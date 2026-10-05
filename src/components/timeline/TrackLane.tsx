@@ -6,7 +6,7 @@ import { dragInstrument, readDragPayload } from '../../store/dragSounds';
 import { ClipView } from './ClipView';
 import type { ContextMenuState } from './ClipContextMenu';
 import { barFromClientX } from './Playhead';
-import { TRACK_HEIGHT } from './layout';
+import { barLabelStep, TRACK_HEIGHT } from './layout';
 
 interface TrackLaneProps {
   track: Track;
@@ -42,7 +42,8 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
         width: TOTAL_BARS * zoom,
         height: TRACK_HEIGHT,
         backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px)`,
-        backgroundSize: `${zoom}px 100%, ${zoom / 4}px 100%`,
+        // Major lines every labelled bar; minor lines per beat, or per bar when zoomed far out
+        backgroundSize: `${zoom * barLabelStep(zoom)}px 100%, ${zoom >= 48 ? zoom / 4 : zoom}px 100%`,
       }}
       data-lane={track.id}
       onContextMenu={(e) => {

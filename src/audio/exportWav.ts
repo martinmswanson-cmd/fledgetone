@@ -23,64 +23,109 @@ export interface RenderOptions {
   endBar: number;
 }
 
+/** Seconds of audio rendered between scheduling passes. */
+const RENDER_STEP = 1;
+/** How far past the render position notes are scheduled, so none are ever late. */
+const SCHEDULE_LEAD = 0.25;
+
 /**
- * Render the arrangement faster than real time with Tone.Offline. Every instrument and the
- * master chain are rebuilt inside the offline context from the same factories used live,
- * so the export sounds like playback (mute/solo/volume/pan included).
+ * Render the arrangement faster than real time in an OfflineContext. Every instrument and
+ * the master chain are rebuilt inside it from the same factories used live, so the export
+ * sounds like playback (mute/solo/volume/pan included).
+ *
+ * Unlike Tone.Offline, which runs the whole Transport (creating a node for every note of the
+ * song) before rendering a single sample, this schedules notes one step ahead of the render
+ * using OfflineAudioContext.suspend(). Finished notes are released as it goes, so render
+ * time grows linearly with song length instead of quadratically. `onProgress` gets 0..1.
  */
-export async function renderArrangement(opts: RenderOptions): Promise<AudioBuffer> {
+export async function renderArrangement(opts: RenderOptions, onProgress?: (fraction: number) => void): Promise<AudioBuffer> {
   const { tracks, clips, bpm, swing, startBar, endBar } = opts;
   const songSeconds = ((endBar - startBar) * 4 * 60) / bpm;
-  // Read live state before Tone.Offline swaps the global context
+  const duration = songSeconds + TAIL_SECONDS;
+  // Read live state before the global context is swapped
   const masterDb = getMasterVolume();
 
-  const buffer = await Tone.Offline(
-    async (context) => {
-      context.destination.volume.value = masterDb;
-      const mix = createMixChain(context.destination);
+  const original = Tone.getContext();
+  // A native OfflineAudioContext, not Tone's default standardized-audio-context wrapper: the
+  // wrapper only builds the real audio graph when rendering starts, so notes created while
+  // the render is suspended would never be heard. Native nodes join the live graph at once.
+  const native = new OfflineAudioContext(2, Math.ceil(duration * SAMPLE_RATE), SAMPLE_RATE);
+  const context = new Tone.OfflineContext(native);
+  Tone.setContext(context);
+  try {
+    await buildGraph(context);
+  } finally {
+    Tone.setContext(original);
+  }
 
-      const drums = createDrumKit(mix.channels.drums);
-      const bass = createBassVoice(mix.channels.bass);
-      const keys = createKeysVoice(mix.channels.keys);
-      const brass = createBrassVoice(mix.channels.brass);
-      await keys.ready;
+  // Drive Tone's offline clock by hand (what OfflineContext.render does all at once)
+  const clock = context as unknown as { _currentTime: number; emit(event: string): void };
+  const quantum = 128 / SAMPLE_RATE;
+  const advanceClock = (to: number) => {
+    const end = Math.min(to, duration);
+    while (clock._currentTime <= end) {
+      clock.emit('tick');
+      clock._currentTime += quantum;
+    }
+  };
 
-      // Solo is resolved here rather than with Channel.solo, which is shared per context
-      const anySolo = tracks.some((t) => t.isSoloed);
-      for (const t of tracks) {
-        const ch = mix.channels[t.instrumentKey];
-        ch.volume.value = t.volume <= -60 ? -Infinity : t.volume;
-        ch.pan.value = t.pan;
-        ch.mute = t.isMuted || (anySolo && !t.isSoloed);
-      }
-
-      const voices: InstrumentVoices = {
-        kick: drums.kick,
-        snare: drums.snare,
-        hat: drums.hat,
-        cowbell: drums.cowbell,
-        bass: bass.trigger,
-        keys: keys.trigger,
-        brass: brass.trigger,
-      };
-
-      const transport = context.transport;
-      transport.bpm.value = bpm;
-      transport.swing = swing;
-      transport.swingSubdivision = '16n';
-      transport.loop = false;
-      scheduleClips(transport, tracks, clips, voices);
-      transport.start(0, `${barToTicks(startBar)}i`);
-    },
-    songSeconds + TAIL_SECONDS,
-    2,
-    SAMPLE_RATE
-  );
-
-  const audio = buffer.get();
-  if (!audio) throw new Error('Render produced no audio');
+  if (typeof native.suspend === 'function') {
+    advanceClock(RENDER_STEP + SCHEDULE_LEAD);
+    for (let t = RENDER_STEP; t < duration; t += RENDER_STEP) {
+      const at = t;
+      void native.suspend(at).then(() => {
+        advanceClock(at + RENDER_STEP + SCHEDULE_LEAD);
+        onProgress?.(at / duration);
+        void native.resume();
+      });
+    }
+  } else {
+    // No offline suspend (older Safari): schedule everything up front, slower for long songs
+    advanceClock(duration);
+  }
+  const audio = await native.startRendering();
+  onProgress?.(1);
   preventClipping(audio);
   return audio;
+
+  /** Instruments, mix and Transport, built inside the offline context. */
+  async function buildGraph(context: Tone.OfflineContext) {
+    context.destination.volume.value = masterDb;
+    const mix = createMixChain(context.destination);
+
+    const drums = createDrumKit(mix.channels.drums);
+    const bass = createBassVoice(mix.channels.bass);
+    const keys = createKeysVoice(mix.channels.keys);
+    const brass = createBrassVoice(mix.channels.brass);
+    await keys.ready;
+
+    // Solo is resolved here rather than with Channel.solo, which is shared per context
+    const anySolo = tracks.some((t) => t.isSoloed);
+    for (const t of tracks) {
+      const ch = mix.channels[t.instrumentKey];
+      ch.volume.value = t.volume <= -60 ? -Infinity : t.volume;
+      ch.pan.value = t.pan;
+      ch.mute = t.isMuted || (anySolo && !t.isSoloed);
+    }
+
+    const voices: InstrumentVoices = {
+      kick: drums.kick,
+      snare: drums.snare,
+      hat: drums.hat,
+      cowbell: drums.cowbell,
+      bass: bass.trigger,
+      keys: keys.trigger,
+      brass: brass.trigger,
+    };
+
+    const transport = context.transport;
+    transport.bpm.value = bpm;
+    transport.swing = swing;
+    transport.swingSubdivision = '16n';
+    transport.loop = false;
+    scheduleClips(transport, tracks, clips, voices);
+    transport.start(0, `${barToTicks(startBar)}i`);
+  }
 }
 
 /**

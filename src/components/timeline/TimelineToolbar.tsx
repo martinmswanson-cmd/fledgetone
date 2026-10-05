@@ -171,7 +171,7 @@ export const TimelineToolbar: React.FC = () => {
 
       {/* Zoom */}
       <div className="flex items-center gap-2 ml-auto text-forge-muted">
-        <button type="button" title="Zoom out" onClick={() => setZoom(zoom - 40)} className="hover:text-forge-text">
+        <button type="button" title="Zoom out" onClick={() => setZoom(zoom / 1.25)} className="hover:text-forge-text">
           <ZoomOut className="w-4 h-4" />
         </button>
         <input
@@ -179,13 +179,13 @@ export const TimelineToolbar: React.FC = () => {
           type="range"
           min={MIN_ZOOM}
           max={MAX_ZOOM}
-          step={10}
+          step={1}
           value={zoom}
           onChange={(e) => setZoom(Number(e.target.value))}
           className="w-28 accent-cyan-400 cursor-pointer"
           aria-label="Timeline zoom (pixels per bar)"
         />
-        <button type="button" title="Zoom in" onClick={() => setZoom(zoom + 40)} className="hover:text-forge-text">
+        <button type="button" title="Zoom in" onClick={() => setZoom(zoom * 1.25)} className="hover:text-forge-text">
           <ZoomIn className="w-4 h-4" />
         </button>
         <span className="font-mono text-[11px] w-16 text-right tabular-nums">{zoom}px/bar</span>

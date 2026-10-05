@@ -16,8 +16,9 @@ import type { Clip, InstrumentKey, LoopRegion, NoteEvent, SnapGrid, TimelineTool
 import type { DragPayload } from './dragSounds';
 import { minClipLength, snapBar, uid } from './timelineTypes';
 
-export const TOTAL_BARS = 32;
-export const MIN_ZOOM = 80;
+/** Song length limit: 400 bars is 5+ minutes even at 240 BPM (about 13 minutes at 120 BPM). */
+export const TOTAL_BARS = 400;
+export const MIN_ZOOM = 12;
 export const MAX_ZOOM = 320;
 const EPS = 1e-6;
 const HISTORY_LIMIT = 100;
