@@ -1,34 +1,55 @@
 import * as Tone from 'tone';
-import { masterBus } from '../engine';
+import { trackChannels } from '../engine';
 
 /**
  * Funk Brass Stabs (Polyphonic)
  * Punchy 70s/80s horn section stabs with filter swell.
+ * Built by a factory so offline (WAV export) rendering can recreate it in its own context.
  */
-export const brassFilter = new Tone.Filter({
-  frequency: 2200,
-  type: 'lowpass',
-  rolloff: -12,
-  Q: 2,
-});
+export function createBrassVoice(output: Tone.InputNode) {
+  const filter = new Tone.Filter({
+    frequency: 2200,
+    type: 'lowpass',
+    rolloff: -12,
+    Q: 2,
+  });
 
-export const brassSynth = new Tone.PolySynth(Tone.Synth, {
-  volume: -3,
-  oscillator: {
-    type: 'sawtooth',
-  },
-  envelope: {
-    attack: 0.015,
-    decay: 0.25,
-    sustain: 0.15,
-    release: 0.2,
-  },
-});
-brassSynth.maxPolyphony = 6;
+  const synth = new Tone.PolySynth(Tone.Synth, {
+    volume: -3,
+    oscillator: {
+      type: 'sawtooth',
+    },
+    envelope: {
+      attack: 0.015,
+      decay: 0.25,
+      sustain: 0.15,
+      release: 0.2,
+    },
+  });
+  synth.maxPolyphony = 6;
 
-// Route: brassSynth -> brassFilter -> masterBus
-brassSynth.connect(brassFilter);
-brassFilter.connect(masterBus);
+  // Route: synth -> filter -> output (brass channel -> masterBus)
+  synth.connect(filter);
+  filter.connect(output);
+
+  return {
+    synth,
+    trigger: (notes: string[], duration: Tone.Unit.Time = '8n', time?: Tone.Unit.Time, velocity: number = 0.85) => {
+      // Mimic brass swell on filter
+      const targetTime = time !== undefined ? time : Tone.now();
+      const t = Tone.Time(targetTime).toSeconds();
+      filter.frequency.cancelScheduledValues(targetTime);
+      filter.frequency.setValueAtTime(800, targetTime);
+      filter.frequency.exponentialRampToValueAtTime(2600, t + 0.03);
+      filter.frequency.exponentialRampToValueAtTime(1400, t + 0.22);
+
+      synth.triggerAttackRelease(notes, duration, time, velocity);
+    },
+  };
+}
+
+const liveBrass = createBrassVoice(trackChannels.brass);
+export const brassSynth = liveBrass.synth;
 
 /**
  * Trigger funk brass section stab
@@ -43,16 +64,5 @@ export function triggerBrass(
   time?: Tone.Unit.Time,
   velocity: number = 0.85
 ): void {
-  // Mimic brass swell on filter
-  const targetTime = time !== undefined ? time : Tone.now();
-  brassFilter.frequency.cancelScheduledValues(targetTime);
-  brassFilter.frequency.setValueAtTime(800, targetTime);
-  brassFilter.frequency.exponentialRampToValueAtTime(2600, Tone.Time(targetTime).toSeconds() + 0.03);
-  brassFilter.frequency.exponentialRampToValueAtTime(1400, Tone.Time(targetTime).toSeconds() + 0.22);
-
-  if (time !== undefined) {
-    brassSynth.triggerAttackRelease(notes, duration, time, velocity);
-  } else {
-    brassSynth.triggerAttackRelease(notes, duration, undefined, velocity);
-  }
+  liveBrass.trigger(notes, duration, time, velocity);
 }

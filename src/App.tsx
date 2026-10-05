@@ -1,7 +1,7 @@
 import React from 'react';
 import { Header } from './components/Header';
 import { SoundAuditionPanel } from './components/SoundAuditionPanel';
-import { DemoSequencer } from './components/DemoSequencer';
+import { Timeline } from './components/timeline/Timeline';
 import { Cpu, Sparkles } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -12,9 +12,9 @@ export const App: React.FC = () => {
 
       {/* Main Workstation Canvas */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
-        {/* Section 1: 2-Bar Funk Demo Sequencer */}
-        <section aria-label="Demo Sequencer">
-          <DemoSequencer />
+        {/* Section 1: Arrangement Timeline */}
+        <section aria-label="Arrangement Timeline">
+          <Timeline />
         </section>
 
         {/* Section 2: Soundbank Audition & MPC Trigger Deck */}
@@ -27,7 +27,7 @@ export const App: React.FC = () => {
               </h2>
             </div>
             <span className="text-[11px] font-mono text-forge-muted hidden sm:inline">
-              Use pads or keyboard shortcuts (Q, W, E, R, 1-4, A-D, Z-X)
+              Click or use keys (Q-T, 1-4, A-D, Z-X) to play • drag pads onto the timeline
             </span>
           </div>
 
@@ -108,7 +108,7 @@ export const App: React.FC = () => {
       <footer className="border-t border-forge-border bg-forge-panel px-6 py-3 text-center text-xs text-forge-muted font-mono flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
-          <span>GrooveForge Production Audio Workstation</span>
+          <span>Bo's Beat Box</span>
         </div>
         <div>
           <span>Electric Funk Soundbank Engine • Tone.js Web Audio API</span>

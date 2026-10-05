@@ -1,5 +1,5 @@
 /**
- * GrooveForge Audio Facade API
+ * Bo's Beat Box audio facade API
  * Provides unified, cleanly typed access to the audio engine, presets, and demo sequencer.
  */
 
@@ -8,7 +8,6 @@ export * from './presets/bass';
 export * from './presets/keys';
 export * from './presets/brass';
 export * from './presets/drums';
-export * from './demoLoop';
 
 // Re-export specific common chord and stab definitions for UI helpers
 export const CHORD_PRESETS = {
