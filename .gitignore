@@ -23,3 +23,6 @@ dist-single
 *.njsproj
 *.sln
 *.sw?
+
+# Personal song projects (kept local, not in the repo)
+songs/
