@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <!-- Bo wearing headphones -->
+  <!-- legs -->
+  <path d="M45 74 L43 103" stroke="#2b2140" stroke-width="11" stroke-linecap="round"/>
+  <path d="M45 74 L43 103" stroke="#e9dcc0" stroke-width="6.5" stroke-linecap="round"/>
+  <path d="M75 74 L77 103" stroke="#2b2140" stroke-width="11" stroke-linecap="round"/>
+  <path d="M75 74 L77 103" stroke="#e9dcc0" stroke-width="6.5" stroke-linecap="round"/>
+  <ellipse cx="41" cy="107" rx="10" ry="5.5" fill="#2b2140"/>
+  <ellipse cx="79" cy="107" rx="10" ry="5.5" fill="#2b2140"/>
+  <!-- stone body + blue band -->
+  <path d="M18 38 a42 13 0 0 1 84 0 v24 a42 13 0 0 1 -84 0 z" fill="#fffaf0" stroke="#2b2140" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M18 57 a42 13 0 0 0 84 0 v8 a42 13 0 0 1 -84 0 z" fill="#3d9ee0" stroke="#2b2140" stroke-width="2.5" stroke-linejoin="round"/>
+  <ellipse cx="60" cy="38" rx="42" ry="13" fill="#fffaf0" stroke="#2b2140" stroke-width="2.5"/>
+  <ellipse cx="45" cy="34" rx="13" ry="4" fill="#fff" opacity="0.6"/>
+  <!-- headphone band over the top of the stone -->
+  <path d="M12 44 C12 9 108 9 108 44" fill="none" stroke="#2b2140" stroke-width="7.5" stroke-linecap="round"/>
+  <path d="M12 44 C12 9 108 9 108 44" fill="none" stroke="#3d9ee0" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- ear cups -->
+  <rect x="3" y="36" width="17" height="27" rx="7" fill="#3d9ee0" stroke="#2b2140" stroke-width="3.5"/>
+  <rect x="100" y="36" width="17" height="27" rx="7" fill="#3d9ee0" stroke="#2b2140" stroke-width="3.5"/>
+  <rect x="7" y="41" width="5" height="17" rx="2.5" fill="#fff" opacity="0.45"/>
+  <rect x="104" y="41" width="5" height="17" rx="2.5" fill="#fff" opacity="0.45"/>
+  <!-- eyes (looking up a little, happy) -->
+  <circle cx="48" cy="52" r="8.5" fill="#fff" stroke="#2b2140" stroke-width="2.5"/>
+  <circle cx="72" cy="52" r="8.5" fill="#fff" stroke="#2b2140" stroke-width="2.5"/>
+  <circle cx="49" cy="51" r="4.2" fill="#2b2140"/>
+  <circle cx="73" cy="51" r="4.2" fill="#2b2140"/>
+  <circle cx="50.5" cy="49.5" r="1.4" fill="#fff"/>
+  <circle cx="74.5" cy="49.5" r="1.4" fill="#fff"/>
+</svg>
