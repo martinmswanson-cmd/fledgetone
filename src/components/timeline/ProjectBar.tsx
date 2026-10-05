@@ -86,6 +86,7 @@ const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const loop = useTimelineStore((s) => s.loopRegion);
   const [status, setStatus] = useState<'idle' | 'rendering' | 'error'>('idle');
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState(0);
 
   const songEnd = clips.length ? Math.max(...clips.map((c) => c.startBar + c.lengthBars)) : 1;
   const songBars = songEnd - 1;
@@ -93,18 +94,22 @@ const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   const render = async (startBar: number, endBar: number) => {
     const s = useTimelineStore.getState();
-    // Tone.Offline swaps the global audio context while it sets up, so halt live playback first
+    // The render swaps the global audio context while it sets up, so halt live playback first
     s.pause();
     setStatus('rendering');
+    setProgress(0);
     try {
-      const audio = await renderArrangement({
-        tracks: s.tracks,
-        clips: s.clips,
-        bpm: s.bpm,
-        swing: s.swing,
-        startBar,
-        endBar,
-      });
+      const audio = await renderArrangement(
+        {
+          tracks: s.tracks,
+          clips: s.clips,
+          bpm: s.bpm,
+          swing: s.swing,
+          startBar,
+          endBar,
+        },
+        setProgress
+      );
       downloadBlob(encodeWav(audio), `${safeFileName(s.projectName)}.wav`);
       onClose();
     } catch (err) {
@@ -118,7 +123,7 @@ const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       {status === 'rendering' ? (
         <div className="flex items-center gap-2 py-4 text-forge-text">
           <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-          Rendering… this takes roughly half the length of the audio.
+          Rendering… {Math.round(progress * 100)}%
         </div>
       ) : (
         <>

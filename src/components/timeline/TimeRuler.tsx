@@ -1,7 +1,7 @@
 import React from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { barFromClientX, Playhead } from './Playhead';
-import { RULER_HEIGHT } from './layout';
+import { barLabelStep, RULER_HEIGHT } from './layout';
 
 interface TimeRulerProps {
   originRef: React.RefObject<HTMLDivElement | null>;
@@ -19,6 +19,8 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
   const totalWidth = TOTAL_BARS * zoom;
   const showBeatLabels = zoom >= 200;
+  const showBeatTicks = zoom >= 48;
+  const labelStep = barLabelStep(zoom);
 
   const startBracketDrag = (which: 'in' | 'out') => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -51,9 +53,9 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
       style={{
         width: totalWidth,
         height: RULER_HEIGHT,
-        // beat ticks (bottom 35%) and 16th ticks (bottom 18%)
+        // beat ticks (bottom 35%) and 16th ticks (bottom 18%); just bar ticks when zoomed far out
         backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.22) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px)`,
-        backgroundSize: `${zoom / 4}px 35%, ${zoom / 16}px 18%`,
+        backgroundSize: showBeatTicks ? `${zoom / 4}px 35%, ${zoom / 16}px 18%` : `${zoom}px 35%, ${zoom}px 0%`,
         backgroundPosition: 'left bottom, left bottom',
         backgroundRepeat: 'repeat-x',
       }}
@@ -99,8 +101,9 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
         </span>
       </div>
 
-      {/* Bar + beat labels */}
-      {Array.from({ length: TOTAL_BARS }, (_, i) => {
+      {/* Bar + beat labels (every Nth bar when zoomed out so labels never overlap) */}
+      {Array.from({ length: Math.ceil(TOTAL_BARS / labelStep) }, (_, k) => {
+        const i = k * labelStep;
         const bar = i + 1;
         return (
           <React.Fragment key={bar}>

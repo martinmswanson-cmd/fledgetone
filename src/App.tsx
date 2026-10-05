@@ -111,7 +111,9 @@ export const App: React.FC = () => {
           <span>Bo's Beat Box</span>
         </div>
         <div>
-          <span>Electric Funk Soundbank Engine • Tone.js Web Audio API</span>
+          <a href="https://twobirdsworkshop.com" target="_blank" rel="noopener" className="hover:text-forge-text transition-colors">
+            twobirdsworkshop.com
+          </a>
         </div>
       </footer>
     </div>

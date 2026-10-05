@@ -201,9 +201,9 @@ export const Timeline: React.FC = () => {
       } else if (e.key === 'Escape') {
         s.clearSelection();
       } else if (e.key === '=' || e.key === '+') {
-        s.setZoom(s.zoom + 40);
+        s.setZoom(s.zoom * 1.25);
       } else if (e.key === '-') {
-        s.setZoom(s.zoom - 40);
+        s.setZoom(s.zoom / 1.25);
       }
     };
     window.addEventListener('keydown', onKeyDown);

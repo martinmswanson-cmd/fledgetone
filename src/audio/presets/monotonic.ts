@@ -18,7 +18,10 @@ export function monotonicTime(context: Tone.BaseContext): (time?: Tone.Unit.Time
   let last = -Infinity;
   return (time) => {
     const requested = time === undefined ? context.now() : Tone.Time(time).toSeconds();
-    const t = Math.max(requested, context.currentTime + LATE_MARGIN);
+    // The raw context's clock is where audio is actually being rendered. (An OfflineContext's
+    // own currentTime is its scheduling clock, which sits right on each note's time and would
+    // make every offline hit look late.)
+    const t = Math.max(requested, context.rawContext.currentTime + LATE_MARGIN);
     last = t > last ? t : last + 0.001;
     return last;
   };
