@@ -12,6 +12,47 @@ import {
   BRASS_PRESETS,
 } from '../audio';
 import { useAudioStore } from '../store/audioStore';
+import { useTimelineStore } from '../store/timelineStore';
+import { DRUM_NOTES } from '../audio/scheduler';
+import { patternsFor } from '../store/demoSong';
+import { setDragPayload } from '../store/dragSounds';
+import type { DragPayload } from '../store/dragSounds';
+import type { InstrumentKey } from '../store/timelineTypes';
+
+type DrumPad = 'kick' | 'snare' | 'hat' | 'openhat' | 'cowbell';
+
+const DRUM_PAD_NOTES: Record<DrumPad, { note: string; label: string; velocity: number }> = {
+  kick: { note: DRUM_NOTES.kick, label: 'Kick', velocity: 0.95 },
+  snare: { note: DRUM_NOTES.snare, label: 'Snare', velocity: 0.9 },
+  hat: { note: DRUM_NOTES.closedHat, label: 'Closed Hat', velocity: 0.7 },
+  openhat: { note: DRUM_NOTES.openHat, label: 'Open Hat', velocity: 0.75 },
+  cowbell: { note: DRUM_NOTES.cowbell, label: 'Cowbell', velocity: 0.8 },
+};
+
+/** Props that make a pad draggable onto the timeline (lanes for the same instrument light up). */
+function dragProps(payload: DragPayload) {
+  return {
+    draggable: true,
+    onDragStart: (e: React.DragEvent) => {
+      setDragPayload(e, payload);
+      useTimelineStore.getState().setDraggingInstrument(payload.instrument);
+    },
+    onDragEnd: () => useTimelineStore.getState().setDraggingInstrument(null),
+    title: `Click to play • drag onto the ${payload.instrument} track`,
+  };
+}
+
+const drumDrag = (pad: DrumPad) => {
+  const d = DRUM_PAD_NOTES[pad];
+  return dragProps({ kind: 'sound', instrument: 'drums', label: d.label, notes: [d.note], duration: '16n', velocity: d.velocity });
+};
+
+const PATTERN_GROUPS: Array<{ instrument: InstrumentKey; label: string; className: string }> = [
+  { instrument: 'drums', label: 'Drums', className: 'text-purple-300 border-purple-500/40 hover:bg-purple-950/30' },
+  { instrument: 'bass', label: 'Bass', className: 'text-emerald-300 border-emerald-500/40 hover:bg-emerald-950/30' },
+  { instrument: 'keys', label: 'Keys', className: 'text-cyan-300 border-cyan-500/40 hover:bg-cyan-950/30' },
+  { instrument: 'brass', label: 'Brass', className: 'text-amber-300 border-amber-500/40 hover:bg-amber-950/30' },
+];
 
 export const SoundAuditionPanel: React.FC = () => {
   const { audioState, initializeAudio, activePad, flashPad } = useAudioStore();
@@ -77,7 +118,9 @@ export const SoundAuditionPanel: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input
-      if (e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      // Leave modifier chords (Ctrl+D etc.) to the timeline
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       const key = e.key.toLowerCase();
       switch (key) {
@@ -158,6 +201,7 @@ export const SoundAuditionPanel: React.FC = () => {
               <button
                 key={note}
                 onClick={() => handleTriggerBass(note)}
+                {...dragProps({ kind: 'sound', instrument: 'bass', label: note, notes: [note], duration: '8n', velocity: 0.9 })}
                 className={`flex flex-col items-center justify-center p-3 rounded-lg border font-mono transition-all duration-100 ${
                   isActive
                     ? 'bg-emerald-500 text-black border-emerald-300 scale-95 shadow-glow-bass'
@@ -199,6 +243,7 @@ export const SoundAuditionPanel: React.FC = () => {
               <button
                 key={chordName}
                 onClick={() => handleTriggerKeys(chordName)}
+                {...dragProps({ kind: 'sound', instrument: 'keys', label: chordName, notes: [...CHORD_PRESETS[chordName]], duration: '4n', velocity: 0.8 })}
                 className={`flex flex-col items-center justify-center p-3 rounded-lg border font-mono transition-all duration-100 ${
                   isActive
                     ? 'bg-cyan-400 text-black border-cyan-200 scale-95 shadow-glow-keys'
@@ -234,6 +279,7 @@ export const SoundAuditionPanel: React.FC = () => {
         <div className="grid grid-cols-2 gap-2 mt-auto">
           <button
             onClick={() => handleTriggerBrass('Dm_Stab')}
+            {...dragProps({ kind: 'sound', instrument: 'brass', label: 'Dm Stab', notes: [...BRASS_PRESETS.Dm_Stab], duration: '8n', velocity: 0.85 })}
             className={`flex flex-col items-center justify-center p-2.5 rounded-lg border font-mono transition-all duration-100 ${
               activeBtn === 'brass-Dm_Stab'
                 ? 'bg-amber-400 text-black border-amber-200 scale-95 shadow-glow-brass'
@@ -245,6 +291,7 @@ export const SoundAuditionPanel: React.FC = () => {
           </button>
           <button
             onClick={() => handleTriggerBrass('C_Stab')}
+            {...dragProps({ kind: 'sound', instrument: 'brass', label: 'C Stab', notes: [...BRASS_PRESETS.C_Stab], duration: '8n', velocity: 0.85 })}
             className={`flex flex-col items-center justify-center p-2.5 rounded-lg border font-mono transition-all duration-100 ${
               activeBtn === 'brass-C_Stab'
                 ? 'bg-amber-400 text-black border-amber-200 scale-95 shadow-glow-brass'
@@ -279,6 +326,7 @@ export const SoundAuditionPanel: React.FC = () => {
           {/* Kick */}
           <button
             onClick={() => handleTriggerDrum('kick')}
+            {...drumDrag('kick')}
             className={`flex flex-col items-center justify-center p-3 rounded-lg border font-mono transition-all duration-100 ${
               activeBtn === 'drum-kick' || activePad === 'drum-kick'
                 ? 'bg-purple-500 text-white border-purple-200 scale-95 shadow-glow-drums'
@@ -292,6 +340,7 @@ export const SoundAuditionPanel: React.FC = () => {
           {/* Snare */}
           <button
             onClick={() => handleTriggerDrum('snare')}
+            {...drumDrag('snare')}
             className={`flex flex-col items-center justify-center p-3 rounded-lg border font-mono transition-all duration-100 ${
               activeBtn === 'drum-snare' || activePad === 'drum-snare'
                 ? 'bg-purple-500 text-white border-purple-200 scale-95 shadow-glow-drums'
@@ -306,6 +355,7 @@ export const SoundAuditionPanel: React.FC = () => {
           <div className="flex gap-1 col-span-1">
             <button
               onClick={() => handleTriggerDrum('hat')}
+              {...drumDrag('hat')}
               className={`flex-1 flex flex-col items-center justify-center p-2 rounded-lg border font-mono transition-all duration-100 ${
                 activeBtn === 'drum-hat' || activePad === 'drum-hat'
                   ? 'bg-purple-500 text-white border-purple-200 scale-95 shadow-glow-drums'
@@ -318,6 +368,7 @@ export const SoundAuditionPanel: React.FC = () => {
             </button>
             <button
               onClick={() => handleTriggerDrum('openhat')}
+              {...drumDrag('openhat')}
               className={`flex-1 flex flex-col items-center justify-center p-2 rounded-lg border font-mono transition-all duration-100 ${
                 activeBtn === 'drum-openhat'
                   ? 'bg-purple-500 text-white border-purple-200 scale-95 shadow-glow-drums'
@@ -333,6 +384,7 @@ export const SoundAuditionPanel: React.FC = () => {
           {/* Cowbell */}
           <button
             onClick={() => handleTriggerDrum('cowbell')}
+            {...drumDrag('cowbell')}
             className={`flex flex-col items-center justify-center p-3 rounded-lg border font-mono transition-all duration-100 ${
               activeBtn === 'drum-cowbell' || activePad === 'drum-cowbell'
                 ? 'bg-purple-500 text-white border-purple-200 scale-95 shadow-glow-drums'
@@ -343,6 +395,29 @@ export const SoundAuditionPanel: React.FC = () => {
             <span className="text-[10px] text-forge-muted mt-0.5">[R]</span>
           </button>
         </div>
+      </div>
+
+      {/* 5. Patterns: drag whole stock patterns onto the matching track */}
+      <div className="lg:col-span-12 bg-forge-panel border border-forge-border rounded-xl p-4 shadow-lg flex flex-wrap items-center gap-x-5 gap-y-3">
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-forge-text font-mono">Patterns</h2>
+          <p className="text-[11px] text-forge-muted">Drag onto the matching track</p>
+        </div>
+        {PATTERN_GROUPS.map((g) => (
+          <div key={g.instrument} className="flex items-center gap-2">
+            <span className="text-[10px] font-mono uppercase text-forge-muted">{g.label}</span>
+            {patternsFor(g.instrument).map((p) => (
+              <div
+                key={p.id}
+                {...dragProps({ kind: 'pattern', instrument: g.instrument, patternId: p.id, label: p.name })}
+                title={`Drag onto the ${g.label.toLowerCase()} track (${p.lengthBars} bars)`}
+                className={`cursor-grab active:cursor-grabbing select-none px-2.5 py-1.5 rounded-md border bg-forge-bg text-xs font-mono ${g.className}`}
+              >
+                {p.name} <span className="text-forge-muted text-[10px]">{p.lengthBars} bars</span>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   );

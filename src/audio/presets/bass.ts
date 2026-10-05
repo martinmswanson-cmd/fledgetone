@@ -1,40 +1,57 @@
 import * as Tone from 'tone';
-import { masterBus } from '../engine';
+import { trackChannels } from '../engine';
+import { monotonicTime } from './monotonic';
 
 /**
  * Funk Slap Bass (Monophonic)
  * Tight slap/squelch bass with fast transient attack and resonant filter sweep.
+ * Built by a factory so offline (WAV export) rendering can recreate it in its own context.
  */
-export const bassDistortion = new Tone.Distortion(0.06);
+export function createBassVoice(output: Tone.InputNode) {
+  const distortion = new Tone.Distortion(0.06);
 
-export const bassSynth = new Tone.MonoSynth({
-  volume: -2,
-  oscillator: {
-    type: 'sawtooth',
-  },
-  filter: {
-    type: 'lowpass',
-    rolloff: -24,
-    Q: 5,
-  },
-  filterEnvelope: {
-    baseFrequency: 70,
-    octaves: 4.5,
-    attack: 0.002,
-    decay: 0.16,
-    sustain: 0.08,
-    release: 0.1,
-  },
-  envelope: {
-    attack: 0.002,
-    decay: 0.22,
-    sustain: 0.2,
-    release: 0.15,
-  },
-});
+  const synth = new Tone.MonoSynth({
+    volume: -2,
+    oscillator: {
+      type: 'sawtooth',
+    },
+    filter: {
+      type: 'lowpass',
+      rolloff: -24,
+      Q: 5,
+    },
+    filterEnvelope: {
+      baseFrequency: 70,
+      octaves: 4.5,
+      attack: 0.002,
+      decay: 0.16,
+      sustain: 0.08,
+      release: 0.1,
+    },
+    envelope: {
+      attack: 0.002,
+      decay: 0.22,
+      sustain: 0.2,
+      release: 0.15,
+    },
+  });
 
-// Route: bassSynth -> bassDistortion -> masterBus
-bassSynth.chain(bassDistortion, masterBus);
+  // Route: synth -> distortion -> output (bass channel -> masterBus)
+  synth.chain(distortion, output);
+
+  // Monophonic: overlapping bass clips could land two notes on one instant
+  const safeTime = monotonicTime(synth.context);
+
+  return {
+    synth,
+    trigger: (note: string, duration: Tone.Unit.Time = '16n', time?: Tone.Unit.Time, velocity: number = 0.9) => {
+      synth.triggerAttackRelease(note, duration, safeTime(time), velocity);
+    },
+  };
+}
+
+const liveBass = createBassVoice(trackChannels.bass);
+export const bassSynth = liveBass.synth;
 
 /**
  * Trigger a funk bass note
@@ -49,9 +66,5 @@ export function triggerBass(
   time?: Tone.Unit.Time,
   velocity: number = 0.9
 ): void {
-  if (time !== undefined) {
-    bassSynth.triggerAttackRelease(note, duration, time, velocity);
-  } else {
-    bassSynth.triggerAttackRelease(note, duration, undefined, velocity);
-  }
+  liveBass.trigger(note, duration, time, velocity);
 }

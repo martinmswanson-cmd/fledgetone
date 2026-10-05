@@ -1,17 +1,13 @@
 import React from 'react';
-import { Volume2, Power, Zap } from 'lucide-react';
+import { Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
+import { useTimelineStore } from '../store/timelineStore';
 
 export const Header: React.FC = () => {
-  const {
-    audioState,
-    initializeAudio,
-    bpm,
-    setBpm,
-    tapTempo,
-    masterVolume,
-    setMasterVolume,
-  } = useAudioStore();
+  const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
+  // Tempo lives in the timeline store so the Transport has a single source of truth
+  const bpm = useTimelineStore((s) => s.bpm);
+  const { setBpm, tapTempo } = useTimelineStore.getState();
 
   const isRunning = audioState === 'running';
 
@@ -19,21 +15,10 @@ export const Header: React.FC = () => {
     <header className="bg-forge-panel border-b border-forge-border px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xl">
       {/* Brand Title */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500 via-purple-600 to-cyan-500 p-0.5 shadow-glow-cyan flex items-center justify-center">
-          <div className="w-full h-full bg-forge-bg rounded-[7px] flex items-center justify-center">
-            <Zap className="w-5 h-5 text-amber-400 fill-amber-400" />
-          </div>
-        </div>
+        <img src="/favicon.svg" alt="Bo wearing headphones" className="w-12 h-12 drop-shadow-[0_0_10px_rgba(61,158,224,0.45)]" />
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-white font-sans">GrooveForge</h1>
-            <span className="text-[10px] uppercase font-mono font-bold tracking-wider px-2 py-0.5 rounded bg-forge-border text-forge-accent-keys border border-forge-borderLight">
-              Soundbank Engine v1.0
-            </span>
-          </div>
-          <p className="text-xs text-forge-muted font-sans">
-            Electric Funk Web Audio Workstation • Tone.js Master Bus
-          </p>
+          <h1 className="text-xl font-bold tracking-tight text-white font-sans">Bo's Beat Box</h1>
+          <p className="text-xs text-forge-muted font-sans">Arrange, mix and export music in your browser</p>
         </div>
       </div>
 
