@@ -40,6 +40,18 @@ const liveVoices: InstrumentVoices = {
   brass: triggerBrass,
 };
 
+/**
+ * Trigger one voice, skipping just that hit if Tone rejects it. An exception escaping a
+ * Transport callback would also cancel the other events due in the same clock tick.
+ */
+function safely(trigger: () => void): void {
+  try {
+    trigger();
+  } catch (err) {
+    console.warn('Skipped a note:', err);
+  }
+}
+
 function playNotes(voices: InstrumentVoices, instrument: InstrumentKey, notes: NoteEvent[], time: number): void {
   if (notes.length === 0) return;
   const maxVelocity = Math.max(...notes.map((n) => n.velocity));
@@ -49,25 +61,25 @@ function playNotes(voices: InstrumentVoices, instrument: InstrumentKey, notes: N
       // One hi-hat voice: an open hat on the same tick replaces the closed one
       const openHat = notes.some((n) => n.note === DRUM_NOTES.openHat);
       for (const n of notes) {
-        if (n.note === DRUM_NOTES.kick) voices.kick(time, n.velocity);
-        else if (n.note === DRUM_NOTES.snare) voices.snare(time, n.velocity);
-        else if (n.note === DRUM_NOTES.closedHat && !openHat) voices.hat(false, time, n.velocity);
-        else if (n.note === DRUM_NOTES.openHat) voices.hat(true, time, n.velocity);
-        else if (n.note === DRUM_NOTES.cowbell) voices.cowbell(time, n.velocity);
+        if (n.note === DRUM_NOTES.kick) safely(() => voices.kick(time, n.velocity));
+        else if (n.note === DRUM_NOTES.snare) safely(() => voices.snare(time, n.velocity));
+        else if (n.note === DRUM_NOTES.closedHat && !openHat) safely(() => voices.hat(false, time, n.velocity));
+        else if (n.note === DRUM_NOTES.openHat) safely(() => voices.hat(true, time, n.velocity));
+        else if (n.note === DRUM_NOTES.cowbell) safely(() => voices.cowbell(time, n.velocity));
       }
       break;
     }
     case 'bass': {
       // Monophonic: the loudest note at this tick wins
       const n = notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));
-      voices.bass(n.note, n.duration, time, n.velocity);
+      safely(() => voices.bass(n.note, n.duration, time, n.velocity));
       break;
     }
     case 'keys':
-      voices.keys(notes.map((n) => n.note), notes[0].duration, time, maxVelocity);
+      safely(() => voices.keys(notes.map((n) => n.note), notes[0].duration, time, maxVelocity));
       break;
     case 'brass':
-      voices.brass(notes.map((n) => n.note), notes[0].duration, time, maxVelocity);
+      safely(() => voices.brass(notes.map((n) => n.note), notes[0].duration, time, maxVelocity));
       break;
   }
 }

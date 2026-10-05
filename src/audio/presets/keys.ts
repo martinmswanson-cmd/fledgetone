@@ -43,7 +43,8 @@ export function createKeysVoice(output: Tone.InputNode) {
       release: 0.25,
     },
   });
-  synth.maxPolyphony = 8;
+  // 5-note chords repeated while earlier ones are still releasing need headroom
+  synth.maxPolyphony = 16;
 
   // Route: synth -> chorus -> reverb -> output (keys channel -> masterBus)
   synth.chain(chorus, reverb, output);
