@@ -2,6 +2,7 @@ import React from 'react';
 import { Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
+import boLogo from '../assets/bo.svg';
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
@@ -15,7 +16,7 @@ export const Header: React.FC = () => {
     <header className="bg-forge-panel border-b border-forge-border px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xl">
       {/* Brand Title */}
       <div className="flex items-center gap-3">
-        <img src="/favicon.svg" alt="Bo wearing headphones" className="w-12 h-12 drop-shadow-[0_0_10px_rgba(61,158,224,0.45)]" />
+        <img src={boLogo} alt="Bo wearing headphones" className="w-12 h-12 drop-shadow-[0_0_10px_rgba(61,158,224,0.45)]" />
         <div>
           <h1 className="text-xl font-bold tracking-tight text-white font-sans">Bo's Beat Box</h1>
           <p className="text-xs text-forge-muted font-sans">Arrange, mix and export music in your browser</p>
