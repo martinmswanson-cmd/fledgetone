@@ -9,6 +9,7 @@ import {
   Repeat,
   Scissors,
   SkipBack,
+  Sliders,
   Square,
   Undo2,
   ZoomIn,
@@ -75,8 +76,20 @@ export const TimelineToolbar: React.FC = () => {
   const zoom = useTimelineStore((s) => s.zoom);
   const canUndo = useTimelineStore((s) => s.past.length > 0);
   const canRedo = useTimelineStore((s) => s.future.length > 0);
-  const { togglePlay, stop, seek, toggleRecord, toggleLoop, setTool, setSnapGrid, setZoom, undo, redo } =
-    useTimelineStore.getState();
+  const isInspectorOpen = useTimelineStore((s) => s.isInspectorOpen);
+  const {
+    togglePlay,
+    stop,
+    seek,
+    toggleRecord,
+    toggleLoop,
+    setTool,
+    setSnapGrid,
+    setZoom,
+    undo,
+    redo,
+    toggleInspector,
+  } = useTimelineStore.getState();
 
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2 bg-forge-panel border-b border-forge-border">
@@ -168,6 +181,18 @@ export const TimelineToolbar: React.FC = () => {
           <option value="off">Off</option>
         </select>
       </label>
+
+      {/* Inspector / Studio FX Rack Toggle */}
+      <ToolButton
+        id="btn-inspector-toggle"
+        title="Toggle Track Inspector & FX Rack"
+        active={isInspectorOpen}
+        activeClass="bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_10px_rgba(34,211,238,0.25)] font-bold"
+        onClick={() => toggleInspector()}
+      >
+        <Sliders className="w-4 h-4" />
+        <span className="text-[11px] font-bold">FX Rack</span>
+      </ToolButton>
 
       {/* Zoom */}
       <div className="flex items-center gap-2 ml-auto text-forge-muted">

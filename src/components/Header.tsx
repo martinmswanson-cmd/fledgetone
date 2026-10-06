@@ -18,7 +18,7 @@ export const Header: React.FC = () => {
       <div className="flex items-center gap-3">
         <img src={boLogo} alt="Bo wearing headphones" className="w-12 h-12 drop-shadow-[0_0_10px_rgba(61,158,224,0.45)]" />
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-white font-sans">Bo's Beat Box</h1>
+          <h1 className="text-xl font-bold tracking-tight text-white font-sans">Bo's Beatbox</h1>
           <p className="text-xs text-forge-muted font-sans">Arrange, mix and export music in your browser</p>
         </div>
       </div>

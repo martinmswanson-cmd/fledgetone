@@ -107,6 +107,7 @@ const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           swing: s.swing,
           startBar,
           endBar,
+          masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback },
         },
         setProgress
       );
@@ -127,7 +128,7 @@ const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       ) : (
         <>
-          <p>Renders a 44.1 kHz 16-bit stereo WAV with the current mix (volume, pan, mute and solo), plus 2 s for the tail. Peaks are kept just under full scale so nothing clips.</p>
+          <p>Renders a 44.1 kHz 16-bit stereo WAV with the current mix (volume, pan, mute, solo and every effect), plus room for reverb tails to ring out. Peaks are kept just under full scale so nothing clips.</p>
           <ChoiceButton
             title="Whole song"
             detail={songBars > 0 ? `Bar 1 to the end of the last clip: ${songBars} bars, ${lengthLabel(songBars, bpm)}` : 'The timeline is empty'}
@@ -202,6 +203,7 @@ export const ProjectBar: React.FC = () => {
       loopRegion: s.loopRegion,
       tracks: s.tracks,
       clips: s.clips,
+      masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback },
     });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     downloadBlob(blob, `${safeFileName(s.projectName)}.beatbox.json`);

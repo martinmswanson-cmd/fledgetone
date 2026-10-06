@@ -18,6 +18,7 @@ import { patternsFor } from '../store/demoSong';
 import { setDragPayload } from '../store/dragSounds';
 import type { DragPayload } from '../store/dragSounds';
 import type { InstrumentKey } from '../store/timelineTypes';
+import { triggerAuditionSampler } from '../audio/samplers/samplerManager';
 
 type DrumPad = 'kick' | 'snare' | 'hat' | 'openhat' | 'cowbell';
 
@@ -27,6 +28,29 @@ const DRUM_PAD_NOTES: Record<DrumPad, { note: string; label: string; velocity: n
   hat: { note: DRUM_NOTES.closedHat, label: 'Closed Hat', velocity: 0.7 },
   openhat: { note: DRUM_NOTES.openHat, label: 'Open Hat', velocity: 0.75 },
   cowbell: { note: DRUM_NOTES.cowbell, label: 'Cowbell', velocity: 0.8 },
+};
+
+const ACOUSTIC_CHORDS = {
+  piano: [
+    { label: 'Cmaj9', notes: ['C3', 'G3', 'B3', 'D4', 'E4'], duration: '2n' },
+    { label: 'Am9', notes: ['A2', 'E3', 'G3', 'C4', 'E4'], duration: '2n' },
+    { label: 'Fmaj7', notes: ['F2', 'C3', 'E3', 'A3', 'C4'], duration: '2n' },
+  ],
+  guitar: [
+    { label: 'Em', notes: ['E2', 'B2', 'E3', 'G3', 'B3', 'E4'], duration: '2n' },
+    { label: 'Gmaj', notes: ['G2', 'B2', 'D3', 'G3', 'D4', 'G4'], duration: '2n' },
+    { label: 'Cmaj', notes: ['C3', 'E3', 'G3', 'C4', 'E4'], duration: '2n' },
+  ],
+  violin: [
+    { label: 'A4 Solo', notes: ['A4'], duration: '2n' },
+    { label: 'C5 Solo', notes: ['C5'], duration: '2n' },
+    { label: 'E5 Solo', notes: ['E5'], duration: '2n' },
+  ],
+  cello: [
+    { label: 'C2 Bass', notes: ['C2'], duration: '2n' },
+    { label: 'G2 Deep', notes: ['G2'], duration: '2n' },
+    { label: 'D3 Warm', notes: ['D3'], duration: '2n' },
+  ],
 };
 
 /** Props that make a pad draggable onto the timeline (lanes for the same instrument light up). */
@@ -52,10 +76,14 @@ const PATTERN_GROUPS: Array<{ instrument: InstrumentKey; label: string; classNam
   { instrument: 'bass', label: 'Bass', className: 'text-emerald-300 border-emerald-500/40 hover:bg-emerald-950/30' },
   { instrument: 'keys', label: 'Keys', className: 'text-cyan-300 border-cyan-500/40 hover:bg-cyan-950/30' },
   { instrument: 'brass', label: 'Brass', className: 'text-amber-300 border-amber-500/40 hover:bg-amber-950/30' },
+  { instrument: 'piano', label: 'Piano', className: 'text-slate-200 border-slate-400/40 hover:bg-slate-800/30' },
+  { instrument: 'violin', label: 'Violin', className: 'text-red-300 border-red-500/40 hover:bg-red-950/30' },
+  { instrument: 'cello', label: 'Cello', className: 'text-orange-300 border-orange-500/40 hover:bg-orange-950/30' },
+  { instrument: 'guitar', label: 'Guitar', className: 'text-amber-600 border-amber-600/40 hover:bg-amber-950/30' },
 ];
 
 export const SoundAuditionPanel: React.FC = () => {
-  const { audioState, initializeAudio, activePad, flashPad } = useAudioStore();
+  const { audioState, initializeAudio, activePad, flashPad, instrumentStatus } = useAudioStore();
   const [activeBtn, setActiveBtn] = useState<string | null>(null);
 
   const ensureAudio = async () => {
@@ -112,6 +140,19 @@ export const SoundAuditionPanel: React.FC = () => {
     }
 
     setTimeout(() => setActiveBtn(null), 140);
+  };
+
+  const handleTriggerSampler = async (
+    inst: 'piano' | 'guitar' | 'violin' | 'cello',
+    padId: string,
+    notes: string[],
+    duration: string
+  ) => {
+    await ensureAudio();
+    flashPad(padId);
+    setActiveBtn(padId);
+    void triggerAuditionSampler(inst, notes, duration, 0.85);
+    setTimeout(() => setActiveBtn(null), 180);
   };
 
   // Keyboard shortcut listener
@@ -397,7 +438,195 @@ export const SoundAuditionPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* 5. Patterns: drag whole stock patterns onto the matching track */}
+      {/* Acoustic Sampled Instruments (Piano, Guitar, Violin, Cello) */}
+      <div className="lg:col-span-12 bg-forge-panel border border-forge-border rounded-xl p-4 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between pb-3 border-b border-forge-border mb-4 gap-2">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-forge-text font-mono">
+              Acoustic Sampled Instruments
+            </h2>
+            <span className="text-[10px] font-mono uppercase text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-500/30">
+              Tone.Sampler Multi-sampled
+            </span>
+          </div>
+          <p className="text-xs text-forge-muted font-sans">
+            Streamed live from public audio CDNs • Click to audition or drag chords/notes into the timeline
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Grand Piano */}
+          <div className="bg-forge-bg border border-forge-border/80 rounded-lg p-3 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-slate-200 font-mono flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-slate-200" />
+                Grand Piano
+              </span>
+              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                instrumentStatus['piano'] === 'ready'
+                  ? 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30'
+                  : instrumentStatus['piano'] === 'loading'
+                  ? 'text-amber-400 bg-amber-950/40 border-amber-500/30 animate-pulse'
+                  : 'text-forge-muted bg-forge-panel border-forge-border'
+              }`}>
+                {instrumentStatus['piano'] === 'ready' ? 'Ready' : instrumentStatus['piano'] === 'loading' ? 'Loading...' : 'Salamander C8'}
+              </span>
+            </div>
+            <p className="text-[11px] text-forge-muted mb-3 font-sans">
+              Yamaha C5 Grand Piano multi-samples (A0–C8)
+            </p>
+            <div className="grid grid-cols-3 gap-1.5 mt-auto">
+              {ACOUSTIC_CHORDS.piano.map((chord) => {
+                const id = `piano-${chord.label}`;
+                const isActive = activeBtn === id || activePad === id;
+                return (
+                  <button
+                    key={chord.label}
+                    onClick={() => handleTriggerSampler('piano', id, chord.notes, chord.duration)}
+                    {...dragProps({ kind: 'sound', instrument: 'piano', label: chord.label, notes: chord.notes, duration: chord.duration, velocity: 0.85 })}
+                    className={`flex flex-col items-center justify-center p-2 rounded border font-mono transition-all text-xs ${
+                      isActive
+                        ? 'bg-slate-200 text-black border-white scale-95 shadow-[0_0_10px_rgba(255,255,255,0.4)]'
+                        : 'bg-forge-panel text-slate-300 border-forge-border hover:border-slate-300/60 hover:bg-slate-800/40'
+                    }`}
+                  >
+                    <span className="font-bold">{chord.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Acoustic Guitar */}
+          <div className="bg-forge-bg border border-forge-border/80 rounded-lg p-3 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-amber-500 font-mono flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                Acoustic Guitar
+              </span>
+              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                instrumentStatus['guitar'] === 'ready'
+                  ? 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30'
+                  : instrumentStatus['guitar'] === 'loading'
+                  ? 'text-amber-400 bg-amber-950/40 border-amber-500/30 animate-pulse'
+                  : 'text-forge-muted bg-forge-panel border-forge-border'
+              }`}>
+                {instrumentStatus['guitar'] === 'ready' ? 'Ready' : instrumentStatus['guitar'] === 'loading' ? 'Loading...' : 'Steel String'}
+              </span>
+            </div>
+            <p className="text-[11px] text-forge-muted mb-3 font-sans">
+              Steel string fingerpicked acoustic chords (E2–E4)
+            </p>
+            <div className="grid grid-cols-3 gap-1.5 mt-auto">
+              {ACOUSTIC_CHORDS.guitar.map((chord) => {
+                const id = `guitar-${chord.label}`;
+                const isActive = activeBtn === id || activePad === id;
+                return (
+                  <button
+                    key={chord.label}
+                    onClick={() => handleTriggerSampler('guitar', id, chord.notes, chord.duration)}
+                    {...dragProps({ kind: 'sound', instrument: 'guitar', label: chord.label, notes: chord.notes, duration: chord.duration, velocity: 0.85 })}
+                    className={`flex flex-col items-center justify-center p-2 rounded border font-mono transition-all text-xs ${
+                      isActive
+                        ? 'bg-amber-500 text-black border-amber-300 scale-95 shadow-[0_0_10px_#f59e0b]'
+                        : 'bg-forge-panel text-amber-400 border-forge-border hover:border-amber-500/60 hover:bg-amber-950/20'
+                    }`}
+                  >
+                    <span className="font-bold">{chord.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Concert Violin */}
+          <div className="bg-forge-bg border border-forge-border/80 rounded-lg p-3 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-red-400 font-mono flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-500" />
+                Concert Violin
+              </span>
+              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                instrumentStatus['violin'] === 'ready'
+                  ? 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30'
+                  : instrumentStatus['violin'] === 'loading'
+                  ? 'text-amber-400 bg-amber-950/40 border-amber-500/30 animate-pulse'
+                  : 'text-forge-muted bg-forge-panel border-forge-border'
+              }`}>
+                {instrumentStatus['violin'] === 'ready' ? 'Ready' : instrumentStatus['violin'] === 'loading' ? 'Loading...' : 'Solo Expressive'}
+              </span>
+            </div>
+            <p className="text-[11px] text-forge-muted mb-3 font-sans">
+              Expressive orchestral violin sustains (A3–G6)
+            </p>
+            <div className="grid grid-cols-3 gap-1.5 mt-auto">
+              {ACOUSTIC_CHORDS.violin.map((chord) => {
+                const id = `violin-${chord.label}`;
+                const isActive = activeBtn === id || activePad === id;
+                return (
+                  <button
+                    key={chord.label}
+                    onClick={() => handleTriggerSampler('violin', id, chord.notes, chord.duration)}
+                    {...dragProps({ kind: 'sound', instrument: 'violin', label: chord.label, notes: chord.notes, duration: chord.duration, velocity: 0.85 })}
+                    className={`flex flex-col items-center justify-center p-2 rounded border font-mono transition-all text-xs ${
+                      isActive
+                        ? 'bg-red-500 text-white border-red-300 scale-95 shadow-[0_0_10px_#ef4444]'
+                        : 'bg-forge-panel text-red-300 border-forge-border hover:border-red-500/60 hover:bg-red-950/20'
+                    }`}
+                  >
+                    <span className="font-bold">{chord.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Deep Cello */}
+          <div className="bg-forge-bg border border-forge-border/80 rounded-lg p-3 flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-orange-400 font-mono flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-orange-500" />
+                Deep Cello
+              </span>
+              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${
+                instrumentStatus['cello'] === 'ready'
+                  ? 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30'
+                  : instrumentStatus['cello'] === 'loading'
+                  ? 'text-amber-400 bg-amber-950/40 border-amber-500/30 animate-pulse'
+                  : 'text-forge-muted bg-forge-panel border-forge-border'
+              }`}>
+                {instrumentStatus['cello'] === 'ready' ? 'Ready' : instrumentStatus['cello'] === 'loading' ? 'Loading...' : 'Resonant Bow'}
+              </span>
+            </div>
+            <p className="text-[11px] text-forge-muted mb-3 font-sans">
+              Rich resonant lower register cello notes (C2–C4)
+            </p>
+            <div className="grid grid-cols-3 gap-1.5 mt-auto">
+              {ACOUSTIC_CHORDS.cello.map((chord) => {
+                const id = `cello-${chord.label}`;
+                const isActive = activeBtn === id || activePad === id;
+                return (
+                  <button
+                    key={chord.label}
+                    onClick={() => handleTriggerSampler('cello', id, chord.notes, chord.duration)}
+                    {...dragProps({ kind: 'sound', instrument: 'cello', label: chord.label, notes: chord.notes, duration: chord.duration, velocity: 0.85 })}
+                    className={`flex flex-col items-center justify-center p-2 rounded border font-mono transition-all text-xs ${
+                      isActive
+                        ? 'bg-orange-500 text-white border-orange-300 scale-95 shadow-[0_0_10px_#ea580c]'
+                        : 'bg-forge-panel text-orange-300 border-forge-border hover:border-orange-500/60 hover:bg-orange-950/20'
+                    }`}
+                  >
+                    <span className="font-bold">{chord.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 6. Patterns: drag whole stock patterns onto the matching track */}
       <div className="lg:col-span-12 bg-forge-panel border border-forge-border rounded-xl p-4 shadow-lg flex flex-wrap items-center gap-x-5 gap-y-3">
         <div>
           <h2 className="text-sm font-bold uppercase tracking-wider text-forge-text font-mono">Patterns</h2>

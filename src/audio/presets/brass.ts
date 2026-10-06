@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { trackChannels } from '../engine';
+import { auditionInput } from '../engine';
 
 /**
  * Funk Brass Stabs (Polyphonic)
@@ -34,6 +34,10 @@ export function createBrassVoice(output: Tone.InputNode) {
 
   return {
     synth,
+    dispose: () => {
+      synth.dispose();
+      filter.dispose();
+    },
     trigger: (notes: string[], duration: Tone.Unit.Time = '8n', time?: Tone.Unit.Time, velocity: number = 0.85) => {
       // Mimic brass swell on filter
       const targetTime = time !== undefined ? time : Tone.now();
@@ -48,7 +52,7 @@ export function createBrassVoice(output: Tone.InputNode) {
   };
 }
 
-const liveBrass = createBrassVoice(trackChannels.brass);
+const liveBrass = createBrassVoice(auditionInput);
 export const brassSynth = liveBrass.synth;
 
 /**

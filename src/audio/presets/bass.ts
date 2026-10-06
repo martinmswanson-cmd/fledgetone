@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { trackChannels } from '../engine';
+import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
 
 /**
@@ -44,13 +44,17 @@ export function createBassVoice(output: Tone.InputNode) {
 
   return {
     synth,
+    dispose: () => {
+      synth.dispose();
+      distortion.dispose();
+    },
     trigger: (note: string, duration: Tone.Unit.Time = '16n', time?: Tone.Unit.Time, velocity: number = 0.9) => {
       synth.triggerAttackRelease(note, duration, safeTime(time), velocity);
     },
   };
 }
 
-const liveBass = createBassVoice(trackChannels.bass);
+const liveBass = createBassVoice(auditionInput);
 export const bassSynth = liveBass.synth;
 
 /**

@@ -1,53 +1,46 @@
 import * as Tone from 'tone';
+import { createBusEffects } from './effects/busEffects';
+import { DEFAULT_MASTER_FX } from '../store/timelineTypes';
+import type { MasterFx } from '../store/timelineTypes';
 
 export type AudioState = 'suspended' | 'running' | 'closed';
 
-export type InstrumentKey = 'drums' | 'bass' | 'keys' | 'brass';
+export type { InstrumentKey } from './instrumentCatalog';
 
 /**
  * Build the mix graph in the current Tone context:
- *   per-track Tone.Channel strips -> master bus -> compressor -> limiter -> destination.
- * Used once for live playback and again inside Tone.Offline for WAV export.
+ *   track strips -> master bus -> compressor -> limiter -> destination
+ *   track sends  -> shared reverb / delay -> master bus
+ * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
+ * the sound deck's pads. Used once for live playback and again inside the WAV export render.
  */
-export function createMixChain(destination: Tone.InputNode) {
-  // Central Master Bus node for all instrument voices
+export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx = DEFAULT_MASTER_FX, bpm = 122) {
+  // Central master bus for every track and the effect returns
   const bus = new Tone.Gain(0.9);
+  const busFx = createBusEffects(bus, masterFx, bpm);
 
-  // Professional Master Mastering Chain
-  const compressor = new Tone.Compressor({
-    threshold: -18,
-    ratio: 4,
-    attack: 0.005,
-    release: 0.1,
-  });
+  // Master mastering chain
+  const compressor = new Tone.Compressor({ threshold: -18, ratio: 4, attack: 0.005, release: 0.1 });
   const limiter = new Tone.Limiter(-0.5);
-
-  // Connect chain: bus -> compressor -> limiter -> destination
   bus.connect(compressor);
   compressor.connect(limiter);
   limiter.connect(destination);
 
-  /**
-   * Per-track mixer channel strips. Every instrument preset routes into its own
-   * Tone.Channel so volume, pan, mute and solo act on real audio nodes.
-   * Tone.Channel solo is global: soloing any channel silences all non-soloed ones.
-   */
-  const channels: Record<InstrumentKey, Tone.Channel> = {
-    drums: new Tone.Channel({ volume: 0, pan: 0 }).connect(bus),
-    bass: new Tone.Channel({ volume: 0, pan: 0 }).connect(bus),
-    keys: new Tone.Channel({ volume: 0, pan: 0 }).connect(bus),
-    brass: new Tone.Channel({ volume: 0, pan: 0 }).connect(bus),
-  };
+  const auditionInput = new Tone.Gain(1).connect(bus);
 
-  return { bus, compressor, limiter, channels };
+  return { bus, busFx, compressor, limiter, auditionInput };
 }
 
-const liveMix = createMixChain(Tone.getDestination());
+export type MixChain = ReturnType<typeof createMixChain>;
+
+export const liveMix = createMixChain(Tone.getDestination());
 
 export const masterBus = liveMix.bus;
+export const masterBusEffects = liveMix.busFx;
 export const masterCompressor = liveMix.compressor;
 export const masterLimiter = liveMix.limiter;
-export const trackChannels = liveMix.channels;
+/** Where the sound deck's audition instruments play (dry, straight to the master bus). */
+export const auditionInput = liveMix.auditionInput;
 
 // Configure default transport clock settings for modern electric funk
 Tone.Transport.bpm.value = 122;

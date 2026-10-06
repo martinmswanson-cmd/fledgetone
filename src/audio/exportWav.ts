@@ -1,16 +1,14 @@
 import * as Tone from 'tone';
 import { createMixChain, getMasterVolume } from './engine';
-import { createDrumKit } from './presets/drums';
-import { createBassVoice } from './presets/bass';
-import { createKeysVoice } from './presets/keys';
-import { createBrassVoice } from './presets/brass';
+import { createTrackStrip } from './effects/trackStrip';
+import { createInstrument } from './instruments';
+import type { TrackInstrument } from './instruments';
 import { scheduleClips } from './scheduler';
-import type { InstrumentVoices } from './scheduler';
+import { isSamplerKey, loadCustomSample, loadSamples } from './samplers/samplerManager';
+import { INSTRUMENTS } from './instrumentCatalog';
 import { barToTicks } from './transport';
-import type { Clip, Track } from '../store/timelineTypes';
+import type { Clip, MasterFx, Track } from '../store/timelineTypes';
 
-/** Seconds rendered past the last bar so reverb and release tails ring out. */
-const TAIL_SECONDS = 2;
 const SAMPLE_RATE = 44100;
 
 export interface RenderOptions {
@@ -21,6 +19,8 @@ export interface RenderOptions {
   /** 1-based bar range to render, [startBar, endBar). */
   startBar: number;
   endBar: number;
+  /** Shared reverb / delay settings. */
+  masterFx: MasterFx;
 }
 
 /** Seconds of audio rendered between scheduling passes. */
@@ -31,7 +31,7 @@ const SCHEDULE_LEAD = 0.25;
 /**
  * Render the arrangement faster than real time in an OfflineContext. Every instrument and
  * the master chain are rebuilt inside it from the same factories used live, so the export
- * sounds like playback (mute/solo/volume/pan included).
+ * sounds like playback (mixer, track effects, sends and the shared reverb / delay included).
  *
  * Unlike Tone.Offline, which runs the whole Transport (creating a node for every note of the
  * song) before rendering a single sample, this schedules notes one step ahead of the render
@@ -39,11 +39,24 @@ const SCHEDULE_LEAD = 0.25;
  * time grows linearly with song length instead of quadratically. `onProgress` gets 0..1.
  */
 export async function renderArrangement(opts: RenderOptions, onProgress?: (fraction: number) => void): Promise<AudioBuffer> {
-  const { tracks, clips, bpm, swing, startBar, endBar } = opts;
+  const { tracks, clips, bpm, swing, startBar, endBar, masterFx } = opts;
   const songSeconds = ((endBar - startBar) * 4 * 60) / bpm;
-  const duration = songSeconds + TAIL_SECONDS;
+  // Room past the last bar for release and reverb tails to ring out
+  const duration = songSeconds + Math.max(2, masterFx.reverbDecay + 0.5);
   // Read live state before the global context is swapped
   const masterDb = getMasterVolume();
+
+  // Download any sampled instruments first (shared with live playback, so usually instant)
+  for (const key of new Set(tracks.map((t) => t.instrumentKey))) {
+    if (!isSamplerKey(key)) continue;
+    try {
+      await loadSamples(key);
+    } catch {
+      throw new Error(`couldn't download the ${INSTRUMENTS[key].name} samples. Check your internet connection and try again.`);
+    }
+  }
+  // ...and decode any Sampler tracks' own sounds in the live context
+  for (const t of tracks) if (t.sample) await loadCustomSample(t.sample.dataUrl);
 
   const original = Tone.getContext();
   // A native OfflineAudioContext, not Tone's default standardized-audio-context wrapper: the
@@ -88,42 +101,27 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
   preventClipping(audio);
   return audio;
 
-  /** Instruments, mix and Transport, built inside the offline context. */
+  /** Mix chain, one strip + instrument per track, and the Transport, inside the offline context. */
   async function buildGraph(context: Tone.OfflineContext) {
     context.destination.volume.value = masterDb;
-    const mix = createMixChain(context.destination);
+    const mix = createMixChain(context.destination, masterFx, bpm);
 
-    const drums = createDrumKit(mix.channels.drums);
-    const bass = createBassVoice(mix.channels.bass);
-    const keys = createKeysVoice(mix.channels.keys);
-    const brass = createBrassVoice(mix.channels.brass);
-    await keys.ready;
-
-    // Solo is resolved here rather than with Channel.solo, which is shared per context
+    // Solo is resolved here as mute rather than with Channel.solo
     const anySolo = tracks.some((t) => t.isSoloed);
-    for (const t of tracks) {
-      const ch = mix.channels[t.instrumentKey];
-      ch.volume.value = t.volume <= -60 ? -Infinity : t.volume;
-      ch.pan.value = t.pan;
-      ch.mute = t.isMuted || (anySolo && !t.isSoloed);
+    const instruments = new Map<string, TrackInstrument>();
+    for (const track of tracks) {
+      const strip = createTrackStrip(mix.bus, mix.busFx);
+      strip.apply(track, { ramp: 0, muteOverride: track.isMuted || (anySolo && !track.isSoloed) });
+      instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample }));
     }
-
-    const voices: InstrumentVoices = {
-      kick: drums.kick,
-      snare: drums.snare,
-      hat: drums.hat,
-      cowbell: drums.cowbell,
-      bass: bass.trigger,
-      keys: keys.trigger,
-      brass: brass.trigger,
-    };
+    await Promise.all([mix.busFx.ready, ...[...instruments.values()].map((i) => i.ready)]);
 
     const transport = context.transport;
     transport.bpm.value = bpm;
     transport.swing = swing;
     transport.swingSubdivision = '16n';
     transport.loop = false;
-    scheduleClips(transport, tracks, clips, voices);
+    scheduleClips(transport, tracks, clips, (trackId) => instruments.get(trackId));
     transport.start(0, `${barToTicks(startBar)}i`);
   }
 }

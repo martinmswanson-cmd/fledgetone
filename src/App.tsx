@@ -1,6 +1,7 @@
 import React from 'react';
 import { Header } from './components/Header';
 import { SoundAuditionPanel } from './components/SoundAuditionPanel';
+import { InstrumentBrowser } from './components/InstrumentBrowser';
 import { Timeline } from './components/timeline/Timeline';
 import { Cpu, Sparkles } from 'lucide-react';
 
@@ -15,6 +16,11 @@ export const App: React.FC = () => {
         {/* Section 1: Arrangement Timeline */}
         <section aria-label="Arrangement Timeline">
           <Timeline />
+        </section>
+
+        {/* Instrument Browser: try any instrument, drag notes onto tracks */}
+        <section aria-label="Instrument Browser">
+          <InstrumentBrowser />
         </section>
 
         {/* Section 2: Soundbank Audition & MPC Trigger Deck */}
@@ -53,20 +59,20 @@ export const App: React.FC = () => {
 
           {/* Signal Flow Breadcrumb */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] text-forge-muted">
-            <span className="px-2.5 py-1 bg-forge-bg border border-forge-border rounded text-forge-accent-bass">
-              Bass (Sawtooth -24dB Q:5)
+            <span className="px-2.5 py-1 bg-forge-bg border border-forge-border rounded text-forge-text font-semibold">
+              8 Instrument Strips (Synths + Samplers)
             </span>
             <span className="text-forge-borderLight">→</span>
-            <span className="px-2.5 py-1 bg-forge-bg border border-forge-border rounded text-forge-accent-keys">
-              Keys (FM Synth + Chorus + Reverb)
+            <span className="px-2.5 py-1 bg-forge-bg border border-blue-500/30 rounded text-blue-300">
+              Track Inserts: Distortion → EQ → Compressor → Chorus
             </span>
             <span className="text-forge-borderLight">→</span>
-            <span className="px-2.5 py-1 bg-forge-bg border border-forge-border rounded text-forge-accent-brass">
-              Brass (Sawtooth + Swell Filter)
+            <span className="px-2.5 py-1 bg-forge-bg border border-forge-border rounded text-forge-text">
+              Track Volume / Pan
             </span>
-            <span className="text-forge-borderLight">→</span>
-            <span className="px-2.5 py-1 bg-forge-bg border border-forge-border rounded text-forge-accent-drums">
-              Drums (Kick/Snare/Hat/Cowbell)
+            <span className="text-forge-borderLight">⇉</span>
+            <span className="px-2.5 py-1 bg-cyan-950/40 border border-cyan-500/40 rounded text-cyan-300">
+              Aux Sends: Master Reverb + Delay
             </span>
             <span className="text-forge-borderLight">⇒</span>
             <span className="px-2.5 py-1 bg-amber-950/40 border border-amber-500/40 rounded text-amber-300 font-bold">
@@ -108,7 +114,7 @@ export const App: React.FC = () => {
       <footer className="border-t border-forge-border bg-forge-panel px-6 py-3 text-center text-xs text-forge-muted font-mono flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
-          <span>Bo's Beat Box</span>
+          <span>Bo's Beatbox</span>
         </div>
         <div>
           <a href="https://twobirdsworkshop.com" target="_blank" rel="noopener" className="hover:text-forge-text transition-colors">

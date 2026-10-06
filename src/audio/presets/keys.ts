@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { trackChannels } from '../engine';
+import { auditionInput } from '../engine';
 
 /**
  * Space Clav / Electric Keys (Polyphonic)
@@ -52,13 +52,18 @@ export function createKeysVoice(output: Tone.InputNode) {
   return {
     synth,
     ready: reverb.ready,
+    dispose: () => {
+      synth.dispose();
+      chorus.dispose();
+      reverb.dispose();
+    },
     trigger: (notes: string[], duration: Tone.Unit.Time = '8n', time?: Tone.Unit.Time, velocity: number = 0.8) => {
       synth.triggerAttackRelease(notes, duration, time, velocity);
     },
   };
 }
 
-const liveKeys = createKeysVoice(trackChannels.keys);
+const liveKeys = createKeysVoice(auditionInput);
 export const keysSynth = liveKeys.synth;
 
 /**

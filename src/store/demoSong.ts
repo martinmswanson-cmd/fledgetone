@@ -1,7 +1,8 @@
 import { DRUM_NOTES } from '../audio/scheduler';
+import { compatibleInstruments } from '../audio/instrumentCatalog';
 import type { ProjectSnapshot } from './project';
 import type { Clip, InstrumentKey, NoteEvent, Track } from './timelineTypes';
-import { uid } from './timelineTypes';
+import { DEFAULT_MASTER_FX, defaultTrackFx, uid } from './timelineTypes';
 
 /**
  * Default tracks, plus the "Sunset Stroll" demo: a mellow neo-soul groove in C major
@@ -10,10 +11,66 @@ import { uid } from './timelineTypes';
  */
 
 export const INITIAL_TRACKS: Track[] = [
-  { id: 'track-drums', name: 'Drums', color: '#f59e0b', instrumentKey: 'drums', isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0 },
-  { id: 'track-bass', name: 'Slap Bass', color: '#06b6d4', instrumentKey: 'bass', isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0 },
-  { id: 'track-keys', name: 'Space Clav', color: '#a855f7', instrumentKey: 'keys', isMuted: false, isSoloed: false, isArmed: false, volume: -1, pan: -0.15 },
-  { id: 'track-brass', name: 'Brass Stabs', color: '#22c55e', instrumentKey: 'brass', isMuted: false, isSoloed: false, isArmed: false, volume: -2, pan: 0.2 },
+  {
+    id: 'track-drums',
+    name: 'Drums',
+    color: '#f59e0b',
+    instrumentKey: 'drums',
+    isMuted: false,
+    isSoloed: false,
+    isArmed: false,
+    volume: 0,
+    pan: 0,
+    eq: { low: 0, mid: 0, high: 0 },
+    fx: defaultTrackFx(),
+    reverbSend: 0.1,
+    delaySend: 0,
+  },
+  {
+    id: 'track-bass',
+    name: 'Slap Bass',
+    color: '#06b6d4',
+    instrumentKey: 'bass',
+    isMuted: false,
+    isSoloed: false,
+    isArmed: false,
+    volume: 0,
+    pan: 0,
+    eq: { low: 1.5, mid: -1.0, high: 0.5 },
+    fx: defaultTrackFx(),
+    reverbSend: 0,
+    delaySend: 0,
+  },
+  {
+    id: 'track-keys',
+    name: 'Space Clav',
+    color: '#a855f7',
+    instrumentKey: 'keys',
+    isMuted: false,
+    isSoloed: false,
+    isArmed: false,
+    volume: -1,
+    pan: -0.15,
+    eq: { low: -1.0, mid: 0.5, high: 2.0 },
+    fx: defaultTrackFx(),
+    reverbSend: 0.35,
+    delaySend: 0.25,
+  },
+  {
+    id: 'track-brass',
+    name: 'Brass Stabs',
+    color: '#22c55e',
+    instrumentKey: 'brass',
+    isMuted: false,
+    isSoloed: false,
+    isArmed: false,
+    volume: -2,
+    pan: 0.2,
+    eq: { low: -2.0, mid: 1.5, high: 1.0 },
+    fx: defaultTrackFx(),
+    reverbSend: 0.4,
+    delaySend: 0.2,
+  },
 ];
 
 /** [step, note(s), velocity, duration] */
@@ -133,11 +190,12 @@ export interface PatternInfo {
 
 /** Stock patterns available for an instrument, for "Insert pattern". */
 export function patternsFor(instrument: InstrumentKey): PatternInfo[] {
-  return PATTERNS.filter((p) => p.instrument === instrument).map(({ id, name, lengthBars }) => ({ id, name, lengthBars }));
+  // Drum patterns work on any drum kit (they share the drum note map)
+  return PATTERNS.filter((p) => compatibleInstruments(p.instrument, instrument)).map(({ id, name, lengthBars }) => ({ id, name, lengthBars }));
 }
 
 export function createPatternClip(track: Track, patternId: string, startBar: number): Clip | null {
-  const p = PATTERNS.find((x) => x.id === patternId && x.instrument === track.instrumentKey);
+  const p = PATTERNS.find((x) => x.id === patternId && compatibleInstruments(x.instrument, track.instrumentKey));
   if (!p) return null;
   return {
     id: uid('clip'),
@@ -172,6 +230,7 @@ export function createDemoProject(): ProjectSnapshot {
     bpm: 88,
     swing: 0.15,
     loopRegion: { inBar: 1, outBar: 13, enabled: true },
+    masterFx: DEFAULT_MASTER_FX,
     tracks,
     clips: place.map(([k, id, bar]) => createPatternClip(byKey(k), id, bar)!),
   };

@@ -11,7 +11,10 @@ import { TrackLane } from './TrackLane';
 import { Playhead, useScrub } from './Playhead';
 import { ClipContextMenu } from './ClipContextMenu';
 import type { ContextMenuState } from './ClipContextMenu';
+import { TrackInspector } from '../inspector/TrackInspector';
+import { AddTrackMenu } from './AddTrackMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
+
 
 function isTypingTarget(target: EventTarget | null): boolean {
   return (
@@ -223,54 +226,70 @@ export const Timeline: React.FC = () => {
       <RestoreSessionBanner />
       <TimelineToolbar />
 
-      <div
-        ref={scrollRef}
-        className={`relative overflow-x-hidden overflow-y-auto max-h-[480px] ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
-        onWheel={(e) => {
-          // The native horizontal bar is replaced by TimelineScrollbar, so handle sideways scrolling here
-          const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
-          if (dx) e.currentTarget.scrollLeft += dx;
-        }}
-      >
+      <div className="flex flex-row relative min-h-[300px] overflow-hidden">
         <div
-          ref={contentRef}
-          className="relative"
-          style={{ width: HEADER_WIDTH + TOTAL_BARS * zoom }}
-          onPointerDown={handleLanePointerDown}
+          ref={scrollRef}
+          className={`flex-1 overflow-x-hidden overflow-y-auto max-h-[520px] ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
+          onWheel={(e) => {
+            // The native horizontal bar is replaced by TimelineScrollbar, so handle sideways scrolling here
+            const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+            if (dx) e.currentTarget.scrollLeft += dx;
+          }}
         >
-          {/* Ruler row */}
-          <div className="sticky top-0 z-[25] flex" style={{ height: RULER_HEIGHT }}>
-            <div
-              className="sticky left-0 z-30 shrink-0 bg-forge-panel border-r border-b border-forge-border flex items-center px-3 text-[10px] font-mono uppercase tracking-widest text-forge-muted"
-              style={{ width: HEADER_WIDTH }}
-            >
-              Tracks
+          <div
+            ref={contentRef}
+            className="relative"
+            style={{ width: HEADER_WIDTH + TOTAL_BARS * zoom }}
+            onPointerDown={handleLanePointerDown}
+          >
+            {/* Ruler row */}
+            <div className="sticky top-0 z-[25] flex" style={{ height: RULER_HEIGHT }}>
+              <div
+                className="sticky left-0 z-30 shrink-0 bg-forge-panel border-r border-b border-forge-border flex items-center px-3 text-[10px] font-mono uppercase tracking-widest text-forge-muted"
+                style={{ width: HEADER_WIDTH }}
+              >
+                Tracks
+              </div>
+              <TimeRuler originRef={rulerRef} onScrubStart={onScrubStart} />
             </div>
-            <TimeRuler originRef={rulerRef} onScrubStart={onScrubStart} />
+
+            {/* Tracks */}
+            {tracks.map((track) => (
+              <div key={track.id} className="flex">
+                <TrackHeader track={track} onOpenMenu={setMenu} />
+                <TrackLane track={track} originRef={rulerRef} onOpenMenu={setMenu} />
+              </div>
+            ))}
+
+            {/* Add Track Row */}
+            <div className="flex border-b border-forge-border bg-black/20" style={{ height: 38 }}>
+              <div
+                className="sticky left-0 z-20 shrink-0 bg-forge-panel border-r border-forge-border flex items-center px-2 relative"
+                style={{ width: HEADER_WIDTH }}
+              >
+                <AddTrackMenu />
+              </div>
+              <div className="flex-1 bg-black/10" />
+            </div>
+
+            <Playhead variant="line" onScrubStart={onScrubStart} />
+
+            {marquee && (
+              <div
+                className="absolute z-[18] pointer-events-none border border-cyan-300/90 bg-cyan-400/15 rounded-sm"
+                style={{
+                  left: Math.min(marquee.x0, marquee.x1),
+                  top: Math.min(marquee.y0, marquee.y1),
+                  width: Math.abs(marquee.x1 - marquee.x0),
+                  height: Math.abs(marquee.y1 - marquee.y0),
+                }}
+              />
+            )}
           </div>
-
-          {/* Tracks */}
-          {tracks.map((track) => (
-            <div key={track.id} className="flex">
-              <TrackHeader track={track} onOpenMenu={setMenu} />
-              <TrackLane track={track} originRef={rulerRef} onOpenMenu={setMenu} />
-            </div>
-          ))}
-
-          <Playhead variant="line" onScrubStart={onScrubStart} />
-
-          {marquee && (
-            <div
-              className="absolute z-[18] pointer-events-none border border-cyan-300/90 bg-cyan-400/15 rounded-sm"
-              style={{
-                left: Math.min(marquee.x0, marquee.x1),
-                top: Math.min(marquee.y0, marquee.y1),
-                width: Math.abs(marquee.x1 - marquee.x0),
-                height: Math.abs(marquee.y1 - marquee.y0),
-              }}
-            />
-          )}
         </div>
+
+        {/* DaVinci Fairlight Track Inspector & FX Rack */}
+        <TrackInspector />
       </div>
 
       <TimelineScrollbar scrollRef={scrollRef} />

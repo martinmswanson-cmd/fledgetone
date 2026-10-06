@@ -1,4 +1,6 @@
-import type { Clip, InstrumentKey, LoopRegion, NoteEvent, Track } from './timelineTypes';
+import type { CustomSample, MasterFx, Clip, InstrumentKey, LoopRegion, NoteEvent, Track } from './timelineTypes';
+import { DEFAULT_MASTER_FX, normalizeTrackFx } from './timelineTypes';
+import { isInstrumentKey } from '../audio/instrumentCatalog';
 
 /**
  * Project file format (.beatbox.json) and browser autosave.
@@ -20,6 +22,7 @@ export interface ProjectData {
   loopRegion: LoopRegion;
   tracks: Track[];
   clips: Omit<Clip, 'isSelected'>[];
+  masterFx: MasterFx;
 }
 
 export interface ProjectSnapshot {
@@ -29,9 +32,10 @@ export interface ProjectSnapshot {
   loopRegion: LoopRegion;
   tracks: Track[];
   clips: Clip[];
+  /** Shared reverb / delay settings (older projects don't have them). */
+  masterFx?: MasterFx;
 }
 
-const INSTRUMENTS: InstrumentKey[] = ['drums', 'bass', 'keys', 'brass'];
 
 export function serializeProject(p: ProjectSnapshot): ProjectData {
   return {
@@ -43,6 +47,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     loopRegion: p.loopRegion,
     tracks: p.tracks,
     clips: p.clips.map(({ isSelected: _isSelected, ...rest }) => rest),
+    masterFx: p.masterFx ?? DEFAULT_MASTER_FX,
   };
 }
 
@@ -50,10 +55,17 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
 
+/** The Sampler's own sound: kept only if it looks like an embedded audio file. */
+function parseSample(v: unknown): CustomSample | undefined {
+  if (!isObj(v) || !isStr(v.dataUrl) || !v.dataUrl.startsWith('data:')) return undefined;
+  return { name: isStr(v.name) ? v.name : 'Sample', dataUrl: v.dataUrl, root: isStr(v.root) ? v.root : 'C4' };
+}
+
 function parseTrack(v: unknown): Track {
-  if (!isObj(v) || !isStr(v.id) || !isStr(v.name) || !INSTRUMENTS.includes(v.instrumentKey as InstrumentKey)) {
+  if (!isObj(v) || !isStr(v.id) || !isStr(v.name) || !isInstrumentKey(v.instrumentKey)) {
     throw new Error('a track is missing its id, name or instrument');
   }
+  const eqObj = isObj(v.eq) ? v.eq : {};
   return {
     id: v.id,
     name: v.name,
@@ -64,6 +76,15 @@ function parseTrack(v: unknown): Track {
     isArmed: v.isArmed === true,
     volume: isNum(v.volume) ? v.volume : 0,
     pan: isNum(v.pan) ? v.pan : 0,
+    eq: {
+      low: isNum(eqObj.low) ? eqObj.low : 0,
+      mid: isNum(eqObj.mid) ? eqObj.mid : 0,
+      high: isNum(eqObj.high) ? eqObj.high : 0,
+    },
+    reverbSend: isNum(v.reverbSend) ? Math.max(0, Math.min(1, v.reverbSend)) : 0,
+    delaySend: isNum(v.delaySend) ? Math.max(0, Math.min(1, v.delaySend)) : 0,
+    fx: normalizeTrackFx(v.fx),
+    sample: parseSample(v.sample),
   };
 }
 
@@ -99,10 +120,10 @@ function parseClip(v: unknown, trackIds: Set<string>): Clip {
 /** Validate untrusted JSON (a file or autosave) into a snapshot. Throws with a readable reason. */
 export function parseProject(raw: unknown): ProjectSnapshot {
   if (!isObj(raw) || !(raw.format === PROJECT_FORMAT || LEGACY_FORMATS.includes(raw.format as string))) {
-    throw new Error("this is not a Bo's Beat Box project file");
+    throw new Error("this is not a Bo's Beatbox project file");
   }
   if (!isNum(raw.version) || raw.version > PROJECT_VERSION) {
-    throw new Error("this project was saved by a newer version of Bo's Beat Box");
+    throw new Error("this project was saved by a newer version of Bo's Beatbox");
   }
   if (!Array.isArray(raw.tracks) || !Array.isArray(raw.clips)) throw new Error('tracks or clips are missing');
 
@@ -120,6 +141,17 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     },
     tracks,
     clips: raw.clips.map((c) => parseClip(c, trackIds)),
+    masterFx: parseMasterFx(raw.masterFx),
+  };
+}
+
+function parseMasterFx(v: unknown): MasterFx {
+  if (!isObj(v)) return DEFAULT_MASTER_FX;
+  const d = DEFAULT_MASTER_FX;
+  return {
+    reverbDecay: isNum(v.reverbDecay) ? Math.max(0.8, Math.min(6, v.reverbDecay)) : d.reverbDecay,
+    delayTime: isStr(v.delayTime) && ['4n', '8n', '8n.', '16n'].includes(v.delayTime) ? v.delayTime : d.delayTime,
+    delayFeedback: isNum(v.delayFeedback) ? Math.max(0, Math.min(0.8, v.delayFeedback)) : d.delayFeedback,
   };
 }
 
