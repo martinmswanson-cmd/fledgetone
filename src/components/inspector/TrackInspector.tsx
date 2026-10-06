@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Loader2,
   Sliders,
+  Trash2,
 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
@@ -56,6 +57,17 @@ export const TrackInspector: React.FC = () => {
     return `${val > 0 ? '+' : ''}${val.toFixed(1)} dB`;
   };
 
+  /** Delete the track (and its clips), confirming first when there's music on it. */
+  const removeTrack = () => {
+    const clipCount = useTimelineStore.getState().clips.filter((c) => c.trackId === currentTrack.id).length;
+    const ok =
+      clipCount === 0 ||
+      window.confirm(
+        `Delete "${currentTrack.name}" and its ${clipCount} clip${clipCount === 1 ? '' : 's'}?\n\nThis can't be undone.`
+      );
+    if (ok) useTimelineStore.getState().deleteTrack(currentTrack.id);
+  };
+
   const delaySubdivisions = [
     { label: '1/4', value: '4n' },
     { label: '1/8', value: '8n' },
@@ -86,6 +98,15 @@ export const TrackInspector: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={removeTrack}
+            className="w-6 h-6 rounded flex items-center justify-center text-forge-muted hover:text-red-300 hover:bg-red-950/40 transition"
+            title="Delete this track"
+            aria-label={`Delete track ${currentTrack.name}`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
           <button
             type="button"
             onClick={() => toggleInspector(false)}
@@ -388,6 +409,15 @@ export const TrackInspector: React.FC = () => {
                 </span>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={removeTrack}
+              className="h-8 flex items-center justify-center gap-1.5 rounded-md border border-red-500/40 text-red-300 text-xs font-mono hover:bg-red-950/40 transition"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete this track
+            </button>
           </>
         ) : (
           /* Master Bus Effects Return Controls */
