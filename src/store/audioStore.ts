@@ -6,15 +6,19 @@ import type { AudioState } from '../audio';
  * Global audio-context state: running/suspended status, master volume and the
  * audition-pad flash. Tempo and playback live in the timeline store.
  */
+export type InstrumentLoadingStatus = 'unloaded' | 'loading' | 'ready' | 'error';
+
 interface AudioStoreState {
   audioState: AudioState;
   masterVolume: number;
   activePad: string | null;
+  instrumentStatus: Record<string, InstrumentLoadingStatus>;
 
   // Actions
   initializeAudio: () => Promise<AudioState>;
   setMasterVolume: (db: number) => void;
   flashPad: (padId: string) => void;
+  setInstrumentStatus: (key: string, status: InstrumentLoadingStatus) => void;
 }
 
 export const useAudioStore = create<AudioStoreState>((set, get) => {
@@ -27,6 +31,25 @@ export const useAudioStore = create<AudioStoreState>((set, get) => {
     audioState: getAudioContextState(),
     masterVolume: 0,
     activePad: null,
+    instrumentStatus: {
+      drums: 'ready',
+      bass: 'ready',
+      keys: 'ready',
+      brass: 'ready',
+      piano: 'unloaded',
+      violin: 'unloaded',
+      cello: 'unloaded',
+      guitar: 'unloaded',
+    },
+
+    setInstrumentStatus: (key: string, status: InstrumentLoadingStatus) => {
+      set((s) => ({
+        instrumentStatus: {
+          ...s.instrumentStatus,
+          [key]: status,
+        },
+      }));
+    },
 
     initializeAudio: async () => {
       const state = await initAudio();

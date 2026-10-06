@@ -3,6 +3,7 @@ import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Track } from '../../store/timelineTypes';
 import { snapBar } from '../../store/timelineTypes';
 import { dragInstrument, readDragPayload } from '../../store/dragSounds';
+import { compatibleInstruments } from '../../audio/instrumentCatalog';
 import { ClipView } from './ClipView';
 import type { ContextMenuState } from './ClipContextMenu';
 import { barFromClientX } from './Playhead';
@@ -31,7 +32,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
     return shift ? raw : snapBar(raw, useTimelineStore.getState().snapGrid);
   };
 
-  const accepts = dragging === track.instrumentKey;
+  const accepts = dragging !== null && compatibleInstruments(dragging, track.instrumentKey);
 
   return (
     <div
@@ -59,7 +60,8 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
         if (id) s.openEditor(id);
       }}
       onDragOver={(e) => {
-        if (dragInstrument(e) !== track.instrumentKey) return;
+        const source = dragInstrument(e);
+        if (!source || !compatibleInstruments(source, track.instrumentKey)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
         setDropBar(snapped(e.clientX, e.shiftKey));
@@ -70,7 +72,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
       onDrop={(e) => {
         const payload = readDragPayload(e);
         setDropBar(null);
-        if (!payload || payload.instrument !== track.instrumentKey) return;
+        if (!payload || !compatibleInstruments(payload.instrument, track.instrumentKey)) return;
         e.preventDefault();
         useTimelineStore.getState().dropOnTrack(track.id, snapped(e.clientX, e.shiftKey), payload);
       }}

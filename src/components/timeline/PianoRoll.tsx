@@ -2,7 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import { Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { initAudio } from '../../audio/engine';
-import { DRUM_NOTES, previewNotes } from '../../audio/scheduler';
+import { DRUM_NOTES } from '../../audio/scheduler';
+import { previewTrackNotes } from '../../audio/liveTracks';
+import { INSTRUMENTS, isDrumKind } from '../../audio/instrumentCatalog';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, NoteEvent } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars } from '../../store/timelineTypes';
@@ -27,19 +29,14 @@ const DRUM_ROWS: Row[] = [
   { note: DRUM_NOTES.kick, label: 'Kick', black: false, midi: -1 },
 ];
 
-/** Default playable range per instrument (MIDI), widened to fit any notes already in the clip. */
-const RANGES: Record<Exclude<InstrumentKey, 'drums'>, [number, number]> = {
-  bass: [24, 55], // C1-G3
-  keys: [36, 88], // C2-E6
-  brass: [48, 84], // C3-C6
-};
 
 const toMidi = (note: string) => Tone.Frequency(note).toMidi();
 const isBlack = (midi: number) => [1, 3, 6, 8, 10].includes(midi % 12);
 
 function rowsFor(instrument: InstrumentKey, notes: NoteEvent[]): Row[] {
-  if (instrument === 'drums') return DRUM_ROWS;
-  let [lo, hi] = RANGES[instrument];
+  if (isDrumKind(instrument)) return DRUM_ROWS;
+  // Instrument's playable range, widened to fit any notes already in the clip
+  let [lo, hi] = INSTRUMENTS[instrument].range;
   for (const n of notes) {
     const m = toMidi(n.note);
     lo = Math.min(lo, m);
@@ -75,12 +72,13 @@ const LENGTH_OPTIONS = [
 ];
 
 let audioReady = false;
-async function preview(instrument: InstrumentKey, notes: Pick<NoteEvent, 'note' | 'duration' | 'velocity'>[]) {
+/** Play notes through the clip's track (its instrument and effects), starting audio if needed. */
+async function preview(trackId: string, notes: Pick<NoteEvent, 'note' | 'duration' | 'velocity'>[]) {
   if (!audioReady) {
     await initAudio();
     audioReady = true;
   }
-  previewNotes(instrument, notes);
+  previewTrackNotes(trackId, notes);
 }
 
 /** Follow the pointer until release. */
@@ -120,7 +118,7 @@ interface EditorProps {
 }
 
 const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName, playhead }) => {
-  const isDrums = instrument === 'drums';
+  const isDrums = isDrumKind(instrument);
   const rowH = isDrums ? 30 : 16;
   const [stepW, setStepW] = useState(24);
   const [gridSteps, setGridSteps] = useState(1);
@@ -208,7 +206,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       if (dRows !== lastRowShift) {
         lastRowShift = dRows;
         const moved = next.find((n) => n.id === primaryId);
-        if (moved) void preview(instrument, [{ ...moved, duration: '16n' }]);
+        if (moved) void preview(clip.trackId, [{ ...moved, duration: '16n' }]);
       }
     });
   };
@@ -232,7 +230,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       setSelected(sel);
       if (!sel.has(id)) return;
       const note = currentNotes().find((n) => n.id === id);
-      if (note) void preview(instrument, [{ ...note, duration: '16n' }]);
+      if (note) void preview(clip.trackId, [{ ...note, duration: '16n' }]);
       const resize = e.clientX > noteEl.getBoundingClientRect().right - EDGE_PX;
       startDrag(e, resize ? new Set([id]) : sel, resize ? 'resize' : 'move', false, id);
       return;
@@ -247,7 +245,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const note = { note: row.note, startOffset: step / 16, duration: barsToDuration(len / 16), velocity };
     const [id] = useTimelineStore.getState().addNotes(clip.id, [note]);
     setSelected(new Set([id]));
-    void preview(instrument, [{ ...note, duration: '16n' }]);
+    void preview(clip.trackId, [{ ...note, duration: '16n' }]);
     startDrag(e, new Set([id]), 'move', true, id);
   };
 
@@ -438,7 +436,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 <button
                   key={r.note}
                   type="button"
-                  onPointerDown={() => void preview(instrument, [{ note: r.note, duration: '8n', velocity }])}
+                  onPointerDown={() => void preview(clip.trackId, [{ note: r.note, duration: '8n', velocity }])}
                   className={`w-full flex items-center justify-end pr-1.5 border-b border-black/40 text-[9px] font-mono ${
                     isDrums
                       ? 'bg-forge-panelLight text-forge-text text-[10px] hover:bg-forge-border'

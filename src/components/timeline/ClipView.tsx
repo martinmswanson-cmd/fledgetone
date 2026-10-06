@@ -4,6 +4,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, Track } from '../../store/timelineTypes';
 import { durationToBars, minClipLength, snapBar } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/scheduler';
+import { isDrumKind } from '../../audio/instrumentCatalog';
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
 import { TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
@@ -39,7 +40,7 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
   let rowOf: (note: string) => number;
   let rows: number;
 
-  if (instrument === 'drums') {
+  if (isDrumKind(instrument)) {
     rows = DRUM_ROWS.length;
     rowOf = (note) => Math.max(0, DRUM_ROWS.indexOf(note));
   } else {

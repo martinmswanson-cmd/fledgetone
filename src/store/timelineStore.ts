@@ -8,13 +8,18 @@ import {
   startTransportAt,
   stopTransport,
 } from '../audio/transport';
-import { applyTrackMix, releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
+import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
+import { syncLiveTracks } from '../audio/liveTracks';
+import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong';
-import { loadAutosave, writeAutosave } from './project';
-import type { ProjectSnapshot } from './project';
-import type { Clip, InstrumentKey, LoopRegion, NoteEvent, SnapGrid, TimelineTool, Track } from './timelineTypes';
+import { loadAutosave, writeAutosave, type ProjectSnapshot } from './project';
+import type { Clip, InstrumentKey, LoopRegion, NoteEvent, SnapGrid, TimelineTool, Track, TrackEq } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
 import { minClipLength, snapBar, uid } from './timelineTypes';
+import { compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
+import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
+import { DEFAULT_MASTER_FX, defaultTrackFx, normalizeTrackFx } from './timelineTypes';
+import type { CustomSample, MasterFx, TrackFx } from './timelineTypes';
 
 /** Song length limit: 400 bars is 5+ minutes even at 240 BPM (about 13 minutes at 120 BPM). */
 export const TOTAL_BARS = 400;
@@ -61,12 +66,35 @@ interface TimelineState {
   setLoopOut: (bar: number) => void;
   toggleLoop: () => void;
 
-  // Tracks
+  // Tracks & Inspector
+  selectedTrackId: string | null;
+  isInspectorOpen: boolean;
+  selectTrack: (trackId: string | null) => void;
+  toggleInspector: (open?: boolean) => void;
+  addTrack: (instrumentKey: InstrumentKey, name?: string) => string;
+  deleteTrack: (trackId: string) => void;
+  setTrackInstrument: (trackId: string, instrumentKey: InstrumentKey) => void;
   toggleMute: (trackId: string) => void;
   toggleSolo: (trackId: string) => void;
   toggleArm: (trackId: string) => void;
   setTrackVolume: (trackId: string, db: number) => void;
   setTrackPan: (trackId: string, pan: number) => void;
+  setTrackEq: (trackId: string, eq: Partial<TrackEq>) => void;
+  resetTrackEq: (trackId: string) => void;
+  setTrackReverbSend: (trackId: string, send: number) => void;
+  setTrackDelaySend: (trackId: string, send: number) => void;
+  /** Change one insert effect (distortion / compressor / chorus) on a track. */
+  setTrackFx: <K extends keyof TrackFx>(trackId: string, effect: K, patch: Partial<TrackFx[K]>) => void;
+  /** Give a Sampler track its sound (or clear it with undefined). */
+  setTrackSample: (trackId: string, sample: CustomSample | undefined) => void;
+
+  // Master Studio FX
+  masterReverbDecay: number;
+  masterDelayTime: string;
+  masterDelayFeedback: number;
+  setMasterReverbDecay: (decay: number) => void;
+  setMasterDelayTime: (time: string) => void;
+  setMasterDelayFeedback: (feedback: number) => void;
 
   // Clips
   selectClip: (clipId: string, additive: boolean) => void;
@@ -131,6 +159,11 @@ interface TimelineState {
   setDraggingInstrument: (instrument: InstrumentKey | null) => void;
 }
 
+/** The store's master reverb / delay settings as one object. */
+function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number }): MasterFx {
+  return { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback };
+}
+
 let rafId = 0;
 let tapTimes: number[] = [];
 
@@ -148,6 +181,9 @@ const clampBar = (bar: number) => Math.max(1, Math.min(TOTAL_BARS + 1, bar));
 export const useTimelineStore = create<TimelineState>((set, get) => {
   const updateTrack = (trackId: string, patch: (t: Track) => Partial<Track>) =>
     set((s) => ({ tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, ...patch(t) } : t)) }));
+
+  /** Push the master reverb / delay settings (and tempo, for the delay time) to the live mix. */
+  const applyMasterFx = () => liveMix.busFx.apply(masterFxOf(get()), get().bpm);
 
   const updateClip = (clipId: string, patch: (c: Clip) => Partial<Clip>) =>
     set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? { ...c, ...patch(c) } : c)) }));
@@ -181,6 +217,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     snapGrid: '1/16',
     loopRegion: { inBar: 1, outBar: 5, enabled: true },
     projectName: 'Untitled',
+    selectedTrackId: INITIAL_TRACKS[0]?.id ?? null,
+    isInspectorOpen: false,
+    masterReverbDecay: 2.4,
+    masterDelayTime: '8n',
+    masterDelayFeedback: 0.35,
     past: [],
     future: [],
 
@@ -267,12 +308,116 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     toggleLoop: () => set((s) => ({ loopRegion: { ...s.loopRegion, enabled: !s.loopRegion.enabled } })),
 
-    // ---------- Tracks ----------
+    // ---------- Tracks & Inspector ----------
+    selectTrack: (id) => set({ selectedTrackId: id }),
+    toggleInspector: (open) => set((s) => ({ isInspectorOpen: open !== undefined ? open : !s.isInspectorOpen })),
+
+    addTrack: (instrumentKey, name) => {
+      const meta = INSTRUMENTS[instrumentKey];
+      const count = get().tracks.filter((t) => t.instrumentKey === instrumentKey).length;
+      const trackName = name || (count > 0 ? `${meta.name} ${count + 1}` : meta.name);
+      const newTrack: Track = {
+        id: uid('track'),
+        name: trackName,
+        color: meta.color,
+        instrumentKey,
+        isMuted: false,
+        isSoloed: false,
+        isArmed: false,
+        volume: 0,
+        pan: 0,
+        eq: { low: 0, mid: 0, high: 0 },
+        fx: defaultTrackFx(),
+        reverbSend: 0.1,
+        delaySend: 0,
+      };
+      set((s) => ({
+        tracks: [...s.tracks, newTrack],
+        selectedTrackId: newTrack.id,
+        isInspectorOpen: true,
+      }));
+      if (isSamplerKey(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
+      return newTrack.id;
+    },
+
+    deleteTrack: (id) => {
+      set((s) => {
+        const nextTracks = s.tracks.filter((t) => t.id !== id);
+        const nextSelected = s.selectedTrackId === id ? nextTracks[0]?.id ?? null : s.selectedTrackId;
+        return {
+          tracks: nextTracks,
+          clips: s.clips.filter((c) => c.trackId !== id),
+          selectedTrackId: nextSelected,
+        };
+      });
+    },
+
+    setTrackInstrument: (id, instrumentKey) => {
+      const meta = INSTRUMENTS[instrumentKey];
+      updateTrack(id, () => ({
+        instrumentKey,
+        name: meta.name,
+        color: meta.color,
+      }));
+      if (isSamplerKey(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
+    },
+
     toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted })),
     toggleSolo: (id) => updateTrack(id, (t) => ({ isSoloed: !t.isSoloed })),
     toggleArm: (id) => updateTrack(id, (t) => ({ isArmed: !t.isArmed })),
     setTrackVolume: (id, db) => updateTrack(id, () => ({ volume: Math.max(-60, Math.min(6, db)) })),
     setTrackPan: (id, pan) => updateTrack(id, () => ({ pan: Math.max(-1, Math.min(1, pan)) })),
+
+    setTrackEq: (id, eqPatch) => {
+      updateTrack(id, (t) => ({
+        eq: {
+          low: eqPatch.low !== undefined ? Math.max(-24, Math.min(12, eqPatch.low)) : t.eq.low,
+          mid: eqPatch.mid !== undefined ? Math.max(-24, Math.min(12, eqPatch.mid)) : t.eq.mid,
+          high: eqPatch.high !== undefined ? Math.max(-24, Math.min(12, eqPatch.high)) : t.eq.high,
+        },
+      }));
+    },
+
+    resetTrackEq: (id) => {
+      updateTrack(id, () => ({
+        eq: { low: 0, mid: 0, high: 0 },
+      }));
+    },
+
+    setTrackReverbSend: (id, send) => {
+      updateTrack(id, () => ({
+        reverbSend: Math.max(0, Math.min(1, send)),
+      }));
+    },
+
+    setTrackDelaySend: (id, send) => {
+      updateTrack(id, () => ({
+        delaySend: Math.max(0, Math.min(1, send)),
+      }));
+    },
+
+    setTrackSample: (id, sample) => updateTrack(id, () => ({ sample })),
+
+    setTrackFx: (id, effect, patch) => {
+      updateTrack(id, (t) => ({ fx: normalizeTrackFx({ ...t.fx, [effect]: { ...t.fx[effect], ...patch } }) }));
+    },
+
+    setMasterReverbDecay: (decay) => {
+      const clamped = Math.max(0.8, Math.min(6.0, decay));
+      set({ masterReverbDecay: clamped });
+      applyMasterFx();
+    },
+
+    setMasterDelayTime: (time) => {
+      set({ masterDelayTime: time });
+      applyMasterFx();
+    },
+
+    setMasterDelayFeedback: (feedback) => {
+      const clamped = Math.max(0, Math.min(0.8, feedback));
+      set({ masterDelayFeedback: clamped });
+      applyMasterFx();
+    },
 
     // ---------- Clips ----------
     selectClip: (clipId, additive) =>
@@ -448,26 +593,46 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               bpm: 122,
               swing: 0.2,
               loopRegion: { inBar: 1, outBar: 5, enabled: true },
-              tracks: INITIAL_TRACKS.map((t) => ({ ...t })),
+              tracks: INITIAL_TRACKS.map((t) => ({ ...t, fx: defaultTrackFx() })),
               clips: [],
+              masterFx: DEFAULT_MASTER_FX,
             }
       );
     },
 
-    loadProject: (p) => {
+    loadProject: (p: ProjectSnapshot) => {
       get().stop();
+      const safeTracks: Track[] = p.tracks.map((t: Track) => ({
+        ...t,
+        eq: t.eq ?? { low: 0, mid: 0, high: 0 },
+        reverbSend: typeof t.reverbSend === 'number' ? t.reverbSend : 0,
+        delaySend: typeof t.delaySend === 'number' ? t.delaySend : 0,
+        fx: normalizeTrackFx(t.fx),
+      }));
+
+      // Start downloading samples for any sampled instruments
+      safeTracks.forEach((t: Track) => {
+        if (isSamplerKey(t.instrumentKey)) void loadSamples(t.instrumentKey).catch(() => {});
+      });
+      const masterFx = p.masterFx ?? DEFAULT_MASTER_FX;
+
       set({
         projectName: p.name,
         bpm: p.bpm,
         swing: p.swing,
         loopRegion: p.loopRegion,
-        tracks: p.tracks,
+        tracks: safeTracks,
         clips: p.clips,
+        selectedTrackId: safeTracks[0]?.id ?? null,
         playheadPosition: p.loopRegion.inBar,
         past: [],
         future: [],
         editingClipId: null,
+        masterReverbDecay: masterFx.reverbDecay,
+        masterDelayTime: masterFx.delayTime,
+        masterDelayFeedback: masterFx.delayFeedback,
       });
+      applyMasterFx();
     },
 
     insertPatternClip: (trackId, patternId, atBar) => {
@@ -508,7 +673,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     dropOnTrack: (trackId, bar, payload) => {
       const s = get();
       const track = s.tracks.find((t) => t.id === trackId);
-      if (!track || track.instrumentKey !== payload.instrument) return;
+      if (!track || !compatibleInstruments(payload.instrument, track.instrumentKey)) return;
 
       if (payload.kind === 'pattern') {
         s.insertPatternClip(trackId, payload.patternId, bar);
@@ -590,6 +755,7 @@ export function connectAutosave(): () => void {
       loopRegion: s.loopRegion,
       tracks: s.tracks,
       clips: s.clips,
+      masterFx: masterFxOf(s),
     });
   };
 
@@ -600,7 +766,10 @@ export function connectAutosave(): () => void {
       state.bpm === prev.bpm &&
       state.swing === prev.swing &&
       state.loopRegion === prev.loopRegion &&
-      state.projectName === prev.projectName
+      state.projectName === prev.projectName &&
+      state.masterReverbDecay === prev.masterReverbDecay &&
+      state.masterDelayTime === prev.masterDelayTime &&
+      state.masterDelayFeedback === prev.masterDelayFeedback
     ) {
       return;
     }
@@ -619,25 +788,32 @@ export function connectAutosave(): () => void {
 }
 
 /**
- * Bind the store to the audio engine: reschedule Transport events when clips/tracks
- * change, push mixer state to channels, and keep loop/tempo/swing in sync.
+ * Bind the store to the audio engine: keep one live strip + instrument per track, reschedule
+ * Transport events when clips change, and keep loop/tempo/swing and the delay time in sync.
  * Returns an unsubscribe function (safe under React StrictMode double-invoke).
  */
 export function connectTimelineToAudio(): () => void {
   const s = useTimelineStore.getState();
+  syncLiveTracks(s.tracks);
   rescheduleClips(s.tracks, s.clips);
-  applyTrackMix(s.tracks);
   syncTransport(s.loopRegion, s.bpm, s.swing);
+  liveMix.busFx.apply(masterFxOf(s), s.bpm);
 
   return useTimelineStore.subscribe((state, prev) => {
-    if (state.clips !== prev.clips) {
-      rescheduleClips(state.tracks, state.clips);
-    }
     if (state.tracks !== prev.tracks) {
-      applyTrackMix(state.tracks);
+      syncLiveTracks(state.tracks);
+    }
+    const trackSetChanged =
+      state.tracks.length !== prev.tracks.length || state.tracks.some((t, i) => t.id !== prev.tracks[i]?.id);
+    if (state.clips !== prev.clips || trackSetChanged) {
+      rescheduleClips(state.tracks, state.clips);
     }
     if (state.loopRegion !== prev.loopRegion || state.bpm !== prev.bpm || state.swing !== prev.swing) {
       syncTransport(state.loopRegion, state.bpm, state.swing);
+    }
+    if (state.bpm !== prev.bpm) {
+      // Delay time is a tempo subdivision, so it follows the BPM
+      liveMix.busFx.apply(masterFxOf(state), state.bpm);
     }
   });
 }

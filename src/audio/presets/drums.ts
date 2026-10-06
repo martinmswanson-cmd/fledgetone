@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { trackChannels } from '../engine';
+import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
 
 /**
@@ -90,6 +90,9 @@ export function createDrumKit(output: Tone.InputNode) {
   const cowbellTime = monotonicTime(cowbell.context);
 
   return {
+    dispose: () => {
+      [kick, snareNoise, snareFilter, snareSnap, hat, cowbell].forEach((n) => n.dispose());
+    },
     kick: (time?: Tone.Unit.Time, velocity: number = 0.95) => {
       kick.triggerAttackRelease('C1', '8n', kickTime(time), velocity);
     },
@@ -112,7 +115,7 @@ export function createDrumKit(output: Tone.InputNode) {
 
 export type DrumKit = ReturnType<typeof createDrumKit>;
 
-const liveKit = createDrumKit(trackChannels.drums);
+const liveKit = createDrumKit(auditionInput);
 
 /** Trigger Kick Drum */
 export function triggerKick(time?: Tone.Unit.Time, velocity: number = 0.95): void {
