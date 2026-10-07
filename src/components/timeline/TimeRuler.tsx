@@ -3,17 +3,21 @@ import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { formatRulerTime } from '../../audio/transport';
 import { barFromClientX, Playhead } from './Playhead';
 import { barLabelStep, RULER_HEIGHT, TIMECODE_LABEL_PX, timecodeRulerSteps } from './layout';
+import { snapBar } from '../../store/timelineTypes';
+import type { RulerMenuState } from './RulerContextMenu';
 
 interface TimeRulerProps {
   originRef: React.RefObject<HTMLDivElement | null>;
   onScrubStart: (e: React.PointerEvent) => void;
+  /** Right-click: open the ruler's menu at the (snapped) bar under the pointer. */
+  onOpenMenu?: (menu: RulerMenuState) => void;
 }
 
 /**
  * Top ruler: bar/beat markings (or timecode at the project frame rate), the In/Out loop region
  * with draggable brackets, click-to-scrub, and the playhead grab handle.
  */
-export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart }) => {
+export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, onOpenMenu }) => {
   const zoom = useTimelineStore((s) => s.zoom);
   const inBar = useTimelineStore((s) => s.loopRegion.inBar);
   const outBar = useTimelineStore((s) => s.loopRegion.outBar);
@@ -74,6 +78,12 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
         backgroundRepeat: 'repeat-x',
       }}
       onPointerDown={onScrubStart}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        const s = useTimelineStore.getState();
+        const raw = barFromClientX(e.clientX, originRef.current);
+        onOpenMenu?.({ x: e.clientX, y: e.clientY, bar: e.shiftKey ? raw : snapBar(raw, s.snapGrid, s) });
+      }}
     >
       {/* Loop region (In → Out) */}
       <div

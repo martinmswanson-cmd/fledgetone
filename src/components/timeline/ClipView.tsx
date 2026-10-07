@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import * as Tone from 'tone';
-import { useTimelineStore } from '../../store/timelineStore';
+import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, Track } from '../../store/timelineTypes';
 import { durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/scheduler';
-import { isDrumKind } from '../../audio/instrumentCatalog';
+import { canMoveClipBetween, isDrumKind } from '../../audio/instrumentCatalog';
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
 import { TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
@@ -74,8 +74,9 @@ interface ClipViewProps {
 
 /**
  * A single clip block on a track lane.
- * Select tool: click to select (Shift/Ctrl adds), drag to move (all selected clips move together),
- * Alt+drag to duplicate, drag either edge to trim. Razor tool: click to split.
+ * Select tool: click to select (Shift/Ctrl adds), drag to move (all selected clips move together,
+ * in time and onto other tracks whose instrument fits), Alt+drag to duplicate, drag either edge to
+ * trim. Razor tool: click to split.
  * Edits snap to the active grid; hold Shift while dragging to bypass snap.
  * Memoized: an edit to one clip doesn't re-render (and re-draw the notes of) every other clip.
  */
@@ -125,38 +126,74 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
     if (!clip.isSelected) store.selectClip(clip.id, false);
 
     const startX = e.clientX;
+    const startY = e.clientY;
     const origStart = clip.startBar;
     const origEnd = clip.startBar + clip.lengthBars;
-    let dragIds: string[] = [clip.id];
-    let origStarts = new Map<string, number>();
     const altDuplicate = mode === 'move' && e.altKey;
     let duplicated = false;
     let moved = false;
 
-    if (mode === 'move') {
-      const selected = useTimelineStore.getState().clips.filter((c) => c.isSelected);
-      dragIds = selected.some((c) => c.id === clip.id) ? selected.map((c) => c.id) : [clip.id];
-      origStarts = new Map(selected.map((c) => [c.id, c.startBar]));
-      origStarts.set(clip.id, origStart);
+    // Moves take every selected clip along (just this one if it isn't selected), as a block
+    const tracks = store.tracks;
+    const rowOf = new Map(tracks.map((t, i) => [t.id, i]));
+    const lane = e.currentTarget.closest<HTMLElement>('[data-lane]');
+    const dragged = mode === 'move' ? useTimelineStore.getState().clips.filter((c) => c.isSelected || c.id === clip.id) : [clip];
+    const origStarts = new Map(dragged.map((c) => [c.id, c.startBar]));
+    const origRows = new Map(dragged.map((c) => [c.id, rowOf.get(c.trackId) ?? -1]));
+    const blockStart = Math.min(...dragged.map((c) => c.startBar));
+    const blockEnd = Math.max(...dragged.map((c) => c.startBar + c.lengthBars));
+    // Row offsets at which every dragged clip lands on a track whose instrument can play it
+    // (0, staying put, always qualifies). Other offsets keep the clips on their own tracks.
+    const rowOffsets = new Set([0]);
+    for (let d = 1 - tracks.length; mode === 'move' && d < tracks.length; d++) {
+      const fits = dragged.every((c) => {
+        const row = origRows.get(c.id)!;
+        const target = tracks[row + d];
+        return row >= 0 && target !== undefined && canMoveClipBetween(tracks[row].instrumentKey, target.instrumentKey);
+      });
+      if (fits) rowOffsets.add(d);
     }
+    const grabbedRow = rowOf.get(clip.trackId) ?? 0;
 
     document.body.style.cursor = mode === 'move' ? 'grabbing' : 'ew-resize';
 
     const onMove = (ev: PointerEvent) => {
       const s = useTimelineStore.getState();
       const deltaBars = (ev.clientX - startX) / s.zoom;
-      if (!moved && Math.abs(ev.clientX - startX) < 3) return;
-      if (!moved) s.checkpoint(); // one undo step per drag gesture
+      // Trims only follow the pointer sideways; a move also follows it up and down
+      const distance = mode === 'move' ? Math.hypot(ev.clientX - startX, ev.clientY - startY) : Math.abs(ev.clientX - startX);
+      if (!moved && distance < 3) return;
+      if (!moved) {
+        s.checkpoint(); // one undo step per drag gesture
+        // Light up the lanes the grabbed clip can be dropped on
+        if (mode === 'move') s.setClipDragTargets(new Set([...rowOffsets].map((d) => tracks[grabbedRow + d].id)));
+      }
       moved = true;
 
       if (mode === 'move') {
         // Alt+drag: leave copies behind at the original positions, drag the originals
         if (altDuplicate && !duplicated) {
           duplicated = true;
-          dragIds.forEach((id) => s.duplicateClip(id));
+          dragged.forEach((c) => s.duplicateClip(c.id));
         }
-        const delta = snapped(origStart + deltaBars, ev.shiftKey) - origStart;
-        dragIds.forEach((id) => s.moveClip(id, (origStarts.get(id) ?? origStart) + delta));
+        // Clamp the block as a whole, so clips pushed against either end keep their spacing
+        const snappedDelta = snapped(origStart + deltaBars, ev.shiftKey) - origStart;
+        const delta = Math.max(1 - blockStart, Math.min(TOTAL_BARS + 1 - blockEnd, snappedDelta));
+        // Row under the pointer (held to the first and last track), counted from the lane the drag
+        // started in. Rows are all TRACK_HEIGHT tall.
+        const laneTop = lane?.getBoundingClientRect().top;
+        const pointerRows =
+          laneTop === undefined
+            ? 0
+            : Math.max(-grabbedRow, Math.min(tracks.length - 1 - grabbedRow, Math.floor((ev.clientY - laneTop) / TRACK_HEIGHT)));
+        const rowDelta = rowOffsets.has(pointerRows) ? pointerRows : 0;
+        s.moveClips(
+          dragged.map((c) => ({
+            clipId: c.id,
+            startBar: origStarts.get(c.id)! + delta,
+            trackId: tracks[origRows.get(c.id)! + rowDelta]?.id,
+          }))
+        );
       } else if (mode === 'trim-start') {
         const minLen = minClipLength(s.snapGrid, s);
         s.trimClipStart(clip.id, Math.min(snapped(origStart + deltaBars, ev.shiftKey), origEnd - minLen));
@@ -169,6 +206,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
 
     const onUp = () => {
       document.body.style.cursor = '';
+      if (moved && mode === 'move') useTimelineStore.getState().setClipDragTargets(null);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };

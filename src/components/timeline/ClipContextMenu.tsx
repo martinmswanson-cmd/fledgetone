@@ -1,7 +1,10 @@
-import React, { useEffect, useRef } from 'react';
-import { ClipboardPaste, Copy, CopyPlus, Piano, Plus, Scissors, Trash2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowRightToLine, ClipboardPaste, Copy, CopyPlus, Piano, Plus, Repeat2, Scissors, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { patternsFor } from '../../store/demoSong';
+import { formatBarCount } from '../../store/timelineTypes';
+import { canMoveClipBetween } from '../../audio/instrumentCatalog';
+import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
 
 export interface ContextMenuState {
   x: number;
@@ -17,124 +20,189 @@ export interface ContextMenuState {
 interface ClipContextMenuProps {
   menu: ContextMenuState;
   onClose: () => void;
-  onDuplicate: () => void;
 }
 
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
-/** Right-click menu for clips (Edit / Copy / Cut / Duplicate / Delete) and empty lane space (New clip, Insert pattern, Paste). Also opened by a track header's + button. */
-export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose, onDuplicate }) => {
+export interface MenuItemProps {
+  label: string;
+  shortcut?: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  divider?: boolean;
+}
+
+export const MenuItem: React.FC<MenuItemProps> = ({ label, shortcut, icon, onClick, disabled, divider }) => (
+  <>
+    {divider && <div className="my-1 border-t border-forge-border" role="separator" />}
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+      className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-forge-text hover:bg-cyan-500/20 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default"
+    >
+      {icon}
+      <span className="flex-1">{label}</span>
+      <span className="text-forge-muted text-[10px]">{shortcut}</span>
+    </button>
+  </>
+);
+
+/** Why the last menu action did nothing, shown in the menu (which stays open). */
+export const MenuNotice: React.FC<{ text: string | null }> = ({ text }) =>
+  text ? (
+    <div role="alert" className="mx-2 mt-1 mb-0.5 px-2 py-1.5 rounded border border-red-500/50 bg-red-500/10 text-[11px] leading-snug text-red-200">
+      {text}
+    </div>
+  ) : null;
+
+const MAX_REPEATS = 64;
+
+/** "Repeat ×N": a number box in the menu. Enter (or OK) makes the copies. */
+const RepeatForm: React.FC<{ onRepeat: (times: number) => void }> = ({ onRepeat }) => {
+  const [text, setText] = useState('2');
+  const input = useRef<HTMLInputElement>(null);
+  // Focus without scrolling: any scroll closes the menu
+  useEffect(() => input.current?.focus({ preventScroll: true }), []);
+  const times = /^\d+$/.test(text.trim()) ? Number(text) : NaN;
+  const valid = times >= 1 && times <= MAX_REPEATS;
+  return (
+    <form
+      className="flex items-center gap-2 px-3 py-1 text-forge-text"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) onRepeat(times);
+      }}
+    >
+      <Repeat2 className="w-3.5 h-3.5" />
+      <label htmlFor="repeat-times" className="flex-1">
+        Repeat ×
+      </label>
+      <input
+        id="repeat-times"
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={MAX_REPEATS}
+        step={1}
+        ref={input}
+        value={text}
+        onFocus={(e) => e.currentTarget.select()}
+        onChange={(e) => setText(e.target.value)}
+        aria-invalid={!valid}
+        title={`How many copies, 1 to ${MAX_REPEATS}`}
+        className={`w-14 h-6 px-1.5 rounded bg-forge-bg border text-right tabular-nums text-forge-text focus:outline-none ${
+          valid ? 'border-forge-borderLight focus:border-cyan-500' : 'border-red-500'
+        }`}
+      />
+      <button
+        type="submit"
+        disabled={!valid}
+        className="h-6 px-2 rounded border border-forge-borderLight text-forge-text hover:border-cyan-500 hover:bg-cyan-500/20 disabled:opacity-40 disabled:pointer-events-none"
+      >
+        OK
+      </button>
+    </form>
+  );
+};
+
+/** Right-click menu for clips (Edit / Copy / Cut / Duplicate / Repeat / Fill / Delete) and empty lane space (New clip, Insert pattern, Paste). Also opened by a track header's + button. */
+export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose }) => {
   const ref = useRef<HTMLDivElement>(null);
   const hasClipboard = useTimelineStore((s) => s.clipboard.length > 0);
-
-  useEffect(() => {
-    const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('pointerdown', onPointerDown, true);
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', onClose, true);
-    window.addEventListener('resize', onClose);
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown, true);
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', onClose, true);
-      window.removeEventListener('resize', onClose);
-    };
-  }, [onClose]);
+  const loopOut = useTimelineStore((s) => s.loopRegion.outBar);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [repeating, setRepeating] = useState(false);
+  useMenuDismiss(ref, onClose);
+  useKeepOnScreen(ref, menu.x, menu.y);
 
   const s = useTimelineStore.getState();
   const track = s.tracks.find((t) => t.id === menu.trackId);
-  const run = (action: () => void) => () => {
-    action();
-    onClose();
+  /** Run an action and close, unless it returns a message saying why it couldn't: then show that. */
+  const run = (action: () => string | null | void) => () => {
+    const message = action();
+    if (typeof message === 'string') setNotice(message);
+    else onClose();
   };
 
-  type Item = { label: string; shortcut: string; icon: React.ReactNode; action: () => void; disabled?: boolean; divider?: boolean };
+  // Clips copied from one track paste onto this lane if its instrument can play them
+  const pastesOntoLane =
+    !!track &&
+    s.clipboardInstrument !== null &&
+    canMoveClipBetween(s.clipboardInstrument, track.instrumentKey) &&
+    s.clipboard.some((c) => c.trackId !== track.id);
+  const pasteHere: MenuItemProps = {
+    label: 'Paste here',
+    shortcut: pastesOntoLane ? 'this track' : '',
+    icon: <ClipboardPaste className="w-3.5 h-3.5" />,
+    onClick: run(() => s.pasteClips(menu.bar, menu.trackId)),
+    disabled: !hasClipboard,
+  };
+
+  type Item = MenuItemProps & { key: string };
   const newClip = (bars: number): Item => ({
+    key: `new-${bars}`,
     label: `New empty clip (${bars} bar${bars === 1 ? '' : 's'})`,
     shortcut: bars === 1 ? 'dbl-click' : '',
     icon: <Piano className="w-3.5 h-3.5" />,
-    action: () => {
+    onClick: run(() => {
       const id = track && s.createEmptyClip(track.id, menu.bar, bars);
       if (id) s.openEditor(id);
-    },
+    }),
   });
 
   const items: Item[] = menu.clipId
     ? [
-        { label: 'Edit notes', shortcut: 'dbl-click', icon: <Piano className="w-3.5 h-3.5" />, action: () => s.openEditor(menu.clipId!) },
-        { label: 'Copy', shortcut: `${MOD}C`, icon: <Copy className="w-3.5 h-3.5" />, action: s.copySelectedClips, divider: true },
-        { label: 'Cut', shortcut: `${MOD}X`, icon: <Scissors className="w-3.5 h-3.5" />, action: s.cutSelectedClips },
-        { label: 'Duplicate', shortcut: `${MOD}D`, icon: <CopyPlus className="w-3.5 h-3.5" />, action: onDuplicate },
+        { key: 'edit', label: 'Edit notes', shortcut: 'dbl-click', icon: <Piano className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) },
+        { key: 'copy', label: 'Copy', shortcut: `${MOD}C`, icon: <Copy className="w-3.5 h-3.5" />, onClick: run(s.copySelectedClips), divider: true },
+        { key: 'cut', label: 'Cut', shortcut: `${MOD}X`, icon: <Scissors className="w-3.5 h-3.5" />, onClick: run(s.cutSelectedClips) },
+        { key: 'paste', ...pasteHere },
+        { key: 'duplicate', label: 'Duplicate', shortcut: `${MOD}D`, icon: <CopyPlus className="w-3.5 h-3.5" />, onClick: run(s.duplicateSelection), divider: true },
+        { key: 'repeat', label: 'Repeat ×N…', icon: <Repeat2 className="w-3.5 h-3.5" />, onClick: () => setRepeating(true) },
         {
-          label: 'Paste here',
-          shortcut: '',
-          icon: <ClipboardPaste className="w-3.5 h-3.5" />,
-          action: () => s.pasteClips(menu.bar),
-          disabled: !hasClipboard,
+          key: 'fill',
+          label: 'Fill to loop Out',
+          shortcut: `bar ${formatBarCount(loopOut)}`,
+          icon: <ArrowRightToLine className="w-3.5 h-3.5" />,
+          onClick: run(s.fillSelectionToLoopOut),
         },
-        { label: 'Delete', shortcut: 'Del', icon: <Trash2 className="w-3.5 h-3.5" />, action: s.deleteSelectedClips, divider: true },
+        { key: 'delete', label: 'Delete', shortcut: 'Del', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(s.deleteSelectedClips), divider: true },
       ]
     : [
         ...(track ? [newClip(1), newClip(2), newClip(4)] : []),
         ...(track
           ? patternsFor(track.instrumentKey).map((p, i) => ({
+              key: `pattern-${p.id}`,
               label: `Insert ${p.name}`,
               shortcut: `${p.lengthBars} bars`,
               icon: <Plus className="w-3.5 h-3.5" />,
-              action: () => s.insertPatternClip(track.id, p.id, menu.bar),
+              onClick: run(() => s.insertPatternClip(track.id, p.id, menu.bar)),
               divider: i === 0,
             }))
           : []),
+        { key: 'paste', ...pasteHere, divider: true },
         {
-          label: 'Paste here',
-          shortcut: '',
-          icon: <ClipboardPaste className="w-3.5 h-3.5" />,
-          action: () => s.pasteClips(menu.bar),
-          disabled: !hasClipboard,
-          divider: true,
-        },
-        {
+          key: 'paste-playhead',
           label: 'Paste at playhead',
           shortcut: `${MOD}V`,
           icon: <ClipboardPaste className="w-3.5 h-3.5" />,
-          action: () => s.pasteClips(),
+          onClick: run(() => s.pasteClips()),
           disabled: !hasClipboard,
         },
       ];
 
-  // Keep the menu on-screen near the right/bottom edges
-  const left = Math.min(menu.x, window.innerWidth - 250);
-  const top = Math.min(menu.y, window.innerHeight - items.length * 30 - 12);
-
   return (
-    <div
-      ref={ref}
-      role="menu"
-      className="fixed z-50 w-60 py-1 rounded-md border border-forge-borderLight bg-forge-panelLight shadow-2xl text-xs font-mono"
-      style={{ left, top }}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      {items.map((item) => (
-        <React.Fragment key={item.label}>
-        {item.divider && <div className="my-1 border-t border-forge-border" role="separator" />}
-        <button
-          type="button"
-          role="menuitem"
-          disabled={item.disabled}
-          onClick={run(item.action)}
-          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-forge-text hover:bg-cyan-500/20 disabled:opacity-40 disabled:hover:bg-transparent disabled:cursor-default"
-        >
-          {item.icon}
-          <span className="flex-1">{item.label}</span>
-          <span className="text-forge-muted text-[10px]">{item.shortcut}</span>
-        </button>
-        </React.Fragment>
-      ))}
+    <div ref={ref} role="menu" className={menuClass} onContextMenu={(e) => e.preventDefault()}>
+      {items.map(({ key, ...item }) =>
+        key === 'repeat' && repeating ? (
+          <RepeatForm key={key} onRepeat={(times) => run(() => s.repeatSelection(times))()} />
+        ) : (
+          <MenuItem key={key} {...item} />
+        )
+      )}
+      <MenuNotice text={notice} />
     </div>
   );
 };
