@@ -3,6 +3,7 @@ import { Flame, Gauge, Waves } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Track, TrackFx } from '../../store/timelineTypes';
 import { defaultTrackFx } from '../../store/timelineTypes';
+import { UndoableRange } from '../UndoableRange';
 
 interface SliderProps {
   label: string;
@@ -21,14 +22,13 @@ interface SliderProps {
 const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled }) => (
   <label className={`flex items-center gap-2 text-[10px] font-mono ${disabled ? 'opacity-45' : ''}`}>
     <span className="w-16 text-forge-muted uppercase">{label}</span>
-    <input
-      type="range"
+    <UndoableRange
       min={min}
       max={max}
       step={step}
       value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      onDoubleClick={() => onChange(reset)}
+      onValue={onChange}
+      resetValue={reset}
       className="flex-1 min-w-0 cursor-pointer h-1.5"
       style={{ accentColor: accent }}
       aria-label={label}
@@ -62,7 +62,11 @@ const InsertPanel: React.FC<PanelProps> = ({ title, icon, on, onToggle, accent, 
         role="switch"
         aria-checked={on}
         aria-label={`${title} ${on ? 'on' : 'off'}`}
-        onClick={onToggle}
+        onClick={() => {
+          // Switching an effect on or off is one undo step (its sliders record per gesture)
+          useTimelineStore.getState().checkpoint();
+          onToggle();
+        }}
         className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition ${
           on ? 'text-black' : 'text-forge-muted bg-forge-panel border-forge-border hover:text-white'
         }`}

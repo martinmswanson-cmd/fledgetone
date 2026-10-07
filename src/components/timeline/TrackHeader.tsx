@@ -6,6 +6,9 @@ import { snapBar } from '../../store/timelineTypes';
 import { Plus, Sliders, Loader2 } from 'lucide-react';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
+import { UndoableRange } from '../UndoableRange';
+import { INSTRUMENTS } from '../../audio/instrumentCatalog';
+import { retryInstrumentDownload } from '../../audio/liveTracks';
 
 interface ToggleProps {
   active: boolean;
@@ -54,6 +57,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
 
   const instrumentStatus = useAudioStore((s) => s.instrumentStatus[track.instrumentKey] ?? 'ready');
   const isLoading = instrumentStatus === 'loading';
+  const downloadFailed = instrumentStatus === 'error';
 
   const handleSelectTrack = () => {
     selectTrack(track.id);
@@ -73,11 +77,24 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
       />
       <div className="flex-1 min-w-0 px-2.5 py-2 flex flex-col justify-between">
         <div className="flex items-center gap-1.5">
-          {/* Loading Indicator or Selected Glow */}
+          {/* Loading Indicator, Download Error (click to retry) or Selected Glow */}
           {isLoading ? (
             <span title="Downloading acoustic samples from CDN..." className="text-cyan-400 animate-spin shrink-0">
               <Loader2 className="w-3 h-3" />
             </span>
+          ) : downloadFailed ? (
+            <button
+              type="button"
+              title={`Couldn't download ${INSTRUMENTS[track.instrumentKey].name} sounds. Click to retry`}
+              aria-label={`Retry downloading ${INSTRUMENTS[track.instrumentKey].name} sounds`}
+              onClick={(e) => {
+                e.stopPropagation();
+                void retryInstrumentDownload(track.instrumentKey).catch(() => {});
+              }}
+              className="w-3.5 h-3.5 shrink-0 rounded-full bg-red-500 hover:bg-red-400 text-white text-[9px] font-bold leading-none flex items-center justify-center"
+            >
+              !
+            </button>
           ) : (
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -163,14 +180,13 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           onClick={(e) => e.stopPropagation()}
         >
           <span className="w-6">VOL</span>
-          <input
-            type="range"
+          <UndoableRange
             min={-60}
             max={6}
             step={0.5}
             value={track.volume}
-            onChange={(e) => setTrackVolume(track.id, Number(e.target.value))}
-            onDoubleClick={() => setTrackVolume(track.id, 0)}
+            onValue={(v) => setTrackVolume(track.id, v)}
+            resetValue={0}
             className="flex-1 min-w-0 cursor-pointer"
             style={{ accentColor: track.color }}
             aria-label={`${track.name} volume`}
@@ -185,14 +201,13 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           onClick={(e) => e.stopPropagation()}
         >
           <span className="w-6">PAN</span>
-          <input
-            type="range"
+          <UndoableRange
             min={-1}
             max={1}
             step={0.01}
             value={track.pan}
-            onChange={(e) => setTrackPan(track.id, Number(e.target.value))}
-            onDoubleClick={() => setTrackPan(track.id, 0)}
+            onValue={(v) => setTrackPan(track.id, v)}
+            resetValue={0}
             className="flex-1 min-w-0 cursor-pointer"
             style={{ accentColor: track.color }}
             aria-label={`${track.name} pan`}

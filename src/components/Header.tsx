@@ -5,6 +5,7 @@ import { useTimelineStore } from '../store/timelineStore';
 import boLogo from '../assets/bo.svg';
 import { GuidePanel } from './guide/GuidePanel';
 import { FitTempoPopover, TempoField } from './TempoControls';
+import { shouldIgnoreShortcut } from './keyboard';
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
@@ -24,9 +25,8 @@ export const Header: React.FC = () => {
   // ? opens the guide from anywhere (except while typing)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target;
-      if (e.key !== '?' || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
-      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      if (e.key !== '?' || shouldIgnoreShortcut(e)) return;
+      if (document.querySelector('[role="menu"]')) return;
       e.preventDefault();
       setGuideOpen(true);
     };

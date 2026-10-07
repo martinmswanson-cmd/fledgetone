@@ -20,16 +20,8 @@ import { AddTrackMenu } from './AddTrackMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
 import type { RulerUnits } from '../../store/timelineTypes';
 import { frameRateLabel } from '../../store/timelineTypes';
-
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLSelectElement ||
-    target instanceof HTMLTextAreaElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
-}
+import { blurMenusAfterChange, shouldIgnoreShortcut } from '../keyboard';
+import { recoverFailedDownloads } from '../../audio/liveTracks';
 
 interface Marquee {
   x0: number;
@@ -196,6 +188,10 @@ export const Timeline: React.FC = () => {
   // Bind store <-> Tone.Transport for the lifetime of the timeline
   useEffect(() => connectTimelineToAudio(), []);
   useEffect(() => connectAutosave(), []);
+  // Menus hand focus back once used, so the shortcuts below keep working
+  useEffect(() => blurMenusAfterChange(), []);
+  // Recorded instruments that failed to download play once a retry succeeds (and retry when the connection returns)
+  useEffect(() => recoverFailedDownloads(), []);
 
   // Keep the playhead in view while playing (page-turn style)
   useEffect(
@@ -215,7 +211,7 @@ export const Timeline: React.FC = () => {
   // Keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isTypingTarget(e.target) || document.querySelector('[role="dialog"]')) return;
+      if (shouldIgnoreShortcut(e)) return;
       const s = useTimelineStore.getState();
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
@@ -224,7 +220,8 @@ export const Timeline: React.FC = () => {
         e.preventDefault();
         // A focused button would also "click" on Space and double-toggle
         if (e.target instanceof HTMLButtonElement) e.target.blur();
-        void s.togglePlay();
+        // Holding Space would otherwise start and stop playback over and over
+        if (!e.repeat) void s.togglePlay();
       } else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) {
         e.preventDefault();
         s.redo();
