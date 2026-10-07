@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Track } from '../../store/timelineTypes';
-import { snapBar } from '../../store/timelineTypes';
+import { frameBars, snapBar } from '../../store/timelineTypes';
 import { dragInstrument, readDragPayload } from '../../store/dragSounds';
 import { compatibleInstruments } from '../../audio/instrumentCatalog';
 import { ClipView } from './ClipView';
@@ -24,6 +24,12 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
   const zoom = useTimelineStore((s) => s.zoom);
   const clips = useTimelineStore((s) => s.clips);
   const dragging = useTimelineStore((s) => s.draggingInstrument);
+  // Faint lines under the beat grid when zoomed in for detail work: with Frame snap, every video
+  // frame once frames are 8px or more apart; with any other snap, every 16th once they're 16px apart
+  const fineGridPx = useTimelineStore((s) => {
+    const px = s.snapGrid === 'frame' ? frameBars(s) * s.zoom : s.zoom / 16;
+    return px >= (s.snapGrid === 'frame' ? 8 : 16) ? px : 0;
+  });
   const [dropBar, setDropBar] = useState<number | null>(null);
   const trackClips = clips.filter((c) => c.trackId === track.id);
 
@@ -43,9 +49,11 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
       style={{
         width: TOTAL_BARS * zoom,
         height: TRACK_HEIGHT,
-        backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px)`,
+        backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px)${
+          fineGridPx ? ', linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px)' : ''
+        }`,
         // Major lines every labelled bar; minor lines per beat, or per bar when zoomed far out
-        backgroundSize: `${zoom * barLabelStep(zoom)}px 100%, ${zoom >= 48 ? zoom / 4 : zoom}px 100%`,
+        backgroundSize: `${zoom * barLabelStep(zoom)}px 100%, ${zoom >= 48 ? zoom / 4 : zoom}px 100%${fineGridPx ? `, ${fineGridPx}px 100%` : ''}`,
       }}
       data-lane={track.id}
       onContextMenu={(e) => {

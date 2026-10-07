@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Film } from 'lucide-react';
-import { connectAutosave, connectTimelineToAudio, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { ProjectBar, RestoreSessionBanner } from './ProjectBar';
 import { TimelineScrollbar } from './TimelineScrollbar';
 import { PianoRoll } from './PianoRoll';
@@ -8,13 +8,14 @@ import { TimelineToolbar } from './TimelineToolbar';
 import { TimeRuler } from './TimeRuler';
 import { TrackHeader } from './TrackHeader';
 import { TrackLane } from './TrackLane';
-import { Playhead, useScrub } from './Playhead';
+import { barFromClientX, Playhead, useScrub } from './Playhead';
 import { ClipContextMenu } from './ClipContextMenu';
 import type { ContextMenuState } from './ClipContextMenu';
 import { TrackInspector } from '../inspector/TrackInspector';
 import { AddTrackMenu } from './AddTrackMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
 import type { RulerUnits } from '../../store/timelineTypes';
+import { frameRateLabel } from '../../store/timelineTypes';
 
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -75,9 +76,10 @@ function clipsInMarquee(m: Marquee): Set<string> {
 const RulerUnitsToggle: React.FC = () => {
   const units = useTimelineStore((s) => s.rulerUnits);
   const fps = useTimelineStore((s) => s.fps);
+  const dropFrame = useTimelineStore((s) => s.dropFrame);
   const options: Array<{ value: RulerUnits; label: string; title: string }> = [
     { value: 'bars', label: 'Bars', title: 'Ruler counts bars and beats' },
-    { value: 'timecode', label: 'Time', title: `Ruler counts minutes, seconds and frames (${fps} fps)` },
+    { value: 'timecode', label: 'Time', title: `Ruler counts minutes, seconds and frames (${frameRateLabel(fps, dropFrame)})` },
   ];
   return (
     <div className="flex rounded border border-forge-border overflow-hidden normal-case tracking-normal" role="group" aria-label="Ruler units">
@@ -158,6 +160,49 @@ export const Timeline: React.FC = () => {
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };
+
+  // Tell the store which stretch of the lanes is on screen (the ruler draws only that; zoom anchors in it)
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => useTimelineStore.getState().setView(el.scrollLeft, Math.max(1, el.clientWidth - HEADER_WIDTH));
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  }, []);
+
+  // After a zoom has re-laid out the lanes, scroll to where setZoom says its anchor stays put
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = useTimelineStore.getState().viewLeft;
+  }, [zoom]);
+
+  // Ctrl/Cmd+wheel (and trackpad pinch) over the lanes or ruler zooms around the pointer. Native
+  // listener: React's wheel handlers are passive, and the browser would zoom the whole page instead.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // The zoom being aimed for, unrounded, so small pinch steps add up instead of rounding away
+    let target = 0;
+    const onWheel = (e: WheelEvent) => {
+      const over = e.target as Element;
+      if (!(e.ctrlKey || e.metaKey) || !(over.closest('[data-lane]') || rulerRef.current?.contains(over))) return;
+      e.preventDefault();
+      const s = useTimelineStore.getState();
+      if (Math.abs(target - s.zoom) > 0.5) target = s.zoom;
+      // Lines and pages (Firefox) to pixels; about 20% per mouse-wheel notch
+      const dy = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+      target = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, target * Math.exp(-dy * 0.002)));
+      s.setZoom(target, barFromClientX(e.clientX, rulerRef.current));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Bind store <-> Tone.Transport for the lifetime of the timeline
   useEffect(() => connectTimelineToAudio(), []);

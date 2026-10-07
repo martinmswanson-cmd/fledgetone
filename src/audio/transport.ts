@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { formatFrameRulerTime, formatFrameTimecode, framesToSeconds, parseFrameTimecode, secondsToFrames } from './timecode';
 
 /**
  * Transport position helpers. Timeline positions are 1-based bars (4/4);
@@ -60,29 +61,20 @@ export function secondsToBar(seconds: number, bpm: number): number {
   return (seconds * bpm) / 240 + 1;
 }
 
-/** Whole frames elapsed by `seconds`. A position sitting exactly on a frame can land a hair below it in floating point, so allow for that. */
-function framesAt(seconds: number, fps: number): number {
-  return Math.floor(Math.max(0, seconds) * fps + 1e-6);
-}
-
-/** Format as SMPTE timecode HH:MM:SS:FF (non-drop-frame) at `fps`, assuming constant tempo. */
-export function formatSmpte(bar: number, bpm: number, fps: number): string {
-  const totalFrames = framesAt(barToSeconds(bar, bpm), fps);
-  const ff = totalFrames % fps;
-  const ss = Math.floor(totalFrames / fps) % 60;
-  const mm = Math.floor(totalFrames / (fps * 60)) % 60;
-  const hh = Math.floor(totalFrames / (fps * 3600));
-  return [hh, mm, ss, ff].map((v) => String(v).padStart(2, '0')).join(':');
+/**
+ * Format as SMPTE timecode HH:MM:SS:FF at `fps`, assuming constant tempo. Drop-frame (29.97 only)
+ * is written HH:MM:SS;FF.
+ */
+export function formatSmpte(bar: number, bpm: number, fps: number, dropFrame = false): string {
+  return formatFrameTimecode(secondsToFrames(barToSeconds(bar, bpm), fps), fps, dropFrame);
 }
 
 /**
- * Short ruler label "M:SS:FF". Always with frames, so a label typed into the timecode box
- * means the same place (two fields there are seconds and frames, not minutes and seconds).
+ * Short ruler label "M:SS:FF" ("M:SS;FF" in drop-frame). Always with frames, so a label typed into
+ * the timecode box means the same place (two fields there are seconds and frames, not minutes and seconds).
  */
-export function formatRulerTime(seconds: number, fps: number): string {
-  const totalFrames = framesAt(seconds, fps);
-  const totalSeconds = Math.floor(totalFrames / fps);
-  return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')}:${String(totalFrames % fps).padStart(2, '0')}`;
+export function formatRulerTime(seconds: number, fps: number, dropFrame = false): string {
+  return formatFrameRulerTime(secondsToFrames(seconds, fps), fps, dropFrame);
 }
 
 /**
@@ -90,19 +82,11 @@ export function formatRulerTime(seconds: number, fps: number): string {
  * frames, seconds, minutes, hours ("1:02:03:04", "2:03:04", "3:04"), separated by any of
  * : ; . or spaces. Digits alone are read in pairs from the right, as in video editors:
  * "1500" is 00:00:15:00 and "12" is 12 frames. Fields may overflow ("90:00" is 90 seconds).
+ * In drop-frame, a label that doesn't exist (;00 or ;01 at the start of most minutes) means the next frame.
  */
-export function parseTimecode(text: string, fps: number): number | null {
-  const t = text.trim();
-  let fields: number[];
-  if (/^\d{1,8}$/.test(t)) {
-    fields = (t.length % 2 ? `0${t}` : t).match(/\d\d/g)!.map(Number);
-  } else if (/^\d+([:;.\s]+\d+){1,3}$/.test(t)) {
-    fields = t.split(/[:;.\s]+/).map(Number);
-  } else {
-    return null;
-  }
-  const [ff = 0, ss = 0, mm = 0, hh = 0] = fields.reverse();
-  return hh * 3600 + mm * 60 + ss + ff / fps;
+export function parseTimecode(text: string, fps: number, dropFrame = false): number | null {
+  const frame = parseFrameTimecode(text, fps, dropFrame);
+  return frame === null ? null : framesToSeconds(frame, fps);
 }
 
 /** Read a typed position as Bar.Beat.Hundredths ("17", "17.3", "17.3.50") into a 1-based bar, or null. */
@@ -114,4 +98,20 @@ export function parseBarsBeats(text: string): number | null {
   const hundredths = m[3] === undefined ? 0 : Number(m[3]);
   if (bar < 1 || beat < 1 || beat > 4 || hundredths > 99) return null;
   return bar + (beat - 1) / 4 + hundredths / 400;
+}
+
+/** A length as bars.beats.hundredths counted from zero: "4.0.00" is four bars, "2.2.00" two bars and two beats. */
+export function formatBarsBeatsLength(bars: number): string {
+  const total = Math.floor(Math.max(0, bars * 400) + 1e-6);
+  return `${Math.floor(total / 400)}.${Math.floor((total % 400) / 100)}.${String(total % 100).padStart(2, '0')}`;
+}
+
+/** Read a typed length as bars ("8", "2.2" for two bars and two beats, "0.1.50"), or null. */
+export function parseBarsBeatsLength(text: string): number | null {
+  const m = text.trim().match(/^(\d+)(?:[.\s]+(\d+))?(?:[.\s]+(\d+))?$/);
+  if (!m) return null;
+  const beats = m[2] === undefined ? 0 : Number(m[2]);
+  const hundredths = m[3] === undefined ? 0 : Number(m[3]);
+  if (beats > 3 || hundredths > 99) return null;
+  return Number(m[1]) + beats / 4 + hundredths / 400;
 }

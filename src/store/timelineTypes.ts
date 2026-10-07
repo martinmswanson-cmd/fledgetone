@@ -1,4 +1,5 @@
 import type { InstrumentKey } from '../audio/engine';
+import { frameSeconds, isDropFrame } from '../audio/timecode';
 
 export type { InstrumentKey };
 
@@ -146,13 +147,27 @@ export type TimelineTool = 'select' | 'razor';
 /** 'frame' snaps to video frames at the project's frame rate and tempo. */
 export type SnapGrid = '1/4' | '1/8' | '1/16' | 'frame' | 'off';
 
-/** Timecode frame rates the timeline can count in. */
-export const FRAME_RATES = [24, 25, 30, 60] as const;
+/**
+ * Timecode frame rates the timeline can count in. 23.976 and 29.97 are the NTSC video rates
+ * (24 and 30 slowed by 1000/1001); 29.97 can also count in drop-frame.
+ */
+export const FRAME_RATES = [23.976, 24, 25, 29.97, 30, 60] as const;
 export type FrameRate = (typeof FRAME_RATES)[number];
 export const DEFAULT_FRAME_RATE: FrameRate = 30;
 
 export function isFrameRate(v: unknown): v is FrameRate {
   return FRAME_RATES.includes(v as FrameRate);
+}
+
+/** The timecode formats on offer, in menu order: every rate, plus 29.97 drop-frame after 29.97. */
+export const TIMECODE_FORMATS: ReadonlyArray<{ fps: FrameRate; dropFrame: boolean }> = FRAME_RATES.flatMap(
+  (fps): Array<{ fps: FrameRate; dropFrame: boolean }> =>
+    fps === 29.97 ? [{ fps, dropFrame: false }, { fps, dropFrame: true }] : [{ fps, dropFrame: false }]
+);
+
+/** "29.97 fps", or "29.97 DF" for drop-frame. */
+export function frameRateLabel(fps: number, dropFrame: boolean): string {
+  return isDropFrame(fps, dropFrame) ? `${fps} DF` : `${fps} fps`;
 }
 
 /** What the time ruler counts in. */
@@ -177,9 +192,9 @@ const NOTE_GRID_BARS: Record<Exclude<SnapGrid, 'frame'>, number> = {
   off: 0,
 };
 
-/** One video frame in bars (4/4 at a constant tempo). */
+/** One video frame in bars (4/4 at a constant tempo). 29.97 and 23.976 frames are 1001/1000 longer than 30 and 24. */
 export function frameBars(timing: GridTiming): number {
-  return timing.bpm / (240 * timing.fps);
+  return (timing.bpm * frameSeconds(timing.fps)) / 240;
 }
 
 /** One step of the grid in bars, 0 when snapping is off. Frames count from the start of bar 1. */
@@ -207,6 +222,11 @@ export function minClipLength(grid: SnapGrid, timing: GridTiming): number {
 /** A bar count for display: up to 3 decimals, trailing zeros dropped (frame-snapped lengths are long floats). */
 export function formatBarCount(bars: number): string {
   return String(Number(bars.toFixed(3)));
+}
+
+/** A tempo for display: up to 2 decimals, trailing zeros dropped ("115.2", "122"). */
+export function formatBpm(bpm: number): string {
+  return String(Number(bpm.toFixed(2)));
 }
 
 const DURATION_BARS: Record<string, number> = {
