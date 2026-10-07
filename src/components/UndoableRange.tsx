@@ -16,6 +16,8 @@ const KEY_BURST_MS = 800;
 /** Covers both clicks of a double-click. */
 const DOUBLE_CLICK_MS = 600;
 
+type RedoSteps = ReturnType<typeof useTimelineStore.getState>['future'];
+
 /** The newest undo step (identity only). */
 const latestStep = () => {
   const { past } = useTimelineStore.getState();
@@ -37,11 +39,22 @@ export const UndoableRange: React.FC<UndoableRangeProps> = ({
   onBlur,
   ...rest
 }) => {
-  const gesture = useRef({ pending: false, inBurst: false, burstTimer: 0, checkpointAt: 0, step: undefined as unknown });
+  const gesture = useRef({
+    pending: false,
+    inBurst: false,
+    burstTimer: 0,
+    checkpointAt: 0,
+    step: undefined as unknown,
+    /** The value when the gesture's step was taken, and the redo steps that step cleared */
+    startValue: value,
+    future: [] as RedoSteps,
+  });
 
   const change = (next: number) => {
     const g = gesture.current;
     if (undoable && g.pending) {
+      g.future = useTimelineStore.getState().future;
+      g.startValue = value;
       useTimelineStore.getState().checkpoint();
       g.step = latestStep();
       g.checkpointAt = performance.now();
@@ -80,9 +93,18 @@ export const UndoableRange: React.FC<UndoableRangeProps> = ({
           ? undefined
           : () => {
               if (value === resetValue) return;
+              const g = gesture.current;
               // If the double-click's first click moved the thumb it already checkpointed: the
               // reset belongs to that same step
-              gesture.current.pending = performance.now() - gesture.current.checkpointAt > DOUBLE_CLICK_MS;
+              const sameStep = undoable && performance.now() - g.checkpointAt <= DOUBLE_CLICK_MS && latestStep() === g.step;
+              if (sameStep && g.startValue === resetValue) {
+                // The first click moved the thumb off its reset value and this puts it back: no
+                // change at all, so leave history as it was (an empty step makes the next undo do nothing)
+                onValue(resetValue);
+                useTimelineStore.setState((s) => ({ past: s.past.slice(0, -1), future: g.future }));
+                return;
+              }
+              g.pending = !sameStep;
               change(resetValue);
             }
       }
