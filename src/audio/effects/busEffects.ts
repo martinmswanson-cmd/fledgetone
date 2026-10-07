@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import type { MasterFx } from '../../store/timelineTypes';
+import { createLightPingPong, type LightPingPong } from './lightFx';
 
 /**
  * Shared return effects fed by every track's post-fader sends: one reverb and one
@@ -8,7 +9,7 @@ import type { MasterFx } from '../../store/timelineTypes';
  */
 export interface BusEffects {
   reverb: Tone.Reverb;
-  delay: Tone.PingPongDelay;
+  delay: LightPingPong;
   reverbInput: Tone.Gain;
   delayInput: Tone.Gain;
   /** Resolves when the reverb impulse response has been generated. */
@@ -29,17 +30,17 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   const delayInput = new Tone.Gain(1);
 
   const reverb = new Tone.Reverb({ decay: fx.reverbDecay, preDelay: 0.02, wet: 1 });
-  const delay = new Tone.PingPongDelay({
+  // Tone.PingPongDelay's sound at wet 1, at a fraction of its CPU (see lightFx.ts)
+  const delay = createLightPingPong({
     delayTime: delaySeconds(fx.delayTime, bpm),
     maxDelay: 2,
-    feedback: fx.delayFeedback,
-    wet: 1,
+    feedback: Math.max(0, Math.min(0.8, fx.delayFeedback)),
   });
 
   reverbInput.connect(reverb);
   reverb.connect(destination);
-  delayInput.connect(delay);
-  delay.connect(destination);
+  delayInput.connect(delay.input);
+  delay.output.connect(destination);
 
   let current = { ...fx };
   return {
@@ -51,8 +52,8 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     apply: (next, tempo) => {
       // Regenerating the impulse response is costly, so only when the decay changes
       if (next.reverbDecay !== current.reverbDecay) reverb.decay = Math.max(0.8, Math.min(6, next.reverbDecay));
-      delay.delayTime.rampTo(delaySeconds(next.delayTime, tempo), 0.05);
-      delay.feedback.rampTo(Math.max(0, Math.min(0.8, next.delayFeedback)), 0.05);
+      delay.setDelayTime(delaySeconds(next.delayTime, tempo), 0.05);
+      delay.setFeedback(Math.max(0, Math.min(0.8, next.delayFeedback)), 0.05);
       current = { ...next };
     },
     dispose: () => {

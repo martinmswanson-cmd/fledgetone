@@ -9,10 +9,9 @@ import { createVoicePool } from './poly';
  * Built by a factory so offline (WAV export) rendering can recreate it in its own context.
  */
 export function createBrassVoice(output: Tone.InputNode) {
-  const filter = new Tone.Filter({
+  const filter = new Tone.BiquadFilter({
     frequency: 2200,
     type: 'lowpass',
-    rolloff: -12,
     Q: 2,
   });
 

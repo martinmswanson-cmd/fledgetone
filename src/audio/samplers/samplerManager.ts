@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { createLightChorus } from '../effects/lightFx';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { InstrumentKey } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
@@ -76,24 +77,24 @@ export interface SamplerVoice {
  * Character processing that turns a related recording into the instrument: the erhu's nasal
  * bowed tone with its wide expressive vibrato, the mandolin's doubled (paired) strings.
  */
-function shapingChain(shape: 'erhu' | 'mandolin' | undefined, output: Tone.InputNode): { input: Tone.InputNode; nodes: Tone.ToneAudioNode[] } {
+function shapingChain(shape: 'erhu' | 'mandolin' | undefined, output: Tone.InputNode): { input: Tone.InputNode; nodes: { dispose: () => void }[] } {
   if (shape === 'erhu') {
     const vibrato = new Tone.Vibrato({ frequency: 5.8, depth: 0.18 });
-    const nasal = new Tone.Filter({ type: 'peaking', frequency: 1400, Q: 2.2, gain: 7 });
-    const thin = new Tone.Filter({ type: 'highpass', frequency: 280 });
+    const nasal = new Tone.BiquadFilter({ type: 'peaking', frequency: 1400, Q: 2.2, gain: 7 });
+    const thin = new Tone.BiquadFilter({ type: 'highpass', frequency: 280 });
     vibrato.chain(nasal, thin, output);
     return { input: vibrato, nodes: [vibrato, nasal, thin] };
   }
   if (shape === 'mandolin') {
-    const courses = new Tone.Chorus({ frequency: 5, delayTime: 1.8, depth: 0.35, spread: 160, wet: 0.55 }).start();
-    const bright = new Tone.Filter({ type: 'highshelf', frequency: 2500, gain: 4 });
-    courses.chain(bright, output);
-    return { input: courses, nodes: [courses, bright] };
+    const courses = createLightChorus({ rate: 5, delayMs: 1.8, depth: 0.35, spread: 160, wet: 0.55 });
+    const bright = new Tone.BiquadFilter({ type: 'highshelf', frequency: 2500, gain: 4 });
+    courses.output.chain(bright, output);
+    return { input: courses.input, nodes: [courses, bright] };
   }
   return { input: output, nodes: [] };
 }
 
-function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: Tone.ToneAudioNode[]): SamplerVoice {
+function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dispose: () => void }[]): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
     loaded = true;
