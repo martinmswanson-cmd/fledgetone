@@ -37,10 +37,9 @@ export function createDrumKit(output: Tone.InputNode) {
     },
     volume: -3,
   });
-  const snareFilter = new Tone.Filter({
+  const snareFilter = new Tone.BiquadFilter({
     frequency: 800,
     type: 'highpass',
-    rolloff: -12,
   });
   snareNoise.connect(snareFilter);
   snareFilter.connect(output);

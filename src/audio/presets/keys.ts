@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { createLightChorus } from '../effects/lightFx';
 import { auditionInput } from '../engine';
 import { createVoicePool } from './poly';
 
@@ -9,12 +10,8 @@ import { createVoicePool } from './poly';
  * `ready` resolves once the reverb impulse response has been generated.
  */
 export function createKeysVoice(output: Tone.InputNode) {
-  const chorus = new Tone.Chorus({
-    depth: 0.6,
-    delayTime: 3.5,
-    frequency: 1.2,
-    wet: 0.45,
-  }).start();
+  // Tone.Chorus's sound (spread 180, no feedback) without its idle CPU cost
+  const chorus = createLightChorus({ rate: 1.2, delayMs: 3.5, depth: 0.6, spread: 180, wet: 0.45 });
 
   const reverb = new Tone.Reverb({
     decay: 1.8,
@@ -22,7 +19,7 @@ export function createKeysVoice(output: Tone.InputNode) {
   });
 
   // Route: voices -> chorus -> reverb -> output (keys channel -> masterBus)
-  chorus.chain(reverb, output);
+  chorus.output.chain(reverb, output);
 
   // 5-note chords repeated while earlier ones are still releasing need headroom
   const synth = createVoicePool(
@@ -52,7 +49,7 @@ export function createKeysVoice(output: Tone.InputNode) {
         },
       }),
     16,
-    chorus
+    chorus.input
   );
 
   return {

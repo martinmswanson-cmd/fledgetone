@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import type { Track } from '../../store/timelineTypes';
 import type { BusEffects } from './busEffects';
+import { createLightChorus, createLightEq3, type LightChorus, type LightEq3 } from './lightFx';
 
 /**
  * One mixer channel per track:
@@ -10,7 +11,8 @@ import type { BusEffects } from './busEffects';
  * An insert only exists while it's switched on (the EQ while any band is boosted or cut).
  * A bypassed insert is disposed and patched out of the chain rather than left running at
  * wet 0: Web Audio keeps processing every connected node, and a full set of idle inserts
- * cost more CPU than the instruments, so a dozen tracks could starve live playback.
+ * cost more CPU than the instruments, so a dozen tracks could starve live playback. The EQ and
+ * chorus are lean versions of Tone's (see lightFx.ts), for the same reason.
  */
 export interface TrackStrip {
   /** Instruments connect here. */
@@ -40,10 +42,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   delaySend.connect(busFx.delayInput);
 
   let distortion: Tone.Distortion | null = null;
-  let eq: Tone.EQ3 | null = null;
+  let eq: LightEq3 | null = null;
   let compressor: Tone.Compressor | null = null;
   let makeup: Tone.Gain | null = null;
-  let chorus: Tone.Chorus | null = null;
+  let chorus: LightChorus | null = null;
   /** The inserts currently patched in, in signal order. */
   let chain: Insert[] = [];
 
@@ -51,9 +53,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   const rewire = () => {
     const next: Insert[] = [];
     if (distortion) next.push({ input: distortion, output: distortion });
-    if (eq) next.push({ input: eq, output: eq });
+    if (eq) next.push({ input: eq.input, output: eq.output });
     if (compressor && makeup) next.push({ input: compressor, output: makeup });
-    if (chorus) next.push({ input: chorus, output: chorus });
+    if (chorus) next.push({ input: chorus.input, output: chorus.output });
     if (next.length === chain.length && next.every((ins, i) => ins.input === chain[i].input)) return;
 
     input.disconnect();
@@ -94,7 +96,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
       if (bands.low !== 0 || bands.mid !== 0 || bands.high !== 0) {
         const fresh = !eq;
-        eq ??= new Tone.EQ3({ low: 0, mid: 0, high: 0, lowFrequency: 400, highFrequency: 2500 });
+        eq ??= createLightEq3(400, 2500);
         set(eq.low, bands.low, fresh ? 0 : ramp);
         set(eq.mid, bands.mid, fresh ? 0 : ramp);
         set(eq.high, bands.high, fresh ? 0 : ramp);
@@ -122,10 +124,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
       if (fx.chorus.on) {
         const fresh = !chorus;
-        chorus ??= new Tone.Chorus({ frequency: fx.chorus.rate, delayTime: 3.5, depth: fx.chorus.depth, spread: 180, wet: fx.chorus.mix }).start();
-        set(chorus.wet, fx.chorus.mix, fresh ? 0 : ramp);
-        set(chorus.frequency, fx.chorus.rate, fresh ? 0 : ramp);
-        chorus.depth = fx.chorus.depth;
+        chorus ??= createLightChorus({ rate: fx.chorus.rate, delayMs: 3.5, depth: fx.chorus.depth, spread: 180, wet: fx.chorus.mix });
+        chorus.setWet(fx.chorus.mix, fresh ? 0 : ramp);
+        chorus.setRate(fx.chorus.rate, fresh ? 0 : ramp);
+        chorus.setDepth(fx.chorus.depth);
       } else if (chorus) {
         chorus.dispose();
         chorus = null;

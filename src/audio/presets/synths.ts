@@ -110,14 +110,14 @@ export function createDrumMachine(output: Tone.InputNode) {
   }).connect(output);
 
   const snareTone = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.05 }, volume: -8 }).connect(output);
-  const snareFilter = new Tone.Filter({ type: 'bandpass', frequency: 2500, Q: 0.8 }).connect(output);
+  const snareFilter = new Tone.BiquadFilter({ type: 'bandpass', frequency: 2500, Q: 0.8 }).connect(output);
   const snareNoise = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.16, sustain: 0 }, volume: -2 }).connect(snareFilter);
 
-  const hatFilter = new Tone.Filter({ type: 'highpass', frequency: 7000 }).connect(output);
+  const hatFilter = new Tone.BiquadFilter({ type: 'highpass', frequency: 7000 }).connect(output);
   const hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.03 }, volume: -10 }).connect(hatFilter);
 
   // 808 cowbell: two square waves (540 + 800 Hz) through a bandpass
-  const bellFilter = new Tone.Filter({ type: 'bandpass', frequency: 700, Q: 2 }).connect(output);
+  const bellFilter = new Tone.BiquadFilter({ type: 'bandpass', frequency: 700, Q: 2 }).connect(output);
   const bellEnv = { attack: 0.001, decay: 0.12, sustain: 0.05, release: 0.15 };
   const bellLow = new Tone.Synth({ oscillator: { type: 'square' }, envelope: bellEnv, volume: -12 }).connect(bellFilter);
   const bellHigh = new Tone.Synth({ oscillator: { type: 'square' }, envelope: bellEnv, volume: -12 }).connect(bellFilter);
