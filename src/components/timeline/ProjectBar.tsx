@@ -1,39 +1,14 @@
 import React, { useRef, useState } from 'react';
-import { Download, FilePlus2, FolderOpen, History, Loader2, Music2, Save, X } from 'lucide-react';
+import { Download, FilePlus2, FolderOpen, History, Music2, Save, X } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
 import { currentProject, lastSession, retryAutosave, useTimelineStore } from '../../store/timelineStore';
-import { parseProject, safeFileName, serializeProject } from '../../store/project';
-import { clearPreviousSession } from '../../store/project';
-import { downloadBlob, encodeWav, renderArrangement } from '../../audio/exportWav';
-import { barToSeconds, formatSmpte } from '../../audio/transport';
-import { formatBarCount } from '../../store/timelineTypes';
+import { clearPreviousSession, parseProject, safeFileName, serializeProject } from '../../store/project';
+import { downloadBlob } from '../../audio/exportWav';
+import { ExportDialog } from './ExportDialog';
+import { Modal } from './Modal';
 
 const barButton =
   'h-8 px-2.5 flex items-center gap-1.5 rounded-md border border-forge-border bg-forge-bg text-xs font-mono text-forge-muted hover:text-forge-text hover:border-forge-borderLight transition-colors';
-
-interface ModalProps {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}
-
-const Modal: React.FC<ModalProps> = ({ title, onClose, children }) => (
-  <div
-    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-    onPointerDown={(e) => e.target === e.currentTarget && onClose()}
-    onKeyDown={(e) => e.key === 'Escape' && onClose()}
-  >
-    <div role="dialog" aria-label={title} className="w-full max-w-md rounded-xl border border-forge-borderLight bg-forge-panel shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-forge-border">
-        <h3 className="text-sm font-semibold text-forge-text">{title}</h3>
-        <button type="button" onClick={onClose} className="text-forge-muted hover:text-forge-text" title="Close">
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-      <div className="p-4 flex flex-col gap-3 text-xs text-forge-muted">{children}</div>
-    </div>
-  </div>
-);
 
 const ChoiceButton: React.FC<{ title: string; detail: string; onClick: () => void; disabled?: boolean; autoFocus?: boolean }> = ({
   title,
@@ -54,12 +29,6 @@ const ChoiceButton: React.FC<{ title: string; detail: string; onClick: () => voi
   </button>
 );
 
-/** Duration label for a bar range at the current tempo, e.g. "0:16". */
-function lengthLabel(bars: number, bpm: number): string {
-  const seconds = Math.floor(barToSeconds(bars + 1, bpm) + 1e-6);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
-
 const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const choose = (template: 'blank' | 'demo') => {
     useTimelineStore.getState().newProject(template);
@@ -78,75 +47,6 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         autoFocus
       />
       <ChoiceButton title="Demo song" detail="Sunset Stroll: a 12-bar neo-soul groove at 88 BPM (intro, groove, horn hook)." onClick={() => choose('demo')} />
-    </Modal>
-  );
-};
-
-const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const clips = useTimelineStore((s) => s.clips);
-  const bpm = useTimelineStore((s) => s.bpm);
-  const fps = useTimelineStore((s) => s.fps);
-  const loop = useTimelineStore((s) => s.loopRegion);
-  const [status, setStatus] = useState<'idle' | 'rendering' | 'error'>('idle');
-  const [error, setError] = useState('');
-  const [progress, setProgress] = useState(0);
-
-  const songEnd = clips.length ? Math.max(...clips.map((c) => c.startBar + c.lengthBars)) : 1;
-  const songBars = songEnd - 1;
-  const loopBars = loop.outBar - loop.inBar;
-
-  const render = async (startBar: number, endBar: number) => {
-    const s = useTimelineStore.getState();
-    // The render swaps the global audio context while it sets up, so halt live playback first
-    s.pause();
-    setStatus('rendering');
-    setProgress(0);
-    try {
-      const audio = await renderArrangement(
-        {
-          tracks: s.tracks,
-          clips: s.clips,
-          bpm: s.bpm,
-          swing: s.swing,
-          startBar,
-          endBar,
-          masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback },
-        },
-        setProgress
-      );
-      downloadBlob(encodeWav(audio), `${safeFileName(s.projectName)}.wav`);
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setStatus('error');
-    }
-  };
-
-  return (
-    <Modal title="Export audio (WAV)" onClose={status === 'rendering' ? () => {} : onClose}>
-      {status === 'rendering' ? (
-        <div className="flex items-center gap-2 py-4 text-forge-text">
-          <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-          Rendering… {Math.round(progress * 100)}%
-        </div>
-      ) : (
-        <>
-          <p>Renders a 44.1 kHz 16-bit stereo WAV with the current mix (volume, pan, mute, solo and every effect), plus room for reverb tails to ring out. Peaks are kept just under full scale so nothing clips.</p>
-          <ChoiceButton
-            title="Whole song"
-            detail={songBars > 0 ? `Bar 1 to the end of the last clip: ${formatBarCount(songBars)} bars, ${lengthLabel(songBars, bpm)}` : 'The timeline is empty'}
-            onClick={() => void render(1, songEnd)}
-            disabled={songBars <= 0}
-            autoFocus
-          />
-          <ChoiceButton
-            title="Loop region (In → Out)"
-            detail={`Bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loopBars, bpm)}, played once. Starts at ${formatSmpte(loop.inBar, bpm, fps)} (${fps} fps)`}
-            onClick={() => void render(loop.inBar, loop.outBar)}
-          />
-          {status === 'error' && <p className="text-red-400">Export failed: {error}</p>}
-        </>
-      )}
     </Modal>
   );
 };
@@ -305,7 +205,7 @@ export const ProjectBar: React.FC = () => {
         type="button"
         className={`${barButton} !text-emerald-300 !border-emerald-500/50 hover:!bg-emerald-500/10`}
         onClick={() => setDialog('export')}
-        title="Render and download the song as a WAV file"
+        title="Render and download the song, or the loop, as WAV audio (the mix, or one file per track)"
       >
         <Download className="w-3.5 h-3.5" /> Export WAV
       </button>
