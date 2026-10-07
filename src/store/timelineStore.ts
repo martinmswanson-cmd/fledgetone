@@ -238,14 +238,26 @@ function copyClip(clip: Clip, offset: number): Clip {
   };
 }
 
-/** The selected clips as one block: where it starts and how long it is (first start to last end). */
+/**
+ * The selected clips as one block: where it starts and how long it is (first start to last end).
+ * Null if nothing is selected, or if the block is shorter than any clip can be (only a damaged
+ * project file could give one), since copies of it would never get anywhere.
+ */
 function selectionBlock(clips: Clip[]): { selected: Clip[]; start: number; span: number } | null {
   const selected = clips.filter((c) => c.isSelected);
   if (selected.length === 0) return null;
   const start = Math.min(...selected.map((c) => c.startBar));
   const end = Math.max(...selected.map((c) => c.startBar + c.lengthBars));
-  return { selected, start, span: end - start };
+  return end - start >= MIN_CLIP_BARS - EPS ? { selected, start, span: end - start } : null;
 }
+
+/**
+ * Most clips one Fill may add. Fill's number of copies comes from the block's length, not from the
+ * user, so a tiny block could make thousands; past this the timeline takes seconds to redraw.
+ */
+const MAX_FILL_CLIPS = 2000;
+
+const countOf = (n: number) => n.toLocaleString('en-US');
 
 const pluralBars = (n: number) => `${formatBarCount(n)} bar${n === 1 ? '' : 's'}`;
 
@@ -656,8 +668,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const block = selectionBlock(s.clips);
       if (!block) return null;
       const out = s.loopRegion.outBar;
+      // Copies that start before Out (the last one may be cut short), counted before making any
+      const passes = Math.max(0, Math.ceil((out - EPS - block.start) / block.span) - 1);
+      if (passes * block.selected.length > MAX_FILL_CLIPS) {
+        return `Filling to bar ${formatBarCount(out)} would make ${countOf(passes * block.selected.length)} clips; Fill makes at most ${countOf(MAX_FILL_CLIPS)} at a time. Move Out earlier, or fill with longer clips.`;
+      }
       const copies: Clip[] = [];
-      for (let k = 1; block.start + k * block.span < out - EPS; k++) {
+      for (let k = 1; k <= passes; k++) {
         for (const c of block.selected) {
           const copy = copyClip(c, k * block.span);
           // The last pass is cut off at Out. Notes past the cut stay in the clip, hidden, as after a trim.
@@ -699,8 +716,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       applyRipple(clips, movePoint, (loop) => {
         const outBar = loop.outBar > at + EPS ? loop.outBar + bars : loop.outBar;
         const inBar = movePoint(loop.inBar);
-        // Pushed off the end: pin Out to the end of the timeline
-        if (outBar > TOTAL_BARS + 1) return { ...loop, outBar: TOTAL_BARS + 1, inBar: Math.min(inBar, TOTAL_BARS + 1 - MIN_CLIP_BARS) };
+        // Pushed off the end: pin Out to the end of the timeline. A loop that moved whole keeps its
+        // length; one that started before the insert point keeps its In.
+        if (outBar > TOTAL_BARS + 1) return { ...loop, outBar: TOTAL_BARS + 1, inBar: Math.min(inBar, TOTAL_BARS + 1 - (loop.outBar - loop.inBar)) };
         return { ...loop, inBar, outBar };
       });
       return null;
@@ -728,11 +746,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         }
       }
       const movePoint = (bar: number) => (bar <= from ? bar : bar >= to ? bar - len : from);
+      // Shortest loop the snap grid allows, as when dragging its brackets
+      const minLoop = minClipLength(s.snapGrid, s);
       applyRipple(clips, movePoint, (loop) => {
         const inBar = movePoint(loop.inBar);
         const outBar = movePoint(loop.outBar);
-        // A loop inside the removed bars (like "Delete bars In → Out") keeps its length, now over what came after
-        if (outBar - inBar < MIN_CLIP_BARS - EPS) return { ...loop, inBar, outBar: Math.min(TOTAL_BARS + 1, inBar + loop.outBar - loop.inBar) };
+        // A loop (nearly) all inside the removed bars, like "Delete bars In → Out", keeps its length, now over what came after
+        if (outBar - inBar < minLoop - EPS) return { ...loop, inBar, outBar: Math.min(TOTAL_BARS + 1, inBar + loop.outBar - loop.inBar) };
         return { ...loop, inBar, outBar };
       });
       return null;

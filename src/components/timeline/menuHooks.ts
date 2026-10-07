@@ -1,23 +1,28 @@
 import { useEffect, useLayoutEffect } from 'react';
 import type { RefObject } from 'react';
 
-/** Close a popup menu on Esc, a click outside it, scrolling or resizing the window. */
+/** Close a popup menu on Esc, a click outside it, scrolling the page (or a panel) or resizing the window. */
 export function useMenuDismiss(ref: RefObject<HTMLElement | null>, onClose: () => void): void {
   useEffect(() => {
+    const outside = (e: Event) => !ref.current?.contains(e.target as Node);
     const onPointerDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
+      if (outside(e)) onClose();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
+    // Scrolling inside the menu doesn't count: a number box scrolls its own text once it's full
+    const onScroll = (e: Event) => {
+      if (outside(e)) onClose();
+    };
     window.addEventListener('pointerdown', onPointerDown, true);
     window.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', onClose, true);
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onClose);
     return () => {
       window.removeEventListener('pointerdown', onPointerDown, true);
       window.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', onClose, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', onClose);
     };
   }, [ref, onClose]);

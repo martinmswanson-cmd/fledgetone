@@ -64,7 +64,7 @@ const MAX_REPEATS = 64;
 const RepeatForm: React.FC<{ onRepeat: (times: number) => void }> = ({ onRepeat }) => {
   const [text, setText] = useState('2');
   const input = useRef<HTMLInputElement>(null);
-  // Focus without scrolling: any scroll closes the menu
+  // Focus without scrolling the page, which would close the menu
   useEffect(() => input.current?.focus({ preventScroll: true }), []);
   const times = /^\d+$/.test(text.trim()) ? Number(text) : NaN;
   const valid = times >= 1 && times <= MAX_REPEATS;
