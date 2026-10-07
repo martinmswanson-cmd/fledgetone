@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Track } from '../../store/timelineTypes';
-import { frameBars, snapBar } from '../../store/timelineTypes';
+import { snapBar } from '../../store/timelineTypes';
 import { dragInstrument, readDragPayload } from '../../store/dragSounds';
 import { compatibleInstruments } from '../../audio/instrumentCatalog';
 import { ClipView } from './ClipView';
+import { LaneFrameGrid } from './LaneFrameGrid';
 import type { ContextMenuState } from './ClipContextMenu';
 import { barFromClientX } from './Playhead';
 import { barLabelStep, TRACK_HEIGHT } from './layout';
@@ -24,12 +25,10 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
   const zoom = useTimelineStore((s) => s.zoom);
   const clips = useTimelineStore((s) => s.clips);
   const dragging = useTimelineStore((s) => s.draggingInstrument);
-  // Faint lines under the beat grid when zoomed in for detail work: with Frame snap, every video
-  // frame once frames are 8px or more apart; with any other snap, every 16th once they're 16px apart
-  const fineGridPx = useTimelineStore((s) => {
-    const px = s.snapGrid === 'frame' ? frameBars(s) * s.zoom : s.zoom / 16;
-    return px >= (s.snapGrid === 'frame' ? 8 : 16) ? px : 0;
-  });
+  // Faint lines on every 16th when zoomed in for detail work (once they're 16px apart). A whole zoom
+  // makes that a whole number of 1/64 px, so a repeating background stays exact. With Frame snap,
+  // LaneFrameGrid marks the frames instead.
+  const fineGridPx = useTimelineStore((s) => (s.snapGrid !== 'frame' && s.zoom >= 256 ? s.zoom / 16 : 0));
   const [dropBar, setDropBar] = useState<number | null>(null);
   const trackClips = clips.filter((c) => c.trackId === track.id);
 
@@ -86,6 +85,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
         useTimelineStore.getState().dropOnTrack(track.id, snapped(e.clientX, e.shiftKey), payload);
       }}
     >
+      <LaneFrameGrid />
       {trackClips.map((clip) => (
         <ClipView key={clip.id} clip={clip} track={track} originRef={originRef} onOpenMenu={onOpenMenu} />
       ))}

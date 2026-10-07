@@ -21,6 +21,7 @@ interface LoopFieldProps {
   other: string;
   /** Apply typed text; false if it can't be read or doesn't make a valid loop */
   apply: (text: string) => boolean;
+  /** Focus this field when the panel opens */
   autoFocus?: boolean;
 }
 
@@ -48,7 +49,7 @@ const LoopField: React.FC<LoopFieldProps> = ({ label, value, other, apply, autoF
     <label className="grid grid-cols-[3.5rem_1fr] items-center gap-x-2 gap-y-0.5">
       <span className="font-mono uppercase tracking-wider text-[10px]">{label}</span>
       <input
-        autoFocus={autoFocus}
+        data-autofocus={autoFocus || undefined}
         value={draft ?? value}
         onFocus={(e) => e.currentTarget.select()}
         onChange={(e) => {
@@ -127,7 +128,11 @@ const LoopRangePopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null
         autoFocus
         apply={(text) => {
           const bar = readPosition(text);
-          return inSong(bar) && setLoopRange(bar!, useTimelineStore.getState().loopRegion.outBar);
+          if (bar === null) return false;
+          const loop = useTimelineStore.getState().loopRegion;
+          // An In at or past Out moves the whole loop there, keeping its length
+          const out = bar < loop.outBar ? loop.outBar : bar + loop.outBar - loop.inBar;
+          return inSong(out) && setLoopRange(bar, out);
         }}
       />
       <LoopField
@@ -136,7 +141,11 @@ const LoopRangePopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null
         other={hidden(position(outBar))}
         apply={(text) => {
           const bar = readPosition(text);
-          return inSong(bar) && setLoopRange(useTimelineStore.getState().loopRegion.inBar, bar!);
+          if (bar === null || !inSong(bar)) return false;
+          const loop = useTimelineStore.getState().loopRegion;
+          // An Out at or before In moves the whole loop back to end there, keeping its length
+          const start = bar > loop.inBar ? loop.inBar : bar - (loop.outBar - loop.inBar);
+          return start >= 1 && setLoopRange(start, bar);
         }}
       />
       <LoopField
@@ -151,7 +160,8 @@ const LoopRangePopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null
       />
       <p className="text-[11px] leading-snug">
         Type a bar position (17.3.50) or a timecode with : or ; (00:00:12:15). Length takes bars.beats (8, or 2.2 for two bars and
-        two beats) or a timecode. Enter applies. Typed values don't snap; the loop is at least a 16th long.
+        two beats) or a timecode. Enter applies. Typed values don't snap; the loop is at least a 16th long. An In past Out (or an
+        Out before In) moves the whole loop.
       </p>
     </Popover>
   );

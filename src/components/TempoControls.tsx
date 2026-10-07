@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../store/timelineStore';
 import { formatBarCount, formatBpm, frameRateLabel } from '../store/timelineTypes';
 import { barToSeconds, formatSmpte, parseTimecode } from '../audio/transport';
+import { secondsToFrames } from '../audio/timecode';
 import { Popover } from './Popover';
 
 /** Read a typed tempo: up to 3 digits and 2 decimals (a comma works as the point), 40 to 240. */
@@ -75,6 +76,23 @@ function parseDecimal(text: string): number | null {
   return /^\d+(\.\d+)?$/.test(t) && Number(t) > 0 ? Number(t) : null;
 }
 
+/**
+ * The tempo, to 0.01 BPM, at which `bars` last `seconds`. Rounding to the nearest hundredth ends
+ * the bars a hair early about half the time, and timecode then reads one frame short of what was
+ * typed. So of the two hundredths either side, prefer one that ends in the same frame as the
+ * target; otherwise (a long stretch, where 0.01 BPM moves the end by more than a frame) the closer.
+ */
+function fitBpm(bars: number, seconds: number, fps: number): number {
+  const exact = (bars * 240) / seconds;
+  const lengthAt = (bpm: number) => barToSeconds(1 + bars, bpm);
+  const targetFrame = secondsToFrames(seconds, fps);
+  const either = [Math.floor(exact * 100) / 100, Math.ceil(exact * 100) / 100];
+  const inFrame = either.filter((bpm) => secondsToFrames(lengthAt(bpm), fps) === targetFrame);
+  return (inFrame.length ? inFrame : either).reduce((best, bpm) =>
+    Math.abs(lengthAt(bpm) - seconds) < Math.abs(lengthAt(best) - seconds) ? bpm : best
+  );
+}
+
 const fieldClass = (invalid: boolean) =>
   `h-8 bg-forge-bg border rounded-md px-2 font-mono text-sm text-forge-text tabular-nums focus:outline-none ${
     invalid ? 'border-red-500 text-red-300' : 'border-forge-border focus:border-cyan-500'
@@ -102,7 +120,7 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
   const bars = range === 'loop' ? loopBars : range === 'song' ? songBars : typedBars !== null && typedBars <= TOTAL_BARS ? typedBars : null;
   // Plain numbers are seconds ("25.5"); anything else is a timecode at the project's rate
   const seconds = parseDecimal(target) ?? parseTimecode(target, fps, dropFrame);
-  const newBpm = bars && seconds ? Math.round(((bars * 240) / seconds) * 100) / 100 : null;
+  const newBpm = bars && seconds ? fitBpm(bars, seconds, fps) : null;
   const timecodeOf = (b: number, tempo: number) => formatSmpte(1 + b, tempo, fps, dropFrame);
   const lengthOf = (b: number, tempo: number) => `${timecodeOf(b, tempo)} (${barToSeconds(1 + b, tempo).toFixed(3)} s)`;
 
@@ -174,7 +192,7 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
       <label className="flex flex-col gap-1">
         <span>Target length</span>
         <input
-          autoFocus
+          data-autofocus
           value={target}
           onChange={(e) => {
             setTarget(e.target.value);
