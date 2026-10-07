@@ -30,7 +30,6 @@ export const TimelineScrollbar: React.FC<TimelineScrollbarProps> = ({ scrollRef 
   const clips = useTimelineStore((s) => s.clips);
   const tracks = useTimelineStore((s) => s.tracks);
   const loop = useTimelineStore((s) => s.loopRegion);
-  const playhead = useTimelineStore((s) => s.playheadPosition);
   const trackRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ left: 0, width: 1 });
 
@@ -160,8 +159,7 @@ export const TimelineScrollbar: React.FC<TimelineScrollbarProps> = ({ scrollRef 
             );
           })}
 
-          {/* Playhead */}
-          <div className="absolute top-0 bottom-0 w-px bg-red-500 pointer-events-none" style={{ left: pct(playhead) }} />
+          <OverviewPlayhead />
 
           {/* Thumb = visible window */}
           <div
@@ -188,5 +186,16 @@ export const TimelineScrollbar: React.FC<TimelineScrollbarProps> = ({ scrollRef 
         </div>
       </div>
     </div>
+  );
+};
+
+/** The overview's playhead, on its own so the clip overview doesn't re-render every frame of playback. */
+const OverviewPlayhead: React.FC = () => {
+  const playhead = useTimelineStore((s) => s.playheadPosition);
+  return (
+    <div
+      className="absolute top-0 bottom-0 w-px bg-red-500 pointer-events-none"
+      style={{ left: `${((playhead - 1) / TOTAL_BARS) * 100}%` }}
+    />
   );
 };

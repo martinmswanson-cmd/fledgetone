@@ -1,5 +1,7 @@
 import * as Tone from 'tone';
 import { auditionInput } from '../engine';
+import { notLate } from './monotonic';
+import { createVoicePool } from './poly';
 
 /**
  * Funk Brass Stabs (Polyphonic)
@@ -14,46 +16,50 @@ export function createBrassVoice(output: Tone.InputNode) {
     Q: 2,
   });
 
-  const synth = new Tone.PolySynth(Tone.Synth, {
-    volume: -3,
-    oscillator: {
-      type: 'sawtooth',
-    },
-    envelope: {
-      attack: 0.015,
-      decay: 0.25,
-      sustain: 0.15,
-      release: 0.2,
-    },
-  });
-  synth.maxPolyphony = 6;
+  const synth = createVoicePool(
+    (context) =>
+      new Tone.Synth({
+        context,
+        volume: -3,
+        oscillator: {
+          type: 'sawtooth',
+        },
+        envelope: {
+          attack: 0.015,
+          decay: 0.25,
+          sustain: 0.15,
+          release: 0.2,
+        },
+      }),
+    8,
+    filter
+  );
 
-  // Route: synth -> filter -> output (brass channel -> masterBus)
-  synth.connect(filter);
+  // Route: voices -> filter -> output (brass channel -> masterBus)
   filter.connect(output);
 
   return {
-    synth,
+    releaseAll: synth.releaseAll,
     dispose: () => {
       synth.dispose();
       filter.dispose();
     },
     trigger: (notes: string[], duration: Tone.Unit.Time = '8n', time?: Tone.Unit.Time, velocity: number = 0.85) => {
       // Mimic brass swell on filter
-      const targetTime = time !== undefined ? time : Tone.now();
-      const t = Tone.Time(targetTime).toSeconds();
-      filter.frequency.cancelScheduledValues(targetTime);
-      filter.frequency.setValueAtTime(800, targetTime);
+      const t = notLate(filter.context, time);
+      filter.frequency.cancelScheduledValues(t);
+      filter.frequency.setValueAtTime(800, t);
       filter.frequency.exponentialRampToValueAtTime(2600, t + 0.03);
       filter.frequency.exponentialRampToValueAtTime(1400, t + 0.22);
 
-      synth.triggerAttackRelease(notes, duration, time, velocity);
+      synth.trigger(notes, duration, t, velocity);
     },
   };
 }
 
-const liveBrass = createBrassVoice(auditionInput);
-export const brassSynth = liveBrass.synth;
+/** The sound deck's brass, built on first use: even a silent synth costs CPU. */
+let liveBrass: ReturnType<typeof createBrassVoice> | undefined;
+const deckBrass = () => (liveBrass ??= createBrassVoice(auditionInput));
 
 /**
  * Trigger funk brass section stab
@@ -68,5 +74,5 @@ export function triggerBrass(
   time?: Tone.Unit.Time,
   velocity: number = 0.85
 ): void {
-  liveBrass.trigger(notes, duration, time, velocity);
+  deckBrass().trigger(notes, duration, time, velocity);
 }

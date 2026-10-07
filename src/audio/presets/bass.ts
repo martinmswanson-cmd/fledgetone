@@ -54,8 +54,9 @@ export function createBassVoice(output: Tone.InputNode) {
   };
 }
 
-const liveBass = createBassVoice(auditionInput);
-export const bassSynth = liveBass.synth;
+/** The sound deck's bass, built on first use: even a silent synth costs CPU. */
+let liveBass: ReturnType<typeof createBassVoice> | undefined;
+const deckBass = () => (liveBass ??= createBassVoice(auditionInput));
 
 /**
  * Trigger a funk bass note
@@ -70,5 +71,5 @@ export function triggerBass(
   time?: Tone.Unit.Time,
   velocity: number = 0.9
 ): void {
-  liveBass.trigger(note, duration, time, velocity);
+  deckBass().trigger(note, duration, time, velocity);
 }

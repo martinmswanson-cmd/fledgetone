@@ -14,14 +14,19 @@ import * as Tone from 'tone';
  */
 const LATE_MARGIN = 0.005;
 
+/** `time` in seconds, moved just ahead of the audio clock if it's already (nearly) past. */
+export function notLate(context: Tone.BaseContext, time?: Tone.Unit.Time): number {
+  const requested = time === undefined ? context.now() : Tone.Time(time).toSeconds();
+  // The raw context's clock is where audio is actually being rendered. (An OfflineContext's
+  // own currentTime is its scheduling clock, which sits right on each note's time and would
+  // make every offline hit look late.)
+  return Math.max(requested, context.rawContext.currentTime + LATE_MARGIN);
+}
+
 export function monotonicTime(context: Tone.BaseContext): (time?: Tone.Unit.Time) => number {
   let last = -Infinity;
   return (time) => {
-    const requested = time === undefined ? context.now() : Tone.Time(time).toSeconds();
-    // The raw context's clock is where audio is actually being rendered. (An OfflineContext's
-    // own currentTime is its scheduling clock, which sits right on each note's time and would
-    // make every offline hit look late.)
-    const t = Math.max(requested, context.rawContext.currentTime + LATE_MARGIN);
+    const t = notLate(context, time);
     last = t > last ? t : last + 0.001;
     return last;
   };

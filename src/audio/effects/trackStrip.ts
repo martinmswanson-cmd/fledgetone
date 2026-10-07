@@ -6,7 +6,11 @@ import type { BusEffects } from './busEffects';
  * One mixer channel per track:
  *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Channel (vol/pan/mute)
  *   Channel -> master bus, plus post-fader sends to the shared reverb and delay.
- * Bypassed inserts stay in the chain at wet 0 (or a 1:1 ratio) so toggling never re-patches.
+ *
+ * An insert only exists while it's switched on (the EQ while any band is boosted or cut).
+ * A bypassed insert is disposed and patched out of the chain rather than left running at
+ * wet 0: Web Audio keeps processing every connected node, and a full set of idle inserts
+ * cost more CPU than the instruments, so a dozen tracks could starve live playback.
  */
 export interface TrackStrip {
   /** Instruments connect here. */
@@ -16,27 +20,57 @@ export interface TrackStrip {
   dispose: () => void;
 }
 
+/** An insert in the chain: where the signal goes in and where it comes out. */
+interface Insert {
+  input: Tone.ToneAudioNode;
+  output: Tone.ToneAudioNode;
+}
+
 export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackStrip {
-  const distortion = new Tone.Distortion({ distortion: 0.3, oversample: '2x', wet: 0 });
-  const eq = new Tone.EQ3({ low: 0, mid: 0, high: 0, lowFrequency: 400, highFrequency: 2500 });
-  const compressor = new Tone.Compressor({ threshold: 0, ratio: 1, attack: 0.01, release: 0.2 });
-  const makeup = new Tone.Gain(1);
-  const chorus = new Tone.Chorus({ frequency: 1.5, delayTime: 3.5, depth: 0.6, spread: 180, wet: 0 }).start();
+  const input = new Tone.Gain(1);
   const channel = new Tone.Channel({ volume: 0, pan: 0 });
   const reverbSend = new Tone.Gain(0);
   const delaySend = new Tone.Gain(0);
 
-  distortion.chain(eq, compressor, makeup, chorus, channel);
+  input.connect(channel);
   channel.connect(bus);
   channel.connect(reverbSend);
   reverbSend.connect(busFx.reverbInput);
   channel.connect(delaySend);
   delaySend.connect(busFx.delayInput);
 
+  let distortion: Tone.Distortion | null = null;
+  let eq: Tone.EQ3 | null = null;
+  let compressor: Tone.Compressor | null = null;
+  let makeup: Tone.Gain | null = null;
+  let chorus: Tone.Chorus | null = null;
+  /** The inserts currently patched in, in signal order. */
+  let chain: Insert[] = [];
+
+  /** Patch input -> active inserts -> channel, only when the set of inserts changed. */
+  const rewire = () => {
+    const next: Insert[] = [];
+    if (distortion) next.push({ input: distortion, output: distortion });
+    if (eq) next.push({ input: eq, output: eq });
+    if (compressor && makeup) next.push({ input: compressor, output: makeup });
+    if (chorus) next.push({ input: chorus, output: chorus });
+    if (next.length === chain.length && next.every((ins, i) => ins.input === chain[i].input)) return;
+
+    input.disconnect();
+    chain.forEach((ins) => ins.output.disposed || ins.output.disconnect());
+    let from: Tone.ToneAudioNode = input;
+    for (const ins of next) {
+      from.connect(ins.input);
+      from = ins.output;
+    }
+    from.connect(channel);
+    chain = next;
+  };
+
   /**
-   * Ramp a param, or set it outright when ramp is 0 (offline setup). Always a linear ramp:
-   * rampTo() goes exponential for decibel params, which can't reach 0 dB (the compressor
-   * threshold's ceiling) and throws.
+   * Ramp a param, or set it outright when ramp is 0 (offline setup, or an insert that was just
+   * created). Always a linear ramp: rampTo() goes exponential for decibel params, which can't
+   * reach 0 dB (the compressor threshold's ceiling) and throws.
    */
   const set = (param: Tone.Param<any> | Tone.Signal<any>, value: number, ramp: number) => {
     if (ramp > 0) param.linearRampTo(value, ramp);
@@ -44,28 +78,60 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   };
 
   return {
-    input: distortion,
+    input,
     channel,
     apply: (track, opts = {}) => {
       const ramp = opts.ramp ?? 0.03;
       const { fx, eq: bands } = track;
 
-      set(distortion.wet, fx.distortion.on ? 1 : 0, ramp);
-      distortion.distortion = fx.distortion.amount;
+      if (fx.distortion.on) {
+        distortion ??= new Tone.Distortion({ distortion: fx.distortion.amount, oversample: '2x', wet: 1 });
+        distortion.distortion = fx.distortion.amount;
+      } else if (distortion) {
+        distortion.dispose();
+        distortion = null;
+      }
 
-      set(eq.low, bands.low, ramp);
-      set(eq.mid, bands.mid, ramp);
-      set(eq.high, bands.high, ramp);
+      if (bands.low !== 0 || bands.mid !== 0 || bands.high !== 0) {
+        const fresh = !eq;
+        eq ??= new Tone.EQ3({ low: 0, mid: 0, high: 0, lowFrequency: 400, highFrequency: 2500 });
+        set(eq.low, bands.low, fresh ? 0 : ramp);
+        set(eq.mid, bands.mid, fresh ? 0 : ramp);
+        set(eq.high, bands.high, fresh ? 0 : ramp);
+      } else if (eq) {
+        eq.dispose();
+        eq = null;
+      }
 
-      // Bypassed compressor = threshold 0 dB at 1:1, no makeup. Set directly, never ramped:
-      // Tone starts any ramp from max(current, 1e-7), which is above the threshold's 0 dB cap.
-      set(compressor.threshold, fx.compressor.on ? fx.compressor.threshold : 0, 0);
-      set(compressor.ratio, fx.compressor.on ? fx.compressor.ratio : 1, 0);
-      set(makeup.gain, fx.compressor.on ? Tone.dbToGain(fx.compressor.makeup) : 1, ramp);
+      if (fx.compressor.on) {
+        const fresh = !compressor;
+        compressor ??= new Tone.Compressor({ threshold: 0, ratio: 1, attack: 0.01, release: 0.2 });
+        makeup ??= new Tone.Gain(1);
+        if (fresh) compressor.connect(makeup);
+        // Set directly, never ramped: Tone starts any ramp from max(current, 1e-7), which is
+        // above the threshold's 0 dB cap.
+        set(compressor.threshold, fx.compressor.threshold, 0);
+        set(compressor.ratio, fx.compressor.ratio, 0);
+        set(makeup.gain, Tone.dbToGain(fx.compressor.makeup), fresh ? 0 : ramp);
+      } else if (compressor) {
+        compressor.dispose();
+        makeup?.dispose();
+        compressor = null;
+        makeup = null;
+      }
 
-      set(chorus.wet, fx.chorus.on ? fx.chorus.mix : 0, ramp);
-      set(chorus.frequency, fx.chorus.rate, ramp);
-      chorus.depth = fx.chorus.depth;
+      if (fx.chorus.on) {
+        const fresh = !chorus;
+        chorus ??= new Tone.Chorus({ frequency: fx.chorus.rate, delayTime: 3.5, depth: fx.chorus.depth, spread: 180, wet: fx.chorus.mix }).start();
+        set(chorus.wet, fx.chorus.mix, fresh ? 0 : ramp);
+        set(chorus.frequency, fx.chorus.rate, fresh ? 0 : ramp);
+        chorus.depth = fx.chorus.depth;
+      } else if (chorus) {
+        chorus.dispose();
+        chorus = null;
+      }
+
+      rewire();
 
       set(channel.volume, track.volume <= -60 ? -Infinity : track.volume, ramp);
       set(channel.pan, track.pan, ramp);
@@ -76,7 +142,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       set(delaySend.gain, Math.max(0, Math.min(1, track.delaySend)), ramp);
     },
     dispose: () => {
-      [distortion, eq, compressor, makeup, chorus, channel, reverbSend, delaySend].forEach((n) => n.dispose());
+      [distortion, eq, compressor, makeup, chorus, input, channel, reverbSend, delaySend].forEach((n) => n?.dispose());
     },
   };
 }

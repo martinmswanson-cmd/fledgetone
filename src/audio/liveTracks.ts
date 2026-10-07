@@ -18,6 +18,10 @@ interface LiveTrack {
   sampleUrl: string | undefined;
   strip: TrackStrip;
   instrument: TrackInstrument;
+  /** The settings last applied to the strip (the store replaces a track object when it changes) */
+  applied: Track | null;
+  /** False while muted, or while another track is soloed: its notes aren't played at all */
+  audible: boolean;
 }
 
 const live = new Map<string, LiveTrack>();
@@ -34,6 +38,7 @@ export function syncLiveTracks(tracks: Track[]): void {
     }
   }
 
+  const anySolo = tracks.some((t) => t.isSoloed);
   for (const track of tracks) {
     let lt = live.get(track.id);
     if (!lt) {
@@ -43,6 +48,8 @@ export function syncLiveTracks(tracks: Track[]): void {
         sampleUrl: sampleKey(track),
         strip,
         instrument: createInstrument(track.instrumentKey, strip.input, { sample: track.sample }),
+        applied: null,
+        audible: true,
       };
       live.set(track.id, lt);
     } else if (lt.instrumentKey !== track.instrumentKey || lt.sampleUrl !== sampleKey(track)) {
@@ -52,12 +59,18 @@ export function syncLiveTracks(tracks: Track[]): void {
       lt.instrumentKey = track.instrumentKey;
       lt.sampleUrl = sampleKey(track);
     }
-    lt.strip.apply(track);
+    // Only touch strips whose settings changed, so dragging one fader doesn't re-ramp every track
+    if (lt.applied !== track) lt.strip.apply(track);
+    lt.applied = track;
+    // A silent track's notes are skipped rather than played into a muted channel, saving CPU
+    lt.audible = !track.isMuted && (!anySolo || track.isSoloed);
   }
 }
 
+/** A track's instrument, or undefined while the track is muted / not the soloed one. */
 export function getLiveInstrument(trackId: string): TrackInstrument | undefined {
-  return live.get(trackId)?.instrument;
+  const lt = live.get(trackId);
+  return lt?.audible ? lt.instrument : undefined;
 }
 
 /** Release sustained voices so nothing hangs after Stop. */
@@ -67,6 +80,6 @@ export function releaseAllLiveVoices(): void {
 
 /** Play notes right now through a track's instrument and effects (piano-roll previews). */
 export function previewTrackNotes(trackId: string, notes: PlayableNote[]): void {
-  const instrument = getLiveInstrument(trackId);
+  const instrument = live.get(trackId)?.instrument;
   if (instrument && notes.length) safely(() => instrument.play(notes, Tone.now()));
 }

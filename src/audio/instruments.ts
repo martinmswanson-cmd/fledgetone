@@ -140,7 +140,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: { 
       const keys = createKeysVoice(output);
       return {
         play: (notes, time) => keys.trigger(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
-        releaseAll: () => keys.synth.releaseAll(),
+        releaseAll: keys.releaseAll,
         ready: keys.ready,
         dispose: keys.dispose,
       };
@@ -149,7 +149,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: { 
       const brass = createBrassVoice(output);
       return {
         play: (notes, time) => brass.trigger(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
-        releaseAll: () => brass.synth.releaseAll(),
+        releaseAll: brass.releaseAll,
         ready: Promise.resolve(),
         dispose: brass.dispose,
       };

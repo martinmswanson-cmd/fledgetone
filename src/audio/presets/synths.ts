@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { monotonicTime } from './monotonic';
+import { createVoicePool } from './poly';
 
 /**
  * Phase 3 synthesized instruments. Like the other presets, each factory builds its nodes in
@@ -13,17 +14,21 @@ import { monotonicTime } from './monotonic';
 export function createWavetable(output: Tone.InputNode) {
   const sweep = new Tone.AutoFilter({ frequency: 0.18, baseFrequency: 280, octaves: 4.5, depth: 0.85, wet: 1 }).start();
   sweep.filter.Q.value = 3;
-  const synth = new Tone.PolySynth(Tone.Synth, {
-    volume: -9,
-    oscillator: { type: 'custom', partials: [1, 0.62, 0.45, 0.3, 0.42, 0.2, 0.28, 0.12, 0.18, 0.08] },
-    envelope: { attack: 0.05, decay: 0.4, sustain: 0.7, release: 1.2 },
-  });
-  synth.maxPolyphony = 12;
-  synth.chain(sweep, output);
+  const synth = createVoicePool(
+    (context) =>
+      new Tone.Synth({
+        context,
+        volume: -9,
+        oscillator: { type: 'custom', partials: [1, 0.62, 0.45, 0.3, 0.42, 0.2, 0.28, 0.12, 0.18, 0.08] },
+        envelope: { attack: 0.05, decay: 0.4, sustain: 0.7, release: 1.2 },
+      }),
+    12,
+    sweep
+  );
+  sweep.connect(output);
   return {
-    trigger: (notes: string[], duration: Tone.Unit.Time, time: number, velocity: number) =>
-      synth.triggerAttackRelease(notes, duration, time, velocity),
-    releaseAll: () => synth.releaseAll(),
+    trigger: (notes: string[], duration: Tone.Unit.Time, time: number, velocity: number) => synth.trigger(notes, duration, time, velocity),
+    releaseAll: synth.releaseAll,
     dispose: () => {
       synth.dispose();
       sweep.dispose();

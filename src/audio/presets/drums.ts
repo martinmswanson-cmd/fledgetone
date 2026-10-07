@@ -115,16 +115,18 @@ export function createDrumKit(output: Tone.InputNode) {
 
 export type DrumKit = ReturnType<typeof createDrumKit>;
 
-const liveKit = createDrumKit(auditionInput);
+/** The sound deck's kit, built on first use: even a silent kit costs CPU. */
+let liveKit: DrumKit | undefined;
+const deckKit = () => (liveKit ??= createDrumKit(auditionInput));
 
 /** Trigger Kick Drum */
 export function triggerKick(time?: Tone.Unit.Time, velocity: number = 0.95): void {
-  liveKit.kick(time, velocity);
+  deckKit().kick(time, velocity);
 }
 
 /** Trigger Snare / Clap */
 export function triggerSnare(time?: Tone.Unit.Time, velocity: number = 0.85): void {
-  liveKit.snare(time, velocity);
+  deckKit().snare(time, velocity);
 }
 
 /**
@@ -132,10 +134,10 @@ export function triggerSnare(time?: Tone.Unit.Time, velocity: number = 0.85): vo
  * @param open If true, triggers longer 0.28s open hat decay; otherwise 0.05s tight closed hat
  */
 export function triggerHat(open: boolean = false, time?: Tone.Unit.Time, velocity: number = 0.75): void {
-  liveKit.hat(open, time, velocity);
+  deckKit().hat(open, time, velocity);
 }
 
 /** Trigger Funk Cowbell */
 export function triggerCowbell(time?: Tone.Unit.Time, velocity: number = 0.8): void {
-  liveKit.cowbell(time, velocity);
+  deckKit().cowbell(time, velocity);
 }

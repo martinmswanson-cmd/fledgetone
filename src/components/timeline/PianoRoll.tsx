@@ -52,7 +52,9 @@ function rowsFor(instrument: InstrumentKey, notes: NoteEvent[]): Row[] {
 
 function rowIndexOf(rows: Row[], note: string): number {
   if (rows[0]?.midi === -1) return rows.findIndex((r) => r.note === note);
-  return rows.findIndex((r) => r.midi === toMidi(note));
+  // Pitched rows run down one semitone at a time from rows[0]
+  const index = rows[0].midi - toMidi(note);
+  return index >= 0 && index < rows.length ? index : -1;
 }
 
 const GRID_OPTIONS = [
@@ -103,10 +105,20 @@ export const PianoRoll: React.FC = () => {
   const clipId = useTimelineStore((s) => s.editingClipId);
   const clip = useTimelineStore((s) => s.clips.find((c) => c.id === s.editingClipId) ?? null);
   const track = useTimelineStore((s) => (clip ? s.tracks.find((t) => t.id === clip.trackId) ?? null : null));
-  const playhead = useTimelineStore((s) => s.playheadPosition);
 
   if (!clipId || !clip || !track) return null;
-  return <PianoRollEditor key={clip.id} clip={clip} instrument={track.instrumentKey} color={track.color} trackName={track.name} playhead={playhead} />;
+  return <PianoRollEditor key={clip.id} clip={clip} instrument={track.instrumentKey} color={track.color} trackName={track.name} />;
+};
+
+/**
+ * The playhead line over the grid. It follows the store's playhead (updated every frame
+ * while playing) on its own, so the editor and its notes don't re-render 60 times a second.
+ */
+const GridPlayhead: React.FC<{ startBar: number; stepW: number; gridW: number }> = ({ startBar, stepW, gridW }) => {
+  const playhead = useTimelineStore((s) => s.playheadPosition);
+  const x = (playhead - startBar) * 16 * stepW;
+  if (x < 0 || x > gridW) return null;
+  return <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 pointer-events-none z-20" style={{ left: x }} />;
 };
 
 interface EditorProps {
@@ -114,10 +126,9 @@ interface EditorProps {
   instrument: InstrumentKey;
   color: string;
   trackName: string;
-  playhead: number;
 }
 
-const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName, playhead }) => {
+const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName }) => {
   const isDrums = isDrumKind(instrument);
   const rowH = isDrums ? 30 : 16;
   const [stepW, setStepW] = useState(24);
@@ -331,7 +342,6 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     );
   };
 
-  const playheadX = (playhead - clip.startBar) * 16 * stepW;
   const select = 'h-7 bg-forge-bg border border-forge-border rounded-md px-1.5 text-forge-text focus:outline-none focus:border-cyan-500';
 
   return (
@@ -507,9 +517,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 );
               })}
 
-              {playheadX >= 0 && playheadX <= gridW && (
-                <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 pointer-events-none z-20" style={{ left: playheadX }} />
-              )}
+              <GridPlayhead startBar={clip.startBar} stepW={stepW} gridW={gridW} />
             </div>
           </div>
         </div>

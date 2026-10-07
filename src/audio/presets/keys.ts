@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { auditionInput } from '../engine';
+import { createVoicePool } from './poly';
 
 /**
  * Space Clav / Electric Keys (Polyphonic)
@@ -20,51 +21,57 @@ export function createKeysVoice(output: Tone.InputNode) {
     wet: 0.25,
   });
 
-  const synth = new Tone.PolySynth(Tone.FMSynth, {
-    volume: -4,
-    harmonicity: 1.5,
-    modulationIndex: 1.8,
-    modulation: {
-      type: 'triangle',
-    },
-    oscillator: {
-      type: 'triangle',
-    },
-    envelope: {
-      attack: 0.005,
-      decay: 0.35,
-      sustain: 0.25,
-      release: 0.4,
-    },
-    modulationEnvelope: {
-      attack: 0.005,
-      decay: 0.25,
-      sustain: 0.15,
-      release: 0.25,
-    },
-  });
-  // 5-note chords repeated while earlier ones are still releasing need headroom
-  synth.maxPolyphony = 16;
+  // Route: voices -> chorus -> reverb -> output (keys channel -> masterBus)
+  chorus.chain(reverb, output);
 
-  // Route: synth -> chorus -> reverb -> output (keys channel -> masterBus)
-  synth.chain(chorus, reverb, output);
+  // 5-note chords repeated while earlier ones are still releasing need headroom
+  const synth = createVoicePool(
+    (context) =>
+      new Tone.FMSynth({
+        context,
+        volume: -4,
+        harmonicity: 1.5,
+        modulationIndex: 1.8,
+        modulation: {
+          type: 'triangle',
+        },
+        oscillator: {
+          type: 'triangle',
+        },
+        envelope: {
+          attack: 0.005,
+          decay: 0.35,
+          sustain: 0.25,
+          release: 0.4,
+        },
+        modulationEnvelope: {
+          attack: 0.005,
+          decay: 0.25,
+          sustain: 0.15,
+          release: 0.25,
+        },
+      }),
+    16,
+    chorus
+  );
 
   return {
-    synth,
     ready: reverb.ready,
+    releaseAll: synth.releaseAll,
     dispose: () => {
       synth.dispose();
       chorus.dispose();
       reverb.dispose();
     },
     trigger: (notes: string[], duration: Tone.Unit.Time = '8n', time?: Tone.Unit.Time, velocity: number = 0.8) => {
-      synth.triggerAttackRelease(notes, duration, time, velocity);
+      synth.trigger(notes, duration, time, velocity);
     },
   };
 }
 
-const liveKeys = createKeysVoice(auditionInput);
-export const keysSynth = liveKeys.synth;
+/** The sound deck's keys, built on first use: even a silent synth costs CPU. */
+let liveKeys: ReturnType<typeof createKeysVoice> | undefined;
+const deckKeys = () => (liveKeys ??= createKeysVoice(auditionInput));
 
 /**
  * Trigger polyphonic clavinet / electric keys chord
@@ -79,5 +86,5 @@ export function triggerKeys(
   time?: Tone.Unit.Time,
   velocity: number = 0.8
 ): void {
-  liveKeys.trigger(notes, duration, time, velocity);
+  deckKeys().trigger(notes, duration, time, velocity);
 }
