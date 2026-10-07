@@ -82,7 +82,11 @@ function disposeFinishedSources(context: Tone.BaseContext, time: number): void {
  * time grows linearly with song length instead of quadratically. `onProgress` gets 0..1.
  */
 export async function renderArrangement(opts: RenderOptions, onProgress?: (fraction: number) => void): Promise<AudioBuffer> {
-  const { tracks, clips, bpm, swing, startBar, endBar, masterFx } = opts;
+  const { clips, bpm, swing, startBar, endBar, masterFx } = opts;
+  // Solo is resolved here as mute rather than with Channel.solo. Silent tracks aren't built at
+  // all (so their notes cost nothing) and their samples aren't needed.
+  const anySolo = opts.tracks.some((t) => t.isSoloed);
+  const tracks = opts.tracks.filter((t) => !t.isMuted && (!anySolo || t.isSoloed));
   const songSeconds = ((endBar - startBar) * 4 * 60) / bpm;
   // Room past the last bar for release and reverb tails to ring out
   const duration = songSeconds + Math.max(2, masterFx.reverbDecay + 0.5);
@@ -151,12 +155,8 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
     context.destination.volume.value = masterDb;
     const mix = createMixChain(context.destination, masterFx, bpm);
 
-    // Solo is resolved here as mute rather than with Channel.solo. Silent tracks aren't built
-    // at all, so their notes cost nothing.
-    const anySolo = tracks.some((t) => t.isSoloed);
     const instruments = new Map<string, TrackInstrument>();
     for (const track of tracks) {
-      if (track.isMuted || (anySolo && !track.isSoloed)) continue;
       const strip = createTrackStrip(mix.bus, mix.busFx);
       strip.apply(track, { ramp: 0, muteOverride: false });
       instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample }));
@@ -170,6 +170,9 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
     transport.loop = false;
     createClipSchedule(transport, (trackId) => instruments.get(trackId)).update(tracks, clips);
     transport.start(0, `${barToTicks(startBar)}i`);
+    // Stop at endBar: the render runs on for the reverb / echo tail, and notes after endBar
+    // (the rest of the song, past a loop region's Out) must not play into it
+    transport.stop(songSeconds);
   }
 }
 

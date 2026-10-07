@@ -23,9 +23,9 @@ export function useScrub(originRef: React.RefObject<HTMLElement | null>) {
       e.stopPropagation();
 
       const seekTo = (clientX: number, shift: boolean) => {
-        const { snapGrid, seek } = useTimelineStore.getState();
+        const s = useTimelineStore.getState();
         const raw = barFromClientX(clientX, originRef.current);
-        seek(shift ? raw : snapBar(raw, snapGrid));
+        s.seek(shift ? raw : snapBar(raw, s.snapGrid, s));
       };
 
       seekTo(e.clientX, e.shiftKey);

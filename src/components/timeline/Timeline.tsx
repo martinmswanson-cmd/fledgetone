@@ -14,6 +14,7 @@ import type { ContextMenuState } from './ClipContextMenu';
 import { TrackInspector } from '../inspector/TrackInspector';
 import { AddTrackMenu } from './AddTrackMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
+import type { RulerUnits } from '../../store/timelineTypes';
 
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -69,6 +70,34 @@ function clipsInMarquee(m: Marquee): Set<string> {
   }
   return hits;
 }
+
+/** Bars / Timecode switch for the time ruler. */
+const RulerUnitsToggle: React.FC = () => {
+  const units = useTimelineStore((s) => s.rulerUnits);
+  const fps = useTimelineStore((s) => s.fps);
+  const options: Array<{ value: RulerUnits; label: string; title: string }> = [
+    { value: 'bars', label: 'Bars', title: 'Ruler counts bars and beats' },
+    { value: 'timecode', label: 'Time', title: `Ruler counts minutes, seconds and frames (${fps} fps)` },
+  ];
+  return (
+    <div className="flex rounded border border-forge-border overflow-hidden normal-case tracking-normal" role="group" aria-label="Ruler units">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          title={o.title}
+          aria-pressed={units === o.value}
+          onClick={() => useTimelineStore.getState().setRulerUnits(o.value)}
+          className={`px-1.5 py-0.5 text-[10px] font-mono ${
+            units === o.value ? 'bg-cyan-500/20 text-cyan-200' : 'text-forge-muted hover:text-forge-text'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+};
 
 /**
  * Premiere-style arrangement timeline: toolbar, ruler with loop brackets,
@@ -245,10 +274,11 @@ export const Timeline: React.FC = () => {
             {/* Ruler row */}
             <div className="sticky top-0 z-[25] flex" style={{ height: RULER_HEIGHT }}>
               <div
-                className="sticky left-0 z-30 shrink-0 bg-forge-panel border-r border-b border-forge-border flex items-center px-3 text-[10px] font-mono uppercase tracking-widest text-forge-muted"
+                className="sticky left-0 z-30 shrink-0 bg-forge-panel border-r border-b border-forge-border flex items-center justify-between px-3 text-[10px] font-mono uppercase tracking-widest text-forge-muted"
                 style={{ width: HEADER_WIDTH }}
               >
                 Tracks
+                <RulerUnitsToggle />
               </div>
               <TimeRuler originRef={rulerRef} onScrubStart={onScrubStart} />
             </div>
@@ -297,7 +327,7 @@ export const Timeline: React.FC = () => {
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
         + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads from the sound deck onto a track •
-        Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete
+        Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • ? guide
       </div>
 
       {menu && <ClipContextMenu menu={menu} onClose={closeMenu} onDuplicate={duplicateSelectionInPlace} />}

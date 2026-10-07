@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import * as Tone from 'tone';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, Track } from '../../store/timelineTypes';
-import { durationToBars, minClipLength, snapBar } from '../../store/timelineTypes';
+import { durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { isDrumKind } from '../../audio/instrumentCatalog';
 import { barFromClientX } from './Playhead';
@@ -90,7 +90,10 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   const left = (clip.startBar - 1) * zoom;
   const width = clip.lengthBars * zoom;
 
-  const snapped = (bar: number, shift: boolean) => (shift ? bar : snapBar(bar, useTimelineStore.getState().snapGrid));
+  const snapped = (bar: number, shift: boolean) => {
+    const s = useTimelineStore.getState();
+    return shift ? bar : snapBar(bar, s.snapGrid, s);
+  };
 
   const razorBarAt = (clientX: number, shift: boolean) => snapped(barFromClientX(clientX, originRef.current), shift);
 
@@ -155,10 +158,10 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         const delta = snapped(origStart + deltaBars, ev.shiftKey) - origStart;
         dragIds.forEach((id) => s.moveClip(id, (origStarts.get(id) ?? origStart) + delta));
       } else if (mode === 'trim-start') {
-        const minLen = minClipLength(s.snapGrid);
+        const minLen = minClipLength(s.snapGrid, s);
         s.trimClipStart(clip.id, Math.min(snapped(origStart + deltaBars, ev.shiftKey), origEnd - minLen));
       } else {
-        const minLen = minClipLength(s.snapGrid);
+        const minLen = minClipLength(s.snapGrid, s);
         const end = Math.max(snapped(origEnd + deltaBars, ev.shiftKey), origStart + minLen);
         s.trimClipEnd(clip.id, end - origStart);
       }
@@ -208,7 +211,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         if (!clip.isSelected) useTimelineStore.getState().selectClip(clip.id, false);
         onOpenMenu({ x: e.clientX, y: e.clientY, bar: razorBarAt(e.clientX, e.shiftKey), trackId: clip.trackId, clipId: clip.id });
       }}
-      title={`${clip.name} — bar ${clip.startBar.toFixed(2)}, ${clip.lengthBars} bars • double-click to edit notes`}
+      title={`${clip.name} — bar ${clip.startBar.toFixed(2)}, ${formatBarCount(clip.lengthBars)} bars • double-click to edit notes`}
     >
       {/* Label strip */}
       <div

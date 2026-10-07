@@ -13,12 +13,12 @@ import { syncLiveTracks } from '../audio/liveTracks';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong';
 import { loadAutosave, writeAutosave, type ProjectSnapshot } from './project';
-import type { Clip, InstrumentKey, LoopRegion, NoteEvent, SnapGrid, TimelineTool, Track, TrackEq } from './timelineTypes';
+import type { Clip, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SnapGrid, TimelineTool, Track, TrackEq } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
 import { minClipLength, snapBar, uid } from './timelineTypes';
 import { compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
-import { DEFAULT_MASTER_FX, defaultTrackFx, normalizeTrackFx } from './timelineTypes';
+import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { CustomSample, MasterFx, TrackFx } from './timelineTypes';
 
 /** Song length limit: 400 bars is 5+ minutes even at 240 BPM (about 13 minutes at 120 BPM). */
@@ -44,6 +44,10 @@ interface TimelineState {
   activeTool: TimelineTool;
   snapGrid: SnapGrid;
   loopRegion: LoopRegion;
+  /** Timecode frame rate (saved with the project); also the step of the Frame snap grid. */
+  fps: FrameRate;
+  /** What the time ruler counts in (a view setting, not saved). */
+  rulerUnits: RulerUnits;
 
   // Transport
   play: () => Promise<void>;
@@ -60,6 +64,8 @@ interface TimelineState {
   setZoom: (zoom: number) => void;
   setTool: (tool: TimelineTool) => void;
   setSnapGrid: (grid: SnapGrid) => void;
+  setFps: (fps: FrameRate) => void;
+  setRulerUnits: (units: RulerUnits) => void;
 
   // Loop
   setLoopIn: (bar: number) => void;
@@ -216,6 +222,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     activeTool: 'select',
     snapGrid: '1/16',
     loopRegion: { inBar: 1, outBar: 5, enabled: true },
+    fps: DEFAULT_FRAME_RATE,
+    rulerUnits: 'bars',
     projectName: 'Untitled',
     selectedTrackId: INITIAL_TRACKS[0]?.id ?? null,
     isInspectorOpen: false,
@@ -278,7 +286,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (tapTimes.length >= 2) {
         const intervals = tapTimes.slice(1).map((t, i) => t - tapTimes[i]);
         const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-        get().setBpm(Math.max(60, Math.min(200, 60000 / avg)));
+        get().setBpm(60000 / avg); // setBpm clamps to 40-240
       }
     },
 
@@ -288,21 +296,25 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     setZoom: (zoom) => set({ zoom: Math.round(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom))) }),
     setTool: (tool) => set({ activeTool: tool }),
     setSnapGrid: (grid) => set({ snapGrid: grid }),
+    setFps: (fps) => {
+      if (isFrameRate(fps)) set({ fps });
+    },
+    setRulerUnits: (units) => set({ rulerUnits: units }),
 
     // ---------- Loop ----------
     setLoopIn: (bar) =>
       set((s) => {
-        const inBar = clampBar(snapBar(bar, s.snapGrid));
-        const minLen = minClipLength(s.snapGrid);
-        const outBar = s.loopRegion.outBar - inBar < minLen ? clampBar(inBar + 1) : s.loopRegion.outBar;
+        const inBar = clampBar(snapBar(bar, s.snapGrid, s));
+        const minLen = minClipLength(s.snapGrid, s);
+        const outBar = s.loopRegion.outBar - inBar < minLen ? clampBar(snapBar(inBar + 1, s.snapGrid, s)) : s.loopRegion.outBar;
         return { loopRegion: { ...s.loopRegion, inBar: Math.min(inBar, outBar - minLen), outBar } };
       }),
 
     setLoopOut: (bar) =>
       set((s) => {
-        const outBar = clampBar(snapBar(bar, s.snapGrid));
-        const minLen = minClipLength(s.snapGrid);
-        const inBar = outBar - s.loopRegion.inBar < minLen ? Math.max(1, outBar - 1) : s.loopRegion.inBar;
+        const outBar = clampBar(snapBar(bar, s.snapGrid, s));
+        const minLen = minClipLength(s.snapGrid, s);
+        const inBar = outBar - s.loopRegion.inBar < minLen ? Math.max(1, snapBar(outBar - 1, s.snapGrid, s)) : s.loopRegion.inBar;
         return { loopRegion: { ...s.loopRegion, outBar: Math.max(outBar, inBar + minLen), inBar } };
       }),
 
@@ -344,9 +356,19 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       set((s) => {
         const nextTracks = s.tracks.filter((t) => t.id !== id);
         const nextSelected = s.selectedTrackId === id ? nextTracks[0]?.id ?? null : s.selectedTrackId;
+        // Also drop the track's clips from undo history, or Undo would bring them back with no
+        // track to live on (invisible, and saved into the project file). Steps that only touched
+        // this track then match their neighbour; drop those too, so no Undo press does nothing.
+        const withoutTrack = (clips: Clip[]) => clips.filter((c) => c.trackId !== id);
+        const same = (a: Clip[], b: Clip[]) => a.length === b.length && a.every((c, i) => c === b[i]);
+        const clips = withoutTrack(s.clips);
+        const past = s.past.map(withoutTrack);
+        const future = s.future.map(withoutTrack);
         return {
           tracks: nextTracks,
-          clips: s.clips.filter((c) => c.trackId !== id),
+          clips,
+          past: past.filter((step, i) => !same(step, past[i + 1] ?? clips)),
+          future: future.filter((step, i) => !same(step, i === 0 ? clips : future[i - 1])),
           selectedTrackId: nextSelected,
         };
       });
@@ -526,7 +548,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const { clipboard, tracks, playheadPosition, snapGrid, isPlaying } = get();
       if (clipboard.length === 0) return;
       const trackIds = new Set(tracks.map((t) => t.id));
-      const at = clampBar(atBar ?? snapBar(playheadPosition, snapGrid));
+      const at = clampBar(atBar ?? snapBar(playheadPosition, snapGrid, get()));
 
       const pasted: Clip[] = clipboard
         .filter((c) => trackIds.has(c.trackId))
@@ -585,9 +607,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     setProjectName: (name) => set({ projectName: name }),
 
     newProject: (template) => {
+      // A new arrangement keeps the frame rate you're working in
+      const fps = get().fps;
       get().loadProject(
         template === 'demo'
-          ? createDemoProject()
+          ? { ...createDemoProject(), fps }
           : {
               name: 'Untitled',
               bpm: 122,
@@ -596,6 +620,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               tracks: INITIAL_TRACKS.map((t) => ({ ...t, fx: defaultTrackFx() })),
               clips: [],
               masterFx: DEFAULT_MASTER_FX,
+              fps,
             }
       );
     },
@@ -631,6 +656,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         masterReverbDecay: masterFx.reverbDecay,
         masterDelayTime: masterFx.delayTime,
         masterDelayFeedback: masterFx.delayFeedback,
+        fps: p.fps ?? DEFAULT_FRAME_RATE,
       });
       applyMasterFx();
     },
@@ -735,6 +761,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   };
 });
 
+/** Everything a project file or autosave stores, read from the store now. */
+export function currentProject(): ProjectSnapshot {
+  const s = useTimelineStore.getState();
+  return {
+    name: s.projectName,
+    bpm: s.bpm,
+    swing: s.swing,
+    loopRegion: s.loopRegion,
+    tracks: s.tracks,
+    clips: s.clips,
+    masterFx: masterFxOf(s),
+    fps: s.fps,
+  };
+}
+
 /**
  * Save the arrangement to browser storage shortly after it changes, so a refresh
  * or closed tab doesn't lose work. Returns an unsubscribe function.
@@ -747,16 +788,7 @@ export function connectAutosave(): () => void {
     if (!pending) return;
     pending = false;
     clearTimeout(timer);
-    const s = useTimelineStore.getState();
-    writeAutosave({
-      name: s.projectName,
-      bpm: s.bpm,
-      swing: s.swing,
-      loopRegion: s.loopRegion,
-      tracks: s.tracks,
-      clips: s.clips,
-      masterFx: masterFxOf(s),
-    });
+    writeAutosave(currentProject());
   };
 
   const unsubscribe = useTimelineStore.subscribe((state, prev) => {
@@ -769,7 +801,8 @@ export function connectAutosave(): () => void {
       state.projectName === prev.projectName &&
       state.masterReverbDecay === prev.masterReverbDecay &&
       state.masterDelayTime === prev.masterDelayTime &&
-      state.masterDelayFeedback === prev.masterDelayFeedback
+      state.masterDelayFeedback === prev.masterDelayFeedback &&
+      state.fps === prev.fps
     ) {
       return;
     }

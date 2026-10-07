@@ -1,5 +1,6 @@
 import type { CustomSample, MasterFx, Clip, InstrumentKey, LoopRegion, NoteEvent, Track } from './timelineTypes';
-import { DEFAULT_MASTER_FX, normalizeTrackFx } from './timelineTypes';
+import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, normalizeTrackFx } from './timelineTypes';
+import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 
 /**
@@ -23,6 +24,8 @@ export interface ProjectData {
   tracks: Track[];
   clips: Omit<Clip, 'isSelected'>[];
   masterFx: MasterFx;
+  /** Timecode frame rate. Optional, so older versions of the app still open newer files. */
+  fps?: FrameRate;
 }
 
 export interface ProjectSnapshot {
@@ -34,6 +37,8 @@ export interface ProjectSnapshot {
   clips: Clip[];
   /** Shared reverb / delay settings (older projects don't have them). */
   masterFx?: MasterFx;
+  /** Timecode frame rate (older projects don't have it: they counted in 30 fps). */
+  fps?: FrameRate;
 }
 
 
@@ -48,6 +53,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     tracks: p.tracks,
     clips: p.clips.map(({ isSelected: _isSelected, ...rest }) => rest),
     masterFx: p.masterFx ?? DEFAULT_MASTER_FX,
+    fps: p.fps ?? DEFAULT_FRAME_RATE,
   };
 }
 
@@ -101,11 +107,10 @@ function parseNote(v: unknown): NoteEvent {
   };
 }
 
-function parseClip(v: unknown, trackIds: Set<string>): Clip {
+function parseClip(v: unknown): Clip {
   if (!isObj(v) || !isStr(v.id) || !isStr(v.trackId) || !isNum(v.startBar) || !isNum(v.lengthBars) || !Array.isArray(v.notes)) {
     throw new Error('a clip is malformed');
   }
-  if (!trackIds.has(v.trackId)) throw new Error(`clip "${String(v.name)}" points at a missing track`);
   return {
     id: v.id,
     trackId: v.trackId,
@@ -140,8 +145,11 @@ export function parseProject(raw: unknown): ProjectSnapshot {
       enabled: loop.enabled !== false,
     },
     tracks,
-    clips: raw.clips.map((c) => parseClip(c, trackIds)),
+    // A clip whose track is gone can't play or be seen. Older versions could save these (undo
+    // after deleting a track), so skip them rather than refuse the whole file.
+    clips: raw.clips.map(parseClip).filter((c) => trackIds.has(c.trackId)),
     masterFx: parseMasterFx(raw.masterFx),
+    fps: isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE,
   };
 }
 

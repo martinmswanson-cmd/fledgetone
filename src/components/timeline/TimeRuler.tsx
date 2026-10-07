@@ -1,7 +1,8 @@
 import React from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { formatRulerTime } from '../../audio/transport';
 import { barFromClientX, Playhead } from './Playhead';
-import { barLabelStep, RULER_HEIGHT } from './layout';
+import { barLabelStep, RULER_HEIGHT, TIMECODE_LABEL_PX, timecodeRulerSteps } from './layout';
 
 interface TimeRulerProps {
   originRef: React.RefObject<HTMLDivElement | null>;
@@ -9,18 +10,30 @@ interface TimeRulerProps {
 }
 
 /**
- * Top ruler: bar/beat markings, the In/Out loop region with draggable brackets,
- * click-to-scrub, and the playhead grab handle.
+ * Top ruler: bar/beat markings (or timecode at the project frame rate), the In/Out loop region
+ * with draggable brackets, click-to-scrub, and the playhead grab handle.
  */
 export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart }) => {
   const zoom = useTimelineStore((s) => s.zoom);
   const inBar = useTimelineStore((s) => s.loopRegion.inBar);
   const outBar = useTimelineStore((s) => s.loopRegion.outBar);
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
+  const units = useTimelineStore((s) => s.rulerUnits);
+  const bpm = useTimelineStore((s) => s.bpm);
+  const fps = useTimelineStore((s) => s.fps);
   const totalWidth = TOTAL_BARS * zoom;
   const showBeatLabels = zoom >= 200;
   const showBeatTicks = zoom >= 48;
   const labelStep = barLabelStep(zoom);
+  // Timecode mode: bar 1 is 0:00, at the project tempo
+  const pxPerSecond = (zoom * bpm) / 240;
+  const tc = timecodeRulerSteps(pxPerSecond, fps);
+  const ticks =
+    units === 'timecode'
+      ? `${tc.label * pxPerSecond}px 35%, ${tc.tick * pxPerSecond}px 18%`
+      : showBeatTicks
+        ? `${zoom / 4}px 35%, ${zoom / 16}px 18%`
+        : `${zoom}px 35%, ${zoom}px 0%`;
 
   const startBracketDrag = (which: 'in' | 'out') => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -53,9 +66,10 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
       style={{
         width: totalWidth,
         height: RULER_HEIGHT,
-        // beat ticks (bottom 35%) and 16th ticks (bottom 18%); just bar ticks when zoomed far out
+        // beat ticks (bottom 35%) and 16th ticks (bottom 18%), just bar ticks when zoomed far out;
+        // in timecode mode, label ticks and frame / second ticks
         backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.22) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px)`,
-        backgroundSize: showBeatTicks ? `${zoom / 4}px 35%, ${zoom / 16}px 18%` : `${zoom}px 35%, ${zoom}px 0%`,
+        backgroundSize: ticks,
         backgroundPosition: 'left bottom, left bottom',
         backgroundRepeat: 'repeat-x',
       }}
@@ -101,8 +115,23 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
         </span>
       </div>
 
+      {/* Timecode labels */}
+      {units === 'timecode' &&
+        // Only labels whose text fits before the end of the timeline
+        Array.from({ length: Math.floor((totalWidth - TIMECODE_LABEL_PX) / (tc.label * pxPerSecond)) + 1 }, (_, k) => {
+          const x = k * tc.label * pxPerSecond;
+          return (
+            <React.Fragment key={k}>
+              <div className="absolute top-0 bottom-0 w-px bg-white/30 pointer-events-none" style={{ left: x }} />
+              <span className="absolute top-[6px] text-[10px] font-mono text-cyan-200/90 pointer-events-none tabular-nums" style={{ left: x + 4 }}>
+                {formatRulerTime(k * tc.label, fps)}
+              </span>
+            </React.Fragment>
+          );
+        })}
+
       {/* Bar + beat labels (every Nth bar when zoomed out so labels never overlap) */}
-      {Array.from({ length: Math.ceil(TOTAL_BARS / labelStep) }, (_, k) => {
+      {units === 'bars' && Array.from({ length: Math.ceil(TOTAL_BARS / labelStep) }, (_, k) => {
         const i = k * labelStep;
         const bar = i + 1;
         return (

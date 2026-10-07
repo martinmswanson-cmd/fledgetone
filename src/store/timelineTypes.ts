@@ -143,7 +143,26 @@ export interface Clip {
 }
 
 export type TimelineTool = 'select' | 'razor';
-export type SnapGrid = '1/4' | '1/8' | '1/16' | 'off';
+/** 'frame' snaps to video frames at the project's frame rate and tempo. */
+export type SnapGrid = '1/4' | '1/8' | '1/16' | 'frame' | 'off';
+
+/** Timecode frame rates the timeline can count in. */
+export const FRAME_RATES = [24, 25, 30, 60] as const;
+export type FrameRate = (typeof FRAME_RATES)[number];
+export const DEFAULT_FRAME_RATE: FrameRate = 30;
+
+export function isFrameRate(v: unknown): v is FrameRate {
+  return FRAME_RATES.includes(v as FrameRate);
+}
+
+/** What the time ruler counts in. */
+export type RulerUnits = 'bars' | 'timecode';
+
+/** Tempo and frame rate: what turns seconds and frames into bars. */
+export interface GridTiming {
+  bpm: number;
+  fps: number;
+}
 
 export interface LoopRegion {
   inBar: number;
@@ -151,23 +170,43 @@ export interface LoopRegion {
   enabled: boolean;
 }
 
-export const SNAP_STEP_BARS: Record<SnapGrid, number> = {
+const NOTE_GRID_BARS: Record<Exclude<SnapGrid, 'frame'>, number> = {
   '1/4': 0.25,
   '1/8': 0.125,
   '1/16': 0.0625,
   off: 0,
 };
 
+/** One video frame in bars (4/4 at a constant tempo). */
+export function frameBars(timing: GridTiming): number {
+  return timing.bpm / (240 * timing.fps);
+}
+
+/** One step of the grid in bars, 0 when snapping is off. Frames count from the start of bar 1. */
+export function snapStepBars(grid: SnapGrid, timing: GridTiming): number {
+  return grid === 'frame' ? frameBars(timing) : NOTE_GRID_BARS[grid];
+}
+
 /** Snap a 1-based bar position to the active grid. */
-export function snapBar(bar: number, grid: SnapGrid): number {
-  const step = SNAP_STEP_BARS[grid];
+export function snapBar(bar: number, grid: SnapGrid, timing: GridTiming): number {
+  const step = snapStepBars(grid, timing);
   if (!step) return bar;
   return Math.round((bar - 1) / step) * step + 1;
 }
 
-/** Smallest editable clip length for the active grid. */
-export function minClipLength(grid: SnapGrid): number {
-  return SNAP_STEP_BARS[grid] || 0.0625;
+/**
+ * Smallest editable clip (and loop) length for the active grid. Never under a 16th, the store's
+ * floor for trims: with Frame snap it's the fewest whole frames that make a 16th.
+ */
+export function minClipLength(grid: SnapGrid, timing: GridTiming): number {
+  const step = snapStepBars(grid, timing);
+  if (!step) return 0.0625;
+  return grid === 'frame' ? Math.ceil(0.0625 / step - 1e-9) * step : step;
+}
+
+/** A bar count for display: up to 3 decimals, trailing zeros dropped (frame-snapped lengths are long floats). */
+export function formatBarCount(bars: number): string {
+  return String(Number(bars.toFixed(3)));
 }
 
 const DURATION_BARS: Record<string, number> = {

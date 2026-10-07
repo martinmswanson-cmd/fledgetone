@@ -24,6 +24,10 @@ export const TrackInspector: React.FC = () => {
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
   const tracks = useTimelineStore((s) => s.tracks);
   const isInspectorOpen = useTimelineStore((s) => s.isInspectorOpen);
+  // Subscribed (not read once from getState) so the Master Aux Bus controls follow their values
+  const masterReverbDecay = useTimelineStore((s) => s.masterReverbDecay);
+  const masterDelayTime = useTimelineStore((s) => s.masterDelayTime);
+  const masterDelayFeedback = useTimelineStore((s) => s.masterDelayFeedback);
   const {
     toggleInspector,
     setTrackInstrument,
@@ -33,9 +37,6 @@ export const TrackInspector: React.FC = () => {
     setTrackDelaySend,
     setTrackVolume,
     setTrackPan,
-    masterReverbDecay,
-    masterDelayTime,
-    masterDelayFeedback,
     setMasterReverbDecay,
     setMasterDelayTime,
     setMasterDelayFeedback,
