@@ -122,11 +122,11 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
             onClick={(e) => {
               e.stopPropagation();
               const r = e.currentTarget.getBoundingClientRect();
-              const { playheadPosition, snapGrid } = useTimelineStore.getState();
+              const s = useTimelineStore.getState();
               onOpenMenu({
                 x: r.left,
                 y: r.bottom + 4,
-                bar: snapBar(playheadPosition, snapGrid),
+                bar: snapBar(s.playheadPosition, s.snapGrid, s),
                 trackId: track.id,
                 clipId: null,
               });

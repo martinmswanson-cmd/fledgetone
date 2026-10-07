@@ -1,16 +1,34 @@
-import React from 'react';
-import { Volume2, Power } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { BookOpen, Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import boLogo from '../assets/bo.svg';
+import { GuidePanel } from './guide/GuidePanel';
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
   // Tempo lives in the timeline store so the Transport has a single source of truth
   const bpm = useTimelineStore((s) => s.bpm);
-  const { setBpm, tapTempo } = useTimelineStore.getState();
+  const swing = useTimelineStore((s) => s.swing);
+  const { setBpm, tapTempo, setSwing } = useTimelineStore.getState();
 
   const isRunning = audioState === 'running';
+  const [guideOpen, setGuideOpen] = useState(false);
+  // Stable, so the guide's focus handling runs once per opening
+  const closeGuide = useCallback(() => setGuideOpen(false), []);
+
+  // ? opens the guide from anywhere (except while typing)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target;
+      if (e.key !== '?' || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return;
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      e.preventDefault();
+      setGuideOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   return (
     <header className="bg-forge-panel border-b border-forge-border px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xl">
@@ -45,9 +63,10 @@ export const Header: React.FC = () => {
             </button>
             <input
               type="range"
-              min="60"
-              max="180"
+              min="40"
+              max="240"
               value={bpm}
+              aria-label="Tempo (BPM)"
               onChange={(e) => setBpm(Number(e.target.value))}
               className="w-20 accent-forge-accent-keys cursor-pointer h-1.5 bg-forge-border rounded-lg appearance-none"
             />
@@ -67,6 +86,23 @@ export const Header: React.FC = () => {
           >
             TAP
           </button>
+
+          <label className="flex flex-col border-l border-forge-border pl-3" title="Swing delays every other 16th note. Set 0% for straight timing (e.g. to hit video frames exactly).">
+            <span className="flex justify-between text-[10px] uppercase font-mono text-forge-muted tracking-wide">
+              Swing <span className="text-forge-text tabular-nums">{Math.round(swing * 100)}%</span>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="0.5"
+              step="0.05"
+              value={swing}
+              onChange={(e) => setSwing(Number(e.target.value))}
+              onDoubleClick={() => setSwing(0)}
+              className="w-20 mt-1.5 accent-forge-accent-keys cursor-pointer h-1.5 bg-forge-border rounded-lg appearance-none"
+              aria-label="Swing"
+            />
+          </label>
         </div>
 
         {/* Master Volume Slider */}
@@ -91,6 +127,16 @@ export const Header: React.FC = () => {
           </div>
         </div>
 
+        <button
+          type="button"
+          onClick={() => setGuideOpen(true)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono tracking-wider border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-500/70 hover:bg-cyan-500/10 transition"
+          title="How Bo's Beatbox works (?)"
+        >
+          <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
+          GUIDE
+        </button>
+
         {/* Audio Context Status Button */}
         <button
           onClick={initializeAudio}
@@ -109,6 +155,7 @@ export const Header: React.FC = () => {
           />
         </button>
       </div>
+      {guideOpen && <GuidePanel onClose={closeGuide} />}
     </header>
   );
 };

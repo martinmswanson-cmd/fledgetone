@@ -29,7 +29,8 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
 
   const snapped = (clientX: number, shift: boolean) => {
     const raw = barFromClientX(clientX, originRef.current);
-    return shift ? raw : snapBar(raw, useTimelineStore.getState().snapGrid);
+    const s = useTimelineStore.getState();
+    return shift ? raw : snapBar(raw, s.snapGrid, s);
   };
 
   const accepts = dragging !== null && compatibleInstruments(dragging, track.instrumentKey);

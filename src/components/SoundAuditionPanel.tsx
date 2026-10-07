@@ -158,8 +158,9 @@ export const SoundAuditionPanel: React.FC = () => {
   // Keyboard shortcut listener
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      // Don't trigger if user is typing in an input, or while a dialog (guide, export...) is open
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
+      if (document.querySelector('[role="dialog"]')) return;
       // Leave modifier chords (Ctrl+D etc.) to the timeline
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 

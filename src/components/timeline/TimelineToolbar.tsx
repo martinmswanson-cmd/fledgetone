@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Circle,
   Magnet,
@@ -15,26 +15,121 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { MAX_ZOOM, MIN_ZOOM, useTimelineStore } from '../../store/timelineStore';
-import type { SnapGrid } from '../../store/timelineTypes';
-import { formatBarsBeats, formatSmpte } from '../../audio/transport';
+import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { FRAME_RATES } from '../../store/timelineTypes';
+import type { FrameRate, SnapGrid } from '../../store/timelineTypes';
+import { formatBarsBeats, formatSmpte, parseBarsBeats, parseTimecode, secondsToBar } from '../../audio/transport';
+
+interface PositionFieldProps {
+  value: string;
+  /** Typed text to a 1-based bar, or null if it can't be read. */
+  parse: (text: string) => number | null;
+  label: string;
+  hint: string;
+  className: string;
+}
+
+/** A position readout: click it, type a position, Enter jumps the playhead there (Esc cancels). */
+const PositionField: React.FC<PositionFieldProps> = ({ value, parse, label, hint, className }) => {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [invalid, setInvalid] = useState(false);
+  const close = () => {
+    setDraft(null);
+    setInvalid(false);
+  };
+
+  if (draft === null) {
+    return (
+      <button
+        type="button"
+        className={`font-mono text-lg leading-none tabular-nums text-left rounded-sm hover:bg-white/10 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 ${className}`}
+        onClick={() => setDraft(value)}
+        title={`Click to type a ${label} and jump there (${hint})`}
+        aria-label={`${label} ${value}, click to go to a position`}
+      >
+        {value}
+      </button>
+    );
+  }
+  return (
+    <input
+      autoFocus
+      value={draft}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        setInvalid(false);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') close();
+        if (e.key !== 'Enter') return;
+        const bar = parse(draft);
+        if (bar === null) {
+          setInvalid(true);
+          return;
+        }
+        useTimelineStore.getState().seek(bar);
+        close();
+      }}
+      onBlur={close}
+      className={`w-full font-mono text-lg leading-none tabular-nums bg-black/60 rounded-sm px-0.5 border focus:outline-none ${
+        invalid ? 'border-red-500 text-red-300' : 'border-cyan-500 text-white'
+      }`}
+      aria-label={`Go to ${label} (${hint})`}
+      aria-invalid={invalid}
+      title={invalid ? `Not a ${label}. ${hint}` : hint}
+    />
+  );
+};
+
+/** A typed position, or null if it's past the end of the timeline. */
+const inSong = (bar: number | null) => (bar !== null && bar <= TOTAL_BARS + 1 ? bar : null);
 
 const TimecodeDisplay: React.FC = () => {
   const position = useTimelineStore((s) => s.playheadPosition);
   const bpm = useTimelineStore((s) => s.bpm);
+  const fps = useTimelineStore((s) => s.fps);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
 
   return (
     <div className="flex items-stretch gap-px rounded-md overflow-hidden border border-forge-border bg-forge-border">
-      <div className="bg-black/60 px-3 py-1 flex flex-col justify-center min-w-[118px]">
+      <div className="bg-black/60 px-3 py-1 flex flex-col justify-center w-[134px]">
         <span className="text-[9px] uppercase tracking-widest text-forge-muted font-mono leading-none mb-0.5">Bar.Beat.Tick</span>
-        <span className={`font-mono text-lg leading-none tabular-nums ${isPlaying ? 'text-amber-300' : 'text-white'}`}>
-          {formatBarsBeats(position)}
-        </span>
+        <PositionField
+          value={formatBarsBeats(position)}
+          parse={(text) => inSong(parseBarsBeats(text))}
+          label="bar position"
+          hint={`bar, bar.beat or bar.beat.hundredths, e.g. 17 or 17.3 (up to bar ${TOTAL_BARS + 1})`}
+          className={isPlaying ? 'text-amber-300' : 'text-white'}
+        />
       </div>
-      <div className="bg-black/60 px-3 py-1 flex flex-col justify-center min-w-[128px]">
-        <span className="text-[9px] uppercase tracking-widest text-forge-muted font-mono leading-none mb-0.5">Timecode 30fps</span>
-        <span className="font-mono text-lg leading-none tabular-nums text-cyan-300">{formatSmpte(position, bpm)}</span>
+      <div className="bg-black/60 px-3 py-1 flex flex-col justify-center w-[152px]">
+        <span className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono leading-none mb-0.5">
+          Timecode
+          <select
+            value={fps}
+            onChange={(e) => useTimelineStore.getState().setFps(Number(e.target.value) as FrameRate)}
+            className="bg-transparent text-[9px] uppercase tracking-widest text-cyan-300 font-mono leading-none cursor-pointer hover:text-cyan-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 rounded-sm"
+            title="Timecode frame rate (saved with the project)"
+            aria-label="Timecode frame rate"
+          >
+            {FRAME_RATES.map((rate) => (
+              <option key={rate} value={rate} className="bg-forge-panel text-forge-text">
+                {rate} fps
+              </option>
+            ))}
+          </select>
+        </span>
+        <PositionField
+          value={formatSmpte(position, bpm, fps)}
+          parse={(text) => {
+            const seconds = parseTimecode(text, fps);
+            return seconds === null ? null : inSong(secondsToBar(seconds, bpm));
+          }}
+          label="timecode"
+          hint={`HH:MM:SS:FF, MM:SS:FF or SS:FF at ${fps} fps; digits alone fill from the frames, so 1500 is 15 seconds`}
+          className="text-cyan-300"
+        />
       </div>
     </div>
   );
@@ -73,6 +168,7 @@ export const TimelineToolbar: React.FC = () => {
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
   const activeTool = useTimelineStore((s) => s.activeTool);
   const snapGrid = useTimelineStore((s) => s.snapGrid);
+  const fps = useTimelineStore((s) => s.fps);
   const zoom = useTimelineStore((s) => s.zoom);
   const canUndo = useTimelineStore((s) => s.past.length > 0);
   const canRedo = useTimelineStore((s) => s.future.length > 0);
@@ -178,6 +274,7 @@ export const TimelineToolbar: React.FC = () => {
           <option value="1/4">1/4</option>
           <option value="1/8">1/8</option>
           <option value="1/16">1/16</option>
+          <option value="frame">Frame ({fps} fps)</option>
           <option value="off">Off</option>
         </select>
       </label>
