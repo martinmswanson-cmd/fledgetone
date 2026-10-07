@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { ArrowLeftToLine, ArrowRightFromLine } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { formatBarsBeats } from '../../audio/transport';
+import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
 import { formatBarCount } from '../../store/timelineTypes';
 import { MenuItem, MenuNotice } from './ClipContextMenu';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
@@ -30,6 +30,10 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
   // Live, in case I / O move the loop while the menu is open
   const inBar = useTimelineStore((st) => st.loopRegion.inBar);
   const outBar = useTimelineStore((st) => st.loopRegion.outBar);
+  // Where the menu was opened, in the ruler's own units
+  const at = useTimelineStore((st) =>
+    st.rulerUnits === 'timecode' ? formatRulerTime(barToSeconds(menu.bar, st.bpm), st.fps) : formatBarsBeats(menu.bar)
+  );
   const run = (action: () => string | null) => () => {
     const message = action();
     if (message) setNotice(message);
@@ -55,7 +59,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
 
   return (
     <div ref={ref} role="menu" aria-label="Ruler" className={menuClass} onContextMenu={(e) => e.preventDefault()}>
-      <div className="px-3 pt-1 pb-1.5 text-[10px] text-forge-muted tabular-nums">At {formatBarsBeats(menu.bar)} · all tracks</div>
+      <div className="px-3 pt-1 pb-1.5 text-[10px] text-forge-muted tabular-nums">At {at} · all tracks</div>
       {items.map(({ key, ...item }) => (
         <MenuItem key={key} {...item} />
       ))}
