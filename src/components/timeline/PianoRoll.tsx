@@ -8,6 +8,8 @@ import { INSTRUMENTS, isDrumKind } from '../../audio/instrumentCatalog';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, NoteEvent } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars } from '../../store/timelineTypes';
+import { shouldIgnoreShortcut } from '../keyboard';
+import { UndoableRange } from '../UndoableRange';
 
 const KEY_W = 72;
 const RULER_H = 20;
@@ -272,9 +274,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   // Keys: capture phase so Delete / Ctrl+A act on notes instead of timeline clips
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target;
-      if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement) return;
-      if (document.querySelector('[role="dialog"]')) return;
+      if (shouldIgnoreShortcut(e)) return;
       const store = useTimelineStore.getState();
       const mod = e.ctrlKey || e.metaKey;
       const handled = () => {
@@ -377,14 +377,13 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         </label>
         <label className="flex items-center gap-1.5" title={selected.size ? 'Velocity of the selected notes' : 'Velocity for new notes'}>
           {selected.size ? `VEL (${selected.size})` : 'VEL'}
-          <input
-            type="range"
+          <UndoableRange
             min={0.1}
             max={1}
             step={0.05}
             value={selectedVelocity ?? velocity}
-            onPointerDown={() => selected.size && useTimelineStore.getState().checkpoint()}
-            onChange={(e) => onVelocity(Number(e.target.value))}
+            onValue={onVelocity}
+            undoable={selected.size > 0}
             className="w-24 cursor-pointer"
             style={{ accentColor: color }}
           />

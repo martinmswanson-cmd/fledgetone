@@ -12,7 +12,7 @@ import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/sched
 import { syncLiveTracks } from '../audio/liveTracks';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong';
-import { loadAutosave, writeAutosave, type ProjectSnapshot } from './project';
+import { preservePreviousSession, writeAutosave, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { Clip, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SnapGrid, TimelineTool, Track, TrackEq } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
 import { minClipLength, snapBar, uid } from './timelineTypes';
@@ -28,8 +28,49 @@ export const MAX_ZOOM = 320;
 const EPS = 1e-6;
 const HISTORY_LIMIT = 100;
 
-/** History patch that records `clips` as the state to return to on undo. */
-const pushPast = (s: { past: Clip[][]; clips: Clip[] }) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), s.clips], future: [] });
+/**
+ * One undo step: the arrangement and mixer as they were. Every field is an immutable reference
+ * the store already holds (edits replace objects rather than change them), so taking one is cheap.
+ */
+interface HistoryEntry {
+  clips: Clip[];
+  tracks: Track[];
+  masterFx: MasterFx;
+}
+
+/** Everything undo restores, read from the store now. */
+const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s) });
+
+/** History patch that records the current state as the one to return to on undo. */
+const pushPast = (s: TimelineState) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), historyEntry(s)], future: [] });
+
+/**
+ * The store patch that puts a history entry back. The track selection stays valid: a track that
+ * comes back (undoing a delete) is selected, and a selected track that disappears hands over to
+ * the first track.
+ */
+function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineState> {
+  const { tracks, masterFx } = entry;
+  const ids = new Set(tracks.map((t) => t.id));
+  // Entries are taken whole, so clips always match their tracks; filter anyway so an orphan can
+  // never reach the scheduler or a saved file
+  const clips = entry.clips.every((c) => ids.has(c.trackId)) ? entry.clips : entry.clips.filter((c) => ids.has(c.trackId));
+  const current = new Set(s.tracks.map((t) => t.id));
+  const returning = tracks.find((t) => !current.has(t.id));
+  const selectedTrackId = returning
+    ? returning.id
+    : s.selectedTrackId && ids.has(s.selectedTrackId)
+      ? s.selectedTrackId
+      : tracks[0]?.id ?? null;
+  return {
+    clips,
+    tracks,
+    selectedTrackId,
+    masterReverbDecay: masterFx.reverbDecay,
+    masterDelayTime: masterFx.delayTime,
+    masterDelayFeedback: masterFx.delayFeedback,
+  };
+}
 
 interface TimelineState {
   tracks: Track[];
@@ -125,15 +166,17 @@ interface TimelineState {
   setSelection: (clipIds: Set<string>) => void;
   selectAll: () => void;
 
-  // History (clip edits only; mixer and transport changes are not undoable)
-  past: Clip[][];
-  future: Clip[][];
-  /** Snapshot the clips before an edit. Gestures (drags) call this once at their start. */
+  // History: clips, tracks and the mixer. Tempo, swing, loop, zoom, snap and frame rate are not undoable.
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+  /** Snapshot clips, tracks and mixer before an edit. Gestures (drags, slider moves) call this once at their start. */
   checkpoint: () => void;
   undo: () => void;
   redo: () => void;
 
   // Project
+  /** The last autosave attempt (null until the first one this session). */
+  autosaveStatus: AutosaveStatus | null;
   projectName: string;
   setProjectName: (name: string) => void;
   /** Replace the arrangement with a blank timeline or the demo song. Clears undo history. */
@@ -165,6 +208,14 @@ interface TimelineState {
   setDraggingInstrument: (instrument: InstrumentKey | null) => void;
 }
 
+export interface AutosaveStatus {
+  ok: boolean;
+  /** When it was attempted (ms since epoch) */
+  at: number;
+  /** Why it failed: the project doesn't fit in browser storage, or the browser blocks storage */
+  reason?: 'too-big' | 'blocked';
+}
+
 /** The store's master reverb / delay settings as one object. */
 function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number }): MasterFx {
   return { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback };
@@ -174,19 +225,28 @@ let rafId = 0;
 let tapTimes: number[] = [];
 
 /**
- * The previous session's autosave, read once at startup before autosave can overwrite it.
- * The app always opens on an empty timeline; this is only offered as "Restore last session".
- * Null if there was nothing worth restoring (no clips).
+ * The previous session, set aside once at startup before autosave can overwrite it (this module
+ * loads before anything can edit). The app always opens on an empty timeline; this is only
+ * offered as "Restore last session". Null if there was nothing worth restoring (no clips).
  */
-const autosaved = loadAutosave();
-export const lastSession: ProjectSnapshot | null = autosaved && autosaved.clips.length > 0 ? autosaved : null;
+export const lastSession: SavedSession | null = preservePreviousSession();
 
 
 const clampBar = (bar: number) => Math.max(1, Math.min(TOTAL_BARS + 1, bar));
 
 export const useTimelineStore = create<TimelineState>((set, get) => {
-  const updateTrack = (trackId: string, patch: (t: Track) => Partial<Track>) =>
-    set((s) => ({ tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, ...patch(t) } : t)) }));
+  /**
+   * Change one track. `record` makes it its own undo step (clicks, menus); continuous controls
+   * (sliders) leave it false because their gesture checkpoint()s once at its start.
+   */
+  const updateTrack = (trackId: string, patch: (t: Track) => Partial<Track>, record = false) =>
+    set((s) => {
+      if (!s.tracks.some((t) => t.id === trackId)) return s;
+      return {
+        tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, ...patch(t) } : t)),
+        ...(record ? pushPast(s) : {}),
+      };
+    });
 
   /** Push the master reverb / delay settings (and tempo, for the delay time) to the live mix. */
   const applyMasterFx = () => liveMix.busFx.apply(masterFxOf(get()), get().bpm);
@@ -347,46 +407,45 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         tracks: [...s.tracks, newTrack],
         selectedTrackId: newTrack.id,
         isInspectorOpen: true,
+        ...pushPast(s),
       }));
       if (isSamplerKey(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
       return newTrack.id;
     },
 
+    // Undoable: history entries carry the tracks, so Undo brings the track and its clips back together
     deleteTrack: (id) => {
       set((s) => {
+        if (!s.tracks.some((t) => t.id === id)) return s;
         const nextTracks = s.tracks.filter((t) => t.id !== id);
         const nextSelected = s.selectedTrackId === id ? nextTracks[0]?.id ?? null : s.selectedTrackId;
-        // Also drop the track's clips from undo history, or Undo would bring them back with no
-        // track to live on (invisible, and saved into the project file). Steps that only touched
-        // this track then match their neighbour; drop those too, so no Undo press does nothing.
-        const withoutTrack = (clips: Clip[]) => clips.filter((c) => c.trackId !== id);
-        const same = (a: Clip[], b: Clip[]) => a.length === b.length && a.every((c, i) => c === b[i]);
-        const clips = withoutTrack(s.clips);
-        const past = s.past.map(withoutTrack);
-        const future = s.future.map(withoutTrack);
         return {
           tracks: nextTracks,
-          clips,
-          past: past.filter((step, i) => !same(step, past[i + 1] ?? clips)),
-          future: future.filter((step, i) => !same(step, i === 0 ? clips : future[i - 1])),
+          clips: s.clips.some((c) => c.trackId === id) ? s.clips.filter((c) => c.trackId !== id) : s.clips,
           selectedTrackId: nextSelected,
+          ...pushPast(s),
         };
       });
     },
 
     setTrackInstrument: (id, instrumentKey) => {
+      if (get().tracks.find((t) => t.id === id)?.instrumentKey === instrumentKey) return;
       const meta = INSTRUMENTS[instrumentKey];
-      updateTrack(id, () => ({
-        instrumentKey,
-        name: meta.name,
-        color: meta.color,
-      }));
+      updateTrack(
+        id,
+        () => ({
+          instrumentKey,
+          name: meta.name,
+          color: meta.color,
+        }),
+        true
+      );
       if (isSamplerKey(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
     },
 
-    toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted })),
-    toggleSolo: (id) => updateTrack(id, (t) => ({ isSoloed: !t.isSoloed })),
-    toggleArm: (id) => updateTrack(id, (t) => ({ isArmed: !t.isArmed })),
+    toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted }), true),
+    toggleSolo: (id) => updateTrack(id, (t) => ({ isSoloed: !t.isSoloed }), true),
+    toggleArm: (id) => updateTrack(id, (t) => ({ isArmed: !t.isArmed }), true),
     setTrackVolume: (id, db) => updateTrack(id, () => ({ volume: Math.max(-60, Math.min(6, db)) })),
     setTrackPan: (id, pan) => updateTrack(id, () => ({ pan: Math.max(-1, Math.min(1, pan)) })),
 
@@ -401,9 +460,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     resetTrackEq: (id) => {
-      updateTrack(id, () => ({
-        eq: { low: 0, mid: 0, high: 0 },
-      }));
+      const { eq } = get().tracks.find((t) => t.id === id) ?? {};
+      if (!eq || (eq.low === 0 && eq.mid === 0 && eq.high === 0)) return;
+      updateTrack(id, () => ({ eq: { low: 0, mid: 0, high: 0 } }), true);
     },
 
     setTrackReverbSend: (id, send) => {
@@ -418,7 +477,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }));
     },
 
-    setTrackSample: (id, sample) => updateTrack(id, () => ({ sample })),
+    setTrackSample: (id, sample) => updateTrack(id, () => ({ sample }), true),
 
     setTrackFx: (id, effect, patch) => {
       updateTrack(id, (t) => ({ fx: normalizeTrackFx({ ...t.fx, [effect]: { ...t.fx[effect], ...patch } }) }));
@@ -431,7 +490,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     setMasterDelayTime: (time) => {
-      set({ masterDelayTime: time });
+      if (time === get().masterDelayTime) return;
+      // A click on a subdivision is its own undo step (the sliders checkpoint per gesture)
+      set((s) => ({ masterDelayTime: time, ...pushPast(s) }));
       applyMasterFx();
     },
 
@@ -583,27 +644,32 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     // ---------- History ----------
     checkpoint: () => set((s) => pushPast(s)),
 
-    undo: () =>
-      set((s) => {
-        if (s.past.length === 0) return s;
-        return {
-          clips: s.past[s.past.length - 1],
-          past: s.past.slice(0, -1),
-          future: [s.clips, ...s.future].slice(0, HISTORY_LIMIT),
-        };
-      }),
+    // The live engine follows tracks and clips on its own (connectTimelineToAudio); the master
+    // returns are pushed here, as their setters do
+    undo: () => {
+      const s = get();
+      if (s.past.length === 0) return;
+      set({
+        ...restoreEntry(s, s.past[s.past.length - 1]),
+        past: s.past.slice(0, -1),
+        future: [historyEntry(s), ...s.future].slice(0, HISTORY_LIMIT),
+      });
+      applyMasterFx();
+    },
 
-    redo: () =>
-      set((s) => {
-        if (s.future.length === 0) return s;
-        return {
-          clips: s.future[0],
-          future: s.future.slice(1),
-          past: [...s.past.slice(-(HISTORY_LIMIT - 1)), s.clips],
-        };
-      }),
+    redo: () => {
+      const s = get();
+      if (s.future.length === 0) return;
+      set({
+        ...restoreEntry(s, s.future[0]),
+        future: s.future.slice(1),
+        past: [...s.past.slice(-(HISTORY_LIMIT - 1)), historyEntry(s)],
+      });
+      applyMasterFx();
+    },
 
     // ---------- Project ----------
+    autosaveStatus: null,
     setProjectName: (name) => set({ projectName: name }),
 
     newProject: (template) => {
@@ -778,17 +844,39 @@ export function currentProject(): ProjectSnapshot {
 
 /**
  * Save the arrangement to browser storage shortly after it changes, so a refresh
- * or closed tab doesn't lose work. Returns an unsubscribe function.
+ * or closed tab doesn't lose work. Each attempt's outcome goes to `autosaveStatus` (shown in
+ * the project bar); while autosave is failing, closing the tab asks first.
+ * Returns an unsubscribe function.
  */
 export function connectAutosave(): () => void {
   let timer = 0;
   let pending = false;
+  let guarding = false;
+
+  // Only registered while autosave is failing: the browser's "Leave site?" prompt is the last
+  // chance to use Save
+  const onBeforeUnload = (e: BeforeUnloadEvent) => {
+    flush();
+    if (useTimelineStore.getState().autosaveStatus?.ok !== false) return;
+    e.preventDefault();
+    e.returnValue = ''; // older browsers only prompt when this is set
+  };
+  const guard = (on: boolean) => {
+    if (on === guarding) return;
+    guarding = on;
+    if (on) window.addEventListener('beforeunload', onBeforeUnload);
+    else window.removeEventListener('beforeunload', onBeforeUnload);
+  };
 
   const flush = () => {
     if (!pending) return;
     pending = false;
     clearTimeout(timer);
-    writeAutosave(currentProject());
+    const result: AutosaveResult = writeAutosave(currentProject());
+    useTimelineStore.setState({
+      autosaveStatus: result.ok ? { ok: true, at: Date.now() } : { ok: false, at: Date.now(), reason: result.reason },
+    });
+    guard(!result.ok);
   };
 
   const unsubscribe = useTimelineStore.subscribe((state, prev) => {
@@ -815,6 +903,7 @@ export function connectAutosave(): () => void {
   window.addEventListener('pagehide', flush);
   return () => {
     flush();
+    guard(false);
     window.removeEventListener('pagehide', flush);
     unsubscribe();
   };

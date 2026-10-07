@@ -6,6 +6,8 @@ import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { Track } from '../store/timelineTypes';
+import { loadSamples } from './samplers/samplerManager';
+import { useAudioStore } from '../store/audioStore';
 
 /**
  * Live playback graph: one effects strip + one instrument per timeline track, kept in step
@@ -82,4 +84,41 @@ export function releaseAllLiveVoices(): void {
 export function previewTrackNotes(trackId: string, notes: PlayableNote[]): void {
   const instrument = live.get(trackId)?.instrument;
   if (instrument && notes.length) safely(() => instrument.play(notes, Tone.now()));
+}
+
+/**
+ * Rebuild every live instrument playing `key`, on the same strip. Used once a failed sample
+ * download succeeds: instruments built while it was failing have no sounds attached.
+ */
+export function reloadInstrument(key: InstrumentKey): void {
+  for (const lt of live.values()) {
+    if (lt.instrumentKey !== key) continue;
+    safely(() => lt.instrument.releaseAll());
+    lt.instrument.dispose();
+    lt.instrument = createInstrument(key, lt.strip.input, { sample: lt.applied?.sample });
+  }
+}
+
+/**
+ * Try a recorded instrument's download again (the track header's "!", the inspector's and the
+ * instrument browser's Retry). On success the status turns Ready and every track using it plays
+ * from the next note on. Rejects if it failed again (the status shows the error).
+ */
+export async function retryInstrumentDownload(key: InstrumentKey): Promise<void> {
+  await loadSamples(key);
+  // A WAV export makes its offline context the global one while it sets up; build in the live one
+  while (Tone.getContext() !== liveMix.bus.context) await new Promise((resolve) => setTimeout(resolve, 50));
+  reloadInstrument(key);
+}
+
+/** Retry every failed download when the browser comes back online. Returns an uninstall function. */
+export function retryDownloadsWhenOnline(): () => void {
+  const onOnline = () => {
+    const status = useAudioStore.getState().instrumentStatus;
+    for (const [key, s] of Object.entries(status)) {
+      if (s === 'error') void retryInstrumentDownload(key as InstrumentKey).catch(() => {});
+    }
+  };
+  window.addEventListener('online', onOnline);
+  return () => window.removeEventListener('online', onOnline);
 }
