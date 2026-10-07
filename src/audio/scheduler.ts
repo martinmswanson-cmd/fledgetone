@@ -65,13 +65,23 @@ export function createClipSchedule(
   let entries = new Map<string, ClipEntry>();
   const events = new Map<number, number>();
 
-  const fire = (tick: number) => (time: number) => {
-    const groups = byTick.get(tick);
-    if (!groups) return;
-    for (const { trackId, notes } of groups) {
-      const instrument = instrumentFor(trackId);
-      if (instrument) safely(() => instrument.play(notes, time));
-    }
+  const fire = (tick: number) => {
+    // Tone's TickSource can hand the Transport the same tick twice when it lands exactly on
+    // the boundary between two clock updates (floating-point rounding). The WAV export steps
+    // its clock in 128-sample blocks, so at 140 BPM that's the downbeat of every 8th bar:
+    // those notes played twice (flammed kicks, +6 dB samples). A repeat at the same time is
+    // skipped; a loop pass comes back at a later time and plays as normal.
+    let lastTime = -Infinity;
+    return (time: number) => {
+      if (Math.abs(time - lastTime) < 1e-4) return;
+      lastTime = time;
+      const groups = byTick.get(tick);
+      if (!groups) return;
+      for (const { trackId, notes } of groups) {
+        const instrument = instrumentFor(trackId);
+        if (instrument) safely(() => instrument.play(notes, time));
+      }
+    };
   };
 
   return {
