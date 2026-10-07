@@ -16,7 +16,7 @@ import { AddTrackMenu } from './AddTrackMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
 import type { RulerUnits } from '../../store/timelineTypes';
 import { blurMenusAfterChange, shouldIgnoreShortcut } from '../keyboard';
-import { retryDownloadsWhenOnline } from '../../audio/liveTracks';
+import { recoverFailedDownloads } from '../../audio/liveTracks';
 
 /** Duplicate every selected clip directly after itself and select the copies (Ctrl+D). */
 function duplicateSelectionInPlace(): void {
@@ -156,8 +156,8 @@ export const Timeline: React.FC = () => {
   useEffect(() => connectAutosave(), []);
   // Menus hand focus back once used, so the shortcuts below keep working
   useEffect(() => blurMenusAfterChange(), []);
-  // Recorded instruments that failed to download try again when the connection returns
-  useEffect(() => retryDownloadsWhenOnline(), []);
+  // Recorded instruments that failed to download play once a retry succeeds (and retry when the connection returns)
+  useEffect(() => recoverFailedDownloads(), []);
 
   // Keep the playhead in view while playing (page-turn style)
   useEffect(

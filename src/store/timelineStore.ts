@@ -12,7 +12,7 @@ import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/sched
 import { syncLiveTracks } from '../audio/liveTracks';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong';
-import { preservePreviousSession, writeAutosave, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
+import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { Clip, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SnapGrid, TimelineTool, Track, TrackEq } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
 import { minClipLength, snapBar, uid } from './timelineTypes';
@@ -212,8 +212,8 @@ export interface AutosaveStatus {
   ok: boolean;
   /** When it was attempted (ms since epoch) */
   at: number;
-  /** Why it failed: the project doesn't fit in browser storage, or the browser blocks storage */
-  reason?: 'too-big' | 'blocked';
+  /** Why it failed (see AutosaveFailure) */
+  reason?: AutosaveFailure;
 }
 
 /** The store's master reverb / delay settings as one object. */
@@ -842,6 +842,14 @@ export function currentProject(): ProjectSnapshot {
   };
 }
 
+/** Autosave right away (set while connectAutosave is connected). */
+let autosaveNow: (() => void) | null = null;
+
+/** Try a failing autosave again now, e.g. once Restore or Dismiss frees the set-aside session's space. */
+export function retryAutosave(): void {
+  if (useTimelineStore.getState().autosaveStatus?.ok === false) autosaveNow?.();
+}
+
 /**
  * Save the arrangement to browser storage shortly after it changes, so a refresh
  * or closed tab doesn't lose work. Each attempt's outcome goes to `autosaveStatus` (shown in
@@ -852,6 +860,21 @@ export function connectAutosave(): () => void {
   let timer = 0;
   let pending = false;
   let guarding = false;
+  const saveNow = () => {
+    pending = true;
+    flush();
+  };
+  autosaveNow = saveNow;
+
+  // Another tab's Dismiss removes the autosave when that tab hasn't autosaved yet, but the session
+  // it dismissed may be this tab's open work: write it straight back. A removed set-aside
+  // session frees space, so a failing autosave tries again.
+  const onStorage = (e: StorageEvent) => {
+    const removed = autosaveRemovedBy(e);
+    const status = useTimelineStore.getState().autosaveStatus;
+    if (!removed || !status) return; // no edits here yet: nothing of this tab's to keep
+    if (removed === 'autosave' || !status.ok) saveNow();
+  };
 
   // Only registered while autosave is failing: the browser's "Leave site?" prompt is the last
   // chance to use Save
@@ -901,10 +924,13 @@ export function connectAutosave(): () => void {
 
   // Don't lose an edit made in the last half-second before the tab closes
   window.addEventListener('pagehide', flush);
+  window.addEventListener('storage', onStorage);
   return () => {
     flush();
     guard(false);
     window.removeEventListener('pagehide', flush);
+    window.removeEventListener('storage', onStorage);
+    if (autosaveNow === saveNow) autosaveNow = null;
     unsubscribe();
   };
 }

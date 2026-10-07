@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Download, FilePlus2, FolderOpen, History, Loader2, Music2, Save, X } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
-import { currentProject, lastSession, useTimelineStore } from '../../store/timelineStore';
+import { currentProject, lastSession, retryAutosave, useTimelineStore } from '../../store/timelineStore';
 import { parseProject, safeFileName, serializeProject } from '../../store/project';
 import { clearPreviousSession } from '../../store/project';
 import { downloadBlob, encodeWav, renderArrangement } from '../../audio/exportWav';
@@ -153,17 +153,28 @@ const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
 const clockTime = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
-/** When a session was saved, in words: "today at 14:02", "yesterday at 18:30", "on 3 Oct at 9:15" (in the local clock style). */
-function savedWhen(at: number): string {
+/** The day of `at` in words: "today", "yesterday", or "on 3 Oct" (with the year if it isn't this year). */
+function onDay(at: number): string {
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
   const startOfYesterday = new Date(startOfToday);
   startOfYesterday.setDate(startOfYesterday.getDate() - 1);
-  if (at >= startOfToday.getTime()) return `today at ${clockTime(at)}`;
-  if (at >= startOfYesterday.getTime()) return `yesterday at ${clockTime(at)}`;
+  if (at >= startOfToday.getTime()) return 'today';
+  if (at >= startOfYesterday.getTime()) return 'yesterday';
   const d = new Date(at);
   const sameYear = d.getFullYear() === startOfToday.getFullYear();
-  return `on ${d.toLocaleDateString([], { day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric' })} at ${clockTime(at)}`;
+  return `on ${d.toLocaleDateString([], { day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric' })}`;
+}
+
+/**
+ * When a session was saved, in words (in the local clock style): "saved today at 14:02",
+ * "saved yesterday at 18:30", "saved on 3 Oct at 9:15". An autosave from an older version only
+ * says when it was set aside: "saved before 14:02 today".
+ */
+function savedWhen({ savedAt, keptAt }: { savedAt: number | null; keptAt: number | null }): string | null {
+  if (savedAt !== null) return `saved ${onDay(savedAt)} at ${clockTime(savedAt)}`;
+  if (keptAt !== null) return `saved before ${clockTime(keptAt)} ${onDay(keptAt)}`;
+  return null;
 }
 
 /**
@@ -174,10 +185,13 @@ function savedWhen(at: number): string {
 export const RestoreSessionBanner: React.FC = () => {
   const [open, setOpen] = useState(lastSession !== null);
   if (!open || !lastSession) return null;
-  const { project, savedAt } = lastSession;
+  const { project } = lastSession;
   const n = project.clips.length;
+  const when = savedWhen(lastSession);
   const close = (dismissed: boolean) => {
     clearPreviousSession(dismissed);
+    // Its space is free now, so an autosave that didn't fit may fit
+    retryAutosave();
     setOpen(false);
   };
 
@@ -186,7 +200,7 @@ export const RestoreSessionBanner: React.FC = () => {
       <History className="w-4 h-4 text-cyan-300 shrink-0" />
       <span className="text-forge-text">
         Your last session, <b>{project.name}</b> ({n} clip{n === 1 ? '' : 's'}
-        {savedAt !== null && `, saved ${savedWhen(savedAt)}`}), can be restored.
+        {when && `, ${when}`}), can be restored.
       </span>
       <div className="flex items-center gap-1.5 ml-auto">
         <button
@@ -229,9 +243,11 @@ const AutosaveStatusChip: React.FC = () => {
   return (
     <span role="status" className="basis-full flex items-center gap-1.5 text-[11px] text-red-400">
       <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-      {status.reason === 'too-big'
-        ? 'Not autosaved: this project is too big for browser storage. Use Save.'
-        : 'Not autosaved: this browser is blocking storage for this site. Use Save.'}
+      {status.reason === 'full'
+        ? 'Not autosaved: browser storage is full. Use Save, or Dismiss your last session below to make room.'
+        : status.reason === 'too-big'
+          ? 'Not autosaved: this project is too big for browser storage. Use Save.'
+          : 'Not autosaved: this browser is blocking storage for this site. Use Save.'}
     </span>
   );
 };
