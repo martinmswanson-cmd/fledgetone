@@ -189,6 +189,7 @@ export const TimelineToolbar: React.FC = () => {
   const canUndo = useTimelineStore((s) => s.past.length > 0);
   const canRedo = useTimelineStore((s) => s.future.length > 0);
   const isInspectorOpen = useTimelineStore((s) => s.isInspectorOpen);
+  const sliderValue = Math.round(zoomToSlider(zoom));
   const {
     togglePlay,
     stop,
@@ -321,8 +322,15 @@ export const TimelineToolbar: React.FC = () => {
           min={0}
           max={ZOOM_SLIDER_STEPS}
           step={1}
-          value={zoomToSlider(zoom)}
-          onChange={(e) => setZoom(sliderToZoom(Number(e.target.value)))}
+          // A whole step, as the slider would round it anyway (React would otherwise see the rounded value as a change)
+          value={sliderValue}
+          onChange={(e) => {
+            const value = Number(e.target.value);
+            const next = Math.round(sliderToZoom(value));
+            // Zoom is whole px per bar, so at the low end two slider steps can round to the same zoom
+            // (and the thumb snaps back): step 1px per bar the way the slider moved instead
+            setZoom(next !== zoom ? next : zoom + Math.sign(value - sliderValue));
+          }}
           className="w-28 accent-cyan-400 cursor-pointer"
           aria-label="Timeline zoom"
           aria-valuetext={`${zoom} pixels per bar`}

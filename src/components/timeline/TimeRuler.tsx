@@ -1,14 +1,9 @@
 import React from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { formatFrameRulerTime, frameSeconds, frameToLabelCount, labelCountToFrame } from '../../audio/timecode';
+import { useDrawnStretch } from './drawnStretch';
 import { barFromClientX, Playhead } from './Playhead';
 import { barLabelStep, RULER_HEIGHT, TIMECODE_LABEL_PX, timecodeRulerSteps } from './layout';
-
-/**
- * Zoomed in, the ruler is up to 512,000 px wide, so labels are drawn only for the visible stretch
- * plus at least this much either side. Scrolling redraws them once per chunk, not per frame.
- */
-const RENDER_CHUNK = 1024;
 
 /** SVG path of 1px vertical ticks at `xs`, `height` px tall, standing on the ruler's bottom edge. */
 const tickPath = (xs: number[], height: number) =>
@@ -32,11 +27,9 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
   const bpm = useTimelineStore((s) => s.bpm);
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
-  const chunk = useTimelineStore((s) => Math.floor(s.viewLeft / RENDER_CHUNK));
-  const viewWidth = useTimelineStore((s) => s.viewWidth);
   const totalWidth = TOTAL_BARS * zoom;
-  const drawFrom = Math.max(0, (chunk - 1) * RENDER_CHUNK);
-  const drawTo = Math.min(totalWidth, (chunk + 2) * RENDER_CHUNK + viewWidth);
+  // Zoomed in, the ruler is up to 512,000 px wide: labels and ticks are drawn only around the view
+  const { drawFrom, drawTo } = useDrawnStretch(totalWidth);
   const showBeatLabels = zoom >= 200;
   const showBeatTicks = zoom >= 48;
   const labelStep = barLabelStep(zoom);
