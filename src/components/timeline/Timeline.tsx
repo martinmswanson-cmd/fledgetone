@@ -11,6 +11,10 @@ import { TrackLane } from './TrackLane';
 import { barFromClientX, Playhead, useScrub } from './Playhead';
 import { ClipContextMenu } from './ClipContextMenu';
 import type { ContextMenuState } from './ClipContextMenu';
+import { RulerContextMenu } from './RulerContextMenu';
+import type { RulerMenuState } from './RulerContextMenu';
+import { Toast } from './Toast';
+import { showToast } from './toastStore';
 import { TrackInspector } from '../inspector/TrackInspector';
 import { AddTrackMenu } from './AddTrackMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
@@ -25,23 +29,6 @@ function isTypingTarget(target: EventTarget | null): boolean {
     target instanceof HTMLTextAreaElement ||
     (target instanceof HTMLElement && target.isContentEditable)
   );
-}
-
-/** Duplicate every selected clip directly after itself and select the copies (Ctrl+D). */
-function duplicateSelectionInPlace(): void {
-  const { clips, duplicateClip, moveClip, clearSelection, selectClip, checkpoint } = useTimelineStore.getState();
-  const selected = clips.filter((c) => c.isSelected);
-  if (selected.length === 0) return;
-  checkpoint();
-  const copies = selected
-    .map((c) => {
-      const id = duplicateClip(c.id);
-      if (id) moveClip(id, c.startBar + c.lengthBars);
-      return id;
-    })
-    .filter((id): id is string => id !== null);
-  clearSelection();
-  copies.forEach((id) => selectClip(id, true));
 }
 
 interface Marquee {
@@ -114,6 +101,8 @@ export const Timeline: React.FC = () => {
   const onScrubStart = useScrub(rulerRef);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const [rulerMenu, setRulerMenu] = useState<RulerMenuState | null>(null);
+  const closeRulerMenu = useCallback(() => setRulerMenu(null), []);
   const contentRef = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
 
@@ -247,7 +236,9 @@ export const Timeline: React.FC = () => {
         s.selectAll();
       } else if (mod && key === 'd') {
         e.preventDefault();
-        duplicateSelectionInPlace();
+        // No menu to explain a refusal in, so say it in a toast
+        const message = s.duplicateSelection();
+        if (message) showToast(message);
       } else if (mod && (key === 'c' || key === 'x')) {
         // Only hijack copy/cut when clips are selected, so page text copying still works
         if (!s.clips.some((c) => c.isSelected)) return;
@@ -325,7 +316,7 @@ export const Timeline: React.FC = () => {
                 Tracks
                 <RulerUnitsToggle />
               </div>
-              <TimeRuler originRef={rulerRef} onScrubStart={onScrubStart} />
+              <TimeRuler originRef={rulerRef} onScrubStart={onScrubStart} onOpenMenu={setRulerMenu} />
             </div>
 
             {/* Tracks */}
@@ -375,7 +366,9 @@ export const Timeline: React.FC = () => {
         Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • ? guide
       </div>
 
-      {menu && <ClipContextMenu menu={menu} onClose={closeMenu} onDuplicate={duplicateSelectionInPlace} />}
+      {menu && <ClipContextMenu menu={menu} onClose={closeMenu} />}
+      {rulerMenu && <RulerContextMenu menu={rulerMenu} onClose={closeRulerMenu} />}
+      <Toast />
     </div>
   );
 };
