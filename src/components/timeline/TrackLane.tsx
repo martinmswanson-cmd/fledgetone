@@ -18,12 +18,14 @@ interface TrackLaneProps {
 /**
  * Horizontal lane holding a track's clips over a bar/beat grid. Empty-space clicks and marquee
  * drags are handled by Timeline (via data-lane). Here: right-click menu, double-click to create
- * an empty clip and open it, and dropping sounds/patterns from the deck (matching instrument only).
+ * an empty clip and open it, dropping sounds/patterns from the deck (matching instrument only),
+ * and the highlight while clips are dragged between tracks.
  */
 export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMenu }) => {
   const zoom = useTimelineStore((s) => s.zoom);
   const clips = useTimelineStore((s) => s.clips);
   const dragging = useTimelineStore((s) => s.draggingInstrument);
+  const clipDropTarget = useTimelineStore((s) => s.clipDragTargets?.has(track.id) ?? false);
   const [dropBar, setDropBar] = useState<number | null>(null);
   const trackClips = clips.filter((c) => c.trackId === track.id);
 
@@ -38,7 +40,9 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
   return (
     <div
       className={`relative shrink-0 border-b border-forge-border bg-forge-bg transition-[box-shadow,opacity] ${
-        accepts ? 'shadow-[inset_0_0_0_2px_rgba(103,232,249,0.6)]' : dragging ? 'opacity-40' : ''
+        // Lanes that take what's being dragged light up. A deck drag also fades the rest; a clip drag
+        // doesn't, so the other tracks' clips stay easy to line up against.
+        accepts || clipDropTarget ? 'shadow-[inset_0_0_0_2px_rgba(103,232,249,0.6)]' : dragging ? 'opacity-40' : ''
       }`}
       style={{
         width: TOTAL_BARS * zoom,
