@@ -19,6 +19,7 @@ import { setDragPayload } from '../store/dragSounds';
 import type { DragPayload } from '../store/dragSounds';
 import type { InstrumentKey } from '../store/timelineTypes';
 import { triggerAuditionSampler } from '../audio/samplers/samplerManager';
+import { shouldIgnoreShortcut } from './keyboard';
 
 type DrumPad = 'kick' | 'snare' | 'hat' | 'openhat' | 'cowbell';
 
@@ -159,10 +160,9 @@ export const SoundAuditionPanel: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if user is typing in an input, or while a dialog (guide, export...) is open
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
-      if (document.querySelector('[role="dialog"]')) return;
-      // Leave modifier chords (Ctrl+D etc.) to the timeline
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (shouldIgnoreShortcut(e)) return;
+      // Leave modifier chords (Ctrl+D etc.) to the timeline. A held key repeats: play once per press
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
 
       const key = e.key.toLowerCase();
       switch (key) {

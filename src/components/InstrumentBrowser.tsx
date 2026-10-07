@@ -5,6 +5,7 @@ import { INSTRUMENTS, instrumentsByCategory, isDrumKind } from '../audio/instrum
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { auditionInstrument, DRUM_NOTES, safely } from '../audio/instruments';
 import { auditionInput, initAudio } from '../audio/engine';
+import { retryInstrumentDownload } from '../audio/liveTracks';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import { setDragPayload } from '../store/dragSounds';
@@ -117,7 +118,19 @@ export const InstrumentBrowser: React.FC = () => {
             <Loader2 className="w-3 h-3 animate-spin" /> Downloading samples…
           </span>
         )}
-        {status === 'error' && <span className="text-[11px] text-red-400">Couldn't download the samples. Check your connection.</span>}
+        {status === 'error' && (
+          <span className="flex items-center gap-2 text-[11px] text-red-400">
+            Couldn't download the samples. Check your connection.
+            <button
+              type="button"
+              onClick={() => void retryInstrumentDownload(key).catch(() => {})}
+              className="px-2 py-0.5 rounded border border-red-500/50 text-red-200 hover:bg-red-950/50 transition"
+              title="Try the download again"
+            >
+              Retry
+            </button>
+          </span>
+        )}
         <span className="ml-auto text-[11px] text-forge-muted hidden md:inline">Click to play • drag onto a matching track</span>
       </div>
 

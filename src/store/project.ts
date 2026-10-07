@@ -13,6 +13,8 @@ const LEGACY_FORMATS = ['grooveforge-project'];
 export const PROJECT_VERSION = 1;
 const AUTOSAVE_KEY = 'bos-beat-box.autosave.v1';
 const LEGACY_AUTOSAVE_KEYS = ['grooveforge.autosave.v1'];
+/** The previous session, set aside at startup (see preservePreviousSession). */
+const PREVIOUS_SESSION_KEY = 'bos-beat-box.autosave.previous';
 
 export interface ProjectData {
   format: typeof PROJECT_FORMAT;
@@ -174,21 +176,176 @@ function parseMasterFx(v: unknown): MasterFx {
   };
 }
 
-export function loadAutosave(): ProjectSnapshot | null {
+/**
+ * Why an autosave failed: the project doesn't fit in browser storage ('too-big'), it fits only
+ * without the set-aside last session this page offers ('full': Dismiss makes room), or the
+ * browser blocks storage for the site ('blocked').
+ */
+export type AutosaveFailure = 'too-big' | 'full' | 'blocked';
+export type AutosaveResult = { ok: true } | { ok: false; reason: AutosaveFailure };
+
+/** True once this page has written an autosave (so the stored one is no longer the previous session). */
+let wroteAutosave = false;
+/** True while this page's Restore banner offers the set-aside session (until Restore or Dismiss). */
+let offeringPrevious = false;
+
+/**
+ * Save to browser storage. The autosave also records when it was written (`savedAt`, ignored
+ * by project parsing), so a restored session can say how old it is.
+ *
+ * The set-aside session shares the browser's storage limit (about 5 MB). If the project only
+ * fits without it and has clips, the project takes its space: the next startup would set this
+ * project aside in its place anyway, and this page's banner still offers the older session.
+ */
+export function writeAutosave(p: ProjectSnapshot): AutosaveResult {
+  const json = JSON.stringify({ ...serializeProject(p), savedAt: Date.now() });
+  const failure = storeAutosave(json);
+  if (failure !== 'too-big') return failure ? { ok: false, reason: failure } : { ok: true };
+
+  const previous = readStored(PREVIOUS_SESSION_KEY);
+  if (previous === null) return { ok: false, reason: 'too-big' };
+  if (p.clips.length === 0) {
+    // A project without clips wouldn't replace that session at the next startup, so it keeps its
+    // space; the user can Dismiss it. Say so only when that certainly makes room: storage already
+    // holds both, so a project no bigger than the two together fits without that session.
+    const fitsAlone = json.length <= previous.length + (readStored(AUTOSAVE_KEY)?.length ?? 0);
+    return { ok: false, reason: offeringPrevious && fitsAlone ? 'full' : 'too-big' };
+  }
   try {
-    const json = [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].map((k) => localStorage.getItem(k)).find((v) => v !== null);
-    return json ? parseProject(JSON.parse(json)) : null;
+    localStorage.removeItem(PREVIOUS_SESSION_KEY);
+  } catch {
+    return { ok: false, reason: 'too-big' };
+  }
+  if (storeAutosave(json) === null) return { ok: true };
+  // Too big even on its own: put the set-aside session back (its space is still free)
+  try {
+    localStorage.setItem(PREVIOUS_SESSION_KEY, previous);
+  } catch {
+    // Another tab took the space meanwhile; this page still offers the session until it closes
+  }
+  return { ok: false, reason: 'too-big' };
+}
+
+/** Write the autosave: null on success, or why it failed. */
+function storeAutosave(json: string): 'too-big' | 'blocked' | null {
+  try {
+    localStorage.setItem(AUTOSAVE_KEY, json);
+    wroteAutosave = true;
+    return null;
+  } catch (err) {
+    // Full (a big Sampler sound), or blocked outright (some private modes, disabled site data)
+    const full = err instanceof DOMException && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+    return full ? 'too-big' : 'blocked';
+  }
+}
+
+function readStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-export function writeAutosave(p: ProjectSnapshot): void {
+/**
+ * A session the app can offer to restore: when it was autosaved, or, for an autosave from an
+ * older version (which didn't record that), when it was set aside, so it was saved before then.
+ */
+export interface SavedSession {
+  project: ProjectSnapshot;
+  savedAt: number | null;
+  keptAt: number | null;
+}
+
+function timeOf(raw: unknown, field: string): number | null {
+  const v = isObj(raw) ? raw[field] : undefined;
+  return isNum(v) ? v : null;
+}
+
+/**
+ * Run once at startup, before autosave can write: if the autosave holds a session with clips,
+ * copy it to a second slot, which the Restore banner offers until the user restores or
+ * dismisses it. A later startup replaces it only with a newer session that has clips, so
+ * clearing the timeline (or starting a blank one) and reloading doesn't lose it. Returns the
+ * session to offer, or null.
+ *
+ * If the copy doesn't fit in storage, the session is still offered for as long as this page is open.
+ */
+export function preservePreviousSession(): SavedSession | null {
+  const session = setAsidePreviousSession();
+  offeringPrevious = session !== null;
+  return session;
+}
+
+function setAsidePreviousSession(): SavedSession | null {
+  let fromAutosave: SavedSession | null = null;
   try {
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeProject(p)));
+    // Autosaves from before the rename (GrooveForge) are still picked up
+    const json = [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].map((k) => localStorage.getItem(k)).find((v) => v !== null);
+    if (json) {
+      const raw: unknown = JSON.parse(json);
+      const project = parseProject(raw);
+      if (project.clips.length > 0) {
+        const savedAt = timeOf(raw, 'savedAt');
+        // An autosave from an older version doesn't say when it was saved, only that it was before
+        // the first startup that set it aside: keep that time through later reloads
+        const earlier = savedAt === null ? readPreviousSlot() : null;
+        const keptAt = (earlier?.savedAt === null ? earlier.keptAt : null) ?? Date.now();
+        fromAutosave = { project, savedAt, keptAt };
+        localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt, keptAt, project: raw }));
+      }
+    }
   } catch {
-    // Storage full or blocked (private mode): autosave is best-effort
+    // Unreadable autosave, blocked storage, or no room for the copy: fall through
   }
+  if (fromAutosave) return fromAutosave;
+
+  // An empty (or unreadable) autosave doesn't replace a session set aside earlier
+  const slot = readPreviousSlot();
+  if (!slot) return null;
+  try {
+    const project = parseProject(slot.project);
+    return project.clips.length > 0 ? { project, savedAt: slot.savedAt, keptAt: slot.keptAt } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The set-aside session as stored (its project not yet validated), or null. */
+function readPreviousSlot(): { project: unknown; savedAt: number | null; keptAt: number | null } | null {
+  try {
+    const json = localStorage.getItem(PREVIOUS_SESSION_KEY);
+    const raw: unknown = json ? JSON.parse(json) : null;
+    return isObj(raw) ? { project: raw.project, savedAt: timeOf(raw, 'savedAt'), keptAt: timeOf(raw, 'keptAt') } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Forget the set-aside session (after Restore or Dismiss). If this page hasn't autosaved yet, the
+ * autosave still holds that same session; dismissing removes it too, or the next startup would
+ * offer it again. (If another tab still has that session open, it writes it straight back: see
+ * autosaveRemovedBy.)
+ */
+export function clearPreviousSession(dismissed: boolean): void {
+  offeringPrevious = false;
+  try {
+    localStorage.removeItem(PREVIOUS_SESSION_KEY);
+    if (dismissed && !wroteAutosave) [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // Storage blocked: nothing was kept anyway
+  }
+}
+
+/**
+ * What another tab's storage change (a `storage` event) removed: the autosave ('autosave'), the
+ * set-aside session ('previous', which frees space), or neither (null).
+ */
+export function autosaveRemovedBy(e: StorageEvent): 'autosave' | 'previous' | null {
+  if (e.newValue !== null) return null;
+  if (e.key === AUTOSAVE_KEY) return 'autosave';
+  return e.key === PREVIOUS_SESSION_KEY ? 'previous' : null;
 }
 
 /** File-system-safe base name for downloads. */

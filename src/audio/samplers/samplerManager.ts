@@ -148,7 +148,12 @@ export async function triggerAuditionSampler(key: InstrumentKey, notes: string[]
     await voice.ready;
     voice.play(notes, duration, undefined, velocity);
   } catch {
-    // download failed; the badge shows the error
+    // Download failed (the badge shows the error). A failed voice stays silent, so replace it:
+    // the next press builds a new one, which tries the download again
+    if (auditionVoices[key] === voice) {
+      delete auditionVoices[key];
+      voice.dispose();
+    }
   }
 }
 
