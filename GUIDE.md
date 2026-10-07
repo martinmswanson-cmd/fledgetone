@@ -34,12 +34,27 @@ The timeline is 400 bars long, in 4/4 at one tempo. Each row is a track: its hea
 
 ### Editing clips
 
-- **Move**: drag the middle of a clip. All selected clips move together. Clips move in time only; they stay on their track. To ignore snap, start dragging and then hold **Shift** (Shift-clicking a clip selects it instead).
-- **Duplicate**: hold **Alt** (Option on a Mac) and drag. Copies stay behind and the originals move. `Ctrl+D` places a copy of each selected clip right after itself.
+- **Move**: drag the middle of a clip. All selected clips move together, sideways in time and up or down to other tracks. To ignore snap, start dragging and then hold **Shift** (Shift-clicking a clip selects it instead). A click that wobbles by a few pixels changes nothing.
+- **Move to another track**: a clip can only go onto a track whose instrument can play it: the same instrument, drum kit to drum kit (Drums and Drum Machine), or any pitched instrument to any other (the Sampler and Taiko count as pitched). While you drag, the tracks it can land on are outlined in cyan; over any other track the clips stay on their own tracks. If several clips are selected and any one can't go to its new track, none of them change track, so a section spread over several tracks stays lined up.
+- **Scroll while dragging**: bring the pointer to the edge of the track area and the timeline scrolls that way, faster the closer you get. The mouse wheel works mid-drag too.
+- **Alt-drag**: hold **Alt** (Option on a Mac) and drag. Copies stay behind and the originals move.
+- **Duplicate** (`Ctrl+D`, or right-click a clip > Duplicate): copies the selected clips as one block right after the end of the selection, so a section spread over several tracks stays lined up. The copies become the selection, so pressing `Ctrl+D` again keeps extending the section. If the copy wouldn't fit before bar 401, nothing is copied and a message says why.
+- **Repeat ×N…** (right-click a clip): type how many copies you want (1 to 64) and press Enter. They go end to end after the selection, like Duplicate. If they wouldn't all fit before bar 401, the menu says how many would.
+- **Fill to loop Out** (right-click a clip): repeats the selection end to end up to the loop's OUT. The last copy is cut short at OUT (its hidden notes come back if you drag its edge out). Fill makes at most 2,000 clips at a time.
 - **Trim**: drag a clip's left or right edge. Trimming hides notes rather than deleting them, so dragging the edge back brings them back. Zoom in if a clip is too narrow to show its edge handles.
-- **Copy, cut, paste**: `Ctrl+C`, `Ctrl+X`, `Ctrl+V`. Paste lands at the playhead (on the snap grid), on the tracks the clips came from, and selects the pasted clips. When playback is stopped, the playhead then moves to the end of the paste, so pressing `Ctrl+V` again lays copies end to end. Clips whose track no longer exists aren't pasted. Right-click empty lane space for **Paste here**.
+- **Copy, cut, paste**: `Ctrl+C`, `Ctrl+X`, `Ctrl+V`. Paste lands at the playhead (on the snap grid), on the tracks the clips came from, and selects the pasted clips. When playback is stopped, the playhead then moves to the end of the paste, so pressing `Ctrl+V` again lays copies end to end. Right-click a lane or clip for **Paste here**: if everything you copied came from one track, it pastes onto the track you right-clicked when that track's instrument can play it (the menu says "this track"); otherwise clips go back to the tracks they came from. Clips whose track no longer exists are only pasted that way.
 - **Delete**: `Delete` or `Backspace`.
-- Right-click a clip for **Edit notes**, Copy, Cut, Duplicate, Paste here and Delete.
+- Right-click a clip for **Edit notes**, Copy, Cut, Duplicate, Repeat ×N…, Fill to loop Out, Paste here and Delete.
+- Duplicate, Repeat, Fill and every move (time and track together) are one Undo step each.
+
+### Inserting and deleting bars
+
+Right-click the time ruler. The menu acts on **all tracks** at the point you clicked (on the snap grid; Shift for the exact point):
+
+- **Insert 1, 2, 4 or 8 bars here**: adds empty bars. Clips that cross the point are cut in two there, and everything after it moves right. If that would push a clip past bar 401, nothing changes and the menu says so.
+- **Delete bars In → Out**: removes the loop's range. Clips inside it go, clips that cross IN or OUT lose the part inside, and everything after it moves left to close the gap.
+
+The loop and the playhead move with the music. Each edit is one Undo step; undo brings the clips back, but the loop and playhead stay where the edit put them.
 
 ### Creating clips
 
@@ -54,7 +69,8 @@ The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cut
 
 ### Zoom and scrolling
 
-- Zoom with the slider at the right of the toolbar, or `+` and `-`.
+- Zoom with the slider at the right of the toolbar, or `+` and `-` (they keep the playhead where it is on screen when it's visible). **Ctrl+mouse wheel** (Cmd on a Mac) or a trackpad pinch zooms around the pointer. Zoom goes from 12 to 1280 pixels per bar, deep enough to see single video frames.
+- Zoomed in, the lanes show faint lines on every 16th, or on every frame when SNAP is Frame.
 - Scroll in time with **Shift+mouse wheel**, a sideways trackpad swipe, or the **Overview** strip under the tracks: drag its cyan window to scroll, click anywhere on it to jump, and drag either end of the window to zoom.
 - While playing, the view follows the playhead.
 
@@ -74,6 +90,7 @@ The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cut
 The amber region on the ruler, between the **IN** and **OUT** brackets, is the loop. With loop on (the Repeat button or `L`), playback goes round it. With it off, playback runs to the end of the timeline.
 
 - Drag the IN and OUT brackets, or move the playhead and press `I` (set In) or `O` (set Out). They follow the snap grid; set SNAP to Off to place them anywhere.
+- For exact values, click the small chevron (˅) right of the Loop button. **Loop range** has **In**, **Out** and **Length** boxes in the ruler's units (bars, or timecode in Time mode); each accepts bars (`17.3`) or a timecode (`00:00:12:15`), and Length takes bars.beats (`2.2`) or a timecode duration. Enter applies. Typed values don't snap. Typing an In at or after the current Out moves the whole loop there.
 - A new project loops bars 1 to 5, so at first you only hear 4 bars. Press `L` to turn the loop off, or move OUT.
 
 ### Going to an exact position
@@ -89,18 +106,22 @@ The **TIMECODE** readout shows the playhead as hours, minutes, seconds and frame
 
 ### Choosing a frame rate
 
-Click the frame rate next to **TIMECODE** (it starts at **30 FPS**) and pick **24**, **25**, **30** or **60** fps:
+Click the frame rate next to **TIMECODE** (it starts at **30 FPS**) and pick one:
 
 | Rate | Typical use |
 |---|---|
+| 23.976 fps | Film shot for NTSC video ("24p" on most cameras) |
 | 24 fps | Film and animation at a true 24 fps |
 | 25 fps | PAL video (Europe, Australia) |
+| 29.97 fps | NTSC video, non-drop-frame |
+| 29.97 DF | NTSC broadcast video, drop-frame |
 | 30 fps | Games, screen recordings and web video at a true 30 fps |
 | 60 fps | Games and high-frame-rate video |
 
 The frame rate is saved with the project. Projects from before this setting open at 30 fps. **New** keeps the frame rate you're using.
 
-> Timecode here is non-drop-frame at exactly 24, 25, 30 or 60 frames a second. Much camera and broadcast video labelled "24" or "30" really runs at 23.976 or 29.97 fps, which isn't supported: against that kind of video, timecode drifts by about 2 frames a minute. Games and screen recordings normally run at true 30 or 60 fps and line up exactly.
+- **23.976** and **29.97** count 24 or 30 frames a second, but each frame lasts 1001/1000 as long, matching camera and broadcast footage. Non-drop 29.97 runs 3.6 seconds an hour behind the clock, as in video editors.
+- **29.97 DF** (drop-frame) is written with a `;` before the frames (`00:01:00;02`). It stays in step with the clock by skipping the frame numbers `;00` and `;01` at the start of every minute except every tenth. Typing a skipped label goes to the next real frame.
 
 ### Typing a timecode
 
@@ -109,12 +130,13 @@ Click the timecode, type, and press Enter:
 - `00:01:12:10` is 1 minute, 12 seconds, frame 10. Fields fill in from the right (frames, then seconds, minutes, hours), so you can leave off leading zeros: `1:12:10` is the same place, and `12:10` is 12 seconds, frame 10. Colons, semicolons, dots or spaces all separate fields.
 - Digits on their own fill in from the frames, like in video editors: `1500` is 15 seconds, `10215` is 1 minute 2 seconds and 15 frames, and `12` is frame 12.
 - Fields can overflow: `90:00` is 90 seconds.
+- In drop-frame, `;` before the frames is optional.
 
 A red box means the entry couldn't be read, or is past the end of the timeline.
 
 ### A timecode ruler
 
-The **Bars | Time** switch above the track names changes what the ruler counts. **Time** labels it as `M:SS:FF` (minutes, seconds, frames), so any label can be typed straight into the timecode box. Labels come every few seconds when zoomed out, and every few frames when zoomed in at a fast enough tempo, with smaller ticks in between.
+The **Bars | Time** switch above the track names changes what the ruler counts. **Time** labels it as `M:SS:FF` (minutes, seconds, frames), so any label can be typed straight into the timecode box. Labels come every few seconds when zoomed out, and every few frames when zoomed in, with smaller ticks in between. In drop-frame, minute labels read like `1:00;02`.
 
 ### Snapping to frames
 
@@ -222,7 +244,8 @@ The Inspector's second tab sets the two effects every track shares through its s
 
 In the header:
 
-- **TEMPO**: `-` and `+` change it by 1 BPM, or drag the slider (40 to 240 BPM). **TAP** sets it from your clicks: tap at least twice; it averages your last few taps and starts over if you pause for more than 2.5 seconds.
+- **TEMPO**: click the number to type a tempo from 40 to 240 BPM, with up to two decimals (`115.25`); Enter sets it, Esc cancels. `-` and `+` change it by 1 BPM, and the slider moves in whole BPM. **TAP** sets it from your clicks: tap at least twice; it averages your last few taps and starts over if you pause for more than 2.5 seconds.
+- **FIT**: sets the tempo so part of the song lasts a given time. Choose **Loop In→Out**, **Whole song** or a number of **Bars**, then type the **Target length** in seconds (`25.5`) or as a timecode (`0:25:00`). It shows the new tempo and the resulting length as you type; **Apply** (or Enter) sets it, to 0.01 BPM, picked so the part ends in the frame you typed. Over long stretches at slow tempos it can land a frame either side, and the panel shows the exact result first.
 - **SWING**: delays every other 16th note for a shuffled feel (0 to 50%). New blank projects start at 20% (the demo song uses 15%). Double-click it for 0% (straight).
 - **MASTER**: the final output level (-30 to +6 dB). It also sets the export level, but it isn't saved with the project.
 
@@ -278,10 +301,10 @@ Shortcuts don't work while you're typing in a box, or while a dialog (Guide, Exp
 | `Ctrl+Shift+Z` or `Ctrl+Y` | Redo |
 | `Ctrl+A` | Select all clips |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste at the playhead |
-| `Ctrl+D` | Duplicate selected clips after themselves |
+| `Ctrl+D` | Duplicate the selection as a block right after itself |
 | `Delete` or `Backspace` | Delete selected clips |
 | `Esc` | Clear the selection |
-| `+` / `-` | Zoom in / out |
+| `+` / `-` | Zoom in / out (around the playhead) |
 | `?` | Open this guide |
 | `Q` `W` `E` `R` `T`, `1`–`4`, `A` `S` `D`, `Z` `X` | Play Audition Deck pads (see Trying sounds) |
 
@@ -293,6 +316,9 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 |---|---|
 | Shift on the ruler, with the Razor, on right-click or a pad drop; or after you start dragging a clip | Ignore snap (loop brackets and piano-roll notes always snap) |
 | Alt (Option) + drag a clip | Duplicate it |
+| Drag a clip up or down | Move it to another track that can play it |
+| Ctrl / Cmd + mouse wheel, or pinch | Zoom around the pointer |
+| Right-click the ruler | Insert bars here, or delete the bars between In and Out |
 | Shift / Ctrl / Cmd + click | Add to or remove from the selection |
 | Double-click empty lane (Selection tool) | New 1-bar clip |
 | Double-click a clip (Selection tool) | Edit its notes (with the Razor, right-click > Edit notes) |
@@ -311,7 +337,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 
 ## Tips and limits
 
-- Songs can be up to 400 bars long, in 4/4, at one tempo (40 to 240 BPM).
+- Songs can be up to 400 bars long, in 4/4, at one tempo (40 to 240 BPM, to 0.01 BPM). The shortest loop is a 16th note.
 - Recorded instruments (piano, strings, winds and others) download their sounds the first time you use them, so they need an internet connection. Everything else works offline.
 - Muted tracks, and tracks silenced by another track's Solo, don't play their notes at all, which saves processing power on big songs.
 - If playback stutters on a big song, mute tracks you aren't working on, switch off effects you don't need, or export a WAV: exporting never stutters, it just takes longer.
