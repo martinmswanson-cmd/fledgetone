@@ -124,7 +124,8 @@ function parseClip(v: unknown): Clip {
     trackId: v.trackId,
     name: isStr(v.name) ? v.name : 'Clip',
     startBar: v.startBar,
-    lengthBars: v.lengthBars,
+    // No clip is shorter than a 16th; a zero or negative length (a hand-edited file) would break edits
+    lengthBars: Math.max(0.0625, v.lengthBars),
     notes: v.notes.map(parseNote),
     isSelected: false,
   };

@@ -197,6 +197,14 @@ export function compatibleInstruments(source: InstrumentKey, target: InstrumentK
   return source === target || (isDrumKind(source) && isDrumKind(target));
 }
 
+/**
+ * Can a clip on a `source` track move (or be pasted) onto a `target` track? Drum parts only make
+ * sense on a drum kit, and a melody plays on any pitched instrument (the Sampler included).
+ */
+export function canMoveClipBetween(source: InstrumentKey, target: InstrumentKey): boolean {
+  return isDrumKind(source) === isDrumKind(target);
+}
+
 /** Instruments grouped by category, in menu order. */
 export function instrumentsByCategory(): Array<{ category: InstrumentCategory; instruments: InstrumentDef[] }> {
   return CATEGORIES.map((category) => ({

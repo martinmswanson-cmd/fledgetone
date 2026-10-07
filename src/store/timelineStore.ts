@@ -15,8 +15,8 @@ import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong
 import { loadAutosave, writeAutosave, type ProjectSnapshot } from './project';
 import type { Clip, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SnapGrid, TimelineTool, Track, TrackEq } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
-import { minClipLength, snapBar, uid } from './timelineTypes';
-import { compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
+import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
+import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { CustomSample, MasterFx, TrackFx } from './timelineTypes';
@@ -129,14 +129,37 @@ interface TimelineState {
   splitClip: (clipId: string, atBar: number) => void;
   duplicateClip: (clipId: string) => string | null;
   deleteSelectedClips: () => void;
+  /** Move several clips at once, optionally onto other tracks (no history: drags checkpoint() once). */
+  moveClips: (moves: ReadonlyArray<ClipMove>) => void;
+
+  // Copies of the selection. The selected clips count as one block from the first start to the
+  // last end, so copies of a section across several tracks stay lined up. Each is one undo step and
+  // selects the copies. They return a message for the user when there's no room, else null.
+  /** One copy of the block right after it (Ctrl+D). Copies nothing if it would pass the end of the timeline. */
+  duplicateSelection: () => string | null;
+  /** `times` copies of the block end to end. Copies nothing if they wouldn't all fit. */
+  repeatSelection: (times: number) => string | null;
+  /** Copies of the block end to end up to the loop's Out; the last one is cut short at Out. */
+  fillSelectionToLoopOut: () => string | null;
+
+  // Ripple edits: add or remove time across every track
+  /** Insert `bars` empty bars at `atBar`: later clips move right, clips across it are split. */
+  insertBars: (atBar: number, bars: number) => string | null;
+  /** Remove the bars from `fromBar` to `toBar`: clips inside go, later clips move left. */
+  removeBars: (fromBar: number, toBar: number) => string | null;
 
   // Clipboard
   /** Snapshot of copied clips; startBar is relative to the earliest copied clip (0 = paste point). */
   clipboard: Clip[];
+  /** Instrument of the track the clipboard was copied from, or null if it came from several tracks. */
+  clipboardInstrument: InstrumentKey | null;
   copySelectedClips: () => void;
   cutSelectedClips: () => void;
-  /** Paste onto each clip's original track at `atBar` (defaults to the playhead, snapped). */
-  pasteClips: (atBar?: number) => void;
+  /**
+   * Paste onto each clip's original track at `atBar` (defaults to the playhead, snapped). With
+   * `ontoTrackId`, clips copied from one track go onto that track instead, if its instrument fits.
+   */
+  pasteClips: (atBar?: number, ontoTrackId?: string) => void;
 
   // Selection
   /** Replace the selection with exactly these clip ids (marquee / select all). */
@@ -181,7 +204,80 @@ interface TimelineState {
   /** Instrument currently being dragged from the sound deck (lanes highlight to match). */
   draggingInstrument: InstrumentKey | null;
   setDraggingInstrument: (instrument: InstrumentKey | null) => void;
+  /** Tracks the clips being dragged could move to (those lanes highlight), null when not dragging clips. */
+  clipDragTargets: ReadonlySet<string> | null;
+  setClipDragTargets: (trackIds: ReadonlySet<string> | null) => void;
 }
+
+/** Where one clip goes in moveClips. */
+export interface ClipMove {
+  clipId: string;
+  startBar: number;
+  /** Omit to keep the clip on its track. */
+  trackId?: string;
+}
+
+/** Shortest clip the edits make: the store's floor for trims, a 16th. */
+const MIN_CLIP_BARS = 0.0625;
+
+/**
+ * Cut a clip in two at `atBar` (a song position). Notes go to the side they start on; the right
+ * half gets new ids and is unselected. Null if `atBar` isn't inside the clip.
+ */
+function splitClipAt(clip: Clip, atBar: number): [Clip, Clip] | null {
+  const rel = atBar - clip.startBar;
+  if (rel <= EPS || rel >= clip.lengthBars - EPS) return null;
+  const left: Clip = {
+    ...clip,
+    lengthBars: rel,
+    notes: clip.notes.filter((n) => n.startOffset < rel - EPS),
+  };
+  const right: Clip = {
+    ...clip,
+    id: uid('clip'),
+    startBar: atBar,
+    lengthBars: clip.lengthBars - rel,
+    isSelected: false,
+    notes: clip.notes
+      .filter((n) => n.startOffset >= rel - EPS)
+      .map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset - rel })),
+  };
+  return [left, right];
+}
+
+/** A selected copy of a clip `offset` bars later, with fresh clip and note ids. */
+function copyClip(clip: Clip, offset: number): Clip {
+  return {
+    ...clip,
+    id: uid('clip'),
+    startBar: clip.startBar + offset,
+    isSelected: true,
+    notes: clip.notes.map((n) => ({ ...n, id: uid('note') })),
+  };
+}
+
+/**
+ * The selected clips as one block: where it starts and how long it is (first start to last end).
+ * Null if nothing is selected, or if the block is shorter than any clip can be (only a damaged
+ * project file could give one), since copies of it would never get anywhere.
+ */
+function selectionBlock(clips: Clip[]): { selected: Clip[]; start: number; span: number } | null {
+  const selected = clips.filter((c) => c.isSelected);
+  if (selected.length === 0) return null;
+  const start = Math.min(...selected.map((c) => c.startBar));
+  const end = Math.max(...selected.map((c) => c.startBar + c.lengthBars));
+  return end - start >= MIN_CLIP_BARS - EPS ? { selected, start, span: end - start } : null;
+}
+
+/**
+ * Most clips one Fill may add. Fill's number of copies comes from the block's length, not from the
+ * user, so a tiny block could make thousands; past this the timeline takes seconds to redraw.
+ */
+const MAX_FILL_CLIPS = 2000;
+
+const countOf = (n: number) => n.toLocaleString('en-US');
+
+const pluralBars = (n: number) => `${formatBarCount(n)} bar${n === 1 ? '' : 's'}`;
 
 /** The store's master reverb / delay settings as one object. */
 function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number }): MasterFx {
@@ -211,6 +307,24 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
   const updateClip = (clipId: string, patch: (c: Clip) => Partial<Clip>) =>
     set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? { ...c, ...patch(c) } : c)) }));
+
+  /**
+   * Finish an insert / remove-bars edit: the new clips (one undo step), then everything else placed
+   * on the timeline moved by the same rule, so it stays with the music: `movePoint` for a position,
+   * `moveLoop` for the loop region. Anything new that sits at a song position belongs here too.
+   */
+  const applyRipple = (clips: Clip[], movePoint: (bar: number) => number, moveLoop: (loop: LoopRegion) => LoopRegion) => {
+    const s = get();
+    const clipsChanged = clips.length !== s.clips.length || clips.some((c, i) => c !== s.clips[i]);
+    const loopRegion = moveLoop(s.loopRegion);
+    const loopChanged = loopRegion.inBar !== s.loopRegion.inBar || loopRegion.outBar !== s.loopRegion.outBar;
+    set((st) => ({
+      ...(clipsChanged ? { clips, ...pushPast(st) } : {}),
+      ...(loopChanged ? { loopRegion } : {}),
+    }));
+    const playhead = movePoint(s.playheadPosition);
+    if (playhead !== s.playheadPosition) get().seek(playhead);
+  };
 
   const frame = () => {
     const pos = getAudiblePositionBar();
@@ -529,28 +643,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     splitClip: (clipId, atBar) =>
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
-        if (!clip) return s;
-        const rel = atBar - clip.startBar;
-        if (rel <= EPS || rel >= clip.lengthBars - EPS) return s;
-
-        const left: Clip = {
-          ...clip,
-          lengthBars: rel,
-          notes: clip.notes.filter((n) => n.startOffset < rel - EPS),
-        };
-        const right: Clip = {
-          ...clip,
-          id: uid('clip'),
-          startBar: atBar,
-          lengthBars: clip.lengthBars - rel,
-          isSelected: false,
-          notes: clip.notes
-            .filter((n) => n.startOffset >= rel - EPS)
-            .map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset - rel })),
-        };
+        const halves = clip && splitClipAt(clip, atBar);
+        if (!clip || !halves) return s;
         const idx = s.clips.indexOf(clip);
         const clips = [...s.clips];
-        clips.splice(idx, 1, left, right);
+        clips.splice(idx, 1, ...halves);
         return { clips, ...pushPast(s) };
       }),
 
@@ -571,15 +668,154 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     deleteSelectedClips: () =>
       set((s) => (s.clips.some((c) => c.isSelected) ? { clips: s.clips.filter((c) => !c.isSelected), ...pushPast(s) } : s)),
 
+    moveClips: (moves) =>
+      set((s) => {
+        const byId = new Map(moves.map((m) => [m.clipId, m]));
+        const trackIds = new Set(s.tracks.map((t) => t.id));
+        let changed = false;
+        const clips = s.clips.map((c) => {
+          const m = byId.get(c.id);
+          if (!m) return c;
+          const startBar = Math.max(1, Math.min(TOTAL_BARS + 1 - c.lengthBars, m.startBar));
+          const trackId = m.trackId !== undefined && trackIds.has(m.trackId) ? m.trackId : c.trackId;
+          // Keep untouched clips identical so their (memoized) views don't re-render on every pointer move
+          if (startBar === c.startBar && trackId === c.trackId) return c;
+          changed = true;
+          return { ...c, startBar, trackId };
+        });
+        return changed ? { clips } : s;
+      }),
+
+    // ---------- Copies of the selection ----------
+    duplicateSelection: () => get().repeatSelection(1),
+
+    repeatSelection: (times) => {
+      const block = selectionBlock(get().clips);
+      const count = Math.floor(times);
+      if (!block || !(count >= 1)) return null;
+      // Whole copies of the block that fit before the end of the timeline
+      const room = Math.floor((TOTAL_BARS + 1 - block.start - block.span) / block.span + EPS);
+      if (room < count) {
+        const end = `the end of the timeline (bar ${TOTAL_BARS + 1})`;
+        return room <= 0 ? `No room for a copy before ${end}.` : `Only ${room} ${room === 1 ? 'copy fits' : 'copies fit'} before ${end}.`;
+      }
+      const copies = Array.from({ length: count }, (_, i) => block.selected.map((c) => copyClip(c, (i + 1) * block.span))).flat();
+      set((s) => ({
+        clips: [...s.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...copies],
+        ...pushPast(s),
+      }));
+      return null;
+    },
+
+    fillSelectionToLoopOut: () => {
+      const s = get();
+      const block = selectionBlock(s.clips);
+      if (!block) return null;
+      const out = s.loopRegion.outBar;
+      // Copies that start before Out (the last one may be cut short), counted before making any
+      const passes = Math.max(0, Math.ceil((out - EPS - block.start) / block.span) - 1);
+      if (passes * block.selected.length > MAX_FILL_CLIPS) {
+        return `Filling to bar ${formatBarCount(out)} would make ${countOf(passes * block.selected.length)} clips; Fill makes at most ${countOf(MAX_FILL_CLIPS)} at a time. Move Out earlier, or fill with longer clips.`;
+      }
+      const copies: Clip[] = [];
+      for (let k = 1; k <= passes; k++) {
+        for (const c of block.selected) {
+          const copy = copyClip(c, k * block.span);
+          // The last pass is cut off at Out. Notes past the cut stay in the clip, hidden, as after a trim.
+          const length = Math.min(c.lengthBars, out - copy.startBar);
+          if (length >= MIN_CLIP_BARS - EPS) copies.push(length < c.lengthBars ? { ...copy, lengthBars: length } : copy);
+        }
+      }
+      if (copies.length === 0) {
+        return `Nothing fits between the selection and the loop's Out (bar ${formatBarCount(out)}). Move Out later first.`;
+      }
+      set((st) => ({
+        clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...copies],
+        ...pushPast(st),
+      }));
+      return null;
+    },
+
+    // ---------- Ripple edits ----------
+    insertBars: (atBar, bars) => {
+      const s = get();
+      const at = clampBar(atBar);
+      if (!(bars > 0)) return null;
+      const clips: Clip[] = [];
+      for (const c of s.clips) {
+        const halves = splitClipAt(c, at);
+        if (halves) {
+          // Across the insert point: split it there and move the right half
+          const [left, right] = halves;
+          clips.push(left, { ...right, startBar: right.startBar + bars, isSelected: c.isSelected });
+        } else {
+          clips.push(c.startBar >= at - EPS ? { ...c, startBar: c.startBar + bars } : c);
+        }
+      }
+      if (clips.some((c) => c.startBar + c.lengthBars > TOTAL_BARS + 1 + EPS)) {
+        return `Can't insert ${pluralBars(bars)}: clips would be pushed past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+      }
+      // Positions move with the music after the insert point. A loop starting there moves; one ending there doesn't.
+      const movePoint = (bar: number) => (bar >= at - EPS ? bar + bars : bar);
+      applyRipple(clips, movePoint, (loop) => {
+        const outBar = loop.outBar > at + EPS ? loop.outBar + bars : loop.outBar;
+        const inBar = movePoint(loop.inBar);
+        // Pushed off the end: pin Out to the end of the timeline. A loop that moved whole keeps its
+        // length; one that started before the insert point keeps its In.
+        if (outBar > TOTAL_BARS + 1) return { ...loop, outBar: TOTAL_BARS + 1, inBar: Math.min(inBar, TOTAL_BARS + 1 - (loop.outBar - loop.inBar)) };
+        return { ...loop, inBar, outBar };
+      });
+      return null;
+    },
+
+    removeBars: (fromBar, toBar) => {
+      const s = get();
+      const from = clampBar(Math.min(fromBar, toBar));
+      const to = clampBar(Math.max(fromBar, toBar));
+      const len = to - from;
+      if (len < EPS) return null;
+      const clips: Clip[] = [];
+      for (const c of s.clips) {
+        const end = c.startBar + c.lengthBars;
+        if (end <= from + EPS) {
+          clips.push(c);
+        } else if (c.startBar >= to - EPS) {
+          clips.push({ ...c, startBar: c.startBar - len });
+        } else {
+          // Keep only the parts outside the removed bars (a clip entirely inside them goes)
+          const left = splitClipAt(c, from)?.[0];
+          const right = splitClipAt(c, to)?.[1];
+          if (left) clips.push(left);
+          if (right) clips.push({ ...right, id: left ? right.id : c.id, startBar: from, isSelected: c.isSelected });
+        }
+      }
+      const movePoint = (bar: number) => (bar <= from ? bar : bar >= to ? bar - len : from);
+      // Shortest loop the snap grid allows, as when dragging its brackets
+      const minLoop = minClipLength(s.snapGrid, s);
+      applyRipple(clips, movePoint, (loop) => {
+        const inBar = movePoint(loop.inBar);
+        const outBar = movePoint(loop.outBar);
+        // A loop (nearly) all inside the removed bars, like "Delete bars In → Out", keeps its length, now over what came after
+        if (outBar - inBar < minLoop - EPS) return { ...loop, inBar, outBar: Math.min(TOTAL_BARS + 1, inBar + loop.outBar - loop.inBar) };
+        return { ...loop, inBar, outBar };
+      });
+      return null;
+    },
+
     // ---------- Clipboard ----------
     clipboard: [],
+    clipboardInstrument: null,
 
     copySelectedClips: () => {
-      const selected = get().clips.filter((c) => c.isSelected);
+      const { clips, tracks } = get();
+      const selected = clips.filter((c) => c.isSelected);
       if (selected.length === 0) return;
       const origin = Math.min(...selected.map((c) => c.startBar));
+      const fromOneTrack = selected.every((c) => c.trackId === selected[0].trackId);
       set({
         clipboard: selected.map((c) => ({ ...c, startBar: c.startBar - origin, isSelected: false })),
+        // Remembered now, so the clips can still be pasted onto a matching track after theirs is gone
+        clipboardInstrument: fromOneTrack ? (tracks.find((t) => t.id === selected[0].trackId)?.instrumentKey ?? null) : null,
       });
     },
 
@@ -588,17 +824,20 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       get().deleteSelectedClips();
     },
 
-    pasteClips: (atBar) => {
-      const { clipboard, tracks, playheadPosition, snapGrid, isPlaying } = get();
+    pasteClips: (atBar, ontoTrackId) => {
+      const { clipboard, clipboardInstrument, tracks, playheadPosition, snapGrid, isPlaying } = get();
       if (clipboard.length === 0) return;
       const trackIds = new Set(tracks.map((t) => t.id));
       const at = clampBar(atBar ?? snapBar(playheadPosition, snapGrid, get()));
+      const onto = ontoTrackId !== undefined ? tracks.find((t) => t.id === ontoTrackId) : undefined;
+      const target = onto && clipboardInstrument && canMoveClipBetween(clipboardInstrument, onto.instrumentKey) ? onto.id : null;
 
       const pasted: Clip[] = clipboard
-        .filter((c) => trackIds.has(c.trackId))
+        .filter((c) => target !== null || trackIds.has(c.trackId))
         .map((c) => ({
           ...c,
           id: uid('clip'),
+          trackId: target ?? c.trackId,
           startBar: Math.max(1, Math.min(TOTAL_BARS + 1 - c.lengthBars, at + c.startBar)),
           isSelected: true,
           notes: c.notes.map((n) => ({ ...n, id: uid('note') })),
@@ -804,6 +1043,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     draggingInstrument: null,
     setDraggingInstrument: (instrument) => set({ draggingInstrument: instrument }),
+    clipDragTargets: null,
+    setClipDragTargets: (trackIds) => set({ clipDragTargets: trackIds }),
   };
 });
 

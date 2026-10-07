@@ -1,13 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import * as Tone from 'tone';
-import { useTimelineStore } from '../../store/timelineStore';
+import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, Track } from '../../store/timelineTypes';
 import { durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/scheduler';
-import { isDrumKind } from '../../audio/instrumentCatalog';
+import { canMoveClipBetween, isDrumKind } from '../../audio/instrumentCatalog';
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
-import { TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
+import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
 
 const CLIP_INSET = 4;
 const CLIP_HEIGHT = TRACK_HEIGHT - CLIP_INSET * 2;
@@ -65,6 +65,25 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
 
 type DragMode = 'move' | 'trim-start' | 'trim-end';
 
+/** The element that scrolls the lanes (the nearest ancestor with vertical overflow scrolling). */
+function scrollParent(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const { overflowY } = getComputedStyle(p);
+    if (overflowY === 'auto' || overflowY === 'scroll') return p;
+  }
+  return null;
+}
+
+/** Edge zone (px) where a drag scrolls the timeline, and the fastest it scrolls (px per frame). */
+const AUTO_SCROLL_EDGE = 24;
+const AUTO_SCROLL_MAX = 24;
+
+/** Auto-scroll step for a pointer at `pos` in a view from `lo` to `hi`: faster the deeper into an edge zone. */
+function edgeStep(pos: number, lo: number, hi: number): number {
+  const depth = pos < lo + AUTO_SCROLL_EDGE ? pos - lo - AUTO_SCROLL_EDGE : pos > hi - AUTO_SCROLL_EDGE ? pos - hi + AUTO_SCROLL_EDGE : 0;
+  return Math.sign(depth) * Math.min(AUTO_SCROLL_MAX, Math.ceil(Math.abs(depth) / 3));
+}
+
 interface ClipViewProps {
   clip: Clip;
   track: Track;
@@ -74,9 +93,11 @@ interface ClipViewProps {
 
 /**
  * A single clip block on a track lane.
- * Select tool: click to select (Shift/Ctrl adds), drag to move (all selected clips move together),
- * Alt+drag to duplicate, drag either edge to trim. Razor tool: click to split.
- * Edits snap to the active grid; hold Shift while dragging to bypass snap.
+ * Select tool: click to select (Shift/Ctrl adds), drag to move (all selected clips move together,
+ * in time and onto other tracks whose instrument fits), Alt+drag to duplicate, drag either edge to
+ * trim. Razor tool: click to split.
+ * Edits snap to the active grid; hold Shift while dragging to bypass snap. Near the edges of the
+ * lanes a drag scrolls the timeline.
  * Memoized: an edit to one clip doesn't re-render (and re-draw the notes of) every other clip.
  */
 export const ClipView = React.memo(function ClipView({ clip, track, originRef, onOpenMenu }: ClipViewProps) {
@@ -124,56 +145,155 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
     }
     if (!clip.isSelected) store.selectClip(clip.id, false);
 
-    const startX = e.clientX;
+    const startY = e.clientY;
+    // Where the pointer grabbed, in bars. The clip follows the pointer's place on the timeline,
+    // not on the screen, so it keeps up when the view scrolls under it (at the edges, or the wheel).
+    const grabBar = barFromClientX(e.clientX, originRef.current);
     const origStart = clip.startBar;
     const origEnd = clip.startBar + clip.lengthBars;
-    let dragIds: string[] = [clip.id];
-    let origStarts = new Map<string, number>();
     const altDuplicate = mode === 'move' && e.altKey;
-    let duplicated = false;
-    let moved = false;
+    let last = { clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey };
+    let moved = false; // past the few pixels that tell a drag from a click
+    let followTime = false; // moved 3px sideways: from then on the clip moves in time too
+    // The change last made, as a key: the same again is skipped (the pointer and a scroll can both
+    // ask for it). It starts as "no change", so nothing happens until something does.
+    let applied = mode === 'move' ? '0|0' : String(mode === 'trim-start' ? origStart : origEnd);
 
-    if (mode === 'move') {
-      const selected = useTimelineStore.getState().clips.filter((c) => c.isSelected);
-      dragIds = selected.some((c) => c.id === clip.id) ? selected.map((c) => c.id) : [clip.id];
-      origStarts = new Map(selected.map((c) => [c.id, c.startBar]));
-      origStarts.set(clip.id, origStart);
+    // Moves take every selected clip along (just this one if it isn't selected), as a block
+    const tracks = store.tracks;
+    const rowOf = new Map(tracks.map((t, i) => [t.id, i]));
+    const lane = e.currentTarget.closest<HTMLElement>('[data-lane]');
+    const scroller = scrollParent(e.currentTarget);
+    const dragged = mode === 'move' ? useTimelineStore.getState().clips.filter((c) => c.isSelected || c.id === clip.id) : [clip];
+    const origStarts = new Map(dragged.map((c) => [c.id, c.startBar]));
+    const origRows = new Map(dragged.map((c) => [c.id, rowOf.get(c.trackId) ?? -1]));
+    const blockStart = Math.min(...dragged.map((c) => c.startBar));
+    const blockEnd = Math.max(...dragged.map((c) => c.startBar + c.lengthBars));
+    // Row offsets at which every dragged clip lands on a track whose instrument can play it
+    // (0, staying put, always qualifies). Other offsets keep the clips on their own tracks.
+    const rowOffsets = new Set([0]);
+    for (let d = 1 - tracks.length; mode === 'move' && d < tracks.length; d++) {
+      const fits = dragged.every((c) => {
+        const row = origRows.get(c.id)!;
+        const target = tracks[row + d];
+        return row >= 0 && target !== undefined && canMoveClipBetween(tracks[row].instrumentKey, target.instrumentKey);
+      });
+      if (fits) rowOffsets.add(d);
     }
+    const grabbedRow = rowOf.get(clip.trackId) ?? 0;
 
     document.body.style.cursor = mode === 'move' ? 'grabbing' : 'ew-resize';
 
-    const onMove = (ev: PointerEvent) => {
+    let committed = false;
+    /**
+     * Make a change unless it's the one already made. The undo step comes with the first change,
+     * not when the pointer starts moving, so a click that wobbles a little leaves the history (and
+     * the redo steps) alone.
+     */
+    const apply = (key: string, change: () => void) => {
+      if (key === applied) return;
+      applied = key;
+      if (!committed) {
+        committed = true;
+        const s = useTimelineStore.getState();
+        s.checkpoint(); // one undo step per drag gesture
+        // Alt+drag: leave copies behind at the original positions, drag the originals
+        if (altDuplicate) dragged.forEach((c) => s.duplicateClip(c.id));
+      }
+      change();
+    };
+
+    /** Put the clip(s) where the pointer (`last`) says. */
+    const update = () => {
       const s = useTimelineStore.getState();
-      const deltaBars = (ev.clientX - startX) / s.zoom;
-      if (!moved && Math.abs(ev.clientX - startX) < 3) return;
-      if (!moved) s.checkpoint(); // one undo step per drag gesture
-      moved = true;
+      const pointerBar = barFromClientX(last.clientX, originRef.current);
+      const dx = (pointerBar - grabBar) * s.zoom;
+      if (Math.abs(dx) >= 3) followTime = true;
+      if (!moved) {
+        // Trims only follow the pointer sideways; a move also follows it up and down
+        if ((mode === 'move' ? Math.hypot(dx, last.clientY - startY) : Math.abs(dx)) < 3) return;
+        moved = true;
+        // Light up the lanes the grabbed clip can be dropped on
+        if (mode === 'move') s.setClipDragTargets(new Set([...rowOffsets].map((d) => tracks[grabbedRow + d].id)));
+      }
+      const deltaBars = pointerBar - grabBar;
+      const shift = last.shiftKey;
 
       if (mode === 'move') {
-        // Alt+drag: leave copies behind at the original positions, drag the originals
-        if (altDuplicate && !duplicated) {
-          duplicated = true;
-          dragIds.forEach((id) => s.duplicateClip(id));
-        }
-        const delta = snapped(origStart + deltaBars, ev.shiftKey) - origStart;
-        dragIds.forEach((id) => s.moveClip(id, (origStarts.get(id) ?? origStart) + delta));
+        // Time stays put until the pointer has gone sideways, so a clip that only changes track
+        // keeps its place even off the grid. (A trim has always gone sideways by now.)
+        const snappedDelta = followTime ? snapped(origStart + deltaBars, shift) - origStart : 0;
+        // Clamp the block as a whole, so clips pushed against either end keep their spacing
+        const delta = Math.max(1 - blockStart, Math.min(TOTAL_BARS + 1 - blockEnd, snappedDelta));
+        // Row under the pointer (held to the first and last track), counted from the lane the drag
+        // started in. Rows are all TRACK_HEIGHT tall.
+        const laneTop = lane?.getBoundingClientRect().top;
+        const pointerRows =
+          laneTop === undefined
+            ? 0
+            : Math.max(-grabbedRow, Math.min(tracks.length - 1 - grabbedRow, Math.floor((last.clientY - laneTop) / TRACK_HEIGHT)));
+        const rowDelta = rowOffsets.has(pointerRows) ? pointerRows : 0;
+        apply(`${delta}|${rowDelta}`, () =>
+          s.moveClips(
+            dragged.map((c) => ({
+              clipId: c.id,
+              startBar: origStarts.get(c.id)! + delta,
+              trackId: tracks[origRows.get(c.id)! + rowDelta]?.id,
+            }))
+          )
+        );
       } else if (mode === 'trim-start') {
         const minLen = minClipLength(s.snapGrid, s);
-        s.trimClipStart(clip.id, Math.min(snapped(origStart + deltaBars, ev.shiftKey), origEnd - minLen));
+        const start = Math.min(snapped(origStart + deltaBars, shift), origEnd - minLen);
+        apply(String(start), () => s.trimClipStart(clip.id, start));
       } else {
         const minLen = minClipLength(s.snapGrid, s);
-        const end = Math.max(snapped(origEnd + deltaBars, ev.shiftKey), origStart + minLen);
-        s.trimClipEnd(clip.id, end - origStart);
+        const end = Math.max(snapped(origEnd + deltaBars, shift), origStart + minLen);
+        apply(String(end), () => s.trimClipEnd(clip.id, end - origStart));
       }
     };
 
+    // Near an edge of the lanes, scroll the timeline towards the pointer while it stays there.
+    // Moves scroll both ways, trims only sideways. The edges are those of the part on screen, so
+    // it also works when the page has scrolled part of the timeline out of the window.
+    let frame = 0;
+    const autoScroll = () => {
+      frame = 0;
+      if (!scroller || !moved) return;
+      const r = scroller.getBoundingClientRect();
+      const { scrollLeft, scrollTop } = scroller;
+      scroller.scrollLeft += edgeStep(last.clientX, Math.max(0, r.left + HEADER_WIDTH), Math.min(window.innerWidth, r.right));
+      if (mode === 'move') scroller.scrollTop += edgeStep(last.clientY, Math.max(0, r.top + RULER_HEIGHT), Math.min(window.innerHeight, r.bottom));
+      if (scroller.scrollLeft === scrollLeft && scroller.scrollTop === scrollTop) return; // out of the zone, or at the end
+      update();
+      frame = requestAnimationFrame(autoScroll);
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      last = { clientX: ev.clientX, clientY: ev.clientY, shiftKey: ev.shiftKey };
+      update();
+      if (!frame) frame = requestAnimationFrame(autoScroll);
+    };
+    // Scrolled some other way mid-drag (the mouse wheel): keep the clip under the pointer
+    const onScroll = () => {
+      if (moved) update();
+    };
+
+    // A cancelled pointer (the browser took a touch over) ends the drag too, so the edge
+    // scrolling can't run on by itself
     const onUp = () => {
       document.body.style.cursor = '';
+      cancelAnimationFrame(frame);
+      if (moved && mode === 'move') useTimelineStore.getState().setClipDragTargets(null);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      scroller?.removeEventListener('scroll', onScroll);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    scroller?.addEventListener('scroll', onScroll);
   };
 
   const handleHover = (e: React.PointerEvent<HTMLDivElement>) => {
