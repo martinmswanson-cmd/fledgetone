@@ -13,6 +13,8 @@ const LEGACY_FORMATS = ['grooveforge-project'];
 export const PROJECT_VERSION = 1;
 const AUTOSAVE_KEY = 'bos-beat-box.autosave.v1';
 const LEGACY_AUTOSAVE_KEYS = ['grooveforge.autosave.v1'];
+/** The previous session, set aside at startup (see preservePreviousSession). */
+const PREVIOUS_SESSION_KEY = 'bos-beat-box.autosave.previous';
 
 export interface ProjectData {
   format: typeof PROJECT_FORMAT;
@@ -163,20 +165,85 @@ function parseMasterFx(v: unknown): MasterFx {
   };
 }
 
-export function loadAutosave(): ProjectSnapshot | null {
+export type AutosaveResult = { ok: true } | { ok: false; reason: 'too-big' | 'blocked' };
+
+/** True once this page has written an autosave (so the stored one is no longer the previous session). */
+let wroteAutosave = false;
+
+/**
+ * Save to browser storage. The autosave also records when it was written (`savedAt`, ignored
+ * by project parsing), so a restored session can say how old it is.
+ */
+export function writeAutosave(p: ProjectSnapshot): AutosaveResult {
   try {
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ ...serializeProject(p), savedAt: Date.now() }));
+    wroteAutosave = true;
+    return { ok: true };
+  } catch (err) {
+    // Full (a big Sampler sound), or blocked outright (some private modes, disabled site data)
+    const full = err instanceof DOMException && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+    return { ok: false, reason: full ? 'too-big' : 'blocked' };
+  }
+}
+
+/** A session the app can offer to restore, and when it was autosaved (null if unknown). */
+export interface SavedSession {
+  project: ProjectSnapshot;
+  savedAt: number | null;
+}
+
+const savedAtOf = (raw: unknown): number | null => (isObj(raw) && isNum(raw.savedAt) ? raw.savedAt : null);
+
+/**
+ * Run once at startup, before autosave can write: if the autosave holds a session with clips,
+ * copy it to a second slot, which the Restore banner offers until the user restores or
+ * dismisses it. So the session survives reloads even after the new session's edits replace the
+ * autosave. Returns the session to offer, or null.
+ *
+ * If the copy doesn't fit in storage, the session is still offered for as long as this page is open.
+ */
+export function preservePreviousSession(): SavedSession | null {
+  let fromAutosave: SavedSession | null = null;
+  try {
+    // Autosaves from before the rename (GrooveForge) are still picked up
     const json = [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].map((k) => localStorage.getItem(k)).find((v) => v !== null);
-    return json ? parseProject(JSON.parse(json)) : null;
+    if (json) {
+      const raw: unknown = JSON.parse(json);
+      const project = parseProject(raw);
+      if (project.clips.length > 0) {
+        fromAutosave = { project, savedAt: savedAtOf(raw) };
+        localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt: fromAutosave.savedAt, project: raw }));
+      }
+    }
+  } catch {
+    // Unreadable autosave, blocked storage, or no room for the copy: fall through
+  }
+  if (fromAutosave) return fromAutosave;
+
+  // An empty (or unreadable) autosave doesn't replace a session set aside earlier
+  try {
+    const json = localStorage.getItem(PREVIOUS_SESSION_KEY);
+    if (!json) return null;
+    const raw: unknown = JSON.parse(json);
+    if (!isObj(raw)) return null;
+    const project = parseProject(raw.project);
+    return project.clips.length > 0 ? { project, savedAt: savedAtOf(raw) } : null;
   } catch {
     return null;
   }
 }
 
-export function writeAutosave(p: ProjectSnapshot): void {
+/**
+ * Forget the set-aside session (after Restore or Dismiss). If this page hasn't autosaved yet, the
+ * autosave still holds that same session; dismissing removes it too, or the next startup would
+ * offer it again.
+ */
+export function clearPreviousSession(dismissed: boolean): void {
   try {
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(serializeProject(p)));
+    localStorage.removeItem(PREVIOUS_SESSION_KEY);
+    if (dismissed && !wroteAutosave) [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].forEach((k) => localStorage.removeItem(k));
   } catch {
-    // Storage full or blocked (private mode): autosave is best-effort
+    // Storage blocked: nothing was kept anyway
   }
 }
 

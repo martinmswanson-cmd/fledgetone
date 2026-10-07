@@ -253,7 +253,7 @@ export const TimelineToolbar: React.FC = () => {
 
       {/* History */}
       <div className="flex items-center gap-1.5" role="group" aria-label="History">
-        <ToolButton id="btn-undo" title="Undo (Ctrl+Z)" onClick={undo} disabled={!canUndo}>
+        <ToolButton id="btn-undo" title="Undo clip, track and mixer changes (Ctrl+Z)" onClick={undo} disabled={!canUndo}>
           <Undo2 className="w-4 h-4" />
         </ToolButton>
         <ToolButton id="btn-redo" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" onClick={redo} disabled={!canRedo}>

@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { Download, FilePlus2, FolderOpen, History, Loader2, Music2, Save, X } from 'lucide-react';
+import { AlertTriangle, HardDrive } from 'lucide-react';
 import { currentProject, lastSession, useTimelineStore } from '../../store/timelineStore';
 import { parseProject, safeFileName, serializeProject } from '../../store/project';
+import { clearPreviousSession } from '../../store/project';
 import { downloadBlob, encodeWav, renderArrangement } from '../../audio/exportWav';
 import { barToSeconds, formatSmpte } from '../../audio/transport';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -149,39 +151,88 @@ const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   );
 };
 
+const clockTime = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+/** When a session was saved, in words: "today at 14:02", "yesterday at 18:30", "on 3 Oct at 9:15" (in the local clock style). */
+function savedWhen(at: number): string {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  if (at >= startOfToday.getTime()) return `today at ${clockTime(at)}`;
+  if (at >= startOfYesterday.getTime()) return `yesterday at ${clockTime(at)}`;
+  const d = new Date(at);
+  const sameYear = d.getFullYear() === startOfToday.getFullYear();
+  return `on ${d.toLocaleDateString([], { day: 'numeric', month: 'short', year: sameYear ? undefined : 'numeric' })} at ${clockTime(at)}`;
+}
+
 /**
  * The app always opens on an empty timeline. If the last session had work in it, offer to
- * bring it back (it lives in memory until dismissed, even after autosave moves on).
+ * bring it back. The session was set aside at startup, so the offer survives reloads (even
+ * after new edits replace the autosave) until Restore or Dismiss.
  */
 export const RestoreSessionBanner: React.FC = () => {
   const [open, setOpen] = useState(lastSession !== null);
   if (!open || !lastSession) return null;
-  const session = lastSession;
-  const n = session.clips.length;
+  const { project, savedAt } = lastSession;
+  const n = project.clips.length;
+  const close = (dismissed: boolean) => {
+    clearPreviousSession(dismissed);
+    setOpen(false);
+  };
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 border-b border-forge-border bg-cyan-500/10 text-xs">
       <History className="w-4 h-4 text-cyan-300 shrink-0" />
       <span className="text-forge-text">
-        Your last session, <b>{session.name}</b> ({n} clip{n === 1 ? '' : 's'}), can be restored.
+        Your last session, <b>{project.name}</b> ({n} clip{n === 1 ? '' : 's'}
+        {savedAt !== null && `, saved ${savedWhen(savedAt)}`}), can be restored.
       </span>
       <div className="flex items-center gap-1.5 ml-auto">
         <button
           type="button"
           className={`${barButton} !text-cyan-200 !border-cyan-400/60`}
           onClick={() => {
-            useTimelineStore.getState().loadProject(session);
-            setOpen(false);
+            useTimelineStore.getState().loadProject(project);
+            close(false);
           }}
           title="Replace the current timeline with your last session"
         >
           Restore
         </button>
-        <button type="button" className={barButton} onClick={() => setOpen(false)}>
+        <button type="button" className={barButton} onClick={() => close(true)} title="Forget your last session">
           Dismiss
         </button>
       </div>
     </div>
+  );
+};
+
+/**
+ * Whether the browser copy is up to date: "Saved in this browser" with the time of the last
+ * autosave, or a red warning when it no longer fits (or the browser blocks storage).
+ */
+const AutosaveStatusChip: React.FC = () => {
+  const status = useTimelineStore((s) => s.autosaveStatus);
+  if (!status) return null;
+  if (status.ok) {
+    return (
+      <span
+        className="flex items-center gap-1 px-1 text-[11px] font-mono text-forge-muted"
+        title="Your work is saved in this browser half a second after every change. Use Save to keep a file."
+      >
+        <HardDrive className="w-3 h-3" />
+        Saved in this browser · {clockTime(status.at)}
+      </span>
+    );
+  }
+  return (
+    <span role="status" className="basis-full flex items-center gap-1.5 text-[11px] text-red-400">
+      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+      {status.reason === 'too-big'
+        ? 'Not autosaved: this project is too big for browser storage. Use Save.'
+        : 'Not autosaved: this browser is blocking storage for this site. Use Save.'}
+    </span>
   );
 };
 
@@ -242,6 +293,7 @@ export const ProjectBar: React.FC = () => {
       >
         <Download className="w-3.5 h-3.5" /> Export WAV
       </button>
+      <AutosaveStatusChip />
       <input
         ref={fileInput}
         type="file"

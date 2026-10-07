@@ -176,8 +176,16 @@ const auditionInstruments = new Map<InstrumentKey, TrackInstrument>();
 export function auditionInstrument(key: InstrumentKey, auditionOutput: Tone.InputNode): TrackInstrument {
   let inst = auditionInstruments.get(key);
   if (!inst) {
-    inst = createInstrument(key, auditionOutput);
-    auditionInstruments.set(key, inst);
+    const created = createInstrument(key, auditionOutput);
+    auditionInstruments.set(key, created);
+    // A failed sample download leaves it silent for good: drop it, so the next use builds a new
+    // one (which tries the download again)
+    created.ready.catch(() => {
+      if (auditionInstruments.get(key) !== created) return;
+      auditionInstruments.delete(key);
+      created.dispose();
+    });
+    inst = created;
   }
   return inst;
 }

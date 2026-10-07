@@ -19,6 +19,8 @@ import { EqCurvePreview } from './EqCurvePreview';
 import { DistortionPanel, DynamicsAndChorusPanels } from './InsertFx';
 import { SampleLoader } from './SampleLoader';
 import { INSTRUMENTS, instrumentsByCategory } from '../../audio/instrumentCatalog';
+import { retryInstrumentDownload } from '../../audio/liveTracks';
+import { UndoableRange } from '../UndoableRange';
 
 export const TrackInspector: React.FC = () => {
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
@@ -64,7 +66,7 @@ export const TrackInspector: React.FC = () => {
     const ok =
       clipCount === 0 ||
       window.confirm(
-        `Delete "${currentTrack.name}" and its ${clipCount} clip${clipCount === 1 ? '' : 's'}?\n\nThis can't be undone.`
+        `Delete "${currentTrack.name}" and its ${clipCount} clip${clipCount === 1 ? '' : 's'}?\n\nUndo (Ctrl+Z) brings it back.`
       );
     if (ok) useTimelineStore.getState().deleteTrack(currentTrack.id);
   };
@@ -169,9 +171,17 @@ export const TrackInspector: React.FC = () => {
                     </span>
                   )}
                   {status === 'error' && (
-                    <span className="flex items-center gap-1 text-red-400 font-semibold">
+                    <span className="flex items-center gap-1 text-red-400 font-semibold" title="Couldn't download the sounds">
                       <AlertCircle className="w-3 h-3" />
                       Error
+                      <button
+                        type="button"
+                        onClick={() => void retryInstrumentDownload(currentTrack.instrumentKey).catch(() => {})}
+                        className="ml-1 px-1.5 py-0.5 rounded border border-red-500/50 text-red-200 hover:bg-red-950/50 transition"
+                        title="Try the download again"
+                      >
+                        Retry
+                      </button>
                     </span>
                   )}
                   {status === 'unloaded' && (
@@ -234,15 +244,14 @@ export const TrackInspector: React.FC = () => {
                 <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80">
                   <span className="text-[10px] font-mono font-bold text-cyan-300">LOW</span>
                   <span className="text-[9px] font-mono text-forge-muted mb-1">400Hz</span>
-                  <input
-                    type="range"
-                    min="-24"
-                    max="12"
-                    step="0.5"
+                  <UndoableRange
+                    min={-24}
+                    max={12}
+                    step={0.5}
                     value={currentTrack.eq?.low ?? 0}
-                    onChange={(e) => setTrackEq(currentTrack.id, { low: Number(e.target.value) })}
-                    onDoubleClick={() => setTrackEq(currentTrack.id, { low: 0 })}
-                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-cyan-400 rotate-180 [writing-mode:vertical-lr]"
+                    onValue={(v) => setTrackEq(currentTrack.id, { low: v })}
+                    resetValue={0}
+                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-cyan-400 [writing-mode:vertical-lr] [direction:rtl]"
                     title="Low Shelf (-24dB to +12dB)"
                   />
                   <span className="text-[10px] font-mono tabular-nums text-white mt-1.5 font-semibold">
@@ -254,15 +263,14 @@ export const TrackInspector: React.FC = () => {
                 <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80">
                   <span className="text-[10px] font-mono font-bold text-emerald-300">MID</span>
                   <span className="text-[9px] font-mono text-forge-muted mb-1">1.0kHz</span>
-                  <input
-                    type="range"
-                    min="-24"
-                    max="12"
-                    step="0.5"
+                  <UndoableRange
+                    min={-24}
+                    max={12}
+                    step={0.5}
                     value={currentTrack.eq?.mid ?? 0}
-                    onChange={(e) => setTrackEq(currentTrack.id, { mid: Number(e.target.value) })}
-                    onDoubleClick={() => setTrackEq(currentTrack.id, { mid: 0 })}
-                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-emerald-400 rotate-180 [writing-mode:vertical-lr]"
+                    onValue={(v) => setTrackEq(currentTrack.id, { mid: v })}
+                    resetValue={0}
+                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-emerald-400 [writing-mode:vertical-lr] [direction:rtl]"
                     title="Mid Bell (-24dB to +12dB)"
                   />
                   <span className="text-[10px] font-mono tabular-nums text-white mt-1.5 font-semibold">
@@ -274,15 +282,14 @@ export const TrackInspector: React.FC = () => {
                 <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80">
                   <span className="text-[10px] font-mono font-bold text-amber-300">HIGH</span>
                   <span className="text-[9px] font-mono text-forge-muted mb-1">2.5kHz</span>
-                  <input
-                    type="range"
-                    min="-24"
-                    max="12"
-                    step="0.5"
+                  <UndoableRange
+                    min={-24}
+                    max={12}
+                    step={0.5}
                     value={currentTrack.eq?.high ?? 0}
-                    onChange={(e) => setTrackEq(currentTrack.id, { high: Number(e.target.value) })}
-                    onDoubleClick={() => setTrackEq(currentTrack.id, { high: 0 })}
-                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-amber-400 rotate-180 [writing-mode:vertical-lr]"
+                    onValue={(v) => setTrackEq(currentTrack.id, { high: v })}
+                    resetValue={0}
+                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-amber-400 [writing-mode:vertical-lr] [direction:rtl]"
                     title="High Shelf (-24dB to +12dB)"
                   />
                   <span className="text-[10px] font-mono tabular-nums text-white mt-1.5 font-semibold">
@@ -315,13 +322,12 @@ export const TrackInspector: React.FC = () => {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
+                  <UndoableRange
+                    min={0}
+                    max={1}
+                    step={0.01}
                     value={currentTrack.reverbSend ?? 0}
-                    onChange={(e) => setTrackReverbSend(currentTrack.id, Number(e.target.value))}
+                    onValue={(v) => setTrackReverbSend(currentTrack.id, v)}
                     className="flex-1 accent-cyan-400 cursor-pointer h-1.5 bg-zinc-800 rounded-lg appearance-none"
                   />
                   <div
@@ -348,13 +354,12 @@ export const TrackInspector: React.FC = () => {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
+                  <UndoableRange
+                    min={0}
+                    max={1}
+                    step={0.01}
                     value={currentTrack.delaySend ?? 0}
-                    onChange={(e) => setTrackDelaySend(currentTrack.id, Number(e.target.value))}
+                    onValue={(v) => setTrackDelaySend(currentTrack.id, v)}
                     className="flex-1 accent-amber-400 cursor-pointer h-1.5 bg-zinc-800 rounded-lg appearance-none"
                   />
                   <div
@@ -377,14 +382,13 @@ export const TrackInspector: React.FC = () => {
               </span>
               <div className="flex items-center justify-between gap-3 text-xs font-mono">
                 <span className="text-forge-muted text-[10px]">VOL</span>
-                <input
-                  type="range"
-                  min="-60"
-                  max="6"
-                  step="0.5"
+                <UndoableRange
+                  min={-60}
+                  max={6}
+                  step={0.5}
                   value={currentTrack.volume}
-                  onChange={(e) => setTrackVolume(currentTrack.id, Number(e.target.value))}
-                  onDoubleClick={() => setTrackVolume(currentTrack.id, 0)}
+                  onValue={(v) => setTrackVolume(currentTrack.id, v)}
+                  resetValue={0}
                   className="flex-1 accent-white cursor-pointer h-1.5 bg-zinc-800 rounded appearance-none"
                 />
                 <span className="w-12 text-right font-bold tabular-nums text-white">
@@ -393,14 +397,13 @@ export const TrackInspector: React.FC = () => {
               </div>
               <div className="flex items-center justify-between gap-3 text-xs font-mono">
                 <span className="text-forge-muted text-[10px]">PAN</span>
-                <input
-                  type="range"
-                  min="-1"
-                  max="1"
-                  step="0.01"
+                <UndoableRange
+                  min={-1}
+                  max={1}
+                  step={0.01}
                   value={currentTrack.pan}
-                  onChange={(e) => setTrackPan(currentTrack.id, Number(e.target.value))}
-                  onDoubleClick={() => setTrackPan(currentTrack.id, 0)}
+                  onValue={(v) => setTrackPan(currentTrack.id, v)}
+                  resetValue={0}
                   className="flex-1 accent-white cursor-pointer h-1.5 bg-zinc-800 rounded appearance-none"
                 />
                 <span className="w-12 text-right font-bold tabular-nums text-white">
@@ -442,13 +445,12 @@ export const TrackInspector: React.FC = () => {
                   <span className="text-forge-muted">Room Decay Time:</span>
                   <span className="text-cyan-300 font-bold tabular-nums">{masterReverbDecay.toFixed(1)}s</span>
                 </div>
-                <input
-                  type="range"
-                  min="0.8"
-                  max="6.0"
-                  step="0.1"
+                <UndoableRange
+                  min={0.8}
+                  max={6.0}
+                  step={0.1}
                   value={masterReverbDecay}
-                  onChange={(e) => setMasterReverbDecay(Number(e.target.value))}
+                  onValue={setMasterReverbDecay}
                   className="w-full accent-cyan-400 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
                 />
                 <div className="flex justify-between text-[9px] font-mono text-forge-muted">
@@ -507,13 +509,12 @@ export const TrackInspector: React.FC = () => {
                     {Math.round(masterDelayFeedback * 100)}%
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="0.8"
-                  step="0.02"
+                <UndoableRange
+                  min={0}
+                  max={0.8}
+                  step={0.02}
                   value={masterDelayFeedback}
-                  onChange={(e) => setMasterDelayFeedback(Number(e.target.value))}
+                  onValue={setMasterDelayFeedback}
                   className="w-full accent-amber-400 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
                 />
                 <div className="flex justify-between text-[9px] font-mono text-forge-muted">
