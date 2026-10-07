@@ -377,4 +377,4 @@ The synths and drum kits are generated in your browser. The recorded instruments
 
 ### Software
 
-Built with [Tone.js](https://github.com/Tonejs/Tone.js) by Yotam Mann and [standardized-audio-context](https://github.com/chrisguttandin/standardized-audio-context) by Christoph Guttandin, with [React](https://react.dev), [zustand](https://github.com/pmndrs/zustand) by Paul Henschel and [Lucide](https://lucide.dev) icons. All are open source under the MIT licence, except Lucide, which uses the ISC licence.
+Built with [Tone.js](https://github.com/Tonejs/Tone.js) by Yotam Mann, [standardized-audio-context](https://github.com/chrisguttandin/standardized-audio-context) and automation-events by Christoph Guttandin, [React](https://react.dev), [zustand](https://github.com/pmndrs/zustand) by Paul Henschel, [Lucide](https://lucide.dev) icons, @babel/runtime and tslib. They are open source under the MIT licence, except Lucide (ISC) and tslib (0BSD). Their full licence texts come with the app: in `third-party-licenses.txt` next to a web build, and in a comment at the top of the single-file `Bos-Beatbox.html`.

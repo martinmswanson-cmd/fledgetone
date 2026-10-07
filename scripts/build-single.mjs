@@ -27,6 +27,11 @@ html = html.replace(/<link rel="icon" type="image\/svg\+xml" href="([^"]+)"\s*\/
   return `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}" />`;
 });
 
+// The bundled libraries' licence notices travel with the file (see thirdPartyLicenses in
+// vite.config.ts). "--" can't appear inside an HTML comment.
+const licenses = read('third-party-licenses.txt').replace(/--/g, '- -');
+html = html.replace(/<html([^>]*)>/, (tag) => `${tag}\n<!--\n${licenses}-->`);
+
 const leftovers = html.match(/(src|href)="\/(assets|favicon)[^"]*"/g);
 if (leftovers) throw new Error(`Unresolved local references: ${leftovers.join(', ')}`);
 
