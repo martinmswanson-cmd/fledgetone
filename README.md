@@ -51,3 +51,7 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
   passed them.
 - Project files are versioned (`PROJECT_VERSION` in `project.ts`). New optional fields don't
   need a version bump; older builds ignore fields they don't know.
+
+## Credits
+
+The recorded instruments use free sample libraries (Salamander Grand Piano, tonejs-instruments, FluidR3 GM via MIDI.js Soundfonts), all CC BY 3.0. The full credits, with links and licences, are in the Credits section of [GUIDE.md](GUIDE.md#credits) and in the app under GUIDE > Credits.

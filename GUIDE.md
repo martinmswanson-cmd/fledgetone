@@ -355,3 +355,26 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 - Muted tracks, and tracks silenced by another track's Solo, don't play their notes at all, which saves processing power on big songs.
 - If playback stutters on a big song, mute tracks you aren't working on, switch off effects you don't need, or export a WAV: exporting never stutters, it just takes longer.
 - The **R** buttons on track headers and the red **Record** button in the toolbar don't record anything yet.
+
+## Credits
+
+The synths and drum kits are generated in your browser. The recorded instruments play free sample libraries that people made and shared. Thank you to all of them.
+
+### Recorded instruments
+
+| Instrument | Samples | Licence |
+|---|---|---|
+| Grand Piano | Salamander Grand Piano by Alexander Holm, from the [Tone.js audio collection](https://github.com/Tonejs/audio) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Bass Guitar, Electric Guitar, Saxophone | Karoryfer Samples | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Acoustic Guitar | University of Iowa Electronic Music Studios | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Violin, Harp, Trumpet, French Horn, Flute | Versilian Studios Orchestra (VSCO 2) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Cello | "Real cello notes" by flcellogrl on Freesound | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Taiko Drums, Fender Rhodes, Pipe Organ, Marimba, Chimes, Mandolin, Erhu | FluidR3 GM SoundFont by Frank Wen, rendered by Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+
+- The guitar, bass, saxophone, strings, harp, flute and brass samples were collected and edited (trimmed, volume-matched, cleaned up and tuned) by Nicholaus Brosowsky for [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments). Its samples are released under CC BY 3.0.
+- The Mandolin and Erhu are shaped in the app from the FluidR3 steel-string guitar and violin.
+- Bo's Beatbox loads these samples straight from the projects above; it doesn't copy or change the files.
+
+### Software
+
+Built with [Tone.js](https://github.com/Tonejs/Tone.js) by Yotam Mann and [standardized-audio-context](https://github.com/chrisguttandin/standardized-audio-context) by Christoph Guttandin, with [React](https://react.dev), [zustand](https://github.com/pmndrs/zustand) by Paul Henschel and [Lucide](https://lucide.dev) icons. All are open source under the MIT licence, except Lucide, which uses the ISC licence.

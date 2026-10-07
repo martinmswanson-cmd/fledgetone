@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * A small Markdown renderer for the in-app guide (GUIDE.md): ## / ### headings, paragraphs,
- * - and 1. lists, | tables |, > tips, **bold**, *italic* and `code`. It builds React elements
+ * - and 1. lists, | tables |, > tips, **bold**, *italic*, `code` and [links](https://...). It builds React elements
  * (no raw HTML), which is all the guide needs without pulling in a Markdown library.
  */
 
@@ -31,15 +31,26 @@ export function splitSections(markdown: string): GuideSection[] {
   return sections;
 }
 
-/** **bold** and *italic* in text with no code spans. The markers must hug the words, so "2 * 3" stays plain. */
+/**
+ * [links](https://...), **bold** and *italic* in text with no code spans. The emphasis markers must
+ * hug the words, so "2 * 3" stays plain. Links only go to http(s) addresses, in a new tab.
+ */
 function emphasis(text: string, key: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   let last = 0;
   let i = 0;
-  for (const m of text.matchAll(/\*\*(\S(?:[^*]*\S)?)\*\*|\*(\S(?:[^*]*\S)?)\*/g)) {
+  for (const m of text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|\*\*(\S(?:[^*]*\S)?)\*\*|\*(\S(?:[^*]*\S)?)\*/g)) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const k = `${key}-${i++}`;
-    out.push(m[1] !== undefined ? <strong key={k} className="text-forge-text font-semibold">{m[1]}</strong> : <em key={k}>{m[2]}</em>);
+    if (m[1] !== undefined) {
+      out.push(
+        <a key={k} href={m[2]} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200">
+          {m[1]}
+        </a>
+      );
+    } else {
+      out.push(m[3] !== undefined ? <strong key={k} className="text-forge-text font-semibold">{m[3]}</strong> : <em key={k}>{m[4]}</em>);
+    }
     last = m.index + m[0].length;
   }
   if (last < text.length) out.push(text.slice(last));
