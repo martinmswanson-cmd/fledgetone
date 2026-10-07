@@ -24,8 +24,13 @@ export interface ProjectData {
   tracks: Track[];
   clips: Omit<Clip, 'isSelected'>[];
   masterFx: MasterFx;
-  /** Timecode frame rate. Optional, so older versions of the app still open newer files. */
+  /**
+   * Timecode frame rate. Optional, so older versions of the app still open newer files (versions
+   * that don't know 23.976 or 29.97 count those projects in 30 fps).
+   */
   fps?: FrameRate;
+  /** 29.97 timecode counted in drop-frame (optional; absent means non-drop). */
+  dropFrame?: boolean;
 }
 
 export interface ProjectSnapshot {
@@ -39,6 +44,8 @@ export interface ProjectSnapshot {
   masterFx?: MasterFx;
   /** Timecode frame rate (older projects don't have it: they counted in 30 fps). */
   fps?: FrameRate;
+  /** Drop-frame timecode, only ever true at 29.97 (older projects don't have it). */
+  dropFrame?: boolean;
 }
 
 
@@ -54,6 +61,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     clips: p.clips.map(({ isSelected: _isSelected, ...rest }) => rest),
     masterFx: p.masterFx ?? DEFAULT_MASTER_FX,
     fps: p.fps ?? DEFAULT_FRAME_RATE,
+    dropFrame: p.dropFrame === true && p.fps === 29.97,
   };
 }
 
@@ -135,6 +143,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const tracks = raw.tracks.map(parseTrack);
   const trackIds = new Set(tracks.map((t) => t.id));
   const loop = isObj(raw.loopRegion) ? raw.loopRegion : {};
+  const fps = isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE;
   return {
     name: isStr(raw.name) && raw.name.trim() ? raw.name : 'Untitled',
     bpm: isNum(raw.bpm) ? Math.max(40, Math.min(240, raw.bpm)) : 122,
@@ -149,7 +158,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     // after deleting a track), so skip them rather than refuse the whole file.
     clips: raw.clips.map(parseClip).filter((c) => trackIds.has(c.trackId)),
     masterFx: parseMasterFx(raw.masterFx),
-    fps: isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE,
+    fps,
+    dropFrame: fps === 29.97 && raw.dropFrame === true,
   };
 }
 

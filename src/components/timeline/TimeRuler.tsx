@@ -1,8 +1,18 @@
 import React from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
-import { formatRulerTime } from '../../audio/transport';
+import { formatFrameRulerTime, frameSeconds, frameToLabelCount, labelCountToFrame } from '../../audio/timecode';
 import { barFromClientX, Playhead } from './Playhead';
 import { barLabelStep, RULER_HEIGHT, TIMECODE_LABEL_PX, timecodeRulerSteps } from './layout';
+
+/**
+ * Zoomed in, the ruler is up to 512,000 px wide, so labels are drawn only for the visible stretch
+ * plus at least this much either side. Scrolling redraws them once per chunk, not per frame.
+ */
+const RENDER_CHUNK = 1024;
+
+/** SVG path of 1px vertical ticks at `xs`, `height` px tall, standing on the ruler's bottom edge. */
+const tickPath = (xs: number[], height: number) =>
+  xs.map((x) => `M${Math.round(x) + 0.5} ${RULER_HEIGHT - height}V${RULER_HEIGHT}`).join('');
 
 interface TimeRulerProps {
   originRef: React.RefObject<HTMLDivElement | null>;
@@ -21,19 +31,40 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
   const units = useTimelineStore((s) => s.rulerUnits);
   const bpm = useTimelineStore((s) => s.bpm);
   const fps = useTimelineStore((s) => s.fps);
+  const dropFrame = useTimelineStore((s) => s.dropFrame);
+  const chunk = useTimelineStore((s) => Math.floor(s.viewLeft / RENDER_CHUNK));
+  const viewWidth = useTimelineStore((s) => s.viewWidth);
   const totalWidth = TOTAL_BARS * zoom;
+  const drawFrom = Math.max(0, (chunk - 1) * RENDER_CHUNK);
+  const drawTo = Math.min(totalWidth, (chunk + 2) * RENDER_CHUNK + viewWidth);
   const showBeatLabels = zoom >= 200;
   const showBeatTicks = zoom >= 48;
   const labelStep = barLabelStep(zoom);
+  const ticks = showBeatTicks ? `${zoom / 4}px 35%, ${zoom / 16}px 18%` : `${zoom}px 35%, ${zoom}px 0%`;
+
   // Timecode mode: bar 1 is 0:00, at the project tempo
-  const pxPerSecond = (zoom * bpm) / 240;
-  const tc = timecodeRulerSteps(pxPerSecond, fps);
-  const ticks =
-    units === 'timecode'
-      ? `${tc.label * pxPerSecond}px 35%, ${tc.tick * pxPerSecond}px 18%`
-      : showBeatTicks
-        ? `${zoom / 4}px 35%, ${zoom / 16}px 18%`
-        : `${zoom}px 35%, ${zoom}px 0%`;
+  const pxPerFrame = ((zoom * bpm) / 240) * frameSeconds(fps);
+  const tc = timecodeRulerSteps((zoom * bpm) / 240, fps);
+  /**
+   * Frames that start a whole multiple of `step` timecode frames, in the drawn stretch, at least
+   * `minGap` frames apart. In drop-frame the labels that don't exist (;00, ;01 at most minute
+   * starts) fall on the next real frame, which can crowd the one after: that one is skipped.
+   */
+  const framesEvery = (step: number, minGap: number) => {
+    const first = Math.floor(frameToLabelCount(Math.floor(drawFrom / pxPerFrame), fps, dropFrame) / step);
+    const last = Math.ceil(frameToLabelCount(Math.ceil(drawTo / pxPerFrame), fps, dropFrame) / step);
+    const frames: number[] = [];
+    for (let k = first; k <= last; k++) {
+      const frame = labelCountToFrame(k * step, fps, dropFrame);
+      if (!frames.length || frame - frames[frames.length - 1] >= minGap) frames.push(frame);
+    }
+    return frames;
+  };
+  const tcLabels = units === 'timecode' ? framesEvery(tc.label, tc.label * 0.75) : [];
+  const tcTicks = units === 'timecode' ? framesEvery(tc.tick, 1) : [];
+  // Bars mode: labelled bars in the drawn stretch
+  const firstLabel = Math.max(0, Math.floor(drawFrom / (labelStep * zoom)));
+  const lastLabel = Math.min(Math.ceil(TOTAL_BARS / labelStep) - 1, Math.floor(drawTo / (labelStep * zoom)));
 
   const startBracketDrag = (which: 'in' | 'out') => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -67,8 +98,11 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
         width: totalWidth,
         height: RULER_HEIGHT,
         // beat ticks (bottom 35%) and 16th ticks (bottom 18%), just bar ticks when zoomed far out;
-        // in timecode mode, label ticks and frame / second ticks
-        backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.22) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px)`,
+        // in timecode mode the ticks are drawn below (drop-frame spaces them unevenly)
+        backgroundImage:
+          units === 'bars'
+            ? `linear-gradient(to right, rgba(255,255,255,0.22) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px)`
+            : 'none',
         backgroundSize: ticks,
         backgroundPosition: 'left bottom, left bottom',
         backgroundRepeat: 'repeat-x',
@@ -115,24 +149,39 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart })
         </span>
       </div>
 
+      {/* Timecode ticks (label ticks bottom 35%, frame / second ticks bottom 18%) */}
+      {units === 'timecode' && (
+        <svg
+          className="absolute top-0 pointer-events-none"
+          style={{ left: drawFrom, width: Math.max(0, drawTo - drawFrom), height: RULER_HEIGHT }}
+          viewBox={`${drawFrom} 0 ${Math.max(1, drawTo - drawFrom)} ${RULER_HEIGHT}`}
+          preserveAspectRatio="none"
+          shapeRendering="crispEdges"
+          aria-hidden="true"
+        >
+          <path d={tickPath(tcTicks.map((f) => f * pxPerFrame), RULER_HEIGHT * 0.18)} stroke="rgba(255,255,255,0.08)" />
+          <path d={tickPath(tcLabels.map((f) => f * pxPerFrame), RULER_HEIGHT * 0.35)} stroke="rgba(255,255,255,0.22)" />
+        </svg>
+      )}
+
       {/* Timecode labels */}
       {units === 'timecode' &&
         // Only labels whose text fits before the end of the timeline
-        Array.from({ length: Math.floor((totalWidth - TIMECODE_LABEL_PX) / (tc.label * pxPerSecond)) + 1 }, (_, k) => {
-          const x = k * tc.label * pxPerSecond;
+        tcLabels.filter((frame) => frame * pxPerFrame <= totalWidth - TIMECODE_LABEL_PX).map((frame) => {
+          const x = frame * pxPerFrame;
           return (
-            <React.Fragment key={k}>
+            <React.Fragment key={frame}>
               <div className="absolute top-0 bottom-0 w-px bg-white/30 pointer-events-none" style={{ left: x }} />
               <span className="absolute top-[6px] text-[10px] font-mono text-cyan-200/90 pointer-events-none tabular-nums" style={{ left: x + 4 }}>
-                {formatRulerTime(k * tc.label, fps)}
+                {formatFrameRulerTime(frame, fps, dropFrame)}
               </span>
             </React.Fragment>
           );
         })}
 
       {/* Bar + beat labels (every Nth bar when zoomed out so labels never overlap) */}
-      {units === 'bars' && Array.from({ length: Math.ceil(TOTAL_BARS / labelStep) }, (_, k) => {
-        const i = k * labelStep;
+      {units === 'bars' && Array.from({ length: Math.max(0, lastLabel - firstLabel + 1) }, (_, k) => {
+        const i = (firstLabel + k) * labelStep;
         const bar = i + 1;
         return (
           <React.Fragment key={bar}>

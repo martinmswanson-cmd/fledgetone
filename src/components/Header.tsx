@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import boLogo from '../assets/bo.svg';
 import { GuidePanel } from './guide/GuidePanel';
+import { FitTempoPopover, TempoField } from './TempoControls';
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
@@ -16,6 +17,9 @@ export const Header: React.FC = () => {
   const [guideOpen, setGuideOpen] = useState(false);
   // Stable, so the guide's focus handling runs once per opening
   const closeGuide = useCallback(() => setGuideOpen(false), []);
+  const [fitOpen, setFitOpen] = useState(false);
+  const closeFit = useCallback(() => setFitOpen(false), []);
+  const fitButton = useRef<HTMLButtonElement>(null);
 
   // ? opens the guide from anywhere (except while typing)
   useEffect(() => {
@@ -44,11 +48,11 @@ export const Header: React.FC = () => {
       {/* Middle & Right Controls */}
       <div className="flex flex-wrap items-center gap-5">
         {/* BPM & Tap Tempo Control */}
-        <div className="flex items-center bg-forge-bg border border-forge-border rounded-lg px-3 py-1.5 gap-3">
+        <div className="relative flex flex-wrap items-center bg-forge-bg border border-forge-border rounded-lg px-3 py-1.5 gap-x-3 gap-y-2">
           <div className="flex flex-col">
             <span className="text-[10px] uppercase font-mono text-forge-muted tracking-wide">TEMPO</span>
             <div className="flex items-baseline gap-1">
-              <span className="text-lg font-bold font-mono text-white tracking-wider">{bpm}</span>
+              <TempoField />
               <span className="text-[10px] text-forge-muted font-mono">BPM</span>
             </div>
           </div>
@@ -65,6 +69,8 @@ export const Header: React.FC = () => {
               type="range"
               min="40"
               max="240"
+              step="1"
+              // Shows a tempo like 115.2 at 115 without changing it; only moving the slider sets whole BPM
               value={bpm}
               aria-label="Tempo (BPM)"
               onChange={(e) => setBpm(Number(e.target.value))}
@@ -86,6 +92,22 @@ export const Header: React.FC = () => {
           >
             TAP
           </button>
+          <button
+            ref={fitButton}
+            type="button"
+            onClick={() => setFitOpen((open) => !open)}
+            aria-expanded={fitOpen}
+            aria-haspopup="dialog"
+            className={`px-2 py-1 text-xs font-mono font-semibold rounded border transition ${
+              fitOpen
+                ? 'bg-cyan-500/20 border-cyan-400/70 text-cyan-200'
+                : 'bg-forge-panel hover:bg-forge-panelLight text-cyan-300 border-cyan-500/30 hover:border-cyan-500/60'
+            }`}
+            title="Fit to time: set the tempo so the loop, the song or some bars last a given time"
+          >
+            FIT
+          </button>
+          {fitOpen && <FitTempoPopover anchorRef={fitButton} onClose={closeFit} />}
 
           <label className="flex flex-col border-l border-forge-border pl-3" title="Swing delays every other 16th note. Set 0% for straight timing (e.g. to hit video frames exactly).">
             <span className="flex justify-between text-[10px] uppercase font-mono text-forge-muted tracking-wide">

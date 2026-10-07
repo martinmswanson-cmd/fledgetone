@@ -16,9 +16,10 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
-import { FRAME_RATES } from '../../store/timelineTypes';
-import type { FrameRate, SnapGrid } from '../../store/timelineTypes';
+import { frameRateLabel, TIMECODE_FORMATS } from '../../store/timelineTypes';
+import type { SnapGrid } from '../../store/timelineTypes';
 import { formatBarsBeats, formatSmpte, parseBarsBeats, parseTimecode, secondsToBar } from '../../audio/transport';
+import { LoopRangeButton } from './LoopRangePopover';
 
 interface PositionFieldProps {
   value: string;
@@ -82,6 +83,15 @@ const PositionField: React.FC<PositionFieldProps> = ({ value, parse, label, hint
   );
 };
 
+/**
+ * The zoom slider is logarithmic, so every part of its travel changes zoom by the same ratio
+ * (12 to 1280 px per bar is over a hundredfold). Each of its steps is about 5%.
+ */
+const ZOOM_SLIDER_STEPS = 100;
+const ZOOM_SPAN = Math.log(MAX_ZOOM / MIN_ZOOM);
+const zoomToSlider = (zoom: number) => (Math.log(zoom / MIN_ZOOM) / ZOOM_SPAN) * ZOOM_SLIDER_STEPS;
+const sliderToZoom = (value: number) => MIN_ZOOM * Math.exp((value / ZOOM_SLIDER_STEPS) * ZOOM_SPAN);
+
 /** A typed position, or null if it's past the end of the timeline. */
 const inSong = (bar: number | null) => (bar !== null && bar <= TOTAL_BARS + 1 ? bar : null);
 
@@ -89,7 +99,9 @@ const TimecodeDisplay: React.FC = () => {
   const position = useTimelineStore((s) => s.playheadPosition);
   const bpm = useTimelineStore((s) => s.bpm);
   const fps = useTimelineStore((s) => s.fps);
+  const dropFrame = useTimelineStore((s) => s.dropFrame);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
+  const rate = frameRateLabel(fps, dropFrame);
 
   return (
     <div className="flex items-stretch gap-px rounded-md overflow-hidden border border-forge-border bg-forge-border">
@@ -107,27 +119,30 @@ const TimecodeDisplay: React.FC = () => {
         <span className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono leading-none mb-0.5">
           Timecode
           <select
-            value={fps}
-            onChange={(e) => useTimelineStore.getState().setFps(Number(e.target.value) as FrameRate)}
+            value={`${fps}${dropFrame ? ' DF' : ''}`}
+            onChange={(e) => {
+              const choice = TIMECODE_FORMATS.find((f) => `${f.fps}${f.dropFrame ? ' DF' : ''}` === e.target.value);
+              if (choice) useTimelineStore.getState().setFps(choice.fps, choice.dropFrame);
+            }}
             className="bg-transparent text-[9px] uppercase tracking-widest text-cyan-300 font-mono leading-none cursor-pointer hover:text-cyan-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 rounded-sm"
             title="Timecode frame rate (saved with the project)"
             aria-label="Timecode frame rate"
           >
-            {FRAME_RATES.map((rate) => (
-              <option key={rate} value={rate} className="bg-forge-panel text-forge-text">
-                {rate} fps
+            {TIMECODE_FORMATS.map((f) => (
+              <option key={`${f.fps}${f.dropFrame}`} value={`${f.fps}${f.dropFrame ? ' DF' : ''}`} className="bg-forge-panel text-forge-text">
+                {frameRateLabel(f.fps, f.dropFrame)}
               </option>
             ))}
           </select>
         </span>
         <PositionField
-          value={formatSmpte(position, bpm, fps)}
+          value={formatSmpte(position, bpm, fps, dropFrame)}
           parse={(text) => {
-            const seconds = parseTimecode(text, fps);
+            const seconds = parseTimecode(text, fps, dropFrame);
             return seconds === null ? null : inSong(secondsToBar(seconds, bpm));
           }}
           label="timecode"
-          hint={`HH:MM:SS:FF, MM:SS:FF or SS:FF at ${fps} fps; digits alone fill from the frames, so 1500 is 15 seconds`}
+          hint={`HH:MM:SS:FF, MM:SS:FF or SS:FF at ${rate}; digits alone fill from the frames, so 1500 is 15 seconds`}
           className="text-cyan-300"
         />
       </div>
@@ -169,6 +184,7 @@ export const TimelineToolbar: React.FC = () => {
   const activeTool = useTimelineStore((s) => s.activeTool);
   const snapGrid = useTimelineStore((s) => s.snapGrid);
   const fps = useTimelineStore((s) => s.fps);
+  const dropFrame = useTimelineStore((s) => s.dropFrame);
   const zoom = useTimelineStore((s) => s.zoom);
   const canUndo = useTimelineStore((s) => s.past.length > 0);
   const canRedo = useTimelineStore((s) => s.future.length > 0);
@@ -219,15 +235,18 @@ export const TimelineToolbar: React.FC = () => {
         >
           <Circle className={`w-3.5 h-3.5 ${isRecording ? 'fill-red-500' : 'fill-red-500/60 text-red-500/60'}`} />
         </ToolButton>
-        <ToolButton
-          id="btn-loop"
-          title="Loop In→Out (L)"
-          active={loopEnabled}
-          activeClass="bg-amber-500/15 border-amber-400/70 text-amber-300"
-          onClick={toggleLoop}
-        >
-          <Repeat className="w-4 h-4" />
-        </ToolButton>
+        <div className="relative flex items-center">
+          <ToolButton
+            id="btn-loop"
+            title="Loop In→Out (L)"
+            active={loopEnabled}
+            activeClass="bg-amber-500/15 border-amber-400/70 text-amber-300"
+            onClick={toggleLoop}
+          >
+            <Repeat className="w-4 h-4" />
+          </ToolButton>
+          <LoopRangeButton />
+        </div>
       </div>
 
       {/* Timecode */}
@@ -274,7 +293,7 @@ export const TimelineToolbar: React.FC = () => {
           <option value="1/4">1/4</option>
           <option value="1/8">1/8</option>
           <option value="1/16">1/16</option>
-          <option value="frame">Frame ({fps} fps)</option>
+          <option value="frame">Frame ({frameRateLabel(fps, dropFrame)})</option>
           <option value="off">Off</option>
         </select>
       </label>
@@ -293,24 +312,25 @@ export const TimelineToolbar: React.FC = () => {
 
       {/* Zoom */}
       <div className="flex items-center gap-2 ml-auto text-forge-muted">
-        <button type="button" title="Zoom out" onClick={() => setZoom(zoom / 1.25)} className="hover:text-forge-text">
+        <button type="button" title="Zoom out (-)" onClick={() => setZoom(zoom / 1.25)} className="hover:text-forge-text">
           <ZoomOut className="w-4 h-4" />
         </button>
         <input
           id="zoom-slider"
           type="range"
-          min={MIN_ZOOM}
-          max={MAX_ZOOM}
+          min={0}
+          max={ZOOM_SLIDER_STEPS}
           step={1}
-          value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
+          value={zoomToSlider(zoom)}
+          onChange={(e) => setZoom(sliderToZoom(Number(e.target.value)))}
           className="w-28 accent-cyan-400 cursor-pointer"
-          aria-label="Timeline zoom (pixels per bar)"
+          aria-label="Timeline zoom"
+          aria-valuetext={`${zoom} pixels per bar`}
         />
-        <button type="button" title="Zoom in" onClick={() => setZoom(zoom * 1.25)} className="hover:text-forge-text">
+        <button type="button" title="Zoom in (+)" onClick={() => setZoom(zoom * 1.25)} className="hover:text-forge-text">
           <ZoomIn className="w-4 h-4" />
         </button>
-        <span className="font-mono text-[11px] w-16 text-right tabular-nums">{zoom}px/bar</span>
+        <span className="font-mono text-[11px] w-[4.5rem] text-right tabular-nums">{zoom}px/bar</span>
       </div>
     </div>
   );

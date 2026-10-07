@@ -24,7 +24,8 @@ import type { CustomSample, MasterFx, TrackFx } from './timelineTypes';
 /** Song length limit: 400 bars is 5+ minutes even at 240 BPM (about 13 minutes at 120 BPM). */
 export const TOTAL_BARS = 400;
 export const MIN_ZOOM = 12;
-export const MAX_ZOOM = 320;
+/** Deep enough for frame-level work: a 30 fps frame is 21px wide at 120 BPM. */
+export const MAX_ZOOM = 1280;
 const EPS = 1e-6;
 const HISTORY_LIMIT = 100;
 
@@ -46,8 +47,16 @@ interface TimelineState {
   loopRegion: LoopRegion;
   /** Timecode frame rate (saved with the project); also the step of the Frame snap grid. */
   fps: FrameRate;
+  /** Count 29.97 timecode in drop-frame (saved with the project; always false at other rates). */
+  dropFrame: boolean;
   /** What the time ruler counts in (a view setting, not saved). */
   rulerUnits: RulerUnits;
+  /**
+   * The lanes' visible stretch in px from bar 1 (scroll position and width), kept up to date by the
+   * timeline so the ruler can draw only what's on screen and zoom can keep its anchor in place.
+   */
+  viewLeft: number;
+  viewWidth: number;
 
   // Transport
   play: () => Promise<void>;
@@ -56,20 +65,29 @@ interface TimelineState {
   stop: () => void;
   seek: (bar: number) => void;
   toggleRecord: () => void;
+  /** Set the tempo (40 to 240 BPM, to 0.01). */
   setBpm: (bpm: number) => void;
   tapTempo: () => void;
   setSwing: (swing: number) => void;
 
   // View / tools
-  setZoom: (zoom: number) => void;
+  /**
+   * Zoom (px per bar), keeping one bar still on screen: `anchorBar` if given, else the playhead
+   * if it's in view, else the middle of the view.
+   */
+  setZoom: (zoom: number, anchorBar?: number) => void;
   setTool: (tool: TimelineTool) => void;
   setSnapGrid: (grid: SnapGrid) => void;
-  setFps: (fps: FrameRate) => void;
+  /** Timecode rate; drop-frame applies only to 29.97. */
+  setFps: (fps: FrameRate, dropFrame?: boolean) => void;
   setRulerUnits: (units: RulerUnits) => void;
+  setView: (left: number, width: number) => void;
 
   // Loop
   setLoopIn: (bar: number) => void;
   setLoopOut: (bar: number) => void;
+  /** Set In and Out exactly as typed (no snapping). False if they don't make a loop of at least a 16th. */
+  setLoopRange: (inBar: number, outBar: number) => boolean;
   toggleLoop: () => void;
 
   // Tracks & Inspector
@@ -223,7 +241,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     snapGrid: '1/16',
     loopRegion: { inBar: 1, outBar: 5, enabled: true },
     fps: DEFAULT_FRAME_RATE,
+    dropFrame: false,
     rulerUnits: 'bars',
+    viewLeft: 0,
+    viewWidth: 1200,
     projectName: 'Untitled',
     selectedTrackId: INITIAL_TRACKS[0]?.id ?? null,
     isInspectorOpen: false,
@@ -273,7 +294,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     toggleRecord: () => set((s) => ({ isRecording: !s.isRecording })),
 
     setBpm: (bpm) => {
-      const clamped = Math.max(40, Math.min(240, Math.round(bpm)));
+      // Hundredths, so a tempo fitted to a video length lands within a frame or so
+      const clamped = Math.max(40, Math.min(240, Math.round(bpm * 100) / 100));
       engineSetBpm(clamped);
       set({ bpm: clamped });
     },
@@ -286,20 +308,34 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (tapTimes.length >= 2) {
         const intervals = tapTimes.slice(1).map((t, i) => t - tapTimes[i]);
         const avg = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-        get().setBpm(60000 / avg); // setBpm clamps to 40-240
+        // Whole BPM: tapping isn't precise enough for decimals to mean anything
+        get().setBpm(Math.round(60000 / avg)); // setBpm clamps to 40-240
       }
     },
 
     setSwing: (swing) => set({ swing: Math.max(0, Math.min(0.5, swing)) }),
 
     // ---------- View / tools ----------
-    setZoom: (zoom) => set({ zoom: Math.round(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom))) }),
+    setZoom: (zoom, anchorBar) =>
+      set((s) => {
+        const next = Math.round(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom)));
+        if (next === s.zoom) return s;
+        const playheadX = (s.playheadPosition - 1) * s.zoom - s.viewLeft;
+        const anchor =
+          anchorBar ??
+          (playheadX >= 0 && playheadX <= s.viewWidth ? s.playheadPosition : (s.viewLeft + s.viewWidth / 2) / s.zoom + 1);
+        // Where the anchor sits on screen now; the timeline scrolls to viewLeft after it re-lays out
+        const anchorX = (anchor - 1) * s.zoom - s.viewLeft;
+        const maxLeft = Math.max(0, TOTAL_BARS * next - s.viewWidth);
+        return { zoom: next, viewLeft: Math.max(0, Math.min(maxLeft, (anchor - 1) * next - anchorX)) };
+      }),
     setTool: (tool) => set({ activeTool: tool }),
     setSnapGrid: (grid) => set({ snapGrid: grid }),
-    setFps: (fps) => {
-      if (isFrameRate(fps)) set({ fps });
+    setFps: (fps, dropFrame = false) => {
+      if (isFrameRate(fps)) set({ fps, dropFrame: dropFrame && fps === 29.97 });
     },
     setRulerUnits: (units) => set({ rulerUnits: units }),
+    setView: (left, width) => set((s) => (s.viewLeft === left && s.viewWidth === width ? s : { viewLeft: left, viewWidth: width })),
 
     // ---------- Loop ----------
     setLoopIn: (bar) =>
@@ -317,6 +353,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const inBar = outBar - s.loopRegion.inBar < minLen ? Math.max(1, snapBar(outBar - 1, s.snapGrid, s)) : s.loopRegion.inBar;
         return { loopRegion: { ...s.loopRegion, outBar: Math.max(outBar, inBar + minLen), inBar } };
       }),
+
+    setLoopRange: (inBar, outBar) => {
+      const a = clampBar(inBar);
+      const b = clampBar(outBar);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || b - a < 0.0625 - EPS) return false;
+      set((s) => ({ loopRegion: { ...s.loopRegion, inBar: a, outBar: b } }));
+      return true;
+    },
 
     toggleLoop: () => set((s) => ({ loopRegion: { ...s.loopRegion, enabled: !s.loopRegion.enabled } })),
 
@@ -608,10 +652,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     newProject: (template) => {
       // A new arrangement keeps the frame rate you're working in
-      const fps = get().fps;
+      const { fps, dropFrame } = get();
       get().loadProject(
         template === 'demo'
-          ? { ...createDemoProject(), fps }
+          ? { ...createDemoProject(), fps, dropFrame }
           : {
               name: 'Untitled',
               bpm: 122,
@@ -621,6 +665,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               clips: [],
               masterFx: DEFAULT_MASTER_FX,
               fps,
+              dropFrame,
             }
       );
     },
@@ -657,6 +702,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         masterDelayTime: masterFx.delayTime,
         masterDelayFeedback: masterFx.delayFeedback,
         fps: p.fps ?? DEFAULT_FRAME_RATE,
+        dropFrame: p.dropFrame === true && p.fps === 29.97,
       });
       applyMasterFx();
     },
@@ -773,6 +819,7 @@ export function currentProject(): ProjectSnapshot {
     clips: s.clips,
     masterFx: masterFxOf(s),
     fps: s.fps,
+    dropFrame: s.dropFrame,
   };
 }
 
@@ -802,7 +849,8 @@ export function connectAutosave(): () => void {
       state.masterReverbDecay === prev.masterReverbDecay &&
       state.masterDelayTime === prev.masterDelayTime &&
       state.masterDelayFeedback === prev.masterDelayFeedback &&
-      state.fps === prev.fps
+      state.fps === prev.fps &&
+      state.dropFrame === prev.dropFrame
     ) {
       return;
     }
