@@ -177,7 +177,7 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 |---|---|
 | Drums & Percussion | Drums (analog kit), Drum Machine (808-style), Taiko Drums |
 | Bass | Slap Bass, Sub-Bass, 808 Bass, Bass Guitar |
-| Keys & Synths | Grand Piano, Fender Rhodes, Space Clav, Wavetable Synth, Analog Lead, Pipe Organ |
+| Keys & Synths | Grand Piano, Electric Piano, Space Clav, Wavetable Synth, Analog Lead, Pipe Organ |
 | Guitars & Strings | Acoustic Guitar, Electric Guitar, Mandolin, Harp, Violin, Cello |
 | Winds & Brass | Brass Stabs, Saxophone, Trumpet, French Horn, Flute |
 | Mallets & Bells | Marimba, Chimes |
@@ -369,7 +369,7 @@ The synths and drum kits are generated in your browser. The recorded instruments
 | Acoustic Guitar | University of Iowa Electronic Music Studios | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Violin, Harp, Trumpet, French Horn, Flute | Versilian Studios Orchestra (VSCO 2) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Cello | "Real cello notes" by flcellogrl on Freesound | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
-| Taiko Drums, Fender Rhodes, Pipe Organ, Marimba, Chimes, Mandolin, Erhu | FluidR3 GM SoundFont by Frank Wen, rendered by Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Taiko Drums, Electric Piano, Pipe Organ, Marimba, Chimes, Mandolin, Erhu | FluidR3 GM SoundFont by Frank Wen, rendered by Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 
 - The guitar, bass, saxophone, strings, harp, flute and brass samples were collected and edited (trimmed, volume-matched, cleaned up and tuned) by Nicholaus Brosowsky for [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments). Its samples are released under CC BY 3.0.
 - The Mandolin and Erhu are shaped in the app from the FluidR3 steel-string guitar and violin.
