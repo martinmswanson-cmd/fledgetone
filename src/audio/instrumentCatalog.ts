@@ -119,7 +119,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
       release: 1.2,
     },
   },
-  rhodes: { key: 'rhodes', name: 'Fender Rhodes', blurb: 'Electric piano (recorded)', color: '#f472b6', category: 'Keys & Synths', kind: 'sampled', range: [33, 100], samples: gm('electric_piano_1', 33, 100, 3, 0.8), gain: 19 },
+  rhodes: { key: 'rhodes', name: 'Electric Piano', blurb: 'Vintage electric piano (recorded)', color: '#f472b6', category: 'Keys & Synths', kind: 'sampled', range: [33, 100], samples: gm('electric_piano_1', 33, 100, 3, 0.8), gain: 19 },
   keys: { key: 'keys', name: 'Space Clav', blurb: 'FM electric keys', color: '#a855f7', category: 'Keys & Synths', kind: 'synth', range: [36, 88] },
   wavetable: { key: 'wavetable', name: 'Wavetable Synth', blurb: 'Evolving sweeping pad', color: '#38bdf8', category: 'Keys & Synths', kind: 'synth', range: [36, 96] },
   lead: { key: 'lead', name: 'Analog Lead', blurb: 'Gliding saw lead', color: '#facc15', category: 'Keys & Synths', kind: 'synth', range: [48, 96] },
