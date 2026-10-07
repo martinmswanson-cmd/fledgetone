@@ -168,8 +168,8 @@ function savedWhen(at: number): string {
 
 /**
  * The app always opens on an empty timeline. If the last session had work in it, offer to
- * bring it back. The session was set aside at startup, so the offer survives reloads (even
- * after new edits replace the autosave) until Restore or Dismiss.
+ * bring it back. The session was set aside at startup, so the offer survives reloads until
+ * Restore or Dismiss (or until a newer session with clips takes its place).
  */
 export const RestoreSessionBanner: React.FC = () => {
   const [open, setOpen] = useState(lastSession !== null);

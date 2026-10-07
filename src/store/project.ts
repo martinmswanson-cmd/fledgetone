@@ -197,8 +197,9 @@ const savedAtOf = (raw: unknown): number | null => (isObj(raw) && isNum(raw.save
 /**
  * Run once at startup, before autosave can write: if the autosave holds a session with clips,
  * copy it to a second slot, which the Restore banner offers until the user restores or
- * dismisses it. So the session survives reloads even after the new session's edits replace the
- * autosave. Returns the session to offer, or null.
+ * dismisses it. A later startup replaces it only with a newer session that has clips, so
+ * clearing the timeline (or starting a blank one) and reloading doesn't lose it. Returns the
+ * session to offer, or null.
  *
  * If the copy doesn't fit in storage, the session is still offered for as long as this page is open.
  */
