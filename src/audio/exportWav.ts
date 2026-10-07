@@ -3,7 +3,7 @@ import { createMixChain, getMasterVolume } from './engine';
 import { createTrackStrip } from './effects/trackStrip';
 import { createInstrument } from './instruments';
 import type { TrackInstrument } from './instruments';
-import { scheduleClips } from './scheduler';
+import { createClipSchedule } from './scheduler';
 import { isSamplerKey, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS } from './instrumentCatalog';
 import { barToTicks } from './transport';
@@ -27,6 +27,49 @@ export interface RenderOptions {
 const RENDER_STEP = 1;
 /** How far past the render position notes are scheduled, so none are ever late. */
 const SCHEDULE_LEAD = 0.25;
+
+/** The fields of Tone's one-shot sources (ToneOscillatorNode, ToneBufferSource) read here. */
+interface OneShotSource {
+  context: Tone.BaseContext;
+  disposed: boolean;
+  dispose: () => void;
+  toSeconds: (time: Tone.Unit.Time) => number;
+  _onended: () => void;
+  _stopTime: number;
+  _fadeOut: Tone.Unit.Time;
+  _curve: 'linear' | 'exponential';
+}
+
+/**
+ * Every note starts fresh oscillator / buffer nodes. Live, Tone disposes them when they end,
+ * but never in an offline context: there its scheduling clock runs ahead of the render, so
+ * "ended" can still be in the render's future. Left connected, each finished node costs time
+ * in every later render block, so render time grew with the square of the song length (a
+ * busy hi-hat alone took 2x real time by 12 seconds in). Tone's ended hook is wrapped here to
+ * collect the export's finished sources, and each is disposed once the render is past it.
+ */
+const finishedSources = new WeakMap<Tone.BaseContext, OneShotSource[]>();
+const oneShotPrototype = Object.getPrototypeOf(Tone.ToneBufferSource.prototype) as OneShotSource;
+const toneOnended = oneShotPrototype._onended;
+oneShotPrototype._onended = function (this: OneShotSource) {
+  finishedSources.get(this.context)?.push(this);
+  toneOnended.call(this);
+};
+
+/** Dispose the finished sources (of `context`) whose sound, fade-out tail included, is over by `time`. */
+function disposeFinishedSources(context: Tone.BaseContext, time: number): void {
+  const finished = finishedSources.get(context);
+  if (!finished) return;
+  const ringing = finished.filter((source) => {
+    if (source.disposed) return false;
+    // Tone stops an exponential fade 2 fade-times after the stop time
+    const tail = source._curve === 'exponential' ? 2 * source.toSeconds(source._fadeOut) : 0;
+    if (source._stopTime + tail + 0.1 > time) return true;
+    source.dispose();
+    return false;
+  });
+  finishedSources.set(context, ringing);
+}
 
 /**
  * Render the arrangement faster than real time in an OfflineContext. Every instrument and
@@ -64,6 +107,7 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
   // the render is suspended would never be heard. Native nodes join the live graph at once.
   const native = new OfflineAudioContext(2, Math.ceil(duration * SAMPLE_RATE), SAMPLE_RATE);
   const context = new Tone.OfflineContext(native);
+  finishedSources.set(context, []);
   Tone.setContext(context);
   try {
     await buildGraph(context);
@@ -87,6 +131,7 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
     for (let t = RENDER_STEP; t < duration; t += RENDER_STEP) {
       const at = t;
       void native.suspend(at).then(() => {
+        disposeFinishedSources(context, at);
         advanceClock(at + RENDER_STEP + SCHEDULE_LEAD);
         onProgress?.(at / duration);
         void native.resume();
@@ -96,7 +141,7 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
     // No offline suspend (older Safari): schedule everything up front, slower for long songs
     advanceClock(duration);
   }
-  const audio = await native.startRendering();
+  const audio = await native.startRendering().finally(() => finishedSources.delete(context));
   onProgress?.(1);
   preventClipping(audio);
   return audio;
@@ -106,12 +151,14 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
     context.destination.volume.value = masterDb;
     const mix = createMixChain(context.destination, masterFx, bpm);
 
-    // Solo is resolved here as mute rather than with Channel.solo
+    // Solo is resolved here as mute rather than with Channel.solo. Silent tracks aren't built
+    // at all, so their notes cost nothing.
     const anySolo = tracks.some((t) => t.isSoloed);
     const instruments = new Map<string, TrackInstrument>();
     for (const track of tracks) {
+      if (track.isMuted || (anySolo && !track.isSoloed)) continue;
       const strip = createTrackStrip(mix.bus, mix.busFx);
-      strip.apply(track, { ramp: 0, muteOverride: track.isMuted || (anySolo && !track.isSoloed) });
+      strip.apply(track, { ramp: 0, muteOverride: false });
       instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample }));
     }
     await Promise.all([mix.busFx.ready, ...[...instruments.values()].map((i) => i.ready)]);
@@ -121,7 +168,7 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
     transport.swing = swing;
     transport.swingSubdivision = '16n';
     transport.loop = false;
-    scheduleClips(transport, tracks, clips, (trackId) => instruments.get(trackId));
+    createClipSchedule(transport, (trackId) => instruments.get(trackId)).update(tracks, clips);
     transport.start(0, `${barToTicks(startBar)}i`);
   }
 }

@@ -77,8 +77,9 @@ interface ClipViewProps {
  * Select tool: click to select (Shift/Ctrl adds), drag to move (all selected clips move together),
  * Alt+drag to duplicate, drag either edge to trim. Razor tool: click to split.
  * Edits snap to the active grid; hold Shift while dragging to bypass snap.
+ * Memoized: an edit to one clip doesn't re-render (and re-draw the notes of) every other clip.
  */
-export const ClipView: React.FC<ClipViewProps> = ({ clip, track, originRef, onOpenMenu }) => {
+export const ClipView = React.memo(function ClipView({ clip, track, originRef, onOpenMenu }: ClipViewProps) {
   const zoom = useTimelineStore((s) => s.zoom);
   const activeTool = useTimelineStore((s) => s.activeTool);
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
@@ -189,6 +190,8 @@ export const ClipView: React.FC<ClipViewProps> = ({ clip, track, originRef, onOp
         width,
         top: CLIP_INSET,
         height: CLIP_HEIGHT,
+        // Skip layout and paint of clips scrolled out of view (long songs have thousands of note marks)
+        contentVisibility: 'auto',
         backgroundColor: `${track.color}2e`,
         borderColor: clip.isSelected ? undefined : `${track.color}99`,
       }}
@@ -254,4 +257,4 @@ export const ClipView: React.FC<ClipViewProps> = ({ clip, track, originRef, onOp
       )}
     </div>
   );
-};
+});
