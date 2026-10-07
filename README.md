@@ -17,6 +17,7 @@ npm install
 npm run dev          # dev server at http://localhost:5173
 npm run build        # typecheck + production build into dist/
 npm run lint         # oxlint
+npm test             # timecode and drop-frame unit tests (node --test)
 npm run build:single # dist-single/index.html: the whole app in one self-contained HTML file
 ```
 
@@ -35,7 +36,7 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
 | `src/audio/scheduler.ts` | Turns clips into Tone.js Transport events (one event per tick, updated incrementally) |
 | `src/audio/liveTracks.ts`, `effects/trackStrip.ts` | One mixer strip and instrument per track for live playback |
 | `src/audio/instruments.ts`, `instrumentCatalog.ts`, `presets/` | Every instrument and its sound design |
-| `src/audio/exportWav.ts` | Offline WAV render, built from the same factories as live playback |
+| `src/audio/exportWav.ts` | Offline WAV render (mixdown, stems, exact-length and seamless-loop endings, 16/24/32-bit), built from the same factories as live playback |
 | `src/audio/transport.ts` | Bars, ticks, seconds and timecode conversions |
 | `src/components/timeline/` | Timeline UI: toolbar, ruler, lanes, clips, piano roll, project bar |
 

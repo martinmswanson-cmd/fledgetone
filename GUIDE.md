@@ -15,7 +15,7 @@ At the top is the header: **TEMPO** and **TAP**, **Swing**, **MASTER** volume, *
 - **Instrument Browser**: try every instrument on an on-screen keyboard.
 - **Interactive Soundbank Audition Deck**: pads you can click or play from the keyboard, and drag onto the timeline.
 
-> The app always opens on an empty timeline. If your last session had clips, a banner offers to **Restore** it. Any change you make overwrites the copy saved in the browser half a second later, but the banner keeps your last session until you click **Dismiss** or leave the page. So restore before you reload or close the tab.
+> The app always opens on an empty timeline. If your last session had clips, a banner offers to **Restore** it, saying when it was saved. It stays across reloads until you click **Restore** or **Dismiss**.
 
 ## The timeline
 
@@ -76,7 +76,14 @@ The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cut
 
 ### Undo
 
-`Ctrl+Z` undoes and `Ctrl+Shift+Z` or `Ctrl+Y` redoes, up to 100 steps. Undo covers clip and note edits only. Mixer settings, adding or deleting tracks, tempo, loop, zoom and snap are not undone.
+`Ctrl+Z` undoes and `Ctrl+Shift+Z` or `Ctrl+Y` redoes, up to 100 steps. Undo covers:
+
+- clip and note edits;
+- adding and deleting tracks (Undo brings a deleted track back with its clips), and changing a track's instrument;
+- M, S and R, VOL and PAN, the EQ, Distortion, Compressor, Chorus, the sends and the Master Aux Bus;
+- loading, replacing or removing a Sampler sound, and its **Original pitch on** note.
+
+One slider adjustment is one step, whether you drag it, tap its arrow keys or double-click to reset it. Tempo, swing, the loop, zoom, snap, frame rate, ruler units, master volume and the project name are not undone.
 
 ## Playback and the loop
 
@@ -178,7 +185,7 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 | Your Sounds | Sampler (plays a sound file you load) |
 
 - **Synths and drum kits** (Drums, Drum Machine, Slap Bass, Sub-Bass, 808 Bass, Space Clav, Wavetable Synth, Analog Lead, Brass Stabs) are generated in the browser and work offline.
-- **Recorded instruments** (the other 18) download their sounds the first time you use them, so they need an internet connection. A spinner shows on the track header while they load, and the Inspector shows **Loading CDN...**, **Ready** or **Error**. Notes are silent until the sounds arrive. If you see **Error**, check your connection, then reload the page (or switch the track to another instrument and back) to try again; the track stays silent until you do.
+- **Recorded instruments** (the other 18) download their sounds the first time you use them, so they need an internet connection. A spinner shows on the track header while they load, and the Inspector shows **Loading CDN...**, **Ready** or **Error**. Notes are silent until the sounds arrive. If a download fails, the track header shows a red **!** in place of its coloured dot and the Inspector shows **Error** with a **Retry** button; click either to try again. Failed downloads are also retried when your connection comes back, and when you play that instrument in the Instrument Browser or Audition Deck, add another track with it or export. Once it downloads, every track using it plays from its next note, with no reload.
 - Both drum kits use the same five notes: **Kick**, **Snare**, **Closed Hat**, **Open Hat** and **Cowbell**, so drum parts can move between them. Taiko is played like a pitched instrument.
 - Slap Bass, Sub-Bass, 808 Bass and Analog Lead play one note at a time; in a chord, only the loudest note sounds. Space Clav (16 notes at once), Wavetable Synth (12) and Brass Stabs (8) cut short whichever ringing note would end soonest when they run out, so new notes still play (only notes beyond the limit that start at the very same moment are dropped).
 
@@ -189,7 +196,7 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 3. Under **ORIGINAL PITCH ON**, choose which C (C2, C3, C4, C5 or C6; C4 by default) plays the file at its normal pitch. Higher notes play it faster and higher, lower notes slower and lower.
 4. Write notes for it in the piano roll like any other instrument.
 
-The sound is stored inside the project, so saved projects bring it with them. It plays only as long as each note lasts (then fades out quickly), so draw long notes for long sounds. The play button previews a half note at the original pitch; the trash button removes the sound (this can't be undone).
+The sound is stored inside the project, so saved projects bring it with them. It plays only as long as each note lasts (then fades out quickly), so draw long notes for long sounds. The play button previews a half note at the original pitch; the trash button removes the sound (`Ctrl+Z` brings it back).
 
 ## Trying sounds: Instrument Browser and Audition Deck
 
@@ -208,7 +215,7 @@ Pads for Slap Bass, Space Clav chords, Brass Stabs, the Drums kit, four recorded
 | `A` `S` `D` | Space Clav chords Dm9, G13, Bbmaj7 |
 | `Z` `X` | Brass stabs Dm and C |
 
-These keys work anywhere on the page except while typing in a box, while a drop-down menu has focus (click an empty part of the page first) or with a dialog open. So pressing `R` plays a cowbell rather than arming a track.
+These keys work anywhere on the page except while typing in a box or with a dialog open. So pressing `R` plays a cowbell rather than arming a track.
 
 Drag a pad or a pattern chip (**Lazy Beat**, **Hats Intro**, **Walking Bass**, **Soul Chords**, **Horn Hook**) onto a matching track: the lanes that accept it light up, the others fade. Drum pads and drum patterns fit either drum kit.
 
@@ -229,7 +236,7 @@ Click **FX Rack** in the toolbar, or the sliders icon on a track header, to open
 - **CHORUS**: Rate, Depth and Mix.
 - **POST-FADER AUX SENDS**: how much of the track goes to the shared reverb and the ping-pong echo.
 - **CHANNEL FADER**: the same volume and pan as the header.
-- **Delete this track** (also the trash icon at the top). It asks first if the track has clips, and it can't be undone.
+- **Delete this track** (also the trash icon at the top). It asks first if the track has clips; `Ctrl+Z` brings the track and its clips back.
 
 Distortion, Compressor and Chorus each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send and Master Aux Bus sliders don't reset on double-click.
 
@@ -251,7 +258,7 @@ In the header:
 
 Every track goes through a master compressor and limiter, which keep the mix in check at MASTER 0 dB or lower. MASTER is applied after the limiter, so above 0 dB playback can clip. Exports are turned down automatically if they would clip.
 
-Mixer and effect changes can't be undone with `Ctrl+Z`.
+Mixer and effect changes can be undone with `Ctrl+Z`; tempo, swing and master volume can't.
 
 ## Projects: saving and opening
 
@@ -266,27 +273,33 @@ A project file holds the tracks, clips, mixer and effect settings, tempo, swing,
 
 ### Autosave
 
-The app also saves your work in this browser half a second after every change. Next time you open the app, a banner offers to **Restore** it.
+The app also saves your work in this browser half a second after every change. The project bar shows **Saved in this browser · <time>**. Next time you open the app, a banner offers to **Restore** it.
 
-- The app always opens on an empty timeline. Your first change overwrites the copy saved in the browser, but the banner keeps your last session until you click **Dismiss** or leave the page, so **Restore** still works (it replaces whatever you've done since). After you dismiss it, or reload or close the tab having changed anything, the old session is gone.
-- Autosave is per browser and per site; private windows don't keep it, and very large projects (big Sampler sounds) may not fit. Use **Save** for anything you care about.
+- At startup the app sets your last session aside. The banner stays across reloads until you click **Restore** (which replaces what's on screen) or **Dismiss**. Only the most recent session with clips is kept: if you make something else with clips and reload, the banner offers that one instead.
+- If autosave fails, the project bar says why in red: the project is too big for browser storage (about 5 MB per site, usually because of big Sampler sounds), storage is full (Dismiss the old session to make room), or the browser blocks storage for this site. While it's failing, closing or reloading the tab asks first, so you can **Save**.
+- Autosave is per browser and per site, and private windows don't keep it. Use **Save** for anything you care about.
 
 ## Exporting audio (WAV)
 
-Click **Export WAV** and choose:
+Click **Export WAV**. The dialog has four choices, and remembers them in this browser:
 
-- **Whole song**: from bar 1 to the end of the last clip.
-- **Loop region (In → Out)**: the range between the loop brackets, played once (whether or not the loop is on). Nothing after OUT plays into the file, only the reverb and echo tails of what came before. The dialog shows where it starts as a timecode at your frame rate.
+- **Range**: **Whole song** (bar 1 to the end of the last clip that plays) or **Loop region** (In to Out, whether or not the loop is on). For the loop, the dialog shows where it starts as a timecode at your frame rate.
+- **Export**: **Mixdown** (one stereo WAV of everything that plays) or **Stems** (one WAV per track that plays and has clips in the range, in one .zip). Stems all start at the range start and have the same length, so they line up in another program, and each includes the track's effects, sends and the shared reverb and echo. **Bypass master compressor & limiter** (on by default) makes the stems add up to the mix as it is before the master compressor and limiter.
+- **Ending**:
+  - **Ring out**: the range, then a few seconds more so reverb and echo tails ring out (the dialog says how long).
+  - **Exact length**: exactly the range, to the sample, with a 5 ms fade at the very end so it doesn't click.
+  - **Seamless loop** (Loop region only): exactly one loop long, with the tails of the pass before already ringing at its start, so it repeats in a game engine or looping player without a gap or click.
+- **Format**: **44.1 kHz** or **48 kHz**; **16-bit**, **24-bit** or **32-bit float**. Always stereo.
 
-The WAV is 44.1 kHz, 16-bit stereo, named after the project. It includes the whole mix: volumes, pans, mutes and solos, every effect, sends, the master reverb and delay, swing, and the master volume. A few seconds are added at the end so reverb and echo tails ring out. If the mix would clip, the file is turned down to just under full scale.
+The footer shows the file name and its exact length. Exports include the whole mix: volumes, pans, mutes and solos, every effect, sends, the master reverb and delay, swing, and the master volume. If the mix would clip, the file is turned down to just under full scale (stems all by the same amount, so their levels still match).
 
-Exporting renders faster than real time and shows its progress. It pauses playback, and it can't be cancelled once started.
+Exporting renders faster than real time (stems one track after another) and shows its progress. It pauses playback. **Cancel**, Esc or the X stops it.
 
 > Exports need the sounds of every recorded instrument that's playing. If one can't download (for example, when you're offline), the export stops with an error. Mute that track, or switch it to a synth, to export without it.
 
 ## Keyboard shortcuts
 
-Shortcuts don't work while you're typing in a box, or while a dialog (Guide, Export, New) is open. After using a slider or menu, click an empty part of the page to give the shortcuts back.
+Shortcuts don't work while you're typing in a box, or while a dialog (Guide, Export, New) is open. On a focused slider, the arrow keys, Home, End, Page Up and Page Down move the slider and every other key is still a shortcut. A drop-down menu lets go of the keyboard after you pick from it with the mouse.
 
 ### Timeline
 
