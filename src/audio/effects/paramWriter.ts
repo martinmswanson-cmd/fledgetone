@@ -5,20 +5,28 @@
  * two parties: the track strip when the user moves its control, and the automation scheduler while
  * a lane owns it. Both go through one of these, so neither fights the other.
  *
- * Each change is a "piece": a jump (setValueAtTime) or a curve (setValueCurveAtTime; two values
- * make a straight ramp). Pieces are written in time order with a one-sample gap between them, and
- * a change of plan only drops pieces that haven't started yet, never one that is running:
- * cancelScheduledValues() inside a running curve throws the whole curve away, and the param snaps
- * back to the value it had before that curve began (a click). Chrome's cancelAndHoldAtTime() is no
- * way out: it restarts the cut curve from its first value. So a new plan starts once the piece
- * running at that moment has finished, which is why the automation scheduler keeps pieces short.
+ * Each change is a "piece": a jump (setValueAtTime) or a curve: a jump to its first value (unless
+ * it carries straight on from the piece before), then straight ramps (linearRampToValueAtTime)
+ * through the rest, evenly spaced, which is exactly how setValueCurveAtTime would play it. Pieces are written in time order with a one-sample gap between
+ * them, and a change of plan only drops pieces that haven't started yet, never one that is running:
+ * cancelScheduledValues() inside a running ramp throws it away, and the param snaps back to the
+ * value it had before (a click). (Chrome's cancelAndHoldAtTime() is no way out for a running
+ * setValueCurveAtTime either: it restarts the curve from its first value.) So a new plan starts once
+ * the piece running at that moment has finished, which is why the automation scheduler keeps pieces
+ * short.
+ *
+ * Why not setValueCurveAtTime: Chrome checks a new event's time against the clock only when it
+ * next renders that param. A track strip nothing sounds into (between a drum track's hits, after a
+ * synth's notes end) isn't rendered at all, so the stretches a lane keeps writing pile up
+ * unchecked; when a note wakes the strip, those already due are moved to that moment, keeping
+ * their length. Two curves then overlap, and Chrome crashes the page (a CHECK in its AudioParam
+ * timeline). Jumps and ramps are single moments, so moving them can't make anything overlap.
+ *
+ * Live, nothing is written closer than LIVE_CLOCK_MARGIN to the clock, so a write that Chrome
+ * checks at once isn't moved late (it only matters when the page catches up after a stall).
  *
  * Nothing here ever throws: writes happen inside Tone's clock callbacks and the store's actions,
- * where an exception would stop notes or an edit. The one refusal to expect is Chrome's: a piece
- * whose start has already passed when the audio thread gets it (the page stalled under load) is
- * moved to that moment, keeping its length, so it ends later than written, and the next piece
- * would overlap it ("setValueCurveAtTime overlaps"). A refused write is retried after the latest
- * any moved piece can end; the param holds its value for that moment.
+ * where an exception would stop notes or an edit.
  */
 export interface ParamWriter {
   /** The value written for time `t` (what the param holds then, as far as this writer knows). */
@@ -30,7 +38,10 @@ export interface ParamWriter {
    * later if a piece is running then (or `t` is too close to the audio clock).
    */
   cut: (t: number) => number;
-  /** A curve from `start` (moved later if a piece is still running then). Returns when it ends. */
+  /**
+   * A curve from `start` (moved later if a piece is still running then): `values` spread evenly
+   * over `duration`, straight lines between them. Returns when it ends.
+   */
   curve: (values: Float32Array, start: number, duration: number) => number;
   /**
    * Jump to `value` at `at` (or later, as for curve). Returns when it happens. On a fresh param,
@@ -58,7 +69,10 @@ interface Piece {
 
 /** Pieces that ended this long before the latest write are forgotten (their last value is kept). */
 const FORGET_AFTER = 1;
-/** Live, a write never starts closer than this to the audio clock (seconds). */
+/**
+ * Live, a write never starts closer than this to the audio clock (seconds). Well inside Tone's
+ * look-ahead: a loop wrap reaches the scheduler only 0.05 to 0.1 s before it plays.
+ */
 const LIVE_CLOCK_MARGIN = 0.02;
 
 /**
@@ -71,7 +85,7 @@ export function clockMargin(raw: BaseAudioContext): number {
 }
 
 let reported = false;
-/** A write refused twice is dropped: say so once (in the console), never to the caller. */
+/** A refused write is skipped: say so once (in the console), never to the caller. */
 function report(err: unknown): void {
   if (reported) return;
   reported = true;
@@ -91,38 +105,19 @@ export function createParamWriter(param: AudioParam, opts: { raw: BaseAudioConte
   /** The value before the first remembered piece. */
   let before = opts.initial;
   let fresh = true;
-  /** After a refused write: nothing starts before this (where a piece Chrome moved may still run). */
-  let barrier = -Infinity;
 
-  const free = () => Math.max(barrier, pieces.length ? pieces[pieces.length - 1].end + gap : -Infinity);
+  const free = () => (pieces.length ? pieces[pieces.length - 1].end + gap : -Infinity);
   /** Where a piece asked for at `at` can start: after the last one, and not too close to the clock. */
   const place = (at: number) => Math.max(at, free(), raw.currentTime + margin);
 
-  /**
-   * A write was refused, so a piece has been moved later than written. A moved piece starts at
-   * most where the audio thread is now (a render quantum or two past the time the page reads), so
-   * new pieces wait until each remembered piece would have ended from there.
-   */
-  const recover = () => {
-    const latest = raw.currentTime + 256 / raw.sampleRate;
-    for (const p of pieces) if (p.start < latest) barrier = Math.max(barrier, latest + (p.end - p.start) + gap);
-  };
-
-  /** Make a native call at `at`; if it's refused, once more where it surely fits. Returns where it went, or null. */
-  const write = (at: number, call: (t: number) => void): number | null => {
+  /** Make the native calls for one piece. False (and nothing remembered) if they were refused. */
+  const write = (calls: () => void): boolean => {
     try {
-      call(at);
-      return at;
-    } catch {
-      recover();
-    }
-    const retry = place(at);
-    try {
-      call(retry);
-      return retry;
+      calls();
+      return true;
     } catch (err) {
       report(err);
-      return null;
+      return false;
     }
   };
 
@@ -133,7 +128,7 @@ export function createParamWriter(param: AudioParam, opts: { raw: BaseAudioConte
     const { start, end, values } = pieces[i];
     const n = values.length;
     if (n === 1 || t >= end) return values[n - 1];
-    // setValueCurveAtTime spreads the values evenly over the duration and draws straight lines between them
+    // The values are spread evenly over the duration, with straight lines between them
     const pos = ((t - start) / (end - start)) * (n - 1);
     const k = Math.floor(pos);
     return values[k] + (values[k + 1] - values[k]) * (pos - k);
@@ -155,23 +150,19 @@ export function createParamWriter(param: AudioParam, opts: { raw: BaseAudioConte
     let keep = pieces.length;
     while (keep > 0 && pieces[keep - 1].start > from) keep--;
     if (keep < pieces.length) {
-      // Cancel in the gap after the piece that stays, so it plays out whole
+      // Cancel in the gap after the piece that stays (its last ramp ends before the gap; the next
+      // piece's first jump or ramp end comes after it), so it plays out whole
       const kept = keep > 0 ? pieces[keep - 1].end : -Infinity;
-      try {
-        param.cancelScheduledValues((Math.max(from, kept) + pieces[keep].start) / 2);
-      } catch (err) {
-        report(err);
-      }
+      write(() => param.cancelScheduledValues((Math.max(from, kept) + pieces[keep].start) / 2));
       pieces.length = keep;
     }
     return place(from);
   };
 
   const jump = (value: number, at: number) => {
-    // A param of a node just made has nothing written to overlap: at 0 (in the past) it takes the value at once
-    const asked = fresh && at <= 0 ? 0 : place(at);
-    const start = write(asked, (t) => param.setValueAtTime(value, t));
-    if (start === null) return asked;
+    // A param of a node just made has nothing written: at 0 (in the past) it takes the value at once
+    const start = fresh && at <= 0 ? 0 : place(at);
+    if (!write(() => param.setValueAtTime(value, start))) return start;
     pieces.push({ start, end: start, values: [value] });
     fresh = false;
     return start;
@@ -179,12 +170,23 @@ export function createParamWriter(param: AudioParam, opts: { raw: BaseAudioConte
 
   const curve = (values: Float32Array, start: number, duration: number) => {
     if (values.length < 2 || duration <= 0) return jump(values[values.length - 1], start);
-    const asked = place(start);
-    const from = write(asked, (t) => param.setValueCurveAtTime(values, t, duration));
-    if (from === null) return asked + duration;
-    pieces.push({ start: from, end: from + duration, values });
+    const from = place(start);
+    const end = from + duration;
+    const last = values.length - 1;
+    // Carrying straight on from the piece before (a sample later, from its last value): its last
+    // ramp is where this one's first ramp starts, so the jump isn't needed
+    const prev = pieces[pieces.length - 1];
+    const joined = prev !== undefined && from - prev.end <= 1.5 * gap && prev.values[prev.values.length - 1] === values[0];
+    const ok = write(() => {
+      // (Checked first, so a bad value can't leave half a piece behind)
+      if (!values.every(Number.isFinite)) throw new TypeError('Automation values must be finite');
+      if (!joined) param.setValueAtTime(values[0], from);
+      for (let k = 1; k <= last; k++) param.linearRampToValueAtTime(values[k], k === last ? end : from + (duration * k) / last);
+    });
+    if (!ok) return end;
+    pieces.push({ start: from, end, values });
     fresh = false;
-    return from + duration;
+    return end;
   };
 
   return {
