@@ -36,28 +36,48 @@ export function swingDelay(tick: number, swing: number, bpm: number, ppq = 192):
 }
 
 /**
+ * Where the Transport was last sent (started or moved while playing) and the audio time it gets
+ * there. Tone acts on both a look-ahead after the call, and until then reports its old position:
+ * bar 1 for a Transport that was stopped, so the playhead (and the view following it) flashed back
+ * to the start of the song for a tenth of a second each time playback started, and a click on the
+ * ruler while playing showed the playhead jump back before it went there.
+ */
+let heading: { bar: number; at: number } | null = null;
+
+/**
  * Position the listener is actually hearing right now. Tone.Transport.ticks reports
  * the scheduling time (currentTime + lookAhead), which would make the playhead run
  * ~100ms ahead of the audio, so we query the clock at the raw context time instead.
+ * Until a start or a move is heard, that's where it's going.
  */
 export function getAudiblePositionBar(): number {
-  return ticksToBar(Tone.Transport.getTicksAtTime(Tone.immediate()));
+  const now = Tone.immediate();
+  if (heading && now < heading.at) return heading.bar;
+  heading = null;
+  return ticksToBar(Tone.Transport.getTicksAtTime(now));
 }
 
 export function startTransportAt(bar: number): void {
-  Tone.Transport.start('+0.03', `${barToTicks(bar)}i`);
+  const at = Tone.now() + 0.03;
+  Tone.Transport.start(at, `${barToTicks(bar)}i`);
+  heading = { bar, at };
 }
 
 export function pauseTransport(): void {
+  heading = null;
   Tone.Transport.pause();
 }
 
 export function stopTransport(): void {
+  heading = null;
   Tone.Transport.stop();
 }
 
 export function seekTransport(bar: number): void {
+  const playing = Tone.Transport.state === 'started';
   Tone.Transport.ticks = barToTicks(bar);
+  // Playing, Tone moves there at its look-ahead, on the next tick
+  if (playing) heading = { bar, at: Tone.now() + Tone.Transport.toSeconds('1i') };
 }
 
 /** Format as Premiere-style Bar.Beat.Tick ("001.01.00"); ticks shown as hundredths of a beat. */
