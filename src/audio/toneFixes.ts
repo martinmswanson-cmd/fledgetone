@@ -38,3 +38,22 @@ Oscillator.prototype._getCachedPeriodicWave = function () {
     Oscillator._periodicWaveCache = all;
   }
 };
+
+/**
+ * Tone turns a Transport position such as '768i' into ticks by way of seconds at the current
+ * tempo, so a whole number of ticks can come back a hair off: 767.9999999999999 at 130 BPM,
+ * 1536.0000000000002 at 150. The Transport files each event under the whole tick at or below its
+ * time, so a note a hair short of its tick was filed under the tick before. It still played on
+ * time in passing, but never when playback started on its tick or a loop came round to it: the
+ * first beat after Play could be silent, and the downbeat of a loop went missing on every repeat.
+ * A loop end a hair past its tick wrapped a tick late, so each pass of a loop (and of a seamless
+ * loop export) ran a tick long. Every Transport time (events, loop points, start positions) goes
+ * through here; a result within float noise of a whole tick is made whole.
+ */
+const timeProto = Tone.TimeClass.prototype as unknown as { toTicks: (this: Tone.TimeClass) => number };
+const toTicks = timeProto.toTicks;
+timeProto.toTicks = function () {
+  const ticks = toTicks.call(this);
+  const whole = Math.round(ticks);
+  return Math.abs(ticks - whole) < 1e-6 ? whole : ticks;
+};
