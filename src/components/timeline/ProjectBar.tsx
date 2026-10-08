@@ -86,7 +86,9 @@ export const RestoreSessionBanner: React.FC = () => {
   const [open, setOpen] = useState(lastSession !== null);
   if (!open || !lastSession) return null;
   const { project } = lastSession;
-  const n = project.clips.length;
+  // What's in it: its clips, or the markers of a session that has only those
+  const markers = project.markers?.length ?? 0;
+  const [n, what] = project.clips.length > 0 || markers === 0 ? [project.clips.length, 'clip'] : [markers, 'marker'];
   const when = savedWhen(lastSession);
   const close = (dismissed: boolean) => {
     clearPreviousSession(dismissed);
@@ -99,7 +101,7 @@ export const RestoreSessionBanner: React.FC = () => {
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 border-b border-forge-border bg-cyan-500/10 text-xs">
       <History className="w-4 h-4 text-cyan-300 shrink-0" />
       <span className="text-forge-text">
-        Your last session, <b>{project.name}</b> ({n} clip{n === 1 ? '' : 's'}
+        Your last session, <b>{project.name}</b> ({n} {what}{n === 1 ? '' : 's'}
         {when && `, ${when}`}), can be restored.
       </span>
       <div className="flex items-center gap-1.5 ml-auto">

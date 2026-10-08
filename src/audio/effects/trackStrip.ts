@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import type { AutomationParam, PumpTrigger, Track } from '../../store/timelineTypes';
 import { activeLanes, AUTOMATION } from '../automation';
+import { INSTRUMENTS } from '../instrumentCatalog';
 import type { BusEffects } from './busEffects';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
 import {
@@ -37,7 +38,9 @@ import {
  * position, so its left output is the right side's share. Each side gets the equal-power gain
  * Tone.Channel gave a mono source (-3 dB at the centre), sample for sample, ramps included. So a
  * mono source (spread to both sides first) pans exactly as before, and a stereo one keeps its
- * width while the pan turns down the side it moves away from.
+ * width while the pan turns down the side it moves away from. The synthesized drum kits are
+ * folded to mono at the end of the inserts, where that panner used to fold them: their noise is
+ * stereo, but they were voiced hearing it folded, and their inserts heard it in stereo.
  *
  * Automation: while a lane with points owns a setting, apply() leaves that setting to the lane
  * (automationSchedule.ts writes it) and puts the track's own value back when the lane goes. Pan,
@@ -76,8 +79,24 @@ type Link = [from: Tone.ToneAudioNode | AudioNode, to: Tone.ToneAudioNode | Audi
 interface Insert {
   input: Tone.ToneAudioNode;
   output: Tone.ToneAudioNode;
-  /** Its own connections, for rewire() to take apart (a warming patch's, see warmIn). */
-  inner?: Link[];
+}
+
+/** An insert that can be disposed. */
+interface Unit extends Insert {
+  dispose: () => void;
+}
+
+/**
+ * A link of the live chain of inserts, made through a gain of its own so that it can be faded in
+ * and out on the audio clock (see rewire).
+ */
+interface Gate {
+  link: Link;
+  gain: GainNode;
+  /** Its last fade: from `from` at `start` to `to` at `end` (audio clock). */
+  fade: { from: number; to: number; start: number; end: number };
+  /** In the chain; else it's on its way out, to be taken apart once its fade has played. */
+  wanted: boolean;
 }
 
 /**
@@ -94,45 +113,27 @@ function blockRateDelay(node: DelayNode): void {
   }
 }
 
-/** How long a fresh Compressor and a fresh Distortion take to sound as they will (see warmIn). */
-const COMPRESSOR_WARM_UP = 0.2;
-const DISTORTION_WARM_UP = 0.01;
-/** The crossfade onto an insert once it has warmed up. */
-const WARM_FADE = 0.01;
-
-/** An insert that can be disposed. */
-interface Unit extends Insert {
-  dispose: () => void;
-}
-
 /**
- * Patch a fresh `insert` in with a way round it. A browser compressor passes nothing for its
- * 6 ms look-ahead and then brings its gain up from nothing over about 0.2 s; the Distortion's
- * oversampling holds back its first 2 ms. Switched on while playing, either dropped the track
- * out with a click. So until `warmUp` has passed the sound goes round the insert, which fills up
- * meanwhile, and then crossfades onto it over 10 ms; once that's done the strip patches in the
- * insert itself instead (the same sound by then) and disposes this. (Disposing it leaves
- * `insert` alone.)
+ * How long after a switch the crossfade to the new chain starts. The fades are all set by then
+ * (in a few microseconds), whatever the main thread does next. A fresh Distortion's oversampling
+ * holds back its first 2 ms, which this covers too.
  */
-function warmIn(insert: Insert, warmUp: number): Unit {
-  const input = new Tone.Gain(1);
-  const output = new Tone.Gain(1);
-  const around = new Tone.Gain(1);
-  const through = new Tone.Gain(0);
-  const at = input.context.rawContext.currentTime + warmUp;
-  around.gain.setValueAtTime(1, at);
-  around.gain.linearRampToValueAtTime(0, at + WARM_FADE);
-  through.gain.setValueAtTime(0, at);
-  through.gain.linearRampToValueAtTime(1, at + WARM_FADE);
-  const inner: Link[] = [
-    [input, around],
-    [around, output],
-    [input, insert.input],
-    [insert.output, through],
-    [through, output],
-  ];
-  inner.forEach(([from, to]) => Tone.connect(from, to));
-  return { input, output, inner, dispose: () => [input, output, around, through].forEach((n) => n.dispose()) };
+const SWITCH_LEAD = 0.02;
+/** The crossfade from the old chain of inserts to the new one. */
+const SWITCH_FADE = 0.01;
+/**
+ * How long a fresh Compressor takes to sound as it will: a browser compressor passes nothing for
+ * its 6 ms look-ahead and then brings its gain up from nothing over about 0.2 s.
+ */
+const COMPRESSOR_WARM_UP = 0.2;
+
+/** A gain that folds whatever comes in to mono (the average of its sides), for the drum kits. */
+function createMonoFold(): Unit {
+  const fold = new Tone.Gain(1);
+  fold.channelCount = 1;
+  fold.channelCountMode = 'explicit';
+  fold.channelInterpretation = 'speakers';
+  return { input: fold, output: fold, dispose: () => fold.dispose() };
 }
 
 /** An equal-power panner for one channel (`discrete`: of a stereo input it takes the first). */
@@ -161,10 +162,6 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   }
   /** Where the chain of inserts starts. */
   const head = barrier ?? input;
-  // And one where the inserts end, so that patching one in or out while playing walks no further
-  // than the chain (see rewire). It costs about what a gain does.
-  const tail = barrier ? raw.createDelay(0.01) : null;
-  if (tail) blockRateDelay(tail);
   const solo = new Tone.Solo();
   // A mono source becomes the same sound on both sides here, for the pan to take apart
   solo.channelCount = 2;
@@ -187,8 +184,6 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   right.connect(merge, 0, 1);
   Tone.connect(merge, fader);
 
-  if (tail) Tone.connect(tail, solo);
-  Tone.connect(head, tail ?? solo);
   fader.connect(bus);
   fader.connect(reverbSend);
   reverbSend.connect(busFx.reverbInput);
@@ -201,15 +196,21 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   let makeup: Tone.Gain | null = null;
   /** The Compressor and its makeup gain as one insert. */
   let compressorUnit: Unit | null = null;
-  /** Fresh inserts' warming patches (see warmIn), patched in instead of them for now (live only). */
-  const warming = new Map<Insert, Unit>();
-  const warmTimers = new Set<number>();
+  /** When the Compressor will have warmed up, on the audio clock (live; see rewire). */
+  let compressorReady = 0;
   let chorus: LightChorus | null = null;
   let filter: LightFilter | null = null;
   let pump: LightPump | null = null;
   let pumpTrigger: PumpTrigger | null = null;
+  /** The drum kits' fold to mono, after the other inserts (see above). */
+  let fold: Unit | null = null;
   /** The inserts currently patched in, in signal order. */
   let chain: Insert[] = [];
+  /** Live, the links of the chain (and those still fading out), each through its own gain. */
+  let gates: Gate[] = [];
+  /** Inserts switched off, disposed once they have faded out. */
+  let leaving: Array<{ dispose: () => unknown }> = [];
+  let tidyTimer = 0;
 
   const now = () => input.context.now();
   const writer = (param: Tone.Param<any>, initial: number) =>
@@ -237,97 +238,122 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     const links: Link[] = [];
     let from: Tone.ToneAudioNode | AudioNode = head;
     for (const ins of inserts) {
-      links.push([from, ins.input], ...(ins.inner ?? []));
+      links.push([from, ins.input]);
       from = ins.output;
     }
-    links.push([from, tail ?? solo]);
+    links.push([from, solo]);
     return links;
+  };
+  const cut = (from: Link[0], to: Tone.InputNode) => {
+    try {
+      Tone.disconnect(from, to);
+    } catch {
+      // Not connected (any more): nothing to cut
+    }
+  };
+  const sameLink = (a: Link, b: Link) => a[0] === b[0] && a[1] === b[1];
+  /** When a switch of the inserts made now crossfades (see rewire): shortly, or once a fresh Compressor has warmed up. */
+  const switchAt = () => Math.max(raw.currentTime + SWITCH_LEAD, compressorUnit ? compressorReady : 0);
+
+  /** Make a live link (see rewire), open (`level` 1) or shut (0). */
+  const gate = (link: Link, level: number) => {
+    const gain = raw.createGain();
+    gain.gain.value = level;
+    Tone.connect(gain, link[1]);
+    Tone.connect(link[0], gain);
+    gates.push({ link, gain, fade: { from: level, to: level, start: 0, end: 0 }, wanted: true });
+  };
+  /**
+   * Fade a link to `level` over SWITCH_FADE from `at`, starting from wherever its earlier fades
+   * have it then. (cancelAndHoldAtTime() cuts short a fade still under way at `at`, but holds
+   * nothing when none is: the new ramp would then start from the param's last event, long ago.)
+   */
+  const fadeTo = (g: Gate, level: number, at: number) => {
+    const { from, to, start, end } = g.fade;
+    const held = at >= end ? to : at <= start ? from : from + ((to - from) * (at - start)) / (end - start);
+    if (held === level && at >= end) return;
+    const param = g.gain.gain;
+    param.cancelAndHoldAtTime(at);
+    param.setValueAtTime(held, at);
+    param.linearRampToValueAtTime(level, at + SWITCH_FADE);
+    g.fade = { from: held, to: level, start: at, end: at + SWITCH_FADE };
+  };
+  // The chain starts empty, the head joined straight to the solo
+  if (barrier) gate([head, solo], 1);
+  else Tone.connect(head, solo);
+
+  /** Take apart the links that have faded out, and dispose the inserts switched off. */
+  const tidy = () => {
+    for (const g of gates) {
+      if (g.wanted) continue;
+      cut(g.link[0], g.gain);
+      g.gain.disconnect();
+    }
+    gates = gates.filter((g) => g.wanted);
+    leaving.forEach((insert) => insert.dispose());
+    leaving = [];
   };
 
   /**
-   * Patch head -> active inserts -> tail (-> solo), only when the chain changed.
+   * Patch head -> active inserts -> solo, only when the chain changed; `retired` are the inserts
+   * switched off, disposed once they're out.
    *
    * An insert switched on or off while playing mustn't open a gap in the sound, or double it.
-   * Live, standardized-audio-context makes or breaks a native connection at once and then walks
-   * the graph downstream of it, and natively disconnects whatever loses its last input (and
-   * everything after that) until an input comes back. Cutting the chain and then joining up the
-   * new one left the track silent for a render block or three (3 to 9 ms) whenever the audio
-   * thread rendered in between, and connecting first doubled it the same way. So: new inserts
-   * are fed first (nothing hears them yet); a silent gain from the head holds up each node whose
-   * input changes; its old link is cut and the new one made straight after, with only a short
-   * walk in between, as the chain ends at a DelayNode (where walks stop); the links into inserts
-   * taken out go last, and the caller disposes those inserts afterwards.
+   * A link made or broken on the main thread takes effect whenever the audio thread next renders,
+   * so joining up the new chain and breaking the old one in turn left the track silent (or
+   * doubled) for the render blocks in between: 3 to 9 ms whenever a walk of the graph (live, by
+   * standardized-audio-context, after every connection) or a pause for garbage collection fell
+   * there. So live, every link of the chain goes through a gain of its own. A switch adds the new
+   * links, silent; then, on the audio clock, crossfades from the old links to the new ones in
+   * 10 ms; and takes the old ones apart once that has played. What the main thread does in
+   * between can't be heard. A link into a fresh insert opens at once (nothing hears it until its
+   * way out fades in), so the insert has filled up by then: a fresh Compressor is heard only once
+   * it has warmed up, and the switch waits for it. (The live strip's gains at 1 pass the sound
+   * through sample for sample. Offline nothing is playing while the strip is set up, so the
+   * export's chain is joined up directly.)
    */
-  const rewire = () => {
+  const rewire = (retired: Array<{ dispose: () => unknown }> = []) => {
+    leaving.push(...retired);
     const next: Insert[] = [];
-    const patched = (ins: Insert) => warming.get(ins) ?? ins;
-    if (distortion) next.push(patched(distortion));
+    if (distortion) next.push(distortion);
     if (eq) next.push(eq);
-    if (compressorUnit) next.push(patched(compressorUnit));
+    if (compressorUnit) next.push(compressorUnit);
     if (chorus) next.push(chorus);
     if (filter) next.push(filter);
     if (pump) next.push(pump);
     if (laneGain) next.push({ input: laneGain.node, output: laneGain.node });
-    if (next.length === chain.length && next.every((ins, i) => ins.input === chain[i].input && ins.output === chain[i].output)) return;
-
+    if (fold) next.push(fold);
+    const unchanged = next.length === chain.length && next.every((ins, i) => ins.input === chain[i].input && ins.output === chain[i].output);
     const before = linksOf(chain);
-    const after = linksOf(next);
-    const has = (links: Link[], [from, to]: Link) => links.some(([f, t]) => f === from && t === to);
-    const cut = (from: Link[0], to: Tone.InputNode) => {
-      try {
-        Tone.disconnect(from, to);
-      } catch {
-        // Not connected (any more): nothing to cut
-      }
-    };
-    // Everything the chain feeds now
-    const playing = new Set(before.map(([, to]) => to));
-    const added = after.filter((link) => !has(before, link));
-    added.filter(([, to]) => !playing.has(to)).forEach(([from, to]) => Tone.connect(from, to));
-    const swaps = added.filter(([, to]) => playing.has(to));
-    // (Offline nothing is playing while the strip is set up, and nothing is disconnected for it)
-    const hold = barrier ? raw.createGain() : null;
-    if (hold) {
-      hold.gain.value = 0;
-      Tone.connect(head, hold);
-      swaps.forEach(([, to]) => Tone.connect(hold, to));
-    }
-    for (const [from, to] of swaps) {
-      before.filter((link) => link[1] === to && !has(after, link)).forEach(([f]) => cut(f, to));
-      Tone.connect(from, to);
-    }
-    before.filter((link) => !has(after, link)).forEach(([from, to]) => cut(from, to));
-    if (hold) {
-      swaps.forEach(([, to]) => cut(hold, to));
-      cut(head, hold);
-    }
+    const links = linksOf(next);
     chain = next;
-  };
+    if (unchanged) {
+      // (Nothing to wait for unless an earlier switch is still fading)
+      if (!gates.some((g) => !g.wanted)) tidy();
+      return;
+    }
+    if (!barrier) {
+      before.filter((link) => !links.some((l) => sameLink(l, link))).forEach(([from, to]) => cut(from, to));
+      links.filter((link) => !before.some((l) => sameLink(l, link))).forEach(([from, to]) => Tone.connect(from, to));
+      tidy();
+      return;
+    }
 
-  /** Live, patch a fresh `insert` in through warmIn until it has warmed up (`seconds`), then itself. */
-  const warm = (insert: Insert, seconds: number) => {
-    if (!barrier) return;
-    const patch = warmIn(insert, seconds);
-    warming.set(insert, patch);
-    const timer = window.setTimeout(
-      () => {
-        warmTimers.delete(timer);
-        // (Unless it was switched off meanwhile)
-        if (warming.get(insert) !== patch) return;
-        warming.delete(insert);
-        rewire();
-        patch.dispose();
-      },
-      (seconds + WARM_FADE) * 1000 + 50
-    );
-    warmTimers.add(timer);
-  };
-  /** An insert switched off: its warming patch (if it has one) and then itself go, once patched out. */
-  const retire = (retired: Array<{ dispose: () => unknown }>, insert: Insert & { dispose: () => unknown }) => {
-    const patch = warming.get(insert);
-    if (patch) retired.push(patch);
-    warming.delete(insert);
-    retired.push(insert);
+    // The new links, silent unless they feed a fresh insert
+    const fed = new Set(gates.map((g) => g.link[1]));
+    for (const link of links) if (!gates.some((g) => sameLink(g.link, link))) gate(link, fed.has(link[1]) ? 0 : 1);
+    // Then, all at once on the audio clock, the new links fade in and the old ones into what
+    // stays fade out. (Links into inserts on their way out are left alone: they are only heard
+    // through those inserts' own links out, which fade.)
+    const at = switchAt();
+    const staying = new Set(links.map((link) => link[1]));
+    for (const g of gates) {
+      g.wanted = links.some((link) => sameLink(g.link, link));
+      if (g.wanted || staying.has(g.link[1])) fadeTo(g, g.wanted ? 1 : 0, at);
+    }
+    // And once that has played, the old ones go
+    clearTimeout(tidyTimer);
+    tidyTimer = window.setTimeout(tidy, (at + SWITCH_FADE - raw.currentTime) * 1000 + 50);
   };
 
   /**
@@ -343,6 +369,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   /**
    * A Volume lane takes the level over: from `at`, the fader goes to 0 dB and the lane's
    * gain to the fader's level in the same instant, so nothing changes until the lane moves it.
+   * A new lane's gain is patched in first (at 1, so that changes nothing either), so the two
+   * trade places only once it's in.
    */
   const takeVolume = (track: Track, muted: boolean, ramp: number) => {
     clearTimeout(retireTimer);
@@ -365,7 +393,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       laneGain.writer.set(Tone.dbToGain(faderDb(track)), 0);
       return;
     }
-    const at = laneGain.writer.jump(Tone.dbToGain(faderDb(track)), laneGain.writer.cut(now()));
+    const at = laneGain.writer.jump(Tone.dbToGain(faderDb(track)), laneGain.writer.cut(Math.max(now(), switchAt() + SWITCH_FADE)));
     fader.volume.cancelScheduledValues(at);
     fader.volume.setValueAtTime(0, at);
     handoverUntil = at;
@@ -397,8 +425,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         laneGain = null;
         retiring = false;
         version++;
-        rewire();
-        lane.node.dispose();
+        rewire([lane.node]);
       },
       Math.max(0, done - raw.currentTime) * 1000 + 100
     );
@@ -416,13 +443,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       const retired: Array<{ dispose: () => unknown }> = [];
 
       if (fx.distortion.on) {
-        if (!distortion) {
-          distortion = createLightDistortion(fx.distortion.amount);
-          warm(distortion, DISTORTION_WARM_UP);
-        }
+        distortion ??= createLightDistortion(fx.distortion.amount);
         distortion.setAmount(fx.distortion.amount);
       } else if (distortion) {
-        retire(retired, distortion);
+        retired.push(distortion);
         distortion = null;
       }
 
@@ -449,7 +473,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
           compressor = comp;
           makeup = gain;
           compressorUnit = { input: comp, output: gain, dispose: () => [comp, gain].forEach((n) => n.dispose()) };
-          warm(compressorUnit, COMPRESSOR_WARM_UP);
+          // Live, it's heard once it has warmed up (see rewire)
+          compressorReady = raw.currentTime + COMPRESSOR_WARM_UP;
         } else {
           // Set directly, never ramped: Tone starts any ramp from max(current, 1e-7), which is
           // above the threshold's 0 dB cap.
@@ -458,7 +483,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
           set(makeup.gain, Tone.dbToGain(fx.compressor.makeup), ramp);
         }
       } else if (compressorUnit) {
-        retire(retired, compressorUnit);
+        retired.push(compressorUnit);
         compressor = null;
         makeup = null;
         compressorUnit = null;
@@ -505,8 +530,14 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       } else if (laneGain && !retiring) {
         giveVolumeBack(track, muted, ramp);
       }
-      rewire();
-      retired.forEach((insert) => insert.dispose());
+
+      if (INSTRUMENTS[track.instrumentKey]?.mono) {
+        fold ??= createMonoFold();
+      } else if (fold) {
+        retired.push(fold);
+        fold = null;
+      }
+      rewire(retired);
 
       // The fader's bottom (-60) is silence, but not -Infinity: Tone's Channel takes a volume of
       // -Infinity to mean muted, so the unmute below put a set-at-once fader (the WAV export's)
@@ -559,10 +590,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     automationVersion: () => version,
     dispose: () => {
       clearTimeout(retireTimer);
-      warmTimers.forEach((timer) => clearTimeout(timer));
-      warming.forEach((patch) => patch.dispose());
-      [distortion, eq, compressorUnit, chorus, filter, pump, laneGain?.node, input, solo, fader, reverbSend, delaySend].forEach((n) => n?.dispose());
-      [barrier, tail, left, split, right, merge].forEach((n) => n?.disconnect());
+      clearTimeout(tidyTimer);
+      gates.forEach((g) => g.gain.disconnect());
+      [...leaving, distortion, eq, compressorUnit, chorus, filter, pump, fold, laneGain?.node, input, solo, fader, reverbSend, delaySend].forEach((n) => n?.dispose());
+      [barrier, left, split, right, merge].forEach((n) => n?.disconnect());
     },
   };
 }

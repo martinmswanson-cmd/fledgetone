@@ -93,6 +93,31 @@ test('a clip placed off the 16th grid swings on its own grid', () => {
   assert.deepEqual(swungNotes([48, 96, 144], 48), [true, false, true]);
 });
 
+test('a clip split or trimmed off the grid swings its notes as before the cut', () => {
+  const sixteenths = Array.from({ length: 16 }, (_, i) => 768 + 48 * i);
+  const whole = swungNotes(sixteenths, 0);
+  // The razor with Snap off or Frame snap, a start trim, Shift Insert bars: the piece starts 8 to
+  // 24 ticks past a 16th line, its notes stay on the song's 16ths
+  for (const cut of [762, 768 + 8, 768 + 12, 768 + 17, 768 + 24, 768 + 36]) {
+    const piece = sixteenths.filter((t) => t >= cut);
+    assert.deepEqual(swungNotes(piece, cut), whole.slice(sixteenths.length - piece.length), `cut at tick ${cut}`);
+  }
+  // A clip moved off the grid and then split: its notes keep the moved grid
+  const moved = sixteenths.map((t) => t + 20);
+  for (const cut of [768 + 5, 768 + 120]) {
+    const piece = moved.filter((t) => t >= cut);
+    assert.deepEqual(swungNotes(piece, cut), swungNotes(moved, 788).slice(moved.length - piece.length), `moved clip cut at tick ${cut}`);
+  }
+  // Loose timing still counts as on the clip's grid, cut or not
+  const loose = [3, 45, 52, 93, 146, 189, 245];
+  assert.deepEqual(swungNotes(loose, 12), swungNotes(loose, 0));
+  // A lone note between the 16ths says nothing about the grid: a 1/32 pickup stays straight
+  assert.deepEqual(swungNotes([72], 0), [false]);
+  // Rolls and triplet runs stay straight wherever the clip was cut
+  assert.deepEqual(swungNotes([24, 48, 72, 96], 20), [false, false, false, false]);
+  assert.deepEqual(swungNotes([32, 64, 96, 128], 30), [false, false, false, false]);
+});
+
 test('no swing, no delay', () => {
   assert.equal(swingDelay(0, 140), 0);
   assert.equal(swingDelay(-0.1, 140), 0);
