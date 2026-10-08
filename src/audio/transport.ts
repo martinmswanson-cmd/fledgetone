@@ -18,6 +18,24 @@ export function ticksToBar(ticks: number): number {
 }
 
 /**
+ * How late swing plays a note on Transport tick `tick` (`ppq` ticks per quarter note), in
+ * seconds. Swing delays the off-beat 16ths, the second 16th of every 8th, by `swing` (0 to 0.5)
+ * times a third of an 8th: exactly what Tone's own swing gives them. Every other position stays
+ * where it is: downbeats, 8ths, triplets and 1/32 notes between the 16ths (Tone's swing bent every
+ * position inside an 8th along a curve, so triplets and 1/32 rolls came out uneven). A note
+ * nudged off an off-beat 16th still swings with it while it's nearer to it than to any triplet
+ * line (the closest grid lines, a 1/48 note away on either side).
+ */
+export function swingDelay(tick: number, swing: number, bpm: number, ppq = 192): number {
+  if (!(swing > 0)) return 0;
+  const sixteenth = ppq / 4;
+  const fromOffBeat = Math.abs((tick % (2 * sixteenth)) - sixteenth);
+  if (fromOffBeat >= ppq / 24) return 0;
+  // Written as Tone works it out, so a swung 16th lands on exactly the same sample as it always has
+  return (((2 * sixteenth) / 3) / ppq) * (60 / bpm) * swing;
+}
+
+/**
  * Position the listener is actually hearing right now. Tone.Transport.ticks reports
  * the scheduling time (currentTime + lookAhead), which would make the playhead run
  * ~100ms ahead of the audio, so we query the clock at the raw context time instead.
