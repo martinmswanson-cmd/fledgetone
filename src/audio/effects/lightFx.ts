@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
 
 /**
  * Lean stand-ins for Tone.EQ3 and Tone.Chorus that sound the same but cost far less CPU, and
@@ -42,10 +43,10 @@ export interface LightInsert {
 }
 
 export interface LightEq3 extends LightInsert {
-  /** Band gains in dB (Tone.Param with decibel units, like Tone.EQ3's). */
-  low: Tone.Param<'decibels'>;
-  mid: Tone.Param<'decibels'>;
-  high: Tone.Param<'decibels'>;
+  /** Band gains, as plain gains (not dB), so an EQ automation lane can drive them too. */
+  low: ParamWriter;
+  mid: ParamWriter;
+  high: ParamWriter;
 }
 
 /**
@@ -60,9 +61,12 @@ export function createLightEq3(lowFrequency = 400, highFrequency = 2500): LightE
   const lowMid = filter('highpass', lowFrequency);
   const mid = filter('lowpass', highFrequency);
   const high = filter('highpass', highFrequency);
-  const lowGain = new Tone.Gain({ gain: 0, units: 'decibels' });
-  const midGain = new Tone.Gain({ gain: 0, units: 'decibels' });
-  const highGain = new Tone.Gain({ gain: 0, units: 'decibels' });
+  const lowGain = new Tone.Gain(1);
+  const midGain = new Tone.Gain(1);
+  const highGain = new Tone.Gain(1);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const writer = (gain: Tone.Gain) =>
+    createParamWriter(gain.gain.input as AudioParam, { raw, now: () => input.context.now(), initial: 1 });
 
   input.fan(low, lowMid, high);
   low.chain(lowGain, output);
@@ -72,9 +76,9 @@ export function createLightEq3(lowFrequency = 400, highFrequency = 2500): LightE
   return {
     input,
     output,
-    low: lowGain.gain,
-    mid: midGain.gain,
-    high: highGain.gain,
+    low: writer(lowGain),
+    mid: writer(midGain),
+    high: writer(highGain),
     dispose: () => [input, output, low, lowMid, mid, high, lowGain, midGain, highGain].forEach((n) => n.dispose()),
   };
 }
@@ -265,9 +269,44 @@ export interface FilterSettings {
   slope: 12 | 24;
 }
 
+/** Settings an automation lane drives instead of the insert's own controls. */
+export interface FilterLanes {
+  cutoff?: boolean;
+  resonance?: boolean;
+}
+
 export interface LightFilter extends LightInsert {
-  /** Cutoff and resonance ramp over `ramp` seconds (0 = at once); type and slope switch at once. */
-  set: (settings: FilterSettings, ramp: number) => void;
+  /**
+   * Cutoff and resonance ramp over `ramp` seconds (0 = at once); type and slope switch at once.
+   * What `lanes` says a lane drives is left alone.
+   */
+  set: (settings: FilterSettings, ramp: number, lanes?: FilterLanes) => void;
+  /**
+   * What a Filter Cutoff or Resonance lane drives, for the type and slope set now: the stages'
+   * params, each with how a cutoff (Hz) or resonance (as a Q) becomes its value.
+   */
+  targets: (lane: 'cutoff' | 'resonance') => AutomationTarget[];
+  /** Changes when the type or slope does (and with them, what targets() returns). */
+  shape: () => string;
+}
+
+/**
+ * Make a biquad's cutoff and Q change once per 128-sample render block (3 ms) instead of every
+ * sample. While either moves (a lane's sweep, a ramp), Chrome otherwise works out new filter
+ * coefficients for each sample: on six tracks with busy cutoff lanes that was about 40% more
+ * render CPU, for a difference no one can hear in a sweep. Live, the node is
+ * standardized-audio-context's wrapper, whose params don't pass automationRate on, so it's set on
+ * the native node the wrapper keeps (the export's nodes are native already). If that's ever
+ * missing, the filter just stays per-sample, and still sounds the same.
+ */
+function blockRate(node: BiquadFilterNode): void {
+  const native = (node as BiquadFilterNode & { _nativeBiquadFilterNode?: BiquadFilterNode })._nativeBiquadFilterNode ?? node;
+  try {
+    native.frequency.automationRate = 'k-rate';
+    native.Q.automationRate = 'k-rate';
+  } catch {
+    // A browser without automationRate (or one that refuses it here): per-sample it is
+  }
 }
 
 /** Q of the first of two cascaded stages in a 4th-order Butterworth filter (the second's is 1.31). */
@@ -288,11 +327,20 @@ export function createLightFilter(): LightFilter {
   const raw = input.context.rawContext as unknown as BaseAudioContext;
   const first = raw.createBiquadFilter();
   const second = raw.createBiquadFilter();
+  blockRate(first);
+  blockRate(second);
   input.connect(first);
-  const ramped = paramSetter(raw);
+  const writer = (param: AudioParam) => createParamWriter(param, { raw, now: () => input.context.now(), initial: param.value });
+  const stages = [first, second].map((stage) => ({ frequency: writer(stage.frequency), q: writer(stage.Q) }));
   let applied: FilterSettings | null = null;
 
-  const set = (s: FilterSettings, ramp: number) => {
+  /** Each stage's Q as a ratio for a resonance (the first 24 dB low/high-pass stage stays Butterworth: null). */
+  const stageQs = (s: FilterSettings, resonance: number): Array<number | null> =>
+    s.type !== 'bandpass' && s.slope === 24 ? [null, resonance / BUTTERWORTH_Q1] : [resonance, resonance];
+  const toParam = (type: FilterSettings['type'], ratio: number) => (type === 'bandpass' ? ratio : 20 * Math.log10(ratio));
+  const nyquist = raw.sampleRate / 2;
+
+  const set = (s: FilterSettings, ramp: number, lanes: FilterLanes = {}) => {
     const typeChanged = applied?.type !== s.type;
     if (typeChanged) {
       first.type = s.type;
@@ -308,14 +356,15 @@ export function createLightFilter(): LightFilter {
         first.connect(output.input as unknown as AudioNode);
       }
     }
-    const q = s.type === 'bandpass' ? [s.resonance, s.resonance] : s.slope === 24 ? [BUTTERWORTH_Q1, s.resonance / BUTTERWORTH_Q1] : [s.resonance, s.resonance];
-    const toParam = (ratio: number) => (s.type === 'bandpass' ? ratio : 20 * Math.log10(ratio));
     // A new type reads Q in different units, so it can't ramp from the old value
     const qRamp = typeChanged ? 0 : ramp;
-    const cutoff = Math.min(s.cutoff, raw.sampleRate / 2);
-    [first, second].forEach((stage, i) => {
-      ramped(stage.frequency, cutoff, ramp);
-      ramped(stage.Q, toParam(q[i]), qRamp);
+    const cutoff = Math.min(s.cutoff, nyquist);
+    const qs = stageQs(s, s.resonance);
+    stages.forEach((stage, i) => {
+      if (!lanes.cutoff) stage.frequency.set(cutoff, ramp);
+      const q = qs[i];
+      if (q === null) stage.q.set(toParam(s.type, BUTTERWORTH_Q1), qRamp);
+      else if (!lanes.resonance) stage.q.set(toParam(s.type, q), qRamp);
     });
     applied = { ...s };
   };
@@ -324,6 +373,14 @@ export function createLightFilter(): LightFilter {
     input,
     output,
     set,
+    targets: (lane) => {
+      if (!applied) return [];
+      if (lane === 'cutoff') return stages.map((stage) => ({ writer: stage.frequency, map: (hz: number) => Math.min(hz, nyquist) }));
+      const s = applied;
+      // (Not the first 24 dB low/high-pass stage, which stays Butterworth)
+      return stages.flatMap((stage, i) => (stageQs(s, 1)[i] === null ? [] : [{ writer: stage.q, map: (q: number) => toParam(s.type, stageQs(s, q)[i]!) }]));
+    },
+    shape: () => (applied ? `${applied.type}|${applied.slope}` : ''),
     dispose: () => {
       first.disconnect();
       second.disconnect();

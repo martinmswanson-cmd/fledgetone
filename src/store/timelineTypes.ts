@@ -3,6 +3,9 @@ import { frameSeconds, isDropFrame } from '../audio/timecode';
 
 export type { InstrumentKey };
 
+/** Song length limit: 400 bars is 5+ minutes even at 240 BPM (about 13 minutes at 120 BPM). */
+export const TOTAL_BARS = 400;
+
 export interface TrackEq {
   /** -24 dB to +12 dB (shelf at 400Hz) */
   low: number;
@@ -167,6 +170,47 @@ export interface Track {
   delaySend: number;
   /** The Sampler instrument's sound, loaded from the user's computer */
   sample?: CustomSample;
+  /** How settings change over the song: at most one lane per setting (older projects have none). */
+  automation?: AutomationLane[];
+}
+
+/**
+ * Track settings an automation lane can drive. The order is the lane picker's. The Filter ones
+ * act on the track's Filter insert, the EQ ones on its 3-band EQ.
+ */
+export const AUTOMATION_PARAMS = [
+  'volume',
+  'pan',
+  'filterCutoff',
+  'filterResonance',
+  'reverbSend',
+  'delaySend',
+  'eqLow',
+  'eqMid',
+  'eqHigh',
+] as const;
+export type AutomationParam = (typeof AUTOMATION_PARAMS)[number];
+
+export function isAutomationParam(v: unknown): v is AutomationParam {
+  return AUTOMATION_PARAMS.includes(v as AutomationParam);
+}
+
+export interface AutomationPoint {
+  /** Song position, 1-based like Clip.startBar */
+  bar: number;
+  /** Height in the lane, 0 (bottom) to 1 (top); see src/audio/automation.ts for what it means per setting */
+  value: number;
+}
+
+/**
+ * How one track setting changes over the song. Points are kept in bar order; two may share a bar
+ * (an instant jump). The value runs in a straight line (in lane height) from point to point,
+ * holds the first point's value before it and the last one's after it. While a lane has points it
+ * owns its setting: the track's own value for it comes back when the lane is emptied or removed.
+ */
+export interface AutomationLane {
+  param: AutomationParam;
+  points: AutomationPoint[];
 }
 
 export interface CustomSample {

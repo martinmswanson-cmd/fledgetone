@@ -17,7 +17,7 @@ npm install
 npm run dev          # dev server at http://localhost:5173
 npm run build        # typecheck + production build into dist/
 npm run lint         # oxlint
-npm test             # timecode and drop-frame unit tests (node --test)
+npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter
 npm run build:single # dist-single/index.html: the whole app in one self-contained HTML file
 ```
 
@@ -36,6 +36,8 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
 | `src/audio/scheduler.ts` | Turns clips into Tone.js Transport events (one event per tick, updated incrementally) |
 | `src/audio/liveTracks.ts`, `effects/trackStrip.ts` | One mixer strip and instrument per track for live playback |
 | `src/audio/instruments.ts`, `instrumentCatalog.ts`, `presets/` | Every instrument and its sound design |
+| `src/audio/automation.ts` | Automation lanes: each setting's scale (lane height to dB, Hz, pan...), values between points, lane edits |
+| `src/audio/automationSchedule.ts`, `effects/paramWriter.ts` | Plays lanes as AudioParam automation, live and in the export; the one way automatable params get written |
 | `src/audio/exportWav.ts` | Offline WAV render (mixdown, stems, exact-length and seamless-loop endings, 16/24/32-bit), built from the same factories as live playback |
 | `src/audio/transport.ts` | Bars, ticks, seconds and timecode conversions |
 | `src/components/timeline/` | Timeline UI: toolbar, ruler, lanes, clips, piano roll, project bar |
@@ -49,6 +51,16 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
 - The WAV export drives Tone's offline clock by hand in 128-sample steps, one second ahead of
   the render (`exportWav.ts`). Anything that disposes nodes must wait until the render has
   passed them.
+- Settings that automation can drive (pan, sends, Filter cutoff / resonance, EQ bands, a Volume
+  lane's gain) are written only through a `ParamWriter` (`effects/paramWriter.ts`), by the track
+  strip and the automation scheduler alike. It never cancels a stretch that has started:
+  `cancelScheduledValues()` inside a running ramp snaps the param back to where it was before,
+  which clicks. So lanes are written in stretches of at most 50 ms, which bounds how late a seek
+  or an edit is heard. Stretches are jumps and linear ramps, never `setValueCurveAtTime()`:
+  Chrome only checks an event against the clock when it renders that param, and a strip nothing
+  sounds into isn't rendered, so curves written meanwhile are moved when a note wakes it, end up
+  overlapping, and crash the page. A `ParamWriter` never throws (it runs inside Tone's clock and
+  store actions).
 - Project files are versioned (`PROJECT_VERSION` in `project.ts`). New optional fields don't
   need a version bump; older builds ignore fields they don't know.
 

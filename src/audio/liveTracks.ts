@@ -3,6 +3,8 @@ import { liveMix } from './engine';
 import type { InstrumentKey } from './engine';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { PumpClock, TrackStrip } from './effects/trackStrip';
+import { createAutomationSchedule } from './automationSchedule';
+import type { AutomationSchedule } from './automationSchedule';
 import { createInstrument, safely } from './instruments';
 import { isDrumKind } from './instrumentCatalog';
 import { barToTicks } from './transport';
@@ -36,6 +38,11 @@ const live = new Map<string, LiveTrack>();
 /** Every beat / every 8th for the Pumps that follow those (on the live Transport, made on first sync). */
 let pumpClock: PumpClock | null = null;
 const liveStrips = () => [...live.values()].map((lt) => lt.strip);
+
+/** The tracks' automation lanes on the live Transport (made on first use). */
+let automation: AutomationSchedule | null = null;
+const liveAutomation = () =>
+  (automation ??= createAutomationSchedule(liveMix.bus.context.transport, (trackId) => live.get(trackId)?.strip));
 
 const sampleKey = (track: Track) => (track.sample ? `${track.sample.root}|${track.sample.dataUrl}` : undefined);
 
@@ -92,6 +99,18 @@ export function syncLiveTracks(tracks: Track[]): void {
   // one, over the whole timeline
   pumpClock ??= createPumpClock(liveMix.bus.context.transport, liveStrips, 0, barToTicks(TOTAL_BARS + 1));
   pumpClock.update();
+  // After the strips, which decide what each lane drives
+  liveAutomation().update(tracks);
+}
+
+/** Stopped with the playhead at `bar`: automated settings sit at their lanes' values there. */
+export function holdAutomationAt(bar: number): void {
+  liveAutomation().hold(bar);
+}
+
+/** The tempo or loop changed: automation that's playing follows. */
+export function retimeAutomation(): void {
+  automation?.retime();
 }
 
 /**

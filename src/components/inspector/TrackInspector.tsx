@@ -21,6 +21,8 @@ import { SampleLoader } from './SampleLoader';
 import { INSTRUMENTS, instrumentsByCategory } from '../../audio/instrumentCatalog';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
+import { AutoBadge, Automatable } from '../timeline/AutoBadge';
+import { AUTOMATED_TIP } from '../timeline/automationHooks';
 
 export const TrackInspector: React.FC = () => {
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
@@ -241,61 +243,76 @@ export const TrackInspector: React.FC = () => {
               {/* 3 Vertical Sliders */}
               <div className="grid grid-cols-3 gap-2 pt-1">
                 {/* Low Band (400Hz) */}
-                <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80">
-                  <span className="text-[10px] font-mono font-bold text-cyan-300">LOW</span>
-                  <span className="text-[9px] font-mono text-forge-muted mb-1">400Hz</span>
-                  <UndoableRange
-                    min={-24}
-                    max={12}
-                    step={0.5}
-                    value={currentTrack.eq?.low ?? 0}
-                    onValue={(v) => setTrackEq(currentTrack.id, { low: v })}
-                    resetValue={0}
-                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-cyan-400 [writing-mode:vertical-lr] [direction:rtl]"
-                    title="Low Shelf (-24dB to +12dB)"
-                  />
-                  <span className="text-[10px] font-mono tabular-nums text-white mt-1.5 font-semibold">
-                    {formatDb(currentTrack.eq?.low ?? 0)}
-                  </span>
-                </div>
+                <Automatable track={currentTrack} param="eqLow">
+                  {(auto) => (
+                    <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80" title={auto !== null ? AUTOMATED_TIP : undefined}>
+                      <span className="text-[10px] font-mono font-bold text-cyan-300">LOW</span>
+                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqLow" /> : '400Hz'}</span>
+                      <UndoableRange
+                        min={-24}
+                        max={12}
+                        step={0.5}
+                        value={auto ?? currentTrack.eq?.low ?? 0}
+                        onValue={(v) => setTrackEq(currentTrack.id, { low: v })}
+                        resetValue={0}
+                        disabled={auto !== null}
+                        className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer disabled:cursor-default accent-cyan-400 [writing-mode:vertical-lr] [direction:rtl]"
+                        title={auto !== null ? AUTOMATED_TIP : 'Low Shelf (-24dB to +12dB)'}
+                      />
+                      <span className={`text-[10px] font-mono tabular-nums mt-1.5 font-semibold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>
+                        {formatDb(auto ?? currentTrack.eq?.low ?? 0)}
+                      </span>
+                    </div>
+                  )}
+                </Automatable>
 
                 {/* Mid Band (1.0kHz) */}
-                <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80">
-                  <span className="text-[10px] font-mono font-bold text-emerald-300">MID</span>
-                  <span className="text-[9px] font-mono text-forge-muted mb-1">1.0kHz</span>
-                  <UndoableRange
-                    min={-24}
-                    max={12}
-                    step={0.5}
-                    value={currentTrack.eq?.mid ?? 0}
-                    onValue={(v) => setTrackEq(currentTrack.id, { mid: v })}
-                    resetValue={0}
-                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-emerald-400 [writing-mode:vertical-lr] [direction:rtl]"
-                    title="Mid Bell (-24dB to +12dB)"
-                  />
-                  <span className="text-[10px] font-mono tabular-nums text-white mt-1.5 font-semibold">
-                    {formatDb(currentTrack.eq?.mid ?? 0)}
-                  </span>
-                </div>
+                <Automatable track={currentTrack} param="eqMid">
+                  {(auto) => (
+                    <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80" title={auto !== null ? AUTOMATED_TIP : undefined}>
+                      <span className="text-[10px] font-mono font-bold text-emerald-300">MID</span>
+                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqMid" /> : '1.0kHz'}</span>
+                      <UndoableRange
+                        min={-24}
+                        max={12}
+                        step={0.5}
+                        value={auto ?? currentTrack.eq?.mid ?? 0}
+                        onValue={(v) => setTrackEq(currentTrack.id, { mid: v })}
+                        resetValue={0}
+                        disabled={auto !== null}
+                        className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer disabled:cursor-default accent-emerald-400 [writing-mode:vertical-lr] [direction:rtl]"
+                        title={auto !== null ? AUTOMATED_TIP : 'Mid Bell (-24dB to +12dB)'}
+                      />
+                      <span className={`text-[10px] font-mono tabular-nums mt-1.5 font-semibold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>
+                        {formatDb(auto ?? currentTrack.eq?.mid ?? 0)}
+                      </span>
+                    </div>
+                  )}
+                </Automatable>
 
                 {/* High Band (2.5kHz) */}
-                <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80">
-                  <span className="text-[10px] font-mono font-bold text-amber-300">HIGH</span>
-                  <span className="text-[9px] font-mono text-forge-muted mb-1">2.5kHz</span>
-                  <UndoableRange
-                    min={-24}
-                    max={12}
-                    step={0.5}
-                    value={currentTrack.eq?.high ?? 0}
-                    onValue={(v) => setTrackEq(currentTrack.id, { high: v })}
-                    resetValue={0}
-                    className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer accent-amber-400 [writing-mode:vertical-lr] [direction:rtl]"
-                    title="High Shelf (-24dB to +12dB)"
-                  />
-                  <span className="text-[10px] font-mono tabular-nums text-white mt-1.5 font-semibold">
-                    {formatDb(currentTrack.eq?.high ?? 0)}
-                  </span>
-                </div>
+                <Automatable track={currentTrack} param="eqHigh">
+                  {(auto) => (
+                    <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80" title={auto !== null ? AUTOMATED_TIP : undefined}>
+                      <span className="text-[10px] font-mono font-bold text-amber-300">HIGH</span>
+                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqHigh" /> : '2.5kHz'}</span>
+                      <UndoableRange
+                        min={-24}
+                        max={12}
+                        step={0.5}
+                        value={auto ?? currentTrack.eq?.high ?? 0}
+                        onValue={(v) => setTrackEq(currentTrack.id, { high: v })}
+                        resetValue={0}
+                        disabled={auto !== null}
+                        className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer disabled:cursor-default accent-amber-400 [writing-mode:vertical-lr] [direction:rtl]"
+                        title={auto !== null ? AUTOMATED_TIP : 'High Shelf (-24dB to +12dB)'}
+                      />
+                      <span className={`text-[10px] font-mono tabular-nums mt-1.5 font-semibold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>
+                        {formatDb(auto ?? currentTrack.eq?.high ?? 0)}
+                      </span>
+                    </div>
+                  )}
+                </Automatable>
               </div>
             </div>
 
@@ -312,68 +329,82 @@ export const TrackInspector: React.FC = () => {
               </div>
 
               {/* Reverb Send */}
-              <div className="flex flex-col gap-1">
-                <div className="flex justify-between items-center text-[10px] font-mono">
-                  <span className="text-cyan-300 font-semibold flex items-center gap-1">
-                    <Waves className="w-3 h-3" />
-                    Studio Reverb Send
-                  </span>
-                  <span className="text-white tabular-nums font-bold">
-                    {Math.round((currentTrack.reverbSend ?? 0) * 100)}%
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <UndoableRange
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={currentTrack.reverbSend ?? 0}
-                    onValue={(v) => setTrackReverbSend(currentTrack.id, v)}
-                    className="flex-1 accent-cyan-400 cursor-pointer h-1.5 bg-zinc-800 rounded-lg appearance-none"
-                  />
-                  <div
-                    className="w-12 h-2 rounded bg-zinc-800 overflow-hidden border border-zinc-700"
-                    title="Reverb send meter"
-                  >
-                    <div
-                      className="h-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] transition-all"
-                      style={{ width: `${(currentTrack.reverbSend ?? 0) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
+              <Automatable track={currentTrack} param="reverbSend">
+                {(auto) => {
+                  const send = auto ?? currentTrack.reverbSend ?? 0;
+                  return (
+                    <div className="flex flex-col gap-1" title={auto !== null ? AUTOMATED_TIP : undefined}>
+                      <div className="flex justify-between items-center gap-1.5 text-[10px] font-mono">
+                        <span className="flex-1 text-cyan-300 font-semibold flex items-center gap-1">
+                          <Waves className="w-3 h-3" />
+                          Studio Reverb Send
+                        </span>
+                        {auto !== null && <AutoBadge trackId={currentTrack.id} param="reverbSend" />}
+                        <span className={`tabular-nums font-bold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>{Math.round(send * 100)}%</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <UndoableRange
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={send}
+                          onValue={(v) => setTrackReverbSend(currentTrack.id, v)}
+                          disabled={auto !== null}
+                          className="flex-1 accent-cyan-400 cursor-pointer disabled:cursor-default h-1.5 bg-zinc-800 rounded-lg appearance-none"
+                        />
+                        <div
+                          className="w-12 h-2 rounded bg-zinc-800 overflow-hidden border border-zinc-700"
+                          title="Reverb send meter"
+                        >
+                          <div
+                            className="h-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] transition-all"
+                            style={{ width: `${send * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }}
+              </Automatable>
 
               {/* Delay Send */}
-              <div className="flex flex-col gap-1">
-                <div className="flex justify-between items-center text-[10px] font-mono">
-                  <span className="text-amber-300 font-semibold flex items-center gap-1">
-                    <Radio className="w-3 h-3" />
-                    Ping-Pong Echo Send
-                  </span>
-                  <span className="text-white tabular-nums font-bold">
-                    {Math.round((currentTrack.delaySend ?? 0) * 100)}%
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <UndoableRange
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={currentTrack.delaySend ?? 0}
-                    onValue={(v) => setTrackDelaySend(currentTrack.id, v)}
-                    className="flex-1 accent-amber-400 cursor-pointer h-1.5 bg-zinc-800 rounded-lg appearance-none"
-                  />
-                  <div
-                    className="w-12 h-2 rounded bg-zinc-800 overflow-hidden border border-zinc-700"
-                    title="Delay send meter"
-                  >
-                    <div
-                      className="h-full bg-amber-400 shadow-[0_0_8px_#f59e0b] transition-all"
-                      style={{ width: `${(currentTrack.delaySend ?? 0) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
+              <Automatable track={currentTrack} param="delaySend">
+                {(auto) => {
+                  const send = auto ?? currentTrack.delaySend ?? 0;
+                  return (
+                    <div className="flex flex-col gap-1" title={auto !== null ? AUTOMATED_TIP : undefined}>
+                      <div className="flex justify-between items-center gap-1.5 text-[10px] font-mono">
+                        <span className="flex-1 text-amber-300 font-semibold flex items-center gap-1">
+                          <Radio className="w-3 h-3" />
+                          Ping-Pong Echo Send
+                        </span>
+                        {auto !== null && <AutoBadge trackId={currentTrack.id} param="delaySend" />}
+                        <span className={`tabular-nums font-bold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>{Math.round(send * 100)}%</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <UndoableRange
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={send}
+                          onValue={(v) => setTrackDelaySend(currentTrack.id, v)}
+                          disabled={auto !== null}
+                          className="flex-1 accent-amber-400 cursor-pointer disabled:cursor-default h-1.5 bg-zinc-800 rounded-lg appearance-none"
+                        />
+                        <div
+                          className="w-12 h-2 rounded bg-zinc-800 overflow-hidden border border-zinc-700"
+                          title="Delay send meter"
+                        >
+                          <div
+                            className="h-full bg-amber-400 shadow-[0_0_8px_#f59e0b] transition-all"
+                            style={{ width: `${send * 100}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }}
+              </Automatable>
             </div>
 
             {/* Fader & Pan Strip */}
@@ -381,38 +412,54 @@ export const TrackInspector: React.FC = () => {
               <span className="text-[10px] font-mono font-bold uppercase text-forge-muted tracking-wider">
                 CHANNEL FADER
               </span>
-              <div className="flex items-center justify-between gap-3 text-xs font-mono">
-                <span className="text-forge-muted text-[10px]">VOL</span>
-                <UndoableRange
-                  min={-60}
-                  max={6}
-                  step={0.5}
-                  value={currentTrack.volume}
-                  onValue={(v) => setTrackVolume(currentTrack.id, v)}
-                  resetValue={0}
-                  className="flex-1 accent-white cursor-pointer h-1.5 bg-zinc-800 rounded appearance-none"
-                />
-                <span className="w-12 text-right font-bold tabular-nums text-white">
-                  {currentTrack.volume <= -60 ? '-inf' : `${currentTrack.volume > 0 ? '+' : ''}${currentTrack.volume.toFixed(1)}`}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-3 text-xs font-mono">
-                <span className="text-forge-muted text-[10px]">PAN</span>
-                <UndoableRange
-                  min={-1}
-                  max={1}
-                  step={0.01}
-                  value={currentTrack.pan}
-                  onValue={(v) => setTrackPan(currentTrack.id, v)}
-                  resetValue={0}
-                  className="flex-1 accent-white cursor-pointer h-1.5 bg-zinc-800 rounded appearance-none"
-                />
-                <span className="w-12 text-right font-bold tabular-nums text-white">
-                  {Math.abs(currentTrack.pan) < 0.01
-                    ? 'C'
-                    : `${currentTrack.pan < 0 ? 'L' : 'R'}${Math.round(Math.abs(currentTrack.pan) * 100)}`}
-                </span>
-              </div>
+              <Automatable track={currentTrack} param="volume">
+                {(auto) => {
+                  const volume = auto ?? currentTrack.volume;
+                  return (
+                    <div className="flex items-center justify-between gap-3 text-xs font-mono" title={auto !== null ? AUTOMATED_TIP : undefined}>
+                      <span className="text-forge-muted text-[10px]">VOL</span>
+                      <UndoableRange
+                        min={-60}
+                        max={6}
+                        step={0.5}
+                        value={Math.max(-60, volume)}
+                        onValue={(v) => setTrackVolume(currentTrack.id, v)}
+                        resetValue={0}
+                        disabled={auto !== null}
+                        className="flex-1 accent-white cursor-pointer disabled:cursor-default h-1.5 bg-zinc-800 rounded appearance-none"
+                      />
+                      {auto !== null && <AutoBadge trackId={currentTrack.id} param="volume" />}
+                      <span className={`w-12 text-right font-bold tabular-nums ${auto !== null ? 'text-amber-200' : 'text-white'}`}>
+                        {volume <= -60 ? '-inf' : `${volume > 0 ? '+' : ''}${volume.toFixed(1)}`}
+                      </span>
+                    </div>
+                  );
+                }}
+              </Automatable>
+              <Automatable track={currentTrack} param="pan">
+                {(auto) => {
+                  const pan = auto ?? currentTrack.pan;
+                  return (
+                    <div className="flex items-center justify-between gap-3 text-xs font-mono" title={auto !== null ? AUTOMATED_TIP : undefined}>
+                      <span className="text-forge-muted text-[10px]">PAN</span>
+                      <UndoableRange
+                        min={-1}
+                        max={1}
+                        step={0.01}
+                        value={pan}
+                        onValue={(v) => setTrackPan(currentTrack.id, v)}
+                        resetValue={0}
+                        disabled={auto !== null}
+                        className="flex-1 accent-white cursor-pointer disabled:cursor-default h-1.5 bg-zinc-800 rounded appearance-none"
+                      />
+                      {auto !== null && <AutoBadge trackId={currentTrack.id} param="pan" />}
+                      <span className={`w-12 text-right font-bold tabular-nums ${auto !== null ? 'text-amber-200' : 'text-white'}`}>
+                        {Math.abs(pan) < 0.01 ? 'C' : `${pan < 0 ? 'L' : 'R'}${Math.round(Math.abs(pan) * 100)}`}
+                      </span>
+                    </div>
+                  );
+                }}
+              </Automatable>
             </div>
 
             <button

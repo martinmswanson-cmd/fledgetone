@@ -12,6 +12,9 @@ import {
   PUMP_RELEASE_MIN,
 } from '../../store/timelineTypes';
 import { UndoableRange } from '../UndoableRange';
+import { AutoBadge, Automatable } from '../timeline/AutoBadge';
+import { AUTOMATED_TIP } from '../timeline/automationHooks';
+import { formatHz } from '../../audio/automation';
 
 interface SliderProps {
   label: string;
@@ -25,10 +28,12 @@ interface SliderProps {
   reset: number;
   accent: string;
   disabled: boolean;
+  /** Set while an automation lane drives this setting: an AUTO badge, and the slider follows the lane and can't be moved. */
+  automated?: React.ReactNode;
 }
 
-const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled }) => (
-  <label className={`flex items-center gap-2 text-[10px] font-mono ${disabled ? 'opacity-45' : ''}`}>
+const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled, automated }) => (
+  <label className={`flex items-center gap-2 text-[10px] font-mono ${disabled ? 'opacity-45' : ''}`} title={automated ? AUTOMATED_TIP : undefined}>
     <span className="w-16 text-forge-muted uppercase">{label}</span>
     <UndoableRange
       min={min}
@@ -37,11 +42,13 @@ const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format,
       value={value}
       onValue={onChange}
       resetValue={reset}
-      className="flex-1 min-w-0 cursor-pointer h-1.5"
-      style={{ accentColor: accent }}
+      disabled={!!automated}
+      className="flex-1 min-w-0 cursor-pointer disabled:cursor-default h-1.5"
+      style={{ accentColor: automated ? '#f59e0b' : accent }}
       aria-label={label}
     />
-    <span className="w-14 text-right tabular-nums text-white font-semibold">{format(value)}</span>
+    {automated}
+    <span className={`w-14 text-right tabular-nums font-semibold ${automated ? 'text-amber-200' : 'text-white'}`}>{format(value)}</span>
   </label>
 );
 
@@ -194,8 +201,6 @@ const logScale = (lo: number, hi: number) => ({
 const cutoffScale = logScale(FILTER_CUTOFF_MIN, FILTER_CUTOFF_MAX);
 const resonanceScale = logScale(FILTER_RESONANCE_MIN, FILTER_RESONANCE_MAX);
 
-/** "350 Hz", "1.25 kHz", "12.5 kHz" */
-const formatHz = (hz: number) => (hz < 999.5 ? `${Math.round(hz)} Hz` : `${(hz / 1000).toFixed(hz < 9995 ? 2 : 1)} kHz`);
 
 const FILTER_TYPE_OPTIONS: ReadonlyArray<{ value: FilterType; label: string; title: string }> = [
   { value: 'lowpass', label: 'Low-pass', title: 'Low-pass: keep what is below the cutoff' },
@@ -231,30 +236,40 @@ export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
         accent={filterAccent}
       >
         <FxChoice label="Type" value={fx.filter.type} options={FILTER_TYPE_OPTIONS} onChange={(type) => setFilter({ type }, true)} accent={filterAccent} disabled={!fx.filter.on} />
-        <FxSlider
-          label="Cutoff"
-          value={cutoffScale.toPos(fx.filter.cutoff)}
-          min={0}
-          max={1000}
-          step={1}
-          format={(pos) => formatHz(cutoffScale.fromPos(pos))}
-          onChange={(pos) => setFilter({ cutoff: Number(cutoffScale.fromPos(pos).toPrecision(4)) })}
-          reset={cutoffScale.toPos(d.filter.cutoff)}
-          accent={filterAccent}
-          disabled={!fx.filter.on}
-        />
-        <FxSlider
-          label="Resonance"
-          value={resonanceScale.toPos(fx.filter.resonance)}
-          min={0}
-          max={1000}
-          step={1}
-          format={(pos) => `Q ${resonanceScale.fromPos(pos).toFixed(2)}`}
-          onChange={(pos) => setFilter({ resonance: Number(resonanceScale.fromPos(pos).toPrecision(3)) })}
-          reset={resonanceScale.toPos(d.filter.resonance)}
-          accent={filterAccent}
-          disabled={!fx.filter.on}
-        />
+        <Automatable track={track} param="filterCutoff">
+          {(auto) => (
+            <FxSlider
+              label="Cutoff"
+              value={cutoffScale.toPos(auto ?? fx.filter.cutoff)}
+              min={0}
+              max={1000}
+              step={1}
+              format={(pos) => formatHz(cutoffScale.fromPos(pos))}
+              onChange={(pos) => setFilter({ cutoff: Number(cutoffScale.fromPos(pos).toPrecision(4)) })}
+              reset={cutoffScale.toPos(d.filter.cutoff)}
+              accent={filterAccent}
+              disabled={!fx.filter.on}
+              automated={auto !== null && <AutoBadge trackId={track.id} param="filterCutoff" />}
+            />
+          )}
+        </Automatable>
+        <Automatable track={track} param="filterResonance">
+          {(auto) => (
+            <FxSlider
+              label="Resonance"
+              value={resonanceScale.toPos(auto ?? fx.filter.resonance)}
+              min={0}
+              max={1000}
+              step={1}
+              format={(pos) => `Q ${resonanceScale.fromPos(pos).toFixed(2)}`}
+              onChange={(pos) => setFilter({ resonance: Number(resonanceScale.fromPos(pos).toPrecision(3)) })}
+              reset={resonanceScale.toPos(d.filter.resonance)}
+              accent={filterAccent}
+              disabled={!fx.filter.on}
+              automated={auto !== null && <AutoBadge trackId={track.id} param="filterResonance" />}
+            />
+          )}
+        </Automatable>
         <FxChoice label="Slope" value={fx.filter.slope} options={FILTER_SLOPE_OPTIONS} onChange={(slope) => setFilter({ slope }, true)} accent={filterAccent} disabled={!fx.filter.on} />
       </InsertPanel>
 

@@ -1,14 +1,17 @@
 import React from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
-import type { Track } from '../../store/timelineTypes';
-import { snapBar } from '../../store/timelineTypes';
-import { Plus, Sliders, Loader2 } from 'lucide-react';
+import type { AutomationParam, Track } from '../../store/timelineTypes';
+import { AUTOMATION_PARAMS, snapBar } from '../../store/timelineTypes';
+import { Plus, Sliders, Loader2, Spline } from 'lucide-react';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
 import { UndoableRange } from '../UndoableRange';
 import { INSTRUMENTS } from '../../audio/instrumentCatalog';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
+import { activeLanes, AUTOMATION, formatPan, laneOf } from '../../audio/automation';
+import { AUTOMATED_TIP, useAutomatedValue } from './automationHooks';
+import { AutoBadge } from './AutoBadge';
 
 interface ToggleProps {
   active: boolean;
@@ -27,7 +30,7 @@ const Toggle: React.FC<ToggleProps> = ({ active, onClick, title, label, activeCl
       e.stopPropagation();
       onClick();
     }}
-    className={`w-6 h-6 rounded text-[10px] font-mono font-bold border transition-colors ${
+    className={`w-5 h-5 shrink-0 rounded text-[10px] font-mono font-bold border transition-colors ${
       active ? activeClass : 'bg-forge-bg border-forge-border text-forge-muted hover:text-forge-text hover:border-forge-borderLight'
     }`}
   >
@@ -35,10 +38,108 @@ const Toggle: React.FC<ToggleProps> = ({ active, onClick, title, label, activeCl
   </button>
 );
 
-function formatPan(pan: number): string {
-  if (Math.abs(pan) < 0.005) return 'C';
-  return `${pan < 0 ? 'L' : 'R'}${Math.round(Math.abs(pan) * 100)}`;
-}
+const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+
+/** The VOL row: the fader, or while a Volume lane owns the level, the lane's value at the playhead. */
+const VolumeRow: React.FC<{ track: Track }> = ({ track }) => {
+  const automated = useAutomatedValue(track, 'volume');
+  const volume = automated ?? track.volume;
+  return (
+    <label className="flex items-center gap-2 text-[10px] font-mono text-forge-muted" onClick={stop} title={automated !== null ? AUTOMATED_TIP : undefined}>
+      <span className="w-6">VOL</span>
+      <UndoableRange
+        min={-60}
+        max={6}
+        step={0.5}
+        value={Math.max(-60, volume)}
+        onValue={(v) => useTimelineStore.getState().setTrackVolume(track.id, v)}
+        resetValue={0}
+        disabled={automated !== null}
+        className="flex-1 min-w-0 cursor-pointer disabled:cursor-default"
+        style={{ accentColor: automated !== null ? '#f59e0b' : track.color }}
+        aria-label={`${track.name} volume`}
+      />
+      {automated !== null && <AutoBadge trackId={track.id} param="volume" />}
+      <span className={`w-10 text-right tabular-nums ${automated !== null ? 'text-amber-200' : 'text-forge-text'}`}>
+        {volume <= -60 ? '-inf' : `${volume > 0 ? '+' : ''}${volume.toFixed(1)}`}
+      </span>
+    </label>
+  );
+};
+
+/** The PAN row, following a Pan lane like VolumeRow. */
+const PanRow: React.FC<{ track: Track }> = ({ track }) => {
+  const automated = useAutomatedValue(track, 'pan');
+  const pan = automated ?? track.pan;
+  return (
+    <label className="flex items-center gap-2 text-[10px] font-mono text-forge-muted" onClick={stop} title={automated !== null ? AUTOMATED_TIP : undefined}>
+      <span className="w-6">PAN</span>
+      <UndoableRange
+        min={-1}
+        max={1}
+        step={0.01}
+        value={pan}
+        onValue={(v) => useTimelineStore.getState().setTrackPan(track.id, v)}
+        resetValue={0}
+        disabled={automated !== null}
+        className="flex-1 min-w-0 cursor-pointer disabled:cursor-default"
+        style={{ accentColor: automated !== null ? '#f59e0b' : track.color }}
+        aria-label={`${track.name} pan`}
+      />
+      {automated !== null && <AutoBadge trackId={track.id} param="pan" />}
+      <span className={`w-10 text-right tabular-nums ${automated !== null ? 'text-amber-200' : 'text-forge-text'}`}>{formatPan(pan)}</span>
+    </label>
+  );
+};
+
+/** The lane's value at the playhead (or the track's own, with no points): the only part that follows playback. */
+const AutomationReadout: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
+  const automated = useAutomatedValue(track, param);
+  const spec = AUTOMATION[param];
+  return (
+    <span
+      className={`shrink-0 text-right tabular-nums ${automated !== null ? 'text-amber-200' : 'text-forge-text'}`}
+      title={automated !== null ? 'The lane\'s value at the playhead' : 'No points: the track\'s own setting plays'}
+    >
+      {spec.format(automated ?? spec.trackValue(track))}
+    </span>
+  );
+};
+
+/** In automation view, the rows under the name pick the lane shown and read its value at the playhead. */
+const AutomationRows: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
+  const spec = AUTOMATION[param];
+  const count = laneOf(track, param)?.points.length ?? 0;
+  const filterOff = !!spec.filter && !track.fx.filter?.on;
+  const withPoints = new Set(activeLanes(track).map((l) => l.param));
+  return (
+    <>
+      <label className="flex items-center gap-2 text-[10px] font-mono text-forge-muted" onClick={stop}>
+        <span className="w-6">LANE</span>
+        <select
+          value={param}
+          onChange={(e) => useTimelineStore.getState().showAutomation(track.id, true, e.target.value as AutomationParam)}
+          className="flex-1 min-w-0 h-5 bg-forge-bg border border-forge-border rounded px-1 text-[10px] font-mono text-forge-text cursor-pointer focus:border-amber-400 focus:outline-none"
+          aria-label={`${track.name} automation lane`}
+          title="The setting this lane automates (● has points)"
+        >
+          {AUTOMATION_PARAMS.map((p) => (
+            <option key={p} value={p}>
+              {withPoints.has(p) ? '● ' : ''}
+              {AUTOMATION[p].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="flex items-center gap-2 text-[10px] font-mono text-forge-muted" onClick={stop}>
+        <span className="flex-1 min-w-0 truncate" title={filterOff ? 'Filter lanes only sound while the Filter insert is on' : undefined}>
+          {filterOff ? 'Filter is off' : count ? `${count} point${count === 1 ? '' : 's'}` : 'No points yet'}
+        </span>
+        <AutomationReadout track={track} param={param} />
+      </div>
+    </>
+  );
+};
 
 /**
  * Sticky left-hand track header: name, + (add clip), M / S / R toggles, volume fader and pan.
@@ -48,12 +149,15 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
   track,
   onOpenMenu,
 }) => {
-  const { toggleMute, toggleSolo, toggleArm, setTrackVolume, setTrackPan, selectTrack, toggleInspector } =
-    useTimelineStore.getState();
+  const { toggleMute, toggleSolo, toggleArm, selectTrack, toggleInspector } = useTimelineStore.getState();
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
   const isSelected = selectedTrackId === track.id;
   const anySoloed = useTimelineStore((s) => s.tracks.some((t) => t.isSoloed));
   const silenced = track.isMuted || (anySoloed && !track.isSoloed);
+
+  const automationOpen = useTimelineStore((s) => s.automationView[track.id]?.open ?? false);
+  const automationParam = useTimelineStore((s) => s.automationView[track.id]?.param ?? 'volume');
+  const hasLanes = activeLanes(track).length > 0;
 
   const instrumentStatus = useAudioStore((s) => s.instrumentStatus[track.instrumentKey] ?? 'ready');
   const isLoading = instrumentStatus === 'loading';
@@ -76,7 +180,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
         style={{ backgroundColor: track.color, opacity: silenced ? 0.35 : 1 }}
       />
       <div className="flex-1 min-w-0 px-2.5 py-2 flex flex-col justify-between">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1">
           {/* Loading Indicator, Download Error (click to retry) or Selected Glow */}
           {isLoading ? (
             <span title="Downloading acoustic samples from CDN..." className="text-cyan-400 animate-spin shrink-0">
@@ -123,7 +227,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
               selectTrack(track.id);
               toggleInspector(true);
             }}
-            className={`w-6 h-6 rounded border flex items-center justify-center transition ${
+            className={`w-5 h-5 shrink-0 rounded border flex items-center justify-center transition ${
               isSelected
                 ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200'
                 : 'border-forge-border bg-forge-bg text-forge-muted hover:text-forge-text hover:border-cyan-500/70'
@@ -148,9 +252,28 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
                 clipId: null,
               });
             }}
-            className="w-6 h-6 rounded border border-forge-border bg-forge-bg text-forge-muted hover:text-forge-text hover:border-cyan-500/70 flex items-center justify-center"
+            className="w-5 h-5 shrink-0 rounded border border-forge-border bg-forge-bg text-forge-muted hover:text-forge-text hover:border-cyan-500/70 flex items-center justify-center"
           >
             <Plus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            title={automationOpen ? 'Hide automation' : hasLanes ? 'Show automation (this track has some)' : 'Show automation'}
+            aria-label={`${automationOpen ? 'Hide' : 'Show'} automation for ${track.name}`}
+            aria-pressed={automationOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              useTimelineStore.getState().showAutomation(track.id);
+            }}
+            className={`w-5 h-5 shrink-0 rounded border flex items-center justify-center transition ${
+              automationOpen
+                ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                : hasLanes
+                  ? 'border-amber-500/50 bg-forge-bg text-amber-300/90 hover:border-amber-400'
+                  : 'border-forge-border bg-forge-bg text-forge-muted hover:text-forge-text hover:border-amber-500/70'
+            }`}
+          >
+            <Spline className="w-3.5 h-3.5" />
           </button>
           <Toggle
             label="M"
@@ -175,45 +298,14 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           />
         </div>
 
-        <label
-          className="flex items-center gap-2 text-[10px] font-mono text-forge-muted"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <span className="w-6">VOL</span>
-          <UndoableRange
-            min={-60}
-            max={6}
-            step={0.5}
-            value={track.volume}
-            onValue={(v) => setTrackVolume(track.id, v)}
-            resetValue={0}
-            className="flex-1 min-w-0 cursor-pointer"
-            style={{ accentColor: track.color }}
-            aria-label={`${track.name} volume`}
-          />
-          <span className="w-12 text-right tabular-nums text-forge-text">
-            {track.volume <= -60 ? '-inf' : `${track.volume > 0 ? '+' : ''}${track.volume.toFixed(1)}`}
-          </span>
-        </label>
-
-        <label
-          className="flex items-center gap-2 text-[10px] font-mono text-forge-muted"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <span className="w-6">PAN</span>
-          <UndoableRange
-            min={-1}
-            max={1}
-            step={0.01}
-            value={track.pan}
-            onValue={(v) => setTrackPan(track.id, v)}
-            resetValue={0}
-            className="flex-1 min-w-0 cursor-pointer"
-            style={{ accentColor: track.color }}
-            aria-label={`${track.name} pan`}
-          />
-          <span className="w-12 text-right tabular-nums text-forge-text">{formatPan(track.pan)}</span>
-        </label>
+        {automationOpen ? (
+          <AutomationRows track={track} param={automationParam} />
+        ) : (
+          <>
+            <VolumeRow track={track} />
+            <PanRow track={track} />
+          </>
+        )}
       </div>
     </div>
   );
