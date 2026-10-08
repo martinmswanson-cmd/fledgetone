@@ -22,12 +22,38 @@ const DRUM_ROWS: string[] = [
 ];
 
 interface NoteRect {
-  id: string;
   left: number;
   width: number;
   top: number;
   height: number;
   opacity: number;
+}
+
+/** Note rectangles that share a shade, as one SVG path. */
+interface NoteShade {
+  opacity: number;
+  d: string;
+}
+
+/**
+ * The note marks as one SVG path per shade (velocity), not an element per note: a dense clip has
+ * hundreds of notes, and each element needed its style worked out when the clip came on screen. A
+ * page turn of a dense song (a thousand notes coming into view) spent about 50 ms on that alone,
+ * on the main thread, while playback was starting.
+ */
+function shadeNotes(notes: NoteRect[]): NoteShade[] {
+  const paths = new Map<number, string[]>();
+  for (const n of notes) {
+    // Hundredths of opacity are as fine as anyone can see, and keep the paths few
+    const opacity = Math.round(n.opacity * 100) / 100;
+    let list = paths.get(opacity);
+    if (!list) paths.set(opacity, (list = []));
+    // On whole pixels, as the browser drew each note's own element, so the edges stay sharp
+    const x = Math.round(n.left);
+    const y = Math.round(n.top);
+    list.push(`M${x} ${y}H${Math.max(x + 1, Math.round(n.left + n.width))}V${Math.max(y + 1, Math.round(n.top + n.height))}H${x}z`);
+  }
+  return [...paths].map(([opacity, parts]) => ({ opacity, d: parts.join('') }));
 }
 
 /** Lay out the visible notes of a clip as mini piano-roll rectangles. */
@@ -57,7 +83,6 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
 
   const rowHeight = areaHeight / rows;
   return visible.map((n) => ({
-    id: n.id,
     left: n.startOffset * zoom,
     width: Math.max(2, Math.min(durationToBars(n.duration), clip.lengthBars - n.startOffset) * zoom - 1),
     top: areaTop + rowOf(n.note) * rowHeight,
@@ -109,7 +134,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
   const [razorX, setRazorX] = useState<number | null>(null);
 
-  const notes = useMemo(() => layoutNotes(clip, track.instrumentKey, zoom), [clip, track.instrumentKey, zoom]);
+  const shades = useMemo(() => shadeNotes(layoutNotes(clip, track.instrumentKey, zoom)), [clip, track.instrumentKey, zoom]);
 
   const left = (clip.startBar - 1) * zoom;
   const width = clip.lengthBars * zoom;
@@ -350,20 +375,13 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       </div>
 
       {/* Notes */}
-      {notes.map((n) => (
-        <div
-          key={n.id}
-          className="absolute rounded-[1px] pointer-events-none"
-          style={{
-            left: n.left,
-            width: n.width,
-            top: n.top,
-            height: n.height,
-            backgroundColor: track.color,
-            opacity: n.opacity,
-          }}
-        />
-      ))}
+      {shades.length > 0 && (
+        <svg className="absolute left-0 top-0 w-full h-full pointer-events-none" shapeRendering="crispEdges" aria-hidden="true">
+          {shades.map(({ opacity, d }) => (
+            <path key={opacity} d={d} fill={track.color} fillOpacity={opacity} />
+          ))}
+        </svg>
+      )}
 
       {/* Trim handles */}
       {!isRazor && width > TRIM_HANDLE_PX * 3 && (
