@@ -119,11 +119,19 @@ test('stretches: straight maps get two values, curves one every 10 ms', () => {
   assert.equal(isLinearMap((n) => 10 ** (AUTOMATION.volume.toReal(n) / 20)), false);
   const line = sampleStretch(0.2, 0.8, 1.5, (n) => n, true);
   assert.deepEqual([...line].map((v) => +v.toFixed(6)), [0.2, 0.8]);
-  const curve = sampleStretch(0, 1, 0.25, AUTOMATION.filterCutoff.toReal, false);
-  assert.equal(curve.length, 26);
+  // A fast sweep: up to one value every 10 ms, straight lines within 0.5% of the curve
+  const cutoff = AUTOMATION.filterCutoff.toReal;
+  const curve = sampleStretch(0, 1, 0.25, cutoff, false);
+  assert.ok(curve.length > 2 && curve.length <= 26);
   near(curve[0], 20, 1e-4);
-  near(curve[25], 20000, 0.01);
-  near(curve[13], AUTOMATION.filterCutoff.toReal(13 / 25), 0.01);
+  near(curve[curve.length - 1], 20000, 0.01);
+  for (let k = 0; k < curve.length - 1; k++) {
+    const mid = cutoff((k + 0.5) / (curve.length - 1));
+    const line = (curve[k] + curve[k + 1]) / 2;
+    assert.ok(Math.abs(line - mid) <= 0.0051 * mid || curve.length === 26, `gap ${k}`);
+  }
+  // A slow one needs only its ends
+  assert.equal(sampleStretch(0.5, 0.51, 0.05, cutoff, false).length, 2);
   assert.equal(sampleStretch(0, 1, 0.001, (n) => n, false).length, 2);
 });
 

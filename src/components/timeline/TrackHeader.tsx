@@ -92,9 +92,22 @@ const PanRow: React.FC<{ track: Track }> = ({ track }) => {
   );
 };
 
+/** The lane's value at the playhead (or the track's own, with no points): the only part that follows playback. */
+const AutomationReadout: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
+  const automated = useAutomatedValue(track, param);
+  const spec = AUTOMATION[param];
+  return (
+    <span
+      className={`shrink-0 text-right tabular-nums ${automated !== null ? 'text-amber-200' : 'text-forge-text'}`}
+      title={automated !== null ? 'The lane\'s value at the playhead' : 'No points: the track\'s own setting plays'}
+    >
+      {spec.format(automated ?? spec.trackValue(track))}
+    </span>
+  );
+};
+
 /** In automation view, the rows under the name pick the lane shown and read its value at the playhead. */
 const AutomationRows: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
-  const automated = useAutomatedValue(track, param);
   const spec = AUTOMATION[param];
   const count = laneOf(track, param)?.points.length ?? 0;
   const filterOff = !!spec.filter && !track.fx.filter?.on;
@@ -122,12 +135,7 @@ const AutomationRows: React.FC<{ track: Track; param: AutomationParam }> = ({ tr
         <span className="flex-1 min-w-0 truncate" title={filterOff ? 'Filter lanes only sound while the Filter insert is on' : undefined}>
           {filterOff ? 'Filter is off' : count ? `${count} point${count === 1 ? '' : 's'}` : 'No points yet'}
         </span>
-        <span
-          className={`shrink-0 text-right tabular-nums ${automated !== null ? 'text-amber-200' : 'text-forge-text'}`}
-          title={automated !== null ? 'The lane\'s value at the playhead' : 'No points: the track\'s own setting plays'}
-        >
-          {spec.format(automated ?? spec.trackValue(track))}
-        </span>
+        <AutomationReadout track={track} param={param} />
       </div>
     </>
   );

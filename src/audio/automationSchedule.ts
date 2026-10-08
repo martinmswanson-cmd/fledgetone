@@ -14,12 +14,13 @@ type Transport = ReturnType<typeof Tone.getTransport>;
  * Nothing goes on the Transport's event list. The schedule listens for the Transport starting
  * (play, or a seek while playing), stopping and wrapping round its loop, each of which comes with
  * the audio time it happens at. From there a lane is written ahead of the clock in short stretches:
- * each stretch is one setValueCurveAtTime per native param (two values when the param moves in a
- * straight line with the lane, else one every 10 ms), never longer than WINDOW and never across a
- * point, so corners land exactly where they're drawn. A lane that holds still (before its first
- * point, after its last, along a flat line) writes nothing until it moves again. While playing, the
- * context's clock tick (20 a second live, every render block in the export) tops lanes up; it is
- * listened to only while the Transport runs and some lane exists, and does nothing between stretches.
+ * each stretch is one curve per native param (two values when the param moves in a straight line
+ * with the lane, else as many as its curve needs, up to one every 10 ms; the writer plays it as
+ * straight ramps between them), never longer than WINDOW and never across a point, so corners land
+ * exactly where they're drawn. A lane that holds still (before its first point, after its last,
+ * along a flat line) writes nothing until it moves again. While playing, the context's clock tick
+ * (20 a second live, every render block in the export) tops lanes up; it is listened to only while
+ * the Transport runs and some lane exists, and does nothing between stretches.
  *
  * An edit to a lane drops only that lane's stretches that haven't started (see paramWriter.ts) and
  * writes it again from there; other lanes are left alone. The stretch already playing can't be cut

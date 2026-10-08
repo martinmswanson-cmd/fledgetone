@@ -53,13 +53,14 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
   passed them.
 - Settings that automation can drive (pan, sends, Filter cutoff / resonance, EQ bands, a Volume
   lane's gain) are written only through a `ParamWriter` (`effects/paramWriter.ts`), by the track
-  strip and the automation scheduler alike. It never cancels a curve that has started:
-  `cancelScheduledValues()` inside a running curve snaps the param back to where it was before
-  the curve, which clicks, and Chrome's `cancelAndHoldAtTime()` restarts the curve instead. So
-  lanes are written in stretches of at most 50 ms, which bounds how late a seek or an edit is
-  heard. A `ParamWriter` never throws: when the page stalls, Chrome moves a write whose start
-  has passed to the moment it gets it, and the next write would overlap it; the writer retries
-  after the moved curve instead (`scripts/paramWriter.test.mjs` models this).
+  strip and the automation scheduler alike. It never cancels a stretch that has started:
+  `cancelScheduledValues()` inside a running ramp snaps the param back to where it was before,
+  which clicks. So lanes are written in stretches of at most 50 ms, which bounds how late a seek
+  or an edit is heard. Stretches are jumps and linear ramps, never `setValueCurveAtTime()`:
+  Chrome only checks an event against the clock when it renders that param, and a strip nothing
+  sounds into isn't rendered, so curves written meanwhile are moved when a note wakes it, end up
+  overlapping, and crash the page. A `ParamWriter` never throws (it runs inside Tone's clock and
+  store actions).
 - Project files are versioned (`PROJECT_VERSION` in `project.ts`). New optional fields don't
   need a version bump; older builds ignore fields they don't know.
 

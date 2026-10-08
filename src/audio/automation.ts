@@ -257,8 +257,13 @@ export function laneOf(track: Pick<Track, 'automation'>, param: AutomationParam)
 
 // ---------- Turning a stretch into audio-param values ----------
 
-/** How often a curve is sampled where the setting doesn't move in a straight line (seconds). */
+/** How often, at most, a curve is sampled where the setting doesn't move in a straight line (seconds). */
 export const CURVE_STEP = 0.01;
+/**
+ * How far straight lines between a curve's samples may stray from the setting's own curve, relative
+ * to the value: 0.5%, under 0.05 dB of a gain or a tenth of a semitone of a cutoff.
+ */
+const CURVE_TOLERANCE = 0.005;
 
 /**
  * True if `map` (lane value to a native param value) is a straight line, so a stretch of the lane
@@ -273,12 +278,27 @@ export function isLinearMap(map: (n: number) => number): boolean {
 
 /**
  * The native param values for a straight stretch of the lane from `from` to `to` lasting
- * `seconds`: two values if `linear`, else one every CURVE_STEP (at least two).
+ * `seconds`, spread evenly over it: two if `linear`, else as few as keep the straight lines between
+ * them within CURVE_TOLERANCE of the setting's own curve (a slow sweep needs only its ends), but
+ * never more than one every CURVE_STEP. Each one is a native call, live, on every stretch.
  */
 export function sampleStretch(from: number, to: number, seconds: number, map: (n: number) => number, linear: boolean): Float32Array {
-  const count = linear ? 2 : Math.max(2, Math.ceil(seconds / CURVE_STEP - 1e-9) + 1);
+  const most = linear ? 2 : Math.max(2, Math.ceil(seconds / CURVE_STEP - 1e-9) + 1);
+  const at = (count: number, k: number) => map(from + ((to - from) * k) / (count - 1));
+  // Close enough if the curve's middle of every gap is near the straight line's
+  const fits = (count: number) => {
+    for (let k = 0; k < count - 1; k++) {
+      const a = at(count, k);
+      const b = at(count, k + 1);
+      const mid = at(count, k + 0.5);
+      if (Math.abs(mid - (a + b) / 2) > CURVE_TOLERANCE * Math.max(Math.abs(mid), Math.abs(a), Math.abs(b))) return false;
+    }
+    return true;
+  };
+  let count = 2;
+  while (count < most && !fits(count)) count = Math.min(most, count * 2 - 1);
   const values = new Float32Array(count);
-  for (let k = 0; k < count; k++) values[k] = map(from + ((to - from) * k) / (count - 1));
+  for (let k = 0; k < count; k++) values[k] = at(count, k);
   return values;
 }
 

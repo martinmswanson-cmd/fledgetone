@@ -1,136 +1,112 @@
-// Unit tests for ParamWriter against a stand-in AudioParam that behaves like Chrome's: overlapping
-// writes are refused, and a write whose start has passed when the audio thread gets it is moved to
-// that moment. Run with `npm test`.
+// Unit tests for ParamWriter (src/audio/effects/paramWriter.ts) against a stand-in AudioParam that
+// keeps the events it's given, like Chrome's timeline. Run with `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 const { createParamWriter } = await import('../src/audio/effects/paramWriter.ts');
 
 const SR = 48000;
+const GAP = 1 / SR;
 
-/** The audio clock: `page` is what currentTime shows; the audio thread can be ahead of it. */
-function makeClock() {
-  return { page: 1, audio: 1 };
-}
-
-/** A stand-in AudioParam with Chrome's rules for curves (see paramWriter.ts). */
-function fakeParam(clock) {
-  /** Events as the audio thread has them: { time, duration (0 for a jump), pending } */
+/** A stand-in AudioParam: a timeline of jumps (setValueAtTime) and ramp ends (linearRampToValueAtTime). */
+function fakeParam() {
   let events = [];
-  /** 'ok' or 'refused' for each write, in order */
-  const log = [];
-  const inside = (t, e) => e.duration > 0 && t >= e.time && t < e.time + e.duration;
-  /** Called as each write starts (a test can stall the page there) */
-  let onWrite = () => {};
-  const refuse = (what) => {
-    log.push('refused');
-    const err = new Error(`${what} overlaps`);
-    err.name = 'NotSupportedError';
-    throw err;
+  const finite = (...xs) => {
+    if (!xs.every(Number.isFinite)) throw new TypeError('non-finite');
   };
   return {
     get events() {
       return events;
     },
-    log,
-    set onWrite(fn) {
-      onWrite = fn;
-    },
-    /** The audio thread picks up new events: one whose time has passed moves to now. */
-    deliver() {
-      for (const e of events) {
-        if (e.pending && e.time < clock.audio) e.time = clock.audio;
-        e.pending = false;
-      }
-    },
     setValueAtTime(value, time) {
-      onWrite();
-      if (!Number.isFinite(value) || !Number.isFinite(time)) throw new TypeError('non-finite');
-      if (events.some((e) => inside(time, e))) refuse('setValueAtTime');
-      events.push({ time, duration: 0, pending: true });
-      log.push('ok');
+      finite(value, time);
+      events.push({ type: 'set', time, value });
     },
-    setValueCurveAtTime(values, time, duration) {
-      onWrite();
-      if (![...values].every(Number.isFinite)) throw new TypeError('non-finite');
-      const end = time + duration;
-      if (events.some((e) => inside(time, e) || (e.time >= time && e.time < end))) refuse('setValueCurveAtTime');
-      events.push({ time, duration, pending: true });
-      log.push('ok');
+    linearRampToValueAtTime(value, time) {
+      finite(value, time);
+      events.push({ type: 'ramp', time, value });
+    },
+    setValueCurveAtTime() {
+      // Never used: Chrome can crash the page on curves it moves (see paramWriter.ts)
+      throw new Error('setValueCurveAtTime used');
     },
     cancelScheduledValues(time) {
-      // (A curve running at `time` goes too: that's the click the writer avoids)
-      events = events.filter((e) => e.time < time && !inside(time, e));
+      events = events.filter((e) => e.time < time);
+    },
+    /** The value the timeline gives at `t` (jumps hold, ramps run from the previous event). */
+    valueAt(t) {
+      const sorted = [...events].sort((a, b) => a.time - b.time);
+      let value = 0;
+      let prev = null;
+      for (const e of sorted) {
+        if (e.time > t) {
+          if (e.type === 'ramp' && prev) return prev.value + ((e.value - prev.value) * (t - prev.time)) / (e.time - prev.time);
+          return value;
+        }
+        value = e.value;
+        prev = e;
+      }
+      return value;
     },
   };
 }
 
 function setup() {
-  const clock = makeClock();
-  const param = fakeParam(clock);
+  const clock = { now: 1 };
+  const param = fakeParam();
   const raw = {
     sampleRate: SR,
     get currentTime() {
-      return clock.page;
+      return clock.now;
     },
   };
-  const writer = createParamWriter(param, { raw, now: () => clock.page + 0.1, initial: 0 });
+  const writer = createParamWriter(param, { raw, now: () => clock.now + 0.1, initial: 0 });
   return { clock, param, writer };
 }
 
 const ramp = (a, b) => new Float32Array([a, b]);
 
-test('pieces follow one another and never start too close to the clock', () => {
+test('pieces follow one another, never too close to the clock', () => {
   const { clock, param, writer } = setup();
   writer.jump(0.5, 0); // a fresh param: at once
-  let end = writer.curve(ramp(0.5, 1), 1.0, 0.05); // asked for in the past: moved to the clock + margin
-  assert.ok(param.events[1].time >= clock.page + 0.02 - 1e-9);
+  assert.equal(param.events[0].time, 0);
+  // Asked for too close to the clock: moved to the clock + margin
+  let end = writer.curve(ramp(0.5, 1), 1.0, 0.05);
+  assert.ok(param.events[1].time >= clock.now + 0.02 - 1e-9);
+  const first = param.events[1].time;
   end = writer.curve(ramp(1, 0.2), end, 0.05);
-  assert.equal(param.events.length, 3);
-  assert.ok(param.events[2].time > param.events[1].time + 0.05);
+  // The second carries straight on (a sample after the first ends): no jump, just its ramp
+  assert.deepEqual(
+    param.events.map((e) => e.type),
+    ['set', 'set', 'ramp', 'ramp']
+  );
+  assert.ok(Math.abs(param.events[3].time - (first + 0.1 + GAP)) < 1e-9);
   assert.ok(Math.abs(writer.valueAt(end - 0.025) - 0.6) < 1e-6);
+  // One that doesn't start where the last ended gets its jump
+  writer.curve(ramp(0.7, 0.1), end + 0.2, 0.05);
+  assert.equal(param.events.at(-2).type, 'set');
 });
 
-test('a curve Chrome moved later does not make the next write throw', () => {
-  const { clock, param, writer } = setup();
+test('a curve is a jump then evenly spaced ramps, as setValueCurveAtTime would play it', () => {
+  const { param, writer } = setup();
   writer.jump(0, 0);
-  param.deliver();
-  // Written just ahead of the clock...
-  const end = writer.curve(ramp(0, 1), 1.03, 0.05);
-  // ...but the page stalls and the audio thread gets it 270 ms late: moved to 1.3
-  clock.audio = 1.3;
-  param.deliver();
-  clock.page = 1.3;
-  assert.equal(param.events[1].time, 1.3);
-  let next;
-  assert.doesNotThrow(() => {
-    next = writer.curve(ramp(1, 0.5), end, 0.05);
-  });
-  // Placed after the latest the moved curve can end, and it really went in
-  assert.equal(param.events.length, 3);
-  assert.ok(param.events[2].time >= 1.35);
-  assert.ok(next >= 1.4);
-  // ...and jumps too
-  clock.audio = 1.6;
-  param.deliver();
-  assert.doesNotThrow(() => writer.jump(0.3, next));
+  const values = new Float32Array([0.1, 0.4, 0.2, 0.9]);
+  const end = writer.curve(values, 2, 0.3);
+  assert.equal(end, 2.3);
+  assert.deepEqual(
+    param.events.slice(1).map((e) => [e.type, +e.time.toFixed(9), +e.value.toFixed(6)]),
+    [
+      ['set', 2, 0.1],
+      ['ramp', 2.1, 0.4],
+      ['ramp', 2.2, 0.2],
+      ['ramp', 2.3, 0.9],
+    ]
+  );
+  // The writer's idea of the value matches the timeline's, through the piece
+  for (const t of [2, 2.05, 2.1, 2.17, 2.29, 2.3, 2.5]) assert.ok(Math.abs(writer.valueAt(t) - param.valueAt(t)) < 1e-6, `at ${t}`);
 });
 
-test('curves written back to back and all moved late: the next write still goes in', () => {
-  const { clock, param, writer } = setup();
-  writer.jump(0, 0);
-  param.deliver();
-  let t = writer.curve(ramp(0, 1), 1.03, 0.05);
-  t = writer.curve(ramp(1, 0), t, 0.05);
-  // Both reach the audio thread after a 200 ms stall: both moved to 1.2, on top of each other
-  clock.audio = clock.page = 1.2;
-  param.deliver();
-  assert.doesNotThrow(() => writer.curve(ramp(0, 0.5), t, 0.05));
-  assert.deepEqual(param.log.slice(-2), ['refused', 'ok']);
-  assert.ok(param.events.at(-1).time >= 1.25);
-});
-
-test('a write refused for another reason is skipped without throwing', () => {
+test('a write refused for a bad value is skipped without throwing', () => {
   const { param, writer } = setup();
   writer.jump(0, 0);
   const warn = console.warn;
@@ -141,28 +117,32 @@ test('a write refused for another reason is skipped without throwing', () => {
   } finally {
     console.warn = warn;
   }
+  // Nothing half-written
   assert.equal(param.events.length, 1);
   // Still usable afterwards
   writer.curve(ramp(0, 1), 1.3, 0.05);
-  assert.equal(param.events.length, 2);
+  assert.equal(param.events.length, 3);
 });
 
 test('cut keeps the running piece and drops the ones not started', () => {
   const { clock, param, writer } = setup();
   writer.jump(0, 0);
-  let t = writer.curve(ramp(0, 1), 1.05, 0.05);
-  t = writer.curve(ramp(1, 0.5), t, 0.05);
-  writer.curve(ramp(0.5, 0), t, 0.05);
-  param.deliver();
-  // The clock is inside the first curve: it plays out, the other two go
-  clock.page = clock.audio = 1.06;
-  const from = writer.cut(1.07);
-  assert.ok(from >= 1.1 && from < 1.1 + 2 / SR);
-  assert.equal(param.events.length, 2);
+  let t = writer.curve(ramp(0, 1), 1.08, 0.2);
+  t = writer.curve(ramp(1, 0.5), t, 0.2);
+  writer.curve(ramp(0.5, 0), t, 0.2);
+  // Cut where the first curve plays: it plays out, the other two go
+  clock.now = 1.1;
+  const from = writer.cut(1.15);
+  assert.ok(from >= 1.28 && from < 1.28 + 2 * GAP);
+  assert.deepEqual(
+    param.events.map((e) => e.type),
+    ['set', 'set', 'ramp']
+  );
   assert.equal(writer.valueAt(from), 1);
+  assert.equal(param.valueAt(1.18), writer.valueAt(1.18));
 });
 
-test('random writes under random stalls never throw', () => {
+test('random writes and cuts never throw and keep the timeline in step with the writer', () => {
   let seed = 12345;
   const rnd = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -171,39 +151,21 @@ test('random writes under random stalls never throw', () => {
   const { clock, param, writer } = setup();
   writer.jump(0, 0);
   let until = 1;
-  const warn = console.warn;
-  console.warn = () => {};
-  try {
-    // Now and then the page stalls between working out a write and making it: the audio thread
-    // runs on and takes what it has (the clock the page reads is never more than a render block behind)
-    const deliver = () => {
-      param.deliver();
-      clock.page = clock.audio - (rnd() * 128) / SR;
-    };
-    param.onWrite = () => {
-      if (rnd() < 0.05) {
-        clock.audio += rnd() * 0.3;
-        deliver();
-      }
-    };
-    for (let i = 0; i < 3000; i++) {
-      clock.audio += rnd() < 0.05 ? rnd() * 0.3 : rnd() * 0.01;
-      if (rnd() < 0.7) deliver();
-      else clock.page = clock.audio - (rnd() * 128) / SR;
-      const r = rnd();
-      assert.doesNotThrow(() => {
-        if (r < 0.6) until = writer.curve(ramp(rnd(), rnd()), Math.max(until, clock.page + rnd() * 0.05), 0.004 + rnd() * 0.05);
-        else if (r < 0.75) until = writer.jump(rnd(), Math.max(until, clock.page));
-        else if (r < 0.9) until = writer.cut(clock.page + rnd() * 0.1);
-        else writer.set(rnd(), rnd() < 0.5 ? 0 : 0.03);
-      });
-    }
-  } finally {
-    console.warn = warn;
+  for (let i = 0; i < 3000; i++) {
+    clock.now += rnd() < 0.05 ? rnd() * 0.3 : rnd() * 0.01;
+    const r = rnd();
+    assert.doesNotThrow(() => {
+      if (r < 0.6) until = writer.curve(Float32Array.from({ length: 2 + Math.floor(rnd() * 5) }, rnd), Math.max(until, clock.now + rnd() * 0.1), 0.004 + rnd() * 0.05);
+      else if (r < 0.75) until = writer.jump(rnd(), Math.max(until, clock.now));
+      else if (r < 0.9) until = writer.cut(clock.now + rnd() * 0.1);
+      else writer.set(rnd(), rnd() < 0.5 ? 0 : 0.03);
+    });
+    // Events go in time order: a new piece never starts before what's already there
+    const times = param.events.map((e) => e.time);
+    for (let k = 1; k < times.length; k++) assert.ok(times[k] >= times[k - 1], 'events out of order');
+    // What the writer believes is what the param will play, from the clock on (a piece that
+    // carries straight on starts its first ramp a sample early, hence the tolerance)
+    const at = clock.now + 0.02 + rnd() * 0.3;
+    assert.ok(Math.abs(writer.valueAt(at) - param.valueAt(at)) < 0.01, `value at ${at}`);
   }
-  // A refused write is retried once where it fits: none is dropped (refused twice in a row)
-  const refused = param.log.filter((x) => x === 'refused').length;
-  const dropped = param.log.filter((x, i) => x === 'refused' && param.log[i + 1] === 'refused').length;
-  assert.ok(refused > 10, `the stalls should cause some refusals (${refused})`);
-  assert.equal(dropped, 0);
 });
