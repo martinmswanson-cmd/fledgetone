@@ -476,8 +476,6 @@ async function renderTracks(
 
     const transport = context.transport;
     transport.bpm.value = bpm;
-    transport.swing = swing;
-    transport.swingSubdivision = '16n';
     transport.loop = ending === 'seamless';
     if (transport.loop) {
       transport.loopStart = `${barToTicks(startBar)}i`;
@@ -490,7 +488,7 @@ async function renderTracks(
     const pumpOnKick = (trackId: string, time: number) => {
       if (kickIds.has(trackId)) strips.forEach((s) => s.pump(time, 'kick'));
     };
-    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick);
+    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing);
     const followsKick = strips.some((s) => s.pumpTrigger() === 'kick');
     schedule.update(followsKick ? [...tracks, ...kickTracks.filter((t) => !instruments.has(t.id))] : tracks, clips);
     const pumpClock = createPumpClock(transport, () => strips, barToTicks(startBar), barToTicks(endBar));

@@ -18,28 +18,90 @@ export function ticksToBar(ticks: number): number {
 }
 
 /**
+ * How late swing plays a swung note, in seconds: `swing` (0 to 0.5) times a third of an 8th, so
+ * at 50% an off-beat 16th lands on the 1/8-triplet line (a full shuffle). Written as Tone works
+ * out its own swing, so a swung 16th lands on exactly the same sample as it always has.
+ */
+export function swingDelay(swing: number, bpm: number, ppq = 192): number {
+  if (!(swing > 0)) return 0;
+  return (((2 * (ppq / 4)) / 3) / ppq) * (60 / bpm) * swing;
+}
+
+/**
+ * Which of a clip's notes swing, given their Transport ticks and the tick the clip starts on.
+ * Swing moves the off-beat 16ths, the second 16th of every 8th, and leaves every other position
+ * where it is: downbeats, 8ths, triplets and 1/32 notes. (Tone's own swing bent every position
+ * inside an 8th along a curve, so triplets and 1/32 rolls came out uneven.) Beyond that:
+ * - A note nudged off an off-beat 16th still swings while it's nearer to it than to any triplet
+ *   line (less than a 1/48 note, 8 ticks, away).
+ * - An 8th in which the clip has notes between the 16ths (a 1/32 roll, a triplet run, a 1/32
+ *   pickup) plays straight, its off-beat 16th included, so the run stays even.
+ * - The grid is the clip's own: a clip placed off the 16th grid (Shift-dragged, frame-snapped,
+ *   typed as a time) swings as if it sat on the nearest 16th line (the earlier one on a tie).
+ */
+export function swungNotes(ticks: readonly number[], clipStartTick: number, ppq = 192): boolean[] {
+  const sixteenth = ppq / 4;
+  const eighth = 2 * sixteenth;
+  const near = ppq / 24;
+  // How far the clip sits after its nearest 16th line, -23 to 24 ticks at 192 PPQ
+  const half = Math.floor(sixteenth / 2);
+  const offset = ((((clipStartTick + half - 1) % sixteenth) + sixteenth) % sixteenth) - (half - 1);
+  const inEighth = (g: number) => ((g % eighth) + eighth) % eighth;
+  const runs = new Set<number>();
+  for (const tick of ticks) {
+    const g = tick - offset;
+    const fromSixteenth = inEighth(g) % sixteenth;
+    if (Math.min(fromSixteenth, sixteenth - fromSixteenth) >= near) runs.add(Math.floor(g / eighth));
+  }
+  return ticks.map((tick) => {
+    const g = tick - offset;
+    return Math.abs(inEighth(g) - sixteenth) < near && !runs.has(Math.floor(g / eighth));
+  });
+}
+
+/**
+ * Where the Transport was last sent (started or moved while playing) and the audio time it gets
+ * there. Tone acts on both a look-ahead after the call, and until then reports its old position:
+ * bar 1 for a Transport that was stopped, so the playhead (and the view following it) flashed back
+ * to the start of the song for a tenth of a second each time playback started, and a click on the
+ * ruler while playing showed the playhead jump back before it went there.
+ */
+let heading: { bar: number; at: number } | null = null;
+
+/**
  * Position the listener is actually hearing right now. Tone.Transport.ticks reports
  * the scheduling time (currentTime + lookAhead), which would make the playhead run
  * ~100ms ahead of the audio, so we query the clock at the raw context time instead.
+ * Until a start or a move is heard, that's where it's going.
  */
 export function getAudiblePositionBar(): number {
-  return ticksToBar(Tone.Transport.getTicksAtTime(Tone.immediate()));
+  const now = Tone.immediate();
+  if (heading && now < heading.at) return heading.bar;
+  heading = null;
+  return ticksToBar(Tone.Transport.getTicksAtTime(now));
 }
 
 export function startTransportAt(bar: number): void {
-  Tone.Transport.start('+0.03', `${barToTicks(bar)}i`);
+  const at = Tone.now() + 0.03;
+  Tone.Transport.start(at, `${barToTicks(bar)}i`);
+  heading = { bar, at };
 }
 
 export function pauseTransport(): void {
+  heading = null;
   Tone.Transport.pause();
 }
 
 export function stopTransport(): void {
+  heading = null;
   Tone.Transport.stop();
 }
 
 export function seekTransport(bar: number): void {
+  const playing = Tone.Transport.state === 'started';
   Tone.Transport.ticks = barToTicks(bar);
+  // Playing, Tone moves there at its look-ahead, on the next tick
+  if (playing) heading = { bar, at: Tone.now() + Tone.Transport.toSeconds('1i') };
 }
 
 /** Format as Premiere-style Bar.Beat.Tick ("001.01.00"); ticks shown as hundredths of a beat. */
