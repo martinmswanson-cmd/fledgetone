@@ -38,9 +38,12 @@ export function swingDelay(swing: number, bpm: number, ppq = 192): number {
  *   pickup) plays straight, its off-beat 16th included, so the run stays even.
  * - The grid is the clip's own: a clip placed off the 16th grid (Shift-dragged, frame-snapped,
  *   typed as a time) swings as if it sat on the nearest 16th line (the earlier one on a tie).
- * - Unless its notes sit better on another: a clip split or start-trimmed off the grid keeps its
- *   notes where they were, so they go on swinging on the grid they were written on (the song's,
- *   or a moved clip's), not on one counted from the cut.
+ * - Unless more of its notes sit on the song's grid: a clip split or start-trimmed off the grid
+ *   keeps its notes where they were, so they go on swinging on the song's 16ths, not on a grid
+ *   counted from the cut. Those two grids are the only ones considered. The notes themselves
+ *   can't say which grid they were written on: a clip shifted by a third of a 16th looks exactly
+ *   like a triplet pattern, and triplets must never swing. So a clip moved off the grid and then
+ *   cut off the grid sits on neither grid and plays straight, which moves nothing.
  */
 export function swungNotes(ticks: readonly number[], clipStartTick: number, ppq = 192): boolean[] {
   const sixteenth = ppq / 4;
@@ -51,18 +54,9 @@ export function swungNotes(ticks: readonly number[], clipStartTick: number, ppq 
   const offsetOf = (tick: number) => ((((tick + half - 1) % sixteenth) + sixteenth) % sixteenth) - (half - 1);
   /** How many notes sit on (or near) a 16th line of the grid `shift` ticks after the song's. */
   const onGrid = (shift: number) => ticks.reduce((n, tick) => (Math.abs(offsetOf(tick - shift)) < near ? n + 1 : n), 0);
-  // The grids to choose from, preferred in this order: the clip's, the song's, and the one most
-  // of its notes sit exactly on (if that's more than one note: a lone note says nothing)
-  const counts = new Map<number, number>();
-  for (const tick of ticks) counts.set(offsetOf(tick), (counts.get(offsetOf(tick)) ?? 0) + 1);
-  let common: number | null = null;
-  for (const [shift, n] of counts) if (n >= 2 && (common === null || n > counts.get(common)!)) common = shift;
+  // The clip's own grid, unless the song's fits its notes better
   let offset = offsetOf(clipStartTick);
-  let best = onGrid(offset);
-  for (const shift of common === null ? [0] : [0, common]) {
-    const n = onGrid(shift);
-    if (n > best) [offset, best] = [shift, n];
-  }
+  if (onGrid(0) > onGrid(offset)) offset = 0;
   const inEighth = (g: number) => ((g % eighth) + eighth) % eighth;
   const runs = new Set<number>();
   for (const tick of ticks) {

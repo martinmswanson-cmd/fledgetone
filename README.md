@@ -82,8 +82,8 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
   to it).
 - Swing is applied by the clip schedule, not Tone's Transport, which bends every position inside
   an 8th; keep the Transport's own swing at 0. `swungNotes` in `transport.ts` picks the notes it
-  delays per clip (off-beat 16ths on the 16th grid its notes sit on, which is the clip's own
-  unless it was split or trimmed off it; an 8th holding a 1/32 or triplet run stays straight)
+  delays per clip (off-beat 16ths on the clip's own 16th grid, or the song's if more of its notes
+  sit there, as after a cut off the grid; an 8th holding a 1/32 or triplet run stays straight)
   and `swingDelay` says by how much.
 - Project files are versioned (`PROJECT_VERSION` in `project.ts`). New optional fields don't
   need a version bump; older builds ignore fields they don't know.
