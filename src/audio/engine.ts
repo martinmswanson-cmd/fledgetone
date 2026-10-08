@@ -67,10 +67,9 @@ export const masterLimiter = liveMix.limiter;
 /** Where the sound deck's audition instruments play (dry, straight to the master bus). */
 export const auditionInput = liveMix.auditionInput;
 
-// Configure default transport clock settings for modern electric funk
+// Configure default transport clock settings for modern electric funk. (Swing isn't the
+// Transport's: the clip schedule delays the off-beat 16ths itself, see swingDelay.)
 Tone.Transport.bpm.value = 122;
-Tone.Transport.swing = 0.2;
-Tone.Transport.swingSubdivision = '16n';
 
 let audioStateChangeListeners: Array<(state: AudioState) => void> = [];
 
