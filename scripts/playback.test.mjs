@@ -1,4 +1,4 @@
-// Unit tests for playback timing: swing, and whole Transport ticks.
+// Unit tests for playback timing (swing, whole Transport ticks) and the clip note marks' paths.
 // Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
@@ -18,6 +18,7 @@ register(
 );
 const Tone = await import('tone');
 const { swingDelay } = await import('../src/audio/transport.ts');
+const { shadeNotes } = await import('../src/components/timeline/noteShades.ts');
 
 /** The delay Tone's own swing (16n subdivision) gives a note on `tick`. */
 function toneSwing(tick, swing, bpm, ppq = 192) {
@@ -82,4 +83,17 @@ test('Transport positions in whole ticks come back whole at every tempo (toneFix
   assert.ok(checked > 500000);
   // Positions between ticks are left as they are
   assert.ok(Math.abs(ticksAt(120, 0.001) - 0.384) < 1e-9);
+});
+
+test('clip note marks: one path per shade, each note a rectangle on whole pixels', () => {
+  const shades = shadeNotes([
+    { left: 0, width: 9, top: 18, height: 4.4, opacity: 0.89 },
+    { left: 10, width: 9, top: 22.4, height: 4.4, opacity: 0.891 },
+    { left: 20.4, width: 0.3, top: 30.6, height: 0.2, opacity: 1 },
+  ]);
+  assert.equal(shades.length, 2);
+  assert.deepEqual(shades[0], { opacity: 0.89, d: 'M0 18H9V22H0zM10 22H19V27H10z' });
+  // Never thinner than a pixel
+  assert.deepEqual(shades[1], { opacity: 1, d: 'M20 31H21V32H20z' });
+  assert.deepEqual(shadeNotes([]), []);
 });
