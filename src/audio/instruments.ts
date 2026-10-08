@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import './toneFixes';
 import type { InstrumentKey } from './instrumentCatalog';
 import { INSTRUMENTS } from './instrumentCatalog';
 import { createDrumKit } from './presets/drums';

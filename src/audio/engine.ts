@@ -1,4 +1,6 @@
 import * as Tone from 'tone';
+// Must run before any oscillator exists: keeps Tone's waveform cache per audio context
+import './toneFixes';
 import { createBusEffects } from './effects/busEffects';
 import { DEFAULT_MASTER_FX } from '../store/timelineTypes';
 import type { MasterFx } from '../store/timelineTypes';
