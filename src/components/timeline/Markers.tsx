@@ -107,8 +107,10 @@ export const MarkerFlags = React.memo(function MarkerFlags({ originRef }: { orig
           <div
             key={m.id}
             data-marker={m.id}
-            // Over the in/out brackets; while renaming, over the playhead's handle too (the double-click just put it here)
-            className={`absolute ${renaming ? 'z-[31]' : 'z-[21]'}`}
+            // Over the in/out brackets and the playhead's handle, so a flag the playhead sits on (just
+            // added, or jumped to) still takes every click; under the ruler's corner box when scrolled.
+            // The one under the pointer comes to the front, so a flag squeezed by the next is easy to get at
+            className={`absolute ${renaming ? 'z-[23]' : 'z-[21] hover:z-[22]'}`}
             style={{ left: x, top: FLAG_TOP, height: RULER_HEIGHT - FLAG_TOP }}
           >
             <div className="absolute left-0 top-0 bottom-0 w-px bg-violet-300 pointer-events-none" />

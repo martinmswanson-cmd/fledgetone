@@ -4,6 +4,7 @@ import { setBpm as engineSetBpm } from '../audio/engine';
 import {
   formatBarsBeats,
   getAudiblePositionBar,
+  getScheduledPositionBar,
   pauseTransport,
   secondsToBar,
   seekTransport,
@@ -30,6 +31,7 @@ import {
   cleanMarkerName,
   createMarker,
   insertMarkerBars,
+  markerPushedPastEnd,
   nextMarkerName,
   placeMarker,
   removeMarkerBars,
@@ -412,6 +414,12 @@ function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; mas
 
 let rafId = 0;
 let tapTimes: number[] = [];
+/**
+ * The last jump to a marker while playing (where, and when by performance.now()). For a moment
+ * after a seek the playhead still shows the place before it (that audio is already scheduled), so
+ * a quick second press of , or . counts from here rather than land on the same marker again.
+ */
+let lastJump: { bar: number; at: number } | null = null;
 
 /**
  * The previous session, set aside once at startup before autosave can overwrite it (this module
@@ -673,12 +681,19 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     jumpToMarker: (direction) => {
       const s = get();
-      // Playing, the playhead is a little past a marker it has just reached: going back skips one
-      // passed less than half a second ago, so pressing , again keeps going back
-      const gap = s.isPlaying ? secondsToBar(0.5, s.bpm) - 1 : 0;
-      const marker = adjacentMarker(s.markers, s.playheadPosition, direction, gap);
+      const now = performance.now();
+      const halfSecond = secondsToBar(0.5, s.bpm) - 1;
+      // Pressed again within half a second of a jump while the Transport is still on from that
+      // marker (not moved since by a click on the ruler or round the loop): count from the marker
+      const sinceJump = lastJump && now - lastJump.at < 500 ? getScheduledPositionBar() - lastJump.bar : NaN;
+      const fromJump = s.isPlaying && lastJump && sinceJump > -0.01 && sinceJump < 2 * halfSecond ? lastJump.bar : null;
+      // Otherwise, playing, the playhead is a little past a marker it has just reached: going back
+      // skips one passed less than half a second ago, so pressing , again keeps going back
+      const gap = s.isPlaying && fromJump === null ? halfSecond : 0;
+      const marker = adjacentMarker(s.markers, fromJump ?? s.playheadPosition, direction, gap);
       if (!marker) return false;
       s.seek(marker.bar);
+      lastJump = s.isPlaying ? { bar: marker.bar, at: now } : null;
       return true;
     },
 
@@ -959,6 +974,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }
       if (clips.some((c) => c.startBar + c.lengthBars > TOTAL_BARS + 1 + EPS)) {
         return `Can't insert ${pluralBars(bars)}: clips would be pushed past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+      }
+      const pushedMarker = markerPushedPastEnd(s.markers, at, bars);
+      if (pushedMarker) {
+        return `Can't insert ${pluralBars(bars)}: the marker "${pushedMarker.name}" would be pushed past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
       }
       // Positions move with the music after the insert point. A loop starting there moves; one ending there doesn't.
       const movePoint = (bar: number) => (bar >= at - EPS ? bar + bars : bar);

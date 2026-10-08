@@ -22,6 +22,7 @@ const {
   cleanMarkerName,
   createMarker,
   insertMarkerBars,
+  markerPushedPastEnd,
   nextMarkerName,
   parseMarkers,
   placeMarker,
@@ -45,6 +46,14 @@ test('names are one tidy line, never blank', () => {
   assert.equal(cleanMarkerName('  Drop \n 2 '), 'Drop 2');
   assert.equal(cleanMarkerName('   '), null);
   assert.equal(cleanMarkerName('x'.repeat(200)).length, MARKER_NAME_MAX);
+  // Control characters (a NUL would end the name early in a WAV label) become spaces
+  assert.equal(cleanMarkerName('\u0000nul\u0007 \u007f\u0085x\u0000'), 'nul x');
+  assert.equal(cleanMarkerName('\u0000\u001f'), null);
+  // Cut at the limit, an emoji isn't split in two
+  const cut = cleanMarkerName('x'.repeat(MARKER_NAME_MAX - 1) + '🎵');
+  assert.equal(cut, 'x'.repeat(MARKER_NAME_MAX - 1));
+  assert.equal(cleanMarkerName('x'.repeat(MARKER_NAME_MAX - 2) + '🎵'), 'x'.repeat(MARKER_NAME_MAX - 2) + '🎵');
+  assert.equal(cleanMarkerName('Drop — é🎵'), 'Drop — é🎵');
 });
 
 test('a marker keeps both positions in step, on the timeline', () => {
@@ -85,8 +94,8 @@ test('a tempo change re-sorts when a time-locked marker passes a bar one', () =>
   assert.deepEqual(names(retimeMarkers(markers, 240)), ['bar', 'time']); // time-locked now at bar 17
 });
 
-test('inserting bars moves bar markers from the insert point on, never past the end', () => {
-  const markers = [M('before', 4), M('at', 5), M('after', 9), M('time', 7, 'time'), M('near end', 399)].sort((a, b) => a.bar - b.bar);
+test('inserting bars moves bar markers from the insert point on', () => {
+  const markers = [M('before', 4), M('at', 5), M('after', 9), M('time', 7, 'time'), M('near end', 397)].sort((a, b) => a.bar - b.bar);
   const out = insertMarkerBars(markers, 5, 4, 120);
   assert.deepEqual(
     out.map((m) => [m.name, m.bar]),
@@ -95,12 +104,27 @@ test('inserting bars moves bar markers from the insert point on, never past the 
       ['at', 9],
       ['time', 7], // stays put in time
       ['after', 13],
-      ['near end', 401],
+      ['near end', 401], // exactly at the end is still on the timeline
     ].sort((a, b) => a[1] - b[1])
   );
+  assert.equal(markerPushedPastEnd(markers, 5, 4), null);
   assert.equal(out.find((m) => m.name === 'at').seconds, 16);
   assert.equal(insertMarkerBars(markers, 500, 4, 120), markers);
   assert.equal(insertMarkerBars(markers, 5, 0, 120), markers);
+});
+
+test('an insert that would push a bar marker past the end is caught', () => {
+  const markers = [M('a', 395), M('b', 398), M('c', 400), M('time', 399, 'time')];
+  // insertBars refuses these rather than pile the markers up at bar 401
+  assert.equal(markerPushedPastEnd(markers, 390, 8).name, 'a');
+  assert.equal(markerPushedPastEnd(markers, 396, 4).name, 'b');
+  assert.equal(markerPushedPastEnd(markers, 399, 2).name, 'c');
+  // Before the insert point, exactly to the end, or held to time: fine
+  assert.equal(markerPushedPastEnd(markers, 400.5, 8), null);
+  assert.equal(markerPushedPastEnd([M('a', 393)], 390, 8), null);
+  assert.equal(markerPushedPastEnd([M('t', 399, 'time')], 390, 8), null);
+  // A marker exactly at the insert point (give or take float noise) moves, so it counts
+  assert.equal(markerPushedPastEnd([M('a', 400 - 1e-9)], 400, 2).name, 'a');
 });
 
 test('removing bars deletes bar markers inside, keeps the one at the end, moves later ones', () => {
