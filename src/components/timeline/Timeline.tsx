@@ -13,6 +13,7 @@ import { ClipContextMenu } from './ClipContextMenu';
 import type { ContextMenuState } from './ClipContextMenu';
 import { RulerContextMenu } from './RulerContextMenu';
 import type { RulerMenuState } from './RulerContextMenu';
+import { MarkerLines } from './Markers';
 import { Toast } from './Toast';
 import { showToast } from './toastStore';
 import { TrackInspector } from '../inspector/TrackInspector';
@@ -258,6 +259,15 @@ export const Timeline: React.FC = () => {
         s.setLoopOut(s.playheadPosition);
       } else if (key === 'l') {
         s.toggleLoop();
+      } else if (key === 'm' && !e.shiftKey) {
+        // Holding M would only repeat "already a marker here" (or, while playing, drop a row of them)
+        if (e.repeat) return;
+        const message = s.addMarker();
+        if (message) showToast(message);
+      } else if (e.key === ',' || e.key === '.') {
+        // Held down while playing, it would restart the music at every marker on the way
+        if (e.repeat && s.isPlaying) return;
+        s.jumpToMarker(e.key === ',' ? -1 : 1);
       } else if (e.key === 'Home') {
         e.preventDefault();
         s.seek(s.loopRegion.inBar);
@@ -344,6 +354,7 @@ export const Timeline: React.FC = () => {
               <div className="flex-1 bg-black/10" />
             </div>
 
+            <MarkerLines />
             <Playhead variant="line" onScrubStart={onScrubStart} />
 
             {marquee && (
@@ -369,7 +380,7 @@ export const Timeline: React.FC = () => {
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
         + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads from the sound deck onto a track •
-        Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • curve button: automation • ? guide
+        Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • M marker • , and . previous / next marker • curve button: automation • ? guide
       </div>
 
       {menu && <ClipContextMenu menu={menu} onClose={closeMenu} />}

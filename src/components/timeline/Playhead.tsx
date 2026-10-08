@@ -61,8 +61,10 @@ export const Playhead: React.FC<PlayheadProps> = ({ variant, onScrubStart }) => 
 
   if (variant === 'head') {
     return (
+      // Over the in/out brackets (z-20, earlier in the ruler) but under the marker flags (z-21), so a
+      // flag the playhead sits on can still be clicked, dragged and renamed
       <div
-        className="absolute top-0 bottom-0 z-30 w-0"
+        className="absolute top-0 bottom-0 z-20 w-0"
         style={{ transform: `translateX(${x}px)`, willChange: 'transform' }}
       >
         <div

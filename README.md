@@ -17,7 +17,7 @@ npm install
 npm run dev          # dev server at http://localhost:5173
 npm run build        # typecheck + production build into dist/
 npm run lint         # oxlint
-npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter, swing and Transport ticks
+npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter, swing and Transport ticks, markers and WAV cue points
 npm run build:single # dist-single/index.html: the whole app in one self-contained HTML file
 ```
 
@@ -32,6 +32,7 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
 | `src/store/timelineStore.ts` | All timeline state (tracks, clips, transport, tempo, frame rate, undo) and the bridge to the audio engine |
 | `src/store/timelineTypes.ts` | Data types, snapping (including the frame grid) and duration helpers |
 | `src/store/project.ts` | The `.beatbox.json` project format, validation and browser autosave |
+| `src/store/markers.ts` | Marker maths: names, bar / time anchors across tempo changes, insert / delete bars, reading them from a file |
 | `src/audio/engine.ts` | The master chain (bus, compressor, limiter, shared reverb / delay) |
 | `src/audio/scheduler.ts` | Turns clips into Tone.js Transport events (one event per tick, updated incrementally) |
 | `src/audio/liveTracks.ts`, `effects/trackStrip.ts` | One mixer strip and instrument per track for live playback |
@@ -39,6 +40,7 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
 | `src/audio/automation.ts` | Automation lanes: each setting's scale (lane height to dB, Hz, pan...), values between points, lane edits |
 | `src/audio/automationSchedule.ts`, `effects/paramWriter.ts` | Plays lanes as AudioParam automation, live and in the export; the one way automatable params get written |
 | `src/audio/exportWav.ts` | Offline WAV render (mixdown, stems, exact-length and seamless-loop endings, 16/24/32-bit), built from the same factories as live playback |
+| `src/audio/wavCues.ts` | Markers written into exported WAVs as cue points (`cue ` and `LIST`/`adtl`/`labl` chunks) |
 | `src/audio/transport.ts` | Bars, ticks, seconds and timecode conversions |
 | `src/components/timeline/` | Timeline UI: toolbar, ruler, lanes, clips, piano roll, project bar |
 
