@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ArrowLeftToLine, ArrowRightFromLine } from 'lucide-react';
+import { ArrowLeftToLine, ArrowRightFromLine, Flag } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -17,8 +17,8 @@ export interface RulerMenuState {
 const INSERT_SIZES = [1, 2, 4, 8];
 
 /**
- * Right-click menu for the time ruler: edits that add or remove time across every track at once
- * (later clips, the loop and the playhead move with the music).
+ * Right-click menu for the time ruler: a marker at the clicked place, and edits that add or remove
+ * time across every track at once (later clips, markers, the loop and the playhead move with the music).
  */
 export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => void }> = ({ menu, onClose }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -41,11 +41,18 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
   };
 
   const items: Array<MenuItemProps & { key: string }> = [
-    ...INSERT_SIZES.map((n) => ({
+    {
+      key: 'marker',
+      label: 'Add marker here',
+      icon: <Flag className="w-3.5 h-3.5" />,
+      onClick: run(() => s.addMarker(menu.bar)),
+    },
+    ...INSERT_SIZES.map((n, i) => ({
       key: `insert-${n}`,
       label: `Insert ${n} bar${n === 1 ? '' : 's'} here`,
       icon: <ArrowRightFromLine className="w-3.5 h-3.5" />,
       onClick: run(() => s.insertBars(menu.bar, n)),
+      divider: i === 0,
     })),
     {
       key: 'delete',

@@ -310,6 +310,23 @@ export interface LoopRegion {
   enabled: boolean;
 }
 
+/**
+ * What holds a marker in place when the tempo changes: its bar (it stays with the music) or its
+ * time (it stays at the same timecode, e.g. a hit point in a video).
+ */
+export type MarkerAnchor = 'bar' | 'time';
+
+/** A named point on the timeline. Both positions are kept; the anchor says which one the other follows. */
+export interface Marker {
+  id: string;
+  name: string;
+  anchor: MarkerAnchor;
+  /** 1-based bar position, like Clip.startBar */
+  bar: number;
+  /** Seconds from the start of bar 1 */
+  seconds: number;
+}
+
 const NOTE_GRID_BARS: Record<Exclude<SnapGrid, 'frame'>, number> = {
   '1/4': 0.25,
   '1/8': 0.125,
