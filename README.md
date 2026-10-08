@@ -17,7 +17,7 @@ npm install
 npm run dev          # dev server at http://localhost:5173
 npm run build        # typecheck + production build into dist/
 npm run lint         # oxlint
-npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter
+npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter, swing and Transport ticks
 npm run build:single # dist-single/index.html: the whole app in one self-contained HTML file
 ```
 
@@ -61,6 +61,17 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
   sounds into isn't rendered, so curves written meanwhile are moved when a note wakes it, end up
   overlapping, and crash the page. A `ParamWriter` never throws (it runs inside Tone's clock and
   store actions).
+- Live, Tone runs on standardized-audio-context, which on every `connect()` walks every path
+  downstream of the connection looking for loops (it stops only at a DelayNode). Each note
+  connects fresh nodes, so the walk's length is paid per note: every live track strip starts
+  with a zero-delay DelayNode that ends it there. Diamonds (a split that joins again) double the
+  paths after them, so keep them behind that barrier.
+- Transport positions are written in ticks (`` `${ticks}i` ``). Tone converts those through seconds,
+  so `toneFixes.ts` makes results within float noise of a whole tick whole again; otherwise about
+  one tick in ten was filed a tick early (skipped when playback started on it or a loop came back
+  to it).
+- Swing is applied by the clip schedule (`swingDelay` in `transport.ts`), not Tone's Transport,
+  which bends every position inside an 8th; keep the Transport's own swing at 0.
 - Project files are versioned (`PROJECT_VERSION` in `project.ts`). New optional fields don't
   need a version bump; older builds ignore fields they don't know.
 

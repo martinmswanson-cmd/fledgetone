@@ -8,6 +8,7 @@ import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
+import { shadeNotes, type NoteRect } from './noteShades';
 
 const CLIP_INSET = 4;
 const CLIP_HEIGHT = TRACK_HEIGHT - CLIP_INSET * 2;
@@ -20,41 +21,6 @@ const DRUM_ROWS: string[] = [
   DRUM_NOTES.snare,
   DRUM_NOTES.kick,
 ];
-
-interface NoteRect {
-  left: number;
-  width: number;
-  top: number;
-  height: number;
-  opacity: number;
-}
-
-/** Note rectangles that share a shade, as one SVG path. */
-interface NoteShade {
-  opacity: number;
-  d: string;
-}
-
-/**
- * The note marks as one SVG path per shade (velocity), not an element per note: a dense clip has
- * hundreds of notes, and each element needed its style worked out when the clip came on screen. A
- * page turn of a dense song (a thousand notes coming into view) spent about 50 ms on that alone,
- * on the main thread, while playback was starting.
- */
-function shadeNotes(notes: NoteRect[]): NoteShade[] {
-  const paths = new Map<number, string[]>();
-  for (const n of notes) {
-    // Hundredths of opacity are as fine as anyone can see, and keep the paths few
-    const opacity = Math.round(n.opacity * 100) / 100;
-    let list = paths.get(opacity);
-    if (!list) paths.set(opacity, (list = []));
-    // On whole pixels, as the browser drew each note's own element, so the edges stay sharp
-    const x = Math.round(n.left);
-    const y = Math.round(n.top);
-    list.push(`M${x} ${y}H${Math.max(x + 1, Math.round(n.left + n.width))}V${Math.max(y + 1, Math.round(n.top + n.height))}H${x}z`);
-  }
-  return [...paths].map(([opacity, parts]) => ({ opacity, d: parts.join('') }));
-}
 
 /** Lay out the visible notes of a clip as mini piano-roll rectangles. */
 function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteRect[] {
