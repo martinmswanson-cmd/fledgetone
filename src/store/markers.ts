@@ -19,9 +19,19 @@ const secondsToBar = (seconds: number, bpm: number) => (seconds * bpm) / 240 + 1
 
 const byPosition = (a: Marker, b: Marker) => a.bar - b.bar;
 
-/** A name as typed, tidied: one line, trimmed, at most MARKER_NAME_MAX characters. Null if nothing is left. */
+/**
+ * A name as typed, tidied: one line, trimmed, at most MARKER_NAME_MAX characters. Null if nothing
+ * is left. Control characters (a NUL from a hand-edited file) become spaces: a WAV label is read
+ * as a C string, so one would hide the rest of the name in other apps.
+ */
 export function cleanMarkerName(name: string): string | null {
-  const clean = name.replace(/\s+/g, ' ').trim().slice(0, MARKER_NAME_MAX).trim();
+  const clean = name
+    .replace(/[\s\p{Cc}]+/gu, ' ')
+    .trim()
+    .slice(0, MARKER_NAME_MAX)
+    // The cut can split an emoji in two: don't keep its first half
+    .replace(/[\uD800-\uDBFF]$/, '')
+    .trim();
   return clean || null;
 }
 
@@ -74,9 +84,18 @@ function sortedOrSame(markers: Marker[]): Marker[] {
 }
 
 /**
+ * The first marker held to its bar that inserting `bars` bars at `at` would push past the end of
+ * the timeline, or null. The insert is refused then, as for a clip, rather than pile markers up at
+ * the end.
+ */
+export function markerPushedPastEnd(markers: readonly Marker[], at: number, bars: number): Marker | null {
+  return markers.find((m) => m.anchor === 'bar' && m.bar >= at - EPS && m.bar + bars > LAST_BAR + EPS) ?? null;
+}
+
+/**
  * Markers after inserting `bars` bars at `at`: markers held to their bar from there on move with
- * the music (a marker pushed past the end of the timeline stops at the end); markers held to
- * their time stay. The same array if nothing moves.
+ * the music; markers held to their time stay. The same array if nothing moves. (Check
+ * markerPushedPastEnd first: one pushed past the end would stop at the end.)
  */
 export function insertMarkerBars(markers: Marker[], at: number, bars: number, bpm: number): Marker[] {
   if (!(bars > 0)) return markers;

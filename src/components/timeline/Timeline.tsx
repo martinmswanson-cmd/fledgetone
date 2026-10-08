@@ -264,10 +264,10 @@ export const Timeline: React.FC = () => {
         if (e.repeat) return;
         const message = s.addMarker();
         if (message) showToast(message);
-      } else if (e.key === ',') {
-        s.jumpToMarker(-1);
-      } else if (e.key === '.') {
-        s.jumpToMarker(1);
+      } else if (e.key === ',' || e.key === '.') {
+        // Held down while playing, it would restart the music at every marker on the way
+        if (e.repeat && s.isPlaying) return;
+        s.jumpToMarker(e.key === ',' ? -1 : 1);
       } else if (e.key === 'Home') {
         e.preventDefault();
         s.seek(s.loopRegion.inBar);
