@@ -2,8 +2,8 @@ import * as Tone from 'tone';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
 
 /**
- * Lean stand-ins for Tone.EQ3 and Tone.Chorus that sound the same but cost far less CPU, and
- * the track Filter and Pump built the same way.
+ * Lean stand-ins for Tone.EQ3, Tone.Distortion and Tone.Chorus that sound the same but cost far
+ * less CPU, and the track Filter and Pump built the same way.
  *
  * Tone.Filter drives its BiquadFilterNodes' frequency, Q, gain and detune from Signals
  * (ConstantSourceNodes). A filter param fed by a node is audio-rate, so Chrome recomputes the
@@ -83,6 +83,52 @@ export function createLightEq3(lowFrequency = 400, highFrequency = 2500): LightE
   };
 }
 
+export interface LightDistortion extends LightInsert {
+  /** Set the amount (0-1). */
+  setAmount: (amount: number) => void;
+}
+
+/**
+ * Tone.Distortion at wet 1 (its curve, 2x oversampled) as a bare wave shaper. Tone's mixes the
+ * shaped sound back in through a Tone.CrossFade, which keeps a constant source, a wave shaper and
+ * a stereo panner running all the time just to hold its output gain at 1; and since that gain
+ * starts at 0, a Distortion switched on while playing dropped the track out for a render block.
+ */
+export function createLightDistortion(amount: number): LightDistortion {
+  const input = new Tone.Gain(1);
+  const output = new Tone.Gain(1);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const shaper = raw.createWaveShaper();
+  shaper.oversample = '2x';
+  let applied = Number.NaN;
+  const setAmount = (value: number) => {
+    if (value === applied) return;
+    applied = value;
+    // Tone.Distortion's curve, 1024 points (Tone.WaveShaper.setMap's default)
+    const k = value * 100;
+    const deg = Math.PI / 180;
+    const curve = new Float32Array(1024);
+    for (let i = 0; i < curve.length; i++) {
+      const x = (i / (curve.length - 1)) * 2 - 1;
+      curve[i] = Math.abs(x) < 0.001 ? 0 : ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+    }
+    shaper.curve = curve;
+  };
+  setAmount(amount);
+  input.connect(shaper);
+  shaper.connect(output.input as unknown as AudioNode);
+  return {
+    input,
+    output,
+    setAmount,
+    dispose: () => {
+      shaper.disconnect();
+      input.dispose();
+      output.dispose();
+    },
+  };
+}
+
 export interface LightChorus extends LightInsert {
   /** Set the LFO rate (Hz), ramping over `ramp` seconds (0 = now). */
   setRate: (hz: number, ramp: number) => void;
@@ -103,8 +149,11 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
   input.channelCount = 2;
   input.channelCountMode = 'explicit';
   const output = new Tone.Gain(1);
-  const dry = new Tone.Gain(0);
-  const wet = new Tone.Gain(0);
+  // Made at their starting levels: set later, they'd change only a look-ahead (0.1 s) on, and a
+  // chorus switched on while playing silenced the track until then
+  const mixAt = (mix: number) => (Math.max(0, Math.min(1, mix)) * Math.PI) / 2;
+  const dry = new Tone.Gain(Math.cos(mixAt(opts.wet)));
+  const wet = new Tone.Gain(Math.sin(mixAt(opts.wet)));
   const raw = input.context.rawContext as unknown as BaseAudioContext;
 
   const centre = opts.delayMs / 1000;
@@ -150,12 +199,10 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
     else param.value = value;
   };
   const setWet = (mix: number, ramp: number) => {
-    const fade = Math.max(0, Math.min(1, mix));
-    ramped(dry.gain, Math.cos((fade * Math.PI) / 2), ramp);
-    ramped(wet.gain, Math.sin((fade * Math.PI) / 2), ramp);
+    ramped(dry.gain, Math.cos(mixAt(mix)), ramp);
+    ramped(wet.gain, Math.sin(mixAt(mix)), ramp);
   };
   setDepth(opts.depth);
-  setWet(opts.wet, 0);
   let rate = opts.rate;
 
   return {
