@@ -148,8 +148,11 @@ interface TimelineState {
   resetTrackEq: (trackId: string) => void;
   setTrackReverbSend: (trackId: string, send: number) => void;
   setTrackDelaySend: (trackId: string, send: number) => void;
-  /** Change one insert effect (distortion / compressor / chorus) on a track. */
-  setTrackFx: <K extends keyof TrackFx>(trackId: string, effect: K, patch: Partial<TrackFx[K]>) => void;
+  /**
+   * Change one insert effect (distortion / compressor / chorus / filter / pump) on a track.
+   * `record` makes it its own undo step (menus); sliders checkpoint once per gesture instead.
+   */
+  setTrackFx: <K extends keyof TrackFx>(trackId: string, effect: K, patch: Partial<TrackFx[K]>, record?: boolean) => void;
   /** Give a Sampler track its sound (or clear it with undefined). */
   setTrackSample: (trackId: string, sample: CustomSample | undefined) => void;
 
@@ -637,8 +640,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setTrackSample: (id, sample) => updateTrack(id, () => ({ sample }), true),
 
-    setTrackFx: (id, effect, patch) => {
-      updateTrack(id, (t) => ({ fx: normalizeTrackFx({ ...t.fx, [effect]: { ...t.fx[effect], ...patch } }) }));
+    setTrackFx: (id, effect, patch, record = false) => {
+      updateTrack(id, (t) => ({ fx: normalizeTrackFx({ ...t.fx, [effect]: { ...t.fx[effect], ...patch } }) }), record);
     },
 
     setMasterReverbDecay: (decay) => {

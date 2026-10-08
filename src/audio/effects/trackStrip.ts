@@ -1,24 +1,39 @@
 import * as Tone from 'tone';
-import type { Track } from '../../store/timelineTypes';
+import type { PumpTrigger, Track } from '../../store/timelineTypes';
 import type { BusEffects } from './busEffects';
-import { createLightChorus, createLightEq3, type LightChorus, type LightEq3 } from './lightFx';
+import {
+  createLightChorus,
+  createLightEq3,
+  createLightFilter,
+  createLightPump,
+  type LightChorus,
+  type LightEq3,
+  type LightFilter,
+  type LightPump,
+} from './lightFx';
 
 /**
  * One mixer channel per track:
- *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Channel (vol/pan/mute)
+ *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Filter -> Pump
+ *         -> Channel (vol/pan/mute)
  *   Channel -> master bus, plus post-fader sends to the shared reverb and delay.
  *
  * An insert only exists while it's switched on (the EQ while any band is boosted or cut).
  * A bypassed insert is disposed and patched out of the chain rather than left running at
  * wet 0: Web Audio keeps processing every connected node, and a full set of idle inserts
- * cost more CPU than the instruments, so a dozen tracks could starve live playback. The EQ and
- * chorus are lean versions of Tone's (see lightFx.ts), for the same reason.
+ * cost more CPU than the instruments, so a dozen tracks could starve live playback. The EQ,
+ * chorus, filter and pump are lean nodes (see lightFx.ts), for the same reason. The Filter sits
+ * late so a sweep shapes everything before it; the Pump is last so it ducks the whole sound.
  */
 export interface TrackStrip {
   /** Instruments connect here. */
   input: Tone.InputNode;
   channel: Tone.Channel;
   apply: (track: Track, opts?: { ramp?: number; muteOverride?: boolean }) => void;
+  /** What the Pump follows, or null while it's off. */
+  pumpTrigger: () => PumpTrigger | null;
+  /** A `source` trigger at `time`: the Pump ducks if it follows that source. */
+  pump: (time: number, source: PumpTrigger) => void;
   dispose: () => void;
 }
 
@@ -49,6 +64,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   let compressor: Tone.Compressor | null = null;
   let makeup: Tone.Gain | null = null;
   let chorus: LightChorus | null = null;
+  let filter: LightFilter | null = null;
+  let pump: LightPump | null = null;
+  let pumpTrigger: PumpTrigger | null = null;
   /** The inserts currently patched in, in signal order. */
   let chain: Insert[] = [];
 
@@ -59,6 +77,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     if (eq) next.push({ input: eq.input, output: eq.output });
     if (compressor && makeup) next.push({ input: compressor, output: makeup });
     if (chorus) next.push({ input: chorus.input, output: chorus.output });
+    if (filter) next.push({ input: filter.input, output: filter.output });
+    if (pump) next.push({ input: pump.input, output: pump.output });
     if (next.length === chain.length && next.every((ins, i) => ins.input === chain[i].input)) return;
 
     input.disconnect();
@@ -136,6 +156,26 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         chorus = null;
       }
 
+      // Older test fixtures and hand-built tracks may lack the newer inserts: treat them as off
+      if (fx.filter?.on) {
+        const fresh = !filter;
+        filter ??= createLightFilter();
+        filter.set(fx.filter, fresh ? 0 : ramp);
+      } else if (filter) {
+        filter.dispose();
+        filter = null;
+      }
+
+      if (fx.pump?.on) {
+        pump ??= createLightPump();
+        pump.setShape(fx.pump.depth, fx.pump.release / 1000);
+        pumpTrigger = fx.pump.trigger;
+      } else {
+        pump?.dispose();
+        pump = null;
+        pumpTrigger = null;
+      }
+
       rewire();
 
       // The fader's bottom (-60) is silence, but not -Infinity: Tone's Channel takes a volume of
@@ -149,8 +189,68 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       set(reverbSend.gain, Math.max(0, Math.min(1, track.reverbSend)), ramp);
       set(delaySend.gain, Math.max(0, Math.min(1, track.delaySend)), ramp);
     },
+    pumpTrigger: () => pumpTrigger,
+    pump: (time, source) => {
+      if (pump && source === pumpTrigger) pump.trigger(time);
+    },
     dispose: () => {
-      [distortion, eq, compressor, makeup, chorus, input, channel, reverbSend, delaySend].forEach((n) => n?.dispose());
+      [distortion, eq, compressor, makeup, chorus, filter, pump, input, channel, reverbSend, delaySend].forEach((n) => n?.dispose());
+    },
+  };
+}
+
+/** The Transport's scheduling calls a pump clock needs (live and offline Transports both have them). */
+type PumpTransport = Pick<ReturnType<typeof Tone.getTransport>, 'schedule' | 'clear'>;
+
+export interface PumpClock {
+  /** Add or remove the clock's events to match what the strips' Pumps follow. */
+  update: () => void;
+  dispose: () => void;
+}
+
+/** Transport ticks in a beat and in an 8th (Tone's 192 per quarter note). */
+const BEAT_TICKS = 192;
+const EIGHTH_TICKS = 96;
+
+/**
+ * The Pump triggers that come from the Transport rather than from notes: every beat and every
+ * 8th, counted from bar 1, over Transport ticks [fromTick, toTick). Each is an ordinary Transport
+ * event at its tick, like a note's, so it fires at exactly the time a note on that tick plays,
+ * through loops, seeks and tempo changes, live and in the export. The events exist only while a
+ * strip's Pump follows the beat or the 8th: one per beat, or one per 8th if any Pump wants those
+ * (about 3,200 over the whole timeline; switching costs a few milliseconds).
+ */
+export function createPumpClock(transport: PumpTransport, strips: () => Iterable<TrackStrip>, fromTick: number, toTick: number): PumpClock {
+  let step = 0;
+  let ids: number[] = [];
+  const clear = () => {
+    ids.forEach((id) => transport.clear(id));
+    ids = [];
+  };
+  const fire = (tick: number) => (time: number) => {
+    const onBeat = tick % BEAT_TICKS === 0;
+    for (const strip of strips()) {
+      strip.pump(time, 'eighth');
+      if (onBeat) strip.pump(time, 'beat');
+    }
+  };
+  return {
+    update: () => {
+      let wanted = 0;
+      for (const strip of strips()) {
+        const trigger = strip.pumpTrigger();
+        if (trigger === 'eighth') wanted = EIGHTH_TICKS;
+        else if (trigger === 'beat' && !wanted) wanted = BEAT_TICKS;
+      }
+      if (wanted === step) return;
+      clear();
+      step = wanted;
+      if (!step) return;
+      for (let tick = Math.ceil(fromTick / step) * step; tick < toTick; tick += step) ids.push(transport.schedule(fire(tick), `${tick}i`));
+    },
+    dispose: () => {
+      clear();
+      step = 0;
     },
   };
 }

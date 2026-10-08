@@ -1,7 +1,8 @@
 import * as Tone from 'tone';
 
 /**
- * Lean stand-ins for Tone.EQ3 and Tone.Chorus that sound the same but cost far less CPU.
+ * Lean stand-ins for Tone.EQ3 and Tone.Chorus that sound the same but cost far less CPU, and
+ * the track Filter and Pump built the same way.
  *
  * Tone.Filter drives its BiquadFilterNodes' frequency, Q, gain and detune from Signals
  * (ConstantSourceNodes). A filter param fed by a node is audio-rate, so Chrome recomputes the
@@ -11,6 +12,27 @@ import * as Tone from 'tone';
  * than the instruments. These versions use the same filters, delay lines and mixing law, with
  * plain node parameters that only change when the user moves a control.
  */
+
+/**
+ * Set native params, ramping over `ramp` seconds (0 = at once). Ramps start from the last value
+ * set here: an AudioParam's .value doesn't show scheduled values until the context renders (an
+ * offline export sets these up before it starts).
+ */
+function paramSetter(raw: BaseAudioContext): (param: AudioParam, value: number, ramp: number) => void {
+  const current = new Map<AudioParam, number>();
+  return (param, value, ramp) => {
+    const at = raw.currentTime;
+    param.cancelScheduledValues(at);
+    const from = current.get(param);
+    if (ramp > 0 && from !== undefined && from !== value) {
+      param.setValueAtTime(from, at);
+      param.linearRampToValueAtTime(value, at + ramp);
+    } else {
+      param.setValueAtTime(value, at);
+    }
+    current.set(param, value);
+  };
+}
 
 /** The parts of an insert the track strip patches together. */
 export interface LightInsert {
@@ -208,21 +230,7 @@ export function createLightPingPong(opts: { delayTime: number; feedback: number;
   feedbackR.connect(leftIn);
   merge.connect(output.input as unknown as AudioNode);
 
-  // Ramps start from the last value set here: an AudioParam's .value doesn't show scheduled
-  // values until the context renders (an offline export sets these up before it starts)
-  const current = new Map<AudioParam, number>();
-  const ramped = (param: AudioParam, value: number, ramp: number) => {
-    const at = raw.currentTime;
-    param.cancelScheduledValues(at);
-    const from = current.get(param);
-    if (ramp > 0 && from !== undefined && from !== value) {
-      param.setValueAtTime(from, at);
-      param.linearRampToValueAtTime(value, at + ramp);
-    } else {
-      param.setValueAtTime(value, at);
-    }
-    current.set(param, value);
-  };
+  const ramped = paramSetter(raw);
   const delays = [left, rightPre, right];
   const setDelayTime = (seconds: number, ramp: number) => {
     const t = Math.max(0, Math.min(opts.maxDelay, seconds));
@@ -244,5 +252,174 @@ export function createLightPingPong(opts: { delayTime: number; feedback: number;
       input.dispose();
       output.dispose();
     },
+  };
+}
+
+export interface FilterSettings {
+  type: 'lowpass' | 'highpass' | 'bandpass';
+  /** Hz */
+  cutoff: number;
+  /** As a Q: 0.71 is flat (a Butterworth response), higher peaks at the cutoff */
+  resonance: number;
+  /** dB per octave */
+  slope: 12 | 24;
+}
+
+export interface LightFilter extends LightInsert {
+  /** Cutoff and resonance ramp over `ramp` seconds (0 = at once); type and slope switch at once. */
+  set: (settings: FilterSettings, ramp: number) => void;
+}
+
+/** Q of the first of two cascaded stages in a 4th-order Butterworth filter (the second's is 1.31). */
+const BUTTERWORTH_Q1 = 1 / (2 * Math.cos(Math.PI / 8));
+
+/**
+ * A resonant low-pass, high-pass or band-pass filter, 12 dB per octave from one biquad or 24 from
+ * two in series, with plain parameters (see above for why not Tone.Filter).
+ *
+ * The two 24 dB stages are a Butterworth pair at the flat setting (Q 0.54 and 1.31). More
+ * resonance raises only the second stage's Q, so the peak at the cutoff is about as high as the
+ * 12 dB filter's at the same setting rather than twice as high in dB. Web Audio takes a low- or
+ * high-pass biquad's Q in dB and a band-pass's as a plain ratio, so it's converted here.
+ */
+export function createLightFilter(): LightFilter {
+  const input = new Tone.Gain(1);
+  const output = new Tone.Gain(1);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const first = raw.createBiquadFilter();
+  const second = raw.createBiquadFilter();
+  input.connect(first);
+  const ramped = paramSetter(raw);
+  let applied: FilterSettings | null = null;
+
+  const set = (s: FilterSettings, ramp: number) => {
+    const typeChanged = applied?.type !== s.type;
+    if (typeChanged) {
+      first.type = s.type;
+      second.type = s.type;
+    }
+    if (applied?.slope !== s.slope) {
+      first.disconnect();
+      second.disconnect();
+      if (s.slope === 24) {
+        first.connect(second);
+        second.connect(output.input as unknown as AudioNode);
+      } else {
+        first.connect(output.input as unknown as AudioNode);
+      }
+    }
+    const q = s.type === 'bandpass' ? [s.resonance, s.resonance] : s.slope === 24 ? [BUTTERWORTH_Q1, s.resonance / BUTTERWORTH_Q1] : [s.resonance, s.resonance];
+    const toParam = (ratio: number) => (s.type === 'bandpass' ? ratio : 20 * Math.log10(ratio));
+    // A new type reads Q in different units, so it can't ramp from the old value
+    const qRamp = typeChanged ? 0 : ramp;
+    const cutoff = Math.min(s.cutoff, raw.sampleRate / 2);
+    [first, second].forEach((stage, i) => {
+      ramped(stage.frequency, cutoff, ramp);
+      ramped(stage.Q, toParam(q[i]), qRamp);
+    });
+    applied = { ...s };
+  };
+
+  return {
+    input,
+    output,
+    set,
+    dispose: () => {
+      first.disconnect();
+      second.disconnect();
+      input.dispose();
+      output.dispose();
+    },
+  };
+}
+
+export interface LightPump extends LightInsert {
+  /**
+   * Duck at `time` and swell back. Triggers normally come in time order: one at the same moment
+   * as another is ignored, and one earlier than those already scheduled replaces them.
+   */
+  trigger: (time: number) => void;
+  /** How far it ducks (0-1) and how long the swell back takes (seconds), from the next trigger on. */
+  setShape: (depth: number, release: number) => void;
+}
+
+/** How fast the Pump ducks: quick enough to clear room for a kick, slow enough not to click. */
+const PUMP_ATTACK = 0.004;
+/** Straight-line pieces the swell back is drawn with (one automation event each). */
+const PUMP_SEGMENTS = 12;
+
+/** One duck as scheduled: from the gain it had at `at`, down to `floor`, back up to 1 over `release`. */
+interface Duck {
+  at: number;
+  from: number;
+  floor: number;
+  release: number;
+}
+
+/** The swell's shape, 0 to 1 over 0 to 1: a raised cosine, so it leaves the floor and lands on full volume gently. */
+const swell = (x: number) => (1 - Math.cos(Math.PI * x)) / 2;
+
+/** The gain a duck gives at `time`, on exactly the straight lines it was scheduled as. */
+function duckGain(d: Duck, time: number): number {
+  const t = time - d.at;
+  if (t <= 0) return d.from;
+  if (t < PUMP_ATTACK) return d.from + ((d.floor - d.from) * t) / PUMP_ATTACK;
+  const x = ((t - PUMP_ATTACK) / d.release) * PUMP_SEGMENTS;
+  if (x >= PUMP_SEGMENTS) return 1;
+  const k = Math.floor(x);
+  const a = swell(k / PUMP_SEGMENTS);
+  const b = swell((k + 1) / PUMP_SEGMENTS);
+  return d.floor + (1 - d.floor) * (a + (b - a) * (x - k));
+}
+
+/**
+ * Sidechain-style pumping as one gain whose value is automated per trigger: down to 1 - depth
+ * in 4 ms, then a smooth swell back to full volume over the release. Nothing runs between
+ * triggers. Automation is sample-accurate, live and in the export.
+ *
+ * A trigger during a swell ducks from wherever the swell has got to: the automation after that
+ * moment is cancelled and the line up to it redrawn, so the gain never jumps. The value at a
+ * moment is worked out from the ducks scheduled (an AudioParam can't report scheduled values,
+ * and Firefox has no cancelAndHoldAtTime). A trigger earlier than ones already scheduled (the
+ * Transport restarted within its look-ahead) replaces them.
+ */
+export function createLightPump(): LightPump {
+  const node = new Tone.Gain(1);
+  const gain = node.input.gain;
+  const raw = node.context.rawContext as unknown as BaseAudioContext;
+  let floor = 0.3;
+  let release = 0.3;
+  /** Recent ducks, in time order: the last one tells the gain at the next trigger. */
+  let ducks: Duck[] = [];
+
+  const trigger = (time: number) => {
+    const at = Math.max(time, raw.currentTime);
+    // Two drum tracks kicking together (or a Transport tick handed over twice) duck once
+    if (ducks.some((d) => Math.abs(d.at - at) < 1e-4)) return;
+    if (floor >= 1) return;
+    // Ducks long over can't matter any more
+    ducks = ducks.filter((d) => d.at < at && d.at > at - 5);
+    const prev = ducks[ducks.length - 1];
+    const from = prev ? duckGain(prev, at) : 1;
+    gain.cancelScheduledValues(at);
+    // Carry on the line the gain was on up to this moment (or hold full volume)
+    if (from < 1) gain.linearRampToValueAtTime(from, at);
+    else gain.setValueAtTime(1, at);
+    gain.linearRampToValueAtTime(floor, at + PUMP_ATTACK);
+    for (let k = 1; k <= PUMP_SEGMENTS; k++) {
+      gain.linearRampToValueAtTime(floor + (1 - floor) * swell(k / PUMP_SEGMENTS), at + PUMP_ATTACK + (release * k) / PUMP_SEGMENTS);
+    }
+    ducks.push({ at, from, floor, release });
+  };
+
+  return {
+    input: node,
+    output: node,
+    trigger,
+    setShape: (depth, seconds) => {
+      floor = 1 - Math.max(0, Math.min(1, depth));
+      release = Math.max(0.01, seconds);
+    },
+    dispose: () => node.dispose(),
   };
 }

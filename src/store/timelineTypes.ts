@@ -12,9 +12,21 @@ export interface TrackEq {
   high: number;
 }
 
+/** The Filter insert's response: low-pass, high-pass or band-pass. */
+export const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass'] as const;
+export type FilterType = (typeof FILTER_TYPES)[number];
+
+/** How steeply the Filter cuts: 12 dB per octave (one biquad) or 24 (two in series). */
+export const FILTER_SLOPES = [12, 24] as const;
+export type FilterSlope = (typeof FILTER_SLOPES)[number];
+
+/** What makes the Pump duck: every kick drum note (C1 on a sounding drum kit), every beat, or every 8th. */
+export const PUMP_TRIGGERS = ['kick', 'beat', 'eighth'] as const;
+export type PumpTrigger = (typeof PUMP_TRIGGERS)[number];
+
 /**
- * Per-track insert effects, in signal order: Distortion -> (EQ) -> Compressor -> Chorus.
- * The EQ lives on Track.eq. Each insert can be bypassed with `on`.
+ * Per-track insert effects, in signal order: Distortion -> (EQ) -> Compressor -> Chorus -> Filter
+ * -> Pump. The EQ lives on Track.eq. Each insert can be bypassed with `on`.
  */
 export interface TrackFx {
   distortion: {
@@ -40,7 +52,32 @@ export interface TrackFx {
     /** wet mix, 0 to 1 */
     mix: number;
   };
+  filter: {
+    on: boolean;
+    type: FilterType;
+    /** Cutoff (centre for band-pass), 20 Hz to 20 kHz */
+    cutoff: number;
+    /** Resonance as a Q, 0.5 to 15 (0.71 is flat: no peak at the cutoff) */
+    resonance: number;
+    slope: FilterSlope;
+  };
+  /** Sidechain-style ducking in time with the music. */
+  pump: {
+    on: boolean;
+    /** How far the volume ducks at each trigger, 0 to 1 */
+    depth: number;
+    /** How long it takes to swell back to full volume, 50 ms to 600 ms */
+    release: number;
+    trigger: PumpTrigger;
+  };
 }
+
+export const FILTER_CUTOFF_MIN = 20;
+export const FILTER_CUTOFF_MAX = 20000;
+export const FILTER_RESONANCE_MIN = 0.5;
+export const FILTER_RESONANCE_MAX = 15;
+export const PUMP_RELEASE_MIN = 50;
+export const PUMP_RELEASE_MAX = 600;
 
 /** Effects for a new track: every insert present but bypassed. */
 export function defaultTrackFx(): TrackFx {
@@ -48,6 +85,8 @@ export function defaultTrackFx(): TrackFx {
     distortion: { on: false, amount: 0.3 },
     compressor: { on: false, threshold: -20, ratio: 4, makeup: 3 },
     chorus: { on: false, rate: 1.5, depth: 0.6, mix: 0.5 },
+    filter: { on: false, type: 'lowpass', cutoff: 1000, resonance: Math.SQRT1_2, slope: 24 },
+    pump: { on: false, depth: 0.7, release: 300, trigger: 'kick' },
   };
 }
 
@@ -61,6 +100,9 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
   const dist = obj(r.distortion);
   const comp = obj(r.compressor);
   const cho = obj(r.chorus);
+  const fil = obj(r.filter);
+  const pum = obj(r.pump);
+  const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
   return {
     distortion: { on: dist.on === true, amount: num(dist.amount, d.distortion.amount, 0, 1) },
     compressor: {
@@ -74,6 +116,19 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
       rate: num(cho.rate, d.chorus.rate, 0.1, 8),
       depth: num(cho.depth, d.chorus.depth, 0, 1),
       mix: num(cho.mix, d.chorus.mix, 0, 1),
+    },
+    filter: {
+      on: fil.on === true,
+      type: oneOf(fil.type, FILTER_TYPES, d.filter.type),
+      cutoff: num(fil.cutoff, d.filter.cutoff, FILTER_CUTOFF_MIN, FILTER_CUTOFF_MAX),
+      resonance: num(fil.resonance, d.filter.resonance, FILTER_RESONANCE_MIN, FILTER_RESONANCE_MAX),
+      slope: oneOf(fil.slope, FILTER_SLOPES, d.filter.slope),
+    },
+    pump: {
+      on: pum.on === true,
+      depth: num(pum.depth, d.pump.depth, 0, 1),
+      release: num(pum.release, d.pump.release, PUMP_RELEASE_MIN, PUMP_RELEASE_MAX),
+      trigger: oneOf(pum.trigger, PUMP_TRIGGERS, d.pump.trigger),
     },
   };
 }
@@ -104,7 +159,7 @@ export interface Track {
   pan: number;
   /** 3-Band Parametric EQ insert */
   eq: TrackEq;
-  /** Distortion / Compressor / Chorus inserts */
+  /** Distortion / Compressor / Chorus / Filter / Pump inserts */
   fx: TrackFx;
   /** Post-fader send to master Reverb (0.0 to 1.0) */
   reverbSend: number;

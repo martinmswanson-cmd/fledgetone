@@ -1,13 +1,13 @@
 import * as Tone from 'tone';
 import { createMixChain, getMasterVolume } from './engine';
 import { delaySeconds } from './effects/busEffects';
-import { createTrackStrip } from './effects/trackStrip';
+import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument } from './instruments';
 import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
 import { isSamplerKey, loadCustomSample, loadSamples } from './samplers/samplerManager';
-import { INSTRUMENTS } from './instrumentCatalog';
+import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar } from './transport';
 import type { Clip, MasterFx, Track } from '../store/timelineTypes';
 
@@ -479,8 +479,18 @@ async function renderTracks(
       transport.loopStart = `${barToTicks(startBar)}i`;
       transport.loopEnd = `${barToTicks(endBar)}i`;
     }
-    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId));
-    schedule.update(tracks, clips);
+    // Pumps that follow the kick hear every kick of the drum kits that sound, including ones this
+    // render leaves out (a stem): those tracks' notes are scheduled, but play no instrument
+    const kickTracks = audibleTracks(opts.tracks).filter((t) => isDrumKind(t.instrumentKey));
+    const kickIds = new Set(kickTracks.map((t) => t.id));
+    const pumpOnKick = (trackId: string, time: number) => {
+      if (kickIds.has(trackId)) strips.forEach((s) => s.pump(time, 'kick'));
+    };
+    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick);
+    const followsKick = strips.some((s) => s.pumpTrigger() === 'kick');
+    schedule.update(followsKick ? [...tracks, ...kickTracks.filter((t) => !instruments.has(t.id))] : tracks, clips);
+    const pumpClock = createPumpClock(transport, () => strips, barToTicks(startBar), barToTicks(endBar));
+    pumpClock.update();
     transport.start(plan.startAt, `${barToTicks(startBar)}i`);
     // Stop at endBar (after the last pass of a seamless loop): the render runs on for the
     // tail, and notes after endBar (the rest of the song, past a loop region's Out) must not
@@ -491,6 +501,7 @@ async function renderTracks(
       reverbImpulse: () => convolver.buffer ?? undefined,
       dispose: () => {
         schedule.dispose();
+        pumpClock.dispose();
         instruments.forEach((i) => i.dispose());
         strips.forEach((s) => s.dispose());
         mix.busFx.dispose();
