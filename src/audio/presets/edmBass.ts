@@ -3,12 +3,14 @@ import type { PlayableNote } from '../instruments';
 import { DEFAULT_WOBBLE, WOBBLE_BEATS } from '../../store/timelineTypes';
 import { monotonicTime } from './monotonic';
 import {
+  atAudioTime,
   attackDecay,
   createBus,
   createDrive,
   createFilter,
   createOsc,
   createVoiceSet,
+  leveledWave,
   noteFrequency,
   releaseConstant,
   releaseTail,
@@ -91,7 +93,7 @@ function sweepCurve(start: number, end: number, cycle: number, value: (t: number
 
 function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
   const { bus, raw, input } = createBus(output);
-  const voices = createVoiceSet();
+  const voices = createVoiceSet(raw);
   // Overlapping clips can land two notes on one instant: keep start times strictly increasing
   const safeTime = monotonicTime(bus.context);
   const releaseTc = releaseConstant(patch.release);
@@ -108,12 +110,16 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
 
   return {
     trigger: (n: PlayableNote, time: number) => {
+      const length = bus.toSeconds(n.duration);
+      const freq = noteFrequency(n.note);
+      // A note a hand-edited file garbled (NaN) is skipped before anything starts playing
+      if (!Number.isFinite(length) || !(freq > 0)) return;
       const start = safeTime(time);
-      const end = start + Math.max(0.005, bus.toSeconds(n.duration));
+      const end = start + Math.max(0.005, length);
       const note: BassNote = {
         start,
         end,
-        freq: noteFrequency(n.note),
+        freq,
         velocity: n.velocity,
         cycle: WOBBLE_BEATS[n.wobble ?? DEFAULT_WOBBLE] * bus.toSeconds('4n'),
       };
@@ -144,14 +150,10 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
           v.tone = next.tone;
           // Let the previous note's filters go once they're silent. Kept to the end of the voice, a
           // long legato run would pile up dozens of idle filters the audio thread still visits.
-          // A source stopped as it starts is a free timer: its 'ended' comes when the audio gets there.
-          const timer = raw.createConstantSource();
-          timer.onended = () => {
+          atAudioTime(raw, start + RETONE_FADE + 0.05, () => {
             previous.forEach((node) => node.disconnect());
             v.voice.nodes = v.voice.nodes.filter((node) => !previous.includes(node));
-          };
-          timer.start(start + RETONE_FADE + 0.05);
-          timer.stop(start + RETONE_FADE + 0.05);
+          });
         }
         voices.extend(v.voice, stopAt);
         v.end = end;
@@ -202,24 +204,17 @@ export function createWobbleBass(output: Tone.InputNode) {
     level: 0.85,
     retone: true,
     source: (raw, { freq, start }) => {
-      const saw1 = createOsc(raw, 'sawtooth', freq, start, -11);
-      const saw2 = createOsc(raw, 'sawtooth', freq, start, 9);
-      const sub = createOsc(raw, 'square', freq / 2, start);
-      // Peaks of about 1 into the drive, so it bends rather than clips
-      const mix = raw.createGain();
-      mix.gain.value = 0.36;
-      const subLevel = raw.createGain();
-      subLevel.gain.value = 0.7;
+      // Levels baked into the waves: peaks of about 1 into the drive, so it bends rather than clips
+      const saw = leveledWave(raw, 'sawtooth', 0.36);
+      const saw1 = createOsc(raw, saw, freq, start, -11);
+      const saw2 = createOsc(raw, saw, freq, start, 9);
+      const sub = createOsc(raw, leveledWave(raw, 'square', 0.25), freq / 2, start);
       const drive = createDrive(raw, 1.6);
-      saw1.connect(mix);
-      saw2.connect(mix);
-      sub.connect(subLevel);
-      subLevel.connect(mix);
-      mix.connect(drive);
+      [saw1, saw2, sub].forEach((o) => o.connect(drive));
       return {
         main: drive,
         sources: [saw1, saw2, sub],
-        nodes: [saw1, saw2, sub, subLevel, mix, drive],
+        nodes: [saw1, saw2, sub, drive],
         glide: glider([[saw1.frequency, 1], [saw2.frequency, 1], [sub.frequency, 0.5]]),
       };
     },
@@ -326,16 +321,13 @@ export function createGrowlBass(output: Tone.InputNode) {
     source: (raw, { freq, start }) => {
       const fm = createOsc(raw, growlWave(raw), freq, start);
       const drive = createDrive(raw, 3.5);
-      const sub = createOsc(raw, 'sine', freq, start);
-      const subLevel = raw.createGain();
-      subLevel.gain.value = 0.45;
+      const sub = createOsc(raw, leveledWave(raw, 'sine', 0.45), freq, start);
       fm.connect(drive);
-      sub.connect(subLevel);
       return {
         main: drive,
-        direct: subLevel,
+        direct: sub,
         sources: [fm, sub],
-        nodes: [fm, drive, sub, subLevel],
+        nodes: [fm, drive, sub],
         glide: glider([[fm.frequency, 1], [sub.frequency, 1]]),
       };
     },
@@ -372,18 +364,16 @@ export function createReeseBass(output: Tone.InputNode) {
     retone: false,
     source: (raw, { freq, start }) => {
       // Uneven detune, so the beating never settles into one steady pulse
-      const saws = [-17, 3, 15].map((cents) => createOsc(raw, 'sawtooth', freq, start, cents));
-      const sine = createOsc(raw, 'sine', freq, start);
-      const mix = raw.createGain();
-      mix.gain.value = 0.3;
+      const saw = leveledWave(raw, 'sawtooth', 0.3);
+      const saws = [-17, 3, 15].map((cents) => createOsc(raw, saw, freq, start, cents));
+      const sine = createOsc(raw, leveledWave(raw, 'sine', 0.3), freq, start);
       const drive = createDrive(raw, 1.3);
-      [...saws, sine].forEach((o) => o.connect(mix));
-      mix.connect(drive);
       const oscs = [...saws, sine];
+      oscs.forEach((o) => o.connect(drive));
       return {
         main: drive,
         sources: oscs,
-        nodes: [...oscs, mix, drive],
+        nodes: [...oscs, drive],
         glide: glider(oscs.map((o) => [o.frequency, 1])),
       };
     },

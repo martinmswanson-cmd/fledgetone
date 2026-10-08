@@ -22,6 +22,9 @@ const MIN_LENGTH = 0.1;
 /** How long an Impact rings, whatever the note's length. */
 const IMPACT_SECONDS = 3.5;
 
+/** Hits are fed by noise: let go of their nodes a moment after they end (see createVoiceSet). */
+const LINGER_SECONDS = 0.5;
+
 type Hit = (raw: BaseAudioContext, start: number, length: number, level: number) => Omit<NativeVoice, 'start'>;
 
 /** A gain with `level` from now on (no automation). */
@@ -120,7 +123,7 @@ const HITS: Record<string, Hit> = {
     return { stopAt: end, sources: [boom, noise], nodes: [boom, boomAmp, drive, noise, noiseFilter, noiseAmp, amp], amp };
   },
 
-  // A sine falling from 60 to 30 Hz over the note, saturated a little so it reaches small speakers, fading in its last third
+  // A sine falling from 60 to 30 Hz over the note, saturated a little so it reaches small speakers, fading out over its last third
   [FX_NOTES.subDrop]: (raw, start, length, level) => {
     const end = start + length;
     const sine = createOsc(raw, 'sine', 60, start);
@@ -164,13 +167,16 @@ const HITS: Record<string, Hit> = {
 
 export function createFx(output: Tone.InputNode) {
   const { bus, raw, input } = createBus(output);
-  const voices = createVoiceSet();
+  const voices = createVoiceSet(raw, LINGER_SECONDS);
 
   const playNote = (n: PlayableNote, start: number) => {
+    // Not one of the rows: a note from another instrument (the track's instrument was changed)
+    if (!Object.hasOwn(HITS, n.note)) return;
     const hit = HITS[n.note];
-    if (!hit) return; // a note from another instrument (the track's instrument was changed)
-    const length = Math.max(MIN_LENGTH, bus.toSeconds(n.duration));
-    const voice = hit(raw, start, length, n.velocity);
+    const length = bus.toSeconds(n.duration);
+    if (!Number.isFinite(length)) return; // garbled by hand-editing: skip it
+    // Above zero: the swells are exponential ramps, which can't start or end at 0
+    const voice = hit(raw, start, Math.max(MIN_LENGTH, length), Math.max(0.01, n.velocity));
     voice.amp.connect(input);
     voices.add({ ...voice, start });
   };

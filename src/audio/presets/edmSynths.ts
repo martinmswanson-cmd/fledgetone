@@ -38,7 +38,7 @@ const SUPERSAW_PHASES = [0, 0.31, 0.57, 0.12, 0.83, 0.46, 0.69];
  */
 export function createSupersaw(output: Tone.InputNode) {
   const { bus, raw, input } = createBus(output);
-  const voices = createVoiceSet();
+  const voices = createVoiceSet(raw);
   // Shared and fixed: a filter whose settings don't change costs nothing while no note plays
   const highpass = createFilter(raw, 'highpass', 140, 0);
   const lowpass = createFilter(raw, 'lowpass', 7000, 0);
@@ -47,8 +47,10 @@ export function createSupersaw(output: Tone.InputNode) {
   const release = 0.45;
 
   const playNote = (n: PlayableNote, start: number) => {
-    const end = start + Math.max(0.005, bus.toSeconds(n.duration));
+    const length = bus.toSeconds(n.duration);
     const freq = noteFrequency(n.note);
+    if (!Number.isFinite(length) || !(freq > 0)) return; // garbled by hand-editing: skip it
+    const end = start + Math.max(0.005, length);
     const waves = phasedSaws(raw, SUPERSAW_PHASES);
     const merger = raw.createChannelMerger(2);
     const sources = SUPERSAW.map(([cents, side], i) => {
@@ -83,14 +85,16 @@ export function createSupersaw(output: Tone.InputNode) {
 /** Pluck: a saw and a detuned square through a low-pass that snaps shut, with a short decay. */
 export function createPluck(output: Tone.InputNode) {
   const { bus, raw, input } = createBus(output);
-  const voices = createVoiceSet();
+  const voices = createVoiceSet(raw);
   /** Seconds to fade 95% of the way out on its own. */
   const decay = 0.5;
   const release = 0.08;
 
   const playNote = (n: PlayableNote, start: number) => {
-    const end = start + Math.max(0.005, bus.toSeconds(n.duration));
+    const length = bus.toSeconds(n.duration);
     const freq = noteFrequency(n.note);
+    if (!Number.isFinite(length) || !(freq > 0)) return; // garbled by hand-editing: skip it
+    const end = start + Math.max(0.005, length);
     const saw = createOsc(raw, 'sawtooth', freq, start);
     const square = createOsc(raw, 'square', freq, start, 8);
     const mix = raw.createGain();

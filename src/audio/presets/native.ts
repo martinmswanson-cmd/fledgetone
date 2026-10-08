@@ -43,11 +43,28 @@ export interface NativeVoice {
 }
 
 /**
+ * Run `then` when the audio reaches `at`: a source stopped as it starts is a free timer, whose
+ * 'ended' event comes when the audio gets there (in the export, when the render does).
+ */
+export function atAudioTime(raw: BaseAudioContext, at: number, then: () => void): void {
+  const timer = raw.createConstantSource();
+  timer.onended = then;
+  timer.start(at);
+  timer.stop(at);
+}
+
+/**
  * The voices an instrument has playing. A voice is forgotten, and its nodes disconnected, when its
  * sources end, which the browser reports only once the audio has actually got there (in the
  * export, once the render has), so nothing is let go before it has been heard.
+ *
+ * `lingerSeconds` waits that long after the end before disconnecting, for voices fed by noise
+ * (AudioBufferSourceNodes): in Chrome, a filter disconnected the instant the noise feeding it
+ * ended went on costing render time for good, so a long export got slower and slower. Left a
+ * moment, Chrome retires the finished nodes first and the disconnect costs nothing. Voices of
+ * oscillators don't need it (and keeping them connected longer isn't free).
  */
-export function createVoiceSet() {
+export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
   const voices = new Set<NativeVoice>();
   const disconnect = (v: NativeVoice) => v.nodes.forEach((n) => n.disconnect());
   return {
@@ -56,7 +73,8 @@ export function createVoiceSet() {
       v.sources.forEach((s) => s.stop(v.stopAt));
       v.sources[0].onended = () => {
         voices.delete(v);
-        disconnect(v);
+        if (lingerSeconds > 0) atAudioTime(raw, raw.currentTime + lingerSeconds, () => disconnect(v));
+        else disconnect(v);
       };
     },
     /** Let a voice ring until `stopAt` instead (a later stop() replaces an earlier one). */
@@ -71,8 +89,11 @@ export function createVoiceSet() {
         if (v.start >= now) {
           v.stopAt = v.start;
         } else {
-          v.amp.gain.cancelScheduledValues(now);
-          v.amp.gain.setTargetAtTime(0, now, fade / 3);
+          // Hold the level it has reached (cancelling would undo a swell in progress: a jump)
+          const gain = v.amp.gain;
+          if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+          else gain.cancelScheduledValues(now);
+          gain.setTargetAtTime(0, now, fade / 3);
           v.stopAt = Math.min(v.stopAt, now + fade * 3);
         }
         v.sources.forEach((s) => s.stop(v.stopAt));
@@ -178,6 +199,36 @@ export function phasedSaws(raw: BaseAudioContext, phases: readonly number[]): Pe
     sawWaves.set(raw, waves);
   }
   return waves;
+}
+
+const leveledWaves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>();
+
+/**
+ * A sine, square or sawtooth wave at `level` instead of full scale: an oscillator playing it
+ * replaces an oscillator and a gain node. Each node a sounding voice has costs the audio thread
+ * time in every block, so a busy bass line plays noticeably cheaper with fewer. Built once per
+ * context and level.
+ */
+export function leveledWave(raw: BaseAudioContext, type: 'sine' | 'square' | 'sawtooth', level: number): PeriodicWave {
+  let waves = leveledWaves.get(raw);
+  if (!waves) leveledWaves.set(raw, (waves = new Map()));
+  const key = `${type}|${level}`;
+  let wave = waves.get(key);
+  if (!wave) {
+    const partials = type === 'sine' ? 1 : SAW_PARTIALS;
+    const real = new Float32Array(partials + 1);
+    const imag = new Float32Array(partials + 1);
+    for (let k = 1; k <= partials; k++) {
+      // Fourier series of each wave (the same phase as the browser's built-in types)
+      if (type === 'sine') imag[k] = 1;
+      else if (type === 'square') imag[k] = k % 2 ? 4 / (Math.PI * k) : 0;
+      else imag[k] = (k % 2 ? 2 : -2) / (Math.PI * k);
+      imag[k] *= level;
+    }
+    wave = raw.createPeriodicWave(real, imag, { disableNormalization: true });
+    waves.set(key, wave);
+  }
+  return wave;
 }
 
 const noiseBuffers = new WeakMap<BaseAudioContext, AudioBuffer>();
