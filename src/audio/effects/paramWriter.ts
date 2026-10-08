@@ -9,8 +9,16 @@
  * make a straight ramp). Pieces are written in time order with a one-sample gap between them, and
  * a change of plan only drops pieces that haven't started yet, never one that is running:
  * cancelScheduledValues() inside a running curve throws the whole curve away, and the param snaps
- * back to the value it had before that curve began (a click). So a new plan starts once the piece
- * running at that moment has finished (pieces are short: at most a quarter of a second).
+ * back to the value it had before that curve began (a click). Chrome's cancelAndHoldAtTime() is no
+ * way out: it restarts the cut curve from its first value. So a new plan starts once the piece
+ * running at that moment has finished, which is why the automation scheduler keeps pieces short.
+ *
+ * Nothing here ever throws: writes happen inside Tone's clock callbacks and the store's actions,
+ * where an exception would stop notes or an edit. The one refusal to expect is Chrome's: a piece
+ * whose start has already passed when the audio thread gets it (the page stalled under load) is
+ * moved to that moment, keeping its length, so it ends later than written, and the next piece
+ * would overlap it ("setValueCurveAtTime overlaps"). A refused write is retried after the latest
+ * any moved piece can end; the param holds its value for that moment.
  */
 export interface ParamWriter {
   /** The value written for time `t` (what the param holds then, as far as this writer knows). */
@@ -19,12 +27,15 @@ export interface ParamWriter {
   readonly fresh: boolean;
   /**
    * Drop the pieces that start after `t`. Returns the first moment a new piece can start: `t`, or
-   * later if a piece is running then.
+   * later if a piece is running then (or `t` is too close to the audio clock).
    */
   cut: (t: number) => number;
   /** A curve from `start` (moved later if a piece is still running then). Returns when it ends. */
   curve: (values: Float32Array, start: number, duration: number) => number;
-  /** Jump to `value` at `at` (or later, as for curve). Returns when it happens. */
+  /**
+   * Jump to `value` at `at` (or later, as for curve). Returns when it happens. On a fresh param,
+   * `at` 0 means at once.
+   */
   jump: (value: number, at: number) => number;
   /**
    * An ordinary change (a slider, a menu): drop what hasn't started and glide to `value` over
@@ -47,20 +58,73 @@ interface Piece {
 
 /** Pieces that ended this long before the latest write are forgotten (their last value is kept). */
 const FORGET_AFTER = 1;
+/** Live, a write never starts closer than this to the audio clock (seconds). */
+const LIVE_CLOCK_MARGIN = 0.02;
 
 /**
- * `now`: when an ordinary change takes effect (the Tone context's now(): live, the audio clock
- * plus Tone's look-ahead, the same moment Tone's own params and the Transport act on).
- * `initial`: the param's value before anything is written.
+ * How close to the audio clock a change can be written. Live, the audio thread renders a little
+ * ahead of the time the page reads; the WAV export's render waits while the page writes, so there
+ * the clock's own time is fine (and a lane starts exactly with the render).
  */
-export function createParamWriter(param: AudioParam, opts: { now: () => number; sampleRate: number; initial: number }): ParamWriter {
-  const gap = 1 / opts.sampleRate;
+export function clockMargin(raw: BaseAudioContext): number {
+  return typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext ? 0 : LIVE_CLOCK_MARGIN;
+}
+
+let reported = false;
+/** A write refused twice is dropped: say so once (in the console), never to the caller. */
+function report(err: unknown): void {
+  if (reported) return;
+  reported = true;
+  console.warn('Automation: a parameter change was refused and skipped', err);
+}
+
+/**
+ * `raw`: the param's audio context. `now`: when an ordinary change takes effect (the Tone context's
+ * now(): live, the audio clock plus Tone's look-ahead, the same moment Tone's own params and the
+ * Transport act on). `initial`: the param's value before anything is written.
+ */
+export function createParamWriter(param: AudioParam, opts: { raw: BaseAudioContext; now: () => number; initial: number }): ParamWriter {
+  const { raw } = opts;
+  const gap = 1 / raw.sampleRate;
+  const margin = clockMargin(raw);
   let pieces: Piece[] = [];
   /** The value before the first remembered piece. */
   let before = opts.initial;
   let fresh = true;
+  /** After a refused write: nothing starts before this (where a piece Chrome moved may still run). */
+  let barrier = -Infinity;
 
-  const free = () => (pieces.length ? pieces[pieces.length - 1].end + gap : -Infinity);
+  const free = () => Math.max(barrier, pieces.length ? pieces[pieces.length - 1].end + gap : -Infinity);
+  /** Where a piece asked for at `at` can start: after the last one, and not too close to the clock. */
+  const place = (at: number) => Math.max(at, free(), raw.currentTime + margin);
+
+  /**
+   * A write was refused, so a piece has been moved later than written. A moved piece starts at
+   * most where the audio thread is now (a render quantum or two past the time the page reads), so
+   * new pieces wait until each remembered piece would have ended from there.
+   */
+  const recover = () => {
+    const latest = raw.currentTime + 256 / raw.sampleRate;
+    for (const p of pieces) if (p.start < latest) barrier = Math.max(barrier, latest + (p.end - p.start) + gap);
+  };
+
+  /** Make a native call at `at`; if it's refused, once more where it surely fits. Returns where it went, or null. */
+  const write = (at: number, call: (t: number) => void): number | null => {
+    try {
+      call(at);
+      return at;
+    } catch {
+      recover();
+    }
+    const retry = place(at);
+    try {
+      call(retry);
+      return retry;
+    } catch (err) {
+      report(err);
+      return null;
+    }
+  };
 
   const valueAt = (t: number) => {
     let i = pieces.length - 1;
@@ -85,21 +149,29 @@ export function createParamWriter(param: AudioParam, opts: { now: () => number; 
   };
 
   const cut = (t: number) => {
-    forget(t);
+    // What has started (or is about to) plays on
+    const from = Math.max(t, raw.currentTime + margin);
+    forget(from);
     let keep = pieces.length;
-    while (keep > 0 && pieces[keep - 1].start > t) keep--;
+    while (keep > 0 && pieces[keep - 1].start > from) keep--;
     if (keep < pieces.length) {
       // Cancel in the gap after the piece that stays, so it plays out whole
       const kept = keep > 0 ? pieces[keep - 1].end : -Infinity;
-      param.cancelScheduledValues((Math.max(t, kept) + pieces[keep].start) / 2);
+      try {
+        param.cancelScheduledValues((Math.max(from, kept) + pieces[keep].start) / 2);
+      } catch (err) {
+        report(err);
+      }
       pieces.length = keep;
     }
-    return Math.max(t, free());
+    return place(from);
   };
 
   const jump = (value: number, at: number) => {
-    const start = Math.max(at, free());
-    param.setValueAtTime(value, start);
+    // A param of a node just made has nothing written to overlap: at 0 (in the past) it takes the value at once
+    const asked = fresh && at <= 0 ? 0 : place(at);
+    const start = write(asked, (t) => param.setValueAtTime(value, t));
+    if (start === null) return asked;
     pieces.push({ start, end: start, values: [value] });
     fresh = false;
     return start;
@@ -107,8 +179,9 @@ export function createParamWriter(param: AudioParam, opts: { now: () => number; 
 
   const curve = (values: Float32Array, start: number, duration: number) => {
     if (values.length < 2 || duration <= 0) return jump(values[values.length - 1], start);
-    const from = Math.max(start, free());
-    param.setValueCurveAtTime(values, from, duration);
+    const asked = place(start);
+    const from = write(asked, (t) => param.setValueCurveAtTime(values, t, duration));
+    if (from === null) return asked + duration;
     pieces.push({ start: from, end: from + duration, values });
     fresh = false;
     return from + duration;
@@ -123,7 +196,7 @@ export function createParamWriter(param: AudioParam, opts: { now: () => number; 
     curve,
     jump,
     set: (value, ramp) => {
-      // A node just made: set it before it makes a sound (time 0 is in the past, so at once)
+      // A node just made: set it before it makes a sound
       if (fresh) {
         jump(value, 0);
         return;

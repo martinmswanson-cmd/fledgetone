@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam, AutomationPoint, Track } from '../../store/timelineTypes';
 import { snapBar, TOTAL_BARS } from '../../store/timelineTypes';
@@ -44,6 +44,16 @@ function lanePoints(trackId: string, param: AutomationParam): AutomationPoint[] 
   return (track && laneOf(track, param)?.points) || NO_POINTS;
 }
 
+/** Point handles as one path of circles (one SVG element for a lane with hundreds of points). */
+function handlesPath(points: readonly AutomationPoint[], zoom: number, x0: number, r: number): string {
+  let d = '';
+  for (const p of points) {
+    const x = (p.bar - 1) * zoom - x0 - r;
+    d += `M${x.toFixed(1)},${yOf(p.value).toFixed(1)}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0`;
+  }
+  return d;
+}
+
 /** Index of the point within POINT_HIT px of (x, y), the nearest one (later on a tie), or -1. */
 function pointAt(points: readonly AutomationPoint[], zoom: number, x: number, y: number): number {
   let best = -1;
@@ -72,7 +82,11 @@ function pointAt(points: readonly AutomationPoint[], zoom: number, x: number, y:
  */
 export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
   const zoom = useTimelineStore((s) => s.zoom);
-  const drawFrom = useTimelineStore((s) => Math.floor(s.viewLeft / DRAW_STEP) * DRAW_STEP);
+  // Scrolled out of sight (above or below the view), a lane draws nothing and doesn't follow
+  // horizontal scrolling (drawFrom -1); it's drawn again just before it comes back into view
+  const [onScreen, setOnScreen] = useState(true);
+  const drawFrom = useTimelineStore((s) => (onScreen ? Math.floor(s.viewLeft / DRAW_STEP) * DRAW_STEP : -1));
+  const hidden = drawFrom < 0;
   const viewWidth = useTimelineStore((s) => s.viewWidth);
   const selected = useTimelineStore((s) =>
     s.automationSelection?.trackId === track.id && s.automationSelection.param === param ? s.automationSelection.points : null
@@ -84,6 +98,17 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
   const closeMenu = useCallback(() => setMenu(null), []);
   const lastAdded = useRef<{ point: AutomationPoint; at: number } | null>(null);
 
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const watch = new IntersectionObserver(([entry]) => setOnScreen(entry.isIntersecting), {
+      root: el.closest('[data-timeline-scroll]'),
+      rootMargin: `${TRACK_HEIGHT * 2}px 0px`,
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+
   const spec = AUTOMATION[param];
   const points = laneOf(track, param)?.points ?? NO_POINTS;
   // A Filter lane on a Filter that's off is kept, but silent
@@ -94,13 +119,24 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
   const x1 = Math.min(TOTAL_BARS * zoom, drawFrom + DRAW_STEP + viewWidth + DRAW_MARGIN);
   const barL = x0 / zoom + 1;
   const barR = x1 / zoom + 1;
-  const visible = points.filter((p) => p.bar >= barL && p.bar <= barR);
-  let line = '';
-  if (points.length) {
-    const corners: Array<[number, number]> = [[x0, laneValueAt(points, barL)!], ...visible.map((p): [number, number] => [(p.bar - 1) * zoom, p.value]), [x1, laneValueAt(points, barR)!]];
-    line = corners.map(([x, v], i) => `${i ? 'L' : 'M'}${(x - x0).toFixed(1)},${yOf(v).toFixed(1)}`).join('');
-  }
   const ownValue = spec.toNorm(spec.trackValue(track));
+  // Built only when what's drawn changes (not on a drag's tooltip, the box, or a menu)
+  const envelope = useMemo(() => {
+    if (hidden || !points.length) return null;
+    const visible = points.filter((p) => p.bar >= barL && p.bar <= barR);
+    const corners: Array<[number, number]> = [[x0, laneValueAt(points, barL)!], ...visible.map((p): [number, number] => [(p.bar - 1) * zoom, p.value]), [x1, laneValueAt(points, barR)!]];
+    const line = corners.map(([x, v], i) => `${i ? 'L' : 'M'}${(x - x0).toFixed(1)},${yOf(v).toFixed(1)}`).join('');
+    const chosen = selected ? visible.filter((p) => selected.has(p)) : [];
+    const others = chosen.length ? visible.filter((p) => !selected!.has(p)) : visible;
+    return (
+      <>
+        <path d={`${line}L${(x1 - x0).toFixed(1)},${TRACK_HEIGHT}L0,${TRACK_HEIGHT}Z`} fill={track.color} fillOpacity={0.16} />
+        <path d={line} fill="none" stroke={track.color} strokeWidth={2} strokeLinejoin="round" />
+        <path d={handlesPath(others, zoom, x0, 3.5)} fill={track.color} stroke="#0b0f14" strokeWidth={1.5} />
+        {chosen.length > 0 && <path d={handlesPath(chosen, zoom, x0, 4.5)} fill="#ffffff" stroke={track.color} strokeWidth={1.5} />}
+      </>
+    );
+  }, [hidden, points, selected, zoom, x0, x1, barL, barR, track.color]);
 
   // ---------- Gestures ----------
   const local = (e: { clientX: number; clientY: number }) => {
@@ -316,26 +352,7 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
           {spec.scale.map(({ value }) => (
             <line key={value} x1={0} x2={x1 - x0} y1={yOf(spec.toNorm(value))} y2={yOf(spec.toNorm(value))} stroke="rgba(255,255,255,0.08)" strokeDasharray="2 4" />
           ))}
-          {points.length ? (
-            <>
-              <path d={`${line}L${(x1 - x0).toFixed(1)},${TRACK_HEIGHT}L0,${TRACK_HEIGHT}Z`} fill={track.color} fillOpacity={0.16} />
-              <path d={line} fill="none" stroke={track.color} strokeWidth={2} strokeLinejoin="round" />
-              {visible.map((p, i) => {
-                const isSelected = selected?.has(p) ?? false;
-                return (
-                  <circle
-                    key={i}
-                    cx={(p.bar - 1) * zoom - x0}
-                    cy={yOf(p.value)}
-                    r={isSelected ? 4.5 : 3.5}
-                    fill={isSelected ? '#ffffff' : track.color}
-                    stroke={isSelected ? track.color : '#0b0f14'}
-                    strokeWidth={1.5}
-                  />
-                );
-              })}
-            </>
-          ) : (
+          {hidden ? null : envelope ?? (
             // No points yet: the setting stays at the track's own value
             <line x1={0} x2={x1 - x0} y1={yOf(ownValue)} y2={yOf(ownValue)} stroke={track.color} strokeOpacity={0.7} strokeWidth={1.5} strokeDasharray="6 4" />
           )}
