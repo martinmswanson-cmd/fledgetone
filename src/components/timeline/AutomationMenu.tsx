@@ -72,7 +72,21 @@ export const AutomationMenu: React.FC<{ menu: AutomationMenuState; onClose: () =
   ];
 
   return (
-    <div ref={ref} role="menu" aria-label={`${spec.label} automation`} className={menuClass} onContextMenu={(e) => e.preventDefault()}>
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={`${spec.label} automation`}
+      data-automation-menu=""
+      className={menuClass}
+      // The menu sits inside the track's lane: its clicks mustn't also start a marquee or clear
+      // the clip selection there, open the lane's clip menu, or add a clip
+      onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
       <div className="px-3 pt-1 pb-1.5 text-[10px] text-forge-muted truncate">
         {track.name} · {spec.label}
       </div>

@@ -91,7 +91,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   const raw = input.context.rawContext as unknown as BaseAudioContext;
   const now = () => input.context.now();
   const writer = (param: Tone.Param<any>, initial: number) =>
-    createParamWriter(param.input as AudioParam, { now, sampleRate: raw.sampleRate, initial });
+    createParamWriter(param.input as AudioParam, { raw, now, initial });
   const panWriter = writer(channel.pan, 0);
   const reverbWriter = writer(reverbSend.gain, 0);
   const delayWriter = writer(delaySend.gain, 0);

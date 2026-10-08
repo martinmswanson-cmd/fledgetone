@@ -32,7 +32,7 @@ interface Marquee {
 
 /** Ids of clips whose on-screen box intersects the marquee (content-relative px). */
 function clipsInMarquee(m: Marquee): Set<string> {
-  const { clips, tracks, zoom } = useTimelineStore.getState();
+  const { clips, tracks, zoom, automationView } = useTimelineStore.getState();
   const left = Math.min(m.x0, m.x1);
   const right = Math.max(m.x0, m.x1);
   const top = Math.min(m.y0, m.y1);
@@ -41,7 +41,8 @@ function clipsInMarquee(m: Marquee): Set<string> {
   const hits = new Set<string>();
   for (const c of clips) {
     const row = rowOf.get(c.trackId);
-    if (row === undefined) continue;
+    // Clips under an open automation view are dimmed and can't be edited there
+    if (row === undefined || automationView[c.trackId]?.open) continue;
     const cx0 = HEADER_WIDTH + (c.startBar - 1) * zoom;
     const cx1 = cx0 + c.lengthBars * zoom;
     const cy0 = RULER_HEIGHT + row * TRACK_HEIGHT;
@@ -293,6 +294,7 @@ export const Timeline: React.FC = () => {
       <div className="flex flex-row relative min-h-[300px] overflow-hidden">
         <div
           ref={scrollRef}
+          data-timeline-scroll=""
           className={`flex-1 overflow-x-hidden overflow-y-auto max-h-[520px] ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
           onWheel={(e) => {
             // The native horizontal bar is replaced by TimelineScrollbar, so handle sideways scrolling here
@@ -306,9 +308,9 @@ export const Timeline: React.FC = () => {
             style={{ width: HEADER_WIDTH + TOTAL_BARS * zoom }}
             onPointerDown={handleLanePointerDown}
             onPointerDownCapture={(e) => {
-              // Selected automation points stay selected only while the user works in their lane
+              // Selected automation points stay selected only while the user works in their lane (or its menu)
               const s = useTimelineStore.getState();
-              if (s.automationSelection && !(e.target as Element).closest('[data-automation-lane]')) s.selectAutomationPoints(null);
+              if (s.automationSelection && !(e.target as Element).closest('[data-automation-lane], [data-automation-menu]')) s.selectAutomationPoints(null);
             }}
           >
             {/* Ruler row */}

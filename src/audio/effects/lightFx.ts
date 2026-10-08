@@ -66,7 +66,7 @@ export function createLightEq3(lowFrequency = 400, highFrequency = 2500): LightE
   const highGain = new Tone.Gain(1);
   const raw = input.context.rawContext as unknown as BaseAudioContext;
   const writer = (gain: Tone.Gain) =>
-    createParamWriter(gain.gain.input as AudioParam, { now: () => input.context.now(), sampleRate: raw.sampleRate, initial: 1 });
+    createParamWriter(gain.gain.input as AudioParam, { raw, now: () => input.context.now(), initial: 1 });
 
   input.fan(low, lowMid, high);
   low.chain(lowGain, output);
@@ -290,6 +290,25 @@ export interface LightFilter extends LightInsert {
   shape: () => string;
 }
 
+/**
+ * Make a biquad's cutoff and Q change once per 128-sample render block (3 ms) instead of every
+ * sample. While either moves (a lane's sweep, a ramp), Chrome otherwise works out new filter
+ * coefficients for each sample: on six tracks with busy cutoff lanes that was about 40% more
+ * render CPU, for a difference no one can hear in a sweep. Live, the node is
+ * standardized-audio-context's wrapper, whose params don't pass automationRate on, so it's set on
+ * the native node the wrapper keeps (the export's nodes are native already). If that's ever
+ * missing, the filter just stays per-sample, and still sounds the same.
+ */
+function blockRate(node: BiquadFilterNode): void {
+  const native = (node as BiquadFilterNode & { _nativeBiquadFilterNode?: BiquadFilterNode })._nativeBiquadFilterNode ?? node;
+  try {
+    native.frequency.automationRate = 'k-rate';
+    native.Q.automationRate = 'k-rate';
+  } catch {
+    // A browser without automationRate (or one that refuses it here): per-sample it is
+  }
+}
+
 /** Q of the first of two cascaded stages in a 4th-order Butterworth filter (the second's is 1.31). */
 const BUTTERWORTH_Q1 = 1 / (2 * Math.cos(Math.PI / 8));
 
@@ -308,8 +327,10 @@ export function createLightFilter(): LightFilter {
   const raw = input.context.rawContext as unknown as BaseAudioContext;
   const first = raw.createBiquadFilter();
   const second = raw.createBiquadFilter();
+  blockRate(first);
+  blockRate(second);
   input.connect(first);
-  const writer = (param: AudioParam) => createParamWriter(param, { now: () => input.context.now(), sampleRate: raw.sampleRate, initial: param.value });
+  const writer = (param: AudioParam) => createParamWriter(param, { raw, now: () => input.context.now(), initial: param.value });
   const stages = [first, second].map((stage) => ({ frequency: writer(stage.frequency), q: writer(stage.Q) }));
   let applied: FilterSettings | null = null;
 
