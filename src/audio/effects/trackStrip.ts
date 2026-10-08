@@ -22,6 +22,9 @@ export interface TrackStrip {
   dispose: () => void;
 }
 
+/** The volume of a fader pulled all the way down: a gain of 1e-10, far below hearing. */
+const FADER_SILENT_DB = -200;
+
 /** An insert in the chain: where the signal goes in and where it comes out. */
 interface Insert {
   input: Tone.ToneAudioNode;
@@ -135,7 +138,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
       rewire();
 
-      set(channel.volume, track.volume <= -60 ? -Infinity : track.volume, ramp);
+      // The fader's bottom (-60) is silence, but not -Infinity: Tone's Channel takes a volume of
+      // -Infinity to mean muted, so the unmute below put a set-at-once fader (the WAV export's)
+      // back to 0 dB, and a track faded all the way down played at full volume in the export
+      set(channel.volume, track.volume <= -60 ? FADER_SILENT_DB : track.volume, ramp);
       set(channel.pan, track.pan, ramp);
       channel.mute = opts.muteOverride ?? track.isMuted;
       if (opts.muteOverride === undefined) channel.solo = track.isSoloed;
