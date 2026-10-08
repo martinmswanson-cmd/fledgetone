@@ -241,6 +241,12 @@ const noiseBuffers = new WeakMap<BaseAudioContext, AudioBuffer>();
 
 /** Seconds of stereo white noise the FX loop (long enough that the repeat isn't heard under a sweep). */
 const NOISE_SECONDS = 4;
+/**
+ * The FX were voiced through a track strip that folded stereo to mono, where two unrelated noise
+ * streams averaged to half their power. The strip keeps both sides now, so each is 3 dB down to
+ * leave the FX as loud as they were voiced, only wide.
+ */
+const NOISE_LEVEL = Math.SQRT1_2;
 
 function noiseBuffer(raw: BaseAudioContext): AudioBuffer {
   let buffer = noiseBuffers.get(raw);
@@ -248,7 +254,7 @@ function noiseBuffer(raw: BaseAudioContext): AudioBuffer {
     buffer = raw.createBuffer(2, Math.round(NOISE_SECONDS * raw.sampleRate), raw.sampleRate);
     for (let c = 0; c < 2; c++) {
       const data = buffer.getChannelData(c);
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * NOISE_LEVEL;
     }
     noiseBuffers.set(raw, buffer);
   }
