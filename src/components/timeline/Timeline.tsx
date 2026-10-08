@@ -32,7 +32,7 @@ interface Marquee {
 
 /** Ids of clips whose on-screen box intersects the marquee (content-relative px). */
 function clipsInMarquee(m: Marquee): Set<string> {
-  const { clips, tracks, zoom } = useTimelineStore.getState();
+  const { clips, tracks, zoom, automationView } = useTimelineStore.getState();
   const left = Math.min(m.x0, m.x1);
   const right = Math.max(m.x0, m.x1);
   const top = Math.min(m.y0, m.y1);
@@ -41,7 +41,8 @@ function clipsInMarquee(m: Marquee): Set<string> {
   const hits = new Set<string>();
   for (const c of clips) {
     const row = rowOf.get(c.trackId);
-    if (row === undefined) continue;
+    // Clips under an open automation view are dimmed and can't be edited there
+    if (row === undefined || automationView[c.trackId]?.open) continue;
     const cx0 = HEADER_WIDTH + (c.startBar - 1) * zoom;
     const cx1 = cx0 + c.lengthBars * zoom;
     const cy0 = RULER_HEIGHT + row * TRACK_HEIGHT;
@@ -262,9 +263,11 @@ export const Timeline: React.FC = () => {
         s.seek(s.loopRegion.inBar);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        s.deleteSelectedClips();
+        // Selected automation points first (selecting them is the last thing the user did)
+        if (!s.deleteSelectedAutomationPoints()) s.deleteSelectedClips();
       } else if (e.key === 'Escape') {
         s.clearSelection();
+        s.selectAutomationPoints(null);
       } else if (e.key === '=' || e.key === '+') {
         s.setZoom(s.zoom * 1.25);
       } else if (e.key === '-') {
@@ -291,6 +294,7 @@ export const Timeline: React.FC = () => {
       <div className="flex flex-row relative min-h-[300px] overflow-hidden">
         <div
           ref={scrollRef}
+          data-timeline-scroll=""
           className={`flex-1 overflow-x-hidden overflow-y-auto max-h-[520px] ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
           onWheel={(e) => {
             // The native horizontal bar is replaced by TimelineScrollbar, so handle sideways scrolling here
@@ -303,6 +307,11 @@ export const Timeline: React.FC = () => {
             className="relative"
             style={{ width: HEADER_WIDTH + TOTAL_BARS * zoom }}
             onPointerDown={handleLanePointerDown}
+            onPointerDownCapture={(e) => {
+              // Selected automation points stay selected only while the user works in their lane (or its menu)
+              const s = useTimelineStore.getState();
+              if (s.automationSelection && !(e.target as Element).closest('[data-automation-lane], [data-automation-menu]')) s.selectAutomationPoints(null);
+            }}
           >
             {/* Ruler row */}
             <div className="sticky top-0 z-[25] flex" style={{ height: RULER_HEIGHT }}>
@@ -360,7 +369,7 @@ export const Timeline: React.FC = () => {
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
         + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads from the sound deck onto a track •
-        Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • ? guide
+        Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • curve button: automation • ? guide
       </div>
 
       {menu && <ClipContextMenu menu={menu} onClose={closeMenu} />}

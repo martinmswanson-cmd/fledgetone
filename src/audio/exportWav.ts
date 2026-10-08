@@ -6,6 +6,7 @@ import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument } from './instruments';
 import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
+import { createAutomationSchedule } from './automationSchedule';
 import { isSamplerKey, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar } from './transport';
@@ -459,11 +460,13 @@ async function renderTracks(
     }
 
     const strips: TrackStrip[] = [];
+    const stripOf = new Map<string, TrackStrip>();
     const instruments = new Map<string, TrackInstrument>();
     for (const track of tracks) {
       const strip = createTrackStrip(mix.bus, mix.busFx);
       strip.apply(track, { ramp: 0, muteOverride: false });
       strips.push(strip);
+      stripOf.set(track.id, strip);
       instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample }));
     }
     await Promise.all([mix.busFx.ready, ...[...instruments.values()].map((i) => i.ready)]);
@@ -492,6 +495,11 @@ async function renderTracks(
     schedule.update(followsKick ? [...tracks, ...kickTracks.filter((t) => !instruments.has(t.id))] : tracks, clips);
     const pumpClock = createPumpClock(transport, () => strips, barToTicks(startBar), barToTicks(endBar));
     pumpClock.update();
+    // Automated settings start at their lanes' values at the range start, set before the render
+    // begins, and follow the lanes from when the Transport starts
+    const automation = createAutomationSchedule(transport, (trackId) => stripOf.get(trackId), { holdGlide: 0 });
+    automation.hold(startBar);
+    automation.update(tracks);
     transport.start(plan.startAt, `${barToTicks(startBar)}i`);
     // Stop at endBar (after the last pass of a seamless loop): the render runs on for the
     // tail, and notes after endBar (the rest of the song, past a loop region's Out) must not
@@ -503,6 +511,7 @@ async function renderTracks(
       dispose: () => {
         schedule.dispose();
         pumpClock.dispose();
+        automation.dispose();
         instruments.forEach((i) => i.dispose());
         strips.forEach((s) => s.dispose());
         mix.busFx.dispose();

@@ -5,6 +5,7 @@ import { snapBar } from '../../store/timelineTypes';
 import { dragInstrument, readDragPayload } from '../../store/dragSounds';
 import { compatibleInstruments } from '../../audio/instrumentCatalog';
 import { ClipView } from './ClipView';
+import { AutomationLane } from './AutomationLane';
 import { LaneFrameGrid } from './LaneFrameGrid';
 import type { ContextMenuState } from './ClipContextMenu';
 import { barFromClientX } from './Playhead';
@@ -20,7 +21,8 @@ interface TrackLaneProps {
  * Horizontal lane holding a track's clips over a bar/beat grid. Empty-space clicks and marquee
  * drags are handled by Timeline (via data-lane). Here: right-click menu, double-click to create
  * an empty clip and open it, dropping sounds/patterns from the deck (matching instrument only),
- * and the highlight while clips are dragged between tracks.
+ * and the highlight while clips are dragged between tracks. In automation view an envelope editor
+ * covers the clips (see AutomationLane).
  */
 export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMenu }) => {
   const zoom = useTimelineStore((s) => s.zoom);
@@ -31,6 +33,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
   // LaneFrameGrid marks the frames instead.
   const fineGridPx = useTimelineStore((s) => (s.snapGrid !== 'frame' && s.zoom >= 256 ? s.zoom / 16 : 0));
   const clipDropTarget = useTimelineStore((s) => s.clipDragTargets?.has(track.id) ?? false);
+  const automation = useTimelineStore((s) => s.automationView[track.id]);
   const [dropBar, setDropBar] = useState<number | null>(null);
   const trackClips = clips.filter((c) => c.trackId === track.id);
 
@@ -93,6 +96,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
       {trackClips.map((clip) => (
         <ClipView key={clip.id} clip={clip} track={track} originRef={originRef} onOpenMenu={onOpenMenu} />
       ))}
+      {automation?.open && <AutomationLane track={track} param={automation.param} />}
 
       {accepts && dropBar !== null && (
         <div
