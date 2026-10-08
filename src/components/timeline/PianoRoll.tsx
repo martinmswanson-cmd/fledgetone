@@ -59,21 +59,53 @@ function rowIndexOf(rows: Row[], note: string): number {
   return index >= 0 && index < rows.length ? index : -1;
 }
 
+/**
+ * Note positions and lengths are worked out in 96ths of a bar ("units"): a 1/32 is 3, a 1/16
+ * triplet 4 (three in the space of two 16ths), a 1/16 6 and a 1/8 triplet 8. A unit is 8
+ * Transport ticks, so a note placed on any grid lands exactly on its tick and never drifts.
+ */
+const UNITS_PER_BAR = 96;
+/** The zoom (`stepW`) is in pixels per 16th. */
+const UNITS_PER_16TH = 6;
+const UNITS_PER_BEAT = 24;
+
 const GRID_OPTIONS = [
-  { label: '1/16', steps: 1 },
-  { label: '1/8', steps: 2 },
-  { label: '1/4', steps: 4 },
+  { label: '1/32', units: 3 },
+  { label: '1/16T', units: 4 },
+  { label: '1/16', units: 6 },
+  { label: '1/8T', units: 8 },
+  { label: '1/8', units: 12 },
+  { label: '1/4', units: 24 },
 ];
 
 const LENGTH_OPTIONS = [
-  { label: '1/16', steps: 1 },
-  { label: '1/8', steps: 2 },
-  { label: '1/8 dotted', steps: 3 },
-  { label: '1/4', steps: 4 },
-  { label: '1/4 dotted', steps: 6 },
-  { label: '1/2', steps: 8 },
-  { label: '1 bar', steps: 16 },
+  { label: '1/32', units: 3 },
+  { label: '1/16T', units: 4 },
+  { label: '1/16', units: 6 },
+  { label: '1/8T', units: 8 },
+  { label: '1/8', units: 12 },
+  { label: '1/8 dotted', units: 18 },
+  { label: '1/4', units: 24 },
+  { label: '1/4 dotted', units: 36 },
+  { label: '1/2', units: 48 },
+  { label: '1 bar', units: 96 },
 ];
+
+/**
+ * Bars as units: a whole number for anything on the 96th grid (every note the piano roll places),
+ * so moving it adds whole units with no rounding error; anything else (notes moved by a trim to
+ * a frame position) keeps its exact place.
+ */
+function unitsOf(bars: number): number {
+  const units = bars * UNITS_PER_BAR;
+  const whole = Math.round(units);
+  return Math.abs(units - whole) < 1e-6 ? whole : units;
+}
+
+const noteUnits = (n: NoteEvent) => unitsOf(durationToBars(n.duration));
+
+/** The width of a note's resize handle: narrower on short notes, so there's still room to grab the note itself. */
+const edgeOf = (noteWidth: number) => Math.min(EDGE_PX, noteWidth / 3);
 
 let audioReady = false;
 /** Play notes through the clip's track (its instrument and effects), starting audio if needed. */
@@ -134,8 +166,9 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const isDrums = isDrumKind(instrument);
   const rowH = isDrums ? 30 : 16;
   const [stepW, setStepW] = useState(24);
-  const [gridSteps, setGridSteps] = useState(1);
-  const [lengthSteps, setLengthSteps] = useState(isDrums ? 1 : 2);
+  const unitW = stepW / UNITS_PER_16TH;
+  const [gridUnits, setGridUnits] = useState(UNITS_PER_16TH);
+  const [lengthUnits, setLengthUnits] = useState(isDrums ? 6 : 12);
   const [velocity, setVelocity] = useState(0.8);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const gridRef = useRef<HTMLDivElement>(null);
@@ -149,19 +182,29 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     if (needed.length > rows.length) setRows(needed);
   }, [clip.notes, instrument, isDrums, rows.length]);
 
-  const totalSteps = Math.round(clip.lengthBars * 16);
-  /** 16ths from the start of the bar the clip begins in (clips may start mid-bar). */
-  const startStep = Math.round((clip.startBar - 1) * 16);
-  const phase = ((startStep % 16) + 16) % 16;
+  const totalUnits = Math.round(clip.lengthBars * UNITS_PER_BAR);
+  /** Where the clip starts, in units from bar 1 (clips may start mid-bar): the grid lines up with the song. */
+  const clipUnits = unitsOf(clip.startBar - 1);
   const beatMarks = useMemo(() => {
-    const marks: { step: number; bar: number; beat: number }[] = [];
-    for (let step = (4 - (startStep % 4)) % 4; step < totalSteps; step += 4) {
-      const abs = startStep + step;
-      marks.push({ step, bar: Math.floor(abs / 16) + 1, beat: Math.floor((abs % 16) / 4) + 1 });
+    const marks: { at: number; bar: number; beat: number }[] = [];
+    for (let abs = Math.ceil(clipUnits / UNITS_PER_BEAT - 1e-9) * UNITS_PER_BEAT; abs - clipUnits < totalUnits; abs += UNITS_PER_BEAT) {
+      marks.push({ at: abs - clipUnits, bar: Math.floor(abs / UNITS_PER_BAR) + 1, beat: Math.floor((abs % UNITS_PER_BAR) / UNITS_PER_BEAT) + 1 });
     }
     return marks;
-  }, [startStep, totalSteps]);
-  const gridW = totalSteps * stepW;
+  }, [clipUnits, totalUnits]);
+  const gridW = totalUnits * unitW;
+  /** The nearest grid line to `u` (units from the clip start). */
+  const snapUnits = (u: number) => Math.round((u + clipUnits) / gridUnits) * gridUnits - clipUnits;
+  /**
+   * Thin lines every `period` units, counted from bar 1, as a CSS background. A repeating
+   * gradient rather than tiles, which would drift where a period isn't a whole number of pixels.
+   */
+  const lines = (period: number, color: string) => {
+    const at = (((-clipUnits % period) + period) % period) * unitW;
+    return `repeating-linear-gradient(to right, ${color} ${at}px, ${color} ${at + 1}px, transparent ${at + 1}px, transparent ${at + period * unitW}px)`;
+  };
+  /** Triplet and 1/32 grids get their own lines; coarser ones keep the 16th lines. */
+  const lineUnits = gridUnits % UNITS_PER_16TH === 0 ? UNITS_PER_16TH : gridUnits;
   const gridH = rows.length * rowH;
 
   const visibleNotes = useMemo(
@@ -181,7 +224,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
 
   const local = (clientX: number, clientY: number) => {
     const r = gridRef.current!.getBoundingClientRect();
-    return { step: (clientX - r.left) / stepW, row: Math.floor((clientY - r.top) / rowH), x: clientX - r.left, y: clientY - r.top };
+    return { units: (clientX - r.left) / unitW, row: Math.floor((clientY - r.top) / rowH), x: clientX - r.left, y: clientY - r.top };
   };
 
   const currentNotes = () => useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? [];
@@ -191,14 +234,33 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const store = useTimelineStore.getState();
     const origin = local(e.clientX, e.clientY);
     const originals = new Map(currentNotes().filter((n) => ids.has(n.id)).map((n) => [n.id, n]));
+    const primary = originals.get(primaryId);
+    const starts = [...originals.values()].map((n) => unitsOf(n.startOffset));
+    // A move keeps every dragged note inside the clip: start >= 0 and before the clip's end
+    const minShift = -Math.min(...starts);
+    const maxShift = totalUnits - Math.max(...starts);
     let recorded = alreadyRecorded;
     let lastRowShift = 0;
 
     trackPointer(mode === 'move' ? 'grabbing' : 'ew-resize', (ev) => {
       const p = local(ev.clientX, ev.clientY);
-      const dSteps = Math.round((p.x - origin.x) / stepW / gridSteps) * gridSteps;
+      const pulled = (p.x - origin.x) / unitW;
+      // Nothing moves until the pointer has gone half a grid step. Then the grabbed note's start
+      // (its end, for a resize) snaps to the grid, like a clip on the timeline, and the other
+      // notes move by as much. Notes already on the grid move by whole grid steps.
+      let dUnits = 0;
+      if (primary && Math.abs(pulled) >= gridUnits / 2) {
+        const anchor = unitsOf(primary.startOffset) + (mode === 'resize' ? noteUnits(primary) : 0);
+        dUnits = snapUnits(anchor + pulled) - anchor;
+        if (mode === 'move') {
+          // Held back by whole grid steps at either end of the clip, so the notes stay on the grid
+          if (dUnits < minShift) dUnits += Math.ceil((minShift - dUnits) / gridUnits - 1e-9) * gridUnits;
+          if (dUnits > maxShift - 1e-6) dUnits -= (Math.floor((dUnits - maxShift) / gridUnits + 1e-9) + 1) * gridUnits;
+          if (dUnits < minShift) dUnits = 0;
+        }
+      }
       const dRows = mode === 'move' ? Math.round((p.y - origin.y) / rowH) : 0;
-      if (!recorded && (dSteps !== 0 || dRows !== 0)) {
+      if (!recorded && (dUnits !== 0 || dRows !== 0)) {
         store.checkpoint();
         recorded = true;
       }
@@ -206,13 +268,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         const o = originals.get(n.id);
         if (!o) return n;
         if (mode === 'resize') {
-          const startStep = Math.round(o.startOffset * 16);
-          const len = Math.max(gridSteps, Math.min(totalSteps - startStep, Math.round(durationToBars(o.duration) * 16) + dSteps));
-          return { ...n, duration: barsToDuration(len / 16) };
+          const start = unitsOf(o.startOffset);
+          const len = Math.max(gridUnits, Math.min(totalUnits - start, noteUnits(o) + dUnits));
+          return { ...n, duration: barsToDuration(len / UNITS_PER_BAR) };
         }
-        const step = Math.max(0, Math.min(totalSteps - 1, Math.round(o.startOffset * 16) + dSteps));
         const rowIdx = Math.max(0, Math.min(rows.length - 1, rowIndexOf(rows, o.note) + dRows));
-        return { ...n, startOffset: step / 16, note: rows[rowIdx].note };
+        return { ...n, startOffset: (unitsOf(o.startOffset) + dUnits) / UNITS_PER_BAR, note: rows[rowIdx].note };
       });
       store.setClipNotes(clip.id, next);
 
@@ -244,7 +305,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       if (!sel.has(id)) return;
       const note = currentNotes().find((n) => n.id === id);
       if (note) void preview(clip.trackId, [{ ...note, duration: '16n' }]);
-      const resize = e.clientX > noteEl.getBoundingClientRect().right - EDGE_PX;
+      const rect = noteEl.getBoundingClientRect();
+      const resize = e.clientX > rect.right - edgeOf(rect.width);
       startDrag(e, resize ? new Set([id]) : sel, resize ? 'resize' : 'move', false, id);
       return;
     }
@@ -253,9 +315,10 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const p = local(e.clientX, e.clientY);
     const row = rows[p.row];
     if (!row) return;
-    const step = Math.max(0, Math.min(totalSteps - 1, Math.floor(p.step / gridSteps) * gridSteps));
-    const len = Math.min(lengthSteps, totalSteps - step);
-    const note = { note: row.note, startOffset: step / 16, duration: barsToDuration(len / 16), velocity };
+    // The grid line at or before the click
+    const start = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
+    const len = Math.min(lengthUnits, totalUnits - start);
+    const note = { note: row.note, startOffset: start / UNITS_PER_BAR, duration: barsToDuration(len / UNITS_PER_BAR), velocity };
     const [id] = useTimelineStore.getState().addNotes(clip.id, [note]);
     setSelected(new Set([id]));
     void preview(clip.trackId, [{ ...note, duration: '16n' }]);
@@ -303,30 +366,36 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       }
 
       const arrows: Record<string, [number, number]> = {
-        ArrowLeft: [-gridSteps, 0],
-        ArrowRight: [gridSteps, 0],
+        ArrowLeft: [-gridUnits, 0],
+        ArrowRight: [gridUnits, 0],
         ArrowUp: [0, e.shiftKey && !isDrums ? -12 : -1],
         ArrowDown: [0, e.shiftKey && !isDrums ? 12 : 1],
       };
       const delta = arrows[e.key];
       if (!delta) return;
       handled();
+      const [dUnits, dRows] = delta;
+      const notes = currentNotes();
+      // The selection moves one grid step as a block: at the clip's edge it stays put rather than bunching up
+      const outside = (n: NoteEvent) => {
+        const u = unitsOf(n.startOffset) + dUnits;
+        return u < 0 || u > totalUnits - 1e-6;
+      };
+      if (notes.some((n) => selected.has(n.id) && outside(n))) return;
       store.checkpoint();
-      const [dSteps, dRows] = delta;
       store.setClipNotes(
         clip.id,
-        currentNotes().map((n) => {
+        notes.map((n) => {
           if (!selected.has(n.id)) return n;
-          const step = Math.max(0, Math.min(totalSteps - 1, Math.round(n.startOffset * 16) + dSteps));
           const rowIdx = Math.max(0, Math.min(rows.length - 1, rowIndexOf(rows, n.note) + dRows));
-          return { ...n, startOffset: step / 16, note: rows[rowIdx].note };
+          return { ...n, startOffset: (unitsOf(n.startOffset) + dUnits) / UNITS_PER_BAR, note: rows[rowIdx].note };
         })
       );
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, visibleNotes, gridSteps, rows, totalSteps, clip.id, isDrums]);
+  }, [selected, visibleNotes, gridUnits, rows, totalUnits, clip.id, isDrums]);
 
   // Velocity slider edits the selection when there is one, else sets the velocity for new notes
   const selectedVelocity = (() => {
@@ -361,17 +430,17 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         </div>
         <label className="flex items-center gap-1.5">
           GRID
-          <select className={select} value={gridSteps} onChange={(e) => setGridSteps(Number(e.target.value))}>
+          <select className={select} value={gridUnits} onChange={(e) => setGridUnits(Number(e.target.value))}>
             {GRID_OPTIONS.map((o) => (
-              <option key={o.steps} value={o.steps}>{o.label}</option>
+              <option key={o.units} value={o.units}>{o.label}</option>
             ))}
           </select>
         </label>
         <label className="flex items-center gap-1.5">
           NEW NOTE
-          <select className={select} value={lengthSteps} onChange={(e) => setLengthSteps(Number(e.target.value))}>
+          <select className={select} value={lengthUnits} onChange={(e) => setLengthUnits(Number(e.target.value))}>
             {LENGTH_OPTIONS.map((o) => (
-              <option key={o.steps} value={o.steps}>{o.label}</option>
+              <option key={o.units} value={o.units}>{o.label}</option>
             ))}
           </select>
         </label>
@@ -419,18 +488,28 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             style={{ height: RULER_H, width: KEY_W + gridW }}
             onPointerDown={(e) => {
               const r = gridRef.current!.getBoundingClientRect();
-              const step = Math.max(0, (e.clientX - r.left) / stepW);
-              useTimelineStore.getState().seek(clip.startBar + step / 16);
+              const units = Math.max(0, (e.clientX - r.left) / unitW);
+              useTimelineStore.getState().seek(clip.startBar + units / UNITS_PER_BAR);
             }}
             title="Click to move the playhead"
           >
             <div className="sticky left-0 z-10 shrink-0 bg-forge-panel border-r border-forge-border" style={{ width: KEY_W }} />
-            <div className="relative" style={{ width: gridW }}>
-              {beatMarks.map(({ step, bar, beat }) => (
+            <div
+              className="relative"
+              style={{
+                width: gridW,
+                // Ticks along the bottom at the grid's spacing
+                backgroundImage: lines(lineUnits, 'rgba(255,255,255,0.18)'),
+                backgroundSize: '100% 4px',
+                backgroundPosition: 'left bottom',
+                backgroundRepeat: 'no-repeat',
+              }}
+            >
+              {beatMarks.map(({ at, bar, beat }) => (
                 <span
-                  key={step}
+                  key={at}
                   className={`absolute top-[3px] text-[10px] font-mono tabular-nums ${beat === 1 ? 'text-forge-text' : 'text-forge-muted/70'}`}
-                  style={{ left: step * stepW + 3 }}
+                  style={{ left: at * unitW + 3 }}
                 >
                   {bar}.{beat}
                 </span>
@@ -478,19 +557,21 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
-                  backgroundImage:
-                    'linear-gradient(to right, rgba(255,255,255,0.28) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.12) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px)',
-                  backgroundSize: `${stepW * 16}px 100%, ${stepW * 4}px 100%, ${stepW}px 100%`,
-                  // Line the bar/beat lines up with the song, not the clip start
-                  backgroundPosition: `${(((16 - phase) % 16) * stepW)}px 0, ${(((4 - (phase % 4)) % 4) * stepW)}px 0, 0 0`,
+                  // Bar, beat and grid lines, lined up with the song, not the clip start
+                  backgroundImage: [
+                    lines(UNITS_PER_BAR, 'rgba(255,255,255,0.28)'),
+                    lines(UNITS_PER_BEAT, 'rgba(255,255,255,0.12)'),
+                    lines(lineUnits, 'rgba(255,255,255,0.05)'),
+                  ].join(', '),
                 }}
               />
 
               {visibleNotes.map((n) => {
                 const idx = rowIndexOf(rows, n.note);
                 if (idx < 0) return null;
-                const start = Math.round(n.startOffset * 16);
-                const len = Math.max(1, Math.min(totalSteps - start, durationToBars(n.duration) * 16));
+                const start = unitsOf(n.startOffset);
+                const len = Math.min(totalUnits - start, noteUnits(n));
+                const width = Math.max(4, len * unitW - 2);
                 const isSel = selected.has(n.id);
                 return (
                   <div
@@ -498,8 +579,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                     data-note-id={n.id}
                     className={`absolute rounded-[3px] border cursor-grab ${isSel ? 'border-white ring-1 ring-white/80 z-10' : 'border-black/50'}`}
                     style={{
-                      left: start * stepW + 1,
-                      width: Math.max(6, len * stepW - 2),
+                      left: start * unitW + 1,
+                      width,
                       top: idx * rowH + 1,
                       height: rowH - 2,
                       backgroundColor: color,
@@ -511,7 +592,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                     }}
                     title={`${isDrums ? rows[idx].label : n.note} • velocity ${Math.round(n.velocity * 100)}`}
                   >
-                    <div className="absolute right-0 top-0 bottom-0 cursor-ew-resize" style={{ width: EDGE_PX }} />
+                    <div className="absolute right-0 top-0 bottom-0 cursor-ew-resize" style={{ width: edgeOf(width) }} />
                   </div>
                 );
               })}
