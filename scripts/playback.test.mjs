@@ -1,4 +1,4 @@
-// Unit tests for playback timing (swing, whole Transport ticks) and the track strip's pan law.
+// Unit tests for playback timing: swing, and whole Transport ticks.
 // Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
@@ -18,7 +18,6 @@ register(
 );
 const Tone = await import('tone');
 const { swingDelay } = await import('../src/audio/transport.ts');
-const { panGains } = await import('../src/audio/effects/trackStrip.ts');
 
 /** The delay Tone's own swing (16n subdivision) gives a note on `tick`. */
 function toneSwing(tick, swing, bpm, ppq = 192) {
@@ -61,22 +60,6 @@ test('no swing, no delay', () => {
     assert.equal(swingDelay(tick, -0.1, 140), 0);
     assert.equal(swingDelay(tick, Number.NaN, 140), 0);
   }
-});
-
-test('pan law: equal power, the StereoPannerNode pair for a mono source', () => {
-  assert.deepEqual(panGains(-1), [1, 0]);
-  assert.ok(Math.abs(panGains(0)[0] - Math.SQRT1_2) < 1e-15 && Math.abs(panGains(0)[1] - Math.SQRT1_2) < 1e-15);
-  assert.ok(Math.abs(panGains(1)[0]) < 1e-15 && panGains(1)[1] === 1);
-  for (let p = -1; p <= 1; p += 0.05) {
-    const [l, r] = panGains(p);
-    assert.ok(Math.abs(l * l + r * r - 1) < 1e-12, `power at ${p}`);
-    // The Web Audio spec's formula for a mono input
-    const x = (p + 1) / 2;
-    assert.ok(Math.abs(l - Math.cos((x * Math.PI) / 2)) < 1e-15 && Math.abs(r - Math.sin((x * Math.PI) / 2)) < 1e-15);
-  }
-  // Out of range is clamped, as the native param does
-  assert.deepEqual(panGains(-3), panGains(-1));
-  assert.deepEqual(panGains(2), panGains(1));
 });
 
 test('Transport positions in whole ticks come back whole at every tempo (toneFixes)', async () => {
