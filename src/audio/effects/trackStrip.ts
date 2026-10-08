@@ -29,10 +29,12 @@ import {
  *
  * The channel is stereo. Tone.Channel's panner folds whatever reaches it to mono first, so a
  * Supersaw's spread, a chorus or a stereo sample lost its width at the strip. The pan here is a
- * balance: each side has its own gain, the equal-power pair StereoPannerNode gives a mono
- * source (cos and sin, -3 dB each at the centre). A mono source is spread to both sides first,
- * so it pans exactly as it did through Tone.Channel; a stereo one keeps its width, and the pan
- * turns down the side it moves away from.
+ * balance made of two of those same mono panners, one per side: the left one pans the left
+ * channel and keeps its left output; the right one pans the right channel at the mirror-image
+ * position, so its left output is the right side's share. Each side gets the equal-power gain
+ * Tone.Channel gave a mono source (-3 dB at the centre), sample for sample, ramps included. So a
+ * mono source (spread to both sides first) pans exactly as before, and a stereo one keeps its
+ * width while the pan turns down the side it moves away from.
  *
  * Automation: while a lane with points owns a setting, apply() leaves that setting to the lane
  * (automationSchedule.ts writes it) and puts the track's own value back when the lane goes. Pan,
@@ -71,38 +73,68 @@ interface Insert {
 }
 
 /**
- * The gains a pan position gives the left and right channels: equal power, as Web Audio's
- * StereoPannerNode pans a mono source (its formula exactly).
+ * Read a DelayNode's delay time once per render block, not per sample (its delay never moves). Live,
+ * the node is standardized-audio-context's wrapper, whose params don't pass automationRate on, so
+ * it's set on the native node the wrapper keeps; if that's missing it just stays per-sample.
  */
-export function panGains(pan: number): [left: number, right: number] {
-  const angle = ((Math.max(-1, Math.min(1, pan)) + 1) * Math.PI) / 4;
-  return [Math.cos(angle), Math.sin(angle)];
+function blockRateDelay(node: DelayNode): void {
+  const native = (node as DelayNode & { _nativeAudioNode?: DelayNode })._nativeAudioNode ?? node;
+  try {
+    native.delayTime.automationRate = 'k-rate';
+  } catch {
+    // A browser without automationRate: per-sample it is
+  }
+}
+
+/** An equal-power panner for one channel (`discrete`: of a stereo input it takes the first). */
+function monoPanner(raw: BaseAudioContext, interpretation: ChannelInterpretation): StereoPannerNode {
+  const panner = raw.createStereoPanner();
+  panner.channelCount = 1;
+  panner.channelCountMode = 'explicit';
+  panner.channelInterpretation = interpretation;
+  return panner;
 }
 
 export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackStrip {
   const input = new Tone.Gain(1);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  // A delay of nothing, which passes the sound through sample for sample. It is here for the live
+  // context's standardized-audio-context, which on every connect walks every path downstream of
+  // it looking for loops, and stops only at a DelayNode. Every note connects new nodes, and each
+  // walk went on through the strip, the sends and the master chain: a fifth of the main thread
+  // while a dense song played. Stopped here, a note's walk covers only its own instrument. With
+  // its delay time fixed per render block it costs about what a gain does. (The WAV export's
+  // native context does no such walking, so there the strip starts at its input.)
+  const barrier = typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext ? null : raw.createDelay(0.01);
+  if (barrier) {
+    blockRateDelay(barrier);
+    input.connect(barrier);
+  }
+  /** Where the chain of inserts starts. */
+  const head = barrier ?? input;
   const solo = new Tone.Solo();
-  // A mono source becomes the same sound on both sides here, for the balance to split
+  // A mono source becomes the same sound on both sides here, for the pan to take apart
   solo.channelCount = 2;
   solo.channelCountMode = 'explicit';
   const fader = new Tone.Volume(0);
   const reverbSend = new Tone.Gain(0);
   const delaySend = new Tone.Gain(0);
-  const raw = input.context.rawContext as unknown as BaseAudioContext;
 
-  // The balance: a gain per side, between the solo and the fader
+  // The pan (see above), between the solo and the fader. Each input of the merge keeps only the
+  // first channel of what comes in: the left panner's left output, the right panner's left output.
+  const left = monoPanner(raw, 'discrete');
+  const right = monoPanner(raw, 'speakers');
   const split = raw.createChannelSplitter(2);
   const merge = raw.createChannelMerger(2);
-  const left = raw.createGain();
-  const right = raw.createGain();
-  solo.connect(split);
-  split.connect(left, 0);
+  merge.channelInterpretation = 'discrete';
+  Tone.connect(solo, left);
+  Tone.connect(solo, split);
   split.connect(right, 1);
   left.connect(merge, 0, 0);
   right.connect(merge, 0, 1);
-  merge.connect(fader.input.input as unknown as AudioNode);
+  Tone.connect(merge, fader);
 
-  input.connect(solo);
+  Tone.connect(head, solo);
   fader.connect(bus);
   fader.connect(reverbSend);
   reverbSend.connect(busFx.reverbInput);
@@ -123,9 +155,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   const now = () => input.context.now();
   const writer = (param: Tone.Param<any>, initial: number) =>
     createParamWriter(param.input as AudioParam, { raw, now, initial });
-  // (A gain's own value until the first apply(), which sets the pan before anything sounds)
-  const panLeft = createParamWriter(left.gain, { raw, now, initial: left.gain.value });
-  const panRight = createParamWriter(right.gain, { raw, now, initial: right.gain.value });
+  const panLeft = createParamWriter(left.pan, { raw, now, initial: 0 });
+  // At the mirror-image position (see above)
+  const panRight = createParamWriter(right.pan, { raw, now, initial: 0 });
   const reverbWriter = writer(reverbSend.gain, 0);
   const delayWriter = writer(delaySend.gain, 0);
   /** The Volume lane's own gain, and its writer: only while a Volume lane owns the level. */
@@ -141,7 +173,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   /** The fader level the channel plays at, in dB. */
   const faderDb = (track: Track) => (track.volume <= -60 ? FADER_SILENT_DB : track.volume);
 
-  /** Patch input -> active inserts -> solo, only when the set of inserts changed. */
+  /** Patch input (-> barrier) -> active inserts -> solo, only when the set of inserts changed. */
   const rewire = () => {
     const next: Insert[] = [];
     if (distortion) next.push({ input: distortion, output: distortion });
@@ -153,14 +185,14 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     if (laneGain) next.push({ input: laneGain.node, output: laneGain.node });
     if (next.length === chain.length && next.every((ins, i) => ins.input === chain[i].input)) return;
 
-    input.disconnect();
+    head.disconnect();
     chain.forEach((ins) => ins.output.disposed || ins.output.disconnect());
-    let from: Tone.ToneAudioNode = input;
+    let from: Tone.ToneAudioNode | AudioNode = head;
     for (const ins of next) {
-      from.connect(ins.input);
+      Tone.connect(from, ins.input);
       from = ins.output;
     }
-    from.connect(solo);
+    Tone.connect(from, solo);
     chain = next;
   };
 
@@ -334,9 +366,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       // two trade places, which Tone's ramp would undo).
       if (handoverUntil <= now()) set(fader.volume, owned.has('volume') ? 0 : faderDb(track), ramp);
       if (!owned.has('pan')) {
-        const [l, r] = panGains(track.pan);
-        panLeft.set(l, ramp);
-        panRight.set(r, ramp);
+        panLeft.set(track.pan, ramp);
+        panRight.set(-track.pan, ramp);
       }
       fader.mute = muted;
       if (opts.muteOverride === undefined) solo.solo = track.isSoloed;
@@ -357,8 +388,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
           return laneGain && !retiring ? [{ writer: laneGain.writer, map: gain }] : null;
         case 'pan':
           return [
-            { writer: panLeft, map: (pan) => panGains(pan)[0] },
-            { writer: panRight, map: (pan) => panGains(pan)[1] },
+            { writer: panLeft, map: same },
+            { writer: panRight, map: (pan) => -pan },
           ];
         case 'reverbSend':
           return [{ writer: reverbWriter, map: same }];
@@ -380,7 +411,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     dispose: () => {
       clearTimeout(retireTimer);
       [distortion, eq, compressor, makeup, chorus, filter, pump, laneGain?.node, input, solo, fader, reverbSend, delaySend].forEach((n) => n?.dispose());
-      [split, left, right, merge].forEach((n) => n.disconnect());
+      [barrier, left, split, right, merge].forEach((n) => n?.disconnect());
     },
   };
 }
