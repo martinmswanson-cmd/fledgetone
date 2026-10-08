@@ -238,9 +238,13 @@ const DURATION_BARS: Record<string, number> = {
   '32n': 0.03125,
 };
 
+/** Transport ticks in a bar: Tone's 192 per quarter note, in 4/4. */
+const TICKS_PER_BAR = 768;
+
 /**
- * Convert a Tone duration to bars (4/4). Handles notation ("8n"), dotted notation ("8n.")
- * and transport time "bars:quarters:sixteenths" (used for lengths drawn in the piano roll).
+ * Convert a Tone duration to bars (4/4). Handles notation ("8n"), dotted notation ("8n."),
+ * triplets ("8t", two thirds of an 8th), ticks ("80i") and transport time
+ * "bars:quarters:sixteenths" (used for lengths drawn in the piano roll).
  */
 export function durationToBars(duration: string): number {
   if (duration.includes(':')) {
@@ -249,17 +253,32 @@ export function durationToBars(duration: string): number {
     return bars > 0 ? bars : 0.0625;
   }
   if (duration.endsWith('.')) return (DURATION_BARS[duration.slice(0, -1)] ?? 0.0625) * 1.5;
+  if (duration.endsWith('t')) {
+    const straight = DURATION_BARS[`${duration.slice(0, -1)}n`];
+    return straight ? (straight * 2) / 3 : 0.0625;
+  }
+  if (/^\d+i$/.test(duration)) return Math.max(1, parseInt(duration, 10)) / TICKS_PER_BAR;
   return DURATION_BARS[duration] ?? 0.0625;
 }
 
 const NAMED_SIXTEENTHS: Record<number, string> = { 1: '16n', 2: '8n', 3: '8n.', 4: '4n', 6: '4n.', 8: '2n', 12: '2n.', 16: '1n' };
+/** Lengths finer than a 16th that have a name: a 32nd and the triplets. */
+const NAMED_TICKS: Record<number, string> = { 24: '32n', 32: '16t', 64: '8t', 128: '4t' };
 
-/** Inverse of durationToBars, rounded to whole 16ths: a named value when one fits, else "b:q:s". */
+/**
+ * Inverse of durationToBars, to the nearest tick. Whole 16ths come out as before (a named value
+ * when one fits, else "b:q:s"), so older versions of the app read them; finer lengths are a
+ * 32nd or a triplet by name ("32n", "16t", "8t", "4t"), else a tick count ("80i").
+ */
 export function barsToDuration(bars: number): string {
-  const sixteenths = Math.max(1, Math.round(bars * 16));
-  const named = NAMED_SIXTEENTHS[sixteenths];
-  if (named) return named;
-  return `${Math.floor(sixteenths / 16)}:${Math.floor((sixteenths % 16) / 4)}:${sixteenths % 4}`;
+  const ticks = Math.max(1, Math.round(bars * TICKS_PER_BAR));
+  if (ticks % 48 === 0) {
+    const sixteenths = ticks / 48;
+    const named = NAMED_SIXTEENTHS[sixteenths];
+    if (named) return named;
+    return `${Math.floor(sixteenths / 16)}:${Math.floor((sixteenths % 16) / 4)}:${sixteenths % 4}`;
+  }
+  return NAMED_TICKS[ticks] ?? `${ticks}i`;
 }
 
 let uidCounter = 0;
