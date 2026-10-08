@@ -15,7 +15,7 @@ At the top is the header: **TEMPO** and **TAP**, **Swing**, **MASTER** volume, *
 - **Instrument Browser**: try every instrument on an on-screen keyboard.
 - **Interactive Soundbank Audition Deck**: pads you can click or play from the keyboard, and drag onto the timeline.
 
-> The app always opens on an empty timeline. If your last session had clips, a banner offers to **Restore** it, saying when it was saved. It stays across reloads until you click **Restore** or **Dismiss**.
+> The app always opens on an empty timeline. If your last session had clips (or markers, with no clips yet), a banner offers to **Restore** it, saying how many and when it was saved. It stays across reloads until you click **Restore** or **Dismiss**.
 
 ## The timeline
 
@@ -72,7 +72,7 @@ The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cut
 - Zoom with the slider at the right of the toolbar, or `+` and `-` (they keep the playhead where it is on screen when it's visible). **Ctrl+mouse wheel** (Cmd on a Mac) or a trackpad pinch zooms around the pointer. Zoom goes from 12 to 1280 pixels per bar, deep enough to see single video frames.
 - Zoomed in, the lanes show faint lines on every 16th, or on every frame when SNAP is Frame.
 - Scroll in time with **Shift+mouse wheel**, a sideways trackpad swipe, or the **Overview** strip under the tracks: drag its cyan window to scroll, click anywhere on it to jump, and drag either end of the window to zoom.
-- While playing, the view follows the playhead.
+- While playing, the view follows the playhead. While stopped, a jump to a spot that's off screen (`,` and `.`, a position in the Markers list, **Go to In** or `Home`, or a position typed into a readout) scrolls the view to it.
 
 ### Undo
 
@@ -92,7 +92,7 @@ One slider adjustment is one step, whether you drag it, tap its arrow keys or do
 
 - **Play / Pause**: the green button or `Space`. Playback starts exactly at the playhead, and notes that start right there play. With the loop on, a playhead at or past OUT jumps straight back to IN, so to play later parts turn the loop off (`L`) or move OUT.
 - **Stop** (the square): stops and sends the playhead back to the loop's In point.
-- **Go to In** (the skip-back button, or `Home`).
+- **Go to In** (the skip-back button, or `Home`). If the In point is off screen, the view scrolls to it.
 - **Playhead**: click or drag anywhere on the ruler, or drag the red line. Works while playing too.
 
 ### The loop
@@ -105,7 +105,7 @@ The amber region on the ruler, between the **IN** and **OUT** brackets, is the l
 
 ### Going to an exact position
 
-Both readouts in the toolbar are also input boxes. Click one, type a position, and press **Enter** to jump the playhead there (`Esc` cancels):
+Both readouts in the toolbar are also input boxes. Click one, type a position, and press **Enter** to jump the playhead there, scrolling the view to it if it's off screen (`Esc` cancels):
 
 - **BAR.BEAT.TICK**: a bar (`17`), a bar and beat (`17.3`) or bar, beat and hundredths of a beat (`17.3.50`).
 - **TIMECODE**: a timecode (see below).
@@ -165,7 +165,7 @@ Markers are named points on the timeline: the sections of a song (intro, build, 
 - Press `M` to drop a marker at the playhead, even while playing. Markers are named **Marker 1**, **Marker 2** and so on. If a marker is already at that exact spot, nothing is added and a message says so.
 - Or right-click the time ruler and choose **Add marker here**: it goes where you clicked, on the snap grid (hold Shift for the exact point).
 - Or open the **Markers** list and click **At playhead**.
-- `,` (comma) jumps to the previous marker and `.` (period) to the next. While playing, `,` skips a marker you passed less than half a second ago, so pressing it again and again keeps going back. Holding the key down while playing jumps once; holding it while stopped steps through the markers one by one.
+- `,` (comma) jumps to the previous marker and `.` (period) to the next. While playing, `,` skips a marker you passed less than half a second ago, so pressing it again and again keeps going back. Holding the key down while playing jumps once; holding it while stopped steps through the markers one by one. If the marker is off screen, the view scrolls to it.
 
 ### Flags on the ruler
 
@@ -174,24 +174,24 @@ Each marker is a violet flag with its name in the ruler, just under the numbers,
 - **Click** a flag to move the playhead there.
 - **Drag** it to move the marker. It snaps to the SNAP grid; hold Shift for no snap.
 - **Double-click** it to rename it (up to 80 characters). Enter or a click anywhere else keeps the name; `Esc` cancels.
-- **Right-click** it for **Rename**, **Lock to time** (or **Lock to bar**) and **Delete**.
+- **Right-click** it for **Rename**, **Lock to time** (or **Lock to bar**) and **Delete**. Unlike a click, the menu leaves the playhead where it is, so it doesn't interrupt playback.
 
 A marker normally stays on its bar when you change the tempo, so it moves with the music. **Lock to time** keeps its timecode instead and lets its bar move, for lining up with a video; its flag shows a small lock. If a faster tempo pushes a locked marker past the end of the timeline, it isn't drawn and the list says "after the end"; it comes back when you slow the tempo down.
 
 ### The Markers list
 
-Click the flag button right of the Loop button (it shows how many markers there are). The list has every marker in order, with its position (bar.beat.hundredths) and its timecode at your frame rate, drop-frame included.
+Click the flag button right of the Loop button (it shows how many markers there are). The list has every marker in order, with its position (bar.beat.hundredths) and its timecode at your frame rate, drop-frame included. It grows to fill the room under it, and scrolls when there are more markers than fit.
 
 - Type over a name to rename the marker; the flag changes as you type.
 - The lock button locks the marker to time, or back to its bar. The bin deletes it.
-- Click a position to move the playhead there.
+- Click a position to move the playhead there (the view scrolls to it if it's off screen).
 - `Esc` or a click outside closes the list.
 
 ### Markers and the rest of the song
 
 - Adding, moving, renaming, locking and deleting a marker are one Undo step each.
 - **Insert bars** moves the markers at or after the insert point with the music. **Delete bars In → Out** deletes the markers in the removed bars (one exactly at IN goes, one exactly at OUT is kept) and moves the later ones left. Markers locked to time stay where they are.
-- Markers are saved with the project and in autosave. Older versions of the app open the file without them.
+- Markers are saved with the project and in autosave, even before there are any clips (hit points placed on a video before the music is written): the Restore banner offers that session too. Older versions of the app open the file without them.
 - WAV exports carry the markers as cue points (see Exporting audio).
 
 ## Writing notes: the piano roll
@@ -278,7 +278,7 @@ Drag a pad or a pattern chip (**Lazy Beat**, **Hats Intro**, **Walking Bass**, *
 
 Each track header has **VOL** (-60 to +6 dB) and **PAN** sliders (double-click either to reset), and buttons for **M** (mute), **S** (solo) and **R** (record arm, which doesn't do anything yet). If any track is soloed, only soloed tracks play. Muted and un-soloed tracks are also left out of exports.
 
-Tracks are stereo, so wide sounds keep their width all the way to the master: the Supersaw, Space Clav and Mandolin, the noise in the FX instrument, the **Chorus** effect, recorded instruments with stereo samples, and stereo files in the Sampler. Most synths, the drum kits and mono samples are mono and sit in the middle. **PAN** works as a balance: in the middle both sides play, and turning it towards one side fades out the other, so at full left you hear only the left channel. For a mono sound that's the same as moving it across.
+Tracks are stereo, so wide sounds keep their width all the way to the master: the Supersaw, Space Clav and Mandolin, the noise in the FX instrument, the **Chorus** effect, recorded instruments with stereo samples, and stereo files in the Sampler. Most synths and mono samples are mono and sit in the middle, and so are the drum kits, effects included (a Chorus on a kit doesn't widen it). **PAN** works as a balance: in the middle both sides play, and turning it towards one side fades out the other, so at full left you hear only the left channel. For a mono sound that's the same as moving it across.
 
 ### The Track Inspector (FX Rack)
 
@@ -295,7 +295,7 @@ Click **FX Rack** in the toolbar, or the sliders icon on a track header, to open
 - **CHANNEL FADER**: the same volume and pan as the header.
 - **Delete this track** (also the trash icon at the top). It asks first if the track has clips; `Ctrl+Z` brings the track and its clips back.
 
-Distortion, Compressor, Chorus, Filter and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. You can switch effects on and off while the song plays without a gap or a click; a Compressor switched on fades in after about a fifth of a second (it needs that long to settle), a Distortion after about a hundredth. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send and Master Aux Bus sliders don't reset on double-click.
+Distortion, Compressor, Chorus, Filter and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. You can switch effects on and off while the song plays without a gap, a click or a doubled sound, however busy the computer is: the change crossfades over 10 ms, about 20 to 30 ms after the click. A Compressor switched on comes in about 0.2 s later, once it has settled, and any other switch on that track in the meantime waits for it. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send and Master Aux Bus sliders don't reset on double-click.
 
 ### Master Aux Bus
 
@@ -310,7 +310,7 @@ In the header:
 
 - **TEMPO**: click the number to type a tempo from 40 to 240 BPM, with up to two decimals (`115.25`); Enter sets it, Esc cancels. `-` and `+` change it by 1 BPM, and the slider moves in whole BPM. **TAP** sets it from your clicks: tap at least twice; it averages your last few taps and starts over if you pause for more than 2.5 seconds.
 - **FIT**: sets the tempo so part of the song lasts a given time. Choose **Loop In→Out**, **Whole song** or a number of **Bars**, then type the **Target length** in seconds (`25.5`) or as a timecode (`0:25:00`). It shows the new tempo and the resulting length as you type; **Apply** (or Enter) sets it, to 0.01 BPM, picked so the part ends in the frame you typed. Over long stretches at slow tempos it can land a frame either side, and the panel shows the exact result first.
-- **SWING**: delays the off-beat 16th notes (the second 16th of each 8th) for a shuffled feel, from 0 to 50%; at 50% they land on the 1/8-triplet line. Downbeats, 8ths, triplets and 1/32 notes stay on the grid. In an 8th where a clip has a 1/32 roll or triplets, that clip plays the whole 8th straight, so rolls stay even (other clips keep swinging). A clip moved off the 16th grid (Shift-drag, Frame snap) swings on its own 16ths. New blank projects start at 20% (the demo song uses 15%). Double-click it for 0% (straight).
+- **SWING**: delays the off-beat 16th notes (the second 16th of each 8th) for a shuffled feel, from 0 to 50%; at 50% they land on the 1/8-triplet line. Downbeats, 8ths, triplets and 1/32 notes stay on the grid. In an 8th where a clip has a 1/32 roll or triplets, that clip plays the whole 8th straight, so rolls stay even (other clips keep swinging). A clip moved off the 16th grid (Shift-drag, Frame snap) swings on its own 16ths. A clip cut off the grid (the razor with Shift, Snap Off or Frame snap, a start trimmed off the grid, or Insert bars at an off-grid point) keeps the swing it had: its notes go on swinging on the song's 16ths. New blank projects start at 20% (the demo song uses 15%). Double-click it for 0% (straight).
 - **MASTER**: the final output level (-30 to +6 dB). It also sets the export level, but it isn't saved with the project.
 
 Every track goes through a master compressor and a limiter that holds peaks just under full scale, so at MASTER 0 dB or lower playback never clips and sounds the same as your exports. MASTER is applied after the limiter, so above 0 dB playback can clip (exports are turned down to fit).
@@ -353,11 +353,13 @@ The project bar sits above the toolbar.
 
 A project file holds the tracks, clips, mixer and effect settings, tempo, swing, loop, markers, master reverb and delay, frame rate, and any Sampler sounds. It doesn't hold the master volume, zoom, snap or ruler setting.
 
+Whether it comes from **New**, **Open** or **Restore**, a project opens showing the start of the timeline, with the playhead at its loop's In point; if that's off the first screen, the view scrolls to it instead. It never keeps the previous project's scroll position.
+
 ### Autosave
 
 The app also saves your work in this browser half a second after every change. The project bar shows **Saved in this browser · <time>**. Next time you open the app, a banner offers to **Restore** it.
 
-- At startup the app sets your last session aside. The banner stays across reloads until you click **Restore** (which replaces what's on screen) or **Dismiss**. Only the most recent session with clips is kept: if you make something else with clips and reload, the banner offers that one instead.
+- At startup the app sets your last session aside. The banner stays across reloads until you click **Restore** (which replaces what's on screen) or **Dismiss**. Only the most recent session with clips or markers is kept: if you make something else and reload, the banner offers that one instead. The banner says how many clips it has (or markers, when it has no clips yet) and when it was saved.
 - If autosave fails, the project bar says why in red: the project is too big for browser storage (about 5 MB per site, usually because of big Sampler sounds), storage is full (Dismiss the old session to make room), or the browser blocks storage for this site. While it's failing, closing or reloading the tab asks first, so you can **Save**.
 - Autosave is per browser and per site, and private windows don't keep it. Use **Save** for anything you care about.
 
@@ -373,9 +375,9 @@ Click **Export WAV**. The dialog has four choices, and remembers them in this br
   - **Seamless loop** (Loop region only): exactly one loop long, with the tails of the pass before already ringing at its start, so it repeats in a game engine or looping player without a gap or click. It stays exactly on the beat at any tempo, fractional ones included.
 - **Format**: **44.1 kHz** or **48 kHz**; **16-bit**, **24-bit** or **32-bit float**. Always stereo.
 
-The footer shows the file name and its exact length. Exports include the whole mix: volumes, pans, mutes and solos, every effect, sends, the master reverb and delay, swing, and the master volume. If the mix would clip, the file is turned down to just under full scale (stems all by the same amount, so their levels still match).
+The footer shows the file name and its exact length. Exports include the whole mix: volumes, pans, mutes and solos, every effect, sends, the master reverb and delay, swing, and the master volume. The first beat is as loud as the rest, so a kick right at the start keeps its attack. If the mix would clip, the file is turned down to just under full scale (stems all by the same amount, so their levels still match).
 
-**Markers** in the range go into the file as cue points with their names, which DAWs, audio editors and game audio tools show as markers. Their positions count from the start of the file (the range start, or IN for a loop), in the mixdown and in every stem. A **Ring out** file also includes a marker sitting exactly at the end of the range. When there are any, the **Format** section says how many go in. The loop's IN and OUT aren't written as markers.
+**Markers** in the range go into the file as cue points with their names, which DAWs, audio editors and game audio tools show as markers. Their positions count from the start of the file (the range start, or IN for a loop), in the mixdown and in every stem. A **Ring out** file also includes a marker sitting exactly at the end of the range. When there are any, the **Format** section says how many go in (or that the one marker does). The loop's IN and OUT aren't written as markers.
 
 Exporting renders faster than real time (stems one track after another) and shows its progress. It pauses playback. **Cancel**, Esc or the X stops it.
 
