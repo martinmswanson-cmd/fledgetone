@@ -262,9 +262,11 @@ export const Timeline: React.FC = () => {
         s.seek(s.loopRegion.inBar);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
-        s.deleteSelectedClips();
+        // Selected automation points first (selecting them is the last thing the user did)
+        if (!s.deleteSelectedAutomationPoints()) s.deleteSelectedClips();
       } else if (e.key === 'Escape') {
         s.clearSelection();
+        s.selectAutomationPoints(null);
       } else if (e.key === '=' || e.key === '+') {
         s.setZoom(s.zoom * 1.25);
       } else if (e.key === '-') {
@@ -303,6 +305,11 @@ export const Timeline: React.FC = () => {
             className="relative"
             style={{ width: HEADER_WIDTH + TOTAL_BARS * zoom }}
             onPointerDown={handleLanePointerDown}
+            onPointerDownCapture={(e) => {
+              // Selected automation points stay selected only while the user works in their lane
+              const s = useTimelineStore.getState();
+              if (s.automationSelection && !(e.target as Element).closest('[data-automation-lane]')) s.selectAutomationPoints(null);
+            }}
           >
             {/* Ruler row */}
             <div className="sticky top-0 z-[25] flex" style={{ height: RULER_HEIGHT }}>
@@ -360,7 +367,7 @@ export const Timeline: React.FC = () => {
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
         + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads from the sound deck onto a track •
-        Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • ? guide
+        Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • curve button: automation • ? guide
       </div>
 
       {menu && <ClipContextMenu menu={menu} onClose={closeMenu} />}
