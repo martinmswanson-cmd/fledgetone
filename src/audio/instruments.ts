@@ -6,8 +6,11 @@ import { createBassVoice } from './presets/bass';
 import { createKeysVoice } from './presets/keys';
 import { createBrassVoice } from './presets/brass';
 import { create808, createDrumMachine, createLead, createSubBass, createWavetable } from './presets/synths';
+import { createGrowlBass, createReeseBass, createWobbleBass } from './presets/edmBass';
+import { createPluck, createSupersaw } from './presets/edmSynths';
+import { createFx } from './presets/fx';
 import { createCustomSamplerVoice, createSamplerVoice } from './samplers/samplerManager';
-import type { CustomSample } from '../store/timelineTypes';
+import type { CustomSample, WobbleRate } from '../store/timelineTypes';
 
 /** Drum note map (GM-style). Drum clips store one note name per voice. */
 export const DRUM_NOTES = {
@@ -22,6 +25,8 @@ export interface PlayableNote {
   note: string;
   duration: string;
   velocity: number;
+  /** Its clip's wobble rate (only Wobble and Growl Bass use it). */
+  wobble?: WobbleRate;
 }
 
 /**
@@ -162,6 +167,20 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: { 
         ready: Promise.resolve(),
         dispose: pad.dispose,
       };
+    }
+    case 'wobbleBass':
+    case 'growlBass':
+    case 'reeseBass': {
+      const create = key === 'wobbleBass' ? createWobbleBass : key === 'growlBass' ? createGrowlBass : createReeseBass;
+      const bass = create(output);
+      // Monophonic: the loudest note at each tick wins
+      return { play: (notes, time) => bass.trigger(loudestNote(notes), time), releaseAll: bass.releaseAll, ready: Promise.resolve(), dispose: bass.dispose };
+    }
+    case 'supersaw':
+    case 'pluck':
+    case 'fx': {
+      const synth = key === 'supersaw' ? createSupersaw(output) : key === 'pluck' ? createPluck(output) : createFx(output);
+      return { ...synth, ready: Promise.resolve() };
     }
     default:
       throw new Error(`No synth for instrument: ${key}`);

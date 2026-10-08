@@ -4,10 +4,11 @@ import { Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { initAudio } from '../../audio/engine';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { previewTrackNotes } from '../../audio/liveTracks';
-import { INSTRUMENTS, isDrumKind } from '../../audio/instrumentCatalog';
+import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../../audio/instrumentCatalog';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, NoteEvent } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars } from '../../store/timelineTypes';
+import { DEFAULT_WOBBLE, WOBBLE_RATES, type WobbleRate } from '../../store/timelineTypes';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
 
@@ -31,12 +32,15 @@ const DRUM_ROWS: Row[] = [
   { note: DRUM_NOTES.kick, label: 'Kick', black: false, midi: -1 },
 ];
 
+const FX_ROW_LIST: Row[] = FX_ROWS.map((r, i) => ({ ...r, black: i % 2 === 1, midi: -1 }));
+
 
 const toMidi = (note: string) => Tone.Frequency(note).toMidi();
 const isBlack = (midi: number) => [1, 3, 6, 8, 10].includes(midi % 12);
 
 function rowsFor(instrument: InstrumentKey, notes: NoteEvent[]): Row[] {
   if (isDrumKind(instrument)) return DRUM_ROWS;
+  if (isFxKind(instrument)) return FX_ROW_LIST;
   // Instrument's playable range, widened to fit any notes already in the clip
   let [lo, hi] = INSTRUMENTS[instrument].range;
   for (const n of notes) {
@@ -89,6 +93,8 @@ const LENGTH_OPTIONS = [
   { label: '1/4 dotted', units: 36 },
   { label: '1/2', units: 48 },
   { label: '1 bar', units: 96 },
+  { label: '2 bars', units: 192 },
+  { label: '4 bars', units: 384 },
 ];
 
 /**
@@ -114,7 +120,10 @@ async function preview(trackId: string, notes: Pick<NoteEvent, 'note' | 'duratio
     await initAudio();
     audioReady = true;
   }
-  previewTrackNotes(trackId, notes);
+  // At the clip's wobble rate, as it will play
+  const { clips, editingClipId } = useTimelineStore.getState();
+  const wobble = clips.find((c) => c.id === editingClipId)?.wobble;
+  previewTrackNotes(trackId, wobble ? notes.map((n) => ({ ...n, wobble })) : notes);
 }
 
 /** Follow the pointer until release. */
@@ -163,12 +172,14 @@ interface EditorProps {
 }
 
 const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName }) => {
-  const isDrums = isDrumKind(instrument);
+  // Drum kits and the FX instrument both have fixed, named rows instead of a keyboard
+  const isDrums = isDrumKind(instrument) || isFxKind(instrument);
   const rowH = isDrums ? 30 : 16;
   const [stepW, setStepW] = useState(24);
   const unitW = stepW / UNITS_PER_16TH;
   const [gridUnits, setGridUnits] = useState(UNITS_PER_16TH);
-  const [lengthUnits, setLengthUnits] = useState(isDrums ? 6 : 12);
+  // FX notes last as long as they're drawn: a bar is a useful riser to start from
+  const [lengthUnits, setLengthUnits] = useState(isFxKind(instrument) ? UNITS_PER_BAR : isDrums ? 6 : 12);
   const [velocity, setVelocity] = useState(0.8);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const gridRef = useRef<HTMLDivElement>(null);
@@ -458,6 +469,20 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           />
           <span className="w-8 tabular-nums text-forge-text">{Math.round((selectedVelocity ?? velocity) * 100)}</span>
         </label>
+        {INSTRUMENTS[instrument].wobble && (
+          <label className="flex items-center gap-1.5" title="How fast this clip's notes wobble: one filter sweep per note value (T = triplet), starting again with every note">
+            WOBBLE
+            <select
+              className={select}
+              value={clip.wobble ?? DEFAULT_WOBBLE}
+              onChange={(e) => useTimelineStore.getState().setClipWobble(clip.id, e.target.value as WobbleRate)}
+            >
+              {WOBBLE_RATES.map((rate) => (
+                <option key={rate} value={rate}>{rate}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="flex items-center gap-1.5">
           <button type="button" title="Zoom out" onClick={() => setStepW((w) => Math.max(10, w - 6))} className="hover:text-forge-text">
             <ZoomOut className="w-4 h-4" />
@@ -524,7 +549,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 <button
                   key={r.note}
                   type="button"
-                  onPointerDown={() => void preview(clip.trackId, [{ note: r.note, duration: '8n', velocity }])}
+                  // An FX row plays a bar of its effect: a riser an 8th long is just a blip
+                  onPointerDown={() => void preview(clip.trackId, [{ note: r.note, duration: isFxKind(instrument) ? '1m' : '8n', velocity }])}
                   className={`w-full flex items-center justify-end pr-1.5 border-b border-black/40 text-[9px] font-mono ${
                     isDrums
                       ? 'bg-forge-panelLight text-forge-text text-[10px] hover:bg-forge-border'
