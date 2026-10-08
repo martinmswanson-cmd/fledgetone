@@ -2,8 +2,10 @@ import { create } from 'zustand';
 import { initAudio } from '../audio/engine';
 import { setBpm as engineSetBpm } from '../audio/engine';
 import {
+  formatBarsBeats,
   getAudiblePositionBar,
   pauseTransport,
+  secondsToBar,
   seekTransport,
   startTransportAt,
   stopTransport,
@@ -20,8 +22,19 @@ import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { AutomationParam, AutomationPoint, CustomSample, MasterFx, TrackFx, WobbleRate } from './timelineTypes';
+import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, TrackFx, WobbleRate } from './timelineTypes';
 import { DEFAULT_WOBBLE, TOTAL_BARS } from './timelineTypes';
+import {
+  adjacentMarker,
+  anchorMarker,
+  cleanMarkerName,
+  createMarker,
+  insertMarkerBars,
+  nextMarkerName,
+  placeMarker,
+  removeMarkerBars,
+  retimeMarkers,
+} from './markers';
 
 // Defined with the data types (project parsing and the automation maths need it too); much of
 // the app reads it from here
@@ -40,10 +53,11 @@ interface HistoryEntry {
   clips: Clip[];
   tracks: Track[];
   masterFx: MasterFx;
+  markers: Marker[];
 }
 
 /** Everything undo restores, read from the store now. */
-const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s) });
+const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s), markers: s.markers });
 
 /** History patch that records the current state as the one to return to on undo. */
 const pushPast = (s: TimelineState) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), historyEntry(s)], future: [] });
@@ -73,6 +87,8 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     masterReverbDecay: masterFx.reverbDecay,
     masterDelayTime: masterFx.delayTime,
     masterDelayFeedback: masterFx.delayFeedback,
+    // Tempo isn't undone, so markers held to their time are placed at today's tempo
+    markers: retimeMarkers(entry.markers, s.bpm),
   };
 }
 
@@ -133,6 +149,26 @@ interface TimelineState {
   /** Set In and Out exactly as typed (no snapping). False if they don't make a loop of at least a 16th. */
   setLoopRange: (inBar: number, outBar: number) => boolean;
   toggleLoop: () => void;
+
+  // Markers: named points on the timeline, in position order (saved with the project; edits are undoable)
+  markers: Marker[];
+  /**
+   * Drop a marker at `bar` (default: the playhead), named "Marker N". Returns a message for the
+   * user if one is already there, else null.
+   */
+  addMarker: (bar?: number) => string | null;
+  /** Move a marker (no history: drags checkpoint() once). */
+  moveMarker: (id: string, bar: number) => void;
+  /**
+   * Rename a marker (a blank name changes nothing). `record` makes it its own undo step; typing in
+   * the markers list checkpoint()s once instead.
+   */
+  renameMarker: (id: string, name: string, record?: boolean) => void;
+  /** Hold a marker to its bar or its time when the tempo changes (undoable). */
+  setMarkerAnchor: (id: string, anchor: MarkerAnchor) => void;
+  deleteMarker: (id: string) => void;
+  /** Move the playhead to the previous (-1) or next (1) marker. False if there's none that way. */
+  jumpToMarker: (direction: -1 | 1) => boolean;
 
   // Tracks & Inspector
   selectedTrackId: string | null;
@@ -213,10 +249,10 @@ interface TimelineState {
   setSelection: (clipIds: Set<string>) => void;
   selectAll: () => void;
 
-  // History: clips, tracks and the mixer. Tempo, swing, loop, zoom, snap and frame rate are not undoable.
+  // History: clips, tracks, the mixer and markers. Tempo, swing, loop, zoom, snap and frame rate are not undoable.
   past: HistoryEntry[];
   future: HistoryEntry[];
-  /** Snapshot clips, tracks and mixer before an edit. Gestures (drags, slider moves) call this once at their start. */
+  /** Snapshot clips, tracks, mixer and markers before an edit. Gestures (drags, slider moves) call this once at their start. */
   checkpoint: () => void;
   undo: () => void;
   redo: () => void;
@@ -410,14 +446,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   /**
    * Finish an insert / remove-bars edit: the new clips (one undo step), then everything else placed
    * on the timeline moved by the same rule, so it stays with the music: `movePoint` for a position,
-   * `moveLoop` for the loop region, `moveLane` for an automation lane's points. Anything new that
-   * sits at a song position belongs here too.
+   * `moveLoop` for the loop region, `moveLane` for an automation lane's points, `moveMarkers` for
+   * the markers. Anything new that sits at a song position belongs here too.
    */
   const applyRipple = (
     clips: Clip[],
     movePoint: (bar: number) => number,
     moveLoop: (loop: LoopRegion) => LoopRegion,
-    moveLane: (points: AutomationPoint[]) => AutomationPoint[]
+    moveLane: (points: AutomationPoint[]) => AutomationPoint[],
+    moveMarkers: (markers: Marker[]) => Marker[]
   ) => {
     const s = get();
     const clipsChanged = clips.length !== s.clips.length || clips.some((c, i) => c !== s.clips[i]);
@@ -432,8 +469,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     const tracksChanged = tracks.some((t, i) => t !== s.tracks[i]);
     const loopRegion = moveLoop(s.loopRegion);
     const loopChanged = loopRegion.inBar !== s.loopRegion.inBar || loopRegion.outBar !== s.loopRegion.outBar;
+    const markers = moveMarkers(s.markers);
+    const markersChanged = markers !== s.markers;
     set((st) => ({
-      ...(clipsChanged || tracksChanged ? { clips, tracks, ...pushPast(st) } : {}),
+      ...(clipsChanged || tracksChanged || markersChanged ? { clips, tracks, markers, ...pushPast(st) } : {}),
       ...(tracksChanged ? { automationSelection: null } : {}),
       ...(loopChanged ? { loopRegion } : {}),
     }));
@@ -469,6 +508,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     activeTool: 'select',
     snapGrid: '1/16',
     loopRegion: { inBar: 1, outBar: 5, enabled: true },
+    markers: [],
     fps: DEFAULT_FRAME_RATE,
     dropFrame: false,
     rulerUnits: 'bars',
@@ -526,7 +566,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       // Hundredths, so a tempo fitted to a video length lands within a frame or so
       const clamped = Math.max(40, Math.min(240, Math.round(bpm * 100) / 100));
       engineSetBpm(clamped);
-      set({ bpm: clamped });
+      // Markers held to their time stay at the same timecode, so their bars move
+      set((s) => ({ bpm: clamped, markers: retimeMarkers(s.markers, clamped) }));
     },
 
     tapTempo: () => {
@@ -592,6 +633,54 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     toggleLoop: () => set((s) => ({ loopRegion: { ...s.loopRegion, enabled: !s.loopRegion.enabled } })),
+
+    // ---------- Markers ----------
+    addMarker: (bar) => {
+      const s = get();
+      const marker = createMarker(bar ?? s.playheadPosition, s.bpm, nextMarkerName(s.markers));
+      // Pressing M twice (or holding it) shouldn't stack markers on one spot
+      const there = s.markers.find((m) => Math.abs(m.bar - marker.bar) < EPS);
+      if (there) return `"${there.name}" is already at ${formatBarsBeats(there.bar)}.`;
+      set((st) => ({ markers: retimeMarkers([...st.markers, marker], st.bpm), ...pushPast(st) }));
+      return null;
+    },
+
+    moveMarker: (id, bar) =>
+      set((s) => {
+        const marker = s.markers.find((m) => m.id === id);
+        const moved = marker && placeMarker(marker, bar, s.bpm);
+        if (!marker || !moved || moved.bar === marker.bar) return s;
+        return { markers: retimeMarkers(s.markers.map((m) => (m === marker ? moved : m)), s.bpm) };
+      }),
+
+    renameMarker: (id, name, record = false) =>
+      set((s) => {
+        const marker = s.markers.find((m) => m.id === id);
+        const clean = cleanMarkerName(name);
+        if (!marker || !clean || clean === marker.name) return s;
+        return { markers: s.markers.map((m) => (m === marker ? { ...m, name: clean } : m)), ...(record ? pushPast(s) : {}) };
+      }),
+
+    setMarkerAnchor: (id, anchor) =>
+      set((s) => {
+        const marker = s.markers.find((m) => m.id === id);
+        if (!marker || marker.anchor === anchor) return s;
+        return { markers: s.markers.map((m) => (m === marker ? anchorMarker(m, anchor) : m)), ...pushPast(s) };
+      }),
+
+    deleteMarker: (id) =>
+      set((s) => (s.markers.some((m) => m.id === id) ? { markers: s.markers.filter((m) => m.id !== id), ...pushPast(s) } : s)),
+
+    jumpToMarker: (direction) => {
+      const s = get();
+      // Playing, the playhead is a little past a marker it has just reached: going back skips one
+      // passed less than half a second ago, so pressing , again keeps going back
+      const gap = s.isPlaying ? secondsToBar(0.5, s.bpm) - 1 : 0;
+      const marker = adjacentMarker(s.markers, s.playheadPosition, direction, gap);
+      if (!marker) return false;
+      s.seek(marker.bar);
+      return true;
+    },
 
     // ---------- Tracks & Inspector ----------
     selectTrack: (id) => set({ selectedTrackId: id }),
@@ -880,7 +969,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         // length; one that started before the insert point keeps its In.
         if (outBar > TOTAL_BARS + 1) return { ...loop, outBar: TOTAL_BARS + 1, inBar: Math.min(inBar, TOTAL_BARS + 1 - (loop.outBar - loop.inBar)) };
         return { ...loop, inBar, outBar };
-      }, (points) => insertLaneBars(points, at, bars));
+      }, (points) => insertLaneBars(points, at, bars), (markers) => insertMarkerBars(markers, at, bars, s.bpm));
       return null;
     },
 
@@ -914,7 +1003,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         // A loop (nearly) all inside the removed bars, like "Delete bars In → Out", keeps its length, now over what came after
         if (outBar - inBar < minLoop - EPS) return { ...loop, inBar, outBar: Math.min(TOTAL_BARS + 1, inBar + loop.outBar - loop.inBar) };
         return { ...loop, inBar, outBar };
-      }, (points) => removeLaneBars(points, from, to));
+      }, (points) => removeLaneBars(points, from, to), (markers) => removeMarkerBars(markers, from, to, s.bpm));
       return null;
     },
 
@@ -1065,6 +1154,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         masterDelayFeedback: masterFx.delayFeedback,
         fps: p.fps ?? DEFAULT_FRAME_RATE,
         dropFrame: p.dropFrame === true && p.fps === 29.97,
+        markers: retimeMarkers(p.markers ?? [], p.bpm),
         automationView: {},
         automationSelection: null,
       });
@@ -1250,6 +1340,7 @@ export function currentProject(): ProjectSnapshot {
     masterFx: masterFxOf(s),
     fps: s.fps,
     dropFrame: s.dropFrame,
+    markers: s.markers,
   };
 }
 
@@ -1325,7 +1416,8 @@ export function connectAutosave(): () => void {
       state.masterDelayTime === prev.masterDelayTime &&
       state.masterDelayFeedback === prev.masterDelayFeedback &&
       state.fps === prev.fps &&
-      state.dropFrame === prev.dropFrame
+      state.dropFrame === prev.dropFrame &&
+      state.markers === prev.markers
     ) {
       return;
     }

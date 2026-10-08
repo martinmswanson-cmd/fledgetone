@@ -7,6 +7,7 @@ import {
   BIT_DEPTHS,
   downloadBlob,
   encodeWav,
+  exportCues,
   exportFrames,
   renderArrangement,
   renderStems,
@@ -154,6 +155,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const reverbDecay = useTimelineStore((s) => s.masterReverbDecay);
   const delayTime = useTimelineStore((s) => s.masterDelayTime);
   const delayFeedback = useTimelineStore((s) => s.masterDelayFeedback);
+  const markers = useTimelineStore((s) => s.markers);
   const [settings, setSettings] = useState(loadSettings);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const abortRef = useRef<AbortController | null>(null);
@@ -181,8 +183,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     masterFx,
     ending,
     sampleRate: settings.sampleRate,
+    markers,
   };
   const { frames, passes } = exportFrames(planned);
+  const cueCount = exportCues(planned).length;
   const stems = stemTracks(planned);
   const stemsOnly = settings.what === 'stems';
   const canExport = stemsOnly ? stems.length > 0 : range === 'loop' || songBars > 0;
@@ -205,6 +209,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       tracks: s.tracks,
       clips: s.clips,
       swing: s.swing,
+      markers: s.markers,
       bypassMaster: stemsOnly && settings.bypassMaster,
       signal: controller.signal,
     };
@@ -221,7 +226,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       } else {
         const audio = await renderArrangement(opts, (progress) => setStatus({ kind: 'rendering', fileName, progress, detail: '' }));
         controller.signal.throwIfAborted();
-        downloadBlob(encodeWav(audio, settings.bitDepth), fileName);
+        downloadBlob(encodeWav(audio, settings.bitDepth, exportCues(opts)), fileName);
       }
       onClose();
     } catch (err) {
@@ -377,7 +382,13 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             ]}
           />
         </div>
-        <p>Stereo. Peaks are kept just under full scale, so nothing clips.</p>
+        <p>
+          Stereo. Peaks are kept just under full scale, so nothing clips.
+          {cueCount > 0 &&
+            ` ${cueCount === 1 ? 'The marker in the range goes' : `The ${cueCount} markers in the range go`} into ${
+              stemsOnly ? 'every file' : 'the file'
+            } as cue points, which DAWs and game audio tools show as markers.`}
+        </p>
       </Section>
 
       {status.error && <p className="text-red-400">Export failed: {status.error}</p>}

@@ -9,8 +9,10 @@ import { createClipSchedule } from './scheduler';
 import { createAutomationSchedule } from './automationSchedule';
 import { isSamplerKey, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
-import { barToTicks, ticksPerBar } from './transport';
-import type { Clip, MasterFx, Track } from '../store/timelineTypes';
+import { barToTicks, ticksPerBar, ticksToBar } from './transport';
+import { cueChunks, markerCues } from './wavCues';
+import type { WavCue } from './wavCues';
+import type { Clip, Marker, MasterFx, Track } from '../store/timelineTypes';
 
 /** Sample rates the export offers. */
 export const SAMPLE_RATES = [44100, 48000] as const;
@@ -53,6 +55,8 @@ export interface RenderOptions {
   reverbImpulse?: AudioBuffer;
   /** Aborting stops the render, which then rejects with the signal's reason (an AbortError). */
   signal?: AbortSignal;
+  /** Markers: the ones in the range go into the file as cue points (see exportCues). */
+  markers?: Marker[];
 }
 
 /** Seconds of audio rendered between scheduling passes. */
@@ -196,6 +200,25 @@ export function exportFrames(opts: RenderOptions): { frames: number; passes: num
   return { frames: plan.keepLength, passes: plan.passes };
 }
 
+/**
+ * The markers in the range as cue points for the file, at their sample positions from its first
+ * sample, which is the range start (a loop's In, seamless loops included). A ring-out file runs on
+ * past the end of the range, so a marker right at the end is in it too.
+ */
+export function exportCues(opts: RenderOptions): WavCue[] {
+  if (!opts.markers?.length) return [];
+  return markerCues(opts.markers, {
+    startBar: opts.startBar,
+    endBar: opts.endBar,
+    // The Transport starts on the tick nearest the range start, and that's where the file starts
+    originBar: ticksToBar(barToTicks(opts.startBar)),
+    bpm: opts.bpm,
+    sampleRate: opts.sampleRate ?? DEFAULT_SAMPLE_RATE,
+    frames: exportFrames(opts).frames,
+    includeEnd: (opts.ending ?? 'ringOut') === 'ringOut',
+  });
+}
+
 const masterLatency = new Map<number, Promise<number>>();
 
 /**
@@ -290,13 +313,14 @@ export async function renderStems(
   }
 
   const gain = peakGain(peak);
+  const cues = exportCues(opts);
   const stems: Array<{ track: Track; wav: Blob }> = [];
   for (const stem of parked) {
     opts.signal?.throwIfAborted();
     const samples = new Float32Array(await stem.samples.arrayBuffer());
     const channels = [samples.subarray(0, stem.length), samples.subarray(stem.length)];
     scale(channels, gain);
-    stems.push({ track: stem.track, wav: encodeChannels(channels, sampleRate, bitDepth) });
+    stems.push({ track: stem.track, wav: encodeChannels(channels, sampleRate, bitDepth, cues) });
   }
   return stems;
 }
@@ -549,12 +573,15 @@ function fadeOut(channels: Float32Array[], frames: number): void {
   }
 }
 
-/** Encode an AudioBuffer as a WAV file: 16- or 24-bit PCM, or 32-bit float. */
-export function encodeWav(audio: AudioBuffer, bitDepth: BitDepth = 16): Blob {
-  return encodeChannels(channelsOf(audio), audio.sampleRate, bitDepth);
+/**
+ * Encode an AudioBuffer as a WAV file: 16- or 24-bit PCM, or 32-bit float, with cue points
+ * (markers) after the audio if there are any.
+ */
+export function encodeWav(audio: AudioBuffer, bitDepth: BitDepth = 16, cues: readonly WavCue[] = []): Blob {
+  return encodeChannels(channelsOf(audio), audio.sampleRate, bitDepth, cues);
 }
 
-function encodeChannels(data: Float32Array[], sampleRate: number, bitDepth: BitDepth): Blob {
+function encodeChannels(data: Float32Array[], sampleRate: number, bitDepth: BitDepth, cues: readonly WavCue[] = []): Blob {
   const channels = data.length;
   const frames = data[0].length;
   const float = bitDepth === 32;
@@ -563,7 +590,11 @@ function encodeChannels(data: Float32Array[], sampleRate: number, bitDepth: BitD
   // Float WAVs need the extended 18-byte format chunk and a fact chunk (the frame count)
   const formatSize = float ? 18 : 16;
   const headerSize = 12 + 8 + formatSize + (float ? 12 : 0) + 8;
-  const view = new DataView(new ArrayBuffer(headerSize + dataSize));
+  // Chunks after the audio (readers that expect the audio straight after the header still find
+  // it there). A chunk of odd length is padded to an even one before the next.
+  const trailer = cueChunks(cues);
+  const pad = trailer.length ? dataSize & 1 : 0;
+  const view = new DataView(new ArrayBuffer(headerSize + dataSize + pad + trailer.length));
 
   let offset = 0;
   const text = (s: string) => {
@@ -579,7 +610,7 @@ function encodeChannels(data: Float32Array[], sampleRate: number, bitDepth: BitD
   };
 
   text('RIFF');
-  u32(headerSize - 8 + dataSize);
+  u32(headerSize - 8 + dataSize + pad + trailer.length);
   text('WAVE');
   text('fmt ');
   u32(formatSize);
@@ -618,6 +649,7 @@ function encodeChannels(data: Float32Array[], sampleRate: number, bitDepth: BitD
       }
     }
   }
+  new Uint8Array(view.buffer).set(trailer, offset + pad);
   return new Blob([view], { type: 'audio/wav' });
 }
 

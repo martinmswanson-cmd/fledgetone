@@ -1,8 +1,9 @@
-import type { CustomSample, MasterFx, Clip, InstrumentKey, LoopRegion, NoteEvent, Track } from './timelineTypes';
+import type { CustomSample, MasterFx, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
+import { parseMarkers } from './markers';
 
 /**
  * Project file format (.beatbox.json) and browser autosave.
@@ -34,6 +35,8 @@ export interface ProjectData {
   fps?: FrameRate;
   /** 29.97 timecode counted in drop-frame (optional; absent means non-drop). */
   dropFrame?: boolean;
+  /** Named points on the timeline (optional; older files have none). */
+  markers?: Marker[];
 }
 
 export interface ProjectSnapshot {
@@ -49,6 +52,8 @@ export interface ProjectSnapshot {
   fps?: FrameRate;
   /** Drop-frame timecode, only ever true at 29.97 (older projects don't have it). */
   dropFrame?: boolean;
+  /** Markers, in position order (older projects don't have any). */
+  markers?: Marker[];
 }
 
 
@@ -65,6 +70,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     masterFx: p.masterFx ?? DEFAULT_MASTER_FX,
     fps: p.fps ?? DEFAULT_FRAME_RATE,
     dropFrame: p.dropFrame === true && p.fps === 29.97,
+    markers: p.markers ?? [],
   };
 }
 
@@ -153,9 +159,10 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const trackIds = new Set(tracks.map((t) => t.id));
   const loop = isObj(raw.loopRegion) ? raw.loopRegion : {};
   const fps = isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE;
+  const bpm = isNum(raw.bpm) ? Math.max(40, Math.min(240, raw.bpm)) : 122;
   return {
     name: isStr(raw.name) && raw.name.trim() ? raw.name : 'Untitled',
-    bpm: isNum(raw.bpm) ? Math.max(40, Math.min(240, raw.bpm)) : 122,
+    bpm,
     swing: isNum(raw.swing) ? Math.max(0, Math.min(0.5, raw.swing)) : 0.2,
     loopRegion: {
       inBar: isNum(loop.inBar) ? loop.inBar : 1,
@@ -169,6 +176,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     masterFx: parseMasterFx(raw.masterFx),
     fps,
     dropFrame: fps === 29.97 && raw.dropFrame === true,
+    markers: parseMarkers(raw.markers, bpm),
   };
 }
 
