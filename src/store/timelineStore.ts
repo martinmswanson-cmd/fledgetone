@@ -9,7 +9,8 @@ import {
   stopTransport,
 } from '../audio/transport';
 import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
-import { syncLiveTracks } from '../audio/liveTracks';
+import { holdAutomationAt, retimeAutomation, syncLiveTracks } from '../audio/liveTracks';
+import { AUTOMATION, insertLaneBars, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
@@ -19,11 +20,12 @@ import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { CustomSample, MasterFx, TrackFx, WobbleRate } from './timelineTypes';
-import { DEFAULT_WOBBLE } from './timelineTypes';
+import type { AutomationParam, AutomationPoint, CustomSample, MasterFx, TrackFx, WobbleRate } from './timelineTypes';
+import { DEFAULT_WOBBLE, TOTAL_BARS } from './timelineTypes';
 
-/** Song length limit: 400 bars is 5+ minutes even at 240 BPM (about 13 minutes at 120 BPM). */
-export const TOTAL_BARS = 400;
+// Defined with the data types (project parsing and the automation maths need it too); much of
+// the app reads it from here
+export { TOTAL_BARS };
 export const MIN_ZOOM = 12;
 /** Deep enough for frame-level work: a 30 fps frame is 21px wide at 120 BPM. */
 export const MAX_ZOOM = 1280;
@@ -256,6 +258,37 @@ interface TimelineState {
   /** Tracks the clips being dragged could move to (those lanes highlight), null when not dragging clips. */
   clipDragTargets: ReadonlySet<string> | null;
   setClipDragTargets: (trackIds: ReadonlySet<string> | null) => void;
+
+  // Automation (the lanes live on the tracks, so undo covers them)
+  /** Which tracks' lanes show automation, and the setting shown (a view setting: not saved or undone). */
+  automationView: Record<string, AutomationViewState>;
+  /** Show or hide a track's automation (toggles without `open`), optionally switching the setting shown. */
+  showAutomation: (trackId: string, open?: boolean, param?: AutomationParam) => void;
+  /**
+   * Replace a lane's points (making the lane if needed). `record` makes it its own undo step
+   * (clicks, menus); drags checkpoint() once and leave it false. A Filter lane's first points
+   * switch the Filter on, in the same step. `selection` becomes the selected points.
+   */
+  setAutomationPoints: (trackId: string, param: AutomationParam, points: AutomationPoint[], record: boolean, selection?: ReadonlySet<AutomationPoint>) => void;
+  /** Delete a lane, points and all (undoable). */
+  removeAutomationLane: (trackId: string, param: AutomationParam) => void;
+  /** Selected points (in one lane), for Delete; null when none. */
+  automationSelection: AutomationSelection | null;
+  selectAutomationPoints: (selection: AutomationSelection | null) => void;
+  /** Delete the selected points (undoable). False if none were selected. */
+  deleteSelectedAutomationPoints: () => boolean;
+}
+
+export interface AutomationViewState {
+  open: boolean;
+  param: AutomationParam;
+}
+
+export interface AutomationSelection {
+  trackId: string;
+  param: AutomationParam;
+  /** The selected point objects (edits replace moved points, and the selection with them) */
+  points: ReadonlySet<AutomationPoint>;
 }
 
 /** Where one clip goes in moveClips. */
@@ -377,15 +410,31 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   /**
    * Finish an insert / remove-bars edit: the new clips (one undo step), then everything else placed
    * on the timeline moved by the same rule, so it stays with the music: `movePoint` for a position,
-   * `moveLoop` for the loop region. Anything new that sits at a song position belongs here too.
+   * `moveLoop` for the loop region, `moveLane` for an automation lane's points. Anything new that
+   * sits at a song position belongs here too.
    */
-  const applyRipple = (clips: Clip[], movePoint: (bar: number) => number, moveLoop: (loop: LoopRegion) => LoopRegion) => {
+  const applyRipple = (
+    clips: Clip[],
+    movePoint: (bar: number) => number,
+    moveLoop: (loop: LoopRegion) => LoopRegion,
+    moveLane: (points: AutomationPoint[]) => AutomationPoint[]
+  ) => {
     const s = get();
     const clipsChanged = clips.length !== s.clips.length || clips.some((c, i) => c !== s.clips[i]);
+    const tracks = s.tracks.map((t) => {
+      if (!t.automation) return t;
+      const automation = t.automation.map((lane) => {
+        const points = moveLane(lane.points);
+        return points === lane.points ? lane : { ...lane, points };
+      });
+      return automation.some((lane, i) => lane !== t.automation![i]) ? { ...t, automation } : t;
+    });
+    const tracksChanged = tracks.some((t, i) => t !== s.tracks[i]);
     const loopRegion = moveLoop(s.loopRegion);
     const loopChanged = loopRegion.inBar !== s.loopRegion.inBar || loopRegion.outBar !== s.loopRegion.outBar;
     set((st) => ({
-      ...(clipsChanged ? { clips, ...pushPast(st) } : {}),
+      ...(clipsChanged || tracksChanged ? { clips, tracks, ...pushPast(st) } : {}),
+      ...(tracksChanged ? { automationSelection: null } : {}),
       ...(loopChanged ? { loopRegion } : {}),
     }));
     const playhead = movePoint(s.playheadPosition);
@@ -831,7 +880,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         // length; one that started before the insert point keeps its In.
         if (outBar > TOTAL_BARS + 1) return { ...loop, outBar: TOTAL_BARS + 1, inBar: Math.min(inBar, TOTAL_BARS + 1 - (loop.outBar - loop.inBar)) };
         return { ...loop, inBar, outBar };
-      });
+      }, (points) => insertLaneBars(points, at, bars));
       return null;
     },
 
@@ -865,7 +914,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         // A loop (nearly) all inside the removed bars, like "Delete bars In → Out", keeps its length, now over what came after
         if (outBar - inBar < minLoop - EPS) return { ...loop, inBar, outBar: Math.min(TOTAL_BARS + 1, inBar + loop.outBar - loop.inBar) };
         return { ...loop, inBar, outBar };
-      });
+      }, (points) => removeLaneBars(points, from, to));
       return null;
     },
 
@@ -942,6 +991,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...restoreEntry(s, s.past[s.past.length - 1]),
         past: s.past.slice(0, -1),
         future: [historyEntry(s), ...s.future].slice(0, HISTORY_LIMIT),
+        automationSelection: null,
       });
       applyMasterFx();
     },
@@ -953,6 +1003,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...restoreEntry(s, s.future[0]),
         future: s.future.slice(1),
         past: [...s.past.slice(-(HISTORY_LIMIT - 1)), historyEntry(s)],
+        automationSelection: null,
       });
       applyMasterFx();
     },
@@ -1014,6 +1065,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         masterDelayFeedback: masterFx.delayFeedback,
         fps: p.fps ?? DEFAULT_FRAME_RATE,
         dropFrame: p.dropFrame === true && p.fps === 29.97,
+        automationView: {},
+        automationSelection: null,
       });
       applyMasterFx();
     },
@@ -1124,6 +1177,63 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     setDraggingInstrument: (instrument) => set({ draggingInstrument: instrument }),
     clipDragTargets: null,
     setClipDragTargets: (trackIds) => set({ clipDragTargets: trackIds }),
+
+    // ---------- Automation ----------
+    automationView: {},
+    showAutomation: (trackId, open, param) =>
+      set((s) => {
+        const current = s.automationView[trackId];
+        const track = s.tracks.find((t) => t.id === trackId);
+        // Opened for the first time: the first setting that has a lane, else Volume
+        const shown = param ?? current?.param ?? track?.automation?.find((l) => l.points.length)?.param ?? 'volume';
+        const next = { open: open ?? !current?.open, param: shown };
+        if (current && current.open === next.open && current.param === next.param) return s;
+        const selection = s.automationSelection;
+        const keepSelection = selection && (selection.trackId !== trackId || (next.open && selection.param === next.param));
+        return { automationView: { ...s.automationView, [trackId]: next }, ...(keepSelection ? {} : { automationSelection: null }) };
+      }),
+
+    setAutomationPoints: (trackId, param, points, record, selection) =>
+      set((s) => {
+        const track = s.tracks.find((t) => t.id === trackId);
+        if (!track) return s;
+        const lanes = track.automation ?? [];
+        const old = lanes.find((l) => l.param === param);
+        const lane = { param, points: normalizePoints(points) };
+        const automation = old ? lanes.map((l) => (l === old ? lane : l)) : [...lanes, lane];
+        // A Filter lane only sounds while the Filter is on, so drawing its first points turns it on
+        const filterOn = !!AUTOMATION[param].filter && lane.points.length > 0 && !old?.points.length && !track.fx.filter?.on;
+        const fx = filterOn ? normalizeTrackFx({ ...track.fx, filter: { ...track.fx.filter, on: true } }) : track.fx;
+        return {
+          tracks: s.tracks.map((t) => (t === track ? { ...t, automation, fx } : t)),
+          automationSelection: selection?.size ? { trackId, param, points: selection } : null,
+          ...(record ? pushPast(s) : {}),
+        };
+      }),
+
+    removeAutomationLane: (trackId, param) =>
+      set((s) => {
+        const track = s.tracks.find((t) => t.id === trackId);
+        if (!track?.automation?.some((l) => l.param === param)) return s;
+        const automation = track.automation.filter((l) => l.param !== param);
+        const { automation: _gone, ...rest } = track;
+        return {
+          tracks: s.tracks.map((t) => (t === track ? (automation.length ? { ...t, automation } : rest) : t)),
+          automationSelection: s.automationSelection?.trackId === trackId ? null : s.automationSelection,
+          ...pushPast(s),
+        };
+      }),
+
+    automationSelection: null,
+    selectAutomationPoints: (selection) => set({ automationSelection: selection?.points.size ? selection : null }),
+
+    deleteSelectedAutomationPoints: () => {
+      const sel = get().automationSelection;
+      const lane = sel && get().tracks.find((t) => t.id === sel.trackId)?.automation?.find((l) => l.param === sel.param);
+      if (!sel || !lane || !lane.points.some((p) => sel.points.has(p))) return false;
+      get().setAutomationPoints(sel.trackId, sel.param, lane.points.filter((p) => !sel.points.has(p)), true);
+      return true;
+    },
   };
 });
 
@@ -1244,12 +1354,18 @@ export function connectAutosave(): () => void {
  */
 export function connectTimelineToAudio(): () => void {
   const s = useTimelineStore.getState();
+  holdAutomationAt(s.playheadPosition);
   syncLiveTracks(s.tracks);
   rescheduleClips(s.tracks, s.clips);
   syncTransport(s.loopRegion, s.bpm, s.swing);
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
 
   return useTimelineStore.subscribe((state, prev) => {
+    // Stopped, automated settings sit at their lanes' values under the playhead (first, so lanes
+    // that come with new tracks start there too)
+    if (!state.isPlaying && (state.playheadPosition !== prev.playheadPosition || prev.isPlaying)) {
+      holdAutomationAt(state.playheadPosition);
+    }
     if (state.tracks !== prev.tracks) {
       syncLiveTracks(state.tracks);
     }
@@ -1260,6 +1376,7 @@ export function connectTimelineToAudio(): () => void {
     }
     if (state.loopRegion !== prev.loopRegion || state.bpm !== prev.bpm || state.swing !== prev.swing) {
       syncTransport(state.loopRegion, state.bpm, state.swing);
+      if (state.isPlaying && (state.loopRegion !== prev.loopRegion || state.bpm !== prev.bpm)) retimeAutomation();
     }
     if (state.bpm !== prev.bpm) {
       // Delay time is a tempo subdivision, so it follows the BPM
