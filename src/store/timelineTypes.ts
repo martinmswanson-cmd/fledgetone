@@ -196,6 +196,32 @@ export interface Clip {
   lengthBars: number;
   notes: NoteEvent[];
   isSelected: boolean;
+  /** How fast Wobble and Growl Bass notes wobble (absent: DEFAULT_WOBBLE). Other instruments ignore it. */
+  wobble?: WobbleRate;
+}
+
+/**
+ * Wobble rates, slowest first: one filter sweep per note value, restarted at the start of every
+ * note so the wobble locks to the beat. "T" is a triplet (three in the time of two).
+ */
+export const WOBBLE_RATES = ['1/1', '1/2', '1/4', '1/8', '1/8T', '1/16', '1/16T', '1/32'] as const;
+export type WobbleRate = (typeof WOBBLE_RATES)[number];
+export const DEFAULT_WOBBLE: WobbleRate = '1/8';
+
+/** One wobble in beats (quarter notes). */
+export const WOBBLE_BEATS: Record<WobbleRate, number> = {
+  '1/1': 4,
+  '1/2': 2,
+  '1/4': 1,
+  '1/8': 1 / 2,
+  '1/8T': 1 / 3,
+  '1/16': 1 / 4,
+  '1/16T': 1 / 6,
+  '1/32': 1 / 8,
+};
+
+export function isWobbleRate(v: unknown): v is WobbleRate {
+  return WOBBLE_RATES.includes(v as WobbleRate);
 }
 
 export type TimelineTool = 'select' | 'razor';

@@ -1,7 +1,7 @@
 import { DRUM_NOTES } from '../audio/scheduler';
-import { compatibleInstruments } from '../audio/instrumentCatalog';
+import { compatibleInstruments, FX_NOTES } from '../audio/instrumentCatalog';
 import type { ProjectSnapshot } from './project';
-import type { Clip, InstrumentKey, NoteEvent, Track } from './timelineTypes';
+import type { Clip, InstrumentKey, NoteEvent, Track, WobbleRate } from './timelineTypes';
 import { DEFAULT_MASTER_FX, defaultTrackFx, uid } from './timelineTypes';
 
 /**
@@ -164,6 +164,51 @@ const HORN_HOOK: Step[] = [
   [48, ['B4', 'D5'], 0.85, '8n'], [52, ['D5', 'G5'], 0.9, '4n'],
 ];
 
+// ---------- EDM (F minor) ----------
+
+const WOBBLE_RIFF: Step[] = [
+  [0, 'F1', 0.95, '4n.'], [6, 'F1', 0.8, '8n'], [8, 'G#1', 0.9, '4n'], [12, 'F1', 0.8, '8n'], [14, 'D#1', 0.85, '8n'],
+  [16, 'F1', 0.95, '2n'], [24, 'C2', 0.9, '4n'], [28, 'A#1', 0.85, '8n'], [30, 'G#1', 0.85, '8n'],
+];
+
+const GROWL_RIFF: Step[] = [
+  [0, 'F1', 0.95, '8n'], [3, 'F1', 0.8], [4, 'F1', 0.9, '8n.'], [8, 'G#1', 0.9, '8n'], [10, 'F1', 0.85, '8n'], [12, 'C2', 0.9, '4n'],
+  [16, 'F1', 0.95, '4n'], [20, 'F1', 0.8], [22, 'D#1', 0.85, '8n'], [24, 'F1', 0.95, '4n.'], [30, 'G#1', 0.85, '8n'],
+];
+
+// Notes held a 16th into the next one slide into it (legato glide)
+const REESE_LINE: Step[] = [
+  [0, 'F1', 0.9, '1:0:1'], [16, 'G#1', 0.85, '2n'], [24, 'G1', 0.85, '2n'],
+  [32, 'D#1', 0.9, '1:0:1'], [48, 'F1', 0.9, '1n'],
+];
+
+// vi - IV - I - V in A flat (Fm - Db - Ab - Eb), a bar each
+const TRANCE_CHORDS: Step[] = [
+  [0, ['F3', 'G#3', 'C4', 'F4', 'G#4'], 0.8, '1n'],
+  [16, ['C#3', 'F3', 'G#3', 'C#4', 'F4'], 0.8, '1n'],
+  [32, ['D#3', 'G#3', 'C4', 'D#4', 'G#4'], 0.8, '1n'],
+  [48, ['D#3', 'G3', 'A#3', 'D#4', 'G4'], 0.8, '1n'],
+];
+
+const PLUCK_ARP: Step[] = everyBar(2, (b) =>
+  (b === 0 ? ['F4', 'G#4', 'C5', 'G#4'] : ['C#4', 'F4', 'G#4', 'F4']).flatMap((note, i): Step[] => [
+    [i * 4, note, 0.9],
+    [i * 4 + 2, note === 'F4' || note === 'C#4' ? 'C5' : 'F5', 0.65],
+  ])
+);
+
+const BUILD_UP: Step[] = [
+  [0, FX_NOTES.riser, 0.85, '4:0:0'],
+  [0, FX_NOTES.noiseSweep, 0.7, '4:0:0'],
+  [48, FX_NOTES.reverseCrash, 0.85, '1n'],
+];
+
+const DROP_HIT: Step[] = [
+  [0, FX_NOTES.impact, 0.95],
+  [0, FX_NOTES.subDrop, 0.9, '1n'],
+  [16, FX_NOTES.downlifter, 0.7, '1n'],
+];
+
 // ---------- Pattern library ----------
 
 interface Pattern {
@@ -172,6 +217,8 @@ interface Pattern {
   instrument: InstrumentKey;
   lengthBars: number;
   steps: () => Step[];
+  /** Wobble rate for the clip (Wobble / Growl Bass). */
+  wobble?: WobbleRate;
 }
 
 const PATTERNS: Pattern[] = [
@@ -180,6 +227,13 @@ const PATTERNS: Pattern[] = [
   { id: 'bass-walk', name: 'Walking Bass', instrument: 'bass', lengthBars: 4, steps: () => BASS_WALK },
   { id: 'keys-chords', name: 'Soul Chords', instrument: 'keys', lengthBars: 4, steps: () => KEYS_CHORDS },
   { id: 'horn-hook', name: 'Horn Hook', instrument: 'brass', lengthBars: 4, steps: () => HORN_HOOK },
+  { id: 'wobble-riff', name: 'Wobble Riff', instrument: 'wobbleBass', lengthBars: 2, steps: () => WOBBLE_RIFF, wobble: '1/8' },
+  { id: 'growl-riff', name: 'Growl Riff', instrument: 'growlBass', lengthBars: 2, steps: () => GROWL_RIFF, wobble: '1/16' },
+  { id: 'reese-line', name: 'Reese Line', instrument: 'reeseBass', lengthBars: 4, steps: () => REESE_LINE },
+  { id: 'trance-chords', name: 'Trance Chords', instrument: 'supersaw', lengthBars: 4, steps: () => TRANCE_CHORDS },
+  { id: 'pluck-arp', name: 'Pluck Arp', instrument: 'pluck', lengthBars: 2, steps: () => PLUCK_ARP },
+  { id: 'build-up', name: 'Build-Up', instrument: 'fx', lengthBars: 4, steps: () => BUILD_UP },
+  { id: 'drop-hit', name: 'Drop Hit', instrument: 'fx', lengthBars: 2, steps: () => DROP_HIT },
 ];
 
 export interface PatternInfo {
@@ -205,6 +259,7 @@ export function createPatternClip(track: Track, patternId: string, startBar: num
     lengthBars: p.lengthBars,
     notes: toNotes(p.steps()),
     isSelected: false,
+    ...(p.wobble ? { wobble: p.wobble } : {}),
   };
 }
 

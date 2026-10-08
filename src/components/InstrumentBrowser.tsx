@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import * as Tone from 'tone';
 import { Library, Loader2 } from 'lucide-react';
-import { INSTRUMENTS, instrumentsByCategory, isDrumKind } from '../audio/instrumentCatalog';
+import { FX_ROWS, INSTRUMENTS, instrumentsByCategory, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { auditionInstrument, DRUM_NOTES, safely } from '../audio/instruments';
 import { auditionInput, initAudio } from '../audio/engine';
@@ -65,7 +65,9 @@ export const InstrumentBrowser: React.FC = () => {
   const status = useAudioStore((s) => s.instrumentStatus[key]);
   const def = INSTRUMENTS[key];
   const drums = isDrumKind(key);
-  const duration = drums ? '16n' : '4n';
+  const fx = isFxKind(key);
+  // An FX pad plays (and drops in) a one-bar effect: risers and sweeps last as long as their note
+  const duration = drums ? '16n' : fx ? '1m' : '4n';
 
   const hit = (note: string) => {
     setLit(note);
@@ -134,9 +136,9 @@ export const InstrumentBrowser: React.FC = () => {
         <span className="ml-auto text-[11px] text-forge-muted hidden md:inline">Click to play • drag onto a matching track</span>
       </div>
 
-      {drums ? (
-        <div className="grid grid-cols-5 gap-2">
-          {DRUM_PADS.map((p) =>
+      {drums || fx ? (
+        <div className={`grid gap-2 ${fx ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-5'}`}>
+          {(fx ? FX_ROWS : DRUM_PADS).map((p) =>
             pad(p.note, p.label, 'h-14 rounded-lg border font-mono text-xs font-bold text-white bg-forge-bg hover:brightness-125', {
               borderColor: def.color,
               boxShadow: `inset 0 -3px 0 ${def.color}66`,
