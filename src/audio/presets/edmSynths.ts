@@ -22,15 +22,22 @@ import {
 /** Supersaw voices: detune in cents and side (-1 left, 0 both, 1 right), alternating across the field. */
 const SUPERSAW: ReadonlyArray<[cents: number, side: -1 | 0 | 1]> = [
   [-37, -1],
-  [-23, 1],
+  [-21, 1],
   [-11, -1],
   [0, 0],
-  [9, 1],
+  [11, 1],
   [21, -1],
-  [34, 1],
+  [37, 1],
 ];
-/** Where in its cycle each saw starts (fixed, uneven), so they don't sweep against each other at every note's start. */
-const SUPERSAW_PHASES = [0, 0.31, 0.57, 0.12, 0.83, 0.46, 0.69];
+/**
+ * Where in its cycle each saw starts (fixed, uneven), so they don't sweep against each other at
+ * every note's start. How loud a side is for the first few hundred milliseconds of a note depends
+ * on how its saws' phases line up (later the detune spreads them), so the right side mirrors the
+ * left: each right saw has a left saw's detune negated and its phase reflected about the middle
+ * saw's, which gives both sides the same phase differences, note for note. (Unmirrored, a short
+ * low note came out up to 5 dB louder on one side.)
+ */
+const SUPERSAW_PHASES = [0, 0.78, 0.57, 0.12, 0.67, 0.46, 0.24];
 /**
  * The Supersaw was voiced through a track strip that folded stereo to mono: its seven unrelated
  * saws came out at 2.5 saws' worth of power on each side. The strip keeps both sides now, where

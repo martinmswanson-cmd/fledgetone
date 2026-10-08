@@ -195,12 +195,18 @@ export const Timeline: React.FC = () => {
   // Recorded instruments that failed to download play once a retry succeeds (and retry when the connection returns)
   useEffect(() => recoverFailedDownloads(), []);
 
-  // Keep the playhead in view while playing (page-turn style)
+  // Keep the playhead in view while playing (page-turn style), and scroll where the store asks
+  // (a jump to a marker off screen, a project opened)
   useEffect(
     () =>
       useTimelineStore.subscribe((state, prev) => {
         const el = scrollRef.current;
-        if (!el || !state.isPlaying || state.playheadPosition === prev.playheadPosition) return;
+        if (!el) return;
+        if (state.viewJumps !== prev.viewJumps) {
+          el.scrollLeft = state.viewLeft;
+          return;
+        }
+        if (!state.isPlaying || state.playheadPosition === prev.playheadPosition) return;
         const x = (state.playheadPosition - 1) * state.zoom;
         const viewWidth = el.clientWidth - HEADER_WIDTH;
         if (x < el.scrollLeft || x > el.scrollLeft + viewWidth - 24) {
@@ -270,7 +276,7 @@ export const Timeline: React.FC = () => {
         s.jumpToMarker(e.key === ',' ? -1 : 1);
       } else if (e.key === 'Home') {
         e.preventDefault();
-        s.seek(s.loopRegion.inBar);
+        s.seek(s.loopRegion.inBar, true);
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         // Selected automation points first (selecting them is the last thing the user did)

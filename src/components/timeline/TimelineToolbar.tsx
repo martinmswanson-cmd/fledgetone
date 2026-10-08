@@ -70,7 +70,7 @@ const PositionField: React.FC<PositionFieldProps> = ({ value, parse, label, hint
           setInvalid(true);
           return;
         }
-        useTimelineStore.getState().seek(bar);
+        useTimelineStore.getState().seek(bar, true);
         close();
       }}
       onBlur={close}
@@ -209,7 +209,7 @@ export const TimelineToolbar: React.FC = () => {
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-2 bg-forge-panel border-b border-forge-border">
       {/* Transport */}
       <div className="flex items-center gap-1.5" role="group" aria-label="Transport">
-        <ToolButton id="btn-goto-in" title="Go to In point (Home)" onClick={() => seek(useTimelineStore.getState().loopRegion.inBar)}>
+        <ToolButton id="btn-goto-in" title="Go to In point (Home)" onClick={() => seek(useTimelineStore.getState().loopRegion.inBar, true)}>
           <SkipBack className="w-4 h-4" />
         </ToolButton>
         <button

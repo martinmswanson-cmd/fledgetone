@@ -37,6 +37,7 @@ import {
   removeMarkerBars,
   retimeMarkers,
 } from './markers';
+import { rippleRules, type RippleEdit } from './ripple';
 
 // Defined with the data types (project parsing and the automation maths need it too); much of
 // the app reads it from here
@@ -64,10 +65,8 @@ interface RippleSpot {
 interface RippleMove {
   before: RippleSpot;
   after: RippleSpot;
-  movePoint: (bar: number) => number;
-  moveLoop: (loop: LoopRegion) => LoopRegion;
-  /** From after the edit back to before it (a position in bars that were removed comes back at the cut). */
-  backPoint: (bar: number) => number;
+  /** The edit itself, in plain numbers (see RippleEdit). */
+  edit: RippleEdit;
 }
 
 /**
@@ -96,13 +95,14 @@ function rippleSpot(s: TimelineState, move: RippleMove, undo: boolean): { loopRe
   const from = undo ? move.after : move.before;
   const to = undo ? move.before : move.after;
   const near = (a: number, b: number) => Math.abs(a - b) < EPS;
+  const rules = rippleRules(move.edit);
   const loop = s.loopRegion;
   let moved: LoopRegion;
   if (near(loop.inBar, from.inBar) && near(loop.outBar, from.outBar)) moved = { ...loop, inBar: to.inBar, outBar: to.outBar };
-  else moved = undo ? { ...loop, inBar: move.backPoint(loop.inBar), outBar: move.backPoint(loop.outBar) } : move.moveLoop(loop);
+  else moved = undo ? { ...loop, inBar: rules.backPoint(loop.inBar), outBar: rules.backPoint(loop.outBar) } : rules.moveLoop(loop);
   // (A loop that would shrink to nothing stays where it is)
   const loopRegion = moved.outBar - moved.inBar > EPS && (moved.inBar !== loop.inBar || moved.outBar !== loop.outBar) ? moved : loop;
-  const playhead = near(s.playheadPosition, from.playhead) ? to.playhead : clampBar((undo ? move.backPoint : move.movePoint)(s.playheadPosition));
+  const playhead = near(s.playheadPosition, from.playhead) ? to.playhead : clampBar((undo ? rules.backPoint : rules.movePoint)(s.playheadPosition));
   return { loopRegion, playhead };
 }
 
@@ -161,13 +161,19 @@ interface TimelineState {
    */
   viewLeft: number;
   viewWidth: number;
+  /** Bumped when the lanes should scroll to viewLeft (the timeline does the scrolling): see seek and loadProject. */
+  viewJumps: number;
 
   // Transport
   play: () => Promise<void>;
   pause: () => void;
   togglePlay: () => Promise<void>;
   stop: () => void;
-  seek: (bar: number) => void;
+  /**
+   * Move the playhead. `reveal` (a jump: to a marker, to In, to a typed position) also scrolls the
+   * lanes to it if it's off screen, as they follow it while playing.
+   */
+  seek: (bar: number, reveal?: boolean) => void;
   toggleRecord: () => void;
   /** Set the tempo (40 to 240 BPM, to 0.01). */
   setBpm: (bpm: number) => void;
@@ -473,6 +479,18 @@ export const lastSession: SavedSession | null = preservePreviousSession();
 
 const clampBar = (bar: number) => Math.max(1, Math.min(TOTAL_BARS + 1, bar));
 
+/**
+ * The view patch that brings `bar` on screen, page-turn style as the view follows the playhead
+ * while playing (`fromStart`: at the very start if it fits there), or nothing if it's on screen.
+ */
+function viewShowing(s: TimelineState, bar: number, fromStart = false): Partial<TimelineState> {
+  const x = (bar - 1) * s.zoom;
+  const room = s.viewWidth - 24;
+  if (!fromStart && x >= s.viewLeft && x <= s.viewLeft + room) return {};
+  const left = fromStart && x <= room ? 0 : x - 24;
+  return { viewLeft: Math.max(0, Math.min(TOTAL_BARS * s.zoom - s.viewWidth, left)), viewJumps: s.viewJumps + 1 };
+}
+
 export const useTimelineStore = create<TimelineState>((set, get) => {
   /**
    * Change one track. `record` makes it its own undo step (clicks, menus); continuous controls
@@ -495,19 +513,17 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
   /**
    * Finish an insert / remove-bars edit: the new clips (one undo step), then everything else placed
-   * on the timeline moved by the same rule, so it stays with the music: `movePoint` for a position,
-   * `moveLoop` for the loop region, `moveLane` for an automation lane's points, `moveMarkers` for
-   * the markers. Anything new that sits at a song position belongs here too. `backPoint` undoes
-   * `movePoint` (for undo, see RippleMove).
+   * on the timeline moved by the same rule, so it stays with the music: the edit's rules (see
+   * rippleRules) for a position and the loop region, `moveLane` for an automation lane's points,
+   * `moveMarkers` for the markers. Anything new that sits at a song position belongs here too.
    */
   const applyRipple = (
     clips: Clip[],
-    movePoint: (bar: number) => number,
-    moveLoop: (loop: LoopRegion) => LoopRegion,
+    edit: RippleEdit,
     moveLane: (points: AutomationPoint[]) => AutomationPoint[],
-    moveMarkers: (markers: Marker[]) => Marker[],
-    backPoint: (bar: number) => number
+    moveMarkers: (markers: Marker[]) => Marker[]
   ) => {
+    const { movePoint, moveLoop } = rippleRules(edit);
     const s = get();
     const clipsChanged = clips.length !== s.clips.length || clips.some((c, i) => c !== s.clips[i]);
     const tracks = s.tracks.map((t) => {
@@ -527,9 +543,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     const ripple: RippleMove = {
       before: { inBar: s.loopRegion.inBar, outBar: s.loopRegion.outBar, playhead: s.playheadPosition },
       after: { inBar: loopRegion.inBar, outBar: loopRegion.outBar, playhead },
-      movePoint,
-      moveLoop,
-      backPoint,
+      edit,
     };
     // One undo step for all of it, even when only the loop or the playhead moved
     set((st) => ({
@@ -575,6 +589,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     rulerUnits: 'bars',
     viewLeft: 0,
     viewWidth: 1200,
+    viewJumps: 0,
     projectName: 'Untitled',
     selectedTrackId: INITIAL_TRACKS[0]?.id ?? null,
     isInspectorOpen: false,
@@ -615,10 +630,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       set({ isPlaying: false, isRecording: false, playheadPosition: get().loopRegion.inBar });
     },
 
-    seek: (bar) => {
+    seek: (bar, reveal = false) => {
       const target = clampBar(bar);
       if (get().isPlaying) seekTransport(target);
-      set({ playheadPosition: target });
+      set((s) => ({ playheadPosition: target, ...(reveal ? viewShowing(s, target) : {}) }));
     },
 
     toggleRecord: () => set((s) => ({ isRecording: !s.isRecording })),
@@ -745,7 +760,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const gap = s.isPlaying && fromJump === null ? halfSecond : 0;
       const marker = adjacentMarker(s.markers, fromJump ?? s.playheadPosition, direction, gap);
       if (!marker) return false;
-      s.seek(marker.bar);
+      s.seek(marker.bar, true);
       lastJump = s.isPlaying ? { bar: marker.bar, at: now } : null;
       return true;
     },
@@ -1032,16 +1047,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (pushedMarker) {
         return `Can't insert ${pluralBars(bars)}: the marker "${pushedMarker.name}" would be pushed past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
       }
-      // Positions move with the music after the insert point. A loop starting there moves; one ending there doesn't.
-      const movePoint = (bar: number) => (bar >= at - EPS ? bar + bars : bar);
-      applyRipple(clips, movePoint, (loop) => {
-        const outBar = loop.outBar > at + EPS ? loop.outBar + bars : loop.outBar;
-        const inBar = movePoint(loop.inBar);
-        // Pushed off the end: pin Out to the end of the timeline. A loop that moved whole keeps its
-        // length; one that started before the insert point keeps its In.
-        if (outBar > TOTAL_BARS + 1) return { ...loop, outBar: TOTAL_BARS + 1, inBar: Math.min(inBar, TOTAL_BARS + 1 - (loop.outBar - loop.inBar)) };
-        return { ...loop, inBar, outBar };
-      }, (points) => insertLaneBars(points, at, bars), (markers) => insertMarkerBars(markers, at, bars, s.bpm), (bar) => (bar >= at + bars - EPS ? bar - bars : Math.min(bar, at)));
+      const { bpm } = s;
+      applyRipple(
+        clips,
+        { kind: 'insert', at, bars },
+        (points) => insertLaneBars(points, at, bars),
+        (markers) => insertMarkerBars(markers, at, bars, bpm)
+      );
       return null;
     },
 
@@ -1066,16 +1078,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           if (right) clips.push({ ...right, id: left ? right.id : c.id, startBar: from, isSelected: c.isSelected });
         }
       }
-      const movePoint = (bar: number) => (bar <= from ? bar : bar >= to ? bar - len : from);
-      // Shortest loop the snap grid allows, as when dragging its brackets
-      const minLoop = minClipLength(s.snapGrid, s);
-      applyRipple(clips, movePoint, (loop) => {
-        const inBar = movePoint(loop.inBar);
-        const outBar = movePoint(loop.outBar);
-        // A loop (nearly) all inside the removed bars, like "Delete bars In → Out", keeps its length, now over what came after
-        if (outBar - inBar < minLoop - EPS) return { ...loop, inBar, outBar: Math.min(TOTAL_BARS + 1, inBar + loop.outBar - loop.inBar) };
-        return { ...loop, inBar, outBar };
-      }, (points) => removeLaneBars(points, from, to), (markers) => removeMarkerBars(markers, from, to, s.bpm), (bar) => (bar > from + EPS ? bar + len : bar));
+      const { bpm } = s;
+      applyRipple(
+        clips,
+        // Shortest loop the snap grid allows, as when dragging its brackets
+        { kind: 'remove', from, to, minLoop: minClipLength(s.snapGrid, s) },
+        (points) => removeLaneBars(points, from, to),
+        (markers) => removeMarkerBars(markers, from, to, bpm)
+      );
       return null;
     },
 
@@ -1238,6 +1248,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         markers: retimeMarkers(p.markers ?? [], p.bpm),
         automationView: {},
         automationSelection: null,
+        // A project opens at its start (or wherever its playhead is), not where the last one was scrolled to
+        ...viewShowing(get(), p.loopRegion.inBar, true),
       });
       applyMasterFx();
     },
