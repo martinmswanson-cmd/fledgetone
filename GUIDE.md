@@ -81,7 +81,8 @@ The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cut
 - clip and note edits;
 - adding and deleting tracks (Undo brings a deleted track back with its clips), and changing a track's instrument;
 - M, S and R, VOL and PAN, the EQ, Distortion, Compressor, Chorus, the sends and the Master Aux Bus;
-- loading, replacing or removing a Sampler sound, and its **Original pitch on** note.
+- loading, replacing or removing a Sampler sound, and its **Original pitch on** note;
+- automation: adding, moving and deleting points, ramps and clearing or removing lanes.
 
 One slider adjustment is one step, whether you drag it, tap its arrow keys or double-click to reset it. Tempo, swing, the loop, zoom, snap, frame rate, ruler units, master volume and the project name are not undone.
 
@@ -274,6 +275,31 @@ Every track goes through a master compressor and a limiter that holds peaks just
 
 Mixer and effect changes can be undone with `Ctrl+Z`; tempo, swing and master volume can't.
 
+## Automation
+
+Automation makes a track setting change over the song: a filter opening during a build-up, a fade-out, a pan sweep, an echo on one word. You draw a line, and the setting follows it every time the song plays and in every export.
+
+### Opening a lane
+
+Click the **curve button** in a track header ("Show automation"; it's tinted amber when the track has automation). The track's lane switches to **automation view**: its clips are dimmed and can't be edited there, and the header shows **LANE**, the number of points and the value at the playhead. Use **LANE** to pick the setting: **Volume**, **Pan**, **Filter Cutoff**, **Filter Resonance**, **Reverb Send**, **Delay Send**, **EQ Low**, **EQ Mid** or **EQ High**. A ● marks settings that already have points. Click the curve button again to go back to the clips.
+
+### Drawing
+
+- Click empty space to add a point (time snaps to the SNAP grid; hold Shift for free time), or click the line to add a point on it.
+- Drag a point to move it: time snaps, the value is free, and Shift during the drag stops snapping. Points can't pass their neighbours, but two can share a bar for an instant jump. Alt+drag leaves a copy behind.
+- Drag the line between two points to move both up or down.
+- Drag a box on empty space to select points (Shift or Ctrl adds). `Delete` deletes them; `Esc` clears the selection. Double-click or right-click a point to delete just that one.
+- **Right-click the lane** for **Ramp up In → Out** and **Ramp down In → Out** (a one-click build-up or fade over the loop region), **Delete selected points**, **Clear lane** and **Remove lane**. Ramps go from silence to the fader level for Volume, 200 Hz to 20 kHz for Filter Cutoff, -24 dB to 0 dB for EQ, and bottom to top for the others.
+- Every gesture is one undo step.
+
+### How it plays
+
+- Lanes run between their points in straight lines; before the first point and after the last they hold that point's value. Volume works like a mixing fader (-60 dB silent to +6 dB; 0 dB is about 84% up); Cutoff (20 Hz to 20 kHz) and Resonance (Q 0.5 to 15) are logarithmic; Pan runs L100 to R100; sends 0 to 100%; EQ -24 to +12 dB.
+- While a lane has points it owns that setting: its control shows **AUTO**, follows the lane and can't be moved (click **AUTO** to open the lane). Clear or remove the lane to get the control back.
+- Filter lanes only sound while the track's **Filter** is on. Drawing a Filter lane's first point turns it on; if you switch the Filter off later, the lane is kept, dimmed, with a **Turn filter on** button.
+- Exports (mixdown and stems) follow lanes to within a millisecond. While playing, an edit, seek or undo is heard on the new line within about a tenth of a second; jumps glide over 4 ms so they don't click.
+- Insert and Delete bars on the ruler move points with the music, deleting a track deletes its lanes (Undo brings them back), and lanes are saved with the project.
+
 ## Projects: saving and opening
 
 The project bar sits above the toolbar.
@@ -346,6 +372,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 | Drag a clip up or down | Move it to another track that can play it |
 | Ctrl / Cmd + mouse wheel, or pinch | Zoom around the pointer |
 | Right-click the ruler | Insert bars here, or delete the bars between In and Out |
+| Curve button on a track header | Show or hide that track's automation |
 | Shift / Ctrl / Cmd + click | Add to or remove from the selection |
 | Double-click empty lane (Selection tool) | New 1-bar clip |
 | Double-click a clip (Selection tool) | Edit its notes (with the Razor, right-click > Edit notes) |
