@@ -6,6 +6,7 @@ import { barFromClientX, Playhead } from './Playhead';
 import { barLabelStep, RULER_HEIGHT, TIMECODE_LABEL_PX, timecodeRulerSteps } from './layout';
 import { snapBar } from '../../store/timelineTypes';
 import type { RulerMenuState } from './RulerContextMenu';
+import { MarkerFlags } from './Markers';
 
 /** SVG path of 1px vertical ticks at `xs`, `height` px tall, standing on the ruler's bottom edge. */
 const tickPath = (xs: number[], height: number) =>
@@ -20,7 +21,7 @@ interface TimeRulerProps {
 
 /**
  * Top ruler: bar/beat markings (or timecode at the project frame rate), the In/Out loop region
- * with draggable brackets, click-to-scrub, and the playhead grab handle.
+ * with draggable brackets, marker flags, click-to-scrub, and the playhead grab handle.
  */
 export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, onOpenMenu }) => {
   const zoom = useTimelineStore((s) => s.zoom);
@@ -209,6 +210,7 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
         );
       })}
 
+      <MarkerFlags originRef={originRef} />
       <Playhead variant="head" onScrubStart={onScrubStart} />
     </div>
   );

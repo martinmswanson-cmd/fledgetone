@@ -81,6 +81,11 @@ export function getAudiblePositionBar(): number {
   return ticksToBar(Tone.Transport.getTicksAtTime(now));
 }
 
+/** Where the Transport is scheduling (the look-ahead past what's heard): a seek shows here at once. */
+export function getScheduledPositionBar(): number {
+  return ticksToBar(Tone.Transport.ticks);
+}
+
 export function startTransportAt(bar: number): void {
   const at = Tone.now() + 0.03;
   Tone.Transport.start(at, `${barToTicks(bar)}i`);
