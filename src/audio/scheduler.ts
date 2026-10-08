@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { barToTicks, swingDelay } from './transport';
+import { barToTicks, swingDelay, swungNotes } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import { getLiveInstrument, pumpOnKick, releaseAllLiveVoices } from './liveTracks';
@@ -12,6 +12,8 @@ export { DRUM_NOTES } from './instruments';
 interface NoteGroup {
   trackId: string;
   notes: PlayableNote[];
+  /** Swing plays it late (see swungNotes). */
+  swung: boolean;
 }
 
 /** A clip's note groups by absolute tick, worked out once per version of the clip. */
@@ -27,19 +29,21 @@ export interface ClipSchedule {
 }
 
 function groupClipNotes(clip: Clip): ClipEntry['groups'] {
+  // Notes hidden by a trim don't play
+  const notes = clip.notes.filter((note) => note.startOffset >= -1e-6 && note.startOffset < clip.lengthBars - 1e-6);
+  const ticks = notes.map((note) => barToTicks(clip.startBar + note.startOffset));
+  const swung = swungNotes(ticks, barToTicks(clip.startBar), Tone.Transport.PPQ);
   // Group notes by tick (and length) so chords trigger as one instrument call
   const groups = new Map<string, [number, NoteGroup]>();
-  for (const note of clip.notes) {
-    // Notes hidden by a trim don't play
-    if (note.startOffset < -1e-6 || note.startOffset >= clip.lengthBars - 1e-6) continue;
-    const tick = barToTicks(clip.startBar + note.startOffset);
+  notes.forEach((note, i) => {
+    const tick = ticks[i];
     const key = `${tick}|${note.duration}`;
     // The clip's wobble rate travels with each note to the instrument (the ones that wobble use it)
     const playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
     const group = groups.get(key);
     if (group) group[1].notes.push(playable);
-    else groups.set(key, [tick, { trackId: clip.trackId, notes: [playable] }]);
-  }
+    else groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], swung: swung[i] }]);
+  });
   return [...groups.values()];
 }
 
@@ -52,7 +56,7 @@ const sameNotes = (prev: Clip, next: Clip) =>
  * its track's instrument, looked up when it plays (`instrumentFor` returns undefined for a track
  * that shouldn't sound). `onKick` hears of every kick drum note (C1) at the time it plays,
  * whether or not that track sounds, for the Pump inserts to follow. `swing` is read as each
- * tick plays and delays the off-beat 16ths (see swingDelay); the Transport's own swing stays off.
+ * tick plays and delays the notes swungNotes picks out; the Transport's own swing stays off.
  *
  * There is one Transport event per tick that has notes, shared by every clip and track, and
  * it reads that tick's notes from a lookup table when it fires. An edit rebuilds the table
@@ -83,15 +87,16 @@ export function createClipSchedule(
       lastTime = tickTime;
       const groups = byTick.get(tick);
       if (!groups) return;
-      const time = tickTime + swingDelay(tick, swing(), transport.bpm.value, transport.PPQ);
-      for (const { trackId, notes } of groups) {
+      const late = swingDelay(swing(), transport.bpm.value, transport.PPQ);
+      for (const { trackId, notes, swung } of groups) {
+        const time = swung ? tickTime + late : tickTime;
         const instrument = instrumentFor(trackId);
         if (instrument) safely(() => instrument.play(notes, time));
       }
 
       if (!onKick) return;
       for (const group of groups) {
-        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, time);
+        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, group.swung ? tickTime + late : tickTime);
       }
     };
   };

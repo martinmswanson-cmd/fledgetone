@@ -68,7 +68,7 @@ export const masterLimiter = liveMix.limiter;
 export const auditionInput = liveMix.auditionInput;
 
 // Configure default transport clock settings for modern electric funk. (Swing isn't the
-// Transport's: the clip schedule delays the off-beat 16ths itself, see swingDelay.)
+// Transport's: the clip schedule delays the off-beat 16ths itself, see swungNotes.)
 Tone.Transport.bpm.value = 122;
 
 let audioStateChangeListeners: Array<(state: AudioState) => void> = [];

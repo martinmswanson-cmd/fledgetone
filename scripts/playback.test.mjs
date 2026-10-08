@@ -17,7 +17,7 @@ register(
 }`)
 );
 const Tone = await import('tone');
-const { swingDelay } = await import('../src/audio/transport.ts');
+const { swingDelay, swungNotes } = await import('../src/audio/transport.ts');
 const { shadeNotes } = await import('../src/components/timeline/noteShades.ts');
 
 /** The delay Tone's own swing (16n subdivision) gives a note on `tick`. */
@@ -28,39 +28,76 @@ function toneSwing(tick, swing, bpm, ppq = 192) {
   return ((swingTicks * 2) / 3 / ppq) * (60 / bpm) * (Math.sin(progress * Math.PI) * swing);
 }
 
+/** What swing does to each of these ticks in one clip starting on `clipStart`: true = played late. */
+const swungAt = (ticks, clipStart = 0) => Object.fromEntries(swungNotes(ticks, clipStart).map((swung, i) => [ticks[i], swung]));
+
 test('swing delays off-beat 16ths exactly as Tone did', () => {
   for (const bpm of [60, 97.3, 140, 174, 240]) {
     for (const swing of [0.05, 0.2, 0.5]) {
       for (let tick = 48; tick < 768 * 4; tick += 96) {
-        assert.equal(swingDelay(tick, swing, bpm), toneSwing(tick, swing, bpm), `tick ${tick} at ${bpm} BPM, swing ${swing}`);
-        assert.ok(swingDelay(tick, swing, bpm) > 0);
+        assert.equal(swingDelay(swing, bpm), toneSwing(tick, swing, bpm), `tick ${tick} at ${bpm} BPM, swing ${swing}`);
+        assert.ok(swingDelay(swing, bpm) > 0);
       }
     }
   }
-  // 32 ticks (a third of an 8th) at the most swing: 16 ticks at 120 BPM is 41.7 ms
-  assert.ok(Math.abs(swingDelay(48, 0.5, 120) - 16 * (60 / 120 / 192)) < 1e-15);
+  // swing x 32 ticks (a third of an 8th): 16 ticks at 50%, the 1/8-triplet line; 41.7 ms at 120 BPM
+  assert.ok(Math.abs(swingDelay(0.5, 120) - 16 * (60 / 120 / 192)) < 1e-15);
 });
 
-test('swing leaves downbeats, 8ths, triplets and 1/32 notes alone', () => {
+test('swing picks out the off-beat 16ths of a 16th or 8th groove, and nothing else', () => {
+  const sixteenths = Array.from({ length: 32 }, (_, i) => 48 * i);
+  swungNotes(sixteenths, 0).forEach((swung, i) => assert.equal(swung, i % 2 === 1, `16th ${i}`));
+  // Downbeats, 8ths and triplet lines on their own never swing
   for (let tick = 0; tick < 768 * 2; tick++) {
-    const onOffBeat16th = tick % 96 === 48;
-    const onGrid = tick % 48 === 0 || tick % 32 === 0 || tick % 24 === 0;
-    if (onGrid && !onOffBeat16th) assert.equal(swingDelay(tick, 0.3, 128), 0, `tick ${tick}`);
+    if (tick % 96 === 48) continue;
+    if (tick % 48 === 0 || tick % 32 === 0) assert.equal(swungNotes([tick], 0)[0], false, `tick ${tick}`);
   }
+});
+
+test('an 8th with notes between its 16ths plays straight, so 1/32 rolls and triplet runs stay even', () => {
+  // A 16th groove with a 1/32 roll over the second beat: that beat's off-beat 16ths go straight, the rest swing
+  const groove = [0, 48, 96, 144, 192, 216, 240, 264, 288, 312, 336, 360, 384, 432, 480, 528];
+  assert.deepEqual(
+    groove.filter((t, i) => swungNotes(groove, 0)[i]),
+    [48, 144, 432, 528]
+  );
+  // 1/32 triplets (16 ticks) and 1/16 triplets (32) around an off-beat 16th
+  assert.deepEqual(swungAt([0, 16, 32, 48, 64, 80]), { 0: false, 16: false, 32: false, 48: false, 64: false, 80: false });
+  assert.deepEqual(swungAt([0, 48, 64]), { 0: false, 48: false, 64: false });
+  // A 1/32 pickup into the next 8th straightens the 8th it sits in only
+  assert.deepEqual(swungAt([0, 48, 72, 96, 144]), { 0: false, 48: false, 72: false, 96: false, 144: true });
+  // Notes nudged a little off the 16ths (flams, a loose hand) are not a run
+  assert.deepEqual(swungAt([3, 45, 52, 93, 146]), { 3: false, 45: true, 52: true, 93: false, 146: true });
+  // Each clip judges its own notes: a clip with only the off-beat 16th swings it
+  assert.deepEqual(swungAt([48]), { 48: true });
 });
 
 test('a note nudged off an off-beat 16th swings while it is nearer to it than to a triplet line', () => {
-  const full = swingDelay(48, 0.2, 120);
-  for (let d = -7; d <= 7; d++) assert.equal(swingDelay(48 + 96 * 3 + d, 0.2, 120), full, `${d} ticks off`);
-  for (const d of [-8, 8, -16, 16]) assert.equal(swingDelay(48 + d, 0.2, 120), 0, `${d} ticks off`);
+  for (let d = -7; d <= 7; d++) assert.equal(swungNotes([48 + 96 * 3 + d], 0)[0], true, `${d} ticks off`);
+  for (const d of [-8, 8, -16, 16]) assert.equal(swungNotes([48 + d], 0)[0], false, `${d} ticks off`);
+});
+
+test('a clip placed off the 16th grid swings on its own grid', () => {
+  const clipGroove = [0, 48, 96, 144];
+  for (const start of [5, 20, 24, 768 + 11, 768 * 7 + 24]) {
+    const ticks = clipGroove.map((t) => start + t);
+    assert.deepEqual(swungNotes(ticks, start), [false, true, false, true], `clip on tick ${start}`);
+  }
+  // Nearer the next 16th line, it counts from that one: a clip starting just before an off-beat
+  // 16th is a pickup, so its first note swings
+  for (const start of [25, 40, 47]) {
+    const ticks = clipGroove.map((t) => start + t);
+    assert.deepEqual(swungNotes(ticks, start), [true, false, true, false], `clip on tick ${start}`);
+  }
+  // On the grid, the song's 16ths decide (a clip may start on an off-beat 16th)
+  assert.deepEqual(swungNotes([48, 96, 144], 48), [true, false, true]);
 });
 
 test('no swing, no delay', () => {
-  for (let tick = 0; tick < 768; tick += 12) {
-    assert.equal(swingDelay(tick, 0, 140), 0);
-    assert.equal(swingDelay(tick, -0.1, 140), 0);
-    assert.equal(swingDelay(tick, Number.NaN, 140), 0);
-  }
+  assert.equal(swingDelay(0, 140), 0);
+  assert.equal(swingDelay(-0.1, 140), 0);
+  assert.equal(swingDelay(Number.NaN, 140), 0);
+  assert.deepEqual(swungNotes([], 0), []);
 });
 
 test('Transport positions in whole ticks come back whole at every tempo (toneFixes)', async () => {

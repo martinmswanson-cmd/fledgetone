@@ -70,8 +70,10 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
   so `toneFixes.ts` makes results within float noise of a whole tick whole again; otherwise about
   one tick in ten was filed a tick early (skipped when playback started on it or a loop came back
   to it).
-- Swing is applied by the clip schedule (`swingDelay` in `transport.ts`), not Tone's Transport,
-  which bends every position inside an 8th; keep the Transport's own swing at 0.
+- Swing is applied by the clip schedule, not Tone's Transport, which bends every position inside
+  an 8th; keep the Transport's own swing at 0. `swungNotes` in `transport.ts` picks the notes it
+  delays per clip (off-beat 16ths, on the clip's own 16th grid, unless their 8th holds a 1/32 or
+  triplet run) and `swingDelay` says by how much.
 - Project files are versioned (`PROJECT_VERSION` in `project.ts`). New optional fields don't
   need a version bump; older builds ignore fields they don't know.
 
