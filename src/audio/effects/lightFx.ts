@@ -138,10 +138,18 @@ export interface LightChorus extends LightInsert {
   setWet: (wet: number, ramp: number) => void;
 }
 
+/** The chorus's wet level against Tone's (see createLightChorus). */
+const WET_LEVEL = Math.SQRT1_2;
+
 /**
  * Tone.Chorus with its defaults (feedback 0, sine LFO): each channel goes through a delay line
  * whose time swings around `delayMs` by `depth`, the left and right LFOs `spread` degrees apart,
  * mixed with the dry signal by an equal-power crossfade.
+ *
+ * The wet side is 3 dB down on Tone's. Every chorus was voiced through a track strip that folded
+ * stereo to mono, where the two sides' wet signals (nearly unrelated) averaged to half their
+ * power. The strip keeps both sides now, so this leaves each side with the level and the dry/wet
+ * balance the folded chorus had, only wide.
  */
 export function createLightChorus(opts: { rate: number; delayMs: number; depth: number; spread: number; wet: number }): LightChorus {
   const input = new Tone.Gain(1);
@@ -153,7 +161,7 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
   // chorus switched on while playing silenced the track until then
   const mixAt = (mix: number) => (Math.max(0, Math.min(1, mix)) * Math.PI) / 2;
   const dry = new Tone.Gain(Math.cos(mixAt(opts.wet)));
-  const wet = new Tone.Gain(Math.sin(mixAt(opts.wet)));
+  const wet = new Tone.Gain(Math.sin(mixAt(opts.wet)) * WET_LEVEL);
   const raw = input.context.rawContext as unknown as BaseAudioContext;
 
   const centre = opts.delayMs / 1000;
@@ -200,7 +208,7 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
   };
   const setWet = (mix: number, ramp: number) => {
     ramped(dry.gain, Math.cos(mixAt(mix)), ramp);
-    ramped(wet.gain, Math.sin(mixAt(mix)), ramp);
+    ramped(wet.gain, Math.sin(mixAt(mix)) * WET_LEVEL, ramp);
   };
   setDepth(opts.depth);
   let rate = opts.rate;
