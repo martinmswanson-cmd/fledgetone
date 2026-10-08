@@ -165,29 +165,41 @@ Double-click a clip with the Selection tool (or right-click it and choose **Edit
 - **Nudge**: arrow keys move selected notes by one grid step or one semitone; Shift with up and down moves an octave.
 - **Hear it**: click the keys on the left. Adding or clicking a note plays it, and so does dragging it to a new pitch.
 
-The header has the clip's name (click to rename), **GRID** (1/16, 1/8, 1/4), **NEW NOTE** length, **VEL** (velocity: how hard new notes are played; with notes selected it changes those notes) and zoom. Click the piano roll's ruler to move the playhead. Close it with **Close** or `Esc` (when no notes are selected).
+The header has the clip's name (click to rename), **GRID** (1/32, 1/16T, 1/16, 1/8T, 1/8, 1/4), **NEW NOTE** length, **VEL** (velocity: how hard new notes are played; with notes selected it changes those notes) and zoom. Click the piano roll's ruler to move the playhead. Close it with **Close** or `Esc` (when no notes are selected).
+
+**Fine grids and triplets.** **T** means triplet: three in the space of two, so 1/16T puts six notes in a beat and 1/8T three. Clicking places a note on the grid line at or before the pointer. Dragging a note, or its right edge, snaps it to the grid, and the arrow keys move notes one grid step. Changing the grid never moves existing notes. Zoom in (the magnifier) for comfortable 1/32 editing. Swing also shifts triplet and 1/32 notes, so set **Swing** to 0% for straight hi-hat rolls and triplets.
 
 > With no notes selected, `Delete` acts on the timeline and deletes the selected clip, usually the one you're editing. `Ctrl+Z` brings it back.
 
 ## Instruments
 
-Each track plays one instrument. Add a track with **+ Add Track** under the last track, or change a track's instrument in the Track Inspector (**SOUND GENERATOR**). There are 28 instruments in 8 groups:
+Each track plays one instrument. Add a track with **+ Add Track** under the last track, or change a track's instrument in the Track Inspector (**SOUND GENERATOR**). There are 34 instruments in 9 groups:
 
 | Group | Instruments |
 |---|---|
 | Drums & Percussion | Drums (analog kit), Drum Machine (808-style), Taiko Drums |
-| Bass | Slap Bass, Sub-Bass, 808 Bass, Bass Guitar |
-| Keys & Synths | Grand Piano, Electric Piano, Space Clav, Wavetable Synth, Analog Lead, Pipe Organ |
+| Bass | Slap Bass, Sub-Bass, 808 Bass, Bass Guitar, Wobble Bass, Growl Bass, Reese Bass |
+| Keys & Synths | Grand Piano, Electric Piano, Space Clav, Wavetable Synth, Analog Lead, Pipe Organ, Supersaw, Pluck |
 | Guitars & Strings | Acoustic Guitar, Electric Guitar, Mandolin, Harp, Violin, Cello |
 | Winds & Brass | Brass Stabs, Saxophone, Trumpet, French Horn, Flute |
 | Mallets & Bells | Marimba, Chimes |
 | World | Erhu |
+| FX | FX (risers, sweeps, impacts, drops) |
 | Your Sounds | Sampler (plays a sound file you load) |
 
-- **Synths and drum kits** (Drums, Drum Machine, Slap Bass, Sub-Bass, 808 Bass, Space Clav, Wavetable Synth, Analog Lead, Brass Stabs) are generated in the browser and work offline.
+- **Synths and drum kits** (Drums, Drum Machine, Slap Bass, Sub-Bass, 808 Bass, Wobble Bass, Growl Bass, Reese Bass, Space Clav, Wavetable Synth, Analog Lead, Supersaw, Pluck, Brass Stabs and FX) are generated in the browser and work offline.
 - **Recorded instruments** (the other 18) download their sounds the first time you use them, so they need an internet connection. A spinner shows on the track header while they load, and the Inspector shows **Loading CDN...**, **Ready** or **Error**. Notes are silent until the sounds arrive. If a download fails, the track header shows a red **!** in place of its coloured dot and the Inspector shows **Error** with a **Retry** button; click either to try again. Failed downloads are also retried when your connection comes back, and when you play that instrument in the Instrument Browser or Audition Deck, add another track with it or export. Once it downloads, every track using it plays from its next note, with no reload.
 - Both drum kits use the same five notes: **Kick**, **Snare**, **Closed Hat**, **Open Hat** and **Cowbell**, so drum parts can move between them. Taiko is played like a pitched instrument.
 - Slap Bass, Sub-Bass, 808 Bass and Analog Lead play one note at a time; in a chord, only the loudest note sounds. Space Clav (16 notes at once), Wavetable Synth (12) and Brass Stabs (8) cut short whichever ringing note would end soonest when they run out, so new notes still play (only notes beyond the limit that start at the very same moment are dropped).
+
+### EDM instruments
+
+- **Wobble Bass**: the dubstep wobble, a filter sweeping in time with the beat. **Growl Bass**: the talking riddim growl, a vowel filter ("oo", "ah", "eh") swept the same way. **Reese Bass**: detuned saws that beat slowly, for drum & bass and dubstep.
+- These three play one note at a time (the loudest wins). A note that starts before the previous one ends **slides** to its pitch without re-attacking: draw a note a little longer so it overlaps the next one. Notes that don't overlap start fresh.
+- **WOBBLE** in the piano roll header (Wobble and Growl only) sets the wobble rate for the whole clip: **1/1**, **1/2**, **1/4**, **1/8** (default), **1/8T**, **1/16**, **1/16T** or **1/32**. Each note restarts the sweep, so wobbles stay locked to the beat. Different clips can use different rates; the rate shows as a small tag on the clip, is saved with the project, and travels with copies. Changing it is one undo step.
+- **Supersaw**: seven detuned saws per note, spread wide, for house and trance chords. **Pluck**: a short, bright pluck for melodies and arps. Both play chords.
+- **FX** has fixed rows like a drum kit: **Riser**, **Noise Sweep**, **Reverse Crash**, **Impact**, **Sub Drop** and **Downlifter**. Every effect except Impact lasts as long as the note you draw: draw a 4-bar note for a 4-bar riser, and end a Reverse Crash on the drop. Impact is a one-shot boom of about 3.5 s. In an FX clip, NEW NOTE starts at 1 bar, and clicking a row's name previews it. FX clips only go on FX tracks.
+- Right-click an empty spot on a lane of these instruments for ready-made parts: **Wobble Riff**, **Growl Riff**, **Reese Line**, **Trance Chords**, **Pluck Arp**, and for FX a **Build-Up** and a **Drop Hit**.
 
 ### The Sampler: your own sound
 
@@ -234,11 +246,13 @@ Click **FX Rack** in the toolbar, or the sliders icon on a track header, to open
 - **3-BAND PARAMETRIC EQ**: LOW (400 Hz), MID (1 kHz) and HIGH (2.5 kHz), each -24 to +12 dB. **Reset** flattens them.
 - **COMPRESSOR**: Threshold, Ratio and Makeup gain.
 - **CHORUS**: Rate, Depth and Mix.
+- **FILTER**: **Low-pass**, **High-pass** or **Band-pass**; **Cutoff** (20 Hz to 20 kHz); **Resonance** (Q 0.5 to 15: high values boost a narrow band at the cutoff, up to about +23 dB, so turn the track down when you push it); **Slope** 12 or 24 dB. It comes after the other effects, so it sweeps everything on the track. Moving Cutoff or Resonance while playing glides smoothly.
+- **PUMP**: sidechain-style ducking. The track's volume dips and swells back on every **Kick drum** (any drum-kit track's kick that is actually playing), **Every beat** or **Every 1/8**. **Depth** (how far it ducks) and **Release** (50 to 600 ms, how long it takes to come back). A muted or soloed-out kick track doesn't pump, so if you solo the pumped track, solo the drums too.
 - **POST-FADER AUX SENDS**: how much of the track goes to the shared reverb and the ping-pong echo.
 - **CHANNEL FADER**: the same volume and pan as the header.
 - **Delete this track** (also the trash icon at the top). It asks first if the track has clips; `Ctrl+Z` brings the track and its clips back.
 
-Distortion, Compressor and Chorus each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send and Master Aux Bus sliders don't reset on double-click.
+Distortion, Compressor, Chorus, Filter and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send and Master Aux Bus sliders don't reset on double-click.
 
 ### Master Aux Bus
 
@@ -351,6 +365,8 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 ## Tips and limits
 
 - Songs can be up to 400 bars long, in 4/4, at one tempo (40 to 240 BPM, to 0.01 BPM). The shortest loop is a 16th note.
+- For EDM, set **Swing** to 0% (new blank projects start at 20%). Dubstep is usually 140 BPM with the snare on beat 3 (half-time), house around 124 to 128, drum & bass around 174.
+- Projects that use Wobble Bass, Growl Bass, Reese Bass, Supersaw, Pluck or FX only open in this version of the app or later.
 - Recorded instruments (piano, strings, winds and others) download their sounds the first time you use them, so they need an internet connection. Everything else works offline.
 - Muted tracks, and tracks silenced by another track's Solo, don't play their notes at all, which saves processing power on big songs.
 - If playback stutters on a big song, mute tracks you aren't working on, switch off effects you don't need, or export a WAV: exporting never stutters, it just takes longer.
