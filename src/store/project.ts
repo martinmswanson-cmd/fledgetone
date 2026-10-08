@@ -2,6 +2,7 @@ import type { CustomSample, MasterFx, Clip, InstrumentKey, LoopRegion, NoteEvent
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
+import { parseAutomation } from '../audio/automation';
 
 /**
  * Project file format (.beatbox.json) and browser autosave.
@@ -82,6 +83,7 @@ function parseTrack(v: unknown): Track {
     throw new Error('a track is missing its id, name or instrument');
   }
   const eqObj = isObj(v.eq) ? v.eq : {};
+  const automation = parseAutomation(v.automation);
   return {
     id: v.id,
     name: v.name,
@@ -101,6 +103,8 @@ function parseTrack(v: unknown): Track {
     delaySend: isNum(v.delaySend) ? Math.max(0, Math.min(1, v.delaySend)) : 0,
     fx: normalizeTrackFx(v.fx),
     sample: parseSample(v.sample),
+    // Optional: tracks from before automation (or without any) have none
+    ...(automation ? { automation } : {}),
   };
 }
 
