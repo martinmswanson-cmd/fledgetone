@@ -133,7 +133,7 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
         <div className={`absolute left-0 top-0 bottom-0 w-[3px] ${accent === 'amber' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
         <div className={`absolute left-0 top-0 w-3 h-[3px] ${accent === 'amber' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
         <div className={`absolute left-0 bottom-0 w-3 h-[3px] ${accent === 'amber' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
-        <span className="absolute left-1.5 top-[5px] text-[8px] font-mono font-bold text-amber-300 opacity-80 group-hover:opacity-100">
+        <span className="absolute left-1.5 top-[3px] text-[8px] leading-none font-mono font-bold text-amber-300 opacity-80 group-hover:opacity-100">
           IN
         </span>
       </div>
@@ -148,7 +148,7 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
         <div className={`absolute right-0 top-0 bottom-0 w-[3px] ${accent === 'amber' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
         <div className={`absolute right-0 top-0 w-3 h-[3px] ${accent === 'amber' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
         <div className={`absolute right-0 bottom-0 w-3 h-[3px] ${accent === 'amber' ? 'bg-amber-400' : 'bg-zinc-500'}`} />
-        <span className="absolute right-1.5 top-[5px] text-[8px] font-mono font-bold text-amber-300 opacity-80 group-hover:opacity-100">
+        <span className="absolute right-1.5 top-[3px] text-[8px] leading-none font-mono font-bold text-amber-300 opacity-80 group-hover:opacity-100">
           OUT
         </span>
       </div>

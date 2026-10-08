@@ -222,7 +222,19 @@ const MarkerMenu: React.FC<{ menu: MarkerMenuState; onClose: () => void; onRenam
     onClose();
   };
   return (
-    <div ref={ref} role="menu" aria-label={`Marker ${marker.name}`} className={menuClass} onContextMenu={(e) => e.preventDefault()}>
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={`Marker ${marker.name}`}
+      className={menuClass}
+      // In the page, but inside the ruler as far as React's events go: its clicks mustn't also
+      // scrub the playhead there, or open the ruler's menu
+      onPointerDown={(e) => e.stopPropagation()}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
       <div className="px-3 pt-1 pb-1.5 text-[10px] text-forge-muted">
         <div className="truncate text-forge-text">{marker.name}</div>
         <div className="tabular-nums">

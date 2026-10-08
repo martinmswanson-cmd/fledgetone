@@ -198,6 +198,12 @@ function parseMasterFx(v: unknown): MasterFx {
 export type AutosaveFailure = 'too-big' | 'full' | 'blocked';
 export type AutosaveResult = { ok: true } | { ok: false; reason: AutosaveFailure };
 
+/**
+ * Whether a session has work in it worth offering to restore: clips, or markers (hit points
+ * placed on a video before any music is written).
+ */
+export const hasWork = (p: Pick<ProjectSnapshot, 'clips' | 'markers'>): boolean => p.clips.length > 0 || (p.markers?.length ?? 0) > 0;
+
 /** True once this page has written an autosave (so the stored one is no longer the previous session). */
 let wroteAutosave = false;
 /** True while this page's Restore banner offers the set-aside session (until Restore or Dismiss). */
@@ -208,8 +214,9 @@ let offeringPrevious = false;
  * by project parsing), so a restored session can say how old it is.
  *
  * The set-aside session shares the browser's storage limit (about 5 MB). If the project only
- * fits without it and has clips, the project takes its space: the next startup would set this
- * project aside in its place anyway, and this page's banner still offers the older session.
+ * fits without it and has work in it (see hasWork), the project takes its space: the next startup
+ * would set this project aside in its place anyway, and this page's banner still offers the older
+ * session.
  */
 export function writeAutosave(p: ProjectSnapshot): AutosaveResult {
   const json = JSON.stringify({ ...serializeProject(p), savedAt: Date.now() });
@@ -218,8 +225,8 @@ export function writeAutosave(p: ProjectSnapshot): AutosaveResult {
 
   const previous = readStored(PREVIOUS_SESSION_KEY);
   if (previous === null) return { ok: false, reason: 'too-big' };
-  if (p.clips.length === 0) {
-    // A project without clips wouldn't replace that session at the next startup, so it keeps its
+  if (!hasWork(p)) {
+    // An empty project wouldn't replace that session at the next startup, so it keeps its
     // space; the user can Dismiss it. Say so only when that certainly makes room: storage already
     // holds both, so a project no bigger than the two together fits without that session.
     const fitsAlone = json.length <= previous.length + (readStored(AUTOSAVE_KEY)?.length ?? 0);
@@ -277,10 +284,10 @@ function timeOf(raw: unknown, field: string): number | null {
 }
 
 /**
- * Run once at startup, before autosave can write: if the autosave holds a session with clips,
- * copy it to a second slot, which the Restore banner offers until the user restores or
- * dismisses it. A later startup replaces it only with a newer session that has clips, so
- * clearing the timeline (or starting a blank one) and reloading doesn't lose it. Returns the
+ * Run once at startup, before autosave can write: if the autosave holds a session with work in
+ * it (clips or markers), copy it to a second slot, which the Restore banner offers until the user
+ * restores or dismisses it. A later startup replaces it only with a newer session with work in it,
+ * so clearing the timeline (or starting a blank one) and reloading doesn't lose it. Returns the
  * session to offer, or null.
  *
  * If the copy doesn't fit in storage, the session is still offered for as long as this page is open.
@@ -299,7 +306,7 @@ function setAsidePreviousSession(): SavedSession | null {
     if (json) {
       const raw: unknown = JSON.parse(json);
       const project = parseProject(raw);
-      if (project.clips.length > 0) {
+      if (hasWork(project)) {
         const savedAt = timeOf(raw, 'savedAt');
         // An autosave from an older version doesn't say when it was saved, only that it was before
         // the first startup that set it aside: keep that time through later reloads
@@ -319,7 +326,7 @@ function setAsidePreviousSession(): SavedSession | null {
   if (!slot) return null;
   try {
     const project = parseProject(slot.project);
-    return project.clips.length > 0 ? { project, savedAt: slot.savedAt, keptAt: slot.keptAt } : null;
+    return hasWork(project) ? { project, savedAt: slot.savedAt, keptAt: slot.keptAt } : null;
   } catch {
     return null;
   }

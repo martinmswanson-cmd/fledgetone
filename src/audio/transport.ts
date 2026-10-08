@@ -38,14 +38,31 @@ export function swingDelay(swing: number, bpm: number, ppq = 192): number {
  *   pickup) plays straight, its off-beat 16th included, so the run stays even.
  * - The grid is the clip's own: a clip placed off the 16th grid (Shift-dragged, frame-snapped,
  *   typed as a time) swings as if it sat on the nearest 16th line (the earlier one on a tie).
+ * - Unless its notes sit better on another: a clip split or start-trimmed off the grid keeps its
+ *   notes where they were, so they go on swinging on the grid they were written on (the song's,
+ *   or a moved clip's), not on one counted from the cut.
  */
 export function swungNotes(ticks: readonly number[], clipStartTick: number, ppq = 192): boolean[] {
   const sixteenth = ppq / 4;
   const eighth = 2 * sixteenth;
   const near = ppq / 24;
-  // How far the clip sits after its nearest 16th line, -23 to 24 ticks at 192 PPQ
   const half = Math.floor(sixteenth / 2);
-  const offset = ((((clipStartTick + half - 1) % sixteenth) + sixteenth) % sixteenth) - (half - 1);
+  /** How far `tick` sits after its nearest 16th line, -23 to 24 ticks at 192 PPQ. */
+  const offsetOf = (tick: number) => ((((tick + half - 1) % sixteenth) + sixteenth) % sixteenth) - (half - 1);
+  /** How many notes sit on (or near) a 16th line of the grid `shift` ticks after the song's. */
+  const onGrid = (shift: number) => ticks.reduce((n, tick) => (Math.abs(offsetOf(tick - shift)) < near ? n + 1 : n), 0);
+  // The grids to choose from, preferred in this order: the clip's, the song's, and the one most
+  // of its notes sit exactly on (if that's more than one note: a lone note says nothing)
+  const counts = new Map<number, number>();
+  for (const tick of ticks) counts.set(offsetOf(tick), (counts.get(offsetOf(tick)) ?? 0) + 1);
+  let common: number | null = null;
+  for (const [shift, n] of counts) if (n >= 2 && (common === null || n > counts.get(common)!)) common = shift;
+  let offset = offsetOf(clipStartTick);
+  let best = onGrid(offset);
+  for (const shift of common === null ? [0] : [0, common]) {
+    const n = onGrid(shift);
+    if (n > best) [offset, best] = [shift, n];
+  }
   const inEighth = (g: number) => ((g % eighth) + eighth) % eighth;
   const runs = new Set<number>();
   for (const tick of ticks) {

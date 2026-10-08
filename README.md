@@ -17,7 +17,7 @@ npm install
 npm run dev          # dev server at http://localhost:5173
 npm run build        # typecheck + production build into dist/
 npm run lint         # oxlint
-npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter, swing and Transport ticks, markers and WAV cue points
+npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter, swing and Transport ticks, markers and WAV cue points, insert / delete bars, restorable sessions
 npm run build:single # dist-single/index.html: the whole app in one self-contained HTML file
 ```
 
@@ -33,6 +33,7 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
 | `src/store/timelineTypes.ts` | Data types, snapping (including the frame grid) and duration helpers |
 | `src/store/project.ts` | The `.beatbox.json` project format, validation and browser autosave |
 | `src/store/markers.ts` | Marker maths: names, bar / time anchors across tempo changes, insert / delete bars, reading them from a file |
+| `src/store/ripple.ts` | How insert / delete bars move positions and the loop (undo steps keep the edit as plain numbers) |
 | `src/audio/engine.ts` | The master chain (bus, compressor, limiter, shared reverb / delay) |
 | `src/audio/scheduler.ts` | Turns clips into Tone.js Transport events (one event per tick, updated incrementally) |
 | `src/audio/liveTracks.ts`, `effects/trackStrip.ts` | One mixer strip and instrument per track for live playback |
@@ -67,18 +68,23 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
   walks every path downstream of the connection looking for loops (it stops only at a
   DelayNode). Each note connects fresh nodes, so the walk's length is paid per note: every live
   track strip starts with a zero-delay DelayNode that ends it there. Diamonds (a split that joins
-  again) double the paths after them, so keep them behind that barrier. The strip's inserts end
-  at another one, so re-patching them while playing is quick enough not to open a gap (see
-  `rewire` in `trackStrip.ts`; it also disconnects natively whatever loses its last input, so
-  the strip holds each node up while its input is swapped).
+  again) double the paths after them, so keep them behind that barrier.
+- A connection made or broken on the main thread takes effect whenever the audio thread next
+  renders, so re-patching a playing graph link by link opens gaps (or doubles the sound) for
+  as long as the main thread takes in between. Live, each link of a strip's insert chain goes
+  through a gain of its own, and switching an insert crossfades the old links into the new ones
+  on the audio clock, then takes the old ones apart (`rewire` in `trackStrip.ts`).
+  `cancelAndHoldAtTime()` holds nothing when no ramp is under way, so a fade that follows it
+  needs a `setValueAtTime()` first, or it ramps from the param's last event.
 - Transport positions are written in ticks (`` `${ticks}i` ``). Tone converts those through seconds,
   so `toneFixes.ts` makes results within float noise of a whole tick whole again; otherwise about
   one tick in ten was filed a tick early (skipped when playback started on it or a loop came back
   to it).
 - Swing is applied by the clip schedule, not Tone's Transport, which bends every position inside
   an 8th; keep the Transport's own swing at 0. `swungNotes` in `transport.ts` picks the notes it
-  delays per clip (off-beat 16ths, on the clip's own 16th grid, unless their 8th holds a 1/32 or
-  triplet run) and `swingDelay` says by how much.
+  delays per clip (off-beat 16ths on the 16th grid its notes sit on, which is the clip's own
+  unless it was split or trimmed off it; an 8th holding a 1/32 or triplet run stays straight)
+  and `swingDelay` says by how much.
 - Project files are versioned (`PROJECT_VERSION` in `project.ts`). New optional fields don't
   need a version bump; older builds ignore fields they don't know.
 

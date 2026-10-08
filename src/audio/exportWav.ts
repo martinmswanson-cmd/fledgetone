@@ -72,11 +72,13 @@ const SEAM_FADE_SECONDS = 0.01;
 /** Longest echo tail a seamless loop warms up for, however high the feedback. */
 const MAX_ECHO_TAIL = 60;
 /**
- * Silence rendered before the Transport starts. Instruments treat a note due less than 5 ms
- * after the render position as late and push it back (see monotonic.ts), which made the first
- * note of every export late; starting a little in fixes that. Whole frames, so cuts stay exact.
+ * Silence rendered before the Transport starts (in whole frames, so cuts stay exact). The master
+ * compressor and limiter, and a track's Compressor, start cold in a fresh render and bring their
+ * gain up from nothing over about 0.15 s, so the first beat of a mixdown came out up to 12 dB
+ * quiet (a kick there lost its attack); they settle in the silence. Instruments also treat a note
+ * due less than 5 ms after the render position as late and push it back (see monotonic.ts).
  */
-const PREROLL_FRAMES = 512;
+const PREROLL_SECONDS = 0.25;
 
 /** The fields of Tone's one-shot sources (ToneOscillatorNode, ToneBufferSource) read here. */
 interface OneShotSource {
@@ -175,9 +177,10 @@ function planRender(opts: RenderOptions, latency = 0): RenderPlan {
   // beat at 120 BPM and 44.1 kHz), and floating-point noise rounded each one to that frame or
   // the next, differently from one loop pass to another. At a whole-number tempo a note falls
   // a whole number of frames plus a fraction that is never 0.7, so moved by 0.3 none is on one.
-  const startAt = (PREROLL_FRAMES + 0.3) / sampleRate;
+  const preroll = Math.round(PREROLL_SECONDS * sampleRate);
+  const startAt = (preroll + 0.3) / sampleRate;
   // Where the range start comes out of the graph
-  const lead = PREROLL_FRAMES + latency;
+  const lead = preroll + latency;
   const rangeSeconds = ((opts.endBar - opts.startBar) * 240) / opts.bpm;
   const ending = opts.ending ?? 'ringOut';
   if (ending === 'seamless') {
