@@ -31,6 +31,13 @@ const SUPERSAW: ReadonlyArray<[cents: number, side: -1 | 0 | 1]> = [
 ];
 /** Where in its cycle each saw starts (fixed, uneven), so they don't sweep against each other at every note's start. */
 const SUPERSAW_PHASES = [0, 0.31, 0.57, 0.12, 0.83, 0.46, 0.69];
+/**
+ * The Supersaw was voiced through a track strip that folded stereo to mono: its seven unrelated
+ * saws came out at 2.5 saws' worth of power on each side. The strip keeps both sides now, where
+ * each has four (three of its own and the middle one), so this leaves each side as loud as it
+ * was voiced, only wide.
+ */
+const SUPERSAW_LEVEL = Math.sqrt(2.5 / 4);
 
 /**
  * Supersaw: seven detuned saws per note, spread left and right, with a soft attack and a medium
@@ -60,7 +67,7 @@ export function createSupersaw(output: Tone.InputNode) {
       return osc;
     });
     const amp = raw.createGain();
-    attackDecay(amp.gain, start, 0.11 * n.velocity, 0.035, 0.4, 0.8);
+    attackDecay(amp.gain, start, 0.11 * SUPERSAW_LEVEL * n.velocity, 0.035, 0.4, 0.8);
     amp.gain.setTargetAtTime(0, end, releaseConstant(release));
     merger.connect(amp);
     amp.connect(highpass);
