@@ -1,8 +1,8 @@
 import * as Tone from 'tone';
 import { barToTicks } from './transport';
-import { safely } from './instruments';
+import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
-import { getLiveInstrument, releaseAllLiveVoices } from './liveTracks';
+import { getLiveInstrument, pumpOnKick, releaseAllLiveVoices } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import type { Clip, LoopRegion, Track } from '../store/timelineTypes';
 
@@ -48,7 +48,8 @@ const sameNotes = (prev: Clip, next: Clip) =>
 /**
  * Play the timeline's clips on `transport`, which picks up loop passes and swing. Each note
  * group goes to its track's instrument, looked up when it plays (`instrumentFor` returns
- * undefined for a track that shouldn't sound).
+ * undefined for a track that shouldn't sound). `onKick` hears of every kick drum note (C1) at
+ * the time it plays, whether or not that track sounds, for the Pump inserts to follow.
  *
  * There is one Transport event per tick that has notes, shared by every clip and track, and
  * it reads that tick's notes from a lookup table when it fires. An edit rebuilds the table
@@ -59,7 +60,8 @@ const sameNotes = (prev: Clip, next: Clip) =>
  */
 export function createClipSchedule(
   transport: ReturnType<typeof Tone.getTransport>,
-  instrumentFor: (trackId: string) => TrackInstrument | undefined
+  instrumentFor: (trackId: string) => TrackInstrument | undefined,
+  onKick?: (trackId: string, time: number) => void
 ): ClipSchedule {
   let byTick = new Map<number, NoteGroup[]>();
   let entries = new Map<string, ClipEntry>();
@@ -80,6 +82,11 @@ export function createClipSchedule(
       for (const { trackId, notes } of groups) {
         const instrument = instrumentFor(trackId);
         if (instrument) safely(() => instrument.play(notes, time));
+      }
+
+      if (!onKick) return;
+      for (const group of groups) {
+        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, time);
       }
     };
   };
@@ -125,7 +132,7 @@ let liveSchedule: ClipSchedule | null = null;
 
 /** Bring the live Transport's events in line with the timeline clips. */
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
-  liveSchedule ??= createClipSchedule(Tone.getTransport(), getLiveInstrument);
+  liveSchedule ??= createClipSchedule(Tone.getTransport(), getLiveInstrument, pumpOnKick);
   liveSchedule.update(tracks, clips);
 }
 
