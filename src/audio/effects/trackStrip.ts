@@ -284,6 +284,16 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
   /** Take apart the links that have faded out, and dispose the inserts switched off. */
   const tidy = () => {
+    // The fades are on the audio clock and this runs from the wall clock. While the page's audio
+    // is suspended (a project opened before anything was played) the audio clock stands still,
+    // and the old links went before the new ones had faded in: the first Play then started with
+    // a gap on a track whose Compressor was still waiting to be heard. So wait for the clock.
+    const fadesEnd = gates.reduce((end, g) => (g.wanted ? end : Math.max(end, g.fade.end)), 0);
+    if (raw.currentTime < fadesEnd) {
+      clearTimeout(tidyTimer);
+      tidyTimer = window.setTimeout(tidy, Math.max(250, (fadesEnd - raw.currentTime) * 1000 + 50));
+      return;
+    }
     for (const g of gates) {
       if (g.wanted) continue;
       cut(g.link[0], g.gain);
