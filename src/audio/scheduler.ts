@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import { barToTicks } from './transport';
+import { barToTicks, swingDelay, swungNotes } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import { getLiveInstrument, pumpOnKick, releaseAllLiveVoices } from './liveTracks';
@@ -12,6 +12,8 @@ export { DRUM_NOTES } from './instruments';
 interface NoteGroup {
   trackId: string;
   notes: PlayableNote[];
+  /** Swing plays it late (see swungNotes). */
+  swung: boolean;
 }
 
 /** A clip's note groups by absolute tick, worked out once per version of the clip. */
@@ -27,19 +29,21 @@ export interface ClipSchedule {
 }
 
 function groupClipNotes(clip: Clip): ClipEntry['groups'] {
+  // Notes hidden by a trim don't play
+  const notes = clip.notes.filter((note) => note.startOffset >= -1e-6 && note.startOffset < clip.lengthBars - 1e-6);
+  const ticks = notes.map((note) => barToTicks(clip.startBar + note.startOffset));
+  const swung = swungNotes(ticks, barToTicks(clip.startBar), Tone.Transport.PPQ);
   // Group notes by tick (and length) so chords trigger as one instrument call
   const groups = new Map<string, [number, NoteGroup]>();
-  for (const note of clip.notes) {
-    // Notes hidden by a trim don't play
-    if (note.startOffset < -1e-6 || note.startOffset >= clip.lengthBars - 1e-6) continue;
-    const tick = barToTicks(clip.startBar + note.startOffset);
+  notes.forEach((note, i) => {
+    const tick = ticks[i];
     const key = `${tick}|${note.duration}`;
     // The clip's wobble rate travels with each note to the instrument (the ones that wobble use it)
     const playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
     const group = groups.get(key);
     if (group) group[1].notes.push(playable);
-    else groups.set(key, [tick, { trackId: clip.trackId, notes: [playable] }]);
-  }
+    else groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], swung: swung[i] }]);
+  });
   return [...groups.values()];
 }
 
@@ -48,10 +52,11 @@ const sameNotes = (prev: Clip, next: Clip) =>
   prev.notes === next.notes && prev.startBar === next.startBar && prev.lengthBars === next.lengthBars && prev.trackId === next.trackId && prev.wobble === next.wobble;
 
 /**
- * Play the timeline's clips on `transport`, which picks up loop passes and swing. Each note
- * group goes to its track's instrument, looked up when it plays (`instrumentFor` returns
- * undefined for a track that shouldn't sound). `onKick` hears of every kick drum note (C1) at
- * the time it plays, whether or not that track sounds, for the Pump inserts to follow.
+ * Play the timeline's clips on `transport`, which picks up loop passes. Each note group goes to
+ * its track's instrument, looked up when it plays (`instrumentFor` returns undefined for a track
+ * that shouldn't sound). `onKick` hears of every kick drum note (C1) at the time it plays,
+ * whether or not that track sounds, for the Pump inserts to follow. `swing` is read as each
+ * tick plays and delays the notes swungNotes picks out; the Transport's own swing stays off.
  *
  * There is one Transport event per tick that has notes, shared by every clip and track, and
  * it reads that tick's notes from a lookup table when it fires. An edit rebuilds the table
@@ -63,7 +68,8 @@ const sameNotes = (prev: Clip, next: Clip) =>
 export function createClipSchedule(
   transport: ReturnType<typeof Tone.getTransport>,
   instrumentFor: (trackId: string) => TrackInstrument | undefined,
-  onKick?: (trackId: string, time: number) => void
+  onKick?: (trackId: string, time: number) => void,
+  swing: () => number = () => 0
 ): ClipSchedule {
   let byTick = new Map<number, NoteGroup[]>();
   let entries = new Map<string, ClipEntry>();
@@ -76,19 +82,21 @@ export function createClipSchedule(
     // those notes played twice (flammed kicks, +6 dB samples). A repeat at the same time is
     // skipped; a loop pass comes back at a later time and plays as normal.
     let lastTime = -Infinity;
-    return (time: number) => {
-      if (Math.abs(time - lastTime) < 1e-4) return;
-      lastTime = time;
+    return (tickTime: number) => {
+      if (Math.abs(tickTime - lastTime) < 1e-4) return;
+      lastTime = tickTime;
       const groups = byTick.get(tick);
       if (!groups) return;
-      for (const { trackId, notes } of groups) {
+      const late = swingDelay(swing(), transport.bpm.value, transport.PPQ);
+      for (const { trackId, notes, swung } of groups) {
+        const time = swung ? tickTime + late : tickTime;
         const instrument = instrumentFor(trackId);
         if (instrument) safely(() => instrument.play(notes, time));
       }
 
       if (!onKick) return;
       for (const group of groups) {
-        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, time);
+        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, group.swung ? tickTime + late : tickTime);
       }
     };
   };
@@ -131,21 +139,21 @@ export function createClipSchedule(
 }
 
 let liveSchedule: ClipSchedule | null = null;
+let liveSwing = 0;
 
 /** Bring the live Transport's events in line with the timeline clips. */
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
-  liveSchedule ??= createClipSchedule(Tone.getTransport(), getLiveInstrument, pumpOnKick);
+  liveSchedule ??= createClipSchedule(Tone.getTransport(), getLiveInstrument, pumpOnKick, () => liveSwing);
   liveSchedule.update(tracks, clips);
 }
 
-/** Apply loop region, tempo and swing to Tone.Transport. */
+/** Apply loop region and tempo to Tone.Transport, and swing to the clips played on it. */
 export function syncTransport(loop: LoopRegion, bpm: number, swing: number): void {
   Tone.Transport.loopStart = `${barToTicks(loop.inBar)}i`;
   Tone.Transport.loopEnd = `${barToTicks(loop.outBar)}i`;
   Tone.Transport.loop = loop.enabled;
   Tone.Transport.bpm.value = bpm;
-  Tone.Transport.swing = swing;
-  Tone.Transport.swingSubdivision = '16n';
+  liveSwing = swing;
 }
 
 /** Release sustained voices (tracks and deck) so nothing hangs after Stop. */

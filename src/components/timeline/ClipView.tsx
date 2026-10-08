@@ -8,6 +8,7 @@ import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
+import { shadeNotes, type NoteRect } from './noteShades';
 
 const CLIP_INSET = 4;
 const CLIP_HEIGHT = TRACK_HEIGHT - CLIP_INSET * 2;
@@ -20,15 +21,6 @@ const DRUM_ROWS: string[] = [
   DRUM_NOTES.snare,
   DRUM_NOTES.kick,
 ];
-
-interface NoteRect {
-  id: string;
-  left: number;
-  width: number;
-  top: number;
-  height: number;
-  opacity: number;
-}
 
 /** Lay out the visible notes of a clip as mini piano-roll rectangles. */
 function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteRect[] {
@@ -57,7 +49,6 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
 
   const rowHeight = areaHeight / rows;
   return visible.map((n) => ({
-    id: n.id,
     left: n.startOffset * zoom,
     width: Math.max(2, Math.min(durationToBars(n.duration), clip.lengthBars - n.startOffset) * zoom - 1),
     top: areaTop + rowOf(n.note) * rowHeight,
@@ -109,7 +100,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
   const [razorX, setRazorX] = useState<number | null>(null);
 
-  const notes = useMemo(() => layoutNotes(clip, track.instrumentKey, zoom), [clip, track.instrumentKey, zoom]);
+  const shades = useMemo(() => shadeNotes(layoutNotes(clip, track.instrumentKey, zoom)), [clip, track.instrumentKey, zoom]);
 
   const left = (clip.startBar - 1) * zoom;
   const width = clip.lengthBars * zoom;
@@ -350,20 +341,13 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       </div>
 
       {/* Notes */}
-      {notes.map((n) => (
-        <div
-          key={n.id}
-          className="absolute rounded-[1px] pointer-events-none"
-          style={{
-            left: n.left,
-            width: n.width,
-            top: n.top,
-            height: n.height,
-            backgroundColor: track.color,
-            opacity: n.opacity,
-          }}
-        />
-      ))}
+      {shades.length > 0 && (
+        <svg className="absolute left-0 top-0 w-full h-full pointer-events-none" shapeRendering="crispEdges" aria-hidden="true">
+          {shades.map(({ opacity, d }) => (
+            <path key={opacity} d={d} fill={track.color} fillOpacity={opacity} />
+          ))}
+        </svg>
+      )}
 
       {/* Trim handles */}
       {!isRazor && width > TRIM_HANDLE_PX * 3 && (

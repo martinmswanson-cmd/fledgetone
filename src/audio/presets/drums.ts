@@ -3,6 +3,17 @@ import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
 
 /**
+ * Fold the noise going through `filter` to mono (the average of its two sides). Tone's noise is
+ * stereo, a separate random stream per side, but the kits were voiced hearing it folded to mono
+ * (the track strip used to fold everything), so their snares and hats stay as they were.
+ */
+export function monoFilter<T extends Tone.ToneAudioNode>(filter: T): T {
+  filter.channelCount = 1;
+  filter.channelCountMode = 'explicit';
+  return filter;
+}
+
+/**
  * Groove Drum Kit (Synthesized Analog Drums)
  * 1. Kick: Punchy 909-style sub-transient membrane
  * 2. Snare / Clap: Layered white noise with 800Hz highpass filter + 200Hz pitched snap
@@ -37,10 +48,12 @@ export function createDrumKit(output: Tone.InputNode) {
     },
     volume: -3,
   });
-  const snareFilter = new Tone.BiquadFilter({
-    frequency: 800,
-    type: 'highpass',
-  });
+  const snareFilter = monoFilter(
+    new Tone.BiquadFilter({
+      frequency: 800,
+      type: 'highpass',
+    })
+  );
   snareNoise.connect(snareFilter);
   snareFilter.connect(output);
 

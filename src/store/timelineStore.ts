@@ -32,11 +32,36 @@ export const MAX_ZOOM = 1280;
 const EPS = 1e-6;
 const HISTORY_LIMIT = 100;
 
+/** Where the loop and the playhead are. */
+interface RippleSpot {
+  inBar: number;
+  outBar: number;
+  playhead: number;
+}
+
+/**
+ * What an insert / delete bars did to the loop and the playhead, kept with its undo step so that
+ * undo takes them back with the music and redo moves them again. One that hasn't moved since goes
+ * exactly back to where it was (or to where the edit put it). One that has (the playhead while
+ * playing, a loop dragged since) is moved by the edit's rule, or back by its inverse, so it stays
+ * on the same music.
+ */
+interface RippleMove {
+  before: RippleSpot;
+  after: RippleSpot;
+  movePoint: (bar: number) => number;
+  moveLoop: (loop: LoopRegion) => LoopRegion;
+  /** From after the edit back to before it (a position in bars that were removed comes back at the cut). */
+  backPoint: (bar: number) => number;
+}
+
 /**
  * One undo step: the arrangement and mixer as they were. Every field is an immutable reference
  * the store already holds (edits replace objects rather than change them), so taking one is cheap.
  */
 interface HistoryEntry {
+  /** An insert / delete bars step: how it moved the loop and the playhead. */
+  ripple?: RippleMove;
   clips: Clip[];
   tracks: Track[];
   masterFx: MasterFx;
@@ -45,8 +70,25 @@ interface HistoryEntry {
 /** Everything undo restores, read from the store now. */
 const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s) });
 
-/** History patch that records the current state as the one to return to on undo. */
-const pushPast = (s: TimelineState) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), historyEntry(s)], future: [] });
+const withRipple = (entry: HistoryEntry, ripple: RippleMove | undefined): HistoryEntry => (ripple ? { ...entry, ripple } : entry);
+
+/** History patch that records the current state as the one to return to on undo (and, for a ripple edit, what it moved). */
+const pushPast = (s: TimelineState, ripple?: RippleMove) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), withRipple(historyEntry(s), ripple)], future: [] });
+
+/** Where undoing (or redoing) a ripple step puts the loop and the playhead: see RippleMove. */
+function rippleSpot(s: TimelineState, move: RippleMove, undo: boolean): { loopRegion: LoopRegion; playhead: number } {
+  const from = undo ? move.after : move.before;
+  const to = undo ? move.before : move.after;
+  const near = (a: number, b: number) => Math.abs(a - b) < EPS;
+  const loop = s.loopRegion;
+  let moved: LoopRegion;
+  if (near(loop.inBar, from.inBar) && near(loop.outBar, from.outBar)) moved = { ...loop, inBar: to.inBar, outBar: to.outBar };
+  else moved = undo ? { ...loop, inBar: move.backPoint(loop.inBar), outBar: move.backPoint(loop.outBar) } : move.moveLoop(loop);
+  // (A loop that would shrink to nothing stays where it is)
+  const loopRegion = moved.outBar - moved.inBar > EPS && (moved.inBar !== loop.inBar || moved.outBar !== loop.outBar) ? moved : loop;
+  const playhead = near(s.playheadPosition, from.playhead) ? to.playhead : clampBar((undo ? move.backPoint : move.movePoint)(s.playheadPosition));
+  return { loopRegion, playhead };
+}
 
 /**
  * The store patch that puts a history entry back. The track selection stays valid: a track that
@@ -411,13 +453,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
    * Finish an insert / remove-bars edit: the new clips (one undo step), then everything else placed
    * on the timeline moved by the same rule, so it stays with the music: `movePoint` for a position,
    * `moveLoop` for the loop region, `moveLane` for an automation lane's points. Anything new that
-   * sits at a song position belongs here too.
+   * sits at a song position belongs here too. `backPoint` undoes `movePoint` (for undo, see RippleMove).
    */
   const applyRipple = (
     clips: Clip[],
     movePoint: (bar: number) => number,
     moveLoop: (loop: LoopRegion) => LoopRegion,
-    moveLane: (points: AutomationPoint[]) => AutomationPoint[]
+    moveLane: (points: AutomationPoint[]) => AutomationPoint[],
+    backPoint: (bar: number) => number
   ) => {
     const s = get();
     const clipsChanged = clips.length !== s.clips.length || clips.some((c, i) => c !== s.clips[i]);
@@ -432,12 +475,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     const tracksChanged = tracks.some((t, i) => t !== s.tracks[i]);
     const loopRegion = moveLoop(s.loopRegion);
     const loopChanged = loopRegion.inBar !== s.loopRegion.inBar || loopRegion.outBar !== s.loopRegion.outBar;
+    const playhead = clampBar(movePoint(s.playheadPosition));
+    const ripple: RippleMove = {
+      before: { inBar: s.loopRegion.inBar, outBar: s.loopRegion.outBar, playhead: s.playheadPosition },
+      after: { inBar: loopRegion.inBar, outBar: loopRegion.outBar, playhead },
+      movePoint,
+      moveLoop,
+      backPoint,
+    };
+    // One undo step for all of it, even when only the loop or the playhead moved
     set((st) => ({
-      ...(clipsChanged || tracksChanged ? { clips, tracks, ...pushPast(st) } : {}),
+      ...(clipsChanged || tracksChanged || loopChanged || playhead !== s.playheadPosition ? pushPast(st, ripple) : {}),
+      ...(clipsChanged || tracksChanged ? { clips, tracks } : {}),
       ...(tracksChanged ? { automationSelection: null } : {}),
       ...(loopChanged ? { loopRegion } : {}),
     }));
-    const playhead = movePoint(s.playheadPosition);
     if (playhead !== s.playheadPosition) get().seek(playhead);
   };
 
@@ -880,7 +932,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         // length; one that started before the insert point keeps its In.
         if (outBar > TOTAL_BARS + 1) return { ...loop, outBar: TOTAL_BARS + 1, inBar: Math.min(inBar, TOTAL_BARS + 1 - (loop.outBar - loop.inBar)) };
         return { ...loop, inBar, outBar };
-      }, (points) => insertLaneBars(points, at, bars));
+      }, (points) => insertLaneBars(points, at, bars), (bar) => (bar >= at + bars - EPS ? bar - bars : Math.min(bar, at)));
       return null;
     },
 
@@ -914,7 +966,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         // A loop (nearly) all inside the removed bars, like "Delete bars In → Out", keeps its length, now over what came after
         if (outBar - inBar < minLoop - EPS) return { ...loop, inBar, outBar: Math.min(TOTAL_BARS + 1, inBar + loop.outBar - loop.inBar) };
         return { ...loop, inBar, outBar };
-      }, (points) => removeLaneBars(points, from, to));
+      }, (points) => removeLaneBars(points, from, to), (bar) => (bar > from + EPS ? bar + len : bar));
       return null;
     },
 
@@ -987,25 +1039,34 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     undo: () => {
       const s = get();
       if (s.past.length === 0) return;
+      const entry = s.past[s.past.length - 1];
+      // An insert / delete bars takes the loop and the playhead back with it (and its redo moves them again)
+      const spot = entry.ripple && rippleSpot(s, entry.ripple, true);
       set({
-        ...restoreEntry(s, s.past[s.past.length - 1]),
+        ...restoreEntry(s, entry),
         past: s.past.slice(0, -1),
-        future: [historyEntry(s), ...s.future].slice(0, HISTORY_LIMIT),
+        future: [withRipple(historyEntry(s), entry.ripple), ...s.future].slice(0, HISTORY_LIMIT),
         automationSelection: null,
+        ...(spot ? { loopRegion: spot.loopRegion } : {}),
       });
       applyMasterFx();
+      if (spot && spot.playhead !== s.playheadPosition) get().seek(spot.playhead);
     },
 
     redo: () => {
       const s = get();
       if (s.future.length === 0) return;
+      const entry = s.future[0];
+      const spot = entry.ripple && rippleSpot(s, entry.ripple, false);
       set({
-        ...restoreEntry(s, s.future[0]),
+        ...restoreEntry(s, entry),
         future: s.future.slice(1),
-        past: [...s.past.slice(-(HISTORY_LIMIT - 1)), historyEntry(s)],
+        past: [...s.past.slice(-(HISTORY_LIMIT - 1)), withRipple(historyEntry(s), entry.ripple)],
         automationSelection: null,
+        ...(spot ? { loopRegion: spot.loopRegion } : {}),
       });
       applyMasterFx();
+      if (spot && spot.playhead !== s.playheadPosition) get().seek(spot.playhead);
     },
 
     // ---------- Project ----------
