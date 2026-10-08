@@ -11,7 +11,7 @@ export type { InstrumentKey } from './instrumentCatalog';
 
 /**
  * Build the mix graph in the current Tone context:
- *   track strips -> master bus -> compressor -> limiter -> destination
+ *   track strips -> master bus -> compressor -> limiter -> ceiling -> destination
  *   track sends  -> shared reverb / delay -> master bus
  * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
  * the sound deck's pads. Used once for live playback and again inside the WAV export render.
@@ -23,17 +23,40 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
 
   // Master mastering chain
   const compressor = new Tone.Compressor({ threshold: -18, ratio: 4, attack: 0.005, release: 0.1 });
-  const limiter = new Tone.Limiter(-0.5);
+  // A hard-knee limiter: Tone.Limiter keeps Tone's 30 dB soft knee, which barely limits, so a
+  // dense mix went up to +7 dB over full scale and clipped in playback (exports were scaled
+  // down instead, so they sounded different). The compressor's 6 ms look-ahead catches peaks
+  // before they arrive; the ceiling then rounds off the little that a 20:1 ratio lets through.
+  const limiter = new Tone.Compressor({ threshold: -1, ratio: 20, attack: 0, release: 0.08, knee: 0 });
+  const ceiling = new Tone.WaveShaper(ceilingCurve());
   bus.connect(compressor);
   compressor.connect(limiter);
-  limiter.connect(destination);
+  limiter.connect(ceiling);
+  ceiling.connect(destination);
 
   const auditionInput = new Tone.Gain(1).connect(bus);
 
-  return { bus, busFx, compressor, limiter, auditionInput };
+  return { bus, busFx, compressor, limiter, ceiling, auditionInput };
 }
 
 export type MixChain = ReturnType<typeof createMixChain>;
+
+/**
+ * Unity up to -0.45 dBFS, then a smooth bend that never passes -0.04 dBFS. The signal reaching it
+ * is already limited to about -1 dBFS, so it only touches the odd fast transient.
+ */
+function ceilingCurve(): Float32Array {
+  const n = 4097;
+  const knee = 0.95;
+  const room = 0.995 - knee;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    const a = Math.abs(x);
+    curve[i] = a <= knee ? x : Math.sign(x) * (knee + room * Math.tanh((a - knee) / room));
+  }
+  return curve;
+}
 
 export const liveMix = createMixChain(Tone.getDestination());
 

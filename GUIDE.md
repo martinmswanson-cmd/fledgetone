@@ -270,7 +270,7 @@ In the header:
 - **SWING**: delays every other 16th note for a shuffled feel (0 to 50%). New blank projects start at 20% (the demo song uses 15%). Double-click it for 0% (straight).
 - **MASTER**: the final output level (-30 to +6 dB). It also sets the export level, but it isn't saved with the project.
 
-Every track goes through a master compressor and limiter, which keep the mix in check at MASTER 0 dB or lower. MASTER is applied after the limiter, so above 0 dB playback can clip. Exports are turned down automatically if they would clip.
+Every track goes through a master compressor and a limiter that holds peaks just under full scale, so at MASTER 0 dB or lower playback never clips and sounds the same as your exports. MASTER is applied after the limiter, so above 0 dB playback can clip (exports are turned down to fit).
 
 Mixer and effect changes can be undone with `Ctrl+Z`; tempo, swing and master volume can't.
 

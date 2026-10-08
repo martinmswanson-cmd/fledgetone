@@ -455,6 +455,7 @@ async function renderTracks(
       mix.bus.connect(context.destination);
       mix.compressor.dispose();
       mix.limiter.dispose();
+      mix.ceiling.dispose();
     }
 
     const strips: TrackStrip[] = [];
@@ -505,7 +506,7 @@ async function renderTracks(
         instruments.forEach((i) => i.dispose());
         strips.forEach((s) => s.dispose());
         mix.busFx.dispose();
-        [mix.bus, mix.compressor, mix.limiter, mix.auditionInput].forEach((n) => n.disposed || n.dispose());
+        [mix.bus, mix.compressor, mix.limiter, mix.ceiling, mix.auditionInput].forEach((n) => n.disposed || n.dispose());
       },
     };
   }
