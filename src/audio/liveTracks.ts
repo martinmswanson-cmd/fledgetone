@@ -1,13 +1,16 @@
 import * as Tone from 'tone';
 import { liveMix } from './engine';
 import type { InstrumentKey } from './engine';
-import { createTrackStrip } from './effects/trackStrip';
-import type { TrackStrip } from './effects/trackStrip';
+import { createPumpClock, createTrackStrip } from './effects/trackStrip';
+import type { PumpClock, TrackStrip } from './effects/trackStrip';
 import { createInstrument, safely } from './instruments';
+import { isDrumKind } from './instrumentCatalog';
+import { barToTicks } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { Track } from '../store/timelineTypes';
 import { loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
+import { TOTAL_BARS } from '../store/timelineStore';
 
 /**
  * Live playback graph: one effects strip + one instrument per timeline track, kept in step
@@ -29,6 +32,10 @@ interface LiveTrack {
 }
 
 const live = new Map<string, LiveTrack>();
+
+/** Every beat / every 8th for the Pumps that follow those (on the live Transport, made on first sync). */
+let pumpClock: PumpClock | null = null;
+const liveStrips = () => [...live.values()].map((lt) => lt.strip);
 
 const sampleKey = (track: Track) => (track.sample ? `${track.sample.root}|${track.sample.dataUrl}` : undefined);
 
@@ -81,6 +88,20 @@ export function syncLiveTracks(tracks: Track[]): void {
     // A silent track's notes are skipped rather than played into a muted channel, saving CPU
     lt.audible = !track.isMuted && (!anySolo || track.isSoloed);
   }
+  // The live mix's own Transport, even while a WAV export has made its offline context the global
+  // one, over the whole timeline
+  pumpClock ??= createPumpClock(liveMix.bus.context.transport, liveStrips, 0, barToTicks(TOTAL_BARS + 1));
+  pumpClock.update();
+}
+
+/**
+ * A kick drum note at `time` on `trackId` (from the scheduler): every Pump that follows the kick
+ * ducks, if that track is a drum kit that sounds (not muted, not silenced by another's solo).
+ */
+export function pumpOnKick(trackId: string, time: number): void {
+  const lt = live.get(trackId);
+  if (!lt?.audible || !isDrumKind(lt.instrumentKey)) return;
+  for (const { strip } of live.values()) strip.pump(time, 'kick');
 }
 
 /** A track's instrument, or undefined while the track is muted / not the soloed one. */

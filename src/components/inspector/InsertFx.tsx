@@ -1,8 +1,16 @@
 import React from 'react';
-import { Flame, Gauge, Waves } from 'lucide-react';
+import { Filter, Flame, Gauge, HeartPulse, Waves } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import type { Track, TrackFx } from '../../store/timelineTypes';
-import { defaultTrackFx } from '../../store/timelineTypes';
+import type { FilterSlope, FilterType, PumpTrigger, Track, TrackFx } from '../../store/timelineTypes';
+import {
+  defaultTrackFx,
+  FILTER_CUTOFF_MAX,
+  FILTER_CUTOFF_MIN,
+  FILTER_RESONANCE_MAX,
+  FILTER_RESONANCE_MIN,
+  PUMP_RELEASE_MAX,
+  PUMP_RELEASE_MIN,
+} from '../../store/timelineTypes';
 import { UndoableRange } from '../UndoableRange';
 
 interface SliderProps {
@@ -36,6 +44,45 @@ const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format,
     <span className="w-14 text-right tabular-nums text-white font-semibold">{format(value)}</span>
   </label>
 );
+
+interface ChoiceProps<T extends string | number> {
+  label: string;
+  value: T;
+  options: ReadonlyArray<{ value: T; label: string; title: string }>;
+  /** Called only for a different choice (each one is an undo step) */
+  onChange: (v: T) => void;
+  accent: string;
+  disabled: boolean;
+}
+
+/** A row of buttons picking one of a few settings (a filter type, a trigger). */
+function FxChoice<T extends string | number>({ label, value, options, onChange, accent, disabled }: ChoiceProps<T>) {
+  return (
+    <div className={`flex items-center gap-2 text-[10px] font-mono ${disabled ? 'opacity-45' : ''}`} role="group" aria-label={label}>
+      <span className="w-16 shrink-0 text-forge-muted uppercase">{label}</span>
+      <div className="flex-1 min-w-0 grid gap-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+        {options.map((o) => {
+          const active = o.value === value;
+          return (
+            <button
+              key={String(o.value)}
+              type="button"
+              aria-pressed={active}
+              title={o.title}
+              onClick={() => !active && onChange(o.value)}
+              className={`py-0.5 rounded border font-bold whitespace-nowrap tracking-tight transition ${
+                active ? 'text-black' : 'bg-black/40 text-forge-muted border-forge-border hover:text-white'
+              }`}
+              style={active ? { backgroundColor: accent, borderColor: accent } : undefined}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 interface PanelProps {
   title: string;
@@ -134,6 +181,104 @@ export const DynamicsAndChorusPanels: React.FC<{ track: Track }> = ({ track }) =
         <FxSlider label="Rate" value={fx.chorus.rate} min={0.1} max={8} step={0.1} format={(v) => `${v.toFixed(1)} Hz`} onChange={(rate) => setChorus({ rate })} reset={d.chorus.rate} accent={chorusAccent} disabled={!fx.chorus.on} />
         <FxSlider label="Depth" value={fx.chorus.depth} min={0} max={1} step={0.01} format={pct} onChange={(depth) => setChorus({ depth })} reset={d.chorus.depth} accent={chorusAccent} disabled={!fx.chorus.on} />
         <FxSlider label="Mix" value={fx.chorus.mix} min={0} max={1} step={0.01} format={pct} onChange={(mix) => setChorus({ mix })} reset={d.chorus.mix} accent={chorusAccent} disabled={!fx.chorus.on} />
+      </InsertPanel>
+    </>
+  );
+};
+
+/** A logarithmic slider scale: positions 0 to 1000 map onto lo..hi (each step the same ratio). */
+const logScale = (lo: number, hi: number) => ({
+  toPos: (v: number) => (1000 * Math.log(v / lo)) / Math.log(hi / lo),
+  fromPos: (pos: number) => lo * Math.pow(hi / lo, pos / 1000),
+});
+const cutoffScale = logScale(FILTER_CUTOFF_MIN, FILTER_CUTOFF_MAX);
+const resonanceScale = logScale(FILTER_RESONANCE_MIN, FILTER_RESONANCE_MAX);
+
+/** "350 Hz", "1.25 kHz", "12.5 kHz" */
+const formatHz = (hz: number) => (hz < 999.5 ? `${Math.round(hz)} Hz` : `${(hz / 1000).toFixed(hz < 9995 ? 2 : 1)} kHz`);
+
+const FILTER_TYPE_OPTIONS: ReadonlyArray<{ value: FilterType; label: string; title: string }> = [
+  { value: 'lowpass', label: 'Low-pass', title: 'Low-pass: keep what is below the cutoff' },
+  { value: 'highpass', label: 'High-pass', title: 'High-pass: keep what is above the cutoff' },
+  { value: 'bandpass', label: 'Band-pass', title: 'Band-pass: keep a band around the cutoff' },
+];
+const FILTER_SLOPE_OPTIONS: ReadonlyArray<{ value: FilterSlope; label: string; title: string }> = [
+  { value: 12, label: '12 dB', title: 'Gentle: 12 dB per octave' },
+  { value: 24, label: '24 dB', title: 'Steep: 24 dB per octave' },
+];
+const PUMP_TRIGGER_OPTIONS: ReadonlyArray<{ value: PumpTrigger; label: string; title: string }> = [
+  { value: 'kick', label: 'Kick drum', title: 'Duck on every kick (C1) of a drum kit that is playing (not muted or silenced by solo)' },
+  { value: 'beat', label: 'Every beat', title: 'Duck on every quarter note' },
+  { value: 'eighth', label: 'Every 1/8', title: 'Duck on every 8th note' },
+];
+
+/** Filter and Pump (last in the chain, after the Chorus). */
+export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
+  const fx = { ...defaultTrackFx(), ...track.fx };
+  const d = defaultTrackFx();
+  const setFilter = (patch: Partial<TrackFx['filter']>, record = false) =>
+    useTimelineStore.getState().setTrackFx(track.id, 'filter', patch, record);
+  const setPump = (patch: Partial<TrackFx['pump']>, record = false) => useTimelineStore.getState().setTrackFx(track.id, 'pump', patch, record);
+  const filterAccent = '#ec4899';
+  const pumpAccent = '#facc15';
+  return (
+    <>
+      <InsertPanel
+        title="Filter"
+        icon={<Filter className="w-3.5 h-3.5" style={{ color: filterAccent }} />}
+        on={fx.filter.on}
+        onToggle={() => setFilter({ on: !fx.filter.on })}
+        accent={filterAccent}
+      >
+        <FxChoice label="Type" value={fx.filter.type} options={FILTER_TYPE_OPTIONS} onChange={(type) => setFilter({ type }, true)} accent={filterAccent} disabled={!fx.filter.on} />
+        <FxSlider
+          label="Cutoff"
+          value={cutoffScale.toPos(fx.filter.cutoff)}
+          min={0}
+          max={1000}
+          step={1}
+          format={(pos) => formatHz(cutoffScale.fromPos(pos))}
+          onChange={(pos) => setFilter({ cutoff: Number(cutoffScale.fromPos(pos).toPrecision(4)) })}
+          reset={cutoffScale.toPos(d.filter.cutoff)}
+          accent={filterAccent}
+          disabled={!fx.filter.on}
+        />
+        <FxSlider
+          label="Resonance"
+          value={resonanceScale.toPos(fx.filter.resonance)}
+          min={0}
+          max={1000}
+          step={1}
+          format={(pos) => `Q ${resonanceScale.fromPos(pos).toFixed(2)}`}
+          onChange={(pos) => setFilter({ resonance: Number(resonanceScale.fromPos(pos).toPrecision(3)) })}
+          reset={resonanceScale.toPos(d.filter.resonance)}
+          accent={filterAccent}
+          disabled={!fx.filter.on}
+        />
+        <FxChoice label="Slope" value={fx.filter.slope} options={FILTER_SLOPE_OPTIONS} onChange={(slope) => setFilter({ slope }, true)} accent={filterAccent} disabled={!fx.filter.on} />
+      </InsertPanel>
+
+      <InsertPanel
+        title="Pump"
+        icon={<HeartPulse className="w-3.5 h-3.5" style={{ color: pumpAccent }} />}
+        on={fx.pump.on}
+        onToggle={() => setPump({ on: !fx.pump.on })}
+        accent={pumpAccent}
+      >
+        <FxChoice label="Trigger" value={fx.pump.trigger} options={PUMP_TRIGGER_OPTIONS} onChange={(trigger) => setPump({ trigger }, true)} accent={pumpAccent} disabled={!fx.pump.on} />
+        <FxSlider label="Depth" value={fx.pump.depth} min={0} max={1} step={0.01} format={pct} onChange={(depth) => setPump({ depth })} reset={d.pump.depth} accent={pumpAccent} disabled={!fx.pump.on} />
+        <FxSlider
+          label="Release"
+          value={fx.pump.release}
+          min={PUMP_RELEASE_MIN}
+          max={PUMP_RELEASE_MAX}
+          step={10}
+          format={(v) => `${Math.round(v)} ms`}
+          onChange={(release) => setPump({ release })}
+          reset={d.pump.release}
+          accent={pumpAccent}
+          disabled={!fx.pump.on}
+        />
       </InsertPanel>
     </>
   );

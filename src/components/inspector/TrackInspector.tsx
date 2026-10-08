@@ -16,7 +16,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { InstrumentKey } from '../../store/timelineTypes';
 import { EqCurvePreview } from './EqCurvePreview';
-import { DistortionPanel, DynamicsAndChorusPanels } from './InsertFx';
+import { DistortionPanel, DynamicsAndChorusPanels, FilterAndPumpPanels } from './InsertFx';
 import { SampleLoader } from './SampleLoader';
 import { INSTRUMENTS, instrumentsByCategory } from '../../audio/instrumentCatalog';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
@@ -212,7 +212,7 @@ export const TrackInspector: React.FC = () => {
 
             {currentTrack.instrumentKey === 'sampler' && <SampleLoader track={currentTrack} />}
 
-            {/* Insert chain, in signal order: Distortion -> EQ -> Compressor -> Chorus */}
+            {/* Insert chain, in signal order: Distortion -> EQ -> Compressor -> Chorus -> Filter -> Pump */}
             <DistortionPanel track={currentTrack} />
 
             {/* 3-Band Parametric EQ Panel */}
@@ -300,6 +300,7 @@ export const TrackInspector: React.FC = () => {
             </div>
 
             <DynamicsAndChorusPanels track={currentTrack} />
+            <FilterAndPumpPanels track={currentTrack} />
 
             {/* Aux FX Sends Section */}
             <div className="flex flex-col gap-3 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
