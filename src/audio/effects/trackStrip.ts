@@ -17,8 +17,8 @@ import {
 /**
  * One mixer channel per track:
  *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Filter -> Pump
- *         -> (Volume lane) -> Channel (vol/pan/mute)
- *   Channel -> master bus, plus post-fader sends to the shared reverb and delay.
+ *         -> (Volume lane) -> solo -> pan -> fader (vol/mute)
+ *   fader -> master bus, plus post-fader sends to the shared reverb and delay.
  *
  * An insert only exists while it's switched on (the EQ while any band is boosted or cut).
  * A bypassed insert is disposed and patched out of the chain rather than left running at
@@ -27,17 +27,23 @@ import {
  * chorus, filter and pump are lean nodes (see lightFx.ts), for the same reason. The Filter sits
  * late so a sweep shapes everything before it; the Pump is last so it ducks the whole sound.
  *
+ * The channel is stereo. Tone.Channel's panner folds whatever reaches it to mono first, so a
+ * Supersaw's spread, a chorus or a stereo sample lost its width at the strip. The pan here is a
+ * balance: each side has its own gain, the equal-power pair StereoPannerNode gives a mono
+ * source (cos and sin, -3 dB each at the centre). A mono source is spread to both sides first,
+ * so it pans exactly as it did through Tone.Channel; a stereo one keeps its width, and the pan
+ * turns down the side it moves away from.
+ *
  * Automation: while a lane with points owns a setting, apply() leaves that setting to the lane
  * (automationSchedule.ts writes it) and puts the track's own value back when the lane goes. Pan,
  * the sends, the Filter and the EQ bands are native params that only ever change through a
  * ParamWriter, whoever moves them. A Volume lane gets a gain of its own at the end of the
- * inserts, made only while that lane exists, with the channel's fader held at 0 dB: the
- * channel's volume also carries Tone's mute, so a lane writing it directly would fight that.
+ * inserts, made only while that lane exists, with the fader held at 0 dB: the fader also
+ * carries Tone's mute, so a lane writing it directly would fight that.
  */
 export interface TrackStrip {
   /** Instruments connect here. */
   input: Tone.InputNode;
-  channel: Tone.Channel;
   apply: (track: Track, opts?: { ramp?: number; muteOverride?: boolean }) => void;
   /** What the Pump follows, or null while it's off. */
   pumpTrigger: () => PumpTrigger | null;
@@ -64,17 +70,43 @@ interface Insert {
   output: Tone.ToneAudioNode;
 }
 
+/**
+ * The gains a pan position gives the left and right channels: equal power, as Web Audio's
+ * StereoPannerNode pans a mono source (its formula exactly).
+ */
+export function panGains(pan: number): [left: number, right: number] {
+  const angle = ((Math.max(-1, Math.min(1, pan)) + 1) * Math.PI) / 4;
+  return [Math.cos(angle), Math.sin(angle)];
+}
+
 export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackStrip {
   const input = new Tone.Gain(1);
-  const channel = new Tone.Channel({ volume: 0, pan: 0 });
+  const solo = new Tone.Solo();
+  // A mono source becomes the same sound on both sides here, for the balance to split
+  solo.channelCount = 2;
+  solo.channelCountMode = 'explicit';
+  const fader = new Tone.Volume(0);
   const reverbSend = new Tone.Gain(0);
   const delaySend = new Tone.Gain(0);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
 
-  input.connect(channel);
-  channel.connect(bus);
-  channel.connect(reverbSend);
+  // The balance: a gain per side, between the solo and the fader
+  const split = raw.createChannelSplitter(2);
+  const merge = raw.createChannelMerger(2);
+  const left = raw.createGain();
+  const right = raw.createGain();
+  solo.connect(split);
+  split.connect(left, 0);
+  split.connect(right, 1);
+  left.connect(merge, 0, 0);
+  right.connect(merge, 0, 1);
+  merge.connect(fader.input.input as unknown as AudioNode);
+
+  input.connect(solo);
+  fader.connect(bus);
+  fader.connect(reverbSend);
   reverbSend.connect(busFx.reverbInput);
-  channel.connect(delaySend);
+  fader.connect(delaySend);
   delaySend.connect(busFx.delayInput);
 
   let distortion: Tone.Distortion | null = null;
@@ -88,11 +120,12 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   /** The inserts currently patched in, in signal order. */
   let chain: Insert[] = [];
 
-  const raw = input.context.rawContext as unknown as BaseAudioContext;
   const now = () => input.context.now();
   const writer = (param: Tone.Param<any>, initial: number) =>
     createParamWriter(param.input as AudioParam, { raw, now, initial });
-  const panWriter = writer(channel.pan, 0);
+  // (A gain's own value until the first apply(), which sets the pan before anything sounds)
+  const panLeft = createParamWriter(left.gain, { raw, now, initial: left.gain.value });
+  const panRight = createParamWriter(right.gain, { raw, now, initial: right.gain.value });
   const reverbWriter = writer(reverbSend.gain, 0);
   const delayWriter = writer(delaySend.gain, 0);
   /** The Volume lane's own gain, and its writer: only while a Volume lane owns the level. */
@@ -108,7 +141,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   /** The fader level the channel plays at, in dB. */
   const faderDb = (track: Track) => (track.volume <= -60 ? FADER_SILENT_DB : track.volume);
 
-  /** Patch input -> active inserts -> channel, only when the set of inserts changed. */
+  /** Patch input -> active inserts -> solo, only when the set of inserts changed. */
   const rewire = () => {
     const next: Insert[] = [];
     if (distortion) next.push({ input: distortion, output: distortion });
@@ -127,7 +160,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       from.connect(ins.input);
       from = ins.output;
     }
-    from.connect(channel);
+    from.connect(solo);
     chain = next;
   };
 
@@ -142,7 +175,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   };
 
   /**
-   * A Volume lane takes the level over: from `at`, the channel's fader goes to 0 dB and the lane's
+   * A Volume lane takes the level over: from `at`, the fader goes to 0 dB and the lane's
    * gain to the fader's level in the same instant, so nothing changes until the lane moves it.
    */
   const takeVolume = (track: Track, muted: boolean, ramp: number) => {
@@ -156,19 +189,19 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       // Taken back before a hand-back finished: the fader is still at 0 dB, so just drop the rest
       // of the hand-back; the lane carries on from wherever its gain has got to
       laneGain.writer.cut(now());
-      channel.volume.cancelScheduledValues(now());
+      fader.volume.cancelScheduledValues(now());
       handoverUntil = -Infinity;
       return;
     }
     if (muted || ramp === 0) {
       // Silent anyway (or not yet playing): no need to line the two up
-      set(channel.volume, 0, ramp);
+      set(fader.volume, 0, ramp);
       laneGain.writer.set(Tone.dbToGain(faderDb(track)), 0);
       return;
     }
     const at = laneGain.writer.jump(Tone.dbToGain(faderDb(track)), laneGain.writer.cut(now()));
-    channel.volume.cancelScheduledValues(at);
-    channel.volume.setValueAtTime(0, at);
+    fader.volume.cancelScheduledValues(at);
+    fader.volume.setValueAtTime(0, at);
     handoverUntil = at;
   };
 
@@ -179,15 +212,15 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     retiring = true;
     let done: number;
     if (muted || ramp === 0) {
-      set(channel.volume, faderDb(track), ramp);
+      set(fader.volume, faderDb(track), ramp);
       lane.writer.set(1, 0);
       done = now();
     } else {
       const from = lane.writer.cut(now());
       const glided = lane.writer.curve(new Float32Array([lane.writer.valueAt(from), Tone.dbToGain(faderDb(track))]), from, VOLUME_HANDBACK);
       done = lane.writer.jump(1, glided);
-      channel.volume.cancelScheduledValues(done);
-      channel.volume.setValueAtTime(faderDb(track), done);
+      fader.volume.cancelScheduledValues(done);
+      fader.volume.setValueAtTime(faderDb(track), done);
       handoverUntil = done;
     }
     // Patched out once the hand-back has played
@@ -207,7 +240,6 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
   return {
     input,
-    channel,
     apply: (track, opts = {}) => {
       const ramp = opts.ramp ?? 0.03;
       const { fx, eq: bands } = track;
@@ -300,10 +332,14 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       // back to 0 dB, and a track faded all the way down played at full volume in the export.
       // While a Volume lane owns the level the fader stays at 0 dB (and is left alone while the
       // two trade places, which Tone's ramp would undo).
-      if (handoverUntil <= now()) set(channel.volume, owned.has('volume') ? 0 : faderDb(track), ramp);
-      if (!owned.has('pan')) panWriter.set(track.pan, ramp);
-      channel.mute = muted;
-      if (opts.muteOverride === undefined) channel.solo = track.isSoloed;
+      if (handoverUntil <= now()) set(fader.volume, owned.has('volume') ? 0 : faderDb(track), ramp);
+      if (!owned.has('pan')) {
+        const [l, r] = panGains(track.pan);
+        panLeft.set(l, ramp);
+        panRight.set(r, ramp);
+      }
+      fader.mute = muted;
+      if (opts.muteOverride === undefined) solo.solo = track.isSoloed;
 
       if (!owned.has('reverbSend')) reverbWriter.set(Math.max(0, Math.min(1, track.reverbSend)), ramp);
       if (!owned.has('delaySend')) delayWriter.set(Math.max(0, Math.min(1, track.delaySend)), ramp);
@@ -320,7 +356,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         case 'volume':
           return laneGain && !retiring ? [{ writer: laneGain.writer, map: gain }] : null;
         case 'pan':
-          return [{ writer: panWriter, map: same }];
+          return [
+            { writer: panLeft, map: (pan) => panGains(pan)[0] },
+            { writer: panRight, map: (pan) => panGains(pan)[1] },
+          ];
         case 'reverbSend':
           return [{ writer: reverbWriter, map: same }];
         case 'delaySend':
@@ -340,7 +379,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     automationVersion: () => version,
     dispose: () => {
       clearTimeout(retireTimer);
-      [distortion, eq, compressor, makeup, chorus, filter, pump, laneGain?.node, input, channel, reverbSend, delaySend].forEach((n) => n?.dispose());
+      [distortion, eq, compressor, makeup, chorus, filter, pump, laneGain?.node, input, solo, fader, reverbSend, delaySend].forEach((n) => n?.dispose());
+      [split, left, right, merge].forEach((n) => n.disconnect());
     },
   };
 }
