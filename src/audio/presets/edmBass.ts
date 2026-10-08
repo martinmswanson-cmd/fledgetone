@@ -352,7 +352,7 @@ export function createGrowlBass(output: Tone.InputNode) {
   });
 }
 
-/** Reese Bass: three saws detuned so they beat slowly, through a gentle drive and a low-pass. */
+/** Reese Bass: three saws detuned so they beat slowly (and a sine for weight), through a gentle drive and a low-pass. */
 export function createReeseBass(output: Tone.InputNode) {
   return createMonoBass(output, {
     glide: 0.08,

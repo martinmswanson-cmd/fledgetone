@@ -171,18 +171,24 @@ export function createOsc(raw: BaseAudioContext, type: OscillatorType | Periodic
   return osc;
 }
 
-const sawWaves = new WeakMap<BaseAudioContext, PeriodicWave[]>();
-
-/** Partials in the phase-shifted saws: band-limited by the browser, enough for any note from C2 up. */
+/**
+ * Partials in the generated waves (the browser band-limits them per note): every harmonic up to
+ * 20 kHz from C2 up. Lower bass notes lose only their top harmonics, which their filters remove anyway.
+ */
 const SAW_PARTIALS = 512;
+
+const sawWaves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave[]>>();
 
 /**
  * Sawtooth waves with their cycle shifted by each of `phases` (0-1). Detuned saws that all start
  * in step sweep audibly ("zip") as they drift apart; analog oscillators never line up like that.
- * Built once per context.
+ * Built once per context and set of phases.
  */
 export function phasedSaws(raw: BaseAudioContext, phases: readonly number[]): PeriodicWave[] {
-  let waves = sawWaves.get(raw);
+  let sets = sawWaves.get(raw);
+  if (!sets) sawWaves.set(raw, (sets = new Map()));
+  const key = phases.join(',');
+  let waves = sets.get(key);
   if (!waves) {
     waves = phases.map((phase) => {
       const real = new Float32Array(SAW_PARTIALS + 1);
@@ -190,13 +196,13 @@ export function phasedSaws(raw: BaseAudioContext, phases: readonly number[]): Pe
       const shift = phase * 2 * Math.PI;
       for (let k = 1; k <= SAW_PARTIALS; k++) {
         // The saw's sine series, each partial rotated by k times the shift
-        const b = ((k % 2 ? 2 : -2) / (Math.PI * k));
+        const b = (k % 2 ? 2 : -2) / (Math.PI * k);
         real[k] = b * Math.sin(k * shift);
         imag[k] = b * Math.cos(k * shift);
       }
       return raw.createPeriodicWave(real, imag);
     });
-    sawWaves.set(raw, waves);
+    sets.set(key, waves);
   }
   return waves;
 }
