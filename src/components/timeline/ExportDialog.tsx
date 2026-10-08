@@ -387,7 +387,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           {cueCount > 0 &&
             ` ${cueCount === 1 ? 'The marker in the range goes' : `The ${cueCount} markers in the range go`} into ${
               stemsOnly ? 'every file' : 'the file'
-            } as cue points, which DAWs and game audio tools show as markers.`}
+            } as ${cueCount === 1 ? 'a cue point, which DAWs and game audio tools show as a marker' : 'cue points, which DAWs and game audio tools show as markers'}.`}
         </p>
       </Section>
 

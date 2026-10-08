@@ -93,6 +93,58 @@ test('a clip placed off the 16th grid swings on its own grid', () => {
   assert.deepEqual(swungNotes([48, 96, 144], 48), [true, false, true]);
 });
 
+test('a clip split or trimmed off the grid swings its notes as before the cut', () => {
+  const sixteenths = Array.from({ length: 16 }, (_, i) => 768 + 48 * i);
+  const whole = swungNotes(sixteenths, 0);
+  // The razor with Snap off or Frame snap, a start trim, Shift Insert bars: the piece starts 8 to
+  // 24 ticks past a 16th line, its notes stay on the song's 16ths
+  for (const cut of [762, 768 + 8, 768 + 12, 768 + 17, 768 + 24, 768 + 36]) {
+    const piece = sixteenths.filter((t) => t >= cut);
+    assert.deepEqual(swungNotes(piece, cut), whole.slice(sixteenths.length - piece.length), `cut at tick ${cut}`);
+  }
+  // A clip moved off the grid and then cut: the piece keeps the moved groove while the cut is
+  // near enough to that grid, and otherwise sits on no grid and plays straight (its notes alone
+  // can't tell a moved grid from a triplet pattern, see below)
+  const moved = sixteenths.map((t) => t + 20);
+  const nearCut = 768 + 20 + 96 + 4;
+  const nearPiece = moved.filter((t) => t >= nearCut);
+  assert.deepEqual(swungNotes(nearPiece, nearCut), swungNotes(moved, 788).slice(moved.length - nearPiece.length));
+  const farPiece = moved.filter((t) => t >= 768 + 5);
+  assert.deepEqual(swungNotes(farPiece, 768 + 5), farPiece.map(() => false));
+  // Loose timing still counts as on the clip's grid, cut or not
+  const loose = [3, 45, 52, 93, 146, 189, 245];
+  assert.deepEqual(swungNotes(loose, 12), swungNotes(loose, 0));
+  // A lone note between the 16ths says nothing about the grid: a 1/32 pickup stays straight
+  assert.deepEqual(swungNotes([72], 0), [false]);
+  // Rolls and triplet runs stay straight wherever the clip was cut
+  assert.deepEqual(swungNotes([24, 48, 72, 96], 20), [false, false, false, false]);
+  assert.deepEqual(swungNotes([32, 64, 96, 128], 30), [false, false, false, false]);
+});
+
+test('triplet patterns never swing, whichever partials they leave out', () => {
+  const beat = 192;
+  const straight = (ticks, start = 0) => assert.deepEqual(swungNotes(ticks, start), ticks.map(() => false), ticks.join(','));
+  // 1/8T hats that skip the downbeat on beats 2 and 4: the third partials outnumber the notes on
+  // the 16th grid, which must not make them the clip's grid
+  const hats = [];
+  for (let b = 0; b < 8; b++) hats.push(...(b % 2 === 0 ? [b * beat] : []), b * beat + 64, b * beat + 128);
+  straight(hats);
+  straight(hats.map((t) => t + 768), 768);
+  // A triplet shuffle (first and third partials) that starts on its pickup
+  const shuffle = [];
+  for (let b = 0; b < 8; b++) shuffle.push(...(b > 0 ? [b * beat] : []), b * beat + 128);
+  straight(shuffle);
+  // ". x x" triplet hats, and third partials on their own
+  const offbeats = [];
+  for (let b = 0; b < 8; b++) offbeats.push(b * beat + 64, b * beat + 128);
+  straight(offbeats);
+  straight(offbeats.filter((t) => t % beat === 128));
+  // 1/16T hats without their downbeats
+  const sixteenthTriplets = [];
+  for (let b = 0; b < 4; b++) for (let k = 1; k < 6; k++) sixteenthTriplets.push(b * beat + 32 * k);
+  straight(sixteenthTriplets);
+});
+
 test('no swing, no delay', () => {
   assert.equal(swingDelay(0, 140), 0);
   assert.equal(swingDelay(-0.1, 140), 0);

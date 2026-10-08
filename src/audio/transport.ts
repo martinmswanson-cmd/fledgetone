@@ -38,14 +38,25 @@ export function swingDelay(swing: number, bpm: number, ppq = 192): number {
  *   pickup) plays straight, its off-beat 16th included, so the run stays even.
  * - The grid is the clip's own: a clip placed off the 16th grid (Shift-dragged, frame-snapped,
  *   typed as a time) swings as if it sat on the nearest 16th line (the earlier one on a tie).
+ * - Unless more of its notes sit on the song's grid: a clip split or start-trimmed off the grid
+ *   keeps its notes where they were, so they go on swinging on the song's 16ths, not on a grid
+ *   counted from the cut. Those two grids are the only ones considered. The notes themselves
+ *   can't say which grid they were written on: a clip shifted by a third of a 16th looks exactly
+ *   like a triplet pattern, and triplets must never swing. So a clip moved off the grid and then
+ *   cut off the grid sits on neither grid and plays straight, which moves nothing.
  */
 export function swungNotes(ticks: readonly number[], clipStartTick: number, ppq = 192): boolean[] {
   const sixteenth = ppq / 4;
   const eighth = 2 * sixteenth;
   const near = ppq / 24;
-  // How far the clip sits after its nearest 16th line, -23 to 24 ticks at 192 PPQ
   const half = Math.floor(sixteenth / 2);
-  const offset = ((((clipStartTick + half - 1) % sixteenth) + sixteenth) % sixteenth) - (half - 1);
+  /** How far `tick` sits after its nearest 16th line, -23 to 24 ticks at 192 PPQ. */
+  const offsetOf = (tick: number) => ((((tick + half - 1) % sixteenth) + sixteenth) % sixteenth) - (half - 1);
+  /** How many notes sit on (or near) a 16th line of the grid `shift` ticks after the song's. */
+  const onGrid = (shift: number) => ticks.reduce((n, tick) => (Math.abs(offsetOf(tick - shift)) < near ? n + 1 : n), 0);
+  // The clip's own grid, unless the song's fits its notes better
+  let offset = offsetOf(clipStartTick);
+  if (onGrid(0) > onGrid(offset)) offset = 0;
   const inEighth = (g: number) => ((g % eighth) + eighth) % eighth;
   const runs = new Set<number>();
   for (const tick of ticks) {

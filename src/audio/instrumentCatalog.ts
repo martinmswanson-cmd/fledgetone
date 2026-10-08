@@ -69,6 +69,11 @@ export interface InstrumentDef {
   gain?: number;
   /** Its notes wobble at their clip's wobble rate (Clip.wobble), chosen in the piano roll */
   wobble?: boolean;
+  /**
+   * Folded to mono by its track, after the inserts: the synthesized kits, whose noise is stereo
+   * but which were voiced hearing it folded (the track strip used to fold everything there)
+   */
+  mono?: boolean;
 }
 
 /**
@@ -124,8 +129,8 @@ function nb(folder: string, files: string[], release = 1): SampleSource {
 
 export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   // Drums & Percussion
-  drums: { key: 'drums', name: 'Drums', blurb: 'Analog groove kit', color: '#f59e0b', category: 'Drums & Percussion', kind: 'drums', range: [36, 48] },
-  drumMachine: { key: 'drumMachine', name: 'Drum Machine', blurb: '808-style boom kit', color: '#ef4444', category: 'Drums & Percussion', kind: 'drums', range: [36, 48] },
+  drums: { key: 'drums', name: 'Drums', blurb: 'Analog groove kit', color: '#f59e0b', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
+  drumMachine: { key: 'drumMachine', name: 'Drum Machine', blurb: '808-style boom kit', color: '#ef4444', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
   taiko: { key: 'taiko', name: 'Taiko Drums', blurb: 'Big Japanese drums', color: '#b91c1c', category: 'Drums & Percussion', kind: 'sampled', range: [36, 72], samples: gm('taiko_drum', 36, 72, 4, 1.5), gain: 9 },
 
   // Bass

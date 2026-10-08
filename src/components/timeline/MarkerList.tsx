@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Flag, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Marker } from '../../store/timelineTypes';
@@ -71,7 +71,7 @@ const MarkerRow: React.FC<{ marker: Marker; timecode: string }> = ({ marker, tim
         <MarkerNameField marker={marker} />
         <button
           type="button"
-          onClick={() => seek(marker.bar)}
+          onClick={() => seek(marker.bar, true)}
           title="Move the playhead here"
           className="px-1 text-left font-mono text-[10px] tabular-nums text-cyan-300/90 hover:text-cyan-200 truncate rounded-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
         >
@@ -99,6 +99,22 @@ const MarkerListPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | nul
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const [notice, setNotice] = useState<string | null>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  // The timeline card clips what hangs below it, so the list scrolls rather than grows past the
+  // card (or the window): it takes whatever room there is below the panel, and at least 12rem
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const panel = list?.closest<HTMLElement>('[role="dialog"]');
+    if (!list || !panel) return;
+    list.style.maxHeight = '';
+    let bottom = window.innerHeight;
+    for (let box = panel.parentElement; box && box !== document.body; box = box.parentElement) {
+      if (getComputedStyle(box).overflowY !== 'visible') bottom = Math.min(bottom, box.getBoundingClientRect().bottom);
+    }
+    const room = bottom - 8 - panel.getBoundingClientRect().bottom;
+    if (room > 0) list.style.maxHeight = `${list.getBoundingClientRect().height + room}px`;
+  });
 
   return (
     <Popover label="Markers" onClose={onClose} anchorRef={anchorRef} className="left-0">
@@ -124,8 +140,7 @@ const MarkerListPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | nul
             <span>bar.beat.hundredths · timecode</span>
             <span>{frameRateLabel(fps, dropFrame)}</span>
           </div>
-          {/* The timeline card clips what hangs below it, so the list scrolls rather than grows */}
-          <ul className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+          <ul ref={listRef} className="flex flex-col gap-1 max-h-48 overflow-y-auto">
             {markers.map((m) => (
               <MarkerRow key={m.id} marker={m} timecode={formatSmpte(m.bar, bpm, fps, dropFrame)} />
             ))}
