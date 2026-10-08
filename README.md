@@ -61,11 +61,14 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
   sounds into isn't rendered, so curves written meanwhile are moved when a note wakes it, end up
   overlapping, and crash the page. A `ParamWriter` never throws (it runs inside Tone's clock and
   store actions).
-- Live, Tone runs on standardized-audio-context, which on every `connect()` walks every path
-  downstream of the connection looking for loops (it stops only at a DelayNode). Each note
-  connects fresh nodes, so the walk's length is paid per note: every live track strip starts
-  with a zero-delay DelayNode that ends it there. Diamonds (a split that joins again) double the
-  paths after them, so keep them behind that barrier.
+- Live, Tone runs on standardized-audio-context, which on every `connect()` and `disconnect()`
+  walks every path downstream of the connection looking for loops (it stops only at a
+  DelayNode). Each note connects fresh nodes, so the walk's length is paid per note: every live
+  track strip starts with a zero-delay DelayNode that ends it there. Diamonds (a split that joins
+  again) double the paths after them, so keep them behind that barrier. The strip's inserts end
+  at another one, so re-patching them while playing is quick enough not to open a gap (see
+  `rewire` in `trackStrip.ts`; it also disconnects natively whatever loses its last input, so
+  the strip holds each node up while its input is swapped).
 - Transport positions are written in ticks (`` `${ticks}i` ``). Tone converts those through seconds,
   so `toneFixes.ts` makes results within float noise of a whole tick whole again; otherwise about
   one tick in ten was filed a tick early (skipped when playback started on it or a loop came back
