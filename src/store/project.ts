@@ -1,5 +1,5 @@
 import type { CustomSample, MasterFx, Clip, InstrumentKey, LoopRegion, NoteEvent, Track } from './timelineTypes';
-import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, normalizeTrackFx } from './timelineTypes';
+import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 
@@ -130,6 +130,8 @@ function parseClip(v: unknown): Clip {
     lengthBars: Math.max(0.0625, v.lengthBars),
     notes: v.notes.map(parseNote),
     isSelected: false,
+    // Optional: a rate this version doesn't know plays at the default
+    ...(isWobbleRate(v.wobble) ? { wobble: v.wobble } : {}),
   };
 }
 

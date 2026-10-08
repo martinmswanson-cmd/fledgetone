@@ -1,9 +1,9 @@
 # Bo's Beatbox
 
 Arrange, mix and export music in your browser. Bo's Beatbox is a small DAW: an arrangement
-timeline with tracks and clips, a piano roll, 28 instruments (synths, drum kits, recorded
-instruments and your own samples), per-track effects, timecode at 24, 25, 30 or 60 fps, and
-WAV export. It runs entirely in the browser; nothing is uploaded anywhere.
+timeline with tracks and clips, a piano roll, 34 instruments (synths, drum kits, EDM basses and
+FX, recorded instruments and your own samples), per-track effects, timecode at 24, 25, 30 or
+60 fps, and WAV export. It runs entirely in the browser; nothing is uploaded anywhere.
 
 **How to use it:** see [GUIDE.md](GUIDE.md). The same guide opens inside the app from the
 **Guide** button in the header (or press `?`).
