@@ -468,7 +468,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 <button
                   key={r.note}
                   type="button"
-                  onPointerDown={() => void preview(clip.trackId, [{ note: r.note, duration: '8n', velocity }])}
+                  // An FX row plays a bar of its effect: a riser an 8th long is just a blip
+                  onPointerDown={() => void preview(clip.trackId, [{ note: r.note, duration: isFxKind(instrument) ? '1m' : '8n', velocity }])}
                   className={`w-full flex items-center justify-end pr-1.5 border-b border-black/40 text-[9px] font-mono ${
                     isDrums
                       ? 'bg-forge-panelLight text-forge-text text-[10px] hover:bg-forge-border'
