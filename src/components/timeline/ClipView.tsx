@@ -2,9 +2,9 @@ import React, { useMemo, useState } from 'react';
 import * as Tone from 'tone';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, Track } from '../../store/timelineTypes';
-import { durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
+import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/scheduler';
-import { canMoveClipBetween, isDrumKind } from '../../audio/instrumentCatalog';
+import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../../audio/instrumentCatalog';
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
@@ -43,6 +43,9 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
   if (isDrumKind(instrument)) {
     rows = DRUM_ROWS.length;
     rowOf = (note) => Math.max(0, DRUM_ROWS.indexOf(note));
+  } else if (isFxKind(instrument)) {
+    rows = FX_ROWS.length;
+    rowOf = (note) => Math.max(0, FX_ROWS.findIndex((r) => r.note === note));
   } else {
     const midis = visible.map((n) => Tone.Frequency(n.note).toMidi());
     const lo = Math.min(...midis);
@@ -339,6 +342,11 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         style={{ height: LABEL_HEIGHT, backgroundColor: track.color }}
       >
         <span className="truncate">{clip.name}</span>
+        {INSTRUMENTS[track.instrumentKey].wobble && (
+          <span className="ml-auto pl-1 shrink-0 font-mono text-[9px] font-bold text-black/70" title="Wobble rate (set in the piano roll)">
+            {clip.wobble ?? DEFAULT_WOBBLE}
+          </span>
+        )}
       </div>
 
       {/* Notes */}

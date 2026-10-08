@@ -5,6 +5,7 @@
  * kind:
  *   synth   - generated live (no download)
  *   drums   - a drum kit on the GM-style drum note map (Kick / Snare / Hats / Cowbell)
+ *   fx      - transition effects (risers, impacts...), one fixed row each, like a drum kit's (FX_ROWS)
  *   sampled - multi-sampled recordings streamed from free public libraries (needs internet)
  *   custom  - the Sampler: plays a sound the user loads from their own computer
  */
@@ -20,11 +21,15 @@ export const INSTRUMENT_KEYS = [
   'marimba', 'chimes',
   'erhu',
   'sampler',
+  // EDM batch
+  'wobbleBass', 'growlBass', 'reeseBass',
+  'supersaw', 'pluck',
+  'fx',
 ] as const;
 
 export type InstrumentKey = (typeof INSTRUMENT_KEYS)[number];
 
-export type InstrumentKind = 'synth' | 'drums' | 'sampled' | 'custom';
+export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom';
 
 export const CATEGORIES = [
   'Drums & Percussion',
@@ -34,6 +39,7 @@ export const CATEGORIES = [
   'Winds & Brass',
   'Mallets & Bells',
   'World',
+  'FX',
   'Your Sounds',
 ] as const;
 export type InstrumentCategory = (typeof CATEGORIES)[number];
@@ -61,7 +67,32 @@ export interface InstrumentDef {
   shaping?: 'erhu' | 'mandolin';
   /** Level correction in dB so instruments start out at similar loudness (measured) */
   gain?: number;
+  /** Its notes wobble at their clip's wobble rate (Clip.wobble), chosen in the piano roll */
+  wobble?: boolean;
 }
+
+/**
+ * The FX instrument's rows, top to bottom in the order a build-up and drop use them: one transition
+ * effect each. The notes only name the row (like the drum map's), in a range no drum kit uses.
+ * Everything but Impact (a one-shot) lasts as long as its note.
+ */
+export const FX_NOTES = {
+  riser: 'C3',
+  noiseSweep: 'D3',
+  reverseCrash: 'E3',
+  impact: 'F3',
+  subDrop: 'G3',
+  downlifter: 'A3',
+} as const;
+
+export const FX_ROWS: ReadonlyArray<{ note: string; label: string }> = [
+  { note: FX_NOTES.riser, label: 'Riser' },
+  { note: FX_NOTES.noiseSweep, label: 'Noise Sweep' },
+  { note: FX_NOTES.reverseCrash, label: 'Reverse Crash' },
+  { note: FX_NOTES.impact, label: 'Impact' },
+  { note: FX_NOTES.subDrop, label: 'Sub Drop' },
+  { note: FX_NOTES.downlifter, label: 'Downlifter' },
+];
 
 // ---------- sample-map helpers ----------
 
@@ -101,6 +132,9 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   bass: { key: 'bass', name: 'Slap Bass', blurb: 'Squelchy funk synth bass', color: '#06b6d4', category: 'Bass', kind: 'synth', range: [24, 55] },
   subBass: { key: 'subBass', name: 'Sub-Bass', blurb: 'Deep sine sub', color: '#0e7490', category: 'Bass', kind: 'synth', range: [24, 48], gain: -10 },
   bass808: { key: 'bass808', name: '808 Bass', blurb: 'Booming pitched 808', color: '#7c3aed', category: 'Bass', kind: 'synth', range: [24, 52], gain: -6 },
+  wobbleBass: { key: 'wobbleBass', name: 'Wobble Bass', blurb: 'Dubstep wobble, tempo-synced', color: '#84cc16', category: 'Bass', kind: 'synth', range: [24, 55], wobble: true, gain: -8 },
+  growlBass: { key: 'growlBass', name: 'Growl Bass', blurb: 'Talking riddim growl', color: '#d946ef', category: 'Bass', kind: 'synth', range: [24, 60], wobble: true, gain: -14 },
+  reeseBass: { key: 'reeseBass', name: 'Reese Bass', blurb: 'Detuned drum & bass Reese', color: '#6366f1', category: 'Bass', kind: 'synth', range: [24, 55], gain: -8 },
   bassGuitar: {
     key: 'bassGuitar', name: 'Bass Guitar', blurb: 'Electric bass (recorded)', color: '#0891b2', category: 'Bass', kind: 'sampled', range: [28, 60],
     samples: nb('bass-electric', ['E1', 'G1', 'As1', 'Cs2', 'E2', 'G2', 'As2', 'Cs3', 'E3', 'G3', 'As3', 'Cs4'], 0.4),
@@ -123,6 +157,8 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   keys: { key: 'keys', name: 'Space Clav', blurb: 'FM electric keys', color: '#a855f7', category: 'Keys & Synths', kind: 'synth', range: [36, 88] },
   wavetable: { key: 'wavetable', name: 'Wavetable Synth', blurb: 'Evolving sweeping pad', color: '#38bdf8', category: 'Keys & Synths', kind: 'synth', range: [36, 96] },
   lead: { key: 'lead', name: 'Analog Lead', blurb: 'Gliding saw lead', color: '#facc15', category: 'Keys & Synths', kind: 'synth', range: [48, 96] },
+  supersaw: { key: 'supersaw', name: 'Supersaw', blurb: 'Wide trance / house chords', color: '#fb7185', category: 'Keys & Synths', kind: 'synth', range: [36, 96], gain: -5 },
+  pluck: { key: 'pluck', name: 'Pluck', blurb: 'Short bright EDM pluck', color: '#2dd4bf', category: 'Keys & Synths', kind: 'synth', range: [48, 96], gain: -6 },
   pipeOrgan: { key: 'pipeOrgan', name: 'Pipe Organ', blurb: 'Church organ (recorded)', color: '#d4a373', category: 'Keys & Synths', kind: 'sampled', range: [24, 96], samples: gm('church_organ', 24, 96, 3, 0.6), gain: 15 },
 
   // Guitars & Strings
@@ -180,6 +216,9 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
     samples: gm('violin', 60, 96, 3, 0.5), shaping: 'erhu', gain: 17,
   },
 
+  // FX
+  fx: { key: 'fx', name: 'FX', blurb: 'Risers, sweeps, impacts, drops', color: '#67e8f9', category: 'FX', kind: 'fx', range: [48, 57], gain: -5 },
+
   // Your Sounds
   sampler: { key: 'sampler', name: 'Sampler', blurb: 'Play your own sound file', color: '#14b8a6', category: 'Your Sounds', kind: 'custom', range: [36, 96] },
 };
@@ -192,17 +231,26 @@ export function isDrumKind(key: InstrumentKey): boolean {
   return INSTRUMENTS[key].kind === 'drums';
 }
 
+/** The FX instrument: fixed named rows (FX_ROWS) instead of a keyboard. */
+export function isFxKind(key: InstrumentKey): boolean {
+  return INSTRUMENTS[key].kind === 'fx';
+}
+
 /** Can a deck sound / pattern made for `source` go on a `target` track? (Drum kits share notes.) */
 export function compatibleInstruments(source: InstrumentKey, target: InstrumentKey): boolean {
   return source === target || (isDrumKind(source) && isDrumKind(target));
 }
 
+/** What a clip's notes mean: drum hits, FX rows, or pitches. */
+const noteFamily = (key: InstrumentKey) => (isDrumKind(key) ? 'drums' : isFxKind(key) ? 'fx' : 'pitched');
+
 /**
  * Can a clip on a `source` track move (or be pasted) onto a `target` track? Drum parts only make
- * sense on a drum kit, and a melody plays on any pitched instrument (the Sampler included).
+ * sense on a drum kit and FX parts on the FX instrument, and a melody plays on any pitched
+ * instrument (the Sampler included).
  */
 export function canMoveClipBetween(source: InstrumentKey, target: InstrumentKey): boolean {
-  return isDrumKind(source) === isDrumKind(target);
+  return noteFamily(source) === noteFamily(target);
 }
 
 /** Instruments grouped by category, in menu order. */

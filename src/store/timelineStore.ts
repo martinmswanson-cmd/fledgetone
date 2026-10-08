@@ -19,7 +19,8 @@ import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { CustomSample, MasterFx, TrackFx } from './timelineTypes';
+import type { CustomSample, MasterFx, TrackFx, WobbleRate } from './timelineTypes';
+import { DEFAULT_WOBBLE } from './timelineTypes';
 
 /** Song length limit: 400 bars is 5+ minutes even at 240 BPM (about 13 minutes at 120 BPM). */
 export const TOTAL_BARS = 400;
@@ -233,6 +234,8 @@ interface TimelineState {
   /** Drop a deck sound or pattern on a track: into the clip under `bar`, else as a new clip (undoable). */
   dropOnTrack: (trackId: string, bar: number, payload: DragPayload) => void;
   renameClip: (clipId: string, name: string) => void;
+  /** Set how fast a Wobble / Growl Bass clip wobbles (undoable). */
+  setClipWobble: (clipId: string, wobble: WobbleRate) => void;
   /** Add notes to a clip (undoable). Returns the new note ids. */
   addNotes: (clipId: string, notes: Omit<NoteEvent, 'id'>[]) => string[];
   /** Replace a clip's notes without recording history (drag gestures checkpoint() once first). */
@@ -1080,6 +1083,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     renameClip: (clipId, name) => updateClip(clipId, () => ({ name })),
+
+    setClipWobble: (clipId, wobble) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        if (!clip || (clip.wobble ?? DEFAULT_WOBBLE) === wobble) return s;
+        return { clips: s.clips.map((c) => (c === clip ? { ...c, wobble } : c)), ...pushPast(s) };
+      }),
 
     addNotes: (clipId, notes) => {
       const created = notes.map((n) => ({ ...n, id: uid('note') }));

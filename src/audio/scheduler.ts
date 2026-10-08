@@ -34,16 +34,18 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
     if (note.startOffset < -1e-6 || note.startOffset >= clip.lengthBars - 1e-6) continue;
     const tick = barToTicks(clip.startBar + note.startOffset);
     const key = `${tick}|${note.duration}`;
+    // The clip's wobble rate travels with each note to the instrument (the ones that wobble use it)
+    const playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
     const group = groups.get(key);
-    if (group) group[1].notes.push(note);
-    else groups.set(key, [tick, { trackId: clip.trackId, notes: [note] }]);
+    if (group) group[1].notes.push(playable);
+    else groups.set(key, [tick, { trackId: clip.trackId, notes: [playable] }]);
   }
   return [...groups.values()];
 }
 
 /** Can `prev`'s note groups be reused for `next`? (Selecting or renaming a clip doesn't move its notes.) */
 const sameNotes = (prev: Clip, next: Clip) =>
-  prev.notes === next.notes && prev.startBar === next.startBar && prev.lengthBars === next.lengthBars && prev.trackId === next.trackId;
+  prev.notes === next.notes && prev.startBar === next.startBar && prev.lengthBars === next.lengthBars && prev.trackId === next.trackId && prev.wobble === next.wobble;
 
 /**
  * Play the timeline's clips on `transport`, which picks up loop passes and swing. Each note
