@@ -245,11 +245,37 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 ### The Sampler: your own sound
 
 1. Add a track with **Your Sounds > Sampler** (or switch a track to Sampler).
-2. In the Inspector, click **Load a sound…** and pick an audio file (WAV, MP3, OGG and most others) under 3 MB.
+2. In the Inspector, click **Load a sound…** and pick an audio file (WAV, MP3, OGG and most others) up to 50 MB.
 3. Under **ORIGINAL PITCH ON**, choose which C (C2, C3, C4, C5 or C6; C4 by default) plays the file at its normal pitch. Higher notes play it faster and higher, lower notes slower and lower.
 4. Write notes for it in the piano roll like any other instrument.
 
-The sound is stored inside the project, so saved projects bring it with them. It plays only as long as each note lasts (then fades out quickly), so draw long notes for long sounds. The play button previews a half note at the original pitch; the trash button removes the sound (`Ctrl+Z` brings it back).
+The sound is kept in this browser and saved inside the project file (see **Where your sounds live** below). It plays only as long as each note lasts (then fades out quickly), so draw long notes for long sounds. The play button previews a half note at the original pitch; the trash button removes the sound (`Ctrl+Z` brings it back).
+
+### Audio tracks: your own recordings
+
+An **Audio** track holds sound files as clips instead of notes. Add one with **Add Track > Your Sounds > Audio**.
+
+- **Getting a file in** (WAV, MP3, OGG, FLAC, M4A and anything else your browser can play, up to 50 MB each): drag files from your computer onto an Audio track's lane (it snaps; hold `Shift` for no snap), or onto the strip under the tracks to make a new Audio track. You can also click **Load audio…** in the Inspector (clips go at the playhead), or double-click an Audio lane or right-click it > **Load audio file…** (clips go at that bar). Several files land end to end.
+- A clip is as long as its sound, is named after the file, and plays it as recorded (no time-stretch). It keeps its start bar and its length in seconds when you change the tempo, so its length in bars follows the tempo.
+- **Editing** works as for note clips: move, trim, razor, copy and paste, duplicate, Repeat, Fill to loop Out, Insert/Delete bars, undo. Trimming the left edge makes the clip play from further into the sound. Audio clips only move between Audio tracks.
+- **Fades**: drag the small square at either top corner of a clip (shown when the clip is wide enough).
+- **Gain and fades**: double-click a clip (or right-click > **Gain and fades**) for the clip editor under the timeline: the waveform, **GAIN** (-24 to +24 dB), **Fade in**, **Fade out**, and **Chop to Slicer…**. `Esc` closes it.
+- The track's mixer, effects, sends and automation all work on Audio tracks. Swing never moves audio clips. Pressing Play in the middle of a clip plays it from the right place, and exports are sample-accurate.
+
+### The Slicer: vocal chops
+
+The **Slicer** (**Add Track > Your Sounds > Slicer**) cuts a sound into slices and puts one on each key from C3 up (Slice 1 on C3, Slice 2 on C#3, and so on, up to 64).
+
+- In the Inspector, click **Load a sound…**. **CUT**: **Auto** cuts where it hears a new word or hit (**SENS** sets how faint a hit still starts a slice); **Equal** cuts the sound into 4, 8, 16 or 32 equal slices.
+- On the waveform, drag a marker to move a cut, double-click to add one, and right-click a marker to remove it. Click a slice to hear it.
+- In the piano roll the rows read **Slice 1**, **Slice 2** and so on. A note plays its slice from the start, for the note's length or the slice's length, whichever is shorter.
+- **Pitch** mode: every key plays the slice you last clicked, pitched from its own key, so you can play a chop as a melody.
+- **Chop to Slicer…** (right-click an audio clip, or in the clip editor) makes a Slicer track from that clip's sound, with a clip that plays the slices in order, ready to rearrange. The audio clip stays.
+- Slices play at the sound's own level; use the track fader to balance it.
+
+### Where your sounds live
+
+Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.beatbox.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen or restorable session uses. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
 
 ## Trying sounds: Instrument Browser and Audition Deck
 
@@ -276,7 +302,7 @@ Drag a pad or a pattern chip (**Lazy Beat**, **Hats Intro**, **Walking Bass**, *
 
 ### Track headers
 
-Each track header has **VOL** (-60 to +6 dB) and **PAN** sliders (double-click either to reset), and buttons for **M** (mute), **S** (solo) and **R** (record arm, which doesn't do anything yet). If any track is soloed, only soloed tracks play. Muted and un-soloed tracks are also left out of exports.
+Each track header has **VOL** (-60 to +6 dB) and **PAN** sliders (double-click either to reset), and buttons for **M** (mute), **S** (solo) and **R** (record arm: takes go on this track, one track at a time; arming also selects it). If any track is soloed, only soloed tracks play. Muted and un-soloed tracks are also left out of exports.
 
 Tracks are stereo, so wide sounds keep their width all the way to the master: the Supersaw, Space Clav and Mandolin, the noise in the FX instrument, the **Chorus** effect, recorded instruments with stereo samples, and stereo files in the Sampler. Most synths and mono samples are mono and sit in the middle, and so are the drum kits, effects included (a Chorus on a kit doesn't widen it). **PAN** works as a balance: in the middle both sides play, and turning it towards one side fades out the other, so at full left you hear only the left channel. For a mono sound that's the same as moving it across.
 
@@ -351,7 +377,7 @@ The project bar sits above the toolbar.
 - **Open**: load a `.beatbox.json` project file. Like New, it replaces what's on screen straight away and clears undo, so save first. If the file can't be read, a red message explains why and nothing is replaced.
 - **Save**: downloads the project as `<name>.beatbox.json` to your downloads folder. Keep this file: it's the only way to move a project to another browser or computer.
 
-A project file holds the tracks, clips, mixer and effect settings, tempo, swing, loop, markers, master reverb and delay, frame rate, and any Sampler sounds. It doesn't hold the master volume, zoom, snap or ruler setting.
+A project file holds the tracks, clips, mixer and effect settings, tempo, swing, loop, markers, master reverb and delay, frame rate, and every sound it uses (audio clips, Slicer and Sampler sounds). It doesn't hold the master volume, zoom, snap or ruler setting.
 
 Whether it comes from **New**, **Open** or **Restore**, a project opens showing the start of the timeline, with the playhead at its loop's In point; if that's off the first screen, the view scrolls to it instead. It never keeps the previous project's scroll position.
 
@@ -362,6 +388,36 @@ The app also saves your work in this browser half a second after every change. T
 - At startup the app sets your last session aside. The banner stays across reloads until you click **Restore** (which replaces what's on screen) or **Dismiss**. Only the most recent session with clips or markers is kept: if you make something else and reload, the banner offers that one instead. The banner says how many clips it has (or markers, when it has no clips yet) and when it was saved.
 - If autosave fails, the project bar says why in red: the project is too big for browser storage (about 5 MB per site, usually because of big Sampler sounds), storage is full (Dismiss the old session to make room), or the browser blocks storage for this site. While it's failing, closing or reloading the tab asks first, so you can **Save**.
 - Autosave is per browser and per site, and private windows don't keep it. Use **Save** for anything you care about.
+
+## Playing a MIDI keyboard
+
+Click the **MIDI** button (the keyboard icon) in the toolbar, then **Connect MIDI devices**. Chrome and Edge connect at once; Firefox asks for permission first; Safari has no MIDI support (use the computer keyboard piano instead). The app reconnects by itself next time.
+
+- **Input** picks one device or **All inputs**. The light and readout show the last thing played.
+- Your playing goes to the **armed** track if one is armed, otherwise the **selected** track, through its instrument, mixer and effects, so you hear what you'll record.
+- Velocity, note-off, the sustain pedal and all-notes-off work on every instrument. The pitch bend wheel (±2 semitones) works on Slap Bass, Sub Bass, 808, Lead, Space Clav, Brass Stabs and Pad.
+- On a drum kit, the standard General MIDI drum pads (kick 36, snare 38, hats 42 and 46) play the kit's sounds.
+
+### The computer keyboard as a piano
+
+In the MIDI popover, tick **Computer keyboard piano**. `A` `S` `D` `F` `G` `H` `J` `K` `L` `;` `'` are the white keys from C, `W` `E` `T` `Y` `U` `O` `P` the black keys, and `Z` / `X` move an octave down or up. Notes play at a fixed velocity. While it's on, those keys play notes instead of their usual jobs (the Audition Deck pads, `L`, `O`); Space and the other shortcuts still work. It's off by default.
+
+## Recording
+
+1. Arm a track with **R** on its header (one track at a time; Audio tracks can't be armed).
+2. Switch **Record** on (the red circle in the toolbar).
+3. Press **Play**. With the **1-bar count-in** on (the default) you hear four clicks first, then the music and the take start together.
+4. Play. Notes are placed where you heard them against the music, with their velocity and length.
+5. **Pause**, **Stop** or switching Record off ends the take. It becomes a clip named **Take 1**, **Take 2** and so on, on whole bars. Switching Record on while playing starts a take right there (punch-in).
+
+- **Undo** removes the whole take in one step. With **Quantize** on, the notes are snapped when you stop, as a second step: the first `Ctrl+Z` puts them back where you played them, the second removes the take.
+- **Loop recording**: with the loop on, every pass adds to the same take, so you can build a part up pass by pass.
+- Takes are ordinary clips: swing, editing, Insert/Delete bars and export work on them like any other.
+- **Recording settings** (the arrow next to Record): **1-bar count-in**, **Quantize** (Off, 1/16, 1/8 or 1/16T), **Metronome while playing** and **Click level**. These are kept in your browser, not in the project.
+
+### Metronome
+
+The **metronome** button in the toolbar clicks on every beat while playing, louder on beat 1 of each bar. It follows the tempo, ignores swing, and is never in an exported WAV. The count-in clicks even when the metronome is off.
 
 ## Exporting audio (WAV)
 
@@ -407,7 +463,7 @@ Shortcuts don't work while you're typing in a box, or while a dialog or panel (G
 | `Esc` | Clear the selection |
 | `+` / `-` | Zoom in / out (around the playhead) |
 | `?` | Open this guide |
-| `Q` `W` `E` `R` `T`, `1`–`4`, `A` `S` `D`, `Z` `X` | Play Audition Deck pads (see Trying sounds) |
+| `Q` `W` `E` `R` `T`, `1`–`4`, `A` `S` `D`, `Z` `X` | Play Audition Deck pads (see Trying sounds); with the computer keyboard piano on, `A`–`'` and `W`–`P` play notes and `Z` / `X` change octave |
 
 On a Mac, use `Cmd` instead of `Ctrl`.
 
@@ -445,11 +501,11 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 
 - Songs can be up to 400 bars long, in 4/4, at one tempo (40 to 240 BPM, to 0.01 BPM). The shortest loop is a 16th note.
 - For EDM, set **Swing** to 0% (new blank projects start at 20%). Dubstep is usually 140 BPM with the snare on beat 3 (half-time), house around 124 to 128, drum & bass around 174.
-- Projects that use Wobble Bass, Growl Bass, Reese Bass, Supersaw, Pluck or FX only open in this version of the app or later.
+- Projects that use Wobble Bass, Growl Bass, Reese Bass, Supersaw, Pluck, FX, Audio tracks or the Slicer only open in this version of the app or later.
 - Recorded instruments (piano, strings, winds and others) download their sounds the first time you use them, so they need an internet connection. Everything else works offline.
 - Muted tracks, and tracks silenced by another track's Solo, don't play their notes at all, which saves processing power on big songs.
 - If playback stutters on a big song, mute tracks you aren't working on, switch off effects you don't need, or export a WAV: exporting never stutters, it just takes longer.
-- The **R** buttons on track headers and the red **Record** button in the toolbar don't record anything yet.
+- Sounds you load are kept in this browser; a private window may not allow it. Save the project to keep its sounds safe.
 
 ## Credits
 
