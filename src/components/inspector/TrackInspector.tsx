@@ -18,7 +18,9 @@ import type { InstrumentKey } from '../../store/timelineTypes';
 import { EqCurvePreview } from './EqCurvePreview';
 import { DistortionPanel, DynamicsAndChorusPanels, FilterAndPumpPanels } from './InsertFx';
 import { SampleLoader } from './SampleLoader';
-import { INSTRUMENTS, instrumentsByCategory } from '../../audio/instrumentCatalog';
+import { SlicerPanel } from './SlicerPanel';
+import { AudioTrackPanel } from './AudioTrackPanel';
+import { INSTRUMENTS, instrumentsByCategory, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
 import { AutoBadge, Automatable } from '../timeline/AutoBadge';
@@ -192,27 +194,38 @@ export const TrackInspector: React.FC = () => {
                 </div>
               </div>
 
-              <select
-                value={currentTrack.instrumentKey}
-                onChange={(e) => setTrackInstrument(currentTrack.id, e.target.value as InstrumentKey)}
-                className="w-full bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white cursor-pointer focus:border-cyan-400 focus:outline-none"
-              >
-                {instrumentsByCategory().map(({ category, instruments }) => (
-                  <optgroup key={category} label={category}>
-                    {instruments.map((inst) => (
-                      <option key={inst.key} value={inst.key}>
-                        {inst.name} ({inst.blurb})
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+              {isAudioKind(currentTrack.instrumentKey) ? (
+                // An Audio track's clips are sound files, which no instrument could play: it stays an Audio track
+                <div className="w-full bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white">
+                  {INSTRUMENTS[currentTrack.instrumentKey].name} track ({INSTRUMENTS[currentTrack.instrumentKey].blurb.toLowerCase()})
+                </div>
+              ) : (
+                <select
+                  value={currentTrack.instrumentKey}
+                  onChange={(e) => setTrackInstrument(currentTrack.id, e.target.value as InstrumentKey)}
+                  className="w-full bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white cursor-pointer focus:border-cyan-400 focus:outline-none"
+                >
+                  {instrumentsByCategory().map(({ category, instruments }) => (
+                    <optgroup key={category} label={category}>
+                      {instruments
+                        .filter((inst) => !isAudioKind(inst.key))
+                        .map((inst) => (
+                          <option key={inst.key} value={inst.key}>
+                            {inst.name} ({inst.blurb})
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+                </select>
+              )}
               {INSTRUMENTS[currentTrack.instrumentKey].kind === 'sampled' && (
                 <span className="text-[10px] text-forge-muted">Recorded samples, downloaded the first time you use them (needs internet).</span>
               )}
             </div>
 
             {currentTrack.instrumentKey === 'sampler' && <SampleLoader track={currentTrack} />}
+            {isSlicerKind(currentTrack.instrumentKey) && <SlicerPanel track={currentTrack} />}
+            {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
             {/* Insert chain, in signal order: Distortion -> EQ -> Compressor -> Chorus -> Filter -> Pump */}
             <DistortionPanel track={currentTrack} />

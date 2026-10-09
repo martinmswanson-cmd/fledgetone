@@ -11,6 +11,8 @@ import { TrackLane } from './TrackLane';
 import { barFromClientX, Playhead, useScrub } from './Playhead';
 import { ClipContextMenu } from './ClipContextMenu';
 import type { ContextMenuState } from './ClipContextMenu';
+import { ChopToSlicerDialog } from './ChopToSlicerDialog';
+import { NewAudioTrackDrop } from './NewAudioTrackDrop';
 import { RulerContextMenu } from './RulerContextMenu';
 import type { RulerMenuState } from './RulerContextMenu';
 import { MarkerLines } from './Markers';
@@ -97,6 +99,8 @@ export const Timeline: React.FC = () => {
   const closeMenu = useCallback(() => setMenu(null), []);
   const [rulerMenu, setRulerMenu] = useState<RulerMenuState | null>(null);
   const closeRulerMenu = useCallback(() => setRulerMenu(null), []);
+  /** The audio clip "Chop to Slicer…" was chosen for, while its dialog is open. */
+  const [chopClipId, setChopClipId] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
 
@@ -357,7 +361,7 @@ export const Timeline: React.FC = () => {
               >
                 <AddTrackMenu />
               </div>
-              <div className="flex-1 bg-black/10" />
+              <NewAudioTrackDrop originRef={rulerRef} />
             </div>
 
             <MarkerLines />
@@ -385,12 +389,13 @@ export const Timeline: React.FC = () => {
       <PianoRoll />
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
-        + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads from the sound deck onto a track •
+        + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads from the sound deck, or sound files, onto a track •
         Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • M marker • , and . previous / next marker • curve button: automation • ? guide
       </div>
 
-      {menu && <ClipContextMenu menu={menu} onClose={closeMenu} />}
+      {menu && <ClipContextMenu menu={menu} onClose={closeMenu} onChop={setChopClipId} />}
       {rulerMenu && <RulerContextMenu menu={rulerMenu} onClose={closeRulerMenu} />}
+      {chopClipId && <ChopToSlicerDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
       <Toast />
     </div>
   );

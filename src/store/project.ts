@@ -1,9 +1,10 @@
-import type { CustomSample, MasterFx, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, MasterFx, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
 import { parseMarkers } from './markers';
+import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 
 /**
  * Project file format (.beatbox.json) and browser autosave.
@@ -37,6 +38,12 @@ export interface ProjectData {
   dropFrame?: boolean;
   /** Named points on the timeline (optional; older files have none). */
   markers?: Marker[];
+  /**
+   * The sound files the audio clips, Slicer and Sampler tracks play, by content hash (optional).
+   * Save embeds them so the file is complete; the browser autosave keeps only their ids (the
+   * sounds themselves stay in the browser's sound library, see src/audio/soundLibrary.ts).
+   */
+  sounds?: EmbeddedSound[];
 }
 
 export interface ProjectSnapshot {
@@ -54,6 +61,8 @@ export interface ProjectSnapshot {
   dropFrame?: boolean;
   /** Markers, in position order (older projects don't have any). */
   markers?: Marker[];
+  /** Embedded sound files (a saved file has them; autosaves and the store's own snapshot don't). */
+  sounds?: EmbeddedSound[];
 }
 
 
@@ -71,6 +80,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     fps: p.fps ?? DEFAULT_FRAME_RATE,
     dropFrame: p.dropFrame === true && p.fps === 29.97,
     markers: p.markers ?? [],
+    ...(p.sounds?.length ? { sounds: p.sounds } : {}),
   };
 }
 
@@ -78,10 +88,16 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
 
-/** The Sampler's own sound: kept only if it looks like an embedded audio file. */
+/**
+ * The Sampler's own sound: a sound library id, or, from projects saved before the library, the
+ * audio file itself as a data: URL (loadProject moves it into the library). Kept only if it has one.
+ */
 function parseSample(v: unknown): CustomSample | undefined {
-  if (!isObj(v) || !isStr(v.dataUrl) || !v.dataUrl.startsWith('data:')) return undefined;
-  return { name: isStr(v.name) ? v.name : 'Sample', dataUrl: v.dataUrl, root: isStr(v.root) ? v.root : 'C4' };
+  if (!isObj(v)) return undefined;
+  const soundId = isStr(v.soundId) && v.soundId ? v.soundId : undefined;
+  const dataUrl = !soundId && isStr(v.dataUrl) && v.dataUrl.startsWith('data:') ? v.dataUrl : undefined;
+  if (!soundId && !dataUrl) return undefined;
+  return { name: isStr(v.name) ? v.name : 'Sample', ...(soundId ? { soundId } : { dataUrl }), root: isStr(v.root) ? v.root : 'C4' };
 }
 
 function parseTrack(v: unknown): Track {
@@ -90,6 +106,7 @@ function parseTrack(v: unknown): Track {
   }
   const eqObj = isObj(v.eq) ? v.eq : {};
   const automation = parseAutomation(v.automation);
+  const slicer = normalizeSlicer(v.slicer);
   return {
     id: v.id,
     name: v.name,
@@ -111,6 +128,8 @@ function parseTrack(v: unknown): Track {
     sample: parseSample(v.sample),
     // Optional: tracks from before automation (or without any) have none
     ...(automation ? { automation } : {}),
+    // Optional: a Slicer track that has a sound loaded
+    ...(slicer ? { slicer } : {}),
   };
 }
 
@@ -131,6 +150,7 @@ function parseClip(v: unknown): Clip {
   if (!isObj(v) || !isStr(v.id) || !isStr(v.trackId) || !isNum(v.startBar) || !isNum(v.lengthBars) || !Array.isArray(v.notes)) {
     throw new Error('a clip is malformed');
   }
+  const audio = normalizeClipAudio(v.audio);
   return {
     id: v.id,
     trackId: v.trackId,
@@ -142,6 +162,8 @@ function parseClip(v: unknown): Clip {
     isSelected: false,
     // Optional: a rate this version doesn't know plays at the default
     ...(isWobbleRate(v.wobble) ? { wobble: v.wobble } : {}),
+    // Optional: an audio clip (on an Audio track) plays a sound file instead of notes
+    ...(audio ? { audio } : {}),
   };
 }
 
@@ -160,6 +182,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const loop = isObj(raw.loopRegion) ? raw.loopRegion : {};
   const fps = isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE;
   const bpm = isNum(raw.bpm) ? Math.max(40, Math.min(240, raw.bpm)) : 122;
+  const sounds = parseEmbeddedSounds(raw.sounds);
   return {
     name: isStr(raw.name) && raw.name.trim() ? raw.name : 'Untitled',
     bpm,
@@ -177,6 +200,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     fps,
     dropFrame: fps === 29.97 && raw.dropFrame === true,
     markers: parseMarkers(raw.markers, bpm),
+    ...(sounds.length ? { sounds } : {}),
   };
 }
 

@@ -2,8 +2,11 @@ import * as Tone from 'tone';
 import { barToTicks, swingDelay, swungNotes } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
-import { getLiveInstrument, pumpOnKick, releaseAllLiveVoices } from './liveTracks';
+import { getLiveClipBus, getLiveInstrument, pumpOnKick, releaseAllLiveVoices } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
+import { liveMix } from './engine';
+import { createAudioClipSchedule } from './audioClipSchedule';
+import type { AudioClipSchedule } from './audioClipSchedule';
 import type { Clip, LoopRegion, Track } from '../store/timelineTypes';
 
 export { DRUM_NOTES } from './instruments';
@@ -139,12 +142,17 @@ export function createClipSchedule(
 }
 
 let liveSchedule: ClipSchedule | null = null;
+let liveAudioClips: AudioClipSchedule | null = null;
 let liveSwing = 0;
 
 /** Bring the live Transport's events in line with the timeline clips. */
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
   liveSchedule ??= createClipSchedule(Tone.getTransport(), getLiveInstrument, pumpOnKick, () => liveSwing);
   liveSchedule.update(tracks, clips);
+  // Audio clips play their sound files on the live mix's own Transport (the global one is the
+  // export's while a WAV render sets up)
+  liveAudioClips ??= createAudioClipSchedule(liveMix.bus.context.transport, getLiveClipBus);
+  liveAudioClips.update(tracks, clips);
 }
 
 /** Apply loop region and tempo to Tone.Transport, and swing to the clips played on it. */

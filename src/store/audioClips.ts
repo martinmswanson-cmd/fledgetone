@@ -1,0 +1,133 @@
+import type { Clip, ClipAudio, EmbeddedSound, SliceCount, SlicerSettings, Track } from './timelineTypes';
+import { AUDIO_FADE_MAX, AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, MAX_SLICES, SLICE_COUNTS } from './timelineTypes';
+
+/**
+ * Audio clip and Slicer maths with no audio or store in it, so Node can unit-test it: how a clip's
+ * length follows the tempo, what the edits do to its offset into the sound, which sounds a project
+ * uses, and reading these settings from a project file.
+ */
+
+const EPS = 1e-9;
+
+/** Seconds in one bar of 4/4 at `bpm`. */
+export const secondsPerBar = (bpm: number): number => 240 / bpm;
+
+/** How long an audio clip plays, in seconds. */
+export const audioClipSeconds = (clip: Pick<Clip, 'lengthBars'>, bpm: number): number => clip.lengthBars * secondsPerBar(bpm);
+
+/**
+ * The clips after a tempo change: an audio clip keeps its start bar and its length in seconds, so
+ * its length in bars scales with the tempo. Note clips are untouched; the same array comes back
+ * when nothing changes.
+ */
+export function retimeAudioClips(clips: Clip[], fromBpm: number, toBpm: number): Clip[] {
+  if (fromBpm === toBpm || !clips.some((c) => c.audio)) return clips;
+  const ratio = toBpm / fromBpm;
+  return clips.map((c) => (c.audio ? { ...c, lengthBars: c.lengthBars * ratio } : c));
+}
+
+/** The audio of a clip's right half when it is cut `seconds` into the clip. */
+export function splitAudio(audio: ClipAudio, seconds: number): ClipAudio {
+  return { ...audio, offset: audio.offset + Math.max(0, seconds) };
+}
+
+/**
+ * The audio of a clip whose left edge moved by `seconds` (positive: later): the start plays from
+ * further into the sound. Never before the sound's start.
+ */
+export function trimAudioStart(audio: ClipAudio, seconds: number): ClipAudio {
+  return { ...audio, offset: Math.max(0, audio.offset + seconds) };
+}
+
+/** The earliest bar a clip's left edge can be dragged to: no earlier than the sound's own start. */
+export function audioTrimStartLimit(clip: Pick<Clip, 'startBar' | 'audio'>, bpm: number): number {
+  return clip.audio ? clip.startBar - clip.audio.offset / secondsPerBar(bpm) : 1;
+}
+
+/** The most bars an audio clip can be, given its sound's length in seconds (Infinity when that isn't known). */
+export function audioLengthLimit(audio: ClipAudio, soundSeconds: number | undefined, bpm: number): number {
+  if (soundSeconds === undefined) return Infinity;
+  return Math.max(0, soundSeconds - audio.offset) / secondsPerBar(bpm);
+}
+
+/** The sounds a project refers to: audio clips, Slicer tracks and Sampler tracks (each id once). */
+export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer'>> }): string[] {
+  const ids = new Set<string>();
+  for (const c of p.clips) if (c.audio) ids.add(c.audio.soundId);
+  for (const t of p.tracks) {
+    if (t.sample?.soundId) ids.add(t.sample.soundId);
+    if (t.slicer) ids.add(t.slicer.soundId);
+  }
+  return [...ids];
+}
+
+/** A file name without its extension, for a clip's name ("take 3.wav" -> "take 3"). */
+export function clipNameFromFile(fileName: string): string {
+  const name = fileName.replace(/\.[A-Za-z0-9]{1,5}$/, '').trim();
+  return name || 'Audio';
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** A clip's audio settings from a file, or undefined if there aren't any (a note clip, or a broken entry). */
+export function normalizeClipAudio(raw: unknown): ClipAudio | undefined {
+  if (!isObj(raw) || typeof raw.soundId !== 'string' || !raw.soundId) return undefined;
+  return {
+    soundId: raw.soundId,
+    offset: isNum(raw.offset) ? Math.max(0, raw.offset) : 0,
+    gain: isNum(raw.gain) ? clamp(raw.gain, AUDIO_GAIN_MIN, AUDIO_GAIN_MAX) : 0,
+    fadeIn: isNum(raw.fadeIn) ? clamp(raw.fadeIn, 0, AUDIO_FADE_MAX) : 0,
+    fadeOut: isNum(raw.fadeOut) ? clamp(raw.fadeOut, 0, AUDIO_FADE_MAX) : 0,
+  };
+}
+
+/**
+ * Slice starts tidied: finite, inside [start, end), ascending with no repeats, the first at
+ * `start`, at most MAX_SLICES.
+ */
+export function normalizeSlices(raw: unknown, start: number, end: number): number[] {
+  const inside = (Array.isArray(raw) ? raw : []).filter((v): v is number => isNum(v) && v > start + EPS && v < end - EPS).sort((a, b) => a - b);
+  const slices = [start];
+  for (const v of inside) if (v - slices[slices.length - 1] > EPS) slices.push(v);
+  return slices.slice(0, MAX_SLICES);
+}
+
+/** The sounds a project file embeds, keeping the well-formed ones (a damaged entry just leaves its sound missing). */
+export function parseEmbeddedSounds(raw: unknown): EmbeddedSound[] {
+  if (!Array.isArray(raw)) return [];
+  const sounds: EmbeddedSound[] = [];
+  for (const v of raw) {
+    if (!isObj(v) || typeof v.id !== 'string' || !v.id || typeof v.data !== 'string') continue;
+    sounds.push({
+      id: v.id,
+      name: typeof v.name === 'string' ? v.name : 'Sound',
+      type: typeof v.type === 'string' ? v.type : 'application/octet-stream',
+      size: isNum(v.size) ? v.size : 0,
+      seconds: isNum(v.seconds) ? v.seconds : 0,
+      data: v.data,
+    });
+  }
+  return sounds;
+}
+
+/** A track's Slicer settings from a file, or undefined if there aren't any usable ones. */
+export function normalizeSlicer(raw: unknown): SlicerSettings | undefined {
+  if (!isObj(raw) || typeof raw.soundId !== 'string' || !raw.soundId) return undefined;
+  const start = isNum(raw.start) ? Math.max(0, raw.start) : 0;
+  const end = isNum(raw.end) && raw.end > start ? raw.end : start + 1;
+  const slices = normalizeSlices(raw.slices, start, end);
+  return {
+    soundId: raw.soundId,
+    name: typeof raw.name === 'string' ? raw.name : 'Sound',
+    start,
+    end,
+    slices,
+    mode: raw.mode === 'equal' ? 'equal' : 'auto',
+    count: SLICE_COUNTS.includes(raw.count as SliceCount) ? (raw.count as SliceCount) : 8,
+    sensitivity: isNum(raw.sensitivity) ? clamp(raw.sensitivity, 0, 1) : 0.5,
+    pitch: raw.pitch === true,
+    focus: isNum(raw.focus) ? clamp(Math.round(raw.focus), 0, slices.length - 1) : 0,
+  };
+}

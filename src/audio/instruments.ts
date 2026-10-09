@@ -10,8 +10,11 @@ import { create808, createDrumMachine, createLead, createSubBass, createWavetabl
 import { createGrowlBass, createReeseBass, createWobbleBass } from './presets/edmBass';
 import { createPluck, createSupersaw } from './presets/edmSynths';
 import { createFx } from './presets/fx';
+import { createSlicer } from './presets/slicer';
+import { createBus } from './presets/native';
+import type { NativeBus } from './presets/native';
 import { createCustomSamplerVoice, createSamplerVoice } from './samplers/samplerManager';
-import type { CustomSample, WobbleRate } from '../store/timelineTypes';
+import type { CustomSample, SlicerSettings, WobbleRate } from '../store/timelineTypes';
 
 /** Drum note map (GM-style). Drum clips store one note name per voice. */
 export const DRUM_NOTES = {
@@ -41,6 +44,16 @@ export interface TrackInstrument {
   /** Resolves when the instrument can sound (reverb generated, samples downloaded). */
   ready: Promise<unknown>;
   dispose: () => void;
+  /** An Audio track's: where its audio clips play (see audioClipSchedule.ts). */
+  clipBus?: NativeBus;
+  /** The Slicer's: give it the track's slices and modes as they change, without a rebuild. */
+  setSlicer?: (settings: SlicerSettings | undefined) => void;
+}
+
+/** What an instrument is built with: the Sampler's sound, the Slicer's sound and slices. */
+export interface InstrumentOptions {
+  sample?: CustomSample;
+  slicer?: SlicerSettings;
 }
 
 /**
@@ -93,9 +106,9 @@ function mono(voice: { trigger: (note: string, d: string, t: number, v: number) 
 
 /**
  * Build `key`'s instrument in the current Tone context, connected to `output`.
- * `options.sample` is the user's sound for the Sampler instrument.
+ * `options` carry the user's sound for the Sampler and the Slicer's sound and slices.
  */
-export function createInstrument(key: InstrumentKey, output: Tone.InputNode, options: { sample?: CustomSample } = {}): TrackInstrument {
+export function createInstrument(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions = {}): TrackInstrument {
   const gain = INSTRUMENTS[key].gain;
   if (!gain) return buildInstrument(key, output, options);
   // Level correction so this instrument starts out about as loud as the others
@@ -110,8 +123,15 @@ export function createInstrument(key: InstrumentKey, output: Tone.InputNode, opt
   };
 }
 
-function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: { sample?: CustomSample }): TrackInstrument {
+function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
   const kind = INSTRUMENTS[key].kind;
+
+  if (kind === 'audio') {
+    // An Audio track plays no notes: its clips play their sound files into this bus
+    const bus = createBus(output);
+    return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => bus.bus.dispose(), clipBus: bus };
+  }
+  if (kind === 'slicer') return createSlicer(output, options.slicer);
 
   if (kind === 'sampled' || kind === 'custom') {
     const voice = kind === 'sampled' ? createSamplerVoice(key, output) : createCustomSamplerVoice(options.sample, output);

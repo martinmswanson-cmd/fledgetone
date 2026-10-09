@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRightToLine, ClipboardPaste, Copy, CopyPlus, Piano, Plus, Repeat2, Scissors, Trash2 } from 'lucide-react';
+import { ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Slice, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { patternsFor } from '../../store/demoSong';
 import { formatBarCount } from '../../store/timelineTypes';
-import { canMoveClipBetween } from '../../audio/instrumentCatalog';
+import { canMoveClipBetween, isAudioKind } from '../../audio/instrumentCatalog';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
+import { dropAudioFiles, pickAudioFiles } from './audioFiles';
 
 export interface ContextMenuState {
   x: number;
@@ -20,6 +21,8 @@ export interface ContextMenuState {
 interface ClipContextMenuProps {
   menu: ContextMenuState;
   onClose: () => void;
+  /** "Chop to Slicer…" on an audio clip: open that dialog for the clip. */
+  onChop?: (clipId: string) => void;
 }
 
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
@@ -108,8 +111,12 @@ const RepeatForm: React.FC<{ onRepeat: (times: number) => void }> = ({ onRepeat 
   );
 };
 
-/** Right-click menu for clips (Edit / Copy / Cut / Duplicate / Repeat / Fill / Delete) and empty lane space (New clip, Insert pattern, Paste). Also opened by a track header's + button. */
-export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose }) => {
+/**
+ * Right-click menu for clips (Edit / Copy / Cut / Duplicate / Repeat / Fill / Delete; an audio
+ * clip: Gain and fades, Chop to Slicer) and empty lane space (New clip, Insert pattern, Paste; on
+ * an Audio track: Load audio file). Also opened by a track header's + button.
+ */
+export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose, onChop }) => {
   const ref = useRef<HTMLDivElement>(null);
   const hasClipboard = useTimelineStore((s) => s.clipboard.length > 0);
   const loopOut = useTimelineStore((s) => s.loopRegion.outBar);
@@ -120,6 +127,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose 
 
   const s = useTimelineStore.getState();
   const track = s.tracks.find((t) => t.id === menu.trackId);
+  const audioClip = menu.clipId ? !!s.clips.find((c) => c.id === menu.clipId)?.audio : false;
+  const audioLane = !!track && isAudioKind(track.instrumentKey);
   /** Run an action and close, unless it returns a message saying why it couldn't: then show that. */
   const run = (action: () => string | null | void) => () => {
     const message = action();
@@ -155,7 +164,12 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose 
 
   const items: Item[] = menu.clipId
     ? [
-        { key: 'edit', label: 'Edit notes', shortcut: 'dbl-click', icon: <Piano className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) },
+        audioClip
+          ? { key: 'edit', label: 'Gain and fades', shortcut: 'dbl-click', icon: <AudioWaveform className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) }
+          : { key: 'edit', label: 'Edit notes', shortcut: 'dbl-click', icon: <Piano className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) },
+        ...(audioClip && onChop
+          ? [{ key: 'chop', label: 'Chop to Slicer…', icon: <Slice className="w-3.5 h-3.5" />, onClick: run(() => onChop(menu.clipId!)) }]
+          : []),
         { key: 'copy', label: 'Copy', shortcut: `${MOD}C`, icon: <Copy className="w-3.5 h-3.5" />, onClick: run(s.copySelectedClips), divider: true },
         { key: 'cut', label: 'Cut', shortcut: `${MOD}X`, icon: <Scissors className="w-3.5 h-3.5" />, onClick: run(s.cutSelectedClips) },
         { key: 'paste', ...pasteHere },
@@ -171,7 +185,20 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose 
         { key: 'delete', label: 'Delete', shortcut: 'Del', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(s.deleteSelectedClips), divider: true },
       ]
     : [
-        ...(track ? [newClip(1), newClip(2), newClip(4)] : []),
+        ...(track && audioLane
+          ? [
+              {
+                key: 'load',
+                label: 'Load audio file…',
+                shortcut: 'dbl-click',
+                icon: <FileAudio className="w-3.5 h-3.5" />,
+                onClick: run(() => {
+                  void pickAudioFiles().then((files) => dropAudioFiles(track.id, menu.bar, files));
+                }),
+              },
+            ]
+          : []),
+        ...(track && !audioLane ? [newClip(1), newClip(2), newClip(4)] : []),
         ...(track
           ? patternsFor(track.instrumentKey).map((p, i) => ({
               key: `pattern-${p.id}`,
