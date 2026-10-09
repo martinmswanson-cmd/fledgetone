@@ -3,6 +3,8 @@ import { Download, FilePlus2, FolderOpen, History, Music2, Save, X } from 'lucid
 import { AlertTriangle, HardDrive } from 'lucide-react';
 import { currentProject, lastSession, retryAutosave, useTimelineStore } from '../../store/timelineStore';
 import { clearPreviousSession, parseProject, safeFileName, serializeProject } from '../../store/project';
+import { referencedSoundIds } from '../../store/audioClips';
+import { embedSounds } from '../../audio/soundLibrary';
 import { downloadBlob } from '../../audio/exportWav';
 import { ExportDialog } from './ExportDialog';
 import { Modal } from './Modal';
@@ -164,9 +166,11 @@ export const ProjectBar: React.FC = () => {
   const [openError, setOpenError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
-  const save = () => {
+  const save = async () => {
     const project = currentProject();
-    const blob = new Blob([JSON.stringify(serializeProject(project), null, 2)], { type: 'application/json' });
+    // The file carries the sound files its clips and instruments play, so it opens on any computer
+    const sounds = await embedSounds(referencedSoundIds(project));
+    const blob = new Blob([JSON.stringify(serializeProject({ ...project, sounds }), null, 2)], { type: 'application/json' });
     downloadBlob(blob, `${safeFileName(project.name)}.beatbox.json`);
   };
 
@@ -200,7 +204,7 @@ export const ProjectBar: React.FC = () => {
       <button type="button" className={barButton} onClick={() => fileInput.current?.click()} title="Open a .beatbox.json project file">
         <FolderOpen className="w-3.5 h-3.5" /> Open
       </button>
-      <button type="button" className={barButton} onClick={save} title="Download this arrangement as a project file">
+      <button type="button" className={barButton} onClick={() => void save()} title="Download this arrangement as a project file (with its sounds)">
         <Save className="w-3.5 h-3.5" /> Save
       </button>
       <button

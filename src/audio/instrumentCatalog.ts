@@ -8,6 +8,8 @@
  *   fx      - transition effects (risers, impacts...), one fixed row each, like a drum kit's (FX_ROWS)
  *   sampled - multi-sampled recordings streamed from free public libraries (needs internet)
  *   custom  - the Sampler: plays a sound the user loads from their own computer
+ *   slicer  - the Slicer: a sound cut into slices, one per key from C3 up (vocal chops)
+ *   audio   - an Audio track: holds audio clips (sound files on the timeline) instead of notes
  */
 export const INSTRUMENT_KEYS = [
   // original set
@@ -25,11 +27,13 @@ export const INSTRUMENT_KEYS = [
   'wobbleBass', 'growlBass', 'reeseBass',
   'supersaw', 'pluck',
   'fx',
+  // audio clips and vocal chops
+  'slicer', 'audio',
 ] as const;
 
 export type InstrumentKey = (typeof INSTRUMENT_KEYS)[number];
 
-export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom';
+export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio';
 
 export const CATEGORIES = [
   'Drums & Percussion',
@@ -226,6 +230,9 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
 
   // Your Sounds
   sampler: { key: 'sampler', name: 'Sampler', blurb: 'Play your own sound file', color: '#14b8a6', category: 'Your Sounds', kind: 'custom', range: [36, 96] },
+  // (The range is the most slices a sound can be cut into, from C3 up; the piano roll shows only the slices there are)
+  slicer: { key: 'slicer', name: 'Slicer', blurb: 'Vocal chops: a sound cut into slices', color: '#f0abfc', category: 'Your Sounds', kind: 'slicer', range: [48, 111] },
+  audio: { key: 'audio', name: 'Audio', blurb: 'Your recordings, as clips', color: '#60a5fa', category: 'Your Sounds', kind: 'audio', range: [0, 127] },
 };
 
 export function isInstrumentKey(key: unknown): key is InstrumentKey {
@@ -241,18 +248,28 @@ export function isFxKind(key: InstrumentKey): boolean {
   return INSTRUMENTS[key].kind === 'fx';
 }
 
+/** An Audio track: its clips are sound files, not notes. */
+export function isAudioKind(key: InstrumentKey): boolean {
+  return INSTRUMENTS[key].kind === 'audio';
+}
+
+/** The Slicer: its rows are the slices of its sound. */
+export function isSlicerKind(key: InstrumentKey): boolean {
+  return INSTRUMENTS[key].kind === 'slicer';
+}
+
 /** Can a deck sound / pattern made for `source` go on a `target` track? (Drum kits share notes.) */
 export function compatibleInstruments(source: InstrumentKey, target: InstrumentKey): boolean {
   return source === target || (isDrumKind(source) && isDrumKind(target));
 }
 
-/** What a clip's notes mean: drum hits, FX rows, or pitches. */
-const noteFamily = (key: InstrumentKey) => (isDrumKind(key) ? 'drums' : isFxKind(key) ? 'fx' : 'pitched');
+/** What a clip's notes mean: drum hits, FX rows, pitches, or none (an audio clip). */
+const noteFamily = (key: InstrumentKey) => (isDrumKind(key) ? 'drums' : isFxKind(key) ? 'fx' : isAudioKind(key) ? 'audio' : 'pitched');
 
 /**
  * Can a clip on a `source` track move (or be pasted) onto a `target` track? Drum parts only make
- * sense on a drum kit and FX parts on the FX instrument, and a melody plays on any pitched
- * instrument (the Sampler included).
+ * sense on a drum kit and FX parts on the FX instrument, a melody plays on any pitched
+ * instrument (the Sampler and the Slicer included), and audio clips only go on Audio tracks.
  */
 export function canMoveClipBetween(source: InstrumentKey, target: InstrumentKey): boolean {
   return noteFamily(source) === noteFamily(target);

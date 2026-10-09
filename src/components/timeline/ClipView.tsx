@@ -1,18 +1,23 @@
 import React, { useMemo, useState } from 'react';
 import * as Tone from 'tone';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
-import type { Clip, InstrumentKey, Track } from '../../store/timelineTypes';
+import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
 import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
+import { secondsPerBar } from '../../store/audioClips';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../../audio/instrumentCatalog';
+import { dbToGain } from '../../audio/clipEnvelope';
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
 import { shadeNotes, type NoteRect } from './noteShades';
+import { Waveform } from './Waveform';
 
 const CLIP_INSET = 4;
 const CLIP_HEIGHT = TRACK_HEIGHT - CLIP_INSET * 2;
 const LABEL_HEIGHT = 16;
+/** The square at each top corner of an audio clip that drags its fade. */
+const FADE_HANDLE_PX = 9;
 
 const DRUM_ROWS: string[] = [
   DRUM_NOTES.cowbell,
@@ -98,12 +103,51 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   const zoom = useTimelineStore((s) => s.zoom);
   const activeTool = useTimelineStore((s) => s.activeTool);
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
+  // Only audio clips follow the tempo here (their width in bars already changed with it)
+  const bpm = useTimelineStore((s) => (clip.audio ? s.bpm : 0));
   const [razorX, setRazorX] = useState<number | null>(null);
 
   const shades = useMemo(() => shadeNotes(layoutNotes(clip, track.instrumentKey, zoom)), [clip, track.instrumentKey, zoom]);
 
   const left = (clip.startBar - 1) * zoom;
   const width = clip.lengthBars * zoom;
+  const audio = clip.audio;
+  const clipSeconds = audio ? clip.lengthBars * secondsPerBar(bpm) : 0;
+  /** Pixels per second of an audio clip. */
+  const pxPerSecond = audio ? zoom / secondsPerBar(bpm) : 0;
+
+  /** Drag a fade handle: the fade follows the pointer, from 0 up to half the clip (one undo step per drag). */
+  const startFadeDrag = (e: React.PointerEvent, edge: 'fadeIn' | 'fadeOut') => {
+    if (e.button !== 0 || !audio) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const original = audio[edge];
+    let last = original;
+    let recorded = false;
+    const onMove = (ev: PointerEvent) => {
+      const dx = (ev.clientX - startX) * (edge === 'fadeIn' ? 1 : -1);
+      const fade = Math.round(Math.max(0, Math.min(clipSeconds / 2, original + dx / pxPerSecond)) * 1000) / 1000;
+      if (fade === last) return;
+      last = fade;
+      const s = useTimelineStore.getState();
+      if (!recorded) {
+        recorded = true;
+        s.checkpoint();
+      }
+      s.setClipAudio(clip.id, { [edge]: fade });
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    document.body.style.cursor = 'ew-resize';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+  };
 
   const snapped = (bar: number, shift: boolean) => {
     const s = useTimelineStore.getState();
@@ -325,7 +369,9 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         if (!clip.isSelected) useTimelineStore.getState().selectClip(clip.id, false);
         onOpenMenu({ x: e.clientX, y: e.clientY, bar: razorBarAt(e.clientX, e.shiftKey), trackId: clip.trackId, clipId: clip.id });
       }}
-      title={`${clip.name} — bar ${clip.startBar.toFixed(2)}, ${formatBarCount(clip.lengthBars)} bars • double-click to edit notes`}
+      title={`${clip.name} — bar ${clip.startBar.toFixed(2)}, ${formatBarCount(clip.lengthBars)} bars • ${
+        audio ? `${clipSeconds.toFixed(2)} s of ${INSTRUMENTS[track.instrumentKey].name.toLowerCase()} • double-click for gain and fades, drag the top corners for the fades` : 'double-click to edit notes'
+      }`}
     >
       {/* Label strip */}
       <div
@@ -333,12 +379,21 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         style={{ height: LABEL_HEIGHT, backgroundColor: track.color }}
       >
         <span className="truncate">{clip.name}</span>
+        {audio && audio.gain !== 0 && (
+          <span className="ml-auto pl-1 shrink-0 font-mono text-[9px] font-bold text-black/70" title="Clip gain (double-click the clip to change it)">
+            {audio.gain > 0 ? '+' : ''}
+            {audio.gain.toFixed(1)} dB
+          </span>
+        )}
         {INSTRUMENTS[track.instrumentKey].wobble && (
           <span className="ml-auto pl-1 shrink-0 font-mono text-[9px] font-bold text-black/70" title="Wobble rate (set in the piano roll)">
             {clip.wobble ?? DEFAULT_WOBBLE}
           </span>
         )}
       </div>
+
+      {/* An audio clip: its waveform, its fades shaded, and the fade handles at the top corners */}
+      {audio && <AudioClipBody audio={audio} seconds={clipSeconds} width={width} pxPerSecond={pxPerSecond} color={track.color} onFadeDrag={startFadeDrag} showHandles={!isRazor && width > FADE_HANDLE_PX * 4} />}
 
       {/* Notes */}
       {shades.length > 0 && (
@@ -373,3 +428,46 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
     </div>
   );
 });
+
+interface AudioClipBodyProps {
+  audio: ClipAudio;
+  seconds: number;
+  width: number;
+  pxPerSecond: number;
+  color: string;
+  showHandles: boolean;
+  onFadeDrag: (e: React.PointerEvent, edge: 'fadeIn' | 'fadeOut') => void;
+}
+
+/** The body of an audio clip under its label: waveform, fades and their handles. */
+const AudioClipBody: React.FC<AudioClipBodyProps> = ({ audio, seconds, width, pxPerSecond, color, showHandles, onFadeDrag }) => {
+  const top = LABEL_HEIGHT;
+  const height = CLIP_HEIGHT - LABEL_HEIGHT;
+  const inPx = Math.min(width, audio.fadeIn * pxPerSecond);
+  const outPx = Math.min(width, audio.fadeOut * pxPerSecond);
+  const handle = (edge: 'fadeIn' | 'fadeOut', x: number) => (
+    <div
+      className="absolute cursor-ew-resize rounded-sm border border-white/80 bg-black/70 hover:bg-white/90 z-20"
+      style={{ top: top + 1, left: Math.max(0, Math.min(width - FADE_HANDLE_PX, x - FADE_HANDLE_PX / 2)), width: FADE_HANDLE_PX, height: FADE_HANDLE_PX }}
+      onPointerDown={(e) => onFadeDrag(e, edge)}
+      title={`${edge === 'fadeIn' ? 'Fade in' : 'Fade out'}: ${audio[edge].toFixed(2)} s (drag)`}
+    />
+  );
+  return (
+    <>
+      <div className="absolute left-0 right-0 pointer-events-none" style={{ top, height }}>
+        <Waveform soundId={audio.soundId} from={audio.offset} to={audio.offset + seconds} width={width} height={height} gain={dbToGain(audio.gain)} color={color} className="block" />
+      </div>
+      {(inPx > 0 || outPx > 0) && (
+        <svg className="absolute left-0 pointer-events-none" style={{ top, width, height }} width={width} height={height} aria-hidden="true">
+          {inPx > 0 && <polygon points={`0,0 ${inPx},0 0,${height}`} fill="black" fillOpacity={0.45} />}
+          {inPx > 0 && <line x1={0} y1={height} x2={inPx} y2={0} stroke="white" strokeOpacity={0.7} />}
+          {outPx > 0 && <polygon points={`${width},0 ${width - outPx},0 ${width},${height}`} fill="black" fillOpacity={0.45} />}
+          {outPx > 0 && <line x1={width} y1={height} x2={width - outPx} y2={0} stroke="white" strokeOpacity={0.7} />}
+        </svg>
+      )}
+      {showHandles && handle('fadeIn', inPx)}
+      {showHandles && handle('fadeOut', width - outPx)}
+    </>
+  );
+};
