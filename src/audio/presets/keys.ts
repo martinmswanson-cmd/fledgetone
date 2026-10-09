@@ -54,6 +54,8 @@ export function createKeysVoice(output: Tone.InputNode) {
 
   return {
     ready: reverb.ready,
+    attack: synth.attack,
+    bend: synth.bend,
     releaseAll: synth.releaseAll,
     dispose: () => {
       synth.dispose();

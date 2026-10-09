@@ -80,6 +80,13 @@ export function swungNotes(ticks: readonly number[], clipStartTick: number, ppq 
 let heading: { bar: number; at: number } | null = null;
 
 /**
+ * The audio time a Play is due to start the Transport, while that's still to come: a recording
+ * count-in starts it a bar of clicks later than the press. Pausing or stopping before then cancels
+ * the start (Tone would pause a Transport that hasn't started, and start it later anyway).
+ */
+let pendingStart: number | null = null;
+
+/**
  * Position the listener is actually hearing right now. Tone.Transport.ticks reports
  * the scheduling time (currentTime + lookAhead), which would make the playhead run
  * ~100ms ahead of the audio, so we query the clock at the raw context time instead.
@@ -97,27 +104,48 @@ export function getScheduledPositionBar(): number {
   return ticksToBar(Tone.Transport.ticks);
 }
 
-export function startTransportAt(bar: number): void {
-  const at = Tone.now() + 0.03;
+/** Start playing from `bar`, at audio time `at` (just ahead of now, or after a count-in). */
+export function startTransportAt(bar: number, at = Tone.now() + 0.03): void {
   Tone.Transport.start(at, `${barToTicks(bar)}i`);
   heading = { bar, at };
+  pendingStart = at;
+}
+
+/** When the Transport is due to start, if it hasn't yet (a count-in is running); else null. */
+export function transportStartsAt(): number | null {
+  return pendingStart !== null && Tone.immediate() < pendingStart ? pendingStart : null;
+}
+
+/** Cancel a start that's still to come (see pendingStart). True if there was one. */
+function cancelPendingStart(): boolean {
+  const at = transportStartsAt();
+  pendingStart = null;
+  if (at === null) return false;
+  // Stopping before the scheduled start removes it: the Transport never gets going
+  Tone.Transport.stop(Tone.immediate());
+  return true;
 }
 
 export function pauseTransport(): void {
   heading = null;
+  if (cancelPendingStart()) return;
   Tone.Transport.pause();
 }
 
 export function stopTransport(): void {
   heading = null;
+  if (cancelPendingStart()) return;
   Tone.Transport.stop();
 }
 
 export function seekTransport(bar: number): void {
   const playing = Tone.Transport.state === 'started';
   Tone.Transport.ticks = barToTicks(bar);
+  const pending = transportStartsAt();
+  // During a count-in the start that's coming moves to the new bar (Tone keeps its time)
+  if (pending !== null) heading = { bar, at: pending };
   // Playing, Tone moves there at its look-ahead, on the next tick
-  if (playing) heading = { bar, at: Tone.now() + Tone.Transport.toSeconds('1i') };
+  else if (playing) heading = { bar, at: Tone.now() + Tone.Transport.toSeconds('1i') };
 }
 
 /** Format as Premiere-style Bar.Beat.Tick ("001.01.00"); ticks shown as hundredths of a beat. */

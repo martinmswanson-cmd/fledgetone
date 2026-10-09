@@ -8,7 +8,7 @@ import { createKeysVoice } from './presets/keys';
 import { createBrassVoice } from './presets/brass';
 import { create808, createDrumMachine, createLead, createSubBass, createWavetable } from './presets/synths';
 import { createGrowlBass, createReeseBass, createWobbleBass } from './presets/edmBass';
-import { createPluck, createSupersaw } from './presets/edmSynths';
+import { createPluck, createSupersaw, HELD_NOTE } from './presets/edmSynths';
 import { createFx } from './presets/fx';
 import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
@@ -33,6 +33,9 @@ export interface PlayableNote {
   wobble?: WobbleRate;
 }
 
+/** Ends a note started by noteOn (a key let go) at an audio time. */
+export type NoteOff = (time: number) => void;
+
 /**
  * One playable instrument, the same shape whatever it is. Each track owns one (live and in
  * the export render), connected to that track's effects strip.
@@ -40,6 +43,15 @@ export interface PlayableNote {
 export interface TrackInstrument {
   /** Play notes that start together (a chord, or simultaneous drum hits) at `time`. */
   play: (notes: PlayableNote[], time: number) => void;
+  /**
+   * Start one note at `time` and keep it sounding, as a key held on a MIDI keyboard; the
+   * returned function ends it with the instrument's own release (`note.duration` is ignored).
+   * One-shots (the drum kits) play the hit and ignore the end. An instrument without it is
+   * played live as short sequenced notes (see liveInput.ts).
+   */
+  noteOn?: (note: PlayableNote, time: number) => NoteOff;
+  /** Pitch bend in cents, for the instruments whose voices can bend (the others ignore it). */
+  bend?: (cents: number, time: number) => void;
   releaseAll: () => void;
   /** Resolves when the instrument can sound (reverb generated, samples downloaded). */
   ready: Promise<unknown>;
@@ -91,18 +103,63 @@ function playDrums(kit: DrumHits, notes: PlayableNote[], time: number): void {
   }
 }
 
-/** A monophonic synth: the loudest note at each tick wins. */
-function mono(voice: { trigger: (note: string, d: string, t: number, v: number) => void; releaseAll: () => void; dispose: () => void }): TrackInstrument {
+interface MonoVoice {
+  trigger: (note: string, d: string, t: number, v: number) => void;
+  attack: (note: string, t: number, v: number) => void;
+  release: (t: number) => void;
+  bend: (cents: number, t: number) => void;
+  releaseAll: () => void;
+  dispose: () => void;
+}
+
+/** A monophonic synth: the loudest note at each tick wins. A held key is let go only if no later key took the voice. */
+function mono(voice: MonoVoice): TrackInstrument {
+  let held: string | null = null;
   return {
     play: (notes, time) => {
       const n = loudestNote(notes);
+      held = null;
       voice.trigger(n.note, n.duration, time, n.velocity);
     },
-    releaseAll: voice.releaseAll,
+    noteOn: (n, time) => {
+      voice.attack(n.note, time, n.velocity);
+      held = n.note;
+      return (at) => {
+        if (held !== n.note) return;
+        held = null;
+        voice.release(at);
+      };
+    },
+    bend: voice.bend,
+    releaseAll: () => {
+      held = null;
+      voice.releaseAll();
+    },
     ready: Promise.resolve(),
     dispose: voice.dispose,
   };
 }
+
+/** A pool synth (chords): a held key gets a voice of its own until it's let go. */
+function poly(
+  synth: { attack: (note: string, t: number, v: number) => { release: (t: number) => void }; bend: (cents: number, t: number) => void },
+  base: Omit<TrackInstrument, 'noteOn' | 'bend'>
+): TrackInstrument {
+  return {
+    ...base,
+    noteOn: (n, time) => {
+      const voice = synth.attack(n.note, time, n.velocity);
+      return (at) => voice.release(at);
+    },
+    bend: synth.bend,
+  };
+}
+
+/** A one-shot (drum hit): a held key plays it once and the end does nothing. */
+const oneShot = (play: TrackInstrument['play']): TrackInstrument['noteOn'] => (n, time) => {
+  play([n], time);
+  return () => {};
+};
 
 /**
  * Build `key`'s instrument in the current Tone context, connected to `output`.
@@ -137,6 +194,10 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     const voice = kind === 'sampled' ? createSamplerVoice(key, output) : createCustomSamplerVoice(options.sample, output);
     return {
       play: (notes, time) => voice.play(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
+      noteOn: (n, time) => {
+        voice.attack(n.note, time, n.velocity);
+        return (at) => voice.release(n.note, at);
+      },
       releaseAll: voice.releaseAll,
       ready: voice.ready,
       dispose: voice.dispose,
@@ -146,15 +207,17 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
   switch (key) {
     case 'drums': {
       const kit = createDrumKit(output);
-      return { play: (notes, time) => playDrums(kit, notes, time), releaseAll: () => {}, ready: Promise.resolve(), dispose: kit.dispose };
+      const play: TrackInstrument['play'] = (notes, time) => playDrums(kit, notes, time);
+      return { play, noteOn: oneShot(play), releaseAll: () => {}, ready: Promise.resolve(), dispose: kit.dispose };
     }
     case 'drumMachine': {
       const kit = createDrumMachine(output);
-      return { play: (notes, time) => playDrums(kit, notes, time), releaseAll: () => {}, ready: Promise.resolve(), dispose: kit.dispose };
+      const play: TrackInstrument['play'] = (notes, time) => playDrums(kit, notes, time);
+      return { play, noteOn: oneShot(play), releaseAll: () => {}, ready: Promise.resolve(), dispose: kit.dispose };
     }
     case 'bass': {
       const bass = createBassVoice(output);
-      return mono({ trigger: bass.trigger, releaseAll: () => bass.synth.triggerRelease(), dispose: bass.dispose });
+      return mono({ ...bass, releaseAll: () => bass.synth.triggerRelease() });
     }
     case 'subBass':
       return mono(createSubBass(output));
@@ -164,44 +227,53 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
       return mono(createLead(output));
     case 'keys': {
       const keys = createKeysVoice(output);
-      return {
+      return poly(keys, {
         play: (notes, time) => keys.trigger(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
         releaseAll: keys.releaseAll,
         ready: keys.ready,
         dispose: keys.dispose,
-      };
+      });
     }
     case 'brass': {
       const brass = createBrassVoice(output);
-      return {
+      return poly(brass, {
         play: (notes, time) => brass.trigger(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
         releaseAll: brass.releaseAll,
         ready: Promise.resolve(),
         dispose: brass.dispose,
-      };
+      });
     }
     case 'wavetable': {
       const pad = createWavetable(output);
-      return {
+      return poly(pad, {
         play: (notes, time) => pad.trigger(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
         releaseAll: pad.releaseAll,
         ready: Promise.resolve(),
         dispose: pad.dispose,
-      };
+      });
     }
     case 'wobbleBass':
     case 'growlBass':
     case 'reeseBass': {
       const create = key === 'wobbleBass' ? createWobbleBass : key === 'growlBass' ? createGrowlBass : createReeseBass;
       const bass = create(output);
-      // Monophonic: the loudest note at each tick wins
-      return { play: (notes, time) => bass.trigger(loudestNote(notes), time), releaseAll: bass.releaseAll, ready: Promise.resolve(), dispose: bass.dispose };
+      // Monophonic: the loudest note at each tick wins. A held key is a long note let go early.
+      return {
+        play: (notes, time) => bass.trigger(loudestNote(notes), time),
+        noteOn: (n, time) => {
+          bass.trigger({ ...n, duration: HELD_NOTE }, time);
+          return (at) => bass.release(n.note, at);
+        },
+        releaseAll: bass.releaseAll,
+        ready: Promise.resolve(),
+        dispose: bass.dispose,
+      };
     }
     case 'supersaw':
     case 'pluck':
     case 'fx': {
       const synth = key === 'supersaw' ? createSupersaw(output) : key === 'pluck' ? createPluck(output) : createFx(output);
-      return { ...synth, ready: Promise.resolve() };
+      return { play: synth.play, noteOn: synth.hold, releaseAll: synth.releaseAll, dispose: synth.dispose, ready: Promise.resolve() };
     }
     default:
       throw new Error(`No synth for instrument: ${key}`);

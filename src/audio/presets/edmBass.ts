@@ -98,7 +98,7 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
   const safeTime = monotonicTime(bus.context);
   const releaseTc = releaseConstant(patch.release);
   /** The voice the last note started or joined, which a note starting before `end` slides on from. */
-  let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; end: number } | null = null;
+  let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; end: number; note: string } | null = null;
 
   /** Filters for one note, behind a gain that switches between legato notes' filters. */
   const section = (note: BassNote, until: number) => {
@@ -157,6 +157,7 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
         }
         voices.extend(v.voice, stopAt);
         v.end = end;
+        v.note = n.note;
         return;
       }
 
@@ -171,7 +172,21 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
       amp.connect(input);
       const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };
       voices.add(voice);
-      current = { voice, source, gate: first.gate, tone: first.tone, end };
+      current = { voice, source, gate: first.gate, tone: first.tone, end, note: n.note };
+    },
+    /**
+     * End the note `note` at `time` (a key let go on a MIDI keyboard) if it's the one sounding:
+     * the envelope falls from where it is, the way it would have at the note's end.
+     */
+    release: (note: string, time: number) => {
+      const v = current;
+      if (!v || v.note !== note || v.end <= time) return;
+      const amp = v.voice.amp.gain;
+      if (typeof amp.cancelAndHoldAtTime === 'function') amp.cancelAndHoldAtTime(time);
+      else amp.cancelScheduledValues(time);
+      amp.setTargetAtTime(0, time, releaseTc);
+      voices.extend(v.voice, time + releaseTail(patch.release));
+      v.end = time;
     },
     releaseAll: () => {
       voices.releaseAll(raw.currentTime);

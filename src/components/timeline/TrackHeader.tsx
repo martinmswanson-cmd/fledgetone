@@ -7,7 +7,7 @@ import { Plus, Sliders, Loader2, Spline } from 'lucide-react';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
 import { UndoableRange } from '../UndoableRange';
-import { INSTRUMENTS } from '../../audio/instrumentCatalog';
+import { INSTRUMENTS, isAudioKind } from '../../audio/instrumentCatalog';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { activeLanes, AUTOMATION, formatPan, laneOf } from '../../audio/automation';
 import { AUTOMATED_TIP, useAutomatedValue } from './automationHooks';
@@ -291,7 +291,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           />
           <Toggle
             label="R"
-            title="Record arm"
+            title={isAudioKind(track.instrumentKey) ? 'Audio tracks hold sound files, not MIDI takes: arm an instrument track to record' : 'Record arm: takes go on this track (one track at a time)'}
             active={track.isArmed}
             onClick={() => toggleArm(track.id)}
             activeClass="bg-red-500/25 border-red-500 text-red-300"

@@ -3,6 +3,24 @@ import { monotonicTime } from './monotonic';
 import { createVoicePool } from './poly';
 
 /**
+ * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
+ * `release`, and a pitch bend moves its detune.
+ */
+interface HeldSynth {
+  triggerAttack: (note: Tone.Unit.Frequency, time?: Tone.Unit.Time, velocity?: number) => unknown;
+  triggerRelease: (time?: Tone.Unit.Time) => unknown;
+  detune: { setTargetAtTime: (value: number, time: Tone.Unit.Time, constant: number) => unknown };
+}
+
+function heldNote(synth: HeldSynth, safeTime: (time?: Tone.Unit.Time) => number) {
+  return {
+    attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),
+    release: (time: number) => synth.triggerRelease(time),
+    bend: (cents: number, time: number) => synth.detune.setTargetAtTime(cents, time, 0.005),
+  };
+}
+
+/**
  * Phase 3 synthesized instruments. Like the other presets, each factory builds its nodes in
  * the current Tone context (live or the export render) and connects them to `output`.
  */
@@ -28,6 +46,8 @@ export function createWavetable(output: Tone.InputNode) {
   sweep.connect(output);
   return {
     trigger: (notes: string[], duration: Tone.Unit.Time, time: number, velocity: number) => synth.trigger(notes, duration, time, velocity),
+    attack: synth.attack,
+    bend: synth.bend,
     releaseAll: synth.releaseAll,
     dispose: () => {
       synth.dispose();
@@ -49,6 +69,7 @@ export function createSubBass(output: Tone.InputNode) {
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) =>
       synth.triggerAttackRelease(note, duration, safeTime(time), velocity),
+    ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
     dispose: () => synth.dispose(),
   };
@@ -69,6 +90,7 @@ export function create808(output: Tone.InputNode) {
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) =>
       synth.triggerAttackRelease(note, duration, safeTime(time), velocity),
+    ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
     dispose: () => {
       synth.dispose();
@@ -91,6 +113,7 @@ export function createLead(output: Tone.InputNode) {
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) =>
       synth.triggerAttackRelease(note, duration, safeTime(time), velocity),
+    ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
     dispose: () => synth.dispose(),
   };
