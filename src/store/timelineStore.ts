@@ -10,9 +10,15 @@ import {
   seekTransport,
   startTransportAt,
   stopTransport,
+  transportStartsAt,
 } from '../audio/transport';
 import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
 import { holdAutomationAt, retimeAutomation, syncLiveTracks } from '../audio/liveTracks';
+import { beginTake, discardTake, finishTake } from '../audio/recorder';
+import { heardTime } from '../audio/latency';
+import { countInClicks } from '../audio/metronome';
+import { quantizeTakeClip, readRecordOptions, writeRecordOptions } from './recording';
+import type { RecordOptions, TakeClip } from './recording';
 import { AUTOMATION, insertLaneBars, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong';
@@ -158,6 +164,7 @@ interface TimelineState {
   /** 1-based bar position; updated every animation frame while playing. */
   playheadPosition: number;
   isPlaying: boolean;
+  /** Record mode (the toolbar's Record button): with a track armed, playing records a take onto it. */
   isRecording: boolean;
   bpm: number;
   swing: number;
@@ -190,6 +197,7 @@ interface TimelineState {
    * lanes to it if it's off screen, as they follow it while playing.
    */
   seek: (bar: number, reveal?: boolean) => void;
+  /** Record mode on or off. Playing with a track armed, on starts a take at once and off ends it. */
   toggleRecord: () => void;
   /** Set the tempo (40 to 240 BPM, to 0.01). */
   setBpm: (bpm: number) => void;
@@ -373,6 +381,19 @@ interface TimelineState {
   editingClipId: string | null;
   openEditor: (clipId: string) => void;
   closeEditor: () => void;
+
+  // Recording (MIDI takes). A take is what's played between record start and stop (or between
+  // the record mode or the arm switching on and off while playing), placed as one clip on the
+  // armed track, from the first whole bar it started or played in to the bar line nearest where
+  // it stopped (or the end of its last note). Notes sit where they were heard against the music;
+  // with the loop on, every pass adds to the same take. The take is one undo step; quantize,
+  // applied on stop, is a second one. Pause and Stop end the take and switch Record off, so
+  // Play then plays it back.
+  /** Count-in, quantize and metronome settings, kept per browser (not in the project). */
+  recordOptions: RecordOptions;
+  setRecordOptions: (patch: Partial<RecordOptions>) => void;
+  /** The take being recorded (the lane marks it), null between takes. */
+  take: { trackId: string; startBar: number } | null;
 
   /** Instrument currently being dragged from the sound deck (lanes highlight to match). */
   draggingInstrument: InstrumentKey | null;
@@ -567,6 +588,55 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
   /** Push the master reverb / delay settings (and tempo, for the delay time) to the live mix. */
   const applyMasterFx = () => liveMix.busFx.apply(masterFxOf(get()), get().bpm);
 
+  /** Silences the clicks of a count-in still running (Pause or Stop during it). */
+  let stopCountIn: (() => void) | null = null;
+
+  /** Begin recording onto `trackId` from `startBar`, the Transport starting (or being) at audio time `startAudio`. */
+  const startTake = (trackId: string, startBar: number, startAudio: number) => {
+    beginTake(trackId, startBar, startAudio, () => get().loopRegion);
+    set({ take: { trackId, startBar } });
+  };
+
+  /** Where a take begun while playing starts: at the Transport's start if a count-in is still running, else now (as heard). */
+  const takeStartAudio = () => transportStartsAt() ?? heardTime();
+
+  /**
+   * End the take where the listener is now (heard time) and put it on its track as a clip,
+   * selected, named "Take N" (one undo step), then quantized if that's on (a second step, so
+   * Ctrl+Z puts the notes back where they were played). Nothing is added for a take with no
+   * notes, or whose track has gone.
+   */
+  const endTake = () => {
+    stopCountIn?.();
+    stopCountIn = null;
+    const s = get();
+    const result = finishTake(heardTime(), s.bpm);
+    if (s.take) set({ take: null });
+    if (!result) return;
+    const { trackId } = result;
+    if (!s.tracks.some((t) => t.id === trackId)) return;
+    const takeClip: TakeClip = result.clip;
+    // One past the highest "Take N" already on the track
+    const taken = s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0));
+    const clip: Clip = {
+      id: uid('clip'),
+      trackId,
+      name: `Take ${Math.max(0, ...taken) + 1}`,
+      startBar: takeClip.startBar,
+      lengthBars: takeClip.lengthBars,
+      notes: takeClip.notes.map((n) => ({ ...n, id: uid('note') })),
+      isSelected: true,
+    };
+    set((st) => ({
+      clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
+      ...pushPast(st),
+    }));
+    const grid = get().recordOptions.quantize;
+    if (grid === 'off') return;
+    const quantized = quantizeTakeClip(clip, grid);
+    set((st) => ({ clips: st.clips.map((c) => (c.id === clip.id ? quantized : c)), ...pushPast(st) }));
+  };
+
   const updateClip = (clipId: string, patch: (c: Clip) => Partial<Clip>) =>
     set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? { ...c, ...patch(c) } : c)) }));
 
@@ -687,7 +757,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     play: async () => {
       await initAudio();
       if (get().isPlaying) return;
-      startTransportAt(get().playheadPosition);
+      const s = get();
+      const armed = s.isRecording ? s.tracks.find((t) => t.isArmed) : undefined;
+      // A count-in: a bar of clicks first, the Transport (and the take) starting after them
+      const beat = 60 / s.bpm;
+      const countIn = armed && s.recordOptions.countIn ? 4 : 0;
+      const at = liveMix.bus.context.now() + 0.03 + countIn * beat;
+      startTransportAt(s.playheadPosition, at);
+      if (countIn) stopCountIn = countInClicks(at, countIn, beat);
+      if (armed) startTake(armed.id, s.playheadPosition, at);
       set({ isPlaying: true });
       stopFrameLoop();
       rafId = requestAnimationFrame(frame);
@@ -696,10 +774,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     pause: () => {
       if (!get().isPlaying) return;
       const pos = getAudiblePositionBar();
+      endTake();
       pauseTransport();
       stopFrameLoop();
       releaseAllVoices();
-      set({ isPlaying: false, playheadPosition: clampBar(pos) });
+      set({ isPlaying: false, isRecording: false, playheadPosition: clampBar(pos) });
     },
 
     togglePlay: async () => {
@@ -708,6 +787,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     stop: () => {
+      if (get().isPlaying) endTake();
       stopTransport();
       stopFrameLoop();
       releaseAllVoices();
@@ -716,11 +796,29 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     seek: (bar, reveal = false) => {
       const target = clampBar(bar);
-      if (get().isPlaying) seekTransport(target);
+      if (get().isPlaying) {
+        seekTransport(target);
+        // Moved during the count-in: the take starts where the music now will
+        const pending = transportStartsAt();
+        const take = get().take;
+        if (pending !== null && take) startTake(take.trackId, target, pending);
+      }
       set((s) => ({ playheadPosition: target, ...(reveal ? viewShowing(s, target) : {}) }));
     },
 
-    toggleRecord: () => set((s) => ({ isRecording: !s.isRecording })),
+    toggleRecord: () => {
+      const s = get();
+      if (s.isRecording) {
+        // Off while playing: the take ends here and playback goes on
+        if (s.isPlaying) endTake();
+        set({ isRecording: false });
+        return;
+      }
+      set({ isRecording: true });
+      // On while playing: a take starts here (a punch-in), no count-in
+      const armed = s.tracks.find((t) => t.isArmed);
+      if (s.isPlaying && armed) startTake(armed.id, getAudiblePositionBar(), takeStartAudio());
+    },
 
     setBpm: (bpm) => {
       // Hundredths, so a tempo fitted to a video length lands within a frame or so
@@ -868,6 +966,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     // Undoable: history entries carry the tracks, so Undo brings the track and its clips back together
     deleteTrack: (id) => {
+      // A take being recorded onto it lands first (its own undo step), so Ctrl+Z brings both back
+      if (get().take?.trackId === id) endTake();
       set((s) => {
         if (!s.tracks.some((t) => t.id === id)) return s;
         const nextTracks = s.tracks.filter((t) => t.id !== id);
@@ -898,7 +998,23 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted }), true),
     toggleSolo: (id) => updateTrack(id, (t) => ({ isSoloed: !t.isSoloed }), true),
-    toggleArm: (id) => updateTrack(id, (t) => ({ isArmed: !t.isArmed }), true),
+
+    // One track records at a time: arming one disarms the others, and selects it, so what's played
+    // sounds on the track it's going to. Playing in record mode, the take moves to it at once.
+    toggleArm: (id) => {
+      const s = get();
+      const track = s.tracks.find((t) => t.id === id);
+      // Takes are note clips, which an Audio track can't hold
+      if (!track || (!track.isArmed && isAudioKind(track.instrumentKey))) return;
+      const arming = !track.isArmed;
+      if (s.isPlaying && s.isRecording) endTake();
+      set((st) => ({
+        tracks: st.tracks.map((t) => (t.id === id ? { ...t, isArmed: arming } : t.isArmed ? { ...t, isArmed: false } : t)),
+        ...(arming ? { selectedTrackId: id } : {}),
+        ...pushPast(st),
+      }));
+      if (arming && s.isPlaying && s.isRecording) startTake(id, getAudiblePositionBar(), takeStartAudio());
+    },
     setTrackVolume: (id, db) => updateTrack(id, () => ({ volume: Math.max(-60, Math.min(6, db)) })),
     setTrackPan: (id, pan) => updateTrack(id, () => ({ pan: Math.max(-1, Math.min(1, pan)) })),
 
@@ -1367,13 +1483,19 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     loadProject: (p: ProjectSnapshot) => {
+      // A take in progress belongs to the arrangement being replaced
+      discardTake();
+      set({ take: null });
       get().stop();
+      // One track records at a time: a file with several armed keeps the first
+      const armedId = p.tracks.find((t) => t.isArmed)?.id;
       const safeTracks: Track[] = p.tracks.map((t: Track) => ({
         ...t,
         eq: t.eq ?? { low: 0, mid: 0, high: 0 },
         reverbSend: typeof t.reverbSend === 'number' ? t.reverbSend : 0,
         delaySend: typeof t.delaySend === 'number' ? t.delaySend : 0,
         fx: normalizeTrackFx(t.fx),
+        isArmed: t.id === armedId,
       }));
 
       // Start downloading samples for any sampled instruments
@@ -1511,6 +1633,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     editingClipId: null,
     openEditor: (clipId) => set({ editingClipId: clipId }),
     closeEditor: () => set({ editingClipId: null }),
+
+    // ---------- Recording ----------
+    recordOptions: readRecordOptions(),
+    setRecordOptions: (patch) => {
+      const recordOptions = { ...get().recordOptions, ...patch };
+      set({ recordOptions });
+      writeRecordOptions(recordOptions);
+    },
+    take: null,
 
     draggingInstrument: null,
     setDraggingInstrument: (instrument) => set({ draggingInstrument: instrument }),

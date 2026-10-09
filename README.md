@@ -17,7 +17,7 @@ npm install
 npm run dev          # dev server at http://localhost:5173
 npm run build        # typecheck + production build into dist/
 npm run lint         # oxlint
-npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter, swing and Transport ticks, markers and WAV cue points, insert / delete bars, restorable sessions
+npm test             # unit tests (node --test): timecode and drop-frame, automation maths, ParamWriter, swing and Transport ticks, markers and WAV cue points, insert / delete bars, restorable sessions, MIDI messages, recorded takes and quantize
 npm run build:single # dist-single/index.html: the whole app in one self-contained HTML file
 ```
 
@@ -47,6 +47,9 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
 | `src/audio/audioClipSchedule.ts`, `clipEnvelope.ts` | Plays audio clips on the Transport (start, seek and loop events; one buffer source per clip; gain and fades), live and in the export |
 | `src/audio/presets/slicer.ts`, `slicing.ts`, `slicerTools.ts` | The Slicer instrument (vocal chops): transient and equal slicing, one buffer source per note |
 | `src/store/audioClips.ts` | Audio clip maths: tempo changes keep seconds, trims and cuts move the offset, reading clip audio and Slicer settings from a file |
+| `src/audio/liveInput.ts`, `midi.ts`, `latency.ts` | Playing instruments live from a MIDI keyboard (Web MIDI) or the computer keyboard, straight on the audio clock; MIDI decoding; where the listener is in heard time (output latency) |
+| `src/audio/recorder.ts`, `src/store/recording.ts` | Recording MIDI takes: the live side (Transport positions of heard notes, loop passes) and the pure side (a take's clip, quantize, the per-browser record settings) |
+| `src/audio/metronome.ts` | The click (live Transport only, straight to the output, never in an export) and the count-in |
 | `src/components/timeline/` | Timeline UI: toolbar, ruler, lanes, clips, piano roll, project bar |
 
 ### Notes for changing the audio engine
@@ -91,6 +94,13 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
   and `swingDelay` says by how much.
 - Project files are versioned (`PROJECT_VERSION` in `project.ts`). New optional fields don't
   need a version bump; older builds ignore fields they don't know.
+- Live input and recording work in *heard* time (`heardTime` in `latency.ts`): the clock says
+  what the graph renders now, the listener hears it an output latency later (30-40 ms in Chrome,
+  from `getOutputTimestamp()` on the native context behind standardized-audio-context's). A note
+  played against the music is placed at the Transport position heard when the key went down, and
+  a take ends where the listener was when they stopped. Held keys use each instrument's `noteOn`
+  (a Tone synth's `triggerAttack`, or for the native-node synths a long note let go early with
+  `VoiceSet.release`); an instrument without one plays held keys as short sequenced notes.
 
 ## Credits
 

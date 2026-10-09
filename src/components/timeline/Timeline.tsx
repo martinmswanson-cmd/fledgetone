@@ -16,6 +16,7 @@ import { NewAudioTrackDrop } from './NewAudioTrackDrop';
 import { RulerContextMenu } from './RulerContextMenu';
 import type { RulerMenuState } from './RulerContextMenu';
 import { MarkerLines } from './Markers';
+import { RecordingMarker } from './RecordControls';
 import { Toast } from './Toast';
 import { showToast } from './toastStore';
 import { TrackInspector } from '../inspector/TrackInspector';
@@ -25,6 +26,7 @@ import type { RulerUnits } from '../../store/timelineTypes';
 import { frameRateLabel } from '../../store/timelineTypes';
 import { blurMenusAfterChange, shouldIgnoreShortcut } from '../keyboard';
 import { recoverFailedDownloads } from '../../audio/liveTracks';
+import { installLiveInput } from '../../audio/liveInput';
 
 interface Marquee {
   x0: number;
@@ -198,6 +200,8 @@ export const Timeline: React.FC = () => {
   useEffect(() => blurMenusAfterChange(), []);
   // Recorded instruments that failed to download play once a retry succeeds (and retry when the connection returns)
   useEffect(() => recoverFailedDownloads(), []);
+  // MIDI and computer-keyboard playing, the metronome
+  useEffect(() => installLiveInput(), []);
 
   // Keep the playhead in view while playing (page-turn style), and scroll where the store asks
   // (a jump to a marker off screen, a project opened)
@@ -365,6 +369,7 @@ export const Timeline: React.FC = () => {
             </div>
 
             <MarkerLines />
+            <RecordingMarker />
             <Playhead variant="line" onScrubStart={onScrubStart} />
 
             {marquee && (
