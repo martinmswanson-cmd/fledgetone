@@ -2,8 +2,9 @@ import * as Tone from 'tone';
 // Must run before any oscillator exists: keeps Tone's waveform cache per audio context
 import './toneFixes';
 import { createBusEffects } from './effects/busEffects';
-import { DEFAULT_MASTER_FX } from '../store/timelineTypes';
-import type { MasterFx } from '../store/timelineTypes';
+import { createMasterInserts } from './effects/masterChain';
+import { DEFAULT_MASTER_FX, defaultMasterSettings } from '../store/timelineTypes';
+import type { MasterFx, MasterSettings } from '../store/timelineTypes';
 
 export type AudioState = 'suspended' | 'running' | 'closed';
 
@@ -11,12 +12,13 @@ export type { InstrumentKey } from './instrumentCatalog';
 
 /**
  * Build the mix graph in the current Tone context:
- *   track strips -> master bus -> compressor -> limiter -> ceiling -> destination
+ *   track strips -> master bus -> compressor -> (OTT, stereo width) -> limiter -> ceiling -> destination
  *   track sends  -> shared reverb / delay -> master bus
  * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
  * the sound deck's pads. Used once for live playback and again inside the WAV export render.
+ * The master section's inserts (`master`, see masterChain.ts) are only built while switched on.
  */
-export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx = DEFAULT_MASTER_FX, bpm = 122) {
+export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx = DEFAULT_MASTER_FX, bpm = 122, master: MasterSettings = defaultMasterSettings()) {
   // Central master bus for every track and the effect returns
   const bus = new Tone.Gain(0.9);
   const busFx = createBusEffects(bus, masterFx, bpm);
@@ -30,13 +32,14 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
   const limiter = new Tone.Compressor({ threshold: -1, ratio: 20, attack: 0, release: 0.08, knee: 0 });
   const ceiling = new Tone.WaveShaper(ceilingCurve());
   bus.connect(compressor);
-  compressor.connect(limiter);
+  // Patches compressor -> limiter itself, with the OTT and width in between while they're on
+  const inserts = createMasterInserts(compressor, limiter, master);
   limiter.connect(ceiling);
   ceiling.connect(destination);
 
   const auditionInput = new Tone.Gain(1).connect(bus);
 
-  return { bus, busFx, compressor, limiter, ceiling, auditionInput };
+  return { bus, busFx, compressor, inserts, limiter, ceiling, auditionInput };
 }
 
 export type MixChain = ReturnType<typeof createMixChain>;
