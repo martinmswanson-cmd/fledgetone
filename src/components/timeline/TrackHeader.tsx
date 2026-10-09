@@ -291,7 +291,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           />
           <Toggle
             label="R"
-            title="Record arm"
+            title="Record arm: takes go on this track (one track at a time)"
             active={track.isArmed}
             onClick={() => toggleArm(track.id)}
             activeClass="bg-red-500/25 border-red-500 text-red-300"
