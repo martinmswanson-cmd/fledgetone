@@ -3,7 +3,9 @@ import { createLightChorus } from '../effects/lightFx';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { InstrumentKey } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
+import { decodeSound } from '../soundLibrary';
 import { useAudioStore } from '../../store/audioStore';
+import type { CustomSample } from '../../store/timelineTypes';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
@@ -51,7 +53,10 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
 
 const customSamples = new Map<string, Promise<Tone.ToneAudioBuffer>>();
 
-/** Decode a sound the user loaded (stored as a data: URL on the track). Cached per sound. */
+/**
+ * Decode a sound a project from before the sound library carries as a data: URL on its track
+ * (loadProject moves it into the library; this plays it meanwhile). Cached per sound.
+ */
 export function loadCustomSample(dataUrl: string): Promise<Tone.ToneAudioBuffer> {
   let p = customSamples.get(dataUrl);
   if (!p) {
@@ -125,15 +130,21 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode): 
   return samplerVoice(sampler, attach, chain.nodes);
 }
 
-/** A sampler playing the user's own sound, tuned so `root` plays it at its original pitch. */
-export function createCustomSamplerVoice(sample: { dataUrl: string; root: string } | undefined, output: Tone.InputNode): SamplerVoice {
-  if (!sample) {
+/**
+ * A sampler playing the user's own sound, tuned so `root` plays it at its original pitch. The
+ * sound comes from the sound library (decoded once per sample rate and shared), or, for a project
+ * not yet converted, from the data: URL it carries.
+ */
+export function createCustomSamplerVoice(sample: CustomSample | undefined, output: Tone.InputNode): SamplerVoice {
+  const dataUrl = sample?.soundId ? undefined : sample?.dataUrl;
+  if (!sample || (!sample.soundId && !dataUrl)) {
     // No sound loaded yet: ready straight away (so exports never wait on it) and silent
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
   }
   const sampler = new Tone.Sampler({ release: 0.4 }).connect(output);
-  const attach = loadCustomSample(sample.dataUrl).then((buffer) => {
-    sampler.add(sample.root as Tone.Unit.Note, buffer);
+  const buffer = dataUrl ? loadCustomSample(dataUrl) : decodeSound(sample.soundId!, sampler.context.sampleRate).then((audio) => new Tone.ToneAudioBuffer(audio));
+  const attach = buffer.then((b) => {
+    sampler.add(sample.root as Tone.Unit.Note, b);
   });
   return samplerVoice(sampler, attach, []);
 }

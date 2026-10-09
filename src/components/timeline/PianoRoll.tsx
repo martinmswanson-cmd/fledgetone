@@ -4,13 +4,14 @@ import { Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { initAudio } from '../../audio/engine';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { previewTrackNotes } from '../../audio/liveTracks';
-import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../../audio/instrumentCatalog';
+import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isSlicerKind } from '../../audio/instrumentCatalog';
 import { useTimelineStore } from '../../store/timelineStore';
-import type { Clip, InstrumentKey, NoteEvent } from '../../store/timelineTypes';
-import { barsToDuration, durationToBars } from '../../store/timelineTypes';
+import type { Clip, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
+import { barsToDuration, durationToBars, SLICE_KEY_BASE } from '../../store/timelineTypes';
 import { DEFAULT_WOBBLE, WOBBLE_RATES, type WobbleRate } from '../../store/timelineTypes';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
+import { AudioClipEditor } from './AudioClipEditor';
 
 const KEY_W = 72;
 const RULER_H = 20;
@@ -38,22 +39,47 @@ const FX_ROW_LIST: Row[] = FX_ROWS.map((r, i) => ({ ...r, black: i % 2 === 1, mi
 const toMidi = (note: string) => Tone.Frequency(note).toMidi();
 const isBlack = (midi: number) => [1, 3, 6, 8, 10].includes(midi % 12);
 
-function rowsFor(instrument: InstrumentKey, notes: NoteEvent[]): Row[] {
-  if (isDrumKind(instrument)) return DRUM_ROWS;
-  if (isFxKind(instrument)) return FX_ROW_LIST;
-  // Instrument's playable range, widened to fit any notes already in the clip
-  let [lo, hi] = INSTRUMENTS[instrument].range;
+/** Rows a semitone apart from `hi` down to `lo`, labelled by note name (or as `label` says). */
+function keyRows(lo: number, hi: number, label: (midi: number, note: string) => string = (_, note) => note): Row[] {
+  const rows: Row[] = [];
+  for (let m = hi; m >= lo; m--) {
+    const note = Tone.Frequency(m, 'midi').toNote();
+    rows.push({ note, label: label(m, note), black: isBlack(m), midi: m });
+  }
+  return rows;
+}
+
+/** The lowest and highest MIDI numbers in `notes`, widening [lo, hi]. */
+function widenTo(notes: NoteEvent[], lo: number, hi: number): [number, number] {
   for (const n of notes) {
     const m = toMidi(n.note);
     lo = Math.min(lo, m);
     hi = Math.max(hi, m);
   }
-  const rows: Row[] = [];
-  for (let m = hi; m >= lo; m--) {
-    const note = Tone.Frequency(m, 'midi').toNote();
-    rows.push({ note, label: note, black: isBlack(m), midi: m });
+  return [lo, hi];
+}
+
+/** Rows Slice N… use, in pitch mode a keyboard around the focused slice's own key. */
+function slicerRows(slicer: SlicerSettings | undefined, notes: NoteEvent[]): Row[] {
+  const count = Math.max(1, slicer?.slices.length ?? 0);
+  if (slicer?.pitch) {
+    const focus = Math.min(slicer.focus, count - 1);
+    const own = SLICE_KEY_BASE + focus;
+    const [lo, hi] = widenTo(notes, own - 12, own + 24);
+    return keyRows(lo, hi, (m, note) => (m === own ? `Slice ${focus + 1} (${note})` : note));
   }
-  return rows;
+  // One row per slice, the keys above C3 (8 to draw into before a sound is loaded)
+  const [, hi] = widenTo(notes, SLICE_KEY_BASE, SLICE_KEY_BASE + (slicer ? count : 8) - 1);
+  return keyRows(SLICE_KEY_BASE, hi, (m) => `Slice ${m - SLICE_KEY_BASE + 1}`).map((r, i) => ({ ...r, black: i % 2 === 1 }));
+}
+
+function rowsFor(instrument: InstrumentKey, notes: NoteEvent[], slicer?: SlicerSettings): Row[] {
+  if (isDrumKind(instrument)) return DRUM_ROWS;
+  if (isFxKind(instrument)) return FX_ROW_LIST;
+  if (isSlicerKind(instrument)) return slicerRows(slicer, notes);
+  // Instrument's playable range, widened to fit any notes already in the clip
+  const [lo, hi] = widenTo(notes, ...INSTRUMENTS[instrument].range);
+  return keyRows(lo, hi);
 }
 
 function rowIndexOf(rows: Row[], note: string): number {
@@ -150,7 +176,9 @@ export const PianoRoll: React.FC = () => {
   const track = useTimelineStore((s) => (clip ? s.tracks.find((t) => t.id === clip.trackId) ?? null : null));
 
   if (!clipId || !clip || !track) return null;
-  return <PianoRollEditor key={clip.id} clip={clip} instrument={track.instrumentKey} color={track.color} trackName={track.name} />;
+  // An audio clip has no notes: its editor is for its gain and fades
+  if (clip.audio) return <AudioClipEditor key={clip.id} clip={clip} track={track} />;
+  return <PianoRollEditor key={clip.id} clip={clip} instrument={track.instrumentKey} color={track.color} trackName={track.name} slicer={track.slicer} />;
 };
 
 /**
@@ -169,12 +197,17 @@ interface EditorProps {
   instrument: InstrumentKey;
   color: string;
   trackName: string;
+  /** A Slicer track's slices (its rows) */
+  slicer?: SlicerSettings;
 }
 
-const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName }) => {
+const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName, slicer }) => {
   // Drum kits and the FX instrument both have fixed, named rows instead of a keyboard
   const isDrums = isDrumKind(instrument) || isFxKind(instrument);
-  const rowH = isDrums ? 30 : 16;
+  // So does the Slicer (one row per slice), unless it's in Pitch mode
+  const sliceRows = isSlicerKind(instrument) && !slicer?.pitch;
+  const namedRows = isDrums || sliceRows;
+  const rowH = isDrums ? 30 : sliceRows ? 22 : 16;
   const [stepW, setStepW] = useState(24);
   const unitW = stepW / UNITS_PER_16TH;
   const [gridUnits, setGridUnits] = useState(UNITS_PER_16TH);
@@ -185,13 +218,14 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const gridRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Rows only grow while the editor is open, so notes never jump rows mid-edit
-  const [rows, setRows] = useState(() => rowsFor(instrument, clip.notes));
+  // Rows only grow while the editor is open, so notes never jump rows mid-edit; a Slicer's follow its slices and mode
+  const [rows, setRows] = useState(() => rowsFor(instrument, clip.notes, slicer));
   useEffect(() => {
     if (isDrums) return;
-    const needed = rowsFor(instrument, clip.notes);
-    if (needed.length > rows.length) setRows(needed);
-  }, [clip.notes, instrument, isDrums, rows.length]);
+    const needed = rowsFor(instrument, clip.notes, slicer);
+    if (isSlicerKind(instrument)) setRows((current) => (current.length === needed.length && current[0]?.note === needed[0]?.note && current[0]?.label === needed[0]?.label ? current : needed));
+    else if (needed.length > rows.length) setRows(needed);
+  }, [clip.notes, instrument, isDrums, rows.length, slicer]);
 
   const totalUnits = Math.round(clip.lengthBars * UNITS_PER_BAR);
   /** Where the clip starts, in units from bar 1 (clips may start mid-bar): the grid lines up with the song. */
@@ -226,7 +260,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   // Open scrolled to the notes (or middle of the range)
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || isDrums) return;
+    if (!el || namedRows) return;
     const idxs = clip.notes.map((n) => rowIndexOf(rows, n.note)).filter((i) => i >= 0);
     const target = idxs.length ? idxs.reduce((a, b) => a + b, 0) / idxs.length : rows.length / 2;
     el.scrollTop = Math.max(0, target * rowH - el.clientHeight / 2 + RULER_H);
@@ -379,8 +413,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       const arrows: Record<string, [number, number]> = {
         ArrowLeft: [-gridUnits, 0],
         ArrowRight: [gridUnits, 0],
-        ArrowUp: [0, e.shiftKey && !isDrums ? -12 : -1],
-        ArrowDown: [0, e.shiftKey && !isDrums ? 12 : 1],
+        ArrowUp: [0, e.shiftKey && !namedRows ? -12 : -1],
+        ArrowDown: [0, e.shiftKey && !namedRows ? 12 : 1],
       };
       const delta = arrows[e.key];
       if (!delta) return;
@@ -406,7 +440,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, visibleNotes, gridUnits, rows, totalUnits, clip.id, isDrums]);
+  }, [selected, visibleNotes, gridUnits, rows, totalUnits, clip.id, namedRows]);
 
   // Velocity slider edits the selection when there is one, else sets the velocity for new notes
   const selectedVelocity = (() => {
@@ -549,10 +583,10 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 <button
                   key={r.note}
                   type="button"
-                  // An FX row plays a bar of its effect: a riser an 8th long is just a blip
-                  onPointerDown={() => void preview(clip.trackId, [{ note: r.note, duration: isFxKind(instrument) ? '1m' : '8n', velocity }])}
+                  // An FX row plays a bar of its effect: a riser an 8th long is just a blip; a slice plays a half note of itself
+                  onPointerDown={() => void preview(clip.trackId, [{ note: r.note, duration: isFxKind(instrument) ? '1m' : isSlicerKind(instrument) ? '2n' : '8n', velocity }])}
                   className={`w-full flex items-center justify-end pr-1.5 border-b border-black/40 text-[9px] font-mono ${
-                    isDrums
+                    namedRows
                       ? 'bg-forge-panelLight text-forge-text text-[10px] hover:bg-forge-border'
                       : r.black
                         ? 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
@@ -561,7 +595,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                   style={{ height: rowH }}
                   title={`Preview ${r.label}`}
                 >
-                  {isDrums || r.note.startsWith('C') && !r.note.startsWith('C#') ? r.label : ''}
+                  {namedRows || r.label !== r.note || (r.note.startsWith('C') && !r.note.startsWith('C#')) ? r.label : ''}
                 </button>
               ))}
             </div>
@@ -616,7 +650,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                       e.preventDefault();
                       deleteNote(n.id);
                     }}
-                    title={`${isDrums ? rows[idx].label : n.note} • velocity ${Math.round(n.velocity * 100)}`}
+                    title={`${namedRows ? rows[idx].label : n.note} • velocity ${Math.round(n.velocity * 100)}`}
                   >
                     <div className="absolute right-0 top-0 bottom-0 cursor-ew-resize" style={{ width: edgeOf(width) }} />
                   </div>

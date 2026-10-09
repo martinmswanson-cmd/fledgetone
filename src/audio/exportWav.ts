@@ -6,7 +6,9 @@ import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument } from './instruments';
 import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
+import { createAudioClipSchedule } from './audioClipSchedule';
 import { createAutomationSchedule } from './automationSchedule';
+import { decodeSound, useSoundLibrary } from './soundLibrary';
 import { isSamplerKey, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar, ticksToBar } from './transport';
@@ -357,8 +359,8 @@ async function renderTracks(
     }
     signal?.throwIfAborted();
   }
-  // ...and decode any Sampler tracks' own sounds in the live context
-  for (const t of tracks) if (t.sample) await loadCustomSample(t.sample.dataUrl);
+  // ...and the sounds this render plays (audio clips, Slicer and Sampler tracks), at its sample rate
+  await loadSounds(tracks, clips, startBar, endBar, sampleRate);
   signal?.throwIfAborted();
 
   const original = Tone.getContext();
@@ -494,7 +496,7 @@ async function renderTracks(
       strip.apply(track, { ramp: 0, muteOverride: false });
       strips.push(strip);
       stripOf.set(track.id, strip);
-      instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample }));
+      instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer }));
     }
     await Promise.all([mix.busFx.ready, ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)
@@ -520,6 +522,10 @@ async function renderTracks(
     schedule.update(followsKick ? [...tracks, ...kickTracks.filter((t) => !instruments.has(t.id))] : tracks, clips);
     const pumpClock = createPumpClock(transport, () => strips, barToTicks(startBar), barToTicks(endBar));
     pumpClock.update();
+    // Audio clips play their sound files on the same Transport, from the right place in them
+    // wherever the range begins (see audioClipSchedule.ts)
+    const audioClips = createAudioClipSchedule(transport, (trackId) => instruments.get(trackId)?.clipBus);
+    audioClips.update(tracks, clips);
     // Automated settings start at their lanes' values at the range start, set before the render
     // begins, and follow the lanes from when the Transport starts
     const automation = createAutomationSchedule(transport, (trackId) => stripOf.get(trackId), { holdGlide: 0 });
@@ -535,6 +541,7 @@ async function renderTracks(
       reverbImpulse: () => convolver.buffer ?? undefined,
       dispose: () => {
         schedule.dispose();
+        audioClips.dispose();
         pumpClock.dispose();
         automation.dispose();
         instruments.forEach((i) => i.dispose());
@@ -543,6 +550,35 @@ async function renderTracks(
         [mix.bus, mix.compressor, mix.limiter, mix.ceiling, mix.auditionInput].forEach((n) => n.disposed || n.dispose());
       },
     };
+  }
+}
+
+/**
+ * Decode every sound a render plays, at its sample rate, before its graph is built: the sounds of
+ * the audio clips in the range and of the Slicer and Sampler tracks. A Sampler from a project not
+ * yet converted still carries its sound as a data: URL, decoded in the live context as before.
+ */
+async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endBar: number, sampleRate: number): Promise<void> {
+  const trackIds = new Set(tracks.map((t) => t.id));
+  // Each sound once, with what to call it in an error: the clip or track it's for
+  const needed = new Map<string, string>();
+  for (const c of clips) {
+    if (c.audio && trackIds.has(c.trackId) && c.startBar < endBar && c.startBar + c.lengthBars > startBar && !needed.has(c.audio.soundId)) {
+      needed.set(c.audio.soundId, `the clip "${c.name}"`);
+    }
+  }
+  for (const t of tracks) {
+    if (t.slicer && !needed.has(t.slicer.soundId)) needed.set(t.slicer.soundId, `the track "${t.name}"`);
+    if (t.sample?.soundId && !needed.has(t.sample.soundId)) needed.set(t.sample.soundId, `the track "${t.name}"`);
+    else if (t.sample?.dataUrl) await loadCustomSample(t.sample.dataUrl);
+  }
+  for (const [id, label] of needed) {
+    try {
+      await decodeSound(id, sampleRate);
+    } catch (err) {
+      const name = useSoundLibrary.getState().metas[id]?.name;
+      throw new Error(`couldn't load the sound ${name ? `"${name}"` : ''} for ${label}. ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 
