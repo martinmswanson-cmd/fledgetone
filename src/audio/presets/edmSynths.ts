@@ -19,6 +19,12 @@ import {
  * nodes (see native.ts), so there's no voice limit to drop notes at and nothing runs between notes.
  */
 
+/**
+ * How long a key held on a MIDI keyboard sounds at most: these synths schedule a note's whole
+ * envelope when it starts, so a held note is a long one let go early (see hold).
+ */
+export const HELD_NOTE = '60s';
+
 /** Supersaw voices: detune in cents and side (-1 left, 0 both, 1 right), alternating across the field. */
 const SUPERSAW: ReadonlyArray<[cents: number, side: -1 | 0 | 1]> = [
   [-37, -1],
@@ -78,13 +84,22 @@ export function createSupersaw(output: Tone.InputNode) {
     amp.gain.setTargetAtTime(0, end, releaseConstant(release));
     merger.connect(amp);
     amp.connect(highpass);
-    voices.add({ start, stopAt: end + releaseTail(release), sources, nodes: [...sources, merger, amp], amp });
+    const voice = { start, stopAt: end + releaseTail(release), sources, nodes: [...sources, merger, amp], amp };
+    voices.add(voice);
+    return voice;
   };
 
   return {
     play: (notes: PlayableNote[], time: number) => {
       const start = notLate(bus.context, time);
       for (const n of notes) safely(() => playNote(n, start));
+    },
+    // A key held on a MIDI keyboard: a long note, let go early with the synth's own release
+    hold: (note: PlayableNote, time: number) => {
+      const voice = playNote({ ...note, duration: HELD_NOTE }, notLate(bus.context, time));
+      return (at: number) => {
+        if (voice) voices.release(voice, notLate(bus.context, at), release);
+      };
     },
     releaseAll: () => voices.releaseAll(raw.currentTime, 0.08),
     dispose: () => {
@@ -128,13 +143,22 @@ export function createPluck(output: Tone.InputNode) {
     amp.connect(input);
     // Down 50 dB by twice the decay time
     const stopAt = Math.min(start + 0.003 + 2 * decay, end + releaseTail(release));
-    voices.add({ start, stopAt, sources: [saw, square], nodes: [saw, square, mix, filter, amp], amp });
+    const voice = { start, stopAt, sources: [saw, square], nodes: [saw, square, mix, filter, amp], amp };
+    voices.add(voice);
+    return voice;
   };
 
   return {
     play: (notes: PlayableNote[], time: number) => {
       const start = notLate(bus.context, time);
       for (const n of notes) safely(() => playNote(n, start));
+    },
+    // A key held on a MIDI keyboard: the pluck dies away on its own, or sooner when let go
+    hold: (note: PlayableNote, time: number) => {
+      const voice = playNote({ ...note, duration: HELD_NOTE }, notLate(bus.context, time));
+      return (at: number) => {
+        if (voice) voices.release(voice, notLate(bus.context, at), release);
+      };
     },
     releaseAll: () => voices.releaseAll(raw.currentTime),
     dispose: () => {

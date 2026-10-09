@@ -7,16 +7,29 @@ const IDLE_SECONDS = 3;
 /** The parts of a monophonic Tone synth (Synth, FMSynth...) the pool drives. */
 export interface PoolVoice {
   triggerAttackRelease: (note: Tone.Unit.Frequency, duration: Tone.Unit.Time, time?: Tone.Unit.Time, velocity?: number) => unknown;
+  triggerAttack: (note: Tone.Unit.Frequency, time?: Tone.Unit.Time, velocity?: number) => unknown;
   triggerRelease: (time?: Tone.Unit.Time) => unknown;
   envelope: { release: Tone.Unit.Time };
+  /** Its pitch offset in cents (a MIDI pitch bend moves it). */
+  detune: { setTargetAtTime: (value: number, time: Tone.Unit.Time, constant: number) => unknown };
   connect: (destination: Tone.InputNode) => unknown;
   toSeconds: (time?: Tone.Unit.Time) => number;
   dispose: () => unknown;
 }
 
+/** A note held in the pool (a key held on a MIDI keyboard) until `release`. */
+export interface HeldVoice {
+  /** Let the note go at `time`, with the voice's own release. */
+  release: (time: number) => void;
+}
+
 export interface VoicePool {
   /** Play `notes` together at `time` (defaults to now). */
   trigger: (notes: string[], duration: Tone.Unit.Time, time?: Tone.Unit.Time, velocity?: number) => void;
+  /** Start one note at `time` and hold it until the returned handle releases it. */
+  attack: (note: string, time: number, velocity: number) => HeldVoice;
+  /** Bend every sounding voice (and the ones to come) by `cents`. */
+  bend: (cents: number, time: number) => void;
   releaseAll: () => void;
   dispose: () => void;
 }
@@ -36,10 +49,16 @@ export interface VoicePool {
  * (the pool's, which isn't the global one while a WAV export renders), and disposed again
  * after IDLE_SECONDS of silence (live): a silent voice still costs CPU, because Chrome keeps
  * running every Tone signal (ConstantSourceNode) whether or not anything is connected or playing.
+ *
+ * A held note (attack) has no end until it's released, so its voice is never free; when every
+ * voice is held, the one held longest is taken for the new note. Each trigger bumps the voice's
+ * serial, so a release that arrives after its voice was taken for another note does nothing.
  */
 export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVoice, maxVoices: number, output: Tone.InputNode): VoicePool {
   const out = new Tone.Gain(1).connect(output);
-  let voices: { voice: PoolVoice; start: number; end: number }[] = [];
+  let voices: { voice: PoolVoice; start: number; end: number; serial: number }[] = [];
+  /** The current pitch bend in cents, applied to every voice as it's taken. */
+  let bendCents = 0;
 
   const pick = (time: number) => {
     let free: (typeof voices)[number] | undefined;
@@ -48,15 +67,16 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
       if (v.end <= time) {
         // Reuse the most recently freed voice, so spare ones go idle long enough to be disposed
         if (!free || v.end > free.end) free = v;
-      } else if (v.start < time && (!soonest || v.end < soonest.end)) {
+      } else if (v.start < time && (!soonest || v.end < soonest.end || (v.end === soonest.end && v.start < soonest.start))) {
         // (a voice already starting at `time` can't be retriggered at the same instant)
         soonest = v;
       }
     }
     if (free) return free;
     if (voices.length < maxVoices) {
-      const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity };
+      const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0 };
       v.voice.connect(out);
+      if (bendCents) v.voice.detune.setTargetAtTime(bendCents, time, 0.001);
       voices.push(v);
       return v;
     }
@@ -86,10 +106,34 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
           v.voice.triggerAttackRelease(note, length, t, velocity);
           v.start = t;
           v.end = t + length + v.voice.toSeconds(v.voice.envelope.release);
+          v.serial++;
         } catch (err) {
           console.warn('Skipped a note:', err);
         }
       }
+    },
+    attack: (note, time, velocity) => {
+      const t = notLate(out.context, time);
+      const v = pick(t);
+      if (!v) return { release: () => {} };
+      v.voice.triggerAttack(note, t, velocity);
+      v.start = t;
+      v.end = Infinity;
+      const serial = ++v.serial;
+      return {
+        release: (at) => {
+          if (v.serial !== serial || v.end !== Infinity) return;
+          const releaseAt = notLate(out.context, at);
+          v.voice.triggerRelease(releaseAt);
+          v.end = releaseAt + v.voice.toSeconds(v.voice.envelope.release);
+        },
+      };
+    },
+    bend: (cents, time) => {
+      bendCents = cents;
+      const t = notLate(out.context, time);
+      // Sounding voices glide over a few ms (a bend wheel moves in small steps); idle ones pick it up when taken
+      for (const v of voices) if (v.end > t) v.voice.detune.setTargetAtTime(cents, t, 0.005);
     },
     releaseAll: () => {
       const now = out.now();

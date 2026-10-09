@@ -99,6 +99,23 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
         v.sources.forEach((s) => s.stop(v.stopAt));
       }
     },
+    /**
+     * Let one voice go at `at` (a key released on a MIDI keyboard) with a release of `seconds`,
+     * the way its own end would have: it holds the level it has reached and falls from there.
+     */
+    release(v: NativeVoice, at: number, seconds: number): void {
+      if (!voices.has(v) || v.stopAt <= at) return;
+      if (v.start >= at) {
+        v.stopAt = v.start;
+      } else {
+        const gain = v.amp.gain;
+        if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(at);
+        else gain.cancelScheduledValues(at);
+        gain.setTargetAtTime(0, at, releaseConstant(seconds));
+        v.stopAt = Math.min(v.stopAt, at + releaseTail(seconds));
+      }
+      v.sources.forEach((s) => s.stop(v.stopAt));
+    },
     /** For disposal: silence everything now. */
     stopAll(): void {
       for (const v of voices) {
