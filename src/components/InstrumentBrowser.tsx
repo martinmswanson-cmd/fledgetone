@@ -105,7 +105,8 @@ export const InstrumentBrowser: React.FC = () => {
           {instrumentsByCategory().map(({ category, instruments }) => (
             <optgroup key={category} label={category}>
               {instruments
-                .filter((i) => i.kind !== 'custom')
+                // Your Sounds play what you load, so there's nothing to try here
+                .filter((i) => i.kind !== 'custom' && i.kind !== 'slicer' && i.kind !== 'audio')
                 .map((i) => (
                   <option key={i.key} value={i.key}>
                     {i.name}

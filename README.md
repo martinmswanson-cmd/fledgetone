@@ -43,6 +43,10 @@ its own. That is the file published on the Two Birds Workshop site as `bos-beat-
 | `src/audio/exportWav.ts` | Offline WAV render (mixdown, stems, exact-length and seamless-loop endings, 16/24/32-bit), built from the same factories as live playback |
 | `src/audio/wavCues.ts` | Markers written into exported WAVs as cue points (`cue ` and `LIST`/`adtl`/`labl` chunks) |
 | `src/audio/transport.ts` | Bars, ticks, seconds and timecode conversions |
+| `src/audio/soundLibrary.ts` | The user's sound files (audio clips, Slicer, Sampler): kept in IndexedDB by content hash, decoded once per sample rate, waveform peaks measured in idle time, embedded in saved project files |
+| `src/audio/audioClipSchedule.ts`, `clipEnvelope.ts` | Plays audio clips on the Transport (start, seek and loop events; one buffer source per clip; gain and fades), live and in the export |
+| `src/audio/presets/slicer.ts`, `slicing.ts`, `slicerTools.ts` | The Slicer instrument (vocal chops): transient and equal slicing, one buffer source per note |
+| `src/store/audioClips.ts` | Audio clip maths: tempo changes keep seconds, trims and cuts move the offset, reading clip audio and Slicer settings from a file |
 | `src/components/timeline/` | Timeline UI: toolbar, ruler, lanes, clips, piano roll, project bar |
 
 ### Notes for changing the audio engine

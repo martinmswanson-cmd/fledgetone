@@ -9,6 +9,7 @@ import { createInstrument, safely } from './instruments';
 import { isDrumKind } from './instrumentCatalog';
 import { barToTicks } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
+import type { NativeBus } from './presets/native';
 import type { Track } from '../store/timelineTypes';
 import { loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
@@ -44,7 +45,7 @@ let automation: AutomationSchedule | null = null;
 const liveAutomation = () =>
   (automation ??= createAutomationSchedule(liveMix.bus.context.transport, (trackId) => live.get(trackId)?.strip));
 
-const sampleKey = (track: Track) => (track.sample ? `${track.sample.root}|${track.sample.dataUrl}` : undefined);
+const sampleKey = (track: Track) => (track.sample ? `${track.sample.root}|${track.sample.soundId ?? track.sample.dataUrl}` : undefined);
 
 /** Note when a track's current instrument fails to download its samples, so it can be rebuilt later. */
 function watchDownload(lt: LiveTrack): void {
@@ -74,7 +75,7 @@ export function syncLiveTracks(tracks: Track[]): void {
         instrumentKey: track.instrumentKey,
         sampleUrl: sampleKey(track),
         strip,
-        instrument: createInstrument(track.instrumentKey, strip.input, { sample: track.sample }),
+        instrument: createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer }),
         applied: null,
         audible: true,
         failed: false,
@@ -84,13 +85,17 @@ export function syncLiveTracks(tracks: Track[]): void {
     } else if (lt.instrumentKey !== track.instrumentKey || lt.sampleUrl !== sampleKey(track)) {
       lt.instrument.releaseAll();
       lt.instrument.dispose();
-      lt.instrument = createInstrument(track.instrumentKey, lt.strip.input, { sample: track.sample });
+      lt.instrument = createInstrument(track.instrumentKey, lt.strip.input, { sample: track.sample, slicer: track.slicer });
       lt.instrumentKey = track.instrumentKey;
       lt.sampleUrl = sampleKey(track);
       watchDownload(lt);
     }
     // Only touch strips whose settings changed, so dragging one fader doesn't re-ramp every track
-    if (lt.applied !== track) lt.strip.apply(track);
+    if (lt.applied !== track) {
+      lt.strip.apply(track);
+      // The Slicer follows its slices and modes without a rebuild
+      lt.instrument.setSlicer?.(track.slicer);
+    }
     lt.applied = track;
     // A silent track's notes are skipped rather than played into a muted channel, saving CPU
     lt.audible = !track.isMuted && (!anySolo || track.isSoloed);
@@ -129,6 +134,11 @@ export function getLiveInstrument(trackId: string): TrackInstrument | undefined 
   return lt?.audible ? lt.instrument : undefined;
 }
 
+/** Where an Audio track's clips play, muted or not (its strip silences it, and un-muting mid-clip is then heard at once). */
+export function getLiveClipBus(trackId: string): NativeBus | undefined {
+  return live.get(trackId)?.instrument.clipBus;
+}
+
 /** Release sustained voices so nothing hangs after Stop. */
 export function releaseAllLiveVoices(): void {
   for (const lt of live.values()) safely(() => lt.instrument.releaseAll());
@@ -149,7 +159,7 @@ export function reloadInstrument(key: InstrumentKey): void {
     if (lt.instrumentKey !== key || !lt.failed) continue;
     safely(() => lt.instrument.releaseAll());
     lt.instrument.dispose();
-    lt.instrument = createInstrument(key, lt.strip.input, { sample: lt.applied?.sample });
+    lt.instrument = createInstrument(key, lt.strip.input, { sample: lt.applied?.sample, slicer: lt.applied?.slicer });
     watchDownload(lt);
   }
 }

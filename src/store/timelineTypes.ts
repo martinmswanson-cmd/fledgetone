@@ -170,6 +170,8 @@ export interface Track {
   delaySend: number;
   /** The Sampler instrument's sound, loaded from the user's computer */
   sample?: CustomSample;
+  /** The Slicer instrument's sound and its slices (absent until a sound is loaded) */
+  slicer?: SlicerSettings;
   /** How settings change over the song: at most one lane per setting (older projects have none). */
   automation?: AutomationLane[];
 }
@@ -216,10 +218,83 @@ export interface AutomationLane {
 export interface CustomSample {
   /** Original file name, for display */
   name: string;
-  /** The audio file itself, as a data: URL (so it travels with the project) */
-  dataUrl: string;
+  /** The sound in the browser's sound library (see soundLibrary.ts), where it is kept by content hash */
+  soundId?: string;
+  /**
+   * The audio file itself, as a data: URL: how projects used to carry the sound inside the file.
+   * Still played; a project that opens with one moves it into the library and keeps the id.
+   */
+  dataUrl?: string;
   /** The note that plays the sound at its original pitch */
   root: string;
+}
+
+/** What the browser's sound library knows of a sound file (see src/audio/soundLibrary.ts). */
+export interface SoundMeta {
+  /** Content hash */
+  id: string;
+  /** File name */
+  name: string;
+  /** MIME type of the file */
+  type: string;
+  /** File size in bytes */
+  size: number;
+  /** Length in seconds */
+  seconds: number;
+}
+
+/** A sound as a project file carries it: its meta and the file's bytes in base64. */
+export interface EmbeddedSound extends SoundMeta {
+  data: string;
+}
+
+/**
+ * How an audio clip plays its sound (a file in the sound library). The clip's length in bars is
+ * its length in seconds at the project's tempo: a tempo change changes the bars, not the sound.
+ */
+export interface ClipAudio {
+  soundId: string;
+  /** Where in the sound the clip starts, in seconds (the left edge trims this) */
+  offset: number;
+  /** Clip gain in dB */
+  gain: number;
+  /** Fade in and out, in seconds, from the clip's edges */
+  fadeIn: number;
+  fadeOut: number;
+}
+
+export const AUDIO_GAIN_MIN = -24;
+export const AUDIO_GAIN_MAX = 24;
+/** Longest fade a project may hold (the handles stop at half the clip). */
+export const AUDIO_FADE_MAX = 30;
+
+/** How the Slicer cuts its sound: at the transients it finds, or into equal parts. */
+export type SliceMode = 'auto' | 'equal';
+export const SLICE_COUNTS = [4, 8, 16, 32] as const;
+export type SliceCount = (typeof SLICE_COUNTS)[number];
+/** Slice 1 plays on C3, slice 2 on C#3, and so on. */
+export const SLICE_KEY_BASE = 48;
+export const MAX_SLICES = 64;
+
+/** The Slicer's sound and where it is cut. Slice i runs from slices[i] to slices[i + 1] (the last one to `end`). */
+export interface SlicerSettings {
+  soundId: string;
+  /** File name, for display */
+  name: string;
+  /** The part of the sound that is sliced, in seconds */
+  start: number;
+  end: number;
+  /** Slice start times in seconds, ascending, the first at `start` */
+  slices: number[];
+  mode: SliceMode;
+  /** Equal: how many slices */
+  count: SliceCount;
+  /** Auto: 0 finds only the strongest transients, 1 the faintest */
+  sensitivity: number;
+  /** Pitch mode: every key plays the focused slice, transposed from the slice's own key */
+  pitch: boolean;
+  /** The slice the keyboard plays in Pitch mode (an index into `slices`) */
+  focus: number;
 }
 
 export interface NoteEvent {
@@ -242,6 +317,8 @@ export interface Clip {
   isSelected: boolean;
   /** How fast Wobble and Growl Bass notes wobble (absent: DEFAULT_WOBBLE). Other instruments ignore it. */
   wobble?: WobbleRate;
+  /** An audio clip: plays a sound file instead of notes (only on Audio tracks). */
+  audio?: ClipAudio;
 }
 
 /**

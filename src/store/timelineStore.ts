@@ -17,11 +17,24 @@ import { AUTOMATION, insertLaneBars, normalizePoints, removeLaneBars } from '../
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
-import type { Clip, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SnapGrid, TimelineTool, Track, TrackEq } from './timelineTypes';
+import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
-import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
+import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
+import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds } from '../audio/soundLibrary';
+import { sliceNotes } from '../audio/slicing';
+import {
+  audioLengthLimit,
+  audioTrimStartLimit,
+  clipNameFromFile,
+  normalizeClipAudio,
+  referencedSoundIds,
+  retimeAudioClips,
+  secondsPerBar,
+  splitAudio,
+  trimAudioStart,
+} from './audioClips';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, TrackFx, WobbleRate } from './timelineTypes';
 import { DEFAULT_WOBBLE, TOTAL_BARS } from './timelineTypes';
@@ -80,10 +93,12 @@ interface HistoryEntry {
   tracks: Track[];
   masterFx: MasterFx;
   markers: Marker[];
+  /** The tempo then: audio clips keep their length in seconds, so restored at another tempo their bars are retimed (tempo isn't undone). */
+  bpm: number;
 }
 
 /** Everything undo restores, read from the store now. */
-const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s), markers: s.markers });
+const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s), markers: s.markers, bpm: s.bpm });
 
 const withRipple = (entry: HistoryEntry, ripple: RippleMove | undefined): HistoryEntry => (ripple ? { ...entry, ripple } : entry);
 
@@ -125,7 +140,8 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
       ? s.selectedTrackId
       : tracks[0]?.id ?? null;
   return {
-    clips,
+    // Audio clips are as long in seconds as they were, at today's tempo
+    clips: retimeAudioClips(clips, entry.bpm, s.bpm),
     tracks,
     selectedTrackId,
     masterReverbDecay: masterFx.reverbDecay,
@@ -245,6 +261,24 @@ interface TimelineState {
   /** Give a Sampler track its sound (or clear it with undefined). */
   setTrackSample: (trackId: string, sample: CustomSample | undefined) => void;
 
+  // Audio clips and the Slicer (the maths is in audioClips.ts, the sound files in soundLibrary.ts)
+  /**
+   * Put sound files on an Audio track (null: a new one, made in the same step) as clips, end to
+   * end from `atBar`, each as long as its sound (undoable, the clips selected). Returns a message
+   * for the user if none fitted, else null.
+   */
+  addAudioClips: (trackId: string | null, atBar: number, sounds: SoundMeta[]) => string | null;
+  /** Change an audio clip's gain, fades or offset. `record` makes it its own undo step; sliders and handle drags checkpoint() once instead. */
+  setClipAudio: (clipId: string, patch: Partial<ClipAudio>, record?: boolean) => void;
+  /** Give a Slicer track its sound and slices (or clear them with undefined). `record` as above. */
+  setTrackSlicer: (trackId: string, slicer: SlicerSettings | undefined, record?: boolean) => void;
+  /**
+   * "Chop to Slicer": a Slicer track playing `slicer`, right after the audio clip's track, with a
+   * clip at the audio clip's place that plays the slices in order (one undo step). Returns the
+   * new track's id.
+   */
+  chopClipToSlicer: (clipId: string, slicer: SlicerSettings) => string | null;
+
   // Master Studio FX
   masterReverbDecay: number;
   masterDelayTime: string;
@@ -286,6 +320,8 @@ interface TimelineState {
   clipboard: Clip[];
   /** Instrument of the track the clipboard was copied from, or null if it came from several tracks. */
   clipboardInstrument: InstrumentKey | null;
+  /** The tempo at the copy: audio clips pasted at another tempo keep their length in seconds. */
+  clipboardBpm: number;
   copySelectedClips: () => void;
   cutSelectedClips: () => void;
   /**
@@ -390,9 +426,10 @@ const MIN_CLIP_BARS = 0.0625;
 
 /**
  * Cut a clip in two at `atBar` (a song position). Notes go to the side they start on; the right
- * half gets new ids and is unselected. Null if `atBar` isn't inside the clip.
+ * half gets new ids and is unselected; an audio clip's right half plays on from where the cut
+ * falls in its sound (at `bpm`). Null if `atBar` isn't inside the clip.
  */
-function splitClipAt(clip: Clip, atBar: number): [Clip, Clip] | null {
+function splitClipAt(clip: Clip, atBar: number, bpm: number): [Clip, Clip] | null {
   const rel = atBar - clip.startBar;
   if (rel <= EPS || rel >= clip.lengthBars - EPS) return null;
   const left: Clip = {
@@ -409,8 +446,30 @@ function splitClipAt(clip: Clip, atBar: number): [Clip, Clip] | null {
     notes: clip.notes
       .filter((n) => n.startOffset >= rel - EPS)
       .map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset - rel })),
+    ...(clip.audio ? { audio: splitAudio(clip.audio, rel * secondsPerBar(bpm)) } : {}),
   };
   return [left, right];
+}
+
+/** A track for `instrumentKey` with the usual starting settings, named after it (numbered after those already there). */
+function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: string): Track {
+  const meta = INSTRUMENTS[instrumentKey];
+  const count = existing.filter((t) => t.instrumentKey === instrumentKey).length;
+  return {
+    id: uid('track'),
+    name: name || (count > 0 ? `${meta.name} ${count + 1}` : meta.name),
+    color: meta.color,
+    instrumentKey,
+    isMuted: false,
+    isSoloed: false,
+    isArmed: false,
+    volume: 0,
+    pan: 0,
+    eq: { low: 0, mid: 0, high: 0 },
+    fx: defaultTrackFx(),
+    reverbSend: 0.1,
+    delaySend: 0,
+  };
 }
 
 /** A selected copy of a clip `offset` bars later, with fresh clip and note ids. */
@@ -555,6 +614,31 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     if (playhead !== s.playheadPosition) get().seek(playhead);
   };
 
+  /**
+   * Get an opened project's sounds ready: the ones a saved file embeds go into the sound library,
+   * every sound it refers to is decoded, and a Sampler from before the library (its sound carried as
+   * a data: URL on the track) is moved into the library and the track pointed at it instead, so
+   * the autosave stops carrying the file. Nothing here is an edit of the user's, so no history.
+   */
+  const prepareSounds = (p: ProjectSnapshot) => {
+    if (p.sounds?.length) void importEmbeddedSounds(p.sounds);
+    for (const id of referencedSoundIds(p)) ensureSound(id);
+    for (const t of p.tracks) {
+      const sample = t.sample;
+      if (!sample?.dataUrl || sample.soundId) continue;
+      importDataUrl(sample.dataUrl, sample.name).then(
+        (meta) =>
+          set((s) => {
+            // Only if it's still that track with that sound (another project may have been opened meanwhile)
+            const track = s.tracks.find((tr) => tr.id === t.id && tr.sample === sample);
+            if (!track) return s;
+            return { tracks: s.tracks.map((tr) => (tr === track ? { ...tr, sample: { name: sample.name, soundId: meta.id, root: sample.root } } : tr)) };
+          }),
+        () => {} // unreadable, or storage blocked: it goes on playing (and being saved) as a data: URL
+      );
+    }
+  };
+
   const frame = () => {
     const pos = getAudiblePositionBar();
     const { loopRegion } = get();
@@ -642,8 +726,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       // Hundredths, so a tempo fitted to a video length lands within a frame or so
       const clamped = Math.max(40, Math.min(240, Math.round(bpm * 100) / 100));
       engineSetBpm(clamped);
-      // Markers held to their time stay at the same timecode, so their bars move
-      set((s) => ({ bpm: clamped, markers: retimeMarkers(s.markers, clamped) }));
+      // Markers held to their time stay at the same timecode, so their bars move; audio clips keep
+      // their length in seconds, so their bars change too
+      set((s) => ({ bpm: clamped, markers: retimeMarkers(s.markers, clamped), clips: retimeAudioClips(s.clips, s.bpm, clamped) }));
     },
 
     tapTempo: () => {
@@ -770,24 +855,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     toggleInspector: (open) => set((s) => ({ isInspectorOpen: open !== undefined ? open : !s.isInspectorOpen })),
 
     addTrack: (instrumentKey, name) => {
-      const meta = INSTRUMENTS[instrumentKey];
-      const count = get().tracks.filter((t) => t.instrumentKey === instrumentKey).length;
-      const trackName = name || (count > 0 ? `${meta.name} ${count + 1}` : meta.name);
-      const newTrack: Track = {
-        id: uid('track'),
-        name: trackName,
-        color: meta.color,
-        instrumentKey,
-        isMuted: false,
-        isSoloed: false,
-        isArmed: false,
-        volume: 0,
-        pan: 0,
-        eq: { low: 0, mid: 0, high: 0 },
-        fx: defaultTrackFx(),
-        reverbSend: 0.1,
-        delaySend: 0,
-      };
+      const newTrack = makeTrack(instrumentKey, get().tracks, name);
       set((s) => ({
         tracks: [...s.tracks, newTrack],
         selectedTrackId: newTrack.id,
@@ -864,6 +932,82 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setTrackSample: (id, sample) => updateTrack(id, () => ({ sample }), true),
 
+    // ---------- Audio clips and the Slicer ----------
+    addAudioClips: (trackId, atBar, sounds) => {
+      const s = get();
+      const existing = trackId === null ? null : s.tracks.find((t) => t.id === trackId);
+      if (trackId !== null && (!existing || !isAudioKind(existing.instrumentKey))) return null;
+      const track = existing ?? makeTrack('audio', s.tracks);
+      const clips: Clip[] = [];
+      let at = clampBar(atBar);
+      // End to end, each as long as its sound (the last ones cut short at the end of the timeline)
+      for (const sound of sounds) {
+        const room = TOTAL_BARS + 1 - at;
+        if (room < MIN_CLIP_BARS - EPS) break;
+        ensureSound(sound.id);
+        const lengthBars = Math.max(MIN_CLIP_BARS, Math.min(sound.seconds / secondsPerBar(s.bpm), room));
+        clips.push({
+          id: uid('clip'),
+          trackId: track.id,
+          name: clipNameFromFile(sound.name),
+          startBar: at,
+          lengthBars,
+          notes: [],
+          isSelected: true,
+          audio: { soundId: sound.id, offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 },
+        });
+        at += lengthBars;
+      }
+      if (!clips.length) return `No room for a clip at bar ${formatBarCount(at)}: the timeline ends at bar ${TOTAL_BARS + 1}.`;
+      set((st) => ({
+        ...(existing ? {} : { tracks: [...st.tracks, track], selectedTrackId: track.id }),
+        clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...clips],
+        ...pushPast(st),
+      }));
+      return null;
+    },
+
+    setClipAudio: (clipId, patch, record = false) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        const audio = clip?.audio && normalizeClipAudio({ ...clip.audio, ...patch });
+        if (!clip?.audio || !audio) return s;
+        const same = (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut'] as const).every((k) => audio[k] === clip.audio![k]);
+        if (same) return s;
+        return { clips: s.clips.map((c) => (c === clip ? { ...c, audio } : c)), ...(record ? pushPast(s) : {}) };
+      }),
+
+    setTrackSlicer: (trackId, slicer, record = true) => {
+      if (slicer) ensureSound(slicer.soundId);
+      updateTrack(trackId, () => ({ slicer }), record);
+    },
+
+    chopClipToSlicer: (clipId, slicer) => {
+      const s = get();
+      const clip = s.clips.find((c) => c.id === clipId);
+      const index = clip ? s.tracks.findIndex((t) => t.id === clip.trackId) : -1;
+      if (!clip?.audio || index < 0) return null;
+      ensureSound(slicer.soundId);
+      const track: Track = { ...makeTrack('slicer', s.tracks), slicer };
+      const chopped: Clip = {
+        id: uid('clip'),
+        trackId: track.id,
+        name: `${clip.name} chops`,
+        startBar: clip.startBar,
+        lengthBars: clip.lengthBars,
+        notes: sliceNotes(slicer.slices, slicer.start, slicer.end, s.bpm).map((n) => ({ ...n, id: uid('note') })),
+        isSelected: true,
+      };
+      set((st) => ({
+        tracks: [...st.tracks.slice(0, index + 1), track, ...st.tracks.slice(index + 1)],
+        clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), chopped],
+        selectedTrackId: track.id,
+        isInspectorOpen: true,
+        ...pushPast(st),
+      }));
+      return track.id;
+    },
+
     setTrackFx: (id, effect, patch, record = false) => {
       updateTrack(id, (t) => ({ fx: normalizeTrackFx({ ...t.fx, [effect]: { ...t.fx[effect], ...patch } }) }), record);
     },
@@ -912,26 +1056,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     trimClipStart: (clipId, newStartBar) =>
       updateClip(clipId, (c) => {
+        const { bpm } = get();
         const end = c.startBar + c.lengthBars;
-        const start = Math.max(1, Math.min(end - 0.0625, newStartBar));
+        // An audio clip's left edge can go back no further than the start of its sound
+        const earliest = c.audio ? Math.max(1, audioTrimStartLimit(c, bpm)) : 1;
+        const start = Math.max(earliest, Math.min(end - 0.0625, newStartBar));
         const delta = start - c.startBar;
-        // Notes keep their absolute song position; offsets shift so trimmed notes become hidden (recoverable)
+        // Notes keep their absolute song position; offsets shift so trimmed notes become hidden
+        // (recoverable); an audio clip plays from further into (or back towards the start of) its sound
         return {
           startBar: start,
           lengthBars: end - start,
           notes: c.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta })),
+          ...(c.audio ? { audio: trimAudioStart(c.audio, delta * secondsPerBar(bpm)) } : {}),
         };
       }),
 
     trimClipEnd: (clipId, newLengthBars) =>
-      updateClip(clipId, (c) => ({
-        lengthBars: Math.max(0.0625, Math.min(TOTAL_BARS + 1 - c.startBar, newLengthBars)),
-      })),
+      updateClip(clipId, (c) => {
+        // An audio clip ends where its sound does, at the latest
+        const longest = c.audio ? audioLengthLimit(c.audio, soundSeconds(c.audio.soundId), get().bpm) : Infinity;
+        return { lengthBars: Math.max(0.0625, Math.min(TOTAL_BARS + 1 - c.startBar, longest, newLengthBars)) };
+      }),
 
     splitClip: (clipId, atBar) =>
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
-        const halves = clip && splitClipAt(clip, atBar);
+        const halves = clip && splitClipAt(clip, atBar, s.bpm);
         if (!clip || !halves) return s;
         const idx = s.clips.indexOf(clip);
         const clips = [...s.clips];
@@ -1031,7 +1182,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (!(bars > 0)) return null;
       const clips: Clip[] = [];
       for (const c of s.clips) {
-        const halves = splitClipAt(c, at);
+        const halves = splitClipAt(c, at, s.bpm);
         if (halves) {
           // Across the insert point: split it there and move the right half
           const [left, right] = halves;
@@ -1072,8 +1223,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           clips.push({ ...c, startBar: c.startBar - len });
         } else {
           // Keep only the parts outside the removed bars (a clip entirely inside them goes)
-          const left = splitClipAt(c, from)?.[0];
-          const right = splitClipAt(c, to)?.[1];
+          const left = splitClipAt(c, from, s.bpm)?.[0];
+          const right = splitClipAt(c, to, s.bpm)?.[1];
           if (left) clips.push(left);
           if (right) clips.push({ ...right, id: left ? right.id : c.id, startBar: from, isSelected: c.isSelected });
         }
@@ -1092,9 +1243,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     // ---------- Clipboard ----------
     clipboard: [],
     clipboardInstrument: null,
+    clipboardBpm: 122,
 
     copySelectedClips: () => {
-      const { clips, tracks } = get();
+      const { clips, tracks, bpm } = get();
       const selected = clips.filter((c) => c.isSelected);
       if (selected.length === 0) return;
       const origin = Math.min(...selected.map((c) => c.startBar));
@@ -1103,6 +1255,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         clipboard: selected.map((c) => ({ ...c, startBar: c.startBar - origin, isSelected: false })),
         // Remembered now, so the clips can still be pasted onto a matching track after theirs is gone
         clipboardInstrument: fromOneTrack ? (tracks.find((t) => t.id === selected[0].trackId)?.instrumentKey ?? null) : null,
+        clipboardBpm: bpm,
       });
     },
 
@@ -1112,14 +1265,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     pasteClips: (atBar, ontoTrackId) => {
-      const { clipboard, clipboardInstrument, tracks, playheadPosition, snapGrid, isPlaying } = get();
+      const { clipboard, clipboardInstrument, clipboardBpm, tracks, playheadPosition, snapGrid, isPlaying, bpm } = get();
       if (clipboard.length === 0) return;
       const trackIds = new Set(tracks.map((t) => t.id));
       const at = clampBar(atBar ?? snapBar(playheadPosition, snapGrid, get()));
       const onto = ontoTrackId !== undefined ? tracks.find((t) => t.id === ontoTrackId) : undefined;
       const target = onto && clipboardInstrument && canMoveClipBetween(clipboardInstrument, onto.instrumentKey) ? onto.id : null;
 
-      const pasted: Clip[] = clipboard
+      // Audio clips copied at another tempo are as long in seconds as they were
+      const pasted: Clip[] = retimeAudioClips(clipboard, clipboardBpm, bpm)
         .filter((c) => target !== null || trackIds.has(c.trackId))
         .map((c) => ({
           ...c,
@@ -1252,6 +1406,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...viewShowing(get(), p.loopRegion.inBar, true),
       });
       applyMasterFx();
+      prepareSounds(p);
     },
 
     insertPatternClip: (trackId, patternId, atBar) => {
@@ -1271,7 +1426,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     createEmptyClip: (trackId, atBar, lengthBars) => {
       const s = get();
       const track = s.tracks.find((t) => t.id === trackId);
-      if (!track) return null;
+      // An Audio track's clips come from sound files (addAudioClips), never empty
+      if (!track || isAudioKind(track.instrumentKey)) return null;
       const count = s.clips.filter((c) => c.trackId === trackId).length + 1;
       const clip: Clip = {
         id: uid('clip'),
