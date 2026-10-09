@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Circle,
   Magnet,
   MousePointer2,
   Pause,
@@ -21,6 +20,7 @@ import type { SnapGrid } from '../../store/timelineTypes';
 import { formatBarsBeats, formatSmpte, parseBarsBeats, parseTimecode, secondsToBar } from '../../audio/transport';
 import { LoopRangeButton } from './LoopRangePopover';
 import { MarkersButton } from './MarkerList';
+import { MetronomeButton, MidiButton, RecordButton } from './RecordControls';
 
 interface PositionFieldProps {
   value: string;
@@ -180,7 +180,6 @@ const ToolButton: React.FC<ToolButtonProps> = ({ active, onClick, title, childre
 
 export const TimelineToolbar: React.FC = () => {
   const isPlaying = useTimelineStore((s) => s.isPlaying);
-  const isRecording = useTimelineStore((s) => s.isRecording);
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
   const activeTool = useTimelineStore((s) => s.activeTool);
   const snapGrid = useTimelineStore((s) => s.snapGrid);
@@ -195,7 +194,6 @@ export const TimelineToolbar: React.FC = () => {
     togglePlay,
     stop,
     seek,
-    toggleRecord,
     toggleLoop,
     setTool,
     setSnapGrid,
@@ -228,15 +226,7 @@ export const TimelineToolbar: React.FC = () => {
         <ToolButton id="btn-stop" title="Stop (return to In point)" onClick={stop}>
           <Square className="w-3.5 h-3.5 fill-current" />
         </ToolButton>
-        <ToolButton
-          id="btn-record"
-          title="Record arm (visual only in this phase)"
-          active={isRecording}
-          activeClass="bg-red-500/20 border-red-500 text-red-400 animate-pulse"
-          onClick={toggleRecord}
-        >
-          <Circle className={`w-3.5 h-3.5 ${isRecording ? 'fill-red-500' : 'fill-red-500/60 text-red-500/60'}`} />
-        </ToolButton>
+        <RecordButton />
         <div className="relative flex items-center">
           <ToolButton
             id="btn-loop"
@@ -250,6 +240,8 @@ export const TimelineToolbar: React.FC = () => {
           <LoopRangeButton />
         </div>
         <MarkersButton />
+        <MetronomeButton />
+        <MidiButton />
       </div>
 
       {/* Timecode */}
