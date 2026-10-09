@@ -37,6 +37,14 @@ export function createBrassVoice(output: Tone.InputNode) {
   // Route: voices -> filter -> output (brass channel -> masterBus)
   filter.connect(output);
 
+  // Mimic brass swell on filter
+  const swell = (t: number) => {
+    filter.frequency.cancelScheduledValues(t);
+    filter.frequency.setValueAtTime(800, t);
+    filter.frequency.exponentialRampToValueAtTime(2600, t + 0.03);
+    filter.frequency.exponentialRampToValueAtTime(1400, t + 0.22);
+  };
+
   return {
     releaseAll: synth.releaseAll,
     dispose: () => {
@@ -44,15 +52,17 @@ export function createBrassVoice(output: Tone.InputNode) {
       filter.dispose();
     },
     trigger: (notes: string[], duration: Tone.Unit.Time = '8n', time?: Tone.Unit.Time, velocity: number = 0.85) => {
-      // Mimic brass swell on filter
       const t = notLate(filter.context, time);
-      filter.frequency.cancelScheduledValues(t);
-      filter.frequency.setValueAtTime(800, t);
-      filter.frequency.exponentialRampToValueAtTime(2600, t + 0.03);
-      filter.frequency.exponentialRampToValueAtTime(1400, t + 0.22);
-
+      swell(t);
       synth.trigger(notes, duration, t, velocity);
     },
+    // A key held on a MIDI keyboard
+    attack: (note: string, time: number, velocity: number) => {
+      const t = notLate(filter.context, time);
+      swell(t);
+      return synth.attack(note, t, velocity);
+    },
+    bend: synth.bend,
   };
 }
 

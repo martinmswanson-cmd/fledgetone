@@ -67,6 +67,9 @@ export function loadCustomSample(dataUrl: string): Promise<Tone.ToneAudioBuffer>
 
 export interface SamplerVoice {
   play: (notes: string[], duration: string, time: number | undefined, velocity: number) => void;
+  /** A key held on a MIDI keyboard: `note` sounds from `time` until released. */
+  attack: (note: string, time: number, velocity: number) => void;
+  release: (note: string, time: number) => void;
   releaseAll: () => void;
   /** Resolves once samples are attached (rejects if they failed to download). */
   ready: Promise<void>;
@@ -105,6 +108,12 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
       if (!loaded || notes.length === 0) return; // still downloading: skip rather than throw
       sampler.triggerAttackRelease(notes, duration, time ?? Tone.now(), velocity);
     },
+    attack: (note, time, velocity) => {
+      if (loaded) sampler.triggerAttack(note, time, velocity);
+    },
+    release: (note, time) => {
+      if (loaded) sampler.triggerRelease(note, time);
+    },
     releaseAll: () => sampler.releaseAll(),
     ready,
     dispose: () => {
@@ -129,7 +138,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode): 
 export function createCustomSamplerVoice(sample: { dataUrl: string; root: string } | undefined, output: Tone.InputNode): SamplerVoice {
   if (!sample) {
     // No sound loaded yet: ready straight away (so exports never wait on it) and silent
-    return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
+    return { play: () => {}, attack: () => {}, release: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
   }
   const sampler = new Tone.Sampler({ release: 0.4 }).connect(output);
   const attach = loadCustomSample(sample.dataUrl).then((buffer) => {

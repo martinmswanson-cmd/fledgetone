@@ -178,13 +178,22 @@ export function createFx(output: Tone.InputNode) {
     // Above zero: the swells are exponential ramps, which can't start or end at 0
     const voice = hit(raw, start, Math.max(MIN_LENGTH, length), Math.max(0.01, n.velocity));
     voice.amp.connect(input);
-    voices.add({ ...voice, start });
+    const added = { ...voice, start };
+    voices.add(added);
+    return added;
   };
 
   return {
     play: (notes: PlayableNote[], time: number) => {
       const start = notLate(bus.context, time);
       for (const n of notes) safely(() => playNote(n, start));
+    },
+    // A key held on a MIDI keyboard plays a one-bar effect, faded out early if the key is let go first
+    hold: (note: PlayableNote, time: number) => {
+      const voice = playNote({ ...note, duration: '1m' }, notLate(bus.context, time));
+      return (at: number) => {
+        if (voice) voices.release(voice, notLate(bus.context, at), 0.1);
+      };
     },
     releaseAll: () => voices.releaseAll(raw.currentTime, 0.1),
     dispose: () => {

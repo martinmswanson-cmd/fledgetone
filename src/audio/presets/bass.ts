@@ -51,6 +51,10 @@ export function createBassVoice(output: Tone.InputNode) {
     trigger: (note: string, duration: Tone.Unit.Time = '16n', time?: Tone.Unit.Time, velocity: number = 0.9) => {
       synth.triggerAttackRelease(note, duration, safeTime(time), velocity);
     },
+    // A key held on a MIDI keyboard: sounds until released
+    attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),
+    release: (time: number) => synth.triggerRelease(time),
+    bend: (cents: number, time: number) => synth.detune.setTargetAtTime(cents, time, 0.005),
   };
 }
 
