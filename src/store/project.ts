@@ -1,5 +1,5 @@
-import type { CustomSample, MasterFx, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
-import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeTrackFx } from './timelineTypes';
+import type { CustomSample, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
+import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
@@ -37,6 +37,8 @@ export interface ProjectData {
   dropFrame?: boolean;
   /** Named points on the timeline (optional; older files have none). */
   markers?: Marker[];
+  /** The master section's OTT and stereo width (optional; older files have them off). */
+  master?: MasterSettings;
 }
 
 export interface ProjectSnapshot {
@@ -54,6 +56,8 @@ export interface ProjectSnapshot {
   dropFrame?: boolean;
   /** Markers, in position order (older projects don't have any). */
   markers?: Marker[];
+  /** The master section's inserts (older projects don't have them: both off). */
+  master?: MasterSettings;
 }
 
 
@@ -71,6 +75,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     fps: p.fps ?? DEFAULT_FRAME_RATE,
     dropFrame: p.dropFrame === true && p.fps === 29.97,
     markers: p.markers ?? [],
+    master: normalizeMasterSettings(p.master),
   };
 }
 
@@ -177,6 +182,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     fps,
     dropFrame: fps === 29.97 && raw.dropFrame === true,
     markers: parseMarkers(raw.markers, bpm),
+    master: normalizeMasterSettings(raw.master),
   };
 }
 

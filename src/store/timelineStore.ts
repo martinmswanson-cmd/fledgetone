@@ -23,8 +23,8 @@ import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, TrackFx, WobbleRate } from './timelineTypes';
-import { DEFAULT_WOBBLE, TOTAL_BARS } from './timelineTypes';
+import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, TrackFx, WobbleRate } from './timelineTypes';
+import { DEFAULT_WOBBLE, TOTAL_BARS, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
   adjacentMarker,
   anchorMarker,
@@ -79,11 +79,13 @@ interface HistoryEntry {
   clips: Clip[];
   tracks: Track[];
   masterFx: MasterFx;
+  /** The master section (OTT, stereo width). */
+  master: MasterSettings;
   markers: Marker[];
 }
 
 /** Everything undo restores, read from the store now. */
-const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s), markers: s.markers });
+const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s), master: s.master, markers: s.markers });
 
 const withRipple = (entry: HistoryEntry, ripple: RippleMove | undefined): HistoryEntry => (ripple ? { ...entry, ripple } : entry);
 
@@ -112,7 +114,7 @@ function rippleSpot(s: TimelineState, move: RippleMove, undo: boolean): { loopRe
  * the first track.
  */
 function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineState> {
-  const { tracks, masterFx } = entry;
+  const { tracks, masterFx, master } = entry;
   const ids = new Set(tracks.map((t) => t.id));
   // Entries are taken whole, so clips always match their tracks; filter anyway so an orphan can
   // never reach the scheduler or a saved file
@@ -131,6 +133,7 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     masterReverbDecay: masterFx.reverbDecay,
     masterDelayTime: masterFx.delayTime,
     masterDelayFeedback: masterFx.delayFeedback,
+    master,
     // Tempo isn't undone, so markers held to their time are placed at today's tempo
     markers: retimeMarkers(entry.markers, s.bpm),
   };
@@ -252,6 +255,13 @@ interface TimelineState {
   setMasterReverbDecay: (decay: number) => void;
   setMasterDelayTime: (time: string) => void;
   setMasterDelayFeedback: (feedback: number) => void;
+
+  // Master section: the OTT and stereo width inserts between the master compressor and the limiter (saved, undoable)
+  master: MasterSettings;
+  /** Change the OTT. `record` makes it its own undo step (menus); switches checkpoint() first and sliders once per gesture. */
+  setMasterOtt: (patch: Partial<MasterSettings['ott']>, record?: boolean) => void;
+  /** Change the stereo width, recorded like setMasterOtt. */
+  setMasterWidth: (patch: Partial<MasterSettings['width']>, record?: boolean) => void;
 
   // Clips
   selectClip: (clipId: string, additive: boolean) => void;
@@ -507,6 +517,16 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
   /** Push the master reverb / delay settings (and tempo, for the delay time) to the live mix. */
   const applyMasterFx = () => liveMix.busFx.apply(masterFxOf(get()), get().bpm);
+  /** Push the master section's settings (OTT, width) to the live mix. */
+  const applyMaster = () => liveMix.inserts.apply(get().master);
+  const setMaster = (next: (m: MasterSettings) => MasterSettings, record: boolean) => {
+    set((s) => {
+      const master = normalizeMasterSettings(next(s.master));
+      if (sameMasterSettings(master, s.master)) return s;
+      return { master, ...(record ? pushPast(s) : {}) };
+    });
+    applyMaster();
+  };
 
   const updateClip = (clipId: string, patch: (c: Clip) => Partial<Clip>) =>
     set((s) => ({ clips: s.clips.map((c) => (c.id === clipId ? { ...c, ...patch(c) } : c)) }));
@@ -596,6 +616,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     masterReverbDecay: 2.4,
     masterDelayTime: '8n',
     masterDelayFeedback: 0.35,
+    master: defaultMasterSettings(),
     past: [],
     future: [],
 
@@ -887,6 +908,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       applyMasterFx();
     },
 
+    setMasterOtt: (patch, record = false) => setMaster((m) => ({ ...m, ott: { ...m.ott, ...patch } }), record),
+    setMasterWidth: (patch, record = false) => setMaster((m) => ({ ...m, width: { ...m.width, ...patch } }), record),
+
     // ---------- Clips ----------
     selectClip: (clipId, additive) =>
       set((s) => ({
@@ -1169,6 +1193,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...(spot ? { loopRegion: spot.loopRegion } : {}),
       });
       applyMasterFx();
+      applyMaster();
       if (spot && spot.playhead !== s.playheadPosition) get().seek(spot.playhead);
     },
 
@@ -1185,6 +1210,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...(spot ? { loopRegion: spot.loopRegion } : {}),
       });
       applyMasterFx();
+      applyMaster();
       if (spot && spot.playhead !== s.playheadPosition) get().seek(spot.playhead);
     },
 
@@ -1243,6 +1269,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         masterReverbDecay: masterFx.reverbDecay,
         masterDelayTime: masterFx.delayTime,
         masterDelayFeedback: masterFx.delayFeedback,
+        master: p.master ?? defaultMasterSettings(),
         fps: p.fps ?? DEFAULT_FRAME_RATE,
         dropFrame: p.dropFrame === true && p.fps === 29.97,
         markers: retimeMarkers(p.markers ?? [], p.bpm),
@@ -1252,6 +1279,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...viewShowing(get(), p.loopRegion.inBar, true),
       });
       applyMasterFx();
+      applyMaster();
     },
 
     insertPatternClip: (trackId, patternId, atBar) => {
@@ -1431,6 +1459,7 @@ export function currentProject(): ProjectSnapshot {
     tracks: s.tracks,
     clips: s.clips,
     masterFx: masterFxOf(s),
+    master: s.master,
     fps: s.fps,
     dropFrame: s.dropFrame,
     markers: s.markers,
@@ -1508,6 +1537,7 @@ export function connectAutosave(): () => void {
       state.masterReverbDecay === prev.masterReverbDecay &&
       state.masterDelayTime === prev.masterDelayTime &&
       state.masterDelayFeedback === prev.masterDelayFeedback &&
+      state.master === prev.master &&
       state.fps === prev.fps &&
       state.dropFrame === prev.dropFrame &&
       state.markers === prev.markers
@@ -1544,6 +1574,7 @@ export function connectTimelineToAudio(): () => void {
   rescheduleClips(s.tracks, s.clips);
   syncTransport(s.loopRegion, s.bpm, s.swing);
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
+  liveMix.inserts.apply(s.master);
 
   return useTimelineStore.subscribe((state, prev) => {
     // Stopped, automated settings sit at their lanes' values under the playhead (first, so lanes
