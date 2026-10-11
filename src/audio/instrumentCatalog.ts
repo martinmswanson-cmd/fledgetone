@@ -254,7 +254,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   flute: {
     key: 'flute', name: 'Flute', blurb: 'Concert flute (recorded)', color: '#93c5fd', category: 'Winds & Brass', kind: 'sampled', range: [60, 96],
-    samples: nb('flute', ['C4', 'E4', 'A4', 'C5', 'E5', 'A5', 'C6', 'E6', 'A6', 'C7'], 0.5),
+    samples: nb('flute', ['C4', 'E4', 'A4', 'C5', 'E5', 'A5', 'C6', 'E6', 'A6', 'C7'], 0.5), taper: [84, 8],
   },
 
   // Mallets & Bells
