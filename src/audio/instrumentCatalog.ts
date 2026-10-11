@@ -27,6 +27,8 @@ export const INSTRUMENT_KEYS = [
   'wobbleBass', 'growlBass', 'reeseBass',
   'supersaw', 'pluck',
   'fx',
+  // string section
+  'strings',
   // audio clips and vocal chops
   'slicer', 'audio',
 ] as const;
@@ -60,6 +62,12 @@ export interface SampleSource {
    * speak at once instead of sounding far away.
    */
   onset?: number;
+  /**
+   * The soundfont renders stop dead at 3.1 s while the note is still at full level. When loaded,
+   * the part from `from` to `to` seconds is looped (crossfaded) until the recording is `hold`
+   * seconds long, so a held note sustains instead of cutting off.
+   */
+  sustain?: { from: number; to: number; hold: number };
 }
 
 export interface InstrumentDef {
@@ -123,6 +131,14 @@ const noteName = (midi: number) => `${NAMES[midi % 12]}${Math.floor(midi / 12) -
 
 /** General MIDI (FluidR3) soundfont set: every note exists; take one every `step` semitones. */
 function gm(instrument: string, lo: number, hi: number, step = 3, release = 1): SampleSource {
+  return soundfont('FluidR3_GM', instrument, lo, hi, step, release);
+}
+
+/** Sustained soundfont notes loop their steady part until they're 10 s long (see SampleSource.sustain). */
+const SOUNDFONT_SUSTAIN = { from: 1.2, to: 3.0, hold: 10 };
+
+/** A soundfont set rendered by midi-js-soundfonts (FluidR3_GM, MusyngKite, FatBoy): every note exists. */
+function soundfont(font: string, instrument: string, lo: number, hi: number, step = 3, release = 1): SampleSource {
   const samples: Record<string, string> = {};
   const add = (m: number) => {
     const n = noteName(m);
@@ -131,7 +147,7 @@ function gm(instrument: string, lo: number, hi: number, step = 3, release = 1): 
   };
   for (let m = lo; m <= hi; m += step) add(m);
   add(hi);
-  return { baseUrl: `https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/${instrument}-mp3/`, samples, release };
+  return { baseUrl: `https://gleitz.github.io/midi-js-soundfonts/${font}/${instrument}-mp3/`, samples, release };
 }
 
 /** nbrosowsky/tonejs-instruments set: listed files ("As3" = A#3). */
@@ -146,7 +162,7 @@ function nb(folder: string, files: string[], release = 1, onset?: number): Sampl
  * bowing, an amp for the electric guitar's dull direct recording, a brighter acoustic guitar, the
  * mandolin's doubled strings. See samplerManager.ts.
  */
-export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin' | 'violin' | 'cello';
+export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin';
 
 /** The solo violin set, every file it has (so no note is stretched more than a few semitones). */
 const VIOLIN_FILES = ['A3', 'C4', 'E4', 'G4', 'A4', 'C5', 'E5', 'G5', 'A5', 'C6', 'E6', 'G6', 'A6', 'C7'];
@@ -210,12 +226,16 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
     samples: nb('harp', ['E1', 'G1', 'B1', 'D2', 'F2', 'A2', 'C3', 'E3', 'G3', 'B3', 'D4', 'F4', 'A4', 'C5', 'E5', 'G5', 'B5', 'D6', 'F6', 'A6', 'B6', 'D7', 'F7'], 1.5),
   },
   violin: {
-    key: 'violin', name: 'Violin', blurb: 'Solo violin (recorded)', color: '#f87171', category: 'Guitars & Strings', kind: 'sampled', range: [55, 96],
-    samples: nb('violin', VIOLIN_FILES, 1, -10), shaping: 'violin', gain: 2, taper: [76, 10],
+    key: 'violin', name: 'Violin', blurb: 'Solo violin, close and dry', color: '#f87171', category: 'Guitars & Strings', kind: 'sampled', range: [55, 96],
+    samples: { ...soundfont('MusyngKite', 'violin', 55, 96, 3, 0.6), sustain: SOUNDFONT_SUSTAIN }, gain: 27, taper: [76, 6],
   },
   cello: {
-    key: 'cello', name: 'Cello', blurb: 'Solo cello (recorded)', color: '#ea580c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 72],
-    samples: nb('cello', ['C2', 'D2', 'E2', 'F2', 'G2', 'A2', 'B2', 'Cs3', 'Ds3', 'F3', 'G3', 'A3', 'B3', 'Cs4', 'Ds4', 'F4', 'G4', 'A4', 'C5'], 1, -10), shaping: 'cello', gain: 0,
+    key: 'cello', name: 'Cello', blurb: 'Solo cello, close and dry', color: '#ea580c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 76],
+    samples: { ...soundfont('MusyngKite', 'cello', 36, 76, 3, 0.6), sustain: SOUNDFONT_SUSTAIN }, gain: 22,
+  },
+  strings: {
+    key: 'strings', name: 'Strings', blurb: 'String section: pads and swells', color: '#fb7185', category: 'Guitars & Strings', kind: 'sampled', range: [36, 96],
+    samples: { ...soundfont('MusyngKite', 'string_ensemble_1', 36, 96, 3, 0.9), sustain: SOUNDFONT_SUSTAIN }, gain: 17, taper: [84, 6],
   },
 
   // Winds & Brass

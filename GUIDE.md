@@ -223,7 +223,7 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 | Drums & Percussion | Drums (analog kit), Drum Machine (808-style), Taiko Drums |
 | Bass | Slap Bass, Sub-Bass, 808 Bass, Bass Guitar, Wobble Bass, Growl Bass, Reese Bass |
 | Keys & Synths | Grand Piano, Electric Piano, Space Clav, Wavetable Synth, Analog Lead, Pipe Organ, Supersaw, Pluck |
-| Guitars & Strings | Acoustic Guitar, Electric Guitar, Mandolin, Harp, Violin, Cello |
+| Guitars & Strings | Acoustic Guitar, Electric Guitar, Mandolin, Harp, Violin, Cello, Strings |
 | Winds & Brass | Brass Stabs, Saxophone, Trumpet, French Horn, Flute |
 | Mallets & Bells | Marimba, Chimes |
 | World | Erhu |
@@ -520,12 +520,12 @@ The synths and drum kits are generated in your browser. The recorded instruments
 | Grand Piano | Salamander Grand Piano by Alexander Holm, from the [Tone.js audio collection](https://github.com/Tonejs/audio) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Bass Guitar, Electric Guitar, Saxophone | Karoryfer Samples | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Acoustic Guitar | University of Iowa Electronic Music Studios | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
-| Violin, Erhu, Harp, Trumpet, French Horn, Flute | Versilian Studios Orchestra (VSCO 2) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
-| Cello | "Real cello notes" by flcellogrl on Freesound | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Erhu, Harp, Trumpet, French Horn, Flute | Versilian Studios Orchestra (VSCO 2) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Violin, Cello, Strings | Musyng Kite SoundFont, rendered by Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts) | [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/) |
 | Taiko Drums, Electric Piano, Pipe Organ, Marimba, Chimes, Mandolin | FluidR3 GM SoundFont by Frank Wen, rendered by Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 
 - The guitar, bass, saxophone, strings, harp, flute and brass samples were collected and edited (trimmed, volume-matched, cleaned up and tuned) by Nicholaus Brosowsky for [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments). Its samples are released under CC BY 3.0.
-- The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app. The Violin and Cello recordings, which are dark and sit back in a hall, are levelled, brightened and given their upper harmonics in the app, and the Violin's and Erhu's top octave plays quieter so it doesn't pierce.
+- The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app. The Violin, Cello and Strings notes are 3 seconds long in the soundfont, so the app loops their steady part when it loads them and a note can be held for about 10 seconds. The top octave of the Violin, Erhu and Strings plays quieter so it doesn't pierce.
 - Bo's Beatbox loads these samples straight from the projects above; it doesn't copy or change the files.
 
 ### Software

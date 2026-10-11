@@ -34,7 +34,8 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   const promise = Promise.all(
     Object.entries(source.samples).map(async ([note, file]) => {
       const buffer = await Tone.ToneAudioBuffer.fromUrl(source.baseUrl + file);
-      return [note, source.onset === undefined ? buffer : trimOnset(buffer, source.onset)] as const;
+      const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
+      return [note, source.onset === undefined ? held : trimOnset(held, source.onset)] as const;
     })
   ).then(
     (entries) => {
@@ -81,6 +82,49 @@ function trimOnset(buffer: Tone.ToneAudioBuffer, onsetDb: number): Tone.ToneAudi
     for (let k = 0; k < fade && k < out.length; k++) out[k] *= k / fade;
   });
   return new Tone.ToneAudioBuffer(trimmed);
+}
+
+/**
+ * Lengthen a recording that stops dead by looping its steady part, crossfading 120 ms at each
+ * join, until it is `hold` seconds long; the last 300 ms fade out. Two identical channels (a mono
+ * recording saved as stereo) are folded to one, halving the memory it takes.
+ */
+function extendSustain(buffer: Tone.ToneAudioBuffer, { from, to, hold }: { from: number; to: number; hold: number }): Tone.ToneAudioBuffer {
+  const audio = buffer.get();
+  if (!audio) return buffer;
+  const sr = audio.sampleRate;
+  const end = Math.min(audio.length, Math.round(to * sr));
+  const start = Math.round(from * sr);
+  const xf = Math.round(0.12 * sr);
+  if (end - start < xf * 3) return buffer;
+  let channels = Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c));
+  if (channels.length === 2) {
+    const [l, r] = channels;
+    let diff = 0, sum = 0;
+    for (let i = 0; i < end; i += 7) { diff += (l[i] - r[i]) ** 2; sum += (l[i] + r[i]) ** 2; }
+    if (diff < sum * 1e-4) channels = [l];
+  }
+  const length = Math.max(end, Math.round(hold * sr));
+  const out = Tone.getContext().createBuffer(channels.length, length, sr);
+  channels.forEach((data, c) => {
+    const o = out.getChannelData(c);
+    o.set(data.subarray(0, end));
+    let pos = end;
+    while (pos < length) {
+      const at = pos - xf;
+      for (let k = 0; k < end - start && at + k < length; k++) {
+        const v = data[start + k];
+        if (k < xf) {
+          const t = (k / xf) * (Math.PI / 2);
+          o[at + k] = o[at + k] * Math.cos(t) + v * Math.sin(t);
+        } else o[at + k] = v;
+      }
+      pos = at + (end - start);
+    }
+    const fade = Math.min(length, Math.round(0.3 * sr));
+    for (let k = 0; k < fade; k++) o[length - 1 - k] *= k / fade;
+  });
+  return new Tone.ToneAudioBuffer(out);
 }
 
 // ---------- the user's own sounds (Sampler instrument) ----------
@@ -218,41 +262,6 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     const trim = raw.createGain();
     trim.gain.value = Tone.dbToGain(-2);
     return chain([bright, sparkle, edge, trim]);
-  }
-  if (shape === 'violin' || shape === 'cello') {
-    // The orchestral recordings are dark (the cello has almost nothing above 2 kHz, the violin
-    // nothing above 8), swell slowly and sit back in a hall. A leveller brings the quiet starts
-    // and the swells to one level; an exciter (the upper part of the sound driven hard, mixed in
-    // under the rest) makes the bow's harmonics the files lack; presence and a top shelf bring it
-    // forward. The violin also gets a dip where its top octave pierces.
-    const violin = shape === 'violin';
-    const tight = biquad('highpass', violin ? 160 : 55, 0.7);
-    const level = raw.createDynamicsCompressor();
-    level.threshold.value = -28;
-    level.knee.value = 10;
-    level.ratio.value = 2.5;
-    level.attack.value = 0.01;
-    level.release.value = 0.25;
-    const split = raw.createGain();
-    const harmonicsIn = biquad('highpass', violin ? 1500 : 700, 0.7);
-    const harmonics = saturator(violin ? 5 : 8);
-    const harmonicsOut = biquad('highpass', violin ? 2500 : 1500, 0.7);
-    const harmonicsMix = raw.createGain();
-    harmonicsMix.gain.value = Tone.dbToGain(violin ? -16 : -9);
-    const sum = raw.createGain();
-    const presence = violin ? biquad('peaking', 2200, 1, 3) : biquad('peaking', 1500, 1, 4);
-    const air = violin ? biquad('highshelf', 5000, 0.7, 6) : biquad('highshelf', 3000, 0.7, 6);
-    const soften = violin ? biquad('peaking', 3600, 1.5, -3) : biquad('peaking', 3000, 1.5, -1);
-    const top = biquad('lowpass', violin ? 11000 : 9000, 0.7);
-    const trim = raw.createGain();
-    trim.gain.value = Tone.dbToGain(violin ? -2 : -2);
-    const built = chain([tight, level, split, sum, presence, air, soften, top, trim]);
-    const exciter = [harmonicsIn, harmonics, harmonicsOut, harmonicsMix];
-    split.connect(harmonicsIn);
-    for (let i = 0; i + 1 < exciter.length; i++) exciter[i].connect(exciter[i + 1]);
-    harmonicsMix.connect(sum);
-    built.nodes.push(...exciter.map((n) => ({ dispose: () => n.disconnect() })));
-    return built;
   }
   if (shape === 'mandolin') {
     const courses = createLightChorus({ rate: 5, delayMs: 1.8, depth: 0.35, spread: 160, wet: 0.55 });
