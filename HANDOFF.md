@@ -1,6 +1,6 @@
 # Bo's Beatbox: handoff
 
-Read this first when picking the project up in a new session. It covers what the app is, how
+Read this first when picking the project up in a new session. (Updated after the mastering work.) It covers what the app is, how
 the code is laid out, how to check changes (including sound), what's finished, and what's next.
 
 ## The app and who it's for
@@ -41,7 +41,7 @@ npm install
 npm run dev            # dev server
 npx tsc -b             # type check
 npx oxlint             # lint (3 known warnings: Playhead.tsx x2, SoundAuditionPanel.tsx x1)
-npm test               # node --test scripts/*.test.mjs (77 tests)
+npm test               # node --test scripts/*.test.mjs (96 tests)
 npm run build          # production build
 npm run build:single   # the one-file site (dist-single/index.html)
 ```
@@ -113,36 +113,23 @@ computer-keyboard piano; every recording the sample libraries offer for each ins
 shaping for the Erhu, Electric and Acoustic Guitar, Violin and Cello and a quieter top octave on
 Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time notice for phone users.
 
-## Next: the mastering tools (branch `qol/q`, unfinished)
+## Recently finished
 
-Commit `6ac78d0` on `qol/q`. It branches from `a4f0071`, which is older than the audio tracks, MIDI
-and instrument work, so **merge the work branch into it first** and expect conflicts in
-`timelineStore.ts`, `project.ts`, `engine.ts` and `exportWav.ts`.
+- **Mastering** (merged from `qol/q`): the Inspector's Master tab has a loudness meter, an OTT
+  (`src/audio/effects/ott.ts`, with makeup gain and a primed start so it doesn't burst when
+  switched on) and Stereo Width (`masterChain.ts`). The header shows loudness. Exports report LUFS
+  and true peak, and mixdowns can normalize to -14 LUFS (`ExportDialog.tsx`, `loudness.ts`).
+- **Genre starters** in the New dialog (`src/store/starters.ts`): Dubstep, House, Drum & Bass,
+  Trap. Each is 16 bars with section markers and master settings, balanced so drums lead.
+- **Strings**: Violin and Cello now come from the Musyng Kite soundfont (dry, fast attack), plus a
+  new Strings section instrument. The soundfont files stop at 3.1 s, so the loader loops their
+  steady part up to 10 s (`extendSustain` in `samplerManager.ts`).
 
-Already written, compiling, with unit tests (`scripts/ott.test.mjs`, `scripts/loudness.test.mjs`):
+## Ideas not started
 
-- `src/audio/effects/ott.ts`: an OTT-style three-band upward and downward compressor, as an
-  AudioWorklet.
-- `src/audio/effects/masterChain.ts`: master inserts between the master compressor and the
-  limiter (OTT, then stereo width with mono bass under 120 Hz), with gapless switching live.
-- `src/audio/loudness.ts`, `loudnessMeter.ts`: LUFS (integrated, short-term) and true peak.
-- `MasterSettings` in `timelineTypes.ts` (defaults, normalising, comparison), saved in projects
-  and kept in undo history.
-
-Still to do:
-
-1. Finish wiring the master chain into live playback and the export, and the meter's tap.
-2. **Master panel** in the Inspector: OTT (depth, time, in and out gain), Width (amount, mono
-   bass), the loudness meter. A small meter in the header.
-3. **Export dialog**: show the mix's LUFS and true peak; an option to normalise to a target
-   (for example -14 LUFS for streaming, louder for club tracks).
-4. **Genre starters** in the New dialog: Dubstep 140, House 126, Drum & Bass 174, Trap 140. Each a
-   ready project (tracks, a few clips, sensible inserts) defined as data.
-5. Browser checks: live and exported WAV measure the same; switching OTT or Width while playing
-   doesn't drop out; the meter reads a known test tone correctly. Then measure CPU before and
-   after on a large project.
-6. Guide sections for all of it. Then merge into the work branch, build the single file, hand it
-   over.
+- More starters: Lo-Fi, Hip-Hop, Cinematic. Starters are plain data, so each is one function in
+  `starters.ts`.
+- A "drop" builder: pick a section and get a matching build-up and drop.
 
 ## Small known issues
 
