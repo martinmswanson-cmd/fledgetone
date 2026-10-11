@@ -4,6 +4,8 @@
 
 Bo's Beatbox is a music maker that runs in your browser. You build a song on the **Arrangement Timeline** out of **tracks** (one instrument each) and **clips** (blocks of notes on a track), mix it, and export it as a WAV file.
 
+It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen. On a phone a notice says so once; you can continue, but the timeline is cramped, drag-and-drop editing and keyboard shortcuts don't work, and audio may stutter.
+
 1. Click **START AUDIO** in the top-right corner. Browsers only allow sound after you click something, so the button glows red until audio is running. Pressing Play also starts it.
 2. To hear an example, click **New** above the timeline and choose **Demo song**.
 3. Press **Space** (or the green Play button) to play, and Space again to pause.
