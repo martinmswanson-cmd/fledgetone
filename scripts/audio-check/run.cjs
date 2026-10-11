@@ -9,7 +9,8 @@
 // ({name: dataUrl}) and OUT=dir is set, each is written to dir/name.wav.
 // START=1 clicks START AUDIO first. APP_URL overrides http://localhost:5200/.
 // SAMPLES_DIR=dir serves instrument samples from local copies (dir/<nb folder>/<file>.mp3 and
-// dir/gm/<instrument>-mp3/<file>.mp3) instead of the network; files not found there are fetched.
+// dir/gm/<instrument>-mp3/<file>.mp3) instead of the network; files not found there are fetched
+// (gleitz.github.io via its raw.githubusercontent.com mirror, for networks that block the site).
 let playwright;
 try { playwright = require('playwright'); } catch { playwright = require('/opt/node22/lib/node_modules/playwright'); }
 const fs = require('fs');
@@ -21,18 +22,22 @@ const path = require('path');
   const browser = await playwright.chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const page = await browser.newPage();
   const samples = process.env.SAMPLES_DIR;
-  if (samples) {
-    await page.route(/gleitz\.github\.io|raw\.githubusercontent\.com/, (r) => {
-      const url = r.request().url();
-      let local = null;
-      let m = url.match(/FluidR3_GM\/(.+\.mp3)$/);
-      if (m) local = path.join(samples, 'gm', decodeURIComponent(m[1]));
-      m = url.match(/tonejs-instruments\/master\/samples\/(.+\.mp3)$/);
-      if (m) local = path.join(samples, decodeURIComponent(m[1]));
-      if (local && fs.existsSync(local)) return r.fulfill({ status: 200, contentType: 'audio/mpeg', body: fs.readFileSync(local), headers: { 'access-control-allow-origin': '*' } });
-      return r.continue();
-    });
-  }
+  await page.route(/gleitz\.github\.io|raw\.githubusercontent\.com/, async (r) => {
+    const url = r.request().url();
+    let local = null;
+    let m = url.match(/FluidR3_GM\/(.+\.mp3)$/);
+    if (m && samples) local = path.join(samples, 'gm', decodeURIComponent(m[1]));
+    m = url.match(/tonejs-instruments\/master\/samples\/(.+\.mp3)$/);
+    if (m && samples) local = path.join(samples, decodeURIComponent(m[1]));
+    if (local && fs.existsSync(local)) return r.fulfill({ status: 200, contentType: 'audio/mpeg', body: fs.readFileSync(local), headers: { 'access-control-allow-origin': '*' } });
+    // gleitz.github.io is the same files as the repository's gh-pages branch, which some networks reach when the site isn't
+    m = url.match(/^https:\/\/gleitz\.github\.io\/midi-js-soundfonts\/(.+)$/);
+    if (m) {
+      const response = await r.fetch({ url: `https://raw.githubusercontent.com/gleitz/midi-js-soundfonts/gh-pages/${m[1]}` });
+      return r.fulfill({ response, headers: { ...response.headers(), 'access-control-allow-origin': '*' } });
+    }
+    return r.continue();
+  });
   page.on('pageerror', (e) => console.log('[pageerror]', e.message));
   page.on('console', (m) => { if (m.type() === 'error') console.log('[page]', m.text().slice(0, 300)); });
   await page.goto(process.env.APP_URL || 'http://localhost:5200/', { waitUntil: 'networkidle' });
