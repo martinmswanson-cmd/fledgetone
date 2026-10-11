@@ -311,7 +311,7 @@ Tracks are stereo, so wide sounds keep their width all the way to the master: th
 Click **FX Rack** in the toolbar, or the sliders icon on a track header, to open the Inspector on the right. Click another track's header to switch to it. The **Track FX** tab, top to bottom:
 
 - **SOUND GENERATOR**: the track's instrument. Changing it renames and recolours the track but keeps its clips.
-- **DISTORTION**: Drive.
+- **DISTORTION**: Drive, from clean at 0% through overdrive to fuzz at 100%. It's a pedal-style overdrive: the lows are tightened, the top is rolled off the harder you drive, and the level stays about the same, so turning it up changes the tone rather than the volume.
 - **3-BAND PARAMETRIC EQ**: LOW (400 Hz), MID (1 kHz) and HIGH (2.5 kHz), each -24 to +12 dB. **Reset** flattens them.
 - **COMPRESSOR**: Threshold, Ratio and Makeup gain.
 - **CHORUS**: Rate, Depth and Mix.
