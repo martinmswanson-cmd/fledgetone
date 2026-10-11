@@ -84,45 +84,89 @@ export function createLightEq3(lowFrequency = 400, highFrequency = 2500): LightE
 }
 
 export interface LightDistortion extends LightInsert {
-  /** Set the amount (0-1). */
-  setAmount: (amount: number) => void;
+  /** Set the amount (0-1), gliding over `ramp` seconds (0 = at once). */
+  setAmount: (amount: number, ramp?: number) => void;
+}
+
+/** The drive an amount gives: 0 dB at 0 (clean), about 10 dB at 0.3, 32 dB at 1. */
+const driveOf = (amount: number) => Math.pow(10, amount * 1.6);
+
+/**
+ * How loud a soft-clipped signal comes out, against how loud it went in, at a typical level
+ * (a sine peaking at 0.3): the makeup gain that keeps the insert from changing the level.
+ */
+function driveMakeup(drive: number): number {
+  const a = 0.3;
+  let sum = 0;
+  const n = 256;
+  for (let i = 0; i < n; i++) {
+    const y = Math.tanh(drive * a * Math.sin((2 * Math.PI * i) / n));
+    sum += y * y;
+  }
+  return a / Math.SQRT2 / Math.sqrt(sum / n);
 }
 
 /**
- * Tone.Distortion at wet 1 (its curve, 2x oversampled) as a bare wave shaper. Tone's mixes the
- * shaped sound back in through a Tone.CrossFade, which keeps a constant source, a wave shaper and
- * a stereo panner running all the time just to hold its output gain at 1; and since that gain
- * starts at 0, a Distortion switched on while playing dropped the track out for a render block.
+ * A pedal-style overdrive, instead of Tone.Distortion's bare curve: that curve clipped hard at
+ * any level, with no tone shaping, so chords turned to buzz and everything came out fizzy and
+ * quiet. Here: the lows are tightened (so the bass doesn't turn to mud), the signal is driven
+ * into a smooth tanh clip (4x oversampled: no aliasing fizz), the top is rolled off more the
+ * harder it's driven (as a speaker does), and the level is made up so the insert is about as
+ * loud as what went in. Amount 0 is clean; the drive, tone and makeup glide, so turning the
+ * knob while playing is smooth (the curve itself never changes).
  */
 export function createLightDistortion(amount: number): LightDistortion {
   const input = new Tone.Gain(1);
   const output = new Tone.Gain(1);
   const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const tight = raw.createBiquadFilter();
+  tight.type = 'highpass';
+  tight.frequency.value = 90;
+  tight.Q.value = 0.7;
+  const drive = raw.createGain();
   const shaper = raw.createWaveShaper();
-  shaper.oversample = '2x';
-  let applied = Number.NaN;
-  const setAmount = (value: number) => {
+  shaper.oversample = '4x';
+  const curve = new Float32Array(4097);
+  for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh((i / (curve.length - 1)) * 2 - 1);
+  shaper.curve = curve;
+  const tone = raw.createBiquadFilter();
+  tone.type = 'lowpass';
+  tone.Q.value = 0.8;
+  const makeup = raw.createGain();
+  const settings = (value: number) => {
+    const d = driveOf(Math.max(0, Math.min(1, value)));
+    return { drive: d, tone: 8000 - 4500 * value, makeup: driveMakeup(d) };
+  };
+  const first = settings(amount);
+  drive.gain.value = first.drive;
+  tone.frequency.value = first.tone;
+  makeup.gain.value = first.makeup;
+  let applied = amount;
+  const setAmount = (value: number, ramp = 0.02) => {
     if (value === applied) return;
     applied = value;
-    // Tone.Distortion's curve, 1024 points (Tone.WaveShaper.setMap's default)
-    const k = value * 100;
-    const deg = Math.PI / 180;
-    const curve = new Float32Array(1024);
-    for (let i = 0; i < curve.length; i++) {
-      const x = (i / (curve.length - 1)) * 2 - 1;
-      curve[i] = Math.abs(x) < 0.001 ? 0 : ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+    const next = settings(value);
+    const now = raw.currentTime;
+    for (const [param, target] of [[drive.gain, next.drive], [tone.frequency, next.tone], [makeup.gain, next.makeup]] as const) {
+      param.cancelScheduledValues(now);
+      if (ramp > 0) {
+        param.setValueAtTime(param.value, now);
+        param.linearRampToValueAtTime(target, now + ramp);
+      } else param.setValueAtTime(target, now);
     }
-    shaper.curve = curve;
   };
-  setAmount(amount);
-  input.connect(shaper);
-  shaper.connect(output.input as unknown as AudioNode);
+  input.connect(tight);
+  tight.connect(drive);
+  drive.connect(shaper);
+  shaper.connect(tone);
+  tone.connect(makeup);
+  makeup.connect(output.input as unknown as AudioNode);
   return {
     input,
     output,
     setAmount,
     dispose: () => {
-      shaper.disconnect();
+      [tight, drive, shaper, tone, makeup].forEach((n) => n.disconnect());
       input.dispose();
       output.dispose();
     },

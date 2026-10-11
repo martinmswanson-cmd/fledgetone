@@ -157,13 +157,25 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     };
   }
   if (shape === 'amp') {
+    // Tighten the lows, even the level out (an amp's sustain), brighten before the clip so the
+    // harmonics land where a guitar's bite is, then the speaker: a bump in the lows, a scooped
+    // low-mid, presence, and a steep top
+    const tight = biquad('highpass', 80, 0.7);
+    const sustain = raw.createDynamicsCompressor();
+    sustain.threshold.value = -30;
+    sustain.knee.value = 12;
+    sustain.ratio.value = 3;
+    sustain.attack.value = 0.004;
+    sustain.release.value = 0.15;
     const pre = biquad('highshelf', 1200, 0.7, 9);
-    const drive = saturator(2);
-    const presence = biquad('peaking', 2800, 1, 4);
-    const cab = biquad('lowpass', 5500, 0.7);
+    const drive = saturator(3);
+    const thump = biquad('peaking', 120, 1, 3);
+    const scoop = biquad('peaking', 450, 1, -3);
+    const presence = biquad('peaking', 2600, 1.2, 4);
+    const cab = biquad('lowpass', 4800, 1.1);
     const trim = raw.createGain();
-    trim.gain.value = Tone.dbToGain(-4);
-    return chain([pre, drive, presence, cab, trim]);
+    trim.gain.value = Tone.dbToGain(-6);
+    return chain([tight, sustain, pre, drive, thump, scoop, presence, cab, trim]);
   }
   if (shape === 'acoustic') {
     const bright = biquad('highshelf', 1800, 0.7, 8);
