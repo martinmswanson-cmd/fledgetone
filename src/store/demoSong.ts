@@ -74,9 +74,9 @@ export const INITIAL_TRACKS: Track[] = [
 ];
 
 /** [step, note(s), velocity, duration] */
-type Step = [step: number, notes: string | string[], velocity: number, duration?: string];
+export type Step = [step: number, notes: string | string[], velocity: number, duration?: string];
 
-function toNotes(steps: Step[]): NoteEvent[] {
+export function toNotes(steps: Step[]): NoteEvent[] {
   return steps.flatMap(([step, notes, velocity, duration = '16n']) =>
     (Array.isArray(notes) ? notes : [notes]).map((note) => ({
       id: uid('note'),
@@ -89,7 +89,7 @@ function toNotes(steps: Step[]): NoteEvent[] {
 }
 
 /** Repeat a one-bar step list across `bars` bars. */
-function everyBar(bars: number, bar: (b: number) => Step[]): Step[] {
+export function everyBar(bars: number, bar: (b: number) => Step[]): Step[] {
   return Array.from({ length: bars }, (_, b) => bar(b).map(([s, n, v, d]): Step => [s + b * 16, n, v, d])).flat();
 }
 
@@ -166,44 +166,44 @@ const HORN_HOOK: Step[] = [
 
 // ---------- EDM (F minor) ----------
 
-const WOBBLE_RIFF: Step[] = [
+export const WOBBLE_RIFF: Step[] = [
   [0, 'F1', 0.95, '4n.'], [6, 'F1', 0.8, '8n'], [8, 'G#1', 0.9, '4n'], [12, 'F1', 0.8, '8n'], [14, 'D#1', 0.85, '8n'],
   [16, 'F1', 0.95, '2n'], [24, 'C2', 0.9, '4n'], [28, 'A#1', 0.85, '8n'], [30, 'G#1', 0.85, '8n'],
 ];
 
-const GROWL_RIFF: Step[] = [
+export const GROWL_RIFF: Step[] = [
   [0, 'F1', 0.95, '8n'], [3, 'F1', 0.8], [4, 'F1', 0.9, '8n.'], [8, 'G#1', 0.9, '8n'], [10, 'F1', 0.85, '8n'], [12, 'C2', 0.9, '4n'],
   [16, 'F1', 0.95, '4n'], [20, 'F1', 0.8], [22, 'D#1', 0.85, '8n'], [24, 'F1', 0.95, '4n.'], [30, 'G#1', 0.85, '8n'],
 ];
 
 // Notes held a 16th into the next one slide into it (legato glide)
-const REESE_LINE: Step[] = [
+export const REESE_LINE: Step[] = [
   [0, 'F1', 0.9, '1:0:1'], [16, 'G#1', 0.85, '2n'], [24, 'G1', 0.85, '2n'],
   [32, 'D#1', 0.9, '1:0:1'], [48, 'F1', 0.9, '1n'],
 ];
 
 // vi - IV - I - V in A flat (Fm - Db - Ab - Eb), a bar each
-const TRANCE_CHORDS: Step[] = [
+export const TRANCE_CHORDS: Step[] = [
   [0, ['F3', 'G#3', 'C4', 'F4', 'G#4'], 0.8, '1n'],
   [16, ['C#3', 'F3', 'G#3', 'C#4', 'F4'], 0.8, '1n'],
   [32, ['D#3', 'G#3', 'C4', 'D#4', 'G#4'], 0.8, '1n'],
   [48, ['D#3', 'G3', 'A#3', 'D#4', 'G4'], 0.8, '1n'],
 ];
 
-const PLUCK_ARP: Step[] = everyBar(2, (b) =>
+export const PLUCK_ARP: Step[] = everyBar(2, (b) =>
   (b === 0 ? ['F4', 'G#4', 'C5', 'G#4'] : ['C#4', 'F4', 'G#4', 'F4']).flatMap((note, i): Step[] => [
     [i * 4, note, 0.9],
     [i * 4 + 2, note === 'F4' || note === 'C#4' ? 'C5' : 'F5', 0.65],
   ])
 );
 
-const BUILD_UP: Step[] = [
+export const BUILD_UP: Step[] = [
   [0, FX_NOTES.riser, 0.85, '4:0:0'],
   [0, FX_NOTES.noiseSweep, 0.7, '4:0:0'],
   [48, FX_NOTES.reverseCrash, 0.85, '1n'],
 ];
 
-const DROP_HIT: Step[] = [
+export const DROP_HIT: Step[] = [
   [0, FX_NOTES.impact, 0.95],
   [0, FX_NOTES.subDrop, 0.9, '1n'],
   [16, FX_NOTES.downlifter, 0.7, '1n'],

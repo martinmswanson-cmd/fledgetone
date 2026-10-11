@@ -8,6 +8,8 @@ import { embedSounds } from '../../audio/soundLibrary';
 import { downloadBlob } from '../../audio/exportWav';
 import { ExportDialog } from './ExportDialog';
 import { Modal } from './Modal';
+import { STARTERS } from '../../store/starters';
+import type { StarterId } from '../../store/starters';
 
 const barButton =
   'h-8 px-2.5 flex items-center gap-1.5 rounded-md border border-forge-border bg-forge-bg text-xs font-mono text-forge-muted hover:text-forge-text hover:border-forge-borderLight transition-colors';
@@ -32,7 +34,7 @@ export const ChoiceButton: React.FC<{ title: string; detail: string; onClick: ()
 );
 
 const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const choose = (template: 'blank' | 'demo') => {
+  const choose = (template: 'blank' | 'demo' | StarterId) => {
     useTimelineStore.getState().newProject(template);
     onClose();
   };
@@ -49,6 +51,10 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         autoFocus
       />
       <ChoiceButton title="Demo song" detail="Sunset Stroll: a 12-bar neo-soul groove at 88 BPM (intro, groove, horn hook)." onClick={() => choose('demo')} />
+      <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Genre starters: 16 bars, sections marked, the master set up</h4>
+      {STARTERS.map((s) => (
+        <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} />
+      ))}
     </Modal>
   );
 };
