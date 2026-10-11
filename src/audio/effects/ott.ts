@@ -42,9 +42,10 @@ export interface OttKernel {
  * Crossovers are Linkwitz-Riley 4th order (two Butterworth biquads in series), which sum back
  * to a flat response. Each band's level is followed by a peak detector with the band's attack
  * and release, linked across the two channels, and turned into a gain: above the downward
- * threshold the band is reduced at 4:1; below the upward threshold it is raised at 4:1, by at
- * most 24 dB (so silence stays silent and the noise floor isn't lifted without end). Depth scales
- * that gain in dB. The low band reacts slower than the mid and the high faster, as the classic
+ * threshold the band is reduced at 4:1; below the upward threshold it is raised at 4:1; a fixed
+ * makeup brings a band at -10 dB back to where it went in, and the total lift is at most 24 dB
+ * (so silence stays silent and the noise floor isn't lifted without end). Depth scales that gain
+ * in dB. The low band reacts slower than the mid and the high faster, as the classic
  * presets do, so the sub doesn't pump on every cycle while the highs stay snappy.
  */
 export function createOttKernel(sampleRate: number): OttKernel {
@@ -55,10 +56,17 @@ export function createOttKernel(sampleRate: number): OttKernel {
   const UP_THRESHOLD_DB = -30;
   const UP_RATIO = 4;
   const MAX_UP_DB = 24;
+  /**
+   * Makeup: a band at this level comes out where it went in. Without it the downward part turns
+   * a mixed-loud master down, the limiter after it stops working and the peaks come back: a
+   * quieter, spikier mix, the opposite of an OTT.
+   */
+  const MAKEUP_REF_DB = -10;
   /** Attack from 1 to 50 ms and release from 10 to 500 ms as Time goes 0 to 1, times each band's factor. */
   const BAND_TIME = [1.6, 1, 0.6];
   const DOWN_SLOPE = 1 - 1 / DOWN_RATIO;
   const UP_SLOPE = 1 - 1 / UP_RATIO;
+  const MAKEUP_DB = (MAKEUP_REF_DB - DOWN_THRESHOLD_DB) * DOWN_SLOPE;
   const DB_PER_NEPER = 20 / Math.LN10;
   const NEPER_PER_DB = Math.LN10 / 20;
 
@@ -98,6 +106,13 @@ export function createOttKernel(sampleRate: number): OttKernel {
   /** Each band's followed level (linear) and the gain it last applied (dB). */
   const envelope = new Float64Array(3);
   const gainsDb = new Float64Array(3);
+  /**
+   * Samples of each band's first sound still to take in at once. Over its first 10 ms the level
+   * follows the peaks instantly: starting from silence, the upward part would lift the first
+   * moments by the full 24 dB, a burst every time the OTT is switched on while the song plays.
+   */
+  const PRIME_SAMPLES = Math.round(0.01 * sampleRate);
+  const priming = new Int32Array(3).fill(-1);
 
   const times = (time: number) => {
     const t = Math.max(0, Math.min(1, time));
@@ -145,14 +160,19 @@ export function createOttKernel(sampleRate: number): OttKernel {
         const right = bands[b + 3];
         // Linked peak detector: the louder side drives both
         const peak = Math.max(Math.abs(left), Math.abs(right));
+        if (priming[b] < 0 && peak > 1e-5) priming[b] = PRIME_SAMPLES;
         const env = envelope[b];
-        const next = peak > env ? attack[b] * env + (1 - attack[b]) * peak : release[b] * env + (1 - release[b]) * peak;
+        let next: number;
+        if (priming[b] > 0) {
+          priming[b]--;
+          next = Math.max(env, peak);
+        } else next = peak > env ? attack[b] * env + (1 - attack[b]) * peak : release[b] * env + (1 - release[b]) * peak;
         envelope[b] = next;
         const levelDb = Math.log(next + 1e-12) * DB_PER_NEPER;
-        let gainDb = 0;
-        if (levelDb > DOWN_THRESHOLD_DB) gainDb = -(levelDb - DOWN_THRESHOLD_DB) * DOWN_SLOPE;
-        else if (levelDb < UP_THRESHOLD_DB) gainDb = Math.min(MAX_UP_DB, (UP_THRESHOLD_DB - levelDb) * UP_SLOPE);
-        gainDb *= depth;
+        let gainDb = MAKEUP_DB;
+        if (levelDb > DOWN_THRESHOLD_DB) gainDb -= (levelDb - DOWN_THRESHOLD_DB) * DOWN_SLOPE;
+        else if (levelDb < UP_THRESHOLD_DB) gainDb += (UP_THRESHOLD_DB - levelDb) * UP_SLOPE;
+        gainDb = Math.min(MAX_UP_DB, gainDb) * depth;
         gainsDb[b] = gainDb;
         const gain = Math.exp(gainDb * NEPER_PER_DB);
         l += left * gain;

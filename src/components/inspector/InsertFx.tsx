@@ -32,7 +32,7 @@ interface SliderProps {
   automated?: React.ReactNode;
 }
 
-const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled, automated }) => (
+export const FxSlider: React.FC<SliderProps> = ({ label, value, min, max, step, format, onChange, reset, accent, disabled, automated }) => (
   <label className={`flex items-center gap-2 text-[10px] font-mono ${disabled ? 'opacity-45' : ''}`} title={automated ? AUTOMATED_TIP : undefined}>
     <span className="w-16 text-forge-muted uppercase">{label}</span>
     <UndoableRange
@@ -101,7 +101,7 @@ interface PanelProps {
 }
 
 /** One insert effect: header with a bypass switch, then its controls (dimmed when bypassed). */
-const InsertPanel: React.FC<PanelProps> = ({ title, icon, on, onToggle, accent, children }) => (
+export const InsertPanel: React.FC<PanelProps> = ({ title, icon, on, onToggle, accent, children }) => (
   <div
     className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border shadow-md transition-colors"
     style={{ borderColor: on ? `${accent}66` : undefined }}
