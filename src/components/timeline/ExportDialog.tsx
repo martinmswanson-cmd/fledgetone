@@ -13,8 +13,12 @@ import {
   renderStems,
   ringOutSeconds,
   SAMPLE_RATES,
+  channelsOf,
+  scaleAudio,
   stemTracks,
 } from '../../audio/exportWav';
+import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb, NORMALIZE_CEILING_DBTP, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
+import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
 import { barToSeconds, formatSmpte } from '../../audio/transport';
@@ -33,9 +37,11 @@ interface ExportSettings {
   bitDepth: BitDepth;
   /** Stems only: leave out the master compressor and limiter so the stems add up to the mix. */
   bypassMaster: boolean;
+  /** Mixdown only: turn the file up or down to the loudness streaming services play at. */
+  normalize: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true, normalize: false };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -56,6 +62,7 @@ function loadSettings(): ExportSettings {
       sampleRate: oneOf(r.sampleRate, SAMPLE_RATES, d.sampleRate),
       bitDepth: oneOf(r.bitDepth, BIT_DEPTHS, d.bitDepth),
       bypassMaster: typeof r.bypassMaster === 'boolean' ? r.bypassMaster : d.bypassMaster,
+      normalize: typeof r.normalize === 'boolean' ? r.normalize : d.normalize,
     };
   } catch {
     return d;
@@ -156,6 +163,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const delayTime = useTimelineStore((s) => s.masterDelayTime);
   const delayFeedback = useTimelineStore((s) => s.masterDelayFeedback);
   const markers = useTimelineStore((s) => s.markers);
+  const master = useTimelineStore((s) => s.master);
   const [settings, setSettings] = useState(loadSettings);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const abortRef = useRef<AbortController | null>(null);
@@ -181,6 +189,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     startBar: range === 'song' ? 1 : loop.inBar,
     endBar: range === 'song' ? songEnd : loop.outBar,
     masterFx,
+    master,
     ending,
     sampleRate: settings.sampleRate,
     markers,
@@ -210,6 +219,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       clips: s.clips,
       swing: s.swing,
       markers: s.markers,
+      master: s.master,
       bypassMaster: stemsOnly && settings.bypassMaster,
       signal: controller.signal,
     };
@@ -226,7 +236,17 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       } else {
         const audio = await renderArrangement(opts, (progress) => setStatus({ kind: 'rendering', fileName, progress, detail: '' }));
         controller.signal.throwIfAborted();
+        setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Measuring loudness' });
+        let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
+        let note = '';
+        if (settings.normalize) {
+          const { gainDb, limited } = normalizeGainDb(reading);
+          if (gainDb !== 0) scaleAudio(audio, gainDb);
+          reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
+          note = limited ? `. That's ${(NORMALIZE_TARGET_LUFS - reading.integrated).toFixed(1)} dB under the target, so peaks stay under ${NORMALIZE_CEILING_DBTP} dBTP. To get louder, turn on the master OTT and raise its Out gain` : '';
+        }
         downloadBlob(encodeWav(audio, settings.bitDepth, exportCues(opts)), fileName);
+        showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}`);
       }
       onClose();
     } catch (err) {
@@ -337,7 +357,20 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             </label>
           </>
         ) : (
-          <p>One stereo WAV of everything that plays.</p>
+          <>
+            <p>One stereo WAV of everything that plays. When it's done, its loudness and true peak show at the bottom of the screen.</p>
+            <label className="flex items-start gap-2 cursor-pointer text-forge-text">
+              <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
+              <span>
+                Normalize to {NORMALIZE_TARGET_LUFS} LUFS
+                <span className="block text-forge-muted">
+                  {settings.normalize
+                    ? `Turns the whole file up or down to the loudness Spotify, YouTube and Apple Music play at, so it won't be turned down or sound quiet next to other tracks. Never pushes peaks over ${NORMALIZE_CEILING_DBTP} dBTP.`
+                    : 'The file keeps the level of the mix.'}
+                </span>
+              </span>
+            </label>
+          </>
         )}
       </Section>
 

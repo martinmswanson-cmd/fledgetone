@@ -6,6 +6,7 @@ import boLogo from '../assets/bo.svg';
 import { GuidePanel } from './guide/GuidePanel';
 import { FitTempoPopover, TempoField } from './TempoControls';
 import { shouldIgnoreShortcut } from './keyboard';
+import { LoudnessBadge } from './LoudnessBadge';
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
@@ -148,6 +149,8 @@ export const Header: React.FC = () => {
             />
           </div>
         </div>
+
+        {isRunning && <LoudnessBadge />}
 
         <button
           type="button"

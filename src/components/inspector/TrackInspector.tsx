@@ -20,6 +20,7 @@ import { DistortionPanel, DynamicsAndChorusPanels, FilterAndPumpPanels } from '.
 import { SampleLoader } from './SampleLoader';
 import { SlicerPanel } from './SlicerPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
+import { MasterPanels } from './MasterPanels';
 import { INSTRUMENTS, instrumentsByCategory, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
@@ -149,7 +150,7 @@ export const TrackInspector: React.FC = () => {
           }`}
         >
           <Radio className="w-3.5 h-3.5" />
-          Master Aux Bus
+          Master
         </button>
       </div>
 
@@ -487,6 +488,7 @@ export const TrackInspector: React.FC = () => {
         ) : (
           /* Master Bus Effects Return Controls */
           <div className="flex flex-col gap-4">
+            <MasterPanels />
             {/* Master Reverb Unit */}
             <div className="flex flex-col gap-2.5 bg-forge-bg p-3 rounded-lg border border-forge-border shadow-md">
               <div className="flex items-center justify-between border-b border-forge-border pb-2">
