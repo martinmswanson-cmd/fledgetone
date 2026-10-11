@@ -54,6 +54,12 @@ export interface SampleSource {
   samples: Record<string, string>;
   /** Seconds a note rings on after release */
   release?: number;
+  /**
+   * Recordings that start slowly (a bow settling onto the string over up to half a second) are
+   * trimmed when loaded to where they first reach this many dB under their peak, so short notes
+   * speak at once instead of sounding far away.
+   */
+  onset?: number;
 }
 
 export interface InstrumentDef {
@@ -71,6 +77,12 @@ export interface InstrumentDef {
   shaping?: Shaping;
   /** Level correction in dB so instruments start out at similar loudness (measured) */
   gain?: number;
+  /**
+   * Notes above the first MIDI number play quieter by the second number of dB per octave above
+   * it: a violin's or erhu's top octave sits where the ear is most sensitive and pierces at the
+   * same level that suits its middle.
+   */
+  taper?: [fromMidi: number, dbPerOctave: number];
   /** Its notes wobble at their clip's wobble rate (Clip.wobble), chosen in the piano roll */
   wobble?: boolean;
   /**
@@ -123,10 +135,10 @@ function gm(instrument: string, lo: number, hi: number, step = 3, release = 1): 
 }
 
 /** nbrosowsky/tonejs-instruments set: listed files ("As3" = A#3). */
-function nb(folder: string, files: string[], release = 1): SampleSource {
+function nb(folder: string, files: string[], release = 1, onset?: number): SampleSource {
   const samples: Record<string, string> = {};
   for (const f of files) samples[f.replace('s', '#')] = `${f}.mp3`;
-  return { baseUrl: `https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/${folder}/`, samples, release };
+  return { baseUrl: `https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/${folder}/`, samples, release, onset };
 }
 
 /**
@@ -134,7 +146,7 @@ function nb(folder: string, files: string[], release = 1): SampleSource {
  * bowing, an amp for the electric guitar's dull direct recording, a brighter acoustic guitar, the
  * mandolin's doubled strings. See samplerManager.ts.
  */
-export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin';
+export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin' | 'violin' | 'cello';
 
 /** The solo violin set, every file it has (so no note is stretched more than a few semitones). */
 const VIOLIN_FILES = ['A3', 'C4', 'E4', 'G4', 'A4', 'C5', 'E5', 'G5', 'A5', 'C6', 'E6', 'G6', 'A6', 'C7'];
@@ -199,11 +211,11 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   violin: {
     key: 'violin', name: 'Violin', blurb: 'Solo violin (recorded)', color: '#f87171', category: 'Guitars & Strings', kind: 'sampled', range: [55, 96],
-    samples: nb('violin', VIOLIN_FILES),
+    samples: nb('violin', VIOLIN_FILES, 1, -10), shaping: 'violin', gain: 2, taper: [76, 10],
   },
   cello: {
     key: 'cello', name: 'Cello', blurb: 'Solo cello (recorded)', color: '#ea580c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 72],
-    samples: nb('cello', ['C2', 'D2', 'E2', 'F2', 'G2', 'A2', 'B2', 'Cs3', 'Ds3', 'F3', 'G3', 'A3', 'B3', 'Cs4', 'Ds4', 'F4', 'G4', 'A4', 'C5']),
+    samples: nb('cello', ['C2', 'D2', 'E2', 'F2', 'G2', 'A2', 'B2', 'Cs3', 'Ds3', 'F3', 'G3', 'A3', 'B3', 'Cs4', 'Ds4', 'F4', 'G4', 'A4', 'C5'], 1, -10), shaping: 'cello', gain: 0,
   },
 
   // Winds & Brass
@@ -232,7 +244,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   // World
   erhu: {
     key: 'erhu', name: 'Erhu', blurb: 'Bowed strings, nasal tone, wide vibrato', color: '#be123c', category: 'World', kind: 'sampled', range: [62, 93],
-    samples: nb('violin', VIOLIN_FILES, 0.5), shaping: 'erhu', gain: 0,
+    samples: nb('violin', VIOLIN_FILES, 0.5, -10), shaping: 'erhu', gain: 0, taper: [79, 5],
   },
 
   // FX

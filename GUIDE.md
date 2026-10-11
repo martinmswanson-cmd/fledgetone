@@ -525,7 +525,7 @@ The synths and drum kits are generated in your browser. The recorded instruments
 | Taiko Drums, Electric Piano, Pipe Organ, Marimba, Chimes, Mandolin | FluidR3 GM SoundFont by Frank Wen, rendered by Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 
 - The guitar, bass, saxophone, strings, harp, flute and brass samples were collected and edited (trimmed, volume-matched, cleaned up and tuned) by Nicholaus Brosowsky for [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments). Its samples are released under CC BY 3.0.
-- The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app.
+- The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app. The Violin and Cello recordings, which are dark and sit back in a hall, are levelled, brightened and given their upper harmonics in the app, and the Violin's and Erhu's top octave plays quieter so it doesn't pierce.
 - Bo's Beatbox loads these samples straight from the projects above; it doesn't copy or change the files.
 
 ### Software
