@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { SoundAuditionPanel } from './components/SoundAuditionPanel';
 import { InstrumentBrowser } from './components/InstrumentBrowser';
 import { Timeline } from './components/timeline/Timeline';
+import { ProjectDrop } from './components/ProjectDrop';
 import { Cpu, Sparkles } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -10,6 +11,7 @@ export const App: React.FC = () => {
     <div className="min-h-screen bg-forge-bg text-forge-text flex flex-col font-sans selection:bg-cyan-500/30">
       {/* Top DAW Header */}
       <Header />
+      <ProjectDrop />
 
       {/* Main Workstation Canvas */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
