@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import { createLightChorus } from '../effects/lightFx';
 import { INSTRUMENTS } from '../instrumentCatalog';
-import type { InstrumentKey } from '../instrumentCatalog';
+import type { InstrumentKey, Shaping } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
 import { decodeSound } from '../soundLibrary';
 import { useAudioStore } from '../../store/audioStore';
@@ -81,17 +81,97 @@ export interface SamplerVoice {
   dispose: () => void;
 }
 
+/** Where a sampler's notes go: the shaping's input, its nodes to dispose, and a hook for each note's start. */
+interface ShapingChain {
+  input: Tone.InputNode;
+  nodes: { dispose: () => void }[];
+  /** A note starts at `time` (audio clock): the erhu's vibrato swells in from there. */
+  onNote?: (time: number) => void;
+}
+
+/** A soft clipper: `drive` times the input through tanh, scaled back so full scale stays full scale. */
+function saturator(drive: number): WaveShaperNode {
+  const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  const shaper = raw.createWaveShaper();
+  const curve = new Float32Array(2049);
+  const norm = Math.tanh(drive);
+  for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(drive * ((i / (curve.length - 1)) * 2 - 1)) / norm;
+  shaper.curve = curve;
+  shaper.oversample = '2x';
+  return shaper;
+}
+
+/** The erhu's vibrato: how far the delay swings, in seconds, once a note has settled (about ±20 cents at 5.5 Hz). */
+const ERHU_VIBRATO = 0.00035;
+
 /**
- * Character processing that turns a related recording into the instrument: the erhu's nasal
- * bowed tone with its wide expressive vibrato, the mandolin's doubled (paired) strings.
+ * Character processing that turns a recording into the instrument.
+ * - erhu: a solo violin through a nasal formant and a dark top (the snakeskin resonator), with a
+ *   wide vibrato that swells in over the first half second of each note, as a player's does.
+ * - amp: the electric guitar's recordings are a dull direct signal with almost nothing above
+ *   2 kHz. An amp stage brightens it before a soft clip (which adds the upper harmonics a real
+ *   amp does), then a speaker-like presence peak and top roll-off.
+ * - acoustic: the steel-string recordings are dark too; brightened with a little edge.
+ * - mandolin: doubled (paired) strings and a bright top.
  */
-function shapingChain(shape: 'erhu' | 'mandolin' | undefined, output: Tone.InputNode): { input: Tone.InputNode; nodes: { dispose: () => void }[] } {
+function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): ShapingChain {
+  const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  const biquad = (type: BiquadFilterType, frequency: number, Q: number, gain = 0) => {
+    const f = raw.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = frequency;
+    f.Q.value = Q;
+    f.gain.value = gain;
+    return f;
+  };
+  const chain = (nodes: AudioNode[]) => {
+    for (let i = 0; i + 1 < nodes.length; i++) nodes[i].connect(nodes[i + 1]);
+    Tone.connect(nodes[nodes.length - 1], output);
+    return { input: nodes[0], nodes: nodes.map((n) => ({ dispose: () => n.disconnect() })) };
+  };
   if (shape === 'erhu') {
-    const vibrato = new Tone.Vibrato({ frequency: 5.8, depth: 0.18 });
-    const nasal = new Tone.BiquadFilter({ type: 'peaking', frequency: 1400, Q: 2.2, gain: 7 });
-    const thin = new Tone.BiquadFilter({ type: 'highpass', frequency: 280 });
-    vibrato.chain(nasal, thin, output);
-    return { input: vibrato, nodes: [vibrato, nasal, thin] };
+    // Vibrato: a sine wobbles the delay line's time around 2.5 ms; `depth` is how far it swings
+    const delay = raw.createDelay(0.01);
+    delay.delayTime.value = 0.0025;
+    const lfo = raw.createOscillator();
+    lfo.frequency.value = 5.5;
+    const depth = raw.createGain();
+    depth.gain.value = ERHU_VIBRATO;
+    lfo.connect(depth);
+    depth.connect(delay.delayTime);
+    lfo.start();
+    const thin = biquad('highpass', 240, 0.7);
+    const nasal = biquad('peaking', 1200, 1.6, 5);
+    const edge = biquad('peaking', 3000, 2, 2);
+    const dark = biquad('lowpass', 6500, 0.7);
+    const built = chain([delay, thin, nasal, edge, dark]);
+    built.nodes.push({ dispose: () => { lfo.stop(); lfo.disconnect(); depth.disconnect(); } });
+    return {
+      ...built,
+      onNote: (time) => {
+        const at = Math.max(time, raw.currentTime);
+        depth.gain.cancelScheduledValues(at);
+        depth.gain.setValueAtTime(ERHU_VIBRATO * 0.2, at);
+        depth.gain.linearRampToValueAtTime(ERHU_VIBRATO, at + 0.45);
+      },
+    };
+  }
+  if (shape === 'amp') {
+    const pre = biquad('highshelf', 1200, 0.7, 9);
+    const drive = saturator(2);
+    const presence = biquad('peaking', 2800, 1, 4);
+    const cab = biquad('lowpass', 5500, 0.7);
+    const trim = raw.createGain();
+    trim.gain.value = Tone.dbToGain(-4);
+    return chain([pre, drive, presence, cab, trim]);
+  }
+  if (shape === 'acoustic') {
+    const bright = biquad('highshelf', 1800, 0.7, 8);
+    const sparkle = biquad('peaking', 3200, 1.2, 3);
+    const edge = saturator(1.3);
+    const trim = raw.createGain();
+    trim.gain.value = Tone.dbToGain(-2);
+    return chain([bright, sparkle, edge, trim]);
   }
   if (shape === 'mandolin') {
     const courses = createLightChorus({ rate: 5, delayMs: 1.8, depth: 0.35, spread: 160, wet: 0.55 });
@@ -102,7 +182,7 @@ function shapingChain(shape: 'erhu' | 'mandolin' | undefined, output: Tone.Input
   return { input: output, nodes: [] };
 }
 
-function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dispose: () => void }[]): SamplerVoice {
+function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dispose: () => void }[], onNote?: (time: number) => void): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
     loaded = true;
@@ -111,10 +191,14 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
   return {
     play: (notes, duration, time, velocity) => {
       if (!loaded || notes.length === 0) return; // still downloading: skip rather than throw
-      sampler.triggerAttackRelease(notes, duration, time ?? Tone.now(), velocity);
+      const at = time ?? Tone.now();
+      onNote?.(at);
+      sampler.triggerAttackRelease(notes, duration, at, velocity);
     },
     attack: (note, time, velocity) => {
-      if (loaded) sampler.triggerAttack(note, time, velocity);
+      if (!loaded) return;
+      onNote?.(time);
+      sampler.triggerAttack(note, time, velocity);
     },
     release: (note, time) => {
       if (loaded) sampler.triggerRelease(note, time);
@@ -132,11 +216,12 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
 export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode): SamplerVoice {
   const def = INSTRUMENTS[key];
   const chain = shapingChain(def.shaping, output);
-  const sampler = new Tone.Sampler({ release: def.samples?.release ?? 1 }).connect(chain.input);
+  // A few ms of attack: a recording stretched to another pitch doesn't always start at zero
+  const sampler = new Tone.Sampler({ attack: 0.004, release: def.samples?.release ?? 1 }).connect(chain.input);
   const attach = loadSamples(key).then((set) => {
     for (const [note, buffer] of Object.entries(set)) sampler.add(note as Tone.Unit.Note, buffer);
   });
-  return samplerVoice(sampler, attach, chain.nodes);
+  return samplerVoice(sampler, attach, chain.nodes, chain.onNote);
 }
 
 /**

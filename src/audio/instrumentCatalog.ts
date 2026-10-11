@@ -68,7 +68,7 @@ export interface InstrumentDef {
   range: [number, number];
   samples?: SampleSource;
   /** Extra processing that turns a related recording into this instrument */
-  shaping?: 'erhu' | 'mandolin';
+  shaping?: Shaping;
   /** Level correction in dB so instruments start out at similar loudness (measured) */
   gain?: number;
   /** Its notes wobble at their clip's wobble rate (Clip.wobble), chosen in the piano roll */
@@ -129,6 +129,16 @@ function nb(folder: string, files: string[], release = 1): SampleSource {
   return { baseUrl: `https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/${folder}/`, samples, release };
 }
 
+/**
+ * Extra processing that turns a recording into the instrument: the erhu's nasal, vibrato-laden
+ * bowing, an amp for the electric guitar's dull direct recording, a brighter acoustic guitar, the
+ * mandolin's doubled strings. See samplerManager.ts.
+ */
+export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin';
+
+/** The solo violin set, every file it has (so no note is stretched more than a few semitones). */
+const VIOLIN_FILES = ['A3', 'C4', 'E4', 'G4', 'A4', 'C5', 'E5', 'G5', 'A5', 'C6', 'E6', 'G6', 'A6', 'C7'];
+
 // ---------- the catalog ----------
 
 export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
@@ -173,11 +183,11 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   // Guitars & Strings
   guitar: {
     key: 'guitar', name: 'Acoustic Guitar', blurb: 'Steel-string (recorded)', color: '#b45309', category: 'Guitars & Strings', kind: 'sampled', range: [40, 76],
-    samples: nb('guitar-acoustic', ['E2', 'A2', 'D3', 'G3', 'B3', 'E4']),
+    samples: nb('guitar-acoustic', ['D2', 'E2', 'Fs2', 'Gs2', 'As2', 'C3', 'D3', 'E3', 'Fs3', 'Gs3', 'As3', 'C4', 'D4', 'E4', 'Fs4', 'Gs4', 'As4', 'C5', 'D5']), shaping: 'acoustic',
   },
   electricGuitar: {
     key: 'electricGuitar', name: 'Electric Guitar', blurb: 'Clean electric (recorded)', color: '#dc2626', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: nb('guitar-electric', ['E2', 'Fs2', 'A2', 'C3', 'Ds3', 'Fs3', 'A3', 'C4', 'Ds4', 'Fs4', 'A4', 'C5', 'Ds5', 'Fs5', 'A5']),
+    samples: nb('guitar-electric', ['Cs2', 'E2', 'Fs2', 'A2', 'C3', 'Ds3', 'Fs3', 'A3', 'C4', 'Ds4', 'Fs4', 'A4', 'C5', 'Ds5', 'Fs5', 'A5', 'C6']), shaping: 'amp',
   },
   mandolin: {
     key: 'mandolin', name: 'Mandolin', blurb: 'Modeled: bright steel strings, doubled', color: '#ca8a04', category: 'Guitars & Strings', kind: 'sampled', range: [55, 88],
@@ -185,22 +195,22 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   harp: {
     key: 'harp', name: 'Harp', blurb: 'Concert harp (recorded)', color: '#fde68a', category: 'Guitars & Strings', kind: 'sampled', range: [24, 100],
-    samples: nb('harp', ['E1', 'G1', 'D2', 'F2', 'A2', 'C3', 'E3', 'G3', 'B3', 'D4', 'F4', 'A4', 'C5', 'E5', 'G5', 'B5', 'D6', 'F6', 'D7'], 1.5),
+    samples: nb('harp', ['E1', 'G1', 'B1', 'D2', 'F2', 'A2', 'C3', 'E3', 'G3', 'B3', 'D4', 'F4', 'A4', 'C5', 'E5', 'G5', 'B5', 'D6', 'F6', 'A6', 'B6', 'D7', 'F7'], 1.5),
   },
   violin: {
     key: 'violin', name: 'Violin', blurb: 'Solo violin (recorded)', color: '#f87171', category: 'Guitars & Strings', kind: 'sampled', range: [55, 96],
-    samples: nb('violin', ['A3', 'G4', 'C5', 'G6']),
+    samples: nb('violin', VIOLIN_FILES),
   },
   cello: {
     key: 'cello', name: 'Cello', blurb: 'Solo cello (recorded)', color: '#ea580c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 72],
-    samples: nb('cello', ['C2', 'G2', 'D3', 'A3', 'C4']),
+    samples: nb('cello', ['C2', 'D2', 'E2', 'F2', 'G2', 'A2', 'B2', 'Cs3', 'Ds3', 'F3', 'G3', 'A3', 'B3', 'Cs4', 'Ds4', 'F4', 'G4', 'A4', 'C5']),
   },
 
   // Winds & Brass
   brass: { key: 'brass', name: 'Brass Stabs', blurb: 'Synth horn section', color: '#22c55e', category: 'Winds & Brass', kind: 'synth', range: [48, 84] },
   saxophone: {
     key: 'saxophone', name: 'Saxophone', blurb: 'Alto sax (recorded)', color: '#eab308', category: 'Winds & Brass', kind: 'sampled', range: [49, 80],
-    samples: nb('saxophone', ['Cs3', 'E3', 'G3', 'As3', 'Cs4', 'E4', 'G4', 'As4', 'Cs5', 'E5', 'G5'], 0.5),
+    samples: nb('saxophone', ['Cs3', 'Ds3', 'F3', 'G3', 'As3', 'C4', 'D4', 'E4', 'Fs4', 'Gs4', 'As4', 'C5', 'D5', 'E5', 'Fs5', 'Gs5'], 0.5),
   },
   trumpet: {
     key: 'trumpet', name: 'Trumpet', blurb: 'Solo trumpet (recorded)', color: '#f97316', category: 'Winds & Brass', kind: 'sampled', range: [52, 84],
@@ -221,8 +231,8 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
 
   // World
   erhu: {
-    key: 'erhu', name: 'Erhu', blurb: 'Modeled: bowed strings, nasal tone + vibrato', color: '#be123c', category: 'World', kind: 'sampled', range: [62, 93],
-    samples: gm('violin', 60, 96, 3, 0.5), shaping: 'erhu', gain: 17,
+    key: 'erhu', name: 'Erhu', blurb: 'Bowed strings, nasal tone, wide vibrato', color: '#be123c', category: 'World', kind: 'sampled', range: [62, 93],
+    samples: nb('violin', VIOLIN_FILES, 0.5), shaping: 'erhu', gain: 0,
   },
 
   // FX
