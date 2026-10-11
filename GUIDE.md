@@ -518,12 +518,12 @@ The synths and drum kits are generated in your browser. The recorded instruments
 | Grand Piano | Salamander Grand Piano by Alexander Holm, from the [Tone.js audio collection](https://github.com/Tonejs/audio) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Bass Guitar, Electric Guitar, Saxophone | Karoryfer Samples | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Acoustic Guitar | University of Iowa Electronic Music Studios | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
-| Violin, Harp, Trumpet, French Horn, Flute | Versilian Studios Orchestra (VSCO 2) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Violin, Erhu, Harp, Trumpet, French Horn, Flute | Versilian Studios Orchestra (VSCO 2) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 | Cello | "Real cello notes" by flcellogrl on Freesound | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
-| Taiko Drums, Electric Piano, Pipe Organ, Marimba, Chimes, Mandolin, Erhu | FluidR3 GM SoundFont by Frank Wen, rendered by Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
+| Taiko Drums, Electric Piano, Pipe Organ, Marimba, Chimes, Mandolin | FluidR3 GM SoundFont by Frank Wen, rendered by Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts) | [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) |
 
 - The guitar, bass, saxophone, strings, harp, flute and brass samples were collected and edited (trimmed, volume-matched, cleaned up and tuned) by Nicholaus Brosowsky for [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments). Its samples are released under CC BY 3.0.
-- The Mandolin and Erhu are shaped in the app from the FluidR3 steel-string guitar and violin.
+- The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app.
 - Bo's Beatbox loads these samples straight from the projects above; it doesn't copy or change the files.
 
 ### Software
