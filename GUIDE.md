@@ -374,7 +374,7 @@ The project bar sits above the toolbar.
 
 - **Project name**: click it to rename. It's used for the file names when you save and export.
 - **New**: start a **Blank timeline** (four empty tracks) or load the **Demo song** (Sunset Stroll, 88 BPM). This replaces what's on screen and clears undo, so save first.
-- **Open**: load a `.beatbox.json` project file. Like New, it replaces what's on screen straight away and clears undo, so save first. If the file can't be read, a red message explains why and nothing is replaced.
+- **Open**: load a `.beatbox.json` project file. Like New, it replaces what's on screen straight away and clears undo, so save first. If the file can't be read, a red message explains why and nothing is replaced. You can also drop a `.beatbox.json` file anywhere on the page: a drop onto an empty timeline opens it at once, and when there's work on the timeline a dialog asks before replacing it.
 - **Save**: downloads the project as `<name>.beatbox.json` to your downloads folder. Keep this file: it's the only way to move a project to another browser or computer.
 
 A project file holds the tracks, clips, mixer and effect settings, tempo, swing, loop, markers, master reverb and delay, frame rate, and every sound it uses (audio clips, Slicer and Sampler sounds). It doesn't hold the master volume, zoom, snap or ruler setting.
