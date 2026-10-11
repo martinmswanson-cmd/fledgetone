@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import { createLightChorus } from '../effects/lightFx';
 import { INSTRUMENTS } from '../instrumentCatalog';
-import type { InstrumentKey, Shaping } from '../instrumentCatalog';
+import type { InstrumentDef, InstrumentKey, Shaping } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
 import { decodeSound } from '../soundLibrary';
 import { useAudioStore } from '../../store/audioStore';
@@ -32,7 +32,10 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   setStatus(key, 'loading');
 
   const promise = Promise.all(
-    Object.entries(source.samples).map(async ([note, file]) => [note, await Tone.ToneAudioBuffer.fromUrl(source.baseUrl + file)] as const)
+    Object.entries(source.samples).map(async ([note, file]) => {
+      const buffer = await Tone.ToneAudioBuffer.fromUrl(source.baseUrl + file);
+      return [note, source.onset === undefined ? buffer : trimOnset(buffer, source.onset)] as const;
+    })
   ).then(
     (entries) => {
       setStatus(key, 'ready');
@@ -47,6 +50,37 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   );
   sampleSets[key] = promise;
   return promise;
+}
+
+/**
+ * Cut a recording's slow start: it begins 30 ms before its level (20 ms RMS) first reaches
+ * `onsetDb` under its peak, with a 15 ms fade so the cut itself is silent. A recording that is
+ * there from the first window is returned as it is.
+ */
+function trimOnset(buffer: Tone.ToneAudioBuffer, onsetDb: number): Tone.ToneAudioBuffer {
+  const audio = buffer.get();
+  if (!audio) return buffer;
+  const sr = audio.sampleRate;
+  const window = Math.round(sr * 0.02);
+  const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c));
+  const levels: number[] = [];
+  for (let i = 0; i + window <= audio.length; i += window) {
+    let sum = 0;
+    for (const data of channels) for (let k = i; k < i + window; k++) sum += data[k] * data[k];
+    levels.push(sum);
+  }
+  const peak = Math.max(...levels);
+  const first = levels.findIndex((l) => l >= peak * 10 ** (onsetDb / 10));
+  const start = Math.max(0, first * window - Math.round(sr * 0.03));
+  if (start <= 0) return buffer;
+  const fade = Math.round(sr * 0.015);
+  const trimmed = Tone.getContext().createBuffer(channels.length, audio.length - start, sr);
+  channels.forEach((data, c) => {
+    const out = trimmed.getChannelData(c);
+    out.set(data.subarray(start));
+    for (let k = 0; k < fade && k < out.length; k++) out[k] *= k / fade;
+  });
+  return new Tone.ToneAudioBuffer(trimmed);
 }
 
 // ---------- the user's own sounds (Sampler instrument) ----------
@@ -185,6 +219,41 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     trim.gain.value = Tone.dbToGain(-2);
     return chain([bright, sparkle, edge, trim]);
   }
+  if (shape === 'violin' || shape === 'cello') {
+    // The orchestral recordings are dark (the cello has almost nothing above 2 kHz, the violin
+    // nothing above 8), swell slowly and sit back in a hall. A leveller brings the quiet starts
+    // and the swells to one level; an exciter (the upper part of the sound driven hard, mixed in
+    // under the rest) makes the bow's harmonics the files lack; presence and a top shelf bring it
+    // forward. The violin also gets a dip where its top octave pierces.
+    const violin = shape === 'violin';
+    const tight = biquad('highpass', violin ? 160 : 55, 0.7);
+    const level = raw.createDynamicsCompressor();
+    level.threshold.value = -28;
+    level.knee.value = 10;
+    level.ratio.value = 2.5;
+    level.attack.value = 0.01;
+    level.release.value = 0.25;
+    const split = raw.createGain();
+    const harmonicsIn = biquad('highpass', violin ? 1500 : 700, 0.7);
+    const harmonics = saturator(violin ? 5 : 8);
+    const harmonicsOut = biquad('highpass', violin ? 2500 : 1500, 0.7);
+    const harmonicsMix = raw.createGain();
+    harmonicsMix.gain.value = Tone.dbToGain(violin ? -16 : -9);
+    const sum = raw.createGain();
+    const presence = violin ? biquad('peaking', 2200, 1, 3) : biquad('peaking', 1500, 1, 4);
+    const air = violin ? biquad('highshelf', 5000, 0.7, 6) : biquad('highshelf', 3000, 0.7, 6);
+    const soften = violin ? biquad('peaking', 3600, 1.5, -3) : biquad('peaking', 3000, 1.5, -1);
+    const top = biquad('lowpass', violin ? 11000 : 9000, 0.7);
+    const trim = raw.createGain();
+    trim.gain.value = Tone.dbToGain(violin ? -2 : -2);
+    const built = chain([tight, level, split, sum, presence, air, soften, top, trim]);
+    const exciter = [harmonicsIn, harmonics, harmonicsOut, harmonicsMix];
+    split.connect(harmonicsIn);
+    for (let i = 0; i + 1 < exciter.length; i++) exciter[i].connect(exciter[i + 1]);
+    harmonicsMix.connect(sum);
+    built.nodes.push(...exciter.map((n) => ({ dispose: () => n.disconnect() })));
+    return built;
+  }
   if (shape === 'mandolin') {
     const courses = createLightChorus({ rate: 5, delayMs: 1.8, depth: 0.35, spread: 160, wet: 0.55 });
     const bright = new Tone.BiquadFilter({ type: 'highshelf', frequency: 2500, gain: 4 });
@@ -194,7 +263,14 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
   return { input: output, nodes: [] };
 }
 
-function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dispose: () => void }[], onNote?: (time: number) => void): SamplerVoice {
+/** How much quieter `note` plays under an instrument's taper (1 = as it is). */
+function taperGain(taper: InstrumentDef['taper'], note: string): number {
+  if (!taper) return 1;
+  const octaves = (Tone.Frequency(note).toMidi() - taper[0]) / 12;
+  return octaves > 0 ? Tone.dbToGain(-taper[1] * octaves) : 1;
+}
+
+function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dispose: () => void }[], onNote?: (time: number) => void, taper?: InstrumentDef['taper']): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
     loaded = true;
@@ -205,12 +281,13 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
       if (!loaded || notes.length === 0) return; // still downloading: skip rather than throw
       const at = time ?? Tone.now();
       onNote?.(at);
-      sampler.triggerAttackRelease(notes, duration, at, velocity);
+      if (!taper) sampler.triggerAttackRelease(notes, duration, at, velocity);
+      else for (const note of notes) sampler.triggerAttackRelease(note, duration, at, velocity * taperGain(taper, note));
     },
     attack: (note, time, velocity) => {
       if (!loaded) return;
       onNote?.(time);
-      sampler.triggerAttack(note, time, velocity);
+      sampler.triggerAttack(note, time, velocity * taperGain(taper, note));
     },
     release: (note, time) => {
       if (loaded) sampler.triggerRelease(note, time);
@@ -233,7 +310,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode): 
   const attach = loadSamples(key).then((set) => {
     for (const [note, buffer] of Object.entries(set)) sampler.add(note as Tone.Unit.Note, buffer);
   });
-  return samplerVoice(sampler, attach, chain.nodes, chain.onNote);
+  return samplerVoice(sampler, attach, chain.nodes, chain.onNote, def.taper);
 }
 
 /**
