@@ -14,7 +14,7 @@ import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar, ticksToBar } from './transport';
 import { cueChunks, markerCues } from './wavCues';
 import type { WavCue } from './wavCues';
-import type { Clip, Marker, MasterFx, Track } from '../store/timelineTypes';
+import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 
 /** Sample rates the export offers. */
 export const SAMPLE_RATES = [44100, 48000] as const;
@@ -44,6 +44,8 @@ export interface RenderOptions {
   endBar: number;
   /** Shared reverb / delay settings. */
   masterFx: MasterFx;
+  /** The master section's OTT and stereo width (default: both off). */
+  master?: MasterSettings;
   /** Default 'ringOut'. */
   ending?: ExportEnding;
   /** Default 44100. */
@@ -478,11 +480,12 @@ async function renderTracks(
   /** Mix chain, one strip + instrument per track, and the Transport, inside the offline context. */
   async function buildGraph(context: Tone.OfflineContext) {
     context.destination.volume.value = masterDb;
-    const mix = createMixChain(context.destination, masterFx, bpm);
+    const mix = createMixChain(context.destination, masterFx, bpm, opts.master);
     if (opts.bypassMaster) {
       // The bus straight to the output (master volume still applies, as it's a plain gain)
       mix.bus.disconnect();
       mix.bus.connect(context.destination);
+      mix.inserts.dispose();
       mix.compressor.dispose();
       mix.limiter.dispose();
       mix.ceiling.dispose();
@@ -498,7 +501,7 @@ async function renderTracks(
       stripOf.set(track.id, strip);
       instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer }));
     }
-    await Promise.all([mix.busFx.ready, ...[...instruments.values()].map((i) => i.ready)]);
+    await Promise.all([mix.busFx.ready, mix.inserts.ready(), ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)
     const convolver = (mix.busFx.reverb as unknown as { _convolver: ConvolverNode })._convolver;
     if (opts.reverbImpulse?.sampleRate === sampleRate) convolver.buffer = opts.reverbImpulse;
@@ -547,6 +550,7 @@ async function renderTracks(
         instruments.forEach((i) => i.dispose());
         strips.forEach((s) => s.dispose());
         mix.busFx.dispose();
+        mix.inserts.dispose();
         [mix.bus, mix.compressor, mix.limiter, mix.ceiling, mix.auditionInput].forEach((n) => n.disposed || n.dispose());
       },
     };
@@ -582,7 +586,13 @@ async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endB
   }
 }
 
-const channelsOf = (audio: AudioBuffer) => Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c));
+/** An AudioBuffer's channels, as views (writing to them changes the buffer). */
+export const channelsOf = (audio: AudioBuffer) => Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c));
+
+/** Change the level of rendered audio in place (gain in dB), e.g. to normalize an export. */
+export function scaleAudio(audio: AudioBuffer, gainDb: number): void {
+  scale(channelsOf(audio), Math.pow(10, gainDb / 20));
+}
 
 function peakOf(channels: Float32Array[]): number {
   let peak = 0;

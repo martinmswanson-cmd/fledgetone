@@ -1,5 +1,5 @@
-import type { CustomSample, EmbeddedSound, MasterFx, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
-import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeTrackFx } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
+import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
@@ -44,6 +44,8 @@ export interface ProjectData {
    * sounds themselves stay in the browser's sound library, see src/audio/soundLibrary.ts).
    */
   sounds?: EmbeddedSound[];
+  /** The master section's OTT and stereo width (optional; older files have them off). */
+  master?: MasterSettings;
 }
 
 export interface ProjectSnapshot {
@@ -63,6 +65,8 @@ export interface ProjectSnapshot {
   markers?: Marker[];
   /** Embedded sound files (a saved file has them; autosaves and the store's own snapshot don't). */
   sounds?: EmbeddedSound[];
+  /** The master section's inserts (older projects don't have them: both off). */
+  master?: MasterSettings;
 }
 
 
@@ -81,6 +85,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     dropFrame: p.dropFrame === true && p.fps === 29.97,
     markers: p.markers ?? [],
     ...(p.sounds?.length ? { sounds: p.sounds } : {}),
+    master: normalizeMasterSettings(p.master),
   };
 }
 
@@ -201,6 +206,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     dropFrame: fps === 29.97 && raw.dropFrame === true,
     markers: parseMarkers(raw.markers, bpm),
     ...(sounds.length ? { sounds } : {}),
+    master: normalizeMasterSettings(raw.master),
   };
 }
 

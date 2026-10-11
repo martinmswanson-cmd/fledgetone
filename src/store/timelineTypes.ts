@@ -148,6 +148,84 @@ export interface MasterFx {
 
 export const DEFAULT_MASTER_FX: MasterFx = { reverbDecay: 2.4, delayTime: '8n', delayFeedback: 0.35 };
 
+/**
+ * The master section: the inserts between the master compressor and the limiter (see
+ * engine.ts). Each can be bypassed with `on`, which takes it out of the chain entirely.
+ */
+export interface MasterSettings {
+  /** OTT-style multiband compression (three bands, upward and downward): see effects/ott.ts. */
+  ott: {
+    on: boolean;
+    /** How much each band is pushed towards its steady level, 0 to 1 (0 leaves the sound alone) */
+    depth: number;
+    /** How fast the bands react, 0 (snappy) to 1 (slow) */
+    time: number;
+    /** dB into the bands, -12 to +12 */
+    inGain: number;
+    /** dB after, -12 to +12 */
+    outGain: number;
+  };
+  /** Stereo width by mid/side: 0 is mono, 1 unchanged, 2 twice as wide. */
+  width: {
+    on: boolean;
+    /** 0 to 2 */
+    amount: number;
+    /** Keep everything below about 120 Hz in the middle, however wide the rest goes */
+    monoBass: boolean;
+  };
+}
+
+export const OTT_GAIN_MIN = -12;
+export const OTT_GAIN_MAX = 12;
+export const WIDTH_MAX = 2;
+
+export function defaultMasterSettings(): MasterSettings {
+  return {
+    ott: { on: false, depth: 0.5, time: 0.3, inGain: 0, outGain: 0 },
+    width: { on: false, amount: 1.3, monoBass: true },
+  };
+}
+
+/** Fill in any missing / out-of-range master settings (older projects have none, hand-edited files). */
+export function normalizeMasterSettings(raw: unknown): MasterSettings {
+  const d = defaultMasterSettings();
+  const obj = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {});
+  const num = (v: unknown, fallback: number, lo: number, hi: number) =>
+    typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback;
+  const r = obj(raw);
+  const ott = obj(r.ott);
+  const width = obj(r.width);
+  return {
+    ott: {
+      on: ott.on === true,
+      depth: num(ott.depth, d.ott.depth, 0, 1),
+      time: num(ott.time, d.ott.time, 0, 1),
+      inGain: num(ott.inGain, d.ott.inGain, OTT_GAIN_MIN, OTT_GAIN_MAX),
+      outGain: num(ott.outGain, d.ott.outGain, OTT_GAIN_MIN, OTT_GAIN_MAX),
+    },
+    width: {
+      on: width.on === true,
+      amount: num(width.amount, d.width.amount, 0, WIDTH_MAX),
+      // Absent means on, as for a new project
+      monoBass: width.monoBass !== false,
+    },
+  };
+}
+
+/** True when two master settings would sound the same (so the engine and autosave can skip no-ops). */
+export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolean {
+  return (
+    a.ott.on === b.ott.on &&
+    a.ott.depth === b.ott.depth &&
+    a.ott.time === b.ott.time &&
+    a.ott.inGain === b.ott.inGain &&
+    a.ott.outGain === b.ott.outGain &&
+    a.width.on === b.width.on &&
+    a.width.amount === b.width.amount &&
+    a.width.monoBass === b.width.monoBass
+  );
+}
+
 export interface Track {
   id: string;
   name: string;
