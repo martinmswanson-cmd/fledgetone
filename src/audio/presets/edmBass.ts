@@ -206,8 +206,9 @@ function glider(params: Array<[AudioParam, number]>): BassSource['glide'] {
 }
 
 /**
- * Wobble Bass: two detuned saws and a square an octave down, lightly driven, into a resonant
- * 24 dB low-pass swept by the tempo-synced wobble.
+ * Wobble Bass: two detuned saws, lightly driven, into a 24 dB low-pass swept by the tempo-synced
+ * wobble, with a little grit after the filter; a clean sub underneath that skips the filter, so
+ * the low end stays solid while the wobble moves above it.
  */
 export function createWobbleBass(output: Tone.InputNode) {
   return createMonoBass(output, {
@@ -220,31 +221,39 @@ export function createWobbleBass(output: Tone.InputNode) {
     retone: true,
     source: (raw, { freq, start }) => {
       // Levels baked into the waves: peaks of about 1 into the drive, so it bends rather than clips
-      const saw = leveledWave(raw, 'sawtooth', 0.36);
+      const saw = leveledWave(raw, 'sawtooth', 0.42);
       const saw1 = createOsc(raw, saw, freq, start, -11);
       const saw2 = createOsc(raw, saw, freq, start, 9);
-      const sub = createOsc(raw, leveledWave(raw, 'square', 0.25), freq / 2, start);
-      const drive = createDrive(raw, 1.6);
-      [saw1, saw2, sub].forEach((o) => o.connect(drive));
+      // The sub: a sine on the note itself down low (an octave below E1 is 20 Hz, felt as mud,
+      // not heard), a square an octave down from about A1 up
+      const low = freq < 60;
+      const sub = createOsc(raw, leveledWave(raw, low ? 'sine' : 'square', low ? 0.3 : 0.22), low ? freq : freq / 2, start);
+      const drive = createDrive(raw, 1.4);
+      [saw1, saw2].forEach((o) => o.connect(drive));
       return {
         main: drive,
+        direct: sub,
         sources: [saw1, saw2, sub],
         nodes: [saw1, saw2, sub, drive],
-        glide: glider([[saw1.frequency, 1], [saw2.frequency, 1], [sub.frequency, 0.5]]),
+        glide: glider([[saw1.frequency, 1], [saw2.frequency, 1], [sub.frequency, low ? 1 : 0.5]]),
       };
     },
     tone: (raw, note, until) => {
-      // A resonant stage and a plain one make the 24 dB slope
-      const lp1 = createFilter(raw, 'lowpass', 200, 9);
-      const lp2 = createFilter(raw, 'lowpass', 200, 0);
+      // A mildly resonant stage and a plain one make the 24 dB slope (a sharp peak sweeping up
+      // and down squelched instead of wubbing)
+      const lp1 = createFilter(raw, 'lowpass', 200, 2.5);
+      const lp2 = createFilter(raw, 'lowpass', 200, 0.7);
+      const grit = createDrive(raw, 1.25);
       lp1.connect(lp2);
-      // Closed just above the fundamental, opening 4 to 5.5 octaves with velocity
-      const closed = Math.max(70, note.freq * 1.5);
-      const octaves = 4 + 1.5 * note.velocity;
-      const curve = sweepCurve(note.start, until, note.cycle, (t) => Math.min(16000, closed * 2 ** (octaves * wob(t, note.cycle))));
+      lp2.connect(grit);
+      // Closed an octave above the fundamental, opening 4.5 to 5.5 octaves with velocity; the
+      // wobble sits closed a little longer than open ("wub", not "wow")
+      const closed = Math.max(90, note.freq * 2);
+      const octaves = 4.5 + note.velocity;
+      const curve = sweepCurve(note.start, until, note.cycle, (t) => Math.min(16000, closed * 2 ** (octaves * wob(t, note.cycle) ** 1.4)));
       lp1.frequency.setValueCurveAtTime(curve, note.start, until - note.start);
       lp2.frequency.setValueCurveAtTime(curve, note.start, until - note.start);
-      return { input: lp1, output: lp2, nodes: [lp1, lp2] };
+      return { input: lp1, output: grit, nodes: [lp1, lp2, grit] };
     },
   });
 }
