@@ -3,6 +3,9 @@ import { Activity, Gauge, MoveHorizontal, RotateCcw } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { defaultMasterSettings, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
 import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
+
+/** A reading, or a dash while there's nothing to measure. */
+const show = (v: number, unit: (v: number) => string) => (Number.isFinite(v) ? unit(v) : `– ${unit(0).split(' ')[1]}`);
 import { resetLoudness } from '../../audio/loudnessMeter';
 import { useLoudness } from './useLoudness';
 import { FxSlider, InsertPanel } from './InsertFx';
@@ -45,9 +48,9 @@ export const LoudnessPanel: React.FC = () => {
       </div>
       <div className="grid grid-cols-3 gap-1.5 text-center font-mono">
         {[
-          { label: 'Now (3 s)', value: formatLufs(reading?.shortTerm ?? -Infinity) },
-          { label: 'Since Play', value: formatLufs(reading?.integrated ?? -Infinity) },
-          { label: 'Peak', value: formatDbtp(reading?.truePeakMax ?? -Infinity), hot: peakHot },
+          { label: 'Now (3 s)', value: show(reading?.shortTerm ?? -Infinity, formatLufs) },
+          { label: 'Since Play', value: show(reading?.integrated ?? -Infinity, formatLufs) },
+          { label: 'Peak', value: show(reading?.truePeakMax ?? -Infinity, formatDbtp), hot: peakHot },
         ].map((m) => (
           <div key={m.label} className="bg-black/40 rounded border border-forge-border px-1 py-1.5">
             <div className="text-[9px] uppercase text-forge-muted">{m.label}</div>

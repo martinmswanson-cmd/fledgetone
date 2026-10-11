@@ -1,6 +1,9 @@
 import React from 'react';
 import { Activity } from 'lucide-react';
 import { formatLufs } from '../audio/loudness';
+
+/** A reading, or a dash while there's nothing to measure. */
+const show = (v: number) => (Number.isFinite(v) ? formatLufs(v) : '– LUFS');
 import { useLoudness } from './inspector/useLoudness';
 
 /**
@@ -19,7 +22,7 @@ export const LoudnessBadge: React.FC = () => {
       aria-label="Loudness"
     >
       <Activity className={`w-3.5 h-3.5 ${hot ? 'text-red-400' : 'text-emerald-400'}`} />
-      {formatLufs(reading?.shortTerm ?? -Infinity)}
+      {show(reading?.shortTerm ?? -Infinity)}
     </div>
   );
 };

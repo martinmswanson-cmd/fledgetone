@@ -7,11 +7,11 @@ Bo's Beatbox is a music maker that runs in your browser. You build a song on the
 It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen. On a phone a notice says so once; you can continue, but the timeline is cramped, drag-and-drop editing and keyboard shortcuts don't work, and audio may stutter.
 
 1. Click **START AUDIO** in the top-right corner. Browsers only allow sound after you click something, so the button glows red until audio is running. Pressing Play also starts it.
-2. To hear an example, click **New** above the timeline and choose **Demo song**.
+2. To hear an example, click **New** above the timeline and choose **Demo song**, or one of the genre starters (Dubstep, House, Drum & Bass, Trap).
 3. Press **Space** (or the green Play button) to play, and Space again to pause.
 4. Double-click a clip to open its notes in the **piano roll** under the timeline.
 
-At the top is the header: **TEMPO** and **TAP**, **Swing**, **MASTER** volume, **GUIDE** and **START AUDIO**. Under it, top to bottom:
+At the top is the header: **TEMPO** and **TAP**, **Swing**, **MASTER** volume, the loudness reading (once audio runs), **GUIDE** and **START AUDIO**. Under it, top to bottom:
 
 - **Arrangement Timeline**: the project bar (name, New, Open, Save, Export WAV), the toolbar, the ruler, your tracks, the Overview strip and the piano roll.
 - **Instrument Browser**: try every instrument on an on-screen keyboard.
@@ -84,7 +84,7 @@ The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cut
 - Insert and Delete bars, along with where they moved the loop and the playhead;
 - markers: adding, moving, renaming, locking and deleting them;
 - adding and deleting tracks (Undo brings a deleted track back with its clips), and changing a track's instrument;
-- M, S and R, VOL and PAN, the EQ, Distortion, Compressor, Chorus, the sends and the Master Aux Bus;
+- M, S and R, VOL and PAN, the EQ, Distortion, Compressor, Chorus, the sends and the Master tab (OTT, Stereo Width, reverb and delay);
 - loading, replacing or removing a Sampler sound, and its **Original pitch on** note;
 - automation: adding, moving and deleting points, ramps and clearing or removing lanes.
 
@@ -323,11 +323,19 @@ Click **FX Rack** in the toolbar, or the sliders icon on a track header, to open
 - **CHANNEL FADER**: the same volume and pan as the header.
 - **Delete this track** (also the trash icon at the top). It asks first if the track has clips; `Ctrl+Z` brings the track and its clips back.
 
-Distortion, Compressor, Chorus, Filter and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. You can switch effects on and off while the song plays without a gap, a click or a doubled sound, however busy the computer is: the change crossfades over 10 ms, about 20 to 30 ms after the click. A Compressor switched on comes in about 0.2 s later, once it has settled, and any other switch on that track in the meantime waits for it. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send and Master Aux Bus sliders don't reset on double-click.
+Distortion, Compressor, Chorus, Filter and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. You can switch effects on and off while the song plays without a gap, a click or a doubled sound, however busy the computer is: the change crossfades over 10 ms, about 20 to 30 ms after the click. A Compressor switched on comes in about 0.2 s later, once it has settled, and any other switch on that track in the meantime waits for it. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send, reverb and delay sliders don't reset on double-click (the master OTT and Stereo Width sliders do).
 
-### Master Aux Bus
+### Master
 
-The Inspector's second tab sets the two effects every track shares through its sends:
+The Inspector's second tab, **Master**, works on the whole mix. At the top:
+
+- **Loudness**: how loud the song is, measured the way streaming services measure it (LUFS). **Now (3 s)** is the last three seconds, **Since Play** the whole stretch since you last pressed Play, and **Peak** the highest true peak (dBTP). A line under them says what the level means: quiet, about streaming level (around -14 LUFS), loud like a club master, or very loud. The peak turns red above -1 dBTP, where a song can distort once a streaming service converts it. **Reset** starts measuring again. The header shows the **Now** reading too, from the moment audio is running, and turns red with the peak.
+- **OTT**: the multiband compressor of bass music. It splits the mix into lows, mids and highs, turns each band's loud parts down and its quiet parts up, and adds back the level it takes, so the mix gets denser, brighter and louder. **Depth** is how much (start around 20 to 40%), **Time** how fast it reacts (snappy to slow), **In gain** drives it harder and **Out gain** turns the result up or down. Raising Out gain pushes the mix into the limiter, which is how you make a master louder.
+- **Stereo Width**: makes the mix wider (up to 200%) or narrower (0% is mono). **Keep the bass in the middle** (on by default) leaves everything below about 120 Hz centred however wide the rest goes, so the low end stays strong on club systems and phones.
+
+OTT and Stereo Width sit between the master compressor and the limiter, are off in a new project, are saved with it, can be undone, and switch on or off while the song plays without a gap. They're in exports too.
+
+Under them are the two effects every track shares through its sends:
 
 - **Master Convolution Reverb**: Room Decay Time, from 0.8 s (tight) to 6 s (cathedral).
 - **Ping-Pong Echo Delay**: Echo Subdivision (1/4, 1/8, dotted 1/8 or 1/16, locked to the tempo) and Echo Feedback (0 to 80%).
@@ -375,11 +383,11 @@ Click the **curve button** in a track header ("Show automation"; it's tinted amb
 The project bar sits above the toolbar.
 
 - **Project name**: click it to rename. It's used for the file names when you save and export.
-- **New**: start a **Blank timeline** (four empty tracks) or load the **Demo song** (Sunset Stroll, 88 BPM). This replaces what's on screen and clears undo, so save first.
+- **New**: start a **Blank timeline** (four empty tracks), load the **Demo song** (Sunset Stroll, 88 BPM), or start from a **genre starter**: **Dubstep** (140 BPM), **House** (126), **Drum & Bass** (174) or **Trap** (140). Each starter is 16 bars with its sections marked (intro, build, drop, and so on), the loop on the main section, its tracks mixed and the master's OTT and Stereo Width set for the style. Change anything; it's an ordinary project. This replaces what's on screen and clears undo, so save first.
 - **Open**: load a `.beatbox.json` project file. Like New, it replaces what's on screen straight away and clears undo, so save first. If the file can't be read, a red message explains why and nothing is replaced. You can also drop a `.beatbox.json` file anywhere on the page: a drop onto an empty timeline opens it at once, and when there's work on the timeline a dialog asks before replacing it.
 - **Save**: downloads the project as `<name>.beatbox.json` to your downloads folder. Keep this file: it's the only way to move a project to another browser or computer.
 
-A project file holds the tracks, clips, mixer and effect settings, tempo, swing, loop, markers, master reverb and delay, frame rate, and every sound it uses (audio clips, Slicer and Sampler sounds). It doesn't hold the master volume, zoom, snap or ruler setting.
+A project file holds the tracks, clips, mixer and effect settings, tempo, swing, loop, markers, master reverb and delay, the master's OTT and Stereo Width, frame rate, and every sound it uses (audio clips, Slicer and Sampler sounds). It doesn't hold the master volume, zoom, snap or ruler setting.
 
 Whether it comes from **New**, **Open** or **Restore**, a project opens showing the start of the timeline, with the playhead at its loop's In point; if that's off the first screen, the view scrolls to it instead. It never keeps the previous project's scroll position.
 
@@ -426,14 +434,14 @@ The **metronome** button in the toolbar clicks on every beat while playing, loud
 Click **Export WAV**. The dialog has four choices, and remembers them in this browser:
 
 - **Range**: **Whole song** (bar 1 to the end of the last clip that plays) or **Loop region** (In to Out, whether or not the loop is on). For the loop, the dialog shows where it starts as a timecode at your frame rate.
-- **Export**: **Mixdown** (one stereo WAV of everything that plays) or **Stems** (one WAV per track that plays and has clips in the range, in one .zip). Stems all start at the range start and have the same length, so they line up in another program, and each includes the track's effects, sends and the shared reverb and echo. **Bypass master compressor & limiter** (on by default) makes the stems add up to the mix as it is before the master compressor and limiter.
+- **Export**: **Mixdown** (one stereo WAV of everything that plays) or **Stems**. For a mixdown, **Normalize to -14 LUFS** turns the whole file up or down to the loudness Spotify, YouTube and Apple Music play at, without letting its true peak pass -1 dBTP. If that would push the peak too high, the file stops short of -14 LUFS and the message says by how much; turn on the master **OTT** and raise its **Out gain** to get louder. When a mixdown finishes, its loudness and peak show at the bottom of the screen. **Stems** (one WAV per track that plays and has clips in the range, in one .zip). Stems all start at the range start and have the same length, so they line up in another program, and each includes the track's effects, sends and the shared reverb and echo. **Bypass master compressor & limiter** (on by default) makes the stems add up to the mix as it is before the master compressor and limiter.
 - **Ending**:
   - **Ring out**: the range, then a few seconds more so reverb and echo tails ring out (the dialog says how long).
   - **Exact length**: exactly the range, to the sample, with a 5 ms fade at the very end so it doesn't click.
   - **Seamless loop** (Loop region only): exactly one loop long, with the tails of the pass before already ringing at its start, so it repeats in a game engine or looping player without a gap or click. It stays exactly on the beat at any tempo, fractional ones included.
 - **Format**: **44.1 kHz** or **48 kHz**; **16-bit**, **24-bit** or **32-bit float**. Always stereo.
 
-The footer shows the file name and its exact length. Exports include the whole mix: volumes, pans, mutes and solos, every effect, sends, the master reverb and delay, swing, and the master volume. The first beat is as loud as the rest, so a kick right at the start keeps its attack. If the mix would clip, the file is turned down to just under full scale (stems all by the same amount, so their levels still match).
+The footer shows the file name and its exact length. Exports include the whole mix: volumes, pans, mutes and solos, every effect, sends, the master reverb and delay, the master OTT and Stereo Width, swing, and the master volume. The first beat is as loud as the rest, so a kick right at the start keeps its attack. If the mix would clip, the file is turned down to just under full scale (stems all by the same amount, so their levels still match).
 
 **Markers** in the range go into the file as cue points with their names, which DAWs, audio editors and game audio tools show as markers. Their positions count from the start of the file (the range start, or IN for a loop), in the mixdown and in every stem. A **Ring out** file also includes a marker sitting exactly at the end of the range. When there are any, the **Format** section says how many go in (or that the one marker does). The loop's IN and OUT aren't written as markers.
 

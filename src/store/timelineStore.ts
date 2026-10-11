@@ -1,3 +1,5 @@
+import { createStarter, isStarterId } from './starters';
+import type { StarterId } from './starters';
 import { create } from 'zustand';
 import { initAudio } from '../audio/engine';
 import { setBpm as engineSetBpm } from '../audio/engine';
@@ -367,7 +369,8 @@ interface TimelineState {
   projectName: string;
   setProjectName: (name: string) => void;
   /** Replace the arrangement with a blank timeline or the demo song. Clears undo history. */
-  newProject: (template: 'blank' | 'demo') => void;
+  /** Replace the arrangement with a blank one, the demo song or a genre starter (see starters.ts). */
+  newProject: (template: 'blank' | 'demo' | StarterId) => void;
   /** Replace the arrangement with a loaded project. Clears undo history. */
   loadProject: (project: ProjectSnapshot) => void;
   /** Drop one of the instrument's stock patterns onto a track (undoable). */
@@ -1494,7 +1497,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       get().loadProject(
         template === 'demo'
           ? { ...createDemoProject(), fps, dropFrame }
-          : {
+          : isStarterId(template)
+            ? { ...createStarter(template), fps, dropFrame }
+            : {
               name: 'Untitled',
               bpm: 122,
               swing: 0.2,
