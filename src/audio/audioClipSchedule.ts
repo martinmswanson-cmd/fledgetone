@@ -5,6 +5,7 @@ import { barToTicks } from './transport';
 import { decodedSound, ensureSound } from './soundLibrary';
 import { DECLICK_SECONDS, envelopeAt, envelopeFrom, envelopeShape } from './clipEnvelope';
 import type { EnvelopePoint, EnvelopeShape } from './clipEnvelope';
+import { crossfades, type Crossfade } from '../store/audioClips';
 
 type Transport = ReturnType<typeof Tone.getTransport>;
 
@@ -28,6 +29,8 @@ interface Entry {
   eventId: number;
   /** What a change of restarts the clip: where it is and what it plays (its gain and fades only reshape it) */
   placement: string;
+  /** Its crossfades with the clips either side, as a key (a change reshapes it) */
+  xfade: string;
 }
 
 export interface AudioClipSchedule {
@@ -59,6 +62,12 @@ const placementOf = (clip: Clip) =>
 export function createAudioClipSchedule(transport: Transport, busFor: (trackId: string) => NativeBus | undefined): AudioClipSchedule {
   const raw = transport.context.rawContext as unknown as BaseAudioContext;
   let entries = new Map<string, Entry>();
+  /** Where overlapping clips on a track crossfade (see crossfades) */
+  let xfades = new Map<string, Crossfade>();
+  const xfadeKey = (id: string) => {
+    const x = xfades.get(id);
+    return x ? `${x.in}|${x.out}` : '';
+  };
   const voices = new Set<Voice>();
   /** Between the Transport's start event and its stop: what plays now is known, and an edit can join in. */
   let running = false;
@@ -76,9 +85,13 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
   const shapeOf = (clip: Clip, buffer: AudioBuffer): EnvelopeShape => {
     const audio = clip.audio!;
     const seconds = clipSeconds(clip);
-    const fadeIn = Math.max(audio.fadeIn, audio.offset > 0 ? DECLICK_SECONDS : 0);
-    const fadeOut = Math.max(audio.fadeOut, audio.offset + seconds < buffer.duration - 1e-6 ? DECLICK_SECONDS : 0);
-    return envelopeShape(audio.gain, seconds, fadeIn, fadeOut);
+    const x = xfades.get(clip.id);
+    // A crossfade longer than the clip's own fade replaces it, with an equal-power curve
+    const xIn = (x?.in ?? 0) > audio.fadeIn;
+    const xOut = (x?.out ?? 0) > audio.fadeOut;
+    const fadeIn = Math.max(xIn ? x!.in : audio.fadeIn, audio.offset > 0 ? DECLICK_SECONDS : 0);
+    const fadeOut = Math.max(xOut ? x!.out : audio.fadeOut, audio.offset + seconds < buffer.duration - 1e-6 ? DECLICK_SECONDS : 0);
+    return envelopeShape(audio.gain, seconds, fadeIn, fadeOut, { in: xIn, out: xOut });
   };
 
   const scheduleEnvelope = (param: AudioParam, points: EnvelopePoint[], base: number) => {
@@ -221,15 +234,18 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
       /** Entries made now: new clips, and clips whose placement changed (their old voices are stopped) */
       const fresh: Entry[] = [];
       const stopped = new Set<string>();
+      xfades = crossfades(clips.filter((c) => c.audio && trackIds.has(c.trackId)), transport.bpm.value);
       for (const clip of clips) {
         if (!clip.audio || !trackIds.has(clip.trackId)) continue;
         ensureSound(clip.audio.soundId);
         const prev = entries.get(clip.id);
         const placement = placementOf(clip);
         if (prev && prev.placement === placement) {
-          if (prev.clip !== clip) {
+          const xfade = xfadeKey(clip.id);
+          if (prev.clip !== clip || prev.xfade !== xfade) {
             reshape(clip);
             prev.clip = clip;
+            prev.xfade = xfade;
           }
           next.set(clip.id, prev);
         } else {
@@ -238,7 +254,7 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
             stopped.add(clip.id);
           }
           const tick = barToTicks(clip.startBar);
-          const entry = { clip, tick, eventId: transport.schedule(fire(clip.id), `${tick}i`), placement };
+          const entry = { clip, tick, eventId: transport.schedule(fire(clip.id), `${tick}i`), placement, xfade: xfadeKey(clip.id) };
           next.set(clip.id, entry);
           fresh.push(entry);
         }

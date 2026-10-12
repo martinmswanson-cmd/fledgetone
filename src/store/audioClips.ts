@@ -131,3 +131,52 @@ export function normalizeSlicer(raw: unknown): SlicerSettings | undefined {
     focus: isNum(raw.focus) ? clamp(Math.round(raw.focus), 0, slices.length - 1) : 0,
   };
 }
+
+/** How long an audio clip crossfades with its neighbours on the track, in seconds. */
+export interface Crossfade {
+  /** Fading in under the clip before it */
+  in: number;
+  /** Fading out under the clip after it */
+  out: number;
+}
+
+/**
+ * Automatic crossfades: where two audio clips on one track overlap, and the earlier one ends
+ * inside the later one, the earlier fades out and the later fades in across the overlap (equal
+ * power, so the level holds through it). A clip lying wholly inside another is a layer and plays
+ * on top, uncrossfaded. Only clips with a crossfade are in the map.
+ */
+export function crossfades(clips: ReadonlyArray<Pick<Clip, 'id' | 'trackId' | 'startBar' | 'lengthBars' | 'audio'>>, bpm: number): Map<string, Crossfade> {
+  const out = new Map<string, Crossfade>();
+  const byTrack = new Map<string, typeof clips[number][]>();
+  for (const c of clips) {
+    if (!c.audio) continue;
+    const list = byTrack.get(c.trackId);
+    if (list) list.push(c);
+    else byTrack.set(c.trackId, [c]);
+  }
+  const spb = secondsPerBar(bpm);
+  for (const list of byTrack.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => a.startBar - b.startBar || a.lengthBars - b.lengthBars);
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      const aEnd = a.startBar + a.lengthBars;
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        if (b.startBar >= aEnd - EPS) break;
+        const bEnd = b.startBar + b.lengthBars;
+        // b inside a (or starting with it): a layer, not a handover
+        if (bEnd <= aEnd + EPS || b.startBar <= a.startBar + EPS) continue;
+        const seconds = (aEnd - b.startBar) * spb;
+        const fa = out.get(a.id) ?? { in: 0, out: 0 };
+        const fb = out.get(b.id) ?? { in: 0, out: 0 };
+        fa.out = Math.max(fa.out, seconds);
+        fb.in = Math.max(fb.in, seconds);
+        out.set(a.id, fa);
+        out.set(b.id, fb);
+      }
+    }
+  }
+  return out;
+}

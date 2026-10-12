@@ -3,7 +3,7 @@ import * as Tone from 'tone';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
 import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
-import { secondsPerBar } from '../../store/audioClips';
+import { crossfades, secondsPerBar } from '../../store/audioClips';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../../audio/instrumentCatalog';
 import { dbToGain } from '../../audio/clipEnvelope';
@@ -12,6 +12,13 @@ import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
 import { shadeNotes, type NoteRect } from './noteShades';
 import { Waveform } from './Waveform';
+
+/** Every clip's crossfades, worked out once per change of the clips (the playhead moving doesn't count). */
+let xfadeCache: { clips: Clip[]; bpm: number; map: ReturnType<typeof crossfades> } | null = null;
+function trackCrossfades(clips: Clip[], bpm: number): ReturnType<typeof crossfades> {
+  if (xfadeCache?.clips !== clips || xfadeCache.bpm !== bpm) xfadeCache = { clips, bpm, map: crossfades(clips, bpm) };
+  return xfadeCache.map;
+}
 
 /** How close (pixels) a dragged clip edge comes before another edge, a marker or the playhead pulls it on. */
 const MAGNET_PX = 8;
@@ -113,6 +120,12 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
   // Only audio clips follow the tempo here (their width in bars already changed with it)
   const bpm = useTimelineStore((s) => (clip.audio ? s.bpm : 0));
+  // Its crossfades with overlapping clips on the track, as a string so the view only redraws when they change
+  const xfade = useTimelineStore((s) => {
+    if (!clip.audio) return '';
+    const x = trackCrossfades(s.clips, s.bpm).get(clip.id);
+    return x ? `${x.in}|${x.out}` : '';
+  });
   const [razorX, setRazorX] = useState<number | null>(null);
 
   const shades = useMemo(() => shadeNotes(layoutNotes(clip, track.instrumentKey, zoom)), [clip, track.instrumentKey, zoom]);
@@ -429,7 +442,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       </div>
 
       {/* An audio clip: its waveform, its fades shaded, and the fade handles at the top corners */}
-      {audio && <AudioClipBody audio={audio} seconds={clipSeconds} width={width} pxPerSecond={pxPerSecond} color={track.color} onFadeDrag={startFadeDrag} showHandles={!isRazor && width > FADE_HANDLE_PX * 4} />}
+      {audio && <AudioClipBody audio={audio} xfade={xfade} seconds={clipSeconds} width={width} pxPerSecond={pxPerSecond} color={track.color} onFadeDrag={startFadeDrag} showHandles={!isRazor && width > FADE_HANDLE_PX * 4} />}
 
       {/* Notes */}
       {shades.length > 0 && (
@@ -467,6 +480,8 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
 
 interface AudioClipBodyProps {
   audio: ClipAudio;
+  /** "in|out" crossfade seconds, or '' */
+  xfade: string;
   seconds: number;
   width: number;
   pxPerSecond: number;
@@ -476,11 +491,21 @@ interface AudioClipBodyProps {
 }
 
 /** The body of an audio clip under its label: waveform, fades and their handles. */
-const AudioClipBody: React.FC<AudioClipBodyProps> = ({ audio, seconds, width, pxPerSecond, color, showHandles, onFadeDrag }) => {
+const AudioClipBody: React.FC<AudioClipBodyProps> = ({ audio, xfade, seconds, width, pxPerSecond, color, showHandles, onFadeDrag }) => {
   const top = LABEL_HEIGHT;
   const height = CLIP_HEIGHT - LABEL_HEIGHT;
+  const [xIn, xOut] = xfade ? xfade.split('|').map(Number) : [0, 0];
   const inPx = Math.min(width, audio.fadeIn * pxPerSecond);
   const outPx = Math.min(width, audio.fadeOut * pxPerSecond);
+  // Crossfades (equal-power curves where clips overlap), when longer than the clip's own fades
+  const xInPx = xIn > audio.fadeIn ? Math.min(width / 2, xIn * pxPerSecond) : 0;
+  const xOutPx = xOut > audio.fadeOut ? Math.min(width / 2, xOut * pxPerSecond) : 0;
+  const curve = (from: number, to: number, rising: boolean) =>
+    Array.from({ length: 17 }, (_, k) => {
+      const r = k / 16;
+      const g = Math.sin(((rising ? r : 1 - r) * Math.PI) / 2);
+      return `${from + (to - from) * r},${height * (1 - g)}`;
+    }).join(' ');
   const handle = (edge: 'fadeIn' | 'fadeOut', x: number) => (
     <div
       className="absolute cursor-ew-resize rounded-sm border border-white/80 bg-black/70 hover:bg-white/90 z-20"
@@ -500,6 +525,15 @@ const AudioClipBody: React.FC<AudioClipBodyProps> = ({ audio, seconds, width, px
           {inPx > 0 && <line x1={0} y1={height} x2={inPx} y2={0} stroke="white" strokeOpacity={0.7} />}
           {outPx > 0 && <polygon points={`${width},0 ${width - outPx},0 ${width},${height}`} fill="black" fillOpacity={0.45} />}
           {outPx > 0 && <line x1={width} y1={height} x2={width - outPx} y2={0} stroke="white" strokeOpacity={0.7} />}
+        </svg>
+      )}
+      {(xInPx > 0 || xOutPx > 0) && (
+        <svg className="absolute left-0 pointer-events-none" style={{ top, width, height }} width={width} height={height} aria-hidden="true">
+          {xInPx > 0 && <rect x={0} y={0} width={xInPx} height={height} fill="#facc15" fillOpacity={0.12} />}
+          {xInPx > 0 && <polyline points={curve(0, xInPx, true)} fill="none" stroke="#facc15" strokeOpacity={0.9} strokeWidth={1.5} />}
+          {xOutPx > 0 && <rect x={width - xOutPx} y={0} width={xOutPx} height={height} fill="#facc15" fillOpacity={0.12} />}
+          {xOutPx > 0 && <polyline points={curve(width - xOutPx, width, false)} fill="none" stroke="#facc15" strokeOpacity={0.9} strokeWidth={1.5} />}
+          <title>Crossfade with the overlapping clip</title>
         </svg>
       )}
       {showHandles && handle('fadeIn', inPx)}
