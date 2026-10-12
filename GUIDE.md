@@ -326,13 +326,18 @@ The header has the clip's name (click to rename), **GRID** (1/32, 1/16T, 1/16, 1
 - **TOOLS** changes the selected notes, or the whole clip with nothing selected, in one Undo step: **Quantize** (starts, or starts and lengths, to the GRID), **Humanize** (small random shifts in timing and velocity), **Strum** (a chord's notes a moment apart, low to high or high to low), **Arpeggiate** (each chord becomes a broken chord at the GRID's speed: up, down, up and down, or random), **Legato** (each note lasts until the next), **Ratchet x2 / x3 / x4** (each note split into equal repeats, getting louder), **Roll** (each note repeated at the GRID's speed for its length, rising: set GRID to 1/32 for a snare or hat roll), **Semitone up / down**, **Octave up / down**, and **Fit to scale**. Drum clips have Quantize, Humanize, Ratchet and Roll.
 - **GHOSTS** shows the other tracks' notes over the same bars as faint outlines in their colours, so a melody can follow the chords.
 
-**Expression lanes** (at the bottom of the piano roll, for every instrument except the drum kits and FX): what a keyboard's wheels and pedal would play, over the whole clip.
+**Expression lanes** (at the bottom of the piano roll, for every instrument except the drum kits and FX): what a keyboard's wheels, pedal and knobs would play over the clip, and each note's own expression. Pick the lane in the menu at the left of the lane.
 
 - **Pitch bend**: every note bends together. Click to add a point, drag one to move it (it snaps to the grid; Shift for none), and right-click or double-click a point to remove it; the bend glides from point to point. The lane shows ±2 semitones; **±2 st** switches it to ±12 for big swoops. Bends reach up to an octave either way.
 - **Mod wheel**: vibrato, deeper as it goes up (at the top, half a semitone either way, about five and a half times a second). Drawn like the bend.
 - **Sustain pedal**: drag along the lane to hold the pedal down there; notes let go while it's down ring on until it comes up. Click a held stretch to lift it.
 
-An underlined lane name means that lane has something in it. The lanes travel with the clip when it's moved, copied, split or trimmed, and play the same live and in exports. Bends and vibrato play on the recorded instruments, Slap Bass, Sub Bass, 808, Lead, Space Clav, Brass Stabs, Pad and plugin instruments; the sustain pedal works on every instrument.
+- **Controller lanes (CC)**: any MIDI controller by number (choose one under **Add a controller lane**). Drawn like the bend, from 0 at the bottom to 127 at the top. A controller lane moves the track setting it's mapped to with MIDI learn, or else the usual one: **CC 7** volume, **10** pan, **74** filter cutoff, **71** resonance, **91** reverb send, **93** delay send. Plugin instruments also get it as MIDI. Knobs on your controller that aren't mapped are recorded into controller lanes.
+- **Note bend** and **Note pressure** (select one note): that note's own expression, as an MPE keyboard plays it. **Note bend** slides just that note away from its pitch and back (up to 24 semitones either way); **Note pressure** swells and fades it (its level, from silent at the bottom to full at the top). The lane covers the note's length. The Multi Sampler plays these on each note on its own; other instruments bend as a whole while the note plays.
+
+A ● in the lane menu means that lane has something in it. The lanes travel with the clip when it's moved, copied, split or trimmed, and play the same live and in exports. Bends and vibrato play on the recorded instruments, Slap Bass, Sub Bass, 808, Lead, Space Clav, Brass Stabs, Pad and plugin instruments; the sustain pedal works on every instrument.
+
+**Notation**: tick **NOTATION** in the piano roll's header to see the clip as sheet music: a staff (a grand staff when it spans both clefs; drum clips on a percussion staff) in the song's key and meter, with chords, rests, ties over bar lines, beams and accidentals. Notes are put on a 16th grid and each staff reads as one voice (notes that start together are a chord, held until the next one starts). The measure the playhead is in is lit. **MusicXML** saves the clip for notation programs (MuseScore, Sibelius, Dorico and others), and **Print** prints it or saves it as a PDF. Untick NOTATION to edit the notes again.
 
 > With no notes selected, `Delete` acts on the timeline and deletes the selected clip, usually the one you're editing. `Ctrl+Z` brings it back.
 
@@ -412,6 +417,25 @@ Set the master's **Stereo Width** off for the authentic mono sound. The **Chiptu
 
 The sound is kept in this browser and saved inside the project file (see **Where your sounds live** below). It plays only as long as each note lasts (then fades out quickly), so draw long notes for long sounds. The play button previews a half note at the original pitch; the trash button removes the sound (`Ctrl+Z` brings it back).
 
+### Drum Rack: your own drum sounds
+
+**Add Track > Your Sounds > Drum Rack** gives 16 pads, each playing a sound of your own, laid out like a pad controller (pad 1, C2, bottom left; pad 16, D#3, top right).
+
+- **Load sounds**: **Load sounds…** in its Inspector panel fills the pads in order with the files you pick (up to 16). Drop files on a pad to load them from there on, or select a pad and click **Load…**. Each pad is named after its file (rename it in the name box above its settings).
+- **Each pad's own effects**: select a pad (clicking it plays it) for its **Level**, **Pan**, **Pitch** (±24 semitones), **Decay** (how long it rings before fading; "full" plays the whole sound), **Low-pass**, **High-pass**, **Drive** (saturation) and **reverse**.
+- **Choke groups**: pads in the same group cut each other off, as a closed hi-hat stops an open one ringing. Put the open and closed hats in group 1.
+- In the piano roll each pad is a row, named as you named it, with the **STEPS** step sequencer. A MIDI keyboard plays the pads on C2 to D#3, and any other octave lands on them too.
+- The rack's sounds are kept like the Sampler's (see Where your sounds live) and saved inside the project file. The whole track also has the usual mixer, inserts and sends.
+
+### Multi Sampler: an instrument from your own recordings
+
+**Add Track > Your Sounds > Multi Sampler** plays several of your sounds across the keyboard: record or collect a few notes of an instrument (a C every octave, or every few notes) and it becomes a playable instrument, each key using the nearest recording, played higher or lower.
+
+- **Add sounds…** (or drop files on the panel). Each sound's own pitch is read from its file name ("Piano C4.wav", "Strings A#2.flac") or, if the name doesn't say, worked out by listening to it. Each then plays the keys nearest it.
+- **Velocity layers**: sounds of the same note marked by loudness in their names (pp, p, mp, mf, f, ff, soft, hard) become layers: soft playing uses the soft recording, hard playing the hard one.
+- The table lists each sound's **Root** (the key it plays at its own pitch), **Keys** (the lowest and highest it plays) and **Vel** (the softest and hardest velocity), all editable. Click a sound's name to hear it. **Re-map by root** lays them out again from their roots. **Attack** and **Release** shape every note.
+- Pitch bend and per-note expression (see the piano roll) play on each note's own voice.
+
 ### Audio tracks: your own recordings
 
 An **Audio** track holds sound files as clips instead of notes. Add one with **Add Track > Your Sounds > Audio**.
@@ -424,6 +448,11 @@ An **Audio** track holds sound files as clips instead of notes. Add one with **A
 - **Editing** works as for note clips: move, trim, razor, copy and paste, duplicate, Repeat, Fill to loop Out, Insert/Delete bars, undo. Trimming the left edge makes the clip play from further into the sound. Audio clips only move between Audio tracks.
 - **Fades**: drag the small square at either top corner of a clip (shown when the clip is wide enough).
 - **Gain and fades**: double-click a clip (or right-click > **Gain and fades**) for the clip editor under the timeline: the waveform, **GAIN** (-24 to +24 dB), **Fade in**, **Fade out**, and **Chop to Slicer…**. `Esc` closes it.
+- **Warp markers** (the clip editor's **Warp** tool): pin a moment of the sound (a drum hit, a word) and move it in time; the audio either side stretches to fit, at the same pitch. Double-click the waveform to add a marker, drag one sideways to move that moment (it snaps to 16ths; Shift for anywhere), right-click to remove it. Markers work while the clip follows the tempo: adding one to a clip that doesn't sets **Follow tempo** at the song's tempo, so nothing else changes. **Clear warp** removes them all.
+- **Quantize audio**: finds the hits in the clip and pulls each onto the chosen grid (1/4 to 1/32) with warp markers, at 25 to 100% strength. Tighten a loose drum take or a strummed part; drag any marker to adjust, or Undo.
+- **Gain envelope** (the **Gain envelope** tool): draw the clip's level over its sound, on top of its gain and fades: click to add a point, drag points up and down (-60 dB, silent, to +12 dB), right-click to remove one. Duck a breath, lift a quiet word. **Clear envelope** removes it.
+- **Reverse**: plays the clip backwards (a reversed copy of its sound, the same stretch of it mirrored). Click **Reversed** to go back.
+- **Normalize**: sets the clip's gain so its loudest moment peaks just under full scale.
 - The track's mixer, effects, sends and automation all work on Audio tracks. Swing never moves audio clips. Pressing Play in the middle of a clip plays it from the right place, and exports are sample-accurate.
 
 ### The Slicer: vocal chops
@@ -511,6 +540,16 @@ A **bus** is a track with no clips of its own that other tracks play into, so th
 - Buses can play into other buses (a drums bus into a music bus). A route that would come back round to itself isn't offered.
 - Deleting a bus sends its tracks back to the master. Buses can't hold clips, be armed or be frozen. Exports, stems and freezing play through them as you hear them.
 
+### Return tracks (effect returns)
+
+A **return** is a track for a shared effect: put a reverb, a delay or any effect on it, and send as much of any track to it as you like. Many tracks share one room or one echo, and each decides how much of itself goes in, without changing its own sound.
+
+- **Make one**: **Add Track → Return (effect return)**, or right-click a track's name and choose **Send to a new return** (that track starts sending to it at 50%).
+- **Put effects on it**: select the return and turn on its inserts in the Inspector, usually the **Reverb** or **Delay** (on a return they start at 100% mix, since the dry sound already plays from the tracks), or any plugin effect.
+- **Send to it**: every track's Inspector has a slider for each return under the sends (and **+ Send to a new return**), each track's Mixer strip has one too, and the track menu has **Send to “Return name”** and **Stop sending**. **pre** takes the send before the track's fader, so the return keeps going as the track fades (or is turned all the way down); otherwise the send follows the fader.
+- A return has a fader, pan, every insert, plugin effects, mute and automation like any track, and can play into a bus. It shows **return · N** (how many tracks send to it). Returns are solo-safe: soloing a track keeps the returns playing, so you hear it with its reverb.
+- Send levels can be automated (pick **Send → Return name** in a track's automation LANE). Deleting a return removes the sends to it (Undo brings them back). Exports, stems and freezing play through returns as you hear them; a frozen track still feeds its returns live.
+
 ### The Track Inspector (FX Rack)
 
 Click **FX Rack** in the toolbar, or the sliders icon on a track header (or **Track › Inspector & FX rack**), to open the Inspector on the right. Click another track's header to switch to it. The **Track FX** tab, top to bottom:
@@ -526,13 +565,15 @@ Click **FX Rack** in the toolbar, or the sliders icon on a track header (or **Tr
 - **CHORUS**: Rate, Depth and Mix.
 - **LO-FI**: **Crush** rounds the sound to fewer bits (16-bit is clean, 3-bit a buzzy 8-bit crunch), **Tone** darkens the top (1 to 20 kHz), **Wow** wobbles the pitch slowly like a worn tape, and **Mix** blends it with the clean sound. For lo-fi keys, dusty drums, chiptune grit and phonk.
 - **FILTER**: **Low-pass**, **High-pass** or **Band-pass**; **Cutoff** (20 Hz to 20 kHz); **Resonance** (Q 0.5 to 15: high values boost a narrow band at the cutoff, up to about +23 dB, so turn the track down when you push it); **Slope** 12 or 24 dB. It comes after the other effects, so it sweeps everything on the track. Moving Cutoff or Resonance while playing glides smoothly.
+- **DELAY**: echoes in time with the song. **Time** is a note value (1/32 to 1/2, dotted and triplet ones too) of the tempo; **ping-pong** bounces the echoes left and right; **Feedback** (how many repeats), **Tone** (darkens each repeat) and **Mix**.
+- **REVERB**: a room of the track's own (apart from the shared master reverb): **Decay** (0.3 s for a small room to 12 s for a huge hall), **Pre-delay** (a gap before the room answers, which keeps a voice clear), **Tone** (darker is warmer) and **Mix**. On a return track, run it at 100% mix.
 - **GATE**: chops the track's volume in time with the song (a trance gate, or a stutter before a drop). **Rate** 1/8, 1/8T, 1/16, 1/16T or 1/32; **Depth** (how far it closes: 100% is silent between chops); **Length** (how much of each step it stays open). The chops line up with bar 1, in playback and exports alike. Try it on a held pad or supersaw chord.
 - **PUMP**: sidechain-style ducking. The track's volume dips and swells back on every **Kick drum** (any drum-kit track's kick that is actually playing), **Every beat**, **Every 1/8**, or every note of **A track** you pick under **Follows** (a sidechain from any part: duck the pads under the bass, or the chords under a lead; the followed track can even be muted, as a silent trigger). **Depth** (how far it ducks) and **Release** (50 to 600 ms, how long it takes to come back). A muted or soloed-out kick track doesn't pump, so if you solo the pumped track, solo the drums too.
-- **POST-FADER AUX SENDS**: how much of the track goes to the shared reverb and the ping-pong echo.
+- **POST-FADER AUX SENDS**: how much of the track goes to the shared reverb and the ping-pong echo, and to each **return track** (see Return tracks), each before or after the fader.
 - **CHANNEL FADER**: the same volume and pan as the header.
 - **Delete this track** (also the trash icon at the top). It asks first if the track has clips; `Ctrl+Z` brings the track and its clips back.
 
-Human, Distortion, Pro EQ, Compressor, Multiband, Chorus, Lo-fi, Filter, Gate and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. You can switch effects on and off while the song plays without a gap, a click or a doubled sound, however busy the computer is: the change crossfades over 10 ms, about 20 to 30 ms after the click. A Compressor switched on comes in about 0.2 s later, once it has settled, and any other switch on that track in the meantime waits for it. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send, reverb and delay sliders don't reset on double-click (the master OTT and Stereo Width sliders do).
+Human, Distortion, Pro EQ, Compressor, Multiband, Chorus, Lo-fi, Filter, Delay, Reverb, Gate and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. You can switch effects on and off while the song plays without a gap, a click or a doubled sound, however busy the computer is: the change crossfades over 10 ms, about 20 to 30 ms after the click. A Compressor switched on comes in about 0.2 s later, once it has settled, and any other switch on that track in the meantime waits for it. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send, reverb and delay sliders don't reset on double-click (the master OTT and Stereo Width sliders do).
 
 ### Master
 
@@ -591,7 +632,14 @@ Automation makes a track setting change over the song: a filter opening during a
 
 ### Opening a lane
 
-Click the **curve button** in a track header ("Show automation"; it's tinted amber when the track has automation). The track's lane switches to **automation view**: its clips are dimmed and can't be edited there, and the header shows **LANE**, the number of points and the value at the playhead. Use **LANE** to pick the setting: **Volume**, **Pan**, **Filter Cutoff**, **Filter Resonance**, **Reverb Send**, **Delay Send**, **EQ Low**, **EQ Mid** or **EQ High**. A ● marks settings that already have points. Click the curve button again to go back to the clips.
+Click the **curve button** in a track header ("Show automation"; it's tinted amber when the track has automation). The track's lane switches to **automation view**: its clips are dimmed and can't be edited there, and the header shows **LANE**, the number of points and the value at the playhead. Use **LANE** to pick the setting. Almost anything can be automated:
+
+- **Track**: Volume, Pan, Filter Cutoff, Filter Resonance, Reverb Send, Delay Send, EQ Low, EQ Mid, EQ High.
+- **Sends**: the send to each return track.
+- **Effects**: every continuous setting of the inserts: Distortion drive, Compressor threshold, ratio and makeup, Chorus rate, depth and mix, Lo-fi tone, wow and mix, Delay feedback, tone and mix, Reverb pre-delay, tone and mix, Gate depth and length, Pump depth and release. A lane for an effect that's off is marked (off); drawing its first point switches the effect on.
+- **Plugins**: each parameter of the track's plugins (instrument and effects), named as the plugin names them, over its whole range.
+
+A ● marks settings that already have points. Click the curve button again to go back to the clips.
 
 ### Drawing
 
@@ -610,6 +658,18 @@ Click the **curve button** in a track header ("Show automation"; it's tinted amb
 - Filter lanes only sound while the track's **Filter** is on. Drawing a Filter lane's first point turns it on; if you switch the Filter off later, the lane is kept, dimmed, with a **Turn filter on** button.
 - Exports (mixdown and stems) follow lanes to within a millisecond. While playing, an edit, seek or undo is heard on the new line within about a tenth of a second; jumps glide over 4 ms so they don't click.
 - Insert and Delete bars on the ruler move points with the music, deleting a track deletes its lanes (Undo brings them back), and lanes are saved with the project.
+
+### MIDI learn: knobs and faders, and writing automation
+
+Any setting a lane can drive can also be moved by a knob or fader on a MIDI controller:
+
+1. Open the track's automation and pick the setting in **LANE**.
+2. Click **MIDI** beside it (it pulses), then move a knob or fader on your controller. The button now shows its number (**CC74** and so on).
+3. Moving that knob now moves the setting, over its whole range. Each burst of movement is one Undo step.
+
+Right-click the button to forget the knob (or use the list in the MIDI popover, which shows every mapping). A knob moves one setting; learning it for another moves it there. Mappings are saved with the project.
+
+**Write automation**: switch on **W** (beside the MIDI button, or **Write automation from knobs while playing** in the MIDI popover). While the song plays, moving a mapped knob writes its setting's lane at the playhead, replacing what the lane had there, so you can perform a filter sweep or a fade and keep it. Stop playing (or switch W off) to just move the setting again.
 
 ## Projects: saving and opening
 
@@ -646,6 +706,8 @@ Click the **MIDI** button (the keyboard icon) in the toolbar, then **Connect MID
 - Your playing goes to the **armed** track if one is armed, otherwise the **selected** track, through its instrument, mixer and effects, so you hear what you'll record.
 - Velocity, note-off, the sustain pedal and all-notes-off work on every instrument. The pitch bend wheel (±2 semitones) works on the recorded instruments, Slap Bass, Sub Bass, 808, Lead, Space Clav, Brass Stabs, Pad and plugin instruments. When you record, the bend and mod wheels go into the clip's **Pitch bend** and **Mod wheel** lanes (see Expression lanes), and the sustain pedal into how long the notes ring.
 - On a drum kit, the standard General MIDI drum pads (kick 36, snare 38, hats 42 and 46) play the kit's sounds.
+- **Knobs and faders** move the settings you map them to (see MIDI learn, under Automation). Knobs that aren't mapped go to plugin instruments as MIDI, and when recording go into the clip's controller lanes.
+- **MPE keyboards** (each note on its own channel, with its own bend and pressure): tick **MPE keyboard** in the MIDI popover. A note's own bend (±48 semitones, the MPE standard) and pressure then move only that note, and recording puts them into the note (its Note bend and Note pressure lanes). The Multi Sampler plays them per note; other instruments bend as a whole.
 
 ### The computer keyboard as a piano
 

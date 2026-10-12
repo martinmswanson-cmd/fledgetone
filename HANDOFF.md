@@ -95,6 +95,12 @@ Run all five checks before every commit.
 | Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |
 | MIDI keyboard, recording, metronome | `midi.ts`, `recorder.ts`, `metronome.ts`, `src/store/recording.ts` |
+| Return tracks and sends; Delay and Reverb inserts | `isReturn` / `liveSends` / `tidySends` in `src/store/buses.ts`; `setSends` / `sendTarget` in `trackStrip.ts` (gains tapped from `merge` pre-fader or `duck` post); `src/audio/effects/spaceFx.ts` (`createEcho`, `createReverb` with a seeded noise impulse, `insertTailSeconds` for exports' ring-out) |
+| Automate anything, MIDI learn | `specOf` / `parseParam` / `FX_AUTOMATION` / `pluginParamInfo` in `src/audio/automation.ts`; params are `send:<id>`, `fx:<insert>.<field>`, `plugin:<pluginId>:<paramId>`. Non-native settings are "controls" in `trackStrip.ts`: a ParamWriter on no param, read on every context tick (`controlTick`) and applied with `atControlTime` (so exports schedule ahead); plugin params via `setWamParam`. MIDI learn: `src/store/midiLearn.ts`, `Track.midiMap` |
+| Audio editing: warp, quantize, gain envelope, reverse, normalize | `src/store/warp.ts` (pure, tested: `beatAt`/`srcAt`/`sourceAt`/`clipSecondsAt`, `quantizeWarp`); warped copies in `soundLibrary.ts` (`warpSound`, piecewise WSOLA); `audioClipSchedule.ts` plays them and the envelope (a second gain per voice); `src/audio/audioEdits.ts`; editor overlay `AudioWarpGain.tsx` |
+| Drum Rack, Multi Sampler | `src/store/sampleKits.ts` (pure, tested: pads, `mapZones`, `zoneFor`, names to roots), `src/audio/presets/sampleKits.ts` (buffer-source voices; a WaveShaper with no curve was silent live, so the drive stage is patched in only when used), `SampleKitPanels.tsx` |
+| CC lanes, per-note expression, MPE | `Clip.expression.cc<n>` lanes (`laneCc`, `lanesOf` in `expression.ts`); `src/store/ccLanes.ts` turns them into automation (`withControllerLanes`, used live in `connectTimelineToAudio` and in `renderTracks`); plugins get CC via `TrackInstrument.cc`. `NoteEvent.expr` (`noteExpression.ts`), played by `playExpressive` in `scheduler.ts` through `TrackInstrument.noteVoice` (Multi Sampler) or a whole-instrument bend; MPE input in `liveInput.ts` (`mpeNotes`), recorded by `Take.noteControl` |
+| Notation, MusicXML | `src/store/notation.ts` (pure, tested: `notate`, `spell`, `musicXml`), `NotationView.tsx` (VexFlow with the Bravura font, imported statically so the one-file build has it) |
 | App state, undo, project load | `src/store/timelineStore.ts`, `timelineTypes.ts` |
 | Project file format, autosave | `src/store/project.ts` |
 | Timeline UI | `src/components/timeline/` |
@@ -321,9 +327,11 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 
 ## Ideas not started
 
-- Per-note pitch bend (MPE); rim / shaker / tambourine rows on the kits; WAM plugin automation
-  (their parameters as automation lanes); live mod-wheel vibrato while playing (it's recorded, and
-  plays back, but isn't heard live).
+- Per-voice note expression on the built-in synths and recorded instruments (only the Multi
+  Sampler plays it per note; the rest bend as a whole); rim / shaker / tambourine rows on the
+  kits; live mod-wheel vibrato while playing (it's recorded, and plays back, but isn't heard live).
+- Notation: editing in the staff, triplets and second voices (it shows one voice per staff on a
+  16th grid); a whole-song score.
 - A desktop app in Rust, once the web version peaks (the owner wants to wait).
 - Time-stretch and vocal tuning run on the main thread (about 0.2 s and 1 s per 30 s of audio):
   a Worker would keep the page smooth on long takes.
