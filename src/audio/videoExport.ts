@@ -39,7 +39,7 @@ export interface VideoOptions {
    * export's start. Before and after the video, the frame is black.
    */
   footage?: { url: string; offset: number };
-  /** How the spectrum is drawn (spectrumSkins.ts): the plain bars, or a character. */
+  /** How the spectrum is drawn (spectrumSkins.ts): LED bars (the default), or a character. */
   skin?: SkinId;
 }
 
@@ -295,25 +295,8 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     g.font = '400 22px system-ui, -apple-system, Segoe UI, sans-serif';
     g.fillText(opts.subtitle, stripX + 96, 140, stripW - 96);
 
-    // Spectrum: mirrored bars, cyan to green, or one of the characters
-    const levels = spectrum(t);
-    if (opts.skin && opts.skin !== 'bars') {
-      drawSpectrum(g, opts.skin, { x: stripX, y: 170, w: stripW, h: 360 }, levels, t, skinMemory);
-    } else {
-      const barsTop = 190;
-      const barsH = 300;
-      const gap = 4;
-      const bw = (stripW - gap * (BANDS - 1)) / BANDS;
-      for (let b = 0; b < BANDS; b++) {
-        const h = Math.max(3, levels[b] * barsH);
-        const x = stripX + b * (bw + gap);
-        const hue = 190 - (b / BANDS) * 40;
-        g.fillStyle = `hsl(${hue} 85% ${50 + levels[b] * 15}%)`;
-        g.fillRect(x, barsTop + barsH - h, bw, h);
-        g.fillStyle = `hsla(${hue} 85% 50% / 0.16)`;
-        g.fillRect(x, barsTop + barsH + 6, bw, h * 0.15);
-      }
-    }
+    // Spectrum: LED bars or one of the characters (spectrumSkins.ts), as in the Mixer
+    drawSpectrum(g, opts.skin ?? 'bars', { x: stripX, y: 170, w: stripW, h: 360 }, spectrum(t), t, skinMemory);
 
     // Waveform of the whole song, with the playhead
     const waveY = 590;

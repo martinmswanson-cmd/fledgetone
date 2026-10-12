@@ -155,10 +155,10 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 ## Recently finished
 
 - **Spectrum styles** (`spectrumSkins.ts`): one `drawSpectrum(g, skin, rect, bands, t, memory)`
-  draws bars, the Gomo-Fu crew, Mochi Bo, Cat, Frog or Two birds into any canvas rect; `memory`
+  draws LED bars, the Gomo-Fu crew, Mochi Bo, Cat, Frog or Two pigeons into any canvas rect, in the app's look (dot grid, accent colours, `neon()` glow lines, LED meters); `memory`
   holds each style's eased values between frames. The Mixer tab shows it live from an analyser on
   the master output (`masterSpectrum.ts`, connected only while shown; style in localStorage), and
-  the MP4 export's "Visualizer style" uses it in place of the bars. Characters follow the
+  the MP4 export draws its spectrum with it ("Visualizer style", LED bars by default). The pigeons are the Two Birds logo's: one faceted (`FACETS`), one a pixel sprite (`SPRITE`). Characters follow the
   Gomo-Fu look from the site's `gomofu-guys.js` (ink #2b2140, Bo and Slate colours).
 - **Mastering** (merged from `qol/q`): the Inspector's Master tab has a loudness meter, an OTT
   (`src/audio/effects/ott.ts`, with makeup gain and a primed start so it doesn't burst when
