@@ -170,6 +170,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
 
   return (
     <div
+      data-tour="track-header"
       onClick={handleSelectTrack}
       className={`sticky left-0 z-20 shrink-0 flex bg-forge-panel border-r border-b transition-colors cursor-pointer ${
         isSelected ? 'border-cyan-400/80 bg-forge-panel/90 shadow-md ring-1 ring-cyan-500/30' : 'border-forge-border'

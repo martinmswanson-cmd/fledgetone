@@ -91,6 +91,7 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
   return (
     <div
       ref={originRef}
+      data-tour="ruler"
       className="relative bg-forge-panel border-b border-forge-border select-none cursor-text"
       style={{
         width: totalWidth,

@@ -10,9 +10,36 @@ import { MobileNotice } from './components/MobileNotice';
 import { SharedLinkOpener } from './components/SharedLinkOpener';
 import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
+import { LearnDialog } from './components/tour/LearnDialog';
+import { TourOverlay } from './components/tour/TourOverlay';
+import { useTourStore } from './tour/tourStore';
 import { useUiStore } from './store/uiStore';
 import { startErrorLog } from './support/problemReport';
 import { Cpu, LifeBuoy, Sparkles } from 'lucide-react';
+
+/** A computer-sized screen (the phone notice covers small touch screens instead). */
+const roomy = () => typeof window !== 'undefined' && window.innerWidth >= 900;
+
+/**
+ * Tour and tutorials: the welcome on someone's first visit (not when they arrive through a shared
+ * song link, which opens that song), LEARN from the header, and the running lesson.
+ */
+const Learn: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'learn');
+  const welcomeSeen = useTourStore((s) => s.welcomeSeen);
+  const [welcome, setWelcome] = React.useState(() => !welcomeSeen && roomy() && !location.hash.includes('song='));
+  const close = () => {
+    setWelcome(false);
+    useTourStore.getState().markWelcomeSeen();
+    if (open) useUiStore.getState().setDialog(null);
+  };
+  return (
+    <>
+      {(welcome || open) && <LearnDialog welcome={welcome} onClose={close} />}
+      <TourOverlay />
+    </>
+  );
+};
 
 /** The Report a problem dialog, when it's open. */
 const ReportProblem: React.FC = () => {
@@ -31,6 +58,7 @@ export const App: React.FC = () => {
       <SharedLinkOpener />
       <SearchPalette />
       <ReportProblem />
+      <Learn />
 
       {/* Main Workstation Canvas */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
