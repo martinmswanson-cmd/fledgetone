@@ -64,7 +64,7 @@ const showTrackPanel = (name: string) => () => {
   void reveal(`[data-search="${name}"]`);
 };
 
-export const MENUS: MenuDef[] = [
+const MENUS: MenuDef[] = [
   {
     id: 'file',
     label: 'File',
@@ -253,10 +253,9 @@ export const MENUS: MenuDef[] = [
   },
 ];
 
-const MenuList: React.FC<{ menu: MenuDef; onClose: () => void; anchor: HTMLElement }> = ({ menu, onClose, anchor }) => {
+const MenuList: React.FC<{ menu: MenuDef; onClose: () => void; left: number; top: number }> = ({ menu, onClose, left, top }) => {
   const ref = useRef<HTMLDivElement>(null);
   const items = menu.items();
-  const rect = anchor.getBoundingClientRect();
   useEffect(() => {
     ref.current?.querySelector<HTMLButtonElement>('button:not([disabled])')?.focus({ preventScroll: true });
   }, []);
@@ -274,7 +273,7 @@ const MenuList: React.FC<{ menu: MenuDef; onClose: () => void; anchor: HTMLEleme
       aria-label={menu.label}
       onKeyDown={onKeyDown}
       className="fixed z-[60] min-w-64 py-1 rounded-md border border-forge-borderLight bg-forge-panelLight shadow-2xl text-xs"
-      style={{ left: Math.min(rect.left, window.innerWidth - 280), top: rect.bottom + 2 }}
+      style={{ left, top }}
     >
       {items.map((item, i) => (
         <React.Fragment key={i}>
@@ -306,10 +305,15 @@ const MenuList: React.FC<{ menu: MenuDef; onClose: () => void; anchor: HTMLEleme
 };
 
 export const MenuBar: React.FC = () => {
-  const [open, setOpen] = useState<string | null>(null);
+  const [where, setWhere] = useState<{ id: string; left: number; top: number } | null>(null);
+  const open = where?.id ?? null;
   const buttons = useRef<Record<string, HTMLButtonElement | null>>({});
   const bar = useRef<HTMLDivElement>(null);
-  const close = useCallback(() => setOpen(null), []);
+  const close = useCallback(() => setWhere(null), []);
+  const setOpen = (id: string | null) => {
+    const r = id ? buttons.current[id]?.getBoundingClientRect() : undefined;
+    setWhere(id && r ? { id, left: Math.min(r.left, window.innerWidth - 280), top: r.bottom + 2 } : null);
+  };
   useMenuDismiss(bar, close);
 
   // File shortcuts: Ctrl+S save, Ctrl+O open, Ctrl+E export
@@ -357,7 +361,7 @@ export const MenuBar: React.FC = () => {
           {m.label}
         </button>
       ))}
-      {menu && buttons.current[menu.id] && <MenuList key={menu.id} menu={menu} onClose={close} anchor={buttons.current[menu.id]!} />}
+      {menu && where && <MenuList key={menu.id} menu={menu} onClose={close} left={where.left} top={where.top} />}
     </div>
   );
 };
