@@ -330,6 +330,8 @@ export interface Track {
   frozen?: FrozenTrack;
   /** The stem group it belongs to for Intensity (see intensity.ts); none plays at full level */
   stemGroup?: string;
+  /** A dialogue / SFX proxy: every other track dips by `depth` dB wherever it sounds (see duck.ts) */
+  duckProxy?: { depth: number };
 }
 
 /**
@@ -664,10 +666,12 @@ const TICKS_PER_BAR = 768;
 
 /**
  * Convert a Tone duration to bars (4/4). Handles notation ("8n"), dotted notation ("8n."),
- * triplets ("8t", two thirds of an 8th), ticks ("80i") and transport time
- * "bars:quarters:sixteenths" (used for lengths drawn in the piano roll).
+ * triplets ("8t", two thirds of an 8th), ticks ("80i"), whole bars ("1m", "2m": the starters and
+ * stingers write long notes this way) and transport time "bars:quarters:sixteenths" (used for
+ * lengths drawn in the piano roll).
  */
 export function durationToBars(duration: string): number {
+  if (/^\d+(\.\d+)?m$/.test(duration)) return Math.max(0.0625, parseFloat(duration));
   if (duration.includes(':')) {
     const [b = 0, q = 0, s = 0] = duration.split(':').map(Number);
     const bars = b + q / 4 + s / 16;

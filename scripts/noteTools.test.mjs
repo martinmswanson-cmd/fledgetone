@@ -134,3 +134,10 @@ test('roll repeats a note at the grid rate for its length', () => {
   assert.ok(Math.abs(out[7].startOffset - (0.5 + 7 / 32)) < 1e-9);
   assert.ok(out[0].velocity < 0.4 && Math.abs(out[7].velocity - 0.9) < 1e-9);
 });
+
+test('durations in whole bars ("1m", "2m") are read as bars', () => {
+  assert.equal(durationToBars('1m'), 1);
+  assert.equal(durationToBars('2m'), 2);
+  assert.equal(durationToBars('3m'), 3);
+  assert.equal(durationToBars('4n'), 0.25);
+});
