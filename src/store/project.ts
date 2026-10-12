@@ -168,6 +168,17 @@ function parseTrack(v: unknown): Track {
     ...(frozen ? { frozen } : {}),
     // Optional: its stem group for Intensity
     ...(isStr(v.stemGroup) && v.stemGroup.trim() ? { stemGroup: v.stemGroup.trim().slice(0, 40) } : {}),
+    // Optional: the folder it's in
+    ...(isObj(v.folder) && isStr(v.folder.id) && v.folder.id
+      ? {
+          folder: {
+            id: v.folder.id,
+            name: isStr(v.folder.name) && v.folder.name.trim() ? v.folder.name.slice(0, 60) : 'Folder',
+            color: isStr(v.folder.color) ? v.folder.color : '#9ca3af',
+            ...(v.folder.collapsed === true ? { collapsed: true } : {}),
+          },
+        }
+      : {}),
     // Optional: a dialogue / SFX proxy the other tracks duck under
     ...(isObj(v.duckProxy) && isNum(v.duckProxy.depth) ? { duckProxy: { depth: Math.max(1, Math.min(30, v.duckProxy.depth)) } } : {}),
   };

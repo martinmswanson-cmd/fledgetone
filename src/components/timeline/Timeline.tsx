@@ -23,6 +23,11 @@ import { showToast } from './toastStore';
 import { TrackInspector } from '../inspector/TrackInspector';
 import { AddTrackMenu } from './AddTrackMenu';
 import { useUiStore } from '../../store/uiStore';
+import { useVideoStore } from '../../store/videoStore';
+import { laneTops } from './rows';
+import { trackRows } from '../../store/folders';
+import { FolderRow } from './FolderRow';
+import { TrackMenu, type TrackMenuState } from './TrackMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
 import type { RulerUnits } from '../../store/timelineTypes';
 import { frameRateLabel } from '../../store/timelineTypes';
@@ -44,15 +49,15 @@ function clipsInMarquee(m: Marquee): Set<string> {
   const right = Math.max(m.x0, m.x1);
   const top = Math.min(m.y0, m.y1);
   const bottom = Math.max(m.y0, m.y1);
-  const rowOf = new Map(tracks.map((t, i) => [t.id, i]));
+  const { tops } = laneTops(tracks, !!useVideoStore.getState().video);
   const hits = new Set<string>();
   for (const c of clips) {
-    const row = rowOf.get(c.trackId);
-    // Clips under an open automation view are dimmed and can't be edited there
-    if (row === undefined || automationView[c.trackId]?.open) continue;
+    const rowTop = tops.get(c.trackId);
+    // Clips under an open automation view are dimmed and can't be edited there (nor folded-away ones)
+    if (rowTop === undefined || automationView[c.trackId]?.open) continue;
     const cx0 = HEADER_WIDTH + (c.startBar - 1) * zoom;
     const cx1 = cx0 + c.lengthBars * zoom;
-    const cy0 = RULER_HEIGHT + row * TRACK_HEIGHT;
+    const cy0 = rowTop;
     const cy1 = cy0 + TRACK_HEIGHT;
     if (cx1 > left && cx0 < right && cy1 > top && cy0 < bottom) hits.add(c.id);
   }
@@ -102,6 +107,8 @@ export const Timeline: React.FC = () => {
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const [rulerMenu, setRulerMenu] = useState<RulerMenuState | null>(null);
+  const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
+  const closeTrackMenu = useCallback(() => setTrackMenu(null), []);
   const closeRulerMenu = useCallback(() => setRulerMenu(null), []);
   /** The audio clip "Chop to Slicer…" was chosen for, while its dialog is open. */
   const [chopClipId, setChopClipId] = useState<string | null>(null);
@@ -359,13 +366,17 @@ export const Timeline: React.FC = () => {
 
             <VideoLane />
 
-            {/* Tracks */}
-            {tracks.map((track) => (
-              <div key={track.id} className="flex">
-                <TrackHeader track={track} onOpenMenu={setMenu} />
-                <TrackLane track={track} originRef={rulerRef} onOpenMenu={setMenu} />
-              </div>
-            ))}
+            {/* Tracks, under their folders' rows */}
+            {trackRows(tracks).map((row) =>
+              row.kind === 'folder' ? (
+                <FolderRow key={`folder-${row.folder.id}`} folder={row.folder} members={row.members} />
+              ) : (
+                <div key={row.track.id} className="flex">
+                  <TrackHeader track={row.track} onOpenMenu={setMenu} onTrackMenu={setTrackMenu} />
+                  <TrackLane track={row.track} originRef={rulerRef} onOpenMenu={setMenu} />
+                </div>
+              )
+            )}
 
             {/* Add Track Row */}
             <div className="flex border-b border-forge-border bg-black/20" style={{ height: 38 }}>
@@ -410,6 +421,7 @@ export const Timeline: React.FC = () => {
 
       {menu && <ClipContextMenu menu={menu} onClose={closeMenu} onChop={setChopClipId} onVariations={setVariationsClipId} />}
       {rulerMenu && <RulerContextMenu menu={rulerMenu} onClose={closeRulerMenu} />}
+      {trackMenu && <TrackMenu menu={trackMenu} onClose={closeTrackMenu} />}
       {chopClipId && <ChopToSlicerDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
       {variationsClipId && <VariationsDialog clipId={variationsClipId} onClose={() => setVariationsClipId(null)} />}
       <Toast />

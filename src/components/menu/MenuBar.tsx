@@ -139,6 +139,12 @@ const MENUS: MenuDef[] = [
           if (!canFreeze(t.id)) return 'This track has nothing to freeze.';
           return freezeTrack(t.id);
         } },
+        { label: 'Move up', run: () => (t ? tl().moveTrackRow(t.id, -1) : NEED_TRACK), disabled: !t, divider: true },
+        { label: 'Move down', run: () => (t ? tl().moveTrackRow(t.id, 1) : NEED_TRACK), disabled: !t },
+        t?.folder
+          ? { label: `Take out of “${t.folder.name}”`, run: () => tl().setTrackFolder(t.id, null) }
+          : { label: 'New folder with this track', run: () => (t ? tl().groupIntoFolder([t.id]) : NEED_TRACK), disabled: !t, title: 'Right-click other tracks to move them into it' },
+        { label: 'Colour, folders and more: right-click a track’s name', run: () => undefined, disabled: true },
         { label: 'Mute', shortcut: '', run: () => (t ? tl().toggleMute(t.id) : NEED_TRACK), checked: !!t?.isMuted, disabled: !t, divider: true },
         { label: 'Solo', run: () => (t ? tl().toggleSolo(t.id) : NEED_TRACK), checked: !!t?.isSoloed, disabled: !t },
         { label: 'Arm for recording', run: () => (t ? tl().toggleArm(t.id) : NEED_TRACK), checked: !!t?.isArmed, disabled: !t },

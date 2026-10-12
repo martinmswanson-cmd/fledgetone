@@ -9,7 +9,9 @@ import { connectMidi } from '../../audio/liveInput';
 import { PIANO_OCTAVE_MAX, PIANO_OCTAVE_MIN } from '../../audio/midi';
 import { Popover } from '../Popover';
 import { showToast } from './toastStore';
-import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
+import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
+import { laneTops } from './rows';
+import { useVideoStore } from '../../store/videoStore';
 
 const toolButton = (active: boolean, activeClass: string) =>
   `h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 rounded-md border text-xs font-mono transition-colors ${
@@ -293,11 +295,12 @@ export const MidiButton: React.FC = () => {
 /** A translucent red block over the armed lane while a take is being recorded, from its start to the playhead. */
 export const RecordingMarker: React.FC = () => {
   const take = useTimelineStore((s) => s.take);
-  const row = useTimelineStore((s) => (s.take ? s.tracks.findIndex((t) => t.id === s.take!.trackId) : -1));
+  const hasVideo = useVideoStore((s) => !!s.video);
+  const rowTop = useTimelineStore((s) => (s.take ? laneTops(s.tracks, hasVideo).tops.get(s.take.trackId) ?? -1 : -1));
   const zoom = useTimelineStore((s) => s.zoom);
   // The playhead is read only while a take runs, so nothing here re-renders per frame otherwise
   const playhead = useTimelineStore((s) => (s.take ? s.playheadPosition : 0));
-  if (!take || row < 0) return null;
+  if (!take || rowTop < 0) return null;
   const from = Math.min(take.startBar, playhead);
   const to = Math.max(take.startBar, playhead);
   return (
@@ -305,7 +308,7 @@ export const RecordingMarker: React.FC = () => {
       className="absolute z-[14] pointer-events-none rounded-sm border border-red-400/70 bg-red-500/15 flex items-start px-1 text-[10px] font-mono font-bold text-red-200"
       style={{
         left: HEADER_WIDTH + (from - 1) * zoom,
-        top: RULER_HEIGHT + row * TRACK_HEIGHT + 2,
+        top: rowTop + 2,
         width: Math.max(3, (to - from) * zoom),
         height: TRACK_HEIGHT - 5,
       }}

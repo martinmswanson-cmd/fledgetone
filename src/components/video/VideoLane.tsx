@@ -8,7 +8,7 @@ import { showToast } from '../timeline/toastStore';
 import { secondsToBar } from '../../audio/transport';
 import { HEADER_WIDTH } from '../timeline/layout';
 
-const LANE_HEIGHT = 48;
+import { VIDEO_LANE_HEIGHT as LANE_HEIGHT } from '../timeline/rows';
 const PANEL_BUTTON = 'h-8 px-3 flex items-center gap-1.5 rounded-md border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-400/60 disabled:opacity-50 tabular-nums';
 const THUMB_W = 72;
 

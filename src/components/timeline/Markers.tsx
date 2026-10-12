@@ -9,7 +9,9 @@ import { formatBarsBeats, formatSmpte } from '../../audio/transport';
 import { barFromClientX } from './Playhead';
 import { MenuItem } from './ClipContextMenu';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
-import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
+import { HEADER_WIDTH, RULER_HEIGHT } from './layout';
+import { laneTops } from './rows';
+import { useVideoStore } from '../../store/videoStore';
 
 /** Where a flag hangs in the ruler: under the bar numbers, over the beat ticks. */
 const FLAG_TOP = 19;
@@ -292,13 +294,15 @@ const MarkerMenu: React.FC<{ menu: MarkerMenuState; onClose: () => void; onRenam
 export const MarkerLines = React.memo(function MarkerLines() {
   const markers = useTimelineStore((s) => s.markers);
   const zoom = useTimelineStore((s) => s.zoom);
+  const hasVideo = useVideoStore((s) => !!s.video);
   const rows = useTimelineStore((s) => s.tracks.length);
+  const bottom = useTimelineStore((s) => laneTops(s.tracks, hasVideo).bottom);
   if (!markers.length || !rows) return null;
   return (
     <div
       aria-hidden="true"
       className="absolute z-[13] right-0 pointer-events-none"
-      style={{ left: HEADER_WIDTH, top: RULER_HEIGHT, height: rows * TRACK_HEIGHT }}
+      style={{ left: HEADER_WIDTH, top: RULER_HEIGHT, height: bottom - RULER_HEIGHT }}
     >
       {markers.map((m) =>
         m.bar <= TOTAL_BARS + 1 ? <div key={m.id} className="absolute top-0 bottom-0 w-px bg-violet-300/40" style={{ left: markerX(m, zoom) }} /> : null

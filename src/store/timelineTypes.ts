@@ -332,7 +332,21 @@ export interface Track {
   stemGroup?: string;
   /** A dialogue / SFX proxy: every other track dips by `depth` dB wherever it sounds (see duck.ts) */
   duckProxy?: { depth: number };
+  /** The folder it's in (see folders.ts): every member carries the folder's settings; members sit together */
+  folder?: TrackFolder;
 }
+
+/** A folder of tracks: a named, coloured group that folds away and mutes or solos together. */
+export interface TrackFolder {
+  id: string;
+  name: string;
+  color: string;
+  /** Folded: its tracks' rows are hidden (they still play) */
+  collapsed?: boolean;
+}
+
+/** Colours offered for tracks and folders. */
+export const TRACK_COLORS = ['#f59e0b', '#ef4444', '#ec4899', '#a855f7', '#6366f1', '#3b82f6', '#06b6d4', '#14b8a6', '#22c55e', '#84cc16', '#eab308', '#9ca3af'] as const;
 
 /**
  * A track's instrument, inserts and EQ rendered to a sound in the sound library. While what it was
