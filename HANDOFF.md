@@ -155,11 +155,15 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 ## Recently finished
 
 - **Spectrum styles** (`spectrumSkins.ts`): one `drawSpectrum(g, skin, rect, bands, t, memory)`
-  draws LED bars, the Gomo-Fu crew, Mochi Bo, Cat, Frog or Two pigeons into any canvas rect, in the app's look (dot grid, accent colours, `neon()` glow lines, LED meters); `memory`
-  holds each style's eased values between frames. The Mixer tab shows it live from an analyser on
-  the master output (`masterSpectrum.ts`, connected only while shown; style in localStorage), and
-  the MP4 export draws its spectrum with it ("Visualizer style", LED bars by default). The pigeons are the Two Birds logo's: one faceted (`FACETS`), one a pixel sprite (`SPRITE`). Characters follow the
-  Gomo-Fu look from the site's `gomofu-guys.js` (ink #2b2140, Bo and Slate colours).
+  draws LED bars, Neon city, Grid terrain, Radar HUD, Data rain or Holo pigeons into any canvas
+  rect (in canvas pixels, no transform: the glitch and the city's reflection copy the canvas onto
+  itself). Cyberpunk look: magenta/purple/cyan/yellow for lows to highs, `neon()` lines with
+  additive glow, and `overlay()` (scanlines, HUD brackets, peak readout, glitch on bass hits) on
+  every style. `memory` keeps each style's state between frames. The Mixer tab shows it live from
+  an analyser on the master output (`masterSpectrum.ts`, connected only while shown; style in
+  localStorage), and the MP4 export draws its spectrum with it ("Visualizer style", LED bars by
+  default). The holo pigeons are the Two Birds logo's: one faceted (`FACETS`), one a pixel sprite
+  (`SPRITE`).
 - **Mastering** (merged from `qol/q`): the Inspector's Master tab has a loudness meter, an OTT
   (`src/audio/effects/ott.ts`, with makeup gain and a primed start so it doesn't burst when
   switched on) and Stereo Width (`masterChain.ts`). The header shows loudness. Exports report LUFS
