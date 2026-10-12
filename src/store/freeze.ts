@@ -65,6 +65,14 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
         .flatMap((c) => c.notes.filter((n) => n.note === 'C1').map((n) => +(c.startBar + n.startOffset).toFixed(6)))
         .sort((a, b) => a - b)
     : [];
+  // A Pump that follows a track ducks on that track's notes, muted or not
+  const source = track.fx.pump.on && track.fx.pump.trigger === 'track' ? track.fx.pump.source : undefined;
+  const sourceNotes = source
+    ? all.clips
+        .filter((c) => c.trackId === source)
+        .flatMap((c) => c.notes.filter((n) => n.startOffset < c.lengthBars).map((n) => +(c.startBar + n.startOffset).toFixed(6)))
+        .sort((a, b) => a - b)
+    : [];
   return hash(
     JSON.stringify({
       key: track.instrumentKey,
@@ -78,6 +86,7 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       bpm: all.bpm,
       swing: all.swing,
       kicks,
+      sourceNotes,
     })
   );
 }

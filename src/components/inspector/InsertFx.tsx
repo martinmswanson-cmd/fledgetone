@@ -215,6 +215,7 @@ const PUMP_TRIGGER_OPTIONS: ReadonlyArray<{ value: PumpTrigger; label: string; t
   { value: 'kick', label: 'Kick drum', title: 'Duck on every kick (C1) of a drum kit that is playing (not muted or silenced by solo)' },
   { value: 'beat', label: 'Every beat', title: 'Duck on every quarter note' },
   { value: 'eighth', label: 'Every 1/8', title: 'Duck on every 8th note' },
+  { value: 'track', label: 'A track', title: "Duck on every note of a track you choose (a sidechain from any part: a bass, a lead, a vocal chop)" },
 ];
 
 /** Filter and Pump (last in the chain, after the Chorus). */
@@ -223,6 +224,7 @@ export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
   const d = defaultTrackFx();
   const setFilter = (patch: Partial<TrackFx['filter']>, record = false) =>
     useTimelineStore.getState().setTrackFx(track.id, 'filter', patch, record);
+  const otherTracks = useTimelineStore((s) => s.tracks).filter((t) => t.id !== track.id);
   const setPump = (patch: Partial<TrackFx['pump']>, record = false) => useTimelineStore.getState().setTrackFx(track.id, 'pump', patch, record);
   const filterAccent = '#ec4899';
   const pumpAccent = '#facc15';
@@ -280,7 +282,32 @@ export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
         onToggle={() => setPump({ on: !fx.pump.on })}
         accent={pumpAccent}
       >
-        <FxChoice label="Trigger" value={fx.pump.trigger} options={PUMP_TRIGGER_OPTIONS} onChange={(trigger) => setPump({ trigger }, true)} accent={pumpAccent} disabled={!fx.pump.on} />
+        <FxChoice
+          label="Trigger"
+          value={fx.pump.trigger}
+          options={PUMP_TRIGGER_OPTIONS}
+          // Following a track: start with the first other track, unless one was picked before
+          onChange={(trigger) => setPump(trigger === 'track' && !fx.pump.source ? { trigger, source: otherTracks[0]?.id } : { trigger }, true)}
+          accent={pumpAccent}
+          disabled={!fx.pump.on}
+        />
+        {fx.pump.trigger === 'track' && (
+          <label className={`flex items-center gap-2 text-[10px] font-mono ${fx.pump.on ? '' : 'opacity-45'}`}>
+            <span className="w-16 shrink-0 text-forge-muted uppercase">Follows</span>
+            <select
+              className="flex-1 min-w-0 h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text"
+              value={fx.pump.source ?? ''}
+              disabled={!fx.pump.on}
+              onChange={(e) => setPump({ source: e.target.value }, true)}
+              aria-label="Pump follows track"
+            >
+              {!otherTracks.some((t) => t.id === fx.pump.source) && <option value="">Choose a track…</option>}
+              {otherTracks.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <FxSlider label="Depth" value={fx.pump.depth} min={0} max={1} step={0.01} format={pct} onChange={(depth) => setPump({ depth })} reset={d.pump.depth} accent={pumpAccent} disabled={!fx.pump.on} />
         <FxSlider
           label="Release"

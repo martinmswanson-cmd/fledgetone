@@ -589,9 +589,13 @@ async function renderTracks(
     const pumpOnKick = (trackId: string, time: number) => {
       if (kickIds.has(trackId)) strips.forEach((s) => s.pump(time, 'kick'));
     };
-    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing);
+    // Pumps that follow a track hear its notes even when this render leaves it out (a stem)
+    const sourceIds = new Set(strips.map((s) => s.pumpSource()).filter((id): id is string => !!id));
+    const pumpOnTrack = sourceIds.size ? (trackId: string, time: number) => sourceIds.has(trackId) && strips.forEach((s) => s.pump(time, 'track', trackId)) : undefined;
+    const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing, pumpOnTrack);
     const followsKick = strips.some((s) => s.pumpTrigger() === 'kick');
-    schedule.update(followsKick ? [...tracks, ...kickTracks.filter((t) => !instruments.has(t.id))] : tracks, clips);
+    const extra = [...(followsKick ? kickTracks : []), ...opts.tracks.filter((t) => sourceIds.has(t.id))].filter((t, i, all) => !instruments.has(t.id) && all.indexOf(t) === i);
+    schedule.update([...tracks, ...extra], clips);
     const pumpClock = createPumpClock(transport, () => strips, barToTicks(startBar), barToTicks(endBar));
     pumpClock.update();
     // Audio clips play their sound files on the same Transport, from the right place in them
