@@ -25,6 +25,16 @@ const BAND_COLORS = ['#f43f5e', '#f59e0b', '#22c55e', '#06b6d4', '#8b5cf6', '#ec
 const fmtHz = (hz: number) => (hz >= 1000 ? `${(hz / 1000).toFixed(hz >= 10000 ? 1 : 2)} kHz` : `${Math.round(hz)} Hz`);
 const fmtDb = (db: number) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
 
+/** Pixels to frequency and gain, and back, for a graph `width` by `height`. */
+function scales(width: number, height: number) {
+  return {
+    xOf: (hz: number) => (Math.log(hz / F_LO) / Math.log(F_HI / F_LO)) * width,
+    hzOf: (x: number) => Math.max(F_LO, Math.min(F_HI, F_LO * (F_HI / F_LO) ** (x / width))),
+    yOf: (db: number) => height / 2 - (Math.max(-DB_RANGE, Math.min(DB_RANGE, db)) / DB_RANGE) * (height / 2 - 6),
+    dbOf: (y: number) => Math.max(-DB_RANGE, Math.min(DB_RANGE, ((height / 2 - y) / (height / 2 - 6)) * DB_RANGE)),
+  };
+}
+
 export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean }> = ({ track, height = 150, big = false }) => {
   const peq = track.fx.peq ?? defaultTrackFx().peq;
   const bands = peq.bands;
@@ -43,22 +53,19 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
     return () => ro.disconnect();
   }, []);
 
-  const xOf = (hz: number) => (Math.log(hz / F_LO) / Math.log(F_HI / F_LO)) * width;
-  const hzOf = (x: number) => Math.max(F_LO, Math.min(F_HI, F_LO * (F_HI / F_LO) ** (x / width)));
-  const yOf = (db: number) => height / 2 - (Math.max(-DB_RANGE, Math.min(DB_RANGE, db)) / DB_RANGE) * (height / 2 - 6);
-  const dbOf = (y: number) => Math.max(-DB_RANGE, Math.min(DB_RANGE, ((height / 2 - y) / (height / 2 - 6)) * DB_RANGE));
+  const { xOf, hzOf, yOf, dbOf } = useMemo(() => scales(width, height), [width, height]);
 
   const set = (next: PeqBand[]) => useTimelineStore.getState().setTrackFx(track.id, 'peq', { bands: next });
   const update = (i: number, patch: Partial<PeqBand>) => set(bands.map((b, k) => (k === i ? { ...b, ...patch } : b)));
 
   // The total curve and the selected band's own shape
   const freqs = useMemo(() => logFrequencies(Math.max(60, Math.round(width / 3))), [width]);
-  const curve = useMemo(() => freqs.map((f, i) => `${i ? 'L' : 'M'}${xOf(f).toFixed(1)},${yOf(peqDb(bands, f)).toFixed(1)}`).join(''), [freqs, bands, width, height]);
+  const curve = useMemo(() => freqs.map((f, i) => `${i ? 'L' : 'M'}${xOf(f).toFixed(1)},${yOf(peqDb(bands, f)).toFixed(1)}`).join(''), [freqs, bands, xOf, yOf]);
   const own = useMemo(() => {
     const b = bands[sel];
     if (!b?.on) return '';
     return `${freqs.map((f, i) => `${i ? 'L' : 'M'}${xOf(f).toFixed(1)},${yOf(bandDb(b, f)).toFixed(1)}`).join('')}L${width},${height / 2}L0,${height / 2}Z`;
-  }, [freqs, bands, sel, width, height]);
+  }, [freqs, bands, sel, width, height, xOf, yOf]);
 
   // The live spectrum behind the curve (only while playing and the EQ is on)
   useEffect(() => {
@@ -92,7 +99,7 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [isPlaying, track.id, track.color, width, height]);
+  }, [isPlaying, track.id, track.color, width, height, hzOf]);
 
   const local = (e: { clientX: number; clientY: number }) => {
     const r = wrap.current!.getBoundingClientRect();
