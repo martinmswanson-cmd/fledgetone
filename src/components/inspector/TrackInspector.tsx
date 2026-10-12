@@ -30,7 +30,7 @@ import { INSTRUMENTS, isAudioKind, isSlicerKind } from '../../audio/instrumentCa
 /** Instruments Expressive playing changes: the recorded ones (but sound effects) and the drum kits. */
 const canPlayExpressively = (key: keyof typeof INSTRUMENTS) => {
   const def = INSTRUMENTS[key];
-  return (def.kind === 'sampled' && def.category !== 'Sound Effects') || def.kind === 'drums';
+  return (def.kind === 'sampled' && def.category !== 'Sound Effects') || def.kind === 'drums' || key === 'bass808';
 };
 import type { InstrumentDef } from '../../audio/instrumentCatalog';
 import { InstrumentPicker } from '../InstrumentMenu';

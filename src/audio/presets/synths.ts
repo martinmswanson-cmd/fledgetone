@@ -84,16 +84,34 @@ const SLIDE_808 = 0.08;
  * ended doesn't hit again: the sounding note slides to the new pitch and carries on to the new
  * note's end (the trap and drill "808 slide"). Notes that only touch play separately.
  */
-export function create808(output: Tone.InputNode) {
-  const drive = new Tone.Distortion({ distortion: 0.22, oversample: '2x', wet: 0.6 });
+export function create808(output: Tone.InputNode, modern = false) {
+  /**
+   * `modern` (Expressive playing): the 808 as it's mixed now, and easier on the ears. A clean,
+   * mono sub (low-passed at 120 Hz) carries the weight; a copy with its lows cut at 90 Hz goes
+   * through the drive and a 3.5 kHz high cut, 8 dB down, so phones and small speakers hear the
+   * 808 without the sub itself getting any louder or harsher. The attack is never sharper than
+   * 6 ms and the pitch drop is gentler. Otherwise the original: the whole 808 through the drive.
+   */
+  const drive = new Tone.Distortion({ distortion: modern ? 0.45 : 0.22, oversample: modern ? '4x' : '2x', wet: modern ? 1 : 0.6 });
   const synth = new Tone.MembraneSynth({
-    volume: -2,
-    pitchDecay: 0.06,
-    octaves: 1.6,
+    // (The clean sub's peaks aren't clipped flat by the drive: a dB lower keeps them in line)
+    volume: modern ? -3 : -2,
+    pitchDecay: modern ? 0.04 : 0.06,
+    octaves: modern ? 0.9 : 1.6,
     oscillator: { type: 'sine' },
-    envelope: { attack: 0.002, decay: 1.4, sustain: 0.35, release: 0.9 },
+    envelope: { attack: modern ? 0.006 : 0.002, decay: 1.4, sustain: 0.35, release: 0.9 },
   });
-  synth.chain(drive, output);
+  const extra: Array<{ dispose: () => void }> = [];
+  if (modern) {
+    const clean = new Tone.Filter({ type: 'lowpass', frequency: 120, rolloff: -24 });
+    const lowCut = new Tone.Filter({ type: 'highpass', frequency: 90, rolloff: -12 });
+    const highCut = new Tone.Filter({ type: 'lowpass', frequency: 3500, rolloff: -12 });
+    const grit = new Tone.Gain(Tone.dbToGain(-8));
+    synth.connect(clean);
+    clean.connect(output);
+    synth.chain(lowCut, drive, highCut, grit, output);
+    extra.push(clean, lowCut, highCut, grit);
+  } else synth.chain(drive, output);
   const safeTime = monotonicTime(synth.context);
   const held = heldNote(synth, safeTime);
   /** When the sounding scheduled note ends, so a note starting before then slides instead. */
@@ -133,6 +151,7 @@ export function create808(output: Tone.InputNode) {
     dispose: () => {
       synth.dispose();
       drive.dispose();
+      extra.forEach((n) => n.dispose());
     },
   };
 }
