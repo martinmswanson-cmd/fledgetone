@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, Volume2, Power } from 'lucide-react';
+import { BookOpen, Search, Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import boLogo from '../assets/bo.svg';
@@ -8,6 +8,7 @@ import { FitTempoPopover, TempoField } from './TempoControls';
 import { shouldIgnoreShortcut } from './keyboard';
 import { LoudnessBadge } from './LoudnessBadge';
 import { PerfBadge } from './PerfBadge';
+import { PALETTE_SHORTCUT, useUiStore } from '../store/uiStore';
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
@@ -17,9 +18,8 @@ export const Header: React.FC = () => {
   const { setBpm, tapTempo, setSwing } = useTimelineStore.getState();
 
   const isRunning = audioState === 'running';
-  const [guideOpen, setGuideOpen] = useState(false);
-  // Stable, so the guide's focus handling runs once per opening
-  const closeGuide = useCallback(() => setGuideOpen(false), []);
+  const guide = useUiStore((s) => s.guide);
+  const { openGuide, closeGuide } = useUiStore.getState();
   const [fitOpen, setFitOpen] = useState(false);
   const closeFit = useCallback(() => setFitOpen(false), []);
   const fitButton = useRef<HTMLButtonElement>(null);
@@ -30,7 +30,7 @@ export const Header: React.FC = () => {
       if (e.key !== '?' || shouldIgnoreShortcut(e)) return;
       if (document.querySelector('[role="menu"]')) return;
       e.preventDefault();
-      setGuideOpen(true);
+      useUiStore.getState().openGuide();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -146,6 +146,7 @@ export const Header: React.FC = () => {
               step="0.5"
               value={masterVolume}
               onChange={(e) => setMasterVolume(Number(e.target.value))}
+              aria-label="Master volume"
               className="w-28 accent-amber-400 cursor-pointer h-1.5 bg-forge-border rounded-lg appearance-none mt-1"
             />
           </div>
@@ -156,7 +157,18 @@ export const Header: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => setGuideOpen(true)}
+          onClick={() => useUiStore.getState().setPaletteOpen(true)}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono tracking-wider border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-500/70 hover:bg-cyan-500/10 transition"
+          title={`Search tools, settings, instruments and the guide (${PALETTE_SHORTCUT})`}
+        >
+          <Search className="w-3.5 h-3.5 text-cyan-400" />
+          SEARCH
+          <kbd className="hidden sm:inline px-1 rounded border border-forge-border text-[9px] text-forge-muted">{PALETTE_SHORTCUT}</kbd>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => openGuide()}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono tracking-wider border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-500/70 hover:bg-cyan-500/10 transition"
           title="How Bo's Beatbox works (?)"
         >
@@ -182,7 +194,8 @@ export const Header: React.FC = () => {
           />
         </button>
       </div>
-      {guideOpen && <GuidePanel onClose={closeGuide} />}
+      {/* Keyed by section, so search opening another section while it's open starts there */}
+      {guide !== null && <GuidePanel key={guide} onClose={closeGuide} section={guide} />}
     </header>
   );
 };

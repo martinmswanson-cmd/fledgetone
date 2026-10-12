@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   SlidersHorizontal,
   X,
@@ -13,8 +13,8 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
+import { useUiStore } from '../../store/uiStore';
 import { useAudioStore } from '../../store/audioStore';
-import type { InstrumentKey } from '../../store/timelineTypes';
 import { EqCurvePreview } from './EqCurvePreview';
 import { DistortionPanel, DynamicsAndChorusPanels, FilterAndPumpPanels } from './InsertFx';
 import { SampleLoader } from './SampleLoader';
@@ -22,13 +22,17 @@ import { SlicerPanel } from './SlicerPanel';
 import { SynthPanel } from './SynthPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
-import { INSTRUMENTS, instrumentsByCategory, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
+import { INSTRUMENTS, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
+import type { InstrumentDef } from '../../audio/instrumentCatalog';
+import { InstrumentPicker } from '../InstrumentMenu';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
 import { AutoBadge, Automatable } from '../timeline/AutoBadge';
 import { AUTOMATED_TIP } from '../timeline/automationHooks';
 
 /** One click to a kind of space: the master reverb's length. */
+const notAudio = (def: InstrumentDef) => !isAudioKind(def.key);
+
 const REVERB_SPACES = [
   { name: 'Room', decay: 1, hint: 'Tight and close: drums, rock, hip-hop' },
   { name: 'Studio', decay: 1.8, hint: 'A little air: pop, lo-fi, electronic' },
@@ -60,7 +64,8 @@ export const TrackInspector: React.FC = () => {
   } = useTimelineStore.getState();
 
   const instrumentStatus = useAudioStore((s) => s.instrumentStatus);
-  const [activeTab, setActiveTab] = useState<'track' | 'master'>('track');
+  const activeTab = useUiStore((s) => s.inspectorTab);
+  const setActiveTab = useUiStore.getState().setInspectorTab;
 
   if (!isInspectorOpen) return null;
 
@@ -168,7 +173,7 @@ export const TrackInspector: React.FC = () => {
         {activeTab === 'track' ? (
           <>
             {/* Instrument Assignment & Status */}
-            <div className="flex flex-col gap-1.5 bg-forge-bg p-2.5 rounded-lg border border-forge-border">
+            <div data-search="instrument" className="flex flex-col gap-1.5 bg-forge-bg p-2.5 rounded-lg border border-forge-border">
               <div className="flex items-center justify-between text-[10px] font-mono text-forge-muted">
                 <span>SOUND GENERATOR</span>
                 {/* Soundbank Loading Status Badge */}
@@ -211,23 +216,14 @@ export const TrackInspector: React.FC = () => {
                   {INSTRUMENTS[currentTrack.instrumentKey].name} track ({INSTRUMENTS[currentTrack.instrumentKey].blurb.toLowerCase()})
                 </div>
               ) : (
-                <select
+                <InstrumentPicker
                   value={currentTrack.instrumentKey}
-                  onChange={(e) => setTrackInstrument(currentTrack.id, e.target.value as InstrumentKey)}
-                  className="w-full bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white cursor-pointer focus:border-cyan-400 focus:outline-none"
-                >
-                  {instrumentsByCategory().map(({ category, instruments }) => (
-                    <optgroup key={category} label={category}>
-                      {instruments
-                        .filter((inst) => !isAudioKind(inst.key))
-                        .map((inst) => (
-                          <option key={inst.key} value={inst.key}>
-                            {inst.name} ({inst.blurb})
-                          </option>
-                        ))}
-                    </optgroup>
-                  ))}
-                </select>
+                  onChange={(key) => setTrackInstrument(currentTrack.id, key)}
+                  include={notAudio}
+                  label="Instrument"
+                  withBlurb
+                  className="w-full bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white cursor-pointer hover:border-cyan-400/60 focus:border-cyan-400 focus:outline-none"
+                />
               )}
               {INSTRUMENTS[currentTrack.instrumentKey].kind === 'sampled' && (
                 <span className="text-[10px] text-forge-muted">Recorded samples, downloaded the first time you use them (needs internet).</span>
@@ -243,7 +239,7 @@ export const TrackInspector: React.FC = () => {
             <DistortionPanel track={currentTrack} />
 
             {/* 3-Band Parametric EQ Panel */}
-            <div className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
+            <div data-search="eq" className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
@@ -345,7 +341,7 @@ export const TrackInspector: React.FC = () => {
             <FilterAndPumpPanels track={currentTrack} />
 
             {/* Aux FX Sends Section */}
-            <div className="flex flex-col gap-3 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
+            <div data-search="sends" className="flex flex-col gap-3 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
               <div className="flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-white">
@@ -433,7 +429,7 @@ export const TrackInspector: React.FC = () => {
             </div>
 
             {/* Fader & Pan Strip */}
-            <div className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border">
+            <div data-search="volume" className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border">
               <span className="text-[10px] font-mono font-bold uppercase text-forge-muted tracking-wider">
                 CHANNEL FADER
               </span>
@@ -501,7 +497,7 @@ export const TrackInspector: React.FC = () => {
           <div className="flex flex-col gap-4">
             <MasterPanels />
             {/* Master Reverb Unit */}
-            <div className="flex flex-col gap-2.5 bg-forge-bg p-3 rounded-lg border border-forge-border shadow-md">
+            <div data-search="master-reverb" className="flex flex-col gap-2.5 bg-forge-bg p-3 rounded-lg border border-forge-border shadow-md">
               <div className="flex items-center justify-between border-b border-forge-border pb-2">
                 <div className="flex items-center gap-1.5">
                   <Waves className="w-4 h-4 text-cyan-400" />
@@ -555,7 +551,7 @@ export const TrackInspector: React.FC = () => {
             </div>
 
             {/* Master Delay Unit */}
-            <div className="flex flex-col gap-2.5 bg-forge-bg p-3 rounded-lg border border-forge-border shadow-md">
+            <div data-search="master-delay" className="flex flex-col gap-2.5 bg-forge-bg p-3 rounded-lg border border-forge-border shadow-md">
               <div className="flex items-center justify-between border-b border-forge-border pb-2">
                 <div className="flex items-center gap-1.5">
                   <Radio className="w-4 h-4 text-amber-400" />

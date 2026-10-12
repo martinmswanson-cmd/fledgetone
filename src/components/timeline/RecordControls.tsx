@@ -31,7 +31,7 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
   return (
     <Popover label="Recording" onClose={onClose} anchorRef={anchorRef} className="left-0">
       <span className="text-sm font-semibold text-forge-text">Recording</span>
-      <label className="flex items-center gap-2 text-forge-text">
+      <label data-search="count-in" className="flex items-center gap-2 text-forge-text">
         <input type="checkbox" className={checkbox} checked={options.countIn} onChange={(e) => setRecordOptions({ countIn: e.target.checked })} />
         1-bar count-in
       </label>
@@ -50,7 +50,7 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
           ))}
         </select>
       </label>
-      <label className="flex items-center gap-2 text-forge-text">
+      <label data-search="metronome-while" className="flex items-center gap-2 text-forge-text">
         <input type="checkbox" className={checkbox} checked={options.metronome} onChange={(e) => setRecordOptions({ metronome: e.target.checked })} />
         Metronome while playing
       </label>
