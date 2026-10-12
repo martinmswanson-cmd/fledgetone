@@ -35,8 +35,11 @@ type Transport = ReturnType<typeof Tone.getTransport>;
  * scrub show what will play.
  */
 export interface AutomationSchedule {
-  /** Bring the lanes in line with the tracks (after their strips have applied them). Cheap when no lane changed. */
-  update: (tracks: Track[]) => void;
+  /**
+   * Bring the lanes in line with the tracks (after their strips have applied them). Cheap when no
+   * lane changed. `duck` is the gain curve every track but the proxies plays (see duck.ts), or null.
+   */
+  update: (tracks: Track[], duck?: AutomationPoint[] | null) => void;
   /** Stopped at `bar`: every lane holds its value there. */
   hold: (bar: number) => void;
   /** The tempo or loop changed while playing: work out where the Transport is and carry on from there. */
@@ -286,7 +289,7 @@ export function createAutomationSchedule(
   };
 
   return {
-    update: (tracks) => {
+    update: (tracks, duck = null) => {
       const seen = new Set<string>();
       for (const track of tracks) {
         if (!track.automation?.length) continue;
@@ -316,8 +319,36 @@ export function createAutomationSchedule(
           }
         }
       }
+      // Ducking: one gain curve on every track except the proxies, written like a lane
+      if (duck?.length) {
+        for (const track of tracks) {
+          if (track.duckProxy) continue;
+          const strip = stripFor(track.id);
+          if (!strip) continue;
+          const key = `${track.id}|duck`;
+          seen.add(key);
+          let lane = lanes.get(key);
+          if (lane && lane.points === duck) continue;
+          const tg = strip.duckTarget();
+          const targets: LaneTarget[] = [{ ...tg, native: (n: number) => n, linear: true }];
+          if (lane) Object.assign(lane, { points: duck, targets });
+          else lanes.set(key, (lane = { points: duck, version: -1, targets, until: -Infinity }));
+          const changed = lane;
+          if (run) {
+            guarded(() => replan(changed, context.now()));
+            nextDue = Math.min(nextDue, changed.until);
+          } else {
+            guarded(() => holdLane(changed));
+          }
+        }
+      }
       // A lane that's gone (or emptied) stops here; the strip puts the track's own setting back
-      for (const key of lanes.keys()) if (!seen.has(key)) lanes.delete(key);
+      // (a duck lane's gain goes back to full level here)
+      for (const [key, lane] of lanes) {
+        if (seen.has(key)) continue;
+        if (key.endsWith('|duck')) guarded(() => lane.targets.forEach((tg) => tg.writer.set(1, 0.03)));
+        lanes.delete(key);
+      }
       listen();
     },
     hold: (bar) => {

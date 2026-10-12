@@ -14,6 +14,7 @@ import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar, ticksToBar } from './transport';
 import { cueChunks, loopChunk, markerCues } from './wavCues';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
+import { duckPoints } from '../store/duck';
 import type { WavCue } from './wavCues';
 import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 
@@ -666,7 +667,8 @@ async function renderTracks(
     // begins, and follow the lanes from when the Transport starts
     const automation = createAutomationSchedule(transport, (trackId) => stripOf.get(trackId), { holdGlide: 0 });
     automation.hold(startBar);
-    automation.update(tracks);
+    // Every track but the proxies ducks under the dialogue / SFX proxies (see duck.ts)
+    automation.update(tracks, duckPoints(opts.tracks, opts.clips, bpm));
     transport.start(plan.startAt, `${barToTicks(startBar)}i`);
     // Stop at endBar (after the last pass of a seamless loop): the render runs on for the
     // tail, and notes after endBar (the rest of the song, past a loop region's Out) must not
