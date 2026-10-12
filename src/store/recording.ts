@@ -118,10 +118,14 @@ export interface Take {
   noteOn: (key: number, note: string, velocity: number, bar: number, seconds: number) => void;
   noteOff: (key: number, seconds: number) => void;
   sustain: (down: boolean, seconds: number) => void;
-  /** The pitch bend (semitones) or mod wheel (0 to 1) moved to `value` at `bar`: it goes in the clip's expression lanes. */
-  control: (lane: 'bend' | 'mod', value: number, bar: number) => void;
-  /** The loop came round: the take covered these bars too, so its clip spans them, and a new pass begins. */
-  cover: (fromBar: number, toBar: number) => void;
+  /** The pitch bend (semitones) or mod wheel (0 to 1) moved to `value` at `bar` (heard at `seconds`): it goes in the clip's expression lanes. */
+  control: (lane: 'bend' | 'mod', value: number, bar: number, seconds?: number) => void;
+  /**
+   * The loop comes round at audio time `at`: the take covers these bars too, so its clip spans
+   * them, and what's played from then on is the next pass. (The Transport says so a little ahead
+   * of the wrap, so what's still played before `at` stays in this pass. Without `at`: from now.)
+   */
+  cover: (fromBar: number, toBar: number, at?: number) => void;
   /** Notes recorded so far, the held ones included. */
   count: () => number;
   /**
@@ -140,7 +144,9 @@ export function createTake(startBar: number): Take {
   const sustained = new Map<number, TakeNote>();
   let pedal = false;
   const controls: Record<'bend' | 'mod', Array<{ bar: number; value: number; pass: number }>> = { bend: [], mod: [] };
-  let pass = 0;
+  /** When each loop wrap is heard (audio seconds) */
+  const wraps: number[] = [];
+  const passAt = (seconds: number | undefined) => (seconds === undefined ? wraps.length : wraps.filter((w) => w <= seconds + 1e-6).length);
   let low = startBar;
   let high = startBar;
 
@@ -165,7 +171,7 @@ export function createTake(startBar: number): Take {
     startBar,
     noteOn: (key, note, velocity, bar, seconds) => {
       endEarlier(key, seconds);
-      held.set(key, { note, velocity, bar, start: seconds, end: seconds, pass });
+      held.set(key, { note, velocity, bar, start: seconds, end: seconds, pass: passAt(seconds) });
       low = Math.min(low, bar);
       high = Math.max(high, bar);
     },
@@ -182,17 +188,18 @@ export function createTake(startBar: number): Take {
       for (const n of sustained.values()) close(n, seconds);
       sustained.clear();
     },
-    control: (lane, value, bar) => {
+    control: (lane, value, bar, seconds) => {
       const list = controls[lane];
+      const pass = passAt(seconds);
       // Wheels send a stream: keep a point only where the value has moved on
       const last = list[list.length - 1];
       if (last && last.pass === pass && Math.abs(last.value - value) < (lane === 'bend' ? 0.02 : 0.01) && bar - last.bar < 1 / 16) return;
       list.push({ bar, value, pass });
     },
-    cover: (fromBar, toBar) => {
+    cover: (fromBar, toBar, at) => {
       low = Math.min(low, fromBar);
       high = Math.max(high, toBar);
-      pass++;
+      wraps.push(at ?? -Infinity);
     },
     count: () => notes.length + held.size + sustained.size,
     finish: (bar, seconds, tempo, options = {}) => {

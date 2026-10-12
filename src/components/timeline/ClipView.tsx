@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import * as Tone from 'tone';
-import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { TOTAL_BARS, useTimelineStore, songTempo } from '../../store/timelineStore';
+import { tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
 import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
 import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
@@ -120,7 +121,8 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   const activeTool = useTimelineStore((s) => s.activeTool);
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
   // Only audio clips follow the tempo here (their width in bars already changed with it)
-  const bpm = useTimelineStore((s) => (clip.audio ? s.bpm : 0));
+  // The tempo where the clip starts, which its sound plays at (as audioClipSchedule does)
+  const bpm = useTimelineStore((s) => (clip.audio ? tempoAt(clip.startBar, songTempo(s)) : 0));
   // Its crossfades with overlapping clips on the track, as a string so the view only redraws when they change
   const xfade = useTimelineStore((s) => {
     if (!clip.audio) return '';

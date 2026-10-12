@@ -296,3 +296,15 @@ test('punch: only notes started in the range are kept, and the clip is the range
   near(durationToBars(clip.notes[0].duration), 0.5, 1e-6);
   assert.equal(createTake(1).finish(2, at(2), BPM, { punch: { inBar: 2, outBar: 3 } }), null);
 });
+
+test('takes: a note played just before the wrap is heard stays in its pass', () => {
+  const take = createTake(1);
+  // The Transport says the loop wraps at at(3) a moment ahead; a note heard just before it is still pass 1
+  take.cover(1, 3, at(3));
+  take.noteOn(60, 'C4', 0.8, 2.9, at(2.9));
+  take.noteOff(60, at(2.95));
+  take.noteOn(62, 'D4', 0.8, 1.2, at(3.2));
+  take.noteOff(62, at(3.3));
+  const clip = take.finish(3, at(3.5), BPM, { passes: true });
+  assert.deepEqual(clip.takes.map((t) => t.notes.map((n) => n.note)), [['C4'], ['D4']]);
+});

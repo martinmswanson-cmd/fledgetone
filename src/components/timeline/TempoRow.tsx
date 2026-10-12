@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Trash2 } from 'lucide-react';
 import { TOTAL_BARS, useSongTempo, useTimelineStore } from '../../store/timelineStore';
@@ -161,12 +161,30 @@ function TempoEditor({ editing, onClose }: { editing: Editing; onClose: () => vo
   const point = useTimelineStore((st) => (editing.kind === 'tempo' ? st.tempoPoints.find((p) => p.id === editing.id) : undefined));
   const meterPoint = useTimelineStore((st) => (editing.kind === 'meter' ? st.meterPoints.find((p) => p.id === editing.id) : undefined));
   const s = useTimelineStore.getState();
+  /**
+   * The BPM as typed: kept when the editor closes, however it closes (a click elsewhere closes it
+   * before the field's blur would), unless Escape cancels it
+   */
+  const draft = useRef<number | null>(null);
+  useEffect(() => {
+    const { kind, id } = editing;
+    return () => {
+      const v = draft.current;
+      if (kind !== 'tempo' || v === null || !(v >= MIN_BPM && v <= MAX_BPM)) return;
+      const st = useTimelineStore.getState();
+      const p = id ? st.tempoPoints.find((q) => q.id === id) : undefined;
+      if (id && p && Math.abs(p.bpm - v) > 1e-9) st.updateTempoChange(id, { bpm: v });
+      else if (!id && Math.abs(st.bpm - v) > 1e-9) st.setBpm(v);
+    };
+  }, [editing]);
   if (editing.id !== null && !point && !meterPoint) return null;
 
   if (editing.kind === 'tempo') {
     const value = point ? point.bpm : bpm;
     const setTempo = (v: number) => {
-      if (!(v >= MIN_BPM && v <= MAX_BPM)) return;
+      draft.current = null;
+      // (Unchanged: no undo step)
+      if (!(v >= MIN_BPM && v <= MAX_BPM) || Math.abs(v - value) < 1e-9) return;
       if (point) s.updateTempoChange(point.id, { bpm: v });
       else s.setBpm(v);
     };
@@ -182,13 +200,15 @@ function TempoEditor({ editing, onClose }: { editing: Editing; onClose: () => vo
             step={0.01}
             defaultValue={formatBpm(value)}
             autoFocus
+            onChange={(e) => {
+              draft.current = e.target.valueAsNumber;
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 setTempo(Number((e.target as HTMLInputElement).value));
                 onClose();
-              }
+              } else if (e.key === 'Escape') draft.current = null;
             }}
-            onBlur={(e) => setTempo(Number(e.target.value))}
             className="w-20 h-6 bg-forge-bg border border-forge-border rounded px-1"
             aria-label="Tempo in BPM"
           />
@@ -203,6 +223,7 @@ function TempoEditor({ editing, onClose }: { editing: Editing; onClose: () => vo
               type="button"
               className="h-7 flex items-center justify-center gap-1.5 rounded border border-forge-border hover:border-red-400/60 text-forge-text"
               onClick={() => {
+                draft.current = null;
                 s.removeTempoChange(point.id);
                 onClose();
               }}

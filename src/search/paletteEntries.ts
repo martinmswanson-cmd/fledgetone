@@ -119,8 +119,10 @@ const TOOLS: Item[] = [
   { title: 'Takes and comping', keywords: 'takes comp comping take folder loop record best bits playlist lanes', detail: 'Loop passes as takes, then pick the best parts (Recording settings: Loop passes are takes).', run: async () => void (await press('button[title^="Recording settings"]')) },
   { title: 'Plugin instrument (WAM)', keywords: 'plugin wam web audio module vst instrument third party external synth', detail: 'Load a Web Audio Module instrument by its address.', run: () => useUiStore.getState().setPluginDialog({ trackId: null }) },
   { title: 'Plugin effect (WAM)', keywords: 'plugin wam web audio module vst effect insert third party external fx', detail: 'Right-click a track: Add plugin effect (WAM)…', run: () => {
-    const id = useTimelineStore.getState().selectedTrackId;
+    const st = useTimelineStore.getState();
+    const id = st.selectedTrackId;
     if (!id) return 'Select a track first (or right-click its name: Add plugin effect (WAM)…).';
+    if (st.tracks.find((t) => t.id === id)?.instrumentKey === 'bus') return 'A bus takes no plugin effects: add them to the tracks that play into it.';
     useUiStore.getState().setPluginDialog({ trackId: id });
   } },
   { title: 'Spectrum', keywords: 'spectrum analyser analyzer visualizer visualiser frequency readout led neon cyberpunk city terrain radar hud data rain hologram pigeons', detail: 'The live spectrum, next to the master in the Mixer, as LED bars, a neon city, terrain, radar, data rain or holograms.', run: () => ui().setDialog('mixer') },

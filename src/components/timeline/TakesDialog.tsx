@@ -78,7 +78,10 @@ export const TakesDialog: React.FC<{ clipId: string; onClose: () => void }> = ({
     e.preventDefault();
     const svg = svgs.current[take];
     if (!svg) return;
-    const atOf = (ev: { clientX: number; shiftKey: boolean }) => snap((ev.clientX - svg.getBoundingClientRect().left) / barW, ev.shiftKey);
+    const rawOf = (ev: { clientX: number }) => Math.max(0, Math.min(clip.lengthBars, (ev.clientX - svg.getBoundingClientRect().left) / barW));
+    const atOf = (ev: { clientX: number; shiftKey: boolean }) => snap(rawOf(ev), ev.shiftKey);
+    const clickedAt = rawOf(e);
+    const fine = e.shiftKey;
     const from = atOf(e);
     let current = { take, from, to: from };
     setDrag(current);
@@ -91,10 +94,11 @@ export const TakesDialog: React.FC<{ clipId: string; onClose: () => void }> = ({
       window.removeEventListener('pointerup', onUp);
       setDrag(null);
       let { from: a, to: b } = current;
-      // A click: the beat it's on
+      // A click: the beat (or with Shift the 16th) it's in
       if (Math.abs(b - a) < 1e-6) {
-        a = Math.floor(a * 4) / 4;
-        b = Math.min(clip.lengthBars, a + 1 / 4);
+        const step = fine ? 1 / 16 : 1 / 4;
+        a = Math.min(Math.floor(clickedAt / step) * step, Math.max(0, clip.lengthBars - step));
+        b = Math.min(clip.lengthBars, a + step);
       }
       store().setTakeComp(clip.id, a, b, take);
     };

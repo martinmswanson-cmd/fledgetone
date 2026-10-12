@@ -105,19 +105,41 @@ export function applyLiveIntensity(tracks: Track[], curves: Record<string, Inten
  * tracks through, a soloed track its buses), since each strip's solo silences the strips not soloed.
  * The same object while that doesn't change, so its strip isn't re-applied.
  */
-const soloViews = new WeakMap<Track, Track>();
-function stripView(track: Track, lit: Set<string> | null): Track {
+const soloViews = new WeakMap<Track, Map<string, Track>>();
+function stripView(track: Track, lit: Set<string> | null, inMutedBus: boolean): Track {
   const soloed = lit ? lit.has(track.id) : false;
-  if (soloed === track.isSoloed) return track;
-  let view = soloViews.get(track);
-  if (!view) {
-    view = { ...track, isSoloed: soloed };
-    soloViews.set(track, view);
-  }
+  // A track in a muted bus is muted at its own strip too, so its reverb and delay sends go quiet
+  // with it (as in the export, which leaves it out)
+  const muted = track.isMuted || inMutedBus;
+  if (soloed === track.isSoloed && muted === track.isMuted) return track;
+  const key = `${soloed}|${muted}`;
+  let views = soloViews.get(track);
+  if (!views) soloViews.set(track, (views = new Map()));
+  let view = views.get(key);
+  if (!view) views.set(key, (view = { ...track, isSoloed: soloed, isMuted: muted }));
   return view;
 }
 
+/** Tracks to bring in once the live context is the global one again (see syncLiveTracks). */
+let pendingSync: Track[] | null = null;
+
 export function syncLiveTracks(tracks: Track[]): void {
+  // While an export builds its graph the global context is the export's: anything made now would
+  // be made there. Wait for the live one to come back (a moment), then sync with the latest tracks.
+  if (Tone.getContext() !== liveMix.bus.context) {
+    const waiting = pendingSync !== null;
+    pendingSync = tracks;
+    if (!waiting) {
+      void (async () => {
+        while (Tone.getContext() !== liveMix.bus.context) await new Promise((resolve) => setTimeout(resolve, 50));
+        const latest = pendingSync;
+        pendingSync = null;
+        if (latest) syncLiveTracks(latest);
+      })();
+    }
+    return;
+  }
+  pendingSync = null;
   const keep = new Set(tracks.map((t) => t.id));
   // Tracks playing into a bus that's going go back to the master first
   for (const lt of live.values()) {
@@ -156,13 +178,15 @@ export function syncLiveTracks(tracks: Track[]): void {
     } else if (lt.instrumentKey !== track.instrumentKey || lt.sampleUrl !== sampleKey(track)) {
       lt.instrument.releaseAll();
       lt.instrument.dispose();
+      const hadBus = !!lt.instrument.clipBus;
       lt.instrument = createInstrument(track.instrumentKey, lt.strip.input, trackInstrumentOptions(track));
       lt.instrumentKey = track.instrumentKey;
       lt.sampleUrl = sampleKey(track);
       watchDownload(lt);
+      if (hadBus && lt.instrument.clipBus) busRebuilt.forEach((l) => l(track.id));
     }
     // Only touch strips whose settings changed, so dragging one fader doesn't re-ramp every track
-    const view = stripView(track, lit);
+    const view = stripView(track, lit, busChain(track, tracks).some((b) => b.isMuted));
     if (lt.applied !== view) {
       lt.strip.apply(view);
       // The Slicer follows its slices and modes without a rebuild
@@ -243,6 +267,12 @@ export function getLiveInstrument(trackId: string): TrackInstrument | undefined 
 }
 
 /** Where an Audio track's clips play, muted or not (its strip silences it, and un-muting mid-clip is then heard at once). */
+const busRebuilt = new Set<(trackId: string) => void>();
+/** Called when a track's clip bus is replaced (its instrument rebuilt), so its audio clips move to the new one. */
+export function onClipBusRebuilt(listener: (trackId: string) => void): void {
+  busRebuilt.add(listener);
+}
+
 export function getLiveClipBus(trackId: string): NativeBus | undefined {
   return live.get(trackId)?.instrument.clipBus;
 }

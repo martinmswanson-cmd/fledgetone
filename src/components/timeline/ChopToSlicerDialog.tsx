@@ -1,5 +1,6 @@
 import React from 'react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useTimelineStore, songTempo } from '../../store/timelineStore';
+import { tempoAt } from '../../audio/tempoMap';
 import { soundStatusText, useSoundLibrary } from '../../audio/soundLibrary';
 import { audioSourceSeconds } from '../../store/audioClips';
 import { slicerFor, resliced } from '../../audio/slicerTools';
@@ -17,7 +18,7 @@ const choice =
  */
 export const ChopToSlicerDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ clipId, onClose }) => {
   const clip = useTimelineStore((s) => s.clips.find((c) => c.id === clipId));
-  const bpm = useTimelineStore((s) => s.bpm);
+  const bpm = useTimelineStore((s) => (clip ? tempoAt(clip.startBar, songTempo(s)) : s.bpm));
   const status = useSoundLibrary((s) => (clip?.audio ? s.status[clip.audio.soundId] : undefined));
   const meta = useSoundLibrary((s) => (clip?.audio ? s.metas[clip.audio.soundId] : undefined));
   if (!clip?.audio) return null;

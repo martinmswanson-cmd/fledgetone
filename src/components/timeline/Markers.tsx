@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Lock, LockOpen, Pencil, Trash2 } from 'lucide-react';
-import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { TOTAL_BARS, useTimelineStore, songTempo, useSongTempo } from '../../store/timelineStore';
 import type { Marker } from '../../store/timelineTypes';
 import { minClipLength, snapBar } from '../../store/timelineTypes';
 import { MARKER_NAME_MAX } from '../../store/markers';
@@ -34,7 +34,8 @@ const markerX = (marker: Marker, zoom: number) => Math.round((marker.bar - 1) * 
 export const MarkerFlags = React.memo(function MarkerFlags({ originRef }: { originRef: React.RefObject<HTMLElement | null> }) {
   const markers = useTimelineStore((s) => s.markers);
   const zoom = useTimelineStore((s) => s.zoom);
-  const bpm = useTimelineStore((s) => s.bpm);
+  // Timecodes through the tempo changes
+  const bpm = useSongTempo();
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const [editing, setEditing] = useState<string | null>(null);
@@ -241,7 +242,7 @@ const MarkerMenu: React.FC<{ menu: MarkerMenuState; onClose: () => void; onRenam
   useMenuDismiss(ref, onClose);
   useKeepOnScreen(ref, menu.x, menu.y);
   const marker = useTimelineStore((s) => s.markers.find((m) => m.id === menu.id));
-  const timecode = useTimelineStore((s) => (marker ? formatSmpte(marker.bar, s.bpm, s.fps, s.dropFrame) : ''));
+  const timecode = useTimelineStore((s) => (marker ? formatSmpte(marker.bar, songTempo(s), s.fps, s.dropFrame) : ''));
   // Gone meanwhile (undone): nothing left to act on
   useEffect(() => {
     if (!marker) onClose();

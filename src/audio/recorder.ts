@@ -39,9 +39,10 @@ export function transportBarAt(audioTime: number): number {
 export function beginTake(trackId: string, startBar: number, startAudio: number, loop: () => { inBar: number; outBar: number }): void {
   discardTake();
   const take = createTake(startBar);
-  const onLoop = () => {
+  // (Tone says so ahead of the wrap, at the audio time it happens: notes until then are this pass's)
+  const onLoop = (time: number) => {
     const { inBar, outBar } = loop();
-    take.cover(inBar, outBar);
+    take.cover(inBar, outBar, time);
   };
   transport().on('loop', onLoop);
   active = { trackId, take, startAudio, stopListening: () => transport().off('loop', onLoop) };
@@ -69,10 +70,10 @@ export function recordMidi(message: MidiMessage, heard: number): void {
       take.sustain(message.down, Math.max(heard, startAudio));
       break;
     case 'pitchBend':
-      if (heard >= startAudio) take.control('bend', message.cents / 100, transportBarAt(heard));
+      if (heard >= startAudio) take.control('bend', message.cents / 100, transportBarAt(heard), heard);
       break;
     case 'mod':
-      if (heard >= startAudio) take.control('mod', message.value, transportBarAt(heard));
+      if (heard >= startAudio) take.control('mod', message.value, transportBarAt(heard), heard);
       break;
     case 'allNotesOff':
       break;

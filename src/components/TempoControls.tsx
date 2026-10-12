@@ -3,7 +3,7 @@ import { TOTAL_BARS, useTimelineStore } from '../store/timelineStore';
 import { formatBarCount, formatBpm, frameRateLabel } from '../store/timelineTypes';
 import { barToSeconds, formatBarsBeats, formatSmpte, parseTimecode, secondsToBar } from '../audio/transport';
 import { findTempos, HIT_GRIDS, scoreTempo, type HitGrid, type TempoSuggestion } from '../store/tempoFinder';
-import { secondsToFrames } from '../audio/timecode';
+import { formatFrameTimecode, secondsToFrames } from '../audio/timecode';
 import { Popover } from './Popover';
 
 /** Read a typed tempo: up to 3 digits and 2 decimals (a comma works as the point), 40 to 240. */
@@ -111,6 +111,8 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const loopBars = useTimelineStore((s) => s.loopRegion.outBar - s.loopRegion.inBar);
+  const loopIn = useTimelineStore((s) => s.loopRegion.inBar);
+  const tempoPoints = useTimelineStore((s) => s.tempoPoints);
   const songBars = useTimelineStore((s) => s.clips.reduce((end, c) => Math.max(end, c.startBar + c.lengthBars), 1) - 1);
   const [range, setRange] = useState<FitRange>('loop');
   const [barsText, setBarsText] = useState('8');
@@ -121,15 +123,26 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
   const bars = range === 'loop' ? loopBars : range === 'song' ? songBars : typedBars !== null && typedBars <= TOTAL_BARS ? typedBars : null;
   // Plain numbers are seconds ("25.5"); anything else is a timecode at the project's rate
   const seconds = parseDecimal(target) ?? parseTimecode(target, fps, dropFrame);
-  const newBpm = bars && seconds ? fitBpm(bars, seconds, fps) : null;
-  const timecodeOf = (b: number, tempo: number) => formatSmpte(1 + b, tempo, fps, dropFrame);
-  const lengthOf = (b: number, tempo: number) => `${timecodeOf(b, tempo)} (${barToSeconds(1 + b, tempo).toFixed(3)} s)`;
+  // With tempo changes, every tempo is scaled together (the changes keep their shape): the length
+  // is measured through them, from where the stretch starts
+  const mapped = tempoPoints.length > 0;
+  const from = range === 'loop' ? loopIn : 1;
+  const scaledMap = (to: number) => ({ bpm: to, points: tempoPoints.map((p) => ({ ...p, bpm: (p.bpm * to) / bpm })) });
+  const secondsAt = (b: number, to: number) => (mapped ? barToSeconds(from + b, scaledMap(to)) - barToSeconds(from, scaledMap(to)) : barToSeconds(1 + b, to));
+  const newBpm = bars && seconds ? (mapped ? Math.round(((bpm * secondsAt(bars, bpm)) / seconds) * 100) / 100 : fitBpm(bars, seconds, fps)) : null;
+  const lengthOf = (b: number, to: number) => {
+    const sec = secondsAt(b, to);
+    return `${formatFrameTimecode(secondsToFrames(sec, fps), fps, dropFrame)} (${sec.toFixed(3)} s)`;
+  };
 
   const apply = () => {
     if (!bars) return setError(range === 'song' ? 'The timeline is empty.' : `Type a number of bars, up to ${TOTAL_BARS}.`);
     if (!seconds || newBpm === null) return setError('Type a length: a timecode like 0:25:00 or seconds like 25.5.');
     if (newBpm < 40 || newBpm > 240) return setError(`That needs ${formatBpm(newBpm)} BPM. The tempo must be 40 to 240.`);
-    useTimelineStore.getState().setBpm(newBpm);
+    if (mapped) {
+      const message = useTimelineStore.getState().scaleTempo(newBpm / bpm);
+      if (message) return setError(message);
+    } else useTimelineStore.getState().setBpm(newBpm);
     onClose();
   };
 

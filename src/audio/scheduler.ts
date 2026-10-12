@@ -4,7 +4,7 @@ import { applyTempoAt, barToTicks, getLiveTempo, scheduleTempo, setLiveTempo, sw
 import type { Tempo } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
-import { getLiveClipBus, getLiveInstrument, pumpOnKick, pumpOnTrack, releaseAllLiveVoices } from './liveTracks';
+import { getLiveClipBus, onClipBusRebuilt, getLiveInstrument, pumpOnKick, pumpOnTrack, releaseAllLiveVoices } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
@@ -245,6 +245,9 @@ export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
   liveAudioClips ??= createAudioClipSchedule(liveMix.bus.context.transport, getLiveClipBus, getLiveTempo);
   liveAudioClips.update(tracks, clips);
 }
+
+// An Audio track rebuilt while playing (its plugin effects changed) carries on on its new bus
+onClipBusRebuilt((trackId) => liveAudioClips?.restartTrack(trackId));
 
 let tempoEvents: number[] = [];
 

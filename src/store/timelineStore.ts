@@ -288,6 +288,8 @@ interface TimelineState {
   toggleRecord: () => void;
   /** Set the tempo (40 to 240 BPM, to 0.01). */
   setBpm: (bpm: number) => void;
+  /** Every tempo (the song's and its changes) times `factor`, as one undo step. A message if one would leave 40 to 240 BPM. */
+  scaleTempo: (factor: number) => string | null;
   /** Add a tempo change at `bar` (a jump, or a glide from the tempo before). Returns its id. */
   addTempoChange: (bar: number, bpm: number, ramp?: boolean) => string;
   /** `record`: its own undo step (a drag checkpoint()s once and passes false). */
@@ -1147,6 +1149,17 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
     },
 
+    scaleTempo: (factor) => {
+      const s = get();
+      const all = [s.bpm, ...s.tempoPoints.map((p) => p.bpm)].map((b) => Math.round(b * factor * 100) / 100);
+      if (all.some((b) => b < 40 || b > 240)) return 'That would take a tempo outside 40 to 240 BPM.';
+      const bpm = all[0];
+      const tempoPoints = s.tempoPoints.map((p, i) => ({ ...p, bpm: all[i + 1] }));
+      const to = songTempo({ bpm, tempoPoints });
+      set({ bpm, tempoPoints, markers: retimeMarkers(s.markers, to), clips: retimeAudioClips(s.clips, songTempo(s), to), ...pushPast(s) });
+      return null;
+    },
+
     addTempoChange: (bar, bpm, ramp = false) => {
       const id = uid('tempo');
       const at = Math.max(1 + 1 / 16, Math.min(TOTAL_BARS, bar));
@@ -1383,7 +1396,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     addTrackPluginFx: (trackId, url, name) => {
       const id = uid('plugin');
       const s = get();
-      if (!s.tracks.some((t) => t.id === trackId)) return null;
+      // (Not on a bus: its tracks' plugins play through it, and a bus plays no instrument to put one after)
+      if (!s.tracks.some((t) => t.id === trackId && !isBus(t))) return null;
       set((st) => ({
         tracks: st.tracks.map((t) => (t.id === trackId ? { ...t, pluginFx: [...(t.pluginFx ?? []), { id, url, name }] } : t)),
         ...pushPast(st),

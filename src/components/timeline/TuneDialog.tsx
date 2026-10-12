@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import { Loader2, Play, Square, Undo2, Wand2 } from 'lucide-react';
 import { Modal } from './Modal';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useTimelineStore, songTempo } from '../../store/timelineStore';
+import { tempoAt } from '../../audio/tempoMap';
 import { detectKey, NOTE_NAMES, MAJOR_STEPS, MINOR_STEPS } from '../../store/songKey';
 import { CHROMATIC, hzToMidi, tuneChannels, type PitchFrame } from '../../audio/vocalTune';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../../audio/soundLibrary';
@@ -23,7 +24,7 @@ const RATE = 44100;
 export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ clipId, onClose }) => {
   const clip = useTimelineStore((s) => s.clips.find((c) => c.id === clipId));
   const track = useTimelineStore((s) => s.tracks.find((t) => t.id === clip?.trackId));
-  const bpm = useTimelineStore((s) => s.bpm);
+  const bpm = useTimelineStore((s) => (clip ? tempoAt(clip.startBar, songTempo(s)) : s.bpm));
   const songKey = useMemo(() => {
     const s = useTimelineStore.getState();
     return detectKey(s.clips, s.tracks);

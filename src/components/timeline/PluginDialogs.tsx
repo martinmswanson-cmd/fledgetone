@@ -203,8 +203,10 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
   const isFx = track?.plugin?.id !== pluginId;
 
   return (
+    // A window you work beside, not a dialog: shortcuts and the keyboard piano keep working
+    // (they stand aside while a dialog is open)
     <div
-      role="dialog"
+      role="region"
       aria-label={`${plugin.name} plugin`}
       className="fixed z-50 rounded-lg border border-fuchsia-400/50 bg-forge-panel shadow-2xl max-w-[95vw]"
       style={{ left: pos.x, top: pos.y }}
