@@ -29,6 +29,7 @@ import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
+import { projectVideo, useVideoStore } from './videoStore';
 import { foldersOf, groupTracks, moveToFolder, moveTrack, ungroup, updateFolder } from './folders';
 import { ANY_STATE, transitionKey } from './transitions';
 import { defaultCurve, type IntensityCurve } from './intensity';
@@ -1935,6 +1936,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       applyMasterFx();
       prepareSounds(p);
       applyMaster();
+      // Its reference video, from this browser or from the file itself
+      if (p.video) void useVideoStore.getState().restore(p.video);
     },
 
     insertPatternClip: (trackId, patternId, atBar) => {
@@ -2131,6 +2134,7 @@ export function currentProject(): ProjectSnapshot {
     stingers: s.stingers,
     transitions: s.transitions,
     intensity: { value: s.intensity, curves: s.intensityCurves },
+    video: projectVideo(),
   };
 }
 
@@ -2221,6 +2225,14 @@ export function connectAutosave(): () => void {
     timer = window.setTimeout(flush, 500);
   });
 
+  // The reference video (which one, and where it starts) is saved with the project too
+  const unwatchVideo = useVideoStore.subscribe((v, prev) => {
+    if (v.key === prev.key && v.start === prev.start) return;
+    pending = true;
+    clearTimeout(timer);
+    timer = window.setTimeout(flush, 500);
+  });
+
   // Don't lose an edit made in the last half-second before the tab closes
   window.addEventListener('pagehide', flush);
   window.addEventListener('storage', onStorage);
@@ -2231,6 +2243,7 @@ export function connectAutosave(): () => void {
     window.removeEventListener('storage', onStorage);
     if (autosaveNow === saveNow) autosaveNow = null;
     unsubscribe();
+    unwatchVideo();
   };
 }
 

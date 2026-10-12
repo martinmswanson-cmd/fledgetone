@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+import type { ProjectVideo } from './timelineTypes';
+import { VIDEO_EMBED_MAX } from './timelineTypes';
+import { readBlob, storeBlob } from '../audio/soundLibrary';
 import { frameDifference, pickCuts } from './sceneCuts';
 import { speechSpans, voiceLevels, type Span } from './dialogue';
 
@@ -37,7 +40,13 @@ interface VideoState {
   muted: boolean;
   loading: boolean;
   error: string | null;
-  load: (file: File) => Promise<void>;
+  /** Where the loaded video is kept in this browser (see keyOf), so the project can find it again */
+  key: string | null;
+  /** A project's video that isn't in this browser (opened elsewhere): load it again to score to it */
+  missing: { name: string; start: number } | null;
+  load: (file: File, opts?: { start?: number; key?: string; stored?: boolean }) => Promise<void>;
+  /** Bring back a project's video: from this browser, or from the project file itself. */
+  restore: (ref: ProjectVideo) => Promise<void>;
   remove: () => void;
   setStart: (seconds: number) => void;
   setPreviewOpen: (open: boolean) => void;
@@ -195,6 +204,29 @@ async function drawThumbs(url: string, duration: number, myGeneration: number, a
   el.load();
 }
 
+/** Where a video file is kept in this browser: by name, size and date, so the same file isn't kept twice. */
+export const keyOf = (file: File): string => `video:${file.name}|${file.size}|${file.lastModified}`;
+
+/** The loaded video as a project refers to it (without the file), or undefined. */
+export function projectVideo(): ProjectVideo | undefined {
+  const { video, key, start } = useVideoStore.getState();
+  return video && key ? { key, name: video.name, type: video.file.type, start } : undefined;
+}
+
+/** The loaded video with the file inside it (as a data: URL) when it's small enough to travel in a project file. */
+export async function projectVideoForFile(): Promise<ProjectVideo | undefined> {
+  const ref = projectVideo();
+  const file = useVideoStore.getState().video?.file;
+  if (!ref || !file || file.size > VIDEO_EMBED_MAX) return ref;
+  const data = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+  return { ...ref, data };
+}
+
 export const useVideoStore = create<VideoState>((set, get) => ({
   video: null,
   start: 0,
@@ -204,11 +236,16 @@ export const useVideoStore = create<VideoState>((set, get) => ({
   muted: true,
   loading: false,
   error: null,
+  key: null,
+  missing: null,
 
-  load: async (file) => {
+  load: async (file, opts = {}) => {
+    // The project's missing video loaded again goes back where it was
+    const missing = get().missing;
+    const startAt = opts.start ?? (missing?.name === file.name ? missing.start : 0);
     get().remove();
     const my = ++generation;
-    set({ loading: true, error: null });
+    set({ loading: true, error: null, missing: null });
     const url = URL.createObjectURL(file);
     try {
       const el = await openVideo(url);
@@ -216,7 +253,10 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       el.removeAttribute('src');
       el.load();
       if (my !== generation) return;
-      set({ video, start: 0, thumbs: [], loading: false, previewOpen: true });
+      const key = opts.key ?? keyOf(file);
+      set({ video, start: startAt, thumbs: [], loading: false, previewOpen: true, key });
+      // Kept in this browser, so the project brings it back after a reload
+      if (!opts.stored) void storeBlob(key, file).catch(() => {});
       void drawThumbs(url, video.duration, my, (t) => my === generation && set((s) => ({ thumbs: [...s.thumbs, t] }))).catch(() => {});
     } catch (err) {
       URL.revokeObjectURL(url);
@@ -227,7 +267,28 @@ export const useVideoStore = create<VideoState>((set, get) => ({
     generation++;
     const v = get().video;
     if (v) URL.revokeObjectURL(v.url);
-    set({ video: null, thumbs: [], start: 0, error: null });
+    set({ video: null, thumbs: [], start: 0, error: null, key: null, missing: null });
+  },
+  restore: async (ref) => {
+    if (get().key === ref.key) {
+      set({ start: ref.start });
+      return;
+    }
+    let blob = await readBlob(ref.key).catch(() => undefined);
+    const stored = !!blob;
+    if (!blob && ref.data) {
+      try {
+        blob = await (await fetch(ref.data)).blob();
+      } catch {
+        blob = undefined;
+      }
+    }
+    if (!blob) {
+      get().remove();
+      set({ missing: { name: ref.name, start: ref.start } });
+      return;
+    }
+    await get().load(new File([blob], ref.name, { type: ref.type || blob.type }), { start: ref.start, key: ref.key, stored });
   },
   setStart: (seconds) => set({ start: Math.max(-36000, Math.min(36000, seconds)) }),
   setPreviewOpen: (previewOpen) => set({ previewOpen }),

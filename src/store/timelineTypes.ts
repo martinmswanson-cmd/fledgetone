@@ -442,6 +442,20 @@ export interface Track {
   folder?: TrackFolder;
 }
 
+/** The reference video a project scores to (see videoStore): kept in the browser by `key`. */
+export interface ProjectVideo {
+  key: string;
+  name: string;
+  /** MIME type */
+  type: string;
+  /** Where it starts in the song, seconds */
+  start: number;
+  /** The file itself as a data: URL, in saved project files when it's small enough (see VIDEO_EMBED_MAX) */
+  data?: string;
+}
+/** Videos up to this size travel inside saved project files; bigger ones stay in the browser. */
+export const VIDEO_EMBED_MAX = 40 * 1024 * 1024;
+
 /** A folder of tracks: a named, coloured group that folds away and mutes or solos together. */
 export interface TrackFolder {
   id: string;
