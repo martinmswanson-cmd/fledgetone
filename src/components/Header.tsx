@@ -7,6 +7,7 @@ import { GuidePanel } from './guide/GuidePanel';
 import { FitTempoPopover, TempoField } from './TempoControls';
 import { shouldIgnoreShortcut } from './keyboard';
 import { LoudnessBadge } from './LoudnessBadge';
+import { PerfBadge } from './PerfBadge';
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
@@ -151,6 +152,7 @@ export const Header: React.FC = () => {
         </div>
 
         {isRunning && <LoudnessBadge />}
+        {isRunning && <PerfBadge />}
 
         <button
           type="button"

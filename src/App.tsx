@@ -1,4 +1,5 @@
 import React from 'react';
+import { startPerfMonitor } from './audio/perfMonitor';
 import { VideoPreview } from './components/video/VideoPreview';
 import { Header } from './components/Header';
 import { SoundAuditionPanel } from './components/SoundAuditionPanel';
@@ -135,3 +136,5 @@ export const App: React.FC = () => {
 };
 
 export default App;
+
+startPerfMonitor();
