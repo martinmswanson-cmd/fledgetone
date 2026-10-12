@@ -10,7 +10,7 @@ import { isDrumKind } from './instrumentCatalog';
 import { barToTicks } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { NativeBus } from './presets/native';
-import type { Track } from '../store/timelineTypes';
+import type { AutomationPoint, Track } from '../store/timelineTypes';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import type { LiveTrackView } from '../store/freeze';
 import { loadSamples } from './samplers/samplerManager';
@@ -56,6 +56,17 @@ function watchDownload(lt: LiveTrack): void {
   instrument.ready.catch(() => {
     if (lt.instrument === instrument) lt.failed = true;
   });
+}
+
+/** The gain curve the tracks duck along (see duck.ts), and the tracks it was last applied with. */
+let liveDuck: AutomationPoint[] | null = null;
+let lastTracks: Track[] = [];
+
+/** Duck the live tracks along `points` (null: no ducking). The same points (by identity) cost nothing. */
+export function setLiveDuck(points: AutomationPoint[] | null): void {
+  if (points === liveDuck) return;
+  liveDuck = points;
+  liveAutomation().update(lastTracks, liveDuck);
 }
 
 /** Each live track's Intensity level as last set, so unchanged ones aren't touched. */
@@ -127,7 +138,8 @@ export function syncLiveTracks(tracks: Track[]): void {
   pumpClock ??= createPumpClock(liveMix.bus.context.transport, liveStrips, 0, barToTicks(TOTAL_BARS + 1));
   pumpClock.update();
   // After the strips, which decide what each lane drives
-  liveAutomation().update(tracks);
+  lastTracks = tracks;
+  liveAutomation().update(tracks, liveDuck);
 }
 
 /** Stopped with the playhead at `bar`: automated settings sit at their lanes' values there. */

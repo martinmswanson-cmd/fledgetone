@@ -62,6 +62,7 @@ const Strip: React.FC<{ track: Track }> = ({ track }) => {
         {track.name}
       </button>
       <div className="min-h-[28px] flex flex-wrap justify-center gap-0.5">
+        {track.duckProxy && <span className="px-1 rounded bg-sky-500/20 text-[8px] font-mono uppercase text-sky-200" title="The other tracks duck under this one">proxy</span>}
         {inserts.length ? inserts.map((k) => (
           <span key={k} className="px-1 rounded bg-cyan-500/15 text-[8px] font-mono uppercase text-cyan-200">{k.slice(0, 4)}</span>
         )) : <span className="text-[8px] font-mono text-forge-muted">no inserts</span>}

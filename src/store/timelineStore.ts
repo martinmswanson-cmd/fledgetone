@@ -15,7 +15,7 @@ import {
   transportStartsAt,
 } from '../audio/transport';
 import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
-import { holdAutomationAt, retimeAutomation, syncLiveTracks, applyLiveIntensity } from '../audio/liveTracks';
+import { holdAutomationAt, retimeAutomation, syncLiveTracks, applyLiveIntensity, setLiveDuck } from '../audio/liveTracks';
 import { beginTake, discardTake, finishTake } from '../audio/recorder';
 import { heardTime } from '../audio/latency';
 import { countInClicks } from '../audio/metronome';
@@ -27,6 +27,7 @@ import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from '.
 import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
+import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
 import { ANY_STATE, transitionKey } from './transitions';
 import { defaultCurve, type IntensityCurve } from './intensity';
@@ -377,6 +378,8 @@ interface TimelineState {
   intensityCurves: Record<string, IntensityCurve>;
   setIntensity: (value: number) => void;
   setIntensityCurve: (group: string, curve: IntensityCurve) => void;
+  /** Make a track a dialogue / SFX proxy the others duck under by `depth` dB, or not (null); one undo step */
+  setTrackDuckProxy: (trackId: string, depth: number | null, record?: boolean) => void;
   /** Put a track in a stem group (or none, with an empty name); one undo step */
   setTrackStemGroup: (trackId: string, group: string) => void;
   /** Transitions into game states, by section marker id ('cut' is left out) */
@@ -1479,6 +1482,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     intensityCurves: {},
     setIntensity: (value) => set({ intensity: Math.max(0, Math.min(1, value)) }),
     setIntensityCurve: (group, curve) => set((s) => ({ intensityCurves: { ...s.intensityCurves, [group]: curve } })),
+    setTrackDuckProxy: (trackId, depth, record = true) =>
+      updateTrack(trackId, () => ({ duckProxy: depth === null ? undefined : { depth: Math.max(1, Math.min(30, depth)) } }), record),
     setTrackStemGroup: (trackId, group) => {
       const name = group.trim().slice(0, 40);
       const track = get().tracks.find((t) => t.id === trackId);
@@ -2179,7 +2184,20 @@ export function connectTimelineToAudio(): () => void {
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
   liveMix.inserts.apply(s.master);
 
+  // Ducking under dialogue / SFX proxies: the curve, kept as the same array while it doesn't change
+  let duckKey = '';
+  let duck: AutomationPoint[] | null = null;
+  const refreshDuck = (state: TimelineState) => {
+    const next = duckPoints(state.tracks, state.clips, state.bpm);
+    const key = next ? JSON.stringify(next) : '';
+    if (key === duckKey) return;
+    duckKey = key;
+    duck = next;
+    setLiveDuck(duck);
+  };
+  refreshDuck(s);
   const unsubscribe = useTimelineStore.subscribe((state, prev) => {
+    if (state.tracks !== prev.tracks || state.clips !== prev.clips || state.bpm !== prev.bpm) refreshDuck(state);
     // Intensity crossfades the stem groups (see intensity.ts)
     if (state.intensity !== prev.intensity || state.intensityCurves !== prev.intensityCurves) applyLiveIntensity(view.tracks, state.intensityCurves, state.intensity);
     // Stopped, automated settings sit at their lanes' values under the playhead (first, so lanes

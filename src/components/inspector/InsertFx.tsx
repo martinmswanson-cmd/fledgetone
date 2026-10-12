@@ -1,5 +1,5 @@
 import React from 'react';
-import { Disc3, Filter, Flame, Gauge, Hand, HeartPulse, Scissors, Waves } from 'lucide-react';
+import { Disc3, Filter, Flame, Gauge, Hand, HeartPulse, MessageSquareText, Scissors, Waves } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { FilterSlope, FilterType, GateRate, PumpTrigger, Track, TrackFx } from '../../store/timelineTypes';
 import {
@@ -165,6 +165,36 @@ export const HumanPanel: React.FC<{ track: Track }> = ({ track }) => {
       <FxSlider label="Timing" value={fx.human.timing} min={0} max={1} step={0.01} format={ms} onChange={(timing) => set({ timing })} reset={d.timing} accent={accent} disabled={off} />
       <FxSlider label="Dynamics" value={fx.human.dynamics} min={0} max={1} step={0.01} format={level} onChange={(dynamics) => set({ dynamics })} reset={d.dynamics} accent={accent} disabled={off} />
       {pitched && <FxSlider label="Pitch" value={fx.human.pitch} min={0} max={1} step={0.01} format={cents} onChange={(pitch) => set({ pitch })} reset={d.pitch} accent={accent} disabled={off} />}
+    </InsertPanel>
+  );
+};
+
+/**
+ * Dialogue / SFX proxy: this track stands in for the game's dialogue or sound effects, and every
+ * other track dips under it wherever it sounds (see duck.ts), live and in exports.
+ */
+export const DuckProxyPanel: React.FC<{ track: Track }> = ({ track }) => {
+  const accent = '#38bdf8';
+  const on = !!track.duckProxy;
+  const depth = track.duckProxy?.depth ?? 8;
+  const st = useTimelineStore.getState;
+  return (
+    <InsertPanel title="Duck others under this" icon={<MessageSquareText className="w-3.5 h-3.5" style={{ color: accent }} />} on={on} onToggle={() => st().setTrackDuckProxy(track.id, on ? null : depth)} accent={accent}>
+      <p className={`text-[10px] text-forge-muted leading-snug ${on ? '' : 'opacity-45'}`}>
+        For a track standing in for the game's dialogue or sound effects: every other track dips a moment before it sounds and comes back after.
+      </p>
+      <FxSlider
+        label="Dip"
+        value={depth}
+        min={2}
+        max={24}
+        step={1}
+        format={(v) => `-${v} dB`}
+        onChange={(v) => st().setTrackDuckProxy(track.id, v, false)}
+        reset={8}
+        accent={accent}
+        disabled={!on}
+      />
     </InsertPanel>
   );
 };
