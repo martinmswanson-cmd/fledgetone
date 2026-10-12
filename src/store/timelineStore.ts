@@ -23,12 +23,13 @@ import { quantizeTakeClip, readRecordOptions, writeRecordOptions } from './recor
 import type { RecordOptions, TakeClip } from './recording';
 import { AUTOMATION, insertLaneBars, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
-import { createDemoProject, createPatternClip, INITIAL_TRACKS } from './demoSong';
+import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
+import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
-import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind } from '../audio/instrumentCatalog';
+import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
@@ -335,6 +336,11 @@ interface TimelineState {
   insertBars: (atBar: number, bars: number) => string | null;
   /** Remove the bars from `fromBar` to `toBar`: clips inside go, later clips move left. */
   removeBars: (fromBar: number, toBar: number) => string | null;
+  /**
+   * A build-up into a drop at `dropBar` (one undo step): riser and snare roll over the bars
+   * before it, an impact on it, and markers. Returns a message when it can't.
+   */
+  addBuildAndDrop: (dropBar: number) => string | null;
 
   // Clipboard
   /** Snapshot of copied clips; startBar is relative to the earliest copied clip (0 = paste point). */
@@ -1349,6 +1355,40 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         (points) => insertLaneBars(points, at, bars),
         (markers) => insertMarkerBars(markers, at, bars, bpm)
       );
+      return null;
+    },
+
+    addBuildAndDrop: (dropBar) => {
+      const s = get();
+      const drop = Math.round(dropBar);
+      const bars = Math.min(BUILD_BARS, drop - 1);
+      if (bars < 1) return 'Pick a later bar: the build-up needs at least one bar before the drop.';
+      if (drop + HIT_BARS > TOTAL_BARS + 1) return `Too close to the end of the timeline (bar ${TOTAL_BARS + 1}) for the drop hit.`;
+      const from = drop - bars;
+      const isFree = (t: Track, a: number, b: number) =>
+        !s.clips.some((c) => c.trackId === t.id && c.startBar < b - EPS && c.startBar + c.lengthBars > a + EPS);
+      // Onto an FX track and a drum track with room there, or new ones next to them
+      const tracks = [...s.tracks];
+      const fxTrack = tracks.find((t) => isFxKind(t.instrumentKey) && isFree(t, from, drop + HIT_BARS)) ?? makeTrack('fx', tracks, tracks.some((t) => isFxKind(t.instrumentKey)) ? 'Build FX' : undefined);
+      if (!tracks.includes(fxTrack)) tracks.push(fxTrack);
+      const kits = tracks.filter((t) => isDrumKind(t.instrumentKey));
+      const rollTrack = kits.find((t) => isFree(t, from, drop)) ?? makeTrack(kits[0]?.instrumentKey ?? 'drumMachine', tracks, 'Snare Roll');
+      if (!tracks.includes(rollTrack)) tracks.push(rollTrack);
+      const parts = [
+        partClip(fxTrack.id, 'Build-up', from, bars, toNotes(buildUpSteps(bars))),
+        partClip(rollTrack.id, 'Snare roll', from, bars, toNotes(snareRollSteps(bars))),
+        partClip(fxTrack.id, 'Drop hit', drop, HIT_BARS, toNotes(dropHitSteps())),
+      ];
+      const markers = [...s.markers];
+      for (const [bar, name] of [[from, 'Build'], [drop, 'Drop']] as const) {
+        if (!markers.some((m) => Math.abs(m.bar - bar) < EPS)) markers.push(createMarker(bar, s.bpm, name));
+      }
+      set((st) => ({
+        tracks,
+        clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...parts],
+        markers: retimeMarkers(markers, st.bpm),
+        ...pushPast(st),
+      }));
       return null;
     },
 

@@ -58,6 +58,17 @@ Right-click the time ruler. Apart from **Add marker here** (see Markers), the me
 
 Markers, automation points, the loop and the playhead move with the music. Each edit is one Undo step, even one that only moves the loop or the playhead. Undo puts everything back, the loop and the playhead included; if either has moved since (you played, or dragged the loop), it moves back with the music instead. `Ctrl+Shift+Z` or `Ctrl+Y` does the edit again.
 
+### Build-up & drop
+
+Right-click the time ruler on the bar where the drop lands and choose **Build-up & drop here**. In one Undo step it writes:
+
+- a **riser** and a **noise sweep** over the 4 bars before it, with a **reverse crash** into the drop (an FX track);
+- a **snare roll** over the same 4 bars: quarters, then 8ths, then 16ths getting louder (a drum track);
+- an **impact** with a **sub drop** on the drop itself, and a downlifter a bar later;
+- markers called **Build** and **Drop**, unless there's already one on those bars.
+
+It uses an FX track and a drum track that are empty there, or adds new ones (Build FX, Snare Roll) so nothing you wrote is covered up. Near the start of the song the build is shorter (a drop at bar 3 gets 2 bars). They're ordinary clips: change, move or delete them as you like.
+
 ### Creating clips
 
 - With the Selection tool, double-click empty lane space for a new 1-bar clip starting on that beat (whatever SNAP is set to). It opens in the piano roll.
@@ -535,7 +546,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 | Alt (Option) + drag a clip | Duplicate it |
 | Drag a clip up or down | Move it to another track that can play it |
 | Ctrl / Cmd + mouse wheel, or pinch | Zoom around the pointer |
-| Right-click the ruler | Add a marker here, insert bars here, or delete the bars between In and Out |
+| Right-click the ruler | Add a marker here, a build-up & drop, insert bars here, or delete the bars between In and Out |
 | Click a marker flag | Move the playhead there |
 | Drag a marker flag | Move the marker (Shift: no snap) |
 | Double-click a marker flag | Rename it |

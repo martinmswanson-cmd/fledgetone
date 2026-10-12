@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ArrowLeftToLine, ArrowRightFromLine, Flag } from 'lucide-react';
+import { ArrowLeftToLine, ArrowRightFromLine, Flag, Zap } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -46,6 +46,13 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       label: 'Add marker here',
       icon: <Flag className="w-3.5 h-3.5" />,
       onClick: run(() => s.addMarker(menu.bar)),
+    },
+    {
+      key: 'drop',
+      label: 'Build-up & drop here',
+      shortcut: `bar ${Math.round(menu.bar)}`,
+      icon: <Zap className="w-3.5 h-3.5" />,
+      onClick: run(() => s.addBuildAndDrop(menu.bar)),
     },
     ...INSERT_SIZES.map((n, i) => ({
       key: `insert-${n}`,
