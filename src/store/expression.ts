@@ -77,6 +77,8 @@ export function sustainNotes<N extends { startOffset: number; duration: string }
 
 /** One pitch event: from `at` bars into the clip, bend this many cents, vibrato this deep (0 to 1). */
 export interface PitchEvent {
+  /** The clip's end: back to rest (it goes before a clip starting at the same moment) */
+  end?: boolean;
   at: number;
   cents: number;
   mod: number;
@@ -97,13 +99,13 @@ export function pitchEvents(clip: Pick<Clip, 'lengthBars' | 'expression'>, step 
   for (let k = 0; k * step < len - EPS; k++) {
     const at = k * step;
     const ev = { at, cents: exprValueAt(bend, at) * 100, mod: exprValueAt(mod, at) };
-    // Steady and without vibrato: nothing new to say (but a held bend is said again every 16th,
-    // so playback started in the middle of it bends at once)
-    if (last && ev.mod === 0 && last.mod === 0 && Math.abs(ev.cents - last.cents) < 0.01 && (ev.cents === 0 || at - last.at < 1 / 16 - EPS)) continue;
+    // Steady and without vibrato: nothing new to say (but a held value, at rest included, is said
+    // again every 16th, so playback started or looped back into it is put right at once)
+    if (last && ev.mod === 0 && last.mod === 0 && Math.abs(ev.cents - last.cents) < 0.01 && at - last.at < 1 / 16 - EPS) continue;
     out.push(ev);
     last = ev;
   }
-  if (last && (last.cents !== 0 || last.mod !== 0)) out.push({ at: len, cents: 0, mod: 0 });
+  if (last && (last.cents !== 0 || last.mod !== 0)) out.push({ at: len, cents: 0, mod: 0, end: true });
   return out;
 }
 

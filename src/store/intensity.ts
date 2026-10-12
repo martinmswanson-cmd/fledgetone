@@ -45,8 +45,9 @@ export function curveLevel(curve: IntensityCurve, x: number): number {
 }
 
 /** A track's level at intensity `x`: its group's curve, or full level without a group. */
-export function trackIntensityLevel(track: Pick<Track, 'stemGroup'>, curves: Record<string, IntensityCurve>, x: number): number {
-  if (!track.stemGroup) return 1;
+export function trackIntensityLevel(track: Pick<Track, 'stemGroup'> & { instrumentKey?: Track['instrumentKey'] }, curves: Record<string, IntensityCurve>, x: number): number {
+  // A bus isn't a stem of its own (its tracks' stems carry its sound), so it follows no curve
+  if (!track.stemGroup || track.instrumentKey === 'bus') return 1;
   return curveLevel(curves[track.stemGroup] ?? defaultCurve(track.stemGroup), x);
 }
 

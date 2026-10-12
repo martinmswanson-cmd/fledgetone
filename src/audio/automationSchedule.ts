@@ -1,3 +1,4 @@
+import { isBus } from '../store/buses';
 import { barToSeconds, secondsToBar, type Tempo } from './tempoMap';
 import type * as Tone from 'tone';
 import type { AutomationParam, AutomationPoint, Track } from '../store/timelineTypes';
@@ -332,7 +333,8 @@ export function createAutomationSchedule(
       // Ducking: one gain curve on every track except the proxies, written like a lane
       if (duck?.length) {
         for (const track of tracks) {
-          if (track.duckProxy) continue;
+          // (Not a bus either: the tracks playing into it dip already)
+          if (track.duckProxy || isBus(track)) continue;
           const strip = stripFor(track.id);
           if (!strip) continue;
           const key = `${track.id}|duck`;

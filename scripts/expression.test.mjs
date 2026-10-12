@@ -55,7 +55,12 @@ test('pitch events follow the bend, add vibrato where the wheel is up, and reset
   const after = ev.filter((e) => e.at > 1 + 1e-9);
   assert.equal(after.length, 16);
   assert.ok(after.slice(0, -1).every((e) => e.cents === 200));
-  assert.deepEqual(after[after.length - 1], { at: 2, cents: 0, mod: 0 });
+  assert.deepEqual(after[after.length - 1], { at: 2, cents: 0, mod: 0, end: true });
+  // At rest before the bend is said again every 16th too, so a loop back into it unbends at once
+  const rest = ev.filter((e) => e.at < 1 - 1e-9 && e.at < 0.5 && e.cents === 0);
+  assert.ok(rest.length >= 1);
+  const late = x.pitchEvents({ lengthBars: 4, expression: { bend: [{ at: 3, value: 0 }, { at: 3.5, value: 2 }] } });
+  assert.equal(late.filter((e) => e.at < 3 && e.cents === 0).length, 48);
   const vib = x.pitchEvents({ lengthBars: 1, expression: { mod: [{ at: 0, value: 1 }] } });
   assert.equal(vib.length, 129);
   near(x.pitchCents({ at: 0, cents: 0, mod: 1 }, 1 / (4 * x.VIBRATO_HZ)), x.VIBRATO_CENTS, 1e-6);

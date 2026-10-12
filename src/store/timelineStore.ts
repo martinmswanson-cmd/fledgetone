@@ -1499,8 +1499,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const shared = members.every((t) => t.output && t.output === members[0].output) ? members[0].output : undefined;
       if (shared) bus.output = shared;
       const lastIndex = Math.max(...members.map((t) => s.tracks.indexOf(t)));
+      const last = s.tracks[lastIndex];
+      // Into the members' folder if they share one; else after the last member's folder, not inside it
+      const sameFolder = last.folder && members.every((t) => t.folder?.id === last.folder!.id) ? last.folder : undefined;
+      if (sameFolder) bus.folder = sameFolder;
+      let at = lastIndex + 1;
+      if (last.folder && !sameFolder) while (at < s.tracks.length && s.tracks[at].folder?.id === last.folder.id) at++;
       const tracks = s.tracks.map((t) => (ids.has(t.id) ? { ...t, output: bus.id } : t));
-      tracks.splice(lastIndex + 1, 0, bus);
+      tracks.splice(at, 0, bus);
       set({ tracks, selectedTrackId: bus.id, ...pushPast(s) });
       return bus.id;
     },
