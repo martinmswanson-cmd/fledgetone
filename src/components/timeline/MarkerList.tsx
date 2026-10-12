@@ -4,7 +4,10 @@ import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Marker } from '../../store/timelineTypes';
 import { frameRateLabel } from '../../store/timelineTypes';
 import { cleanMarkerName, MARKER_NAME_MAX } from '../../store/markers';
-import { formatBarsBeats, formatSmpte } from '../../audio/transport';
+import { barToSeconds, formatBarsBeats, formatSmpte } from '../../audio/transport';
+import { useVideoStore } from '../../store/videoStore';
+import { EDITOR_FORMATS, editorMarkerFile, type EditorFormat } from '../../store/editorMarkers';
+import { downloadBlob } from '../../audio/exportWav';
 import { Popover } from '../Popover';
 
 /**
@@ -147,6 +150,7 @@ const MarkerListPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | nul
           </ul>
         </>
       )}
+      {markers.length > 0 && <ExportForEditors />}
       <p className="text-[11px] leading-snug">
         Press , (comma) and . (period) to jump to the previous and next marker. A marker locked to time keeps its timecode when the tempo
         changes; the others stay on their bar.
@@ -182,6 +186,60 @@ export const MarkersButton: React.FC = () => {
         <span className="sr-only">Markers</span>
       </button>
       {open && <MarkerListPopover anchorRef={anchorRef} onClose={close} />}
+    </div>
+  );
+};
+
+/**
+ * The markers as a file for video editing software, so the editor sees the sections and hit
+ * points on their own timeline. With a reference video loaded they count from its first frame.
+ */
+const ExportForEditors: React.FC = () => {
+  const video = useVideoStore((s) => s.video);
+  const videoStart = useVideoStore((s) => s.start);
+  const [startHour, setStartHour] = useState<0 | 1>(0);
+  const [fromVideo, setFromVideo] = useState(true);
+  const save = (format: EditorFormat) => {
+    const s = useTimelineStore.getState();
+    const offset = video && fromVideo ? videoStart : 0;
+    const songEnd = s.clips.reduce((e, c) => Math.max(e, c.startBar + c.lengthBars), 1);
+    const length = Math.max(video && fromVideo ? video.duration : 0, barToSeconds(songEnd, s.bpm) - offset);
+    const text = editorMarkerFile(
+      format,
+      s.markers.map((m) => ({ name: m.name, seconds: m.seconds - offset })),
+      { title: s.projectName || 'Untitled', fps: s.fps, dropFrame: s.dropFrame, startHour },
+      length
+    );
+    const ext = EDITOR_FORMATS.find((f) => f.id === format)!.ext;
+    downloadBlob(new Blob([text], { type: 'text/plain' }), `${s.projectName || 'Untitled'} markers.${ext}`);
+  };
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-forge-border pt-2">
+      <select
+        value=""
+        onChange={(e) => e.target.value && save(e.target.value as EditorFormat)}
+        className="h-7 bg-forge-bg border border-forge-border rounded-md px-1.5 text-[11px] text-forge-text"
+        aria-label="Export the markers for video editing software"
+      >
+        <option value="">Export markers for…</option>
+        {EDITOR_FORMATS.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.label}
+          </option>
+        ))}
+      </select>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+        <label className="flex items-center gap-1" title="DaVinci Resolve timelines usually start at 01:00:00:00">
+          <input type="checkbox" checked={startHour === 1} onChange={(e) => setStartHour(e.target.checked ? 1 : 0)} />
+          Timeline starts at 01:00:00:00
+        </label>
+        {video && (
+          <label className="flex items-center gap-1" title="Count from the video's first frame, where it sits on the editor's timeline">
+            <input type="checkbox" checked={fromVideo} onChange={(e) => setFromVideo(e.target.checked)} />
+            From the video's start
+          </label>
+        )}
+      </div>
     </div>
   );
 };
