@@ -254,6 +254,13 @@ Click the flag button right of the Loop button (it shows how many markers there 
 - The lock button locks the marker to time, or back to its bar. The bin deletes it.
 - Click a position to move the playhead there (the view scrolls to it if it's off screen).
 - `Esc` or a click outside closes the list.
+- **Export markers for…** saves every marker (sections and hit points) as a file your video editing software imports, so the editor sees the same names at the same moments on their timeline:
+  - **Premiere Pro (.xml)**: File › Import; it opens as a sequence carrying the markers.
+  - **DaVinci Resolve (.edl)**: right-click the timeline in the Media Pool, or Timeline › Import › Timeline Markers from EDL. Resolve timelines usually start at 01:00:00:00, so tick **Timeline starts at 01:00:00:00** first.
+  - **Final Cut Pro (.fcpxml)**: File › Import › XML; a project with the markers on its timeline.
+  - **Spreadsheet (.csv)**: name, timecode and seconds.
+
+  They use your frame rate (drop-frame included). With a reference video loaded, **From the video's start** (on) counts from the video's first frame, where it sits on the editor's timeline; untick it to count from bar 1.
 
 ### Markers and the rest of the song
 

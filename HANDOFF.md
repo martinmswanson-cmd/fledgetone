@@ -81,6 +81,7 @@ Run all five checks before every commit.
 | Cut to length | `src/store/cutToLength.ts` (sections, plan), store action `cutToLength`, `CutToLengthDialog.tsx` |
 | Sound effects maker, song key detection | `src/audio/sfx/sfxSynth.ts` (pure renderer + recipes), `src/components/sfx/SfxMakerDialog.tsx`, `src/store/songKey.ts` |
 | Game stingers (saved in the project, fired from the Game preview) | `src/store/stingers.ts` (recipes, parse), `src/audio/stingerPlayer.ts` (fire on next beat, render), `StingerList` in `GamePreview.tsx` |
+| Scene cuts in the reference video, markers for editors | `findSceneCuts` in `videoStore.ts` (+ `src/store/sceneCuts.ts`), `addHitsAt`; `src/store/editorMarkers.ts` (EDL / FCP7 XML / FCPXML / CSV), `ExportForEditors` in `MarkerList.tsx` |
 | Lo-fi and Gate inserts | `createLightLofi` / `createLightGate` in `effects/lightFx.ts`; the Gate is chopped by the strip's beat clock (`createPumpClock`) |
 | Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |
