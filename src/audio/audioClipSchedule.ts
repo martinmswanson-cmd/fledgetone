@@ -240,7 +240,15 @@ export function createAudioClipSchedule(
 
   const onStart = (time: number, offsetSeconds: number) => {
     running = true;
-    const posTicks = offsetSeconds / secondsPerTick();
+    // Where the Transport is then, read in ticks: its offset in seconds is worked out along the
+    // tempo ramp it had (mid-glide, a seek or a loop wrap would read back at the wrong bar)
+    let posTicks = offsetSeconds / secondsPerTick();
+    try {
+      const ticks = transport.getTicksAtTime(time);
+      if (Number.isFinite(ticks)) posTicks = ticks;
+    } catch {
+      // Keep the offset
+    }
     for (const { clip, tick } of entries.values()) startInside(clip, tick, posTicks, time);
   };
   const onStop = (time: number) => {
