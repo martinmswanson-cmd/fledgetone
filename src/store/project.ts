@@ -1,10 +1,11 @@
-import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
 import { parseMarkers } from './markers';
+import { parseStingers } from './stingers';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 
 /**
@@ -47,6 +48,8 @@ export interface ProjectData {
   sounds?: EmbeddedSound[];
   /** The master section's OTT and stereo width (optional; older files have them off). */
   master?: MasterSettings;
+  /** Game stingers (optional; older files have none). */
+  stingers?: Stinger[];
 }
 
 export interface ProjectSnapshot {
@@ -68,6 +71,8 @@ export interface ProjectSnapshot {
   sounds?: EmbeddedSound[];
   /** The master section's inserts (older projects don't have them: both off). */
   master?: MasterSettings;
+  /** Game stingers (older projects don't have any). */
+  stingers?: Stinger[];
 }
 
 
@@ -87,6 +92,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     markers: p.markers ?? [],
     ...(p.sounds?.length ? { sounds: p.sounds } : {}),
     master: normalizeMasterSettings(p.master),
+    ...(p.stingers?.length ? { stingers: p.stingers } : {}),
   };
 }
 
@@ -220,6 +226,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     markers: parseMarkers(raw.markers, bpm),
     ...(sounds.length ? { sounds } : {}),
     master: normalizeMasterSettings(raw.master),
+    stingers: parseStingers(raw.stingers, isInstrumentKey),
   };
 }
 

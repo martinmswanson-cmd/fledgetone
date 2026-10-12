@@ -610,6 +610,14 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 - **Layers**: tick tracks on and off while it plays, or use **Intensity**, which brings tracks in one by one from the top of the track list (put your calmest layers at the top and the most intense at the bottom). These mute and unmute the tracks without making Undo steps.
 - When it sounds right, export the sections with **Intro + loop** and the layers with **Layers** (below) for your game engine.
 
+**Stingers** (at the bottom of the panel) are short cues a game plays over its music when something happens. Choose one from **+ Add a stinger…**: **Victory** (a fanfare), **Level up** (a rising arpeggio), **Item found**, **Checkpoint**, **Danger** (tense low pulses) or **Game over** (falling to a low minor chord). Each is written in the song's key, worked out from its notes and shown next to the heading, and plays at the song's tempo.
+
+- Click a stinger to fire it over the music, the way the game will: on the next bar, the next beat or at once (the same choice as the states). It lights up when it plays.
+- Pick its **instrument** from the list beside it. The dice makes **another version** (a different rhythm or register), written again in the song's current key, so after a key change or new chords it follows.
+- The list button **puts it on the timeline** at the playhead, on a new track, as an ordinary clip you can edit in the piano roll.
+- **Export stingers (.zip)** renders each one as a WAV through the song's master section, ringing out, ready for the game.
+- Stingers are saved with the project. Adding, changing or deleting one isn't an Undo step (putting one on the timeline is).
+
 ### Sound effects maker
 
 **SFX** in the toolbar (or search *sound effects*) makes the little sounds games are full of. Click **Jump**, **Coin**, **Laser**, **Hit**, **Power-up**, **Explosion** or **Blip**: each click makes a new one of that kind and plays it. **Mutate** makes a variation of the sound you have; **Random** any kind.
