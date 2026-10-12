@@ -602,7 +602,7 @@ Click **Export**. The dialog has four choices, and remembers them in this browse
 - **Ending**:
   - **Ring out**: the range, then a few seconds more so reverb and echo tails ring out (the dialog says how long).
   - **Exact length**: exactly the range, to the sample, with a 5 ms fade at the very end so it doesn't click.
-  - **Seamless loop** (Loop region only): exactly one loop long, with the tails of the pass before already ringing at its start, so it repeats in a game engine or looping player without a gap or click. It stays exactly on the beat at any tempo, fractional ones included.
+  - **Seamless loop** (Loop region only): exactly one loop long, with the tails of the pass before already ringing at its start, so it repeats in a game engine or looping player without a gap or click. It stays exactly on the beat at any tempo, fractional ones included. As a WAV (the mixdown and every stem) it also carries **loop points** (a standard `smpl` chunk covering the whole file), which Godot, GameMaker, samplers and many Web Audio loaders read, so you don't have to set the loop by hand.
 - **Format**: the **file type**: **WAV** (uncompressed and exact, the only one that holds markers and loop points), **MP3** (320 kb/s, plays everywhere) or **OGG** (Ogg Vorbis, about 256 kb/s, the best compressed format for games: Godot and Unity loop it without a gap). Then **44.1 kHz** or **48 kHz**, and for WAV **16-bit**, **24-bit** or **32-bit float**. Always stereo. An MP3 can have a few milliseconds of silence added at its start by the format itself, so use OGG or WAV for anything that has to loop seamlessly.
 
 ### Video (MP4)
