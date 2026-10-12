@@ -7,15 +7,28 @@ Bo's Beatbox is a music maker that runs in your browser. You build a song on the
 It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen. On a phone a notice says so once; you can continue, but the timeline is cramped, drag-and-drop editing and keyboard shortcuts don't work, and audio may stutter.
 
 1. Click **START AUDIO** in the top-right corner. Browsers only allow sound after you click something, so the button glows red until audio is running. Pressing Play also starts it.
-2. To hear an example, click **New** above the timeline and choose **Demo song**, or one of the 42 genre starters (Final Boss Artcore, Drift Phonk, Bossa Jazz-Pop, Dubstep and many more).
+2. To hear an example, open the **File** menu at the top, choose **New…** and pick **Demo song**, or one of the 42 genre starters (Final Boss Artcore, Drift Phonk, Bossa Jazz-Pop, Dubstep and many more).
 3. Press **Space** (or the green Play button) to play, and Space again to pause.
 4. Double-click a clip to open its notes in the **piano roll** under the timeline.
 
-At the top is the header: **TEMPO** and **TAP**, **Swing**, **MASTER** volume, the loudness reading (once audio runs), **SEARCH**, **GUIDE** and **START AUDIO**. Under it, top to bottom:
+At the very top is the **menu bar**: every tool in the app, where a desktop DAW keeps it (see The menu bar below), with the project's name, **Save**, **Export** and **Share** on the right. Under it is the header: **TEMPO** and **TAP**, **Swing**, **Intensity**, **MASTER** volume, the loudness reading (once audio runs), **SEARCH**, **LEARN**, **GUIDE** and **START AUDIO**. Under that, top to bottom:
 
-- **Arrangement Timeline**: the project bar (name, New, Open, Save, Export, Share), the toolbar, the ruler, your tracks, the Overview strip and the piano roll.
-- **Instrument Browser**: try every instrument on an on-screen keyboard.
-- **Interactive Soundbank Audition Deck**: pads you can click or play from the keyboard, and drag onto the timeline.
+- **Arrangement Timeline**: the toolbar, the ruler, your tracks (in folders, if you make some), the Overview strip and the piano roll or audio editor.
+- **The bottom panel**: tabs for the **Mixer**, **EQ & Dynamics**, **Instruments** (the Instrument Browser, the sound deck pads and patterns), **Game**, **Video** and **Sound FX**. Click a tab to show it; click the open tab (or the arrow on the right) to fold the panel away. Drag its top edge to make it taller or shorter (double-click the edge to reset). The tab and height are remembered in this browser.
+
+### The menu bar
+
+- **File**: New…, Open… (`Ctrl+O`), Save (`Ctrl+S`), Export audio / video… (`Ctrl+E`), Share…, Cut song to length…, Export markers for video editors…, Game kit, FMOD / Wwise package…
+- **Edit**: Undo, Redo, Cut, Copy, Paste at the playhead, Duplicate, Delete, Select all / nothing, and the Selection and Razor tools.
+- **Song**: markers and hit points, the Markers list, Fit tempo / tempo finder, Tap tempo, insert and delete bars, Build-up & drop and key changes at the playhead, Cut song to length.
+- **Track** (the selected track): Add track…, Delete, Freeze, Move up / down, New folder with this track, Mute, Solo, Arm, the Inspector, EQ, Pro EQ, Multiband, Human feel, Duck others under this track, Automation.
+- **Tools**: Mixer, Instruments & sounds, Sound effects maker, Generate variations, Tune vocal, Synth Designer, the microphone, MIDI keyboard, metronome, Performance & memory.
+- **Video**: load the reference video, its preview window, Find cuts, Dip under dialogue, the tempo finder, Cut to length, markers for editors, music onto the video, remove the video.
+- **Game**: the Game tab and its parts (transitions, intensity, stingers, loop variations), Sound effects maker, variations, and the game kit, web runtime and FMOD / Wwise exports.
+- **View**: the bottom panel's tabs, show or hide it, the Inspector, zoom, and bars or timecode on the ruler.
+- **Help**: Guide, Tour & tutorials, Search, Keyboard shortcuts, Report a problem.
+
+Hover across the bar while a menu is open to move between menus; the arrow keys work too, and `Esc` closes.
 
 > The app always opens on an empty timeline. If your last session had clips (or markers, with no clips yet), a banner offers to **Restore** it, saying how many and when it was saved. It stays across reloads until you click **Restore** or **Dismiss**.
 
@@ -206,13 +219,14 @@ Frame snap applies to the timeline. Notes you write in the piano roll sit on its
 
 Write music to a gameplay clip, a trailer or a cutscene, and see the picture while you work.
 
-- Click **Video** in the toolbar (or drop a video file anywhere on the page) to load an MP4 or WebM. It appears as a **video lane** under the ruler, with its frames along the song at the current tempo, and in a **preview window** that follows the playhead: it plays along when you play, and shows the frame under the playhead when you click or drag on the ruler, so you can line hits up with the picture.
+- Click **Video** in the **Video** tab of the bottom panel (or **Video › Load reference video…**, or drop a video file anywhere on the page) to load an MP4 or WebM. It appears as a **video lane** under the ruler, with its frames along the song at the current tempo, and in a **preview window** that follows the playhead: it plays along when you play, and shows the frame under the playhead when you click or drag on the ruler, so you can line hits up with the picture.
 - **Drag the video lane** sideways to move where the video starts in the song. It snaps to beats; hold Shift to place it freely. The lane's header shows where it starts (time and bar).
 - **Find the cuts**: the scissors on the video lane's header looks through the video for hard cuts and drops a hit point (a marker locked to time) on each one, named **Cut 1**, **Cut 2**..., at the frame where the new shot starts. It takes a second or two for a short clip (the header shows how far it's got; click it again to stop). Cuts already marked aren't added twice. Then **FIT › Hit points** finds a tempo that lands the music on them. Move the video first: the markers go where the cuts fall in the song now.
 - **Dip under dialogue**: the speech bubble on the video lane's header listens to the video's own sound for voices and shows how much talking it found. Pick how far the music should dip (**-3** to **-24 dB**, -10 to start) and click **Dip the music**: every track's volume dips from a moment before each line until half a second after it, with short pauses between words bridged so the music doesn't bob up mid-sentence. It's written as **volume automation** (one Undo step), so you can see each dip on the tracks, move or reshape it, and it's in every export. A track that already has a volume lane keeps its shape, lowered in the dips; remember a volume lane takes over from the track's fader. It listens for anything loud in the voice range, so loud effects or music in the video can count too: check the dips and delete any you don't want.
 - The preview window: drag its top bar to move it, the arrows button cycles its size (small, medium, large), the speaker button lets you hear the video's own sound while you work (off by default), and **×** hides it. The eye button on the video lane shows it again; **×** on the lane removes the video.
 - To export the music **on** your video, choose **Video (MP4)** in Export. With a video loaded, **Put the music on** *your video* is ticked: the picture is your video, where it sits on the timeline (black before and after), instead of the visualizer. Tick **Keep the video's own sound too** to mix its sound effects and dialogue under the music.
-- The video stays loaded until you close the page; it isn't saved with the project (videos are too big). Load it again next time, and drag it back to its start.
+- The **Video** tab of the bottom panel has it all in one place: load or remove the video, its preview and sound, where it starts (type a time), **Find cuts** and **Dip under dialogue**, the hit points and the **Tempo finder**, **Cut to length**, the markers for **Premiere / Resolve / Final Cut**, and exporting the music onto the video.
+- **The video is saved with the project.** It's kept in this browser, so a reload (or **Restore** of your last session) brings it back, where it was. A saved project file carries the video inside it when it's 40 MB or less; a bigger one stays in this browser, and opening the project elsewhere says which video it scores to (load it again and it goes back to its place).
 
 ## Markers
 
@@ -378,7 +392,10 @@ The sound is kept in this browser and saved inside the project file (see **Where
 An **Audio** track holds sound files as clips instead of notes. Add one with **Add Track > Your Sounds > Audio**.
 
 - **Getting a file in** (WAV, MP3, OGG, FLAC, M4A and anything else your browser can play, up to 50 MB each): drag files from your computer onto an Audio track's lane (it snaps; hold `Shift` for no snap), or onto the strip under the tracks to make a new Audio track. You can also click **Load audio…** in the Inspector (clips go at the playhead), or double-click an Audio lane or right-click it > **Load audio file…** (clips go at that bar). Several files land end to end.
-- A clip is as long as its sound, is named after the file, and plays it as recorded (no time-stretch). It keeps its start bar and its length in seconds when you change the tempo, so its length in bars follows the tempo.
+- A clip is as long as its sound, is named after the file, and plays it as recorded. It keeps its start bar and its length in seconds when you change the tempo, so its length in bars follows the tempo, unless it **follows the tempo** (below).
+- **Follow tempo** (in the clip editor): tick it for a loop or a recording made at a set tempo, and the clip is **time-stretched** with the song's tempo: it keeps its pitch and its length in bars, playing faster or slower. Set **recorded at** to the tempo it was made at; the buttons beside it suggest tempos at which the clip lasts a whole number of bars. **×1.20** and so on shows how fast it's playing; past about 30% faster or slower (amber) hits start to smear. Drum hits are kept sharp and on the beat. While a new tempo's stretch is being made (a moment, after you stop dragging the tempo), the clip plays sped up like tape, in time but a little off pitch.
+- **Crossfades**: overlap two audio clips on a track (drag one over the end of another) and they **crossfade** across the overlap: the earlier fades out as the later fades in, with equal-power curves so the level holds through it. The overlap is drawn as a yellow X. A clip lying wholly inside another plays on top of it instead (a layer). A crossfade longer than a clip's own fade replaces that fade.
+- **Tune vocal** (right-click an audio clip, the clip editor, or **Tools › Tune vocal**): pulls a recorded voice (or any instrument playing one note at a time) onto the notes of a key, keeping its timing. Pick the **key** (it starts on the key the song's notes are in) and **major**, **minor** or **chromatic** (any note); **Strength** is how far onto the note (100% lands right on it), **Speed** how fast it gets there (0 ms snaps at once for the hard tuned sound; 40 to 200 ms keeps slides and vibrato natural). The graph shows the pitch sung (grey) and tuned (colour) against the key's notes. **Hear tuned** and **Hear original** compare them; **Apply** makes a tuned copy for the clip (one Undo step). The original is kept: **Untune** in the same dialog goes back to it.
 - **Editing** works as for note clips: move, trim, razor, copy and paste, duplicate, Repeat, Fill to loop Out, Insert/Delete bars, undo. Trimming the left edge makes the clip play from further into the sound. Audio clips only move between Audio tracks.
 - **Fades**: drag the small square at either top corner of a clip (shown when the clip is wide enough).
 - **Gain and fades**: double-click a clip (or right-click > **Gain and fades**) for the clip editor under the timeline: the waveform, **GAIN** (-24 to +24 dB), **Fade in**, **Fade out**, and **Chop to Slicer…**. `Esc` closes it.
@@ -401,9 +418,11 @@ Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, 
 
 ## Trying sounds: Instrument Browser and Audition Deck
 
+Both are in the **Instruments** tab of the bottom panel.
+
 ### Instrument Browser
 
-Under the timeline. Pick any instrument except the Sampler from the menu (it has the same search field as Add Track) and play the on-screen keyboard (or drum pads) with the mouse. Drag a key or pad onto a track that uses the same instrument to add that note. The browser plays instruments "dry", without any track's volume or effects.
+Pick any instrument except the Sampler from the menu (it has the same search field as Add Track) and play the on-screen keyboard (or drum pads) with the mouse. Drag a key or pad onto a track that uses the same instrument to add that note. The browser plays instruments "dry", without any track's volume or effects.
 
 ### Soundbank Audition Deck
 
@@ -416,7 +435,7 @@ Pads for Slap Bass, Space Clav chords, Brass Stabs, the Drums kit, four recorded
 | `A` `S` `D` | Space Clav chords Dm9, G13, Bbmaj7 |
 | `Z` `X` | Brass stabs Dm and C |
 
-These keys work anywhere on the page except while typing in a box or with a dialog open. So pressing `R` plays a cowbell rather than arming a track.
+These keys work while the Instruments tab is showing, anywhere on the page except while typing in a box or with a dialog open. So pressing `R` plays a cowbell rather than arming a track.
 
 Drag a pad or a pattern chip (**Lazy Beat**, **Hats Intro**, **Walking Bass**, **Soul Chords**, **Horn Hook**) onto a matching track: the lanes that accept it light up, the others fade. Drum pads and drum patterns fit either drum kit.
 
@@ -424,9 +443,13 @@ Drag a pad or a pattern chip (**Lazy Beat**, **Hats Intro**, **Walking Bass**, *
 
 ### The Mixer
 
-**Mixer** in the toolbar opens every track side by side as a mixing desk: a level meter (after the fader: green, amber near the top, red at the very top), a fader, pan, the reverb (**REV**) and delay (**DLY**) sends, **M**ute and **S**olo, and which inserts are on. The master fader is on the right. These are the same settings as the track headers and the Inspector; each drag is one Undo step and a double-click resets. Click a track's name to open it in the Inspector for its inserts, EQ and automation.
+The **Mixer** tab of the bottom panel shows every track side by side as a mixing desk: a level meter (after the fader: green, amber near the top, red at the very top), a fader, pan, the reverb (**REV**) and delay (**DLY**) sends, **M**ute and **S**olo, and which inserts are on. The master fader is on the right. These are the same settings as the track headers and the Inspector; each drag is one Undo step and a double-click resets. Click a track's name to open it in the Inspector for its inserts, EQ and automation.
 
 ### Track headers
+
+**Right-click a track's name** for its **colour**, **Move up** / **Move down**, **New folder…**, **Move into** a folder or **Take out of** one, Freeze and Delete.
+
+**Folders**: a folder groups tracks under a row of its own. Its arrow **folds** them away (they still play, and the folder's row shows their clips in miniature, so you can see where the music is); double-click the folder's lane to fold or unfold too. Its **M** and **S** mute or solo every track in it, the folder icon sets a colour for it and its tracks, double-click its name to rename it, and **×** ungroups it (the tracks stay where they are). Tracks in a folder show a thin stripe of its colour. Moving a track up or down past the edge of its folder takes it out; a track outside folders hops over a whole folder. Folders are saved with the project and every change is one Undo step (folding isn't).
 
 Each track header has **VOL** (-60 to +6 dB) and **PAN** sliders (double-click either to reset), and buttons for **M** (mute), **S** (solo) and **R** (record arm: takes go on this track, one track at a time; arming also selects it). If any track is soloed, only soloed tracks play. Muted and un-soloed tracks are also left out of exports.
 
@@ -434,14 +457,16 @@ Tracks are stereo, so wide sounds keep their width all the way to the master: th
 
 ### The Track Inspector (FX Rack)
 
-Click **FX Rack** in the toolbar, or the sliders icon on a track header, to open the Inspector on the right. Click another track's header to switch to it. The **Track FX** tab, top to bottom:
+Click **FX Rack** in the toolbar, or the sliders icon on a track header (or **Track › Inspector & FX rack**), to open the Inspector on the right. Click another track's header to switch to it. The **Track FX** tab, top to bottom:
 
 - **SOUND GENERATOR**: the track's instrument. Changing it renames and recolours the track but keeps its clips.
 - **HUMAN**: makes the track sound played rather than programmed. A real player never hits the same note quite the same way twice, so with Human on every note comes out a little different: **Timing** puts notes a few milliseconds either side of the beat (up to ±8 ms), **Dynamics** plays them a little softer or harder (up to ±30%), and **Pitch** leaves them a hair sharp or flat (up to ±12 cents, like a string player or a slightly loose guitar; only on instruments that play pitches, so drum kits don't show it). The notes of a chord land a hair apart, like fingers. Each note's variation is worked out from the note itself, so the song sounds the same every time you play it and in your exports, while no two notes are alike. Your notes aren't changed: switch it off and they play exactly as written. Start around 30 to 50% for a natural feel; turn Timing right up for a loose, laid-back one. (The piano roll's **Humanize** tool is different: it moves the notes themselves, once.)
 - **DUCK OTHERS UNDER THIS**: for a track that stands in for the game's dialogue or sound effects (a voice line, placeholder effects). Switch it on and every other track dips by **Dip** (2 to 24 dB, 8 to start) wherever this track sounds: a moment before each note or audio clip (so the first syllable isn't masked), holding while it sounds, and back up 0.4 s after; gaps under about a third of a second are bridged. It follows the track's clips as you edit them, plays live and in every export, and isn't written as automation. Muting the proxy stops the ducking. The Mixer marks a proxy track **PROXY**. (To dip under a reference video's own dialogue instead, use the speech bubble on the video lane.)
 - **DISTORTION**: Drive, from clean at 0% through overdrive to fuzz at 100%. It's a pedal-style overdrive: the lows are tightened, the top is rolled off the harder you drive, and the level stays about the same, so turning it up changes the tone rather than the volume.
 - **3-BAND PARAMETRIC EQ**: LOW (400 Hz), MID (1 kHz) and HIGH (2.5 kHz), each -24 to +12 dB. **Reset** flattens them.
+- **PRO EQ**: a parametric EQ you draw. Up to six bands, each a **Low cut**, **Low shelf**, **Bell**, **Notch**, **High shelf** or **High cut**. Drag a numbered dot sideways for its frequency and up or down for its gain (Shift: fine); the mouse wheel over the graph changes the selected band's width (Q); double-click empty space to add a band there; double-click a dot to switch it off or on; right-click a dot to remove it. Under the graph: the selected band's shape, frequency, gain and Q. The curve is exactly what the filters do, and while the song plays the track's own sound is drawn behind it, so you can see what you're cutting. **Open big** shows it in the **EQ & Dynamics** tab of the bottom panel. It starts flat, with a low shelf, two bells and a high shelf ready to drag (and a low cut and high cut, off).
 - **COMPRESSOR**: Threshold, Ratio and Makeup gain.
+- **MULTIBAND**: a compressor in three bands, **Low**, **Mid** and **High**, split at **Low / mid** and **Mid / high** (the bands add back up exactly, so with nothing squeezing the sound is unchanged). Each band has its own **Threshold**, **Ratio** and **Gain**, or **bypass**; **Attack** and **Release** are shared. Meters show how much each band is turning down. Tame a boomy low end without dulling the top, or squash a harsh top only when it gets loud. (The Master's **OTT** is a ready-made multiband for the whole mix.)
 - **CHORUS**: Rate, Depth and Mix.
 - **LO-FI**: **Crush** rounds the sound to fewer bits (16-bit is clean, 3-bit a buzzy 8-bit crunch), **Tone** darkens the top (1 to 20 kHz), **Wow** wobbles the pitch slowly like a worn tape, and **Mix** blends it with the clean sound. For lo-fi keys, dusty drums, chiptune grit and phonk.
 - **FILTER**: **Low-pass**, **High-pass** or **Band-pass**; **Cutoff** (20 Hz to 20 kHz); **Resonance** (Q 0.5 to 15: high values boost a narrow band at the cutoff, up to about +23 dB, so turn the track down when you push it); **Slope** 12 or 24 dB. It comes after the other effects, so it sweeps everything on the track. Moving Cutoff or Resonance while playing glides smoothly.
@@ -451,7 +476,7 @@ Click **FX Rack** in the toolbar, or the sliders icon on a track header, to open
 - **CHANNEL FADER**: the same volume and pan as the header.
 - **Delete this track** (also the trash icon at the top). It asks first if the track has clips; `Ctrl+Z` brings the track and its clips back.
 
-Human, Distortion, Compressor, Chorus, Lo-fi, Filter, Gate and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. You can switch effects on and off while the song plays without a gap, a click or a doubled sound, however busy the computer is: the change crossfades over 10 ms, about 20 to 30 ms after the click. A Compressor switched on comes in about 0.2 s later, once it has settled, and any other switch on that track in the meantime waits for it. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send, reverb and delay sliders don't reset on double-click (the master OTT and Stereo Width sliders do).
+Human, Distortion, Pro EQ, Compressor, Multiband, Chorus, Lo-fi, Filter, Gate and Pump each have an **ON / OFF** switch and start off. An effect that's off is taken out of the sound completely, so it costs nothing. You can switch effects on and off while the song plays without a gap, a click or a doubled sound, however busy the computer is: the change crossfades over 10 ms, about 20 to 30 ms after the click. A Compressor switched on comes in about 0.2 s later, once it has settled, and any other switch on that track in the meantime waits for it. The EQ is on whenever any band isn't at 0 dB. Double-click a Drive, EQ, Compressor or Chorus slider to reset it to its starting value (EQ bands go back to 0 dB); the send, reverb and delay sliders don't reset on double-click (the master OTT and Stereo Width sliders do).
 
 ### Master
 
@@ -517,13 +542,14 @@ Click the **curve button** in a track header ("Show automation"; it's tinted amb
 - Click empty space to add a point (time snaps to the SNAP grid; hold Shift for free time), or click the line to add a point on it.
 - Drag a point to move it: time snaps, the value is free, and Shift during the drag stops snapping. Points can't pass their neighbours, but two can share a bar for an instant jump. Alt+drag leaves a copy behind.
 - Drag the line between two points to move both up or down.
+- **Alt+drag the line** between two points to bend it: up or down pulls its middle that way. A line that starts slow and rushes in at the end makes a build feel like it's taking off; one that falls away fast then settles makes a natural fade. A tooltip shows the bend. Right-click a line for **Bend: slow start**, **Bend: fast start** or **Straighten line**.
 - Drag a box on empty space to select points (Shift or Ctrl adds). `Delete` deletes them; `Esc` clears the selection. Double-click or right-click a point to delete just that one.
 - **Right-click the lane** for **Ramp up In → Out** and **Ramp down In → Out** (a one-click build-up or fade over the loop region), **Delete selected points**, **Clear lane** and **Remove lane**. Ramps go from silence to the fader level for Volume, 200 Hz to 20 kHz for Filter Cutoff, -24 dB to 0 dB for EQ, and bottom to top for the others.
 - Every gesture is one undo step.
 
 ### How it plays
 
-- Lanes run between their points in straight lines; before the first point and after the last they hold that point's value. Volume works like a mixing fader (-60 dB silent to +6 dB; 0 dB is about 84% up); Cutoff (20 Hz to 20 kHz) and Resonance (Q 0.5 to 15) are logarithmic; Pan runs L100 to R100; sends 0 to 100%; EQ -24 to +12 dB.
+- Lanes run between their points in straight lines (or bent ones, as drawn); before the first point and after the last they hold that point's value. Volume works like a mixing fader (-60 dB silent to +6 dB; 0 dB is about 84% up); Cutoff (20 Hz to 20 kHz) and Resonance (Q 0.5 to 15) are logarithmic; Pan runs L100 to R100; sends 0 to 100%; EQ -24 to +12 dB.
 - While a lane has points it owns that setting: its control shows **AUTO**, follows the lane and can't be moved (click **AUTO** to open the lane). Clear or remove the lane to get the control back.
 - Filter lanes only sound while the track's **Filter** is on. Drawing a Filter lane's first point turns it on; if you switch the Filter off later, the lane is kept, dimmed, with a **Turn filter on** button.
 - Exports (mixdown and stems) follow lanes to within a millisecond. While playing, an edit, seek or undo is heard on the new line within about a tenth of a second; jumps glide over 4 ms so they don't click.
@@ -531,7 +557,7 @@ Click the **curve button** in a track header ("Show automation"; it's tinted amb
 
 ## Projects: saving and opening
 
-The project bar sits above the toolbar.
+The project's name, **Save**, **Export** and **Share** sit at the right of the menu bar; **New** and **Open** are in the **File** menu.
 
 - **Project name**: click it to rename. It's used for the file names when you save and export.
 - **New**: start a **Blank timeline** (four empty tracks), load the **Demo song** (Sunset Stroll, 88 BPM), or start from one of 42 **genre starters** in eight groups: **Electronic** (Dubstep, House, Trance, Drum & Bass, Synthwave, Chiptune), **Artcore & Game** (Final Boss Artcore, Melodic Hardcore, Breakcore, RPG Battle), **Bass Music** (Metal Dubstep, Melodic Dubstep, Riddim, Kawaii Future Bass), **Orchestral & Choir** (Classical, Angelic, Cinematic, Epic Orchestral, Horror), **Hip-Hop & Phonk** (Drift Phonk, UK Drill, Rage, Neo-Soul), **Pop & Jazz** (Bedroom Pop, Bossa Jazz-Pop, City Pop, Theatrical Pop), **Band** (Rock, Metal, Pop, Funk, Jazz, Hip-Hop, Trap, Rap-Rock, Math Rock) and **Chill & World** (Lo-Fi, Ambient, Celtic, Fantasy Tavern, Latin, Eastern). The newer starters keep the low end gentle: kicks below full force, soft impacts and no sub drops, and builds that get quieter before the drop instead of louder drops. Each starter is 16 bars with its sections marked (intro, build, drop, and so on), the loop on the main section, its tracks mixed and the master's OTT and Stereo Width set for the style. Change anything; it's an ordinary project. This replaces what's on screen and clears undo, so save first.
@@ -614,7 +640,7 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 
 ### Game preview: hear it the way the game will play it
 
-**Game** in the toolbar opens a small panel for rehearsing adaptive music, the kind that changes with what the player is doing:
+The **Game** tab of the bottom panel is for rehearsing adaptive music, the kind that changes with what the player is doing:
 
 - **States**: every section between your markers is a button (Intro, Explore, Combat, Boss...). Click one and the song moves there **on the next bar** (or next beat, or at once: the menu above them) and loops it, the way a game switches music. The playing state is green; a waiting one pulses amber.
 - **Transitions** (click to open, under the states): a matrix of how each state hands over to each other one. Rows are the state you come **from** (and **Any**, for a rule that applies from every state unless that row has its own); columns are the state you go **to**. Click a cell and pick:
@@ -639,7 +665,7 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 
 ### Sound effects maker
 
-**SFX** in the toolbar (or search *sound effects*) makes the little sounds games are full of. Click **Jump**, **Coin**, **Laser**, **Hit**, **Power-up**, **Explosion** or **Blip**: each click makes a new one of that kind and plays it. **Mutate** makes a variation of the sound you have; **Random** any kind.
+The **Sound FX** tab of the bottom panel (or **Tools › Sound effects maker**, or search *sound effects*) makes the little sounds games are full of. Click **Jump**, **Coin**, **Laser**, **Hit**, **Power-up**, **Explosion** or **Blip**: each click makes a new one of that kind and plays it. **Mutate** makes a variation of the sound you have; **Random** any kind.
 
 - **Shape it** with the sliders; letting go of one plays the result. **Wave** (square, saw, triangle, sine or noise), **Pitch**, **Slide** (how far the pitch moves, in semitones) and its **Curve**, a **Jump** in pitch partway through (the classic coin), **Vibrato**, **Repeat** (restarts the pitch, for a power-up warble); then **Attack**, **Hold**, **Punch** and **Decay** for its loudness over time, **Width** for the square wave's tone, **Low-pass** (and its **Sweep**), **High-pass**, **Crush** (fewer bits, crunchier) and **Volume**.
 - **Tune to key** (on when the song has notes) snaps the pitch, and the coin's jump, to notes of the key the song is in, worked out from its notes; the key and the note show next to it. Noise sounds aren't tuned.
@@ -657,11 +683,11 @@ A sound a game plays again and again (a footstep, a sword swing, a menu click) s
 
 ### Audition like the game
 
-**Audition like the game** (at the bottom of the Game preview) renders the states, their stems, the stingers and the transition sounds exactly as the game kit exports them (it takes a few seconds, more for a long song), then plays them with the kit's own web player. Big pads switch states (a waiting one pulses until its line), stinger pads fire stingers on the next beat, and **Intensity** crossfades the stem groups. Every switch follows your transition matrix, crossfades included, so what you hear is what the game will do. The song stops while it's open.
+**Audition like the game** (in the Game tab) renders the states, their stems, the stingers and the transition sounds exactly as the game kit exports them (it takes a few seconds, more for a long song), then plays them with the kit's own web player. Big pads switch states (a waiting one pulses until its line), stinger pads fire stingers on the next beat, and **Intensity** crossfades the stem groups. Every switch follows your transition matrix, crossfades included, so what you hear is what the game will do. The song stops while it's open.
 
 ### The game kit: everything for the game in one file
 
-**Export game kit (.zip)** at the bottom of the Game preview makes everything a game needs to play your music the way the panel does:
+**Export game kit (.zip)** in the Game tab makes everything a game needs to play your music the way the panel does:
 
 - `states/`: every state (section between markers) as a **seamless loop**, a whole number of bars long, with loop points.
 - `stems/<state>/`: when tracks have stem groups, the same loop split by group (tracks without a group go in **Main**), every stem exactly the same length: played together at full level they make the mix.
@@ -670,9 +696,21 @@ A sound a game plays again and again (a footstep, a sword swing, a menu click) s
 - `players/`: ready-made players that read the manifest and do all of it (switching by your rules on the beat, crossfades, stinger bridges, intensity): `web/adaptive-music.js` for a web game, `godot/AdaptiveMusic.gd` for Godot 4, and `unity/AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `setIntensity` / `set_intensity` / `SetIntensity`, `stinger` and `stop`.
 - `README.txt` says how to drop it into each engine, with your own state and stinger names in the examples.
 
+### FMOD and Wwise
+
+**File › FMOD / Wwise package…** (also in the Game tab) lays your game music out for audio middleware, in one .zip:
+
+- `Audio/`: every state as an exact loop, its stems by stem group, the stingers and the transition sounds (48 kHz, or 44.1).
+- `cues.json`: the tempo, every state (bars, seconds, samples, stems, and where it sits on one timeline), the transition rules, the stingers and the intensity curves.
+- `fmod/…js`: an **FMOD Studio** script. Put it in your project's Scripts folder and choose **Scripts › Bo's Beatbox › Import**: it builds the event with a track per stem group, every state laid out with a loop region and a marker, the tempo, an **Intensity** parameter driving each group's volume along its curve, and an event per stinger.
+- `wwise/…py`: a **Wwise** script (Wwise Authoring API, Python). With Wwise open, it builds a Music Switch Container with a playlist and segment per state and a track per stem group, a State Group with a state per section, an Intensity game parameter, and the stingers as sounds.
+- `README.md`: how to run them, your states, transitions and intensity curves (in dB), and the steps each tool doesn't let a script do (FMOD's transition regions, Wwise's state assignments and RTPC curves).
+
+Versions of FMOD and Wwise differ, so each script step reports whether it worked (OK or SKIP) rather than stopping the rest.
+
 ### The web runtime kit: music with no audio files
 
-For a web game where download size matters, **Export web runtime kit (no audio files)** (at the bottom of the Game preview) makes a .zip with just:
+For a web game where download size matters, **Export web runtime kit (no audio files)** (in the Game tab) makes a .zip with just:
 
 - the song's project file (`<song>.json`, usually tens of kilobytes, with any sounds your clips play inside it),
 - `bos-player.js` (about 550 KB, about 135 KB as a web server sends it), which **synthesizes the music in the player's browser** when the game loads, with the same engine as Bo's Beatbox: every state (as stems, if the song has stem groups), the stingers and the transitions,
@@ -709,6 +747,7 @@ Shortcuts don't work while you're typing in a box, or while a dialog or panel (G
 | Keys | Action |
 |---|---|
 | `Space` | Play / pause |
+| `Ctrl+S` / `Ctrl+O` / `Ctrl+E` | Save / Open / Export (`Cmd` on a Mac) |
 | `V` / `C` | Selection tool / Razor tool |
 | `L` | Loop on / off |
 | `J` / `Shift+L` | Playhead back / forward a bar (`Shift+J`: back 4 bars) |
