@@ -20,7 +20,7 @@ const { INSTRUMENTS, CATEGORIES } = await import('../src/audio/instrumentCatalog
 const { SAMPLE_CREDITS, creditFor } = await import('../src/credits.ts');
 
 export const GUIDE = fileURLToPath(new URL('../GUIDE.md', import.meta.url));
-const playable = () => Object.values(INSTRUMENTS).filter((d) => d.kind !== 'slicer' && d.kind !== 'audio');
+const playable = () => Object.values(INSTRUMENTS).filter((d) => d.kind !== 'slicer' && d.kind !== 'audio' && d.kind !== 'bus');
 const recorded = (d) => !!d.samples;
 
 /** Instruments whose samples come from no listed source. */
