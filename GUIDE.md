@@ -456,6 +456,12 @@ Click **Export WAV**. The dialog has four choices, and remembers them in this br
   - **Seamless loop** (Loop region only): exactly one loop long, with the tails of the pass before already ringing at its start, so it repeats in a game engine or looping player without a gap or click. It stays exactly on the beat at any tempo, fractional ones included.
 - **Format**: the **file type**: **WAV** (uncompressed and exact, the only one that holds markers and loop points), **MP3** (320 kb/s, plays everywhere) or **OGG** (Ogg Vorbis, about 256 kb/s, the best compressed format for games: Godot and Unity loop it without a gap). Then **44.1 kHz** or **48 kHz**, and for WAV **16-bit**, **24-bit** or **32-bit float**. Always stereo. An MP3 can have a few milliseconds of silence added at its start by the format itself, so use OGG or WAV for anything that has to loop seamlessly.
 
+### Video (MP4)
+
+Choose **Export: Video (MP4)** to turn the song (or the loop region) into a video for YouTube, socials or a game's trailer: 1280×720 at 30 frames a second, with the mix as its sound and a visualizer as its picture. It shows the project's name, a spectrum that moves with the music, the whole song's waveform with a playhead, the section you're in (from your markers) and the time. It's made faster than real time: a 30-second song takes about 20 seconds. **Normalize** sets it to -14 LUFS, the loudness YouTube plays at.
+
+Videos need Chrome or Edge (or another browser with WebCodecs) on a site served over https. On Windows and Mac they're H.264 with AAC sound, which plays everywhere; where the browser doesn't have those, they're VP9 or AV1 with Opus sound, which browsers, VLC, YouTube and Discord play but some older players don't.
+
 ### Music for games: intro + loop, and layers
 
 Game music usually plays an intro once and then loops the rest for as long as the player stays. Set the loop region to the part that should repeat (everything before its **In** is the intro) and choose **Range: Intro + loop**. The export is a .zip with:
