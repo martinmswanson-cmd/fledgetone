@@ -1939,7 +1939,9 @@ export function connectTimelineToAudio(): () => void {
     const next = liveView(state, soundMissing, view);
     if (next.tracks !== view.tracks) syncLiveTracks(next.tracks);
     const trackSetChanged = next.tracks.length !== view.tracks.length || next.tracks.some((t, i) => t.id !== view.tracks[i]?.id);
-    if (next.clips !== view.clips || trackSetChanged) rescheduleClips(next.tracks, next.clips);
+    // The Human insert works in the scheduler, so turning it or its amounts changes what plays
+    const feelChanged = next.tracks.some((t, i) => t.fx.human !== view.tracks[i]?.fx.human || t.instrumentKey !== view.tracks[i]?.instrumentKey);
+    if (next.clips !== view.clips || trackSetChanged || feelChanged) rescheduleClips(next.tracks, next.clips);
     view = next;
   };
   // A frozen sound found missing (or back again) changes what plays

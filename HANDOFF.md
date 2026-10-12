@@ -76,6 +76,7 @@ Run all five checks before every commit.
 | Tour and tutorials (welcome on first visit, LEARN, spotlight card) | `src/tour/lessons.ts` (steps: target selector, optional `task.begin`/`task.done` checks), `src/tour/tourStore.ts`, `src/components/tour/` |
 | Genre starters: helpers, the style batch (artcore, bass music, phonk, jazz-pop...) | `src/store/starterKit.ts`, `src/store/startersPlaylist.ts` (metadata and groups in `starters.ts`) |
 | Key change, ratchet / roll tools | `src/store/keyChange.ts` (ruler menu), `ratchet` / `roll` in `noteTools.ts` |
+| Human insert (per-note timing / velocity / pitch drift) | `src/audio/human.ts` (seeded from clip id, note id and tick; unit tested in `scripts/human.test.mjs`), applied in `scheduler.ts` `playGroup`; panel `HumanPanel` in `InsertFx.tsx` |
 | Lo-fi and Gate inserts | `createLightLofi` / `createLightGate` in `effects/lightFx.ts`; the Gate is chopped by the strip's beat clock (`createPumpClock`) |
 | Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |
@@ -202,6 +203,13 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   drop, soft impacts, distortion on one track at most (0.08). The report's other asks still open:
   a tempo map, time signatures, a piano sustain-pedal lane, per-note pitch bend, a break slicer
   with per-slice pitch, amp-sim / saturation, and more drum rows (rim, shaker, tambourine).
+
+- **Human insert** (Oct 2026): per track, in the FX Rack above Distortion. It works on notes in
+  the scheduler, not on audio: each note drifts late (0 to 15 ms, never early, because the
+  export's look-ahead is about 5 ms), softer / harder and (pitched kinds only, via an `"…hz"`
+  note string) sharp / flat. The drift is a hash of clip id + note id + tick, so live, export and
+  freeze match. Mono basses, the 808 and drum kits keep a group together (one drift per group),
+  so chords still pick the loudest note, 808 slides still slide and open hats still choke.
 
 ## Ideas not started
 

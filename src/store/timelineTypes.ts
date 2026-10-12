@@ -97,6 +97,20 @@ export interface TrackFx {
     /** How much of each step it stays open, 0.1 to 0.95 */
     length: number;
   };
+  /**
+   * Human feel: every note played a little differently, as a player would. Each amount is 0 to 1.
+   * The variation is worked out from the note itself, so a note sounds the same every time the
+   * song plays (and in an export), but no two notes are quite alike.
+   */
+  human: {
+    on: boolean;
+    /** Notes early or late, up to about 15 ms */
+    timing: number;
+    /** Notes softer or harder, up to about 30% */
+    dynamics: number;
+    /** Notes a touch sharp or flat, up to about 12 cents (pitched instruments only) */
+    pitch: number;
+  };
 }
 
 /** Gate speeds: one chop per note value (T = triplet). */
@@ -124,6 +138,7 @@ export function defaultTrackFx(): TrackFx {
     pump: { on: false, depth: 0.7, release: 300, trigger: 'kick' },
     lofi: { on: false, crush: 0.5, tone: 5000, wow: 0.3, mix: 1 },
     gate: { on: false, rate: '1/16', depth: 0.9, length: 0.5 },
+    human: { on: false, timing: 0.5, dynamics: 0.5, pitch: 0.5 },
   };
 }
 
@@ -141,6 +156,7 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
   const pum = obj(r.pump);
   const lof = obj(r.lofi);
   const gat = obj(r.gate);
+  const hum = obj(r.human);
   const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
   return {
     distortion: { on: dist.on === true, amount: num(dist.amount, d.distortion.amount, 0, 1) },
@@ -182,6 +198,12 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
       rate: oneOf(gat.rate, GATE_RATES, d.gate.rate),
       depth: num(gat.depth, d.gate.depth, 0, 1),
       length: num(gat.length, d.gate.length, 0.1, 0.95),
+    },
+    human: {
+      on: hum.on === true,
+      timing: num(hum.timing, d.human.timing, 0, 1),
+      dynamics: num(hum.dynamics, d.human.dynamics, 0, 1),
+      pitch: num(hum.pitch, d.human.pitch, 0, 1),
     },
   };
 }

@@ -16,7 +16,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { useAudioStore } from '../../store/audioStore';
 import { EqCurvePreview } from './EqCurvePreview';
-import { DistortionPanel, DynamicsAndChorusPanels, FilterAndPumpPanels } from './InsertFx';
+import { DistortionPanel, DynamicsAndChorusPanels, FilterAndPumpPanels, HumanPanel } from './InsertFx';
 import { SampleLoader } from './SampleLoader';
 import { SlicerPanel } from './SlicerPanel';
 import { SynthPanel } from './SynthPanel';
@@ -235,7 +235,10 @@ export const TrackInspector: React.FC = () => {
             {currentTrack.instrumentKey === 'synthDesigner' && <SynthPanel track={currentTrack} />}
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
-            {/* Insert chain, in signal order: Distortion -> EQ -> Compressor -> Chorus -> Filter -> Pump */}
+            {/* Human works on the notes before the instrument plays them */}
+            {!isAudioKind(currentTrack.instrumentKey) && <HumanPanel track={currentTrack} />}
+
+            {/* Insert chain, in signal order: Distortion -> EQ -> Compressor -> Chorus -> Lo-fi -> Filter -> Gate -> Pump */}
             <DistortionPanel track={currentTrack} />
 
             {/* 3-Band Parametric EQ Panel */}
