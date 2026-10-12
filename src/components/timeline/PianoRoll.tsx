@@ -1,3 +1,4 @@
+import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import { Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
@@ -757,7 +758,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
 
       {/* Body */}
       <div ref={scrollRef} className="relative overflow-auto max-h-[340px] select-none">
-        <div className="relative" style={{ width: KEY_W + gridW, height: RULER_H + gridH }}>
+        <div className="relative" style={{ width: KEY_W + gridW, height: RULER_H + gridH + (isDrums ? 0 : EXPRESSION_LANE_H) }}>
           {/* Ruler */}
           <div
             className="sticky top-0 z-20 flex bg-forge-panel border-b border-forge-border cursor-pointer"
@@ -894,6 +895,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               <GridPlayhead startBar={clip.startBar} stepW={stepW} gridW={gridW} />
             </div>
           </div>
+          {/* Pitch bend, mod wheel and sustain pedal (not for drums and FX) */}
+          {!isDrums && <ExpressionLane clip={clip} keyWidth={KEY_W} barW={UNITS_PER_BAR * unitW} snap={(at) => snapUnits(at * UNITS_PER_BAR) / UNITS_PER_BAR} />}
         </div>
       </div>
     </div>

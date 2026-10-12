@@ -146,6 +146,8 @@ function describe(message: MidiMessage): string {
       return message.down ? 'sustain down' : 'sustain up';
     case 'pitchBend':
       return `bend ${message.cents >= 0 ? '+' : ''}${Math.round(message.cents)} cents`;
+    case 'mod':
+      return `mod wheel ${Math.round(message.value * 100)}%`;
     case 'allNotesOff':
       return 'all notes off';
   }

@@ -68,8 +68,13 @@ export function recordMidi(message: MidiMessage, heard: number): void {
     case 'sustain':
       take.sustain(message.down, Math.max(heard, startAudio));
       break;
-    case 'allNotesOff':
     case 'pitchBend':
+      if (heard >= startAudio) take.control('bend', message.cents / 100, transportBarAt(heard));
+      break;
+    case 'mod':
+      if (heard >= startAudio) take.control('mod', message.value, transportBarAt(heard));
+      break;
+    case 'allNotesOff':
       break;
   }
 }

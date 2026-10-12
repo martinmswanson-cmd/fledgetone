@@ -1,5 +1,5 @@
 import { tempoAt, type Tempo } from '../audio/tempoMap';
-import type { Clip, NoteEvent } from './timelineTypes';
+import type { Clip, ClipExpression, NoteEvent } from './timelineTypes';
 import { barsToDuration, durationToBars, TOTAL_BARS } from './timelineTypes';
 
 /**
@@ -68,6 +68,8 @@ export interface TakeClip {
   startBar: number;
   lengthBars: number;
   notes: Omit<NoteEvent, 'id'>[];
+  /** The pitch bend and mod wheel as played */
+  expression?: ClipExpression;
 }
 
 /** A note played into the take, in song bars (1-based) and audio seconds (for its length). */
@@ -98,6 +100,8 @@ export interface Take {
   noteOn: (key: number, note: string, velocity: number, bar: number, seconds: number) => void;
   noteOff: (key: number, seconds: number) => void;
   sustain: (down: boolean, seconds: number) => void;
+  /** The pitch bend (semitones) or mod wheel (0 to 1) moved to `value` at `bar`: it goes in the clip's expression lanes. */
+  control: (lane: 'bend' | 'mod', value: number, bar: number) => void;
   /** The take covered these bars too (a loop pass came round), so its clip spans them. */
   cover: (fromBar: number, toBar: number) => void;
   /** Notes recorded so far, the held ones included. */
@@ -117,6 +121,7 @@ export function createTake(startBar: number): Take {
   /** Let go while the pedal was down: they end when it comes up. */
   const sustained = new Map<number, TakeNote>();
   let pedal = false;
+  const controls: Record<'bend' | 'mod', Array<{ bar: number; value: number }>> = { bend: [], mod: [] };
   let low = startBar;
   let high = startBar;
 
@@ -158,6 +163,13 @@ export function createTake(startBar: number): Take {
       for (const n of sustained.values()) close(n, seconds);
       sustained.clear();
     },
+    control: (lane, value, bar) => {
+      const list = controls[lane];
+      // Wheels send a stream: keep a point only where the value has moved on
+      const last = list[list.length - 1];
+      if (last && Math.abs(last.value - value) < (lane === 'bend' ? 0.02 : 0.01) && bar - last.bar < 1 / 16) return;
+      list.push({ bar, value });
+    },
     cover: (fromBar, toBar) => {
       low = Math.min(low, fromBar);
       high = Math.max(high, toBar);
@@ -187,6 +199,16 @@ export function createTake(startBar: number): Take {
             duration: barsToDuration(lengthOf(n)),
             velocity: Math.max(0.01, Math.min(1, n.velocity)),
           })),
+        // The wheels as played, back to rest at the end of the take
+        ...(() => {
+          const expression: ClipExpression = {};
+          for (const lane of ['bend', 'mod'] as const) {
+            const list = controls[lane].filter((c) => c.bar >= clipStart && c.bar <= clipEnd);
+            if (!list.some((c) => c.value !== 0)) continue;
+            expression[lane] = list.map((c) => ({ at: c.bar - clipStart, value: Math.round(c.value * 1000) / 1000 }));
+          }
+          return Object.keys(expression).length ? { expression } : {};
+        })(),
       };
     },
   };

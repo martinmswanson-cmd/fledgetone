@@ -13,6 +13,8 @@ export type MidiMessage =
   | { kind: 'noteOff'; note: number }
   | { kind: 'sustain'; down: boolean }
   | { kind: 'pitchBend'; cents: number }
+  /** The mod wheel (CC 1), 0 to 1 */
+  | { kind: 'mod'; value: number }
   | { kind: 'allNotesOff' };
 
 /** How far the bend wheel moves the pitch at full travel: two semitones, the common default. */
@@ -22,6 +24,7 @@ const NOTE_ON = 0x90;
 const NOTE_OFF = 0x80;
 const CONTROL_CHANGE = 0xb0;
 const PITCH_BEND = 0xe0;
+const CC_MOD_WHEEL = 1;
 const CC_SUSTAIN = 64;
 const CC_ALL_SOUND_OFF = 120;
 const CC_ALL_NOTES_OFF = 123;
@@ -43,6 +46,7 @@ export function decodeMidi(data: ArrayLike<number>): MidiMessage | null {
       return { kind: 'noteOff', note: d1 };
     case CONTROL_CHANGE:
       if (d1 === CC_SUSTAIN) return { kind: 'sustain', down: d2 >= 64 };
+      if (d1 === CC_MOD_WHEEL) return { kind: 'mod', value: d2 / 127 };
       if (d1 === CC_ALL_NOTES_OFF || d1 === CC_ALL_SOUND_OFF) return { kind: 'allNotesOff' };
       return null;
     case PITCH_BEND: {
