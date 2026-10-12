@@ -4,12 +4,15 @@ import { referencedSoundIds } from '../../store/audioClips';
 import { embedSounds } from '../../audio/soundLibrary';
 import { downloadBlob } from '../../audio/exportWav';
 import { showToast } from './toastStore';
+import { projectVideoForFile } from '../../store/videoStore';
 
 /** Download the arrangement as a project file, with the sound files its clips and instruments play. */
 export async function saveProjectFile(): Promise<void> {
   const project = currentProject();
   const sounds = await embedSounds(referencedSoundIds(project));
-  const blob = new Blob([JSON.stringify(serializeProject({ ...project, sounds }), null, 2)], { type: 'application/json' });
+  // The reference video goes in the file too when it's small enough (else it stays in this browser)
+  const video = await projectVideoForFile();
+  const blob = new Blob([JSON.stringify(serializeProject({ ...project, sounds, video }), null, 2)], { type: 'application/json' });
   downloadBlob(blob, `${safeFileName(project.name)}.beatbox.json`);
 }
 

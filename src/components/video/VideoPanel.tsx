@@ -34,6 +34,7 @@ export const VideoPanel: React.FC = () => {
   const bpm = useTimelineStore((s) => s.bpm);
   const markers = useTimelineStore((s) => s.markers);
   const hits = markers.filter((m) => m.anchor === 'time').length;
+  const missing = useVideoStore((s) => s.missing);
   const v = useVideoStore.getState();
 
   return (
@@ -78,6 +79,10 @@ export const VideoPanel: React.FC = () => {
             </label>
             <span>Drag the film strip on the timeline to move it too. The video is saved in this browser and in project files.</span>
           </div>
+        ) : missing ? (
+          <p className="text-[11px] text-amber-200">
+            This project scores to <b>{missing.name}</b> (from {missing.start.toFixed(2)} s), which isn't in this browser: load it again with Video and it goes back where it was.
+          </p>
         ) : (
           <p className="text-[11px]">Load gameplay, a trailer or a cut: it plays in sync with the playhead, as a strip under the ruler and in a preview window. You can also drop a video file on the page.</p>
         )}

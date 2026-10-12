@@ -131,6 +131,25 @@ async function writeStoredSound(meta: SoundMeta, data: Blob): Promise<void> {
   await completed(tx);
 }
 
+/** Keep any other file in this browser under `key` (the reference video: see videoStore). */
+export async function storeBlob(key: string, blob: Blob): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(DATA_STORE, 'readwrite');
+  tx.objectStore(DATA_STORE).put(blob, key);
+  await completed(tx);
+}
+
+export async function readBlob(key: string): Promise<Blob | undefined> {
+  return readStoredData(key);
+}
+
+export async function deleteBlob(key: string): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction(DATA_STORE, 'readwrite');
+  tx.objectStore(DATA_STORE).delete(key);
+  await completed(tx);
+}
+
 /** Every sound kept in this browser (its meta, not its bytes). */
 export async function storedSounds(): Promise<SoundMeta[]> {
   const db = await openDb();

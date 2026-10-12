@@ -1,4 +1,4 @@
-import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
@@ -56,6 +56,8 @@ export interface ProjectData {
   transitions?: Record<string, TransitionRule>;
   /** Intensity: the level now (0 to 1) and each stem group's curve (optional). */
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
+  /** The reference video (optional) */
+  video?: ProjectVideo;
 }
 
 export interface ProjectSnapshot {
@@ -83,6 +85,8 @@ export interface ProjectSnapshot {
   transitions?: Record<string, TransitionRule>;
   /** Intensity: the level now and each stem group's curve. */
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
+  /** The reference video, if one is loaded */
+  video?: ProjectVideo;
 }
 
 
@@ -105,6 +109,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     ...(p.stingers?.length ? { stingers: p.stingers } : {}),
     ...(p.transitions && Object.keys(p.transitions).length ? { transitions: p.transitions } : {}),
     ...(p.intensity && (Object.keys(p.intensity.curves).length || p.intensity.value !== 1) ? { intensity: p.intensity } : {}),
+    ...(p.video ? { video: p.video } : {}),
   };
 }
 
@@ -259,6 +264,17 @@ export function parseProject(raw: unknown): ProjectSnapshot {
       value: isObj(raw.intensity) && isNum(raw.intensity.value) ? Math.max(0, Math.min(1, raw.intensity.value)) : 1,
       curves: parseCurves(isObj(raw.intensity) ? raw.intensity.curves : undefined),
     },
+    ...(isObj(raw.video) && isStr(raw.video.key) && isStr(raw.video.name)
+      ? {
+          video: {
+            key: raw.video.key,
+            name: raw.video.name,
+            type: isStr(raw.video.type) ? raw.video.type : 'video/mp4',
+            start: isNum(raw.video.start) ? raw.video.start : 0,
+            ...(isStr(raw.video.data) && raw.video.data.startsWith('data:') ? { data: raw.video.data } : {}),
+          },
+        }
+      : {}),
   };
 }
 
