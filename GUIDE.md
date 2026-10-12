@@ -615,6 +615,7 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 **Game** in the toolbar opens a small panel for rehearsing adaptive music, the kind that changes with what the player is doing:
 
 - **States**: every section between your markers is a button (Intro, Explore, Combat, Boss...). Click one and the song moves there **on the next bar** (or next beat, or at once: the menu above them) and loops it, the way a game switches music. The playing state is green; a waiting one pulses amber.
+- **Transitions** (click to open, under the states): how the music goes **into** each state. **Cut** (straight in, the default), **Fill** (a snare fill over the beat before the switch, on the song's own drum kit), **Riser** (a riser over the bar before it: the switch waits a bar if there isn't a whole one left) or **Impact** (a hit on the new state's downbeat). They play when you switch states while the song plays, and are saved with the project.
 - **Layers**: tick tracks on and off while it plays, or use **Intensity**, which brings tracks in one by one from the top of the track list (put your calmest layers at the top and the most intense at the bottom). These mute and unmute the tracks without making Undo steps.
 - When it sounds right, export the sections with **Intro + loop** and the layers with **Layers** (below) for your game engine.
 

@@ -5,7 +5,10 @@ import { getAudiblePositionBar } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
-import { fireStinger, renderStinger } from '../../audio/stingerPlayer';
+import { fireStinger, playNotesAt, renderStinger } from '../../audio/stingerPlayer';
+import { transitionCue, TRANSITIONS } from '../../store/transitions';
+import type { TransitionKind } from '../../store/timelineTypes';
+import * as Tone from 'tone';
 import { createZip } from '../../audio/zip';
 import { downloadBlob, encodeChannels, renderLoopTakes } from '../../audio/exportWav';
 import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/loopVariations';
@@ -80,6 +83,38 @@ const LoopVariations: React.FC = () => {
         </button>
       </div>
     </div>
+  );
+};
+
+/** How the music goes into each state: straight in, or with a fill, a riser or an impact. */
+const TransitionList: React.FC<{ sections: Array<{ id: string; name: string }> }> = ({ sections }) => {
+  const transitions = useTimelineStore((s) => s.transitions);
+  return (
+    <details className="flex flex-col gap-1">
+      <summary className="cursor-pointer text-[10px] font-mono text-forge-muted uppercase select-none">
+        Transitions ({Object.keys(transitions).filter((id) => sections.some((s) => s.id === id)).length} set)
+      </summary>
+      <p className="text-forge-muted mt-1">What plays as the music switches into each state (on the next bar or beat).</p>
+      <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 mt-1">
+        {sections.map((sec) => (
+          <React.Fragment key={sec.id}>
+            <span className="truncate text-forge-text self-center">Into {sec.name}</span>
+            <select
+              value={transitions[sec.id] ?? 'cut'}
+              onChange={(e) => useTimelineStore.getState().setTransition(sec.id, e.target.value as TransitionKind)}
+              className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text"
+              aria-label={`Transition into ${sec.name}`}
+            >
+              {TRANSITIONS.map((t) => (
+                <option key={t.kind} value={t.kind} title={t.blurb}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </React.Fragment>
+        ))}
+      </div>
+    </details>
   );
 };
 
@@ -259,6 +294,7 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const goTo = (sec: (typeof sections)[number]) => {
     const s = useTimelineStore.getState();
     clearTimeout(timer.current);
+    const cue = transitionCue(s.transitions[sec.id] ?? 'cut', s.tracks);
     const jump = () => {
       const st = useTimelineStore.getState();
       st.setLoopRange(sec.from, sec.to);
@@ -269,13 +305,16 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     if (!s.isPlaying || quantize === 'now') {
       jump();
       if (!s.isPlaying) void s.togglePlay();
+      if (cue && cue.leadIn === 0) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + 0.1);
       return;
     }
-    // On the next bar or beat line of the song
+    // On the next bar or beat line of the song, or a later one if the transition needs more room
     const at = getAudiblePositionBar();
     const unit = quantize === 'bar' ? 1 : 0.25;
-    const next = Math.floor((at - 1) / unit + 1e-6) * unit + unit + 1;
+    let next = Math.floor((at - 1) / unit + 1e-6) * unit + unit + 1;
+    if (cue && next - at < cue.leadIn) next += Math.ceil((cue.leadIn - (next - at)) / unit - 1e-6) * unit;
     const ms = ((next - at) * 240 * 1000) / s.bpm;
+    if (cue) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + ms / 1000);
     setPending(sec.id);
     // Make the jump land on the line: the loop wraps there if the line is the loop's end
     timer.current = window.setTimeout(jump, Math.max(0, ms - 15));
@@ -343,6 +382,7 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
           )}
         </div>
+        {sections.length > 1 && <TransitionList sections={sections} />}
         <div className="flex flex-col gap-1.5">
           <label className="flex items-center gap-2 text-[10px] font-mono text-forge-muted uppercase">
             Intensity

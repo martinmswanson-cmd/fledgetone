@@ -1,4 +1,4 @@
-import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionKind } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
@@ -6,6 +6,7 @@ import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
 import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
+import { parseTransitions } from './transitions';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 
 /**
@@ -50,6 +51,8 @@ export interface ProjectData {
   master?: MasterSettings;
   /** Game stingers (optional; older files have none). */
   stingers?: Stinger[];
+  /** Transitions into game states, by section marker id (optional; absent means straight cuts). */
+  transitions?: Record<string, TransitionKind>;
 }
 
 export interface ProjectSnapshot {
@@ -73,6 +76,8 @@ export interface ProjectSnapshot {
   master?: MasterSettings;
   /** Game stingers (older projects don't have any). */
   stingers?: Stinger[];
+  /** Transitions into game states, by section marker id. */
+  transitions?: Record<string, TransitionKind>;
 }
 
 
@@ -93,6 +98,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     ...(p.sounds?.length ? { sounds: p.sounds } : {}),
     master: normalizeMasterSettings(p.master),
     ...(p.stingers?.length ? { stingers: p.stingers } : {}),
+    ...(p.transitions && Object.keys(p.transitions).length ? { transitions: p.transitions } : {}),
   };
 }
 
@@ -227,6 +233,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     ...(sounds.length ? { sounds } : {}),
     master: normalizeMasterSettings(raw.master),
     stingers: parseStingers(raw.stingers, isInstrumentKey),
+    transitions: parseTransitions(raw.transitions),
   };
 }
 

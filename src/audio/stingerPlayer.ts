@@ -6,7 +6,7 @@ import { INSTRUMENTS, type InstrumentKey } from './instrumentCatalog';
 import { hasRecordings, loadSamples } from './samplers/samplerManager';
 import { renderArrangement, encodeWav, type SampleRate } from './exportWav';
 import { fitNotesToRange } from '../store/stingers';
-import type { Clip, MasterFx, MasterSettings, Stinger, Track } from '../store/timelineTypes';
+import type { Clip, MasterFx, MasterSettings, NoteEvent, Stinger, Track } from '../store/timelineTypes';
 import { defaultTrackFx } from '../store/timelineTypes';
 
 /**
@@ -27,6 +27,28 @@ function player(key: InstrumentKey): TrackInstrument {
 }
 
 export type StingerTiming = 'bar' | 'beat' | 'now';
+
+/**
+ * Play notes on a shared instrument from `start` (audio time), their offsets in bars; notes that
+ * would start in the past are left out. For the Game preview's transitions.
+ */
+export async function playNotesAt(key: InstrumentKey, notes: readonly NoteEvent[], start: number): Promise<void> {
+  if (hasRecordings(key)) await loadSamples(key);
+  const inst = player(key);
+  await inst.ready;
+  const now = Tone.getContext().currentTime;
+  const secondsPerBar = 240 / liveTransport.bpm.value;
+  for (const n of notes) {
+    const at = start + n.startOffset * secondsPerBar;
+    if (at >= now) inst.play([n], at);
+  }
+}
+
+/** The audio time of the next bar or beat line while the song plays (or `null` when stopped). */
+export function nextLineTime(unit: 'bar' | 'beat'): number | null {
+  if (liveTransport.state !== 'started') return null;
+  return liveTransport.nextSubdivision(unit === 'bar' ? '1m' : '4n');
+}
 
 /**
  * Play `stinger` over whatever is playing: on the next bar or beat while the song plays, or at
