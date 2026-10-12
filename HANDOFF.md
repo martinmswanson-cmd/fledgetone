@@ -1,6 +1,6 @@
 # Bo's Beatbox: handoff
 
-Read this first when picking the project up in a new session. (Updated after the mastering work.) It covers what the app is, how
+Read this first when picking the project up in a new session. (Updated after the game exports, video, sharing, chiptune and build & drop work.) It covers what the app is, how
 the code is laid out, how to check changes (including sound), what's finished, and what's next.
 
 ## The app and who it's for
@@ -57,7 +57,11 @@ Run all five checks before every commit.
 | Synth presets (Wobble, Growl, Reese, Supersaw, 808...) | `src/audio/presets/` |
 | Track inserts (Distortion, Filter, Pump, Chorus...) | `src/audio/effects/` |
 | Audio graph, master bus, live playback | `src/audio/engine.ts`, `liveTracks.ts`, `scheduler.ts`, `transport.ts` |
-| WAV export (offline render, stems) | `src/audio/exportWav.ts` |
+| Export (offline render, stems, intro + loop) | `src/audio/exportWav.ts`, `ExportDialog.tsx` |
+| MP3 / OGG encoding (wasm-media-encoders), WAV loop chunk | `src/audio/encoders.ts`, `wavCues.ts` |
+| MP4 video (WebCodecs + mp4-muxer) | `src/audio/videoExport.ts` |
+| Share link (`#song=`), Share dialog, opening a link | `src/store/shareLink.ts`, `ShareDialog.tsx`, `src/components/SharedLinkOpener.tsx` |
+| Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |
 | MIDI keyboard, recording, metronome | `midi.ts`, `recorder.ts`, `metronome.ts`, `src/store/recording.ts` |
 | App state, undo, project load | `src/store/timelineStore.ts`, `timelineTypes.ts` |
@@ -136,22 +140,34 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   `Tone.Transport` / `Tone.Destination` / `Tone.context`: Tone creates those at import from its
   default context, which Stable playback replaces.
 
+- **Game exports** (Export dialog, Range "Intro + loop"): the intro rendered exactly, the loop
+  seamless, sharing one reverb impulse and gain; zipped with a WAV carrying `smpl` loop points.
+  "Layers" are stems. File type WAV / MP3 (320k) / OGG (q8); the encoders are bundled inline and
+  `vite.config.ts` appends their licence notices.
+- **MP4 video**: 1280x720 at 30 fps with a spectrum, waveform and section names. H.264/AAC is
+  preferred, VP9 or AV1 with Opus the fallback. WebCodecs needs https (or localhost). H.264 is
+  untested here (no encoder in the test Chromium). `mp4-muxer` is deprecated for Mediabunny.
+- **Share**: a link with the song deflated into `#song=` (short ids, packed notes; sounds and
+  freezes left out), an MP3 to the share sheet, or the project file. Discord cuts messages at
+  2,000 characters, so the dialog warns over that.
+- **Chiptune** instruments (`src/audio/presets/chiptune.ts`) and four more starters: Cinematic,
+  Lo-Fi, Chiptune, Hip-Hop.
+- **Build-up & drop** (ruler right-click): riser, snare roll, impact and markers in one undo step.
+- **Marker flags from the keyboard**: Tab, Enter, F2, Delete, arrows, Shift+F10.
+
 ## Ideas not started
 
-- More starters: Lo-Fi, Hip-Hop, Cinematic. Starters are plain data, so each is one function in
-  `starters.ts`.
-- A "drop" builder: pick a section and get a matching build-up and drop.
+- A desktop app in Rust, once the web version peaks (the owner wants to wait).
+- Swap `mp4-muxer` for Mediabunny.
 
 ## Small known issues
 
-- On very large projects, a short hitch of up to 80 ms can follow Play. No notes play late.
-- Repeated short Supersaw notes with overlapping tails can lean up to about 1.7 dB to one side.
-- A clip moved off the 16th grid and then cut off the grid plays without swing.
-- Marker flags can't be reached with Tab. The Markers list is the keyboard route.
-- Pull request #1's description is out of date: it stops before the audio tracks, MIDI,
-  instrument, Distortion, Wobble, drag-and-drop, phone-notice and strings commits.
+- On very large projects, a short hitch of up to 80 ms can follow Play. No notes play late. Freeze
+  and Stable playback make it rare.
+- A clip moved off the 16th grid and then cut off the grid plays without swing (on purpose: it
+  can't be told from a triplet pattern).
+- Supersaw chords lean up to about 0.6 dB per bar (single notes within 0.15 dB): inaudible.
 
 ## Waiting on the owner
 
-- Whether the reworked Violin and Cello sound right, or need more or less brightness, or more
-  taming of the high notes.
+- Whether the new starters, chiptune sounds and the build-up & drop sound right.
