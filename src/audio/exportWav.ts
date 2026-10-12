@@ -13,6 +13,7 @@ import { createAudioClipSchedule } from './audioClipSchedule';
 import { createAutomationSchedule } from './automationSchedule';
 import { decodeSound, stretchSound, useSoundLibrary, warpSound } from './soundLibrary';
 import { isWarped } from '../store/warp';
+import { withControllerLanes } from '../store/ccLanes';
 import { secondsPerBar, stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
 import { hasRecordings, loadCustomSample, loadSamples } from './samplers/samplerManager';
@@ -497,8 +498,9 @@ async function renderTracks(
   const returns = opts.tracks.filter((r) => !soundingIds.has(r.id) && heard.has(r.id) && sounding.some((t) => liveSends(t, opts.tracks).some((x) => x.to === r.id)));
   const withReturns = [...sounding, ...returns];
   const busIds = new Set(withReturns.flatMap((t) => busChain(t, opts.tracks).map((b) => b.id)));
-  const tracks = busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]);
   const { clips, bpm, swing, startBar, endBar, masterFx, signal } = opts;
+  // Clips' controller lanes play as their tracks' automation (see ccLanes.ts)
+  const tracks = withControllerLanes(busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]), clips);
   const ending = opts.ending ?? 'ringOut';
   const plan = planRender(opts, opts.bypassMaster ? 0 : await masterChainLatency(opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
   const { sampleRate, length } = plan;

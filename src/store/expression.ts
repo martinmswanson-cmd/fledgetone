@@ -11,12 +11,56 @@ import { barsToDuration, durationToBars } from './timelineTypes';
  */
 
 export type ExprLane = keyof ClipExpression;
-export const EXPR_LANES: ReadonlyArray<{ lane: ExprLane; label: string; min: number; max: number; step: boolean }> = [
+interface LaneSpec {
+  lane: ExprLane;
+  label: string;
+  min: number;
+  max: number;
+  step: boolean;
+}
+export const EXPR_LANES: ReadonlyArray<LaneSpec> = [
   { lane: 'bend', label: 'Pitch bend', min: -12, max: 12, step: false },
   { lane: 'mod', label: 'Mod wheel', min: 0, max: 1, step: false },
   { lane: 'sustain', label: 'Sustain pedal', min: 0, max: 1, step: true },
 ];
-export const exprSpec = (lane: ExprLane) => EXPR_LANES.find((l) => l.lane === lane)!;
+
+/** Common controllers' names (the General MIDI ones, and those synths and pad controllers often use). */
+export const CC_NAMES: Readonly<Record<number, string>> = {
+  2: 'Breath',
+  4: 'Foot',
+  5: 'Portamento time',
+  7: 'Volume',
+  8: 'Balance',
+  10: 'Pan',
+  11: 'Expression',
+  71: 'Resonance',
+  72: 'Release',
+  73: 'Attack',
+  74: 'Cutoff',
+  91: 'Reverb',
+  93: 'Chorus',
+};
+/** A controller lane's name, e.g. 'cc74'. */
+export const ccLane = (cc: number): ExprLane => `cc${cc}` as ExprLane;
+/** The controller number of a lane ('cc74' -> 74), or null for bend / mod / sustain. */
+export const laneCc = (lane: string): number | null => {
+  const m = /^cc(\d{1,3})$/.exec(lane);
+  const n = m ? Number(m[1]) : NaN;
+  return Number.isInteger(n) && n >= 0 && n < 120 ? n : null;
+};
+export const ccLabel = (cc: number) => `CC ${cc}${CC_NAMES[cc] ? ` ${CC_NAMES[cc]}` : ''}`;
+
+/** A lane's range and name (a controller's: 0 to 1, gliding). */
+export function exprSpec(lane: ExprLane): LaneSpec {
+  const fixed = EXPR_LANES.find((l) => l.lane === lane);
+  if (fixed) return fixed;
+  const cc = laneCc(lane) ?? 0;
+  return { lane, label: ccLabel(cc), min: 0, max: 1, step: false };
+}
+
+/** Every lane a clip has: the fixed ones, then its controllers by number. */
+export const lanesOf = (expression: ClipExpression | undefined): ExprLane[] =>
+  expression ? (Object.keys(expression) as ExprLane[]).filter((l) => EXPR_LANES.some((f) => f.lane === l) || laneCc(l) !== null) : [];
 
 /** Vibrato at full mod wheel: this many cents either way, this fast. */
 export const VIBRATO_CENTS = 50;
@@ -116,7 +160,8 @@ export const pitchCents = (ev: PitchEvent, time: number) => ev.cents + (ev.mod ?
 export function normalizeExpression(raw: unknown): ClipExpression | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const out: ClipExpression = {};
-  for (const { lane } of EXPR_LANES) {
+  const lanes = [...EXPR_LANES.map((l) => l.lane), ...(Object.keys(raw).filter((k) => laneCc(k) !== null) as ExprLane[])];
+  for (const lane of lanes) {
     const v = (raw as Record<string, unknown>)[lane];
     if (!Array.isArray(v)) continue;
     const points = tidyLane(
@@ -135,7 +180,8 @@ export function normalizeExpression(raw: unknown): ClipExpression | undefined {
 export function shiftExpression(expression: ClipExpression | undefined, shift: number, length: number): ClipExpression | undefined {
   if (!expression) return undefined;
   const out: ClipExpression = {};
-  for (const { lane, step } of EXPR_LANES) {
+  for (const lane of lanesOf(expression)) {
+    const { step } = exprSpec(lane);
     const points = expression[lane];
     if (!points?.length) continue;
     const startValue = exprValueAt(points, -shift, step);
@@ -150,7 +196,7 @@ export function shiftExpression(expression: ClipExpression | undefined, shift: n
 export function moveExpression(expression: ClipExpression | undefined, shift: number): ClipExpression | undefined {
   if (!expression) return undefined;
   const out: ClipExpression = {};
-  for (const { lane } of EXPR_LANES) {
+  for (const lane of lanesOf(expression)) {
     const points = expression[lane];
     if (points) out[lane] = points.map((p) => ({ at: p.at + shift, value: p.value }));
   }

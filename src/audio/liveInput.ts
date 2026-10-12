@@ -1,10 +1,10 @@
 import { liveMix } from './engine';
 import { getLiveInstrument } from './liveTracks';
 import { DRUM_NOTES, safely } from './instruments';
-import type { NoteOff, TrackInstrument } from './instruments';
+import type { NoteOff, TrackInstrument, VoiceControl } from './instruments';
 import { isDrumKind, isRackKind } from './instrumentCatalog';
 import { heardTime, outputLatencySeconds } from './latency';
-import { decodeMidi, midiNoteLabel, midiNoteName, PIANO_OCTAVE_KEYS, pianoKeyNote } from './midi';
+import { decodeMidi, midiNoteLabel, midiNoteName, MPE_BEND_RANGE_CENTS, PIANO_OCTAVE_KEYS, PITCH_BEND_RANGE_CENTS, pianoKeyNote } from './midi';
 import type { MidiMessage } from './midi';
 import { recordMidi } from './recorder';
 import { setMetronomeOn, setMetronomeVolume } from './metronome';
@@ -52,6 +52,12 @@ export function noteNameOn(midi: number, track: Track | undefined): string {
 
 /** Notes sounding now, by MIDI note number, with the function that ends each. */
 const held = new Map<number, NoteOff>();
+/**
+ * MPE: the note each channel is playing, and its own controls (when the instrument has voices of
+ * its own, see TrackInstrument.noteVoice). Channel 1 (0 here) is the keyboard's master channel:
+ * its bend moves every note.
+ */
+const mpeNotes = new Map<number, { note: number; voice: VoiceControl | null }>();
 /** Let go while the sustain pedal was down: ended when it comes up. */
 const sustained = new Map<number, NoteOff>();
 let pedal = false;
@@ -97,14 +103,26 @@ export function playMidi(message: MidiMessage, heard: number): void {
       // Struck again while still sounding (or sustained): the earlier one ends first
       endNote(message.note, now);
       const name = noteNameOn(message.note, track);
+      const mpe = useMidiStore.getState().mpe && message.channel !== undefined && message.channel > 0;
       if (instrument) {
         const note = { note: name, duration: '4n', velocity: message.velocity };
-        safely(() => held.set(message.note, startNote(instrument, note, now)));
+        if (mpe && instrument.noteVoice) {
+          // Its own voice, so its channel's bend and pressure move it alone
+          safely(() => {
+            const voice = instrument.noteVoice!(note, now);
+            mpeNotes.set(message.channel!, { note: message.note, voice });
+            held.set(message.note, (at) => voice?.off(at));
+          });
+        } else {
+          safely(() => held.set(message.note, startNote(instrument, note, now)));
+          if (mpe) mpeNotes.set(message.channel!, { note: message.note, voice: null });
+        }
       }
       recorded = { ...message, name };
       break;
     }
     case 'noteOff': {
+      if (message.channel !== undefined && mpeNotes.get(message.channel)?.note === message.note) mpeNotes.delete(message.channel);
       const off = held.get(message.note);
       if (!off) break;
       held.delete(message.note);
@@ -119,11 +137,32 @@ export function playMidi(message: MidiMessage, heard: number): void {
         sustained.clear();
       }
       break;
-    case 'pitchBend':
+    case 'pitchBend': {
+      const own = useMidiStore.getState().mpe && message.channel ? mpeNotes.get(message.channel) : undefined;
+      if (own) {
+        // An MPE note's own bend (its range is 48 semitones)
+        const cents = (message.cents / PITCH_BEND_RANGE_CENTS) * MPE_BEND_RANGE_CENTS;
+        if (own.voice) safely(() => own.voice!.bend(cents, now));
+        else if (instrument?.bend) safely(() => instrument.bend!(cents, now));
+        recorded = { kind: 'noteExpr', note: own.note, lane: 'bend', value: cents / 100 };
+        break;
+      }
       if (instrument?.bend) safely(() => instrument.bend!(message.cents, now));
       break;
+    }
+    case 'pressure': {
+      const own = message.note !== undefined ? [...mpeNotes.values()].find((m) => m.note === message.note) : message.channel ? mpeNotes.get(message.channel) : undefined;
+      if (!own) break;
+      if (own.voice) safely(() => own.voice!.pressure(message.value, now));
+      recorded = { kind: 'noteExpr', note: own.note, lane: 'pressure', value: message.value };
+      break;
+    }
     case 'allNotesOff':
       releaseLiveNotes();
+      break;
+    case 'cc':
+      // (A plugin gets it as MIDI; a mapped setting has already followed it, see midiLearn.ts)
+      if (instrument?.cc) safely(() => instrument.cc!(message.cc, message.value, now));
       break;
   }
   recordMidi(recorded, heard);
@@ -136,6 +175,7 @@ export function releaseLiveNotes(): void {
   for (const off of sustained.values()) safely(() => off(now));
   held.clear();
   sustained.clear();
+  mpeNotes.clear();
   pedal = false;
 }
 
@@ -156,6 +196,10 @@ function describe(message: MidiMessage): string {
       return 'all notes off';
     case 'cc':
       return `CC ${message.cc} ${Math.round(message.value * 127)}`;
+    case 'pressure':
+      return `pressure ${Math.round(message.value * 100)}%`;
+    case 'noteExpr':
+      return `${midiNoteName(message.note)} ${message.lane}`;
   }
 }
 
@@ -182,8 +226,10 @@ function onMidiMessage(this: MIDIInput, e: MIDIMessageEvent): void {
   // Heard time first: the event's own stamp says when the key went down
   const heard = heardTime(e.timeStamp);
   // A knob or fader: MIDI learn, mapped settings, automation writing
-  if (message.kind === 'cc') handleMidiCc(message.cc, message.value);
-  else playMidi(message, heard);
+  if (message.kind === 'cc') {
+    // A knob not mapped to anything (or learning) is recorded into the take's controller lanes
+    if (!handleMidiCc(message.cc, message.value)) playMidi(message, heard);
+  } else playMidi(message, heard);
   useMidiStore.getState().noteActivity(describe(message));
 }
 

@@ -39,6 +39,9 @@ interface MidiState {
   octave: number;
   /** Seconds the sound takes to reach the listener after it's rendered, as measured by the browser; null until audio runs. */
   outputLatency: number | null;
+  /** An MPE keyboard: each note on its own channel, whose bend and pressure move only that note */
+  mpe: boolean;
+  setMpe: (on: boolean) => void;
 
   setSupport: (support: MidiSupport) => void;
   setInputs: (inputs: MidiInputInfo[]) => void;
@@ -56,6 +59,7 @@ interface MidiPrefs {
   octave: number;
   /** The user connected MIDI before: ask the browser for the devices again at startup. */
   connected: boolean;
+  mpe?: boolean;
 }
 
 export function readMidiPrefs(): MidiPrefs {
@@ -68,6 +72,7 @@ export function readMidiPrefs(): MidiPrefs {
       inputId: typeof r.inputId === 'string' ? r.inputId : d.inputId,
       octave: typeof r.octave === 'number' ? Math.max(PIANO_OCTAVE_MIN, Math.min(PIANO_OCTAVE_MAX, Math.round(r.octave))) : d.octave,
       connected: r.connected === true,
+      mpe: r.mpe === true,
     };
   } catch {
     return d;
@@ -85,7 +90,7 @@ export function writeMidiPrefs(prefs: MidiPrefs): void {
 const prefs = readMidiPrefs();
 
 export const useMidiStore = create<MidiState>((set, get) => {
-  const remember = () => writeMidiPrefs({ inputId: get().inputId, octave: get().octave, connected: get().support === 'ready' });
+  const remember = () => writeMidiPrefs({ inputId: get().inputId, octave: get().octave, connected: get().support === 'ready', mpe: get().mpe });
   return {
     support: typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator ? 'unknown' : 'unsupported',
     inputs: [],
@@ -94,6 +99,11 @@ export const useMidiStore = create<MidiState>((set, get) => {
     keyboardPiano: false,
     octave: prefs.octave,
     outputLatency: null,
+    mpe: prefs.mpe === true,
+    setMpe: (on) => {
+      set({ mpe: on });
+      remember();
+    },
 
     setSupport: (support) => {
       set({ support });

@@ -21,30 +21,32 @@ const { decodeMidi, midiNoteName, midiNoteLabel, pianoKeyNote, PIANO_KEYS, PIANO
 const near = (a, b, tol = 1e-9) => assert.ok(Math.abs(a - b) <= tol, `${a} is not within ${tol} of ${b}`);
 
 test('note on and off, on any channel, with velocity scaled to 0..1', () => {
-  assert.deepEqual(decodeMidi([0x90, 60, 127]), { kind: 'noteOn', note: 60, velocity: 1 });
+  assert.deepEqual(decodeMidi([0x90, 60, 127]), { kind: 'noteOn', note: 60, velocity: 1, channel: 0 });
   near(decodeMidi([0x95, 61, 64]).velocity, 64 / 127);
-  assert.deepEqual(decodeMidi([0x80, 60, 64]), { kind: 'noteOff', note: 60 });
-  assert.deepEqual(decodeMidi([0x8f, 60]), { kind: 'noteOff', note: 60 });
+  assert.deepEqual(decodeMidi([0x80, 60, 64]), { kind: 'noteOff', note: 60, channel: 0 });
+  assert.deepEqual(decodeMidi([0x8f, 60]), { kind: 'noteOff', note: 60, channel: 15 });
   // Note-on with velocity 0 is a note-off (running status keyboards send these)
-  assert.deepEqual(decodeMidi([0x90, 60, 0]), { kind: 'noteOff', note: 60 });
-  assert.deepEqual(decodeMidi(new Uint8Array([0x91, 72, 100])), { kind: 'noteOn', note: 72, velocity: 100 / 127 });
+  assert.deepEqual(decodeMidi([0x90, 60, 0]), { kind: 'noteOff', note: 60, channel: 0 });
+  assert.deepEqual(decodeMidi(new Uint8Array([0x91, 72, 100])), { kind: 'noteOn', note: 72, velocity: 100 / 127, channel: 1 });
 });
 
-test('sustain pedal, mod wheel, all notes off, pitch bend; other messages are ignored', () => {
+test('sustain pedal, mod wheel, all notes off, pitch bend, pressure, knobs; other messages are ignored', () => {
   assert.deepEqual(decodeMidi([0xb0, 64, 127]), { kind: 'sustain', down: true });
   assert.deepEqual(decodeMidi([0xb0, 64, 63]), { kind: 'sustain', down: false });
   assert.deepEqual(decodeMidi([0xb0, 64, 64]), { kind: 'sustain', down: true });
   assert.deepEqual(decodeMidi([0xb0, 123, 0]), { kind: 'allNotesOff' });
   assert.deepEqual(decodeMidi([0xb0, 120, 0]), { kind: 'allNotesOff' });
   // Centre, full up, full down (14 bits, little end first)
-  assert.deepEqual(decodeMidi([0xe0, 0x00, 0x40]), { kind: 'pitchBend', cents: 0 });
+  assert.deepEqual(decodeMidi([0xe0, 0x00, 0x40]), { kind: 'pitchBend', cents: 0, channel: 0 });
   near(decodeMidi([0xe0, 0x7f, 0x7f]).cents, PITCH_BEND_RANGE_CENTS * (8191 / 8192));
   near(decodeMidi([0xe0, 0x00, 0x00]).cents, -PITCH_BEND_RANGE_CENTS);
   assert.deepEqual(decodeMidi([0xb0, 1, 127]), { kind: 'mod', value: 1 });
   assert.deepEqual(decodeMidi([0xb0, 7, 127]), { kind: 'cc', cc: 7, value: 1 }); // any other knob, for MIDI learn
   assert.equal(decodeMidi([0xb0, 121, 0]), null); // channel mode messages aren't knobs
   assert.equal(decodeMidi([0xc0, 5]), null); // program change
-  assert.equal(decodeMidi([0xd0, 5]), null); // aftertouch
+  // Key pressure: of a channel (an MPE keyboard's per-note pressure), or of one key
+  assert.deepEqual(decodeMidi([0xd3, 127]), { kind: 'pressure', value: 1, channel: 3 });
+  assert.deepEqual(decodeMidi([0xa0, 60, 127]), { kind: 'pressure', value: 1, channel: 0, note: 60 });
   assert.equal(decodeMidi([0xf8]), null); // clock
   assert.equal(decodeMidi([]), null);
   assert.equal(decodeMidi([0x90]), null);

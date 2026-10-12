@@ -9,10 +9,14 @@
  * what the keyboard sent, which is what its note-off carries.
  */
 export type MidiMessage =
-  | { kind: 'noteOn'; note: number; velocity: number; name?: string }
-  | { kind: 'noteOff'; note: number }
+  | { kind: 'noteOn'; note: number; velocity: number; name?: string; channel?: number }
+  | { kind: 'noteOff'; note: number; channel?: number }
   | { kind: 'sustain'; down: boolean }
-  | { kind: 'pitchBend'; cents: number }
+  | { kind: 'pitchBend'; cents: number; channel?: number }
+  /** Key pressure (aftertouch), 0 to 1: of the whole channel, or (`note`) of one key */
+  | { kind: 'pressure'; value: number; channel?: number; note?: number }
+  /** One recorded note's own bend (semitones) or pressure (0 to 1), from an MPE keyboard (see liveInput.ts) */
+  | { kind: 'noteExpr'; note: number; lane: 'bend' | 'pressure'; value: number }
   /** The mod wheel (CC 1), 0 to 1 */
   | { kind: 'mod'; value: number }
   | { kind: 'allNotesOff' }
@@ -26,6 +30,10 @@ const NOTE_ON = 0x90;
 const NOTE_OFF = 0x80;
 const CONTROL_CHANGE = 0xb0;
 const PITCH_BEND = 0xe0;
+const CHANNEL_PRESSURE = 0xd0;
+const POLY_PRESSURE = 0xa0;
+/** How far an MPE keyboard's per-note bend reaches at full travel: 48 semitones, the MPE default. */
+export const MPE_BEND_RANGE_CENTS = 4800;
 const CC_MOD_WHEEL = 1;
 const CC_SUSTAIN = 64;
 const CC_ALL_SOUND_OFF = 120;
@@ -41,11 +49,16 @@ export function decodeMidi(data: ArrayLike<number>): MidiMessage | null {
   const status = data[0] & 0xf0;
   const d1 = data[1] & 0x7f;
   const d2 = data.length > 2 ? data[2] & 0x7f : 0;
+  const channel = data[0] & 0x0f;
   switch (status) {
     case NOTE_ON:
-      return d2 > 0 ? { kind: 'noteOn', note: d1, velocity: d2 / 127 } : { kind: 'noteOff', note: d1 };
+      return d2 > 0 ? { kind: 'noteOn', note: d1, velocity: d2 / 127, channel } : { kind: 'noteOff', note: d1, channel };
     case NOTE_OFF:
-      return { kind: 'noteOff', note: d1 };
+      return { kind: 'noteOff', note: d1, channel };
+    case CHANNEL_PRESSURE:
+      return { kind: 'pressure', value: d1 / 127, channel };
+    case POLY_PRESSURE:
+      return { kind: 'pressure', value: d2 / 127, channel, note: d1 };
     case CONTROL_CHANGE:
       if (d1 === CC_SUSTAIN) return { kind: 'sustain', down: d2 >= 64 };
       if (d1 === CC_MOD_WHEEL) return { kind: 'mod', value: d2 / 127 };
@@ -55,7 +68,7 @@ export function decodeMidi(data: ArrayLike<number>): MidiMessage | null {
     case PITCH_BEND: {
       // 14 bits, 8192 is the centre
       const value = d1 | (d2 << 7);
-      return { kind: 'pitchBend', cents: ((value - 8192) / 8192) * PITCH_BEND_RANGE_CENTS };
+      return { kind: 'pitchBend', cents: ((value - 8192) / 8192) * PITCH_BEND_RANGE_CENTS, channel };
     }
     default:
       return null;

@@ -919,7 +919,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             </div>
           </div>
           {/* Pitch bend, mod wheel and sustain pedal (not for drums and FX) */}
-          {!isDrums && <ExpressionLane clip={clip} keyWidth={KEY_W} barW={UNITS_PER_BAR * unitW} snap={(at) => snapUnits(at * UNITS_PER_BAR) / UNITS_PER_BAR} />}
+          {!isDrums && <ExpressionLane clip={clip} keyWidth={KEY_W} barW={UNITS_PER_BAR * unitW} snap={(at) => snapUnits(at * UNITS_PER_BAR) / UNITS_PER_BAR} note={selected.size === 1 ? clip.notes.find((n) => selected.has(n.id)) : undefined} />}
         </div>
       </div>
     </div>

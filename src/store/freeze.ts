@@ -112,6 +112,7 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
 export function trackForFreezing(track: Track): Track {
   return {
     ...track,
+    freezing: true,
     volume: 0,
     pan: 0,
     reverbSend: 0,
