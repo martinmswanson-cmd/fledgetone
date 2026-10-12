@@ -43,7 +43,7 @@ test('the FMOD script is valid JavaScript and carries the song', () => {
   execFileSync(process.execPath, ['--check', file]);
   // Run it against a stand-in Studio that records what it was asked to do
   const calls = [];
-  const obj = (kind) => new Proxy({ kind }, { get: (t, p) => (p in t ? t[p] : (...a) => { calls.push(`${kind}.${String(p)}`); return obj(String(p)); }), set: (t, p, v) => { t[p] = v; return true; } });
+  const obj = (kind) => new Proxy({ kind }, { get: (t, p) => (p in t ? t[p] : () => { calls.push(`${kind}.${String(p)}`); return obj(String(p)); }), set: (t, p, v) => { t[p] = v; return true; } });
   const studio = {
     menu: { addMenuItem: (item) => { studio.item = item; } },
     system: { getText: () => '/audio', message: () => {} },
