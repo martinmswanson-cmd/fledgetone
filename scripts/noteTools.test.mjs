@@ -116,3 +116,21 @@ test('synth patches: presets are valid, saved patches are made safe', () => {
   assert.equal(wild.level, SP.defaultSynthPatch().level);
   assert.equal(SP.normalizeSynthPatch('nope'), undefined);
 });
+
+test('ratchet splits each note evenly, rising to its own velocity', () => {
+  let k = 0;
+  const out = T.ratchet([N('a', 'C4', 0, '4n', 0.8)], 4, () => `r${k++}`);
+  assert.equal(out.length, 4);
+  assert.deepEqual(out.map((n) => +n.startOffset.toFixed(4)), [0, 0.0625, 0.125, 0.1875]);
+  assert.ok(out.every((n) => durationToBars(n.duration) === 0.0625));
+  assert.equal(out[0].id, 'a');
+  assert.ok(out[0].velocity < out[3].velocity && Math.abs(out[3].velocity - 0.8) < 1e-9);
+});
+
+test('roll repeats a note at the grid rate for its length', () => {
+  let k = 0;
+  const out = T.roll([N('s', 'D1', 0.5, '4n', 0.9)], 1 / 32, () => `r${k++}`);
+  assert.equal(out.length, 8);
+  assert.ok(Math.abs(out[7].startOffset - (0.5 + 7 / 32)) < 1e-9);
+  assert.ok(out[0].velocity < 0.4 && Math.abs(out[7].velocity - 0.9) < 1e-9);
+});

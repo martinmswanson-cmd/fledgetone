@@ -24,6 +24,7 @@ import type { RecordOptions, TakeClip } from './recording';
 import { AUTOMATION, insertLaneBars, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
+import { keyChange } from './keyChange';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq } from './timelineTypes';
@@ -346,6 +347,8 @@ interface TimelineState {
    * before it, an impact on it, and markers. Returns a message when it can't.
    */
   addBuildAndDrop: (dropBar: number) => string | null;
+  /** Move every pitched note from `fromBar` on by `semitones` (a key change), one undo step. A message back means nothing moved. */
+  keyChangeFrom: (fromBar: number, semitones: number) => string | null;
 
   // Clipboard
   /** Snapshot of copied clips; startBar is relative to the earliest copied clip (0 = paste point). */
@@ -1400,6 +1403,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...pushPast(st),
       }));
       return null;
+    },
+
+    keyChangeFrom: (fromBar, semitones) => {
+      const s = get();
+      const { clips, moved, outOfRange } = keyChange(s.clips, s.tracks, fromBar, semitones);
+      if (!moved) return outOfRange ? "Nothing moved: those notes would leave their instruments' range." : 'No pitched notes from here on to move.';
+      set((st) => ({ clips, ...pushPast(st) }));
+      return outOfRange ? `Moved ${moved} notes; ${outOfRange} stayed put (outside their instrument's range).` : null;
     },
 
     removeBars: (fromBar, toBar) => {

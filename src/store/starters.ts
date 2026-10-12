@@ -1,10 +1,7 @@
-import { DRUM_NOTES } from '../audio/scheduler';
-import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import type { ProjectSnapshot } from './project';
-import type { AutomationLane, Clip, InstrumentKey, MasterSettings, Track, TrackFx, WobbleRate } from './timelineTypes';
-import { DEFAULT_MASTER_FX, defaultMasterSettings, defaultTrackFx, uid } from './timelineTypes';
-import { createMarker } from './markers';
-import { BUILD_UP, DROP_HIT, everyBar, GROWL_RIFF, PLUCK_ARP, REESE_LINE, toNotes, TRANCE_CHORDS, WOBBLE_RIFF } from './demoSong';
+import { BUILD_UP, DROP_HIT, everyBar, GROWL_RIFF, PLUCK_ARP, REESE_LINE, TRANCE_CHORDS, WOBBLE_RIFF } from './demoSong';
+import { clip, D, hats8, master, progression, project, snareRoll, track } from './starterKit';
+import { PLAYLIST_BUILDERS } from './startersPlaylist';
 import type { Step } from './demoSong';
 
 /**
@@ -38,82 +35,29 @@ export const STARTERS = [
   { id: 'tavern', group: 'Chill & World', name: 'Fantasy Tavern', detail: '110 BPM, D minor jig. Hammered dulcimer, lute, hand drum, accordion and recorder: inns and villages.' },
   { id: 'latin', group: 'Chill & World', name: 'Latin', detail: '130 BPM, bossa nova. Nylon guitar comping, upright bass, bongos and shaker, a flute melody.' },
   { id: 'eastern', group: 'Chill & World', name: 'Eastern', detail: '84 BPM, D in-scale. Koto, shakuhachi, taiko and shamisen over a glass drone: temples and gardens.' },
+  { id: 'artcore', group: 'Artcore & Game', name: 'Final Boss Artcore', detail: '174 BPM, D minor. Piano octave lead and violin over Amen breaks, cello, choir, taiko; the last drop a whole step up.' },
+  { id: 'hardcore', group: 'Artcore & Game', name: 'Melodic Hardcore', detail: '180 BPM, E minor. Rhythm-game piano: 16th arpeggios, a stuttered build, then a four-on-the-floor Royal Road drop.' },
+  { id: 'breakcore', group: 'Artcore & Game', name: 'Breakcore', detail: '172 BPM, C# minor. A hardcore hook, then chopped Amen breaks with rolls and a stop-time under electric piano.' },
+  { id: 'rpg', group: 'Artcore & Game', name: 'RPG Battle', detail: '120 BPM, D minor. A hero motif in town on marimba, then a battle on pluck and bouncing bass, then stacked on brass.' },
+  { id: 'metaldub', group: 'Bass Music', name: 'Metal Dubstep', detail: '150 BPM, E minor. Twin guitar riff, then a half-time drop: guitars, growl and taiko chugging on every kick.' },
+  { id: 'melodicdub', group: 'Bass Music', name: 'Melodic Dubstep', detail: '150 BPM, D minor. Piano intro, a quiet build, a wobble drop with off-beat supersaws and a dotted-8th hook on lead and violin.' },
+  { id: 'riddim', group: 'Bass Music', name: 'Riddim', detail: '140 BPM, G. An organ drone, then a call-and-response of triplet growls and wobbles on two notes, G and Ab.' },
+  { id: 'futurebass', group: 'Bass Music', name: 'Kawaii Future Bass', detail: '150 BPM half time, D major. Blooming, pumping add9 chords, twinkles, a chopped topline doubled on marimba.' },
+  { id: 'phonk', group: 'Hip-Hop & Phonk', name: 'Drift Phonk', detail: '130 BPM, D Phrygian. A cowbell riff, 808 on every kick (sliding up at the turn), house drums, a switch a fourth up.' },
+  { id: 'drill', group: 'Hip-Hop & Phonk', name: 'UK Drill', detail: '142 BPM, G minor. FM keys motif over strings, the drill bounce with triplet hats, sliding 808s.' },
+  { id: 'rage', group: 'Hip-Hop & Phonk', name: 'Rage', detail: '160 BPM, F# minor. Wide supersaw stabs, bells, an 808 with grit an octave up, hat rolls and empty space.' },
+  { id: 'neosoul', group: 'Hip-Hop & Phonk', name: 'Neo-Soul', detail: '80 BPM, F, swung. Electric piano maj7 chords opening up, drums that drag, then a beat switch up a minor third.' },
+  { id: 'bedroom', group: 'Pop & Jazz', name: 'Bedroom Pop', detail: '90 BPM, E minor, swung. Chorused clean guitar, a busy bass, lazy drums and a sax line behind the beat.' },
+  { id: 'bossa', group: 'Pop & Jazz', name: 'Bossa Jazz-Pop', detail: '82 BPM, Db major. Nylon guitar bossa comping, upright bass, brushes, a flute melody and strings in the chorus.' },
+  { id: 'citypop', group: 'Pop & Jazz', name: 'City Pop', detail: '113 BPM, E major. Slap bass, FM piano, cutting guitar, horn hits and a sax theme on the Royal Road.' },
+  { id: 'theatrical', group: 'Pop & Jazz', name: 'Theatrical Pop', detail: '132 BPM, D minor to F. A line-cliche verse with pizzicato and a music-box motif, then a disco chorus with fanfares.' },
+  { id: 'raprock', group: 'Band', name: 'Rap-Rock', detail: '154 BPM, G minor. A chromatic riff over half-time drums, a dead stop, then a double-time chant chorus with horns.' },
+  { id: 'mathrock', group: 'Band', name: 'Math Rock', detail: '150 BPM, E major. Twinkly guitar, tapping in triplets, 3+3+3+3+2+2 accents, then an easycore breakdown.' },
 ] as const;
 export type StarterId = (typeof STARTERS)[number]['id'];
-export const STARTER_GROUPS = ['Electronic', 'Orchestral & Choir', 'Band', 'Chill & World'] as const;
+export const STARTER_GROUPS = ['Electronic', 'Artcore & Game', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World'] as const;
 
 export const isStarterId = (v: unknown): v is StarterId => STARTERS.some((s) => s.id === v);
-
-const D = DRUM_NOTES;
-
-type FxPatch = { [K in keyof TrackFx]?: Partial<TrackFx[K]> };
-
-function fx(patch: FxPatch = {}): TrackFx {
-  const d = defaultTrackFx();
-  return {
-    distortion: { ...d.distortion, ...patch.distortion },
-    compressor: { ...d.compressor, ...patch.compressor },
-    chorus: { ...d.chorus, ...patch.chorus },
-    filter: { ...d.filter, ...patch.filter },
-    pump: { ...d.pump, ...patch.pump },
-  };
-}
-
-function track(name: string, key: InstrumentKey, opts: Partial<Omit<Track, 'fx'>> & { fx?: FxPatch; automation?: AutomationLane[] } = {}): Track {
-  const { fx: patch, ...rest } = opts;
-  return {
-    id: uid('track'),
-    name,
-    color: INSTRUMENTS[key].color,
-    instrumentKey: key,
-    isMuted: false,
-    isSoloed: false,
-    isArmed: false,
-    volume: 0,
-    pan: 0,
-    eq: { low: 0, mid: 0, high: 0 },
-    reverbSend: 0,
-    delaySend: 0,
-    ...rest,
-    fx: fx(patch),
-  };
-}
-
-/** A clip of `steps` (whose length is `bars`), repeated `times` from `startBar`. */
-function clip(t: Track, name: string, startBar: number, bars: number, steps: Step[], times = 1, wobble?: WobbleRate): Clip {
-  const all = Array.from({ length: times }, (_, i) => steps.map(([s, n, v, d]): Step => [s + i * bars * 16, n, v, d])).flat();
-  return { id: uid('clip'), trackId: t.id, name, startBar, lengthBars: bars * times, notes: toNotes(all), isSelected: false, ...(wobble ? { wobble } : {}) };
-}
-
-function master(ott: Partial<MasterSettings['ott']>, width: Partial<MasterSettings['width']>): MasterSettings {
-  const d = defaultMasterSettings();
-  return { ott: { ...d.ott, ...ott }, width: { ...d.width, ...width } };
-}
-
-function project(name: string, bpm: number, swing: number, loop: [number, number], tracks: Track[], clips: Clip[], sections: Array<[number, string]>, m: MasterSettings): ProjectSnapshot {
-  return {
-    name,
-    bpm,
-    swing,
-    loopRegion: { inBar: loop[0], outBar: loop[1], enabled: true },
-    masterFx: DEFAULT_MASTER_FX,
-    master: m,
-    tracks,
-    clips,
-    markers: sections.map(([bar, label]) => createMarker(bar, bpm, label)),
-  };
-}
-
-/** Hats every 8th, the bar's last one open every other bar. */
-const hats8 = (bars: number, vel = 0.55): Step[] =>
-  everyBar(bars, (b) => Array.from({ length: 8 }, (_, i): Step => [i * 2, b % 2 === 1 && i === 7 ? D.openHat : D.closedHat, i % 2 ? vel * 0.7 : vel]));
-
-/** A snare roll over 4 bars: quarters, 8ths, then 16ths twice, getting louder. */
-const snareRoll: Step[] = [
-  ...[0, 4, 8, 12].map((s): Step => [s, D.snare, 0.5]),
-  ...[0, 2, 4, 6, 8, 10, 12, 14].map((s): Step => [16 + s, D.snare, 0.6]),
-  ...Array.from({ length: 32 }, (_, i): Step => [32 + i, D.snare, 0.65 + (0.3 * i) / 31]),
-];
 
 // ---------- Dubstep ----------
 
@@ -241,8 +185,8 @@ function trap(): ProjectSnapshot {
       : [12, 12.5, 13, 13.5, 14, 14 + 2 / 3, 14 + 4 / 3].map((s, i): Step => [s, D.closedHat, 0.4 + i * 0.06, '32n'])),
   ]);
   const beat = everyBar(2, (b): Step[] => [[0, D.kick, 1], [7, D.kick, 0.8], [8, D.snare, 0.95], ...(b === 1 ? [[11, D.kick, 0.85] as Step, [14, D.openHat, 0.5] as Step] : [])]);
-  // The 808 follows the kick
-  const slide: Step[] = [[0, 'C1', 1, '4n.'], [7, 'C1', 0.85, '8n'], [16, 'D#1', 1, '4n'], [23, 'G1', 0.9, '4n'], [27, 'F1', 0.85, '8n']];
+  // The 808 follows the kick; the G1 runs on into the F1, so it slides down to it
+  const slide: Step[] = [[0, 'C1', 1, '4n.'], [7, 'C1', 0.85, '8n'], [16, 'D#1', 1, '4n'], [23, 'G1', 0.9, '4n.'], [27, 'F1', 0.85, '8n']];
   const tune: Step[] = [
     [0, 'C5', 0.85], [3, 'D#5', 0.7], [6, 'G5', 0.8], [8, 'F5', 0.75], [11, 'D#5', 0.7], [14, 'D5', 0.7],
     [16, 'C5', 0.85], [19, 'D#5', 0.7], [22, 'G#5', 0.8], [24, 'G5', 0.75], [28, 'D5', 0.7],
@@ -446,7 +390,6 @@ function hiphop(): ProjectSnapshot {
 // ---------- Helpers for the starters below ----------
 
 /** One chord (or note) per `every` steps, each held `dur`. */
-const progression = (chords: Array<string | string[]>, every: number, dur: string, vel = 0.7): Step[] => chords.map((c, i): Step => [i * every, c, vel, dur]);
 
 /** A rock/pop beat: kick on 1 and 3 (and the "and" of 3), snare on 2 and 4, 8th hats. */
 const rockBeat = (bars: number, hat: string = D.closedHat): Step[] =>
@@ -1089,6 +1032,7 @@ function funk(): ProjectSnapshot {
 const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   dubstep, house, dnb, trap, cinematic, lofi, chiptune, hiphop,
   classical, angelic, epic, ambient, rock, metal, jazz, synthwave, pop, trance, horror, celtic, latin, tavern, eastern, funk,
+  ...PLAYLIST_BUILDERS,
 };
 
 /** A fresh copy of a starter (new ids each time). */

@@ -90,6 +90,7 @@ const TOOLS: Item[] = [
     const s = timeline();
     return s.addBuildAndDrop(Math.max(2, Math.round(s.playheadPosition))) ?? undefined;
   } },
+  { title: 'Key change', keywords: 'key change modulation transpose semitone whole step lift final chorus', detail: 'Right-click the ruler where the new key starts: up a semitone, up a whole step or down a semitone.', run: () => void ui().openGuide('the-timeline') },
   { title: 'Undo', keywords: 'undo back revert ctrl z', run: () => timeline().undo() },
   { title: 'Redo', keywords: 'redo again ctrl y', run: () => timeline().redo() },
   { title: 'Selection tool', keywords: 'select pointer arrow tool v', run: () => timeline().setTool('select') },
@@ -137,6 +138,8 @@ const SETTINGS: Item[] = [
   { title: 'Compressor', keywords: 'compressor compression dynamics punch squash', run: trackPanel('Compressor') },
   { title: 'Chorus', keywords: 'chorus wide shimmer ensemble detune', run: trackPanel('Chorus') },
   { title: 'Filter', keywords: 'filter lowpass highpass bandpass cutoff resonance sweep', run: trackPanel('Filter') },
+  { title: 'Lo-fi', keywords: 'lofi lo fi bitcrusher bit crush crusher 8 bit tape wow vinyl dusty grit', run: trackPanel('Lo-fi') },
+  { title: 'Gate (stutter)', keywords: 'gate trance gate stutter chop chopper tremolo rhythmic', run: trackPanel('Gate') },
   { title: 'Pump (sidechain)', keywords: 'pump sidechain ducking kick duck', run: trackPanel('Pump') },
   { title: 'Reverb and delay sends', keywords: 'reverb delay echo send space wet', run: trackPanel('sends') },
   { title: 'Track volume and pan', keywords: 'volume pan fader level balance left right', run: trackPanel('volume') },
@@ -159,7 +162,7 @@ const SETTINGS: Item[] = [
   { title: 'Stable playback', keywords: 'stable playback buffer latency glitch crackle stutter lag', detail: 'A bigger playback buffer, for fewer glitches on a busy computer.', run: masterPanel('playback') },
   { title: 'Scale', keywords: 'scale key major minor mode piano roll', run: pianoRoll('scale') },
   { title: 'Chord stamps', keywords: 'chord chords stamp triad piano roll', run: pianoRoll('chord') },
-  { title: 'Note tools', keywords: 'arpeggiate arpeggio strum humanize quantize legato transpose fit scale tools notes piano roll', run: pianoRoll('tools') },
+  { title: 'Note tools', keywords: 'arpeggiate arpeggio strum humanize quantize legato transpose semitone ratchet roll fit scale tools notes piano roll', run: pianoRoll('tools') },
   { title: 'Step sequencer', keywords: 'steps step sequencer grid drum pattern piano roll', run: pianoRoll('steps') },
   { title: 'Ghost notes', keywords: 'ghost notes other tracks piano roll', run: pianoRoll('ghosts') },
   { title: 'Wobble rate', keywords: 'wobble dubstep lfo rate piano roll', run: pianoRoll('wobble') },

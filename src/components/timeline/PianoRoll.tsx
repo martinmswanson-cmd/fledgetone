@@ -8,7 +8,7 @@ import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isSlicerKind } from '../../
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
-import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
+import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ratchet, roll, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
 import type { ChordId, Scale, ScaleId } from '../../store/noteTools';
 import { DEFAULT_WOBBLE, WOBBLE_RATES, type WobbleRate } from '../../store/timelineTypes';
 import { shouldIgnoreShortcut } from '../keyboard';
@@ -164,6 +164,12 @@ const TOOLS = [
   { id: 'arpUpDown', label: 'Arpeggiate up and down', drums: false },
   { id: 'arpRandom', label: 'Arpeggiate random', drums: false },
   { id: 'legato', label: 'Legato (fill the gaps)', drums: false },
+  { id: 'ratchet2', label: 'Ratchet x2 (split each note)', drums: true },
+  { id: 'ratchet3', label: 'Ratchet x3', drums: true },
+  { id: 'ratchet4', label: 'Ratchet x4', drums: true },
+  { id: 'roll', label: 'Roll (repeat at grid speed, rising)', drums: true },
+  { id: 'semiUp', label: 'Semitone up', drums: false },
+  { id: 'semiDown', label: 'Semitone down', drums: false },
   { id: 'octaveUp', label: 'Octave up', drums: false },
   { id: 'octaveDown', label: 'Octave down', drums: false },
   { id: 'fitScale', label: 'Fit to scale', drums: false },
@@ -426,6 +432,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         case 'arpUpDown': return arpeggiate(target, grid, 'upDown', newId);
         case 'arpRandom': return arpeggiate(target, grid, 'random', newId);
         case 'legato': return legato(target, bars);
+        case 'ratchet2': return ratchet(target, 2, newId);
+        case 'ratchet3': return ratchet(target, 3, newId);
+        case 'ratchet4': return ratchet(target, 4, newId);
+        case 'roll': return roll(target, grid, newId);
+        case 'semiUp': return transpose(target, 1, lo, hi);
+        case 'semiDown': return transpose(target, -1, lo, hi);
         case 'octaveUp': return transpose(target, 12, lo, hi);
         case 'octaveDown': return transpose(target, -12, lo, hi);
         case 'fitScale': return scale ? fitToScale(target, scale) : target;

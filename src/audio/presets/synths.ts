@@ -76,6 +76,14 @@ export function createSubBass(output: Tone.InputNode) {
 }
 
 /** 808 bass: a long sine boom with a quick downward pitch drop, lightly saturated. */
+/** Seconds an 808 note takes to slide to the next one's pitch when they overlap. */
+const SLIDE_808 = 0.08;
+
+/**
+ * The 808: a sine with a quick pitch drop, driven. A note that starts before the previous one has
+ * ended doesn't hit again: the sounding note slides to the new pitch and carries on to the new
+ * note's end (the trap and drill "808 slide"). Notes that only touch play separately.
+ */
 export function create808(output: Tone.InputNode) {
   const drive = new Tone.Distortion({ distortion: 0.22, oversample: '2x', wet: 0.6 });
   const synth = new Tone.MembraneSynth({
@@ -87,11 +95,41 @@ export function create808(output: Tone.InputNode) {
   });
   synth.chain(drive, output);
   const safeTime = monotonicTime(synth.context);
+  const held = heldNote(synth, safeTime);
+  /** When the sounding scheduled note ends, so a note starting before then slides instead. */
+  let soundingUntil = -Infinity;
   return {
-    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) =>
-      synth.triggerAttackRelease(note, duration, safeTime(time), velocity),
-    ...heldNote(synth, safeTime),
-    releaseAll: () => synth.triggerRelease(),
+    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
+      const start = safeTime(time);
+      const length = synth.toSeconds(duration);
+      const freq = Tone.Frequency(note).toFrequency();
+      if (!Number.isFinite(length) || !(freq > 0)) return;
+      const end = start + Math.max(0.005, length);
+      if (soundingUntil > start + 0.001) {
+        const f = synth.oscillator.frequency;
+        f.cancelAndHoldAtTime(start);
+        f.exponentialRampToValueAtTime(freq, start + SLIDE_808);
+        // The old note's release and oscillator stop go; the envelope carries on and releases at
+        // the new end
+        synth.envelope.cancel(start);
+        synth.oscillator.restart(start);
+        synth.triggerRelease(end);
+      } else {
+        synth.triggerAttack(note, start, velocity);
+        synth.triggerRelease(end);
+      }
+      soundingUntil = end;
+    },
+    attack: (note: string, time: number, velocity: number) => {
+      soundingUntil = -Infinity;
+      held.attack(note, time, velocity);
+    },
+    release: held.release,
+    bend: held.bend,
+    releaseAll: () => {
+      soundingUntil = -Infinity;
+      synth.triggerRelease();
+    },
     dispose: () => {
       synth.dispose();
       drive.dispose();

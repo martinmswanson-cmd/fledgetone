@@ -579,3 +579,142 @@ export function createLightPump(): LightPump {
     dispose: () => node.dispose(),
   };
 }
+
+export interface LightLofi extends LightInsert {
+  set: (settings: { crush: number; tone: number; wow: number; mix: number }, ramp: number) => void;
+}
+
+/** Bits the Crush amount leaves: 16 (clean) at 0 down to 3 at 1. */
+export const lofiBits = (crush: number) => Math.round(16 - Math.max(0, Math.min(1, crush)) * 13);
+
+const crushCurves = new Map<number, Float32Array<ArrayBuffer>>();
+
+/** A staircase: the signal rounded to the levels `bits` bits allow (shared, as nodes copy it). */
+function crushCurve(bits: number): Float32Array<ArrayBuffer> {
+  let curve = crushCurves.get(bits);
+  if (!curve) {
+    const levels = 2 ** (bits - 1);
+    curve = new Float32Array(16385);
+    for (let i = 0; i < curve.length; i++) {
+      const x = (i / (curve.length - 1)) * 2 - 1;
+      curve[i] = Math.round(x * levels) / levels;
+    }
+    crushCurves.set(bits, curve);
+  }
+  return curve;
+}
+
+/** Wow: a slow wobble of the delay time, so the pitch drifts like a worn tape. */
+const WOW_RATE = 0.55;
+/** The delay the wobble swings around, and its widest swing (seconds). */
+const WOW_BASE = 0.006;
+const WOW_SWING = 0.0035;
+
+/**
+ * Lo-fi: the signal through a slowly wobbling delay (tape wow), rounded to fewer bits (digital
+ * grit: 16 bits is clean, 3 is a buzzy 8-bit crunch), then darkened by a low-pass, mixed with the
+ * dry signal. Plain nodes, so live and the export sound the same. The wobble's delay puts the wet
+ * signal 6 ms late, too little to hear as lateness.
+ */
+export function createLightLofi(settings: { crush: number; tone: number; wow: number; mix: number }): LightLofi {
+  const input = new Tone.Gain(1);
+  const output = new Tone.Gain(1);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const setParam = paramSetter(raw);
+  const dry = raw.createGain();
+  const delay = raw.createDelay(0.05);
+  delay.delayTime.value = WOW_BASE;
+  const lfo = raw.createOscillator();
+  lfo.frequency.value = WOW_RATE;
+  const swing = raw.createGain();
+  const shaper = raw.createWaveShaper();
+  const tone = raw.createBiquadFilter();
+  tone.type = 'lowpass';
+  tone.Q.value = 0.7;
+  const wet = raw.createGain();
+  const into = input.input as unknown as AudioNode;
+  const out = output.input as unknown as AudioNode;
+  into.connect(dry);
+  dry.connect(out);
+  into.connect(delay);
+  lfo.connect(swing);
+  swing.connect(delay.delayTime);
+  delay.connect(shaper);
+  shaper.connect(tone);
+  tone.connect(wet);
+  wet.connect(out);
+  lfo.start();
+  let bits = 0;
+  const set: LightLofi['set'] = (s, ramp) => {
+    const b = lofiBits(s.crush);
+    if (b !== bits) {
+      bits = b;
+      shaper.curve = crushCurve(b);
+    }
+    setParam(tone.frequency, s.tone, ramp);
+    setParam(swing.gain, WOW_SWING * Math.max(0, Math.min(1, s.wow)), ramp);
+    // An equal-power crossfade, so the mix doesn't dip in the middle
+    const m = Math.max(0, Math.min(1, s.mix));
+    setParam(wet.gain, Math.sin((m * Math.PI) / 2), ramp);
+    setParam(dry.gain, Math.cos((m * Math.PI) / 2), ramp);
+  };
+  set(settings, 0);
+  return {
+    input,
+    output,
+    set,
+    dispose: () => {
+      lfo.stop();
+      [dry, delay, lfo, swing, shaper, tone, wet].forEach((n) => n.disconnect());
+      input.dispose();
+      output.dispose();
+    },
+  };
+}
+
+export interface LightGate extends LightInsert {
+  /** How far it closes (0-1) and how much of each step it stays open (0-1). */
+  setShape: (depth: number, length: number) => void;
+  /**
+   * Open at each of `steps` (times, in order, `stepSeconds` apart) and close for the rest of the
+   * step. Anything scheduled from the first of them on is replaced. At `resetAt` it opens fully,
+   * unless a later call replaces that (playback carrying on): so when the music stops, the track
+   * isn't left shut.
+   */
+  schedule: (steps: number[], stepSeconds: number, resetAt: number) => void;
+}
+
+/** Ramp into each open step and out of it: short enough to chop, long enough not to click. */
+const GATE_OPEN = 0.002;
+const GATE_CLOSE = 0.003;
+
+/** Trance gate / stutter: one gain, chopped on the beat grid (the strip's clock calls schedule()). */
+export function createLightGate(): LightGate {
+  const node = new Tone.Gain(1);
+  const gain = node.input.gain;
+  let floor = 0.1;
+  let length = 0.5;
+  return {
+    input: node,
+    output: node,
+    setShape: (depth, len) => {
+      floor = 1 - Math.max(0, Math.min(1, depth));
+      length = Math.max(0.1, Math.min(0.95, len));
+    },
+    schedule: (steps, stepSeconds, resetAt) => {
+      if (!steps.length) return;
+      gain.cancelScheduledValues(steps[0]);
+      for (const at of steps) {
+        gain.setValueAtTime(floor, at);
+        gain.linearRampToValueAtTime(1, at + GATE_OPEN);
+        // Shut in time for the next step to open from the floor
+        const close = Math.min(at + length * stepSeconds, at + stepSeconds - GATE_CLOSE - 0.001);
+        gain.setValueAtTime(1, Math.max(at + GATE_OPEN, close));
+        gain.linearRampToValueAtTime(floor, Math.max(at + GATE_OPEN, close) + GATE_CLOSE);
+      }
+      gain.setValueAtTime(floor, resetAt);
+      gain.linearRampToValueAtTime(1, resetAt + 0.01);
+    },
+    dispose: () => node.dispose(),
+  };
+}

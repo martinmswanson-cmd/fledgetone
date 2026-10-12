@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
-import type { AutomationParam, PumpTrigger, Track } from '../../store/timelineTypes';
+import type { AutomationParam, GateRate, PumpTrigger, Track } from '../../store/timelineTypes';
+import { GATE_TICKS } from '../../store/timelineTypes';
 import { activeLanes, AUTOMATION } from '../automation';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { BusEffects } from './busEffects';
@@ -9,8 +10,12 @@ import {
   createLightDistortion,
   createLightEq3,
   createLightFilter,
+  createLightGate,
+  createLightLofi,
   createLightPump,
   type LightChorus,
+  type LightGate,
+  type LightLofi,
   type LightDistortion,
   type LightEq3,
   type LightFilter,
@@ -19,8 +24,8 @@ import {
 
 /**
  * One mixer channel per track:
- *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Filter -> Pump
- *         -> (Volume lane) -> solo -> pan -> fader (vol/mute)
+ *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Lo-fi -> Filter -> Gate
+ *         -> Pump -> (Volume lane) -> solo -> pan -> fader (vol/mute)
  *   fader -> master bus, plus post-fader sends to the shared reverb and delay.
  *
  * An insert only exists while it's switched on (the EQ while any band is boosted or cut).
@@ -59,6 +64,13 @@ export interface TrackStrip {
   pump: (time: number, source: PumpTrigger, fromTrack?: string) => void;
   /** The track a 'track'-triggered Pump follows, or null. */
   pumpSource: () => string | null;
+  /** The Gate's speed, or null while it's off. */
+  gateRate: () => GateRate | null;
+  /**
+   * The clock's 8th at Transport tick `tick` plays at `time`: chop the Gate for the steps that start
+   * in it (`windowTicks` long), at `secondsPerTick`.
+   */
+  gate: (time: number, tick: number, windowTicks: number, secondsPerTick: number) => void;
   /**
    * What a lane for `param` drives, or null while it can't sound (its Filter is off) or no lane
    * owns it (as of the last apply()).
@@ -210,6 +222,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   let pump: LightPump | null = null;
   let pumpTrigger: PumpTrigger | null = null;
   let pumpSource: string | null = null;
+  let lofi: LightLofi | null = null;
+  let gateUnit: LightGate | null = null;
+  let gateRate: GateRate | null = null;
   /** The drum kits' fold to mono, after the other inserts (see above). */
   let fold: Unit | null = null;
   /** The inserts currently patched in, in signal order. */
@@ -337,7 +352,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     if (eq) next.push(eq);
     if (compressorUnit) next.push(compressorUnit);
     if (chorus) next.push(chorus);
+    if (lofi) next.push(lofi);
     if (filter) next.push(filter);
+    if (gateUnit) next.push(gateUnit);
     if (pump) next.push(pump);
     if (laneGain) next.push({ input: laneGain.node, output: laneGain.node });
     if (fold) next.push(fold);
@@ -533,6 +550,24 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         version++;
       }
 
+      if (fx.lofi?.on) {
+        if (lofi) lofi.set(fx.lofi, ramp);
+        else lofi = createLightLofi(fx.lofi);
+      } else if (lofi) {
+        retired.push(lofi);
+        lofi = null;
+      }
+
+      if (fx.gate?.on) {
+        gateUnit ??= createLightGate();
+        gateUnit.setShape(fx.gate.depth, fx.gate.length);
+        gateRate = fx.gate.rate;
+      } else if (gateUnit) {
+        retired.push(gateUnit);
+        gateUnit = null;
+        gateRate = null;
+      }
+
       if (fx.pump?.on) {
         pump ??= createLightPump();
         pump.setShape(fx.pump.depth, fx.pump.release / 1000);
@@ -577,6 +612,14 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     },
     pumpTrigger: () => pumpTrigger,
     pumpSource: () => pumpSource,
+    gateRate: () => gateRate,
+    gate: (time, tick, windowTicks, secondsPerTick) => {
+      if (!gateUnit || !gateRate) return;
+      const step = GATE_TICKS[gateRate];
+      const steps: number[] = [];
+      for (let k = Math.ceil(tick / step) * step; k < tick + windowTicks; k += step) steps.push(time + (k - tick) * secondsPerTick);
+      gateUnit.schedule(steps, step * secondsPerTick, time + (windowTicks + step) * secondsPerTick + 0.05);
+    },
     peak: () => {
       if (!meter) {
         meter = raw.createAnalyser();
@@ -625,14 +668,14 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       clearTimeout(retireTimer);
       clearTimeout(tidyTimer);
       gates.forEach((g) => g.gain.disconnect());
-      [...leaving, distortion, eq, compressorUnit, chorus, filter, pump, fold, laneGain?.node, input, solo, fader, reverbSend, delaySend].forEach((n) => n?.dispose());
+      [...leaving, distortion, eq, compressorUnit, chorus, lofi, filter, gateUnit, pump, fold, laneGain?.node, input, solo, fader, reverbSend, delaySend].forEach((n) => n?.dispose());
       [barrier, left, split, right, merge].forEach((n) => n?.disconnect());
     },
   };
 }
 
 /** The Transport's scheduling calls a pump clock needs (live and offline Transports both have them). */
-type PumpTransport = Pick<ReturnType<typeof Tone.getTransport>, 'schedule' | 'clear'>;
+type PumpTransport = Pick<ReturnType<typeof Tone.getTransport>, 'schedule' | 'clear' | 'bpm'>;
 
 export interface PumpClock {
   /** Add or remove the clock's events to match what the strips' Pumps follow. */
@@ -661,9 +704,11 @@ export function createPumpClock(transport: PumpTransport, strips: () => Iterable
   };
   const fire = (tick: number) => (time: number) => {
     const onBeat = tick % BEAT_TICKS === 0;
+    const secondsPerTick = 60 / (transport.bpm.value * BEAT_TICKS);
     for (const strip of strips()) {
       strip.pump(time, 'eighth');
       if (onBeat) strip.pump(time, 'beat');
+      strip.gate(time, tick, step, secondsPerTick);
     }
   };
   return {
@@ -673,6 +718,8 @@ export function createPumpClock(transport: PumpTransport, strips: () => Iterable
         const trigger = strip.pumpTrigger();
         if (trigger === 'eighth') wanted = EIGHTH_TICKS;
         else if (trigger === 'beat' && !wanted) wanted = BEAT_TICKS;
+        // The Gate chops within each 8th
+        if (strip.gateRate()) wanted = EIGHTH_TICKS;
       }
       if (wanted === step) return;
       clear();
