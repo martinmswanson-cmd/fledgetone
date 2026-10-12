@@ -272,6 +272,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       master: s.master,
       bypassMaster: stemsOnly && settings.bypassMaster,
       signal: controller.signal,
+      // The mix plays at the Intensity you hear; stems and layers stay at full level for the game to mix
+      ...(stemsOnly ? {} : { intensity: { value: s.intensity, curves: s.intensityCurves } }),
     };
     const encodeOpts = { bitDepth: settings.bitDepth, cues: exportCues(opts) };
     try {

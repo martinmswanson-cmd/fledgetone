@@ -328,6 +328,8 @@ export interface Track {
   automation?: AutomationLane[];
   /** Rendered to audio to save CPU (see src/store/freeze.ts); absent when the track plays live. */
   frozen?: FrozenTrack;
+  /** The stem group it belongs to for Intensity (see intensity.ts); none plays at full level */
+  stemGroup?: string;
 }
 
 /**
