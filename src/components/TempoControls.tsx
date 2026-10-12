@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../store/timelineStore';
 import { formatBarCount, formatBpm, frameRateLabel } from '../store/timelineTypes';
-import { barToSeconds, formatSmpte, parseTimecode } from '../audio/transport';
+import { barToSeconds, formatBarsBeats, formatSmpte, parseTimecode, secondsToBar } from '../audio/transport';
+import { findTempos, HIT_GRIDS, scoreTempo, type HitGrid, type TempoSuggestion } from '../store/tempoFinder';
 import { secondsToFrames } from '../audio/timecode';
 import { Popover } from './Popover';
 
@@ -68,7 +69,7 @@ export const TempoField: React.FC = () => {
   );
 };
 
-type FitRange = 'loop' | 'song' | 'bars';
+type FitRange = 'loop' | 'song' | 'bars' | 'hits';
 
 /** A typed positive number ("8", "7.5", "7,5"), or null. */
 function parseDecimal(text: string): number | null {
@@ -140,6 +141,7 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
     { value: 'loop', label: 'Loop In→Out' },
     { value: 'song', label: 'Whole song', disabled: songBars <= 0 },
     { value: 'bars', label: 'Bars' },
+    { value: 'hits', label: 'Hit points' },
   ];
 
   return (
@@ -178,6 +180,10 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
           />
         )}
       </div>
+      {range === 'hits' ? (
+        <HitFinder onClose={onClose} />
+      ) : (
+      <>
       <p>
         {bars ? (
           <>
@@ -225,6 +231,128 @@ export const FitTempoPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement 
         </p>
       )}
       {error && <p className="text-red-400">{error}</p>}
+      </>
+      )}
     </Popover>
+  );
+};
+
+/**
+ * The tempo finder: the markers locked to time are the hit points (moments in the video the music
+ * must hit), and it lists the tempos that put the most of them on a bar, beat or 1/8. A hit counts
+ * when it's within a frame. Applying one sets the tempo; the hits keep their times, so they then
+ * sit on the grid.
+ */
+const HitFinder: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const bpm = useTimelineStore((s) => s.bpm);
+  const fps = useTimelineStore((s) => s.fps);
+  const dropFrame = useTimelineStore((s) => s.dropFrame);
+  const markers = useTimelineStore((s) => s.markers);
+  const hits = useMemo(() => markers.filter((m) => m.anchor === 'time' && m.seconds > 0), [markers]);
+  const [grid, setGrid] = useState<HitGrid>('beat');
+  const [minText, setMinText] = useState('70');
+  const [maxText, setMaxText] = useState('180');
+  const [picked, setPicked] = useState(0);
+  const min = parseDecimal(minText);
+  const max = parseDecimal(maxText);
+  const rangeOk = min !== null && max !== null && min >= 40 && max <= 240 && min <= max;
+  const tolerance = 1 / fps;
+  const seconds = useMemo(() => hits.map((h) => h.seconds), [hits]);
+  const suggestions = useMemo(
+    () => (rangeOk ? findTempos(seconds, { grid, min: min!, max: max!, tolerance, near: bpm }) : []),
+    [seconds, grid, min, max, rangeOk, tolerance, bpm]
+  );
+  const now = scoreTempo(seconds, bpm, grid, tolerance);
+  const gridWord = grid === 'bar' ? 'a bar line' : grid === 'beat' ? 'the beat' : 'an 1/8';
+  const shown: TempoSuggestion | undefined = suggestions[Math.min(picked, suggestions.length - 1)];
+  const offText = (off: number) => {
+    const frames = Math.abs(off) * fps;
+    if (Math.abs(off) < 0.0005) return 'exact';
+    return `${off < 0 ? 'early' : 'late'} ${Math.round(Math.abs(off) * 1000)} ms${frames >= 0.5 ? ` (${frames.toFixed(1)} fr)` : ''}`;
+  };
+
+  if (!hits.length) {
+    return (
+      <div className="flex flex-col gap-2 max-w-[22rem]">
+        <p>
+          Hit points are moments in the video the music should land on: a door slam, a cut, a logo. Move the playhead to one and press{' '}
+          <kbd className="font-mono text-forge-text">Shift+M</kbd> to drop a hit there (or right-click any marker flag and choose <strong>Lock to time</strong>).
+        </p>
+        <p>Add a few, then come back here: it finds the tempos that put the most of them on the beat.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 w-[22rem] max-w-full">
+      <p>
+        {hits.length} hit point{hits.length === 1 ? '' : 's'} (markers locked to time). Land them on:
+      </p>
+      <div className="flex items-center gap-1.5" role="group" aria-label="Land the hits on">
+        {HIT_GRIDS.map((g) => (
+          <button
+            key={g.value}
+            type="button"
+            aria-pressed={grid === g.value}
+            onClick={() => {
+              setGrid(g.value);
+              setPicked(0);
+            }}
+            className={`h-7 px-2 rounded-md border font-mono text-[11px] ${
+              grid === g.value ? 'bg-cyan-500/20 border-cyan-400/70 text-cyan-200' : 'border-forge-border text-forge-muted hover:text-forge-text'
+            }`}
+          >
+            {g.label}
+          </button>
+        ))}
+        <span className="ml-auto text-[11px]">BPM</span>
+        <input value={minText} onChange={(e) => setMinText(e.target.value)} inputMode="decimal" className={`${fieldClass(!rangeOk)} !h-7 w-14`} aria-label="Slowest tempo to try" />
+        <span>to</span>
+        <input value={maxText} onChange={(e) => setMaxText(e.target.value)} inputMode="decimal" className={`${fieldClass(!rangeOk)} !h-7 w-14`} aria-label="Fastest tempo to try" />
+      </div>
+      {!rangeOk && <p className="text-red-400">Type a tempo range between 40 and 240.</p>}
+      <p className="text-[11px]">
+        Now, at {formatBpm(bpm)} BPM: {now.onGrid} of {hits.length} on {gridWord} (within a frame).
+      </p>
+      <ul className="flex flex-col gap-1" aria-label="Suggested tempos">
+        {suggestions.map((sg, i) => (
+          <li key={sg.bpm} className={`flex items-center gap-2 rounded-md border px-2 py-1 ${i === picked ? 'border-cyan-400/60 bg-cyan-500/10' : 'border-forge-border'}`}>
+            <button type="button" onClick={() => setPicked(i)} className="flex-1 min-w-0 text-left" title="Show where each hit lands">
+              <span className="font-mono text-forge-text">{formatBpm(sg.bpm)} BPM</span>{' '}
+              <span className={sg.onGrid === hits.length ? 'text-emerald-300' : ''}>
+                {sg.onGrid}/{hits.length} on {gridWord}
+              </span>
+              <span className="text-[11px]"> · avg {Math.round(sg.meanOff * 1000)} ms</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                useTimelineStore.getState().setBpm(sg.bpm);
+                onClose();
+              }}
+              className="h-6 px-2 rounded border border-cyan-400/60 bg-cyan-500/15 text-cyan-200 font-mono text-[11px] hover:bg-cyan-500/25"
+              aria-label={`Set the tempo to ${formatBpm(sg.bpm)} BPM`}
+            >
+              Apply
+            </button>
+          </li>
+        ))}
+      </ul>
+      {shown && (
+        <table className="text-[11px] font-mono">
+          <caption className="text-left text-forge-muted pb-0.5">At {formatBpm(shown.bpm)} BPM:</caption>
+          <tbody>
+            {shown.hits.map((h, i) => (
+              <tr key={hits[i].id}>
+                <td className="pr-2 truncate max-w-[7rem] text-forge-text">{hits[i].name}</td>
+                <td className="pr-2">{formatSmpte(secondsToBar(h.seconds, shown.bpm), shown.bpm, fps, dropFrame)}</td>
+                <td className="pr-2">{formatBarsBeats(h.bar)}</td>
+                <td className={Math.abs(h.off) <= tolerance ? 'text-emerald-300' : 'text-amber-300'}>{offText(-h.off)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 };

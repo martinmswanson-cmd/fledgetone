@@ -210,6 +210,7 @@ Markers are named points on the timeline: the sections of a song (intro, build, 
 ### Adding markers and jumping to them
 
 - Press `M` to drop a marker at the playhead, even while playing. Markers are named **Marker 1**, **Marker 2** and so on. If a marker is already at that exact spot, nothing is added and a message says so.
+- Press `Shift+M` to drop a **hit point** instead: a marker named **Hit 1**, **Hit 2**... that's locked to time, for a moment in a video the music should land on (a door slam, a cut, a logo). The **tempo finder** uses them (below).
 - Or right-click the time ruler and choose **Add marker here**: it goes where you clicked, on the snap grid (hold Shift for the exact point).
 - Or open the **Markers** list and click **At playhead**.
 - `,` (comma) jumps to the previous marker and `.` (period) to the next. While playing, `,` skips a marker you passed less than half a second ago, so pressing it again and again keeps going back. Holding the key down while playing jumps once; holding it while stopped steps through the markers one by one. If the marker is off screen, the view scrolls to it.
@@ -225,6 +226,15 @@ Each marker is a violet flag with its name in the ruler, just under the numbers,
 - **With the keyboard**: `Tab` reaches each flag. `Enter` moves the playhead there, `F2` renames it, `Delete` deletes it, `←` / `→` move it one SNAP step (with Shift, a bar), and the menu key or `Shift+F10` opens its menu.
 
 A marker normally stays on its bar when you change the tempo, so it moves with the music. **Lock to time** keeps its timecode instead and lets its bar move, for lining up with a video; its flag shows a small lock. If a faster tempo pushes a locked marker past the end of the timeline, it isn't drawn and the list says "after the end"; it comes back when you slow the tempo down.
+
+### The tempo finder: land the music on your hit points
+
+Drop hit points on the moments in a video that matter (`Shift+M`, or **Lock to time** on any marker), then click **FIT** next to the tempo and choose **Hit points**. It tries every tempo in the range (70 to 180 BPM unless you type another, in steps of 0.01) and lists the five that put the most hits on the grid:
+
+- **Bar**, **Beat** or **1/8**: what the hits should land on. A hit counts when it's within one frame at your frame rate.
+- Each suggestion shows how many hits it lands and how far off they are on average; click it to see every hit's timecode, the bar and beat it lands on, and how early or late it is.
+- **Apply** sets that tempo. Hit points keep their times, so they now sit on the grid, ready for a crash or a stab right on them.
+- The line above the list says how many land at the tempo you have now.
 
 ### The Markers list
 
@@ -627,6 +637,7 @@ Shortcuts don't work while you're typing in a box, or while a dialog or panel (G
 | `I` / `O` | Set loop In / Out at the playhead |
 | `Home` | Go to the loop In point |
 | `M` | Add a marker at the playhead |
+| `Shift+M` | Add a hit point (a marker locked to time) at the playhead |
 | `,` / `.` | Jump to the previous / next marker |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Shift+Z` or `Ctrl+Y` | Redo |

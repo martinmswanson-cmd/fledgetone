@@ -285,10 +285,11 @@ export const Timeline: React.FC = () => {
       } else if (key === 'k') {
         e.preventDefault();
         if (!e.repeat) void s.togglePlay();
-      } else if (key === 'm' && !e.shiftKey) {
+      } else if (key === 'm') {
         // Holding M would only repeat "already a marker here" (or, while playing, drop a row of them)
         if (e.repeat) return;
-        const message = s.addMarker();
+        // Shift+M: a hit point, locked to time, for the tempo finder (FIT › Hit points)
+        const message = e.shiftKey ? s.addHit() : s.addMarker();
         if (message) showToast(message);
       } else if (e.key === ',' || e.key === '.') {
         // Held down while playing, it would restart the music at every marker on the way
