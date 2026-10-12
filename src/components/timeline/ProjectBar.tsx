@@ -4,7 +4,7 @@ import { AlertTriangle, HardDrive } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { autosaveUnreadable, clearPreviousSession } from '../../store/project';
-import { saveProjectFile } from './projectFile';
+import { saveProjectFile, useProjectFile } from './projectFile';
 import { ExportDialog } from './ExportDialog';
 import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
@@ -191,6 +191,7 @@ const AutosaveStatusChip: React.FC = () => {
  */
 export const ProjectBar: React.FC = () => {
   const projectName = useTimelineStore((s) => s.projectName);
+  const savedTo = useProjectFile((s) => s.handle?.name ?? null);
   const dialog = useUiStore((s) => s.dialog);
   const setDialog = useUiStore.getState().setDialog;
 
@@ -208,7 +209,13 @@ export const ProjectBar: React.FC = () => {
           aria-label="Project name"
         />
       </label>
-      <button type="button" className={barButton} id="btn-save-project" onClick={() => void saveProjectFile()} title="Download this arrangement as a project file (with its sounds)">
+      <button
+        type="button"
+        className={barButton}
+        id="btn-save-project"
+        onClick={() => void saveProjectFile()}
+        title={savedTo ? `Save to ${savedTo} (File › Save As… to save somewhere else)` : 'Save this arrangement as a project file, with its sounds: choose where (File › Save As… later saves a copy elsewhere)'}
+      >
         <Save className="w-3.5 h-3.5" /> Save
       </button>
       <button
