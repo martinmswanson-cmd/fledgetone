@@ -26,6 +26,12 @@ import { SynthPanel } from './SynthPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
 import { INSTRUMENTS, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
+
+/** Instruments Expressive playing changes: the recorded ones (but sound effects) and the drum kits. */
+const canPlayExpressively = (key: keyof typeof INSTRUMENTS) => {
+  const def = INSTRUMENTS[key];
+  return (def.kind === 'sampled' && def.category !== 'Sound Effects') || def.kind === 'drums';
+};
 import type { InstrumentDef } from '../../audio/instrumentCatalog';
 import { InstrumentPicker } from '../InstrumentMenu';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
@@ -244,6 +250,26 @@ export const TrackInspector: React.FC = () => {
               )}
               {INSTRUMENTS[currentTrack.instrumentKey].kind === 'sampled' && (
                 <span className="text-[10px] text-forge-muted">Recorded samples, downloaded the first time you use them (needs internet).</span>
+              )}
+              {canPlayExpressively(currentTrack.instrumentKey) && (
+                <label
+                  data-search="expressive"
+                  className="flex items-center gap-2 text-[11px] text-forge-text cursor-pointer"
+                  title={
+                    INSTRUMENTS[currentTrack.instrumentKey].kind === 'drums'
+                      ? 'Each hit a hair different in pitch and level, as a real drummer plays: no machine-gun repeats'
+                      : 'Softer notes are darker as well as quieter (on a natural loudness curve), and no two notes are quite the same: the recording plays the way the instrument sounds at that velocity'
+                  }
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-cyan-500"
+                    checked={!!currentTrack.expressive}
+                    onChange={(e) => useTimelineStore.getState().setTrackExpressive(currentTrack.id, e.target.checked)}
+                  />
+                  Expressive playing
+                  <span className="text-forge-muted text-[10px]">{INSTRUMENTS[currentTrack.instrumentKey].kind === 'drums' ? 'every hit a little different' : 'velocity shapes the tone'}</span>
+                </label>
               )}
             </div>
 

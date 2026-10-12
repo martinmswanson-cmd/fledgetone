@@ -17,7 +17,7 @@ import { createSampledKit } from './presets/sampledKit';
 import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
 import type { NativeBus } from './presets/native';
-import { createCustomSamplerVoice, createSamplerVoice, taperGain } from './samplers/samplerManager';
+import { createCustomSamplerVoice, createSamplerVoice, noteJitter, taperGain } from './samplers/samplerManager';
 import type { NoteExpression } from '../store/timelineTypes';
 import type { CustomSample, DrumRack, MultiSample, SlicerSettings, Track, WamPlugin, WobbleRate } from '../store/timelineTypes';
 import { createMultiInstrument, createRackInstrument } from './presets/sampleKits';
@@ -121,12 +121,14 @@ export interface InstrumentOptions {
   pluginFx?: WamPlugin[];
   rack?: DrumRack;
   multi?: MultiSample;
+  /** Expressive playing (Track.expressive) */
+  expressive?: boolean;
 }
 
 /** What a track's instrument is built with (its sound, slices, patch, plugins). */
-export function trackInstrumentOptions(track: Pick<Track, 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi'> | null | undefined): InstrumentOptions {
+export function trackInstrumentOptions(track: Pick<Track, 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'expressive'> | null | undefined): InstrumentOptions {
   if (!track) return {};
-  return { sample: track.sample, slicer: track.slicer, synth: track.synth, plugin: track.plugin, pluginFx: track.pluginFx, rack: track.rack, multi: track.multi };
+  return { sample: track.sample, slicer: track.slicer, synth: track.synth, plugin: track.plugin, pluginFx: track.pluginFx, rack: track.rack, multi: track.multi, ...(track.expressive ? { expressive: true } : {}) };
 }
 
 /**
@@ -145,54 +147,67 @@ const loudest = (notes: PlayableNote[]) => Math.max(...notes.map((n) => n.veloci
 const loudestNote = (notes: PlayableNote[]) => notes.reduce((a, b) => (b.velocity > a.velocity ? b : a));
 
 interface DrumHits {
-  kick: (time: number, velocity: number) => void;
-  snare: (time: number, velocity: number) => void;
-  hat: (open: boolean, time: number, velocity: number) => void;
-  cowbell: (time: number, velocity: number) => void;
+  kick: (time: number, velocity: number, ratio?: number) => void;
+  snare: (time: number, velocity: number, ratio?: number) => void;
+  hat: (open: boolean, time: number, velocity: number, ratio?: number) => void;
+  cowbell: (time: number, velocity: number, ratio?: number) => void;
 }
 
-/** Play one row of a kit at `time`. */
-type DrumPlayer = (row: DrumRow, time: number, velocity: number) => void;
+/** Play one row of a kit at `time` (`ratio`: detune as a frequency ratio, 1 = none). */
+type DrumPlayer = (row: DrumRow, time: number, velocity: number, ratio?: number) => void;
 
 /** A synthesized kit's player: its own five sounds, and the extras for the rows added later. */
 function synthKitPlayer(kit: DrumHits, extras: KitExtras): DrumPlayer {
-  return (row, time, v) => {
+  return (row, time, v, r = 1) => {
     switch (row) {
-      case 'kick': return kit.kick(time, v);
-      case 'snare': return kit.snare(time, v);
-      case 'closedHat': return kit.hat(false, time, v);
-      case 'openHat': return kit.hat(true, time, v);
-      case 'cowbell': return kit.cowbell(time, v);
-      default: return extraHit(extras, row, time, v);
+      case 'kick': return kit.kick(time, v, r);
+      case 'snare': return kit.snare(time, v, r);
+      case 'closedHat': return kit.hat(false, time, v, r);
+      case 'openHat': return kit.hat(true, time, v, r);
+      case 'cowbell': return kit.cowbell(time, v, r);
+      default: return extraHit(extras, row, time, v, r);
     }
   };
 }
 
-function extraHit(extras: KitExtras, row: DrumRow, time: number, v: number): void {
-  if (row === 'clap') extras.clap(time, v);
-  else if (row === 'tomLow') extras.tom('low', time, v);
-  else if (row === 'tomMid') extras.tom('mid', time, v);
-  else if (row === 'tomHigh') extras.tom('high', time, v);
-  else if (row === 'crash') extras.crash(time, v);
-  else if (row === 'ride') extras.ride(time, v);
-  else if (row === 'cowbell') extras.cowbell(time, v);
+function extraHit(extras: KitExtras, row: DrumRow, time: number, v: number, r = 1): void {
+  if (row === 'clap') extras.clap(time, v, r);
+  else if (row === 'tomLow') extras.tom('low', time, v, r);
+  else if (row === 'tomMid') extras.tom('mid', time, v, r);
+  else if (row === 'tomHigh') extras.tom('high', time, v, r);
+  else if (row === 'crash') extras.crash(time, v, r);
+  else if (row === 'ride') extras.ride(time, v, r);
+  else if (row === 'cowbell') extras.cowbell(time, v, r);
 }
 
-/** Map drum-clip notes onto a kit's rows. */
-function playDrums(play: DrumPlayer, notes: PlayableNote[], time: number): void {
+/**
+ * Expressive drums (Track.expressive): how far each row's hits may be detuned, in cents, so a
+ * repeated hit isn't the identical sound (a real drum never is; real 808s drift too). The kick
+ * hardly moves, so the low end stays put; hats and claps the most.
+ */
+const DRUM_SPREAD: Partial<Record<DrumRow, number>> = { kick: 4, snare: 14, clap: 18, closedHat: 20, openHat: 16, tomLow: 10, tomMid: 10, tomHigh: 10, crash: 12, ride: 12, cowbell: 6 };
+
+/** Map drum-clip notes onto a kit's rows (expressive: each hit a hair different in pitch and level, seeded so exports repeat). */
+function playDrums(play: DrumPlayer, notes: PlayableNote[], time: number, expressive = false): void {
   // One hi-hat voice: an open hat on the same tick replaces the closed one
   const openHat = notes.some((n) => n.note === DRUM_NOTES.openHat);
   for (const n of notes) {
     const row = ROW_OF.get(n.note);
     if (!row || (row === 'closedHat' && openHat)) continue;
+    if (expressive) {
+      const ratio = 2 ** (((DRUM_SPREAD[row] ?? 8) * noteJitter(row, time, 3)) / 1200);
+      const velocity = Math.min(1, n.velocity * 10 ** ((0.8 * noteJitter(row, time, 5)) / 20));
+      safely(() => play(row, time, velocity, ratio));
+      continue;
+    }
     safely(() => play(row, time, n.velocity));
   }
 }
 
 /** A synthesized kit as a track instrument. */
-function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNode): TrackInstrument {
+function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNode, expressive = false): TrackInstrument {
   const extras = createKitExtras(output);
-  const play: TrackInstrument['play'] = (notes, time) => playDrums(synthKitPlayer(kit, extras), notes, time);
+  const play: TrackInstrument['play'] = (notes, time) => playDrums(synthKitPlayer(kit, extras), notes, time, expressive);
   return {
     play,
     noteOn: oneShot(play),
@@ -206,17 +221,17 @@ function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNod
 }
 
 /** A recorded kit: its recordings, the hats shortened or let ring, the extras for rows it lacks. */
-function recordedKit(key: InstrumentKey, output: Tone.InputNode): TrackInstrument {
+function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = false): TrackInstrument {
   const kit = createSampledKit(key, output);
   const extras = createKitExtras(output);
-  const player: DrumPlayer = (row, time, v) => {
-    const opts = row === 'closedHat' ? { seconds: 0.14 } : row === 'openHat' ? { rate: 0.94 } : {};
+  const player: DrumPlayer = (row, time, v, r = 1) => {
+    const opts = row === 'closedHat' ? { seconds: 0.14, rate: r } : row === 'openHat' ? { rate: 0.94 * r } : { rate: r };
     const note = row === 'openHat' && !kit.has(DRUM_NOTES.openHat) ? DRUM_NOTES.closedHat : DRUM_NOTES[row];
     // Still downloading: nothing (rather than the extras standing in for every row)
     if (!kit.loaded()) return;
-    if (!kit.hit(note, time, v, opts)) extraHit(extras, row, time, v);
+    if (!kit.hit(note, time, v, opts)) extraHit(extras, row, time, v, r);
   };
-  const play: TrackInstrument['play'] = (notes, time) => playDrums(player, notes, time);
+  const play: TrackInstrument['play'] = (notes, time) => playDrums(player, notes, time, expressive);
   return {
     play,
     noteOn: oneShot(play),
@@ -359,10 +374,10 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => bus.bus.dispose(), clipBus: bus };
   }
   if (kind === 'slicer') return createSlicer(output, options.slicer);
-  if (kind === 'drums' && INSTRUMENTS[key].samples) return recordedKit(key, output);
+  if (kind === 'drums' && INSTRUMENTS[key].samples) return recordedKit(key, output, !!options.expressive);
 
   if (kind === 'sampled' || kind === 'custom') {
-    const voice = kind === 'sampled' ? createSamplerVoice(key, output) : createCustomSamplerVoice(options.sample, output);
+    const voice = kind === 'sampled' ? createSamplerVoice(key, output, !!options.expressive) : createCustomSamplerVoice(options.sample, output);
     return {
       play: (notes, time) => voice.play(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
       noteOn: (n, time) => {
@@ -378,9 +393,9 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
 
   switch (key) {
     case 'drums':
-      return synthKit(createDrumKit(output), output);
+      return synthKit(createDrumKit(output), output, !!options.expressive);
     case 'drumMachine':
-      return synthKit(createDrumMachine(output), output);
+      return synthKit(createDrumMachine(output), output, !!options.expressive);
     case 'bass': {
       const bass = createBassVoice(output);
       return mono({ ...bass, releaseAll: () => bass.synth.triggerRelease() });

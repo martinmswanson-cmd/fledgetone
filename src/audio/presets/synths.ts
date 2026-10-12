@@ -189,21 +189,21 @@ export function createDrumMachine(output: Tone.InputNode) {
   const bellTime = monotonicTime(bellLow.context);
 
   return {
-    kick: (time: number, velocity: number) => kick.triggerAttackRelease('A0', '8n', kickTime(time), velocity),
-    snare: (time: number, velocity: number) => {
+    kick: (time: number, velocity: number, ratio = 1) => kick.triggerAttackRelease(27.5 * ratio, '8n', kickTime(time), velocity),
+    snare: (time: number, velocity: number, ratio = 1) => {
       const t = snareTime(time);
       snareNoise.triggerAttackRelease('16n', t, velocity);
-      snareTone.triggerAttackRelease(185, '32n', t, velocity * 0.8);
+      snareTone.triggerAttackRelease(185 * ratio, '32n', t, velocity * 0.8);
     },
     hat: (open: boolean, time: number, velocity: number) => {
       hat.envelope.decay = open ? 0.32 : 0.04;
       hat.envelope.release = open ? 0.25 : 0.03;
       hat.triggerAttackRelease(open ? '8n' : '32n', hatTime(time), velocity);
     },
-    cowbell: (time: number, velocity: number) => {
+    cowbell: (time: number, velocity: number, ratio = 1) => {
       const t = bellTime(time);
-      bellLow.triggerAttackRelease(540, '16n', t, velocity);
-      bellHigh.triggerAttackRelease(800, '16n', t, velocity);
+      bellLow.triggerAttackRelease(540 * ratio, '16n', t, velocity);
+      bellHigh.triggerAttackRelease(800 * ratio, '16n', t, velocity);
     },
     dispose: () => {
       [kick, snareTone, snareFilter, snareNoise, hatFilter, hat, bellFilter, bellLow, bellHigh].forEach((n) => n.dispose());

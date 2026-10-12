@@ -438,6 +438,8 @@ interface TimelineState {
   setTrackFx: <K extends keyof TrackFx>(trackId: string, effect: K, patch: Partial<TrackFx[K]>, record?: boolean) => void;
   /** Give a Sampler track its sound (or clear it with undefined). */
   setTrackSample: (trackId: string, sample: CustomSample | undefined) => void;
+  /** Expressive playing on or off (undoable) */
+  setTrackExpressive: (trackId: string, on: boolean) => void;
 
   // Audio clips and the Slicer (the maths is in audioClips.ts, the sound files in soundLibrary.ts)
   /**
@@ -732,6 +734,7 @@ function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: strin
     fx: instrumentKey === 'return' ? returnFx() : defaultTrackFx(),
     reverbSend: 0.1,
     delaySend: 0,
+    expressive: true,
   };
 }
 
@@ -1818,6 +1821,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setTrackSample: (id, sample) => updateTrack(id, () => ({ sample }), true),
 
+    setTrackExpressive: (id, on) => updateTrack(id, () => ({ expressive: on }), true),
+
     // ---------- Audio clips and the Slicer ----------
     addAudioClips: (trackId, atBar, sounds) => {
       const s = get();
@@ -2518,7 +2523,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     newProject: (template) => {
       // A new arrangement keeps the frame rate you're working in
       const { fps, dropFrame } = get();
-      get().loadProject(
+      // A new song plays expressively (older projects opened later keep their sound)
+      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, expressive: true })) });
+      get().loadProject(expressive(
         template === 'demo'
           ? { ...createDemoProject(), fps, dropFrame }
           : isStarterId(template)
@@ -2534,7 +2541,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
               fps,
               dropFrame,
             }
-      );
+      ));
     },
 
     loadProject: (p: ProjectSnapshot) => {

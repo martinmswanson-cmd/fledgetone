@@ -92,22 +92,23 @@ export function createDrumKit(output: Tone.InputNode) {
     dispose: () => {
       [kick, snareNoise, snareFilter, snareSnap, hat, cowbell].forEach((n) => n.dispose());
     },
-    kick: (time?: Tone.Unit.Time, velocity: number = 0.95) => {
-      kick.triggerAttackRelease('C1', '8n', kickTime(time), velocity);
+    // (`ratio`: a hair of detune, so repeated hits aren't identical; see playDrums)
+    kick: (time?: Tone.Unit.Time, velocity: number = 0.95, ratio = 1) => {
+      kick.triggerAttackRelease(32.703 * ratio, '8n', kickTime(time), velocity);
     },
-    snare: (time?: Tone.Unit.Time, velocity: number = 0.85) => {
+    snare: (time?: Tone.Unit.Time, velocity: number = 0.85, ratio = 1) => {
       const t = snareTime(time);
       snareNoise.triggerAttackRelease('16n', t, velocity);
-      snareSnap.triggerAttackRelease(200, '16n', t, velocity * 0.9);
+      snareSnap.triggerAttackRelease(200 * ratio, '16n', t, velocity * 0.9);
     },
     /** open: longer 0.28s decay; otherwise 0.05s tight closed hat */
-    hat: (open: boolean = false, time?: Tone.Unit.Time, velocity: number = 0.75) => {
+    hat: (open: boolean = false, time?: Tone.Unit.Time, velocity: number = 0.75, ratio = 1) => {
       hat.envelope.decay = open ? 0.28 : 0.05;
       hat.envelope.release = open ? 0.28 : 0.05;
-      hat.triggerAttackRelease(200, open ? '8n' : '32n', hatTime(time), velocity);
+      hat.triggerAttackRelease(200 * ratio, open ? '8n' : '32n', hatTime(time), velocity);
     },
-    cowbell: (time?: Tone.Unit.Time, velocity: number = 0.8) => {
-      cowbell.triggerAttackRelease(800, '16n', cowbellTime(time), velocity);
+    cowbell: (time?: Tone.Unit.Time, velocity: number = 0.8, ratio = 1) => {
+      cowbell.triggerAttackRelease(800 * ratio, '16n', cowbellTime(time), velocity);
     },
   };
 }
