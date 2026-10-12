@@ -4,6 +4,7 @@ import { TOTAL_BARS, isAutomationParam } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
+import { normalizeMulti, normalizeRack } from './sampleKits';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
@@ -212,6 +213,9 @@ function parseTrack(v: unknown): Track {
     ...(slicer ? { slicer } : {}),
     // Optional: a Synth Designer track's patch
     ...(synth ? { synth } : {}),
+    // Optional: a Drum Rack's pads, a Multi Sampler's sounds
+    ...(normalizeRack(v.rack) ? { rack: normalizeRack(v.rack)! } : {}),
+    ...(normalizeMulti(v.multi) ? { multi: normalizeMulti(v.multi)! } : {}),
     // Optional: a frozen track
     ...(frozen ? { frozen } : {}),
     // Optional: the bus it plays into (checked against the other tracks after they're read)

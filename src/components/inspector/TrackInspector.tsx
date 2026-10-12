@@ -19,6 +19,7 @@ import { EqCurvePreview } from './EqCurvePreview';
 import { DistortionPanel, DuckProxyPanel, DynamicsAndChorusPanels, FilterAndPumpPanels, HumanPanel } from './InsertFx';
 import { SampleLoader } from './SampleLoader';
 import { SlicerPanel } from './SlicerPanel';
+import { MultiPanel, RackPanel } from './SampleKitPanels';
 import { PeqPanel } from './PeqEditor';
 import { MbcPanel } from './MbcPanel';
 import { SynthPanel } from './SynthPanel';
@@ -242,6 +243,8 @@ export const TrackInspector: React.FC = () => {
 
             {currentTrack.instrumentKey === 'sampler' && <SampleLoader track={currentTrack} />}
             {isSlicerKind(currentTrack.instrumentKey) && <SlicerPanel track={currentTrack} />}
+            {currentTrack.instrumentKey === 'drumRack' && <RackPanel track={currentTrack} />}
+            {currentTrack.instrumentKey === 'multiSampler' && <MultiPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'synthDesigner' && <SynthPanel track={currentTrack} />}
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 

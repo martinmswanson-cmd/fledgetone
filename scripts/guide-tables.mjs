@@ -36,8 +36,8 @@ export function instrumentTable() {
     '|---|---|',
     ...groups.map((c) => `| ${c} | ${all.filter((d) => d.category === c).map((d) => d.name).join(', ')} |`),
     '',
-    `- **Generated in the browser** (they work offline): ${all.filter((d) => !recorded(d) && d.kind !== 'custom').map((d) => d.name).join(', ')}.`,
-    `- **Recorded** (${all.filter(recorded).length} instruments and kits, downloaded the first time you use them): all the others, except the Sampler, which plays your own sound file.`,
+    `- **Generated in the browser** (they work offline): ${all.filter((d) => !recorded(d) && !['custom', 'rack', 'multi'].includes(d.kind)).map((d) => d.name).join(', ')}.`,
+    `- **Recorded** (${all.filter(recorded).length} instruments and kits, downloaded the first time you use them): all the others, except the Sampler, Drum Rack and Multi Sampler, which play your own sound files.`,
   ];
   return lines.join('\n');
 }

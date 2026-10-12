@@ -7,7 +7,7 @@ import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timeline
 import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
 import { crossfades, secondsPerBar, stretchRatio } from '../../store/audioClips';
 import { DRUM_NOTES } from '../../audio/scheduler';
-import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../../audio/instrumentCatalog';
+import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isRackKind, isFxKind } from '../../audio/instrumentCatalog';
 import { dbToGain } from '../../audio/clipEnvelope';
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
@@ -15,6 +15,8 @@ import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layo
 import { shadeNotes, type NoteRect } from './noteShades';
 import { ClipWaveform, Waveform } from './Waveform';
 import { isWarped } from '../../store/warp';
+import { padOfNote } from '../../store/sampleKits';
+import { RACK_PADS } from '../../store/timelineTypes';
 
 /** Every clip's crossfades, worked out once per change of the clips (the playhead moving doesn't count). */
 let xfadeCache: { clips: Clip[]; bpm: number; map: ReturnType<typeof crossfades> } | null = null;
@@ -58,6 +60,9 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
   if (isDrumKind(instrument)) {
     rows = DRUM_ROWS.length;
     rowOf = (note) => Math.max(0, DRUM_ROWS.indexOf(note));
+  } else if (isRackKind(instrument)) {
+    rows = RACK_PADS;
+    rowOf = (note) => RACK_PADS - 1 - Math.max(0, padOfNote(note));
   } else if (isFxKind(instrument)) {
     rows = FX_ROWS.length;
     rowOf = (note) => Math.max(0, FX_ROWS.findIndex((r) => r.note === note));

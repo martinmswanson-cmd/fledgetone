@@ -9,6 +9,8 @@
  *   sampled - multi-sampled recordings streamed from free public libraries (needs internet)
  *   custom  - the Sampler: plays a sound the user loads from their own computer
  *   slicer  - the Slicer: a sound cut into slices, one per key from C3 up (vocal chops)
+ *   rack    - the Drum Rack: 16 pads, each its own sound with its own effects
+ *   multi   - the Multi Sampler: several sounds laid across the keys and velocities
  *   audio   - an Audio track: holds audio clips (sound files on the timeline) instead of notes
  */
 import { SAMPLE_TUNING } from './sampleTuning';
@@ -57,7 +59,7 @@ export const INSTRUMENT_KEYS = [
   // world and folk
   'fiddle', 'sitar', 'koto', 'shamisen', 'shakuhachi', 'panFlute', 'ocarina', 'bagpipe', 'accordion', 'harmonica', 'kalimba', 'steelDrums', 'dulcimer',
   // audio clips and vocal chops
-  'slicer', 'audio',
+  'slicer', 'audio', 'drumRack', 'multiSampler',
   // a group channel (a bus) other tracks route into
   'bus',
   // a Web Audio Module instrument loaded from a URL
@@ -68,7 +70,7 @@ export const INSTRUMENT_KEYS = [
 
 export type InstrumentKey = (typeof INSTRUMENT_KEYS)[number];
 
-export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio' | 'bus' | 'plugin' | 'return';
+export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio' | 'bus' | 'plugin' | 'return' | 'rack' | 'multi';
 
 export const CATEGORIES = [
   'Drums & Percussion',
@@ -477,6 +479,8 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   // Your Sounds
   sampler: { key: 'sampler', name: 'Sampler', blurb: 'Play your own sound file', color: '#14b8a6', category: 'Your Sounds', kind: 'custom', range: [36, 96] },
   // (The range is the most slices a sound can be cut into, from C3 up; the piano roll shows only the slices there are)
+  drumRack: { key: 'drumRack', name: 'Drum Rack', blurb: 'Your own sounds on 16 pads, each with its own effects', color: '#fb7185', category: 'Your Sounds', kind: 'rack', range: [36, 51] },
+  multiSampler: { key: 'multiSampler', name: 'Multi Sampler', blurb: 'Several of your sounds across the keys and velocities', color: '#2dd4bf', category: 'Your Sounds', kind: 'multi', range: [21, 108] },
   slicer: { key: 'slicer', name: 'Slicer', blurb: 'Vocal chops: a sound cut into slices', color: '#f0abfc', category: 'Your Sounds', kind: 'slicer', range: [48, 111] },
   audio: { key: 'audio', name: 'Audio', blurb: 'Your recordings, as clips', color: '#60a5fa', category: 'Your Sounds', kind: 'audio', range: [0, 127] },
   plugin: { key: 'plugin', name: 'Plugin', blurb: 'A Web Audio Module instrument, loaded from its URL', color: '#e879f9', category: 'Your Sounds', kind: 'plugin', range: [0, 127] },
@@ -508,6 +512,11 @@ export function isDrumKind(key: InstrumentKey): boolean {
 }
 
 /** The FX instrument: fixed named rows (FX_ROWS) instead of a keyboard. */
+/** The Drum Rack: fixed pad rows (one per pad) instead of a keyboard. */
+export function isRackKind(key: InstrumentKey): boolean {
+  return INSTRUMENTS[key]?.kind === 'rack';
+}
+
 export function isFxKind(key: InstrumentKey): boolean {
   return INSTRUMENTS[key].kind === 'fx';
 }

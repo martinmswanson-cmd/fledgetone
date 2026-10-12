@@ -36,7 +36,7 @@ import { defaultCurve, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
-import type { Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
+import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
 import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
@@ -451,6 +451,10 @@ interface TimelineState {
   setClipStretch: (clipId: string, stretchBpm: number | undefined) => void;
   /** Give a Slicer track its sound and slices (or clear them with undefined). `record` as above. */
   setTrackSlicer: (trackId: string, slicer: SlicerSettings | undefined, record?: boolean) => void;
+  /** A Drum Rack's pads (`record`: one undo step; a slider checkpoints and passes false). */
+  setTrackRack: (trackId: string, rack: DrumRack | undefined, record?: boolean) => void;
+  /** A Multi Sampler's sounds and shape. */
+  setTrackMulti: (trackId: string, multi: MultiSample | undefined, record?: boolean) => void;
   /** Change a Synth Designer track's patch (`record` false while a knob is dragged: checkpoint() first). */
   setTrackSynth: (trackId: string, synth: SynthPatch, record?: boolean) => void;
   /**
@@ -1855,6 +1859,16 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }),
 
     setTrackSynth: (trackId, synth, record = true) => updateTrack(trackId, () => ({ synth }), record),
+
+    setTrackRack: (trackId, rack, record = true) => {
+      for (const pad of rack?.pads ?? []) if (pad.soundId) ensureSound(pad.soundId);
+      updateTrack(trackId, () => ({ rack }), record);
+    },
+
+    setTrackMulti: (trackId, multi, record = true) => {
+      for (const zone of multi?.zones ?? []) ensureSound(zone.soundId);
+      updateTrack(trackId, () => ({ multi }), record);
+    },
 
     setTrackSlicer: (trackId, slicer, record = true) => {
       if (slicer) ensureSound(slicer.soundId);

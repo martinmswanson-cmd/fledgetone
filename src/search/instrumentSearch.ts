@@ -34,6 +34,8 @@ const KIND_WORDS: Record<InstrumentDef['kind'], string> = {
   bus: 'bus group',
   plugin: 'plugin wam',
   return: 'return aux send effect',
+  rack: 'drum rack pads kit sampler drums one shots choke 808 own samples',
+  multi: 'multi sampler multisample zones velocity layers own samples keymap',
 };
 
 const fieldsCache = new Map<InstrumentKey, SearchFields>();

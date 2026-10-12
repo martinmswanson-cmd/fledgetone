@@ -18,7 +18,8 @@ import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
 import type { NativeBus } from './presets/native';
 import { createCustomSamplerVoice, createSamplerVoice, taperGain } from './samplers/samplerManager';
-import type { CustomSample, SlicerSettings, Track, WamPlugin, WobbleRate } from '../store/timelineTypes';
+import type { CustomSample, DrumRack, MultiSample, SlicerSettings, Track, WamPlugin, WobbleRate } from '../store/timelineTypes';
+import { createMultiInstrument, createRackInstrument } from './presets/sampleKits';
 import { createPluginChain, createPluginInstrument } from './presets/wamPlugin';
 import type { SynthPatch } from '../store/synthPatch';
 import { createDesignedSynth } from './presets/designer';
@@ -82,6 +83,10 @@ export interface TrackInstrument {
   setSlicer?: (settings: SlicerSettings | undefined) => void;
   /** The Synth Designer's: its patch as it changes (from the next note), without a rebuild. */
   setSynth?: (patch: SynthPatch | undefined) => void;
+  /** The Drum Rack's: its pads as they change, without a rebuild. */
+  setRack?: (rack: DrumRack | undefined) => void;
+  /** The Multi Sampler's: its sounds and shape as they change, without a rebuild. */
+  setMulti?: (multi: MultiSample | undefined) => void;
 }
 
 /** What an instrument is built with: the Sampler's sound, the Slicer's sound and slices. */
@@ -93,12 +98,14 @@ export interface InstrumentOptions {
   plugin?: WamPlugin;
   /** WAM effects between the instrument and the track's strip */
   pluginFx?: WamPlugin[];
+  rack?: DrumRack;
+  multi?: MultiSample;
 }
 
 /** What a track's instrument is built with (its sound, slices, patch, plugins). */
-export function trackInstrumentOptions(track: Pick<Track, 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx'> | null | undefined): InstrumentOptions {
+export function trackInstrumentOptions(track: Pick<Track, 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi'> | null | undefined): InstrumentOptions {
   if (!track) return {};
-  return { sample: track.sample, slicer: track.slicer, synth: track.synth, plugin: track.plugin, pluginFx: track.pluginFx };
+  return { sample: track.sample, slicer: track.slicer, synth: track.synth, plugin: track.plugin, pluginFx: track.pluginFx, rack: track.rack, multi: track.multi };
 }
 
 /**
@@ -319,6 +326,8 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
   const kind = INSTRUMENTS[key].kind;
 
   if (kind === 'plugin') return createPluginInstrument(output, options.plugin);
+  if (kind === 'rack') return createRackInstrument(output, options.rack);
+  if (kind === 'multi') return createMultiInstrument(output, options.multi);
   if (kind === 'bus' || kind === 'return') {
     // A bus plays nothing itself: the tracks routed to it play into its strip
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };

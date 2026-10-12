@@ -90,6 +90,8 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       sample: track.sample,
       slicer: track.slicer,
       synth: track.synth,
+      ...(track.rack ? { rack: track.rack } : {}),
+      ...(track.multi ? { multi: track.multi } : {}),
       ...(track.plugin ? { plugin: track.plugin } : {}),
       ...(track.pluginFx?.length ? { pluginFx: track.pluginFx } : {}),
       // (The newer inserts only while on, so tracks frozen before they existed stay frozen)
@@ -177,6 +179,8 @@ export function liveView(
         frozenFrom: t.instrumentKey,
         sample: undefined,
         slicer: undefined,
+        rack: undefined,
+        multi: undefined,
         // Its plugins are in the sound, and it plays straight into its bus (whose sound isn't)
         plugin: undefined,
         pluginFx: undefined,
