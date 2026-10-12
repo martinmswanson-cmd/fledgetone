@@ -11,6 +11,7 @@ import { barToTicks } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { NativeBus } from './presets/native';
 import type { Track } from '../store/timelineTypes';
+import type { LiveTrackView } from '../store/freeze';
 import { loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
 import { TOTAL_BARS } from '../store/timelineStore';
@@ -124,7 +125,9 @@ export function retimeAutomation(): void {
  */
 export function pumpOnKick(trackId: string, time: number): void {
   const lt = live.get(trackId);
-  if (!lt?.audible || !isDrumKind(lt.instrumentKey)) return;
+  // A frozen drum track plays as audio, but its kicks still count
+  const kind = (lt?.applied as LiveTrackView | null)?.frozenFrom ?? lt?.instrumentKey;
+  if (!lt?.audible || !kind || !isDrumKind(kind)) return;
   for (const { strip } of live.values()) strip.pump(time, 'kick');
 }
 

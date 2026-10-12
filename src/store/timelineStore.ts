@@ -30,7 +30,8 @@ import type { DragPayload } from './dragSounds';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind } from '../audio/instrumentCatalog';
 import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
-import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds } from '../audio/soundLibrary';
+import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
+import { liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
 import {
   audioLengthLimit,
@@ -1859,28 +1860,46 @@ export function connectAutosave(): () => void {
  * Transport events when clips change, and keep loop/tempo/swing and the delay time in sync.
  * Returns an unsubscribe function (safe under React StrictMode double-invoke).
  */
+/** A frozen track's sound can't be played (deleted from this browser, or unreadable): it plays live. */
+const soundMissing = (id: string) => {
+  const status = useSoundLibrary.getState().status[id];
+  return status === 'missing' || status === 'error';
+};
+
 export function connectTimelineToAudio(): () => void {
   const s = useTimelineStore.getState();
   holdAutomationAt(s.playheadPosition);
-  syncLiveTracks(s.tracks);
-  rescheduleClips(s.tracks, s.clips);
+  // The engine plays frozen tracks as audio (see freeze.ts)
+  let view = liveView(s, soundMissing);
+  for (const t of s.tracks) if (t.frozen) ensureSound(t.frozen.soundId);
+  syncLiveTracks(view.tracks);
+  rescheduleClips(view.tracks, view.clips);
+  const refresh = (state: TimelineState) => {
+    const next = liveView(state, soundMissing, view);
+    if (next.tracks !== view.tracks) syncLiveTracks(next.tracks);
+    const trackSetChanged = next.tracks.length !== view.tracks.length || next.tracks.some((t, i) => t.id !== view.tracks[i]?.id);
+    if (next.clips !== view.clips || trackSetChanged) rescheduleClips(next.tracks, next.clips);
+    view = next;
+  };
+  // A frozen sound found missing (or back again) changes what plays
+  const unwatchSounds = useSoundLibrary.subscribe((lib, prevLib) => {
+    if (lib.status === prevLib.status) return;
+    const state = useTimelineStore.getState();
+    if (state.tracks.some((t) => t.frozen && lib.status[t.frozen.soundId] !== prevLib.status[t.frozen.soundId])) refresh(state);
+  });
   syncTransport(s.loopRegion, s.bpm, s.swing);
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
   liveMix.inserts.apply(s.master);
 
-  return useTimelineStore.subscribe((state, prev) => {
+  const unsubscribe = useTimelineStore.subscribe((state, prev) => {
     // Stopped, automated settings sit at their lanes' values under the playhead (first, so lanes
     // that come with new tracks start there too)
     if (!state.isPlaying && (state.playheadPosition !== prev.playheadPosition || prev.isPlaying)) {
       holdAutomationAt(state.playheadPosition);
     }
-    if (state.tracks !== prev.tracks) {
-      syncLiveTracks(state.tracks);
-    }
-    const trackSetChanged =
-      state.tracks.length !== prev.tracks.length || state.tracks.some((t, i) => t.id !== prev.tracks[i]?.id);
-    if (state.clips !== prev.clips || trackSetChanged) {
-      rescheduleClips(state.tracks, state.clips);
+    if (state.tracks !== prev.tracks || state.clips !== prev.clips || state.bpm !== prev.bpm || state.swing !== prev.swing) {
+      for (const t of state.tracks) if (t.frozen && t.frozen !== prev.tracks.find((p) => p.id === t.id)?.frozen) ensureSound(t.frozen.soundId);
+      refresh(state);
     }
     if (state.loopRegion !== prev.loopRegion || state.bpm !== prev.bpm || state.swing !== prev.swing) {
       syncTransport(state.loopRegion, state.bpm, state.swing);
@@ -1891,4 +1910,8 @@ export function connectTimelineToAudio(): () => void {
       liveMix.busFx.apply(masterFxOf(state), state.bpm);
     }
   });
+  return () => {
+    unsubscribe();
+    unwatchSounds();
+  };
 }

@@ -12,6 +12,7 @@ import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { activeLanes, AUTOMATION, formatPan, laneOf } from '../../audio/automation';
 import { AUTOMATED_TIP, useAutomatedValue } from './automationHooks';
 import { AutoBadge } from './AutoBadge';
+import { FreezeButton } from './FreezeButton';
 
 interface ToggleProps {
   active: boolean;
@@ -275,6 +276,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           >
             <Spline className="w-3.5 h-3.5" />
           </button>
+          {!isAudioKind(track.instrumentKey) && <FreezeButton track={track} />}
           <Toggle
             label="M"
             title="Mute"

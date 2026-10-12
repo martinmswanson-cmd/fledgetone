@@ -1,4 +1,4 @@
-import type { CustomSample, EmbeddedSound, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
@@ -105,6 +105,12 @@ function parseSample(v: unknown): CustomSample | undefined {
   return { name: isStr(v.name) ? v.name : 'Sample', ...(soundId ? { soundId } : { dataUrl }), root: isStr(v.root) ? v.root : 'C4' };
 }
 
+/** A frozen track's freeze (its sound isn't in the file: elsewhere the track plays live until frozen again). */
+function parseFrozen(v: unknown): FrozenTrack | undefined {
+  if (!isObj(v) || !isStr(v.soundId) || !isNum(v.startBar) || !isNum(v.seconds) || !isStr(v.fingerprint)) return undefined;
+  return { soundId: v.soundId, startBar: v.startBar, seconds: v.seconds, gainDb: isNum(v.gainDb) ? v.gainDb : 0, fingerprint: v.fingerprint };
+}
+
 function parseTrack(v: unknown): Track {
   if (!isObj(v) || !isStr(v.id) || !isStr(v.name) || !isInstrumentKey(v.instrumentKey)) {
     throw new Error('a track is missing its id, name or instrument');
@@ -112,6 +118,7 @@ function parseTrack(v: unknown): Track {
   const eqObj = isObj(v.eq) ? v.eq : {};
   const automation = parseAutomation(v.automation);
   const slicer = normalizeSlicer(v.slicer);
+  const frozen = parseFrozen(v.frozen);
   return {
     id: v.id,
     name: v.name,
@@ -135,6 +142,8 @@ function parseTrack(v: unknown): Track {
     ...(automation ? { automation } : {}),
     // Optional: a Slicer track that has a sound loaded
     ...(slicer ? { slicer } : {}),
+    // Optional: a frozen track
+    ...(frozen ? { frozen } : {}),
   };
 }
 
