@@ -13,9 +13,9 @@ const BANDS = 48;
 function savedSkin(): SkinId {
   try {
     const v = localStorage.getItem(STYLE_KEY);
-    return isSkin(v) ? v : 'crew';
+    return isSkin(v) ? v : 'city';
   } catch {
-    return 'crew';
+    return 'city';
   }
 }
 

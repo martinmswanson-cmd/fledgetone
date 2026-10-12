@@ -111,7 +111,7 @@ const TOOLS: Item[] = [
   } },
   { title: 'Video tools', keywords: 'video tools panel scoring picture film edit editor cuts dialogue hit points', detail: 'The reference video, its cuts and dialogue, hit points, markers for editors (the Video tab).', run: () => ui().openDock('video') },
   { title: 'Menu bar', keywords: 'menu menus file edit song track tools view help', detail: 'Every tool, by where a DAW keeps it.', run: () => void reveal('#menu-file') },
-  { title: 'Spectrum', keywords: 'spectrum analyser analyzer visualizer visualiser frequency readout led characters cat frog birds pigeons gomo-fu crew mochi bo cute', detail: 'The live spectrum, next to the master in the Mixer, as LED bars or a character.', run: () => ui().setDialog('mixer') },
+  { title: 'Spectrum', keywords: 'spectrum analyser analyzer visualizer visualiser frequency readout led neon cyberpunk city terrain radar hud data rain hologram pigeons', detail: 'The live spectrum, next to the master in the Mixer, as LED bars, a neon city, terrain, radar, data rain or holograms.', run: () => ui().setDialog('mixer') },
   { title: 'Bottom panel', keywords: 'dock bottom panel tabs mixer instruments game video sfx', detail: 'Show or hide the panel under the timeline.', run: () => ui().setDockOpen(!ui().dockOpen) },
   { title: 'Markers list', keywords: 'markers sections rename jump list', run: async () => void (await press('button[title^="Markers:"]')) },
   { title: 'Build-up & drop at the playhead', keywords: 'buildup build up drop riser transition edm snare roll impact', detail: 'Adds a build-up before the playhead and a drop on it (also on the ruler’s right-click menu).', run: () => {
