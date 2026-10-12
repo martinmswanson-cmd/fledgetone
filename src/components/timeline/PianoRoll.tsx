@@ -151,6 +151,7 @@ const edgeOf = (noteWidth: number) => Math.min(EDGE_PX, noteWidth / 3);
 let rememberedScale: Scale | null = null;
 let rememberedChord: ChordId = 'off';
 let rememberedGhosts = true;
+let rememberedStepMode = true;
 
 const TOOLS = [
   { id: 'quantize', label: 'Quantize to grid', drums: true },
@@ -248,6 +249,10 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const [scale, setScaleState] = useState<Scale | null>(rememberedScale);
   const [chord, setChordState] = useState<ChordId>(rememberedChord);
   const [ghosts, setGhostsState] = useState(rememberedGhosts);
+  // Drum clips: a click toggles a hit on the grid, like a step sequencer
+  const [stepMode, setStepModeState] = useState(rememberedStepMode);
+  const setStepMode = (next: boolean) => setStepModeState((rememberedStepMode = next));
+  const stepping = stepMode && isDrumKind(instrument);
   const setScale = (next: Scale | null) => setScaleState((rememberedScale = next));
   const setChord = (next: ChordId) => setChordState((rememberedChord = next));
   const setGhosts = (next: boolean) => setGhostsState((rememberedGhosts = next));
@@ -438,6 +443,27 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     if (e.button !== 0) return;
     e.preventDefault();
     const noteEl = (e.target as HTMLElement).closest<HTMLElement>('[data-note-id]');
+
+    if (stepping && !e.altKey) {
+      // Step sequencer: the cell under the click (one GRID step on its row) gets a hit, or loses its hits
+      const p = local(e.clientX, e.clientY);
+      const row = rows[p.row];
+      if (!row) return;
+      const cell = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
+      const inCell = currentNotes().filter((n) => n.note === row.note && unitsOf(n.startOffset) >= cell - 1e-6 && unitsOf(n.startOffset) < cell + gridUnits - 1e-6);
+      const store = useTimelineStore.getState();
+      if (inCell.length) {
+        store.deleteNotes(clip.id, new Set(inCell.map((n) => n.id)));
+        setSelected(new Set());
+        return;
+      }
+      if (cell >= totalUnits) return;
+      // Shift: an accent
+      const note = { note: row.note, startOffset: cell / UNITS_PER_BAR, duration: barsToDuration(gridUnits / UNITS_PER_BAR), velocity: e.shiftKey ? 1 : velocity };
+      store.addNotes(clip.id, [note]);
+      void preview(clip.trackId, [{ ...note, duration: '16n' }]);
+      return;
+    }
 
     if (noteEl) {
       const id = noteEl.dataset.noteId!;
@@ -666,6 +692,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 <option key={id} value={id}>{CHORDS[id].name}</option>
               ))}
             </select>
+          </label>
+        )}
+        {isDrumKind(instrument) && (
+          <label className="flex items-center gap-1.5 cursor-pointer" title="Step sequencer: a click turns a hit on or off in that GRID step (Shift-click: an accent). Alt-click: add and drag notes as usual. Off: always add and drag.">
+            <input type="checkbox" checked={stepMode} onChange={(e) => setStepMode(e.target.checked)} className="accent-cyan-500" />
+            STEPS
           </label>
         )}
         <label className="flex items-center gap-1.5" title={selected.size ? 'Change the selected notes' : 'Change all the notes in this clip (select some to change only those)'}>
