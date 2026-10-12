@@ -500,6 +500,14 @@ In the MIDI popover, tick **Computer keyboard piano**. `A` `S` `D` `F` `G` `H` `
 
 ## Recording
 
+### Recording from a microphone
+
+Click **Mic** in the toolbar to record your voice, a guitar, or anything on your computer's audio input. The browser asks for permission the first time. Playback starts from the playhead as you click it, so you can sing or play along; the button turns into **Stop** with a level meter. Click **Stop** and the take goes onto the selected Audio track (or a new one) exactly where you played it: the delays of the speakers and the mic are taken off, so it lines up with the beat. The take is saved in the sound library like a dropped sound file, so it can be trimmed, faded, chopped to the Slicer, frozen and exported.
+
+The input isn't played through the speakers while you record (no feedback); use headphones to hear the music. Microphone access needs a secure page (the published site, on https).
+
+To **resample** (record a part, then mangle it), export the part as a WAV and drop it back onto a lane, or right-click an audio clip for **Chop to Slicer…**.
+
 1. Arm a track with **R** on its header (one track at a time; Audio tracks can't be armed).
 2. Switch **Record** on (the red circle in the toolbar).
 3. Press **Play**. With the **1-bar count-in** on (the default) you hear four clicks first, then the music and the take start together.
