@@ -42,7 +42,7 @@ npm install
 npm run dev            # dev server
 npx tsc -b             # type check
 npx oxlint             # lint (3 known warnings: Playhead.tsx x2, SoundAuditionPanel.tsx x1)
-npm test               # node --test scripts/*.test.mjs (120 tests)
+npm test               # node --test scripts/*.test.mjs (204 tests)
 npm run build          # production build
 npm run build:single   # the one-file site (dist-single/index.html)
 npm run guide-tables   # rewrite GUIDE.md's instrument list and credits from the catalog
@@ -234,18 +234,50 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 - **Type check with `npx tsc -b`** (what `npm run build` runs). `tsc --noEmit -p .` checks nothing
   here: the root tsconfig only has references.
 
+- **DAW batch** (Oct 2026):
+  - *Layout*: a menu bar (`components/menu/MenuBar.tsx`, every tool by DAW menu; Ctrl+S/O/E) holds
+    the project controls; the old bottom sections became the **bottom panel**
+    (`components/dock/BottomDock.tsx`): Mixer, EQ & Dynamics, Instruments, Game, Video, Sound FX tabs.
+    `uiStore.setDialog('mixer' | 'game' | 'sfx')` opens the dock tab instead (search and the tour
+    rely on that). Tab and height are in localStorage (`bosBeatbox.dock`).
+  - *Crossfades*: `audioClips.crossfades()` (overlaps on a track; a clip wholly inside another
+    is a layer); the clip schedule uses them as equal-power fades (`clipEnvelope` curveIn/curveOut).
+  - *Follow tempo*: `ClipAudio.stretchBpm`; `timeStretch.ts` (WSOLA, hits placed on time);
+    `soundLibrary.stretchSound / requestStretch` cache copies per speed (last 3); the schedule
+    plays the raw sound sped up (varispeed) until the copy exists; exports await it.
+  - *Curved automation*: `AutomationPoint.curve` (-1..1, `automation.bend`); the schedule
+    samples bent pieces every 10 ms. Alt-drag a line, or the lane's right-click menu.
+  - *Folders*: `Track.folder` on every member (so undo / save / autosave need nothing new);
+    `store/folders.ts` keeps members together; `components/timeline/rows.ts` lays out rows
+    (folder rows, folded tracks hidden, the video lane) for the marquee, recording marker, marker
+    lines; clip drags find the lane under the pointer from the DOM.
+  - *Pro EQ / Multiband*: `TrackFx.peq` (6 biquads always patched in; off = peaking 0 dB) and
+    `TrackFx.mbc` (LR4 crossovers + DynamicsCompressorNodes; the browser's auto make-up gain,
+    0.6 × what it takes off full scale, is divided back out). `audio/peq.ts` draws the exact
+    curve. Freeze fingerprints leave them out while off, so older freezes stay valid.
+  - *Tune vocal*: `audio/vocalTune.ts` (YIN at half rate, scale snap, TD-PSOLA); Apply imports a
+    tuned copy and keeps `ClipAudio.tunedFrom` (saved with the project) for Untune.
+  - *Video saved*: the file is kept in the sound DB (`soundLibrary.storeBlob`, key
+    `video:name|size|lastModified`); `ProjectSnapshot.video` holds the reference and start;
+    saved files embed it up to 40 MB (`VIDEO_EMBED_MAX`); autosave watches the video store.
+  - *FMOD / Wwise*: `audio/enginePackage.ts` (renders via `buildGameKitParts`) and
+    `audio/engineScripts.ts` (FMOD Studio script, WAAPI Python script, README); the test runs the
+    FMOD script against a stand-in `studio` object and compiles the Python.
+  - *Video export*: Mediabunny (`Output` + encoded packet sources, a write queue per track).
+  - Bitcrusher was already there as Lo-fi.
+- **Browser tests**: after editing `src`, restart Vite before a script imports `/src/...`
+  modules: once HMR has re-imported a module with `?t=`, the script's import is a second copy
+  (a different store), and what it sets isn't what the page shows.
+
 ## Ideas not started
 
 - Tempo changes during a song (a tempo map) and time-signature changes; a sustain-pedal lane;
   per-note pitch bend; rim / shaker / tambourine rows on the kits.
-
 - A desktop app in Rust, once the web version peaks (the owner wants to wait).
-- Swap `mp4-muxer` for Mediabunny.
-- Crossfades between overlapping audio clips; time-stretching audio clips to the tempo.
-- Curved automation; track folders and colour groups.
-- More effects: a visual parametric EQ, multiband compression, bitcrusher, vocal tuning.
-- Game engine export: cue data for FMOD / Wwise / Unity / Godot, stingers on the beat.
-- Save the reference video with the project (IndexedDB) instead of session only.
+- Time-stretch and vocal tuning run on the main thread (about 0.2 s and 1 s per 30 s of audio):
+  a Worker would keep the page smooth on long takes.
+- The FMOD and Wwise scripts haven't been run against the real tools (none here): each step
+  reports OK / SKIP, so check them in the tools and fix the SKIPs.
 
 ## Small known issues
 

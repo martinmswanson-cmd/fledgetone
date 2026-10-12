@@ -9,7 +9,6 @@ import { pickProjectFile, saveProjectFile } from '../timeline/projectFile';
 import { showToast } from '../timeline/toastStore';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
-import { useMenuDismiss } from '../timeline/menuHooks';
 
 /**
  * The menu bar: every tool in the app, in the place a DAW keeps it (File, Edit, Song, Track,
@@ -320,11 +319,32 @@ export const MenuBar: React.FC = () => {
   const buttons = useRef<Record<string, HTMLButtonElement | null>>({});
   const bar = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setWhere(null), []);
-  const setOpen = (id: string | null) => {
+  const place = useCallback((id: string | null) => {
     const r = id ? buttons.current[id]?.getBoundingClientRect() : undefined;
     setWhere(id && r ? { id, left: Math.min(r.left, window.innerWidth - 280), top: r.bottom + 2 } : null);
-  };
-  useMenuDismiss(bar, close);
+  }, []);
+  const setOpen = place;
+  // A click outside, Esc or a resize closes the menu; scrolling the page carries it along with its button
+  useEffect(() => {
+    if (!where) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (!bar.current?.contains(e.target as Node)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+    const onScroll = () => place(where.id);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [where, close, place]);
 
   // File shortcuts: Ctrl+S save, Ctrl+O open, Ctrl+E export
   useEffect(() => {
