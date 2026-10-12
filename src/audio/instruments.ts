@@ -11,6 +11,9 @@ import { create808, createDrumMachine, createLead, createSubBass, createWavetabl
 import { createGrowlBass, createReeseBass, createWobbleBass } from './presets/edmBass';
 import { createPluck, createSupersaw, HELD_NOTE } from './presets/edmSynths';
 import { createFx } from './presets/fx';
+import { createKitExtras } from './presets/kitExtras';
+import type { KitExtras } from './presets/kitExtras';
+import { createSampledKit } from './presets/sampledKit';
 import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
 import type { NativeBus } from './presets/native';
@@ -24,7 +27,16 @@ export const DRUM_NOTES = {
   closedHat: 'F#1',
   openHat: 'A#1',
   cowbell: 'G#2',
+  // Added later, on the General MIDI pads an octave down like the others
+  clap: 'D#1',
+  tomLow: 'F1',
+  tomMid: 'B1',
+  tomHigh: 'D2',
+  crash: 'C#2',
+  ride: 'D#2',
 } as const;
+export type DrumRow = keyof typeof DRUM_NOTES;
+const ROW_OF = new Map(Object.entries(DRUM_NOTES).map(([row, note]) => [note as string, row as DrumRow]));
 
 export interface PlayableNote {
   note: string;
@@ -91,17 +103,82 @@ interface DrumHits {
   cowbell: (time: number, velocity: number) => void;
 }
 
-/** Map drum-clip notes onto a kit's hits. */
-function playDrums(kit: DrumHits, notes: PlayableNote[], time: number): void {
+/** Play one row of a kit at `time`. */
+type DrumPlayer = (row: DrumRow, time: number, velocity: number) => void;
+
+/** A synthesized kit's player: its own five sounds, and the extras for the rows added later. */
+function synthKitPlayer(kit: DrumHits, extras: KitExtras): DrumPlayer {
+  return (row, time, v) => {
+    switch (row) {
+      case 'kick': return kit.kick(time, v);
+      case 'snare': return kit.snare(time, v);
+      case 'closedHat': return kit.hat(false, time, v);
+      case 'openHat': return kit.hat(true, time, v);
+      case 'cowbell': return kit.cowbell(time, v);
+      default: return extraHit(extras, row, time, v);
+    }
+  };
+}
+
+function extraHit(extras: KitExtras, row: DrumRow, time: number, v: number): void {
+  if (row === 'clap') extras.clap(time, v);
+  else if (row === 'tomLow') extras.tom('low', time, v);
+  else if (row === 'tomMid') extras.tom('mid', time, v);
+  else if (row === 'tomHigh') extras.tom('high', time, v);
+  else if (row === 'crash') extras.crash(time, v);
+  else if (row === 'ride') extras.ride(time, v);
+  else if (row === 'cowbell') extras.cowbell(time, v);
+}
+
+/** Map drum-clip notes onto a kit's rows. */
+function playDrums(play: DrumPlayer, notes: PlayableNote[], time: number): void {
   // One hi-hat voice: an open hat on the same tick replaces the closed one
   const openHat = notes.some((n) => n.note === DRUM_NOTES.openHat);
   for (const n of notes) {
-    if (n.note === DRUM_NOTES.kick) safely(() => kit.kick(time, n.velocity));
-    else if (n.note === DRUM_NOTES.snare) safely(() => kit.snare(time, n.velocity));
-    else if (n.note === DRUM_NOTES.closedHat && !openHat) safely(() => kit.hat(false, time, n.velocity));
-    else if (n.note === DRUM_NOTES.openHat) safely(() => kit.hat(true, time, n.velocity));
-    else if (n.note === DRUM_NOTES.cowbell) safely(() => kit.cowbell(time, n.velocity));
+    const row = ROW_OF.get(n.note);
+    if (!row || (row === 'closedHat' && openHat)) continue;
+    safely(() => play(row, time, n.velocity));
   }
+}
+
+/** A synthesized kit as a track instrument. */
+function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNode): TrackInstrument {
+  const extras = createKitExtras(output);
+  const play: TrackInstrument['play'] = (notes, time) => playDrums(synthKitPlayer(kit, extras), notes, time);
+  return {
+    play,
+    noteOn: oneShot(play),
+    releaseAll: () => {},
+    ready: Promise.resolve(),
+    dispose: () => {
+      kit.dispose();
+      extras.dispose();
+    },
+  };
+}
+
+/** A recorded kit: its recordings, the hats shortened or let ring, the extras for rows it lacks. */
+function recordedKit(key: InstrumentKey, output: Tone.InputNode): TrackInstrument {
+  const kit = createSampledKit(key, output);
+  const extras = createKitExtras(output);
+  const player: DrumPlayer = (row, time, v) => {
+    const opts = row === 'closedHat' ? { seconds: 0.14 } : row === 'openHat' ? { rate: 0.94 } : {};
+    const note = row === 'openHat' && !kit.has(DRUM_NOTES.openHat) ? DRUM_NOTES.closedHat : DRUM_NOTES[row];
+    // Still downloading: nothing (rather than the extras standing in for every row)
+    if (!kit.loaded()) return;
+    if (!kit.hit(note, time, v, opts)) extraHit(extras, row, time, v);
+  };
+  const play: TrackInstrument['play'] = (notes, time) => playDrums(player, notes, time);
+  return {
+    play,
+    noteOn: oneShot(play),
+    releaseAll: kit.releaseAll,
+    ready: kit.ready,
+    dispose: () => {
+      kit.dispose();
+      extras.dispose();
+    },
+  };
 }
 
 interface MonoVoice {
@@ -190,6 +267,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => bus.bus.dispose(), clipBus: bus };
   }
   if (kind === 'slicer') return createSlicer(output, options.slicer);
+  if (kind === 'drums' && INSTRUMENTS[key].samples) return recordedKit(key, output);
 
   if (kind === 'sampled' || kind === 'custom') {
     const voice = kind === 'sampled' ? createSamplerVoice(key, output) : createCustomSamplerVoice(options.sample, output);
@@ -206,16 +284,10 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
   }
 
   switch (key) {
-    case 'drums': {
-      const kit = createDrumKit(output);
-      const play: TrackInstrument['play'] = (notes, time) => playDrums(kit, notes, time);
-      return { play, noteOn: oneShot(play), releaseAll: () => {}, ready: Promise.resolve(), dispose: kit.dispose };
-    }
-    case 'drumMachine': {
-      const kit = createDrumMachine(output);
-      const play: TrackInstrument['play'] = (notes, time) => playDrums(kit, notes, time);
-      return { play, noteOn: oneShot(play), releaseAll: () => {}, ready: Promise.resolve(), dispose: kit.dispose };
-    }
+    case 'drums':
+      return synthKit(createDrumKit(output), output);
+    case 'drumMachine':
+      return synthKit(createDrumMachine(output), output);
     case 'bass': {
       const bass = createBassVoice(output);
       return mono({ ...bass, releaseAll: () => bass.synth.triggerRelease() });
@@ -270,11 +342,8 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
         dispose: bass.dispose,
       };
     }
-    case 'chipDrums': {
-      const kit = createChipDrums(output);
-      const play: TrackInstrument['play'] = (notes, time) => playDrums(kit, notes, time);
-      return { play, noteOn: oneShot(play), releaseAll: () => {}, ready: Promise.resolve(), dispose: kit.dispose };
-    }
+    case 'chipDrums':
+      return synthKit(createChipDrums(output), output);
     case 'chipLead':
     case 'chipBass': {
       const synth = key === 'chipLead' ? createChipLead(output) : createChipBass(output);

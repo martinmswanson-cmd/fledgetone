@@ -30,7 +30,7 @@ import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, 
 import type { DragPayload } from './dragSounds';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
-import { isSamplerKey, loadSamples } from '../audio/samplers/samplerManager';
+import { hasRecordings, loadSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
@@ -991,7 +991,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         isInspectorOpen: true,
         ...pushPast(s),
       }));
-      if (isSamplerKey(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
+      if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
       return newTrack.id;
     },
 
@@ -1024,7 +1024,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         }),
         true
       );
-      if (isSamplerKey(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
+      if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
     },
 
     toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted }), true),
@@ -1572,7 +1572,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
       // Start downloading samples for any sampled instruments
       safeTracks.forEach((t: Track) => {
-        if (isSamplerKey(t.instrumentKey)) void loadSamples(t.instrumentKey).catch(() => {});
+        if (hasRecordings(t.instrumentKey)) void loadSamples(t.instrumentKey).catch(() => {});
       });
       const masterFx = p.masterFx ?? DEFAULT_MASTER_FX;
 

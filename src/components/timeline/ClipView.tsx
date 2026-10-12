@@ -20,9 +20,15 @@ const LABEL_HEIGHT = 16;
 const FADE_HANDLE_PX = 9;
 
 const DRUM_ROWS: string[] = [
+  DRUM_NOTES.crash,
+  DRUM_NOTES.ride,
   DRUM_NOTES.cowbell,
+  DRUM_NOTES.tomHigh,
+  DRUM_NOTES.tomMid,
+  DRUM_NOTES.tomLow,
   DRUM_NOTES.openHat,
   DRUM_NOTES.closedHat,
+  DRUM_NOTES.clap,
   DRUM_NOTES.snare,
   DRUM_NOTES.kick,
 ];
