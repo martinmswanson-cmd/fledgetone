@@ -77,6 +77,9 @@ Run all five checks before every commit.
 | Genre starters: helpers, the style batch (artcore, bass music, phonk, jazz-pop...) | `src/store/starterKit.ts`, `src/store/startersPlaylist.ts` (metadata and groups in `starters.ts`) |
 | Key change, ratchet / roll tools | `src/store/keyChange.ts` (ruler menu), `ratchet` / `roll` in `noteTools.ts` |
 | Human insert (per-note timing / velocity / pitch drift) | `src/audio/human.ts` (seeded from clip id, note id and tick; unit tested in `scripts/human.test.mjs`), applied in `scheduler.ts` `playGroup`; panel `HumanPanel` in `InsertFx.tsx` |
+| Tempo finder (hit points = markers locked to time, Shift+M) | `src/store/tempoFinder.ts`, `HitFinder` in `TempoControls.tsx`, `addHit` in the store |
+| Cut to length | `src/store/cutToLength.ts` (sections, plan), store action `cutToLength`, `CutToLengthDialog.tsx` |
+| Sound effects maker, song key detection | `src/audio/sfx/sfxSynth.ts` (pure renderer + recipes), `src/components/sfx/SfxMakerDialog.tsx`, `src/store/songKey.ts` |
 | Lo-fi and Gate inserts | `createLightLofi` / `createLightGate` in `effects/lightFx.ts`; the Gate is chopped by the strip's beat clock (`createPumpClock`) |
 | Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |

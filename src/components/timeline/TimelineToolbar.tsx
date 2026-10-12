@@ -3,6 +3,7 @@ import { VideoButton } from '../video/VideoButton';
 import { MixerDialog } from './MixerDialog';
 import { MicButton } from './MicButton';
 import { GamePreview } from './GamePreview';
+import { SfxMakerDialog } from '../sfx/SfxMakerDialog';
 import {
   Magnet,
   MousePointer2,
@@ -15,6 +16,7 @@ import {
   Sliders,
   SlidersVertical,
   Gamepad2,
+  AudioWaveform,
   Square,
   Undo2,
   ZoomIn,
@@ -318,6 +320,12 @@ export const TimelineToolbar: React.FC = () => {
         <span className="text-[11px] font-bold">Game</span>
       </ToolButton>
       {gameOpen && <GamePreview onClose={() => setDialog(null)} />}
+
+      <ToolButton id="btn-sfx" title="Sound effects maker: jump, coin, laser, hit, power-up, explosion and blip sounds for games" active={dialog === 'sfx'} activeClass="bg-amber-500/25 border-amber-400 text-amber-200" onClick={() => setDialog('sfx')}>
+        <AudioWaveform className="w-4 h-4" />
+        <span className="text-[11px] font-bold">SFX</span>
+      </ToolButton>
+      {dialog === 'sfx' && <SfxMakerDialog onClose={() => setDialog(null)} />}
 
       {/* Inspector / Studio FX Rack Toggle */}
       <ToolButton
