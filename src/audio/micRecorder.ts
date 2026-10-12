@@ -61,7 +61,8 @@ export async function startMic(): Promise<MicSession> {
   // A script processor only runs while connected onward: through a silent gain
   proc.connect(silent);
   silent.connect(ctx.destination);
-  const inputLatency = (stream.getAudioTracks()[0]?.getSettings() as MediaTrackSettings & { latency?: number }).latency ?? 0;
+  const settings = stream.getAudioTracks()[0]?.getSettings() as (MediaTrackSettings & { latency?: number }) | undefined;
+  const inputLatency = settings?.latency ?? 0;
 
   const close = () => {
     proc.onaudioprocess = null;
