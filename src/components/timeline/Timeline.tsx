@@ -13,6 +13,7 @@ import { ClipContextMenu } from './ClipContextMenu';
 import type { ContextMenuState } from './ClipContextMenu';
 import { ChopToSlicerDialog } from './ChopToSlicerDialog';
 import { VariationsDialog } from './VariationsDialog';
+import { TuneDialog } from './TuneDialog';
 import { NewAudioTrackDrop } from './NewAudioTrackDrop';
 import { RulerContextMenu } from './RulerContextMenu';
 import type { RulerMenuState } from './RulerContextMenu';
@@ -114,6 +115,7 @@ export const Timeline: React.FC = () => {
   const [chopClipId, setChopClipId] = useState<string | null>(null);
   const variationsClipId = useUiStore((s) => s.variationsClipId);
   const setVariationsClipId = useUiStore.getState().setVariationsClip;
+  const tuneClipId = useUiStore((s) => s.tuneClipId);
   const contentRef = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
 
@@ -424,6 +426,7 @@ export const Timeline: React.FC = () => {
       {trackMenu && <TrackMenu menu={trackMenu} onClose={closeTrackMenu} />}
       {chopClipId && <ChopToSlicerDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
       {variationsClipId && <VariationsDialog clipId={variationsClipId} onClose={() => setVariationsClipId(null)} />}
+      {tuneClipId && <TuneDialog clipId={tuneClipId} onClose={() => useUiStore.getState().setTuneClip(null)} />}
       <Toast />
     </div>
   );

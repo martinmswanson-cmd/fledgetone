@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AudioWaveform, Gauge, Slice, X } from 'lucide-react';
+import { AudioWaveform, Gauge, Slice, Wand2, X } from 'lucide-react';
+import { useUiStore } from '../../store/uiStore';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, Track } from '../../store/timelineTypes';
 import { AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from '../../store/timelineTypes';
@@ -86,6 +87,9 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
         {fadeSlider('Fade in', audio.fadeIn, 'fadeIn')}
         {fadeSlider('Fade out', audio.fadeOut, 'fadeOut')}
         <StretchControls clip={clip} bpm={bpm} />
+        <button type="button" onClick={() => useUiStore.getState().setTuneClip(clip.id)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500 ${audio.tunedFrom ? '!border-cyan-500/70 text-cyan-200' : ''}`} title="Pull a vocal's pitch onto the notes of a key">
+          <Wand2 className="w-3.5 h-3.5" /> {audio.tunedFrom ? 'Tuned…' : 'Tune vocal…'}
+        </button>
         <button type="button" onClick={() => setChopping(true)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500`} title="Cut this clip's sound into slices on a new Slicer track">
           <Slice className="w-3.5 h-3.5" /> Chop to Slicer…
         </button>

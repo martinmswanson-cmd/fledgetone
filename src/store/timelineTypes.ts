@@ -567,6 +567,8 @@ export interface ClipAudio {
    * Unset: the recording plays as it is, and keeps its length in seconds.
    */
   stretchBpm?: number;
+  /** Tuned (see vocalTune.ts): the sound it was tuned from, to go back to */
+  tunedFrom?: string;
 }
 
 export const STRETCH_BPM_MIN = 30;

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
+import { Wand2, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
+import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
 import { formatBarCount } from '../../store/timelineTypes';
 import { canMoveClipBetween, isAudioKind } from '../../audio/instrumentCatalog';
@@ -170,7 +171,10 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
           ? { key: 'edit', label: 'Gain and fades', shortcut: 'dbl-click', icon: <AudioWaveform className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) }
           : { key: 'edit', label: 'Edit notes', shortcut: 'dbl-click', icon: <Piano className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) },
         ...(audioClip && onChop
-          ? [{ key: 'chop', label: 'Chop to Slicer…', icon: <Slice className="w-3.5 h-3.5" />, onClick: run(() => onChop(menu.clipId!)) }]
+          ? [
+              { key: 'chop', label: 'Chop to Slicer…', icon: <Slice className="w-3.5 h-3.5" />, onClick: run(() => onChop(menu.clipId!)) },
+              { key: 'tune', label: 'Tune vocal…', icon: <Wand2 className="w-3.5 h-3.5" />, onClick: run(() => useUiStore.getState().setTuneClip(menu.clipId!)) },
+            ]
           : []),
         ...(onVariations
           ? [{ key: 'variations', label: 'Generate variations…', shortcut: 'game SFX', icon: <Shuffle className="w-3.5 h-3.5" />, onClick: run(() => onVariations(menu.clipId!)) }]
