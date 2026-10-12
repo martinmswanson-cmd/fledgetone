@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { liveTransport } from './liveContext';
 import { barToTicks, swingDelay, swungNotes } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
@@ -35,7 +36,7 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
   // Notes hidden by a trim don't play
   const notes = clip.notes.filter((note) => note.startOffset >= -1e-6 && note.startOffset < clip.lengthBars - 1e-6);
   const ticks = notes.map((note) => barToTicks(clip.startBar + note.startOffset));
-  const swung = swungNotes(ticks, barToTicks(clip.startBar), Tone.Transport.PPQ);
+  const swung = swungNotes(ticks, barToTicks(clip.startBar), liveTransport.PPQ);
   // Group notes by tick (and length) so chords trigger as one instrument call
   const groups = new Map<string, [number, NoteGroup]>();
   notes.forEach((note, i) => {
@@ -155,12 +156,12 @@ export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
   liveAudioClips.update(tracks, clips);
 }
 
-/** Apply loop region and tempo to Tone.Transport, and swing to the clips played on it. */
+/** Apply loop region and tempo to liveTransport, and swing to the clips played on it. */
 export function syncTransport(loop: LoopRegion, bpm: number, swing: number): void {
-  Tone.Transport.loopStart = `${barToTicks(loop.inBar)}i`;
-  Tone.Transport.loopEnd = `${barToTicks(loop.outBar)}i`;
-  Tone.Transport.loop = loop.enabled;
-  Tone.Transport.bpm.value = bpm;
+  liveTransport.loopStart = `${barToTicks(loop.inBar)}i`;
+  liveTransport.loopEnd = `${barToTicks(loop.outBar)}i`;
+  liveTransport.loop = loop.enabled;
+  liveTransport.bpm.value = bpm;
   liveSwing = swing;
 }
 

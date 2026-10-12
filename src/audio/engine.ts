@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { liveTransport, liveDestination, liveContext } from './liveContext';
 // Must run before any oscillator exists: keeps Tone's waveform cache per audio context
 import './toneFixes';
 import { createBusEffects } from './effects/busEffects';
@@ -75,7 +76,7 @@ export const auditionInput = liveMix.auditionInput;
 
 // Configure default transport clock settings for modern electric funk. (Swing isn't the
 // Transport's: the clip schedule delays the off-beat 16ths itself, see swungNotes.)
-Tone.Transport.bpm.value = 122;
+liveTransport.bpm.value = 122;
 
 let audioStateChangeListeners: Array<(state: AudioState) => void> = [];
 
@@ -98,15 +99,15 @@ function notifyState(state: AudioState) {
  * Must be triggered by a user gesture (e.g., button click).
  */
 export async function initAudio(): Promise<AudioState> {
-  if (Tone.context.state !== 'running') {
+  if (liveContext.state !== 'running') {
     await Tone.start();
     // In case Tone's underlying raw context needs resuming
-    if (Tone.context.rawContext && Tone.context.rawContext.state === 'suspended') {
-      await Tone.context.rawContext.resume();
+    if (liveContext.rawContext && liveContext.rawContext.state === 'suspended') {
+      await liveContext.rawContext.resume();
     }
   }
 
-  const state = Tone.context.state as AudioState;
+  const state = liveContext.state as AudioState;
   notifyState(state);
   return state;
 }
@@ -115,33 +116,33 @@ export async function initAudio(): Promise<AudioState> {
  * Get current Tone AudioContext state
  */
 export function getAudioContextState(): AudioState {
-  return Tone.context.state as AudioState;
+  return liveContext.state as AudioState;
 }
 
 /**
  * Set global master volume in decibels (-60dB to +6dB)
  */
 export function setMasterVolume(db: number): void {
-  Tone.Destination.volume.rampTo(db, 0.05);
+  liveDestination.volume.rampTo(db, 0.05);
 }
 
 /**
  * Get current master volume in decibels
  */
 export function getMasterVolume(): number {
-  return Tone.Destination.volume.value;
+  return liveDestination.volume.value;
 }
 
 /**
  * Set global BPM
  */
 export function setBpm(bpm: number): void {
-  Tone.Transport.bpm.rampTo(Math.max(40, Math.min(240, bpm)), 0.05);
+  liveTransport.bpm.rampTo(Math.max(40, Math.min(240, bpm)), 0.05);
 }
 
 /**
  * Get global BPM
  */
 export function getBpm(): number {
-  return Tone.Transport.bpm.value;
+  return liveTransport.bpm.value;
 }

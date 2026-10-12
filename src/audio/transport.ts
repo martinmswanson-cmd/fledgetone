@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { liveTransport } from './liveContext';
 import { formatFrameRulerTime, formatFrameTimecode, framesToSeconds, parseFrameTimecode, secondsToFrames } from './timecode';
 
 /**
@@ -6,7 +7,7 @@ import { formatFrameRulerTime, formatFrameTimecode, framesToSeconds, parseFrameT
  * Tone.Transport works in ticks (PPQ per quarter note).
  */
 export function ticksPerBar(): number {
-  return Tone.Transport.PPQ * 4;
+  return liveTransport.PPQ * 4;
 }
 
 export function barToTicks(bar: number): number {
@@ -97,7 +98,7 @@ export function getAudiblePositionBar(): number {
   if (heading && now < heading.at) return heading.bar;
   heading = null;
   // What leaves the speakers now was rendered the output latency ago (larger with Stable playback)
-  return ticksToBar(Tone.Transport.getTicksAtTime(Math.max(0, now - outputLatency())));
+  return ticksToBar(liveTransport.getTicksAtTime(Math.max(0, now - outputLatency())));
 }
 
 /**
@@ -112,12 +113,12 @@ function outputLatency(): number {
 
 /** Where the Transport is scheduling (the look-ahead past what's heard): a seek shows here at once. */
 export function getScheduledPositionBar(): number {
-  return ticksToBar(Tone.Transport.ticks);
+  return ticksToBar(liveTransport.ticks);
 }
 
 /** Start playing from `bar`, at audio time `at` (just ahead of now, or after a count-in). */
 export function startTransportAt(bar: number, at = Tone.now() + 0.03): void {
-  Tone.Transport.start(at, `${barToTicks(bar)}i`);
+  liveTransport.start(at, `${barToTicks(bar)}i`);
   heading = { bar, at };
   pendingStart = at;
 }
@@ -133,30 +134,30 @@ function cancelPendingStart(): boolean {
   pendingStart = null;
   if (at === null) return false;
   // Stopping before the scheduled start removes it: the Transport never gets going
-  Tone.Transport.stop(Tone.immediate());
+  liveTransport.stop(Tone.immediate());
   return true;
 }
 
 export function pauseTransport(): void {
   heading = null;
   if (cancelPendingStart()) return;
-  Tone.Transport.pause();
+  liveTransport.pause();
 }
 
 export function stopTransport(): void {
   heading = null;
   if (cancelPendingStart()) return;
-  Tone.Transport.stop();
+  liveTransport.stop();
 }
 
 export function seekTransport(bar: number): void {
-  const playing = Tone.Transport.state === 'started';
-  Tone.Transport.ticks = barToTicks(bar);
+  const playing = liveTransport.state === 'started';
+  liveTransport.ticks = barToTicks(bar);
   const pending = transportStartsAt();
   // During a count-in the start that's coming moves to the new bar (Tone keeps its time)
   if (pending !== null) heading = { bar, at: pending };
   // Playing, Tone moves there at its look-ahead, on the next tick
-  else if (playing) heading = { bar, at: Tone.now() + Tone.Transport.toSeconds('1i') };
+  else if (playing) heading = { bar, at: Tone.now() + liveTransport.toSeconds('1i') };
 }
 
 /** Format as Premiere-style Bar.Beat.Tick ("001.01.00"); ticks shown as hundredths of a beat. */
