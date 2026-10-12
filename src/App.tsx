@@ -9,7 +9,16 @@ import { ProjectDrop } from './components/ProjectDrop';
 import { MobileNotice } from './components/MobileNotice';
 import { SharedLinkOpener } from './components/SharedLinkOpener';
 import { SearchPalette } from './components/SearchPalette';
-import { Cpu, Sparkles } from 'lucide-react';
+import { ReportProblemDialog } from './components/ReportProblemDialog';
+import { useUiStore } from './store/uiStore';
+import { startErrorLog } from './support/problemReport';
+import { Cpu, LifeBuoy, Sparkles } from 'lucide-react';
+
+/** The Report a problem dialog, when it's open. */
+const ReportProblem: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'report');
+  return open ? <ReportProblemDialog onClose={() => useUiStore.getState().setDialog(null)} /> : null;
+};
 
 export const App: React.FC = () => {
   return (
@@ -21,6 +30,7 @@ export const App: React.FC = () => {
       <MobileNotice />
       <SharedLinkOpener />
       <SearchPalette />
+      <ReportProblem />
 
       {/* Main Workstation Canvas */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-6">
@@ -127,7 +137,15 @@ export const App: React.FC = () => {
           <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
           <span>Bo's Beatbox</span>
         </div>
-        <div>
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => useUiStore.getState().setDialog('report')}
+            className="flex items-center gap-1.5 hover:text-forge-text transition-colors"
+            title="Something not working? Tell us"
+          >
+            <LifeBuoy className="w-3.5 h-3.5" /> Report a problem
+          </button>
           <a href="https://twobirdsworkshop.com" target="_blank" rel="noopener" className="hover:text-forge-text transition-colors">
             twobirdsworkshop.com
           </a>
@@ -140,3 +158,4 @@ export const App: React.FC = () => {
 export default App;
 
 startPerfMonitor();
+startErrorLog();

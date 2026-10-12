@@ -78,6 +78,7 @@ const TOOLS: Item[] = [
   { title: 'Share', keywords: 'share link url send friend mp3', detail: 'A link that opens the song, an MP3, or the project file.', run: () => ui().setDialog('share') },
   { title: 'Mixer', keywords: 'mixer faders meters levels channels desk console balance', detail: "Every track's fader, meter, pan and sends side by side.", run: () => ui().setDialog('mixer') },
   { title: 'Game preview', keywords: 'game adaptive interactive layers sections intensity dynamic music', detail: 'Switch between sections and layers live, the way adaptive game music does.', run: () => ui().setDialog('game') },
+  { title: 'Report a problem', keywords: 'report problem bug broken crash error issue help contact support email feedback', detail: 'Tell Two Birds Workshop something went wrong.', run: () => ui().setDialog('report') },
   { title: 'Guide', keywords: 'guide help manual how docs documentation tutorial', detail: 'How everything works.', run: () => ui().openGuide() },
   { title: 'Play / pause', keywords: 'play pause start transport space k', run: () => void timeline().togglePlay() },
   { title: 'Stop', keywords: 'stop transport return', run: () => timeline().stop() },
