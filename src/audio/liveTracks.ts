@@ -133,6 +133,13 @@ export function pumpOnKick(trackId: string, time: number): void {
 }
 
 /** A track's instrument, or undefined while the track is muted / not the soloed one. */
+/** Each live track's level after its fader (peak, 0..1), for the mixer's meters. */
+export function liveTrackPeaks(): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const [id, lt] of live) out.set(id, lt.strip.peak());
+  return out;
+}
+
 export function getLiveInstrument(trackId: string): TrackInstrument | undefined {
   const lt = live.get(trackId);
   return lt?.audible ? lt.instrument : undefined;

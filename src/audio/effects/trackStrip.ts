@@ -64,6 +64,8 @@ export interface TrackStrip {
   automationTargets: (param: AutomationParam) => AutomationTarget[] | null;
   /** Changes whenever automationTargets() might answer differently (an insert came or went, the Filter changed type...). */
   automationVersion: () => number;
+  /** The level after the fader (for the mixer's meters): peak 0..1 since the last call, built on first use. */
+  peak: () => number;
   dispose: () => void;
 }
 
@@ -185,6 +187,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   Tone.connect(merge, fader);
 
   fader.connect(bus);
+  // The mixer's meter, made when first read (see peak)
+  let meter: AnalyserNode | null = null;
+  let meterData: Float32Array<ArrayBuffer> | null = null;
   fader.connect(reverbSend);
   reverbSend.connect(busFx.reverbInput);
   fader.connect(delaySend);
@@ -566,6 +571,18 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       if (!owned.has('delaySend')) delayWriter.set(Math.max(0, Math.min(1, track.delaySend)), ramp);
     },
     pumpTrigger: () => pumpTrigger,
+    peak: () => {
+      if (!meter) {
+        meter = raw.createAnalyser();
+        meter.fftSize = 1024;
+        meterData = new Float32Array(meter.fftSize);
+        fader.connect(meter as unknown as Tone.InputNode);
+      }
+      meter.getFloatTimeDomainData(meterData!);
+      let p = 0;
+      for (let i = 0; i < meterData!.length; i++) p = Math.max(p, Math.abs(meterData![i]));
+      return p;
+    },
     pump: (time, source) => {
       if (pump && source === pumpTrigger) pump.trigger(time);
     },
