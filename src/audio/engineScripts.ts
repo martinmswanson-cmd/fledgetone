@@ -8,11 +8,13 @@ import type { AudioManifest } from './gameKit';
 export type EngineTarget = 'fmod' | 'wwise' | 'both';
 
 /** Where each state sits on one timeline (seconds), states end to end with a bar's gap. */
-export function stateLayout(m: AudioManifest): Array<{ name: string; start: number; length: number }> {
+export function stateLayout(m: AudioManifest): Array<{ name: string; start: number; length: number; bpm: number; num: number; den: number }> {
   const gap = (240 / m.bpm) * 1;
   let at = 0;
   return m.states.map((s) => {
-    const entry = { name: s.name, start: +at.toFixed(6), length: s.seconds };
+    // Each state at its own tempo and time signature (older manifests: the song's)
+    const [num, den] = s.timeSignature ?? m.timeSignature ?? [4, 4];
+    const entry = { name: s.name, start: +at.toFixed(6), length: s.seconds, bpm: s.bpm ?? m.bpm, num, den };
     at += s.seconds + gap;
     return entry;
   });
@@ -114,13 +116,16 @@ function bbImport() {
   });
 
   // Tempo, a marker and a loop region per state
-  bbTry('tempo ' + DATA.bpm + ' BPM, 4/4', function () {
-    var tempo = studio.project.create('TempoMarker');
-    tempo.timeline = event.timeline;
-    tempo.position = 0;
-    tempo.tempo = DATA.bpm;
-    tempo.timeSignatureNumerator = 4;
-    tempo.timeSignatureDenominator = 4;
+  // A tempo marker where each state starts, at its tempo and time signature
+  DATA.layout.forEach(function (s) {
+    bbTry('tempo ' + s.bpm + ' BPM, ' + s.num + '/' + s.den + ' at ' + s.name, function () {
+      var tempo = studio.project.create('TempoMarker');
+      tempo.timeline = event.timeline;
+      tempo.position = s.start;
+      tempo.tempo = s.bpm;
+      tempo.timeSignatureNumerator = s.num;
+      tempo.timeSignatureDenominator = s.den;
+    });
   });
   var markerTrack = bbTry('a marker track', function () { return event.addMarkerTrack(); });
   DATA.layout.forEach(function (s) {
@@ -188,6 +193,7 @@ export function wwiseScript(m: AudioManifest): string {
     states: m.states.map((s) => ({ name: s.name, bars: s.bars, tracks: tracks.map((t) => ({ name: t.name, file: t.fileOf(s) })) })),
     stingers: m.stingers.map((s) => ({ name: s.name, file: s.file })),
     intensity: m.intensity.groups.length > 0,
+    layout: stateLayout(m),
   };
   return `#!/usr/bin/env python3
 """${m.name}: Wwise import script, made by Bo's Beatbox.
@@ -247,7 +253,13 @@ with WaapiClient() as client:
     })
 
     step(client, 'tempo %s BPM' % DATA['bpm'], 'ak.wwise.core.object.setProperty', {'object': MUSIC, 'property': 'Tempo', 'value': DATA['bpm']})
-    step(client, 'time signature 4/4', 'ak.wwise.core.object.setProperty', {'object': MUSIC, 'property': 'TimeSignatureUpper', 'value': 4})
+    for state in DATA['layout']:
+        playlist = MUSIC + '\\\\<Music Playlist Container>' + state['name']
+        # Each state at its own tempo and time signature
+        step(client, state['name'] + ': own tempo and time signature', 'ak.wwise.core.object.setProperty', {'object': playlist, 'property': 'OverrideClockSettings', 'value': True})
+        step(client, state['name'] + ': %s BPM' % state['bpm'], 'ak.wwise.core.object.setProperty', {'object': playlist, 'property': 'Tempo', 'value': state['bpm']})
+        step(client, state['name'] + ': %d/%d' % (state['num'], state['den']), 'ak.wwise.core.object.setProperty', {'object': playlist, 'property': 'TimeSignatureUpper', 'value': state['num']})
+        step(client, state['name'] + ': beat value', 'ak.wwise.core.object.setProperty', {'object': playlist, 'property': 'TimeSignatureLower', 'value': state['den']})
     for state in DATA['states']:
         playlist = MUSIC + '\\\\<Music Playlist Container>' + state['name']
         step(client, 'playlist ' + state['name'] + ' loops', 'ak.wwise.core.object.setProperty', {'object': playlist, 'property': 'LoopCount', 'value': 0})
@@ -278,7 +290,7 @@ export function engineReadme(m: AudioManifest, target: EngineTarget): string {
   const slug = m.name.replace(/[^A-Za-z0-9]+/g, '_');
   return `# ${m.name}: FMOD / Wwise package
 
-Made with Bo's Beatbox. ${m.bpm} BPM, 4/4 (a bar is ${bar.toFixed(4)} s)${m.key ? `, in ${m.key}` : ''}.
+Made with Bo's Beatbox. ${m.bpm} BPM, ${(m.timeSignature ?? [4, 4]).join('/')} at the start (a bar is ${bar.toFixed(4)} s there; each state keeps its own tempo and time signature, see the table)${m.key ? `, in ${m.key}` : ''}.
 
 ## What's here
 
@@ -290,9 +302,9 @@ Made with Bo's Beatbox. ${m.bpm} BPM, 4/4 (a bar is ${bar.toFixed(4)} s)${m.key 
 ${fmod ? `- \`fmod/BosBeatbox_${slug}.js\`: builds the music in FMOD Studio.\n` : ''}${wwise ? `- \`wwise/import_${slug}.py\`: builds the music in Wwise.\n` : ''}
 ## States
 
-| State | Bars | Seconds | Timeline start (FMOD) |
-| --- | --- | --- | --- |
-${m.states.map((s, i) => `| ${s.name} | ${s.bars} | ${s.seconds.toFixed(3)} | ${layout[i].start.toFixed(3)} s |`).join('\n')}
+| State | Bars | Seconds | Tempo | Time signature | Timeline start (FMOD) |
+| --- | --- | --- | --- | --- | --- |
+${m.states.map((s, i) => `| ${s.name} | ${s.bars} | ${s.seconds.toFixed(3)} | ${layout[i].bpm} BPM | ${layout[i].num}/${layout[i].den} | ${layout[i].start.toFixed(3)} s |`).join('\n')}
 
 ## Transitions
 

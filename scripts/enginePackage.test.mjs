@@ -31,8 +31,8 @@ const manifest = {
 
 test('states are laid end to end with a bar between', () => {
   assert.deepEqual(stateLayout(manifest), [
-    { name: 'Explore', start: 0, length: 16 },
-    { name: 'Combat', start: 18, length: 8 },
+    { name: 'Explore', start: 0, length: 16, bpm: 120, num: 4, den: 4 },
+    { name: 'Combat', start: 18, length: 8, bpm: 120, num: 4, den: 4 },
   ]);
 });
 
@@ -72,7 +72,7 @@ test('the Wwise script compiles as Python', () => {
 
 test('the README lists the states, transitions and curves', () => {
   const r = engineReadme(manifest, 'both');
-  assert.match(r, /\| Combat \| 4 \| 8\.000 \| 18\.000 s \|/);
+  assert.match(r, /\| Combat \| 4 \| 8\.000 \| 120 BPM \| 4\/4 \| 18\.000 s \|/);
   assert.match(r, /Any state → Combat: stinger \(stinger Danger\)/);
   assert.match(r, /\*\*Percussion\*\*: 0% → silent, 50% → 0\.0 dB/);
 });

@@ -51,11 +51,23 @@ func _state(name: String) -> Dictionary:
 	push_error("No state called %s" % name)
 	return {}
 
+## The state playing now's beat and bar (each state has its own tempo and time signature).
+func _current_state() -> Dictionary:
+	for s in data.states:
+		if s.name == current_name:
+			return s
+	return {}
+
 func _seconds_per_beat() -> float:
-	return 60.0 / float(data.bpm)
+	var st := _current_state()
+	if st.has("beatSeconds"):
+		return float(st.beatSeconds)
+	return float(data.get("beatSeconds", 60.0 / float(data.bpm)))
 
 func _line(unit: String) -> float:
-	return _seconds_per_beat() * (float(data.beatsPerBar) if unit == "bar" else 1.0)
+	var st := _current_state()
+	var per_bar := float(st.get("beatsPerBar", data.beatsPerBar))
+	return _seconds_per_beat() * (per_bar if unit == "bar" else 1.0)
 
 ## A stem group's level at the intensity now (straight lines between its curve's points).
 func level(group) -> float:
@@ -155,7 +167,7 @@ func set_state(name: String, unit := "") -> void:
 		for st in data.stingers:
 			if st.name == r.get("stinger", ""):
 				_play_once_after(streams[st.file], wait)
-				bridge = float(st.get("bridgeBars", 1)) * _line("bar")
+				bridge = float(st.get("bridgeSeconds", float(st.get("bridgeBars", 1)) * _line("bar")))
 	if wait > 0.0:
 		await get_tree().create_timer(wait, true, false, true).timeout
 	if _pending != name:

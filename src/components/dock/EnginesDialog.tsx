@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Loader2, Package } from 'lucide-react';
 import { Modal } from '../timeline/Modal';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useTimelineStore } from '../../store/timelineStore';
 import { buildEnginePackage, type EngineTarget } from '../../audio/enginePackage';
 import { gameKitSong } from '../timeline/gameKitSong';
 import { downloadBlob, type SampleRate } from '../../audio/exportWav';
@@ -19,7 +19,8 @@ export const EnginesDialog: React.FC<{ onClose: () => void }> = ({ onClose }) =>
   const [progress, setProgress] = useState<string | null>(null);
   const clips = useTimelineStore((s) => s.clips);
   const markers = useTimelineStore((s) => s.markers);
-  const sections = useMemo(() => songSections(clips, markers), [clips, markers]);
+  const meter = useSongMeter();
+  const sections = useMemo(() => songSections(clips, markers, meter), [clips, markers, meter]);
   const stems = useTimelineStore((s) => s.tracks.filter((t) => t.stemGroup).length);
   const stingers = useTimelineStore((s) => s.stingers.length);
 

@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Scissors } from 'lucide-react';
 import { Modal } from './Modal';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongMeter, useSongTempo, useTimelineStore } from '../../store/timelineStore';
+import { secondsBetween } from '../../audio/tempoMap';
 import { exactTempo, MAX_TEMPO_NUDGE, planCut, songSections } from '../../store/cutToLength';
 import { formatBpm } from '../../store/timelineTypes';
 import { parseTimecode } from '../../audio/transport';
@@ -23,6 +24,8 @@ export const CutToLengthDialog: React.FC<{ onClose: () => void }> = ({ onClose }
   const clips = useTimelineStore((s) => s.clips);
   const markers = useTimelineStore((s) => s.markers);
   const bpm = useTimelineStore((s) => s.bpm);
+  const tempo = useSongTempo();
+  const meter = useSongMeter();
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const [seconds, setSeconds] = useState(30);
@@ -30,12 +33,23 @@ export const CutToLengthDialog: React.FC<{ onClose: () => void }> = ({ onClose }
   const [nudge, setNudge] = useState(true);
   const [error, setError] = useState('');
 
-  const sections = useMemo(() => songSections(clips, markers), [clips, markers]);
+  const sections = useMemo(() => songSections(clips, markers, meter), [clips, markers, meter]);
   const songBars = sections.length ? sections[sections.length - 1].to - 1 : 0;
+  // Planned in seconds through the tempo changes: each section as long as it lasts, in bars of the
+  // starting tempo (every tempo scales together when the length is fitted, so this stays exact)
+  const timed = useMemo(() => {
+    let at = 1;
+    return sections.map((sec) => {
+      const bars = (secondsBetween(sec.from, sec.to, tempo) * bpm) / 240;
+      const out = { ...sec, from: at, to: at + bars };
+      at += bars;
+      return out;
+    });
+  }, [sections, tempo, bpm]);
   const typedSeconds = typed.trim() ? (/^\d+(\.\d+)?$/.test(typed.trim()) ? Number(typed.trim()) : parseTimecode(typed, fps, dropFrame)) : null;
   const target = typedSeconds && typedSeconds > 0 ? typedSeconds : seconds;
   const targetBars = (target * bpm) / 240;
-  const plan = useMemo(() => planCut(sections, targetBars), [sections, targetBars]);
+  const plan = useMemo(() => planCut(timed, targetBars), [timed, targetBars]);
   const fitted = plan ? exactTempo(plan.bars, target, bpm) : null;
   const useBpm = nudge && fitted !== null ? fitted : bpm;
   const length = plan ? (plan.bars * 240) / useBpm : 0;
@@ -57,7 +71,7 @@ export const CutToLengthDialog: React.FC<{ onClose: () => void }> = ({ onClose }
             <p>
               Make a shorter or longer version of the song, for an ad, a trailer or a social clip. Whole sections (between your markers
               {markers.some((m) => m.anchor === 'bar') ? '' : ', or 8-bar phrases without any'}) are dropped or repeated, and it ends on the song's
-              own ending. The song is now {clock((songBars * 240) / bpm)} ({songBars} bars).
+              own ending. The song is now {clock(secondsBetween(1, 1 + songBars, tempo))} ({songBars} bars).
             </p>
             <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Length">
               {LENGTHS.map((n) => (

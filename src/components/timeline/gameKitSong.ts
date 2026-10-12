@@ -9,6 +9,7 @@ export function gameKitSong(): GameKitSong {
     bpm: s.bpm,
     tempoPoints: s.tempoPoints,
     meter: s.meter,
+    meterPoints: s.meterPoints,
     swing: s.swing,
     tracks: s.tracks,
     clips: s.clips,

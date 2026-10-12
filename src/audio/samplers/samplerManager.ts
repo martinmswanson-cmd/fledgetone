@@ -359,7 +359,8 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
    * the rate it started with, so bent down it would stop early).
    */
   const sounding: Array<{ src: Source; note: string; until: number; base: number; played: number; last: number; rate: number }> = [];
-  const releaseSeconds = () => Tone.Time(sampler.release).toSeconds();
+  // (Read in the sampler's own context: in an export, the render's tempo, not the live one)
+  const releaseSeconds = () => sampler.toSeconds(sampler.release);
   /** Start `trigger`'s notes, keep their sources (bent by the bend now) until `until`. */
   const started = (notes: string[], until: number, trigger: () => void, at: number) => {
     const before = new Set(allSources());
@@ -380,7 +381,7 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
       if (!loaded || notes.length === 0) return; // still downloading: skip rather than throw
       const at = time ?? Tone.now();
       onNote?.(at);
-      const end = at + Tone.Time(duration).toSeconds();
+      const end = at + sampler.toSeconds(duration);
       prune(at);
       // Attack and release apart (what triggerAttackRelease does), so the sources can be kept
       started(

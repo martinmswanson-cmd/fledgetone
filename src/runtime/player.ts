@@ -38,6 +38,9 @@ function songOf(p: ProjectSnapshot): GameKitSong {
   return {
     name: p.name,
     bpm: p.bpm,
+    tempoPoints: p.tempoPoints ?? [],
+    meter: p.meter,
+    meterPoints: p.meterPoints ?? [],
     swing: p.swing,
     tracks: p.tracks.map((t) => ({ ...t, fx: normalizeTrackFx(t.fx) })),
     clips: p.clips,
