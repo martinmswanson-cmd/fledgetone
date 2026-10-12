@@ -10,6 +10,7 @@ import {
   exportCues,
   exportFrames,
   renderArrangement,
+  renderIntroLoop,
   renderStems,
   ringOutSeconds,
   SAMPLE_RATES,
@@ -21,12 +22,15 @@ import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb, NORMALIZE_CEI
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
+import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encoders';
+import type { AudioFormat } from '../../audio/encoders';
 import { barToSeconds, formatSmpte } from '../../audio/transport';
 import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
 import type { Track } from '../../store/timelineTypes';
 import { Modal } from './Modal';
 
-type Range = 'song' | 'loop';
+/** 'game': an intro (bar 1 to the loop's In) and the loop region as a seamless loop, for games. */
+type Range = 'song' | 'loop' | 'game';
 type What = 'mixdown' | 'stems';
 
 interface ExportSettings {
@@ -39,9 +43,12 @@ interface ExportSettings {
   bypassMaster: boolean;
   /** Mixdown only: turn the file up or down to the loudness streaming services play at. */
   normalize: boolean;
+  format: AudioFormat;
+  /** Intro + loop as WAV: also one file holding both, with the loop marked in it (Godot, samplers). */
+  loopFile: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true, normalize: false };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true, normalize: false, format: 'wav', loopFile: true };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -56,13 +63,15 @@ function loadSettings(): ExportSettings {
     if (typeof raw !== 'object' || raw === null) return d;
     const r = raw as Record<string, unknown>;
     return {
-      range: oneOf(r.range, ['song', 'loop'] as const, d.range),
+      range: oneOf(r.range, ['song', 'loop', 'game'] as const, d.range),
       what: oneOf(r.what, ['mixdown', 'stems'] as const, d.what),
       ending: oneOf(r.ending, ['ringOut', 'exact', 'seamless'] as const, d.ending),
       sampleRate: oneOf(r.sampleRate, SAMPLE_RATES, d.sampleRate),
       bitDepth: oneOf(r.bitDepth, BIT_DEPTHS, d.bitDepth),
       bypassMaster: typeof r.bypassMaster === 'boolean' ? r.bypassMaster : d.bypassMaster,
       normalize: typeof r.normalize === 'boolean' ? r.normalize : d.normalize,
+      format: oneOf(r.format, AUDIO_FORMATS, d.format),
+      loopFile: typeof r.loopFile === 'boolean' ? r.loopFile : d.loopFile,
     };
   } catch {
     return d;
@@ -89,8 +98,8 @@ function durationLabel(seconds: number): string {
   return `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`;
 }
 
-/** "<base> - <track>.wav" per stem, numbered " 2", " 3"... where names repeat (ignoring case, as most file systems do). */
-function stemFileNames(base: string, tracks: Track[]): string[] {
+/** "<base> - <track>.<ext>" per stem, numbered " 2", " 3"... where names repeat (ignoring case, as most file systems do). */
+function stemFileNames(base: string, tracks: Track[], ext = 'wav'): string[] {
   const used = new Set<string>();
   return tracks.map((track) => {
     // Cleaned apart, so a long project name can't cut the track name off
@@ -98,7 +107,7 @@ function stemFileNames(base: string, tracks: Track[]): string[] {
     let name = stem;
     for (let n = 2; used.has(name.toLowerCase()); n++) name = `${stem} ${n}`;
     used.add(name.toLowerCase());
-    return `${name}.wav`;
+    return `${name}.${ext}`;
   });
 }
 
@@ -177,9 +186,14 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const songBars = songEnd - 1;
   const loopBars = loop.outBar - loop.inBar;
 
-  // The choices in effect: an empty song can't be exported, and only the loop region can be a seamless loop
-  const range: Range = settings.range === 'song' && songBars > 0 ? 'song' : 'loop';
-  const ending: ExportEnding = range === 'song' && settings.ending === 'seamless' ? 'ringOut' : settings.ending;
+  // The choices in effect: an empty song can't be exported, only the loop region can be a seamless
+  // loop, and an intro + loop needs an intro (the loop starting after bar 1)
+  const hasIntro = loop.inBar > 1;
+  const range: Range = settings.range === 'game' && hasIntro ? 'game' : settings.range === 'song' && songBars > 0 ? 'song' : 'loop';
+  const game = range === 'game';
+  const ending: ExportEnding = game ? 'seamless' : range === 'song' && settings.ending === 'seamless' ? 'ringOut' : settings.ending;
+  const format = settings.format;
+  const ext = FORMAT_EXTENSION[format];
   const masterFx = { reverbDecay, delayTime, delayFeedback };
   const planned: RenderOptions = {
     tracks,
@@ -200,9 +214,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const stemsOnly = settings.what === 'stems';
   const canExport = stemsOnly ? stems.length > 0 : range === 'loop' || songBars > 0;
 
-  const suffix = range === 'song' ? '' : ending === 'seamless' ? ' (seamless loop)' : ' (loop)';
+  const suffix = range === 'song' || game ? '' : ending === 'seamless' ? ' (seamless loop)' : ' (loop)';
   const fileBase = `${safeFileName(projectName)}${suffix}`;
-  const fileName = stemsOnly ? `${fileBase} stems.zip` : `${fileBase}.wav`;
+  const fileName = game ? `${fileBase} ${stemsOnly ? 'layers' : 'game music'}.zip` : stemsOnly ? `${fileBase} stems.zip` : `${fileBase}.${ext}`;
+  const introFrames = Math.round(((loop.inBar - 1) * 240 * settings.sampleRate) / bpm);
   const tail = ringOutSeconds(masterFx);
 
   const startExport = async () => {
@@ -223,12 +238,51 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       bypassMaster: stemsOnly && settings.bypassMaster,
       signal: controller.signal,
     };
+    const encodeOpts = { bitDepth: settings.bitDepth, cues: exportCues(opts) };
     try {
-      if (stemsOnly) {
-        const rendered = await renderStems(opts, settings.bitDepth, (progress, stem) =>
-          setStatus({ kind: 'rendering', fileName, progress, detail: `Stem ${stem.index + 1} of ${stem.count}: ${stem.track.name}` })
+      if (game) {
+        const { parts, sampleRate } = await renderIntroLoop(opts, stemsOnly, (progress, detail) => setStatus({ kind: 'rendering', fileName, progress, detail }));
+        controller.signal.throwIfAborted();
+        // Loudness is the loop's (what the player hears for longest); normalizing moves intro and loop together
+        setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Measuring loudness' });
+        let reading = stemsOnly ? null : await measureLoudness(parts[0].loop, sampleRate, controller.signal);
+        let note = '';
+        if (reading && settings.normalize) {
+          const { gainDb, limited } = normalizeGainDb(reading);
+          const g = Math.pow(10, gainDb / 20);
+          if (gainDb !== 0) for (const ch of [...parts[0].intro, ...parts[0].loop]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
+          reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
+          note = limited ? ` (held under the target so peaks stay under ${NORMALIZE_CEILING_DBTP} dBTP)` : '';
+        }
+        const files: Array<{ name: string; data: Blob }> = [];
+        for (const [i, part] of parts.entries()) {
+          const name = part.track ? stemFileNames(fileBase, parts.map((p) => p.track!), '')[i].replace(/\.$/, '') : fileBase;
+          setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${part.track ? part.track.name : 'the music'}` });
+          files.push({ name: `${name} intro.${ext}`, data: await encodeAudio(part.intro, sampleRate, format, { bitDepth: settings.bitDepth }) });
+          files.push({ name: `${name} loop.${ext}`, data: await encodeAudio(part.loop, sampleRate, format, { bitDepth: settings.bitDepth }) });
+          if (format === 'wav' && settings.loopFile) {
+            const whole = part.intro.map((ch, c) => {
+              const out = new Float32Array(ch.length + part.loop[c].length);
+              out.set(ch);
+              out.set(part.loop[c], ch.length);
+              return out;
+            });
+            const start = part.intro[0].length;
+            files.push({ name: `${name} intro+loop (loop points).wav`, data: await encodeAudio(whole, sampleRate, 'wav', { bitDepth: settings.bitDepth, loop: { start, end: start + part.loop[0].length } }) });
+          }
+          controller.signal.throwIfAborted();
+        }
+        setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
+        downloadBlob(await createZip(files), fileName);
+        showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}` : ''}`);
+      } else if (stemsOnly) {
+        const rendered = await renderStems(
+          opts,
+          settings.bitDepth,
+          (progress, stem) => setStatus({ kind: 'rendering', fileName, progress, detail: `Stem ${stem.index + 1} of ${stem.count}: ${stem.track.name}` }),
+          format === 'wav' ? undefined : (channels, sampleRate) => encodeAudio(channels, sampleRate, format, encodeOpts)
         );
-        const names = stemFileNames(fileBase, rendered.map((r) => r.track));
+        const names = stemFileNames(fileBase, rendered.map((r) => r.track), ext);
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
         const zip = await createZip(rendered.map((r, i) => ({ name: names[i], data: r.wav })));
         controller.signal.throwIfAborted();
@@ -245,7 +299,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
           note = limited ? `. That's ${(NORMALIZE_TARGET_LUFS - reading.integrated).toFixed(1)} dB under the target, so peaks stay under ${NORMALIZE_CEILING_DBTP} dBTP. To get louder, turn on the master OTT and raise its Out gain` : '';
         }
-        downloadBlob(encodeWav(audio, settings.bitDepth, exportCues(opts)), fileName);
+        if (format !== 'wav') setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${format.toUpperCase()}` });
+        downloadBlob(format === 'wav' ? encodeWav(audio, settings.bitDepth, exportCues(opts)) : await encodeAudio(channelsOf(audio), audio.sampleRate, format, encodeOpts), fileName);
         showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}`);
       }
       onClose();
@@ -261,7 +316,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const percent = Math.round(status.progress * 100);
     // Closing the dialog stops the render (see the effect above); Cancel keeps it open to try again
     return (
-      <Modal title="Export audio (WAV)" onClose={onClose}>
+      <Modal title="Export audio" onClose={onClose}>
         <div className="flex items-center gap-2 text-forge-text">
           <Loader2 className="w-4 h-4 shrink-0 animate-spin text-cyan-400" />
           <span className="min-w-0 break-words">Rendering {status.fileName}…</span>
@@ -294,8 +349,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     );
   }
 
-  const rangeDetail =
-    range === 'song'
+  const rangeDetail = game
+    ? `For games: an intro (bars 1 to ${formatBarCount(loop.inBar)}, ${lengthLabel(loop.inBar - 1, bpm)}) to play once, then the loop region (bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}, ${lengthLabel(loopBars, bpm)}) as a seamless loop to repeat. The intro leads straight into the loop.`
+    : range === 'song'
       ? `Bar 1 to the end of the last clip: ${formatBarCount(songBars)} bars, ${lengthLabel(songBars, bpm)}.`
       : `Bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loopBars, bpm)}. Starts at ${formatSmpte(loop.inBar, bpm, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
   const endingDetail =
@@ -306,7 +362,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         : `Exactly one loop, ${frames.toLocaleString()} samples. Its start already holds what rings on from the pass before, so it repeats without a gap or click. (Renders ${passes} passes and keeps the last.)`;
 
   return (
-    <Modal title="Export audio (WAV)" onClose={onClose}>
+    <Modal title="Export audio" onClose={onClose}>
       <p>Renders the current mix (volume, pan, mute, solo, every effect and the master volume) faster than real time. Muted and un-soloed tracks are left out.</p>
 
       <Section title="Range">
@@ -317,6 +373,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           options={[
             { value: 'song', label: 'Whole song', disabled: songBars <= 0, title: songBars <= 0 ? 'No audible track has clips' : 'Bar 1 to the end of the last clip' },
             { value: 'loop', label: 'Loop region', title: 'Loop In to Out' },
+            { value: 'game', label: 'Intro + loop', disabled: !hasIntro, title: hasIntro ? 'For games: an intro, then a seamless loop' : 'Move the loop In past bar 1: everything before it is the intro' },
           ]}
         />
         <p>{rangeDetail}</p>
@@ -328,15 +385,17 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           value={settings.what}
           onChange={(value) => update({ what: value })}
           options={[
-            { value: 'mixdown', label: 'Mixdown', title: 'One stereo WAV of the whole mix' },
-            { value: 'stems', label: 'Stems', title: 'One WAV per track, in a .zip' },
+            { value: 'mixdown', label: 'Mixdown', title: 'One stereo file of the whole mix' },
+            { value: 'stems', label: game ? 'Layers' : 'Stems', title: game ? 'An intro and a loop per track, for adaptive music' : 'One file per track, in a .zip' },
           ]}
         />
         {stemsOnly ? (
           <>
             <p>
               {stems.length
-                ? `${stems.length} WAV file${stems.length === 1 ? '' : 's'} in one .zip, one per audible track with clips in the range (${stems.map((t) => t.name).join(', ')}). All start at the range start and have the same length.`
+                ? game
+                  ? `An intro and a loop file for each of ${stems.length} track${stems.length === 1 ? '' : 's'} (${stems.map((t) => t.name).join(', ')}), in one .zip. They all line up, so a game can play them together and fade layers in and out as the action changes.`
+                  : `${stems.length} ${format.toUpperCase()} file${stems.length === 1 ? '' : 's'} in one .zip, one per audible track with clips in the range (${stems.map((t) => t.name).join(', ')}). All start at the range start and have the same length.`
                 : 'No audible track has clips in this range.'}
             </p>
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
@@ -358,7 +417,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           </>
         ) : (
           <>
-            <p>One stereo WAV of everything that plays. When it's done, its loudness and true peak show at the bottom of the screen.</p>
+            <p>
+              {game ? 'An intro file and a loop file of everything that plays, in one .zip.' : `One stereo ${format.toUpperCase()} of everything that plays.`} When it's done, its loudness and true peak
+              show at the bottom of the screen.
+            </p>
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
               <span>
@@ -374,7 +436,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         )}
       </Section>
 
-      <Section title="Ending">
+      {!game && <Section title="Ending">
         <Segmented<ExportEnding>
           label="Ending"
           value={ending}
@@ -391,9 +453,19 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           ]}
         />
         <p>{endingDetail}</p>
-      </Section>
+      </Section>}
 
       <Section title="Format">
+        <Segmented<AudioFormat>
+          label="File type"
+          value={format}
+          onChange={(value) => update({ format: value })}
+          options={[
+            { value: 'wav', label: 'WAV', title: 'Uncompressed, exact. Holds markers and loop points' },
+            { value: 'mp3', label: 'MP3', title: '320 kb/s: small, plays everywhere' },
+            { value: 'ogg', label: 'OGG', title: 'Ogg Vorbis, about 256 kb/s: small, and what Godot and Unity loop best' },
+          ]}
+        />
         <div className="grid grid-cols-1 sm:grid-cols-[2fr_3fr] gap-1.5">
           <Segmented<SampleRate>
             label="Sample rate"
@@ -404,7 +476,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               { value: 48000, label: '48 kHz' },
             ]}
           />
-          <Segmented<BitDepth>
+          {format === 'wav' && <Segmented<BitDepth>
             label="Bit depth"
             value={settings.bitDepth}
             onChange={(value) => update({ bitDepth: value })}
@@ -413,11 +485,21 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               { value: 24, label: '24-bit' },
               { value: 32, label: '32-bit float' },
             ]}
-          />
+          />}
         </div>
+        {game && format === 'wav' && (
+          <label className="flex items-start gap-2 cursor-pointer text-forge-text">
+            <input type="checkbox" checked={settings.loopFile} onChange={(e) => update({ loopFile: e.target.checked })} className="mt-0.5 accent-cyan-400" />
+            <span>
+              Also one file with loop points
+              <span className="block text-forge-muted">The intro and the loop in one WAV, with the loop marked in it: Godot and most samplers then play the intro once and loop the rest on their own.</span>
+            </span>
+          </label>
+        )}
         <p>
           Stereo. Peaks are kept just under full scale, so nothing clips.
-          {cueCount > 0 &&
+          {format !== 'wav' && ' MP3 and OGG are compressed: a small file that sounds the same to most ears. An MP3 can have a few milliseconds of silence added at its start, so for seamless loops in games use OGG or WAV.'}
+          {format === 'wav' && !game && cueCount > 0 &&
             ` ${cueCount === 1 ? 'The marker in the range goes' : `The ${cueCount} markers in the range go`} into ${
               stemsOnly ? 'every file' : 'the file'
             } as ${cueCount === 1 ? 'a cue point, which DAWs and game audio tools show as a marker' : 'cue points, which DAWs and game audio tools show as markers'}.`}
@@ -432,7 +514,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           {fileName}
           <span className="text-forge-muted">
             {' · '}
-            {durationLabel(frames / settings.sampleRate)}
+            {game ? `intro ${durationLabel(introFrames / settings.sampleRate)} + loop ${durationLabel(frames / settings.sampleRate)}` : durationLabel(frames / settings.sampleRate)}
           </span>
         </span>
         <button

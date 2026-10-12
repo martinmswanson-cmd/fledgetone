@@ -444,17 +444,29 @@ In the MIDI popover, tick **Computer keyboard piano**. `A` `S` `D` `F` `G` `H` `
 
 The **metronome** button in the toolbar clicks on every beat while playing, louder on beat 1 of each bar. It follows the tempo, ignores swing, and is never in an exported WAV. The count-in clicks even when the metronome is off.
 
-## Exporting audio (WAV)
+## Exporting audio
 
 Click **Export WAV**. The dialog has four choices, and remembers them in this browser:
 
-- **Range**: **Whole song** (bar 1 to the end of the last clip that plays) or **Loop region** (In to Out, whether or not the loop is on). For the loop, the dialog shows where it starts as a timecode at your frame rate.
+- **Range**: **Whole song** (bar 1 to the end of the last clip that plays), **Loop region** (In to Out, whether or not the loop is on), or **Intro + loop** (for games, below). For the loop, the dialog shows where it starts as a timecode at your frame rate.
 - **Export**: **Mixdown** (one stereo WAV of everything that plays) or **Stems**. For a mixdown, **Normalize to -14 LUFS** turns the whole file up or down to the loudness Spotify, YouTube and Apple Music play at, without letting its true peak pass -1 dBTP. If that would push the peak too high, the file stops short of -14 LUFS and the message says by how much; turn on the master **OTT** and raise its **Out gain** to get louder. When a mixdown finishes, its loudness and peak show at the bottom of the screen. **Stems** (one WAV per track that plays and has clips in the range, in one .zip). Stems all start at the range start and have the same length, so they line up in another program, and each includes the track's effects, sends and the shared reverb and echo. **Bypass master compressor & limiter** (on by default) makes the stems add up to the mix as it is before the master compressor and limiter.
 - **Ending**:
   - **Ring out**: the range, then a few seconds more so reverb and echo tails ring out (the dialog says how long).
   - **Exact length**: exactly the range, to the sample, with a 5 ms fade at the very end so it doesn't click.
   - **Seamless loop** (Loop region only): exactly one loop long, with the tails of the pass before already ringing at its start, so it repeats in a game engine or looping player without a gap or click. It stays exactly on the beat at any tempo, fractional ones included.
-- **Format**: **44.1 kHz** or **48 kHz**; **16-bit**, **24-bit** or **32-bit float**. Always stereo.
+- **Format**: the **file type**: **WAV** (uncompressed and exact, the only one that holds markers and loop points), **MP3** (320 kb/s, plays everywhere) or **OGG** (Ogg Vorbis, about 256 kb/s, the best compressed format for games: Godot and Unity loop it without a gap). Then **44.1 kHz** or **48 kHz**, and for WAV **16-bit**, **24-bit** or **32-bit float**. Always stereo. An MP3 can have a few milliseconds of silence added at its start by the format itself, so use OGG or WAV for anything that has to loop seamlessly.
+
+### Music for games: intro + loop, and layers
+
+Game music usually plays an intro once and then loops the rest for as long as the player stays. Set the loop region to the part that should repeat (everything before its **In** is the intro) and choose **Range: Intro + loop**. The export is a .zip with:
+
+- `<name> intro.<ext>`: bar 1 up to the loop's In, exactly, ending without a fade so it runs straight into the loop.
+- `<name> loop.<ext>`: the loop region as a seamless loop (see **Seamless loop** above): exactly as long as the loop, and it repeats without a gap or click.
+- For WAV, also `<name> intro+loop (loop points).wav` (untick **Also one file with loop points** to leave it out): both in one file, with the loop marked inside it. Godot (set the import's loop mode to detect from the WAV) and most samplers play the intro once and loop the rest on their own.
+
+In your game, play the intro, then start the loop the moment the intro ends, set to repeat. Intro and loop share one level and one reverb, so the change can't be heard. **Normalize** measures the loop and moves both together.
+
+Choose **Export: Layers** instead of Mixdown for **adaptive music**: an intro and a loop for every track that plays, all exactly the same lengths, so the game can play them together and fade layers in and out (drums when a fight starts, strings when the player finds something). They share one level, so turned all the way up they make the mix.
 
 The footer shows the file name and its exact length. Exports include the whole mix: volumes, pans, mutes and solos, every effect, sends, the master reverb and delay, the master OTT and Stereo Width, swing, and the master volume. The first beat is as loud as the rest, so a kick right at the start keeps its attack. If the mix would clip, the file is turned down to just under full scale (stems all by the same amount, so their levels still match).
 
