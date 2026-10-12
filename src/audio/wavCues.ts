@@ -90,3 +90,32 @@ export function cueChunks(cues: readonly WavCue[]): Uint8Array<ArrayBuffer> {
   });
   return bytes;
 }
+
+/**
+ * A 'smpl' chunk marking one forward loop from frame `start` up to (not including) `end`: Godot,
+ * samplers and most audio editors read it, and a game that plays the file loops that part after
+ * playing what comes before it once.
+ */
+export function loopChunk(sampleRate: number, start: number, end: number): Uint8Array<ArrayBuffer> {
+  const bytes = new Uint8Array(8 + 36 + 24);
+  const view = new DataView(bytes.buffer);
+  bytes.set(ascii('smpl'), 0);
+  const u32 = (at: number, v: number) => view.setUint32(at, v >>> 0, true);
+  u32(4, 36 + 24);
+  u32(8, 0); // manufacturer
+  u32(12, 0); // product
+  u32(16, Math.round(1e9 / sampleRate)); // sample period, nanoseconds
+  u32(20, 60); // MIDI unity note (C4)
+  u32(24, 0); // pitch fraction
+  u32(28, 0); // SMPTE format
+  u32(32, 0); // SMPTE offset
+  u32(36, 1); // one loop
+  u32(40, 0); // no sampler data
+  u32(44, 0); // loop id
+  u32(48, 0); // forward loop
+  u32(52, start);
+  u32(56, end - 1); // the loop's last frame, inclusive
+  u32(60, 0); // fraction
+  u32(64, 0); // play count: forever
+  return bytes;
+}

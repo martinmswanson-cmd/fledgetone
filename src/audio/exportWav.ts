@@ -12,7 +12,7 @@ import { decodeSound, useSoundLibrary } from './soundLibrary';
 import { isSamplerKey, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar, ticksToBar } from './transport';
-import { cueChunks, markerCues } from './wavCues';
+import { cueChunks, loopChunk, markerCues } from './wavCues';
 import type { WavCue } from './wavCues';
 import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 
@@ -63,6 +63,8 @@ export interface RenderOptions {
   markers?: Marker[];
   /** Leave the master volume out (a freeze: live playback applies it to the frozen sound anyway). */
   ignoreMasterVolume?: boolean;
+  /** An exact-length render ends without its 5 ms fade (an intro that leads straight into a loop). */
+  noEndFade?: boolean;
 }
 
 /** Seconds of audio rendered between scheduling passes. */
@@ -301,7 +303,9 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
 export async function renderStems(
   opts: RenderOptions,
   bitDepth: BitDepth,
-  onProgress?: (fraction: number, stem: { track: Track; index: number; count: number }) => void
+  onProgress?: (fraction: number, stem: { track: Track; index: number; count: number }) => void,
+  /** How each stem's samples become a file (default: WAV at `bitDepth`, with the markers as cue points). */
+  encode?: (channels: Float32Array[], sampleRate: number) => Promise<Blob>
 ): Promise<Array<{ track: Track; wav: Blob }>> {
   const tracks = stemTracks(opts);
   if (!tracks.length) throw new Error('no audible track has clips in this range');
@@ -329,9 +333,62 @@ export async function renderStems(
     const samples = new Float32Array(await stem.samples.arrayBuffer());
     const channels = [samples.subarray(0, stem.length), samples.subarray(stem.length)];
     scale(channels, gain);
-    stems.push({ track: stem.track, wav: encodeChannels(channels, sampleRate, bitDepth, cues) });
+    stems.push({ track: stem.track, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues) });
   }
   return stems;
+}
+
+/** One file pair of an intro + loop export: the mix, or one track's layer. */
+export interface IntroLoopPart {
+  /** The track, for a layer; absent for the mix. */
+  track?: Track;
+  intro: Float32Array[];
+  loop: Float32Array[];
+}
+
+/**
+ * Render a game's music the way game engines play it: an intro, from bar 1 to the loop's In,
+ * played once, then the loop region as a seamless loop, repeated. The intro ends without a fade,
+ * straight into the loop. With `layers`, one pair per track that plays (for adaptive music: the
+ * game fades layers in and out, and they all line up); otherwise one pair for the mix. Every file
+ * shares one reverb and one gain (set by the loudest peak of all, never up), so intro and loop,
+ * and the layers, match each other.
+ */
+export async function renderIntroLoop(
+  opts: RenderOptions,
+  layers: boolean,
+  onProgress?: (fraction: number, detail: string) => void
+): Promise<{ parts: IntroLoopPart[]; sampleRate: number }> {
+  const inBar = opts.startBar;
+  const outBar = opts.endBar;
+  if (inBar <= 1) throw new Error('the loop starts at bar 1, so there is no intro: move the loop In later');
+  const intro: RenderOptions = { ...opts, startBar: 1, endBar: inBar, ending: 'exact', noEndFade: true, markers: [] };
+  const loop: RenderOptions = { ...opts, startBar: inBar, endBar: outBar, ending: 'seamless', markers: [] };
+  const groups: Array<{ track?: Track; tracks: Track[] }> = layers
+    ? stemTracks({ ...opts, startBar: 1, endBar: outBar }).map((t) => ({ track: t, tracks: [t] }))
+    : [{ tracks: audibleTracks(opts.tracks) }];
+  if (!groups.length || !groups[0].tracks.length) throw new Error('no audible track has clips in this range');
+  let reverbImpulse = opts.reverbImpulse;
+  let sampleRate: number = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  let peak = 0;
+  const parts: IntroLoopPart[] = [];
+  const steps = groups.length * 2;
+  for (const [i, group] of groups.entries()) {
+    const name = group.track ? `${group.track.name}: ` : '';
+    const a = await renderTracks({ ...intro, reverbImpulse }, group.tracks, (f) => onProgress?.((2 * i + f) / steps, `${name}intro`));
+    reverbImpulse ??= a.reverbImpulse;
+    const b = await renderTracks({ ...loop, reverbImpulse }, group.tracks, (f) => onProgress?.((2 * i + 1 + f) / steps, `${name}loop`));
+    sampleRate = a.sampleRate;
+    peak = Math.max(peak, peakOf(a.channels), peakOf(b.channels));
+    // Copies: the renders' channels are views into much larger buffers
+    parts.push({ track: group.track, intro: a.channels.map((c) => c.slice()), loop: b.channels.map((c) => c.slice()) });
+  }
+  const gain = peakGain(peak);
+  for (const part of parts) {
+    scale(part.intro, gain);
+    scale(part.loop, gain);
+  }
+  return { parts, sampleRate };
 }
 
 /**
@@ -486,7 +543,7 @@ async function renderTracks(
   }
   // Cut to the sample: the file starts where the range start comes out (a seamless loop's last pass)
   const channels = channelsOf(rendered).map((ch) => ch.subarray(plan.keepFrom, plan.keepFrom + plan.keepLength));
-  if (ending === 'exact') fadeOut(channels, Math.round(EXACT_FADE_SECONDS * sampleRate));
+  if (ending === 'exact' && !opts.noEndFade) fadeOut(channels, Math.round(EXACT_FADE_SECONDS * sampleRate));
   return { channels, sampleRate, reverbImpulse: graph.reverbImpulse() };
 
   /** Mix chain, one strip + instrument per track, and the Transport, inside the offline context. */
@@ -640,7 +697,14 @@ export function encodeWav(audio: AudioBuffer, bitDepth: BitDepth = 16, cues: rea
   return encodeChannels(channelsOf(audio), audio.sampleRate, bitDepth, cues);
 }
 
-export function encodeChannels(data: Float32Array[], sampleRate: number, bitDepth: BitDepth, cues: readonly WavCue[] = []): Blob {
+export function encodeChannels(
+  data: Float32Array[],
+  sampleRate: number,
+  bitDepth: BitDepth,
+  cues: readonly WavCue[] = [],
+  /** Frames [start, end) the file loops (written as a 'smpl' chunk). */
+  loop?: { start: number; end: number }
+): Blob {
   const channels = data.length;
   const frames = data[0].length;
   const float = bitDepth === 32;
@@ -651,7 +715,11 @@ export function encodeChannels(data: Float32Array[], sampleRate: number, bitDept
   const headerSize = 12 + 8 + formatSize + (float ? 12 : 0) + 8;
   // Chunks after the audio (readers that expect the audio straight after the header still find
   // it there). A chunk of odd length is padded to an even one before the next.
-  const trailer = cueChunks(cues);
+  const cueBytes = cueChunks(cues);
+  const loopBytes = loop ? loopChunk(sampleRate, loop.start, loop.end) : new Uint8Array(0);
+  const trailer = new Uint8Array(cueBytes.length + loopBytes.length);
+  trailer.set(cueBytes);
+  trailer.set(loopBytes, cueBytes.length);
   const pad = trailer.length ? dataSize & 1 : 0;
   const view = new DataView(new ArrayBuffer(headerSize + dataSize + pad + trailer.length));
 
