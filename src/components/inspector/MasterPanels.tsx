@@ -1,5 +1,5 @@
-import React from 'react';
-import { Activity, Gauge, MoveHorizontal, RotateCcw } from 'lucide-react';
+import React, { useState } from 'react';
+import { Activity, Gauge, MoveHorizontal, RotateCcw, Timer } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { defaultMasterSettings, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
 import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
@@ -8,6 +8,8 @@ import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudn
 const show = (v: number, unit: (v: number) => string) => (Number.isFinite(v) ? unit(v) : `– ${unit(0).split(' ')[1]}`);
 import { resetLoudness } from '../../audio/loudnessMeter';
 import { useLoudness } from './useLoudness';
+import { choosePlaybackMode, chosenPlaybackMode, PLAYBACK_MODE } from '../../audio/playbackMode';
+import type { PlaybackMode } from '../../audio/playbackMode';
 import { FxSlider, InsertPanel } from './InsertFx';
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -119,11 +121,58 @@ export const WidthPanel: React.FC = () => {
   );
 };
 
-/** The master section's own effects, above the reverb and delay returns. */
+const MODES: Array<{ mode: PlaybackMode; label: string; detail: string }> = [
+  { mode: 'responsive', label: 'Responsive', detail: 'The least delay between a key you play and its sound.' },
+  { mode: 'stable', label: 'Stable', detail: 'A bigger audio buffer and more time to schedule notes: busy moments in big songs play through instead of crackling. Play starts about a quarter of a second later, and live playing has a few hundredths of a second more delay.' },
+];
+
+/** How this browser buffers playback (not saved with the project). Applies after a reload. */
+export const PlaybackPanel: React.FC = () => {
+  const [chosen, setChosen] = useState(chosenPlaybackMode);
+  return (
+    <div className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
+      <div className="flex items-center gap-1.5">
+        <Timer className="w-3.5 h-3.5 text-sky-400" />
+        <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-white">Playback</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Playback buffer">
+        {MODES.map((m) => (
+          <button
+            key={m.mode}
+            type="button"
+            aria-pressed={chosen === m.mode}
+            title={m.detail}
+            onClick={() => {
+              choosePlaybackMode(m.mode);
+              setChosen(m.mode);
+            }}
+            className={`py-1 rounded border text-[11px] font-mono font-bold transition ${
+              chosen === m.mode ? 'bg-sky-500/25 border-sky-400 text-sky-100' : 'bg-black/40 text-forge-muted border-forge-border hover:text-white'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-forge-muted">{MODES.find((m) => m.mode === chosen)!.detail}</p>
+      {chosen !== PLAYBACK_MODE && (
+        <div className="flex items-center justify-between gap-2 text-[10px] text-amber-200">
+          <span>Takes effect after a reload. Your work is kept: click Restore after it.</span>
+          <button type="button" onClick={() => window.location.reload()} className="shrink-0 px-2 py-0.5 rounded border border-amber-400/60 font-mono hover:bg-amber-500/15">
+            Reload
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** The master section's own effects, above the reverb and delay returns, and the playback buffer. */
 export const MasterPanels: React.FC = () => (
   <div className="flex flex-col gap-3">
     <LoudnessPanel />
     <OttPanel />
     <WidthPanel />
+    <PlaybackPanel />
   </div>
 );

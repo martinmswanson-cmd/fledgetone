@@ -333,6 +333,8 @@ The Inspector's second tab, **Master**, works on the whole mix. At the top:
 - **OTT**: the multiband compressor of bass music. It splits the mix into lows, mids and highs, turns each band's loud parts down and its quiet parts up, and adds back the level it takes, so the mix gets denser, brighter and louder. **Depth** is how much (start around 20 to 40%), **Time** how fast it reacts (snappy to slow), **In gain** drives it harder and **Out gain** turns the result up or down. Raising Out gain pushes the mix into the limiter, which is how you make a master louder.
 - **Stereo Width**: makes the mix wider (up to 200%) or narrower (0% is mono). **Keep the bass in the middle** (on by default) leaves everything below about 120 Hz centred however wide the rest goes, so the low end stays strong on club systems and phones.
 
+- **Playback**: how this browser buffers live audio. **Responsive** (the default) has the least delay between a key you play and its sound. **Stable** gives the audio a bigger buffer and more time to schedule notes, so busy moments in big songs play through instead of crackling; Play then starts about a quarter of a second later, and live playing has a few hundredths of a second more delay. It's a setting for this browser, not the project, and takes effect after a reload (the panel offers one; your work is kept, click **Restore** after it).
+
 OTT and Stereo Width sit between the master compressor and the limiter, are off in a new project, are saved with it, can be undone, and switch on or off while the song plays without a gap. They're in exports too.
 
 Under them are the two effects every track shares through its sends:
@@ -527,7 +529,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 - Projects that use Wobble Bass, Growl Bass, Reese Bass, Supersaw, Pluck, FX, Audio tracks or the Slicer only open in this version of the app or later.
 - Recorded instruments (piano, strings, winds and others) download their sounds the first time you use them, so they need an internet connection. Everything else works offline.
 - Muted tracks, and tracks silenced by another track's Solo, don't play their notes at all, which saves processing power on big songs.
-- If playback stutters on a big song, freeze the tracks you aren't changing (the snowflake in each track's header), mute tracks you aren't working on, or switch off effects you don't need. Exporting never stutters, it just takes longer.
+- If playback stutters on a big song, freeze the tracks you aren't changing (the snowflake in each track's header), switch **Playback** to **Stable** in the Inspector's Master tab, mute tracks you aren't working on, or switch off effects you don't need. Exporting never stutters, it just takes longer.
 - Sounds you load are kept in this browser; a private window may not allow it. Save the project to keep its sounds safe.
 
 ## Credits

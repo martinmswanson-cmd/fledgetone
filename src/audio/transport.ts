@@ -96,7 +96,18 @@ export function getAudiblePositionBar(): number {
   const now = Tone.immediate();
   if (heading && now < heading.at) return heading.bar;
   heading = null;
-  return ticksToBar(Tone.Transport.getTicksAtTime(now));
+  // What leaves the speakers now was rendered the output latency ago (larger with Stable playback)
+  return ticksToBar(Tone.Transport.getTicksAtTime(Math.max(0, now - outputLatency())));
+}
+
+/**
+ * Seconds from a sample leaving the graph to the listener hearing it, from the browser's own
+ * context (Tone's wrapper doesn't pass these on; see latency.ts, which can't be imported here).
+ */
+function outputLatency(): number {
+  const raw = Tone.getContext().rawContext as unknown as { _nativeAudioContext?: AudioContext };
+  const native = (raw._nativeAudioContext ?? raw) as Partial<AudioContext>;
+  return (native.baseLatency || 0) + (native.outputLatency || 0);
 }
 
 /** Where the Transport is scheduling (the look-ahead past what's heard): a seek shows here at once. */
