@@ -19,6 +19,7 @@ import { EqCurvePreview } from './EqCurvePreview';
 import { DistortionPanel, DynamicsAndChorusPanels, FilterAndPumpPanels } from './InsertFx';
 import { SampleLoader } from './SampleLoader';
 import { SlicerPanel } from './SlicerPanel';
+import { SynthPanel } from './SynthPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
 import { INSTRUMENTS, instrumentsByCategory, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
@@ -226,6 +227,7 @@ export const TrackInspector: React.FC = () => {
 
             {currentTrack.instrumentKey === 'sampler' && <SampleLoader track={currentTrack} />}
             {isSlicerKind(currentTrack.instrumentKey) && <SlicerPanel track={currentTrack} />}
+            {currentTrack.instrumentKey === 'synthDesigner' && <SynthPanel track={currentTrack} />}
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
             {/* Insert chain, in signal order: Distortion -> EQ -> Compressor -> Chorus -> Filter -> Pump */}

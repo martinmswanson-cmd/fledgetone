@@ -19,6 +19,8 @@ import { createBus } from './presets/native';
 import type { NativeBus } from './presets/native';
 import { createCustomSamplerVoice, createSamplerVoice } from './samplers/samplerManager';
 import type { CustomSample, SlicerSettings, WobbleRate } from '../store/timelineTypes';
+import type { SynthPatch } from '../store/synthPatch';
+import { createDesignedSynth } from './presets/designer';
 
 /** Drum note map (GM-style). Drum clips store one note name per voice. */
 export const DRUM_NOTES = {
@@ -73,12 +75,15 @@ export interface TrackInstrument {
   clipBus?: NativeBus;
   /** The Slicer's: give it the track's slices and modes as they change, without a rebuild. */
   setSlicer?: (settings: SlicerSettings | undefined) => void;
+  /** The Synth Designer's: its patch as it changes (from the next note), without a rebuild. */
+  setSynth?: (patch: SynthPatch | undefined) => void;
 }
 
 /** What an instrument is built with: the Sampler's sound, the Slicer's sound and slices. */
 export interface InstrumentOptions {
   sample?: CustomSample;
   slicer?: SlicerSettings;
+  synth?: SynthPatch;
 }
 
 /**
@@ -341,6 +346,10 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
         ready: Promise.resolve(),
         dispose: bass.dispose,
       };
+    }
+    case 'synthDesigner': {
+      const synth = createDesignedSynth(output, options.synth);
+      return { play: synth.play, noteOn: synth.hold, releaseAll: synth.releaseAll, dispose: synth.dispose, setSynth: synth.setPatch, ready: Promise.resolve() };
     }
     case 'chipDrums':
       return synthKit(createChipDrums(output), output);

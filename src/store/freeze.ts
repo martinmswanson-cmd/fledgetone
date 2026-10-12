@@ -70,6 +70,7 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       key: track.instrumentKey,
       sample: track.sample,
       slicer: track.slicer,
+      synth: track.synth,
       fx: track.fx,
       eq: track.eq,
       automation: (track.automation ?? []).filter((l) => !LIVE_PARAMS.has(l.param)),

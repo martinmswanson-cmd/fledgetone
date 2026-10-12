@@ -1,4 +1,5 @@
 import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Track } from './timelineTypes';
+import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
@@ -118,6 +119,7 @@ function parseTrack(v: unknown): Track {
   const eqObj = isObj(v.eq) ? v.eq : {};
   const automation = parseAutomation(v.automation);
   const slicer = normalizeSlicer(v.slicer);
+  const synth = normalizeSynthPatch(v.synth);
   const frozen = parseFrozen(v.frozen);
   return {
     id: v.id,
@@ -142,6 +144,8 @@ function parseTrack(v: unknown): Track {
     ...(automation ? { automation } : {}),
     // Optional: a Slicer track that has a sound loaded
     ...(slicer ? { slicer } : {}),
+    // Optional: a Synth Designer track's patch
+    ...(synth ? { synth } : {}),
     // Optional: a frozen track
     ...(frozen ? { frozen } : {}),
   };

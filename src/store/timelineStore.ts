@@ -28,6 +28,7 @@ import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSt
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
+import type { SynthPatch } from './synthPatch';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadSamples } from '../audio/samplers/samplerManager';
@@ -287,6 +288,8 @@ interface TimelineState {
   setClipAudio: (clipId: string, patch: Partial<ClipAudio>, record?: boolean) => void;
   /** Give a Slicer track its sound and slices (or clear them with undefined). `record` as above. */
   setTrackSlicer: (trackId: string, slicer: SlicerSettings | undefined, record?: boolean) => void;
+  /** Change a Synth Designer track's patch (`record` false while a knob is dragged: checkpoint() first). */
+  setTrackSynth: (trackId: string, synth: SynthPatch, record?: boolean) => void;
   /**
    * "Chop to Slicer": a Slicer track playing `slicer`, right after the audio clip's track, with a
    * clip at the audio clip's place that plays the slices in order (one undo step). Returns the
@@ -1123,6 +1126,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         if (same) return s;
         return { clips: s.clips.map((c) => (c === clip ? { ...c, audio } : c)), ...(record ? pushPast(s) : {}) };
       }),
+
+    setTrackSynth: (trackId, synth, record = true) => updateTrack(trackId, () => ({ synth }), record),
 
     setTrackSlicer: (trackId, slicer, record = true) => {
       if (slicer) ensureSound(slicer.soundId);

@@ -235,7 +235,7 @@ The header has the clip's name (click to rename), **GRID** (1/32, 1/16T, 1/16, 1
 
 ## Instruments
 
-Each track plays one instrument. Add a track with **+ Add Track** under the last track, or change a track's instrument in the Track Inspector (**SOUND GENERATOR**). There are 104 instruments in 14 groups:
+Each track plays one instrument. Add a track with **+ Add Track** under the last track, or change a track's instrument in the Track Inspector (**SOUND GENERATOR**). There are 105 instruments in 14 groups:
 
 | Group | Instruments |
 |---|---|
@@ -244,7 +244,7 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 | Choir & Voices | Choir, Voices "Ooh", Synth Choir |
 | Pads & Atmospheres | Halo Pad, Warm Pad, New Age Pad, Choir Pad, Glass Pad, Sweep Pad, Atmosphere, Crystal, Sci-Fi, Goblins |
 | Orchestra | Timpani, Viola, Contrabass, Pizzicato Strings, Tremolo Strings, Slow Strings, Orchestra Hit, Oboe, Clarinet, Bassoon, English Horn, Piccolo, Recorder, Trombone, Tuba, Brass Section |
-| Keys & Synths | Grand Piano, Electric Piano, Space Clav, Wavetable Synth, Analog Lead, Supersaw, Pluck, Pipe Organ, Synth Strings, Harpsichord, Drawbar Organ, Rock Organ |
+| Keys & Synths | Grand Piano, Electric Piano, Space Clav, Wavetable Synth, Analog Lead, Supersaw, Pluck, Synth Designer, Pipe Organ, Synth Strings, Harpsichord, Drawbar Organ, Rock Organ |
 | Guitars & Strings | Acoustic Guitar, Electric Guitar, Mandolin, Harp, Violin, Cello, Strings, Classical Guitar, Distortion Guitar, Overdrive Guitar, Muted Guitar, Banjo |
 | Winds & Brass | Brass Stabs, Saxophone, Trumpet, French Horn, Flute, Muted Trumpet, Tenor Sax |
 | Mallets & Bells | Marimba, Chimes, Celesta, Glockenspiel, Music Box, Vibraphone, Xylophone |
@@ -255,10 +255,24 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 
 For **classical and angelic** music: Choir and Voices "Ooh" for heavenly voices, Halo Pad, Glass Pad and Choir Pad underneath, Harp, Celesta and Glockenspiel for sparkle, and the Orchestra group for everything from a string quartet (Violin, Viola, Cello, Contrabass) to a full orchestra with woodwinds, brass and Timpani.
 
-- **Synths and synthesized kits** (Drums, Drum Machine, Slap Bass, Sub-Bass, 808 Bass, Wobble Bass, Growl Bass, Reese Bass, Space Clav, Wavetable Synth, Analog Lead, Supersaw, Pluck, Brass Stabs, FX and the three Chiptune instruments) are generated in the browser and work offline.
+- **Synths and synthesized kits** (Drums, Drum Machine, Slap Bass, Sub-Bass, 808 Bass, Wobble Bass, Growl Bass, Reese Bass, Space Clav, Wavetable Synth, Analog Lead, Supersaw, Pluck, Synth Designer, Brass Stabs, FX and the three Chiptune instruments) are generated in the browser and work offline.
 - **Recorded instruments and kits** (the other 85) download their sounds the first time you use them, so they need an internet connection. A spinner shows on the track header while they load, and the Inspector shows **Loading CDN...**, **Ready** or **Error**. Notes are silent until the sounds arrive. If a download fails, the track header shows a red **!** in place of its coloured dot and the Inspector shows **Error** with a **Retry** button; click either to try again. Failed downloads are also retried when your connection comes back, and when you play that instrument in the Instrument Browser or Audition Deck, add another track with it or export. Once it downloads, every track using it plays from its next note, with no reload.
 - Every drum kit has the same eleven rows: **Kick**, **Snare**, **Clap**, **Closed Hat**, **Open Hat**, **Tom Low**, **Tom Mid**, **Tom High**, **Cowbell**, **Ride** and **Crash**, so drum parts move between kits. The recorded kits play their own recordings of the kick, snare, hats and toms, and synthesized hits for the rows they have no recording of. On a MIDI keyboard, the drum pads land on the matching rows. Taiko and Timpani are played like pitched instruments.
 - Slap Bass, Sub-Bass, 808 Bass and Analog Lead play one note at a time; in a chord, only the loudest note sounds. Space Clav (16 notes at once), Wavetable Synth (12) and Brass Stabs (8) cut short whichever ringing note would end soonest when they run out, so new notes still play (only notes beyond the limit that start at the very same moment are dropped).
+
+### Synth Designer
+
+**Synth Designer** (Keys & Synths) is a synth you build yourself. Its controls appear in the Track Inspector under the instrument:
+
+- **Load preset…** starts from a sound: Init saw, Supersaw lead, Wobble bass, Growl bass, Sub bass, Angelic pad, Warm pad, Pluck, Bell, Brass, 8-bit lead or Riser noise.
+- **Osc 1** and **Osc 2**: a wave each (Saw, Square, Triangle, Sine), tuned by octave, semitone and cents, with a level. **Sub** adds a sine an octave down, **Noise** adds white noise.
+- **Unison** stacks up to 7 copies of each oscillator, detuned across **Spread** and panned across **Width**, for big wide leads and pads.
+- **Filter**: Low-pass, High-pass or Band-pass, with **Cutoff**, **Reso**(nance), how far its own envelope opens it (**Env amt**, in octaves), how much it follows the note (**Key trk**) and **Drive** for grit.
+- **Filter envelope** and **Amp envelope**: Attack, Decay, Sustain, Release.
+- **LFO**: wobbles the **Filter**, adds vibrato to the **Pitch** or tremolo to the **Volume**, in sync with the tempo (1/1 to 1/32, triplets too) or free in Hz. Each note restarts it, so a synced filter LFO is a dubstep wobble locked to the beat.
+- **Mono** plays one note at a time and **Glide**s between them; **Level** sets the output.
+
+Every change is one Undo step (a whole slider drag is one), is saved with the project and plays from the next note. Double-click a slider to reset it.
 
 ### EDM instruments
 

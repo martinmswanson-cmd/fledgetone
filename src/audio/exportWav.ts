@@ -568,7 +568,7 @@ async function renderTracks(
       strip.apply(track, { ramp: 0, muteOverride: false });
       strips.push(strip);
       stripOf.set(track.id, strip);
-      instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer }));
+      instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer, synth: track.synth }));
     }
     await Promise.all([mix.busFx.ready, mix.inserts.ready(), ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)
