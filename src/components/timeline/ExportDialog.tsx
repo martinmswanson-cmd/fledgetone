@@ -24,6 +24,7 @@ import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../au
 import { createZip } from '../../audio/zip';
 import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encoders';
 import type { AudioFormat } from '../../audio/encoders';
+import { canExportVideo, renderVideo, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '../../audio/videoExport';
 import { barToSeconds, formatSmpte } from '../../audio/transport';
 import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
 import type { Track } from '../../store/timelineTypes';
@@ -31,7 +32,7 @@ import { Modal } from './Modal';
 
 /** 'game': an intro (bar 1 to the loop's In) and the loop region as a seamless loop, for games. */
 type Range = 'song' | 'loop' | 'game';
-type What = 'mixdown' | 'stems';
+type What = 'mixdown' | 'stems' | 'video';
 
 interface ExportSettings {
   range: Range;
@@ -64,7 +65,7 @@ function loadSettings(): ExportSettings {
     const r = raw as Record<string, unknown>;
     return {
       range: oneOf(r.range, ['song', 'loop', 'game'] as const, d.range),
-      what: oneOf(r.what, ['mixdown', 'stems'] as const, d.what),
+      what: oneOf(r.what, ['mixdown', 'stems', 'video'] as const, d.what),
       ending: oneOf(r.ending, ['ringOut', 'exact', 'seamless'] as const, d.ending),
       sampleRate: oneOf(r.sampleRate, SAMPLE_RATES, d.sampleRate),
       bitDepth: oneOf(r.bitDepth, BIT_DEPTHS, d.bitDepth),
@@ -190,6 +191,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   // loop, and an intro + loop needs an intro (the loop starting after bar 1)
   const hasIntro = loop.inBar > 1;
   const range: Range = settings.range === 'game' && hasIntro ? 'game' : settings.range === 'song' && songBars > 0 ? 'song' : 'loop';
+  const videoOk = canExportVideo();
+  // A video is of the song or the loop; an intro + loop is audio for a game
+  const what: What = settings.what === 'video' && (!videoOk || range === 'game') ? 'mixdown' : settings.what;
+  const videoOut = what === 'video';
   const game = range === 'game';
   const ending: ExportEnding = game ? 'seamless' : range === 'song' && settings.ending === 'seamless' ? 'ringOut' : settings.ending;
   const format = settings.format;
@@ -211,12 +216,12 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const { frames, passes } = exportFrames(planned);
   const cueCount = exportCues(planned).length;
   const stems = stemTracks(planned);
-  const stemsOnly = settings.what === 'stems';
+  const stemsOnly = what === 'stems';
   const canExport = stemsOnly ? stems.length > 0 : range === 'loop' || songBars > 0;
 
   const suffix = range === 'song' || game ? '' : ending === 'seamless' ? ' (seamless loop)' : ' (loop)';
   const fileBase = `${safeFileName(projectName)}${suffix}`;
-  const fileName = game ? `${fileBase} ${stemsOnly ? 'layers' : 'game music'}.zip` : stemsOnly ? `${fileBase} stems.zip` : `${fileBase}.${ext}`;
+  const fileName = game ? `${fileBase} ${stemsOnly ? 'layers' : 'game music'}.zip` : stemsOnly ? `${fileBase} stems.zip` : videoOut ? `${fileBase}.mp4` : `${fileBase}.${ext}`;
   const introFrames = Math.round(((loop.inBar - 1) * 240 * settings.sampleRate) / bpm);
   const tail = ringOutSeconds(masterFx);
 
@@ -275,6 +280,34 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
         downloadBlob(await createZip(files), fileName);
         showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}` : ''}`);
+      } else if (videoOut) {
+        // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs)
+        const audio = await renderArrangement({ ...opts, sampleRate: 48000 }, (progress) =>
+          setStatus({ kind: 'rendering', fileName, progress: progress * 0.3, detail: 'Rendering the sound' })
+        );
+        controller.signal.throwIfAborted();
+        let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
+        if (settings.normalize) {
+          const { gainDb } = normalizeGainDb(reading);
+          if (gainDb !== 0) scaleAudio(audio, gainDb);
+          reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
+        }
+        const startSeconds = barToSeconds(opts.startBar, opts.bpm);
+        const sections = (opts.markers ?? [])
+          .filter((m) => m.bar >= opts.startBar && m.bar < opts.endBar)
+          .map((m) => ({ at: barToSeconds(m.bar, opts.bpm) - startSeconds, name: m.name }));
+        const blob = await renderVideo({
+          channels: channelsOf(audio),
+          sampleRate: audio.sampleRate,
+          title: projectName,
+          subtitle: `${Math.round(opts.bpm * 100) / 100} BPM · made with Bo's Beatbox`,
+          sections,
+          signal: controller.signal,
+          onProgress: (p) => setStatus({ kind: 'rendering', fileName, progress: 0.3 + 0.7 * p, detail: 'Drawing the video' }),
+        });
+        controller.signal.throwIfAborted();
+        downloadBlob(blob, fileName);
+        showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}`);
       } else if (stemsOnly) {
         const rendered = await renderStems(
           opts,
@@ -382,11 +415,17 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       <Section title="Export">
         <Segmented<What>
           label="What to export"
-          value={settings.what}
+          value={what}
           onChange={(value) => update({ what: value })}
           options={[
             { value: 'mixdown', label: 'Mixdown', title: 'One stereo file of the whole mix' },
             { value: 'stems', label: game ? 'Layers' : 'Stems', title: game ? 'An intro and a loop per track, for adaptive music' : 'One file per track, in a .zip' },
+            {
+              value: 'video',
+              label: 'Video (MP4)',
+              disabled: !videoOk || game,
+              title: !videoOk ? "This browser can't make videos: use Chrome or Edge" : game ? 'Choose Whole song or Loop region for a video' : 'The song with a visualizer, for YouTube and socials',
+            },
           ]}
         />
         {stemsOnly ? (
@@ -412,6 +451,20 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                     ? 'The stems add up to the mix as it is before the master compressor and limiter.'
                     : 'Each stem goes through its own master compressor and limiter, so together they won’t add up to the mix exactly.'}
                 </span>
+              </span>
+            </label>
+          </>
+        ) : videoOut ? (
+          <>
+            <p>
+              An MP4 video ({VIDEO_WIDTH}×{VIDEO_HEIGHT}, {VIDEO_FPS} fps) of the mix with a visualizer: the project's name, a spectrum that moves with the music, the whole song's waveform with a
+              playhead, the section from your markers, and the time. Ready for YouTube, socials or a game's trailer. It's drawn faster than real time.
+            </p>
+            <label className="flex items-start gap-2 cursor-pointer text-forge-text">
+              <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
+              <span>
+                Normalize to {NORMALIZE_TARGET_LUFS} LUFS
+                <span className="block text-forge-muted">YouTube plays at this loudness: matching it means your video isn't turned down.</span>
               </span>
             </label>
           </>
@@ -455,7 +508,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         <p>{endingDetail}</p>
       </Section>}
 
-      <Section title="Format">
+      {!videoOut && <Section title="Format">
         <Segmented<AudioFormat>
           label="File type"
           value={format}
@@ -504,9 +557,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               stemsOnly ? 'every file' : 'the file'
             } as ${cueCount === 1 ? 'a cue point, which DAWs and game audio tools show as a marker' : 'cue points, which DAWs and game audio tools show as markers'}.`}
         </p>
-      </Section>
+      </Section>}
 
       {status.error && <p className="text-red-400">Export failed: {status.error}</p>}
+      {videoOut && <p>Video sound is 48 kHz. Where the browser has them (Chrome and Edge on Windows and Mac), the video is H.264 with AAC sound, which plays everywhere; otherwise VP9 or AV1 with Opus, which browsers, VLC and YouTube play.</p>}
       {status.note && <p className="text-amber-300">{status.note}</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-3 border-t border-forge-border">
