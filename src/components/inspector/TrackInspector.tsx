@@ -19,6 +19,8 @@ import { EqCurvePreview } from './EqCurvePreview';
 import { DistortionPanel, DuckProxyPanel, DynamicsAndChorusPanels, FilterAndPumpPanels, HumanPanel } from './InsertFx';
 import { SampleLoader } from './SampleLoader';
 import { SlicerPanel } from './SlicerPanel';
+import { PeqPanel } from './PeqEditor';
+import { MbcPanel } from './MbcPanel';
 import { SynthPanel } from './SynthPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
@@ -239,7 +241,7 @@ export const TrackInspector: React.FC = () => {
             {!isAudioKind(currentTrack.instrumentKey) && <HumanPanel track={currentTrack} />}
             <DuckProxyPanel track={currentTrack} />
 
-            {/* Insert chain, in signal order: Distortion -> EQ -> Compressor -> Chorus -> Lo-fi -> Filter -> Gate -> Pump */}
+            {/* Insert chain, in signal order: Distortion -> EQ -> Pro EQ -> Compressor -> Multiband -> Chorus -> Lo-fi -> Filter -> Gate -> Pump */}
             <DistortionPanel track={currentTrack} />
 
             {/* 3-Band Parametric EQ Panel */}
@@ -341,7 +343,9 @@ export const TrackInspector: React.FC = () => {
               </div>
             </div>
 
+            <PeqPanel track={currentTrack} />
             <DynamicsAndChorusPanels track={currentTrack} />
+            <MbcPanel track={currentTrack} />
             <FilterAndPumpPanels track={currentTrack} />
 
             {/* Aux FX Sends Section */}

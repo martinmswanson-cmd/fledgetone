@@ -150,6 +150,8 @@ const MENUS: MenuDef[] = [
         { label: 'Arm for recording', run: () => (t ? tl().toggleArm(t.id) : NEED_TRACK), checked: !!t?.isArmed, disabled: !t },
         { label: 'Inspector & FX rack', run: () => tl().toggleInspector(), checked: tl().isInspectorOpen, divider: true },
         { label: 'EQ', run: showTrackPanel('eq') },
+        { label: 'Pro EQ (big)', run: () => (t ? ui().openDock('eq') : NEED_TRACK) },
+        { label: 'Multiband compressor', run: showTrackPanel('Multiband') },
         { label: 'Human feel', run: showTrackPanel('Human') },
         { label: 'Duck others under this track', run: showTrackPanel('Duck others under this') },
         { label: 'Automation', run: () => (t ? tl().showAutomation(t.id, true) : NEED_TRACK), disabled: !t },
@@ -233,6 +235,7 @@ const MENUS: MenuDef[] = [
       const tab = (t: DockTab, label: string, divider = false): MenuAction => ({ label, run: () => u.openDock(t), checked: u.dockOpen && u.dockTab === t, divider });
       return [
         tab('mixer', 'Mixer'),
+        tab('eq', 'EQ & Dynamics'),
         tab('instruments', 'Instruments & sounds'),
         tab('game', 'Game'),
         tab('video', 'Video'),

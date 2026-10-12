@@ -97,6 +97,25 @@ export interface TrackFx {
     /** How much of each step it stays open, 0.1 to 0.95 */
     length: number;
   };
+  /** Parametric EQ: up to PEQ_MAX_BANDS bands of any shape, drawn and dragged on a graph. */
+  peq: {
+    on: boolean;
+    bands: PeqBand[];
+  };
+  /**
+   * Multiband compressor: the sound split into low, mid and high bands at two crossovers, each
+   * band compressed on its own, then put back together.
+   */
+  mbc: {
+    on: boolean;
+    /** Crossovers, Hz: low/mid and mid/high */
+    lowFreq: number;
+    highFreq: number;
+    /** Shared timing, seconds */
+    attack: number;
+    release: number;
+    bands: [MbcBand, MbcBand, MbcBand];
+  };
   /**
    * Human feel: every note played a little differently, as a player would. Each amount is 0 to 1.
    * The variation is worked out from the note itself, so a note sounds the same every time the
@@ -111,6 +130,35 @@ export interface TrackFx {
     /** Notes a touch sharp or flat, up to about 12 cents (pitched instruments only) */
     pitch: number;
   };
+}
+
+/** The shapes a parametric EQ band can take. */
+export const PEQ_TYPES = ['lowcut', 'lowshelf', 'bell', 'notch', 'highshelf', 'highcut'] as const;
+export type PeqType = (typeof PEQ_TYPES)[number];
+export interface PeqBand {
+  on: boolean;
+  type: PeqType;
+  /** Hz, 20 to 20000 */
+  freq: number;
+  /** dB, -24 to +24 (bells and shelves) */
+  gain: number;
+  /** Width as Q, 0.1 to 18 (bells, notches and cuts; shelves have a fixed slope) */
+  q: number;
+}
+export const PEQ_MAX_BANDS = 6;
+export const PEQ_GAIN_MAX = 24;
+export const PEQ_Q_MIN = 0.1;
+export const PEQ_Q_MAX = 18;
+
+export interface MbcBand {
+  /** dB, -60 to 0 */
+  threshold: number;
+  /** 1 to 20 */
+  ratio: number;
+  /** Makeup gain, dB, -12 to +18 */
+  gain: number;
+  /** Bypass this band (it passes through uncompressed) */
+  bypass?: boolean;
 }
 
 /** Gate speeds: one chop per note value (T = triplet). */
@@ -139,7 +187,32 @@ export function defaultTrackFx(): TrackFx {
     lofi: { on: false, crush: 0.5, tone: 5000, wow: 0.3, mix: 1 },
     gate: { on: false, rate: '1/16', depth: 0.9, length: 0.5 },
     human: { on: false, timing: 0.5, dynamics: 0.5, pitch: 0.5 },
+    peq: { on: false, bands: defaultPeqBands() },
+    mbc: {
+      on: false,
+      lowFreq: 200,
+      highFreq: 3000,
+      attack: 0.01,
+      release: 0.15,
+      bands: [
+        { threshold: -24, ratio: 3, gain: 2 },
+        { threshold: -20, ratio: 2.5, gain: 1 },
+        { threshold: -22, ratio: 3, gain: 1.5 },
+      ],
+    },
   };
+}
+
+/** A parametric EQ's bands when it's first switched on: everything flat, ready to drag. */
+export function defaultPeqBands(): PeqBand[] {
+  return [
+    { on: false, type: 'lowcut', freq: 40, gain: 0, q: Math.SQRT1_2 },
+    { on: true, type: 'lowshelf', freq: 120, gain: 0, q: 0.7 },
+    { on: true, type: 'bell', freq: 500, gain: 0, q: 1 },
+    { on: true, type: 'bell', freq: 2500, gain: 0, q: 1 },
+    { on: true, type: 'highshelf', freq: 8000, gain: 0, q: 0.7 },
+    { on: false, type: 'highcut', freq: 18000, gain: 0, q: Math.SQRT1_2 },
+  ];
 }
 
 /** Fill in any missing / out-of-range effect settings (older projects, hand-edited files). */
@@ -157,6 +230,8 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
   const lof = obj(r.lofi);
   const gat = obj(r.gate);
   const hum = obj(r.human);
+  const peq = obj(r.peq);
+  const mbc = obj(r.mbc);
   const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
   return {
     distortion: { on: dist.on === true, amount: num(dist.amount, d.distortion.amount, 0, 1) },
@@ -204,6 +279,37 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
       timing: num(hum.timing, d.human.timing, 0, 1),
       dynamics: num(hum.dynamics, d.human.dynamics, 0, 1),
       pitch: num(hum.pitch, d.human.pitch, 0, 1),
+    },
+    peq: {
+      on: peq.on === true,
+      bands: Array.isArray(peq.bands)
+        ? peq.bands.slice(0, PEQ_MAX_BANDS).map((raw) => {
+            const b = obj(raw);
+            return {
+              on: b.on !== false,
+              type: oneOf(b.type, PEQ_TYPES, 'bell' as PeqType),
+              freq: num(b.freq, 1000, 20, 20000),
+              gain: num(b.gain, 0, -PEQ_GAIN_MAX, PEQ_GAIN_MAX),
+              q: num(b.q, 1, PEQ_Q_MIN, PEQ_Q_MAX),
+            };
+          })
+        : d.peq.bands,
+    },
+    mbc: {
+      on: mbc.on === true,
+      lowFreq: num(mbc.lowFreq, d.mbc.lowFreq, 40, 1000),
+      highFreq: num(mbc.highFreq, d.mbc.highFreq, 1000, 12000),
+      attack: num(mbc.attack, d.mbc.attack, 0.001, 0.2),
+      release: num(mbc.release, d.mbc.release, 0.02, 1),
+      bands: d.mbc.bands.map((fallback, i) => {
+        const b = obj(Array.isArray(mbc.bands) ? mbc.bands[i] : undefined);
+        return {
+          threshold: num(b.threshold, fallback.threshold, -60, 0),
+          ratio: num(b.ratio, fallback.ratio, 1, 20),
+          gain: num(b.gain, fallback.gain, -12, 18),
+          ...(b.bypass === true ? { bypass: true } : {}),
+        };
+      }) as [MbcBand, MbcBand, MbcBand],
     },
   };
 }

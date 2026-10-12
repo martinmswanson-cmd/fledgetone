@@ -169,6 +169,8 @@ const SETTINGS: Item[] = [
   { title: 'Project name', keywords: 'project name title rename file', run: show('[aria-label="Project name"]') },
   { title: "Track's instrument", keywords: 'change instrument sound swap track', run: trackPanel('instrument') },
   { title: 'EQ', keywords: 'eq equalizer equaliser bass treble low mid high tone', run: trackPanel('eq') },
+  { title: 'Pro EQ (parametric)', keywords: 'pro eq parametric equalizer equaliser bands bell shelf notch low cut high cut highpass lowpass spectrum analyser analyzer graph surgical', detail: 'Up to six bands of any shape, dragged on a graph over the track\'s live spectrum.', run: trackPanel('Pro EQ') },
+  { title: 'Multiband compressor', keywords: 'multiband multi band compressor compression dynamics low mid high crossover glue tame', detail: 'Compress the lows, mids and highs separately.', run: trackPanel('Multiband') },
   { title: 'Human (feel)', keywords: 'human humanize humanise feel groove realistic real player natural authentic timing velocity variation imperfect sloppy live loose', detail: 'Each note played a little differently, like a real player.', run: trackPanel('Human') },
   { title: 'Distortion', keywords: 'distortion drive overdrive saturation crunch fuzz', run: trackPanel('Distortion') },
   { title: 'Compressor', keywords: 'compressor compression dynamics punch squash', run: trackPanel('Compressor') },

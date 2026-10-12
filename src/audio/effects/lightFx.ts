@@ -1,5 +1,7 @@
 import * as Tone from 'tone';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
+import { PEQ_MAX_BANDS, type PeqBand } from '../../store/timelineTypes';
+import { BIQUAD_TYPE, biquadQ, hasGain } from '../peq';
 
 /**
  * Lean stand-ins for Tone.EQ3, Tone.Distortion and Tone.Chorus that sound the same but cost far
@@ -716,5 +718,157 @@ export function createLightGate(): LightGate {
       gain.linearRampToValueAtTime(1, resetAt + 0.01);
     },
     dispose: () => node.dispose(),
+  };
+}
+
+export interface LightPeq extends LightInsert {
+  set: (bands: readonly PeqBand[], ramp: number) => void;
+}
+
+/**
+ * The parametric EQ: PEQ_MAX_BANDS biquads in series, always all patched in. A band that's off (or
+ * missing) is a peaking filter at 0 dB, which passes the sound through exactly, so switching bands
+ * on and off or changing their shape never re-patches anything.
+ */
+export function createLightPeq(): LightPeq {
+  const input = new Tone.Gain(1);
+  const output = new Tone.Gain(1);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const setParam = paramSetter(raw);
+  const stages = Array.from({ length: PEQ_MAX_BANDS }, () => {
+    const f = raw.createBiquadFilter();
+    blockRate(f);
+    f.type = 'peaking';
+    f.gain.value = 0;
+    return f;
+  });
+  let from: AudioNode = input.input as unknown as AudioNode;
+  for (const f of stages) {
+    from.connect(f);
+    from = f;
+  }
+  from.connect(output.input as unknown as AudioNode);
+  const nyquist = raw.sampleRate / 2;
+  const shapes: Array<BiquadFilterType | null> = stages.map(() => null);
+
+  return {
+    input,
+    output,
+    set: (bands, ramp) => {
+      stages.forEach((f, i) => {
+        const b = bands[i];
+        const type: BiquadFilterType = b?.on ? BIQUAD_TYPE[b.type] : 'peaking';
+        // A new shape reads its params differently: set them at once
+        const fresh = shapes[i] !== type;
+        if (fresh) {
+          f.type = type;
+          shapes[i] = type;
+        }
+        const r = fresh ? 0 : ramp;
+        if (!b?.on) {
+          setParam(f.gain, 0, r);
+          return;
+        }
+        setParam(f.frequency, Math.min(b.freq, nyquist - 1), r);
+        setParam(f.gain, hasGain(b.type) ? b.gain : 0, r);
+        setParam(f.Q, biquadQ(b), r);
+      });
+    },
+    dispose: () => {
+      stages.forEach((f) => f.disconnect());
+      input.dispose();
+      output.dispose();
+    },
+  };
+}
+
+export interface MbcSettings {
+  lowFreq: number;
+  highFreq: number;
+  attack: number;
+  release: number;
+  bands: ReadonlyArray<{ threshold: number; ratio: number; gain: number; bypass?: boolean }>;
+}
+
+export interface LightMbc extends LightInsert {
+  set: (s: MbcSettings, ramp: number) => void;
+  /** Each band's gain reduction now, in dB (0 or below) */
+  reduction: () => [number, number, number];
+}
+
+/**
+ * The multiband compressor: Linkwitz-Riley crossovers (two Butterworth biquads each, 24 dB per
+ * octave) split the sound into low, mid and high, each band goes through its own compressor and
+ * makeup gain, and the three add back up. The low band also passes the high crossover's all-pass,
+ * so with the compressors idle the bands sum to the input's level at every frequency.
+ */
+export function createLightMbc(initial: MbcSettings): LightMbc {
+  const input = new Tone.Gain(1);
+  const output = new Tone.Gain(1);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const setParam = paramSetter(raw);
+  const BUTTERWORTH_DB = 20 * Math.log10(Math.SQRT1_2);
+  const biquad = (type: BiquadFilterType) => {
+    const f = raw.createBiquadFilter();
+    blockRate(f);
+    f.type = type;
+    f.Q.value = type === 'allpass' ? Math.SQRT1_2 : BUTTERWORTH_DB;
+    return f;
+  };
+  const chain = (nodes: AudioNode[]) => {
+    for (let i = 1; i < nodes.length; i++) nodes[i - 1].connect(nodes[i]);
+    return { first: nodes[0], last: nodes[nodes.length - 1] };
+  };
+  const src = input.input as unknown as AudioNode;
+  const dst = output.input as unknown as AudioNode;
+  const lowLp = [biquad('lowpass'), biquad('lowpass')];
+  const lowAp = biquad('allpass');
+  const restHp = [biquad('highpass'), biquad('highpass')];
+  const midLp = [biquad('lowpass'), biquad('lowpass')];
+  const highHp = [biquad('highpass'), biquad('highpass')];
+  const comps = [0, 1, 2].map(() => raw.createDynamicsCompressor());
+  const gains = [0, 1, 2].map(() => raw.createGain());
+  comps.forEach((c) => (c.knee.value = 6));
+  const low = chain([...lowLp, lowAp, comps[0], gains[0]]);
+  src.connect(low.first);
+  const rest = chain(restHp);
+  src.connect(rest.first);
+  const mid = chain([...midLp, comps[1], gains[1]]);
+  rest.last.connect(mid.first);
+  const high = chain([...highHp, comps[2], gains[2]]);
+  rest.last.connect(high.first);
+  gains.forEach((g) => g.connect(dst));
+
+  const set = (s: MbcSettings, ramp: number) => {
+    const nyquist = raw.sampleRate / 2 - 1;
+    const f1 = Math.min(s.lowFreq, nyquist);
+    const f2 = Math.min(Math.max(s.highFreq, f1 * 1.5), nyquist);
+    [...lowLp, ...restHp].forEach((f) => setParam(f.frequency, f1, ramp));
+    [lowAp, ...midLp, ...highHp].forEach((f) => setParam(f.frequency, f2, ramp));
+    comps.forEach((c, i) => {
+      const b = s.bands[i];
+      // A bypassed band: a compressor at 1:1 does nothing (and adds no makeup of its own)
+      setParam(c.threshold, b.bypass ? 0 : b.threshold, 0);
+      setParam(c.ratio, b.bypass ? 1 : b.ratio, 0);
+      setParam(c.attack, s.attack, 0);
+      setParam(c.release, s.release, 0);
+      // The browser's compressor adds make-up gain of its own (0.6 of what it takes off a full-scale
+      // signal): take that back out, so the band's Gain is all the make-up there is
+      const autoMakeup = b.bypass ? 0 : -0.6 * b.threshold * (1 - 1 / b.ratio);
+      setParam(gains[i].gain, b.bypass ? 1 : 10 ** ((b.gain - autoMakeup) / 20), ramp);
+    });
+  };
+  set(initial, 0);
+
+  return {
+    input,
+    output,
+    set,
+    reduction: () => comps.map((c) => c.reduction) as [number, number, number],
+    dispose: () => {
+      [...lowLp, lowAp, ...restHp, ...midLp, ...highHp, ...comps, ...gains].forEach((n) => n.disconnect());
+      input.dispose();
+      output.dispose();
+    },
   };
 }
