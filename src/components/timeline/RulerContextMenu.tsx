@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ArrowLeftToLine, ArrowRightFromLine, Flag, Zap } from 'lucide-react';
+import { ArrowLeftToLine, ArrowRightFromLine, Flag, KeyRound, Zap } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -15,6 +15,12 @@ export interface RulerMenuState {
 }
 
 const INSERT_SIZES = [1, 2, 4, 8];
+/** Key changes offered: the classic final-chorus lifts, and a step down. */
+const KEY_CHANGES: ReadonlyArray<[semitones: number, label: string]> = [
+  [1, 'Key change here: up a semitone'],
+  [2, 'Key change here: up a whole step'],
+  [-1, 'Key change here: down a semitone'],
+];
 
 /**
  * Right-click menu for the time ruler: a marker at the clicked place, and edits that add or remove
@@ -54,6 +60,14 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       icon: <Zap className="w-3.5 h-3.5" />,
       onClick: run(() => s.addBuildAndDrop(menu.bar)),
     },
+    ...KEY_CHANGES.map(([semitones, label], i) => ({
+      key: `key${semitones}`,
+      label,
+      shortcut: i === 0 ? 'to the end' : undefined,
+      icon: <KeyRound className="w-3.5 h-3.5" />,
+      onClick: run(() => s.keyChangeFrom(menu.bar, semitones)),
+      divider: i === 0,
+    })),
     ...INSERT_SIZES.map((n, i) => ({
       key: `insert-${n}`,
       label: `Insert ${n} bar${n === 1 ? '' : 's'} here`,

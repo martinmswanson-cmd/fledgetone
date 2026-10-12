@@ -76,7 +76,36 @@ export interface TrackFx {
     /** The track whose notes it ducks to (trigger 'track') */
     source?: string;
   };
+  /** Lo-fi: bit crushing, a darker top and tape wow. */
+  lofi: {
+    on: boolean;
+    /** 0 (16-bit, clean) to 1 (3-bit, gritty) */
+    crush: number;
+    /** Low-pass, 1 kHz to 20 kHz */
+    tone: number;
+    /** Tape wow (slow pitch wobble), 0 to 1 */
+    wow: number;
+    /** Wet mix, 0 to 1 */
+    mix: number;
+  };
+  /** Trance gate / stutter: the volume chopped in time with the song. */
+  gate: {
+    on: boolean;
+    rate: GateRate;
+    /** How far it closes, 0 to 1 (1 = silent between chops) */
+    depth: number;
+    /** How much of each step it stays open, 0.1 to 0.95 */
+    length: number;
+  };
 }
+
+/** Gate speeds: one chop per note value (T = triplet). */
+export const GATE_RATES = ['1/8', '1/8T', '1/16', '1/16T', '1/32'] as const;
+export type GateRate = (typeof GATE_RATES)[number];
+/** A gate step in Transport ticks (192 per quarter note). */
+export const GATE_TICKS: Record<GateRate, number> = { '1/8': 96, '1/8T': 64, '1/16': 48, '1/16T': 32, '1/32': 24 };
+export const LOFI_TONE_MIN = 1000;
+export const LOFI_TONE_MAX = 20000;
 
 export const FILTER_CUTOFF_MIN = 20;
 export const FILTER_CUTOFF_MAX = 20000;
@@ -93,6 +122,8 @@ export function defaultTrackFx(): TrackFx {
     chorus: { on: false, rate: 1.5, depth: 0.6, mix: 0.5 },
     filter: { on: false, type: 'lowpass', cutoff: 1000, resonance: Math.SQRT1_2, slope: 24 },
     pump: { on: false, depth: 0.7, release: 300, trigger: 'kick' },
+    lofi: { on: false, crush: 0.5, tone: 5000, wow: 0.3, mix: 1 },
+    gate: { on: false, rate: '1/16', depth: 0.9, length: 0.5 },
   };
 }
 
@@ -108,6 +139,8 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
   const cho = obj(r.chorus);
   const fil = obj(r.filter);
   const pum = obj(r.pump);
+  const lof = obj(r.lofi);
+  const gat = obj(r.gate);
   const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
   return {
     distortion: { on: dist.on === true, amount: num(dist.amount, d.distortion.amount, 0, 1) },
@@ -136,6 +169,19 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
       release: num(pum.release, d.pump.release, PUMP_RELEASE_MIN, PUMP_RELEASE_MAX),
       trigger: oneOf(pum.trigger, PUMP_TRIGGERS, d.pump.trigger),
       ...(typeof pum.source === 'string' ? { source: pum.source } : {}),
+    },
+    lofi: {
+      on: lof.on === true,
+      crush: num(lof.crush, d.lofi.crush, 0, 1),
+      tone: num(lof.tone, d.lofi.tone, LOFI_TONE_MIN, LOFI_TONE_MAX),
+      wow: num(lof.wow, d.lofi.wow, 0, 1),
+      mix: num(lof.mix, d.lofi.mix, 0, 1),
+    },
+    gate: {
+      on: gat.on === true,
+      rate: oneOf(gat.rate, GATE_RATES, d.gate.rate),
+      depth: num(gat.depth, d.gate.depth, 0, 1),
+      length: num(gat.length, d.gate.length, 0.1, 0.95),
     },
   };
 }

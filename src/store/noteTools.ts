@@ -195,3 +195,28 @@ export function fitToScale(notes: NoteEvent[], scale: Scale): NoteEvent[] {
     return Number.isFinite(m) ? { ...n, note: nameOf(snapToScale(m, scale)) } : n;
   });
 }
+
+/**
+ * Split each note into `count` equal repeats across its length (a ratchet), getting louder towards
+ * the last, which keeps the note's own velocity.
+ */
+export function ratchet(notes: NoteEvent[], count: number, newId: () => string, from = 0.55): NoteEvent[] {
+  return notes.flatMap((n) => {
+    const len = lengthOf(n) / count;
+    return Array.from({ length: count }, (_, i) => ({
+      ...n,
+      id: i === 0 ? n.id : newId(),
+      startOffset: n.startOffset + i * len,
+      duration: barsToDuration(len),
+      velocity: Math.max(0.05, n.velocity * (count === 1 ? 1 : from + ((1 - from) * i) / (count - 1))),
+    }));
+  });
+}
+
+/**
+ * A roll: each note repeated every `rateBars` for as long as it lasts, rising from a third of its
+ * velocity to its own (snare rolls into a drop, hat rolls in trap).
+ */
+export function roll(notes: NoteEvent[], rateBars: number, newId: () => string): NoteEvent[] {
+  return notes.flatMap((n) => ratchet([n], Math.max(1, Math.round(lengthOf(n) / rateBars)), newId, 0.35));
+}

@@ -1,13 +1,16 @@
 import React from 'react';
-import { Filter, Flame, Gauge, HeartPulse, Waves } from 'lucide-react';
+import { Disc3, Filter, Flame, Gauge, HeartPulse, Scissors, Waves } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import type { FilterSlope, FilterType, PumpTrigger, Track, TrackFx } from '../../store/timelineTypes';
+import type { FilterSlope, FilterType, GateRate, PumpTrigger, Track, TrackFx } from '../../store/timelineTypes';
 import {
   defaultTrackFx,
   FILTER_CUTOFF_MAX,
   FILTER_CUTOFF_MIN,
   FILTER_RESONANCE_MAX,
   FILTER_RESONANCE_MIN,
+  GATE_RATES,
+  LOFI_TONE_MAX,
+  LOFI_TONE_MIN,
   PUMP_RELEASE_MAX,
   PUMP_RELEASE_MIN,
 } from '../../store/timelineTypes';
@@ -15,6 +18,7 @@ import { UndoableRange } from '../UndoableRange';
 import { AutoBadge, Automatable } from '../timeline/AutoBadge';
 import { AUTOMATED_TIP } from '../timeline/automationHooks';
 import { formatHz } from '../../audio/automation';
+import { lofiBits } from '../../audio/effects/lightFx';
 
 interface SliderProps {
   label: string;
@@ -219,7 +223,42 @@ const PUMP_TRIGGER_OPTIONS: ReadonlyArray<{ value: PumpTrigger; label: string; t
   { value: 'track', label: 'A track', title: "Duck on every note of a track you choose (a sidechain from any part: a bass, a lead, a vocal chop)" },
 ];
 
-/** Filter and Pump (last in the chain, after the Chorus). */
+const GATE_RATE_OPTIONS = GATE_RATES.map((r) => ({ value: r, label: r, title: r.endsWith('T') ? `${r.slice(0, -1)} triplets` : `${r} notes` })) as ReadonlyArray<{ value: GateRate; label: string; title: string }>;
+
+/** Lo-fi (after the Chorus): crush, tone, tape wow. */
+const LofiPanel: React.FC<{ track: Track }> = ({ track }) => {
+  const fx = { ...defaultTrackFx(), ...track.fx };
+  const d = defaultTrackFx();
+  const set = (patch: Partial<TrackFx['lofi']>, record = false) => useTimelineStore.getState().setTrackFx(track.id, 'lofi', patch, record);
+  const accent = '#a3a3a3';
+  const toneLog = (v: number) => Math.log(v / LOFI_TONE_MIN) / Math.log(LOFI_TONE_MAX / LOFI_TONE_MIN);
+  const toneHz = (x: number) => LOFI_TONE_MIN * (LOFI_TONE_MAX / LOFI_TONE_MIN) ** x;
+  return (
+    <InsertPanel title="Lo-fi" icon={<Disc3 className="w-3.5 h-3.5" style={{ color: accent }} />} on={fx.lofi.on} onToggle={() => set({ on: !fx.lofi.on })} accent={accent}>
+      <FxSlider label="Crush" value={fx.lofi.crush} min={0} max={1} step={0.01} format={(v) => `${lofiBits(v)}-bit`} onChange={(crush) => set({ crush })} reset={d.lofi.crush} accent={accent} disabled={!fx.lofi.on} />
+      <FxSlider label="Tone" value={toneLog(fx.lofi.tone)} min={0} max={1} step={0.001} format={(x) => formatHz(toneHz(x))} onChange={(x) => set({ tone: Math.round(toneHz(x)) })} reset={toneLog(d.lofi.tone)} accent={accent} disabled={!fx.lofi.on} />
+      <FxSlider label="Wow" value={fx.lofi.wow} min={0} max={1} step={0.01} format={pct} onChange={(wow) => set({ wow })} reset={d.lofi.wow} accent={accent} disabled={!fx.lofi.on} />
+      <FxSlider label="Mix" value={fx.lofi.mix} min={0} max={1} step={0.01} format={pct} onChange={(mix) => set({ mix })} reset={d.lofi.mix} accent={accent} disabled={!fx.lofi.on} />
+    </InsertPanel>
+  );
+};
+
+/** Gate (after the Filter): the volume chopped in time with the song. */
+const GatePanel: React.FC<{ track: Track }> = ({ track }) => {
+  const fx = { ...defaultTrackFx(), ...track.fx };
+  const d = defaultTrackFx();
+  const set = (patch: Partial<TrackFx['gate']>, record = false) => useTimelineStore.getState().setTrackFx(track.id, 'gate', patch, record);
+  const accent = '#38bdf8';
+  return (
+    <InsertPanel title="Gate" icon={<Scissors className="w-3.5 h-3.5" style={{ color: accent }} />} on={fx.gate.on} onToggle={() => set({ on: !fx.gate.on })} accent={accent}>
+      <FxChoice label="Rate" value={fx.gate.rate} options={GATE_RATE_OPTIONS} onChange={(rate) => set({ rate }, true)} accent={accent} disabled={!fx.gate.on} />
+      <FxSlider label="Depth" value={fx.gate.depth} min={0} max={1} step={0.01} format={pct} onChange={(depth) => set({ depth })} reset={d.gate.depth} accent={accent} disabled={!fx.gate.on} />
+      <FxSlider label="Length" value={fx.gate.length} min={0.1} max={0.95} step={0.01} format={pct} onChange={(length) => set({ length })} reset={d.gate.length} accent={accent} disabled={!fx.gate.on} />
+    </InsertPanel>
+  );
+};
+
+/** Lo-fi, Filter, Gate and Pump (last in the chain, after the Chorus). */
 export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
   const fx = { ...defaultTrackFx(), ...track.fx };
   const d = defaultTrackFx();
@@ -231,6 +270,7 @@ export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
   const pumpAccent = '#facc15';
   return (
     <>
+      <LofiPanel track={track} />
       <InsertPanel
         title="Filter"
         icon={<Filter className="w-3.5 h-3.5" style={{ color: filterAccent }} />}
@@ -275,6 +315,8 @@ export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
         </Automatable>
         <FxChoice label="Slope" value={fx.filter.slope} options={FILTER_SLOPE_OPTIONS} onChange={(slope) => setFilter({ slope }, true)} accent={filterAccent} disabled={!fx.filter.on} />
       </InsertPanel>
+
+      <GatePanel track={track} />
 
       <InsertPanel
         title="Pump"

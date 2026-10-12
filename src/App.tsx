@@ -85,7 +85,7 @@ export const App: React.FC = () => {
             </span>
             <span className="text-forge-borderLight">→</span>
             <span className="px-2.5 py-1 bg-forge-bg border border-blue-500/30 rounded text-blue-300">
-              Track Inserts: Distortion → EQ → Compressor → Chorus
+              Track Inserts: Distortion → EQ → Compressor → Chorus → Lo-fi → Filter → Gate → Pump
             </span>
             <span className="text-forge-borderLight">→</span>
             <span className="px-2.5 py-1 bg-forge-bg border border-forge-border rounded text-forge-text">
