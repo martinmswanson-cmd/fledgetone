@@ -41,7 +41,7 @@ npm install
 npm run dev            # dev server
 npx tsc -b             # type check
 npx oxlint             # lint (3 known warnings: Playhead.tsx x2, SoundAuditionPanel.tsx x1)
-npm test               # node --test scripts/*.test.mjs (96 tests)
+npm test               # node --test scripts/*.test.mjs (102 tests)
 npm run build          # production build
 npm run build:single   # the one-file site (dist-single/index.html)
 ```
@@ -124,6 +124,17 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 - **Strings**: Violin and Cello now come from the Musyng Kite soundfont (dry, fast attack), plus a
   new Strings section instrument. The soundfont files stop at 3.1 s, so the loader loops their
   steady part up to 10 s (`extendSustain` in `samplerManager.ts`).
+
+- **Freeze tracks** (`src/store/freeze.ts`, `freezeActions.ts`, `FreezeButton.tsx`): a track's
+  instrument, inserts and EQ rendered to a library sound; the engine is handed a "live view" in
+  which the frozen track is an Audio track with one clip of that sound (volume, pan, sends stay
+  live). A fingerprint decides whether the freeze is current; otherwise the track plays live.
+  The frozen gain adds back the centre pan law and the bus gain that playback applies a second
+  time (`BUS_GAIN` in engine.ts). Cuts live audio work about 3.7x on a 36-track test song.
+- **Stable playback** (`src/audio/playbackMode.ts`): a per-browser choice of a bigger audio
+  buffer, applied at startup. Use `liveContext.ts` (`liveTransport`, `liveDestination`), never
+  `Tone.Transport` / `Tone.Destination` / `Tone.context`: Tone creates those at import from its
+  default context, which Stable playback replaces.
 
 ## Ideas not started
 
