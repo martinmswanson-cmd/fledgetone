@@ -6,7 +6,8 @@ import { barToTicks } from './transport';
 import { decodedSound, ensureSound, requestStretch, stretchedSound } from './soundLibrary';
 import { DECLICK_SECONDS, envelopeAt, envelopeFrom, envelopeShape } from './clipEnvelope';
 import type { EnvelopePoint, EnvelopeShape } from './clipEnvelope';
-import { crossfades, stretchRatio, type Crossfade } from '../store/audioClips';
+import { crossfades, secondsPerBar, stretchRatio, type Crossfade } from '../store/audioClips';
+import { expandAudioComps } from '../store/takes';
 
 type Transport = ReturnType<typeof Tone.getTransport>;
 
@@ -253,7 +254,9 @@ export function createAudioClipSchedule(
   transport.on('loopEnd', onStop);
 
   return {
-    update: (tracks, clips) => {
+    update: (tracks, all) => {
+      // A mic take folder plays its comp's pieces, each a clip of its own here
+      const clips = expandAudioComps(all, (c) => secondsPerBar(localBpm(c)) * stretchRatio(c.audio!, localBpm(c)));
       const trackIds = new Set(tracks.map((t) => t.id));
       const next = new Map<string, Entry>();
       /** Entries made now: new clips, and clips whose placement changed (their old voices are stopped) */

@@ -87,12 +87,15 @@ export function audioLengthLimit(audio: ClipAudio, soundSeconds: number | undefi
 }
 
 /** The sounds a project refers to: audio clips, Slicer tracks and Sampler tracks (each id once). */
-export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer'>> }): string[] {
+export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer'>> }): string[] {
   const ids = new Set<string>();
   for (const c of p.clips) {
-    if (!c.audio) continue;
-    ids.add(c.audio.soundId);
-    if (c.audio.tunedFrom) ids.add(c.audio.tunedFrom);
+    // A take folder keeps every take's sound, not only the one its comp starts with
+    for (const audio of [c.audio, ...(c.takes ?? []).map((t) => t.audio)]) {
+      if (!audio) continue;
+      ids.add(audio.soundId);
+      if (audio.tunedFrom) ids.add(audio.tunedFrom);
+    }
   }
   for (const t of p.tracks) {
     if (t.sample?.soundId) ids.add(t.sample.soundId);

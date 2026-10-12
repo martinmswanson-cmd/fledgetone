@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ArrowLeftToLine, ArrowRightFromLine, Flag, Gauge, KeyRound, Music2, Scissors, TrendingUp, Zap } from 'lucide-react';
+import { CircleDot, ArrowLeftToLine, ArrowRightFromLine, Flag, Gauge, KeyRound, Music2, Scissors, TrendingUp, Zap } from 'lucide-react';
 import { meterAt, tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
 import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
@@ -84,6 +84,28 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       onClick: run(() => {
         const current = meterAt(menu.bar, songMeterOf(s));
         s.addMeterChange(menu.bar, current.num === 4 && current.den === 4 ? { num: 3, den: 4 } : { num: 4, den: 4 });
+        return null;
+      }),
+    },
+    {
+      key: 'punch-in',
+      divider: true,
+      label: 'Punch in here',
+      shortcut: 'recording',
+      icon: <CircleDot className="w-3.5 h-3.5" />,
+      onClick: run(() => {
+        const p = s.punch;
+        s.setPunch({ enabled: true, inBar: menu.bar, outBar: p.outBar > menu.bar ? p.outBar : menu.bar + 1 });
+        return null;
+      }),
+    },
+    {
+      key: 'punch-out',
+      label: 'Punch out here',
+      icon: <CircleDot className="w-3.5 h-3.5" />,
+      onClick: run(() => {
+        const p = s.punch;
+        s.setPunch({ enabled: true, outBar: menu.bar, inBar: p.inBar < menu.bar ? p.inBar : Math.max(1, menu.bar - 1) });
         return null;
       }),
     },

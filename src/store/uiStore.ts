@@ -68,6 +68,9 @@ interface UiState {
   /** The audio clip whose Tune vocal dialog is open */
   tuneClipId: string | null;
   setTuneClip: (clipId: string | null) => void;
+  /** The take folder whose Takes dialog is open */
+  takesClipId: string | null;
+  setTakesClip: (clipId: string | null) => void;
   setDialog: (dialog: AppDialog | null) => void;
   openGuide: (section?: string) => void;
   closeGuide: () => void;
@@ -93,6 +96,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   setVariationsClip: (variationsClipId) => set({ variationsClipId }),
   tuneClipId: null,
   setTuneClip: (tuneClipId) => set({ tuneClipId }),
+  takesClipId: null,
+  setTakesClip: (takesClipId) => set({ takesClipId }),
   setDialog: (dialog) => {
     if (isDockTab(dialog)) get().openDock(dialog);
     else set({ dialog });

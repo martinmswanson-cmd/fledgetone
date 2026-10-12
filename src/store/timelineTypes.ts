@@ -649,6 +649,25 @@ export interface Clip {
   audio?: ClipAudio;
   /** Controller lanes over the clip: pitch bend, mod wheel, sustain pedal (see expression.ts) */
   expression?: ClipExpression;
+  /** A take folder: the takes recorded over this clip's span (see takes.ts) */
+  takes?: ClipTake[];
+  /** Which take plays where (the comp), when there are takes */
+  comp?: CompSegment[];
+}
+
+/** One recorded take of a take folder: notes (a MIDI take) or a sound (a mic take), from the clip's start. */
+export interface ClipTake {
+  id: string;
+  name: string;
+  notes?: NoteEvent[];
+  expression?: ClipExpression;
+  audio?: ClipAudio;
+}
+
+/** From `at` bars into the clip (until the next segment), take number `take` plays. */
+export interface CompSegment {
+  at: number;
+  take: number;
 }
 
 /** A controller lane's point: `at` bars from the clip's start. */

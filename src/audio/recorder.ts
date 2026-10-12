@@ -4,7 +4,7 @@ import { ticksToBar } from './transport';
 import type { MidiMessage } from './midi';
 import { midiNoteName } from './midi';
 import { createTake } from '../store/recording';
-import type { Take, TakeClip } from '../store/recording';
+import type { FinishOptions, Take, TakeClip } from '../store/recording';
 
 /**
  * The take being recorded, if any: the live side of src/store/recording.ts. The store starts
@@ -83,16 +83,16 @@ export function recordMidi(message: MidiMessage, heard: number): void {
  * End the take at `heard` (the audio time the listener was hearing when they stopped): notes
  * still held end there, and the clip runs to the bar there. Stopped during the count-in, the
  * take ends where it would have started. Returns the clip to add to its track, or null if
- * nothing was played.
+ * nothing was played (see Take.finish for the options: a take per loop pass, a punch range).
  */
-export function finishTake(heard: number, tempo: Tempo): { trackId: string; clip: TakeClip } | null {
+export function finishTake(heard: number, tempo: Tempo, options?: FinishOptions): { trackId: string; clip: TakeClip } | null {
   if (!active) return null;
   const { trackId, take, startAudio, stopListening } = active;
   active = null;
   stopListening();
   const seconds = Math.max(heard, startAudio);
   const bar = heard < startAudio ? take.startBar : transportBarAt(heard);
-  const clip = take.finish(bar, seconds, tempo);
+  const clip = take.finish(bar, seconds, tempo, options);
   return clip ? { trackId, clip } : null;
 }
 

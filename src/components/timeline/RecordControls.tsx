@@ -28,8 +28,10 @@ const checkbox = 'accent-red-400 cursor-pointer';
 /** Count-in, quantize and the metronome's volume: the settings behind the Record button's chevron. */
 const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null>; onClose: () => void }> = ({ anchorRef, onClose }) => {
   const options = useTimelineStore((s) => s.recordOptions);
+  const punch = useTimelineStore((s) => s.punch);
   const latency = useMidiStore((s) => s.outputLatency);
-  const { setRecordOptions } = useTimelineStore.getState();
+  const { setRecordOptions, setPunch } = useTimelineStore.getState();
+  const barInput = 'h-7 w-16 bg-forge-bg border border-forge-border rounded-md px-1.5 text-xs font-mono text-forge-text focus:outline-none focus:border-cyan-500';
   return (
     <Popover label="Recording" onClose={onClose} anchorRef={anchorRef} className="left-0">
       <span className="text-sm font-semibold text-forge-text">Recording</span>
@@ -56,6 +58,49 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
         <input type="checkbox" className={checkbox} checked={options.metronome} onChange={(e) => setRecordOptions({ metronome: e.target.checked })} />
         Metronome while playing
       </label>
+      <label data-search="takes" className="flex items-center gap-2 text-forge-text">
+        <input type="checkbox" className={checkbox} checked={options.takes} onChange={(e) => setRecordOptions({ takes: e.target.checked })} />
+        Loop passes are takes (comp them after)
+      </label>
+      <div className="flex flex-col gap-1.5 border-t border-forge-border pt-2">
+        <label data-search="punch" className="flex items-center gap-2 text-forge-text">
+          <input type="checkbox" className={checkbox} checked={punch.enabled} onChange={(e) => setPunch({ enabled: e.target.checked })} />
+          Punch in / out
+        </label>
+        <div className="flex items-center gap-1.5">
+          <span className="w-6">In</span>
+          <input
+            type="number"
+            min={1}
+            step={0.25}
+            value={Math.round(punch.inBar * 1000) / 1000}
+            onChange={(e) => Number.isFinite(e.target.valueAsNumber) && setPunch({ inBar: e.target.valueAsNumber })}
+            className={barInput}
+            aria-label="Punch in bar"
+          />
+          <span className="w-7 text-right">Out</span>
+          <input
+            type="number"
+            min={1}
+            step={0.25}
+            value={Math.round(punch.outBar * 1000) / 1000}
+            onChange={(e) => Number.isFinite(e.target.valueAsNumber) && setPunch({ outBar: e.target.valueAsNumber })}
+            className={barInput}
+            aria-label="Punch out bar"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const loop = useTimelineStore.getState().loopRegion;
+              setPunch({ enabled: true, inBar: loop.inBar, outBar: loop.outBar });
+            }}
+            className="h-7 px-2 rounded-md border border-forge-border text-[11px] text-forge-text hover:border-red-400/70"
+            title="Punch over the loop region"
+          >
+            = loop
+          </button>
+        </div>
+      </div>
       <label className="flex items-center gap-2 text-forge-text">
         <span className="w-[4.5rem]">Click level</span>
         <input
@@ -73,7 +118,10 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
       <p className="text-[11px] leading-snug">
         Arm a track (R on its header), switch Record on and press Play: what you play on the MIDI or computer keyboard goes into a new
         clip on that track, from Play to Stop, in whole bars. The count-in clicks a bar first. With the loop on, every pass adds to the
-        same take. Quantize snaps the notes on Stop; Ctrl+Z puts them back where you played them, and again removes the take.
+        same take, or with "Loop passes are takes", each pass is a take of its own, and recording over a clip of the same span adds
+        takes to it (right-click it, Takes, to comp). Punch keeps only what's played between its In and Out (the red stretch on the
+        ruler), so you can play along from earlier and replace just that part. Quantize snaps the notes on Stop; Ctrl+Z puts them
+        back where you played them, and again removes the take.
         {latency !== null && ` Notes are placed where you heard them (output latency ${Math.round(latency * 1000)} ms allowed for).`}
       </p>
     </Popover>

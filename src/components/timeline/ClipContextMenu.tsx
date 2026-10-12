@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Wand2, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
+import { Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
@@ -130,7 +130,9 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
 
   const s = useTimelineStore.getState();
   const track = s.tracks.find((t) => t.id === menu.trackId);
-  const audioClip = menu.clipId ? !!s.clips.find((c) => c.id === menu.clipId)?.audio : false;
+  const menuClip = menu.clipId ? s.clips.find((c) => c.id === menu.clipId) : undefined;
+  const audioClip = !!menuClip?.audio;
+  const takeCount = menuClip?.takes?.length ?? 0;
   const audioLane = !!track && isAudioKind(track.instrumentKey);
   /** Run an action and close, unless it returns a message saying why it couldn't: then show that. */
   const run = (action: () => string | null | void) => () => {
@@ -170,6 +172,9 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         audioClip
           ? { key: 'edit', label: 'Gain and fades', shortcut: 'dbl-click', icon: <AudioWaveform className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) }
           : { key: 'edit', label: 'Edit notes', shortcut: 'dbl-click', icon: <Piano className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) },
+        ...(takeCount
+          ? [{ key: 'takes', label: `Takes (${takeCount})…`, shortcut: 'comp', icon: <Layers className="w-3.5 h-3.5" />, onClick: run(() => useUiStore.getState().setTakesClip(menu.clipId!)) }]
+          : []),
         ...(audioClip && onChop
           ? [
               { key: 'chop', label: 'Chop to Slicer…', icon: <Slice className="w-3.5 h-3.5" />, onClick: run(() => onChop(menu.clipId!)) },

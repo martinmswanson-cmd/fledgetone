@@ -26,9 +26,15 @@ export interface RecordOptions {
   metronome: boolean;
   /** 0 to 1 */
   metronomeVolume: number;
+  /**
+   * Each loop pass is a take of its own (kept in one take folder, the last pass playing) rather
+   * than all of them playing together, and a take recorded over a clip of the same span joins it
+   * as another take.
+   */
+  takes: boolean;
 }
 
-export const DEFAULT_RECORD_OPTIONS: RecordOptions = { countIn: true, quantize: 'off', metronome: false, metronomeVolume: 0.6 };
+export const DEFAULT_RECORD_OPTIONS: RecordOptions = { countIn: true, quantize: 'off', metronome: false, metronomeVolume: 0.6, takes: false };
 
 const RECORD_OPTIONS_KEY = 'bos-beat-box.record';
 
@@ -42,6 +48,7 @@ export function normalizeRecordOptions(raw: unknown): RecordOptions {
     quantize: QUANTIZE_GRIDS.includes(r.quantize as QuantizeGrid) ? (r.quantize as QuantizeGrid) : d.quantize,
     metronome: typeof r.metronome === 'boolean' ? r.metronome : d.metronome,
     metronomeVolume: typeof volume === 'number' && Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : d.metronomeVolume,
+    takes: typeof r.takes === 'boolean' ? r.takes : d.takes,
   };
 }
 
@@ -70,6 +77,15 @@ export interface TakeClip {
   notes: Omit<NoteEvent, 'id'>[];
   /** The pitch bend and mod wheel as played */
   expression?: ClipExpression;
+  /** Recorded as takes (one per loop pass that played something), in the order played; the clip's notes are the last one's. */
+  takes?: Array<{ notes: Omit<NoteEvent, 'id'>[]; expression?: ClipExpression }>;
+}
+
+/** How a take is finished: split into a take per loop pass, and/or cut to a punch range. */
+export interface FinishOptions {
+  passes?: boolean;
+  /** Only what was played from `inBar` to `outBar` is kept, and the clip is exactly that span. */
+  punch?: { inBar: number; outBar: number } | null;
 }
 
 /** A note played into the take, in song bars (1-based) and audio seconds (for its length). */
@@ -80,6 +96,8 @@ interface TakeNote {
   bar: number;
   start: number;
   end: number;
+  /** The loop pass it was played in (0 for the first) */
+  pass: number;
 }
 
 /** The shortest note a take keeps: a 32nd, the finest grid the piano roll shows. */
@@ -102,7 +120,7 @@ export interface Take {
   sustain: (down: boolean, seconds: number) => void;
   /** The pitch bend (semitones) or mod wheel (0 to 1) moved to `value` at `bar`: it goes in the clip's expression lanes. */
   control: (lane: 'bend' | 'mod', value: number, bar: number) => void;
-  /** The take covered these bars too (a loop pass came round), so its clip spans them. */
+  /** The loop came round: the take covered these bars too, so its clip spans them, and a new pass begins. */
   cover: (fromBar: number, toBar: number) => void;
   /** Notes recorded so far, the held ones included. */
   count: () => number;
@@ -112,7 +130,7 @@ export interface Take {
    * nearest where it stopped, or to the end of the last note, whichever is later. Null if
    * nothing was played.
    */
-  finish: (bar: number, seconds: number, tempo: Tempo) => TakeClip | null;
+  finish: (bar: number, seconds: number, tempo: Tempo, options?: FinishOptions) => TakeClip | null;
 }
 
 export function createTake(startBar: number): Take {
@@ -121,7 +139,8 @@ export function createTake(startBar: number): Take {
   /** Let go while the pedal was down: they end when it comes up. */
   const sustained = new Map<number, TakeNote>();
   let pedal = false;
-  const controls: Record<'bend' | 'mod', Array<{ bar: number; value: number }>> = { bend: [], mod: [] };
+  const controls: Record<'bend' | 'mod', Array<{ bar: number; value: number; pass: number }>> = { bend: [], mod: [] };
+  let pass = 0;
   let low = startBar;
   let high = startBar;
 
@@ -146,7 +165,7 @@ export function createTake(startBar: number): Take {
     startBar,
     noteOn: (key, note, velocity, bar, seconds) => {
       endEarlier(key, seconds);
-      held.set(key, { note, velocity, bar, start: seconds, end: seconds });
+      held.set(key, { note, velocity, bar, start: seconds, end: seconds, pass });
       low = Math.min(low, bar);
       high = Math.max(high, bar);
     },
@@ -167,30 +186,42 @@ export function createTake(startBar: number): Take {
       const list = controls[lane];
       // Wheels send a stream: keep a point only where the value has moved on
       const last = list[list.length - 1];
-      if (last && Math.abs(last.value - value) < (lane === 'bend' ? 0.02 : 0.01) && bar - last.bar < 1 / 16) return;
-      list.push({ bar, value });
+      if (last && last.pass === pass && Math.abs(last.value - value) < (lane === 'bend' ? 0.02 : 0.01) && bar - last.bar < 1 / 16) return;
+      list.push({ bar, value, pass });
     },
     cover: (fromBar, toBar) => {
       low = Math.min(low, fromBar);
       high = Math.max(high, toBar);
+      pass++;
     },
     count: () => notes.length + held.size + sustained.size,
-    finish: (bar, seconds, tempo) => {
+    finish: (bar, seconds, tempo, options = {}) => {
       for (const n of held.values()) close(n, seconds);
       held.clear();
       for (const n of sustained.values()) close(n, seconds);
       sustained.clear();
-      if (notes.length === 0) return null;
-      // Held this many seconds, at the tempo where the note started
-      const lengthOf = (n: TakeNote) => Math.max(MIN_NOTE_BARS, ((n.end - n.start) * tempoAt(n.bar, tempo)) / 240);
-      // Stopped just past a bar line, the take ends on that line rather than a bar later
-      high = Math.max(high, Math.round(bar), ...notes.map((n) => n.bar + lengthOf(n)));
-      const clipStart = Math.max(1, Math.min(TOTAL_BARS, Math.floor(low + EPS)));
-      const clipEnd = Math.max(clipStart + 1, Math.min(TOTAL_BARS + 1, Math.ceil(high - EPS)));
-      return {
-        startBar: clipStart,
-        lengthBars: clipEnd - clipStart,
-        notes: notes
+      const punch = options.punch && options.punch.outBar > options.punch.inBar + EPS ? options.punch : null;
+      // Punching, only what starts inside the range is kept
+      const kept = punch ? notes.filter((n) => n.bar >= punch.inBar - EPS && n.bar < punch.outBar - EPS) : notes;
+      if (kept.length === 0) return null;
+      // Held this many seconds, at the tempo where the note started (and, punching, no further than the punch out)
+      const lengthOf = (n: TakeNote) => {
+        const played = ((n.end - n.start) * tempoAt(n.bar, tempo)) / 240;
+        return Math.max(MIN_NOTE_BARS, punch ? Math.min(played, punch.outBar - n.bar) : played);
+      };
+      let clipStart: number;
+      let clipEnd: number;
+      if (punch) {
+        clipStart = punch.inBar;
+        clipEnd = punch.outBar;
+      } else {
+        // Stopped just past a bar line, the take ends on that line rather than a bar later
+        high = Math.max(high, Math.round(bar), ...kept.map((n) => n.bar + lengthOf(n)));
+        clipStart = Math.max(1, Math.min(TOTAL_BARS, Math.floor(low + EPS)));
+        clipEnd = Math.max(clipStart + 1, Math.min(TOTAL_BARS + 1, Math.ceil(high - EPS)));
+      }
+      const notesOf = (list: TakeNote[]) =>
+        list
           .slice()
           .sort((a, b) => a.bar - b.bar || a.start - b.start)
           .map((n) => ({
@@ -198,18 +229,27 @@ export function createTake(startBar: number): Take {
             startOffset: Math.max(0, n.bar - clipStart),
             duration: barsToDuration(lengthOf(n)),
             velocity: Math.max(0.01, Math.min(1, n.velocity)),
-          })),
-        // The wheels as played, back to rest at the end of the take
-        ...(() => {
-          const expression: ClipExpression = {};
-          for (const lane of ['bend', 'mod'] as const) {
-            const list = controls[lane].filter((c) => c.bar >= clipStart && c.bar <= clipEnd);
-            if (!list.some((c) => c.value !== 0)) continue;
-            expression[lane] = list.map((c) => ({ at: c.bar - clipStart, value: Math.round(c.value * 1000) / 1000 }));
-          }
-          return Object.keys(expression).length ? { expression } : {};
-        })(),
+          }));
+      // The wheels as played (of one pass, or all of them)
+      const expressionOf = (only?: number): { expression?: ClipExpression } => {
+        const expression: ClipExpression = {};
+        for (const lane of ['bend', 'mod'] as const) {
+          const list = controls[lane].filter((c) => c.bar >= clipStart && c.bar <= clipEnd && (only === undefined || c.pass === only));
+          if (!list.some((c) => c.value !== 0)) continue;
+          expression[lane] = list.map((c) => ({ at: c.bar - clipStart, value: Math.round(c.value * 1000) / 1000 }));
+        }
+        return Object.keys(expression).length ? { expression } : {};
       };
+      const base = { startBar: clipStart, lengthBars: clipEnd - clipStart };
+      if (options.passes) {
+        const passes = [...new Set(kept.map((n) => n.pass))].sort((a, b) => a - b);
+        if (passes.length > 1) {
+          const takes = passes.map((p) => ({ notes: notesOf(kept.filter((n) => n.pass === p)), ...expressionOf(p) }));
+          const last = takes[takes.length - 1];
+          return { ...base, notes: last.notes, ...(last.expression ? { expression: last.expression } : {}), takes };
+        }
+      }
+      return { ...base, notes: notesOf(kept), ...expressionOf() };
     },
   };
 }

@@ -10,6 +10,7 @@ import { TrackHeader } from './TrackHeader';
 import { TrackLane } from './TrackLane';
 import { barFromClientX, Playhead, useScrub } from './Playhead';
 import { ClipContextMenu } from './ClipContextMenu';
+import { TakesDialog } from './TakesDialog';
 import type { ContextMenuState } from './ClipContextMenu';
 import { ChopToSlicerDialog } from './ChopToSlicerDialog';
 import { VariationsDialog } from './VariationsDialog';
@@ -116,6 +117,7 @@ export const Timeline: React.FC = () => {
   const variationsClipId = useUiStore((s) => s.variationsClipId);
   const setVariationsClipId = useUiStore.getState().setVariationsClip;
   const tuneClipId = useUiStore((s) => s.tuneClipId);
+  const takesClipId = useUiStore((s) => s.takesClipId);
   const contentRef = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
 
@@ -427,6 +429,7 @@ export const Timeline: React.FC = () => {
       {chopClipId && <ChopToSlicerDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
       {variationsClipId && <VariationsDialog clipId={variationsClipId} onClose={() => setVariationsClipId(null)} />}
       {tuneClipId && <TuneDialog clipId={tuneClipId} onClose={() => useUiStore.getState().setTuneClip(null)} />}
+      {takesClipId && <TakesDialog clipId={takesClipId} onClose={() => useUiStore.getState().setTakesClip(null)} />}
       <Toast />
     </div>
   );

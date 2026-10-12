@@ -30,6 +30,7 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
   const inBar = useTimelineStore((s) => s.loopRegion.inBar);
   const outBar = useTimelineStore((s) => s.loopRegion.outBar);
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
+  const punch = useTimelineStore((s) => s.punch);
   const units = useTimelineStore((s) => s.rulerUnits);
   const tempo = useSongTempo();
   const meterMap = useSongMeter();
@@ -139,6 +140,16 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
       >
         <div className={`absolute inset-x-0 h-[3px] ${loopEnabled ? 'bg-amber-400' : 'bg-zinc-500'}`} style={{ top: TEMPO_ROW }} />
       </div>
+
+      {/* Punch in/out range: recording keeps only what's played here */}
+      {punch.enabled && (
+        <div
+          className="absolute bottom-0 h-[5px] pointer-events-none bg-red-500/80 border-x-2 border-red-300"
+          style={{ left: (punch.inBar - 1) * zoom, width: Math.max(2, (punch.outBar - punch.inBar) * zoom) }}
+          title="Punch range"
+          aria-hidden
+        />
+      )}
 
       {/* In bracket */}
       <div
