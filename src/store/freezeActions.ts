@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { useTimelineStore } from './timelineStore';
-import { freezeFingerprint, trackForFreezing } from './freeze';
+import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';
+import type { Track } from './timelineTypes';
+import { barToSeconds, secondsToBar } from '../audio/tempoMap';
 import { isAudioKind } from '../audio/instrumentCatalog';
 import { encodeChannels, renderForFreeze, SAMPLE_RATES } from '../audio/exportWav';
 import type { SampleRate } from '../audio/exportWav';
@@ -29,18 +31,27 @@ export const canFreeze = (trackId: string): boolean => {
   return !!track && !isAudioKind(track.instrumentKey) && s.clips.some((c) => c.trackId === trackId);
 };
 
+interface RenderedTrack {
+  soundId: string;
+  startBar: number;
+  seconds: number;
+  gainDb: number;
+  fingerprint: string;
+}
+
 /**
- * Render a track to a sound and mark it frozen (one undo step). Playback stops first: a render
- * swaps the global audio context while it sets up. Rejects with a message to show.
+ * Render a track's instrument, inserts and EQ (not its volume, pan or sends) to a sound in the
+ * library, from its first clip to the end of its tail. Playback stops first: a render swaps the
+ * global audio context while it sets up. Null when the track went away while it rendered.
  */
-export async function freezeTrack(trackId: string): Promise<void> {
+async function renderTrackSound(trackId: string, label: string): Promise<RenderedTrack | null> {
   const store = useTimelineStore.getState();
   const track = store.tracks.find((t) => t.id === trackId);
-  if (!track) return;
+  if (!track) return null;
   if (isAudioKind(track.instrumentKey)) throw new Error('an Audio track already plays recordings');
   const own = store.clips.filter((c) => c.trackId === trackId);
-  if (!own.length) throw new Error(`"${track.name}" has no clips to freeze`);
-  if (useFreezing.getState()[trackId] !== undefined) return;
+  if (!own.length) throw new Error(`"${track.name}" has no clips to render`);
+  if (useFreezing.getState()[trackId] !== undefined) return null;
   store.pause();
   useFreezing.setState({ [trackId]: 0 });
   try {
@@ -77,7 +88,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
       for (let i = ch.length - 1; i > end; i--) if (Math.abs(ch[i]) > SILENCE) { end = i; break; }
       for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]));
     }
-    if (peak <= SILENCE) throw new Error(`"${track.name}" is silent: nothing to freeze`);
+    if (peak <= SILENCE) throw new Error(`"${track.name}" is silent: nothing to render`);
     const length = Math.min(channels[0].length, end + Math.round(0.05 * sampleRate));
     // Normalized within ±20 dB, leaving room in the clip gain's ±24 dB for the playback correction
     const normalizeDb = Math.max(-20, Math.min(20, 20 * Math.log10(peak / STORED_PEAK)));
@@ -89,13 +100,9 @@ export async function freezeTrack(trackId: string): Promise<void> {
       return out;
     });
     const wav = encodeChannels(stored, sampleRate, 16, []);
-    const meta = await importSoundFile(wav, `${track.name} (frozen)`, MAX_FROZEN_BYTES);
-    const now = useTimelineStore.getState();
-    if (!now.tracks.some((t) => t.id === trackId)) return; // deleted while it rendered
-    now.checkpoint();
-    useTimelineStore.setState((s) => ({
-      tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, frozen: { soundId: meta.id, startBar, seconds: length / sampleRate, gainDb, fingerprint } } : t)),
-    }));
+    const meta = await importSoundFile(wav, `${track.name} (${label})`, MAX_FROZEN_BYTES);
+    if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return null; // deleted while it rendered
+    return { soundId: meta.id, startBar, seconds: length / sampleRate, gainDb, fingerprint };
   } finally {
     useFreezing.setState((s) => {
       const next = { ...s };
@@ -103,6 +110,71 @@ export async function freezeTrack(trackId: string): Promise<void> {
       return next;
     }, true);
   }
+}
+
+/**
+ * Render a track to a sound and mark it frozen (one undo step). Playback stops first: a render
+ * swaps the global audio context while it sets up. Rejects with a message to show.
+ */
+export async function freezeTrack(trackId: string): Promise<void> {
+  const r = await renderTrackSound(trackId, 'frozen');
+  if (!r) return;
+  useTimelineStore.getState().checkpoint();
+  useTimelineStore.setState((s) => ({
+    tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, frozen: { soundId: r.soundId, startBar: r.startBar, seconds: r.seconds, gainDb: r.gainDb, fingerprint: r.fingerprint } } : t)),
+  }));
+}
+
+/**
+ * Bounce in place (one undo step): the track's sound, instrument, inserts and EQ included, as one
+ * audio clip on a new Audio track just under it, which takes over its volume, pan, sends, output
+ * and their automation. The original is muted and kept, to go back to. Returns the new track's id.
+ */
+export async function bounceTrack(trackId: string): Promise<string | null> {
+  const r = await renderTrackSound(trackId, 'bounce');
+  if (!r) return null;
+  const s = useTimelineStore.getState();
+  const source = s.tracks.find((t) => t.id === trackId);
+  if (!source) return null;
+  s.checkpoint();
+  const id = s.addTrack('audio', `${source.name} (bounce)`);
+  const tempo = { bpm: s.bpm, points: s.tempoPoints ?? [] };
+  const lengthBars = secondsToBar(barToSeconds(r.startBar, tempo) + r.seconds, tempo) - r.startBar;
+  useTimelineStore.setState((st) => {
+    const made = st.tracks.find((t) => t.id === id)!;
+    const bounced: Track = {
+      ...made,
+      volume: source.volume,
+      pan: source.pan,
+      reverbSend: source.reverbSend,
+      delaySend: source.delaySend,
+      ...(source.sends ? { sends: source.sends } : {}),
+      ...(source.output ? { output: source.output } : {}),
+      ...(source.folder ? { folder: source.folder } : {}),
+      automation: (source.automation ?? []).filter((l) => isLiveParam(l.param)),
+    };
+    const others = st.tracks.filter((t) => t.id !== id).map((t) => (t.id === trackId ? { ...t, isMuted: true } : t));
+    const at = others.findIndex((t) => t.id === trackId) + 1;
+    return {
+      tracks: [...others.slice(0, at), bounced, ...others.slice(at)],
+      clips: [
+        ...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)),
+        {
+          id: `clip-bounce-${id}`,
+          trackId: id,
+          name: `${source.name} (bounce)`,
+          startBar: r.startBar,
+          lengthBars,
+          notes: [],
+          isSelected: true,
+          audio: { soundId: r.soundId, offset: 0, gain: r.gainDb, fadeIn: 0, fadeOut: 0 },
+        },
+      ],
+      // (addTrack and this are one step: drop the step addTrack pushed)
+      past: st.past.slice(0, -1),
+    };
+  });
+  return id;
 }
 
 /** Play the track live again (one undo step). The frozen sound stays in the library until freed. */

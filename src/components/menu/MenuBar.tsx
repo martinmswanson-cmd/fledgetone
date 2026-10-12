@@ -4,7 +4,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { MOD_KEY, PALETTE_SHORTCUT, useUiStore, type DockTab } from '../../store/uiStore';
 import { useVideoStore } from '../../store/videoStore';
 import { useAudioStore } from '../../store/audioStore';
-import { canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
+import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
 import { pickProjectFile, saveProjectFile } from '../timeline/projectFile';
 import { showToast } from '../timeline/toastStore';
 import { press, reveal } from '../../search/reveal';
@@ -137,6 +137,11 @@ const MENUS: MenuDef[] = [
           if (frozen) return unfreezeTrack(t.id);
           if (!canFreeze(t.id)) return 'This track has nothing to freeze.';
           return freezeTrack(t.id);
+        } },
+        { label: t ? `Bounce “${t.name}” in place` : 'Bounce in place', disabled: !t, run: () => {
+          if (!t) return NEED_TRACK;
+          if (!canFreeze(t.id)) return 'This track has nothing to bounce.';
+          return bounceTrack(t.id).then((id) => (id ? `Bounced ${t.name} to audio: the original is muted, under it` : undefined));
         } },
         { label: 'Move up', run: () => (t ? tl().moveTrackRow(t.id, -1) : NEED_TRACK), disabled: !t, divider: true },
         { label: 'Move down', run: () => (t ? tl().moveTrackRow(t.id, 1) : NEED_TRACK), disabled: !t },

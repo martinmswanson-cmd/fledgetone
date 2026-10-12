@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Plug, Radio, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints } from 'lucide-react';
+import { Plug, Radio, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints, AudioLines } from 'lucide-react';
 import { busTargets, isBus, isMixTrack, sendTargets } from '../../store/buses';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
@@ -8,7 +8,8 @@ import { foldersOf } from '../../store/folders';
 import { MenuItem } from './ClipContextMenu';
 import type { MenuItemProps } from './ClipContextMenu';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
-import { canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
+import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
+import { showToast } from './toastStore';
 
 /**
  * The tracks a "new bus" takes: the ones with clips selected, if this track is one of them, else
@@ -125,6 +126,18 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
     track.frozen
       ? { key: 'freeze', label: 'Unfreeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => unfreezeTrack(track.id)), divider: true }
       : { key: 'freeze', label: 'Freeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => void freezeTrack(track.id)), disabled: isMixTrack(track) || !canFreeze(track.id), divider: true },
+    {
+      key: 'bounce',
+      label: 'Bounce in place',
+      icon: <AudioLines className="w-3.5 h-3.5" />,
+      onClick: run(() =>
+        bounceTrack(track.id).then(
+          (id) => id && showToast(`Bounced ${track.name} to audio: the original is muted, under it`),
+          (err) => showToast(`Couldn't bounce ${track.name}: ${err instanceof Error ? err.message : String(err)}`)
+        )
+      ),
+      disabled: isMixTrack(track) || !canFreeze(track.id),
+    },
     { key: 'delete', label: 'Delete track', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(() => s.deleteTrack(track.id)) },
   ];
 
