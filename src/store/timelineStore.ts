@@ -240,6 +240,8 @@ interface TimelineState {
    * user if one is already there, else null.
    */
   addMarker: (bar?: number) => string | null;
+  /** A hit point at the playhead: a marker named "Hit N", locked to time (see tempoFinder.ts) */
+  addHit: () => string | null;
   /** Move a marker (no history: drags checkpoint() once). */
   moveMarker: (id: string, bar: number) => void;
   /**
@@ -937,6 +939,20 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const s = get();
       const marker = createMarker(bar ?? s.playheadPosition, s.bpm, nextMarkerName(s.markers));
       // Pressing M twice (or holding it) shouldn't stack markers on one spot
+      const there = s.markers.find((m) => Math.abs(m.bar - marker.bar) < EPS);
+      if (there) return `"${there.name}" is already at ${formatBarsBeats(there.bar)}.`;
+      set((st) => ({ markers: retimeMarkers([...st.markers, marker], st.bpm), ...pushPast(st) }));
+      return null;
+    },
+
+    addHit: () => {
+      const s = get();
+      let highest = 0;
+      for (const m of s.markers) {
+        const n = /^Hit (\d+)$/.exec(m.name);
+        if (n) highest = Math.max(highest, Number(n[1]));
+      }
+      const marker = anchorMarker(createMarker(s.playheadPosition, s.bpm, `Hit ${highest + 1}`), 'time');
       const there = s.markers.find((m) => Math.abs(m.bar - marker.bar) < EPS);
       if (there) return `"${there.name}" is already at ${formatBarsBeats(there.bar)}.`;
       set((st) => ({ markers: retimeMarkers([...st.markers, marker], st.bpm), ...pushPast(st) }));
