@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Lock, LockOpen, Pencil, Trash2 } from 'lucide-react';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Marker } from '../../store/timelineTypes';
-import { snapBar } from '../../store/timelineTypes';
+import { minClipLength, snapBar } from '../../store/timelineTypes';
 import { MARKER_NAME_MAX } from '../../store/markers';
 import { formatBarsBeats, formatSmpte } from '../../audio/transport';
 import { barFromClientX } from './Playhead';
@@ -90,6 +90,32 @@ export const MarkerFlags = React.memo(function MarkerFlags({ originRef }: { orig
     window.addEventListener('pointercancel', onCancel);
   };
 
+  // Keyboard: Tab reaches each flag. Enter moves the playhead there, F2 renames, Delete deletes,
+  // the arrows move it a grid step (Shift: a bar), the menu key or Shift+F10 opens its menu
+  const onFlagKey = (e: React.KeyboardEvent<HTMLDivElement>, marker: Marker) => {
+    const s = useTimelineStore.getState();
+    let handled = true;
+    if (e.key === 'Enter') s.seek(marker.bar);
+    else if (e.key === 'F2') setEditing(marker.id);
+    else if (e.key === 'Delete' || e.key === 'Backspace') s.deleteMarker(marker.id);
+    else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+      const r = e.currentTarget.getBoundingClientRect();
+      setMenu({ x: r.left, y: r.bottom, id: marker.id });
+    } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const step = (e.shiftKey ? 1 : minClipLength(s.snapGrid, s)) * (e.key === 'ArrowLeft' ? -1 : 1);
+      const bar = Math.max(1, Math.min(TOTAL_BARS + 1, marker.bar + step));
+      if (bar !== marker.bar) {
+        s.checkpoint();
+        s.moveMarker(marker.id, bar);
+      }
+    } else handled = false;
+    if (handled) {
+      // Not the timeline's own shortcuts too (Delete would delete the selected clips)
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
   return (
     <>
       {markers.map((m, i) => {
@@ -118,9 +144,14 @@ export const MarkerFlags = React.memo(function MarkerFlags({ originRef }: { orig
               <FlagNameInput marker={m} className={side} onDone={stopEditing} />
             ) : (
               <div
-                className={`absolute top-0 ${side} ${leftward ? 'rounded-l-sm pr-1 pl-1.5' : 'rounded-r-sm pl-1 pr-1.5'} flex items-center gap-0.5 bg-violet-500/90 hover:bg-violet-400 text-[9px] font-semibold leading-none text-white whitespace-nowrap shadow-md cursor-pointer touch-none`}
+                className={`absolute top-0 ${side} ${leftward ? 'rounded-l-sm pr-1 pl-1.5' : 'rounded-r-sm pl-1 pr-1.5'} flex items-center gap-0.5 bg-violet-500/90 hover:bg-violet-400 text-[9px] font-semibold leading-none text-white whitespace-nowrap shadow-md cursor-pointer touch-none focus:outline-none focus-visible:ring-2 focus-visible:ring-white`}
                 style={{ height: FLAG_HEIGHT, maxWidth }}
                 onPointerDown={(e) => startDrag(e, m)}
+                tabIndex={0}
+                role="button"
+                aria-label={`Marker ${m.name} at ${formatBarsBeats(m.bar)}`}
+                aria-keyshortcuts="Enter F2 Delete ArrowLeft ArrowRight"
+                onKeyDown={(e) => onFlagKey(e, m)}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   setEditing(m.id);

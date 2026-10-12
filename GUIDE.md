@@ -188,6 +188,7 @@ Each marker is a violet flag with its name in the ruler, just under the numbers,
 - **Drag** it to move the marker. It snaps to the SNAP grid; hold Shift for no snap.
 - **Double-click** it to rename it (up to 80 characters). Enter or a click anywhere else keeps the name; `Esc` cancels.
 - **Right-click** it for **Rename**, **Lock to time** (or **Lock to bar**) and **Delete**. Unlike a click, the menu leaves the playhead where it is, so it doesn't interrupt playback.
+- **With the keyboard**: `Tab` reaches each flag. `Enter` moves the playhead there, `F2` renames it, `Delete` deletes it, `←` / `→` move it one SNAP step (with Shift, a bar), and the menu key or `Shift+F10` opens its menu.
 
 A marker normally stays on its bar when you change the tempo, so it moves with the music. **Lock to time** keeps its timecode instead and lets its bar move, for lining up with a video; its flag shows a small lock. If a faster tempo pushes a locked marker past the end of the timeline, it isn't drawn and the list says "after the end"; it comes back when you slow the tempo down.
 
