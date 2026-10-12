@@ -1,6 +1,6 @@
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { NotationView } from './NotationView';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import { Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { initAudio } from '../../audio/engine';
@@ -88,8 +88,8 @@ function slicerRows(slicer: SlicerSettings | undefined, notes: NoteEvent[]): Row
 
 /** A Drum Rack's rows: one per pad, named as its pads are, pad 1 at the bottom. */
 function rackRows(rack: DrumRack | undefined): Row[] {
-  return Array.from({ length: RACK_PADS }, (_, k) => {
-    const i = RACK_PADS - 1 - k;
+  // Pad 1 at the top, where the pads loaded first are
+  return Array.from({ length: RACK_PADS }, (_, i) => {
     const pad = rack?.pads[i];
     return { note: padNote(i), label: `${pad?.name ?? `Pad ${i + 1}`}${pad?.soundId ? '' : ' (empty)'}`, black: i % 2 === 1, midi: -1 };
   });
@@ -164,7 +164,8 @@ const edgeOf = (noteWidth: number) => Math.min(EDGE_PX, noteWidth / 3);
 
 /** The scale and chord chosen last, kept while the app is open so the next clip opens with them. */
 let rememberedScale: Scale | null = null;
-let rememberedChord: ChordId = 'off';
+/** Per track: a chord stamp suits the chords part, not the melody you open next */
+const rememberedChords = new Map<string, ChordId>();
 let rememberedGhosts = true;
 let rememberedStepMode = true;
 let rememberedNotation = false;
@@ -271,7 +272,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const [velocity, setVelocity] = useState(0.8);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scale, setScaleState] = useState<Scale | null>(rememberedScale);
-  const [chord, setChordState] = useState<ChordId>(rememberedChord);
+  const [chord, setChordState] = useState<ChordId>(() => rememberedChords.get(clip.trackId) ?? 'off');
   const [ghosts, setGhostsState] = useState(rememberedGhosts);
   // Drum clips: a click toggles a hit on the grid, like a step sequencer
   const [stepMode, setStepModeState] = useState(rememberedStepMode);
@@ -284,10 +285,21 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const setStepMode = (next: boolean) => setStepModeState((rememberedStepMode = next));
   const stepping = stepMode && (isDrumKind(instrument) || isRackKind(instrument));
   const setScale = (next: Scale | null) => setScaleState((rememberedScale = next));
-  const setChord = (next: ChordId) => setChordState((rememberedChord = next));
+  const setChord = (next: ChordId) => {
+    rememberedChords.set(clip.trackId, next);
+    setChordState(next);
+  };
   const setGhosts = (next: boolean) => setGhostsState((rememberedGhosts = next));
   const gridRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Opened: zoomed out so the whole clip fits (up to 4 bars or so), and scrolled into view
+  useLayoutEffect(() => {
+    const width = scrollRef.current?.clientWidth ?? 0;
+    const steps = Math.max(1, clip.lengthBars * 16);
+    if (width > 0) setStepW((w) => Math.max(10, Math.min(w, Math.floor((width - 72) / steps))));
+    scrollRef.current?.closest('[data-piano-roll]')?.scrollIntoView({ block: 'nearest' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, as the clip opens
+  }, [clip.id]);
 
   // Rows only grow while the editor is open, so notes never jump rows mid-edit; a Slicer's follow its slices and mode
   const [rows, setRows] = useState(() => rowsFor(instrument, clip.notes, slicer, rack));
@@ -547,7 +559,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     }
     const added = pitches.map((note) => ({ note, ...at }));
     const ids = useTimelineStore.getState().addNotes(clip.id, added);
-    setSelected(new Set(ids));
+    // A drawn note isn't left selected: TOOLS and VEL go on working on the whole clip
+    setSelected(new Set());
     void preview(clip.trackId, added.map((n) => ({ ...n, duration: '8n' })));
     startDrag(e, new Set(ids), 'move', true, ids[0]);
   };
@@ -641,7 +654,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const select = 'h-7 bg-forge-bg border border-forge-border rounded-md px-1.5 text-forge-text focus:outline-none focus:border-cyan-500';
 
   return (
-    <div className="border-t-2 bg-forge-panel flex flex-col" style={{ borderTopColor: color }} aria-label="Piano roll">
+    <div data-piano-roll className="border-t-2 bg-forge-panel flex flex-col" style={{ borderTopColor: color }} aria-label="Piano roll">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 border-b border-forge-border text-xs font-mono text-forge-muted">
         <div className="flex items-center gap-2">
@@ -708,8 +721,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               className={select}
               aria-label="Scale root"
               value={scale?.root ?? 0}
-              disabled={!scale}
-              onChange={(e) => scale && setScale({ ...scale, root: Number(e.target.value) })}
+              onChange={(e) => setScale({ id: scale?.id ?? 'major', root: Number(e.target.value) })}
+              title={scale ? undefined : 'Pick a key: it turns the scale on (major; pick minor or another beside it)'}
             >
               {ROOT_NAMES.map((n, i) => (
                 <option key={n} value={i}>{n}</option>
@@ -781,7 +794,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </button>
         </div>
         <span className="hidden xl:inline text-[11px]">
-          Click to add • drag to move • drag right edge to resize • right-click to delete • arrows nudge
+          {stepping ? 'Click a step to turn a hit on or off • Shift-click: an accent • Alt-drag: move notes as usual' : 'Click to add • drag to move • drag right edge to resize • right-click to delete • arrows nudge'}
         </span>
         <button
           type="button"
@@ -793,7 +806,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         </button>
       </div>
 
-      {notation && fullTrack && <NotationView clip={clip} track={fullTrack} />}
+      {notation && fullTrack && <NotationView clip={clip} track={fullTrack} scale={scale} />}
       {/* Body */}
       <div ref={scrollRef} className={`relative overflow-auto max-h-[340px] select-none ${notation ? 'hidden' : ''}`}>
         <div className="relative" style={{ width: KEY_W + gridW, height: RULER_H + gridH + (isDrums ? 0 : EXPRESSION_LANE_H) }}>

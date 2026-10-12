@@ -1,10 +1,11 @@
+import type { Scale } from '../../store/noteTools';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Printer } from 'lucide-react';
 import { useTimelineStore, songMeterOf } from '../../store/timelineStore';
 import type { Clip, Track } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/instruments';
 import { isDrumKind, isRackKind, INSTRUMENTS } from '../../audio/instrumentCatalog';
-import { detectKey } from '../../store/songKey';
+import { detectKey, keyOf } from '../../store/songKey';
 import { keySpec, musicXml, notate, spellPitch, type Clef, type Glyph, type Score } from '../../store/notation';
 import { tempoAt } from '../../audio/tempoMap';
 import { songTempo } from '../../store/timelineStore';
@@ -149,7 +150,7 @@ function draw(VF: VF, el: HTMLDivElement, score: Score, width: number, drumsRack
   return boxes;
 }
 
-export const NotationView: React.FC<{ clip: Clip; track: Track }> = ({ clip, track }) => {
+export const NotationView: React.FC<{ clip: Clip; track: Track; scale?: Scale | null }> = ({ clip, track, scale }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [boxes, setBoxes] = useState<Array<{ x: number; y: number; w: number; h: number }>>([]);
@@ -157,7 +158,12 @@ export const NotationView: React.FC<{ clip: Clip; track: Track }> = ({ clip, tra
   const meter = useTimelineStore((s) => songMeterOf(s));
   const clips = useTimelineStore((s) => s.clips);
   const tracks = useTimelineStore((s) => s.tracks);
-  const key = useMemo(() => detectKey(clips, tracks), [clips, tracks]);
+  // The piano roll's SCALE when it's a major or minor one, else the key the song's notes are in
+  const key = useMemo(() => {
+    if (scale?.id === 'major' || scale?.id === 'minor') return keyOf(scale.root, scale.id);
+    if (scale?.id === 'harmonicMinor') return keyOf(scale.root, 'minor');
+    return detectKey(clips, tracks);
+  }, [clips, tracks, scale]);
   const drums = isDrumKind(track.instrumentKey) || isRackKind(track.instrumentKey);
   const score = useMemo(() => notate(clip, meter, key, drums), [clip, meter, key, drums]);
   const playhead = useTimelineStore((s) => s.playheadPosition);

@@ -2,9 +2,11 @@ import React from 'react';
 import { Activity } from 'lucide-react';
 import { formatLufs } from '../audio/loudness';
 
-/** A reading, or a dash while there's nothing to measure. */
-const show = (v: number) => (Number.isFinite(v) ? formatLufs(v) : '– LUFS');
 import { useLoudness } from './inspector/useLoudness';
+import { useTimelineStore } from '../store/timelineStore';
+
+/** A reading, or a dash while there's nothing to measure (silence reads as far below anything heard). */
+const show = (v: number) => (Number.isFinite(v) && v > -70 ? formatLufs(v) : '– LUFS');
 
 /**
  * The song's loudness over the last 3 seconds, in the header while audio runs. Turns red while
@@ -12,7 +14,9 @@ import { useLoudness } from './inspector/useLoudness';
  */
 export const LoudnessBadge: React.FC = () => {
   const reading = useLoudness();
-  const hot = reading !== null && reading.truePeakMax > -1;
+  const playing = useTimelineStore((s) => s.isPlaying);
+  // Red only while playing: stopped, the badge shows a dash, and a red dash reads like an error
+  const hot = playing && reading !== null && reading.truePeakMax > -1;
   return (
     <div
       className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-mono tabular-nums border bg-forge-bg ${

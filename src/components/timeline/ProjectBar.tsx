@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Download, History, Music2, Save, Share2 } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
-import { lastSession, retryAutosave, useTimelineStore } from '../../store/timelineStore';
+import { retryAutosave, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { clearPreviousSession } from '../../store/project';
 import { saveProjectFile } from './projectFile';
@@ -100,8 +100,8 @@ function savedWhen({ savedAt, keptAt }: { savedAt: number | null; keptAt: number
  * Restore or Dismiss (or until a newer session with clips takes its place).
  */
 export const RestoreSessionBanner: React.FC = () => {
-  const [open, setOpen] = useState(lastSession !== null);
-  if (!open || !lastSession) return null;
+  const lastSession = useLastSession((s) => s.session);
+  if (!lastSession) return null;
   const { project } = lastSession;
   // What's in it: its clips, or the markers of a session that has only those
   const markers = project.markers?.length ?? 0;
@@ -111,14 +111,14 @@ export const RestoreSessionBanner: React.FC = () => {
     clearPreviousSession(dismissed);
     // Its space is free now, so an autosave that didn't fit may fit
     retryAutosave();
-    setOpen(false);
+    useLastSession.setState({ session: null });
   };
 
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 border-b border-forge-border bg-cyan-500/10 text-xs">
       <History className="w-4 h-4 text-cyan-300 shrink-0" />
       <span className="text-forge-text">
-        Your last session, <b>{project.name}</b> ({n} {what}{n === 1 ? '' : 's'}
+        {lastSession.replaced ? 'The song you replaced' : 'Your last session'}, <b>{project.name}</b> ({n} {what}{n === 1 ? '' : 's'}
         {when && `, ${when}`}), can be restored.
       </span>
       <div className="flex items-center gap-1.5 ml-auto">
@@ -126,8 +126,9 @@ export const RestoreSessionBanner: React.FC = () => {
           type="button"
           className={`${barButton} !text-cyan-200 !border-cyan-400/60`}
           onClick={() => {
-            useTimelineStore.getState().loadProject(project);
+            // (Loading sets the current song aside in its place, so Restore can be undone the same way)
             close(false);
+            useTimelineStore.getState().loadProject(project);
           }}
           title="Replace the current timeline with your last session"
         >

@@ -303,7 +303,7 @@ Click the flag button right of the Loop button (it shows how many markers there 
 
 ## Writing notes: the piano roll
 
-Double-click a clip with the Selection tool (or right-click it and choose **Edit notes**, which works with either tool) to open it in the piano roll under the timeline. Drum kits show five rows (Cowbell, Open Hat, Closed Hat, Snare, Kick); other instruments show a keyboard covering the instrument's range.
+Double-click a clip with the Selection tool (or right-click it and choose **Edit notes**, which works with either tool) to open it in the piano roll under the timeline. Drum kits show a row per drum (Kick, Snare, Clap, the hats, toms, crash, ride and cowbell); other instruments show a keyboard covering the instrument's range.
 
 - **Add a note**: click empty grid. Keep the button down and drag to place it.
 - **Move**: drag a note sideways (time) or up and down (pitch). Selected notes move together.
@@ -568,7 +568,7 @@ Click **FX Rack** in the toolbar, or the sliders icon on a track header (or **Tr
 - **DELAY**: echoes in time with the song. **Time** is a note value (1/32 to 1/2, dotted and triplet ones too) of the tempo; **ping-pong** bounces the echoes left and right; **Feedback** (how many repeats), **Tone** (darkens each repeat) and **Mix**.
 - **REVERB**: a room of the track's own (apart from the shared master reverb): **Decay** (0.3 s for a small room to 12 s for a huge hall), **Pre-delay** (a gap before the room answers, which keeps a voice clear), **Tone** (darker is warmer) and **Mix**. On a return track, run it at 100% mix.
 - **GATE**: chops the track's volume in time with the song (a trance gate, or a stutter before a drop). **Rate** 1/8, 1/8T, 1/16, 1/16T or 1/32; **Depth** (how far it closes: 100% is silent between chops); **Length** (how much of each step it stays open). The chops line up with bar 1, in playback and exports alike. Try it on a held pad or supersaw chord.
-- **PUMP**: sidechain-style ducking. The track's volume dips and swells back on every **Kick drum** (any drum-kit track's kick that is actually playing), **Every beat**, **Every 1/8**, or every note of **A track** you pick under **Follows** (a sidechain from any part: duck the pads under the bass, or the chords under a lead; the followed track can even be muted, as a silent trigger). **Depth** (how far it ducks) and **Release** (50 to 600 ms, how long it takes to come back). A muted or soloed-out kick track doesn't pump, so if you solo the pumped track, solo the drums too.
+- **PUMP**: sidechain-style ducking. The track's volume dips and swells back on every **Kick** (any drum-kit track's kick that is actually playing), every **Beat**, every **1/8**, or every note of a **Track** you pick under **Follows** (a sidechain from any part: duck the pads under the bass, or the chords under a lead; the followed track can even be muted, as a silent trigger). **Depth** (how far it ducks) and **Release** (50 to 600 ms, how long it takes to come back). A muted or soloed-out kick track doesn't pump, so if you solo the pumped track, solo the drums too.
 - **POST-FADER AUX SENDS**: how much of the track goes to the shared reverb and the ping-pong echo, and to each **return track** (see Return tracks), each before or after the fader.
 - **CHANNEL FADER**: the same volume and pan as the header.
 - **Delete this track** (also the trash icon at the top). It asks first if the track has clips; `Ctrl+Z` brings the track and its clips back.

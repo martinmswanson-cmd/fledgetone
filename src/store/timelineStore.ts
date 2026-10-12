@@ -36,7 +36,7 @@ import { ANY_STATE, transitionKey } from './transitions';
 import { defaultCurve, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
-import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
+import { autosaveRemovedBy, hasWork, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
 import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
@@ -729,10 +729,16 @@ function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: strin
     volume: 0,
     pan: 0,
     eq: { low: 0, mid: 0, high: 0 },
-    fx: defaultTrackFx(),
+    fx: instrumentKey === 'return' ? returnFx() : defaultTrackFx(),
     reverbSend: 0.1,
     delaySend: 0,
   };
+}
+
+/** A return's effects start fully wet (the dry sound plays from the tracks that send to it), so its Delay and Reverb show the mix they'll use. */
+function returnFx(): Track['fx'] {
+  const fx = defaultTrackFx();
+  return { ...fx, echo: { ...fx.echo, mix: 1 }, reverb: { ...fx.reverb, mix: 1 } };
 }
 
 /** A selected copy of a clip `offset` bars later, with fresh clip and note ids. */
@@ -796,7 +802,8 @@ let lastJump: { bar: number; at: number } | null = null;
  * loads before anything can edit). The app always opens on an empty timeline; this is only
  * offered as "Restore last session". Null if there was nothing worth restoring (no clips).
  */
-export const lastSession: SavedSession | null = preservePreviousSession();
+/** The session the Restore banner offers: the last one at startup, or the song that New, Open or a link replaced. */
+export const useLastSession = create<{ session: SavedSession | null }>(() => ({ session: preservePreviousSession() }));
 
 
 const clampBar = (bar: number) => Math.max(1, Math.min(TOTAL_BARS + 1, bar));
@@ -2527,6 +2534,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     loadProject: (p: ProjectSnapshot) => {
+      // The song being replaced is kept for the Restore banner, so New, Open or a link never loses work
+      const replaced = currentProject();
+      if (hasWork(replaced)) useLastSession.setState({ session: setAsideSession(replaced) });
       // A take in progress belongs to the arrangement being replaced
       discardTake();
       // Plugins start from the settings the new project saved

@@ -212,7 +212,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
     shortcut: bars === 1 ? 'dbl-click' : '',
     icon: <Piano className="w-3.5 h-3.5" />,
     onClick: run(() => {
-      const id = track && s.createEmptyClip(track.id, menu.bar, bars);
+      // On the beat, as a double-click makes one
+      const id = track && s.createEmptyClip(track.id, Math.floor(menu.bar * 4 + 1e-6) / 4, bars);
       if (id) s.openEditor(id);
     }),
   });
@@ -253,6 +254,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
           shortcut: `bar ${formatBarCount(loopOut)}`,
           icon: <ArrowRightToLine className="w-3.5 h-3.5" />,
           onClick: run(s.fillSelectionToLoopOut),
+          // Greyed out when Out isn't after the selection: there'd be no room for a copy
+          disabled: !s.clips.some((c) => c.isSelected) || Math.max(...s.clips.filter((c) => c.isSelected).map((c) => c.startBar + c.lengthBars)) >= loopOut - 1e-6,
         },
         {
           key: 'launcher',

@@ -1,3 +1,4 @@
+import { isMixKind } from '../../audio/instrumentCatalog';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Circle, KeyboardMusic, Triangle } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -224,6 +225,16 @@ const PlaysOn: React.FC = () => {
     const track = armed ?? s.tracks.find((t) => t.id === s.selectedTrackId);
     return track ? `${track.name} (${armed ? 'armed' : 'selected'})` : 'no track';
   });
+  const mix = useTimelineStore((s) => {
+    const track = s.tracks.find((t) => t.isArmed) ?? s.tracks.find((t) => t.id === s.selectedTrackId);
+    return track && isMixKind(track.instrumentKey) ? track.name : null;
+  });
+  if (mix)
+    return (
+      <p className="text-[11px]">
+        <b className="text-forge-text">{mix}</b> plays no instrument: select an instrument track to play.
+      </p>
+    );
   return (
     <p className="text-[11px]">
       Plays on <b className="text-forge-text">{name}</b>, through its channel strip.
