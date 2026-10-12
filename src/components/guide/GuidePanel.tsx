@@ -7,9 +7,9 @@ import { renderBlocks, splitSections } from './markdown';
  * The user guide, shown in the app. Its text is GUIDE.md at the repository root, so the same
  * guide reads on GitHub and here. Sections are listed on the left; Esc or the backdrop closes it.
  */
-export const GuidePanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const GuidePanel: React.FC<{ onClose: () => void; section?: string }> = ({ onClose, section: startAt }) => {
   const sections = useMemo(() => splitSections(guideMarkdown), []);
-  const [active, setActive] = useState(sections[0]?.id ?? '');
+  const [active, setActive] = useState(startAt && sections.some((s) => s.id === startAt) ? startAt : (sections[0]?.id ?? ''));
   const bodyRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const section = sections.find((s) => s.id === active) ?? sections[0];

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import * as Tone from 'tone';
 import { Library, Loader2 } from 'lucide-react';
-import { FX_ROWS, INSTRUMENTS, instrumentsByCategory, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
-import type { InstrumentKey } from '../audio/instrumentCatalog';
+import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
+import type { InstrumentDef, InstrumentKey } from '../audio/instrumentCatalog';
+import { InstrumentPicker } from './InstrumentMenu';
 import { auditionInstrument, DRUM_NOTES, safely } from '../audio/instruments';
 import { auditionInput, initAudio } from '../audio/engine';
 import { retryInstrumentDownload } from '../audio/liveTracks';
@@ -65,6 +66,8 @@ function dragProps(payload: DragPayload) {
  * Try any instrument: pick one, click keys to hear it, drag a key onto a matching track to
  * drop that note in. Sampled instruments download their recordings on first play.
  */
+const triable = (i: InstrumentDef) => i.kind !== 'custom' && i.kind !== 'slicer' && i.kind !== 'audio';
+
 export const InstrumentBrowser: React.FC = () => {
   const [key, setKey] = useState<InstrumentKey>('rhodes');
   const [lit, setLit] = useState<string | null>(null);
@@ -102,25 +105,14 @@ export const InstrumentBrowser: React.FC = () => {
           <Library className="w-4 h-4 text-cyan-400" />
           <h2 className="text-sm font-bold uppercase tracking-wider text-forge-text font-mono">Instrument Browser</h2>
         </div>
-        <select
+        <InstrumentPicker
           value={key}
-          onChange={(e) => setKey(e.target.value as InstrumentKey)}
-          className="h-8 bg-forge-bg border border-forge-border rounded-md px-2 text-xs font-semibold text-white focus:outline-none focus:border-cyan-500"
-          aria-label="Instrument to try"
-        >
-          {instrumentsByCategory().map(({ category, instruments }) => (
-            <optgroup key={category} label={category}>
-              {instruments
-                // Your Sounds play what you load, so there's nothing to try here
-                .filter((i) => i.kind !== 'custom' && i.kind !== 'slicer' && i.kind !== 'audio')
-                .map((i) => (
-                  <option key={i.key} value={i.key}>
-                    {i.name}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
+          onChange={setKey}
+          // Your Sounds play what you load, so there's nothing to try here
+          include={triable}
+          label="Instrument to try"
+          className="h-8 min-w-[12rem] bg-forge-bg border border-forge-border rounded-md px-2 text-xs font-semibold text-white hover:border-cyan-500/60 focus:outline-none focus:border-cyan-500"
+        />
         <span className="text-[11px] text-forge-muted">{def.blurb}</span>
         {status === 'loading' && (
           <span className="flex items-center gap-1 text-[11px] text-amber-300">

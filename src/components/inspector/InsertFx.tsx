@@ -103,6 +103,7 @@ interface PanelProps {
 /** One insert effect: header with a bypass switch, then its controls (dimmed when bypassed). */
 export const InsertPanel: React.FC<PanelProps> = ({ title, icon, on, onToggle, accent, children }) => (
   <div
+    data-search={title}
     className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border shadow-md transition-colors"
     style={{ borderColor: on ? `${accent}66` : undefined }}
   >

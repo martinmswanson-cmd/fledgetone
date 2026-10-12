@@ -644,7 +644,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           <span className="w-8 tabular-nums text-forge-text">{Math.round((selectedVelocity ?? velocity) * 100)}</span>
         </label>
         {INSTRUMENTS[instrument].wobble && (
-          <label className="flex items-center gap-1.5" title="How fast this clip's notes wobble: one filter sweep per note value (T = triplet), starting again with every note">
+          <label data-search="wobble" className="flex items-center gap-1.5" title="How fast this clip's notes wobble: one filter sweep per note value (T = triplet), starting again with every note">
             WOBBLE
             <select
               className={select}
@@ -658,7 +658,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </label>
         )}
         {!namedRows && (
-          <label className="flex items-center gap-1.5" title="Shade the notes outside a key; clicks land on the key's notes">
+          <label data-search="scale" className="flex items-center gap-1.5" title="Shade the notes outside a key; clicks land on the key's notes">
             SCALE
             <select
               className={select}
@@ -685,7 +685,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </label>
         )}
         {!namedRows && (
-          <label className="flex items-center gap-1.5" title="A click adds a whole chord from the note you click">
+          <label data-search="chord" className="flex items-center gap-1.5" title="A click adds a whole chord from the note you click">
             CHORD
             <select className={select} value={chord} onChange={(e) => setChord(e.target.value as ChordId)}>
               {(Object.keys(CHORDS) as ChordId[]).map((id) => (
@@ -695,12 +695,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </label>
         )}
         {isDrumKind(instrument) && (
-          <label className="flex items-center gap-1.5 cursor-pointer" title="Step sequencer: a click turns a hit on or off in that GRID step (Shift-click: an accent). Alt-click: add and drag notes as usual. Off: always add and drag.">
+          <label data-search="steps" className="flex items-center gap-1.5 cursor-pointer" title="Step sequencer: a click turns a hit on or off in that GRID step (Shift-click: an accent). Alt-click: add and drag notes as usual. Off: always add and drag.">
             <input type="checkbox" checked={stepMode} onChange={(e) => setStepMode(e.target.checked)} className="accent-cyan-500" />
             STEPS
           </label>
         )}
-        <label className="flex items-center gap-1.5" title={selected.size ? 'Change the selected notes' : 'Change all the notes in this clip (select some to change only those)'}>
+        <label data-search="tools" className="flex items-center gap-1.5" title={selected.size ? 'Change the selected notes' : 'Change all the notes in this clip (select some to change only those)'}>
           TOOLS
           <select
             className={select}
@@ -717,7 +717,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </select>
         </label>
         {!namedRows && (
-          <label className="flex items-center gap-1.5 cursor-pointer" title="Show the other tracks' notes at these bars, faintly, behind this clip's">
+          <label data-search="ghosts" className="flex items-center gap-1.5 cursor-pointer" title="Show the other tracks' notes at these bars, faintly, behind this clip's">
             <input type="checkbox" checked={ghosts} onChange={(e) => setGhosts(e.target.checked)} className="accent-cyan-500" />
             GHOSTS
           </label>

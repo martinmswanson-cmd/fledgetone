@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Download, FilePlus2, FolderOpen, History, Music2, Save, Share2, X } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
 import { currentProject, lastSession, retryAutosave, useTimelineStore } from '../../store/timelineStore';
+import { useUiStore } from '../../store/uiStore';
 import { clearPreviousSession, parseProject, safeFileName, serializeProject } from '../../store/project';
 import { referencedSoundIds } from '../../store/audioClips';
 import { embedSounds } from '../../audio/soundLibrary';
@@ -15,15 +16,17 @@ import type { StarterId } from '../../store/starters';
 const barButton =
   'h-8 px-2.5 flex items-center gap-1.5 rounded-md border border-forge-border bg-forge-bg text-xs font-mono text-forge-muted hover:text-forge-text hover:border-forge-borderLight transition-colors';
 
-export const ChoiceButton: React.FC<{ title: string; detail: string; onClick: () => void; disabled?: boolean; autoFocus?: boolean }> = ({
+export const ChoiceButton: React.FC<{ title: string; detail: string; onClick: () => void; disabled?: boolean; autoFocus?: boolean; searchId?: string }> = ({
   title,
   detail,
   onClick,
   disabled,
   autoFocus,
+  searchId,
 }) => (
   <button
     type="button"
+    data-search={searchId}
     onClick={onClick}
     disabled={disabled}
     autoFocus={autoFocus}
@@ -58,7 +61,7 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <h5 className="text-[10px] font-semibold text-forge-text">{group}</h5>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             {STARTERS.filter((s) => s.group === group).map((s) => (
-              <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} />
+              <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
             ))}
           </div>
         </section>
@@ -176,7 +179,8 @@ const AutosaveStatusChip: React.FC = () => {
  */
 export const ProjectBar: React.FC = () => {
   const projectName = useTimelineStore((s) => s.projectName);
-  const [dialog, setDialog] = useState<'new' | 'export' | 'share' | null>(null);
+  const dialog = useUiStore((s) => s.dialog);
+  const setDialog = useUiStore.getState().setDialog;
   const [openError, setOpenError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -215,10 +219,10 @@ export const ProjectBar: React.FC = () => {
       <button type="button" className={barButton} onClick={() => setDialog('new')} title="New arrangement">
         <FilePlus2 className="w-3.5 h-3.5" /> New
       </button>
-      <button type="button" className={barButton} onClick={() => fileInput.current?.click()} title="Open a .beatbox.json project file">
+      <button type="button" className={barButton} id="btn-open-project" onClick={() => fileInput.current?.click()} title="Open a .beatbox.json project file">
         <FolderOpen className="w-3.5 h-3.5" /> Open
       </button>
-      <button type="button" className={barButton} onClick={() => void save()} title="Download this arrangement as a project file (with its sounds)">
+      <button type="button" className={barButton} id="btn-save-project" onClick={() => void save()} title="Download this arrangement as a project file (with its sounds)">
         <Save className="w-3.5 h-3.5" /> Save
       </button>
       <button

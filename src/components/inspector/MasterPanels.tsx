@@ -32,7 +32,7 @@ export const LoudnessPanel: React.FC = () => {
   const reading = useLoudness();
   const peakHot = reading !== null && reading.truePeakMax > -1;
   return (
-    <div className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
+    <div data-search="loudness" className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <Activity className="w-3.5 h-3.5 text-emerald-400" />
@@ -130,7 +130,7 @@ const MODES: Array<{ mode: PlaybackMode; label: string; detail: string }> = [
 export const PlaybackPanel: React.FC = () => {
   const [chosen, setChosen] = useState(chosenPlaybackMode);
   return (
-    <div className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
+    <div data-search="playback" className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
       <div className="flex items-center gap-1.5">
         <Timer className="w-3.5 h-3.5 text-sky-400" />
         <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-white">Playback</span>
