@@ -26,6 +26,7 @@ import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
 import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
+import { dipLane, type DipShape } from './dialogue';
 import { createStinger, fitNotesToRange } from './stingers';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
@@ -361,6 +362,8 @@ interface TimelineState {
    * one undo step; `bpm`, when given, is the tempo that makes it last exactly the length asked.
    */
   cutToLength: (order: number[], bpm: number | null) => string | null;
+  /** Dip every track's volume where `spans` (song seconds) have dialogue, as automation (one undo step). Returns how many tracks. */
+  dipUnderDialogue: (spans: Array<{ start: number; end: number }>, shape: DipShape) => number;
 
   /** Game stingers (see stingers.ts): saved with the project, not undo steps */
   stingers: Stinger[];
@@ -1502,6 +1505,25 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...pushPast(st),
       }));
       return null;
+    },
+
+    dipUnderDialogue: (spans, shape) => {
+      const s = get();
+      const dips = spans.map((sp) => ({ from: secondsToBar(sp.start, s.bpm), to: secondsToBar(sp.end, s.bpm) })).filter((d) => d.to > 1 && d.from < TOTAL_BARS + 1);
+      if (!dips.length) return 0;
+      const secondsPerBarNow = 240 / s.bpm;
+      let changed = 0;
+      const tracks = s.tracks.map((t) => {
+        if (isAudioKind(t.instrumentKey) && !s.clips.some((c) => c.trackId === t.id)) return t;
+        const lanes = t.automation ?? [];
+        const old = lanes.find((l) => l.param === 'volume');
+        const points = dipLane(old?.points ?? [], t.volume, dips, shape, secondsPerBarNow);
+        changed++;
+        const lane = { param: 'volume' as const, points };
+        return { ...t, automation: old ? lanes.map((l) => (l === old ? lane : l)) : [...lanes, lane] };
+      });
+      set((st) => ({ tracks, ...pushPast(st) }));
+      return changed;
     },
 
     cutToLength: (order, newBpm) => {

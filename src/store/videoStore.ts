@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { frameDifference, pickCuts } from './sceneCuts';
+import { speechSpans, voiceLevels, type Span } from './dialogue';
 
 /**
  * A reference video to score to (gameplay, a trailer, a cutscene): shown in a preview window that
@@ -152,6 +153,26 @@ export async function findSceneCuts(url: string, onProgress?: (fraction: number)
     el.removeAttribute('src');
     el.load();
   }
+}
+
+/**
+ * Where people talk in a video's own sound (see dialogue.ts): seconds from the video's start.
+ * Throws if the video has no sound the browser can read.
+ */
+export async function findDialogue(file: File): Promise<Span[]> {
+  const ctx = new OfflineAudioContext(1, 1, 16000);
+  let audio: AudioBuffer;
+  try {
+    audio = await ctx.decodeAudioData(await file.arrayBuffer());
+  } catch {
+    throw new Error("this video has no sound the browser can read");
+  }
+  const mono = new Float32Array(audio.length);
+  for (let c = 0; c < audio.numberOfChannels; c++) {
+    const x = audio.getChannelData(c);
+    for (let i = 0; i < x.length; i++) mono[i] += x[i] / audio.numberOfChannels;
+  }
+  return speechSpans(voiceLevels(mono, audio.sampleRate));
 }
 
 let generation = 0;

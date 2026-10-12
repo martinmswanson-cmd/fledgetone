@@ -85,6 +85,7 @@ Run all five checks before every commit.
 | Loop variations (takes A-D for games) | `src/store/loopVariations.ts`, `renderLoopTakes` in `exportWav.ts`, `LoopVariations` in `GamePreview.tsx` |
 | Game state transitions (fill / riser / impact into a state) | `src/store/transitions.ts`, `playNotesAt` in `stingerPlayer.ts`, `goTo` and `TransitionList` in `GamePreview.tsx`; saved as `transitions` (marker id to kind) |
 | Game kit export (states, stingers, transitions, music.json, players) | `src/audio/gameKit.ts`; the players are plain files in `src/gameKit/` imported with `?raw` (the web one was run on a real kit; the Godot and Unity ones haven't been compiled here: no engines in the container) |
+| Dip under dialogue (video's speech to volume automation) | `src/store/dialogue.ts` (voice-band levels, speech spans, `dipLane`), `findDialogue` in `videoStore.ts`, store `dipUnderDialogue`, `DialogueDipButton` in `VideoLane.tsx` |
 | Lo-fi and Gate inserts | `createLightLofi` / `createLightGate` in `effects/lightFx.ts`; the Gate is chopped by the strip's beat clock (`createPumpClock`) |
 | Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |
@@ -212,6 +213,11 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   a tempo map, time signatures, a piano sustain-pedal lane, per-note pitch bend, a break slicer
   with per-slice pitch, amp-sim / saturation, and more drum rows (rim, shaker, tambourine).
 
+- **Video and game batch** (Oct 2026): hit points (Shift+M) and the tempo finder (FIT ›
+  Hit points), Cut to length, scene cuts from the reference video, dip under dialogue, marker
+  export for Premiere / Resolve / Final Cut / CSV, the sound effects maker, stingers, state
+  transitions, loop variations and the game kit. The song's key is detected from its notes
+  (`songKey.ts`) for the effects and stingers.
 - **Human insert** (Oct 2026): per track, in the FX Rack above Distortion. It works on notes in
   the scheduler, not on audio: each note drifts late (0 to 15 ms, never early, because the
   export's look-ahead is about 5 ms), softer / harder and (pitched kinds only, via an `"…hz"`
