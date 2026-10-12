@@ -7,8 +7,81 @@ import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
 import { fireStinger, renderStinger } from '../../audio/stingerPlayer';
 import { createZip } from '../../audio/zip';
-import { downloadBlob } from '../../audio/exportWav';
+import { downloadBlob, encodeChannels, renderLoopTakes } from '../../audio/exportWav';
+import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/loopVariations';
+import { formatBarCount } from '../../store/timelineTypes';
 import { showToast } from './toastStore';
+
+/**
+ * Loop variations: 2 to 4 takes of the loop region for the game to rotate through, each with its
+ * own feel and turnaround (see loopVariations.ts), all seamless and the same length.
+ */
+const LoopVariations: React.FC = () => {
+  const loop = useTimelineStore((s) => s.loopRegion);
+  const [count, setCount] = useState(3);
+  const [humanize, setHumanize] = useState(true);
+  const [progress, setProgress] = useState<number | null>(null);
+  const run = async () => {
+    const s = useTimelineStore.getState();
+    const { inBar, outBar } = s.loopRegion;
+    setProgress(0);
+    try {
+      const takes = Array.from({ length: count }, (_, k) => loopVariation(s.clips, s.tracks, inBar, outBar, k));
+      const opts = {
+        tracks: s.tracks,
+        clips: s.clips,
+        bpm: s.bpm,
+        swing: s.swing,
+        startBar: inBar,
+        endBar: outBar,
+        masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback },
+        master: s.master,
+      };
+      const { takes: audio, sampleRate } = await renderLoopTakes(opts, takes, humanize, (f) => setProgress(f));
+      const base = s.projectName || 'Untitled';
+      const files = audio.map((channels, k) => ({
+        name: `${base} loop ${VARIATION_NAMES[k]}.wav`,
+        data: encodeChannels(channels, sampleRate, 16, [], { start: 0, end: channels[0].length }),
+      }));
+      downloadBlob(await createZip(files), `${base} loop variations.zip`);
+    } catch (err) {
+      showToast(`Couldn't export the variations: ${err instanceof Error ? err.message : String(err)}.`);
+    } finally {
+      setProgress(null);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-[10px] font-mono text-forge-muted uppercase">Loop variations</div>
+      <p className="text-forge-muted">
+        Takes of the loop (bars {formatBarCount(loop.inBar)} to {formatBarCount(loop.outBar)}) for the game to rotate through, so it doesn't repeat exactly:{' '}
+        {VARIATION_NAMES.slice(0, count).map((n, k) => `${n}: ${VARIATION_BLURBS[k]}`).join('; ')}.
+      </p>
+      <div className="flex items-center gap-2">
+        <select value={count} onChange={(e) => setCount(Number(e.target.value))} className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-[11px] text-forge-text" aria-label="How many takes">
+          {[2, 3, 4].map((n) => (
+            <option key={n} value={n}>
+              {n} takes
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1 text-forge-text" title="Tracks without the Human insert get a light one, so each take's feel differs">
+          <input type="checkbox" checked={humanize} onChange={(e) => setHumanize(e.target.checked)} className="accent-emerald-400" />
+          Human feel
+        </label>
+        <button
+          type="button"
+          disabled={progress !== null}
+          onClick={() => void run()}
+          className="ml-auto h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border text-forge-muted hover:text-forge-text disabled:opacity-60"
+          title="Each take as a seamless WAV loop (with loop points), all the same length and level, in one .zip"
+        >
+          <Download className="w-3.5 h-3.5" /> {progress === null ? 'Export' : `${Math.round(progress * 100)}%`}
+        </button>
+      </div>
+    </div>
+  );
+};
 
 /** Instruments that suit a stinger (the stinger's own is offered too). */
 const STINGER_INSTRUMENTS: InstrumentKey[] = ['brass', 'brassSection', 'chipLead', 'pluck', 'keys', 'lead', 'supersaw', 'glockenspiel', 'celesta', 'musicBox', 'marimba', 'xylophone', 'kalimba', 'steelDrums', 'chimes', 'slowStrings', 'choir', 'warmPad'];
@@ -240,7 +313,7 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <X className="w-4 h-4" />
         </button>
       </div>
-      <div className="p-3 flex flex-col gap-3">
+      <div className="p-3 flex flex-col gap-3 max-h-[75vh] overflow-y-auto">
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-[10px] font-mono text-forge-muted uppercase">
             <span>States (sections)</span>
@@ -287,6 +360,7 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           </div>
         </div>
         <StingerList timing={quantize} />
+        <LoopVariations />
         <p className="text-[10px] text-forge-muted">{isPlaying ? 'Switch states and fire stingers while it plays, the way the game will.' : 'Pick a state to start.'} Intensity brings layers in from the top track down.</p>
       </div>
     </div>

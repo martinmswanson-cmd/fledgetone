@@ -626,6 +626,8 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 - **Export stingers (.zip)** renders each one as a WAV through the song's master section, ringing out, ready for the game.
 - Stingers are saved with the project. Adding, changing or deleting one isn't an Undo step (putting one on the timeline is).
 
+**Loop variations** (under the stingers) export 2, 3 or 4 **takes** of the loop region, so a player who stays in one place doesn't hear the very same loop over and over: the game picks a different take each time round. **A** is the loop as written; **B** ends with a snare fill into the loop point, **C** with a tom fill, and **D** drops the hats for the first half with a kick pickup at the end (the fills go on the first drum track that plays through the loop's last beat). With **Human feel** ticked, tracks without the Human insert get a light one, so every take's timing and dynamics differ too. **Export** saves a .zip of seamless WAV loops (with loop points), all exactly the loop's length and at one level, so the game can switch takes at the loop point without a jump.
+
 ### Sound effects maker
 
 **SFX** in the toolbar (or search *sound effects*) makes the little sounds games are full of. Click **Jump**, **Coin**, **Laser**, **Hit**, **Power-up**, **Explosion** or **Blip**: each click makes a new one of that kind and plays it. **Mutate** makes a variation of the sound you have; **Random** any kind.

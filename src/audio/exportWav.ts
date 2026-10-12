@@ -392,6 +392,37 @@ export async function renderIntroLoop(
 }
 
 /**
+ * Render takes of the loop region (see loopVariations.ts), each a seamless loop of the same
+ * length, sharing one reverb and one gain so they can be swapped mid-game without a jump in
+ * level. `takes` are the clips of each take; with `humanize`, tracks without the Human insert get
+ * a light one, so every take's feel differs too.
+ */
+export async function renderLoopTakes(
+  opts: RenderOptions,
+  takes: Clip[][],
+  humanize: boolean,
+  onProgress?: (fraction: number, detail: string) => void
+): Promise<{ takes: Float32Array[][]; sampleRate: number }> {
+  const tracks = humanize ? opts.tracks.map((t) => (t.fx.human.on ? t : { ...t, fx: { ...t.fx, human: { on: true, timing: 0.35, dynamics: 0.4, pitch: 0.25 } } })) : opts.tracks;
+  const audible = audibleTracks(tracks);
+  if (!audible.length) throw new Error('no audible track has clips in the loop');
+  let reverbImpulse = opts.reverbImpulse;
+  let sampleRate: number = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  let peak = 0;
+  const out: Float32Array[][] = [];
+  for (const [i, clips] of takes.entries()) {
+    const r = await renderTracks({ ...opts, tracks, clips, ending: 'seamless', markers: [], reverbImpulse }, audible, (f) => onProgress?.((i + f) / takes.length, `take ${i + 1}`));
+    reverbImpulse ??= r.reverbImpulse;
+    sampleRate = r.sampleRate;
+    peak = Math.max(peak, peakOf(r.channels));
+    out.push(r.channels.map((c) => c.slice()));
+  }
+  const gain = peakGain(peak);
+  for (const take of out) scale(take, gain);
+  return { takes: out, sampleRate };
+}
+
+/**
  * Render one track for freezing (see src/store/freeze.ts): through its instrument, inserts and
  * strip, without the master chain or volume, at its true level (not scaled to fit), with every
  * other track's kicks still driving its Pump. `opts.tracks` is the whole arrangement.
