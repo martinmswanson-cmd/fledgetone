@@ -212,6 +212,8 @@ function parseTrack(v: unknown): Track {
     ...(synth ? { synth } : {}),
     // Optional: a frozen track
     ...(frozen ? { frozen } : {}),
+    // Optional: the bus it plays into (checked against the other tracks after they're read)
+    ...(isStr(v.output) && v.output ? { output: v.output } : {}),
     // Optional: its stem group for Intensity
     ...(isStr(v.stemGroup) && v.stemGroup.trim() ? { stemGroup: v.stemGroup.trim().slice(0, 40) } : {}),
     // Optional: the folder it's in

@@ -72,6 +72,7 @@ import {
   retimeMarkers,
 } from './markers';
 import { rippleRules, type RippleEdit } from './ripple';
+import { isBus, tidyRoutes, wouldLoop } from './buses';
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
@@ -336,6 +337,13 @@ interface TimelineState {
   toggleInspector: (open?: boolean) => void;
   addTrack: (instrumentKey: InstrumentKey, name?: string) => string;
   deleteTrack: (trackId: string) => void;
+  /**
+   * Play a track into a bus track (its group channel), or straight to the master with null (one
+   * undo step). Refused (false) where it would make a loop.
+   */
+  setTrackOutput: (trackId: string, busId: string | null) => boolean;
+  /** A new bus with these tracks playing into it, placed after the last of them (one undo step). Returns its id. */
+  groupIntoBus: (trackIds: readonly string[], name?: string) => string | null;
   /** Put tracks in a new folder (one undo step). Returns its id. */
   groupIntoFolder: (trackIds: readonly string[], name?: string) => string | null;
   /** Take every track out of a folder (one undo step). */
@@ -1239,7 +1247,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     toggleInspector: (open) => set((s) => ({ isInspectorOpen: open !== undefined ? open : !s.isInspectorOpen })),
 
     addTrack: (instrumentKey, name) => {
-      const newTrack = makeTrack(instrumentKey, get().tracks, name);
+      const made = makeTrack(instrumentKey, get().tracks, name);
+      // A bus sends nothing to the reverb itself unless asked: its tracks have their own sends
+      const newTrack = isBus(made) ? { ...made, reverbSend: 0 } : made;
       set((s) => ({
         tracks: [...s.tracks, newTrack],
         selectedTrackId: newTrack.id,
@@ -1248,6 +1258,41 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }));
       if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
       return newTrack.id;
+    },
+
+    setTrackOutput: (trackId, busId) => {
+      const s = get();
+      const track = s.tracks.find((t) => t.id === trackId);
+      if (!track) return false;
+      if (busId !== null && (wouldLoop(trackId, busId, s.tracks) || !s.tracks.some((t) => t.id === busId && isBus(t)))) return false;
+      if ((track.output ?? null) === busId) return true;
+      set((st) => ({
+        tracks: st.tracks.map((t) => {
+          if (t.id !== trackId) return t;
+          if (busId) return { ...t, output: busId };
+          const { output: _gone, ...rest } = t;
+          return rest;
+        }),
+        ...pushPast(st),
+      }));
+      return true;
+    },
+
+    groupIntoBus: (trackIds, name) => {
+      const s = get();
+      const ids = new Set(trackIds.filter((id) => s.tracks.some((t) => t.id === id && !isBus(t))));
+      if (!ids.size) return null;
+      const members = s.tracks.filter((t) => ids.has(t.id));
+      const busCount = s.tracks.filter(isBus).length;
+      const bus: Track = { ...makeTrack('bus', s.tracks, name?.trim() || `Bus ${busCount + 1}`), reverbSend: 0, color: members[0].color };
+      // A bus the tracks already shared, the new one plays into
+      const shared = members.every((t) => t.output && t.output === members[0].output) ? members[0].output : undefined;
+      if (shared) bus.output = shared;
+      const lastIndex = Math.max(...members.map((t) => s.tracks.indexOf(t)));
+      const tracks = s.tracks.map((t) => (ids.has(t.id) ? { ...t, output: bus.id } : t));
+      tracks.splice(lastIndex + 1, 0, bus);
+      set({ tracks, selectedTrackId: bus.id, ...pushPast(s) });
+      return bus.id;
     },
 
     // Undoable: history entries carry the tracks, so Undo brings the track and its clips back together
@@ -1311,7 +1356,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (get().take?.trackId === id) endTake();
       set((s) => {
         if (!s.tracks.some((t) => t.id === id)) return s;
-        const nextTracks = s.tracks.filter((t) => t.id !== id);
+        // Tracks that played into it (a bus) play to the master again
+        const nextTracks = tidyRoutes(s.tracks.filter((t) => t.id !== id));
         const nextSelected = s.selectedTrackId === id ? nextTracks[0]?.id ?? null : s.selectedTrackId;
         return {
           tracks: nextTracks,
@@ -1349,7 +1395,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const s = get();
       const track = s.tracks.find((t) => t.id === id);
       // Takes are note clips, which an Audio track can't hold
-      if (!track || (!track.isArmed && isAudioKind(track.instrumentKey))) return;
+      if (!track || (!track.isArmed && (isAudioKind(track.instrumentKey) || isBus(track)))) return;
       const arming = !track.isArmed;
       if (s.isPlaying && s.isRecording) endTake();
       set((st) => ({
@@ -2062,7 +2108,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       get().stop();
       // One track records at a time: a file with several armed keeps the first
       const armedId = p.tracks.find((t) => t.isArmed)?.id;
-      const safeTracks: Track[] = p.tracks.map((t: Track) => ({
+      const safeTracks: Track[] = tidyRoutes(p.tracks).map((t: Track) => ({
         ...t,
         eq: t.eq ?? { low: 0, mid: 0, high: 0 },
         reverbSend: typeof t.reverbSend === 'number' ? t.reverbSend : 0,
@@ -2132,8 +2178,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     createEmptyClip: (trackId, atBar, lengthBars) => {
       const s = get();
       const track = s.tracks.find((t) => t.id === trackId);
-      // An Audio track's clips come from sound files (addAudioClips), never empty
-      if (!track || isAudioKind(track.instrumentKey)) return null;
+      // An Audio track's clips come from sound files (addAudioClips), never empty; a bus holds none
+      if (!track || isAudioKind(track.instrumentKey) || isBus(track)) return null;
       const count = s.clips.filter((c) => c.trackId === trackId).length + 1;
       const clip: Clip = {
         id: uid('clip'),

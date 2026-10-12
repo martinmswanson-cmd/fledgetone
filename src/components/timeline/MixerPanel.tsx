@@ -4,6 +4,7 @@ import { useAudioStore } from '../../store/audioStore';
 import type { Track } from '../../store/timelineTypes';
 import { liveTrackPeaks } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
+import { busTargets, isBus } from '../../store/buses';
 import { SpectrumView } from './SpectrumView';
 
 /**
@@ -44,12 +45,14 @@ const Meter: React.FC<{ trackId: string | null }> = ({ trackId }) => {
   );
 };
 
-const Strip: React.FC<{ track: Track }> = ({ track }) => {
+const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) => {
   const s = useTimelineStore.getState();
+  const bus = isBus(track);
+  const targets = busTargets(track, tracks);
   const selected = useTimelineStore((st) => st.selectedTrackId === track.id);
   const inserts = (['human', 'distortion', 'peq', 'compressor', 'mbc', 'chorus', 'lofi', 'filter', 'gate', 'pump'] as const).filter((k) => track.fx[k]?.on);
   return (
-    <div className={`flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border bg-forge-bg p-2 ${selected ? 'border-cyan-500/70' : 'border-forge-border'}`} aria-label={`${track.name} channel`}>
+    <div className={`flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border p-2 ${bus ? 'bg-slate-500/10' : 'bg-forge-bg'} ${selected ? 'border-cyan-500/70' : 'border-forge-border'}`} aria-label={`${track.name} ${bus ? 'bus' : 'channel'}`}>
       <div className="w-full h-1 rounded" style={{ background: track.color }} />
       <button
         type="button"
@@ -63,6 +66,7 @@ const Strip: React.FC<{ track: Track }> = ({ track }) => {
         {track.name}
       </button>
       <div className="min-h-[28px] flex flex-wrap justify-center gap-0.5">
+        {bus && <span className="px-1 rounded bg-slate-400/25 text-[8px] font-mono uppercase text-slate-100" title="A bus: tracks routed here play through its strip">bus</span>}
         {track.duckProxy && <span className="px-1 rounded bg-sky-500/20 text-[8px] font-mono uppercase text-sky-200" title="The other tracks duck under this one">proxy</span>}
         {inserts.length ? inserts.map((k) => (
           <span key={k} className="px-1 rounded bg-cyan-500/15 text-[8px] font-mono uppercase text-cyan-200">{k.slice(0, 4)}</span>
@@ -115,6 +119,20 @@ const Strip: React.FC<{ track: Track }> = ({ track }) => {
           S
         </button>
       </div>
+      <select
+        value={track.output ?? ''}
+        onChange={(e) => s.setTrackOutput(track.id, e.target.value || null)}
+        className="w-full h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] font-mono text-forge-text"
+        aria-label={`${track.name} output`}
+        title="Where this channel plays: the master, or a bus"
+      >
+        <option value="">→ Master</option>
+        {targets.map((b) => (
+          <option key={b.id} value={b.id}>
+            → {b.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 };
@@ -126,7 +144,7 @@ export const MixerPanel: React.FC = () => {
     <div className="flex flex-col gap-2 p-3 text-xs text-forge-muted" role="region" aria-label="Mixer">
       <div className="flex gap-2 overflow-x-auto pb-2">
         {tracks.map((t) => (
-          <Strip key={t.id} track={t} />
+          <Strip key={t.id} track={t} tracks={tracks} />
         ))}
         <div className="flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border border-cyan-500/50 bg-cyan-950/20 p-2" aria-label="Master channel">
           <div className="w-full h-1 rounded bg-cyan-400" />

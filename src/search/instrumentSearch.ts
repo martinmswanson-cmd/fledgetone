@@ -31,6 +31,7 @@ const KIND_WORDS: Record<InstrumentDef['kind'], string> = {
   custom: 'sample',
   slicer: 'slice chop',
   audio: 'audio',
+  bus: 'bus group',
 };
 
 const fieldsCache = new Map<InstrumentKey, SearchFields>();
@@ -51,6 +52,6 @@ export function instrumentFields(def: InstrumentDef): SearchFields {
 
 /** The instruments matching `query`, best first, among those `include` lets through. */
 export function searchInstruments(query: string, include: (def: InstrumentDef) => boolean = () => true): InstrumentDef[] {
-  const defs = INSTRUMENT_KEYS.map((k) => INSTRUMENTS[k]).filter(include);
+  const defs = INSTRUMENT_KEYS.map((k) => INSTRUMENTS[k]).filter((d) => d.kind !== 'bus' && include(d));
   return rank(defs, query, instrumentFields);
 }

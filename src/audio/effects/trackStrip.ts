@@ -92,6 +92,8 @@ export interface TrackStrip {
   spectrum: (out: Float32Array) => number;
   /** The multiband compressor's gain reduction per band now (dB), or null when it's off. */
   mbcReduction: () => [number, number, number] | null;
+  /** Play into `target` (a bus track's strip input) instead of where it plays now (the master bus at first). */
+  setOutput: (target: Tone.InputNode) => void;
   dispose: () => void;
 }
 
@@ -219,6 +221,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   fader.connect(level);
   level.connect(duck);
   duck.connect(bus);
+  /** Where the strip plays into: the master bus, or a bus track's strip (setOutput) */
+  let output: Tone.InputNode = bus;
   // The mixer's meter, made when first read (see peak)
   let meter: AnalyserNode | null = null;
   let meterData: Float32Array<ArrayBuffer> | null = null;
@@ -493,8 +497,18 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
   return {
     input,
+    setOutput: (target) => {
+      if (target === output) return;
+      Tone.disconnect(duck, output);
+      Tone.connect(duck, target);
+      output = target;
+    },
     apply: (track, opts = {}) => {
       const ramp = opts.ramp ?? 0.03;
+      // A bus pans its tracks' already-panned sound again: the pan's -3 dB at the centre is made up
+      // at its input, so a bus at 0 dB, centred, passes its tracks through at the level they had
+      const busMakeup = INSTRUMENTS[track.instrumentKey]?.kind === 'bus' ? Math.SQRT2 : 1;
+      if (input.gain.value !== busMakeup) input.gain.value = busMakeup;
       const { fx, eq: bands } = track;
       const muted = opts.muteOverride ?? track.isMuted;
       // A Filter lane only counts while the Filter is on

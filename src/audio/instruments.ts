@@ -290,6 +290,10 @@ function buildGained(key: InstrumentKey, output: Tone.InputNode, options: Instru
 function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
   const kind = INSTRUMENTS[key].kind;
 
+  if (kind === 'bus') {
+    // A bus plays nothing itself: the tracks routed to it play into its strip
+    return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
+  }
   if (kind === 'audio') {
     // An Audio track plays no notes: its clips play their sound files into this bus
     const bus = createBus(output);

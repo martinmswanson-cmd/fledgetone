@@ -9,6 +9,7 @@ import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
 import type { TrackMenuState } from './TrackMenu';
 import { UndoableRange } from '../UndoableRange';
 import { INSTRUMENTS, isAudioKind } from '../../audio/instrumentCatalog';
+import { audibleIds, isBus } from '../../store/buses';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { activeLanes, AUTOMATION, formatPan, laneOf } from '../../audio/automation';
 import { AUTOMATED_TIP, useAutomatedValue } from './automationHooks';
@@ -155,8 +156,11 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
   const { toggleMute, toggleSolo, toggleArm, selectTrack, toggleInspector } = useTimelineStore.getState();
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
   const isSelected = selectedTrackId === track.id;
-  const anySoloed = useTimelineStore((s) => s.tracks.some((t) => t.isSoloed));
-  const silenced = track.isMuted || (anySoloed && !track.isSoloed);
+  // Muted, or silenced by a solo or a muted bus (see buses.ts)
+  const silenced = useTimelineStore((s) => !audibleIds(s.tracks).has(track.id));
+  const bus = isBus(track);
+  const busName = useTimelineStore((s) => (track.output ? s.tracks.find((t) => t.id === track.output && isBus(t))?.name : undefined));
+  const inputs = useTimelineStore((s) => (bus ? s.tracks.filter((t) => t.output === track.id).length : 0));
 
   const automationOpen = useTimelineStore((s) => s.automationView[track.id]?.open ?? false);
   const automationParam = useTimelineStore((s) => s.automationView[track.id]?.param ?? 'volume');
@@ -228,6 +232,16 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           >
             {track.name}
           </span>
+          {bus && (
+            <span className="shrink-0 px-1 rounded bg-slate-400/20 text-[8px] font-mono uppercase text-slate-200" title={`A bus: ${inputs} track${inputs === 1 ? '' : 's'} play${inputs === 1 ? 's' : ''} into it. Right-click a track to route it here.`}>
+              bus · {inputs}
+            </span>
+          )}
+          {busName && (
+            <span className="shrink-0 max-w-[64px] truncate px-1 rounded bg-slate-400/15 text-[8px] font-mono text-slate-300" title={`Plays into the bus ${busName}`}>
+              → {busName}
+            </span>
+          )}
 
           {/* Quick Inspector Toggle Button */}
           <button
@@ -247,6 +261,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
             <Sliders className="w-3 h-3" />
           </button>
 
+          {!bus && (
           <button
             type="button"
             title="Add a clip at the playhead (empty or a pattern)"
@@ -267,6 +282,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
+          )}
           <button
             type="button"
             title={automationOpen ? 'Hide automation' : hasLanes ? 'Show automation (this track has some)' : 'Show automation'}
@@ -286,7 +302,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           >
             <Spline className="w-3.5 h-3.5" />
           </button>
-          {!isAudioKind(track.instrumentKey) && <FreezeButton track={track} />}
+          {!isAudioKind(track.instrumentKey) && !bus && <FreezeButton track={track} />}
           <Toggle
             label="M"
             title="Mute"
@@ -301,13 +317,13 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
             onClick={() => toggleSolo(track.id)}
             activeClass="bg-amber-500/25 border-amber-400 text-amber-200"
           />
-          <Toggle
+          {!bus && <Toggle
             label="R"
             title={isAudioKind(track.instrumentKey) ? 'Audio tracks hold sound files, not MIDI takes: arm an instrument track to record' : 'Record arm: takes go on this track (one track at a time)'}
             active={track.isArmed}
             onClick={() => toggleArm(track.id)}
             activeClass="bg-red-500/25 border-red-500 text-red-300"
-          />
+          />}
         </div>
 
         {automationOpen ? (

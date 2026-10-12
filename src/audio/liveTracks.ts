@@ -16,6 +16,7 @@ import type { LiveTrackView } from '../store/freeze';
 import { loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
 import { TOTAL_BARS } from '../store/timelineTypes';
+import { audibleIds, busChain, busOf, soloLit } from '../store/buses';
 
 /**
  * Live playback graph: one effects strip + one instrument per timeline track, kept in step
@@ -34,6 +35,8 @@ interface LiveTrack {
   audible: boolean;
   /** The instrument's sample download failed: it stays silent until rebuilt (see recoverFailedDownloads) */
   failed: boolean;
+  /** The bus track whose strip it plays into (null: the master) */
+  outputId: string | null;
 }
 
 const live = new Map<string, LiveTrack>();
@@ -87,8 +90,32 @@ export function applyLiveIntensity(tracks: Track[], curves: Record<string, Inten
   }
 }
 
+/**
+ * The track as its strip should take it: soloed when a solo lets it through (a soloed bus lets its
+ * tracks through, a soloed track its buses), since each strip's solo silences the strips not soloed.
+ * The same object while that doesn't change, so its strip isn't re-applied.
+ */
+const soloViews = new WeakMap<Track, Track>();
+function stripView(track: Track, lit: Set<string> | null): Track {
+  const soloed = lit ? lit.has(track.id) : false;
+  if (soloed === track.isSoloed) return track;
+  let view = soloViews.get(track);
+  if (!view) {
+    view = { ...track, isSoloed: soloed };
+    soloViews.set(track, view);
+  }
+  return view;
+}
+
 export function syncLiveTracks(tracks: Track[]): void {
   const keep = new Set(tracks.map((t) => t.id));
+  // Tracks playing into a bus that's going go back to the master first
+  for (const lt of live.values()) {
+    if (lt.outputId && !keep.has(lt.outputId)) {
+      lt.strip.setOutput(liveMix.bus);
+      lt.outputId = null;
+    }
+  }
   for (const [id, lt] of live) {
     if (!keep.has(id)) {
       lt.instrument.dispose();
@@ -98,7 +125,8 @@ export function syncLiveTracks(tracks: Track[]): void {
     }
   }
 
-  const anySolo = tracks.some((t) => t.isSoloed);
+  const lit = soloLit(tracks);
+  const heard = audibleIds(tracks);
   for (const track of tracks) {
     let lt = live.get(track.id);
     if (!lt) {
@@ -111,6 +139,7 @@ export function syncLiveTracks(tracks: Track[]): void {
         applied: null,
         audible: true,
         failed: false,
+        outputId: null,
       };
       watchDownload(lt);
       live.set(track.id, lt);
@@ -123,15 +152,26 @@ export function syncLiveTracks(tracks: Track[]): void {
       watchDownload(lt);
     }
     // Only touch strips whose settings changed, so dragging one fader doesn't re-ramp every track
-    if (lt.applied !== track) {
-      lt.strip.apply(track);
+    const view = stripView(track, lit);
+    if (lt.applied !== view) {
+      lt.strip.apply(view);
       // The Slicer follows its slices and modes without a rebuild
       lt.instrument.setSlicer?.(track.slicer);
       lt.instrument.setSynth?.(track.synth);
     }
-    lt.applied = track;
-    // A silent track's notes are skipped rather than played into a muted channel, saving CPU
-    lt.audible = !track.isMuted && (!anySolo || track.isSoloed);
+    lt.applied = view;
+    // A silent track's notes are skipped rather than played into a muted channel (or bus), saving CPU
+    lt.audible = heard.has(track.id);
+  }
+  // Each track plays into its bus's strip, or the master
+  for (const track of tracks) {
+    const lt = live.get(track.id)!;
+    const bus = busOf(track, tracks);
+    const target = bus && !busChain(bus, tracks).some((b) => b.id === track.id) ? live.get(bus.id) : undefined;
+    const outputId = target ? bus!.id : null;
+    if (outputId === lt.outputId) continue;
+    lt.strip.setOutput(target ? target.strip.input : liveMix.bus);
+    lt.outputId = outputId;
   }
   // The live mix's own Transport, even while a WAV export has made its offline context the global
   // one, over the whole timeline
