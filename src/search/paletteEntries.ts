@@ -125,6 +125,7 @@ const TOOLS: Item[] = [
 const SETTINGS: Item[] = [
   { title: 'Tempo', keywords: 'tempo bpm speed fast slow', run: show('[aria-label="Tempo (BPM)"]') },
   { title: 'Tap tempo', keywords: 'tap tempo bpm', run: show('button[title="Click repeatedly to tap tempo"]') },
+  { title: 'Cut song to length', keywords: 'cut down cutdown edit shorten lengthen 15 30 60 seconds ad trailer spot social version duration trim song', detail: 'A 6, 15, 30, 60 or 90-second version, cut at the sections.', run: () => void ui().setDialog('cut') },
   { title: 'Tempo finder (hit points)', keywords: 'tempo finder hit points hits sync picture video cut slam land on beat film scoring calculator', detail: 'Find tempos that land your hit points (Shift+M) on the beat.', run: async () => {
     if (await press('button[title^="Fit to time"]')) await press('[aria-label="What to fit"] button:last-child');
   } },

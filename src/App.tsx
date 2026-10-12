@@ -11,6 +11,7 @@ import { SharedLinkOpener } from './components/SharedLinkOpener';
 import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import { LearnDialog } from './components/tour/LearnDialog';
+import { CutToLengthDialog } from './components/timeline/CutToLengthDialog';
 import { TourOverlay } from './components/tour/TourOverlay';
 import { useTourStore } from './tour/tourStore';
 import { useUiStore } from './store/uiStore';
@@ -47,6 +48,12 @@ const ReportProblem: React.FC = () => {
   return open ? <ReportProblemDialog onClose={() => useUiStore.getState().setDialog(null)} /> : null;
 };
 
+/** The Cut to length dialog, when it's open. */
+const CutToLength: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'cut');
+  return open ? <CutToLengthDialog onClose={() => useUiStore.getState().setDialog(null)} /> : null;
+};
+
 export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-forge-bg text-forge-text flex flex-col font-sans selection:bg-cyan-500/30">
@@ -58,6 +65,7 @@ export const App: React.FC = () => {
       <SharedLinkOpener />
       <SearchPalette />
       <ReportProblem />
+      <CutToLength />
       <Learn />
 
       {/* Main Workstation Canvas */}

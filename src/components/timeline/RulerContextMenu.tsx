@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { ArrowLeftToLine, ArrowRightFromLine, Flag, KeyRound, Zap } from 'lucide-react';
+import { ArrowLeftToLine, ArrowRightFromLine, Flag, KeyRound, Scissors, Zap } from 'lucide-react';
+import { useUiStore } from '../../store/uiStore';
 import { useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -81,6 +82,17 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       shortcut: `${formatBarCount(outBar - inBar)} bar${outBar - inBar === 1 ? '' : 's'}`,
       icon: <ArrowLeftToLine className="w-3.5 h-3.5" />,
       onClick: run(() => s.removeBars(inBar, outBar)),
+      divider: true,
+    },
+    {
+      key: 'cut',
+      label: 'Cut song to length…',
+      shortcut: '15 / 30 / 60 s',
+      icon: <Scissors className="w-3.5 h-3.5" />,
+      onClick: () => {
+        onClose();
+        useUiStore.getState().setDialog('cut');
+      },
       divider: true,
     },
   ];
