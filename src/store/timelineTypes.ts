@@ -488,6 +488,10 @@ export interface Track {
   slicer?: SlicerSettings;
   /** The Synth Designer's settings (absent: the default patch) */
   synth?: SynthPatch;
+  /** A Drum Rack's pads (absent: every pad empty) */
+  rack?: DrumRack;
+  /** A Multi Sampler's sounds and how they're laid across the keys (absent: none yet) */
+  multi?: MultiSample;
   /** How settings change over the song: at most one lane per setting (older projects have none). */
   automation?: AutomationLane[];
   /** Rendered to audio to save CPU (see src/store/freeze.ts); absent when the track plays live. */
@@ -722,6 +726,60 @@ export interface ClipAudio {
   envelope?: GainPoint[];
   /** Reversed: the sound it was reversed from (the clip plays a reversed copy), to go back to */
   reversedFrom?: string;
+}
+
+/** One pad of a Drum Rack: a sound, and the effects it plays through (its own, not shared with the other pads). */
+export interface RackPad {
+  name: string;
+  /** Its sound in the sound library (absent: an empty pad) */
+  soundId?: string;
+  /** Level, dB (-60 to +12) */
+  gain: number;
+  /** -1 (left) to 1 (right) */
+  pan: number;
+  /** Semitones, -24 to +24 */
+  pitch: number;
+  /** How long it rings before fading out, seconds (0: the whole sound) */
+  decay: number;
+  /** Low-pass and high-pass on the pad, Hz */
+  lowpass: number;
+  highpass: number;
+  /** Saturation, 0 to 1 */
+  drive: number;
+  /** Choke group, 1 to 8 (0: none): a pad cuts off the others in its group, as a closed hat does an open one */
+  choke: number;
+  /** Plays backwards */
+  reverse?: boolean;
+}
+
+/** A Drum Rack: 16 pads, pad i on MIDI note RACK_BASE_NOTE + i. */
+export interface DrumRack {
+  pads: RackPad[];
+}
+export const RACK_PADS = 16;
+/** Pad 1's note: C2 (36), as on most pad controllers. */
+export const RACK_BASE_NOTE = 36;
+
+/** One sound of a Multi Sampler, played over a range of keys and velocities. */
+export interface MultiZone {
+  soundId: string;
+  name: string;
+  /** The key (MIDI) it plays at its own pitch */
+  root: number;
+  /** The keys it plays on (MIDI, inclusive) */
+  lo: number;
+  hi: number;
+  /** The velocities it plays on (1 to 127, inclusive) */
+  velLo: number;
+  velHi: number;
+}
+
+/** A Multi Sampler: its sounds, and the shape every note plays with. */
+export interface MultiSample {
+  zones: MultiZone[];
+  /** Seconds */
+  attack: number;
+  release: number;
 }
 
 /** A warp marker: the moment `src` seconds into a sound lands on beat `beat` of it (see warp.ts). */

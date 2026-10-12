@@ -2,7 +2,7 @@ import { liveMix } from './engine';
 import { getLiveInstrument } from './liveTracks';
 import { DRUM_NOTES, safely } from './instruments';
 import type { NoteOff, TrackInstrument } from './instruments';
-import { isDrumKind } from './instrumentCatalog';
+import { isDrumKind, isRackKind } from './instrumentCatalog';
 import { heardTime, outputLatencySeconds } from './latency';
 import { decodeMidi, midiNoteLabel, midiNoteName, PIANO_OCTAVE_KEYS, pianoKeyNote } from './midi';
 import type { MidiMessage } from './midi';
@@ -13,6 +13,7 @@ import type { MidiInputInfo } from '../store/midiStore';
 import { useTimelineStore } from '../store/timelineStore';
 import { handleMidiCc } from '../store/midiLearn';
 import type { Track } from '../store/timelineTypes';
+import { RACK_BASE_NOTE, RACK_PADS } from '../store/timelineTypes';
 import { isSliderKey, isTextEntry } from '../components/keyboard';
 
 /**
@@ -39,6 +40,8 @@ const DRUM_ROWS = new Set<string>(Object.values(DRUM_NOTES));
  * snare 38, closed hat 42, open hat 46, cowbell 56), so a keyboard's drum pads land on them.
  */
 export function noteNameOn(midi: number, track: Track | undefined): string {
+  // A Drum Rack's pads are C2 up: any octave of the keyboard plays them, 16 keys to the pads
+  if (track && isRackKind(track.instrumentKey)) return midiNoteName(RACK_BASE_NOTE + (((midi - RACK_BASE_NOTE) % RACK_PADS) + RACK_PADS) % RACK_PADS);
   const name = midiNoteName(midi);
   if (!track || !isDrumKind(track.instrumentKey) || DRUM_ROWS.has(name)) return name;
   const below = midiNoteName(midi - 12);

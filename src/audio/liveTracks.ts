@@ -219,6 +219,8 @@ export function syncLiveTracks(tracks: Track[]): void {
       // The Slicer follows its slices and modes without a rebuild
       lt.instrument.setSlicer?.(track.slicer);
       lt.instrument.setSynth?.(track.synth);
+      lt.instrument.setRack?.(track.rack);
+      lt.instrument.setMulti?.(track.multi);
     }
     lt.applied = view;
     // A silent track's notes are skipped rather than played into a muted channel (or bus), saving CPU

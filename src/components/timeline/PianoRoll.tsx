@@ -5,7 +5,10 @@ import { Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { initAudio } from '../../audio/engine';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { previewTrackNotes } from '../../audio/liveTracks';
-import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isSlicerKind } from '../../audio/instrumentCatalog';
+import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
+import { padNote } from '../../store/sampleKits';
+import { RACK_PADS } from '../../store/timelineTypes';
+import type { DrumRack } from '../../store/timelineTypes';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
@@ -82,8 +85,18 @@ function slicerRows(slicer: SlicerSettings | undefined, notes: NoteEvent[]): Row
   return keyRows(SLICE_KEY_BASE, hi, (m) => `Slice ${m - SLICE_KEY_BASE + 1}`).map((r, i) => ({ ...r, black: i % 2 === 1 }));
 }
 
-function rowsFor(instrument: InstrumentKey, notes: NoteEvent[], slicer?: SlicerSettings): Row[] {
+/** A Drum Rack's rows: one per pad, named as its pads are, pad 1 at the bottom. */
+function rackRows(rack: DrumRack | undefined): Row[] {
+  return Array.from({ length: RACK_PADS }, (_, k) => {
+    const i = RACK_PADS - 1 - k;
+    const pad = rack?.pads[i];
+    return { note: padNote(i), label: `${pad?.name ?? `Pad ${i + 1}`}${pad?.soundId ? '' : ' (empty)'}`, black: i % 2 === 1, midi: -1 };
+  });
+}
+
+function rowsFor(instrument: InstrumentKey, notes: NoteEvent[], slicer?: SlicerSettings, rack?: DrumRack): Row[] {
   if (isDrumKind(instrument)) return DRUM_ROWS;
+  if (isRackKind(instrument)) return rackRows(rack);
   if (isFxKind(instrument)) return FX_ROW_LIST;
   if (isSlicerKind(instrument)) return slicerRows(slicer, notes);
   // Instrument's playable range, widened to fit any notes already in the clip
@@ -216,7 +229,7 @@ export const PianoRoll: React.FC = () => {
   if (!clipId || !clip || !track) return null;
   // An audio clip has no notes: its editor is for its gain and fades
   if (clip.audio) return <AudioClipEditor key={clip.id} clip={clip} track={track} />;
-  return <PianoRollEditor key={clip.id} clip={clip} instrument={track.instrumentKey} color={track.color} trackName={track.name} slicer={track.slicer} />;
+  return <PianoRollEditor key={clip.id} clip={clip} instrument={track.instrumentKey} color={track.color} trackName={track.name} slicer={track.slicer} rack={track.rack} />;
 };
 
 /**
@@ -237,11 +250,13 @@ interface EditorProps {
   trackName: string;
   /** A Slicer track's slices (its rows) */
   slicer?: SlicerSettings;
+  /** A Drum Rack's pads (its rows) */
+  rack?: DrumRack;
 }
 
-const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName, slicer }) => {
+const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName, slicer, rack }) => {
   // Drum kits and the FX instrument both have fixed, named rows instead of a keyboard
-  const isDrums = isDrumKind(instrument) || isFxKind(instrument);
+  const isDrums = isDrumKind(instrument) || isFxKind(instrument) || isRackKind(instrument);
   // So does the Slicer (one row per slice), unless it's in Pitch mode
   const sliceRows = isSlicerKind(instrument) && !slicer?.pitch;
   const namedRows = isDrums || sliceRows;
@@ -259,7 +274,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   // Drum clips: a click toggles a hit on the grid, like a step sequencer
   const [stepMode, setStepModeState] = useState(rememberedStepMode);
   const setStepMode = (next: boolean) => setStepModeState((rememberedStepMode = next));
-  const stepping = stepMode && isDrumKind(instrument);
+  const stepping = stepMode && (isDrumKind(instrument) || isRackKind(instrument));
   const setScale = (next: Scale | null) => setScaleState((rememberedScale = next));
   const setChord = (next: ChordId) => setChordState((rememberedChord = next));
   const setGhosts = (next: boolean) => setGhostsState((rememberedGhosts = next));
@@ -267,7 +282,13 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Rows only grow while the editor is open, so notes never jump rows mid-edit; a Slicer's follow its slices and mode
-  const [rows, setRows] = useState(() => rowsFor(instrument, clip.notes, slicer));
+  const [rows, setRows] = useState(() => rowsFor(instrument, clip.notes, slicer, rack));
+  // A Drum Rack's rows follow its pads' names
+  useEffect(() => {
+    if (!isRackKind(instrument)) return;
+    const needed = rackRows(rack);
+    setRows((current) => (current.length === needed.length && current.every((r, i) => r.label === needed[i].label) ? current : needed));
+  }, [instrument, rack]);
   useEffect(() => {
     if (isDrums) return;
     const needed = rowsFor(instrument, clip.notes, slicer);
@@ -709,7 +730,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             </select>
           </label>
         )}
-        {isDrumKind(instrument) && (
+        {(isDrumKind(instrument) || isRackKind(instrument)) && (
           <label data-search="steps" className="flex items-center gap-1.5 cursor-pointer" title="Step sequencer: a click turns a hit on or off in that GRID step (Shift-click: an accent). Alt-click: add and drag notes as usual. Off: always add and drag.">
             <input type="checkbox" checked={stepMode} onChange={(e) => setStepMode(e.target.checked)} className="accent-cyan-500" />
             STEPS

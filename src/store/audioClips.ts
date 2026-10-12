@@ -92,7 +92,7 @@ export function audioLengthLimit(audio: ClipAudio, soundSeconds: number | undefi
 }
 
 /** The sounds a project refers to: audio clips, Slicer tracks and Sampler tracks (each id once). */
-export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer'>> }): string[] {
+export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer' | 'rack' | 'multi'>> }): string[] {
   const ids = new Set<string>();
   for (const c of p.clips) {
     // A take folder keeps every take's sound, not only the one its comp starts with
@@ -106,6 +106,8 @@ export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' 
   for (const t of p.tracks) {
     if (t.sample?.soundId) ids.add(t.sample.soundId);
     if (t.slicer) ids.add(t.slicer.soundId);
+    for (const pad of t.rack?.pads ?? []) if (pad.soundId) ids.add(pad.soundId);
+    for (const zone of t.multi?.zones ?? []) ids.add(zone.soundId);
   }
   return [...ids];
 }
