@@ -377,6 +377,17 @@ There are 159 instruments in 14 groups:
 - **Recorded** (137 instruments and kits, downloaded the first time you use them): all the others, except the Sampler, Drum Rack and Multi Sampler, which play your own sound files.
 <!-- instruments:end -->
 
+### Expressive playing
+
+A recorded instrument has one recording per note, made at one loudness, so on its own a soft note is just the same note turned down, and every repeat is identical: that's much of what makes sampled music sound like an old game. **Expressive playing** (a tick box under the instrument in the Track Inspector) plays the recordings the way the instruments really behave:
+
+- **Softer is darker.** Each note gets its own tone filter that follows its velocity: at full velocity the recording is untouched; soft notes lose their brightness as well as their level (by about two to three octaves of top end at the softest, depending on the instrument family, brass and strings the most, pads the least). So a crescendo drawn with velocities brightens as it grows, as a real one does.
+- **A natural loudness curve.** Velocity follows a decibel curve rather than a straight line, so the soft end is really soft.
+- **No machine-gun repeats.** Every note is a hair different, up to ±3 cents in pitch and ±0.6 dB in level, worked out from the note and its moment so exports come out the same every time. On the drum kits, each hit is detuned a little (the kick hardly at all, the hats and claps the most) and its level varies, as a real drummer's hits do.
+- **A modern 808.** The 808 Bass becomes a clean mono sub with a separate driven copy for the grit, low end untouched by the distortion, with a softer attack (6 ms).
+
+It's on for every track of a new song and every track you add. Songs made before it existed open with it off, so they sound as they did; tick it to try. Velocities matter more with it on: draw accents (0.85-0.95), normal notes (0.55-0.7) and ghosts (0.25-0.35), and use the **HUMAN** insert for timing.
+
 For **classical and angelic** music: Choir and Voices "Ooh" for heavenly voices, Halo Pad, Glass Pad and Choir Pad underneath, Harp, Celesta and Glockenspiel for sparkle, and the Orchestra group for everything from a string quartet (Violin, Viola, Cello, Contrabass) to a full orchestra with woodwinds, brass and Timpani.
 
 - **Recorded instruments** download their sounds the first time you use them, so they need an internet connection. A spinner shows on the track header while they load, and the Inspector shows **Loading CDN...**, **Ready** or **Error**. Notes are silent until the sounds arrive. If a download fails, the track header shows a red **!** in place of its coloured dot and the Inspector shows **Error** with a **Retry** button; click either to try again. Failed downloads are also retried when your connection comes back, and when you play that instrument in the Instrument Browser or Audition Deck, add another track with it or export. Once it downloads, every track using it plays from its next note, with no reload.
