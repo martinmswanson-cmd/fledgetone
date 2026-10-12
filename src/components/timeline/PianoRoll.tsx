@@ -26,11 +26,17 @@ interface Row {
 }
 
 const DRUM_ROWS: Row[] = [
-  { note: DRUM_NOTES.cowbell, label: 'Cowbell', black: false, midi: -1 },
+  { note: DRUM_NOTES.crash, label: 'Crash', black: true, midi: -1 },
+  { note: DRUM_NOTES.ride, label: 'Ride', black: false, midi: -1 },
+  { note: DRUM_NOTES.cowbell, label: 'Cowbell', black: true, midi: -1 },
+  { note: DRUM_NOTES.tomHigh, label: 'Tom High', black: false, midi: -1 },
+  { note: DRUM_NOTES.tomMid, label: 'Tom Mid', black: true, midi: -1 },
+  { note: DRUM_NOTES.tomLow, label: 'Tom Low', black: false, midi: -1 },
   { note: DRUM_NOTES.openHat, label: 'Open Hat', black: true, midi: -1 },
   { note: DRUM_NOTES.closedHat, label: 'Closed Hat', black: false, midi: -1 },
-  { note: DRUM_NOTES.snare, label: 'Snare', black: true, midi: -1 },
-  { note: DRUM_NOTES.kick, label: 'Kick', black: false, midi: -1 },
+  { note: DRUM_NOTES.clap, label: 'Clap', black: true, midi: -1 },
+  { note: DRUM_NOTES.snare, label: 'Snare', black: false, midi: -1 },
+  { note: DRUM_NOTES.kick, label: 'Kick', black: true, midi: -1 },
 ];
 
 const FX_ROW_LIST: Row[] = FX_ROWS.map((r, i) => ({ ...r, black: i % 2 === 1, midi: -1 }));

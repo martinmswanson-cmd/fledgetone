@@ -21,6 +21,11 @@ export function isSamplerKey(key: InstrumentKey): boolean {
   return INSTRUMENTS[key].kind === 'sampled';
 }
 
+/** True for instruments with recordings to download first: the sampled ones and the recorded drum kits. */
+export function hasRecordings(key: InstrumentKey): boolean {
+  return !!INSTRUMENTS[key].samples;
+}
+
 /** Download + decode an instrument's samples (once). Updates the loading badge in audioStore. */
 export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   const existing = sampleSets[key];

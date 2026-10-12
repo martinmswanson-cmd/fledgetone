@@ -9,7 +9,7 @@ import { createClipSchedule } from './scheduler';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import { createAutomationSchedule } from './automationSchedule';
 import { decodeSound, useSoundLibrary } from './soundLibrary';
-import { isSamplerKey, loadCustomSample, loadSamples } from './samplers/samplerManager';
+import { hasRecordings, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar, ticksToBar } from './transport';
 import { cueChunks, loopChunk, markerCues } from './wavCues';
@@ -422,7 +422,7 @@ async function renderTracks(
 
   // Download any sampled instruments first (shared with live playback, so usually instant)
   for (const key of new Set(tracks.map((t) => t.instrumentKey))) {
-    if (!isSamplerKey(key)) continue;
+    if (!hasRecordings(key)) continue;
     try {
       await loadSamples(key);
     } catch {

@@ -21,6 +21,12 @@ const DRUM_PADS = [
   { note: DRUM_NOTES.closedHat, label: 'Closed Hat' },
   { note: DRUM_NOTES.openHat, label: 'Open Hat' },
   { note: DRUM_NOTES.cowbell, label: 'Cowbell' },
+  { note: DRUM_NOTES.clap, label: 'Clap' },
+  { note: DRUM_NOTES.tomHigh, label: 'Tom High' },
+  { note: DRUM_NOTES.tomMid, label: 'Tom Mid' },
+  { note: DRUM_NOTES.tomLow, label: 'Tom Low' },
+  { note: DRUM_NOTES.crash, label: 'Crash' },
+  { note: DRUM_NOTES.ride, label: 'Ride' },
 ];
 
 /** Two octaves starting on a C near the middle of the instrument's range. */
