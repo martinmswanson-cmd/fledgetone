@@ -169,6 +169,23 @@ Both readouts in the toolbar are also input boxes. Click one, type a position, a
 - **BAR.BEAT.TICK**: a bar (`17`), a bar and beat (`17.3`) or bar, beat and hundredths of a beat (`17.3.50`).
 - **TIMECODE**: a timecode (see below).
 
+## Tempo changes and time signatures
+
+The thin top row of the ruler holds the song's tempo and time signature, and every change along the way. A faint line traces the tempo across the song, rising where it speeds up; a glide shows as a slope.
+
+- **Add a tempo change**: double-click the top row, or right-click the ruler and choose **Tempo change here** (a jump) or **Tempo glide to here** (the tempo slides there from the change before, evenly over time, for a ritardando or a build that speeds up).
+- **Edit one**: click its flag. Type the **BPM** (40 to 240, to 0.01), tick **Glide from the tempo before** to make it a glide, or **Remove** it. Click the first flag to change the song's starting tempo (the same as TEMPO in the header).
+- **Move one**: drag its flag along the row. It snaps to the grid (Shift for none).
+- **Time signatures**: right-click the ruler and choose **Time signature change here**, or click the time signature at the start of the row for the song's own. Pick the beats per measure (1 to 16) and the beat (2, 4, 8 or 16): 3/4, 6/8, 7/8, 5/4 and so on. A change lands on the nearest measure line, and dragging its flag keeps it on measure lines.
+
+What changes and what doesn't:
+
+- The ruler counts **measures** in their time signature, and the grid, the bar lines in the lanes and the BAR.BEAT.TICK readout follow it. The metronome clicks each beat of the measure, accented on beat 1, and the count-in is one measure of the song's time signature.
+- Clips, notes, the loop and markers stay where they are in the music when the tempo changes: they keep their place in beats, and their time in seconds moves. Timecode, the video, and the time readouts follow the tempo.
+- Audio clips that follow the tempo (stretched to it) play at the tempo where they start. Audio clips that don't play at their own speed, so their length in bars follows the tempo there.
+- Exports, stems, freezing and every game export follow the tempo map to the sample, and so does playback, the loop included (a loop that crosses a change goes back to the tempo at its In each time round).
+- Inserting and deleting bars moves the changes after them (deleting bars deletes the changes in them). Every change is one Undo step.
+
 ## Timecode and frame rates
 
 The **TIMECODE** readout shows the playhead as hours, minutes, seconds and frames (`HH:MM:SS:FF`), counted from the start of bar 1 at the song's tempo. Use it to line music up with video or a game.
@@ -309,6 +326,14 @@ The header has the clip's name (click to rename), **GRID** (1/32, 1/16T, 1/16, 1
 - **TOOLS** changes the selected notes, or the whole clip with nothing selected, in one Undo step: **Quantize** (starts, or starts and lengths, to the GRID), **Humanize** (small random shifts in timing and velocity), **Strum** (a chord's notes a moment apart, low to high or high to low), **Arpeggiate** (each chord becomes a broken chord at the GRID's speed: up, down, up and down, or random), **Legato** (each note lasts until the next), **Ratchet x2 / x3 / x4** (each note split into equal repeats, getting louder), **Roll** (each note repeated at the GRID's speed for its length, rising: set GRID to 1/32 for a snare or hat roll), **Semitone up / down**, **Octave up / down**, and **Fit to scale**. Drum clips have Quantize, Humanize, Ratchet and Roll.
 - **GHOSTS** shows the other tracks' notes over the same bars as faint outlines in their colours, so a melody can follow the chords.
 
+**Expression lanes** (at the bottom of the piano roll, for every instrument except the drum kits and FX): what a keyboard's wheels and pedal would play, over the whole clip.
+
+- **Pitch bend**: every note bends together. Click to add a point, drag one to move it (it snaps to the grid; Shift for none), and right-click or double-click a point to remove it; the bend glides from point to point. The lane shows ±2 semitones; **±2 st** switches it to ±12 for big swoops. Bends reach up to an octave either way.
+- **Mod wheel**: vibrato, deeper as it goes up (at the top, half a semitone either way, about five and a half times a second). Drawn like the bend.
+- **Sustain pedal**: drag along the lane to hold the pedal down there; notes let go while it's down ring on until it comes up. Click a held stretch to lift it.
+
+An underlined lane name means that lane has something in it. The lanes travel with the clip when it's moved, copied, split or trimmed, and play the same live and in exports. Bends and vibrato play on the recorded instruments, Slap Bass, Sub Bass, 808, Lead, Space Clav, Brass Stabs, Pad and plugin instruments; the sustain pedal works on every instrument.
+
 > With no notes selected, `Delete` acts on the timeline and deletes the selected clip, usually the one you're editing. `Ctrl+Z` brings it back.
 
 ## Instruments
@@ -412,6 +437,18 @@ The **Slicer** (**Add Track > Your Sounds > Slicer**) cuts a sound into slices a
 - **Chop to Slicer…** (right-click an audio clip, or in the clip editor) makes a Slicer track from that clip's sound, with a clip that plays the slices in order, ready to rearrange. The audio clip stays.
 - Slices play at the sound's own level; use the track fader to balance it.
 
+### Plugins (Web Audio Modules)
+
+The app can load **Web Audio Modules** (WAM 2): instruments and effects other people make for the web, each at its own address. Look for them in the WAM community's plugin lists; you need the address of the plugin's module (usually ending `index.js`), and its site has to let other sites load it.
+
+- **A plugin instrument**: **Add Track → Plugin instrument (WAM)…**, paste the address and press **Load plugin**. It becomes a track you write notes for, record onto and play from a MIDI keyboard like any other (notes, velocity, held keys, pitch bend and the expression lanes go to it as MIDI).
+- **A plugin effect**: right-click any track's name, **Add plugin effect (WAM)…**. Effects come after the track's instrument and before its own inserts, in the order you add them. Right-click the track to open or remove each one.
+- **Its window**: the plugin's own controls open when you add it. Reopen them with the plug icon on the track's header, or from the right-click menu. Drag the window by its title bar; **BYPASS** (effects) lets the sound pass it by; closing the window leaves the plugin playing.
+- **Its settings** are read from it every few seconds and when its window closes, and saved with the project, so exports, freezing and reopening the project hear it as you set it.
+- Addresses you've used are listed under **Used before** in the dialog.
+
+Plugins are programs from their sites, so only load ones you trust. A project you open that uses plugins plays without them at first, and a bar at the top names the sites: **Load plugins** allows them (remembered in this browser). Plugins need an internet connection (the site they come from), and a plugin that fails to load says why and stays silent (an effect lets the sound through). A plugin is only as good as its maker made it: one that's slow can make playback stutter, and freezing its track helps.
+
 ### Where your sounds live
 
 Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.beatbox.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen or restorable session uses. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
@@ -455,13 +492,24 @@ The **Mixer** tab of the bottom panel shows every track side by side as a mixing
 
 ### Track headers
 
-**Right-click a track's name** for its **colour**, **Move up** / **Move down**, **New folder…**, **Move into** a folder or **Take out of** one, Freeze and Delete.
+**Right-click a track's name** for its **colour**, **Move up** / **Move down**, **New folder…**, **Move into** a folder or **Take out of** one, its **Output** (the master or a bus), **Send to a new bus**, plugin effects (**Add plugin effect (WAM)…**, and **Open** or **Remove** each one), Freeze and Delete.
 
 **Folders**: a folder groups tracks under a row of its own. Its arrow **folds** them away (they still play, and the folder's row shows their clips in miniature, so you can see where the music is); double-click the folder's lane to fold or unfold too. Its **M** and **S** mute or solo every track in it, the folder icon sets a colour for it and its tracks, double-click its name to rename it, and **×** ungroups it (the tracks stay where they are). Tracks in a folder show a thin stripe of its colour. Moving a track up or down past the edge of its folder takes it out; a track outside folders hops over a whole folder. Folders are saved with the project and every change is one Undo step (folding isn't).
 
 Each track header has **VOL** (-60 to +6 dB) and **PAN** sliders (double-click either to reset), and buttons for **M** (mute), **S** (solo) and **R** (record arm: takes go on this track, one track at a time; arming also selects it). If any track is soloed, only soloed tracks play. Muted and un-soloed tracks are also left out of exports.
 
 Tracks are stereo, so wide sounds keep their width all the way to the master: the Supersaw, Space Clav and Mandolin, the noise in the FX instrument, the **Chorus** effect, recorded instruments with stereo samples, and stereo files in the Sampler. Most synths and mono samples are mono and sit in the middle, and so are the drum kits, effects included (a Chorus on a kit doesn't widen it). **PAN** works as a balance: in the middle both sides play, and turning it towards one side fades out the other, so at full left you hear only the left channel. For a mono sound that's the same as moving it across.
+
+### Buses (group channels)
+
+A **bus** is a track with no clips of its own that other tracks play into, so they share one fader, one set of inserts and EQ, and one pair of sends: put all the drums through one compressor, or turn every backing part down together.
+
+- **Make one**: **Add Track → Bus (group channel)**, or select the tracks you want (Ctrl or Shift-click their names), right-click one and choose **Group N tracks into a new bus** (with one track, **Send to a new bus**).
+- **Route a track**: right-click its name and pick **Play into “Bus name”**, or **Output: back to the master**; or use the output menu at the bottom of its Mixer strip. The track's header shows **→ Bus name**, and the bus shows **bus · N** (how many tracks play into it).
+- A bus has a fader, pan, every insert and the EQ, sends, mute, solo, automation and a meter, like any track. At 0 dB, centred and with nothing on, it leaves the sound exactly as it was.
+- **Mute** a bus and its tracks go silent; **solo** it and you hear it with everything playing into it. Soloing a track in a bus keeps the bus playing.
+- Buses can play into other buses (a drums bus into a music bus). A route that would come back round to itself isn't offered.
+- Deleting a bus sends its tracks back to the master. Buses can't hold clips, be armed or be frozen. Exports, stems and freezing play through them as you hear them.
 
 ### The Track Inspector (FX Rack)
 
@@ -507,14 +555,14 @@ Under them are the two effects every track shares through its sends:
 
 In the header:
 
-- **TEMPO**: click the number to type a tempo from 40 to 240 BPM, with up to two decimals (`115.25`); Enter sets it, Esc cancels. `-` and `+` change it by 1 BPM, and the slider moves in whole BPM. **TAP** sets it from your clicks: tap at least twice; it averages your last few taps and starts over if you pause for more than 2.5 seconds.
+- **TEMPO**: the song's starting tempo (tempo changes later in the song are on the ruler: see Tempo changes and time signatures). Click the number to type a tempo from 40 to 240 BPM, with up to two decimals (`115.25`); Enter sets it, Esc cancels. `-` and `+` change it by 1 BPM, and the slider moves in whole BPM. **TAP** sets it from your clicks: tap at least twice; it averages your last few taps and starts over if you pause for more than 2.5 seconds.
 - **FIT**: sets the tempo so part of the song lasts a given time. Choose **Loop In→Out**, **Whole song** or a number of **Bars**, then type the **Target length** in seconds (`25.5`) or as a timecode (`0:25:00`). It shows the new tempo and the resulting length as you type; **Apply** (or Enter) sets it, to 0.01 BPM, picked so the part ends in the frame you typed. Over long stretches at slow tempos it can land a frame either side, and the panel shows the exact result first.
 - **SWING**: delays the off-beat 16th notes (the second 16th of each 8th) for a shuffled feel, from 0 to 50%; at 50% they land on the 1/8-triplet line. Downbeats, 8ths, triplets and 1/32 notes stay on the grid. In an 8th where a clip has a 1/32 roll or triplets, that clip plays the whole 8th straight, so rolls stay even (other clips keep swinging). A clip moved off the 16th grid (Shift-drag, Frame snap) swings on its own 16ths. A clip cut off the grid (the razor with Shift, Snap Off or Frame snap, a start trimmed off the grid, or Insert bars at an off-grid point) keeps the swing it had: its notes go on swinging on the song's 16ths. New blank projects start at 20% (the demo song uses 15%). Double-click it for 0% (straight).
 - **MASTER**: the final output level (-30 to +6 dB). It also sets the export level, but it isn't saved with the project.
 
 Every track goes through a master compressor and a limiter that holds peaks just under full scale, so at MASTER 0 dB or lower playback never clips and sounds the same as your exports. MASTER is applied after the limiter, so above 0 dB playback can clip (exports are turned down to fit).
 
-Mixer and effect changes can be undone with `Ctrl+Z`; tempo, swing and master volume can't.
+Mixer and effect changes, tempo changes and time signatures can be undone with `Ctrl+Z`; the starting tempo, swing and master volume can't.
 
 ### When playback lags: the performance badge and Clear memory
 
@@ -596,7 +644,7 @@ Click the **MIDI** button (the keyboard icon) in the toolbar, then **Connect MID
 
 - **Input** picks one device or **All inputs**. The light and readout show the last thing played.
 - Your playing goes to the **armed** track if one is armed, otherwise the **selected** track, through its instrument, mixer and effects, so you hear what you'll record.
-- Velocity, note-off, the sustain pedal and all-notes-off work on every instrument. The pitch bend wheel (±2 semitones) works on Slap Bass, Sub Bass, 808, Lead, Space Clav, Brass Stabs and Pad.
+- Velocity, note-off, the sustain pedal and all-notes-off work on every instrument. The pitch bend wheel (±2 semitones) works on the recorded instruments, Slap Bass, Sub Bass, 808, Lead, Space Clav, Brass Stabs, Pad and plugin instruments. When you record, the bend and mod wheels go into the clip's **Pitch bend** and **Mod wheel** lanes (see Expression lanes), and the sustain pedal into how long the notes ring.
 - On a drum kit, the standard General MIDI drum pads (kick 36, snare 38, hats 42 and 46) play the kit's sounds.
 
 ### The computer keyboard as a piano
@@ -617,12 +665,34 @@ To **resample** (record a part, then mangle it), export the part as a WAV and dr
 2. Switch **Record** on (the red circle in the toolbar).
 3. Press **Play**. With the **1-bar count-in** on (the default) you hear four clicks first, then the music and the take start together.
 4. Play. Notes are placed where you heard them against the music, with their velocity and length.
-5. **Pause**, **Stop** or switching Record off ends the take. It becomes a clip named **Take 1**, **Take 2** and so on, on whole bars. Switching Record on while playing starts a take right there (punch-in).
+5. **Pause**, **Stop** or switching Record off ends the take. It becomes a clip named **Take 1**, **Take 2** and so on, on whole bars. Switching Record on while playing starts a take right there.
 
 - **Undo** removes the whole take in one step. With **Quantize** on, the notes are snapped when you stop, as a second step: the first `Ctrl+Z` puts them back where you played them, the second removes the take.
-- **Loop recording**: with the loop on, every pass adds to the same take, so you can build a part up pass by pass.
+- **Loop recording**: with the loop on, every pass adds to the same take, so you can build a part up pass by pass. Or tick **Loop passes are takes** to keep each pass as a take of its own and pick the best afterwards (see Takes and comping).
 - Takes are ordinary clips: swing, editing, Insert/Delete bars and export work on them like any other.
-- **Recording settings** (the arrow next to Record): **1-bar count-in**, **Quantize** (Off, 1/16, 1/8 or 1/16T), **Metronome while playing** and **Click level**. These are kept in your browser, not in the project.
+- **Recording settings** (the arrow next to Record): **1-bar count-in**, **Quantize** (Off, 1/16, 1/8 or 1/16T), **Metronome while playing**, **Loop passes are takes**, **Punch in / out** and **Click level**. These are kept in your browser, not in the project.
+
+### Punch in and out
+
+Punch replaces just one part: play along from earlier to get the feel, and only what you play between the punch **In** and **Out** is kept.
+
+- Tick **Punch in / out** in the recording settings and type its **In** and **Out** bars, or press **= loop** to punch over the loop. Or right-click the ruler: **Punch in here** and **Punch out here** (each switches punch on).
+- The punch range shows as a red bar along the bottom of the ruler.
+- A MIDI take keeps the notes that start inside the range, cut off at the Out, and its clip is exactly the range. A mic recording is cut to the range too.
+- With **Loop passes are takes** on, punching over the same range again adds a take each time, so you can try a fill as often as you like.
+
+### Takes and comping
+
+With **Loop passes are takes** ticked, recording round the loop keeps each pass as a separate take in one clip (a **take folder**), and recording over a clip of exactly the same span (the same punch range, or the loop again) adds takes to it. This works for MIDI and for the microphone. The newest take plays at first; the clip shows **NT** (N takes) by its name.
+
+Click **NT**, or right-click the clip and choose **Takes (N)…**, to **comp**: build the part from the best bits of each take.
+
+- Each take is a row (notes or waveform). The lit stretch of each row is what plays; the rest is shaded.
+- **Drag along a take** to use it there; it snaps to beats (Shift for 16ths). A click uses that beat.
+- Click a take's **name** to use it all the way through. The bin deletes a take.
+- **Flatten** keeps what the comp plays as an ordinary clip and drops the other takes. (A mic comp made of several takes stays as the take it starts with when flattened: to keep a mixed comp, leave it as a folder.)
+- Where a mic comp changes take, the two blend over 10 ms, so the joins don't click.
+- Each change is one Undo step. Take folders save with the project, split and trim like any clip, and play the comp live and in every export. Editing a MIDI folder's notes in the piano roll works as usual, but the next comp change rebuilds the notes from the takes.
 
 ### Metronome
 
@@ -700,7 +770,7 @@ A sound a game plays again and again (a footstep, a sword swing, a menu click) s
 - `states/`: every state (section between markers) as a **seamless loop**, a whole number of bars long, with loop points.
 - `stems/<state>/`: when tracks have stem groups, the same loop split by group (tracks without a group go in **Main**), every stem exactly the same length: played together at full level they make the mix.
 - `transitions/`: the fill, riser and impact sounds your rules use (a fill or a riser starts just before the switch; an impact on it), and `stingers/`: every stinger.
-- `audio_manifest.json`: the tempo, the time signature (4/4), the sample rate, the key, every state (its loop, its stems, its length in bars, seconds and samples), the transition rules by state name, every stinger (with how many bars it bridges), and each stem group's **intensity curve** ([intensity, level] points, both 0 to 1) as the recommended gain curve for the game's audio code.
+- `audio_manifest.json`: the tempo, the time signature, the sample rate, the key, every state (its loop, its stems, its length in bars, seconds and samples), the transition rules by state name, every stinger (with how many bars it bridges), and each stem group's **intensity curve** ([intensity, level] points, both 0 to 1) as the recommended gain curve for the game's audio code.
 - `players/`: ready-made players that read the manifest and do all of it (switching by your rules on the beat, crossfades, stinger bridges, intensity): `web/adaptive-music.js` for a web game, `godot/AdaptiveMusic.gd` for Godot 4, and `unity/AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `setIntensity` / `set_intensity` / `SetIntensity`, `stinger` and `stop`.
 - `README.txt` says how to drop it into each engine, with your own state and stinger names in the examples.
 
@@ -811,7 +881,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 
 ## Tips and limits
 
-- Songs can be up to 400 bars long, in 4/4, at one tempo (40 to 240 BPM, to 0.01 BPM). The shortest loop is a 16th note.
+- Songs can be up to 400 bars long, with any number of tempo changes (40 to 240 BPM, to 0.01 BPM) and time signatures. The shortest loop is a 16th note.
 - For EDM, set **Swing** to 0% (new blank projects start at 20%). Dubstep is usually 140 BPM with the snare on beat 3 (half-time), house around 124 to 128, drum & bass around 174.
 - Projects that use Wobble Bass, Growl Bass, Reese Bass, Supersaw, Pluck, FX, Audio tracks or the Slicer only open in this version of the app or later.
 - Recorded instruments (piano, strings, winds and others) download their sounds the first time you use them, so they need an internet connection. Everything else works offline.
