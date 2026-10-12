@@ -403,7 +403,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     case 'subBass':
       return mono(createSubBass(output));
     case 'bass808':
-      return mono(create808(output));
+      return mono(create808(output, !!options.expressive));
     case 'lead':
       return mono(createLead(output));
     case 'keys': {
