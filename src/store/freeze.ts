@@ -1,6 +1,7 @@
 import type { AutomationParam, Clip, FrozenTrack, Track } from './timelineTypes';
 import { defaultTrackFx } from './timelineTypes';
 import { isDrumKind } from '../audio/instrumentCatalog';
+import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 
 /**
  * Freezing a track: its instrument, inserts and EQ are rendered once to a sound, and live
@@ -38,17 +39,20 @@ const clipContent = (c: Clip) => ({
   wobble: c.wobble,
   audio: c.audio,
   notes: c.notes.map((n) => [n.note, n.startOffset, n.duration, n.velocity]),
+  // (Only when present, so freezes made before these existed stay current)
+  ...(c.expression ? { expression: c.expression } : {}),
+  ...(c.takes?.length ? { comp: c.comp, takes: c.takes.map((t) => t.audio ?? null) } : {}),
 });
 
 /** The last fingerprint of each track object, with the arrangement it was taken from (see freezeFingerprint). */
-const fingerprints = new WeakMap<Track, { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; value: string }>();
+const fingerprints = new WeakMap<Track, { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[]; value: string }>();
 
 /** What a freeze of `track` depends on, as a short hash. Cached until the track or arrangement changes. */
-export function freezeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number }): string {
+export function freezeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] }): string {
   const hit = fingerprints.get(track);
-  if (hit && hit.clips === all.clips && hit.tracks === all.tracks && hit.bpm === all.bpm && hit.swing === all.swing) return hit.value;
+  if (hit && hit.clips === all.clips && hit.tracks === all.tracks && hit.bpm === all.bpm && hit.swing === all.swing && hit.tempoPoints === all.tempoPoints) return hit.value;
   const value = computeFingerprint(track, all);
-  fingerprints.set(track, { tracks: all.tracks, clips: all.clips, bpm: all.bpm, swing: all.swing, value });
+  fingerprints.set(track, { tracks: all.tracks, clips: all.clips, bpm: all.bpm, swing: all.swing, tempoPoints: all.tempoPoints, value });
   return value;
 }
 
@@ -57,7 +61,7 @@ function fxPrint(fx: Track['fx']): Partial<Track['fx']> {
   return { ...rest, ...(peq?.on ? { peq } : {}), ...(mbc?.on ? { mbc } : {}) };
 }
 
-function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number }): string {
+function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] }): string {
   const own = all.clips.filter((c) => c.trackId === track.id).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
   const followsKick = track.fx.pump.on && track.fx.pump.trigger === 'kick';
   // A kick-triggered Pump ducks on the kicks of the drum tracks that sound (as live playback
@@ -84,12 +88,15 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       sample: track.sample,
       slicer: track.slicer,
       synth: track.synth,
+      ...(track.plugin ? { plugin: track.plugin } : {}),
+      ...(track.pluginFx?.length ? { pluginFx: track.pluginFx } : {}),
       // (The newer inserts only while on, so tracks frozen before they existed stay frozen)
       fx: fxPrint(track.fx),
       eq: track.eq,
       automation: (track.automation ?? []).filter((l) => !LIVE_PARAMS.has(l.param)),
       clips: own.map(clipContent),
       bpm: all.bpm,
+      ...(all.tempoPoints?.length ? { tempoPoints: all.tempoPoints.map((p) => [p.bar, p.bpm, p.ramp]) } : {}),
       swing: all.swing,
       kicks,
       sourceNotes,
@@ -109,13 +116,15 @@ export function trackForFreezing(track: Track): Track {
     isSoloed: false,
     automation: (track.automation ?? []).filter((l) => !LIVE_PARAMS.has(l.param)),
     frozen: undefined,
+    // Rendered to the master, not through its bus: live, the frozen sound still plays into the bus
+    output: undefined,
   };
 }
 
 /** Whether a track's freeze still matches what it was rendered from (and its sound is there). */
 export function freezeIsCurrent(
   track: Track,
-  all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number },
+  all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] },
   soundMissing: (id: string) => boolean
 ): track is Track & { frozen: FrozenTrack } {
   // An armed track plays live, so a MIDI keyboard played into it is heard
@@ -123,6 +132,9 @@ export function freezeIsCurrent(
 }
 
 export const frozenClipId = (trackId: string) => `frozen:${trackId}`;
+
+/** How many bars `seconds` of frozen sound from `startBar` lasts, through the song's tempo changes. */
+const frozenLengthBars = (startBar: number, seconds: number, tempo: TempoMap) => secondsToBar(barToSeconds(startBar, tempo) + seconds, tempo) - startBar;
 
 
 export interface LiveView {
@@ -141,7 +153,7 @@ export interface LiveView {
  * but an Audio track plays no notes). Everything else is passed through as it is.
  */
 export function liveView(
-  all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number },
+  all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] },
   soundMissing: (id: string) => boolean,
   previous?: LiveView
 ): LiveView {
@@ -161,6 +173,9 @@ export function liveView(
         frozenFrom: t.instrumentKey,
         sample: undefined,
         slicer: undefined,
+        // Its plugins are in the sound, and it plays straight into its bus (whose sound isn't)
+        plugin: undefined,
+        pluginFx: undefined,
         fx: defaultTrackFx(),
         eq: { low: 0, mid: 0, high: 0 },
         automation: (t.automation ?? []).filter((l) => LIVE_PARAMS.has(l.param)),
@@ -170,7 +185,7 @@ export function liveView(
         trackId: t.id,
         name: 'Frozen',
         startBar: f.startBar,
-        lengthBars: (f.seconds * all.bpm) / 240,
+        lengthBars: frozenLengthBars(f.startBar, f.seconds, { bpm: all.bpm, points: all.tempoPoints ?? [] }),
         isSelected: false,
         notes: [],
         audio: { soundId: f.soundId, offset: 0, gain: f.gainDb, fadeIn: 0, fadeOut: 0 },

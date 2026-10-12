@@ -90,14 +90,28 @@ export const isPluginUrlAllowed = (url: string): boolean => trustedUrls().has(ur
 /** Allow these URLs to load (and remember it). Bumps the epoch, so plugins waiting on them rebuild. */
 export function allowPluginUrls(urls: Iterable<string>): void {
   const set = trustedUrls();
-  for (const u of urls) set.add(u);
+  const fresh = [...urls].filter((u) => !set.has(u));
+  // Nothing new: nothing to rebuild (a rebuild drops every plugin's sound for a moment)
+  if (!fresh.length) return;
+  for (const u of fresh) set.add(u);
   try {
     localStorage.setItem(TRUST_KEY, JSON.stringify([...set]));
   } catch {
     // Storage blocked: allowed for this page
   }
   epoch++;
+  for (const u of fresh) blocked.delete(u);
+  notify();
+}
+
+/**
+ * A project is being replaced: forget the plugin settings read from the old one and the URLs it
+ * asked for, and rebuild every plugin, so each starts from the settings its project saved.
+ */
+export function resetWamSession(): void {
+  states.clear();
   blocked.clear();
+  epoch++;
   notify();
 }
 
@@ -136,8 +150,8 @@ export function normalizePluginUrl(url: string): string | null {
 export class PluginBlockedError extends Error {}
 
 /** Load the plugin at `url` into `ctx` with `state`. Rejects for a URL not yet allowed, a load error, or a timeout. */
-export async function loadWam(ctx: BaseAudioContext, url: string, state?: unknown): Promise<WamInstance> {
-  if (!isPluginUrlAllowed(url)) {
+export async function loadWam(ctx: BaseAudioContext, url: string, state?: unknown, checkAllowed = true): Promise<WamInstance> {
+  if (checkAllowed && !isPluginUrlAllowed(url)) {
     if (!blocked.has(url)) {
       blocked.add(url);
       notify();
@@ -156,7 +170,11 @@ export async function loadWam(ctx: BaseAudioContext, url: string, state?: unknow
   })();
   let timer = 0;
   const timeout = new Promise<never>((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error(`the plugin at ${url} took too long to load`)), LOAD_TIMEOUT_MS);
+    timer = window.setTimeout(() => {
+      reject(new Error(`the plugin at ${url} took too long to load`));
+      // Given up on: if it does arrive, let it go
+      load.then(destroyInstance, () => {});
+    }, LOAD_TIMEOUT_MS);
   });
   try {
     return await Promise.race([load, timeout]);
@@ -165,16 +183,25 @@ export async function loadWam(ctx: BaseAudioContext, url: string, state?: unknow
   }
 }
 
-/** What a plugin says it is, read by loading it once in `ctx` (then let go). */
-export async function describeWam(ctx: BaseAudioContext, url: string): Promise<{ name: string; isInstrument: boolean }> {
-  const inst = await loadWam(ctx, url);
-  const d = inst.descriptor ?? {};
+/** Take an instance out of the graph and let it go. */
+export function destroyInstance(inst: WamInstance): void {
   try {
     inst.audioNode.disconnect();
+  } catch {
+    // Not connected
+  }
+  try {
     inst.audioNode.destroy?.();
   } catch {
-    // Already gone
+    // Already destroyed
   }
+}
+
+/** What a plugin says it is, read by loading it once in `ctx` (then let go). It needn't be allowed yet: this is the person trying it. */
+export async function describeWam(ctx: BaseAudioContext, url: string): Promise<{ name: string; isInstrument: boolean }> {
+  const inst = await loadWam(ctx, url, undefined, false);
+  const d = inst.descriptor ?? {};
+  destroyInstance(inst);
   return { name: (d.name || url.split('/').filter(Boolean).slice(-2, -1)[0] || 'Plugin').slice(0, 40), isInstrument: !!d.isInstrument || d.hasAudioInput === false };
 }
 
@@ -194,6 +221,42 @@ export function registerLiveWam(pluginId: string, inst: WamInstance): void {
 export function unregisterLiveWam(pluginId: string, inst: WamInstance): void {
   if (live.get(pluginId) === inst) live.delete(pluginId);
   notify();
+}
+
+/** Plugins being let go, by id: their settings are read first, so the one built next starts from them. */
+const retiring = new Map<string, Promise<void>>();
+
+/**
+ * Let a live instance go after reading its settings (the last poll may be up to 3 s old), so a
+ * rebuild (bypass, another effect added) keeps what was just turned.
+ */
+export function retireLiveWam(pluginId: string, inst: WamInstance): void {
+  unregisterLiveWam(pluginId, inst);
+  inst.audioNode.disconnect();
+  const read = Promise.race([
+    Promise.resolve(inst.audioNode.getState?.()).then((state) => {
+      if (state === undefined) return;
+      const json = JSON.stringify(state);
+      if (json.length > 2_000_000 || states.get(pluginId) === json) return;
+      states.set(pluginId, json);
+      const changed = new Map<string, unknown>([[pluginId, JSON.parse(json)]]);
+      stateListeners.forEach((l) => l(changed));
+    }),
+    new Promise<void>((resolve) => setTimeout(resolve, 1000)),
+  ]).catch(() => {});
+  const done = read.then(() => destroyInstance(inst));
+  retiring.set(pluginId, done);
+  void done.then(() => {
+    if (retiring.get(pluginId) === done) retiring.delete(pluginId);
+  });
+}
+
+/** Resolves once the instance of `pluginId` being let go has had its settings read. */
+export const whenRetired = (pluginId: string): Promise<void> => retiring.get(pluginId) ?? Promise.resolve();
+
+/** Every plugin's settings as last read live (to put back on the tracks after an undo). */
+export function liveStates(): Map<string, unknown> {
+  return new Map([...states].map(([id, json]) => [id, JSON.parse(json)]));
 }
 
 /** The settings a plugin should start with: as last read live, else as saved. */

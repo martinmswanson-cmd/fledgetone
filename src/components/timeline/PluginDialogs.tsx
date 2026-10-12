@@ -61,9 +61,9 @@ export const PluginUrlDialog: React.FC<{ trackId: string | null; onClose: () => 
     setError(null);
     try {
       await initAudio();
-      // You typed it: it may load (from now on, in this browser)
-      allowPluginUrls([u]);
       const { name, isInstrument } = await describeWam(nativeContextOf(liveMix.bus.context), u);
+      // You chose it and it loads: it may load from now on, in this browser
+      allowPluginUrls([u]);
       const s = useTimelineStore.getState();
       if (asEffect) {
         const id = s.addTrackPluginFx(trackId!, u, name);
