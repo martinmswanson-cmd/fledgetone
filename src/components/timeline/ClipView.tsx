@@ -13,6 +13,8 @@ import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layo
 import { shadeNotes, type NoteRect } from './noteShades';
 import { Waveform } from './Waveform';
 
+/** How close (pixels) a dragged clip edge comes before another edge, a marker or the playhead pulls it on. */
+const MAGNET_PX = 8;
 const CLIP_INSET = 4;
 const CLIP_HEIGHT = TRACK_HEIGHT - CLIP_INSET * 2;
 const LABEL_HEIGHT = 16;
@@ -226,6 +228,25 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
     }
     const grabbedRow = rowOf.get(clip.trackId) ?? 0;
 
+    // Magnetic edges: other clips' starts and ends, markers, the playhead and the loop brackets
+    // pull a dragged edge onto them from a few pixels away (unless Shift, or snapping is off)
+    const draggedIds = new Set(dragged.map((c) => c.id));
+    const magnets = (() => {
+      const s = useTimelineStore.getState();
+      const pts = [s.playheadPosition, s.loopRegion.inBar, s.loopRegion.outBar, ...s.markers.map((m) => m.bar)];
+      for (const c of s.clips) if (!draggedIds.has(c.id)) pts.push(c.startBar, c.startBar + c.lengthBars);
+      return pts;
+    })();
+    /** The magnet within reach of `bar`, if any. */
+    const magnetAt = (bar: number, shift: boolean): number | null => {
+      const s = useTimelineStore.getState();
+      if (shift || s.snapGrid === 'off') return null;
+      const reach = MAGNET_PX / s.zoom;
+      let best: number | null = null;
+      for (const p of magnets) if (Math.abs(p - bar) < reach && (best === null || Math.abs(p - bar) < Math.abs(best - bar))) best = p;
+      return best;
+    };
+
     document.body.style.cursor = mode === 'move' ? 'grabbing' : 'ew-resize';
 
     let committed = false;
@@ -266,7 +287,16 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       if (mode === 'move') {
         // Time stays put until the pointer has gone sideways, so a clip that only changes track
         // keeps its place even off the grid. (A trim has always gone sideways by now.)
-        const snappedDelta = followTime ? snapped(origStart + deltaBars, shift) - origStart : 0;
+        // A magnet near the block's start or end wins over the grid
+        const toStart = magnetAt(blockStart + deltaBars, shift);
+        const toEnd = toStart === null ? magnetAt(blockEnd + deltaBars, shift) : null;
+        const snappedDelta = !followTime
+          ? 0
+          : toStart !== null
+            ? toStart - blockStart
+            : toEnd !== null
+              ? toEnd - blockEnd
+              : snapped(origStart + deltaBars, shift) - origStart;
         // Clamp the block as a whole, so clips pushed against either end keep their spacing
         const delta = Math.max(1 - blockStart, Math.min(TOTAL_BARS + 1 - blockEnd, snappedDelta));
         // Row under the pointer (held to the first and last track), counted from the lane the drag
@@ -288,11 +318,11 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         );
       } else if (mode === 'trim-start') {
         const minLen = minClipLength(s.snapGrid, s);
-        const start = Math.min(snapped(origStart + deltaBars, shift), origEnd - minLen);
+        const start = Math.min(magnetAt(origStart + deltaBars, shift) ?? snapped(origStart + deltaBars, shift), origEnd - minLen);
         apply(String(start), () => s.trimClipStart(clip.id, start));
       } else {
         const minLen = minClipLength(s.snapGrid, s);
-        const end = Math.max(snapped(origEnd + deltaBars, shift), origStart + minLen);
+        const end = Math.max(magnetAt(origEnd + deltaBars, shift) ?? snapped(origEnd + deltaBars, shift), origStart + minLen);
         apply(String(end), () => s.trimClipEnd(clip.id, end - origStart));
       }
     };

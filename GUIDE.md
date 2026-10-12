@@ -80,6 +80,8 @@ It uses an FX track and a drum track that are empty there, or adds new ones (Bui
 
 The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cuts, the playhead, the loop brackets, markers and paste land on: **1/4** (a beat), **1/8**, **1/16**, **Frame** (one video frame, see Timecode & frame rates) or **Off**. Hold **Shift** to ignore snap when clicking or dragging on the ruler, razor-cutting, right-clicking or dropping a pad; for clip moves and trims, start the drag first and then hold Shift. The loop brackets always snap: set SNAP to Off to place them freely. The snap step is also the shortest a clip or the loop can be (never less than a 16th).
 
+**Magnetic edges**: while you drag a clip or its edge (with SNAP on and Shift not held), its start or end jumps onto another clip's start or end, a marker, the playhead or a loop bracket once it comes within a few pixels, so parts butt up exactly. Further away, it snaps to the grid as usual.
+
 ### Zoom and scrolling
 
 - Zoom with the slider at the right of the toolbar, or `+` and `-` (they keep the playhead where it is on screen when it's visible). **Ctrl+mouse wheel** (Cmd on a Mac) or a trackpad pinch zooms around the pointer. Zoom goes from 12 to 1280 pixels per bar, deep enough to see single video frames.
@@ -361,6 +363,10 @@ Drag a pad or a pattern chip (**Lazy Beat**, **Hats Intro**, **Walking Bass**, *
 
 ## Mixing and effects
 
+### The Mixer
+
+**Mixer** in the toolbar opens every track side by side as a mixing desk: a level meter (after the fader: green, amber near the top, red at the very top), a fader, pan, the reverb (**REV**) and delay (**DLY**) sends, **M**ute and **S**olo, and which inserts are on. The master fader is on the right. These are the same settings as the track headers and the Inspector; each drag is one Undo step and a double-click resets. Click a track's name to open it in the Inspector for its inserts, EQ and automation.
+
 ### Track headers
 
 Each track header has **VOL** (-60 to +6 dB) and **PAN** sliders (double-click either to reset), and buttons for **M** (mute), **S** (solo) and **R** (record arm: takes go on this track, one track at a time; arming also selects it). If any track is soloed, only soloed tracks play. Muted and un-soloed tracks are also left out of exports.
@@ -527,6 +533,14 @@ Choose **Export: Video (MP4)** to turn the song (or the loop region) into a vide
 
 Videos need Chrome or Edge (or another browser with WebCodecs) on a site served over https. On Windows and Mac they're H.264 with AAC sound, which plays everywhere; where the browser doesn't have those, they're VP9 or AV1 with Opus sound, which browsers, VLC, YouTube and Discord play but some older players don't.
 
+### Game preview: hear it the way the game will play it
+
+**Game** in the toolbar opens a small panel for rehearsing adaptive music, the kind that changes with what the player is doing:
+
+- **States**: every section between your markers is a button (Intro, Explore, Combat, Boss...). Click one and the song moves there **on the next bar** (or next beat, or at once: the menu above them) and loops it, the way a game switches music. The playing state is green; a waiting one pulses amber.
+- **Layers**: tick tracks on and off while it plays, or use **Intensity**, which brings tracks in one by one from the top of the track list (put your calmest layers at the top and the most intense at the bottom). These mute and unmute the tracks without making Undo steps.
+- When it sounds right, export the sections with **Intro + loop** and the layers with **Layers** (below) for your game engine.
+
 ### Music for games: intro + loop, and layers
 
 Game music usually plays an intro once and then loops the rest for as long as the player stays. Set the loop region to the part that should repeat (everything before its **In** is the intro) and choose **Range: Intro + loop**. The export is a .zip with:
@@ -558,6 +572,8 @@ Shortcuts don't work while you're typing in a box, or while a dialog or panel (G
 | `Space` | Play / pause |
 | `V` / `C` | Selection tool / Razor tool |
 | `L` | Loop on / off |
+| `J` / `Shift+L` | Playhead back / forward a bar (`Shift+J`: back 4 bars) |
+| `K` | Play / pause (like Space) |
 | `I` / `O` | Set loop In / Out at the playhead |
 | `Home` | Go to the loop In point |
 | `M` | Add a marker at the playhead |

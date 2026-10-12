@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { VideoButton } from '../video/VideoButton';
+import { MixerDialog } from './MixerDialog';
+import { GamePreview } from './GamePreview';
 import {
   Magnet,
   MousePointer2,
@@ -10,6 +12,8 @@ import {
   Scissors,
   SkipBack,
   Sliders,
+  SlidersVertical,
+  Gamepad2,
   Square,
   Undo2,
   ZoomIn,
@@ -180,6 +184,8 @@ const ToolButton: React.FC<ToolButtonProps> = ({ active, onClick, title, childre
 );
 
 export const TimelineToolbar: React.FC = () => {
+  const [mixerOpen, setMixerOpen] = useState(false);
+  const [gameOpen, setGameOpen] = useState(false);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
   const activeTool = useTimelineStore((s) => s.activeTool);
@@ -295,6 +301,18 @@ export const TimelineToolbar: React.FC = () => {
       </label>
 
       <VideoButton />
+
+      <ToolButton id="btn-mixer" title="Mixer: every track's fader, meter, pan and sends side by side" active={mixerOpen} activeClass="bg-cyan-500/25 border-cyan-400 text-cyan-200" onClick={() => setMixerOpen(true)}>
+        <SlidersVertical className="w-4 h-4" />
+        <span className="text-[11px] font-bold">Mixer</span>
+      </ToolButton>
+      {mixerOpen && <MixerDialog onClose={() => setMixerOpen(false)} />}
+
+      <ToolButton id="btn-game" title="Game preview: switch between sections and layers live, the way adaptive game music does" active={gameOpen} activeClass="bg-emerald-500/25 border-emerald-400 text-emerald-200" onClick={() => setGameOpen(!gameOpen)}>
+        <Gamepad2 className="w-4 h-4" />
+        <span className="text-[11px] font-bold">Game</span>
+      </ToolButton>
+      {gameOpen && <GamePreview onClose={() => setGameOpen(false)} />}
 
       {/* Inspector / Studio FX Rack Toggle */}
       <ToolButton

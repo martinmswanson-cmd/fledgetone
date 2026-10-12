@@ -272,8 +272,19 @@ export const Timeline: React.FC = () => {
         s.setLoopIn(s.playheadPosition);
       } else if (key === 'o') {
         s.setLoopOut(s.playheadPosition);
+      } else if (key === 'l' && e.shiftKey) {
+        // Video-editor style shuttle: Shift+L a bar forward (L is the loop), J back, K play / pause
+        e.preventDefault();
+        s.seek(Math.floor(s.playheadPosition + 1e-6) + 1, true);
       } else if (key === 'l') {
         s.toggleLoop();
+      } else if (key === 'j') {
+        e.preventDefault();
+        const bar = Math.ceil(s.playheadPosition - 1e-6) - 1;
+        s.seek(Math.max(1, e.shiftKey ? bar - 3 : bar), true);
+      } else if (key === 'k') {
+        e.preventDefault();
+        if (!e.repeat) void s.togglePlay();
       } else if (key === 'm' && !e.shiftKey) {
         // Holding M would only repeat "already a marker here" (or, while playing, drop a row of them)
         if (e.repeat) return;
