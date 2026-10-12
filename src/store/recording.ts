@@ -1,3 +1,4 @@
+import { tempoAt, type Tempo } from '../audio/tempoMap';
 import type { Clip, NoteEvent } from './timelineTypes';
 import { barsToDuration, durationToBars, TOTAL_BARS } from './timelineTypes';
 
@@ -107,7 +108,7 @@ export interface Take {
    * nearest where it stopped, or to the end of the last note, whichever is later. Null if
    * nothing was played.
    */
-  finish: (bar: number, seconds: number, bpm: number) => TakeClip | null;
+  finish: (bar: number, seconds: number, tempo: Tempo) => TakeClip | null;
 }
 
 export function createTake(startBar: number): Take {
@@ -162,13 +163,14 @@ export function createTake(startBar: number): Take {
       high = Math.max(high, toBar);
     },
     count: () => notes.length + held.size + sustained.size,
-    finish: (bar, seconds, bpm) => {
+    finish: (bar, seconds, tempo) => {
       for (const n of held.values()) close(n, seconds);
       held.clear();
       for (const n of sustained.values()) close(n, seconds);
       sustained.clear();
       if (notes.length === 0) return null;
-      const lengthOf = (n: TakeNote) => Math.max(MIN_NOTE_BARS, ((n.end - n.start) * bpm) / 240);
+      // Held this many seconds, at the tempo where the note started
+      const lengthOf = (n: TakeNote) => Math.max(MIN_NOTE_BARS, ((n.end - n.start) * tempoAt(n.bar, tempo)) / 240);
       // Stopped just past a bar line, the take ends on that line rather than a bar later
       high = Math.max(high, Math.round(bar), ...notes.map((n) => n.bar + lengthOf(n)));
       const clipStart = Math.max(1, Math.min(TOTAL_BARS, Math.floor(low + EPS)));

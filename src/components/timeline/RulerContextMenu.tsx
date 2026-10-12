@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { ArrowLeftToLine, ArrowRightFromLine, Flag, KeyRound, Scissors, Zap } from 'lucide-react';
+import { ArrowLeftToLine, ArrowRightFromLine, Flag, Gauge, KeyRound, Music2, Scissors, TrendingUp, Zap } from 'lucide-react';
+import { meterAt, tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
 import { formatBarCount } from '../../store/timelineTypes';
 import { MenuItem, MenuNotice } from './ClipContextMenu';
@@ -39,7 +40,7 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
   const outBar = useTimelineStore((st) => st.loopRegion.outBar);
   // Where the menu was opened, in the ruler's own units
   const at = useTimelineStore((st) =>
-    st.rulerUnits === 'timecode' ? formatRulerTime(barToSeconds(menu.bar, st.bpm), st.fps, st.dropFrame) : formatBarsBeats(menu.bar)
+    st.rulerUnits === 'timecode' ? formatRulerTime(barToSeconds(menu.bar, songTempo(st)), st.fps, st.dropFrame) : formatBarsBeats(menu.bar)
   );
   const run = (action: () => string | null) => () => {
     const message = action();
@@ -55,7 +56,40 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       onClick: run(() => s.addMarker(menu.bar)),
     },
     {
+      key: 'tempo',
+      label: 'Tempo change here',
+      icon: <Gauge className="w-3.5 h-3.5" />,
+      onClick: run(() => {
+        if (menu.bar <= 1) return 'Bar 1 has the song\'s own tempo: click the tempo flag at the start of the ruler (or the BPM box) to change it.';
+        s.addTempoChange(menu.bar, tempoAt(menu.bar, songTempo(s)));
+        return null;
+      }),
+      divider: true,
+    },
+    {
+      key: 'glide',
+      label: 'Tempo glide to here',
+      icon: <TrendingUp className="w-3.5 h-3.5" />,
+      onClick: run(() => {
+        if (menu.bar <= 1) return 'A glide needs somewhere to start from: pick a later place.';
+        s.addTempoChange(menu.bar, tempoAt(menu.bar, songTempo(s)), true);
+        return null;
+      }),
+    },
+    {
+      key: 'meter',
+      label: 'Time signature change here',
+      shortcut: 'nearest measure',
+      icon: <Music2 className="w-3.5 h-3.5" />,
+      onClick: run(() => {
+        const current = meterAt(menu.bar, songMeterOf(s));
+        s.addMeterChange(menu.bar, current.num === 4 && current.den === 4 ? { num: 3, den: 4 } : { num: 4, den: 4 });
+        return null;
+      }),
+    },
+    {
       key: 'drop',
+      divider: true,
       label: 'Build-up & drop here',
       shortcut: `bar ${Math.round(menu.bar)}`,
       icon: <Zap className="w-3.5 h-3.5" />,

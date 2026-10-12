@@ -2,7 +2,6 @@ import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
 import { create } from 'zustand';
 import { initAudio } from '../audio/engine';
-import { setBpm as engineSetBpm } from '../audio/engine';
 import {
   formatBarsBeats,
   getAudiblePositionBar,
@@ -73,6 +72,9 @@ import {
   retimeMarkers,
 } from './markers';
 import { rippleRules, type RippleEdit } from './ripple';
+import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt } from '../audio/tempoMap';
+import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
+import { setSongMeter } from '../audio/transport';
 
 // Defined with the data types (project parsing and the automation maths need it too); much of
 // the app reads it from here
@@ -117,12 +119,49 @@ interface HistoryEntry {
   /** The master section (OTT, stereo width). */
   master: MasterSettings;
   markers: Marker[];
-  /** The tempo then: audio clips keep their length in seconds, so restored at another tempo their bars are retimed (tempo isn't undone). */
+  /** The tempo then: audio clips keep their length in seconds, so restored at another tempo their bars are retimed (the song's tempo isn't undone). */
   bpm: number;
+  /** The tempo changes and time signatures (these are undone) */
+  tempoPoints: TempoPoint[];
+  meter: Meter;
+  meterPoints: MeterPoint[];
 }
 
 /** Everything undo restores, read from the store now. */
-const historyEntry = (s: TimelineState): HistoryEntry => ({ clips: s.clips, tracks: s.tracks, masterFx: masterFxOf(s), master: s.master, markers: s.markers, bpm: s.bpm });
+const historyEntry = (s: TimelineState): HistoryEntry => ({
+  clips: s.clips,
+  tracks: s.tracks,
+  masterFx: masterFxOf(s),
+  master: s.master,
+  markers: s.markers,
+  bpm: s.bpm,
+  tempoPoints: s.tempoPoints,
+  meter: s.meter,
+  meterPoints: s.meterPoints,
+});
+
+let tempoMemo: { bpm: number; points: TempoPoint[]; map: TempoMap } | null = null;
+/** The song's tempo map (the same object while the tempo doesn't change). */
+export function songTempo(s: { bpm: number; tempoPoints: TempoPoint[] }): TempoMap {
+  if (tempoMemo && tempoMemo.bpm === s.bpm && tempoMemo.points === s.tempoPoints) return tempoMemo.map;
+  const map: TempoMap = { bpm: s.bpm, points: s.tempoPoints };
+  tempoMemo = { bpm: s.bpm, points: s.tempoPoints, map };
+  return map;
+}
+
+/** The song's tempo map, for components (re-renders only when it changes). */
+export const useSongTempo = () => useTimelineStore((s) => songTempo(s));
+/** The song's meter map, for components. */
+export const useSongMeter = () => useTimelineStore((s) => songMeterOf(s));
+
+let meterMemo: { meter: Meter; points: MeterPoint[]; map: MeterMap } | null = null;
+/** The song's meter map (the same object while the time signatures don't change). */
+export function songMeterOf(s: { meter: Meter; meterPoints: MeterPoint[] }): MeterMap {
+  if (meterMemo && meterMemo.meter === s.meter && meterMemo.points === s.meterPoints) return meterMemo.map;
+  const map: MeterMap = { base: s.meter, points: s.meterPoints };
+  meterMemo = { meter: s.meter, points: s.meterPoints, map };
+  return map;
+}
 
 const withRipple = (entry: HistoryEntry, ripple: RippleMove | undefined): HistoryEntry => (ripple ? { ...entry, ripple } : entry);
 
@@ -163,17 +202,22 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     : s.selectedTrackId && ids.has(s.selectedTrackId)
       ? s.selectedTrackId
       : tracks[0]?.id ?? null;
+  const then = { bpm: entry.bpm, points: entry.tempoPoints };
+  const now = songTempo({ bpm: s.bpm, tempoPoints: entry.tempoPoints });
   return {
     // Audio clips are as long in seconds as they were, at today's tempo
-    clips: retimeAudioClips(clips, entry.bpm, s.bpm),
+    clips: retimeAudioClips(clips, then, now),
+    tempoPoints: entry.tempoPoints,
+    meter: entry.meter,
+    meterPoints: entry.meterPoints,
     tracks,
     selectedTrackId,
     masterReverbDecay: masterFx.reverbDecay,
     masterDelayTime: masterFx.delayTime,
     masterDelayFeedback: masterFx.delayFeedback,
     master,
-    // Tempo isn't undone, so markers held to their time are placed at today's tempo
-    markers: retimeMarkers(entry.markers, s.bpm),
+    // The song's tempo isn't undone, so markers held to their time are placed at today's tempo
+    markers: retimeMarkers(entry.markers, now),
   };
 }
 
@@ -185,7 +229,14 @@ interface TimelineState {
   isPlaying: boolean;
   /** Record mode (the toolbar's Record button): with a track armed, playing records a take onto it. */
   isRecording: boolean;
+  /** The tempo at bar 1 (the whole song's, unless there are tempo changes) */
   bpm: number;
+  /** Tempo changes after bar 1: jumps, or glides from the tempo before (see tempoMap.ts) */
+  tempoPoints: TempoPoint[];
+  /** The time signature from bar 1 */
+  meter: Meter;
+  /** Time signature changes, each at the start of a measure */
+  meterPoints: MeterPoint[];
   swing: number;
   zoom: number;
   activeTool: TimelineTool;
@@ -220,6 +271,17 @@ interface TimelineState {
   toggleRecord: () => void;
   /** Set the tempo (40 to 240 BPM, to 0.01). */
   setBpm: (bpm: number) => void;
+  /** Add a tempo change at `bar` (a jump, or a glide from the tempo before). Returns its id. */
+  addTempoChange: (bar: number, bpm: number, ramp?: boolean) => string;
+  /** `record`: its own undo step (a drag checkpoint()s once and passes false). */
+  updateTempoChange: (id: string, patch: Partial<Pick<TempoPoint, 'bar' | 'bpm' | 'ramp'>>, record?: boolean) => void;
+  removeTempoChange: (id: string) => void;
+  /** The time signature from bar 1. */
+  setMeter: (meter: Meter) => void;
+  /** Change the time signature from the measure nearest `bar`. Returns its id (null if that's bar 1: setMeter). */
+  addMeterChange: (bar: number, meter: Meter) => string | null;
+  updateMeterChange: (id: string, patch: Partial<Pick<MeterPoint, 'bar' | 'num' | 'den'>>, record?: boolean) => void;
+  removeMeterChange: (id: string) => void;
   tapTempo: () => void;
   setSwing: (swing: number) => void;
 
@@ -540,7 +602,8 @@ const MIN_CLIP_BARS = 0.0625;
  * half gets new ids and is unselected; an audio clip's right half plays on from where the cut
  * falls in its sound (at `bpm`). Null if `atBar` isn't inside the clip.
  */
-function splitClipAt(clip: Clip, atBar: number, bpm: number): [Clip, Clip] | null {
+function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Clip] | null {
+  const local = tempoAt(clip.startBar, tempo);
   const rel = atBar - clip.startBar;
   if (rel <= EPS || rel >= clip.lengthBars - EPS) return null;
   const left: Clip = {
@@ -557,7 +620,7 @@ function splitClipAt(clip: Clip, atBar: number, bpm: number): [Clip, Clip] | nul
     notes: clip.notes
       .filter((n) => n.startOffset >= rel - EPS)
       .map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset - rel })),
-    ...(clip.audio ? { audio: splitAudio(clip.audio, rel * secondsPerBar(bpm) * stretchRatio(clip.audio, bpm)) } : {}),
+    ...(clip.audio ? { audio: splitAudio(clip.audio, rel * secondsPerBar(local) * stretchRatio(clip.audio, local)) } : {}),
   };
   return [left, right];
 }
@@ -661,6 +724,23 @@ function viewShowing(s: TimelineState, bar: number, fromStart = false): Partial<
   return { viewLeft: Math.max(0, Math.min(TOTAL_BARS * s.zoom - s.viewWidth, left)), viewJumps: s.viewJumps + 1 };
 }
 
+/**
+ * Time signature changes in order, each on a measure start of the meter before it, dropping any
+ * that change nothing.
+ */
+function tidyMeters(points: MeterPoint[], base: Meter): MeterPoint[] {
+  const out: MeterPoint[] = [];
+  let current = base;
+  for (const p of sortedPoints(points)) {
+    const bar = nearestMeasureStart(p.bar, { base, points: out });
+    if (bar <= 1 + 1e-6 || out.some((o) => Math.abs(o.bar - bar) < 1e-6)) continue;
+    if (p.num === current.num && p.den === current.den) continue;
+    out.push({ ...p, bar });
+    current = p;
+  }
+  return out;
+}
+
 export const useTimelineStore = create<TimelineState>((set, get) => {
   /**
    * Change one track. `record` makes it its own undo step (clicks, menus); continuous controls
@@ -676,6 +756,17 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     });
 
   /** Push the master reverb / delay settings (and tempo, for the delay time) to the live mix. */
+  /**
+   * Change the tempo points (one undo step): audio clips keep their seconds and markers held to
+   * their time keep their timecode, so both are retimed along the new map.
+   */
+  const retempo = (edit: (points: TempoPoint[]) => TempoPoint[], record = true) =>
+    set((s) => {
+      const tempoPoints = sortedPoints(edit(s.tempoPoints));
+      const to = songTempo({ bpm: s.bpm, tempoPoints });
+      return { tempoPoints, clips: retimeAudioClips(s.clips, songTempo(s), to), markers: retimeMarkers(s.markers, to), ...(record ? pushPast(s) : {}) };
+    });
+
   const applyMasterFx = () => liveMix.busFx.apply(masterFxOf(get()), get().bpm);
   /** Push the master section's settings (OTT, width) to the live mix. */
   const applyMaster = () => liveMix.inserts.apply(get().master);
@@ -710,7 +801,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     stopCountIn?.();
     stopCountIn = null;
     const s = get();
-    const result = finishTake(heardTime(), s.bpm);
+    const result = finishTake(heardTime(), songTempo(s));
     if (s.take) set({ take: null });
     if (!result) return;
     const { trackId } = result;
@@ -750,10 +841,19 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     clips: Clip[],
     edit: RippleEdit,
     moveLane: (points: AutomationPoint[]) => AutomationPoint[],
-    moveMarkers: (markers: Marker[]) => Marker[]
+    moveMarkers: (markers: Marker[], tempo: TempoMap) => Marker[]
   ) => {
     const { movePoint, moveLoop } = rippleRules(edit);
     const s = get();
+    // Tempo and time signature changes move with the music after the edit (and go with removed bars)
+    const shift = <P extends { bar: number }>(points: P[]): P[] =>
+      edit.kind === 'insert'
+        ? points.map((p) => (p.bar >= edit.at - EPS ? { ...p, bar: p.bar + edit.bars } : p))
+        : shiftTempoPoints(points.filter((p) => !(p.bar >= edit.from - EPS && p.bar < edit.to - EPS)), edit.from, -(edit.to - edit.from));
+    const tempoPoints = s.tempoPoints.length ? sortedPoints(shift(s.tempoPoints)) : s.tempoPoints;
+    const meterPoints = s.meterPoints.length ? tidyMeters(shift(s.meterPoints), s.meter) : s.meterPoints;
+    const tempoChanged = tempoPoints.some((p, i) => p.bar !== s.tempoPoints[i]?.bar) || tempoPoints.length !== s.tempoPoints.length;
+    const meterChanged = meterPoints.some((p, i) => p.bar !== s.meterPoints[i]?.bar) || meterPoints.length !== s.meterPoints.length;
     const clipsChanged = clips.length !== s.clips.length || clips.some((c, i) => c !== s.clips[i]);
     const tracks = s.tracks.map((t) => {
       if (!t.automation) return t;
@@ -766,7 +866,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     const tracksChanged = tracks.some((t, i) => t !== s.tracks[i]);
     const loopRegion = moveLoop(s.loopRegion);
     const loopChanged = loopRegion.inBar !== s.loopRegion.inBar || loopRegion.outBar !== s.loopRegion.outBar;
-    const markers = moveMarkers(s.markers);
+    const markers = moveMarkers(s.markers, songTempo({ bpm: s.bpm, tempoPoints }));
     const markersChanged = markers !== s.markers;
     const playhead = clampBar(movePoint(s.playheadPosition));
     const ripple: RippleMove = {
@@ -776,8 +876,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     };
     // One undo step for all of it, even when only the loop or the playhead moved
     set((st) => ({
-      ...(clipsChanged || tracksChanged || markersChanged || loopChanged || playhead !== s.playheadPosition ? pushPast(st, ripple) : {}),
+      ...(clipsChanged || tracksChanged || markersChanged || loopChanged || tempoChanged || meterChanged || playhead !== s.playheadPosition ? pushPast(st, ripple) : {}),
       ...(clipsChanged || tracksChanged || markersChanged ? { clips, tracks, markers } : {}),
+      ...(tempoChanged ? { tempoPoints } : {}),
+      ...(meterChanged ? { meterPoints } : {}),
       ...(tracksChanged ? { automationSelection: null } : {}),
       ...(loopChanged ? { loopRegion } : {}),
     }));
@@ -832,6 +934,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     isPlaying: false,
     isRecording: false,
     bpm: 122,
+    tempoPoints: [],
+    meter: FOUR_FOUR,
+    meterPoints: [],
     swing: 0.2,
     zoom: 160,
     activeTool: 'select',
@@ -861,8 +966,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const s = get();
       const armed = s.isRecording ? s.tracks.find((t) => t.isArmed) : undefined;
       // A count-in: a bar of clicks first, the Transport (and the take) starting after them
-      const beat = 60 / s.bpm;
-      const countIn = armed && s.recordOptions.countIn ? 4 : 0;
+      // A measure of the time signature there, at the tempo there
+      const countMeter = meterAt(s.playheadPosition, songMeterOf(s));
+      const beat = 240 / tempoAt(s.playheadPosition, songTempo(s)) / countMeter.den;
+      const countIn = armed && s.recordOptions.countIn ? countMeter.num : 0;
       const at = liveMix.bus.context.now() + 0.03 + countIn * beat;
       startTransportAt(s.playheadPosition, at);
       if (countIn) stopCountIn = countInClicks(at, countIn, beat);
@@ -923,12 +1030,56 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setBpm: (bpm) => {
       // Hundredths, so a tempo fitted to a video length lands within a frame or so
-      const clamped = Math.max(40, Math.min(240, Math.round(bpm * 100) / 100));
-      engineSetBpm(clamped);
+      const clamped = clampBpm(bpm);
       // Markers held to their time stay at the same timecode, so their bars move; audio clips keep
       // their length in seconds, so their bars change too
-      set((s) => ({ bpm: clamped, markers: retimeMarkers(s.markers, clamped), clips: retimeAudioClips(s.clips, s.bpm, clamped) }));
+      set((s) => {
+        const to = songTempo({ bpm: clamped, tempoPoints: s.tempoPoints });
+        return { bpm: clamped, markers: retimeMarkers(s.markers, to), clips: retimeAudioClips(s.clips, songTempo(s), to) };
+      });
     },
+
+    addTempoChange: (bar, bpm, ramp = false) => {
+      const id = uid('tempo');
+      const at = Math.max(1 + 1 / 16, Math.min(TOTAL_BARS, bar));
+      retempo((pts) => [...pts.filter((p) => Math.abs(p.bar - at) > 1e-6), { id, bar: at, bpm: clampBpm(bpm), ramp }]);
+      return id;
+    },
+    updateTempoChange: (id, patch, record = true) =>
+      retempo((pts) =>
+        pts.map((p) =>
+          p.id === id
+            ? {
+                ...p,
+                ...(patch.bar !== undefined ? { bar: Math.max(1 + 1 / 16, Math.min(TOTAL_BARS, patch.bar)) } : {}),
+                ...(patch.bpm !== undefined ? { bpm: clampBpm(patch.bpm) } : {}),
+                ...(patch.ramp !== undefined ? { ramp: patch.ramp } : {}),
+              }
+            : p
+        ),
+        record
+      ),
+    removeTempoChange: (id) => retempo((pts) => pts.filter((p) => p.id !== id)),
+
+    setMeter: (meter) => set((s) => ({ meter: { num: meter.num, den: meter.den }, meterPoints: tidyMeters(s.meterPoints, meter), ...pushPast(s) })),
+    addMeterChange: (bar, meter) => {
+      const s = get();
+      const at = nearestMeasureStart(bar, songMeterOf(s));
+      if (at <= 1 + 1e-6) {
+        get().setMeter(meter);
+        return null;
+      }
+      const id = uid('meter');
+      set((st) => ({ meterPoints: tidyMeters([...st.meterPoints.filter((p) => Math.abs(p.bar - at) > 1e-6), { id, bar: at, num: meter.num, den: meter.den }], st.meter), ...pushPast(st) }));
+      return id;
+    },
+    updateMeterChange: (id, patch, record = true) =>
+      set((s) => {
+        const others = { base: s.meter, points: s.meterPoints.filter((p) => p.id !== id) };
+        const points = s.meterPoints.map((p) => (p.id === id ? { ...p, ...patch, ...(patch.bar !== undefined ? { bar: Math.max(1, nearestMeasureStart(patch.bar, others)) } : {}) } : p));
+        return { meterPoints: tidyMeters(points, s.meter), ...(record ? pushPast(s) : {}) };
+      }),
+    removeMeterChange: (id) => set((s) => ({ meterPoints: tidyMeters(s.meterPoints.filter((p) => p.id !== id), s.meter), ...pushPast(s) })),
 
     tapTempo: () => {
       const now = performance.now();
@@ -997,11 +1148,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     // ---------- Markers ----------
     addMarker: (bar) => {
       const s = get();
-      const marker = createMarker(bar ?? s.playheadPosition, s.bpm, nextMarkerName(s.markers));
+      const marker = createMarker(bar ?? s.playheadPosition, songTempo(s), nextMarkerName(s.markers));
       // Pressing M twice (or holding it) shouldn't stack markers on one spot
       const there = s.markers.find((m) => Math.abs(m.bar - marker.bar) < EPS);
       if (there) return `"${there.name}" is already at ${formatBarsBeats(there.bar)}.`;
-      set((st) => ({ markers: retimeMarkers([...st.markers, marker], st.bpm), ...pushPast(st) }));
+      set((st) => ({ markers: retimeMarkers([...st.markers, marker], songTempo(st)), ...pushPast(st) }));
       return null;
     },
 
@@ -1012,10 +1163,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const n = /^Hit (\d+)$/.exec(m.name);
         if (n) highest = Math.max(highest, Number(n[1]));
       }
-      const marker = anchorMarker(createMarker(s.playheadPosition, s.bpm, `Hit ${highest + 1}`), 'time');
+      const marker = anchorMarker(createMarker(s.playheadPosition, songTempo(s), `Hit ${highest + 1}`), 'time');
       const there = s.markers.find((m) => Math.abs(m.bar - marker.bar) < EPS);
       if (there) return `"${there.name}" is already at ${formatBarsBeats(there.bar)}.`;
-      set((st) => ({ markers: retimeMarkers([...st.markers, marker], st.bpm), ...pushPast(st) }));
+      set((st) => ({ markers: retimeMarkers([...st.markers, marker], songTempo(st)), ...pushPast(st) }));
       return null;
     },
 
@@ -1030,21 +1181,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }
       const added: Marker[] = [];
       for (const t of [...seconds].sort((a, b) => a - b)) {
-        const bar = secondsToBar(t, s.bpm);
+        const bar = secondsToBar(t, songTempo(s));
         if (t < 0 || bar > TOTAL_BARS + 1) continue;
         if ([...s.markers, ...added].some((m) => Math.abs(m.seconds - t) < frame)) continue;
-        added.push(anchorMarker(createMarker(bar, s.bpm, `${prefix} ${++highest}`), 'time'));
+        added.push(anchorMarker(createMarker(bar, songTempo(s), `${prefix} ${++highest}`), 'time'));
       }
-      if (added.length) set((st) => ({ markers: retimeMarkers([...st.markers, ...added], st.bpm), ...pushPast(st) }));
+      if (added.length) set((st) => ({ markers: retimeMarkers([...st.markers, ...added], songTempo(st)), ...pushPast(st) }));
       return added.length;
     },
 
     moveMarker: (id, bar) =>
       set((s) => {
         const marker = s.markers.find((m) => m.id === id);
-        const moved = marker && placeMarker(marker, bar, s.bpm);
+        const moved = marker && placeMarker(marker, bar, songTempo(s));
         if (!marker || !moved || moved.bar === marker.bar) return s;
-        return { markers: retimeMarkers(s.markers.map((m) => (m === marker ? moved : m)), s.bpm) };
+        return { markers: retimeMarkers(s.markers.map((m) => (m === marker ? moved : m)), songTempo(s)) };
       }),
 
     renameMarker: (id, name, record = false) =>
@@ -1068,7 +1219,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     jumpToMarker: (direction) => {
       const s = get();
       const now = performance.now();
-      const halfSecond = secondsToBar(0.5, s.bpm) - 1;
+      const halfSecond = (0.5 * tempoAt(s.playheadPosition, songTempo(s))) / 240;
       // Pressed again within half a second of a jump while the Transport is still on from that
       // marker (not moved since by a click on the ruler or round the loop): count from the marker
       const sinceJump = lastJump && now - lastJump.at < 500 ? getScheduledPositionBar() - lastJump.bar : NaN;
@@ -1254,7 +1405,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const room = TOTAL_BARS + 1 - at;
         if (room < MIN_CLIP_BARS - EPS) break;
         ensureSound(sound.id);
-        const lengthBars = Math.max(MIN_CLIP_BARS, Math.min(sound.seconds / secondsPerBar(s.bpm), room));
+        const lengthBars = Math.max(MIN_CLIP_BARS, Math.min(sound.seconds / secondsPerBar(tempoAt(at, songTempo(s))), room));
         clips.push({
           id: uid('clip'),
           trackId: track.id,
@@ -1295,7 +1446,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         if (!audio || audio.stretchBpm === clip.audio.stretchBpm) return s;
         if (stretchBpm === undefined) delete audio.stretchBpm;
         // The same stretch of the sound, played at the new speed
-        const lengthBars = Math.max(0.0625, Math.min(TOTAL_BARS + 1 - clip.startBar, (clip.lengthBars * stretchRatio(clip.audio, s.bpm)) / stretchRatio(audio, s.bpm)));
+        const local = tempoAt(clip.startBar, songTempo(s));
+        const lengthBars = Math.max(0.0625, Math.min(TOTAL_BARS + 1 - clip.startBar, (clip.lengthBars * stretchRatio(clip.audio, local)) / stretchRatio(audio, local)));
         return { clips: s.clips.map((c) => (c === clip ? { ...c, lengthBars, audio } : c)), ...pushPast(s) };
       }),
 
@@ -1319,7 +1471,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         name: `${clip.name} chops`,
         startBar: clip.startBar,
         lengthBars: clip.lengthBars,
-        notes: sliceNotes(slicer.slices, slicer.start, slicer.end, s.bpm).map((n) => ({ ...n, id: uid('note') })),
+        notes: sliceNotes(slicer.slices, slicer.start, slicer.end, tempoAt(clip.startBar, songTempo(s))).map((n) => ({ ...n, id: uid('note') })),
         isSelected: true,
       };
       set((st) => ({
@@ -1379,11 +1531,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     // move / trim are called every pointermove during a drag, so they don't record history themselves
     moveClip: (clipId, startBar) =>
-      updateClip(clipId, (c) => ({ startBar: Math.max(1, Math.min(TOTAL_BARS + 1 - c.lengthBars, startBar)) })),
+      updateClip(clipId, (c) => {
+        const start = Math.max(1, Math.min(TOTAL_BARS + 1 - c.lengthBars, startBar));
+        // An audio clip keeps its length in seconds: moved to where the tempo differs, its bars change
+        if (!c.audio || c.audio.stretchBpm || !get().tempoPoints.length) return { startBar: start };
+        const tempo = songTempo(get());
+        const lengthBars = Math.min(TOTAL_BARS + 1 - start, (c.lengthBars * tempoAt(start, tempo)) / tempoAt(c.startBar, tempo));
+        return { startBar: start, lengthBars };
+      }),
 
     trimClipStart: (clipId, newStartBar) =>
       updateClip(clipId, (c) => {
-        const { bpm } = get();
+        const bpm = tempoAt(c.startBar, songTempo(get()));
         const end = c.startBar + c.lengthBars;
         // An audio clip's left edge can go back no further than the start of its sound
         const earliest = c.audio ? Math.max(1, audioTrimStartLimit(c, bpm)) : 1;
@@ -1402,14 +1561,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     trimClipEnd: (clipId, newLengthBars) =>
       updateClip(clipId, (c) => {
         // An audio clip ends where its sound does, at the latest
-        const longest = c.audio ? audioLengthLimit(c.audio, soundSeconds(c.audio.soundId), get().bpm) : Infinity;
+        const longest = c.audio ? audioLengthLimit(c.audio, soundSeconds(c.audio.soundId), tempoAt(c.startBar, songTempo(get()))) : Infinity;
         return { lengthBars: Math.max(0.0625, Math.min(TOTAL_BARS + 1 - c.startBar, longest, newLengthBars)) };
       }),
 
     splitClip: (clipId, atBar) =>
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
-        const halves = clip && splitClipAt(clip, atBar, s.bpm);
+        const halves = clip && splitClipAt(clip, atBar, songTempo(s));
         if (!clip || !halves) return s;
         const idx = s.clips.indexOf(clip);
         const clips = [...s.clips];
@@ -1509,7 +1668,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (!(bars > 0)) return null;
       const clips: Clip[] = [];
       for (const c of s.clips) {
-        const halves = splitClipAt(c, at, s.bpm);
+        const halves = splitClipAt(c, at, songTempo(s));
         if (halves) {
           // Across the insert point: split it there and move the right half
           const [left, right] = halves;
@@ -1525,12 +1684,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (pushedMarker) {
         return `Can't insert ${pluralBars(bars)}: the marker "${pushedMarker.name}" would be pushed past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
       }
-      const { bpm } = s;
       applyRipple(
         clips,
         { kind: 'insert', at, bars },
         (points) => insertLaneBars(points, at, bars),
-        (markers) => insertMarkerBars(markers, at, bars, bpm)
+        (markers, tempo) => insertMarkerBars(markers, at, bars, tempo)
       );
       return null;
     },
@@ -1558,12 +1716,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       ];
       const markers = [...s.markers];
       for (const [bar, name] of [[from, 'Build'], [drop, 'Drop']] as const) {
-        if (!markers.some((m) => Math.abs(m.bar - bar) < EPS)) markers.push(createMarker(bar, s.bpm, name));
+        if (!markers.some((m) => Math.abs(m.bar - bar) < EPS)) markers.push(createMarker(bar, songTempo(s), name));
       }
       set((st) => ({
         tracks,
         clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), ...parts],
-        markers: retimeMarkers(markers, st.bpm),
+        markers: retimeMarkers(markers, songTempo(st)),
         ...pushPast(st),
       }));
       return null;
@@ -1635,9 +1793,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     dipUnderDialogue: (spans, shape) => {
       const s = get();
-      const dips = spans.map((sp) => ({ from: secondsToBar(sp.start, s.bpm), to: secondsToBar(sp.end, s.bpm) })).filter((d) => d.to > 1 && d.from < TOTAL_BARS + 1);
+      const dips = spans.map((sp) => ({ from: secondsToBar(sp.start, songTempo(s)), to: secondsToBar(sp.end, songTempo(s)) })).filter((d) => d.to > 1 && d.from < TOTAL_BARS + 1);
       if (!dips.length) return 0;
-      const secondsPerBarNow = 240 / s.bpm;
+      const secondsPerBarNow = 240 / tempoAt(dips[0].from, songTempo(s));
       let changed = 0;
       const tracks = s.tracks.map((t) => {
         if (isAudioKind(t.instrumentKey) && !s.clips.some((c) => c.trackId === t.id)) return t;
@@ -1659,8 +1817,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       // Each section's clips, cut at its edges, laid end to end
       const slice = (c: Clip, from: number, to: number): Clip | null => {
         let part: Clip | null = c;
-        if (part.startBar < from - EPS) part = splitClipAt(part, from, s.bpm)?.[1] ?? null;
-        if (part && part.startBar + part.lengthBars > to + EPS) part = splitClipAt(part, to, s.bpm)?.[0] ?? null;
+        if (part.startBar < from - EPS) part = splitClipAt(part, from, songTempo(s))?.[1] ?? null;
+        if (part && part.startBar + part.lengthBars > to + EPS) part = splitClipAt(part, to, songTempo(s))?.[0] ?? null;
         return part && part.startBar >= from - EPS && part.startBar + part.lengthBars <= to + EPS ? part : null;
       };
       const clips: Clip[] = [];
@@ -1693,19 +1851,34 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         });
         return { ...t, automation };
       });
-      const bpm = newBpm ? Math.max(40, Math.min(240, Math.round(newBpm * 100) / 100)) : s.bpm;
+      const bpm = newBpm ? clampBpm(newBpm) : s.bpm;
+      // Tempo changes follow their sections too: the tempo at each section's start, and the
+      // changes inside it (scaled with the song's tempo when the length was fitted)
+      const scale = bpm / s.bpm;
+      const oldTempo = songTempo(s);
+      const tempoPoints: TempoPoint[] = s.tempoPoints.length
+        ? sortedPoints(
+            placed.flatMap((p) => [
+              ...(p.at > 1 + EPS ? [{ id: uid('tempo'), bar: p.at, bpm: clampBpm(tempoAt(p.from, oldTempo) * scale), ramp: false }] : []),
+              ...s.tempoPoints.filter((q) => q.bar > p.from + EPS && q.bar < p.to - EPS).map((q) => ({ ...q, id: uid('tempo'), bar: q.bar + p.at - p.from, bpm: clampBpm(q.bpm * scale) })),
+            ])
+          )
+        : s.tempoPoints;
+      const firstBpm = s.tempoPoints.length && placed.length ? clampBpm(tempoAt(placed[0].from, oldTempo) * scale) : bpm;
+      const newTempo = songTempo({ bpm: firstBpm, tempoPoints });
       // Section flags where each section now starts; hit points locked to time stay with the picture
       const named = placed.filter((p) => !/^(Start|Bars \d+-\d+)$/.test(p.name));
       const markers = [
         ...s.markers.filter((m) => m.anchor === 'time'),
-        ...named.filter((p, k) => named.findIndex((o) => o.at === p.at) === k).map((p) => createMarker(p.at, bpm, p.name)),
+        ...named.filter((p, k) => named.findIndex((o) => o.at === p.at) === k).map((p) => createMarker(p.at, newTempo, p.name)),
       ];
-      if (bpm !== s.bpm) engineSetBpm(bpm);
       set((st) => ({
+        // Every section keeps its own tempo (scaled when fitted), so audio clips scale with it
         clips: retimeAudioClips(clips, st.bpm, bpm),
         tracks,
-        bpm,
-        markers: retimeMarkers(markers, bpm),
+        bpm: firstBpm,
+        tempoPoints,
+        markers: retimeMarkers(markers, newTempo),
         loopRegion: { ...st.loopRegion, inBar: 1, outBar: cursor },
         ...pushPast(st),
       }));
@@ -1736,19 +1909,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           clips.push({ ...c, startBar: c.startBar - len });
         } else {
           // Keep only the parts outside the removed bars (a clip entirely inside them goes)
-          const left = splitClipAt(c, from, s.bpm)?.[0];
-          const right = splitClipAt(c, to, s.bpm)?.[1];
+          const left = splitClipAt(c, from, songTempo(s))?.[0];
+          const right = splitClipAt(c, to, songTempo(s))?.[1];
           if (left) clips.push(left);
           if (right) clips.push({ ...right, id: left ? right.id : c.id, startBar: from, isSelected: c.isSelected });
         }
       }
-      const { bpm } = s;
       applyRipple(
         clips,
         // Shortest loop the snap grid allows, as when dragging its brackets
         { kind: 'remove', from, to, minLoop: minClipLength(s.snapGrid, s) },
         (points) => removeLaneBars(points, from, to),
-        (markers) => removeMarkerBars(markers, from, to, bpm)
+        (markers, tempo) => removeMarkerBars(markers, from, to, tempo)
       );
       return null;
     },
@@ -1908,6 +2080,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       set({
         projectName: p.name,
         bpm: p.bpm,
+        tempoPoints: p.tempoPoints ?? [],
+        meter: p.meter ?? FOUR_FOUR,
+        meterPoints: p.meterPoints ?? [],
         swing: p.swing,
         loopRegion: p.loopRegion,
         tracks: safeTracks,
@@ -1923,7 +2098,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         master: p.master ?? defaultMasterSettings(),
         fps: p.fps ?? DEFAULT_FRAME_RATE,
         dropFrame: p.dropFrame === true && p.fps === 29.97,
-        markers: retimeMarkers(p.markers ?? [], p.bpm),
+        markers: retimeMarkers(p.markers ?? [], songTempo({ bpm: p.bpm, tempoPoints: p.tempoPoints ?? [] })),
         stingers: p.stingers ?? [],
         transitions: p.transitions ?? {},
         intensity: p.intensity?.value ?? 1,
@@ -2117,11 +2292,20 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 });
 
 /** Everything a project file or autosave stores, read from the store now. */
+// Positions are counted (and typed) in the song's time signatures
+setSongMeter(songMeterOf(useTimelineStore.getState()));
+useTimelineStore.subscribe((state, prev) => {
+  if (state.meter !== prev.meter || state.meterPoints !== prev.meterPoints) setSongMeter(songMeterOf(state));
+});
+
 export function currentProject(): ProjectSnapshot {
   const s = useTimelineStore.getState();
   return {
     name: s.projectName,
     bpm: s.bpm,
+    tempoPoints: s.tempoPoints,
+    meter: s.meter,
+    meterPoints: s.meterPoints,
     swing: s.swing,
     loopRegion: s.loopRegion,
     tracks: s.tracks,
@@ -2203,6 +2387,9 @@ export function connectAutosave(): () => void {
       state.clips === prev.clips &&
       state.tracks === prev.tracks &&
       state.bpm === prev.bpm &&
+      state.tempoPoints === prev.tempoPoints &&
+      state.meter === prev.meter &&
+      state.meterPoints === prev.meterPoints &&
       state.swing === prev.swing &&
       state.loopRegion === prev.loopRegion &&
       state.projectName === prev.projectName &&
@@ -2283,7 +2470,7 @@ export function connectTimelineToAudio(): () => void {
     const state = useTimelineStore.getState();
     if (state.tracks.some((t) => t.frozen && lib.status[t.frozen.soundId] !== prevLib.status[t.frozen.soundId])) refresh(state);
   });
-  syncTransport(s.loopRegion, s.bpm, s.swing);
+  syncTransport(s.loopRegion, songTempo(s), s.swing);
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
   liveMix.inserts.apply(s.master);
 
@@ -2309,14 +2496,15 @@ export function connectTimelineToAudio(): () => void {
       holdAutomationAt(state.playheadPosition);
     }
     // The Transport takes the new tempo first, so clips rescheduled below are timed at it
-    if (state.loopRegion !== prev.loopRegion || state.bpm !== prev.bpm || state.swing !== prev.swing) {
-      syncTransport(state.loopRegion, state.bpm, state.swing);
-      if (state.isPlaying && (state.loopRegion !== prev.loopRegion || state.bpm !== prev.bpm)) retimeAutomation();
+    const tempoChanged = state.bpm !== prev.bpm || state.tempoPoints !== prev.tempoPoints;
+    if (state.loopRegion !== prev.loopRegion || tempoChanged || state.swing !== prev.swing) {
+      syncTransport(state.loopRegion, songTempo(state), state.swing);
+      if (state.isPlaying && (state.loopRegion !== prev.loopRegion || tempoChanged)) retimeAutomation();
     }
-    if (state.tracks !== prev.tracks || state.clips !== prev.clips || state.bpm !== prev.bpm || state.swing !== prev.swing) {
+    if (state.tracks !== prev.tracks || state.clips !== prev.clips || tempoChanged || state.swing !== prev.swing) {
       for (const t of state.tracks) if (t.frozen && t.frozen !== prev.tracks.find((p) => p.id === t.id)?.frozen) ensureSound(t.frozen.soundId);
       // Clips that follow the tempo are stretched anew at another tempo, though they haven't changed
-      refresh(state, state.bpm !== prev.bpm && state.clips.some((c) => c.audio?.stretchBpm));
+      refresh(state, tempoChanged && state.clips.some((c) => c.audio?.stretchBpm));
     }
     if (state.bpm !== prev.bpm) {
       // Delay time is a tempo subdivision, so it follows the BPM

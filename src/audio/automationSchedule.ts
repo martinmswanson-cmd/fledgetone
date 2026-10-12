@@ -1,3 +1,4 @@
+import { barToSeconds, secondsToBar, type Tempo } from './tempoMap';
 import type * as Tone from 'tone';
 import type { AutomationParam, AutomationPoint, Track } from '../store/timelineTypes';
 import { AUTOMATION, CURVE_STEP, isLinearMap, lanePieceFrom, laneValueAt, sampleStretch } from './automation';
@@ -75,17 +76,19 @@ interface LaneState {
   until: number;
 }
 
-/** Where the Transport runs: bar `bar0` at time `t0`, at a constant tempo, up to `endBar` (the loop's Out, when looping). */
+/** Where the Transport runs: bar `bar0` at time `t0`, along `tempo`, up to `endBar` (the loop's Out, when looping). */
 interface Run {
   t0: number;
   bar0: number;
-  secondsPerBar: number;
+  tempo: Tempo;
+  /** Seconds from bar 1 to bar0 along the tempo */
+  s0: number;
   endBar: number;
   endTime: number;
 }
 
-const barAt = (r: Run, t: number) => r.bar0 + (t - r.t0) / r.secondsPerBar;
-const timeAt = (r: Run, bar: number) => r.t0 + (bar - r.bar0) * r.secondsPerBar;
+const barAt = (r: Run, t: number) => secondsToBar(r.s0 + (t - r.t0), r.tempo);
+const timeAt = (r: Run, bar: number) => r.t0 + barToSeconds(bar, r.tempo) - r.s0;
 
 let reported = false;
 /**
@@ -108,7 +111,7 @@ const differs = (a: number, b: number) => Math.abs(a - b) > 1e-4 * Math.max(Math
 export function createAutomationSchedule(
   transport: Transport,
   stripFor: (trackId: string) => TrackStrip | undefined,
-  opts: { holdGlide?: number } = {}
+  opts: { holdGlide?: number; tempo?: () => Tempo } = {}
 ): AutomationSchedule {
   const context = transport.context;
   const raw = context.rawContext as unknown as BaseAudioContext;
@@ -123,14 +126,15 @@ export function createAutomationSchedule(
   let nextDue = Infinity;
 
   const runFrom = (time: number, bar: number): Run => {
-    const secondsPerBar = 240 / transport.bpm.getValueAtTime(time);
+    // The song's tempo map, or (without one) the Transport's tempo now, held steady
+    const tempo = opts.tempo?.() ?? transport.bpm.getValueAtTime(time);
     let endBar = Infinity;
     if (transport.loop) {
       const loopEnd = ticksToBar(Math.round(transport.toTicks(transport.loopEnd)));
       // Started at or past the loop's end, the Transport wraps at once (and says so)
       endBar = bar < loopEnd ? loopEnd : bar;
     }
-    const r = { t0: time, bar0: bar, secondsPerBar, endBar, endTime: Infinity };
+    const r = { t0: time, bar0: bar, tempo, s0: barToSeconds(bar, tempo), endBar, endTime: Infinity };
     r.endTime = timeAt(r, endBar);
     return r;
   };
@@ -148,7 +152,7 @@ export function createAutomationSchedule(
       const value = piece.from;
       // Each stretch starts a sample after the last one ends, so on a moving lane the param trails
       // the lane by a sample or two there. That's no jump: allow for two samples of the lane's motion
-      const seconds = (piece.endBar - bar) * r.secondsPerBar;
+      const seconds = timeAt(r, piece.endBar) - timeAt(r, bar);
       const drift = seconds > 0 ? Math.abs(piece.to - piece.from) * Math.min(1, (2 * sample) / seconds) : 0;
       const away = (tg: LaneTarget) => {
         const playing = tg.writer.valueAt(t);

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useVideoStore } from '../../store/videoStore';
 import { Download, Loader2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -28,7 +28,7 @@ import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encode
 import type { AudioFormat } from '../../audio/encoders';
 import { SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
 import { canExportVideo, renderVideo, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '../../audio/videoExport';
-import { barToSeconds, formatSmpte } from '../../audio/transport';
+import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
 import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
 import type { Track } from '../../store/timelineTypes';
 import { Modal } from './Modal';
@@ -91,8 +91,8 @@ function saveSettings(settings: ExportSettings): void {
 }
 
 /** Duration label for a bar range at the current tempo, e.g. "0:16". */
-function lengthLabel(bars: number, bpm: number): string {
-  const seconds = Math.floor(barToSeconds(bars + 1, bpm) + 1e-6);
+function lengthLabel(from: number, to: number, tempo: Tempo): string {
+  const seconds = Math.floor(barToSeconds(to, tempo) - barToSeconds(from, tempo) + 1e-6);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 }
 
@@ -192,6 +192,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const tracks = useTimelineStore((s) => s.tracks);
   const clips = useTimelineStore((s) => s.clips);
   const bpm = useTimelineStore((s) => s.bpm);
+  const tempoPoints = useTimelineStore((s) => s.tempoPoints);
+  const tempo: Tempo = useMemo(() => ({ bpm, points: tempoPoints }), [bpm, tempoPoints]);
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const loop = useTimelineStore((s) => s.loopRegion);
@@ -236,6 +238,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     tracks,
     clips,
     bpm,
+    tempoPoints,
     swing: 0,
     startBar: range === 'song' ? 1 : loop.inBar,
     endBar: range === 'song' ? songEnd : loop.outBar,
@@ -254,7 +257,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const suffix = range === 'song' || game ? '' : ending === 'seamless' ? ' (seamless loop)' : ' (loop)';
   const fileBase = `${safeFileName(projectName)}${suffix}`;
   const fileName = game ? `${fileBase} ${stemsOnly ? 'layers' : 'game music'}.zip` : stemsOnly ? `${fileBase} stems.zip` : videoOut ? `${fileBase}.mp4` : `${fileBase}.${ext}`;
-  const introFrames = Math.round(((loop.inBar - 1) * 240 * settings.sampleRate) / bpm);
+  const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * settings.sampleRate);
   const tail = ringOutSeconds(masterFx);
 
   const startExport = async () => {
@@ -326,10 +329,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           if (gainDb !== 0) scaleAudio(audio, gainDb);
           reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
         }
-        const startSeconds = barToSeconds(opts.startBar, opts.bpm);
+        const startSeconds = barToSeconds(opts.startBar, tempo);
         const sections = (opts.markers ?? [])
           .filter((m) => m.bar >= opts.startBar && m.bar < opts.endBar)
-          .map((m) => ({ at: barToSeconds(m.bar, opts.bpm) - startSeconds, name: m.name }));
+          .map((m) => ({ at: barToSeconds(m.bar, tempo) - startSeconds, name: m.name }));
         // On the reference video, if one is loaded and chosen: where it is at the export's start
         const footage = refVideo && useFootage ? { url: refVideo.url, offset: startSeconds - videoStart } : undefined;
         const channels = channelsOf(audio);
@@ -426,10 +429,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   }
 
   const rangeDetail = game
-    ? `For games: an intro (bars 1 to ${formatBarCount(loop.inBar)}, ${lengthLabel(loop.inBar - 1, bpm)}) to play once, then the loop region (bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}, ${lengthLabel(loopBars, bpm)}) as a seamless loop to repeat. The intro leads straight into the loop.`
+    ? `For games: an intro (bars 1 to ${formatBarCount(loop.inBar)}, ${lengthLabel(1, loop.inBar, tempo)}) to play once, then the loop region (bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}) as a seamless loop to repeat. The intro leads straight into the loop.`
     : range === 'song'
-      ? `Bar 1 to the end of the last clip: ${formatBarCount(songBars)} bars, ${lengthLabel(songBars, bpm)}.`
-      : `Bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loopBars, bpm)}. Starts at ${formatSmpte(loop.inBar, bpm, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
+      ? `Bar 1 to the end of the last clip: ${formatBarCount(songBars)} bars, ${lengthLabel(1, 1 + songBars, tempo)}.`
+      : `Bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
   const endingDetail =
     ending === 'ringOut'
       ? `Plays the range once, then ${formatBarCount(tail)} s more so release, reverb and echo tails ring out.`

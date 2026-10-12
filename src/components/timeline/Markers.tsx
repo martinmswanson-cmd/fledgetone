@@ -9,12 +9,12 @@ import { formatBarsBeats, formatSmpte } from '../../audio/transport';
 import { barFromClientX } from './Playhead';
 import { MenuItem } from './ClipContextMenu';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
-import { HEADER_WIDTH, RULER_HEIGHT } from './layout';
+import { HEADER_WIDTH, RULER_HEIGHT, TEMPO_ROW } from './layout';
 import { laneTops } from './rows';
 import { useVideoStore } from '../../store/videoStore';
 
 /** Where a flag hangs in the ruler: under the bar numbers, over the beat ticks. */
-const FLAG_TOP = 19;
+const FLAG_TOP = TEMPO_ROW + 19;
 const FLAG_HEIGHT = 13;
 /** Widest a flag gets (a long name is cut short; its tooltip has all of it). */
 const FLAG_MAX_WIDTH = 144;

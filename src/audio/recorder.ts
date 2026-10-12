@@ -1,3 +1,4 @@
+import type { Tempo } from './tempoMap';
 import { liveMix } from './engine';
 import { ticksToBar } from './transport';
 import type { MidiMessage } from './midi';
@@ -79,14 +80,14 @@ export function recordMidi(message: MidiMessage, heard: number): void {
  * take ends where it would have started. Returns the clip to add to its track, or null if
  * nothing was played.
  */
-export function finishTake(heard: number, bpm: number): { trackId: string; clip: TakeClip } | null {
+export function finishTake(heard: number, tempo: Tempo): { trackId: string; clip: TakeClip } | null {
   if (!active) return null;
   const { trackId, take, startAudio, stopListening } = active;
   active = null;
   stopListening();
   const seconds = Math.max(heard, startAudio);
   const bar = heard < startAudio ? take.startBar : transportBarAt(heard);
-  const clip = take.finish(bar, seconds, bpm);
+  const clip = take.finish(bar, seconds, tempo);
   return clip ? { trackId, clip } : null;
 }
 

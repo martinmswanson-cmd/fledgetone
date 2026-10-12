@@ -1,3 +1,4 @@
+import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
 import { createMixChain, getMasterVolume } from './engine';
 import { delaySeconds } from './effects/busEffects';
@@ -12,7 +13,7 @@ import { decodeSound, stretchSound, useSoundLibrary } from './soundLibrary';
 import { stretchRatio } from '../store/audioClips';
 import { hasRecordings, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
-import { barToTicks, ticksPerBar, ticksToBar } from './transport';
+import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
 import { cueChunks, loopChunk, markerCues } from './wavCues';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import { duckPoints } from '../store/duck';
@@ -40,7 +41,10 @@ export type ExportEnding = 'ringOut' | 'exact' | 'seamless';
 export interface RenderOptions {
   tracks: Track[];
   clips: Clip[];
+  /** The tempo at bar 1 */
   bpm: number;
+  /** Tempo changes after bar 1 (none: one tempo throughout) */
+  tempoPoints?: TempoPoint[];
   swing: number;
   /** 1-based bar range to render, [startBar, endBar). */
   startBar: number;
@@ -168,6 +172,9 @@ function loopTailSeconds(opts: RenderOptions): number {
   return tail;
 }
 
+/** The tempo a render plays at. */
+const renderTempo = (opts: Pick<RenderOptions, 'bpm' | 'tempoPoints'>): TempoMap => ({ bpm: opts.bpm, points: opts.tempoPoints ?? [] });
+
 /** What one render produces: how many frames, which of them make the file, and when the Transport runs. */
 interface RenderPlan {
   sampleRate: number;
@@ -194,11 +201,12 @@ function planRender(opts: RenderOptions, latency = 0): RenderPlan {
   const startAt = (preroll + 0.3) / sampleRate;
   // Where the range start comes out of the graph
   const lead = preroll + latency;
-  const rangeSeconds = ((opts.endBar - opts.startBar) * 240) / opts.bpm;
+  const tempo = renderTempo(opts);
+  const rangeSeconds = secondsBetween(opts.startBar, opts.endBar, tempo);
   const ending = opts.ending ?? 'ringOut';
   if (ending === 'seamless') {
     // One pass of the Transport's loop, whose ends sit on whole ticks
-    const loopSeconds = (((barToTicks(opts.endBar) - barToTicks(opts.startBar)) / ticksPerBar()) * 240) / opts.bpm;
+    const loopSeconds = secondsBetween(ticksToBar(barToTicks(opts.startBar)), ticksToBar(barToTicks(opts.endBar)), tempo);
     // Warm-up passes until whatever rings on from the first one has died away, then the pass that's kept
     const passes = 2 + Math.ceil(loopTailSeconds(opts) / loopSeconds);
     const keepFrom = lead + Math.round((passes - 1) * loopSeconds * sampleRate);
@@ -228,7 +236,7 @@ export function exportCues(opts: RenderOptions): WavCue[] {
     endBar: opts.endBar,
     // The Transport starts on the tick nearest the range start, and that's where the file starts
     originBar: ticksToBar(barToTicks(opts.startBar)),
-    bpm: opts.bpm,
+    bpm: renderTempo(opts),
     sampleRate: opts.sampleRate ?? DEFAULT_SAMPLE_RATE,
     frames: exportFrames(opts).frames,
     includeEnd: (opts.ending ?? 'ringOut') === 'ringOut',
@@ -492,7 +500,7 @@ async function renderTracks(
     signal?.throwIfAborted();
   }
   // ...and the sounds this render plays (audio clips, Slicer and Sampler tracks), at its sample rate
-  await loadSounds(tracks, clips, startBar, endBar, sampleRate, bpm);
+  await loadSounds(tracks, clips, startBar, endBar, sampleRate, renderTempo(opts));
   signal?.throwIfAborted();
 
   const original = Tone.getContext();
@@ -638,12 +646,15 @@ async function renderTracks(
     if (opts.reverbImpulse?.sampleRate === sampleRate) convolver.buffer = opts.reverbImpulse;
 
     const transport = context.transport;
-    transport.bpm.value = bpm;
+    const tempo = renderTempo(opts);
     transport.loop = ending === 'seamless';
     if (transport.loop) {
       transport.loopStart = `${barToTicks(startBar)}i`;
       transport.loopEnd = `${barToTicks(endBar)}i`;
     }
+    // The tempo map plays as Transport events (and from the loop's start on each pass), as live
+    applyTempoAt(transport, tempo, startBar, plan.startAt);
+    scheduleTempo(transport, tempo, transport.loop ? startBar : null);
     // Pumps that follow the kick hear every kick of the drum kits that sound, including ones this
     // render leaves out (a stem): those tracks' notes are scheduled, but play no instrument
     const kickTracks = audibleTracks(opts.tracks).filter((t) => isDrumKind(t.instrumentKey));
@@ -662,11 +673,11 @@ async function renderTracks(
     pumpClock.update();
     // Audio clips play their sound files on the same Transport, from the right place in them
     // wherever the range begins (see audioClipSchedule.ts)
-    const audioClips = createAudioClipSchedule(transport, (trackId) => instruments.get(trackId)?.clipBus);
+    const audioClips = createAudioClipSchedule(transport, (trackId) => instruments.get(trackId)?.clipBus, () => tempo);
     audioClips.update(tracks, clips);
     // Automated settings start at their lanes' values at the range start, set before the render
     // begins, and follow the lanes from when the Transport starts
-    const automation = createAutomationSchedule(transport, (trackId) => stripOf.get(trackId), { holdGlide: 0 });
+    const automation = createAutomationSchedule(transport, (trackId) => stripOf.get(trackId), { holdGlide: 0, tempo: () => tempo });
     automation.hold(startBar);
     // Every track but the proxies ducks under the dialogue / SFX proxies (see duck.ts)
     automation.update(tracks, duckPoints(opts.tracks, opts.clips, bpm));
@@ -698,7 +709,7 @@ async function renderTracks(
  * the audio clips in the range and of the Slicer and Sampler tracks. A Sampler from a project not
  * yet converted still carries its sound as a data: URL, decoded in the live context as before.
  */
-async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endBar: number, sampleRate: number, bpm: number): Promise<void> {
+async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endBar: number, sampleRate: number, tempo: Tempo): Promise<void> {
   const trackIds = new Set(tracks.map((t) => t.id));
   // Each sound once, with what to call it in an error: the clip or track it's for
   const needed = new Map<string, string>();
@@ -716,7 +727,7 @@ async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endB
   const stretches = new Map<string, number>();
   for (const c of clips) {
     if (!c.audio?.stretchBpm || !trackIds.has(c.trackId) || c.startBar >= endBar || c.startBar + c.lengthBars <= startBar) continue;
-    const ratio = stretchRatio(c.audio, bpm);
+    const ratio = stretchRatio(c.audio, tempoAt(c.startBar, tempo));
     if (ratio !== 1) stretches.set(`${c.audio.soundId}|${ratio}`, ratio);
   }
   for (const [id, label] of needed) {

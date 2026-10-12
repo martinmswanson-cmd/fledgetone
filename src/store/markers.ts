@@ -1,3 +1,4 @@
+import { barToSeconds, secondsToBar, type Tempo } from '../audio/tempoMap';
 import type { Marker, MarkerAnchor } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 
@@ -13,9 +14,6 @@ export const MARKER_NAME_MAX = 80;
 const LAST_BAR = TOTAL_BARS + 1;
 const EPS = 1e-6;
 
-// 4/4 at a constant tempo, as barToSeconds / secondsToBar in transport.ts (which loads Tone.js)
-const barToSeconds = (bar: number, bpm: number) => ((bar - 1) * 240) / bpm;
-const secondsToBar = (seconds: number, bpm: number) => (seconds * bpm) / 240 + 1;
 
 const byPosition = (a: Marker, b: Marker) => a.bar - b.bar;
 
@@ -46,12 +44,12 @@ export function nextMarkerName(markers: readonly Marker[]): string {
 }
 
 /** A marker held to its bar, at `bar` (put on the timeline). */
-export function createMarker(bar: number, bpm: number, name: string, id = uid('marker')): Marker {
+export function createMarker(bar: number, bpm: Tempo, name: string, id = uid('marker')): Marker {
   return placeMarker({ id, name, anchor: 'bar', bar: 1, seconds: 0 }, bar, bpm);
 }
 
 /** The marker moved to `bar` (put on the timeline). Both positions move; the anchor stays. */
-export function placeMarker(marker: Marker, bar: number, bpm: number): Marker {
+export function placeMarker(marker: Marker, bar: number, bpm: Tempo): Marker {
   const at = Math.max(1, Math.min(LAST_BAR, bar));
   return { ...marker, bar: at, seconds: barToSeconds(at, bpm) };
 }
@@ -66,7 +64,7 @@ export function anchorMarker(marker: Marker, anchor: MarkerAnchor): Marker {
  * position order. A marker held to its time keeps its time, so a faster tempo can put it past the
  * end of the timeline (it comes back when the tempo drops). The same array if nothing changes.
  */
-export function retimeMarkers(markers: Marker[], bpm: number): Marker[] {
+export function retimeMarkers(markers: Marker[], bpm: Tempo): Marker[] {
   let changed = false;
   const next = markers.map((m) => {
     const bar = m.anchor === 'time' ? secondsToBar(m.seconds, bpm) : m.bar;
@@ -97,7 +95,7 @@ export function markerPushedPastEnd(markers: readonly Marker[], at: number, bars
  * the music; markers held to their time stay. The same array if nothing moves. (Check
  * markerPushedPastEnd first: one pushed past the end would stop at the end.)
  */
-export function insertMarkerBars(markers: Marker[], at: number, bars: number, bpm: number): Marker[] {
+export function insertMarkerBars(markers: Marker[], at: number, bars: number, bpm: Tempo): Marker[] {
   if (!(bars > 0)) return markers;
   return rippleMarkers(markers, (bar) => (bar >= at - EPS ? bar + bars : bar), bpm);
 }
@@ -107,14 +105,14 @@ export function insertMarkerBars(markers: Marker[], at: number, bars: number, bp
  * (one at `from` marks what was removed; one at `to` marks what now follows the cut, so it
  * stays), later ones move left. Markers held to their time stay. The same array if nothing changes.
  */
-export function removeMarkerBars(markers: Marker[], from: number, to: number, bpm: number): Marker[] {
+export function removeMarkerBars(markers: Marker[], from: number, to: number, bpm: Tempo): Marker[] {
   const length = to - from;
   if (!(length > EPS)) return markers;
   return rippleMarkers(markers, (bar) => (bar < from - EPS ? bar : bar >= to - EPS ? bar - length : null), bpm);
 }
 
 /** Bar-held markers moved by `move` (null removes one); time-held ones untouched. */
-function rippleMarkers(markers: Marker[], move: (bar: number) => number | null, bpm: number): Marker[] {
+function rippleMarkers(markers: Marker[], move: (bar: number) => number | null, bpm: Tempo): Marker[] {
   let changed = false;
   const next: Marker[] = [];
   for (const m of markers) {
@@ -153,7 +151,7 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
  * other one if only that is there. Markers held to their bar are put on the timeline. Ids are
  * made unique, names tidied. In position order.
  */
-export function parseMarkers(raw: unknown, bpm: number): Marker[] {
+export function parseMarkers(raw: unknown, bpm: Tempo): Marker[] {
   if (!Array.isArray(raw)) return [];
   const ids = new Set<string>();
   const markers: Marker[] = [];

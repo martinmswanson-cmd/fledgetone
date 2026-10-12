@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { songMeterOf, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { isPlainMeter } from '../../audio/tempoMap';
 import type { Track } from '../../store/timelineTypes';
 import { snapBar } from '../../store/timelineTypes';
 import { dragInstrument, readDragPayload } from '../../store/dragSounds';
 import { compatibleInstruments, isAudioKind } from '../../audio/instrumentCatalog';
 import { ClipView } from './ClipView';
 import { AutomationLane } from './AutomationLane';
-import { LaneFrameGrid } from './LaneFrameGrid';
+import { LaneFrameGrid, LaneMeterGrid } from './LaneFrameGrid';
 import type { ContextMenuState } from './ClipContextMenu';
 import { barFromClientX } from './Playhead';
 import { barLabelStep, TRACK_HEIGHT } from './layout';
@@ -36,6 +37,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
   const fineGridPx = useTimelineStore((s) => (s.snapGrid !== 'frame' && s.zoom >= 256 ? s.zoom / 16 : 0));
   const clipDropTarget = useTimelineStore((s) => s.clipDragTargets?.has(track.id) ?? false);
   const automation = useTimelineStore((s) => s.automationView[track.id]);
+  const plainMeter = useTimelineStore((s) => isPlainMeter(songMeterOf(s)));
   const [dropBar, setDropBar] = useState<number | null>(null);
   const [filesOver, setFilesOver] = useState(false);
   const trackClips = clips.filter((c) => c.trackId === track.id);
@@ -59,11 +61,16 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
       style={{
         width: TOTAL_BARS * zoom,
         height: TRACK_HEIGHT,
-        backgroundImage: `linear-gradient(to right, rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px)${
-          fineGridPx ? ', linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px)' : ''
-        }`,
-        // Major lines every labelled bar; minor lines per beat, or per bar when zoomed far out
-        backgroundSize: `${zoom * barLabelStep(zoom)}px 100%, ${zoom >= 48 ? zoom / 4 : zoom}px 100%${fineGridPx ? `, ${fineGridPx}px 100%` : ''}`,
+        // Major lines every labelled bar; minor lines per beat, or per bar when zoomed far out (in
+        // other time signatures LaneMeterGrid draws the measures and beats instead)
+        backgroundImage: plainMeter
+          ? `linear-gradient(to right, rgba(255,255,255,0.14) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px)${
+              fineGridPx ? ', linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px)' : ''
+            }`
+          : fineGridPx
+            ? 'linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px)'
+            : 'none',
+        backgroundSize: plainMeter ? `${zoom * barLabelStep(zoom)}px 100%, ${zoom >= 48 ? zoom / 4 : zoom}px 100%${fineGridPx ? `, ${fineGridPx}px 100%` : ''}` : `${fineGridPx}px 100%`,
       }}
       data-lane={track.id}
       onContextMenu={(e) => {
@@ -121,6 +128,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
       }}
     >
       <LaneFrameGrid />
+      {!plainMeter && <LaneMeterGrid />}
       {trackClips.map((clip) => (
         <ClipView key={clip.id} clip={clip} track={track} originRef={originRef} onOpenMenu={onOpenMenu} />
       ))}

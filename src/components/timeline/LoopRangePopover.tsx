@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
-import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { TOTAL_BARS, useSongTempo, useTimelineStore } from '../../store/timelineStore';
 import { frameRateLabel } from '../../store/timelineTypes';
 import {
   formatBarsBeats,
@@ -91,7 +91,7 @@ const LoopRangePopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null
   const inBar = useTimelineStore((s) => s.loopRegion.inBar);
   const outBar = useTimelineStore((s) => s.loopRegion.outBar);
   const units = useTimelineStore((s) => s.rulerUnits);
-  const bpm = useTimelineStore((s) => s.bpm);
+  const bpm = useSongTempo();
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const timecode = (bar: number) => formatSmpte(bar, bpm, fps, dropFrame);

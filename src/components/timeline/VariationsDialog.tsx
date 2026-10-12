@@ -1,8 +1,9 @@
+import { tempoAt } from '../../audio/tempoMap';
 import React, { useRef, useState } from 'react';
 import * as Tone from 'tone';
 import { Download, Loader2, ListPlus, Play } from 'lucide-react';
 import { Modal } from './Modal';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songTempo, useTimelineStore } from '../../store/timelineStore';
 import { DEFAULT_BOUNDS, variationTakes, type VariationBounds } from '../../store/microVariations';
 import { renderVariations } from '../../audio/microVariations';
 import { downloadBlob, encodeChannels } from '../../audio/exportWav';
@@ -35,7 +36,7 @@ export const VariationsDialog: React.FC<{ clipId: string; onClose: () => void }>
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 2 ** 31));
   const [busy, setBusy] = useState<number | null>(null);
   const [rendered, setRendered] = useState<{ key: string; takes: Float32Array[][]; sampleRate: number } | null>(null);
-  const seconds = useTimelineStore((s) => (clip ? (clip.lengthBars * 240) / s.bpm : 0));
+  const seconds = useTimelineStore((s) => (clip ? (clip.lengthBars * 240) / tempoAt(clip.startBar, songTempo(s)) : 0));
   const playing = useRef<AudioBufferSourceNode | null>(null);
   if (!clip || !track) return null;
   const key = JSON.stringify([count, bounds, keepSends, seed]);
@@ -49,7 +50,7 @@ export const VariationsDialog: React.FC<{ clipId: string; onClose: () => void }>
       const r = await renderVariations(
         clip,
         track,
-        { bpm: s.bpm, masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback }, master: s.master },
+        { bpm: clip ? tempoAt(clip.startBar, songTempo(s)) : s.bpm, masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback }, master: s.master },
         variationTakes(count, bounds, seed),
         keepSends,
         setBusy
