@@ -4,6 +4,7 @@ import { GATE_TICKS } from '../../store/timelineTypes';
 import { activeLanes, AUTOMATION } from '../automation';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { BusEffects } from './busEffects';
+import { createEcho, createReverb, type EchoUnit, type ReverbUnit } from './spaceFx';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
 import {
   createLightChorus,
@@ -28,7 +29,8 @@ import {
 
 /**
  * One mixer channel per track:
- *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Lo-fi -> Filter -> Gate
+ *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Lo-fi -> Filter -> Delay
+ *         -> Reverb -> Gate
  *         -> Pump -> (Volume lane) -> solo -> pan -> fader (vol/mute)
  *   fader -> master bus, plus post-fader sends to the shared reverb and delay.
  *
@@ -92,8 +94,18 @@ export interface TrackStrip {
   spectrum: (out: Float32Array) => number;
   /** The multiband compressor's gain reduction per band now (dB), or null when it's off. */
   mbcReduction: () => [number, number, number] | null;
+  /** The song's tempo, which the Delay insert's echoes follow. */
+  setTempo: (bpm: number) => void;
   /** Play into `target` (a bus track's strip input) instead of where it plays now (the master bus at first). */
   setOutput: (target: Tone.InputNode) => void;
+  /**
+   * Its sends to return tracks: each to `target` (the return's input) at `level`, taken after the
+   * fader or (`pre`) before it. Sends not named go; a level changes smoothly. `muted`: the track
+   * is muted (a pre-fader send goes quiet with it).
+   */
+  setSends: (sends: ReadonlyArray<{ id: string; target: Tone.InputNode; level: number; pre: boolean }>, muted: boolean) => void;
+  /** A send's level param, for its automation lane (null if it has no such send). */
+  sendTarget: (returnId: string) => AutomationTarget | null;
   dispose: () => void;
 }
 
@@ -230,6 +242,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   let spectrumNode: AnalyserNode | null = null;
   duck.connect(reverbSend);
   reverbSend.connect(busFx.reverbInput);
+  /** Sends to return tracks, by return id (see setSends) */
+  const sends = new Map<string, { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean }>();
   duck.connect(delaySend);
   delaySend.connect(busFx.delayInput);
 
@@ -249,6 +263,11 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   let pumpTrigger: PumpTrigger | null = null;
   let pumpSource: string | null = null;
   let lofi: LightLofi | null = null;
+  let echo: EchoUnit | null = null;
+  let reverb: ReverbUnit | null = null;
+  /** The tempo the Delay follows, and its settings as last applied. */
+  let tempo = 120;
+  let echoSettings: Track['fx']['echo'] | null = null;
   let gateUnit: LightGate | null = null;
   let gateRate: GateRate | null = null;
   /** The drum kits' fold to mono, after the other inserts (see above). */
@@ -383,6 +402,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     if (chorus) next.push(chorus);
     if (lofi) next.push(lofi);
     if (filter) next.push(filter);
+    if (echo) next.push(echo);
+    if (reverb) next.push(reverb);
     if (gateUnit) next.push(gateUnit);
     if (pump) next.push(pump);
     if (laneGain) next.push({ input: laneGain.node, output: laneGain.node });
@@ -497,6 +518,44 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
   return {
     input,
+    setSends: (list, muted) => {
+      const wanted = new Set(list.map((x) => x.id));
+      for (const [id, send] of sends) {
+        if (wanted.has(id)) continue;
+        // Faded out, then let go
+        send.writer.set(0, 0.03);
+        const gone = send.gain;
+        sends.delete(id);
+        window.setTimeout(() => gone.dispose(), 120);
+      }
+      for (const want of list) {
+        let send = sends.get(want.id);
+        if (send && (send.target !== want.target || send.pre !== want.pre)) {
+          const old = send.gain;
+          old.dispose();
+          sends.delete(want.id);
+          send = undefined;
+        }
+        if (!send) {
+          const gain = new Tone.Gain(0);
+          if (want.pre) Tone.connect(merge, gain);
+          else duck.connect(gain);
+          gain.connect(want.target);
+          send = { gain, writer: writer(gain.gain, 0), target: want.target, pre: want.pre };
+          sends.set(want.id, send);
+        }
+        if (!owned.has(`send:${want.id}` as AutomationParam)) send.writer.set(want.pre && muted ? 0 : Math.max(0, Math.min(1, want.level)), 0.02);
+      }
+    },
+    sendTarget: (returnId) => {
+      const send = sends.get(returnId);
+      return send ? { writer: send.writer, map: (v: number) => Math.max(0, Math.min(1, v)) } : null;
+    },
+    setTempo: (bpm) => {
+      if (bpm === tempo) return;
+      tempo = bpm;
+      if (echo && echoSettings) echo.set(echoSettings, tempo, 0.05);
+    },
     setOutput: (target) => {
       if (target === output) return;
       Tone.disconnect(duck, output);
@@ -507,7 +566,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       const ramp = opts.ramp ?? 0.03;
       // A bus pans its tracks' already-panned sound again: the pan's -3 dB at the centre is made up
       // at its input, so a bus at 0 dB, centred, passes its tracks through at the level they had
-      const busMakeup = INSTRUMENTS[track.instrumentKey]?.kind === 'bus' ? Math.SQRT2 : 1;
+      const busMakeup = INSTRUMENTS[track.instrumentKey]?.kind === 'bus' || INSTRUMENTS[track.instrumentKey]?.kind === 'return' ? Math.SQRT2 : 1;
       if (input.gain.value !== busMakeup) input.gain.value = busMakeup;
       const { fx, eq: bands } = track;
       const muted = opts.muteOverride ?? track.isMuted;
@@ -612,6 +671,24 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       } else if (lofi) {
         retired.push(lofi);
         lofi = null;
+      }
+
+      if (fx.echo?.on) {
+        echoSettings = fx.echo;
+        if (echo) echo.set(fx.echo, tempo, ramp);
+        else echo = createEcho(fx.echo, tempo);
+      } else if (echo) {
+        retired.push(echo);
+        echo = null;
+        echoSettings = null;
+      }
+
+      if (fx.reverb?.on) {
+        if (reverb) reverb.set(fx.reverb, ramp);
+        else reverb = createReverb(fx.reverb);
+      } else if (reverb) {
+        retired.push(reverb);
+        reverb = null;
       }
 
       if (fx.gate?.on) {
@@ -744,7 +821,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       clearTimeout(retireTimer);
       clearTimeout(tidyTimer);
       gates.forEach((g) => g.gain.disconnect());
-      [...leaving, distortion, eq, peq, mbc, compressorUnit, chorus, lofi, filter, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend].forEach((n) => n?.dispose());
+      [...leaving, distortion, eq, peq, mbc, compressorUnit, chorus, lofi, filter, echo, reverb, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend, ...[...sends.values()].map((x) => x.gain)].forEach((n) => n?.dispose());
       [barrier, left, split, right, merge].forEach((n) => n?.disconnect());
     },
   };

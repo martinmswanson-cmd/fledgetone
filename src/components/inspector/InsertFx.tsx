@@ -1,14 +1,21 @@
 import React from 'react';
-import { Disc3, Filter, Flame, Gauge, Hand, HeartPulse, MessageSquareText, Scissors, Waves } from 'lucide-react';
+import { Disc3, Repeat, Sparkle, Filter, Flame, Gauge, Hand, HeartPulse, MessageSquareText, Scissors, Waves } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import type { FilterSlope, FilterType, GateRate, PumpTrigger, Track, TrackFx } from '../../store/timelineTypes';
+import type { EchoTime, FilterSlope, FilterType, GateRate, PumpTrigger, Track, TrackFx } from '../../store/timelineTypes';
 import {
   defaultTrackFx,
   FILTER_CUTOFF_MAX,
   FILTER_CUTOFF_MIN,
   FILTER_RESONANCE_MAX,
   FILTER_RESONANCE_MIN,
+  ECHO_FEEDBACK_MAX,
+  ECHO_TIMES,
+  ECHO_TONE_MAX,
+  ECHO_TONE_MIN,
   GATE_RATES,
+  REVERB_DECAY_MAX,
+  REVERB_DECAY_MIN,
+  REVERB_PREDELAY_MAX,
   LOFI_TONE_MAX,
   LOFI_TONE_MIN,
   PUMP_RELEASE_MAX,
@@ -21,6 +28,7 @@ import { formatHz } from '../../audio/automation';
 import { lofiBits } from '../../audio/effects/lightFx';
 import { HUMAN_MAX_CENTS, HUMAN_MAX_DYNAMICS, HUMAN_MAX_LATE } from '../../audio/human';
 import { INSTRUMENTS } from '../../audio/instrumentCatalog';
+import { isReturn } from '../../store/buses';
 
 interface SliderProps {
   label: string;
@@ -300,6 +308,67 @@ const LofiPanel: React.FC<{ track: Track }> = ({ track }) => {
   );
 };
 
+const toneLog = (v: number) => Math.log(v / ECHO_TONE_MIN) / Math.log(ECHO_TONE_MAX / ECHO_TONE_MIN);
+const toneHz = (x: number) => ECHO_TONE_MIN * (ECHO_TONE_MAX / ECHO_TONE_MIN) ** x;
+const ECHO_TIME_TITLES: Record<string, string> = { d: 'dotted', t: 'triplet' };
+const echoTimeLabel = (t: EchoTime) => (/[dt]$/.test(t) ? `${t.slice(0, -1)} ${ECHO_TIME_TITLES[t.slice(-1)]}` : t);
+
+/**
+ * Switching an effect on: on a return track it starts fully wet (the dry sound already plays
+ * from the tracks that send to it), elsewhere at its usual mix.
+ */
+const switchOn = (track: Track, mix: number, fallback: number) => (isReturn(track) && mix === fallback ? { on: true, mix: 1 } : { on: true });
+
+/** Delay (after the Filter): echoes in time with the song. */
+const EchoPanel: React.FC<{ track: Track }> = ({ track }) => {
+  const fx = { ...defaultTrackFx(), ...track.fx };
+  const d = defaultTrackFx();
+  const e = fx.echo;
+  const set = (patch: Partial<TrackFx['echo']>, record = false) => useTimelineStore.getState().setTrackFx(track.id, 'echo', patch, record);
+  const accent = '#f59e0b';
+  return (
+    <InsertPanel title="Delay" icon={<Repeat className="w-3.5 h-3.5" style={{ color: accent }} />} on={e.on} onToggle={() => set(e.on ? { on: false } : switchOn(track, e.mix, d.echo.mix), true)} accent={accent}>
+      <div className={`flex items-center gap-2 text-[10px] font-mono ${e.on ? '' : 'opacity-45'}`}>
+        <span className="w-16 text-forge-muted uppercase">Time</span>
+        <select value={e.time} onChange={(ev) => set({ time: ev.target.value as EchoTime }, true)} className="flex-1 h-6 bg-forge-bg border border-forge-border rounded px-1 text-forge-text" aria-label="Delay time">
+          {ECHO_TIMES.map((t) => (
+            <option key={t} value={t}>
+              {echoTimeLabel(t)} note
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1 text-forge-muted" title="Ping-pong: the echoes bounce between left and right">
+          <input type="checkbox" checked={e.pingPong} onChange={(ev) => set({ pingPong: ev.target.checked }, true)} aria-label="Ping-pong" />
+          ping-pong
+        </label>
+      </div>
+      <FxSlider label="Feedback" value={e.feedback} min={0} max={ECHO_FEEDBACK_MAX} step={0.01} format={pct} onChange={(feedback) => set({ feedback })} reset={d.echo.feedback} accent={accent} disabled={!e.on} />
+      <FxSlider label="Tone" value={toneLog(e.tone)} min={0} max={1} step={0.001} format={(x) => formatHz(toneHz(x))} onChange={(x) => set({ tone: Math.round(toneHz(x)) })} reset={toneLog(d.echo.tone)} accent={accent} disabled={!e.on} />
+      <FxSlider label="Mix" value={e.mix} min={0} max={1} step={0.01} format={pct} onChange={(mix) => set({ mix })} reset={d.echo.mix} accent={accent} disabled={!e.on} />
+    </InsertPanel>
+  );
+};
+
+/** Reverb (after the Delay): a room of the track's own. */
+const ReverbPanel: React.FC<{ track: Track }> = ({ track }) => {
+  const fx = { ...defaultTrackFx(), ...track.fx };
+  const d = defaultTrackFx();
+  const r = fx.reverb;
+  const set = (patch: Partial<TrackFx['reverb']>, record = false) => useTimelineStore.getState().setTrackFx(track.id, 'reverb', patch, record);
+  const accent = '#22d3ee';
+  // Decay on a log scale: as much travel for 0.3 to 2 s as for 2 to 12 s
+  const decayPos = (v: number) => Math.log(v / REVERB_DECAY_MIN) / Math.log(REVERB_DECAY_MAX / REVERB_DECAY_MIN);
+  const decayS = (x: number) => Math.round(REVERB_DECAY_MIN * (REVERB_DECAY_MAX / REVERB_DECAY_MIN) ** x * 20) / 20;
+  return (
+    <InsertPanel title="Reverb" icon={<Sparkle className="w-3.5 h-3.5" style={{ color: accent }} />} on={r.on} onToggle={() => set(r.on ? { on: false } : switchOn(track, r.mix, d.reverb.mix), true)} accent={accent}>
+      <FxSlider label="Decay" value={decayPos(r.decay)} min={0} max={1} step={0.001} format={(x) => `${decayS(x).toFixed(2)} s`} onChange={(x) => set({ decay: decayS(x) })} reset={decayPos(d.reverb.decay)} accent={accent} disabled={!r.on} />
+      <FxSlider label="Pre-delay" value={r.preDelay} min={0} max={REVERB_PREDELAY_MAX} step={1} format={(v) => `${Math.round(v)} ms`} onChange={(preDelay) => set({ preDelay })} reset={d.reverb.preDelay} accent={accent} disabled={!r.on} />
+      <FxSlider label="Tone" value={toneLog(r.tone)} min={0} max={1} step={0.001} format={(x) => formatHz(toneHz(x))} onChange={(x) => set({ tone: Math.round(toneHz(x)) })} reset={toneLog(d.reverb.tone)} accent={accent} disabled={!r.on} />
+      <FxSlider label="Mix" value={r.mix} min={0} max={1} step={0.01} format={pct} onChange={(mix) => set({ mix })} reset={d.reverb.mix} accent={accent} disabled={!r.on} />
+    </InsertPanel>
+  );
+};
+
 /** Gate (after the Filter): the volume chopped in time with the song. */
 const GatePanel: React.FC<{ track: Track }> = ({ track }) => {
   const fx = { ...defaultTrackFx(), ...track.fx };
@@ -373,6 +442,8 @@ export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
         <FxChoice label="Slope" value={fx.filter.slope} options={FILTER_SLOPE_OPTIONS} onChange={(slope) => setFilter({ slope }, true)} accent={filterAccent} disabled={!fx.filter.on} />
       </InsertPanel>
 
+      <EchoPanel track={track} />
+      <ReverbPanel track={track} />
       <GatePanel track={track} />
 
       <InsertPanel

@@ -98,6 +98,33 @@ export interface TrackFx {
     /** How much of each step it stays open, 0.1 to 0.95 */
     length: number;
   };
+  /**
+   * Delay: echoes at a note value of the song's tempo, fed back into themselves, darkened by a
+   * tone filter, optionally bouncing left and right. Mostly heard on a return track, at full mix.
+   */
+  echo: {
+    on: boolean;
+    time: EchoTime;
+    /** 0 to 0.9 */
+    feedback: number;
+    /** Low-pass on the echoes, ECHO_TONE_MIN to ECHO_TONE_MAX Hz */
+    tone: number;
+    pingPong: boolean;
+    /** Wet mix, 0 to 1 */
+    mix: number;
+  };
+  /** Reverb: a room / hall / plate tail of its own (unlike the shared master reverb). */
+  reverb: {
+    on: boolean;
+    /** Tail length to -60 dB, REVERB_DECAY_MIN to REVERB_DECAY_MAX s */
+    decay: number;
+    /** ms before the tail starts, 0 to 200 */
+    preDelay: number;
+    /** Low-pass on the tail, ECHO_TONE_MIN to ECHO_TONE_MAX Hz (darker is warmer) */
+    tone: number;
+    /** Wet mix, 0 to 1 */
+    mix: number;
+  };
   /** Parametric EQ: up to PEQ_MAX_BANDS bands of any shape, drawn and dragged on a graph. */
   peq: {
     on: boolean;
@@ -167,6 +194,17 @@ export const GATE_RATES = ['1/8', '1/8T', '1/16', '1/16T', '1/32'] as const;
 export type GateRate = (typeof GATE_RATES)[number];
 /** A gate step in Transport ticks (192 per quarter note). */
 export const GATE_TICKS: Record<GateRate, number> = { '1/8': 96, '1/8T': 64, '1/16': 48, '1/16T': 32, '1/32': 24 };
+/** Delay insert times, as note values of the tempo (d = dotted, t = triplet). */
+export const ECHO_TIMES = ['1/32', '1/16t', '1/16', '1/8t', '1/16d', '1/8', '1/4t', '1/8d', '1/4', '1/4d', '1/2'] as const;
+export type EchoTime = (typeof ECHO_TIMES)[number];
+/** Each one in quarter notes. */
+export const ECHO_BEATS: Record<EchoTime, number> = { '1/32': 0.125, '1/16t': 1 / 6, '1/16': 0.25, '1/8t': 1 / 3, '1/16d': 0.375, '1/8': 0.5, '1/4t': 2 / 3, '1/8d': 0.75, '1/4': 1, '1/4d': 1.5, '1/2': 2 };
+export const ECHO_TONE_MIN = 500;
+export const ECHO_TONE_MAX = 20000;
+export const ECHO_FEEDBACK_MAX = 0.9;
+export const REVERB_DECAY_MIN = 0.3;
+export const REVERB_DECAY_MAX = 12;
+export const REVERB_PREDELAY_MAX = 200;
 export const LOFI_TONE_MIN = 1000;
 export const LOFI_TONE_MAX = 20000;
 
@@ -187,6 +225,8 @@ export function defaultTrackFx(): TrackFx {
     pump: { on: false, depth: 0.7, release: 300, trigger: 'kick' },
     lofi: { on: false, crush: 0.5, tone: 5000, wow: 0.3, mix: 1 },
     gate: { on: false, rate: '1/16', depth: 0.9, length: 0.5 },
+    echo: { on: false, time: '1/8d', feedback: 0.4, tone: 6000, pingPong: true, mix: 0.35 },
+    reverb: { on: false, decay: 2.2, preDelay: 20, tone: 9000, mix: 0.3 },
     human: { on: false, timing: 0.5, dynamics: 0.5, pitch: 0.5 },
     peq: { on: false, bands: defaultPeqBands() },
     mbc: {
@@ -230,6 +270,8 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
   const pum = obj(r.pump);
   const lof = obj(r.lofi);
   const gat = obj(r.gate);
+  const ech = obj(r.echo);
+  const rev = obj(r.reverb);
   const hum = obj(r.human);
   const peq = obj(r.peq);
   const mbc = obj(r.mbc);
@@ -274,6 +316,21 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
       rate: oneOf(gat.rate, GATE_RATES, d.gate.rate),
       depth: num(gat.depth, d.gate.depth, 0, 1),
       length: num(gat.length, d.gate.length, 0.1, 0.95),
+    },
+    echo: {
+      on: ech.on === true,
+      time: oneOf(ech.time, ECHO_TIMES, d.echo.time),
+      feedback: num(ech.feedback, d.echo.feedback, 0, ECHO_FEEDBACK_MAX),
+      tone: num(ech.tone, d.echo.tone, ECHO_TONE_MIN, ECHO_TONE_MAX),
+      pingPong: ech.pingPong !== false,
+      mix: num(ech.mix, d.echo.mix, 0, 1),
+    },
+    reverb: {
+      on: rev.on === true,
+      decay: num(rev.decay, d.reverb.decay, REVERB_DECAY_MIN, REVERB_DECAY_MAX),
+      preDelay: num(rev.preDelay, d.reverb.preDelay, 0, REVERB_PREDELAY_MAX),
+      tone: num(rev.tone, d.reverb.tone, ECHO_TONE_MIN, ECHO_TONE_MAX),
+      mix: num(rev.mix, d.reverb.mix, 0, 1),
     },
     human: {
       on: hum.on === true,
@@ -443,10 +500,22 @@ export interface Track {
   folder?: TrackFolder;
   /** The bus track it plays into (see buses.ts); absent: straight to the master */
   output?: string;
+  /** Sends to return tracks (see buses.ts), each at its own level */
+  sends?: TrackSend[];
   /** A Plugin track's instrument: a Web Audio Module loaded from its URL (see wamHost.ts) */
   plugin?: WamPlugin;
   /** Web Audio Module effects, in order, between the instrument and the track's own inserts */
   pluginFx?: WamPlugin[];
+}
+
+/** A send from a track to a return track. */
+export interface TrackSend {
+  /** The return track's id */
+  to: string;
+  /** 0 to 1 (as the reverb and delay sends) */
+  level: number;
+  /** Taken before the fader (the track's volume and mute don't change it); else after */
+  pre?: boolean;
 }
 
 /** A Web Audio Module (WAM 2) plugin on a track, loaded from `url` with its saved settings. */

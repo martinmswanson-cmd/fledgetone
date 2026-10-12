@@ -108,7 +108,7 @@ export async function buildGameKitParts(
   const secondsPerBar = 240 / song.bpm;
   // Stems: one per stem group in use (tracks without one go in Main), when any track has a group
   // (Buses aren't stems: their sound is in the stems of the tracks that play into them)
-  const audible = audibleTracks(song.tracks).filter((t) => t.instrumentKey !== 'bus');
+  const audible = audibleTracks(song.tracks).filter((t) => t.instrumentKey !== 'bus' && t.instrumentKey !== 'return');
   const groupNames = groupsInUse(audible);
   const stemGroups = groupNames.length
     ? [

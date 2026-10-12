@@ -31,6 +31,8 @@ import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
 import { AutoBadge, Automatable } from '../timeline/AutoBadge';
 import { AUTOMATED_TIP } from '../timeline/automationHooks';
+import { isBus, isMixTrack, sendTargets } from '../../store/buses';
+import type { Track } from '../../store/timelineTypes';
 
 /** One click to a kind of space: the master reverb's length. */
 const notAudio = (def: InstrumentDef) => !isAudioKind(def.key);
@@ -177,7 +179,7 @@ export const TrackInspector: React.FC = () => {
             {/* Instrument Assignment & Status */}
             <div data-search="instrument" className="flex flex-col gap-1.5 bg-forge-bg p-2.5 rounded-lg border border-forge-border">
               <div className="flex items-center justify-between text-[10px] font-mono text-forge-muted">
-                <span>SOUND GENERATOR</span>
+                <span>{isMixTrack(currentTrack) ? (isBus(currentTrack) ? "BUS" : "RETURN") : "SOUND GENERATOR"}</span>
                 {/* Soundbank Loading Status Badge */}
                 <div className="flex items-center gap-1">
                   {status === 'loading' && (
@@ -212,7 +214,13 @@ export const TrackInspector: React.FC = () => {
                 </div>
               </div>
 
-              {isAudioKind(currentTrack.instrumentKey) ? (
+              {isMixTrack(currentTrack) ? (
+                <div className="w-full bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs text-forge-text">
+                  {isBus(currentTrack)
+                    ? 'A bus: it plays the tracks routed into it (right-click a track → Play into…), through the effects below.'
+                    : 'A return: it plays what tracks send to it (their Sends, below each track’s effects), through the effects below. Turn on a Reverb or Delay here at 100% mix.'}
+                </div>
+              ) : isAudioKind(currentTrack.instrumentKey) ? (
                 // An Audio track's clips are sound files, which no instrument could play: it stays an Audio track
                 <div className="w-full bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white">
                   {INSTRUMENTS[currentTrack.instrumentKey].name} track ({INSTRUMENTS[currentTrack.instrumentKey].blurb.toLowerCase()})
@@ -238,8 +246,8 @@ export const TrackInspector: React.FC = () => {
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
             {/* Human works on the notes before the instrument plays them */}
-            {!isAudioKind(currentTrack.instrumentKey) && <HumanPanel track={currentTrack} />}
-            <DuckProxyPanel track={currentTrack} />
+            {!isAudioKind(currentTrack.instrumentKey) && !isMixTrack(currentTrack) && <HumanPanel track={currentTrack} />}
+            {!isMixTrack(currentTrack) && <DuckProxyPanel track={currentTrack} />}
 
             {/* Insert chain, in signal order: Distortion -> EQ -> Pro EQ -> Compressor -> Multiband -> Chorus -> Lo-fi -> Filter -> Gate -> Pump */}
             <DistortionPanel track={currentTrack} />
@@ -434,6 +442,7 @@ export const TrackInspector: React.FC = () => {
                   );
                 }}
               </Automatable>
+              <ReturnSends track={currentTrack} />
             </div>
 
             {/* Fader & Pan Strip */}
@@ -619,5 +628,48 @@ export const TrackInspector: React.FC = () => {
         )}
       </div>
     </aside>
+  );
+};
+
+/** Sends to the song's effect returns: a level each, and pre-fader (it ignores this track's fader) or post. */
+const ReturnSends: React.FC<{ track: Track }> = ({ track }) => {
+  const returns = useTimelineStore((s) => s.tracks).filter((t) => sendTargets(track, [t]).length > 0);
+  if (isMixTrack(track)) return null;
+  const s = useTimelineStore.getState();
+  return (
+    <div className="flex flex-col gap-2 pt-1 border-t border-forge-border" aria-label="Sends to returns" data-search="return sends">
+      {returns.map((r) => {
+        const send = track.sends?.find((x) => x.to === r.id);
+        const level = send?.level ?? 0;
+        return (
+          <div key={r.id} className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5 text-[10px] font-mono">
+              <span className="flex-1 truncate font-semibold" style={{ color: r.color }}>
+                → {r.name}
+              </span>
+              <label className="flex items-center gap-1 text-forge-muted" title="Pre-fader: the send ignores this track's volume fader (and mute), so the return keeps going as the track fades">
+                <input type="checkbox" checked={!!send?.pre} disabled={!send} onChange={(e) => s.setTrackSendPre(track.id, r.id, e.target.checked)} aria-label={`Send to ${r.name} pre-fader`} />
+                pre
+              </label>
+              <span className="w-9 text-right tabular-nums font-bold text-white">{Math.round(level * 100)}%</span>
+            </div>
+            <UndoableRange
+              min={0}
+              max={1}
+              step={0.01}
+              value={level}
+              onValue={(v) => s.setTrackSend(track.id, r.id, v, false)}
+              resetValue={0}
+              className="w-full cursor-pointer h-1.5 bg-zinc-800 rounded-lg appearance-none"
+              style={{ accentColor: r.color }}
+              aria-label={`Send to ${r.name}`}
+            />
+          </div>
+        );
+      })}
+      <button type="button" onClick={() => s.addReturn(track.id)} className="self-start text-[10px] font-mono text-sky-300 hover:text-sky-200" title="A new effect return track, with this track sending to it">
+        + Send to a new return
+      </button>
+    </div>
   );
 };

@@ -14,7 +14,7 @@ import {
   transportStartsAt,
 } from '../audio/transport';
 import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
-import { holdAutomationAt, retimeAutomation, syncLiveTracks, applyLiveIntensity, setLiveDuck } from '../audio/liveTracks';
+import { holdAutomationAt, retimeAutomation, syncLiveTracks, applyLiveIntensity, setLiveDuck, setLiveStripTempo } from '../audio/liveTracks';
 import { beginTake, discardTake, finishTake } from '../audio/recorder';
 import { heardTime } from '../audio/latency';
 import { countInClicks } from '../audio/metronome';
@@ -73,7 +73,7 @@ import {
   retimeMarkers,
 } from './markers';
 import { rippleRules, type RippleEdit } from './ripple';
-import { isBus, tidyRoutes, wouldLoop } from './buses';
+import { isBus, isMixTrack, isReturn, tidyRoutes, tidySends, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
@@ -360,6 +360,15 @@ interface TimelineState {
    * undo step). Refused (false) where it would make a loop.
    */
   setTrackOutput: (trackId: string, busId: string | null) => boolean;
+  /**
+   * A track's send to a return: its level (0 to 1), or null to take it away. `record`: its own undo
+   * step (a slider checkpoint()s once and passes false).
+   */
+  setTrackSend: (trackId: string, returnId: string, level: number | null, record?: boolean) => void;
+  /** A send taken before the fader (true) or after it (one undo step). */
+  setTrackSendPre: (trackId: string, returnId: string, pre: boolean) => void;
+  /** A new return, and `trackId` (if given) sending to it at half level (one undo step). Returns its id. */
+  addReturn: (trackId?: string, name?: string) => string;
   /** A new Plugin track playing the WAM at `url` (one undo step). Returns its id. */
   addPluginTrack: (url: string, name: string) => string;
   /** Add a WAM effect to a track, after its other plugin effects (one undo step). Returns the plugin's id. */
@@ -832,7 +841,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return { tempoPoints, clips: retimeAudioClips(s.clips, songTempo(s), to), markers: retimeMarkers(s.markers, to), ...(record ? pushPast(s) : {}) };
     });
 
-  const applyMasterFx = () => liveMix.busFx.apply(masterFxOf(get()), get().bpm);
+  const applyMasterFx = () => {
+    liveMix.busFx.apply(masterFxOf(get()), get().bpm);
+    setLiveStripTempo(get().bpm);
+  };
   /** Push the master section's settings (OTT, width) to the live mix. */
   const applyMaster = () => liveMix.inserts.apply(get().master);
   const setMaster = (next: (m: MasterSettings) => MasterSettings, record: boolean) => {
@@ -1374,8 +1386,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     addTrack: (instrumentKey, name) => {
       const made = makeTrack(instrumentKey, get().tracks, name);
-      // A bus sends nothing to the reverb itself unless asked: its tracks have their own sends
-      const newTrack = isBus(made) ? { ...made, reverbSend: 0 } : made;
+      // A bus or a return sends nothing to the reverb itself unless asked: its tracks have their own sends
+      const newTrack = isMixTrack(made) ? { ...made, reverbSend: 0, delaySend: 0 } : made;
       set((s) => ({
         tracks: [...s.tracks, newTrack],
         selectedTrackId: newTrack.id,
@@ -1441,6 +1453,47 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         });
         return changed ? { tracks } : s;
       }),
+
+    setTrackSend: (trackId, returnId, level, record = true) =>
+      set((s) => {
+        const track = s.tracks.find((t) => t.id === trackId);
+        const ret = s.tracks.find((t) => t.id === returnId);
+        if (!track || !ret || !isReturn(ret) || isReturn(track)) return s;
+        const rest = (track.sends ?? []).filter((x) => x.to !== returnId);
+        const had = track.sends?.find((x) => x.to === returnId);
+        if (level === null ? !had : had?.level === level) return s;
+        const sends = level === null ? rest : [...(track.sends ?? []).map((x) => (x.to === returnId ? { ...x, level: Math.max(0, Math.min(1, level)) } : x)), ...(had ? [] : [{ to: returnId, level: Math.max(0, Math.min(1, level)) }])];
+        const next: Track = { ...track };
+        if (sends.length) next.sends = sends;
+        else delete next.sends;
+        return { tracks: s.tracks.map((t) => (t === track ? next : t)), ...(record ? pushPast(s) : {}) };
+      }),
+
+    setTrackSendPre: (trackId, returnId, pre) =>
+      set((s) => {
+        const track = s.tracks.find((t) => t.id === trackId);
+        const send = track?.sends?.find((x) => x.to === returnId);
+        if (!track || !send || !!send.pre === pre) return s;
+        const sends = track.sends!.map((x) => (x.to === returnId ? (pre ? { ...x, pre: true } : (({ pre: _p, ...rest }) => rest)(x)) : x));
+        return { tracks: s.tracks.map((t) => (t === track ? { ...t, sends } : t)), ...pushPast(s) };
+      }),
+
+    addReturn: (trackId, name) => {
+      const s = get();
+      const count = s.tracks.filter(isReturn).length;
+      const made = makeTrack('return', s.tracks, name?.trim() || `Return ${count + 1}`);
+      const ret: Track = { ...made, reverbSend: 0, delaySend: 0 };
+      set((st) => ({
+        tracks: [
+          ...st.tracks.map((t) => (t.id === trackId && !isMixTrack(t) ? { ...t, sends: [...(t.sends ?? []).filter((x) => x.to !== ret.id), { to: ret.id, level: 0.5 }] } : t)),
+          ret,
+        ],
+        selectedTrackId: ret.id,
+        isInspectorOpen: true,
+        ...pushPast(st),
+      }));
+      return ret.id;
+    },
 
     setTrackOutput: (trackId, busId) => {
       const s = get();
@@ -1611,7 +1664,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       set((s) => {
         if (!s.tracks.some((t) => t.id === id)) return s;
         // Tracks that played into it (a bus) play to the master again
-        const nextTracks = tidyRoutes(s.tracks.filter((t) => t.id !== id));
+        const nextTracks = tidySends(tidyRoutes(s.tracks.filter((t) => t.id !== id)));
         const nextSelected = s.selectedTrackId === id ? nextTracks[0]?.id ?? null : s.selectedTrackId;
         return {
           tracks: nextTracks,
@@ -1627,7 +1680,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (!current || current.instrumentKey === instrumentKey) return;
       // A bus or a Plugin track is made as one (Add Track), not by switching an instrument: a bus
       // can't hold the clips a track has, and a Plugin track needs its plugin
-      if (isBus({ instrumentKey }) || instrumentKey === 'plugin') return;
+      if (isMixTrack({ instrumentKey }) || instrumentKey === 'plugin') return;
       const meta = INSTRUMENTS[instrumentKey];
       updateTrack(
         id,
@@ -1641,7 +1694,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         true
       );
       // A bus that becomes an instrument: the tracks that played into it go back to the master
-      if (isBus(current)) set((s) => ({ tracks: tidyRoutes(s.tracks) }));
+      if (isMixTrack(current)) set((s) => ({ tracks: tidySends(tidyRoutes(s.tracks)) }));
       if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
     },
 
@@ -1657,7 +1710,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const s = get();
       const track = s.tracks.find((t) => t.id === id);
       // Takes are note clips, which an Audio track can't hold
-      if (!track || (!track.isArmed && (isAudioKind(track.instrumentKey) || isBus(track)))) return;
+      if (!track || (!track.isArmed && (isAudioKind(track.instrumentKey) || isMixTrack(track)))) return;
       const arming = !track.isArmed;
       if (s.isPlaying && s.isRecording) endTake();
       set((st) => ({
@@ -2409,7 +2462,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       get().stop();
       // One track records at a time: a file with several armed keeps the first
       const armedId = p.tracks.find((t) => t.isArmed)?.id;
-      const safeTracks: Track[] = tidyFolders(tidyRoutes(p.tracks)).map((t: Track) => ({
+      const safeTracks: Track[] = tidyFolders(tidySends(tidyRoutes(p.tracks))).map((t: Track) => ({
         ...t,
         eq: t.eq ?? { low: 0, mid: 0, high: 0 },
         reverbSend: typeof t.reverbSend === 'number' ? t.reverbSend : 0,
@@ -2480,8 +2533,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     createEmptyClip: (trackId, atBar, lengthBars) => {
       const s = get();
       const track = s.tracks.find((t) => t.id === trackId);
-      // An Audio track's clips come from sound files (addAudioClips), never empty; a bus holds none
-      if (!track || isAudioKind(track.instrumentKey) || isBus(track)) return null;
+      // An Audio track's clips come from sound files (addAudioClips), never empty; a bus or a return holds none
+      if (!track || isAudioKind(track.instrumentKey) || isMixTrack(track)) return null;
       const count = s.clips.filter((c) => c.trackId === trackId).length + 1;
       const clip: Clip = {
         id: uid('clip'),
@@ -2831,6 +2884,7 @@ export function connectTimelineToAudio(): () => void {
   });
   syncTransport(s.loopRegion, songTempo(s), s.swing);
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
+  setLiveStripTempo(s.bpm);
   liveMix.inserts.apply(s.master);
 
   // Ducking under dialogue / SFX proxies: the curve, kept as the same array while it doesn't change
@@ -2868,6 +2922,7 @@ export function connectTimelineToAudio(): () => void {
     if (state.bpm !== prev.bpm) {
       // Delay time is a tempo subdivision, so it follows the BPM
       liveMix.busFx.apply(masterFxOf(state), state.bpm);
+      setLiveStripTempo(state.bpm);
     }
   });
   return () => {

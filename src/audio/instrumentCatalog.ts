@@ -62,11 +62,13 @@ export const INSTRUMENT_KEYS = [
   'bus',
   // a Web Audio Module instrument loaded from a URL
   'plugin',
+  // an effect return the other tracks send to
+  'return',
 ] as const;
 
 export type InstrumentKey = (typeof INSTRUMENT_KEYS)[number];
 
-export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio' | 'bus' | 'plugin';
+export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio' | 'bus' | 'plugin' | 'return';
 
 export const CATEGORIES = [
   'Drums & Percussion',
@@ -478,6 +480,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   slicer: { key: 'slicer', name: 'Slicer', blurb: 'Vocal chops: a sound cut into slices', color: '#f0abfc', category: 'Your Sounds', kind: 'slicer', range: [48, 111] },
   audio: { key: 'audio', name: 'Audio', blurb: 'Your recordings, as clips', color: '#60a5fa', category: 'Your Sounds', kind: 'audio', range: [0, 127] },
   plugin: { key: 'plugin', name: 'Plugin', blurb: 'A Web Audio Module instrument, loaded from its URL', color: '#e879f9', category: 'Your Sounds', kind: 'plugin', range: [0, 127] },
+  return: { key: 'return', name: 'Return', blurb: 'An effect return: tracks send to it, it plays its effects back into the mix', color: '#38bdf8', category: 'Your Sounds', kind: 'return', range: [0, 127] },
   bus: { key: 'bus', name: 'Bus', blurb: 'A group channel: the tracks routed to it share its fader, inserts and sends', color: '#94a3b8', category: 'Your Sounds', kind: 'bus', range: [0, 127] },
 };
 
@@ -515,6 +518,12 @@ export function isBusKind(key: InstrumentKey): boolean {
   return INSTRUMENTS[key]?.kind === 'bus';
 }
 
+/** A bus or a return: a track with no clips of its own, that others play or send into. */
+export function isMixKind(key: InstrumentKey): boolean {
+  const kind = INSTRUMENTS[key]?.kind;
+  return kind === 'bus' || kind === 'return';
+}
+
 export function isAudioKind(key: InstrumentKey): boolean {
   return INSTRUMENTS[key].kind === 'audio';
 }
@@ -530,7 +539,7 @@ export function compatibleInstruments(source: InstrumentKey, target: InstrumentK
 }
 
 /** What a clip's notes mean: drum hits, FX rows, pitches, or none (an audio clip). */
-const noteFamily = (key: InstrumentKey) => (isDrumKind(key) ? 'drums' : isFxKind(key) ? 'fx' : isAudioKind(key) ? 'audio' : isBusKind(key) ? 'bus' : 'pitched');
+const noteFamily = (key: InstrumentKey) => (isDrumKind(key) ? 'drums' : isFxKind(key) ? 'fx' : isAudioKind(key) ? 'audio' : isMixKind(key) ? 'bus' : 'pitched');
 
 /**
  * Can a clip on a `source` track move (or be pasted) onto a `target` track? Drum parts only make
@@ -539,7 +548,7 @@ const noteFamily = (key: InstrumentKey) => (isDrumKind(key) ? 'drums' : isFxKind
  */
 export function canMoveClipBetween(source: InstrumentKey, target: InstrumentKey): boolean {
   // A bus holds no clips
-  return noteFamily(source) === noteFamily(target) && !isBusKind(target);
+  return noteFamily(source) === noteFamily(target) && !isMixKind(target);
 }
 
 /** Instruments grouped by category, in menu order. */
@@ -547,6 +556,6 @@ export function instrumentsByCategory(): Array<{ category: InstrumentCategory; i
   return CATEGORIES.map((category) => ({
     category,
     // A bus isn't an instrument to pick (Add track makes one)
-    instruments: INSTRUMENT_KEYS.map((k) => INSTRUMENTS[k]).filter((d) => d.category === category && d.kind !== 'bus' && d.kind !== 'plugin'),
+    instruments: INSTRUMENT_KEYS.map((k) => INSTRUMENTS[k]).filter((d) => d.category === category && d.kind !== 'bus' && d.kind !== 'plugin' && d.kind !== 'return'),
   })).filter((g) => g.instruments.length > 0);
 }

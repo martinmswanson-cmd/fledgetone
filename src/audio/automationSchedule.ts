@@ -1,4 +1,4 @@
-import { isBus } from '../store/buses';
+import { isMixTrack } from '../store/buses';
 import { barToSeconds, secondsToBar, type Tempo } from './tempoMap';
 import type * as Tone from 'tone';
 import type { AutomationParam, AutomationPoint, Track } from '../store/timelineTypes';
@@ -334,7 +334,7 @@ export function createAutomationSchedule(
       if (duck?.length) {
         for (const track of tracks) {
           // (Not a bus either: the tracks playing into it dip already)
-          if (track.duckProxy || isBus(track)) continue;
+          if (track.duckProxy || isMixTrack(track)) continue;
           const strip = stripFor(track.id);
           if (!strip) continue;
           const key = `${track.id}|duck`;
