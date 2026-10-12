@@ -3,7 +3,7 @@ import { Eraser, Minus, Spline, Trash2, TrendingDown, TrendingUp, X } from 'luci
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam } from '../../store/timelineTypes';
 import { formatBarCount } from '../../store/timelineTypes';
-import { AUTOMATION, laneOf, rampPoints } from '../../audio/automation';
+import { specOf, laneOf, rampPoints } from '../../audio/automation';
 import { MenuItem } from './ClipContextMenu';
 import type { MenuItemProps } from './ClipContextMenu';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
@@ -31,7 +31,7 @@ export const AutomationMenu: React.FC<{ menu: AutomationMenuState; onClose: () =
   const s = useTimelineStore.getState();
   const track = s.tracks.find((t) => t.id === menu.trackId);
   if (!track) return null;
-  const spec = AUTOMATION[menu.param];
+  const spec = specOf(menu.param, track, s.tracks);
   const points = laneOf(track, menu.param)?.points ?? [];
   const run = (action: () => void) => () => {
     action();

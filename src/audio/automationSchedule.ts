@@ -2,7 +2,7 @@ import { isMixTrack } from '../store/buses';
 import { barToSeconds, secondsToBar, type Tempo } from './tempoMap';
 import type * as Tone from 'tone';
 import type { AutomationParam, AutomationPoint, Track } from '../store/timelineTypes';
-import { AUTOMATION, CURVE_STEP, isLinearMap, lanePieceFrom, laneValueAt, sampleStretch } from './automation';
+import { specOf, CURVE_STEP, isLinearMap, lanePieceFrom, laneValueAt, sampleStretch } from './automation';
 import { clockMargin, type AutomationTarget } from './effects/paramWriter';
 import type { TrackStrip } from './effects/trackStrip';
 import { ticksToBar } from './transport';
@@ -292,7 +292,7 @@ export function createAutomationSchedule(
   const readTargets = (strip: TrackStrip, param: AutomationParam): LaneTarget[] | null => {
     const targets = strip.automationTargets(param);
     if (!targets?.length) return null;
-    const { toReal } = AUTOMATION[param];
+    const { toReal } = specOf(param);
     return targets.map((tg) => {
       const native = (n: number) => tg.map(toReal(n));
       return { ...tg, native, linear: isLinearMap(native) };

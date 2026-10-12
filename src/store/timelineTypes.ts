@@ -502,6 +502,8 @@ export interface Track {
   output?: string;
   /** Sends to return tracks (see buses.ts), each at its own level */
   sends?: TrackSend[];
+  /** Knobs and faders of a MIDI controller that move this track's settings (MIDI learn) */
+  midiMap?: MidiMapping[];
   /** A Plugin track's instrument: a Web Audio Module loaded from its URL (see wamHost.ts) */
   plugin?: WamPlugin;
   /** Web Audio Module effects, in order, between the instrument and the track's own inserts */
@@ -509,6 +511,12 @@ export interface Track {
 }
 
 /** A send from a track to a return track. */
+/** A MIDI controller's knob or fader (its CC number) moving one of a track's settings, over the setting's whole range. */
+export interface MidiMapping {
+  cc: number;
+  param: AutomationParam;
+}
+
 export interface TrackSend {
   /** The return track's id */
   to: string;
@@ -574,8 +582,8 @@ export interface FrozenTrack {
 }
 
 /**
- * Track settings an automation lane can drive. The order is the lane picker's. The Filter ones
- * act on the track's Filter insert, the EQ ones on its 3-band EQ.
+ * The fixed track settings an automation lane can drive. The order is the lane picker's. The
+ * Filter ones act on the track's Filter insert, the EQ ones on its 3-band EQ.
  */
 export const AUTOMATION_PARAMS = [
   'volume',
@@ -588,10 +596,47 @@ export const AUTOMATION_PARAMS = [
   'eqMid',
   'eqHigh',
 ] as const;
-export type AutomationParam = (typeof AUTOMATION_PARAMS)[number];
+export type BuiltinParam = (typeof AUTOMATION_PARAMS)[number];
+
+/**
+ * What an automation lane drives: a fixed setting, or
+ *   `send:<return track id>`   the level of the track's send to a return,
+ *   `fx:<insert>.<setting>`    a setting of one of its inserts (see FX_AUTOMATION in automation.ts),
+ *   `plugin:<plugin id>:<parameter id>`   a parameter of one of its WAM plugins (0 to 1 of its range).
+ */
+export type AutomationParam = BuiltinParam | `send:${string}` | `fx:${string}` | `plugin:${string}`;
+
+/** The insert settings a lane can drive, as `insert.setting`. */
+export const FX_AUTOMATION_KEYS = [
+  'distortion.amount',
+  'compressor.threshold',
+  'compressor.ratio',
+  'compressor.makeup',
+  'chorus.rate',
+  'chorus.depth',
+  'chorus.mix',
+  'lofi.tone',
+  'lofi.wow',
+  'lofi.mix',
+  'echo.feedback',
+  'echo.tone',
+  'echo.mix',
+  'reverb.preDelay',
+  'reverb.tone',
+  'reverb.mix',
+  'gate.depth',
+  'gate.length',
+  'pump.depth',
+  'pump.release',
+] as const;
+export type FxAutomationKey = (typeof FX_AUTOMATION_KEYS)[number];
 
 export function isAutomationParam(v: unknown): v is AutomationParam {
-  return AUTOMATION_PARAMS.includes(v as AutomationParam);
+  if (typeof v !== 'string') return false;
+  if (AUTOMATION_PARAMS.includes(v as BuiltinParam)) return true;
+  if (v.startsWith('send:')) return v.length > 5;
+  if (v.startsWith('fx:')) return FX_AUTOMATION_KEYS.includes(v.slice(3) as FxAutomationKey);
+  return /^plugin:[^:]+:.+$/.test(v);
 }
 
 export interface AutomationPoint {

@@ -72,6 +72,8 @@ export interface TrackInstrument {
   /** Resolves when the instrument can sound (reverb generated, samples downloaded). */
   ready: Promise<unknown>;
   dispose: () => void;
+  /** Set one of its plugins' parameters (0 to 1 of its range) at `time`: false while that plugin isn't loaded. */
+  setPluginParam?: (pluginId: string, paramId: string, value: number, time: number) => boolean;
   /** Where sends to this track (a return) arrive: before its plugin effects, when it has some (else its strip's input). */
   sendInput?: Tone.InputNode;
   /** An Audio track's: where its audio clips play (see audioClipSchedule.ts). */
@@ -270,6 +272,7 @@ export function createInstrument(key: InstrumentKey, output: Tone.InputNode, opt
   return {
     ...inst,
     sendInput: chain.input,
+    setPluginParam: (pluginId, paramId, value, time) => chain.setPluginParam(pluginId, paramId, value, time) || (inst.setPluginParam?.(pluginId, paramId, value, time) ?? false),
     ready: Promise.all([inst.ready, chain.ready]),
     dispose: () => {
       inst.dispose();

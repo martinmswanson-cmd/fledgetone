@@ -1,7 +1,7 @@
 import { useEffect, useReducer } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam, Track } from '../../store/timelineTypes';
-import { AUTOMATION, laneOf, laneValueAt } from '../../audio/automation';
+import { specOf, laneOf, laneValueAt } from '../../audio/automation';
 
 /** How often a control following a lane catches up while playing (ms): smooth enough to watch, no per-frame renders. */
 const FOLLOW_MS = 125;
@@ -18,7 +18,7 @@ export function useAutomatedValue(track: Track, param: AutomationParam): number 
 
   useEffect(() => {
     if (!active) return;
-    const { toReal } = AUTOMATION[param];
+    const { toReal } = specOf(param);
     const readNow = () => toReal(laneValueAt(active, useTimelineStore.getState().playheadPosition)!);
     let last = readNow();
     let timer = 0;
@@ -45,7 +45,7 @@ export function useAutomatedValue(track: Track, param: AutomationParam): number 
   }, [active, param]);
 
   // Read at render, so it's right whatever made the component render
-  return active ? AUTOMATION[param].toReal(laneValueAt(active, useTimelineStore.getState().playheadPosition)!) : null;
+  return active ? specOf(param).toReal(laneValueAt(active, useTimelineStore.getState().playheadPosition)!) : null;
 }
 
 /** Tooltip of a control an automation lane drives. */

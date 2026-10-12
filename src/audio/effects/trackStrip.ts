@@ -1,12 +1,13 @@
 import * as Tone from 'tone';
 import type { AutomationParam, GateRate, PumpTrigger, Track } from '../../store/timelineTypes';
 import { GATE_TICKS } from '../../store/timelineTypes';
-import { activeLanes, AUTOMATION } from '../automation';
+import { activeLanes, parseParam, specOf } from '../automation';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { BusEffects } from './busEffects';
 import { createEcho, createReverb, type EchoUnit, type ReverbUnit } from './spaceFx';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
 import {
+  atControlTime,
   createLightChorus,
   createLightDistortion,
   createLightEq3,
@@ -106,6 +107,11 @@ export interface TrackStrip {
   setSends: (sends: ReadonlyArray<{ id: string; target: Tone.InputNode; level: number; pre: boolean }>, muted: boolean) => void;
   /** A send's level param, for its automation lane (null if it has no such send). */
   sendTarget: (returnId: string) => AutomationTarget | null;
+  /**
+   * Where lanes of the track's plugin parameters go: `set` a parameter (0 to 1 of its range) at a
+   * time. Until it's given (or while the plugin is loading) those lanes wait.
+   */
+  setPluginParams: (set: ((pluginId: string, paramId: string, value: number, time: number) => boolean) | null) => void;
   dispose: () => void;
 }
 
@@ -294,6 +300,19 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   /** Settings lanes own, as of the last apply(). */
   let owned = new Set<AutomationParam>();
   let version = 0;
+  /**
+   * Lanes of settings that aren't a single native param (an insert's settings, a plugin's
+   * parameters), by lane: the scheduler writes each into a writer of no param of its own, and on
+   * every tick of the clock (20 a second live, every render block in an export) the value due next
+   * is handed on. `value` is the last one handed on (null: none yet). See controlTick.
+   */
+  const controls = new Map<AutomationParam, { writer: ParamWriter; value: number | null; apply: (v: number, at: number, ramp: number) => boolean }>();
+  /** The track's effect settings as last applied, before lanes override any (see effective). */
+  let baseFx: Track['fx'] | null = null;
+  /** The track as last applied. */
+  let lastTrack: Track | null = null;
+  let pluginSink: ((pluginId: string, paramId: string, value: number, time: number) => boolean) | null = null;
+  let controlListening = false;
   /** Until this (Tone) time the fader and the Volume lane's gain are trading places: leave the fader be. */
   let handoverUntil = -Infinity;
   /** The Volume lane's gain is handing the level back and will be patched out. */
@@ -516,8 +535,124 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     );
   };
 
+  /** Effect settings with the lanes' values in place of the track's own, for the settings lanes own. */
+  const effective = (fx: Track['fx']): Track['fx'] => {
+    let out = fx;
+    for (const [param, c] of controls) {
+      if (c.value === null) continue;
+      const p = parseParam(param);
+      if (p.kind !== 'fx') continue;
+      const settings = (out[p.insert] ?? {}) as unknown as Record<string, unknown>;
+      if (settings[p.field] === c.value) continue;
+      if (out === fx) out = { ...fx };
+      (out as unknown as Record<string, unknown>)[p.insert] = { ...settings, [p.field]: c.value };
+    }
+    return out;
+  };
+
+  /** Hand an insert's settings (with the lanes' values) to it, scheduled at `at`. */
+  const applyInsert = (insert: keyof Track['fx'], at: number, ramp: number) => {
+    if (!baseFx) return;
+    const fx = effective(baseFx);
+    atControlTime(at, () => {
+      switch (insert) {
+        case 'distortion':
+          distortion?.setAmount(fx.distortion.amount, ramp);
+          break;
+        case 'compressor':
+          if (compressor && makeup) {
+            compressor.threshold.setValueAtTime(fx.compressor.threshold, Math.max(at, compressor.now()));
+            compressor.ratio.setValueAtTime(fx.compressor.ratio, Math.max(at, compressor.now()));
+            makeup.gain.setValueAtTime(Tone.dbToGain(fx.compressor.makeup), Math.max(at, makeup.now()));
+          }
+          break;
+        case 'chorus':
+          if (chorus) {
+            chorus.setWet(fx.chorus.mix, ramp);
+            chorus.setRate(fx.chorus.rate, ramp);
+            chorus.setDepth(fx.chorus.depth);
+          }
+          break;
+        case 'lofi':
+          lofi?.set(fx.lofi, ramp);
+          break;
+        case 'echo':
+          echoSettings = fx.echo;
+          echo?.set(fx.echo, tempo, ramp);
+          break;
+        case 'reverb':
+          reverb?.set(fx.reverb, ramp);
+          break;
+        case 'gate':
+          gateUnit?.setShape(fx.gate.depth, fx.gate.length);
+          break;
+        case 'pump':
+          pump?.setShape(fx.pump.depth, fx.pump.release / 1000);
+          break;
+      }
+    });
+  };
+
+  /** How far ahead of the clock a control's value is taken, and how long it glides there. */
+  const offline = typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext;
+  const CONTROL_STEP = offline ? 128 / raw.sampleRate : 0.05;
+  const controlTick = () => {
+    const t = input.context.currentTime;
+    const dirty = new Set<keyof Track['fx']>();
+    for (const [param, c] of controls) {
+      const v = c.writer.valueAt(t + CONTROL_STEP);
+      if (c.value !== null && Math.abs(v - c.value) <= 1e-6 * Math.max(1, Math.abs(v))) continue;
+      const p = parseParam(param);
+      if (p.kind === 'fx') {
+        c.value = v;
+        dirty.add(p.insert);
+      } else if (c.apply(v, t, CONTROL_STEP)) c.value = v;
+    }
+    for (const insert of dirty) applyInsert(insert, t, CONTROL_STEP);
+  };
+  const listenControls = () => {
+    const want = controls.size > 0;
+    if (want === controlListening) return;
+    controlListening = want;
+    if (want) input.context.on('tick', controlTick);
+    else input.context.off('tick', controlTick);
+  };
+  /** A param that isn't one: writing it does nothing, the writer just remembers what was written. */
+  const noParam = { setValueAtTime: () => noParam, linearRampToValueAtTime: () => noParam, cancelScheduledValues: () => noParam } as unknown as AudioParam;
+
+  /** Keep a control for each owned lane of an insert setting or a plugin parameter (see controls). */
+  const syncControls = (track: Track) => {
+    let changed = false;
+    for (const param of owned) {
+      const p = parseParam(param);
+      if (p.kind !== 'fx' && p.kind !== 'plugin') continue;
+      if (p.kind === 'plugin' && !pluginSink) continue;
+      if (controls.has(param)) continue;
+      const initial = p.kind === 'fx' ? specOf(param).trackValue(track) : specOf(param, track).trackValue(track);
+      const apply = p.kind === 'plugin' ? (v: number, at: number) => pluginSink?.(p.pluginId, p.paramId, v, at) ?? false : () => true;
+      controls.set(param, { writer: createParamWriter(noParam, { raw, now, initial }), value: null, apply });
+      changed = true;
+    }
+    for (const param of [...controls.keys()]) {
+      if (owned.has(param)) continue;
+      controls.delete(param);
+      changed = true;
+    }
+    if (changed) version++;
+    listenControls();
+  };
+
   return {
     input,
+    setPluginParams: (set) => {
+      if (set === pluginSink) return;
+      pluginSink = set;
+      for (const param of [...controls.keys()]) if (parseParam(param).kind === 'plugin') controls.delete(param);
+      version++;
+      // The plugin lanes the track already has go to the new plugins
+      if (lastTrack) syncControls(lastTrack);
+      listenControls();
+    },
     setSends: (list, muted) => {
       const wanted = new Set(list.map((x) => x.id));
       for (const [id, send] of sends) {
@@ -527,6 +662,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         const gone = send.gain;
         sends.delete(id);
         window.setTimeout(() => gone.dispose(), 120);
+        version++;
       }
       for (const want of list) {
         let send = sends.get(want.id);
@@ -543,6 +679,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
           gain.connect(want.target);
           send = { gain, writer: writer(gain.gain, 0), target: want.target, pre: want.pre };
           sends.set(want.id, send);
+          version++;
         }
         if (!owned.has(`send:${want.id}` as AutomationParam)) send.writer.set(want.pre && muted ? 0 : Math.max(0, Math.min(1, want.level)), 0.02);
       }
@@ -568,10 +705,22 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       // at its input, so a bus at 0 dB, centred, passes its tracks through at the level they had
       const busMakeup = INSTRUMENTS[track.instrumentKey]?.kind === 'bus' || INSTRUMENTS[track.instrumentKey]?.kind === 'return' ? Math.SQRT2 : 1;
       if (input.gain.value !== busMakeup) input.gain.value = busMakeup;
-      const { fx, eq: bands } = track;
+      const { eq: bands } = track;
       const muted = opts.muteOverride ?? track.isMuted;
-      // A Filter lane only counts while the Filter is on
-      owned = new Set(activeLanes(track).map((l) => l.param).filter((p) => !AUTOMATION[p].filter || fx.filter?.on));
+      // A lane of an insert's setting only counts while the insert is on
+      owned = new Set(
+        activeLanes(track)
+          .map((l) => l.param)
+          .filter((p) => {
+            const insert = specOf(p).insert;
+            return !insert || (track.fx[insert] as { on?: boolean } | undefined)?.on;
+          })
+      );
+      baseFx = track.fx;
+      lastTrack = track;
+      syncControls(track);
+      // The settings lanes drive, at the lanes' values
+      const fx = effective(track.fx);
       /** Inserts switched off: disposed once they're patched out (see rewire). */
       const retired: Array<{ dispose: () => unknown }> = [];
 
@@ -815,9 +964,18 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         case 'eqHigh':
           return eq ? [{ writer: eq.high, map: gain }] : null;
       }
+      const p = parseParam(param);
+      if (p.kind === 'send') {
+        const target = sends.get(p.returnId);
+        return target ? [{ writer: target.writer, map: (v: number) => Math.max(0, Math.min(1, v)) }] : null;
+      }
+      const control = controls.get(param);
+      return control ? [{ writer: control.writer, map: same }] : null;
     },
     automationVersion: () => version,
     dispose: () => {
+      controls.clear();
+      listenControls();
       clearTimeout(retireTimer);
       clearTimeout(tidyTimer);
       gates.forEach((g) => g.gain.disconnect());

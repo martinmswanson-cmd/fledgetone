@@ -41,7 +41,8 @@ test('sustain pedal, mod wheel, all notes off, pitch bend; other messages are ig
   near(decodeMidi([0xe0, 0x7f, 0x7f]).cents, PITCH_BEND_RANGE_CENTS * (8191 / 8192));
   near(decodeMidi([0xe0, 0x00, 0x00]).cents, -PITCH_BEND_RANGE_CENTS);
   assert.deepEqual(decodeMidi([0xb0, 1, 127]), { kind: 'mod', value: 1 });
-  assert.equal(decodeMidi([0xb0, 7, 64]), null); // channel volume
+  assert.deepEqual(decodeMidi([0xb0, 7, 127]), { kind: 'cc', cc: 7, value: 1 }); // any other knob, for MIDI learn
+  assert.equal(decodeMidi([0xb0, 121, 0]), null); // channel mode messages aren't knobs
   assert.equal(decodeMidi([0xc0, 5]), null); // program change
   assert.equal(decodeMidi([0xd0, 5]), null); // aftertouch
   assert.equal(decodeMidi([0xf8]), null); // clock

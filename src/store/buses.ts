@@ -104,17 +104,32 @@ export function busFirst<T extends RouteTrack>(tracks: readonly T[]): T[] {
   return [...tracks].sort((a, b) => rank(a) - rank(b) || depth(a) - depth(b));
 }
 
-/** Drop sends to returns that are gone (and a return's own). The same array when nothing changes. */
-export function tidySends<T extends RouteTrack & Pick<Track, 'sends'>>(tracks: T[]): T[] {
+/**
+ * Drop sends to returns that are gone (and a return's own), and the automation lanes of those
+ * sends. The same array when nothing changes.
+ */
+export function tidySends<T extends RouteTrack & Pick<Track, 'sends' | 'automation'>>(tracks: T[]): T[] {
   let changed = false;
+  const returns = new Set(tracks.filter(isReturn).map((t) => t.id));
   const out = tracks.map((t) => {
-    if (!t.sends) return t;
-    const kept = liveSends(t, tracks);
-    if (kept.length === t.sends.length && t.sends.length) return t;
-    changed = true;
-    if (kept.length) return { ...t, sends: kept };
-    const { sends: _drop, ...rest } = t;
-    return rest as T;
+    let next = t;
+    const lanes = t.automation?.filter((l) => !l.param.startsWith('send:') || (returns.has(l.param.slice(5)) && l.param.slice(5) !== t.id));
+    if (lanes && lanes.length !== t.automation!.length) {
+      next = { ...next, automation: lanes };
+      if (!lanes.length) delete next.automation;
+    }
+    if (t.sends) {
+      const kept = liveSends(t, tracks);
+      if (kept.length !== t.sends.length || !t.sends.length) {
+        if (kept.length) next = { ...next, sends: kept };
+        else {
+          const { sends: _drop, ...rest } = next;
+          next = rest as T;
+        }
+      }
+    }
+    if (next !== t) changed = true;
+    return next;
   });
   return changed ? out : tracks;
 }

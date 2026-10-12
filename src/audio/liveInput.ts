@@ -11,6 +11,7 @@ import { setMetronomeOn, setMetronomeVolume } from './metronome';
 import { useMidiStore, ALL_INPUTS, midiConnectedBefore } from '../store/midiStore';
 import type { MidiInputInfo } from '../store/midiStore';
 import { useTimelineStore } from '../store/timelineStore';
+import { handleMidiCc } from '../store/midiLearn';
 import type { Track } from '../store/timelineTypes';
 import { isSliderKey, isTextEntry } from '../components/keyboard';
 
@@ -150,6 +151,8 @@ function describe(message: MidiMessage): string {
       return `mod wheel ${Math.round(message.value * 100)}%`;
     case 'allNotesOff':
       return 'all notes off';
+    case 'cc':
+      return `CC ${message.cc} ${Math.round(message.value * 127)}`;
   }
 }
 
@@ -175,7 +178,9 @@ function onMidiMessage(this: MIDIInput, e: MIDIMessageEvent): void {
   if (!message) return;
   // Heard time first: the event's own stamp says when the key went down
   const heard = heardTime(e.timeStamp);
-  playMidi(message, heard);
+  // A knob or fader: MIDI learn, mapped settings, automation writing
+  if (message.kind === 'cc') handleMidiCc(message.cc, message.value);
+  else playMidi(message, heard);
   useMidiStore.getState().noteActivity(describe(message));
 }
 

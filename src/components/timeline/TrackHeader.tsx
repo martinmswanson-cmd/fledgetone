@@ -1,9 +1,10 @@
 import React from 'react';
 import { useUiStore } from '../../store/uiStore';
+import { useMidiLearn } from '../../store/midiLearn';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { AutomationParam, Track } from '../../store/timelineTypes';
-import { AUTOMATION_PARAMS, snapBar } from '../../store/timelineTypes';
+import { snapBar } from '../../store/timelineTypes';
 import { Plug, Plus, Sliders, Loader2, Spline } from 'lucide-react';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
@@ -11,8 +12,9 @@ import type { TrackMenuState } from './TrackMenu';
 import { UndoableRange } from '../UndoableRange';
 import { INSTRUMENTS, isAudioKind } from '../../audio/instrumentCatalog';
 import { audibleIds, isBus, isMixTrack, isReturn } from '../../store/buses';
-import { retryInstrumentDownload } from '../../audio/liveTracks';
-import { activeLanes, AUTOMATION, formatPan, laneOf } from '../../audio/automation';
+import { onPluginParams, retryInstrumentDownload } from '../../audio/liveTracks';
+import { activeLanes, automatableParams, formatPan, laneOf, pluginParamInfo, specOf } from '../../audio/automation';
+import { readWamParams } from '../../audio/wamHost';
 import { AUTOMATED_TIP, useAutomatedValue } from './automationHooks';
 import { AutoBadge } from './AutoBadge';
 import { FreezeButton } from './FreezeButton';
@@ -99,7 +101,7 @@ const PanRow: React.FC<{ track: Track }> = ({ track }) => {
 /** The lane's value at the playhead (or the track's own, with no points): the only part that follows playback. */
 const AutomationReadout: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
   const automated = useAutomatedValue(track, param);
-  const spec = AUTOMATION[param];
+  const spec = specOf(param, track);
   return (
     <span
       className={`shrink-0 text-right tabular-nums ${automated !== null ? 'text-amber-200' : 'text-forge-text'}`}
@@ -111,33 +113,115 @@ const AutomationReadout: React.FC<{ track: Track; param: AutomationParam }> = ({
 };
 
 /** In automation view, the rows under the name pick the lane shown and read its value at the playhead. */
+/** MIDI learn for the lane's setting: click, then move a knob on the controller. Shows the knob once mapped (right-click forgets it). */
+const MidiLearnButton: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
+  const learning = useMidiLearn((m) => m.learning);
+  const waiting = learning?.trackId === track.id && learning.param === param;
+  const mapped = track.midiMap?.find((m) => m.param === param);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        useMidiLearn.getState().setLearning(waiting ? null : { trackId: track.id, param });
+      }}
+      onContextMenu={(e) => {
+        if (!mapped) return;
+        e.preventDefault();
+        e.stopPropagation();
+        useTimelineStore.getState().unmapMidi(track.id, mapped.cc);
+      }}
+      className={`shrink-0 h-5 px-1 rounded border text-[9px] font-mono ${
+        waiting ? 'border-amber-400 bg-amber-500/25 text-amber-100 animate-pulse' : mapped ? 'border-cyan-500/60 bg-cyan-500/15 text-cyan-200' : 'border-forge-border text-forge-muted hover:text-forge-text'
+      }`}
+      title={
+        waiting
+          ? 'Move a knob or fader on your MIDI controller now (click to cancel)'
+          : mapped
+            ? `MIDI CC ${mapped.cc} moves this setting. Click to learn another knob, right-click to forget it`
+            : 'MIDI learn: click, then move a knob or fader on your MIDI controller'
+      }
+      aria-label={`MIDI learn for ${track.name}`}
+      aria-pressed={waiting}
+    >
+      {waiting ? '…' : mapped ? `CC${mapped.cc}` : 'MIDI'}
+    </button>
+  );
+};
+
+/** Write: moves of mapped knobs while playing are written into their lanes. */
+const WriteToggle: React.FC = () => {
+  const write = useMidiLearn((m) => m.write);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        useMidiLearn.getState().setWrite(!write);
+      }}
+      className={`shrink-0 w-5 h-5 rounded border text-[9px] font-mono font-bold ${write ? 'border-red-500 bg-red-500/25 text-red-200' : 'border-forge-border text-forge-muted hover:text-forge-text'}`}
+      title={write ? 'Write is on: knob moves while playing are written into their lanes (click to stop)' : 'Write automation: while playing, moving a mapped MIDI knob writes its lane'}
+      aria-pressed={write}
+      aria-label="Write automation from MIDI knobs"
+    >
+      W
+    </button>
+  );
+};
+
 const AutomationRows: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
-  const spec = AUTOMATION[param];
+  const tracks = useTimelineStore((s) => s.tracks);
+  // Re-read when the track's plugins report their parameters
+  const [, rerender] = React.useReducer((n: number) => n + 1, 0);
+  React.useEffect(() => onPluginParams(rerender), []);
+  const spec = specOf(param, track, tracks);
   const count = laneOf(track, param)?.points.length ?? 0;
-  const filterOff = !!spec.filter && !track.fx.filter?.on;
+  const insertOff = !!spec.insert && !(track.fx[spec.insert] as { on?: boolean } | undefined)?.on;
   const withPoints = new Set(activeLanes(track).map((l) => l.param));
+  const options = automatableParams(track, tracks);
+  // A lane with points whose setting is no longer offered (a deleted return, an unread plugin) still shows
+  for (const l of track.automation ?? []) if (!options.some((o) => o.param === l.param)) options.push({ param: l.param, group: 'Other' });
+  if (!options.some((o) => o.param === param)) options.push({ param, group: 'Other' });
+  const groups = [...new Set(options.map((o) => o.group))];
+  const readPlugins = () => {
+    for (const p of [track.plugin, ...(track.pluginFx ?? [])]) if (p) void readWamParams(p.id, pluginParamInfo).then((n) => n && rerender());
+  };
   return (
     <>
       <label className="flex items-center gap-2 text-[10px] font-mono text-forge-muted" onClick={stop}>
         <span className="w-6">LANE</span>
         <select
           value={param}
+          onFocus={readPlugins}
           onChange={(e) => useTimelineStore.getState().showAutomation(track.id, true, e.target.value as AutomationParam)}
           className="flex-1 min-w-0 h-5 bg-forge-bg border border-forge-border rounded px-1 text-[10px] font-mono text-forge-text cursor-pointer focus:border-amber-400 focus:outline-none"
           aria-label={`${track.name} automation lane`}
-          title="The setting this lane automates (● has points)"
+          title="The setting this lane automates (● has points): the track's own, a send, any effect's setting or a plugin's parameter"
         >
-          {AUTOMATION_PARAMS.map((p) => (
-            <option key={p} value={p}>
-              {withPoints.has(p) ? '● ' : ''}
-              {AUTOMATION[p].label}
-            </option>
+          {groups.map((g) => (
+            <optgroup key={g} label={g}>
+              {options
+                .filter((o) => o.group === g)
+                .map(({ param: p }) => {
+                  const sp = specOf(p, track, tracks);
+                  const off = sp.insert && sp.insert !== 'filter' && !(track.fx[sp.insert] as { on?: boolean } | undefined)?.on;
+                  return (
+                    <option key={p} value={p}>
+                      {withPoints.has(p) ? '● ' : ''}
+                      {sp.label}
+                      {off ? ' (off)' : ''}
+                    </option>
+                  );
+                })}
+            </optgroup>
           ))}
         </select>
+        <MidiLearnButton track={track} param={param} />
+        <WriteToggle />
       </label>
       <div className="flex items-center gap-2 text-[10px] font-mono text-forge-muted" onClick={stop}>
-        <span className="flex-1 min-w-0 truncate" title={filterOff ? 'Filter lanes only sound while the Filter insert is on' : undefined}>
-          {filterOff ? 'Filter is off' : count ? `${count} point${count === 1 ? '' : 's'}` : 'No points yet'}
+        <span className="flex-1 min-w-0 truncate" title={insertOff ? 'This lane only sounds while its effect is on (drawing a point switches it on)' : undefined}>
+          {insertOff ? 'Effect is off' : count ? `${count} point${count === 1 ? '' : 's'}` : 'No points yet'}
         </span>
         <AutomationReadout track={track} param={param} />
       </div>

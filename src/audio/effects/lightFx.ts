@@ -21,10 +21,29 @@ import { BIQUAD_TYPE, biquadQ, hasGain } from '../peq';
  * set here: an AudioParam's .value doesn't show scheduled values until the context renders (an
  * offline export sets these up before it starts).
  */
+/**
+ * While automation applies a setting (see the track strip's controls), the time it applies it for:
+ * in an export that is ahead of the render, which waits while the page schedules. Else -Infinity,
+ * and changes happen now.
+ */
+let controlAt = -Infinity;
+/** Run `fn` with the effects' changes scheduled at `time` (or now, if that is past). */
+export function atControlTime<T>(time: number, fn: () => T): T {
+  const was = controlAt;
+  controlAt = time;
+  try {
+    return fn();
+  } finally {
+    controlAt = was;
+  }
+}
+/** When a change made now takes effect on `raw`'s clock. */
+export const writeTime = (raw: BaseAudioContext): number => Math.max(raw.currentTime, controlAt);
+
 function paramSetter(raw: BaseAudioContext): (param: AudioParam, value: number, ramp: number) => void {
   const current = new Map<AudioParam, number>();
   return (param, value, ramp) => {
-    const at = raw.currentTime;
+    const at = writeTime(raw);
     param.cancelScheduledValues(at);
     const from = current.get(param);
     if (ramp > 0 && from !== undefined && from !== value) {
@@ -148,7 +167,7 @@ export function createLightDistortion(amount: number): LightDistortion {
     if (value === applied) return;
     applied = value;
     const next = settings(value);
-    const now = raw.currentTime;
+    const now = writeTime(raw);
     for (const [param, target] of [[drive.gain, next.drive], [tone.frequency, next.tone], [makeup.gain, next.makeup]] as const) {
       param.cancelScheduledValues(now);
       if (ramp > 0) {
@@ -243,13 +262,16 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
     const deviation = centre * depth;
     const min = Math.max(centre - deviation, 0);
     const max = centre + deviation;
+    const at = writeTime(raw);
     for (const s of [left, right]) {
-      s.delay.delayTime.value = (min + max) / 2;
-      s.swing.gain.value = (max - min) / 2;
+      s.delay.delayTime.setValueAtTime((min + max) / 2, at);
+      s.swing.gain.setValueAtTime((max - min) / 2, at);
     }
   };
   const ramped = (param: Tone.Param<'gain'>, value: number, ramp: number) => {
-    if (ramp > 0) param.linearRampTo(value, ramp);
+    const at = controlAt > -Infinity ? writeTime(raw) : undefined;
+    if (ramp > 0) param.linearRampTo(value, ramp, at);
+    else if (at !== undefined) param.setValueAtTime(value, at);
     else param.value = value;
   };
   const setWet = (mix: number, ramp: number) => {
@@ -267,7 +289,7 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
     setRate: (hz, ramp) => {
       if (hz === rate) return;
       for (const { osc } of [left, right]) {
-        const at = raw.currentTime;
+        const at = writeTime(raw);
         osc.frequency.cancelScheduledValues(at);
         if (ramp > 0) {
           osc.frequency.setValueAtTime(rate, at);

@@ -6,7 +6,8 @@ import type { PumpClock, TrackStrip } from './effects/trackStrip';
 import { createAutomationSchedule } from './automationSchedule';
 import type { AutomationSchedule } from './automationSchedule';
 import { createInstrument, safely, trackInstrumentOptions } from './instruments';
-import { pluginEpoch } from './wamHost';
+import { pluginEpoch, readWamParams } from './wamHost';
+import { pluginParamInfo } from './automation';
 import { isDrumKind } from './instrumentCatalog';
 import { barToTicks, getLiveTempo } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
@@ -75,9 +76,25 @@ const sampleKey = (track: Track) => {
 function watchDownload(lt: LiveTrack): void {
   const instrument = lt.instrument;
   lt.failed = false;
-  instrument.ready.catch(() => {
-    if (lt.instrument === instrument) lt.failed = true;
-  });
+  // Lanes of its plugins' parameters go to its plugins
+  lt.strip.setPluginParams(instrument.setPluginParam ?? null);
+  instrument.ready.then(
+    () => {
+      // Its plugins' parameters, for the lane picker
+      const plugins = [lt.applied?.plugin, ...(lt.applied?.pluginFx ?? [])].filter((p) => !!p);
+      if (lt.instrument === instrument && plugins.length) void Promise.all(plugins.map((p) => readWamParams(p!.id, pluginParamInfo))).then(() => paramListeners.forEach((l) => l()));
+    },
+    () => {
+      if (lt.instrument === instrument) lt.failed = true;
+    }
+  );
+}
+
+const paramListeners = new Set<() => void>();
+/** Told when plugins' parameters have been read (see pluginParamInfo). */
+export function onPluginParams(listener: () => void): () => void {
+  paramListeners.add(listener);
+  return () => paramListeners.delete(listener);
 }
 
 /** The gain curve the tracks duck along (see duck.ts), and the tracks it was last applied with. */

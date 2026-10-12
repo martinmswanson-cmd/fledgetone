@@ -15,7 +15,9 @@ export type MidiMessage =
   | { kind: 'pitchBend'; cents: number }
   /** The mod wheel (CC 1), 0 to 1 */
   | { kind: 'mod'; value: number }
-  | { kind: 'allNotesOff' };
+  | { kind: 'allNotesOff' }
+  /** Any other controller (a knob, a fader): its number and value, 0 to 1 */
+  | { kind: 'cc'; cc: number; value: number };
 
 /** How far the bend wheel moves the pitch at full travel: two semitones, the common default. */
 export const PITCH_BEND_RANGE_CENTS = 200;
@@ -31,7 +33,7 @@ const CC_ALL_NOTES_OFF = 123;
 
 /**
  * Read one message from a MIDI input (the browser hands over whole messages, running status
- * resolved). Returns null for anything the app doesn't act on: other controllers, aftertouch,
+ * resolved). Returns null for anything the app doesn't act on: channel mode messages, aftertouch,
  * program changes, clock. A note-on with velocity 0 is a note-off, as the MIDI spec allows.
  */
 export function decodeMidi(data: ArrayLike<number>): MidiMessage | null {
@@ -48,7 +50,8 @@ export function decodeMidi(data: ArrayLike<number>): MidiMessage | null {
       if (d1 === CC_SUSTAIN) return { kind: 'sustain', down: d2 >= 64 };
       if (d1 === CC_MOD_WHEEL) return { kind: 'mod', value: d2 / 127 };
       if (d1 === CC_ALL_NOTES_OFF || d1 === CC_ALL_SOUND_OFF) return { kind: 'allNotesOff' };
-      return null;
+      // (Channel mode messages, 120 and up, aren't knobs)
+      return d1 < 120 ? { kind: 'cc', cc: d1, value: d2 / 127 } : null;
     case PITCH_BEND: {
       // 14 bits, 8192 is the centre
       const value = d1 | (d2 << 7);

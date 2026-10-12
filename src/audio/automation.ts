@@ -1,5 +1,15 @@
-import type { AutomationLane, AutomationParam, AutomationPoint, Track } from '../store/timelineTypes';
+import type { AutomationLane, AutomationParam, AutomationPoint, BuiltinParam, FxAutomationKey, Track, TrackFx } from '../store/timelineTypes';
 import {
+  AUTOMATION_PARAMS,
+  ECHO_FEEDBACK_MAX,
+  ECHO_TONE_MAX,
+  ECHO_TONE_MIN,
+  FX_AUTOMATION_KEYS,
+  LOFI_TONE_MAX,
+  LOFI_TONE_MIN,
+  PUMP_RELEASE_MAX,
+  PUMP_RELEASE_MIN,
+  REVERB_PREDELAY_MAX,
   defaultTrackFx,
   FILTER_CUTOFF_MAX,
   FILTER_CUTOFF_MIN,
@@ -68,9 +78,11 @@ export interface AutomationSpec {
   rampRange: (track: Track) => [low: number, high: number];
   /** It acts on the Filter insert, so it only sounds while that is on */
   filter?: boolean;
+  /** It acts on this insert, so it only sounds while that is on (drawing a lane switches it on) */
+  insert?: keyof TrackFx;
 }
 
-export const AUTOMATION: Record<AutomationParam, AutomationSpec> = {
+export const AUTOMATION: Record<BuiltinParam, AutomationSpec> = {
   volume: {
     label: 'Volume',
     toReal: volumeToReal,
@@ -113,6 +125,7 @@ export const AUTOMATION: Record<AutomationParam, AutomationSpec> = {
     // The classic build-up sweep: from a muffled 200 Hz to fully open
     rampRange: () => [200, FILTER_CUTOFF_MAX],
     filter: true,
+    insert: 'filter',
   },
   filterResonance: {
     label: 'Filter Resonance',
@@ -126,6 +139,7 @@ export const AUTOMATION: Record<AutomationParam, AutomationSpec> = {
     ],
     rampRange: () => [Math.SQRT1_2, FILTER_RESONANCE_MAX],
     filter: true,
+    insert: 'filter',
   },
   reverbSend: {
     label: 'Reverb Send',
@@ -173,6 +187,158 @@ function eqSpec(label: string, band: 'low' | 'mid' | 'high'): AutomationSpec {
     // A band killed, then back to flat (the DJ-style bass swap before a drop)
     rampRange: () => [EQ_MIN_DB, 0],
   };
+}
+
+// ---------- Sends, insert settings and plugin parameters ----------
+
+const linear = (lo: number, hi: number) => ({
+  toReal: (n: number) => lo + (hi - lo) * clamp01(n),
+  toNorm: (v: number) => clamp01((v - lo) / (hi - lo)),
+});
+const percentScale = (lo = 0, hi = 1) => [
+  { value: hi, label: formatPercent(hi) },
+  { value: (lo + hi) / 2, label: formatPercent((lo + hi) / 2) },
+  { value: lo, label: formatPercent(lo) },
+];
+const hzScale = (marks: number[]) => marks.map((v) => ({ value: v, label: v >= 1000 ? `${v / 1000}k` : String(v) }));
+
+interface FxField {
+  label: string;
+  scale: { toReal: (n: number) => number; toNorm: (v: number) => number };
+  format: (v: number) => string;
+  marks: ReadonlyArray<{ value: number; label: string }>;
+  ramp: [number, number];
+}
+const percentField = (label: string, hi = 1): FxField => ({ label, scale: linear(0, hi), format: formatPercent, marks: percentScale(0, hi), ramp: [0, hi] });
+
+/** Each insert setting a lane can drive: its name, range and scale. */
+export const FX_AUTOMATION: Record<FxAutomationKey, FxField> = {
+  'distortion.amount': percentField('Distortion Drive'),
+  'compressor.threshold': { label: 'Compressor Threshold', scale: linear(-60, 0), format: (v) => `${v.toFixed(1)} dB`, marks: [{ value: 0, label: '0 dB' }, { value: -30, label: '-30' }, { value: -60, label: '-60' }], ramp: [0, -40] },
+  'compressor.ratio': { label: 'Compressor Ratio', scale: logScale(1, 20), format: (v) => `${v.toFixed(1)}:1`, marks: [{ value: 20, label: '20:1' }, { value: 4, label: '4:1' }, { value: 1, label: '1:1' }], ramp: [1, 20] },
+  'compressor.makeup': { label: 'Compressor Makeup', scale: linear(0, 18), format: (v) => `+${v.toFixed(1)} dB`, marks: [{ value: 18, label: '+18' }, { value: 9, label: '+9' }, { value: 0, label: '0 dB' }], ramp: [0, 12] },
+  'chorus.rate': { label: 'Chorus Rate', scale: logScale(0.1, 8), format: (v) => `${v.toFixed(2)} Hz`, marks: [{ value: 8, label: '8 Hz' }, { value: 1, label: '1 Hz' }, { value: 0.1, label: '0.1' }], ramp: [0.1, 8] },
+  'chorus.depth': percentField('Chorus Depth'),
+  'chorus.mix': percentField('Chorus Mix'),
+  'lofi.tone': { label: 'Lo-fi Tone', scale: logScale(LOFI_TONE_MIN, LOFI_TONE_MAX), format: formatHz, marks: hzScale([10000, 3000, 1000]), ramp: [LOFI_TONE_MIN, LOFI_TONE_MAX] },
+  'lofi.wow': percentField('Lo-fi Wow'),
+  'lofi.mix': percentField('Lo-fi Mix'),
+  'echo.feedback': percentField('Delay Feedback', ECHO_FEEDBACK_MAX),
+  'echo.tone': { label: 'Delay Tone', scale: logScale(ECHO_TONE_MIN, ECHO_TONE_MAX), format: formatHz, marks: hzScale([10000, 2000, 500]), ramp: [ECHO_TONE_MIN, ECHO_TONE_MAX] },
+  'echo.mix': percentField('Delay Mix'),
+  'reverb.preDelay': { label: 'Reverb Pre-delay', scale: linear(0, REVERB_PREDELAY_MAX), format: (v) => `${Math.round(v)} ms`, marks: [{ value: 200, label: '200' }, { value: 100, label: '100' }, { value: 0, label: '0 ms' }], ramp: [0, 120] },
+  'reverb.tone': { label: 'Reverb Tone', scale: logScale(ECHO_TONE_MIN, ECHO_TONE_MAX), format: formatHz, marks: hzScale([10000, 2000, 500]), ramp: [ECHO_TONE_MIN, ECHO_TONE_MAX] },
+  'reverb.mix': percentField('Reverb Mix'),
+  'gate.depth': percentField('Gate Depth'),
+  'gate.length': { label: 'Gate Length', scale: linear(0.1, 0.95), format: formatPercent, marks: percentScale(0.1, 0.95), ramp: [0.1, 0.95] },
+  'pump.depth': percentField('Pump Depth'),
+  'pump.release': { label: 'Pump Release', scale: linear(PUMP_RELEASE_MIN, PUMP_RELEASE_MAX), format: (v) => `${Math.round(v)} ms`, marks: [{ value: 600, label: '600' }, { value: 300, label: '300' }, { value: 50, label: '50 ms' }], ramp: [PUMP_RELEASE_MIN, PUMP_RELEASE_MAX] },
+};
+
+/** What a plugin says about one of its parameters (see wamHost.ts), for a lane's name and readout. */
+export interface PluginParamInfo {
+  label: string;
+  minValue: number;
+  maxValue: number;
+  defaultValue: number;
+  /** Its value now (in its own units), as last read */
+  value?: number;
+}
+/** Plugin parameters as last read from the plugins, by `pluginId:paramId`. Filled in by the audio side. */
+export const pluginParamInfo = new Map<string, PluginParamInfo>();
+
+/** The parts of a `send:`, `fx:` or `plugin:` lane's name. */
+export function parseParam(param: AutomationParam):
+  | { kind: 'builtin'; key: BuiltinParam }
+  | { kind: 'send'; returnId: string }
+  | { kind: 'fx'; key: FxAutomationKey; insert: keyof TrackFx; field: string }
+  | { kind: 'plugin'; pluginId: string; paramId: string } {
+  if (param.startsWith('send:')) return { kind: 'send', returnId: param.slice(5) };
+  if (param.startsWith('fx:')) {
+    const key = param.slice(3) as FxAutomationKey;
+    const [insert, field] = key.split('.') as [keyof TrackFx, string];
+    return { kind: 'fx', key, insert, field };
+  }
+  if (param.startsWith('plugin:')) {
+    const rest = param.slice(7);
+    const i = rest.indexOf(':');
+    return { kind: 'plugin', pluginId: rest.slice(0, i), paramId: rest.slice(i + 1) };
+  }
+  return { kind: 'builtin', key: param as BuiltinParam };
+}
+
+const sendSpec = (returnId: string, name: string): AutomationSpec => ({
+  label: `Send → ${name}`,
+  toReal: clamp01,
+  toNorm: clamp01,
+  format: formatPercent,
+  trackValue: (t) => t.sends?.find((x) => x.to === returnId)?.level ?? 0,
+  scale: percentScale(),
+  rampRange: () => [0, 1],
+});
+
+/**
+ * How a lane's height means the setting's value, its name and readout, for any lane. `tracks`
+ * names a send's return; a plugin's name comes from `track`.
+ */
+export function specOf(param: AutomationParam, track?: Pick<Track, 'plugin' | 'pluginFx'>, tracks?: ReadonlyArray<Pick<Track, 'id' | 'name'>>): AutomationSpec {
+  const p = parseParam(param);
+  switch (p.kind) {
+    case 'builtin':
+      return AUTOMATION[p.key] ?? AUTOMATION.volume;
+    case 'send':
+      return sendSpec(p.returnId, tracks?.find((t) => t.id === p.returnId)?.name ?? 'return');
+    case 'fx': {
+      const f = FX_AUTOMATION[p.key];
+      return {
+        label: f.label,
+        ...f.scale,
+        format: f.format,
+        trackValue: (t) => {
+          const settings = (t.fx[p.insert] ?? defaultTrackFx()[p.insert]) as unknown as Record<string, number>;
+          return settings[p.field];
+        },
+        scale: f.marks,
+        rampRange: () => f.ramp,
+        insert: p.insert,
+      };
+    }
+    case 'plugin': {
+      const info = pluginParamInfo.get(`${p.pluginId}:${p.paramId}`);
+      const plugin = [track?.plugin, ...(track?.pluginFx ?? [])].find((x) => x?.id === p.pluginId);
+      const lo = info?.minValue ?? 0;
+      const hi = info && info.maxValue > info.minValue ? info.maxValue : 1;
+      // The lane runs over the parameter's whole range; its value is shown in the parameter's units
+      return {
+        label: `${plugin?.name ?? 'Plugin'}: ${info?.label || p.paramId}`,
+        toReal: clamp01,
+        toNorm: clamp01,
+        format: (n) => {
+          const v = lo + (hi - lo) * clamp01(n);
+          return Math.abs(hi - lo) <= 1.0001 && lo === 0 ? formatPercent(v) : Math.abs(v) >= 100 ? Math.round(v).toString() : v.toFixed(2);
+        },
+        trackValue: () => (info?.value !== undefined ? clamp01((info.value - lo) / (hi - lo)) : info ? clamp01((info.defaultValue - lo) / (hi - lo)) : 0.5),
+        scale: [
+          { value: 1, label: 'max' },
+          { value: 0.5, label: 'mid' },
+          { value: 0, label: 'min' },
+        ],
+        rampRange: () => [0, 1],
+      };
+    }
+  }
+}
+
+/** Every lane a track could have: the fixed settings, its sends, its inserts' settings and (as far as read) its plugins' parameters. */
+export function automatableParams(track: Pick<Track, 'id' | 'sends' | 'plugin' | 'pluginFx'>, tracks: ReadonlyArray<Pick<Track, 'id' | 'name' | 'instrumentKey'>>): Array<{ param: AutomationParam; group: string }> {
+  const out: Array<{ param: AutomationParam; group: string }> = AUTOMATION_PARAMS.map((p) => ({ param: p, group: 'Track' }));
+  for (const r of tracks) if (r.instrumentKey === 'return' && r.id !== track.id) out.push({ param: `send:${r.id}`, group: 'Sends' });
+  for (const key of FX_AUTOMATION_KEYS) out.push({ param: `fx:${key}`, group: 'Effects' });
+  for (const plugin of [track.plugin, ...(track.pluginFx ?? [])]) {
+    if (!plugin) continue;
+    for (const key of pluginParamInfo.keys()) if (key.startsWith(`${plugin.id}:`)) out.push({ param: `plugin:${key}`, group: plugin.name });
+  }
+  return out;
 }
 
 // ---------- Reading a lane ----------

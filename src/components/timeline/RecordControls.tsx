@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Circle, KeyboardMusic, Triangle } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { ALL_INPUTS, useMidiStore } from '../../store/midiStore';
+import { useMidiLearn } from '../../store/midiLearn';
+import { specOf } from '../../audio/automation';
 import type { MidiActivity } from '../../store/midiStore';
 import { QUANTIZE_GRIDS } from '../../store/recording';
 import type { QuantizeGrid } from '../../store/recording';
@@ -307,6 +309,7 @@ const MidiPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null>; on
           those keys play notes instead of their usual jobs (the Audition Deck pads, L loop, O set Out); the rest still work.
         </p>
       </div>
+      <MidiMappings />
     </Popover>
   );
 };
@@ -363,6 +366,41 @@ export const RecordingMarker: React.FC = () => {
       aria-hidden
     >
       REC
+    </div>
+  );
+};
+
+/** The controller knobs mapped to settings (MIDI learn), each with a way to forget it, and Write. */
+const MidiMappings: React.FC = () => {
+  const tracks = useTimelineStore((s) => s.tracks);
+  const write = useMidiLearn((m) => m.write);
+  const mapped = tracks.flatMap((t) => (t.midiMap ?? []).map((m) => ({ track: t, ...m })));
+  return (
+    <div className="border-t border-forge-border pt-2 flex flex-col gap-1.5" aria-label="MIDI mappings">
+      <span className="text-forge-text font-semibold">Knobs and faders (MIDI learn)</span>
+      {mapped.length === 0 ? (
+        <p className="text-[11px] leading-snug">
+          Open a track's automation (its curve button), pick the setting in LANE, click MIDI beside it and move a knob: that knob then moves the setting.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+          {mapped.map(({ track, cc, param }) => (
+            <li key={`${track.id}-${cc}`} className="flex items-center gap-2 text-[11px]">
+              <span className="w-12 shrink-0 font-mono text-cyan-200">CC {cc}</span>
+              <span className="flex-1 min-w-0 truncate text-forge-text">
+                {track.name}: {specOf(param, track, tracks).label}
+              </span>
+              <button type="button" onClick={() => useTimelineStore.getState().unmapMidi(track.id, cc)} className="text-forge-muted hover:text-red-300" aria-label={`Forget CC ${cc}`} title="Forget this knob">
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <label className="flex items-center gap-2 text-forge-text" title="While the song plays, moving a mapped knob writes its setting's automation lane at the playhead">
+        <input type="checkbox" className="accent-red-500 cursor-pointer" checked={write} onChange={(e) => useMidiLearn.getState().setWrite(e.target.checked)} />
+        Write automation from knobs while playing
+      </label>
     </div>
   );
 };
