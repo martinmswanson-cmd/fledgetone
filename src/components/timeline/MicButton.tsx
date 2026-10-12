@@ -1,0 +1,89 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Mic, Square } from 'lucide-react';
+import { useTimelineStore } from '../../store/timelineStore';
+import { isAudioKind } from '../../audio/instrumentCatalog';
+import { startMic } from '../../audio/micRecorder';
+import type { MicSession } from '../../audio/micRecorder';
+import { encodeChannels } from '../../audio/exportWav';
+import { importSoundFile, SoundError } from '../../audio/soundLibrary';
+import { showToast } from './toastStore';
+
+let takeCount = 0;
+
+/**
+ * Record from the microphone (or the computer's audio input) onto an Audio track: click to start
+ * (playback starts with it, from the playhead), click again to stop. The take lands where it was
+ * played, on the selected Audio track or a new one.
+ */
+export const MicButton: React.FC = () => {
+  const [session, setSession] = useState<MicSession | null>(null);
+  const [busy, setBusy] = useState(false);
+  const meter = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!session) return;
+    let raf = 0;
+    const tick = () => {
+      if (meter.current) meter.current.style.transform = `scaleY(${Math.min(1, session.level() * 1.4)})`;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [session]);
+
+  const start = async () => {
+    try {
+      const s = await startMic();
+      setSession(s);
+      const st = useTimelineStore.getState();
+      if (!st.isPlaying) await st.togglePlay();
+    } catch (err) {
+      const msg = err instanceof DOMException && err.name === 'NotAllowedError' ? 'the browser was not allowed to use the microphone' : err instanceof Error ? err.message : String(err);
+      showToast(`Couldn't start recording: ${msg}`);
+    }
+  };
+
+  const stop = async () => {
+    if (!session) return;
+    const take = session.stop();
+    setSession(null);
+    const st = useTimelineStore.getState();
+    if (st.isPlaying) st.pause();
+    if (!take) return;
+    setBusy(true);
+    try {
+      const name = `Mic take ${++takeCount}`;
+      const wav = encodeChannels(take.channels, take.sampleRate, 24);
+      const sound = await importSoundFile(new Blob([wav], { type: 'audio/wav' }), `${name}.wav`);
+      const s = useTimelineStore.getState();
+      const selected = s.tracks.find((t) => t.id === s.selectedTrackId);
+      const target = selected && isAudioKind(selected.instrumentKey) ? selected.id : null;
+      const message = s.addAudioClips(target, Math.max(1, take.startBar), [sound]);
+      showToast(message ?? `Recorded ${name} (${(take.channels[0].length / take.sampleRate).toFixed(1)} s)`);
+    } catch (err) {
+      showToast(err instanceof SoundError ? err.message : `Couldn't keep the recording: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const recording = !!session;
+  return (
+    <button
+      type="button"
+      onClick={() => void (recording ? stop() : start())}
+      disabled={busy}
+      title={recording ? 'Stop recording (the take goes on the selected Audio track, or a new one)' : 'Record from the microphone: playback starts from the playhead, click again to stop'}
+      className={`h-8 px-2.5 flex items-center gap-1.5 rounded-md border text-[11px] font-bold transition ${recording ? 'border-red-400 bg-red-500/20 text-red-100' : 'border-forge-border text-forge-muted hover:text-forge-text'} disabled:opacity-50`}
+      aria-pressed={recording}
+    >
+      {recording ? <Square className="w-3.5 h-3.5 fill-current" /> : <Mic className="w-4 h-4" />}
+      {recording ? 'Stop' : 'Mic'}
+      {recording && (
+        <span className="relative w-1.5 h-4 rounded-sm bg-black/50 overflow-hidden" aria-hidden>
+          <span ref={meter} className="absolute inset-0 origin-bottom bg-emerald-400" style={{ transform: 'scaleY(0)' }} />
+        </span>
+      )}
+    </button>
+  );
+};

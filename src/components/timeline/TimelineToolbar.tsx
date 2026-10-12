@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { VideoButton } from '../video/VideoButton';
 import { MixerDialog } from './MixerDialog';
+import { MicButton } from './MicButton';
 import { GamePreview } from './GamePreview';
 import {
   Magnet,
@@ -301,6 +302,7 @@ export const TimelineToolbar: React.FC = () => {
       </label>
 
       <VideoButton />
+      <MicButton />
 
       <ToolButton id="btn-mixer" title="Mixer: every track's fader, meter, pan and sends side by side" active={mixerOpen} activeClass="bg-cyan-500/25 border-cyan-400 text-cyan-200" onClick={() => setMixerOpen(true)}>
         <SlidersVertical className="w-4 h-4" />
