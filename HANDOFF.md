@@ -1,6 +1,6 @@
 # Bo's Beatbox: handoff
 
-Read this first when picking the project up in a new session. (Updated after the game exports, video, sharing, chiptune and build & drop work.) It covers what the app is, how
+Read this first when picking the project up in a new session. (Updated after the big genre, instrument and tools batch: 105 instruments, 24 starters, Synth Designer, video scoring, Mixer, Game preview, mic recording, lag detection.) It covers what the app is, how
 the code is laid out, how to check changes (including sound), what's finished, and what's next.
 
 ## The app and who it's for
@@ -61,6 +61,12 @@ Run all five checks before every commit.
 | MP3 / OGG encoding (wasm-media-encoders), WAV loop chunk | `src/audio/encoders.ts`, `wavCues.ts` |
 | MP4 video (WebCodecs + mp4-muxer) | `src/audio/videoExport.ts` |
 | Share link (`#song=`), Share dialog, opening a link | `src/store/shareLink.ts`, `ShareDialog.tsx`, `src/components/SharedLinkOpener.tsx` |
+| Synth Designer (patch, presets, engine, panel) | `src/store/synthPatch.ts`, `src/audio/presets/designer.ts`, `src/components/inspector/SynthPanel.tsx` |
+| Recorded drum kits, extra drum rows (clap, toms, crash, ride) | `src/audio/presets/sampledKit.ts`, `kitExtras.ts`, `DRUM_NOTES` in `instruments.ts` |
+| Piano roll helpers (scales, chords, arp, strum, humanize) | `src/store/noteTools.ts` (unit tested) |
+| Reference video (lane, preview, export onto it) | `src/store/videoStore.ts`, `src/components/video/`, `footage` in `videoExport.ts` |
+| Mixer, Game preview, Mic | `src/components/timeline/MixerDialog.tsx`, `GamePreview.tsx`, `MicButton.tsx`, `src/audio/micRecorder.ts` |
+| Lag detection, Clear memory | `src/audio/perfMonitor.ts` (late notes counted in `notLate`), `src/components/PerfBadge.tsx` |
 | Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |
 | MIDI keyboard, recording, metronome | `midi.ts`, `recorder.ts`, `metronome.ts`, `src/store/recording.ts` |
@@ -155,10 +161,22 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 - **Build-up & drop** (ruler right-click): riser, snare roll, impact and markers in one undo step.
 - **Marker flags from the keyboard**: Tab, Enter, F2, Delete, arrows, Shift+F10.
 
+- **Big batch**: 66 more instruments from Musyng Kite (choir, pads, orchestra, world, rock guitars,
+  bells) and 6 recorded drum kits, levels measured; every kit has 11 rows. 16 more starters (24 in
+  4 groups). Piano roll SCALE / CHORD / TOOLS / GHOSTS and a STEPS mode for drums. Synth Designer.
+  Video scoring (session only, not saved). Reverb up to 12 s with one-click spaces. Mixer with
+  meters. Game preview (sections as states, layers, intensity). J / K / Shift+L. Magnetic clip
+  edges. Pump can follow any track. Mic recording. Lag detection with Clear memory.
+
 ## Ideas not started
 
 - A desktop app in Rust, once the web version peaks (the owner wants to wait).
 - Swap `mp4-muxer` for Mediabunny.
+- Crossfades between overlapping audio clips; time-stretching audio clips to the tempo.
+- Curved automation; track folders and colour groups.
+- More effects: a visual parametric EQ, multiband compression, bitcrusher, vocal tuning.
+- Game engine export: cue data for FMOD / Wwise / Unity / Godot, stingers on the beat.
+- Save the reference video with the project (IndexedDB) instead of session only.
 
 ## Small known issues
 
