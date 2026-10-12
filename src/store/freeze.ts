@@ -94,6 +94,7 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       ...(track.multi ? { multi: track.multi } : {}),
       ...(track.plugin ? { plugin: track.plugin } : {}),
       ...(track.pluginFx?.length ? { pluginFx: track.pluginFx } : {}),
+      ...(track.expressive ? { expressive: true } : {}),
       // (The newer inserts only while on, so tracks frozen before they existed stay frozen)
       fx: fxPrint(track.fx),
       eq: track.eq,

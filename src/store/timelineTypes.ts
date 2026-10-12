@@ -516,6 +516,12 @@ export interface Track {
   pluginFx?: WamPlugin[];
   /** Its clips in the clip launcher, one per scene at most (see launcher.ts) */
   slots?: LauncherSlot[];
+  /**
+   * Expressive playing (see samplerManager.ts): recorded instruments get darker as they get
+   * softer, on a dB velocity curve, with a little per-note variation; synthesized drums follow
+   * velocity in tone too. On for tracks made since it existed; older projects keep their sound.
+   */
+  expressive?: boolean;
 }
 
 /** What a clip launcher slot holds: a clip, without a place in the song. */

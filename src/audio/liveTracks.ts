@@ -69,7 +69,9 @@ const pluginKey = (p: WamPlugin) => `${p.id}@${p.url}${p.bypass ? '~' : ''}`;
 const sampleKey = (track: Track) => {
   const sample = track.sample ? `${track.sample.root}|${track.sample.soundId ?? track.sample.dataUrl}` : '';
   const plugins = [track.plugin, ...(track.pluginFx ?? [])].filter((p): p is WamPlugin => !!p);
-  return sample || plugins.length ? `${sample}#${plugins.map(pluginKey).join(',')}#${plugins.length ? pluginEpoch() : ''}` : undefined;
+  const built = sample || plugins.length ? `${sample}#${plugins.map(pluginKey).join(',')}#${plugins.length ? pluginEpoch() : ''}` : undefined;
+  // Expressive playing is built into the instrument
+  return track.expressive ? `${built ?? ''}!expressive` : built;
 };
 
 /** Note when a track's current instrument fails to download its samples, so it can be rebuilt later. */

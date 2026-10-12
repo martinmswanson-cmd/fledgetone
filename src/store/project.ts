@@ -270,6 +270,8 @@ function parseTrack(v: unknown): Track {
             .map((x) => ({ cc: Math.round(x.cc as number), param: x.param as AutomationParam })),
         }
       : {}),
+    // Optional: expressive playing (absent in projects from before it: they keep their sound)
+    ...(v.expressive === true ? { expressive: true } : {}),
     // Optional: its clips in the clip launcher
     ...(parseSlots(v.slots, v.id).length ? { slots: parseSlots(v.slots, v.id) } : {}),
     // Optional: Web Audio Module plugins (the instrument of a Plugin track, and plugin effects)

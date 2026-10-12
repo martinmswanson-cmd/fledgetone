@@ -339,7 +339,63 @@ export function taperGain(taper: InstrumentDef['taper'], note: string): number {
   return octaves > 0 ? Tone.dbToGain(-taper[1] * octaves) : 1;
 }
 
-function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dispose: () => void }[], onNote?: (time: number) => void, taper?: InstrumentDef['taper']): SamplerVoice {
+/**
+ * Expressive playing (a track's Expressive switch): a recording made at one loudness is played
+ * the way a real instrument sounds at the velocity asked for.
+ * - Brightness follows velocity: each note gets a low-pass of its own, open at full velocity and
+ *   about `depth` octaves lower at the softest (never below a few harmonics of the note), so a
+ *   soft note is darker, not just quieter, as with SFZ's fil_veltrack.
+ * - Loudness follows a dB curve (`rangeDb` from the softest to full) instead of a straight line.
+ * - No two hits are quite the same: each note is detuned up to ±3 cents and its level moved up
+ *   to ±0.6 dB, seeded from the note and its time, so a repeated note doesn't machine-gun and an
+ *   export comes out the same every time.
+ */
+export interface Expressive {
+  depth: number;
+  rangeDb: number;
+}
+
+const EXPRESSIVE_BY_CATEGORY: Partial<Record<InstrumentDef['category'], Expressive>> = {
+  'Winds & Brass': { depth: 3.2, rangeDb: 20 },
+  Orchestra: { depth: 3, rangeDb: 20 },
+  'Keys & Synths': { depth: 2.5, rangeDb: 18 },
+  'Guitars & Strings': { depth: 2.5, rangeDb: 18 },
+  'Choir & Voices': { depth: 2, rangeDb: 16 },
+  'Mallets & Bells': { depth: 2.2, rangeDb: 20 },
+  'Pads & Atmospheres': { depth: 1.5, rangeDb: 12 },
+  World: { depth: 2.5, rangeDb: 18 },
+  Bass: { depth: 2, rangeDb: 14 },
+  'Drums & Percussion': { depth: 1.6, rangeDb: 18 },
+};
+
+/** How an instrument plays expressively (null: as recorded, e.g. drum kits and sound effects). */
+export function expressiveFor(def: InstrumentDef): Expressive | null {
+  return EXPRESSIVE_BY_CATEGORY[def.category] ?? null;
+}
+
+/** A note's level for `velocity` (0..1) on a dB curve `rangeDb` deep. */
+export const expressiveGain = (velocity: number, rangeDb: number) => (velocity <= 0 ? 0 : 10 ** ((-rangeDb * (1 - Math.min(1, velocity))) / 20));
+
+/**
+ * A note's low-pass cutoff for `velocity`: at full velocity about the 48th harmonic of the note
+ * (these recordings hold little above 11-15 kHz anyway), `depth` octaves lower at the softest,
+ * and never below the 3rd harmonic.
+ */
+export const expressiveCutoff = (velocity: number, depth: number, noteHz: number) =>
+  Math.min(20000, Math.max(noteHz * 3, Math.min(20000, noteHz * 48) * 2 ** (-depth * (1 - Math.min(1, Math.max(0, velocity))))));
+
+/** A number from -1 to 1 for a note at a moment (the same every time). */
+export function noteJitter(note: string, time: number, salt: number): number {
+  let h = 0x811c9dc5 ^ salt;
+  const text = `${note}@${Math.round(time * 1000)}`;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return ((h >>> 0) / 4294967295) * 2 - 1;
+}
+
+function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dispose: () => void }[], onNote?: (time: number) => void, taper?: InstrumentDef['taper'], expressive?: Expressive | null): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
     loaded = true;
@@ -361,12 +417,39 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
   const sounding: Array<{ src: Source; note: string; until: number; base: number; played: number; last: number; rate: number }> = [];
   // (Read in the sampler's own context: in an export, the render's tempo, not the live one)
   const releaseSeconds = () => sampler.toSeconds(sampler.release);
+  /** Expressive: a note's own low-pass for its velocity, between its source and the sampler's output (gone when it ends). */
+  const voiceFilter = (src: Source, note: string, velocity: number) => {
+    if (!expressive) return;
+    const tsrc = src as unknown as Tone.ToneBufferSource;
+    const raw = sampler.context.rawContext as unknown as BaseAudioContext;
+    const filter = raw.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.Q.value = 0.6;
+    filter.frequency.value = expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency());
+    tsrc.disconnect();
+    Tone.connect(tsrc, filter);
+    Tone.connect(filter, sampler.output);
+    const ended = tsrc.onended;
+    tsrc.onended = (s) => {
+      ended(s);
+      filter.disconnect();
+    };
+  };
+  /** The velocity a note is triggered at: as given, or on the dB curve with a little variation. */
+  const level = (note: string, velocity: number, at: number) =>
+    expressive ? expressiveGain(velocity, expressive.rangeDb) * 10 ** ((0.6 * noteJitter(note, at, 7)) / 20) : velocity;
   /** Start `trigger`'s notes, keep their sources (bent by the bend now) until `until`. */
-  const started = (notes: string[], until: number, trigger: () => void, at: number) => {
+  const started = (notes: string[], until: number, trigger: () => void, at: number, velocity = 1) => {
     const before = new Set(allSources());
     trigger();
     const fresh = allSources().filter((src) => !before.has(src));
     fresh.forEach((src, i) => {
+      const note = notes[Math.min(i, notes.length - 1)];
+      if (expressive) {
+        voiceFilter(src, note, velocity);
+        // Each hit a hair off the last: up to ±3 cents
+        src.playbackRate.value *= 2 ** ((3 * noteJitter(note, at, 13)) / 1200);
+      }
       // Its rate unbent, which every bend scales (reading the rate back mid-glide would drift)
       const base = src.playbackRate.value;
       if (bendRatio !== 1) src.playbackRate.value = base * bendRatio;
@@ -388,10 +471,11 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
         notes,
         end + releaseSeconds() + 0.1,
         () => {
-          if (!taper) sampler.triggerAttack(notes, at, velocity);
-          else for (const note of notes) sampler.triggerAttack(note, at, velocity * taperGain(taper, note));
+          if (!taper && !expressive) sampler.triggerAttack(notes, at, velocity);
+          else for (const note of notes) sampler.triggerAttack(note, at, level(note, velocity, at) * taperGain(taper, note));
         },
-        at
+        at,
+        velocity
       );
       sampler.triggerRelease(notes, end);
     },
@@ -399,7 +483,7 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
       if (!loaded) return;
       onNote?.(time);
       prune(time);
-      started([note], Infinity, () => sampler.triggerAttack(note, time, velocity * taperGain(taper, note)), time);
+      started([note], Infinity, () => sampler.triggerAttack(note, time, level(note, velocity, time) * taperGain(taper, note)), time, velocity);
     },
     bend: (cents, time) => {
       const next = 2 ** (cents / 1200);
@@ -440,7 +524,7 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
 }
 
 /** A Tone.Sampler for a sampled instrument in the current context, connected to `output`. */
-export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode): SamplerVoice {
+export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, expressive = false): SamplerVoice {
   const def = INSTRUMENTS[key];
   const shaped = shapingChain(def.shaping, output);
   const chain = toneChain(def.tone, shaped);
@@ -449,7 +533,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode): 
   const attach = loadSamples(key).then((set) => {
     for (const [note, buffer] of Object.entries(set)) sampler.add(note as Tone.Unit.Note, buffer);
   });
-  return samplerVoice(sampler, attach, chain.nodes, chain.onNote, def.taper);
+  return samplerVoice(sampler, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null);
 }
 
 /**
