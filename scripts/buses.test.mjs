@@ -58,3 +58,23 @@ test('buses come first, outermost first', () => {
   const tracks = [t('kick', { output: 'inner' }), bus('inner', { output: 'outer' }), bus('outer')];
   assert.deepEqual(b.busFirst(tracks).map((x) => x.id), ['outer', 'inner', 'kick']);
 });
+
+test('returns: sends, solo-safe, render order, tidy', () => {
+  const tr = (id, key, extra = {}) => ({ id, instrumentKey: key, isMuted: false, isSoloed: false, ...extra });
+  const tracks = [
+    tr('a', 'lead', { sends: [{ to: 'r', level: 0.5 }, { to: 'gone', level: 1 }, { to: 'r', level: 0.2 }] }),
+    tr('b', 'bass', { isSoloed: true }),
+    tr('r', 'return', { sends: [{ to: 'r', level: 1 }] }),
+    tr('g', 'bus'),
+  ];
+  assert.deepEqual(b.liveSends(tracks[0], tracks), [{ to: 'r', level: 0.5 }]);
+  assert.deepEqual(b.sendTargets(tracks[0], tracks).map((t) => t.id), ['r']);
+  assert.deepEqual(b.sendTargets(tracks[2], tracks), []);
+  // A solo leaves the return on
+  assert.ok(b.audibleIds(tracks).has('r'));
+  assert.ok(!b.audibleIds(tracks).has('a'));
+  assert.deepEqual(b.busFirst(tracks).map((t) => t.id), ['g', 'r', 'a', 'b']);
+  const tidy = b.tidySends(tracks);
+  assert.deepEqual(tidy[0].sends, [{ to: 'r', level: 0.5 }]);
+  assert.equal(tidy[2].sends, undefined);
+});

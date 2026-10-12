@@ -72,6 +72,8 @@ export interface TrackInstrument {
   /** Resolves when the instrument can sound (reverb generated, samples downloaded). */
   ready: Promise<unknown>;
   dispose: () => void;
+  /** Where sends to this track (a return) arrive: before its plugin effects, when it has some (else its strip's input). */
+  sendInput?: Tone.InputNode;
   /** An Audio track's: where its audio clips play (see audioClipSchedule.ts). */
   clipBus?: NativeBus;
   /** The Slicer's: give it the track's slices and modes as they change, without a rebuild. */
@@ -267,6 +269,7 @@ export function createInstrument(key: InstrumentKey, output: Tone.InputNode, opt
   const inst = withTaper(key, buildGained(key, chain.input, options));
   return {
     ...inst,
+    sendInput: chain.input,
     ready: Promise.all([inst.ready, chain.ready]),
     dispose: () => {
       inst.dispose();
@@ -313,7 +316,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
   const kind = INSTRUMENTS[key].kind;
 
   if (kind === 'plugin') return createPluginInstrument(output, options.plugin);
-  if (kind === 'bus') {
+  if (kind === 'bus' || kind === 'return') {
     // A bus plays nothing itself: the tracks routed to it play into its strip
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
   }

@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Plug, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints } from 'lucide-react';
-import { busTargets, isBus } from '../../store/buses';
+import { Plug, Radio, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints } from 'lucide-react';
+import { busTargets, isBus, isMixTrack, sendTargets } from '../../store/buses';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { TRACK_COLORS } from '../../store/timelineTypes';
@@ -84,6 +84,21 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
             onClick: run(() => s.groupIntoBus(selectedTrackIds(track.id))),
           },
         ]),
+    // Sends to effect returns (a track can feed several, and still play to its output)
+    ...(isMixTrack(track)
+      ? []
+      : [
+          ...sendTargets(track, tracks).map((r) => {
+            const on = track.sends?.some((x) => x.to === r.id);
+            return {
+              key: `send-${r.id}`,
+              label: on ? `Stop sending to “${r.name}”` : `Send to “${r.name}”`,
+              icon: <Radio className="w-3.5 h-3.5" style={{ color: r.color }} />,
+              onClick: run(() => s.setTrackSend(track.id, r.id, on ? null : 0.5)),
+            };
+          }),
+          { key: 'new-return', label: 'Send to a new return', icon: <Radio className="w-3.5 h-3.5" />, onClick: run(() => s.addReturn(track.id)) },
+        ]),
     ...(track.plugin
       ? [{ key: 'plugin-open', label: `Open ${track.plugin.name}`, icon: <Plug className="w-3.5 h-3.5 text-fuchsia-300" />, onClick: run(() => ui.setPluginWindow({ trackId: track.id, pluginId: track.plugin!.id })), divider: true }]
       : []),
@@ -109,7 +124,7 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
     ]),
     track.frozen
       ? { key: 'freeze', label: 'Unfreeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => unfreezeTrack(track.id)), divider: true }
-      : { key: 'freeze', label: 'Freeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => void freezeTrack(track.id)), disabled: isBus(track) || !canFreeze(track.id), divider: true },
+      : { key: 'freeze', label: 'Freeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => void freezeTrack(track.id)), disabled: isMixTrack(track) || !canFreeze(track.id), divider: true },
     { key: 'delete', label: 'Delete track', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(() => s.deleteTrack(track.id)) },
   ];
 

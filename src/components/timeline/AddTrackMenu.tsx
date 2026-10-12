@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plug, Plus, Waypoints } from 'lucide-react';
+import { Plug, Plus, Radio, Waypoints } from 'lucide-react';
 import { useUiStore } from '../../store/uiStore';
 import { useTimelineStore } from '../../store/timelineStore';
 import { InstrumentList } from '../InstrumentMenu';
@@ -45,6 +45,19 @@ export const AddTrackMenu: React.FC = () => {
             <Waypoints className="w-3.5 h-3.5 text-slate-300" />
             <span className="flex-1">Bus (group channel)</span>
             <span className="text-[10px] text-forge-muted">route tracks into it</span>
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-sky-200 hover:bg-sky-500/15 border-b border-forge-border"
+            onClick={() => {
+              useTimelineStore.getState().addReturn();
+              close();
+            }}
+            title="An effect return: put a reverb or delay on it, then send any amount of any track to it"
+          >
+            <Radio className="w-3.5 h-3.5 text-sky-300" />
+            <span className="flex-1">Return (effect return)</span>
+            <span className="text-[10px] text-forge-muted">tracks send to it</span>
           </button>
           <button
             type="button"

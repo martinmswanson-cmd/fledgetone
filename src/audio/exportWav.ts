@@ -1,4 +1,5 @@
-import { audibleIds, busChain, busFirst, busOf } from '../store/buses';
+import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
+import { insertTailSeconds } from './effects/spaceFx';
 import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
 import { createMixChain, getMasterVolume } from './engine';
@@ -156,8 +157,10 @@ export function stemTracks(opts: Pick<RenderOptions, 'tracks' | 'clips' | 'start
 }
 
 /** Seconds a ring-out export runs past the end of its range, for release and reverb tails. */
-export function ringOutSeconds(masterFx: MasterFx): number {
-  return Math.max(2, masterFx.reverbDecay + 0.5);
+export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], bpm = 120): number {
+  // A track's own Delay or Reverb insert can ring on longer than the master reverb
+  const inserts = audibleTracks(tracks).reduce((tail, t) => Math.max(tail, insertTailSeconds(t.fx, bpm)), 0);
+  return Math.max(2, masterFx.reverbDecay + 0.5, inserts > 0 ? inserts + 0.5 : 0);
 }
 
 /**
@@ -166,7 +169,7 @@ export function ringOutSeconds(masterFx: MasterFx): number {
  */
 function loopTailSeconds(opts: RenderOptions): number {
   const { masterFx, bpm } = opts;
-  let tail = ringOutSeconds(masterFx);
+  let tail = ringOutSeconds(masterFx, opts.tracks, bpm);
   const echoes = audibleTracks(opts.tracks).some((t) => t.delaySend > 0) && masterFx.delayFeedback > 0;
   if (echoes) {
     const repeats = Math.log(0.001) / Math.log(Math.min(0.8, masterFx.delayFeedback));
@@ -217,7 +220,7 @@ function planRender(opts: RenderOptions, latency = 0): RenderPlan {
     return { sampleRate, length: keepFrom + keepLength, keepFrom, keepLength, startAt, stopAt: startAt + passes * loopSeconds, passes };
   }
   const keepLength =
-    ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutSeconds(opts.masterFx)) * sampleRate);
+    ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutSeconds(opts.masterFx, opts.tracks, opts.bpm)) * sampleRate);
   return { sampleRate, length: lead + keepLength, keepFrom: lead, keepLength, startAt, stopAt: startAt + rangeSeconds, passes: 1 };
 }
 
@@ -487,8 +490,13 @@ async function renderTracks(
 ): Promise<{ channels: Float32Array<ArrayBuffer>[]; sampleRate: number; reverbImpulse: AudioBuffer | undefined }> {
   // The buses these tracks play through come too (a stem of a bused track has its bus's sound),
   // each made before the tracks that play into it
-  const busIds = new Set(sounding.flatMap((t) => busChain(t, opts.tracks).map((b) => b.id)));
-  const tracks = busFirst([...sounding.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]);
+  // ...and the returns they send to (heard ones: a muted return takes nothing), with their buses
+  const heard = audibleIds(opts.tracks);
+  const soundingIds = new Set(sounding.map((t) => t.id));
+  const returns = opts.tracks.filter((r) => !soundingIds.has(r.id) && heard.has(r.id) && sounding.some((t) => liveSends(t, opts.tracks).some((x) => x.to === r.id)));
+  const withReturns = [...sounding, ...returns];
+  const busIds = new Set(withReturns.flatMap((t) => busChain(t, opts.tracks).map((b) => b.id)));
+  const tracks = busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]);
   const { clips, bpm, swing, startBar, endBar, masterFx, signal } = opts;
   const ending = opts.ending ?? 'ringOut';
   const plan = planRender(opts, opts.bypassMaster ? 0 : await masterChainLatency(opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
@@ -658,11 +666,20 @@ async function renderTracks(
       // Into its bus's strip (made already: buses come first), or the master
       const bus = busOf(track, opts.tracks);
       const strip = createTrackStrip((bus && stripOf.get(bus.id)?.input) || mix.bus, mix.busFx);
+      strip.setTempo(bpm);
       strip.apply(track, { ramp: 0, muteOverride: false });
       if (opts.intensity) strip.setIntensityLevel(trackIntensityLevel(track, opts.intensity.curves, opts.intensity.value));
       strips.push(strip);
       stripOf.set(track.id, strip);
       instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track)));
+    }
+    // Sends into the returns (made already: returns come before the tracks that send to them)
+    for (const track of tracks) {
+      const sends = liveSends(track, opts.tracks).flatMap((x) => {
+        const ret = stripOf.get(x.to);
+        return ret ? [{ id: x.to, target: instruments.get(x.to)?.sendInput ?? ret.input, level: x.level, pre: !!x.pre }] : [];
+      });
+      if (sends.length) stripOf.get(track.id)!.setSends(sends, false);
     }
     await Promise.all([mix.busFx.ready, mix.inserts.ready(), ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)

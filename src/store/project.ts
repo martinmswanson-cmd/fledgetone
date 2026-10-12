@@ -216,6 +216,15 @@ function parseTrack(v: unknown): Track {
     ...(frozen ? { frozen } : {}),
     // Optional: the bus it plays into (checked against the other tracks after they're read)
     ...(isStr(v.output) && v.output ? { output: v.output } : {}),
+    // Optional: sends to return tracks (those to returns that aren't there are dropped on load)
+    ...(Array.isArray(v.sends) && v.sends.some((x) => isObj(x) && isStr(x.to) && isNum(x.level))
+      ? {
+          sends: v.sends
+            .filter((x): x is Record<string, unknown> => isObj(x) && isStr(x.to) && isNum(x.level))
+            .slice(0, 32)
+            .map((x) => ({ to: x.to as string, level: Math.max(0, Math.min(1, x.level as number)), ...(x.pre === true ? { pre: true } : {}) })),
+        }
+      : {}),
     // Optional: Web Audio Module plugins (the instrument of a Plugin track, and plugin effects)
     ...(parsePlugin(v.plugin) ? { plugin: parsePlugin(v.plugin)! } : {}),
     ...(Array.isArray(v.pluginFx) && v.pluginFx.some((p) => parsePlugin(p))

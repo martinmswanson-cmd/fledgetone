@@ -1,16 +1,35 @@
-import type { Track } from './timelineTypes';
+import type { Track, TrackSend } from './timelineTypes';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 
 /**
  * Group buses: a bus is a track with no clips of its own (instrument 'bus') whose strip the
  * tracks routed to it play through, so a group of tracks shares one fader, its inserts and its
  * sends. A track's `output` names its bus; a bus can play into another bus, but never round into
- * itself. Pure, so it's unit tested (scripts/buses.test.mjs).
+ * itself.
+ *
+ * Returns: a return is a track with no clips of its own (instrument 'return') that other tracks
+ * send to (`Track.sends`), each at its own level, before or after their fader: its inserts are the
+ * effect (a long reverb, a parallel compressor) and its fader how much of it comes back. A return
+ * plays into the master, or a bus; it sends nowhere itself. A solo doesn't silence returns (else
+ * a soloed track would lose its reverb). Pure, so it's unit tested (scripts/buses.test.mjs).
  */
 
 type RouteTrack = Pick<Track, 'id' | 'instrumentKey' | 'isMuted' | 'isSoloed' | 'output'>;
 
 export const isBus = (t: Pick<Track, 'instrumentKey'>) => INSTRUMENTS[t.instrumentKey]?.kind === 'bus';
+export const isReturn = (t: Pick<Track, 'instrumentKey'>) => INSTRUMENTS[t.instrumentKey]?.kind === 'return';
+/** A bus or a return: no clips, no recording, no freezing. */
+export const isMixTrack = (t: Pick<Track, 'instrumentKey'>) => isBus(t) || isReturn(t);
+
+/** The returns a track can send to (a return sends nowhere). */
+export const sendTargets = <T extends RouteTrack>(track: T, tracks: readonly T[]): T[] => (isReturn(track) ? [] : tracks.filter((t) => isReturn(t) && t.id !== track.id));
+
+/** A track's sends that reach a return that's there, each once (what plays). */
+export function liveSends<T extends RouteTrack & Pick<Track, 'sends'>>(track: T, tracks: readonly T[]): TrackSend[] {
+  if (!track.sends?.length || isReturn(track)) return [];
+  const returns = new Set(tracks.filter(isReturn).map((t) => t.id));
+  return track.sends.filter((s, i, all) => returns.has(s.to) && s.to !== track.id && all.findIndex((o) => o.to === s.to) === i);
+}
 
 /** The bus `track` plays into, if it names one that exists (and isn't itself). */
 export function busOf<T extends RouteTrack>(track: T, tracks: readonly T[]): T | undefined {
@@ -53,7 +72,8 @@ export function soloLit(tracks: readonly RouteTrack[]): Set<string> | null {
   const lit = new Set<string>();
   for (const t of tracks) {
     const chain = busChain(t, tracks);
-    if (t.isSoloed || chain.some((b) => b.isSoloed)) {
+    // Returns stay on through a solo (unless soloing them is the point), with the buses they play into
+    if (t.isSoloed || chain.some((b) => b.isSoloed) || isReturn(t)) {
       lit.add(t.id);
       for (const b of chain) lit.add(b.id);
     }
@@ -76,11 +96,27 @@ export function audibleIds(tracks: readonly RouteTrack[]): Set<string> {
   return out;
 }
 
-/** Tracks ordered so every bus comes before the tracks (and buses) that play into it. */
+/** Tracks ordered so every bus comes before the tracks (and buses) that play into it, and every return before the tracks that send to it. */
 export function busFirst<T extends RouteTrack>(tracks: readonly T[]): T[] {
   const depth = (t: T) => busChain(t, tracks).length;
-  // Buses first, those playing straight into the master before the ones inside them
-  return [...tracks].sort((a, b) => Number(isBus(b)) - Number(isBus(a)) || depth(a) - depth(b));
+  const rank = (t: T) => (isBus(t) ? 0 : isReturn(t) ? 1 : 2);
+  // Buses first, those playing straight into the master before the ones inside them; then returns
+  return [...tracks].sort((a, b) => rank(a) - rank(b) || depth(a) - depth(b));
+}
+
+/** Drop sends to returns that are gone (and a return's own). The same array when nothing changes. */
+export function tidySends<T extends RouteTrack & Pick<Track, 'sends'>>(tracks: T[]): T[] {
+  let changed = false;
+  const out = tracks.map((t) => {
+    if (!t.sends) return t;
+    const kept = liveSends(t, tracks);
+    if (kept.length === t.sends.length && t.sends.length) return t;
+    changed = true;
+    if (kept.length) return { ...t, sends: kept };
+    const { sends: _drop, ...rest } = t;
+    return rest as T;
+  });
+  return changed ? out : tracks;
 }
 
 /** Drop routes to buses that are gone (or aren't buses, or would loop). The same array when nothing changes. */

@@ -26,6 +26,8 @@ export function fx(patch: FxPatch = {}): TrackFx {
     pump: { ...d.pump, ...patch.pump },
     lofi: { ...d.lofi, ...patch.lofi },
     gate: { ...d.gate, ...patch.gate },
+    echo: { ...d.echo, ...patch.echo },
+    reverb: { ...d.reverb, ...patch.reverb },
     human: { ...d.human, ...patch.human },
     peq: { ...d.peq, ...patch.peq },
     mbc: { ...d.mbc, ...patch.mbc },

@@ -10,7 +10,7 @@ import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
 import type { TrackMenuState } from './TrackMenu';
 import { UndoableRange } from '../UndoableRange';
 import { INSTRUMENTS, isAudioKind } from '../../audio/instrumentCatalog';
-import { audibleIds, isBus } from '../../store/buses';
+import { audibleIds, isBus, isMixTrack, isReturn } from '../../store/buses';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { activeLanes, AUTOMATION, formatPan, laneOf } from '../../audio/automation';
 import { AUTOMATED_TIP, useAutomatedValue } from './automationHooks';
@@ -161,7 +161,11 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
   const silenced = useTimelineStore((s) => !audibleIds(s.tracks).has(track.id));
   const bus = isBus(track);
   const busName = useTimelineStore((s) => (track.output ? s.tracks.find((t) => t.id === track.output && isBus(t))?.name : undefined));
-  const inputs = useTimelineStore((s) => (bus ? s.tracks.filter((t) => t.output === track.id).length : 0));
+  const ret = isReturn(track);
+  const mixTrack = isMixTrack(track);
+  const inputs = useTimelineStore((s) =>
+    bus ? s.tracks.filter((t) => t.output === track.id).length : ret ? s.tracks.filter((t) => t.sends?.some((x) => x.to === track.id)).length : 0
+  );
 
   const automationOpen = useTimelineStore((s) => s.automationView[track.id]?.open ?? false);
   const automationParam = useTimelineStore((s) => s.automationView[track.id]?.param ?? 'volume');
@@ -238,6 +242,11 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
               bus · {inputs}
             </span>
           )}
+          {ret && (
+            <span className="shrink-0 px-1 rounded bg-sky-400/20 text-[8px] font-mono uppercase text-sky-200" title={`A return: ${inputs} track${inputs === 1 ? '' : 's'} send${inputs === 1 ? 's' : ''} to it. Put effects on it in the Inspector, then turn up sends in the mixer or a track's Inspector.`}>
+              return · {inputs}
+            </span>
+          )}
           {(track.plugin || track.pluginFx?.length) && (
             <button
               type="button"
@@ -276,7 +285,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
             <Sliders className="w-3 h-3" />
           </button>
 
-          {!bus && (
+          {!mixTrack && (
           <button
             type="button"
             title="Add a clip at the playhead (empty or a pattern)"
@@ -317,7 +326,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
           >
             <Spline className="w-3.5 h-3.5" />
           </button>
-          {!isAudioKind(track.instrumentKey) && !bus && <FreezeButton track={track} />}
+          {!isAudioKind(track.instrumentKey) && !mixTrack && <FreezeButton track={track} />}
           <Toggle
             label="M"
             title="Mute"
@@ -332,7 +341,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
             onClick={() => toggleSolo(track.id)}
             activeClass="bg-amber-500/25 border-amber-400 text-amber-200"
           />
-          {!bus && <Toggle
+          {!mixTrack && <Toggle
             label="R"
             title={isAudioKind(track.instrumentKey) ? 'Audio tracks hold sound files, not MIDI takes: arm an instrument track to record' : 'Record arm: takes go on this track (one track at a time)'}
             active={track.isArmed}

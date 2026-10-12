@@ -17,7 +17,7 @@ import type { LiveTrackView } from '../store/freeze';
 import { loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
 import { TOTAL_BARS } from '../store/timelineTypes';
-import { audibleIds, busChain, busOf, soloLit } from '../store/buses';
+import { audibleIds, busChain, busOf, liveSends, soloLit } from '../store/buses';
 
 /**
  * Live playback graph: one effects strip + one instrument per timeline track, kept in step
@@ -32,12 +32,21 @@ interface LiveTrack {
   instrument: TrackInstrument;
   /** The settings last applied to the strip (the store replaces a track object when it changes) */
   applied: Track | null;
+  /** It had sends to returns at the last sync (so removing the last one is heard) */
+  hadSends?: boolean;
   /** False while muted, or while another track is soloed: its notes aren't played at all */
   audible: boolean;
   /** The instrument's sample download failed: it stays silent until rebuilt (see recoverFailedDownloads) */
   failed: boolean;
   /** The bus track whose strip it plays into (null: the master) */
   outputId: string | null;
+}
+
+/** The song's base tempo, which the strips' Delay inserts follow. */
+let stripTempo = 120;
+export function setLiveStripTempo(bpm: number): void {
+  stripTempo = bpm;
+  for (const lt of live.values()) lt.strip.setTempo(bpm);
 }
 
 const live = new Map<string, LiveTrack>();
@@ -163,6 +172,7 @@ export function syncLiveTracks(tracks: Track[]): void {
     let lt = live.get(track.id);
     if (!lt) {
       const strip = createTrackStrip(liveMix.bus, liveMix.busFx);
+      strip.setTempo(stripTempo);
       lt = {
         instrumentKey: track.instrumentKey,
         sampleUrl: sampleKey(track),
@@ -206,6 +216,16 @@ export function syncLiveTracks(tracks: Track[]): void {
     if (outputId === lt.outputId) continue;
     lt.strip.setOutput(target ? target.strip.input : liveMix.bus);
     lt.outputId = outputId;
+  }
+  // Each track's sends into its returns (into a return's plugin effects first, when it has some)
+  for (const track of tracks) {
+    const lt = live.get(track.id)!;
+    const sends = liveSends(track, tracks).flatMap((send) => {
+      const ret = live.get(send.to);
+      return ret ? [{ id: send.to, target: ret.instrument.sendInput ?? ret.strip.input, level: send.level, pre: !!send.pre }] : [];
+    });
+    if (sends.length || lt.hadSends) lt.strip.setSends(sends, !!(lt.applied?.isMuted));
+    lt.hadSends = sends.length > 0;
   }
   // The live mix's own Transport, even while a WAV export has made its offline context the global
   // one, over the whole timeline

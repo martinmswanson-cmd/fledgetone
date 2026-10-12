@@ -258,7 +258,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const fileBase = `${safeFileName(projectName)}${suffix}`;
   const fileName = game ? `${fileBase} ${stemsOnly ? 'layers' : 'game music'}.zip` : stemsOnly ? `${fileBase} stems.zip` : videoOut ? `${fileBase}.mp4` : `${fileBase}.${ext}`;
   const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * settings.sampleRate);
-  const tail = ringOutSeconds(masterFx);
+  const tail = ringOutSeconds(masterFx, tracks, bpm);
 
   const startExport = async () => {
     const s = useTimelineStore.getState();

@@ -4,7 +4,7 @@ import { useAudioStore } from '../../store/audioStore';
 import type { Track } from '../../store/timelineTypes';
 import { liveTrackPeaks } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
-import { busTargets, isBus } from '../../store/buses';
+import { busTargets, isBus, isReturn, sendTargets } from '../../store/buses';
 import { SpectrumView } from './SpectrumView';
 
 /**
@@ -48,11 +48,13 @@ const Meter: React.FC<{ trackId: string | null }> = ({ trackId }) => {
 const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) => {
   const s = useTimelineStore.getState();
   const bus = isBus(track);
+  const ret = isReturn(track);
   const targets = busTargets(track, tracks);
+  const returns = sendTargets(track, tracks);
   const selected = useTimelineStore((st) => st.selectedTrackId === track.id);
-  const inserts = (['human', 'distortion', 'peq', 'compressor', 'mbc', 'chorus', 'lofi', 'filter', 'gate', 'pump'] as const).filter((k) => track.fx[k]?.on);
+  const inserts = (['human', 'distortion', 'peq', 'compressor', 'mbc', 'chorus', 'lofi', 'filter', 'echo', 'reverb', 'gate', 'pump'] as const).filter((k) => track.fx[k]?.on);
   return (
-    <div className={`flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border p-2 ${bus ? 'bg-slate-500/10' : 'bg-forge-bg'} ${selected ? 'border-cyan-500/70' : 'border-forge-border'}`} aria-label={`${track.name} ${bus ? 'bus' : 'channel'}`}>
+    <div className={`flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border p-2 ${bus ? 'bg-slate-500/10' : ret ? 'bg-sky-500/10' : 'bg-forge-bg'} ${selected ? 'border-cyan-500/70' : 'border-forge-border'}`} aria-label={`${track.name} ${bus ? 'bus' : ret ? 'return' : 'channel'}`}>
       <div className="w-full h-1 rounded" style={{ background: track.color }} />
       <button
         type="button"
@@ -67,6 +69,7 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
       </button>
       <div className="min-h-[28px] flex flex-wrap justify-center gap-0.5">
         {bus && <span className="px-1 rounded bg-slate-400/25 text-[8px] font-mono uppercase text-slate-100" title="A bus: tracks routed here play through its strip">bus</span>}
+        {ret && <span className="px-1 rounded bg-sky-400/25 text-[8px] font-mono uppercase text-sky-100" title="A return: tracks send to it, it plays its effects back">return</span>}
         {track.duckProxy && <span className="px-1 rounded bg-sky-500/20 text-[8px] font-mono uppercase text-sky-200" title="The other tracks duck under this one">proxy</span>}
         {inserts.length ? inserts.map((k) => (
           <span key={k} className="px-1 rounded bg-cyan-500/15 text-[8px] font-mono uppercase text-cyan-200">{k.slice(0, 4)}</span>
@@ -80,6 +83,27 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
         DLY {Math.round(track.delaySend * 100)}%
         <UndoableRange min={0} max={1} step={0.01} value={track.delaySend} onValue={(v) => s.setTrackDelaySend(track.id, v)} resetValue={0} className="w-full h-1 accent-violet-400" aria-label={`${track.name} delay send`} />
       </label>
+      {returns.map((r) => {
+        const send = track.sends?.find((x) => x.to === r.id);
+        return (
+          <label key={r.id} className="w-full flex flex-col gap-0.5 text-[9px] font-mono text-forge-muted" title={`Send to the return ${r.name}${send?.pre ? ' (before the fader)' : ''}`}>
+            <span className="flex items-center justify-between gap-1">
+              <span className="truncate" style={{ color: r.color }}>→ {r.name}</span>
+              <span>{send ? `${Math.round(send.level * 100)}%${send.pre ? ' pre' : ''}` : 'off'}</span>
+            </span>
+            <UndoableRange
+              min={0}
+              max={1}
+              step={0.01}
+              value={send?.level ?? 0}
+              onValue={(v) => s.setTrackSend(track.id, r.id, v, false)}
+              resetValue={0}
+              className="w-full h-1 accent-sky-400"
+              aria-label={`${track.name} send to ${r.name}`}
+            />
+          </label>
+        );
+      })}
       <label className="w-full flex flex-col gap-0.5 text-[9px] font-mono text-forge-muted">
         PAN {track.pan === 0 ? 'C' : `${track.pan < 0 ? 'L' : 'R'}${Math.round(Math.abs(track.pan) * 100)}`}
         <UndoableRange min={-1} max={1} step={0.01} value={track.pan} onValue={(v) => s.setTrackPan(track.id, v)} resetValue={0} className="w-full h-1 accent-amber-400" aria-label={`${track.name} pan`} />

@@ -118,6 +118,8 @@ export function trackForFreezing(track: Track): Track {
     frozen: undefined,
     // Rendered to the master, not through its bus: live, the frozen sound still plays into the bus
     output: undefined,
+    // Its sends stay live (as the reverb and delay sends do): the frozen sound feeds its returns
+    sends: undefined,
   };
 }
 
