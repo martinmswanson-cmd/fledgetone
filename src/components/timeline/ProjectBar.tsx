@@ -9,7 +9,7 @@ import { downloadBlob } from '../../audio/exportWav';
 import { ExportDialog } from './ExportDialog';
 import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
-import { STARTERS } from '../../store/starters';
+import { STARTER_GROUPS, STARTERS } from '../../store/starters';
 import type { StarterId } from '../../store/starters';
 
 const barButton =
@@ -40,7 +40,7 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     onClose();
   };
   return (
-    <Modal title="New arrangement" onClose={onClose}>
+    <Modal title="New arrangement" onClose={onClose} wide>
       <p>
         This replaces the current timeline and clears undo history. Save it first if you want to keep it. Copied clips
         stay on the clipboard, so you can paste them into the new arrangement.
@@ -53,8 +53,15 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       />
       <ChoiceButton title="Demo song" detail="Sunset Stroll: a 12-bar neo-soul groove at 88 BPM (intro, groove, horn hook)." onClick={() => choose('demo')} />
       <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Genre starters: 16 bars, sections marked, the master set up</h4>
-      {STARTERS.map((s) => (
-        <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} />
+      {STARTER_GROUPS.map((group) => (
+        <section key={group} aria-label={group} className="flex flex-col gap-1.5">
+          <h5 className="text-[10px] font-semibold text-forge-text">{group}</h5>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {STARTERS.filter((s) => s.group === group).map((s) => (
+              <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} />
+            ))}
+          </div>
+        </section>
       ))}
     </Modal>
   );
