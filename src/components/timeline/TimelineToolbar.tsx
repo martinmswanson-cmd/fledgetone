@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { VideoButton } from '../video/VideoButton';
 import {
   Magnet,
   MousePointer2,
@@ -292,6 +293,8 @@ export const TimelineToolbar: React.FC = () => {
           <option value="off">Off</option>
         </select>
       </label>
+
+      <VideoButton />
 
       {/* Inspector / Studio FX Rack Toggle */}
       <ToolButton

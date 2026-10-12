@@ -169,6 +169,16 @@ Set **SNAP** to **Frame** to make clip moves, clip edges, razor cuts, the playhe
 
 Frame snap applies to the timeline. Notes you write in the piano roll sit on its own grid (1/16, 1/8 or 1/4), counted from the clip's start. A pad dropped into a clip with Frame snap on lands on a frame instead; the piano roll shows it at the nearest 16th, and moving or nudging it puts it back on the grid.
 
+## Scoring to a video
+
+Write music to a gameplay clip, a trailer or a cutscene, and see the picture while you work.
+
+- Click **Video** in the toolbar (or drop a video file anywhere on the page) to load an MP4 or WebM. It appears as a **video lane** under the ruler, with its frames along the song at the current tempo, and in a **preview window** that follows the playhead: it plays along when you play, and shows the frame under the playhead when you click or drag on the ruler, so you can line hits up with the picture.
+- **Drag the video lane** sideways to move where the video starts in the song. It snaps to beats; hold Shift to place it freely. The lane's header shows where it starts (time and bar).
+- The preview window: drag its top bar to move it, the arrows button cycles its size (small, medium, large), the speaker button lets you hear the video's own sound while you work (off by default), and **×** hides it. The eye button on the video lane shows it again; **×** on the lane removes the video.
+- To export the music **on** your video, choose **Video (MP4)** in Export. With a video loaded, **Put the music on** *your video* is ticked: the picture is your video, where it sits on the timeline (black before and after), instead of the visualizer. Tick **Keep the video's own sound too** to mix its sound effects and dialogue under the music.
+- The video stays loaded until you close the page; it isn't saved with the project (videos are too big). Load it again next time, and drag it back to its start.
+
 ## Markers
 
 Markers are named points on the timeline: the sections of a song (intro, build, drop), or hit points in a video.

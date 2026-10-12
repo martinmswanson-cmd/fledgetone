@@ -1,4 +1,5 @@
 import React from 'react';
+import { VideoPreview } from './components/video/VideoPreview';
 import { Header } from './components/Header';
 import { SoundAuditionPanel } from './components/SoundAuditionPanel';
 import { InstrumentBrowser } from './components/InstrumentBrowser';
@@ -14,6 +15,7 @@ export const App: React.FC = () => {
       {/* Top DAW Header */}
       <Header />
       <ProjectDrop />
+      <VideoPreview />
       <MobileNotice />
       <SharedLinkOpener />
 

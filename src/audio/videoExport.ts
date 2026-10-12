@@ -1,4 +1,5 @@
 import { ArrayBufferTarget, Muxer } from 'mp4-muxer';
+import { openVideo, seekVideo } from '../store/videoStore';
 import boLogo from '../assets/bo.svg';
 
 /**
@@ -32,6 +33,11 @@ export interface VideoOptions {
   sections: VideoSection[];
   onProgress?: (fraction: number) => void;
   signal?: AbortSignal;
+  /**
+   * The picture from a video instead of the visualizer: `offset` is the video's time at the
+   * export's start. Before and after the video, the frame is black.
+   */
+  footage?: { url: string; offset: number };
 }
 
 /** True where this browser can make a video at all (WebCodecs in a secure page). */
@@ -219,6 +225,19 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   background.addColorStop(0, '#16161a');
   background.addColorStop(1, '#0c0c0e');
   const total = Math.ceil(seconds * VIDEO_FPS);
+  const footage = opts.footage ? await openVideo(opts.footage.url) : null;
+
+  const encodeFrame = async (f: number, t: number) => {
+    const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / VIDEO_FPS) });
+    videoEncoder.encode(frame, { keyFrame: f % (VIDEO_FPS * 2) === 0 });
+    frame.close();
+    // Don't run ahead of the encoder (memory), and let the page update its progress bar
+    while (videoEncoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 1));
+    if (f % 15 === 0) {
+      opts.onProgress?.(f / total);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  };
 
   for (let f = 0; f < total; f++) {
     if (signal?.aborted) {
@@ -228,6 +247,21 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     }
     if (failure) throw failure;
     const t = f / VIDEO_FPS;
+    if (footage && opts.footage) {
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, W, H);
+      const vt = opts.footage.offset + t;
+      if (vt >= 0 && vt < footage.duration) {
+        await seekVideo(footage, vt);
+        // Letterboxed to fit
+        const scale = Math.min(W / footage.videoWidth, H / footage.videoHeight);
+        const w = footage.videoWidth * scale;
+        const h = footage.videoHeight * scale;
+        g.drawImage(footage, (W - w) / 2, (H - h) / 2, w, h);
+      }
+      await encodeFrame(f, t);
+      continue;
+    }
     g.fillStyle = background;
     g.fillRect(0, 0, W, H);
 
@@ -280,15 +314,11 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     const time = `${clock(t)} / ${clock(seconds)}`;
     g.fillText(time, stripX + stripW - g.measureText(time).width, 660);
 
-    const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / VIDEO_FPS) });
-    videoEncoder.encode(frame, { keyFrame: f % (VIDEO_FPS * 2) === 0 });
-    frame.close();
-    // Don't run ahead of the encoder (memory), and let the page update its progress bar
-    while (videoEncoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 1));
-    if (f % 15 === 0) {
-      opts.onProgress?.(f / total);
-      await new Promise((r) => setTimeout(r, 0));
-    }
+    await encodeFrame(f, t);
+  }
+  if (footage) {
+    footage.removeAttribute('src');
+    footage.load();
   }
   await videoEncoder.flush();
   await audioEncoder.flush();
