@@ -225,7 +225,18 @@ export const Timeline: React.FC = () => {
   const trackCount = useTimelineStore((s) => s.tracks.length);
   const selectedTrack = useTimelineStore((s) => s.selectedTrackId);
   useEffect(() => {
-    if (selectedTrack) document.querySelector(`[data-lane="${CSS.escape(selectedTrack)}"]`)?.scrollIntoView({ block: 'nearest' });
+    const lane = selectedTrack ? document.querySelector<HTMLElement>(`[data-lane="${CSS.escape(selectedTrack)}"]`) : null;
+    if (!lane) return;
+    // Up or down only (a lane is as wide as the song: scrollIntoView would scroll the timeline sideways too)
+    for (let p = lane.parentElement; p; p = p.parentElement) {
+      const { overflowY } = getComputedStyle(p);
+      if (overflowY !== 'auto' && overflowY !== 'scroll') continue;
+      const box = p.getBoundingClientRect();
+      const r = lane.getBoundingClientRect();
+      if (r.top < box.top) p.scrollTop -= box.top - r.top;
+      else if (r.bottom > box.bottom) p.scrollTop += Math.min(r.top - box.top, r.bottom - box.bottom);
+      break;
+    }
   }, [trackCount, selectedTrack]);
   useEffect(() => connectAutosave(), []);
   // Menus hand focus back once used, so the shortcuts below keep working
