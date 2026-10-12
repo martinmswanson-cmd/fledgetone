@@ -664,6 +664,12 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 - If playback stutters on a big song, freeze the tracks you aren't changing (the snowflake in each track's header), switch **Playback** to **Stable** in the Inspector's Master tab, mute tracks you aren't working on, or switch off effects you don't need. Exporting never stutters, it just takes longer.
 - Sounds you load are kept in this browser; a private window may not allow it. Save the project to keep its sounds safe.
 
+## Reporting a problem
+
+Something not working, sounding wrong or crashing? Click **Report a problem** at the bottom of the page (or search for *report*). Describe what you were doing, what you expected and what happened instead, and add your email if you'd like a reply. **Email it** opens your email program with the report addressed to martin@twobirdsworkshop.com; **Copy report** copies it to paste anywhere. You can also use the contact form at twobirdsworkshop.com (pick **SOMETHING'S BROKEN**).
+
+With **Include technical details** ticked (it is unless you untick it), the report also carries your browser, audio settings, the size of the song (tracks, clips, notes, tempo, instruments) and the last few errors the page hit; **See exactly what's included** shows all of it. Your song itself isn't sent: if the problem is in one song, **Save** it and attach the file.
+
 ## Credits
 
 The synths and drum kits are generated in your browser. The recorded instruments play free sample libraries that people made and shared. Thank you to all of them.
