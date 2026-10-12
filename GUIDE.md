@@ -645,6 +645,15 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 - Name it, then **Save WAV** to use it in your game, or **Add to song** to put it at the playhead on the selected Audio track (or a new one). **Recent** keeps the last ten you made while the page is open; click one to bring it back.
 - The same settings always make the same sound, so a sound you saved can be made again exactly.
 
+### Micro-variations for game sounds
+
+A sound a game plays again and again (a footstep, a sword swing, a menu click) sounds mechanical if it's the very same every time, so games pick one of several slightly different takes at random. Right-click a short clip (a beat or two) and choose **Generate variations…**:
+
+- **Takes**: 4, 6 or 8. The first is the clip as it is; the others are drawn within the bounds below, spread across them so no two come out nearly the same. **Reroll** draws new ones.
+- **Pitch** (± %, 5% is about a semitone either way; a higher take is a little shorter, as on a sampler, so it works on drums and recordings too), **Brightness** (± %: the track's Filter cutoff, or a gentle low-pass if the Filter is off), **Length** (± ms: how long each note is held before it lets go) and **Level** (± %).
+- **Keep the reverb and echo**: off by default, since game sounds are usually dry and the game adds its own space.
+- The numbered buttons play each take. **Save .zip** saves them as `<clip>_01.wav` to `_08.wav` (one shared level, the loudest at -1 dBFS, with the silence at the end trimmed); **Lay out on the timeline** puts them end to end on a new Audio track right after the clip.
+
 ### Audition like the game
 
 **Audition like the game** (at the bottom of the Game preview) renders the states, their stems, the stingers and the transition sounds exactly as the game kit exports them (it takes a few seconds, more for a long song), then plays them with the kit's own web player. Big pads switch states (a waiting one pulses until its line), stinger pads fire stingers on the next beat, and **Intensity** crossfades the stem groups. Every switch follows your transition matrix, crossfades included, so what you hear is what the game will do. The song stops while it's open.
