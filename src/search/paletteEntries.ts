@@ -111,6 +111,18 @@ const TOOLS: Item[] = [
   } },
   { title: 'Video tools', keywords: 'video tools panel scoring picture film edit editor cuts dialogue hit points', detail: 'The reference video, its cuts and dialogue, hit points, markers for editors (the Video tab).', run: () => ui().openDock('video') },
   { title: 'Menu bar', keywords: 'menu menus file edit song track tools view help', detail: 'Every tool, by where a DAW keeps it.', run: () => void reveal('#menu-file') },
+  { title: 'Tempo change', keywords: 'tempo change map ritardando accelerando glide ramp speed up slow down bpm automation', detail: 'Double-click the ruler\'s top row, or right-click the ruler: Tempo change here / Tempo glide to here.', run: () => 'Double-click the top row of the ruler for a tempo change there, or right-click the ruler for a jump or a glide.' },
+  { title: 'Time signature', keywords: 'time signature meter 3/4 6/8 7/8 5/4 odd measure waltz', detail: 'Right-click the ruler: Time signature change here (or click the one at the start of the ruler\'s top row).', run: () => 'Right-click the ruler and choose Time signature change here, or click the time signature at the start of the ruler\'s top row.' },
+  { title: 'Bus (group channel)', keywords: 'bus group channel submix subgroup route routing output aux', detail: 'Tracks that play into one fader, inserts and sends.', run: () => void useTimelineStore.getState().addTrack('bus') },
+  { title: 'Expression lanes (pitch bend, mod wheel, sustain)', keywords: 'pitch bend mod wheel modulation vibrato sustain pedal expression controller cc lane', detail: 'At the bottom of the piano roll.', run: () => 'Open a clip in the piano roll: the Pitch bend, Mod wheel and Sustain pedal lanes are at the bottom.' },
+  { title: 'Punch in / out', keywords: 'punch in out record replace drop in overdub range', detail: 'Record only between two points (the Record button\'s settings).', run: async () => void (await press('button[title^="Recording settings"]')) },
+  { title: 'Takes and comping', keywords: 'takes comp comping take folder loop record best bits playlist lanes', detail: 'Loop passes as takes, then pick the best parts (Recording settings: Loop passes are takes).', run: async () => void (await press('button[title^="Recording settings"]')) },
+  { title: 'Plugin instrument (WAM)', keywords: 'plugin wam web audio module vst instrument third party external synth', detail: 'Load a Web Audio Module instrument by its address.', run: () => useUiStore.getState().setPluginDialog({ trackId: null }) },
+  { title: 'Plugin effect (WAM)', keywords: 'plugin wam web audio module vst effect insert third party external fx', detail: 'Right-click a track: Add plugin effect (WAM)…', run: () => {
+    const id = useTimelineStore.getState().selectedTrackId;
+    if (!id) return 'Select a track first (or right-click its name: Add plugin effect (WAM)…).';
+    useUiStore.getState().setPluginDialog({ trackId: id });
+  } },
   { title: 'Spectrum', keywords: 'spectrum analyser analyzer visualizer visualiser frequency readout led neon cyberpunk city terrain radar hud data rain hologram pigeons', detail: 'The live spectrum, next to the master in the Mixer, as LED bars, a neon city, terrain, radar, data rain or holograms.', run: () => ui().setDialog('mixer') },
   { title: 'Bottom panel', keywords: 'dock bottom panel tabs mixer instruments game video sfx', detail: 'Show or hide the panel under the timeline.', run: () => ui().setDockOpen(!ui().dockOpen) },
   { title: 'Markers list', keywords: 'markers sections rename jump list', run: async () => void (await press('button[title^="Markers:"]')) },

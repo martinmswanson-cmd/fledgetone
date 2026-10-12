@@ -154,6 +154,45 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 
 ## Recently finished
 
+- **Tempo map and time signatures** (`src/audio/tempoMap.ts`, pure, tested in
+  `scripts/tempoMap.test.mjs`): positions stay in bars of 4 quarter notes; a `Tempo` is a number
+  or `{bpm, points}` where each point jumps or glides (linear in time) from the one before. Every
+  bars↔seconds conversion takes a `Tempo` (`barToSeconds`, `secondsToBar`, `tempoAt`). Meters
+  only change counting (ruler, grid, readouts, metronome, count-in): `measuresBetween`,
+  `toMeasureBeat`. Live, `scheduleTempo` puts Transport tempo events at each change and at the loop
+  In, and `applyTempoAt` sets it on start and seek; exports do the same in the offline Transport.
+  Audio clips play at `tempoAt(clip.startBar)`. UI: `TempoRow.tsx` (the ruler's top row), ruler
+  menu entries. Store: `tempoPoints`, `meter`, `meterPoints` (in history, saved).
+- **Buses** (`src/store/buses.ts`, tested): a track with `instrumentKey: 'bus'`; others route to
+  it with `Track.output`. `soloLit` / `audibleIds` carry solo and mute through bus chains;
+  `busFirst` orders renders so a bus strip exists before its inputs. A bus strip gets √2 input
+  makeup (`trackStrip.ts`) so 0 dB centred is transparent through the double pan law.
+- **Expression lanes** (`src/store/expression.ts`, tested): `Clip.expression = {bend, mod,
+  sustain}`. Sustain lengthens notes (`sustainNotes`) before scheduling; bend and mod become pitch
+  events every 1/128 bar where they move (`pitchEvents`), fired before notes. The recorded
+  instruments bend through `samplerVoice`, which starts and releases its own sources and keeps
+  each one's base rate (Tone's Sampler forgets a source once its release is scheduled).
+  `ExpressionLane.tsx` is the editor.
+- **Punch and takes** (`src/store/takes.ts`, tested; `recording.ts`): `Clip.takes` and `Clip.comp`
+  (segments `{at, take}`). A MIDI folder's notes are rewritten from the comp (`applyComp`); a mic
+  folder is expanded into one clip per segment at play time (`expandAudioComp`, live and export),
+  overlapping by 10 ms so the automatic crossfade blends the joins. `Take` tracks the loop pass of
+  each note (`cover` starts a pass); `finish(…, {passes, punch})` splits by pass and crops to the
+  punch. Mic takes: one sound, each take an offset into it (`recordedPieces`). Punch state is
+  session-only (`punch` in the store); `recordOptions.takes` is per browser. UI: `TakesDialog.tsx`,
+  the record popover, the ruler's red punch bar.
+- **WAM plugins** (`src/audio/wamHost.ts`, `presets/wamPlugin.ts`, `PluginDialogs.tsx`):
+  `@webaudiomodules/sdk` sets up the host per native context; plugins load by dynamic import.
+  They're wired into Tone's graph natively (`_nativeAudioNode`), and every Tone node a plugin plays
+  into gets `keepActive` (a silent ConstantSource): standardized-audio-context takes nodes with no
+  input it knows of out of the native graph, which silenced plugins live (offline worked). The
+  SDK's base `initialize` ignores the initial state, so the host calls `setState` itself. Live
+  instances register by plugin id (for their windows); `captureWamStates` reads settings every 3 s
+  and on window close into `Track.plugin.state` / `pluginFx[].state` (no undo step). URLs from an
+  opened project need allowing (`allowPluginUrls`, localStorage); the instrument rebuild key
+  includes `pluginEpoch()`. Tested with two small SDK plugins (a sine synth and a level effect)
+  served locally; the public plugin sites weren't reachable from the sandbox, so try a real one.
+
 - **Spectrum styles** (`spectrumSkins.ts`): one `drawSpectrum(g, skin, rect, bands, t, memory)`
   draws LED bars, Neon city, Grid terrain, Radar HUD, Data rain or Holo pigeons into any canvas
   rect (in canvas pixels, no transform: the glitch and the city's reflection copy the canvas onto
@@ -282,8 +321,9 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 
 ## Ideas not started
 
-- Tempo changes during a song (a tempo map) and time-signature changes; a sustain-pedal lane;
-  per-note pitch bend; rim / shaker / tambourine rows on the kits.
+- Per-note pitch bend (MPE); rim / shaker / tambourine rows on the kits; WAM plugin automation
+  (their parameters as automation lanes); live mod-wheel vibrato while playing (it's recorded, and
+  plays back, but isn't heard live).
 - A desktop app in Rust, once the web version peaks (the owner wants to wait).
 - Time-stretch and vocal tuning run on the main thread (about 0.2 s and 1 s per 30 s of audio):
   a Worker would keep the page smooth on long takes.
