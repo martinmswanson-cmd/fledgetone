@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { isVideoFile, useVideoStore } from '../store/videoStore';
 import { FolderOpen } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { hasWork, parseProject } from '../store/project';
@@ -8,7 +9,8 @@ import { ChoiceButton } from './timeline/ProjectBar';
 
 /** A dragged item that is (or may be) a project file: browsers give a type but no name while it's in the air. */
 const draggingProjectFile = (dt: DataTransfer | null): boolean =>
-  !!dt && Array.from(dt.items).some((item) => item.kind === 'file' && /json/.test(item.type));
+  !!dt && Array.from(dt.items).some((item) => item.kind === 'file' && (/json/.test(item.type) || item.type.startsWith('video/')));
+const draggingVideo = (dt: DataTransfer | null): boolean => !!dt && Array.from(dt.items).some((item) => item.kind === 'file' && item.type.startsWith('video/'));
 
 const isProjectFile = (file: File): boolean => /\.json$/i.test(file.name) || /json/.test(file.type);
 
@@ -21,6 +23,7 @@ const isProjectFile = (file: File): boolean => /\.json$/i.test(file.name) || /js
 export const ProjectDrop: React.FC = () => {
   const [over, setOver] = useState(false);
   const [pending, setPending] = useState<File | null>(null);
+  const [video, setVideo] = useState(false);
 
   useEffect(() => {
     // Enter and leave fire for every element passed over: count them to know when the drag has left the window
@@ -29,6 +32,7 @@ export const ProjectDrop: React.FC = () => {
       if (!draggingProjectFile(e.dataTransfer)) return;
       depth++;
       setOver(true);
+      setVideo(draggingVideo(e.dataTransfer));
     };
     const leave = (e: DragEvent) => {
       if (!draggingProjectFile(e.dataTransfer)) return;
@@ -42,9 +46,18 @@ export const ProjectDrop: React.FC = () => {
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
     };
     const drop = (e: DragEvent) => {
-      const file = Array.from(e.dataTransfer?.files ?? []).find(isProjectFile);
+      const files = Array.from(e.dataTransfer?.files ?? []);
       depth = 0;
       setOver(false);
+      // A video is the reference to score to (see videoStore.ts)
+      const clip = files.find(isVideoFile);
+      if (clip && !files.some(isProjectFile)) {
+        e.preventDefault();
+        e.stopPropagation();
+        void useVideoStore.getState().load(clip);
+        return;
+      }
+      const file = files.find(isProjectFile);
       if (!file) return;
       e.preventDefault();
       e.stopPropagation();
@@ -69,7 +82,7 @@ export const ProjectDrop: React.FC = () => {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-6 pointer-events-auto">
           <div className="flex items-center gap-3 rounded-xl border-2 border-dashed border-cyan-400 bg-forge-panel/90 px-6 py-4 text-sm font-semibold text-cyan-200 shadow-2xl">
             <FolderOpen className="w-5 h-5" />
-            Drop to open the project file
+            {video ? 'Drop to load the video to score to' : 'Drop to open the project file'}
           </div>
         </div>
       )}

@@ -59,7 +59,7 @@ function emphasis(text: string, key: string): React.ReactNode[] {
 
 /** Inline markup: `code` first (nothing inside it is markup), then **bold** and *italic*. */
 function inline(text: string, key: string): React.ReactNode[] {
-  return text.split(/(`[^`]+`)/).flatMap((part, i) =>
+  return text.split(/(`[^`]+`)/).flatMap<React.ReactNode>((part, i) =>
     part.startsWith('`') && part.endsWith('`') && part.length > 1
       ? [
           <code key={`${key}-c${i}`} className="px-1 py-px rounded bg-black/50 border border-forge-border text-cyan-200 font-mono text-[0.92em]">

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useVideoStore } from '../../store/videoStore';
 import { Download, Loader2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { safeFileName } from '../../store/project';
@@ -161,6 +162,30 @@ type Status =
  * how the file ends, and its sample format. Renders offline, then downloads a WAV (or a .zip
  * of stem WAVs). Closing the dialog, or Cancel, stops a render.
  */
+/**
+ * Mix a video file's own sound into `channels` (at `sampleRate`), `offset` seconds of the video
+ * at the start, 6 dB down so the music leads. A video without sound (or one the browser can't
+ * decode) leaves them as they are.
+ */
+async function mixVideoSound(file: File, channels: Float32Array[], sampleRate: number, offset: number): Promise<void> {
+  let decoded: AudioBuffer;
+  try {
+    decoded = await new OfflineAudioContext(2, 1, sampleRate).decodeAudioData(await file.arrayBuffer());
+  } catch {
+    showToast("The video's sound couldn't be read, so the video has the music only");
+    return;
+  }
+  const gain = 0.5;
+  const shift = Math.round(offset * sampleRate);
+  for (let c = 0; c < channels.length; c++) {
+    const src = decoded.getChannelData(Math.min(c, decoded.numberOfChannels - 1));
+    const out = channels[c];
+    const from = Math.max(0, -shift);
+    const to = Math.min(out.length, src.length - shift);
+    for (let i = from; i < to; i++) out[i] += src[i + shift] * gain;
+  }
+}
+
 export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const tracks = useTimelineStore((s) => s.tracks);
   const clips = useTimelineStore((s) => s.clips);
@@ -175,6 +200,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const markers = useTimelineStore((s) => s.markers);
   const master = useTimelineStore((s) => s.master);
   const [settings, setSettings] = useState(loadSettings);
+  const refVideo = useVideoStore((st) => st.video);
+  const videoStart = useVideoStore((st) => st.start);
+  const [useFootage, setUseFootage] = useState(true);
+  const [keepVideoSound, setKeepVideoSound] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const abortRef = useRef<AbortController | null>(null);
   // A render still going when the dialog goes away is stopped
@@ -296,8 +325,16 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         const sections = (opts.markers ?? [])
           .filter((m) => m.bar >= opts.startBar && m.bar < opts.endBar)
           .map((m) => ({ at: barToSeconds(m.bar, opts.bpm) - startSeconds, name: m.name }));
+        // On the reference video, if one is loaded and chosen: where it is at the export's start
+        const footage = refVideo && useFootage ? { url: refVideo.url, offset: startSeconds - videoStart } : undefined;
+        const channels = channelsOf(audio);
+        if (footage && keepVideoSound) {
+          setStatus({ kind: 'rendering', fileName, progress: 0.3, detail: "Reading the video's sound" });
+          await mixVideoSound(refVideo!.file, channels, audio.sampleRate, footage.offset);
+        }
         const blob = await renderVideo({
-          channels: channelsOf(audio),
+          footage,
+          channels,
           sampleRate: audio.sampleRate,
           title: projectName,
           subtitle: `${Math.round(opts.bpm * 100) / 100} BPM · made with Bo's Beatbox`,
@@ -456,6 +493,26 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           </>
         ) : videoOut ? (
           <>
+            {refVideo && (
+              <div className="flex flex-col gap-1.5 rounded-md border border-amber-400/40 bg-amber-500/5 p-2">
+                <label className="flex items-start gap-2 cursor-pointer text-forge-text">
+                  <input type="checkbox" checked={useFootage} onChange={(e) => setUseFootage(e.target.checked)} className="mt-0.5 accent-amber-400" />
+                  <span>
+                    Put the music on {refVideo.name}
+                    <span className="block text-forge-muted">The picture is your video, where it sits on the timeline (black before and after it), instead of the visualizer.</span>
+                  </span>
+                </label>
+                {useFootage && (
+                  <label className="flex items-start gap-2 cursor-pointer text-forge-text">
+                    <input type="checkbox" checked={keepVideoSound} onChange={(e) => setKeepVideoSound(e.target.checked)} className="mt-0.5 accent-amber-400" />
+                    <span>
+                      Keep the video's own sound too
+                      <span className="block text-forge-muted">Mixed under the music (sound effects, dialogue). Off: the music only.</span>
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
             <p>
               An MP4 video ({VIDEO_WIDTH}×{VIDEO_HEIGHT}, {VIDEO_FPS} fps) of the mix with a visualizer: the project's name, a spectrum that moves with the music, the whole song's waveform with a
               playhead, the section from your markers, and the time. Ready for YouTube, socials or a game's trailer. It's drawn faster than real time.

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { VideoLane } from '../video/VideoLane';
 import { Film } from 'lucide-react';
 import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { ProjectBar, RestoreSessionBanner } from './ProjectBar';
@@ -348,6 +349,8 @@ export const Timeline: React.FC = () => {
               </div>
               <TimeRuler originRef={rulerRef} onScrubStart={onScrubStart} onOpenMenu={setRulerMenu} />
             </div>
+
+            <VideoLane />
 
             {/* Tracks */}
             {tracks.map((track) => (
