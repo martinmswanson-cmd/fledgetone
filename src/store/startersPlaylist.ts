@@ -7,7 +7,7 @@ import { barsToDuration } from './timelineTypes';
 import { clip, D, master, progression, project, snareRoll, track } from './starterKit';
 
 /**
- * More genre starters, for the styles of the owner's playlist: artcore boss fights, bass music,
+ * More genre starters, for the styles the owner listens to most: artcore boss fights, bass music,
  * internet rap and phonk, bedroom pop and jazz-pop, theatrical pop and two band styles. Melodies
  * are written for these starters (not copied from any song); progressions, tempos and grooves
  * follow each style's conventions.
@@ -77,8 +77,8 @@ const softHit: Step[] = [[0, FX_NOTES.impact, 0.45], [16, FX_NOTES.downlifter, 0
 /** A snare roll with the last beat left silent before the drop. */
 const rollWithGap = snareRoll.filter(([s]) => s < 60);
 
-/** The Amen-style break rebuilt from single hits, two bars; `fill` ends bar 2 with a 32nd roll. */
-const amen = (fill = false): Step[] => [
+/** A classic funk breakbeat rebuilt from single hits, two bars; `fill` ends bar 2 with a 32nd roll. */
+const breakbeat = (fill = false): Step[] => [
   ...beat([[D.kick, 'X.X.......XX....'], [D.snare, '...gX.gX.X..Xg.X'], [D.closedHat, 'x.x.x.x.x.x.x.x.']], 0.8),
   ...later(
     fill
@@ -140,7 +140,7 @@ function artcore(): ProjectSnapshot {
   const bassRoots = ['D2', 'A#1', 'F1', 'C2'];
   const reeseLine = everyBar(4, (b): Step[] => [[0, bassRoots[b], 0.85, '4n'], [6, bassRoots[b], 0.7, '8n'], [10, bassRoots[b], 0.7, '8n'], [12, nameOf(midiOf(bassRoots[b]) + 12), 0.75, '4n']]);
   const dropChoir = progression([['D4', 'F4', 'A4'], ['D4', 'F4', 'A#4'], ['C4', 'F4', 'A4'], ['C4', 'E4', 'G4']], 16, '1n', 0.5);
-  const dropDrums = [[0, D.crash, 0.55] as Step, ...amen(), ...later(amen(true), 32)];
+  const dropDrums = [[0, D.crash, 0.55] as Step, ...breakbeat(), ...later(breakbeat(true), 32)];
   const taikoHits: Step[] = [[0, 'D2', 0.85], [8, 'A2', 0.7], [60, 'D2', 0.7], [62, 'A2', 0.75]];
 
   return project(
@@ -289,9 +289,9 @@ function breakcore(): ProjectSnapshot {
   const chords = [['C#4', 'E4', 'G#4', 'B4'], ['A3', 'C#4', 'E4', 'G#4'], ['B3', 'E4', 'G#4'], ['B3', 'D#4', 'F#4']];
   const roots = ['C#2', 'A1', 'E2', 'B1'];
   const hardcoreBeat = beat([[D.kick, 'X...X...X...X...'], [D.snare, '....X.......X...'], [D.openHat, '..x...x...x...x.']], 0.8);
-  // Breakcore: the Amen, its last bars chopped (bar 3 starts with bar 1's second half) and a stop-time
+  // Breakcore: the break, its last bars chopped (bar 3 starts with bar 1's second half) and a stop-time
   const chopped = [
-    ...amen(),
+    ...breakbeat(),
     ...later(beat([[D.kick, '..XX....X.X.....'], [D.snare, 'X.g.X.gX.X..'], [D.closedHat, 'x.x.x.x.x.x.']], 0.8), 32),
     ...later(roll32(D.snare, 12, 16, 0.3, 0.9), 32),
     ...later(beat([[D.kick, 'X.X.....'], [D.snare, '...gX.gX'], [D.closedHat, 'x.x.x.x.']], 0.8), 48),
@@ -310,7 +310,7 @@ function breakcore(): ProjectSnapshot {
       clip(rhodes, 'Chords', 5, 4, progression(chords, 16, '1n', 0.6)),
       clip(breaks, 'Breakcore A', 5, 4, chopped),
       clip(sub, 'Sub', 5, 4, progression(roots, 16, '2n.', 0.65)),
-      clip(breaks, 'Breaks', 9, 4, [...amen(), ...later(amen(true), 32)], 2),
+      clip(breaks, 'Breaks', 9, 4, [...breakbeat(), ...later(breakbeat(true), 32)], 2),
       clip(saw, 'Hook B', 9, 4, hook, 2),
       clip(pluck, 'Arp', 9, 4, everyBar(4, (b) => Array.from({ length: 16 }, (_, i): Step => [i, chords[b][i % chords[b].length].replace(/\d/, (o) => String(Number(o) + 1)), i % 4 === 0 ? 0.7 : 0.5, '16n'])), 2),
       clip(rhodes, 'Chords', 9, 4, progression(chords, 16, '1n', 0.5), 2),
