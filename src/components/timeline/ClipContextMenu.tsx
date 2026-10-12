@@ -178,7 +178,15 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         ...(audioClip && onChop
           ? [
               { key: 'chop', label: 'Chop to Slicer…', icon: <Slice className="w-3.5 h-3.5" />, onClick: run(() => onChop(menu.clipId!)) },
-              { key: 'tune', label: 'Tune vocal…', icon: <Wand2 className="w-3.5 h-3.5" />, onClick: run(() => useUiStore.getState().setTuneClip(menu.clipId!)) },
+              {
+                key: 'tune',
+                label: 'Tune vocal…',
+                shortcut: takeCount ? 'flatten first' : '',
+                icon: <Wand2 className="w-3.5 h-3.5" />,
+                onClick: run(() => useUiStore.getState().setTuneClip(menu.clipId!)),
+                // A take folder plays several sounds: tune it once it's flattened
+                disabled: takeCount > 1,
+              },
             ]
           : []),
         ...(onVariations

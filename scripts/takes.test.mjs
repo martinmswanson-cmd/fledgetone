@@ -96,8 +96,8 @@ test('a mic recording over a looping region: a take per pass, partial first pass
     { startBar: 5, lengthBars: 2, from: 6 },
     { startBar: 5, lengthBars: 2, from: 10 },
   ]);
-  // Takes off: the last pass, as far as it got
-  assert.deepEqual(t.recordedPieces(6, 11, loop, null, false, between, after), [{ startBar: 5, lengthBars: 0.5, from: 10 }]);
+  // Takes off: the last whole pass (not the bit after the last wrap)
+  assert.deepEqual(t.recordedPieces(6, 11, loop, null, false, between, after), [{ startBar: 5, lengthBars: 2, from: 6 }]);
 });
 
 test('a mic recording punched in: only the punch range is kept', () => {
@@ -110,4 +110,42 @@ test('a mic recording punched in: only the punch range is kept', () => {
     { startBar: 5.5, lengthBars: 0.5, from: 1 },
     { startBar: 5.5, lengthBars: 0.5, from: 5 },
   ]);
+});
+
+test('review fixes: comp keeps the folder\'s gain and stretch; pieces carry the stretch', () => {
+  const audio = (soundId, offset) => ({ soundId, offset, gain: 0, fadeIn: 0, fadeOut: 0 });
+  const c = {
+    id: 'm', trackId: 'k', name: 'Vox', startBar: 1, lengthBars: 2, isSelected: false, notes: [],
+    audio: { ...audio('a', 0), gain: -6, fadeIn: 0.1, stretchBpm: 100 },
+    takes: [{ id: 'a', name: 'A', audio: audio('a', 0) }, { id: 'b', name: 'B', audio: audio('b', 3) }],
+    comp: [{ at: 0, take: 1 }],
+  };
+  const applied = t.applyComp(c, () => 'x');
+  assert.equal(applied.audio.soundId, 'b');
+  assert.equal(applied.audio.offset, 3);
+  assert.equal(applied.audio.gain, -6);
+  assert.equal(applied.audio.stretchBpm, 100);
+  const pieces = t.expandAudioComp({ ...c, comp: [{ at: 0, take: 0 }, { at: 1, take: 1 }] }, 2);
+  assert.ok(pieces.every((p) => p.audio.stretchBpm === 100 && p.audio.gain === -6));
+});
+
+test('review fixes: piano roll edits survive a comp change', () => {
+  const c = t.applyComp(folder(), () => 'n');
+  // Transpose what plays (take 2's notes) up an octave
+  const edited = { ...c, notes: c.notes.map((n) => ({ ...n, note: 'C5' })) };
+  const kept = t.keepNoteEdits(edited);
+  assert.ok(kept.takes[1].notes.every((n) => n.note === 'C5'));
+  assert.ok(kept.takes[0].notes.every((n) => n.note === 'C4'));
+  assert.equal(t.keepNoteEdits(c), c);
+});
+
+test('review fixes: recorded passes', () => {
+  const loop = { inBar: 5, outBar: 7 };
+  // Takes on, one pass and a 50 ms tail: the tail isn't a take
+  assert.deepEqual(t.recordedPieces(5, 4.05, loop, null, true, between, after), [{ startBar: 5, lengthBars: 2, from: 0 }]);
+  // Takes off, punch over the loop, stopped just after the wrap: the whole pass, not the sliver
+  assert.deepEqual(t.recordedPieces(5, 4.05, loop, { inBar: 5, outBar: 7 }, false, between, after), [{ startBar: 5, lengthBars: 2, from: 0 }]);
+  // Started before the loop In: the passes after it are takes from the In
+  const pieces = t.recordedPieces(3, 12, loop, null, true, between, after);
+  assert.deepEqual(pieces.map((p) => [p.startBar, p.lengthBars, p.from]), [[5, 2, 4], [5, 2, 8]]);
 });

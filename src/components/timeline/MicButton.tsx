@@ -64,7 +64,9 @@ export const MicButton: React.FC = () => {
       const seconds = take.channels[0].length / take.sampleRate;
       const startBar = Math.max(1, take.startBar);
       const punch = s.punch.enabled ? s.punch : null;
-      if (!punch && !s.recordOptions.takes) {
+      // Straight onto the track, unless it went round the loop (keep a pass), is punched, or makes takes
+      const looped = s.loopRegion.enabled && startBar < s.loopRegion.outBar && secondsToBar(barToSeconds(startBar, songTempo(s)) + seconds, songTempo(s)) > s.loopRegion.outBar;
+      if (!punch && !s.recordOptions.takes && !looped) {
         const message = s.addAudioClips(target, startBar, [sound]);
         showToast(message ?? `Recorded ${name} (${seconds.toFixed(1)} s)`);
         return;

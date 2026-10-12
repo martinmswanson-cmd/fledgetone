@@ -75,7 +75,7 @@ import {
 import { rippleRules, type RippleEdit } from './ripple';
 import { isBus, tidyRoutes, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
-import { addTake, applyComp, flattenTakes, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
+import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
@@ -1426,7 +1426,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip?.takes?.length) return s;
-        const next = applyComp({ ...clip, comp: setCompRange(clip, from, to, take) }, () => uid('note'));
+        const kept = keepNoteEdits(clip);
+        const next = applyComp({ ...kept, comp: setCompRange(kept, from, to, take) }, () => uid('note'));
         return { clips: s.clips.map((c) => (c === clip ? next : c)), ...pushPast(s) };
       }),
 
@@ -1434,7 +1435,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip?.takes?.length) return s;
-        const left = removeTake(clip, take);
+        const left = removeTake(keepNoteEdits(clip), take);
         const next = left ? applyComp(left, () => uid('note')) : null;
         const flat = next && next.takes!.length > 1 ? next : flattenTakes(next ?? clip);
         return { clips: s.clips.map((c) => (c === clip ? flat : c)), ...pushPast(s) };
@@ -1445,7 +1446,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip?.takes?.length) return s;
         // A mic folder comped across takes can't be one sound: it stays the take its comp starts with
-        return { clips: s.clips.map((c) => (c === clip ? flattenTakes(applyComp(clip, () => uid('note'))) : c)), ...pushPast(s) };
+        // What it plays now, edits included
+        return { clips: s.clips.map((c) => (c === clip ? flattenTakes(clip) : c)), ...pushPast(s) };
       }),
 
     addAudioTakes: (trackId, startBar, lengthBars, recorded, clipName) => {
@@ -1703,8 +1705,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         if (stretchBpm === undefined) delete audio.stretchBpm;
         // The same stretch of the sound, played at the new speed
         const local = tempoAt(clip.startBar, songTempo(s));
-        const lengthBars = Math.max(0.0625, Math.min(TOTAL_BARS + 1 - clip.startBar, (clip.lengthBars * stretchRatio(clip.audio, local)) / stretchRatio(audio, local)));
-        return { clips: s.clips.map((c) => (c === clip ? { ...c, lengthBars, audio } : c)), ...pushPast(s) };
+        const scale = stretchRatio(clip.audio, local) / stretchRatio(audio, local);
+        const lengthBars = Math.max(0.0625, Math.min(TOTAL_BARS + 1 - clip.startBar, clip.lengthBars * scale));
+        // A take folder's comp keeps its place in the sound
+        const comp = clip.comp?.map((seg) => ({ ...seg, at: seg.at * scale }));
+        return { clips: s.clips.map((c) => (c === clip ? { ...c, lengthBars, audio, ...(comp ? { comp } : {}) } : c)), ...pushPast(s) };
       }),
 
     setTrackSynth: (trackId, synth, record = true) => updateTrack(trackId, () => ({ synth }), record),
@@ -1801,7 +1806,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const bpm = tempoAt(c.startBar, songTempo(get()));
         const end = c.startBar + c.lengthBars;
         // An audio clip's left edge can go back no further than the start of its sound
-        const earliest = c.audio ? Math.max(1, audioTrimStartLimit(c, bpm)) : 1;
+        // (a take folder's: no earlier than the start of the sound of whichever take starts latest in it)
+        const earliest = c.audio ? Math.max(1, ...[c.audio, ...(c.takes ?? []).map((t) => t.audio)].map((a) => (a ? audioTrimStartLimit({ ...c, audio: a }, bpm) : 1))) : 1;
         const start = Math.max(earliest, Math.min(end - 0.0625, newStartBar));
         const delta = start - c.startBar;
         // Notes keep their absolute song position; offsets shift so trimmed notes become hidden
