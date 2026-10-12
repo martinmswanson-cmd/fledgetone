@@ -18,6 +18,10 @@ export const STARTERS = [
   { id: 'house', name: 'House', detail: '126 BPM, A minor. Four-on-the-floor, off-beat bass and hats, clav chord stabs, a pluck arp in the peak.' },
   { id: 'dnb', name: 'Drum & Bass', detail: '174 BPM, F minor. A two-step break, a gliding Reese bass, a string pad and a pluck arp.' },
   { id: 'trap', name: 'Trap', detail: '140 BPM, C minor. Half-time drums with hat rolls, a sliding 808, a dark pluck melody over strings.' },
+  { id: 'cinematic', name: 'Cinematic', detail: '100 BPM, D minor. Harp and strings, a cello ostinato with taiko building, then French horns over it all: boss fights and title screens.' },
+  { id: 'lofi', name: 'Lo-Fi', detail: '82 BPM, swung. Electric piano ninth chords, a dusty filtered beat, bass guitar and a flute line: calm levels and menus.' },
+  { id: 'chiptune', name: 'Chiptune', detail: '150 BPM, A minor. 8-bit pulse lead and arpeggios, a bouncing triangle bass and a noise kit: retro games.' },
+  { id: 'hiphop', name: 'Hip-Hop', detail: '90 BPM, boom bap. A swung beat, a piano loop, bass guitar and brass stabs in the hook.' },
 ] as const;
 export type StarterId = (typeof STARTERS)[number]['id'];
 
@@ -251,7 +255,178 @@ function trap(): ProjectSnapshot {
   );
 }
 
-const BUILDERS: Record<StarterId, () => ProjectSnapshot> = { dubstep, house, dnb, trap };
+// ---------- Cinematic ----------
+
+function cinematic(): ProjectSnapshot {
+  const harp = track('Harp', 'harp', { volume: -6, reverbSend: 0.45, pan: -0.2 });
+  const strings = track('Strings', 'strings', { volume: -15, reverbSend: 0.5 });
+  const cello = track('Cello', 'cello', { volume: -6, reverbSend: 0.35, pan: 0.15 });
+  const horns = track('Horns', 'frenchHorn', { volume: -4, reverbSend: 0.5 });
+  const taiko = track('Taiko', 'taiko', { volume: 3, reverbSend: 0.4 });
+  const sfx = track('FX', 'fx', { volume: -6, reverbSend: 0.3 });
+  // Dm - Bb - Gm - A, a bar each
+  const pad: Step[] = [
+    [0, ['D3', 'F3', 'A3', 'D4'], 0.7, '1n'],
+    [16, ['A#2', 'D3', 'F3', 'A#3'], 0.7, '1n'],
+    [32, ['G2', 'A#2', 'D3', 'G3'], 0.7, '1n'],
+    [48, ['A2', 'C#3', 'E3', 'A3'], 0.75, '1n'],
+  ];
+  const roots = ['D', 'A#', 'G', 'A'];
+  const thirds = ['F', 'D', 'A#', 'C#'];
+  const fifths = ['A', 'F', 'D', 'E'];
+  const arp = everyBar(4, (b) => [0, 2, 4, 6, 8, 10, 12, 14].map((s, i): Step => [s, `${[roots, fifths, thirds, fifths][i % 4][b]}${i < 4 ? 4 : 5}`, i % 4 === 0 ? 0.8 : 0.6, '8n']));
+  // Driving 8ths on the root, an octave jump on the last two
+  const ostinato = everyBar(4, (b) => Array.from({ length: 8 }, (_, i): Step => [i * 2, `${roots[b]}${i >= 6 ? 3 : 2}`, i % 2 ? 0.7 : 0.9, '8n']));
+  const theme: Step[] = [
+    [0, 'D4', 0.85, '4n.'], [6, 'E4', 0.8, '8n'], [8, 'F4', 0.85, '2n'],
+    [16, 'F4', 0.85, '4n.'], [22, 'G4', 0.8, '8n'], [24, 'A4', 0.9, '2n'],
+    [32, 'A#4', 0.9, '4n.'], [38, 'A4', 0.8, '8n'], [40, 'G4', 0.85, '2n'],
+    [48, 'A4', 0.9, '2n.'], [60, 'C#4', 0.75, '4n'],
+  ];
+  const war = everyBar(1, (): Step[] => [[0, 'C2', 1, '4n'], [6, 'C2', 0.7, '8n'], [8, 'G2', 0.85, '4n'], [12, 'C2', 0.8, '8n'], [14, 'C2', 0.9, '8n']]);
+  return project(
+    'Cinematic starter',
+    100,
+    0,
+    [9, 17],
+    [harp, strings, cello, horns, taiko, sfx],
+    [
+      clip(harp, 'Arpeggio', 1, 4, arp, 2),
+      clip(strings, 'Pad', 1, 4, pad, 4),
+      clip(cello, 'Ostinato', 5, 4, ostinato, 3),
+      clip(taiko, 'Build', 5, 1, [[0, 'C2', 0.7, '4n'], [8, 'C2', 0.6, '4n']], 4),
+      clip(taiko, 'War drums', 9, 1, war, 8),
+      clip(horns, 'Theme', 9, 4, theme, 2),
+      clip(sfx, 'Riser', 5, 4, BUILD_UP),
+      clip(sfx, 'Impact', 9, 2, DROP_HIT),
+    ],
+    [[1, 'Intro'], [5, 'Build'], [9, 'Climax']],
+    master({ on: false }, { on: true, amount: 1.25 })
+  );
+}
+
+// ---------- Lo-Fi ----------
+
+function lofi(): ProjectSnapshot {
+  const keys = track('Keys', 'rhodes', { volume: -9, reverbSend: 0.3, fx: { chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.3 } } });
+  const drums = track('Drums', 'drums', { volume: 2, fx: { filter: { on: true, type: 'lowpass', cutoff: 3200, resonance: 0.9 }, distortion: { on: true, amount: 0.15 } } });
+  const bass = track('Bass', 'bassGuitar', { volume: 0 });
+  const melody = track('Flute', 'flute', { volume: -4, reverbSend: 0.45, delaySend: 0.2, pan: 0.2 });
+  // Fmaj9 - Em7 - Dm9 - Cmaj9, a bar each, played lazily (a little after the beat)
+  const chords: Step[] = [
+    [1, ['F3', 'A3', 'C4', 'E4', 'G4'], 0.6, '2n.'],
+    [17, ['E3', 'G3', 'B3', 'D4'], 0.6, '2n.'],
+    [33, ['D3', 'F3', 'A3', 'C4', 'E4'], 0.6, '2n.'],
+    [49, ['C3', 'E3', 'G3', 'B3', 'D4'], 0.6, '2n.'],
+  ];
+  const beat = everyBar(2, (b): Step[] => [
+    [0, D.kick, 0.85], [7, D.kick, 0.55], [10, D.kick, 0.7], ...(b ? [[13, D.kick, 0.5] as Step] : []),
+    [4, D.snare, 0.7], [12, D.snare, 0.72],
+    ...[0, 2, 4, 6, 8, 10, 12, 14].map((s): Step => [s, D.closedHat, s % 4 === 0 ? 0.45 : 0.3]),
+  ]);
+  const bassLine: Step[] = [
+    [0, 'F1', 0.8, '4n.'], [10, 'C2', 0.6, '8n'], [16, 'E1', 0.8, '4n.'], [26, 'B1', 0.6, '8n'],
+    [32, 'D2', 0.8, '4n.'], [42, 'A1', 0.6, '8n'], [48, 'C2', 0.8, '4n.'], [58, 'G1', 0.6, '8n'],
+  ];
+  const tune: Step[] = [
+    [4, 'A5', 0.7, '8n'], [6, 'G5', 0.65, '8n'], [8, 'E5', 0.7, '4n.'],
+    [22, 'D5', 0.65, '8n'], [24, 'E5', 0.7, '4n'], [28, 'G5', 0.65, '4n'],
+    [36, 'F5', 0.7, '8n'], [38, 'E5', 0.65, '8n'], [40, 'C5', 0.7, '2n'],
+    [56, 'D5', 0.6, '8n'], [58, 'E5', 0.65, '8n'],
+  ];
+  return project(
+    'Lo-Fi starter',
+    82,
+    0.3,
+    [5, 17],
+    [keys, drums, bass, melody],
+    [
+      clip(keys, 'Chords', 1, 4, chords, 4),
+      clip(drums, 'Dusty beat', 5, 2, beat, 6),
+      clip(bass, 'Bass', 5, 4, bassLine, 3),
+      clip(melody, 'Flute', 9, 4, tune, 2),
+    ],
+    [[1, 'Intro'], [5, 'Groove'], [9, 'Melody']],
+    master({ on: false }, { on: true, amount: 1.1 })
+  );
+}
+
+// ---------- Chiptune ----------
+
+function chiptune(): ProjectSnapshot {
+  const lead = track('Lead', 'chipLead', { volume: 1 });
+  const arp = track('Arp', 'chipLead', { volume: -5, pan: 0.25, delaySend: 0.15 });
+  const bass = track('Bass', 'chipBass', { volume: -8 });
+  const drums = track('Drums', 'chipDrums', { volume: -1 });
+  // Am - F - C - G, a bar each
+  const triads = [['A4', 'C5', 'E5'], ['F4', 'A4', 'C5'], ['C5', 'E5', 'G5'], ['G4', 'B4', 'D5']];
+  const roots = ['A1', 'F1', 'C2', 'G1'];
+  const arps = everyBar(4, (b) => Array.from({ length: 16 }, (_, i): Step => [i, triads[b][i % 3], i % 4 === 0 ? 0.8 : 0.55, '16n']));
+  const bounce = everyBar(4, (b) => Array.from({ length: 8 }, (_, i): Step => [i * 2, i % 2 ? roots[b].replace(/\d/, (o) => String(Number(o) + 1)) : roots[b], 0.9, '8n']));
+  const beat = everyBar(1, (): Step[] => [
+    [0, D.kick, 1], [6, D.kick, 0.7], [8, D.kick, 0.9], [4, D.snare, 0.9], [12, D.snare, 0.9],
+    ...[0, 2, 4, 6, 8, 10, 12, 14].map((s): Step => [s, D.closedHat, 0.6]),
+  ]);
+  const theme: Step[] = [
+    [0, 'E5', 0.9, '8n'], [2, 'A5', 0.9, '8n'], [4, 'B5', 0.9, '8n'], [6, 'C6', 0.9, '4n'], [10, 'B5', 0.8, '8n'], [12, 'A5', 0.85, '4n'],
+    [16, 'F5', 0.9, '4n'], [20, 'A5', 0.85, '8n'], [22, 'C6', 0.9, '4n.'], [28, 'A5', 0.8, '8n'], [30, 'C6', 0.8, '8n'],
+    [32, 'G5', 0.9, '4n'], [36, 'E5', 0.85, '8n'], [38, 'G5', 0.85, '8n'], [40, 'C6', 0.9, '4n.'], [46, 'E6', 0.85, '8n'],
+    [48, 'D6', 0.9, '4n.'], [54, 'B5', 0.85, '8n'], [56, 'G5', 0.85, '4n'], [60, 'B5', 0.8, '8n'], [62, 'D6', 0.8, '8n'],
+  ];
+  return project(
+    'Chiptune starter',
+    150,
+    0,
+    [5, 17],
+    [lead, arp, bass, drums],
+    [
+      clip(arp, 'Arpeggios', 1, 4, arps, 4),
+      clip(bass, 'Bounce', 1, 4, bounce, 4),
+      clip(drums, 'Beat', 5, 1, beat, 12),
+      clip(lead, 'Theme', 5, 4, theme, 3),
+    ],
+    [[1, 'Intro'], [5, 'Theme'], [13, 'Repeat']],
+    master({ on: false }, { on: false })
+  );
+}
+
+// ---------- Hip-Hop ----------
+
+function hiphop(): ProjectSnapshot {
+  const drums = track('Drums', 'drums', { volume: -1, fx: { compressor: { on: true, threshold: -18, ratio: 3, makeup: 1 } } });
+  const piano = track('Piano', 'piano', { volume: 4, reverbSend: 0.25 });
+  const bass = track('Bass', 'bassGuitar', { volume: 3 });
+  const stabs = track('Stabs', 'brass', { volume: 5, reverbSend: 0.3 });
+  // Am9 - Dm9, two bars each
+  const loop: Step[] = [
+    [0, ['A2', 'E3', 'G3', 'B3', 'C4'], 0.65, '2n'], [10, ['A2', 'E3', 'G3', 'B3', 'C4'], 0.5, '8n'], [14, ['G3', 'B3', 'C4'], 0.45, '8n'],
+    [32, ['D3', 'F3', 'A3', 'C4', 'E4'], 0.65, '2n'], [42, ['D3', 'F3', 'A3', 'C4', 'E4'], 0.5, '8n'], [46, ['F3', 'A3', 'C4'], 0.45, '8n'],
+  ];
+  const boomBap = everyBar(2, (b): Step[] => [
+    [0, D.kick, 1], [7, D.kick, 0.6], [10, D.kick, 0.85], ...(b ? [[15, D.kick, 0.55] as Step] : []),
+    [4, D.snare, 0.95], [12, D.snare, 0.95],
+    ...[0, 2, 4, 6, 8, 10, 12, 14].map((s): Step => [s, b && s === 14 ? D.openHat : D.closedHat, s % 4 === 2 ? 0.35 : 0.5]),
+  ]);
+  const bassLine: Step[] = [[0, 'A1', 0.9, '4n.'], [10, 'A1', 0.7, '8n'], [14, 'G1', 0.7, '8n'], [32, 'D2', 0.9, '4n.'], [42, 'D2', 0.7, '8n'], [46, 'C2', 0.7, '8n']];
+  const hook: Step[] = [[0, ['A4', 'C5', 'E5'], 0.85, '8n'], [3, ['A4', 'C5', 'E5'], 0.75, '16n'], [32, ['A4', 'D5', 'F5'], 0.85, '8n'], [35, ['A4', 'D5', 'F5'], 0.75, '16n']];
+  return project(
+    'Hip-Hop starter',
+    90,
+    0.15,
+    [5, 17],
+    [drums, piano, bass, stabs],
+    [
+      clip(piano, 'Piano loop', 1, 4, loop, 4),
+      clip(drums, 'Boom bap', 5, 2, boomBap, 6),
+      clip(bass, 'Bass', 5, 4, bassLine, 3),
+      clip(stabs, 'Hook stabs', 13, 4, hook),
+    ],
+    [[1, 'Intro'], [5, 'Verse'], [13, 'Hook']],
+    master({ on: true, depth: 0.2 }, { on: true, amount: 1.1 })
+  );
+}
+
+const BUILDERS: Record<StarterId, () => ProjectSnapshot> = { dubstep, house, dnb, trap, cinematic, lofi, chiptune, hiphop };
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {

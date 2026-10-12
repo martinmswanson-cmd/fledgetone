@@ -29,6 +29,8 @@ export const INSTRUMENT_KEYS = [
   'fx',
   // string section
   'strings',
+  // chiptune
+  'chipLead', 'chipBass', 'chipDrums',
   // audio clips and vocal chops
   'slicer', 'audio',
 ] as const;
@@ -46,6 +48,7 @@ export const CATEGORIES = [
   'Mallets & Bells',
   'World',
   'FX',
+  'Chiptune',
   'Your Sounds',
 ] as const;
 export type InstrumentCategory = (typeof CATEGORIES)[number];
@@ -266,6 +269,11 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
     key: 'erhu', name: 'Erhu', blurb: 'Bowed strings, nasal tone, wide vibrato', color: '#be123c', category: 'World', kind: 'sampled', range: [62, 93],
     samples: nb('violin', VIOLIN_FILES, 0.5, -10), shaping: 'erhu', gain: 0, taper: [79, 5],
   },
+
+  // Chiptune
+  chipLead: { key: 'chipLead', name: 'Chip Lead', blurb: '8-bit pulse lead with vibrato', color: '#a3e635', category: 'Chiptune', kind: 'synth', range: [48, 96] },
+  chipBass: { key: 'chipBass', name: 'Chip Bass', blurb: '8-bit stepped triangle bass', color: '#22d3ee', category: 'Chiptune', kind: 'synth', range: [28, 72] },
+  chipDrums: { key: 'chipDrums', name: 'Chip Drums', blurb: '8-bit noise kit', color: '#f472b6', category: 'Chiptune', kind: 'drums', range: [36, 48], mono: true },
 
   // FX
   fx: { key: 'fx', name: 'FX', blurb: 'Risers, sweeps, impacts, drops', color: '#67e8f9', category: 'FX', kind: 'fx', range: [48, 57], gain: -5 },
