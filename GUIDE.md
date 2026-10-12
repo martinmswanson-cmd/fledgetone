@@ -13,7 +13,7 @@ It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen
 
 At the top is the header: **TEMPO** and **TAP**, **Swing**, **MASTER** volume, the loudness reading (once audio runs), **GUIDE** and **START AUDIO**. Under it, top to bottom:
 
-- **Arrangement Timeline**: the project bar (name, New, Open, Save, Export WAV), the toolbar, the ruler, your tracks, the Overview strip and the piano roll.
+- **Arrangement Timeline**: the project bar (name, New, Open, Save, Export, Share), the toolbar, the ruler, your tracks, the Overview strip and the piano roll.
 - **Instrument Browser**: try every instrument on an on-screen keyboard.
 - **Interactive Soundbank Audition Deck**: pads you can click or play from the keyboard, and drag onto the timeline.
 
@@ -400,6 +400,12 @@ The project bar sits above the toolbar.
 - **Project name**: click it to rename. It's used for the file names when you save and export.
 - **New**: start a **Blank timeline** (four empty tracks), load the **Demo song** (Sunset Stroll, 88 BPM), or start from a **genre starter**: **Dubstep** (140 BPM), **House** (126), **Drum & Bass** (174) or **Trap** (140). Each starter is 16 bars with its sections marked (intro, build, drop, and so on), the loop on the main section, its tracks mixed and the master's OTT and Stereo Width set for the style. Change anything; it's an ordinary project. This replaces what's on screen and clears undo, so save first.
 - **Open**: load a `.beatbox.json` project file. Like New, it replaces what's on screen straight away and clears undo, so save first. If the file can't be read, a red message explains why and nothing is replaced. You can also drop a `.beatbox.json` file anywhere on the page: a drop onto an empty timeline opens it at once, and when there's work on the timeline a dialog asks before replacing it.
+- **Share**: three ways to send the song to someone:
+  - **A link to this song**: the whole song travels inside the link (nothing is uploaded anywhere), and opening it opens the song in Bo's Beatbox, ready to play and change. **Copy link**, or **Share…** for your device's share menu. Sound files (audio clips, Sampler and Slicer sounds) can't go in a link, so the dialog says which tracks would be silent; frozen tracks just play live. A very long link can be cut off by some chat apps: the dialog warns when it's long.
+  - **The song as an MP3**: the whole song mixed, handed to your share menu where the browser can (phones, Windows, Safari on a Mac), or downloaded.
+  - **The project file**: everything, sound files included, shared or downloaded the same way.
+
+  Opening a shared link on a page that already has work on its timeline asks first.
 - **Save**: downloads the project as `<name>.beatbox.json` to your downloads folder. Keep this file: it's the only way to move a project to another browser or computer.
 
 A project file holds the tracks, clips, mixer and effect settings, tempo, swing, loop, markers, master reverb and delay, the master's OTT and Stereo Width, frame rate, and every sound it uses (audio clips, Slicer and Sampler sounds). It doesn't hold the master volume, zoom, snap or ruler setting.
@@ -446,7 +452,7 @@ The **metronome** button in the toolbar clicks on every beat while playing, loud
 
 ## Exporting audio
 
-Click **Export WAV**. The dialog has four choices, and remembers them in this browser:
+Click **Export**. The dialog has four choices, and remembers them in this browser:
 
 - **Range**: **Whole song** (bar 1 to the end of the last clip that plays), **Loop region** (In to Out, whether or not the loop is on), or **Intro + loop** (for games, below). For the loop, the dialog shows where it starts as a timecode at your frame rate.
 - **Export**: **Mixdown** (one stereo WAV of everything that plays) or **Stems**. For a mixdown, **Normalize to -14 LUFS** turns the whole file up or down to the loudness Spotify, YouTube and Apple Music play at, without letting its true peak pass -1 dBTP. If that would push the peak too high, the file stops short of -14 LUFS and the message says by how much; turn on the master **OTT** and raise its **Out gain** to get louder. When a mixdown finishes, its loudness and peak show at the bottom of the screen. **Stems** (one WAV per track that plays and has clips in the range, in one .zip). Stems all start at the range start and have the same length, so they line up in another program, and each includes the track's effects, sends and the shared reverb and echo. **Bypass master compressor & limiter** (on by default) makes the stems add up to the mix as it is before the master compressor and limiter.

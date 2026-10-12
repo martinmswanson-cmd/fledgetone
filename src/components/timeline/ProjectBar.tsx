@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Download, FilePlus2, FolderOpen, History, Music2, Save, X } from 'lucide-react';
+import { Download, FilePlus2, FolderOpen, History, Music2, Save, Share2, X } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
 import { currentProject, lastSession, retryAutosave, useTimelineStore } from '../../store/timelineStore';
 import { clearPreviousSession, parseProject, safeFileName, serializeProject } from '../../store/project';
@@ -7,6 +7,7 @@ import { referencedSoundIds } from '../../store/audioClips';
 import { embedSounds } from '../../audio/soundLibrary';
 import { downloadBlob } from '../../audio/exportWav';
 import { ExportDialog } from './ExportDialog';
+import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
 import { STARTERS } from '../../store/starters';
 import type { StarterId } from '../../store/starters';
@@ -168,7 +169,7 @@ const AutosaveStatusChip: React.FC = () => {
  */
 export const ProjectBar: React.FC = () => {
   const projectName = useTimelineStore((s) => s.projectName);
-  const [dialog, setDialog] = useState<'new' | 'export' | null>(null);
+  const [dialog, setDialog] = useState<'new' | 'export' | 'share' | null>(null);
   const [openError, setOpenError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -217,9 +218,12 @@ export const ProjectBar: React.FC = () => {
         type="button"
         className={`${barButton} !text-emerald-300 !border-emerald-500/50 hover:!bg-emerald-500/10`}
         onClick={() => setDialog('export')}
-        title="Render and download the song, or the loop, as WAV audio (the mix, or one file per track)"
+        title="Render the song or the loop as WAV, MP3, OGG or an MP4 video (the mix, one file per track, or an intro + loop for games)"
       >
-        <Download className="w-3.5 h-3.5" /> Export WAV
+        <Download className="w-3.5 h-3.5" /> Export
+      </button>
+      <button type="button" className={barButton} onClick={() => setDialog('share')} title="Share the song: a link that opens it, an MP3, or the project file">
+        <Share2 className="w-3.5 h-3.5" /> Share
       </button>
       <AutosaveStatusChip />
       <input
@@ -245,6 +249,7 @@ export const ProjectBar: React.FC = () => {
 
       {dialog === 'new' && <NewProjectDialog onClose={() => setDialog(null)} />}
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
+      {dialog === 'share' && <ShareDialog onClose={() => setDialog(null)} />}
     </div>
   );
 };
