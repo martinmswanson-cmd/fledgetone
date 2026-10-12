@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AudioWaveform, Gauge, Slice, Wand2, X } from 'lucide-react';
+import { AudioWaveform, FlipHorizontal2, Gauge, Magnet, Maximize2, Slice, Spline, Wand2, X } from 'lucide-react';
 import { useUiStore } from '../../store/uiStore';
 import { useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
@@ -11,7 +11,10 @@ import { dbToGain } from '../../audio/clipEnvelope';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
 import { ChopToSlicerDialog } from './ChopToSlicerDialog';
-import { Waveform } from './Waveform';
+import { ClipWaveform } from './Waveform';
+import { AudioWarpGain, type AudioTool } from './AudioWarpGain';
+import { normalizeClip, quantizeClipAudio, reverseClip } from '../../audio/audioEdits';
+import { showToast } from './toastStore';
 
 const WAVE_H = 120;
 const WAVE_COLUMNS = 1200;
@@ -30,6 +33,22 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
   const audio = clip.audio!;
   const meta = useSoundLibrary((s) => s.metas[audio.soundId]);
   const [chopping, setChopping] = useState(false);
+  const [tool, setTool] = useState<AudioTool>(null);
+  const [busy, setBusy] = useState(false);
+  const [grid, setGrid] = useState(0.25);
+  const [strength, setStrength] = useState(1);
+  /** Run an edit that works on the sound, with a word if it fails. */
+  const edit = async (work: () => Promise<string | null>) => {
+    setBusy(true);
+    try {
+      const said = await work();
+      if (said) showToast(said);
+    } catch (err) {
+      showToast(`Couldn't do that: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
   const seconds = audioClipSeconds(clip, bpm);
   /** Seconds of the sound it plays (more or fewer than `seconds` when it follows the tempo) */
   const sourceSeconds = audioSourceSeconds(clip, bpm);
@@ -107,7 +126,7 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
 
       <div className="relative px-4 py-3 select-none">
         <div className="relative rounded-md overflow-hidden border border-forge-border bg-black/40" style={{ height: WAVE_H }}>
-          <Waveform soundId={audio.soundId} from={audio.offset} to={audio.offset + sourceSeconds} width={WAVE_COLUMNS} height={WAVE_H} stretch gain={dbToGain(audio.gain)} color={track.color} className="block" />
+          <ClipWaveform audio={audio} bpm={bpm} seconds={seconds} columns={WAVE_COLUMNS} height={WAVE_H} gain={dbToGain(audio.gain)} color={track.color} className="block" />
           {/* The fades: the quiet corners shaded, as on the clip */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${WAVE_COLUMNS} ${WAVE_H}`} preserveAspectRatio="none" aria-hidden="true">
             {audio.fadeIn > 0 && <polygon points={`0,0 ${px(audio.fadeIn)},0 0,${WAVE_H}`} fill="black" fillOpacity={0.45} />}
@@ -116,6 +135,58 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
             {audio.fadeOut > 0 && <line x1={WAVE_COLUMNS} y1={WAVE_H} x2={WAVE_COLUMNS - px(audio.fadeOut)} y2={0} stroke="white" strokeOpacity={0.6} strokeWidth={1} vectorEffect="non-scaling-stroke" />}
           </svg>
           <EditorPlayhead clip={clip} />
+          <AudioWarpGain clip={clip} bpm={bpm} seconds={seconds} width={WAVE_COLUMNS} height={WAVE_H} tool={tool} />
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-mono text-forge-muted" role="toolbar" aria-label="Audio editing">
+          <button type="button" aria-pressed={tool === 'warp'} onClick={() => setTool(tool === 'warp' ? null : 'warp')} className={`${select} flex items-center gap-1.5 ${tool === 'warp' ? '!border-amber-400 text-amber-200 bg-amber-500/15' : 'hover:border-cyan-500'}`} title="Warp markers: double-click the waveform to pin a moment, drag a marker to move it in time (snaps to 16ths, Shift for anywhere), right-click to remove">
+            <Spline className="w-3.5 h-3.5" /> Warp{audio.warp?.length ? ` · ${audio.warp.length}` : ''}
+          </button>
+          <button type="button" aria-pressed={tool === 'gain'} onClick={() => setTool(tool === 'gain' ? null : 'gain')} className={`${select} flex items-center gap-1.5 ${tool === 'gain' ? '!border-lime-400 text-lime-200 bg-lime-500/15' : 'hover:border-cyan-500'}`} title="Gain envelope: click to add a point, drag points up and down, right-click to remove">
+            <AudioWaveform className="w-3.5 h-3.5" /> Gain envelope{audio.envelope?.length ? ` · ${audio.envelope.length}` : ''}
+          </button>
+          <span className="mx-1 h-5 w-px bg-forge-border" />
+          <span>Quantize audio</span>
+          <select value={grid} onChange={(e) => setGrid(Number(e.target.value))} className={select} aria-label="Quantize grid">
+            <option value={1}>1/4</option>
+            <option value={0.5}>1/8</option>
+            <option value={0.25}>1/16</option>
+            <option value={0.125}>1/32</option>
+          </select>
+          <select value={strength} onChange={(e) => setStrength(Number(e.target.value))} className={select} aria-label="Quantize strength" title="How far each hit moves toward the grid">
+            <option value={1}>100%</option>
+            <option value={0.75}>75%</option>
+            <option value={0.5}>50%</option>
+            <option value={0.25}>25%</option>
+          </select>
+          <button type="button" disabled={busy} onClick={() => void edit(async () => `Moved ${await quantizeClipAudio(clip.id, grid, strength)} hits onto the grid (with warp markers: drag them to adjust, Undo to go back)`)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500 disabled:opacity-50`} title="Find the hits in the audio and pull each onto the grid with warp markers">
+            <Magnet className="w-3.5 h-3.5" /> Quantize
+          </button>
+          {!!audio.warp?.length && (
+            <button type="button" onClick={() => useTimelineStore.getState().setClipAudio(clip.id, { warp: undefined }, true)} className={`${select} hover:border-red-400`} title="Remove every warp marker">
+              Clear warp
+            </button>
+          )}
+          {!!audio.envelope?.length && (
+            <button type="button" onClick={() => useTimelineStore.getState().setClipAudio(clip.id, { envelope: undefined }, true)} className={`${select} hover:border-red-400`} title="Remove the gain envelope">
+              Clear envelope
+            </button>
+          )}
+          <span className="mx-1 h-5 w-px bg-forge-border" />
+          <button type="button" disabled={busy} onClick={() => void edit(async () => (await reverseClip(clip.id), null))} className={`${select} flex items-center gap-1.5 hover:border-cyan-500 disabled:opacity-50 ${audio.reversedFrom ? '!border-cyan-500/70 text-cyan-200' : ''}`} title={audio.reversedFrom ? 'Reversed: click to play it forwards again' : 'Play the clip backwards'}>
+            <FlipHorizontal2 className="w-3.5 h-3.5" /> {audio.reversedFrom ? 'Reversed' : 'Reverse'}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void edit(async () => {
+              const gain = await normalizeClip(clip.id);
+              return gain === null ? 'That clip is silent' : `Gain set to ${formatDb(gain)}: its loudest moment now peaks just under full scale`;
+            })}
+            className={`${select} flex items-center gap-1.5 hover:border-cyan-500 disabled:opacity-50`}
+            title="Set the clip gain so its loudest moment peaks just under full scale"
+          >
+            <Maximize2 className="w-3.5 h-3.5" /> Normalize
+          </button>
         </div>
       </div>
       {chopping && <ChopToSlicerDialog clipId={clip.id} onClose={() => setChopping(false)} />}

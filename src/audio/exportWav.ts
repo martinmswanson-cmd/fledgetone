@@ -11,7 +11,8 @@ import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import { createAutomationSchedule } from './automationSchedule';
-import { decodeSound, stretchSound, useSoundLibrary } from './soundLibrary';
+import { decodeSound, stretchSound, useSoundLibrary, warpSound } from './soundLibrary';
+import { isWarped } from '../store/warp';
 import { secondsPerBar, stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
 import { hasRecordings, loadCustomSample, loadSamples } from './samplers/samplerManager';
@@ -769,8 +770,14 @@ async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar
   }
   // Clips that follow the tempo play stretched copies, made before the render starts
   const stretches = new Map<string, number>();
+  /** ...and the clips with warp markers, warped copies */
+  const warps: Array<{ audio: NonNullable<Clip['audio']>; bpm: number }> = [];
   for (const c of clips) {
     if (!c.audio?.stretchBpm || !trackIds.has(c.trackId) || c.startBar >= endBar || c.startBar + c.lengthBars <= startBar) continue;
+    if (isWarped(c.audio)) {
+      warps.push({ audio: c.audio, bpm: tempoAt(c.startBar, tempo) });
+      continue;
+    }
     const ratio = stretchRatio(c.audio, tempoAt(c.startBar, tempo));
     if (ratio !== 1) stretches.set(`${c.audio.soundId}|${ratio}`, ratio);
   }
@@ -778,6 +785,7 @@ async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar
     try {
       await decodeSound(id, sampleRate);
       for (const [key, ratio] of stretches) if (key.startsWith(`${id}|`)) await stretchSound(id, sampleRate, ratio);
+      for (const w of warps) if (w.audio.soundId === id) await warpSound(id, sampleRate, w.audio, w.bpm);
     } catch (err) {
       const name = useSoundLibrary.getState().metas[id]?.name;
       throw new Error(`couldn't load the sound ${name ? `"${name}"` : ''} for ${label}. ${err instanceof Error ? err.message : String(err)}`);

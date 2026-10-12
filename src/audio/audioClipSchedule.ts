@@ -3,10 +3,12 @@ import * as Tone from 'tone';
 import type { Clip, Track } from '../store/timelineTypes';
 import type { NativeBus } from './presets/native';
 import { barToTicks } from './transport';
-import { decodedSound, ensureSound, requestStretch, stretchedSound } from './soundLibrary';
+import { decodedSound, ensureSound, requestStretch, requestWarp, stretchedSound, warpedSound } from './soundLibrary';
 import { DECLICK_SECONDS, envelopeAt, envelopeFrom, envelopeShape } from './clipEnvelope';
 import type { EnvelopePoint, EnvelopeShape } from './clipEnvelope';
-import { crossfades, secondsPerBar, stretchRatio, type Crossfade } from '../store/audioClips';
+import { crossfades, envelopeDbAt, secondsPerBar, stretchRatio, type Crossfade } from '../store/audioClips';
+import { beatAt, clipSecondsAt, isWarped, sourceAt, warpKey } from '../store/warp';
+import { ENVELOPE_DB_MIN } from '../store/timelineTypes';
 import { expandAudioComps } from '../store/takes';
 
 type Transport = ReturnType<typeof Tone.getTransport>;
@@ -16,6 +18,8 @@ interface Voice {
   clipId: string;
   source: AudioBufferSourceNode;
   gain: GainNode;
+  /** The clip's gain envelope (a gain of its own, after the fades), while it has one */
+  env: GainNode | null;
   shape: EnvelopeShape;
   /** Context time it starts (or started), and how far into the clip that is */
   startAt: number;
@@ -49,7 +53,10 @@ export interface AudioClipSchedule {
 const TICK_EPS = 1e-3;
 
 const placementOf = (clip: Clip, bpm: number) =>
-  `${clip.trackId}|${clip.startBar}|${clip.lengthBars}|${clip.audio?.soundId}|${clip.audio?.offset}|${clip.audio ? stretchRatio(clip.audio, bpm) : 1}`;
+  `${clip.trackId}|${clip.startBar}|${clip.lengthBars}|${clip.audio?.soundId}|${clip.audio?.offset}|${clip.audio ? stretchRatio(clip.audio, bpm) : 1}|${clip.audio ? warpKey(clip.audio) : ''}|${clip.audio?.envelope ? 'e' : ''}`;
+
+/** An envelope point's gain: silent at the bottom of its range. */
+const envGain = (db: number) => (db <= ENVELOPE_DB_MIN ? 0 : Math.pow(10, db / 20));
 
 /**
  * Play the timeline's audio clips on `transport`: each clip's sound file, from the clip's offset
@@ -105,13 +112,30 @@ export function createAudioClipSchedule(
     const xIn = (x?.in ?? 0) > audio.fadeIn;
     const xOut = (x?.out ?? 0) > audio.fadeOut;
     const fadeIn = Math.max(xIn ? x!.in : audio.fadeIn, audio.offset > 0 ? DECLICK_SECONDS : 0);
-    const fadeOut = Math.max(xOut ? x!.out : audio.fadeOut, audio.offset + seconds * ratio < soundSeconds - 1e-6 ? DECLICK_SECONDS : 0);
+    const fadeOut = Math.max(xOut ? x!.out : audio.fadeOut, (ratio === 1 && !audio.stretchBpm ? audio.offset + seconds : sourceAt(audio, seconds, localBpm(clip))) < soundSeconds - 1e-6 ? DECLICK_SECONDS : 0);
     return envelopeShape(audio.gain, seconds, fadeIn, fadeOut, { in: xIn, out: xOut });
   };
 
   const scheduleEnvelope = (param: AudioParam, points: EnvelopePoint[], base: number) => {
     param.setValueAtTime(points[0][1], base + points[0][0]);
     for (let i = 1; i < points.length; i++) param.linearRampToValueAtTime(points[i][1], base + points[i][0]);
+  };
+
+  /**
+   * A clip's gain envelope on `param` from `from` seconds into the clip (the clip's start at context
+   * time `base`), its points placed where the clip plays their moments of the sound; from `at` on.
+   */
+  const scheduleGainEnvelope = (param: AudioParam, clip: Clip, from: number, base: number, at: number) => {
+    const audio = clip.audio!;
+    const points = audio.envelope ?? [];
+    const bpm = localBpm(clip);
+    const seconds = clipSeconds(clip);
+    param.setValueAtTime(envGain(envelopeDbAt(points, sourceAt(audio, from, bpm))), Math.max(at, base + from));
+    for (const p of points) {
+      const t = clipSecondsAt(audio, p.src, bpm);
+      if (t <= from || t >= seconds) continue;
+      param.linearRampToValueAtTime(envGain(p.db), base + t);
+    }
   };
 
   /** Hold `param` where the envelope is at `at`, so the ramp scheduled next starts from there (see README on cancelAndHoldAtTime). */
@@ -133,7 +157,17 @@ export function createAudioClipSchedule(
     if (!recorded) return; // not decoded yet (or missing from this browser): silent until it is
     let buffer = recorded;
     let bufferRatio = 1;
-    if (ratio !== 1) {
+    /** Along its warp markers: where in the warped copy the clip starts (else null) */
+    let warpedAt: number | null = null;
+    const bpm = localBpm(clip);
+    if (isWarped(audio)) {
+      const warped = warpedSound(audio.soundId, raw.sampleRate, audio, bpm);
+      if (warped) {
+        buffer = warped;
+        warpedAt = ((beatAt(audio, audio.offset) - beatAt(audio, 0)) * 60) / bpm;
+      } else requestWarp(audio.soundId, raw.sampleRate, audio, bpm);
+    }
+    if (warpedAt === null && ratio !== 1) {
       const stretched = stretchedSound(audio.soundId, raw.sampleRate, ratio);
       if (stretched) {
         buffer = stretched;
@@ -149,27 +183,34 @@ export function createAudioClipSchedule(
     at = onFrame(at);
     from = onFrame(from);
     const seconds = clipSeconds(clip);
-    const offset = onFrame((audio.offset + from * ratio) / bufferRatio);
+    const offset = onFrame(warpedAt !== null ? warpedAt + from : (audio.offset + from * ratio) / bufferRatio);
     if (from >= seconds || offset >= buffer.duration) return;
     const shape = shapeOf(clip, recorded.duration);
     const points = envelopeFrom(shape, from);
     if (!points.length) return;
     const source = raw.createBufferSource();
     source.buffer = buffer;
-    if (ratio !== bufferRatio) source.playbackRate.value = ratio / bufferRatio;
+    if (warpedAt === null && ratio !== bufferRatio) source.playbackRate.value = ratio / bufferRatio;
     const gain = raw.createGain();
     scheduleEnvelope(gain.gain, points, at - from);
     source.connect(gain);
-    gain.connect(bus.input);
+    let env: GainNode | null = null;
+    if (audio.envelope?.length) {
+      env = raw.createGain();
+      scheduleGainEnvelope(env.gain, clip, from, at - from, at);
+      gain.connect(env);
+      env.connect(bus.input);
+    } else gain.connect(bus.input);
     source.start(at, offset);
     const stopAt = at + (seconds - from);
     source.stop(stopAt);
-    const voice: Voice = { clipId: clip.id, source, gain, shape, startAt: at, from, stopAt, soundSeconds: recorded.duration };
+    const voice: Voice = { clipId: clip.id, source, gain, env, shape, startAt: at, from, stopAt, soundSeconds: recorded.duration };
     // Ended (which the browser reports once the audio, or the render, has got there): let the nodes go
     source.onended = () => {
       voices.delete(voice);
       source.disconnect();
       gain.disconnect();
+      env?.disconnect();
     };
     voices.add(voice);
   };
@@ -221,6 +262,13 @@ export function createAudioClipSchedule(
         scheduleEnvelope(param, envelopeFrom(shape, join, false), voice.startAt - voice.from);
       }
       voice.shape = shape;
+      if (voice.env) {
+        // The gain envelope again, from here
+        const at = Math.max(now, voice.startAt);
+        const pos = voice.from + (at - voice.startAt);
+        holdAt(voice.env.gain, voice.env.gain.value, at);
+        scheduleGainEnvelope(voice.env.gain, clip, pos, voice.startAt - voice.from, at);
+      }
     }
   };
 
@@ -277,7 +325,8 @@ export function createAudioClipSchedule(
         if (!clip.audio || !trackIds.has(clip.trackId)) continue;
         ensureSound(clip.audio.soundId);
         const ratio = stretchRatio(clip.audio, localBpm(clip));
-        if (ratio !== 1) requestStretch(clip.audio.soundId, raw.sampleRate, ratio);
+        if (isWarped(clip.audio)) requestWarp(clip.audio.soundId, raw.sampleRate, clip.audio, localBpm(clip));
+        else if (ratio !== 1) requestStretch(clip.audio.soundId, raw.sampleRate, ratio);
         const prev = entries.get(clip.id);
         const placement = placementOf(clip, localBpm(clip));
         if (prev && prev.placement === placement) {
@@ -338,6 +387,7 @@ export function createAudioClipSchedule(
         voice.source.stop();
         voice.source.disconnect();
         voice.gain.disconnect();
+        voice.env?.disconnect();
       }
       voices.clear();
     },

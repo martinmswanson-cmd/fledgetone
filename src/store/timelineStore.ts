@@ -20,6 +20,7 @@ import { heardTime } from '../audio/latency';
 import { countInClicks } from '../audio/metronome';
 import { quantizeTakeClip, readRecordOptions, writeRecordOptions } from './recording';
 import type { RecordOptions, TakeClip } from './recording';
+import { clipSecondsAt, sourceAt } from './warp';
 import { specOf, insertLaneBars, laneValueAt, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
@@ -54,6 +55,7 @@ import {
   retimeAudioClips,
   secondsPerBar,
   splitAudio,
+  audioShift,
   trimAudioStart,
   stretchRatio,
 } from './audioClips';
@@ -693,12 +695,12 @@ function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Clip] | nu
     notes: clip.notes
       .filter((n) => n.startOffset >= rel - EPS)
       .map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset - rel })),
-    ...(clip.audio ? { audio: splitAudio(clip.audio, rel * secondsPerBar(local) * stretchRatio(clip.audio, local)) } : {}),
+    ...(clip.audio ? { audio: splitAudio(clip.audio, audioShift(clip.audio, rel, local)) } : {}),
   };
   if (rightExpr) right.expression = rightExpr;
   else delete right.expression;
   // A take folder's takes split with it
-  const takes = splitTakes(clip, rel, clip.audio ? rel * secondsPerBar(local) * stretchRatio(clip.audio, local) : 0, () => uid('note'));
+  const takes = splitTakes(clip, rel, clip.audio ? audioShift(clip.audio, rel, local) : 0, () => uid('note'));
   if (takes) return [{ ...left, ...takes[0] }, { ...right, ...takes[1] }];
   return [left, right];
 }
@@ -1822,8 +1824,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const audio = clip?.audio && normalizeClipAudio({ ...clip.audio, ...patch });
         if (!clip?.audio || !audio) return s;
         if (patch.tunedFrom === undefined && 'tunedFrom' in patch) delete audio.tunedFrom;
-        const same = (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut', 'tunedFrom'] as const).every((k) => audio[k] === clip.audio![k]);
+        const same =
+          (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut', 'tunedFrom', 'reversedFrom'] as const).every((k) => audio[k] === clip.audio![k]) &&
+          JSON.stringify(audio.warp ?? []) === JSON.stringify(clip.audio.warp ?? []) &&
+          JSON.stringify(audio.envelope ?? []) === JSON.stringify(clip.audio.envelope ?? []);
         if (same) return s;
+        // (Unchanged markers and envelope keep their arrays, so nothing downstream sees a change)
+        if (audio.warp && JSON.stringify(audio.warp) === JSON.stringify(clip.audio.warp ?? [])) audio.warp = clip.audio.warp;
+        if (audio.envelope && JSON.stringify(audio.envelope) === JSON.stringify(clip.audio.envelope ?? [])) audio.envelope = clip.audio.envelope;
         return { clips: s.clips.map((c) => (c === clip ? { ...c, audio } : c)), ...(record ? pushPast(s) : {}) };
       }),
 
@@ -1834,9 +1842,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const audio = normalizeClipAudio({ ...clip.audio, stretchBpm });
         if (!audio || audio.stretchBpm === clip.audio.stretchBpm) return s;
         if (stretchBpm === undefined) delete audio.stretchBpm;
+        // Warp markers keep their places in the sound's beats as its tempo changes
+        if (audio.warp && clip.audio.stretchBpm && audio.stretchBpm) audio.warp = audio.warp.map((m) => ({ src: m.src, beat: (m.beat * audio.stretchBpm!) / clip.audio!.stretchBpm! }));
         // The same stretch of the sound, played at the new speed
         const local = tempoAt(clip.startBar, songTempo(s));
-        const scale = stretchRatio(clip.audio, local) / stretchRatio(audio, local);
+        const seconds = clip.lengthBars * secondsPerBar(local);
+        const scale = clipSecondsAt(audio, sourceAt(clip.audio, seconds, local), local) / seconds;
         const lengthBars = Math.max(0.0625, Math.min(TOTAL_BARS + 1 - clip.startBar, clip.lengthBars * scale));
         // A take folder's comp keeps its place in the sound
         const comp = clip.comp?.map((seg) => ({ ...seg, at: seg.at * scale }));
@@ -1950,7 +1961,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           lengthBars: end - start,
           notes: c.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta })),
           ...(c.expression ? { expression: moveExpression(c.expression, -delta) } : {}),
-          ...(c.audio ? { audio: trimAudioStart(c.audio, delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm)) } : {}),
+          ...(c.audio ? { audio: trimAudioStart(c.audio, audioShift(c.audio, delta, bpm)) } : {}),
           ...trimTakes(c, delta, c.audio ? delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm) : 0),
         };
       }),

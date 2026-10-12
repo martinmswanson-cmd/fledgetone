@@ -1,6 +1,7 @@
-import type { Clip, ClipAudio, EmbeddedSound, SliceCount, SlicerSettings, Track } from './timelineTypes';
+import type { Clip, ClipAudio, EmbeddedSound, GainPoint, SliceCount, SlicerSettings, Track } from './timelineTypes';
+import { clipSecondsAt, normalizeWarp, sourceAt } from './warp';
 import { tempoAt, type Tempo } from '../audio/tempoMap';
-import { AUDIO_FADE_MAX, AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, MAX_SLICES, SLICE_COUNTS, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from './timelineTypes';
+import { AUDIO_FADE_MAX, AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, ENVELOPE_DB_MAX, ENVELOPE_DB_MIN, MAX_SLICES, SLICE_COUNTS, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from './timelineTypes';
 
 /**
  * Audio clip and Slicer maths with no audio or store in it, so Node can unit-test it: how a clip's
@@ -22,9 +23,12 @@ export const audioClipSeconds = (clip: Pick<Clip, 'lengthBars'>, bpm: number): n
  */
 export const stretchRatio = (audio: Pick<ClipAudio, 'stretchBpm'>, bpm: number): number => (audio.stretchBpm ? bpm / audio.stretchBpm : 1);
 
-/** Seconds of the sound a clip plays (its length in seconds times its stretch). */
+/** Seconds of the sound a clip plays (its length in seconds times its stretch, or along its warp markers). */
 export const audioSourceSeconds = (clip: Pick<Clip, 'lengthBars' | 'audio'>, bpm: number): number =>
-  audioClipSeconds(clip, bpm) * (clip.audio ? stretchRatio(clip.audio, bpm) : 1);
+  clip.audio ? sourceAt(clip.audio, audioClipSeconds(clip, bpm), bpm) - clip.audio.offset : audioClipSeconds(clip, bpm);
+
+/** How far into its sound (seconds) a clip's audio moves when the clip is cut, or its left edge moved, `bars` in (at `bpm`). */
+export const audioShift = (audio: ClipAudio, bars: number, bpm: number): number => sourceAt(audio, bars * secondsPerBar(bpm), bpm) - audio.offset;
 
 /**
  * The clips after a tempo change: an audio clip keeps its start bar and its length in seconds, so
@@ -78,13 +82,13 @@ export function trimAudioStart(audio: ClipAudio, seconds: number): ClipAudio {
 
 /** The earliest bar a clip's left edge can be dragged to: no earlier than the sound's own start. */
 export function audioTrimStartLimit(clip: Pick<Clip, 'startBar' | 'audio'>, bpm: number): number {
-  return clip.audio ? clip.startBar - clip.audio.offset / stretchRatio(clip.audio, bpm) / secondsPerBar(bpm) : 1;
+  return clip.audio ? clip.startBar + clipSecondsAt(clip.audio, 0, bpm) / secondsPerBar(bpm) : 1;
 }
 
 /** The most bars an audio clip can be, given its sound's length in seconds (Infinity when that isn't known). */
 export function audioLengthLimit(audio: ClipAudio, soundSeconds: number | undefined, bpm: number): number {
   if (soundSeconds === undefined) return Infinity;
-  return Math.max(0, soundSeconds - audio.offset) / stretchRatio(audio, bpm) / secondsPerBar(bpm);
+  return Math.max(0, clipSecondsAt(audio, soundSeconds, bpm)) / secondsPerBar(bpm);
 }
 
 /** The sounds a project refers to: audio clips, Slicer tracks and Sampler tracks (each id once). */
@@ -96,6 +100,7 @@ export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' 
       if (!audio) continue;
       ids.add(audio.soundId);
       if (audio.tunedFrom) ids.add(audio.tunedFrom);
+      if (audio.reversedFrom) ids.add(audio.reversedFrom);
     }
   }
   for (const t of p.tracks) {
@@ -126,7 +131,39 @@ export function normalizeClipAudio(raw: unknown): ClipAudio | undefined {
     fadeOut: isNum(raw.fadeOut) ? clamp(raw.fadeOut, 0, AUDIO_FADE_MAX) : 0,
     ...(isNum(raw.stretchBpm) ? { stretchBpm: clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) } : {}),
     ...(typeof raw.tunedFrom === 'string' && raw.tunedFrom ? { tunedFrom: raw.tunedFrom } : {}),
+    ...(typeof raw.reversedFrom === 'string' && raw.reversedFrom ? { reversedFrom: raw.reversedFrom } : {}),
+    ...(() => {
+      const warp = normalizeWarp(raw.warp, isNum(raw.stretchBpm) ? clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) : 60);
+      return warp.length ? { warp } : {};
+    })(),
+    ...(() => {
+      const envelope = normalizeEnvelope(raw.envelope);
+      return envelope.length ? { envelope } : {};
+    })(),
   };
+}
+
+/** Gain envelope points tidied: finite, in order, inside the envelope's range, at most 1024. */
+export function normalizeEnvelope(raw: unknown): GainPoint[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((p): p is GainPoint => isObj(p) && isNum(p.src) && isNum(p.db))
+    .map((p) => ({ src: Math.max(0, p.src), db: clamp(p.db, ENVELOPE_DB_MIN, ENVELOPE_DB_MAX) }))
+    .sort((a, b) => a.src - b.src)
+    .slice(0, 1024);
+}
+
+/** The envelope's gain (dB) at `src` seconds into the sound: straight lines between points, held beyond them (0 dB with none). */
+export function envelopeDbAt(points: readonly GainPoint[] | undefined, src: number): number {
+  if (!points?.length) return 0;
+  if (src <= points[0].src) return points[0].db;
+  const last = points[points.length - 1];
+  if (src >= last.src) return last.db;
+  let i = 1;
+  while (points[i].src < src) i++;
+  const a = points[i - 1];
+  const b = points[i];
+  return b.src - a.src < 1e-9 ? b.db : a.db + ((src - a.src) / (b.src - a.src)) * (b.db - a.db);
 }
 
 /**
