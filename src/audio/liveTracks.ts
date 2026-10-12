@@ -11,6 +11,7 @@ import { barToTicks } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { NativeBus } from './presets/native';
 import type { Track } from '../store/timelineTypes';
+import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import type { LiveTrackView } from '../store/freeze';
 import { loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
@@ -57,6 +58,24 @@ function watchDownload(lt: LiveTrack): void {
   });
 }
 
+/** Each live track's Intensity level as last set, so unchanged ones aren't touched. */
+const intensityLevels = new Map<string, number>();
+
+/**
+ * Set every live track's Intensity level from its stem group's curve at `intensity` (see
+ * intensity.ts), gliding over `ramp` seconds so scrubbing the slider crossfades smoothly.
+ */
+export function applyLiveIntensity(tracks: Track[], curves: Record<string, IntensityCurve>, intensity: number, ramp = 0.08): void {
+  for (const track of tracks) {
+    const lt = live.get(track.id);
+    if (!lt) continue;
+    const level = trackIntensityLevel(track, curves, intensity);
+    if (intensityLevels.get(track.id) === level && intensityLevels.has(track.id)) continue;
+    intensityLevels.set(track.id, level);
+    lt.strip.setIntensityLevel(level, ramp);
+  }
+}
+
 export function syncLiveTracks(tracks: Track[]): void {
   const keep = new Set(tracks.map((t) => t.id));
   for (const [id, lt] of live) {
@@ -64,6 +83,7 @@ export function syncLiveTracks(tracks: Track[]): void {
       lt.instrument.dispose();
       lt.strip.dispose();
       live.delete(id);
+      intensityLevels.delete(id);
     }
   }
 

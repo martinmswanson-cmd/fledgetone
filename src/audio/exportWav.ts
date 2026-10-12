@@ -13,6 +13,7 @@ import { hasRecordings, loadCustomSample, loadSamples } from './samplers/sampler
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar, ticksToBar } from './transport';
 import { cueChunks, loopChunk, markerCues } from './wavCues';
+import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import type { WavCue } from './wavCues';
 import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 
@@ -63,6 +64,8 @@ export interface RenderOptions {
   markers?: Marker[];
   /** Leave the master volume out (a freeze: live playback applies it to the frozen sound anyway). */
   ignoreMasterVolume?: boolean;
+  /** Intensity: each track plays at its stem group's level (see intensity.ts); absent: all at full level. */
+  intensity?: { value: number; curves: Record<string, IntensityCurve> };
   /** An exact-length render ends without its 5 ms fade (an intro that leads straight into a loop). */
   noEndFade?: boolean;
 }
@@ -597,6 +600,7 @@ async function renderTracks(
     for (const track of tracks) {
       const strip = createTrackStrip(mix.bus, mix.busFx);
       strip.apply(track, { ramp: 0, muteOverride: false });
+      if (opts.intensity) strip.setIntensityLevel(trackIntensityLevel(track, opts.intensity.curves, opts.intensity.value));
       strips.push(strip);
       stripOf.set(track.id, strip);
       instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer, synth: track.synth }));

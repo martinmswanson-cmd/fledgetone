@@ -15,7 +15,7 @@ import {
   transportStartsAt,
 } from '../audio/transport';
 import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
-import { holdAutomationAt, retimeAutomation, syncLiveTracks } from '../audio/liveTracks';
+import { holdAutomationAt, retimeAutomation, syncLiveTracks, applyLiveIntensity } from '../audio/liveTracks';
 import { beginTake, discardTake, finishTake } from '../audio/recorder';
 import { heardTime } from '../audio/latency';
 import { countInClicks } from '../audio/metronome';
@@ -28,6 +28,7 @@ import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { createStinger, fitNotesToRange } from './stingers';
+import { defaultCurve, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
@@ -370,6 +371,13 @@ interface TimelineState {
   addStinger: (kind: StingerKind) => Stinger;
   updateStinger: (id: string, patch: Partial<Omit<Stinger, 'id'>>) => void;
   deleteStinger: (id: string) => void;
+  /** Intensity, 0 to 1 (see intensity.ts), and each stem group's curve */
+  intensity: number;
+  intensityCurves: Record<string, IntensityCurve>;
+  setIntensity: (value: number) => void;
+  setIntensityCurve: (group: string, curve: IntensityCurve) => void;
+  /** Put a track in a stem group (or none, with an empty name); one undo step */
+  setTrackStemGroup: (trackId: string, group: string) => void;
   /** Transitions into game states, by section marker id ('cut' is left out) */
   transitions: Record<string, TransitionKind>;
   setTransition: (markerId: string, kind: TransitionKind) => void;
@@ -1465,6 +1473,25 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return null;
     },
 
+    intensity: 1,
+    intensityCurves: {},
+    setIntensity: (value) => set({ intensity: Math.max(0, Math.min(1, value)) }),
+    setIntensityCurve: (group, curve) => set((s) => ({ intensityCurves: { ...s.intensityCurves, [group]: curve } })),
+    setTrackStemGroup: (trackId, group) => {
+      const name = group.trim().slice(0, 40);
+      const track = get().tracks.find((t) => t.id === trackId);
+      if (!track || (track.stemGroup ?? '') === name) return;
+      updateTrack(
+        trackId,
+        (t) => {
+          const { stemGroup: _old, ...rest } = t;
+          return name ? { ...rest, stemGroup: name } : { ...rest, stemGroup: undefined };
+        },
+        true
+      );
+      // A new group starts from its default curve, kept with the project so it can be shaped
+      if (name && !get().intensityCurves[name]) set((s) => ({ intensityCurves: { ...s.intensityCurves, [name]: defaultCurve(name) } }));
+    },
     transitions: {},
     setTransition: (markerId, kind) =>
       set((s) => {
@@ -1800,6 +1827,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         markers: retimeMarkers(p.markers ?? [], p.bpm),
         stingers: p.stingers ?? [],
         transitions: p.transitions ?? {},
+        intensity: p.intensity?.value ?? 1,
+        intensityCurves: p.intensity?.curves ?? {},
         automationView: {},
         automationSelection: null,
         // A project opens at its start (or wherever its playhead is), not where the last one was scrolled to
@@ -2003,6 +2032,7 @@ export function currentProject(): ProjectSnapshot {
     markers: s.markers,
     stingers: s.stingers,
     transitions: s.transitions,
+    intensity: { value: s.intensity, curves: s.intensityCurves },
   };
 }
 
@@ -2082,7 +2112,9 @@ export function connectAutosave(): () => void {
       state.dropFrame === prev.dropFrame &&
       state.markers === prev.markers &&
       state.stingers === prev.stingers &&
-      state.transitions === prev.transitions
+      state.transitions === prev.transitions &&
+      state.intensity === prev.intensity &&
+      state.intensityCurves === prev.intensityCurves
     ) {
       return;
     }
@@ -2122,10 +2154,12 @@ export function connectTimelineToAudio(): () => void {
   let view = liveView(s, soundMissing);
   for (const t of s.tracks) if (t.frozen) ensureSound(t.frozen.soundId);
   syncLiveTracks(view.tracks);
+  applyLiveIntensity(view.tracks, s.intensityCurves, s.intensity, 0);
   rescheduleClips(view.tracks, view.clips);
   const refresh = (state: TimelineState) => {
     const next = liveView(state, soundMissing, view);
     if (next.tracks !== view.tracks) syncLiveTracks(next.tracks);
+    applyLiveIntensity(next.tracks, state.intensityCurves, state.intensity);
     const trackSetChanged = next.tracks.length !== view.tracks.length || next.tracks.some((t, i) => t.id !== view.tracks[i]?.id);
     // The Human insert works in the scheduler, so turning it or its amounts changes what plays
     const feelChanged = next.tracks.some((t, i) => t.fx.human !== view.tracks[i]?.fx.human || t.instrumentKey !== view.tracks[i]?.instrumentKey);
@@ -2143,6 +2177,8 @@ export function connectTimelineToAudio(): () => void {
   liveMix.inserts.apply(s.master);
 
   const unsubscribe = useTimelineStore.subscribe((state, prev) => {
+    // Intensity crossfades the stem groups (see intensity.ts)
+    if (state.intensity !== prev.intensity || state.intensityCurves !== prev.intensityCurves) applyLiveIntensity(view.tracks, state.intensityCurves, state.intensity);
     // Stopped, automated settings sit at their lanes' values under the playhead (first, so lanes
     // that come with new tracks start there too)
     if (!state.isPlaying && (state.playheadPosition !== prev.playheadPosition || prev.isPlaying)) {

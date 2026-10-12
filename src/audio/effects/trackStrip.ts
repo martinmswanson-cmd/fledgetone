@@ -78,6 +78,8 @@ export interface TrackStrip {
   automationTargets: (param: AutomationParam) => AutomationTarget[] | null;
   /** Changes whenever automationTargets() might answer differently (an insert came or went, the Filter changed type...). */
   automationVersion: () => number;
+  /** The Intensity level (0 to 1), gliding there over `ramp` seconds (0: at once). */
+  setIntensityLevel: (gain: number, ramp?: number) => void;
   /** The level after the fader (for the mixer's meters): peak 0..1 since the last call, built on first use. */
   peak: () => number;
   dispose: () => void;
@@ -200,13 +202,16 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   right.connect(merge, 0, 1);
   Tone.connect(merge, fader);
 
-  fader.connect(bus);
+  // Intensity (see intensity.ts): the track's stem-group level, after the fader and before the sends
+  const level = new Tone.Gain(1);
+  fader.connect(level);
+  level.connect(bus);
   // The mixer's meter, made when first read (see peak)
   let meter: AnalyserNode | null = null;
   let meterData: Float32Array<ArrayBuffer> | null = null;
-  fader.connect(reverbSend);
+  level.connect(reverbSend);
   reverbSend.connect(busFx.reverbInput);
-  fader.connect(delaySend);
+  level.connect(delaySend);
   delaySend.connect(busFx.delayInput);
 
   let distortion: LightDistortion | null = null;
@@ -620,12 +625,20 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       for (let k = Math.ceil(tick / step) * step; k < tick + windowTicks; k += step) steps.push(time + (k - tick) * secondsPerTick);
       gateUnit.schedule(steps, step * secondsPerTick, time + (windowTicks + step) * secondsPerTick + 0.05);
     },
+    setIntensityLevel: (gain, ramp = 0) => {
+      const g = Math.max(0, Math.min(1, gain));
+      const param = level.gain;
+      const t = now();
+      param.cancelScheduledValues(t);
+      if (ramp > 0) param.setTargetAtTime(g, t, ramp / 3);
+      else param.setValueAtTime(g, t);
+    },
     peak: () => {
       if (!meter) {
         meter = raw.createAnalyser();
         meter.fftSize = 1024;
         meterData = new Float32Array(meter.fftSize);
-        fader.connect(meter as unknown as Tone.InputNode);
+        level.connect(meter as unknown as Tone.InputNode);
       }
       meter.getFloatTimeDomainData(meterData!);
       let p = 0;
@@ -668,7 +681,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       clearTimeout(retireTimer);
       clearTimeout(tidyTimer);
       gates.forEach((g) => g.gain.disconnect());
-      [...leaving, distortion, eq, compressorUnit, chorus, lofi, filter, gateUnit, pump, fold, laneGain?.node, input, solo, fader, reverbSend, delaySend].forEach((n) => n?.dispose());
+      [...leaving, distortion, eq, compressorUnit, chorus, lofi, filter, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, reverbSend, delaySend].forEach((n) => n?.dispose());
       [barrier, left, split, right, merge].forEach((n) => n?.disconnect());
     },
   };

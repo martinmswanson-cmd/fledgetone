@@ -86,6 +86,7 @@ Run all five checks before every commit.
 | Game state transitions (fill / riser / impact into a state) | `src/store/transitions.ts`, `playNotesAt` in `stingerPlayer.ts`, `goTo` and `TransitionList` in `GamePreview.tsx`; saved as `transitions` (marker id to kind) |
 | Game kit export (states, stingers, transitions, music.json, players) | `src/audio/gameKit.ts`; the players are plain files in `src/gameKit/` imported with `?raw` (the web one was run on a real kit; the Godot and Unity ones haven't been compiled here: no engines in the container) |
 | Dip under dialogue (video's speech to volume automation) | `src/store/dialogue.ts` (voice-band levels, speech spans, `dipLane`), `findDialogue` in `videoStore.ts`, store `dipUnderDialogue`, `DialogueDipButton` in `VideoLane.tsx` |
+| Intensity and stem groups | `src/store/intensity.ts` (curves), `track.stemGroup`, store `intensity` / `intensityCurves`; a `level` gain after each strip's fader (`setIntensityLevel` in `trackStrip.ts`), set live by `applyLiveIntensity` and in renders by `RenderOptions.intensity`; UI `IntensityPanel.tsx` and the header slider |
 | Lo-fi and Gate inserts | `createLightLofi` / `createLightGate` in `effects/lightFx.ts`; the Gate is chopped by the strip's beat clock (`createPumpClock`) |
 | Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |

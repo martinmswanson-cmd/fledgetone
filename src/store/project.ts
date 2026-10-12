@@ -7,6 +7,7 @@ import { parseAutomation } from '../audio/automation';
 import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
 import { parseTransitions } from './transitions';
+import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 
 /**
@@ -53,6 +54,8 @@ export interface ProjectData {
   stingers?: Stinger[];
   /** Transitions into game states, by section marker id (optional; absent means straight cuts). */
   transitions?: Record<string, TransitionKind>;
+  /** Intensity: the level now (0 to 1) and each stem group's curve (optional). */
+  intensity?: { value: number; curves: Record<string, IntensityCurve> };
 }
 
 export interface ProjectSnapshot {
@@ -78,6 +81,8 @@ export interface ProjectSnapshot {
   stingers?: Stinger[];
   /** Transitions into game states, by section marker id. */
   transitions?: Record<string, TransitionKind>;
+  /** Intensity: the level now and each stem group's curve. */
+  intensity?: { value: number; curves: Record<string, IntensityCurve> };
 }
 
 
@@ -99,6 +104,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     master: normalizeMasterSettings(p.master),
     ...(p.stingers?.length ? { stingers: p.stingers } : {}),
     ...(p.transitions && Object.keys(p.transitions).length ? { transitions: p.transitions } : {}),
+    ...(p.intensity && (Object.keys(p.intensity.curves).length || p.intensity.value !== 1) ? { intensity: p.intensity } : {}),
   };
 }
 
@@ -160,6 +166,8 @@ function parseTrack(v: unknown): Track {
     ...(synth ? { synth } : {}),
     // Optional: a frozen track
     ...(frozen ? { frozen } : {}),
+    // Optional: its stem group for Intensity
+    ...(isStr(v.stemGroup) && v.stemGroup.trim() ? { stemGroup: v.stemGroup.trim().slice(0, 40) } : {}),
   };
 }
 
@@ -234,6 +242,10 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     master: normalizeMasterSettings(raw.master),
     stingers: parseStingers(raw.stingers, isInstrumentKey),
     transitions: parseTransitions(raw.transitions),
+    intensity: {
+      value: isObj(raw.intensity) && isNum(raw.intensity.value) ? Math.max(0, Math.min(1, raw.intensity.value)) : 1,
+      curves: parseCurves(isObj(raw.intensity) ? raw.intensity.curves : undefined),
+    },
   };
 }
 

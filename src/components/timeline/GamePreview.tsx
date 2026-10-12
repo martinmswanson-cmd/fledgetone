@@ -15,6 +15,7 @@ import { downloadBlob, encodeChannels, renderLoopTakes } from '../../audio/expor
 import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/loopVariations';
 import { formatBarCount } from '../../store/timelineTypes';
 import { showToast } from './toastStore';
+import { IntensityPanel } from './IntensityPanel';
 
 /**
  * Loop variations: 2 to 4 takes of the loop region for the game to rotate through, each with its
@@ -311,8 +312,8 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
 /**
  * Hear the music the way a game will play it: each section (between markers) is a state the game
  * can be in, and a button moves to it on the next bar (or beat), looping there, the way adaptive
- * music switches; layers (tracks) come and go with their switches, or with the Intensity slider,
- * which brings tracks in from the top of the list down. Nothing here is an undo step: it's a
+ * music switches; layers (tracks) come and go with their switches, or crossfade with Intensity (see intensity.ts),
+ * along their stem groups' curves. Nothing here is an undo step: it's a
  * rehearsal, though the mutes and the loop it leaves stay as they are.
  */
 
@@ -320,13 +321,11 @@ type Quantize = 'bar' | 'beat' | 'now';
 
 export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const markers = useTimelineStore((s) => s.markers);
-  const tracks = useTimelineStore((s) => s.tracks);
   const clips = useTimelineStore((s) => s.clips);
   const loop = useTimelineStore((s) => s.loopRegion);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   const [quantize, setQuantize] = useState<Quantize>('bar');
   const [pending, setPending] = useState<string | null>(null);
-  const [intensity, setIntensity] = useState(() => tracks.filter((t) => !t.isMuted).length);
   const timer = useRef<number>(0);
   const [pos, setPos] = useState({ left: 16, bottom: 16 });
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -366,11 +365,6 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     timer.current = window.setTimeout(jump, Math.max(0, ms - 15));
   };
 
-  const applyIntensity = (n: number) => {
-    setIntensity(n);
-    const s = useTimelineStore.getState();
-    s.tracks.forEach((t, i) => s.setTrackMuted(t.id, i >= n));
-  };
 
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -429,26 +423,11 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           )}
         </div>
         {sections.length > 1 && <TransitionList sections={sections} />}
-        <div className="flex flex-col gap-1.5">
-          <label className="flex items-center gap-2 text-[10px] font-mono text-forge-muted uppercase">
-            Intensity
-            <input type="range" min={1} max={Math.max(1, tracks.length)} step={1} value={Math.min(intensity, tracks.length)} onChange={(e) => applyIntensity(Number(e.target.value))} className="flex-1 accent-emerald-400" aria-label="Intensity" />
-            <span className="w-10 text-right text-forge-text tabular-nums">{Math.min(intensity, tracks.length)}/{tracks.length}</span>
-          </label>
-          <div className="flex flex-col gap-0.5 max-h-40 overflow-y-auto">
-            {tracks.map((t) => (
-              <label key={t.id} className="flex items-center gap-2 cursor-pointer text-forge-text">
-                <input type="checkbox" checked={!t.isMuted} onChange={(e) => useTimelineStore.getState().setTrackMuted(t.id, !e.target.checked)} className="accent-emerald-400" />
-                <span className="w-2 h-2 rounded-full" style={{ background: t.color }} />
-                <span className="truncate">{t.name}</span>
-              </label>
-            ))}
-          </div>
-        </div>
+        <IntensityPanel />
         <StingerList timing={quantize} />
         <LoopVariations />
         <GameKitButton />
-        <p className="text-[10px] text-forge-muted">{isPlaying ? 'Switch states and fire stingers while it plays, the way the game will.' : 'Pick a state to start.'} Intensity brings layers in from the top track down.</p>
+        <p className="text-[10px] text-forge-muted">{isPlaying ? 'Switch states and fire stingers while it plays, the way the game will.' : 'Pick a state to start.'} Intensity crossfades the stem groups along their curves.</p>
       </div>
     </div>
   );

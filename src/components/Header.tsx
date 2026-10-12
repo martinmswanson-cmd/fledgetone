@@ -127,6 +127,7 @@ export const Header: React.FC = () => {
               aria-label="Swing"
             />
           </label>
+          <IntensitySlider />
         </div>
 
         {/* Master Volume Slider */}
@@ -208,5 +209,39 @@ export const Header: React.FC = () => {
       {/* Keyed by section, so search opening another section while it's open starts there */}
       {guide !== null && <GuidePanel key={guide} onClose={closeGuide} section={guide} />}
     </header>
+  );
+};
+
+/**
+ * Intensity: scrub it to crossfade the tracks' stem groups along their curves (see intensity.ts),
+ * live, the way a game turns the music up. Tracks without a group aren't affected.
+ */
+const IntensitySlider: React.FC = () => {
+  const intensity = useTimelineStore((s) => s.intensity);
+  const grouped = useTimelineStore((s) => s.tracks.some((t) => t.stemGroup));
+  return (
+    <label
+      className={`flex flex-col border-l border-forge-border pl-3 ${grouped ? '' : 'opacity-50'}`}
+      title={
+        grouped
+          ? 'Intensity: crossfades the stem groups along their curves (Game preview). Double-click for 100%.'
+          : 'Intensity: give tracks a stem group (in the Game preview) and this crossfades them, the way a game turns the music up'
+      }
+    >
+      <span className="flex justify-between text-[10px] uppercase font-mono text-forge-muted tracking-wide">
+        Intensity <span className="text-forge-text tabular-nums">{Math.round(intensity * 100)}%</span>
+      </span>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={intensity}
+        onChange={(e) => useTimelineStore.getState().setIntensity(Number(e.target.value))}
+        onDoubleClick={() => useTimelineStore.getState().setIntensity(1)}
+        className="w-24 mt-1.5 accent-emerald-400 cursor-pointer h-1.5 bg-forge-border rounded-lg appearance-none"
+        aria-label="Intensity"
+      />
+    </label>
   );
 };
