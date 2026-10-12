@@ -1,4 +1,5 @@
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
+import { NotationView } from './NotationView';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import { Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
@@ -166,6 +167,7 @@ let rememberedScale: Scale | null = null;
 let rememberedChord: ChordId = 'off';
 let rememberedGhosts = true;
 let rememberedStepMode = true;
+let rememberedNotation = false;
 
 const TOOLS = [
   { id: 'quantize', label: 'Quantize to grid', drums: true },
@@ -273,6 +275,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const [ghosts, setGhostsState] = useState(rememberedGhosts);
   // Drum clips: a click toggles a hit on the grid, like a step sequencer
   const [stepMode, setStepModeState] = useState(rememberedStepMode);
+  // Sheet music instead of the grid (pitched and drum clips)
+  const [notationOn, setNotationState] = useState(rememberedNotation);
+  const canNotate = !isFxKind(instrument) && !isSlicerKind(instrument);
+  const notation = notationOn && canNotate;
+  const setNotation = (next: boolean) => setNotationState((rememberedNotation = next));
+  const fullTrack = useTimelineStore((s) => s.tracks.find((t) => t.id === clip.trackId));
   const setStepMode = (next: boolean) => setStepModeState((rememberedStepMode = next));
   const stepping = stepMode && (isDrumKind(instrument) || isRackKind(instrument));
   const setScale = (next: Scale | null) => setScaleState((rememberedScale = next));
@@ -730,6 +738,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             </select>
           </label>
         )}
+        {canNotate && (
+          <label data-search="notation" className="flex items-center gap-1.5 cursor-pointer" title="Show the clip as sheet music (notes on staves), to read, print or save as MusicXML">
+            <input type="checkbox" checked={notation} onChange={(e) => setNotation(e.target.checked)} className="accent-cyan-500" />
+            NOTATION
+          </label>
+        )}
         {(isDrumKind(instrument) || isRackKind(instrument)) && (
           <label data-search="steps" className="flex items-center gap-1.5 cursor-pointer" title="Step sequencer: a click turns a hit on or off in that GRID step (Shift-click: an accent). Alt-click: add and drag notes as usual. Off: always add and drag.">
             <input type="checkbox" checked={stepMode} onChange={(e) => setStepMode(e.target.checked)} className="accent-cyan-500" />
@@ -779,8 +793,9 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         </button>
       </div>
 
+      {notation && fullTrack && <NotationView clip={clip} track={fullTrack} />}
       {/* Body */}
-      <div ref={scrollRef} className="relative overflow-auto max-h-[340px] select-none">
+      <div ref={scrollRef} className={`relative overflow-auto max-h-[340px] select-none ${notation ? 'hidden' : ''}`}>
         <div className="relative" style={{ width: KEY_W + gridW, height: RULER_H + gridH + (isDrums ? 0 : EXPRESSION_LANE_H) }}>
           {/* Ruler */}
           <div
