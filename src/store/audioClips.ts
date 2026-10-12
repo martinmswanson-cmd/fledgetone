@@ -40,7 +40,8 @@ export function retimeAudioClips(clips: Clip[], from: Tempo, to: Tempo): Clip[] 
     const ratio = tempoAt(c.startBar, to) / tempoAt(c.startBar, from);
     if (Math.abs(ratio - 1) < EPS) return c;
     changed = true;
-    return { ...c, lengthBars: c.lengthBars * ratio };
+    // A take folder's comp keeps its place in the sound, so its bars scale too
+    return { ...c, lengthBars: c.lengthBars * ratio, ...(c.comp ? { comp: c.comp.map((seg) => ({ ...seg, at: seg.at * ratio })) } : {}) };
   });
   return changed ? next : clips;
 }

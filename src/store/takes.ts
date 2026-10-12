@@ -52,11 +52,38 @@ export function applyComp(clip: Clip, makeId: () => string): Clip {
   if (!clip.takes?.length) return clip;
   const segs = compSegments(clip);
   const first = clip.takes[segs[0].take];
-  if (clip.audio || first.audio) return { ...clip, comp: segs, ...(first.audio ? { audio: first.audio } : {}) };
+  if (clip.audio || first.audio) {
+    // The folder's own gain, fades and stretch stay: only which sound, and where in it, is the take's
+    const audio = first.audio && clip.audio ? { ...clip.audio, soundId: first.audio.soundId, offset: first.audio.offset } : (first.audio ?? clip.audio);
+    if (audio && clip.audio && audio.soundId !== clip.audio.soundId) delete audio.tunedFrom;
+    return { ...clip, comp: segs, ...(audio ? { audio } : {}) };
+  }
   const next: Clip = { ...clip, comp: segs, notes: compNotes(clip).map((n) => ({ ...n, id: makeId() })) };
   if (first.expression) next.expression = first.expression;
   else delete next.expression;
   return next;
+}
+
+/**
+ * A MIDI folder whose notes were edited in the piano roll (moved, transposed, quantized): each
+ * comp stretch's edited notes go back into the take it plays, so the next comp change keeps them.
+ * Unedited (or a mic folder): as it is.
+ */
+export function keepNoteEdits(clip: Clip): Clip {
+  if (clip.audio || !clip.takes?.length) return clip;
+  const playing = compNotes(clip);
+  const key = (n: Omit<NoteEvent, 'id'>) => `${n.note}|${n.startOffset.toFixed(6)}|${n.duration}|${n.velocity}`;
+  const now = clip.notes.map(key).sort().join(',');
+  if (now === playing.map(key).sort().join(',')) return clip;
+  const segs = compSegments(clip);
+  const ends = segmentEnds(segs, clip.lengthBars);
+  const takes = clip.takes.map((t) => ({ ...t, notes: [...(t.notes ?? [])] }));
+  segs.forEach((s, i) => {
+    const inside = (n: { startOffset: number }) => n.startOffset >= s.at - EPS && (n.startOffset < ends[i] - EPS || i === segs.length - 1);
+    const take = takes[s.take];
+    take.notes = [...take.notes.filter((n) => !inside(n)), ...clip.notes.filter(inside)];
+  });
+  return { ...clip, takes };
 }
 
 /** The comp with take `take` playing from `from` to `to` (bars into the clip), the rest as it was. */
@@ -127,6 +154,8 @@ export function expandAudioComp(clip: Clip, secondsPerBar: number): Clip[] {
         fadeIn: first ? clip.audio!.fadeIn : 0,
         fadeOut: last ? clip.audio!.fadeOut : 0,
         gain: clip.audio!.gain,
+        // Played at the folder's stretch (the offsets above are worked out with it)
+        ...(clip.audio!.stretchBpm ? { stretchBpm: clip.audio!.stretchBpm } : {}),
       },
     };
   });
@@ -209,6 +238,8 @@ export function splitTakes(clip: Clip, rel: number, seconds: number, makeId: () 
   ];
 }
 
+const longest = (pieces: RecordedPiece[]): RecordedPiece => pieces.reduce((a, b) => (b.lengthBars > a.lengthBars + EPS ? b : a));
+
 /** A piece of a mic recording to keep: song bars `startBar` for `lengthBars`, from `from` seconds into the recording. */
 export interface RecordedPiece {
   startBar: number;
@@ -234,7 +265,8 @@ export function recordedPieces(
 ): RecordedPiece[] {
   // The recording as passes: song spans with where each starts in the recording
   const passes: Array<{ a: number; b: number; from: number }> = [];
-  if (loop && startBar < loop.outBar - EPS && startBar >= loop.inBar - EPS) {
+  // (Started before the loop In, the Transport still goes round the loop once it gets to Out)
+  if (loop && startBar < loop.outBar - EPS) {
     let from = 0;
     let a = startBar;
     while (from < seconds - 1e-4 && passes.length < 512) {
@@ -258,11 +290,15 @@ export function recordedPieces(
     })
     .filter((p): p is RecordedPiece => !!p);
   if (!looped || !pieces.length) return pieces;
+  const span = spanB - spanA;
+  // A pass cut short by stopping just after the loop came round (under a beat) isn't a performance
+  const played = pieces.filter((p, i) => i < pieces.length - 1 || p.lengthBars >= Math.min(0.25, span) - EPS || pieces.length === 1);
+  const full = played.filter((p) => Math.abs(p.startBar - spanA) < EPS && p.lengthBars >= span - EPS);
   if (takes) {
-    const whole = pieces.filter((p) => Math.abs(p.startBar - spanA) < EPS);
+    const whole = played.filter((p) => Math.abs(p.startBar - spanA) < EPS);
     // Every take a piece of the span's whole length (an early stop just leaves its end silent)
-    return whole.length ? whole.map((p) => ({ ...p, lengthBars: spanB - spanA })) : [pieces[pieces.length - 1]];
+    return whole.length ? whole.map((p) => ({ ...p, lengthBars: span })) : [longest(played)];
   }
-  // Without takes, the passes over the same span: the last one played
-  return [pieces[pieces.length - 1]];
+  // Without takes, the passes over the same span: the last whole one played, else the longest
+  return [full.length ? full[full.length - 1] : longest(played)];
 }
