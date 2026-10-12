@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { soundStatusText, useSoundLibrary } from '../../audio/soundLibrary';
-import { audioClipSeconds } from '../../store/audioClips';
+import { audioSourceSeconds } from '../../store/audioClips';
 import { slicerFor, resliced } from '../../audio/slicerTools';
 import { SLICE_COUNTS } from '../../store/timelineTypes';
 import type { SliceCount } from '../../store/timelineTypes';
@@ -26,7 +26,7 @@ export const ChopToSlicerDialog: React.FC<{ clipId: string; onClose: () => void 
   const chop = (mode: 'auto' | 'equal', count: SliceCount = 8) => {
     if (!clip.audio || !meta) return;
     const offset = clip.audio.offset;
-    const part = { start: offset, end: Math.min(meta.seconds, offset + audioClipSeconds(clip, bpm)) };
+    const part = { start: offset, end: Math.min(meta.seconds, offset + audioSourceSeconds(clip, bpm)) };
     const settings = resliced({ ...slicerFor(meta, part), mode, count });
     const trackId = useTimelineStore.getState().chopClipToSlicer(clip.id, settings);
     if (trackId) showToast(`Chopped "${clip.name}" into ${settings.slices.length} slice${settings.slices.length === 1 ? '' : 's'} on a new Slicer track.`);

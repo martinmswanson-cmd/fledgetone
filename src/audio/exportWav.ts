@@ -8,7 +8,8 @@ import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import { createAutomationSchedule } from './automationSchedule';
-import { decodeSound, useSoundLibrary } from './soundLibrary';
+import { decodeSound, stretchSound, useSoundLibrary } from './soundLibrary';
+import { stretchRatio } from '../store/audioClips';
 import { hasRecordings, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, ticksPerBar, ticksToBar } from './transport';
@@ -491,7 +492,7 @@ async function renderTracks(
     signal?.throwIfAborted();
   }
   // ...and the sounds this render plays (audio clips, Slicer and Sampler tracks), at its sample rate
-  await loadSounds(tracks, clips, startBar, endBar, sampleRate);
+  await loadSounds(tracks, clips, startBar, endBar, sampleRate, bpm);
   signal?.throwIfAborted();
 
   const original = Tone.getContext();
@@ -697,7 +698,7 @@ async function renderTracks(
  * the audio clips in the range and of the Slicer and Sampler tracks. A Sampler from a project not
  * yet converted still carries its sound as a data: URL, decoded in the live context as before.
  */
-async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endBar: number, sampleRate: number): Promise<void> {
+async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endBar: number, sampleRate: number, bpm: number): Promise<void> {
   const trackIds = new Set(tracks.map((t) => t.id));
   // Each sound once, with what to call it in an error: the clip or track it's for
   const needed = new Map<string, string>();
@@ -711,9 +712,17 @@ async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endB
     if (t.sample?.soundId && !needed.has(t.sample.soundId)) needed.set(t.sample.soundId, `the track "${t.name}"`);
     else if (t.sample?.dataUrl) await loadCustomSample(t.sample.dataUrl);
   }
+  // Clips that follow the tempo play stretched copies, made before the render starts
+  const stretches = new Map<string, number>();
+  for (const c of clips) {
+    if (!c.audio?.stretchBpm || !trackIds.has(c.trackId) || c.startBar >= endBar || c.startBar + c.lengthBars <= startBar) continue;
+    const ratio = stretchRatio(c.audio, bpm);
+    if (ratio !== 1) stretches.set(`${c.audio.soundId}|${ratio}`, ratio);
+  }
   for (const [id, label] of needed) {
     try {
       await decodeSound(id, sampleRate);
+      for (const [key, ratio] of stretches) if (key.startsWith(`${id}|`)) await stretchSound(id, sampleRate, ratio);
     } catch (err) {
       const name = useSoundLibrary.getState().metas[id]?.name;
       throw new Error(`couldn't load the sound ${name ? `"${name}"` : ''} for ${label}. ${err instanceof Error ? err.message : String(err)}`);

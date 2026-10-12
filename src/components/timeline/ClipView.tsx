@@ -3,7 +3,7 @@ import * as Tone from 'tone';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
 import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
-import { crossfades, secondsPerBar } from '../../store/audioClips';
+import { crossfades, secondsPerBar, stretchRatio } from '../../store/audioClips';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../../audio/instrumentCatalog';
 import { dbToGain } from '../../audio/clipEnvelope';
@@ -442,7 +442,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       </div>
 
       {/* An audio clip: its waveform, its fades shaded, and the fade handles at the top corners */}
-      {audio && <AudioClipBody audio={audio} xfade={xfade} seconds={clipSeconds} width={width} pxPerSecond={pxPerSecond} color={track.color} onFadeDrag={startFadeDrag} showHandles={!isRazor && width > FADE_HANDLE_PX * 4} />}
+      {audio && <AudioClipBody audio={audio} xfade={xfade} stretch={stretchRatio(audio, bpm)} seconds={clipSeconds} width={width} pxPerSecond={pxPerSecond} color={track.color} onFadeDrag={startFadeDrag} showHandles={!isRazor && width > FADE_HANDLE_PX * 4} />}
 
       {/* Notes */}
       {shades.length > 0 && (
@@ -482,6 +482,8 @@ interface AudioClipBodyProps {
   audio: ClipAudio;
   /** "in|out" crossfade seconds, or '' */
   xfade: string;
+  /** How fast it plays its sound (1 as recorded; see stretchRatio) */
+  stretch: number;
   seconds: number;
   width: number;
   pxPerSecond: number;
@@ -491,7 +493,7 @@ interface AudioClipBodyProps {
 }
 
 /** The body of an audio clip under its label: waveform, fades and their handles. */
-const AudioClipBody: React.FC<AudioClipBodyProps> = ({ audio, xfade, seconds, width, pxPerSecond, color, showHandles, onFadeDrag }) => {
+const AudioClipBody: React.FC<AudioClipBodyProps> = ({ audio, xfade, stretch, seconds, width, pxPerSecond, color, showHandles, onFadeDrag }) => {
   const top = LABEL_HEIGHT;
   const height = CLIP_HEIGHT - LABEL_HEIGHT;
   const [xIn, xOut] = xfade ? xfade.split('|').map(Number) : [0, 0];
@@ -517,7 +519,7 @@ const AudioClipBody: React.FC<AudioClipBodyProps> = ({ audio, xfade, seconds, wi
   return (
     <>
       <div className="absolute left-0 right-0 pointer-events-none" style={{ top, height }}>
-        <Waveform soundId={audio.soundId} from={audio.offset} to={audio.offset + seconds} width={width} height={height} gain={dbToGain(audio.gain)} color={color} className="block" />
+        <Waveform soundId={audio.soundId} from={audio.offset} to={audio.offset + seconds * stretch} width={width} height={height} gain={dbToGain(audio.gain)} color={color} className="block" />
       </div>
       {(inPx > 0 || outPx > 0) && (
         <svg className="absolute left-0 pointer-events-none" style={{ top, width, height }} width={width} height={height} aria-hidden="true">

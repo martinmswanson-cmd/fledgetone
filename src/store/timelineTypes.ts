@@ -436,7 +436,16 @@ export interface ClipAudio {
   /** Fade in and out, in seconds, from the clip's edges */
   fadeIn: number;
   fadeOut: number;
+  /**
+   * Follow the song's tempo: the tempo the recording was made at. The clip is time-stretched (same
+   * pitch) by the song's tempo over this, and keeps its length in bars when the tempo changes.
+   * Unset: the recording plays as it is, and keeps its length in seconds.
+   */
+  stretchBpm?: number;
 }
+
+export const STRETCH_BPM_MIN = 30;
+export const STRETCH_BPM_MAX = 400;
 
 export const AUDIO_GAIN_MIN = -24;
 export const AUDIO_GAIN_MAX = 24;

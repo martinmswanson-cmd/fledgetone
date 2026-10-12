@@ -2,10 +2,10 @@ import * as Tone from 'tone';
 import type { Clip, Track } from '../store/timelineTypes';
 import type { NativeBus } from './presets/native';
 import { barToTicks } from './transport';
-import { decodedSound, ensureSound } from './soundLibrary';
+import { decodedSound, ensureSound, requestStretch, stretchedSound } from './soundLibrary';
 import { DECLICK_SECONDS, envelopeAt, envelopeFrom, envelopeShape } from './clipEnvelope';
 import type { EnvelopePoint, EnvelopeShape } from './clipEnvelope';
-import { crossfades, type Crossfade } from '../store/audioClips';
+import { crossfades, stretchRatio, type Crossfade } from '../store/audioClips';
 
 type Transport = ReturnType<typeof Tone.getTransport>;
 
@@ -20,6 +20,8 @@ interface Voice {
   from: number;
   /** Context time it stops */
   stopAt: number;
+  /** The whole sound's length, in seconds as recorded */
+  soundSeconds: number;
 }
 
 interface Entry {
@@ -42,8 +44,8 @@ export interface AudioClipSchedule {
 /** A tick's worth of float noise: positions compared closer than this are the same tick. */
 const TICK_EPS = 1e-3;
 
-const placementOf = (clip: Clip) =>
-  `${clip.trackId}|${clip.startBar}|${clip.lengthBars}|${clip.audio?.soundId}|${clip.audio?.offset}`;
+const placementOf = (clip: Clip, bpm: number) =>
+  `${clip.trackId}|${clip.startBar}|${clip.lengthBars}|${clip.audio?.soundId}|${clip.audio?.offset}|${clip.audio ? stretchRatio(clip.audio, bpm) : 1}`;
 
 /**
  * Play the timeline's audio clips on `transport`: each clip's sound file, from the clip's offset
@@ -82,15 +84,16 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
    * sound's end gets at least a short fade at that edge, so the cut doesn't click; one that plays
    * its sound from the very start, or to its end, keeps the recording's own edges.
    */
-  const shapeOf = (clip: Clip, buffer: AudioBuffer): EnvelopeShape => {
+  const shapeOf = (clip: Clip, soundSeconds: number): EnvelopeShape => {
     const audio = clip.audio!;
     const seconds = clipSeconds(clip);
+    const ratio = stretchRatio(audio, transport.bpm.value);
     const x = xfades.get(clip.id);
     // A crossfade longer than the clip's own fade replaces it, with an equal-power curve
     const xIn = (x?.in ?? 0) > audio.fadeIn;
     const xOut = (x?.out ?? 0) > audio.fadeOut;
     const fadeIn = Math.max(xIn ? x!.in : audio.fadeIn, audio.offset > 0 ? DECLICK_SECONDS : 0);
-    const fadeOut = Math.max(xOut ? x!.out : audio.fadeOut, audio.offset + seconds < buffer.duration - 1e-6 ? DECLICK_SECONDS : 0);
+    const fadeOut = Math.max(xOut ? x!.out : audio.fadeOut, audio.offset + seconds * ratio < soundSeconds - 1e-6 ? DECLICK_SECONDS : 0);
     return envelopeShape(audio.gain, seconds, fadeIn, fadeOut, { in: xIn, out: xOut });
   };
 
@@ -111,8 +114,20 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
     const audio = clip.audio;
     const bus = audio && busFor(clip.trackId);
     if (!audio || !bus) return;
-    const buffer = decodedSound(audio.soundId, raw.sampleRate);
-    if (!buffer) return; // not decoded yet (or missing from this browser): silent until it is
+    // A clip that follows the tempo plays its stretched copy; until that's made, the recording
+    // sped up like tape (in time, a little off pitch)
+    const ratio = stretchRatio(audio, transport.bpm.value);
+    const recorded = decodedSound(audio.soundId, raw.sampleRate);
+    if (!recorded) return; // not decoded yet (or missing from this browser): silent until it is
+    let buffer = recorded;
+    let bufferRatio = 1;
+    if (ratio !== 1) {
+      const stretched = stretchedSound(audio.soundId, raw.sampleRate, ratio);
+      if (stretched) {
+        buffer = stretched;
+        bufferRatio = ratio;
+      } else requestStretch(audio.soundId, raw.sampleRate, ratio);
+    }
     // A late event (the main thread was busy) starts the clip now, further in, so it stays in time
     const late = raw.currentTime - at;
     if (late > 0) {
@@ -122,13 +137,14 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
     at = onFrame(at);
     from = onFrame(from);
     const seconds = clipSeconds(clip);
-    const offset = onFrame(audio.offset + from);
+    const offset = onFrame((audio.offset + from * ratio) / bufferRatio);
     if (from >= seconds || offset >= buffer.duration) return;
-    const shape = shapeOf(clip, buffer);
+    const shape = shapeOf(clip, recorded.duration);
     const points = envelopeFrom(shape, from);
     if (!points.length) return;
     const source = raw.createBufferSource();
     source.buffer = buffer;
+    if (ratio !== bufferRatio) source.playbackRate.value = ratio / bufferRatio;
     const gain = raw.createGain();
     scheduleEnvelope(gain.gain, points, at - from);
     source.connect(gain);
@@ -136,7 +152,7 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
     source.start(at, offset);
     const stopAt = at + (seconds - from);
     source.stop(stopAt);
-    const voice: Voice = { clipId: clip.id, source, gain, shape, startAt: at, from, stopAt };
+    const voice: Voice = { clipId: clip.id, source, gain, shape, startAt: at, from, stopAt, soundSeconds: recorded.duration };
     // Ended (which the browser reports once the audio, or the render, has got there): let the nodes go
     source.onended = () => {
       voices.delete(voice);
@@ -179,7 +195,7 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
     const now = raw.currentTime + 0.005;
     for (const voice of voices) {
       if (voice.clipId !== clip.id || voice.stopAt <= now) continue;
-      const shape = shapeOf(clip, voice.source.buffer!);
+      const shape = shapeOf(clip, voice.soundSeconds);
       const param = voice.gain.gain;
       if (now < voice.startAt) {
         // Not started yet: the whole envelope again
@@ -238,8 +254,10 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
       for (const clip of clips) {
         if (!clip.audio || !trackIds.has(clip.trackId)) continue;
         ensureSound(clip.audio.soundId);
+        const ratio = stretchRatio(clip.audio, transport.bpm.value);
+        if (ratio !== 1) requestStretch(clip.audio.soundId, raw.sampleRate, ratio);
         const prev = entries.get(clip.id);
-        const placement = placementOf(clip);
+        const placement = placementOf(clip, transport.bpm.value);
         if (prev && prev.placement === placement) {
           const xfade = xfadeKey(clip.id);
           if (prev.clip !== clip || prev.xfade !== xfade) {

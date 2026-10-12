@@ -325,3 +325,31 @@ test('a crossfade is equal power: the two curves keep the level through the over
   // No curve without a fade
   assert.equal(envelopeShape(0, 4, 0, 0, { in: true, out: true }).curveIn, undefined);
 });
+
+test('a clip that follows the tempo keeps its bars and plays its sound faster or slower', async () => {
+  const { stretchRatio, retimeAudioClips, audioSourceSeconds, audioLengthLimit, audioTrimStartLimit, loopTempos, normalizeClipAudio } = await import('../src/store/audioClips.ts');
+  const plain = { soundId: 's', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 };
+  const loop = { ...plain, stretchBpm: 100 };
+  assert.equal(stretchRatio(plain, 120), 1);
+  assert.equal(stretchRatio(loop, 120), 1.2);
+  const clips = [
+    { id: 'a', trackId: 't', startBar: 1, lengthBars: 4, audio: plain, notes: [] },
+    { id: 'b', trackId: 't', startBar: 5, lengthBars: 4, audio: loop, notes: [] },
+  ];
+  const after = retimeAudioClips(clips, 100, 120);
+  assert.equal(after[0].lengthBars, 4.8); // as recorded: keeps its seconds
+  assert.equal(after[1].lengthBars, 4); // follows: keeps its bars
+  assert.equal(retimeAudioClips([clips[1]], 100, 120)[0], clips[1]);
+  // 4 bars at 120 is 8 s of song, 9.6 s of a recording made at 100
+  assert.ok(Math.abs(audioSourceSeconds(clips[1], 120) - 9.6) < 1e-9);
+  // A 9.6 s sound fills exactly 4 bars at 120 when it follows the tempo
+  assert.ok(Math.abs(audioLengthLimit(loop, 9.6, 120) - 4) < 1e-9);
+  assert.ok(Math.abs(audioTrimStartLimit({ startBar: 3, audio: { ...loop, offset: 2.4 } }, 120) - 2) < 1e-9);
+  // A 9.6 s loop is 4 bars at 100 (or 2 at 50, 8 at 200)
+  assert.equal(loopTempos(9.6, 100)[0], 100);
+  assert.ok(loopTempos(9.6, 190).includes(200));
+  // Saved and opened
+  assert.equal(normalizeClipAudio({ ...plain, stretchBpm: 100 }).stretchBpm, 100);
+  assert.equal(normalizeClipAudio({ ...plain, stretchBpm: 9999 }).stretchBpm, 400);
+  assert.equal('stretchBpm' in normalizeClipAudio(plain), false);
+});

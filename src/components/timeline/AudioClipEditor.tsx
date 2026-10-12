@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { AudioWaveform, Slice, X } from 'lucide-react';
+import { AudioWaveform, Gauge, Slice, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, Track } from '../../store/timelineTypes';
-import { AUDIO_GAIN_MAX, AUDIO_GAIN_MIN } from '../../store/timelineTypes';
-import { audioClipSeconds } from '../../store/audioClips';
+import { AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from '../../store/timelineTypes';
+import { audioClipSeconds, audioSourceSeconds, loopTempos, stretchRatio } from '../../store/audioClips';
 import { useSoundLibrary } from '../../audio/soundLibrary';
 import { dbToGain } from '../../audio/clipEnvelope';
 import { shouldIgnoreShortcut } from '../keyboard';
@@ -28,6 +28,8 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
   const meta = useSoundLibrary((s) => s.metas[audio.soundId]);
   const [chopping, setChopping] = useState(false);
   const seconds = audioClipSeconds(clip, bpm);
+  /** Seconds of the sound it plays (more or fewer than `seconds` when it follows the tempo) */
+  const sourceSeconds = audioSourceSeconds(clip, bpm);
   const maxFade = Math.max(0, Math.floor((seconds / 2) * 100) / 100);
   const setAudio = (patch: Parameters<ReturnType<typeof useTimelineStore.getState>['setClipAudio']>[1]) =>
     useTimelineStore.getState().setClipAudio(clip.id, patch);
@@ -83,11 +85,12 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
         </label>
         {fadeSlider('Fade in', audio.fadeIn, 'fadeIn')}
         {fadeSlider('Fade out', audio.fadeOut, 'fadeOut')}
+        <StretchControls clip={clip} bpm={bpm} />
         <button type="button" onClick={() => setChopping(true)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500`} title="Cut this clip's sound into slices on a new Slicer track">
           <Slice className="w-3.5 h-3.5" /> Chop to Slicer…
         </button>
         <span className="hidden xl:inline text-[11px]">
-          {meta ? `${meta.name} · ${formatSeconds(meta.seconds)}` : 'Sound'} · plays {formatSeconds(audio.offset)} to {formatSeconds(audio.offset + seconds)} · drag the clip's edges to trim, its top corners for the fades
+          {meta ? `${meta.name} · ${formatSeconds(meta.seconds)}` : 'Sound'} · plays {formatSeconds(audio.offset)} to {formatSeconds(audio.offset + sourceSeconds)} · drag the clip's edges to trim, its top corners for the fades
         </span>
         <button type="button" onClick={() => useTimelineStore.getState().closeEditor()} className="ml-auto flex items-center gap-1 text-forge-muted hover:text-forge-text" title="Close editor (Esc)">
           <X className="w-4 h-4" /> Close
@@ -96,7 +99,7 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
 
       <div className="relative px-4 py-3 select-none">
         <div className="relative rounded-md overflow-hidden border border-forge-border bg-black/40" style={{ height: WAVE_H }}>
-          <Waveform soundId={audio.soundId} from={audio.offset} to={audio.offset + seconds} width={WAVE_COLUMNS} height={WAVE_H} stretch gain={dbToGain(audio.gain)} color={track.color} className="block" />
+          <Waveform soundId={audio.soundId} from={audio.offset} to={audio.offset + sourceSeconds} width={WAVE_COLUMNS} height={WAVE_H} stretch gain={dbToGain(audio.gain)} color={track.color} className="block" />
           {/* The fades: the quiet corners shaded, as on the clip */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox={`0 0 ${WAVE_COLUMNS} ${WAVE_H}`} preserveAspectRatio="none" aria-hidden="true">
             {audio.fadeIn > 0 && <polygon points={`0,0 ${px(audio.fadeIn)},0 0,${WAVE_H}`} fill="black" fillOpacity={0.45} />}
@@ -108,6 +111,61 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
         </div>
       </div>
       {chopping && <ChopToSlicerDialog clipId={clip.id} onClose={() => setChopping(false)} />}
+    </div>
+  );
+};
+
+/**
+ * Follow tempo: time-stretch the clip to the song's tempo (same pitch), given the tempo it was
+ * recorded at. Suggested tempos are the ones at which it lasts a whole number of bars.
+ */
+const StretchControls: React.FC<{ clip: Clip; bpm: number }> = ({ clip, bpm }) => {
+  const audio = clip.audio!;
+  const on = !!audio.stretchBpm;
+  const [draft, setDraft] = useState<string | null>(null);
+  const set = (v: number | undefined) => useTimelineStore.getState().setClipStretch(clip.id, v);
+  const asRecorded = audioSourceSeconds(clip, bpm);
+  const guesses = loopTempos(asRecorded, bpm).slice(0, 3);
+  const ratio = stretchRatio(audio, bpm);
+  return (
+    <div className="flex items-center gap-1.5" role="group" aria-label="Follow tempo">
+      <label className="flex items-center gap-1.5" title="Time-stretch the clip with the song's tempo (it keeps its pitch), the way loops should behave">
+        <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked ? guesses[0] ?? bpm : undefined)} aria-label="Follow the song's tempo" />
+        <Gauge className="w-3.5 h-3.5" /> FOLLOW TEMPO
+      </label>
+      {on && (
+        <>
+          <span>recorded at</span>
+          <input
+            value={draft ?? String(audio.stretchBpm)}
+            onFocus={(e) => {
+              setDraft(String(audio.stretchBpm));
+              e.currentTarget.select();
+            }}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+              const v = Number(draft);
+              if (draft !== null && Number.isFinite(v) && v >= STRETCH_BPM_MIN && v <= STRETCH_BPM_MAX) set(v);
+              setDraft(null);
+            }}
+            onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            className="h-7 w-16 bg-forge-bg border border-forge-border rounded-md px-1.5 text-forge-text tabular-nums focus:outline-none focus:border-cyan-500"
+            aria-label="The tempo the recording was made at (BPM)"
+            title="The tempo the recording was made at"
+          />
+          <span>BPM</span>
+          {guesses
+            .filter((g) => Math.abs(g - (audio.stretchBpm ?? 0)) > 0.05)
+            .map((g) => (
+              <button key={g} type="button" onClick={() => set(g)} className="h-6 px-1.5 rounded border border-forge-border text-[10px] hover:text-forge-text hover:border-cyan-500" title={`It lasts a whole number of bars at ${g} BPM`}>
+                {g}
+              </button>
+            ))}
+          <span className={`tabular-nums ${Math.abs(ratio - 1) > 0.3 ? 'text-amber-300' : 'text-forge-text'}`} title="How fast it plays: over about 30% faster or slower, hits start to smear">
+            ×{ratio.toFixed(2)}
+          </span>
+        </>
+      )}
     </div>
   );
 };
