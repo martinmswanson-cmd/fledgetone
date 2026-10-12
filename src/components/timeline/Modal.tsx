@@ -5,10 +5,12 @@ interface ModalProps {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  /** A wider dialog, for lists laid out in columns. */
+  wide?: boolean;
 }
 
 /** A centred dialog over a dimmed page. Esc, the close button or a click outside it calls `onClose`. */
-export const Modal: React.FC<ModalProps> = ({ title, onClose, children }) => {
+export const Modal: React.FC<ModalProps> = ({ title, onClose, children, wide = false }) => {
   const dialog = useRef<HTMLDivElement>(null);
   // Esc is heard through focus, so take it unless a control inside already has it (autoFocus
   // does nothing on a disabled button, which left focus, and Esc, out on the page)
@@ -28,7 +30,7 @@ export const Modal: React.FC<ModalProps> = ({ title, onClose, children }) => {
         role="dialog"
         aria-label={title}
         tabIndex={-1}
-        className="w-full max-w-md max-h-full flex flex-col rounded-xl border border-forge-borderLight bg-forge-panel shadow-2xl focus:outline-none"
+        className={`w-full ${wide ? 'max-w-3xl' : 'max-w-md'} max-h-full flex flex-col rounded-xl border border-forge-borderLight bg-forge-panel shadow-2xl focus:outline-none`}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-forge-border">
           <h3 className="text-sm font-semibold text-forge-text">{title}</h3>

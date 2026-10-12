@@ -14,16 +14,33 @@ import type { Step } from './demoSong';
  * projects once opened. Steps are 16th notes: offset = step / 16 bars.
  */
 export const STARTERS = [
-  { id: 'dubstep', name: 'Dubstep', detail: '140 BPM, F minor. Half-time drums, a wobble and growl call-and-response in the drop, supersaw chords pumping to the kick.' },
-  { id: 'house', name: 'House', detail: '126 BPM, A minor. Four-on-the-floor, off-beat bass and hats, clav chord stabs, a pluck arp in the peak.' },
-  { id: 'dnb', name: 'Drum & Bass', detail: '174 BPM, F minor. A two-step break, a gliding Reese bass, a string pad and a pluck arp.' },
-  { id: 'trap', name: 'Trap', detail: '140 BPM, C minor. Half-time drums with hat rolls, a sliding 808, a dark pluck melody over strings.' },
-  { id: 'cinematic', name: 'Cinematic', detail: '100 BPM, D minor. Harp and strings, a cello ostinato with taiko building, then French horns over it all: boss fights and title screens.' },
-  { id: 'lofi', name: 'Lo-Fi', detail: '82 BPM, swung. Electric piano ninth chords, a dusty filtered beat, bass guitar and a flute line: calm levels and menus.' },
-  { id: 'chiptune', name: 'Chiptune', detail: '150 BPM, A minor. 8-bit pulse lead and arpeggios, a bouncing triangle bass and a noise kit: retro games.' },
-  { id: 'hiphop', name: 'Hip-Hop', detail: '90 BPM, boom bap. A swung beat, a piano loop, bass guitar and brass stabs in the hook.' },
+  { id: 'dubstep', group: 'Electronic', name: 'Dubstep', detail: '140 BPM, F minor. Half-time drums, a wobble and growl call-and-response in the drop, supersaw chords pumping to the kick.' },
+  { id: 'house', group: 'Electronic', name: 'House', detail: '126 BPM, A minor. Four-on-the-floor, off-beat bass and hats, clav chord stabs, a pluck arp in the peak.' },
+  { id: 'trance', group: 'Electronic', name: 'Trance', detail: '138 BPM, A minor. A pluck arp, a snare-roll build with a riser, then pumping supersaws and an off-beat bass.' },
+  { id: 'dnb', group: 'Electronic', name: 'Drum & Bass', detail: '174 BPM, F minor. A two-step break, a gliding Reese bass, a string pad and a pluck arp.' },
+  { id: 'synthwave', group: 'Electronic', name: 'Synthwave', detail: '100 BPM, A minor. LinnDrum beat, pulsing bass, chorused string machine, an arp and a soaring lead: night drives.' },
+  { id: 'chiptune', group: 'Electronic', name: 'Chiptune', detail: '150 BPM, A minor. 8-bit pulse lead and arpeggios, a bouncing triangle bass and a noise kit: retro games.' },
+  { id: 'classical', group: 'Orchestral & Choir', name: 'Classical', detail: '92 BPM, D major. A string quartet over a Baroque ground bass, harpsichord continuo, a theme and its variation.' },
+  { id: 'angelic', group: 'Orchestral & Choir', name: 'Angelic', detail: '66 BPM, C Lydian. Choir and soft voices, a halo pad, harp and celesta: heaven, healing, sacred places.' },
+  { id: 'cinematic', group: 'Orchestral & Choir', name: 'Cinematic', detail: '100 BPM, D minor. Harp and strings, a cello ostinato with taiko building, then French horns over it all: title screens.' },
+  { id: 'epic', group: 'Orchestral & Choir', name: 'Epic Orchestral', detail: '130 BPM, C minor. Driving cellos, timpani, tremolo strings and choir, then a brass battle theme: boss fights.' },
+  { id: 'horror', group: 'Orchestral & Choir', name: 'Horror', detail: '72 BPM. An eerie drone, string clusters, a broken music-box lullaby and timpani, then a chase.' },
+  { id: 'rock', group: 'Band', name: 'Rock', detail: '124 BPM, E minor. A real drum kit with fills, distorted power chords, bass guitar and organ.' },
+  { id: 'metal', group: 'Band', name: 'Metal', detail: '170 BPM, E Phrygian. Double-kick blast beat, twin chugging guitars, then a breakdown with choir.' },
+  { id: 'pop', group: 'Band', name: 'Pop', detail: '112 BPM, C major. Piano 8ths, a punchy beat, bass guitar, a pluck hook and strings in the chorus.' },
+  { id: 'funk', group: 'Band', name: 'Funk', detail: '104 BPM, E9. Ghost-note groove, slap bass, scratchy muted guitar, organ and horn hits.' },
+  { id: 'jazz', group: 'Band', name: 'Jazz', detail: '132 BPM, swing. Ride cymbal, walking upright bass, piano comping, alto sax and vibes on a ii-V-I.' },
+  { id: 'hiphop', group: 'Band', name: 'Hip-Hop', detail: '90 BPM, boom bap. A swung beat, a piano loop, bass guitar and brass stabs in the hook.' },
+  { id: 'trap', group: 'Band', name: 'Trap', detail: '140 BPM, C minor. Half-time drums with hat rolls, a sliding 808, a dark pluck melody over strings.' },
+  { id: 'lofi', group: 'Chill & World', name: 'Lo-Fi', detail: '82 BPM, swung. Electric piano ninth chords, a dusty filtered beat, bass guitar and a flute line: calm levels and menus.' },
+  { id: 'ambient', group: 'Chill & World', name: 'Ambient', detail: '70 BPM, D major. Warm and glass pads, a kalimba melody and crystal sparkles: exploring, resting.' },
+  { id: 'celtic', group: 'Chill & World', name: 'Celtic', detail: '112 BPM, D major. A fiddle reel over strummed guitar and bodhrán, a tin whistle, then the pipes.' },
+  { id: 'tavern', group: 'Chill & World', name: 'Fantasy Tavern', detail: '110 BPM, D minor jig. Hammered dulcimer, lute, hand drum, accordion and recorder: inns and villages.' },
+  { id: 'latin', group: 'Chill & World', name: 'Latin', detail: '130 BPM, bossa nova. Nylon guitar comping, upright bass, bongos and shaker, a flute melody.' },
+  { id: 'eastern', group: 'Chill & World', name: 'Eastern', detail: '84 BPM, D in-scale. Koto, shakuhachi, taiko and shamisen over a glass drone: temples and gardens.' },
 ] as const;
 export type StarterId = (typeof STARTERS)[number]['id'];
+export const STARTER_GROUPS = ['Electronic', 'Orchestral & Choir', 'Band', 'Chill & World'] as const;
 
 export const isStarterId = (v: unknown): v is StarterId => STARTERS.some((s) => s.id === v);
 
@@ -426,7 +443,653 @@ function hiphop(): ProjectSnapshot {
   );
 }
 
-const BUILDERS: Record<StarterId, () => ProjectSnapshot> = { dubstep, house, dnb, trap, cinematic, lofi, chiptune, hiphop };
+// ---------- Helpers for the starters below ----------
+
+/** One chord (or note) per `every` steps, each held `dur`. */
+const progression = (chords: Array<string | string[]>, every: number, dur: string, vel = 0.7): Step[] => chords.map((c, i): Step => [i * every, c, vel, dur]);
+
+/** A rock/pop beat: kick on 1 and 3 (and the "and" of 3), snare on 2 and 4, 8th hats. */
+const rockBeat = (bars: number, hat: string = D.closedHat): Step[] =>
+  everyBar(bars, (): Step[] => [
+    [0, D.kick, 1], [8, D.kick, 0.9], [10, D.kick, 0.75],
+    [4, D.snare, 0.95], [12, D.snare, 0.95],
+    ...[0, 2, 4, 6, 8, 10, 12, 14].map((i): Step => [i, hat, i % 4 === 0 ? 0.7 : 0.5]),
+  ]);
+
+/** A tom fill over the last beat or two of a bar, ending on a crash next bar's downbeat (with `crashAt`). */
+const tomFill = (from: number): Step[] => [
+  [from, D.tomHigh, 0.8], [from + 1, D.tomHigh, 0.75], [from + 2, D.tomMid, 0.8], [from + 3, D.tomMid, 0.75],
+  [from + 4, D.tomLow, 0.85], [from + 5, D.tomLow, 0.8], [from + 6, D.snare, 0.9], [from + 7, D.snare, 0.95],
+];
+
+// ---------- Classical ----------
+
+function classical(): ProjectSnapshot {
+  const vln1 = track('Violin I', 'violin', { volume: -3, pan: -0.35, reverbSend: 0.35 });
+  const vln2 = track('Violin II', 'violin', { volume: -9, pan: -0.15, reverbSend: 0.35 });
+  const viola = track('Viola', 'viola', { volume: -4, pan: 0.15, reverbSend: 0.35 });
+  const cello = track('Cello', 'cello', { volume: -4, pan: 0.35, reverbSend: 0.35 });
+  const harpsi = track('Harpsichord', 'harpsichord', { volume: -8, reverbSend: 0.25 });
+  // D - A - Bm - F#m - G - D - G - A, two beats each (the Canon's ground)
+  const roots = ['D3', 'A2', 'B2', 'F#2', 'G2', 'D2', 'G2', 'A2'];
+  const triads = [['D4', 'F#4', 'A4'], ['C#4', 'E4', 'A4'], ['D4', 'F#4', 'B4'], ['C#4', 'F#4', 'A4'], ['D4', 'G4', 'B4'], ['D4', 'F#4', 'A4'], ['D4', 'G4', 'B4'], ['C#4', 'E4', 'A4']];
+  const ground = progression(roots, 8, '2n', 0.75);
+  const violaPart = triads.flatMap((t, i): Step[] => [[i * 8, t[1], 0.6, '4n'], [i * 8 + 4, t[2], 0.55, '4n']]);
+  const broken = triads.flatMap((t, i): Step[] => [t[0], t[1], t[2], t[1]].map((n, j): Step => [i * 8 + j * 2, n.replace('4', '5'), j === 0 ? 0.6 : 0.5, '8n']));
+  const theme = progression(['F#5', 'E5', 'D5', 'C#5', 'B4', 'A4', 'B4', 'C#5'], 8, '2n', 0.8);
+  const variation: Step[] = [['D5', 'F#5'], ['E5', 'C#5'], ['D5', 'B4'], ['C#5', 'A4'], ['B4', 'D5'], ['A4', 'F#4'], ['G4', 'B4'], ['A4', 'C#5']].flatMap(([a, b], i): Step[] => [[i * 8, a, 0.8, '4n'], [i * 8 + 4, b, 0.75, '4n']]);
+  const continuo = triads.map((t, i): Step => [i * 8, t, 0.6, '2n']);
+  return project(
+    'Classical starter',
+    92,
+    0,
+    [9, 17],
+    [vln1, vln2, viola, cello, harpsi],
+    [
+      clip(cello, 'Ground bass', 1, 4, ground, 4),
+      clip(viola, 'Inner voice', 1, 4, violaPart, 4),
+      clip(vln2, 'Arpeggios', 5, 4, broken, 3),
+      clip(vln1, 'Theme', 9, 4, theme),
+      clip(vln1, 'Variation', 13, 4, variation),
+      clip(harpsi, 'Continuo', 9, 4, continuo, 2),
+    ],
+    [[1, 'Ground'], [5, 'Second violins'], [9, 'Theme'], [13, 'Variation']],
+    master({ on: false }, { on: true, amount: 1.1 })
+  );
+}
+
+// ---------- Angelic ----------
+
+function angelic(): ProjectSnapshot {
+  const choir = track('Choir', 'choir', { volume: -4, reverbSend: 0.6 });
+  const voices = track('Voices', 'voiceOohs', { volume: -1, reverbSend: 0.65, delaySend: 0.15 });
+  const halo = track('Halo', 'haloPad', { volume: -8, reverbSend: 0.5 });
+  const harp = track('Harp', 'harp', { volume: -6, pan: -0.25, reverbSend: 0.55 });
+  const celesta = track('Celesta', 'celesta', { volume: -1, pan: 0.3, reverbSend: 0.6, delaySend: 0.25 });
+  // Cmaj7 - D/C - Em7 - Am7: the raised fourth of D/C gives the floating, heavenly sound
+  const chords = [['C4', 'E4', 'G4', 'B4'], ['C4', 'D4', 'F#4', 'A4'], ['B3', 'E4', 'G4', 'D5'], ['A3', 'C4', 'E4', 'G4']];
+  const pad = progression([['C3', 'G3', 'E4'], ['C3', 'A3', 'F#4'], ['E3', 'B3', 'G4'], ['A2', 'E3', 'C4']], 16, '1n', 0.6);
+  const choirPart = progression(chords, 16, '1n', 0.7);
+  const arp = everyBar(4, (b) => [0, 1, 2, 3, 2, 1, 2, 3].map((k, i): Step => [i * 2, chords[b][k].replace(/\d/, (o) => String(Number(o) + (i >= 4 ? 1 : 0))), i === 0 ? 0.7 : 0.5, '4n']));
+  const melody: Step[] = [
+    [0, 'E5', 0.7, '2n'], [8, 'D5', 0.65, '2n'], [16, 'F#5', 0.7, '2n.'], [28, 'E5', 0.6, '4n'],
+    [32, 'D5', 0.7, '2n'], [40, 'B4', 0.65, '2n'], [48, 'C5', 0.7, '1n'],
+  ];
+  const sparkle = everyBar(4, (b) => [0, 3, 6, 10].map((st, i): Step => [st, chords[b][(i + b) % 4].replace(/\d/, '6'), 0.5, '8n']));
+  return project(
+    'Angelic starter',
+    66,
+    0,
+    [9, 17],
+    [choir, voices, halo, harp, celesta],
+    [
+      clip(halo, 'Halo', 1, 4, pad, 4),
+      clip(harp, 'Harp', 1, 4, arp, 4),
+      clip(choir, 'Choir', 5, 4, choirPart, 3),
+      clip(voices, 'Melody', 9, 4, melody, 2),
+      clip(celesta, 'Sparkle', 9, 4, sparkle, 2),
+    ],
+    [[1, 'Light'], [5, 'Choir'], [9, 'Heaven']],
+    master({ on: false }, { on: true, amount: 1.3 })
+  );
+}
+
+// ---------- Epic Orchestral ----------
+
+function epic(): ProjectSnapshot {
+  const lows = track('Low strings', 'contrabass', { volume: -4, reverbSend: 0.3 });
+  const celli = track('Cellos', 'cello', { volume: -6, reverbSend: 0.3 });
+  const trem = track('Tremolo', 'tremolo', { volume: -10, reverbSend: 0.45 });
+  const brass = track('Brass', 'brassSection', { volume: -1, reverbSend: 0.45 });
+  const choir = track('Choir', 'choir', { volume: -5, reverbSend: 0.55 });
+  const timp = track('Timpani', 'timpani', { volume: -2, reverbSend: 0.4 });
+  const perc = track('Percussion', 'acousticKit', { volume: -1, reverbSend: 0.35 });
+  // Cm - Ab - Eb - Bb, a bar each
+  const roots = ['C', 'G#', 'D#', 'A#'];
+  const ostinato = everyBar(4, (b) => Array.from({ length: 16 }, (_, i): Step => [i, `${roots[b]}${i % 4 === 3 ? 3 : 2}`, i % 4 === 0 ? 0.9 : 0.6, '16n']));
+  const lowNotes = progression(['C2', 'G#1', 'D#2', 'A#1'], 16, '1n', 0.8);
+  const chords = [['C4', 'D#4', 'G4'], ['C4', 'D#4', 'G#4'], ['A#3', 'D#4', 'G4'], ['A#3', 'D4', 'F4']];
+  const tremChords = progression(chords.map((c) => c.map((n) => n.replace('4', '5').replace('3', '4'))), 16, '1n', 0.65);
+  const choirPart = progression(chords, 16, '1n', 0.75);
+  const theme: Step[] = [
+    [0, 'C4', 0.95, '4n.'], [6, 'D4', 0.85, '8n'], [8, 'D#4', 0.95, '2n'],
+    [16, 'G#4', 0.95, '4n.'], [22, 'G4', 0.85, '8n'], [24, 'D#4', 0.9, '2n'],
+    [32, 'G4', 0.95, '4n.'], [38, 'F4', 0.85, '8n'], [40, 'D#4', 0.9, '4n'], [44, 'D4', 0.85, '4n'],
+    [48, 'D4', 0.95, '2n.'], [60, 'G3', 0.85, '4n'],
+  ];
+  const rolls = everyBar(1, (): Step[] => [[0, 'C2', 1, '4n'], [8, 'G2', 0.85, '4n'], [12, 'C2', 0.7, '16n'], [13, 'C2', 0.75, '16n'], [14, 'C2', 0.8, '16n'], [15, 'C2', 0.85, '16n']]);
+  const battle = everyBar(2, (b): Step[] => [
+    [0, D.kick, 1], ...(b === 0 ? [[0, D.crash, 0.8] as Step] : []), [4, D.tomLow, 0.85], [6, D.tomLow, 0.7], [8, D.kick, 0.95], [8, D.snare, 0.8], [12, D.tomMid, 0.85], [14, D.tomHigh, 0.8],
+  ]);
+  return project(
+    'Epic Orchestral starter',
+    130,
+    0,
+    [9, 17],
+    [lows, celli, trem, brass, choir, timp, perc],
+    [
+      clip(celli, 'Ostinato', 1, 4, ostinato, 4),
+      clip(lows, 'Basses', 5, 4, lowNotes, 3),
+      clip(timp, 'Timpani', 1, 1, rolls, 16),
+      clip(trem, 'Tremolo', 5, 4, tremChords, 3),
+      clip(choir, 'Choir', 5, 4, choirPart, 3),
+      clip(brass, 'Battle theme', 9, 4, theme, 2),
+      clip(perc, 'Battle drums', 9, 2, battle, 4),
+    ],
+    [[1, 'Tension'], [5, 'Rise'], [9, 'Battle']],
+    master({ on: true, depth: 0.15 }, { on: true, amount: 1.2 })
+  );
+}
+
+// ---------- Ambient ----------
+
+function ambient(): ProjectSnapshot {
+  const warm = track('Warm pad', 'warmPad', { volume: -6, reverbSend: 0.5 });
+  const glass = track('Glass', 'glassPad', { volume: -6, reverbSend: 0.6, pan: 0.2 });
+  const kalimba = track('Kalimba', 'kalimba', { volume: -2, reverbSend: 0.5, delaySend: 0.35, pan: -0.2 });
+  const crystal = track('Crystal', 'crystal', { volume: -4, reverbSend: 0.7, delaySend: 0.3, pan: 0.3 });
+  // Dmaj9 - Bm11 - Gmaj9 - A6sus, two bars each
+  const pad = progression([['D3', 'A3', 'C#4', 'E4'], ['B2', 'F#3', 'A3', 'E4'], ['G2', 'D3', 'F#3', 'A3'], ['A2', 'E3', 'F#3', 'B3']], 32, '2m', 0.6);
+  const air = progression([['F#5', 'A5'], ['D5', 'F#5'], ['B4', 'D5'], ['C#5', 'E5']], 32, '2m', 0.5);
+  const tune: Step[] = [
+    [0, 'F#5', 0.7, '4n'], [3, 'A5', 0.6, '4n'], [6, 'E5', 0.65, '4n'], [12, 'D5', 0.6, '4n'],
+    [20, 'C#5', 0.6, '4n'], [24, 'E5', 0.65, '4n'], [28, 'F#5', 0.6, '4n'],
+    [36, 'D5', 0.65, '4n'], [40, 'B4', 0.6, '4n'], [46, 'A4', 0.6, '4n'], [52, 'B4', 0.55, '4n'], [56, 'D5', 0.6, '2n'],
+  ];
+  const shimmer: Step[] = [[0, 'A6', 0.5, '2n'], [22, 'E6', 0.45, '2n'], [40, 'F#6', 0.5, '2n'], [58, 'C#6', 0.4, '2n']];
+  return project(
+    'Ambient starter',
+    70,
+    0,
+    [1, 17],
+    [warm, glass, kalimba, crystal],
+    [
+      clip(warm, 'Pad', 1, 8, pad, 2),
+      clip(glass, 'Air', 5, 8, air, 1),
+      clip(glass, 'Air', 13, 4, air.slice(0, 2)),
+      clip(kalimba, 'Kalimba', 5, 4, tune, 3),
+      clip(crystal, 'Shimmer', 9, 4, shimmer, 2),
+    ],
+    [[1, 'Drift'], [5, 'Kalimba'], [9, 'Shimmer']],
+    master({ on: false }, { on: true, amount: 1.4 })
+  );
+}
+
+// ---------- Rock ----------
+
+function rock(): ProjectSnapshot {
+  const drums = track('Drums', 'acousticKit', { volume: 3, reverbSend: 0.15 });
+  const gtr = track('Guitar', 'distortionGuitar', { volume: -7, pan: -0.3 });
+  const gtr2 = track('Guitar 2', 'overdriveGuitar', { volume: -7, pan: 0.3 });
+  const bass = track('Bass', 'bassGuitar', { volume: 1 });
+  const organ = track('Organ', 'rockOrgan', { volume: -10, reverbSend: 0.2 });
+  // Em - C - G - D, a bar each, as power chords
+  const power = (root: string) => { const m = Number(root.slice(-1)); const p = root.slice(0, -1); return [root, `${({ E: 'B', C: 'G', G: 'D', D: 'A' } as Record<string, string>)[p]}${p === 'G' || p === 'D' ? m + 1 : m}`, `${p}${m + 1}`]; };
+  const roots = ['E2', 'C3', 'G2', 'D3'];
+  const chug = everyBar(4, (b) => Array.from({ length: 8 }, (_, i): Step => [i * 2, power(roots[b]), i % 4 === 0 ? 0.95 : 0.75, '8n']));
+  const ring = everyBar(4, (b): Step[] => [[0, power(roots[b]), 0.95, '2n.'], [12, power(roots[b]), 0.8, '4n']]);
+  const bassLine = everyBar(4, (b) => Array.from({ length: 8 }, (_, i): Step => [i * 2, roots[b].replace(/\d/, (o) => String(Number(o) - 1)), 0.85, '8n']));
+  const organChords = progression([['E4', 'G4', 'B4'], ['E4', 'G4', 'C5'], ['D4', 'G4', 'B4'], ['D4', 'F#4', 'A4']], 16, '1n', 0.6);
+  const beat = rockBeat(4);
+  const fill = [...rockBeat(1).filter(([st]) => st < 8), ...tomFill(8)];
+  const verse = [...beat.filter(([st]) => st < 48), ...fill.map(([st, n, v, d]): Step => [st + 48, n, v, d])];
+  const chorus: Step[] = [[0, D.crash, 0.85, '1n'], ...rockBeat(4, D.ride).filter(([st]) => st < 48), ...fill.map(([st, n, v, d]): Step => [st + 48, n, v, d])];
+  return project(
+    'Rock starter',
+    124,
+    0,
+    [9, 17],
+    [drums, gtr, gtr2, bass, organ],
+    [
+      clip(gtr, 'Riff', 1, 4, chug, 2),
+      clip(drums, 'Verse beat', 5, 4, verse),
+      clip(bass, 'Bass', 5, 4, bassLine, 3),
+      clip(drums, 'Chorus beat', 9, 4, chorus, 2),
+      clip(gtr, 'Chorus', 9, 4, ring, 2),
+      clip(gtr2, 'Chugs', 9, 4, chug, 2),
+      clip(organ, 'Organ', 9, 4, organChords, 2),
+    ],
+    [[1, 'Intro'], [5, 'Verse'], [9, 'Chorus']],
+    master({ on: true, depth: 0.2 }, { on: true, amount: 1.15 })
+  );
+}
+
+// ---------- Metal ----------
+
+function metal(): ProjectSnapshot {
+  const drums = track('Drums', 'acousticKit', { volume: -3, fx: { compressor: { on: true, threshold: -16, ratio: 4, makeup: 2 } } });
+  const left = track('Guitar L', 'distortionGuitar', { volume: -5, pan: -0.5 });
+  const right = track('Guitar R', 'distortionGuitar', { volume: -5, pan: 0.5 });
+  const bass = track('Bass', 'bassGuitar', { volume: 0, fx: { distortion: { on: true, amount: 0.25 } } });
+  const choir = track('Choir', 'choir', { volume: -9, reverbSend: 0.5 });
+  // E Phrygian: chugs on low E with stabs up to F, G and A#
+  const riff = everyBar(2, (b): Step[] => [
+    ...[0, 1, 2, 4, 5, 6, 8, 9].map((i): Step => [i, ['E2', 'B2'], 0.9, '16n']),
+    [3, ['F2', 'C3'], 0.95, '16n'], [7, ['G2', 'D3'], 0.95, '16n'], [10, ['E2', 'B2'], 0.9, '8n'],
+    [12, b ? ['A#2', 'F3'] : ['G2', 'D3'], 1, '8n'], [14, b ? ['A2', 'E3'] : ['F2', 'C3'], 1, '8n'],
+  ]);
+  const bassRiff = riff.map(([st, n, v, d]): Step => [st, (n as string[])[0].replace('2', '1'), v, d]);
+  const blast = everyBar(1, (): Step[] => [
+    ...Array.from({ length: 16 }, (_, i): Step => [i, D.kick, i % 4 === 0 ? 1 : 0.8]),
+    [4, D.snare, 1], [12, D.snare, 1], [0, D.crash, 0.75], [8, D.crash, 0.6],
+  ]);
+  const breakdown = everyBar(2, (b): Step[] => [
+    [0, D.kick, 1], [0, D.crash, 0.9], [3, D.kick, 0.9], [6, D.kick, 0.9], [8, D.snare, 1], [10, D.kick, 0.85], [11, D.kick, 0.85], ...(b ? [[14, D.tomLow, 0.9] as Step, [15, D.tomLow, 0.95] as Step] : []),
+    ...[0, 4, 8, 12].map((i): Step => [i, D.ride, 0.6]),
+  ]);
+  const chug = everyBar(2, (b): Step[] => [[0, ['E2', 'B2'], 1, '8n'], [3, ['E2', 'B2'], 0.95, '16n'], [6, ['E2', 'B2'], 0.95, '16n'], [10, ['E2', 'B2'], 0.9, '16n'], [11, ['E2', 'B2'], 0.9, '16n'], ...(b ? [[14, ['A#2', 'F3'], 1, '8n'] as Step] : [])]);
+  const choirPart = progression([['E4', 'G4', 'B4'], ['F4', 'A4', 'C5'], ['E4', 'G4', 'B4'], ['D4', 'F4', 'A#4']], 16, '1n', 0.7);
+  return project(
+    'Metal starter',
+    170,
+    0,
+    [9, 17],
+    [drums, left, right, bass, choir],
+    [
+      clip(left, 'Riff', 1, 2, riff, 4),
+      clip(right, 'Riff', 1, 2, riff, 4),
+      clip(bass, 'Riff', 1, 2, bassRiff, 4),
+      clip(drums, 'Blast', 1, 1, blast, 8),
+      clip(drums, 'Breakdown', 9, 2, breakdown, 4),
+      clip(left, 'Breakdown', 9, 2, chug, 4),
+      clip(right, 'Breakdown', 9, 2, chug, 4),
+      clip(bass, 'Breakdown', 9, 2, chug.map(([st, n, v, d]): Step => [st, (n as string[])[0].replace('2', '1'), v, d]), 4),
+      clip(choir, 'Choir', 9, 4, choirPart, 2),
+    ],
+    [[1, 'Riff'], [9, 'Breakdown']],
+    master({ on: true, depth: 0.25 }, { on: true, amount: 1.2 })
+  );
+}
+
+// ---------- Jazz ----------
+
+function jazz(): ProjectSnapshot {
+  const drums = track('Drums', 'acousticKit', { volume: 5, reverbSend: 0.2 });
+  const bass = track('Upright bass', 'uprightBass', { volume: 0 });
+  const piano = track('Piano', 'piano', { volume: 3, reverbSend: 0.25, pan: -0.15 });
+  const sax = track('Sax', 'saxophone', { volume: -2, reverbSend: 0.3, pan: 0.15 });
+  const vibes = track('Vibes', 'vibraphone', { volume: 0, reverbSend: 0.35, pan: 0.3 });
+  // ii - V - I - VI in C (Dm7 G7 Cmaj7 A7), a bar each. Swung 8ths are written as triplets: the off-beat two triplet 8ths (2.67 steps) after the beat
+  const tri = 4 / 3;
+  const ride = everyBar(4, (): Step[] => [
+    [0, D.ride, 0.7], [4, D.ride, 0.75], [4 + 2 * tri, D.ride, 0.55], [8, D.ride, 0.7], [12, D.ride, 0.75], [12 + 2 * tri, D.ride, 0.55],
+    [4, D.closedHat, 0.5], [12, D.closedHat, 0.5], [0, D.kick, 0.35], [8, D.kick, 0.3], [10 + tri, D.snare, 0.25],
+  ]);
+  const walk: Step[] = ['D2', 'F2', 'A2', 'C3', 'G2', 'B1', 'D2', 'F2', 'C2', 'E2', 'G2', 'B2', 'A1', 'C#2', 'E2', 'G2'].map((n, i): Step => [i * 4, n, i % 4 === 0 ? 0.9 : 0.75, '4n']);
+  const voicings = [['F3', 'A3', 'C4', 'E4'], ['F3', 'B3', 'E4'], ['E3', 'G3', 'B3', 'D4'], ['C#4', 'G4', 'B4']];
+  const comp = everyBar(4, (b): Step[] => [[4 + 2 * tri, voicings[b], 0.6, '8n'], [12, voicings[b], 0.5, '4n']]);
+  const head: Step[] = [
+    [0, 'A4', 0.8, '4n'], [4 + 2 * tri, 'C5', 0.75, '8n'], [8, 'E5', 0.85, '4n'], [12, 'D5', 0.75, '4n'],
+    [16, 'B4', 0.8, '4n.'], [24, 'G4', 0.7, '8n'], [24 + 2 * tri, 'A4', 0.75, '8n'], [28, 'B4', 0.75, '4n'],
+    [32, 'C5', 0.85, '2n'], [40 + 2 * tri, 'E5', 0.7, '8n'], [44, 'D5', 0.7, '4n'],
+    [48, 'C#5', 0.8, '4n'], [52, 'A4', 0.7, '4n'], [56, 'G4', 0.7, '4n'], [60, 'E4', 0.7, '4n'],
+  ];
+  const vibeLine = progression([['F4', 'A4', 'E5'], ['F4', 'B4', 'E5'], ['E4', 'G4', 'D5'], ['C#5', 'G5']], 16, '2n', 0.5);
+  return project(
+    'Jazz starter',
+    132,
+    0,
+    [5, 17],
+    [drums, bass, piano, sax, vibes],
+    [
+      clip(drums, 'Ride', 1, 4, ride, 4),
+      clip(bass, 'Walking bass', 1, 4, walk, 4),
+      clip(piano, 'Comping', 1, 4, comp, 4),
+      clip(sax, 'Head', 5, 4, head, 2),
+      clip(vibes, 'Vibes', 13, 4, vibeLine),
+      clip(sax, 'Head', 13, 4, head),
+    ],
+    [[1, 'Intro'], [5, 'Head'], [13, 'Out chorus']],
+    master({ on: false }, { on: true, amount: 1.1 })
+  );
+}
+
+// ---------- Synthwave ----------
+
+function synthwave(): ProjectSnapshot {
+  const drums = track('Drums', 'linnDrum', { volume: 0, reverbSend: 0.25 });
+  const bass = track('Bass', 'reeseBass', { volume: -4, fx: { filter: { on: true, type: 'lowpass', cutoff: 900, resonance: 1 } } });
+  const pads = track('Strings', 'synthStrings', { volume: -8, reverbSend: 0.4, fx: { chorus: { on: true, rate: 0.6, depth: 0.6, mix: 0.4 } } });
+  const arp = track('Arp', 'pluck', { volume: -3, delaySend: 0.35, pan: 0.2 });
+  const lead = track('Lead', 'lead', { volume: -2, reverbSend: 0.35, delaySend: 0.25 });
+  // Am - F - C - G, a bar each
+  const roots = ['A1', 'F1', 'C2', 'G1'];
+  const triads = [['A3', 'C4', 'E4'], ['A3', 'C4', 'F4'], ['G3', 'C4', 'E4'], ['G3', 'B3', 'D4']];
+  const pulse = everyBar(4, (b) => Array.from({ length: 8 }, (_, i): Step => [i * 2, i % 2 ? roots[b].replace(/\d/, (o) => String(Number(o) + 1)) : roots[b], 0.85, '8n']));
+  const pad = progression(triads, 16, '1n', 0.65);
+  const arps = everyBar(4, (b) => Array.from({ length: 16 }, (_, i): Step => [i, triads[b][i % 3].replace(/\d/, (o) => String(Number(o) + 1)), i % 4 === 0 ? 0.75 : 0.5, '16n']));
+  const beat = everyBar(1, (): Step[] => [
+    [0, D.kick, 1], [8, D.kick, 0.95], [4, D.snare, 0.95], [12, D.snare, 0.95], [4, D.clap, 0.6], [12, D.clap, 0.6],
+    ...Array.from({ length: 16 }, (_, i): Step => [i, D.closedHat, i % 2 ? 0.35 : 0.55]),
+  ]);
+  const melody: Step[] = [
+    [0, 'E5', 0.85, '4n.'], [6, 'D5', 0.75, '8n'], [8, 'C5', 0.8, '4n'], [12, 'A4', 0.75, '4n'],
+    [16, 'C5', 0.85, '2n'], [24, 'F5', 0.8, '4n'], [28, 'E5', 0.75, '4n'],
+    [32, 'G5', 0.85, '4n.'], [38, 'E5', 0.75, '8n'], [40, 'C5', 0.8, '2n'],
+    [48, 'D5', 0.85, '2n.'], [60, 'B4', 0.7, '4n'],
+  ];
+  return project(
+    'Synthwave starter',
+    100,
+    0,
+    [9, 17],
+    [drums, bass, pads, arp, lead],
+    [
+      clip(pads, 'Strings', 1, 4, pad, 4),
+      clip(arp, 'Arp', 1, 4, arps, 4),
+      clip(bass, 'Pulse', 5, 4, pulse, 3),
+      clip(drums, 'Beat', 5, 1, beat, 12),
+      clip(lead, 'Lead', 9, 4, melody, 2),
+    ],
+    [[1, 'Night drive'], [5, 'Groove'], [9, 'Lead']],
+    master({ on: true, depth: 0.2 }, { on: true, amount: 1.3 })
+  );
+}
+
+// ---------- Pop ----------
+
+function pop(): ProjectSnapshot {
+  const drums = track('Drums', 'drumMachine', { volume: -2 });
+  const piano = track('Piano', 'piano', { volume: 2, reverbSend: 0.25 });
+  const bass = track('Bass', 'bassGuitar', { volume: 0 });
+  const hook = track('Hook', 'pluck', { volume: 3, delaySend: 0.2, reverbSend: 0.25 });
+  const strings = track('Strings', 'slowStrings', { volume: -7, reverbSend: 0.4 });
+  // C - G - Am - F, a bar each
+  const triads = [['C4', 'E4', 'G4'], ['B3', 'D4', 'G4'], ['C4', 'E4', 'A4'], ['C4', 'F4', 'A4']];
+  const roots = ['C2', 'G1', 'A1', 'F1'];
+  const keys = everyBar(4, (b) => Array.from({ length: 8 }, (_, i): Step => [i * 2, triads[b], i % 4 === 0 ? 0.7 : 0.5, '8n']));
+  const bassLine = everyBar(4, (b): Step[] => [[0, roots[b], 0.9, '4n.'], [6, roots[b], 0.7, '8n'], [10, roots[b], 0.75, '8n'], [12, roots[b].replace(/\d/, (o) => String(Number(o) + 1)), 0.7, '8n']]);
+  const beat = everyBar(1, (): Step[] => [
+    [0, D.kick, 1], [6, D.kick, 0.7], [8, D.kick, 0.9], [4, D.clap, 0.9], [12, D.clap, 0.9],
+    ...[0, 2, 4, 6, 8, 10, 12, 14].map((i): Step => [i, D.closedHat, i % 4 === 2 ? 0.55 : 0.4]),
+  ]);
+  const tune: Step[] = [
+    [0, 'G5', 0.85, '8n'], [2, 'E5', 0.8, '8n'], [4, 'G5', 0.85, '8n'], [6, 'A5', 0.8, '4n'], [10, 'G5', 0.75, '8n'],
+    [16, 'D5', 0.8, '8n'], [18, 'G5', 0.85, '4n'], [22, 'F5', 0.75, '8n'], [24, 'E5', 0.8, '4n'],
+    [32, 'E5', 0.8, '8n'], [34, 'C5', 0.75, '8n'], [36, 'E5', 0.8, '8n'], [38, 'A5', 0.85, '4n'], [42, 'G5', 0.75, '8n'],
+    [48, 'F5', 0.8, '4n'], [52, 'E5', 0.75, '4n'], [56, 'D5', 0.8, '4n'], [60, 'C5', 0.75, '4n'],
+  ];
+  const pad = progression([['E5', 'G5'], ['D5', 'G5'], ['E5', 'A5'], ['F5', 'A5']], 16, '1n', 0.6);
+  return project(
+    'Pop starter',
+    112,
+    0,
+    [9, 17],
+    [drums, piano, bass, hook, strings],
+    [
+      clip(piano, 'Piano', 1, 4, keys, 4),
+      clip(drums, 'Beat', 5, 1, beat, 12),
+      clip(bass, 'Bass', 5, 4, bassLine, 3),
+      clip(hook, 'Hook', 9, 4, tune, 2),
+      clip(strings, 'Strings', 9, 4, pad, 2),
+    ],
+    [[1, 'Intro'], [5, 'Verse'], [9, 'Chorus']],
+    master({ on: true, depth: 0.25 }, { on: true, amount: 1.2 })
+  );
+}
+
+// ---------- Trance ----------
+
+function trance(): ProjectSnapshot {
+  const drums = track('Drums', 'drumMachine', { volume: -2 });
+  const bass = track('Bass', 'subBass', { volume: -3, fx: { pump: { on: true, depth: 0.8, release: 200, trigger: 'kick' } } });
+  const chords = track('Supersaw', 'supersaw', { volume: 3, reverbSend: 0.35, fx: { pump: { on: true, depth: 0.7, release: 240, trigger: 'kick' } } });
+  const arp = track('Pluck arp', 'pluck', { volume: -4, delaySend: 0.3, pan: -0.2 });
+  const sfx = track('FX', 'fx', { volume: -6, reverbSend: 0.3 });
+  const kit = everyBar(1, (): Step[] => [...[0, 4, 8, 12].map((i): Step => [i, D.kick, 1]), ...[2, 6, 10, 14].map((i): Step => [i, D.openHat, 0.6]), [4, D.clap, 0.8], [12, D.clap, 0.8]]);
+  const roots = ['A1', 'F1', 'C2', 'G1'];
+  const offbeat = everyBar(4, (b) => [2, 6, 10, 14].map((i): Step => [i, roots[b], 0.9, '8n']));
+  const arps = everyBar(4, (b) => Array.from({ length: 16 }, (_, i): Step => [i, [['A4', 'C5', 'E5', 'A5'], ['F4', 'A4', 'C5', 'F5'], ['G4', 'C5', 'E5', 'G5'], ['G4', 'B4', 'D5', 'G5']][b][[0, 1, 2, 3, 2, 1][i % 6]], i % 4 === 0 ? 0.8 : 0.55, '16n']));
+  const saws = progression([['A3', 'C4', 'E4', 'A4'], ['A3', 'C4', 'F4', 'A4'], ['G3', 'C4', 'E4', 'G4'], ['G3', 'B3', 'D4', 'G4']], 16, '1n', 0.75);
+  return project(
+    'Trance starter',
+    138,
+    0,
+    [9, 17],
+    [drums, bass, chords, arp, sfx],
+    [
+      clip(drums, 'Four to the floor', 1, 1, kit, 4),
+      clip(drums, 'Snare roll', 5, 4, snareRoll),
+      clip(drums, 'Four to the floor', 9, 1, kit, 8),
+      clip(arp, 'Arp', 1, 4, arps, 4),
+      clip(bass, 'Offbeat bass', 1, 4, offbeat),
+      clip(bass, 'Offbeat bass', 9, 4, offbeat, 2),
+      clip(chords, 'Supersaws', 9, 4, saws, 2),
+      clip(sfx, 'Build-up', 5, 4, BUILD_UP),
+      clip(sfx, 'Drop hit', 9, 2, DROP_HIT),
+    ],
+    [[1, 'Intro'], [5, 'Build'], [9, 'Drop']],
+    master({ on: true, depth: 0.35 }, { on: true, amount: 1.3 })
+  );
+}
+
+// ---------- Horror ----------
+
+function horror(): ProjectSnapshot {
+  const drone = track('Drone', 'goblins', { volume: -6, reverbSend: 0.5 });
+  const trem = track('Tremolo', 'tremolo', { volume: -10, reverbSend: 0.5 });
+  const box = track('Music box', 'musicBox', { volume: -2, reverbSend: 0.6, delaySend: 0.3 });
+  const timp = track('Timpani', 'timpani', { volume: -2, reverbSend: 0.5 });
+  const space = track('Swells', 'sciFi', { volume: -4, reverbSend: 0.6, pan: 0.3 });
+  const dread: Step[] = [[0, ['C2', 'C3'], 0.7, '4m']];
+  const cluster = progression([['C4', 'C#4'], ['C4', 'D4', 'D#4'], ['B3', 'C4'], ['C4', 'F#4']], 16, '1n', 0.55);
+  // A lullaby in C minor, a little wrong
+  const lullaby: Step[] = [
+    [0, 'G5', 0.6, '4n'], [4, 'D#5', 0.55, '4n'], [8, 'C5', 0.6, '4n'], [12, 'D#5', 0.5, '4n'],
+    [16, 'D5', 0.6, '4n'], [20, 'B4', 0.55, '4n'], [24, 'G4', 0.6, '2n'],
+    [32, 'G#4', 0.6, '4n'], [36, 'C5', 0.55, '4n'], [40, 'D#5', 0.6, '4n'], [44, 'F#5', 0.5, '4n'],
+    [48, 'G5', 0.6, '2n'], [56, 'C#5', 0.45, '2n'],
+  ];
+  const hits: Step[] = [[0, 'C2', 0.9, '2n'], [26, 'C2', 0.7, '4n'], [40, 'F#2', 0.85, '2n'], [58, 'C2', 0.6, '8n'], [60, 'C2', 0.7, '8n'], [62, 'C2', 0.8, '8n']];
+  const chase = everyBar(1, (): Step[] => Array.from({ length: 8 }, (_, i): Step => [i * 2, i % 4 === 3 ? 'C#2' : 'C2', 0.6 + i * 0.04, '8n']));
+  const swell: Step[] = [[0, ['C3', 'F#3'], 0.6, '2m'], [32, ['D#3', 'A3'], 0.6, '2m']];
+  return project(
+    'Horror starter',
+    72,
+    0,
+    [5, 13],
+    [drone, trem, box, timp, space],
+    [
+      clip(drone, 'Dread', 1, 4, dread, 4),
+      clip(trem, 'Cluster', 1, 4, cluster, 4),
+      clip(box, 'Lullaby', 5, 4, lullaby, 2),
+      clip(timp, 'Hits', 5, 4, hits, 2),
+      clip(space, 'Swells', 9, 4, swell),
+      clip(timp, 'Chase', 13, 1, chase, 4),
+    ],
+    [[1, 'Dread'], [5, 'Lullaby'], [13, 'Chase']],
+    master({ on: false }, { on: true, amount: 1.3 })
+  );
+}
+
+// ---------- Celtic ----------
+
+function celtic(): ProjectSnapshot {
+  const fiddle = track('Fiddle', 'fiddle', { volume: -2, pan: -0.2, reverbSend: 0.3 });
+  const whistle = track('Whistle', 'recorder', { volume: -3, pan: 0.25, reverbSend: 0.3 });
+  const guitar = track('Guitar', 'guitar', { volume: -8, reverbSend: 0.2 });
+  const bodhran = track('Bodhrán', 'bongos', { volume: 4, reverbSend: 0.2 });
+  const pipes = track('Pipes', 'bagpipe', { volume: -8, reverbSend: 0.4, pan: 0.1 });
+  // A reel in D: D - G - D - A, a bar each
+  const strums = [['D3', 'A3', 'D4', 'F#4'], ['G2', 'D3', 'G3', 'B3', 'D4'], ['D3', 'A3', 'D4', 'F#4'], ['A2', 'E3', 'A3', 'C#4', 'E4']];
+  const strum = everyBar(4, (b) => [0, 3, 4, 6, 8, 11, 12, 14].map((i, k): Step => [i, strums[b], k % 2 ? 0.5 : 0.75, '8n']));
+  const reel: Step[] = [
+    'F#5', 'A5', 'A5', 'F#5', 'D5', 'F#5', 'A5', 'F#5', 'G5', 'B5', 'B5', 'A5', 'G5', 'F#5', 'E5', 'D5',
+    'F#5', 'A5', 'A5', 'F#5', 'D5', 'F#5', 'A5', 'D6', 'C#6', 'A5', 'E5', 'F#5', 'G5', 'E5', 'C#5', 'E5',
+  ].map((n, i): Step => [i * 2, n, i % 4 === 0 ? 0.85 : 0.7, '8n']);
+  const harmony = reel.map(([st, n, v, d]): Step => [st, n, v * 0.85, d]).filter((_, i) => i % 2 === 0);
+  const drum = everyBar(1, (): Step[] => [[0, D.tomLow, 0.95], [3, D.tomMid, 0.5], [4, D.tomLow, 0.7], [6, D.tomHigh, 0.55], [8, D.tomLow, 0.9], [11, D.tomMid, 0.5], [12, D.tomLow, 0.7], [14, D.snare, 0.5]]);
+  const drone: Step[] = [[0, ['D4', 'A4'], 0.6, '4m']];
+  return project(
+    'Celtic starter',
+    112,
+    0,
+    [5, 17],
+    [fiddle, whistle, guitar, bodhran, pipes],
+    [
+      clip(guitar, 'Strum', 1, 4, strum, 4),
+      clip(bodhran, 'Bodhrán', 1, 1, drum, 16),
+      clip(fiddle, 'Reel', 5, 4, reel, 3),
+      clip(whistle, 'Whistle', 9, 4, harmony, 2),
+      clip(pipes, 'Drone', 13, 4, drone),
+    ],
+    [[1, 'Intro'], [5, 'Reel'], [9, 'Whistle'], [13, 'Pipes']],
+    master({ on: false }, { on: true, amount: 1.15 })
+  );
+}
+
+// ---------- Latin (bossa nova) ----------
+
+function latin(): ProjectSnapshot {
+  const guitar = track('Guitar', 'nylonGuitar', { volume: -3, reverbSend: 0.2 });
+  const bass = track('Bass', 'uprightBass', { volume: 0 });
+  const perc = track('Percussion', 'bongos', { volume: -1 });
+  const kit = track('Kit', 'acousticKit', { volume: -2 });
+  const flute = track('Flute', 'flute', { volume: -4, reverbSend: 0.35, delaySend: 0.15 });
+  // Dm9 - G13 - Cmaj9 - A7, a bar each
+  const voicings = [['D3', 'F3', 'C4', 'E4'], ['G2', 'F3', 'B3', 'E4'], ['C3', 'E3', 'B3', 'D4'], ['A2', 'G3', 'C#4', 'F4']];
+  const comp = everyBar(4, (b) => [0, 3, 6, 10, 12].map((i, k): Step => [i, voicings[b], k === 0 ? 0.7 : 0.55, '8n']));
+  const bassLine = everyBar(4, (b): Step[] => { const r = ['D2', 'G1', 'C2', 'A1'][b]; const f = ['A2', 'D2', 'G2', 'E2'][b]; return [[0, r, 0.85, '4n.'], [6, f, 0.7, '8n'], [8, f, 0.75, '4n.'], [14, r, 0.65, '8n']]; });
+  const shaker = everyBar(1, (): Step[] => [...Array.from({ length: 8 }, (_, i): Step => [i * 2, D.closedHat, i % 2 ? 0.35 : 0.5]), [0, D.tomHigh, 0.6], [6, D.tomHigh, 0.5], [10, D.tomMid, 0.55], [14, D.tomLow, 0.6]]);
+  const rim: Step[] = [...[0, 6, 8, 14, 16, 22, 24, 30].map((i): Step => [i, D.kick, i % 8 === 0 ? 0.6 : 0.45]), ...[0, 3, 6, 10, 12, 19, 22, 26, 28].map((i): Step => [i, D.snare, 0.3])];
+  const tune: Step[] = [
+    [0, 'A5', 0.75, '4n.'], [6, 'G5', 0.65, '8n'], [8, 'F5', 0.7, '4n'], [12, 'E5', 0.65, '4n'],
+    [16, 'F5', 0.75, '2n'], [24, 'D5', 0.65, '4n'], [28, 'E5', 0.65, '4n'],
+    [32, 'E5', 0.75, '4n.'], [38, 'D5', 0.65, '8n'], [40, 'B4', 0.7, '2n'],
+    [48, 'C#5', 0.75, '2n'], [56, 'E5', 0.65, '4n'], [60, 'G5', 0.65, '4n'],
+  ];
+  return project(
+    'Latin starter',
+    130,
+    0,
+    [5, 17],
+    [guitar, bass, perc, kit, flute],
+    [
+      clip(guitar, 'Bossa comping', 1, 4, comp, 4),
+      clip(perc, 'Shaker & bongos', 1, 1, shaker, 16),
+      clip(bass, 'Bass', 5, 4, bassLine, 3),
+      clip(kit, 'Rim & kick', 5, 2, rim, 6),
+      clip(flute, 'Melody', 9, 4, tune, 2),
+    ],
+    [[1, 'Intro'], [5, 'Groove'], [9, 'Melody']],
+    master({ on: false }, { on: true, amount: 1.1 })
+  );
+}
+
+// ---------- Fantasy Tavern ----------
+
+function tavern(): ProjectSnapshot {
+  const dulcimer = track('Dulcimer', 'dulcimer', { volume: -2, reverbSend: 0.3, pan: -0.2 });
+  const lute = track('Lute', 'nylonGuitar', { volume: -3, reverbSend: 0.25, pan: 0.2 });
+  const recorder = track('Recorder', 'recorder', { volume: -3, reverbSend: 0.35 });
+  const drum = track('Hand drum', 'bongos', { volume: 4, reverbSend: 0.2 });
+  const accordion = track('Accordion', 'accordion', { volume: -8, reverbSend: 0.3 });
+  // D minor jig feel (triplet 8ths): Dm - C - Bb - A, a bar each
+  const t = 16 / 6;
+  const triads = [['D4', 'F4', 'A4'], ['C4', 'E4', 'G4'], ['A#3', 'D4', 'F4'], ['A3', 'C#4', 'E4']];
+  const lutePart = everyBar(4, (b) => [0, 1, 2, 3, 4, 5].map((k): Step => [k * t, k === 0 ? triads[b][0].replace(/\d/, (o) => String(Number(o) - 1)) : triads[b][k % 2 ? 1 : 2], k % 3 === 0 ? 0.75 : 0.5, '8n']));
+  const tune: Step[] = [
+    ...['A4', 'D5', 'D5', 'E5', 'F5', 'E5'], ...['G5', 'E5', 'C5', 'E5', 'G5', 'E5'],
+    ...['F5', 'D5', 'A#4', 'D5', 'F5', 'A5'], ...['E5', 'C#5', 'A4', 'C#5', 'E5', 'A4'],
+  ].map((n, i): Step => [i * t, n, i % 3 === 0 ? 0.85 : 0.65, '8n']);
+  const drumPart = everyBar(1, (): Step[] => [[0, D.tomLow, 0.9], [2 * t, D.tomHigh, 0.5], [3 * t, D.tomLow, 0.75], [5 * t, D.tomHigh, 0.55]]);
+  const harmony = tune.filter((_, i) => i % 3 === 0).map(([st, n, v]): Step => [st, n, v * 0.8, '4n.']);
+  const squeeze = progression(triads, 16, '1n', 0.55);
+  return project(
+    'Fantasy Tavern starter',
+    110,
+    0,
+    [5, 17],
+    [dulcimer, lute, recorder, drum, accordion],
+    [
+      clip(lute, 'Lute', 1, 4, lutePart, 4),
+      clip(drum, 'Hand drum', 1, 1, drumPart, 16),
+      clip(dulcimer, 'Tune', 5, 4, tune, 3),
+      clip(accordion, 'Accordion', 9, 4, squeeze, 2),
+      clip(recorder, 'Recorder', 13, 4, harmony),
+    ],
+    [[1, 'Intro'], [5, 'Tune'], [9, 'Full tavern']],
+    master({ on: false }, { on: true, amount: 1.1 })
+  );
+}
+
+// ---------- Eastern ----------
+
+function eastern(): ProjectSnapshot {
+  const koto = track('Koto', 'koto', { volume: -3, reverbSend: 0.4, pan: -0.2 });
+  const flute = track('Shakuhachi', 'shakuhachi', { volume: -4, reverbSend: 0.5, delaySend: 0.15 });
+  const taiko = track('Taiko', 'taiko', { volume: 2, reverbSend: 0.35 });
+  const pad = track('Pad', 'glassPad', { volume: -12, reverbSend: 0.5 });
+  const shamisen = track('Shamisen', 'shamisen', { volume: -1, pan: 0.25, reverbSend: 0.3 });
+  // The in scale on D: D, Eb, G, A, Bb
+  const pattern = ['D4', 'A4', 'D5', 'D#5', 'A4', 'D5', 'A#4', 'G4'];
+  const kotoPart = everyBar(2, (b) => pattern.map((n, i): Step => [i * 2, b && i === 7 ? 'A4' : n, i % 4 === 0 ? 0.8 : 0.6, '4n']));
+  const tune: Step[] = [
+    [0, 'A5', 0.75, '2n'], [8, 'A#5', 0.65, '8n'], [10, 'A5', 0.7, '4n.'],
+    [16, 'G5', 0.7, '4n'], [20, 'D#5', 0.65, '4n'], [24, 'D5', 0.75, '2n'],
+    [32, 'D#5', 0.7, '4n.'], [38, 'G5', 0.65, '8n'], [40, 'A5', 0.75, '2n'],
+    [48, 'D6', 0.7, '4n'], [52, 'A#5', 0.65, '4n'], [56, 'A5', 0.7, '2n'],
+  ];
+  const drums = everyBar(2, (b): Step[] => [[0, 'C2', 1, '4n'], [6, 'C2', 0.6, '8n'], [8, 'G2', 0.8, '4n'], ...(b ? [[12, 'C3', 0.7, '8n'] as Step, [13, 'C3', 0.75, '8n'] as Step, [14, 'C2', 0.9, '8n'] as Step] : [[12, 'C2', 0.7, '4n'] as Step])]);
+  const drone: Step[] = [[0, ['D3', 'A3', 'D4'], 0.6, '4m']];
+  const pluck = everyBar(1, (): Step[] => [[0, 'D4', 0.8, '8n'], [3, 'D4', 0.6, '16n'], [6, 'A4', 0.7, '8n'], [10, 'G4', 0.7, '8n'], [12, 'D#4', 0.65, '8n']]);
+  return project(
+    'Eastern starter',
+    84,
+    0,
+    [5, 17],
+    [koto, flute, taiko, pad, shamisen],
+    [
+      clip(pad, 'Drone', 1, 4, drone, 4),
+      clip(koto, 'Koto', 1, 2, kotoPart, 8),
+      clip(flute, 'Shakuhachi', 5, 4, tune, 3),
+      clip(taiko, 'Taiko', 9, 2, drums, 4),
+      clip(shamisen, 'Shamisen', 13, 1, pluck, 4),
+    ],
+    [[1, 'Garden'], [5, 'Flute'], [9, 'Drums'], [13, 'Shamisen']],
+    master({ on: false }, { on: true, amount: 1.2 })
+  );
+}
+
+// ---------- Funk ----------
+
+function funk(): ProjectSnapshot {
+  const drums = track('Drums', 'acousticKit', { volume: 1 });
+  const bass = track('Bass', 'bass', { volume: 0 });
+  const gtr = track('Guitar', 'mutedGuitar', { volume: -5, pan: -0.3 });
+  const brass = track('Horns', 'brassSection', { volume: -1, reverbSend: 0.25, pan: 0.2 });
+  const organ = track('Organ', 'drawbarOrgan', { volume: -9, reverbSend: 0.2 });
+  // An E9 vamp
+  const beat = everyBar(1, (): Step[] => [
+    [0, D.kick, 1], [3, D.kick, 0.7], [10, D.kick, 0.85], [4, D.snare, 0.95], [12, D.snare, 0.95], [7, D.snare, 0.25], [9, D.snare, 0.2], [15, D.snare, 0.3],
+    ...Array.from({ length: 16 }, (_, i): Step => [i, D.closedHat, i % 2 ? 0.3 : 0.5]),
+  ]);
+  const bassLine: Step[] = [[0, 'E1', 1, '8n'], [3, 'E2', 0.7, '16n'], [6, 'E1', 0.8, '16n'], [7, 'G1', 0.75, '16n'], [8, 'A1', 0.85, '8n'], [11, 'A#1', 0.7, '16n'], [12, 'B1', 0.85, '8n'], [14, 'D2', 0.7, '16n'], [15, 'E2', 0.75, '16n']];
+  const scratch = everyBar(1, (): Step[] => Array.from({ length: 16 }, (_, i): Step => [i, ['G#3', 'D4', 'F#4'], i % 4 === 2 ? 0.8 : 0.35, '16n']));
+  const hits: Step[] = [[6, ['G#4', 'D5', 'F#5'], 0.9, '16n'], [10, ['G#4', 'D5', 'F#5'], 0.85, '8n'], [22, ['A4', 'C#5', 'E5'], 0.9, '16n'], [24, ['B4', 'D5', 'F#5'], 0.95, '4n']];
+  const pad = progression([['E3', 'G#3', 'D4', 'F#4']], 16, '1n', 0.6);
+  return project(
+    'Funk starter',
+    104,
+    0,
+    [5, 17],
+    [drums, bass, gtr, brass, organ],
+    [
+      clip(drums, 'Groove', 1, 1, beat, 16),
+      clip(bass, 'Bass', 1, 1, bassLine, 16),
+      clip(gtr, 'Scratch', 5, 1, scratch, 12),
+      clip(organ, 'Organ', 5, 1, pad, 12),
+      clip(brass, 'Horn hits', 9, 2, hits, 4),
+    ],
+    [[1, 'Groove'], [5, 'Band'], [9, 'Horns']],
+    master({ on: true, depth: 0.2 }, { on: true, amount: 1.1 })
+  );
+}
+
+const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
+  dubstep, house, dnb, trap, cinematic, lofi, chiptune, hiphop,
+  classical, angelic, epic, ambient, rock, metal, jazz, synthwave, pop, trance, horror, celtic, latin, tavern, eastern, funk,
+};
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
