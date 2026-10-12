@@ -245,6 +245,8 @@ interface TimelineState {
   addMarker: (bar?: number) => string | null;
   /** A hit point at the playhead: a marker named "Hit N", locked to time (see tempoFinder.ts) */
   addHit: () => string | null;
+  /** Hit points at song times (seconds), named `${prefix} N`, skipping any within a frame of a marker; one undo step. Returns how many were added. */
+  addHitsAt: (seconds: number[], prefix: string) => number;
   /** Move a marker (no history: drags checkpoint() once). */
   moveMarker: (id: string, bar: number) => void;
   /**
@@ -973,6 +975,26 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (there) return `"${there.name}" is already at ${formatBarsBeats(there.bar)}.`;
       set((st) => ({ markers: retimeMarkers([...st.markers, marker], st.bpm), ...pushPast(st) }));
       return null;
+    },
+
+    addHitsAt: (seconds, prefix) => {
+      const s = get();
+      const frame = 1 / s.fps;
+      let highest = 0;
+      const re = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} (\\d+)$`);
+      for (const m of s.markers) {
+        const n = re.exec(m.name);
+        if (n) highest = Math.max(highest, Number(n[1]));
+      }
+      const added: Marker[] = [];
+      for (const t of [...seconds].sort((a, b) => a - b)) {
+        const bar = secondsToBar(t, s.bpm);
+        if (t < 0 || bar > TOTAL_BARS + 1) continue;
+        if ([...s.markers, ...added].some((m) => Math.abs(m.seconds - t) < frame)) continue;
+        added.push(anchorMarker(createMarker(bar, s.bpm, `${prefix} ${++highest}`), 'time'));
+      }
+      if (added.length) set((st) => ({ markers: retimeMarkers([...st.markers, ...added], st.bpm), ...pushPast(st) }));
+      return added.length;
     },
 
     moveMarker: (id, bar) =>

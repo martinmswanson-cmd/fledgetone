@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { frameDifference, pickCuts } from './sceneCuts';
 
 /**
  * A reference video to score to (gameplay, a trailer, a cutscene): shown in a preview window that
@@ -84,6 +85,73 @@ export async function seekVideo(el: HTMLVideoElement, seconds: number): Promise<
   const seeked = once(el, 'seeked');
   el.currentTime = t;
   await seeked;
+}
+
+/** Frames are compared this small: enough to see a cut, quick to read. */
+const CUT_W = 48;
+const CUT_H = 27;
+/** Seconds between the frames looked at first (a cut is then found to the frame between them). */
+const CUT_STEP = 0.125;
+
+/**
+ * Find the hard cuts in a video: frames every CUT_STEP seconds are compared (see sceneCuts.ts),
+ * and each cut found is narrowed down to the frame it happens on (to 1/480 s). Resolves with the cut
+ * times in seconds from the video's start; `onProgress` hears 0 to 1. Stops early (with what it
+ * has) when `signal` aborts.
+ */
+export async function findSceneCuts(url: string, onProgress?: (fraction: number) => void, signal?: AbortSignal): Promise<number[]> {
+  const el = await openVideo(url);
+  const canvas = document.createElement('canvas');
+  canvas.width = CUT_W;
+  canvas.height = CUT_H;
+  const g = canvas.getContext('2d', { willReadFrequently: true })!;
+  const frameAt = async (t: number) => {
+    await seekVideo(el, t);
+    g.drawImage(el, 0, 0, CUT_W, CUT_H);
+    return g.getImageData(0, 0, CUT_W, CUT_H).data;
+  };
+  try {
+    const duration = el.duration;
+    const times: number[] = [];
+    for (let t = 0; t < duration - 0.02; t += CUT_STEP) times.push(t);
+    const frames: Uint8ClampedArray[] = [];
+    const diffs: number[] = [];
+    for (let i = 0; i < times.length; i++) {
+      if (signal?.aborted) break;
+      frames.push(await frameAt(times[i]));
+      if (i > 0) diffs.push(frameDifference(frames[i - 1], frames[i]));
+      if (i > 1) frames[i - 2] = new Uint8ClampedArray(0); // only the last two are needed
+      onProgress?.((0.85 * i) / times.length);
+    }
+    const steps = pickCuts(diffs, times);
+    const cuts: number[] = [];
+    for (const [n, i] of steps.entries()) {
+      if (signal?.aborted) break;
+      // Narrow it down: keep the half whose ends differ more
+      let lo = times[i];
+      let hi = times[i + 1];
+      let a = await frameAt(lo);
+      let b = await frameAt(hi);
+      while (hi - lo > 1 / 480) {
+        const mid = (lo + hi) / 2;
+        const m = await frameAt(mid);
+        if (frameDifference(a, m) >= frameDifference(m, b)) {
+          hi = mid;
+          b = m;
+        } else {
+          lo = mid;
+          a = m;
+        }
+      }
+      cuts.push(hi);
+      onProgress?.(0.85 + (0.15 * (n + 1)) / steps.length);
+    }
+    onProgress?.(1);
+    return cuts;
+  } finally {
+    el.removeAttribute('src');
+    el.load();
+  }
 }
 
 let generation = 0;

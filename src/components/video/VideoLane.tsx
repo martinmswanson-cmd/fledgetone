@@ -1,7 +1,8 @@
 import React, { useRef } from 'react';
-import { Clapperboard, Eye, EyeOff, X } from 'lucide-react';
+import { Clapperboard, Eye, EyeOff, Scissors, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { useVideoStore } from '../../store/videoStore';
+import { findSceneCuts, useVideoStore } from '../../store/videoStore';
+import { showToast } from '../timeline/toastStore';
 import { secondsToBar } from '../../audio/transport';
 import { HEADER_WIDTH } from '../timeline/layout';
 
@@ -74,6 +75,7 @@ export const VideoLane: React.FC = () => {
         <span className="ml-auto tabular-nums shrink-0" title="Where the video starts in the song (drag the strip to move it)">
           @{clock(start)} · bar {secondsToBar(start, bpm).toFixed(2)}
         </span>
+        <FindCutsButton />
         <button type="button" title={previewOpen ? 'Hide the preview window' : 'Show the preview window'} onClick={() => useVideoStore.getState().setPreviewOpen(!previewOpen)} className="hover:text-forge-text shrink-0">
           {previewOpen ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
         </button>
@@ -106,3 +108,50 @@ export const VideoLane: React.FC = () => {
   );
 };
 
+/**
+ * Find the video's hard cuts and drop a hit point (a marker locked to time) on each, named Cut 1,
+ * Cut 2..., where they fall in the song. Click again while it looks to stop.
+ */
+const FindCutsButton: React.FC = () => {
+  const [progress, setProgress] = React.useState<number | null>(null);
+  const abort = React.useRef<AbortController | null>(null);
+  const run = async () => {
+    if (abort.current) {
+      abort.current.abort();
+      return;
+    }
+    const { video, start } = useVideoStore.getState();
+    if (!video) return;
+    const controller = new AbortController();
+    abort.current = controller;
+    setProgress(0);
+    try {
+      const cuts = await findSceneCuts(video.url, setProgress, controller.signal);
+      const added = useTimelineStore.getState().addHitsAt(
+        cuts.map((t) => start + t),
+        'Cut'
+      );
+      showToast(
+        cuts.length === 0
+          ? 'No hard cuts found in the video.'
+          : `Found ${cuts.length} cut${cuts.length === 1 ? '' : 's'}${added < cuts.length ? ` (${added} new)` : ''}: markers "Cut 1"... locked to time. FIT › Hit points finds a tempo for them.`
+      );
+    } catch {
+      showToast("Couldn't read the video's frames.");
+    } finally {
+      abort.current = null;
+      setProgress(null);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={() => void run()}
+      title={progress === null ? 'Find the cuts: a hit point on every hard cut in the video' : 'Looking for cuts… click to stop'}
+      aria-label={progress === null ? 'Find cuts in the video' : 'Stop looking for cuts'}
+      className="hover:text-forge-text shrink-0 tabular-nums"
+    >
+      {progress === null ? <Scissors className="w-3.5 h-3.5" /> : `${Math.round(progress * 100)}%`}
+    </button>
+  );
+};
