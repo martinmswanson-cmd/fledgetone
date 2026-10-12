@@ -28,6 +28,15 @@ import { UndoableRange } from '../UndoableRange';
 import { AutoBadge, Automatable } from '../timeline/AutoBadge';
 import { AUTOMATED_TIP } from '../timeline/automationHooks';
 
+/** One click to a kind of space: the master reverb's length. */
+const REVERB_SPACES = [
+  { name: 'Room', decay: 1, hint: 'Tight and close: drums, rock, hip-hop' },
+  { name: 'Studio', decay: 1.8, hint: 'A little air: pop, lo-fi, electronic' },
+  { name: 'Hall', decay: 3.2, hint: 'A concert hall: orchestra, piano, strings' },
+  { name: 'Cathedral', decay: 7, hint: 'Stone and height: choir, organ, sacred music' },
+  { name: 'Heaven', decay: 11, hint: 'Endless: angelic pads, ambient, dreams' },
+];
+
 export const TrackInspector: React.FC = () => {
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
   const tracks = useTimelineStore((s) => s.tracks);
@@ -512,15 +521,29 @@ export const TrackInspector: React.FC = () => {
                 </div>
                 <UndoableRange
                   min={0.8}
-                  max={6.0}
+                  max={12}
                   step={0.1}
                   value={masterReverbDecay}
                   onValue={setMasterReverbDecay}
                   className="w-full accent-cyan-400 cursor-pointer h-2 bg-zinc-800 rounded-lg appearance-none"
                 />
-                <div className="flex justify-between text-[9px] font-mono text-forge-muted">
-                  <span>Tight (0.8s)</span>
-                  <span>Cathedral (6.0s)</span>
+                <div className="grid grid-cols-5 gap-1" role="group" aria-label="Reverb space">
+                  {REVERB_SPACES.map((sp) => (
+                    <button
+                      key={sp.name}
+                      type="button"
+                      title={`${sp.name}: ${sp.decay} s. ${sp.hint}`}
+                      aria-pressed={Math.abs(masterReverbDecay - sp.decay) < 0.05}
+                      onClick={() => {
+                        if (Math.abs(masterReverbDecay - sp.decay) < 0.05) return;
+                        useTimelineStore.getState().checkpoint();
+                        setMasterReverbDecay(sp.decay);
+                      }}
+                      className={`py-0.5 rounded border text-[9px] font-mono font-bold transition ${Math.abs(masterReverbDecay - sp.decay) < 0.05 ? 'bg-cyan-500/25 border-cyan-400 text-cyan-100' : 'border-forge-border text-forge-muted hover:text-forge-text'}`}
+                    >
+                      {sp.name}
+                    </button>
+                  ))}
                 </div>
               </div>
 

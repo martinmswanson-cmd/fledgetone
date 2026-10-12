@@ -51,7 +51,7 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     ready: reverb.ready,
     apply: (next, tempo) => {
       // Regenerating the impulse response is costly, so only when the decay changes
-      if (next.reverbDecay !== current.reverbDecay) reverb.decay = Math.max(0.8, Math.min(6, next.reverbDecay));
+      if (next.reverbDecay !== current.reverbDecay) reverb.decay = Math.max(0.8, Math.min(12, next.reverbDecay));
       delay.setDelayTime(delaySeconds(next.delayTime, tempo), 0.05);
       delay.setFeedback(Math.max(0, Math.min(0.8, next.delayFeedback)), 0.05);
       current = { ...next };
