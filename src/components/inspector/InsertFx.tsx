@@ -282,10 +282,10 @@ const FILTER_SLOPE_OPTIONS: ReadonlyArray<{ value: FilterSlope; label: string; t
   { value: 24, label: '24 dB', title: 'Steep: 24 dB per octave' },
 ];
 const PUMP_TRIGGER_OPTIONS: ReadonlyArray<{ value: PumpTrigger; label: string; title: string }> = [
-  { value: 'kick', label: 'Kick drum', title: 'Duck on every kick (C1) of a drum kit that is playing (not muted or silenced by solo)' },
-  { value: 'beat', label: 'Every beat', title: 'Duck on every quarter note' },
-  { value: 'eighth', label: 'Every 1/8', title: 'Duck on every 8th note' },
-  { value: 'track', label: 'A track', title: "Duck on every note of a track you choose (a sidechain from any part: a bass, a lead, a vocal chop)" },
+  { value: 'kick', label: 'Kick', title: 'Duck on every kick (C1) of a drum kit that is playing (not muted or silenced by solo)' },
+  { value: 'beat', label: 'Beat', title: 'Duck on every quarter note' },
+  { value: 'eighth', label: '1/8', title: 'Duck on every 8th note' },
+  { value: 'track', label: 'Track', title: "Duck on every note of a track you choose (a sidechain from any part: a bass, a lead, a vocal chop)" },
 ];
 
 const GATE_RATE_OPTIONS = GATE_RATES.map((r) => ({ value: r, label: r, title: r.endsWith('T') ? `${r.slice(0, -1)} triplets` : `${r} notes` })) as ReadonlyArray<{ value: GateRate; label: string; title: string }>;

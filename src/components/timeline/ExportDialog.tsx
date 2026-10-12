@@ -628,7 +628,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           </label>
         )}
         <p>
-          Stereo. Peaks are kept just under full scale, so nothing clips.
+          Stereo. True peaks are kept under -1 dBTP (between samples too), so nothing clips.
           {format !== 'wav' && ' MP3 and OGG are compressed: a small file that sounds the same to most ears. An MP3 can have a few milliseconds of silence added at its start, so for seamless loops in games use OGG or WAV.'}
           {format === 'wav' && !game && cueCount > 0 &&
             ` ${cueCount === 1 ? 'The marker in the range goes' : `The ${cueCount} markers in the range go`} into ${

@@ -1,3 +1,4 @@
+import { truePeakOf } from './loudness';
 import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
 import { insertTailSeconds } from './effects/spaceFx';
 import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
@@ -85,8 +86,8 @@ export interface RenderOptions {
 const RENDER_STEP = 1;
 /** How far past the render position notes are scheduled, so none are ever late. */
 const SCHEDULE_LEAD = 0.25;
-/** Exports are scaled down (never up) so their peaks sit here, just under full scale. */
-const PEAK_CEILING = 0.98;
+/** Exports are scaled down (never up) so their true peaks sit here: -1 dBTP, just under full scale even between samples. */
+const PEAK_CEILING = 10 ** (-1 / 20);
 /** Fade at the end of an exact-length file. */
 const EXACT_FADE_SECONDS = 0.005;
 /** Crossfade at the end of a seamless loop into the end of the pass before it (see renderTracks). */
@@ -803,15 +804,13 @@ export function scaleAudio(audio: AudioBuffer, gainDb: number): void {
   scale(channelsOf(audio), Math.pow(10, gainDb / 20));
 }
 
-function peakOf(channels: Float32Array[]): number {
-  let peak = 0;
-  for (const ch of channels) for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]));
-  return peak;
-}
+/** The true peak (between samples too: a limiter that catches sample peaks lets those through). */
+const peakOf = (channels: Float32Array[]): number => truePeakOf(channels);
 
 /**
- * Tone.Limiter has no lookahead, so transients can overshoot 0 dBFS. Exports are scaled
- * down (never up) so they peak just under full scale instead of clipping. Float WAVs get the
+ * The master limiter catches sample peaks only, so peaks between samples can overshoot 0 dBFS
+ * (by 2 dB or more on a loud mix). Exports are scaled down (never up) so their true peaks stay
+ * under -1 dBTP instead of clipping. Float WAVs get the
  * same treatment: most players and game engines clip them at full scale anyway.
  */
 const peakGain = (peak: number) => (peak > PEAK_CEILING ? PEAK_CEILING / peak : 1);

@@ -2,7 +2,7 @@ import { liveMix } from './engine';
 import { getLiveInstrument } from './liveTracks';
 import { DRUM_NOTES, safely } from './instruments';
 import type { NoteOff, TrackInstrument, VoiceControl } from './instruments';
-import { isDrumKind, isRackKind } from './instrumentCatalog';
+import { isDrumKind, isMixKind, isRackKind } from './instrumentCatalog';
 import { heardTime, outputLatencySeconds } from './latency';
 import { decodeMidi, midiNoteLabel, midiNoteName, MPE_BEND_RANGE_CENTS, PIANO_OCTAVE_KEYS, PITCH_BEND_RANGE_CENTS, pianoKeyNote } from './midi';
 import type { MidiMessage } from './midi';
@@ -65,7 +65,9 @@ let pedal = false;
 /** The track live notes play on: the armed one, else the selected one. */
 function targetTrack(): Track | undefined {
   const s = useTimelineStore.getState();
-  return s.tracks.find((t) => t.isArmed) ?? s.tracks.find((t) => t.id === s.selectedTrackId);
+  const track = s.tracks.find((t) => t.isArmed) ?? s.tracks.find((t) => t.id === s.selectedTrackId);
+  // A bus or a return plays no instrument
+  return track && !isMixKind(track.instrumentKey) ? track : undefined;
 }
 
 /**

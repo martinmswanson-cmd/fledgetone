@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   SlidersHorizontal,
   X,
@@ -49,6 +49,11 @@ const REVERB_SPACES = [
 export const TrackInspector: React.FC = () => {
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
   const tracks = useTimelineStore((s) => s.tracks);
+  // Another track's settings start from the top (a new Drum Rack's Load sounds is there)
+  const aside = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (aside.current) aside.current.scrollTop = 0;
+  }, [selectedTrackId]);
   const isInspectorOpen = useTimelineStore((s) => s.isInspectorOpen);
   // Subscribed (not read once from getState) so the Master Aux Bus controls follow their values
   const masterReverbDecay = useTimelineStore((s) => s.masterReverbDecay);
@@ -105,6 +110,7 @@ export const TrackInspector: React.FC = () => {
 
   return (
     <aside
+      ref={aside}
       className="w-80 shrink-0 bg-forge-panel/95 backdrop-blur-md border-l border-forge-border flex flex-col shadow-2xl z-30 transition-all select-none overflow-y-auto max-h-[640px]"
       aria-label="Audio Track Inspector and FX Rack"
     >

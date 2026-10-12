@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { HardDrive } from 'lucide-react';
-import { currentProject, lastSession, useTimelineStore } from '../../store/timelineStore';
+import { currentProject, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { referencedSoundIds } from '../../store/audioClips';
 import { freeUnusedSounds, librarySize, useSoundLibrary } from '../../audio/soundLibrary';
 import { showToast } from '../timeline/toastStore';
@@ -26,6 +26,7 @@ export const SoundLibraryFooter: React.FC = () => {
 
   const free = async () => {
     const keep = new Set(referencedSoundIds(currentProject()));
+    const lastSession = useLastSession.getState().session;
     if (lastSession) referencedSoundIds(lastSession.project).forEach((id) => keep.add(id));
     // Frozen tracks' sounds too (they aren't saved in project files, so only this browser has them)
     for (const p of [currentProject(), lastSession?.project]) p?.tracks.forEach((t) => t.frozen && keep.add(t.frozen.soundId));

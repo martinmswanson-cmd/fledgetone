@@ -1,5 +1,5 @@
 import guideMarkdown from '../../GUIDE.md?raw';
-import { INSTRUMENTS, INSTRUMENT_KEYS, isAudioKind } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, INSTRUMENT_KEYS, isAudioKind, isMixKind } from '../audio/instrumentCatalog';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
@@ -237,11 +237,12 @@ function instrumentEntry(key: InstrumentKey): PaletteEntry {
     id: `instrument-${key}`,
     group: 'Instrument',
     color: def.color,
-    altHint: isAudioKind(key) ? undefined : 'Shift+Enter: use it on the selected track',
+    // (An Audio track, a bus or a return is a kind of track, not an instrument to put on one)
+    altHint: isAudioKind(key) || isMixKind(key) ? undefined : 'Shift+Enter: use it on the selected track',
     run: ({ alt }) => {
       const s = timeline();
       const selected = s.tracks.find((t) => t.id === s.selectedTrackId);
-      if (alt && !isAudioKind(key)) {
+      if (alt && !isAudioKind(key) && !isMixKind(key)) {
         if (!selected) return 'Select a track first (click its name), or press Enter to add a new track.';
         if (isAudioKind(selected.instrumentKey)) return 'An Audio track plays sound files, so it keeps its instrument.';
         s.setTrackInstrument(selected.id, key);

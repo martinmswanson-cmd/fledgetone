@@ -38,12 +38,17 @@ function shortIds(project: ProjectSnapshot): ProjectSnapshot {
   let n = 0;
   const next = () => (n++).toString(36);
   const trackIds = new Map(project.tracks.map((t) => [t.id, `t${next()}`]));
-  return {
+  const renamed: ProjectSnapshot = {
     ...project,
-    tracks: project.tracks.map((t) => ({ ...t, id: trackIds.get(t.id)! })),
-    clips: project.clips.map((c) => ({ ...c, id: `c${next()}`, trackId: trackIds.get(c.trackId) ?? c.trackId })),
+    clips: project.clips.map((c) => ({ ...c, id: `c${next()}` })),
     markers: project.markers?.map((m) => ({ ...m, id: `m${next()}` })),
   };
+  if (!trackIds.size) return renamed;
+  // Track ids are pointed at from all over (clips, bus outputs, sends, a Pump's source, "send:" lanes,
+  // MIDI mappings, the game's rules...): rename them everywhere at once
+  const escape = (id: string) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const any = new RegExp([...trackIds.keys()].sort((a, b) => b.length - a.length).map(escape).join('|'), 'g');
+  return JSON.parse(JSON.stringify(renamed).replace(any, (id) => trackIds.get(id)!)) as ProjectSnapshot;
 }
 
 /** Ticks per bar in a link's note positions (192 per quarter): every grid line, triplets included, is a whole number. */
@@ -90,10 +95,10 @@ export async function projectFromHash(hash: string): Promise<ProjectSnapshot | n
   return parseProject(unpackNotes(JSON.parse(new TextDecoder().decode(bytes))));
 }
 
-/** Tracks whose sound comes from a file (audio clips, the Sampler, the Slicer): a link can't carry those. */
+/** Tracks whose sound comes from a file (audio clips, the Sampler, the Slicer, Drum Rack and Multi Sampler sounds): a link can't carry those. */
 export function tracksNeedingFiles(project: ProjectSnapshot): string[] {
   const names = new Set<string>();
-  for (const t of project.tracks) if (t.sample || t.slicer) names.add(t.name);
+  for (const t of project.tracks) if (t.sample || t.slicer || t.rack?.pads.some((p) => p.soundId) || t.multi?.zones.length) names.add(t.name);
   for (const c of project.clips) if (c.audio) names.add(project.tracks.find((t) => t.id === c.trackId)?.name ?? 'Audio');
   return [...names];
 }

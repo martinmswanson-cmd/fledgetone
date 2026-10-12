@@ -491,6 +491,8 @@ export interface SavedSession {
   project: ProjectSnapshot;
   savedAt: number | null;
   keptAt: number | null;
+  /** Set aside this time round, by New, Open or a link replacing it (not found at startup) */
+  replaced?: boolean;
 }
 
 function timeOf(raw: unknown, field: string): number | null {
@@ -545,6 +547,21 @@ function setAsidePreviousSession(): SavedSession | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Set the current song aside as the session the Restore banner offers, before something replaces
+ * it (New, Open, a shared link): so nothing is lost without a way back. Returns the session.
+ */
+export function setAsideSession(p: ProjectSnapshot): SavedSession {
+  const now = Date.now();
+  offeringPrevious = true;
+  try {
+    localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt: now, keptAt: now, project: serializeProject(p) }));
+  } catch {
+    // No room or storage blocked: it's still offered while this page is open
+  }
+  return { project: p, savedAt: now, keptAt: now, replaced: true };
 }
 
 /** The set-aside session as stored (its project not yet validated), or null. */

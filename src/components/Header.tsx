@@ -196,14 +196,17 @@ export const Header: React.FC = () => {
         <button
           onClick={initializeAudio}
           data-tour="start-audio"
-          className={`flex items-center gap-2.5 px-4 py-2 rounded-lg font-medium text-xs font-mono tracking-wider transition-all duration-200 border ${
+          title={isRunning ? 'Audio is running' : 'Start audio (browsers only let sound play after a click)'}
+          aria-label={isRunning ? 'Audio running' : 'Start audio'}
+          className={`flex items-center gap-2.5 ${isRunning ? 'px-2.5' : 'px-4'} py-2 rounded-lg font-medium text-xs font-mono tracking-wider transition-all duration-200 border ${
             isRunning
               ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50 shadow-glow-bass'
               : 'bg-red-950/40 text-red-300 border-red-500/50 hover:bg-red-900/50 hover:border-red-400 shadow-lg animate-pulse'
           }`}
         >
           <Power className={`w-3.5 h-3.5 ${isRunning ? 'text-emerald-400' : 'text-red-400'}`} />
-          <span>{isRunning ? 'AUDIO RUNNING' : 'START AUDIO'}</span>
+          {/* Running, it shrinks to its light: the loudness badge appears beside it, and the header stays one row */}
+          {!isRunning && <span>START AUDIO</span>}
           <span
             className={`w-2 h-2 rounded-full ${
               isRunning ? 'bg-emerald-400 shadow-[0_0_8px_#34d399]' : 'bg-red-500 shadow-[0_0_8px_#f87171]'

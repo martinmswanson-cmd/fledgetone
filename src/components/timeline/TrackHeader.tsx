@@ -1,3 +1,6 @@
+import { showToast } from './toastStore';
+import { useMidiStore } from '../../store/midiStore';
+import { connectMidi } from '../../audio/liveInput';
 import React from 'react';
 import { useUiStore } from '../../store/uiStore';
 import { useMidiLearn } from '../../store/midiLearn';
@@ -123,7 +126,22 @@ const MidiLearnButton: React.FC<{ track: Track; param: AutomationParam }> = ({ t
       type="button"
       onClick={(e) => {
         e.stopPropagation();
-        useMidiLearn.getState().setLearning(waiting ? null : { trackId: track.id, param });
+        if (waiting) return useMidiLearn.getState().setLearning(null);
+        // Wait for a knob only when there's a controller to move one
+        const learn = () => {
+          const m = useMidiStore.getState();
+          if (m.support === 'ready' && m.inputs.some((i) => i.state === 'connected')) useMidiLearn.getState().setLearning({ trackId: track.id, param });
+          else
+            showToast(
+              m.support === 'unsupported'
+                ? 'This browser has no MIDI: try Chrome or Edge'
+                : m.support === 'denied'
+                  ? 'The browser refused MIDI access: allow MIDI for this site, then click MIDI again'
+                  : 'Connect a MIDI controller first, then click MIDI again'
+            );
+        };
+        if (useMidiStore.getState().support === 'ready') learn();
+        else void connectMidi().then(learn, learn);
       }}
       onContextMenu={(e) => {
         if (!mapped) return;

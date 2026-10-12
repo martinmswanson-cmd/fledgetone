@@ -221,6 +221,12 @@ export const Timeline: React.FC = () => {
 
   // Bind store <-> Tone.Transport for the lifetime of the timeline
   useEffect(() => connectTimelineToAudio(), []);
+  // A track just added (or selected from elsewhere) is scrolled into view
+  const trackCount = useTimelineStore((s) => s.tracks.length);
+  const selectedTrack = useTimelineStore((s) => s.selectedTrackId);
+  useEffect(() => {
+    if (selectedTrack) document.querySelector(`[data-lane="${CSS.escape(selectedTrack)}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [trackCount, selectedTrack]);
   useEffect(() => connectAutosave(), []);
   // Menus hand focus back once used, so the shortcuts below keep working
   useEffect(() => blurMenusAfterChange(), []);

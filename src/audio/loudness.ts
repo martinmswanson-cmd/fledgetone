@@ -38,6 +38,39 @@ export interface LoudnessAnalyser {
  * the last 4 and 30 of those, and every 400 ms gating block (75% overlap) above -70 LUFS is kept
  * for the integrated measure, which applies the relative gate (10 LU under their mean) on read.
  */
+// The 4x interpolation filter of BS.1770-4 Annex 2: four phases of 12 taps over the latest samples
+const PHASES = [
+  [0.0017089843750, 0.0109863281250, -0.0196533203125, 0.0332031250000, -0.0594482421875, 0.1373291015625, 0.9721679687500, -0.1022949218750, 0.0476074218750, -0.0266113281250, 0.0148925781250, -0.0083007812500],
+  [-0.0291748046875, 0.0292968750000, -0.0517578125000, 0.0891113281250, -0.1665039062500, 0.4650878906250, 0.7797851562500, -0.2003173828125, 0.1015625000000, -0.0582275390625, 0.0330810546875, -0.0189208984375],
+  [-0.0189208984375, 0.0330810546875, -0.0582275390625, 0.1015625000000, -0.2003173828125, 0.7797851562500, 0.4650878906250, -0.1665039062500, 0.0891113281250, -0.0517578125000, 0.0292968750000, -0.0291748046875],
+  [-0.0083007812500, 0.0148925781250, -0.0266113281250, 0.0476074218750, -0.1022949218750, 0.9721679687500, 0.1373291015625, -0.0594482421875, 0.0332031250000, -0.0196533203125, 0.0109863281250, 0.0017089843750],
+].map((taps) => Float64Array.from(taps));
+const TAPS = 12;
+
+/**
+ * The true peak of audio (linear: 1 is full scale): the highest of its samples and the points the
+ * 4x interpolation filter finds between them, where a converter's output can go over full scale
+ * even though no sample does.
+ */
+export function truePeakOf(channels: readonly Float32Array[]): number {
+  let peak = 0;
+  for (const ch of channels) {
+    for (let i = 0; i < ch.length; i++) {
+      const a = Math.abs(ch[i]);
+      if (a > peak) peak = a;
+      if (i < TAPS - 1) continue;
+      for (let p = 0; p < 4; p++) {
+        const taps = PHASES[p];
+        let acc = 0;
+        for (let k = 0; k < TAPS; k++) acc += taps[k] * ch[i - k];
+        const v = acc < 0 ? -acc : acc;
+        if (v > peak) peak = v;
+      }
+    }
+  }
+  return peak;
+}
+
 export function createLoudnessAnalyser(sampleRate: number): LoudnessAnalyser {
   const ABSOLUTE_GATE_LUFS = -70;
   const RELATIVE_GATE_LU = 10;
@@ -69,14 +102,6 @@ export function createLoudnessAnalyser(sampleRate: number): LoudnessAnalyser {
   /** Filter memory per channel: shelf [x1, x2, y1, y2], then high-pass [x1, x2, y1, y2]. */
   const memory = [new Float64Array(8), new Float64Array(8)];
 
-  // The 4x interpolation filter of BS.1770-4 Annex 2: four phases of 12 taps over the latest samples
-  const PHASES = [
-    [0.0017089843750, 0.0109863281250, -0.0196533203125, 0.0332031250000, -0.0594482421875, 0.1373291015625, 0.9721679687500, -0.1022949218750, 0.0476074218750, -0.0266113281250, 0.0148925781250, -0.0083007812500],
-    [-0.0291748046875, 0.0292968750000, -0.0517578125000, 0.0891113281250, -0.1665039062500, 0.4650878906250, 0.7797851562500, -0.2003173828125, 0.1015625000000, -0.0582275390625, 0.0330810546875, -0.0189208984375],
-    [-0.0189208984375, 0.0330810546875, -0.0582275390625, 0.1015625000000, -0.2003173828125, 0.7797851562500, 0.4650878906250, -0.1665039062500, 0.0891113281250, -0.0517578125000, 0.0292968750000, -0.0291748046875],
-    [-0.0083007812500, 0.0148925781250, -0.0266113281250, 0.0476074218750, -0.1022949218750, 0.9721679687500, 0.1373291015625, -0.0594482421875, 0.0332031250000, -0.0196533203125, 0.0109863281250, 0.0017089843750],
-  ].map((taps) => Float64Array.from(taps));
-  const TAPS = 12;
   /** The last 12 samples of each channel, twice over so a window is always contiguous. */
   const history = [new Float64Array(TAPS * 2), new Float64Array(TAPS * 2)];
   let historyAt = 0;
@@ -225,6 +250,8 @@ export const METER_RATE_HZ = 10;
  * second. It takes 'reset' and 'dispose' messages (after 'dispose' the processor is let go).
  */
 export const LOUDNESS_WORKLET_SOURCE = `
+const TAPS = ${TAPS};
+const PHASES = ${JSON.stringify(PHASES.map((p) => Array.from(p)))}.map((taps) => Float64Array.from(taps));
 const createLoudnessAnalyser = ${createLoudnessAnalyser.toString()};
 class LoudnessProcessor extends AudioWorkletProcessor {
   constructor() {
