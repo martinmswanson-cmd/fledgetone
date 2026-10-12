@@ -24,8 +24,8 @@ export type FilterType = (typeof FILTER_TYPES)[number];
 export const FILTER_SLOPES = [12, 24] as const;
 export type FilterSlope = (typeof FILTER_SLOPES)[number];
 
-/** What makes the Pump duck: every kick drum note (C1 on a sounding drum kit), every beat, or every 8th. */
-export const PUMP_TRIGGERS = ['kick', 'beat', 'eighth'] as const;
+/** What makes the Pump duck: every kick drum note (C1 on a sounding drum kit), every beat, every 8th, or every note of one track (`source`). */
+export const PUMP_TRIGGERS = ['kick', 'beat', 'eighth', 'track'] as const;
 export type PumpTrigger = (typeof PUMP_TRIGGERS)[number];
 
 /**
@@ -73,6 +73,8 @@ export interface TrackFx {
     /** How long it takes to swell back to full volume, 50 ms to 600 ms */
     release: number;
     trigger: PumpTrigger;
+    /** The track whose notes it ducks to (trigger 'track') */
+    source?: string;
   };
 }
 
@@ -133,6 +135,7 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
       depth: num(pum.depth, d.pump.depth, 0, 1),
       release: num(pum.release, d.pump.release, PUMP_RELEASE_MIN, PUMP_RELEASE_MAX),
       trigger: oneOf(pum.trigger, PUMP_TRIGGERS, d.pump.trigger),
+      ...(typeof pum.source === 'string' ? { source: pum.source } : {}),
     },
   };
 }

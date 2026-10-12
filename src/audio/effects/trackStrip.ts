@@ -55,8 +55,10 @@ export interface TrackStrip {
   apply: (track: Track, opts?: { ramp?: number; muteOverride?: boolean }) => void;
   /** What the Pump follows, or null while it's off. */
   pumpTrigger: () => PumpTrigger | null;
-  /** A `source` trigger at `time`: the Pump ducks if it follows that source. */
-  pump: (time: number, source: PumpTrigger) => void;
+  /** A `source` trigger at `time`: the Pump ducks if it follows that source (for 'track', the notes of `fromTrack`). */
+  pump: (time: number, source: PumpTrigger, fromTrack?: string) => void;
+  /** The track a 'track'-triggered Pump follows, or null. */
+  pumpSource: () => string | null;
   /**
    * What a lane for `param` drives, or null while it can't sound (its Filter is off) or no lane
    * owns it (as of the last apply()).
@@ -207,6 +209,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   let filter: LightFilter | null = null;
   let pump: LightPump | null = null;
   let pumpTrigger: PumpTrigger | null = null;
+  let pumpSource: string | null = null;
   /** The drum kits' fold to mono, after the other inserts (see above). */
   let fold: Unit | null = null;
   /** The inserts currently patched in, in signal order. */
@@ -534,10 +537,12 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         pump ??= createLightPump();
         pump.setShape(fx.pump.depth, fx.pump.release / 1000);
         pumpTrigger = fx.pump.trigger;
+        pumpSource = fx.pump.trigger === 'track' ? fx.pump.source ?? null : null;
       } else {
         if (pump) retired.push(pump);
         pump = null;
         pumpTrigger = null;
+        pumpSource = null;
       }
 
       if (owned.has('volume')) {
@@ -571,6 +576,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       if (!owned.has('delaySend')) delayWriter.set(Math.max(0, Math.min(1, track.delaySend)), ramp);
     },
     pumpTrigger: () => pumpTrigger,
+    pumpSource: () => pumpSource,
     peak: () => {
       if (!meter) {
         meter = raw.createAnalyser();
@@ -583,8 +589,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       for (let i = 0; i < meterData!.length; i++) p = Math.max(p, Math.abs(meterData![i]));
       return p;
     },
-    pump: (time, source) => {
-      if (pump && source === pumpTrigger) pump.trigger(time);
+    pump: (time, source, fromTrack) => {
+      if (pump && source === pumpTrigger && (source !== 'track' || fromTrack === pumpSource)) pump.trigger(time);
     },
     automationTargets: (param) => {
       if (!owned.has(param)) return null;

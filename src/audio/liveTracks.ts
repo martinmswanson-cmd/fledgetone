@@ -140,6 +140,11 @@ export function liveTrackPeaks(): Map<string, number> {
   return out;
 }
 
+/** A note of `trackId` at `time`: every Pump that follows that track ducks. */
+export function pumpOnTrack(trackId: string, time: number): void {
+  for (const { strip } of live.values()) if (strip.pumpSource() === trackId) strip.pump(time, 'track', trackId);
+}
+
 export function getLiveInstrument(trackId: string): TrackInstrument | undefined {
   const lt = live.get(trackId);
   return lt?.audible ? lt.instrument : undefined;

@@ -3,7 +3,7 @@ import { liveTransport } from './liveContext';
 import { barToTicks, swingDelay, swungNotes } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
-import { getLiveClipBus, getLiveInstrument, pumpOnKick, releaseAllLiveVoices } from './liveTracks';
+import { getLiveClipBus, getLiveInstrument, pumpOnKick, pumpOnTrack, releaseAllLiveVoices } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
@@ -73,7 +73,9 @@ export function createClipSchedule(
   transport: ReturnType<typeof Tone.getTransport>,
   instrumentFor: (trackId: string) => TrackInstrument | undefined,
   onKick?: (trackId: string, time: number) => void,
-  swing: () => number = () => 0
+  swing: () => number = () => 0,
+  /** Every note group of every track as it plays (Pumps that follow a track) */
+  onNotes?: (trackId: string, time: number) => void
 ): ClipSchedule {
   let byTick = new Map<number, NoteGroup[]>();
   let entries = new Map<string, ClipEntry>();
@@ -98,6 +100,7 @@ export function createClipSchedule(
         if (instrument) safely(() => instrument.play(notes, time));
       }
 
+      if (onNotes) for (const group of groups) onNotes(group.trackId, group.swung ? tickTime + late : tickTime);
       if (!onKick) return;
       for (const group of groups) {
         if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, group.swung ? tickTime + late : tickTime);
@@ -148,7 +151,7 @@ let liveSwing = 0;
 
 /** Bring the live Transport's events in line with the timeline clips. */
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
-  liveSchedule ??= createClipSchedule(Tone.getTransport(), getLiveInstrument, pumpOnKick, () => liveSwing);
+  liveSchedule ??= createClipSchedule(Tone.getTransport(), getLiveInstrument, pumpOnKick, () => liveSwing, pumpOnTrack);
   liveSchedule.update(tracks, clips);
   // Audio clips play their sound files on the live mix's own Transport (the global one is the
   // export's while a WAV render sets up)
