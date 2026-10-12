@@ -286,3 +286,42 @@ test('clip audio and Slicer settings from a file are tidied, with safe defaults'
     { id: 'a', name: 'Sound', type: 'application/octet-stream', size: 0, seconds: 0, data: 'AAAA' },
   ]);
 });
+
+test('overlapping audio clips crossfade: the earlier fades out, the later fades in, across the overlap', async () => {
+  const { crossfades } = await import('../src/store/audioClips.ts');
+  const audio = { soundId: 's', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 };
+  const clip = (id, trackId, startBar, lengthBars) => ({ id, trackId, startBar, lengthBars, audio });
+  // 120 BPM: a bar is 2 s. A ends at bar 3, B starts at 2.5: half a bar (1 s) of overlap
+  const x = crossfades([clip('a', 't', 1, 2), clip('b', 't', 2.5, 2)], 120);
+  assert.deepEqual(x.get('a'), { in: 0, out: 1 });
+  assert.deepEqual(x.get('b'), { in: 1, out: 0 });
+  // Touching clips, other tracks and note clips don't crossfade
+  assert.equal(crossfades([clip('a', 't', 1, 2), clip('b', 't', 3, 2)], 120).size, 0);
+  assert.equal(crossfades([clip('a', 't', 1, 2), clip('b', 'u', 2, 2)], 120).size, 0);
+  assert.equal(crossfades([clip('a', 't', 1, 2), { ...clip('b', 't', 2, 2), audio: undefined }], 120).size, 0);
+  // A clip wholly inside another is a layer: no crossfade
+  assert.equal(crossfades([clip('a', 't', 1, 4), clip('b', 't', 2, 1)], 120).size, 0);
+  // A chain: the middle clip crossfades on both sides
+  const chain = crossfades([clip('a', 't', 1, 2), clip('b', 't', 2.75, 2), clip('c', 't', 4.5, 1)], 120);
+  assert.deepEqual(chain.get('b'), { in: 0.5, out: 0.5 });
+});
+
+test('a crossfade is equal power: the two curves keep the level through the overlap', () => {
+  const out = envelopeShape(0, 4, 0, 1, { out: true });
+  const into = envelopeShape(0, 4, 1, 0, { in: true });
+  assert.equal(out.curveOut, true);
+  assert.equal(into.curveIn, true);
+  for (const r of [0, 0.25, 0.5, 0.75, 0.999]) {
+    const a = envelopeAt(out, 3 + r);
+    const b = envelopeAt(into, r);
+    assert.ok(Math.abs(a * a + b * b - 1) < 1e-6, `power at ${r}: ${a * a + b * b}`);
+  }
+  // Midway each is at -3 dB, not -6 dB as a straight line would be
+  assert.ok(Math.abs(envelopeAt(into, 0.5) - Math.SQRT1_2) < 1e-9);
+  // The points follow the curve: 16 steps across the fade, each on it
+  const points = envelopeFrom(into, 0);
+  assert.equal(points.length, 18);
+  for (const [t, g] of points) assert.ok(Math.abs(g - envelopeAt(into, t)) < 1e-9 || t >= 4);
+  // No curve without a fade
+  assert.equal(envelopeShape(0, 4, 0, 0, { in: true, out: true }).curveIn, undefined);
+});
