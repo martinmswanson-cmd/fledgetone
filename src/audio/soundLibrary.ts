@@ -2,8 +2,9 @@ import { create } from 'zustand';
 import { liveMix } from './engine';
 import { createPeaks, fillPeaks } from './waveform';
 import { stretchChannels } from './timeStretch';
+import { beatAt, warpKey, warpPieces } from '../store/warp';
 import type { Peaks } from './waveform';
-import type { EmbeddedSound, SoundMeta } from '../store/timelineTypes';
+import type { ClipAudio, EmbeddedSound, SoundMeta } from '../store/timelineTypes';
 
 export type { EmbeddedSound, SoundMeta };
 
@@ -325,6 +326,104 @@ export function requestStretch(id: string, sampleRate: number, ratio: number): v
       stretchTimers.delete(slot);
       void stretchSound(id, sampleRate, ratio).catch(() => {});
     }, 250)
+  );
+}
+
+// ---------- warped copies ----------
+
+/**
+ * A sound played along a clip's warp markers at `bpm` (see warp.ts): each stretch between markers
+ * time-stretched to its length in beats at that tempo, end to end. Index t seconds into it is
+ * beat beatAt(0) + t * bpm / 60 of the sound. Kept per sound, rate, tempo and markers.
+ */
+const warpedBuffers = new Map<string, AudioBuffer>();
+const warping = new Map<string, Promise<AudioBuffer>>();
+const warpBufferKey = (id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number) =>
+  `${id}|${sampleRate}|${bpm.toFixed(4)}|${audio.stretchBpm}|${warpKey(audio)}`;
+/** Warps kept per sound and rate (markers being dragged leave only the last few behind) */
+const KEEP_WARPS = 4;
+
+export const warpedSound = (id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number): AudioBuffer | undefined =>
+  warpedBuffers.get(warpBufferKey(id, sampleRate, audio, bpm));
+
+export function warpSound(id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number): Promise<AudioBuffer> {
+  const key = warpBufferKey(id, sampleRate, audio, bpm);
+  let promise = warping.get(key);
+  if (!promise) {
+    const shape = { stretchBpm: audio.stretchBpm, warp: audio.warp };
+    promise = (async () => {
+      const source = await decodeSound(id, sampleRate);
+      const input = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c));
+      const parts: Float32Array[][] = [];
+      for (const piece of warpPieces(shape, 0, source.duration)) {
+        const a = Math.round(piece.src0 * sampleRate);
+        const b = Math.round(piece.src1 * sampleRate);
+        // Its length at the song's tempo, in samples (rounded so the pieces add up to the beats)
+        const outStart = Math.round(((piece.beat0 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
+        const outEnd = Math.round(((piece.beat1 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
+        if (b <= a || outEnd <= outStart) continue;
+        const stretched = stretchChannels(input.map((ch) => ch.subarray(a, b)), (b - a) / (outEnd - outStart), sampleRate);
+        parts.push(stretched.map((ch) => (ch.length === outEnd - outStart ? ch : fitLength(ch, outEnd - outStart))));
+      }
+      const length = Math.max(1, parts.reduce((n, p) => n + p[0].length, 0));
+      const buffer = new AudioBuffer({ length, numberOfChannels: source.numberOfChannels, sampleRate });
+      for (let c = 0; c < source.numberOfChannels; c++) {
+        const out = new Float32Array(length);
+        let at = 0;
+        for (const p of parts) {
+          out.set(p[c], at);
+          at += p[c].length;
+        }
+        buffer.copyToChannel(out, c);
+      }
+      return buffer;
+    })();
+    promise.then(
+      (buffer) => {
+        warpedBuffers.set(key, buffer);
+        const prefix = `${id}|${sampleRate}|`;
+        const mine = [...warpedBuffers.keys()].filter((k) => k.startsWith(prefix));
+        for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_WARPS))) {
+          warpedBuffers.delete(old);
+          warping.delete(old);
+        }
+        warpListeners.forEach((l) => l());
+      },
+      () => warping.delete(key)
+    );
+    warping.set(key, promise);
+  }
+  return promise;
+}
+
+/** A channel cut or padded with silence to `length` samples. */
+function fitLength(ch: Float32Array, length: number): Float32Array {
+  if (ch.length >= length) return ch.subarray(0, length);
+  const out = new Float32Array(length);
+  out.set(ch);
+  return out;
+}
+
+const warpListeners = new Set<() => void>();
+/** Told whenever a warped copy is ready (the player swaps it in). */
+export function onWarped(listener: () => void): () => void {
+  warpListeners.add(listener);
+  return () => warpListeners.delete(listener);
+}
+
+const warpTimers = new Map<string, number>();
+/** Ask for a warped copy soon (while markers are being dragged, only where they settle is made). */
+export function requestWarp(id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number): void {
+  if (warpedSound(id, sampleRate, audio, bpm)) return;
+  const slot = `${id}|${sampleRate}`;
+  clearTimeout(warpTimers.get(slot));
+  const shape = { stretchBpm: audio.stretchBpm, warp: audio.warp };
+  warpTimers.set(
+    slot,
+    window.setTimeout(() => {
+      warpTimers.delete(slot);
+      void warpSound(id, sampleRate, shape, bpm).catch(() => {});
+    }, 200)
   );
 }
 

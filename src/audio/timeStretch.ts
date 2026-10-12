@@ -130,7 +130,7 @@ export function stretchChannels(input: readonly Float32Array[], ratio: number, s
 }
 
 /** Where the hits (sudden rises in loudness) are in `x`, in samples, in order. */
-function onsets(x: Float32Array, sampleRate: number): number[] {
+export function onsets(x: Float32Array, sampleRate: number): number[] {
   const block = 128;
   const blocks = Math.floor(x.length / block);
   const energy = new Float32Array(blocks);

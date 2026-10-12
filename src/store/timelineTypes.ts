@@ -716,7 +716,28 @@ export interface ClipAudio {
   stretchBpm?: number;
   /** Tuned (see vocalTune.ts): the sound it was tuned from, to go back to */
   tunedFrom?: string;
+  /** Warp markers (see warp.ts), in the order of the sound: only heard while it follows the tempo */
+  warp?: WarpMarker[];
+  /** A gain envelope over the sound (points at moments of it, `src` seconds in), on top of the clip gain and fades */
+  envelope?: GainPoint[];
+  /** Reversed: the sound it was reversed from (the clip plays a reversed copy), to go back to */
+  reversedFrom?: string;
 }
+
+/** A warp marker: the moment `src` seconds into a sound lands on beat `beat` of it (see warp.ts). */
+export interface WarpMarker {
+  src: number;
+  beat: number;
+}
+
+/** A point of a clip's gain envelope: `db` at the moment `src` seconds into its sound. */
+export interface GainPoint {
+  src: number;
+  db: number;
+}
+/** The envelope's range: at the bottom the clip is silent. */
+export const ENVELOPE_DB_MIN = -60;
+export const ENVELOPE_DB_MAX = 12;
 
 export const STRETCH_BPM_MIN = 30;
 export const STRETCH_BPM_MAX = 400;
