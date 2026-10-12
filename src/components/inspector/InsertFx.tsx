@@ -1,5 +1,5 @@
 import React from 'react';
-import { Disc3, Filter, Flame, Gauge, HeartPulse, Scissors, Waves } from 'lucide-react';
+import { Disc3, Filter, Flame, Gauge, Hand, HeartPulse, Scissors, Waves } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { FilterSlope, FilterType, GateRate, PumpTrigger, Track, TrackFx } from '../../store/timelineTypes';
 import {
@@ -19,6 +19,8 @@ import { AutoBadge, Automatable } from '../timeline/AutoBadge';
 import { AUTOMATED_TIP } from '../timeline/automationHooks';
 import { formatHz } from '../../audio/automation';
 import { lofiBits } from '../../audio/effects/lightFx';
+import { HUMAN_MAX_CENTS, HUMAN_MAX_DYNAMICS, HUMAN_MAX_LATE } from '../../audio/human';
+import { INSTRUMENTS } from '../../audio/instrumentCatalog';
 
 interface SliderProps {
   label: string;
@@ -141,6 +143,31 @@ export const InsertPanel: React.FC<PanelProps> = ({ title, icon, on, onToggle, a
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const db = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
+
+/**
+ * Human: each note played a little differently, as a player would (a little early or late, softer
+ * or harder, a hair sharp or flat). It works on the notes before they reach the instrument, so it
+ * sits ahead of the effects. Pitch only moves pitched instruments.
+ */
+export const HumanPanel: React.FC<{ track: Track }> = ({ track }) => {
+  const fx = track.fx ?? defaultTrackFx();
+  const d = defaultTrackFx().human;
+  const set = (patch: Partial<TrackFx['human']>) => useTimelineStore.getState().setTrackFx(track.id, 'human', patch);
+  const accent = '#facc15';
+  const off = !fx.human.on;
+  const pitched = ['synth', 'sampled', 'custom'].includes(INSTRUMENTS[track.instrumentKey].kind);
+  const ms = (v: number) => `±${Math.round(v * HUMAN_MAX_LATE * 500)} ms`;
+  const cents = (v: number) => `±${Math.round(v * HUMAN_MAX_CENTS)} ¢`;
+  const level = (v: number) => `±${Math.round(v * HUMAN_MAX_DYNAMICS * 100)}%`;
+  return (
+    <InsertPanel title="Human" icon={<Hand className="w-3.5 h-3.5" style={{ color: accent }} />} on={fx.human.on} onToggle={() => set({ on: !fx.human.on })} accent={accent}>
+      <p className={`text-[10px] text-forge-muted leading-snug ${off ? 'opacity-45' : ''}`}>No two notes played quite alike, the way a real player sounds.</p>
+      <FxSlider label="Timing" value={fx.human.timing} min={0} max={1} step={0.01} format={ms} onChange={(timing) => set({ timing })} reset={d.timing} accent={accent} disabled={off} />
+      <FxSlider label="Dynamics" value={fx.human.dynamics} min={0} max={1} step={0.01} format={level} onChange={(dynamics) => set({ dynamics })} reset={d.dynamics} accent={accent} disabled={off} />
+      {pitched && <FxSlider label="Pitch" value={fx.human.pitch} min={0} max={1} step={0.01} format={cents} onChange={(pitch) => set({ pitch })} reset={d.pitch} accent={accent} disabled={off} />}
+    </InsertPanel>
+  );
+};
 
 /** Distortion (before the EQ in the chain). */
 export const DistortionPanel: React.FC<{ track: Track }> = ({ track }) => {

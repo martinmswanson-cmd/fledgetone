@@ -46,7 +46,7 @@ const Meter: React.FC<{ trackId: string | null }> = ({ trackId }) => {
 
 const Strip: React.FC<{ track: Track }> = ({ track }) => {
   const s = useTimelineStore.getState();
-  const inserts = (['distortion', 'compressor', 'chorus', 'lofi', 'filter', 'gate', 'pump'] as const).filter((k) => track.fx[k].on);
+  const inserts = (['human', 'distortion', 'compressor', 'chorus', 'lofi', 'filter', 'gate', 'pump'] as const).filter((k) => track.fx[k].on);
   return (
     <div className="flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border border-forge-border bg-forge-bg p-2" aria-label={`${track.name} channel`}>
       <div className="w-full h-1 rounded" style={{ background: track.color }} />

@@ -135,6 +135,7 @@ const SETTINGS: Item[] = [
   { title: 'Project name', keywords: 'project name title rename file', run: show('[aria-label="Project name"]') },
   { title: "Track's instrument", keywords: 'change instrument sound swap track', run: trackPanel('instrument') },
   { title: 'EQ', keywords: 'eq equalizer equaliser bass treble low mid high tone', run: trackPanel('eq') },
+  { title: 'Human (feel)', keywords: 'human humanize humanise feel groove realistic real player natural authentic timing velocity variation imperfect sloppy live loose', detail: 'Each note played a little differently, like a real player.', run: trackPanel('Human') },
   { title: 'Distortion', keywords: 'distortion drive overdrive saturation crunch fuzz', run: trackPanel('Distortion') },
   { title: 'Compressor', keywords: 'compressor compression dynamics punch squash', run: trackPanel('Compressor') },
   { title: 'Chorus', keywords: 'chorus wide shimmer ensemble detune', run: trackPanel('Chorus') },
