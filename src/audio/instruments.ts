@@ -310,6 +310,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
         voice.attack(n.note, time, n.velocity);
         return (at) => voice.release(n.note, at);
       },
+      bend: voice.bend,
       releaseAll: voice.releaseAll,
       ready: voice.ready,
       dispose: voice.dispose,

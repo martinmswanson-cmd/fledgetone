@@ -1,3 +1,4 @@
+import { normalizeExpression } from './expression';
 import { TOTAL_BARS } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo } from './timelineTypes';
@@ -250,6 +251,7 @@ function parseClip(v: unknown): Clip {
     throw new Error('a clip is malformed');
   }
   const audio = normalizeClipAudio(v.audio);
+  const expression = normalizeExpression(v.expression);
   return {
     id: v.id,
     trackId: v.trackId,
@@ -263,6 +265,8 @@ function parseClip(v: unknown): Clip {
     ...(isWobbleRate(v.wobble) ? { wobble: v.wobble } : {}),
     // Optional: an audio clip (on an Audio track) plays a sound file instead of notes
     ...(audio ? { audio } : {}),
+    // Optional: pitch bend, mod wheel and sustain pedal lanes
+    ...(expression ? { expression } : {}),
   };
 }
 

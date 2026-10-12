@@ -192,6 +192,8 @@ export interface SamplerVoice {
   /** A key held on a MIDI keyboard: `note` sounds from `time` until released. */
   attack: (note: string, time: number, velocity: number) => void;
   release: (note: string, time: number) => void;
+  /** Pitch bend in cents from `time`: every sounding note, and the notes after, play that far off. */
+  bend: (cents: number, time: number) => void;
   releaseAll: () => void;
   /** Resolves once samples are attached (rejects if they failed to download). */
   ready: Promise<void>;
@@ -343,23 +345,68 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
     loaded = true;
   });
   ready.catch(() => {}); // the loading badge / inspector reports failures
+  // Pitch bend: Tone.Sampler plays each note on a buffer source of its own, at the playback rate
+  // that tunes the nearest recording to it. A bend scales the rate of every source still sounding,
+  // and a note started while bent starts scaled. Tone forgets a source as soon as its release is
+  // scheduled, so the sources are kept here, each until it has rung out.
+  let bendRatio = 1;
+  type Source = { playbackRate: Tone.Param<'positive'> };
+  const active = () => (sampler as unknown as { _activeSources: Map<number, Source[]> })._activeSources;
+  const allSources = () => [...active().values()].flat();
+  const sounding: Array<{ src: Source; note: string; until: number; base: number }> = [];
+  const releaseSeconds = () => Tone.Time(sampler.release).toSeconds();
+  /** Start `trigger`'s notes, keep their sources (bent by the bend now) until `until`. */
+  const started = (notes: string[], until: number, trigger: () => void) => {
+    const before = new Set(allSources());
+    trigger();
+    const fresh = allSources().filter((src) => !before.has(src));
+    fresh.forEach((src, i) => {
+      // Its rate unbent, which every bend scales (reading the rate back mid-glide would drift)
+      const base = src.playbackRate.value;
+      if (bendRatio !== 1) src.playbackRate.value = base * bendRatio;
+      sounding.push({ src, note: notes[Math.min(i, notes.length - 1)], until, base });
+    });
+  };
+  const prune = (time: number) => {
+    for (let i = sounding.length - 1; i >= 0; i--) if (sounding[i].until < time) sounding.splice(i, 1);
+  };
   return {
     play: (notes, duration, time, velocity) => {
       if (!loaded || notes.length === 0) return; // still downloading: skip rather than throw
       const at = time ?? Tone.now();
       onNote?.(at);
-      if (!taper) sampler.triggerAttackRelease(notes, duration, at, velocity);
-      else for (const note of notes) sampler.triggerAttackRelease(note, duration, at, velocity * taperGain(taper, note));
+      const end = at + Tone.Time(duration).toSeconds();
+      prune(at);
+      // Attack and release apart (what triggerAttackRelease does), so the sources can be kept
+      started(notes, end + releaseSeconds() + 0.1, () => {
+        if (!taper) sampler.triggerAttack(notes, at, velocity);
+        else for (const note of notes) sampler.triggerAttack(note, at, velocity * taperGain(taper, note));
+      });
+      sampler.triggerRelease(notes, end);
     },
     attack: (note, time, velocity) => {
       if (!loaded) return;
       onNote?.(time);
-      sampler.triggerAttack(note, time, velocity * taperGain(taper, note));
+      prune(time);
+      started([note], Infinity, () => sampler.triggerAttack(note, time, velocity * taperGain(taper, note)));
+    },
+    bend: (cents, time) => {
+      const next = 2 ** (cents / 1200);
+      if (Math.abs(next - bendRatio) < 1e-6) return;
+      prune(time);
+      for (const { src, base } of sounding) src.playbackRate.setTargetAtTime(base * next, time, 0.005);
+      bendRatio = next;
     },
     release: (note, time) => {
-      if (loaded) sampler.triggerRelease(note, time);
+      if (!loaded) return;
+      sampler.triggerRelease(note, time);
+      for (const s of sounding) if (s.note === note && s.until === Infinity) s.until = time + releaseSeconds() + 0.1;
     },
-    releaseAll: () => sampler.releaseAll(),
+    releaseAll: () => {
+      sampler.releaseAll();
+      const until = sampler.context.currentTime + releaseSeconds() + 0.1;
+      for (const s of sounding) s.until = Math.min(s.until, until);
+    },
     ready,
     dispose: () => {
       sampler.dispose();
@@ -390,7 +437,7 @@ export function createCustomSamplerVoice(sample: CustomSample | undefined, outpu
   const dataUrl = sample?.soundId ? undefined : sample?.dataUrl;
   if (!sample || (!sample.soundId && !dataUrl)) {
     // No sound loaded yet: ready straight away (so exports never wait on it) and silent
-    return { play: () => {}, attack: () => {}, release: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
+    return { play: () => {}, attack: () => {}, release: () => {}, bend: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
   }
   const sampler = new Tone.Sampler({ release: 0.4 }).connect(output);
   const buffer = dataUrl ? loadCustomSample(dataUrl) : decodeSound(sample.soundId!, sampler.context.sampleRate).then((audio) => new Tone.ToneAudioBuffer(audio));

@@ -239,7 +239,11 @@ export function getLiveClipBus(trackId: string): NativeBus | undefined {
 
 /** Release sustained voices so nothing hangs after Stop. */
 export function releaseAllLiveVoices(): void {
-  for (const lt of live.values()) safely(() => lt.instrument.releaseAll());
+  for (const lt of live.values()) {
+    safely(() => lt.instrument.releaseAll());
+    // A bend left by a clip's expression ends with playback
+    if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, Tone.now()));
+  }
 }
 
 /** Play notes right now through a track's instrument and effects (piano-roll previews). */

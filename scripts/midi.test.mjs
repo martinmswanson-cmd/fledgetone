@@ -30,7 +30,7 @@ test('note on and off, on any channel, with velocity scaled to 0..1', () => {
   assert.deepEqual(decodeMidi(new Uint8Array([0x91, 72, 100])), { kind: 'noteOn', note: 72, velocity: 100 / 127 });
 });
 
-test('sustain pedal, all notes off, pitch bend; other messages are ignored', () => {
+test('sustain pedal, mod wheel, all notes off, pitch bend; other messages are ignored', () => {
   assert.deepEqual(decodeMidi([0xb0, 64, 127]), { kind: 'sustain', down: true });
   assert.deepEqual(decodeMidi([0xb0, 64, 63]), { kind: 'sustain', down: false });
   assert.deepEqual(decodeMidi([0xb0, 64, 64]), { kind: 'sustain', down: true });
@@ -40,7 +40,8 @@ test('sustain pedal, all notes off, pitch bend; other messages are ignored', () 
   assert.deepEqual(decodeMidi([0xe0, 0x00, 0x40]), { kind: 'pitchBend', cents: 0 });
   near(decodeMidi([0xe0, 0x7f, 0x7f]).cents, PITCH_BEND_RANGE_CENTS * (8191 / 8192));
   near(decodeMidi([0xe0, 0x00, 0x00]).cents, -PITCH_BEND_RANGE_CENTS);
-  assert.equal(decodeMidi([0xb0, 1, 64]), null); // mod wheel
+  assert.deepEqual(decodeMidi([0xb0, 1, 127]), { kind: 'mod', value: 1 });
+  assert.equal(decodeMidi([0xb0, 7, 64]), null); // channel volume
   assert.equal(decodeMidi([0xc0, 5]), null); // program change
   assert.equal(decodeMidi([0xd0, 5]), null); // aftertouch
   assert.equal(decodeMidi([0xf8]), null); // clock

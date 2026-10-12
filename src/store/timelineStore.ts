@@ -35,7 +35,7 @@ import { defaultCurve, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
-import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder } from './timelineTypes';
+import type { Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
@@ -73,6 +73,7 @@ import {
 } from './markers';
 import { rippleRules, type RippleEdit } from './ripple';
 import { isBus, tidyRoutes, wouldLoop } from './buses';
+import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
@@ -342,6 +343,11 @@ interface TimelineState {
    * undo step). Refused (false) where it would make a loop.
    */
   setTrackOutput: (trackId: string, busId: string | null) => boolean;
+  /**
+   * Set a clip's expression lane (pitch bend, mod wheel or sustain pedal) to `points` (empty: none).
+   * `record`: its own undo step (a drag checkpoint()s once and passes false).
+   */
+  setClipExpression: (clipId: string, lane: ExprLane, points: ExprPoint[], record?: boolean) => void;
   /** A new bus with these tracks playing into it, placed after the last of them (one undo step). Returns its id. */
   groupIntoBus: (trackIds: readonly string[], name?: string) => string | null;
   /** Put tracks in a new folder (one undo step). Returns its id. */
@@ -619,6 +625,11 @@ function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Clip] | nu
     lengthBars: rel,
     notes: clip.notes.filter((n) => n.startOffset < rel - EPS),
   };
+  // Expression lanes split with the notes: the right half starts where the lanes were at the cut
+  const leftExpr = shiftExpression(clip.expression, 0, rel);
+  const rightExpr = shiftExpression(clip.expression, -rel, clip.lengthBars - rel);
+  if (leftExpr) left.expression = leftExpr;
+  else delete left.expression;
   const right: Clip = {
     ...clip,
     id: uid('clip'),
@@ -630,6 +641,8 @@ function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Clip] | nu
       .map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset - rel })),
     ...(clip.audio ? { audio: splitAudio(clip.audio, rel * secondsPerBar(local) * stretchRatio(clip.audio, local)) } : {}),
   };
+  if (rightExpr) right.expression = rightExpr;
+  else delete right.expression;
   return [left, right];
 }
 
@@ -825,6 +838,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       lengthBars: takeClip.lengthBars,
       notes: takeClip.notes.map((n) => ({ ...n, id: uid('note') })),
       isSelected: true,
+      ...(takeClip.expression ? { expression: takeClip.expression } : {}),
     };
     set((st) => ({
       clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
@@ -1278,6 +1292,20 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return true;
     },
 
+    setClipExpression: (clipId, lane, points, record = true) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        if (!clip || clip.audio) return s;
+        const tidy = tidyLane(points, lane);
+        const expression = { ...clip.expression };
+        if (tidy.length) expression[lane] = tidy;
+        else delete expression[lane];
+        const next: Clip = { ...clip };
+        if (Object.keys(expression).length) next.expression = expression;
+        else delete next.expression;
+        return { clips: s.clips.map((c) => (c === clip ? next : c)), ...(record ? pushPast(s) : {}) };
+      }),
+
     groupIntoBus: (trackIds, name) => {
       const s = get();
       const ids = new Set(trackIds.filter((id) => s.tracks.some((t) => t.id === id && !isBus(t))));
@@ -1600,6 +1628,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           startBar: start,
           lengthBars: end - start,
           notes: c.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta })),
+          ...(c.expression ? { expression: moveExpression(c.expression, -delta) } : {}),
           ...(c.audio ? { audio: trimAudioStart(c.audio, delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm)) } : {}),
         };
       }),

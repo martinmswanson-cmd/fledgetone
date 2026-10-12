@@ -647,7 +647,18 @@ export interface Clip {
   wobble?: WobbleRate;
   /** An audio clip: plays a sound file instead of notes (only on Audio tracks). */
   audio?: ClipAudio;
+  /** Controller lanes over the clip: pitch bend, mod wheel, sustain pedal (see expression.ts) */
+  expression?: ClipExpression;
 }
+
+/** A controller lane's point: `at` bars from the clip's start. */
+export interface ExprPoint {
+  at: number;
+  value: number;
+}
+
+/** A clip's controller lanes (absent: untouched): pitch bend in semitones, mod wheel 0..1, sustain 0 or 1. */
+export type ClipExpression = Partial<Record<'bend' | 'mod' | 'sustain', ExprPoint[]>>;
 
 /**
  * Wobble rates, slowest first: one filter sweep per note value, restarted at the start of every
