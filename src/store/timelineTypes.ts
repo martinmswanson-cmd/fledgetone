@@ -565,6 +565,9 @@ export interface LoopRegion {
 export type MarkerAnchor = 'bar' | 'time';
 
 /** A named point on the timeline. Both positions are kept; the anchor says which one the other follows. */
+/** What plays as the Game preview switches into a state (see transitions.ts). */
+export type TransitionKind = 'cut' | 'fill' | 'riser' | 'impact';
+
 /** What a stinger is for (see stingers.ts). */
 export type StingerKind = 'victory' | 'levelUp' | 'item' | 'checkpoint' | 'danger' | 'gameOver';
 

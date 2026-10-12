@@ -51,7 +51,7 @@ import {
   trimAudioStart,
 } from './audioClips';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, WobbleRate } from './timelineTypes';
+import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionKind, WobbleRate } from './timelineTypes';
 import { DEFAULT_WOBBLE, TOTAL_BARS, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
   adjacentMarker,
@@ -367,6 +367,9 @@ interface TimelineState {
   addStinger: (kind: StingerKind) => Stinger;
   updateStinger: (id: string, patch: Partial<Omit<Stinger, 'id'>>) => void;
   deleteStinger: (id: string) => void;
+  /** Transitions into game states, by section marker id ('cut' is left out) */
+  transitions: Record<string, TransitionKind>;
+  setTransition: (markerId: string, kind: TransitionKind) => void;
   /** Put a stinger on the timeline at `bar`, on a new track of its instrument (one undo step) */
   placeStinger: (id: string, bar: number) => string | null;
 
@@ -1459,6 +1462,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return null;
     },
 
+    transitions: {},
+    setTransition: (markerId, kind) =>
+      set((s) => {
+        const next = { ...s.transitions };
+        if (kind === 'cut') delete next[markerId];
+        else next[markerId] = kind;
+        return { transitions: next };
+      }),
     stingers: [],
     addStinger: (kind) => {
       const s = get();
@@ -1766,6 +1777,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         dropFrame: p.dropFrame === true && p.fps === 29.97,
         markers: retimeMarkers(p.markers ?? [], p.bpm),
         stingers: p.stingers ?? [],
+        transitions: p.transitions ?? {},
         automationView: {},
         automationSelection: null,
         // A project opens at its start (or wherever its playhead is), not where the last one was scrolled to
@@ -1968,6 +1980,7 @@ export function currentProject(): ProjectSnapshot {
     dropFrame: s.dropFrame,
     markers: s.markers,
     stingers: s.stingers,
+    transitions: s.transitions,
   };
 }
 
@@ -2046,7 +2059,8 @@ export function connectAutosave(): () => void {
       state.fps === prev.fps &&
       state.dropFrame === prev.dropFrame &&
       state.markers === prev.markers &&
-      state.stingers === prev.stingers
+      state.stingers === prev.stingers &&
+      state.transitions === prev.transitions
     ) {
       return;
     }
