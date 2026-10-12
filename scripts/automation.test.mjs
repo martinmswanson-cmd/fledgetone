@@ -57,7 +57,7 @@ test('a lane value at a bar: before, between, after and at a jump', () => {
 
 test('lane pieces stop at the next point or the limit', () => {
   const pts = P([2, 0], [4, 1], [4, 0.2], [6, 0.6]);
-  assert.deepEqual(lanePieceFrom(pts, 1, 10), { endBar: 2, from: 0, to: 0 });
+  assert.deepEqual(lanePieceFrom(pts, 1, 10), { endBar: 2, from: 0, to: 0, curved: false });
   const p = lanePieceFrom(pts, 3, 10);
   assert.equal(p.endBar, 4);
   near(p.from, 0.5);
@@ -66,7 +66,7 @@ test('lane pieces stop at the next point or the limit', () => {
   assert.equal(q.endBar, 5);
   assert.equal(q.from, 0.2);
   near(q.to, 0.4);
-  assert.deepEqual(lanePieceFrom(pts, 7, 9), { endBar: 9, from: 0.6, to: 0.6 });
+  assert.deepEqual(lanePieceFrom(pts, 7, 9), { endBar: 9, from: 0.6, to: 0.6, curved: false });
 });
 
 test('volume lane: a fader-like scale, -60 dB silent', () => {
@@ -219,5 +219,27 @@ test('project lanes are validated', () => {
   assert.deepEqual(lanes, [
     { param: 'volume', points: P([1, 1], [3, 0.5]) },
     { param: 'filterCutoff', points: [] },
+  ]);
+});
+
+test('a bent line: slow then fast above 0, fast then slow below, and saved with the project', async () => {
+  const { bend, laneValueAt, lanePieceFrom, normalizePoints, parseAutomation, movePoints } = await import('../src/audio/automation.ts');
+  assert.equal(bend(0.5, 0), 0.5);
+  assert.equal(bend(0.5, 1), 0.0625); // 0.5^4
+  assert.equal(bend(0.5, -1), 0.9375);
+  assert.equal(bend(0, 0.7), 0);
+  assert.equal(bend(1, -0.7), 1);
+  const pts = [{ bar: 1, value: 0, curve: 1 }, { bar: 5, value: 1 }];
+  assert.equal(laneValueAt(pts, 3), 0.0625);
+  assert.equal(laneValueAt(pts, 5), 1);
+  assert.equal(lanePieceFrom(pts, 2, Infinity).curved, true);
+  assert.equal(lanePieceFrom([{ bar: 1, value: 0 }, { bar: 5, value: 1 }], 2, Infinity).curved, false);
+  // Kept through a move, tidied (0 or junk is straight), clamped, read back from a file
+  assert.equal(movePoints(pts, new Set([0]), 1, 0, false).points[0].curve, 1);
+  assert.deepEqual(normalizePoints([{ bar: 1, value: 0, curve: 0 }]), [{ bar: 1, value: 0 }]);
+  assert.equal(normalizePoints([{ bar: 1, value: 0, curve: 9 }])[0].curve, 1);
+  assert.deepEqual(parseAutomation([{ param: 'volume', points: [{ bar: 1, value: 0.2, curve: -0.5 }, { bar: 2, value: 0.8 }] }])[0].points, [
+    { bar: 1, value: 0.2, curve: -0.5 },
+    { bar: 2, value: 0.8 },
   ]);
 });

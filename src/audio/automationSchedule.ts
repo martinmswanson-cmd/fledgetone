@@ -1,6 +1,6 @@
 import type * as Tone from 'tone';
 import type { AutomationParam, AutomationPoint, Track } from '../store/timelineTypes';
-import { AUTOMATION, isLinearMap, lanePieceFrom, laneValueAt, sampleStretch } from './automation';
+import { AUTOMATION, CURVE_STEP, isLinearMap, lanePieceFrom, laneValueAt, sampleStretch } from './automation';
 import { clockMargin, type AutomationTarget } from './effects/paramWriter';
 import type { TrackStrip } from './effects/trackStrip';
 import { ticksToBar } from './transport';
@@ -179,7 +179,13 @@ export function createAutomationSchedule(
       }
       const to = endBar === piece.endBar ? piece.to : laneValueAt(points, endBar)!;
       let written = end;
-      for (const tg of targets) written = Math.max(written, tg.writer.curve(sampleStretch(piece.from, to, end - t, tg.native, tg.linear), t, end - t));
+      if (piece.curved) {
+        // A bent line: the lane sampled along it (every CURVE_STEP), each through the setting's own scale
+        const count = Math.max(2, Math.ceil((end - t) / CURVE_STEP) + 1);
+        const lane = new Float32Array(count);
+        for (let k = 0; k < count; k++) lane[k] = k === count - 1 ? to : laneValueAt(points, bar + ((endBar - bar) * k) / (count - 1))!;
+        for (const tg of targets) written = Math.max(written, tg.writer.curve(lane.map(tg.native), t, end - t));
+      } else for (const tg of targets) written = Math.max(written, tg.writer.curve(sampleStretch(piece.from, to, end - t, tg.native, tg.linear), t, end - t));
       lane.until = written;
     }
   };

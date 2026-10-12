@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam, AutomationPoint, Track } from '../../store/timelineTypes';
 import { snapBar, TOTAL_BARS } from '../../store/timelineTypes';
-import { AUTOMATION, insertPoint, laneOf, laneValueAt, movePoints, shiftRange } from '../../audio/automation';
+import { AUTOMATION, CURVE_MAX, insertPoint, lanePieceFrom, laneOf, laneValueAt, movePoints, shiftRange } from '../../audio/automation';
 import { formatBarsBeats } from '../../audio/transport';
 import { AutomationMenu } from './AutomationMenu';
 import type { AutomationMenuState } from './AutomationMenu';
@@ -125,7 +125,23 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
     if (hidden || !points.length) return null;
     const visible = points.filter((p) => p.bar >= barL && p.bar <= barR);
     const corners: Array<[number, number]> = [[x0, laneValueAt(points, barL)!], ...visible.map((p): [number, number] => [(p.bar - 1) * zoom, p.value]), [x1, laneValueAt(points, barR)!]];
-    const line = corners.map(([x, v], i) => `${i ? 'L' : 'M'}${(x - x0).toFixed(1)},${yOf(v).toFixed(1)}`).join('');
+    // A bent line is drawn as short straight steps along it (about every 4 px)
+    const traced: Array<[number, number]> = [];
+    corners.forEach(([x, v], i) => {
+      const prev = corners[i - 1];
+      if (prev && x - prev[0] > 8) {
+        const barA = prev[0] / zoom + 1;
+        if (lanePieceFrom(points, barA, Infinity).curved) {
+          const steps = Math.ceil((x - prev[0]) / 4);
+          for (let k = 1; k < steps; k++) {
+            const xk = prev[0] + ((x - prev[0]) * k) / steps;
+            traced.push([xk, laneValueAt(points, xk / zoom + 1)!]);
+          }
+        }
+      }
+      traced.push([x, v]);
+    });
+    const line = traced.map(([x, v], i) => `${i ? 'L' : 'M'}${(x - x0).toFixed(1)},${yOf(v).toFixed(1)}`).join('');
     const chosen = selected ? visible.filter((p) => selected.has(p)) : [];
     const others = chosen.length ? visible.filter((p) => !selected!.has(p)) : visible;
     return (
@@ -208,6 +224,40 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
       const lead = { bar: Math.max(1, grab.bar + bars), value: clamp01(grab.value + value) };
       setTip({ x: (lead.bar - 1) * s.zoom, y: yOf(lead.value), text: describe(lead) });
     });
+  };
+
+  /**
+   * Alt-drag the line between two points to bend it: up or down pulls its middle that way (a build
+   * that starts slow and rushes in, or a fade that drops away then settles). One undo step.
+   */
+  const bendLine = (e: React.PointerEvent, pts: AutomationPoint[], bar: number) => {
+    const after = pts.findIndex((p) => p.bar > bar);
+    if (after <= 0) return false;
+    const left = after - 1;
+    const a = pts[left];
+    const b = pts[after];
+    if (a.value === b.value) return false;
+    const start = a.curve ?? 0;
+    const direction = Math.sign(b.value - a.value);
+    let applied = start;
+    let committed = false;
+    follow(e, (ev, from) => {
+      const dy = local(ev).y - from.y;
+      const curve = Math.round(Math.max(-CURVE_MAX, Math.min(CURVE_MAX, start + (direction * dy) / 60)) * 100) / 100;
+      if (curve === applied) return;
+      applied = curve;
+      const s = store();
+      if (!committed) {
+        committed = true;
+        s.checkpoint();
+      }
+      const bent: AutomationPoint = curve ? { ...a, curve } : { bar: a.bar, value: a.value };
+      const next = pts.map((p, i) => (i === left ? bent : p));
+      s.setAutomationPoints(track.id, param, next, false);
+      const mid = (a.bar + b.bar) / 2;
+      setTip({ x: (mid - 1) * s.zoom, y: yOf(laneValueAt(next, mid)!), text: curve ? `Bend ${curve > 0 ? '+' : ''}${Math.round(curve * 100)}%` : 'Straight' });
+    });
+    return true;
   };
 
   /** Drag the line between two points (or the flat run before the first / after the last) up or down. */
@@ -300,6 +350,8 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
     }
     const bar = x / s.zoom + 1;
     if (pts.length && !additive && Math.abs(yOf(laneValueAt(pts, bar)!) - y) <= LINE_HIT) {
+      // Alt bends the line; otherwise it moves up or down
+      if (e.altKey && bendLine(e, pts, bar)) return;
       dragLine(e, pts, bar);
       return;
     }
@@ -341,7 +393,7 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (!deletePointAt(e)) setMenu({ x: e.clientX, y: e.clientY, trackId: track.id, param });
+          if (!deletePointAt(e)) setMenu({ x: e.clientX, y: e.clientY, trackId: track.id, param, bar: local(e).x / store().zoom + 1 });
         }}
       >
         <svg
