@@ -7,7 +7,9 @@ import { previewTrackNotes } from '../../audio/liveTracks';
 import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isSlicerKind } from '../../audio/instrumentCatalog';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
-import { barsToDuration, durationToBars, SLICE_KEY_BASE } from '../../store/timelineTypes';
+import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
+import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
+import type { ChordId, Scale, ScaleId } from '../../store/noteTools';
 import { DEFAULT_WOBBLE, WOBBLE_RATES, type WobbleRate } from '../../store/timelineTypes';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
@@ -145,6 +147,28 @@ const noteUnits = (n: NoteEvent) => unitsOf(durationToBars(n.duration));
 /** The width of a note's resize handle: narrower on short notes, so there's still room to grab the note itself. */
 const edgeOf = (noteWidth: number) => Math.min(EDGE_PX, noteWidth / 3);
 
+/** The scale and chord chosen last, kept while the app is open so the next clip opens with them. */
+let rememberedScale: Scale | null = null;
+let rememberedChord: ChordId = 'off';
+let rememberedGhosts = true;
+
+const TOOLS = [
+  { id: 'quantize', label: 'Quantize to grid', drums: true },
+  { id: 'quantizeEnds', label: 'Quantize starts and lengths', drums: false },
+  { id: 'humanize', label: 'Humanize (timing and velocity)', drums: true },
+  { id: 'strumDown', label: 'Strum chords (low to high)', drums: false },
+  { id: 'strumUp', label: 'Strum chords (high to low)', drums: false },
+  { id: 'arpUp', label: 'Arpeggiate up (grid speed)', drums: false },
+  { id: 'arpDown', label: 'Arpeggiate down', drums: false },
+  { id: 'arpUpDown', label: 'Arpeggiate up and down', drums: false },
+  { id: 'arpRandom', label: 'Arpeggiate random', drums: false },
+  { id: 'legato', label: 'Legato (fill the gaps)', drums: false },
+  { id: 'octaveUp', label: 'Octave up', drums: false },
+  { id: 'octaveDown', label: 'Octave down', drums: false },
+  { id: 'fitScale', label: 'Fit to scale', drums: false },
+] as const;
+type ToolId = (typeof TOOLS)[number]['id'];
+
 let audioReady = false;
 /** Play notes through the clip's track (its instrument and effects), starting audio if needed. */
 async function preview(trackId: string, notes: Pick<NoteEvent, 'note' | 'duration' | 'velocity'>[]) {
@@ -221,6 +245,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const [lengthUnits, setLengthUnits] = useState(isFxKind(instrument) ? UNITS_PER_BAR : isDrums ? 6 : 12);
   const [velocity, setVelocity] = useState(0.8);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [scale, setScaleState] = useState<Scale | null>(rememberedScale);
+  const [chord, setChordState] = useState<ChordId>(rememberedChord);
+  const [ghosts, setGhostsState] = useState(rememberedGhosts);
+  const setScale = (next: Scale | null) => setScaleState((rememberedScale = next));
+  const setChord = (next: ChordId) => setChordState((rememberedChord = next));
+  const setGhosts = (next: boolean) => setGhostsState((rememberedGhosts = next));
   const gridRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -262,6 +292,29 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     () => clip.notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < clip.lengthBars - 1e-6),
     [clip.notes, clip.lengthBars]
   );
+
+  // Other tracks' notes over the same bars, drawn faintly behind this clip's so parts fit together
+  const allClips = useTimelineStore((st) => st.clips);
+  const allTracks = useTimelineStore((st) => st.tracks);
+  const ghostNotes = useMemo(() => {
+    if (!ghosts || namedRows) return [];
+    const pitched = new Set(allTracks.filter((t) => !isDrumKind(t.instrumentKey) && !isFxKind(t.instrumentKey) && !isSlicerKind(t.instrumentKey)).map((t) => t.id));
+    const from = clip.startBar;
+    const to = clip.startBar + clip.lengthBars;
+    const out: { key: string; note: string; start: number; length: number; color: string }[] = [];
+    for (const c of allClips) {
+      if (c.id === clip.id || c.audio || !pitched.has(c.trackId) || c.startBar >= to || c.startBar + c.lengthBars <= from) continue;
+      const color = allTracks.find((t) => t.id === c.trackId)?.color ?? '#888';
+      for (const n of c.notes) {
+        if (n.startOffset >= c.lengthBars) continue;
+        const at = c.startBar + n.startOffset;
+        const len = Math.min(durationToBars(n.duration), c.lengthBars - n.startOffset);
+        if (at >= to || at + len <= from) continue;
+        out.push({ key: `${c.id}:${n.id}`, note: n.note, start: at - from, length: len, color });
+      }
+    }
+    return out;
+  }, [ghosts, namedRows, allClips, allTracks, clip.id, clip.startBar, clip.lengthBars]);
 
   // Open scrolled to the notes (or middle of the range)
   useEffect(() => {
@@ -336,6 +389,51 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     });
   };
 
+  /** The nearest in-scale note to `midi` that has a row. */
+  const snapRow = (midi: number) => {
+    if (!scale) return midi;
+    for (let d = 0; d <= 6; d++) {
+      for (const m of [midi + d, midi - d]) if (inScale(m, scale) && rowIndexOf(rows, nameOf(m)) >= 0) return m;
+    }
+    return midi;
+  };
+
+  /** Run a tool over the selected notes (all of the clip's, with none selected): one undo step. */
+  const applyTool = (tool: ToolId) => {
+    const store = useTimelineStore.getState();
+    const notes = currentNotes();
+    const target = selected.size ? notes.filter((n) => selected.has(n.id)) : notes;
+    if (!target.length) return;
+    const rest = notes.filter((n) => !target.includes(n));
+    const bars = clip.lengthBars;
+    const grid = gridUnits / UNITS_PER_BAR;
+    const [lo, hi] = INSTRUMENTS[instrument].range;
+    const newId = () => uid('note');
+    const out = (() => {
+      switch (tool) {
+        case 'quantize': return quantize(target, grid, clip.startBar - 1);
+        case 'quantizeEnds': return quantize(target, grid, clip.startBar - 1, 1, true);
+        case 'humanize': return humanize(target, bars);
+        case 'strumDown': return strum(target, bars, 1 / 96, true);
+        case 'strumUp': return strum(target, bars, 1 / 96, false);
+        case 'arpUp': return arpeggiate(target, grid, 'up', newId);
+        case 'arpDown': return arpeggiate(target, grid, 'down', newId);
+        case 'arpUpDown': return arpeggiate(target, grid, 'upDown', newId);
+        case 'arpRandom': return arpeggiate(target, grid, 'random', newId);
+        case 'legato': return legato(target, bars);
+        case 'octaveUp': return transpose(target, 12, lo, hi);
+        case 'octaveDown': return transpose(target, -12, lo, hi);
+        case 'fitScale': return scale ? fitToScale(target, scale) : target;
+      }
+    })();
+    store.checkpoint();
+    store.setClipNotes(clip.id, [...rest, ...out]);
+    if (selected.size) setSelected(new Set(out.map((n) => n.id)));
+    // Rows grow to fit notes moved past them (an octave up)
+    const needed = rowsFor(instrument, [...rest, ...out], slicer);
+    if (!namedRows && needed.length > rows.length) setRows(needed);
+  };
+
   const onGridPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -369,11 +467,21 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     // The grid line at or before the click
     const start = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
     const len = Math.min(lengthUnits, totalUnits - start);
-    const note = { note: row.note, startOffset: start / UNITS_PER_BAR, duration: barsToDuration(len / UNITS_PER_BAR), velocity };
-    const [id] = useTimelineStore.getState().addNotes(clip.id, [note]);
-    setSelected(new Set([id]));
-    void preview(clip.trackId, [{ ...note, duration: '16n' }]);
-    startDrag(e, new Set([id]), 'move', true, id);
+    const at = { startOffset: start / UNITS_PER_BAR, duration: barsToDuration(len / UNITS_PER_BAR), velocity };
+    // In a scale, a click lands on the nearest note of it; a chord stamps every note of the chord
+    let pitches = [row.note];
+    if (!namedRows) {
+      const clicked = midiOf(row.note);
+      const root = scale ? snapRow(clicked) : clicked;
+      const midis = chordNotes(root, chord, scale);
+      pitches = midis.map(nameOf).filter((n) => rowIndexOf(rows, n) >= 0);
+      if (!pitches.length) pitches = [row.note];
+    }
+    const added = pitches.map((note) => ({ note, ...at }));
+    const ids = useTimelineStore.getState().addNotes(clip.id, added);
+    setSelected(new Set(ids));
+    void preview(clip.trackId, added.map((n) => ({ ...n, duration: '8n' })));
+    startDrag(e, new Set(ids), 'move', true, ids[0]);
   };
 
   const deleteNote = (id: string) => {
@@ -523,6 +631,65 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             </select>
           </label>
         )}
+        {!namedRows && (
+          <label className="flex items-center gap-1.5" title="Shade the notes outside a key; clicks land on the key's notes">
+            SCALE
+            <select
+              className={select}
+              aria-label="Scale root"
+              value={scale?.root ?? 0}
+              disabled={!scale}
+              onChange={(e) => scale && setScale({ ...scale, root: Number(e.target.value) })}
+            >
+              {ROOT_NAMES.map((n, i) => (
+                <option key={n} value={i}>{n}</option>
+              ))}
+            </select>
+            <select
+              className={select}
+              aria-label="Scale"
+              value={scale?.id ?? 'off'}
+              onChange={(e) => setScale(e.target.value === 'off' ? null : { root: scale?.root ?? 0, id: e.target.value as ScaleId })}
+            >
+              <option value="off">Off</option>
+              {(Object.keys(SCALES) as ScaleId[]).map((id) => (
+                <option key={id} value={id}>{SCALES[id].name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!namedRows && (
+          <label className="flex items-center gap-1.5" title="A click adds a whole chord from the note you click">
+            CHORD
+            <select className={select} value={chord} onChange={(e) => setChord(e.target.value as ChordId)}>
+              {(Object.keys(CHORDS) as ChordId[]).map((id) => (
+                <option key={id} value={id}>{CHORDS[id].name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <label className="flex items-center gap-1.5" title={selected.size ? 'Change the selected notes' : 'Change all the notes in this clip (select some to change only those)'}>
+          TOOLS
+          <select
+            className={select}
+            value=""
+            onChange={(e) => {
+              if (e.target.value) applyTool(e.target.value as ToolId);
+              e.currentTarget.blur();
+            }}
+          >
+            <option value="">{selected.size ? `${selected.size} selected…` : 'All notes…'}</option>
+            {TOOLS.filter((t) => (namedRows ? t.drums : t.id !== 'fitScale' || scale)).map((t) => (
+              <option key={t.id} value={t.id}>{t.label}</option>
+            ))}
+          </select>
+        </label>
+        {!namedRows && (
+          <label className="flex items-center gap-1.5 cursor-pointer" title="Show the other tracks' notes at these bars, faintly, behind this clip's">
+            <input type="checkbox" checked={ghosts} onChange={(e) => setGhosts(e.target.checked)} className="accent-cyan-500" />
+            GHOSTS
+          </label>
+        )}
         <div className="flex items-center gap-1.5">
           <button type="button" title="Zoom out" onClick={() => setStepW((w) => Math.max(10, w - 6))} className="hover:text-forge-text">
             <ZoomOut className="w-4 h-4" />
@@ -613,13 +780,30 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               style={{ width: gridW, height: gridH }}
               onPointerDown={onGridPointerDown}
             >
-              {rows.map((r, i) => (
-                <div
-                  key={r.note}
-                  className={`absolute left-0 right-0 border-b border-black/30 ${r.black ? 'bg-black/25' : 'bg-white/[0.03]'}`}
-                  style={{ top: i * rowH, height: rowH }}
-                />
-              ))}
+              {rows.map((r, i) => {
+                // With a scale: notes outside it darker, its root lit
+                const m = scale && !namedRows ? midiOf(r.note) : NaN;
+                const outside = Number.isFinite(m) && !inScale(m, scale!);
+                const root = Number.isFinite(m) && (((m - scale!.root) % 12) + 12) % 12 === 0;
+                return (
+                  <div
+                    key={r.note}
+                    className={`absolute left-0 right-0 border-b border-black/30 ${outside ? 'bg-black/55' : root ? 'bg-cyan-400/[0.09]' : r.black ? 'bg-black/25' : 'bg-white/[0.03]'}`}
+                    style={{ top: i * rowH, height: rowH }}
+                  />
+                );
+              })}
+              {ghostNotes.map((g) => {
+                const idx = rowIndexOf(rows, g.note);
+                if (idx < 0) return null;
+                return (
+                  <div
+                    key={g.key}
+                    className="absolute rounded-[3px] border pointer-events-none"
+                    style={{ left: unitsOf(g.start) * unitW + 1, width: Math.max(3, unitsOf(g.length) * unitW - 2), top: idx * rowH + 3, height: rowH - 6, borderColor: g.color, opacity: 0.35 }}
+                  />
+                );
+              })}
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{

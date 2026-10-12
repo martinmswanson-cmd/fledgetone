@@ -224,6 +224,13 @@ The header has the clip's name (click to rename), **GRID** (1/32, 1/16T, 1/16, 1
 
 **Fine grids and triplets.** **T** means triplet: three in the space of two, so 1/16T puts six notes in a beat and 1/8T three. Clicking places a note on the grid line at or before the pointer. Dragging a note, or its right edge, snaps it to the grid, and the arrow keys move notes one grid step. Changing the grid never moves existing notes. Zoom in (the magnifier) for comfortable 1/32 editing. Swing leaves triplets and 1/32 notes on the grid, and an 8th with a 1/32 roll or a triplet in it plays straight, so rolls stay even with Swing on.
 
+**Composing helpers** (in the piano roll's header):
+
+- **SCALE**: pick a key (root and scale: Major, Minor, Harmonic minor, Dorian, Phrygian, Lydian, Mixolydian, the two pentatonics, Blues or Japanese). Rows outside the key are shaded dark and the root's rows lit, and a click lands on the nearest note of the key, so nothing sounds wrong.
+- **CHORD**: a click adds a whole chord from the note you click. **Triad in key** and **7th chord in key** build the right chord for that place in the scale (in A minor, a click on D gives D minor); the others are fixed shapes (Major, Minor, Sus2, Sus4, 7, Maj7, Min7, Add9, Diminished, Power, Octave). The chord drags as one.
+- **TOOLS** changes the selected notes, or the whole clip with nothing selected, in one Undo step: **Quantize** (starts, or starts and lengths, to the GRID), **Humanize** (small random shifts in timing and velocity), **Strum** (a chord's notes a moment apart, low to high or high to low), **Arpeggiate** (each chord becomes a broken chord at the GRID's speed: up, down, up and down, or random), **Legato** (each note lasts until the next), **Octave up / down**, and **Fit to scale**. Drum clips have Quantize and Humanize.
+- **GHOSTS** shows the other tracks' notes over the same bars as faint outlines in their colours, so a melody can follow the chords.
+
 > With no notes selected, `Delete` acts on the timeline and deletes the selected clip, usually the one you're editing. `Ctrl+Z` brings it back.
 
 ## Instruments
