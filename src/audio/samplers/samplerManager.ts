@@ -40,7 +40,8 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
 
   const promise = Promise.all(
     Object.entries(source.samples).map(async ([note, file]) => {
-      const buffer = await Tone.ToneAudioBuffer.fromUrl(source.baseUrl + file);
+      const loaded = await Tone.ToneAudioBuffer.fromUrl(source.baseUrl + file);
+      const buffer = source.tune?.[note] ? retune(loaded, source.tune[note]) : loaded;
       const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
       return [note, source.onset === undefined ? held : trimOnset(held, source.onset)] as const;
     })
@@ -60,6 +61,35 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   );
   sampleSets[key] = promise;
   return promise;
+}
+
+/**
+ * Re-pitch a recording by `cents` (an out-of-tune one: see sampleTuning.ts), by reading it a little
+ * faster or slower with cubic interpolation. A few cents changes its length by a fraction of a
+ * percent, which nobody hears.
+ */
+function retune(buffer: Tone.ToneAudioBuffer, cents: number): Tone.ToneAudioBuffer {
+  const audio = buffer.get();
+  if (!audio || !cents) return buffer;
+  const rate = 2 ** (cents / 1200);
+  const length = Math.max(1, Math.floor((audio.length - 3) / rate));
+  const out = Tone.getContext().createBuffer(audio.numberOfChannels, length, audio.sampleRate);
+  for (let c = 0; c < audio.numberOfChannels; c++) {
+    const x = audio.getChannelData(c);
+    const y = out.getChannelData(c);
+    for (let i = 0; i < length; i++) {
+      const pos = i * rate;
+      const k = Math.floor(pos);
+      const t = pos - k;
+      const p0 = x[k > 0 ? k - 1 : 0];
+      const p1 = x[k];
+      const p2 = x[k + 1];
+      const p3 = x[k + 2];
+      // Catmull-Rom
+      y[i] = p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
+    }
+  }
+  return new Tone.ToneAudioBuffer(out);
 }
 
 /**
