@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "lucide-react": "^1.52.0",
-    "mp4-muxer": "^5.2.2",
+    "mediabunny": "^1.61.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tone": "^15.1.22",
