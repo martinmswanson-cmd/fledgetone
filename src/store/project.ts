@@ -1,7 +1,8 @@
 import { normalizeExpression } from './expression';
+import { compSegments, normalizeTakes } from './takes';
 import { TOTAL_BARS } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
-import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
@@ -252,13 +253,22 @@ function parseClip(v: unknown): Clip {
   }
   const audio = normalizeClipAudio(v.audio);
   const expression = normalizeExpression(v.expression);
+  const takes = normalizeTakes(v.takes, (n) => {
+    try {
+      return parseNote(n);
+    } catch {
+      return null;
+    }
+  });
+  const lengthBars = Math.max(0.0625, v.lengthBars);
+  const comp = takes && Array.isArray(v.comp) ? v.comp.filter((s): s is CompSegment => isObj(s) && isNum(s.at) && isNum(s.take)) : [];
   return {
     id: v.id,
     trackId: v.trackId,
     name: isStr(v.name) ? v.name : 'Clip',
     startBar: v.startBar,
     // No clip is shorter than a 16th; a zero or negative length (a hand-edited file) would break edits
-    lengthBars: Math.max(0.0625, v.lengthBars),
+    lengthBars,
     notes: v.notes.map(parseNote),
     isSelected: false,
     // Optional: a rate this version doesn't know plays at the default
@@ -267,6 +277,8 @@ function parseClip(v: unknown): Clip {
     ...(audio ? { audio } : {}),
     // Optional: pitch bend, mod wheel and sustain pedal lanes
     ...(expression ? { expression } : {}),
+    // Optional: a take folder (its takes, and which plays where)
+    ...(takes ? { takes, comp: compSegments({ takes, comp, lengthBars }) } : {}),
   };
 }
 

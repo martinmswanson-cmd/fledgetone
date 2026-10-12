@@ -240,9 +240,59 @@ test('record settings: missing or bad values fall back, good ones are kept', () 
     quantize: '1/8',
     metronome: true,
     metronomeVolume: 0.3,
+    takes: false,
   });
   const bad = normalizeRecordOptions({ countIn: 'yes', quantize: '1/3', metronome: 1, metronomeVolume: 7 });
   assert.deepEqual(bad, { ...DEFAULT_RECORD_OPTIONS, metronomeVolume: 1 });
   assert.equal(normalizeRecordOptions({ metronomeVolume: -2 }).metronomeVolume, 0);
   assert.equal(normalizeRecordOptions({ metronomeVolume: NaN }).metronomeVolume, DEFAULT_RECORD_OPTIONS.metronomeVolume);
+});
+
+test('takes: each loop pass is a take of its own, the last one playing', () => {
+  const take = createTake(1);
+  take.noteOn(60, 'C4', 0.8, 1, at(1));
+  take.noteOff(60, at(1.25));
+  take.cover(1, 3); // the loop came round
+  take.noteOn(62, 'D4', 0.8, 1.5, at(1.5));
+  take.noteOff(62, at(1.75));
+  take.cover(1, 3);
+  take.control('bend', 1, 2);
+  take.noteOn(64, 'E4', 0.8, 2, at(2));
+  take.noteOff(64, at(2.25));
+  const clip = take.finish(3, at(3), BPM, { passes: true });
+  assert.equal(clip.takes.length, 3);
+  assert.deepEqual(clip.takes.map((t) => t.notes.map((n) => n.note)), [['C4'], ['D4'], ['E4']]);
+  assert.deepEqual(clip.notes.map((n) => n.note), ['E4']);
+  assert.ok(clip.takes[2].expression?.bend && !clip.takes[0].expression);
+  // Without passes, all of them together, as before
+  assert.equal(createTakeFromAbove(), 3);
+  function createTakeFromAbove() {
+    const again = createTake(1);
+    again.noteOn(60, 'C4', 0.8, 1, at(1));
+    again.noteOff(60, at(1.25));
+    again.cover(1, 3);
+    again.noteOn(62, 'D4', 0.8, 1.5, at(1.5));
+    again.noteOff(62, at(1.75));
+    again.noteOn(64, 'E4', 0.8, 2, at(2));
+    again.noteOff(64, at(2.25));
+    const c = again.finish(3, at(3), BPM, { passes: false });
+    assert.equal(c.takes, undefined);
+    return c.notes.length;
+  }
+});
+
+test('punch: only notes started in the range are kept, and the clip is the range', () => {
+  const take = createTake(1);
+  take.noteOn(60, 'C4', 0.8, 1.5, at(1.5));
+  take.noteOff(60, at(1.75));
+  take.noteOn(62, 'D4', 0.8, 2.5, at(2.5));
+  take.noteOff(62, at(3.5)); // held past the punch out
+  take.noteOn(64, 'E4', 0.8, 3.25, at(3.25));
+  take.noteOff(64, at(3.5));
+  const clip = take.finish(4, at(4), BPM, { punch: { inBar: 2, outBar: 3 } });
+  assert.equal(clip.startBar, 2);
+  assert.equal(clip.lengthBars, 1);
+  assert.deepEqual(clip.notes.map((n) => [n.note, n.startOffset]), [['D4', 0.5]]);
+  near(durationToBars(clip.notes[0].duration), 0.5, 1e-6);
+  assert.equal(createTake(1).finish(2, at(2), BPM, { punch: { inBar: 2, outBar: 3 } }), null);
 });

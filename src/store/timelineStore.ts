@@ -74,6 +74,7 @@ import {
 import { rippleRules, type RippleEdit } from './ripple';
 import { isBus, tidyRoutes, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
+import { addTake, applyComp, flattenTakes, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
@@ -348,6 +349,14 @@ interface TimelineState {
    * `record`: its own undo step (a drag checkpoint()s once and passes false).
    */
   setClipExpression: (clipId: string, lane: ExprLane, points: ExprPoint[], record?: boolean) => void;
+  /** A take folder: take `take` plays from `from` to `to` (bars into the clip) (one undo step). */
+  setTakeComp: (clipId: string, from: number, to: number, take: number) => void;
+  /** A take folder: delete one take (the last one left flattens it into a plain clip) (one undo step). */
+  deleteTake: (clipId: string, take: number) => void;
+  /** A take folder becomes a plain clip of what its comp plays; the other takes go (one undo step). */
+  flattenClipTakes: (clipId: string) => void;
+  /** Mic takes recorded over `startBar` to `startBar + lengthBars` on an Audio track: a take folder (joining a clip of that span if takes are on). */
+  addAudioTakes: (trackId: string | null, startBar: number, lengthBars: number, takes: Array<{ audio: ClipAudio; name?: string }>, clipName: string) => string | null;
   /** A new bus with these tracks playing into it, placed after the last of them (one undo step). Returns its id. */
   groupIntoBus: (trackIds: readonly string[], name?: string) => string | null;
   /** Put tracks in a new folder (one undo step). Returns its id. */
@@ -560,6 +569,12 @@ interface TimelineState {
   setRecordOptions: (patch: Partial<RecordOptions>) => void;
   /** The take being recorded (the lane marks it), null between takes. */
   take: { trackId: string; startBar: number } | null;
+  /**
+   * Punch in/out: while it's on, a recording keeps only what's played from `inBar` to `outBar`
+   * (the music plays from wherever it's started), and its clip is exactly that span.
+   */
+  punch: { enabled: boolean; inBar: number; outBar: number };
+  setPunch: (patch: Partial<{ enabled: boolean; inBar: number; outBar: number }>) => void;
 
   /** Instrument currently being dragged from the sound deck (lanes highlight to match). */
   draggingInstrument: InstrumentKey | null;
@@ -643,6 +658,9 @@ function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Clip] | nu
   };
   if (rightExpr) right.expression = rightExpr;
   else delete right.expression;
+  // A take folder's takes split with it
+  const takes = splitTakes(clip, rel, clip.audio ? rel * secondsPerBar(local) * stretchRatio(clip.audio, local) : 0, () => uid('note'));
+  if (takes) return [{ ...left, ...takes[0] }, { ...right, ...takes[1] }];
   return [left, right];
 }
 
@@ -822,12 +840,50 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     stopCountIn?.();
     stopCountIn = null;
     const s = get();
-    const result = finishTake(heardTime(), songTempo(s));
+    const options = s.recordOptions;
+    const punch = s.punch.enabled ? { inBar: s.punch.inBar, outBar: s.punch.outBar } : null;
+    const result = finishTake(heardTime(), songTempo(s), { passes: options.takes, punch });
     if (s.take) set({ take: null });
     if (!result) return;
     const { trackId } = result;
     if (!s.tracks.some((t) => t.id === trackId)) return;
     const takeClip: TakeClip = result.clip;
+    const grid = options.quantize;
+    const withIds = (notes: TakeClip['notes']) => notes.map((n) => ({ ...n, id: uid('note') }));
+    const played = (takeClip.takes ?? [takeClip]).map((t) => ({ notes: withIds(t.notes), ...(t.expression ? { expression: t.expression } : {}) }));
+    // With takes on, recording over a clip of the same span adds to it as more takes
+    const same = options.takes
+      ? s.clips.find((c) => c.trackId === trackId && !c.audio && Math.abs(c.startBar - takeClip.startBar) < EPS && Math.abs(c.lengthBars - takeClip.lengthBars) < EPS)
+      : undefined;
+    if (same || played.length > 1) {
+      // A take folder: quantized as it's made (one undo step), each take as it was played otherwise
+      const q = (notes: NoteEvent[]) => (grid === 'off' ? notes : quantizeTakeClip({ ...(same ?? ({} as Clip)), startBar: takeClip.startBar, lengthBars: takeClip.lengthBars, notes } as Clip, grid).notes);
+      let folder: Clip = same ?? {
+        id: uid('clip'),
+        trackId,
+        name: `Take ${Math.max(0, ...s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0))) + 1}`,
+        startBar: takeClip.startBar,
+        lengthBars: takeClip.lengthBars,
+        notes: q(played[0].notes),
+        isSelected: true,
+        ...(played[0].expression ? { expression: played[0].expression } : {}),
+      };
+      for (const [i, t] of played.entries()) {
+        if (!same && i === 0) {
+          folder = { ...folder, takes: [{ id: uid('take'), name: 'Take 1', notes: folder.notes, ...(t.expression ? { expression: t.expression } : {}) }] };
+          continue;
+        }
+        folder = addTake(folder, { id: uid('take'), name: `Take ${(folder.takes?.length ?? 1) + 1}`, notes: q(t.notes), ...(t.expression ? { expression: t.expression } : {}) });
+      }
+      folder = { ...applyComp(folder, () => uid('note')), isSelected: true };
+      set((st) => ({
+        clips: same
+          ? st.clips.map((c) => (c.id === same.id ? folder : c.isSelected ? { ...c, isSelected: false } : c))
+          : [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), folder],
+        ...pushPast(st),
+      }));
+      return;
+    }
     // One past the highest "Take N" already on the track
     const taken = s.clips.filter((c) => c.trackId === trackId).map((c) => Number(/^Take (\d+)$/.exec(c.name)?.[1] ?? 0));
     const clip: Clip = {
@@ -836,7 +892,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       name: `Take ${Math.max(0, ...taken) + 1}`,
       startBar: takeClip.startBar,
       lengthBars: takeClip.lengthBars,
-      notes: takeClip.notes.map((n) => ({ ...n, id: uid('note') })),
+      notes: played[0].notes,
       isSelected: true,
       ...(takeClip.expression ? { expression: takeClip.expression } : {}),
     };
@@ -844,7 +900,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
       ...pushPast(st),
     }));
-    const grid = get().recordOptions.quantize;
     if (grid === 'off') return;
     const quantized = quantizeTakeClip(clip, grid);
     set((st) => ({ clips: st.clips.map((c) => (c.id === clip.id ? quantized : c)), ...pushPast(st) }));
@@ -1292,6 +1347,56 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return true;
     },
 
+    setTakeComp: (clipId, from, to, take) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        if (!clip?.takes?.length) return s;
+        const next = applyComp({ ...clip, comp: setCompRange(clip, from, to, take) }, () => uid('note'));
+        return { clips: s.clips.map((c) => (c === clip ? next : c)), ...pushPast(s) };
+      }),
+
+    deleteTake: (clipId, take) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        if (!clip?.takes?.length) return s;
+        const left = removeTake(clip, take);
+        const next = left ? applyComp(left, () => uid('note')) : null;
+        const flat = next && next.takes!.length > 1 ? next : flattenTakes(next ?? clip);
+        return { clips: s.clips.map((c) => (c === clip ? flat : c)), ...pushPast(s) };
+      }),
+
+    flattenClipTakes: (clipId) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        if (!clip?.takes?.length) return s;
+        // A mic folder comped across takes can't be one sound: it stays the take its comp starts with
+        return { clips: s.clips.map((c) => (c === clip ? flattenTakes(applyComp(clip, () => uid('note'))) : c)), ...pushPast(s) };
+      }),
+
+    addAudioTakes: (trackId, startBar, lengthBars, recorded, clipName) => {
+      const s = get();
+      const existing = trackId === null ? null : s.tracks.find((t) => t.id === trackId);
+      if (!recorded.length || (trackId !== null && (!existing || !isAudioKind(existing.instrumentKey)))) return null;
+      const track = existing ?? makeTrack('audio', s.tracks);
+      recorded.forEach((r) => ensureSound(r.audio.soundId));
+      const same = s.recordOptions.takes
+        ? s.clips.find((c) => c.trackId === track.id && c.audio && Math.abs(c.startBar - startBar) < EPS && Math.abs(c.lengthBars - lengthBars) < EPS)
+        : undefined;
+      let clip: Clip = same ?? { id: uid('clip'), trackId: track.id, name: clipName, startBar, lengthBars, notes: [], isSelected: true, audio: recorded[0].audio };
+      for (const [i, r] of recorded.entries()) {
+        if (!same && i === 0) continue;
+        clip = addTake(clip, { id: uid('take'), name: r.name ?? `Take ${(clip.takes?.length ?? 1) + 1}`, audio: r.audio });
+      }
+      if (clip.takes) clip = { ...applyComp(clip, () => uid('note')), takes: clip.takes.map((t, i) => (i === 0 && !same ? { ...t, name: recorded[0].name ?? t.name } : t)) };
+      const done = { ...clip, isSelected: true };
+      set((st) => ({
+        ...(existing ? {} : { tracks: [...st.tracks, track], selectedTrackId: track.id }),
+        clips: same ? st.clips.map((c) => (c.id === same.id ? done : c.isSelected ? { ...c, isSelected: false } : c)) : [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), done],
+        ...pushPast(st),
+      }));
+      return done.id;
+    },
+
     setClipExpression: (clipId, lane, points, record = true) =>
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
@@ -1630,6 +1735,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           notes: c.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta })),
           ...(c.expression ? { expression: moveExpression(c.expression, -delta) } : {}),
           ...(c.audio ? { audio: trimAudioStart(c.audio, delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm)) } : {}),
+          ...trimTakes(c, delta, c.audio ? delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm) : 0),
         };
       }),
 
@@ -2301,6 +2407,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       writeRecordOptions(recordOptions);
     },
     take: null,
+    punch: { enabled: false, inBar: 1, outBar: 3 },
+    setPunch: (patch) =>
+      set((s) => {
+        const next = { ...s.punch, ...patch };
+        const inBar = Math.max(1, Math.min(TOTAL_BARS, next.inBar));
+        const outBar = Math.max(inBar + 1 / 16, Math.min(TOTAL_BARS + 1, next.outBar));
+        return { punch: { enabled: next.enabled, inBar, outBar } };
+      }),
 
     draggingInstrument: null,
     setDraggingInstrument: (instrument) => set({ draggingInstrument: instrument }),

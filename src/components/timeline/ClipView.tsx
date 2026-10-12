@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import * as Tone from 'tone';
 import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { useUiStore } from '../../store/uiStore';
 import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
 import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
 import { crossfades, secondsPerBar, stretchRatio } from '../../store/audioClips';
@@ -434,6 +435,20 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         style={{ height: LABEL_HEIGHT, backgroundColor: track.color }}
       >
         <span className="truncate">{clip.name}</span>
+        {clip.takes && clip.takes.length > 1 && (
+          <button
+            type="button"
+            className="ml-1 shrink-0 rounded-sm bg-black/30 px-1 font-mono text-[9px] font-bold text-white/90 hover:bg-black/50"
+            title={`${clip.takes.length} takes: click to comp them`}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              useUiStore.getState().setTakesClip(clip.id);
+            }}
+          >
+            {clip.takes.length}T
+          </button>
+        )}
         {audio && audio.gain !== 0 && (
           <span className="ml-auto pl-1 shrink-0 font-mono text-[9px] font-bold text-black/70" title="Clip gain (double-click the clip to change it)">
             {audio.gain > 0 ? '+' : ''}

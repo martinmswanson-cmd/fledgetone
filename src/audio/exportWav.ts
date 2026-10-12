@@ -11,7 +11,8 @@ import { createClipSchedule } from './scheduler';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import { createAutomationSchedule } from './automationSchedule';
 import { decodeSound, stretchSound, useSoundLibrary } from './soundLibrary';
-import { stretchRatio } from '../store/audioClips';
+import { secondsPerBar, stretchRatio } from '../store/audioClips';
+import { expandAudioComps } from '../store/takes';
 import { hasRecordings, loadCustomSample, loadSamples } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
@@ -717,7 +718,8 @@ async function renderTracks(
  * the audio clips in the range and of the Slicer and Sampler tracks. A Sampler from a project not
  * yet converted still carries its sound as a data: URL, decoded in the live context as before.
  */
-async function loadSounds(tracks: Track[], clips: Clip[], startBar: number, endBar: number, sampleRate: number, tempo: Tempo): Promise<void> {
+async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar: number, sampleRate: number, tempo: Tempo): Promise<void> {
+  const clips = expandAudioComps(all, (c) => secondsPerBar(tempoAt(c.startBar, tempo)) * stretchRatio(c.audio!, tempoAt(c.startBar, tempo)));
   const trackIds = new Set(tracks.map((t) => t.id));
   // Each sound once, with what to call it in an error: the clip or track it's for
   const needed = new Map<string, string>();
