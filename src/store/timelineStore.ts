@@ -28,6 +28,7 @@ import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { createStinger, fitNotesToRange } from './stingers';
+import { ANY_STATE, transitionKey } from './transitions';
 import { defaultCurve, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
@@ -53,7 +54,7 @@ import {
   trimAudioStart,
 } from './audioClips';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionKind, WobbleRate } from './timelineTypes';
+import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate } from './timelineTypes';
 import { DEFAULT_WOBBLE, TOTAL_BARS, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
   adjacentMarker,
@@ -379,8 +380,9 @@ interface TimelineState {
   /** Put a track in a stem group (or none, with an empty name); one undo step */
   setTrackStemGroup: (trackId: string, group: string) => void;
   /** Transitions into game states, by section marker id ('cut' is left out) */
-  transitions: Record<string, TransitionKind>;
-  setTransition: (markerId: string, kind: TransitionKind) => void;
+  transitions: Record<string, TransitionRule>;
+  /** Set the rule from one state to another (marker ids; ANY_STATE as `from` for any), or remove it with null */
+  setTransitionRule: (from: string, to: string, rule: TransitionRule | null) => void;
   /** Put a stinger on the timeline at `bar`, on a new track of its instrument (one undo step) */
   placeStinger: (id: string, bar: number) => string | null;
 
@@ -1493,11 +1495,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (name && !get().intensityCurves[name]) set((s) => ({ intensityCurves: { ...s.intensityCurves, [name]: defaultCurve(name) } }));
     },
     transitions: {},
-    setTransition: (markerId, kind) =>
+    setTransitionRule: (from, to, rule) =>
       set((s) => {
         const next = { ...s.transitions };
-        if (kind === 'cut') delete next[markerId];
-        else next[markerId] = kind;
+        const key = transitionKey(from, to);
+        if (!rule || (rule.kind === 'cut' && !rule.quantize && from === ANY_STATE)) delete next[key];
+        else next[key] = rule;
         return { transitions: next };
       }),
     stingers: [],

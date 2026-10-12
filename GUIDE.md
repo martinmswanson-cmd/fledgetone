@@ -616,7 +616,11 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 **Game** in the toolbar opens a small panel for rehearsing adaptive music, the kind that changes with what the player is doing:
 
 - **States**: every section between your markers is a button (Intro, Explore, Combat, Boss...). Click one and the song moves there **on the next bar** (or next beat, or at once: the menu above them) and loops it, the way a game switches music. The playing state is green; a waiting one pulses amber.
-- **Transitions** (click to open, under the states): how the music goes **into** each state. **Cut** (straight in, the default), **Fill** (a snare fill over the beat before the switch, on the song's own drum kit), **Riser** (a riser over the bar before it: the switch waits a bar if there isn't a whole one left) or **Impact** (a hit on the new state's downbeat). They play when you switch states while the song plays, and are saved with the project.
+- **Transitions** (click to open, under the states): a matrix of how each state hands over to each other one. Rows are the state you come **from** (and **Any**, for a rule that applies from every state unless that row has its own); columns are the state you go **to**. Click a cell and pick:
+  - **Cut** (straight in), **Fill** (a snare fill over the beat before, on the song's own kit), **Riser** (over the bar before; the switch waits a bar if there isn't a whole one left), **Impact** (a hit on the new state's downbeat), **Crossfade** (the old state fades out as the new one fades in, over 1 to 16 beats), or **Stinger** (one of your stingers plays on the line, and the new state comes in after it: a 2-bar stinger bridges 2 bars).
+  - **When**: on the next bar (the default), on the next beat, or at once.
+  - A switch with no rule cuts on the next bar. Rules are saved with the project.
+  - Switching states on the timeline plays the cuts, fills, risers, impacts and stinger bridges; a crossfade needs two parts of the song at once, so there it cuts. **Audition like the game** (below) plays every rule exactly.
 - **Intensity**: the music a game turns up as things get exciting. Give each track a **stem group** with the list beside it: **Ambient**, **Percussion**, **Tension**, **Climax** or **Other…** (any name); **Auto-assign** puts drums in Percussion, effects in Tension, leads in Climax and everything else in Ambient. Each group in use gets a **curve**: how loud its tracks play (up) at each intensity (across). Drag a point to move it, click empty space to add one, double-click a point to remove it; the dashed line is the intensity now. Then scrub **Intensity** (here, or next to Swing in the header) while the song plays: the groups crossfade along their curves, smoothly, the way the game's audio code will mix them. Tracks without a group always play at full level, and the on/off switches still mute a track outright.
   - The mixdown and video exports play at the Intensity you set; stems, layers and the game kit stay at full level, so the game can apply the curves itself (the curves go into the kit's files).
   - Stem groups, the curves and the intensity are saved with the project. Changing a track's group is an Undo step; moving the slider and the curves isn't.
@@ -641,14 +645,19 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 - Name it, then **Save WAV** to use it in your game, or **Add to song** to put it at the playhead on the selected Audio track (or a new one). **Recent** keeps the last ten you made while the page is open; click one to bring it back.
 - The same settings always make the same sound, so a sound you saved can be made again exactly.
 
+### Audition like the game
+
+**Audition like the game** (at the bottom of the Game preview) renders the states, their stems, the stingers and the transition sounds exactly as the game kit exports them (it takes a few seconds, more for a long song), then plays them with the kit's own web player. Big pads switch states (a waiting one pulses until its line), stinger pads fire stingers on the next beat, and **Intensity** crossfades the stem groups. Every switch follows your transition matrix, crossfades included, so what you hear is what the game will do. The song stops while it's open.
+
 ### The game kit: everything for the game in one file
 
 **Export game kit (.zip)** at the bottom of the Game preview makes everything a game needs to play your music the way the panel does:
 
 - `states/`: every state (section between markers) as a **seamless loop**, a whole number of bars long, with loop points.
-- `transitions/`: the transitions you chose (a fill or a riser starts just before the switch; an impact on it), and `stingers/`: every stinger.
-- `music.json`: the tempo, the key, every state with its loop file, length and transition, and every stinger.
-- `players/`: ready-made players that read `music.json` and switch states **on the next bar, on the beat**: `web/adaptive-music.js` for a web game, `godot/AdaptiveMusic.gd` for Godot 4, and `unity/AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `stinger` and `stop`.
+- `stems/<state>/`: when tracks have stem groups, the same loop split by group (tracks without a group go in **Main**), every stem exactly the same length: played together at full level they make the mix.
+- `transitions/`: the fill, riser and impact sounds your rules use (a fill or a riser starts just before the switch; an impact on it), and `stingers/`: every stinger.
+- `audio_manifest.json`: the tempo, the time signature (4/4), the sample rate, the key, every state (its loop, its stems, its length in bars, seconds and samples), the transition rules by state name, every stinger (with how many bars it bridges), and each stem group's **intensity curve** ([intensity, level] points, both 0 to 1) as the recommended gain curve for the game's audio code.
+- `players/`: ready-made players that read the manifest and do all of it (switching by your rules on the beat, crossfades, stinger bridges, intensity): `web/adaptive-music.js` for a web game, `godot/AdaptiveMusic.gd` for Godot 4, and `unity/AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `setIntensity` / `set_intensity` / `SetIntensity`, `stinger` and `stop`.
 - `README.txt` says how to drop it into each engine, with your own state and stinger names in the examples.
 
 ### Music for games: intro + loop, and layers

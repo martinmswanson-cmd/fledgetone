@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { transitionCue, parseTransitions } = await import('../src/store/transitions.ts');
+const { transitionCue, parseTransitions, ruleFor } = await import('../src/store/transitions.ts');
 
 test('a fill plays on the song\'s own kit over the beat before the switch', () => {
   const cue = transitionCue('fill', [{ instrumentKey: 'piano' }, { instrumentKey: 'acousticKit' }]);
@@ -32,8 +32,21 @@ test('a riser leads in a bar; an impact lands on the downbeat; a cut is nothing'
   assert.equal(transitionCue('cut', []), null);
 });
 
-test('transitions from a file keep only known kinds', () => {
-  assert.deepEqual(parseTransitions({ a: 'fill', b: 'nope', c: 'cut', d: 'riser' }), { a: 'fill', d: 'riser' });
+test('older files (a kind per state gone into) become rules from any state', () => {
+  assert.deepEqual(parseTransitions({ a: 'fill', b: 'nope', d: 'riser' }), { '*>a': { kind: 'fill' }, '*>d': { kind: 'riser' } });
   assert.deepEqual(parseTransitions(null), {});
   assert.deepEqual(parseTransitions(['fill']), {});
+});
+
+test('matrix rules: options kept, junk dropped', () => {
+  const rules = parseTransitions({ 'a>b': { kind: 'crossfade', beats: 8, quantize: 'beat' }, '*>b': { kind: 'stinger', stingerId: 's1', beats: 99 }, 'x>y': { kind: 'warp' } });
+  assert.deepEqual(rules, { 'a>b': { kind: 'crossfade', beats: 8, quantize: 'beat' }, '*>b': { kind: 'stinger', stingerId: 's1' } });
+});
+
+test("a state's own rule wins over Any; with neither it cuts", () => {
+  const rules = { 'a>b': { kind: 'crossfade' }, '*>b': { kind: 'riser' } };
+  assert.equal(ruleFor(rules, 'a', 'b').kind, 'crossfade');
+  assert.equal(ruleFor(rules, 'c', 'b').kind, 'riser');
+  assert.equal(ruleFor(rules, null, 'b').kind, 'riser');
+  assert.equal(ruleFor(rules, 'a', 'c').kind, 'cut');
 });

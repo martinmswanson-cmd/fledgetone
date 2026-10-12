@@ -426,6 +426,31 @@ export async function renderLoopTakes(
 }
 
 /**
+ * Render the range as one seamless loop per group of tracks (a game's stems), all the same length,
+ * sharing one reverb and one gain so that, played together at full level, they make the mix.
+ */
+export async function renderGroupStems(
+  opts: RenderOptions,
+  groups: Array<{ name: string; tracks: Track[] }>,
+  onProgress?: (fraction: number, detail: string) => void
+): Promise<{ stems: Array<{ name: string; channels: Float32Array[] }>; sampleRate: number }> {
+  let reverbImpulse = opts.reverbImpulse;
+  let sampleRate: number = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  let peak = 0;
+  const stems: Array<{ name: string; channels: Float32Array[] }> = [];
+  for (const [i, group] of groups.entries()) {
+    const r = await renderTracks({ ...opts, ending: 'seamless', markers: [], reverbImpulse }, group.tracks, (f) => onProgress?.((i + f) / groups.length, group.name));
+    reverbImpulse ??= r.reverbImpulse;
+    sampleRate = r.sampleRate;
+    peak = Math.max(peak, peakOf(r.channels));
+    stems.push({ name: group.name, channels: r.channels.map((c) => c.slice()) });
+  }
+  const gain = peakGain(peak);
+  for (const stem of stems) scale(stem.channels, gain);
+  return { stems, sampleRate };
+}
+
+/**
  * Render one track for freezing (see src/store/freeze.ts): through its instrument, inserts and
  * strip, without the master chain or volume, at its true level (not scaled to fit), with every
  * other track's kicks still driving its Pump. `opts.tracks` is the whole arrangement.
