@@ -63,8 +63,8 @@ function createGatedSynth(output: Tone.InputNode, wave: (raw: BaseAudioContext) 
     const end = start + Math.max(0.01, length);
     const osc = createOsc(raw, shape, freq, start);
     const amp = raw.createGain();
-    // Velocity in four steps, like the chips' volume register
-    const level = opts.level * Math.max(0.25, Math.ceil(n.velocity * 4) / 4);
+    // Velocity in 16 steps, like the chips' 4-bit volume register
+    const level = opts.level * Math.max(1 / 16, Math.ceil(n.velocity * 16) / 16);
     amp.gain.setValueAtTime(0, start);
     amp.gain.linearRampToValueAtTime(level, start + 0.002);
     amp.gain.setTargetAtTime(0, end, releaseConstant(opts.release));
