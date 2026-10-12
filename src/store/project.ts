@@ -1,4 +1,5 @@
 import { normalizeExpression } from './expression';
+import { normalizeNoteExpression } from './noteExpression';
 import { compSegments, normalizeTakes } from './takes';
 import { TOTAL_BARS, isAutomationParam } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
@@ -284,6 +285,10 @@ function parseNote(v: unknown): NoteEvent {
     // A length the app can't read plays as a 16th rather than breaking playback
     duration: /^(\d+(\.\d+)?m|\d+:\d+(\.\d+)?(:\d+(\.\d+)?)?|\d+[nt]\.?|\d+i)$/.test(v.duration) ? v.duration : '16n',
     velocity: isNum(v.velocity) ? Math.max(0, Math.min(1, v.velocity)) : 0.8,
+    ...(() => {
+      const expr = normalizeNoteExpression(v.expr);
+      return expr ? { expr } : {};
+    })(),
   };
 }
 

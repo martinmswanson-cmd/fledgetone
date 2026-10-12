@@ -1,5 +1,6 @@
 import { tempoAt, type Tempo } from '../audio/tempoMap';
-import type { Clip, ClipExpression, NoteEvent } from './timelineTypes';
+import type { Clip, ClipExpression, NoteEvent, NoteExpression } from './timelineTypes';
+import { tidyNoteLane } from './noteExpression';
 import { barsToDuration, durationToBars, TOTAL_BARS } from './timelineTypes';
 
 /**
@@ -98,6 +99,8 @@ interface TakeNote {
   end: number;
   /** The loop pass it was played in (0 for the first) */
   pass: number;
+  /** Its own bend (semitones) and pressure as played on an MPE keyboard, in song bars */
+  expr?: Partial<Record<'bend' | 'pressure', Array<{ bar: number; value: number }>>>;
 }
 
 /** The shortest note a take keeps: a 32nd, the finest grid the piano roll shows. */
@@ -118,8 +121,10 @@ export interface Take {
   noteOn: (key: number, note: string, velocity: number, bar: number, seconds: number) => void;
   noteOff: (key: number, seconds: number) => void;
   sustain: (down: boolean, seconds: number) => void;
-  /** The pitch bend (semitones) or mod wheel (0 to 1) moved to `value` at `bar` (heard at `seconds`): it goes in the clip's expression lanes. */
-  control: (lane: 'bend' | 'mod', value: number, bar: number, seconds?: number) => void;
+  /** The pitch bend (semitones), mod wheel or another controller (0 to 1) moved to `value` at `bar` (heard at `seconds`): it goes in the clip's expression lanes. */
+  control: (lane: 'bend' | 'mod' | `cc${number}`, value: number, bar: number, seconds?: number) => void;
+  /** A held note's own bend (semitones) or pressure (0 to 1) moved, at `bar` (an MPE keyboard's per-note expression). */
+  noteControl: (key: number, lane: 'bend' | 'pressure', value: number, bar: number) => void;
   /**
    * The loop comes round at audio time `at`: the take covers these bars too, so its clip spans
    * them, and what's played from then on is the next pass. (The Transport says so a little ahead
@@ -143,7 +148,7 @@ export function createTake(startBar: number): Take {
   /** Let go while the pedal was down: they end when it comes up. */
   const sustained = new Map<number, TakeNote>();
   let pedal = false;
-  const controls: Record<'bend' | 'mod', Array<{ bar: number; value: number; pass: number }>> = { bend: [], mod: [] };
+  const controls: Record<string, Array<{ bar: number; value: number; pass: number }>> = { bend: [], mod: [] };
   /** When each loop wrap is heard (audio seconds) */
   const wraps: number[] = [];
   const passAt = (seconds: number | undefined) => (seconds === undefined ? wraps.length : wraps.filter((w) => w <= seconds + 1e-6).length);
@@ -189,12 +194,20 @@ export function createTake(startBar: number): Take {
       sustained.clear();
     },
     control: (lane, value, bar, seconds) => {
-      const list = controls[lane];
+      const list = (controls[lane] ??= []);
       const pass = passAt(seconds);
       // Wheels send a stream: keep a point only where the value has moved on
       const last = list[list.length - 1];
       if (last && last.pass === pass && Math.abs(last.value - value) < (lane === 'bend' ? 0.02 : 0.01) && bar - last.bar < 1 / 16) return;
       list.push({ bar, value, pass });
+    },
+    noteControl: (key, lane, value, bar) => {
+      const n = held.get(key) ?? sustained.get(key);
+      if (!n) return;
+      const list = ((n.expr ??= {})[lane] ??= []);
+      const last = list[list.length - 1];
+      if (last && Math.abs(last.value - value) < (lane === 'bend' ? 0.02 : 0.01) && bar - last.bar < 1 / 32) return;
+      list.push({ bar, value });
     },
     cover: (fromBar, toBar, at) => {
       low = Math.min(low, fromBar);
@@ -231,21 +244,30 @@ export function createTake(startBar: number): Take {
         list
           .slice()
           .sort((a, b) => a.bar - b.bar || a.start - b.start)
-          .map((n) => ({
-            note: n.note,
-            startOffset: Math.max(0, n.bar - clipStart),
-            duration: barsToDuration(lengthOf(n)),
-            velocity: Math.max(0.01, Math.min(1, n.velocity)),
-          }));
+          .map((n) => {
+            const expr: NoteExpression = {};
+            for (const lane of ['bend', 'pressure'] as const) {
+              const pts = (n.expr?.[lane] ?? []).filter((p) => p.bar >= n.bar - EPS && p.bar <= n.bar + lengthOf(n) + EPS);
+              if (pts.length) expr[lane] = tidyNoteLane(pts.map((p) => ({ at: p.bar - n.bar, value: Math.round(p.value * 1000) / 1000 })), lane, lengthOf(n));
+            }
+            return {
+              note: n.note,
+              startOffset: Math.max(0, n.bar - clipStart),
+              duration: barsToDuration(lengthOf(n)),
+              velocity: Math.max(0.01, Math.min(1, n.velocity)),
+              ...(Object.keys(expr).length ? { expr } : {}),
+            };
+          });
       // The wheels as played (of one pass, or all of them)
       const expressionOf = (only?: number): { expression?: ClipExpression } => {
         const expression: ClipExpression = {};
-        for (const lane of ['bend', 'mod'] as const) {
+        for (const lane of Object.keys(controls) as Array<keyof ClipExpression>) {
           const inClip = controls[lane].filter((c) => c.bar >= clipStart && c.bar <= clipEnd);
           // All passes in one clip: a lane can only follow one of them, the last that moved it
           const pass = only ?? Math.max(-1, ...inClip.map((c) => c.pass));
           const list = inClip.filter((c) => c.pass === pass).sort((a, b) => a.bar - b.bar);
-          if (!list.some((c) => c.value !== 0)) continue;
+          // (A wheel left at rest throughout adds nothing; a knob's lane is kept wherever it was)
+          if (lane === 'bend' || lane === 'mod' ? !list.some((c) => c.value !== 0) : !list.length) continue;
           expression[lane] = list.map((c) => ({ at: c.bar - clipStart, value: Math.round(c.value * 1000) / 1000 }));
         }
         return Object.keys(expression).length ? { expression } : {};

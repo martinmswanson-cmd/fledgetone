@@ -119,6 +119,10 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       sendMidi(inst, [0xe0, 0, 64], now);
       touched.clear();
     },
+    cc: (cc: number, value: number, time: number) => {
+      if (!inst) return;
+      sendMidi(inst, [0xb0, Math.max(0, Math.min(119, cc)), Math.max(0, Math.min(127, Math.round(value * 127)))], time);
+    },
     setPluginParam: (pluginId, paramId, value, time) => {
       if (!inst || pluginId !== plugin?.id) return false;
       setWamParam(inst, paramId, value, time);

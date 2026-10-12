@@ -75,6 +75,14 @@ export function recordMidi(message: MidiMessage, heard: number): void {
     case 'mod':
       if (heard >= startAudio) take.control('mod', message.value, transportBarAt(heard), heard);
       break;
+    case 'noteExpr':
+      if (heard >= startAudio) take.noteControl(message.note, message.lane, message.value, transportBarAt(heard));
+      break;
+    case 'pressure':
+      break;
+    case 'cc':
+      if (heard >= startAudio) take.control(`cc${message.cc}`, message.value, transportBarAt(heard), heard);
+      break;
     case 'allNotesOff':
       break;
   }

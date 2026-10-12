@@ -289,6 +289,7 @@ const MidiPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null>; on
         </>
       )}
       <PlaysOn />
+      <MpeToggle />
       <div className="border-t border-forge-border pt-2 flex flex-col gap-1.5">
         <label className="flex items-center gap-2 text-forge-text">
           <input type="checkbox" className="accent-cyan-400 cursor-pointer" checked={keyboardPiano} onChange={(e) => setKeyboardPiano(e.target.checked)} />
@@ -402,5 +403,16 @@ const MidiMappings: React.FC = () => {
         Write automation from knobs while playing
       </label>
     </div>
+  );
+};
+
+/** MPE: an MPE keyboard plays each note on its own channel, whose bend and pressure move only that note (and are recorded into it). */
+const MpeToggle: React.FC = () => {
+  const mpe = useMidiStore((m) => m.mpe);
+  return (
+    <label className="flex items-center gap-2 text-forge-text" title="For MPE keyboards (each note on its own channel): a note's own bend and pressure move only that note, and are recorded into it (draw them under the piano roll: N.bend, N.press)">
+      <input type="checkbox" className="accent-cyan-400 cursor-pointer" checked={mpe} onChange={(e) => useMidiStore.getState().setMpe(e.target.checked)} />
+      MPE keyboard (per-note bend and pressure)
+    </label>
   );
 };

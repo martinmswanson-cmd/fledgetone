@@ -508,6 +508,8 @@ export interface Track {
   sends?: TrackSend[];
   /** Knobs and faders of a MIDI controller that move this track's settings (MIDI learn) */
   midiMap?: MidiMapping[];
+  /** Set only on the copy of a track rendered into its freeze (never saved): its live settings stay out of the sound */
+  freezing?: boolean;
   /** A Plugin track's instrument: a Web Audio Module loaded from its URL (see wamHost.ts) */
   plugin?: WamPlugin;
   /** Web Audio Module effects, in order, between the instrument and the track's own inserts */
@@ -841,6 +843,18 @@ export interface NoteEvent {
   startOffset: number;
   duration: string;
   velocity: number;
+  /** The note's own expression over its length (see noteExpression.ts), as an MPE keyboard plays it */
+  expr?: NoteExpression;
+}
+
+/**
+ * Per-note expression: each curve's points are `at` bars from the note's start. `bend` in
+ * semitones (-24 to 24: a slide to another note, a vibrato drawn by hand); `pressure` 0 to 1 (how
+ * hard the key is pressed: the note's level swells and fades with it; absent: steady).
+ */
+export interface NoteExpression {
+  bend?: ExprPoint[];
+  pressure?: ExprPoint[];
 }
 
 export interface Clip {
@@ -886,7 +900,11 @@ export interface ExprPoint {
 }
 
 /** A clip's controller lanes (absent: untouched): pitch bend in semitones, mod wheel 0..1, sustain 0 or 1. */
-export type ClipExpression = Partial<Record<'bend' | 'mod' | 'sustain', ExprPoint[]>>;
+/**
+ * A clip's controller lanes: pitch bend, mod wheel, sustain pedal, and any MIDI controller by
+ * number (`cc74`: values 0 to 1).
+ */
+export type ClipExpression = Partial<Record<'bend' | 'mod' | 'sustain' | `cc${number}`, ExprPoint[]>>;
 
 /**
  * Wobble rates, slowest first: one filter sweep per note value, restarted at the start of every

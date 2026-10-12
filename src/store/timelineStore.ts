@@ -21,6 +21,7 @@ import { countInClicks } from '../audio/metronome';
 import { quantizeTakeClip, readRecordOptions, writeRecordOptions } from './recording';
 import type { RecordOptions, TakeClip } from './recording';
 import { clipSecondsAt, sourceAt } from './warp';
+import { controllerMemo, withControllerLanes } from './ccLanes';
 import { specOf, insertLaneBars, laneValueAt, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
@@ -40,7 +41,7 @@ import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, Inst
 import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
-import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
+import { durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import { hasRecordings, loadSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
@@ -77,6 +78,7 @@ import {
 import { rippleRules, type RippleEdit } from './ripple';
 import { isBus, isMixTrack, isReturn, tidyRoutes, tidySends, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
+import { tidyNoteLane, type NoteLane } from './noteExpression';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
@@ -390,6 +392,8 @@ interface TimelineState {
    * `record`: its own undo step (a drag checkpoint()s once and passes false).
    */
   setClipExpression: (clipId: string, lane: ExprLane, points: ExprPoint[], record?: boolean) => void;
+  /** A note's own bend or pressure curve (points `at` bars from the note's start; empty: none). */
+  setNoteExpression: (clipId: string, noteId: string, lane: NoteLane, points: ExprPoint[], record?: boolean) => void;
   /** A take folder: take `take` plays from `from` to `to` (bars into the clip) (one undo step). */
   setTakeComp: (clipId: string, from: number, to: number, take: number) => void;
   /** A take folder: delete one take (the last one left flattens it into a plain clip) (one undo step). */
@@ -1611,6 +1615,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         if (Object.keys(expression).length) next.expression = expression;
         else delete next.expression;
         return { clips: s.clips.map((c) => (c === clip ? next : c)), ...(record ? pushPast(s) : {}) };
+      }),
+
+    setNoteExpression: (clipId, noteId, lane, points, record = true) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        const note = clip?.notes.find((n) => n.id === noteId);
+        if (!clip || !note) return s;
+        const tidy = tidyNoteLane(points, lane, durationToBars(note.duration));
+        const expr = { ...note.expr };
+        if (tidy.length) expr[lane] = tidy;
+        else delete expr[lane];
+        const next: NoteEvent = { ...note };
+        if (Object.keys(expr).length) next.expr = expr;
+        else delete next.expr;
+        return { clips: s.clips.map((c) => (c === clip ? { ...c, notes: c.notes.map((n) => (n === note ? next : n)) } : c)), ...(record ? pushPast(s) : {}) };
       }),
 
     groupIntoBus: (trackIds, name) => {
@@ -2917,12 +2936,17 @@ export function connectTimelineToAudio(): () => void {
   // The engine plays frozen tracks as audio (see freeze.ts)
   let view = liveView(s, soundMissing);
   for (const t of s.tracks) if (t.frozen) ensureSound(t.frozen.soundId);
-  syncLiveTracks(view.tracks);
+  // Clips' controller lanes play as their tracks' automation (see ccLanes.ts)
+  const ccMemo = controllerMemo();
+  let playing = withControllerLanes(view.tracks, view.clips, ccMemo);
+  syncLiveTracks(playing);
   applyLiveIntensity(view.tracks, s.intensityCurves, s.intensity, 0);
   rescheduleClips(view.tracks, view.clips);
   const refresh = (state: TimelineState, retimed = false) => {
     const next = liveView(state, soundMissing, view);
-    if (next.tracks !== view.tracks) syncLiveTracks(next.tracks);
+    const nextPlaying = withControllerLanes(next.tracks, next.clips, ccMemo);
+    if (nextPlaying !== playing) syncLiveTracks(nextPlaying);
+    playing = nextPlaying;
     applyLiveIntensity(next.tracks, state.intensityCurves, state.intensity);
     const trackSetChanged = next.tracks.length !== view.tracks.length || next.tracks.some((t, i) => t.id !== view.tracks[i]?.id);
     // The Human insert works in the scheduler, so turning it or its amounts changes what plays

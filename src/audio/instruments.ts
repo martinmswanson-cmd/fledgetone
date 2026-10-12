@@ -18,6 +18,7 @@ import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
 import type { NativeBus } from './presets/native';
 import { createCustomSamplerVoice, createSamplerVoice, taperGain } from './samplers/samplerManager';
+import type { NoteExpression } from '../store/timelineTypes';
 import type { CustomSample, DrumRack, MultiSample, SlicerSettings, Track, WamPlugin, WobbleRate } from '../store/timelineTypes';
 import { createMultiInstrument, createRackInstrument } from './presets/sampleKits';
 import { createPluginChain, createPluginInstrument } from './presets/wamPlugin';
@@ -46,8 +47,20 @@ export interface PlayableNote {
   note: string;
   duration: string;
   velocity: number;
+  /** Its own bend and pressure over its length (see noteExpression.ts) */
+  expr?: NoteExpression;
   /** Its clip's wobble rate (only Wobble and Growl Bass use it). */
   wobble?: WobbleRate;
+}
+
+/** One sounding note's own controls (see TrackInstrument.noteVoice). */
+export interface VoiceControl {
+  /** Its bend from its own pitch, in cents, from `time` */
+  bend: (cents: number, time: number) => void;
+  /** Its key pressure (0 to 1: its level), from `time` */
+  pressure: (value: number, time: number) => void;
+  /** Let it go at `time` */
+  off: (time: number) => void;
 }
 
 /** Ends a note started by noteOn (a key let go) at an audio time. */
@@ -69,6 +82,14 @@ export interface TrackInstrument {
   noteOn?: (note: PlayableNote, time: number) => NoteOff;
   /** Pitch bend in cents, for the instruments whose voices can bend (the others ignore it). */
   bend?: (cents: number, time: number) => void;
+  /** A MIDI controller (0 to 119) moved to `value` (0 to 1): plugins get it as MIDI. */
+  cc?: (cc: number, value: number, time: number) => void;
+  /**
+   * Start one note whose bend and pressure can then be moved on their own (per-note expression),
+   * or null if it doesn't sound. Instruments without it play expressive notes as ordinary ones,
+   * bending as a whole.
+   */
+  noteVoice?: (note: PlayableNote, time: number) => VoiceControl | null;
   releaseAll: () => void;
   /** Resolves when the instrument can sound (reverb generated, samples downloaded). */
   ready: Promise<unknown>;

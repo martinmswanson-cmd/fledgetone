@@ -3,7 +3,7 @@ import type { DrumRack, MultiSample, RackPad } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
 import { padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
 import { decodeSound } from '../soundLibrary';
-import type { NoteOff, PlayableNote, TrackInstrument } from '../instruments';
+import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../instruments';
 
 /**
  * The Drum Rack and the Multi Sampler: the user's own sounds played from buffers, each hit or note
@@ -295,7 +295,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     const semis = midi - zone.root;
     const source = raw.createBufferSource();
     source.buffer = buffer;
-    source.playbackRate.value = rateOf(semis);
+    source.playbackRate.setValueAtTime(rateOf(semis), at);
     const env = raw.createGain();
     const level = Math.max(0, Math.min(1, velocity));
     const attack = Math.max(0.001, multi.attack);
@@ -328,6 +328,24 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
       const v = start(note.note, note.velocity, time);
       return (at: number) => {
         if (v) release(v, at);
+      };
+    },
+    noteVoice: (note: PlayableNote, time: number): VoiceControl | null => {
+      const v = start(note.note, note.velocity, time);
+      if (!v) return null;
+      const level = Math.max(0, Math.min(1, note.velocity));
+      const settled = Math.max(time, raw.currentTime) + Math.max(0.001, multi?.attack ?? 0.002);
+      let cents = 0;
+      return {
+        bend: (c, t) => {
+          cents = c;
+          v.source.playbackRate.linearRampToValueAtTime(rateOf(v.semis + cents / 100), Math.max(t, raw.currentTime));
+        },
+        pressure: (p, t) => {
+          if (v.released) return;
+          v.env.gain.linearRampToValueAtTime(level * Math.max(0, Math.min(1, p)), Math.max(t, settled));
+        },
+        off: (t) => release(v, t),
       };
     },
     bend: (cents: number, time: number) => {
