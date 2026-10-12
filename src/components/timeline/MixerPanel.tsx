@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { Track } from '../../store/timelineTypes';
-import { liveTrackPeaks } from '../../audio/liveTracks';
+import { liveTrackPeak } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
 import { busTargets, isBus, isReturn, sendTargets } from '../../store/buses';
 import { SpectrumView } from './SpectrumView';
@@ -23,8 +23,8 @@ const Meter: React.FC<{ trackId: string | null }> = ({ trackId }) => {
     let raf = 0;
     let held = 0;
     const tick = () => {
-      const peaks = trackId ? liveTrackPeaks() : null;
-      const p = trackId ? peaks?.get(trackId) ?? 0 : 0;
+      // Its own analyser only: reading every track's for every meter was N² work a frame
+      const p = trackId ? liveTrackPeak(trackId) : 0;
       // Falls back at about 20 dB a second
       held = Math.max(p, held * 0.92);
       const dbfs = held > 0 ? 20 * Math.log10(held) : -90;

@@ -1037,8 +1037,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
    * the autosave stops carrying the file. Nothing here is an edit of the user's, so no history.
    */
   const prepareSounds = (p: ProjectSnapshot) => {
-    if (p.sounds?.length) void importEmbeddedSounds(p.sounds);
-    for (const id of referencedSoundIds(p)) ensureSound(id);
+    // Sounds carried in the file go into the library first, then everything is loaded from there
+    const ensureAll = () => {
+      for (const id of referencedSoundIds(p)) ensureSound(id);
+    };
+    if (p.sounds?.length) void importEmbeddedSounds(p.sounds).then(ensureAll, ensureAll);
+    else ensureAll();
     for (const t of p.tracks) {
       const sample = t.sample;
       if (!sample?.dataUrl || sample.soundId) continue;
@@ -2867,6 +2871,15 @@ export function connectAutosave(): () => void {
     else window.removeEventListener('beforeunload', onBeforeUnload);
   };
 
+  /** When the oldest unsaved edit was made: a steady stream of edits is still saved every few seconds */
+  let since = 0;
+  const later = () => {
+    const now = Date.now();
+    if (!pending) since = now;
+    pending = true;
+    clearTimeout(timer);
+    timer = window.setTimeout(flush, Math.max(0, Math.min(500, since + 3000 - now)));
+  };
   const flush = () => {
     if (!pending) return;
     pending = false;
@@ -2903,17 +2916,13 @@ export function connectAutosave(): () => void {
     ) {
       return;
     }
-    pending = true;
-    clearTimeout(timer);
-    timer = window.setTimeout(flush, 500);
+    later();
   });
 
   // The reference video (which one, and where it starts) is saved with the project too
   const unwatchVideo = useVideoStore.subscribe((v, prev) => {
     if (v.key === prev.key && v.start === prev.start) return;
-    pending = true;
-    clearTimeout(timer);
-    timer = window.setTimeout(flush, 500);
+    later();
   });
 
   // Don't lose an edit made in the last half-second before the tab closes

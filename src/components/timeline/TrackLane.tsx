@@ -1,3 +1,4 @@
+import { useShallow } from 'zustand/react/shallow';
 import React, { useState } from 'react';
 import { songMeterOf, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { isPlainMeter } from '../../audio/tempoMap';
@@ -29,7 +30,8 @@ interface TrackLaneProps {
  */
 export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMenu }) => {
   const zoom = useTimelineStore((s) => s.zoom);
-  const clips = useTimelineStore((s) => s.clips);
+  // Only this track's clips: an edit on another track doesn't re-render this lane
+  const trackClips = useTimelineStore(useShallow((s) => s.clips.filter((c) => c.trackId === track.id)));
   const dragging = useTimelineStore((s) => s.draggingInstrument);
   // Faint lines on every 16th when zoomed in for detail work (once they're 16px apart). A whole zoom
   // makes that a whole number of 1/64 px, so a repeating background stays exact. With Frame snap,
@@ -40,7 +42,6 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
   const plainMeter = useTimelineStore((s) => isPlainMeter(songMeterOf(s)));
   const [dropBar, setDropBar] = useState<number | null>(null);
   const [filesOver, setFilesOver] = useState(false);
-  const trackClips = clips.filter((c) => c.trackId === track.id);
   const isAudio = isAudioKind(track.instrumentKey);
 
   const snapped = (clientX: number, shift: boolean) => {

@@ -86,6 +86,16 @@ export function soloLit(tracks: readonly RouteTrack[]): Set<string> | null {
  * (A bus is heard when it is; what plays through it depends on its tracks too.)
  */
 export function audibleIds(tracks: readonly RouteTrack[]): Set<string> {
+  // Every track header asks, on every store change (the playhead's included): once per track list
+  const hit = audibleMemo.get(tracks);
+  if (hit) return hit;
+  const out = computeAudible(tracks);
+  audibleMemo.set(tracks, out);
+  return out;
+}
+const audibleMemo = new WeakMap<readonly RouteTrack[], Set<string>>();
+
+function computeAudible(tracks: readonly RouteTrack[]): Set<string> {
   const lit = soloLit(tracks);
   const out = new Set<string>();
   for (const t of tracks) {
@@ -108,7 +118,7 @@ export function busFirst<T extends RouteTrack>(tracks: readonly T[]): T[] {
  * Drop sends to returns that are gone (and a return's own), and the automation lanes of those
  * sends. The same array when nothing changes.
  */
-export function tidySends<T extends RouteTrack & Pick<Track, 'sends' | 'automation'>>(tracks: T[]): T[] {
+export function tidySends<T extends RouteTrack & Pick<Track, 'sends' | 'automation' | 'midiMap'>>(tracks: T[]): T[] {
   let changed = false;
   const returns = new Set(tracks.filter(isReturn).map((t) => t.id));
   const out = tracks.map((t) => {
@@ -117,6 +127,12 @@ export function tidySends<T extends RouteTrack & Pick<Track, 'sends' | 'automati
     if (lanes && lanes.length !== t.automation!.length) {
       next = { ...next, automation: lanes };
       if (!lanes.length) delete next.automation;
+    }
+    // A MIDI knob mapped to a send to a return that's gone maps nothing
+    const maps = t.midiMap?.filter((m) => !m.param.startsWith('send:') || (returns.has(m.param.slice(5)) && m.param.slice(5) !== t.id));
+    if (maps && maps.length !== t.midiMap!.length) {
+      next = { ...next, midiMap: maps };
+      if (!maps.length) delete next.midiMap;
     }
     if (t.sends) {
       const kept = liveSends(t, tracks);

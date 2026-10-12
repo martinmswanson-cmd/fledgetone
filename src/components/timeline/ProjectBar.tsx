@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Download, History, Music2, Save, Share2 } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
-import { clearPreviousSession } from '../../store/project';
+import { autosaveUnreadable, clearPreviousSession } from '../../store/project';
 import { saveProjectFile } from './projectFile';
 import { ExportDialog } from './ExportDialog';
 import { ShareDialog } from './ShareDialog';
@@ -101,6 +101,19 @@ function savedWhen({ savedAt, keptAt }: { savedAt: number | null; keptAt: number
  */
 export const RestoreSessionBanner: React.FC = () => {
   const lastSession = useLastSession((s) => s.session);
+  const [unreadableSeen, setUnreadableSeen] = useState(false);
+  if (!lastSession && autosaveUnreadable && !unreadableSeen)
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 border-b border-forge-border bg-amber-500/10 text-xs">
+        <History className="w-4 h-4 text-amber-300 shrink-0" />
+        <span className="text-forge-text">
+          Your last session couldn't be read (it may be damaged, or from a newer version of Bo's Beatbox). It's kept in this browser, apart, so nothing overwrites it.
+        </span>
+        <button type="button" className={`${barButton} ml-auto`} onClick={() => setUnreadableSeen(true)}>
+          OK
+        </button>
+      </div>
+    );
   if (!lastSession) return null;
   const { project } = lastSession;
   // What's in it: its clips, or the markers of a session that has only those

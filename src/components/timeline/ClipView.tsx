@@ -1,5 +1,5 @@
+import { midiOf } from '../../store/noteTools';
 import React, { useMemo, useState } from 'react';
-import * as Tone from 'tone';
 import { TOTAL_BARS, useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
@@ -67,12 +67,14 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
     rows = FX_ROWS.length;
     rowOf = (note) => Math.max(0, FX_ROWS.findIndex((r) => r.note === note));
   } else {
-    const midis = visible.map((n) => Tone.Frequency(n.note).toMidi());
+    // (A note name that can't be read sits mid-range rather than breaking the drawing)
+    const midiAt = (note: string) => (Number.isFinite(midiOf(note)) ? midiOf(note) : 60);
+    const midis = visible.map((n) => midiAt(n.note));
     const lo = Math.min(...midis);
     const hi = Math.max(...midis);
     rows = Math.max(hi - lo + 1, 6);
     const pad = Math.floor((rows - (hi - lo + 1)) / 2);
-    rowOf = (note) => hi + pad - Tone.Frequency(note).toMidi();
+    rowOf = (note) => hi + pad - midiAt(note);
   }
 
   const rowHeight = areaHeight / rows;

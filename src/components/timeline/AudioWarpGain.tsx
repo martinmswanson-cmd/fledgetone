@@ -51,10 +51,10 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
   };
 
   /** Follow the pointer until it's let go. */
-  const drag = (e: React.PointerEvent, move: (ev: PointerEvent) => void) => {
+  const drag = (e: React.PointerEvent, move: (ev: PointerEvent) => void, checkpoint = true) => {
     e.preventDefault();
     e.stopPropagation();
-    store().checkpoint();
+    if (checkpoint) store().checkpoint();
     const onMove = (ev: PointerEvent) => move(ev);
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -117,8 +117,11 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
       const src = sourceAt(audio, p.t, bpm);
       points = [...envelope, { src, db: envelope.length ? envelopeDbAt(envelope, src) : yToDb(p.y, height) }].sort((a, b) => a.src - b.src);
       i = points.findIndex((g) => g.src === src);
-      setEnvelope(points, true);
+      // Adding it and dragging it is one undo step
+      store().checkpoint();
+      setEnvelope(points, false);
     }
+    const added = points !== envelope;
     const index = i;
     const base = points;
     drag(e, (ev) => {
@@ -127,7 +130,7 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
       const hi = index < base.length - 1 ? base[index + 1].src : Infinity;
       const src = Math.max(lo, Math.min(hi, sourceAt(audio, q.t, bpm)));
       setEnvelope(base.map((g, j) => (j === index ? { src, db: yToDb(q.y, height) } : g)), false);
-    });
+    }, !added);
   };
   const onGainMenu = (e: React.MouseEvent) => {
     const i = near(envelope.map((g) => xOfSrc(g.src)), at(e).x);
