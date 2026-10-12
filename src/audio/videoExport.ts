@@ -1,4 +1,4 @@
-import { ArrayBufferTarget, Muxer } from 'mp4-muxer';
+import { BufferTarget, EncodedAudioPacketSource, EncodedPacket, EncodedVideoPacketSource, Mp4OutputFormat, Output } from 'mediabunny';
 import { openVideo, seekVideo } from '../store/videoStore';
 import boLogo from '../assets/bo.svg';
 
@@ -6,7 +6,7 @@ import boLogo from '../assets/bo.svg';
  * A song as an MP4 video, for YouTube, socials or a game's trailer: the rendered mix as its sound,
  * and a visualizer as its picture (the project's name, a spectrum that moves with the music, the
  * whole song's waveform with a playhead, the section it's in, the time). Encoded faster than real
- * time with the browser's own encoders (WebCodecs) and put into an MP4 by mp4-muxer.
+ * time with the browser's own encoders (WebCodecs) and put into an MP4 by Mediabunny.
  *
  * H.264 video and AAC sound play everywhere; browsers without those encoders (Chromium builds
  * without the licensed codecs, Firefox on some systems) fall back to VP9 or AV1 video and Opus
@@ -180,17 +180,33 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   const seconds = frames / sampleRate;
   const { video, audio } = await pickCodecs(sampleRate);
 
-  const muxer = new Muxer({
-    target: new ArrayBufferTarget(),
-    video: { codec: video.mux, width: VIDEO_WIDTH, height: VIDEO_HEIGHT, frameRate: VIDEO_FPS },
-    audio: { codec: audio.mux, numberOfChannels: 2, sampleRate },
-    fastStart: 'in-memory',
-    firstTimestampBehavior: 'offset',
-  });
+  const target = new BufferTarget();
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target });
+  const videoTrack = new EncodedVideoPacketSource(video.mux);
+  const audioTrack = new EncodedAudioPacketSource(audio.mux);
+  output.addVideoTrack(videoTrack, { frameRate: VIDEO_FPS });
+  output.addAudioTrack(audioTrack);
+  await output.start();
   let failure: unknown = null;
-  const videoEncoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => (failure = e) });
+  // The encoders hand over packets as they finish them; each track's are written in turn (its own
+  // queue, so one track waiting for the other to catch up never holds the other back)
+  let videoWrites: Promise<void> = Promise.resolve();
+  let audioWrites: Promise<void> = Promise.resolve();
+  const videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => {
+      const packet = EncodedPacket.fromEncodedChunk(chunk);
+      videoWrites = videoWrites.then(() => videoTrack.add(packet, meta)).catch((e) => void (failure ??= e));
+    },
+    error: (e) => (failure = e),
+  });
   videoEncoder.configure({ codec: video.codec, width: VIDEO_WIDTH, height: VIDEO_HEIGHT, bitrate: 6e6, framerate: VIDEO_FPS, ...(video.mux === 'avc' ? { avc: { format: 'avc' as const } } : {}) });
-  const audioEncoder = new AudioEncoder({ output: (chunk, meta) => muxer.addAudioChunk(chunk, meta), error: (e) => (failure = e) });
+  const audioEncoder = new AudioEncoder({
+    output: (chunk, meta) => {
+      const packet = EncodedPacket.fromEncodedChunk(chunk);
+      audioWrites = audioWrites.then(() => audioTrack.add(packet, meta)).catch((e) => void (failure ??= e));
+    },
+    error: (e) => (failure = e),
+  });
   audioEncoder.configure({ codec: audio.codec, sampleRate, numberOfChannels: 2, bitrate: 192000 });
 
   // The sound, in 0.1 s pieces
@@ -322,10 +338,11 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   }
   await videoEncoder.flush();
   await audioEncoder.flush();
+  await Promise.all([videoWrites, audioWrites]);
   if (failure) throw failure;
   videoEncoder.close();
   audioEncoder.close();
-  muxer.finalize();
+  await output.finalize();
   opts.onProgress?.(1);
-  return new Blob([muxer.target.buffer], { type: 'video/mp4' });
+  return new Blob([target.buffer!], { type: 'video/mp4' });
 }
