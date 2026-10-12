@@ -18,6 +18,7 @@ import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/lo
 import { formatBarCount } from '../../store/timelineTypes';
 import { showToast } from './toastStore';
 import { IntensityPanel } from './IntensityPanel';
+import { useUiStore } from '../../store/uiStore';
 
 /**
  * Loop variations: 2 to 4 takes of the loop region for the game to rotate through, each with its
@@ -118,6 +119,14 @@ const GameKitButton: React.FC = () => {
       </button>
       <AuditionButton />
       <RuntimeKitButton />
+      <button
+        type="button"
+        onClick={() => useUiStore.getState().setDialog('engines')}
+        className="h-8 px-3 flex items-center justify-center gap-1.5 rounded-md border border-forge-border text-forge-text hover:border-emerald-400/60"
+        title="The states, stems, stingers and cues laid out for FMOD Studio or Wwise, with scripts that build them there"
+      >
+        <Package className="w-4 h-4" /> FMOD / Wwise package…
+      </button>
       <p className="text-[10px] text-forge-muted">Every state as a loop and stems by group, the stingers and transitions, an audio_manifest.json, and ready-made players for the web, Godot and Unity.</p>
     </div>
   );
