@@ -805,6 +805,13 @@ let lastJump: { bar: number; at: number } | null = null;
  * loads before anything can edit). The app always opens on an empty timeline; this is only
  * offered as "Restore last session". Null if there was nothing worth restoring (no clips).
  */
+/** Called whenever another song replaces the open one (New, Open, a link, Restore). */
+const replacedListeners = new Set<() => void>();
+export function onProjectReplaced(listener: () => void): () => void {
+  replacedListeners.add(listener);
+  return () => replacedListeners.delete(listener);
+}
+
 /** The session the Restore banner offers: the last one at startup, or the song that New, Open or a link replaced. */
 export const useLastSession = create<{ session: SavedSession | null }>(() => ({ session: preservePreviousSession() }));
 
@@ -2548,6 +2555,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       // The song being replaced is kept for the Restore banner, so New, Open or a link never loses work
       const replaced = currentProject();
       if (hasWork(replaced)) useLastSession.setState({ session: setAsideSession(replaced) });
+      replacedListeners.forEach((l) => l());
       // A take in progress belongs to the arrangement being replaced
       discardTake();
       // Plugins start from the settings the new project saved

@@ -5,7 +5,7 @@ import { MOD_KEY, PALETTE_SHORTCUT, useUiStore, type DockTab } from '../../store
 import { useVideoStore } from '../../store/videoStore';
 import { useAudioStore } from '../../store/audioStore';
 import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
-import { pickProjectFile, saveProjectFile } from '../timeline/projectFile';
+import { canChooseSaveLocation, pickProjectFile, saveProjectAs, saveProjectFile } from '../timeline/projectFile';
 import { showToast } from '../timeline/toastStore';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
@@ -70,7 +70,8 @@ const MENUS: MenuDef[] = [
     items: () => [
       { label: 'New…', run: () => ui().setDialog('new'), title: 'Start again from a blank timeline, the demo song or a genre starter' },
       { label: 'Open…', shortcut: `${MOD_KEY}O`, run: pickProjectFile },
-      { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile() },
+      { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
+      { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },
       { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export'), divider: true },
       { label: 'Share…', run: () => ui().setDialog('share') },
       { label: 'Cut song to length…', run: () => ui().setDialog('cut'), divider: true },
@@ -351,15 +352,17 @@ export const MenuBar: React.FC = () => {
     };
   }, [where, close, place]);
 
-  // File shortcuts: Ctrl+S save, Ctrl+O open, Ctrl+E export
+  // File shortcuts: Ctrl+S save, Ctrl+Shift+S save as, Ctrl+O open, Ctrl+E export
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const key = e.key.toLowerCase();
+      // (Shift only with S: Save As)
+      if (e.shiftKey && key !== 's') return;
       if (key !== 's' && key !== 'o' && key !== 'e') return;
       if (shouldIgnoreShortcut(e) && key !== 's') return;
       e.preventDefault();
-      if (key === 's') void saveProjectFile();
+      if (key === 's') void (e.shiftKey ? saveProjectAs() : saveProjectFile());
       else if (key === 'o') pickProjectFile();
       else ui().setDialog('export');
     };
