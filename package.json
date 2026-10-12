@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "node --test scripts/*.test.mjs",
+    "guide-tables": "node scripts/guide-tables.mjs",
     "preview": "vite preview",
     "build:single": "npm run build && node scripts/build-single.mjs"
   },
