@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, GripHorizontal, ListPlus, Package, Trash2, X } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { currentProject, useTimelineStore } from '../../store/timelineStore';
 import { getAudiblePositionBar } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
@@ -12,6 +12,7 @@ import { gameKitSong } from './gameKitSong';
 import * as Tone from 'tone';
 import { createZip } from '../../audio/zip';
 import { buildGameKit } from '../../audio/gameKit';
+import { buildRuntimeKit } from '../../audio/runtimeKit';
 import { downloadBlob, encodeChannels, renderLoopTakes } from '../../audio/exportWav';
 import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/loopVariations';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -116,8 +117,35 @@ const GameKitButton: React.FC = () => {
         <Package className="w-4 h-4" /> {progress === null ? 'Export game kit (.zip)' : `Building… ${progress}`}
       </button>
       <AuditionButton />
+      <RuntimeKitButton />
       <p className="text-[10px] text-forge-muted">Every state as a loop and stems by group, the stingers and transitions, an audio_manifest.json, and ready-made players for the web, Godot and Unity.</p>
     </div>
+  );
+};
+
+/** The web runtime kit: the song file and bos-player.js instead of audio files (see runtimeKit.ts). */
+const RuntimeKitButton: React.FC = () => {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          const p = currentProject();
+          downloadBlob(await buildRuntimeKit(p), `${p.name || 'Untitled'} web runtime kit.zip`);
+        } catch (err) {
+          showToast(`Couldn't build the web runtime kit: ${err instanceof Error ? err.message : String(err)}.`);
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="h-7 px-2 flex items-center justify-center gap-1 rounded-md border border-forge-border text-forge-muted hover:text-forge-text disabled:opacity-50 text-[11px]"
+      title="For web games: the song file (kilobytes) and bos-player.js, which synthesizes the music in the browser, instead of audio files"
+    >
+      <Download className="w-3.5 h-3.5" /> {busy ? 'Packing…' : 'Export web runtime kit (no audio files)'}
+    </button>
   );
 };
 

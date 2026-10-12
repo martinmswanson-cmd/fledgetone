@@ -51,8 +51,9 @@ export class AdaptiveMusic {
   static filesOf(data) {
     const files = [];
     for (const s of data.states) {
-      files.push(s.file);
-      for (const stem of s.stems ?? []) files.push(stem.file);
+      // A state with stems plays them; its whole mix is only needed without
+      if (s.stems?.length) for (const stem of s.stems) files.push(stem.file);
+      else files.push(s.file);
     }
     for (const t of data.transitions ?? []) if (t.file) files.push(t.file);
     for (const s of data.states) if (s.transition?.file) files.push(s.transition.file); // version 1 manifests
