@@ -222,7 +222,7 @@ const AutomationRows: React.FC<{ track: Track; param: AutomationParam }> = ({ tr
                 .filter((o) => o.group === g)
                 .map(({ param: p }) => {
                   const sp = specOf(p, track, tracks);
-                  const off = sp.insert && sp.insert !== 'filter' && !(track.fx[sp.insert] as { on?: boolean } | undefined)?.on;
+                  const off = sp.insert && !(track.fx[sp.insert] as { on?: boolean } | undefined)?.on;
                   return (
                     <option key={p} value={p}>
                       {withPoints.has(p) ? '● ' : ''}

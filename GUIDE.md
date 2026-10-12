@@ -14,7 +14,7 @@ It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen
 At the very top is the **menu bar**: every tool in the app, where a desktop DAW keeps it (see The menu bar below), with the project's name, **Save**, **Export** and **Share** on the right. Under it is the header: **TEMPO** and **TAP**, **Swing**, **Intensity**, **MASTER** volume, the loudness reading (once audio runs), **SEARCH**, **LEARN**, **GUIDE** and **START AUDIO**. Under that, top to bottom:
 
 - **Arrangement Timeline**: the toolbar, the ruler, your tracks (in folders, if you make some), the Overview strip and the piano roll or audio editor.
-- **The bottom panel**: tabs for the **Mixer**, **EQ & Dynamics**, **Instruments** (the Instrument Browser, the sound deck pads and patterns), **Game**, **Video** and **Sound FX**. Click a tab to show it; click the open tab (or the arrow on the right) to fold the panel away. Drag its top edge to make it taller or shorter (double-click the edge to reset). The tab and height are remembered in this browser.
+- **The bottom panel**: tabs for the **Mixer**, the **Launcher** (see Clip launcher), **EQ & Dynamics**, **Instruments** (the Instrument Browser, the sound deck pads and patterns), **Game**, **Video** and **Sound FX**. Click a tab to show it; click the open tab (or the arrow on the right) to fold the panel away. Drag its top edge to make it taller or shorter (double-click the edge to reset). The tab and height are remembered in this browser.
 
 ### The menu bar
 
@@ -339,6 +339,16 @@ A ● in the lane menu means that lane has something in it. The lanes travel wit
 
 **Notation**: tick **NOTATION** in the piano roll's header to see the clip as sheet music: a staff (a grand staff when it spans both clefs; drum clips on a percussion staff) in the song's key and meter, with chords, rests, ties over bar lines, beams and accidentals. Notes are put on a 16th grid and each staff reads as one voice (notes that start together are a chord, held until the next one starts). The measure the playhead is in is lit. **MusicXML** saves the clip for notation programs (MuseScore, Sibelius, Dorico and others), and **Print** prints it or saves it as a PDF. Untick NOTATION to edit the notes again.
 
+### Smart tools: chords, bass lines, a drummer and fills
+
+Right-click to have parts written for you. Each one is a single Undo step, and the result is ordinary notes you can edit.
+
+- **Chord progression…** (right-click an empty spot on an instrument track): four well-worn chords, such as I–V–vi–IV (pop) or i–VI–III–VII (epic), in the song's key (worked out from its notes; pick another key in the dialog). Choose how long each chord lasts, how many times through, and how they're played: **Held chords**, a **Quarter-note pulse**, **Off-beat stabs** or an **Arpeggio**. **7th chords** makes them jazzier. Each chord is voiced to move as little as it can from the last, as a keyboard player would. The clip is named after its chords and starts on the bar line you clicked.
+- **Chords for this melody** (right-click a note clip): chords that fit the clip's tune, a chord a bar (half a bar for a clip of two bars or less), on a new track under it. Long notes and notes on the beat count most; the chords are chosen to move the way songs usually do, ending on the home chord or the V.
+- **Bass line from these chords** (right-click a chord clip): a driving 8th-note bass on each chord's root, on a new Slap Bass track under it (change the instrument as you like).
+- **Drummer…** (right-click an empty spot on a drum-kit track): a beat in one of eight styles (**Four on the floor**, **Backbeat**, **Boom bap**, **Trap**, **Two-step**, **Funk**, **Dembow**, **Half time**), 1 to 16 bars long, with an **Energy** slider (sparse, steady, busy) and a fill every 2, 4 or 8 bars. A crash opens the part. Every clip it makes is a new take: the hats breathe and the kicks move a little from bar to bar.
+- **Fill** (right-click a drum clip): replaces the end of the bar under the pointer with a **snare roll** (last beat), a **tom run** (last two beats), a **build-up** (the whole bar, snare 8ths to 16ths to 32nds, getting louder) or a **kick pickup**. Kicks on the beat stay, and a crash and kick land on the next downbeat.
+
 > With no notes selected, `Delete` acts on the timeline and deletes the selected clip, usually the one you're editing. `Ctrl+Z` brings it back.
 
 ## Instruments
@@ -625,6 +635,22 @@ Big songs can ask more of the computer than it has, and playback starts to crack
 - Exports always render every track from its instrument, frozen or not, so they sound exactly the same either way.
 - The frozen audio stays in this browser (about 10 MB per minute of track in storage, and about 20 MB per minute in memory while the project is open). It isn't saved inside project files: open the project in another browser and frozen tracks play live until you freeze them again. **Free unused** in the sound panels keeps the frozen audio of this project and your last session.
 - Audio tracks can't be frozen: they already play recordings.
+
+### Bounce in place
+
+Right-click a track's name and choose **Bounce in place** (or **Track ▸ Bounce in place**) to turn it into audio for good: its instrument, inserts and EQ are rendered to one audio clip on a new Audio track right under it. The new track takes over the original's volume, pan, sends, output and their automation, so the mix sounds the same. The original is muted and kept, so you can go back to it. Unlike freezing, the bounce is an ordinary audio clip: cut it, reverse it, warp it, chop it into the Slicer. One Undo step undoes it all.
+
+## Clip launcher
+
+The **Launcher** tab of the dock is a grid of loops: a column for every track and a row for every **scene**. Click a clip to launch it: it starts on the next bar line and loops, in place of the track's arrangement. Launch something else on the same track and it takes over at the next bar line; a pulsing clip is waiting for its turn. This is for jamming, trying sections against each other, and building an arrangement live.
+
+- **Fill the grid**: **Scenes from song** turns each section of the song (between its markers, or every 4 or 8 bars) into a scene. **Send selected clips** (or right-click clips, **Send to launcher**) puts the selected clips into each track's first empty slot. Drag a clip to another slot to move it, Alt-drag to copy it, and hover it for **×** to delete it.
+- **Launch a scene** with the ▶ at the start of its row: every track plays its clip in that row, and a track with nothing there stops.
+- **Stop** a track with the ■ in its column header (or click an empty slot); **Stop all** stops every clip. **Back to arrangement** lets every track play its arrangement again from the next bar line.
+- **Launch on**: launches land on the next beat, half bar, bar (the usual), 2 bars or 4 bars.
+- With nothing playing, launching starts playback from the bar the playhead is in. While the launcher is in use the song doesn't loop. Stopping playback ends the session, and the song plays its arrangement again.
+- **Write to arrangement** writes what you played, from your first launch to where you stopped, into the timeline (one Undo step): where a track played a slot, copies of its clip; where it was stopped, nothing. So you can jam a song together and then edit it.
+- The launcher's clips are saved with the project and undo like everything else. Moving the playhead back before your first launch plays the arrangement until it gets there.
 
 ## Automation
 
