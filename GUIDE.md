@@ -610,6 +610,15 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 - **Layers**: tick tracks on and off while it plays, or use **Intensity**, which brings tracks in one by one from the top of the track list (put your calmest layers at the top and the most intense at the bottom). These mute and unmute the tracks without making Undo steps.
 - When it sounds right, export the sections with **Intro + loop** and the layers with **Layers** (below) for your game engine.
 
+### Sound effects maker
+
+**SFX** in the toolbar (or search *sound effects*) makes the little sounds games are full of. Click **Jump**, **Coin**, **Laser**, **Hit**, **Power-up**, **Explosion** or **Blip**: each click makes a new one of that kind and plays it. **Mutate** makes a variation of the sound you have; **Random** any kind.
+
+- **Shape it** with the sliders; letting go of one plays the result. **Wave** (square, saw, triangle, sine or noise), **Pitch**, **Slide** (how far the pitch moves, in semitones) and its **Curve**, a **Jump** in pitch partway through (the classic coin), **Vibrato**, **Repeat** (restarts the pitch, for a power-up warble); then **Attack**, **Hold**, **Punch** and **Decay** for its loudness over time, **Width** for the square wave's tone, **Low-pass** (and its **Sweep**), **High-pass**, **Crush** (fewer bits, crunchier) and **Volume**.
+- **Tune to key** (on when the song has notes) snaps the pitch, and the coin's jump, to notes of the key the song is in, worked out from its notes; the key and the note show next to it. Noise sounds aren't tuned.
+- Name it, then **Save WAV** to use it in your game, or **Add to song** to put it at the playhead on the selected Audio track (or a new one). **Recent** keeps the last ten you made while the page is open; click one to bring it back.
+- The same settings always make the same sound, so a sound you saved can be made again exactly.
+
 ### Music for games: intro + loop, and layers
 
 Game music usually plays an intro once and then loops the rest for as long as the player stays. Set the loop region to the part that should repeat (everything before its **In** is the intro) and choose **Range: Intro + loop**. The export is a .zip with:

@@ -8,7 +8,7 @@ export const PALETTE_SHORTCUT = isMac ? '⌘K' : 'Ctrl+K';
  * Which dialogs and panels are open: kept here rather than in the components that show them, so
  * the search palette can open any of them.
  */
-export type AppDialog = 'new' | 'export' | 'share' | 'mixer' | 'game' | 'report' | 'learn' | 'cut';
+export type AppDialog = 'new' | 'export' | 'share' | 'mixer' | 'game' | 'report' | 'learn' | 'cut' | 'sfx';
 
 interface UiState {
   dialog: AppDialog | null;
