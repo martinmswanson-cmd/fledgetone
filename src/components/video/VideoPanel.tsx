@@ -1,7 +1,7 @@
 import React from 'react';
 import { Clapperboard, Crosshair, Download, Eye, EyeOff, Film, Scissors, Volume2, VolumeX, X } from 'lucide-react';
 import { useVideoStore } from '../../store/videoStore';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongTempo, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { secondsToBar } from '../../audio/transport';
 import { VideoButton } from './VideoButton';
@@ -31,7 +31,7 @@ export const VideoPanel: React.FC = () => {
   const start = useVideoStore((s) => s.start);
   const previewOpen = useVideoStore((s) => s.previewOpen);
   const muted = useVideoStore((s) => s.muted);
-  const bpm = useTimelineStore((s) => s.bpm);
+  const bpm = useSongTempo();
   const markers = useTimelineStore((s) => s.markers);
   const hits = markers.filter((m) => m.anchor === 'time').length;
   const missing = useVideoStore((s) => s.missing);

@@ -7,7 +7,7 @@ import { createAutomationSchedule } from './automationSchedule';
 import type { AutomationSchedule } from './automationSchedule';
 import { createInstrument, safely } from './instruments';
 import { isDrumKind } from './instrumentCatalog';
-import { barToTicks } from './transport';
+import { barToTicks, getLiveTempo } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { NativeBus } from './presets/native';
 import type { AutomationPoint, Track } from '../store/timelineTypes';
@@ -45,7 +45,7 @@ const liveStrips = () => [...live.values()].map((lt) => lt.strip);
 /** The tracks' automation lanes on the live Transport (made on first use). */
 let automation: AutomationSchedule | null = null;
 const liveAutomation = () =>
-  (automation ??= createAutomationSchedule(liveMix.bus.context.transport, (trackId) => live.get(trackId)?.strip));
+  (automation ??= createAutomationSchedule(liveMix.bus.context.transport, (trackId) => live.get(trackId)?.strip, { tempo: getLiveTempo }));
 
 const sampleKey = (track: Track) => (track.sample ? `${track.sample.root}|${track.sample.soundId ?? track.sample.dataUrl}` : undefined);
 

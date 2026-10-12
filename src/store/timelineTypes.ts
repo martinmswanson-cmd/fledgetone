@@ -1,3 +1,4 @@
+import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
 import { frameSeconds, isDropFrame } from '../audio/timecode';
@@ -704,6 +705,8 @@ export type RulerUnits = 'bars' | 'timecode';
 export interface GridTiming {
   bpm: number;
   fps: number;
+  /** Tempo changes, so frame snapping steps through time along them */
+  tempoPoints?: readonly TempoPoint[];
 }
 
 export interface LoopRegion {
@@ -777,6 +780,12 @@ export function snapStepBars(grid: SnapGrid, timing: GridTiming): number {
 
 /** Snap a 1-based bar position to the active grid. */
 export function snapBar(bar: number, grid: SnapGrid, timing: GridTiming): number {
+  // Frames are steps of time: along tempo changes they're steps of seconds, not of bars
+  if (grid === 'frame' && timing.tempoPoints?.length) {
+    const tempo = { bpm: timing.bpm, points: timing.tempoPoints };
+    const frame = frameSeconds(timing.fps);
+    return secondsToBar(Math.round(barToSeconds(bar, tempo) / frame) * frame, tempo);
+  }
   const step = snapStepBars(grid, timing);
   if (!step) return bar;
   return Math.round((bar - 1) / step) * step + 1;

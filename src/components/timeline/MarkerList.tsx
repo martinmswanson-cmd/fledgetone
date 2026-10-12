@@ -1,6 +1,6 @@
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Flag, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
-import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { TOTAL_BARS, songTempo, useSongTempo, useTimelineStore } from '../../store/timelineStore';
 import type { Marker } from '../../store/timelineTypes';
 import { frameRateLabel } from '../../store/timelineTypes';
 import { cleanMarkerName, MARKER_NAME_MAX } from '../../store/markers';
@@ -98,7 +98,7 @@ const MarkerRow: React.FC<{ marker: Marker; timecode: string }> = ({ marker, tim
 /** Every marker with its bar and timecode: rename, lock, delete, or click a position to go there. */
 const MarkerListPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null>; onClose: () => void }> = ({ anchorRef, onClose }) => {
   const markers = useTimelineStore((s) => s.markers);
-  const bpm = useTimelineStore((s) => s.bpm);
+  const bpm = useSongTempo();
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const [notice, setNotice] = useState<string | null>(null);
@@ -203,7 +203,7 @@ export const ExportForEditors: React.FC = () => {
     const s = useTimelineStore.getState();
     const offset = video && fromVideo ? videoStart : 0;
     const songEnd = s.clips.reduce((e, c) => Math.max(e, c.startBar + c.lengthBars), 1);
-    const length = Math.max(video && fromVideo ? video.duration : 0, barToSeconds(songEnd, s.bpm) - offset);
+    const length = Math.max(video && fromVideo ? video.duration : 0, barToSeconds(songEnd, songTempo(s)) - offset);
     const text = editorMarkerFile(
       format,
       s.markers.map((m) => ({ name: m.name, seconds: m.seconds - offset })),

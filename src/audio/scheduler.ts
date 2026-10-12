@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import { liveTransport } from './liveContext';
-import { barToTicks, swingDelay, swungNotes } from './transport';
+import { applyTempoAt, barToTicks, getLiveTempo, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
+import type { Tempo } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import { getLiveClipBus, getLiveInstrument, pumpOnKick, pumpOnTrack, releaseAllLiveVoices } from './liveTracks';
@@ -217,16 +218,26 @@ export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
   liveSchedule.update(tracks, clips);
   // Audio clips play their sound files on the live mix's own Transport (the global one is the
   // export's while a WAV render sets up)
-  liveAudioClips ??= createAudioClipSchedule(liveMix.bus.context.transport, getLiveClipBus);
+  liveAudioClips ??= createAudioClipSchedule(liveMix.bus.context.transport, getLiveClipBus, getLiveTempo);
   liveAudioClips.update(tracks, clips);
 }
 
-/** Apply loop region and tempo to liveTransport, and swing to the clips played on it. */
-export function syncTransport(loop: LoopRegion, bpm: number, swing: number): void {
+let tempoEvents: number[] = [];
+
+/**
+ * Apply loop region and tempo (a steady one or a map) to liveTransport, and swing to the clips
+ * played on it. The tempo map plays as Transport events at each change and at the loop's In
+ * point (where a loop jumps back to), and the tempo is set now for wherever the Transport is.
+ */
+export function syncTransport(loop: LoopRegion, tempo: Tempo, swing: number): void {
   liveTransport.loopStart = `${barToTicks(loop.inBar)}i`;
   liveTransport.loopEnd = `${barToTicks(loop.outBar)}i`;
   liveTransport.loop = loop.enabled;
-  liveTransport.bpm.value = bpm;
+  for (const id of tempoEvents) liveTransport.clear(id);
+  tempoEvents = scheduleTempo(liveTransport, tempo, loop.enabled ? loop.inBar : null);
+  setLiveTempo(tempo);
+  const now = Tone.now();
+  applyTempoAt(liveTransport, tempo, ticksToBar(liveTransport.getTicksAtTime(now)), now);
   liveSwing = swing;
 }
 

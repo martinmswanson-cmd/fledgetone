@@ -1,3 +1,4 @@
+import { secondsBetween, tempoAt, type Meter, type TempoMap, type TempoPoint } from './tempoMap';
 import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, channelsOf, type SampleRate } from './exportWav';
 import { defaultCurve, groupsInUse, type IntensityCurve } from '../store/intensity';
 import { renderStinger } from './stingerPlayer';
@@ -20,7 +21,12 @@ import unityPlayer from '../gameKit/AdaptiveMusic.cs?raw';
 
 export interface GameKitSong {
   name: string;
+  /** The tempo at bar 1 */
   bpm: number;
+  /** Tempo changes (each state plays at its own tempo) */
+  tempoPoints?: TempoPoint[];
+  /** The time signature from bar 1 */
+  meter?: Meter;
   swing: number;
   tracks: Track[];
   clips: Clip[];
@@ -55,7 +61,8 @@ export interface AudioManifest {
   sampleRate: number;
   key: string | null;
   intensity: { default: number; groups: Array<{ name: string; curve: IntensityCurve }> };
-  states: Array<{ name: string; file: string; bars: number; seconds: number; samples: number; stems: Array<{ group: string; file: string; tracks: string[] }> }>;
+  /** `bpm`: the state's tempo where it starts (the song's when there are no tempo changes) */
+  states: Array<{ name: string; file: string; bars: number; seconds: number; samples: number; bpm: number; stems: Array<{ group: string; file: string; tracks: string[] }> }>;
   transitions: Array<{ from: string; to: string; kind: TransitionKind; quantize: 'bar' | 'beat' | 'now'; beats?: number; file?: string; leadInSeconds?: number; stinger?: string }>;
   stingers: Array<{ name: string; kind: string; label: string; file: string; quantize: 'beat'; bridgeBars: number }>;
 }
@@ -76,6 +83,7 @@ export async function buildGameKitParts(
   if (!sections.length) throw new Error('the timeline is empty');
   const files: ZipEntry[] = [];
   const key = detectKey(song.clips, song.tracks);
+  const tempo: TempoMap = { bpm: song.bpm, points: song.tempoPoints ?? [] };
   const secondsPerBar = 240 / song.bpm;
   // Stems: one per stem group in use (tracks without one go in Main), when any track has a group
   const audible = audibleTracks(song.tracks);
@@ -102,9 +110,10 @@ export async function buildGameKitParts(
     usedNames.add(name);
     const marker = song.markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - sec.from) < 1e-6);
     if (marker) stateOfMarker.set(marker.id, name);
-    const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate };
+    const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate };
     const file = `states/${safe(name)}.wav`;
-    let samples = Math.round(((sec.to - sec.from) * secondsPerBar) * sampleRate);
+    const seconds = secondsBetween(sec.from, sec.to, tempo);
+    let samples = Math.round(seconds * sampleRate);
     if (!skipMix) {
       const audio = await renderArrangement({ ...range, ending: 'seamless' });
       const channels = channelsOf(audio);
@@ -121,7 +130,7 @@ export async function buildGameKitParts(
         stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map((t) => t.name) });
       }
     }
-    states.push({ name, file, bars: sec.to - sec.from, seconds: +((sec.to - sec.from) * secondsPerBar).toFixed(6), samples, stems });
+    states.push({ name, file, bars: sec.to - sec.from, seconds: +seconds.toFixed(6), samples, bpm: +tempoAt(sec.from, tempo).toFixed(2), stems });
   }
 
   // Stingers (some also bridge transitions)
@@ -177,8 +186,8 @@ export async function buildGameKitParts(
     version: 2,
     name: song.name,
     bpm: song.bpm,
-    timeSignature: [4, 4],
-    beatsPerBar: 4,
+    timeSignature: [song.meter?.num ?? 4, song.meter?.den ?? 4],
+    beatsPerBar: song.meter?.num ?? 4,
     sampleRate,
     key: key?.name ?? null,
     // Each group's recommended level (0 to 1) at each intensity (0 to 1); Main always plays at 1

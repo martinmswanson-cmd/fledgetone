@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GripHorizontal, Maximize2, Minimize2, Volume2, VolumeX, X } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songTempo, useTimelineStore } from '../../store/timelineStore';
 import { useVideoStore } from '../../store/videoStore';
 import { barToSeconds } from '../../audio/transport';
 
@@ -27,8 +27,8 @@ export const VideoPreview: React.FC = () => {
     if (!el || !video || !open) return;
     let raf = 0;
     const tick = () => {
-      const { playheadPosition, isPlaying, bpm } = useTimelineStore.getState();
-      const t = barToSeconds(playheadPosition, bpm) - useVideoStore.getState().start;
+      const { playheadPosition, isPlaying } = useTimelineStore.getState();
+      const t = barToSeconds(playheadPosition, songTempo(useTimelineStore.getState())) - useVideoStore.getState().start;
       const inside = t >= 0 && t < video.duration;
       setOutside((was) => (was === !inside ? was : !inside));
       if (!inside) {

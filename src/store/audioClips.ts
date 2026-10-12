@@ -1,4 +1,5 @@
 import type { Clip, ClipAudio, EmbeddedSound, SliceCount, SlicerSettings, Track } from './timelineTypes';
+import { tempoAt, type Tempo } from '../audio/tempoMap';
 import { AUDIO_FADE_MAX, AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, MAX_SLICES, SLICE_COUNTS, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from './timelineTypes';
 
 /**
@@ -27,13 +28,21 @@ export const audioSourceSeconds = (clip: Pick<Clip, 'lengthBars' | 'audio'>, bpm
 
 /**
  * The clips after a tempo change: an audio clip keeps its start bar and its length in seconds, so
- * its length in bars scales with the tempo, unless it follows the tempo (then it keeps its bars
- * and is stretched instead). Note clips are untouched; the same array comes back when nothing changes.
+ * its length in bars scales with the tempo where it starts, unless it follows the tempo (then it
+ * keeps its bars and is stretched instead). Note clips are untouched; the same array comes back
+ * when nothing changes.
  */
-export function retimeAudioClips(clips: Clip[], fromBpm: number, toBpm: number): Clip[] {
-  if (fromBpm === toBpm || !clips.some((c) => c.audio && !c.audio.stretchBpm)) return clips;
-  const ratio = toBpm / fromBpm;
-  return clips.map((c) => (c.audio && !c.audio.stretchBpm ? { ...c, lengthBars: c.lengthBars * ratio } : c));
+export function retimeAudioClips(clips: Clip[], from: Tempo, to: Tempo): Clip[] {
+  if (from === to || !clips.some((c) => c.audio && !c.audio.stretchBpm)) return clips;
+  let changed = false;
+  const next = clips.map((c) => {
+    if (!c.audio || c.audio.stretchBpm) return c;
+    const ratio = tempoAt(c.startBar, to) / tempoAt(c.startBar, from);
+    if (Math.abs(ratio - 1) < EPS) return c;
+    changed = true;
+    return { ...c, lengthBars: c.lengthBars * ratio };
+  });
+  return changed ? next : clips;
 }
 
 /**

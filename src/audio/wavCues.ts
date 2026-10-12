@@ -1,3 +1,4 @@
+import { secondsBetween, type Tempo } from './tempoMap';
 import type { Marker } from '../store/timelineTypes';
 
 /**
@@ -18,7 +19,7 @@ export interface CueRange {
   endBar: number;
   /** The song position at the file's first sample. */
   originBar: number;
-  bpm: number;
+  bpm: Tempo;
   sampleRate: number;
   /** The file's length: a cue must fall inside it. */
   frames: number;
@@ -34,7 +35,7 @@ export function markerCues(markers: readonly Marker[], range: CueRange): WavCue[
   for (const m of markers) {
     if (m.bar < range.startBar - EPS) continue;
     if (range.includeEnd ? m.bar > range.endBar + EPS : m.bar >= range.endBar - EPS) continue;
-    const frame = Math.max(0, Math.round((((m.bar - range.originBar) * 240) / range.bpm) * range.sampleRate));
+    const frame = Math.max(0, Math.round(secondsBetween(range.originBar, m.bar, range.bpm) * range.sampleRate));
     if (frame < range.frames) cues.push({ frame, name: m.name });
   }
   return cues.sort((a, b) => a.frame - b.frame);

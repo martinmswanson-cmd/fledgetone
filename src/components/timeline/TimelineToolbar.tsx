@@ -15,7 +15,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useSongTempo, useTimelineStore } from '../../store/timelineStore';
 import { frameRateLabel, TIMECODE_FORMATS } from '../../store/timelineTypes';
 import type { SnapGrid } from '../../store/timelineTypes';
 import { formatBarsBeats, formatSmpte, parseBarsBeats, parseTimecode, secondsToBar } from '../../audio/transport';
@@ -99,7 +99,7 @@ const inSong = (bar: number | null) => (bar !== null && bar <= TOTAL_BARS + 1 ? 
 
 const TimecodeDisplay: React.FC = () => {
   const position = useTimelineStore((s) => s.playheadPosition);
-  const bpm = useTimelineStore((s) => s.bpm);
+  const bpm = useSongTempo();
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const isPlaying = useTimelineStore((s) => s.isPlaying);

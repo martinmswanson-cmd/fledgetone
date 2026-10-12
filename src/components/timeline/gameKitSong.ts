@@ -7,6 +7,8 @@ export function gameKitSong(): GameKitSong {
   return {
     name: s.projectName || 'Untitled',
     bpm: s.bpm,
+    tempoPoints: s.tempoPoints,
+    meter: s.meter,
     swing: s.swing,
     tracks: s.tracks,
     clips: s.clips,

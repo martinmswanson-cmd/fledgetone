@@ -1,6 +1,7 @@
+import { secondsBetween, tempoAt } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
-import { currentProject, useTimelineStore } from '../../store/timelineStore';
+import { currentProject, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { getAudiblePositionBar } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
@@ -39,6 +40,7 @@ const LoopVariations: React.FC = () => {
         tracks: s.tracks,
         clips: s.clips,
         bpm: s.bpm,
+        tempoPoints: s.tempoPoints,
         swing: s.swing,
         startBar: inBar,
         endBar: outBar,
@@ -357,7 +359,7 @@ export const GamePanel: React.FC = () => {
     const unit = when === 'bar' ? 1 : 0.25;
     let next = Math.floor((at - 1) / unit + 1e-6) * unit + unit + 1;
     if (cue && next - at < cue.leadIn) next += Math.ceil((cue.leadIn - (next - at)) / unit - 1e-6) * unit;
-    const ms = ((next - at) * 240 * 1000) / s.bpm;
+    const ms = secondsBetween(at, next, songTempo(s)) * 1000;
     if (cue) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + ms / 1000);
     setPending(sec.id);
     if (bridge) {
@@ -369,7 +371,7 @@ export const GamePanel: React.FC = () => {
         timer.current = window.setTimeout(() => {
           jump();
           void useTimelineStore.getState().togglePlay();
-        }, (bridgeBars * 240 * 1000) / s.bpm - 40);
+        }, (bridgeBars * 240 * 1000) / tempoAt(next, songTempo(s)) - 40);
       }, Math.max(0, ms - 15));
       return;
     }

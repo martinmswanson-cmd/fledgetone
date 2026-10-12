@@ -1,9 +1,11 @@
 import React from 'react';
-import { TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { TOTAL_BARS, useSongMeter, useSongTempo, useTimelineStore } from '../../store/timelineStore';
+import { barToSeconds, isPlainMeter, measuresBetween, secondsToBar, tempoAt } from '../../audio/tempoMap';
 import { formatFrameRulerTime, frameSeconds, frameToLabelCount, labelCountToFrame } from '../../audio/timecode';
 import { useDrawnStretch } from './drawnStretch';
 import { barFromClientX, Playhead } from './Playhead';
-import { barLabelStep, RULER_HEIGHT, TIMECODE_LABEL_PX, timecodeRulerSteps } from './layout';
+import { barLabelStep, RULER_HEIGHT, TEMPO_ROW, TIMECODE_LABEL_PX, timecodeRulerSteps } from './layout';
+import { TempoRow } from './TempoRow';
 import { snapBar } from '../../store/timelineTypes';
 import type { RulerMenuState } from './RulerContextMenu';
 import { MarkerFlags } from './Markers';
@@ -29,7 +31,9 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
   const outBar = useTimelineStore((s) => s.loopRegion.outBar);
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
   const units = useTimelineStore((s) => s.rulerUnits);
-  const bpm = useTimelineStore((s) => s.bpm);
+  const tempo = useSongTempo();
+  const meterMap = useSongMeter();
+  const plainMeter = isPlainMeter(meterMap);
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const totalWidth = TOTAL_BARS * zoom;
@@ -40,17 +44,20 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
   const labelStep = barLabelStep(zoom);
   const ticks = showBeatTicks ? `${zoom / 4}px 35%, ${zoom / 16}px 18%` : `${zoom}px 35%, ${zoom}px 0%`;
 
-  // Timecode mode: bar 1 is 0:00, at the project tempo
-  const pxPerFrame = ((zoom * bpm) / 240) * frameSeconds(fps);
-  const tc = timecodeRulerSteps((zoom * bpm) / 240, fps);
+  // Timecode mode: bar 1 is 0:00, along the tempo (spacing from the tempo mid-view)
+  const frameSec = frameSeconds(fps);
+  const frameX = (frame: number) => (secondsToBar(frame * frameSec, tempo) - 1) * zoom;
+  const frameAt = (x: number) => barToSeconds(x / zoom + 1, tempo) / frameSec;
+  const midBpm = tempoAt((drawFrom + drawTo) / 2 / zoom + 1, tempo);
+  const tc = timecodeRulerSteps((zoom * midBpm) / 240, fps);
   /**
    * Frames that start a whole multiple of `step` timecode frames, in the drawn stretch, at least
    * `minGap` frames apart. In drop-frame the labels that don't exist (;00, ;01 at most minute
    * starts) fall on the next real frame, which can crowd the one after: that one is skipped.
    */
   const framesEvery = (step: number, minGap: number) => {
-    const first = Math.floor(frameToLabelCount(Math.floor(drawFrom / pxPerFrame), fps, dropFrame) / step);
-    const last = Math.ceil(frameToLabelCount(Math.ceil(drawTo / pxPerFrame), fps, dropFrame) / step);
+    const first = Math.floor(frameToLabelCount(Math.max(0, Math.floor(frameAt(drawFrom))), fps, dropFrame) / step);
+    const last = Math.ceil(frameToLabelCount(Math.ceil(frameAt(drawTo)), fps, dropFrame) / step);
     const frames: number[] = [];
     for (let k = first; k <= last; k++) {
       const frame = labelCountToFrame(k * step, fps, dropFrame);
@@ -63,6 +70,15 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
   // Bars mode: labelled bars in the drawn stretch
   const firstLabel = Math.max(0, Math.floor(drawFrom / (labelStep * zoom)));
   const lastLabel = Math.min(Math.ceil(TOTAL_BARS / labelStep) - 1, Math.floor(drawTo / (labelStep * zoom)));
+  // Other time signatures: measures and beats where the meter puts them
+  const measures = !plainMeter && units === 'bars' ? measuresBetween(Math.max(1, drawFrom / zoom + 1 - 4), drawTo / zoom + 1, meterMap) : [];
+  const measureStep = (() => {
+    if (!measures.length) return 1;
+    const avg = measures.reduce((a, m) => a + m.meter.num / m.meter.den, 0) / measures.length;
+    return [1, 2, 4, 8, 16, 32].find((k) => k * avg * zoom >= 44) ?? 64;
+  })();
+  const beatXs: number[] = [];
+  if (measures.length && showBeatTicks) for (const m of measures) for (let b = 1; b < m.meter.num; b++) beatXs.push((m.bar - 1 + b / m.meter.den) * zoom);
 
   const startBracketDrag = (which: 'in' | 'out') => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -99,7 +115,7 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
         // beat ticks (bottom 35%) and 16th ticks (bottom 18%), just bar ticks when zoomed far out;
         // in timecode mode the ticks are drawn below (drop-frame spaces them unevenly)
         backgroundImage:
-          units === 'bars'
+          units === 'bars' && plainMeter
             ? `linear-gradient(to right, rgba(255,255,255,0.22) 1px, transparent 1px), linear-gradient(to right, rgba(255,255,255,0.08) 1px, transparent 1px)`
             : 'none',
         backgroundSize: ticks,
@@ -121,13 +137,13 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
         }`}
         style={{ left: loopLeft, width: loopWidth }}
       >
-        <div className={`absolute inset-x-0 top-0 h-[3px] ${loopEnabled ? 'bg-amber-400' : 'bg-zinc-500'}`} />
+        <div className={`absolute inset-x-0 h-[3px] ${loopEnabled ? 'bg-amber-400' : 'bg-zinc-500'}`} style={{ top: TEMPO_ROW }} />
       </div>
 
       {/* In bracket */}
       <div
-        className="absolute top-0 bottom-0 z-20 w-3 cursor-ew-resize group"
-        style={{ left: loopLeft - 1 }}
+        className="absolute bottom-0 z-20 w-3 cursor-ew-resize group"
+        style={{ left: loopLeft - 1, top: TEMPO_ROW }}
         onPointerDown={startBracketDrag('in')}
         title="Drag In point (I)"
       >
@@ -141,8 +157,8 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
 
       {/* Out bracket */}
       <div
-        className="absolute top-0 bottom-0 z-20 w-3 cursor-ew-resize group"
-        style={{ left: loopLeft + loopWidth - 11 }}
+        className="absolute bottom-0 z-20 w-3 cursor-ew-resize group"
+        style={{ left: loopLeft + loopWidth - 11, top: TEMPO_ROW }}
         onPointerDown={startBracketDrag('out')}
         title="Drag Out point (O)"
       >
@@ -164,20 +180,20 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
           shapeRendering="crispEdges"
           aria-hidden="true"
         >
-          <path d={tickPath(tcTicks.map((f) => f * pxPerFrame), RULER_HEIGHT * 0.18)} stroke="rgba(255,255,255,0.08)" />
-          <path d={tickPath(tcLabels.map((f) => f * pxPerFrame), RULER_HEIGHT * 0.35)} stroke="rgba(255,255,255,0.22)" />
+          <path d={tickPath(tcTicks.map(frameX), RULER_HEIGHT * 0.18)} stroke="rgba(255,255,255,0.08)" />
+          <path d={tickPath(tcLabels.map(frameX), RULER_HEIGHT * 0.35)} stroke="rgba(255,255,255,0.22)" />
         </svg>
       )}
 
       {/* Timecode labels */}
       {units === 'timecode' &&
         // Only labels whose text fits before the end of the timeline
-        tcLabels.filter((frame) => frame * pxPerFrame <= totalWidth - TIMECODE_LABEL_PX).map((frame) => {
-          const x = frame * pxPerFrame;
+        tcLabels.filter((frame) => frameX(frame) <= totalWidth - TIMECODE_LABEL_PX).map((frame) => {
+          const x = frameX(frame);
           return (
             <React.Fragment key={frame}>
-              <div className="absolute top-0 bottom-0 w-px bg-white/30 pointer-events-none" style={{ left: x }} />
-              <span className="absolute top-[6px] text-[10px] font-mono text-cyan-200/90 pointer-events-none tabular-nums" style={{ left: x + 4 }}>
+              <div className="absolute bottom-0 w-px bg-white/30 pointer-events-none" style={{ left: x, top: TEMPO_ROW }} />
+              <span className="absolute text-[10px] font-mono text-cyan-200/90 pointer-events-none tabular-nums" style={{ left: x + 4, top: TEMPO_ROW + 6 }}>
                 {formatFrameRulerTime(frame, fps, dropFrame)}
               </span>
             </React.Fragment>
@@ -185,15 +201,15 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
         })}
 
       {/* Bar + beat labels (every Nth bar when zoomed out so labels never overlap) */}
-      {units === 'bars' && Array.from({ length: Math.max(0, lastLabel - firstLabel + 1) }, (_, k) => {
+      {units === 'bars' && plainMeter && Array.from({ length: Math.max(0, lastLabel - firstLabel + 1) }, (_, k) => {
         const i = (firstLabel + k) * labelStep;
         const bar = i + 1;
         return (
           <React.Fragment key={bar}>
-            <div className="absolute top-0 bottom-0 w-px bg-white/30 pointer-events-none" style={{ left: i * zoom }} />
+            <div className="absolute bottom-0 w-px bg-white/30 pointer-events-none" style={{ left: i * zoom, top: TEMPO_ROW }} />
             <span
-              className="absolute top-[6px] text-[10px] font-mono text-forge-text/90 pointer-events-none tabular-nums"
-              style={{ left: i * zoom + 4 }}
+              className="absolute text-[10px] font-mono text-forge-text/90 pointer-events-none tabular-nums"
+              style={{ left: i * zoom + 4, top: TEMPO_ROW + 6 }}
             >
               {bar}.1
             </span>
@@ -201,8 +217,8 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
               [2, 3, 4].map((beat) => (
                 <span
                   key={beat}
-                  className="absolute top-[8px] text-[9px] font-mono text-forge-muted/70 pointer-events-none tabular-nums"
-                  style={{ left: i * zoom + ((beat - 1) * zoom) / 4 + 3 }}
+                  className="absolute text-[9px] font-mono text-forge-muted/70 pointer-events-none tabular-nums"
+                  style={{ left: i * zoom + ((beat - 1) * zoom) / 4 + 3, top: TEMPO_ROW + 8 }}
                 >
                   {bar}.{beat}
                 </span>
@@ -211,6 +227,47 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
         );
       })}
 
+      {/* Other time signatures: measure lines, beat ticks and labels where the meter puts them */}
+      {measures.length > 0 && (
+        <svg
+          className="absolute top-0 pointer-events-none"
+          style={{ left: drawFrom, width: Math.max(0, drawTo - drawFrom), height: RULER_HEIGHT }}
+          viewBox={`${drawFrom} 0 ${Math.max(1, drawTo - drawFrom)} ${RULER_HEIGHT}`}
+          preserveAspectRatio="none"
+          shapeRendering="crispEdges"
+          aria-hidden="true"
+        >
+          <path d={tickPath(beatXs, RULER_HEIGHT * 0.35 - 4)} stroke="rgba(255,255,255,0.22)" />
+          <path d={tickPath(measures.map((m) => (m.bar - 1) * zoom), RULER_HEIGHT * 0.5)} stroke="rgba(255,255,255,0.3)" />
+        </svg>
+      )}
+      {measures
+        .filter((m) => (m.measure - 1) % measureStep === 0)
+        .map((m) => {
+          const x = (m.bar - 1) * zoom;
+          return (
+            <React.Fragment key={m.measure}>
+              <div className="absolute bottom-0 w-px bg-white/30 pointer-events-none" style={{ left: x, top: TEMPO_ROW }} />
+              <span className="absolute text-[10px] font-mono text-forge-text/90 pointer-events-none tabular-nums" style={{ left: x + 4, top: TEMPO_ROW + 6 }}>
+                {m.measure}.1
+              </span>
+              {showBeatLabels &&
+                Array.from({ length: m.meter.num - 1 }, (_, b) => b + 2)
+                  .filter(() => zoom / m.meter.den >= 34)
+                  .map((beat) => (
+                    <span
+                      key={beat}
+                      className="absolute text-[9px] font-mono text-forge-muted/70 pointer-events-none tabular-nums"
+                      style={{ left: x + ((beat - 1) * zoom) / m.meter.den + 3, top: TEMPO_ROW + 8 }}
+                    >
+                      {m.measure}.{beat}
+                    </span>
+                  ))}
+            </React.Fragment>
+          );
+        })}
+
+      <TempoRow originRef={originRef} />
       <MarkerFlags originRef={originRef} />
       <Playhead variant="head" onScrubStart={onScrubStart} />
     </div>

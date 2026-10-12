@@ -1,3 +1,5 @@
+import { TOTAL_BARS } from './timelineTypes';
+import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
@@ -58,6 +60,12 @@ export interface ProjectData {
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
   /** The reference video (optional) */
   video?: ProjectVideo;
+  /** Tempo changes after bar 1 (optional; absent means one tempo throughout) */
+  tempoPoints?: TempoPoint[];
+  /** The time signature from bar 1 (optional; absent means 4/4) */
+  meter?: Meter;
+  /** Time signature changes (optional) */
+  meterPoints?: MeterPoint[];
 }
 
 export interface ProjectSnapshot {
@@ -87,6 +95,12 @@ export interface ProjectSnapshot {
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
   /** The reference video, if one is loaded */
   video?: ProjectVideo;
+  /** Tempo changes (older projects don't have any) */
+  tempoPoints?: TempoPoint[];
+  /** The time signature from bar 1 (older projects are 4/4) */
+  meter?: Meter;
+  /** Time signature changes */
+  meterPoints?: MeterPoint[];
 }
 
 
@@ -110,7 +124,34 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     ...(p.transitions && Object.keys(p.transitions).length ? { transitions: p.transitions } : {}),
     ...(p.intensity && (Object.keys(p.intensity.curves).length || p.intensity.value !== 1) ? { intensity: p.intensity } : {}),
     ...(p.video ? { video: p.video } : {}),
+    ...(p.tempoPoints?.length ? { tempoPoints: p.tempoPoints } : {}),
+    ...(p.meter && (p.meter.num !== 4 || p.meter.den !== 4) ? { meter: p.meter } : {}),
+    ...(p.meterPoints?.length ? { meterPoints: p.meterPoints } : {}),
   };
+}
+
+/** Tempo changes from a file: each needs a position after bar 1 and a tempo (clamped to range). */
+function parseTempoPoints(raw: unknown): TempoPoint[] {
+  if (!Array.isArray(raw)) return [];
+  const points = raw
+    .filter((v): v is Record<string, unknown> => isObj(v) && isNum(v.bar) && isNum(v.bpm))
+    .map((v, i) => ({ id: isStr(v.id) && v.id ? v.id : `tempo-${i}`, bar: Math.min(TOTAL_BARS, v.bar as number), bpm: clampBpm(v.bpm as number), ramp: v.ramp === true }));
+  return sortedPoints(points);
+}
+
+function parseMeterValue(v: unknown): Meter | null {
+  if (!isObj(v) || !isNum(v.num) || !isNum(v.den)) return null;
+  return parseMeter(`${Math.round(v.num)}/${Math.round(v.den)}`);
+}
+
+function parseMeterPoints(raw: unknown): MeterPoint[] {
+  if (!Array.isArray(raw)) return [];
+  const out: MeterPoint[] = [];
+  raw.forEach((v, i) => {
+    const m = parseMeterValue(v);
+    if (m && isObj(v) && isNum(v.bar) && v.bar > 1) out.push({ id: isStr(v.id) && v.id ? v.id : `meter-${i}`, bar: v.bar, ...m });
+  });
+  return sortedPoints(out);
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
@@ -238,6 +279,10 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const loop = isObj(raw.loopRegion) ? raw.loopRegion : {};
   const fps = isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE;
   const bpm = isNum(raw.bpm) ? Math.max(40, Math.min(240, raw.bpm)) : 122;
+  const tempoPoints = parseTempoPoints(raw.tempoPoints);
+  const tempo = { bpm, points: tempoPoints };
+  const meter = parseMeterValue(raw.meter);
+  const meterPoints = parseMeterPoints(raw.meterPoints);
   const sounds = parseEmbeddedSounds(raw.sounds);
   return {
     name: isStr(raw.name) && raw.name.trim() ? raw.name : 'Untitled',
@@ -255,7 +300,10 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     masterFx: parseMasterFx(raw.masterFx),
     fps,
     dropFrame: fps === 29.97 && raw.dropFrame === true,
-    markers: parseMarkers(raw.markers, bpm),
+    markers: parseMarkers(raw.markers, tempo),
+    ...(tempoPoints.length ? { tempoPoints } : {}),
+    ...(meter ? { meter } : {}),
+    ...(meterPoints.length ? { meterPoints } : {}),
     ...(sounds.length ? { sounds } : {}),
     master: normalizeMasterSettings(raw.master),
     stingers: parseStingers(raw.stingers, isInstrumentKey),

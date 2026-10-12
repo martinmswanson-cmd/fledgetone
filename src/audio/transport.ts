@@ -1,6 +1,56 @@
 import * as Tone from 'tone';
 import { liveTransport } from './liveContext';
 import { formatFrameRulerTime, formatFrameTimecode, framesToSeconds, parseFrameTimecode, secondsToFrames } from './timecode';
+import { barToSeconds as mapBarToSeconds, FOUR_FOUR, fromMeasureBeat, secondsToBar as mapSecondsToBar, tempoChangeBars, tempoFrom, toMeasureBeat } from './tempoMap';
+import type { MeterMap, Tempo } from './tempoMap';
+
+export type { Tempo } from './tempoMap';
+
+/**
+ * The song's meter, for counting positions as measure.beat (the ruler, the position box, typed
+ * positions). The store keeps it in step with the song (setSongMeter).
+ */
+let songMeter: MeterMap = { base: FOUR_FOUR, points: [] };
+export function setSongMeter(map: MeterMap): void {
+  songMeter = map;
+}
+export const getSongMeter = () => songMeter;
+
+/**
+ * The live Transport's tempo map. Tone ramps and jumps its tempo where the map says, as it plays
+ * (see scheduleTempo); a start or a move sets the tempo of where it lands.
+ */
+let liveTempo: Tempo = 120;
+export function setLiveTempo(tempo: Tempo): void {
+  liveTempo = tempo;
+}
+export const getLiveTempo = () => liveTempo;
+
+type TransportLike = ReturnType<typeof Tone.getTransport>;
+
+/**
+ * Set `transport`'s tempo to what `tempo` has at `bar`, from audio time `time`: the tempo there,
+ * and the rest of a glide it's part way through.
+ */
+export function applyTempoAt(transport: TransportLike, tempo: Tempo, bar: number, time: number): void {
+  const { bpm, glide } = tempoFrom(bar, tempo);
+  const param = transport.bpm;
+  param.cancelScheduledValues(time);
+  param.setValueAtTime(bpm, time);
+  if (glide && glide.seconds > 0) param.linearRampToValueAtTime(glide.to, time + glide.seconds);
+}
+
+/**
+ * Keep `transport`'s tempo following `tempo` as it plays: an event at every tempo change, and at
+ * `loopIn` (a loop jumps back there, to whatever tempo the map has). Returns the event ids, for
+ * clearing when the map or the loop changes.
+ */
+export function scheduleTempo(transport: TransportLike, tempo: Tempo, loopIn: number | null): number[] {
+  const bars = tempoChangeBars(tempo);
+  if (!bars.length) return [];
+  if (loopIn !== null) bars.push(loopIn);
+  return [...new Set(bars)].map((bar) => transport.schedule((time) => applyTempoAt(transport, tempo, bar, time), `${barToTicks(bar)}i`));
+}
 
 /**
  * Transport position helpers. Timeline positions are 1-based bars (4/4);
@@ -118,6 +168,7 @@ export function getScheduledPositionBar(): number {
 
 /** Start playing from `bar`, at audio time `at` (just ahead of now, or after a count-in). */
 export function startTransportAt(bar: number, at = Tone.now() + 0.03): void {
+  applyTempoAt(liveTransport, liveTempo, bar, at);
   liveTransport.start(at, `${barToTicks(bar)}i`);
   heading = { bar, at };
   pendingStart = at;
@@ -158,33 +209,31 @@ export function seekTransport(bar: number): void {
   if (pending !== null) heading = { bar, at: pending };
   // Playing, Tone moves there at its look-ahead, on the next tick
   else if (playing) heading = { bar, at: Tone.now() + liveTransport.toSeconds('1i') };
+  applyTempoAt(liveTransport, liveTempo, bar, heading && (pending !== null || playing) ? heading.at : Tone.now());
 }
 
 /** Format as Premiere-style Bar.Beat.Tick ("001.01.00"); ticks shown as hundredths of a beat. */
 export function formatBarsBeats(bar: number): string {
-  // Count in whole hundredths of a beat (with float slack) so a typed 17.3.07 reads back as 07, not 06
-  const total = Math.floor(Math.max(0, (bar - 1) * 400) + 1e-6);
-  const barNum = Math.floor(total / 400) + 1;
-  const beatNum = Math.floor((total % 400) / 100) + 1;
-  const hundredths = total % 100;
-  return `${String(barNum).padStart(3, '0')}.${String(beatNum).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
+  // Counted in the song's meter: measure, beat (a quarter in 4/4, an eighth in 6/8), hundredths
+  const { measure, beat, hundredths } = toMeasureBeat(bar, songMeter);
+  return `${String(measure).padStart(3, '0')}.${String(beat).padStart(2, '0')}.${String(hundredths).padStart(2, '0')}`;
 }
 
-/** Seconds from the start of bar 1 to `bar` (4/4 at a constant tempo). */
-export function barToSeconds(bar: number, bpm: number): number {
-  return ((bar - 1) * 240) / bpm;
+/** Seconds from the start of bar 1 to `bar`, at a steady tempo or along a tempo map. */
+export function barToSeconds(bar: number, tempo: Tempo): number {
+  return mapBarToSeconds(bar, tempo);
 }
 
-export function secondsToBar(seconds: number, bpm: number): number {
-  return (seconds * bpm) / 240 + 1;
+export function secondsToBar(seconds: number, tempo: Tempo): number {
+  return mapSecondsToBar(seconds, tempo);
 }
 
 /**
- * Format as SMPTE timecode HH:MM:SS:FF at `fps`, assuming constant tempo. Drop-frame (29.97 only)
+ * Format as SMPTE timecode HH:MM:SS:FF at `fps`, along the tempo. Drop-frame (29.97 only)
  * is written HH:MM:SS;FF.
  */
-export function formatSmpte(bar: number, bpm: number, fps: number, dropFrame = false): string {
-  return formatFrameTimecode(secondsToFrames(barToSeconds(bar, bpm), fps), fps, dropFrame);
+export function formatSmpte(bar: number, tempo: Tempo, fps: number, dropFrame = false): string {
+  return formatFrameTimecode(secondsToFrames(barToSeconds(bar, tempo), fps), fps, dropFrame);
 }
 
 /**
@@ -214,8 +263,9 @@ export function parseBarsBeats(text: string): number | null {
   const bar = Number(m[1]);
   const beat = m[2] === undefined ? 1 : Number(m[2]);
   const hundredths = m[3] === undefined ? 0 : Number(m[3]);
-  if (bar < 1 || beat < 1 || beat > 4 || hundredths > 99) return null;
-  return bar + (beat - 1) / 4 + hundredths / 400;
+  if (bar < 1) return null;
+  // Counted in the song's meter, so a typed position means what the ruler shows
+  return fromMeasureBeat(bar, beat, hundredths, songMeter);
 }
 
 /** A length as bars.beats.hundredths counted from zero: "4.0.00" is four bars, "2.2.00" two bars and two beats. */

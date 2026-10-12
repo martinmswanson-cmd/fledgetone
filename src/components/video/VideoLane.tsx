@@ -1,6 +1,7 @@
+import { tempoAt } from '../../audio/tempoMap';
 import React, { useRef } from 'react';
 import { Clapperboard, Eye, EyeOff, MessageSquareText, Scissors, X } from 'lucide-react';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useSongTempo, useTimelineStore } from '../../store/timelineStore';
 import { findDialogue, findSceneCuts, useVideoStore } from '../../store/videoStore';
 import { DEFAULT_DIP, type Span } from '../../store/dialogue';
 import { Modal } from '../timeline/Modal';
@@ -29,7 +30,7 @@ export const VideoLane: React.FC = () => {
   const start = useVideoStore((s) => s.start);
   const previewOpen = useVideoStore((s) => s.previewOpen);
   const zoom = useTimelineStore((s) => s.zoom);
-  const bpm = useTimelineStore((s) => s.bpm);
+  const bpm = useSongTempo();
   const laneRef = useRef<HTMLDivElement>(null);
   if (!video) return null;
 
@@ -54,7 +55,7 @@ export const VideoLane: React.FC = () => {
       let next = s0 + dx / pxPerSecond;
       // Snap the start to the nearest beat unless Shift is held
       if (!ev.shiftKey) {
-        const beat = 60 / bpm;
+        const beat = 60 / tempoAt(1, bpm);
         next = Math.round(next / beat) * beat;
       }
       useVideoStore.getState().setStart(next);

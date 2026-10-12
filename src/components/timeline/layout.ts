@@ -3,7 +3,10 @@ import { frameSeconds, nominalFps } from '../../audio/timecode';
 /** Shared timeline layout metrics (px). */
 export const HEADER_WIDTH = 240;
 export const TRACK_HEIGHT = 84;
-export const RULER_HEIGHT = 34;
+/** The ruler: a row for tempo and time signature changes on top, then bar numbers, markers and ticks. */
+export const RULER_HEIGHT = 48;
+/** Height of the ruler's tempo row. */
+export const TEMPO_ROW = 14;
 /** Pixel width of the grab zone on each clip edge used for trimming. */
 export const TRIM_HANDLE_PX = 7;
 

@@ -1,4 +1,6 @@
 import * as Tone from 'tone';
+import { measureAt } from './tempoMap';
+import { getSongMeter } from './transport';
 import { liveMix } from './engine';
 
 /**
@@ -63,7 +65,8 @@ export function setMetronomeVolume(level: number): void {
 }
 
 /**
- * Click on every beat the live Transport plays while `on`. Beat one of each bar is the accent.
+ * Click on every beat the live Transport plays while `on`, in the song's time signature there. Beat
+ * one of each measure is the accent.
  * (Swing moves notes, not beats: the clicks stay straight.)
  */
 export function setMetronomeOn(on: boolean): void {
@@ -80,8 +83,13 @@ export function setMetronomeOn(on: boolean): void {
     if (Math.abs(time - lastTime) < 1e-4) return;
     lastTime = time;
     const ticks = Math.round(transport.getTicksAtTime(time));
-    click(time, ticks % (transport.PPQ * 4) === 0);
-  }, '4n', 0);
+    // Every beat of the time signature there (quarters in 4/4, eighths in 6/8), accented on each measure's first
+    const bar = ticks / (transport.PPQ * 4) + 1;
+    const m = measureAt(bar, getSongMeter());
+    const beats = (bar - m.start) * m.meter.den;
+    if (Math.abs(beats - Math.round(beats)) > 1e-3) return;
+    click(time, Math.round(beats) === 0);
+  }, '16n', 0);
 }
 
 /**

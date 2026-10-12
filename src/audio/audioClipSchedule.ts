@@ -1,3 +1,4 @@
+import { baseBpm, tempoAt, type Tempo } from './tempoMap';
 import * as Tone from 'tone';
 import type { Clip, Track } from '../store/timelineTypes';
 import type { NativeBus } from './presets/native';
@@ -61,7 +62,12 @@ const placementOf = (clip: Clip, bpm: number) =>
  * clip is a plain AudioBufferSourceNode and a GainNode made when it starts and let go when it
  * ends, so nothing runs between clips. Cuts fade over DECLICK_SECONDS so they don't click.
  */
-export function createAudioClipSchedule(transport: Transport, busFor: (trackId: string) => NativeBus | undefined): AudioClipSchedule {
+export function createAudioClipSchedule(
+  transport: Transport,
+  busFor: (trackId: string) => NativeBus | undefined,
+  /** The song's tempo: each clip plays at the tempo where it starts (see tempoMap.ts) */
+  tempo: () => Tempo = () => transport.bpm.value
+): AudioClipSchedule {
   const raw = transport.context.rawContext as unknown as BaseAudioContext;
   let entries = new Map<string, Entry>();
   /** Where overlapping clips on a track crossfade (see crossfades) */
@@ -74,8 +80,11 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
   /** Between the Transport's start event and its stop: what plays now is known, and an edit can join in. */
   let running = false;
 
+  /** The tempo where `clip` starts, which sets its length in seconds and its stretch. */
+  const localBpm = (clip: Clip) => tempoAt(clip.startBar, tempo());
+  /** Seconds per Transport tick as the Transport counts them now (to read its start offset back as ticks) */
   const secondsPerTick = () => 60 / (transport.bpm.value * transport.PPQ);
-  const clipSeconds = (clip: Clip) => (clip.lengthBars * 240) / transport.bpm.value;
+  const clipSeconds = (clip: Clip) => (clip.lengthBars * 240) / localBpm(clip);
   /** Whole frames: a source started between two frames is interpolated by the browser, which blurs its top end. */
   const onFrame = (seconds: number) => Math.round(seconds * raw.sampleRate) / raw.sampleRate;
 
@@ -87,7 +96,7 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
   const shapeOf = (clip: Clip, soundSeconds: number): EnvelopeShape => {
     const audio = clip.audio!;
     const seconds = clipSeconds(clip);
-    const ratio = stretchRatio(audio, transport.bpm.value);
+    const ratio = stretchRatio(audio, localBpm(clip));
     const x = xfades.get(clip.id);
     // A crossfade longer than the clip's own fade replaces it, with an equal-power curve
     const xIn = (x?.in ?? 0) > audio.fadeIn;
@@ -116,7 +125,7 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
     if (!audio || !bus) return;
     // A clip that follows the tempo plays its stretched copy; until that's made, the recording
     // sped up like tape (in time, a little off pitch)
-    const ratio = stretchRatio(audio, transport.bpm.value);
+    const ratio = stretchRatio(audio, localBpm(clip));
     const recorded = decodedSound(audio.soundId, raw.sampleRate);
     if (!recorded) return; // not decoded yet (or missing from this browser): silent until it is
     let buffer = recorded;
@@ -165,7 +174,7 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
   /** Start `clip` at `at` if the Transport position `posTicks` is inside it (strictly past its start). */
   const startInside = (clip: Clip, tick: number, posTicks: number, at: number) => {
     if (tick >= posTicks - TICK_EPS) return;
-    start(clip, (posTicks - tick) * secondsPerTick(), at);
+    start(clip, ((posTicks - tick) / (transport.PPQ * 4)) * (240 / localBpm(clip)), at);
   };
 
   /** How long before its time the Transport may dispatch an event: an edit and the event can meet in this window (see update). */
@@ -250,14 +259,14 @@ export function createAudioClipSchedule(transport: Transport, busFor: (trackId: 
       /** Entries made now: new clips, and clips whose placement changed (their old voices are stopped) */
       const fresh: Entry[] = [];
       const stopped = new Set<string>();
-      xfades = crossfades(clips.filter((c) => c.audio && trackIds.has(c.trackId)), transport.bpm.value);
+      xfades = crossfades(clips.filter((c) => c.audio && trackIds.has(c.trackId)), baseBpm(tempo()));
       for (const clip of clips) {
         if (!clip.audio || !trackIds.has(clip.trackId)) continue;
         ensureSound(clip.audio.soundId);
-        const ratio = stretchRatio(clip.audio, transport.bpm.value);
+        const ratio = stretchRatio(clip.audio, localBpm(clip));
         if (ratio !== 1) requestStretch(clip.audio.soundId, raw.sampleRate, ratio);
         const prev = entries.get(clip.id);
-        const placement = placementOf(clip, transport.bpm.value);
+        const placement = placementOf(clip, localBpm(clip));
         if (prev && prev.placement === placement) {
           const xfade = xfadeKey(clip.id);
           if (prev.clip !== clip || prev.xfade !== xfade) {
