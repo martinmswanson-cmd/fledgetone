@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dices, Download, Gamepad2, GripHorizontal, ListPlus, Trash2, X } from 'lucide-react';
+import { Dices, Download, Gamepad2, GripHorizontal, ListPlus, Package, Trash2, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { getAudiblePositionBar } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
@@ -115,6 +115,52 @@ const TransitionList: React.FC<{ sections: Array<{ id: string; name: string }> }
         ))}
       </div>
     </details>
+  );
+};
+
+/** Everything the game needs, in one .zip: see gameKit.ts. */
+const GameKitButton: React.FC = () => {
+  const [progress, setProgress] = useState<string | null>(null);
+  const run = async () => {
+    const s = useTimelineStore.getState();
+    setProgress('0%');
+    try {
+      const { buildGameKit } = await import('../../audio/gameKit');
+      const blob = await buildGameKit(
+        {
+          name: s.projectName || 'Untitled',
+          bpm: s.bpm,
+          swing: s.swing,
+          tracks: s.tracks,
+          clips: s.clips,
+          markers: s.markers,
+          masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback },
+          master: s.master,
+          stingers: s.stingers,
+          transitions: s.transitions,
+        },
+        (f) => setProgress(`${Math.round(f * 100)}%`)
+      );
+      downloadBlob(blob, `${s.projectName || 'Untitled'} game kit.zip`);
+    } catch (err) {
+      showToast(`Couldn't build the game kit: ${err instanceof Error ? err.message : String(err)}.`);
+    } finally {
+      setProgress(null);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-forge-border pt-2">
+      <button
+        type="button"
+        disabled={progress !== null}
+        onClick={() => void run()}
+        className="h-8 px-3 flex items-center justify-center gap-1.5 rounded-md border border-emerald-400/60 bg-emerald-500/15 text-emerald-100 font-semibold hover:bg-emerald-500/25 disabled:opacity-60"
+        title="Every state as a seamless loop, the stingers and transitions, music.json, and players for the web, Godot and Unity"
+      >
+        <Package className="w-4 h-4" /> {progress === null ? 'Export game kit (.zip)' : `Building… ${progress}`}
+      </button>
+      <p className="text-[10px] text-forge-muted">Every state as a loop, the stingers and transitions, a music.json, and ready-made players for the web, Godot and Unity that switch on the beat.</p>
+    </div>
   );
 };
 
@@ -401,6 +447,7 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
         <StingerList timing={quantize} />
         <LoopVariations />
+        <GameKitButton />
         <p className="text-[10px] text-forge-muted">{isPlaying ? 'Switch states and fire stingers while it plays, the way the game will.' : 'Pick a state to start.'} Intensity brings layers in from the top track down.</p>
       </div>
     </div>

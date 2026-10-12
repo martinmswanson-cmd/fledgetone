@@ -638,6 +638,16 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 - Name it, then **Save WAV** to use it in your game, or **Add to song** to put it at the playhead on the selected Audio track (or a new one). **Recent** keeps the last ten you made while the page is open; click one to bring it back.
 - The same settings always make the same sound, so a sound you saved can be made again exactly.
 
+### The game kit: everything for the game in one file
+
+**Export game kit (.zip)** at the bottom of the Game preview makes everything a game needs to play your music the way the panel does:
+
+- `states/`: every state (section between markers) as a **seamless loop**, a whole number of bars long, with loop points.
+- `transitions/`: the transitions you chose (a fill or a riser starts just before the switch; an impact on it), and `stingers/`: every stinger.
+- `music.json`: the tempo, the key, every state with its loop file, length and transition, and every stinger.
+- `players/`: ready-made players that read `music.json` and switch states **on the next bar, on the beat**: `web/adaptive-music.js` for a web game, `godot/AdaptiveMusic.gd` for Godot 4, and `unity/AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `stinger` and `stop`.
+- `README.txt` says how to drop it into each engine, with your own state and stinger names in the examples.
+
 ### Music for games: intro + loop, and layers
 
 Game music usually plays an intro once and then loops the rest for as long as the player stays. Set the loop region to the part that should repeat (everything before its **In** is the intro) and choose **Range: Intro + loop**. The export is a .zip with:
