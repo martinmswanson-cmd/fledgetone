@@ -86,6 +86,13 @@ const TOOLS: Item[] = [
   { title: 'Loop on / off', keywords: 'loop repeat cycle l', run: () => timeline().toggleLoop() },
   { title: 'Loop range', keywords: 'loop in out length points region', detail: 'Type exact loop In, Out and Length.', run: show('button[title^="Loop In, Out and Length"]') },
   { title: 'Add marker', keywords: 'marker section label flag m', detail: 'Drop a marker at the playhead.', run: () => timeline().addMarker() ?? undefined },
+  { title: 'Stingers', keywords: 'stinger stingers cue victory level up item found checkpoint danger game over fanfare jingle', detail: 'Short cues over the music, in the song\'s key (Game preview).', run: () => ui().setDialog('game') },
+  { title: 'Game kit export', keywords: 'game kit export godot unity web engine adaptive music json loops states player script', detail: 'Every state, stinger and transition, with players for web, Godot and Unity.', run: () => ui().setDialog('game') },
+  { title: 'Loop variations', keywords: 'loop variations takes alternate versions fills repeat fatigue', detail: 'Takes of the loop for a game to rotate through (Game preview).', run: () => ui().setDialog('game') },
+  { title: 'Transitions between states', keywords: 'transition transitions fill riser impact state switch', detail: 'A fill, riser or impact into each game state (Game preview).', run: () => ui().setDialog('game') },
+  { title: 'Find cuts in the video', keywords: 'scene cut cuts detection shots edit video hit points', detail: 'A hit point on every hard cut (the scissors on the video lane).', run: async () => void (await press('[aria-label="Find cuts in the video"]')) },
+  { title: 'Dip under dialogue', keywords: 'dialogue dialog voice speech duck ducking dip lower music under talking video', detail: 'Turn the music down wherever people talk in the video.', run: async () => void (await press('[aria-label="Dip the music under the video\'s dialogue"]')) },
+  { title: 'Export markers for Premiere, Resolve, Final Cut', keywords: 'export markers premiere resolve davinci final cut fcpxml edl xml csv editor', detail: 'In the Markers list.', run: async () => void (await press('button[title^="Markers:"]')) },
   { title: 'Markers list', keywords: 'markers sections rename jump list', run: async () => void (await press('button[title^="Markers:"]')) },
   { title: 'Build-up & drop at the playhead', keywords: 'buildup build up drop riser transition edm snare roll impact', detail: 'Adds a build-up before the playhead and a drop on it (also on the ruler’s right-click menu).', run: () => {
     const s = timeline();

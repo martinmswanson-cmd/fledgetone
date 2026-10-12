@@ -225,6 +225,8 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   freeze match. Mono basses, the 808 and drum kits keep a group together (one drift per group),
   so chords still pick the loudest note, 808 slides still slide and open hats still choke.
 
+- **Browser tests and the tour**: a step's card scrolls its target into view smoothly, so wait
+  ~800 ms before clicking at a measured position, or the click lands where the target was.
 - **Type check with `npx tsc -b`** (what `npm run build` runs). `tsc --noEmit -p .` checks nothing
   here: the root tsconfig only has references.
 
