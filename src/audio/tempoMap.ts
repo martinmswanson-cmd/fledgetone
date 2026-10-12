@@ -221,7 +221,8 @@ export function parseMeter(text: string): Meter | null {
   if (!m) return null;
   const num = Number(m[1]);
   const den = Number(m[2]);
-  if (num < 1 || num > 32 || ![1, 2, 4, 8, 16, 32].includes(den)) return null;
+  // What the editor offers (and the metronome can click: it counts in 16ths)
+  if (num < 1 || num > 16 || ![2, 4, 8, 16].includes(den)) return null;
   return { num, den };
 }
 

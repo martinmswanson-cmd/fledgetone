@@ -76,7 +76,7 @@ import { rippleRules, type RippleEdit } from './ripple';
 import { isBus, tidyRoutes, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
-import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt } from '../audio/tempoMap';
+import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
 
@@ -215,11 +215,15 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     : s.selectedTrackId && ids.has(s.selectedTrackId)
       ? s.selectedTrackId
       : tracks[0]?.id ?? null;
+  // The starting tempo isn't undone on its own, but an edit that changed the tempo changes (cut to
+  // length) set it too: then the whole map comes back as it was
+  const bpm = entry.tempoPoints !== s.tempoPoints ? entry.bpm : s.bpm;
   const then = { bpm: entry.bpm, points: entry.tempoPoints };
-  const now = songTempo({ bpm: s.bpm, tempoPoints: entry.tempoPoints });
+  const now = songTempo({ bpm, tempoPoints: entry.tempoPoints });
   return {
     // Audio clips are as long in seconds as they were, at today's tempo
     clips: retimeAudioClips(clips, then, now),
+    ...(bpm !== s.bpm ? { bpm } : {}),
     tempoPoints: entry.tempoPoints,
     meter: entry.meter,
     meterPoints: entry.meterPoints,
@@ -947,7 +951,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       edit.kind === 'insert'
         ? points.map((p) => (p.bar >= edit.at - EPS ? { ...p, bar: p.bar + edit.bars } : p))
         : shiftTempoPoints(points.filter((p) => !(p.bar >= edit.from - EPS && p.bar < edit.to - EPS)), edit.from, -(edit.to - edit.from));
-    const tempoPoints = s.tempoPoints.length ? sortedPoints(shift(s.tempoPoints)) : s.tempoPoints;
+    let tempoPoints = s.tempoPoints.length ? sortedPoints(shift(s.tempoPoints)) : s.tempoPoints;
+    // Deleting bars that held tempo changes: the music after them keeps the tempo it had
+    if (edit.kind !== 'insert' && edit.from > 1 + 1e-6 && s.tempoPoints.some((p) => p.bar >= edit.from - EPS && p.bar < edit.to - EPS)) {
+      const keep = tempoAt(edit.to, songTempo(s));
+      if (Math.abs(tempoAt(edit.from - 1e-6, songTempo({ bpm: s.bpm, tempoPoints })) - keep) > 1e-6 && !tempoPoints.some((p) => Math.abs(p.bar - edit.from) < 1e-6)) {
+        tempoPoints = sortedPoints([...tempoPoints, { id: uid('tempo'), bar: edit.from, bpm: keep, ramp: false }]);
+      }
+    }
     const meterPoints = s.meterPoints.length ? tidyMeters(shift(s.meterPoints), s.meter) : s.meterPoints;
     const tempoChanged = tempoPoints.some((p, i) => p.bar !== s.tempoPoints[i]?.bar) || tempoPoints.length !== s.tempoPoints.length;
     const meterChanged = meterPoints.some((p, i) => p.bar !== s.meterPoints[i]?.bar) || meterPoints.length !== s.meterPoints.length;
@@ -1144,16 +1155,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
     updateTempoChange: (id, patch, record = true) =>
       retempo((pts) =>
-        pts.map((p) =>
-          p.id === id
-            ? {
+        pts.map((p) => {
+          if (p.id !== id) return p;
+          // Onto another change's bar it doesn't go (one of the two would be lost): it stays put
+          const bar = patch.bar === undefined ? p.bar : Math.max(1 + 1 / 16, Math.min(TOTAL_BARS, patch.bar));
+          const free = !pts.some((o) => o.id !== id && Math.abs(o.bar - bar) < 1e-6);
+          return {
                 ...p,
-                ...(patch.bar !== undefined ? { bar: Math.max(1 + 1 / 16, Math.min(TOTAL_BARS, patch.bar)) } : {}),
+                ...(free ? { bar } : {}),
                 ...(patch.bpm !== undefined ? { bpm: clampBpm(patch.bpm) } : {}),
                 ...(patch.ramp !== undefined ? { ramp: patch.ramp } : {}),
-              }
-            : p
-        ),
+              };
+        }),
         record
       ),
     removeTempoChange: (id) => retempo((pts) => pts.filter((p) => p.id !== id)),
@@ -1173,7 +1186,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     updateMeterChange: (id, patch, record = true) =>
       set((s) => {
         const others = { base: s.meter, points: s.meterPoints.filter((p) => p.id !== id) };
-        const points = s.meterPoints.map((p) => (p.id === id ? { ...p, ...patch, ...(patch.bar !== undefined ? { bar: Math.max(1, nearestMeasureStart(patch.bar, others)) } : {}) } : p));
+        const self = s.meterPoints.find((p) => p.id === id);
+        let bar = self?.bar ?? 1;
+        if (self && patch.bar !== undefined) {
+          // Moved only between its neighbours, and not onto bar 1: passing one would swallow it
+          const sorted = sortedPoints(s.meterPoints);
+          const i = sorted.findIndex((p) => p.id === id);
+          const lo = sorted[i - 1]?.bar ?? 1;
+          const hi = sorted[i + 1]?.bar ?? Infinity;
+          const next = nearestMeasureStart(patch.bar, others);
+          if (next > lo + 1e-6 && next < hi - 1e-6) bar = next;
+        }
+        const points = s.meterPoints.map((p) => (p.id === id ? { ...p, ...patch, bar } : p));
         return { meterPoints: tidyMeters(points, s.meter), ...(record ? pushPast(s) : {}) };
       }),
     removeMeterChange: (id) => set((s) => ({ meterPoints: tidyMeters(s.meterPoints.filter((p) => p.id !== id), s.meter), ...pushPast(s) })),
@@ -2131,10 +2155,26 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
             placed.flatMap((p) => [
               ...(p.at > 1 + EPS ? [{ id: uid('tempo'), bar: p.at, bpm: clampBpm(tempoAt(p.from, oldTempo) * scale), ramp: false }] : []),
               ...s.tempoPoints.filter((q) => q.bar > p.from + EPS && q.bar < p.to - EPS).map((q) => ({ ...q, id: uid('tempo'), bar: q.bar + p.at - p.from, bpm: clampBpm(q.bpm * scale) })),
+              // A glide still under way at the section's end goes as far as it got there
+              ...(tempoFrom(p.to - 1e-3, oldTempo).glide
+                ? [{ id: uid('tempo'), bar: p.at + (p.to - p.from) - 1e-3, bpm: clampBpm(tempoAt(p.to - 1e-3, oldTempo) * scale), ramp: true }]
+                : []),
             ])
           )
         : s.tempoPoints;
       const firstBpm = s.tempoPoints.length && placed.length ? clampBpm(tempoAt(placed[0].from, oldTempo) * scale) : bpm;
+      // Time signatures follow their sections too
+      const oldMeter = songMeterOf(s);
+      const meter = placed.length ? meterAt(placed[0].from, oldMeter) : s.meter;
+      const meterPoints = s.meterPoints.length
+        ? tidyMeters(
+            placed.flatMap((p) => [
+              { id: uid('meter'), bar: p.at, ...meterAt(p.from, oldMeter) },
+              ...s.meterPoints.filter((q) => q.bar > p.from + EPS && q.bar < p.to - EPS).map((q) => ({ ...q, id: uid('meter'), bar: q.bar + p.at - p.from })),
+            ]),
+            meter
+          )
+        : s.meterPoints;
       const newTempo = songTempo({ bpm: firstBpm, tempoPoints });
       // Section flags where each section now starts; hit points locked to time stay with the picture
       const named = placed.filter((p) => !/^(Start|Bars \d+-\d+)$/.test(p.name));
@@ -2148,6 +2188,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         tracks,
         bpm: firstBpm,
         tempoPoints,
+        meter,
+        meterPoints,
         markers: retimeMarkers(markers, newTempo),
         loopRegion: { ...st.loopRegion, inBar: 1, outBar: cursor },
         ...pushPast(st),
@@ -2356,7 +2398,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         bpm: p.bpm,
         tempoPoints: p.tempoPoints ?? [],
         meter: p.meter ?? FOUR_FOUR,
-        meterPoints: p.meterPoints ?? [],
+        // On measure lines, as editing keeps them (a file may say otherwise)
+        meterPoints: tidyMeters(p.meterPoints ?? [], p.meter ?? FOUR_FOUR),
         swing: p.swing,
         loopRegion: p.loopRegion,
         tracks: safeTracks,
