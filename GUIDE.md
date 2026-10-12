@@ -442,7 +442,7 @@ The **Slicer** (**Add Track > Your Sounds > Slicer**) cuts a sound into slices a
 The app can load **Web Audio Modules** (WAM 2): instruments and effects other people make for the web, each at its own address. Look for them in the WAM community's plugin lists; you need the address of the plugin's module (usually ending `index.js`), and its site has to let other sites load it.
 
 - **A plugin instrument**: **Add Track → Plugin instrument (WAM)…**, paste the address and press **Load plugin**. It becomes a track you write notes for, record onto and play from a MIDI keyboard like any other (notes, velocity, held keys, pitch bend and the expression lanes go to it as MIDI).
-- **A plugin effect**: right-click any track's name, **Add plugin effect (WAM)…**. Effects come after the track's instrument and before its own inserts, in the order you add them. Right-click the track to open or remove each one.
+- **A plugin effect**: right-click a track's name (any but a bus), **Add plugin effect (WAM)…**. Effects come after the track's instrument and before its own inserts, in the order you add them. Right-click the track to open or remove each one.
 - **Its window**: the plugin's own controls open when you add it. Reopen them with the plug icon on the track's header, or from the right-click menu. Drag the window by its title bar; **BYPASS** (effects) lets the sound pass it by; closing the window leaves the plugin playing.
 - **Its settings** are read from it every few seconds and when its window closes, and saved with the project, so exports, freezing and reopening the project hear it as you set it.
 - Addresses you've used are listed under **Used before** in the dialog.
@@ -504,7 +504,7 @@ Tracks are stereo, so wide sounds keep their width all the way to the master: th
 
 A **bus** is a track with no clips of its own that other tracks play into, so they share one fader, one set of inserts and EQ, and one pair of sends: put all the drums through one compressor, or turn every backing part down together.
 
-- **Make one**: **Add Track → Bus (group channel)**, or select the tracks you want (Ctrl or Shift-click their names), right-click one and choose **Group N tracks into a new bus** (with one track, **Send to a new bus**).
+- **Make one**: **Add Track → Bus (group channel)**, or select clips on each of the tracks you want, right-click one of those tracks' names and choose **Group N tracks into a new bus** (for just the track you right-click, **Send to a new bus**).
 - **Route a track**: right-click its name and pick **Play into “Bus name”**, or **Output: back to the master**; or use the output menu at the bottom of its Mixer strip. The track's header shows **→ Bus name**, and the bus shows **bus · N** (how many tracks play into it).
 - A bus has a fader, pan, every insert and the EQ, sends, mute, solo, automation and a meter, like any track. At 0 dB, centred and with nothing on, it leaves the sound exactly as it was.
 - **Mute** a bus and its tracks go silent; **solo** it and you hear it with everything playing into it. Soloing a track in a bus keeps the bus playing.

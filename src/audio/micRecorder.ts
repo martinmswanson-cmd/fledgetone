@@ -20,6 +20,8 @@ export interface MicTake {
   sampleRate: number;
   /** Where the first sample belongs in the song (1-based bar). */
   startBar: number;
+  /** The audio time the first sample belongs at (as the music was heard) */
+  heardAt: number;
 }
 
 export interface MicSession {
@@ -88,7 +90,7 @@ export async function startMic(): Promise<MicSession> {
         return out;
       });
       const heardAt = firstTime - outputLatencySeconds() - inputLatency;
-      return { channels, sampleRate: ctx.sampleRate, startBar: transportBarAt(heardAt) };
+      return { channels, sampleRate: ctx.sampleRate, startBar: transportBarAt(heardAt), heardAt };
     },
   };
 }

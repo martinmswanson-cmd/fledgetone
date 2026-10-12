@@ -39,5 +39,8 @@ export function choosePlaybackMode(mode: PlaybackMode): void {
 export const chosenPlaybackMode = (): PlaybackMode => read();
 
 if (PLAYBACK_MODE === 'stable' && typeof window !== 'undefined') {
-  Tone.setContext(new Tone.Context({ latencyHint: 'playback', lookAhead: 0.25 }));
+  // The context Tone made when it was imported isn't used: let it go (its clock and audio device)
+  const unused = Tone.getContext();
+  Tone.setContext(new Tone.Context({ latencyHint: 'playback', lookAhead: 0.25 }), true);
+  void (unused as Tone.Context).close?.().catch(() => {});
 }

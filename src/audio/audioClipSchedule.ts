@@ -40,6 +40,8 @@ interface Entry {
 export interface AudioClipSchedule {
   /** Bring the Transport in line with the timeline's audio clips. Cheap when little has changed. */
   update: (tracks: Track[], clips: Clip[]) => void;
+  /** A track's bus was rebuilt (its plugin effects changed): what's playing on it starts again on the new one, where it was. */
+  restartTrack: (trackId: string) => void;
   dispose: () => void;
 }
 
@@ -313,6 +315,15 @@ export function createAudioClipSchedule(
       if (!running) return;
       const posTicks = transport.getTicksAtTime(now);
       for (const entry of fresh) startInside(entry.clip, entry.tick, posTicks, now);
+    },
+    restartTrack: (trackId) => {
+      const now = transport.now();
+      const onTrack = [...entries.values()].filter((e) => e.clip.trackId === trackId);
+      const ids = new Set(onTrack.map((e) => e.clip.id));
+      for (const voice of voices) if (ids.has(voice.clipId)) stop(voice, now);
+      if (!running) return;
+      const posTicks = transport.getTicksAtTime(now);
+      for (const entry of onTrack) startInside(entry.clip, entry.tick, posTicks, now);
     },
     dispose: () => {
       transport.off('start', onStart);

@@ -5,6 +5,7 @@ import { recordedPieces } from '../../store/takes';
 import { secondsBetween, secondsToBar, barToSeconds } from '../../audio/tempoMap';
 import { isAudioKind } from '../../audio/instrumentCatalog';
 import { startMic } from '../../audio/micRecorder';
+import { transportStartsAt } from '../../audio/transport';
 import type { MicSession } from '../../audio/micRecorder';
 import { encodeChannels } from '../../audio/exportWav';
 import { importSoundFile, SoundError } from '../../audio/soundLibrary';
@@ -22,6 +23,8 @@ export const MicButton: React.FC = () => {
   const [session, setSession] = useState<MicSession | null>(null);
   const [busy, setBusy] = useState(false);
   const meter = useRef<HTMLSpanElement>(null);
+  /** When and where playback started with the recording (null: it was already playing) */
+  const playStart = useRef<{ at: number; bar: number } | null>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -39,7 +42,14 @@ export const MicButton: React.FC = () => {
       const s = await startMic();
       setSession(s);
       const st = useTimelineStore.getState();
-      if (!st.isPlaying) await st.togglePlay();
+      if (!st.isPlaying) {
+        const bar = st.playheadPosition;
+        await st.togglePlay();
+        // Where and when the music starts: what's caught before then (the mic opens first) is cut,
+        // and the take starts at that bar (the Transport reads bar 1 before it has started)
+        const at = transportStartsAt();
+        playStart.current = at === null ? null : { at, bar };
+      } else playStart.current = null;
     } catch (err) {
       const msg = err instanceof DOMException && err.name === 'NotAllowedError' ? 'the browser was not allowed to use the microphone' : err instanceof Error ? err.message : String(err);
       showToast(`Couldn't start recording: ${msg}`);
@@ -48,7 +58,12 @@ export const MicButton: React.FC = () => {
 
   const stop = async () => {
     if (!session) return;
-    const take = session.stop();
+    let take = session.stop();
+    const begun = playStart.current;
+    if (take && begun && take.heardAt < begun.at) {
+      const lead = Math.round((begun.at - take.heardAt) * take.sampleRate);
+      take = lead >= take.channels[0].length ? null : { ...take, channels: take.channels.map((c) => c.slice(lead)), startBar: begun.bar, heardAt: begun.at };
+    }
     setSession(null);
     const st = useTimelineStore.getState();
     if (st.isPlaying) st.pause();

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { AudioWaveform, Gauge, Slice, Wand2, X } from 'lucide-react';
 import { useUiStore } from '../../store/uiStore';
-import { useTimelineStore } from '../../store/timelineStore';
+import { useTimelineStore, songTempo } from '../../store/timelineStore';
+import { tempoAt } from '../../audio/tempoMap';
 import type { Clip, Track } from '../../store/timelineTypes';
 import { AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from '../../store/timelineTypes';
 import { audioClipSeconds, audioSourceSeconds, loopTempos, stretchRatio } from '../../store/audioClips';
@@ -24,7 +25,8 @@ const formatDb = (db: number) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
  * adjustment), and "Chop to Slicer…".
  */
 export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, track }) => {
-  const bpm = useTimelineStore((s) => s.bpm);
+  // The tempo where the clip starts, which its sound plays at
+  const bpm = useTimelineStore((s) => tempoAt(clip.startBar, songTempo(s)));
   const audio = clip.audio!;
   const meta = useSoundLibrary((s) => s.metas[audio.soundId]);
   const [chopping, setChopping] = useState(false);
