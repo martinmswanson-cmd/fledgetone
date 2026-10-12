@@ -98,3 +98,21 @@ test('legato, transpose, fit to scale, humanize', () => {
   const h0 = T.humanize(notes, 1, 1 / 192, 0.1, () => 0);
   near(h0[0].startOffset, 0); // never before the clip
 });
+
+const SP = await import('../src/store/synthPatch.ts');
+
+test('synth patches: presets are valid, saved patches are made safe', () => {
+  for (const { name } of SP.SYNTH_PRESETS) {
+    const p = SP.presetPatch(name);
+    assert.deepEqual(SP.normalizeSynthPatch(JSON.parse(JSON.stringify(p))), p, name);
+  }
+  const wild = SP.normalizeSynthPatch({ osc1: { wave: 'banana', octave: 9, level: -2 }, unison: { voices: 40 }, filter: { cutoff: 1e9 }, lfo: { sync: '1/3' }, level: 'loud' });
+  assert.equal(wild.osc1.wave, 'sawtooth');
+  assert.equal(wild.osc1.octave, 3);
+  assert.equal(wild.osc1.level, 0);
+  assert.equal(wild.unison.voices, 7);
+  assert.equal(wild.filter.cutoff, 20000);
+  assert.equal(wild.lfo.sync, SP.defaultSynthPatch().lfo.sync);
+  assert.equal(wild.level, SP.defaultSynthPatch().level);
+  assert.equal(SP.normalizeSynthPatch('nope'), undefined);
+});

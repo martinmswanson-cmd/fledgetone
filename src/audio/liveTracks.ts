@@ -76,7 +76,7 @@ export function syncLiveTracks(tracks: Track[]): void {
         instrumentKey: track.instrumentKey,
         sampleUrl: sampleKey(track),
         strip,
-        instrument: createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer }),
+        instrument: createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer, synth: track.synth }),
         applied: null,
         audible: true,
         failed: false,
@@ -86,7 +86,7 @@ export function syncLiveTracks(tracks: Track[]): void {
     } else if (lt.instrumentKey !== track.instrumentKey || lt.sampleUrl !== sampleKey(track)) {
       lt.instrument.releaseAll();
       lt.instrument.dispose();
-      lt.instrument = createInstrument(track.instrumentKey, lt.strip.input, { sample: track.sample, slicer: track.slicer });
+      lt.instrument = createInstrument(track.instrumentKey, lt.strip.input, { sample: track.sample, slicer: track.slicer, synth: track.synth });
       lt.instrumentKey = track.instrumentKey;
       lt.sampleUrl = sampleKey(track);
       watchDownload(lt);
@@ -96,6 +96,7 @@ export function syncLiveTracks(tracks: Track[]): void {
       lt.strip.apply(track);
       // The Slicer follows its slices and modes without a rebuild
       lt.instrument.setSlicer?.(track.slicer);
+      lt.instrument.setSynth?.(track.synth);
     }
     lt.applied = track;
     // A silent track's notes are skipped rather than played into a muted channel, saving CPU
@@ -162,7 +163,7 @@ export function reloadInstrument(key: InstrumentKey): void {
     if (lt.instrumentKey !== key || !lt.failed) continue;
     safely(() => lt.instrument.releaseAll());
     lt.instrument.dispose();
-    lt.instrument = createInstrument(key, lt.strip.input, { sample: lt.applied?.sample, slicer: lt.applied?.slicer });
+    lt.instrument = createInstrument(key, lt.strip.input, { sample: lt.applied?.sample, slicer: lt.applied?.slicer, synth: lt.applied?.synth });
     watchDownload(lt);
   }
 }

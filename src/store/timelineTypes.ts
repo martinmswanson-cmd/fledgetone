@@ -1,4 +1,5 @@
 import type { InstrumentKey } from '../audio/engine';
+import type { SynthPatch } from './synthPatch';
 import { frameSeconds, isDropFrame } from '../audio/timecode';
 
 export type { InstrumentKey };
@@ -250,6 +251,8 @@ export interface Track {
   sample?: CustomSample;
   /** The Slicer instrument's sound and its slices (absent until a sound is loaded) */
   slicer?: SlicerSettings;
+  /** The Synth Designer's settings (absent: the default patch) */
+  synth?: SynthPatch;
   /** How settings change over the song: at most one lane per setting (older projects have none). */
   automation?: AutomationLane[];
   /** Rendered to audio to save CPU (see src/store/freeze.ts); absent when the track plays live. */
