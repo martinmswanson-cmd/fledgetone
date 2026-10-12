@@ -13,6 +13,7 @@ import { barFromClientX, Playhead, useScrub } from './Playhead';
 import { ClipContextMenu } from './ClipContextMenu';
 import type { ContextMenuState } from './ClipContextMenu';
 import { ChopToSlicerDialog } from './ChopToSlicerDialog';
+import { VariationsDialog } from './VariationsDialog';
 import { NewAudioTrackDrop } from './NewAudioTrackDrop';
 import { RulerContextMenu } from './RulerContextMenu';
 import type { RulerMenuState } from './RulerContextMenu';
@@ -104,6 +105,7 @@ export const Timeline: React.FC = () => {
   const closeRulerMenu = useCallback(() => setRulerMenu(null), []);
   /** The audio clip "Chop to Slicer…" was chosen for, while its dialog is open. */
   const [chopClipId, setChopClipId] = useState<string | null>(null);
+  const [variationsClipId, setVariationsClipId] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
 
@@ -413,9 +415,10 @@ export const Timeline: React.FC = () => {
         Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • M marker • , and . previous / next marker • curve button: automation • ? guide
       </div>
 
-      {menu && <ClipContextMenu menu={menu} onClose={closeMenu} onChop={setChopClipId} />}
+      {menu && <ClipContextMenu menu={menu} onClose={closeMenu} onChop={setChopClipId} onVariations={setVariationsClipId} />}
       {rulerMenu && <RulerContextMenu menu={rulerMenu} onClose={closeRulerMenu} />}
       {chopClipId && <ChopToSlicerDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
+      {variationsClipId && <VariationsDialog clipId={variationsClipId} onClose={() => setVariationsClipId(null)} />}
       <Toast />
     </div>
   );

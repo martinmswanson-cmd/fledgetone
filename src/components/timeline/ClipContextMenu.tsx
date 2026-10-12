@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Slice, Trash2 } from 'lucide-react';
+import { ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { patternsFor } from '../../store/demoSong';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -23,6 +23,8 @@ interface ClipContextMenuProps {
   onClose: () => void;
   /** "Chop to Slicer…" on an audio clip: open that dialog for the clip. */
   onChop?: (clipId: string) => void;
+  /** Open Generate variations for a clip */
+  onVariations?: (clipId: string) => void;
 }
 
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
@@ -116,7 +118,7 @@ const RepeatForm: React.FC<{ onRepeat: (times: number) => void }> = ({ onRepeat 
  * clip: Gain and fades, Chop to Slicer) and empty lane space (New clip, Insert pattern, Paste; on
  * an Audio track: Load audio file). Also opened by a track header's + button.
  */
-export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose, onChop }) => {
+export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose, onChop, onVariations }) => {
   const ref = useRef<HTMLDivElement>(null);
   const hasClipboard = useTimelineStore((s) => s.clipboard.length > 0);
   const loopOut = useTimelineStore((s) => s.loopRegion.outBar);
@@ -169,6 +171,9 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
           : { key: 'edit', label: 'Edit notes', shortcut: 'dbl-click', icon: <Piano className="w-3.5 h-3.5" />, onClick: run(() => s.openEditor(menu.clipId!)) },
         ...(audioClip && onChop
           ? [{ key: 'chop', label: 'Chop to Slicer…', icon: <Slice className="w-3.5 h-3.5" />, onClick: run(() => onChop(menu.clipId!)) }]
+          : []),
+        ...(onVariations
+          ? [{ key: 'variations', label: 'Generate variations…', shortcut: 'game SFX', icon: <Shuffle className="w-3.5 h-3.5" />, onClick: run(() => onVariations(menu.clipId!)) }]
           : []),
         { key: 'copy', label: 'Copy', shortcut: `${MOD}C`, icon: <Copy className="w-3.5 h-3.5" />, onClick: run(s.copySelectedClips), divider: true },
         { key: 'cut', label: 'Cut', shortcut: `${MOD}X`, icon: <Scissors className="w-3.5 h-3.5" />, onClick: run(s.cutSelectedClips) },
