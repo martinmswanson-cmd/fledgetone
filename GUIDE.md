@@ -236,6 +236,8 @@ The header has the clip's name (click to rename), **GRID** (1/32, 1/16T, 1/16, 1
 
 **Fine grids and triplets.** **T** means triplet: three in the space of two, so 1/16T puts six notes in a beat and 1/8T three. Clicking places a note on the grid line at or before the pointer. Dragging a note, or its right edge, snaps it to the grid, and the arrow keys move notes one grid step. Changing the grid never moves existing notes. Zoom in (the magnifier) for comfortable 1/32 editing. Swing leaves triplets and 1/32 notes on the grid, and an 8th with a 1/32 roll or a triplet in it plays straight, so rolls stay even with Swing on.
 
+**Step sequencer** (drum clips): with **STEPS** ticked (the default for drum kits), a click puts a hit in that GRID step of the row, and a click on a hit takes it out, like a drum machine. Shift-click adds an accent (full velocity). Alt-click (or STEPS off) adds and drags notes as usual.
+
 **Composing helpers** (in the piano roll's header):
 
 - **SCALE**: pick a key (root and scale: Major, Minor, Harmonic minor, Dorian, Phrygian, Lydian, Mixolydian, the two pentatonics, Blues or Japanese). Rows outside the key are shaded dark and the root's rows lit, and a click lands on the nearest note of the key, so nothing sounds wrong.
