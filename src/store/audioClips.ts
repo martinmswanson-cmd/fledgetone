@@ -80,7 +80,11 @@ export function audioLengthLimit(audio: ClipAudio, soundSeconds: number | undefi
 /** The sounds a project refers to: audio clips, Slicer tracks and Sampler tracks (each id once). */
 export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer'>> }): string[] {
   const ids = new Set<string>();
-  for (const c of p.clips) if (c.audio) ids.add(c.audio.soundId);
+  for (const c of p.clips) {
+    if (!c.audio) continue;
+    ids.add(c.audio.soundId);
+    if (c.audio.tunedFrom) ids.add(c.audio.tunedFrom);
+  }
   for (const t of p.tracks) {
     if (t.sample?.soundId) ids.add(t.sample.soundId);
     if (t.slicer) ids.add(t.slicer.soundId);
@@ -108,6 +112,7 @@ export function normalizeClipAudio(raw: unknown): ClipAudio | undefined {
     fadeIn: isNum(raw.fadeIn) ? clamp(raw.fadeIn, 0, AUDIO_FADE_MAX) : 0,
     fadeOut: isNum(raw.fadeOut) ? clamp(raw.fadeOut, 0, AUDIO_FADE_MAX) : 0,
     ...(isNum(raw.stretchBpm) ? { stretchBpm: clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) } : {}),
+    ...(typeof raw.tunedFrom === 'string' && raw.tunedFrom ? { tunedFrom: raw.tunedFrom } : {}),
   };
 }
 

@@ -65,6 +65,9 @@ interface UiState {
   /** The clip whose Generate variations dialog is open */
   variationsClipId: string | null;
   setVariationsClip: (clipId: string | null) => void;
+  /** The audio clip whose Tune vocal dialog is open */
+  tuneClipId: string | null;
+  setTuneClip: (clipId: string | null) => void;
   setDialog: (dialog: AppDialog | null) => void;
   openGuide: (section?: string) => void;
   closeGuide: () => void;
@@ -88,6 +91,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   dockHeight: dock.height,
   variationsClipId: null,
   setVariationsClip: (variationsClipId) => set({ variationsClipId }),
+  tuneClipId: null,
+  setTuneClip: (tuneClipId) => set({ tuneClipId }),
   setDialog: (dialog) => {
     if (isDockTab(dialog)) get().openDock(dialog);
     else set({ dialog });

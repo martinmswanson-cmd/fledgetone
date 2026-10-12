@@ -1280,7 +1280,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const clip = s.clips.find((c) => c.id === clipId);
         const audio = clip?.audio && normalizeClipAudio({ ...clip.audio, ...patch });
         if (!clip?.audio || !audio) return s;
-        const same = (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut'] as const).every((k) => audio[k] === clip.audio![k]);
+        if (patch.tunedFrom === undefined && 'tunedFrom' in patch) delete audio.tunedFrom;
+        const same = (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut', 'tunedFrom'] as const).every((k) => audio[k] === clip.audio![k]);
         if (same) return s;
         return { clips: s.clips.map((c) => (c === clip ? { ...c, audio } : c)), ...(record ? pushPast(s) : {}) };
       }),

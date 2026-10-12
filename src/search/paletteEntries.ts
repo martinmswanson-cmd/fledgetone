@@ -92,6 +92,11 @@ const TOOLS: Item[] = [
   { title: 'Game kit export', keywords: 'game kit export godot unity web engine adaptive music json loops states player script', detail: 'Every state, stinger and transition, with players for web, Godot and Unity.', run: () => ui().setDialog('game') },
   { title: 'Loop variations', keywords: 'loop variations takes alternate versions fills repeat fatigue', detail: 'Takes of the loop for a game to rotate through (Game preview).', run: () => ui().setDialog('game') },
   { title: 'Generate variations (game sounds)', keywords: 'variations micro variation random footstep swing click sfx takes round robin pitch', detail: 'Right-click a short clip: Generate variations…', run: () => 'Right-click a short clip on the timeline and choose Generate variations…' },
+  { title: 'Tune vocal', keywords: 'tune tuning autotune auto tune pitch correction vocal voice singing key scale in tune flat sharp robot', detail: 'Pull a recorded vocal onto the notes of a key (right-click an audio clip).', run: () => {
+    const clip = timeline().clips.find((c) => c.isSelected && c.audio) ?? timeline().clips.find((c) => c.audio);
+    if (!clip) return 'Record or drop a vocal onto the timeline first: then right-click it, Tune vocal…';
+    ui().setTuneClip(clip.id);
+  } },
   { title: 'Transition matrix', keywords: 'transition transitions matrix fill riser impact crossfade stinger bridge state switch from to', detail: 'How each game state hands over to each other one (Game preview).', run: () => ui().setDialog('game') },
   { title: 'Audition like the game', keywords: 'audition pads trigger test game engine states preview crossfade', detail: 'Play the states with the game kit\'s own player (Game preview).', run: () => ui().setDialog('game') },
   { title: 'Intensity and stem groups', keywords: 'intensity stem group stems ambient percussion tension climax curve crossfade layers adaptive', detail: 'Crossfade stem groups along their curves (header, Game preview).', run: () => ui().setDialog('game') },
