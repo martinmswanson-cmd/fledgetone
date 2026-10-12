@@ -26,6 +26,7 @@ import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../au
 import { createZip } from '../../audio/zip';
 import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encoders';
 import type { AudioFormat } from '../../audio/encoders';
+import { SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
 import { canExportVideo, renderVideo, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '../../audio/videoExport';
 import { barToSeconds, formatSmpte } from '../../audio/transport';
 import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
@@ -205,6 +206,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const videoStart = useVideoStore((st) => st.start);
   const [useFootage, setUseFootage] = useState(true);
   const [keepVideoSound, setKeepVideoSound] = useState(false);
+  const [skin, setSkin] = useState<SkinId>('bars');
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const abortRef = useRef<AbortController | null>(null);
   // A render still going when the dialog goes away is stopped
@@ -337,6 +339,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         }
         const blob = await renderVideo({
           footage,
+          skin,
           channels,
           sampleRate: audio.sampleRate,
           title: projectName,
@@ -520,6 +523,18 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               An MP4 video ({VIDEO_WIDTH}×{VIDEO_HEIGHT}, {VIDEO_FPS} fps) of the mix with a visualizer: the project's name, a spectrum that moves with the music, the whole song's waveform with a
               playhead, the section from your markers, and the time. Ready for YouTube, socials or a game's trailer. It's drawn faster than real time.
             </p>
+            {!(refVideo && useFootage) && (
+              <label className="flex items-center gap-2 text-forge-text">
+                Visualizer style
+                <select value={skin} onChange={(e) => setSkin(e.target.value as SkinId)} className="h-7 bg-forge-bg border border-forge-border rounded px-1" title={SPECTRUM_SKINS.find((k) => k.id === skin)?.blurb}>
+                  {SPECTRUM_SKINS.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
               <span>

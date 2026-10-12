@@ -1,4 +1,5 @@
 import { BufferTarget, EncodedAudioPacketSource, EncodedPacket, EncodedVideoPacketSource, Mp4OutputFormat, Output } from 'mediabunny';
+import { drawSpectrum, type SkinId, type SkinMemory } from './spectrumSkins';
 import { openVideo, seekVideo } from '../store/videoStore';
 import boLogo from '../assets/bo.svg';
 
@@ -38,6 +39,8 @@ export interface VideoOptions {
    * export's start. Before and after the video, the frame is black.
    */
   footage?: { url: string; offset: number };
+  /** How the spectrum is drawn (spectrumSkins.ts): the plain bars, or a character. */
+  skin?: SkinId;
 }
 
 /** True where this browser can make a video at all (WebCodecs in a secure page). */
@@ -242,6 +245,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   background.addColorStop(1, '#0c0c0e');
   const total = Math.ceil(seconds * VIDEO_FPS);
   const footage = opts.footage ? await openVideo(opts.footage.url) : null;
+  const skinMemory: SkinMemory = {};
 
   const encodeFrame = async (f: number, t: number) => {
     const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / VIDEO_FPS) });
@@ -291,20 +295,24 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     g.font = '400 22px system-ui, -apple-system, Segoe UI, sans-serif';
     g.fillText(opts.subtitle, stripX + 96, 140, stripW - 96);
 
-    // Spectrum: mirrored bars, cyan to green
+    // Spectrum: mirrored bars, cyan to green, or one of the characters
     const levels = spectrum(t);
-    const barsTop = 190;
-    const barsH = 300;
-    const gap = 4;
-    const bw = (stripW - gap * (BANDS - 1)) / BANDS;
-    for (let b = 0; b < BANDS; b++) {
-      const h = Math.max(3, levels[b] * barsH);
-      const x = stripX + b * (bw + gap);
-      const hue = 190 - (b / BANDS) * 40;
-      g.fillStyle = `hsl(${hue} 85% ${50 + levels[b] * 15}%)`;
-      g.fillRect(x, barsTop + barsH - h, bw, h);
-      g.fillStyle = `hsla(${hue} 85% 50% / 0.16)`;
-      g.fillRect(x, barsTop + barsH + 6, bw, h * 0.15);
+    if (opts.skin && opts.skin !== 'bars') {
+      drawSpectrum(g, opts.skin, { x: stripX, y: 170, w: stripW, h: 360 }, levels, t, skinMemory);
+    } else {
+      const barsTop = 190;
+      const barsH = 300;
+      const gap = 4;
+      const bw = (stripW - gap * (BANDS - 1)) / BANDS;
+      for (let b = 0; b < BANDS; b++) {
+        const h = Math.max(3, levels[b] * barsH);
+        const x = stripX + b * (bw + gap);
+        const hue = 190 - (b / BANDS) * 40;
+        g.fillStyle = `hsl(${hue} 85% ${50 + levels[b] * 15}%)`;
+        g.fillRect(x, barsTop + barsH - h, bw, h);
+        g.fillStyle = `hsla(${hue} 85% 50% / 0.16)`;
+        g.fillRect(x, barsTop + barsH + 6, bw, h * 0.15);
+      }
     }
 
     // Waveform of the whole song, with the playhead
