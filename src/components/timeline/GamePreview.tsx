@@ -10,6 +10,7 @@ import { transitionCue, TRANSITIONS } from '../../store/transitions';
 import type { TransitionKind } from '../../store/timelineTypes';
 import * as Tone from 'tone';
 import { createZip } from '../../audio/zip';
+import { buildGameKit } from '../../audio/gameKit';
 import { downloadBlob, encodeChannels, renderLoopTakes } from '../../audio/exportWav';
 import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/loopVariations';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -125,7 +126,6 @@ const GameKitButton: React.FC = () => {
     const s = useTimelineStore.getState();
     setProgress('0%');
     try {
-      const { buildGameKit } = await import('../../audio/gameKit');
       const blob = await buildGameKit(
         {
           name: s.projectName || 'Untitled',
@@ -185,7 +185,7 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
     if (!stinger) return;
     try {
       const at = await fireStinger(stinger, timing);
-      const wait = Math.max(0, (at - (await import('tone')).now()) * 1000);
+      const wait = Math.max(0, (at - Tone.getContext().currentTime) * 1000);
       window.setTimeout(() => setLit(id), wait);
       window.setTimeout(() => setLit((cur) => (cur === id ? null : cur)), wait + 400);
     } catch {
