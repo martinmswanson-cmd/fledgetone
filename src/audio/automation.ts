@@ -203,8 +203,22 @@ function firstAfter(points: readonly AutomationPoint[], bar: number): number {
   return lo;
 }
 
+/** The most a line bends: at full bend it's a 4th-power curve. */
+export const CURVE_MAX = 1;
+
+/**
+ * How far along a line bent by `curve` (-1..1) the value is, `u` (0..1) of the way through it:
+ * u itself when straight, u^4 at full positive bend (slow then fast), 1-(1-u)^4 at full negative.
+ */
+export function bend(u: number, curve = 0): number {
+  const x = Math.max(0, Math.min(1, u));
+  if (!curve) return x;
+  const p = 1 + 3 * Math.min(CURVE_MAX, Math.abs(curve));
+  return curve > 0 ? x ** p : 1 - (1 - x) ** p;
+}
+
 const lerp = (a: AutomationPoint, b: AutomationPoint, bar: number) =>
-  b.bar - a.bar < 1e-12 ? b.value : a.value + ((b.value - a.value) * (bar - a.bar)) / (b.bar - a.bar);
+  b.bar - a.bar < 1e-12 ? b.value : a.value + (b.value - a.value) * bend((bar - a.bar) / (b.bar - a.bar), a.curve);
 
 /**
  * The lane value at a song position, or null for a lane without points. Where two points share a
@@ -239,11 +253,15 @@ export interface LanePiece {
   /** Lane values at the start and at the end (arriving, so before any jump there) */
   from: number;
   to: number;
+  /** It bends (its point has a curve): the values between come from laneValueAt, not a straight line */
+  curved: boolean;
 }
 
 export function lanePieceFrom(points: readonly AutomationPoint[], bar: number, limitBar: number): LanePiece {
   const endBar = Math.min(nextPointBar(points, bar), limitBar);
-  return { endBar, from: laneValueAt(points, bar) ?? 0, to: laneValueBefore(points, endBar) ?? 0 };
+  const i = firstAfter(points, bar);
+  const curved = i > 0 && i < points.length && !!points[i - 1].curve;
+  return { endBar, from: laneValueAt(points, bar) ?? 0, to: laneValueBefore(points, endBar) ?? 0, curved };
 }
 
 /** The lanes with points: the settings automation owns on this track. */
@@ -309,7 +327,11 @@ export function normalizePoints(points: readonly AutomationPoint[]): AutomationP
   return points
     .map((p, i) => ({ p, i, bar: Math.max(1, Math.min(LAST_BAR, p.bar)) }))
     .sort((a, b) => a.bar - b.bar || a.i - b.i)
-    .map(({ p, bar }) => (bar === p.bar && p.value >= 0 && p.value <= 1 ? p : { bar, value: clamp01(p.value) }));
+    .map(({ p, bar }) => {
+      const curve = typeof p.curve === 'number' && Number.isFinite(p.curve) && p.curve !== 0 ? Math.max(-CURVE_MAX, Math.min(CURVE_MAX, p.curve)) : undefined;
+      if (bar === p.bar && p.value >= 0 && p.value <= 1 && curve === p.curve) return p;
+      return curve === undefined ? { bar, value: clamp01(p.value) } : { bar, value: clamp01(p.value), curve };
+    });
 }
 
 /** Add a point, after any already at its bar. Returns the new list and where the point went. */
@@ -362,7 +384,7 @@ export function movePoints(
   // on the side it was left behind on
   const entries = points.map((p, i) => {
     if (!selected.has(i)) return { p, key: 3 * i + 1 };
-    const next = { bar: Math.max(1, Math.min(LAST_BAR, p.bar + bars)), value: clamp01(p.value + value) };
+    const next = { ...p, bar: Math.max(1, Math.min(LAST_BAR, p.bar + bars)), value: clamp01(p.value + value) };
     moved.add(next);
     return { p: next, key: 3 * i + 1 };
   });
@@ -381,7 +403,7 @@ export function insertLaneBars(points: AutomationPoint[], at: number, bars: numb
   if (bars <= 0 || !points.some((p) => p.bar >= at - EPS)) return points;
   const held = laneValueBefore(points, at)!;
   const leaving = laneValueAt(points, at)!;
-  const move = (p: AutomationPoint) => ({ bar: p.bar + bars, value: p.value });
+  const move = (p: AutomationPoint) => ({ ...p, bar: p.bar + bars });
   const shifted: AutomationPoint[] = points.some((p) => p.bar < at - EPS)
     ? [
         ...points.filter((p) => p.bar < at - EPS),
@@ -411,7 +433,7 @@ export function removeLaneBars(points: AutomationPoint[], from: number, to: numb
     ...points.filter((p) => p.bar < from - EPS),
     { bar: from, value: arriving },
     ...(leaving !== arriving ? [{ bar: from, value: leaving }] : []),
-    ...points.filter((p) => p.bar > to + EPS).map((p) => ({ bar: p.bar - length, value: p.value })),
+    ...points.filter((p) => p.bar > to + EPS).map((p) => ({ ...p, bar: p.bar - length })),
   ];
 }
 
@@ -440,7 +462,7 @@ export function parseAutomation(raw: unknown): AutomationLane[] | undefined {
       (p): p is AutomationPoint =>
         typeof p === 'object' && p !== null && Number.isFinite((p as AutomationPoint).bar) && Number.isFinite((p as AutomationPoint).value)
     );
-    lanes.push({ param, points: normalizePoints(valid.map(({ bar, value }) => ({ bar, value }))) });
+    lanes.push({ param, points: normalizePoints(valid.map(({ bar, value, curve }) => (typeof curve === 'number' ? { bar, value, curve } : { bar, value }))) });
   }
   return lanes.length ? lanes : undefined;
 }

@@ -377,11 +377,16 @@ export interface AutomationPoint {
   bar: number;
   /** Height in the lane, 0 (bottom) to 1 (top); see src/audio/automation.ts for what it means per setting */
   value: number;
+  /**
+   * The bend of the line from this point to the next, -1 to 1: 0 (or unset) is straight, above 0
+   * starts slow and speeds up (a build), below 0 starts fast and settles (a fade that drops away).
+   */
+  curve?: number;
 }
 
 /**
  * How one track setting changes over the song. Points are kept in bar order; two may share a bar
- * (an instant jump). The value runs in a straight line (in lane height) from point to point,
+ * (an instant jump). The value runs in a line (in lane height) from point to point, straight or bent by the point's `curve`,
  * holds the first point's value before it and the last one's after it. While a lane has points it
  * owns its setting: the track's own value for it comes back when the lane is emptied or removed.
  */

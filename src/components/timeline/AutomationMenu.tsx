@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Eraser, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react';
+import { Eraser, Minus, Spline, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam } from '../../store/timelineTypes';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -13,6 +13,8 @@ export interface AutomationMenuState {
   y: number;
   trackId: string;
   param: AutomationParam;
+  /** Where on the lane it was opened */
+  bar?: number;
 }
 
 /** Right-click menu of an automation lane: quick ramps over the loop region, clearing and removing the lane. */
@@ -39,10 +41,28 @@ export const AutomationMenu: React.FC<{ menu: AutomationMenuState; onClose: () =
   const [low, high] = spec.rampRange(track).map(spec.toNorm);
   const ramp = (from: number, to: number) => run(() => s.setAutomationPoints(track.id, menu.param, rampPoints(points, inBar, outBar, from, to), true));
   const span = `bars ${formatBarCount(inBar)}–${formatBarCount(outBar)}`;
+  // The line under the pointer, between two points: it can be bent
+  const after = menu.bar === undefined ? -1 : points.findIndex((p) => p.bar > menu.bar!);
+  const left = after > 0 && points[after - 1].value !== points[after].value ? after - 1 : -1;
+  const bendTo = (curve: number) =>
+    run(() => {
+      const a = points[left];
+      s.setAutomationPoints(track.id, menu.param, points.map((p, i) => (i === left ? (curve ? { ...a, curve } : { bar: a.bar, value: a.value }) : p)), true);
+    });
+  const current = left >= 0 ? points[left].curve ?? 0 : 0;
+  const bends: Array<MenuItemProps & { key: string }> =
+    left < 0
+      ? []
+      : [
+          { key: 'slow', label: 'Bend: slow start', icon: <Spline className="w-3.5 h-3.5" />, onClick: bendTo(0.6), disabled: current === 0.6, divider: true },
+          { key: 'fast', label: 'Bend: fast start', icon: <Spline className="w-3.5 h-3.5 -scale-x-100" />, onClick: bendTo(-0.6), disabled: current === -0.6 },
+          { key: 'straight', label: 'Straighten line', shortcut: 'Alt-drag', icon: <Minus className="w-3.5 h-3.5" />, onClick: bendTo(0), disabled: current === 0 },
+        ];
 
   const items: Array<MenuItemProps & { key: string }> = [
     { key: 'up', label: 'Ramp up In → Out', shortcut: span, icon: <TrendingUp className="w-3.5 h-3.5" />, onClick: ramp(low, high) },
     { key: 'down', label: 'Ramp down In → Out', shortcut: span, icon: <TrendingDown className="w-3.5 h-3.5" />, onClick: ramp(high, low) },
+    ...bends,
     {
       key: 'delete',
       label: 'Delete selected points',
