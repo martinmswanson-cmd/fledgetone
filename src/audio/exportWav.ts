@@ -1,3 +1,4 @@
+import { audibleIds, busChain, busFirst, busOf } from '../store/buses';
 import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
 import { createMixChain, getMasterVolume } from './engine';
@@ -142,8 +143,9 @@ function disposeFinishedSources(context: Tone.BaseContext, time: number): void {
 
 /** The tracks that sound: not muted, and soloed if any track is. */
 export function audibleTracks(tracks: Track[]): Track[] {
-  const anySolo = tracks.some((t) => t.isSoloed);
-  return tracks.filter((t) => !t.isMuted && (!anySolo || t.isSoloed));
+  // Muted and soloed through their buses too (see buses.ts)
+  const heard = audibleIds(tracks);
+  return tracks.filter((t) => heard.has(t.id));
 }
 
 /** The tracks that get a stem: audible ones with a clip in [startBar, endBar). */
@@ -476,9 +478,13 @@ export async function renderForFreeze(opts: RenderOptions, track: Track, onProgr
  */
 async function renderTracks(
   opts: RenderOptions,
-  tracks: Track[],
+  sounding: Track[],
   onProgress?: (fraction: number) => void
 ): Promise<{ channels: Float32Array<ArrayBuffer>[]; sampleRate: number; reverbImpulse: AudioBuffer | undefined }> {
+  // The buses these tracks play through come too (a stem of a bused track has its bus's sound),
+  // each made before the tracks that play into it
+  const busIds = new Set(sounding.flatMap((t) => busChain(t, opts.tracks).map((b) => b.id)));
+  const tracks = busFirst([...sounding.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]);
   const { clips, bpm, swing, startBar, endBar, masterFx, signal } = opts;
   const ending = opts.ending ?? 'ringOut';
   const plan = planRender(opts, opts.bypassMaster ? 0 : await masterChainLatency(opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
@@ -633,7 +639,9 @@ async function renderTracks(
     const stripOf = new Map<string, TrackStrip>();
     const instruments = new Map<string, TrackInstrument>();
     for (const track of tracks) {
-      const strip = createTrackStrip(mix.bus, mix.busFx);
+      // Into its bus's strip (made already: buses come first), or the master
+      const bus = busOf(track, opts.tracks);
+      const strip = createTrackStrip((bus && stripOf.get(bus.id)?.input) || mix.bus, mix.busFx);
       strip.apply(track, { ramp: 0, muteOverride: false });
       if (opts.intensity) strip.setIntensityLevel(trackIntensityLevel(track, opts.intensity.curves, opts.intensity.value));
       strips.push(strip);

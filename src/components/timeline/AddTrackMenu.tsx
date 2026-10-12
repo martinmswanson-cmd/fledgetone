@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Waypoints } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { InstrumentList } from '../InstrumentMenu';
 import { useFloatingMenu } from '../useFloatingMenu';
@@ -31,13 +31,28 @@ export const AddTrackMenu: React.FC = () => {
           column's stacking layer and get covered by later sticky rows (e.g. the piano roll ruler) */}
       {render(
         'Add instrument track',
-        <InstrumentList
-          heading="Add Instrument Track"
-          onPick={(key) => {
-            useTimelineStore.getState().addTrack(key);
-            close();
-          }}
-        />
+        <>
+          <button
+            type="button"
+            className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-slate-200 hover:bg-slate-500/15 border-b border-forge-border"
+            onClick={() => {
+              useTimelineStore.getState().addTrack('bus');
+              close();
+            }}
+            title="A group channel: route tracks into it (right-click a track) to share one fader, inserts and sends"
+          >
+            <Waypoints className="w-3.5 h-3.5 text-slate-300" />
+            <span className="flex-1">Bus (group channel)</span>
+            <span className="text-[10px] text-forge-muted">route tracks into it</span>
+          </button>
+          <InstrumentList
+            heading="Add Instrument Track"
+            onPick={(key) => {
+              useTimelineStore.getState().addTrack(key);
+              close();
+            }}
+          />
+        </>
       )}
     </>
   );

@@ -441,6 +441,8 @@ export interface Track {
   duckProxy?: { depth: number };
   /** The folder it's in (see folders.ts): every member carries the folder's settings; members sit together */
   folder?: TrackFolder;
+  /** The bus track it plays into (see buses.ts); absent: straight to the master */
+  output?: string;
 }
 
 /** The reference video a project scores to (see videoStore): kept in the browser by `key`. */
