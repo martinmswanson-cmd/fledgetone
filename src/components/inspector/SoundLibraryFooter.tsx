@@ -27,6 +27,8 @@ export const SoundLibraryFooter: React.FC = () => {
   const free = async () => {
     const keep = new Set(referencedSoundIds(currentProject()));
     if (lastSession) referencedSoundIds(lastSession.project).forEach((id) => keep.add(id));
+    // Frozen tracks' sounds too (they aren't saved in project files, so only this browser has them)
+    for (const p of [currentProject(), lastSession?.project]) p?.tracks.forEach((t) => t.frozen && keep.add(t.frozen.soundId));
     if (!window.confirm("Delete the sounds in this browser that neither this project nor your last session uses?\n\nProjects saved as files keep their sounds inside the file, so they come back when opened.")) return;
     try {
       const gone = await freeUnusedSounds(keep);

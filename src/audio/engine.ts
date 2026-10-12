@@ -10,6 +10,9 @@ export type AudioState = 'suspended' | 'running' | 'closed';
 
 export type { InstrumentKey } from './instrumentCatalog';
 
+/** The mix bus's gain: a little headroom before the master compressor. */
+export const BUS_GAIN = 0.9;
+
 /**
  * Build the mix graph in the current Tone context:
  *   track strips -> master bus -> compressor -> (OTT, stereo width) -> limiter -> ceiling -> destination
@@ -20,7 +23,7 @@ export type { InstrumentKey } from './instrumentCatalog';
  */
 export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx = DEFAULT_MASTER_FX, bpm = 122, master: MasterSettings = defaultMasterSettings()) {
   // Central master bus for every track and the effect returns
-  const bus = new Tone.Gain(0.9);
+  const bus = new Tone.Gain(BUS_GAIN);
   const busFx = createBusEffects(bus, masterFx, bpm);
 
   // Master mastering chain

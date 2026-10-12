@@ -252,6 +252,25 @@ export interface Track {
   slicer?: SlicerSettings;
   /** How settings change over the song: at most one lane per setting (older projects have none). */
   automation?: AutomationLane[];
+  /** Rendered to audio to save CPU (see src/store/freeze.ts); absent when the track plays live. */
+  frozen?: FrozenTrack;
+}
+
+/**
+ * A track's instrument, inserts and EQ rendered to a sound in the sound library. While what it was
+ * rendered from is unchanged (`fingerprint`), live playback plays the sound instead; volume, pan
+ * and the sends stay live.
+ */
+export interface FrozenTrack {
+  soundId: string;
+  /** Where the sound starts on the timeline (the track's first clip). */
+  startBar: number;
+  /** The sound's length in seconds. */
+  seconds: number;
+  /** dB to play the sound at: it's stored normalized (so quiet tracks keep their detail), plus what playing it through the strip and bus again takes off. */
+  gainDb: number;
+  /** Hash of everything the render depended on. */
+  fingerprint: string;
 }
 
 /**

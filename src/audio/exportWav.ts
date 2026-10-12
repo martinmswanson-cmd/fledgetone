@@ -61,6 +61,8 @@ export interface RenderOptions {
   signal?: AbortSignal;
   /** Markers: the ones in the range go into the file as cue points (see exportCues). */
   markers?: Marker[];
+  /** Leave the master volume out (a freeze: live playback applies it to the frozen sound anyway). */
+  ignoreMasterVolume?: boolean;
 }
 
 /** Seconds of audio rendered between scheduling passes. */
@@ -333,6 +335,16 @@ export async function renderStems(
 }
 
 /**
+ * Render one track for freezing (see src/store/freeze.ts): through its instrument, inserts and
+ * strip, without the master chain or volume, at its true level (not scaled to fit), with every
+ * other track's kicks still driving its Pump. `opts.tracks` is the whole arrangement.
+ */
+export async function renderForFreeze(opts: RenderOptions, track: Track, onProgress?: (fraction: number) => void): Promise<{ channels: Float32Array[]; sampleRate: number }> {
+  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, ignoreMasterVolume: true }, [track], onProgress);
+  return { channels, sampleRate };
+}
+
+/**
  * Render `tracks` (already filtered to the ones that sound) as planned by planRender. Returns
  * the file's samples per channel, views into the render.
  */
@@ -349,7 +361,7 @@ async function renderTracks(
   const duration = length / sampleRate;
   signal?.throwIfAborted();
   // Read live state before the global context is swapped
-  const masterDb = getMasterVolume();
+  const masterDb = opts.ignoreMasterVolume ? 0 : getMasterVolume();
 
   // Download any sampled instruments first (shared with live playback, so usually instant)
   for (const key of new Set(tracks.map((t) => t.instrumentKey))) {
@@ -628,7 +640,7 @@ export function encodeWav(audio: AudioBuffer, bitDepth: BitDepth = 16, cues: rea
   return encodeChannels(channelsOf(audio), audio.sampleRate, bitDepth, cues);
 }
 
-function encodeChannels(data: Float32Array[], sampleRate: number, bitDepth: BitDepth, cues: readonly WavCue[] = []): Blob {
+export function encodeChannels(data: Float32Array[], sampleRate: number, bitDepth: BitDepth, cues: readonly WavCue[] = []): Blob {
   const channels = data.length;
   const frames = data[0].length;
   const float = bitDepth === 32;

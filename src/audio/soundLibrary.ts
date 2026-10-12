@@ -294,8 +294,8 @@ export function ensureSound(id: string): void {
  * play is refused) and stored. The same bytes loaded again give the same id and are stored once.
  * The meta describes the file; the caller names the clip or track.
  */
-export async function importSoundFile(file: Blob, name: string): Promise<SoundMeta> {
-  if (file.size > MAX_SOUND_BYTES) {
+export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_SOUND_BYTES): Promise<SoundMeta> {
+  if (file.size > maxBytes) {
     throw new SoundError(`"${name}" is ${megabytes(file.size)} MB. Sounds up to ${MAX_SOUND_BYTES / 1048576} MB can be loaded: trim it, or save it as MP3 or OGG.`);
   }
   const bytes = await file.arrayBuffer();

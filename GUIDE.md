@@ -353,6 +353,19 @@ Every track goes through a master compressor and a limiter that holds peaks just
 
 Mixer and effect changes can be undone with `Ctrl+Z`; tempo, swing and master volume can't.
 
+### Freezing tracks
+
+Big songs can ask more of the computer than it has, and playback starts to crackle or skip. **Freezing** a track fixes that: click the snowflake in its header and the app renders the track's instrument, effects and EQ to audio once (a second or two), then plays that recording instead. A frozen track costs about as much as one audio clip: on a 36-track test song, freezing everything cut the playback work to about a quarter.
+
+- A frozen track's snowflake is lit. Its **volume**, **pan** and **sends** (and their automation) stay live, so you can keep mixing it.
+- Change anything that went into the recording, such as its notes, instrument, effects, EQ, filter automation, the tempo or the swing, and the freeze is out of date: the snowflake turns amber and the track plays live again, so you always hear the real thing. Click the snowflake to freeze it again. Undo the change and it's frozen again.
+- A track's Pump that follows the kick is frozen ducking to the drum tracks that were sounding. Mute those drums, or solo another track, and it plays live until you put them back.
+- An armed track plays live while it's armed, so you hear what you play into it.
+- Click a lit snowflake to unfreeze. Freezing and unfreezing can be undone.
+- Exports always render every track from its instrument, frozen or not, so they sound exactly the same either way.
+- The frozen audio stays in this browser (about 10 MB per minute of track in storage, and about 20 MB per minute in memory while the project is open). It isn't saved inside project files: open the project in another browser and frozen tracks play live until you freeze them again. **Free unused** in the sound panels keeps the frozen audio of this project and your last session.
+- Audio tracks can't be frozen: they already play recordings.
+
 ## Automation
 
 Automation makes a track setting change over the song: a filter opening during a build-up, a fade-out, a pan sweep, an echo on one word. You draw a line, and the setting follows it every time the song plays and in every export.
@@ -514,7 +527,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 - Projects that use Wobble Bass, Growl Bass, Reese Bass, Supersaw, Pluck, FX, Audio tracks or the Slicer only open in this version of the app or later.
 - Recorded instruments (piano, strings, winds and others) download their sounds the first time you use them, so they need an internet connection. Everything else works offline.
 - Muted tracks, and tracks silenced by another track's Solo, don't play their notes at all, which saves processing power on big songs.
-- If playback stutters on a big song, mute tracks you aren't working on, switch off effects you don't need, or export a WAV: exporting never stutters, it just takes longer.
+- If playback stutters on a big song, freeze the tracks you aren't changing (the snowflake in each track's header), mute tracks you aren't working on, or switch off effects you don't need. Exporting never stutters, it just takes longer.
 - Sounds you load are kept in this browser; a private window may not allow it. Save the project to keep its sounds safe.
 
 ## Credits
