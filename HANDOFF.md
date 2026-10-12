@@ -61,13 +61,14 @@ Run all five checks before every commit.
 | Audio graph, master bus, live playback | `src/audio/engine.ts`, `liveTracks.ts`, `scheduler.ts`, `transport.ts` |
 | Export (offline render, stems, intro + loop) | `src/audio/exportWav.ts`, `ExportDialog.tsx` |
 | MP3 / OGG encoding (wasm-media-encoders), WAV loop chunk | `src/audio/encoders.ts`, `wavCues.ts` |
-| MP4 video (WebCodecs + mp4-muxer) | `src/audio/videoExport.ts` |
+| MP4 video (WebCodecs + Mediabunny) | `src/audio/videoExport.ts` |
+| Spectrum readouts (bars and character styles), master analyser, Mixer view | `src/audio/spectrumSkins.ts`, `masterSpectrum.ts`, `src/components/timeline/SpectrumView.tsx` |
 | Share link (`#song=`), Share dialog, opening a link | `src/store/shareLink.ts`, `ShareDialog.tsx`, `src/components/SharedLinkOpener.tsx` |
 | Synth Designer (patch, presets, engine, panel) | `src/store/synthPatch.ts`, `src/audio/presets/designer.ts`, `src/components/inspector/SynthPanel.tsx` |
 | Recorded drum kits, extra drum rows (clap, toms, crash, ride) | `src/audio/presets/sampledKit.ts`, `kitExtras.ts`, `DRUM_NOTES` in `instruments.ts` |
 | Piano roll helpers (scales, chords, arp, strum, humanize) | `src/store/noteTools.ts` (unit tested) |
 | Reference video (lane, preview, export onto it) | `src/store/videoStore.ts`, `src/components/video/`, `footage` in `videoExport.ts` |
-| Mixer, Game preview, Mic | `src/components/timeline/MixerDialog.tsx`, `GamePreview.tsx`, `MicButton.tsx`, `src/audio/micRecorder.ts` |
+| Mixer, Game preview, Mic | `src/components/timeline/MixerPanel.tsx`, `GamePreview.tsx`, `MicButton.tsx`, `src/audio/micRecorder.ts` |
 | Lag detection, Clear memory | `src/audio/perfMonitor.ts` (late notes counted in `notLate`), `src/components/PerfBadge.tsx` |
 | Search: palette (Ctrl+K), searchable instrument lists | `src/search/` (matching in `searchCore.ts`, unit tested; palette entries in `paletteEntries.ts`), `src/components/SearchPalette.tsx`, `InstrumentMenu.tsx` |
 | Open dialogs, Inspector tab, guide section (so search can open them) | `src/store/uiStore.ts` |
@@ -153,6 +154,12 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 
 ## Recently finished
 
+- **Spectrum styles** (`spectrumSkins.ts`): one `drawSpectrum(g, skin, rect, bands, t, memory)`
+  draws bars, the Gomo-Fu crew, Mochi Bo, Cat, Frog or Two birds into any canvas rect; `memory`
+  holds each style's eased values between frames. The Mixer tab shows it live from an analyser on
+  the master output (`masterSpectrum.ts`, connected only while shown; style in localStorage), and
+  the MP4 export's "Visualizer style" uses it in place of the bars. Characters follow the
+  Gomo-Fu look from the site's `gomofu-guys.js` (ink #2b2140, Bo and Slate colours).
 - **Mastering** (merged from `qol/q`): the Inspector's Master tab has a loudness meter, an OTT
   (`src/audio/effects/ott.ts`, with makeup gain and a primed start so it doesn't burst when
   switched on) and Stereo Width (`masterChain.ts`). The header shows loudness. Exports report LUFS

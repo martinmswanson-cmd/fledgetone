@@ -4,6 +4,7 @@ import { useAudioStore } from '../../store/audioStore';
 import type { Track } from '../../store/timelineTypes';
 import { liveTrackPeaks } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
+import { SpectrumView } from './SpectrumView';
 
 /**
  * Every track side by side as a mixing-desk strip: a level meter, a fader, pan, the reverb and
@@ -145,6 +146,7 @@ export const MixerPanel: React.FC = () => {
           />
           <span className="text-[10px] font-mono tabular-nums text-forge-text">{db(masterVolume)} dB</span>
         </div>
+        <SpectrumView className="w-[28rem] shrink-0 rounded-lg border border-cyan-500/30 bg-forge-bg/50 p-2" />
       </div>
       <p className="text-[11px]">Double-click a fader or knob to reset it. Each drag is one undo step. Click a track's name to open it in the Inspector (inserts, EQ, automation).</p>
     </div>
