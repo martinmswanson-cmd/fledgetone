@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { createChipBass, createChipDrums, createChipLead } from './presets/chiptune';
 import './toneFixes';
 import type { InstrumentKey } from './instrumentCatalog';
 import { INSTRUMENTS } from './instrumentCatalog';
@@ -268,6 +269,16 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
         ready: Promise.resolve(),
         dispose: bass.dispose,
       };
+    }
+    case 'chipDrums': {
+      const kit = createChipDrums(output);
+      const play: TrackInstrument['play'] = (notes, time) => playDrums(kit, notes, time);
+      return { play, noteOn: oneShot(play), releaseAll: () => {}, ready: Promise.resolve(), dispose: kit.dispose };
+    }
+    case 'chipLead':
+    case 'chipBass': {
+      const synth = key === 'chipLead' ? createChipLead(output) : createChipBass(output);
+      return { play: synth.play, noteOn: synth.hold, releaseAll: synth.releaseAll, dispose: synth.dispose, ready: Promise.resolve() };
     }
     case 'supersaw':
     case 'pluck':

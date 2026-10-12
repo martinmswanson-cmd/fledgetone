@@ -228,11 +228,12 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 | Mallets & Bells | Marimba, Chimes |
 | World | Erhu |
 | FX | FX (risers, sweeps, impacts, drops) |
+| Chiptune | Chip Lead, Chip Bass, Chip Drums |
 | Your Sounds | Sampler (plays a sound file you load) |
 
-- **Synths and drum kits** (Drums, Drum Machine, Slap Bass, Sub-Bass, 808 Bass, Wobble Bass, Growl Bass, Reese Bass, Space Clav, Wavetable Synth, Analog Lead, Supersaw, Pluck, Brass Stabs and FX) are generated in the browser and work offline.
+- **Synths and drum kits** (Drums, Drum Machine, Slap Bass, Sub-Bass, 808 Bass, Wobble Bass, Growl Bass, Reese Bass, Space Clav, Wavetable Synth, Analog Lead, Supersaw, Pluck, Brass Stabs, FX and the three Chiptune instruments) are generated in the browser and work offline.
 - **Recorded instruments** (the other 18) download their sounds the first time you use them, so they need an internet connection. A spinner shows on the track header while they load, and the Inspector shows **Loading CDN...**, **Ready** or **Error**. Notes are silent until the sounds arrive. If a download fails, the track header shows a red **!** in place of its coloured dot and the Inspector shows **Error** with a **Retry** button; click either to try again. Failed downloads are also retried when your connection comes back, and when you play that instrument in the Instrument Browser or Audition Deck, add another track with it or export. Once it downloads, every track using it plays from its next note, with no reload.
-- Both drum kits use the same five notes: **Kick**, **Snare**, **Closed Hat**, **Open Hat** and **Cowbell**, so drum parts can move between them. Taiko is played like a pitched instrument.
+- All three drum kits (Drums, Drum Machine, Chip Drums) use the same five notes: **Kick**, **Snare**, **Closed Hat**, **Open Hat** and **Cowbell**, so drum parts can move between them. Taiko is played like a pitched instrument.
 - Slap Bass, Sub-Bass, 808 Bass and Analog Lead play one note at a time; in a chord, only the loudest note sounds. Space Clav (16 notes at once), Wavetable Synth (12) and Brass Stabs (8) cut short whichever ringing note would end soonest when they run out, so new notes still play (only notes beyond the limit that start at the very same moment are dropped).
 
 ### EDM instruments
@@ -243,6 +244,16 @@ Each track plays one instrument. Add a track with **+ Add Track** under the last
 - **Supersaw**: seven detuned saws per note, spread wide, for house and trance chords. **Pluck**: a short, bright pluck for melodies and arps. Both play chords.
 - **FX** has fixed rows like a drum kit: **Riser**, **Noise Sweep**, **Reverse Crash**, **Impact**, **Sub Drop** and **Downlifter**. Every effect except Impact lasts as long as the note you draw: draw a 4-bar note for a 4-bar riser, and end a Reverse Crash on the drop. Impact is a one-shot boom of about 3.5 s. In an FX clip, NEW NOTE starts at 1 bar, and clicking a row's name previews it. FX clips only go on FX tracks.
 - Right-click an empty spot on a lane of these instruments for ready-made parts: **Wobble Riff**, **Growl Riff**, **Reese Line**, **Trance Chords**, **Pluck Arp**, and for FX a **Build-Up** and a **Drop Hit**.
+
+### Chiptune
+
+The sound of 8-bit game consoles, for retro games:
+
+- **Chip Lead**: a 25% pulse wave, the classic 8-bit lead. Notes start and stop hard, and a vibrato comes in after a note has sounded a moment. It plays chords, so it does arpeggios too: fast 16th notes cycling through a chord are the chip way of playing one.
+- **Chip Bass**: the stepped triangle wave those consoles played bass on. Like the real thing it has no fade: notes are on or off.
+- **Chip Drums**: a noise kit with the same five notes as the other kits: a pitch-swept kick, a noise snare, short noise hats, and a metallic open hat and cowbell from the noise channel's "short mode".
+
+Set the master's **Stereo Width** off for the authentic mono sound. The **Chiptune** starter (New) has all three playing together.
 
 ### The Sampler: your own sound
 
@@ -398,7 +409,7 @@ Click the **curve button** in a track header ("Show automation"; it's tinted amb
 The project bar sits above the toolbar.
 
 - **Project name**: click it to rename. It's used for the file names when you save and export.
-- **New**: start a **Blank timeline** (four empty tracks), load the **Demo song** (Sunset Stroll, 88 BPM), or start from a **genre starter**: **Dubstep** (140 BPM), **House** (126), **Drum & Bass** (174) or **Trap** (140). Each starter is 16 bars with its sections marked (intro, build, drop, and so on), the loop on the main section, its tracks mixed and the master's OTT and Stereo Width set for the style. Change anything; it's an ordinary project. This replaces what's on screen and clears undo, so save first.
+- **New**: start a **Blank timeline** (four empty tracks), load the **Demo song** (Sunset Stroll, 88 BPM), or start from a **genre starter**: **Dubstep** (140 BPM), **House** (126), **Drum & Bass** (174), **Trap** (140), **Cinematic** (100, for boss fights and title screens), **Lo-Fi** (82, for calm levels and menus), **Chiptune** (150, for retro games) or **Hip-Hop** (90, boom bap). Each starter is 16 bars with its sections marked (intro, build, drop, and so on), the loop on the main section, its tracks mixed and the master's OTT and Stereo Width set for the style. Change anything; it's an ordinary project. This replaces what's on screen and clears undo, so save first.
 - **Open**: load a `.beatbox.json` project file. Like New, it replaces what's on screen straight away and clears undo, so save first. If the file can't be read, a red message explains why and nothing is replaced. You can also drop a `.beatbox.json` file anywhere on the page: a drop onto an empty timeline opens it at once, and when there's work on the timeline a dialog asks before replacing it.
 - **Share**: three ways to send the song to someone:
   - **A link to this song**: the whole song travels inside the link (nothing is uploaded anywhere), and opening it opens the song in Bo's Beatbox, ready to play and change. **Copy link**, or **Share…** for your device's share menu. Sound files (audio clips, Sampler and Slicer sounds) can't go in a link, so the dialog says which tracks would be silent; frozen tracks just play live. A very long link can be cut off by some chat apps: the dialog warns when it's long.
