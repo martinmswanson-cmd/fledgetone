@@ -41,7 +41,7 @@ export const STARTERS = [
   { id: 'eastern', group: 'Chill & World', name: 'Eastern', detail: '84 BPM, D in-scale. Koto, shakuhachi, taiko and shamisen over a glass drone: temples and gardens.' },
   { id: 'artcore', group: 'Artcore & Game', name: 'Final Boss Artcore', detail: '174 BPM, D minor. Piano octave lead and violin over chopped jungle breaks, cello and contrabass, choir, taiko; the last drop a semitone up.' },
   { id: 'hardcore', group: 'Artcore & Game', name: 'Melodic Hardcore', detail: '180 BPM, E minor. Rhythm-game piano: 16th arpeggios, a stuttered build, then a four-on-the-floor bittersweet Royal Road drop.' },
-  { id: 'breakcore', group: 'Artcore & Game', name: 'Breakcore', detail: '172 BPM, C# minor. A wide, driven hook, then chopped, crushed breakbeats with rolls and a stop-time under electric piano.' },
+  { id: 'breakcore', group: 'Artcore & Game', name: 'Breakcore', detail: '172 BPM, C# minor. A piano hook over a hardcore beat, then chopped, crushed breakbeats with rolls and a stop-time under electric piano.' },
   { id: 'rpg', group: 'Artcore & Game', name: 'RPG Battle', detail: '140 BPM, D minor. A hero motif in town on marimba, then a battle on horn and trumpet over strings, rock guitar and taiko, then stacked on brass.' },
   { id: 'metaldub', group: 'Bass Music', name: 'Metal Dubstep', detail: '150 BPM, E Phrygian. Twin guitar riff, then a half-time drop: guitars, driven growl and taiko chugging on every kick, low trombones.' },
   { id: 'melodicdub', group: 'Bass Music', name: 'Melodic Dubstep', detail: '150 BPM, D minor. Piano intro, a quiet build, a wobble drop with off-beat supersaws and a violin and voice hook.' },
@@ -147,11 +147,11 @@ const designer = (edit: Parameters<typeof withPatch>[1]) => withPatch(defaultSyn
 /** A. Night Reese: two detuned saws, a driven low-pass, mono with glide. */
 const NIGHT_REESE = () => designer({
   osc2: { on: true, wave: 'sawtooth', fine: 10, level: 0.8 },
-  unison: { voices: 4, spread: 33, width: 0.5 },
+  unison: { voices: 3, spread: 20, width: 0.5 },
   filter: { cutoff: 500, resonance: 1, envAmount: 1, keyTrack: 0.5 },
   filterEnv: { attack: 0.001, decay: 0.4, sustain: 0.4, release: 0.2 },
   amp: { attack: 0.005, decay: 0.3, sustain: 1, release: 0.15 },
-  drive: 0.4, mono: true, glide: 0.06, level: 0,
+  drive: 0.15, mono: true, glide: 0.06, level: 0,
 });
 /** B. Dark Pluck: replaces the bright Pluck. Play it between C3 and C5. */
 const DARK_PLUCK = () => designer({
@@ -165,7 +165,7 @@ const DARK_PLUCK = () => designer({
 /** D. Dark Supersaw: chords that swell instead of buzzing. */
 const DARK_SUPERSAW = () => withPatch(presetPatch('Supersaw lead'), {
   osc2: { on: true, wave: 'sawtooth', octave: 0, fine: -12, level: 0.6 },
-  unison: { voices: 7, spread: 24, width: 0.9 },
+  unison: { voices: 5, spread: 18, width: 0.8 },
   filter: { cutoff: 2000, envAmount: 1, resonance: 0.8 },
   filterEnv: { attack: 0.15, decay: 1, sustain: 0.5, release: 0.5 },
   amp: { attack: 0.02, decay: 0.3, sustain: 0.9, release: 0.5 },
@@ -174,7 +174,7 @@ const DARK_SUPERSAW = () => withPatch(presetPatch('Supersaw lead'), {
 /** G. Dark Pad: slow, wide and low-passed, breathing on a slow LFO. */
 const DARK_PAD = () => designer({
   osc2: { on: true, wave: 'triangle', semi: 12, level: 0.5 },
-  unison: { voices: 5, spread: 40, width: 1 },
+  unison: { voices: 3, spread: 18, width: 0.9 },
   filter: { cutoff: 900, envAmount: 0.5, resonance: 0.8 },
   filterEnv: { attack: 1.5, decay: 1.5, sustain: 0.7, release: 2 },
   amp: { attack: 0.8, decay: 1, sustain: 0.9, release: 2.5 },
@@ -195,8 +195,8 @@ function dubstep(): ProjectSnapshot {
   const room = darkRoom();
   const drums = track('Drums', 'technoKit', { volume: -4, reverbSend: 0.08, fx: { peq: EQ.kit(350), compressor: GLUE, distortion: { on: true, amount: 0.12 } } });
   const sub = track('Sub', 'subBass', { volume: -10, fx: { peq: EQ.sub(150), pump: { on: true, depth: 0.6, release: 150, trigger: 'kick' } } });
-  const wobble = track('Wobble', 'wobbleBass', { volume: -6, fx: { peq: peq(lowCut(120), bell(900, 3), highCut(10000)), distortion: { on: true, amount: 0.35 }, mbc: TAME_FIZZ } });
-  const growl = track('Growl', 'growlBass', { volume: -7, fx: { peq: peq(lowCut(120), highCut(9000)), distortion: { on: true, amount: 0.3 } } });
+  const wobble = track('Wobble', 'wobbleBass', { volume: -6, fx: { peq: peq(lowCut(120), bell(900, 3), highCut(10000)), distortion: { on: true, amount: 0.1 }, mbc: TAME_FIZZ } });
+  const growl = track('Growl', 'growlBass', { volume: -7, fx: { peq: peq(lowCut(120), highCut(9000)), distortion: { on: true, amount: 0.1 } } });
   // The Dark Pad, gated to 16ths in the last bar before the drop only
   const pad = track('Pad', 'synthDesigner', {
     volume: -14,
@@ -542,7 +542,7 @@ function chiptune(): ProjectSnapshot {
   const drums = track('Drums', 'chipDrums', { volume: -3 });
   const kick = track('Kick layer', 'technoKit', { volume: -8, fx: { peq: peq(lowCut(30), bell(300, -3)) } });
   // A crushed Dark Supersaw pad behind the chip parts
-  const pad = track('Pad', 'synthDesigner', { volume: -16, synth: DARK_SUPERSAW(), reverbSend: 0.2, fx: { lofi: { on: true, crush: bits(8), tone: 8000, wow: 0, mix: 0.3 }, peq: EQ.pad(9000) } });
+  const pad = track('Pad', 'synthDesigner', { volume: -16, synth: DARK_SUPERSAW(), reverbSend: 0.2, fx: { peq: EQ.pad(9000) } });
   // Am - F - C - G, a bar each
   const triads = [['A4', 'C5', 'E5'], ['F4', 'A4', 'C5'], ['C5', 'E5', 'G5'], ['G4', 'B4', 'D5']];
   const roots = ['A1', 'F1', 'C2', 'G1'];
