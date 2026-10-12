@@ -1,7 +1,10 @@
 import React from 'react';
-import { AudioWaveform, ChevronDown, ChevronUp, Clapperboard, Gamepad2, Piano, SlidersVertical } from 'lucide-react';
+import { AudioLines, AudioWaveform, ChevronDown, ChevronUp, Clapperboard, Gamepad2, Piano, SlidersVertical } from 'lucide-react';
 import { useUiStore, type DockTab } from '../../store/uiStore';
 import { MixerPanel } from '../timeline/MixerPanel';
+import { useTimelineStore } from '../../store/timelineStore';
+import { PeqEditor } from '../inspector/PeqEditor';
+import { MbcControls } from '../inspector/MbcPanel';
 import { GamePanel } from '../timeline/GamePreview';
 import { SfxMakerPanel } from '../sfx/SfxMakerPanel';
 import { VideoPanel } from '../video/VideoPanel';
@@ -16,6 +19,7 @@ import { SoundAuditionPanel } from '../SoundAuditionPanel';
 
 const TABS: ReadonlyArray<{ id: DockTab; label: string; icon: React.ReactNode; title: string; buttonId: string }> = [
   { id: 'mixer', label: 'Mixer', icon: <SlidersVertical className="w-3.5 h-3.5" />, title: "Mixer: every track's fader, meter, pan and sends side by side", buttonId: 'btn-mixer' },
+  { id: 'eq', label: 'EQ & Dynamics', icon: <AudioLines className="w-3.5 h-3.5" />, title: "The selected track's Pro EQ and multiband compressor, big", buttonId: 'btn-eq' },
   { id: 'instruments', label: 'Instruments', icon: <Piano className="w-3.5 h-3.5" />, title: 'Try any instrument, play the sound deck pads and drag patterns onto tracks', buttonId: 'btn-instruments' },
   { id: 'game', label: 'Game', icon: <Gamepad2 className="w-3.5 h-3.5" />, title: 'Game preview: switch between sections and layers live, the way adaptive game music does', buttonId: 'btn-game' },
   { id: 'video', label: 'Video', icon: <Clapperboard className="w-3.5 h-3.5" />, title: 'Video tools: the reference video, its cuts and dialogue, hit points, and markers for editors', buttonId: 'btn-video-tools' },
@@ -26,6 +30,8 @@ const Content: React.FC<{ tab: DockTab }> = ({ tab }) => {
   switch (tab) {
     case 'mixer':
       return <MixerPanel />;
+    case 'eq':
+      return <TrackEqDock />;
     case 'game':
       return <GamePanel />;
     case 'video':
@@ -45,6 +51,38 @@ const Content: React.FC<{ tab: DockTab }> = ({ tab }) => {
         </div>
       );
   }
+};
+
+/** The selected track's Pro EQ and multiband compressor, with room to work. */
+const TrackEqDock: React.FC = () => {
+  const track = useTimelineStore((s) => s.tracks.find((t) => t.id === s.selectedTrackId) ?? s.tracks[0]);
+  if (!track) return <p className="p-3 text-xs text-forge-muted">Add a track first.</p>;
+  const set = useTimelineStore.getState().setTrackFx;
+  const toggle = (effect: 'peq' | 'mbc', on: boolean) => {
+    useTimelineStore.getState().checkpoint();
+    set(track.id, effect, { on });
+  };
+  const sw = (on: boolean, effect: 'peq' | 'mbc', label: string) => (
+    <button type="button" role="switch" aria-checked={on} aria-label={`${label} ${on ? 'on' : 'off'}`} onClick={() => toggle(effect, !on)} className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${on ? 'bg-cyan-400 border-cyan-400 text-black' : 'border-forge-border text-forge-muted hover:text-forge-text'}`}>
+      {on ? 'ON' : 'OFF'}
+    </button>
+  );
+  return (
+    <div className="grid gap-4 p-3 2xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
+      <section className="flex flex-col gap-2 min-w-0" aria-label="Pro EQ">
+        <div className="flex items-center gap-2 text-[11px] font-mono uppercase text-forge-muted">
+          <span className="w-2 h-2 rounded-full" style={{ background: track.color }} />
+          <span className="text-forge-text font-bold normal-case">{track.name}</span> Pro EQ {sw(!!track.fx.peq?.on, 'peq', 'Pro EQ')}
+          <span className="normal-case">· select another track to edit its EQ</span>
+        </div>
+        <PeqEditor track={track} height={230} big />
+      </section>
+      <section className="flex flex-col gap-2 min-w-0" aria-label="Multiband compressor">
+        <div className="flex items-center gap-2 text-[11px] font-mono uppercase text-forge-muted">Multiband compressor {sw(!!track.fx.mbc?.on, 'mbc', 'Multiband')}</div>
+        <MbcControls track={track} wide />
+      </section>
+    </div>
+  );
 };
 
 export const BottomDock: React.FC = () => {

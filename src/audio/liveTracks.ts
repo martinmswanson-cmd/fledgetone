@@ -172,6 +172,16 @@ export function liveTrackPeaks(): Map<string, number> {
   return out;
 }
 
+/** A track's spectrum now (dB per bin) into `out`; the bin count, or 0 if the track isn't live. */
+export function liveTrackSpectrum(trackId: string, out: Float32Array): number {
+  return live.get(trackId)?.strip.spectrum(out) ?? 0;
+}
+
+/** A track's multiband compressor gain reduction per band (dB), or null. */
+export function liveMbcReduction(trackId: string): [number, number, number] | null {
+  return live.get(trackId)?.strip.mbcReduction() ?? null;
+}
+
 /** A note of `trackId` at `time`: every Pump that follows that track ducks. */
 export function pumpOnTrack(trackId: string, time: number): void {
   for (const { strip } of live.values()) if (strip.pumpSource() === trackId) strip.pump(time, 'track', trackId);

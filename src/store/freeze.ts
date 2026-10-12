@@ -52,6 +52,11 @@ export function freezeFingerprint(track: Track, all: { tracks: Track[]; clips: C
   return value;
 }
 
+function fxPrint(fx: Track['fx']): Partial<Track['fx']> {
+  const { peq, mbc, ...rest } = fx;
+  return { ...rest, ...(peq?.on ? { peq } : {}), ...(mbc?.on ? { mbc } : {}) };
+}
+
 function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number }): string {
   const own = all.clips.filter((c) => c.trackId === track.id).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
   const followsKick = track.fx.pump.on && track.fx.pump.trigger === 'kick';
@@ -79,7 +84,8 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       sample: track.sample,
       slicer: track.slicer,
       synth: track.synth,
-      fx: track.fx,
+      // (The newer inserts only while on, so tracks frozen before they existed stay frozen)
+      fx: fxPrint(track.fx),
       eq: track.eq,
       automation: (track.automation ?? []).filter((l) => !LIVE_PARAMS.has(l.param)),
       clips: own.map(clipContent),

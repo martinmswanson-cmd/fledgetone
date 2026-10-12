@@ -27,6 +27,8 @@ export function fx(patch: FxPatch = {}): TrackFx {
     lofi: { ...d.lofi, ...patch.lofi },
     gate: { ...d.gate, ...patch.gate },
     human: { ...d.human, ...patch.human },
+    peq: { ...d.peq, ...patch.peq },
+    mbc: { ...d.mbc, ...patch.mbc },
   };
 }
 

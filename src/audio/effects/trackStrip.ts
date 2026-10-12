@@ -9,6 +9,10 @@ import {
   createLightChorus,
   createLightDistortion,
   createLightEq3,
+  createLightMbc,
+  createLightPeq,
+  type LightMbc,
+  type LightPeq,
   createLightFilter,
   createLightGate,
   createLightLofi,
@@ -84,6 +88,10 @@ export interface TrackStrip {
   setIntensityLevel: (gain: number, ramp?: number) => void;
   /** The level after the fader (for the mixer's meters): peak 0..1 since the last call, built on first use. */
   peak: () => number;
+  /** The track's spectrum now, in dB per bin, into `out` (at least 2048 long); returns the bin count. Built on first use. */
+  spectrum: (out: Float32Array) => number;
+  /** The multiband compressor's gain reduction per band now (dB), or null when it's off. */
+  mbcReduction: () => [number, number, number] | null;
   dispose: () => void;
 }
 
@@ -214,6 +222,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   // The mixer's meter, made when first read (see peak)
   let meter: AnalyserNode | null = null;
   let meterData: Float32Array<ArrayBuffer> | null = null;
+  // The EQ's spectrum display, made when first read (see spectrum)
+  let spectrumNode: AnalyserNode | null = null;
   duck.connect(reverbSend);
   reverbSend.connect(busFx.reverbInput);
   duck.connect(delaySend);
@@ -221,6 +231,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
   let distortion: LightDistortion | null = null;
   let eq: LightEq3 | null = null;
+  let peq: LightPeq | null = null;
+  let mbc: LightMbc | null = null;
   let compressor: Tone.Compressor | null = null;
   let makeup: Tone.Gain | null = null;
   /** The Compressor and its makeup gain as one insert. */
@@ -361,7 +373,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     const next: Insert[] = [];
     if (distortion) next.push(distortion);
     if (eq) next.push(eq);
+    if (peq) next.push(peq);
     if (compressorUnit) next.push(compressorUnit);
+    if (mbc) next.push(mbc);
     if (chorus) next.push(chorus);
     if (lofi) next.push(lofi);
     if (filter) next.push(filter);
@@ -510,6 +524,23 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         version++;
       }
 
+      if (fx.peq?.on) {
+        const fresh = !peq;
+        peq ??= createLightPeq();
+        peq.set(fx.peq.bands, fresh ? 0 : ramp);
+      } else if (peq) {
+        retired.push(peq);
+        peq = null;
+      }
+
+      if (fx.mbc?.on) {
+        if (mbc) mbc.set(fx.mbc, ramp);
+        else mbc = createLightMbc(fx.mbc);
+      } else if (mbc) {
+        retired.push(mbc);
+        mbc = null;
+      }
+
       if (fx.compressor.on) {
         if (!compressor || !makeup || !compressorUnit) {
           // Made with their settings: set afterwards, they'd only apply a look-ahead (0.1 s) later
@@ -640,6 +671,17 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       if (ramp > 0) param.setTargetAtTime(g, t, ramp / 3);
       else param.setValueAtTime(g, t);
     },
+    spectrum: (out) => {
+      if (!spectrumNode) {
+        spectrumNode = raw.createAnalyser();
+        spectrumNode.fftSize = 4096;
+        spectrumNode.smoothingTimeConstant = 0.75;
+        duck.connect(spectrumNode as unknown as Tone.InputNode);
+      }
+      if (out.length >= spectrumNode.frequencyBinCount) spectrumNode.getFloatFrequencyData(out.subarray(0, spectrumNode.frequencyBinCount) as Float32Array<ArrayBuffer>);
+      return spectrumNode.frequencyBinCount;
+    },
+    mbcReduction: () => mbc?.reduction() ?? null,
     peak: () => {
       if (!meter) {
         meter = raw.createAnalyser();
@@ -688,7 +730,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       clearTimeout(retireTimer);
       clearTimeout(tidyTimer);
       gates.forEach((g) => g.gain.disconnect());
-      [...leaving, distortion, eq, compressorUnit, chorus, lofi, filter, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend].forEach((n) => n?.dispose());
+      [...leaving, distortion, eq, peq, mbc, compressorUnit, chorus, lofi, filter, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend].forEach((n) => n?.dispose());
       [barrier, left, split, right, merge].forEach((n) => n?.disconnect());
     },
   };
