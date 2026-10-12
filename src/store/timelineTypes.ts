@@ -139,7 +139,7 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
 
 /** Shared return effects that every track's reverb / delay send feeds. */
 export interface MasterFx {
-  /** Reverb decay, 0.8 s to 6 s */
+  /** Reverb decay, 0.8 s to 12 s */
   reverbDecay: number;
   /** Delay time as a tempo subdivision ("4n", "8n", "8n.", "16n") */
   delayTime: string;

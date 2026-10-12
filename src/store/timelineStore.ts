@@ -1165,7 +1165,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     setMasterReverbDecay: (decay) => {
-      const clamped = Math.max(0.8, Math.min(6.0, decay));
+      const clamped = Math.max(0.8, Math.min(12, decay));
       set({ masterReverbDecay: clamped });
       applyMasterFx();
     },
