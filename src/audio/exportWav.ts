@@ -333,7 +333,7 @@ export async function renderStems(
     const samples = new Float32Array(await stem.samples.arrayBuffer());
     const channels = [samples.subarray(0, stem.length), samples.subarray(stem.length)];
     scale(channels, gain);
-    stems.push({ track: stem.track, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues) });
+    stems.push({ track: stem.track, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues, wholeFileLoop(opts, channels[0].length)) });
   }
   return stems;
 }
@@ -728,9 +728,12 @@ function fadeOut(channels: Float32Array[], frames: number): void {
  * Encode an AudioBuffer as a WAV file: 16- or 24-bit PCM, or 32-bit float, with cue points
  * (markers) after the audio if there are any.
  */
-export function encodeWav(audio: AudioBuffer, bitDepth: BitDepth = 16, cues: readonly WavCue[] = []): Blob {
-  return encodeChannels(channelsOf(audio), audio.sampleRate, bitDepth, cues);
+export function encodeWav(audio: AudioBuffer, bitDepth: BitDepth = 16, cues: readonly WavCue[] = [], loop?: { start: number; end: number }): Blob {
+  return encodeChannels(channelsOf(audio), audio.sampleRate, bitDepth, cues, loop);
 }
+
+/** Loop points for a seamless loop render: the whole file loops (a 'smpl' chunk engines and samplers read). */
+export const wholeFileLoop = (opts: Pick<RenderOptions, 'ending'>, frames: number) => (opts.ending === 'seamless' ? { start: 0, end: frames } : undefined);
 
 export function encodeChannels(
   data: Float32Array[],

@@ -7,6 +7,7 @@ import {
   audibleTracks,
   BIT_DEPTHS,
   downloadBlob,
+  wholeFileLoop,
   encodeWav,
   exportCues,
   exportFrames,
@@ -370,7 +371,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           note = limited ? `. That's ${(NORMALIZE_TARGET_LUFS - reading.integrated).toFixed(1)} dB under the target, so peaks stay under ${NORMALIZE_CEILING_DBTP} dBTP. To get louder, turn on the master OTT and raise its Out gain` : '';
         }
         if (format !== 'wav') setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${format.toUpperCase()}` });
-        downloadBlob(format === 'wav' ? encodeWav(audio, settings.bitDepth, exportCues(opts)) : await encodeAudio(channelsOf(audio), audio.sampleRate, format, encodeOpts), fileName);
+        downloadBlob(format === 'wav' ? encodeWav(audio, settings.bitDepth, exportCues(opts), wholeFileLoop(opts, audio.length)) : await encodeAudio(channelsOf(audio), audio.sampleRate, format, encodeOpts), fileName);
         showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}`);
       }
       onClose();
