@@ -20,6 +20,17 @@ At the top is the header: **TEMPO** and **TAP**, **Swing**, **MASTER** volume, t
 > The app always opens on an empty timeline. If your last session had clips (or markers, with no clips yet), a banner offers to **Restore** it, saying how many and when it was saved. It stays across reloads until you click **Restore** or **Dismiss**.
 
 
+### Tour and tutorials
+
+The first time you open Bo's Beatbox it offers a one-minute **tour** and three hands-on **tutorials**; click **LEARN** in the header (or search for *tutorial*) to find them again any time.
+
+- **Quick tour**: points at each part of the screen and says what it's for. Just read and click **Next**.
+- **Beginner: Your first song**: open a starter, play it, mute a track, change the tempo, write a note, undo, and export.
+- **Intermediate: Shape and mix a song**: add an instrument, use the Filter, Pump and reverb, draw automation, use the Mixer, add markers, a build-up and drop, and the loop.
+- **Expert: Pro techniques**: search, the Synth Designer, sidechaining from any track, the Gate, key changes, freezing, the Game preview and game-ready exports, and the fastest shortcuts.
+
+A tutorial lights up the part of the screen to use and dims the rest. Steps marked **Your turn** wait for you to do it and move on by themselves once you have (with a tick); everything else just needs **Next**. The app works normally the whole time, shortcuts included. **Back** goes to the previous step, **Skip** moves past a task you'd rather not do, and the **X** closes the tutorial: **LEARN** then offers to **Resume** where you stopped. Finished tutorials are ticked. Progress is remembered in this browser.
+
 ### Search
 
 Press `Ctrl+K` (`Cmd+K` on a Mac), or click **SEARCH** in the header, and type what you're after: a tool (*export*, *mixer*, *mic*), a setting (*swing*, *reverb*, *stable playback*, *count-in*), an instrument (*violin*, *8-bit*, *angelic*), a genre starter (*horror*) or anything in this guide (*frame rate*). Results are labelled **Tool**, **Setting**, **Instrument**, **Starter** or **Guide**; the best match is first. A word with one letter wrong still finds it when nothing matches as typed (*viloin*).

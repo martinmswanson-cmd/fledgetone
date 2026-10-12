@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { BookOpen, Search, Volume2, Power } from 'lucide-react';
+import { BookOpen, GraduationCap, Search, Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import boLogo from '../assets/bo.svg';
@@ -168,6 +168,16 @@ export const Header: React.FC = () => {
 
         <button
           type="button"
+          onClick={() => useUiStore.getState().setDialog('learn')}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono tracking-wider border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-500/70 hover:bg-cyan-500/10 transition"
+          title="Tour and tutorials: learn by doing, from beginner to expert"
+        >
+          <GraduationCap className="w-3.5 h-3.5 text-cyan-400" />
+          LEARN
+        </button>
+
+        <button
+          type="button"
           onClick={() => openGuide()}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono tracking-wider border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-500/70 hover:bg-cyan-500/10 transition"
           title="How Bo's Beatbox works (?)"
@@ -179,6 +189,7 @@ export const Header: React.FC = () => {
         {/* Audio Context Status Button */}
         <button
           onClick={initializeAudio}
+          data-tour="start-audio"
           className={`flex items-center gap-2.5 px-4 py-2 rounded-lg font-medium text-xs font-mono tracking-wider transition-all duration-200 border ${
             isRunning
               ? 'bg-emerald-950/40 text-emerald-300 border-emerald-500/50 shadow-glow-bass'
