@@ -312,13 +312,19 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
               : snapped(origStart + deltaBars, shift) - origStart;
         // Clamp the block as a whole, so clips pushed against either end keep their spacing
         const delta = Math.max(1 - blockStart, Math.min(TOTAL_BARS + 1 - blockEnd, snappedDelta));
-        // Row under the pointer (held to the first and last track), counted from the lane the drag
-        // started in. Rows are all TRACK_HEIGHT tall.
-        const laneTop = lane?.getBoundingClientRect().top;
-        const pointerRows =
-          laneTop === undefined
-            ? 0
-            : Math.max(-grabbedRow, Math.min(tracks.length - 1 - grabbedRow, Math.floor((last.clientY - laneTop) / TRACK_HEIGHT)));
+        // The track whose lane is under the pointer (or nearest it: past the first or last, or over
+        // a folder's row), counted from the track the drag started in
+        let nearest: string | null = null;
+        let distance = Infinity;
+        for (const el of document.querySelectorAll<HTMLElement>('[data-lane]')) {
+          const r = el.getBoundingClientRect();
+          const d = last.clientY < r.top ? r.top - last.clientY : last.clientY > r.bottom ? last.clientY - r.bottom : 0;
+          if (d < distance) {
+            distance = d;
+            nearest = el.dataset.lane ?? null;
+          }
+        }
+        const pointerRows = lane && nearest !== null && rowOf.has(nearest) ? rowOf.get(nearest)! - grabbedRow : 0;
         const rowDelta = rowOffsets.has(pointerRows) ? pointerRows : 0;
         apply(`${delta}|${rowDelta}`, () =>
           s.moveClips(

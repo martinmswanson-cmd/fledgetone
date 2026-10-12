@@ -29,12 +29,13 @@ import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
+import { foldersOf, groupTracks, moveToFolder, moveTrack, ungroup, updateFolder } from './folders';
 import { ANY_STATE, transitionKey } from './transitions';
 import { defaultCurve, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
-import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq } from './timelineTypes';
+import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder } from './timelineTypes';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
@@ -272,6 +273,20 @@ interface TimelineState {
   toggleInspector: (open?: boolean) => void;
   addTrack: (instrumentKey: InstrumentKey, name?: string) => string;
   deleteTrack: (trackId: string) => void;
+  /** Put tracks in a new folder (one undo step). Returns its id. */
+  groupIntoFolder: (trackIds: readonly string[], name?: string) => string | null;
+  /** Take every track out of a folder (one undo step). */
+  ungroupFolder: (folderId: string) => void;
+  /** Rename, recolour (`recolor`: its tracks too) or fold a folder. Folding isn't an undo step. */
+  setFolder: (folderId: string, patch: Partial<Omit<TrackFolder, 'id'>>, recolor?: boolean) => void;
+  /** Put a track in a folder, or take it out with null (one undo step). */
+  setTrackFolder: (trackId: string, folderId: string | null) => void;
+  /** Move a track a row up or down (see folders.ts moveTrack; one undo step). */
+  moveTrackRow: (trackId: string, direction: -1 | 1) => void;
+  setTrackColor: (trackId: string, color: string) => void;
+  /** Mute (or, if all are muted, unmute) a folder's tracks; the same for solo. One undo step. */
+  toggleFolderMute: (folderId: string) => void;
+  toggleFolderSolo: (folderId: string) => void;
   setTrackInstrument: (trackId: string, instrumentKey: InstrumentKey) => void;
   toggleMute: (trackId: string) => void;
   /** Mute or unmute without an undo step (the game preview switching layers while it plays). */
@@ -1084,6 +1099,61 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     // Undoable: history entries carry the tracks, so Undo brings the track and its clips back together
+    groupIntoFolder: (trackIds, name) => {
+      const s = get();
+      const ids = new Set(trackIds.filter((id) => s.tracks.some((t) => t.id === id)));
+      if (!ids.size) return null;
+      const first = s.tracks.find((t) => ids.has(t.id))!;
+      const folder: TrackFolder = { id: uid('folder'), name: name?.trim() || `Folder ${foldersOf(s.tracks).length + 1}`, color: first.color };
+      set({ tracks: groupTracks(s.tracks, ids, folder), ...pushPast(s) });
+      return folder.id;
+    },
+
+    ungroupFolder: (folderId) =>
+      set((s) => {
+        const tracks = ungroup(s.tracks, folderId);
+        return tracks === s.tracks ? s : { tracks, ...pushPast(s) };
+      }),
+
+    setFolder: (folderId, patch, recolor = false) =>
+      set((s) => {
+        const tracks = updateFolder(s.tracks, folderId, patch, recolor);
+        if (tracks === s.tracks) return s;
+        // Folding is a view: no undo step
+        const viewOnly = Object.keys(patch).every((k) => k === 'collapsed');
+        return { tracks, ...(viewOnly ? {} : pushPast(s)) };
+      }),
+
+    setTrackFolder: (trackId, folderId) =>
+      set((s) => {
+        const tracks = moveToFolder(s.tracks, trackId, folderId);
+        return tracks === s.tracks ? s : { tracks, ...pushPast(s) };
+      }),
+
+    moveTrackRow: (trackId, direction) =>
+      set((s) => {
+        const tracks = moveTrack(s.tracks, trackId, direction);
+        return tracks === s.tracks ? s : { tracks, ...pushPast(s) };
+      }),
+
+    setTrackColor: (trackId, color) => updateTrack(trackId, () => ({ color }), true),
+
+    toggleFolderMute: (folderId) =>
+      set((s) => {
+        const members = s.tracks.filter((t) => t.folder?.id === folderId);
+        if (!members.length) return s;
+        const mute = !members.every((t) => t.isMuted);
+        return { tracks: s.tracks.map((t) => (t.folder?.id === folderId ? { ...t, isMuted: mute } : t)), ...pushPast(s) };
+      }),
+
+    toggleFolderSolo: (folderId) =>
+      set((s) => {
+        const members = s.tracks.filter((t) => t.folder?.id === folderId);
+        if (!members.length) return s;
+        const solo = !members.every((t) => t.isSoloed);
+        return { tracks: s.tracks.map((t) => (t.folder?.id === folderId ? { ...t, isSoloed: solo } : t)), ...pushPast(s) };
+      }),
+
     deleteTrack: (id) => {
       // A take being recorded onto it lands first (its own undo step), so Ctrl+Z brings both back
       if (get().take?.trackId === id) endTake();

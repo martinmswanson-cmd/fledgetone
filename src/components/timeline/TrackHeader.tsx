@@ -6,6 +6,7 @@ import { AUTOMATION_PARAMS, snapBar } from '../../store/timelineTypes';
 import { Plus, Sliders, Loader2, Spline } from 'lucide-react';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
+import type { TrackMenuState } from './TrackMenu';
 import { UndoableRange } from '../UndoableRange';
 import { INSTRUMENTS, isAudioKind } from '../../audio/instrumentCatalog';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
@@ -146,9 +147,10 @@ const AutomationRows: React.FC<{ track: Track; param: AutomationParam }> = ({ tr
  * Sticky left-hand track header: name, + (add clip), M / S / R toggles, volume fader and pan.
  * Double-click a fader to reset it. Click header to select track & open FX Inspector.
  */
-export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMenuState) => void }> = ({
+export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMenuState) => void; onTrackMenu?: (menu: TrackMenuState) => void }> = ({
   track,
   onOpenMenu,
+  onTrackMenu,
 }) => {
   const { toggleMute, toggleSolo, toggleArm, selectTrack, toggleInspector } = useTimelineStore.getState();
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
@@ -172,11 +174,18 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
     <div
       data-tour="track-header"
       onClick={handleSelectTrack}
+      onContextMenu={(e) => {
+        if (!onTrackMenu || (e.target as HTMLElement).closest('input, select, textarea')) return;
+        e.preventDefault();
+        selectTrack(track.id);
+        onTrackMenu({ x: e.clientX, y: e.clientY, trackId: track.id });
+      }}
       className={`sticky left-0 z-20 shrink-0 flex bg-forge-panel border-r border-b transition-colors cursor-pointer ${
         isSelected ? 'border-cyan-400/80 bg-forge-panel/90 shadow-md ring-1 ring-cyan-500/30' : 'border-forge-border'
       }`}
       style={{ width: HEADER_WIDTH, height: TRACK_HEIGHT }}
     >
+      {track.folder && <div className="w-1 shrink-0" style={{ backgroundColor: track.folder.color, opacity: 0.5 }} title={`In the folder ${track.folder.name}`} />}
       <div
         className="w-1.5 shrink-0 transition-opacity"
         style={{ backgroundColor: track.color, opacity: silenced ? 0.35 : 1 }}
