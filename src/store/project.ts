@@ -259,8 +259,9 @@ function parseNote(v: unknown): NoteEvent {
     id: v.id,
     note: v.note,
     startOffset: v.startOffset,
-    duration: v.duration,
-    velocity: isNum(v.velocity) ? v.velocity : 0.8,
+    // A length the app can't read plays as a 16th rather than breaking playback
+    duration: /^(\d+(\.\d+)?m|\d+:\d+(\.\d+)?(:\d+(\.\d+)?)?|\d+[nt]\.?|\d+i)$/.test(v.duration) ? v.duration : '16n',
+    velocity: isNum(v.velocity) ? Math.max(0, Math.min(1, v.velocity)) : 0.8,
   };
 }
 
@@ -277,13 +278,15 @@ function parseClip(v: unknown): Clip {
       return null;
     }
   });
-  const lengthBars = Math.max(0.0625, v.lengthBars);
+  // On the timeline, whatever the file says
+  const startBar = Math.max(1, Math.min(TOTAL_BARS, v.startBar));
+  const lengthBars = Math.max(0.0625, Math.min(TOTAL_BARS + 1 - startBar, v.lengthBars));
   const comp = takes && Array.isArray(v.comp) ? v.comp.filter((s): s is CompSegment => isObj(s) && isNum(s.at) && isNum(s.take)) : [];
   return {
     id: v.id,
     trackId: v.trackId,
     name: isStr(v.name) ? v.name : 'Clip',
-    startBar: v.startBar,
+    startBar,
     // No clip is shorter than a 16th; a zero or negative length (a hand-edited file) would break edits
     lengthBars,
     notes: v.notes.map(parseNote),
@@ -309,7 +312,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   }
   if (!Array.isArray(raw.tracks) || !Array.isArray(raw.clips)) throw new Error('tracks or clips are missing');
 
-  const tracks = raw.tracks.map(parseTrack);
+  // One of each id (a hand-edited or merged file can repeat one): the first is kept
+  const tracks = raw.tracks.map(parseTrack).filter((t, i, all) => all.findIndex((o) => o.id === t.id) === i);
   const trackIds = new Set(tracks.map((t) => t.id));
   const loop = isObj(raw.loopRegion) ? raw.loopRegion : {};
   const fps = isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE;
@@ -323,15 +327,18 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     name: isStr(raw.name) && raw.name.trim() ? raw.name : 'Untitled',
     bpm,
     swing: isNum(raw.swing) ? Math.max(0, Math.min(0.5, raw.swing)) : 0.2,
-    loopRegion: {
-      inBar: isNum(loop.inBar) ? loop.inBar : 1,
-      outBar: isNum(loop.outBar) ? loop.outBar : 5,
-      enabled: loop.enabled !== false,
-    },
+    // In order and on the timeline (an Out before the In would hold playback at the In)
+    loopRegion: (() => {
+      const inBar = isNum(loop.inBar) ? Math.max(1, Math.min(TOTAL_BARS, loop.inBar)) : 1;
+      const outBar = isNum(loop.outBar) ? Math.min(TOTAL_BARS + 1, loop.outBar) : 5;
+      return { inBar, outBar: outBar > inBar + 1 / 64 ? outBar : Math.min(TOTAL_BARS + 1, inBar + 4), enabled: loop.enabled !== false };
+    })(),
     tracks,
     // A clip whose track is gone can't play or be seen. Older versions could save these (undo
     // after deleting a track), so skip them rather than refuse the whole file.
-    clips: raw.clips.map(parseClip).filter((c) => trackIds.has(c.trackId)),
+    clips: raw.clips
+      .map(parseClip)
+      .filter((c, i, all) => trackIds.has(c.trackId) && all.findIndex((o) => o.id === c.id) === i),
     masterFx: parseMasterFx(raw.masterFx),
     fps,
     dropFrame: fps === 29.97 && raw.dropFrame === true,

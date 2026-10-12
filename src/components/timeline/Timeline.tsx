@@ -11,6 +11,7 @@ import { TrackLane } from './TrackLane';
 import { barFromClientX, Playhead, useScrub } from './Playhead';
 import { ClipContextMenu } from './ClipContextMenu';
 import { TakesDialog } from './TakesDialog';
+import { Modal } from './Modal';
 import { PluginPermissionBar, PluginUrlDialog, PluginWindow } from './PluginDialogs';
 import { onPluginError } from '../../audio/presets/wamPlugin';
 
@@ -437,7 +438,17 @@ export const Timeline: React.FC = () => {
       {trackMenu && <TrackMenu menu={trackMenu} onClose={closeTrackMenu} />}
       {chopClipId && <ChopToSlicerDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
       {variationsClipId && <VariationsDialog clipId={variationsClipId} onClose={() => setVariationsClipId(null)} />}
-      {tuneClipId && <TuneDialog clipId={tuneClipId} onClose={() => useUiStore.getState().setTuneClip(null)} />}
+      {tuneClipId &&
+        // A take folder plays several sounds: it's tuned once flattened (Takes, Flatten)
+        ((useTimelineStore.getState().clips.find((c) => c.id === tuneClipId)?.takes?.length ?? 0) > 1 ? (
+          <Modal title="Tune vocal" onClose={() => useUiStore.getState().setTuneClip(null)}>
+            <p className="p-4 text-sm text-forge-muted">
+              This clip is a take folder: it plays parts of several takes. Flatten it first (right-click it, Takes, Flatten), then tune it.
+            </p>
+          </Modal>
+        ) : (
+          <TuneDialog clipId={tuneClipId} onClose={() => useUiStore.getState().setTuneClip(null)} />
+        ))}
       {takesClipId && <TakesDialog clipId={takesClipId} onClose={() => useUiStore.getState().setTakesClip(null)} />}
       {pluginDialog && <PluginUrlDialog trackId={pluginDialog.trackId} onClose={() => useUiStore.getState().setPluginDialog(null)} />}
       {pluginWindow && (

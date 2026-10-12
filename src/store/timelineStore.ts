@@ -29,7 +29,7 @@ import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
 import { projectVideo, useVideoStore } from './videoStore';
-import { foldersOf, groupTracks, moveToFolder, moveTrack, ungroup, updateFolder } from './folders';
+import { foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
 import { ANY_STATE, transitionKey } from './transitions';
 import { defaultCurve, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
@@ -1609,7 +1609,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     setTrackInstrument: (id, instrumentKey) => {
-      if (get().tracks.find((t) => t.id === id)?.instrumentKey === instrumentKey) return;
+      const current = get().tracks.find((t) => t.id === id);
+      if (!current || current.instrumentKey === instrumentKey) return;
+      // A bus or a Plugin track is made as one (Add Track), not by switching an instrument: a bus
+      // can't hold the clips a track has, and a Plugin track needs its plugin
+      if (isBus({ instrumentKey }) || instrumentKey === 'plugin') return;
       const meta = INSTRUMENTS[instrumentKey];
       updateTrack(
         id,
@@ -1622,6 +1626,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         }),
         true
       );
+      // A bus that becomes an instrument: the tracks that played into it go back to the master
+      if (isBus(current)) set((s) => ({ tracks: tidyRoutes(s.tracks) }));
       if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
     },
 
@@ -1755,7 +1761,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const index = clip ? s.tracks.findIndex((t) => t.id === clip.trackId) : -1;
       if (!clip?.audio || index < 0) return null;
       ensureSound(slicer.soundId);
-      const track: Track = { ...makeTrack('slicer', s.tracks), slicer };
+      // Next to the clip's track, in its folder if it's in one (so the folder stays in one piece)
+      const source = s.tracks[index];
+      const track: Track = { ...makeTrack('slicer', s.tracks), slicer, ...(source.folder ? { folder: source.folder } : {}) };
       const chopped: Clip = {
         id: uid('clip'),
         trackId: track.id,
@@ -1900,6 +1908,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           // Keep untouched clips identical so their (memoized) views don't re-render on every pointer move
           if (startBar === c.startBar && trackId === c.trackId) return c;
           changed = true;
+          // An audio clip playing at its own speed keeps its length in seconds at the tempo it lands in
+          if (c.audio && !c.audio.stretchBpm && s.tempoPoints.length && startBar !== c.startBar) {
+            const tempo = songTempo(s);
+            const ratio = tempoAt(startBar, tempo) / tempoAt(c.startBar, tempo);
+            if (Math.abs(ratio - 1) > EPS) {
+              return { ...c, startBar, trackId, lengthBars: c.lengthBars * ratio, ...(c.comp ? { comp: c.comp.map((seg) => ({ ...seg, at: seg.at * ratio })) } : {}) };
+            }
+          }
           return { ...c, startBar, trackId };
         });
         return changed ? { clips } : s;
@@ -2161,7 +2177,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
                 : []),
             ])
           )
-        : s.tempoPoints;
+        : // (A new array either way, so Undo knows the tempo changed with it: see restoreEntry)
+          [...s.tempoPoints];
       const firstBpm = s.tempoPoints.length && placed.length ? clampBpm(tempoAt(placed[0].from, oldTempo) * scale) : bpm;
       // Time signatures follow their sections too
       const oldMeter = songMeterOf(s);
@@ -2378,7 +2395,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       get().stop();
       // One track records at a time: a file with several armed keeps the first
       const armedId = p.tracks.find((t) => t.isArmed)?.id;
-      const safeTracks: Track[] = tidyRoutes(p.tracks).map((t: Track) => ({
+      const safeTracks: Track[] = tidyFolders(tidyRoutes(p.tracks)).map((t: Track) => ({
         ...t,
         eq: t.eq ?? { low: 0, mid: 0, high: 0 },
         reverbSend: typeof t.reverbSend === 'number' ? t.reverbSend : 0,
@@ -2500,6 +2517,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }));
     },
 
+    // Low-level, as typed: the name field checkpoint()s once when it's focused
     renameClip: (clipId, name) => updateClip(clipId, () => ({ name })),
 
     setClipWobble: (clipId, wobble) =>

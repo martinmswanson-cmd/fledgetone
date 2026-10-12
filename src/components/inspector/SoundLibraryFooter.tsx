@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { HardDrive } from 'lucide-react';
-import { currentProject, lastSession } from '../../store/timelineStore';
+import { currentProject, lastSession, useTimelineStore } from '../../store/timelineStore';
 import { referencedSoundIds } from '../../store/audioClips';
 import { freeUnusedSounds, librarySize, useSoundLibrary } from '../../audio/soundLibrary';
 import { showToast } from '../timeline/toastStore';
@@ -29,6 +29,13 @@ export const SoundLibraryFooter: React.FC = () => {
     if (lastSession) referencedSoundIds(lastSession.project).forEach((id) => keep.add(id));
     // Frozen tracks' sounds too (they aren't saved in project files, so only this browser has them)
     for (const p of [currentProject(), lastSession?.project]) p?.tracks.forEach((t) => t.frozen && keep.add(t.frozen.soundId));
+    // ...and whatever Undo, Redo or Paste can bring back
+    const st = useTimelineStore.getState();
+    for (const e of [...st.past, ...st.future]) {
+      referencedSoundIds(e).forEach((id) => keep.add(id));
+      e.tracks.forEach((t) => t.frozen && keep.add(t.frozen.soundId));
+    }
+    referencedSoundIds({ clips: st.clipboard, tracks: [] }).forEach((id) => keep.add(id));
     if (!window.confirm("Delete the sounds in this browser that neither this project nor your last session uses?\n\nProjects saved as files keep their sounds inside the file, so they come back when opened.")) return;
     try {
       const gone = await freeUnusedSounds(keep);
