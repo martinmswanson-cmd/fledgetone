@@ -188,6 +188,21 @@ const decoded = new Map<string, Promise<AudioBuffer>>();
 const decodedBuffers = new Map<string, AudioBuffer>();
 const decodeKey = (id: string, sampleRate: number) => `${id}|${sampleRate}`;
 
+/**
+ * Forget decoded copies of sounds nothing uses any more (`keep`: the ids in use): decoded audio is
+ * ten times the size of the file it came from. They're decoded again if needed. Returns the bytes freed.
+ */
+export function forgetDecodedSounds(keep: Set<string>): number {
+  let bytes = 0;
+  for (const [key, buffer] of decodedBuffers) {
+    if (keep.has(key.split('|')[0])) continue;
+    bytes += buffer.length * buffer.numberOfChannels * 4;
+    decodedBuffers.delete(key);
+    decoded.delete(key);
+  }
+  return bytes;
+}
+
 /** The sound decoded to `sampleRate`, once decodeSound has finished with it. */
 export const decodedSound = (id: string, sampleRate: number): AudioBuffer | undefined => decodedBuffers.get(decodeKey(id, sampleRate));
 

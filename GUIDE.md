@@ -422,6 +422,14 @@ Every track goes through a master compressor and a limiter that holds peaks just
 
 Mixer and effect changes can be undone with `Ctrl+Z`; tempo, swing and master volume can't.
 
+### When playback lags: the performance badge and Clear memory
+
+While the song plays, the app watches for two signs that the computer isn't keeping up: notes reaching the sound engine too late, and the page freezing for a moment. A few of either in a few seconds turns the badge in the header (next to LUFS) into an amber **LAG**, and a warning appears at the top with **Clear memory**. Close the warning with **×** (it stays away until you next press Play). When all is well the badge shows how much memory the page is using (in Chrome).
+
+**Clear memory** (in the warning, or from the badge at any time) lets go of what the app holds but isn't using: downloaded recordings of instruments no track plays, decoded sounds no clip uses, the Instrument Browser's preview players, and any notes left hanging. Everything comes back by itself if needed (an instrument re-downloads when you use it again). Tick **Also empty the undo history** to free the most on a long session, but then earlier edits can't be undone.
+
+If it still lags: **Freeze** the busiest tracks (below), turn on **Stable playback** (Master tab › Playback), and close other tabs and programs.
+
 ### Freezing tracks
 
 Big songs can ask more of the computer than it has, and playback starts to crackle or skip. **Freezing** a track fixes that: click the snowflake in its header and the app renders the track's instrument, effects and EQ to audio once (a second or two), then plays that recording instead. A frozen track costs about as much as one audio clip: on a 36-track test song, freezing everything cut the playback work to about a quarter.

@@ -15,6 +15,8 @@ import type { CustomSample } from '../../store/timelineTypes';
 type SampleSet = Record<string, Tone.ToneAudioBuffer>;
 
 const sampleSets: Partial<Record<InstrumentKey, Promise<SampleSet>>> = {};
+/** The sets that have finished loading (for counting what forgetting them frees). */
+const loadedSets: Partial<Record<InstrumentKey, SampleSet>> = {};
 
 /** True for instruments that stream recordings (piano, sax, marimba...). */
 export function isSamplerKey(key: InstrumentKey): boolean {
@@ -45,7 +47,9 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   ).then(
     (entries) => {
       setStatus(key, 'ready');
-      return Object.fromEntries(entries) as SampleSet;
+      const set = Object.fromEntries(entries) as SampleSet;
+      loadedSets[key] = set;
+      return set;
     },
     (err) => {
       console.error(`Failed to load samples [${key}]:`, err);
@@ -364,6 +368,27 @@ export async function triggerAuditionSampler(key: InstrumentKey, notes: string[]
       voice.dispose();
     }
   }
+}
+
+/**
+ * Let go of downloaded recordings no track uses (`keep`), and the instrument browser's preview
+ * players: they're downloaded or rebuilt again when next needed. Returns about how many bytes of
+ * sound that frees.
+ */
+export function forgetUnusedSamples(keep: Set<InstrumentKey>): number {
+  let bytes = 0;
+  for (const key of Object.keys(auditionVoices) as InstrumentKey[]) {
+    auditionVoices[key]?.dispose();
+    delete auditionVoices[key];
+  }
+  for (const key of Object.keys(sampleSets) as InstrumentKey[]) {
+    if (keep.has(key)) continue;
+    delete sampleSets[key];
+    for (const b of Object.values(loadedSets[key] ?? {})) bytes += b.length * b.numberOfChannels * 4;
+    delete loadedSets[key];
+    useAudioStore.getState().setInstrumentStatus(key, 'unloaded');
+  }
+  return bytes;
 }
 
 export function releaseAuditionSamplers(): void {
