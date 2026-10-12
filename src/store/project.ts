@@ -1,4 +1,4 @@
-import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionKind } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
@@ -53,7 +53,7 @@ export interface ProjectData {
   /** Game stingers (optional; older files have none). */
   stingers?: Stinger[];
   /** Transitions into game states, by section marker id (optional; absent means straight cuts). */
-  transitions?: Record<string, TransitionKind>;
+  transitions?: Record<string, TransitionRule>;
   /** Intensity: the level now (0 to 1) and each stem group's curve (optional). */
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
 }
@@ -80,7 +80,7 @@ export interface ProjectSnapshot {
   /** Game stingers (older projects don't have any). */
   stingers?: Stinger[];
   /** Transitions into game states, by section marker id. */
-  transitions?: Record<string, TransitionKind>;
+  transitions?: Record<string, TransitionRule>;
   /** Intensity: the level now and each stem group's curve. */
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
 }

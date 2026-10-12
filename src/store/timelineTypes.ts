@@ -567,8 +567,19 @@ export interface LoopRegion {
 export type MarkerAnchor = 'bar' | 'time';
 
 /** A named point on the timeline. Both positions are kept; the anchor says which one the other follows. */
-/** What plays as the Game preview switches into a state (see transitions.ts). */
-export type TransitionKind = 'cut' | 'fill' | 'riser' | 'impact';
+/** What happens as the music switches between game states (see transitions.ts). */
+export type TransitionKind = 'cut' | 'fill' | 'riser' | 'impact' | 'crossfade' | 'stinger';
+
+/** How one state hands over to another: a transition matrix entry (see transitions.ts). */
+export interface TransitionRule {
+  kind: TransitionKind;
+  /** When the switch happens: the next bar (default), the next beat, or at once */
+  quantize?: 'bar' | 'beat' | 'now';
+  /** A crossfade's length in beats */
+  beats?: number;
+  /** The stinger that bridges the gap (kind 'stinger') */
+  stingerId?: string;
+}
 
 /** What a stinger is for (see stingers.ts). */
 export type StingerKind = 'victory' | 'levelUp' | 'item' | 'checkpoint' | 'danger' | 'gameOver';

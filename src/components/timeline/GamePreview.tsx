@@ -6,8 +6,9 @@ import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
 import { fireStinger, playNotesAt, renderStinger } from '../../audio/stingerPlayer';
-import { transitionCue, TRANSITIONS } from '../../store/transitions';
-import type { TransitionKind } from '../../store/timelineTypes';
+import { ruleFor, transitionCue } from '../../store/transitions';
+import { AuditionButton, TransitionMatrix } from './GameMatrix';
+import { gameKitSong } from './gameKitSong';
 import * as Tone from 'tone';
 import { createZip } from '../../audio/zip';
 import { buildGameKit } from '../../audio/gameKit';
@@ -88,38 +89,6 @@ const LoopVariations: React.FC = () => {
   );
 };
 
-/** How the music goes into each state: straight in, or with a fill, a riser or an impact. */
-const TransitionList: React.FC<{ sections: Array<{ id: string; name: string }> }> = ({ sections }) => {
-  const transitions = useTimelineStore((s) => s.transitions);
-  return (
-    <details className="flex flex-col gap-1">
-      <summary className="cursor-pointer text-[10px] font-mono text-forge-muted uppercase select-none">
-        Transitions ({Object.keys(transitions).filter((id) => sections.some((s) => s.id === id)).length} set)
-      </summary>
-      <p className="text-forge-muted mt-1">What plays as the music switches into each state (on the next bar or beat).</p>
-      <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-1 mt-1">
-        {sections.map((sec) => (
-          <React.Fragment key={sec.id}>
-            <span className="truncate text-forge-text self-center">Into {sec.name}</span>
-            <select
-              value={transitions[sec.id] ?? 'cut'}
-              onChange={(e) => useTimelineStore.getState().setTransition(sec.id, e.target.value as TransitionKind)}
-              className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text"
-              aria-label={`Transition into ${sec.name}`}
-            >
-              {TRANSITIONS.map((t) => (
-                <option key={t.kind} value={t.kind} title={t.blurb}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </React.Fragment>
-        ))}
-      </div>
-    </details>
-  );
-};
-
 /** Everything the game needs, in one .zip: see gameKit.ts. */
 const GameKitButton: React.FC = () => {
   const [progress, setProgress] = useState<string | null>(null);
@@ -127,21 +96,7 @@ const GameKitButton: React.FC = () => {
     const s = useTimelineStore.getState();
     setProgress('0%');
     try {
-      const blob = await buildGameKit(
-        {
-          name: s.projectName || 'Untitled',
-          bpm: s.bpm,
-          swing: s.swing,
-          tracks: s.tracks,
-          clips: s.clips,
-          markers: s.markers,
-          masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback },
-          master: s.master,
-          stingers: s.stingers,
-          transitions: s.transitions,
-        },
-        (f) => setProgress(`${Math.round(f * 100)}%`)
-      );
+      const blob = await buildGameKit(gameKitSong(), (f) => setProgress(`${Math.round(f * 100)}%`));
       downloadBlob(blob, `${s.projectName || 'Untitled'} game kit.zip`);
     } catch (err) {
       showToast(`Couldn't build the game kit: ${err instanceof Error ? err.message : String(err)}.`);
@@ -156,11 +111,12 @@ const GameKitButton: React.FC = () => {
         disabled={progress !== null}
         onClick={() => void run()}
         className="h-8 px-3 flex items-center justify-center gap-1.5 rounded-md border border-emerald-400/60 bg-emerald-500/15 text-emerald-100 font-semibold hover:bg-emerald-500/25 disabled:opacity-60"
-        title="Every state as a seamless loop, the stingers and transitions, music.json, and players for the web, Godot and Unity"
+        title="Every state as a seamless loop (and its stems), the stingers and transitions, audio_manifest.json, and players for the web, Godot and Unity"
       >
         <Package className="w-4 h-4" /> {progress === null ? 'Export game kit (.zip)' : `Building… ${progress}`}
       </button>
-      <p className="text-[10px] text-forge-muted">Every state as a loop, the stingers and transitions, a music.json, and ready-made players for the web, Godot and Unity that switch on the beat.</p>
+      <AuditionButton />
+      <p className="text-[10px] text-forge-muted">Every state as a loop and stems by group, the stingers and transitions, an audio_manifest.json, and ready-made players for the web, Godot and Unity.</p>
     </div>
   );
 };
@@ -339,7 +295,13 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const goTo = (sec: (typeof sections)[number]) => {
     const s = useTimelineStore.getState();
     clearTimeout(timer.current);
-    const cue = transitionCue(s.transitions[sec.id] ?? 'cut', s.tracks);
+    const playingNow = sections.find((x) => Math.abs(x.from - s.loopRegion.inBar) < 1e-6 && Math.abs(x.to - s.loopRegion.outBar) < 1e-6 && s.loopRegion.enabled);
+    const rule = ruleFor(s.transitions, playingNow?.id ?? null, sec.id);
+    const cue = transitionCue(rule.kind, s.tracks);
+    // A stinger bridge: the stinger on the line, then the new state that many bars later
+    const bridge = rule.kind === 'stinger' ? s.stingers.find((x) => x.id === rule.stingerId) : undefined;
+    const bridgeBars = bridge ? Math.max(1, Math.ceil(bridge.lengthBars - 1e-6)) : 0;
+    const when = rule.quantize ?? quantize;
     const jump = () => {
       const st = useTimelineStore.getState();
       st.setLoopRange(sec.from, sec.to);
@@ -347,24 +309,38 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       st.seek(sec.from);
       setPending(null);
     };
-    if (!s.isPlaying || quantize === 'now') {
+    if (!s.isPlaying || when === 'now') {
       jump();
       if (!s.isPlaying) void s.togglePlay();
       if (cue && cue.leadIn === 0) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + 0.1);
+      if (bridge && s.isPlaying) void fireStinger(bridge, 'now');
       return;
     }
     // On the next bar or beat line of the song, or a later one if the transition needs more room
     const at = getAudiblePositionBar();
-    const unit = quantize === 'bar' ? 1 : 0.25;
+    const unit = when === 'bar' ? 1 : 0.25;
     let next = Math.floor((at - 1) / unit + 1e-6) * unit + unit + 1;
     if (cue && next - at < cue.leadIn) next += Math.ceil((cue.leadIn - (next - at)) / unit - 1e-6) * unit;
     const ms = ((next - at) * 240 * 1000) / s.bpm;
     if (cue) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + ms / 1000);
     setPending(sec.id);
+    if (bridge) {
+      // The song stops on the line while the stinger plays, then comes in on the new state
+      void fireStinger(bridge, when === 'beat' ? 'beat' : 'bar');
+      timer.current = window.setTimeout(() => {
+        const st = useTimelineStore.getState();
+        if (st.isPlaying) void st.togglePlay();
+        timer.current = window.setTimeout(() => {
+          jump();
+          void useTimelineStore.getState().togglePlay();
+        }, (bridgeBars * 240 * 1000) / s.bpm - 40);
+      }, Math.max(0, ms - 15));
+      return;
+    }
     // Make the jump land on the line: the loop wraps there if the line is the loop's end
+    // (a crossfade can't be heard on one timeline: it cuts here; the audition pads play it)
     timer.current = window.setTimeout(jump, Math.max(0, ms - 15));
   };
-
 
   const startDrag = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -422,7 +398,7 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
           )}
         </div>
-        {sections.length > 1 && <TransitionList sections={sections} />}
+        {sections.length > 1 && <TransitionMatrix states={sections} />}
         <IntensityPanel />
         <StingerList timing={quantize} />
         <LoopVariations />
