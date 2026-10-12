@@ -281,8 +281,27 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
   return { input: output, nodes: [] };
 }
 
+/** The instrument's tone correction (InstrumentDef.tone) in front of its shaping chain. */
+function toneChain(tone: InstrumentDef['tone'], next: ShapingChain): ShapingChain {
+  if (!tone || (!tone.presence && !tone.mud)) return next;
+  const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  const presence = raw.createBiquadFilter();
+  presence.type = 'peaking';
+  presence.frequency.value = tone.presenceHz ?? 2500;
+  presence.Q.value = 0.8;
+  presence.gain.value = tone.presence ?? 0;
+  const mud = raw.createBiquadFilter();
+  mud.type = 'peaking';
+  mud.frequency.value = 300;
+  mud.Q.value = 0.9;
+  mud.gain.value = tone.mud ?? 0;
+  presence.connect(mud);
+  Tone.connect(mud, next.input);
+  return { ...next, input: presence, nodes: [...next.nodes, { dispose: () => { presence.disconnect(); mud.disconnect(); } }] };
+}
+
 /** How much quieter `note` plays under an instrument's taper (1 = as it is). */
-function taperGain(taper: InstrumentDef['taper'], note: string): number {
+export function taperGain(taper: InstrumentDef['taper'], note: string): number {
   if (!taper) return 1;
   const octaves = (Tone.Frequency(note).toMidi() - taper[0]) / 12;
   return octaves > 0 ? Tone.dbToGain(-taper[1] * octaves) : 1;
@@ -322,7 +341,8 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
 /** A Tone.Sampler for a sampled instrument in the current context, connected to `output`. */
 export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode): SamplerVoice {
   const def = INSTRUMENTS[key];
-  const chain = shapingChain(def.shaping, output);
+  const shaped = shapingChain(def.shaping, output);
+  const chain = toneChain(def.tone, shaped);
   // A few ms of attack: a recording stretched to another pitch doesn't always start at zero
   const sampler = new Tone.Sampler({ attack: 0.004, release: def.samples?.release ?? 1 }).connect(chain.input);
   const attach = loadSamples(key).then((set) => {

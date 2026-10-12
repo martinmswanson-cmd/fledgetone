@@ -17,7 +17,7 @@ import { createSampledKit } from './presets/sampledKit';
 import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
 import type { NativeBus } from './presets/native';
-import { createCustomSamplerVoice, createSamplerVoice } from './samplers/samplerManager';
+import { createCustomSamplerVoice, createSamplerVoice, taperGain } from './samplers/samplerManager';
 import type { CustomSample, SlicerSettings, WobbleRate } from '../store/timelineTypes';
 import type { SynthPatch } from '../store/synthPatch';
 import { createDesignedSynth } from './presets/designer';
@@ -249,6 +249,30 @@ const oneShot = (play: TrackInstrument['play']): TrackInstrument['noteOn'] => (n
  * `options` carry the user's sound for the Sampler and the Slicer's sound and slices.
  */
 export function createInstrument(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions = {}): TrackInstrument {
+  const tapered = withTaper(key, buildGained(key, output, options));
+  return tapered;
+}
+
+/**
+ * The top notes of a generated instrument play quieter under its taper (see InstrumentDef.taper),
+ * as the recorded ones do in their sampler: a note's velocity is scaled, which these synths turn
+ * into level.
+ */
+function withTaper(key: InstrumentKey, inst: TrackInstrument): TrackInstrument {
+  const { taper, kind } = INSTRUMENTS[key];
+  if (!taper || kind === 'sampled') return inst;
+  const soften = (n: PlayableNote): PlayableNote => {
+    const g = taperGain(taper, n.note);
+    return g === 1 ? n : { ...n, velocity: n.velocity * g };
+  };
+  return {
+    ...inst,
+    play: (notes, time) => inst.play(notes.map(soften), time),
+    ...(inst.noteOn ? { noteOn: (n: PlayableNote, time: number) => inst.noteOn!(soften(n), time) } : {}),
+  };
+}
+
+function buildGained(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
   const gain = INSTRUMENTS[key].gain;
   if (!gain) return buildInstrument(key, output, options);
   // Level correction so this instrument starts out about as loud as the others

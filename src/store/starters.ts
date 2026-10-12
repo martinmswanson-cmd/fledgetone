@@ -328,7 +328,7 @@ function lofi(): ProjectSnapshot {
   const keys = track('Keys', 'rhodes', { volume: -9, reverbSend: 0.3, fx: { chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.3 } } });
   const drums = track('Drums', 'drums', { volume: 2, fx: { filter: { on: true, type: 'lowpass', cutoff: 3200, resonance: 0.9 }, distortion: { on: true, amount: 0.15 } } });
   const bass = track('Bass', 'bassGuitar', { volume: 0 });
-  const melody = track('Flute', 'flute', { volume: -4, reverbSend: 0.45, delaySend: 0.2, pan: 0.2 });
+  const melody = track('Flute', 'flute', { volume: -1, reverbSend: 0.45, delaySend: 0.2, pan: 0.2 });
   // Fmaj9 - Em7 - Dm9 - Cmaj9, a bar each, played lazily (a little after the beat)
   const chords: Step[] = [
     [1, ['F3', 'A3', 'C4', 'E4', 'G4'], 0.6, '2n.'],
@@ -705,7 +705,7 @@ function metal(): ProjectSnapshot {
 
 function jazz(): ProjectSnapshot {
   const drums = track('Drums', 'acousticKit', { volume: 5, reverbSend: 0.2 });
-  const bass = track('Upright bass', 'uprightBass', { volume: 0 });
+  const bass = track('Upright bass', 'uprightBass', { volume: -1.5 });
   const piano = track('Piano', 'piano', { volume: 3, reverbSend: 0.25, pan: -0.15 });
   const sax = track('Sax', 'saxophone', { volume: -2, reverbSend: 0.3, pan: 0.15 });
   const vibes = track('Vibes', 'vibraphone', { volume: 0, reverbSend: 0.35, pan: 0.3 });
