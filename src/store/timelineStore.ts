@@ -26,6 +26,8 @@ import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
 import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
+import { createStinger, fitNotesToRange } from './stingers';
+import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq } from './timelineTypes';
@@ -49,7 +51,7 @@ import {
   trimAudioStart,
 } from './audioClips';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, TrackFx, WobbleRate } from './timelineTypes';
+import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, WobbleRate } from './timelineTypes';
 import { DEFAULT_WOBBLE, TOTAL_BARS, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
   adjacentMarker,
@@ -357,6 +359,14 @@ interface TimelineState {
    * one undo step; `bpm`, when given, is the tempo that makes it last exactly the length asked.
    */
   cutToLength: (order: number[], bpm: number | null) => string | null;
+
+  /** Game stingers (see stingers.ts): saved with the project, not undo steps */
+  stingers: Stinger[];
+  addStinger: (kind: StingerKind) => Stinger;
+  updateStinger: (id: string, patch: Partial<Omit<Stinger, 'id'>>) => void;
+  deleteStinger: (id: string) => void;
+  /** Put a stinger on the timeline at `bar`, on a new track of its instrument (one undo step) */
+  placeStinger: (id: string, bar: number) => string | null;
 
   // Clipboard
   /** Snapshot of copied clips; startBar is relative to the earliest copied clip (0 = paste point). */
@@ -1427,6 +1437,40 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return null;
     },
 
+    stingers: [],
+    addStinger: (kind) => {
+      const s = get();
+      const stinger = createStinger(kind, detectKey(s.clips, s.tracks) ?? keyOf(0, 'major'), s.stingers);
+      set({ stingers: [...s.stingers, stinger] });
+      return stinger;
+    },
+    updateStinger: (id, patch) => set((s) => ({ stingers: s.stingers.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
+    deleteStinger: (id) => set((s) => ({ stingers: s.stingers.filter((x) => x.id !== id) })),
+    placeStinger: (id, bar) => {
+      const s = get();
+      const stinger = s.stingers.find((x) => x.id === id);
+      if (!stinger) return null;
+      const at = clampBar(bar);
+      if (at + stinger.lengthBars > TOTAL_BARS + 1 + EPS) return `Too close to the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+      const track = makeTrack(stinger.instrumentKey, s.tracks, stinger.name);
+      const clip: Clip = {
+        id: uid('clip'),
+        trackId: track.id,
+        name: stinger.name,
+        startBar: at,
+        lengthBars: stinger.lengthBars,
+        isSelected: true,
+        notes: fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range).map((n) => ({ ...n, id: uid('note') })),
+      };
+      if (hasRecordings(track.instrumentKey)) void loadSamples(track.instrumentKey).catch(() => {});
+      set((st) => ({
+        tracks: [...st.tracks, track],
+        clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
+        ...pushPast(st),
+      }));
+      return null;
+    },
+
     cutToLength: (order, newBpm) => {
       const s = get();
       const sections = songSections(s.clips, s.markers);
@@ -1699,6 +1743,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         fps: p.fps ?? DEFAULT_FRAME_RATE,
         dropFrame: p.dropFrame === true && p.fps === 29.97,
         markers: retimeMarkers(p.markers ?? [], p.bpm),
+        stingers: p.stingers ?? [],
         automationView: {},
         automationSelection: null,
         // A project opens at its start (or wherever its playhead is), not where the last one was scrolled to
@@ -1900,6 +1945,7 @@ export function currentProject(): ProjectSnapshot {
     fps: s.fps,
     dropFrame: s.dropFrame,
     markers: s.markers,
+    stingers: s.stingers,
   };
 }
 
@@ -1977,7 +2023,8 @@ export function connectAutosave(): () => void {
       state.master === prev.master &&
       state.fps === prev.fps &&
       state.dropFrame === prev.dropFrame &&
-      state.markers === prev.markers
+      state.markers === prev.markers &&
+      state.stingers === prev.stingers
     ) {
       return;
     }

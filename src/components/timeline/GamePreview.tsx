@@ -1,7 +1,158 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Gamepad2, GripHorizontal, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Dices, Download, Gamepad2, GripHorizontal, ListPlus, Trash2, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { getAudiblePositionBar } from '../../audio/transport';
+import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
+import { detectKey, keyOf } from '../../store/songKey';
+import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
+import { fireStinger, renderStinger } from '../../audio/stingerPlayer';
+import { createZip } from '../../audio/zip';
+import { downloadBlob } from '../../audio/exportWav';
+import { showToast } from './toastStore';
+
+/** Instruments that suit a stinger (the stinger's own is offered too). */
+const STINGER_INSTRUMENTS: InstrumentKey[] = ['brass', 'brassSection', 'chipLead', 'pluck', 'keys', 'lead', 'supersaw', 'glockenspiel', 'celesta', 'musicBox', 'marimba', 'xylophone', 'kalimba', 'steelDrums', 'chimes', 'slowStrings', 'choir', 'warmPad'];
+
+/**
+ * Stingers: short cues the game plays over the music (a win, an item found). Each fires on the
+ * next bar or beat like the states do, can be put on the timeline, and exports as WAV files.
+ */
+const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
+  const stingers = useTimelineStore((s) => s.stingers);
+  const clips = useTimelineStore((s) => s.clips);
+  const tracks = useTimelineStore((s) => s.tracks);
+  const key = useMemo(() => detectKey(clips, tracks), [clips, tracks]);
+  const [busy, setBusy] = useState(false);
+  const [lit, setLit] = useState<string | null>(null);
+  const st = useTimelineStore.getState;
+
+  const fire = async (id: string) => {
+    const stinger = st().stingers.find((x) => x.id === id);
+    if (!stinger) return;
+    try {
+      const at = await fireStinger(stinger, timing);
+      const wait = Math.max(0, (at - (await import('tone')).now()) * 1000);
+      window.setTimeout(() => setLit(id), wait);
+      window.setTimeout(() => setLit((cur) => (cur === id ? null : cur)), wait + 400);
+    } catch {
+      showToast(`Couldn't play "${stinger.name}" (its instrument didn't load).`);
+    }
+  };
+
+  const exportAll = async () => {
+    const s = st();
+    setBusy(true);
+    try {
+      const song = { bpm: s.bpm, masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback }, master: s.master };
+      const files = [];
+      for (const x of s.stingers) files.push({ name: `${x.name.replace(/[\\/:*?"<>|]/g, '-')}.wav`, data: await renderStinger(x, song) });
+      downloadBlob(await createZip(files), `${s.projectName || 'Untitled'} stingers.zip`);
+    } catch {
+      showToast("Couldn't export the stingers (an instrument didn't load).");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[10px] font-mono text-forge-muted uppercase">
+        <span className="whitespace-nowrap" title={key ? `Written in ${key.name}, the key the song's notes are in` : undefined}>
+          Stingers{key ? ` · ${key.name}` : ''}
+        </span>
+        <select
+          className="h-6 flex-1 min-w-0 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text normal-case"
+          value=""
+          onChange={(e) => {
+            const kind = e.target.value as (typeof STINGER_KINDS)[number]['kind'];
+            if (kind) void fire(st().addStinger(kind).id);
+          }}
+          aria-label="Add a stinger"
+        >
+          <option value="">+ Add a stinger…</option>
+          {STINGER_KINDS.map((k) => (
+            <option key={k.kind} value={k.kind}>
+              {k.label}: {k.blurb.toLowerCase()}
+            </option>
+          ))}
+        </select>
+      </div>
+      {stingers.length === 0 ? (
+        <p className="text-forge-muted">Short cues the game plays over the music when something happens: a win, a level up, an item found. They're written in the song's key{key ? ` (${key.name})` : ''}.</p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {stingers.map((x) => (
+            <div key={x.id} className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => void fire(x.id)}
+                className={`flex-1 min-w-0 h-8 rounded-md border px-2 text-left truncate font-semibold transition ${lit === x.id ? 'border-amber-300 bg-amber-500/30 text-amber-50' : 'border-forge-border text-forge-text hover:border-amber-400/60'}`}
+                title={`Play over the music (${timing === 'now' ? 'at once' : `on the next ${timing}`})`}
+              >
+                {x.name}
+              </button>
+              <select
+                value={x.instrumentKey}
+                onChange={(e) => st().updateStinger(x.id, { instrumentKey: e.target.value as InstrumentKey })}
+                className="h-8 w-20 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text"
+                aria-label={`${x.name}: instrument`}
+              >
+                {[...new Set([x.instrumentKey, ...STINGER_INSTRUMENTS])].map((k) => (
+                  <option key={k} value={k}>
+                    {INSTRUMENTS[k].name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  const variation = x.variation + 1;
+                  st().updateStinger(x.id, { variation, ...stingerNotes(x.kind, key ?? keyOf(0, 'major'), variation) });
+                  void fire(x.id);
+                }}
+                className="h-8 w-7 flex items-center justify-center rounded border border-forge-border text-forge-muted hover:text-forge-text"
+                title={`Another version (${stingerKind(x.kind).label.toLowerCase()}, re-written in the song's key)`}
+                aria-label={`${x.name}: another version`}
+              >
+                <Dices className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const message = st().placeStinger(x.id, st().playheadPosition);
+                  showToast(message ?? `"${x.name}" is on a new track at the playhead.`);
+                }}
+                className="h-8 w-7 flex items-center justify-center rounded border border-forge-border text-forge-muted hover:text-forge-text"
+                title="Put it on the timeline at the playhead (a new track)"
+                aria-label={`${x.name}: put on the timeline`}
+              >
+                <ListPlus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => st().deleteStinger(x.id)}
+                className="h-8 w-7 flex items-center justify-center rounded border border-forge-border text-forge-muted hover:text-red-300"
+                title="Delete this stinger"
+                aria-label={`${x.name}: delete`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void exportAll()}
+            className="self-end h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border text-forge-muted hover:text-forge-text disabled:opacity-50"
+            title="Every stinger as a WAV file, through the song's master section, in one .zip"
+          >
+            <Download className="w-3.5 h-3.5" /> {busy ? 'Exporting…' : 'Export stingers (.zip)'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 /**
  * Hear the music the way a game will play it: each section (between markers) is a state the game
@@ -135,7 +286,8 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             ))}
           </div>
         </div>
-        <p className="text-[10px] text-forge-muted">{isPlaying ? 'Switch states while it plays, the way the game will.' : 'Pick a state to start.'} Intensity brings layers in from the top track down.</p>
+        <StingerList timing={quantize} />
+        <p className="text-[10px] text-forge-muted">{isPlaying ? 'Switch states and fire stingers while it plays, the way the game will.' : 'Pick a state to start.'} Intensity brings layers in from the top track down.</p>
       </div>
     </div>
   );

@@ -565,6 +565,21 @@ export interface LoopRegion {
 export type MarkerAnchor = 'bar' | 'time';
 
 /** A named point on the timeline. Both positions are kept; the anchor says which one the other follows. */
+/** What a stinger is for (see stingers.ts). */
+export type StingerKind = 'victory' | 'levelUp' | 'item' | 'checkpoint' | 'danger' | 'gameOver';
+
+/** A short cue a game plays over its music (a win, an item found), in the song's key and tempo. */
+export interface Stinger {
+  id: string;
+  name: string;
+  kind: StingerKind;
+  instrumentKey: InstrumentKey;
+  /** Which of the kind's variations its notes came from */
+  variation: number;
+  notes: NoteEvent[];
+  lengthBars: number;
+}
+
 export interface Marker {
   id: string;
   name: string;

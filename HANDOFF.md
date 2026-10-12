@@ -80,6 +80,7 @@ Run all five checks before every commit.
 | Tempo finder (hit points = markers locked to time, Shift+M) | `src/store/tempoFinder.ts`, `HitFinder` in `TempoControls.tsx`, `addHit` in the store |
 | Cut to length | `src/store/cutToLength.ts` (sections, plan), store action `cutToLength`, `CutToLengthDialog.tsx` |
 | Sound effects maker, song key detection | `src/audio/sfx/sfxSynth.ts` (pure renderer + recipes), `src/components/sfx/SfxMakerDialog.tsx`, `src/store/songKey.ts` |
+| Game stingers (saved in the project, fired from the Game preview) | `src/store/stingers.ts` (recipes, parse), `src/audio/stingerPlayer.ts` (fire on next beat, render), `StingerList` in `GamePreview.tsx` |
 | Lo-fi and Gate inserts | `createLightLofi` / `createLightGate` in `effects/lightFx.ts`; the Gate is chopped by the strip's beat clock (`createPumpClock`) |
 | Genre starters, build-up & drop | `src/store/starters.ts`, `src/store/buildDrop.ts` (action `addBuildAndDrop`) |
 | Audio clips, sound library (IndexedDB), Slicer | `audioClipSchedule.ts`, `soundLibrary.ts`, `slicing.ts`, `src/store/audioClips.ts` |
@@ -213,6 +214,9 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   note string) sharp / flat. The drift is a hash of clip id + note id + tick, so live, export and
   freeze match. Mono basses, the 808 and drum kits keep a group together (one drift per group),
   so chords still pick the loudest note, 808 slides still slide and open hats still choke.
+
+- **Type check with `npx tsc -b`** (what `npm run build` runs). `tsc --noEmit -p .` checks nothing
+  here: the root tsconfig only has references.
 
 ## Ideas not started
 
