@@ -285,6 +285,11 @@ export function liveTrackPeaks(): Map<string, number> {
   return out;
 }
 
+/** One track's level after its fader (peak, 0..1), reading only its own analyser: 0 if it isn't live. */
+export function liveTrackPeak(trackId: string): number {
+  return live.get(trackId)?.strip.peak() ?? 0;
+}
+
 /** A track's spectrum now (dB per bin) into `out`; the bin count, or 0 if the track isn't live. */
 export function liveTrackSpectrum(trackId: string, out: Float32Array): number {
   return live.get(trackId)?.strip.spectrum(out) ?? 0;

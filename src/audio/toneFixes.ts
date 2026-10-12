@@ -57,3 +57,24 @@ timeProto.toTicks = function () {
   const whole = Math.round(ticks);
   return Math.abs(ticks - whole) < 1e-6 ? whole : ticks;
 };
+
+/**
+ * Tone.CrossFade (inside every Tone effect with a wet/dry mix: Reverb, Distortion, Chorus...)
+ * connects the context's shared, always-running constant source to its panner and never
+ * disconnects it, so each disposed effect left a panner alive and processing for good: one more
+ * every time an instrument with a built-in effect was rebuilt (a new project, a changed
+ * instrument). Disposing it now cuts that connection too.
+ */
+const crossFadeProto = Tone.CrossFade.prototype as unknown as {
+  dispose: (this: Tone.CrossFade) => Tone.CrossFade;
+};
+const disposeCrossFade = crossFadeProto.dispose;
+crossFadeProto.dispose = function () {
+  const self = this as unknown as { _panner?: AudioNode; context: Tone.BaseContext };
+  try {
+    if (self._panner) (self.context.getConstant(1) as unknown as AudioNode).disconnect(self._panner);
+  } catch {
+    // Already disconnected
+  }
+  return disposeCrossFade.call(this);
+};

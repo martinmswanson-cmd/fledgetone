@@ -3,7 +3,7 @@ import { normalizeNoteExpression } from './noteExpression';
 import { compSegments, normalizeTakes } from './takes';
 import { TOTAL_BARS, isAutomationParam } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
-import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
+import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LauncherSlot, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { normalizeMulti, normalizeRack } from './sampleKits';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
@@ -28,6 +28,8 @@ const AUTOSAVE_KEY = 'bos-beat-box.autosave.v1';
 const LEGACY_AUTOSAVE_KEYS = ['grooveforge.autosave.v1'];
 /** The previous session, set aside at startup (see preservePreviousSession). */
 const PREVIOUS_SESSION_KEY = 'bos-beat-box.autosave.previous';
+/** An autosave that couldn't be read at startup, kept as it was rather than overwritten */
+const UNREADABLE_KEY = 'bos-beat-box.autosave.unreadable';
 
 export interface ProjectData {
   format: typeof PROJECT_FORMAT;
@@ -180,6 +182,34 @@ function parseFrozen(v: unknown): FrozenTrack | undefined {
   return { soundId: v.soundId, startBar: v.startBar, seconds: v.seconds, gainDb: isNum(v.gainDb) ? v.gainDb : 0, fingerprint: v.fingerprint };
 }
 
+/** A track's launcher slots: one per scene (the first kept), each a clip without a place in the song. */
+function parseSlots(raw: unknown, trackId: string): LauncherSlot[] {
+  if (!Array.isArray(raw)) return [];
+  const out: LauncherSlot[] = [];
+  for (const x of raw.slice(0, 256)) {
+    if (!isObj(x) || !isNum(x.scene) || x.scene < 0 || x.scene >= 64 || !isObj(x.clip)) continue;
+    const scene = Math.floor(x.scene);
+    if (out.some((o) => o.scene === scene)) continue;
+    try {
+      const c = parseClip({ ...x.clip, id: 'slot', trackId, startBar: 1 });
+      out.push({
+        scene,
+        clip: {
+          name: c.name,
+          lengthBars: c.lengthBars,
+          notes: c.notes,
+          ...(c.wobble ? { wobble: c.wobble } : {}),
+          ...(c.audio ? { audio: c.audio } : {}),
+          ...(c.expression ? { expression: c.expression } : {}),
+        },
+      });
+    } catch {
+      // A slot this version can't read is left empty
+    }
+  }
+  return out.sort((a, b) => a.scene - b.scene);
+}
+
 function parseTrack(v: unknown): Track {
   if (!isObj(v) || !isStr(v.id) || !isStr(v.name) || !isInstrumentKey(v.instrumentKey)) {
     throw new Error('a track is missing its id, name or instrument');
@@ -197,8 +227,9 @@ function parseTrack(v: unknown): Track {
     isMuted: v.isMuted === true,
     isSoloed: v.isSoloed === true,
     isArmed: v.isArmed === true,
-    volume: isNum(v.volume) ? v.volume : 0,
-    pan: isNum(v.pan) ? v.pan : 0,
+    // In range, whatever the file says (an out-of-range level throws in the audio engine)
+    volume: isNum(v.volume) ? Math.max(-60, Math.min(6, v.volume)) : 0,
+    pan: isNum(v.pan) ? Math.max(-1, Math.min(1, v.pan)) : 0,
     eq: {
       low: isNum(eqObj.low) ? eqObj.low : 0,
       mid: isNum(eqObj.mid) ? eqObj.mid : 0,
@@ -239,6 +270,8 @@ function parseTrack(v: unknown): Track {
             .map((x) => ({ cc: Math.round(x.cc as number), param: x.param as AutomationParam })),
         }
       : {}),
+    // Optional: its clips in the clip launcher
+    ...(parseSlots(v.slots, v.id).length ? { slots: parseSlots(v.slots, v.id) } : {}),
     // Optional: Web Audio Module plugins (the instrument of a Plugin track, and plugin effects)
     ...(parsePlugin(v.plugin) ? { plugin: parsePlugin(v.plugin)! } : {}),
     ...(Array.isArray(v.pluginFx) && v.pluginFx.some((p) => parsePlugin(p))
@@ -316,7 +349,14 @@ function parseClip(v: unknown): Clip {
     startBar,
     // No clip is shorter than a 16th; a zero or negative length (a hand-edited file) would break edits
     lengthBars,
-    notes: v.notes.map(parseNote),
+    // A note that can't be read is left out, not the whole clip
+    notes: v.notes.flatMap((n) => {
+      try {
+        return [parseNote(n)];
+      } catch {
+        return [];
+      }
+    }),
     isSelected: false,
     // Optional: a rate this version doesn't know plays at the default
     ...(isWobbleRate(v.wobble) ? { wobble: v.wobble } : {}),
@@ -340,7 +380,19 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   if (!Array.isArray(raw.tracks) || !Array.isArray(raw.clips)) throw new Error('tracks or clips are missing');
 
   // One of each id (a hand-edited or merged file can repeat one): the first is kept
-  const tracks = raw.tracks.map(parseTrack).filter((t, i, all) => all.findIndex((o) => o.id === t.id) === i);
+  // A track or clip that can't be read (an instrument from a newer version, a damaged entry) is
+  // left out, rather than the whole song: the rest still opens
+  const tolerant = <T,>(items: unknown[], parse: (v: unknown) => T): T[] =>
+    items.flatMap((v) => {
+      try {
+        return [parse(v)];
+      } catch {
+        return [];
+      }
+    });
+  const parsedTracks = tolerant(raw.tracks, parseTrack);
+  if (raw.tracks.length && !parsedTracks.length) parseTrack(raw.tracks[0]); // nothing readable: say why
+  const tracks = parsedTracks.filter((t, i, all) => all.findIndex((o) => o.id === t.id) === i);
   const trackIds = new Set(tracks.map((t) => t.id));
   const loop = isObj(raw.loopRegion) ? raw.loopRegion : {};
   const fps = isFrameRate(raw.fps) ? raw.fps : DEFAULT_FRAME_RATE;
@@ -363,8 +415,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     tracks,
     // A clip whose track is gone can't play or be seen. Older versions could save these (undo
     // after deleting a track), so skip them rather than refuse the whole file.
-    clips: raw.clips
-      .map(parseClip)
+    clips: tolerant(raw.clips, parseClip)
       .filter((c, i, all) => trackIds.has(c.trackId) && all.findIndex((o) => o.id === c.id) === i),
     masterFx: parseMasterFx(raw.masterFx),
     fps,
@@ -405,6 +456,51 @@ function parseMasterFx(v: unknown): MasterFx {
   };
 }
 
+
+/**
+ * Projects in browser storage write each note as a short list ([note, startOffset, duration,
+ * velocity, expr?]) instead of an object with its id: about a third of the size, exactly the same
+ * notes. (Browser storage holds about 5 MB, and a big song is mostly notes.) Notes get new ids
+ * when read back.
+ */
+function packForStorage<T extends { clips: Array<{ notes: NoteEvent[] }> }>(data: T): unknown {
+  return {
+    ...data,
+    clips: data.clips.map((c) => {
+      if (!c.notes.length) return c;
+      const { notes, ...rest } = c;
+      return { ...rest, N: notes.map((n) => (n.expr ? [n.note, n.startOffset, n.duration, n.velocity, n.expr] : [n.note, n.startOffset, n.duration, n.velocity])) };
+    }),
+  };
+}
+
+/** A stored project with its notes as objects again (one in the older, unpacked form passes through). */
+function unpackStored(raw: unknown): unknown {
+  if (!isObj(raw) || !Array.isArray(raw.clips)) return raw;
+  let id = 0;
+  return {
+    ...raw,
+    clips: raw.clips.map((c) => {
+      if (!isObj(c) || !Array.isArray(c.N)) return c;
+      const { N, ...rest } = c;
+      const notes = (N as unknown[]).filter(Array.isArray).map((n) => ({
+        id: `s${(id++).toString(36)}`,
+        note: n[0],
+        startOffset: n[1],
+        duration: n[2],
+        velocity: n[3],
+        ...(n[4] ? { expr: n[4] } : {}),
+      }));
+      return { ...rest, notes };
+    }),
+  };
+}
+
+/** True when the startup autosave couldn't be read (it was kept aside, not overwritten). */
+export let autosaveUnreadable = false;
+/** True while the session the banner offers couldn't be copied aside (no room): autosave mustn't overwrite its only stored copy. */
+let previousOnlyInAutosave = false;
+
 /**
  * Why an autosave failed: the project doesn't fit in browser storage ('too-big'), it fits only
  * without the set-aside last session this page offers ('full': Dismiss makes room), or the
@@ -434,7 +530,9 @@ let offeringPrevious = false;
  * session.
  */
 export function writeAutosave(p: ProjectSnapshot): AutosaveResult {
-  const json = JSON.stringify({ ...serializeProject(p), savedAt: Date.now() });
+  // The session the banner offers is stored only in the autosave: keep it until Restore or Dismiss
+  if (offeringPrevious && previousOnlyInAutosave) return { ok: false, reason: 'full' };
+  const json = JSON.stringify(packForStorage({ ...serializeProject(p), savedAt: Date.now() }));
   const failure = storeAutosave(json);
   if (failure !== 'too-big') return failure ? { ok: false, reason: failure } : { ok: true };
 
@@ -521,8 +619,21 @@ function setAsidePreviousSession(): SavedSession | null {
     // Autosaves from before the rename (GrooveForge) are still picked up
     const json = [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].map((k) => localStorage.getItem(k)).find((v) => v !== null);
     if (json) {
-      const raw: unknown = JSON.parse(json);
-      const project = parseProject(raw);
+      let raw: unknown;
+      let project: ProjectSnapshot;
+      try {
+        raw = JSON.parse(json);
+        project = parseProject(unpackStored(raw));
+      } catch {
+        // Damaged, or from a newer version: keep it as it is, rather than let the first edit overwrite it
+        autosaveUnreadable = true;
+        try {
+          localStorage.setItem(UNREADABLE_KEY, json);
+        } catch {
+          // No room for a copy
+        }
+        throw new Error('unreadable autosave');
+      }
       if (hasWork(project)) {
         const savedAt = timeOf(raw, 'savedAt');
         // An autosave from an older version doesn't say when it was saved, only that it was before
@@ -530,7 +641,10 @@ function setAsidePreviousSession(): SavedSession | null {
         const earlier = savedAt === null ? readPreviousSlot() : null;
         const keptAt = (earlier?.savedAt === null ? earlier.keptAt : null) ?? Date.now();
         fromAutosave = { project, savedAt, keptAt };
+        // If the copy doesn't fit, the autosave is its only stored copy: autosave leaves it be
+        previousOnlyInAutosave = true;
         localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt, keptAt, project: raw }));
+        previousOnlyInAutosave = false;
       }
     }
   } catch {
@@ -542,7 +656,7 @@ function setAsidePreviousSession(): SavedSession | null {
   const slot = readPreviousSlot();
   if (!slot) return null;
   try {
-    const project = parseProject(slot.project);
+    const project = parseProject(unpackStored(slot.project));
     return hasWork(project) ? { project, savedAt: slot.savedAt, keptAt: slot.keptAt } : null;
   } catch {
     return null;
@@ -557,9 +671,12 @@ export function setAsideSession(p: ProjectSnapshot): SavedSession {
   const now = Date.now();
   offeringPrevious = true;
   try {
-    localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt: now, keptAt: now, project: serializeProject(p) }));
+    localStorage.setItem(PREVIOUS_SESSION_KEY, JSON.stringify({ savedAt: now, keptAt: now, project: packForStorage(serializeProject(p)) }));
+    previousOnlyInAutosave = false;
   } catch {
-    // No room or storage blocked: it's still offered while this page is open
+    // No room or storage blocked: it's still offered while this page is open, and the autosave
+    // (which may be its only stored copy) is left alone until Restore or Dismiss
+    previousOnlyInAutosave = true;
   }
   return { project: p, savedAt: now, keptAt: now, replaced: true };
 }
@@ -583,6 +700,7 @@ function readPreviousSlot(): { project: unknown; savedAt: number | null; keptAt:
  */
 export function clearPreviousSession(dismissed: boolean): void {
   offeringPrevious = false;
+  previousOnlyInAutosave = false;
   try {
     localStorage.removeItem(PREVIOUS_SESSION_KEY);
     if (dismissed && !wroteAutosave) [AUTOSAVE_KEY, ...LEGACY_AUTOSAVE_KEYS].forEach((k) => localStorage.removeItem(k));
