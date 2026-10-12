@@ -670,6 +670,16 @@ A sound a game plays again and again (a footstep, a sword swing, a menu click) s
 - `players/`: ready-made players that read the manifest and do all of it (switching by your rules on the beat, crossfades, stinger bridges, intensity): `web/adaptive-music.js` for a web game, `godot/AdaptiveMusic.gd` for Godot 4, and `unity/AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `setIntensity` / `set_intensity` / `SetIntensity`, `stinger` and `stop`.
 - `README.txt` says how to drop it into each engine, with your own state and stinger names in the examples.
 
+### The web runtime kit: music with no audio files
+
+For a web game where download size matters, **Export web runtime kit (no audio files)** (at the bottom of the Game preview) makes a .zip with just:
+
+- the song's project file (`<song>.json`, usually tens of kilobytes, with any sounds your clips play inside it),
+- `bos-player.js` (about 550 KB, about 135 KB as a web server sends it), which **synthesizes the music in the player's browser** when the game loads, with the same engine as Bo's Beatbox: every state (as stems, if the song has stem groups), the stingers and the transitions,
+- a test page (`index.html`) and a README.
+
+In the game: `const music = await loadSong('./song.json', { onProgress })`, then `music.play(...)`, `music.setState(...)`, `music.setIntensity(...)` and `music.stinger(...)`, exactly as with the game kit's web player. Synthesizing takes a few seconds per minute of music (longer on slow devices; a 16-bar song with three stem groups took about 12 seconds in testing), so start it while the game loads and show a progress bar. Recorded instruments download their samples from the same public libraries the app uses, so they need a connection; the synths need nothing.
+
 ### Music for games: intro + loop, and layers
 
 Game music usually plays an intro once and then loops the rest for as long as the player stays. Set the loop region to the part that should repeat (everything before its **In** is the intro) and choose **Range: Intro + loop**. The export is a .zip with:

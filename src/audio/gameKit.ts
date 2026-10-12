@@ -65,7 +65,13 @@ export interface AudioManifest {
  * made. Used by the export (zipped, with the players) and by the Game preview's audition pads,
  * which play these same sounds with the same web player.
  */
-export async function buildGameKitParts(song: GameKitSong, onProgress?: (fraction: number, detail: string) => void, sampleRate: SampleRate = 44100): Promise<GameKitParts> {
+export async function buildGameKitParts(
+  song: GameKitSong,
+  onProgress?: (fraction: number, detail: string) => void,
+  sampleRate: SampleRate = 44100,
+  /** Leave out each state's whole mix when it has stems (a player that mixes the stems never needs it) */
+  stemsOnly = false
+): Promise<GameKitParts> {
   const sections = songSections(song.clips, song.markers);
   if (!sections.length) throw new Error('the timeline is empty');
   const files: ZipEntry[] = [];
@@ -80,7 +86,8 @@ export async function buildGameKitParts(song: GameKitSong, onProgress?: (fractio
         ...(audible.some((t) => !t.stemGroup) ? [{ name: MAIN_STEM, tracks: audible.filter((t) => !t.stemGroup) }] : []),
       ]
     : [];
-  const steps = sections.length * (stemGroups.length ? 2 : 1) + song.stingers.length + 4;
+  const skipMix = stemsOnly && stemGroups.length > 0;
+  const steps = sections.length * (stemGroups.length && !skipMix ? 2 : 1) + song.stingers.length + 4;
   let step = 0;
   const tick = (detail: string) => onProgress?.(step++ / steps, detail);
 
@@ -96,13 +103,17 @@ export async function buildGameKitParts(song: GameKitSong, onProgress?: (fractio
     const marker = song.markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - sec.from) < 1e-6);
     if (marker) stateOfMarker.set(marker.id, name);
     const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate };
-    const audio = await renderArrangement({ ...range, ending: 'seamless' });
-    const channels = channelsOf(audio);
     const file = `states/${safe(name)}.wav`;
-    files.push({ name: file, data: encodeChannels(channels, audio.sampleRate, 16, [], { start: 0, end: channels[0].length }) });
+    let samples = Math.round(((sec.to - sec.from) * secondsPerBar) * sampleRate);
+    if (!skipMix) {
+      const audio = await renderArrangement({ ...range, ending: 'seamless' });
+      const channels = channelsOf(audio);
+      samples = channels[0].length;
+      files.push({ name: file, data: encodeChannels(channels, audio.sampleRate, 16, [], { start: 0, end: channels[0].length }) });
+    }
     const stems: AudioManifest['states'][number]['stems'] = [];
     if (stemGroups.length) {
-      tick(`stems ${name}`);
+      if (!skipMix) tick(`stems ${name}`);
       const r = await renderGroupStems(range, stemGroups);
       for (const [k, stem] of r.stems.entries()) {
         const stemFile = `stems/${safe(name)}/${safe(stem.name)}.wav`;
@@ -110,7 +121,7 @@ export async function buildGameKitParts(song: GameKitSong, onProgress?: (fractio
         stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map((t) => t.name) });
       }
     }
-    states.push({ name, file, bars: sec.to - sec.from, seconds: +((sec.to - sec.from) * secondsPerBar).toFixed(6), samples: channels[0].length, stems });
+    states.push({ name, file, bars: sec.to - sec.from, seconds: +((sec.to - sec.from) * secondsPerBar).toFixed(6), samples, stems });
   }
 
   // Stingers (some also bridge transitions)

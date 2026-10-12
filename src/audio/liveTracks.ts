@@ -15,7 +15,7 @@ import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import type { LiveTrackView } from '../store/freeze';
 import { loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
-import { TOTAL_BARS } from '../store/timelineStore';
+import { TOTAL_BARS } from '../store/timelineTypes';
 
 /**
  * Live playback graph: one effects strip + one instrument per timeline track, kept in step
