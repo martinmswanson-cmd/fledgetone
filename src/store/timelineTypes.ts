@@ -514,6 +514,17 @@ export interface Track {
   plugin?: WamPlugin;
   /** Web Audio Module effects, in order, between the instrument and the track's own inserts */
   pluginFx?: WamPlugin[];
+  /** Its clips in the clip launcher, one per scene at most (see launcher.ts) */
+  slots?: LauncherSlot[];
+}
+
+/** What a clip launcher slot holds: a clip, without a place in the song. */
+export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'audio' | 'expression'>>;
+
+/** A track's clip in the clip launcher, in scene (row) `scene` (0 is the first). */
+export interface LauncherSlot {
+  scene: number;
+  clip: SlotClip;
 }
 
 /** A send from a track to a return track. */

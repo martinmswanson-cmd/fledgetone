@@ -10,8 +10,8 @@ export const MOD_KEY = isMac ? '⌘' : 'Ctrl+';
  * The panels of the dock under the timeline. The Mixer, Game and Sound effects used to be
  * dialogs: asking for one of those as a dialog opens its dock tab instead.
  */
-export type DockTab = 'mixer' | 'eq' | 'instruments' | 'game' | 'video' | 'sfx';
-export const DOCK_TABS: readonly DockTab[] = ['mixer', 'eq', 'instruments', 'game', 'video', 'sfx'];
+export type DockTab = 'mixer' | 'launcher' | 'eq' | 'instruments' | 'game' | 'video' | 'sfx';
+export const DOCK_TABS: readonly DockTab[] = ['mixer', 'launcher', 'eq', 'instruments', 'game', 'video', 'sfx'];
 const isDockTab = (d: string | null): d is DockTab => d !== null && (DOCK_TABS as readonly string[]).includes(d);
 
 /**

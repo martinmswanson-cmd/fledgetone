@@ -1,5 +1,6 @@
 import React from 'react';
-import { AudioLines, AudioWaveform, ChevronDown, ChevronUp, Clapperboard, Gamepad2, Piano, SlidersVertical } from 'lucide-react';
+import { AudioLines, AudioWaveform, ChevronDown, ChevronUp, Clapperboard, Gamepad2, Grid3x3, Piano, SlidersVertical } from 'lucide-react';
+import { LauncherPanel } from '../timeline/LauncherPanel';
 import { useUiStore, type DockTab } from '../../store/uiStore';
 import { MixerPanel } from '../timeline/MixerPanel';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -19,6 +20,7 @@ import { SoundAuditionPanel } from '../SoundAuditionPanel';
 
 const TABS: ReadonlyArray<{ id: DockTab; label: string; icon: React.ReactNode; title: string; buttonId: string }> = [
   { id: 'mixer', label: 'Mixer', icon: <SlidersVertical className="w-3.5 h-3.5" />, title: "Mixer: every track's fader, meter, pan and sends side by side", buttonId: 'btn-mixer' },
+  { id: 'launcher', label: 'Launcher', icon: <Grid3x3 className="w-3.5 h-3.5" />, title: 'Clip launcher: loops in a grid of tracks and scenes, launched live on the bar to jam out an arrangement', buttonId: 'btn-launcher' },
   { id: 'eq', label: 'EQ & Dynamics', icon: <AudioLines className="w-3.5 h-3.5" />, title: "The selected track's Pro EQ and multiband compressor, big", buttonId: 'btn-eq' },
   { id: 'instruments', label: 'Instruments', icon: <Piano className="w-3.5 h-3.5" />, title: 'Try any instrument, play the sound deck pads and drag patterns onto tracks', buttonId: 'btn-instruments' },
   { id: 'game', label: 'Game', icon: <Gamepad2 className="w-3.5 h-3.5" />, title: 'Game preview: switch between sections and layers live, the way adaptive game music does', buttonId: 'btn-game' },
@@ -30,6 +32,8 @@ const Content: React.FC<{ tab: DockTab }> = ({ tab }) => {
   switch (tab) {
     case 'mixer':
       return <MixerPanel />;
+    case 'launcher':
+      return <LauncherPanel />;
     case 'eq':
       return <TrackEqDock />;
     case 'game':

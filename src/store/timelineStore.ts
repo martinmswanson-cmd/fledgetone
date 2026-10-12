@@ -79,6 +79,7 @@ import { rippleRules, type RippleEdit } from './ripple';
 import { isBus, isMixTrack, isReturn, tidyRoutes, tidySends, wouldLoop } from './buses';
 import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expression';
 import { tidyNoteLane, type NoteLane } from './noteExpression';
+import { launcherActive, launcherClips, useLauncher } from './launcherView';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
@@ -680,7 +681,7 @@ const MIN_CLIP_BARS = 0.0625;
  * half gets new ids and is unselected; an audio clip's right half plays on from where the cut
  * falls in its sound (at `bpm`). Null if `atBar` isn't inside the clip.
  */
-function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Clip] | null {
+export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Clip] | null {
   const local = tempoAt(clip.startBar, tempo);
   const rel = atBar - clip.startBar;
   if (rel <= EPS || rel >= clip.lengthBars - EPS) return null;
@@ -2933,8 +2934,14 @@ const soundMissing = (id: string) => {
 export function connectTimelineToAudio(): () => void {
   const s = useTimelineStore.getState();
   holdAutomationAt(s.playheadPosition);
+  // The clip launcher's tracks play their slots (see launcherView.ts), and while it's in use the song doesn't loop
+  const launched = (state: TimelineState) => {
+    const segments = useLauncher.getState().segments;
+    return launcherActive(segments) ? { ...state, clips: launcherClips(state.tracks, state.clips, segments) } : state;
+  };
+  const loopOf = (state: TimelineState) => (launcherActive(useLauncher.getState().segments) && state.loopRegion.enabled ? { ...state.loopRegion, enabled: false } : state.loopRegion);
   // The engine plays frozen tracks as audio (see freeze.ts)
-  let view = liveView(s, soundMissing);
+  let view = liveView(launched(s), soundMissing);
   for (const t of s.tracks) if (t.frozen) ensureSound(t.frozen.soundId);
   // Clips' controller lanes play as their tracks' automation (see ccLanes.ts)
   const ccMemo = controllerMemo();
@@ -2943,7 +2950,7 @@ export function connectTimelineToAudio(): () => void {
   applyLiveIntensity(view.tracks, s.intensityCurves, s.intensity, 0);
   rescheduleClips(view.tracks, view.clips);
   const refresh = (state: TimelineState, retimed = false) => {
-    const next = liveView(state, soundMissing, view);
+    const next = liveView(launched(state), soundMissing, view);
     const nextPlaying = withControllerLanes(next.tracks, next.clips, ccMemo);
     if (nextPlaying !== playing) syncLiveTracks(nextPlaying);
     playing = nextPlaying;
@@ -2960,7 +2967,7 @@ export function connectTimelineToAudio(): () => void {
     const state = useTimelineStore.getState();
     if (state.tracks.some((t) => t.frozen && lib.status[t.frozen.soundId] !== prevLib.status[t.frozen.soundId])) refresh(state);
   });
-  syncTransport(s.loopRegion, songTempo(s), s.swing);
+  syncTransport(loopOf(s), songTempo(s), s.swing);
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
   setLiveStripTempo(s.bpm);
   liveMix.inserts.apply(s.master);
@@ -2989,7 +2996,7 @@ export function connectTimelineToAudio(): () => void {
     // The Transport takes the new tempo first, so clips rescheduled below are timed at it
     const tempoChanged = state.bpm !== prev.bpm || state.tempoPoints !== prev.tempoPoints;
     if (state.loopRegion !== prev.loopRegion || tempoChanged || state.swing !== prev.swing) {
-      syncTransport(state.loopRegion, songTempo(state), state.swing);
+      syncTransport(loopOf(state), songTempo(state), state.swing);
       if (state.isPlaying && (state.loopRegion !== prev.loopRegion || tempoChanged)) retimeAutomation();
     }
     if (state.tracks !== prev.tracks || state.clips !== prev.clips || tempoChanged || state.swing !== prev.swing) {
@@ -3003,8 +3010,15 @@ export function connectTimelineToAudio(): () => void {
       setLiveStripTempo(state.bpm);
     }
   });
+  const unwatchLauncher = useLauncher.subscribe((l, p) => {
+    if (l.segments === p.segments) return;
+    const state = useTimelineStore.getState();
+    if (launcherActive(l.segments) !== launcherActive(p.segments)) syncTransport(loopOf(state), songTempo(state), state.swing);
+    refresh(state);
+  });
   return () => {
     unsubscribe();
     unwatchSounds();
+    unwatchLauncher();
   };
 }

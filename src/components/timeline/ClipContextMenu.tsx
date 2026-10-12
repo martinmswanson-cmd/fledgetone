@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
+import { Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
@@ -7,6 +7,8 @@ import { formatBarCount } from '../../store/timelineTypes';
 import { canMoveClipBetween, isAudioKind } from '../../audio/instrumentCatalog';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
 import { dropAudioFiles, pickAudioFiles } from './audioFiles';
+import { sendSelectionToLauncher } from '../../store/launcher';
+import { showToast } from './toastStore';
 
 export interface ContextMenuState {
   x: number;
@@ -203,6 +205,18 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
           shortcut: `bar ${formatBarCount(loopOut)}`,
           icon: <ArrowRightToLine className="w-3.5 h-3.5" />,
           onClick: run(s.fillSelectionToLoopOut),
+        },
+        {
+          key: 'launcher',
+          label: 'Send to launcher',
+          icon: <Grid3x3 className="w-3.5 h-3.5" />,
+          onClick: run(() => {
+            const n = sendSelectionToLauncher();
+            if (n) {
+              useUiStore.getState().openDock('launcher');
+              showToast(`In the launcher: ${n} slot${n === 1 ? '' : 's'}`);
+            }
+          }),
         },
         { key: 'delete', label: 'Delete', shortcut: 'Del', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(s.deleteSelectedClips), divider: true },
       ]
