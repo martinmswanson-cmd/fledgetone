@@ -9,6 +9,7 @@ import { secondsToBar } from '../../audio/transport';
 import { HEADER_WIDTH } from '../timeline/layout';
 
 const LANE_HEIGHT = 48;
+const PANEL_BUTTON = 'h-8 px-3 flex items-center gap-1.5 rounded-md border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-400/60 disabled:opacity-50 tabular-nums';
 const THUMB_W = 72;
 
 const clock = (s: number) => {
@@ -115,7 +116,7 @@ export const VideoLane: React.FC = () => {
  * Find the video's hard cuts and drop a hit point (a marker locked to time) on each, named Cut 1,
  * Cut 2..., where they fall in the song. Click again while it looks to stop.
  */
-const FindCutsButton: React.FC = () => {
+export const FindCutsButton: React.FC<{ labelled?: boolean }> = ({ labelled = false }) => {
   const [progress, setProgress] = React.useState<number | null>(null);
   const abort = React.useRef<AbortController | null>(null);
   const run = async () => {
@@ -152,9 +153,10 @@ const FindCutsButton: React.FC = () => {
       onClick={() => void run()}
       title={progress === null ? 'Find the cuts: a hit point on every hard cut in the video' : 'Looking for cuts… click to stop'}
       aria-label={progress === null ? 'Find cuts in the video' : 'Stop looking for cuts'}
-      className="hover:text-forge-text shrink-0 tabular-nums"
+      className={labelled ? PANEL_BUTTON : 'hover:text-forge-text shrink-0 tabular-nums'}
     >
       {progress === null ? <Scissors className="w-3.5 h-3.5" /> : `${Math.round(progress * 100)}%`}
+      {labelled && (progress === null ? 'Find cuts' : 'Stop')}
     </button>
   );
 };
@@ -163,7 +165,7 @@ const FindCutsButton: React.FC = () => {
  * Dip under dialogue: listen to the video's own sound for voices, then dip every track's volume
  * there (as automation, one undo step), by an amount you pick.
  */
-const DialogueDipButton: React.FC = () => {
+export const DialogueDipButton: React.FC<{ labelled?: boolean }> = ({ labelled = false }) => {
   const [busy, setBusy] = React.useState(false);
   const [found, setFound] = React.useState<Span[] | null>(null);
   const [depth, setDepth] = React.useState(DEFAULT_DIP.depth);
@@ -199,9 +201,10 @@ const DialogueDipButton: React.FC = () => {
         disabled={busy}
         title="Dip under dialogue: turn the music down wherever people talk in the video"
         aria-label="Dip the music under the video's dialogue"
-        className="hover:text-forge-text shrink-0 disabled:opacity-50"
+        className={labelled ? PANEL_BUTTON : 'hover:text-forge-text shrink-0 disabled:opacity-50'}
       >
         <MessageSquareText className={`w-3.5 h-3.5 ${busy ? 'animate-pulse' : ''}`} />
+        {labelled && (busy ? 'Listening…' : 'Dip under dialogue')}
       </button>
       {found && (
         <Modal title="Dip under dialogue" onClose={() => setFound(null)}>

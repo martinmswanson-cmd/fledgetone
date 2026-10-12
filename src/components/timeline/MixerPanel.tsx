@@ -4,7 +4,6 @@ import { useAudioStore } from '../../store/audioStore';
 import type { Track } from '../../store/timelineTypes';
 import { liveTrackPeaks } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
-import { Modal } from './Modal';
 
 /**
  * Every track side by side as a mixing-desk strip: a level meter, a fader, pan, the reverb and
@@ -46,9 +45,10 @@ const Meter: React.FC<{ trackId: string | null }> = ({ trackId }) => {
 
 const Strip: React.FC<{ track: Track }> = ({ track }) => {
   const s = useTimelineStore.getState();
+  const selected = useTimelineStore((st) => st.selectedTrackId === track.id);
   const inserts = (['human', 'distortion', 'compressor', 'chorus', 'lofi', 'filter', 'gate', 'pump'] as const).filter((k) => track.fx[k].on);
   return (
-    <div className="flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border border-forge-border bg-forge-bg p-2" aria-label={`${track.name} channel`}>
+    <div className={`flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border bg-forge-bg p-2 ${selected ? 'border-cyan-500/70' : 'border-forge-border'}`} aria-label={`${track.name} channel`}>
       <div className="w-full h-1 rounded" style={{ background: track.color }} />
       <button
         type="button"
@@ -118,11 +118,11 @@ const Strip: React.FC<{ track: Track }> = ({ track }) => {
   );
 };
 
-export const MixerDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const MixerPanel: React.FC = () => {
   const tracks = useTimelineStore((st) => st.tracks);
   const masterVolume = useAudioStore((st) => st.masterVolume);
   return (
-    <Modal title="Mixer" onClose={onClose} wide>
+    <div className="flex flex-col gap-2 p-3 text-xs text-forge-muted" role="region" aria-label="Mixer">
       <div className="flex gap-2 overflow-x-auto pb-2">
         {tracks.map((t) => (
           <Strip key={t.id} track={t} />
@@ -147,6 +147,6 @@ export const MixerDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       </div>
       <p className="text-[11px]">Double-click a fader or knob to reset it. Each drag is one undo step. Click a track's name to open it in the Inspector (inserts, EQ, automation).</p>
-    </Modal>
+    </div>
   );
 };

@@ -9,6 +9,7 @@ import { splitSections } from '../components/guide/markdown';
 import { instrumentFields } from './instrumentSearch';
 import type { SearchFields } from './searchCore';
 import { openAndReveal, press, reveal } from './reveal';
+import { pickProjectFile } from '../components/timeline/projectFile';
 
 /**
  * Everything the search palette (Ctrl+K) can find: the app's tools and settings, every
@@ -72,7 +73,7 @@ type Item = Omit<PaletteEntry, 'id' | 'group'> & { id?: string };
 
 const TOOLS: Item[] = [
   { title: 'New arrangement', keywords: 'new project blank start over template starter demo', detail: 'Start again from a blank timeline, the demo song or a genre starter.', run: () => ui().setDialog('new') },
-  { title: 'Open project', keywords: 'open load file json import project', detail: 'Open a .beatbox.json project file.', run: async () => void (await press('#btn-open-project')) },
+  { title: 'Open project', keywords: 'open load file json import project', detail: 'Open a .beatbox.json project file.', run: () => pickProjectFile() },
   { title: 'Save project', keywords: 'save download keep backup file json', detail: 'Download this arrangement as a project file, with its sounds.', run: async () => void (await press('#btn-save-project')) },
   { title: 'Export', keywords: 'export render bounce mixdown download wav mp3 ogg mp4 video stems tracks intro loop game audio file', detail: 'Render the song or loop as WAV, MP3, OGG or MP4: the mix, one file per track, or an intro + loop.', run: () => ui().setDialog('export') },
   { title: 'Share', keywords: 'share link url send friend mp3', detail: 'A link that opens the song, an MP3, or the project file.', run: () => ui().setDialog('share') },
@@ -97,7 +98,14 @@ const TOOLS: Item[] = [
   { title: 'Find cuts in the video', keywords: 'scene cut cuts detection shots edit video hit points', detail: 'A hit point on every hard cut (the scissors on the video lane).', run: async () => void (await press('[aria-label="Find cuts in the video"]')) },
   { title: 'Duck others under this track (dialogue / SFX proxy)', keywords: 'duck ducking sidechain proxy dialogue voiceover vo sfx sound effects lower music bed', detail: 'Every other track dips wherever this one sounds.', run: trackPanel('Duck others under this') },
   { title: 'Dip under dialogue', keywords: 'dialogue dialog voice speech duck ducking dip lower music under talking video', detail: 'Turn the music down wherever people talk in the video.', run: async () => void (await press('[aria-label="Dip the music under the video\'s dialogue"]')) },
-  { title: 'Export markers for Premiere, Resolve, Final Cut', keywords: 'export markers premiere resolve davinci final cut fcpxml edl xml csv editor', detail: 'In the Markers list.', run: async () => void (await press('button[title^="Markers:"]')) },
+  { title: 'Export markers for Premiere, Resolve, Final Cut', keywords: 'export markers premiere resolve davinci final cut fcpxml edl xml csv editor', detail: 'In the Video tab (and the Markers list).', run: () => {
+    ui().openDock('video');
+    if (!timeline().markers.length) return 'Add markers (M) or hit points (Shift+M) first.';
+    void reveal('[aria-label="Export the markers for video editing software"]');
+  } },
+  { title: 'Video tools', keywords: 'video tools panel scoring picture film edit editor cuts dialogue hit points', detail: 'The reference video, its cuts and dialogue, hit points, markers for editors (the Video tab).', run: () => ui().openDock('video') },
+  { title: 'Menu bar', keywords: 'menu menus file edit song track tools view help', detail: 'Every tool, by where a DAW keeps it.', run: () => void reveal('#menu-file') },
+  { title: 'Bottom panel', keywords: 'dock bottom panel tabs mixer instruments game video sfx', detail: 'Show or hide the panel under the timeline.', run: () => ui().setDockOpen(!ui().dockOpen) },
   { title: 'Markers list', keywords: 'markers sections rename jump list', run: async () => void (await press('button[title^="Markers:"]')) },
   { title: 'Build-up & drop at the playhead', keywords: 'buildup build up drop riser transition edm snare roll impact', detail: 'Adds a build-up before the playhead and a drop on it (also on the ruler’s right-click menu).', run: () => {
     const s = timeline();
@@ -116,7 +124,10 @@ const TOOLS: Item[] = [
   { title: 'Metronome volume', keywords: 'metronome click level loudness', run: () => void openAndReveal(RECORD_OPTIONS, '[aria-label="Metronome volume"]') },
   { title: 'MIDI keyboard', keywords: 'midi keyboard controller input device computer keyboard piano typing', detail: 'Choose a MIDI keyboard, or play the computer keyboard.', run: async () => void (await press('button[title^="MIDI input"]')) },
   { title: 'Record from the microphone', keywords: 'mic microphone voice vocals singing audio record guitar', run: show('button[title^="Record from the microphone"], button[title^="Stop recording"]') },
-  { title: 'Reference video', keywords: 'video movie film gameplay trailer cutscene score picture sync mp4', detail: 'Load a video to score to; it plays in sync with the playhead.', run: show('button[title^="Load a video"], button[title^="Scoring to"]') },
+  { title: 'Reference video', keywords: 'video movie film gameplay trailer cutscene score picture sync mp4', detail: 'Load a video to score to; it plays in sync with the playhead.', run: () => {
+    ui().openDock('video');
+    void reveal('button[title^="Load a video"], button[title^="Scoring to"]');
+  } },
   { title: 'Freeze track', keywords: 'freeze bounce render cpu lag performance', detail: 'Render a track to audio to save processing (on each track header).', run: show('button[aria-label^="Freeze "], button[aria-label^="Unfreeze "]', NO_TRACKS) },
   { title: 'Clear memory', keywords: 'memory ram lag slow performance cpu clean free', detail: 'Free memory when playback lags.', run: async () => {
     if (useAudioStore.getState().audioState !== 'running') return AUDIO_FIRST;
@@ -129,8 +140,14 @@ const TOOLS: Item[] = [
     s.toggleInspector(true);
     ui().setInspectorTab('track');
   } },
-  { title: 'Instrument browser', keywords: 'browse try audition preview listen instruments', run: show('section[aria-label="Instrument Browser"]') },
-  { title: 'Sound deck', keywords: 'pads audition deck trigger keys', run: show('section[aria-label="Soundbank Audition Panel"]') },
+  { title: 'Instrument browser', keywords: 'browse try audition preview listen instruments', run: () => {
+    ui().openDock('instruments');
+    void reveal('section[aria-label="Instrument Browser"]');
+  } },
+  { title: 'Sound deck', keywords: 'pads audition deck trigger keys patterns', run: () => {
+    ui().openDock('instruments');
+    void reveal('section[aria-label="Soundbank Audition Panel"]');
+  } },
   { title: 'Start audio', keywords: 'start audio sound on enable power', run: () => void useAudioStore.getState().initializeAudio() },
 ];
 

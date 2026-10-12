@@ -194,7 +194,7 @@ export const MarkersButton: React.FC = () => {
  * The markers as a file for video editing software, so the editor sees the sections and hit
  * points on their own timeline. With a reference video loaded they count from its first frame.
  */
-const ExportForEditors: React.FC = () => {
+export const ExportForEditors: React.FC = () => {
   const video = useVideoStore((s) => s.video);
   const videoStart = useVideoStore((s) => s.start);
   const [startHour, setStartHour] = useState<0 | 1>(0);
