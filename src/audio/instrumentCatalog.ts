@@ -11,6 +11,8 @@
  *   slicer  - the Slicer: a sound cut into slices, one per key from C3 up (vocal chops)
  *   audio   - an Audio track: holds audio clips (sound files on the timeline) instead of notes
  */
+import { SAMPLE_TUNING } from './sampleTuning';
+
 export const INSTRUMENT_KEYS = [
   // original set
   'drums', 'bass', 'keys', 'brass', 'piano', 'violin', 'cello', 'guitar',
@@ -89,6 +91,8 @@ export interface SampleSource {
    * seconds long, so a held note sustains instead of cutting off.
    */
   sustain?: { from: number; to: number; hold: number };
+  /** Cents to re-pitch each recording by when it loads (out-of-tune recordings; see sampleTuning.ts). */
+  tune?: Record<string, number>;
 }
 
 export interface InstrumentDef {
@@ -347,7 +351,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   // Orchestra
   viola: { key: 'viola', name: 'Viola', blurb: 'Solo viola, warm middle voice', color: '#f97316', category: 'Orchestra', kind: 'sampled', range: [48, 88], samples: held('viola', 48, 88, 0.6, -6), gain: 23, taper: [69, 2.5], tone: { presence: 2, mud: -1 } },
   contrabass: { key: 'contrabass', name: 'Contrabass', blurb: 'Orchestral double bass, bowed', color: '#9a3412', category: 'Orchestra', kind: 'sampled', range: [28, 60], samples: held('contrabass', 28, 60, 0.6, -6), gain: 22.5, taper: [45, 2], tone: { presence: 5, presenceHz: 1800, mud: -3 } },
-  pizzicato: { key: 'pizzicato', name: 'Pizzicato Strings', blurb: 'Plucked string section', color: '#fda4af', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: struck('pizzicato_strings', 36, 96, 0.4), gain: 30 },
+  pizzicato: { key: 'pizzicato', name: 'Pizzicato Strings', blurb: 'Plucked string section', color: '#fda4af', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: soundfont('FluidR3_GM', 'pizzicato_strings', 36, 96, 1, 0.4), gain: 28, taper: [70, 1] },
   tremolo: { key: 'tremolo', name: 'Tremolo Strings', blurb: 'Trembling strings: tension, suspense', color: '#f43f5e', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: held('tremolo_strings', 36, 96, 0.8, -8), gain: 20, taper: [84, 6], tone: { presence: 2, mud: -1 } },
   slowStrings: { key: 'slowStrings', name: 'Slow Strings', blurb: 'Soft swelling string section', color: '#fecdd3', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: held('string_ensemble_2', 36, 96, 1), gain: 27, taper: [67, 3], tone: { presence: 3, mud: -2 } },
   synthStrings: { key: 'synthStrings', name: 'Synth Strings', blurb: '80s string machine', color: '#f9a8d4', category: 'Keys & Synths', kind: 'sampled', range: [36, 96], samples: held('synth_strings_1', 36, 96, 1, -8), gain: 23, taper: [67, 1], tone: { presence: 2 } },
@@ -407,6 +411,21 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   slicer: { key: 'slicer', name: 'Slicer', blurb: 'Vocal chops: a sound cut into slices', color: '#f0abfc', category: 'Your Sounds', kind: 'slicer', range: [48, 111] },
   audio: { key: 'audio', name: 'Audio', blurb: 'Your recordings, as clips', color: '#60a5fa', category: 'Your Sounds', kind: 'audio', range: [0, 127] },
 };
+
+// Measured tuning: steadier recordings in place of badly tuned ones, and per-recording corrections
+for (const [key, tuning] of Object.entries(SAMPLE_TUNING)) {
+  const source = INSTRUMENTS[key as InstrumentKey]?.samples;
+  if (!source) continue;
+  if (tuning.notes) {
+    source.samples = Object.fromEntries(
+      tuning.notes.map((n) => {
+        const pitch = n.replace(/\d+$/, '');
+        return [n, `${(FLATS[pitch] ?? pitch) + n.slice(pitch.length)}.mp3`];
+      })
+    );
+  }
+  source.tune = tuning.cents;
+}
 
 export function isInstrumentKey(key: unknown): key is InstrumentKey {
   return typeof key === 'string' && key in INSTRUMENTS;
