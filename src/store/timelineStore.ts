@@ -21,10 +21,11 @@ import { heardTime } from '../audio/latency';
 import { countInClicks } from '../audio/metronome';
 import { quantizeTakeClip, readRecordOptions, writeRecordOptions } from './recording';
 import type { RecordOptions, TakeClip } from './recording';
-import { AUTOMATION, insertLaneBars, normalizePoints, removeLaneBars } from '../audio/automation';
+import { AUTOMATION, insertLaneBars, laneValueAt, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
 import { keyChange } from './keyChange';
+import { songSections } from './cutToLength';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { Clip, ClipAudio, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq } from './timelineTypes';
@@ -351,6 +352,11 @@ interface TimelineState {
   addBuildAndDrop: (dropBar: number) => string | null;
   /** Move every pitched note from `fromBar` on by `semitones` (a key change), one undo step. A message back means nothing moved. */
   keyChangeFrom: (fromBar: number, semitones: number) => string | null;
+  /**
+   * Rebuild the song from its sections (see cutToLength.ts) in `order`, a repeat playing twice, as
+   * one undo step; `bpm`, when given, is the tempo that makes it last exactly the length asked.
+   */
+  cutToLength: (order: number[], bpm: number | null) => string | null;
 
   // Clipboard
   /** Snapshot of copied clips; startBar is relative to the earliest copied clip (0 = paste point). */
@@ -1418,6 +1424,67 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         markers: retimeMarkers(markers, st.bpm),
         ...pushPast(st),
       }));
+      return null;
+    },
+
+    cutToLength: (order, newBpm) => {
+      const s = get();
+      const sections = songSections(s.clips, s.markers);
+      if (!order.length || order.some((i) => !sections[i])) return 'Nothing to cut: the song has no sections.';
+      // Each section's clips, cut at its edges, laid end to end
+      const slice = (c: Clip, from: number, to: number): Clip | null => {
+        let part: Clip | null = c;
+        if (part.startBar < from - EPS) part = splitClipAt(part, from, s.bpm)?.[1] ?? null;
+        if (part && part.startBar + part.lengthBars > to + EPS) part = splitClipAt(part, to, s.bpm)?.[0] ?? null;
+        return part && part.startBar >= from - EPS && part.startBar + part.lengthBars <= to + EPS ? part : null;
+      };
+      const clips: Clip[] = [];
+      const placed: Array<{ from: number; to: number; at: number; name: string }> = [];
+      let cursor = 1;
+      for (const i of order) {
+        const sec = sections[i];
+        for (const c of s.clips) {
+          if (c.startBar >= sec.to - EPS || c.startBar + c.lengthBars <= sec.from + EPS) continue;
+          const part = slice(c, sec.from, sec.to);
+          if (part) clips.push({ ...copyClip(part, cursor - sec.from), isSelected: false });
+        }
+        placed.push({ from: sec.from, to: sec.to, at: cursor, name: sec.name });
+        cursor += sec.to - sec.from;
+      }
+      if (cursor > TOTAL_BARS + 1) return `That would run past the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+      // Automation follows its section: the value at each edge, and the points in between
+      const tracks = s.tracks.map((t) => {
+        if (!t.automation?.length) return t;
+        const automation = t.automation.map((lane) => {
+          if (!lane.points.length) return lane;
+          const points: AutomationPoint[] = [];
+          for (const p of placed) {
+            const shift = p.at - p.from;
+            points.push({ bar: p.at, value: laneValueAt(lane.points, p.from)! });
+            for (const q of lane.points) if (q.bar > p.from + EPS && q.bar < p.to - EPS) points.push({ bar: q.bar + shift, value: q.value });
+            points.push({ bar: p.at + (p.to - p.from) - 1e-3, value: laneValueAt(lane.points, p.to - 1e-3)! });
+          }
+          return { ...lane, points: normalizePoints(points) };
+        });
+        return { ...t, automation };
+      });
+      const bpm = newBpm ? Math.max(40, Math.min(240, Math.round(newBpm * 100) / 100)) : s.bpm;
+      // Section flags where each section now starts; hit points locked to time stay with the picture
+      const named = placed.filter((p) => !/^(Start|Bars \d+-\d+)$/.test(p.name));
+      const markers = [
+        ...s.markers.filter((m) => m.anchor === 'time'),
+        ...named.filter((p, k) => named.findIndex((o) => o.at === p.at) === k).map((p) => createMarker(p.at, bpm, p.name)),
+      ];
+      if (bpm !== s.bpm) engineSetBpm(bpm);
+      set((st) => ({
+        clips: retimeAudioClips(clips, st.bpm, bpm),
+        tracks,
+        bpm,
+        markers: retimeMarkers(markers, bpm),
+        loopRegion: { ...st.loopRegion, inBar: 1, outBar: cursor },
+        ...pushPast(st),
+      }));
+      get().seek(1);
       return null;
     },
 

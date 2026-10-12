@@ -88,6 +88,15 @@ Right-click the time ruler on the bar where the drop lands and choose **Build-up
 It uses an FX track and a drum track that are empty there, or adds new ones (Build FX, Snare Roll) so nothing you wrote is covered up. Near the start of the song the build is shorter (a drop at bar 3 gets 2 bars). They're ordinary clips: change, move or delete them as you like.
 
 
+### Cut to length: 6, 15, 30, 60 and 90-second versions
+
+For an ad, a trailer or a social clip, the music often has to last an exact time. Right-click the time ruler and choose **Cut song to length…** (or search *cut down*), pick **6 s**, **15 s**, **30 s**, **60 s** or **90 s**, or type a length (`0:45:00` or `45`).
+
+- It works in **sections**: the stretches between your markers (in a song without markers, 8-bar phrases; 4-bar ones in a song under 16 bars). Whole sections are left out for a shorter version, or a middle section is repeated for a longer one, so every edit falls on a bar line where the music changes anyway.
+- It always **ends on the song's own ending** (its last section), keeps the sections in order, and keeps the parts that matter most: the busiest sections, and those named like a main part (Drop, Chorus, Hook, Theme, Combat, Boss...) before an Intro, Break or Build.
+- The dialog shows the sections it will use, in order, with the length that makes. **Nudge the tempo** (on by default) changes the tempo by up to 8% so it lasts exactly the length you picked, to the hundredth of a second; untick it to keep your tempo and get the nearest whole number of bars.
+- **Cut to** rebuilds the timeline in one Undo step: clips are cut at the section edges, automation goes with its section, the section markers move to where their sections now start (hit points locked to time stay put), and the loop covers the new version. `Ctrl+Z` brings the whole song back; a nudged tempo stays, so set it back by hand. Save a copy first if you want to keep both versions.
+
 ### Key change
 
 Right-click the ruler where the new key starts and choose **Key change here: up a semitone**, **up a whole step** or **down a semitone**. Every pitched note from there to the end moves, in one Undo step; drum kits, percussion (Taiko and the like), sound effects, the FX track, the Slicer and audio clips stay as they are. A clip that runs across that point changes only from it on. A note that would go outside its instrument's range stays put, and the menu says how many did. The classic final-chorus lift is up a whole step, set up by a bar of the new key's V7 chord or a bar of silence.
