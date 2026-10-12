@@ -243,3 +243,40 @@ test('a bent line: slow then fast above 0, fast then slow below, and saved with 
     { bar: 2, value: 0.8 },
   ]);
 });
+
+test('any setting can be a lane: sends, insert settings and plugin parameters', async () => {
+  const { specOf, parseParam, automatableParams, pluginParamInfo, FX_AUTOMATION } = await import('../src/audio/automation.ts');
+  const { isAutomationParam, defaultTrackFx, FX_AUTOMATION_KEYS } = await import('../src/store/timelineTypes.ts');
+  assert.ok(isAutomationParam('volume'));
+  assert.ok(isAutomationParam('send:track-1'));
+  assert.ok(isAutomationParam('fx:echo.mix'));
+  assert.ok(!isAutomationParam('fx:echo.time'));
+  assert.ok(isAutomationParam('plugin:p1:cutoff'));
+  assert.ok(!isAutomationParam('plugin:p1'));
+  assert.ok(!isAutomationParam('send:'));
+  assert.deepEqual(parseParam('plugin:p1:a:b'), { kind: 'plugin', pluginId: 'p1', paramId: 'a:b' });
+  assert.deepEqual(parseParam('fx:compressor.threshold'), { kind: 'fx', key: 'compressor.threshold', insert: 'compressor', field: 'threshold' });
+  // Every insert setting a lane can drive exists on the effects, and its scale round-trips
+  const fx = defaultTrackFx();
+  for (const key of FX_AUTOMATION_KEYS) {
+    const [insert, field] = key.split('.');
+    assert.equal(typeof fx[insert][field], 'number', key);
+    const spec = specOf(`fx:${key}`);
+    assert.equal(spec.insert, insert);
+    const v = fx[insert][field];
+    assert.ok(Math.abs(spec.toReal(spec.toNorm(v)) - v) < 1e-6 * Math.max(1, Math.abs(v)), key);
+    assert.ok(FX_AUTOMATION[key].label.length > 0);
+  }
+  const track = { id: 't', name: 'Lead', instrumentKey: 'lead', fx, sends: [{ to: 'r', level: 0.4 }], pluginFx: [{ id: 'p1', url: 'x', name: 'Crusher' }] };
+  const ret = { id: 'r', name: 'Hall', instrumentKey: 'return' };
+  const send = specOf('send:r', track, [track, ret]);
+  assert.equal(send.label, 'Send → Hall');
+  assert.equal(send.trackValue(track), 0.4);
+  pluginParamInfo.set('p1:bits', { label: 'Bits', minValue: 1, maxValue: 16, defaultValue: 8, value: 4 });
+  const plug = specOf('plugin:p1:bits', track);
+  assert.equal(plug.label, 'Crusher: Bits');
+  assert.ok(Math.abs(plug.trackValue(track) - 3 / 15) < 1e-9);
+  const params = automatableParams(track, [track, ret]).map((o) => o.param);
+  assert.ok(params.includes('send:r') && params.includes('fx:reverb.mix') && params.includes('plugin:p1:bits') && params.includes('volume'));
+  pluginParamInfo.clear();
+});

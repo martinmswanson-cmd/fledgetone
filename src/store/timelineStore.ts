@@ -20,7 +20,7 @@ import { heardTime } from '../audio/latency';
 import { countInClicks } from '../audio/metronome';
 import { quantizeTakeClip, readRecordOptions, writeRecordOptions } from './recording';
 import type { RecordOptions, TakeClip } from './recording';
-import { AUTOMATION, insertLaneBars, laneValueAt, normalizePoints, removeLaneBars } from '../audio/automation';
+import { specOf, insertLaneBars, laneValueAt, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
 import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
 import { keyChange } from './keyChange';
@@ -367,6 +367,10 @@ interface TimelineState {
   setTrackSend: (trackId: string, returnId: string, level: number | null, record?: boolean) => void;
   /** A send taken before the fader (true) or after it (one undo step). */
   setTrackSendPre: (trackId: string, returnId: string, pre: boolean) => void;
+  /** MIDI learn: CC `cc` moves `param` of the track (and nothing else any more) (one undo step). */
+  mapMidi: (trackId: string, cc: number, param: AutomationParam) => void;
+  /** Forget a track's MIDI mapping of CC `cc` (one undo step). */
+  unmapMidi: (trackId: string, cc: number) => void;
   /** A new return, and `trackId` (if given) sending to it at half level (one undo step). Returns its id. */
   addReturn: (trackId?: string, name?: string) => string;
   /** A new Plugin track playing the WAM at `url` (one undo step). Returns its id. */
@@ -1467,6 +1471,30 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         if (sends.length) next.sends = sends;
         else delete next.sends;
         return { tracks: s.tracks.map((t) => (t === track ? next : t)), ...(record ? pushPast(s) : {}) };
+      }),
+
+    mapMidi: (trackId, cc, param) =>
+      set((s) => {
+        if (!s.tracks.some((t) => t.id === trackId)) return s;
+        const tracks = s.tracks.map((t) => {
+          const kept = (t.midiMap ?? []).filter((m) => m.cc !== cc && !(t.id === trackId && m.param === param));
+          const midiMap = t.id === trackId ? [...kept, { cc, param }] : kept;
+          if (midiMap.length === (t.midiMap?.length ?? 0) && midiMap.every((m, i) => m === t.midiMap![i])) return t;
+          const next: Track = { ...t, midiMap };
+          if (!midiMap.length) delete next.midiMap;
+          return next;
+        });
+        return { tracks, ...pushPast(s) };
+      }),
+
+    unmapMidi: (trackId, cc) =>
+      set((s) => {
+        const track = s.tracks.find((t) => t.id === trackId);
+        if (!track?.midiMap?.some((m) => m.cc === cc)) return s;
+        const midiMap = track.midiMap.filter((m) => m.cc !== cc);
+        const next: Track = { ...track, midiMap };
+        if (!midiMap.length) delete next.midiMap;
+        return { tracks: s.tracks.map((t) => (t === track ? next : t)), ...pushPast(s) };
       }),
 
     setTrackSendPre: (trackId, returnId, pre) =>
@@ -2665,9 +2693,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const old = lanes.find((l) => l.param === param);
         const lane = { param, points: normalizePoints(points) };
         const automation = old ? lanes.map((l) => (l === old ? lane : l)) : [...lanes, lane];
-        // A Filter lane only sounds while the Filter is on, so drawing its first points turns it on
-        const filterOn = !!AUTOMATION[param].filter && lane.points.length > 0 && !old?.points.length && !track.fx.filter?.on;
-        const fx = filterOn ? normalizeTrackFx({ ...track.fx, filter: { ...track.fx.filter, on: true } }) : track.fx;
+        // A lane of an effect's setting only sounds while the effect is on, so drawing its first points turns it on
+        const insert = specOf(param).insert;
+        const switchOn = !!insert && lane.points.length > 0 && !old?.points.length && !(track.fx[insert] as { on?: boolean } | undefined)?.on;
+        const fx = switchOn ? normalizeTrackFx({ ...track.fx, [insert]: { ...track.fx[insert], on: true } }) : track.fx;
         return {
           tracks: s.tracks.map((t) => (t === track ? { ...t, automation, fx } : t)),
           automationSelection: selection?.size ? { trackId, param, points: selection } : null,

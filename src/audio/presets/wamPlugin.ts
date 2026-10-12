@@ -12,6 +12,7 @@ import {
   registerLiveWam,
   retireLiveWam,
   sendMidi,
+  setWamParam,
   startingState,
   whenRetired,
   type WamInstance,
@@ -118,6 +119,11 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       sendMidi(inst, [0xe0, 0, 64], now);
       touched.clear();
     },
+    setPluginParam: (pluginId, paramId, value, time) => {
+      if (!inst || pluginId !== plugin?.id) return false;
+      setWamParam(inst, paramId, value, time);
+      return true;
+    },
     ready,
     dispose: () => {
       disposed = true;
@@ -133,7 +139,10 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
  * The WAM effects on a track, in order, between `input` and `output`: `input` plays straight into
  * `output` until they're in (or if none load), then through each one that isn't bypassed.
  */
-export function createPluginChain(output: Tone.InputNode, plugins: WamPlugin[]): { input: Tone.Gain; ready: Promise<unknown>; dispose: () => void } {
+export function createPluginChain(
+  output: Tone.InputNode,
+  plugins: WamPlugin[]
+): { input: Tone.Gain; ready: Promise<unknown>; dispose: () => void; setPluginParam: (pluginId: string, paramId: string, value: number, time: number) => boolean } {
   const input = new Tone.Gain(1);
   input.connect(output);
   // The last plugin plays into the strip natively, out of Tone's sight: keep that in the graph
@@ -176,6 +185,12 @@ export function createPluginChain(output: Tone.InputNode, plugins: WamPlugin[]):
   return {
     input,
     ready,
+    setPluginParam: (pluginId, paramId, value, time) => {
+      const found = loaded.find((l) => l.plugin.id === pluginId);
+      if (!found) return false;
+      setWamParam(found.inst, paramId, value, time);
+      return true;
+    },
     dispose: () => {
       disposed = true;
       loaded.forEach(({ plugin, inst }) => release(plugin, inst, ctx));

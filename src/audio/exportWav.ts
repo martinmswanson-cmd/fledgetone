@@ -671,7 +671,9 @@ async function renderTracks(
       if (opts.intensity) strip.setIntensityLevel(trackIntensityLevel(track, opts.intensity.curves, opts.intensity.value));
       strips.push(strip);
       stripOf.set(track.id, strip);
-      instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track)));
+      const instrument = createInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track));
+      strip.setPluginParams(instrument.setPluginParam ?? null);
+      instruments.set(track.id, instrument);
     }
     // Sends into the returns (made already: returns come before the tracks that send to them)
     for (const track of tracks) {

@@ -22,6 +22,8 @@ export type LiveTrackView = Track & { frozenFrom?: Track['instrumentKey'] };
 
 /** Settings that stay live on a frozen track (not rendered into it). */
 export const LIVE_PARAMS: ReadonlySet<AutomationParam> = new Set(['volume', 'pan', 'reverbSend', 'delaySend']);
+/** A lane that stays live on a frozen track: those settings, and its sends to returns. */
+export const isLiveParam = (param: AutomationParam): boolean => LIVE_PARAMS.has(param) || param.startsWith('send:');
 
 /** FNV-1a over a string, as 8 hex digits. */
 function hash(text: string): string {
@@ -93,7 +95,7 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       // (The newer inserts only while on, so tracks frozen before they existed stay frozen)
       fx: fxPrint(track.fx),
       eq: track.eq,
-      automation: (track.automation ?? []).filter((l) => !LIVE_PARAMS.has(l.param)),
+      automation: (track.automation ?? []).filter((l) => !isLiveParam(l.param)),
       clips: own.map(clipContent),
       bpm: all.bpm,
       ...(all.tempoPoints?.length ? { tempoPoints: all.tempoPoints.map((p) => [p.bar, p.bpm, p.ramp]) } : {}),
@@ -114,7 +116,7 @@ export function trackForFreezing(track: Track): Track {
     delaySend: 0,
     isMuted: false,
     isSoloed: false,
-    automation: (track.automation ?? []).filter((l) => !LIVE_PARAMS.has(l.param)),
+    automation: (track.automation ?? []).filter((l) => !isLiveParam(l.param)),
     frozen: undefined,
     // Rendered to the master, not through its bus: live, the frozen sound still plays into the bus
     output: undefined,
@@ -180,7 +182,7 @@ export function liveView(
         pluginFx: undefined,
         fx: defaultTrackFx(),
         eq: { low: 0, mid: 0, high: 0 },
-        automation: (t.automation ?? []).filter((l) => LIVE_PARAMS.has(l.param)),
+        automation: (t.automation ?? []).filter((l) => isLiveParam(l.param)),
       };
       frozenClips.push({
         id: frozenClipId(t.id),

@@ -13,6 +13,8 @@ import type { WamPlugin } from '../store/timelineTypes';
 /** The parts of a WAM instance the host uses. */
 export interface WamInstance {
   audioNode: AudioNode & {
+    getParameterInfo?: (...ids: string[]) => Promise<Record<string, { id?: string; label?: string; type?: string; minValue?: number; maxValue?: number; defaultValue?: number }>>;
+    getParameterValues?: (normalized?: boolean, ...ids: string[]) => Promise<Record<string, { id: string; value: number; normalized?: boolean }>>;
     scheduleEvents?: (...events: unknown[]) => void;
     clearEvents?: () => void;
     getState?: () => Promise<unknown>;
@@ -326,4 +328,37 @@ export const wamVersion = (): number => version;
 /** MIDI bytes for a note at `time` (audio seconds) to a plugin's node. */
 export function sendMidi(inst: WamInstance, bytes: [number, number, number], time: number): void {
   inst.audioNode.scheduleEvents?.({ type: 'wam-midi', time, data: { bytes } });
+}
+
+/**
+ * Set a plugin parameter to `value` (0 to 1 of its range) at `time` (audio seconds), as an
+ * automation lane does.
+ */
+export function setWamParam(inst: WamInstance, id: string, value: number, time: number): void {
+  inst.audioNode.scheduleEvents?.({ type: 'wam-automation', time, data: { id, value: Math.max(0, Math.min(1, value)), normalized: true } });
+}
+
+/**
+ * Read a live plugin's parameters (names, ranges, values now) into pluginParamInfo, for the lane
+ * picker and the lanes' readouts. Resolves to how many it has (0 if it isn't loaded).
+ */
+export async function readWamParams(pluginId: string, info: Map<string, { label: string; minValue: number; maxValue: number; defaultValue: number; value?: number }>): Promise<number> {
+  const inst = live.get(pluginId);
+  const node = inst?.audioNode;
+  if (!node?.getParameterInfo) return 0;
+  try {
+    const params = await node.getParameterInfo();
+    const values = (await node.getParameterValues?.(false).catch(() => ({}))) ?? {};
+    let count = 0;
+    for (const [id, p] of Object.entries(params)) {
+      // (Only numbers can be drawn on a lane)
+      if (p.type && !['float', 'int', 'boolean', 'choice'].includes(p.type)) continue;
+      const v = (values as Record<string, { value: number }>)[id]?.value;
+      info.set(`${pluginId}:${id}`, { label: p.label || id, minValue: p.minValue ?? 0, maxValue: p.maxValue ?? 1, defaultValue: p.defaultValue ?? 0, ...(Number.isFinite(v) ? { value: v } : {}) });
+      count++;
+    }
+    return count;
+  } catch {
+    return 0;
+  }
 }

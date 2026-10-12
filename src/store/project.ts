@@ -1,8 +1,8 @@
 import { normalizeExpression } from './expression';
 import { compSegments, normalizeTakes } from './takes';
-import { TOTAL_BARS } from './timelineTypes';
+import { TOTAL_BARS, isAutomationParam } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
-import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
+import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
@@ -223,6 +223,15 @@ function parseTrack(v: unknown): Track {
             .filter((x): x is Record<string, unknown> => isObj(x) && isStr(x.to) && isNum(x.level))
             .slice(0, 32)
             .map((x) => ({ to: x.to as string, level: Math.max(0, Math.min(1, x.level as number)), ...(x.pre === true ? { pre: true } : {}) })),
+        }
+      : {}),
+    // Optional: MIDI controller knobs mapped to its settings
+    ...(Array.isArray(v.midiMap) && v.midiMap.some((x) => isObj(x) && isNum(x.cc) && isAutomationParam(x.param))
+      ? {
+          midiMap: v.midiMap
+            .filter((x): x is Record<string, unknown> => isObj(x) && isNum(x.cc) && x.cc >= 0 && x.cc < 128 && isAutomationParam(x.param))
+            .slice(0, 128)
+            .map((x) => ({ cc: Math.round(x.cc as number), param: x.param as AutomationParam })),
         }
       : {}),
     // Optional: Web Audio Module plugins (the instrument of a Plugin track, and plugin effects)

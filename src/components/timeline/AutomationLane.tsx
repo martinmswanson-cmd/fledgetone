@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam, AutomationPoint, Track } from '../../store/timelineTypes';
 import { snapBar, TOTAL_BARS } from '../../store/timelineTypes';
-import { AUTOMATION, CURVE_MAX, insertPoint, lanePieceFrom, laneOf, laneValueAt, movePoints, shiftRange } from '../../audio/automation';
+import { specOf, CURVE_MAX, insertPoint, lanePieceFrom, laneOf, laneValueAt, movePoints, shiftRange } from '../../audio/automation';
 import { formatBarsBeats } from '../../audio/transport';
 import { AutomationMenu } from './AutomationMenu';
 import type { AutomationMenuState } from './AutomationMenu';
@@ -80,6 +80,9 @@ function pointAt(points: readonly AutomationPoint[], zoom: number, x: number, y:
  * double-click or right-click a point to delete it, right-click elsewhere for the lane's menu.
  * Each gesture is one undo step.
  */
+/** The time now (ms), read in event handlers. */
+const clock = () => performance.now();
+
 export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> = ({ track, param }) => {
   const zoom = useTimelineStore((s) => s.zoom);
   // Scrolled out of sight (above or below the view), a lane draws nothing and doesn't follow
@@ -109,10 +112,11 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
     return () => watch.disconnect();
   }, []);
 
-  const spec = AUTOMATION[param];
+  // (A send's return is named from the tracks as they are: the lane re-renders with its track)
+  const spec = specOf(param, track, useTimelineStore.getState().tracks);
   const points = laneOf(track, param)?.points ?? NO_POINTS;
-  // A Filter lane on a Filter that's off is kept, but silent
-  const silent = !!spec.filter && !track.fx.filter?.on;
+  // A lane of an effect's setting while the effect is off is kept, but silent
+  const silent = !!spec.insert && !(track.fx[spec.insert] as { on?: boolean } | undefined)?.on;
 
   // ---------- Drawing (only around the stretch on screen: the lane can be 500,000 px wide) ----------
   const x0 = Math.max(0, drawFrom - DRAW_MARGIN);
@@ -299,7 +303,7 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
     const value = onLine && pts.length ? laneValueAt(pts, bar)! : valueOfY(y);
     const point = { bar, value };
     s.setAutomationPoints(track.id, param, insertPoint(pts, point).points, true, new Set([point]));
-    lastAdded.current = { point, at: performance.now() };
+    lastAdded.current = { point, at: clock() };
   };
 
   /** Box-select points; Shift/Ctrl adds to the selection. A click on empty space adds a point instead. */
@@ -387,7 +391,7 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
           const s = store();
           const { x, y } = local(e);
           const hit = pointAt(pts, s.zoom, x, y);
-          if (hit >= 0 && added?.point === pts[hit] && performance.now() - added.at < DOUBLE_CLICK_MS) return;
+          if (hit >= 0 && added?.point === pts[hit] && clock() - added.at < DOUBLE_CLICK_MS) return;
           deletePointAt(e);
         }}
         onContextMenu={(e) => {
