@@ -11,6 +11,9 @@ import { TrackLane } from './TrackLane';
 import { barFromClientX, Playhead, useScrub } from './Playhead';
 import { ClipContextMenu } from './ClipContextMenu';
 import { TakesDialog } from './TakesDialog';
+import { PluginPermissionBar, PluginUrlDialog, PluginWindow } from './PluginDialogs';
+import { onPluginError } from '../../audio/presets/wamPlugin';
+
 import type { ContextMenuState } from './ClipContextMenu';
 import { ChopToSlicerDialog } from './ChopToSlicerDialog';
 import { VariationsDialog } from './VariationsDialog';
@@ -36,6 +39,10 @@ import { frameRateLabel } from '../../store/timelineTypes';
 import { blurMenusAfterChange, shouldIgnoreShortcut } from '../keyboard';
 import { recoverFailedDownloads } from '../../audio/liveTracks';
 import { installLiveInput } from '../../audio/liveInput';
+
+// A plugin that fails to load says why
+onPluginError((message) => showToast(message));
+const closePluginWindow = () => useUiStore.getState().setPluginWindow(null);
 
 interface Marquee {
   x0: number;
@@ -118,6 +125,8 @@ export const Timeline: React.FC = () => {
   const setVariationsClipId = useUiStore.getState().setVariationsClip;
   const tuneClipId = useUiStore((s) => s.tuneClipId);
   const takesClipId = useUiStore((s) => s.takesClipId);
+  const pluginWindow = useUiStore((s) => s.pluginWindow);
+  const pluginDialog = useUiStore((s) => s.pluginDialog);
   const contentRef = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
 
@@ -430,6 +439,11 @@ export const Timeline: React.FC = () => {
       {variationsClipId && <VariationsDialog clipId={variationsClipId} onClose={() => setVariationsClipId(null)} />}
       {tuneClipId && <TuneDialog clipId={tuneClipId} onClose={() => useUiStore.getState().setTuneClip(null)} />}
       {takesClipId && <TakesDialog clipId={takesClipId} onClose={() => useUiStore.getState().setTakesClip(null)} />}
+      {pluginDialog && <PluginUrlDialog trackId={pluginDialog.trackId} onClose={() => useUiStore.getState().setPluginDialog(null)} />}
+      {pluginWindow && (
+        <PluginWindow key={pluginWindow.pluginId} trackId={pluginWindow.trackId} pluginId={pluginWindow.pluginId} onClose={closePluginWindow} />
+      )}
+      <PluginPermissionBar />
       <Toast />
     </div>
   );

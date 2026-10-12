@@ -1,5 +1,6 @@
 import React from 'react';
-import { Plus, Waypoints } from 'lucide-react';
+import { Plug, Plus, Waypoints } from 'lucide-react';
+import { useUiStore } from '../../store/uiStore';
 import { useTimelineStore } from '../../store/timelineStore';
 import { InstrumentList } from '../InstrumentMenu';
 import { useFloatingMenu } from '../useFloatingMenu';
@@ -44,6 +45,19 @@ export const AddTrackMenu: React.FC = () => {
             <Waypoints className="w-3.5 h-3.5 text-slate-300" />
             <span className="flex-1">Bus (group channel)</span>
             <span className="text-[10px] text-forge-muted">route tracks into it</span>
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-fuchsia-200 hover:bg-fuchsia-500/15 border-b border-forge-border"
+            onClick={() => {
+              useUiStore.getState().setPluginDialog({ trackId: null });
+              close();
+            }}
+            title="A Web Audio Module instrument from the web, loaded by its address"
+          >
+            <Plug className="w-3.5 h-3.5 text-fuchsia-300" />
+            <span className="flex-1">Plugin instrument (WAM)…</span>
+            <span className="text-[10px] text-forge-muted">by URL</span>
           </button>
           <InstrumentList
             heading="Add Instrument Track"

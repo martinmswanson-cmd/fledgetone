@@ -18,7 +18,8 @@ import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
 import type { NativeBus } from './presets/native';
 import { createCustomSamplerVoice, createSamplerVoice, taperGain } from './samplers/samplerManager';
-import type { CustomSample, SlicerSettings, WobbleRate } from '../store/timelineTypes';
+import type { CustomSample, SlicerSettings, Track, WamPlugin, WobbleRate } from '../store/timelineTypes';
+import { createPluginChain, createPluginInstrument } from './presets/wamPlugin';
 import type { SynthPatch } from '../store/synthPatch';
 import { createDesignedSynth } from './presets/designer';
 
@@ -84,6 +85,16 @@ export interface InstrumentOptions {
   sample?: CustomSample;
   slicer?: SlicerSettings;
   synth?: SynthPatch;
+  /** A Plugin track's instrument */
+  plugin?: WamPlugin;
+  /** WAM effects between the instrument and the track's strip */
+  pluginFx?: WamPlugin[];
+}
+
+/** What a track's instrument is built with (its sound, slices, patch, plugins). */
+export function trackInstrumentOptions(track: Pick<Track, 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx'> | null | undefined): InstrumentOptions {
+  if (!track) return {};
+  return { sample: track.sample, slicer: track.slicer, synth: track.synth, plugin: track.plugin, pluginFx: track.pluginFx };
 }
 
 /**
@@ -249,8 +260,19 @@ const oneShot = (play: TrackInstrument['play']): TrackInstrument['noteOn'] => (n
  * `options` carry the user's sound for the Sampler and the Slicer's sound and slices.
  */
 export function createInstrument(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions = {}): TrackInstrument {
-  const tapered = withTaper(key, buildGained(key, output, options));
-  return tapered;
+  const fx = options.pluginFx?.filter((p) => !p.bypass) ?? [];
+  if (!fx.length) return withTaper(key, buildGained(key, output, options));
+  // The track's plugin effects come first, between the instrument and its strip
+  const chain = createPluginChain(output, fx);
+  const inst = withTaper(key, buildGained(key, chain.input, options));
+  return {
+    ...inst,
+    ready: Promise.all([inst.ready, chain.ready]),
+    dispose: () => {
+      inst.dispose();
+      chain.dispose();
+    },
+  };
 }
 
 /**
@@ -290,6 +312,7 @@ function buildGained(key: InstrumentKey, output: Tone.InputNode, options: Instru
 function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
   const kind = INSTRUMENTS[key].kind;
 
+  if (kind === 'plugin') return createPluginInstrument(output, options.plugin);
   if (kind === 'bus') {
     // A bus plays nothing itself: the tracks routed to it play into its strip
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };

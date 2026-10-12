@@ -60,11 +60,13 @@ export const INSTRUMENT_KEYS = [
   'slicer', 'audio',
   // a group channel (a bus) other tracks route into
   'bus',
+  // a Web Audio Module instrument loaded from a URL
+  'plugin',
 ] as const;
 
 export type InstrumentKey = (typeof INSTRUMENT_KEYS)[number];
 
-export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio' | 'bus';
+export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio' | 'bus' | 'plugin';
 
 export const CATEGORIES = [
   'Drums & Percussion',
@@ -475,6 +477,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   // (The range is the most slices a sound can be cut into, from C3 up; the piano roll shows only the slices there are)
   slicer: { key: 'slicer', name: 'Slicer', blurb: 'Vocal chops: a sound cut into slices', color: '#f0abfc', category: 'Your Sounds', kind: 'slicer', range: [48, 111] },
   audio: { key: 'audio', name: 'Audio', blurb: 'Your recordings, as clips', color: '#60a5fa', category: 'Your Sounds', kind: 'audio', range: [0, 127] },
+  plugin: { key: 'plugin', name: 'Plugin', blurb: 'A Web Audio Module instrument, loaded from its URL', color: '#e879f9', category: 'Your Sounds', kind: 'plugin', range: [0, 127] },
   bus: { key: 'bus', name: 'Bus', blurb: 'A group channel: the tracks routed to it share its fader, inserts and sends', color: '#94a3b8', category: 'Your Sounds', kind: 'bus', range: [0, 127] },
 };
 
@@ -544,6 +547,6 @@ export function instrumentsByCategory(): Array<{ category: InstrumentCategory; i
   return CATEGORIES.map((category) => ({
     category,
     // A bus isn't an instrument to pick (Add track makes one)
-    instruments: INSTRUMENT_KEYS.map((k) => INSTRUMENTS[k]).filter((d) => d.category === category && d.kind !== 'bus'),
+    instruments: INSTRUMENT_KEYS.map((k) => INSTRUMENTS[k]).filter((d) => d.category === category && d.kind !== 'bus' && d.kind !== 'plugin'),
   })).filter((g) => g.instruments.length > 0);
 }

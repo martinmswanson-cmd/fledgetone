@@ -5,7 +5,7 @@ import { createMixChain, getMasterVolume } from './engine';
 import { delaySeconds } from './effects/busEffects';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
-import { createInstrument } from './instruments';
+import { createInstrument, trackInstrumentOptions } from './instruments';
 import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
 import { createAudioClipSchedule } from './audioClipSchedule';
@@ -647,7 +647,7 @@ async function renderTracks(
       if (opts.intensity) strip.setIntensityLevel(trackIntensityLevel(track, opts.intensity.curves, opts.intensity.value));
       strips.push(strip);
       stripOf.set(track.id, strip);
-      instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer, synth: track.synth }));
+      instruments.set(track.id, createInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track)));
     }
     await Promise.all([mix.busFx.ready, mix.inserts.ready(), ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)

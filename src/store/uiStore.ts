@@ -71,6 +71,12 @@ interface UiState {
   /** The take folder whose Takes dialog is open */
   takesClipId: string | null;
   setTakesClip: (clipId: string | null) => void;
+  /** The plugin whose window is open */
+  pluginWindow: { trackId: string; pluginId: string } | null;
+  setPluginWindow: (target: { trackId: string; pluginId: string } | null) => void;
+  /** The add-a-plugin dialog: for a new Plugin track (null) or an effect on a track */
+  pluginDialog: { trackId: string | null } | null;
+  setPluginDialog: (target: { trackId: string | null } | null) => void;
   setDialog: (dialog: AppDialog | null) => void;
   openGuide: (section?: string) => void;
   closeGuide: () => void;
@@ -98,6 +104,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   setTuneClip: (tuneClipId) => set({ tuneClipId }),
   takesClipId: null,
   setTakesClip: (takesClipId) => set({ takesClipId }),
+  pluginWindow: null,
+  setPluginWindow: (pluginWindow) => set({ pluginWindow }),
+  pluginDialog: null,
+  setPluginDialog: (pluginDialog) => set({ pluginDialog }),
   setDialog: (dialog) => {
     if (isDockTab(dialog)) get().openDock(dialog);
     else set({ dialog });
