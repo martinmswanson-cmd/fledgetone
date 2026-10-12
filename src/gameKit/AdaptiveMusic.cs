@@ -15,13 +15,13 @@ using UnityEngine;
 public class AdaptiveMusic : MonoBehaviour
 {
     [Serializable] public class Stem { public string group; public string file; }
-    [Serializable] public class State { public string name; public string file; public double bars; public double seconds; public Stem[] stems; }
+    [Serializable] public class State { public string name; public string file; public double bars; public double seconds; public double beatSeconds; public int beatsPerBar; public Stem[] stems; }
     [Serializable] public class Rule { public string from; public string to; public string kind; public string quantize; public double beats; public string file; public double leadInSeconds; public string stinger; }
-    [Serializable] public class StingerInfo { public string name; public string kind; public string file; public string quantize; public double bridgeBars; }
+    [Serializable] public class StingerInfo { public string name; public string kind; public string file; public string quantize; public double bridgeBars; public double bridgeSeconds; }
     [Serializable] public class Point { public float x; public float y; }
     [Serializable] public class Group { public string name; public Point[] points; }
     [Serializable] public class Intensity { public float @default = 1f; public Group[] groups; }
-    [Serializable] public class MusicData { public string name; public double bpm; public int beatsPerBar; public string key; public Intensity intensity; public State[] states; public Rule[] transitions; public StingerInfo[] stingers; }
+    [Serializable] public class MusicData { public string name; public double bpm; public int beatsPerBar; public double beatSeconds; public string key; public Intensity intensity; public State[] states; public Rule[] transitions; public StingerInfo[] stingers; }
 
     public string resourcesFolder = "Music";
     [UnityEngine.Range(0f, 1f)] public float volume = 1f;
@@ -64,8 +64,10 @@ public class AdaptiveMusic : MonoBehaviour
         throw new ArgumentException("No state called " + name);
     }
 
-    double SecondsPerBeat => 60.0 / Data.bpm;
-    double Line(string unit) => SecondsPerBeat * (unit == "bar" ? Data.beatsPerBar : 1);
+    // The state playing now's beat and bar (each state has its own tempo and time signature)
+    State CurrentState() { if (Current != null) foreach (var s in Data.states) if (s.name == Current) return s; return null; }
+    double SecondsPerBeat { get { var st = CurrentState(); return st != null && st.beatSeconds > 0 ? st.beatSeconds : Data.beatSeconds > 0 ? Data.beatSeconds : 60.0 / Data.bpm; } }
+    double Line(string unit) { var st = CurrentState(); return SecondsPerBeat * (unit == "bar" ? (st != null && st.beatsPerBar > 0 ? st.beatsPerBar : Data.beatsPerBar) : 1); }
 
     /// A stem group's level at the intensity now (straight lines between its curve's points).
     public float Level(string group)
@@ -166,7 +168,7 @@ public class AdaptiveMusic : MonoBehaviour
         double startAt = at;
         if (r.kind == "stinger" && Data.stingers != null)
             foreach (var st in Data.stingers)
-                if (st.name == r.stinger) { PlayOnce(st.file, at); startAt = at + (st.bridgeBars > 0 ? st.bridgeBars : 1) * Line("bar"); }
+                if (st.name == r.stinger) { PlayOnce(st.file, at); startAt = at + (st.bridgeSeconds > 0 ? st.bridgeSeconds : (st.bridgeBars > 0 ? st.bridgeBars : 1) * Line("bar")); }
         StopVoices(old, at);
         voices = StartState(s, startAt);
     }

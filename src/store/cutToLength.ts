@@ -1,4 +1,5 @@
 import type { Clip, Marker } from './timelineTypes';
+import { measureAt, type MeterMap } from '../audio/tempoMap';
 
 /**
  * Cut to length: make a 15, 30 or 60-second version of a song (an ad, a trailer, a social clip) by
@@ -25,20 +26,23 @@ export const MAX_TEMPO_NUDGE = 0.08;
 const MAIN = /drop|chorus|hook|main|theme|combat|boss|climax|peak|verse/i;
 const LIGHT = /intro|break|bridge|interlude|silence|build/i;
 
-/** The end of the music: the last clip's end, rounded up to a whole bar. */
-export function songEnd(clips: readonly Clip[]): number {
+/** The end of the music: the last clip's end, rounded up to a whole measure (in `meter`; a whole 4/4 bar without one). */
+export function songEnd(clips: readonly Clip[], meter?: MeterMap): number {
   const end = clips.reduce((e, c) => Math.max(e, c.startBar + c.lengthBars), 1);
-  return Math.ceil(end - EPS);
+  if (!meter || end <= 1 + EPS) return Math.ceil(end - EPS);
+  const m = measureAt(end - EPS, meter);
+  return Math.abs(m.start - end) < EPS ? end : m.start + m.length;
 }
 
 /** The song's sections, from its bar markers (hit points locked to time don't count). */
-export function songSections(clips: readonly Clip[], markers: readonly Marker[]): Section[] {
-  const end = songEnd(clips);
+export function songSections(clips: readonly Clip[], markers: readonly Marker[], meter?: MeterMap): Section[] {
+  const end = songEnd(clips, meter);
   if (end <= 1) return [];
   const cuts = markers
     .filter((m) => m.anchor === 'bar' && m.bar > 1 + EPS && m.bar < end - EPS)
-    .map((m) => ({ bar: Math.round(m.bar), name: m.name }))
-    .filter((c, i, all) => c.bar > 1 && c.bar < end && all.findIndex((o) => o.bar === c.bar) === i)
+    // On the 16th grid (not whole bars: in 3/4 or 6/8 a section can start part-way through a 4/4 bar)
+    .map((m) => ({ bar: Math.round(m.bar * 16) / 16, name: m.name }))
+    .filter((c, i, all) => c.bar > 1 && c.bar < end && all.findIndex((o) => Math.abs(o.bar - c.bar) < EPS) === i)
     .sort((a, b) => a.bar - b.bar);
   const atStart = markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - 1) < EPS);
   let bounds: Array<{ bar: number; name: string }>;

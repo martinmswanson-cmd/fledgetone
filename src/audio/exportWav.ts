@@ -473,6 +473,9 @@ export async function renderForFreeze(opts: RenderOptions, track: Track, onProgr
   return { channels, sampleRate };
 }
 
+/** Renders taking turns at the global context (see renderTracks). */
+let contextSwaps: Promise<void> = Promise.resolve();
+
 /**
  * Render `tracks` (already filtered to the ones that sound) as planned by planRender. Returns
  * the file's samples per channel, views into the render.
@@ -510,7 +513,6 @@ async function renderTracks(
   await loadSounds(tracks, clips, startBar, endBar, sampleRate, renderTempo(opts));
   signal?.throwIfAborted();
 
-  const original = Tone.getContext();
   // A native OfflineAudioContext, not Tone's default standardized-audio-context wrapper: the
   // wrapper only builds the real audio graph when rendering starts, so notes created while
   // the render is suspended would never be heard. Native nodes join the live graph at once.
@@ -518,14 +520,27 @@ async function renderTracks(
   const context = new Tone.OfflineContext(native);
   finishedSources.set(context, []);
   let graph: Awaited<ReturnType<typeof buildGraph>>;
-  Tone.setContext(context);
+  // The global context is this render's while its graph is built. Two renders at once (a game
+  // matrix still rendering behind another export) take turns, so neither takes the other's
+  // offline context for the live one and leaves it in place
+  const swap = contextSwaps.then(async () => {
+    const original = Tone.getContext();
+    Tone.setContext(context);
+    try {
+      return await buildGraph(context);
+    } finally {
+      Tone.setContext(original);
+    }
+  });
+  contextSwaps = swap.then(
+    () => undefined,
+    () => undefined
+  );
   try {
-    graph = await buildGraph(context);
+    graph = await swap;
   } catch (err) {
     finishedSources.delete(context);
     throw err;
-  } finally {
-    Tone.setContext(original);
   }
   // After a cancel: schedule nothing more, and free the graph so the rest of the render (which
   // an OfflineAudioContext can't stop early) runs on silence and finishes at once

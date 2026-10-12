@@ -1,4 +1,4 @@
-import { secondsBetween, tempoAt, type Meter, type TempoMap, type TempoPoint } from './tempoMap';
+import { FOUR_FOUR, meterAt, secondsBetween, tempoAt, type Meter, type MeterMap, type MeterPoint, type TempoMap, type TempoPoint } from './tempoMap';
 import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, channelsOf, type SampleRate } from './exportWav';
 import { defaultCurve, groupsInUse, type IntensityCurve } from '../store/intensity';
 import { renderStinger } from './stingerPlayer';
@@ -27,6 +27,8 @@ export interface GameKitSong {
   tempoPoints?: TempoPoint[];
   /** The time signature from bar 1 */
   meter?: Meter;
+  /** Time signature changes */
+  meterPoints?: MeterPoint[];
   swing: number;
   tracks: Track[];
   clips: Clip[];
@@ -58,13 +60,31 @@ export interface AudioManifest {
   bpm: number;
   timeSignature: [number, number];
   beatsPerBar: number;
+  /** A beat at the starting tempo, in seconds (each state has its own: see states) */
+  beatSeconds: number;
   sampleRate: number;
   key: string | null;
   intensity: { default: number; groups: Array<{ name: string; curve: IntensityCurve }> };
   /** `bpm`: the state's tempo where it starts (the song's when there are no tempo changes) */
-  states: Array<{ name: string; file: string; bars: number; seconds: number; samples: number; bpm: number; stems: Array<{ group: string; file: string; tracks: string[] }> }>;
+  /**
+   * `beatSeconds` and `beatsPerBar`: the state's beat (a quarter in 4/4, an eighth in 6/8) at its
+   * tempo, and how many make a bar in its time signature, so a player finds its bar lines.
+   */
+  states: Array<{
+    name: string;
+    file: string;
+    bars: number;
+    seconds: number;
+    samples: number;
+    bpm: number;
+    timeSignature: [number, number];
+    beatsPerBar: number;
+    beatSeconds: number;
+    stems: Array<{ group: string; file: string; tracks: string[] }>;
+  }>;
   transitions: Array<{ from: string; to: string; kind: TransitionKind; quantize: 'bar' | 'beat' | 'now'; beats?: number; file?: string; leadInSeconds?: number; stinger?: string }>;
-  stingers: Array<{ name: string; kind: string; label: string; file: string; quantize: 'beat'; bridgeBars: number }>;
+  /** `bridgeSeconds`: how long a stinger bridging a switch holds the new state back */
+  stingers: Array<{ name: string; kind: string; label: string; file: string; quantize: 'beat'; bridgeBars: number; bridgeSeconds: number }>;
 }
 
 /**
@@ -79,7 +99,8 @@ export async function buildGameKitParts(
   /** Leave out each state's whole mix when it has stems (a player that mixes the stems never needs it) */
   stemsOnly = false
 ): Promise<GameKitParts> {
-  const sections = songSections(song.clips, song.markers);
+  const meterMap: MeterMap = { base: song.meter ?? FOUR_FOUR, points: song.meterPoints ?? [] };
+  const sections = songSections(song.clips, song.markers, meterMap);
   if (!sections.length) throw new Error('the timeline is empty');
   const files: ZipEntry[] = [];
   const key = detectKey(song.clips, song.tracks);
@@ -109,7 +130,8 @@ export async function buildGameKitParts(
     let name = sec.name;
     for (let n = 2; usedNames.has(name); n++) name = `${sec.name} ${n}`;
     usedNames.add(name);
-    const marker = song.markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - sec.from) < 1e-6);
+    // (Sections start on the 16th grid; a marker a hair off it is still this state's)
+    const marker = song.markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - sec.from) < 1 / 32);
     if (marker) stateOfMarker.set(marker.id, name);
     const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate };
     const file = `states/${safe(name)}.wav`;
@@ -131,7 +153,20 @@ export async function buildGameKitParts(
         stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map((t) => t.name) });
       }
     }
-    states.push({ name, file, bars: sec.to - sec.from, seconds: +seconds.toFixed(6), samples, bpm: +tempoAt(sec.from, tempo).toFixed(2), stems });
+    const stateBpm = tempoAt(sec.from, tempo);
+    const meter = meterAt(sec.from, meterMap);
+    states.push({
+      name,
+      file,
+      bars: sec.to - sec.from,
+      seconds: +seconds.toFixed(6),
+      samples,
+      bpm: +stateBpm.toFixed(2),
+      timeSignature: [meter.num, meter.den],
+      beatsPerBar: meter.num,
+      beatSeconds: +((60 / stateBpm) * (4 / meter.den)).toFixed(6),
+      stems,
+    });
   }
 
   // Stingers (some also bridge transitions)
@@ -141,7 +176,7 @@ export async function buildGameKitParts(
     tick(`stinger ${s.name}`);
     const file = `stingers/${safe(s.name)}.wav`;
     files.push({ name: file, data: await renderStinger(s, song, sampleRate) });
-    stingers.push({ name: s.name, kind: s.kind, label: stingerKind(s.kind).label, file, quantize: 'beat', bridgeBars: Math.max(1, Math.ceil(s.lengthBars - 1e-6)) });
+    stingers.push({ name: s.name, kind: s.kind, label: stingerKind(s.kind).label, file, quantize: 'beat', bridgeBars: Math.max(1, Math.ceil(s.lengthBars - 1e-6)), bridgeSeconds: +(Math.max(1, Math.ceil(s.lengthBars - 1e-6)) * secondsPerBar).toFixed(6) });
     stingerName.set(s.id, s.name);
   }
 
@@ -189,6 +224,7 @@ export async function buildGameKitParts(
     bpm: song.bpm,
     timeSignature: [song.meter?.num ?? 4, song.meter?.den ?? 4],
     beatsPerBar: song.meter?.num ?? 4,
+    beatSeconds: +((60 / song.bpm) * (4 / (song.meter?.den ?? 4))).toFixed(6),
     sampleRate,
     key: key?.name ?? null,
     // Each group's recommended level (0 to 1) at each intensity (0 to 1); Main always plays at 1

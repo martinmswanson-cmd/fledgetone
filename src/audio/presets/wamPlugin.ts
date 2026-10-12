@@ -95,7 +95,8 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       for (const note of notes) {
         const n = noteNumber(note.note);
         on(n, note.velocity, time);
-        off(n, time + Tone.Time(note.duration).toSeconds());
+        // (In the render's own context: an export's tempo, not the live one)
+        off(n, time + out.toSeconds(note.duration));
       }
     },
     noteOn: (note: PlayableNote, time: number): NoteOff => {

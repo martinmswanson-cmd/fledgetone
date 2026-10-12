@@ -2106,7 +2106,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     cutToLength: (order, newBpm) => {
       const s = get();
-      const sections = songSections(s.clips, s.markers);
+      const sections = songSections(s.clips, s.markers, songMeterOf(s));
       if (!order.length || order.some((i) => !sections[i])) return 'Nothing to cut: the song has no sections.';
       // Each section's clips, cut at its edges, laid end to end
       const slice = (c: Clip, from: number, to: number): Clip | null => {

@@ -61,12 +61,15 @@ export class AdaptiveMusic {
     return [...new Set(files)];
   }
 
+  /** The state playing now's beat and bar (each state has its own tempo and time signature). */
   get secondsPerBeat() {
-    return 60 / this.data.bpm;
+    const st = this.current && this.data.states.find((s) => s.name === this.current.name);
+    return st?.beatSeconds ?? this.data.beatSeconds ?? 60 / this.data.bpm;
   }
 
   lineLength(unit) {
-    return this.secondsPerBeat * (unit === 'bar' ? this.data.beatsPerBar : 1);
+    const st = this.current && this.data.states.find((s) => s.name === this.current.name);
+    return this.secondsPerBeat * (unit === 'bar' ? st?.beatsPerBar ?? this.data.beatsPerBar : 1);
   }
 
   /** The audio time of the next bar or beat line of the state playing now. */
@@ -184,7 +187,7 @@ export class AdaptiveMusic {
       if (s) {
         this.playOnce(s.file, at);
         this.stopState(old, at);
-        this.current = this.startState(next, at + (s.bridgeBars ?? 1) * this.lineLength('bar'));
+        this.current = this.startState(next, at + (s.bridgeSeconds ?? (s.bridgeBars ?? 1) * this.lineLength('bar')));
         return;
       }
     }
