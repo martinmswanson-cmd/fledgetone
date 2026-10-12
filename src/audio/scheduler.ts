@@ -165,11 +165,14 @@ export function createClipSchedule(
       const groups = byTick.get(tick);
       if (!groups) return;
       const late = swingDelay(swing(), transport.bpm.value, transport.PPQ);
-      // Bends first, so notes starting on the same tick start bent
-      for (const { trackId, pitch } of groups) {
-        if (!pitch) continue;
-        const instrument = instrumentFor(trackId);
-        if (instrument?.bend) safely(() => instrument.bend!(pitchCents(pitch, tickTime), tickTime));
+      // Bends first, so notes starting on the same tick start bent; a clip's end before the
+      // next clip's start, so the next clip's bend wins
+      for (const ends of [true, false]) {
+        for (const { trackId, pitch } of groups) {
+          if (!pitch || !!pitch.end !== ends) continue;
+          const instrument = instrumentFor(trackId);
+          if (instrument?.bend) safely(() => instrument.bend!(pitchCents(pitch, tickTime), tickTime));
+        }
       }
       for (const { trackId, notes, seeds, swung, pitch } of groups) {
         if (pitch) continue;

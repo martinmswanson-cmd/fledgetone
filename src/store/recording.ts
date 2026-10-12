@@ -234,7 +234,10 @@ export function createTake(startBar: number): Take {
       const expressionOf = (only?: number): { expression?: ClipExpression } => {
         const expression: ClipExpression = {};
         for (const lane of ['bend', 'mod'] as const) {
-          const list = controls[lane].filter((c) => c.bar >= clipStart && c.bar <= clipEnd && (only === undefined || c.pass === only));
+          const inClip = controls[lane].filter((c) => c.bar >= clipStart && c.bar <= clipEnd);
+          // All passes in one clip: a lane can only follow one of them, the last that moved it
+          const pass = only ?? Math.max(-1, ...inClip.map((c) => c.pass));
+          const list = inClip.filter((c) => c.pass === pass).sort((a, b) => a.bar - b.bar);
           if (!list.some((c) => c.value !== 0)) continue;
           expression[lane] = list.map((c) => ({ at: c.bar - clipStart, value: Math.round(c.value * 1000) / 1000 }));
         }

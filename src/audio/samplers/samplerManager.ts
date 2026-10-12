@@ -350,13 +350,18 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
   // and a note started while bent starts scaled. Tone forgets a source as soon as its release is
   // scheduled, so the sources are kept here, each until it has rung out.
   let bendRatio = 1;
-  type Source = { playbackRate: Tone.Param<'positive'> };
+  type Source = { playbackRate: Tone.Param<'positive'>; buffer: { duration: number }; stop: (time: number) => unknown };
   const active = () => (sampler as unknown as { _activeSources: Map<number, Source[]> })._activeSources;
   const allSources = () => [...active().values()].flat();
-  const sounding: Array<{ src: Source; note: string; until: number; base: number }> = [];
+  /**
+   * `played`: seconds of the recording played by `last` (at `rate`), so a held note's end can be
+   * moved when a bend changes its speed (Tone stops a source where the recording would run out at
+   * the rate it started with, so bent down it would stop early).
+   */
+  const sounding: Array<{ src: Source; note: string; until: number; base: number; played: number; last: number; rate: number }> = [];
   const releaseSeconds = () => Tone.Time(sampler.release).toSeconds();
   /** Start `trigger`'s notes, keep their sources (bent by the bend now) until `until`. */
-  const started = (notes: string[], until: number, trigger: () => void) => {
+  const started = (notes: string[], until: number, trigger: () => void, at: number) => {
     const before = new Set(allSources());
     trigger();
     const fresh = allSources().filter((src) => !before.has(src));
@@ -364,7 +369,7 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
       // Its rate unbent, which every bend scales (reading the rate back mid-glide would drift)
       const base = src.playbackRate.value;
       if (bendRatio !== 1) src.playbackRate.value = base * bendRatio;
-      sounding.push({ src, note: notes[Math.min(i, notes.length - 1)], until, base });
+      sounding.push({ src, note: notes[Math.min(i, notes.length - 1)], until, base, played: 0, last: at, rate: base * bendRatio });
     });
   };
   const prune = (time: number) => {
@@ -378,23 +383,41 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
       const end = at + Tone.Time(duration).toSeconds();
       prune(at);
       // Attack and release apart (what triggerAttackRelease does), so the sources can be kept
-      started(notes, end + releaseSeconds() + 0.1, () => {
-        if (!taper) sampler.triggerAttack(notes, at, velocity);
-        else for (const note of notes) sampler.triggerAttack(note, at, velocity * taperGain(taper, note));
-      });
+      started(
+        notes,
+        end + releaseSeconds() + 0.1,
+        () => {
+          if (!taper) sampler.triggerAttack(notes, at, velocity);
+          else for (const note of notes) sampler.triggerAttack(note, at, velocity * taperGain(taper, note));
+        },
+        at
+      );
       sampler.triggerRelease(notes, end);
     },
     attack: (note, time, velocity) => {
       if (!loaded) return;
       onNote?.(time);
       prune(time);
-      started([note], Infinity, () => sampler.triggerAttack(note, time, velocity * taperGain(taper, note)));
+      started([note], Infinity, () => sampler.triggerAttack(note, time, velocity * taperGain(taper, note)), time);
     },
     bend: (cents, time) => {
       const next = 2 ** (cents / 1200);
       if (Math.abs(next - bendRatio) < 1e-6) return;
       prune(time);
-      for (const { src, base } of sounding) src.playbackRate.setTargetAtTime(base * next, time, 0.005);
+      for (const s of sounding) {
+        s.src.playbackRate.setTargetAtTime(s.base * next, time, 0.005);
+        if (time > s.last) s.played += (time - s.last) * s.rate;
+        s.last = Math.max(s.last, time);
+        s.rate = s.base * next;
+        // A held key rings until its recording runs out at the new speed
+        if (s.until === Infinity) {
+          try {
+            s.src.stop(time + Math.max(0, s.src.buffer.duration - s.played) / s.rate);
+          } catch {
+            // Already stopped
+          }
+        }
+      }
       bendRatio = next;
     },
     release: (note, time) => {
