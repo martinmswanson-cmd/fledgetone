@@ -19,6 +19,7 @@ import type { ContextMenuState } from './ClipContextMenu';
 import { ChopToSlicerDialog } from './ChopToSlicerDialog';
 import { VariationsDialog } from './VariationsDialog';
 import { TuneDialog } from './TuneDialog';
+import { SmartDialog } from './SmartDialog';
 import { NewAudioTrackDrop } from './NewAudioTrackDrop';
 import { RulerContextMenu } from './RulerContextMenu';
 import type { RulerMenuState } from './RulerContextMenu';
@@ -449,6 +450,7 @@ export const Timeline: React.FC = () => {
         ) : (
           <TuneDialog clipId={tuneClipId} onClose={() => useUiStore.getState().setTuneClip(null)} />
         ))}
+      <SmartDialog />
       {takesClipId && <TakesDialog clipId={takesClipId} onClose={() => useUiStore.getState().setTakesClip(null)} />}
       {pluginDialog && <PluginUrlDialog trackId={pluginDialog.trackId} onClose={() => useUiStore.getState().setPluginDialog(null)} />}
       {pluginWindow && (

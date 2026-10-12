@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
+import { Drum, Music4, Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
 import { formatBarCount } from '../../store/timelineTypes';
-import { canMoveClipBetween, isAudioKind } from '../../audio/instrumentCatalog';
+import { canMoveClipBetween, isAudioKind, isDrumKind } from '../../audio/instrumentCatalog';
+import { isMixTrack } from '../../store/buses';
+import { bassForChords, chordsForMelody, fillClipBar, useSmartDialog } from '../../store/smartActions';
+import { FILLS } from '../../store/smartTools';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
 import { dropAudioFiles, pickAudioFiles } from './audioFiles';
 import { sendSelectionToLauncher } from '../../store/launcher';
@@ -158,6 +161,51 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
   };
 
   type Item = MenuItemProps & { key: string };
+
+  const drumLane = !!track && isDrumKind(track.instrumentKey);
+  const pitchedLane = !!track && !audioLane && !drumLane && !isMixTrack(track);
+  const noteClip = !!menuClip && !audioClip;
+  const openSmart = (mode: 'chords' | 'drummer') => run(() => useSmartDialog.setState({ open: { mode, trackId: menu.trackId, bar: Math.max(1, Math.floor(menu.bar + 1e-6)) } }));
+  // Writing helpers: fills on a drum clip, chords and a bass line from a note clip
+  const smartClipItems: Item[] = !noteClip
+    ? []
+    : drumLane
+      ? FILLS.map((f, i) => ({
+          key: `fill-${f.id}`,
+          label: `Fill: ${f.name.toLowerCase()}`,
+          shortcut: i === 0 ? 'this bar' : '',
+          icon: <Drum className="w-3.5 h-3.5" />,
+          onClick: run(() => {
+            fillClipBar(menu.clipId!, menu.bar, f.id);
+          }),
+          divider: i === 0,
+        }))
+      : pitchedLane
+        ? [
+            {
+              key: 'harmonize',
+              label: 'Chords for this melody',
+              shortcut: 'new track',
+              icon: <Music4 className="w-3.5 h-3.5" />,
+              onClick: run(() => {
+                const names = chordsForMelody(menu.clipId!);
+                if (!names) return 'This clip has no notes to write chords for.';
+                showToast(`Chords on a new track: ${names.join(' ')}`);
+              }),
+              divider: true,
+            },
+            {
+              key: 'bassline',
+              label: 'Bass line from these chords',
+              shortcut: 'new track',
+              icon: <Music4 className="w-3.5 h-3.5" />,
+              onClick: run(() => {
+                if (!bassForChords(menu.clipId!)) return 'This clip has no notes to write a bass line under.';
+                showToast('A bass line on a new track, on the roots of these chords');
+              }),
+            },
+          ]
+        : [];
   const newClip = (bars: number): Item => ({
     key: `new-${bars}`,
     label: `New empty clip (${bars} bar${bars === 1 ? '' : 's'})`,
@@ -218,6 +266,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
             }
           }),
         },
+        ...smartClipItems,
         { key: 'delete', label: 'Delete', shortcut: 'Del', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(s.deleteSelectedClips), divider: true },
       ]
     : [
@@ -235,6 +284,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
             ]
           : []),
         ...(track && !audioLane ? [newClip(1), newClip(2), newClip(4)] : []),
+        ...(drumLane ? [{ key: 'drummer', label: 'Drummer…', shortcut: 'make a beat', icon: <Drum className="w-3.5 h-3.5" />, onClick: openSmart('drummer') }] : []),
+        ...(pitchedLane ? [{ key: 'chords', label: 'Chord progression…', shortcut: 'in key', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chords') }] : []),
         ...(track
           ? patternsFor(track.instrumentKey).map((p, i) => ({
               key: `pattern-${p.id}`,
