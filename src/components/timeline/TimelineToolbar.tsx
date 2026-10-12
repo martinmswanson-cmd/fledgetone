@@ -1,9 +1,5 @@
 import React, { useState } from 'react';
-import { VideoButton } from '../video/VideoButton';
-import { MixerDialog } from './MixerDialog';
 import { MicButton } from './MicButton';
-import { GamePreview } from './GamePreview';
-import { SfxMakerDialog } from '../sfx/SfxMakerDialog';
 import {
   Magnet,
   MousePointer2,
@@ -14,16 +10,12 @@ import {
   Scissors,
   SkipBack,
   Sliders,
-  SlidersVertical,
-  Gamepad2,
-  AudioWaveform,
   Square,
   Undo2,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
-import { useUiStore } from '../../store/uiStore';
 import { frameRateLabel, TIMECODE_FORMATS } from '../../store/timelineTypes';
 import type { SnapGrid } from '../../store/timelineTypes';
 import { formatBarsBeats, formatSmpte, parseBarsBeats, parseTimecode, secondsToBar } from '../../audio/transport';
@@ -188,10 +180,6 @@ const ToolButton: React.FC<ToolButtonProps> = ({ active, onClick, title, childre
 );
 
 export const TimelineToolbar: React.FC = () => {
-  const dialog = useUiStore((s) => s.dialog);
-  const setDialog = useUiStore.getState().setDialog;
-  const mixerOpen = dialog === 'mixer';
-  const gameOpen = dialog === 'game';
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
   const activeTool = useTimelineStore((s) => s.activeTool);
@@ -306,26 +294,7 @@ export const TimelineToolbar: React.FC = () => {
         </select>
       </label>
 
-      <VideoButton />
       <MicButton />
-
-      <ToolButton id="btn-mixer" title="Mixer: every track's fader, meter, pan and sends side by side" active={mixerOpen} activeClass="bg-cyan-500/25 border-cyan-400 text-cyan-200" onClick={() => setDialog('mixer')}>
-        <SlidersVertical className="w-4 h-4" />
-        <span className="text-[11px] font-bold">Mixer</span>
-      </ToolButton>
-      {mixerOpen && <MixerDialog onClose={() => setDialog(null)} />}
-
-      <ToolButton id="btn-game" title="Game preview: switch between sections and layers live, the way adaptive game music does" active={gameOpen} activeClass="bg-emerald-500/25 border-emerald-400 text-emerald-200" onClick={() => setDialog(gameOpen ? null : 'game')}>
-        <Gamepad2 className="w-4 h-4" />
-        <span className="text-[11px] font-bold">Game</span>
-      </ToolButton>
-      {gameOpen && <GamePreview onClose={() => setDialog(null)} />}
-
-      <ToolButton id="btn-sfx" title="Sound effects maker: jump, coin, laser, hit, power-up, explosion and blip sounds for games" active={dialog === 'sfx'} activeClass="bg-amber-500/25 border-amber-400 text-amber-200" onClick={() => setDialog('sfx')}>
-        <AudioWaveform className="w-4 h-4" />
-        <span className="text-[11px] font-bold">SFX</span>
-      </ToolButton>
-      {dialog === 'sfx' && <SfxMakerDialog onClose={() => setDialog(null)} />}
 
       {/* Inspector / Studio FX Rack Toggle */}
       <ToolButton

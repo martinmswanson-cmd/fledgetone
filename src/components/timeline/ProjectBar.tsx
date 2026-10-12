@@ -1,12 +1,10 @@
-import React, { useRef, useState } from 'react';
-import { Download, FilePlus2, FolderOpen, History, Music2, Save, Share2, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { Download, History, Music2, Save, Share2 } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
-import { currentProject, lastSession, retryAutosave, useTimelineStore } from '../../store/timelineStore';
+import { lastSession, retryAutosave, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
-import { clearPreviousSession, parseProject, safeFileName, serializeProject } from '../../store/project';
-import { referencedSoundIds } from '../../store/audioClips';
-import { embedSounds } from '../../audio/soundLibrary';
-import { downloadBlob } from '../../audio/exportWav';
+import { clearPreviousSession } from '../../store/project';
+import { saveProjectFile } from './projectFile';
 import { ExportDialog } from './ExportDialog';
 import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
@@ -162,7 +160,7 @@ const AutosaveStatusChip: React.FC = () => {
     );
   }
   return (
-    <span role="status" className="basis-full flex items-center gap-1.5 text-[11px] text-red-400">
+    <span role="status" className="flex items-center gap-1.5 text-[11px] text-red-400">
       <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
       {status.reason === 'full'
         ? 'Not autosaved: browser storage is full. Use Save, or Dismiss your last session below to make room.'
@@ -174,37 +172,17 @@ const AutosaveStatusChip: React.FC = () => {
 };
 
 /**
- * Project controls in the timeline header: editable name, New, Open / Save project file,
- * and WAV export. The arrangement also autosaves to this browser.
+ * Project controls in the top bar: the editable name, Save, Export and Share (New and Open are in
+ * the File menu). The arrangement also autosaves to this browser.
  */
 export const ProjectBar: React.FC = () => {
   const projectName = useTimelineStore((s) => s.projectName);
   const dialog = useUiStore((s) => s.dialog);
   const setDialog = useUiStore.getState().setDialog;
-  const [openError, setOpenError] = useState('');
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  const save = async () => {
-    const project = currentProject();
-    // The file carries the sound files its clips and instruments play, so it opens on any computer
-    const sounds = await embedSounds(referencedSoundIds(project));
-    const blob = new Blob([JSON.stringify(serializeProject({ ...project, sounds }), null, 2)], { type: 'application/json' });
-    downloadBlob(blob, `${safeFileName(project.name)}.beatbox.json`);
-  };
-
-  const open = async (file: File) => {
-    try {
-      const project = parseProject(JSON.parse(await file.text()));
-      useTimelineStore.getState().loadProject(project);
-      setOpenError('');
-    } catch (err) {
-      const reason = err instanceof SyntaxError ? 'the file is not valid JSON' : err instanceof Error ? err.message : String(err);
-      setOpenError(`Couldn't open ${file.name}: ${reason}`);
-    }
-  };
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      <AutosaveStatusChip />
       <label className="flex items-center gap-1.5 mr-1" title="Project name (used for file names)">
         <Music2 className="w-3.5 h-3.5 text-forge-muted" />
         <input
@@ -216,13 +194,7 @@ export const ProjectBar: React.FC = () => {
           aria-label="Project name"
         />
       </label>
-      <button type="button" className={barButton} onClick={() => setDialog('new')} title="New arrangement">
-        <FilePlus2 className="w-3.5 h-3.5" /> New
-      </button>
-      <button type="button" className={barButton} id="btn-open-project" onClick={() => fileInput.current?.click()} title="Open a .beatbox.json project file">
-        <FolderOpen className="w-3.5 h-3.5" /> Open
-      </button>
-      <button type="button" className={barButton} id="btn-save-project" onClick={() => void save()} title="Download this arrangement as a project file (with its sounds)">
+      <button type="button" className={barButton} id="btn-save-project" onClick={() => void saveProjectFile()} title="Download this arrangement as a project file (with its sounds)">
         <Save className="w-3.5 h-3.5" /> Save
       </button>
       <button
@@ -236,27 +208,6 @@ export const ProjectBar: React.FC = () => {
       <button type="button" className={barButton} onClick={() => setDialog('share')} title="Share the song: a link that opens it, an MP3, or the project file">
         <Share2 className="w-3.5 h-3.5" /> Share
       </button>
-      <AutosaveStatusChip />
-      <input
-        ref={fileInput}
-        type="file"
-        accept=".json,application/json"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = '';
-          if (file) void open(file);
-        }}
-      />
-
-      {openError && (
-        <span className="basis-full text-[11px] text-red-400 flex items-center gap-2">
-          {openError}
-          <button type="button" onClick={() => setOpenError('')} className="text-forge-muted hover:text-forge-text">
-            <X className="w-3 h-3" />
-          </button>
-        </span>
-      )}
 
       {dialog === 'new' && <NewProjectDialog onClose={() => setDialog(null)} />}
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}

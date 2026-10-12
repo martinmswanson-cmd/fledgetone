@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
 import * as Tone from 'tone';
 import { Dices, Download, Play, Plus, Shuffle } from 'lucide-react';
-import { Modal } from '../timeline/Modal';
 import { useTimelineStore } from '../../store/timelineStore';
 import { isAudioKind } from '../../audio/instrumentCatalog';
 import { initAudio } from '../../audio/engine';
@@ -137,7 +136,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 const st = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v)} st`;
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)} kHz` : `${Math.round(v)} Hz`);
 
-export const SfxMakerDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const SfxMakerPanel: React.FC = () => {
   const { current, recent, tune } = useSfx();
   const clips = useTimelineStore((s) => s.clips);
   const tracks = useTimelineStore((s) => s.tracks);
@@ -171,8 +170,8 @@ export const SfxMakerDialog: React.FC<{ onClose: () => void }> = ({ onClose }) =
   };
 
   return (
-    <Modal title="Sound effects maker" onClose={onClose} wide>
-      <div className="flex flex-col gap-3 p-4 text-xs text-forge-muted" onPointerUp={(e) => (e.target as HTMLElement).matches('input[type=range]') && replay()} onKeyUp={(e) => (e.target as HTMLElement).matches('input[type=range]') && replay()}>
+    <div role="region" aria-label="Sound effects maker">
+      <div className="flex flex-col gap-3 p-3 text-xs text-forge-muted" onPointerUp={(e) => (e.target as HTMLElement).matches('input[type=range]') && replay()} onKeyUp={(e) => (e.target as HTMLElement).matches('input[type=range]') && replay()}>
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Make a new sound">
           {SFX_CATEGORIES.map((c) => (
             <button
@@ -231,7 +230,7 @@ export const SfxMakerDialog: React.FC<{ onClose: () => void }> = ({ onClose }) =
           {p.wave !== 'noise' && <span className="font-mono text-forge-text">{noteName(played.freq)}</span>}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-x-8 gap-y-1.5 max-w-5xl">
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-1" role="group" aria-label="Wave">
               <span className="w-16 shrink-0 text-[10px] font-mono uppercase">Wave</span>
@@ -302,6 +301,6 @@ export const SfxMakerDialog: React.FC<{ onClose: () => void }> = ({ onClose }) =
           </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 };

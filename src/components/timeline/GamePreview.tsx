@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dices, Download, Gamepad2, GripHorizontal, ListPlus, Package, Trash2, X } from 'lucide-react';
+import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
 import { currentProject, useTimelineStore } from '../../store/timelineStore';
 import { getAudiblePositionBar } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
@@ -303,7 +303,7 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
 
 type Quantize = 'bar' | 'beat' | 'now';
 
-export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+export const GamePanel: React.FC = () => {
   const markers = useTimelineStore((s) => s.markers);
   const clips = useTimelineStore((s) => s.clips);
   const loop = useTimelineStore((s) => s.loopRegion);
@@ -311,7 +311,6 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [quantize, setQuantize] = useState<Quantize>('bar');
   const [pending, setPending] = useState<string | null>(null);
   const timer = useRef<number>(0);
-  const [pos, setPos] = useState({ left: 16, bottom: 16 });
   useEffect(() => () => clearTimeout(timer.current), []);
 
   const songEnd = Math.max(2, ...clips.map((c) => c.startBar + c.lengthBars));
@@ -370,36 +369,16 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     timer.current = window.setTimeout(jump, Math.max(0, ms - 15));
   };
 
-  const startDrag = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const x0 = e.clientX;
-    const y0 = e.clientY;
-    const p0 = pos;
-    const move = (ev: PointerEvent) => setPos({ left: Math.max(0, p0.left + ev.clientX - x0), bottom: Math.max(0, p0.bottom - (ev.clientY - y0)) });
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-  };
-
   const current = sections.find((sec) => Math.abs(sec.from - loop.inBar) < 1e-6 && Math.abs(sec.to - loop.outBar) < 1e-6 && loop.enabled);
 
   return (
-    <div className="fixed z-40 w-80 rounded-lg border border-forge-borderLight bg-forge-panel shadow-2xl text-xs" style={{ left: pos.left, bottom: pos.bottom }} role="region" aria-label="Game preview">
-      <div className="flex items-center gap-1.5 px-2 h-8 border-b border-forge-border cursor-move select-none text-forge-text" onPointerDown={startDrag}>
-        <GripHorizontal className="w-3.5 h-3.5 text-forge-muted" />
-        <Gamepad2 className="w-4 h-4 text-emerald-400" />
-        <span className="font-semibold">Game preview</span>
-        <button type="button" onPointerDown={(e) => e.stopPropagation()} onClick={onClose} className="ml-auto text-forge-muted hover:text-forge-text" title="Close">
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-      <div className="p-3 flex flex-col gap-3 max-h-[75vh] overflow-y-auto">
+    <div className="grid gap-4 p-3 text-xs lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]" role="region" aria-label="Game preview">
+      <section className="flex flex-col gap-3 min-w-0" data-game="states">
         <div className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-[10px] font-mono text-forge-muted uppercase">
-            <span>States (sections)</span>
+            <span className="flex items-center gap-1.5">
+              <Gamepad2 className="w-3.5 h-3.5 text-emerald-400" /> States (sections)
+            </span>
             <select className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text" value={quantize} onChange={(e) => setQuantize(e.target.value as Quantize)} aria-label="Switch timing">
               <option value="bar">on the next bar</option>
               <option value="beat">on the next beat</option>
@@ -409,7 +388,7 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           {sections.length === 0 ? (
             <p className="text-forge-muted">Add markers (M) where your sections start: each section becomes a state to switch to.</p>
           ) : (
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
               {sections.map((sec) => (
                 <button
                   key={sec.id}
@@ -425,14 +404,26 @@ export const GamePreview: React.FC<{ onClose: () => void }> = ({ onClose }) => {
               ))}
             </div>
           )}
+          <p className="text-[10px] text-forge-muted">{isPlaying ? 'Switch states and fire stingers while it plays, the way the game will.' : 'Pick a state to start.'}</p>
         </div>
-        {sections.length > 1 && <TransitionMatrix states={sections} />}
+        {sections.length > 1 && (
+          <div data-game="transitions">
+            <TransitionMatrix states={sections} />
+          </div>
+        )}
+      </section>
+      <section className="flex flex-col gap-3 min-w-0" data-game="intensity">
         <IntensityPanel />
+        <div data-game="variations">
+          <LoopVariations />
+        </div>
+      </section>
+      <section className="flex flex-col gap-3 min-w-0" data-game="stingers">
         <StingerList timing={quantize} />
-        <LoopVariations />
-        <GameKitButton />
-        <p className="text-[10px] text-forge-muted">{isPlaying ? 'Switch states and fire stingers while it plays, the way the game will.' : 'Pick a state to start.'} Intensity crossfades the stem groups along their curves.</p>
-      </div>
+        <div data-game="export">
+          <GameKitButton />
+        </div>
+      </section>
     </div>
   );
 };

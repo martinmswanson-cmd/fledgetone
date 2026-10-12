@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VideoLane } from '../video/VideoLane';
-import { Film } from 'lucide-react';
 import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
-import { ProjectBar, RestoreSessionBanner } from './ProjectBar';
+import { RestoreSessionBanner } from './ProjectBar';
 import { TimelineScrollbar } from './TimelineScrollbar';
 import { PianoRoll } from './PianoRoll';
 import { TimelineToolbar } from './TimelineToolbar';
@@ -23,6 +22,7 @@ import { Toast } from './Toast';
 import { showToast } from './toastStore';
 import { TrackInspector } from '../inspector/TrackInspector';
 import { AddTrackMenu } from './AddTrackMenu';
+import { useUiStore } from '../../store/uiStore';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT } from './layout';
 import type { RulerUnits } from '../../store/timelineTypes';
 import { frameRateLabel } from '../../store/timelineTypes';
@@ -105,7 +105,8 @@ export const Timeline: React.FC = () => {
   const closeRulerMenu = useCallback(() => setRulerMenu(null), []);
   /** The audio clip "Chop to Slicer…" was chosen for, while its dialog is open. */
   const [chopClipId, setChopClipId] = useState<string | null>(null);
-  const [variationsClipId, setVariationsClipId] = useState<string | null>(null);
+  const variationsClipId = useUiStore((s) => s.variationsClipId);
+  const setVariationsClipId = useUiStore.getState().setVariationsClip;
   const contentRef = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
 
@@ -318,15 +319,7 @@ export const Timeline: React.FC = () => {
   }, []);
 
   return (
-    <div className="bg-forge-panel border border-forge-border rounded-xl shadow-lg overflow-hidden flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-forge-border">
-        <div className="flex items-center gap-2">
-          <Film className="w-4 h-4 text-forge-accent-keys" />
-          <h2 className="text-xs font-mono font-bold tracking-wider uppercase text-forge-text">Arrangement Timeline</h2>
-        </div>
-        <ProjectBar />
-      </div>
-
+    <div className="bg-forge-panel border border-forge-border rounded-xl shadow-lg overflow-hidden flex flex-col" aria-label="Arrangement Timeline">
       <RestoreSessionBanner />
       <TimelineToolbar />
 
@@ -411,7 +404,7 @@ export const Timeline: React.FC = () => {
       <PianoRoll />
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
-        + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads from the sound deck, or sound files, onto a track •
+        + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads (Instruments tab below), or sound files, onto a track •
         Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • M marker • , and . previous / next marker • curve button: automation • ? guide
       </div>
 

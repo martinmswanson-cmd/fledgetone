@@ -54,7 +54,7 @@ const ensureTrack = () => {
   if (!s.tracks.some((t) => t.id === s.selectedTrackId)) s.selectTrack(s.tracks[0].id);
 };
 
-const NEW_BUTTON = 'button[title="New arrangement"]';
+const NEW_BUTTON = '#menu-file';
 const EXPORT_BUTTON = 'button[title^="Render the song"]';
 const RULER = '[data-tour="ruler"]';
 const FIRST_HEADER = '[data-tour="track-header"]';
@@ -77,9 +77,14 @@ const TOUR: Lesson = {
       target: '[data-tour="start-audio"]',
     },
     {
+      title: 'The menus',
+      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Tools**, **Video**, **Game**, **View** and **Help**. **New** offers a blank timeline, the demo song or one of 42 genre starters.',
+      target: '[role="menubar"]',
+    },
+    {
       title: 'Your project',
-      body: 'Name it, start something **New** (a blank timeline, the demo song or one of 42 genre starters), **Open** and **Save** project files, **Export** audio and video, or **Share** a link.',
-      target: NEW_BUTTON,
+      body: 'Name it, **Save** a project file, **Export** audio and video, or **Share** a link. It also autosaves in this browser.',
+      target: '#btn-save-project',
     },
     {
       title: 'Play, stop and loop',
@@ -103,8 +108,13 @@ const TOUR: Lesson = {
     },
     {
       title: 'Effects and mixing',
-      body: '**FX Rack** opens the Inspector: EQ, compressor, filter, pump, lo-fi, gate, reverb and more for the selected track, and the master effects. **Mixer** shows every track side by side.',
+      body: '**FX Rack** opens the Inspector: EQ, compressor, filter, pump, lo-fi, gate, reverb and more for the selected track, and the master effects.',
       target: '#btn-inspector-toggle',
+    },
+    {
+      title: 'The bottom panel',
+      body: 'Tabs under the timeline: the **Mixer** (every track side by side), **Instruments** (try any sound, play pads, drag patterns), **Game**, **Video** tools and the **Sound FX** maker. Drag its top edge to resize it.',
+      target: '[role="tablist"][aria-label="Bottom panel tabs"]',
     },
     {
       title: 'Tempo and swing',
@@ -143,7 +153,7 @@ const BEGINNER: Lesson = {
     },
     {
       title: 'Open a starter',
-      body: 'Click **New**, then pick any genre starter. *Lo-Fi* is a gentle first one. (This replaces the current timeline.)',
+      body: 'Open the **File** menu, click **New…**, then pick any genre starter. *Lo-Fi* is a gentle first one. (This replaces the current timeline.)',
       target: dialogOr('new', 'New arrangement', NEW_BUTTON),
       task: { hint: 'New, then a starter', begin: () => tl().projectName, done: (name) => tl().projectName !== name && tl().clips.length > 0 },
     },
@@ -275,13 +285,13 @@ const INTERMEDIATE: Lesson = {
     },
     {
       title: 'Open the Mixer',
-      body: 'Click **Mixer** to see every track side by side with level meters. Balance them by ear, then close it.',
-      target: dialogOr('mixer', 'Mixer', '#btn-mixer'),
-      task: { hint: 'Open the Mixer', done: () => ui().dialog === 'mixer' },
+      body: 'Click the **Mixer** tab under the timeline to see every track side by side with level meters. Balance them by ear.',
+      target: () => (ui().dockOpen && ui().dockTab === 'mixer' ? '[role="region"][aria-label="Mixer"]' : '#btn-mixer'),
+      task: { hint: 'Open the Mixer tab', done: () => ui().dockOpen && ui().dockTab === 'mixer' },
     },
     {
       title: 'Mark a section',
-      body: 'Close the Mixer, move the playhead (click the ruler) and press **M** to drop a marker there. Double-click a marker flag to rename it; **,** and **.** jump between markers.',
+      body: 'Move the playhead (click the ruler) and press **M** to drop a marker there. Double-click a marker flag to rename it; **,** and **.** jump between markers.',
       target: RULER,
       task: { hint: 'Press M to add a marker', begin: () => tl().markers.length, done: (n) => tl().markers.length > (n as number) },
     },
@@ -377,9 +387,9 @@ const EXPERT: Lesson = {
     },
     {
       title: 'Hear it like a game',
-      body: '**Game** plays your marker sections as game states that switch on the next bar or beat, with layers you can bring in and an Intensity slider.',
-      target: () => (ui().dialog === 'game' ? '[aria-label="Game preview"]' : '#btn-game'),
-      task: { hint: 'Open the Game preview', done: () => ui().dialog === 'game' },
+      body: 'The **Game** tab plays your marker sections as game states that switch on the next bar or beat, with layers you can bring in and an Intensity slider.',
+      target: () => (ui().dockOpen && ui().dockTab === 'game' ? '[aria-label="Game preview"]' : '#btn-game'),
+      task: { hint: 'Open the Game tab', done: () => ui().dockOpen && ui().dockTab === 'game' },
     },
     {
       title: 'Export for a game',
@@ -393,8 +403,8 @@ const EXPERT: Lesson = {
     },
     {
       title: 'Score to picture, play live',
-      body: '**Video** loads gameplay or a trailer that plays in sync with the playhead; video export can put your music on it. **Mic** records your voice or an instrument, and the MIDI button connects a keyboard or turns the computer keyboard into one.',
-      target: 'button[title^="Load a video"], button[title^="Scoring to"]',
+      body: 'The **Video** tab loads gameplay or a trailer that plays in sync with the playhead; video export can put your music on it. **Mic** records your voice or an instrument, and the MIDI button connects a keyboard or turns the computer keyboard into one.',
+      target: '#btn-video-tools',
     },
     {
       title: "You're a pro",

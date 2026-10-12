@@ -9,6 +9,8 @@ import { shouldIgnoreShortcut } from './keyboard';
 import { LoudnessBadge } from './LoudnessBadge';
 import { PerfBadge } from './PerfBadge';
 import { PALETTE_SHORTCUT, useUiStore } from '../store/uiStore';
+import { MenuBar } from './menu/MenuBar';
+import { ProjectBar } from './timeline/ProjectBar';
 
 export const Header: React.FC = () => {
   const { audioState, initializeAudio, masterVolume, setMasterVolume } = useAudioStore();
@@ -37,18 +39,21 @@ export const Header: React.FC = () => {
   }, []);
 
   return (
-    <header className="bg-forge-panel border-b border-forge-border px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-xl">
-      {/* Brand Title */}
-      <div className="flex items-center gap-3">
-        <img src={boLogo} alt="Bo wearing headphones" className="w-12 h-12 drop-shadow-[0_0_10px_rgba(61,158,224,0.45)]" />
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-white font-sans">Bo's Beatbox</h1>
-          <p className="text-xs text-forge-muted font-sans">Arrange, mix and export music in your browser</p>
+    <header className="bg-forge-panel border-b border-forge-border shadow-xl">
+      {/* Menu bar and project */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 border-b border-forge-border">
+        <div className="flex items-center gap-2 mr-1">
+          <img src={boLogo} alt="Bo wearing headphones" className="w-8 h-8 drop-shadow-[0_0_8px_rgba(61,158,224,0.45)]" />
+          <h1 className="text-sm font-bold tracking-tight text-white font-sans whitespace-nowrap">Bo's Beatbox</h1>
+        </div>
+        <MenuBar />
+        <div className="ml-auto">
+          <ProjectBar />
         </div>
       </div>
-
+      <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-3">
       {/* Middle & Right Controls */}
-      <div className="flex flex-wrap items-center gap-5">
+      <div className="flex flex-wrap items-center gap-3 w-full">
         {/* BPM & Tap Tempo Control */}
         <div className="relative flex flex-wrap items-center bg-forge-bg border border-forge-border rounded-lg px-3 py-1.5 gap-x-3 gap-y-2">
           <div className="flex flex-col">
@@ -159,7 +164,7 @@ export const Header: React.FC = () => {
         <button
           type="button"
           onClick={() => useUiStore.getState().setPaletteOpen(true)}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono tracking-wider border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-500/70 hover:bg-cyan-500/10 transition"
+          className="ml-auto flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono tracking-wider border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-500/70 hover:bg-cyan-500/10 transition"
           title={`Search tools, settings, instruments and the guide (${PALETTE_SHORTCUT})`}
         >
           <Search className="w-3.5 h-3.5 text-cyan-400" />
@@ -205,6 +210,7 @@ export const Header: React.FC = () => {
             }`}
           />
         </button>
+      </div>
       </div>
       {/* Keyed by section, so search opening another section while it's open starts there */}
       {guide !== null && <GuidePanel key={guide} onClose={closeGuide} section={guide} />}
