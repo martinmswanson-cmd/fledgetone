@@ -38,13 +38,9 @@ export const CutToLengthDialog: React.FC<{ onClose: () => void }> = ({ onClose }
   // Planned in seconds through the tempo changes: each section as long as it lasts, in bars of the
   // starting tempo (every tempo scales together when the length is fitted, so this stays exact)
   const timed = useMemo(() => {
-    let at = 1;
-    return sections.map((sec) => {
-      const bars = (secondsBetween(sec.from, sec.to, tempo) * bpm) / 240;
-      const out = { ...sec, from: at, to: at + bars };
-      at += bars;
-      return out;
-    });
+    const lengths = sections.map((sec) => (secondsBetween(sec.from, sec.to, tempo) * bpm) / 240);
+    const starts = lengths.map((_, i) => 1 + lengths.slice(0, i).reduce((a, b) => a + b, 0));
+    return sections.map((sec, i) => ({ ...sec, from: starts[i], to: starts[i] + lengths[i] }));
   }, [sections, tempo, bpm]);
   const typedSeconds = typed.trim() ? (/^\d+(\.\d+)?$/.test(typed.trim()) ? Number(typed.trim()) : parseTimecode(typed, fps, dropFrame)) : null;
   const target = typedSeconds && typedSeconds > 0 ? typedSeconds : seconds;
