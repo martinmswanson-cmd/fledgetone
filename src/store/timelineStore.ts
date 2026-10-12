@@ -53,6 +53,7 @@ import {
   secondsPerBar,
   splitAudio,
   trimAudioStart,
+  stretchRatio,
 } from './audioClips';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
 import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate } from './timelineTypes';
@@ -300,6 +301,12 @@ interface TimelineState {
   addAudioClips: (trackId: string | null, atBar: number, sounds: SoundMeta[]) => string | null;
   /** Change an audio clip's gain, fades or offset. `record` makes it its own undo step; sliders and handle drags checkpoint() once instead. */
   setClipAudio: (clipId: string, patch: Partial<ClipAudio>, record?: boolean) => void;
+  /**
+   * Make an audio clip follow the song's tempo, recorded at `stretchBpm` (or play as recorded again,
+   * with undefined). It keeps playing the same part of its sound, so its length in bars changes
+   * with the stretch. One undo step.
+   */
+  setClipStretch: (clipId: string, stretchBpm: number | undefined) => void;
   /** Give a Slicer track its sound and slices (or clear them with undefined). `record` as above. */
   setTrackSlicer: (trackId: string, slicer: SlicerSettings | undefined, record?: boolean) => void;
   /** Change a Synth Designer track's patch (`record` false while a knob is dragged: checkpoint() first). */
@@ -534,7 +541,7 @@ function splitClipAt(clip: Clip, atBar: number, bpm: number): [Clip, Clip] | nul
     notes: clip.notes
       .filter((n) => n.startOffset >= rel - EPS)
       .map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset - rel })),
-    ...(clip.audio ? { audio: splitAudio(clip.audio, rel * secondsPerBar(bpm)) } : {}),
+    ...(clip.audio ? { audio: splitAudio(clip.audio, rel * secondsPerBar(bpm) * stretchRatio(clip.audio, bpm)) } : {}),
   };
   return [left, right];
 }
@@ -1208,6 +1215,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         return { clips: s.clips.map((c) => (c === clip ? { ...c, audio } : c)), ...(record ? pushPast(s) : {}) };
       }),
 
+    setClipStretch: (clipId, stretchBpm) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        if (!clip?.audio) return s;
+        const audio = normalizeClipAudio({ ...clip.audio, stretchBpm });
+        if (!audio || audio.stretchBpm === clip.audio.stretchBpm) return s;
+        if (stretchBpm === undefined) delete audio.stretchBpm;
+        // The same stretch of the sound, played at the new speed
+        const lengthBars = Math.max(0.0625, Math.min(TOTAL_BARS + 1 - clip.startBar, (clip.lengthBars * stretchRatio(clip.audio, s.bpm)) / stretchRatio(audio, s.bpm)));
+        return { clips: s.clips.map((c) => (c === clip ? { ...c, lengthBars, audio } : c)), ...pushPast(s) };
+      }),
+
     setTrackSynth: (trackId, synth, record = true) => updateTrack(trackId, () => ({ synth }), record),
 
     setTrackSlicer: (trackId, slicer, record = true) => {
@@ -1304,7 +1323,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           startBar: start,
           lengthBars: end - start,
           notes: c.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta })),
-          ...(c.audio ? { audio: trimAudioStart(c.audio, delta * secondsPerBar(bpm)) } : {}),
+          ...(c.audio ? { audio: trimAudioStart(c.audio, delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm)) } : {}),
         };
       }),
 
@@ -2164,14 +2183,14 @@ export function connectTimelineToAudio(): () => void {
   syncLiveTracks(view.tracks);
   applyLiveIntensity(view.tracks, s.intensityCurves, s.intensity, 0);
   rescheduleClips(view.tracks, view.clips);
-  const refresh = (state: TimelineState) => {
+  const refresh = (state: TimelineState, retimed = false) => {
     const next = liveView(state, soundMissing, view);
     if (next.tracks !== view.tracks) syncLiveTracks(next.tracks);
     applyLiveIntensity(next.tracks, state.intensityCurves, state.intensity);
     const trackSetChanged = next.tracks.length !== view.tracks.length || next.tracks.some((t, i) => t.id !== view.tracks[i]?.id);
     // The Human insert works in the scheduler, so turning it or its amounts changes what plays
     const feelChanged = next.tracks.some((t, i) => t.fx.human !== view.tracks[i]?.fx.human || t.instrumentKey !== view.tracks[i]?.instrumentKey);
-    if (next.clips !== view.clips || trackSetChanged || feelChanged) rescheduleClips(next.tracks, next.clips);
+    if (next.clips !== view.clips || trackSetChanged || feelChanged || retimed) rescheduleClips(next.tracks, next.clips);
     view = next;
   };
   // A frozen sound found missing (or back again) changes what plays
@@ -2205,13 +2224,15 @@ export function connectTimelineToAudio(): () => void {
     if (!state.isPlaying && (state.playheadPosition !== prev.playheadPosition || prev.isPlaying)) {
       holdAutomationAt(state.playheadPosition);
     }
-    if (state.tracks !== prev.tracks || state.clips !== prev.clips || state.bpm !== prev.bpm || state.swing !== prev.swing) {
-      for (const t of state.tracks) if (t.frozen && t.frozen !== prev.tracks.find((p) => p.id === t.id)?.frozen) ensureSound(t.frozen.soundId);
-      refresh(state);
-    }
+    // The Transport takes the new tempo first, so clips rescheduled below are timed at it
     if (state.loopRegion !== prev.loopRegion || state.bpm !== prev.bpm || state.swing !== prev.swing) {
       syncTransport(state.loopRegion, state.bpm, state.swing);
       if (state.isPlaying && (state.loopRegion !== prev.loopRegion || state.bpm !== prev.bpm)) retimeAutomation();
+    }
+    if (state.tracks !== prev.tracks || state.clips !== prev.clips || state.bpm !== prev.bpm || state.swing !== prev.swing) {
+      for (const t of state.tracks) if (t.frozen && t.frozen !== prev.tracks.find((p) => p.id === t.id)?.frozen) ensureSound(t.frozen.soundId);
+      // Clips that follow the tempo are stretched anew at another tempo, though they haven't changed
+      refresh(state, state.bpm !== prev.bpm && state.clips.some((c) => c.audio?.stretchBpm));
     }
     if (state.bpm !== prev.bpm) {
       // Delay time is a tempo subdivision, so it follows the BPM

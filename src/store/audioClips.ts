@@ -1,5 +1,5 @@
 import type { Clip, ClipAudio, EmbeddedSound, SliceCount, SlicerSettings, Track } from './timelineTypes';
-import { AUDIO_FADE_MAX, AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, MAX_SLICES, SLICE_COUNTS } from './timelineTypes';
+import { AUDIO_FADE_MAX, AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, MAX_SLICES, SLICE_COUNTS, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from './timelineTypes';
 
 /**
  * Audio clip and Slicer maths with no audio or store in it, so Node can unit-test it: how a clip's
@@ -16,14 +16,41 @@ export const secondsPerBar = (bpm: number): number => 240 / bpm;
 export const audioClipSeconds = (clip: Pick<Clip, 'lengthBars'>, bpm: number): number => clip.lengthBars * secondsPerBar(bpm);
 
 /**
+ * How fast a clip plays its sound at `bpm`: 1 as recorded, or for a clip that follows the tempo,
+ * the song's tempo over the recording's (2: twice as fast, at the same pitch).
+ */
+export const stretchRatio = (audio: Pick<ClipAudio, 'stretchBpm'>, bpm: number): number => (audio.stretchBpm ? bpm / audio.stretchBpm : 1);
+
+/** Seconds of the sound a clip plays (its length in seconds times its stretch). */
+export const audioSourceSeconds = (clip: Pick<Clip, 'lengthBars' | 'audio'>, bpm: number): number =>
+  audioClipSeconds(clip, bpm) * (clip.audio ? stretchRatio(clip.audio, bpm) : 1);
+
+/**
  * The clips after a tempo change: an audio clip keeps its start bar and its length in seconds, so
- * its length in bars scales with the tempo. Note clips are untouched; the same array comes back
- * when nothing changes.
+ * its length in bars scales with the tempo, unless it follows the tempo (then it keeps its bars
+ * and is stretched instead). Note clips are untouched; the same array comes back when nothing changes.
  */
 export function retimeAudioClips(clips: Clip[], fromBpm: number, toBpm: number): Clip[] {
-  if (fromBpm === toBpm || !clips.some((c) => c.audio)) return clips;
+  if (fromBpm === toBpm || !clips.some((c) => c.audio && !c.audio.stretchBpm)) return clips;
   const ratio = toBpm / fromBpm;
-  return clips.map((c) => (c.audio ? { ...c, lengthBars: c.lengthBars * ratio } : c));
+  return clips.map((c) => (c.audio && !c.audio.stretchBpm ? { ...c, lengthBars: c.lengthBars * ratio } : c));
+}
+
+/**
+ * Likely tempos a loop was recorded at, from its length: tempos at which it lasts a whole number
+ * of bars (1, 2, 4, 8 or 16), between 60 and 200 BPM, nearest `near` first.
+ */
+export function loopTempos(seconds: number, near: number): number[] {
+  const found: number[] = [];
+  for (const bars of [1, 2, 4, 8, 16]) {
+    let bpm = (240 * bars) / seconds;
+    // Halve or double into range: a loop at 70 might be 140 counted the other way
+    while (bpm > 200) bpm /= 2;
+    while (bpm < 60) bpm *= 2;
+    const rounded = Math.round(bpm * 100) / 100;
+    if (!found.some((b) => Math.abs(b - rounded) < 0.05)) found.push(rounded);
+  }
+  return found.sort((a, b) => Math.abs(a - near) - Math.abs(b - near));
 }
 
 /** The audio of a clip's right half when it is cut `seconds` into the clip. */
@@ -41,13 +68,13 @@ export function trimAudioStart(audio: ClipAudio, seconds: number): ClipAudio {
 
 /** The earliest bar a clip's left edge can be dragged to: no earlier than the sound's own start. */
 export function audioTrimStartLimit(clip: Pick<Clip, 'startBar' | 'audio'>, bpm: number): number {
-  return clip.audio ? clip.startBar - clip.audio.offset / secondsPerBar(bpm) : 1;
+  return clip.audio ? clip.startBar - clip.audio.offset / stretchRatio(clip.audio, bpm) / secondsPerBar(bpm) : 1;
 }
 
 /** The most bars an audio clip can be, given its sound's length in seconds (Infinity when that isn't known). */
 export function audioLengthLimit(audio: ClipAudio, soundSeconds: number | undefined, bpm: number): number {
   if (soundSeconds === undefined) return Infinity;
-  return Math.max(0, soundSeconds - audio.offset) / secondsPerBar(bpm);
+  return Math.max(0, soundSeconds - audio.offset) / stretchRatio(audio, bpm) / secondsPerBar(bpm);
 }
 
 /** The sounds a project refers to: audio clips, Slicer tracks and Sampler tracks (each id once). */
@@ -80,6 +107,7 @@ export function normalizeClipAudio(raw: unknown): ClipAudio | undefined {
     gain: isNum(raw.gain) ? clamp(raw.gain, AUDIO_GAIN_MIN, AUDIO_GAIN_MAX) : 0,
     fadeIn: isNum(raw.fadeIn) ? clamp(raw.fadeIn, 0, AUDIO_FADE_MAX) : 0,
     fadeOut: isNum(raw.fadeOut) ? clamp(raw.fadeOut, 0, AUDIO_FADE_MAX) : 0,
+    ...(isNum(raw.stretchBpm) ? { stretchBpm: clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) } : {}),
   };
 }
 

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { liveMix } from './engine';
 import { createPeaks, fillPeaks } from './waveform';
+import { stretchChannels } from './timeStretch';
 import type { Peaks } from './waveform';
 import type { EmbeddedSound, SoundMeta } from '../store/timelineTypes';
 
@@ -194,6 +195,12 @@ const decodeKey = (id: string, sampleRate: number) => `${id}|${sampleRate}`;
  */
 export function forgetDecodedSounds(keep: Set<string>): number {
   let bytes = 0;
+  for (const [key, buffer] of stretchedBuffers) {
+    if (keep.has(key.split('|')[0])) continue;
+    bytes += buffer.length * buffer.numberOfChannels * 4;
+    stretchedBuffers.delete(key);
+    stretching.delete(key);
+  }
   for (const [key, buffer] of decodedBuffers) {
     if (keep.has(key.split('|')[0])) continue;
     bytes += buffer.length * buffer.numberOfChannels * 4;
@@ -235,6 +242,71 @@ export function decodeSound(id: string, sampleRate: number): Promise<AudioBuffer
     decoded.set(key, promise);
   }
   return promise;
+}
+
+// ---------- time-stretched copies ----------
+
+/** Stretched copies of sounds (see timeStretch.ts), by sound, sample rate and speed. */
+const stretchedBuffers = new Map<string, AudioBuffer>();
+const stretching = new Map<string, Promise<AudioBuffer>>();
+const stretchKey = (id: string, sampleRate: number, ratio: number) => `${id}|${sampleRate}|${ratio.toFixed(4)}`;
+/** Speeds kept per sound and rate: a tempo being dragged leaves only the last few behind */
+const KEEP_STRETCHES = 3;
+
+/** The sound played `ratio` times as fast at the same pitch, once stretchSound has made it. */
+export const stretchedSound = (id: string, sampleRate: number, ratio: number): AudioBuffer | undefined =>
+  stretchedBuffers.get(stretchKey(id, sampleRate, ratio));
+
+/** Make (once, shared) the sound played `ratio` times as fast at the same pitch, decoded to `sampleRate`. */
+export function stretchSound(id: string, sampleRate: number, ratio: number): Promise<AudioBuffer> {
+  const key = stretchKey(id, sampleRate, ratio);
+  let promise = stretching.get(key);
+  if (!promise) {
+    promise = (async () => {
+      const source = await decodeSound(id, sampleRate);
+      const channels = stretchChannels(
+        Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c)),
+        ratio,
+        sampleRate
+      );
+      const buffer = new AudioBuffer({ length: channels[0].length, numberOfChannels: channels.length, sampleRate });
+      channels.forEach((ch, c) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
+      return buffer;
+    })();
+    promise.then(
+      (buffer) => {
+        stretchedBuffers.set(key, buffer);
+        // Forget the oldest speeds of this sound beyond the last few
+        const prefix = `${id}|${sampleRate}|`;
+        const mine = [...stretchedBuffers.keys()].filter((k) => k.startsWith(prefix));
+        for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_STRETCHES))) {
+          stretchedBuffers.delete(old);
+          stretching.delete(old);
+        }
+      },
+      () => stretching.delete(key)
+    );
+    stretching.set(key, promise);
+  }
+  return promise;
+}
+
+const stretchTimers = new Map<string, number>();
+/**
+ * Ask for a stretched copy soon: while a tempo is being dragged only the speed it settles on is
+ * made (each takes a moment of work). Until then the player plays the sound sped up as a tape would.
+ */
+export function requestStretch(id: string, sampleRate: number, ratio: number): void {
+  if (stretchedSound(id, sampleRate, ratio)) return;
+  const slot = `${id}|${sampleRate}`;
+  clearTimeout(stretchTimers.get(slot));
+  stretchTimers.set(
+    slot,
+    window.setTimeout(() => {
+      stretchTimers.delete(slot);
+      void stretchSound(id, sampleRate, ratio).catch(() => {});
+    }, 250)
+  );
 }
 
 // ---------- waveform peaks ----------
