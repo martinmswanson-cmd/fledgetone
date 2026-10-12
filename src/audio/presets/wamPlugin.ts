@@ -2,16 +2,18 @@ import * as Tone from 'tone';
 import type { WamPlugin } from '../../store/timelineTypes';
 import { midiOf } from '../../store/noteTools';
 import {
+  destroyInstance,
+  keepActive,
   loadWam,
   nativeContextOf,
   nativeInputOf,
   nativeOutputOf,
   PluginBlockedError,
   registerLiveWam,
-  keepActive,
+  retireLiveWam,
   sendMidi,
   startingState,
-  unregisterLiveWam,
+  whenRetired,
   type WamInstance,
 } from '../wamHost';
 import type { NoteOff, PlayableNote, TrackInstrument } from '../instruments';
@@ -38,20 +40,14 @@ const report = (plugin: WamPlugin, err: unknown) => {
   errorHandler(`Couldn't load the plugin "${plugin.name}": ${err instanceof Error ? err.message : String(err)}`);
 };
 
-/** Take a plugin instance out of the graph and let it go. */
+/** Take a plugin instance out of the graph and let it go (a live one once its settings are read). */
 function release(plugin: WamPlugin, inst: WamInstance, ctx: BaseAudioContext): void {
-  try {
-    inst.audioNode.disconnect();
-  } catch {
-    // Not connected
-  }
-  try {
-    inst.audioNode.destroy?.();
-  } catch {
-    // Already destroyed
-  }
-  if (isLive(ctx)) unregisterLiveWam(plugin.id, inst);
+  if (isLive(ctx)) retireLiveWam(plugin.id, inst);
+  else destroyInstance(inst);
 }
+
+/** Load `plugin` into `ctx`, from its latest settings (after any instance of it being let go has given them). */
+const loadPlugin = (ctx: BaseAudioContext, plugin: WamPlugin) => whenRetired(plugin.id).then(() => loadWam(ctx, plugin.url, startingState(plugin)));
 
 export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin | undefined): TrackInstrument {
   const out = new Tone.Gain(1).connect(output);
@@ -60,8 +56,11 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
   const ctx = nativeContextOf(out.context);
   let inst: WamInstance | null = null;
   let disposed = false;
-  /** Notes sounding (key held or scheduled), so they can all be let go */
-  const sounding = new Map<number, number>();
+  /**
+   * Every note started since the last let-go: a scheduled note's note-off may still be pending (and
+   * is cleared by releaseAll), so each of these gets a note-off then.
+   */
+  const touched = new Set<number>();
   const noteNumber = (note: string) => {
     const m = midiOf(note);
     return Number.isFinite(m) ? Math.max(0, Math.min(127, m)) : 60;
@@ -69,18 +68,15 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
   const on = (n: number, velocity: number, time: number) => {
     if (!inst) return;
     sendMidi(inst, [0x90, n, Math.max(1, Math.min(127, Math.round(velocity * 127)))], time);
-    sounding.set(n, (sounding.get(n) ?? 0) + 1);
+    touched.add(n);
   };
   const off = (n: number, time: number) => {
     if (!inst) return;
     sendMidi(inst, [0x80, n, 0], time);
-    const left = (sounding.get(n) ?? 1) - 1;
-    if (left > 0) sounding.set(n, left);
-    else sounding.delete(n);
   };
 
   const ready = plugin
-    ? loadWam(ctx, plugin.url, startingState(plugin)).then(
+    ? loadPlugin(ctx, plugin).then(
         (loaded) => {
           if (disposed) {
             release(plugin, loaded, ctx);
@@ -116,10 +112,10 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       if (!inst) return;
       const now = out.context.currentTime;
       inst.audioNode.clearEvents?.();
-      for (const n of sounding.keys()) sendMidi(inst, [0x80, n, 0], now);
+      for (const n of touched) sendMidi(inst, [0x80, n, 0], now);
       sendMidi(inst, [0xb0, 123, 0], now);
       sendMidi(inst, [0xe0, 0, 64], now);
-      sounding.clear();
+      touched.clear();
     },
     ready,
     dispose: () => {
@@ -148,7 +144,7 @@ export function createPluginChain(output: Tone.InputNode, plugins: WamPlugin[]):
   const active = plugins.filter((p) => !p.bypass);
   const ready = Promise.all(
     active.map((plugin) =>
-      loadWam(ctx, plugin.url, startingState(plugin)).then(
+      loadPlugin(ctx, plugin).then(
         (inst) => ({ plugin, inst }),
         (err) => {
           report(plugin, err);

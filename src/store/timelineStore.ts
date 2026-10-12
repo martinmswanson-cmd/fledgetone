@@ -36,7 +36,7 @@ import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
-import { onWamStates } from '../audio/wamHost';
+import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
@@ -87,6 +87,15 @@ export const MIN_ZOOM = 12;
 /** Deep enough for frame-level work: a 30 fps frame is 21px wide at 120 BPM. */
 export const MAX_ZOOM = 1280;
 const EPS = 1e-6;
+
+/**
+ * An undo or redo brings back the tracks as they were, plugin settings included, but the plugins
+ * play on as they are now (they aren't rebuilt): keep their current settings on the tracks.
+ */
+function keepLivePluginStates(): void {
+  const states = liveStates();
+  if (states.size) useTimelineStore.getState().setPluginStates(states);
+}
 const HISTORY_LIMIT = 100;
 
 /** Where the loop and the playhead are. */
@@ -1381,13 +1390,16 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       set((s) => {
         let changed = false;
         const withState = (p: WamPlugin) => {
-          if (!states.has(p.id)) return p;
+          if (!states.has(p.id) || JSON.stringify(p.state) === JSON.stringify(states.get(p.id))) return p;
           changed = true;
           return { ...p, state: states.get(p.id) };
         };
         const tracks = s.tracks.map((t) => {
           if (!(t.plugin && states.has(t.plugin.id)) && !t.pluginFx?.some((p) => states.has(p.id))) return t;
-          return { ...t, ...(t.plugin ? { plugin: withState(t.plugin) } : {}), ...(t.pluginFx ? { pluginFx: t.pluginFx.map(withState) } : {}) };
+          const plugin = t.plugin && withState(t.plugin);
+          const pluginFx = t.pluginFx?.map(withState);
+          if (plugin === t.plugin && (pluginFx ?? []).every((p, i) => p === t.pluginFx![i])) return t;
+          return { ...t, ...(plugin ? { plugin } : {}), ...(pluginFx ? { pluginFx } : {}) };
         });
         return changed ? { tracks } : s;
       }),
@@ -1573,6 +1585,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           instrumentKey,
           name: meta.name,
           color: meta.color,
+          // A Plugin track's plugin goes with its instrument (its effects stay)
+          plugin: undefined,
         }),
         true
       );
@@ -2253,6 +2267,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
       applyMasterFx();
       applyMaster();
+      keepLivePluginStates();
       if (spot && spot.playhead !== s.playheadPosition) get().seek(spot.playhead);
     },
 
@@ -2270,6 +2285,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
       applyMasterFx();
       applyMaster();
+      keepLivePluginStates();
       if (spot && spot.playhead !== s.playheadPosition) get().seek(spot.playhead);
     },
 
@@ -2302,6 +2318,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     loadProject: (p: ProjectSnapshot) => {
       // A take in progress belongs to the arrangement being replaced
       discardTake();
+      // Plugins start from the settings the new project saved
+      resetWamSession();
       set({ take: null });
       get().stop();
       // One track records at a time: a file with several armed keeps the first

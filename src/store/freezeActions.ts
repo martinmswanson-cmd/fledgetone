@@ -45,7 +45,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
   useFreezing.setState({ [trackId]: 0 });
   try {
     // Everything as it is now: an edit made while this renders leaves the freeze out of date
-    const snapshot = { tracks: store.tracks, clips: store.clips, bpm: store.bpm, swing: store.swing };
+    const snapshot = { tracks: store.tracks, clips: store.clips, bpm: store.bpm, swing: store.swing, tempoPoints: store.tempoPoints };
     const fingerprint = freezeFingerprint(track, snapshot);
     const startBar = Math.min(...own.map((c) => c.startBar));
     const endBar = Math.max(...own.map((c) => c.startBar + c.lengthBars));
@@ -59,6 +59,7 @@ export async function freezeTrack(trackId: string): Promise<void> {
         tracks,
         clips: snapshot.clips,
         bpm: snapshot.bpm,
+        tempoPoints: snapshot.tempoPoints,
         swing: snapshot.swing,
         startBar,
         endBar,
