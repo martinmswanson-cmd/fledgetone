@@ -1,7 +1,9 @@
 import React, { useRef } from 'react';
-import { Clapperboard, Eye, EyeOff, Scissors, X } from 'lucide-react';
+import { Clapperboard, Eye, EyeOff, MessageSquareText, Scissors, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { findSceneCuts, useVideoStore } from '../../store/videoStore';
+import { findDialogue, findSceneCuts, useVideoStore } from '../../store/videoStore';
+import { DEFAULT_DIP, type Span } from '../../store/dialogue';
+import { Modal } from '../timeline/Modal';
 import { showToast } from '../timeline/toastStore';
 import { secondsToBar } from '../../audio/transport';
 import { HEADER_WIDTH } from '../timeline/layout';
@@ -76,6 +78,7 @@ export const VideoLane: React.FC = () => {
           @{clock(start)} · bar {secondsToBar(start, bpm).toFixed(2)}
         </span>
         <FindCutsButton />
+        <DialogueDipButton />
         <button type="button" title={previewOpen ? 'Hide the preview window' : 'Show the preview window'} onClick={() => useVideoStore.getState().setPreviewOpen(!previewOpen)} className="hover:text-forge-text shrink-0">
           {previewOpen ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
         </button>
@@ -153,5 +156,81 @@ const FindCutsButton: React.FC = () => {
     >
       {progress === null ? <Scissors className="w-3.5 h-3.5" /> : `${Math.round(progress * 100)}%`}
     </button>
+  );
+};
+
+/**
+ * Dip under dialogue: listen to the video's own sound for voices, then dip every track's volume
+ * there (as automation, one undo step), by an amount you pick.
+ */
+const DialogueDipButton: React.FC = () => {
+  const [busy, setBusy] = React.useState(false);
+  const [found, setFound] = React.useState<Span[] | null>(null);
+  const [depth, setDepth] = React.useState(DEFAULT_DIP.depth);
+  const find = async () => {
+    const { video } = useVideoStore.getState();
+    if (!video) return;
+    setBusy(true);
+    try {
+      const spans = await findDialogue(video.file);
+      if (!spans.length) showToast('No dialogue found in the video\'s sound.');
+      else setFound(spans);
+    } catch (err) {
+      showToast(`Couldn't listen to the video: ${err instanceof Error ? err.message : String(err)}.`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const apply = () => {
+    const start = useVideoStore.getState().start;
+    const n = useTimelineStore.getState().dipUnderDialogue(
+      found!.map((s) => ({ start: start + s.start, end: start + s.end })),
+      { ...DEFAULT_DIP, depth }
+    );
+    showToast(`Dipped ${n} track${n === 1 ? '' : 's'} by ${depth} dB under ${found!.length} line${found!.length === 1 ? '' : 's'} of dialogue (volume automation; Ctrl+Z takes it out).`);
+    setFound(null);
+  };
+  const talk = found ? found.reduce((t, s) => t + s.end - s.start, 0) : 0;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void find()}
+        disabled={busy}
+        title="Dip under dialogue: turn the music down wherever people talk in the video"
+        aria-label="Dip the music under the video's dialogue"
+        className="hover:text-forge-text shrink-0 disabled:opacity-50"
+      >
+        <MessageSquareText className={`w-3.5 h-3.5 ${busy ? 'animate-pulse' : ''}`} />
+      </button>
+      {found && (
+        <Modal title="Dip under dialogue" onClose={() => setFound(null)}>
+          <div className="flex flex-col gap-3 p-4 text-xs text-forge-muted">
+            <p>
+              Found {found.length} stretch{found.length === 1 ? '' : 'es'} of talking ({talk.toFixed(1)} s in all), from {found[0].start.toFixed(1)} s to{' '}
+              {found[found.length - 1].end.toFixed(1)} s into the video. The music dips there, starting a moment before each line and coming back
+              half a second after it.
+            </p>
+            <label className="flex items-center gap-2 font-mono text-[11px]">
+              <span className="w-12 uppercase">Dip</span>
+              <input type="range" min={3} max={24} step={1} value={depth} onChange={(e) => setDepth(Number(e.target.value))} className="flex-1 accent-cyan-400" aria-label="How far the music dips" />
+              <span className="w-14 text-right text-forge-text">-{depth} dB</span>
+            </label>
+            <p className="text-[11px]">
+              It's written as volume automation on every track, so you can see it, change it, and it's in your exports. A track that already has a volume
+              lane keeps its shape, lowered in the dips. Note that a volume lane takes over from the track's fader.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setFound(null)} className="h-8 px-3 rounded-md border border-forge-border hover:text-forge-text">
+                Cancel
+              </button>
+              <button type="button" onClick={apply} className="h-8 px-3 rounded-md border border-cyan-400/60 bg-cyan-500/15 text-cyan-100 font-semibold hover:bg-cyan-500/25">
+                Dip the music
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 };
