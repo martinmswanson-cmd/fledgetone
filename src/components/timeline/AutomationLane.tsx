@@ -442,7 +442,8 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
             </div>
           ) : (
             points.length === 0 && (
-              <span className="absolute left-12 top-1.5 whitespace-nowrap text-[10px] font-mono text-forge-muted">
+              // Bottom right, clear of the clip names along the top
+              <span className="absolute right-2 bottom-1 whitespace-nowrap text-[10px] font-mono text-forge-muted pointer-events-none">
                 {spec.label}: click to add a point, drag a box to select
               </span>
             )
