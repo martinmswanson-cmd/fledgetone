@@ -35,7 +35,8 @@ import { defaultCurve, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, preservePreviousSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
-import type { Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder } from './timelineTypes';
+import type { Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
+import { onWamStates } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import { formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
@@ -344,6 +345,16 @@ interface TimelineState {
    * undo step). Refused (false) where it would make a loop.
    */
   setTrackOutput: (trackId: string, busId: string | null) => boolean;
+  /** A new Plugin track playing the WAM at `url` (one undo step). Returns its id. */
+  addPluginTrack: (url: string, name: string) => string;
+  /** Add a WAM effect to a track, after its other plugin effects (one undo step). Returns the plugin's id. */
+  addTrackPluginFx: (trackId: string, url: string, name: string) => string | null;
+  /** Take a plugin effect off a track (one undo step). */
+  removeTrackPluginFx: (trackId: string, pluginId: string) => void;
+  /** Bypass a plugin effect, or put it back in (one undo step). */
+  setPluginBypass: (trackId: string, pluginId: string, bypass: boolean) => void;
+  /** Plugins' settings as read from them (not an undo step: they're the plugins' own). */
+  setPluginStates: (states: ReadonlyMap<string, unknown>) => void;
   /**
    * Set a clip's expression lane (pitch bend, mod wheel or sustain pedal) to `points` (empty: none).
    * `record`: its own undo step (a drag checkpoint()s once and passes false).
@@ -1328,6 +1339,58 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
       return newTrack.id;
     },
+
+    addPluginTrack: (url, name) => {
+      const made = makeTrack('plugin', get().tracks, name);
+      const track: Track = { ...made, plugin: { id: uid('plugin'), url, name } };
+      set((s) => ({ tracks: [...s.tracks, track], selectedTrackId: track.id, isInspectorOpen: true, ...pushPast(s) }));
+      return track.id;
+    },
+
+    addTrackPluginFx: (trackId, url, name) => {
+      const id = uid('plugin');
+      const s = get();
+      if (!s.tracks.some((t) => t.id === trackId)) return null;
+      set((st) => ({
+        tracks: st.tracks.map((t) => (t.id === trackId ? { ...t, pluginFx: [...(t.pluginFx ?? []), { id, url, name }] } : t)),
+        ...pushPast(st),
+      }));
+      return id;
+    },
+
+    removeTrackPluginFx: (trackId, pluginId) =>
+      set((s) => ({
+        tracks: s.tracks.map((t) => {
+          if (t.id !== trackId || !t.pluginFx) return t;
+          const left = t.pluginFx.filter((p) => p.id !== pluginId);
+          const { pluginFx: _gone, ...rest } = t;
+          return left.length ? { ...t, pluginFx: left } : rest;
+        }),
+        ...pushPast(s),
+      })),
+
+    setPluginBypass: (trackId, pluginId, bypass) =>
+      set((s) => ({
+        tracks: s.tracks.map((t) =>
+          t.id === trackId && t.pluginFx ? { ...t, pluginFx: t.pluginFx.map((p) => (p.id === pluginId ? { ...p, bypass } : p)) } : t
+        ),
+        ...pushPast(s),
+      })),
+
+    setPluginStates: (states) =>
+      set((s) => {
+        let changed = false;
+        const withState = (p: WamPlugin) => {
+          if (!states.has(p.id)) return p;
+          changed = true;
+          return { ...p, state: states.get(p.id) };
+        };
+        const tracks = s.tracks.map((t) => {
+          if (!(t.plugin && states.has(t.plugin.id)) && !t.pluginFx?.some((p) => states.has(p.id))) return t;
+          return { ...t, ...(t.plugin ? { plugin: withState(t.plugin) } : {}), ...(t.pluginFx ? { pluginFx: t.pluginFx.map(withState) } : {}) };
+        });
+        return changed ? { tracks } : s;
+      }),
 
     setTrackOutput: (trackId, busId) => {
       const s = get();
@@ -2483,6 +2546,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 /** Everything a project file or autosave stores, read from the store now. */
 // Positions are counted (and typed) in the song's time signatures
 setSongMeter(songMeterOf(useTimelineStore.getState()));
+// Plugins' settings, read from them every few seconds, are kept on their tracks (and so saved)
+onWamStates((states) => useTimelineStore.getState().setPluginStates(states));
 useTimelineStore.subscribe((state, prev) => {
   if (state.meter !== prev.meter || state.meterPoints !== prev.meterPoints) setSongMeter(songMeterOf(state));
 });

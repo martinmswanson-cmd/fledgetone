@@ -2,7 +2,7 @@ import { normalizeExpression } from './expression';
 import { compSegments, normalizeTakes } from './takes';
 import { TOTAL_BARS } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
-import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo } from './timelineTypes';
+import type { CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
@@ -216,6 +216,11 @@ function parseTrack(v: unknown): Track {
     ...(frozen ? { frozen } : {}),
     // Optional: the bus it plays into (checked against the other tracks after they're read)
     ...(isStr(v.output) && v.output ? { output: v.output } : {}),
+    // Optional: Web Audio Module plugins (the instrument of a Plugin track, and plugin effects)
+    ...(parsePlugin(v.plugin) ? { plugin: parsePlugin(v.plugin)! } : {}),
+    ...(Array.isArray(v.pluginFx) && v.pluginFx.some((p) => parsePlugin(p))
+      ? { pluginFx: v.pluginFx.map(parsePlugin).filter((p): p is WamPlugin => !!p).slice(0, 16) }
+      : {}),
     // Optional: its stem group for Intensity
     ...(isStr(v.stemGroup) && v.stemGroup.trim() ? { stemGroup: v.stemGroup.trim().slice(0, 40) } : {}),
     // Optional: the folder it's in
@@ -231,6 +236,18 @@ function parseTrack(v: unknown): Track {
       : {}),
     // Optional: a dialogue / SFX proxy the other tracks duck under
     ...(isObj(v.duckProxy) && isNum(v.duckProxy.depth) ? { duckProxy: { depth: Math.max(1, Math.min(30, v.duckProxy.depth)) } } : {}),
+  };
+}
+
+/** A plugin on a track, or null if it's unreadable. */
+function parsePlugin(v: unknown): WamPlugin | null {
+  if (!isObj(v) || !isStr(v.id) || !isStr(v.url) || !/^https?:\/\//.test(v.url)) return null;
+  return {
+    id: v.id,
+    url: v.url,
+    name: isStr(v.name) && v.name ? v.name.slice(0, 40) : 'Plugin',
+    ...(v.state !== undefined && v.state !== null ? { state: v.state } : {}),
+    ...(v.bypass === true ? { bypass: true } : {}),
   };
 }
 

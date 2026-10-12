@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints } from 'lucide-react';
+import { Plug, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints } from 'lucide-react';
 import { busTargets, isBus } from '../../store/buses';
 import { useTimelineStore } from '../../store/timelineStore';
+import { useUiStore } from '../../store/uiStore';
 import { TRACK_COLORS } from '../../store/timelineTypes';
 import { foldersOf } from '../../store/folders';
 import { MenuItem } from './ClipContextMenu';
@@ -35,6 +36,7 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
   const track = tracks.find((t) => t.id === menu.trackId);
   if (!track) return null;
   const s = useTimelineStore.getState();
+  const ui = useUiStore.getState();
   const index = tracks.indexOf(track);
   const folders = foldersOf(tracks).filter((f) => f.id !== track.folder?.id);
   const run = (action: () => unknown) => () => {
@@ -82,6 +84,29 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
             onClick: run(() => s.groupIntoBus(selectedTrackIds(track.id))),
           },
         ]),
+    ...(track.plugin
+      ? [{ key: 'plugin-open', label: `Open ${track.plugin.name}`, icon: <Plug className="w-3.5 h-3.5 text-fuchsia-300" />, onClick: run(() => ui.setPluginWindow({ trackId: track.id, pluginId: track.plugin!.id })), divider: true }]
+      : []),
+    ...(isBus(track)
+      ? []
+      : [
+          {
+            key: 'plugin-add',
+            label: 'Add plugin effect (WAM)…',
+            icon: <Plug className="w-3.5 h-3.5" />,
+            onClick: run(() => ui.setPluginDialog({ trackId: track.id })),
+            divider: !track.plugin,
+          },
+        ]),
+    ...(track.pluginFx ?? []).flatMap((p) => [
+      {
+        key: `fx-open-${p.id}`,
+        label: `Open ${p.name}${p.bypass ? ' (bypassed)' : ''}`,
+        icon: <Plug className="w-3.5 h-3.5 text-fuchsia-300" />,
+        onClick: run(() => ui.setPluginWindow({ trackId: track.id, pluginId: p.id })),
+      },
+      { key: `fx-remove-${p.id}`, label: `Remove ${p.name}`, icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(() => s.removeTrackPluginFx(track.id, p.id)) },
+    ]),
     track.frozen
       ? { key: 'freeze', label: 'Unfreeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => unfreezeTrack(track.id)), divider: true }
       : { key: 'freeze', label: 'Freeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => void freezeTrack(track.id)), disabled: isBus(track) || !canFreeze(track.id), divider: true },

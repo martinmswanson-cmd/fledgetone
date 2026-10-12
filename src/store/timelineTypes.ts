@@ -443,6 +443,22 @@ export interface Track {
   folder?: TrackFolder;
   /** The bus track it plays into (see buses.ts); absent: straight to the master */
   output?: string;
+  /** A Plugin track's instrument: a Web Audio Module loaded from its URL (see wamHost.ts) */
+  plugin?: WamPlugin;
+  /** Web Audio Module effects, in order, between the instrument and the track's own inserts */
+  pluginFx?: WamPlugin[];
+}
+
+/** A Web Audio Module (WAM 2) plugin on a track, loaded from `url` with its saved settings. */
+export interface WamPlugin {
+  id: string;
+  /** The plugin's module (its index.js), whose default export is the WebAudioModule */
+  url: string;
+  name: string;
+  /** Its settings, as the plugin gives them (getState) */
+  state?: unknown;
+  /** Skipped: the sound passes it by */
+  bypass?: boolean;
 }
 
 /** The reference video a project scores to (see videoStore): kept in the browser by `key`. */

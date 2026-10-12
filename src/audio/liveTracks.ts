@@ -5,12 +5,13 @@ import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { PumpClock, TrackStrip } from './effects/trackStrip';
 import { createAutomationSchedule } from './automationSchedule';
 import type { AutomationSchedule } from './automationSchedule';
-import { createInstrument, safely } from './instruments';
+import { createInstrument, safely, trackInstrumentOptions } from './instruments';
+import { pluginEpoch } from './wamHost';
 import { isDrumKind } from './instrumentCatalog';
 import { barToTicks, getLiveTempo } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { NativeBus } from './presets/native';
-import type { AutomationPoint, Track } from '../store/timelineTypes';
+import type { AutomationPoint, Track, WamPlugin } from '../store/timelineTypes';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import type { LiveTrackView } from '../store/freeze';
 import { loadSamples } from './samplers/samplerManager';
@@ -50,7 +51,16 @@ let automation: AutomationSchedule | null = null;
 const liveAutomation = () =>
   (automation ??= createAutomationSchedule(liveMix.bus.context.transport, (trackId) => live.get(trackId)?.strip, { tempo: getLiveTempo }));
 
-const sampleKey = (track: Track) => (track.sample ? `${track.sample.root}|${track.sample.soundId ?? track.sample.dataUrl}` : undefined);
+/**
+ * What the instrument is built from that a change of means building it again: the Sampler's
+ * sound, and the plugins (which, not their settings: those change inside them), as allowed now.
+ */
+const pluginKey = (p: WamPlugin) => `${p.id}@${p.url}${p.bypass ? '~' : ''}`;
+const sampleKey = (track: Track) => {
+  const sample = track.sample ? `${track.sample.root}|${track.sample.soundId ?? track.sample.dataUrl}` : '';
+  const plugins = [track.plugin, ...(track.pluginFx ?? [])].filter((p): p is WamPlugin => !!p);
+  return sample || plugins.length ? `${sample}#${plugins.map(pluginKey).join(',')}#${plugins.length ? pluginEpoch() : ''}` : undefined;
+};
 
 /** Note when a track's current instrument fails to download its samples, so it can be rebuilt later. */
 function watchDownload(lt: LiveTrack): void {
@@ -135,7 +145,7 @@ export function syncLiveTracks(tracks: Track[]): void {
         instrumentKey: track.instrumentKey,
         sampleUrl: sampleKey(track),
         strip,
-        instrument: createInstrument(track.instrumentKey, strip.input, { sample: track.sample, slicer: track.slicer, synth: track.synth }),
+        instrument: createInstrument(track.instrumentKey, strip.input, trackInstrumentOptions(track)),
         applied: null,
         audible: true,
         failed: false,
@@ -146,7 +156,7 @@ export function syncLiveTracks(tracks: Track[]): void {
     } else if (lt.instrumentKey !== track.instrumentKey || lt.sampleUrl !== sampleKey(track)) {
       lt.instrument.releaseAll();
       lt.instrument.dispose();
-      lt.instrument = createInstrument(track.instrumentKey, lt.strip.input, { sample: track.sample, slicer: track.slicer, synth: track.synth });
+      lt.instrument = createInstrument(track.instrumentKey, lt.strip.input, trackInstrumentOptions(track));
       lt.instrumentKey = track.instrumentKey;
       lt.sampleUrl = sampleKey(track);
       watchDownload(lt);
@@ -261,7 +271,7 @@ export function reloadInstrument(key: InstrumentKey): void {
     if (lt.instrumentKey !== key || !lt.failed) continue;
     safely(() => lt.instrument.releaseAll());
     lt.instrument.dispose();
-    lt.instrument = createInstrument(key, lt.strip.input, { sample: lt.applied?.sample, slicer: lt.applied?.slicer, synth: lt.applied?.synth });
+    lt.instrument = createInstrument(key, lt.strip.input, trackInstrumentOptions(lt.applied));
     watchDownload(lt);
   }
 }

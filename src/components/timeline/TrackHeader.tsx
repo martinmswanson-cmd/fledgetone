@@ -1,9 +1,10 @@
 import React from 'react';
+import { useUiStore } from '../../store/uiStore';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { AutomationParam, Track } from '../../store/timelineTypes';
 import { AUTOMATION_PARAMS, snapBar } from '../../store/timelineTypes';
-import { Plus, Sliders, Loader2, Spline } from 'lucide-react';
+import { Plug, Plus, Sliders, Loader2, Spline } from 'lucide-react';
 import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
 import type { TrackMenuState } from './TrackMenu';
@@ -236,6 +237,20 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
             <span className="shrink-0 px-1 rounded bg-slate-400/20 text-[8px] font-mono uppercase text-slate-200" title={`A bus: ${inputs} track${inputs === 1 ? '' : 's'} play${inputs === 1 ? 's' : ''} into it. Right-click a track to route it here.`}>
               bus · {inputs}
             </span>
+          )}
+          {(track.plugin || track.pluginFx?.length) && (
+            <button
+              type="button"
+              className="shrink-0 p-0.5 rounded bg-fuchsia-400/20 text-fuchsia-100 hover:bg-fuchsia-400/35"
+              title={`Plugins: ${[track.plugin, ...(track.pluginFx ?? [])].filter(Boolean).map((p) => p!.name).join(', ')}. Click to open ${(track.plugin ?? track.pluginFx![0]).name}; right-click the track for the rest.`}
+              onClick={(e) => {
+                e.stopPropagation();
+                useUiStore.getState().setPluginWindow({ trackId: track.id, pluginId: (track.plugin ?? track.pluginFx![0]).id });
+              }}
+            >
+              <Plug className="w-2.5 h-2.5" />
+              <span className="sr-only">Open plugin</span>
+            </button>
           )}
           {busName && (
             <span className="shrink-0 max-w-[64px] truncate px-1 rounded bg-slate-400/15 text-[8px] font-mono text-slate-300" title={`Plays into the bus ${busName}`}>
