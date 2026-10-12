@@ -445,13 +445,13 @@ Drag a pad or a pattern chip (**Lazy Beat**, **Hats Intro**, **Walking Bass**, *
 
 The **Mixer** tab of the bottom panel shows every track side by side as a mixing desk: a level meter (after the fader: green, amber near the top, red at the very top), a fader, pan, the reverb (**REV**) and delay (**DLY**) sends, **M**ute and **S**olo, and which inserts are on. The master fader is on the right. These are the same settings as the track headers and the Inspector; each drag is one Undo step and a double-click resets. Click a track's name to open it in the Inspector for its inserts, EQ and automation.
 
-**Spectrum**: right of the master fader, the live spectrum of everything you hear (lows on the left, highs on the right). Pick its style from the menu above it, and it's remembered:
-- **Bars**: the classic readout.
-- **Gomo-Fu crew**: a row of Bo and Slate. Each listens to its own slice of the sound and stands taller the louder it gets.
-- **Mochi Bo**: one big Bo whose top wobbles with the spectrum (lows at his sides, highs on his crown). He squashes on the bass, his eyes widen on the highs and he blushes when it's loud.
-- **Cat**: ears perk up on the highs, eyes open with the mids, whiskers twitch with their slice of the sound, mouth opens on the bass.
-- **Frog**: throat puffs on the bass, ripples spread on the mids, eyes pop on the highs.
-- **Two birds**: a wire that shakes with the spectrum and two birds riding it, singing notes when it gets loud.
+**Spectrum**: right of the master fader, the live spectrum of everything you hear (lows on the left, highs on the right), drawn in the app's own neon colours: purple for the lows, through cyan and green, to amber for the highs. Pick its style from the menu above it, and it's remembered:
+- **LED bars**: green, amber and red segments like the meters, with cyan peaks that fall slowly.
+- **Gomo-Fu crew**: a row of Bo and Slate. Each listens to its own slice of the sound: it stands taller the louder that slice gets, the band round its middle lights up like a meter, and a little diamond marks its highest point.
+- **Mochi Bo**: one big Bo with the spectrum glowing round his head (lows at his sides, highs on his crown). He squashes on the bass, the band round his middle lights from the centre out with the loudness, his eyes widen on the highs and he blushes when it's loud.
+- **Cat**: a neon cat whose ears are meters for the highs, whose whiskers trace the spectrum, whose mouth opens on the bass and whose paws tap on the beat.
+- **Frog**: a frog on a lily pad ringed by the spectrum. Its throat puffs on the bass, ripples spread on the mids, its eyes pop and the fireflies glow on the highs.
+- **Two pigeons**: the workshop's two pigeons, one faceted and one in pixels, standing on a bar of light in front of a chunky pixel spectrum. They bob their heads on the beat and sing pixel notes when it gets loud.
 
 ### Track headers
 
@@ -642,7 +642,7 @@ Click **Export**. The dialog has four choices, and remembers them in this browse
 
 ### Video (MP4)
 
-Choose **Export: Video (MP4)** to turn the song (or the loop region) into a video for YouTube, socials or a game's trailer: 1280×720 at 30 frames a second, with the mix as its sound and a visualizer as its picture. It shows the project's name, a spectrum that moves with the music, the whole song's waveform with a playhead, the section you're in (from your markers) and the time. It's made faster than real time: a 30-second song takes about 20 seconds. **Visualizer style** draws the spectrum as plain bars or as one of the characters from the Mixer's spectrum (Gomo-Fu crew, Mochi Bo, Cat, Frog, Two birds). **Normalize** sets it to -14 LUFS, the loudness YouTube plays at.
+Choose **Export: Video (MP4)** to turn the song (or the loop region) into a video for YouTube, socials or a game's trailer: 1280×720 at 30 frames a second, with the mix as its sound and a visualizer as its picture. It shows the project's name, a spectrum that moves with the music, the whole song's waveform with a playhead, the section you're in (from your markers) and the time. It's made faster than real time: a 30-second song takes about 20 seconds. **Visualizer style** draws the spectrum in any of the Mixer's spectrum styles: LED bars, or a character (Gomo-Fu crew, Mochi Bo, Cat, Frog, Two pigeons). **Normalize** sets it to -14 LUFS, the loudness YouTube plays at.
 
 Videos need Chrome or Edge (or another browser with WebCodecs) on a site served over https. On Windows and Mac they're H.264 with AAC sound, which plays everywhere; where the browser doesn't have those, they're VP9 or AV1 with Opus sound, which browsers, VLC, YouTube and Discord play but some older players don't.
 
