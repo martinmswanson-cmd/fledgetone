@@ -299,7 +299,7 @@ function parseTrack(v: unknown): Track {
 
 /** A plugin on a track, or null if it's unreadable. */
 function parsePlugin(v: unknown): WamPlugin | null {
-  if (!isObj(v) || !isStr(v.id) || !isStr(v.url) || !/^https?:\/\//.test(v.url)) return null;
+  if (!isObj(v) || !isStr(v.id) || !isStr(v.url) || !/^(https?:\/\/|builtin:)/.test(v.url)) return null;
   return {
     id: v.id,
     url: v.url,

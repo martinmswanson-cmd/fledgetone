@@ -60,6 +60,13 @@ export const PluginBrowser: React.FC<{ trackId: string | null; category?: string
       !!e.info.tags?.includes(group);
     const list = entries.filter((e) => (words.length ? true : inGroup(e)) && words.every((w) => `${e.info.name} ${e.info.category} ${e.info.about} ${e.family.label}`.toLowerCase().includes(w)));
     if (group === RECENT && !words.length) list.sort((a, b) => recent.indexOf(a.key) - recent.indexOf(b.key));
+    // A search shows plugins named for it first, then those of that kind, then the rest
+    const rank = (e: Entry) => {
+      const name = e.info.name.toLowerCase();
+      if (words.every((w) => name.includes(w))) return 0;
+      return words.every((w) => `${name} ${e.info.category}`.toLowerCase().includes(w)) ? 1 : 2;
+    };
+    if (words.length) list.sort((a, b) => rank(a) - rank(b));
     return list;
   }, [entries, query, group, favourites, recent]);
 
