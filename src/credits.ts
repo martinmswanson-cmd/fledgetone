@@ -14,6 +14,7 @@ export interface SampleCredit {
 }
 
 const CC_BY = '[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)';
+const CC0 = '[CC0](https://creativecommons.org/publicdomain/zero/1.0/) (public domain)';
 const CC_BY_SA = '[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/)';
 const NB = 'https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/';
 const GLEITZ = "Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts)";
@@ -32,6 +33,16 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     prefixes: [`${NB}violin/`, `${NB}harp/`, `${NB}trumpet/`, `${NB}french-horn/`, `${NB}flute/`],
     samples: 'Versilian Studios Orchestra (VSCO 2), via [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments)',
     licence: CC_BY,
+  },
+  {
+    prefixes: ['bos-beat-box-samples/cello-sustain/', 'bos-beat-box-samples/cello-spiccato/'],
+    samples: 'Cello section from the [Versilian Community Sample Library, VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: ['bos-beat-box-samples/guitar-black/', 'bos-beat-box-samples/guitar-green/'],
+    samples: 'Electric guitars from [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars) by Karoryfer Lecolds, recorded by Brian Wood (converted to MP3, hosted with the app)',
+    licence: CC0,
   },
   { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/MusyngKite/'], samples: `Musyng Kite SoundFont, rendered by ${GLEITZ}`, licence: CC_BY_SA },
   { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/'], samples: `FluidR3 GM SoundFont by Frank Wen, rendered by ${GLEITZ}`, licence: CC_BY },

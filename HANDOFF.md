@@ -105,6 +105,7 @@ Run all five checks before every commit.
 | Drum Rack, Multi Sampler | `src/store/sampleKits.ts` (pure, tested: pads, `mapZones`, `zoneFor`, names to roots), `src/audio/presets/sampleKits.ts` (buffer-source voices; a WaveShaper with no curve was silent live, so the drive stage is patched in only when used), `SampleKitPanels.tsx` |
 | CC lanes, per-note expression, MPE | `Clip.expression.cc<n>` lanes (`laneCc`, `lanesOf` in `expression.ts`); `src/store/ccLanes.ts` turns them into automation (`withControllerLanes`, used live in `connectTimelineToAudio` and in `renderTracks`); plugins get CC via `TrackInstrument.cc`. `NoteEvent.expr` (`noteExpression.ts`), played by `playExpressive` in `scheduler.ts` through `TrackInstrument.noteVoice` (Multi Sampler) or a whole-instrument bend; MPE input in `liveInput.ts` (`mpeNotes`), recorded by `Take.noteControl` |
 | Notation, MusicXML | `src/store/notation.ts` (pure, tested: `notate`, `spell`, `musicXml`), `NotationView.tsx` (VexFlow with the Bravura font, imported statically so the one-file build has it) |
+| Real instruments (hosted recordings, loudness layers, takes, guitar amps) | `hosted` in `instrumentCatalog.ts` (files in `public/bos-beat-box-samples`, rebuilt by `scripts/real-samples/`); `SampleSource.layers` played by a sampler per layer and take (`createSamplerVoice`); `AMPS` in `samplerManager.ts` (built in `shapingChain`); the site must serve the folder next to the page |
 | App state, undo, project load | `src/store/timelineStore.ts`, `timelineTypes.ts` |
 | Project file format, autosave | `src/store/project.ts` |
 | Timeline UI | `src/components/timeline/` |
@@ -119,6 +120,10 @@ mono, and so on).
 - **The welcome dialog covers a fresh page.** Browser tests start from an empty browser, so set
   `localStorage['bosBeatbox.welcomeSeen'] = 'true'` first (Playwright `addInitScript`) or the
   dialog sits on top of what they click.
+
+- **Tone's "ended" comes early in an export.** The offline clock runs ahead of the render, so a
+  source's `onended` can fire before it has sounded. Clean up per-note nodes when the source is
+  disposed (exportWav.ts disposes them once the render is past them), never in `onended`.
 
 - **Live and export must sound the same.** Every sound path is built for both the live context and
   the offline export context. Change one, check both.

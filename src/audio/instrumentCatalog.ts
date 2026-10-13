@@ -6,7 +6,7 @@
  *   synth   - generated live (no download)
  *   drums   - a drum kit on the GM-style drum note map (Kick / Snare / Hats / Cowbell)
  *   fx      - transition effects (risers, impacts...), one fixed row each, like a drum kit's (FX_ROWS)
- *   sampled - multi-sampled recordings streamed from free public libraries (needs internet)
+ *   sampled - multi-sampled recordings streamed from free public libraries, or hosted with the app (needs internet)
  *   custom  - the Sampler: plays a sound the user loads from their own computer
  *   slicer  - the Slicer: a sound cut into slices, one per key from C3 up (vocal chops)
  *   rack    - the Drum Rack: 16 pads, each its own sound with its own effects
@@ -18,6 +18,8 @@ import { SAMPLE_TUNING } from './sampleTuning';
 export const INSTRUMENT_KEYS = [
   // original set
   'drums', 'bass', 'keys', 'brass', 'piano', 'violin', 'cello', 'guitar',
+  // real recordings at several loudnesses, hosted with the app
+  'realCello', 'realCelloShort', 'realGuitar', 'realCrunchGuitar', 'realLeadGuitar', 'realHollowGuitar',
   // phase 3 additions
   'drumMachine', 'taiko',
   'subBass', 'bass808', 'bassGuitar',
@@ -110,6 +112,15 @@ export interface SampleSource {
   sustain?: { from: number; to: number; hold: number };
   /** Cents to re-pitch each recording by when it loads (out-of-tune recordings; see sampleTuning.ts). */
   tune?: Record<string, number>;
+  /**
+   * Recordings of each note played at several loudnesses, softest first: the highest velocity
+   * (0..1) each plays up to (the last is 1). Their names in `samples` are `note|layer|take`; a
+   * note's takes at one loudness play in turn (round robin), so a repeated note never sounds
+   * exactly the same twice.
+   */
+  layers?: number[];
+  /** Where to fetch the files instead when `baseUrl` can't serve them (the page opened from a file, or hosted elsewhere). */
+  fallbackUrl?: string;
 }
 
 export interface InstrumentDef {
@@ -205,12 +216,36 @@ function nb(folder: string, files: string[], release = 1, onset?: number): Sampl
   return { baseUrl: `https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/${folder}/`, samples, release, onset };
 }
 
+/** The site the app is published on, which hosts the recordings in public/bos-beat-box-samples too. */
+const SITE_SAMPLES = 'https://twobirdsworkshop.com/bos-beat-box-samples/';
+
+/**
+ * Recordings hosted with the app (public/bos-beat-box-samples/<folder>, converted by
+ * scripts/real-samples/README.md): the MIDI notes `notes`, each at the loudnesses `layers` (see
+ * SampleSource.layers) in `takes` takes, as <note>_<layer>_<take>.mp3 ("Cs3" = C#3). Next to the
+ * page (relative), else from the site.
+ */
+function hosted(folder: string, notes: number[], layers: number[], takes: number, release: number): SampleSource {
+  const samples: Record<string, string> = {};
+  for (const m of notes) {
+    const n = noteName(m);
+    for (let l = 0; l < layers.length; l++) for (let t = 0; t < takes; t++) samples[`${n}|${l}|${t}`] = `${n.replace('#', 's')}_${l}_${t}.mp3`;
+  }
+  return { baseUrl: `bos-beat-box-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release, layers };
+}
+/** The cello section's notes: every third or fourth semitone from the open C string up */
+const CELLO_NOTES = [36, 40, 43, 47, 50, 53, 57, 60, 64, 67, 71, 74, 77];
+/** The electric guitars' notes: every third semitone from the open low E */
+const GUITAR_NOTES = Array.from({ length: 16 }, (_, i) => 40 + i * 3);
+
 /**
  * Extra processing that turns a recording into the instrument: the erhu's nasal, vibrato-laden
  * bowing, an amp for the electric guitar's dull direct recording, a brighter acoustic guitar, the
  * mandolin's doubled strings. See samplerManager.ts.
  */
-export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin';
+export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin' | AmpModel;
+/** Guitar amps for the real electric guitar recordings (direct from the pickup): see samplerManager.ts. */
+export type AmpModel = 'cleanAmp' | 'crunchAmp' | 'leadAmp' | 'jazzAmp';
 
 /** The solo violin set, every file it has (so no note is stretched more than a few semitones). */
 const VIOLIN_FILES = ['A3', 'C4', 'E4', 'G4', 'A4', 'C5', 'E5', 'G5', 'A5', 'C6', 'E6', 'G6', 'A6', 'C7'];
@@ -299,6 +334,30 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   cello: {
     key: 'cello', name: 'Cello', blurb: 'Solo cello, close and dry', color: '#ea580c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 76],
     samples: { ...soundfont('MusyngKite', 'cello', 36, 76, 3, 0.6), sustain: SOUNDFONT_SUSTAIN, onset: -6 }, gain: 22, taper: [57, 6], tone: { presence: 4, mud: -2 },
+  },
+  realCello: {
+    key: 'realCello', name: 'Cellos (Real)', blurb: 'A recorded cello section, bowed with vibrato: soft and loud takes', color: '#c2410c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
+    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 3, taper: [65, 4],
+  },
+  realCelloShort: {
+    key: 'realCelloShort', name: 'Cellos Short (Real)', blurb: 'Recorded cellos, short bouncing bow strokes: ostinatos, drive', color: '#9a3412', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
+    samples: hosted('cello-spiccato', CELLO_NOTES, [0.55, 1], 2, 0.25), gain: 7, taper: [65, 4],
+  },
+  realGuitar: {
+    key: 'realGuitar', name: 'Electric Guitar (Real)', blurb: 'A recorded electric through a clean amp: soft, medium and hard picking', color: '#e11d48', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
+    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.3), shaping: 'cleanAmp', gain: -4, taper: [64, 2],
+  },
+  realCrunchGuitar: {
+    key: 'realCrunchGuitar', name: 'Crunch Guitar (Real)', blurb: 'The recorded electric through a pushed amp: rock rhythm', color: '#be123c', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
+    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.25), shaping: 'crunchAmp', gain: -8.5, taper: [64, 2],
+  },
+  realLeadGuitar: {
+    key: 'realLeadGuitar', name: 'Distortion Guitar (Real)', blurb: 'The recorded electric through a high-gain amp: riffs, power chords, leads', color: '#9f1239', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
+    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.2), shaping: 'leadAmp', gain: -14, taper: [64, 2],
+  },
+  realHollowGuitar: {
+    key: 'realHollowGuitar', name: 'Hollow-Body Guitar (Real)', blurb: 'A recorded hollow-body electric through a warm clean amp: jazz, soul, rockabilly', color: '#a16207', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
+    samples: hosted('guitar-green', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.35), shaping: 'jazzAmp', gain: 4, taper: [64, 2],
   },
   strings: {
     key: 'strings', name: 'Strings', blurb: 'String section: pads and swells', color: '#fb7185', category: 'Guitars & Strings', kind: 'sampled', range: [36, 96],
