@@ -209,9 +209,20 @@ Web Audio keeps processing every connected node, even silent ones, and Tone's `S
   with no Signals.
 - Per-note instruments make their nodes when a note starts and let them go when it ends;
   polyphonic Tone synths free idle voices (`poly.ts`).
+- The audio thread's cost is mostly a fixed price per node, so fewer nodes is the whole game.
+  Recorded instruments play each note as one buffer source and one gain made straight on the
+  browser's own context (`samplerManager.ts`, `nativeNodes.ts`), skipping the extra nodes and
+  graph walks Tone's wrapper adds; their expressive filters are shared by notes of similar
+  brightness. The parametric EQ builds only the bands in use, a send joins the track only while
+  it's turned up, and the meter and spectrum analysers join only while something on screen reads
+  them (`trackStrip.ts`).
 - The scheduler keeps one Transport event per tick, not per note, and updates incrementally.
 - React components subscribe to the smallest slice of state they need; things that move every
-  frame (the playhead, meters) are drawn by small components of their own.
+  frame (the playhead, meters) are drawn by small components of their own, on one shared frame
+  loop at a rate each asks for (`frameTicker.ts`, `playheadReadout.ts`), moving with CSS
+  transforms and never reading layout (`scrollLeft`, `clientWidth`) in a frame.
+- The lag badge (`perfMonitor.ts`) also checks that the audio clock keeps up with the wall
+  clock, which catches the audio thread overloading even when the page itself is smooth.
 
 ## Where to start for common changes
 

@@ -744,20 +744,28 @@ export function createLightGate(): LightGate {
 }
 
 export interface LightPeq extends LightInsert {
+  /** How many bands it has filters for (the bands switched on when it was made). */
+  count: number;
+  /** The bands that are on, in order, go to its filters; there must be `count` of them. */
   set: (bands: readonly PeqBand[], ramp: number) => void;
 }
 
+/** How many of `bands` are switched on: the filters a parametric EQ for them needs. */
+export const peqActiveBands = (bands: readonly (PeqBand | undefined)[]): number => bands.filter((b) => b?.on).length;
+
 /**
- * The parametric EQ: PEQ_MAX_BANDS biquads in series, always all patched in. A band that's off (or
- * missing) is a peaking filter at 0 dB, which passes the sound through exactly, so switching bands
- * on and off or changing their shape never re-patches anything.
+ * The parametric EQ: one biquad per band that's on, in series. A band that's off has no filter at
+ * all: a filter left in at 0 dB passes the sound through but still costs as much as any other, and
+ * most tracks use one or two bands of the six (a starter's low cut). Changing a band's shape or
+ * settings just sets its filter; switching a band on or off changes `count`, and the track strip
+ * swaps in a new EQ, crossfading as it does for any insert.
  */
-export function createLightPeq(): LightPeq {
+export function createLightPeq(count: number): LightPeq {
   const input = new Tone.Gain(1);
   const output = new Tone.Gain(1);
   const raw = input.context.rawContext as unknown as BaseAudioContext;
   const setParam = paramSetter(raw);
-  const stages = Array.from({ length: PEQ_MAX_BANDS }, () => {
+  const stages = Array.from({ length: Math.max(1, Math.min(PEQ_MAX_BANDS, count)) }, () => {
     const f = raw.createBiquadFilter();
     blockRate(f);
     f.type = 'peaking';
@@ -776,7 +784,9 @@ export function createLightPeq(): LightPeq {
   return {
     input,
     output,
-    set: (bands, ramp) => {
+    count: stages.length,
+    set: (all, ramp) => {
+      const bands = all.filter((b) => b?.on);
       stages.forEach((f, i) => {
         const b = bands[i];
         const type: BiquadFilterType = b?.on ? BIQUAD_TYPE[b.type] : 'peaking';

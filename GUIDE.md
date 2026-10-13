@@ -645,9 +645,11 @@ Mixer and effect changes, tempo changes and time signatures can be undone with `
 
 ### When playback lags: the performance badge and Clear memory
 
-While the song plays, the app watches for two signs that the computer isn't keeping up: notes reaching the sound engine too late, and the page freezing for a moment. A few of either in a few seconds turns the badge in the header (next to LUFS) into an amber **LAG**, and a warning appears at the top with **Clear memory**. Close the warning with **×** (it stays away until you next press Play). When all is well the badge shows how much memory the page is using (in Chrome).
+While the song plays, the app watches for three signs that the computer isn't keeping up: notes reaching the sound engine too late, the page freezing for a moment, and the sound engine itself falling behind (it can't make the sound as fast as it plays, which you hear as crackles). A few of the first two in a few seconds, or the engine running behind, turns the badge in the header (next to LUFS) into an amber **LAG**, and a warning appears at the top with **Clear memory**. Close the warning with **×** (it stays away until you next press Play). When all is well the badge shows how much memory the page is using (in Chrome).
 
 **Clear memory** (in the warning, or from the badge at any time) lets go of what the app holds but isn't using: downloaded recordings of instruments no track plays, decoded sounds no clip uses, the Instrument Browser's preview players, and any notes left hanging. Everything comes back by itself if needed (an instrument re-downloads when you use it again). Tick **Also empty the undo history** to free the most on a long session, but then earlier edits can't be undone.
+
+Click the badge for the details, including **Audio engine speed** while playing (100% is keeping up). When the engine is what's behind, the warning offers **Use Stable playback** directly; it takes effect after a reload.
 
 If it still lags: **Freeze** the busiest tracks (below), turn on **Stable playback** (Master tab › Playback), and close other tabs and programs.
 

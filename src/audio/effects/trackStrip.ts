@@ -19,6 +19,7 @@ import {
   createLightEq3,
   createLightMbc,
   createLightPeq,
+  peqActiveBands,
   type LightMbc,
   type LightPeq,
   createLightFilter,
@@ -247,17 +248,82 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   duck.connect(bus);
   /** Where the strip plays into: the master bus, or a bus track's strip (setOutput) */
   let output: Tone.InputNode = bus;
-  // The mixer's meter, made when first read (see peak)
-  let meter: AnalyserNode | null = null;
-  let meterData: Float32Array<ArrayBuffer> | null = null;
-  // The EQ's spectrum display, made when first read (see spectrum)
-  let spectrumNode: AnalyserNode | null = null;
-  duck.connect(reverbSend);
+  // The mixer's meter's samples (see peak)
+  const meterData = new Float32Array(512);
   reverbSend.connect(busFx.reverbInput);
   /** Sends to return tracks, by return id (see setSends) */
-  const sends = new Map<string, { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean }>();
-  duck.connect(delaySend);
+  const sends = new Map<string, { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean; link: (need: boolean, ramp: number) => void }>();
   delaySend.connect(busFx.delayInput);
+
+  /**
+   * A send link that exists only while something goes through it. A send at 0 (most of them: a
+   * track sends to one or two effects, if any) still processes every render block and keeps the
+   * effect it feeds busy, and every node costs the audio thread time however little it does. So a
+   * send is joined to the track only while it's turned up or a lane owns it: turned up, it's joined
+   * first (still at 0) and then ramps; turned down to 0, it ramps to silence and is cut once that has
+   * played. In an export (set up once, before anything plays) it's simply joined or not.
+   */
+  const sendLink = (from: Tone.ToneAudioNode | AudioNode, to: Tone.Gain) => {
+    let joined = false;
+    let timer = 0;
+    return (need: boolean, ramp: number) => {
+      window.clearTimeout(timer);
+      if (need && !joined) {
+        Tone.connect(from, to);
+        joined = true;
+      } else if (!need && joined) {
+        const cut = () => {
+          try {
+            Tone.disconnect(from, to);
+          } catch {
+            // Already apart (the send was let go)
+          }
+          joined = false;
+        };
+        if (!barrier) cut();
+        else timer = window.setTimeout(cut, (ramp + 0.05) * 1000 + 50);
+      }
+    };
+  };
+  const reverbLink = sendLink(duck, reverbSend);
+  const delayLink = sendLink(duck, delaySend);
+
+  /**
+   * An analyser read by the screen (the mixer's meter, the EQ's spectrum): joined when first read
+   * and let go a second after the last read, so a track nobody is looking at doesn't feed one.
+   */
+  const screenTap = (fftSize: number, smoothing?: number) => {
+    let node: AnalyserNode | null = null;
+    let lastRead = 0;
+    let timer = 0;
+    const check = () => {
+      if (!node) return;
+      if (performance.now() - lastRead < 1000) {
+        timer = window.setTimeout(check, 500);
+        return;
+      }
+      try {
+        Tone.disconnect(duck, node);
+      } catch {
+        // The strip was let go
+      }
+      node = null;
+      timer = 0;
+    };
+    return (): AnalyserNode => {
+      lastRead = performance.now();
+      if (!node) {
+        node = raw.createAnalyser();
+        node.fftSize = fftSize;
+        if (smoothing !== undefined) node.smoothingTimeConstant = smoothing;
+        duck.connect(node as unknown as Tone.InputNode);
+      }
+      if (!timer) timer = window.setTimeout(check, 500);
+      return node;
+    };
+  };
+  const meterTap = screenTap(512);
+  const spectrumTap = screenTap(4096, 0.75);
 
   let distortion: LightDistortion | null = null;
   let eq: LightEq3 | null = null;
@@ -680,14 +746,15 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         }
         if (!send) {
           const gain = new Tone.Gain(0);
-          if (want.pre) Tone.connect(merge, gain);
-          else duck.connect(gain);
           gain.connect(want.target);
-          send = { gain, writer: writer(gain.gain, 0), target: want.target, pre: want.pre };
+          send = { gain, writer: writer(gain.gain, 0), target: want.target, pre: want.pre, link: sendLink(want.pre ? merge : duck, gain) };
           sends.set(want.id, send);
           version++;
         }
-        if (!owned.has(`send:${want.id}` as AutomationParam)) send.writer.set(want.pre && muted ? 0 : Math.max(0, Math.min(1, want.level)), 0.02);
+        const lane = owned.has(`send:${want.id}` as AutomationParam);
+        const level = want.pre && muted ? 0 : Math.max(0, Math.min(1, want.level));
+        if (!lane) send.writer.set(level, 0.02);
+        send.link(lane || level > 0, 0.02);
       }
     },
     sendTarget: (returnId) => {
@@ -752,10 +819,13 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         version++;
       }
 
-      if (fx.peq?.on) {
-        const fresh = !peq;
-        peq ??= createLightPeq();
-        peq.set(fx.peq.bands, fresh ? 0 : ramp);
+      const peqBands = fx.peq?.on ? peqActiveBands(fx.peq.bands) : 0;
+      if (peqBands > 0) {
+        // A band switched on or off: a new EQ with a filter per band that's on (see createLightPeq)
+        const fresh = !peq || peq.count !== peqBands;
+        if (fresh && peq) retired.push(peq);
+        if (fresh) peq = createLightPeq(peqBands);
+        peq!.set(fx.peq!.bands, fresh ? 0 : ramp);
       } else if (peq) {
         retired.push(peq);
         peq = null;
@@ -897,6 +967,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
       if (!owned.has('reverbSend')) reverbWriter.set(Math.max(0, Math.min(1, track.reverbSend)), ramp);
       if (!owned.has('delaySend')) delayWriter.set(Math.max(0, Math.min(1, track.delaySend)), ramp);
+      reverbLink(owned.has('reverbSend') || track.reverbSend > 0, ramp);
+      delayLink(owned.has('delaySend') || track.delaySend > 0, ramp);
     },
     pumpTrigger: () => pumpTrigger,
     pumpSource: () => pumpSource,
@@ -918,26 +990,15 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       else param.setValueAtTime(g, t);
     },
     spectrum: (out) => {
-      if (!spectrumNode) {
-        spectrumNode = raw.createAnalyser();
-        spectrumNode.fftSize = 4096;
-        spectrumNode.smoothingTimeConstant = 0.75;
-        duck.connect(spectrumNode as unknown as Tone.InputNode);
-      }
-      if (out.length >= spectrumNode.frequencyBinCount) spectrumNode.getFloatFrequencyData(out.subarray(0, spectrumNode.frequencyBinCount) as Float32Array<ArrayBuffer>);
-      return spectrumNode.frequencyBinCount;
+      const node = spectrumTap();
+      if (out.length >= node.frequencyBinCount) node.getFloatFrequencyData(out.subarray(0, node.frequencyBinCount) as Float32Array<ArrayBuffer>);
+      return node.frequencyBinCount;
     },
     mbcReduction: () => mbc?.reduction() ?? null,
     peak: () => {
-      if (!meter) {
-        meter = raw.createAnalyser();
-        meter.fftSize = 1024;
-        meterData = new Float32Array(meter.fftSize);
-        duck.connect(meter as unknown as Tone.InputNode);
-      }
-      meter.getFloatTimeDomainData(meterData!);
+      meterTap().getFloatTimeDomainData(meterData);
       let p = 0;
-      for (let i = 0; i < meterData!.length; i++) p = Math.max(p, Math.abs(meterData![i]));
+      for (let i = 0; i < meterData.length; i++) p = Math.max(p, Math.abs(meterData[i]));
       return p;
     },
     pump: (time, source, fromTrack) => {

@@ -6,6 +6,7 @@ import { liveTrackPeak } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
 import { busTargets, isBus, isReturn, sendTargets } from '../../store/buses';
 import { SpectrumView } from './SpectrumView';
+import { onFrame } from '../frameTicker';
 
 /**
  * Every track side by side as a mixing-desk strip: a level meter, a fader, pan, the reverb and
@@ -16,31 +17,36 @@ import { SpectrumView } from './SpectrumView';
 const vertical: React.CSSProperties = { writingMode: 'vertical-lr', direction: 'rtl' };
 const db = (v: number) => (v <= -60 ? '-∞' : `${v > 0 ? '+' : ''}${v.toFixed(1)}`);
 
-/** A meter that reads the live peaks itself, each frame, without re-rendering the dialog. */
+/**
+ * A meter that reads the live peaks itself, 30 times a second on the shared frame loop, without
+ * re-rendering the dialog; the page is only touched when the bar has moved.
+ */
 const Meter: React.FC<{ trackId: string | null }> = ({ trackId }) => {
   const bar = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    let raf = 0;
     let held = 0;
-    const tick = () => {
+    let shown = '';
+    return onFrame(() => {
       // Its own analyser only: reading every track's for every meter was N² work a frame
       const p = trackId ? liveTrackPeak(trackId) : 0;
       // Falls back at about 20 dB a second
-      held = Math.max(p, held * 0.92);
+      held = Math.max(p, held * 0.85);
       const dbfs = held > 0 ? 20 * Math.log10(held) : -90;
-      const h = Math.max(0, Math.min(1, (dbfs + 60) / 60));
-      if (bar.current) {
-        bar.current.style.height = `${h * 100}%`;
-        bar.current.style.background = dbfs > -1 ? '#ef4444' : dbfs > -9 ? '#f59e0b' : '#22c55e';
+      const h = Math.round(Math.max(0, Math.min(1, (dbfs + 60) / 60)) * 200) / 2;
+      const color = dbfs > -1 ? '#ef4444' : dbfs > -9 ? '#f59e0b' : '#22c55e';
+      const look = `${h}${color}`;
+      if (bar.current && look !== shown) {
+        shown = look;
+        // Scaled on a layer of its own, not resized: a height change repaints the page's main
+        // layer, a transform only moves pixels the compositor already has
+        bar.current.style.transform = `scaleY(${h / 100})`;
+        bar.current.style.background = color;
       }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    });
   }, [trackId]);
   return (
     <div className="relative w-2 h-36 rounded-sm bg-black/60 overflow-hidden" aria-hidden>
-      <div ref={bar} className="absolute bottom-0 left-0 right-0" style={{ height: 0 }} />
+      <div ref={bar} className="absolute inset-0 origin-bottom" style={{ transform: 'scaleY(0)', willChange: 'transform' }} />
     </div>
   );
 };

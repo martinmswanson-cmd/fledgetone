@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 
 /**
  * Building blocks for instruments made of plain Web Audio nodes, created for each note and let go
@@ -8,9 +9,10 @@ import * as Tone from 'tone';
  * Envelopes and sweeps are parameter automation scheduled with the note, so they are
  * sample-accurate live and in the WAV export alike.
  *
- * Nodes come from the raw context of the output they're given: the WAV export builds instruments
- * in its own OfflineAudioContext. Live, that's standardized-audio-context's wrapper and offline the
- * native context, so only the factory methods both share are used (createOscillator, createGain...).
+ * Nodes are made on the browser's own context under the output they're given (createBus): the
+ * live one, or the WAV export's OfflineAudioContext. Not through Tone's wrapper
+ * (standardized-audio-context), which added a gain to every buffer source and walked the graph
+ * downstream on every connect; per note, both added up (see nativeNodes.ts).
  */
 
 /** An instrument's output gain on the track strip, and the raw context its notes are built in. */
@@ -23,7 +25,15 @@ export interface NativeBus {
 
 export function createBus(output: Tone.InputNode): NativeBus {
   const bus = new Tone.Gain(1).connect(output);
-  return { bus, raw: bus.context.rawContext as unknown as BaseAudioContext, input: bus.input as unknown as AudioNode };
+  // Notes are made on the browser's own context, not through Tone's wrapper (see nativeNodes.ts),
+  // so the bus must be kept in the graph with nothing the wrapper knows of feeding it
+  const letGo = keepActive(bus);
+  const dispose = bus.dispose.bind(bus);
+  bus.dispose = () => {
+    letGo();
+    return dispose();
+  };
+  return { bus, raw: nativeContextOf(bus.context), input: nativeInputOf(bus) };
 }
 
 /** Hz of a note name ("C2", "F#3"). */

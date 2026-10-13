@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { drawSpectrum, isSkin, SPECTRUM_SKINS, type SkinId, type SkinMemory } from '../../audio/spectrumSkins';
 import { readMasterBands, watchMasterSpectrum } from '../../audio/masterSpectrum';
+import { frameRate, onFrame } from '../frameTicker';
 
 /**
  * The live master spectrum, drawn in one of the readout styles (spectrumSkins.ts): plain bars, or
@@ -31,9 +32,9 @@ export const SpectrumView: React.FC<{ className?: string }> = ({ className = '' 
     const stop = watchMasterSpectrum();
     const bands = new Float32Array(BANDS);
     const memory: SkinMemory = {};
-    let raf = 0;
+    /** When the sound was last above silence: a quiet readout slows to a few frames a second. */
+    let lastHeard = 0;
     const frame = (now: number) => {
-      raf = requestAnimationFrame(frame);
       const dpr = window.devicePixelRatio || 1;
       const w = Math.max(1, Math.round(c.clientWidth * dpr));
       const h = Math.max(1, Math.round(c.clientHeight * dpr));
@@ -42,12 +43,15 @@ export const SpectrumView: React.FC<{ className?: string }> = ({ className = '' 
         c.height = h;
       }
       if (!readMasterBands(bands)) bands.fill(0);
+      if (bands.some((b) => b > 0.01)) lastHeard = now;
+      frameRate(frame, now - lastHeard > 1000 ? 4 : 30);
       g.clearRect(0, 0, w, h);
       drawSpectrum(g, skin, { x: 4 * dpr, y: 4 * dpr, w: w - 8 * dpr, h: h - 8 * dpr }, bands, now / 1000, memory);
     };
-    raf = requestAnimationFrame(frame);
+    // 30 a second while there's sound: the scenes are as smooth to the eye, at half the drawing
+    const unlisten = onFrame(frame, 30);
     return () => {
-      cancelAnimationFrame(raf);
+      unlisten();
       stop();
     };
   }, [skin]);

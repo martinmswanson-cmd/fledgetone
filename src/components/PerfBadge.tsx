@@ -5,8 +5,32 @@
 import React, { useRef, useState } from 'react';
 import { Gauge, MemoryStick, TriangleAlert, X } from 'lucide-react';
 import { clearMemory, usePerfStore } from '../audio/perfMonitor';
+import { chosenPlaybackMode, choosePlaybackMode, PLAYBACK_MODE } from '../audio/playbackMode';
 import { Popover } from './Popover';
 import { showToast } from './timeline/toastStore';
+
+/** The audio engine is behind when its clock runs under this share of real time (see perfMonitor.ts). */
+const audioBehind = (speed: number | null) => speed !== null && speed < 0.97;
+
+/** Stable playback (a bigger audio buffer) from the next start; a button while it's off. */
+const StableButton: React.FC = () => {
+  const [chosen, setChosen] = useState(chosenPlaybackMode());
+  if (PLAYBACK_MODE === 'stable') return null;
+  if (chosen === 'stable') return <span className="text-emerald-300">Stable playback is on from the next reload.</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        choosePlaybackMode('stable');
+        setChosen('stable');
+        showToast('Stable playback is on from the next reload (your song is kept)');
+      }}
+      className="h-8 px-3 rounded-md border border-amber-400/70 bg-amber-500/15 text-amber-100 font-semibold hover:bg-amber-500/25"
+    >
+      Use Stable playback
+    </button>
+  );
+};
 
 const runClear = (history: boolean) => {
   const mb = clearMemory({ history });
@@ -35,6 +59,8 @@ export const PerfBadge: React.FC = () => {
   const late = usePerfStore((s) => s.lateNotes);
   const hitches = usePerfStore((s) => s.hitches);
   const worst = usePerfStore((s) => s.worstFrame);
+  const audioSpeed = usePerfStore((s) => s.audioSpeed);
+  const behind = audioBehind(audioSpeed);
   const memory = usePerfStore((s) => s.memoryMB);
   const dismissed = usePerfStore((s) => s.dismissed);
   const [open, setOpen] = useState(false);
@@ -64,6 +90,8 @@ export const PerfBadge: React.FC = () => {
             <span className="text-forge-text tabular-nums">{late}</span>
             <span className="text-forge-muted">Page freezes (4 s)</span>
             <span className="text-forge-text tabular-nums">{hitches}{worst ? `, longest ${worst} ms` : ''}</span>
+            <span className="text-forge-muted">Audio engine speed</span>
+            <span className={`tabular-nums ${behind ? 'text-amber-200' : 'text-forge-text'}`}>{audioSpeed === null ? 'measured while playing' : `${Math.round(audioSpeed * 100)}% of real time`}</span>
             <span className="text-forge-muted">Memory in use</span>
             <span className="text-forge-text tabular-nums">{memory !== null ? `${memory} MB` : 'not shown by this browser'}</span>
           </div>
@@ -93,10 +121,12 @@ export const PerfBadge: React.FC = () => {
             </button>
           </div>
           <p className="text-forge-muted">
-            {late > 0 ? `${late} notes played late` : 'The page froze'}
-            {hitches > 0 && late > 0 ? ` and the page froze ${hitches} times` : ''} in the last few seconds.
+            {behind
+              ? `The audio engine can't keep up (it ran at ${Math.round((audioSpeed ?? 0) * 100)}% of real time), so the sound may crackle. Freeze your busiest tracks, or use Stable playback.`
+              : `${late > 0 ? `${late} notes played late` : 'The page froze'}${hitches > 0 && late > 0 ? ` and the page froze ${hitches} times` : ''} in the last few seconds.`}
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {behind && <StableButton />}
             <button type="button" onClick={() => runClear(false)} className="h-8 px-3 flex items-center gap-1.5 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-cyan-100 font-semibold hover:bg-cyan-500/25">
               <MemoryStick className="w-4 h-4" /> Clear memory
             </button>
