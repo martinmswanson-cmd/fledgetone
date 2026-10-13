@@ -42,7 +42,7 @@ The first time you open Bo's Beatbox it offers a one-minute **tour** and three h
 - **Intermediate: Shape and mix a song**: add an instrument, use the Filter, Pump and reverb, draw automation, use the Mixer, add markers, a build-up and drop, and the loop.
 - **Expert: Pro techniques**: search, the Synth Designer, sidechaining from any track, the Gate, key changes, freezing, the Game preview and game-ready exports, and the fastest shortcuts.
 
-A tutorial lights up the part of the screen to use and dims the rest. Steps marked **Your turn** wait for you to do it and move on by themselves once you have (with a tick); everything else just needs **Next**. The app works normally the whole time, shortcuts included. **Back** goes to the previous step, **Skip** moves past a task you'd rather not do, and the **X** closes the tutorial: **LEARN** then offers to **Resume** where you stopped. Finished tutorials are ticked. Progress is remembered in this browser.
+A tutorial puts a glowing ring round the part of the screen to use, and its card sits in a corner out of the way: it moves only if a menu, picker or dialog you open would end up under it. Drag the card by its top row to put it anywhere, or shrink it to one line with **–** (the line still shows what to do). Steps marked **Your turn** wait for you to do it and move on by themselves once you have (with a tick); everything else just needs **Next**. The app works normally the whole time, shortcuts included. **Back** goes to the previous step, **Skip** moves past a task you'd rather not do, and the **X** closes the tutorial: **LEARN** then offers to **Resume** where you stopped. Finished tutorials are ticked. Progress is remembered in this browser.
 
 ### Search
 
