@@ -20,25 +20,29 @@ import { FX_NOTES } from '../audio/instrumentCatalog';
 
 const { beat, melody, broken, stabs, pulse, power, lowCut, highCut, peq, EQ, human, glue, drumBus, inSpace, ROOM, STUDIO, HALL, dur } = KIT;
 
-type Group = 'Ambient' | 'Percussion' | 'Tension' | 'Climax';
+export type Group = 'Ambient' | 'Percussion' | 'Tension' | 'Climax';
 /** A track in a stem group */
-const grouped = (t: Track, stemGroup: Group): Track => ({ ...t, stemGroup });
+export const grouped = (t: Track, stemGroup: Group): Track => ({ ...t, stemGroup });
 
-interface GameSetup {
+export interface GameSetup {
   /** The song's key (for the stingers): root 0 = C */
   key: [root: number, mode: 'major' | 'minor'];
-  /** Transition rules between states by section name ('*': from any state) */
+  /** Transition rules between states by section name ('*': from any state, or into each other state) */
   rules?: Array<[from: string, to: string, rule: TransitionRule]>;
   stingers: StingerKind[];
 }
 
 /** The starter with its game parts: stingers in its key, and transitions between its sections. */
-function gameReady(p: ProjectSnapshot, setup: GameSetup): ProjectSnapshot {
+export function gameReady(p: ProjectSnapshot, setup: GameSetup): ProjectSnapshot {
   const key = keyOf(...setup.key);
   const stingers = setup.stingers.reduce<NonNullable<ProjectSnapshot['stingers']>>((all, kind) => [...all, createStinger(kind, key, all)], []);
   const idOf = (name: string) => (name === '*' ? ANY_STATE : p.markers?.find((m) => m.name === name)?.id);
   const transitions: Record<string, TransitionRule> = {};
-  for (const [from, to, rule] of setup.rules ?? []) {
+  // A rule into any state ('*' as the target) is a rule into each of the others
+  const expanded = (setup.rules ?? []).flatMap(([from, to, rule]): Array<[string, string, TransitionRule]> =>
+    to === '*' ? (p.markers ?? []).filter((m) => m.name !== from).map((m): [string, string, TransitionRule] => [from, m.name, rule]) : [[from, to, rule]]
+  );
+  for (const [from, to, rule] of expanded) {
     const a = idOf(from);
     const b = idOf(to);
     if (!a || !b) throw new Error(`no section ${a ? to : from}`);
