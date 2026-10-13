@@ -113,7 +113,7 @@ export const PLUGIN_CREDITS: PluginCredit[] = [
   { family: 'open303', made: '[Open303](https://github.com/RobinSchmidt/Open303) by Robin Schmidt', licence: MIT },
   {
     family: 'mutable',
-    made: 'Plaits, Rings, Elements and Clouds by Emilie Gillet ([Mutable Instruments eurorack](https://github.com/pichenettes/eurorack) code)',
+    made: 'Plaits, Braids, Rings, Elements and Clouds by Emilie Gillet ([Mutable Instruments eurorack](https://github.com/pichenettes/eurorack) code)',
     licence: MIT,
   },
   {
@@ -125,4 +125,6 @@ export const PLUGIN_CREDITS: PluginCredit[] = [
   // GPL families: only in builds with them (see audio/plugins/pluginSources.ts)
   { family: 'surge', made: '[Surge XT](https://surge-synthesizer.github.io) by the Surge Synth Team, with its factory patches', licence: '[GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)' },
   { family: 'dragonfly', made: '[Dragonfly Reverb](https://michaelwillis.github.io/dragonfly-reverb/) by Michael Willis and Rob van den Berg', licence: '[GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)' },
+  { family: 'plateau', made: 'Plateau by Dale Johnson ([Valley Audio ValleyRackFree](https://github.com/ValleyAudio/ValleyRackFree))', licence: '[GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)' },
+  { family: 'setbfree', made: '[setBfree](https://setbfree.org/) tonewheel organ by Fredrik Kilander, Robin Gareus and Will Panther', licence: '[GPL-2.0-or-later](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html)' },
 ];

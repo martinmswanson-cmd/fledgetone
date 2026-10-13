@@ -1,15 +1,15 @@
 /* The Mutable Instruments family: every module's plugins, in one list. */
 #include "../bbplug_impl.h"
 
-extern const BBDef plaitsDefs[], ringsDefs[], elementsDefs[], cloudsDefs[];
-extern const int plaitsCount, ringsCount, elementsCount, cloudsCount;
+extern const BBDef plaitsDefs[], ringsDefs[], elementsDefs[], cloudsDefs[], braidsDefs[];
+extern const int plaitsCount, ringsCount, elementsCount, cloudsCount, braidsCount;
 
 struct List
 {
     const BBDef *defs;
     const int *count;
 };
-static const List lists[] = {{plaitsDefs, &plaitsCount}, {ringsDefs, &ringsCount}, {elementsDefs, &elementsCount}, {cloudsDefs, &cloudsCount}};
+static const List lists[] = {{plaitsDefs, &plaitsCount}, {ringsDefs, &ringsCount}, {elementsDefs, &elementsCount}, {cloudsDefs, &cloudsCount}, {braidsDefs, &braidsCount}};
 
 int bbFamilyCount()
 {

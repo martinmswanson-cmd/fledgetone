@@ -30,6 +30,8 @@ function groupPresets(names: string[]): Array<[string, Array<{ name: string; i: 
   return [...groups];
 }
 
+// The panel is registered with setBuiltinGui below rather than exported
+// oxlint-disable-next-line react/only-export-components
 const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
   const params = useSyncExternalStore(controls.subscribe, controls.params);
   const { info, family } = controls.ref;

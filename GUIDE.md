@@ -1080,7 +1080,7 @@ The synths and drum kits are generated in your browser. The recorded instruments
 | Airwindows: 508 effects | The [Airwindows](https://www.airwindows.com) effects by Chris Johnson, through the [Airwin Consolidated](https://github.com/baconpaul/airwin2rack) library by Paul Walker | [MIT](https://opensource.org/license/mit) |
 | MDA: 33 effects, 4 instruments | The mda plug-ins by Paul Kellett ([mda-vst](https://sourceforge.net/projects/mda-vst/)) | [MIT](https://opensource.org/license/mit) (offered under MIT or the GPL) |
 | Open303: 1 instrument | [Open303](https://github.com/RobinSchmidt/Open303) by Robin Schmidt | [MIT](https://opensource.org/license/mit) |
-| Mutable Instruments: 6 effects, 31 instruments | Plaits, Rings, Elements and Clouds by Emilie Gillet ([Mutable Instruments eurorack](https://github.com/pichenettes/eurorack) code) | [MIT](https://opensource.org/license/mit) |
+| Mutable Instruments: 6 effects, 32 instruments | Plaits, Braids, Rings, Elements and Clouds by Emilie Gillet ([Mutable Instruments eurorack](https://github.com/pichenettes/eurorack) code) | [MIT](https://opensource.org/license/mit) |
 | Faust: 22 effects, 32 instruments | Physical models and effects from the [Faust](https://faust.grame.fr) libraries and examples by GRAME and contributors, among them Romain Michon, Julius O. Smith III, Yann Orlarey and Stéphane Letz (the waveguide models after the Synthesis ToolKit by Perry Cook and Gary Scavone) | [MIT](https://opensource.org/license/mit), BSD and STK-4.3 (the library code is used under the Faust exception to its LGPL) |
 <!-- plugin-credits:end -->
 

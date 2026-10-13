@@ -19,7 +19,7 @@ const RECENT = 'Recently used';
 const INSTRUMENTS = 'Instruments';
 
 export const PluginBrowser: React.FC<{ trackId: string | null; category?: string; onClose: () => void }> = ({ trackId, category, onClose }) => {
-  const entries = useMemo(allBuiltinPlugins, []);
+  const entries = useMemo(() => allBuiltinPlugins(), []);
   const tracks = useTimelineStore((s) => s.tracks);
   const targets = tracks.filter((t) => !isBus(t));
   const [target, setTarget] = useState<string | null>(trackId && targets.some((t) => t.id === trackId) ? trackId : (targets[0]?.id ?? null));

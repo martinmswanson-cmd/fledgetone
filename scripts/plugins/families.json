@@ -62,5 +62,23 @@
     "file": "gpl/dragonfly.wasm",
     "source": "https://github.com/michaelwillis/dragonfly-reverb",
     "commit": "440ec7b3b3db2fec34b9f80cf4890102ca14d1c3"
+  },
+  {
+    "family": "plateau",
+    "label": "Plateau",
+    "licence": "GPL-3.0",
+    "gpl": true,
+    "file": "gpl/plateau.wasm",
+    "source": "https://github.com/ValleyAudio/ValleyRackFree",
+    "commit": "86f02e431136a7f5c96a872b99b7115b7e133e05"
+  },
+  {
+    "family": "setbfree",
+    "label": "setBfree",
+    "licence": "GPL-2.0-or-later",
+    "gpl": true,
+    "file": "gpl/setbfree.wasm",
+    "source": "https://github.com/pantherb/setBfree",
+    "commit": "2f41983b5b535bda9b1b1db38a06da29d50ff557"
   }
 ]
