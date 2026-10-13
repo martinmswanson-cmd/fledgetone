@@ -1,3 +1,7 @@
+/**
+ * The Sampler instrument's panel: load a sound file and choose the key that plays it at its own
+ * pitch.
+ */
 import React, { useState } from 'react';
 import { FileAudio, Play, Trash2, Upload } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';

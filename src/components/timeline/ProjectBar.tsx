@@ -1,3 +1,8 @@
+/**
+ * The project bar in the header: the song's name, Save, Export and Share, the autosave status, the
+ * New dialog (genre starters; opened from the File menu), and the banner offering to restore the
+ * last session.
+ */
 import React, { useState } from 'react';
 import { Download, History, Music2, Save, Share2 } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';

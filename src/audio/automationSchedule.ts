@@ -1,3 +1,8 @@
+/**
+ * Automation lanes played as Web Audio parameter automation: each lane is written a short stretch
+ * ahead of the audio clock, so seeks, edits and loop wraps are heard almost at once without
+ * clicks. Live and in exports, one schedule per Transport.
+ */
 import { isMixTrack } from '../store/buses';
 import { barToSeconds, secondsToBar, type Tempo } from './tempoMap';
 import type * as Tone from 'tone';

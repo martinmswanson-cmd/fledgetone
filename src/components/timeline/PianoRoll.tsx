@@ -1,3 +1,9 @@
+/**
+ * The piano roll: the note editor for one note clip, docked under the timeline. Adding, moving,
+ * resizing and deleting notes, velocity, scales and chord stamps, the composing tools
+ * (noteTools.ts), drum and Slicer rows, the expression lane and the notation view switch.
+ * Positions are worked out in 96ths of a bar so notes never drift.
+ */
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { NotationView } from './NotationView';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';

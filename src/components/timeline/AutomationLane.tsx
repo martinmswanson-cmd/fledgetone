@@ -1,3 +1,7 @@
+/**
+ * The automation lane editor drawn over a track's lane in automation view: the envelope, its
+ * points and curves, and clicking, dragging and deleting them.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam, AutomationPoint, Track } from '../../store/timelineTypes';

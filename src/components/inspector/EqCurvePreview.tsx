@@ -1,3 +1,7 @@
+/**
+ * The response curve drawn above the Track Inspector's 3-band EQ sliders, from the track's low,
+ * mid and high gains.
+ */
 import React, { useMemo } from 'react';
 import type { TrackEq } from '../../store/timelineTypes';
 

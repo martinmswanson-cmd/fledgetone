@@ -1,3 +1,8 @@
+/**
+ * The Game tab: hear the song the way a game will play it (sections as states switched on the
+ * beat, transitions, stingers, intensity, loop variations), and export the game kit, the web
+ * runtime kit and the FMOD / Wwise package.
+ */
 import { secondsBetween, tempoAt } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';

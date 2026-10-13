@@ -1,3 +1,7 @@
+/**
+ * A range slider whose adjustments are one undo step each (a drag, a burst of arrow keys, a
+ * double-click reset), used for most of the app's sliders.
+ */
 import React, { useRef } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
 import { isSliderKey } from './keyboard';

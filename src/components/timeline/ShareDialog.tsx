@@ -1,3 +1,8 @@
+/**
+ * The Share dialog: a link that opens the song (shareLink.ts), the mix as an MP3, or the project
+ * file with its sounds, handed to the device's share sheet where the browser has one and
+ * downloaded otherwise.
+ */
 import React, { useEffect, useState } from 'react';
 import { Check, Copy, FileAudio, FileJson, Link2, Loader2, Share2 } from 'lucide-react';
 import { currentProject, useTimelineStore } from '../../store/timelineStore';

@@ -1,3 +1,8 @@
+/**
+ * A polyphonic synth made from a pool of monophonic Tone voices (createVoicePool), used instead of
+ * Tone.PolySynth: voices are added as needed instead of notes being dropped, and silent ones are
+ * freed.
+ */
 import * as Tone from 'tone';
 import { notLate } from './monotonic';
 

@@ -9,6 +9,7 @@
     "build:runtime": "vite build -c vite.runtime.config.ts",
     "lint": "oxlint",
     "test": "node --test scripts/*.test.mjs",
+    "codemap": "node scripts/codemap.mjs",
     "guide-tables": "node scripts/guide-tables.mjs",
     "preview": "vite preview",
     "build:single": "npm run build && node scripts/build-single.mjs"

@@ -1,3 +1,7 @@
+/**
+ * How much the browser's sound library holds, with Free unused (delete sounds no project here
+ * refers to).
+ */
 import React, { useEffect, useState } from 'react';
 import { HardDrive } from 'lucide-react';
 import { currentProject, useLastSession, useTimelineStore } from '../../store/timelineStore';

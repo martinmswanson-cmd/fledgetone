@@ -1,3 +1,7 @@
+/**
+ * The Slicer's panel: load a sound, see and drag its slices (auto at transients, or equal parts),
+ * audition them, and Pitch mode.
+ */
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { FileAudio, Upload } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';

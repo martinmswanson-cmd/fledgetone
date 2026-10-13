@@ -1,3 +1,10 @@
+/**
+ * Offline rendering and WAV encoding. The arrangement (or its stems, an intro plus loop, loop
+ * takes, or one track for a freeze) is rendered faster than real time in an OfflineAudioContext,
+ * built from the same instrument, strip, schedule and master factories as live playback, so an
+ * export sounds like the app. Endings are ring-out, exact length or a seamless loop; WAVs are 16,
+ * 24 or 32-bit with markers as cue points and loop points.
+ */
 import { truePeakOf } from './loudness';
 import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
 import { insertTailSeconds } from './effects/spaceFx';

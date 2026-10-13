@@ -1,8 +1,8 @@
 /**
- * Bo's Beat Box audio facade API
- * Provides unified, cleanly typed access to the audio engine, presets, and demo sequencer.
+ * The sound deck's audio entry point (SoundAuditionPanel.tsx): the original synth instruments'
+ * factories and trigger helpers, re-exported, and the chords, brass stabs and bass notes its pads
+ * play.
  */
-
 export * from './engine';
 export * from './presets/bass';
 export * from './presets/keys';

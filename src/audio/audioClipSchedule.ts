@@ -1,3 +1,9 @@
+/**
+ * Audio clips (sound files on the timeline) on a Transport: each clip's sound plays from its
+ * offset with its gain, fades, crossfades, time-stretch and warp markers, into its track. Handles
+ * starts, seeks and loop passes into the middle of a clip. The same code serves live playback and
+ * every export render.
+ */
 import { baseBpm, tempoAt, type Tempo } from './tempoMap';
 import * as Tone from 'tone';
 import type { Clip, Track } from '../store/timelineTypes';

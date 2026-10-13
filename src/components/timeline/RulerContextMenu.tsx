@@ -1,3 +1,7 @@
+/**
+ * The ruler's right-click menu: add a marker, tempo or time-signature change there, insert or
+ * delete bars across every track, and key changes.
+ */
 import React, { useRef, useState } from 'react';
 import { CircleDot, ArrowLeftToLine, ArrowRightFromLine, Flag, Gauge, KeyRound, Music2, Scissors, TrendingUp, Zap } from 'lucide-react';
 import { meterAt, tempoAt } from '../../audio/tempoMap';

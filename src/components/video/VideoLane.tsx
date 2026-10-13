@@ -1,3 +1,7 @@
+/**
+ * The reference video's lane under the ruler (its frames along the song), and the Find cuts and
+ * Dip under dialogue buttons.
+ */
 import { tempoAt } from '../../audio/tempoMap';
 import React, { useRef } from 'react';
 import { Clapperboard, Eye, EyeOff, MessageSquareText, Scissors, X } from 'lucide-react';

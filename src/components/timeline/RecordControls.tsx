@@ -1,3 +1,8 @@
+/**
+ * Recording and MIDI controls in the toolbar: the Record button and its settings (count-in,
+ * quantize, punch, takes), the metronome, and the MIDI popover (devices, activity, the computer
+ * keyboard piano).
+ */
 import { isMixKind } from '../../audio/instrumentCatalog';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Circle, KeyboardMusic, Triangle } from 'lucide-react';

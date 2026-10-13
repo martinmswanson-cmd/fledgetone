@@ -1,3 +1,7 @@
+/**
+ * React hook for a control that follows an automation lane: the lane's value at the playhead,
+ * updated a few times a second while playing.
+ */
 import { useEffect, useReducer } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam, Track } from '../../store/timelineTypes';

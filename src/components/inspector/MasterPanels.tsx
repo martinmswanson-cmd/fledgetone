@@ -1,3 +1,7 @@
+/**
+ * The Master tab of the Inspector: the loudness meter, the OTT and stereo width inserts, and the
+ * playback buffering choice.
+ */
 import React, { useState } from 'react';
 import { Activity, Gauge, MoveHorizontal, RotateCcw, Timer } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';

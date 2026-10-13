@@ -1,3 +1,6 @@
+/**
+ * The short message at the bottom of the screen (shown by showToast in toastStore.ts).
+ */
 import React, { useEffect } from 'react';
 import { Info } from 'lucide-react';
 import { useToast } from './toastStore';

@@ -1,3 +1,8 @@
+/**
+ * Tempo controls: the header's typed tempo field, Fit to time (set the tempo that makes a stretch
+ * of the song last a given time) and the tempo finder (tempos that land the hit points on the
+ * beat, see tempoFinder.ts).
+ */
 import React, { useMemo, useState } from 'react';
 import { TOTAL_BARS, useTimelineStore } from '../store/timelineStore';
 import { formatBarCount, formatBpm, frameRateLabel } from '../store/timelineTypes';

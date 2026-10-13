@@ -1,3 +1,8 @@
+/**
+ * The sound deck in the Instruments tab: pads for the original instruments (drums, bass, keys,
+ * brass and more) to play and audition, and patterns, each of which can be dragged onto a matching
+ * track.
+ */
 import React, { useEffect, useState } from 'react';
 import {
   triggerBass,

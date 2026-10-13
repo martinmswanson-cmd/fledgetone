@@ -1,3 +1,7 @@
+/**
+ * Markers on the timeline: their flags in the ruler (click to go there, drag to move, double-click
+ * to rename, right-click menu) and their lines across the lanes.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Lock, LockOpen, Pencil, Trash2 } from 'lucide-react';

@@ -1,3 +1,7 @@
+/**
+ * The performance badge in the header: how smoothly playback is going (perfMonitor.ts), with Clear
+ * memory, and a warning with tips while playback lags.
+ */
 import React, { useRef, useState } from 'react';
 import { Gauge, MemoryStick, TriangleAlert, X } from 'lucide-react';
 import { clearMemory, usePerfStore } from '../audio/perfMonitor';

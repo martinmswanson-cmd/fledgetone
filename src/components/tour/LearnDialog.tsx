@@ -1,3 +1,7 @@
+/**
+ * The list of the tour and tutorials (lessons.ts): shown as a welcome on someone's first visit,
+ * and from LEARN in the header.
+ */
 import React from 'react';
 import { CheckCircle2, Compass, GraduationCap, Play, RotateCcw } from 'lucide-react';
 import { Modal } from '../timeline/Modal';

@@ -1,3 +1,8 @@
+/**
+ * The project's data types (Track, Clip, NoteEvent, the insert settings, automation, markers,
+ * master settings and the rest) with their defaults, limits and small helpers (snapping,
+ * durations, frame grids). Everything the store, the engine and the project file share.
+ */
 import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';

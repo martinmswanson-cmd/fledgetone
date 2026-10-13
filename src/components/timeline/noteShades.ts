@@ -1,3 +1,7 @@
+/**
+ * A clip's note marks on the timeline as one SVG path per shade (velocity), instead of an element
+ * per note.
+ */
 /** A note's mark in a clip on the timeline, in px from the clip's top left. */
 export interface NoteRect {
   left: number;

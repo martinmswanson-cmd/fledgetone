@@ -1,3 +1,7 @@
+/**
+ * Opens a song shared as a link (#song=... in the address, see shareLink.ts), on page load or when
+ * one is pasted into an open page, asking first if there's work on the timeline. Renders nothing.
+ */
 import { useEffect } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
 import { hasWork } from '../store/project';

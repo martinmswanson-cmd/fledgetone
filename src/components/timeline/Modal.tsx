@@ -1,3 +1,6 @@
+/**
+ * A centred dialog over a dimmed page, closed by Esc, its close button or a click outside.
+ */
 import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 

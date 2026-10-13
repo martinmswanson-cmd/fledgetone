@@ -1,3 +1,8 @@
+/**
+ * The app's layout: the header, the arrangement timeline and the dock under it, the footer, and
+ * the dialogs and overlays that can open over any of them (search, report a problem, cut to
+ * length, the FMOD / Wwise package, the tour, the phone notice, project drops and shared links).
+ */
 import React from 'react';
 import { startPerfMonitor } from './audio/perfMonitor';
 import { VideoPreview } from './components/video/VideoPreview';

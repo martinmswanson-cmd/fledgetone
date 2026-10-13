@@ -1,3 +1,10 @@
+/**
+ * The TrackInstrument interface every instrument implements, and createInstrument, which builds
+ * any instrument in the catalog (synths, drum kits, recorded instruments, the Sampler, Slicer,
+ * Drum Rack, Multi Sampler, Synth Designer and plugins) in the current Tone context, with its
+ * level correction and high-note taper. Also the drum note map (DRUM_NOTES) and the expressive
+ * drum detune.
+ */
 import * as Tone from 'tone';
 import { createChipBass, createChipDrums, createChipLead } from './presets/chiptune';
 import './toneFixes';

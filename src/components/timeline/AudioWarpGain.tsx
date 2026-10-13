@@ -1,3 +1,7 @@
+/**
+ * The warp markers and gain envelope drawn over the audio clip editor's waveform, and the pointer
+ * editing of both.
+ */
 import React, { useRef } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, GainPoint, WarpMarker } from '../../store/timelineTypes';

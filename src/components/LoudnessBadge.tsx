@@ -1,3 +1,7 @@
+/**
+ * The loudness readout in the header: short-term LUFS while audio runs, red once the true peak
+ * passes -1 dBTP.
+ */
 import React from 'react';
 import { Activity } from 'lucide-react';
 import { formatLufs } from '../audio/loudness';

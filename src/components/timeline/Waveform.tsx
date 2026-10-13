@@ -1,3 +1,7 @@
+/**
+ * Waveform drawings from a sound's precomputed peaks: a stretch of a sound (Waveform), and an
+ * audio clip's waveform laid along its warp markers (ClipWaveform).
+ */
 import React, { useMemo } from 'react';
 import { soundStatusText, useSoundLibrary } from '../../audio/soundLibrary';
 import { waveformPath } from '../../audio/waveform';

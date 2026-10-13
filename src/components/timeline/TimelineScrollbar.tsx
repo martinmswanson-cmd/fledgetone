@@ -1,3 +1,7 @@
+/**
+ * The overview scrollbar under the lanes: the whole song in miniature, with the visible window as
+ * a thumb to drag, click or stretch (zoom).
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { HEADER_WIDTH } from './layout';

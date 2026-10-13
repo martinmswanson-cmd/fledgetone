@@ -1,3 +1,7 @@
+/**
+ * The Cut to length dialog: pick a length and the song is rebuilt from its sections to last that
+ * long (see cutToLength.ts).
+ */
 import React, { useMemo, useState } from 'react';
 import { Scissors } from 'lucide-react';
 import { Modal } from './Modal';

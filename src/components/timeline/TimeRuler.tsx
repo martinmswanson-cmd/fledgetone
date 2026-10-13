@@ -1,3 +1,7 @@
+/**
+ * The time ruler: bars and beats (or timecode), the tempo row, the loop In / Out brackets, marker
+ * flags, scrubbing and the playhead handle.
+ */
 import React from 'react';
 import { TOTAL_BARS, useSongMeter, useSongTempo, useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, isPlainMeter, measuresBetween, secondsToBar, tempoAt } from '../../audio/tempoMap';

@@ -1,3 +1,7 @@
+/**
+ * The playhead: its line across the lanes and its handle in the ruler, and scrubbing it with the
+ * mouse.
+ */
 import React, { useCallback } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { snapBar } from '../../store/timelineTypes';

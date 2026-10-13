@@ -1,3 +1,8 @@
+/**
+ * Searching the instrument list: each instrument's searchable fields (name, its group's style and
+ * mood words, its description) and the ranked matches for what's typed, used by every instrument
+ * picker and the search palette.
+ */
 import type { InstrumentCategory, InstrumentDef, InstrumentKey } from '../audio/instrumentCatalog';
 import { INSTRUMENTS, INSTRUMENT_KEYS } from '../audio/instrumentCatalog';
 import { rank, type SearchFields } from './searchCore';

@@ -1,3 +1,8 @@
+/**
+ * The Track Inspector (the side panel): the selected track's instrument and its own panel (Slicer,
+ * Drum Rack, Multi Sampler, Synth Designer, Sampler, Audio track), Expressive playing, the insert
+ * effects in chain order, sends to returns, and the Master tab.
+ */
 import React, { useEffect, useRef } from 'react';
 import {
   SlidersHorizontal,

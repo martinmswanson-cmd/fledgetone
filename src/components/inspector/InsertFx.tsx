@@ -1,3 +1,8 @@
+/**
+ * The Track Inspector's insert effect panels and their shared controls: each insert's header with
+ * its on/off switch (InsertPanel), labelled sliders (FxSlider), and the Human, dialogue proxy,
+ * Distortion, Compressor, Chorus, Lo-fi, Filter, Pump and Gate panels.
+ */
 import React from 'react';
 import { Disc3, Repeat, Sparkle, Filter, Flame, Gauge, Hand, HeartPulse, MessageSquareText, Scissors, Waves } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';

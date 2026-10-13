@@ -1,3 +1,7 @@
+/**
+ * The Instruments tab's browser: pick any instrument, play its keys to hear it, and drag a key
+ * onto a matching track to drop that note in.
+ */
 import React, { useState } from 'react';
 import * as Tone from 'tone';
 import { Library, Loader2 } from 'lucide-react';

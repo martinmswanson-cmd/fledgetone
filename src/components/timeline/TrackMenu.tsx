@@ -1,3 +1,6 @@
+/**
+ * The right-click menu of a track header: colour, move, folders, buses, freeze / bounce, delete.
+ */
 import React, { useRef, useState } from 'react';
 import { Plug, Radio, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints, AudioLines } from 'lucide-react';
 import { busTargets, isBus, isMixTrack, sendTargets } from '../../store/buses';

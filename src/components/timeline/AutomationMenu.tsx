@@ -1,3 +1,7 @@
+/**
+ * The right-click menu of an automation lane: quick ramps over the loop region, clear, remove the
+ * lane.
+ */
 import React, { useRef } from 'react';
 import { Eraser, Minus, Spline, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';

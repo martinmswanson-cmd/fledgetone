@@ -1,3 +1,8 @@
+/**
+ * The timeline's toolbar: transport (go to In, play, stop, loop and its exact range), record,
+ * metronome, Mic and MIDI, the position and timecode readouts, tools (select, razor), snap, undo /
+ * redo, the markers list, the Inspector toggle and zoom.
+ */
 import React, { useState } from 'react';
 import { MicButton } from './MicButton';
 import {

@@ -1,3 +1,7 @@
+/**
+ * Freezing, bouncing and unfreezing tracks: renders a track's instrument and inserts to a sound
+ * (see freeze.ts for how the live engine plays it), with progress.
+ */
 import { create } from 'zustand';
 import { useTimelineStore } from './timelineStore';
 import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';

@@ -1,3 +1,9 @@
+/**
+ * The master section and the live audio context. createMixChain builds the mix graph (master bus,
+ * compressor, the OTT and width inserts, limiter and ceiling, plus the shared reverb and delay
+ * returns) in whatever context is current: once for live playback (liveMix) and again inside every
+ * export render. Also starting the audio, its running / suspended state, and the master volume.
+ */
 import * as Tone from 'tone';
 import { liveTransport, liveDestination, liveContext } from './liveContext';
 // Must run before any oscillator exists: keeps Tone's waveform cache per audio context
