@@ -232,7 +232,9 @@ func _order(n: int, last: int, shuffle: bool) -> Array:
 
 ## Play a state piece by piece (shuffled, or with silences between passes) until another starts.
 func _run_pieces(s: Dictionary, from: float, id: int, voices: Array) -> void:
-	var bars := float(s.bars)
+	# Bars are measures of the state's own time signature
+	var bar_len := float(s.get("beatsPerBar", data.beatsPerBar)) * float(s.get("beatSeconds", data.get("beatSeconds", 0.0)))
+	var bars := maxf(1.0, round(float(s.seconds) / bar_len)) if bar_len > 0.0 else maxf(1.0, round(float(s.bars)))
 	var shuffle := int(s.get("shuffleBars", 0)) > 0
 	var each := float(s.shuffleBars) if shuffle and float(s.shuffleBars) < bars else bars
 	var count := int(ceil(bars / each - 1e-6))

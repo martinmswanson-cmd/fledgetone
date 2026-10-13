@@ -190,7 +190,7 @@ export class AdaptiveMusic {
       g.connect(bus);
       groups.set(group, g);
     }
-    const playing = { name: state.name, startTime: at, tempo, bus, groups, sources: new Set(), pieces: [], gridStart: () => at };
+    const playing = { name: state.name, startTime: at, fade, tempo, bus, groups, sources: new Set(), pieces: [], gridStart: () => at };
     if (!state.shuffleBars && !state.gap) {
       const offset = (from % 1) * seconds;
       for (const { file, group } of parts) {
@@ -204,8 +204,9 @@ export class AdaptiveMusic {
       playing.gridStart = () => at - offset;
       return playing;
     }
-    // Pieces: bar-line boundaries a few bars apart (the whole loop when it isn't shuffled)
-    const bars = state.bars;
+    // Pieces: bar-line boundaries a few bars (measures of the state's own time signature) apart,
+    // the whole loop when it isn't shuffled
+    const bars = AdaptiveMusic.measures(state, this.data);
     const each = state.shuffleBars && state.shuffleBars < bars ? state.shuffleBars : bars;
     const bounds = [];
     for (let b = 0; b < bars - 1e-6; b += each) bounds.push([(b / bars) * seconds, (Math.min(bars, b + each) / bars) * seconds]);
@@ -225,6 +226,12 @@ export class AdaptiveMusic {
     };
     this.schedule(playing);
     return playing;
+  }
+
+  /** How many bars (measures of its time signature) a state is. */
+  static measures(state, data) {
+    const bar = (state.beatsPerBar ?? data.beatsPerBar) * (state.beatSeconds ?? data.beatSeconds);
+    return bar > 0 ? Math.max(1, Math.round(state.seconds / bar)) : Math.max(1, Math.round(state.bars));
   }
 
   /** A pass through `n` pieces: in order, or shuffled with no piece twice in a row (`last` played just before). */
@@ -375,6 +382,12 @@ export class AdaptiveMusic {
     const old = this.current;
     const state = this.state(old.name);
     const now = this.ctx.currentTime + 0.03;
+    // A state still waiting for its line: it comes in there, in the new costume
+    if (old.startTime > now) {
+      this.stopState(old, old.startTime);
+      this.current = this.startState(state, old.startTime, old.fade ?? 0);
+      return;
+    }
     // How far into the loop (or the piece) the music is, as a fraction of the whole state
     const len = state.seconds / (old.tempo ?? 1);
     let from;

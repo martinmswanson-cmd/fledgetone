@@ -222,7 +222,10 @@ const AccompanyForm: React.FC<{ clipId: string; onClose: () => void }> = ({ clip
         <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Pattern">
           {ACCOMP_STYLES.map((a) => (
             <label key={a.id} className={`flex items-start gap-2 rounded px-2 py-1 cursor-pointer ${a.id === style ? 'bg-cyan-500/15' : 'hover:bg-white/5'}`}>
-              <input type="radio" name="accomp" className="mt-1 accent-cyan-500" checked={a.id === style} onChange={() => setStyle(a.id)} />
+              <input type="radio" name="accomp" className="mt-1 accent-cyan-500" checked={a.id === style} onChange={() => {
+                setStyle(a.id);
+                setInstrument(null);
+              }} />
               <span className="text-xs text-forge-text">
                 {a.name}
                 <span className="block text-[11px] text-forge-muted">{a.detail}</span>

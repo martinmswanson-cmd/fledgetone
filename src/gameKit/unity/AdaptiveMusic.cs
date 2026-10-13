@@ -46,6 +46,8 @@ public class AdaptiveMusic : MonoBehaviour
     List<Voice> voices = new List<Voice>();
     double startDsp;
     double tempoNow = 1;
+    // When the state playing (or waiting) started (or starts)
+    double stateStart;
     Coroutine glide;
     // Music plays on a child object with its own filters, so effects leave sound effects alone
     GameObject musicObject;
@@ -167,6 +169,7 @@ public class AdaptiveMusic : MonoBehaviour
         pieceTimes.Clear();
         tempoNow = tempo;
         Current = s.name;
+        stateStart = at;
         if (s.shuffleBars > 0 || (s.gap != null && s.gap.max > 0))
         {
             pieces = StartCoroutine(Pieces(s, parts, seconds, at, from, playId, list));
@@ -200,7 +203,9 @@ public class AdaptiveMusic : MonoBehaviour
     // Schedule a state's pieces a little ahead of the audio clock, with its silences between passes
     IEnumerator Pieces(State s, List<Stem> parts, double seconds, double at, double from, int id, List<Voice> list)
     {
-        double bars = s.bars > 0 ? s.bars : 1;
+        // Bars are measures of the state's own time signature
+        double barLen = (s.beatsPerBar > 0 ? s.beatsPerBar : Data.beatsPerBar) * (s.beatSeconds > 0 ? s.beatSeconds : Data.beatSeconds);
+        double bars = barLen > 0 ? Math.Max(1, Math.Round(s.seconds / barLen)) : Math.Max(1, Math.Round(s.bars));
         double each = s.shuffleBars > 0 && s.shuffleBars < bars ? s.shuffleBars : bars;
         var bounds = new List<double[]>();
         for (double b = 0; b < bars - 1e-6; b += each) bounds.Add(new[] { b / bars * seconds, Math.Min(bars, b + each) / bars * seconds });
@@ -373,6 +378,13 @@ public class AdaptiveMusic : MonoBehaviour
         var s = Find(Current);
         double now = AudioSettings.dspTime + 0.05;
         double len = s.seconds / tempoNow;
+        // A state still waiting for its line: it comes in there, in the new costume
+        if (stateStart > now)
+        {
+            StopVoices(voices, stateStart);
+            voices = StartState(s, stateStart);
+            return;
+        }
         double from = 0;
         if (pieceTimes.Count > 0)
         {
