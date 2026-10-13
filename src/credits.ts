@@ -19,6 +19,8 @@ const CC_BY_SA = '[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/
 const NB = 'https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/';
 const GLEITZ = "Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts)";
 const TONE_AUDIO = 'the [Tone.js audio collection](https://github.com/Tonejs/audio)';
+/** The recordings hosted with the app (public/bos-beat-box-samples/) */
+const HOSTED = 'bos-beat-box-samples/';
 
 export const SAMPLE_CREDITS: SampleCredit[] = [
   { prefixes: ['https://tonejs.github.io/audio/salamander/'], samples: `Salamander Grand Piano by Alexander Holm, from ${TONE_AUDIO}`, licence: CC_BY },
@@ -35,12 +37,53 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC_BY,
   },
   {
-    prefixes: ['bos-beat-box-samples/cello-sustain/', 'bos-beat-box-samples/cello-spiccato/'],
-    samples: 'Cello section from the [Versilian Community Sample Library, VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios (converted to MP3, hosted with the app)',
+    prefixes: [
+      'cello-sustain', 'cello-spiccato', 'violins-sustain', 'violins-spiccato', 'violas-sustain', 'violas-spiccato', 'strings-pizzicato',
+      'strings-tremolo', 'solo-violin', 'harp', 'flute', 'flute-staccato', 'oboe', 'clarinet', 'bassoon', 'horn', 'horn-staccato', 'trumpet',
+      'trumpet-staccato', 'trombone', 'trombone-staccato', 'tuba', 'marimba', 'xylophone', 'glockenspiel', 'pipe-organ', 'chapel-organ',
+    ].map((set) => `${HOSTED}${set}/`),
+    samples:
+      'Strings, woodwinds, brass, harp, mallets and organ from the [Versilian Community Sample Library, VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {
-    prefixes: ['bos-beat-box-samples/guitar-black/', 'bos-beat-box-samples/guitar-green/'],
+    prefixes: [`${HOSTED}upright-piano/`],
+    samples:
+      'Upright piano sampled by Simon Dalzell of Ivy Audio, from the [VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) library by Versilian Studios, which may redistribute it (converted to MP3, hosted with the app)',
+    licence: `${CC0}, as part of VSCO 2 CE`,
+  },
+  {
+    prefixes: [`${HOSTED}grand-piano/`],
+    samples: '[Splendid Grand Piano](https://github.com/sfzinstruments/SplendidGrandPiano), samples by AKAI, mapped by kinwie (converted to MP3, hosted with the app)',
+    licence: 'Public domain',
+  },
+  {
+    prefixes: [`${HOSTED}alto-sax/`],
+    samples: 'Alto saxophone from [Weresax](https://github.com/sfzinstruments/karoryfer.weresax) by Karoryfer Lecolds (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}baritone-sax/`],
+    samples: 'Baritone saxophone from [Bear Sax](https://github.com/sfzinstruments/karoryfer.bear-sax) by Karoryfer Lecolds (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}double-bass/`, `${HOSTED}upright-bass/`],
+    samples: 'Double bass from [Meatbass](https://github.com/sfzinstruments/karoryfer.meatbass) by Karoryfer Lecolds, played by Drogomir Smolken (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}electric-bass/`],
+    samples: 'Electric bass from [Growlybass](https://github.com/sfzinstruments/karoryfer.growlybass) by Karoryfer Lecolds (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}guitar-flatwound/`],
+    samples: 'Electric guitar from [Emily Guitar](https://github.com/sfzinstruments/karoryfer.emilyguitar) by Karoryfer Lecolds, played by D. Smolken (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}guitar-black/`, `${HOSTED}guitar-green/`],
     samples: 'Electric guitars from [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars) by Karoryfer Lecolds, recorded by Brian Wood (converted to MP3, hosted with the app)',
     licence: CC0,
   },

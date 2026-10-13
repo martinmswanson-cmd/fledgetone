@@ -23,8 +23,9 @@ const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 const hosted = Object.values(INSTRUMENTS).filter((d) => d.samples?.baseUrl.startsWith('bos-beat-box-samples/'));
 
-test('the real instruments are hosted with the app', () => {
-  assert.deepEqual(hosted.map((d) => d.key).sort(), ['realCello', 'realCelloShort', 'realCrunchGuitar', 'realGuitar', 'realHollowGuitar', 'realLeadGuitar']);
+test('the real instruments are hosted with the app, and only they are', () => {
+  const real = Object.values(INSTRUMENTS).filter((d) => d.name.endsWith('(Real)'));
+  assert.deepEqual(hosted.map((d) => d.key).sort(), real.map((d) => d.key).sort());
 });
 
 test('every hosted recording an instrument plays is in public/', () => {
@@ -48,7 +49,7 @@ test('every hosted recording an instrument plays is in public/', () => {
 test('each note has every loudness layer and take, layers rising to full velocity', () => {
   for (const def of hosted) {
     const { layers, samples } = def.samples;
-    assert.ok(layers.length >= 2 && layers.at(-1) === 1, def.key);
+    assert.ok(layers.length >= 1 && layers.at(-1) === 1, def.key);
     for (let i = 1; i < layers.length; i++) assert.ok(layers[i] > layers[i - 1], def.key);
     const byNote = new Map();
     for (const name of Object.keys(samples)) {
@@ -63,7 +64,8 @@ test('each note has every loudness layer and take, layers rising to full velocit
       const m = n.match(/^([A-G]#?)(-?\d)$/);
       return ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(m[1]) + 12 * (Number(m[2]) + 1);
     });
-    // No note in the playable range is more than 2 semitones from a recording
-    for (let m = lo; m <= hi; m++) assert.ok(Math.min(...midis.map((r) => Math.abs(r - m))) <= 2, `${def.key}: ${m} is far from any recording`);
+    // No note in the playable range is more than 3 semitones from a recording (shifted further, a
+    // recording starts to sound like a different instrument)
+    for (let m = lo; m <= hi; m++) assert.ok(Math.min(...midis.map((r) => Math.abs(r - m))) <= 3, `${def.key}: ${m} is far from any recording`);
   }
 });

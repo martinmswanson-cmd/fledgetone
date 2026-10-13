@@ -103,7 +103,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'Add a track',
-      body: 'Pick from 157 instruments. Type to search: a name, or a style such as *8-bit*, *orchestral* or *jazz*.',
+      body: 'Pick from 198 instruments. Type to search: a name, or a style such as *8-bit*, *orchestral* or *jazz*.',
       target: 'button[title="Add a new instrument track"]',
     },
     {
