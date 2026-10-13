@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import { createLightChorus } from '../effects/lightFx';
 import { INSTRUMENTS } from '../instrumentCatalog';
-import type { InstrumentDef, InstrumentKey, Shaping } from '../instrumentCatalog';
+import type { AmpModel, InstrumentDef, InstrumentKey, SampleSource, Shaping } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
 import { decodeSound } from '../soundLibrary';
 import { useAudioStore } from '../../store/audioStore';
@@ -28,6 +28,23 @@ export function hasRecordings(key: InstrumentKey): boolean {
   return !!INSTRUMENTS[key].samples;
 }
 
+/**
+ * Recordings downloaded and decoded, by URL: instruments that play the same recordings through
+ * different amps share them. A file `baseUrl` can't serve comes from `fallbackUrl`.
+ */
+const recordings = new Map<string, Promise<Tone.ToneAudioBuffer>>();
+function fetchRecording(source: SampleSource, file: string): Promise<Tone.ToneAudioBuffer> {
+  const url = source.baseUrl + file;
+  let p = recordings.get(url);
+  if (!p) {
+    const fallback = source.fallbackUrl;
+    p = Tone.ToneAudioBuffer.fromUrl(url).catch((err) => (fallback ? Tone.ToneAudioBuffer.fromUrl(fallback + file) : Promise.reject(err)));
+    p.catch(() => recordings.delete(url));
+    recordings.set(url, p);
+  }
+  return p;
+}
+
 /** Download + decode an instrument's samples (once). Updates the loading badge in audioStore. */
 export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   const existing = sampleSets[key];
@@ -40,7 +57,7 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
 
   const promise = Promise.all(
     Object.entries(source.samples).map(async ([note, file]) => {
-      const loaded = await Tone.ToneAudioBuffer.fromUrl(source.baseUrl + file);
+      const loaded = await fetchRecording(source, file);
       const buffer = source.tune?.[note] ? retune(loaded, source.tune[note]) : loaded;
       const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
       return [note, source.onset === undefined ? held : trimOnset(held, source.onset)] as const;
@@ -223,6 +240,43 @@ function saturator(drive: number): WaveShaperNode {
 /** The erhu's vibrato: how far the delay swings, in seconds, once a note has settled (about ±20 cents at 5.5 Hz). */
 const ERHU_VIBRATO = 0.00035;
 
+/** A guitar amp's settings (played by shapingChain). */
+interface AmpSettings {
+  /** High-pass in front of the amp, Hz: higher keeps a driven amp's lows from turning to mud */
+  tight: number;
+  /** A compressor's threshold and ratio, as a clean amp and a picking hand even notes out */
+  squeeze?: [threshold: number, ratio: number];
+  /** EQ before the drive: [type, Hz, Q, dB] */
+  pre: Array<[BiquadFilterType, number, number, number]>;
+  /** Drive of each gain stage (more stages: more distortion, smoother) */
+  stages: number[];
+  /** Tone stack, dB: bass (120 Hz), mid (at midHz), treble (2.5 kHz) */
+  bass: number;
+  mid: number;
+  midHz: number;
+  treble: number;
+  /** Where the speaker cabinet rolls the top off, Hz */
+  cabTop: number;
+}
+
+/**
+ * The real electric guitars are recorded straight from the pickup, as a guitarist records direct
+ * to choose the amp later; each instrument is that recording through one of these amps. Pickup
+ * signal → (compression) → preamp EQ → gain stages → tone stack → a 1×12 speaker cabinet (a low
+ * resonance, the cone's upper-mid bite, a dip where cabinets honk, and a steep top roll-off: what
+ * makes an amp sound like an amp rather than a fuzz box).
+ */
+const AMPS: Record<AmpModel, AmpSettings> = {
+  // Bright and glassy, a touch of edge when picked hard
+  cleanAmp: { tight: 70, squeeze: [-26, 3], pre: [['highshelf', 1500, 0.7, 4]], stages: [1.4], bass: 1, mid: -2, midHz: 600, treble: 3, cabTop: 6500 },
+  // Warm and round: treble down, the neck pickup sound
+  jazzAmp: { tight: 60, squeeze: [-30, 2], pre: [], stages: [1.2], bass: 2, mid: 0, midHz: 700, treble: -4, cabTop: 4200 },
+  // An amp turned up until it breaks up: rock rhythm
+  crunchAmp: { tight: 110, pre: [['peaking', 800, 0.8, 6], ['highshelf', 1800, 0.7, 4]], stages: [5], bass: 0, mid: 1, midHz: 700, treble: 2, cabTop: 5000 },
+  // Two gain stages, scooped mids: riffs and leads
+  leadAmp: { tight: 150, pre: [['peaking', 900, 0.8, 6], ['highshelf', 2000, 0.7, 3]], stages: [8, 4], bass: 3, mid: -4, midHz: 500, treble: 0, cabTop: 4200 },
+};
+
 /**
  * Character processing that turns a recording into the instrument.
  * - erhu: a solo violin through a nasal formant and a dark top (the snakeskin resonator), with a
@@ -295,6 +349,39 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     const trim = raw.createGain();
     trim.gain.value = Tone.dbToGain(-6);
     return chain([tight, sustain, pre, drive, thump, scoop, presence, cab, trim]);
+  }
+  if (shape && shape in AMPS) {
+    const amp = AMPS[shape as AmpModel];
+    const nodes: AudioNode[] = [biquad('highpass', amp.tight, 0.7)];
+    if (amp.squeeze) {
+      const squeeze = raw.createDynamicsCompressor();
+      squeeze.threshold.value = amp.squeeze[0];
+      squeeze.ratio.value = amp.squeeze[1];
+      squeeze.knee.value = 10;
+      squeeze.attack.value = 0.005;
+      squeeze.release.value = 0.12;
+      nodes.push(squeeze);
+    }
+    for (const [type, hz, q, db] of amp.pre) nodes.push(biquad(type, hz, q, db));
+    amp.stages.forEach((drive, i) => {
+      // Between stages: the coupling that keeps a high-gain amp's lows tight and its fizz down
+      if (i > 0) nodes.push(biquad('highpass', 180, 0.7), biquad('lowpass', 4500, 0.7));
+      nodes.push(saturator(drive));
+    });
+    nodes.push(
+      biquad('lowshelf', 120, 0.7, amp.bass),
+      biquad('peaking', amp.midHz, 0.7, amp.mid),
+      biquad('highshelf', 2500, 0.7, amp.treble),
+      // The cabinet
+      biquad('highpass', 70, 0.8),
+      biquad('peaking', 115, 1.2, 2.5),
+      biquad('peaking', 400, 1, -2.5),
+      biquad('peaking', 2200, 1, 2),
+      biquad('peaking', 3800, 2.5, 3),
+      biquad('lowpass', amp.cabTop, 0.7),
+      biquad('lowpass', amp.cabTop * 1.15, 0.7)
+    );
+    return chain(nodes);
   }
   if (shape === 'acoustic') {
     const bright = biquad('highshelf', 1800, 0.7, 8);
@@ -370,7 +457,10 @@ const EXPRESSIVE_BY_CATEGORY: Partial<Record<InstrumentDef['category'], Expressi
 
 /** How an instrument plays expressively (null: as recorded, e.g. drum kits and sound effects). */
 export function expressiveFor(def: InstrumentDef): Expressive | null {
-  return EXPRESSIVE_BY_CATEGORY[def.category] ?? null;
+  const base = EXPRESSIVE_BY_CATEGORY[def.category] ?? null;
+  // Recorded at several loudnesses: a soft recording is already darker, so less filtering on top
+  // (their levels are matched when converted, so velocity still sets the loudness)
+  return base && def.samples?.layers ? { ...base, depth: base.depth * 0.4 } : base;
 }
 
 /** A note's level for `velocity` (0..1) on a dB curve `rangeDb` deep. */
@@ -395,7 +485,18 @@ export function noteJitter(note: string, time: number, salt: number): number {
   return ((h >>> 0) / 4294967295) * 2 - 1;
 }
 
-function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dispose: () => void }[], onNote?: (time: number) => void, taper?: InstrumentDef['taper'], expressive?: Expressive | null): SamplerVoice {
+/**
+ * The samplers a voice plays: one, or one per loudness and take (SampleSource.layers), and which
+ * of them plays a note at a velocity.
+ */
+interface SamplerBank {
+  all: Tone.Sampler[];
+  pick: (note: string, velocity: number) => Tone.Sampler;
+}
+const single = (sampler: Tone.Sampler): SamplerBank => ({ all: [sampler], pick: () => sampler });
+
+function samplerVoice(bank: SamplerBank, attach: Promise<void>, extra: { dispose: () => void }[], onNote?: (time: number) => void, taper?: InstrumentDef['taper'], expressive?: Expressive | null): SamplerVoice {
+  const sampler = bank.all[0];
   let loaded = false;
   const ready = attach.then(() => {
     loaded = true;
@@ -407,8 +508,8 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
   // scheduled, so the sources are kept here, each until it has rung out.
   let bendRatio = 1;
   type Source = { playbackRate: Tone.Param<'positive'>; buffer: { duration: number }; stop: (time: number) => unknown };
-  const active = () => (sampler as unknown as { _activeSources: Map<number, Source[]> })._activeSources;
-  const allSources = () => [...active().values()].flat();
+  const active = (s: Tone.Sampler) => (s as unknown as { _activeSources: Map<number, Source[]> })._activeSources;
+  const allSources = () => bank.all.flatMap((s) => [...active(s).values()].flat());
   /**
    * `played`: seconds of the recording played by `last` (at `rate`), so a held note's end can be
    * moved when a bend changes its speed (Tone stops a source where the recording would run out at
@@ -417,36 +518,42 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
   const sounding: Array<{ src: Source; note: string; until: number; base: number; played: number; last: number; rate: number }> = [];
   // (Read in the sampler's own context: in an export, the render's tempo, not the live one)
   const releaseSeconds = () => sampler.toSeconds(sampler.release);
-  /** Expressive: a note's own low-pass for its velocity, between its source and the sampler's output (gone when it ends). */
-  const voiceFilter = (src: Source, note: string, velocity: number) => {
+  /**
+   * Expressive: a note's own low-pass for its velocity, between its source and the sampler's
+   * output, let go with the source. (Not when Tone says it ended: in an export Tone's clock runs
+   * ahead of the render, so "ended" comes before the note has sounded, and letting go of its
+   * filter then silenced it. The source is disposed once it really is over: live a second after
+   * it ends, in an export once the render is past it; see exportWav.ts.)
+   */
+  const voiceFilter = (src: Source, note: string, velocity: number, by: Tone.Sampler) => {
     if (!expressive) return;
     const tsrc = src as unknown as Tone.ToneBufferSource;
-    const raw = sampler.context.rawContext as unknown as BaseAudioContext;
+    const raw = by.context.rawContext as unknown as BaseAudioContext;
     const filter = raw.createBiquadFilter();
     filter.type = 'lowpass';
     filter.Q.value = 0.6;
     filter.frequency.value = expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency());
     tsrc.disconnect();
     Tone.connect(tsrc, filter);
-    Tone.connect(filter, sampler.output);
-    const ended = tsrc.onended;
-    tsrc.onended = (s) => {
-      ended(s);
+    Tone.connect(filter, by.output);
+    const dispose = tsrc.dispose.bind(tsrc);
+    tsrc.dispose = () => {
       filter.disconnect();
+      return dispose();
     };
   };
   /** The velocity a note is triggered at: as given, or on the dB curve with a little variation. */
   const level = (note: string, velocity: number, at: number) =>
     expressive ? expressiveGain(velocity, expressive.rangeDb) * 10 ** ((0.6 * noteJitter(note, at, 7)) / 20) : velocity;
   /** Start `trigger`'s notes, keep their sources (bent by the bend now) until `until`. */
-  const started = (notes: string[], until: number, trigger: () => void, at: number, velocity = 1) => {
+  const started = (notes: string[], until: number, trigger: () => void, at: number, velocity: number, by: Tone.Sampler) => {
     const before = new Set(allSources());
     trigger();
     const fresh = allSources().filter((src) => !before.has(src));
     fresh.forEach((src, i) => {
       const note = notes[Math.min(i, notes.length - 1)];
       if (expressive) {
-        voiceFilter(src, note, velocity);
+        voiceFilter(src, note, velocity, by);
         // Each hit a hair off the last: up to ±3 cents
         src.playbackRate.value *= 2 ** ((3 * noteJitter(note, at, 13)) / 1200);
       }
@@ -456,6 +563,8 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
       sounding.push({ src, note: notes[Math.min(i, notes.length - 1)], until, base, played: 0, last: at, rate: base * bendRatio });
     });
   };
+  /** Keys held down (attack without release yet): which sampler each went to */
+  const held = new Map<string, Tone.Sampler[]>();
   const prune = (time: number) => {
     for (let i = sounding.length - 1; i >= 0; i--) if (sounding[i].until < time) sounding.splice(i, 1);
   };
@@ -467,23 +576,19 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
       const end = at + sampler.toSeconds(duration);
       prune(at);
       // Attack and release apart (what triggerAttackRelease does), so the sources can be kept
-      started(
-        notes,
-        end + releaseSeconds() + 0.1,
-        () => {
-          if (!taper && !expressive) sampler.triggerAttack(notes, at, velocity);
-          else for (const note of notes) sampler.triggerAttack(note, at, level(note, velocity, at) * taperGain(taper, note));
-        },
-        at,
-        velocity
-      );
-      sampler.triggerRelease(notes, end);
+      for (const note of notes) {
+        const by = bank.pick(note, velocity);
+        started([note], end + releaseSeconds() + 0.1, () => by.triggerAttack(note, at, level(note, velocity, at) * taperGain(taper, note)), at, velocity, by);
+        by.triggerRelease(note, end);
+      }
     },
     attack: (note, time, velocity) => {
       if (!loaded) return;
       onNote?.(time);
       prune(time);
-      started([note], Infinity, () => sampler.triggerAttack(note, time, level(note, velocity, time) * taperGain(taper, note)), time, velocity);
+      const by = bank.pick(note, velocity);
+      held.set(note, [...(held.get(note) ?? []), by]);
+      started([note], Infinity, () => by.triggerAttack(note, time, level(note, velocity, time) * taperGain(taper, note)), time, velocity, by);
     },
     bend: (cents, time) => {
       const next = 2 ** (cents / 1200);
@@ -507,17 +612,21 @@ function samplerVoice(sampler: Tone.Sampler, attach: Promise<void>, extra: { dis
     },
     release: (note, time) => {
       if (!loaded) return;
-      sampler.triggerRelease(note, time);
+      // The sampler the key went to (the oldest still held, as Tone releases the oldest source)
+      const by = held.get(note)?.shift() ?? sampler;
+      if (!held.get(note)?.length) held.delete(note);
+      by.triggerRelease(note, time);
       for (const s of sounding) if (s.note === note && s.until === Infinity) s.until = time + releaseSeconds() + 0.1;
     },
     releaseAll: () => {
-      sampler.releaseAll();
+      bank.all.forEach((s) => s.releaseAll());
+      held.clear();
       const until = sampler.context.currentTime + releaseSeconds() + 0.1;
       for (const s of sounding) s.until = Math.min(s.until, until);
     },
     ready,
     dispose: () => {
-      sampler.dispose();
+      bank.all.forEach((s) => s.dispose());
       extra.forEach((n) => n.dispose());
     },
   };
@@ -529,11 +638,35 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
   const shaped = shapingChain(def.shaping, output);
   const chain = toneChain(def.tone, shaped);
   // A few ms of attack: a recording stretched to another pitch doesn't always start at zero
-  const sampler = new Tone.Sampler({ attack: 0.004, release: def.samples?.release ?? 1 }).connect(chain.input);
+  const options = { attack: 0.004, release: def.samples?.release ?? 1 };
+  const layers = def.samples?.layers;
+  if (!layers) {
+    const sampler = new Tone.Sampler(options).connect(chain.input);
+    const attach = loadSamples(key).then((set) => {
+      for (const [note, buffer] of Object.entries(set)) sampler.add(note as Tone.Unit.Note, buffer);
+    });
+    return samplerVoice(single(sampler), attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null);
+  }
+  // One sampler per loudness and take (names note|layer|take): a note plays the layer for its
+  // velocity, its takes in turn
+  const bank: Tone.Sampler[][] = layers.map(() => []);
+  for (const name of Object.keys(def.samples!.samples)) {
+    const [, l, t] = name.split('|').map(Number);
+    while (bank[l].length <= t) bank[l].push(new Tone.Sampler(options).connect(chain.input));
+  }
+  const turn = layers.map(() => 0);
+  const pick = (_note: string, velocity: number) => {
+    const found = layers.findIndex((top) => velocity <= top + 1e-6);
+    const l = found < 0 ? layers.length - 1 : found;
+    return bank[l][turn[l]++ % bank[l].length];
+  };
   const attach = loadSamples(key).then((set) => {
-    for (const [note, buffer] of Object.entries(set)) sampler.add(note as Tone.Unit.Note, buffer);
+    for (const [name, buffer] of Object.entries(set)) {
+      const [note, l, t] = name.split('|');
+      bank[Number(l)][Number(t)].add(note as Tone.Unit.Note, buffer);
+    }
   });
-  return samplerVoice(sampler, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null);
+  return samplerVoice({ all: bank.flat(), pick }, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null);
 }
 
 /**
@@ -552,7 +685,7 @@ export function createCustomSamplerVoice(sample: CustomSample | undefined, outpu
   const attach = buffer.then((b) => {
     sampler.add(sample.root as Tone.Unit.Note, b);
   });
-  return samplerVoice(sampler, attach, []);
+  return samplerVoice(single(sampler), attach, []);
 }
 
 // ---------- instrument browser / deck audition ----------
@@ -593,6 +726,8 @@ export function forgetUnusedSamples(keep: Set<InstrumentKey>): number {
     delete loadedSets[key];
     useAudioStore.getState().setInstrumentStatus(key, 'unloaded');
   }
+  // (The sets kept hold their own recordings)
+  recordings.clear();
   return bytes;
 }
 
