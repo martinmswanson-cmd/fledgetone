@@ -1,3 +1,7 @@
+/**
+ * Ripple edits (insert or delete bars across the whole song) as plain data, and the rules they
+ * move positions by.
+ */
 import type { LoopRegion } from './timelineTypes';
 import { TOTAL_BARS } from './timelineTypes';
 

@@ -1,3 +1,9 @@
+/**
+ * The user's own sound files (audio clips, the Sampler, the Slicer, the Drum Rack and the Multi
+ * Sampler). They're kept in this browser's IndexedDB under a hash of their bytes, decoded once per
+ * sample rate, measured for waveform peaks in idle time, cached as time-stretched or warped
+ * copies, and embedded into saved project files.
+ */
 import { create } from 'zustand';
 import { liveMix } from './engine';
 import { createPeaks, fillPeaks } from './waveform';

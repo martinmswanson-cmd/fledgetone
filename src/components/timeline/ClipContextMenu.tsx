@@ -1,3 +1,7 @@
+/**
+ * The right-click menu for clips and empty lane space (edit, copy, duplicate, repeat, delete, new
+ * clip, insert pattern, paste, load audio, smart tools), and the menu items other menus share.
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import { Drum, Music4, Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';

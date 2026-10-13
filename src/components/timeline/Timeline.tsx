@@ -1,3 +1,8 @@
+/**
+ * The arrangement timeline: toolbar, ruler, the video lane, folder rows, sticky track headers and
+ * clip lanes, the playhead, marquee selection, zoom and scroll, keyboard shortcuts, and the
+ * editors docked under it (piano roll, audio clip editor). The heart of the UI.
+ */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VideoLane } from '../video/VideoLane';
 import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';

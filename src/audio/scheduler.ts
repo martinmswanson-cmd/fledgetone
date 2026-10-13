@@ -1,3 +1,9 @@
+/**
+ * Note clips to Transport events. createClipSchedule plays every note clip on a Transport (one
+ * event per tick that has notes, shared by all clips and tracks, updated incrementally as clips
+ * change), live and in exports; each note group goes to its track's instrument, looked up when it
+ * plays. Also applies the loop region, tempo and swing to the live Transport (syncTransport).
+ */
 import * as Tone from 'tone';
 import { liveTransport } from './liveContext';
 import { applyTempoAt, barToTicks, getLiveTempo, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';

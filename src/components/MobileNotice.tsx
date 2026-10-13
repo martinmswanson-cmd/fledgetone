@@ -1,3 +1,7 @@
+/**
+ * The one-time notice on phones that the app is made for a computer (it still runs after Continue
+ * anyway).
+ */
 import React, { useState } from 'react';
 import { Monitor } from 'lucide-react';
 import { Modal } from './timeline/Modal';

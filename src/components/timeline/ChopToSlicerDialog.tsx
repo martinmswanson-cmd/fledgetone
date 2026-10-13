@@ -1,3 +1,7 @@
+/**
+ * Chop to Slicer: cut an audio clip's sound into slices on a new Slicer track, with a clip that
+ * plays them back in order.
+ */
 import React from 'react';
 import { useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';

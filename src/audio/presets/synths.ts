@@ -1,3 +1,8 @@
+/**
+ * The Tone.js synth instruments: the Wavetable pad, Sub-Bass, the 808 (with slides between
+ * overlapping notes, and the modern two-layer version for expressive tracks), the Analog Lead and
+ * the Drum Machine kit.
+ */
 import * as Tone from 'tone';
 import { monotonicTime } from './monotonic';
 import { createVoicePool } from './poly';

@@ -1,3 +1,7 @@
+/**
+ * A small panel dropped below the control that opened it, kept on screen and inside any clipping
+ * box, closed by Esc or a click elsewhere. The base of most of the app's popovers.
+ */
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 
 /** Room kept between a popover and the edge of whatever would cut it off. */

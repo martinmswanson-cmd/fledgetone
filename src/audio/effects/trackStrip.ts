@@ -1,3 +1,9 @@
+/**
+ * The mixer channel each track plays through: its inserts (in the order listed on TrackStrip), a
+ * stereo balance pan, solo and mute, the fader, and post-fader sends to the shared reverb and
+ * delay and to return tracks. An insert exists only while it's switched on, so idle effects cost
+ * nothing. Also the Pump's beat clock (createPumpClock).
+ */
 import * as Tone from 'tone';
 import type { AutomationParam, GateRate, PumpTrigger, Track } from '../../store/timelineTypes';
 import { GATE_TICKS } from '../../store/timelineTypes';

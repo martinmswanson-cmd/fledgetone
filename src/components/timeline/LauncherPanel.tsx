@@ -1,3 +1,7 @@
+/**
+ * The Launcher tab: the clip launcher's grid (a column per track, a row per scene) with launch,
+ * stop and drag-to-move. The logic is launcher.ts.
+ */
 import React, { useEffect, useState } from 'react';
 import { Play, Square, Undo2, LayoutList, Send, ListPlus, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';

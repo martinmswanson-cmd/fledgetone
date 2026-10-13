@@ -1,3 +1,7 @@
+/**
+ * The live audio context, its Transport and its output, shared by every module in place of Tone's
+ * global Tone.context / Tone.Transport / Tone.Destination.
+ */
 // After the playback mode has picked the live context's buffering (it may replace Tone's default)
 import './playbackMode';
 import * as Tone from 'tone';

@@ -1,3 +1,7 @@
+/**
+ * Which dialogs, panels and dock tab are open, and the dock's height: kept in a store rather than
+ * the components, so the search palette and menus can open any of them.
+ */
 import { create } from 'zustand';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);

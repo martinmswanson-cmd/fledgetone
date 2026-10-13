@@ -1,3 +1,7 @@
+/**
+ * The Sound FX tab: the sound effects maker (jump, coin, laser, hit, power-up, explosion, blip)
+ * with sliders, Randomize, Tune to key, save as WAV or add to the song. The synth is sfxSynth.ts.
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
 import * as Tone from 'tone';

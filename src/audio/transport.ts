@@ -1,3 +1,8 @@
+/**
+ * Positions and time on a Transport: 1-based bars to Tone ticks and back, the song's meter and the
+ * live tempo map, swing, and where playback is (what's been scheduled versus what the listener
+ * hears now).
+ */
 import * as Tone from 'tone';
 import { liveTransport } from './liveContext';
 import { formatFrameRulerTime, formatFrameTimecode, framesToSeconds, parseFrameTimecode, secondsToFrames } from './timecode';

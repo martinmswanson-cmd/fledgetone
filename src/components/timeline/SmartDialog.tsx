@@ -1,3 +1,7 @@
+/**
+ * The Chord progression and Drummer dialogs: make a clip from a few choices at the right-clicked
+ * bar (smartTools.ts writes the notes).
+ */
 import React, { useMemo, useState } from 'react';
 import { Modal } from './Modal';
 import { useTimelineStore } from '../../store/timelineStore';

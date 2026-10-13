@@ -1,3 +1,8 @@
+/**
+ * The editor docked under the timeline for an audio clip (where the piano roll goes for note
+ * clips): its stretch of the sound with warp markers and gain envelope, gain and fades, Follow
+ * tempo (time-stretch), Tune, Chop to Slicer.
+ */
 import React, { useEffect, useState } from 'react';
 import { AudioWaveform, FlipHorizontal2, Gauge, Magnet, Maximize2, Slice, Spline, Wand2, X } from 'lucide-react';
 import { useUiStore } from '../../store/uiStore';

@@ -1,3 +1,7 @@
+/**
+ * The Inspector panels of the Drum Rack (16 pads, each a sound with its own settings) and the
+ * Multi Sampler (sounds laid across the keys and velocities).
+ */
 import React, { useState } from 'react';
 import { Drum, Piano, Trash2, Upload } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';

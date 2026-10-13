@@ -1,3 +1,8 @@
+/**
+ * A track's header on the left of its lane: name, colour, add clip, mute / solo / arm, volume and
+ * pan (or, in automation view, the lane picker, its value and MIDI learn), freeze, and selecting
+ * the track for the Inspector.
+ */
 import { showToast } from './toastStore';
 import { useMidiStore } from '../../store/midiStore';
 import { connectMidi } from '../../audio/liveInput';

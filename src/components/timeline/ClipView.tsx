@@ -1,3 +1,7 @@
+/**
+ * One clip block on a track lane: its note marks or waveform, name, fades and crossfades, and the
+ * select / move / duplicate / trim / razor gestures (with snapping and edge auto-scroll).
+ */
 import { midiOf } from '../../store/noteTools';
 import React, { useMemo, useState } from 'react';
 import { TOTAL_BARS, useTimelineStore, songTempo } from '../../store/timelineStore';

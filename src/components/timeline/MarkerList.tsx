@@ -1,3 +1,7 @@
+/**
+ * The markers list popover (rename, lock to time or bar, delete, go to) and exporting the markers
+ * for video editing software.
+ */
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Flag, Lock, LockOpen, Plus, Trash2 } from 'lucide-react';
 import { TOTAL_BARS, songTempo, useSongTempo, useTimelineStore } from '../../store/timelineStore';

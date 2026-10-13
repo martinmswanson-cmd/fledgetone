@@ -1,3 +1,7 @@
+/**
+ * The Slicer instrument (vocal chops): a sound cut into slices, one per key from C3 up, each note
+ * playing its slice from a buffer with a short fade at either end.
+ */
 import * as Tone from 'tone';
 import type { PlayableNote, TrackInstrument } from '../instruments';
 import type { SlicerSettings } from '../../store/timelineTypes';

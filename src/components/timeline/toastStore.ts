@@ -1,3 +1,6 @@
+/**
+ * The toast's state: showToast puts a short message at the bottom of the screen.
+ */
 import { create } from 'zustand';
 
 interface ToastState {

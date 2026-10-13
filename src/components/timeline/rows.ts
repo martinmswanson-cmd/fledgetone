@@ -1,3 +1,7 @@
+/**
+ * The timeline's vertical layout: where each shown track's row starts, below the ruler, the video
+ * lane and the folder rows.
+ */
 import type { Track } from '../../store/timelineTypes';
 import { trackRows } from '../../store/folders';
 import { RULER_HEIGHT, TRACK_HEIGHT } from './layout';

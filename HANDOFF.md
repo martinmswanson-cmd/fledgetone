@@ -42,15 +42,18 @@ npm install
 npm run dev            # dev server
 npx tsc -b             # type check
 npx oxlint             # lint (3 known warnings: Playhead.tsx x2, SoundAuditionPanel.tsx x1)
-npm test               # node --test scripts/*.test.mjs (204 tests)
+npm test               # node --test scripts/*.test.mjs
 npm run build          # production build
 npm run build:single   # the one-file site (dist-single/index.html)
 npm run guide-tables   # rewrite GUIDE.md's instrument list and credits from the catalog
+npm run codemap        # rewrite docs/CODEMAP.md from the files' summary comments
 ```
 
 Run all five checks before every commit.
 
 ## Where things live
+
+For how the parts fit together see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); for every file, [docs/CODEMAP.md](docs/CODEMAP.md) (generated from each file's summary comment: `npm run codemap`). The table below is the quick version.
 
 | Area | Files |
 |------|-------|

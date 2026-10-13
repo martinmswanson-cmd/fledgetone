@@ -1,3 +1,8 @@
+/**
+ * Rendering micro-variations (the takes planned by src/store/microVariations.ts): each take played
+ * through the clip's track with its own pitch, brightness, note lengths and level, then trimmed
+ * and level-matched.
+ */
 import { renderArrangement, channelsOf } from './exportWav';
 import type { Clip, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 import { takeNotes, trimmedLength, type VariationTake } from '../store/microVariations';

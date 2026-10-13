@@ -1,3 +1,8 @@
+/**
+ * The Export dialog: what to render (song, loop, stems, the intro plus loop for games, a video),
+ * its ending, format (WAV, MP3, Ogg, MP4), sample rate and bit depth, loudness normalizing, and
+ * the render with progress and cancel.
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useVideoStore } from '../../store/videoStore';
 import { Download, Loader2 } from 'lucide-react';

@@ -1,3 +1,7 @@
+/**
+ * Fixes for Tone.js behaviour that breaks this app, applied when the module is imported (engine.ts
+ * imports it before any oscillator exists). See each fix's comment below.
+ */
 import * as Tone from 'tone';
 
 /**

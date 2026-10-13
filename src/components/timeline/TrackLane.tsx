@@ -1,3 +1,7 @@
+/**
+ * A track's lane: its clips over the bar grid, double-click to make a clip, drops from the sound
+ * deck or the desktop, the right-click menu, and the automation lane in automation view.
+ */
 import { useShallow } from 'zustand/react/shallow';
 import React, { useState } from 'react';
 import { songMeterOf, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';

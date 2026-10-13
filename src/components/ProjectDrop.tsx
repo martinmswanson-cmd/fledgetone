@@ -1,3 +1,7 @@
+/**
+ * Drop a .beatbox.json project file anywhere on the page to open it (asking first when there's
+ * work on the timeline).
+ */
 import React, { useEffect, useState } from 'react';
 import { isVideoFile, useVideoStore } from '../store/videoStore';
 import { FolderOpen } from 'lucide-react';

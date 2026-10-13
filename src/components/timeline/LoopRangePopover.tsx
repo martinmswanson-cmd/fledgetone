@@ -1,3 +1,7 @@
+/**
+ * The exact loop range editor (In, Out and Length typed in bars or timecode), opened from the
+ * chevron beside the Loop button.
+ */
 import React, { useCallback, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { TOTAL_BARS, useSongTempo, useTimelineStore } from '../../store/timelineStore';

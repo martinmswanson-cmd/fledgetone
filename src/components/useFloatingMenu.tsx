@@ -1,3 +1,7 @@
+/**
+ * A hook for a panel floating beside a button (portalled to the page body, on whichever side has
+ * room), closed by a click elsewhere, Esc or scrolling.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 

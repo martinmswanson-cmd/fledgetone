@@ -1,3 +1,7 @@
+/**
+ * The microphone record button: records the audio input onto an Audio track from the playhead,
+ * with punch in / out and loop takes.
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import { Mic, Square } from 'lucide-react';
 import { songTempo, useTimelineStore } from '../../store/timelineStore';

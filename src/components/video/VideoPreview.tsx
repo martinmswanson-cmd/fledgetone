@@ -1,3 +1,7 @@
+/**
+ * The reference video in a floating window that follows the playhead (plays along, and shows the
+ * frame under the playhead while stopped).
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import { GripHorizontal, Maximize2, Minimize2, Volume2, VolumeX, X } from 'lucide-react';
 import { songTempo, useTimelineStore } from '../../store/timelineStore';

@@ -1,3 +1,8 @@
+/**
+ * Web Audio Module plugins in the mix: a Plugin track's instrument (createPluginInstrument) and
+ * the plugin effects on a track (createPluginChain). Loading, permission and the plugin's own
+ * window are in wamHost.ts and PluginDialogs.tsx.
+ */
 import * as Tone from 'tone';
 import type { WamPlugin } from '../../store/timelineTypes';
 import { midiOf } from '../../store/noteTools';

@@ -1,3 +1,39 @@
+/**
+ * The song and everything that changes it: one zustand store (useTimelineStore) holding the
+ * tracks, clips, tempo and meter maps, markers, loop, master settings and the view and transport
+ * state, with every action the UI calls, and undo. Plus the two bridges out of it: to the audio
+ * engine (connectTimelineToAudio) and to the browser autosave (connectAutosave).
+ *
+ * How it's laid out, top to bottom (search for the names):
+ *
+ * 1. Undo: historyEntry, pushPast and restoreEntry. An undo step is a snapshot of the song's data
+ * (HistoryEntry, below), up to HISTORY_LIMIT of them; actions call checkpoint() (or
+ * pushPast) before changing anything they want undoable. Ripple edits also carry their RippleMove
+ * so undo puts the loop and playhead back.
+ *
+ * 2. TimelineState: the state's fields, then its actions grouped by area, each with a comment:
+ * Transport, View / tools, Loop, Markers, Tracks & Inspector, Audio clips and the Slicer, Master
+ * Studio FX, Clips, Ripple edits, Clipboard, Selection, Project, Creating and editing clips, Piano
+ * roll, Recording, Automation, and the rest after.
+ *
+ * 3. Helpers the actions share: splitClipAt, makeTrack, copyClip, selectionBlock, viewShowing,
+ * tidyMeters, and onProjectReplaced (listeners told when New, Open, a link or Restore replaces the
+ * song).
+ *
+ * 4. useTimelineStore = create(...): the actions' implementations, in the same order as
+ * TimelineState. Pure logic lives in the store's sibling files (markers.ts, takes.ts, buses.ts,
+ * folders.ts, audioClips.ts, launcher.ts...) and the actions call it, so most of this is applying
+ * their results with set().
+ *
+ * 5. currentProject (the song as a ProjectSnapshot, for saving and exports), retryAutosave and
+ * connectAutosave (writes the song to the browser a moment after each change, see project.ts).
+ *
+ * 6. connectTimelineToAudio: subscribes to the store and keeps the live engine in step. On every
+ * change it works out what the engine should play (frozen tracks as audio, clip launcher slots,
+ * controller lanes as automation), then updates only what changed: the live tracks
+ * (liveTracks.ts), the clip schedule (scheduler.ts), the Transport's loop, tempo and swing, the
+ * master inserts and returns, ducking and intensity.
+ */
 import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
 import { create } from 'zustand';

@@ -1,3 +1,8 @@
+/**
+ * The header bar: the menu bar, the project bar (name, Save, Export, Share), tempo, Fit to time
+ * and swing, the intensity slider, master volume, the loudness and performance badges, and the
+ * Search, Learn, Guide and Start Audio buttons. Also the ? shortcut that opens the guide.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, GraduationCap, Search, Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';

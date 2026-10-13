@@ -1,3 +1,7 @@
+/**
+ * Grid lines drawn across lanes for the visible stretch only: video frame lines while snapping to
+ * frames, and measure and beat lines in songs with other meters than 4/4.
+ */
 import React from 'react';
 import { TOTAL_BARS, useSongMeter, useSongTempo, useTimelineStore } from '../../store/timelineStore';
 import { barToSeconds, isPlainMeter, measuresBetween, secondsToBar } from '../../audio/tempoMap';
