@@ -4,11 +4,12 @@ import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 import { detectKey, keyOf } from './songKey';
 import type { SongKey } from './songKey';
-import { bassFromChords, chordName, chordNotesFor, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf } from './smartTools';
+import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf } from './smartTools';
 import { measureAt, meterAt } from '../audio/tempoMap';
 import type { Meter } from '../audio/tempoMap';
-import type { BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
-import { isDrumKind } from '../audio/instrumentCatalog';
+import type { AccompStyle, BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
+import { INSTRUMENTS, isDrumKind } from '../audio/instrumentCatalog';
+import { midiOf, nameOf } from './noteTools';
 
 /** The store side of the writing helpers (smartTools.ts): each makes or changes one clip, as one undo step. */
 
@@ -16,7 +17,7 @@ const tl = () => useTimelineStore.getState();
 const newId = () => uid('note');
 
 /** Which smart dialog is open, for which track and bar. */
-export const useSmartDialog = create<{ open: null | { mode: 'chords' | 'drummer'; trackId: string; bar: number } }>(() => ({ open: null }));
+export const useSmartDialog = create<{ open: null | { mode: 'chords' | 'drummer' | 'accompany'; trackId: string; bar: number; clipId?: string } }>(() => ({ open: null }));
 
 /** The song's key, from its notes (C major for a song with none yet). */
 export function songKey(): SongKey {
@@ -145,4 +146,44 @@ export function bassForChords(clipId: string, style: BassStyle = 'eighths', inst
   const notes = bassFromChords(clip.notes, clip.lengthBars, style, newId);
   if (!notes.length) return null;
   return trackWithClip(clip.trackId, instrument, 'Bass line', { name: 'Bass line', startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
+}
+
+/** Notes moved by octaves into an instrument's range (the part as a whole first, then any stragglers). */
+export function fitToInstrument(notes: NoteEvent[], instrument: InstrumentKey): NoteEvent[] {
+  const def = INSTRUMENTS[instrument];
+  if (!def?.range || def.kind === 'drums' || !notes.length) return notes;
+  const [lo, hi] = def.range;
+  const midis = notes.map((n) => midiOf(n.note));
+  let best = 0;
+  let bestFit = -1;
+  for (const k of [0, 12, -12, 24, -24]) {
+    const fit = midis.filter((m) => m + k >= lo && m + k <= hi).length;
+    if (fit > bestFit) {
+      best = k;
+      bestFit = fit;
+    }
+  }
+  return notes.map((n, i) => {
+    let m = midis[i] + best;
+    while (m > hi && m - 12 >= lo) m -= 12;
+    while (m < lo && m + 12 <= hi) m += 12;
+    return { ...n, note: nameOf(m) };
+  });
+}
+
+/**
+ * An accompaniment for a chord clip (see ACCOMP_STYLES) on a new track under it, over the same
+ * bars, in the song's time signature there. Returns the new track's id, or null if the clip has
+ * no chords.
+ */
+export function accompanyChords(clipId: string, style: AccompStyle, instrument?: InstrumentKey, seed = 1): string | null {
+  const s = tl();
+  const clip = s.clips.find((c) => c.id === clipId);
+  if (!clip || clip.audio || !clip.notes.length) return null;
+  const meter = meterAt(clip.startBar, { base: s.meter, points: s.meterPoints });
+  const def = ACCOMP_STYLES.find((a) => a.id === style)!;
+  const key = instrument ?? def.instrument;
+  const notes = fitToInstrument(accompany(clip.notes, clip.lengthBars, style, newId, meter, seed), key);
+  if (!notes.length) return null;
+  return trackWithClip(clip.trackId, key, def.track, { name: def.track, startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
 }

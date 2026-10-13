@@ -1,4 +1,4 @@
-import type { NoteEvent } from './timelineTypes';
+import type { InstrumentKey, NoteEvent } from './timelineTypes';
 import { barsToDuration, durationToBars } from './timelineTypes';
 import { midiOf, nameOf } from './noteTools';
 import type { SongKey } from './songKey';
@@ -381,6 +381,178 @@ export function bassFromChords(chordNotes: readonly NoteEvent[], lengthBars: num
     }
   });
   return out;
+}
+
+// ---------- Accompaniment under chords ----------
+
+/** A chord of a chord part and how long it lasts: its pitch classes, root first. */
+export interface ChordChange {
+  at: number;
+  end: number;
+  root: number;
+  pcs: number[];
+}
+
+/** The chords of a chord part (where notes start together), one per change of root. */
+export function chordChanges(chordNotes: readonly NoteEvent[], lengthBars: number): ChordChange[] {
+  const groups = new Map<number, number[]>();
+  for (const n of chordNotes) {
+    if (n.startOffset < -EPS || n.startOffset >= lengthBars - EPS) continue;
+    const m = midiOf(n.note);
+    if (!Number.isFinite(m)) continue;
+    const at = Math.round(n.startOffset * 192) / 192;
+    groups.set(at, [...(groups.get(at) ?? []), m]);
+  }
+  const out: ChordChange[] = [];
+  for (const at of [...groups.keys()].sort((a, b) => a - b)) {
+    const midis = groups.get(at)!;
+    const root = chordRoot(midis);
+    if (out.length && out[out.length - 1].root === root) continue;
+    const pcs = [...new Set(midis.map(pc))].sort((a, b) => pc(a - root) - pc(b - root));
+    out.push({ at, end: lengthBars, root, pcs });
+  }
+  out.forEach((c, i) => (c.end = out[i + 1]?.at ?? lengthBars));
+  return out;
+}
+
+/** The chord's pitch classes stacked upward in close position from the first at or above `low`. */
+function stack(pcs: readonly number[], low: number): number[] {
+  const out: number[] = [];
+  let m = low + pc(pcs[0] - low);
+  for (const p of pcs) {
+    while (pc(m) !== p) m++;
+    out.push(m);
+    m++;
+  }
+  return out;
+}
+
+export type AccompStyle = 'walking' | 'waltz' | 'alberti' | 'strum' | 'gliss' | 'ostinato' | 'sparkle' | 'fanfare' | 'drone';
+/** The accompaniments, each with the instrument it suits (the new track's, unless another is picked). */
+export const ACCOMP_STYLES: ReadonlyArray<{ id: AccompStyle; name: string; detail: string; instrument: InstrumentKey; track: string }> = [
+  { id: 'walking', name: 'Walking bass', detail: 'Quarter notes up the chord, a half step into the next one: jazz, shops, cities', instrument: 'realUprightBass', track: 'Walking bass' },
+  { id: 'waltz', name: 'Oom-pah-pah', detail: 'The root low on the beat, the chord on the others (3/4 waltz, 4/4 oom-pah, 6/8 lilt)', instrument: 'realGrandPiano', track: 'Oom-pah' },
+  { id: 'alberti', name: 'Alberti bass', detail: 'Low, high, middle, high in 8ths: classical, music boxes, calm towns', instrument: 'realGrandPiano', track: 'Alberti bass' },
+  { id: 'strum', name: 'Strummed guitar', detail: 'Down, down-up, up, down-up: campfires, villages, travel', instrument: 'guitar', track: 'Strums' },
+  { id: 'gliss', name: 'Harp glissando', detail: 'A sweep up the chord on each change: wonder, magic, reveals', instrument: 'realHarp', track: 'Harp sweeps' },
+  { id: 'ostinato', name: 'String ostinato (3+3+2)', detail: 'Driving 16ths on root and fifth, accented 3+3+2: battles, chases', instrument: 'realViolinsShort', track: 'Ostinato' },
+  { id: 'sparkle', name: 'Sparkle', detail: 'A few high chord notes here and there: stars, ice, fairy lights', instrument: 'celesta', track: 'Sparkle' },
+  { id: 'fanfare', name: 'Horn fanfare', detail: 'A triplet pickup, then up the chord to the octave: heroes, titles, victories', instrument: 'realHorn', track: 'Fanfare' },
+  { id: 'drone', name: 'Drone', detail: 'The first chord\'s root and fifth held under everything: folk, deserts, ancient places', instrument: 'slowStrings', track: 'Drone' },
+];
+
+/**
+ * An accompaniment for a chord part (see ACCOMP_STYLES): notes from the clip's start, written in
+ * `meter` (a waltz measure is 3/4 of a bar). `seed` varies the ones with a little chance in them.
+ */
+export function accompany(chordNotes: readonly NoteEvent[], lengthBars: number, style: AccompStyle, newId: () => string, meter: { num: number; den: number } = { num: 4, den: 4 }, seed = 1): NoteEvent[] {
+  const changes = chordChanges(chordNotes, lengthBars);
+  if (!changes.length) return [];
+  const rnd = seeded(seed);
+  const measure = meter.num / meter.den;
+  const posIn = (t: number) => ((t % measure) + measure) % measure;
+  const out: NoteEvent[] = [];
+  const add = (m: number, at: number, bars: number, vel: number) => {
+    if (at < -EPS || at >= lengthBars - EPS) return;
+    out.push(note(newId, m, at, Math.max(1 / 64, Math.min(bars, lengthBars - at)), Math.max(0.1, Math.min(1, vel))));
+  };
+  const grid = (c: ChordChange, step: number, fn: (t: number, k: number) => void) => {
+    for (let t = c.at, k = 0; t < c.end - EPS; t += step, k++) fn(t, k);
+  };
+  changes.forEach((c, i) => {
+    const next = changes[i + 1];
+    const span = c.end - c.at;
+    switch (style) {
+      case 'walking': {
+        const tones = [...stack(c.pcs.slice(0, 3), 36), 36 + pc(c.root - 36) + 12];
+        grid(c, 0.25, (t, k) => {
+          const last = t + 0.25 >= c.end - EPS && next;
+          // The last beat leads a half step into the next root
+          const m = last ? 36 + pc(next.root - 36) - 1 : tones[k % tones.length];
+          add(m, t, 0.23, k % 2 ? 0.66 : 0.78);
+        });
+        break;
+      }
+      case 'waltz': {
+        // Strong beats: the measure's start (and its middle in 4/4, each dotted quarter in 6/8)
+        const strongEvery = meter.den === 8 ? 3 / 8 : meter.num % 3 === 0 ? measure : 0.5;
+        const unit = meter.den === 8 ? 1 / 8 : 1 / 4;
+        const bass = 40 + pc(c.root - 40);
+        const chord = stack(c.pcs.slice(0, 3), 55);
+        grid(c, unit, (t) => {
+          const strong = Math.abs(posIn(t) % strongEvery) < EPS || Math.abs((posIn(t) % strongEvery) - strongEvery) < EPS;
+          if (strong) add(bass, t, unit * 0.95, 0.72);
+          else for (const m of chord) add(m, t, unit * 0.6, 0.5);
+        });
+        break;
+      }
+      case 'alberti': {
+        const [lo, mid, hi] = stack(c.pcs.slice(0, 3), 48);
+        grid(c, 1 / 8, (t, k) => add([lo, hi, mid, hi][k % 4], t, 1 / 8, k % 4 === 0 ? 0.62 : 0.48));
+        break;
+      }
+      case 'strum': {
+        const strings = [...stack(c.pcs.slice(0, 3), 52), 52 + pc(c.root - 52) + 12].sort((a, b) => a - b);
+        const PATTERN = ['D', '', 'D', 'U', '', 'U', 'D', 'U'];
+        grid(c, 1 / 8, (t) => {
+          const kind = PATTERN[Math.round(posIn(t) * 8) % 8];
+          if (!kind) return;
+          const order = kind === 'D' ? strings : [...strings].reverse().slice(0, 3);
+          order.forEach((m, j) => add(m, t + j / 192, 1 / 8, kind === 'D' ? 0.62 - j * 0.03 : 0.42));
+        });
+        break;
+      }
+      case 'gliss': {
+        const run: number[] = [];
+        for (let m = 43; run.length < 12; m++) if (c.pcs.includes(pc(m))) run.push(m);
+        run.forEach((m, j) => add(m, c.at + j / 32, j === run.length - 1 ? Math.max(1 / 8, span - j / 32) : 1 / 4, 0.35 + (0.35 * j) / run.length));
+        break;
+      }
+      case 'ostinato': {
+        const r = 48 + pc(c.root - 48);
+        const fifth = c.pcs.find((p) => pc(p - c.root) === 7) ?? pc(c.root + 7);
+        const tones = [r, r + pc(fifth - c.root), r + 12];
+        grid(c, 1 / 16, (t) => {
+          const g = Math.round(posIn(t) * 16) % 8;
+          add(tones[[0, 1, 2, 0, 1, 2, 0, 1][g]], t, 1 / 16, [0, 3, 6].includes(g) ? 0.78 : 0.5);
+        });
+        break;
+      }
+      case 'sparkle': {
+        const tones = [...stack(c.pcs.slice(0, 3), 79), ...stack(c.pcs.slice(0, 3), 91)];
+        grid(c, 1 / 8, (t) => {
+          if (rnd() < 0.3) add(tones[Math.floor(rnd() * tones.length)], t, 1 / 16, 0.35 + rnd() * 0.15);
+        });
+        break;
+      }
+      case 'fanfare': {
+        const [r, third, fifth] = stack(c.pcs.slice(0, 3), 53);
+        // The next chord's pickup takes the last beat
+        const until = next && span >= 0.75 ? c.end - 0.25 : c.end;
+        add(r, c.at, 0.25, 0.8);
+        if (until - c.at >= 0.5) {
+          add(third, c.at + 0.25, 1 / 8, 0.7);
+          add(fifth, c.at + 0.375, 1 / 8, 0.72);
+          add(r + 12, c.at + 0.5, until - c.at - 0.5, 0.82);
+        }
+        if (next && span >= 0.75) {
+          const nr = 53 + pc(next.root - 53);
+          for (let j = 0; j < 3; j++) add(nr, until + j / 12, 1 / 12, 0.6 + j * 0.05);
+        }
+        break;
+      }
+      case 'drone':
+        break;
+    }
+  });
+  if (style === 'drone') {
+    const r = 36 + pc(changes[0].root - 36);
+    for (let t = 0; t < lengthBars - EPS; t += 2) {
+      add(r, t, 2, 0.5);
+      add(r + 7, t, 2, 0.42);
+    }
+  }
+  return out.sort((a, b) => a.startOffset - b.startOffset);
 }
 
 // ---------- A drummer ----------
