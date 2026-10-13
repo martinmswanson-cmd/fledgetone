@@ -1,33 +1,28 @@
 /**
- * The game preview's little game, in three.js: Bo (the Gomo-Fu crew's white one) walks a grassy
- * arena collecting coins while Slate (the dark one) patrols. Slate notices Bo when he comes close
- * and chases him; touching Bo hurts, but landing on Slate from a jump beats it. The scene only
- * reports what happens (events); the preview turns them into music and sound effects. Bo and
- * Slate are built from simple shapes the way gomofu-guys.js on twobirdsworkshop.com builds them.
+ * The game preview's little game, in three.js: the hero (a small robot) walks a grassy arena
+ * collecting coins while the guard (a one-eyed cube) patrols. The guard notices the hero when it
+ * comes close and chases it; touching the guard hurts, but landing on it from a jump beats it. The
+ * scene only reports what happens (events); the preview turns them into music and sound effects.
  */
 import * as T from 'three';
 
 export interface TryOutEvents {
-  /** Slate saw Bo and is chasing */
+  /** The guard saw the hero and is chasing */
   notice: () => void;
-  /** Slate gave up and went back to its rounds */
+  /** The guard gave up and went back to its rounds */
   lose: () => void;
-  /** Every frame while chasing: how far Slate is */
+  /** Every frame while chasing: how far the guard is */
   distance: (d: number, chasing: boolean) => void;
   coin: (left: number) => void;
   hurt: (hearts: number) => void;
   step: () => void;
   jump: () => void;
-  /** Bo landed on Slate */
+  /** The hero landed on the guard */
   bonk: () => void;
   gameOver: () => void;
 }
 
 const INK = 0x2b2140;
-const CREW = {
-  slate: { body: 0x2f2546, band: 0xffbe3b, legs: 0x3b3155 },
-  bo: { body: 0xfffaf0, band: 0x3d9ee0, legs: 0xe9dcc0 },
-};
 const ARENA = 11;
 const SPEED = 4;
 const CHASE_SPEED = 2.7;
@@ -43,58 +38,91 @@ interface Guy {
   legs: Array<{ hip: T.Group; knee: T.Group }>;
 }
 
-/** One of the crew: a round body with a band, two eyes and two little legs, outlined in ink. */
-function buildGuy(c: { body: number; band: number; legs: number }): Guy {
-  const toon = (col: number) => new T.MeshToonMaterial({ color: col });
-  const inkMat = new T.MeshBasicMaterial({ color: INK, side: T.BackSide });
-  const withLine = (mesh: T.Mesh, t: number) => {
-    const shell = new T.Mesh(mesh.geometry, inkMat);
-    shell.scale.setScalar(1 + t);
-    mesh.add(shell);
-    return mesh;
-  };
-  const root = new T.Group();
-  const body = new T.Group();
-  root.add(body);
-  const ball = withLine(new T.Mesh(new T.SphereGeometry(0.5, 32, 18), toon(c.body)), 0.08);
-  ball.scale.set(1, 0.65, 1);
-  body.add(ball);
-  const band = withLine(new T.Mesh(new T.TorusGeometry(0.47, 0.065, 12, 48), toon(c.band)), 0.12);
-  band.rotation.x = Math.PI / 2;
-  band.scale.set(1, 1, 0.8);
-  band.position.y = -0.09;
-  body.add(band);
-  for (const sx of [-1, 1]) {
-    const eye = withLine(new T.Mesh(new T.SphereGeometry(0.105, 16, 12), toon(0xffffff)), 0.18);
-    eye.position.set(sx * 0.14, 0.04, 0.47);
-    eye.scale.set(1, 1, 0.55);
-    body.add(eye);
-    const pupil = new T.Mesh(new T.SphereGeometry(0.052, 12, 8), new T.MeshBasicMaterial({ color: INK }));
-    pupil.position.set(sx * 0.14 + 0.012, 0.03, 0.545);
-    pupil.scale.set(1, 1, 0.5);
-    body.add(pupil);
-  }
+const toon = (col: number) => new T.MeshToonMaterial({ color: col });
+/** A mesh with an ink outline (a slightly bigger back-faced copy). */
+function outlined(mesh: T.Mesh, t: number): T.Mesh {
+  const shell = new T.Mesh(mesh.geometry, new T.MeshBasicMaterial({ color: INK, side: T.BackSide }));
+  shell.scale.setScalar(1 + t);
+  mesh.add(shell);
+  return mesh;
+}
+
+/** Two short block legs that can walk (hip and knee joints), in `color`, `spread` apart. */
+function blockLegs(root: T.Group, color: number, spread: number, top: number): Guy['legs'] {
   const legs: Guy['legs'] = [];
   for (const sx of [-1, 1]) {
     const hip = new T.Group();
-    hip.position.set(sx * 0.17, -0.2 + 0.88, 0);
-    const thigh = withLine(new T.Mesh(new T.CapsuleGeometry(0.055, 0.2, 4, 10), toon(c.legs)), 0.35);
-    thigh.position.y = -0.135;
-    hip.add(thigh);
+    hip.position.set(sx * spread, top, 0);
+    const upper = outlined(new T.Mesh(new T.BoxGeometry(0.13, 0.2, 0.13), toon(color)), 0.12);
+    upper.position.y = -0.1;
+    hip.add(upper);
     const knee = new T.Group();
-    knee.position.y = -0.27;
+    knee.position.y = -0.2;
     hip.add(knee);
-    const shin = withLine(new T.Mesh(new T.CapsuleGeometry(0.05, 0.2, 4, 10), toon(c.legs)), 0.35);
-    shin.position.y = -0.135;
-    knee.add(shin);
-    const foot = new T.Mesh(new T.SphereGeometry(0.1, 12, 8), new T.MeshBasicMaterial({ color: INK }));
-    foot.scale.set(1, 0.5, 1.3);
-    foot.position.set(0, -0.27, 0.04);
+    const lower = outlined(new T.Mesh(new T.BoxGeometry(0.12, 0.18, 0.12), toon(color)), 0.12);
+    lower.position.y = -0.09;
+    knee.add(lower);
+    const foot = new T.Mesh(new T.BoxGeometry(0.18, 0.07, 0.24), new T.MeshBasicMaterial({ color: INK }));
+    foot.position.set(0, -0.19, 0.04);
     knee.add(foot);
     root.add(hip);
     legs.push({ hip, knee });
   }
-  body.position.y = 0.88;
+  return legs;
+}
+
+/** The hero: a small orange robot with a screen for a face and an antenna. */
+function buildHero(): Guy {
+  const root = new T.Group();
+  const body = new T.Group();
+  root.add(body);
+  const torso = outlined(new T.Mesh(new T.BoxGeometry(0.62, 0.5, 0.48), toon(0xf08a3c)), 0.06);
+  body.add(torso);
+  const head = outlined(new T.Mesh(new T.BoxGeometry(0.5, 0.36, 0.42), toon(0xf6f1e7)), 0.07);
+  head.position.y = 0.45;
+  body.add(head);
+  const screen = new T.Mesh(new T.BoxGeometry(0.4, 0.22, 0.02), new T.MeshBasicMaterial({ color: 0x1d2433 }));
+  screen.position.set(0, 0.45, 0.215);
+  body.add(screen);
+  for (const sx of [-1, 1]) {
+    const eye = new T.Mesh(new T.BoxGeometry(0.07, 0.09, 0.02), new T.MeshBasicMaterial({ color: 0x5ee6ff }));
+    eye.position.set(sx * 0.09, 0.46, 0.23);
+    body.add(eye);
+  }
+  const stalk = new T.Mesh(new T.CylinderGeometry(0.018, 0.018, 0.22, 8), new T.MeshBasicMaterial({ color: INK }));
+  stalk.position.y = 0.74;
+  body.add(stalk);
+  const tip = outlined(new T.Mesh(new T.SphereGeometry(0.06, 12, 8), toon(0xffd23f)), 0.2);
+  tip.position.y = 0.87;
+  body.add(tip);
+  body.position.y = 0.62;
+  const legs = blockLegs(root, 0x5b6474, 0.16, 0.4);
+  return { root, body, legs };
+}
+
+/** The guard: a purple cube with one big eye and two horns. */
+function buildGuard(): Guy {
+  const root = new T.Group();
+  const body = new T.Group();
+  root.add(body);
+  const cube = outlined(new T.Mesh(new T.BoxGeometry(0.8, 0.72, 0.72), toon(0x6b3fa0)), 0.05);
+  body.add(cube);
+  const white = outlined(new T.Mesh(new T.SphereGeometry(0.17, 20, 14), toon(0xffffff)), 0.12);
+  white.position.set(0, 0.06, 0.34);
+  white.scale.set(1, 1, 0.5);
+  body.add(white);
+  const pupil = new T.Mesh(new T.SphereGeometry(0.075, 12, 8), new T.MeshBasicMaterial({ color: 0xe0303a }));
+  pupil.position.set(0, 0.05, 0.42);
+  pupil.scale.set(1, 1, 0.5);
+  body.add(pupil);
+  for (const sx of [-1, 1]) {
+    const horn = outlined(new T.Mesh(new T.ConeGeometry(0.09, 0.26, 10), toon(0xf2e6c9)), 0.15);
+    horn.position.set(sx * 0.26, 0.48, 0);
+    horn.rotation.z = -sx * 0.35;
+    body.add(horn);
+  }
+  body.position.y = 0.72;
+  const legs = blockLegs(root, 0x45286b, 0.22, 0.38);
   return { root, body, legs };
 }
 
@@ -113,10 +141,10 @@ export class TryOutScene {
   private renderer: T.WebGLRenderer;
   private scene = new T.Scene();
   private camera = new T.PerspectiveCamera(42, 1, 0.1, 100);
-  private bo = buildGuy(CREW.bo);
-  private slate = buildGuy(CREW.slate);
-  private boShadow: T.Mesh;
-  private slateShadow: T.Mesh;
+  private hero = buildHero();
+  private guard = buildGuard();
+  private heroShadow: T.Mesh;
+  private guardShadow: T.Mesh;
   private coins: T.Mesh[] = [];
   private obstacles: Array<{ x: number; z: number; r: number }> = [];
   private keys = new Set<string>();
@@ -124,21 +152,21 @@ export class TryOutScene {
   private last = 0;
   private resize: ResizeObserver;
   // Game state
-  private boVel = new T.Vector3();
-  private boY = 0;
-  private boVy = 0;
+  private heroVel = new T.Vector3();
+  private heroY = 0;
+  private heroVy = 0;
   private walk = 0;
   private stepClock = 0;
   private hearts = 3;
   private hurtUntil = 0;
   private chasing = false;
   private farFor = 0;
-  private slateDown = false;
-  /** Slate stops for a moment after it hits Bo */
-  private slateRestUntil = 0;
-  /** Slate naps (stays put, notices nothing) until the music is ready */
-  private slateAwake = false;
-  private slateSquash = 0;
+  private guardDown = false;
+  /** The guard stops for a moment after it hits the hero */
+  private guardRestUntil = 0;
+  /** The guard naps (stays put, notices nothing) until the music is ready */
+  private guardAwake = false;
+  private guardSquash = 0;
   private patrol = 0;
   private over = false;
   private time = 0;
@@ -223,9 +251,9 @@ export class TryOutScene {
       this.scene.add(s);
       return s;
     };
-    this.boShadow = shadow();
-    this.slateShadow = shadow();
-    this.scene.add(this.bo.root, this.slate.root);
+    this.heroShadow = shadow();
+    this.guardShadow = shadow();
+    this.scene.add(this.hero.root, this.guard.root);
     this.reset();
 
     this.resize = new ResizeObserver(() => this.fit());
@@ -241,22 +269,22 @@ export class TryOutScene {
     this.camera.updateProjectionMatrix();
   }
 
-  /** Back to the start: Bo in the middle, Slate on its rounds, every coin back. */
+  /** Back to the start: the hero in the middle, the guard on its rounds, every coin back. */
   reset() {
-    this.bo.root.position.set(0, 0, 0);
-    this.bo.root.rotation.y = Math.PI;
-    this.boY = 0;
-    this.boVy = 0;
-    this.slate.root.position.set(0, 0, -8);
-    this.slate.root.scale.setScalar(1);
-    this.slate.root.visible = true;
-    this.slateShadow.visible = true;
-    this.slateDown = false;
+    this.hero.root.position.set(0, 0, 0);
+    this.hero.root.rotation.y = Math.PI;
+    this.heroY = 0;
+    this.heroVy = 0;
+    this.guard.root.position.set(0, 0, -8);
+    this.guard.root.scale.setScalar(1);
+    this.guard.root.visible = true;
+    this.guardShadow.visible = true;
+    this.guardDown = false;
     this.chasing = false;
     this.farFor = 0;
     this.hearts = 3;
     this.hurtUntil = 0;
-    this.slateRestUntil = 0;
+    this.guardRestUntil = 0;
     this.time = 0;
     this.over = false;
     for (const c of this.coins) c.visible = true;
@@ -264,21 +292,21 @@ export class TryOutScene {
     this.camera.lookAt(0, 0, 0);
   }
 
-  /** Slate wakes up and starts its rounds (once the music is ready to follow it). */
+  /** The guard wakes up and starts its rounds (once the music is ready to follow it). */
   wake() {
-    this.slateAwake = true;
-    this.slate.root.scale.setScalar(1);
+    this.guardAwake = true;
+    this.guard.root.scale.setScalar(1);
   }
 
   get state() {
-    return { hearts: this.hearts, coins: this.coins.filter((c) => !c.visible).length, coinsTotal: this.coins.length, chasing: this.chasing, asleep: !this.slateAwake, beaten: this.slateDown, over: this.over };
+    return { hearts: this.hearts, coins: this.coins.filter((c) => !c.visible).length, coinsTotal: this.coins.length, chasing: this.chasing, asleep: !this.guardAwake, beaten: this.guardDown, over: this.over };
   }
 
   key(code: string, down: boolean) {
     if (down) this.keys.add(code);
     else this.keys.delete(code);
-    if (down && (code === 'Space' || code === 'KeyJ') && this.boY <= 0.001 && !this.over) {
-      this.boVy = JUMP;
+    if (down && (code === 'Space' || code === 'KeyJ') && this.heroY <= 0.001 && !this.over) {
+      this.heroVy = JUMP;
       this.events.jump();
     }
   }
@@ -338,34 +366,34 @@ export class TryOutScene {
 
   private update(dt: number) {
     this.time += dt;
-    const bo = this.bo.root;
-    const sl = this.slate.root;
+    const hero = this.hero.root;
+    const gd = this.guard.root;
 
-    // Bo: walk with the arrows or WASD (relative to the screen), jump with Space
+    // The hero: walk with the arrows or WASD (relative to the screen), jump with Space
     const k = this.keys;
     const ix = (k.has('ArrowRight') || k.has('KeyD') ? 1 : 0) - (k.has('ArrowLeft') || k.has('KeyA') ? 1 : 0);
     const iz = (k.has('ArrowDown') || k.has('KeyS') ? 1 : 0) - (k.has('ArrowUp') || k.has('KeyW') ? 1 : 0);
     const len = Math.hypot(ix, iz);
     const moving = len > 0 && !this.over;
     const target = moving ? new T.Vector3((ix / len) * SPEED, 0, (iz / len) * SPEED) : new T.Vector3();
-    this.boVel.lerp(target, Math.min(1, dt * 12));
-    bo.position.addScaledVector(this.boVel, dt);
-    this.collide(bo.position, 0.45);
-    if (this.boVel.lengthSq() > 0.2) bo.rotation.y = Math.atan2(this.boVel.x, this.boVel.z);
+    this.heroVel.lerp(target, Math.min(1, dt * 12));
+    hero.position.addScaledVector(this.heroVel, dt);
+    this.collide(hero.position, 0.45);
+    if (this.heroVel.lengthSq() > 0.2) hero.rotation.y = Math.atan2(this.heroVel.x, this.heroVel.z);
     // The jump
-    this.boVy -= GRAVITY * dt;
-    this.boY = Math.max(0, this.boY + this.boVy * dt);
-    if (this.boY === 0) this.boVy = 0;
-    bo.position.y = this.boY;
-    const speed = this.boVel.length();
-    if (this.boY > 0) {
-      this.bo.legs.forEach((l) => {
+    this.heroVy -= GRAVITY * dt;
+    this.heroY = Math.max(0, this.heroY + this.heroVy * dt);
+    if (this.heroY === 0) this.heroVy = 0;
+    hero.position.y = this.heroY;
+    const speed = this.heroVel.length();
+    if (this.heroY > 0) {
+      this.hero.legs.forEach((l) => {
         l.hip.rotation.x = -0.6;
         l.knee.rotation.x = 1.2;
       });
     } else {
       this.walk += dt * speed * 3.2;
-      this.animateLegs(this.bo, this.walk, Math.min(1, speed / SPEED));
+      this.animateLegs(this.hero, this.walk, Math.min(1, speed / SPEED));
       if (speed > 1) {
         this.stepClock -= dt;
         if (this.stepClock <= 0) {
@@ -375,35 +403,35 @@ export class TryOutScene {
       } else this.stepClock = 0;
     }
     // Blinking while hurt
-    bo.visible = !(this.time < this.hurtUntil && Math.floor(this.time * 12) % 2 === 0);
-    this.boShadow.position.set(bo.position.x, 0.02, bo.position.z);
-    this.boShadow.scale.setScalar(1 - Math.min(0.6, this.boY * 0.25));
+    hero.visible = !(this.time < this.hurtUntil && Math.floor(this.time * 12) % 2 === 0);
+    this.heroShadow.position.set(hero.position.x, 0.02, hero.position.z);
+    this.heroShadow.scale.setScalar(1 - Math.min(0.6, this.heroY * 0.25));
 
     // Coins
     for (const c of this.coins) {
       if (!c.visible) continue;
       c.rotation.y += dt * 3;
       c.position.y = 0.6 + Math.sin(this.time * 3 + c.position.x) * 0.08;
-      if (Math.hypot(c.position.x - bo.position.x, c.position.z - bo.position.z) < 0.75 && this.boY < 1.2) {
+      if (Math.hypot(c.position.x - hero.position.x, c.position.z - hero.position.z) < 0.75 && this.heroY < 1.2) {
         c.visible = false;
         this.events.coin(this.coins.filter((x) => x.visible).length);
       }
     }
 
-    // Slate: on its rounds, or chasing, or beaten
-    const dx = bo.position.x - sl.position.x;
-    const dz = bo.position.z - sl.position.z;
+    // The guard: on its rounds, or chasing, or beaten
+    const dx = hero.position.x - gd.position.x;
+    const dz = hero.position.z - gd.position.z;
     const dist = Math.hypot(dx, dz);
-    if (this.slateDown) {
-      this.slateSquash = Math.min(1, this.slateSquash + dt * 3);
-      sl.scale.set(1 + this.slateSquash * 0.5, Math.max(0.05, 1 - this.slateSquash * 0.95), 1 + this.slateSquash * 0.5);
-      if (this.slateSquash >= 1) {
-        sl.visible = false;
-        this.slateShadow.visible = false;
+    if (this.guardDown) {
+      this.guardSquash = Math.min(1, this.guardSquash + dt * 3);
+      gd.scale.set(1 + this.guardSquash * 0.5, Math.max(0.05, 1 - this.guardSquash * 0.95), 1 + this.guardSquash * 0.5);
+      if (this.guardSquash >= 1) {
+        gd.visible = false;
+        this.guardShadow.visible = false;
       }
-    } else if (!this.slateAwake) {
+    } else if (!this.guardAwake) {
       // Napping: a slow breath in place
-      sl.scale.set(1, 0.92 + Math.sin(this.time * 2) * 0.04, 1);
+      gd.scale.set(1, 0.92 + Math.sin(this.time * 2) * 0.04, 1);
     } else if (!this.over) {
       if (!this.chasing && dist < NOTICE) {
         this.chasing = true;
@@ -419,7 +447,7 @@ export class TryOutScene {
       }
       let vx: number;
       let vz: number;
-      if (this.time < this.slateRestUntil) {
+      if (this.time < this.guardRestUntil) {
         vx = 0;
         vz = 0;
       } else if (this.chasing) {
@@ -430,33 +458,33 @@ export class TryOutScene {
         this.patrol += dt * 0.18;
         const tx = Math.cos(this.patrol) * 7.5;
         const tz = -Math.abs(Math.sin(this.patrol)) * 7.5 - 0.5;
-        const ex = tx - sl.position.x;
-        const ez = tz - sl.position.z;
+        const ex = tx - gd.position.x;
+        const ez = tz - gd.position.z;
         const ed = Math.hypot(ex, ez) || 1;
         vx = (ex / ed) * PATROL_SPEED;
         vz = (ez / ed) * PATROL_SPEED;
       }
-      sl.position.x += vx * dt;
-      sl.position.z += vz * dt;
-      this.collide(sl.position, 0.45);
-      sl.rotation.y = Math.atan2(vx, vz);
-      this.animateLegs(this.slate, this.time * (this.chasing ? 11 : 6), this.chasing ? 1 : 0.6);
+      gd.position.x += vx * dt;
+      gd.position.z += vz * dt;
+      this.collide(gd.position, 0.45);
+      gd.rotation.y = Math.atan2(vx, vz);
+      this.animateLegs(this.guard, this.time * (this.chasing ? 11 : 6), this.chasing ? 1 : 0.6);
       if (this.chasing) this.events.distance(dist, true);
 
-      // Landing on Slate beats it; walking into it hurts
-      if (dist < 0.95 && this.boVy < 0 && this.boY > 0.25 && this.boY < 1.3) {
-        this.slateDown = true;
-        this.slateSquash = 0;
+      // Landing on the guard beats it; walking into it hurts
+      if (dist < 0.95 && this.heroVy < 0 && this.heroY > 0.25 && this.heroY < 1.3) {
+        this.guardDown = true;
+        this.guardSquash = 0;
         this.chasing = false;
-        this.boVy = JUMP * 0.7;
+        this.heroVy = JUMP * 0.7;
         this.events.bonk();
-      } else if (dist < 0.85 && this.boY < 0.25 && this.time > this.hurtUntil) {
+      } else if (dist < 0.85 && this.heroY < 0.25 && this.time > this.hurtUntil) {
         this.hearts -= 1;
         this.hurtUntil = this.time + 1.5;
-        this.slateRestUntil = this.time + 1.2;
-        bo.position.x += (dx / Math.max(dist, 1e-6)) * 1.5;
-        bo.position.z += (dz / Math.max(dist, 1e-6)) * 1.5;
-        this.collide(bo.position, 0.45);
+        this.guardRestUntil = this.time + 1.2;
+        hero.position.x += (dx / Math.max(dist, 1e-6)) * 1.5;
+        hero.position.z += (dz / Math.max(dist, 1e-6)) * 1.5;
+        this.collide(hero.position, 0.45);
         this.events.hurt(this.hearts);
         if (this.hearts <= 0) {
           this.over = true;
@@ -464,11 +492,11 @@ export class TryOutScene {
         }
       }
     }
-    this.slateShadow.position.set(sl.position.x, 0.02, sl.position.z);
+    this.guardShadow.position.set(gd.position.x, 0.02, gd.position.z);
 
-    // The camera follows Bo from above and behind
-    const want = new T.Vector3(bo.position.x * 0.85, 8.5, bo.position.z * 0.85 + 8.5);
+    // The camera follows the hero from above and behind
+    const want = new T.Vector3(hero.position.x * 0.85, 8.5, hero.position.z * 0.85 + 8.5);
     this.camera.position.lerp(want, Math.min(1, dt * 3));
-    this.camera.lookAt(bo.position.x * 0.85, 0.5, bo.position.z * 0.85);
+    this.camera.lookAt(hero.position.x * 0.85, 0.5, hero.position.z * 0.85);
   }
 }

@@ -1,8 +1,8 @@
 /**
- * Try it in a game: a little 3D game (Bo, Slate and coins: see tryOutScene.ts) that plays the song
+ * Try it in a game: a little 3D game (a robot hero, a guard and coins: see tryOutScene.ts) that plays the song
  * the way a real game would, through the game kit's own web player. Exploring plays the calm state,
- * Slate spotting Bo switches to the fight state by the song's transition rule and turns the
- * intensity up as it closes in, coins fire the item stinger and a coin sound, and beating Slate or
+ * The guard spotting the hero switches to the fight state by the song's transition rule and turns the
+ * intensity up as it closes in, coins fire the item stinger and a coin sound, and beating the guard or
  * losing plays the win or lose stinger. A panel picks which state, stinger and sound each moment
  * plays (guessed from their names: tryOut.ts). Sounds the song doesn't have come from the sound
  * effects maker.
@@ -41,7 +41,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const scene = useRef<TryOutScene | null>(null);
   const music = useRef<AdaptiveMusic | null>(null);
   const own = useRef<Map<SfxMoment, AudioBuffer[]>>(new Map());
-  /** The music is loaded (a scene made after this wakes Slate straight away) */
+  /** The music is loaded (a scene made after this wakes the guard straight away) */
   const musicReady = useRef(false);
   /** The live audio context (Tone's current context is an offline one while the music renders) */
   const liveCtx = useRef<AudioContext | null>(null);
@@ -106,10 +106,10 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         setManifest(manifest);
         if (guess.calm) m.play(guess.calm);
         m.setIntensity(0.3, 0.1);
-        // Slate naps until now, so the music is there for the chase
+        // The guard naps until now, so the music is there for the chase
         musicReady.current = true;
         scene.current?.wake();
-        say(`Music ready: ${guess.calm || '(no state)'}. Slate woke up!`);
+        say(`Music ready: ${guess.calm || '(no state)'}. The guard woke up!`);
       } catch (err) {
         if (!cancelled) showToast(`Couldn't make the game preview: ${err instanceof Error ? err.message : String(err)}.`);
         onClose();
@@ -179,9 +179,9 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     void import('./tryOutScene').then(({ TryOutScene }) => {
       if (disposed || !host.current) return;
       sc = new TryOutScene(host.current, {
-        notice: () => toState(mapRef.current?.fight, 'Slate spotted you'),
+        notice: () => toState(mapRef.current?.fight, 'The guard spotted you'),
         lose: () => {
-          toState(mapRef.current?.calm, 'Slate gave up');
+          toState(mapRef.current?.calm, 'The guard gave up');
           music.current?.setIntensity(0.3, 2);
           lastIntensity.current = 0.3;
         },
@@ -209,8 +209,8 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           sfx('bonkSfx');
           const mp = mapRef.current;
           stinger(mp?.winStinger);
-          if (mp?.win) toState(mp.win, 'Slate beaten');
-          else toState(mp?.calm, 'Slate beaten');
+          if (mp?.win) toState(mp.win, 'Guard beaten');
+          else toState(mp?.calm, 'Guard beaten');
           music.current?.setIntensity(0.6, 1);
         },
         gameOver: () => {
@@ -271,7 +271,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <div className="flex items-center gap-2 px-3 py-2 border-b border-forge-border">
           <Gamepad2 className="w-4 h-4 text-emerald-300" />
           <span className="text-sm font-semibold text-forge-text">Try it in a game</span>
-          <span className="hidden md:inline">Arrows or WASD walk · Space jumps (land on Slate to beat it) · R restarts · Esc closes</span>
+          <span className="hidden md:inline">Arrows or WASD walk · Space jumps (land on the guard to beat it) · R restarts · Esc closes</span>
           <button type="button" onClick={() => setPanel((p) => !p)} aria-pressed={panel} className="ml-auto h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:text-forge-text" title="Which state, stinger and sound each moment plays">
             <SlidersHorizontal className="w-3.5 h-3.5" /> Music wiring
           </button>
@@ -294,7 +294,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div ref={host} className="absolute inset-0" />
             {!manifest && (
               <div className="absolute left-1/2 -translate-x-1/2 top-3 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-2 text-white text-[11px] pointer-events-none">
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> {progress} Slate naps until it's ready: walk around and grab coins meanwhile.
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> {progress} The guard naps until it's ready: walk around and grab coins meanwhile.
               </div>
             )}
             {(
@@ -327,7 +327,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 </ul>
                 {(hud.over || hud.beaten) && (
                   <div className="absolute inset-x-0 top-1/3 text-center pointer-events-none">
-                    <span className="inline-block rounded-xl bg-black/60 px-5 py-3 text-lg font-bold text-white">{hud.over ? 'Game over: press R' : 'Slate beaten! Press R to play again'}</span>
+                    <span className="inline-block rounded-xl bg-black/60 px-5 py-3 text-lg font-bold text-white">{hud.over ? 'Game over: press R' : 'Guard beaten! Press R to play again'}</span>
                   </div>
                 )}
               </>
@@ -353,7 +353,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                   </select>
                 </label>
               ))}
-              <p className="text-[10px]">Intensity rises from 30% to 100% as Slate closes in, the way a game might drive it.</p>
+              <p className="text-[10px]">Intensity rises from 30% to 100% as the guard closes in, the way a game might drive it.</p>
             </aside>
           )}
         </div>
