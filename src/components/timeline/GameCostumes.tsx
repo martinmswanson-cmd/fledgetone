@@ -58,12 +58,15 @@ export const CostumesPanel: React.FC = () => {
           Add costume
         </button>
       </div>
-      {costumes.map((c) => (
+      {costumes.map((c) => {
+        // Swaps for tracks still in the song (a deleted track's swap stays, for its undo)
+        const changes = parts.filter((t) => c.tracks[t.id]).length;
+        return (
         <details key={c.id} className="rounded border border-forge-border px-2 py-1">
           <summary className="cursor-pointer flex items-center gap-1.5 text-forge-text">
             <span className="font-semibold truncate">{c.name}</span>
             <span className="text-[10px] text-forge-muted">
-              {Object.keys(c.tracks).length} change{Object.keys(c.tracks).length === 1 ? '' : 's'}
+              {changes} change{changes === 1 ? '' : 's'}
               {c.tempo !== 1 ? ` · ${c.tempo > 1 ? '+' : ''}${Math.round((c.tempo - 1) * 100)}% tempo` : ''}
             </span>
           </summary>
@@ -123,7 +126,8 @@ export const CostumesPanel: React.FC = () => {
             </div>
           </div>
         </details>
-      ))}
+        );
+      })}
       {costumes.length > 0 && <p className="text-[10px] text-forge-muted">Hear them with Audition like the game. The game kit renders every state in every costume.</p>}
     </div>
   );

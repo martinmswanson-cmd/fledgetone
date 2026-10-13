@@ -842,7 +842,7 @@ function ambient(): ProjectSnapshot {
     ],
     [[1, 'Drift'], [5, 'Kalimba'], [9, 'Shimmer']],
     master({ on: false }, { on: true, amount: 1.4 })
-  ), HEAVEN, { delayTime: '4n.', delayFeedback: 0.4 });
+  ), HEAVEN, { delayTime: '8n', delayFeedback: 0.4 });
 }
 
 // ---------- Rock ----------
