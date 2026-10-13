@@ -1,0 +1,481 @@
+[
+ {
+  "id": "pmBrass",
+  "name": "Brass Model",
+  "category": "Physical",
+  "about": "A brass instrument model: lips, bore and bell.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.brass_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmClarinet",
+  "name": "Clarinet Model",
+  "category": "Physical",
+  "about": "A clarinet model: reed, bore and bell, with breath.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.clarinet_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmFlute",
+  "name": "Flute Model",
+  "category": "Physical",
+  "about": "A flute model: breath jet over a tube.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.flute_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmViolin",
+  "name": "Violin Model",
+  "category": "Physical",
+  "about": "A bowed violin model: bow pressure and position on a string and body.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.violin_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmGuitar",
+  "name": "Steel Guitar Model",
+  "category": "Physical",
+  "about": "An acoustic steel-string guitar model, plucked.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.guitar_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmNylon",
+  "name": "Nylon Guitar Model",
+  "category": "Physical",
+  "about": "A classical nylon-string guitar model, plucked.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.nylonGuitar_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmElecGuitar",
+  "name": "Electric Guitar Model",
+  "category": "Physical",
+  "about": "An electric guitar string and pickup model.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.elecGuitar_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmMarimba",
+  "name": "Marimba Model",
+  "category": "Physical",
+  "about": "A marimba bar and resonator tube model.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.marimba_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmDjembe",
+  "name": "Djembe Model",
+  "category": "Percussion",
+  "about": "A hand drum model: struck membrane.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.djembe_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmKs",
+  "name": "Karplus String",
+  "category": "Physical",
+  "about": "The classic Karplus-Strong plucked string.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.ks_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmMorph",
+  "name": "Morphing Instrument",
+  "category": "Physical",
+  "about": "A modular physical model that morphs between a bowed string, a blown tube and more.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.modularInterpInstr_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmVoice",
+  "name": "Singing Voice",
+  "category": "Physical",
+  "about": "A singing voice: formants sweep through vowels as you play.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.SFFormantModelFofSmooth_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "pmVoiceBP",
+  "name": "Choir Voice",
+  "category": "Physical",
+  "about": "A softer, breathier formant voice.",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.SFFormantModelBP_ui_MIDI <: _,_;",
+  "file": null
+ },
+ {
+  "id": "churchBell",
+  "name": "Church Bell",
+  "category": "Percussion",
+  "about": "A modal model of a real church bell (it rings at its own pitch: any note strikes it).",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.churchBell_ui <: _,_;",
+  "file": null
+ },
+ {
+  "id": "englishBell",
+  "name": "English Bell",
+  "category": "Percussion",
+  "about": "A modal model of a real english bell (it rings at its own pitch: any note strikes it).",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.englishBell_ui <: _,_;",
+  "file": null
+ },
+ {
+  "id": "frenchBell",
+  "name": "French Bell",
+  "category": "Percussion",
+  "about": "A modal model of a real french bell (it rings at its own pitch: any note strikes it).",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.frenchBell_ui <: _,_;",
+  "file": null
+ },
+ {
+  "id": "germanBell",
+  "name": "German Bell",
+  "category": "Percussion",
+  "about": "A modal model of a real german bell (it rings at its own pitch: any note strikes it).",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.germanBell_ui <: _,_;",
+  "file": null
+ },
+ {
+  "id": "russianBell",
+  "name": "Russian Bell",
+  "category": "Percussion",
+  "about": "A modal model of a real russian bell (it rings at its own pitch: any note strikes it).",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.russianBell_ui <: _,_;",
+  "file": null
+ },
+ {
+  "id": "standardBell",
+  "name": "Standard Bell",
+  "category": "Percussion",
+  "about": "A modal model of a real standard bell (it rings at its own pitch: any note strikes it).",
+  "instrument": 1,
+  "code": "import(\"stdfaust.lib\");\nprocess = pm.standardBell_ui <: _,_;",
+  "file": null
+ },
+ {
+  "id": "stk_NLFeks",
+  "name": "Nonlinear Pluck",
+  "category": "Physical",
+  "about": "A plucked string with a nonlinear, rattling filter.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/NLFeks.dsp"
+ },
+ {
+  "id": "stk_bass",
+  "name": "Waveguide Bass",
+  "category": "Physical",
+  "about": "A plucked bass string waveguide model.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/bass.dsp"
+ },
+ {
+  "id": "stk_blowBottle",
+  "name": "Blown Bottle",
+  "category": "Physical",
+  "about": "Breath across the neck of a bottle.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/blowBottle.dsp"
+ },
+ {
+  "id": "stk_bowed",
+  "name": "Bowed String",
+  "category": "Physical",
+  "about": "A bowed string waveguide: cello to violin.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/bowed.dsp"
+ },
+ {
+  "id": "stk_brass",
+  "name": "Waveguide Brass",
+  "category": "Physical",
+  "about": "A lip-reed brass waveguide.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/brass.dsp"
+ },
+ {
+  "id": "stk_clarinet",
+  "name": "Waveguide Clarinet",
+  "category": "Physical",
+  "about": "A reed and bore waveguide clarinet.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/clarinet.dsp"
+ },
+ {
+  "id": "stk_flute",
+  "name": "Waveguide Flute",
+  "category": "Physical",
+  "about": "A nonlinear waveguide flute with breath noise.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/flute.dsp"
+ },
+ {
+  "id": "stk_harpsi",
+  "name": "Harpsichord Model",
+  "category": "Physical",
+  "about": "A plucked harpsichord string and soundboard.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/harpsi.dsp"
+ },
+ {
+  "id": "stk_modalBar",
+  "name": "Modal Bar",
+  "category": "Physical",
+  "about": "Struck bars: marimba, vibraphone, wood and glass.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/modalBar.dsp"
+ },
+ {
+  "id": "stk_piano",
+  "name": "Piano Model",
+  "category": "Physical",
+  "about": "A synthesized piano: hammers, strings and soundboard.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/piano.dsp"
+ },
+ {
+  "id": "stk_saxophony",
+  "name": "Saxophone Model",
+  "category": "Physical",
+  "about": "A conical-bore reed saxophone.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/saxophony.dsp"
+ },
+ {
+  "id": "stk_sitar",
+  "name": "Sitar Model",
+  "category": "Physical",
+  "about": "A buzzing plucked string.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/sitar.dsp"
+ },
+ {
+  "id": "stk_voiceForm",
+  "name": "Voice Formant",
+  "category": "Physical",
+  "about": "A formant voice that sings vowels.",
+  "instrument": 1,
+  "code": null,
+  "file": "/usr/share/faust/examples/physicalModeling/faust-stk/voiceForm.dsp"
+ },
+ {
+  "id": "zita",
+  "name": "Studio Hall",
+  "category": "Reverb",
+  "about": "A smooth, dense 8-line studio hall reverb.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.zita_rev1;",
+  "defaults": {
+   "Level": 0,
+   "Dry/Wet Mix": 0
+  }
+ },
+ {
+  "id": "dattorro",
+  "name": "Plate Reverb",
+  "category": "Reverb",
+  "about": "The classic figure-of-eight plate reverb.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.dattorro_rev_demo;"
+ },
+ {
+  "id": "greyhole",
+  "name": "Diffuse Echo Hall",
+  "category": "Reverb",
+  "about": "A huge, modulated echo-reverb: dark, endless spaces.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.greyhole_demo;",
+  "defaults": {
+   "feedback": 0.6
+  }
+ },
+ {
+  "id": "jprev",
+  "name": "Lush Reverb",
+  "category": "Reverb",
+  "about": "A big, modulated, shimmering reverb with three-band decay.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.jprev_demo;"
+ },
+ {
+  "id": "freeverb",
+  "name": "Classic Room",
+  "category": "Reverb",
+  "about": "The classic comb-and-allpass room reverb.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.freeverb_demo;"
+ },
+ {
+  "id": "flanger",
+  "name": "Flanger",
+  "category": "Effects",
+  "about": "A stereo flanger: jet sweeps and metallic swirl.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.flanger_demo;"
+ },
+ {
+  "id": "phaser",
+  "name": "Phaser",
+  "category": "Effects",
+  "about": "A stereo phaser with feedback.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.phaser2_demo;"
+ },
+ {
+  "id": "ladder",
+  "name": "Ladder Filter",
+  "category": "Filter",
+  "about": "A resonant four-pole ladder low-pass filter.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = par(i, 2, dm.moog_vcf_demo);"
+ },
+ {
+  "id": "wah",
+  "name": "Wah Filter",
+  "category": "Filter",
+  "about": "A four-pole wah filter you can sweep or automate.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = par(i, 2, dm.wah4_demo);"
+ },
+ {
+  "id": "crybaby",
+  "name": "Wah Pedal",
+  "category": "Filter",
+  "about": "A classic wah pedal model.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = par(i, 2, dm.crybaby_demo);"
+ },
+ {
+  "id": "comp",
+  "name": "Stereo Compressor",
+  "category": "Dynamics",
+  "about": "A clean stereo compressor with knee, attack and release.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.compressor_demo;",
+  "defaults": {
+   "Makeup Gain": 6,
+   "Threshold": -20,
+   "Ratio": 3
+  }
+ },
+ {
+  "id": "gate",
+  "name": "Noise Gate",
+  "category": "Dynamics",
+  "about": "Silences the sound below a threshold.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.gate_demo;"
+ },
+ {
+  "id": "cubic",
+  "name": "Cubic Distortion",
+  "category": "Distortion",
+  "about": "Smooth cubic soft clipping, from warm to fuzzy.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = par(i, 2, dm.cubicnl_demo);"
+ },
+ {
+  "id": "tilt",
+  "name": "Spectral Tilt",
+  "category": "Tone Color",
+  "about": "Tilts the whole spectrum brighter or darker.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = par(i, 2, dm.spectral_tilt_demo(3));"
+ },
+ {
+  "id": "peq",
+  "name": "Parametric EQ",
+  "category": "Filter",
+  "about": "Low shelf, a parametric peak and a high shelf.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = par(i, 2, dm.parametric_eq_demo);"
+ },
+ {
+  "id": "geq",
+  "name": "Graphic EQ",
+  "category": "Filter",
+  "about": "An octave-band graphic equalizer.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = par(i, 2, dm.mth_octave_filterbank_demo(1));",
+  "defaults": {
+   "Band *": 0
+  }
+ },
+ {
+  "id": "revecho",
+  "name": "Reverse Echo",
+  "category": "Ambience",
+  "about": "Echoes that play backwards.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nprocess = dm.reverse_echo_demo(2);"
+ },
+ {
+  "id": "diode",
+  "name": "Diode Ladder",
+  "category": "Filter",
+  "about": "A screaming diode-ladder filter.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nf = hslider(\"Cutoff\", 0.5, 0, 1, 0.001) : si.smoo; q = hslider(\"Resonance\", 1, 0.7, 10, 0.01) : si.smoo;\nprocess = par(i, 2, ve.diodeLadder(f, q));"
+ },
+ {
+  "id": "ms20",
+  "name": "Hard Sync Filter",
+  "category": "Filter",
+  "about": "An aggressive 35-style low-pass filter.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nf = hslider(\"Cutoff\", 0.5, 0, 1, 0.001) : si.smoo; q = hslider(\"Resonance\", 1, 0.7, 10, 0.01) : si.smoo;\nprocess = par(i, 2, ve.korg35LPF(f, q));"
+ },
+ {
+  "id": "svf",
+  "name": "State Variable Filter",
+  "category": "Filter",
+  "about": "A smooth two-pole state-variable low-pass filter.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nf = hslider(\"Cutoff\", 0.5, 0, 1, 0.001) : si.smoo; q = hslider(\"Resonance\", 1, 0.5, 10, 0.01) : si.smoo;\nprocess = par(i, 2, ve.oberheimLPF(f, q));"
+ },
+ {
+  "id": "pitch",
+  "name": "Pitch Shifter",
+  "category": "Effects",
+  "about": "Shifts the pitch up or down, keeping the timing.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\ns = hslider(\"Shift [unit:semitones]\", 0, -12, 12, 0.1); w = hslider(\"Window [unit:samples]\", 1000, 50, 10000, 1); x = hslider(\"Crossfade [unit:samples]\", 10, 1, 10000, 1);\nprocess = par(i, 2, ef.transpose(w, x, s));"
+ },
+ {
+  "id": "echo",
+  "name": "Feedback Echo",
+  "category": "Ambience",
+  "about": "A simple echo with feedback.",
+  "instrument": 0,
+  "code": "import(\"stdfaust.lib\");\nt = hslider(\"Time [unit:ms]\", 375, 10, 2000, 1) * ma.SR / 1000; fb = hslider(\"Feedback\", 0.4, 0, 0.95, 0.01);\nprocess = par(i, 2, ef.echo(2, t / ma.SR, fb));"
+ }
+]

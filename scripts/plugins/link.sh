@@ -1,0 +1,6 @@
+#!/bin/sh
+# Link a family's objects into its WebAssembly with the bb_* exports: link.sh <out.wasm> <objects...>
+OUT="$1"; shift
+em++ -O2 -fno-exceptions "$@" -o "$OUT" --no-entry -sSTANDALONE_WASM -sALLOW_MEMORY_GROWTH -sINITIAL_MEMORY=16MB -sFILESYSTEM=0 \
+  -sEXPORTED_FUNCTIONS=_bb_count,_bb_info,_bb_create,_bb_destroy,_bb_params,_bb_get,_bb_set,_bb_param_name,_bb_param_display,_bb_buffer,_bb_process,_bb_midi,_bb_programs,_bb_program_name,_bb_set_program,_bb_get_program
+ls -l "$OUT"

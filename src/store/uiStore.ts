@@ -81,6 +81,9 @@ interface UiState {
   /** The add-a-plugin dialog: for a new Plugin track (null) or an effect on a track */
   pluginDialog: { trackId: string | null } | null;
   setPluginDialog: (target: { trackId: string | null } | null) => void;
+  /** The built-in plugin browser: effects go on `trackId` (else the selected track); opened on `category` */
+  pluginBrowser: { trackId: string | null; category?: string } | null;
+  setPluginBrowser: (target: { trackId: string | null; category?: string } | null) => void;
   setDialog: (dialog: AppDialog | null) => void;
   openGuide: (section?: string) => void;
   closeGuide: () => void;
@@ -112,6 +115,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   setPluginWindow: (pluginWindow) => set({ pluginWindow }),
   pluginDialog: null,
   setPluginDialog: (pluginDialog) => set({ pluginDialog }),
+  pluginBrowser: null,
+  setPluginBrowser: (pluginBrowser) => set({ pluginBrowser }),
   setDialog: (dialog) => {
     if (isDockTab(dialog)) get().openDock(dialog);
     else set({ dialog });

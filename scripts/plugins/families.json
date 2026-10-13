@@ -1,0 +1,42 @@
+[
+  {
+    "family": "airwindows",
+    "label": "Airwindows",
+    "licence": "MIT",
+    "gpl": false,
+    "source": "https://github.com/baconpaul/airwin2rack",
+    "commit": "8a67b80e04230a5cf40e84d6e8b9a2fd70b13a75"
+  },
+  {
+    "family": "mda",
+    "label": "MDA",
+    "licence": "MIT",
+    "gpl": false,
+    "source": "https://sourceforge.net/projects/mda-vst/files/mda-vst/mda-vst-src-2015-06-18/",
+    "commit": "mda-vst-src-2015-06-18.zip"
+  },
+  {
+    "family": "open303",
+    "label": "Open303",
+    "licence": "MIT",
+    "gpl": false,
+    "source": "https://github.com/RobinSchmidt/Open303",
+    "commit": "313bf0d9ade7c1dcb6b3a74f5ea1780a29d70074"
+  },
+  {
+    "family": "mutable",
+    "label": "Mutable Instruments",
+    "licence": "MIT",
+    "gpl": false,
+    "source": "https://github.com/pichenettes/eurorack",
+    "commit": "f4cfa7697095a28d292bff758beb51deb49b5a86"
+  },
+  {
+    "family": "faust",
+    "label": "Faust",
+    "licence": "MIT / BSD / STK-4.3 (Faust library exception)",
+    "gpl": false,
+    "source": "https://github.com/grame-cncm/faust",
+    "commit": "Faust 2.70.3 (Ubuntu package) with its libraries and examples"
+  }
+]

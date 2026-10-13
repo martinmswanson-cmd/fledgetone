@@ -1,4 +1,5 @@
 import { INSTRUMENTS, type SampleSource } from './instrumentCatalog';
+import { pluginFamilies, pluginSource } from './plugins/pluginSources';
 
 /**
  * The instruments' recordings, kept in this browser (IndexedDB) once downloaded, so each one is
@@ -77,7 +78,7 @@ async function write(key: string, version: string, bytes: ArrayBuffer): Promise<
 }
 
 /** The addresses a recording can come from, in order (its own, then the site's copy). */
-const addressesOf = (source: SampleSource, file: string) => [source.baseUrl + file, ...(source.fallbackUrl ? [source.fallbackUrl + file] : [])];
+const addressesOf = (source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl'>, file: string) => [source.baseUrl + file, ...(source.fallbackUrl ? [source.fallbackUrl + file] : [])];
 
 async function download(addresses: string[], signal?: AbortSignal): Promise<ArrayBuffer> {
   let last: unknown;
@@ -98,7 +99,7 @@ async function download(addresses: string[], signal?: AbortSignal): Promise<Arra
  * A recording's bytes: the kept copy, or downloaded (and kept for next time). The bytes are the
  * caller's: decoding them (which detaches them) doesn't touch the kept copy.
  */
-export async function recordingBytes(source: SampleSource, file: string): Promise<ArrayBuffer> {
+export async function recordingBytes(source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl' | 'version'>, file: string): Promise<ArrayBuffer> {
   const addresses = addressesOf(source, file);
   const version = source.version ?? '';
   const kept = await read(addresses[0], version);
@@ -108,7 +109,7 @@ export async function recordingBytes(source: SampleSource, file: string): Promis
   return bytes;
 }
 
-/** Every recording any instrument plays, once each. */
+/** Every recording any instrument plays, once each, and the plugins' files. */
 function everyRecording(): Array<{ key: string; version: string; addresses: string[] }> {
   const seen = new Map<string, { key: string; version: string; addresses: string[] }>();
   for (const def of Object.values(INSTRUMENTS)) {
@@ -118,6 +119,12 @@ function everyRecording(): Array<{ key: string; version: string; addresses: stri
       const addresses = addressesOf(source, file);
       if (!seen.has(addresses[0])) seen.set(addresses[0], { key: addresses[0], version: source.version ?? '', addresses });
     }
+  }
+  // And the built-in plugins' WebAssembly (plugins/builtinHost.ts)
+  for (const family of pluginFamilies()) {
+    const source = pluginSource(family);
+    const addresses = addressesOf(source, family.file);
+    seen.set(addresses[0], { key: addresses[0], version: source.version, addresses });
   }
   return [...seen.values()];
 }

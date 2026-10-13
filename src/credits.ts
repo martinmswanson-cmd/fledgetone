@@ -93,3 +93,33 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
 
 /** The credit for a sample address, if it's from a listed source. */
 export const creditFor = (url: string): SampleCredit | undefined => SAMPLE_CREDITS.find((c) => c.prefixes.some((p) => url.startsWith(p)));
+
+/** Who made each built-in plugin family (see audio/plugins/), for the guide's Credits (generated). */
+export interface PluginCredit {
+  family: string;
+  /** Who made them and where they come from (Markdown) */
+  made: string;
+  licence: string;
+}
+
+const MIT = '[MIT](https://opensource.org/license/mit)';
+export const PLUGIN_CREDITS: PluginCredit[] = [
+  {
+    family: 'airwindows',
+    made: 'The [Airwindows](https://www.airwindows.com) effects by Chris Johnson, through the [Airwin Consolidated](https://github.com/baconpaul/airwin2rack) library by Paul Walker',
+    licence: MIT,
+  },
+  { family: 'mda', made: 'The mda plug-ins by Paul Kellett ([mda-vst](https://sourceforge.net/projects/mda-vst/))', licence: `${MIT} (offered under MIT or the GPL)` },
+  { family: 'open303', made: '[Open303](https://github.com/RobinSchmidt/Open303) by Robin Schmidt', licence: MIT },
+  {
+    family: 'mutable',
+    made: 'Plaits, Rings, Elements and Clouds by Emilie Gillet ([Mutable Instruments eurorack](https://github.com/pichenettes/eurorack) code)',
+    licence: MIT,
+  },
+  {
+    family: 'faust',
+    made:
+      'Physical models and effects from the [Faust](https://faust.grame.fr) libraries and examples by GRAME and contributors, among them Romain Michon, Julius O. Smith III, Yann Orlarey and Stéphane Letz (the waveguide models after the Synthesis ToolKit by Perry Cook and Gary Scavone)',
+    licence: `${MIT}, BSD and STK-4.3 (the library code is used under the Faust exception to its LGPL)`,
+  },
+];

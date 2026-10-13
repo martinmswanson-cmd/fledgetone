@@ -1,12 +1,14 @@
 import { initializeWamHost } from '@webaudiomodules/sdk';
 import type { WamPlugin } from '../store/timelineTypes';
+import { createBuiltinInstance, isBuiltinUrl } from './plugins/builtinHost';
 
 /**
  * Hosting Web Audio Modules (WAM 2.0): third-party instruments and effects, each an ES module at
  * a URL whose default export is a WebAudioModule. A plugin runs in the native audio context (the
  * live one, or an export's offline one) and is wired into Tone's graph through the native nodes
  * Tone's wrappers keep. Plugins are code from elsewhere, so one named by an opened project only
- * loads once the person has allowed its URL (adding a plugin yourself allows it).
+ * loads once the person has allowed its URL (adding a plugin yourself allows it). The app's own
+ * built-in plugins (`builtin:` addresses) are made by plugins/builtinHost.ts instead.
  */
 
 /** The parts of a WAM instance the host uses. */
@@ -111,6 +113,8 @@ export class PluginBlockedError extends Error {}
 
 /** Load the plugin at `url` into `ctx` with `state`. Rejects for a URL not yet allowed, a load error, or a timeout. */
 export async function loadWam(ctx: BaseAudioContext, url: string, state?: unknown, checkAllowed = true): Promise<WamInstance> {
+  // The app's own plugins (plugins/builtinHost.ts): nothing to allow
+  if (isBuiltinUrl(url)) return createBuiltinInstance(ctx, url, state);
   if (checkAllowed && !isPluginUrlAllowed(url)) {
     if (!blocked.has(url)) {
       blocked.add(url);

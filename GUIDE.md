@@ -507,12 +507,24 @@ The **Slicer** (**Add Track > Your Sounds > Slicer**) cuts a sound into slices a
 - **Chop to Slicer…** (right-click an audio clip, or in the clip editor) makes a Slicer track from that clip's sound, with a clip that plays the slices in order, ready to rearrange. The audio clip stays.
 - Slices play at the sound's own level; use the track fader to balance it.
 
-### Plugins (Web Audio Modules)
+### Plugins
 
-The app can load **Web Audio Modules** (WAM 2): instruments and effects other people make for the web, each at its own address. Look for them in the WAM community's plugin lists; you need the address of the plugin's module (usually ending `index.js`), and its site has to let other sites load it.
+The **Plugins** menu holds hundreds of built-in effects and instruments: open-source plugins from Airwindows, MDA, Mutable Instruments, Faust and Open303, compiled to run in the browser (see Credits for who made them). They need no address and nothing to allow.
+
+- **Plugins › Browse plugins…** opens the plugin browser: search by name or by what it does ("tape", "warm", "bell", "granular"), or pick a group down the side: **Instruments**, **Recommended** and **Basic** (the Airwindows picks), then each kind of effect (Reverb, Saturation, Dynamics, Filter, Lo-Fi and more). **Effects go on** chooses the track. **Add** puts an effect on that track; an instrument's **New track** makes a track that plays it. The menu also has shortcuts straight to the reverbs, delays, saturation, tape, dynamics, filters and others.
+- **Effects** go after the track's instrument and before its own inserts, in the order you add them, like the web plugins below. Right-click a track's name for **Add plugin effect…**, and to open or remove each one.
+- **Instruments** become tracks you write notes for, record onto and play from a MIDI keyboard, like any other: an acid bass line synth; electric piano, piano, FM and analog poly synths; 22 synthesis engines (analog, FM, wavetable, chords, speech, swarm, drums and more); resonators, modal voices, bells and physical models of brass, woodwinds, strings, guitars and percussion.
+- **Its window** opens when you add it, with what it does and a slider for each setting, showing the value as the plugin does. Double-click a slider to put it back; **Reset all** puts them all back. Plugins that come with presets have a **Preset** list at the top.
+- **★** a plugin in the browser to keep it under **Favourites**, and on the Plugins menu (added to the selected track in one click). **Recently used** lists the last ones you added.
+- Everything works as for any plugin: automation lanes for every setting, MIDI learn, freezing, bouncing, exports, and the settings saved with the project.
+- The plugins download the first time you open the browser or use one (about 9 MB in all, in a few files) and are kept in this browser. **Master tab › Instruments offline › Download all** includes them, for working offline.
+
+### Plugins from the web (Web Audio Modules)
+
+The app can also load **Web Audio Modules** (WAM 2): instruments and effects other people make for the web, each at its own address. Look for them in the WAM community's plugin lists; you need the address of the plugin's module (usually ending `index.js`), and its site has to let other sites load it.
 
 - **A plugin instrument**: **Add Track → Plugin instrument (WAM)…**, paste the address and press **Load plugin**. It becomes a track you write notes for, record onto and play from a MIDI keyboard like any other (notes, velocity, held keys, pitch bend and the expression lanes go to it as MIDI).
-- **A plugin effect**: right-click a track's name (any but a bus), **Add plugin effect (WAM)…**. Effects come after the track's instrument and before its own inserts, in the order you add them. Right-click the track to open or remove each one.
+- **A plugin effect**: right-click a track's name (any but a bus), **Add plugin from a web address (WAM)…** (or **Plugins › Effect from a web address (WAM)…**). Effects come after the track's instrument and before its own inserts, in the order you add them. Right-click the track to open or remove each one.
 - **Its window**: the plugin's own controls open when you add it. Reopen them with the plug icon on the track's header, or from the right-click menu. Drag the window by its title bar; **BYPASS** (effects) lets the sound pass it by; closing the window leaves the plugin playing.
 - **Its settings** are read from it every few seconds and when its window closes, and saved with the project, so exports, freezing and reopening the project hear it as you set it.
 - Addresses you've used are listed under **Used before** in the dialog.
@@ -1059,6 +1071,20 @@ The synths and drum kits are generated in your browser. The recorded instruments
 - The guitar, bass, saxophone, strings, harp, flute and brass samples were collected and edited (trimmed, volume-matched, cleaned up and tuned) by Nicholaus Brosowsky for [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments). Its samples are released under CC BY 3.0.
 - The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app. The Violin, Cello and Strings notes are 3 seconds long in the soundfont, so the app loops their steady part when it loads them and a note can be held for about 10 seconds. The top octave of the Violin, Erhu, Strings and Flute plays quieter so it doesn't pierce.
 - Bo's Beatbox loads these samples straight from the projects above; it doesn't copy or change the files.
+
+### Plugins
+
+<!-- plugin-credits:start (generated by npm run guide-tables) -->
+| Plugins | Made by | Licence |
+|---|---|---|
+| Airwindows: 508 effects | The [Airwindows](https://www.airwindows.com) effects by Chris Johnson, through the [Airwin Consolidated](https://github.com/baconpaul/airwin2rack) library by Paul Walker | [MIT](https://opensource.org/license/mit) |
+| MDA: 33 effects, 4 instruments | The mda plug-ins by Paul Kellett ([mda-vst](https://sourceforge.net/projects/mda-vst/)) | [MIT](https://opensource.org/license/mit) (offered under MIT or the GPL) |
+| Open303: 1 instrument | [Open303](https://github.com/RobinSchmidt/Open303) by Robin Schmidt | [MIT](https://opensource.org/license/mit) |
+| Mutable Instruments: 6 effects, 31 instruments | Plaits, Rings, Elements and Clouds by Emilie Gillet ([Mutable Instruments eurorack](https://github.com/pichenettes/eurorack) code) | [MIT](https://opensource.org/license/mit) |
+| Faust: 22 effects, 32 instruments | Physical models and effects from the [Faust](https://faust.grame.fr) libraries and examples by GRAME and contributors, among them Romain Michon, Julius O. Smith III, Yann Orlarey and Stéphane Letz (the waveguide models after the Synthesis ToolKit by Perry Cook and Gary Scavone) | [MIT](https://opensource.org/license/mit), BSD and STK-4.3 (the library code is used under the Faust exception to its LGPL) |
+<!-- plugin-credits:end -->
+
+Their licence notices come with the app, in `third-party-licenses.txt` and in `bos-beat-box-plugins/LICENSES.txt` next to the plugin files.
 
 ### Software
 

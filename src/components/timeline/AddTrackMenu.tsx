@@ -63,6 +63,19 @@ export const AddTrackMenu: React.FC = () => {
             type="button"
             className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-fuchsia-200 hover:bg-fuchsia-500/15 border-b border-forge-border"
             onClick={() => {
+              useUiStore.getState().setPluginBrowser({ trackId: null, category: 'Instruments' });
+              close();
+            }}
+            title="The built-in plugin instruments: synths, physical models, bells, drums"
+          >
+            <Plug className="w-3.5 h-3.5 text-fuchsia-300" />
+            <span className="flex-1">Plugin instrument…</span>
+            <span className="text-[10px] text-forge-muted">built in</span>
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-fuchsia-200 hover:bg-fuchsia-500/15 border-b border-forge-border"
+            onClick={() => {
               useUiStore.getState().setPluginDialog({ trackId: null });
               close();
             }}

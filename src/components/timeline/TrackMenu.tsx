@@ -110,11 +110,17 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
       ? []
       : [
           {
+            key: 'plugin-browse',
+            label: 'Add plugin effect…',
+            icon: <Plug className="w-3.5 h-3.5" />,
+            onClick: run(() => ui.setPluginBrowser({ trackId: track.id })),
+            divider: !track.plugin,
+          },
+          {
             key: 'plugin-add',
-            label: 'Add plugin effect (WAM)…',
+            label: 'Add plugin from a web address (WAM)…',
             icon: <Plug className="w-3.5 h-3.5" />,
             onClick: run(() => ui.setPluginDialog({ trackId: track.id })),
-            divider: !track.plugin,
           },
         ]),
     ...(track.pluginFx ?? []).flatMap((p) => [
