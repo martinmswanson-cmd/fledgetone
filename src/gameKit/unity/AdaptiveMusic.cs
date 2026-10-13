@@ -3,6 +3,8 @@
 // 1. Copy this folder into Assets/Resources/Music/ (audio_manifest.json becomes a TextAsset, the WAVs AudioClips).
 // 2. Add this component to a GameObject. In the Inspector, leave Resources Folder as "Music".
 // 3. music.Play("Explore"); music.SetState("Combat"); music.SetIntensity(0.8f); music.Stinger("Victory");
+// 4. Sound effects: music.PlaySfx("sword_hit") plays a different variation each time;
+//    var rain = music.PlaySfx("rain") loops until music.StopSfx("rain") (or Destroy(rain)).
 //
 // Every state is a seamless loop exactly a whole number of bars long (and, when the song has stem
 // groups, a set of stems of that length). Changes are scheduled on the audio clock
@@ -21,10 +23,12 @@ public class AdaptiveMusic : MonoBehaviour
     [Serializable] public class Point { public float x; public float y; }
     [Serializable] public class Group { public string name; public Point[] points; }
     [Serializable] public class Intensity { public float @default = 1f; public Group[] groups; }
-    [Serializable] public class MusicData { public string name; public double bpm; public int beatsPerBar; public double beatSeconds; public string key; public Intensity intensity; public State[] states; public Rule[] transitions; public StingerInfo[] stingers; }
+    [Serializable] public class SfxInfo { public string name; public string[] files; public bool loop; public double seconds; }
+    [Serializable] public class MusicData { public string name; public double bpm; public int beatsPerBar; public double beatSeconds; public string key; public Intensity intensity; public State[] states; public Rule[] transitions; public StingerInfo[] stingers; public SfxInfo[] sfx; }
 
     public string resourcesFolder = "Music";
     [UnityEngine.Range(0f, 1f)] public float volume = 1f;
+    [UnityEngine.Range(0f, 1f)] public float sfxVolume = 1f;
 
     public MusicData Data { get; private set; }
     public string Current { get; private set; }
@@ -226,6 +230,47 @@ public class AdaptiveMusic : MonoBehaviour
         src.volume = volume;
         src.PlayScheduled(Math.Max(at, AudioSettings.dspTime));
         Destroy(src, (float)(at - AudioSettings.dspTime) + src.clip.length + 0.5f);
+    }
+
+    readonly Dictionary<string, int> lastSfx = new Dictionary<string, int>();
+    readonly List<KeyValuePair<string, AudioSource>> sfxPlaying = new List<KeyValuePair<string, AudioSource>>();
+
+    /// The names of the kit's sound effects.
+    public IEnumerable<string> SfxNames { get { if (Data.sfx != null) foreach (var s in Data.sfx) yield return s.name; } }
+
+    /// Play a sound effect now: one of its variations, never the same one twice in a row. A looping
+    /// sound plays until StopSfx(name). `pitchSemitones` moves it (a little random pitch helps too).
+    public AudioSource PlaySfx(string name, float volumeScale = 1f, float pitchSemitones = 0f)
+    {
+        if (Data.sfx != null)
+        {
+            foreach (var s in Data.sfx)
+            {
+                if (s.name != name || s.files == null || s.files.Length == 0) continue;
+                int i = UnityEngine.Random.Range(0, s.files.Length);
+                if (s.files.Length > 1 && lastSfx.TryGetValue(name, out var last) && last == i) i = (i + 1) % s.files.Length;
+                lastSfx[name] = i;
+                var src = gameObject.AddComponent<AudioSource>();
+                src.clip = Clip(s.files[i]);
+                src.loop = s.loop;
+                src.playOnAwake = false;
+                src.volume = sfxVolume * volumeScale;
+                src.pitch = Mathf.Pow(2f, pitchSemitones / 12f);
+                src.Play();
+                if (!s.loop && src.clip != null) Destroy(src, src.clip.length / Mathf.Max(0.01f, src.pitch) + 0.1f);
+                sfxPlaying.RemoveAll(p => p.Value == null);
+                sfxPlaying.Add(new KeyValuePair<string, AudioSource>(name, src));
+                return src;
+            }
+        }
+        throw new ArgumentException("No sound effect called " + name);
+    }
+
+    /// Stop every playing sound effect called `name` (or all of them, with null).
+    public void StopSfx(string name = null)
+    {
+        foreach (var p in sfxPlaying) if (p.Value != null && (name == null || p.Key == name)) Destroy(p.Value);
+        sfxPlaying.RemoveAll(p => p.Value == null || name == null || p.Key == name);
     }
 
     public void Stop()

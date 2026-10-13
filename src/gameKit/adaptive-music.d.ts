@@ -12,6 +12,10 @@ export class AdaptiveMusic {
   setState(name: string, unit?: 'bar' | 'beat' | 'now'): void;
   setIntensity(value: number, seconds?: number): void;
   stinger(name: string, unit?: 'bar' | 'beat' | 'now'): void;
+  readonly sfxNames: string[];
+  playSfx(name: string, opts?: { volume?: number; pitch?: number; when?: number }): { stop(fade?: number): void };
+  stopSfx(name?: string, fade?: number): void;
+  setSfxVolume(volume: number, seconds?: number): void;
   setVolume(volume: number, seconds?: number): void;
   stop(): void;
 }

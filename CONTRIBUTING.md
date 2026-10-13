@@ -1,21 +1,168 @@
 # Contributing to Bo's Beatbox
 
-Thanks for wanting to help. This page covers setting up, the checks every change must pass, and
-the conventions the code follows. Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) first for
-how the app fits together, and use [docs/CODEMAP.md](docs/CODEMAP.md) to find the file you need.
+Thanks for wanting to help. Bo's Beatbox is a music studio in the browser, built most of all for
+people who make music for games and video, and for beginners who want something that sounds good
+on day one. Every kind of help counts: a clear bug report, a sound that's off, a starter song, a
+better sentence in the guide, or code.
+
+This page covers:
+
+1. [Ways to help](#ways-to-help) (no code needed for most)
+2. [Setting up](#setting-up)
+3. [Finding your way around](#finding-your-way-around)
+4. [Recipes for common contributions](#recipes-for-common-contributions)
+5. [The checks](#the-checks)
+6. [Conventions](#conventions)
+7. [Things that bite](#things-that-bite)
+8. [Checking sound](#checking-sound)
+9. [Pull requests](#pull-requests)
+10. [Licences: your work and other people's](#licences-your-work-and-other-peoples)
+11. [Being kind](#being-kind)
+
+## Ways to help
+
+- **Report a bug.** Say what you did, what you expected and what happened instead, which browser
+  and system you use, and attach the song if you can (File › Save makes a `.beatbox.json`; take
+  anything private out first). Something you *hear* wrong is a bug too: a click, a note out of
+  tune, an instrument much louder than the others. A short recording helps a lot.
+- **Suggest a feature.** Describe the music you were trying to make and where the app got in the
+  way, more than the button you'd add. Game and film composers: tell us what your engine or
+  middleware needs.
+- **Listen.** Open the starters and the sound effects maker and tell us what sounds cheap,
+  harsh, quiet or wrong. Ears are the scarcest resource on this project.
+- **Write.** The user guide (`GUIDE.md`, also shown in the app) should be plain, short and
+  correct. If something confused you, it will confuse others: send the sentence you wish you'd
+  read.
+- **Make content.** Starter songs, sound effect recipes, sets and synth patches are plain data
+  in TypeScript and a great first contribution (see the recipes below).
+- **Code.** Look for issues labelled *good first issue*, or ask in an issue before starting
+  something big, so nobody's work is wasted.
 
 ## Setting up
 
-Requires Node 22.
+You need Node 22 and npm.
 
 ```sh
 npm install
-npm run dev            # dev server (http://localhost:5173)
+npm run dev            # the dev server: http://localhost:5173
 ```
 
-The app needs a click before it can make sound (a browser rule): press Play or Start Audio.
+The app needs a click before it can make sound (a browser rule): press Play or Start Audio. The
+welcome dialog shows on a fresh page; close it, or see [Things that bite](#things-that-bite) for
+browser tests.
 
-## Checks
+Two builds matter:
+
+```sh
+npm run build:single   # dist-single/index.html: the whole app in one file, as published
+npm run build:full     # dist-full/: the same with the GPL plugins (Surge XT, Dragonfly...) in it
+```
+
+The dev server includes the GPL plugins (`.env.development` sets `VITE_GPL_PLUGINS=1`), so you
+see everything while you work.
+
+## Finding your way around
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how the app fits together, what happens when you
+  edit, play, save and export, and *where to start for common changes*. Read this first.
+- [docs/CODEMAP.md](docs/CODEMAP.md): every source file and what it's for, by folder.
+- [GUIDE.md](GUIDE.md): what the app does, from the user's side. If you're changing a feature,
+  read its section first.
+- [scripts/plugins/README.md](scripts/plugins/README.md): the built-in plugins (WebAssembly) and
+  how each family is built.
+
+The stack: React 19, TypeScript, zustand, Tone.js 15 on the Web Audio API, Tailwind and Vite.
+The main folders:
+
+| Folder | What's in it |
+| --- | --- |
+| `src/store/` | The song (`timelineStore.ts`), the project file format (`project.ts`), and pure logic: notes, tempo, markers, starters, game states, intensity, stingers |
+| `src/audio/` | The audio engine: instruments, effects, the live engine, exports, the game kit |
+| `src/audio/sfx/` | The sound effects maker's synth (pure maths, no Web Audio) |
+| `src/audio/plugins/` | Hosting the built-in plugins and web plugins (WAM) |
+| `src/components/` | The screen: React components |
+| `src/gameKit/` | The players shipped in game kits: web (`adaptive-music.js`), Godot (`godot/`), Unity (`unity/`) |
+| `src/runtime/` | The web runtime player that synthesizes a song in a game |
+| `scripts/` | Unit tests (`*.test.mjs`), generators, sample and plugin build scripts |
+| `public/` | Recorded instruments and plugin WebAssembly, served next to the app |
+
+## Recipes for common contributions
+
+Each recipe lists the files to touch. The checks below catch most mistakes; run them.
+
+### A starter song
+
+1. Write a function that returns the project, in `src/store/starters.ts`, `startersPlaylist.ts`
+   or (for game music) `startersGame.ts`, using the helpers in `starterKit.ts` and the `KIT`
+   export at the end of `startersPlaylist.ts`: `track`, `clip`, `melody`, `beat`, `progression`,
+   `stabs`... Steps are 16th notes: step 4 is beat 2 of the first bar.
+2. Add its entry to `STARTERS` in `starters.ts` (id, group, name, a one-line description with its
+   tempo and key) and its builder to `BUILDERS` (or `GAME_BUILDERS`).
+3. Mark its sections (they become the game states), put the loop on the main section, and mix
+   it: no track should poke out, and the whole should sit around -20 dB RMS like the others.
+4. Game starters also get stem groups (`grouped(track, 'Percussion')`), transitions and
+   stingers through `gameReady()`.
+5. Listen to it all the way through, and render it (see [Checking sound](#checking-sound)) to
+   compare its level with a few others. Update the starter list in `GUIDE.md`.
+
+### A kind of sound effect
+
+1. In `src/audio/sfx/sfxSynth.ts`, add the kind to a group in `SFX_GROUPS`, its label to
+   `SFX_LABELS`, and a recipe in `generateSfx`: a few layers (`L({...})`, `click`, `thump`,
+   `swish`, `bell`, `tone`) with random ranges from `between` and `pick`, so every click makes a
+   different one.
+2. Set its loudness class (`level: 'soft'` for menus, `'loud'` for impacts). Loops set
+   `loop: true` and a `loopLength`.
+3. `npm test` renders every kind with three seeds and checks it's audible, never over -1 dBFS,
+   click-free and within its length. Then listen to ten or so in the app.
+4. If it belongs in a set, add it to `SFX_SETS`. Update the list in `GUIDE.md`.
+
+### An instrument
+
+1. Add it to `src/audio/instrumentCatalog.ts` (key, name, category, range) and its preset in
+   `src/audio/presets/` (a synth) or its sample set (recorded: see
+   `scripts/real-samples/README.md` for converting and hosting the recordings).
+2. Recorded sounds need a licence that allows redistribution and an entry in `src/credits.ts`.
+3. Level-match it: play the same phrase on it and on a few neighbours and compare (`scripts/audio-check/`).
+4. `npm run guide-tables` updates the guide's instrument list and credits.
+
+### A built-in plugin family
+
+Follow `scripts/plugins/README.md`: wrap the plugins with the `bbplug` interface, add the family
+to `scripts/plugins/families.json` (with its source, commit and licence), build the `.wasm`, then
+`node scripts/plugins/catalog.mjs` and `node --test scripts/plugins.test.mjs`. Add its credit to
+`src/credits.ts` and its licence notice to `scripts/plugins/LICENSES.txt`.
+
+A GPL family goes in `public/bos-beat-box-plugins/gpl/` with `"gpl": true`, its notice in
+`LICENSES-GPL.txt`, and is only in builds made with `VITE_GPL_PLUGINS=1`.
+
+### A field in the project file
+
+1. Add it to `ProjectSnapshot` (and `ProjectData`) in `src/store/project.ts` as **optional**.
+2. Write it in `serializeProject` only when it isn't the default, and read it in `parseProject`
+   with a check and a default, so files from older versions and hand-edited files still open.
+3. Carry it through `loadProject` and `currentProject` in `timelineStore.ts`, and the autosave
+   subscription's change check.
+4. Add a test that saves and reopens a project with it (see `scripts/projectPlugins.test.mjs`).
+
+### The game kit players
+
+The web, Godot and Unity players (`src/gameKit/`) read the same `audio_manifest.json` and offer
+the same calls. Change all three together, keep the manifest change backward-compatible, and
+update the kit's READMEs in `src/audio/gameKit.ts`. To check the Godot player for real:
+
+```sh
+# Export a game kit "for Godot" from the app, then:
+mkdir kit-test && cd kit-test && unzip ../"My song game kit for Godot.zip"
+printf 'config_version=5\n[application]\nconfig/name="KitTest"\n' > project.godot
+godot --headless --path . --import
+godot --headless --path . --quit-after 300 res://bos_music/my_song_example.tscn
+```
+
+Script errors show in the output. For Unity, open a project, unzip the "for Unity" kit into it,
+add **Adaptive Music Example** to an empty GameObject and press Play.
+
+## The checks
 
 Run all of these before every commit; they must all pass.
 
@@ -34,6 +181,9 @@ from:
 npm run guide-tables   # GUIDE.md's instrument list and credits, from the instrument catalog
 npm run codemap        # docs/CODEMAP.md, from the summary comment at the top of each source file
 ```
+
+Please don't run a formatter over files you didn't otherwise change: the code has its own style
+(long lines are fine where they read better), and reformatting buries the real change in a diff.
 
 ## Conventions
 
@@ -54,9 +204,9 @@ narrate what the next line does when the code already says it.
 ### Pure logic in its own file, with tests
 
 Anything that's maths or rules on plain data (positions, tempo, markers, notes, takes, notation,
-the starters) goes in a file with no React, store or Web Audio in it, so Node can test it.
-Tests live in `scripts/*.test.mjs` and import the TypeScript directly. The store's actions and
-the audio engine call those functions and apply what they return.
+the starters, the sound effects synth) goes in a file with no React, store or Web Audio in it, so
+Node can test it. Tests live in `scripts/*.test.mjs` and import the TypeScript directly. The
+store's actions and the audio engine call those functions and apply what they return.
 
 ### The store is the source of truth
 
@@ -86,14 +236,9 @@ default when it's missing; `parseProject` checks and repairs every field it read
 ### Words in the app
 
 The user guide is `GUIDE.md` (also shown inside the app); every user-visible change updates it.
-Interface text is plain and short. Don't name artists or songs anywhere in the software
-(starters, descriptions, comments, the guide): describe a style by its genre, tempo and sound.
-
-### Third-party sounds
-
-Recorded instruments must come from sources whose licence allows redistribution, and each one
-needs an entry in `src/credits.ts` (a test fails without it). Say where the files come from and
-how they were converted, as `scripts/real-samples/README.md` does.
+Interface text is plain and short: say what a thing does for the musician, not how it's built.
+Don't name artists or songs anywhere in the software (starters, presets, descriptions, comments,
+the guide): describe a style by its genre, tempo and sound.
 
 ## Things that bite
 
@@ -114,6 +259,8 @@ how they were converted, as `scripts/real-samples/README.md` does.
   and stops passing sound.
 - **Vite hot reload and test pages.** After editing `src/`, restart the dev server before running
   browser checks, or the page can import a stale copy of a module.
+- **Built-in plugins talk by message.** A plugin's notes reach its AudioWorklet as messages, so an
+  export waits for every plugin to have its notes (`syncBuiltinPlugins`) before each step renders.
 
 ## Checking sound
 
@@ -131,3 +278,41 @@ python3 scripts/audio-check/phrases.py /tmp/after
 
 It needs Playwright with Chromium, ffmpeg, and Python with numpy. When a change is meant to be
 heard, attach a short before-and-after recording of the same phrase to the pull request.
+
+## Pull requests
+
+- **One topic per pull request.** A fix and an unrelated tidy-up are two pull requests.
+- **Say what changes for the musician** in plain words at the top, then how it works.
+- **Show it.** Screenshots for anything on screen; a before-and-after recording for anything you
+  hear.
+- **Tests and the guide.** Pure logic gets a test; user-visible changes update `GUIDE.md`.
+- **All checks pass** (see [The checks](#the-checks)), including the one-file build.
+- **Small commits with clear messages** are easier to review than one large one.
+
+A maintainer will review it, usually within a week. Questions in the review are questions, not
+rejections: answer or push a change, and say if you disagree.
+
+## Licences: your work and other people's
+
+Bo's Beatbox is free software under the GNU General Public License, version 3 or later (see
+`LICENSE`). By sending a contribution you agree that it's licensed the same way, and that you
+have the right to contribute it.
+
+- **Code you didn't write** must have a licence compatible with GPL-3.0-or-later (MIT, BSD,
+  Apache-2.0, LGPL, GPL...). Say where it came from in the file's header comment and keep its
+  copyright notice.
+- **Sounds you didn't record** (samples, impulse responses, presets) need a licence that allows
+  redistribution and modification, and an entry in `src/credits.ts`.
+- **No ripped or "found" material**: no samples from commercial libraries or records, no presets
+  copied from commercial products, and no artist or song names in anything we ship.
+- **The website build** (`build:single`) leaves the GPL plugins out until the source is public;
+  the full build (`build:full`) has them. Don't copy `public/bos-beat-box-plugins/gpl/` anywhere
+  the website build is published.
+
+## Being kind
+
+Be patient and generous with each other. People here range from first-time coders and
+first-time musicians to people who've done this for decades; everyone's question deserves a
+real answer. Criticise the work, never the person. Harassment, insults and discrimination aren't
+welcome, and the maintainers will remove comments, pull requests or people that don't follow
+this. If something makes you uncomfortable, tell a maintainer privately.
