@@ -263,6 +263,7 @@ const MENUS: MenuDef[] = [
     label: 'Game',
     items: () => [
       { label: 'Game panel (states, intensity, stingers)', run: inDock('game') },
+      { label: 'Try it in a game…', run: () => ui().setDialog('tryOut') },
       { label: 'Transition matrix', run: inDock('game', () => reveal('[data-game="transitions"]')) },
       { label: 'Intensity & stem groups', run: inDock('game', () => reveal('[data-game="intensity"]')) },
       { label: 'Stingers', run: inDock('game', () => reveal('[data-game="stingers"]')) },

@@ -3,6 +3,10 @@ export class AdaptiveMusic {
   constructor(context?: BaseAudioContext, destination?: AudioNode);
   ctx: BaseAudioContext;
   current: { name: string; startTime: number } | null;
+  /** The manifest */
+  data: any;
+  /** Where sound effects play into (their own volume) */
+  sfxOut: GainNode;
   intensity: number;
   load(baseUrl?: string): Promise<void>;
   loadFrom(data: unknown, buffers: Map<string, AudioBuffer>): void;
