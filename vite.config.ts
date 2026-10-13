@@ -32,6 +32,8 @@ function thirdPartyLicenses(): Plugin {
       if (roots.has('wasm-media-encoders')) sections.push(CODEC_NOTICES)
       // The built-in plugins (public/bos-beat-box-plugins/, compiled from scripts/plugins/)
       sections.push(readFileSync(join(process.cwd(), 'scripts/plugins/LICENSES.txt'), 'utf8').trim())
+      // The GPL ones, in the builds that have them (VITE_GPL_PLUGINS=1: npm run build:full)
+      if (process.env.VITE_GPL_PLUGINS === '1') sections.push(readFileSync(join(process.cwd(), 'scripts/plugins/LICENSES-GPL.txt'), 'utf8').trim())
       this.emitFile({
         type: 'asset',
         fileName: 'third-party-licenses.txt',

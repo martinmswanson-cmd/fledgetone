@@ -246,7 +246,10 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   instruments (Airwindows, MDA, Open303, Mutable Instruments, Faust) compiled to WebAssembly and
   hosted as WAM-shaped AudioWorklet nodes behind `builtin:` addresses. Plugins menu, browser
   (`PluginBrowser.tsx`), panel (`BuiltinPluginPanel.tsx`). Instruments are level-trimmed in their
-  wrappers. GPL families (none yet) only in `VITE_GPL_PLUGINS=1` builds.
+  wrappers. GPL families (Surge XT with 607 factory patches fetched on demand, Dragonfly's four
+  reverbs) only in `VITE_GPL_PLUGINS=1` builds: the dev server and `npm run build:full`
+  (`dist-full/`). Never copy `public/bos-beat-box-plugins/gpl/` to the site before the app's source
+  is published.
 - **Auto-freeze** (`src/store/autoFreeze.ts`): renders settled tracks of a big song (6+ instrument
   tracks) while stopped, into memory-only sounds (`provideMemorySound`), within a memory budget;
   `liveView` takes them through its `autoFrozen` hook when the fingerprint still matches. Renders

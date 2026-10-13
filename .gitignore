@@ -29,3 +29,4 @@ dist-runtime
 songs/
 __pycache__/
 scripts/plugins/faust/gen/
+dist-full

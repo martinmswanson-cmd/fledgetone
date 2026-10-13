@@ -1,6 +1,6 @@
 import type { WamInstance } from '../wamHost';
 import { recordingBytes } from '../recordingStore';
-import { PLUGIN_FAMILIES } from './pluginCatalog';
+import { GPL_FAMILY_NAMES } from './pluginCatalog';
 import type { BuiltinPluginInfo, PluginFamily } from './pluginTypes';
 import { BUILTIN_PROCESSOR, BUILTIN_PROCESSOR_SOURCE } from './processor';
 import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
@@ -101,6 +101,8 @@ interface BuiltinState {
   builtin: 1;
   /** The preset chosen (for plugins with presets), before `values` */
   program?: number;
+  /** The preset file chosen (plugins whose presets are files, like Surge's patches), before `values` */
+  preset?: string;
   values: number[];
 }
 const valuesOf = (state: unknown): number[] | undefined => {
@@ -120,10 +122,10 @@ export interface BuiltinParam {
 export interface BuiltinControls {
   ref: BuiltinRef;
   params: () => BuiltinParam[];
-  /** The plugin's presets (none for most), and the one chosen (-1: none) */
+  /** The plugin's presets (none for most; "Category/Name" for preset files), and the one chosen (-1: none) */
   programs: string[];
   program: () => number;
-  setProgram: (index: number) => void;
+  setProgram: (index: number) => Promise<void>;
   /** Set parameter `index` now (0 to 1) */
   set: (index: number, value: number) => void;
   /** Called when a parameter's value or text changes (returns a function that stops it) */
@@ -137,6 +139,13 @@ export function setBuiltinGui(factory: GuiFactory): void {
   guiFactory = factory;
 }
 
+/** A preset file's bytes (downloaded once, then kept like the plugins). */
+function presetBytes(ref: BuiltinRef, name: string): Promise<ArrayBuffer> {
+  const files = ref.info.presetFiles!;
+  const path = `${files.dir}/${name.split('/').map(encodeURIComponent).join('/')}${files.ext}`;
+  return recordingBytes(pluginSource(ref.family), path);
+}
+
 /** How long making an instance may take (after its family has downloaded). */
 const READY_TIMEOUT_MS = 10_000;
 
@@ -145,10 +154,12 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   const ref = findBuiltin(url);
   if (!ref) {
     const missing = url.slice(BUILTIN_PREFIX.length);
-    const family = PLUGIN_FAMILIES.find((f) => f.family === missing.split('/')[0]);
-    throw new Error(family?.gpl && !GPL_PLUGINS ? `${missing} is in the full build only (GPL plugins)` : `${missing} isn't in this version`);
+    throw new Error(GPL_FAMILY_NAMES.includes(missing.split('/')[0]) && !GPL_PLUGINS ? `${missing} is in the full build only (GPL plugins)` : `${missing} isn't in this version`);
   }
-  const [module] = await Promise.all([familyModule(ref.family), addProcessor(ctx)]);
+  const files = ref.info.presetFiles;
+  const savedPreset = (state as Partial<BuiltinState> | undefined)?.preset;
+  const startPreset = files && savedPreset && files.names.includes(savedPreset) ? savedPreset : null;
+  const [module, , presetData] = await Promise.all([familyModule(ref.family), addProcessor(ctx), startPreset ? presetBytes(ref, startPreset) : null]);
   const node = new AudioWorkletNode(ctx, BUILTIN_PROCESSOR, {
     numberOfInputs: ref.info.instrument ? 0 : 1,
     numberOfOutputs: 1,
@@ -156,7 +167,14 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     channelCount: 2,
     channelCountMode: 'explicit',
     channelInterpretation: 'speakers',
-    processorOptions: { family: ref.family.family, module, index: ref.index, values: valuesOf(state), program: (state as Partial<BuiltinState> | undefined)?.program },
+    processorOptions: {
+      family: ref.family.family,
+      module,
+      index: ref.index,
+      values: valuesOf(state),
+      program: (state as Partial<BuiltinState> | undefined)?.program,
+      preset: presetData,
+    },
   });
 
   let params: BuiltinParam[] = [];
@@ -169,13 +187,17 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   let nextReply = 0;
   const ready = new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${ref.info.name} didn't start`)), READY_TIMEOUT_MS);
+    node.onprocessorerror = () => {
+      clearTimeout(timer);
+      reject(new Error(`${ref.info.name} stopped with an error`));
+    };
     node.port.onmessage = (m: MessageEvent) => {
       const d = m.data;
       if (d.type === 'ready') {
         clearTimeout(timer);
         params = d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: d.defaults[i] ?? p.value }));
-        programs = d.programs ?? [];
-        program = d.program ?? -1;
+        programs = files ? files.names : (d.programs ?? []);
+        program = files ? (startPreset ? files.names.indexOf(startPreset) : -1) : (d.program ?? -1);
         resolve();
       } else if (d.type === 'error') {
         clearTimeout(timer);
@@ -188,14 +210,17 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
         synced.get(d.id)?.();
         synced.delete(d.id);
       } else if (d.type === 'params') {
-        program = d.program ?? -1;
+        if (!files) program = d.program ?? -1;
         const reply = replies.get(d.id);
         replies.delete(d.id);
         if (reply) reply(d.params);
         else {
           // A preset was chosen: every parameter may have moved
-          params = d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: params[i]?.defaultValue ?? p.value }));
+          // (A preset file's values are its own defaults: Reset puts the patch back)
+          params = d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: files ? p.value : (params[i]?.defaultValue ?? p.value) }));
           changed();
+          loaded?.();
+          loaded = null;
         }
       }
     };
@@ -238,10 +263,15 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       pending = [];
       if (!destroyed) node.port.postMessage({ type: 'clear' });
     },
-    getState: async (): Promise<BuiltinState> => ({ builtin: 1, ...(program >= 0 ? { program } : {}), values: params.map((p) => p.value) }),
+    getState: async (): Promise<BuiltinState> => ({
+      builtin: 1,
+      ...(program >= 0 ? (files ? { preset: files.names[program] } : { program }) : {}),
+      values: params.map((p) => p.value),
+    }),
     setState: async (s: unknown) => {
-      const p = (s as Partial<BuiltinState> | undefined)?.program;
-      if (typeof p === 'number' && p >= 0 && p < programs.length && p !== program) setProgram(p);
+      const saved = s as Partial<BuiltinState> | undefined;
+      const p = files ? (saved?.preset ? files.names.indexOf(saved.preset) : -1) : saved?.program;
+      if (typeof p === 'number' && p >= 0 && p < programs.length && p !== program) await setProgram(p);
       const values = valuesOf(s);
       values?.forEach((v, i) => {
         if (Number.isFinite(v) && params[i]) set(i, v);
@@ -265,12 +295,25 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     node.port.postMessage({ type: 'set', index, value: v });
     changed();
   };
-  const setProgram = (index: number) => {
+  /** Choose preset `index`: a built-in one at once, a file once it's downloaded (resolves then). */
+  const setProgram = async (index: number) => {
     if (destroyed || index < 0 || index >= programs.length) return;
     program = index;
-    node.port.postMessage({ type: 'program', index });
     changed();
+    if (!files) {
+      node.port.postMessage({ type: 'program', index });
+      return;
+    }
+    const data = await presetBytes(ref, files.names[index]);
+    // (Another was chosen meanwhile: that one wins)
+    if (destroyed || program !== index) return;
+    await new Promise<void>((resolve) => {
+      loaded = resolve;
+      node.port.postMessage({ type: 'load', data }, [data]);
+    });
   };
+  /** Resolves a file preset's load once the plugin has sent its new parameters */
+  let loaded: (() => void) | null = null;
   /** Ask the plugin for every parameter's value and text (after automation moved them). */
   const refresh = () =>
     new Promise<void>((resolve) => {

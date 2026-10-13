@@ -1,5 +1,6 @@
 /* The bb_* exports (bbplug.h) over a family's BBPlugin list (bbplug_impl.h). */
 #include "bbplug_impl.h"
+#include <stdlib.h>
 #include <string>
 
 struct BBInst
@@ -36,6 +37,11 @@ BB_EXPORT int bb_create(int i, float sr)
     BBInst *in = new BBInst();
     memset(in->buf, 0, sizeof(in->buf));
     in->p = bbFamilyDef(i).make(sr);
+    if (!in->p)
+    {
+        delete in;
+        return 0;
+    }
     return (int)(intptr_t)in;
 }
 #define IN ((BBInst *)(intptr_t)h)
@@ -74,3 +80,6 @@ BB_EXPORT void bb_set_program(int h, int i)
     IN->p->setProgram(i);
 }
 BB_EXPORT int bb_get_program(int h) { return IN->p->program; }
+BB_EXPORT int bb_alloc(int bytes) { return (int)(intptr_t)malloc(bytes > 0 ? bytes : 1); }
+BB_EXPORT void bb_free(int ptr) { free((void *)(intptr_t)ptr); }
+BB_EXPORT int bb_load(int h, int ptr, int bytes) { return IN->p->loadData((const void *)(intptr_t)ptr, bytes) ? 1 : 0; }

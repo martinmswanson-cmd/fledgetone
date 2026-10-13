@@ -12,7 +12,8 @@
     "codemap": "node scripts/codemap.mjs",
     "guide-tables": "node scripts/guide-tables.mjs",
     "preview": "vite preview",
-    "build:single": "npm run build && node scripts/build-single.mjs"
+    "build:single": "npm run build && node scripts/build-single.mjs",
+    "build:full": "VITE_GPL_PLUGINS=1 npm run build && VITE_GPL_PLUGINS=1 node scripts/build-single.mjs"
   },
   "dependencies": {
     "@webaudiomodules/api": "^2.0.0-alpha.6",

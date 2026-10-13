@@ -34,3 +34,8 @@ BB_EXPORT int bb_programs(int h);
 BB_EXPORT const char *bb_program_name(int h, int i);
 BB_EXPORT void bb_set_program(int h, int i);
 BB_EXPORT int bb_get_program(int h);
+/** A preset file the host fetched (a Surge patch): bb_alloc space for it, copy it in, bb_load it
+ * (returns 1 if the plugin took it), then bb_free. Optional: families without files skip them. */
+BB_EXPORT int bb_alloc(int bytes);
+BB_EXPORT void bb_free(int ptr);
+BB_EXPORT int bb_load(int h, int ptr, int bytes);
