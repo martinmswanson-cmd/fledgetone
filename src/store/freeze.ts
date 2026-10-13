@@ -156,23 +156,31 @@ export interface LiveView {
 }
 
 /**
- * What the live engine plays: each frozen track with a current freeze becomes an Audio track
+ * What the live engine plays: each frozen track with a current freeze (its own, or auto-freeze's)
+ * becomes an Audio track
  * playing its frozen sound (its note clips stay, so its kicks still drive other tracks' Pumps,
  * but an Audio track plays no notes). Everything else is passed through as it is.
  */
 export function liveView(
   all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] },
   soundMissing: (id: string) => boolean,
-  previous?: LiveView
+  previous?: LiveView,
+  autoFrozen?: (trackId: string) => FrozenTrack | undefined
 ): LiveView {
+  // A freeze the person made, or else one auto-freeze made (autoFreeze.ts), if it's current
+  const frozenOf = (t: Track): FrozenTrack | undefined => {
+    if (freezeIsCurrent(t, all, soundMissing)) return t.frozen;
+    const auto = autoFrozen?.(t.id);
+    return auto && !t.isArmed && !soundMissing(auto.soundId) && auto.fingerprint === freezeFingerprint(t, all) ? auto : undefined;
+  };
   const source = new Map<string, Track>();
   const view = new Map<string, Track>();
   const frozenClips: Clip[] = [];
   let changed = !previous || previous.tracks.length !== all.tracks.length;
   const tracks = all.tracks.map((t, i) => {
     let out: LiveTrackView = t;
-    if (freezeIsCurrent(t, all, soundMissing)) {
-      const f = t.frozen;
+    const f = frozenOf(t);
+    if (f) {
       // Reuse the last view of an unchanged track, so the engine leaves its strip alone
       const before = previous?.source.get(t.id) === t && previous.view.get(t.id) !== t ? previous.view.get(t.id) : undefined;
       out = before ?? {

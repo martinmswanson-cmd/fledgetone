@@ -236,8 +236,35 @@ export function forgetDecodedSounds(keep: Set<string>): number {
   return bytes;
 }
 
+/**
+ * Sounds that live only in memory, never in the library or a project file: auto-freeze's renders
+ * (see autoFreeze.ts). Audio clips play them like any other sound, at the rate they were made at.
+ */
+const memorySounds = new Map<string, AudioBuffer>();
+
+/** Make `buffer` playable as sound `id` (in memory only). */
+export function provideMemorySound(id: string, buffer: AudioBuffer): void {
+  memorySounds.set(id, buffer);
+  setStatus(id, 'ready');
+}
+
+/** Let go of a memory-only sound. */
+export function dropMemorySound(id: string): void {
+  memorySounds.delete(id);
+  useSoundLibrary.setState((s) => {
+    if (!(id in s.status)) return s;
+    const status = { ...s.status };
+    delete status[id];
+    return { status };
+  });
+}
+
 /** The sound decoded to `sampleRate`, once decodeSound has finished with it. */
-export const decodedSound = (id: string, sampleRate: number): AudioBuffer | undefined => decodedBuffers.get(decodeKey(id, sampleRate));
+export const decodedSound = (id: string, sampleRate: number): AudioBuffer | undefined => {
+  const memory = memorySounds.get(id);
+  if (memory) return memory.sampleRate === sampleRate ? memory : undefined;
+  return decodedBuffers.get(decodeKey(id, sampleRate));
+};
 
 /**
  * The sound decoded to `sampleRate`, once per rate and shared. Rejects if the sound isn't in this
@@ -245,6 +272,8 @@ export const decodedSound = (id: string, sampleRate: number): AudioBuffer | unde
  * so the sound is tried again once it has been loaded.
  */
 export function decodeSound(id: string, sampleRate: number): Promise<AudioBuffer> {
+  const memory = memorySounds.get(id);
+  if (memory) return memory.sampleRate === sampleRate ? Promise.resolve(memory) : Promise.reject(new SoundError('This sound is only kept at its own sample rate.'));
   const key = decodeKey(id, sampleRate);
   let promise = decoded.get(key);
   if (!promise) {

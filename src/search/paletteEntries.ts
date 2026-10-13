@@ -223,6 +223,7 @@ const SETTINGS: Item[] = [
   { title: 'OTT', keywords: 'ott multiband compression loud edm upward', run: masterPanel('OTT') },
   { title: 'Stereo width', keywords: 'stereo width wide mono', run: masterPanel('Stereo Width') },
   { title: 'Stable playback', keywords: 'stable playback buffer latency glitch crackle stutter lag', detail: 'A bigger playback buffer, for fewer glitches on a busy computer.', run: masterPanel('playback') },
+  { title: 'Auto-freeze', keywords: 'auto freeze automatic render cpu lag performance stutter big song', detail: 'Freeze the tracks you leave alone in a big song, by itself.', run: masterPanel('playback') },
   { title: 'Scale', keywords: 'scale key major minor mode piano roll', run: pianoRoll('scale') },
   { title: 'Chord stamps', keywords: 'chord chords stamp triad piano roll', run: pianoRoll('chord') },
   { title: 'Note tools', keywords: 'arpeggiate arpeggio strum humanize quantize legato transpose semitone ratchet roll fit scale tools notes piano roll', run: pianoRoll('tools') },

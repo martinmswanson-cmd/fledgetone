@@ -3,7 +3,7 @@
  * playback buffering choice, and the instruments kept for offline use.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Timer } from 'lucide-react';
+import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Snowflake, Timer } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { defaultMasterSettings, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
 import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
@@ -14,6 +14,7 @@ import { resetLoudness } from '../../audio/loudnessMeter';
 import { useLoudness } from './useLoudness';
 import { choosePlaybackMode, chosenPlaybackMode, PLAYBACK_MODE } from '../../audio/playbackMode';
 import type { PlaybackMode } from '../../audio/playbackMode';
+import { AUTO_FREEZE_MIN_TRACKS, setAutoFreeze, useAutoFreeze } from '../../store/autoFreeze';
 import { clearRecordings, downloadAll, keptRecordings, recordingCount, type DownloadProgress } from '../../audio/recordingStore';
 import { FxSlider, InsertPanel } from './InsertFx';
 
@@ -160,6 +161,7 @@ export const PlaybackPanel: React.FC = () => {
         ))}
       </div>
       <p className="text-[10px] text-forge-muted">{MODES.find((m) => m.mode === chosen)!.detail}</p>
+      <AutoFreezeSetting />
       {chosen !== PLAYBACK_MODE && (
         <div className="flex items-center justify-between gap-2 text-[10px] text-amber-200">
           <span>Takes effect after a reload. Your work is kept: click Restore after it.</span>
@@ -168,6 +170,33 @@ export const PlaybackPanel: React.FC = () => {
           </button>
         </div>
       )}
+    </div>
+  );
+};
+
+/** Auto-freeze on or off (see autoFreeze.ts), with what it's doing now. */
+const AutoFreezeSetting: React.FC = () => {
+  const on = useAutoFreeze((s) => s.on);
+  const count = useAutoFreeze((s) => Object.keys(s.frozen).length);
+  const rendering = useAutoFreeze((s) => s.rendering !== null);
+  const bytes = useAutoFreeze((s) => Object.values(s.frozen).reduce((n, e) => n + e.bytes, 0));
+  return (
+    <div className="flex flex-col gap-1 pt-1 border-t border-forge-border/60">
+      <label
+        className="flex items-center gap-2 text-[11px] text-white cursor-pointer"
+        title="In a song with many tracks, the tracks you aren't working on are frozen by themselves while the song is stopped, so it plays without stutters. Change a track and it plays live again at once."
+      >
+        <input type="checkbox" checked={on} onChange={(e) => setAutoFreeze(e.target.checked)} className="accent-cyan-400" />
+        <Snowflake className="w-3 h-3 text-cyan-300" />
+        Auto-freeze big songs
+      </label>
+      <p className="text-[10px] text-forge-muted">
+        {!on
+          ? 'Off: every track plays live unless you freeze it.'
+          : count || rendering
+            ? `${count} track${count === 1 ? '' : 's'} frozen for you (${mb(bytes)} of memory)${rendering ? ', freezing another…' : ''}. Change one and it plays live again.`
+            : `On: once a song has ${AUTO_FREEZE_MIN_TRACKS} or more instrument tracks, the ones you leave alone are frozen while it's stopped.`}
+      </p>
     </div>
   );
 };

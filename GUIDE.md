@@ -655,7 +655,7 @@ While the song plays, the app watches for three signs that the computer isn't ke
 
 Click the badge for the details, including **Audio engine speed** while playing (100% is keeping up). When the engine is what's behind, the warning offers **Use Stable playback** directly; it takes effect after a reload.
 
-If it still lags: **Freeze** the busiest tracks (below), turn on **Stable playback** (Master tab › Playback), and close other tabs and programs.
+If it still lags: **Freeze** the busiest tracks (below), turn on **Stable playback** (Master tab › Playback), and close other tabs and programs. **Auto-freeze** (below) does most of the freezing for you.
 
 ### Freezing tracks
 
@@ -669,6 +669,12 @@ Big songs can ask more of the computer than it has, and playback starts to crack
 - Exports always render every track from its instrument, frozen or not, so they sound exactly the same either way.
 - The frozen audio stays in this browser (about 10 MB per minute of track in storage, and about 20 MB per minute in memory while the project is open). It isn't saved inside project files: open the project in another browser and frozen tracks play live until you freeze them again. **Free unused** in the sound panels keeps the frozen audio of this project and your last session.
 - Audio tracks can't be frozen: they already play recordings.
+
+**Auto-freeze** does this for you in big songs. Once a song has 6 or more instrument tracks, the tracks you haven't changed for a few seconds are frozen in the background while the song is stopped (never while it plays, so nothing changes under you). Their snowflake shows a faint ring. Change one and it plays live again at once, then is frozen again a few seconds after you leave it alone. On a five-song test mix it cut the playback work by more than half.
+
+- Auto-frozen audio is kept in memory only, never in the project or the browser's storage, and stops at a limit set by the computer's memory (the busiest tracks go first).
+- Click a ringed snowflake to freeze that track for good (a normal freeze).
+- Turn it off in **Master tab › Playback › Auto-freeze big songs**; it shows how many tracks are frozen and the memory they use. It's a setting for this browser, on by default.
 
 ### Bounce in place
 
