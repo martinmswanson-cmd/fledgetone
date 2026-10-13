@@ -127,6 +127,8 @@ export interface SampleSource {
   layers?: number[];
   /** Where to fetch the files instead when `baseUrl` can't serve them (the page opened from a file, or hosted elsewhere). */
   fallbackUrl?: string;
+  /** Changes when the files at these addresses do, so a kept copy is downloaded afresh (see recordingStore.ts) */
+  version?: string;
 }
 
 export interface InstrumentDef {
@@ -237,7 +239,7 @@ function hosted(folder: string, notes: number[], layers: number[], takes: number
     const n = noteName(m);
     for (let l = 0; l < layers.length; l++) for (let t = 0; t < takes; t++) samples[`${n}|${l}|${t}`] = `${n.replace('#', 's')}_${l}_${t}.mp3`;
   }
-  return { baseUrl: `bos-beat-box-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release, layers };
+  return { baseUrl: `bos-beat-box-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release, layers, version: HOSTED_SETS[folder]?.hash };
 }
 /** Velocity tops for a set recorded at `n` loudnesses (see SampleSource.layers) */
 const LAYER_TOPS: Record<number, number[]> = { 1: [1], 2: [0.55, 1], 3: [0.35, 0.68, 1], 4: [0.3, 0.55, 0.8, 1] };

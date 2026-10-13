@@ -4,6 +4,7 @@ import { INSTRUMENTS } from '../instrumentCatalog';
 import type { AmpModel, InstrumentDef, InstrumentKey, SampleSource, Shaping } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
 import { decodeSound } from '../soundLibrary';
+import { recordingBytes } from '../recordingStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { CustomSample } from '../../store/timelineTypes';
 import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
@@ -30,16 +31,18 @@ export function hasRecordings(key: InstrumentKey): boolean {
 }
 
 /**
- * Recordings downloaded and decoded, by URL: instruments that play the same recordings through
- * different amps share them. A file `baseUrl` can't serve comes from `fallbackUrl`.
+ * Recordings decoded, by URL: instruments that play the same recordings through different amps
+ * share them. The bytes come from this browser's kept copy, or are downloaded (from `baseUrl`, or
+ * `fallbackUrl` when that can't serve them) and kept for next time: see recordingStore.ts.
  */
 const recordings = new Map<string, Promise<Tone.ToneAudioBuffer>>();
 function fetchRecording(source: SampleSource, file: string): Promise<Tone.ToneAudioBuffer> {
   const url = source.baseUrl + file;
   let p = recordings.get(url);
   if (!p) {
-    const fallback = source.fallbackUrl;
-    p = Tone.ToneAudioBuffer.fromUrl(url).catch((err) => (fallback ? Tone.ToneAudioBuffer.fromUrl(fallback + file) : Promise.reject(err)));
+    p = recordingBytes(source, file)
+      .then((bytes) => Tone.getContext().decodeAudioData(bytes))
+      .then((audio) => new Tone.ToneAudioBuffer(audio));
     p.catch(() => recordings.delete(url));
     recordings.set(url, p);
   }

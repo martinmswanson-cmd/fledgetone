@@ -1,9 +1,9 @@
 /**
- * The Master tab of the Inspector: the loudness meter, the OTT and stereo width inserts, and the
- * playback buffering choice.
+ * The Master tab of the Inspector: the loudness meter, the OTT and stereo width inserts, the
+ * playback buffering choice, and the instruments kept for offline use.
  */
-import React, { useState } from 'react';
-import { Activity, Gauge, MoveHorizontal, RotateCcw, Timer } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Timer } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { defaultMasterSettings, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
 import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
@@ -14,6 +14,7 @@ import { resetLoudness } from '../../audio/loudnessMeter';
 import { useLoudness } from './useLoudness';
 import { choosePlaybackMode, chosenPlaybackMode, PLAYBACK_MODE } from '../../audio/playbackMode';
 import type { PlaybackMode } from '../../audio/playbackMode';
+import { clearRecordings, downloadAll, keptRecordings, recordingCount, type DownloadProgress } from '../../audio/recordingStore';
 import { FxSlider, InsertPanel } from './InsertFx';
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
@@ -171,12 +172,99 @@ export const PlaybackPanel: React.FC = () => {
   );
 };
 
-/** The master section's own effects, above the reverb and delay returns, and the playback buffer. */
+const mb = (bytes: number) => `${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB`;
+
+/**
+ * The instruments' recordings kept in this browser (see recordingStore.ts): how much is kept, a
+ * button to download every instrument's ahead of time for offline use, and one to free the space.
+ */
+export const OfflinePanel: React.FC = () => {
+  const [kept, setKept] = useState<{ count: number; bytes: number } | null>(null);
+  const [progress, setProgress] = useState<DownloadProgress | null>(null);
+  const [running, setRunning] = useState<AbortController | null>(null);
+  const total = useMemo(() => recordingCount(), []);
+  const refresh = () => void keptRecordings().then(setKept);
+  useEffect(refresh, []);
+
+  const start = async () => {
+    const abort = new AbortController();
+    setRunning(abort);
+    const result = await downloadAll(setProgress, abort.signal);
+    setRunning(null);
+    setProgress(result);
+    refresh();
+  };
+  const remove = async () => {
+    if (!window.confirm('Remove the kept recordings? Instruments download them again when you next use them.')) return;
+    await clearRecordings();
+    setProgress(null);
+    refresh();
+  };
+  const finished = progress && !running && progress.done === progress.total;
+
+  return (
+    <div data-search="offline download all instruments" className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
+      <div className="flex items-center gap-1.5">
+        <Download className="w-3.5 h-3.5 text-sky-400" />
+        <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-white">Instruments offline</span>
+      </div>
+      <p className="text-[10px] text-forge-muted">
+        Recordings are kept in this browser once an instrument has used them, so they load at once next time and work offline.{' '}
+        {kept && (kept.count ? `${kept.count.toLocaleString()} of ${total.toLocaleString()} kept (${mb(kept.bytes)}).` : 'None kept yet.')}
+      </p>
+      {running && progress ? (
+        <div className="flex flex-col gap-1">
+          <div className="h-1.5 rounded bg-black/40 overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done}>
+            <div className="h-full bg-sky-400" style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} />
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-forge-muted font-mono">
+            <span>
+              {progress.done.toLocaleString()} / {progress.total.toLocaleString()} · {mb(progress.bytes)} downloaded
+            </span>
+            <button type="button" onClick={() => running.abort()} className="px-2 py-0.5 rounded border border-forge-border hover:text-white">
+              Stop
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => void start()}
+            title="Download every instrument's recordings now (about 250 MB), so every instrument works offline"
+            className="flex-1 py-1 rounded border border-sky-400/60 bg-sky-500/15 text-sky-100 text-[11px] font-mono font-bold hover:bg-sky-500/25"
+          >
+            Download all
+          </button>
+          <button
+            type="button"
+            onClick={() => void remove()}
+            disabled={!kept?.count}
+            title="Free the space: recordings download again when an instrument next uses them"
+            className="px-2 py-1 rounded border border-forge-border text-forge-muted text-[11px] font-mono hover:text-white disabled:opacity-40"
+          >
+            Remove
+          </button>
+        </div>
+      )}
+      {finished && (
+        <p className={`text-[10px] ${progress.failed ? 'text-amber-200' : 'text-emerald-300'}`}>
+          {progress.failed
+            ? `${progress.failed.toLocaleString()} couldn't be downloaded (check the connection), the rest are kept. Download all again to retry them.`
+            : 'Every instrument is kept: they all work offline now.'}
+        </p>
+      )}
+    </div>
+  );
+};
+
+/** The master section's own effects, above the reverb and delay returns, the playback buffer, and offline use. */
 export const MasterPanels: React.FC = () => (
   <div className="flex flex-col gap-3">
     <LoudnessPanel />
     <OttPanel />
     <WidthPanel />
     <PlaybackPanel />
+    <OfflinePanel />
   </div>
 );

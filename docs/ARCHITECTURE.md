@@ -192,7 +192,8 @@ Clean up per-note nodes when they're disposed, not when they report ending.
 - **Drum kits**: synthesized (`drums.ts`, `kitExtras.ts`) or recorded (`sampledKit.ts`), all on
   the same drum note map (`DRUM_NOTES`) so parts move between kits.
 - **Recorded instruments** (`samplers/samplerManager.ts`): multi-sampled recordings downloaded
-  once and shared, with onset trimming, sustain looping, tuning fixes, tone shaping (including
+  once ever (kept in IndexedDB by `recordingStore.ts`, which can also download them all for
+  offline use) and shared, with onset trimming, sustain looping, tuning fixes, tone shaping (including
   guitar amps), loudness layers and round-robin takes, and Expressive playing.
 - **Your sounds**: the Sampler, Slicer, Drum Rack and Multi Sampler play sounds from the library;
   Plugin tracks host Web Audio Modules (`wamHost.ts`, `presets/wamPlugin.ts`).
