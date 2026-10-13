@@ -250,6 +250,14 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   reverbs, Plateau reverb, setBfree organ) only in `VITE_GPL_PLUGINS=1` builds: the dev server and `npm run build:full`
   (`dist-full/`). Never copy `public/bos-beat-box-plugins/gpl/` to the site before the app's source
   is published.
+- **Sound effects maker** (`src/audio/sfx/sfxSynth.ts`, `src/components/sfx/SfxMakerPanel.tsx`): layered
+  sounds (up to 4 layers: waves, noise, FM, bell, crackle; SVF filter; seq notes) with drive, echo
+  and reverb over the whole; ~70 kinds in `SFX_GROUPS`, `SFX_SETS` made with a shared style seed;
+  levelled per kind (`LEVEL_DB`), trimmed, seamless loops (`smpl`), variations (`varySfx`), WAV/OGG,
+  zips; My sounds in localStorage (`bosBeatbox.mySounds`). Pure maths, unit-tested in sfx.test.mjs.
+- **Game starters** (`src/store/startersGame.ts`): states as markers, stem groups, transitions and
+  stingers set up (`gameReady`). Starters fold into groups in the New dialog with a filter;
+  `reveal()` opens a folded `<details>` it finds.
 - **Auto-freeze** (`src/store/autoFreeze.ts`): renders settled tracks of a big song (6+ instrument
   tracks) while stopped, into memory-only sounds (`provideMemorySound`), within a memory budget;
   `liveView` takes them through its `autoFrozen` hook when the fingerprint still matches. Renders

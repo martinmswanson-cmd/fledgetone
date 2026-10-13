@@ -1464,3 +1464,6 @@ export const PLAYLIST_BUILDERS = {
   raprock: rapRock,
   mathrock: mathRock,
 };
+
+/** The pieces above, for the game starters (startersGame.ts). */
+export const KIT = { dur, VEL, beat, up, later, melody, phrase, octaves, roll32, stabs, pulse, broken, softBuild, softHit, gliss, power, lowCut, highCut, bell, peq, EQ, human, bits, glue, PATCH, darkRoom, send, drumBus, inSpace, ROOM, STUDIO, HALL };

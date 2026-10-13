@@ -2,6 +2,7 @@ import type { ProjectSnapshot } from './project';
 import { BUILD_UP, DROP_HIT, everyBar, PLUCK_ARP } from './demoSong';
 import { clip, D, hats8, master, progression, project, snareRoll, track } from './starterKit';
 import { PLAYLIST_BUILDERS } from './startersPlaylist';
+import { GAME_BUILDERS } from './startersGame';
 import { FX_NOTES } from '../audio/instrumentCatalog';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
 import { DEFAULT_MASTER_FX, durationToBars } from './timelineTypes';
@@ -15,6 +16,17 @@ import type { Step } from './demoSong';
  * projects once opened. Steps are 16th notes: offset = step / 16 bars.
  */
 export const STARTERS = [
+  { id: 'overworld', group: 'Game Worlds', name: 'Overworld Adventure', detail: '116 BPM, C major. Game-ready: Explore (harp, flute theme, strings) and Danger (horn hero theme, march, timpani), with layers for Intensity, a fill into Danger and stingers.' },
+  { id: 'dungeon', group: 'Game Worlds', name: 'Dungeon Crawl', detail: '84 BPM, D minor. Game-ready: Explore (drone and a music-box lullaby) and Ambush (taiko, cellos, tremolo strings, choir), an impact into the ambush.' },
+  { id: 'village', group: 'Game Worlds', name: 'Cozy Village', detail: '100 BPM, F major, swung. Game-ready: Day (guitar, accordion tune, hand drum) and Evening (an ocarina lullaby), crossfading between them.' },
+  { id: 'spacestation', group: 'Game Worlds', name: 'Space Station', detail: '105 BPM, E minor. Game-ready: Explore (pluck arp, pad, LinnDrum) and Alert (Phrygian brass stabs, driving drums), a riser into the alert.' },
+  { id: 'racing', group: 'Game Worlds', name: 'Racing', detail: '150 BPM, E minor. Game-ready: Race (rock drums, Reese bass, guitars, supersaws, a hook) and Final Lap, a semitone up and harder.' },
+  { id: 'platformer', group: 'Game Worlds', name: 'Platformer', detail: '140 BPM, C major. Game-ready: a bouncy chip Level theme and an echoing Underground in A minor, with item, level-up and game-over stingers.' },
+  { id: 'boss', group: 'Game Moments', name: 'Boss Fight', detail: '150 BPM, C minor. Game-ready: Phase 1 (brass riff, guitars, drums), Phase 2 (choir, organ, double-time drums) and Defeated in E flat, a victory stinger into it.' },
+  { id: 'stealth', group: 'Game Moments', name: 'Stealth', detail: '96 BPM, B minor. Game-ready: Sneak (a ticking clock, creeping pizzicato, a pulse) and Spotted (drums, brass, strings). Turn Intensity down to sneak.' },
+  { id: 'title', group: 'Game Moments', name: 'Title Screen', detail: '76 BPM, D major. Game-ready: a broad horn theme over piano and strings that loops for the title, and a quieter Menu loop.' },
+  { id: 'puzzle', group: 'Game Moments', name: 'Puzzle', detail: '100 BPM, F major, swung. Game-ready: Thinking (marimba, pizzicato, bassoon) and Almost There (clarinet, kalimba, hand drum), with a level-up stinger.' },
+  { id: 'shop', group: 'Game Moments', name: 'Shop', detail: '112 BPM, G major shuffle. Game-ready: Browse (vibes, electric piano, walking bass, ride) and Bargain (steel drums), with an item stinger.' },
   { id: 'dubstep', group: 'Electronic', name: 'Dubstep', detail: '140 BPM, F minor. Half-time drums on a techno kit, a gritty wobble and growl call-and-response over a clean sub, dark pad chords.' },
   { id: 'house', group: 'Electronic', name: 'House', detail: '126 BPM, A minor. Four-on-the-floor on a techno kit, off-beat bass, electric piano ninth stabs, a warm pad and a dark pluck in the peak.' },
   { id: 'trance', group: 'Electronic', name: 'Trance', detail: '138 BPM, A minor, dark. A broken pluck arp, a snare-roll build with a riser, then gated supersaws over a rolling bass.' },
@@ -39,10 +51,10 @@ export const STARTERS = [
   { id: 'tavern', group: 'Chill & World', name: 'Fantasy Tavern', detail: '110 BPM, D minor jig. Hammered dulcimer, lute, hand drum, accordion and recorder: inns and villages.' },
   { id: 'latin', group: 'Chill & World', name: 'Latin', detail: '130 BPM, bossa nova. Nylon guitar comping, upright bass, bongos, shaker and agogô bells, a flute melody.' },
   { id: 'eastern', group: 'Chill & World', name: 'Eastern', detail: '84 BPM, D in-scale. Koto, shakuhachi, taiko and shamisen over a glass drone: temples and gardens.' },
-  { id: 'artcore', group: 'Artcore & Game', name: 'Final Boss Artcore', detail: '174 BPM, D minor. Piano octave lead and violin over chopped jungle breaks, cello and contrabass, choir, taiko; the last drop a semitone up.' },
-  { id: 'hardcore', group: 'Artcore & Game', name: 'Melodic Hardcore', detail: '180 BPM, E minor. Rhythm-game piano: 16th arpeggios, a stuttered build, then a four-on-the-floor bittersweet Royal Road drop.' },
-  { id: 'breakcore', group: 'Artcore & Game', name: 'Breakcore', detail: '172 BPM, C# minor. A piano hook over a hardcore beat, then chopped, crushed breakbeats with rolls and a stop-time under electric piano.' },
-  { id: 'rpg', group: 'Artcore & Game', name: 'RPG Battle', detail: '140 BPM, D minor. A hero motif in town on marimba, then a battle on horn and trumpet over strings, rock guitar and taiko, then stacked on brass.' },
+  { id: 'artcore', group: 'Artcore & Rhythm Games', name: 'Final Boss Artcore', detail: '174 BPM, D minor. Piano octave lead and violin over chopped jungle breaks, cello and contrabass, choir, taiko; the last drop a semitone up.' },
+  { id: 'hardcore', group: 'Artcore & Rhythm Games', name: 'Melodic Hardcore', detail: '180 BPM, E minor. Rhythm-game piano: 16th arpeggios, a stuttered build, then a four-on-the-floor bittersweet Royal Road drop.' },
+  { id: 'breakcore', group: 'Artcore & Rhythm Games', name: 'Breakcore', detail: '172 BPM, C# minor. A piano hook over a hardcore beat, then chopped, crushed breakbeats with rolls and a stop-time under electric piano.' },
+  { id: 'rpg', group: 'Game Moments', name: 'RPG Battle', detail: '140 BPM, D minor. A hero motif in town on marimba, then a battle on horn and trumpet over strings, rock guitar and taiko, then stacked on brass.' },
   { id: 'metaldub', group: 'Bass Music', name: 'Metal Dubstep', detail: '150 BPM, E Phrygian. Twin guitar riff, then a half-time drop: guitars, driven growl and taiko chugging on every kick, low trombones.' },
   { id: 'melodicdub', group: 'Bass Music', name: 'Melodic Dubstep', detail: '150 BPM, D minor. Piano intro, a quiet build, a wobble drop with off-beat supersaws and a violin and voice hook.' },
   { id: 'riddim', group: 'Bass Music', name: 'Riddim', detail: '140 BPM, G. An organ drone, then a call-and-response of triplet growls and wobbles on two notes, G and Ab.' },
@@ -59,7 +71,7 @@ export const STARTERS = [
   { id: 'mathrock', group: 'Band', name: 'Math Rock', detail: '150 BPM, E major. Twinkly guitar, tapping in triplets, 3+3+3+3+2+2 accents, then an easycore breakdown.' },
 ] as const;
 export type StarterId = (typeof STARTERS)[number]['id'];
-export const STARTER_GROUPS = ['Electronic', 'Artcore & Game', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World'] as const;
+export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World'] as const;
 
 export const isStarterId = (v: unknown): v is StarterId => STARTERS.some((s) => s.id === v);
 
@@ -1358,6 +1370,7 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   dubstep, house, dnb, trap, cinematic, lofi, chiptune, hiphop,
   classical, angelic, epic, ambient, rock, metal, jazz, synthwave, pop, trance, horror, celtic, latin, tavern, eastern, funk,
   ...PLAYLIST_BUILDERS,
+  ...GAME_BUILDERS,
 };
 
 /** A fresh copy of a starter (new ids each time). */
