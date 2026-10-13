@@ -668,6 +668,8 @@ While the song plays, the app watches for three signs that the computer isn't ke
 
 **Clear memory** (in the warning, or from the badge at any time) lets go of what the app holds but isn't using: downloaded recordings of instruments no track plays, decoded sounds no clip uses, the Instrument Browser's preview players, and any notes left hanging. Everything comes back by itself if needed (an instrument re-downloads when you use it again). Tick **Also empty the undo history** to free the most on a long session, but then earlier edits can't be undone.
 
+The app also steps in by itself. At the first late note or freeze of a playback, it hands notes to the sound engine further ahead of time (0.4 s instead of 0.1 s) until you press Stop, so the next busy moment is absorbed instead of heard; once a playback has needed that, later ones start with it. The only cost is that a fader, a mute or a jump you make while it plays takes a moment longer to be heard; playing your keyboard or MIDI keyboard isn't affected. And while it lags, the meters and the spectrum draw less often, to leave the computer's time to the music. The badge's details show **Notes sent ahead: further** while this is on.
+
 Click the badge for the details, including **Audio engine speed** while playing (100% is keeping up). When the engine is what's behind, the warning offers **Use Stable playback** directly; it takes effect after a reload.
 
 If it still lags: **Freeze** the busiest tracks (below), turn on **Stable playback** (Master tab › Playback), and close other tabs and programs. **Auto-freeze** (below) does most of the freezing for you.

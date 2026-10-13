@@ -285,10 +285,11 @@ function bars(g: CanvasRenderingContext2D, r: Rect, bands: ArrayLike<number>, t:
 
 // ---------- Neon city ----------
 
-function city(g: CanvasRenderingContext2D, r: Rect, bands: ArrayLike<number>, t: number, memory: SkinMemory) {
-  const u = Math.max(0.6, r.h / 300);
-  const ground = r.y + r.h * 0.8;
-  // Sky, with the city's glow on the horizon
+/** The lit windows' brightnesses (each window takes the nearest, from its own random draw). */
+const WINDOW_ALPHAS = [0.51, 0.64, 0.76, 0.89];
+
+/** The city's still backdrop: the sky with the city's glow on the horizon, and the far skyline. */
+function cityBackdrop(g: CanvasRenderingContext2D, r: Rect, u: number, ground: number) {
   const sky = g.createLinearGradient(0, r.y, 0, ground);
   sky.addColorStop(0, '#05040a');
   sky.addColorStop(1, '#1c0a2e');
@@ -308,6 +309,24 @@ function city(g: CanvasRenderingContext2D, r: Rect, bands: ArrayLike<number>, t:
     }
     x += w;
   }
+}
+
+function city(g: CanvasRenderingContext2D, r: Rect, bands: ArrayLike<number>, t: number, memory: SkinMemory) {
+  const u = Math.max(0.6, r.h / 300);
+  const ground = r.y + r.h * 0.8;
+  // The sky and the far skyline never move: drawn once for this size and copied in each frame
+  const size = `${g.canvas.width}x${g.canvas.height}:${r.x},${r.y},${r.w},${r.h}`;
+  let backdrop = memory.cityBackdrop as HTMLCanvasElement | undefined;
+  if (memory.cityBackdropSize !== size || !backdrop) {
+    backdrop = document.createElement('canvas');
+    backdrop.width = g.canvas.width;
+    backdrop.height = g.canvas.height;
+    const b = backdrop.getContext('2d');
+    if (b) cityBackdrop(b, r, u, ground);
+    memory.cityBackdrop = backdrop;
+    memory.cityBackdropSize = size;
+  }
+  g.drawImage(backdrop, r.x, r.y, r.w, ground - r.y, r.x, r.y, r.w, ground - r.y);
   // The towers, one per slice of the spectrum
   const count = Math.max(10, Math.min(30, Math.floor(r.w / (36 * u))));
   const widths = Array.from({ length: count }, (_, k) => 0.6 + rand(k, 9) * 0.8);
@@ -334,14 +353,23 @@ function city(g: CanvasRenderingContext2D, r: Rect, bands: ArrayLike<number>, t:
     const cols = Math.max(1, Math.floor((w - 4 * u) / (5 * u)));
     const rows = Math.max(0, Math.floor((h - 8 * u) / (7 * u)));
     const lit = 0.12 + lv * 0.75;
+    // In a few batches (white or the tower's colour, at four brightnesses): hundreds of windows
+    // filled one by one were most of a frame's drawing
+    const batches = WINDOW_ALPHAS.map(() => [new Path2D(), new Path2D()]);
     for (let i = 0; i < cols; i++) {
       for (let j = 0; j < rows; j++) {
         const roll = rand(k, i, j);
         if (roll > lit || rand(k, i * 31 + j, Math.floor(t * 3)) < 0.02) continue;
-        g.fillStyle = rgba(roll < lit * 0.3 ? '#ffffff' : tint, 0.45 + 0.5 * rand(k, j, i));
-        g.fillRect(bx + 2 * u + i * 5 * u + (5 * u - ww) / 2, top + 6 * u + j * 7 * u, ww, wh);
+        const shade = Math.min(WINDOW_ALPHAS.length - 1, Math.floor(rand(k, j, i) * WINDOW_ALPHAS.length));
+        batches[shade][roll < lit * 0.3 ? 0 : 1].rect(bx + 2 * u + i * 5 * u + (5 * u - ww) / 2, top + 6 * u + j * 7 * u, ww, wh);
       }
     }
+    WINDOW_ALPHAS.forEach((a, n) => {
+      g.fillStyle = rgba('#ffffff', a);
+      g.fill(batches[n][0]);
+      g.fillStyle = rgba(tint, a);
+      g.fill(batches[n][1]);
+    });
     // Rooftop edge in the tower's colour
     g.globalAlpha = 0.5 + lv * 0.5;
     neon(g, poly([[bx, top], [bx + w, top]], false), tint, Math.max(1, u), 0.8);

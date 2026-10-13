@@ -6,7 +6,8 @@ import { forgetUnusedSamples } from './samplers/samplerManager';
 import { forgetDecodedSounds } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
 import type { InstrumentKey } from './instrumentCatalog';
-import { liveContext } from './liveContext';
+import { liveContext, restoreLookAhead, widenLookAhead } from './liveContext';
+import { capFrameRate } from '../components/frameTicker';
 
 /**
  * Notices when playback can't keep up, and frees memory on request.
@@ -18,6 +19,11 @@ import { liveContext } from './liveContext';
  * effects at once: the sound crackles) it advances slower than the wall clock; under 97% of real
  * time over a few seconds counts. A few of the first two in a few seconds, or the third, counts as
  * lagging; a while without any clears it.
+ *
+ * It also steps in: at the first late note or freeze of a playback, the Transport schedules further
+ * ahead (liveContext.ts) so later freezes are absorbed instead of heard, until Stop; and while
+ * lagging, the readouts that move with the sound (meters, the spectrum) draw less often, to leave
+ * the page's time to the music.
  */
 
 interface PerfState {
@@ -33,6 +39,8 @@ interface PerfState {
   audioSpeed: number | null;
   /** The page's JavaScript memory in use, MB, where the browser says (Chrome) */
   memoryMB: number | null;
+  /** Scheduling further ahead for this playback, after a late note or a freeze (until Stop) */
+  smoothing: boolean;
   /** The warning was closed: don't show it again until playback stops and starts */
   dismissed: boolean;
   dismiss: () => void;
@@ -45,12 +53,17 @@ export const usePerfStore = create<PerfState>((set) => ({
   worstFrame: 0,
   audioSpeed: null,
   memoryMB: null,
+  smoothing: false,
   dismissed: false,
   dismiss: () => set({ dismissed: true }),
 }));
 
 const WINDOW_MS = 4000;
 const HITCH_MS = 100;
+/** A frame this late while playing is enough to start scheduling further ahead (notes are handed over 0.1 s early). */
+const SMOOTH_MS = 70;
+/** The readouts' frame rate while lagging. */
+const CALM_FPS = 10;
 /** The audio clock is measured over this long (ms), and counts as behind under this share of real time. */
 const AUDIO_WINDOW_MS = 3000;
 const AUDIO_BEHIND = 0.97;
@@ -61,6 +74,8 @@ const memoryMB = (): number | null => {
 };
 
 let started = false;
+/** A playback on this page has needed the wider look-ahead: later ones start with it. */
+let needsSmoothing = false;
 /** Set by clearMemory: the monitor starts counting afresh. */
 let restart = false;
 
@@ -82,9 +97,23 @@ export function startPerfMonitor(): void {
     const gap = now - lastFrame;
     lastFrame = now;
     const playing = useTimelineStore.getState().isPlaying;
-    if (playing && !wasPlaying) usePerfStore.setState({ dismissed: false });
+    if (playing && !wasPlaying) {
+      usePerfStore.setState({ dismissed: false });
+      // A playback that needed it once starts with it next time (this page): a heavy song's first
+      // seconds are its busiest
+      if (needsSmoothing && widenLookAhead()) usePerfStore.setState({ smoothing: true });
+    }
     // A hidden tab gets no frames at all: that's not lag
     if (playing && wasPlaying && gap > HITCH_MS && !document.hidden) hitchTimes.push({ at: now, ms: gap });
+    if (!playing && wasPlaying) {
+      restoreLookAhead();
+      if (usePerfStore.getState().smoothing) usePerfStore.setState({ smoothing: false });
+    }
+    // The first sign of trouble in a playback: absorb the next ones
+    if (playing && wasPlaying && ((gap > SMOOTH_MS && !document.hidden) || lateNotes.count > seenLate)) {
+      needsSmoothing = true;
+      if (widenLookAhead()) usePerfStore.setState({ smoothing: true });
+    }
     wasPlaying = playing;
     if (restart) {
       restart = false;
@@ -117,6 +146,7 @@ export function startPerfMonitor(): void {
     // Lagging as soon as it struggles; calm again after 8 quiet seconds
     const lagging = struggling || (s.lagging && now - calmSince < 8000);
     const worst = Math.round(Math.max(0, ...hitchTimes.map((h) => h.ms)));
+    if (lagging !== s.lagging) capFrameRate(lagging ? CALM_FPS : null);
     if (lagging !== s.lagging || lateTimes.length !== s.lateNotes || hitchTimes.length !== s.hitches || worst !== s.worstFrame || speed !== s.audioSpeed) {
       usePerfStore.setState({ lagging, lateNotes: lateTimes.length, hitches: hitchTimes.length, worstFrame: worst, audioSpeed: speed });
     }
@@ -144,6 +174,7 @@ export function clearMemory(opts: { history: boolean }): number {
   bytes += forgetDecodedSounds(sounds);
   if (opts.history) useTimelineStore.setState({ past: [], future: [] });
   restart = true;
+  capFrameRate(null);
   usePerfStore.setState({ lagging: false, lateNotes: 0, hitches: 0, worstFrame: 0 });
   return Math.round(bytes / 1048576);
 }

@@ -103,6 +103,26 @@ const sliderToZoom = (value: number) => MIN_ZOOM * Math.exp((value / ZOOM_SLIDER
 /** A typed position, or null if it's past the end of the timeline. */
 const inSong = (bar: number | null) => (bar !== null && bar <= TOTAL_BARS + 1 ? bar : null);
 
+/** The timecode's frame-rate menu, apart so the playhead's changing digits don't redraw its options. */
+const TimecodeRate = React.memo<{ fps: number; dropFrame: boolean }>(({ fps, dropFrame }) => (
+  <select
+    value={`${fps}${dropFrame ? ' DF' : ''}`}
+    onChange={(e) => {
+      const choice = TIMECODE_FORMATS.find((f) => `${f.fps}${f.dropFrame ? ' DF' : ''}` === e.target.value);
+      if (choice) useTimelineStore.getState().setFps(choice.fps, choice.dropFrame);
+    }}
+    className="bg-transparent text-[9px] uppercase tracking-widest text-cyan-300 font-mono leading-none cursor-pointer hover:text-cyan-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 rounded-sm"
+    title="Timecode frame rate (saved with the project)"
+    aria-label="Timecode frame rate"
+  >
+    {TIMECODE_FORMATS.map((f) => (
+      <option key={`${f.fps}${f.dropFrame}`} value={`${f.fps}${f.dropFrame ? ' DF' : ''}`} className="bg-forge-panel text-forge-text">
+        {frameRateLabel(f.fps, f.dropFrame)}
+      </option>
+    ))}
+  </select>
+));
+
 const TimecodeDisplay: React.FC = () => {
   const position = usePlayheadReadout();
   const bpm = useSongTempo();
@@ -127,22 +147,7 @@ const TimecodeDisplay: React.FC = () => {
       <div className="bg-black/60 px-3 py-1 flex flex-col justify-center w-[152px]">
         <span className="flex items-center gap-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono leading-none mb-0.5">
           Timecode
-          <select
-            value={`${fps}${dropFrame ? ' DF' : ''}`}
-            onChange={(e) => {
-              const choice = TIMECODE_FORMATS.find((f) => `${f.fps}${f.dropFrame ? ' DF' : ''}` === e.target.value);
-              if (choice) useTimelineStore.getState().setFps(choice.fps, choice.dropFrame);
-            }}
-            className="bg-transparent text-[9px] uppercase tracking-widest text-cyan-300 font-mono leading-none cursor-pointer hover:text-cyan-200 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400 rounded-sm"
-            title="Timecode frame rate (saved with the project)"
-            aria-label="Timecode frame rate"
-          >
-            {TIMECODE_FORMATS.map((f) => (
-              <option key={`${f.fps}${f.dropFrame}`} value={`${f.fps}${f.dropFrame ? ' DF' : ''}`} className="bg-forge-panel text-forge-text">
-                {frameRateLabel(f.fps, f.dropFrame)}
-              </option>
-            ))}
-          </select>
+          <TimecodeRate fps={fps} dropFrame={dropFrame} />
         </span>
         <PositionField
           value={formatSmpte(position, bpm, fps, dropFrame)}

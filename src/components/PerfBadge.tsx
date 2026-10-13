@@ -63,6 +63,7 @@ export const PerfBadge: React.FC = () => {
   const behind = audioBehind(audioSpeed);
   const memory = usePerfStore((s) => s.memoryMB);
   const dismissed = usePerfStore((s) => s.dismissed);
+  const smoothing = usePerfStore((s) => s.smoothing);
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -92,6 +93,8 @@ export const PerfBadge: React.FC = () => {
             <span className="text-forge-text tabular-nums">{hitches}{worst ? `, longest ${worst} ms` : ''}</span>
             <span className="text-forge-muted">Audio engine speed</span>
             <span className={`tabular-nums ${behind ? 'text-amber-200' : 'text-forge-text'}`}>{audioSpeed === null ? 'measured while playing' : `${Math.round(audioSpeed * 100)}% of real time`}</span>
+            <span className="text-forge-muted">Notes sent ahead</span>
+            <span className="text-forge-text" title="After a late note or a freeze, notes go to the audio engine further ahead of time until Stop, so the next busy moment isn't heard">{smoothing ? 'further (smoothing a busy page)' : 'as usual'}</span>
             <span className="text-forge-muted">Memory in use</span>
             <span className="text-forge-text tabular-nums">{memory !== null ? `${memory} MB` : 'not shown by this browser'}</span>
           </div>

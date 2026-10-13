@@ -9,12 +9,14 @@ type Listener = { fps: number; last: number; fn: (now: number) => void };
 
 const listeners = new Set<Listener>();
 let raf = 0;
+/** While playback lags, no readout is drawn more often than this (perfMonitor.ts); null: as asked. */
+let cap: number | null = null;
 
 const frame = (now: number) => {
   raf = listeners.size ? requestAnimationFrame(frame) : 0;
   for (const l of listeners) {
     // A frame's worth of slack, so 30 fps on a 60 Hz screen is every other frame, not every third
-    if (now - l.last < 1000 / l.fps - 8) continue;
+    if (now - l.last < 1000 / (cap === null ? l.fps : Math.min(cap, l.fps)) - 8) continue;
     l.last = now;
     l.fn(now);
   }
@@ -33,4 +35,9 @@ export function onFrame(fn: (now: number) => void, fps = 30): () => void {
 /** Change how often a listener is called (a readout that has gone quiet can slow down). */
 export function frameRate(fn: (now: number) => void, fps: number): void {
   for (const l of listeners) if (l.fn === fn) l.fps = fps;
+}
+
+/** Draw every readout at most `fps` times a second (null: each at its own rate again). */
+export function capFrameRate(fps: number | null): void {
+  cap = fps;
 }
