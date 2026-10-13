@@ -107,6 +107,11 @@ how they were converted, as `scripts/real-samples/README.md` does.
   `monotonicTime` (`presets/monotonic.ts`); keep new ones doing the same.
 - **The welcome dialog covers a fresh page** in browser tests: set
   `localStorage['bosBeatbox.welcomeSeen'] = 'true'` first.
+- **Nodes made on the browser's own context.** Per-note nodes of the recorded instruments and the
+  native buses are made straight on the native `AudioContext` (`nativeNodes.ts`) to skip Tone's
+  wrapper. Connect native nodes into a Tone node with `nativeInputOf`, never the other way, and
+  hold `keepActive(node)` on a Tone node only native nodes feed, or the wrapper decides it's idle
+  and stops passing sound.
 - **Vite hot reload and test pages.** After editing `src/`, restart the dev server before running
   browser checks, or the page can import a stale copy of a module.
 

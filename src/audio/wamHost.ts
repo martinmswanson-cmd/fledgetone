@@ -1,4 +1,3 @@
-import * as Tone from 'tone';
 import { initializeWamHost } from '@webaudiomodules/sdk';
 import type { WamPlugin } from '../store/timelineTypes';
 
@@ -29,48 +28,7 @@ export interface WamInstance {
 /** How long a plugin may take to load before it's given up on. */
 const LOAD_TIMEOUT_MS = 30_000;
 
-type WithNative = { _nativeAudioContext?: BaseAudioContext; _nativeOfflineAudioContext?: BaseAudioContext; _nativeContext?: BaseAudioContext };
-
-/** The native context under a Tone context (live or offline). */
-export function nativeContextOf(context: Tone.BaseContext): BaseAudioContext {
-  const raw = context.rawContext as unknown as WithNative;
-  return raw._nativeAudioContext ?? raw._nativeOfflineAudioContext ?? raw._nativeContext ?? (raw as unknown as BaseAudioContext);
-}
-
-/** The native node a Tone node (or wrapped node) takes its input at. */
-export function nativeInputOf(node: Tone.InputNode): AudioNode {
-  let n: unknown = node;
-  while (n instanceof Tone.ToneAudioNode) n = n.input;
-  return ((n as { _nativeAudioNode?: AudioNode })._nativeAudioNode ?? n) as AudioNode;
-}
-
-/** The native node a Tone node's sound comes out of. */
-export function nativeOutputOf(node: Tone.ToneAudioNode): AudioNode {
-  let n: unknown = node;
-  while (n instanceof Tone.ToneAudioNode) n = n.output;
-  return ((n as { _nativeAudioNode?: AudioNode })._nativeAudioNode ?? n) as AudioNode;
-}
-
-/**
- * Keep a node of Tone's graph sounding when only native nodes (a plugin) play into it. Tone's nodes
- * are standardized-audio-context's wrappers, which take a node with no input they know of out of
- * the native graph to save work ("passive"); a silent constant source playing into it, which they
- * do know of, keeps it in. Returns what undoes it.
- */
-export function keepActive(node: Tone.ToneAudioNode): () => void {
-  const source = node.context.createConstantSource();
-  source.offset.value = 0;
-  source.start();
-  Tone.connect(source, node);
-  return () => {
-    try {
-      source.stop();
-      source.disconnect();
-    } catch {
-      // Already stopped
-    }
-  };
-}
+export { nativeContextOf, nativeInputOf, nativeOutputOf, keepActive } from './nativeNodes';
 
 // --- Allowed URLs (kept per browser) ---
 

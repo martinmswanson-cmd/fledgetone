@@ -8,6 +8,7 @@ import { baseBpm, tempoAt, type Tempo } from './tempoMap';
 import * as Tone from 'tone';
 import type { Clip, Track } from '../store/timelineTypes';
 import type { NativeBus } from './presets/native';
+import { nativeContextOf } from './nativeNodes';
 import { barToTicks } from './transport';
 import { decodedSound, ensureSound, requestStretch, requestWarp, stretchedSound, warpedSound } from './soundLibrary';
 import { DECLICK_SECONDS, envelopeAt, envelopeFrom, envelopeShape } from './clipEnvelope';
@@ -84,7 +85,8 @@ export function createAudioClipSchedule(
   /** The song's tempo: each clip plays at the tempo where it starts (see tempoMap.ts) */
   tempo: () => Tempo = () => transport.bpm.value
 ): AudioClipSchedule {
-  const raw = transport.context.rawContext as unknown as BaseAudioContext;
+  // The browser's own context: a clip's nodes are made per play, so skip Tone's wrapper (nativeNodes.ts)
+  const raw = nativeContextOf(transport.context);
   let entries = new Map<string, Entry>();
   /** Where overlapping clips on a track crossfade (see crossfades) */
   let xfades = new Map<string, Crossfade>();

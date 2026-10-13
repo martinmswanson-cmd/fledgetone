@@ -264,8 +264,11 @@ export const Timeline: React.FC = () => {
         }
         if (!state.isPlaying || state.playheadPosition === prev.playheadPosition) return;
         const x = (state.playheadPosition - 1) * state.zoom;
-        const viewWidth = el.clientWidth - HEADER_WIDTH;
-        if (x < el.scrollLeft || x > el.scrollLeft + viewWidth - 24) {
+        // The view as the store has it (setView, on every scroll and resize), not read from the
+        // page: reading scrollLeft or clientWidth makes the browser lay the page out there and then,
+        // and this runs every frame of playback
+        const { viewLeft, viewWidth } = state;
+        if (x < viewLeft || x > viewLeft + viewWidth - 24) {
           el.scrollLeft = Math.max(0, x - 24);
         }
       }),

@@ -3,6 +3,7 @@
  * metronome, Mic and MIDI, the position and timecode readouts, tools (select, razor), snap, undo /
  * redo, the markers list, the Inspector toggle and zoom.
  */
+import { usePlayheadReadout } from './playheadReadout';
 import React, { useState } from 'react';
 import { MicButton } from './MicButton';
 import {
@@ -103,7 +104,7 @@ const sliderToZoom = (value: number) => MIN_ZOOM * Math.exp((value / ZOOM_SLIDER
 const inSong = (bar: number | null) => (bar !== null && bar <= TOTAL_BARS + 1 ? bar : null);
 
 const TimecodeDisplay: React.FC = () => {
-  const position = useTimelineStore((s) => s.playheadPosition);
+  const position = usePlayheadReadout();
   const bpm = useSongTempo();
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
@@ -111,7 +112,8 @@ const TimecodeDisplay: React.FC = () => {
   const rate = frameRateLabel(fps, dropFrame);
 
   return (
-    <div className="flex items-stretch gap-px rounded-md overflow-hidden border border-forge-border bg-forge-border">
+    // A layer of its own, so its changing digits repaint only this box (see playheadReadout.ts)
+    <div className="flex items-stretch gap-px rounded-md overflow-hidden border border-forge-border bg-forge-border" style={{ willChange: 'transform', contain: 'layout paint' }}>
       <div className="bg-black/60 px-3 py-1 flex flex-col justify-center w-[134px]">
         <span className="text-[9px] uppercase tracking-widest text-forge-muted font-mono leading-none mb-0.5">Bar.Beat.Tick</span>
         <PositionField

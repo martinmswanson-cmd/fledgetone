@@ -2,6 +2,7 @@
  * The overview scrollbar under the lanes: the whole song in miniature, with the visible window as
  * a thumb to drag, click or stretch (zoom).
  */
+import { usePlayheadReadout } from './playheadReadout';
 import React, { useEffect, useRef, useState } from 'react';
 import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { HEADER_WIDTH } from './layout';
@@ -193,13 +194,15 @@ export const TimelineScrollbar: React.FC<TimelineScrollbarProps> = ({ scrollRef 
   );
 };
 
-/** The overview's playhead, on its own so the clip overview doesn't re-render every frame of playback. */
+/**
+ * The overview's playhead, on its own so the clip overview doesn't re-render every frame of
+ * playback. A full-width layer slid by a share of its own width, so moving it repaints nothing.
+ */
 const OverviewPlayhead: React.FC = () => {
-  const playhead = useTimelineStore((s) => s.playheadPosition);
+  const playhead = usePlayheadReadout(30);
   return (
-    <div
-      className="absolute top-0 bottom-0 w-px bg-red-500 pointer-events-none"
-      style={{ left: `${((playhead - 1) / TOTAL_BARS) * 100}%` }}
-    />
+    <div className="absolute inset-0 pointer-events-none" style={{ transform: `translateX(${((playhead - 1) / TOTAL_BARS) * 100}%)`, willChange: 'transform' }}>
+      <div className="absolute top-0 bottom-0 left-0 w-px bg-red-500" />
+    </div>
   );
 };

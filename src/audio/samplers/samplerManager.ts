@@ -6,6 +6,7 @@ import { auditionInput } from '../engine';
 import { decodeSound } from '../soundLibrary';
 import { useAudioStore } from '../../store/audioStore';
 import type { CustomSample } from '../../store/timelineTypes';
+import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
@@ -485,110 +486,186 @@ export function noteJitter(note: string, time: number, salt: number): number {
   return ((h >>> 0) / 4294967295) * 2 - 1;
 }
 
-/**
- * The samplers a voice plays: one, or one per loudness and take (SampleSource.layers), and which
- * of them plays a note at a velocity.
- */
-interface SamplerBank {
-  all: Tone.Sampler[];
-  pick: (note: string, velocity: number) => Tone.Sampler;
-}
-const single = (sampler: Tone.Sampler): SamplerBank => ({ all: [sampler], pick: () => sampler });
+/** Recordings by MIDI note: what one sampler slot plays from (the nearest one, re-pitched). */
+type Slot = Map<number, AudioBuffer>;
 
-function samplerVoice(bank: SamplerBank, attach: Promise<void>, extra: { dispose: () => void }[], onNote?: (time: number) => void, taper?: InstrumentDef['taper'], expressive?: Expressive | null): SamplerVoice {
-  const sampler = bank.all[0];
+/**
+ * The recordings a voice plays: one slot, or one per loudness and take (SampleSource.layers), and
+ * which slot plays a note at a velocity.
+ */
+interface SlotBank {
+  slots: Slot[];
+  pick: (velocity: number) => Slot;
+}
+
+/** The recording nearest `midi` in `slot` and how many semitones it sits below (Tone.Sampler's search: the higher one on a tie). */
+function nearest(slot: Slot, midi: number): { buffer: AudioBuffer; interval: number } | null {
+  for (let i = 0; i < 96; i++) {
+    const up = slot.get(midi + i);
+    if (up) return { buffer: up, interval: -i };
+    const down = slot.get(midi - i);
+    if (down) return { buffer: down, interval: i };
+  }
+  return null;
+}
+
+const midiOfNote = (note: string) => 69 + 12 * Math.log2(Tone.Frequency(note).toFrequency() / 440);
+
+/**
+ * Expressive cutoffs are shared a sixth of an octave apart: notes whose cutoffs round to the same
+ * step play through one filter, instead of each note making its own (a biquad is the costliest
+ * node a note had). A sixth of an octave is finer than the ear follows in a note's brightness.
+ */
+const CUTOFF_STEPS_PER_OCTAVE = 6;
+
+/**
+ * Plays recordings from plain Web Audio nodes: each note is an AudioBufferSourceNode and one
+ * GainNode (its velocity, a short fade in, and its release), made on the browser's own context (see
+ * nativeNodes.ts: Tone's wrapper added a gain to every buffer source and walked the graph on every
+ * connect) when it starts, and let go when it has rung out, so nothing runs between notes. Tone.Sampler made two gains per note (and, played
+ * expressively, a filter of its own), and on a repeat of a pitch still ringing it moved the earlier
+ * note's end to the later one's, so fast repeats piled up as overlapping notes. Here a note lasts
+ * what it says, plus its release.
+ *
+ * The envelope matches Tone.Sampler's: `attack` seconds in, and the release an exponential fall
+ * whose last tenth is a straight line to silence (Tone's targetRampTo).
+ */
+function samplerVoice(
+  bank: SlotBank,
+  options: { attack: number; release: number },
+  output: Tone.Gain,
+  attach: Promise<void>,
+  extra: { dispose: () => void }[],
+  onNote?: (time: number) => void,
+  taper?: InstrumentDef['taper'],
+  expressive?: Expressive | null
+): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
     loaded = true;
   });
   ready.catch(() => {}); // the loading badge / inspector reports failures
-  // Pitch bend: Tone.Sampler plays each note on a buffer source of its own, at the playback rate
-  // that tunes the nearest recording to it. A bend scales the rate of every source still sounding,
-  // and a note started while bent starts scaled. Tone forgets a source as soon as its release is
-  // scheduled, so the sources are kept here, each until it has rung out.
+  const raw = nativeContextOf(output.context);
+  const into = nativeInputOf(output);
+  // Only native nodes feed `output`: keep Tone's wrapper from taking it out of the graph
+  const letGo = keepActive(output);
+  // (Read in the voice's own context: in an export, the render's tempo, not the live one)
+  const release = options.release;
+  /** The release's time constant and where its straight last tenth starts (as Tone's targetRampTo). */
+  const releaseTc = Math.log(release + 1) / Math.log(200);
+  /** Expressive filters, by cutoff step (see CUTOFF_STEPS_PER_OCTAVE). */
+  const filters = new Map<number, BiquadFilterNode>();
+  const filterFor = (cutoff: number): AudioNode => {
+    const step = Math.round(Math.log2(cutoff) * CUTOFF_STEPS_PER_OCTAVE);
+    let f = filters.get(step);
+    if (!f) {
+      f = raw.createBiquadFilter();
+      f.type = 'lowpass';
+      f.Q.value = 0.6;
+      f.frequency.value = Math.min(raw.sampleRate / 2 - 1, 2 ** (step / CUTOFF_STEPS_PER_OCTAVE));
+      f.connect(into);
+      filters.set(step, f);
+    }
+    return f;
+  };
+
+  /**
+   * A note sounding: `until` is when it has rung out (Infinity while its key is held). Pitch bend
+   * scales every sounding note's rate, so each keeps its unbent rate (`base`) and how much of its
+   * recording it has played (`played` by `last`, at `rate`), so a held note's end can be moved
+   * when a bend changes its speed.
+   */
+  interface Sounding {
+    src: AudioBufferSourceNode;
+    gain: GainNode;
+    note: string;
+    level: number;
+    start: number;
+    until: number;
+    base: number;
+    played: number;
+    last: number;
+    rate: number;
+  }
+  const sounding: Sounding[] = [];
   let bendRatio = 1;
-  type Source = { playbackRate: Tone.Param<'positive'>; buffer: { duration: number }; stop: (time: number) => unknown };
-  const active = (s: Tone.Sampler) => (s as unknown as { _activeSources: Map<number, Source[]> })._activeSources;
-  const allSources = () => bank.all.flatMap((s) => [...active(s).values()].flat());
-  /**
-   * `played`: seconds of the recording played by `last` (at `rate`), so a held note's end can be
-   * moved when a bend changes its speed (Tone stops a source where the recording would run out at
-   * the rate it started with, so bent down it would stop early).
-   */
-  const sounding: Array<{ src: Source; note: string; until: number; base: number; played: number; last: number; rate: number }> = [];
-  // (Read in the sampler's own context: in an export, the render's tempo, not the live one)
-  const releaseSeconds = () => sampler.toSeconds(sampler.release);
-  /**
-   * Expressive: a note's own low-pass for its velocity, between its source and the sampler's
-   * output, let go with the source. (Not when Tone says it ended: in an export Tone's clock runs
-   * ahead of the render, so "ended" comes before the note has sounded, and letting go of its
-   * filter then silenced it. The source is disposed once it really is over: live a second after
-   * it ends, in an export once the render is past it; see exportWav.ts.)
-   */
-  const voiceFilter = (src: Source, note: string, velocity: number, by: Tone.Sampler) => {
-    if (!expressive) return;
-    const tsrc = src as unknown as Tone.ToneBufferSource;
-    const raw = by.context.rawContext as unknown as BaseAudioContext;
-    const filter = raw.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.Q.value = 0.6;
-    filter.frequency.value = expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency());
-    tsrc.disconnect();
-    Tone.connect(tsrc, filter);
-    Tone.connect(filter, by.output);
-    const dispose = tsrc.dispose.bind(tsrc);
-    tsrc.dispose = () => {
-      filter.disconnect();
-      return dispose();
-    };
-  };
-  /** The velocity a note is triggered at: as given, or on the dB curve with a little variation. */
-  const level = (note: string, velocity: number, at: number) =>
-    expressive ? expressiveGain(velocity, expressive.rangeDb) * 10 ** ((0.6 * noteJitter(note, at, 7)) / 20) : velocity;
-  /** Start `trigger`'s notes, keep their sources (bent by the bend now) until `until`. */
-  const started = (notes: string[], until: number, trigger: () => void, at: number, velocity: number, by: Tone.Sampler) => {
-    const before = new Set(allSources());
-    trigger();
-    const fresh = allSources().filter((src) => !before.has(src));
-    fresh.forEach((src, i) => {
-      const note = notes[Math.min(i, notes.length - 1)];
-      if (expressive) {
-        voiceFilter(src, note, velocity, by);
-        // Each hit a hair off the last: up to ±3 cents
-        src.playbackRate.value *= 2 ** ((3 * noteJitter(note, at, 13)) / 1200);
-      }
-      // Its rate unbent, which every bend scales (reading the rate back mid-glide would drift)
-      const base = src.playbackRate.value;
-      if (bendRatio !== 1) src.playbackRate.value = base * bendRatio;
-      sounding.push({ src, note: notes[Math.min(i, notes.length - 1)], until, base, played: 0, last: at, rate: base * bendRatio });
-    });
-  };
-  /** Keys held down (attack without release yet): which sampler each went to */
-  const held = new Map<string, Tone.Sampler[]>();
   const prune = (time: number) => {
     for (let i = sounding.length - 1; i >= 0; i--) if (sounding[i].until < time) sounding.splice(i, 1);
   };
+
+  /** The velocity a note is triggered at: as given, or on the dB curve with a little variation. */
+  const level = (note: string, velocity: number, at: number) =>
+    expressive ? expressiveGain(velocity, expressive.rangeDb) * 10 ** ((0.6 * noteJitter(note, at, 7)) / 20) : velocity;
+
+  /** Start `note` at `at`; it plays to the end of its recording unless released. */
+  const start = (note: string, at: number, velocity: number): Sounding | null => {
+    const midiFloat = midiOfNote(note);
+    const midi = Math.round(midiFloat);
+    const found = nearest(bank.pick(velocity), midi);
+    if (!found) return null;
+    let base = 2 ** ((found.interval + midiFloat - midi) / 12);
+    // Each hit a hair off the last: up to ±3 cents
+    if (expressive) base *= 2 ** ((3 * noteJitter(note, at, 13)) / 1200);
+    const when = Math.max(at, raw.currentTime);
+    const src = raw.createBufferSource();
+    src.buffer = found.buffer;
+    src.playbackRate.value = base * bendRatio;
+    const gain = raw.createGain();
+    const v = level(note, velocity, at) * taperGain(taper, note);
+    if (options.attack > 0) {
+      gain.gain.setValueAtTime(0, when);
+      gain.gain.linearRampToValueAtTime(v, when + options.attack);
+    } else gain.gain.value = v;
+    src.connect(gain);
+    gain.connect(expressive ? filterFor(expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency())) : into);
+    src.start(when);
+    // Let go once it has played (nodes made in an export are dropped with its context anyway)
+    src.onended = () => {
+      src.disconnect();
+      gain.disconnect();
+    };
+    const end = when + found.buffer.duration / (base * bendRatio);
+    src.stop(end);
+    const s: Sounding = { src, gain, note, level: v, start: when, until: end, base, played: 0, last: when, rate: base * bendRatio };
+    sounding.push(s);
+    return s;
+  };
+
+  /** Release `s` at `time`: its level falls away over the release, then it stops. */
+  const releaseAt = (s: Sounding, time: number) => {
+    const at = Math.max(time, s.start + options.attack);
+    const g = s.gain.gain;
+    g.cancelScheduledValues(at);
+    g.setValueAtTime(s.level, at);
+    g.setTargetAtTime(0, at, releaseTc);
+    const late = at + release * 0.9;
+    g.setValueAtTime(s.level * Math.exp((-release * 0.9) / releaseTc), late);
+    g.linearRampToValueAtTime(0, at + release);
+    const stop = at + release + 0.01;
+    if (stop < s.until) {
+      s.src.stop(stop);
+      s.until = stop;
+    }
+  };
+
   return {
     play: (notes, duration, time, velocity) => {
       if (!loaded || notes.length === 0) return; // still downloading: skip rather than throw
-      const at = time ?? Tone.now();
+      const at = time ?? output.now();
       onNote?.(at);
-      const end = at + sampler.toSeconds(duration);
+      const end = at + output.toSeconds(duration);
       prune(at);
-      // Attack and release apart (what triggerAttackRelease does), so the sources can be kept
       for (const note of notes) {
-        const by = bank.pick(note, velocity);
-        started([note], end + releaseSeconds() + 0.1, () => by.triggerAttack(note, at, level(note, velocity, at) * taperGain(taper, note)), at, velocity, by);
-        by.triggerRelease(note, end);
+        const s = start(note, at, velocity);
+        if (s) releaseAt(s, end);
       }
     },
     attack: (note, time, velocity) => {
       if (!loaded) return;
       onNote?.(time);
       prune(time);
-      const by = bank.pick(note, velocity);
-      held.set(note, [...(held.get(note) ?? []), by]);
-      started([note], Infinity, () => by.triggerAttack(note, time, level(note, velocity, time) * taperGain(taper, note)), time, velocity, by);
+      const s = start(note, time, velocity);
+      if (s) s.until = Infinity;
     },
     bend: (cents, time) => {
       const next = 2 ** (cents / 1200);
@@ -600,73 +677,75 @@ function samplerVoice(bank: SamplerBank, attach: Promise<void>, extra: { dispose
         s.last = Math.max(s.last, time);
         s.rate = s.base * next;
         // A held key rings until its recording runs out at the new speed
-        if (s.until === Infinity) {
-          try {
-            s.src.stop(time + Math.max(0, s.src.buffer.duration - s.played) / s.rate);
-          } catch {
-            // Already stopped
-          }
-        }
+        if (s.until === Infinity) s.src.stop(time + Math.max(0, (s.src.buffer?.duration ?? 0) - s.played) / s.rate);
       }
       bendRatio = next;
     },
     release: (note, time) => {
       if (!loaded) return;
-      // The sampler the key went to (the oldest still held, as Tone releases the oldest source)
-      const by = held.get(note)?.shift() ?? sampler;
-      if (!held.get(note)?.length) held.delete(note);
-      by.triggerRelease(note, time);
-      for (const s of sounding) if (s.note === note && s.until === Infinity) s.until = time + releaseSeconds() + 0.1;
+      // The oldest key still held on that note
+      const s = sounding.find((x) => x.note === note && x.until === Infinity);
+      if (s) {
+        s.until = Number.MAX_VALUE;
+        releaseAt(s, time);
+      }
     },
     releaseAll: () => {
-      bank.all.forEach((s) => s.releaseAll());
-      held.clear();
-      const until = sampler.context.currentTime + releaseSeconds() + 0.1;
-      for (const s of sounding) s.until = Math.min(s.until, until);
+      const now = raw.currentTime;
+      for (const s of sounding) if (s.until > now) releaseAt(s, now);
     },
     ready,
     dispose: () => {
-      bank.all.forEach((s) => s.dispose());
+      for (const s of sounding) {
+        s.src.onended = null;
+        try {
+          s.src.stop();
+        } catch {
+          // Not started
+        }
+        s.src.disconnect();
+        s.gain.disconnect();
+      }
+      sounding.length = 0;
+      filters.forEach((f) => f.disconnect());
+      letGo();
+      output.dispose();
       extra.forEach((n) => n.dispose());
     },
   };
 }
 
-/** A Tone.Sampler for a sampled instrument in the current context, connected to `output`. */
+/** A sampled instrument's voice in the current context, connected to `output`. */
 export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, expressive = false): SamplerVoice {
   const def = INSTRUMENTS[key];
   const shaped = shapingChain(def.shaping, output);
   const chain = toneChain(def.tone, shaped);
+  const out = new Tone.Gain(1).connect(chain.input);
   // A few ms of attack: a recording stretched to another pitch doesn't always start at zero
   const options = { attack: 0.004, release: def.samples?.release ?? 1 };
-  const layers = def.samples?.layers;
-  if (!layers) {
-    const sampler = new Tone.Sampler(options).connect(chain.input);
-    const attach = loadSamples(key).then((set) => {
-      for (const [note, buffer] of Object.entries(set)) sampler.add(note as Tone.Unit.Note, buffer);
-    });
-    return samplerVoice(single(sampler), attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null);
+  const layers = def.samples?.layers ?? [1];
+  // One slot per loudness and take (layered names are note|layer|take): a note plays the slot for
+  // its velocity, its takes in turn
+  const bank: Slot[][] = layers.map(() => []);
+  for (const name of Object.keys(def.samples?.samples ?? {})) {
+    const [, l = '0', t = '0'] = name.split('|');
+    while (bank[Number(l)].length <= Number(t)) bank[Number(l)].push(new Map());
   }
-  // One sampler per loudness and take (names note|layer|take): a note plays the layer for its
-  // velocity, its takes in turn
-  const bank: Tone.Sampler[][] = layers.map(() => []);
-  for (const name of Object.keys(def.samples!.samples)) {
-    const [, l, t] = name.split('|').map(Number);
-    while (bank[l].length <= t) bank[l].push(new Tone.Sampler(options).connect(chain.input));
-  }
+  if (!bank[0].length) bank[0].push(new Map());
   const turn = layers.map(() => 0);
-  const pick = (_note: string, velocity: number) => {
+  const pick = (velocity: number) => {
     const found = layers.findIndex((top) => velocity <= top + 1e-6);
     const l = found < 0 ? layers.length - 1 : found;
     return bank[l][turn[l]++ % bank[l].length];
   };
   const attach = loadSamples(key).then((set) => {
     for (const [name, buffer] of Object.entries(set)) {
-      const [note, l, t] = name.split('|');
-      bank[Number(l)][Number(t)].add(note as Tone.Unit.Note, buffer);
+      const [note, l = '0', t = '0'] = name.split('|');
+      const audio = buffer.get();
+      if (audio) bank[Number(l)][Number(t)].set(Math.round(midiOfNote(note)), audio);
     }
   });
-  return samplerVoice({ all: bank.flat(), pick }, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null);
+  return samplerVoice({ slots: bank.flat(), pick }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null);
 }
 
 /**
@@ -680,12 +759,14 @@ export function createCustomSamplerVoice(sample: CustomSample | undefined, outpu
     // No sound loaded yet: ready straight away (so exports never wait on it) and silent
     return { play: () => {}, attack: () => {}, release: () => {}, bend: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
   }
-  const sampler = new Tone.Sampler({ release: 0.4 }).connect(output);
-  const buffer = dataUrl ? loadCustomSample(dataUrl) : decodeSound(sample.soundId!, sampler.context.sampleRate).then((audio) => new Tone.ToneAudioBuffer(audio));
+  const out = new Tone.Gain(1).connect(output);
+  const slot: Slot = new Map();
+  const buffer = dataUrl ? loadCustomSample(dataUrl) : decodeSound(sample.soundId!, out.context.sampleRate).then((audio) => new Tone.ToneAudioBuffer(audio));
   const attach = buffer.then((b) => {
-    sampler.add(sample.root as Tone.Unit.Note, b);
+    const audio = b.get();
+    if (audio) slot.set(Math.round(midiOfNote(sample.root)), audio);
   });
-  return samplerVoice(single(sampler), attach, []);
+  return samplerVoice({ slots: [slot], pick: () => slot }, { attack: 0, release: 0.4 }, out, attach, []);
 }
 
 // ---------- instrument browser / deck audition ----------
