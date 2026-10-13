@@ -7,29 +7,68 @@
 //   music.setState('Combat');            // switches by the transition rules in the manifest
 //   music.setIntensity(0.8);             // crossfades the stem groups along their curves
 //   music.stinger('Victory');            // plays over the music on the next beat
+//   music.setCostume('8-bit');           // the same music played another way, mid-loop (null: back)
+//   music.setEffect('underwater');       // muffled and roomy ('muffled', 'lowHealth', 'none')
 //   music.playSfx('sword_hit');          // a sound effect (a different variation each time)
 //   const rain = music.playSfx('rain');  // a looping one plays until stopped: rain.stop()
 //   music.setVolume(0.8); music.setSfxVolume(0.6);
 //   music.stop();
 //
 // Every state is a seamless loop exactly a whole number of bars long (and, when the song has stem
-// groups, a set of stems of that same length), so switching on a bar line keeps the beat. Times
-// come from the audio clock, so changes land on the beat however busy the game is.
+// groups, a set of stems of that same length), so switching on a bar line keeps the beat. A state
+// can also play its pieces in a shuffled order, or leave silences between plays (see the
+// manifest's shuffleBars and gap). Times come from the audio clock, so changes land on the beat
+// however busy the game is.
+
+/** The effect presets: a low-pass, a reverb send, and the music's level. */
+const EFFECTS = {
+  none: { filter: 20000, reverb: 0, level: 1 },
+  underwater: { filter: 650, reverb: 0.5, level: 1 },
+  muffled: { filter: 1100, reverb: 0.12, level: 0.9 },
+  lowHealth: { filter: 2200, reverb: 0.2, level: 0.85 },
+  dream: { filter: 5000, reverb: 0.7, level: 0.9 },
+};
 
 export class AdaptiveMusic {
   constructor(context = new AudioContext(), destination) {
     this.ctx = context;
+    const dest = destination ?? this.ctx.destination;
+    // Music: out -> level -> low-pass -> (dry, and a reverb send) -> the destination
     this.out = this.ctx.createGain();
-    this.out.connect(destination ?? this.ctx.destination);
-    // Sound effects have their own level, apart from the music's
+    this.levelGain = this.ctx.createGain();
+    this.filter = this.ctx.createBiquadFilter();
+    this.filter.type = 'lowpass';
+    this.filter.frequency.value = 20000;
+    this.filter.Q.value = 0.7;
+    this.out.connect(this.levelGain).connect(this.filter).connect(dest);
+    this.reverbSend = this.ctx.createGain();
+    this.reverbSend.gain.value = 0;
+    this.reverb = this.ctx.createConvolver();
+    this.reverb.buffer = AdaptiveMusic.impulse(this.ctx, 2.8);
+    this.filter.connect(this.reverbSend).connect(this.reverb).connect(dest);
+    // Sound effects have their own level, apart from the music's (and no music effects)
     this.sfxOut = this.ctx.createGain();
-    this.sfxOut.connect(destination ?? this.ctx.destination);
+    this.sfxOut.connect(dest);
     this.lastSfx = new Map(); // name -> the variation played last, so the next differs
     this.sfxPlaying = new Map(); // name -> Set of handles still sounding
     this.buffers = new Map();
     this.data = null;
-    this.current = null; // { name, startTime, bus, voices: [{ source, gain, group }] }
+    this.current = null; // see startState
     this.intensity = 1;
+    this.costume = null;
+    this.effect = 'none';
+    this.timer = null;
+  }
+
+  /** A soft room: stereo noise fading over `seconds`. */
+  static impulse(ctx, seconds) {
+    const n = Math.round(ctx.sampleRate * seconds);
+    const b = ctx.createBuffer(2, n, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = b.getChannelData(c);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3) * 0.5;
+    }
+    return b;
   }
 
   /** Load audio_manifest.json and every sound it lists from `baseUrl` (ending in a slash). */
@@ -57,10 +96,11 @@ export class AdaptiveMusic {
   /** Every sound file a manifest uses. */
   static filesOf(data) {
     const files = [];
+    const partsOf = (s) => (s.stems?.length ? s.stems.map((x) => x.file) : s.file ? [s.file] : []);
     for (const s of data.states) {
       // A state with stems plays them; its whole mix is only needed without
-      if (s.stems?.length) for (const stem of s.stems) files.push(stem.file);
-      else files.push(s.file);
+      files.push(...partsOf(s));
+      for (const c of s.costumes ?? []) files.push(...partsOf(c));
     }
     for (const t of data.transitions ?? []) if (t.file) files.push(t.file);
     for (const s of data.states) if (s.transition?.file) files.push(s.transition.file); // version 1 manifests
@@ -69,10 +109,17 @@ export class AdaptiveMusic {
     return [...new Set(files)];
   }
 
-  /** The state playing now's beat and bar (each state has its own tempo and time signature). */
+  /** The names of the costumes (the same music played other ways). */
+  get costumeNames() {
+    const names = new Set();
+    for (const s of this.data?.states ?? []) for (const c of s.costumes ?? []) names.add(c.name);
+    return [...names];
+  }
+
+  /** The state playing now's beat and bar (each state has its own tempo and time signature; a costume may be faster). */
   get secondsPerBeat() {
     const st = this.current && this.data.states.find((s) => s.name === this.current.name);
-    return st?.beatSeconds ?? this.data.beatSeconds ?? 60 / this.data.bpm;
+    return (st?.beatSeconds ?? this.data.beatSeconds ?? 60 / this.data.bpm) / (this.current?.tempo ?? 1);
   }
 
   lineLength(unit) {
@@ -84,10 +131,11 @@ export class AdaptiveMusic {
   nextLine(unit = 'bar') {
     const now = this.ctx.currentTime + 0.02;
     if (!this.current || unit === 'now') return now;
+    // Where the bar lines run from: the piece playing now (or, in a silence, the next one)
+    const from = this.current.gridStart(now);
+    if (from >= now) return from;
     const line = this.lineLength(unit);
-    const elapsed = now - this.current.startTime;
-    if (elapsed < 0) return this.current.startTime;
-    return this.current.startTime + Math.ceil(elapsed / line - 1e-6) * line;
+    return from + Math.ceil((now - from) / line - 1e-6) * line;
   }
 
   state(name) {
@@ -113,34 +161,145 @@ export class AdaptiveMusic {
     return c[c.length - 1][1];
   }
 
-  /** Start a state's loop (its stems, or its mix) at `at`, fading in over `fade` seconds. */
-  startState(state, at, fade = 0) {
+  /** A state as the costume on now dresses it: its parts (stems or mix), length and tempo. */
+  dressed(state) {
+    const c = this.costume && state.costumes?.find((x) => x.name === this.costume);
+    const src = c ?? state;
+    const parts = src.stems?.length ? src.stems.map((s) => ({ file: s.file, group: s.group })) : [{ file: src.file, group: null }];
+    return { parts, seconds: c ? c.seconds : state.seconds, tempo: c ? c.tempo : 1 };
+  }
+
+  /**
+   * Start a state at `at`, fading in over `fade` seconds, `from` (0 to 1) of the way into its loop.
+   * A plain state is a loop; one with shuffled pieces or silences is scheduled piece by piece.
+   */
+  startState(state, at, fade = 0, from = 0) {
     const bus = this.ctx.createGain();
     bus.connect(this.out);
     if (fade > 0) {
       bus.gain.setValueAtTime(0, at);
       bus.gain.linearRampToValueAtTime(1, at + fade);
     }
-    const parts = state.stems?.length ? state.stems.map((s) => ({ file: s.file, group: s.group })) : [{ file: state.file, group: null }];
-    const voices = parts.map(({ file, group }) => {
-      const source = this.ctx.createBufferSource();
-      source.buffer = this.buffers.get(file);
-      source.loop = true;
-      const gain = this.ctx.createGain();
-      gain.gain.value = group ? this.level(group) : 1;
-      source.connect(gain).connect(bus);
-      source.start(at);
-      return { source, gain, group };
-    });
-    return { name: state.name, startTime: at, bus, voices };
+    const { parts, seconds, tempo } = this.dressed(state);
+    // One gain per stem group, so intensity reaches every piece
+    const groups = new Map();
+    for (const { group } of parts) {
+      if (groups.has(group)) continue;
+      const g = this.ctx.createGain();
+      g.gain.value = group ? this.level(group) : 1;
+      g.connect(bus);
+      groups.set(group, g);
+    }
+    const playing = { name: state.name, startTime: at, tempo, bus, groups, sources: new Set(), pieces: [], gridStart: () => at };
+    if (!state.shuffleBars && !state.gap) {
+      const offset = (from % 1) * seconds;
+      for (const { file, group } of parts) {
+        const source = this.ctx.createBufferSource();
+        source.buffer = this.buffers.get(file);
+        source.loop = true;
+        source.connect(groups.get(group));
+        source.start(at, offset);
+        playing.sources.add(source);
+      }
+      playing.gridStart = () => at - offset;
+      return playing;
+    }
+    // Pieces: bar-line boundaries a few bars apart (the whole loop when it isn't shuffled)
+    const bars = state.bars;
+    const each = state.shuffleBars && state.shuffleBars < bars ? state.shuffleBars : bars;
+    const bounds = [];
+    for (let b = 0; b < bars - 1e-6; b += each) bounds.push([(b / bars) * seconds, (Math.min(bars, b + each) / bars) * seconds]);
+    playing.bounds = bounds;
+    // The piece `from` falls in, then the rest of the pass in order (or shuffled)
+    const first = Math.min(bounds.length - 1, Math.floor((from % 1) * bars / each));
+    const startIn = (from % 1) * seconds - bounds[first][0];
+    playing.queue = [first, ...this.order(bounds.length, first, state.shuffleBars).filter((i) => i !== first)];
+    playing.next = at - startIn;
+    playing.firstOffset = startIn;
+    playing.parts = parts;
+    playing.state = state;
+    playing.gridStart = (now) => {
+      for (const p of playing.pieces) if (now >= p.at - 1e-3 && now < p.end) return p.at;
+      const ahead = playing.pieces.find((p) => p.at >= now);
+      return ahead ? ahead.at : playing.next;
+    };
+    this.schedule(playing);
+    return playing;
+  }
+
+  /** A pass through `n` pieces: in order, or shuffled with no piece twice in a row (`last` played just before). */
+  order(n, last, shuffle) {
+    const idx = [...Array(n).keys()];
+    if (!shuffle) return idx;
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [idx[i], idx[j]] = [idx[j], idx[i]];
+    }
+    if (n > 1 && idx[0] === last) [idx[0], idx[1]] = [idx[1], idx[0]];
+    return idx;
+  }
+
+  /** Queue pieces a little ahead of the clock (all at once in an offline render). */
+  schedule(playing) {
+    const offline = 'startRendering' in this.ctx;
+    const horizon = offline ? this.ctx.length / this.ctx.sampleRate : this.ctx.currentTime + 1.5;
+    while (playing.next < horizon && !playing.stopped) {
+      if (!playing.queue.length) {
+        // End of a pass: a silence (if the state has one), then another pass
+        const g = playing.state.gap;
+        if (g) playing.next += g.min + Math.random() * Math.max(0, g.max - g.min);
+        const last = playing.lastPiece ?? -1;
+        playing.queue = this.order(playing.bounds.length, last, playing.state.shuffleBars);
+        continue;
+      }
+      const i = playing.queue.shift();
+      const [a, b] = playing.bounds[i];
+      const skip = playing.firstOffset ?? 0;
+      playing.firstOffset = 0;
+      const at = Math.max(playing.next + skip, this.ctx.currentTime);
+      const dur = b - a - skip;
+      if (dur > 0.01) {
+        for (const { file, group } of playing.parts) {
+          const source = this.ctx.createBufferSource();
+          source.buffer = this.buffers.get(file);
+          const env = this.ctx.createGain();
+          // Short fades so a piece joins any other cleanly
+          env.gain.setValueAtTime(0, at);
+          env.gain.linearRampToValueAtTime(1, at + 0.006);
+          env.gain.setValueAtTime(1, at + dur - 0.006);
+          env.gain.linearRampToValueAtTime(0, at + dur);
+          source.connect(env).connect(playing.groups.get(group));
+          source.start(at, a + skip, dur);
+          playing.sources.add(source);
+          source.onended = () => playing.sources.delete(source);
+        }
+        playing.pieces.push({ at: playing.next, end: playing.next + (b - a), index: i });
+        if (playing.pieces.length > 64) playing.pieces.shift();
+      }
+      playing.lastPiece = i;
+      playing.next += b - a;
+    }
+    if (!offline && !playing.stopped) {
+      clearTimeout(playing.timer);
+      playing.timer = setTimeout(() => this.schedule(playing), 400);
+    }
   }
 
   stopState(playing, at, fade = 0) {
+    playing.stopped = true;
+    clearTimeout(playing.timer);
     if (fade > 0) {
-      playing.bus.gain.setValueAtTime(1, at);
+      playing.bus.gain.cancelScheduledValues(at);
+      playing.bus.gain.setValueAtTime(playing.bus.gain.value || 1, at);
       playing.bus.gain.linearRampToValueAtTime(0, at + fade);
     }
-    for (const v of playing.voices) v.source.stop(at + fade);
+    for (const s of playing.sources) {
+      try {
+        s.stop(at + fade);
+      } catch {
+        // already stopped
+      }
+    }
   }
 
   playOnce(file, at) {
@@ -204,12 +363,73 @@ export class AdaptiveMusic {
     this.current = this.startState(next, at);
   }
 
+  /**
+   * Play the music in a costume (null: as written), crossfading over `seconds` from the same point
+   * in the loop, so the tune carries on in its new clothes. Every later state wears it too.
+   */
+  setCostume(name, seconds = 1) {
+    if (name && !this.costumeNames.includes(name)) throw new Error(`No costume called "${name}"`);
+    if ((name ?? null) === this.costume) return;
+    this.costume = name ?? null;
+    if (!this.current) return;
+    const old = this.current;
+    const state = this.state(old.name);
+    const now = this.ctx.currentTime + 0.03;
+    // How far into the loop (or the piece) the music is, as a fraction of the whole state
+    const len = state.seconds / (old.tempo ?? 1);
+    let from;
+    // In a silence between plays: the new costume comes in when the music would have
+    if (old.bounds && !old.pieces.some((x) => now >= x.at && now < x.end)) {
+      const ahead = old.pieces.find((x) => x.at > now)?.at ?? old.next;
+      if (ahead > now) {
+        this.stopState(old, now);
+        this.current = this.startState(state, ahead);
+        return;
+      }
+    }
+    if (old.bounds) {
+      const p = old.pieces.find((x) => now >= x.at && now < x.end) ?? old.pieces[old.pieces.length - 1];
+      from = p ? (old.bounds[p.index][0] + (now - p.at)) / len : 0;
+    } else {
+      from = (((now - old.gridStart(now)) % len) + len) % len / len;
+    }
+    this.stopState(old, now, seconds);
+    this.current = this.startState(state, now, seconds, Math.max(0, from));
+  }
+
+  /**
+   * Shape the music for what's going on: 'underwater', 'muffled' (behind a wall, a pause menu),
+   * 'lowHealth', 'dream' or 'none', over `seconds`. Sound effects aren't touched.
+   */
+  setEffect(name, seconds = 1) {
+    const e = EFFECTS[name];
+    if (!e) throw new Error(`No effect called "${name}" (try ${Object.keys(EFFECTS).join(', ')})`);
+    this.effect = name;
+    this.setFilter(e.filter, seconds);
+    this.setReverb(e.reverb, seconds);
+    const t = this.ctx.currentTime;
+    this.levelGain.gain.setTargetAtTime(e.level, t, Math.max(0.01, seconds / 3));
+  }
+
+  /** The music through a low-pass at `hz` (20000: open), gliding over `seconds`. */
+  setFilter(hz, seconds = 0.5) {
+    const t = this.ctx.currentTime;
+    this.filter.frequency.cancelScheduledValues(t);
+    this.filter.frequency.setValueAtTime(this.filter.frequency.value, t);
+    this.filter.frequency.exponentialRampToValueAtTime(Math.max(40, Math.min(20000, hz)), t + Math.max(0.01, seconds));
+  }
+
+  /** How much of the music goes to the room reverb, 0 to 1, over `seconds`. */
+  setReverb(amount, seconds = 0.5) {
+    this.reverbSend.gain.setTargetAtTime(Math.max(0, Math.min(1, amount)) * 0.6, this.ctx.currentTime, Math.max(0.01, seconds / 3));
+  }
+
   /** Crossfade the stem groups to `value` (0 to 1) along their curves, over `seconds`. */
   setIntensity(value, seconds = 0.5) {
     this.intensity = Math.max(0, Math.min(1, value));
     if (!this.current) return;
-    for (const v of this.current.voices) {
-      if (v.group) v.gain.gain.setTargetAtTime(this.level(v.group), this.ctx.currentTime, Math.max(0.01, seconds / 3));
+    for (const [group, g] of this.current.groups) {
+      if (group) g.gain.setTargetAtTime(this.level(group), this.ctx.currentTime, Math.max(0.01, seconds / 3));
     }
   }
 
@@ -280,7 +500,7 @@ export class AdaptiveMusic {
   }
 
   stop() {
-    if (this.current) for (const v of this.current.voices) v.source.stop();
+    if (this.current?.sources) this.stopState(this.current, this.ctx.currentTime);
     this.current = null;
   }
 }

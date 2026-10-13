@@ -148,6 +148,15 @@ export const TransitionMatrix: React.FC<{ states: StateRef[] }> = ({ states }) =
   );
 };
 
+/** The player's effects, as the audition offers them. */
+const AUDITION_EFFECTS = [
+  { id: 'none', name: 'None', title: 'The music as it is' },
+  { id: 'underwater', name: 'Underwater', title: 'A low-pass and a big room: swimming, a dream sequence' },
+  { id: 'muffled', name: 'Muffled', title: 'Behind a wall, in another room, the pause menu' },
+  { id: 'lowHealth', name: 'Low health', title: 'Duller and further away: in trouble' },
+  { id: 'dream', name: 'Dream', title: 'Soft and washed in reverb' },
+] as const;
+
 /**
  * Audition like the game: the states (and their stems), stingers and transition sounds are
  * rendered the way the game kit exports them, then played by the kit's own web player, with pads
@@ -160,6 +169,8 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [current, setCurrent] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [intensity, setIntensity] = useState(() => useTimelineStore.getState().intensity);
+  const [costume, setCostume] = useState<string | null>(null);
+  const [effect, setEffect] = useState<(typeof AUDITION_EFFECTS)[number]['id']>('none');
   const player = useRef<AdaptiveMusic | null>(null);
 
   useEffect(() => {
@@ -238,7 +249,11 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   }`}
                 >
                   {s.name}
-                  <span className="block text-[10px] font-normal opacity-70">{s.bars} bars{s.stems.length ? ` · ${s.stems.length} stems` : ''}</span>
+                  <span className="block text-[10px] font-normal opacity-70">
+                    {s.bars} bars{s.stems.length ? ` · ${s.stems.length} stems` : ''}
+                    {s.shuffleBars ? ' · shuffled' : ''}
+                    {s.gap ? ' · silences' : ''}
+                  </span>
                 </button>
               ))}
             </div>
@@ -251,6 +266,41 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 ))}
               </div>
             )}
+            {(manifest.states[0]?.costumes?.length ?? 0) > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Costumes">
+                <span className="font-mono text-[10px] uppercase mr-1">Costume</span>
+                {[null, ...(manifest.states[0].costumes ?? []).map((c) => c.name)].map((name) => (
+                  <button
+                    key={name ?? 'none'}
+                    type="button"
+                    onClick={() => {
+                      player.current?.setCostume(name, 1);
+                      setCostume(name);
+                    }}
+                    className={`h-7 px-2.5 rounded-md border ${costume === name ? 'border-violet-400 bg-violet-500/20 text-violet-100' : 'border-forge-border text-forge-text hover:border-violet-400/60'}`}
+                  >
+                    {name ?? 'As written'}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Effects">
+              <span className="font-mono text-[10px] uppercase mr-1">Effect</span>
+              {AUDITION_EFFECTS.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  title={e.title}
+                  onClick={() => {
+                    player.current?.setEffect(e.id, 1);
+                    setEffect(e.id);
+                  }}
+                  className={`h-7 px-2.5 rounded-md border ${effect === e.id ? 'border-sky-400 bg-sky-500/20 text-sky-100' : 'border-forge-border text-forge-text hover:border-sky-400/60'}`}
+                >
+                  {e.name}
+                </button>
+              ))}
+            </div>
             <label className="flex items-center gap-2 font-mono text-[10px] uppercase">
               Intensity
               <input

@@ -261,6 +261,20 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   (`buildGameKit(..., layout)`): Godot and Unity zips unzip into a project, with example scenes
   (`src/gameKit/godot/`, `src/gameKit/unity/`). The Godot player was run headless in Godot 4.3;
   the Unity scripts compile against stub UnityEngine types (no Unity here).
+- **Game-music vocabulary**: scales in `noteTools.ts` (SCALES), borrowed/chromatic progressions as
+  `X(semis, quality)` degrees in `smartTools.ts` (PROGRESSIONS, CHORD_QUALITIES), per-clip swing
+  `clip.groove` {swing, grid 8|16} (scheduler `lateOf`, `swungNotes(..., grid)`), drum styles that
+  write measures of a meter (`drummer(..., meter)`, DRUM_STYLES `meter`/`groove`), and
+  accompaniments (`accompany`, ACCOMP_STYLES; `accompanyChords` in smartActions).
+- **More game starters** (`src/store/startersGameMore.ts`): their `clip()` folds parts into each
+  instrument's range; `boost()` levels a starter; a rule into '*' expands to every other state.
+- **Costumes and state options** (`src/store/costumes.ts`): `costumes` / `stateOptions` in the store
+  and project (saved, not undo steps). The kit renders each state per costume (`states/<s> (<c>).wav`,
+  `stems/<s> (<c>)/`), manifest `state.costumes`, `shuffleBars`, `gap`. All three players have
+  setCostume / setEffect / setFilter / setReverb and play shuffled pieces with silences (web: scheduled
+  on the audio clock, everything up front in an OfflineAudioContext; Godot: its own bus with a
+  low-pass and reverb, pieces by timers; Unity: music on a child object with filters, pieces by
+  PlayScheduled). Godot run headless; Unity compiled against stubs.
 - **Try it in a game** (`src/components/game/GameTryOut.tsx`, `tryOutScene.ts`, `src/store/tryOut.ts`):
   three.js scene (Bo and Slate built like gomofu-guys) whose events drive the kit's web player
   (`AdaptiveMusic`) on the live mix: notice/lose switch states, distance sets intensity, coins and

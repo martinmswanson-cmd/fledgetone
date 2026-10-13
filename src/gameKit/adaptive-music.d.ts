@@ -2,7 +2,7 @@
 export class AdaptiveMusic {
   constructor(context?: BaseAudioContext, destination?: AudioNode);
   ctx: BaseAudioContext;
-  current: { name: string; startTime: number } | null;
+  current: { name: string; startTime: number; tempo: number } | null;
   /** The manifest */
   data: any;
   /** Where sound effects play into (their own volume) */
@@ -16,6 +16,15 @@ export class AdaptiveMusic {
   setState(name: string, unit?: 'bar' | 'beat' | 'now'): void;
   setIntensity(value: number, seconds?: number): void;
   stinger(name: string, unit?: 'bar' | 'beat' | 'now'): void;
+  /** The costume on now (null: as written) */
+  costume: string | null;
+  readonly costumeNames: string[];
+  setCostume(name: string | null, seconds?: number): void;
+  /** The effect on now */
+  effect: 'none' | 'underwater' | 'muffled' | 'lowHealth' | 'dream';
+  setEffect(name: 'none' | 'underwater' | 'muffled' | 'lowHealth' | 'dream', seconds?: number): void;
+  setFilter(hz: number, seconds?: number): void;
+  setReverb(amount: number, seconds?: number): void;
   readonly sfxNames: string[];
   playSfx(name: string, opts?: { volume?: number; pitch?: number; when?: number }): { stop(fade?: number): void };
   stopSfx(name?: string, fade?: number): void;
