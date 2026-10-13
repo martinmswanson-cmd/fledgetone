@@ -23,7 +23,8 @@ export type { EngineTarget };
 
 /** Render and package everything for FMOD and / or Wwise. */
 export async function buildEnginePackage(song: GameKitSong, target: EngineTarget, onProgress?: (fraction: number, detail: string) => void, sampleRate: SampleRate = 48000): Promise<Blob> {
-  const { manifest, files } = await buildGameKitParts(song, (f, d) => onProgress?.(f * 0.97, d), sampleRate);
+  // (FMOD and Wwise get the states as written: costumes and shuffled pieces are the game kit players')
+  const { manifest, files } = await buildGameKitParts({ ...song, costumes: [], stateOptions: {} }, (f, d) => onProgress?.(f * 0.97, d), sampleRate);
   const slug = manifest.name.replace(/[^A-Za-z0-9]+/g, '_');
   const out: ZipEntry[] = files.map((f) => ({ ...f, name: `Audio/${f.name}` }));
   const cues = { ...manifest, format: 'bos-beatbox-cues', mainStem: MAIN_STEM, timeline: stateLayout(manifest) };

@@ -82,7 +82,8 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             })
           );
         }
-        const song = gameKitSong();
+        // (The preview plays the song as written: costumes would only make it slower to make)
+        const song = { ...gameKitSong(), costumes: [] };
         const key = JSON.stringify(song);
         let manifest: AudioManifest;
         let buffers: Map<string, AudioBuffer>;

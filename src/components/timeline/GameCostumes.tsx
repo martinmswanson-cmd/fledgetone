@@ -10,6 +10,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { COSTUME_PRESETS, GAP_PRESETS, MAX_COSTUMES, SHUFFLE_BARS, type CostumePreset } from '../../store/costumes';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
 import { isMixTrack } from '../../store/buses';
+import { meterAt } from '../../audio/tempoMap';
 
 const control = 'h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text';
 const TEMPOS = [0.75, 0.8, 0.9, 1, 1.1, 1.2, 1.25, 1.5];
@@ -69,6 +70,7 @@ export const CostumesPanel: React.FC = () => {
           <div className="flex flex-col gap-1.5 pt-1.5">
             <div className="flex items-center gap-1.5">
               <input
+                key={c.name}
                 className={`${control} flex-1 min-w-0`}
                 defaultValue={c.name}
                 onBlur={(e) => st().updateCostume(c.id, { name: e.target.value })}
@@ -130,6 +132,8 @@ export const CostumesPanel: React.FC = () => {
 /** How each state plays in the game: as written or shuffled, and silences between plays. */
 export const StateOptionsPanel: React.FC<{ states: ReadonlyArray<{ id: string; name: string; from: number; to: number }> }> = ({ states }) => {
   const options = useTimelineStore((s) => s.stateOptions);
+  const meter = useTimelineStore((s) => s.meter);
+  const meterPoints = useTimelineStore((s) => s.meterPoints);
   const set = useTimelineStore.getState().setStateOptions;
   if (!states.length) return null;
   return (
@@ -140,7 +144,9 @@ export const StateOptionsPanel: React.FC<{ states: ReadonlyArray<{ id: string; n
       <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-1.5 gap-y-1 items-center">
         {states.map((sec) => {
           const o = options[sec.id] ?? {};
-          const bars = sec.to - sec.from;
+          // In bars of the state's own time signature (the players cut pieces on those)
+          const m = meterAt(sec.from, { base: meter, points: meterPoints });
+          const bars = Math.round((sec.to - sec.from) / (m.num / m.den));
           const gapId = GAP_PRESETS.find((g) => g.gap && o.gap && g.gap.min === o.gap.min && g.gap.max === o.gap.max)?.id ?? (o.gap ? 'custom' : 'none');
           return (
             <React.Fragment key={sec.id}>
