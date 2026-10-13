@@ -6,9 +6,11 @@ import React, { useMemo, useState } from 'react';
 import { Modal } from './Modal';
 import { useTimelineStore } from '../../store/timelineStore';
 import { keyOf, NOTE_NAMES } from '../../store/songKey';
-import { CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordName, progressionChords } from '../../store/smartTools';
-import type { ChordStyle, DrumStyle } from '../../store/smartTools';
-import { drumMeterAt, makeChordClip, makeDrumClip, songKey, useSmartDialog } from '../../store/smartActions';
+import { ACCOMP_STYLES, CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordName, progressionChords } from '../../store/smartTools';
+import type { AccompStyle, ChordStyle, DrumStyle } from '../../store/smartTools';
+import type { InstrumentKey } from '../../store/timelineTypes';
+import { INSTRUMENTS } from '../../audio/instrumentCatalog';
+import { accompanyChords, drumMeterAt, makeChordClip, makeDrumClip, songKey, useSmartDialog } from '../../store/smartActions';
 import { meterAt } from '../../audio/tempoMap';
 import { showToast } from './toastStore';
 
@@ -21,6 +23,7 @@ export const SmartDialog: React.FC = () => {
   const open = useSmartDialog((s) => s.open);
   if (!open) return null;
   const close = () => useSmartDialog.setState({ open: null });
+  if (open.mode === 'accompany' && open.clipId) return <AccompanyForm clipId={open.clipId} onClose={close} />;
   return open.mode === 'chords' ? <ChordsForm trackId={open.trackId} bar={open.bar} onClose={close} /> : <DrummerForm trackId={open.trackId} bar={open.bar} onClose={close} />;
 };
 
@@ -186,6 +189,59 @@ const DrummerForm: React.FC<{ trackId: string; bar: number; onClose: () => void 
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>
             Make clip at bar {bar}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+/** Instruments an accompaniment can go on besides its own suggestion. */
+const ACCOMP_INSTRUMENTS: InstrumentKey[] = ['realGrandPiano', 'realUprightPiano', 'rhodes', 'realHarp', 'guitar', 'nylonGuitar', 'mandolin', 'realViolinsShort', 'realPizzicato', 'slowStrings', 'celesta', 'realGlockenspiel', 'musicBox', 'realMarimba', 'vibraphone', 'realHorn', 'realTrumpet', 'accordion', 'realUprightBass', 'realElectricBass', 'chipLead', 'pluck'];
+
+let lastAccomp: { style: AccompStyle; instrument: InstrumentKey | null } = { style: 'waltz', instrument: null };
+let accompSeed = 1;
+
+/** Accompaniment: a pattern from a chord clip's chords, on a new track under it. */
+const AccompanyForm: React.FC<{ clipId: string; onClose: () => void }> = ({ clipId, onClose }) => {
+  const [style, setStyle] = useState<AccompStyle>(lastAccomp.style);
+  const [instrument, setInstrument] = useState<InstrumentKey | null>(lastAccomp.instrument);
+  const def = ACCOMP_STYLES.find((a) => a.id === style)!;
+  const clip = useTimelineStore((s) => s.clips.find((c) => c.id === clipId));
+  const make = () => {
+    lastAccomp = { style, instrument };
+    const id = accompanyChords(clipId, style, instrument ?? undefined, accompSeed++);
+    if (id) showToast(`${def.name} on a new track under "${clip?.name ?? 'the chords'}"`);
+    else showToast('This clip has no chords to accompany.');
+    onClose();
+  };
+  const options = [def.instrument, ...ACCOMP_INSTRUMENTS.filter((k) => k !== def.instrument)];
+  return (
+    <Modal title="Accompaniment for these chords" onClose={onClose}>
+      <div className="flex flex-col gap-3 p-4 w-[30rem] max-w-full">
+        <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Pattern">
+          {ACCOMP_STYLES.map((a) => (
+            <label key={a.id} className={`flex items-start gap-2 rounded px-2 py-1 cursor-pointer ${a.id === style ? 'bg-cyan-500/15' : 'hover:bg-white/5'}`}>
+              <input type="radio" name="accomp" className="mt-1 accent-cyan-500" checked={a.id === style} onChange={() => setStyle(a.id)} />
+              <span className="text-xs text-forge-text">
+                {a.name}
+                <span className="block text-[11px] text-forge-muted">{a.detail}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <label className={field}>
+          On
+          <select className={control} value={instrument ?? def.instrument} onChange={(e) => setInstrument(e.target.value === def.instrument ? null : (e.target.value as InstrumentKey))}>
+            {options.map((k, i) => (
+              <option key={k} value={k}>{INSTRUMENTS[k].name}{i === 0 ? ' (suggested)' : ''}</option>
+            ))}
+          </select>
+        </label>
+        <p className="text-[11px] text-forge-muted">Follows each chord change in the clip and the song's time signature. Make another for a different take of the ones with a little chance in them.</p>
+        <div className="flex justify-end">
+          <button type="button" className={primary} onClick={make}>
+            Make the track
           </button>
         </div>
       </div>

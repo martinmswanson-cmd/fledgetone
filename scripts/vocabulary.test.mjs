@@ -18,7 +18,7 @@ register(
 );
 const S = await import('../src/store/smartTools.ts');
 const { keyOf } = await import('../src/store/songKey.ts');
-const { SCALES, inScale, chordNotes } = await import('../src/store/noteTools.ts');
+const { SCALES, inScale, chordNotes, midiOf } = await import('../src/store/noteTools.ts');
 const { swingDelay, swungNotes } = await import('../src/audio/transport.ts');
 
 let n = 0;
@@ -94,4 +94,32 @@ test('drum styles follow their time signature', () => {
   }
   // The heartbeat has no crash and no fills
   assert.ok(!S.drummer('heartbeat', 8, 0.5, 4, 1, newId).some((x) => x.note === 'C#2'));
+});
+
+test('accompaniments follow the chords', () => {
+  // C for a bar, then G for a bar (held chords)
+  const chords = [
+    ...['C4', 'E4', 'G4'].map((note) => ({ id: 'a' + note, note, startOffset: 0, duration: '1n', velocity: 0.7 })),
+    ...['B3', 'D4', 'G4'].map((note) => ({ id: 'b' + note, note, startOffset: 1, duration: '1n', velocity: 0.7 })),
+  ];
+  const changes = S.chordChanges(chords, 2);
+  assert.deepEqual(changes.map((c) => [c.at, c.end, c.root, c.pcs]), [[0, 1, 0, [0, 4, 7]], [1, 2, 7, [7, 11, 2]]]);
+  const pcOf = (n) => ((midiOf(n.note) % 12) + 12) % 12;
+  // Walking bass: quarters, chord tones, the last beat a half step under the next root
+  const walk = S.accompany(chords, 2, 'walking', newId);
+  assert.equal(walk.length, 8);
+  assert.equal(pcOf(walk[3]), 6, 'F# leads into G');
+  assert.ok(walk.slice(4, 7).every((n) => [7, 11, 2].includes(pcOf(n))));
+  // A waltz in 3/4: bass on one, the chord on two and three
+  const waltz = S.accompany(chords.map((n) => ({ ...n, startOffset: n.startOffset * 0.75 })), 1.5, 'waltz', newId, { num: 3, den: 4 });
+  const onOne = waltz.filter((n) => Math.abs(n.startOffset % 0.75) < 1e-9);
+  assert.deepEqual(onOne.map(pcOf), [0, 7]);
+  assert.equal(waltz.filter((n) => Math.abs(n.startOffset - 0.25) < 1e-9).length, 3);
+  // Every style writes notes inside the clip, from the chords' notes (the walking bass's approach aside)
+  for (const st of S.ACCOMP_STYLES) {
+    const out = S.accompany(chords, 2, st.id, newId);
+    assert.ok(out.length > 0, st.id);
+    assert.ok(out.every((n) => n.startOffset >= 0 && n.startOffset < 2), st.id);
+    if (st.id !== 'walking' && st.id !== 'drone') assert.ok(out.every((n) => [0, 4, 7, 11, 2].includes(pcOf(n))), st.id);
+  }
 });

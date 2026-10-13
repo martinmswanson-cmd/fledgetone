@@ -208,6 +208,13 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
                 showToast('A bass line on a new track, on the roots of these chords');
               }),
             },
+            {
+              key: 'accompany',
+              label: 'Accompaniment for these chords…',
+              shortcut: 'new track',
+              icon: <Music4 className="w-3.5 h-3.5" />,
+              onClick: run(() => useSmartDialog.setState({ open: { mode: 'accompany', trackId: menu.trackId, bar: menu.bar, clipId: menu.clipId! } })),
+            },
           ]
         : [];
   const newClip = (bars: number): Item => ({
