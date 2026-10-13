@@ -3,6 +3,7 @@ import { BUILD_UP, DROP_HIT, everyBar, PLUCK_ARP } from './demoSong';
 import { clip, D, hats8, master, progression, project, snareRoll, track } from './starterKit';
 import { PLAYLIST_BUILDERS } from './startersPlaylist';
 import { GAME_BUILDERS } from './startersGame';
+import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { FX_NOTES } from '../audio/instrumentCatalog';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
 import { DEFAULT_MASTER_FX, durationToBars } from './timelineTypes';
@@ -27,6 +28,18 @@ export const STARTERS = [
   { id: 'title', group: 'Game Moments', name: 'Title Screen', detail: '76 BPM, D major. Game-ready: a broad horn theme over piano and strings that loops for the title, and a quieter Menu loop.' },
   { id: 'puzzle', group: 'Game Moments', name: 'Puzzle', detail: '100 BPM, F major, swung. Game-ready: Thinking (marimba, pizzicato, bassoon) and Almost There (clarinet, kalimba, hand drum), with a level-up stinger.' },
   { id: 'shop', group: 'Game Moments', name: 'Shop', detail: '112 BPM, G major shuffle. Game-ready: Browse (vibes, electric piano, walking bass, ride) and Bargain (steel drums), with an item stinger.' },
+  { id: 'openField', group: 'Game Worlds', name: 'Open Field', detail: '132 BPM, B flat. Game-ready: Explore (horn theme with triplet pickups, harp, march snare, the bVI - bVII - I landing), Idle (strings and harp) and Battle in G minor at the same tempo.' },
+  { id: 'cosmicWaltz', group: 'Game Worlds', name: 'Cosmic Waltz', detail: '100 BPM, E flat Lydian, 3/4. Game-ready: Observatory (harp, celesta, oom-pah-pah), Restored (violins, voices, horn layers in) and Flight in 4/4, a step up.' },
+  { id: 'bigBandCity', group: 'Game Worlds', name: 'Big Band City', detail: '145 BPM, C, swung 8ths. Game-ready: the Head (saxes in thirds, walking bass, ride) and the Festival a step up with shout brass.' },
+  { id: 'quietWorld', group: 'Game Worlds', name: 'Quiet World', detail: '76 BPM, C major. Game-ready: two calm piano cues over maj7 chords with long rests, and a Rest state of near silence between them.' },
+  { id: 'wildField', group: 'Game Worlds', name: 'Wild Field', detail: '72 BPM, D pentatonic. Game-ready: Day (piano dabs and whole bars of air), Night (slower, celesta and violins) and Riding (faster, galloping piano).' },
+  { id: 'underwaterWaltz', group: 'Game Worlds', name: 'Underwater Waltz', detail: '84 BPM, F Lydian, 3/4. Game-ready: Shore, then Deep: the same music through a low-pass and more reverb (automation on a bus).' },
+  { id: 'desertBazaar', group: 'Game Worlds', name: 'Desert Bazaar', detail: '116 BPM, E Phrygian dominant. Game-ready: Market (drone, dulcimer, shehnai, desert hand drums), Ruins at night, and Danger with battle drums.' },
+  { id: 'fogTown', group: 'Game Worlds', name: 'Fog Town', detail: '88 BPM, E Phrygian. Game-ready: Fog (drone, static, a warped mandolin, a sparse swung break), Otherworld (a noise wall) and Lament on clean guitar.' },
+  { id: 'countdownTown', group: 'Game Moments', name: 'Countdown Town', detail: '112, 124, 140 BPM. Game-ready: one tune over three days, faster each day and darker (major, Dorian, Phrygian), a danger stinger between.' },
+  { id: 'saveRoom', group: 'Game Moments', name: 'Save Room', detail: '66 BPM, A minor. Game-ready: Safe (two chords on electric piano and glass pad, a soft piano tune, never quite home) and Uneasy (a low tremolo, a faint heartbeat).' },
+  { id: 'cathedralBoss', group: 'Game Moments', name: 'Cathedral Boss', detail: '150 BPM, D harmonic minor, 3/4. Game-ready: Phase 1 (organ, cello ostinato), Phase 2 a half step up with choir and a sudden chord, Phase 3 broken down, and a piano Lament.' },
+  { id: 'arenaMetal', group: 'Game Moments', name: 'Arena Metal', detail: '130 BPM, D Phrygian. Game-ready: four combat levels: Exploration, Incidental bursts, Combat riffs and High combat with blast beats and a 7/8 lurch.' },
   { id: 'dubstep', group: 'Electronic', name: 'Dubstep', detail: '140 BPM, F minor. Half-time drums on a techno kit, a gritty wobble and growl call-and-response over a clean sub, dark pad chords.' },
   { id: 'house', group: 'Electronic', name: 'House', detail: '126 BPM, A minor. Four-on-the-floor on a techno kit, off-beat bass, electric piano ninth stabs, a warm pad and a dark pluck in the peak.' },
   { id: 'trance', group: 'Electronic', name: 'Trance', detail: '138 BPM, A minor, dark. A broken pluck arp, a snare-roll build with a riser, then gated supersaws over a rolling bass.' },
@@ -1371,6 +1384,7 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   classical, angelic, epic, ambient, rock, metal, jazz, synthwave, pop, trance, horror, celtic, latin, tavern, eastern, funk,
   ...PLAYLIST_BUILDERS,
   ...GAME_BUILDERS,
+  ...MORE_GAME_BUILDERS,
 };
 
 /** A fresh copy of a starter (new ids each time). */
