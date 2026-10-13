@@ -276,10 +276,10 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   low-pass and reverb, pieces by timers; Unity: music on a child object with filters, pieces by
   PlayScheduled). Godot run headless; Unity compiled against stubs.
 - **Try it in a game** (`src/components/game/GameTryOut.tsx`, `tryOutScene.ts`, `src/store/tryOut.ts`):
-  three.js scene (Bo and Slate built like gomofu-guys) whose events drive the kit's web player
+  three.js scene (a robot hero and a cube guard) whose events drive the kit's web player
   (`AdaptiveMusic`) on the live mix: notice/lose switch states, distance sets intensity, coins and
   hits fire stingers and sfx. Renders with `buildGameKitParts(..., stemsOnly)`, cached per song
-  JSON for the session. Slate naps until the music is ready. Note: Tone's current context is the
+  JSON for the session. The guard naps until the music is ready. Note: Tone's current context is the
   offline one while a render runs, so the preview keeps the live context in a ref.
 - **Game starters** (`src/store/startersGame.ts`): states as markers, stem groups, transitions and
   stingers set up (`gameReady`). Starters fold into groups in the New dialog with a filter;

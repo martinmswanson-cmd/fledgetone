@@ -107,7 +107,7 @@ const TryOutButton: React.FC = () => {
         type="button"
         onClick={() => useUiStore.getState().setDialog('tryOut')}
         className="h-8 px-3 flex items-center justify-center gap-1.5 rounded-md border border-emerald-400/60 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
-        title="Walk Bo around a little game: the music switches state, builds intensity and plays stingers and sound effects the way a real game would"
+        title="Walk a little robot around a game: the music switches state, builds intensity and plays stingers and sound effects the way a real game would"
       >
         <Gamepad2 className="w-4 h-4" /> Try it in a game
       </button>

@@ -947,11 +947,11 @@ The game kit's players can shape the music for what's going on, with no extra fi
 
 ### Try it in a game
 
-**Game → Try it in a game…** (or **Try it in a game** in the Game tab) drops your song into a little 3D game so you can hear it react to play. You're Bo; Slate patrols the far side of a fenced field with eight coins.
+**Game → Try it in a game…** (or **Try it in a game** in the Game tab) drops your song into a little 3D game so you can hear it react to play. You're a little robot; a one-eyed cube guard patrols the far side of a fenced field with eight coins.
 
-- **Arrows** or **WASD** walk, **Space** jumps (land on Slate to beat it), **R** restarts, **Esc** closes. While it's open the game takes these keys, so Space jumps instead of playing the song.
-- The game starts at once. The music renders the way the game kit exports it (the first time takes a while for a long song; opening it again on an unchanged song is instant). Slate naps until the music is ready, so you can walk around and grab coins meanwhile.
-- Get close and Slate spots you: the music switches to the chase state through your transition matrix, and **Intensity** rises the closer Slate gets. Get away and it gives up, back to exploring. A hit costs a heart; three and it's game over (at one heart left the music goes dull and far away: the players' low-health effect). Bonking Slate plays the win stinger and the win state.
+- **Arrows** or **WASD** walk, **Space** jumps (land on the guard to beat it), **R** restarts, **Esc** closes. While it's open the game takes these keys, so Space jumps instead of playing the song.
+- The game starts at once. The music renders the way the game kit exports it (the first time takes a while for a long song; opening it again on an unchanged song is instant) The guard naps until the music is ready, so you can walk around and grab coins meanwhile.
+- Get close and the guard spots you: the music switches to the chase state through your transition matrix, and **Intensity** rises the closer the guard gets. Get away and it gives up, back to exploring. A hit costs a heart; three and it's game over (at one heart left the music goes dull and far away: the players' low-health effect). Bonking the guard plays the win stinger and the win state.
 - Coins, footsteps, jumps, hits and the bonk play your song's game sounds when it has fitting ones, else the preview's own.
 - **Music wiring** shows what plays for each moment (exploring, chasing, beaten, each stinger and sound), guessed from your names; change any of them there. The panel at the top left shows the state playing and the intensity, and the list under it says what the music just did and why.
 
