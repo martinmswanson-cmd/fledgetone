@@ -668,9 +668,9 @@ function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => n
       break;
     case 'waltz':
       // Boom on one, light taps on two and three (oom-pah-pah)
-      add([0], KICK, 0.85);
-      add(beats.slice(1), SNARE, mid ? 0.42 : 0.3);
-      add(mid ? eighths : beats, busy ? HAT : RIDE, busy ? 0.4 : 0.32);
+      add([0], KICK, 0.88);
+      add(beats.slice(1), SNARE, mid ? 0.58 : 0.46);
+      add(mid ? eighths : beats, busy ? HAT : RIDE, busy ? 0.5 : 0.45);
       if (busy) add([steps - 2], KICK, 0.55);
       break;
     case 'jig': {
@@ -702,16 +702,16 @@ function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => n
       break;
     case 'swing':
       // Ride "ding, ding-a ding", the hat foot on two and four, a feathered kick on every beat
-      add(beats, RIDE, 0.62);
-      add(every(8, 6), RIDE, 0.45);
-      add(every(8, 4), HAT, 0.5);
-      add(beats, KICK, 0.28);
-      if (mid && rnd() < 0.6) add([6 + 8 * Math.floor(rnd() * 2)], SNARE, 0.3);
-      if (busy) add([14], SNARE, 0.42);
+      add(beats, RIDE, 0.85);
+      add(every(8, 6), RIDE, 0.68);
+      add(every(8, 4), HAT, 0.7);
+      add(beats, KICK, 0.42);
+      if (mid && rnd() < 0.6) add([6 + 8 * Math.floor(rnd() * 2)], SNARE, 0.42);
+      if (busy) add([14], SNARE, 0.55);
       break;
     case 'bossa':
       // Rim on the 3-2 clave, the kick's dotted bounce, shaker 16ths
-      add(bar % 2 ? [4, 8] : [0, 6, 12], SNARE, 0.32);
+      add(bar % 2 ? [4, 8] : [0, 6, 12], SNARE, 0.45);
       add([0, 6, 8, 14], KICK, 0.7);
       add(mid ? sixteenths : eighths, HAT, mid ? 0.3 : 0.38);
       break;
