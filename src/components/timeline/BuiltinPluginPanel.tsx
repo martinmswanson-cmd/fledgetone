@@ -105,5 +105,6 @@ setBuiltinGui((controls) => {
   const element = document.createElement('div');
   const root = createRoot(element);
   root.render(<Panel controls={controls} />);
-  return { element, destroy: () => root.unmount() };
+  // (Closed from the dialog's own cleanup while React is rendering: unmount once that's done)
+  return { element, destroy: () => setTimeout(() => root.unmount()) };
 });

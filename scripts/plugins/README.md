@@ -33,7 +33,7 @@ instrument) or passes it (an effect) without NaNs.
   stand-in for the plug-in SDK it was written for, which can't be redistributed). Instruments
   get an output trim so they sit at the app's level.
 - **Open303**: its DSP code, with `open303/bb_open303.cpp` (presets ours).
-- **Mutable Instruments**: Plaits (each engine an instrument), Rings, Elements and Clouds, with
+- **Mutable Instruments**: Plaits (each engine an instrument), Braids (its 47 shapes as presets), Rings, Elements and Clouds, with
   `mutable/bb_*.cpp`; `mutable/override/plaits/user_data.h` stands in for the module's flash
   memory. They run at their own rates' tuning (pitch corrected for the browser's rate).
 - **Faust**: `faust/plugins.json` lists the programs: physical models from the Faust libraries
@@ -53,6 +53,8 @@ get its source. `LICENSES-GPL.txt` is their notice (in the full build's third-pa
 sh surge/build.sh <surge checkout, with submodules> ../../public/bos-beat-box-plugins/gpl/surge.wasm
 python3 surge/patches.py <surge checkout> ../../public/bos-beat-box-plugins/gpl/surge-patches
 sh dragonfly/build.sh <dragonfly-reverb checkout> ../../public/bos-beat-box-plugins/gpl/dragonfly.wasm
+sh plateau/build.sh <ValleyRackFree checkout> ../../public/bos-beat-box-plugins/gpl/plateau.wasm
+sh setbfree/build.sh <setBfree checkout> ../../public/bos-beat-box-plugins/gpl/setbfree.wasm
 ```
 
 - **Surge XT**: its engine library built without JUCE or Lua (`surge/prepare.py` makes the few
@@ -63,6 +65,11 @@ sh dragonfly/build.sh <dragonfly-reverb checkout> ../../public/bos-beat-box-plug
 - **Dragonfly Reverb**: the hall, room, plate and early-reflection reverbs' DSP with Freeverb3,
   each in its own namespace (`dragonfly/adapter.inc`), with stand-ins for the two bits of DPF the
   DSP uses (`dragonfly/override/`).
+- **Plateau**: only the Dattorro plate reverb from ValleyRackFree (`src/Plateau/Dattorro.cpp` and
+  the filters and delays it uses), with the VCV module's knob scaling in `plateau/bb_plateau.cpp`.
+- **setBfree**: the organ's sources as its LV2 plugin builds them, with `setbfree/bb_setbfree.cpp`
+  in place of `b_synth/lv2.c`; settings go through setBfree's named MIDI controls.
+  `setbfree/quiet.h` drops its status prints.
 
 When publishing the site, copy only the top-level files of `public/bos-beat-box-plugins/` (the
 `*.wasm` and `LICENSES.txt`), never `gpl/`.
