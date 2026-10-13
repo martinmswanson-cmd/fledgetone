@@ -306,8 +306,8 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
         className="w-1.5 shrink-0 transition-opacity"
         style={{ backgroundColor: track.color, opacity: silenced ? 0.35 : 1 }}
       />
-      <div className="flex-1 min-w-0 px-2.5 py-2 flex flex-col justify-between">
-        <div className="flex items-center gap-1">
+      <div className="flex-1 min-w-0 px-2.5 py-1.5 flex flex-col justify-between">
+        <div className="flex items-center gap-1 min-h-[14px]">
           {/* Loading Indicator, Download Error (click to retry) or Selected Glow */}
           {isLoading ? (
             <span title="Downloading acoustic samples from CDN..." className="text-cyan-400 animate-spin shrink-0">
@@ -369,11 +369,14 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
             </button>
           )}
           {busName && (
-            <span className="shrink-0 max-w-[64px] truncate px-1 rounded bg-slate-400/15 text-[8px] font-mono text-slate-300" title={`Plays into the bus ${busName}`}>
+            <span className="shrink min-w-0 max-w-[96px] truncate px-1 rounded bg-slate-400/15 text-[8px] font-mono text-slate-300" title={`Plays into the bus ${busName}`}>
               → {busName}
             </span>
           )}
+        </div>
 
+        {/* The track's buttons, on a row of their own so the name above keeps its room */}
+        <div className="flex items-center justify-end gap-1">
           {/* Quick Inspector Toggle Button */}
           <button
             type="button"
