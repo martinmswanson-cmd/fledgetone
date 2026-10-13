@@ -5,6 +5,7 @@ import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
 import { STARTERS } from '../store/starters';
+import { showSfxMode } from '../components/sfx/SfxMakerPanel';
 import { splitSections } from '../components/guide/markdown';
 import { instrumentFields } from './instrumentSearch';
 import type { SearchFields } from './searchCore';
@@ -177,7 +178,8 @@ const TOOLS: Item[] = [
 const SETTINGS: Item[] = [
   { title: 'Tempo', keywords: 'tempo bpm speed fast slow', run: show('[aria-label="Tempo (BPM)"]') },
   { title: 'Tap tempo', keywords: 'tap tempo bpm', run: show('button[title="Click repeatedly to tap tempo"]') },
-  { title: 'Sound effects maker', keywords: 'sfx sound effects maker generator game jump coin laser hit hurt power up powerup explosion blip select 8 bit retro', detail: 'Make game sounds: jump, coin, laser, hit, power-up, explosion.', run: () => void ui().setDialog('sfx') },
+  { title: 'Sound effects maker', keywords: 'sfx sound effects maker generator game jump coin laser hit hurt power up powerup explosion blip select 8 bit retro ui click menu sword footstep whoosh impact magic spell gem level up jingle loop ambience wind rain fire engine', detail: 'Make game sounds: UI, combat, pickups, magic, jingles, ambience loops; with variations.', run: () => { showSfxMode('sound'); void ui().setDialog('sfx'); } },
+  { title: 'Sound effect set', keywords: 'sfx sound effects pack set kit ui menu sounds rpg platformer shooter casual ambience zip game', detail: 'Every sound a kind of game needs, in one style, as a zip.', run: () => { showSfxMode('set'); void ui().setDialog('sfx'); } },
   { title: 'Cut song to length', keywords: 'cut down cutdown edit shorten lengthen 15 30 60 seconds ad trailer spot social version duration trim song', detail: 'A 6, 15, 30, 60 or 90-second version, cut at the sections.', run: () => void ui().setDialog('cut') },
   { title: 'Tempo finder (hit points)', keywords: 'tempo finder hit points hits sync picture video cut slam land on beat film scoring calculator', detail: 'Find tempos that land your hit points (Shift+M) on the beat.', run: async () => {
     if (await press('button[title^="Fit to time"]')) await press('[aria-label="What to fit"] button:last-child');

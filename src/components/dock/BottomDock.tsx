@@ -25,7 +25,7 @@ const TABS: ReadonlyArray<{ id: DockTab; label: string; icon: React.ReactNode; t
   { id: 'instruments', label: 'Instruments', icon: <Piano className="w-3.5 h-3.5" />, title: 'Try any instrument, play the sound deck pads and drag patterns onto tracks', buttonId: 'btn-instruments' },
   { id: 'game', label: 'Game', icon: <Gamepad2 className="w-3.5 h-3.5" />, title: 'Game preview: switch between sections and layers live, the way adaptive game music does', buttonId: 'btn-game' },
   { id: 'video', label: 'Video', icon: <Clapperboard className="w-3.5 h-3.5" />, title: 'Video tools: the reference video, its cuts and dialogue, hit points, and markers for editors', buttonId: 'btn-video-tools' },
-  { id: 'sfx', label: 'Sound FX', icon: <AudioWaveform className="w-3.5 h-3.5" />, title: 'Sound effects maker: jump, coin, laser, hit, power-up, explosion and blip sounds for games', buttonId: 'btn-sfx' },
+  { id: 'sfx', label: 'Sound FX', icon: <AudioWaveform className="w-3.5 h-3.5" />, title: 'Sound effects maker: UI, combat, pickup, magic and retro sounds, jingles and ambience loops for games, alone or as a matching set', buttonId: 'btn-sfx' },
 ];
 
 const Content: React.FC<{ tab: DockTab }> = ({ tab }) => {

@@ -41,6 +41,9 @@ export const ChoiceButton: React.FC<{ title: string; detail: string; onClick: ()
 );
 
 const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [filter, setFilter] = useState('');
+  const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
+  const found = STARTERS.filter((s) => words.every((w) => `${s.name} ${s.group} ${s.detail}`.toLowerCase().includes(w)));
   const choose = (template: 'blank' | 'demo' | StarterId) => {
     useTimelineStore.getState().newProject(template);
     onClose();
@@ -58,17 +61,41 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         autoFocus
       />
       <ChoiceButton title="Demo song" detail="Sunset Stroll: a 12-bar neo-soul groove at 88 BPM (intro, groove, horn hook)." onClick={() => choose('demo')} />
-      <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Genre starters: 16 bars, sections marked, the master set up</h4>
-      {STARTER_GROUPS.map((group) => (
-        <section key={group} aria-label={group} className="flex flex-col gap-1.5">
-          <h5 className="text-[10px] font-semibold text-forge-text">{group}</h5>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {STARTERS.filter((s) => s.group === group).map((s) => (
-              <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
-            ))}
-          </div>
-        </section>
-      ))}
+      <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Starters: sections marked, the master set up; game ones come with states, layers and stingers</h4>
+      <input
+        value={filter}
+        onChange={(e) => setFilter(e.target.value)}
+        placeholder={`Find a starter (${STARTERS.length}): boss, cozy, 140, minor…`}
+        aria-label="Find a starter"
+        className="h-8 w-full bg-forge-bg border border-forge-border rounded-md px-2.5 text-xs text-forge-text focus:outline-none focus:border-cyan-500"
+      />
+      {words.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5" aria-label="Starters found">
+          {found.map((s) => (
+            <ChoiceButton key={s.id} title={s.name} detail={`${s.group}. ${s.detail}`} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
+          ))}
+          {!found.length && <p className="text-xs text-forge-muted p-2">No starter matches.</p>}
+        </div>
+      ) : (
+        STARTER_GROUPS.map((group) => {
+          const list = STARTERS.filter((s) => s.group === group);
+          return (
+            <details key={group} aria-label={group} className="group rounded-lg border border-forge-border bg-forge-bg/40 open:bg-transparent">
+              <summary className="cursor-pointer select-none list-none flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/5 rounded-lg">
+                <span className="text-forge-muted transition-transform group-open:rotate-90">▸</span>
+                <span className="font-semibold text-forge-text">{group}</span>
+                <span className="text-[10px] font-mono text-forge-muted">{list.length}</span>
+                <span className="ml-auto truncate text-[10px] text-forge-muted hidden sm:block group-open:hidden">{list.map((s) => s.name).join(' · ')}</span>
+              </summary>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2 pt-0">
+                {list.map((s) => (
+                  <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
+                ))}
+              </div>
+            </details>
+          );
+        })
+      )}
     </Modal>
   );
 };

@@ -29,6 +29,8 @@ function flash(el: HTMLElement) {
 export async function reveal(selector: string): Promise<boolean> {
   const el = await waitFor(selector);
   if (!el) return false;
+  // Inside a folded section (a <details>): unfold it, and any it sits in
+  for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true;
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
   const target = el.matches(FOCUSABLE) ? el : el.querySelector<HTMLElement>(FOCUSABLE);
   target?.focus({ preventScroll: true });
