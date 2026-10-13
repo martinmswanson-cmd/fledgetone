@@ -35,6 +35,19 @@ export const SCALES = {
   minorPentatonic: { name: 'Minor pentatonic', steps: [0, 3, 5, 7, 10] },
   blues: { name: 'Blues', steps: [0, 3, 5, 6, 7, 10] },
   japanese: { name: 'Japanese (in)', steps: [0, 1, 5, 7, 8] },
+  hirajoshi: { name: 'Hirajoshi (Japanese, plaintive)', steps: [0, 2, 3, 7, 8] },
+  yo: { name: 'Yo (Japanese folk, bright)', steps: [0, 2, 5, 7, 9] },
+  phrygianDominant: { name: 'Phrygian dominant (desert)', steps: [0, 1, 4, 5, 7, 8, 10] },
+  doubleHarmonic: { name: 'Double harmonic (desert, exotic)', steps: [0, 1, 4, 5, 7, 8, 11] },
+  hungarianMinor: { name: 'Hungarian minor (gothic)', steps: [0, 2, 3, 6, 7, 8, 11] },
+  harmonicMajor: { name: 'Harmonic major (noble, mysterious)', steps: [0, 2, 4, 5, 7, 8, 11] },
+  melodicMinor: { name: 'Melodic minor (jazz, cool)', steps: [0, 2, 3, 5, 7, 9, 11] },
+  lydianDominant: { name: 'Lydian dominant (mischief)', steps: [0, 2, 4, 6, 7, 9, 10] },
+  locrian: { name: 'Locrian (darkest, unstable)', steps: [0, 1, 3, 5, 6, 8, 10] },
+  wholeTone: { name: 'Whole tone (dream, magic)', steps: [0, 2, 4, 6, 8, 10] },
+  octatonicHW: { name: 'Diminished half-whole (menace)', steps: [0, 1, 3, 4, 6, 7, 9, 10] },
+  octatonicWH: { name: 'Diminished whole-half (horror)', steps: [0, 2, 3, 5, 6, 8, 9, 11] },
+  chromatic: { name: 'Chromatic (every note)', steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
 } as const;
 export type ScaleId = keyof typeof SCALES;
 
@@ -68,7 +81,13 @@ export const CHORDS = {
   maj7: { name: 'Maj7', intervals: [0, 4, 7, 11] },
   min7: { name: 'Min7', intervals: [0, 3, 7, 10] },
   add9: { name: 'Add9', intervals: [0, 4, 7, 14] },
+  min6: { name: 'Min6', intervals: [0, 3, 7, 9] },
+  minMaj7: { name: 'Min(maj7)', intervals: [0, 3, 7, 11] },
+  sixNine: { name: '6/9', intervals: [0, 4, 7, 9, 14] },
   dim: { name: 'Diminished', intervals: [0, 3, 6] },
+  dim7: { name: 'Dim7', intervals: [0, 3, 6, 9] },
+  aug: { name: 'Augmented', intervals: [0, 4, 8] },
+  cluster: { name: 'Cluster (3 semitones)', intervals: [0, 1, 2] },
   power: { name: 'Power (5th)', intervals: [0, 7, 12] },
   octave: { name: 'Octave', intervals: [0, 12] },
 } as const;

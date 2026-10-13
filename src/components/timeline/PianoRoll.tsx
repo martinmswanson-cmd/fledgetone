@@ -17,7 +17,7 @@ import { padNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
 import type { DrumRack } from '../../store/timelineTypes';
 import { useTimelineStore } from '../../store/timelineStore';
-import type { Clip, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
+import type { Clip, ClipGroove, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
 import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ratchet, roll, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
 import type { ChordId, Scale, ScaleId } from '../../store/noteTools';
@@ -230,6 +230,22 @@ function trackPointer(cursor: string, onMove: (ev: PointerEvent) => void, onEnd?
  * drag to place it), drag notes to move them, drag a note's right edge to change its length,
  * right-click (or Delete) to delete. Arrow keys nudge / transpose the selection.
  */
+/** The clip feels the piano roll offers (a clip's groove is one of these unless a file set another). */
+const FEELS: ReadonlyArray<{ id: string; name: string; groove: ClipGroove | null }> = [
+  { id: 'song', name: "Song's swing", groove: null },
+  { id: 'straight', name: 'Straight', groove: { swing: 0, grid: 16 } },
+  { id: '8-light', name: 'Swing 8ths: light', groove: { swing: 0.25, grid: 8 } },
+  { id: '8-shuffle', name: 'Swing 8ths: shuffle', groove: { swing: 0.5, grid: 8 } },
+  { id: '8-hard', name: 'Swing 8ths: hard (dotted)', groove: { swing: 0.75, grid: 8 } },
+  { id: '16-light', name: 'Swing 16ths: light', groove: { swing: 0.25, grid: 16 } },
+  { id: '16-shuffle', name: 'Swing 16ths: shuffle', groove: { swing: 0.5, grid: 16 } },
+];
+const grooveValue = (g: ClipGroove | undefined) => {
+  if (!g) return 'song';
+  if (g.swing === 0) return 'straight';
+  return FEELS.reduce((best, f) => (f.groove && f.groove.grid === g.grid && Math.abs(f.groove.swing - g.swing) < Math.abs((best.groove?.swing ?? 9) - g.swing) ? f : best), FEELS[1]).id;
+};
+
 export const PianoRoll: React.FC = () => {
   const clipId = useTimelineStore((s) => s.editingClipId);
   const clip = useTimelineStore((s) => s.clips.find((c) => c.id === s.editingClipId) ?? null);
@@ -716,6 +732,20 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             >
               {WOBBLE_RATES.map((rate) => (
                 <option key={rate} value={rate}>{rate}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {!clip.audio && (
+          <label data-search="swing feel groove shuffle" className="flex items-center gap-1.5" title="This clip's own swing, in place of the song's: off-beat 8ths or 16ths play late (shuffle = a triplet lilt, hard = dotted)">
+            FEEL
+            <select
+              className={select}
+              value={grooveValue(clip.groove)}
+              onChange={(e) => useTimelineStore.getState().setClipGroove(clip.id, FEELS.find((f) => f.id === e.target.value)?.groove ?? null)}
+            >
+              {FEELS.map((f) => (
+                <option key={f.id} value={f.id}>{f.name}</option>
               ))}
             </select>
           </label>

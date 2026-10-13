@@ -142,6 +142,7 @@ export function slotFromClips(clips: readonly Clip[], name?: string): SlotClip |
     lengthBars: Math.max(1 / 16, to - from),
     notes,
     ...(clips[0].wobble ? { wobble: clips[0].wobble } : {}),
+    ...(clips[0].groove ? { groove: clips[0].groove } : {}),
     ...(one?.expression ? { expression: one.expression } : {}),
   };
 }

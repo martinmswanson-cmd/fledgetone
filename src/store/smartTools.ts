@@ -32,10 +32,42 @@ export function seeded(seed: number): () => number {
 export interface Degree {
   degree: number;
   major?: boolean;
+  /**
+   * A chord from outside the key (a borrowed or chromatic one): its root `semis` semitones above
+   * the key's tonic, of `quality`, in place of the degree's own chord.
+   */
+  semis?: number;
+  quality?: ChordQuality;
 }
+
+/** Chord qualities by intervals over the root (the 7th ones always have their 7th). */
+export const CHORD_QUALITIES = {
+  maj: [0, 4, 7],
+  min: [0, 3, 7],
+  dim: [0, 3, 6],
+  aug: [0, 4, 8],
+  dom7: [0, 4, 7, 10],
+  maj7: [0, 4, 7, 11],
+  min7: [0, 3, 7, 10],
+  min6: [0, 3, 7, 9],
+  mMaj7: [0, 3, 7, 11],
+  dim7: [0, 3, 6, 9],
+} as const;
+export type ChordQuality = keyof typeof CHORD_QUALITIES;
 
 /** The pitch classes of a degree's chord, root first (a triad, or with `seventh` a 7th chord). */
 export function degreeChord(key: SongKey, d: Degree, seventh = false): number[] {
+  if (d.semis !== undefined && d.quality) {
+    const root = pc(key.root + d.semis);
+    const out = CHORD_QUALITIES[d.quality].map((i) => pc(root + i));
+    if (seventh && out.length === 3) {
+      // A borrowed major chord on a step or a 4th below home leans like a dominant (♭VII7, II7)
+      if (d.quality === 'maj') out.push(pc(root + (d.semis === 10 || d.semis === 2 || d.semis === 7 ? 10 : 11)));
+      else if (d.quality === 'min') out.push(pc(root + 10));
+      else if (d.quality === 'dim') out.push(pc(root + 10));
+    }
+    return out;
+  }
   const at = (i: number) => pc(key.root + key.steps[(d.degree + i) % 7]);
   const out = [at(0), at(2), at(4)];
   if (d.major && pc(out[1] - out[0]) === 3) out[1] = pc(out[1] + 1);
@@ -53,10 +85,10 @@ export function chordName(pcs: readonly number[]): string {
   if (iv.length >= 3) {
     const sev = iv[2];
     if (dim) return `${root}${sev === 9 ? 'dim7' : 'm7b5'}`;
-    if (minor) return `${root}m7`;
+    if (minor) return `${root}${sev === 11 ? 'm(maj7)' : sev === 9 ? 'm6' : 'm7'}`;
     return `${root}${sev === 11 ? 'maj7' : '7'}`;
   }
-  return `${root}${dim ? 'dim' : minor ? 'm' : ''}`;
+  return `${root}${dim ? 'dim' : minor ? 'm' : iv.includes(8) && iv.includes(4) ? '+' : ''}`;
 }
 
 export interface Progression {
@@ -67,6 +99,8 @@ export interface Progression {
 }
 
 const D = (degree: number, major?: boolean): Degree => (major ? { degree, major } : { degree });
+/** A chord from outside the key: `semis` above the tonic, of `quality`. */
+const X = (semis: number, quality: ChordQuality): Degree => ({ degree: 0, semis, quality });
 
 /** Well-worn progressions, four chords each, in Roman numerals (lower case: minor). */
 export const PROGRESSIONS: readonly Progression[] = [
@@ -82,6 +116,24 @@ export const PROGRESSIONS: readonly Progression[] = [
   { id: 'sad', name: 'i – iv – VI – V (sad)', mode: 'minor', chords: [D(0), D(3), D(5), D(4, true)] },
   { id: 'drift', name: 'i – VI – iv – v (drift)', mode: 'minor', chords: [D(0), D(5), D(3), D(4)] },
   { id: 'anthem', name: 'VI – VII – i – i (anthem)', mode: 'minor', chords: [D(5), D(6), D(0), D(0)] },
+  // Borrowed and chromatic chords: the colours game and film music lean on
+  { id: 'levelClear', name: '♭VI – ♭VII – I – I (level clear, victory)', mode: 'major', chords: [X(8, 'maj'), X(10, 'maj'), D(0), D(0)] },
+  { id: 'openField', name: 'I – ♭VII – IV – I (open field, folk)', mode: 'major', chords: [D(0), X(10, 'maj'), D(3), D(0)] },
+  { id: 'wonder', name: 'I – ♭VI – I – ♭VI (wonder, reveal)', mode: 'major', chords: [D(0), X(8, 'maj'), D(0), X(8, 'maj')] },
+  { id: 'journey', name: "I – III – IV – I (hero's journey)", mode: 'major', chords: [D(0), X(4, 'maj'), D(3), D(0)] },
+  { id: 'lydian', name: 'I – II – I – II (magic, floating)', mode: 'major', chords: [D(0), X(2, 'maj'), D(0), X(2, 'maj')] },
+  { id: 'ache', name: 'I – IV – iv – I (wistful ache)', mode: 'major', chords: [D(0), D(3), X(5, 'min'), D(0)] },
+  { id: 'calmVamp', name: 'Imaj7 – IVmaj7 (calm vamp, menus)', mode: 'major', chords: [X(0, 'maj7'), X(5, 'maj7'), X(0, 'maj7'), X(5, 'maj7')] },
+  { id: 'march', name: 'I – IV – ♭VII – I (rousing march)', mode: 'major', chords: [D(0), D(3), X(10, 'maj'), D(0)] },
+  { id: 'ancient', name: 'i – IV – i – IV (ancient, folk)', mode: 'minor', chords: [D(0), X(5, 'maj'), D(0), X(5, 'maj')] },
+  { id: 'menace', name: 'i – ♭II – i – ♭II (menace)', mode: 'minor', chords: [D(0), X(1, 'maj'), D(0), X(1, 'maj')] },
+  { id: 'castle', name: 'i – V – VI – V (castle, gothic)', mode: 'minor', chords: [D(0), D(4, true), D(5), D(4, true)] },
+  { id: 'tragic', name: 'i – ♭vi – i – ♭vi (tragic grandeur)', mode: 'minor', chords: [D(0), X(8, 'min'), D(0), X(8, 'min')] },
+  { id: 'shock', name: 'i – ♯iii – i – ♯iii (sudden shock)', mode: 'minor', chords: [D(0), X(4, 'min'), D(0), X(4, 'min')] },
+  { id: 'cliche', name: 'i – i(maj7) – i7 – i6 (noir, melancholy)', mode: 'minor', chords: [X(0, 'min'), X(0, 'mMaj7'), X(0, 'min7'), X(0, 'min6')] },
+  { id: 'triumph', name: 'i – ♭VI – ♭VII – I (triumph after struggle)', mode: 'minor', chords: [D(0), D(5), D(6), D(0, true)] },
+  { id: 'picardy', name: 'i – iv – V – I (dark to light)', mode: 'minor', chords: [D(0), D(3), D(4, true), D(0, true)] },
+  { id: 'dread', name: 'vii°7 – V7 – vii°7 – V7 (dread, horror)', mode: 'minor', chords: [X(11, 'dim7'), X(7, 'dom7'), X(11, 'dim7'), X(7, 'dom7')] },
 ];
 
 /**
@@ -343,9 +395,16 @@ const TOM_MID = 'B1';
 const TOM_LO = 'F1';
 const CRASH = 'C#2';
 const RIDE = 'D#2';
+const COWBELL = 'G#2';
 
-export type DrumStyle = 'house' | 'rock' | 'hiphop' | 'trap' | 'dnb' | 'funk' | 'dembow' | 'halftime';
-export const DRUM_STYLES: ReadonlyArray<{ id: DrumStyle; name: string; bpm: string }> = [
+export type DrumStyle =
+  | 'house' | 'rock' | 'hiphop' | 'trap' | 'dnb' | 'funk' | 'dembow' | 'halftime'
+  | 'waltz' | 'jig' | 'march' | 'shuffle' | 'swing' | 'bossa' | 'calypso' | 'maqsum' | 'battle' | 'tribal' | 'blast' | 'heartbeat';
+/**
+ * The drummer's styles. A style with a `meter` is written in it (a waltz in 3/4, a jig in 6/8);
+ * the others follow the song's time signature. A style with a `groove` gives its clip that swing.
+ */
+export const DRUM_STYLES: ReadonlyArray<{ id: DrumStyle; name: string; bpm: string; meter?: { num: number; den: number }; groove?: { swing: number; grid: 8 | 16 } }> = [
   { id: 'house', name: 'Four on the floor (house, disco, techno)', bpm: '118–130' },
   { id: 'rock', name: 'Backbeat (rock, pop)', bpm: '90–140' },
   { id: 'hiphop', name: 'Boom bap (hip-hop)', bpm: '85–98' },
@@ -354,16 +413,34 @@ export const DRUM_STYLES: ReadonlyArray<{ id: DrumStyle; name: string; bpm: stri
   { id: 'funk', name: 'Funk (ghost notes)', bpm: '95–115' },
   { id: 'dembow', name: 'Dembow (reggaeton)', bpm: '88–100' },
   { id: 'halftime', name: 'Half time (ballad, cinematic)', bpm: '60–90' },
+  { id: 'waltz', name: 'Waltz in 3/4 (underwater, town, love theme)', bpm: '80–180', meter: { num: 3, den: 4 } },
+  { id: 'jig', name: 'Jig in 6/8 (folk, island, tavern, pirate)', bpm: '100–127', meter: { num: 6, den: 8 } },
+  { id: 'march', name: 'March (snare cadence: heroic, title, military)', bpm: '100–130' },
+  { id: 'shuffle', name: 'Shuffle (swung 8ths: kart, cozy, shop)', bpm: '90–150', groove: { swing: 0.5, grid: 8 } },
+  { id: 'swing', name: 'Big-band swing (ride, city, menus)', bpm: '120–220', groove: { swing: 0.5, grid: 8 } },
+  { id: 'bossa', name: 'Bossa nova (shop, lounge, menu)', bpm: '120–140' },
+  { id: 'calypso', name: 'Calypso (sunny platformer, beach)', bpm: '90–100 (per half note)' },
+  { id: 'maqsum', name: 'Maqsum (desert hand drums)', bpm: '100–130' },
+  { id: 'battle', name: 'Battle ostinato (taiko 8ths, 3+3+2 accents)', bpm: '130–170' },
+  { id: 'tribal', name: 'Tribal build (toms, sparse to dense)', bpm: '90–130' },
+  { id: 'blast', name: 'Blast beat (metal, top combat)', bpm: '180–240' },
+  { id: 'heartbeat', name: 'Heartbeat (horror, no kit)', bpm: '60–80' },
 ];
 
-/** One bar of a style at an intensity (0 sparse to 1 busy), as [step of 16, drum, velocity]. */
-function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => number): Array<[number, string, number]> {
+/**
+ * One measure of a style at an intensity (0 sparse to 1 busy), as [step of 16th, drum, velocity],
+ * for a measure `steps` 16ths long (16 in 4/4, 12 in 3/4 or 6/8). `progress` is how far through the
+ * part this measure is (0 to 1), for the styles that grow.
+ */
+function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => number, steps = 16, progress = 0): Array<[number, string, number]> {
   const hits: Array<[number, string, number]> = [];
-  const add = (steps: number[], drum: string, vel: number) => steps.forEach((s) => hits.push([s, drum, vel]));
+  const add = (at: number[], drum: string, vel: number) => at.forEach((s) => s < steps && hits.push([s, drum, vel]));
   const busy = intensity > 0.66;
   const mid = intensity > 0.33;
-  const eighths = [0, 2, 4, 6, 8, 10, 12, 14];
-  const sixteenths = [...Array(16).keys()];
+  const every = (n: number, from = 0) => Array.from({ length: Math.ceil((steps - from) / n) }, (_, i) => from + i * n).filter((x) => x < steps);
+  const eighths = every(2);
+  const sixteenths = every(1);
+  const beats = every(4);
   switch (style) {
     case 'house':
       add([0, 4, 8, 12], KICK, 0.95);
@@ -417,9 +494,112 @@ function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => n
       add([8], SNARE, 0.9);
       add(busy ? eighths : [0, 4, 8, 12], mid ? HAT : RIDE, 0.5);
       break;
+    case 'waltz':
+      // Boom on one, light taps on two and three (oom-pah-pah)
+      add([0], KICK, 0.85);
+      add(beats.slice(1), SNARE, mid ? 0.42 : 0.3);
+      add(mid ? eighths : beats, busy ? HAT : RIDE, busy ? 0.4 : 0.32);
+      if (busy) add([steps - 2], KICK, 0.55);
+      break;
+    case 'jig': {
+      // Groups of three 8ths: a hand drum on each, accented on the beat (a dotted quarter)
+      const group = 6;
+      for (const s of eighths) hits.push([s, TOM_LO, s % group === 0 ? 0.82 : 0.48]);
+      add(every(group), KICK, mid ? 0.7 : 0.55);
+      if (mid) add(every(group, 4), TOM_MID, 0.45);
+      if (busy) add(eighths.filter((s) => s % group === 2), HAT, 0.4);
+      break;
+    }
+    case 'march':
+      add(every(8), KICK, 0.88);
+      // The snare cadence: accents on two and four, a flam-like double before them, rolls when busy
+      add(every(8, 4), SNARE, 0.9);
+      add(every(8, 3), SNARE, 0.35);
+      add(eighths.filter((s) => s % 4 === 2), SNARE, mid ? 0.48 : 0.38);
+      if (mid) add(every(8, 7), SNARE, 0.4);
+      if (busy) add(sixteenths.filter((s) => s >= steps - 4), SNARE, 0.55);
+      if (bar % 4 === 0) add([0], CRASH, 0.6);
+      break;
+    case 'shuffle':
+      // Written straight; the clip's 8th swing makes the lilt
+      add([0, 8], KICK, 0.92);
+      if (mid) add([10], KICK, 0.7);
+      add(every(8, 4), SNARE, 0.88);
+      add(eighths, HAT, 0.5);
+      if (busy) add([14], OPEN, 0.5);
+      break;
+    case 'swing':
+      // Ride "ding, ding-a ding", the hat foot on two and four, a feathered kick on every beat
+      add(beats, RIDE, 0.62);
+      add(every(8, 6), RIDE, 0.45);
+      add(every(8, 4), HAT, 0.5);
+      add(beats, KICK, 0.28);
+      if (mid && rnd() < 0.6) add([6 + 8 * Math.floor(rnd() * 2)], SNARE, 0.3);
+      if (busy) add([14], SNARE, 0.42);
+      break;
+    case 'bossa':
+      // Rim on the 3-2 clave, the kick's dotted bounce, shaker 16ths
+      add(bar % 2 ? [4, 8] : [0, 6, 12], SNARE, 0.32);
+      add([0, 6, 8, 14], KICK, 0.7);
+      add(mid ? sixteenths : eighths, HAT, mid ? 0.3 : 0.38);
+      break;
+    case 'calypso':
+      // Kick on one with anticipations, cowbell 8ths, a light backbeat
+      add([0, 6, 8, 14], KICK, 0.85);
+      add(eighths, COWBELL, mid ? 0.42 : 0.32);
+      add([4, 12], SNARE, 0.6);
+      if (busy) add(sixteenths.filter((s) => s % 2), HAT, 0.3);
+      break;
+    case 'maqsum':
+      // Dum tek - tek dum - tek -: low (dum) and high (tek) hand drums
+      add([0, 8], TOM_LO, 0.9);
+      add([2, 6, 12], TOM_HI, 0.7);
+      if (mid) add([0, 8], KICK, 0.6);
+      if (mid) add([5, 13, 15], TOM_HI, 0.35);
+      if (busy) add([10, 14], TOM_HI, 0.45);
+      break;
+    case 'battle':
+      // Taiko 8ths with 3+3+2 accents (16ths), the low drum on the downbeats
+      for (const s of eighths) hits.push([s, TOM_LO, [0, 6, 12].includes(s % 16) ? 0.95 : 0.5]);
+      add(every(8), KICK, 0.9);
+      if (mid) add([6, 12], TOM_MID, 0.7);
+      if (busy) add(sixteenths.filter((s) => s % 2), TOM_HI, 0.38);
+      if (busy && bar % 2 === 1) add([0], CRASH, 0.55);
+      break;
+    case 'tribal': {
+      // Low toms that fill in as the part goes on (and with energy)
+      const fill = Math.min(1, 0.2 + progress * 0.7 + intensity * 0.3);
+      add(beats, TOM_LO, 0.85);
+      if (fill > 0.4) add(eighths.filter((s) => s % 4), TOM_LO, 0.55);
+      if (fill > 0.6) add(eighths.filter((s) => s % 4), TOM_MID, 0.5);
+      if (fill > 0.8) add(sixteenths.filter((s) => s % 2), TOM_HI, 0.42);
+      if (fill > 0.5) add([0], KICK, 0.8);
+      break;
+    }
+    case 'blast':
+      if (busy) {
+        add(sixteenths.filter((s) => s % 2 === 0), KICK, 0.9);
+        add(sixteenths.filter((s) => s % 2 === 1), SNARE, 0.82);
+      } else {
+        add(eighths, KICK, 0.9);
+        add(mid ? eighths.map((s) => s + 1) : every(4, 2), SNARE, 0.85);
+      }
+      add(beats, CRASH, 0.5);
+      break;
+    case 'heartbeat': {
+      // Lub-dub, faster with energy: once a measure, then every half, then every beat
+      const gap = busy ? 4 : mid ? 8 : 16;
+      for (const s of every(gap)) {
+        hits.push([s, KICK, 0.88]);
+        if (s + 1 < steps) hits.push([s + 1, KICK, 0.55]);
+      }
+      break;
+    }
   }
   return hits;
 }
+
+const QUIET_STYLES = new Set<DrumStyle>(['heartbeat', 'bossa', 'swing', 'waltz']);
 
 export type FillKind = 'snare' | 'toms' | 'build' | 'kick';
 export const FILLS: ReadonlyArray<{ id: FillKind; name: string; beats: number }> = [
@@ -434,10 +614,10 @@ export const FILLS: ReadonlyArray<{ id: FillKind; name: string; beats: number }>
  * its last beats make way (a kick on the beat stays) for the fill, and with `crash` a crash and
  * kick land on the next downbeat (when it's inside the clip).
  */
-export function fillBar(notes: readonly NoteEvent[], barStart: number, kind: FillKind, clipBars: number, newId: () => string, crash = true): NoteEvent[] {
+export function fillBar(notes: readonly NoteEvent[], barStart: number, kind: FillKind, clipBars: number, newId: () => string, crash = true, measure = 1): NoteEvent[] {
   const beats = FILLS.find((f) => f.id === kind)!.beats;
-  const from = barStart + 1 - beats / 4;
-  const to = barStart + 1;
+  const from = barStart + measure - Math.min(beats / 4, measure);
+  const to = barStart + measure;
   const keep = notes.filter((n) => !(n.startOffset >= from - EPS && n.startOffset < to - EPS && !(n.note === KICK && Math.abs(n.startOffset * 4 - Math.round(n.startOffset * 4)) < 1e-3)));
   const fill: NoteEvent[] = [];
   const hit = (drum: string, at: number, vel: number, len = 1 / 16) => fill.push(note(newId, midiOf(drum), at, len, Math.min(1, vel)));
@@ -472,14 +652,17 @@ export function fillBar(notes: readonly NoteEvent[], barStart: number, kind: Fil
  * an extra kick now and then), with a fill closing every `fillEvery` bars (0: none) and a crash
  * opening the part.
  */
-export function drummer(style: DrumStyle, bars: number, intensity: number, fillEvery: number, seed: number, newId: () => string): NoteEvent[] {
+export function drummer(style: DrumStyle, bars: number, intensity: number, fillEvery: number, seed: number, newId: () => string, meter: { num: number; den: number } = { num: 4, den: 4 }): NoteEvent[] {
   const rnd = seeded(seed);
+  // `bars` measures of the meter (a 3/4 measure is 3/4 of a 4/4 bar long)
+  const measure = meter.num / meter.den;
+  const steps = Math.max(1, Math.round(measure * 16));
   let out: NoteEvent[] = [];
   for (let b = 0; b < bars; b++) {
-    for (const [step, drum, vel] of styleBar(style, intensity, b, rnd)) {
+    for (const [step, drum, vel] of styleBar(style, intensity, b, rnd, steps, bars > 1 ? b / (bars - 1) : 1)) {
       // Hats lean on the beat, and every hit varies a little
       const accent = drum === HAT && step % 4 === 0 ? 0.12 : 0;
-      out.push(note(newId, midiOf(drum), b + step / 16, drum === OPEN ? 1 / 8 : 1 / 16, Math.max(0.15, Math.min(1, vel + accent + (rnd() - 0.5) * 0.12))));
+      out.push(note(newId, midiOf(drum), b * measure + step / 16, drum === OPEN ? 1 / 8 : 1 / 16, Math.max(0.15, Math.min(1, vel + accent + (rnd() - 0.5) * 0.12))));
     }
   }
   // The same drum on the same step once only (styles can stack the same hat)
@@ -490,12 +673,14 @@ export function drummer(style: DrumStyle, bars: number, intensity: number, fillE
     seen.add(k);
     return true;
   });
-  if (bars > 0) out.push(note(newId, midiOf(CRASH), 0, 0.5, 0.8));
-  if (fillEvery > 0) {
+  // The quiet styles open without a crash and play through without fills
+  const quiet = QUIET_STYLES.has(style);
+  if (bars > 0 && !quiet) out.push(note(newId, midiOf(CRASH), 0, 0.5, 0.8));
+  if (fillEvery > 0 && !quiet) {
     const kinds: FillKind[] = intensity > 0.6 ? ['toms', 'snare', 'build'] : ['snare', 'toms', 'kick'];
     for (let b = fillEvery - 1, k = 0; b < bars; b += fillEvery, k++) {
       const kind = b === bars - 1 && bars >= 8 && intensity > 0.6 ? 'build' : kinds[k % kinds.length];
-      out = fillBar(out, b, kind, bars, newId, true);
+      out = fillBar(out, b * measure, kind, bars * measure, newId, true, measure);
     }
   }
   return out.sort((a, b) => a.startOffset - b.startOffset);

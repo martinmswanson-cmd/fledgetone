@@ -15,7 +15,7 @@ import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import type { AudioClipSchedule } from './audioClipSchedule';
-import type { Clip, LoopRegion, Track, TrackFx } from '../store/timelineTypes';
+import type { Clip, ClipGroove, LoopRegion, Track, TrackFx } from '../store/timelineTypes';
 import { INSTRUMENTS } from './instrumentCatalog';
 import { detuned, hashSeed, noteDrift } from './human';
 import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
@@ -36,6 +36,8 @@ interface NoteGroup {
   seeds: number[];
   /** Swing plays it late (see swungNotes). */
   swung: boolean;
+  /** The clip's own swing, in place of the song's */
+  groove?: ClipGroove;
 }
 
 /** A track's Human settings while they're on, and whether its notes can be detuned. */
@@ -78,7 +80,8 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
     clip.lengthBars
   );
   const ticks = notes.map((note) => barToTicks(clip.startBar + note.startOffset));
-  const swung = swungNotes(ticks, barToTicks(clip.startBar), liveTransport.PPQ);
+  const groove = clip.groove && clip.groove.swing > 0 ? clip.groove : undefined;
+  const swung = clip.groove && !groove ? ticks.map(() => false) : swungNotes(ticks, barToTicks(clip.startBar), liveTransport.PPQ, groove?.grid ?? 16);
   // Group notes by tick (and length) so chords trigger as one instrument call
   const groups = new Map<string, [number, NoteGroup]>();
   notes.forEach((note, i) => {
@@ -91,7 +94,7 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
     if (group) {
       group[1].notes.push(playable);
       group[1].seeds.push(seed);
-    } else groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i] }]);
+    } else groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}) }]);
   });
   // Pitch bend and vibrato, as events of their own (played before the notes of the same tick)
   const pitch: ClipEntry['groups'] = pitchEvents(clip).map((ev) => [barToTicks(clip.startBar + ev.at), { trackId: clip.trackId, notes: [], seeds: [], swung: false, pitch: ev }]);
@@ -218,7 +221,8 @@ export function createClipSchedule(
       lastTime = tickTime;
       const groups = byTick.get(tick);
       if (!groups) return;
-      const late = swingDelay(swing(), transport.bpm.value, transport.PPQ);
+      const songLate = swingDelay(swing(), transport.bpm.value, transport.PPQ);
+      const lateOf = (g: NoteGroup) => (!g.swung ? 0 : g.groove ? swingDelay(g.groove.swing, transport.bpm.value, transport.PPQ, g.groove.grid) : songLate);
       // Bends first, so notes starting on the same tick start bent; a clip's end before the
       // next clip's start, so the next clip's bend wins
       for (const ends of [true, false]) {
@@ -233,17 +237,18 @@ export function createClipSchedule(
         const instrument = instrumentFor(trackId);
         if (instrument?.cc) safely(() => instrument.cc!(cc.cc, cc.value, tickTime));
       }
-      for (const { trackId, notes, seeds, swung, pitch, cc } of groups) {
+      for (const group of groups) {
+        const { trackId, notes, seeds, swung, pitch, cc } = group;
         if (pitch || cc) continue;
-        const time = swung ? tickTime + late : tickTime;
+        const time = tickTime + lateOf(group);
         const instrument = instrumentFor(trackId);
         if (instrument) safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time));
       }
 
-      if (onNotes) for (const group of groups) if (!group.pitch && !group.cc) onNotes(group.trackId, group.swung ? tickTime + late : tickTime);
+      if (onNotes) for (const group of groups) if (!group.pitch && !group.cc) onNotes(group.trackId, tickTime + lateOf(group));
       if (!onKick) return;
       for (const group of groups) {
-        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, group.swung ? tickTime + late : tickTime);
+        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, tickTime + lateOf(group));
       }
     };
   };
