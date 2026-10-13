@@ -98,6 +98,22 @@ const LoopVariations: React.FC = () => {
   );
 };
 
+/** Try it in a game: a little 3D game that plays the song like a real one (see GameTryOut.tsx). */
+const TryOutButton: React.FC = () => {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => useUiStore.getState().setDialog('tryOut')}
+        className="h-8 px-3 flex items-center justify-center gap-1.5 rounded-md border border-emerald-400/60 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/20"
+        title="Walk Bo around a little game: the music switches state, builds intensity and plays stingers and sound effects the way a real game would"
+      >
+        <Gamepad2 className="w-4 h-4" /> Try it in a game
+      </button>
+    </>
+  );
+};
+
 /** Everything the game needs, in one .zip: see gameKit.ts. */
 const KIT_LAYOUT_LABELS: Record<KitLayout, string> = { any: 'Any engine (web, Godot and Unity players)', godot: 'Godot 4 project (unzip into it)', unity: 'Unity project (unzip into it)' };
 
@@ -158,6 +174,7 @@ const GameKitButton: React.FC = () => {
       >
         <Package className="w-4 h-4" /> {progress === null ? 'Export game kit (.zip)' : `Building… ${progress}`}
       </button>
+      <TryOutButton />
       <AuditionButton />
       <RuntimeKitButton />
       <button

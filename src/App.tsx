@@ -9,6 +9,7 @@ import { VideoPreview } from './components/video/VideoPreview';
 import { Header } from './components/Header';
 import { BottomDock } from './components/dock/BottomDock';
 import { EnginesDialog } from './components/dock/EnginesDialog';
+import { GameTryOut } from './components/game/GameTryOut';
 import { Timeline } from './components/timeline/Timeline';
 import { ProjectDrop } from './components/ProjectDrop';
 import { MobileNotice } from './components/MobileNotice';
@@ -65,6 +66,13 @@ const Engines: React.FC = () => {
   return open ? <EnginesDialog onClose={() => useUiStore.getState().setDialog(null)} /> : null;
 };
 
+/** Try it in a game, when it's open. */
+const TryOut: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'tryOut');
+  const close = React.useCallback(() => useUiStore.getState().setDialog(null), []);
+  return open ? <GameTryOut onClose={close} /> : null;
+};
+
 export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-forge-bg text-forge-text flex flex-col font-sans selection:bg-cyan-500/30">
@@ -78,6 +86,7 @@ export const App: React.FC = () => {
       <ReportProblem />
       <CutToLength />
       <Engines />
+      <TryOut />
       <Learn />
 
       {/* Main Workstation Canvas: the arrangement, and the dock under it */}

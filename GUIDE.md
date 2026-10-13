@@ -921,6 +921,16 @@ A sound a game plays again and again (a footstep, a sword swing, a menu click) s
 
 **Audition like the game** (in the Game tab) renders the states, their stems, the stingers and the transition sounds exactly as the game kit exports them (it takes a few seconds, more for a long song), then plays them with the kit's own web player. Big pads switch states (a waiting one pulses until its line), stinger pads fire stingers on the next beat, and **Intensity** crossfades the stem groups. Every switch follows your transition matrix, crossfades included, so what you hear is what the game will do. The song stops while it's open.
 
+### Try it in a game
+
+**Game → Try it in a game…** (or **Try it in a game** in the Game tab) drops your song into a little 3D game so you can hear it react to play. You're Bo; Slate patrols the far side of a fenced field with eight coins.
+
+- **Arrows** or **WASD** walk, **Space** jumps (land on Slate to beat it), **R** restarts, **Esc** closes. While it's open the game takes these keys, so Space jumps instead of playing the song.
+- The game starts at once. The music renders the way the game kit exports it (the first time takes a while for a long song; opening it again on an unchanged song is instant). Slate naps until the music is ready, so you can walk around and grab coins meanwhile.
+- Get close and Slate spots you: the music switches to the chase state through your transition matrix, and **Intensity** rises the closer Slate gets. Get away and it gives up, back to exploring. A hit costs a heart; three and it's game over. Bonking Slate plays the win stinger and the win state.
+- Coins, footsteps, jumps, hits and the bonk play your song's game sounds when it has fitting ones, else the preview's own.
+- **Music wiring** shows what plays for each moment (exploring, chasing, beaten, each stinger and sound), guessed from your names; change any of them there. The panel at the top left shows the state playing and the intensity, and the list under it says what the music just did and why.
+
 ### The game kit: everything for the game in one file
 
 **Export game kit (.zip)** in the Game tab makes everything a game needs to play your music, and your sound effects, the way the panel does. Choose what it's **For** first:
