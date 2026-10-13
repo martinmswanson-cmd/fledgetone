@@ -27,3 +27,4 @@ dist-runtime
 
 # Personal song projects (kept local, not in the repo)
 songs/
+__pycache__/

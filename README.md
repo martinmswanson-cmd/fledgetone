@@ -1,7 +1,7 @@
 # Bo's Beatbox
 
 A music studio that runs in the browser. Arrange tracks and clips on a timeline, write in a piano
-roll, play 165 instruments (synths, EDM basses, drum kits, recorded instruments and your own
+roll, play 198 instruments (synths, EDM basses, drum kits, recorded instruments and your own
 sounds), mix with per-track effects, buses, returns and automation, record from MIDI or a
 microphone, and export WAV, MP3, Ogg, stems or video. It also scores to picture (timecode, hit
 points, a reference video) and exports adaptive music for games (states, stems, stingers and

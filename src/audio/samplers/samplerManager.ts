@@ -461,7 +461,7 @@ export function expressiveFor(def: InstrumentDef): Expressive | null {
   const base = EXPRESSIVE_BY_CATEGORY[def.category] ?? null;
   // Recorded at several loudnesses: a soft recording is already darker, so less filtering on top
   // (their levels are matched when converted, so velocity still sets the loudness)
-  return base && def.samples?.layers ? { ...base, depth: base.depth * 0.4 } : base;
+  return base && (def.samples?.layers?.length ?? 0) > 1 ? { ...base, depth: base.depth * 0.4 } : base;
 }
 
 /** A note's level for `velocity` (0..1) on a dB curve `rangeDb` deep. */
