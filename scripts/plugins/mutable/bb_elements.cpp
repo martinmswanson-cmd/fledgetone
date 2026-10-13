@@ -27,13 +27,13 @@ struct Preset
 //                               cont  bow   bowT  blow  flow  blowT strk  mall  strkT geom  brig  damp  pos   space res   vol
 static const Preset presets[] = {
     {"Struck bell", {0.0f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 0.8f, 0.5f, 0.6f, 0.7f, 0.6f, 0.4f, 0.3f, 0.5f, 0.0f, 0.8f}},
-    {"Bowed string", {0.6f, 0.8f, 0.5f, 0.0f, 0.5f, 0.5f, 0.0f, 0.5f, 0.5f, 0.25f, 0.5f, 0.6f, 0.3f, 0.4f, 0.0f, 0.8f}},
-    {"Blown pipe", {0.5f, 0.0f, 0.5f, 0.8f, 0.6f, 0.4f, 0.0f, 0.5f, 0.5f, 0.3f, 0.45f, 0.6f, 0.5f, 0.4f, 0.0f, 0.8f}},
+    {"Bowed string", {0.6f, 0.8f, 0.5f, 0.0f, 0.5f, 0.5f, 0.0f, 0.5f, 0.5f, 0.25f, 0.5f, 0.6f, 0.3f, 0.4f, 0.0f, 0.45f}},
+    {"Blown pipe", {0.5f, 0.0f, 0.5f, 0.8f, 0.6f, 0.4f, 0.0f, 0.5f, 0.5f, 0.3f, 0.45f, 0.6f, 0.5f, 0.4f, 0.0f, 0.45f}},
     {"Marimba", {0.0f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 0.9f, 0.3f, 0.3f, 0.2f, 0.4f, 0.35f, 0.2f, 0.3f, 0.0f, 0.8f}},
     {"Plucked string", {0.0f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 0.8f, 0.8f, 0.5f, 0.4f, 0.6f, 0.5f, 0.2f, 0.3f, 0.5f, 0.8f}},
-    {"Glass harmonica", {0.7f, 0.6f, 0.8f, 0.0f, 0.5f, 0.5f, 0.0f, 0.5f, 0.5f, 0.8f, 0.8f, 0.7f, 0.4f, 0.6f, 0.0f, 0.8f}},
-    {"Breathy drone", {0.9f, 0.3f, 0.4f, 0.6f, 0.8f, 0.6f, 0.0f, 0.5f, 0.5f, 0.5f, 0.35f, 0.8f, 0.6f, 0.9f, 1.0f, 0.8f}},
-    {"Gong", {0.0f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 0.9f, 0.6f, 0.8f, 0.9f, 0.5f, 0.75f, 0.6f, 0.7f, 0.0f, 0.8f}},
+    {"Glass harmonica", {0.7f, 0.6f, 0.8f, 0.0f, 0.5f, 0.5f, 0.0f, 0.5f, 0.5f, 0.8f, 0.8f, 0.7f, 0.4f, 0.6f, 0.0f, 0.5f}},
+    {"Breathy drone", {0.9f, 0.3f, 0.4f, 0.6f, 0.8f, 0.6f, 0.0f, 0.5f, 0.5f, 0.5f, 0.35f, 0.8f, 0.6f, 0.9f, 1.0f, 0.5f}},
+    {"Gong", {0.0f, 0.0f, 0.5f, 0.0f, 0.5f, 0.5f, 0.9f, 0.6f, 0.8f, 0.9f, 0.5f, 0.75f, 0.6f, 0.7f, 0.0f, 0.7f}},
 };
 
 struct Elements : BBPlugin

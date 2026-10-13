@@ -7,7 +7,7 @@
  * Messages in (port): `events` (timed MIDI and parameter changes, as WAM events: applied at their
  * exact frame), `set` (a parameter now, from its panel), `clear` (drop pending events),
  * `describe` (send every parameter's name, value and text), `program` (choose a preset, which
- * sets the parameters), `sync` (answered with `synced` once everything before it has arrived),
+ * sets the parameters), `load` (a preset file's bytes), `sync` (answered with `synced` once everything before it has arrived),
  * `destroy`.
  * Messages out: `ready` with the parameters (and their defaults) and presets once made, `params` answering `describe`, `display`
  * after a `set` (the parameter's text), `error` if the plugin couldn't be made.
@@ -23,13 +23,30 @@ const families = new Map();
 function familyOf(name, module) {
   let fam = families.get(name);
   if (fam) return fam;
+  // The C runtime's few calls out: writing text (it's shown in the console) is done properly, so
+  // the runtime doesn't retry it forever; the rest answer "nothing here"
+  let e = null;
   const imports = {};
   for (const i of WebAssembly.Module.imports(module)) {
     if (!imports[i.module]) imports[i.module] = {};
     imports[i.module][i.name] = i.kind === 'function' ? () => 0 : undefined;
   }
+  if (imports.wasi_snapshot_preview1 && imports.wasi_snapshot_preview1.fd_write) {
+    imports.wasi_snapshot_preview1.fd_write = (fd, iovs, count, written) => {
+      const view = new DataView(e.memory.buffer);
+      let total = 0, text = '';
+      for (let k = 0; k < count; k++) {
+        const ptr = view.getUint32(iovs + k * 8, true), len = view.getUint32(iovs + k * 8 + 4, true);
+        text += readString(e, ptr).slice(0, len);
+        total += len;
+      }
+      view.setUint32(written, total, true);
+      if (text.trim()) console.log('[' + name + '] ' + text.trim());
+      return 0;
+    };
+  }
   const instance = new WebAssembly.Instance(module, imports);
-  const e = instance.exports;
+  e = instance.exports;
   if (e._initialize) e._initialize();
   fam = { e };
   families.set(name, fam);
@@ -61,9 +78,11 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       this.h = this.e.bb_create(o.index, sampleRate);
       if (!this.h) throw new Error('no plugin ' + o.index + ' in ' + o.family);
       this.n = this.e.bb_params(this.h);
+      // A preset file (Surge's patches) is the starting point: its values are the defaults
+      if (o.preset) this.loadData(o.preset);
       const defaults = [];
       for (let i = 0; i < this.n; i++) defaults.push(this.e.bb_get(this.h, i));
-      // A preset first (it sets the parameters), then the saved parameters over it
+      // A built-in preset, then the saved parameters over it
       this.programs = this.e.bb_programs ? this.e.bb_programs(this.h) : 0;
       if (this.programs && Number.isInteger(o.program) && o.program >= 0 && o.program < this.programs) this.e.bb_set_program(this.h, o.program);
       const values = o.values || [];
@@ -83,6 +102,20 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     const e = this.e;
     this.mem = e.memory.buffer;
     this.buf = [0, 1, 2, 3].map((w) => new Float32Array(this.mem, e.bb_buffer(this.h, w), BLOCK));
+  }
+
+  /** Hand the plugin a preset file (bb_load): through its own memory */
+  loadData(buffer) {
+    const e = this.e;
+    if (!e.bb_alloc) return 0;
+    const bytes = new Uint8Array(buffer);
+    const ptr = e.bb_alloc(bytes.length);
+    new Uint8Array(e.memory.buffer, ptr, bytes.length).set(bytes);
+    const ok = e.bb_load(this.h, ptr, bytes.length);
+    e.bb_free(ptr);
+    this.n = e.bb_params(this.h);
+    this.views();
+    return ok;
   }
 
   program() {
@@ -117,6 +150,9 @@ class BuiltinPlugin extends AudioWorkletProcessor {
         this.e.bb_set_program(this.h, d.index);
         this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program() });
       }
+    } else if (d.type === 'load') {
+      this.loadData(d.data);
+      this.port.postMessage({ type: 'params', id: -1, params: this.describe(), program: this.program() });
     } else if (d.type === 'sync') {
       // Everything sent before this has arrived (an export waits for it before rendering on)
       this.port.postMessage({ type: 'synced', id: d.id });

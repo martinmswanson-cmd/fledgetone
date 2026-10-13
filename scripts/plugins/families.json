@@ -38,5 +38,29 @@
     "gpl": false,
     "source": "https://github.com/grame-cncm/faust",
     "commit": "Faust 2.70.3 (Ubuntu package) with its libraries and examples"
+  },
+  {
+    "family": "surge",
+    "label": "Surge XT",
+    "licence": "GPL-3.0",
+    "gpl": true,
+    "file": "gpl/surge.wasm",
+    "presets": {
+      "Surge XT": {
+        "dir": "gpl/surge-patches",
+        "ext": ".fxp"
+      }
+    },
+    "source": "https://github.com/surge-synthesizer/surge",
+    "commit": "f398826e85672b5d8dd0ed844065fccd2e8cdfba"
+  },
+  {
+    "family": "dragonfly",
+    "label": "Dragonfly",
+    "licence": "GPL-3.0",
+    "gpl": true,
+    "file": "gpl/dragonfly.wasm",
+    "source": "https://github.com/michaelwillis/dragonfly-reverb",
+    "commit": "440ec7b3b3db2fec34b9f80cf4890102ca14d1c3"
   }
 ]

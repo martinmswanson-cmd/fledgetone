@@ -122,4 +122,7 @@ export const PLUGIN_CREDITS: PluginCredit[] = [
       'Physical models and effects from the [Faust](https://faust.grame.fr) libraries and examples by GRAME and contributors, among them Romain Michon, Julius O. Smith III, Yann Orlarey and Stéphane Letz (the waveguide models after the Synthesis ToolKit by Perry Cook and Gary Scavone)',
     licence: `${MIT}, BSD and STK-4.3 (the library code is used under the Faust exception to its LGPL)`,
   },
+  // GPL families: only in builds with them (see audio/plugins/pluginSources.ts)
+  { family: 'surge', made: '[Surge XT](https://surge-synthesizer.github.io) by the Surge Synth Team, with its factory patches', licence: '[GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)' },
+  { family: 'dragonfly', made: '[Dragonfly Reverb](https://michaelwillis.github.io/dragonfly-reverb/) by Michael Willis and Rob van den Berg', licence: '[GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html)' },
 ];

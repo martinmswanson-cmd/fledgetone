@@ -26,6 +26,8 @@ struct BBPlugin
     virtual const char *programName(int) { return ""; }
     /** Choose preset i: set every parameter through set() */
     virtual void setProgram(int i) {}
+    /** A preset file from the host (see bb_load): true if it was taken */
+    virtual bool loadData(const void *, int) { return false; }
     float values[BB_MAX_PARAMS] = {};
     int program = 0;
     void set(int i, float v)

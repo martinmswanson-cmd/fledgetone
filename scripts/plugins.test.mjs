@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 const { PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalog.ts');
+const { GPL_PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalogGpl.ts');
 
-for (const family of PLUGIN_FAMILIES) {
+for (const family of [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES]) {
   const file = new URL(`../public/bos-beat-box-plugins/${family.file}`, import.meta.url);
   test(`${family.family}: every plugin plays`, { skip: !existsSync(file) && family.gpl ? 'GPL family not built here' : false }, async () => {
     const bytes = readFileSync(file);
@@ -14,7 +15,17 @@ for (const family of PLUGIN_FAMILIES) {
     const mod = await WebAssembly.compile(bytes);
     const imports = {};
     for (const i of WebAssembly.Module.imports(mod)) (imports[i.module] ??= {})[i.name] = () => 0;
-    const { exports: e } = await WebAssembly.instantiate(mod, imports);
+    // Writing text must say it wrote it (as the app's processor does), or the C runtime retries forever
+    let e;
+    if (imports.wasi_snapshot_preview1?.fd_write)
+      imports.wasi_snapshot_preview1.fd_write = (fd, iovs, count, written) => {
+        const view = new DataView(e.memory.buffer);
+        let total = 0;
+        for (let k = 0; k < count; k++) total += view.getUint32(iovs + k * 8 + 4, true);
+        view.setUint32(written, total, true);
+        return 0;
+      };
+    ({ exports: e } = await WebAssembly.instantiate(mod, imports));
     e._initialize?.();
     const text = (p) => {
       const m = new Uint8Array(e.memory.buffer);

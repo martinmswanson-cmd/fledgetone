@@ -3911,8 +3911,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT",
   "gpl": false,
   "file": "mutable.wasm",
-  "bytes": 756167,
-  "hash": "67ff6b7651de",
+  "bytes": 756240,
+  "hash": "61107ea1abeb",
   "plugins": [
    {
     "name": "Filter Synth",
@@ -4446,3 +4446,6 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   ]
  }
 ];
+
+/** The GPL families (in pluginCatalogGpl.ts, only in builds with VITE_GPL_PLUGINS=1), by name, to explain why one is missing */
+export const GPL_FAMILY_NAMES: string[] = ["surge","dragonfly"];

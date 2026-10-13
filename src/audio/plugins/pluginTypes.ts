@@ -23,4 +23,6 @@ export interface BuiltinPluginInfo {
   instrument?: boolean;
   /** The family's own groupings ("Recommended", "Basic", "Latest") */
   tags?: string[];
+  /** Presets that are files beside the plugin (Surge's patches), fetched when chosen: `dir/name ext` */
+  presetFiles?: { dir: string; ext: string; names: string[] };
 }

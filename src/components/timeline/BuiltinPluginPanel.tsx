@@ -18,6 +18,18 @@ function tidyValue(text: string): string {
   return `${Number(v.toFixed(places)).toFixed(places).replace(/^-0(\.0+)?$/, '0$1')}${m[2]}`;
 }
 
+/** Presets named "Category/Name" (Surge's patches) are grouped by category; others are one list. */
+function groupPresets(names: string[]): Array<[string, Array<{ name: string; i: number }>]> {
+  const groups = new Map<string, Array<{ name: string; i: number }>>();
+  names.forEach((full, i) => {
+    const cut = full.lastIndexOf('/');
+    const group = cut > 0 ? full.slice(0, cut) : '';
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group)!.push({ name: cut > 0 ? full.slice(cut + 1) : full, i });
+  });
+  return [...groups];
+}
+
 const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
   const params = useSyncExternalStore(controls.subscribe, controls.params);
   const { info, family } = controls.ref;
@@ -31,16 +43,28 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
           <span className="w-[96px]">Preset</span>
           <select
             value={controls.program()}
-            onChange={(e) => controls.setProgram(Number(e.target.value))}
+            onChange={(e) => void controls.setProgram(Number(e.target.value))}
             aria-label="Preset"
             className="flex-1 h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
           >
             {controls.program() < 0 && <option value={-1}>(none)</option>}
-            {controls.programs.map((name, i) => (
-              <option key={i} value={i}>
-                {i + 1}. {name || 'Untitled'}
-              </option>
-            ))}
+            {groupPresets(controls.programs).map(([group, list]) =>
+              group ? (
+                <optgroup key={group} label={group}>
+                  {list.map(({ name, i }) => (
+                    <option key={i} value={i}>
+                      {name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : (
+                list.map(({ name, i }) => (
+                  <option key={i} value={i}>
+                    {i + 1}. {name || 'Untitled'}
+                  </option>
+                ))
+              )
+            )}
           </select>
         </label>
       )}

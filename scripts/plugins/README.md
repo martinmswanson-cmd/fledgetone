@@ -42,6 +42,27 @@ instrument) or passes it (an effect) without NaNs.
 
 ## GPL plugins
 
-Families marked `"gpl": true` are only offered by builds made with `VITE_GPL_PLUGINS=1`
-(`npm run build:full`), and their files are only published once the app's own source is: the GPL
-asks that whoever gets the program can get its source.
+Families marked `"gpl": true` (their files in `public/bos-beat-box-plugins/gpl/`, their catalog in
+`src/audio/plugins/pluginCatalogGpl.ts`) are only in builds made with `VITE_GPL_PLUGINS=1`: the
+dev server (`.env.development`) and `npm run build:full` (written to `dist-full/`, never to
+`dist-single/`). The website build leaves out their catalog, and their files are not copied to
+the site, until the app's own source is published: the GPL asks that whoever gets the program can
+get its source. `LICENSES-GPL.txt` is their notice (in the full build's third-party licences).
+
+```sh
+sh surge/build.sh <surge checkout, with submodules> ../../public/bos-beat-box-plugins/gpl/surge.wasm
+python3 surge/patches.py <surge checkout> ../../public/bos-beat-box-plugins/gpl/surge-patches
+sh dragonfly/build.sh <dragonfly-reverb checkout> ../../public/bos-beat-box-plugins/gpl/dragonfly.wasm
+```
+
+- **Surge XT**: its engine library built without JUCE or Lua (`surge/prepare.py` makes the few
+  changes WebAssembly needs; `surge/nofiles.c` answers its file lookups with "not found"), with
+  `surge/bb_surge.cpp`. Its factory patches are separate files the app fetches when one is chosen
+  (`bb_load`); `surge/patches.py` copies them, renaming the few named after artists, songs,
+  people or products and leaving out a few crude ones.
+- **Dragonfly Reverb**: the hall, room, plate and early-reflection reverbs' DSP with Freeverb3,
+  each in its own namespace (`dragonfly/adapter.inc`), with stand-ins for the two bits of DPF the
+  DSP uses (`dragonfly/override/`).
+
+When publishing the site, copy only the top-level files of `public/bos-beat-box-plugins/` (the
+`*.wasm` and `LICENSES.txt`), never `gpl/`.

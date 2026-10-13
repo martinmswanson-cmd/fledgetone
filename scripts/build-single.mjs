@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
-const outDir = join(root, 'dist-single');
+// The full build (with the GPL plugins: npm run build:full) goes elsewhere, so it can't be published by mistake
+const outDir = join(root, process.env.VITE_GPL_PLUGINS === '1' ? 'dist-full' : 'dist-single');
 const read = (p) => readFileSync(join(dist, p.replace(/^\.?\//, '')), 'utf8');
 
 let html = read('index.html');
@@ -37,4 +38,4 @@ if (leftovers) throw new Error(`Unresolved local references: ${leftovers.join(',
 
 mkdirSync(outDir, { recursive: true });
 writeFileSync(join(outDir, 'index.html'), html);
-console.log(`dist-single/index.html written (${(Buffer.byteLength(html) / 1024).toFixed(0)} KB)`);
+console.log(`${outDir.split(/[\\/]/).pop()}/index.html written (${(Buffer.byteLength(html) / 1024).toFixed(0)} KB)`);
