@@ -10,6 +10,7 @@ import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses
 import { insertTailSeconds } from './effects/spaceFx';
 import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
+import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { createMixChain, getMasterVolume } from './engine';
 import { delaySeconds } from './effects/busEffects';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
@@ -610,8 +611,9 @@ async function renderTracks(
           }
           onProgress?.(at / duration);
         } finally {
-          // Never leave the render suspended, or it would hold its memory forever
-          void native.resume();
+          // Never leave the render suspended, or it would hold its memory forever. Built-in
+          // plugins get this step's notes first (they arrive by message: see builtinHost.ts)
+          void syncBuiltinPlugins(native).finally(() => native.resume());
         }
       });
     };
@@ -627,6 +629,7 @@ async function renderTracks(
     advanceClock(duration);
     signal?.addEventListener('abort', release, { once: true });
   }
+  await syncBuiltinPlugins(native);
   const rendered = await abortable(
     native.startRendering().finally(() => {
       signal?.removeEventListener('abort', release);

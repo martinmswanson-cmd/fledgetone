@@ -200,6 +200,21 @@ Clean up per-note nodes when they're disposed, not when they report ending.
 
 Each instrument also gets its level correction from the catalog (`gain`) and a high-note taper.
 
+## Built-in plugins
+
+The Plugins menu's effects and instruments are open-source plugins compiled to WebAssembly
+(`scripts/plugins/`, see its README), one file per family in `public/bos-beat-box-plugins/`,
+described by the generated `audio/plugins/pluginCatalog.ts`. On a track they're Web Audio Module
+plugins with a `builtin:<family>/<name>` address: `wamHost.loadWam` hands those to
+`plugins/builtinHost.ts`, which makes an AudioWorkletNode (`plugins/processor.ts`) that looks like
+a WAM (parameters, timed MIDI and automation events, getState / setState), so plugin tracks,
+effect chains, automation lanes, saving, freezing and exports need nothing new. A family's
+WebAssembly is downloaded once (kept like the instruments' recordings, `recordingStore.ts`),
+compiled once per page, and instantiated once per audio context; every plugin of the family in
+that context lives in that one instance's memory. Exports render in steps (suspend, schedule,
+resume): `syncBuiltinPlugins` waits for every plugin's processor to have the step's events
+before the render resumes. Families marked GPL are only in builds with `VITE_GPL_PLUGINS=1`.
+
 ## Keeping it fast
 
 Web Audio keeps processing every connected node, even silent ones, and Tone's `Signal`s are

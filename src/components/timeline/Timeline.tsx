@@ -19,6 +19,9 @@ import { ClipContextMenu } from './ClipContextMenu';
 import { TakesDialog } from './TakesDialog';
 import { Modal } from './Modal';
 import { PluginPermissionBar, PluginUrlDialog, PluginWindow } from './PluginDialogs';
+import { PluginBrowser } from './PluginBrowser';
+// Registers the built-in plugins' window
+import './BuiltinPluginPanel';
 import { onPluginError } from '../../audio/presets/wamPlugin';
 
 import type { ContextMenuState } from './ClipContextMenu';
@@ -134,6 +137,7 @@ export const Timeline: React.FC = () => {
   const tuneClipId = useUiStore((s) => s.tuneClipId);
   const takesClipId = useUiStore((s) => s.takesClipId);
   const pluginWindow = useUiStore((s) => s.pluginWindow);
+  const pluginBrowser = useUiStore((s) => s.pluginBrowser);
   const pluginDialog = useUiStore((s) => s.pluginDialog);
   const contentRef = useRef<HTMLDivElement>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
@@ -479,6 +483,13 @@ export const Timeline: React.FC = () => {
         ))}
       <SmartDialog />
       {takesClipId && <TakesDialog clipId={takesClipId} onClose={() => useUiStore.getState().setTakesClip(null)} />}
+      {pluginBrowser && (
+        <PluginBrowser
+          trackId={pluginBrowser.trackId ?? useTimelineStore.getState().selectedTrackId}
+          category={pluginBrowser.category}
+          onClose={() => useUiStore.getState().setPluginBrowser(null)}
+        />
+      )}
       {pluginDialog && <PluginUrlDialog trackId={pluginDialog.trackId} onClose={() => useUiStore.getState().setPluginDialog(null)} />}
       {pluginWindow && (
         <PluginWindow key={pluginWindow.pluginId} trackId={pluginWindow.trackId} pluginId={pluginWindow.pluginId} onClose={closePluginWindow} />

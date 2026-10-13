@@ -1,3 +1,5 @@
+import { isBus } from '../../store/buses';
+import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, type BuiltinEntry } from '../../store/builtinPlugins';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -62,6 +64,22 @@ const showTrackPanel = (name: string) => () => {
   ui().setInspectorTab('track');
   void reveal(`[data-search="${name}"]`);
 };
+
+/** Quick ways into the plugin browser, on a category. */
+const PLUGIN_SHORTCUTS = [
+  { label: 'Instruments', category: 'Instruments' },
+  { label: 'Reverbs', category: 'Reverb' },
+  { label: 'Delays and ambience', category: 'Ambience' },
+  { label: 'Saturation and warmth', category: 'Saturation' },
+  { label: 'Tape', category: 'Tape' },
+  { label: 'Dynamics', category: 'Dynamics' },
+  { label: 'Filters', category: 'Filter' },
+  { label: 'Lo-fi', category: 'Lo-Fi' },
+  { label: 'Amps and distortion', category: 'Amp Sims' },
+  { label: 'Stereo', category: 'Stereo' },
+  { label: 'Console and mix bus', category: 'Consoles' },
+  { label: 'Recommended', category: 'Recommended' },
+];
 
 const MENUS: MenuDef[] = [
   {
@@ -160,6 +178,33 @@ const MENUS: MenuDef[] = [
         { label: 'Human feel', run: showTrackPanel('Human') },
         { label: 'Duck others under this track', run: showTrackPanel('Duck others under this') },
         { label: 'Automation', run: () => (t ? tl().showAutomation(t.id, true) : NEED_TRACK), disabled: !t },
+      ];
+    },
+  },
+  {
+    id: 'plugins',
+    label: 'Plugins',
+    items: () => {
+      const t = selectedTrack();
+      const fxTrack = t && !isBus(t) ? t : null;
+      const browse = (category?: string) => () => ui().setPluginBrowser({ trackId: fxTrack?.id ?? null, category });
+      const favourites = readList(FAVOURITES_KEY)
+        .map((key) => allBuiltinPlugins().find((e) => e.key === key))
+        .filter((e): e is BuiltinEntry => !!e)
+        .slice(0, 8);
+      const open = t ? [t.plugin, ...(t.pluginFx ?? [])].filter((p) => !!p) : [];
+      return [
+        { label: 'Browse plugins…', run: browse(), title: `${allBuiltinPlugins().length} built-in effects and instruments` },
+        { label: fxTrack ? `Add effect to “${fxTrack.name}”…` : 'Add effect to a track…', run: browse(), disabled: !fxTrack },
+        ...PLUGIN_SHORTCUTS.map((c, i) => ({ label: `${c.label}…`, run: c.category === 'Instruments' ? () => ui().setPluginBrowser({ trackId: null, category: c.category }) : browse(c.category), divider: i === 0 })),
+        ...favourites.map((e, i) => ({
+          label: `★ ${e.info.name}${e.info.instrument ? ' (new track)' : fxTrack ? ` on “${fxTrack.name}”` : ''}`,
+          run: () => (e.info.instrument || fxTrack ? void addBuiltinPlugin(e, fxTrack?.id ?? null) : NEED_TRACK),
+          divider: i === 0,
+        })),
+        ...open.map((p, i) => ({ label: `Open ${p.name}`, run: () => ui().setPluginWindow({ trackId: t!.id, pluginId: p.id }), divider: i === 0 })),
+        { label: 'Instrument from a web address (WAM)…', run: () => ui().setPluginDialog({ trackId: null }), divider: true },
+        { label: 'Effect from a web address (WAM)…', run: () => (fxTrack ? ui().setPluginDialog({ trackId: fxTrack.id }) : NEED_TRACK), disabled: !fxTrack },
       ];
     },
   },

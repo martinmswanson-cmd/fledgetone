@@ -242,6 +242,11 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   live). A fingerprint decides whether the freeze is current; otherwise the track plays live.
   The frozen gain adds back the centre pan law and the bus gain that playback applies a second
   time (`BUS_GAIN` in engine.ts). Cuts live audio work about 3.7x on a 36-track test song.
+- **Built-in plugins** (`src/audio/plugins/`, `scripts/plugins/`): 637 open-source effects and
+  instruments (Airwindows, MDA, Open303, Mutable Instruments, Faust) compiled to WebAssembly and
+  hosted as WAM-shaped AudioWorklet nodes behind `builtin:` addresses. Plugins menu, browser
+  (`PluginBrowser.tsx`), panel (`BuiltinPluginPanel.tsx`). Instruments are level-trimmed in their
+  wrappers. GPL families (none yet) only in `VITE_GPL_PLUGINS=1` builds.
 - **Auto-freeze** (`src/store/autoFreeze.ts`): renders settled tracks of a big song (6+ instrument
   tracks) while stopped, into memory-only sounds (`provideMemorySound`), within a memory budget;
   `liveView` takes them through its `autoFrozen` hook when the fingerprint still matches. Renders

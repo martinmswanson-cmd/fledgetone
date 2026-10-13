@@ -30,6 +30,8 @@ function thirdPartyLicenses(): Plugin {
         })
       // Libraries compiled into a package's WebAssembly, whose notices the package's own licence file doesn't carry
       if (roots.has('wasm-media-encoders')) sections.push(CODEC_NOTICES)
+      // The built-in plugins (public/bos-beat-box-plugins/, compiled from scripts/plugins/)
+      sections.push(readFileSync(join(process.cwd(), 'scripts/plugins/LICENSES.txt'), 'utf8').trim())
       this.emitFile({
         type: 'asset',
         fileName: 'third-party-licenses.txt',
