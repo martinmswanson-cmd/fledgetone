@@ -662,5 +662,38 @@ export const GPL_PLUGIN_FAMILIES: PluginFamily[] = [
     "about": "Just the first reflections of a room: places a sound in a space without a tail."
    }
   ]
+ },
+ {
+  "family": "plateau",
+  "label": "Plateau",
+  "licence": "GPL-3.0",
+  "gpl": true,
+  "file": "gpl/plateau.wasm",
+  "bytes": 45361,
+  "hash": "467f5d094112",
+  "plugins": [
+   {
+    "name": "Plateau",
+    "category": "Reverb",
+    "about": "Huge, smooth plate reverb that can sustain forever: size, decay, damping, modulation and Hold to freeze the tail."
+   }
+  ]
+ },
+ {
+  "family": "setbfree",
+  "label": "setBfree",
+  "licence": "GPL-2.0-or-later",
+  "gpl": true,
+  "file": "gpl/setbfree.wasm",
+  "bytes": 119919,
+  "hash": "b39496d68362",
+  "plugins": [
+   {
+    "name": "Tonewheel Organ",
+    "category": "Organ",
+    "about": "Drawbar tonewheel organ with key click, percussion, scanner vibrato and chorus, overdrive, spring reverb and a rotary speaker (mod wheel or sustain pedal switches it to fast).",
+    "instrument": true
+   }
+  ]
  }
 ];

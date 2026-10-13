@@ -1,6 +1,6 @@
 Bo's Beatbox's GPL-licensed built-in plugins (only in builds made with VITE_GPL_PLUGINS=1: the
 files in bos-beat-box-plugins/gpl/). Each is free software under the GNU General Public License,
-version 3; the complete source of each, and of how it is built for Bo's Beatbox
+version 3 (setBfree: version 2 or later); the complete source of each, and of how it is built for Bo's Beatbox
 (scripts/plugins/), is available with the app's own source.
 
 
@@ -19,6 +19,20 @@ dragonfly.wasm: Dragonfly Reverb (GPL-3.0)
 Copyright (c) 2018-2026 Michael Willis, Rob van den Berg and contributors,
 https://github.com/michaelwillis/dragonfly-reverb. Built on Freeverb3 by Teru Kamogashira
 (GPL-2.0-or-later) and KISS FFT by Mark Borgerding (BSD-3-Clause).
+
+
+plateau.wasm: Plateau (GPL-3.0)
+============================================================
+ValleyRackFree Copyright (C) 2020, Valley Audio Soft, Dale Johnson,
+https://github.com/ValleyAudio/ValleyRackFree. Only the Plateau reverb (Dattorro.cpp, after Jon
+Dattorro's 1997 plate reverb design) and the filters and delays it uses are built.
+
+
+setbfree.wasm: setBfree (GPL-2.0-or-later)
+============================================================
+Copyright (C) 2003-2004 Fredrik Kilander, (C) 2008-2018 Robin Gareus, (C) 2012 Will Panther,
+https://github.com/pantherb/setBfree. Free software under the GNU General Public License,
+version 2 or (at your option) any later version; used here under version 3.
 
 
 The GNU General Public License, version 3

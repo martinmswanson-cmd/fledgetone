@@ -3911,8 +3911,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT",
   "gpl": false,
   "file": "mutable.wasm",
-  "bytes": 756240,
-  "hash": "61107ea1abeb",
+  "bytes": 855579,
+  "hash": "ba39981d6d8f",
   "plugins": [
    {
     "name": "Filter Synth",
@@ -4129,6 +4129,12 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
     "name": "Spectral Cloud",
     "category": "Effects",
     "about": "Spectral processing: blurs, freezes and warps the sound's frequencies into pads."
+   },
+   {
+    "name": "Macro Oscillator",
+    "category": "Synth",
+    "about": "47 oscillator shapes in one: analog waves, sync, FM, vowels, plucked and bowed models, drums and noise. Pick a shape from Preset.",
+    "instrument": true
    }
   ]
  },
@@ -4448,4 +4454,4 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
 ];
 
 /** The GPL families (in pluginCatalogGpl.ts, only in builds with VITE_GPL_PLUGINS=1), by name, to explain why one is missing */
-export const GPL_FAMILY_NAMES: string[] = ["surge","dragonfly"];
+export const GPL_FAMILY_NAMES: string[] = ["surge","dragonfly","plateau","setbfree"];
