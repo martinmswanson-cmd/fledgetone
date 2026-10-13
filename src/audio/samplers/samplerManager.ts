@@ -512,6 +512,31 @@ function nearest(slot: Slot, midi: number): { buffer: AudioBuffer; interval: num
   return null;
 }
 
+/** A note's tail below this (about -90 dBFS, before velocity) is cut: nobody hears it, and it keeps a voice playing. */
+const SILENT = 3e-5;
+const audibleEnds = new WeakMap<AudioBuffer, number>();
+/** Where `buffer` falls silent for good, in seconds (the end of its last sample above SILENT). */
+function audibleEnd(buffer: AudioBuffer): number {
+  let end = audibleEnds.get(buffer);
+  if (end === undefined) {
+    let last = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = data.length - 1; i > last; i--) if (Math.abs(data[i]) > SILENT) { last = i; break; }
+    }
+    end = Math.min(buffer.duration, (last + 1) / buffer.sampleRate + 0.01);
+    audibleEnds.set(buffer, end);
+  }
+  return end;
+}
+
+/** At most this many notes of one pitch ring at once: a further repeat fades the oldest (as a re-struck string damps itself). */
+const SAME_PITCH = 3;
+/** At most this many notes of one instrument ring at once: past it, the oldest fades. */
+const MAX_NOTES = 64;
+/** How fast a note let go for a newer one fades (time constant, s: gone in about 50 ms). */
+const STEAL_TC = 0.01;
+
 const midiOfNote = (note: string) => 69 + 12 * Math.log2(Tone.Frequency(note).toFrequency() / 440);
 
 /**
@@ -556,6 +581,8 @@ function samplerVoice(
   const release = options.release;
   /** The release's time constant and where its straight last tenth starts (as Tone's targetRampTo). */
   const releaseTc = Math.log(release + 1) / Math.log(200);
+  /** How long a release really lasts: a long one is inaudible (below -70 dB) well before it ends, so it stops there. */
+  const tail = Math.min(release, releaseTc * 8);
   /** Expressive filters, by cutoff step (see CUTOFF_STEPS_PER_OCTAVE). */
   const filters = new Map<number, BiquadFilterNode>();
   const filterFor = (cutoff: number): AudioNode => {
@@ -596,6 +623,41 @@ function samplerVoice(
     for (let i = sounding.length - 1; i >= 0; i--) if (sounding[i].until < time) sounding.splice(i, 1);
   };
 
+  /** Fade `s` out quickly from `at` (its place taken by a newer note), and stop it. */
+  const steal = (s: Sounding, at: number) => {
+    const g = s.gain.gain;
+    g.cancelScheduledValues(at);
+    g.setTargetAtTime(0, at, STEAL_TC);
+    const stop = at + STEAL_TC * 6;
+    if (stop < s.until) {
+      s.src.stop(stop);
+      s.until = stop;
+    }
+  };
+
+  /**
+   * Before a note starts at `at`: if SAME_PITCH notes of its pitch, or MAX_NOTES in all, are still
+   * ringing then, the oldest fade out. A fast repeat on a long-ringing note otherwise stacks up
+   * dozens of copies of it, which cost a voice each and blur together.
+   */
+  const makeRoom = (note: string, at: number) => {
+    let same: Sounding | null = null;
+    let sameCount = 0;
+    let oldest: Sounding | null = null;
+    let count = 0;
+    for (const x of sounding) {
+      if (x.start >= at || x.until <= at) continue;
+      count++;
+      if (!oldest || x.start < oldest.start) oldest = x;
+      if (x.note === note) {
+        sameCount++;
+        if (!same || x.start < same.start) same = x;
+      }
+    }
+    if (same && sameCount >= SAME_PITCH) steal(same, at);
+    else if (oldest && count >= MAX_NOTES) steal(oldest, at);
+  };
+
   /** The velocity a note is triggered at: as given, or on the dB curve with a little variation. */
   const level = (note: string, velocity: number, at: number) =>
     expressive ? expressiveGain(velocity, expressive.rangeDb) * 10 ** ((0.6 * noteJitter(note, at, 7)) / 20) : velocity;
@@ -627,8 +689,9 @@ function samplerVoice(
       src.disconnect();
       gain.disconnect();
     };
-    const end = when + found.buffer.duration / (base * bendRatio);
+    const end = when + audibleEnd(found.buffer) / (base * bendRatio);
     src.stop(end);
+    makeRoom(note, when);
     const s: Sounding = { src, gain, note, level: v, start: when, until: end, base, played: 0, last: when, rate: base * bendRatio };
     sounding.push(s);
     return s;
@@ -641,10 +704,10 @@ function samplerVoice(
     g.cancelScheduledValues(at);
     g.setValueAtTime(s.level, at);
     g.setTargetAtTime(0, at, releaseTc);
-    const late = at + release * 0.9;
-    g.setValueAtTime(s.level * Math.exp((-release * 0.9) / releaseTc), late);
-    g.linearRampToValueAtTime(0, at + release);
-    const stop = at + release + 0.01;
+    const late = at + tail * 0.9;
+    g.setValueAtTime(s.level * Math.exp((-tail * 0.9) / releaseTc), late);
+    g.linearRampToValueAtTime(0, at + tail);
+    const stop = at + tail + 0.01;
     if (stop < s.until) {
       s.src.stop(stop);
       s.until = stop;
@@ -680,7 +743,7 @@ function samplerVoice(
         s.last = Math.max(s.last, time);
         s.rate = s.base * next;
         // A held key rings until its recording runs out at the new speed
-        if (s.until === Infinity) s.src.stop(time + Math.max(0, (s.src.buffer?.duration ?? 0) - s.played) / s.rate);
+        if (s.until === Infinity && s.src.buffer) s.src.stop(time + Math.max(0, audibleEnd(s.src.buffer) - s.played) / s.rate);
       }
       bendRatio = next;
     },

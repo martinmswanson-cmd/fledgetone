@@ -217,6 +217,15 @@ Web Audio keeps processing every connected node, even silent ones, and Tone's `S
   brightness. The parametric EQ builds only the bands in use, a send joins the track only while
   it's turned up, and the meter and spectrum analysers join only while something on screen reads
   them (`trackStrip.ts`).
+- A recorded note stops where its recording falls silent, a long release stops once it's below
+  -70 dB, and at most three notes of one pitch (64 in all) ring per instrument: a further one fades
+  the oldest in about 50 ms (`samplerManager.ts`), so fast repeats of a ringing note don't pile up.
+- Auto-freeze (`store/autoFreeze.ts`): in a song with 6 or more instrument tracks, tracks left
+  unchanged for a few seconds are rendered in the background while the song is stopped, kept in
+  memory only (`provideMemorySound` in `soundLibrary.ts`, budgeted by the device's memory), and
+  handed to the engine through the same live view as a manual freeze (`liveView` in `freeze.ts`).
+  A changed fingerprint puts the track back live at once. On the 5-starter test song it cut the
+  audio thread's load from about 73% to 33%.
 - The scheduler keeps one Transport event per tick, not per note, and updates incrementally.
 - React components subscribe to the smallest slice of state they need; things that move every
   frame (the playhead, meters) are drawn by small components of their own, on one shared frame

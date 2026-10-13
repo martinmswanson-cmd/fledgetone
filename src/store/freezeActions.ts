@@ -25,7 +25,7 @@ const STORED_PEAK = 0.98;
  * render already went through: the strip's pan takes each side 3 dB down at the centre (equal
  * power, see trackStrip.ts) and the bus has its headroom gain. The frozen sound gets both back.
  */
-const PLAYBACK_DB = 20 * Math.log10(Math.SQRT2) - 20 * Math.log10(BUS_GAIN);
+export const PLAYBACK_DB = 20 * Math.log10(Math.SQRT2) - 20 * Math.log10(BUS_GAIN);
 /** Below this the freeze's tail is silence and is trimmed off. */
 const SILENCE = 10 ** (-90 / 20);
 
@@ -43,70 +43,95 @@ interface RenderedTrack {
   fingerprint: string;
 }
 
+/** A track's sound as rendered: its samples (silent tail trimmed), where it starts, and what it was rendered from. */
+export interface TrackRender {
+  channels: Float32Array[];
+  sampleRate: number;
+  startBar: number;
+  /** Peak sample */
+  peak: number;
+  fingerprint: string;
+}
+
 /**
- * Render a track's instrument, inserts and EQ (not its volume, pan or sends) to a sound in the
- * library, from its first clip to the end of its tail. Playback stops first: a render swaps the
- * global audio context while it sets up. Null when the track went away while it rendered.
+ * Render a track's instrument, inserts and EQ (not its volume, pan or sends) from its first clip
+ * to the end of its tail, as the song is now (an edit made while it renders leaves the result
+ * out of date: see freeze.ts). Doesn't stop playback: live playback waits out the moment a render
+ * holds the global audio context. Null when the track has no clips, plays recordings already, or
+ * is silent.
+ */
+export async function renderTrackChannels(trackId: string, onProgress?: (fraction: number) => void): Promise<TrackRender | null> {
+  const store = useTimelineStore.getState();
+  const track = store.tracks.find((t) => t.id === trackId);
+  if (!track || isAudioKind(track.instrumentKey)) return null;
+  const own = store.clips.filter((c) => c.trackId === trackId);
+  if (!own.length) return null;
+  const snapshot = { tracks: store.tracks, clips: store.clips, bpm: store.bpm, swing: store.swing, tempoPoints: store.tempoPoints };
+  const fingerprint = freezeFingerprint(track, snapshot);
+  const startBar = Math.min(...own.map((c) => c.startBar));
+  const endBar = Math.max(...own.map((c) => c.startBar + c.lengthBars));
+  const rate = liveMix.bus.context.sampleRate;
+  const sampleRate: SampleRate = (SAMPLE_RATES as readonly number[]).includes(rate) ? (rate as SampleRate) : 48000;
+  const subject = trackForFreezing(track);
+  // Every track goes in, as it is: a Pump follows the kicks of the drum tracks that sound
+  const tracks = snapshot.tracks.map((t) => (t.id === trackId ? { ...subject, isMuted: t.isMuted, isSoloed: t.isSoloed } : t));
+  const { channels } = await renderForFreeze(
+    {
+      tracks,
+      clips: snapshot.clips,
+      bpm: snapshot.bpm,
+      tempoPoints: snapshot.tempoPoints,
+      swing: snapshot.swing,
+      startBar,
+      endBar,
+      masterFx: { reverbDecay: store.masterReverbDecay, delayTime: store.masterDelayTime, delayFeedback: store.masterDelayFeedback },
+      ending: 'ringOut',
+      sampleRate,
+    },
+    subject,
+    onProgress
+  );
+  // Trim the silent tail
+  let end = 0;
+  let peak = 0;
+  for (const ch of channels) {
+    for (let i = ch.length - 1; i > end; i--) if (Math.abs(ch[i]) > SILENCE) { end = i; break; }
+    for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]));
+  }
+  if (peak <= SILENCE) return null;
+  const length = Math.min(channels[0].length, end + Math.round(0.05 * sampleRate));
+  return { channels: channels.map((ch) => ch.subarray(0, length)), sampleRate, startBar, peak, fingerprint };
+}
+
+/**
+ * Render a track to a sound in the library, as renderTrackChannels does. Playback stops first (a
+ * freeze the person asked for shows its progress, and the timeline waits). Null when the track went
+ * away while it rendered.
  */
 async function renderTrackSound(trackId: string, label: string): Promise<RenderedTrack | null> {
   const store = useTimelineStore.getState();
   const track = store.tracks.find((t) => t.id === trackId);
   if (!track) return null;
   if (isAudioKind(track.instrumentKey)) throw new Error('an Audio track already plays recordings');
-  const own = store.clips.filter((c) => c.trackId === trackId);
-  if (!own.length) throw new Error(`"${track.name}" has no clips to render`);
+  if (!store.clips.some((c) => c.trackId === trackId)) throw new Error(`"${track.name}" has no clips to render`);
   if (useFreezing.getState()[trackId] !== undefined) return null;
   store.pause();
   useFreezing.setState({ [trackId]: 0 });
   try {
-    // Everything as it is now: an edit made while this renders leaves the freeze out of date
-    const snapshot = { tracks: store.tracks, clips: store.clips, bpm: store.bpm, swing: store.swing, tempoPoints: store.tempoPoints };
-    const fingerprint = freezeFingerprint(track, snapshot);
-    const startBar = Math.min(...own.map((c) => c.startBar));
-    const endBar = Math.max(...own.map((c) => c.startBar + c.lengthBars));
-    const rate = liveMix.bus.context.sampleRate;
-    const sampleRate: SampleRate = (SAMPLE_RATES as readonly number[]).includes(rate) ? (rate as SampleRate) : 48000;
-    const subject = trackForFreezing(track);
-    // Every track goes in, as it is: a Pump follows the kicks of the drum tracks that sound
-    const tracks = snapshot.tracks.map((t) => (t.id === trackId ? { ...subject, isMuted: t.isMuted, isSoloed: t.isSoloed } : t));
-    const { channels } = await renderForFreeze(
-      {
-        tracks,
-        clips: snapshot.clips,
-        bpm: snapshot.bpm,
-        tempoPoints: snapshot.tempoPoints,
-        swing: snapshot.swing,
-        startBar,
-        endBar,
-        masterFx: { reverbDecay: store.masterReverbDecay, delayTime: store.masterDelayTime, delayFeedback: store.masterDelayFeedback },
-        ending: 'ringOut',
-        sampleRate,
-      },
-      subject,
-      (f) => useFreezing.setState({ [trackId]: f })
-    );
-    // Trim the silent tail, then store it normalized
-    let end = 0;
-    let peak = 0;
-    for (const ch of channels) {
-      for (let i = ch.length - 1; i > end; i--) if (Math.abs(ch[i]) > SILENCE) { end = i; break; }
-      for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]));
-    }
-    if (peak <= SILENCE) throw new Error(`"${track.name}" is silent: nothing to render`);
-    const length = Math.min(channels[0].length, end + Math.round(0.05 * sampleRate));
-    // Normalized within ±20 dB, leaving room in the clip gain's ±24 dB for the playback correction
-    const normalizeDb = Math.max(-20, Math.min(20, 20 * Math.log10(peak / STORED_PEAK)));
+    const r = await renderTrackChannels(trackId, (f) => useFreezing.setState({ [trackId]: f }));
+    if (!r) throw new Error(`"${track.name}" is silent: nothing to render`);
+    // Stored normalized within ±20 dB, leaving room in the clip gain's ±24 dB for the playback correction
+    const normalizeDb = Math.max(-20, Math.min(20, 20 * Math.log10(r.peak / STORED_PEAK)));
     const scale = 10 ** (-normalizeDb / 20);
-    const gainDb = normalizeDb + PLAYBACK_DB;
-    const stored = channels.map((ch) => {
-      const out = ch.slice(0, length);
+    const stored = r.channels.map((ch) => {
+      const out = ch.slice();
       for (let i = 0; i < out.length; i++) out[i] *= scale;
       return out;
     });
-    const wav = encodeChannels(stored, sampleRate, 16, []);
+    const wav = encodeChannels(stored, r.sampleRate, 16, []);
     const meta = await importSoundFile(wav, `${track.name} (${label})`, MAX_FROZEN_BYTES);
     if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return null; // deleted while it rendered
-    return { soundId: meta.id, startBar, seconds: length / sampleRate, gainDb, fingerprint };
+    return { soundId: meta.id, startBar: r.startBar, seconds: r.channels[0].length / r.sampleRate, gainDb: normalizeDb + PLAYBACK_DB, fingerprint: r.fingerprint };
   } finally {
     useFreezing.setState((s) => {
       const next = { ...s };

@@ -242,6 +242,15 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   live). A fingerprint decides whether the freeze is current; otherwise the track plays live.
   The frozen gain adds back the centre pan law and the bus gain that playback applies a second
   time (`BUS_GAIN` in engine.ts). Cuts live audio work about 3.7x on a 36-track test song.
+- **Auto-freeze** (`src/store/autoFreeze.ts`): renders settled tracks of a big song (6+ instrument
+  tracks) while stopped, into memory-only sounds (`provideMemorySound`), within a memory budget;
+  `liveView` takes them through its `autoFrozen` hook when the fingerprint still matches. Renders
+  finished while playing wait in `pending` until stop. `renderTrackChannels` (freezeActions.ts) is
+  the shared render. Heavy test song: audio-thread load 73% → 33%, 38 tracks, 208 MB, about a
+  minute to settle.
+- **Sampler voice limits** (`samplerManager.ts`): notes stop at their recording's last audible
+  sample, releases end below -70 dB, at most 3 notes per pitch and 64 per instrument (oldest fades
+  over ~50 ms). Renders differ from before by about -60 dB.
 - **Stable playback** (`src/audio/playbackMode.ts`): a per-browser choice of a bigger audio
   buffer, applied at startup. Use `liveContext.ts` (`liveTransport`, `liveDestination`), never
   `Tone.Transport` / `Tone.Destination` / `Tone.context`: Tone creates those at import from its

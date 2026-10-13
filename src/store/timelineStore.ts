@@ -34,6 +34,7 @@
  * (liveTracks.ts), the clip schedule (scheduler.ts), the Transport's loop, tempo and swing, the
  * master inserts and returns, ducking and intensity.
  */
+import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
 import { create } from 'zustand';
@@ -3011,7 +3012,7 @@ export function connectTimelineToAudio(): () => void {
   };
   const loopOf = (state: TimelineState) => (launcherActive(useLauncher.getState().segments) && state.loopRegion.enabled ? { ...state.loopRegion, enabled: false } : state.loopRegion);
   // The engine plays frozen tracks as audio (see freeze.ts)
-  let view = liveView(launched(s), soundMissing);
+  let view = liveView(launched(s), soundMissing, undefined, autoFrozenFor);
   for (const t of s.tracks) if (t.frozen) ensureSound(t.frozen.soundId);
   // Clips' controller lanes play as their tracks' automation (see ccLanes.ts)
   const ccMemo = controllerMemo();
@@ -3020,7 +3021,7 @@ export function connectTimelineToAudio(): () => void {
   applyLiveIntensity(view.tracks, s.intensityCurves, s.intensity, 0);
   rescheduleClips(view.tracks, view.clips);
   const refresh = (state: TimelineState, retimed = false) => {
-    const next = liveView(launched(state), soundMissing, view);
+    const next = liveView(launched(state), soundMissing, view, autoFrozenFor);
     const nextPlaying = withControllerLanes(next.tracks, next.clips, ccMemo);
     if (nextPlaying !== playing) syncLiveTracks(nextPlaying);
     playing = nextPlaying;
@@ -3032,6 +3033,10 @@ export function connectTimelineToAudio(): () => void {
     view = next;
   };
   // A frozen sound found missing (or back again) changes what plays
+  // Auto-freeze swapping a render in or out changes what plays
+  const unwatchAutoFreeze = useAutoFreeze.subscribe((a, prevA) => {
+    if (a.frozen !== prevA.frozen) refresh(useTimelineStore.getState());
+  });
   const unwatchSounds = useSoundLibrary.subscribe((lib, prevLib) => {
     if (lib.status === prevLib.status) return;
     const state = useTimelineStore.getState();
@@ -3089,6 +3094,7 @@ export function connectTimelineToAudio(): () => void {
   return () => {
     unsubscribe();
     unwatchSounds();
+    unwatchAutoFreeze();
     unwatchLauncher();
   };
 }

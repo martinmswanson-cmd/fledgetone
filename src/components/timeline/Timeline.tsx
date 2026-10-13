@@ -3,6 +3,7 @@
  * clip lanes, the playhead, marquee selection, zoom and scroll, keyboard shortcuts, and the
  * editors docked under it (piano roll, audio clip editor). The heart of the UI.
  */
+import { startAutoFreeze } from '../../store/autoFreeze';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VideoLane } from '../video/VideoLane';
 import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
@@ -226,6 +227,7 @@ export const Timeline: React.FC = () => {
 
   // Bind store <-> Tone.Transport for the lifetime of the timeline
   useEffect(() => connectTimelineToAudio(), []);
+  useEffect(() => startAutoFreeze(), []);
   // A track just added (or selected from elsewhere) is scrolled into view
   const trackCount = useTimelineStore((s) => s.tracks.length);
   const selectedTrack = useTimelineStore((s) => s.selectedTrackId);
