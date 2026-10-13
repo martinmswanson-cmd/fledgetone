@@ -7,7 +7,9 @@
 //   music.setState('Combat');            // switches by the transition rules in the manifest
 //   music.setIntensity(0.8);             // crossfades the stem groups along their curves
 //   music.stinger('Victory');            // plays over the music on the next beat
-//   music.setVolume(0.8);
+//   music.playSfx('sword_hit');          // a sound effect (a different variation each time)
+//   const rain = music.playSfx('rain');  // a looping one plays until stopped: rain.stop()
+//   music.setVolume(0.8); music.setSfxVolume(0.6);
 //   music.stop();
 //
 // Every state is a seamless loop exactly a whole number of bars long (and, when the song has stem
@@ -19,6 +21,11 @@ export class AdaptiveMusic {
     this.ctx = context;
     this.out = this.ctx.createGain();
     this.out.connect(destination ?? this.ctx.destination);
+    // Sound effects have their own level, apart from the music's
+    this.sfxOut = this.ctx.createGain();
+    this.sfxOut.connect(destination ?? this.ctx.destination);
+    this.lastSfx = new Map(); // name -> the variation played last, so the next differs
+    this.sfxPlaying = new Map(); // name -> Set of handles still sounding
     this.buffers = new Map();
     this.data = null;
     this.current = null; // { name, startTime, bus, voices: [{ source, gain, group }] }
@@ -58,6 +65,7 @@ export class AdaptiveMusic {
     for (const t of data.transitions ?? []) if (t.file) files.push(t.file);
     for (const s of data.states) if (s.transition?.file) files.push(s.transition.file); // version 1 manifests
     for (const s of data.stingers) files.push(s.file);
+    for (const s of data.sfx ?? []) files.push(...s.files);
     return [...new Set(files)];
   }
 
@@ -210,6 +218,61 @@ export class AdaptiveMusic {
     const s = this.data.stingers.find((x) => x.name === name);
     if (!s) throw new Error(`No stinger called "${name}"`);
     this.playOnce(s.file, this.nextLine(unit ?? s.quantize ?? 'beat'));
+  }
+
+  /** The names of the kit's sound effects. */
+  get sfxNames() {
+    return (this.data?.sfx ?? []).map((s) => s.name);
+  }
+
+  /**
+   * Play a sound effect now: one of its variations, never the same one twice in a row.
+   * `volume` 0 to 1, `pitch` in semitones (a little random pitch is up to you: pitch: Math.random() - 0.5).
+   * A looping sound plays until its handle's stop(); stopSfx(name) stops every one of a name.
+   */
+  playSfx(name, { volume = 1, pitch = 0, when = 0 } = {}) {
+    const s = (this.data?.sfx ?? []).find((x) => x.name === name);
+    if (!s) throw new Error(`No sound effect called "${name}"`);
+    if (this.ctx.state === 'suspended' && !('startRendering' in this.ctx)) this.ctx.resume();
+    let i = Math.floor(Math.random() * s.files.length);
+    if (s.files.length > 1 && i === this.lastSfx.get(name)) i = (i + 1) % s.files.length;
+    this.lastSfx.set(name, i);
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.buffers.get(s.files[i]);
+    source.loop = !!s.loop;
+    source.playbackRate.value = Math.pow(2, pitch / 12);
+    const gain = this.ctx.createGain();
+    gain.gain.value = volume;
+    source.connect(gain).connect(this.sfxOut);
+    source.start(Math.max(this.ctx.currentTime, when));
+    const live = this.sfxPlaying.get(name) ?? new Set();
+    this.sfxPlaying.set(name, live);
+    const handle = {
+      source,
+      gain,
+      stop: (fade = 0.05) => {
+        const t = this.ctx.currentTime;
+        gain.gain.setTargetAtTime(0, t, Math.max(0.005, fade / 3));
+        try {
+          source.stop(t + fade + 0.05);
+        } catch {
+          // already stopped
+        }
+        live.delete(handle);
+      },
+    };
+    live.add(handle);
+    source.onended = () => live.delete(handle);
+    return handle;
+  }
+
+  /** Stop every playing sound effect called `name` (or all of them). */
+  stopSfx(name, fade = 0.05) {
+    for (const [n, live] of this.sfxPlaying) if (name === undefined || n === name) for (const h of [...live]) h.stop(fade);
+  }
+
+  setSfxVolume(volume, seconds = 0.1) {
+    this.sfxOut.gain.setTargetAtTime(volume, this.ctx.currentTime, seconds / 3);
   }
 
   setVolume(volume, seconds = 0.1) {

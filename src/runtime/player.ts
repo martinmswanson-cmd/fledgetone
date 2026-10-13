@@ -51,6 +51,7 @@ function songOf(p: ProjectSnapshot): GameKitSong {
     transitions: p.transitions ?? {},
     intensity: p.intensity?.value ?? 1,
     intensityCurves: p.intensity?.curves ?? {},
+    sfx: p.sfx ?? [],
   };
 }
 

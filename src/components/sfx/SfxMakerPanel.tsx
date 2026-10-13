@@ -7,7 +7,7 @@
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
 import * as Tone from 'tone';
-import { Copy, Dices, Download, Layers, Play, Plus, RefreshCw, Shuffle, Square, Star, Trash2, Upload, X } from 'lucide-react';
+import { Copy, Dices, Download, Gamepad2, Layers, Play, Plus, RefreshCw, Shuffle, Square, Star, Trash2, Upload, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { isAudioKind } from '../../audio/instrumentCatalog';
 import { initAudio } from '../../audio/engine';
@@ -43,9 +43,11 @@ interface Made {
   name: string;
   sound: SfxSound;
   kind?: SfxCategory;
+  /** Opened from the song's game sounds: Update in game puts the changes back */
+  gameId?: string;
 }
 
-type Mode = 'sound' | 'set' | 'mine';
+type Mode = 'sound' | 'set' | 'mine' | 'game';
 type Format = 'wav' | 'ogg';
 
 interface ExportSettings {
@@ -520,6 +522,7 @@ const TuneToKey: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
 
 const SoundMaker: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
   const { current, recent, tune, group, layer, exp, library } = useSfx();
+  const inGame = useTimelineStore((t) => (current.gameId ? t.gameSfx.find((g) => g.id === current.gameId) : undefined));
   const s = current.sound;
   const heard = useMemo(() => tuned(s, keyOf, tune), [s, keyOf, tune]);
   const deferred = useDeferredValue(heard);
@@ -709,6 +712,33 @@ const SoundMaker: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
           <button type="button" onClick={keep} className={button} title="Keep it in My sounds (in this browser)">
             <Star className="w-3.5 h-3.5" /> Keep
           </button>
+          {inGame ? (
+            <button
+              type="button"
+              onClick={() => {
+                useTimelineStore.getState().updateGameSfx(inGame.id, { sound: heard, variations: exp.variations, spread: exp.spread });
+                setNotice(`Updated ${inGame.name} in the game kit.`);
+              }}
+              className={button}
+              title="Put your changes back into the song's game sounds"
+            >
+              <Gamepad2 className="w-3.5 h-3.5" /> Update in game
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                const [name] = useTimelineStore.getState().addGameSfx([{ name: current.name.replace(/\s+\d+$/, '') || current.name, sound: heard, variations: exp.variations, spread: exp.spread }]);
+                const id = useTimelineStore.getState().gameSfx.find((g) => g.name === name)?.id;
+                st((x) => ({ current: { ...x.current, gameId: id } }));
+                setNotice(`Added to the game kit as ${name}${exp.variations > 1 ? ` (${exp.variations} variations)` : ''}: the game plays it with playSfx("${name}").`);
+              }}
+              className={button}
+              title="Add it to this song's game sounds: the game kit export carries it, with its variations, and its players can play it"
+            >
+              <Gamepad2 className="w-3.5 h-3.5" /> Add to game
+            </button>
+          )}
           <button type="button" onClick={() => void save()} className={button}>
             <Download className="w-3.5 h-3.5" /> {exp.variations > 1 ? `Save ${exp.variations} (.zip)` : `Save ${exp.format.toUpperCase()}`}
           </button>
@@ -838,6 +868,17 @@ const SetMaker: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
               >
                 <Star className="w-3.5 h-3.5" /> Keep all
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const names = useTimelineStore.getState().addGameSfx(set.map((m) => ({ name: `${def.folder}_${m.name}`, sound: tuned(m.sound, keyOf, tune), variations: exp.variations, spread: exp.spread })));
+                  setNotice(`Added ${names.length} sounds to the game kit (${names[0]}, ${names[1] ?? ''}…).`);
+                }}
+                className={button}
+                title="Add the whole set to this song's game sounds, for the game kit export"
+              >
+                <Gamepad2 className="w-3.5 h-3.5" /> Add all to game
+              </button>
               <button type="button" disabled={busy} onClick={() => void downloadSet()} className={primary}>
                 <Download className="w-3.5 h-3.5" /> {busy ? 'Making…' : `Download set (${files} files, .zip)`}
               </button>
@@ -923,9 +964,68 @@ const MySounds: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
   );
 };
 
+// ---- The song's game sounds ----
+
+const GameSounds: React.FC = () => {
+  const list = useTimelineStore((t) => t.gameSfx);
+  const t = useTimelineStore.getState();
+  return (
+    <div className="flex flex-col gap-3">
+      <p>
+        Sounds that go into this song's <b>game kit</b> (File › Export, Game kit) next to the music: each saved with its variations, named for the game, and played with <code className="text-forge-text">playSfx("name")</code> in the web, Godot and Unity players (a different variation each time). They're saved with the song.
+      </p>
+      {list.length === 0 ? (
+        <p className="p-3 rounded-md border border-dashed border-forge-border">None yet: press <b>Add to game</b> on a sound, or <b>Add all to game</b> on a set.</p>
+      ) : (
+        <ul className="flex flex-col gap-1.5" aria-label="Game sounds">
+          {list.map((g) => (
+            <li key={g.id} className="flex flex-wrap items-center gap-2 rounded-md border border-forge-border bg-forge-bg/60 px-2 py-1">
+              <button type="button" onClick={() => hear(g.sound)} className="h-6 w-6 flex items-center justify-center rounded-full border border-cyan-400/50 text-cyan-100" aria-label={`Play ${g.name}`}>
+                <Play className="w-3 h-3" />
+              </button>
+              <input
+                key={g.name}
+                defaultValue={g.name}
+                onBlur={(e) => e.target.value !== g.name && t.updateGameSfx(g.id, { name: e.target.value })}
+                aria-label={`Name of ${g.name}`}
+                className="h-6 w-56 bg-forge-bg border border-forge-border rounded px-1.5 font-mono text-forge-text focus:outline-none focus:border-cyan-500"
+              />
+              {g.sound.loop && <span className="text-[9px] font-mono">loop</span>}
+              <label className="flex items-center gap-1 text-[10px] font-mono" title="How many versions the kit makes: the game plays a different one each time">
+                Variations
+                <select value={g.variations} onChange={(e) => t.updateGameSfx(g.id, { variations: Number(e.target.value) })} className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-forge-text">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {g.variations > 1 && (
+                <button type="button" onClick={() => void hearVariations(g.sound, g.variations, g.spread)} className="px-1.5 text-[10px] rounded border border-forge-border hover:text-forge-text">
+                  Hear variations
+                </button>
+              )}
+              <span className="ml-auto flex items-center gap-1">
+                <button type="button" onClick={() => st({ current: { name: g.name, sound: g.sound, gameId: g.id }, layer: 0, mode: 'sound' })} className="px-1.5 text-[10px] rounded border border-forge-border hover:text-forge-text" title="Shape it in Make a sound, then Update in game">
+                  Edit
+                </button>
+                <button type="button" onClick={() => t.deleteGameSfx(g.id)} className="p-1 hover:text-rose-300" aria-label={`Remove ${g.name}`} title="Take it out of the game kit">
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
 export const SfxMakerPanel: React.FC = () => {
   const mode = useSfx((s) => s.mode);
   const count = useSfx((s) => s.library.length);
+  const inGame = useTimelineStore((s) => s.gameSfx.length);
   const clips = useTimelineStore((s) => s.clips);
   const tracks = useTimelineStore((s) => s.tracks);
   const keyOf = useMemo(() => detectKey(clips, tracks), [clips, tracks]);
@@ -949,10 +1049,12 @@ export const SfxMakerPanel: React.FC = () => {
           {tab('sound', 'Make a sound')}
           {tab('set', 'Make a set')}
           {tab('mine', `My sounds${count ? ` (${count})` : ''}`)}
+          {tab('game', `In this game${inGame ? ` (${inGame})` : ''}`)}
         </div>
         {mode === 'sound' && <SoundMaker keyOf={keyOf} />}
         {mode === 'set' && <SetMaker keyOf={keyOf} />}
         {mode === 'mine' && <MySounds keyOf={keyOf} />}
+        {mode === 'game' && <GameSounds />}
       </div>
     </div>
   );

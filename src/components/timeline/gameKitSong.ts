@@ -20,6 +20,7 @@ export function gameKitSong(): GameKitSong {
     transitions: s.transitions,
     intensity: s.intensity,
     intensityCurves: s.intensityCurves,
+    sfx: s.gameSfx,
   };
 }
 

@@ -888,7 +888,7 @@ The **Game** tab of the bottom panel is for rehearsing adaptive music, the kind 
 
 ### Sound effects maker
 
-The **Sound FX** tab of the bottom panel (or **Tools › Sound effects maker**, or search *sound effects*) makes the sounds games are full of: menus, hits, pickups, magic, footsteps, jingles and ambience loops. It has three parts: **Make a sound**, **Make a set** and **My sounds**.
+The **Sound FX** tab of the bottom panel (or **Tools › Sound effects maker**, or search *sound effects*) makes the sounds games are full of: menus, hits, pickups, magic, footsteps, jingles and ambience loops. It has four parts: **Make a sound**, **Make a set**, **My sounds** and **In this game**.
 
 **Make a sound.** Pick a group (**Retro**, **UI**, **Combat**, **Movement**, **Rewards**, **Magic & Sci-fi**, **Jingles**, **Loops**), then a kind of sound: **Click**, **Confirm**, **Error**, **Sword swing**, **Heavy impact**, **Footstep**, **Gem**, **Level up**, **Teleport**, **Victory**, **Rain** and about sixty more. Each click makes a new one of that kind and plays it. **Mutate** makes one like it but a little different; **Surprise me** any kind.
 
@@ -898,9 +898,11 @@ The **Sound FX** tab of the bottom panel (or **Tools › Sound effects maker**, 
 - **Loops** (the **Loops** group, or tick **Loop** on any sound) render exactly the loop's length and join up seamlessly: engines, wind, rain, fire, a stream, alarms, force fields. Saved as WAV they carry loop points, so Godot, samplers and most engines loop them on their own.
 - **Tune to key** (on when the song has notes) puts pitches, jumps and the notes of jingles in the key the song is in, so a coin or a level-up sits in the music. The key and the first layer's note show next to it.
 - **Variations.** A sound a game plays over and over (a footstep, a hit) sounds mechanical if it's the very same every time. Set **Variations** (up to 8) and **Spread** (how far their pitch moves) and **Hear variations**; saving then makes them all, numbered (*footstep_01.wav*, *footstep_02.wav*...), in a zip.
-- **Save** as **WAV** or **OGG** (small; Godot and Unity import it), at 44.1 or 48 kHz. File names are ready for a game: lower case with underscores (*open_menu.wav*). **Add to song** puts the sound at the playhead on the selected Audio track (or a new one). **Keep** puts it in My sounds. **Recent** brings back the last twelve you made.
+- **Save** as **WAV** or **OGG** (small; Godot and Unity import it), at 44.1 or 48 kHz. File names are ready for a game: lower case with underscores (*open_menu.wav*). **Add to song** puts the sound at the playhead on the selected Audio track (or a new one). **Keep** puts it in My sounds. **Add to game** puts it in the song's game sounds (below), with its variations: the game kit carries it. **Recent** brings back the last twelve you made.
 
 **Make a set.** Every sound a kind of game needs, in one go: **Menus & UI** (12 sounds), **Retro platformer**, **Action RPG**, **Sci-fi shooter**, **Casual & puzzle** and **Ambience loops**. The sounds of a set share a style (the same tone, register and space), so they sound like a family, and they're levelled to sit together. Play each one, **↻** for another of it in the set's style, **Edit** to shape it in Make a sound, **✕** to leave it out, **New style** to make the whole set again differently, and **Hear all**. **Download set** saves a zip with a folder of files named for the game (with variations, if you set them) and a *sounds.json* that opens the set again in My sounds (**Import**), to change it later.
+
+**In this game** lists the song's game sounds: what the **game kit** export carries next to the music, each named for the game (*sword_hit*) and played with `playSfx("sword_hit")` in its players. Play each one, rename it, set its **Variations**, **Edit** it (then **Update in game** puts your changes back) or remove it. **Add all to game** on a set adds the whole set. They're saved with the song.
 
 **My sounds** keeps the sounds you **Keep** in this browser: play, **Edit**, save or delete them. **Export all** saves them to a file, to back them up or share them; **Import** opens one (or a set's *sounds.json*).
 
@@ -921,14 +923,21 @@ A sound a game plays again and again (a footstep, a sword swing, a menu click) s
 
 ### The game kit: everything for the game in one file
 
-**Export game kit (.zip)** in the Game tab makes everything a game needs to play your music the way the panel does:
+**Export game kit (.zip)** in the Game tab makes everything a game needs to play your music, and your sound effects, the way the panel does. Choose what it's **For** first:
+
+- **Godot 4 project**: unzip it into your Godot project's folder (the one with `project.godot`). You get `bos_music/`, with the song's folder, the player, an **example scene** (`bos_music/<song>_example.tscn`: open it and press **F6**, then **1**, **2**... switch states, **Up** / **Down** intensity, **Space** a stinger, **A**, **B**... the sound effects) and a README with the steps to use it in your game: add `AdaptiveMusic.gd` as an autoload called **Music**, `Music.load_song("res://bos_music/<song>/")` once, then `Music.play(...)`, `Music.set_state(...)` and so on.
+- **Unity project**: unzip it into your Unity project's folder (the one with `Assets`). Everything lands in `Assets/BosBeatbox`: the player, the song under `Resources/BosMusic/<Song>`, an **example** component (make an empty GameObject, **Add Component › Adaptive Music Example**, press **Play**: buttons for every state, stinger and sound effect, and an intensity slider) and a README.
+- **Any engine**: one folder with everything and the players for the web, Godot and Unity side by side, as below.
+
+What's inside:
 
 - `states/`: every state (section between markers) as a **seamless loop**, a whole number of bars long, with loop points.
 - `stems/<state>/`: when tracks have stem groups, the same loop split by group (tracks without a group go in **Main**), every stem exactly the same length: played together at full level they make the mix.
 - `transitions/`: the fill, riser and impact sounds your rules use (a fill or a riser starts just before the switch; an impact on it), and `stingers/`: every stinger.
-- `audio_manifest.json`: the tempo, the time signature, the sample rate, the key, every state (its loop, its stems, its length in bars, seconds and samples), the transition rules by state name, every stinger (with how many bars it bridges), and each stem group's **intensity curve** ([intensity, level] points, both 0 to 1) as the recommended gain curve for the game's audio code.
-- `players/`: ready-made players that read the manifest and do all of it (switching by your rules on the beat, crossfades, stinger bridges, intensity): `web/adaptive-music.js` for a web game, `godot/AdaptiveMusic.gd` for Godot 4, and `unity/AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `setIntensity` / `set_intensity` / `SetIntensity`, `stinger` and `stop`.
-- `README.txt` says how to drop it into each engine, with your own state and stinger names in the examples.
+- `sfx/`: the song's sound effects (added with **Add to game** in the Sound FX tab), each with its variations (`sword_hit_01.wav`, `sword_hit_02.wav`...). Looping ones (an engine, the rain) carry loop points.
+- `audio_manifest.json`: the tempo, the time signature, the sample rate, the key, every state (its loop, its stems, its length in bars, seconds and samples), the transition rules by state name, every stinger (with how many bars it bridges), each stem group's **intensity curve** ([intensity, level] points, both 0 to 1) as the recommended gain curve for the game's audio code, and every sound effect with its files.
+- Ready-made players that read the manifest and do all of it (switching by your rules on the beat, crossfades, stinger bridges, intensity, sound effects): `adaptive-music.js` for a web game, `AdaptiveMusic.gd` for Godot 4, and `AdaptiveMusic.cs` for Unity (scheduled on Unity's audio clock, so changes land exactly on the beat). Each has `play`, `setState` / `set_state` / `SetState`, `setIntensity` / `set_intensity` / `SetIntensity`, `stinger`, `playSfx` / `play_sfx` / `PlaySfx` (a different variation each time, never the same one twice in a row; a looping sound plays until stopped), `stopSfx` / `stop_sfx` / `StopSfx`, and `stop`. Sound effects have their own volume (`setSfxVolume`, `sfxVolume`, or Godot's `sfx_bus`).
+- A README that says how to drop it in, with your own state, stinger and sound names in the examples.
 
 ### FMOD and Wwise
 

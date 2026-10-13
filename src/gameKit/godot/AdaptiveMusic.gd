@@ -2,8 +2,11 @@
 #
 # 1. Copy this folder (audio_manifest.json, states/, stems/, stingers/, transitions/) into your
 #    project, e.g. res://music/.
-# 2. Add this script to a Node (or make it an autoload called Music) and set music_dir.
+# 2. Add this script to a Node and set music_dir in the Inspector, or make it an autoload called
+#    Music and call Music.load_song("res://music/") once at the start.
 # 3. Music.play("Explore"); Music.set_state("Combat"); Music.set_intensity(0.8); Music.stinger("Victory")
+# 4. Sound effects: Music.play_sfx("sword_hit") plays a different variation each time;
+#    var rain = Music.play_sfx("rain") loops until rain.stop() (or Music.stop_sfx("rain")).
 #
 # Every state is a seamless loop exactly a whole number of bars long (and, when the song has stem
 # groups, a set of stems of that length), so switching on a bar line keeps the beat. Switches are
@@ -12,6 +15,8 @@ extends Node
 
 @export var music_dir := "res://music/"
 @export var bus := "Master"
+## The bus sound effects play on (make an "SFX" bus to give them their own volume)
+@export var sfx_bus := "Master"
 
 var data := {}
 var streams := {}
@@ -22,6 +27,17 @@ var _voices: Array = []
 var _pending := ""
 
 func _ready() -> void:
+	# Load the folder set in the Inspector, if it holds a song (an autoload calls load_song instead)
+	if FileAccess.file_exists(music_dir.path_join("audio_manifest.json")) or FileAccess.file_exists(music_dir.path_join("music.json")):
+		load_song(music_dir)
+
+## Load the song in `dir` (a folder with audio_manifest.json in it). Stops what's playing.
+func load_song(dir: String) -> void:
+	if not data.is_empty():
+		stop()
+		stop_sfx()
+	music_dir = dir
+	streams = {}
 	var path := music_dir.path_join("audio_manifest.json")
 	if not FileAccess.file_exists(path):
 		path = music_dir.path_join("music.json")
@@ -36,6 +52,14 @@ func _ready() -> void:
 			streams[t.file] = load(music_dir.path_join(t.file))
 	for s in data.stingers:
 		streams[s.file] = load(music_dir.path_join(s.file))
+	for s in data.get("sfx", []):
+		for f in s.files:
+			var st: AudioStreamWAV = load(music_dir.path_join(f))
+			if s.get("loop", false):
+				st.loop_mode = AudioStreamWAV.LOOP_FORWARD
+				st.loop_begin = 0
+				st.loop_end = int(st.get_length() * st.mix_rate)
+			streams[f] = st
 
 func _load_loop(file: String) -> void:
 	var stream: AudioStreamWAV = load(music_dir.path_join(file))
@@ -211,6 +235,46 @@ func _play_once_after(stream: AudioStream, seconds: float) -> void:
 	add_child(p)
 	p.finished.connect(p.queue_free)
 	p.play()
+
+var _last_sfx := {}
+
+## The names of the kit's sound effects.
+func sfx_names() -> Array:
+	var out := []
+	for s in data.get("sfx", []):
+		out.append(s.name)
+	return out
+
+## Play a sound effect now: one of its variations, never the same one twice in a row. Returns its
+## player: a looping sound plays until you call stop() on it (or stop_sfx). `pitch_semitones` moves it.
+func play_sfx(name: String, volume_db := 0.0, pitch_semitones := 0.0) -> AudioStreamPlayer:
+	for s in data.get("sfx", []):
+		if s.name == name:
+			var n: int = s.files.size()
+			var i := randi() % n
+			if n > 1 and i == int(_last_sfx.get(name, -1)):
+				i = (i + 1) % n
+			_last_sfx[name] = i
+			var p := AudioStreamPlayer.new()
+			p.bus = sfx_bus
+			p.stream = streams[s.files[i]]
+			p.volume_db = volume_db
+			p.pitch_scale = pow(2.0, pitch_semitones / 12.0)
+			p.set_meta("sfx", name)
+			add_child(p)
+			if not s.get("loop", false):
+				p.finished.connect(p.queue_free)
+			p.play()
+			return p
+	push_error("No sound effect called %s" % name)
+	return null
+
+## Stop every playing sound effect called `name` (or all of them, with "").
+func stop_sfx(name := "") -> void:
+	for c in get_children():
+		if c is AudioStreamPlayer and c.has_meta("sfx") and (name == "" or c.get_meta("sfx") == name):
+			c.stop()
+			c.queue_free()
 
 func stop() -> void:
 	_pending = ""

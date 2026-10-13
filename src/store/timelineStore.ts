@@ -67,6 +67,8 @@ import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
+import { createGameSfx, type GameSfx } from './gameSfx';
+import type { SfxSound } from '../audio/sfx/sfxSynth';
 import { projectVideo, useVideoStore } from './videoStore';
 import { foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
 import { ANY_STATE, transitionKey } from './transitions';
@@ -567,6 +569,12 @@ interface TimelineState {
 
   /** Game stingers (see stingers.ts): saved with the project, not undo steps */
   stingers: Stinger[];
+  /** Game sound effects for the game kit (see gameSfx.ts): saved with the project, not undo steps */
+  gameSfx: GameSfx[];
+  /** Add sounds from the sound effects maker; returns their names in the game */
+  addGameSfx: (sounds: ReadonlyArray<{ name: string; sound: SfxSound; variations?: number; spread?: number }>) => string[];
+  updateGameSfx: (id: string, patch: Partial<Omit<GameSfx, 'id'>>) => void;
+  deleteGameSfx: (id: string) => void;
   addStinger: (kind: StingerKind) => Stinger;
   updateStinger: (id: string, patch: Partial<Omit<Stinger, 'id'>>) => void;
   deleteStinger: (id: string) => void;
@@ -2267,6 +2275,29 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         else next[key] = rule;
         return { transitions: next };
       }),
+    gameSfx: [],
+    addGameSfx: (sounds) => {
+      const list = [...get().gameSfx];
+      const names: string[] = [];
+      for (const x of sounds) {
+        const made = createGameSfx(x.name, x.sound, list, x.variations, x.spread);
+        list.push(made);
+        names.push(made.name);
+      }
+      set({ gameSfx: list });
+      return names;
+    },
+    updateGameSfx: (id, patch) =>
+      set((s) => ({
+        gameSfx: s.gameSfx.map((x) => {
+          if (x.id !== id) return x;
+          const next = { ...x, ...patch };
+          // A new name is made game-safe and unique
+          if (patch.name !== undefined) next.name = createGameSfx(patch.name, x.sound, s.gameSfx.filter((y) => y.id !== id)).name;
+          return next;
+        }),
+      })),
+    deleteGameSfx: (id) => set((s) => ({ gameSfx: s.gameSfx.filter((x) => x.id !== id) })),
     stingers: [],
     addStinger: (kind) => {
       const s = get();
@@ -2640,6 +2671,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         dropFrame: p.dropFrame === true && p.fps === 29.97,
         markers: retimeMarkers(p.markers ?? [], songTempo({ bpm: p.bpm, tempoPoints: p.tempoPoints ?? [] })),
         stingers: p.stingers ?? [],
+        gameSfx: p.sfx ?? [],
         transitions: p.transitions ?? {},
         intensity: p.intensity?.value ?? 1,
         intensityCurves: p.intensity?.curves ?? {},
@@ -2868,6 +2900,7 @@ export function currentProject(): ProjectSnapshot {
     dropFrame: s.dropFrame,
     markers: s.markers,
     stingers: s.stingers,
+    sfx: s.gameSfx,
     transitions: s.transitions,
     intensity: { value: s.intensity, curves: s.intensityCurves },
     video: projectVideo(),
@@ -2962,6 +2995,7 @@ export function connectAutosave(): () => void {
       state.dropFrame === prev.dropFrame &&
       state.markers === prev.markers &&
       state.stingers === prev.stingers &&
+      state.gameSfx === prev.gameSfx &&
       state.transitions === prev.transitions &&
       state.intensity === prev.intensity &&
       state.intensityCurves === prev.intensityCurves

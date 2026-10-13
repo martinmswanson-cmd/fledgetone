@@ -255,6 +255,12 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   and reverb over the whole; ~70 kinds in `SFX_GROUPS`, `SFX_SETS` made with a shared style seed;
   levelled per kind (`LEVEL_DB`), trimmed, seamless loops (`smpl`), variations (`varySfx`), WAV/OGG,
   zips; My sounds in localStorage (`bosBeatbox.mySounds`). Pure maths, unit-tested in sfx.test.mjs.
+- **Game sounds in the game kit** (`src/store/gameSfx.ts`): `gameSfx` in the store / `sfx` in the
+  project (not undo steps, like stingers); the kit renders `sfx/<name>_NN.wav` and lists them in
+  `manifest.sfx`; every player has playSfx / stopSfx. Kit layouts `any` / `godot` / `unity`
+  (`buildGameKit(..., layout)`): Godot and Unity zips unzip into a project, with example scenes
+  (`src/gameKit/godot/`, `src/gameKit/unity/`). The Godot player was run headless in Godot 4.3;
+  the Unity scripts compile against stub UnityEngine types (no Unity here).
 - **Game starters** (`src/store/startersGame.ts`): states as markers, stem groups, transitions and
   stingers set up (`gameReady`). Starters fold into groups in the New dialog with a filter;
   `reveal()` opens a folded `<details>` it finds.

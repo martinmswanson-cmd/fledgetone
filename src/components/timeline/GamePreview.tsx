@@ -17,7 +17,7 @@ import { AuditionButton, TransitionMatrix } from './GameMatrix';
 import { gameKitSong } from './gameKitSong';
 import * as Tone from 'tone';
 import { createZip } from '../../audio/zip';
-import { buildGameKit } from '../../audio/gameKit';
+import { buildGameKit, KIT_LAYOUTS, type KitLayout } from '../../audio/gameKit';
 import { buildRuntimeKit } from '../../audio/runtimeKit';
 import { downloadBlob, encodeChannels, renderLoopTakes } from '../../audio/exportWav';
 import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/loopVariations';
@@ -99,14 +99,25 @@ const LoopVariations: React.FC = () => {
 };
 
 /** Everything the game needs, in one .zip: see gameKit.ts. */
+const KIT_LAYOUT_LABELS: Record<KitLayout, string> = { any: 'Any engine (web, Godot and Unity players)', godot: 'Godot 4 project (unzip into it)', unity: 'Unity project (unzip into it)' };
+
 const GameKitButton: React.FC = () => {
   const [progress, setProgress] = useState<string | null>(null);
+  const [layout, setLayout] = useState<KitLayout>(() => {
+    try {
+      const v = localStorage.getItem('bosBeatbox.kitLayout');
+      return (KIT_LAYOUTS as readonly string[]).includes(v ?? '') ? (v as KitLayout) : 'any';
+    } catch {
+      return 'any';
+    }
+  });
+  const sfxCount = useTimelineStore((s) => s.gameSfx.length);
   const run = async () => {
     const s = useTimelineStore.getState();
     setProgress('0%');
     try {
-      const blob = await buildGameKit(gameKitSong(), (f) => setProgress(`${Math.round(f * 100)}%`));
-      downloadBlob(blob, `${s.projectName || 'Untitled'} game kit.zip`);
+      const blob = await buildGameKit(gameKitSong(), (f) => setProgress(`${Math.round(f * 100)}%`), 44100, layout);
+      downloadBlob(blob, `${s.projectName || 'Untitled'} game kit${layout === 'any' ? '' : ` for ${layout === 'godot' ? 'Godot' : 'Unity'}`}.zip`);
     } catch (err) {
       showToast(`Couldn't build the game kit: ${err instanceof Error ? err.message : String(err)}.`);
     } finally {
@@ -115,6 +126,29 @@ const GameKitButton: React.FC = () => {
   };
   return (
     <div className="flex flex-col gap-1.5 border-t border-forge-border pt-2">
+      <label className="flex items-center gap-2 text-[11px] text-forge-muted" title="Godot and Unity kits unzip straight into your project, with the player and an example scene you can run">
+        For
+        <select
+          value={layout}
+          onChange={(e) => {
+            const v = e.target.value as KitLayout;
+            setLayout(v);
+            try {
+              localStorage.setItem('bosBeatbox.kitLayout', v);
+            } catch {
+              // remembered for this visit only
+            }
+          }}
+          aria-label="Game kit for"
+          className="flex-1 h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
+        >
+          {KIT_LAYOUTS.map((l) => (
+            <option key={l} value={l}>
+              {KIT_LAYOUT_LABELS[l]}
+            </option>
+          ))}
+        </select>
+      </label>
       <button
         type="button"
         disabled={progress !== null}
@@ -134,7 +168,9 @@ const GameKitButton: React.FC = () => {
       >
         <Package className="w-4 h-4" /> FMOD / Wwise package…
       </button>
-      <p className="text-[10px] text-forge-muted">Every state as a loop and stems by group, the stingers and transitions, an audio_manifest.json, and ready-made players for the web, Godot and Unity.</p>
+      <p className="text-[10px] text-forge-muted">
+        Every state as a loop and stems by group, the stingers and transitions{sfxCount ? `, ${sfxCount} sound effect${sfxCount === 1 ? '' : 's'} with their variations` : ''}, an audio_manifest.json, and ready-made players with an example scene. Add sound effects from the Sound FX tab (Add to game).
+      </p>
     </div>
   );
 };

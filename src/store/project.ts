@@ -12,6 +12,7 @@ import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
 import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
+import { parseGameSfx, type GameSfx } from './gameSfx';
 import { parseTransitions } from './transitions';
 import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
@@ -60,6 +61,8 @@ export interface ProjectData {
   master?: MasterSettings;
   /** Game stingers (optional; older files have none). */
   stingers?: Stinger[];
+  /** Game sound effects for the game kit (optional; older files have none). */
+  sfx?: GameSfx[];
   /** Transitions into game states, by section marker id (optional; absent means straight cuts). */
   transitions?: Record<string, TransitionRule>;
   /** Intensity: the level now (0 to 1) and each stem group's curve (optional). */
@@ -95,6 +98,8 @@ export interface ProjectSnapshot {
   master?: MasterSettings;
   /** Game stingers (older projects don't have any). */
   stingers?: Stinger[];
+  /** Game sound effects (older projects don't have any). */
+  sfx?: GameSfx[];
   /** Transitions into game states, by section marker id. */
   transitions?: Record<string, TransitionRule>;
   /** Intensity: the level now and each stem group's curve. */
@@ -127,6 +132,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     ...(p.sounds?.length ? { sounds: p.sounds } : {}),
     master: normalizeMasterSettings(p.master),
     ...(p.stingers?.length ? { stingers: p.stingers } : {}),
+    ...(p.sfx?.length ? { sfx: p.sfx } : {}),
     ...(p.transitions && Object.keys(p.transitions).length ? { transitions: p.transitions } : {}),
     ...(p.intensity && (Object.keys(p.intensity.curves).length || p.intensity.value !== 1) ? { intensity: p.intensity } : {}),
     ...(p.video ? { video: p.video } : {}),
@@ -429,6 +435,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     ...(sounds.length ? { sounds } : {}),
     master: normalizeMasterSettings(raw.master),
     stingers: parseStingers(raw.stingers, isInstrumentKey),
+    sfx: parseGameSfx(raw.sfx),
     transitions: parseTransitions(raw.transitions),
     intensity: {
       value: isObj(raw.intensity) && isNum(raw.intensity.value) ? Math.max(0, Math.min(1, raw.intensity.value)) : 1,
