@@ -163,6 +163,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     if (!m || !mp) return;
     m.stop();
     m.stopSfx();
+    m.setEffect('none', 0.1);
     if (mp.calm) m.play(mp.calm);
     m.setIntensity(0.3, 0.1);
     lastIntensity.current = 0.3;
@@ -197,6 +198,8 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         },
         hurt: (hearts) => {
           sfx('hurtSfx');
+          // One heart left: the music goes dull and far away (the player's low-health effect)
+          if (hearts === 1) music.current?.setEffect('lowHealth', 0.6);
           say(hearts > 0 ? `Ouch: ${hearts} heart${hearts === 1 ? '' : 's'} left` : 'Out of hearts');
         },
         step: () => sfx('stepSfx', Math.random() * 0.6 - 0.3),

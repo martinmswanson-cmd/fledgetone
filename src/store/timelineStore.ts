@@ -68,6 +68,7 @@ import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
 import { createGameSfx, type GameSfx } from './gameSfx';
+import { costumeFromPreset, freeCostumeName, MAX_COSTUMES, MAX_COSTUME_TEMPO, MIN_COSTUME_TEMPO, type Costume, type CostumePreset, type CostumeTrack, type StateOptions } from './costumes';
 import type { SfxSound } from '../audio/sfx/sfxSynth';
 import { projectVideo, useVideoStore } from './videoStore';
 import { foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
@@ -575,6 +576,17 @@ interface TimelineState {
   addGameSfx: (sounds: ReadonlyArray<{ name: string; sound: SfxSound; variations?: number; spread?: number }>) => string[];
   updateGameSfx: (id: string, patch: Partial<Omit<GameSfx, 'id'>>) => void;
   deleteGameSfx: (id: string) => void;
+  /** Game costumes: the song played other ways (see costumes.ts); saved, not undo steps */
+  costumes: Costume[];
+  /** A costume from a preset, for the tracks now. Returns it (null when there are already MAX_COSTUMES). */
+  addCostume: (preset: CostumePreset) => Costume | null;
+  updateCostume: (id: string, patch: Partial<Pick<Costume, 'name' | 'tempo'>>) => void;
+  /** Set (or with null, clear) what one track does in a costume. */
+  setCostumeTrack: (id: string, trackId: string, swap: CostumeTrack | null) => void;
+  deleteCostume: (id: string) => void;
+  /** How each game state plays (shuffled pieces, silences), by section marker id; saved, not undo steps */
+  stateOptions: Record<string, StateOptions>;
+  setStateOptions: (markerId: string, opts: StateOptions | null) => void;
   addStinger: (kind: StingerKind) => Stinger;
   updateStinger: (id: string, patch: Partial<Omit<Stinger, 'id'>>) => void;
   deleteStinger: (id: string) => void;
@@ -2300,6 +2312,43 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         }),
       })),
     deleteGameSfx: (id) => set((s) => ({ gameSfx: s.gameSfx.filter((x) => x.id !== id) })),
+    costumes: [],
+    addCostume: (preset) => {
+      const s = get();
+      if (s.costumes.length >= MAX_COSTUMES) return null;
+      const c = costumeFromPreset(preset, s.tracks, s.costumes);
+      set({ costumes: [...s.costumes, c] });
+      return c;
+    },
+    updateCostume: (id, patch) =>
+      set((s) => ({
+        costumes: s.costumes.map((c) => {
+          if (c.id !== id) return c;
+          const next = { ...c };
+          if (patch.name !== undefined) next.name = freeCostumeName(patch.name, s.costumes.filter((x) => x.id !== id));
+          if (patch.tempo !== undefined && Number.isFinite(patch.tempo)) next.tempo = Math.max(MIN_COSTUME_TEMPO, Math.min(MAX_COSTUME_TEMPO, patch.tempo));
+          return next;
+        }),
+      })),
+    setCostumeTrack: (id, trackId, swap) =>
+      set((s) => ({
+        costumes: s.costumes.map((c) => {
+          if (c.id !== id) return c;
+          const tracks = { ...c.tracks };
+          if (swap && (swap.mute || swap.instrument)) tracks[trackId] = swap;
+          else delete tracks[trackId];
+          return { ...c, tracks };
+        }),
+      })),
+    deleteCostume: (id) => set((s) => ({ costumes: s.costumes.filter((c) => c.id !== id) })),
+    stateOptions: {},
+    setStateOptions: (markerId, opts) =>
+      set((s) => {
+        const next = { ...s.stateOptions };
+        if (!opts || (!opts.shuffleBars && !opts.gap)) delete next[markerId];
+        else next[markerId] = opts;
+        return { stateOptions: next };
+      }),
     stingers: [],
     addStinger: (kind) => {
       const s = get();
@@ -2674,6 +2723,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         markers: retimeMarkers(p.markers ?? [], songTempo({ bpm: p.bpm, tempoPoints: p.tempoPoints ?? [] })),
         stingers: p.stingers ?? [],
         gameSfx: p.sfx ?? [],
+        costumes: p.costumes ?? [],
+        stateOptions: p.stateOptions ?? {},
         transitions: p.transitions ?? {},
         intensity: p.intensity?.value ?? 1,
         intensityCurves: p.intensity?.curves ?? {},
@@ -2911,6 +2962,8 @@ export function currentProject(): ProjectSnapshot {
     markers: s.markers,
     stingers: s.stingers,
     sfx: s.gameSfx,
+    costumes: s.costumes,
+    stateOptions: s.stateOptions,
     transitions: s.transitions,
     intensity: { value: s.intensity, curves: s.intensityCurves },
     video: projectVideo(),
@@ -3006,6 +3059,8 @@ export function connectAutosave(): () => void {
       state.markers === prev.markers &&
       state.stingers === prev.stingers &&
       state.gameSfx === prev.gameSfx &&
+      state.costumes === prev.costumes &&
+      state.stateOptions === prev.stateOptions &&
       state.transitions === prev.transitions &&
       state.intensity === prev.intensity &&
       state.intensityCurves === prev.intensityCurves

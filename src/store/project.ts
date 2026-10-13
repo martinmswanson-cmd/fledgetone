@@ -13,6 +13,7 @@ import { parseAutomation } from '../audio/automation';
 import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
 import { parseGameSfx, type GameSfx } from './gameSfx';
+import { parseCostumes, parseStateOptions, type Costume, type StateOptions } from './costumes';
 import { parseTransitions } from './transitions';
 import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
@@ -63,6 +64,10 @@ export interface ProjectData {
   stingers?: Stinger[];
   /** Game sound effects for the game kit (optional; older files have none). */
   sfx?: GameSfx[];
+  /** Game costumes: the song played other ways (optional; older files have none). */
+  costumes?: Costume[];
+  /** How each game state plays (shuffled pieces, silences), by section marker id (optional). */
+  stateOptions?: Record<string, StateOptions>;
   /** Transitions into game states, by section marker id (optional; absent means straight cuts). */
   transitions?: Record<string, TransitionRule>;
   /** Intensity: the level now (0 to 1) and each stem group's curve (optional). */
@@ -100,6 +105,10 @@ export interface ProjectSnapshot {
   stingers?: Stinger[];
   /** Game sound effects (older projects don't have any). */
   sfx?: GameSfx[];
+  /** Game costumes (older projects don't have any). */
+  costumes?: Costume[];
+  /** How each game state plays, by section marker id. */
+  stateOptions?: Record<string, StateOptions>;
   /** Transitions into game states, by section marker id. */
   transitions?: Record<string, TransitionRule>;
   /** Intensity: the level now and each stem group's curve. */
@@ -133,6 +142,8 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     master: normalizeMasterSettings(p.master),
     ...(p.stingers?.length ? { stingers: p.stingers } : {}),
     ...(p.sfx?.length ? { sfx: p.sfx } : {}),
+    ...(p.costumes?.length ? { costumes: p.costumes } : {}),
+    ...(p.stateOptions && Object.keys(p.stateOptions).length ? { stateOptions: p.stateOptions } : {}),
     ...(p.transitions && Object.keys(p.transitions).length ? { transitions: p.transitions } : {}),
     ...(p.intensity && (Object.keys(p.intensity.curves).length || p.intensity.value !== 1) ? { intensity: p.intensity } : {}),
     ...(p.video ? { video: p.video } : {}),
@@ -415,6 +426,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const meter = parseMeterValue(raw.meter);
   const meterPoints = parseMeterPoints(raw.meterPoints);
   const sounds = parseEmbeddedSounds(raw.sounds);
+  const markers = parseMarkers(raw.markers, tempo);
   return {
     name: isStr(raw.name) && raw.name.trim() ? raw.name : 'Untitled',
     bpm,
@@ -433,7 +445,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     masterFx: parseMasterFx(raw.masterFx),
     fps,
     dropFrame: fps === 29.97 && raw.dropFrame === true,
-    markers: parseMarkers(raw.markers, tempo),
+    markers,
     ...(tempoPoints.length ? { tempoPoints } : {}),
     ...(meter ? { meter } : {}),
     ...(meterPoints.length ? { meterPoints } : {}),
@@ -441,6 +453,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     master: normalizeMasterSettings(raw.master),
     stingers: parseStingers(raw.stingers, isInstrumentKey),
     sfx: parseGameSfx(raw.sfx),
+    costumes: parseCostumes(raw.costumes, new Set(tracks.map((t) => t.id)), isInstrumentKey),
+    stateOptions: parseStateOptions(raw.stateOptions, new Set(markers.map((m) => m.id))),
     transitions: parseTransitions(raw.transitions),
     intensity: {
       value: isObj(raw.intensity) && isNum(raw.intensity.value) ? Math.max(0, Math.min(1, raw.intensity.value)) : 1,

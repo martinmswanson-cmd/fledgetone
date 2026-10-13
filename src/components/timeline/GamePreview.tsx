@@ -3,6 +3,7 @@
  * beat, transitions, stingers, intensity, loop variations), and export the game kit, the web
  * runtime kit and the FMOD / Wwise package.
  */
+import { CostumesPanel, StateOptionsPanel } from './GameCostumes';
 import { secondsBetween, tempoAt } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
@@ -480,12 +481,14 @@ export const GamePanel: React.FC = () => {
             <TransitionMatrix states={sections} />
           </div>
         )}
+        <StateOptionsPanel states={sections} />
       </section>
       <section className="flex flex-col gap-3 min-w-0" data-game="intensity">
         <IntensityPanel />
         <div data-game="variations">
           <LoopVariations />
         </div>
+        <CostumesPanel />
       </section>
       <section className="flex flex-col gap-3 min-w-0" data-game="stingers">
         <StingerList timing={quantize} />
