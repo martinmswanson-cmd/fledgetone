@@ -4,7 +4,9 @@ import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 import { detectKey, keyOf } from './songKey';
 import type { SongKey } from './songKey';
-import { bassFromChords, chordName, chordNotesFor, drummer, fillBar, harmonize, melodyOf } from './smartTools';
+import { bassFromChords, chordName, chordNotesFor, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf } from './smartTools';
+import { measureAt, meterAt } from '../audio/tempoMap';
+import type { Meter } from '../audio/tempoMap';
 import type { BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
 import { isDrumKind } from '../audio/instrumentCatalog';
 
@@ -69,9 +71,37 @@ export function makeChordClip(trackId: string, atBar: number, chords: number[][]
 }
 
 /** A drum part clip on a drum track. */
-export function makeDrumClip(trackId: string, atBar: number, style: DrumStyle, bars: number, intensity: number, fillEvery: number, seed: number): string | null {
-  const notes = drummer(style, bars, intensity, fillEvery, seed, newId);
-  return placeClip(trackId, atBar, bars, notes, `Drummer ${bars} bars`);
+/** The time signature a drum style is written in at a bar: its own (a waltz's 3/4), else the song's there. */
+export function drumMeterAt(style: DrumStyle, atBar: number): Meter {
+  const s = tl();
+  return DRUM_STYLES.find((d) => d.id === style)?.meter ?? meterAt(atBar, { base: s.meter, points: s.meterPoints });
+}
+
+/**
+ * A drum part clip on a drum track: `bars` measures of the style. With `setMeter`, a style in a
+ * time signature the song isn't in there (a waltz in a 4/4 song) also sets the song's time
+ * signature for the clip's span (and back after it), in the same undo step.
+ */
+export function makeDrumClip(trackId: string, atBar: number, style: DrumStyle, bars: number, intensity: number, fillEvery: number, seed: number, setMeter = false): string | null {
+  const s = tl();
+  const meter = drumMeterAt(style, atBar);
+  const notes = drummer(style, bars, intensity, fillEvery, seed, newId, meter);
+  const length = bars * (meter.num / meter.den);
+  const songMeter = meterAt(atBar, { base: s.meter, points: s.meterPoints });
+  const id = placeClip(trackId, atBar, length, notes, `Drummer ${bars} bars`);
+  if (!id) return null;
+  const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
+  if (groove) useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === id ? { ...c, groove } : c)) }));
+  if (setMeter && (songMeter.num !== meter.num || songMeter.den !== meter.den)) {
+    // (placeClip made the undo step: the time signature changes join it)
+    const past = tl().past;
+    const after = meterAt(atBar + length, { base: s.meter, points: s.meterPoints });
+    if (atBar <= 1 + 1e-6) tl().setMeter(meter);
+    else tl().addMeterChange(atBar, meter);
+    if (atBar + length <= TOTAL_BARS) tl().addMeterChange(atBar + length, atBar <= 1 + 1e-6 ? songMeter : after);
+    useTimelineStore.setState({ past });
+  }
+  return id;
 }
 
 /** A fill at the end of the bar under `songBar` in a drum clip (one undo step). */
@@ -80,10 +110,12 @@ export function fillClipBar(clipId: string, songBar: number, kind: FillKind): bo
   const clip = s.clips.find((c) => c.id === clipId);
   const track = clip && s.tracks.find((t) => t.id === clip.trackId);
   if (!clip || clip.audio || !track || !isDrumKind(track.instrumentKey)) return false;
-  const barStart = Math.max(0, Math.min(Math.ceil(clip.lengthBars) - 1, Math.floor(songBar - clip.startBar + 1e-6)));
-  if (barStart >= clip.lengthBars) return false;
+  // The measure under `songBar` (a 3/4 measure is shorter than a bar), from the clip's start
+  const m = measureAt(songBar, { base: s.meter, points: s.meterPoints });
+  const barStart = Math.max(0, m.start - clip.startBar);
+  if (barStart >= clip.lengthBars - 1e-6) return false;
   s.checkpoint();
-  s.setClipNotes(clipId, fillBar(clip.notes, barStart, kind, clip.lengthBars, newId));
+  s.setClipNotes(clipId, fillBar(clip.notes, barStart, kind, clip.lengthBars, newId, true, Math.min(m.length, clip.lengthBars - barStart)));
   return true;
 }
 

@@ -100,7 +100,7 @@ import {
   stretchRatio,
 } from './audioClips';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate } from './timelineTypes';
+import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate, ClipGroove } from './timelineTypes';
 import { DEFAULT_WOBBLE, TOTAL_BARS, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
   adjacentMarker,
@@ -643,6 +643,8 @@ interface TimelineState {
   renameClip: (clipId: string, name: string) => void;
   /** Set how fast a Wobble / Growl Bass clip wobbles (undoable). */
   setClipWobble: (clipId: string, wobble: WobbleRate) => void;
+  /** Give a clip its own swing, or (null) let it follow the song's (undoable). */
+  setClipGroove: (clipId: string, groove: ClipGroove | null) => void;
   /** Add notes to a clip (undoable). Returns the new note ids. */
   addNotes: (clipId: string, notes: Omit<NoteEvent, 'id'>[]) => string[];
   /** Replace a clip's notes without recording history (drag gestures checkpoint() once first). */
@@ -2763,6 +2765,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip || (clip.wobble ?? DEFAULT_WOBBLE) === wobble) return s;
         return { clips: s.clips.map((c) => (c === clip ? { ...c, wobble } : c)), ...pushPast(s) };
+      }),
+
+    setClipGroove: (clipId, groove) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        if (!clip || JSON.stringify(clip.groove ?? null) === JSON.stringify(groove)) return s;
+        const { groove: _old, ...rest } = clip;
+        return { clips: s.clips.map((c) => (c === clip ? (groove ? { ...rest, groove } : rest) : c)), ...pushPast(s) };
       }),
 
     addNotes: (clipId, notes) => {

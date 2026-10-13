@@ -530,7 +530,7 @@ export interface Track {
 }
 
 /** What a clip launcher slot holds: a clip, without a place in the song. */
-export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'audio' | 'expression'>>;
+export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'groove' | 'audio' | 'expression'>>;
 
 /** A track's clip in the clip launcher, in scene (row) `scene` (0 is the first). */
 export interface LauncherSlot {
@@ -890,6 +890,8 @@ export interface Clip {
   isSelected: boolean;
   /** How fast Wobble and Growl Bass notes wobble (absent: DEFAULT_WOBBLE). Other instruments ignore it. */
   wobble?: WobbleRate;
+  /** The clip's own swing, in place of the song's (absent: the song's swing on 16ths) */
+  groove?: ClipGroove;
   /** An audio clip: plays a sound file instead of notes (only on Audio tracks). */
   audio?: ClipAudio;
   /** Controller lanes over the clip: pitch bend, mod wheel, sustain pedal (see expression.ts) */
@@ -899,6 +901,16 @@ export interface Clip {
   /** Which take plays where (the comp), when there are takes */
   comp?: CompSegment[];
 }
+
+/**
+ * A clip's own swing: the off-beat note of each pair on the `grid` (8ths or 16ths) plays late by
+ * `swing` (0 straight, 0.5 a full triplet shuffle, up to 0.75 a hard dotted lilt).
+ */
+export interface ClipGroove {
+  swing: number;
+  grid: 8 | 16;
+}
+export const MAX_CLIP_SWING = 0.75;
 
 /** One recorded take of a take folder: notes (a MIDI take) or a sound (a mic take), from the clip's start. */
 export interface ClipTake {

@@ -8,7 +8,8 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { keyOf, NOTE_NAMES } from '../../store/songKey';
 import { CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordName, progressionChords } from '../../store/smartTools';
 import type { ChordStyle, DrumStyle } from '../../store/smartTools';
-import { makeChordClip, makeDrumClip, songKey, useSmartDialog } from '../../store/smartActions';
+import { drumMeterAt, makeChordClip, makeDrumClip, songKey, useSmartDialog } from '../../store/smartActions';
+import { meterAt } from '../../audio/tempoMap';
 import { showToast } from './toastStore';
 
 const field = 'flex flex-col gap-1 text-[11px] text-forge-muted';
@@ -115,7 +116,7 @@ const ChordsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
   );
 };
 
-let lastDrums = { style: 'rock' as DrumStyle, bars: 8, intensity: 0.5, fillEvery: 4 };
+let lastDrums = { style: 'rock' as DrumStyle, bars: 8, intensity: 0.5, fillEvery: 4, setMeter: true };
 let drumSeed = 1;
 const rememberDrums = (o: typeof lastDrums) => {
   lastDrums = o;
@@ -127,9 +128,14 @@ const DrummerForm: React.FC<{ trackId: string; bar: number; onClose: () => void 
   const set = (patch: Partial<typeof opts>) => setOpts((o) => ({ ...o, ...patch }));
   const bpm = useTimelineStore((s) => s.bpm);
   const style = DRUM_STYLES.find((d) => d.id === opts.style)!;
+  const baseMeter = useTimelineStore((s) => s.meter);
+  const meterPoints = useTimelineStore((s) => s.meterPoints);
+  const songMeter = meterAt(bar, { base: baseMeter, points: meterPoints });
+  const meter = drumMeterAt(opts.style, bar);
+  const meterDiffers = meter.num !== songMeter.num || meter.den !== songMeter.den;
   const make = () => {
     const seed = rememberDrums(opts);
-    const id = makeDrumClip(trackId, bar, opts.style, opts.bars, opts.intensity, opts.fillEvery, seed);
+    const id = makeDrumClip(trackId, bar, opts.style, opts.bars, opts.intensity, opts.fillEvery, seed, opts.setMeter);
     if (id) showToast(`Drummer: ${opts.bars} bars of ${style.name.split(' (')[0].toLowerCase()}. Make another for a different take`);
     onClose();
   };
@@ -149,7 +155,7 @@ const DrummerForm: React.FC<{ trackId: string; bar: number; onClose: () => void 
             Length
             <select className={control} value={opts.bars} onChange={(e) => set({ bars: Number(e.target.value) })}>
               {[1, 2, 4, 8, 16].map((n) => (
-                <option key={n} value={n}>{n} bar{n === 1 ? '' : 's'}</option>
+                <option key={n} value={n}>{n} {meter.num === 4 && meter.den === 4 ? 'bar' : `measure${n === 1 ? '' : 's'} of ${meter.num}/${meter.den}`}{meter.num === 4 && meter.den === 4 && n !== 1 ? 's' : ''}</option>
               ))}
             </select>
           </label>
@@ -167,6 +173,13 @@ const DrummerForm: React.FC<{ trackId: string; bar: number; onClose: () => void 
           Energy: {opts.intensity < 0.34 ? 'sparse' : opts.intensity < 0.67 ? 'steady' : 'busy'}
           <input type="range" min={0} max={1} step={0.01} value={opts.intensity} onChange={(e) => set({ intensity: Number(e.target.value) })} className="accent-cyan-500" />
         </label>
+        {meterDiffers && (
+          <label className="flex items-center gap-2 text-xs text-forge-text">
+            <input type="checkbox" className="accent-cyan-500" checked={opts.setMeter} onChange={(e) => set({ setMeter: e.target.checked })} />
+            This style is in {meter.num}/{meter.den}; the song is in {songMeter.num}/{songMeter.den} here. Change the song to {meter.num}/{meter.den} for the clip (and back after it)
+          </label>
+        )}
+        {style.groove && <p className="text-[11px] text-cyan-300">Swung 8ths: the clip gets a shuffle feel (change it with FEEL in the piano roll).</p>}
         <p className="text-[11px] text-forge-muted">
           The song is at {bpm} BPM; this style usually sits at {style.bpm}. Each clip is a new take: the hats breathe and kicks move a little bar to bar.
         </p>

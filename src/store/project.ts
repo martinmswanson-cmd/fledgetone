@@ -6,7 +6,7 @@ import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type T
 import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LauncherSlot, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
 import { normalizeMulti, normalizeRack } from './sampleKits';
-import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
+import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, MAX_CLIP_SWING, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
@@ -205,6 +205,7 @@ function parseSlots(raw: unknown, trackId: string): LauncherSlot[] {
           lengthBars: c.lengthBars,
           notes: c.notes,
           ...(c.wobble ? { wobble: c.wobble } : {}),
+          ...(c.groove ? { groove: c.groove } : {}),
           ...(c.audio ? { audio: c.audio } : {}),
           ...(c.expression ? { expression: c.expression } : {}),
         },
@@ -368,6 +369,10 @@ function parseClip(v: unknown): Clip {
     isSelected: false,
     // Optional: a rate this version doesn't know plays at the default
     ...(isWobbleRate(v.wobble) ? { wobble: v.wobble } : {}),
+    // Optional: the clip's own swing
+    ...(isObj(v.groove) && isNum(v.groove.swing) && (v.groove.grid === 8 || v.groove.grid === 16)
+      ? { groove: { swing: Math.max(0, Math.min(MAX_CLIP_SWING, v.groove.swing)), grid: v.groove.grid } }
+      : {}),
     // Optional: an audio clip (on an Audio track) plays a sound file instead of notes
     ...(audio ? { audio } : {}),
     // Optional: pitch bend, mod wheel and sustain pedal lanes

@@ -78,9 +78,10 @@ export function ticksToBar(ticks: number): number {
  * at 50% an off-beat 16th lands on the 1/8-triplet line (a full shuffle). Written as Tone works
  * out its own swing, so a swung 16th lands on exactly the same sample as it always has.
  */
-export function swingDelay(swing: number, bpm: number, ppq = 192): number {
+export function swingDelay(swing: number, bpm: number, ppq = 192, grid: 8 | 16 = 16): number {
   if (!(swing > 0)) return 0;
-  return (((2 * (ppq / 4)) / 3) / ppq) * (60 / bpm) * swing;
+  const unit = grid === 8 ? ppq / 2 : ppq / 4;
+  return (((2 * unit) / 3) / ppq) * (60 / bpm) * swing;
 }
 
 /**
@@ -101,8 +102,9 @@ export function swingDelay(swing: number, bpm: number, ppq = 192): number {
  *   like a triplet pattern, and triplets must never swing. So a clip moved off the grid and then
  *   cut off the grid sits on neither grid and plays straight, which moves nothing.
  */
-export function swungNotes(ticks: readonly number[], clipStartTick: number, ppq = 192): boolean[] {
-  const sixteenth = ppq / 4;
+export function swungNotes(ticks: readonly number[], clipStartTick: number, ppq = 192, grid: 8 | 16 = 16): boolean[] {
+  // (On an 8th grid the same rules run one level up: off-beat 8ths swing, a beat with 16ths in it plays straight)
+  const sixteenth = grid === 8 ? ppq / 2 : ppq / 4;
   const eighth = 2 * sixteenth;
   const near = ppq / 24;
   const half = Math.floor(sixteenth / 2);
