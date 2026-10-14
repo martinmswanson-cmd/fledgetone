@@ -515,6 +515,7 @@ function parseMasterFx(v: unknown): MasterFx {
     reverbDecay: isNum(v.reverbDecay) ? Math.max(0.8, Math.min(12, v.reverbDecay)) : d.reverbDecay,
     delayTime: isStr(v.delayTime) && ['4n', '8n', '8n.', '16n'].includes(v.delayTime) ? v.delayTime : d.delayTime,
     delayFeedback: isNum(v.delayFeedback) ? Math.max(0, Math.min(0.8, v.delayFeedback)) : d.delayFeedback,
+    ...(isStr(v.room) && v.room ? { room: v.room } : {}),
   };
 }
 

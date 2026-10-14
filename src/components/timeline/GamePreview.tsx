@@ -8,7 +8,7 @@ import { GameParamsPanel } from './GameParams';
 import { secondsBetween, tempoAt } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
-import { currentProject, songTempo, useTimelineStore } from '../../store/timelineStore';
+import { currentProject, masterFxOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { getAudiblePositionBar } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
@@ -52,7 +52,7 @@ const LoopVariations: React.FC = () => {
         swing: s.swing,
         startBar: inBar,
         endBar: outBar,
-        masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback },
+        masterFx: masterFxOf(s),
         master: s.master,
       };
       const { takes: audio, sampleRate } = await renderLoopTakes(opts, takes, humanize, (f) => setProgress(f));
@@ -254,7 +254,7 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
     const s = st();
     setBusy(true);
     try {
-      const song = { bpm: s.bpm, masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback }, master: s.master };
+      const song = { bpm: s.bpm, masterFx: masterFxOf(s), master: s.master };
       const files = [];
       for (const x of s.stingers) files.push({ name: `${x.name.replace(/[\\/:*?"<>|]/g, '-')}.wav`, data: await renderStinger(x, song) });
       downloadBlob(await createZip(files), `${s.projectName || 'Untitled'} stingers.zip`);

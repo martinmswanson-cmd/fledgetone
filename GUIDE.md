@@ -653,7 +653,7 @@ OTT and Stereo Width sit between the master compressor and the limiter, are off 
 
 Under them are the two effects every track shares through its sends:
 
-- **Master Convolution Reverb**: Room Decay Time, from 0.8 s (tight) to 12 s. One click picks a space: **Room** (1 s), **Studio** (1.8 s), **Hall** (3.2 s, for an orchestra), **Cathedral** (7 s, for choir and organ) or **Heaven** (11 s, for angelic pads and ambient).
+- **Master Convolution Reverb**: Room Decay Time, from 0.8 s (tight) to 12 s. One click picks a space: **Room** (1 s), **Studio** (1.8 s), **Hall** (3.2 s, for an orchestra), **Cathedral** (7 s, for choir and organ) or **Heaven** (11 s, for angelic pads and ambient). **Use a recorded room…** loads a recording of a real space instead (an impulse response: a WAV of a clap or sweep dying away in a hall, church or studio; free ones are shared online, often under Creative Commons, so credit the recordist as their licence asks). The reverb then sounds like that room, its tail as long as the recording (up to 12 s), and the recording is saved inside the project file. The **×** next to its name goes back to the generated hall.
 - **Ping-Pong Echo Delay**: Echo Subdivision (1/4, 1/8, dotted 1/8 or 1/16, locked to the tempo) and Echo Feedback (0 to 80%).
 
 ### Tempo, swing and master volume

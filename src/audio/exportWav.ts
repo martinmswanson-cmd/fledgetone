@@ -176,7 +176,9 @@ export function stemTracks(opts: Pick<RenderOptions, 'tracks' | 'clips' | 'start
 export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], bpm = 120): number {
   // A track's own Delay or Reverb insert can ring on longer than the master reverb
   const inserts = audibleTracks(tracks).reduce((tail, t) => Math.max(tail, insertTailSeconds(t.fx, bpm)), 0);
-  return Math.max(2, masterFx.reverbDecay + 0.5, inserts > 0 ? inserts + 0.5 : 0);
+  // A recorded room rings as long as its recording (up to the 12 s the reverb keeps)
+  const hall = masterFx.room ? Math.min(12, useSoundLibrary.getState().metas[masterFx.room]?.seconds ?? masterFx.reverbDecay) : masterFx.reverbDecay;
+  return Math.max(2, hall + 0.5, inserts > 0 ? inserts + 0.5 : 0);
 }
 
 /**

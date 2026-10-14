@@ -92,8 +92,10 @@ export function audioLengthLimit(audio: ClipAudio, soundSeconds: number | undefi
 }
 
 /** The sounds a project refers to: audio clips, Slicer tracks and Sampler tracks (each id once). */
-export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer' | 'rack' | 'multi'>> }): string[] {
+export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' | 'takes'>>; tracks: ReadonlyArray<Pick<Track, 'sample' | 'slicer' | 'rack' | 'multi'>>; masterFx?: { room?: string } }): string[] {
   const ids = new Set<string>();
+  // The recorded room the master reverb plays through
+  if (p.masterFx?.room) ids.add(p.masterFx.room);
   for (const c of p.clips) {
     // A take folder keeps every take's sound, not only the one its comp starts with
     for (const audio of [c.audio, ...(c.takes ?? []).map((t) => t.audio)]) {

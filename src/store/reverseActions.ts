@@ -1,4 +1,4 @@
-import { songTempo, splitClipAt, useTimelineStore } from './timelineStore';
+import { masterFxOf, songTempo, splitClipAt, useTimelineStore } from './timelineStore';
 import { isMixTrack } from './buses';
 import { defaultMasterSettings, defaultTrackFx, uid } from './timelineTypes';
 import type { Clip, Track } from './timelineTypes';
@@ -54,7 +54,7 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
     tempoPoints: s.tempoPoints,
     swing: s.swing,
     // The master section stays off: the reversed audio comes back through it
-    masterFx: { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback },
+    masterFx: masterFxOf(s),
     master: defaultMasterSettings(),
     startBar: from,
     endBar: to,

@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import type { MasterFx } from '../../store/timelineTypes';
 import { createLightPingPong, type LightPingPong } from './lightFx';
+import { decodeSound } from '../soundLibrary';
 
 /**
  * Shared return effects fed by every track's post-fader sends: one reverb and one
@@ -12,7 +13,7 @@ export interface BusEffects {
   delay: LightPingPong;
   reverbInput: Tone.Gain;
   delayInput: Tone.Gain;
-  /** Resolves when the reverb impulse response has been generated. */
+  /** Resolves when the reverb impulse response is in place (generated, or the recorded room loaded). */
   ready: Promise<void>;
   apply: (fx: MasterFx, bpm: number) => void;
   dispose: () => void;
@@ -47,22 +48,80 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   delayInput.connect(delay.input);
   delay.output.connect(destination);
 
+  // A recorded room: its impulse response (a sound in the library) goes into the reverb's own
+  // convolver in place of the generated one, so the sends, filters and exports all stay as they are
+  const convolver = () => (reverb as unknown as { _convolver: ConvolverNode })._convolver;
+  let roomToken = 0;
+  const loadRoom = async (room: string | undefined) => {
+    const token = ++roomToken;
+    if (!room) {
+      await reverb.generate();
+      return;
+    }
+    try {
+      const buffer = roomImpulse(await decodeSound(room, reverb.context.sampleRate), reverb.context);
+      if (token === roomToken) convolver().buffer = buffer;
+    } catch {
+      // Not in this browser any more: the generated hall stands in
+      if (token === roomToken) await reverb.generate();
+    }
+  };
+
   let current = { ...fx };
   return {
     reverb,
     delay,
     reverbInput,
     delayInput,
-    ready: reverb.ready,
+    ready: reverb.ready.then(() => (fx.room ? loadRoom(fx.room) : undefined)),
     apply: (next, tempo) => {
-      // Regenerating the impulse response is costly, so only when the decay changes
-      if (next.reverbDecay !== current.reverbDecay) reverb.decay = Math.max(0.8, Math.min(12, next.reverbDecay));
+      if (next.room !== current.room) {
+        if (!next.room && next.reverbDecay !== current.reverbDecay) {
+          roomToken++;
+          reverb.decay = Math.max(0.8, Math.min(12, next.reverbDecay));
+        } else void loadRoom(next.room);
+      } else if (!next.room && next.reverbDecay !== current.reverbDecay) {
+        // Regenerating the impulse response is costly, so only when the decay changes
+        reverb.decay = Math.max(0.8, Math.min(12, next.reverbDecay));
+      }
       delay.setDelayTime(delaySeconds(next.delayTime, tempo), 0.05);
       delay.setFeedback(Math.max(0, Math.min(0.8, next.delayFeedback)), 0.05);
       current = { ...next };
     },
     dispose: () => {
+      roomToken++;
       [reverbInput, lowCut, damp, delayInput, reverb, delay].forEach((n) => n.dispose());
     },
   };
+}
+
+/** Longest room kept (seconds): a longer tail is faded out there */
+const ROOM_MAX_SECONDS = 12;
+
+/**
+ * A room recording made ready for the convolver: mono or stereo (a recording with more channels
+ * keeps its first two), its leading silence taken off so the hall answers on time, and no longer
+ * than ROOM_MAX_SECONDS, faded at the cut.
+ */
+function roomImpulse(source: AudioBuffer, context: Tone.BaseContext): AudioBuffer {
+  const rate = source.sampleRate;
+  const channels = Math.min(2, source.numberOfChannels);
+  let peak = 0;
+  for (let c = 0; c < channels; c++) for (const v of source.getChannelData(c)) peak = Math.max(peak, Math.abs(v));
+  let start = 0;
+  const threshold = peak * 0.05;
+  outer: for (; start < source.length; start++) for (let c = 0; c < channels; c++) if (Math.abs(source.getChannelData(c)[start]) >= threshold) break outer;
+  // A millisecond before the first reflection, so its attack isn't clipped
+  start = Math.max(0, start - Math.round(rate * 0.001));
+  const length = Math.max(1, Math.min(source.length - start, Math.round(ROOM_MAX_SECONDS * rate)));
+  const out = context.createBuffer(channels, length, rate);
+  const fade = Math.min(length, Math.round(rate * 0.5));
+  const cut = length < source.length - start;
+  for (let c = 0; c < channels; c++) {
+    const data = source.getChannelData(c).subarray(start, start + length);
+    const copy = new Float32Array(data);
+    if (cut) for (let i = 0; i < fade; i++) copy[length - 1 - i] *= i / fade;
+    out.copyToChannel(copy, c);
+  }
+  return out;
 }

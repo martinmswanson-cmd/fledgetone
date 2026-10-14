@@ -238,7 +238,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const ending: ExportEnding = game ? 'seamless' : range === 'song' && settings.ending === 'seamless' ? 'ringOut' : settings.ending;
   const format = settings.format;
   const ext = FORMAT_EXTENSION[format];
-  const masterFx = { reverbDecay, delayTime, delayFeedback };
+  const room = useTimelineStore((s) => s.masterReverbRoom);
+  const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}) };
   const planned: RenderOptions = {
     tracks,
     clips,

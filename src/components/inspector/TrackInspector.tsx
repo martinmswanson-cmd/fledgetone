@@ -30,6 +30,7 @@ import { MbcPanel } from './MbcPanel';
 import { SynthPanel } from './SynthPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
+import { RecordedRoom } from './RecordedRoom';
 import { INSTRUMENTS, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
 
 /** Instruments Expressive playing changes: the recorded ones (but sound effects) and the drum kits. */
@@ -599,6 +600,8 @@ export const TrackInspector: React.FC = () => {
                   ))}
                 </div>
               </div>
+
+              <RecordedRoom />
 
               <div className="flex justify-between items-center text-[10px] font-mono text-forge-muted bg-black/40 p-2 rounded">
                 <span>Pre-Delay: 20ms</span>

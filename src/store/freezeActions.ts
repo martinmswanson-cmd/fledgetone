@@ -3,7 +3,7 @@
  * (see freeze.ts for how the live engine plays it), with progress.
  */
 import { create } from 'zustand';
-import { useTimelineStore } from './timelineStore';
+import { masterFxOf, useTimelineStore } from './timelineStore';
 import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';
 import type { Track } from './timelineTypes';
 import { barToSeconds, secondsToBar } from '../audio/tempoMap';
@@ -84,7 +84,7 @@ export async function renderTrackChannels(trackId: string, onProgress?: (fractio
       swing: snapshot.swing,
       startBar,
       endBar,
-      masterFx: { reverbDecay: store.masterReverbDecay, delayTime: store.masterDelayTime, delayFeedback: store.masterDelayFeedback },
+      masterFx: masterFxOf(store),
       ending: 'ringOut',
       sampleRate,
       hold,

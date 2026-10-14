@@ -385,6 +385,11 @@ export interface MasterFx {
   delayTime: string;
   /** 0 to 0.8 */
   delayFeedback: number;
+  /**
+   * A recorded room (an impulse response in the sound library) the reverb plays the music through,
+   * in place of its generated one; absent: generated, `reverbDecay` long.
+   */
+  room?: string;
 }
 
 export const DEFAULT_MASTER_FX: MasterFx = { reverbDecay: 2.4, delayTime: '8n', delayFeedback: 0.35 };

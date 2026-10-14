@@ -169,7 +169,7 @@ export function clearMemory(opts: { history: boolean }): number {
   releaseAllLiveVoices();
   const keys = new Set<InstrumentKey>(s.tracks.map((t) => t.instrumentKey));
   let bytes = forgetUnusedSamples(keys);
-  const sounds = new Set(referencedSoundIds({ clips: s.clips, tracks: s.tracks }));
+  const sounds = new Set(referencedSoundIds({ clips: s.clips, tracks: s.tracks, masterFx: { room: s.masterReverbRoom ?? undefined } }));
   for (const t of s.tracks) if (t.frozen) sounds.add(t.frozen.soundId);
   bytes += forgetDecodedSounds(sounds);
   if (opts.history) useTimelineStore.setState({ past: [], future: [] });

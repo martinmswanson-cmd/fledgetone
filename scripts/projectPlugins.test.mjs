@@ -47,3 +47,14 @@ test('built-in and web plugins survive saving and opening a project', () => {
   assert.deepEqual(t.pluginFx.map((f) => f.url), ['builtin:plateau/Plateau', 'https://example.com/wam/index.js']);
   assert.equal(t.pluginFx[0].bypass, true);
 });
+
+test('a recorded room for the master reverb survives saving and opening, and is kept with the sounds', async () => {
+  const { referencedSoundIds } = await import('../src/store/audioClips.ts');
+  const masterFx = { reverbDecay: 3, delayTime: '8n', delayFeedback: 0.3, room: 'hall-sound' };
+  const p = { name: 'Room', bpm: 120, swing: 0, loopRegion: { inBar: 1, outBar: 5, enabled: false }, tracks: [], clips: [], masterFx };
+  const back = parseProject(JSON.parse(JSON.stringify(serializeProject(p))));
+  assert.equal(back.masterFx.room, 'hall-sound');
+  assert.deepEqual(referencedSoundIds(back), ['hall-sound']);
+  const plain = parseProject(JSON.parse(JSON.stringify(serializeProject({ ...p, masterFx: { ...masterFx, room: "" } }))));
+  assert.equal(plain.masterFx.room, undefined);
+});

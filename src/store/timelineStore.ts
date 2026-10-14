@@ -296,6 +296,7 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     masterReverbDecay: masterFx.reverbDecay,
     masterDelayTime: masterFx.delayTime,
     masterDelayFeedback: masterFx.delayFeedback,
+    masterReverbRoom: masterFx.room ?? null,
     master,
     // The song's tempo isn't undone, so markers held to their time are placed at today's tempo
     markers: retimeMarkers(entry.markers, now),
@@ -546,7 +547,11 @@ interface TimelineState {
   masterReverbDecay: number;
   masterDelayTime: string;
   masterDelayFeedback: number;
+  /** The recorded room the master reverb plays through (a sound id), or null for its generated one */
+  masterReverbRoom: string | null;
   setMasterReverbDecay: (decay: number) => void;
+  /** Play the master reverb through a recorded room (a sound id), or its generated one (null): one undo step. */
+  setMasterReverbRoom: (soundId: string | null) => void;
   setMasterDelayTime: (time: string) => void;
   setMasterDelayFeedback: (feedback: number) => void;
 
@@ -890,8 +895,9 @@ export interface AutosaveStatus {
 }
 
 /** The store's master reverb / delay settings as one object. */
-function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number }): MasterFx {
-  return { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback };
+/** The master effects (the reverb and delay the sends go to) as the song has them now. */
+export function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number; masterReverbRoom?: string | null }): MasterFx {
+  return { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback, ...(s.masterReverbRoom ? { room: s.masterReverbRoom } : {}) };
 }
 
 let rafId = 0;
@@ -1231,6 +1237,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     masterReverbDecay: 2.4,
     masterDelayTime: '8n',
     masterDelayFeedback: 0.35,
+    masterReverbRoom: null,
     master: defaultMasterSettings(),
     past: [],
     future: [],
@@ -2090,6 +2097,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       updateTrack(id, (t) => ({ fx: normalizeTrackFx({ ...t.fx, [effect]: { ...t.fx[effect], ...patch } }) }), record);
     },
 
+    setMasterReverbRoom: (soundId) => {
+      if (soundId === get().masterReverbRoom) return;
+      set((s) => ({ masterReverbRoom: soundId, ...pushPast(s) }));
+      applyMasterFx();
+    },
+
     setMasterReverbDecay: (decay) => {
       const clamped = Math.max(0.8, Math.min(12, decay));
       set({ masterReverbDecay: clamped });
@@ -2836,6 +2849,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         masterReverbDecay: masterFx.reverbDecay,
         masterDelayTime: masterFx.delayTime,
         masterDelayFeedback: masterFx.delayFeedback,
+        masterReverbRoom: masterFx.room ?? null,
         master: p.master ?? defaultMasterSettings(),
         fps: p.fps ?? DEFAULT_FRAME_RATE,
         dropFrame: p.dropFrame === true && p.fps === 29.97,
@@ -3176,6 +3190,7 @@ export function connectAutosave(): () => void {
       state.masterReverbDecay === prev.masterReverbDecay &&
       state.masterDelayTime === prev.masterDelayTime &&
       state.masterDelayFeedback === prev.masterDelayFeedback &&
+      state.masterReverbRoom === prev.masterReverbRoom &&
       state.master === prev.master &&
       state.fps === prev.fps &&
       state.dropFrame === prev.dropFrame &&
