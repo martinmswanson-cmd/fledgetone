@@ -48,4 +48,19 @@ in the app under Guide > Credits, generated from `src/credits.ts`.
 
 ## Licence
 
-Not chosen yet.
+Fledgetone is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+Copyright (C) 2026 the Fledgetone authors.
+
+The recorded sounds and built-in plugins keep their own licences (see Credits above).
+
+### The name and logo
+
+The licence covers the code, not the Fledgetone name or logo (`src/assets/fledgetone.png`,
+`public/favicon.svg`, `public/apple-touch-icon.png`). You're welcome to fork and change
+Fledgetone, but please give your version its own name and logo, so nobody mistakes it for this
+one. Saying your version is "based on Fledgetone" is fine. See [TRADEMARKS.md](TRADEMARKS.md).
