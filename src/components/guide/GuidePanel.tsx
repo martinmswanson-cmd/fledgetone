@@ -55,7 +55,7 @@ export const GuidePanel: React.FC<{ onClose: () => void; section?: string }> = (
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label="Bo's Beatbox guide"
+        aria-label="Fledgetone guide"
         className="focus:outline-none w-full max-w-5xl h-full max-h-[85vh] flex flex-col rounded-xl border border-forge-borderLight bg-forge-panel shadow-2xl overflow-hidden"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-forge-border">

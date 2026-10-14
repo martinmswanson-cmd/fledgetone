@@ -1,5 +1,5 @@
 /*
- * One Dragonfly reverb as a Bo's Beatbox plugin (included by bb_dragonfly_<kind>.cpp, inside a
+ * One Dragonfly reverb as a Fledgetone plugin (included by bb_dragonfly_<kind>.cpp, inside a
  * namespace of its own, with that reverb's DistrhoPluginInfo.h and DSP.cpp). DF_PRESETS says how
  * its presets are kept: 1 banks of presets, 2 one list, 0 none (the early reflections choose a
  * room with their Program parameter).

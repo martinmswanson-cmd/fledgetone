@@ -1,5 +1,5 @@
 /*
- * The mda plug-ins (Paul Kellett, MIT) as a Bo's Beatbox plugin family: effects and four
+ * The mda plug-ins (Paul Kellett, MIT) as a Fledgetone plugin family: effects and four
  * instruments (DX10, EPiano, JX10, Piano), each with its own presets. Built against the
  * stand-in base class in audioeffectx.h.
  */

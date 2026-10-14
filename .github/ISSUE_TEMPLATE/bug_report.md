@@ -15,4 +15,4 @@ labels: bug
 <!-- e.g. Chrome 130 on Windows 11, Safari 18 on an iPad -->
 
 **The song** (optional, but it helps a lot)
-<!-- File › Save makes a .beatbox.json: attach it (take anything private out first). A screenshot or a short recording is welcome too. -->
+<!-- File › Save makes a .fledgetone.json: attach it (take anything private out first). A screenshot or a short recording is welcome too. -->

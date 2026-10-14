@@ -45,7 +45,7 @@ export const MobileNotice: React.FC = () => {
       <div className="flex items-start gap-3">
         <Monitor className="w-8 h-8 shrink-0 text-cyan-300 mt-0.5" />
         <p>
-          Bo's Beatbox is a music studio built for a PC or Mac with a mouse, a keyboard and a wide screen. On a phone the
+          Fledgetone is a music studio built for a PC or Mac with a mouse, a keyboard and a wide screen. On a phone the
           timeline is cramped, drag-and-drop editing and keyboard shortcuts don't work, and audio may stutter. For the real
           thing, open this page on a computer.
         </p>

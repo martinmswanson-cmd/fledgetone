@@ -1,5 +1,5 @@
 /*
- * Open303 (Robin Schmidt, MIT) as a Bo's Beatbox instrument: an acid bass line synth (one voice,
+ * Open303 (Robin Schmidt, MIT) as a Fledgetone instrument: an acid bass line synth (one voice,
  * a saw/square oscillator into a resonant diode-ladder-style filter). Overlapping notes slide;
  * notes at velocity 100 or more (about 0.79) are accented.
  */

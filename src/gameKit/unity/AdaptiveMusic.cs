@@ -1,4 +1,4 @@
-// Adaptive music player for Unity, from Bo's Beatbox.
+// Adaptive music player for Unity, from Fledgetone.
 //
 // 1. Copy this folder into Assets/Resources/Music/ (audio_manifest.json becomes a TextAsset, the WAVs AudioClips).
 // 2. Add this component to a GameObject. In the Inspector, leave Resources Folder as "Music".
@@ -87,7 +87,7 @@ public class AdaptiveMusic : MonoBehaviour
     }
 
     /// What the parameters ask for together: the highest intensity and reverb, the lowest filter, the
-    /// volumes and each group's levels multiplied (the same sums as Bo's Beatbox's gameParams.ts).
+    /// volumes and each group's levels multiplied (the same sums as Fledgetone's gameParams.ts).
     public class ParamMix { public float intensity = -1f; public float filter = 20000f; public float reverb; public float volume = 1f; public Dictionary<string, float> layers = new Dictionary<string, float>(); }
 
     public ParamMix Mix()

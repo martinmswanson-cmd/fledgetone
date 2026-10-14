@@ -1,5 +1,5 @@
 // Try the music and sound effects: add this component to an empty GameObject and press Play.
-// From Bo's Beatbox. Buttons for every state, an intensity slider, the stingers and the sound
+// From Fledgetone. Buttons for every state, an intensity slider, the stingers and the sound
 // effects. In your own game, call AdaptiveMusic the same way (see AdaptiveMusic.cs).
 using System.Collections.Generic;
 using UnityEngine;

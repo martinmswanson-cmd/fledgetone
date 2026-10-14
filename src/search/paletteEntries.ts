@@ -74,7 +74,7 @@ type Item = Omit<PaletteEntry, 'id' | 'group'> & { id?: string };
 
 const TOOLS: Item[] = [
   { title: 'New arrangement', keywords: 'new project blank start over template starter demo', detail: 'Start again from a blank timeline, the demo song or a genre starter.', run: () => ui().setDialog('new') },
-  { title: 'Open project', keywords: 'open load file json import project', detail: 'Open a .beatbox.json project file.', run: () => pickProjectFile() },
+  { title: 'Open project', keywords: 'open load file json import project', detail: 'Open a .fledgetone.json project file.', run: () => pickProjectFile() },
   { title: 'Save project', keywords: 'save download keep backup file json', detail: 'Save this arrangement as a project file, with its sounds (the first time, choose where).', run: async () => void (await press('#btn-save-project')) },
   { title: 'Save as…', keywords: 'save as copy location folder where file name', detail: 'Choose the folder and file name to save the project to.', run: async () => void (await import('../components/timeline/projectFile')).saveProjectAs() },
   { title: 'Export', keywords: 'export render bounce mixdown download wav mp3 ogg mp4 video stems tracks intro loop game audio file', detail: 'Render the song or loop as WAV, MP3, OGG or MP4: the mix, one file per track, or an intro + loop.', run: () => ui().setDialog('export') },

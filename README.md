@@ -1,4 +1,4 @@
-# Bo's Beatbox
+# Fledgetone
 
 A music studio that runs in the browser. Arrange tracks and clips on a timeline, write in a piano
 roll, play 198 instruments (synths, EDM basses, drum kits, recorded instruments and your own
@@ -7,7 +7,7 @@ microphone, and export WAV, MP3, Ogg, stems or video. It also scores to picture 
 points, a reference video) and exports adaptive music for games (states, stems, stingers and
 players for the web, Unity, Godot, FMOD and Wwise).
 
-Nothing is uploaded anywhere: songs autosave in the browser and save to `.beatbox.json` files.
+Nothing is uploaded anywhere: songs autosave in the browser and save to `.fledgetone.json` files.
 
 **Using it:** [GUIDE.md](GUIDE.md), also inside the app (the Guide button, or press `?`).
 

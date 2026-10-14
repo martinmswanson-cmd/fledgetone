@@ -20,7 +20,7 @@ import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
 
 /**
- * Project file format (.beatbox.json) and browser autosave.
+ * Project file format (.fledgetone.json) and browser autosave.
  * Selection state is not saved; everything else needed to rebuild the arrangement is.
  * Files and autosaves from before the rename (GrooveForge) still load.
  */
@@ -427,10 +427,10 @@ function modWheelWasVibrato(raw: unknown, depth = 0): void {
 /** Validate untrusted JSON (a file or autosave) into a snapshot. Throws with a readable reason. */
 export function parseProject(raw: unknown): ProjectSnapshot {
   if (!isObj(raw) || !(raw.format === PROJECT_FORMAT || LEGACY_FORMATS.includes(raw.format as string))) {
-    throw new Error("this is not a Bo's Beatbox project file");
+    throw new Error("this is not a Fledgetone project file");
   }
   if (!isNum(raw.version) || raw.version > PROJECT_VERSION) {
-    throw new Error("this project was saved by a newer version of Bo's Beatbox");
+    throw new Error("this project was saved by a newer version of Fledgetone");
   }
   if (!Array.isArray(raw.tracks) || !Array.isArray(raw.clips)) throw new Error('tracks or clips are missing');
   // (The file's own objects are changed: it was parsed for this)

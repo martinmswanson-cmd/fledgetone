@@ -1,8 +1,8 @@
-# Bo's Beatbox guide
+# Fledgetone guide
 
 ## Getting started
 
-Bo's Beatbox is a music maker that runs in your browser. You build a song on the **Arrangement Timeline** out of **tracks** (one instrument each) and **clips** (blocks of notes on a track), mix it, and export it as a WAV file.
+Fledgetone is a music maker that runs in your browser. You build a song on the **Arrangement Timeline** out of **tracks** (one instrument each) and **clips** (blocks of notes on a track), mix it, and export it as a WAV file.
 
 It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen. On a phone a notice says so once; you can continue, but the timeline is cramped, drag-and-drop editing and keyboard shortcuts don't work, and audio may stutter.
 
@@ -35,7 +35,7 @@ Hover across the bar while a menu is open to move between menus; the arrow keys 
 
 ### Tour and tutorials
 
-The first time you open Bo's Beatbox it offers a one-minute **tour** and six hands-on **tutorials**; click **LEARN** in the header (or search for *tutorial*) to find them again any time.
+The first time you open Fledgetone it offers a one-minute **tour** and six hands-on **tutorials**; click **LEARN** in the header (or search for *tutorial*) to find them again any time.
 
 - **Quick tour**: points at each part of the screen and says what it's for. Just read and click **Next**.
 - **Beginner: Your first song**: open a starter, play it, mute a track, change the tempo, write a note, undo, and export.
@@ -544,7 +544,7 @@ Plugins are programs from their sites, so only load ones you trust. A project yo
 
 ### Where your sounds live
 
-Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.beatbox.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen or restorable session uses. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
+Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.fledgetone.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen or restorable session uses. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
 
 ## Trying sounds: Instrument Browser and Audition Deck
 
@@ -775,9 +775,9 @@ The project's name, **Save**, **Export** and **Share** sit at the right of the m
 - **Project name**: click it to rename. It's used for the file names when you save and export.
 - **New**: start a **Blank timeline** (four empty tracks), load the **Demo song** (Sunset Stroll, 88 BPM), or start from one of 75 **starters**. They're folded into groups: click a group to open it, or type in **Find a starter** (a name, a mood, a tempo: *boss*, *cozy*, *140*, *minor*). The groups are **Game Worlds** (Overworld Adventure, Dungeon Crawl, Cozy Village, Space Station, Racing, Platformer, Open Field, Cosmic Waltz, Big Band City, Quiet World, Wild Field, Underwater Waltz, Desert Bazaar, Fog Town), **Game Moments** (Boss Fight, Stealth, Title Screen, Puzzle, Shop, RPG Battle, Countdown Town, Save Room, Cathedral Boss, Arena Metal), **Anime & Cartoon** (Starlit City, Farewell Piano, Sunset Drive, Midnight Caper, Velvet Infiltration, Wanderer's Road, Meadow Waltz, Champion's Showdown, Ruin Requiem, Neon Ritual: story sounds, each game-ready with two states), **Electronic** (Dubstep, House, Trance, Drum & Bass, Synthwave, Chiptune), **Artcore & Rhythm Games** (Final Boss Artcore, Melodic Hardcore, Breakcore), **Bass Music** (Metal Dubstep, Melodic Dubstep, Riddim, Kawaii Future Bass), **Orchestral & Choir** (Classical, Angelic, Cinematic, Epic Orchestral, Horror), **Hip-Hop & Phonk** (Drift Phonk, UK Drill, Rage, Neo-Soul), **Pop & Jazz** (Bedroom Pop, Bossa Jazz-Pop, City Pop, Theatrical Pop), **Band** (Rock, Metal, Pop, Funk, Jazz, Hip-Hop, Trap, Rap-Rock, Math Rock) and **Chill & World** (Lo-Fi, Ambient, Celtic, Fantasy Tavern, Latin, Eastern). The newer starters keep the low end gentle: kicks below full force, soft impacts and no sub drops, and builds that get quieter before the drop instead of louder drops. Each starter is 16 bars or so with its sections marked (intro, build, drop, and so on), the loop on the main section, its tracks mixed and the master's OTT and Stereo Width set for the style. Change anything; it's an ordinary project. This replaces what's on screen and clears undo (the song it replaces is offered back by the Restore banner).
   - **Game starters are ready to wire into a game.** Each section is a game state that loops on its own (Explore and Danger, Sneak and Spotted, Phase 1, Phase 2 and Defeated...); the tracks are in stem groups (Ambient, Percussion, Tension, Climax), so the **Intensity** slider builds the music up and down; the **transitions** between states are set (a fill into a fight, a crossfade back out, a riser into the final lap, a victory stinger when the boss falls); and **stingers** in the song's key are made (item, level up, victory, game over...). Open the **Game** tab to try it: click the states, move Intensity, play the stingers. Then export it as a game kit, for FMOD or Wwise, or as stems.
-- **Open** (`Ctrl+O`): load a `.beatbox.json` project file. Like New, it replaces what's on screen straight away and clears undo (the Restore banner offers the replaced song back). If the file can't be read, a red message explains why and nothing is replaced. You can also drop a `.beatbox.json` file anywhere on the page: a drop onto an empty timeline opens it at once, and when there's work on the timeline a dialog asks before replacing it.
+- **Open** (`Ctrl+O`): load a `.fledgetone.json` project file. Like New, it replaces what's on screen straight away and clears undo (the Restore banner offers the replaced song back). If the file can't be read, a red message explains why and nothing is replaced. You can also drop a `.fledgetone.json` file anywhere on the page: a drop onto an empty timeline opens it at once, and when there's work on the timeline a dialog asks before replacing it.
 - **Share**: three ways to send the song to someone:
-  - **A link to this song**: the whole song travels inside the link (nothing is uploaded anywhere), and opening it opens the song in Bo's Beatbox, ready to play and change. **Copy link**, or **Share…** for your device's share menu. Sound files (audio clips, Sampler and Slicer sounds) can't go in a link, so the dialog says which tracks would be silent; frozen tracks just play live. Links are packed tight (less than half the length they used to be), but a very long one can be cut off by some chat apps: the dialog warns when it's long. Links made before still open.
+  - **A link to this song**: the whole song travels inside the link (nothing is uploaded anywhere), and opening it opens the song in Fledgetone, ready to play and change. **Copy link**, or **Share…** for your device's share menu. Sound files (audio clips, Sampler and Slicer sounds) can't go in a link, so the dialog says which tracks would be silent; frozen tracks just play live. Links are packed tight (less than half the length they used to be), but a very long one can be cut off by some chat apps: the dialog warns when it's long. Links made before still open.
   - **The song as an MP3**: the whole song mixed, handed to your share menu where the browser can (phones, Windows, Safari on a Mac), or downloaded.
   - **The project file**: everything, sound files included, shared or downloaded the same way.
 
@@ -995,7 +995,7 @@ Move them in **Audition like the game**: each parameter gets a slider under **In
 **Export game kit (.zip)** in the Game tab makes everything a game needs to play your music, and your sound effects, the way the panel does. Choose what it's **For** first:
 
 - **Godot 4 project**: unzip it into your Godot project's folder (the one with `project.godot`). You get `bos_music/`, with the song's folder, the player, an **example scene** (`bos_music/<song>_example.tscn`: open it and press **F6**, then **1**, **2**... switch states, **Up** / **Down** intensity, **Space** a stinger, **A**, **B**... the sound effects) and a README with the steps to use it in your game: add `AdaptiveMusic.gd` as an autoload called **Music**, `Music.load_song("res://bos_music/<song>/")` once, then `Music.play(...)`, `Music.set_state(...)` and so on.
-- **Unity project**: unzip it into your Unity project's folder (the one with `Assets`). Everything lands in `Assets/BosBeatbox`: the player, the song under `Resources/BosMusic/<Song>`, an **example** component (make an empty GameObject, **Add Component › Adaptive Music Example**, press **Play**: buttons for every state, stinger and sound effect, and an intensity slider) and a README.
+- **Unity project**: unzip it into your Unity project's folder (the one with `Assets`). Everything lands in `Assets/Fledgetone`: the player, the song under `Resources/BosMusic/<Song>`, an **example** component (make an empty GameObject, **Add Component › Adaptive Music Example**, press **Play**: buttons for every state, stinger and sound effect, and an intensity slider) and a README.
 - **Any engine**: one folder with everything and the players for the web, Godot and Unity side by side, as below.
 
 What's inside:
@@ -1014,7 +1014,7 @@ What's inside:
 
 - `Audio/`: every state as an exact loop, its stems by stem group, the stingers and the transition sounds (48 kHz, or 44.1).
 - `cues.json`: the tempo, every state (bars, seconds, samples, stems, and where it sits on one timeline), the transition rules, the stingers and the intensity curves.
-- `fmod/…js`: an **FMOD Studio** script. Put it in your project's Scripts folder and choose **Scripts › Bo's Beatbox › Import**: it builds the event with a track per stem group, every state laid out with a loop region and a marker, the tempo, an **Intensity** parameter driving each group's volume along its curve, and an event per stinger.
+- `fmod/…js`: an **FMOD Studio** script. Put it in your project's Scripts folder and choose **Scripts › Fledgetone › Import**: it builds the event with a track per stem group, every state laid out with a loop region and a marker, the tempo, an **Intensity** parameter driving each group's volume along its curve, and an event per stinger.
 - `wwise/…py`: a **Wwise** script (Wwise Authoring API, Python). With Wwise open, it builds a Music Switch Container with a playlist and segment per state and a track per stem group, a State Group with a state per section, an Intensity game parameter, and the stingers as sounds.
 - `README.md`: how to run them, your states, transitions and intensity curves (in dB), and the steps each tool doesn't let a script do (FMOD's transition regions, Wwise's state assignments and RTPC curves).
 
@@ -1025,7 +1025,7 @@ Versions of FMOD and Wwise differ, so each script step reports whether it worked
 For a web game where download size matters, **Export web runtime kit (no audio files)** (in the Game tab) makes a .zip with just:
 
 - the song's project file (`<song>.json`, usually tens of kilobytes, with any sounds your clips play inside it),
-- `bos-player.js` (about 550 KB, about 135 KB as a web server sends it), which **synthesizes the music in the player's browser** when the game loads, with the same engine as Bo's Beatbox: every state (as stems, if the song has stem groups), the stingers and the transitions,
+- `bos-player.js` (about 550 KB, about 135 KB as a web server sends it), which **synthesizes the music in the player's browser** when the game loads, with the same engine as Fledgetone: every state (as stems, if the song has stem groups), the stingers and the transitions,
 - a test page (`index.html`) and a README.
 
 In the game: `const music = await loadSong('./song.json', { onProgress })`, then `music.play(...)`, `music.setState(...)`, `music.setIntensity(...)` and `music.stinger(...)`, exactly as with the game kit's web player. Synthesizing takes a few seconds per minute of music (longer on slow devices; a 16-bar song with three stem groups took about 12 seconds in testing), so start it while the game loads and show a progress bar. Recorded instruments download their samples from the same public libraries the app uses, so they need a connection; the synths need nothing.
@@ -1160,7 +1160,7 @@ The synths and drum kits are generated in your browser. The recorded instruments
 
 - The guitar, bass, saxophone, strings, harp, flute and brass samples were collected and edited (trimmed, volume-matched, cleaned up and tuned) by Nicholaus Brosowsky for [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments). Its samples are released under CC BY 3.0.
 - The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app. The Violin, Cello and Strings notes are 3 seconds long in the soundfont, so the app loops their steady part when it loads them and a note can be held for about 10 seconds. The top octave of the Violin, Erhu, Strings and Flute plays quieter so it doesn't pierce.
-- Bo's Beatbox loads these samples straight from the projects above; it doesn't copy or change the files.
+- Fledgetone loads these samples straight from the projects above; it doesn't copy or change the files.
 
 ### Plugins
 

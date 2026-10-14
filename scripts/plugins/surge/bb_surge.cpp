@@ -1,5 +1,5 @@
 /*
- * Surge XT (the Surge Synth Team, GPL-3.0) as a Bo's Beatbox instrument: the whole synth engine,
+ * Surge XT (the Surge Synth Team, GPL-3.0) as a Fledgetone instrument: the whole synth engine,
  * with its factory patches as presets (the host fetches a patch file when one is chosen: see
  * bb_load). Its panel shows the patch's eight macros, the filter and envelope settings and the
  * volume; editing one changes both scenes, so layered and split patches follow.

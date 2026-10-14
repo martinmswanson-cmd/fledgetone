@@ -352,7 +352,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           channels,
           sampleRate: audio.sampleRate,
           title: projectName,
-          subtitle: `${Math.round(opts.bpm * 100) / 100} BPM · made with Bo's Beatbox`,
+          subtitle: `${Math.round(opts.bpm * 100) / 100} BPM · made with Fledgetone`,
           sections,
           signal: controller.signal,
           onProgress: (p) => setStatus({ kind: 'rendering', fileName, progress: 0.3 + 0.7 * p, detail: 'Drawing the video' }),

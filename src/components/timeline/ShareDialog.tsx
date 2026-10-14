@@ -39,7 +39,7 @@ const button =
   'h-8 px-3 flex items-center justify-center gap-1.5 rounded-md border border-forge-border bg-forge-panel text-xs font-mono text-forge-text hover:border-cyan-500/70 disabled:opacity-40 disabled:pointer-events-none';
 
 /**
- * Share the song three ways: a link that opens it in Bo's Beatbox (the song travels inside the
+ * Share the song three ways: a link that opens it in Fledgetone (the song travels inside the
  * link, see shareLink.ts), the mix as an MP3, or the project file with its sounds.
  */
 export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -77,7 +77,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const shareLink = async () => {
     if (!link) return;
     try {
-      await navigator.share({ title: projectName, text: `${projectName}, made with Bo's Beatbox`, url: link });
+      await navigator.share({ title: projectName, text: `${projectName}, made with Fledgetone`, url: link });
     } catch {
       // Cancelled
     }
@@ -109,7 +109,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       const p = currentProject();
       const sounds = await embedSounds(referencedSoundIds(p));
       const json = JSON.stringify(serializeProject({ ...p, sounds }), null, 2);
-      const file = new File([json], `${safeFileName(p.name)}.beatbox.json`, { type: 'application/json' });
+      const file = new File([json], `${safeFileName(p.name)}.fledgetone.json`, { type: 'application/json' });
       const how = await shareOrDownload(file, p.name);
       if (how !== 'cancelled') showToast(how === 'shared' ? `Shared ${file.name}` : `Downloaded ${file.name}`);
     } catch (err) {
@@ -128,7 +128,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           <Link2 className="w-4 h-4 text-cyan-400" /> A link to this song
         </div>
         <p>
-          Anyone who opens it gets the song in Bo's Beatbox, ready to play and change. The whole song travels inside the link, so nothing is uploaded anywhere: it works as long as this
+          Anyone who opens it gets the song in Fledgetone, ready to play and change. The whole song travels inside the link, so nothing is uploaded anywhere: it works as long as this
           site is online.
         </p>
         {link ? (

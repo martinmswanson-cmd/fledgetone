@@ -1,5 +1,5 @@
-Recordings for Bo's Beatbox's "(Real)" instruments, converted to MP3.
-How they were made: scripts/real-samples/README.md in the Bo's Beatbox source.
+Recordings for Fledgetone's "(Real)" instruments, converted to MP3.
+How they were made: scripts/real-samples/README.md in the Fledgetone source.
 
 From VSCO 2 Community Edition by Versilian Studios
   https://github.com/sgossner/VSCO-2-CE (CC0 1.0, public domain):

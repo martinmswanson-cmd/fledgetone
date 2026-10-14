@@ -1,5 +1,5 @@
 /**
- * Drop a .beatbox.json project file anywhere on the page to open it (asking first when there's
+ * Drop a .fledgetone.json project file anywhere on the page to open it (asking first when there's
  * work on the timeline).
  */
 import React, { useEffect, useState } from 'react';
@@ -19,7 +19,7 @@ const draggingVideo = (dt: DataTransfer | null): boolean => !!dt && Array.from(d
 const isProjectFile = (file: File): boolean => /\.json$/i.test(file.name) || /json/.test(file.type);
 
 /**
- * Drop a `.beatbox.json` project file anywhere on the page to open it, as the Open button does.
+ * Drop a `.fledgetone.json` project file anywhere on the page to open it, as the Open button does.
  * The page's own drop zones (sound files onto the lanes) never see a project file: the drop is
  * taken on the way down. Opening replaces what's on screen, so when there is work on the
  * timeline a dialog asks first.

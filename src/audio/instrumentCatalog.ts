@@ -1,5 +1,5 @@
 /**
- * Every instrument Bo's Beatbox can play, in one place. The Add Track menu, the inspector,
+ * Every instrument Fledgetone can play, in one place. The Add Track menu, the inspector,
  * the piano roll's note range, the instrument browser and project validation all read this.
  *
  * kind:

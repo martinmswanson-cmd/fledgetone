@@ -101,7 +101,7 @@ export const App: React.FC = () => {
       <footer className="border-t border-forge-border bg-forge-panel px-6 py-3 text-center text-xs text-forge-muted font-mono flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
-          <span>Bo's Beatbox</span>
+          <span>Fledgetone</span>
         </div>
         <div className="flex items-center gap-4">
           <button

@@ -1,4 +1,4 @@
-# Try the music and sound effects: run this scene (F6). From Bo's Beatbox.
+# Try the music and sound effects: run this scene (F6). From Fledgetone.
 #
 #   1 to 9      switch to that state (the way the song's transition rules say)
 #   Up / Down   intensity up or down (the stem groups crossfade along their curves)

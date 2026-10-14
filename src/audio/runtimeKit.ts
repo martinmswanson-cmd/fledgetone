@@ -51,14 +51,14 @@ export async function buildRuntimeKit(project: ProjectSnapshot): Promise<Blob> {
   };
 </script>
 `;
-  const readme = `${project.name}: web runtime kit, made with Bo's Beatbox
+  const readme = `${project.name}: web runtime kit, made with Fledgetone
 ${'='.repeat(project.name.length + 46)}
 
 For web games where download size matters. Instead of audio files, the game loads the song as
 its project file (${songFile}, ${Math.round(song.length / 1024)} KB) and bos-player.js
 (${Math.round(runtimeSource.length / 1024)} KB, about ${Math.round(runtimeSource.length / 4200)} KB gzipped by a web server), which synthesizes the
 music in the player's browser when the game loads: every state (and its stems, if the song has
-stem groups), the stingers and the transitions, with the same engine as Bo's Beatbox. Then it
+stem groups), the stingers and the transitions, with the same engine as Fledgetone. Then it
 plays like the game kit's player: transitions by your rules, on the beat, and intensity.
 
     import { loadSong } from './bos-player.js';

@@ -37,7 +37,7 @@ function thirdPartyLicenses(): Plugin {
       this.emitFile({
         type: 'asset',
         fileName: 'third-party-licenses.txt',
-        source: `Bo's Beatbox includes the following open-source software.\n\n${sections.join('\n\n\n')}\n`,
+        source: `Fledgetone includes the following open-source software.\n\n${sections.join('\n\n\n')}\n`,
       })
     },
   }

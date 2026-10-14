@@ -1,5 +1,5 @@
 /*
- * The synthesis engines of Mutable Instruments' Plaits (Emilie Gillet, MIT) as Bo's Beatbox
+ * The synthesis engines of Mutable Instruments' Plaits (Emilie Gillet, MIT) as Fledgetone
  * instruments: each engine is its own instrument, eight voices deep. A note triggers a voice;
  * "Hold" keeps it sounding while the note is held (a gate into the low-pass gate), "Pluck" lets
  * it ring out on its own decay. Plaits runs at 48 kHz: at other rates the note is corrected.

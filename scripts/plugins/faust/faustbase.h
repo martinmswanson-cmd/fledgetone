@@ -1,5 +1,5 @@
 /*
- * The few classes Faust-generated code needs (written for Bo's Beatbox, MIT): a DSP base class,
+ * The few classes Faust-generated code needs (written for Fledgetone, MIT): a DSP base class,
  * the UI interface its controls are listed through, and Meta for its declarations.
  */
 #pragma once

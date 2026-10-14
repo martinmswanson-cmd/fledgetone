@@ -1,14 +1,14 @@
 # Architecture
 
-How Bo's Beatbox is put together: the parts, how a change travels through them, and where to
+How Fledgetone is put together: the parts, how a change travels through them, and where to
 start when you want to change something. For a one-line description of every file, see
 [CODEMAP.md](CODEMAP.md). For how to use the app, see [GUIDE.md](../GUIDE.md).
 
 ## The shape of it
 
-Bo's Beatbox is a single-page app with no server: React for the screen, a zustand store for the
+Fledgetone is a single-page app with no server: React for the screen, a zustand store for the
 song, and Tone.js over the Web Audio API for the sound. Everything runs in the browser; songs
-autosave to the browser and save to `.beatbox.json` files.
+autosave to the browser and save to `.fledgetone.json` files.
 
 ```
             ┌──────────────────────────────────────────────────────────┐

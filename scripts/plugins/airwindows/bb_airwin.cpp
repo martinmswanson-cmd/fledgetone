@@ -1,5 +1,5 @@
 /*
- * The Airwindows effects (via the Airwin Consolidated library, MIT) as a Bo's Beatbox plugin
+ * The Airwindows effects (via the Airwin Consolidated library, MIT) as a Fledgetone plugin
  * family. Every effect is stereo in, stereo out, with parameters 0 to 1.
  */
 #include "../bbplug.h"

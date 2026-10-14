@@ -36,7 +36,7 @@ const pickers = () => window as unknown as FilePickers;
 /** Whether this browser can save to a chosen place on disk (and save to it again). */
 export const canChooseSaveLocation = (): boolean => typeof pickers().showSaveFilePicker === 'function';
 
-const TYPES: PickerTypes = [{ description: "Bo's Beatbox project", accept: { 'application/json': ['.json'] } }];
+const TYPES: PickerTypes = [{ description: "Fledgetone project", accept: { 'application/json': ['.json'] } }];
 /** The picker remembers its last folder under this id (one for projects, apart from exports). */
 const PICKER_ID = 'beatbox-projects';
 
@@ -54,7 +54,7 @@ async function projectBlob(): Promise<Blob> {
   return new Blob([JSON.stringify(serializeProject({ ...project, sounds, video }), null, 2)], { type: 'application/json' });
 }
 
-const fileName = () => `${safeFileName(currentProject().name)}.beatbox.json`;
+const fileName = () => `${safeFileName(currentProject().name)}.fledgetone.json`;
 
 /** Write the project into `handle` (asking for permission again if the browser dropped it). */
 async function writeTo(handle: FileHandle): Promise<void> {
@@ -107,7 +107,7 @@ export async function saveProjectAs(): Promise<void> {
   showToast(`Saved to ${handle.name}. Save (${navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+'}S) now keeps it up to date`);
 }
 
-/** Open a .beatbox.json file. Returns why it couldn't, or null. */
+/** Open a .fledgetone.json file. Returns why it couldn't, or null. */
 export async function openProjectFromFile(file: File, handle: FileHandle | null = null): Promise<string | null> {
   try {
     const project = parseProject(JSON.parse(await file.text()));

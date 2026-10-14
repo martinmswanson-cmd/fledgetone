@@ -8,7 +8,7 @@ import type { SampleRate } from './exportWav';
  * stingers, the transition sounds) laid out for audio middleware, with
  * - cues.json: the same description as the game kit's manifest, plus each state's place on one
  *   timeline (for FMOD's single-event layout);
- * - fmod/BosBeatbox_<song>.js: an FMOD Studio script (Scripts menu) that builds the event: a track
+ * - fmod/Fledgetone_<song>.js: an FMOD Studio script (Scripts menu) that builds the event: a track
  *   per stem group, every state laid out with a loop region and a marker, the tempo, and an
  *   Intensity parameter driving each group's volume along its curve;
  * - wwise/import_<song>.py: a Wwise Authoring API script that imports the states into a Music
@@ -29,7 +29,7 @@ export async function buildEnginePackage(song: GameKitSong, target: EngineTarget
   const out: ZipEntry[] = files.map((f) => ({ ...f, name: `Audio/${f.name}` }));
   const cues = { ...manifest, format: 'bos-beatbox-cues', mainStem: MAIN_STEM, timeline: stateLayout(manifest) };
   out.push({ name: 'cues.json', data: new Blob([JSON.stringify(cues, null, 2)], { type: 'application/json' }) });
-  if (target !== 'wwise') out.push({ name: `fmod/BosBeatbox_${slug}.js`, data: new Blob([fmodScript(manifest)], { type: 'text/javascript' }) });
+  if (target !== 'wwise') out.push({ name: `fmod/Fledgetone_${slug}.js`, data: new Blob([fmodScript(manifest)], { type: 'text/javascript' }) });
   if (target !== 'fmod') out.push({ name: `wwise/import_${slug}.py`, data: new Blob([wwiseScript(manifest)], { type: 'text/x-python' }) });
   out.push({ name: 'README.md', data: new Blob([engineReadme(manifest, target)], { type: 'text/markdown' }) });
   onProgress?.(1, 'zip');

@@ -1,6 +1,6 @@
-Bo's Beatbox built-in plugins: the open-source software compiled into the WebAssembly files in
+Fledgetone built-in plugins: the open-source software compiled into the WebAssembly files in
 this folder (bos-beat-box-plugins/), and its licences. How they are built: scripts/plugins/ in the
-Bo's Beatbox source.
+Fledgetone source.
 
 
 airwindows.wasm: Airwindows effects (MIT)
@@ -27,7 +27,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 mda.wasm: the mda plug-ins (MIT; offered by the author under MIT or GPL 2+)
 ============================================================
 Copyright (c) 2008 Paul Kellett, https://sourceforge.net/projects/mda-vst/
-The plug-in base class they are built against here is Bo's Beatbox's own (MIT).
+The plug-in base class they are built against here is Fledgetone's own (MIT).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
 associated documentation files (the "Software"), to deal in the Software without restriction,

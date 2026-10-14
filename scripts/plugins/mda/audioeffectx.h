@@ -1,6 +1,6 @@
 /*
  * A minimal stand-in for the plug-in base class the mda plug-ins were written against, written
- * for Bo's Beatbox (MIT, like the plug-ins). It provides only what the mda sources use: the
+ * for Fledgetone (MIT, like the plug-ins). It provides only what the mda sources use: the
  * plug-in's own processing, parameters, programs and MIDI events, with a host that is
  * bb_mda.cpp. No host callbacks: the "audioMaster" is ignored.
  */

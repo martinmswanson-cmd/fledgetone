@@ -1,4 +1,4 @@
-# Adaptive music player for Godot 4, from Bo's Beatbox.
+# Adaptive music player for Godot 4, from Fledgetone.
 #
 # 1. Copy this folder (audio_manifest.json, states/, stems/, stingers/, transitions/) into your
 #    project, e.g. res://music/.
@@ -190,7 +190,7 @@ func get_parameter(name: String) -> float:
 	return float(params.get(name, 0.0))
 
 # What the parameters ask for together: the highest intensity and reverb, the lowest filter, the
-# volumes and each group's levels multiplied (the same sums as Bo's Beatbox's gameParams.ts)
+# volumes and each group's levels multiplied (the same sums as Fledgetone's gameParams.ts)
 func _mix() -> Dictionary:
 	var m := {"intensity": null, "filter": 20000.0, "reverb": 0.0, "volume": 1.0, "layers": {}}
 	for p in data.get("parameters", []):

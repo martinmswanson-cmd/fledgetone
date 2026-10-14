@@ -139,7 +139,7 @@ export const RestoreSessionBanner: React.FC = () => {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 border-b border-forge-border bg-amber-500/10 text-xs">
         <History className="w-4 h-4 text-amber-300 shrink-0" />
         <span className="text-forge-text">
-          Your last session couldn't be read (it may be damaged, or from a newer version of Bo's Beatbox). It's kept in this browser, apart, so nothing overwrites it.
+          Your last session couldn't be read (it may be damaged, or from a newer version of Fledgetone). It's kept in this browser, apart, so nothing overwrites it.
         </span>
         <button type="button" className={`${barButton} ml-auto`} onClick={() => setUnreadableSeen(true)}>
           OK

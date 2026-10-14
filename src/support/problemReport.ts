@@ -12,8 +12,8 @@ import { useTimelineStore } from '../store/timelineStore';
  */
 
 export const CONTACT_EMAIL = 'martin@twobirdsworkshop.com';
-/** The site's contact form, opened as a problem report about Bo's Beatbox. */
-export const CONTACT_PAGE = `https://twobirdsworkshop.com/contact?broken=${encodeURIComponent("Bo's Beatbox")}`;
+/** The site's contact form, opened as a problem report about Fledgetone. */
+export const CONTACT_PAGE = `https://twobirdsworkshop.com/contact?broken=${encodeURIComponent("Fledgetone")}`;
 
 const MAX_ERRORS = 5;
 const errors: string[] = [];
@@ -73,5 +73,5 @@ const MAILTO_MAX = 1800;
 export function mailtoLink(report: ProblemReport): string {
   let body = reportText(report);
   if (body.length > MAILTO_MAX) body = `${body.slice(0, MAILTO_MAX)}\n[cut short]`;
-  return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Bo's Beatbox problem report")}&body=${encodeURIComponent(body)}`;
+  return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Fledgetone problem report")}&body=${encodeURIComponent(body)}`;
 }

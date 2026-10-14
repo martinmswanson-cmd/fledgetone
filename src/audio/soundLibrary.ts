@@ -18,7 +18,7 @@ export type { EmbeddedSound, SoundMeta };
  * The user's own sound files: audio clips, the Slicer's sound and the Sampler's. They live in the
  * browser's IndexedDB, keyed by a hash of their bytes, so a file loaded twice (or used by several
  * tracks or projects) is stored once, and projects only hold the ids: browser autosave has about
- * 5 MB for a whole project, and a sound file alone can be ten times that. A saved .beatbox.json
+ * 5 MB for a whole project, and a sound file alone can be ten times that. A saved .fledgetone.json
  * embeds the files it uses (see embedSounds), and opening one puts them back here.
  *
  * Each sound is decoded once per sample rate (the live context's, and the WAV export's) and the

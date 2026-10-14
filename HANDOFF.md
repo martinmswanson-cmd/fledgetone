@@ -1,11 +1,11 @@
-# Bo's Beatbox: handoff
+# Fledgetone: handoff
 
 Read this first when picking the project up in a new session. (Updated after the big genre, instrument and tools batch: 105 instruments, 24 starters, Synth Designer, video scoring, Mixer, Game preview, mic recording, lag detection.) It covers what the app is, how
 the code is laid out, how to check changes (including sound), what's finished, and what's next.
 
 ## The app and who it's for
 
-Bo's Beatbox is a music maker that runs in the browser. It's laid out like a video editor more
+Fledgetone is a music maker that runs in the browser. It's laid out like a video editor more
 than a classic DAW: an arrangement timeline with tracks and clips, a timecode readout, markers,
 a ripple-editing toolbar. It's used mostly for **dubstep and EDM**, so bass sounds, drops and
 loudness matter more than orchestral realism.
@@ -35,7 +35,7 @@ loudness matter more than orchestral realism.
 ## Stack and commands
 
 React 19, TypeScript, zustand, Tone.js 15, Tailwind, Vite. No backend: projects autosave in the
-browser and save to `.beatbox.json` files.
+browser and save to `.fledgetone.json` files.
 
 ```
 npm install
@@ -173,7 +173,7 @@ Filter, Pump and Distortion inserts; audio tracks and clips, a sound library and
 vocal chops; MIDI keyboard input, recording takes with count-in and loop overdub, metronome,
 computer-keyboard piano; every recording the sample libraries offer for each instrument, with
 shaping for the Erhu, Electric and Acoustic Guitar, Violin and Cello and a quieter top octave on
-Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time notice for phone users.
+Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time notice for phone users.
 
 ## Recently finished
 

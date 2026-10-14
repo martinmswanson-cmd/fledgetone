@@ -68,7 +68,7 @@ const TOUR: Lesson = {
   minutes: 1,
   steps: [
     {
-      title: "Welcome to Bo's Beatbox",
+      title: "Welcome to Fledgetone",
       body: 'A music maker that runs in your browser: build a song from tracks and clips, mix it, and export it for your game or video. Here is where everything lives.',
     },
     {

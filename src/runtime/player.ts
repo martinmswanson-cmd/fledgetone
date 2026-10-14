@@ -1,5 +1,5 @@
 /**
- * Bo's Beatbox runtime for web games: load a project file (.json, as Save makes it) and play its
+ * Fledgetone runtime for web games: load a project file (.json, as Save makes it) and play its
  * music with no audio files at all. The song's states, stems, stingers and transitions are
  * synthesized in the browser when it loads, by the same engine the app uses, then played by the
  * game kit's adaptive player (see src/gameKit/adaptive-music.js), so it behaves exactly as the

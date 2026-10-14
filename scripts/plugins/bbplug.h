@@ -1,5 +1,5 @@
 /*
- * The interface every compiled plugin family exports to Bo's Beatbox (see
+ * The interface every compiled plugin family exports to Fledgetone (see
  * src/audio/plugins/processor.js). A family is one WebAssembly module holding many plugins:
  * the worklet makes an instance of a plugin by index, sets its parameters (0 to 1), fills its
  * input buffers, processes a block and reads its outputs. Instruments also take MIDI.

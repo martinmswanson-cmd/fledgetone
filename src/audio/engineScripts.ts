@@ -36,11 +36,11 @@ export function fmodScript(m: AudioManifest): string {
   const tracks = tracksOf(m).map((t) => ({ name: t.name, sounds: m.states.map((s, i) => ({ file: t.fileOf(s), start: layout[i].start, length: layout[i].length })) }));
   const curves = m.intensity.groups.map((g) => ({ name: g.name, points: g.curve.map(([x, y]) => [x, +levelDb(y).toFixed(2)]) }));
   const data = { name: m.name, bpm: m.bpm, layout, tracks, curves, stingers: m.stingers.map((s) => ({ name: s.name, file: s.file })), transitions: m.transitions };
-  return `// ${m.name}: FMOD Studio import script, made by Bo's Beatbox.
+  return `// ${m.name}: FMOD Studio import script, made by Fledgetone.
 //
 // 1. Copy this file into your FMOD Studio project's Scripts folder (next to the .fspro), or your
 //    user Scripts folder, and choose Scripts > Reload in FMOD Studio.
-// 2. Choose Scripts > Bo's Beatbox > Import "${m.name}" and give it the full path of this package's
+// 2. Choose Scripts > Fledgetone > Import "${m.name}" and give it the full path of this package's
 //    Audio folder when asked (or set AUDIO_FOLDER below first).
 // It builds the event Music/${m.name} and an event per stinger, and reports what it did in the console.
 // See README.md for what to finish by hand.
@@ -66,7 +66,7 @@ function bbTry(what, fn) {
 function bbFolder() {
   if (AUDIO_FOLDER) return AUDIO_FOLDER.replace(/[\\\\/]+$/, '');
   var asked = null;
-  try { asked = studio.system.getText('Full path of the Audio folder from the Bo\\'s Beatbox package', ''); } catch (e) {}
+  try { asked = studio.system.getText('Full path of the Audio folder from the Fledgetone package', ''); } catch (e) {}
   return asked ? String(asked).replace(/[\\\\/]+$/, '') : null;
 }
 
@@ -178,7 +178,7 @@ function bbImport() {
 }
 
 studio.menu.addMenuItem({
-  name: "Bo's Beatbox\\\\Import \\"" + DATA.name + "\\"",
+  name: "Fledgetone\\\\Import \\"" + DATA.name + "\\"",
   execute: bbImport,
 });
 `;
@@ -196,7 +196,7 @@ export function wwiseScript(m: AudioManifest): string {
     layout: stateLayout(m),
   };
   return `#!/usr/bin/env python3
-"""${m.name}: Wwise import script, made by Bo's Beatbox.
+"""${m.name}: Wwise import script, made by Fledgetone.
 
 1. Open your Wwise project, and turn on the Wwise Authoring API
    (Project > User Preferences > Enable Wwise Authoring API).
@@ -290,7 +290,7 @@ export function engineReadme(m: AudioManifest, target: EngineTarget): string {
   const slug = m.name.replace(/[^A-Za-z0-9]+/g, '_');
   return `# ${m.name}: FMOD / Wwise package
 
-Made with Bo's Beatbox. ${m.bpm} BPM, ${(m.timeSignature ?? [4, 4]).join('/')} at the start (a bar is ${bar.toFixed(4)} s there; each state keeps its own tempo and time signature, see the table)${m.key ? `, in ${m.key}` : ''}.
+Made with Fledgetone. ${m.bpm} BPM, ${(m.timeSignature ?? [4, 4]).join('/')} at the start (a bar is ${bar.toFixed(4)} s there; each state keeps its own tempo and time signature, see the table)${m.key ? `, in ${m.key}` : ''}.
 
 ## What's here
 
@@ -299,7 +299,7 @@ Made with Bo's Beatbox. ${m.bpm} BPM, ${(m.timeSignature ?? [4, 4]).join('/')} a
 - \`Audio/stingers/\`: short cues to play over the music on the next beat.
 - \`Audio/transitions/\`: fill, riser and impact sounds for switches (a fill or riser starts its lead-in before the switch).
 - \`cues.json\`: tempo, every state (bars, seconds, samples, its stems, where it sits on one timeline), the transition rules, the stingers and the intensity curves.
-${fmod ? `- \`fmod/BosBeatbox_${slug}.js\`: builds the music in FMOD Studio.\n` : ''}${wwise ? `- \`wwise/import_${slug}.py\`: builds the music in Wwise.\n` : ''}
+${fmod ? `- \`fmod/Fledgetone_${slug}.js\`: builds the music in FMOD Studio.\n` : ''}${wwise ? `- \`wwise/import_${slug}.py\`: builds the music in Wwise.\n` : ''}
 ## States
 
 | State | Bars | Seconds | Tempo | Time signature | Timeline start (FMOD) |
@@ -318,8 +318,8 @@ ${curves.map((g) => `- **${g.name}**: ${g.curve.map(([x, y]) => `${Math.round(x 
 ` : ''}${fmod ? `
 ## FMOD Studio
 
-1. Copy \`fmod/BosBeatbox_${slug}.js\` into your project's \`Scripts\` folder (next to the .fspro) and choose **Scripts > Reload**.
-2. Choose **Scripts > Bo's Beatbox > Import "${m.name}"**, and paste the full path of this package's \`Audio\` folder.
+1. Copy \`fmod/Fledgetone_${slug}.js\` into your project's \`Scripts\` folder (next to the .fspro) and choose **Scripts > Reload**.
+2. Choose **Scripts > Fledgetone > Import "${m.name}"**, and paste the full path of this package's \`Audio\` folder.
 3. It makes the event **Music/${m.name}**: ${tracksOf(m).length > 1 ? `a track per stem group (${tracksOf(m).map((t) => t.name).join(', ')})` : 'one track'}, every state laid end to end with a **loop region** and a **marker** named after it, the tempo marker, an **Intensity** parameter (0 to 1) automating each group's volume, and an event per stinger under **Stingers/**. The console lists each step as OK or SKIP: a SKIP is something your version of Studio's scripting doesn't allow, to do by hand below.
 4. By hand: add a **State** parameter (labelled, one label per state) and **transition regions** (or transition markers) to each state's marker with that label as the condition, quantized to the bar (or as the transitions above say). Set loop regions to loop while their state is set.
 5. In the game: start the event, set **State** and **Intensity**; play the stinger events on the next beat.

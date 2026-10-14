@@ -391,11 +391,11 @@ export async function buildGameKit(song: GameKitSong, onProgress?: (fraction: nu
   } else if (layout === 'unity') {
     const folder = manifest.name.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('') || 'Song';
     const resources = `BosMusic/${folder}`;
-    out.push(...files.map((f) => ({ ...f, name: `Assets/BosBeatbox/Resources/${resources}/${f.name}` })));
-    out.push({ name: `Assets/BosBeatbox/Resources/${resources}/audio_manifest.json`, data: json(manifest) });
-    out.push({ name: 'Assets/BosBeatbox/AdaptiveMusic.cs', data: text(unityPlayer.replace('public string resourcesFolder = "Music";', `public string resourcesFolder = "${resources}";`)) });
-    out.push({ name: 'Assets/BosBeatbox/AdaptiveMusicExample.cs', data: text(unityExample) });
-    out.push({ name: `Assets/BosBeatbox/README_${folder}.md`, data: text(unityReadme(manifest, resources), 'text/markdown') });
+    out.push(...files.map((f) => ({ ...f, name: `Assets/Fledgetone/Resources/${resources}/${f.name}` })));
+    out.push({ name: `Assets/Fledgetone/Resources/${resources}/audio_manifest.json`, data: json(manifest) });
+    out.push({ name: 'Assets/Fledgetone/AdaptiveMusic.cs', data: text(unityPlayer.replace('public string resourcesFolder = "Music";', `public string resourcesFolder = "${resources}";`)) });
+    out.push({ name: 'Assets/Fledgetone/AdaptiveMusicExample.cs', data: text(unityExample) });
+    out.push({ name: `Assets/Fledgetone/README_${folder}.md`, data: text(unityReadme(manifest, resources), 'text/markdown') });
   } else {
     out.push(...files);
     out.push({ name: 'audio_manifest.json', data: json(manifest) });
@@ -476,7 +476,7 @@ function godotReadme(m: AudioManifest, slug: string): string {
   const c = callNames(m);
   return `# ${m.name}: music${m.sfx?.length ? ' and sound effects' : ''} for Godot 4
 
-Made with Bo's Beatbox. ${m.bpm} BPM.
+Made with Fledgetone. ${m.bpm} BPM.
 
 ${inventory(m)}
 
@@ -514,13 +514,13 @@ function unityReadme(m: AudioManifest, resources: string): string {
   const c = callNames(m);
   return `# ${m.name}: music${m.sfx?.length ? ' and sound effects' : ''} for Unity
 
-Made with Bo's Beatbox. ${m.bpm} BPM.
+Made with Fledgetone. ${m.bpm} BPM.
 
 ${inventory(m)}
 
 ## Try it (two minutes)
 
-1. Unzip this into your Unity project's folder (the one with the \`Assets\` folder in it). Everything lands in \`Assets/BosBeatbox\`.
+1. Unzip this into your Unity project's folder (the one with the \`Assets\` folder in it). Everything lands in \`Assets/Fledgetone\`.
 2. Go back to Unity: it imports the sounds by itself.
 3. Make an empty GameObject (**GameObject › Create Empty**), and in the Inspector **Add Component › Adaptive Music Example** (it adds Adaptive Music too).
 4. Press **Play**: buttons for every state${c.sting ? ' and stinger' : ''}${m.sfx?.length ? ' and sound effect' : ''}, and an intensity slider.
@@ -550,7 +550,7 @@ function readme(m: AudioManifest): string {
   const second = states[1] ?? first;
   const sting = stingers[0];
   const stems = m.intensity.groups.map((g) => g.name);
-  return `${name}: game music kit, made with Bo's Beatbox
+  return `${name}: game music kit, made with Fledgetone
 ${'='.repeat(name.length + 49)}
 
 ${bpm} BPM, 4/4.

@@ -27,7 +27,7 @@ export const LearnDialog: React.FC<{ onClose: () => void; welcome?: boolean }> =
     window.setTimeout(() => useTourStore.getState().start(id, step), 50);
   };
   return (
-    <Modal title={welcome ? "Welcome to Bo's Beatbox" : 'Tour and tutorials'} onClose={onClose} wide>
+    <Modal title={welcome ? "Welcome to Fledgetone" : 'Tour and tutorials'} onClose={onClose} wide>
       <p className="text-[13px] text-forge-text">
         {welcome
           ? 'Make music for games and videos, right in your browser. New here? Take the one-minute tour, or learn by doing in a tutorial at your level.'

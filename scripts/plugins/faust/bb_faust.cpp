@@ -1,5 +1,5 @@
 /*
- * Faust programs (physical-model instruments and effects, see plugins.json) as a Bo's Beatbox
+ * Faust programs (physical-model instruments and effects, see plugins.json) as a Fledgetone
  * plugin family. Each program's controls become the plugin's parameters, except an instrument's
  * "freq", "gain" and "gate" (and "bend"), which its notes play: eight copies of the program are
  * the instrument's voices. Generated code for each program is in gen/ (build.py).

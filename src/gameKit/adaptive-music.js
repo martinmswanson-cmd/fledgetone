@@ -1,4 +1,4 @@
-// Adaptive music player for the web, from Bo's Beatbox. No libraries: Web Audio only.
+// Adaptive music player for the web, from Fledgetone. No libraries: Web Audio only.
 //
 //   import { AdaptiveMusic } from './adaptive-music.js';
 //   const music = new AdaptiveMusic();
@@ -172,7 +172,7 @@ export class AdaptiveMusic {
 
   /**
    * What the parameters ask for together: the highest intensity and reverb, the lowest filter, the
-   * volumes and each group's levels multiplied (the same sums as Bo's Beatbox's gameParams.ts).
+   * volumes and each group's levels multiplied (the same sums as Fledgetone's gameParams.ts).
    */
   mix() {
     const m = { intensity: null, filter: 20000, reverb: 0, volume: 1, layers: {} };

@@ -1,6 +1,6 @@
-# Contributing to Bo's Beatbox
+# Contributing to Fledgetone
 
-Thanks for wanting to help. Bo's Beatbox is a music studio in the browser, built most of all for
+Thanks for wanting to help. Fledgetone is a music studio in the browser, built most of all for
 people who make music for games and video, and for beginners who want something that sounds good
 on day one. Every kind of help counts: a clear bug report, a sound that's off, a starter song, a
 better sentence in the guide, or code.
@@ -22,7 +22,7 @@ This page covers:
 ## Ways to help
 
 - **Report a bug.** Say what you did, what you expected and what happened instead, which browser
-  and system you use, and attach the song if you can (File › Save makes a `.beatbox.json`; take
+  and system you use, and attach the song if you can (File › Save makes a `.fledgetone.json`; take
   anything private out first). Something you *hear* wrong is a bug too: a click, a note out of
   tune, an instrument much louder than the others. A short recording helps a lot.
 - **Suggest a feature.** Describe the music you were trying to make and where the app got in the
@@ -294,7 +294,7 @@ rejections: answer or push a change, and say if you disagree.
 
 ## Licences: your work and other people's
 
-Bo's Beatbox is free software under the GNU General Public License, version 3 or later (see
+Fledgetone is free software under the GNU General Public License, version 3 or later (see
 `LICENSE`). By sending a contribution you agree that it's licensed the same way, and that you
 have the right to contribute it.
 

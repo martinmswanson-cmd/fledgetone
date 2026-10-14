@@ -11,6 +11,6 @@ labels: sound
 <!-- Live while playing, in an export, or both? Which notes or bars? -->
 
 **A recording** (the best help of all)
-<!-- Export a few seconds (File › Export) or attach the song (.beatbox.json). -->
+<!-- Export a few seconds (File › Export) or attach the song (.fledgetone.json). -->
 
 **Browser and system**

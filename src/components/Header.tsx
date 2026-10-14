@@ -49,7 +49,7 @@ export const Header: React.FC = () => {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 border-b border-forge-border">
         <div className="flex items-center gap-2 mr-1">
           <img src={boLogo} alt="Bo wearing headphones" className="w-8 h-8 drop-shadow-[0_0_8px_rgba(61,158,224,0.45)]" />
-          <h1 className="text-sm font-bold tracking-tight text-white font-sans whitespace-nowrap">Bo's Beatbox</h1>
+          <h1 className="text-sm font-bold tracking-tight text-white font-sans whitespace-nowrap">Fledgetone</h1>
         </div>
         <MenuBar />
         <div className="ml-auto">
@@ -191,7 +191,7 @@ export const Header: React.FC = () => {
           type="button"
           onClick={() => openGuide()}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-mono tracking-wider border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-500/70 hover:bg-cyan-500/10 transition"
-          title="How Bo's Beatbox works (?)"
+          title="How Fledgetone works (?)"
         >
           <BookOpen className="w-3.5 h-3.5 text-cyan-400" />
           GUIDE
