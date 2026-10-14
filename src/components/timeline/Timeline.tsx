@@ -6,6 +6,7 @@
 import { startAutoFreeze } from '../../store/autoFreeze';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VideoLane } from '../video/VideoLane';
+import { livePlayhead, onPlayhead } from '../../store/playheadClock';
 import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { RestoreSessionBanner } from './ProjectBar';
 import { TimelineScrollbar } from './TimelineScrollbar';
@@ -264,12 +265,17 @@ export const Timeline: React.FC = () => {
       useTimelineStore.subscribe((state, prev) => {
         const el = scrollRef.current;
         if (!el) return;
-        if (state.viewJumps !== prev.viewJumps) {
-          el.scrollLeft = state.viewLeft;
-          return;
-        }
-        if (!state.isPlaying || state.playheadPosition === prev.playheadPosition) return;
-        const x = (state.playheadPosition - 1) * state.zoom;
+        if (state.viewJumps !== prev.viewJumps) el.scrollLeft = state.viewLeft;
+      }),
+    []
+  );
+  useEffect(
+    () =>
+      onPlayhead(() => {
+        const el = scrollRef.current;
+        const state = useTimelineStore.getState();
+        if (!el || !state.isPlaying) return;
+        const x = (livePlayhead() - 1) * state.zoom;
         // The view as the store has it (setView, on every scroll and resize), not read from the
         // page: reading scrollLeft or clientWidth makes the browser lay the page out there and then,
         // and this runs every frame of playback

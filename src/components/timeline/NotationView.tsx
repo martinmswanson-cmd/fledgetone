@@ -1,6 +1,7 @@
 import type { Scale } from '../../store/noteTools';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Download, Printer } from 'lucide-react';
+import { useLivePlayhead } from '../../store/playheadClock';
 import { useTimelineStore, songMeterOf } from '../../store/timelineStore';
 import type { Clip, Track } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/instruments';
@@ -166,7 +167,7 @@ export const NotationView: React.FC<{ clip: Clip; track: Track; scale?: Scale | 
   }, [clips, tracks, scale]);
   const drums = isDrumKind(track.instrumentKey) || isRackKind(track.instrumentKey);
   const score = useMemo(() => notate(clip, meter, key, drums), [clip, meter, key, drums]);
-  const playhead = useTimelineStore((s) => s.playheadPosition);
+  const playhead = useLivePlayhead();
   const lit = score.measures.findIndex((m, i) => playhead >= m.bar - 1e-9 && (i + 1 >= score.measures.length || playhead < score.measures[i + 1].bar - 1e-9) && playhead < clip.startBar + clip.lengthBars);
 
   useEffect(() => {

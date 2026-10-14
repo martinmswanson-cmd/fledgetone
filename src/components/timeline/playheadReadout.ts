@@ -9,13 +9,14 @@
 import { useEffect, useState } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { onFrame } from '../frameTicker';
+import { livePlayhead } from '../../store/playheadClock';
 
 export function usePlayheadReadout(fps = 15): number {
   const [position, setPosition] = useState(() => useTimelineStore.getState().playheadPosition);
   useEffect(() => {
     let playing = useTimelineStore.getState().isPlaying;
     const unFrame = onFrame(() => {
-      if (playing) setPosition(useTimelineStore.getState().playheadPosition);
+      if (playing) setPosition(livePlayhead());
     }, fps);
     const unSubscribe = useTimelineStore.subscribe((s, prev) => {
       playing = s.isPlaying;

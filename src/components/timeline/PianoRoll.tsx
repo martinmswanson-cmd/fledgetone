@@ -16,6 +16,7 @@ import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isRackKind, isSlicerKind } 
 import { padNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
 import type { DrumRack } from '../../store/timelineTypes';
+import { useLivePlayhead } from '../../store/playheadClock';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, ClipGroove, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
@@ -262,7 +263,7 @@ export const PianoRoll: React.FC = () => {
  * while playing) on its own, so the editor and its notes don't re-render 60 times a second.
  */
 const GridPlayhead: React.FC<{ startBar: number; stepW: number; gridW: number }> = ({ startBar, stepW, gridW }) => {
-  const playhead = useTimelineStore((s) => s.playheadPosition);
+  const playhead = useLivePlayhead();
   const x = (playhead - startBar) * 16 * stepW;
   if (x < 0 || x > gridW) return null;
   return <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 pointer-events-none z-20" style={{ left: x }} />;

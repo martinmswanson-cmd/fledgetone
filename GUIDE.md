@@ -143,7 +143,8 @@ The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cut
 - adding and deleting tracks (Undo brings a deleted track back with its clips), and changing a track's instrument;
 - M, S and R, VOL and PAN, the EQ, Distortion, Compressor, Chorus, the sends and the Master tab (OTT, Stereo Width, reverb and delay);
 - loading, replacing or removing a Sampler sound, and its **Original pitch on** note;
-- automation: adding, moving and deleting points, ramps and clearing or removing lanes.
+- automation: adding, moving and deleting points, ramps and clearing or removing lanes;
+- the Game tab's own parts: costumes, stingers, the game's sound effects, transition rules, and how each state plays (shuffle and silences).
 
 One slider adjustment is one step, whether you drag it, tap its arrow keys or double-click to reset it. Tempo, swing, the loop (other than by Insert and Delete bars), zoom, snap, frame rate, ruler units, master volume and the project name are not undone.
 

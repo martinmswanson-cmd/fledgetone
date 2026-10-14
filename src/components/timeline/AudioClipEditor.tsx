@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { AudioWaveform, FlipHorizontal2, Gauge, Magnet, Maximize2, Slice, Spline, Wand2, X } from 'lucide-react';
 import { useUiStore } from '../../store/uiStore';
+import { useLivePlayhead } from '../../store/playheadClock';
 import { useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
 import type { Clip, Track } from '../../store/timelineTypes';
@@ -256,7 +257,7 @@ const StretchControls: React.FC<{ clip: Clip; bpm: number }> = ({ clip, bpm }) =
 
 /** The playhead over the waveform, following the store on its own so the editor doesn't re-render per frame. */
 const EditorPlayhead: React.FC<{ clip: Clip }> = ({ clip }) => {
-  const playhead = useTimelineStore((s) => s.playheadPosition);
+  const playhead = useLivePlayhead();
   const fraction = (playhead - clip.startBar) / clip.lengthBars;
   if (fraction < 0 || fraction > 1) return null;
   return <div className="absolute top-0 bottom-0 w-[2px] bg-red-500 pointer-events-none" style={{ left: `${fraction * 100}%` }} />;

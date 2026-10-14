@@ -146,7 +146,13 @@ export async function buildGameKitParts(
   const costumes = (song.costumes ?? []).map((c) => ({ costume: c, ...applyCostume(song.tracks, song.clips, c) }));
   const steps = sections.length * (stemGroups.length && !skipMix ? 2 : 1) * (1 + costumes.length) + song.stingers.length + gameSfx.length + 4;
   let step = 0;
-  const tick = (detail: string) => onProgress?.(step++ / steps, detail);
+  let current = '';
+  const tick = (detail: string) => {
+    current = detail;
+    onProgress?.(step++ / steps, detail);
+  };
+  /** How far through the step just begun (a long state's render moves the bar as it goes). */
+  const within = (f: number) => onProgress?.((step - 1 + Math.max(0, Math.min(1, f))) / steps, current);
 
   // States: each section a seamless loop (and its stems), named after its marker
   const states: AudioManifest['states'] = [];
@@ -165,7 +171,7 @@ export async function buildGameKitParts(
     const seconds = secondsBetween(sec.from, sec.to, tempo);
     let samples = Math.round(seconds * sampleRate);
     if (!skipMix) {
-      const audio = await renderArrangement({ ...range, ending: 'seamless' });
+      const audio = await renderArrangement({ ...range, ending: 'seamless' }, within);
       const channels = channelsOf(audio);
       samples = channels[0].length;
       files.push({ name: file, data: encodeChannels(channels, audio.sampleRate, 16, [], { start: 0, end: channels[0].length }) });
@@ -173,7 +179,7 @@ export async function buildGameKitParts(
     const stems: AudioManifest['states'][number]['stems'] = [];
     if (stemGroups.length) {
       if (!skipMix) tick(`stems ${name}`);
-      const r = await renderGroupStems(range, stemGroups);
+      const r = await renderGroupStems(range, stemGroups, within);
       for (const [k, stem] of r.stems.entries()) {
         const stemFile = `stems/${safe(name)}/${safe(stem.name)}.wav`;
         files.push({ name: stemFile, data: encodeChannels(stem.channels, r.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }) });
@@ -190,7 +196,7 @@ export async function buildGameKitParts(
       const base = `${safe(name)} (${safe(d.costume.name)})`;
       let cfile: string | undefined;
       if (!skipMix || !stemGroups.length) {
-        const audio = await renderArrangement({ ...crange, ending: 'seamless' });
+        const audio = await renderArrangement({ ...crange, ending: 'seamless' }, within);
         const channels = channelsOf(audio);
         cfile = `states/${base}.wav`;
         files.push({ name: cfile, data: encodeChannels(channels, audio.sampleRate, 16, [], { start: 0, end: channels[0].length }) });

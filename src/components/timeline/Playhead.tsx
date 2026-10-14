@@ -4,6 +4,7 @@
  */
 import React, { useCallback } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
+import { useLivePlayhead } from '../../store/playheadClock';
 import { snapBar } from '../../store/timelineTypes';
 import { HEADER_WIDTH } from './layout';
 
@@ -55,11 +56,11 @@ interface PlayheadProps {
 
 /**
  * Current Time Indicator. The "line" variant spans every track lane; the "head"
- * variant is the grab handle drawn inside the ruler. Position is driven by the
- * store's playheadPosition, which the transport rAF loop updates each frame.
+ * variant is the grab handle drawn inside the ruler. It moves every frame with the live playhead
+ * (playheadClock.ts).
  */
 export const Playhead: React.FC<PlayheadProps> = ({ variant, onScrubStart }) => {
-  const position = useTimelineStore((s) => s.playheadPosition);
+  const position = useLivePlayhead();
   const zoom = useTimelineStore((s) => s.zoom);
   const x = (position - 1) * zoom;
 

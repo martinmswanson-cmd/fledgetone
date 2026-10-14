@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Play, Square, Undo2, LayoutList, Send, ListPlus, X } from 'lucide-react';
+import { useLivePlayhead } from '../../store/playheadClock';
 import { useTimelineStore } from '../../store/timelineStore';
 import { isMixTrack } from '../../store/buses';
 import { useLauncher, launcherActive, slotAt } from '../../store/launcherView';
@@ -28,7 +29,7 @@ import { showToast } from './toastStore';
 /** Where the music is, about 20 times a second while it plays (the playhead's bar while stopped). */
 function useHeardBar(): number {
   const playing = useTimelineStore((s) => s.isPlaying);
-  const playhead = useTimelineStore((s) => s.playheadPosition);
+  const playhead = useLivePlayhead();
   const [bar, setBar] = useState(playhead);
   useEffect(() => {
     if (!playing) return;

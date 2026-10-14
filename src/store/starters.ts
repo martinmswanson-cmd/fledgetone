@@ -4,7 +4,8 @@ import { clip, D, hats8, master, progression, project, snareRoll, track } from '
 import { PLAYLIST_BUILDERS } from './startersPlaylist';
 import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
-import { FX_NOTES } from '../audio/instrumentCatalog';
+import { FX_NOTES, INSTRUMENTS } from '../audio/instrumentCatalog';
+import { midiOf, nameOf } from './noteTools';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
 import { DEFAULT_MASTER_FX, durationToBars } from './timelineTypes';
 import type { Clip, ClipExpression, MasterFx, MbcBand, PeqBand, Track } from './timelineTypes';
@@ -1389,5 +1390,33 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  return BUILDERS[id]();
+  return inRange(BUILDERS[id]());
+}
+
+/**
+ * Each pitched part's notes within what its instrument really plays: a note past the end moves an
+ * octave (or more) in. A recording stretched far below its lowest note or above its highest sounds
+ * thin or muddy, and a bassoon can't play a G1 at all. Drum kits' notes are drum names, left alone.
+ */
+function inRange(p: ProjectSnapshot): ProjectSnapshot {
+  const ranges = new Map(p.tracks.map((t) => [t.id, INSTRUMENTS[t.instrumentKey]?.kind === 'drums' ? undefined : INSTRUMENTS[t.instrumentKey]?.range]));
+  let moved = false;
+  const clips = p.clips.map((c) => {
+    const range = ranges.get(c.trackId);
+    if (!range || !c.notes.length) return c;
+    const [lo, hi] = range;
+    let changed = false;
+    const notes = c.notes.map((n) => {
+      let m = midiOf(n.note);
+      if (!Number.isFinite(m) || (m >= lo && m <= hi)) return n;
+      while (m < lo && m + 12 <= hi) m += 12;
+      while (m > hi && m - 12 >= lo) m -= 12;
+      changed = true;
+      return { ...n, note: nameOf(m) };
+    });
+    if (!changed) return c;
+    moved = true;
+    return { ...c, notes };
+  });
+  return moved ? { ...p, clips } : p;
 }

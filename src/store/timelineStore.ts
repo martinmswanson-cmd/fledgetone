@@ -67,6 +67,7 @@ import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
+import { setLivePlayhead } from './playheadClock';
 import { createGameSfx, type GameSfx } from './gameSfx';
 import { costumeFromPreset, freeCostumeName, MAX_COSTUMES, MAX_COSTUME_TEMPO, MIN_COSTUME_TEMPO, type Costume, type CostumePreset, type CostumeTrack, type StateOptions } from './costumes';
 import type { SfxSound } from '../audio/sfx/sfxSynth';
@@ -183,6 +184,12 @@ interface HistoryEntry {
   tempoPoints: TempoPoint[];
   meter: Meter;
   meterPoints: MeterPoint[];
+  /** The game tab's own parts: costumes, stingers, sound effects and how each state plays */
+  costumes: Costume[];
+  stingers: Stinger[];
+  gameSfx: GameSfx[];
+  stateOptions: Record<string, StateOptions>;
+  transitions: Record<string, TransitionRule>;
 }
 
 /** Everything undo restores, read from the store now. */
@@ -196,6 +203,11 @@ const historyEntry = (s: TimelineState): HistoryEntry => ({
   tempoPoints: s.tempoPoints,
   meter: s.meter,
   meterPoints: s.meterPoints,
+  costumes: s.costumes,
+  stingers: s.stingers,
+  gameSfx: s.gameSfx,
+  stateOptions: s.stateOptions,
+  transitions: s.transitions,
 });
 
 let tempoMemo: { bpm: number; points: TempoPoint[]; map: TempoMap } | null = null;
@@ -280,6 +292,11 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     master,
     // The song's tempo isn't undone, so markers held to their time are placed at today's tempo
     markers: retimeMarkers(entry.markers, now),
+    costumes: entry.costumes,
+    stingers: entry.stingers,
+    gameSfx: entry.gameSfx,
+    stateOptions: entry.stateOptions,
+    transitions: entry.transitions,
   };
 }
 
@@ -851,6 +868,8 @@ function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; mas
 }
 
 let rafId = 0;
+/** How often, while playing, the store's playheadPosition follows the playhead (ms); playheadClock.ts has it every frame. */
+const STORE_PLAYHEAD_MS = 100;
 let tapTimes: number[] = [];
 /**
  * The last jump to a marker while playing (where, and when by performance.now()). For a moment
@@ -1128,14 +1147,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     }
   };
 
-  const frame = () => {
+  /** When the frame loop last set the store's playheadPosition (see playheadClock.ts). */
+  let storeMovedAt = 0;
+  const frame = (now: number) => {
     const pos = getAudiblePositionBar();
     const { loopRegion } = get();
     if (!loopRegion.enabled && pos >= TOTAL_BARS + 1) {
       get().stop();
       return;
     }
-    set({ playheadPosition: Math.max(1, pos) });
+    // Every frame for what moves with it; the store (and all its subscriptions) ten times a second
+    setLivePlayhead(Math.max(1, pos));
+    if (now - storeMovedAt >= STORE_PLAYHEAD_MS || now < storeMovedAt) {
+      storeMovedAt = now;
+      set({ playheadPosition: Math.max(1, pos) });
+    }
     rafId = requestAnimationFrame(frame);
   };
 
@@ -2287,7 +2313,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         const key = transitionKey(from, to);
         if (!rule || (rule.kind === 'cut' && !rule.quantize && from === ANY_STATE)) delete next[key];
         else next[key] = rule;
-        return { transitions: next };
+        return { transitions: next, ...pushPast(s) };
       }),
     gameSfx: [],
     addGameSfx: (sounds) => {
@@ -2298,7 +2324,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         list.push(made);
         names.push(made.name);
       }
-      set({ gameSfx: list });
+      set((st) => ({ gameSfx: list, ...pushPast(st) }));
       return names;
     },
     updateGameSfx: (id, patch) =>
@@ -2310,26 +2336,28 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           if (patch.name !== undefined) next.name = createGameSfx(patch.name, x.sound, s.gameSfx.filter((y) => y.id !== id)).name;
           return next;
         }),
+        ...pushPast(s),
       })),
-    deleteGameSfx: (id) => set((s) => ({ gameSfx: s.gameSfx.filter((x) => x.id !== id) })),
+    deleteGameSfx: (id) => set((s) => ({ gameSfx: s.gameSfx.filter((x) => x.id !== id), ...pushPast(s) })),
     costumes: [],
     addCostume: (preset) => {
       const s = get();
       if (s.costumes.length >= MAX_COSTUMES) return null;
       const c = costumeFromPreset(preset, s.tracks, s.costumes);
-      set({ costumes: [...s.costumes, c] });
+      set({ costumes: [...s.costumes, c], ...pushPast(s) });
       return c;
     },
     updateCostume: (id, patch) =>
-      set((s) => ({
-        costumes: s.costumes.map((c) => {
-          if (c.id !== id) return c;
-          const next = { ...c };
-          if (patch.name !== undefined) next.name = freeCostumeName(patch.name, s.costumes.filter((x) => x.id !== id));
-          if (patch.tempo !== undefined && Number.isFinite(patch.tempo)) next.tempo = Math.max(MIN_COSTUME_TEMPO, Math.min(MAX_COSTUME_TEMPO, patch.tempo));
-          return next;
-        }),
-      })),
+      set((s) => {
+        const was = s.costumes.find((c) => c.id === id);
+        if (!was) return s;
+        const next = { ...was };
+        if (patch.name !== undefined) next.name = freeCostumeName(patch.name, s.costumes.filter((x) => x.id !== id));
+        if (patch.tempo !== undefined && Number.isFinite(patch.tempo)) next.tempo = Math.max(MIN_COSTUME_TEMPO, Math.min(MAX_COSTUME_TEMPO, patch.tempo));
+        // (A name field left as it was isn't an undo step)
+        if (next.name === was.name && next.tempo === was.tempo) return s;
+        return { costumes: s.costumes.map((c) => (c === was ? next : c)), ...pushPast(s) };
+      }),
     setCostumeTrack: (id, trackId, swap) =>
       set((s) => ({
         costumes: s.costumes.map((c) => {
@@ -2339,25 +2367,26 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
           else delete tracks[trackId];
           return { ...c, tracks };
         }),
+        ...pushPast(s),
       })),
-    deleteCostume: (id) => set((s) => ({ costumes: s.costumes.filter((c) => c.id !== id) })),
+    deleteCostume: (id) => set((s) => ({ costumes: s.costumes.filter((c) => c.id !== id), ...pushPast(s) })),
     stateOptions: {},
     setStateOptions: (markerId, opts) =>
       set((s) => {
         const next = { ...s.stateOptions };
         if (!opts || (!opts.shuffleBars && !opts.gap)) delete next[markerId];
         else next[markerId] = opts;
-        return { stateOptions: next };
+        return { stateOptions: next, ...pushPast(s) };
       }),
     stingers: [],
     addStinger: (kind) => {
       const s = get();
       const stinger = createStinger(kind, detectKey(s.clips, s.tracks) ?? keyOf(0, 'major'), s.stingers);
-      set({ stingers: [...s.stingers, stinger] });
+      set({ stingers: [...s.stingers, stinger], ...pushPast(s) });
       return stinger;
     },
-    updateStinger: (id, patch) => set((s) => ({ stingers: s.stingers.map((x) => (x.id === id ? { ...x, ...patch } : x)) })),
-    deleteStinger: (id) => set((s) => ({ stingers: s.stingers.filter((x) => x.id !== id) })),
+    updateStinger: (id, patch) => set((s) => ({ stingers: s.stingers.map((x) => (x.id === id ? { ...x, ...patch } : x)), ...pushPast(s) })),
+    deleteStinger: (id) => set((s) => ({ stingers: s.stingers.filter((x) => x.id !== id), ...pushPast(s) })),
     placeStinger: (id, bar) => {
       const s = get();
       const stinger = s.stingers.find((x) => x.id === id);
@@ -2941,6 +2970,8 @@ setSongMeter(songMeterOf(useTimelineStore.getState()));
 onWamStates((states) => useTimelineStore.getState().setPluginStates(states));
 useTimelineStore.subscribe((state, prev) => {
   if (state.meter !== prev.meter || state.meterPoints !== prev.meterPoints) setSongMeter(songMeterOf(state));
+  // Every seek, stop and move reaches the live playhead (playing, the frame loop moves it too)
+  if (state.playheadPosition !== prev.playheadPosition) setLivePlayhead(state.playheadPosition);
 });
 
 export function currentProject(): ProjectSnapshot {
