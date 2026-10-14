@@ -126,6 +126,8 @@ export interface PitchEvent {
   at: number;
   cents: number;
   mod: number;
+  /** The mod wheel as dynamics (InstrumentDef.dynamics): present when the clip has a mod wheel lane */
+  dyn?: number;
 }
 
 /**
@@ -138,11 +140,13 @@ export function pitchEvents(clip: Pick<Clip, 'lengthBars' | 'expression'>, step 
   const mod = clip.expression?.mod;
   if (!bend?.some((p) => p.value !== 0) && !mod?.some((p) => p.value !== 0)) return [];
   const out: PitchEvent[] = [];
+  const wheel = !!mod?.some((p) => p.value !== 0);
   let last: PitchEvent | null = null;
   const len = clip.lengthBars;
   for (let k = 0; k * step < len - EPS; k++) {
     const at = k * step;
-    const ev = { at, cents: exprValueAt(bend, at) * 100, mod: exprValueAt(mod, at) };
+    const value = exprValueAt(mod, at);
+    const ev: PitchEvent = { at, cents: exprValueAt(bend, at) * 100, mod: value, ...(wheel ? { dyn: value } : {}) };
     // Steady and without vibrato: nothing new to say (but a held value, at rest included, is said
     // again every 16th, so playback started or looped back into it is put right at once)
     if (last && ev.mod === 0 && last.mod === 0 && Math.abs(ev.cents - last.cents) < 0.01 && at - last.at < 1 / 16 - EPS) continue;

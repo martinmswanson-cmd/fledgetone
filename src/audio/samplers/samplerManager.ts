@@ -215,6 +215,11 @@ export interface SamplerVoice {
   release: (note: string, time: number) => void;
   /** Pitch bend in cents from `time`: every sounding note, and the notes after, play that far off. */
   bend: (cents: number, time: number) => void;
+  /**
+   * The mod wheel as dynamics (0 soft to 1 loud), from `time`, for an instrument recorded at several
+   * loudnesses (InstrumentDef.dynamics); null hands loudness back to each note's velocity.
+   */
+  dynamics?: (value: number | null, time: number) => void;
   releaseAll: () => void;
   /** Resolves once samples are attached (rejects if they failed to download). */
   ready: Promise<void>;
@@ -510,6 +515,9 @@ type Slot = Map<number, AudioBuffer>;
 interface SlotBank {
   slots: Slot[];
   pick: (velocity: number) => Slot;
+  /** The recordings at loudness `layer` (0 softest; its takes in turn), and how many loudnesses there are */
+  layer?: (layer: number) => Slot;
+  layers?: number;
 }
 
 /** The recording nearest `midi` in `slot` and how many semitones it sits below (Tone.Sampler's search: the higher one on a tie). */
@@ -545,6 +553,21 @@ function audibleEnd(buffer: AudioBuffer): number {
 const SAME_PITCH = 3;
 /** At most this many notes of one instrument ring at once: past it, the oldest fades. */
 const MAX_NOTES = 64;
+/**
+ * The mod wheel's dynamics over a note playing loudness `low` and the next: the two recordings'
+ * levels, crossfaded with equal power, times the loudness itself (DYNAMICS_DB from the softest to
+ * the loudest, as the recordings are matched in level and the wheel sets it). A wheel outside the
+ * pair's span holds its nearer end.
+ */
+export function dynamicsMix(value: number, low: number, span: number): [soft: number, loud: number] {
+  const x = Math.max(0, Math.min(1, value * span - low));
+  const level = 10 ** ((-DYNAMICS_DB * (1 - Math.max(0, Math.min(1, value)))) / 20);
+  return [Math.cos((x * Math.PI) / 2) * level, Math.sin((x * Math.PI) / 2) * level];
+}
+/** From the softest to the loudest under the mod wheel's dynamics, in dB. */
+const DYNAMICS_DB = 18;
+/** How quickly the dynamics follow the wheel (time constant, s): smooth, without zipper noise. */
+const DYNAMICS_TC = 0.03;
 /** A legato change on a bowed string: the new note starts this far in (past its attack) and the two crossfade over LEGATO_FADE seconds. */
 const LEGATO_SKIP = 0.07;
 const LEGATO_FADE = 0.05;
@@ -633,7 +656,16 @@ function samplerVoice(
     rate: number;
     /** When it was let go (Infinity until then): a bowed note starting before this is a legato change */
     releasedAt: number;
+    /**
+     * Played under the mod wheel's dynamics: the next louder recording sounds with it, the two
+     * mixed by `soft` and `loud` (see dynamicsMix), `low` the softer one's loudness.
+     */
+    pair?: { src: AudioBufferSourceNode; base: number; soft: GainNode; loud: GainNode; low: number };
   }
+  /** Every source a note plays (two under the mod wheel's dynamics). */
+  const sourcesOf = (s: Sounding) => (s.pair ? [s.src, s.pair.src] : [s.src]);
+  /** The mod wheel's dynamics now (null: off, each note's velocity sets it). */
+  let dyn: number | null = null;
   const sounding: Sounding[] = [];
   let bendRatio = 1;
   const prune = (time: number) => {
@@ -647,7 +679,7 @@ function samplerVoice(
     g.setTargetAtTime(0, at, STEAL_TC);
     const stop = at + STEAL_TC * 6;
     if (stop < s.until) {
-      s.src.stop(stop);
+      for (const x of sourcesOf(s)) x.stop(stop);
       s.until = stop;
     }
   };
@@ -686,15 +718,17 @@ function samplerVoice(
   const start = (note: string, at: number, velocity: number, offset = 0, fade = 0): Sounding | null => {
     const midiFloat = midiOfNote(note);
     const midi = Math.round(midiFloat);
-    const found = nearest(bank.pick(velocity), midi);
+    // Under the mod wheel: the recording at the wheel's loudness and the next louder one
+    const span = (bank.layers ?? 1) - 1;
+    const low = dyn !== null && bank.layer && span > 0 ? Math.min(span - 1, Math.floor(dyn * span)) : -1;
+    const found = low >= 0 ? nearest(bank.layer!(low), midi) : nearest(bank.pick(velocity), midi);
     if (!found) return null;
-    let base = 2 ** ((found.interval + midiFloat - midi) / 12);
+    const upper = low >= 0 ? nearest(bank.layer!(low + 1), midi) : null;
     // Each hit a hair off the last: up to ±3 cents
-    if (expressive) base *= 2 ** ((3 * noteJitter(note, at, 13)) / 1200);
+    const jitter = expressive ? 2 ** ((3 * noteJitter(note, at, 13)) / 1200) : 1;
+    const rateOf = (interval: number) => 2 ** ((interval + midiFloat - midi) / 12) * jitter;
+    const base = rateOf(found.interval);
     const when = Math.max(at, raw.currentTime);
-    const src = raw.createBufferSource();
-    src.buffer = found.buffer;
-    src.playbackRate.value = base * bendRatio;
     const gain = raw.createGain();
     const v = level(note, velocity, at) * taperGain(taper, note);
     const rise = Math.max(options.attack, fade);
@@ -702,19 +736,45 @@ function samplerVoice(
       gain.gain.setValueAtTime(0, when);
       gain.gain.linearRampToValueAtTime(v, when + rise);
     } else gain.gain.value = v;
-    src.connect(gain);
     gain.connect(expressive ? filterFor(expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency())) : into);
-    const from = Math.min(offset, audibleEnd(found.buffer) / 2);
-    src.start(when, from);
-    // Let go once it has played (nodes made in an export are dropped with its context anyway)
-    src.onended = () => {
-      src.disconnect();
-      gain.disconnect();
+    /** A source of `buffer` at `rate` into `to`, started `offset` in; returns it and when it runs out */
+    const play = (buffer: AudioBuffer, rate: number, to: AudioNode, extra: AudioNode[] = []) => {
+      const src = raw.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = rate * bendRatio;
+      src.connect(to);
+      const from = Math.min(offset, audibleEnd(buffer) / 2);
+      src.start(when, from);
+      const end = when + (audibleEnd(buffer) - from) / (rate * bendRatio);
+      src.stop(end);
+      // Let go once it has played (nodes made in an export are dropped with its context anyway)
+      src.onended = () => {
+        src.disconnect();
+        for (const n of extra) n.disconnect();
+      };
+      return { src, end, from };
     };
-    const end = when + (audibleEnd(found.buffer) - from) / (base * bendRatio);
-    src.stop(end);
+    let s: Sounding;
+    if (upper) {
+      const soft = raw.createGain();
+      const loud = raw.createGain();
+      const [a, b] = dynamicsMix(dyn!, low, span);
+      soft.gain.value = a;
+      loud.gain.value = b;
+      soft.connect(gain);
+      loud.connect(gain);
+      // The note's gain is let go with whichever recording runs out last
+      let left = 2;
+      const done = { disconnect: () => --left === 0 && gain.disconnect() } as unknown as AudioNode;
+      const one = play(found.buffer, base, soft, [soft, done]);
+      const hiBase = rateOf(upper.interval);
+      const two = play(upper.buffer, hiBase, loud, [loud, done]);
+      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, pair: { src: two.src, base: hiBase, soft, loud, low } };
+    } else {
+      const one = play(found.buffer, base, gain, [gain]);
+      s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity };
+    }
     makeRoom(note, when);
-    const s: Sounding = { src, gain, note, level: v, start: when, until: end, base, played: from, last: when, rate: base * bendRatio, releasedAt: Infinity };
     sounding.push(s);
     return s;
   };
@@ -732,7 +792,7 @@ function samplerVoice(
     g.linearRampToValueAtTime(0, at + tail);
     const stop = at + tail + 0.01;
     if (stop < s.until) {
-      s.src.stop(stop);
+      for (const x of sourcesOf(s)) x.stop(stop);
       s.until = stop;
     }
   };
@@ -769,7 +829,7 @@ function samplerVoice(
         g.setTargetAtTime(0, at, LEGATO_FADE);
         const stop = at + LEGATO_FADE * 6;
         if (stop < from.until) {
-          from.src.stop(stop);
+          for (const x of sourcesOf(from)) x.stop(stop);
           from.until = stop;
         }
         from.releasedAt = at;
@@ -788,13 +848,26 @@ function samplerVoice(
       prune(time);
       for (const s of sounding) {
         s.src.playbackRate.setTargetAtTime(s.base * next, time, 0.005);
+        s.pair?.src.playbackRate.setTargetAtTime(s.pair.base * next, time, 0.005);
         if (time > s.last) s.played += (time - s.last) * s.rate;
         s.last = Math.max(s.last, time);
         s.rate = s.base * next;
         // A held key rings until its recording runs out at the new speed
-        if (s.until === Infinity && s.src.buffer) s.src.stop(time + Math.max(0, audibleEnd(s.src.buffer) - s.played) / s.rate);
+        if (s.until === Infinity) for (const x of sourcesOf(s)) if (x.buffer) x.stop(time + Math.max(0, audibleEnd(x.buffer) - s.played) / s.rate);
       }
       bendRatio = next;
+    },
+    dynamics: (value, time) => {
+      dyn = value === null ? null : Math.max(0, Math.min(1, value));
+      if (dyn === null) return;
+      prune(time);
+      const span = (bank.layers ?? 1) - 1;
+      for (const s of sounding) {
+        if (!s.pair) continue;
+        const [a, b] = dynamicsMix(dyn, s.pair.low, span);
+        s.pair.soft.gain.setTargetAtTime(a, time, DYNAMICS_TC);
+        s.pair.loud.gain.setTargetAtTime(b, time, DYNAMICS_TC);
+      }
     },
     release: (note, time) => {
       if (!loaded) return;
@@ -806,19 +879,25 @@ function samplerVoice(
       }
     },
     releaseAll: () => {
+      // (Stopped: the wheel's dynamics wait for the next clip or wheel to set them)
+      dyn = null;
       const now = raw.currentTime;
       for (const s of sounding) if (s.until > now) releaseAt(s, now);
     },
     ready,
     dispose: () => {
       for (const s of sounding) {
-        s.src.onended = null;
-        try {
-          s.src.stop();
-        } catch {
-          // Not started
+        for (const x of sourcesOf(s)) {
+          x.onended = null;
+          try {
+            x.stop();
+          } catch {
+            // Not started
+          }
+          x.disconnect();
         }
-        s.src.disconnect();
+        s.pair?.soft.disconnect();
+        s.pair?.loud.disconnect();
         s.gain.disconnect();
       }
       sounding.length = 0;
@@ -860,7 +939,8 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
       if (audio) bank[Number(l)][Number(t)].set(Math.round(midiOfNote(note)), audio);
     }
   });
-  return samplerVoice({ slots: bank.flat(), pick }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed);
+  const layer = (l: number) => bank[l][turn[l]++ % bank[l].length];
+  return samplerVoice({ slots: bank.flat(), pick, ...(def.dynamics ? { layer, layers: layers.length } : {}) }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed);
 }
 
 /**

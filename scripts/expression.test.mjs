@@ -73,3 +73,12 @@ test('lanes from a file are tidied and clamped', () => {
   assert.equal(e.mod, undefined);
   assert.equal(x.normalizeExpression(null), undefined);
 });
+
+test('the mod wheel is offered as dynamics only by clips with a wheel lane', () => {
+  const bendOnly = x.pitchEvents({ lengthBars: 1, expression: { bend: [{ at: 0, value: 1 }] } });
+  assert.ok(bendOnly.length && bendOnly.every((e) => e.dyn === undefined));
+  const wheel = x.pitchEvents({ lengthBars: 1, expression: { mod: [{ at: 0, value: 0.2 }, { at: 1, value: 0.9 }] } });
+  assert.ok(wheel.filter((e) => !e.end).every((e) => e.dyn === e.mod));
+  assert.equal(wheel.at(-1).end, true);
+  assert.equal(wheel.at(-1).dyn, undefined);
+});

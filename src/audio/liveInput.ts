@@ -162,6 +162,10 @@ export function playMidi(message: MidiMessage, heard: number): void {
     case 'allNotesOff':
       releaseLiveNotes();
       break;
+    case 'mod':
+      // An instrument recorded at several loudnesses plays the wheel as dynamics (the take records it as usual)
+      if (instrument?.dynamics) safely(() => instrument.dynamics!(message.value, now));
+      break;
     case 'cc':
       // (A plugin gets it as MIDI; a mapped setting has already followed it, see midiLearn.ts)
       if (instrument?.cc) safely(() => instrument.cc!(message.cc, message.value, now));

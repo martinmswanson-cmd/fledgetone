@@ -89,6 +89,11 @@ export interface TrackInstrument {
   noteOn?: (note: PlayableNote, time: number) => NoteOff;
   /** Pitch bend in cents, for the instruments whose voices can bend (the others ignore it). */
   bend?: (cents: number, time: number) => void;
+  /**
+   * The mod wheel as dynamics (0 soft to 1 loud) from `time`, for instruments recorded at several
+   * loudnesses (InstrumentDef.dynamics): played instead of the wheel's vibrato. null: no wheel.
+   */
+  dynamics?: (value: number | null, time: number) => void;
   /** A MIDI controller (0 to 119) moved to `value` (0 to 1): plugins get it as MIDI. */
   cc?: (cc: number, value: number, time: number) => void;
   /**
@@ -392,6 +397,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
         return (at) => voice.release(n.note, at);
       },
       bend: voice.bend,
+      ...(kind === 'sampled' && INSTRUMENTS[key].dynamics && voice.dynamics ? { dynamics: voice.dynamics } : {}),
       releaseAll: voice.releaseAll,
       ready: voice.ready,
       dispose: voice.dispose,

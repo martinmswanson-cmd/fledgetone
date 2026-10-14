@@ -166,6 +166,12 @@ export interface InstrumentDef {
    * outer two of a chord.
    */
   bowed?: { skip: number; solo?: boolean };
+  /**
+   * Recorded at several loudnesses: the mod wheel (CC 1) is its dynamics, crossfading the soft and
+   * loud recordings while a note sounds (as orchestral sample libraries do), instead of vibrato
+   * (the recordings have their own).
+   */
+  dynamics?: boolean;
   /** Its notes wobble at their clip's wobble rate (Clip.wobble), chosen in the piano roll */
   wobble?: boolean;
   /**
@@ -370,7 +376,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realCello: {
     key: 'realCello', name: 'Cellos (Real)', blurb: 'A recorded cello section, bowed with vibrato: soft and loud takes', color: '#c2410c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
-    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 3, taper: [65, 4], bowed: { skip: 0.08 },
+    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 3, taper: [65, 4], bowed: { skip: 0.08 }, dynamics: true,
   },
   realCelloShort: {
     key: 'realCelloShort', name: 'Cellos Short (Real)', blurb: 'Recorded cellos, short bouncing bow strokes: ostinatos, drive', color: '#9a3412', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
@@ -398,7 +404,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realViolins: {
     key: 'realViolins', name: 'Violins (Real)', blurb: 'A recorded violin section, bowed with vibrato: soft and loud takes', color: '#ef4444', category: 'Orchestra', kind: 'sampled', range: realRange('violins-sustain'),
-    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 14, taper: [70, 2.5], bowed: { skip: 0.12 },
+    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 14, taper: [70, 2.5], bowed: { skip: 0.12 }, dynamics: true,
   },
   realViolinsShort: {
     key: 'realViolinsShort', name: 'Violins Short (Real)', blurb: 'Recorded violins, short bouncing strokes: ostinatos, action', color: '#dc2626', category: 'Orchestra', kind: 'sampled', range: realRange('violins-spiccato'),
@@ -406,7 +412,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realViolas: {
     key: 'realViolas', name: 'Violas (Real)', blurb: 'A recorded viola section, bowed with vibrato: warm middle voices', color: '#f97316', category: 'Orchestra', kind: 'sampled', range: realRange('violas-sustain'),
-    samples: real('violas-sustain', 0.7), gain: 11, taper: [69, 1], bowed: { skip: 0.1 },
+    samples: real('violas-sustain', 0.7), gain: 11, taper: [69, 1], bowed: { skip: 0.1 }, dynamics: true,
   },
   realViolasShort: {
     key: 'realViolasShort', name: 'Violas Short (Real)', blurb: 'Recorded violas, short bouncing strokes', color: '#ea580c', category: 'Orchestra', kind: 'sampled', range: realRange('violas-spiccato'),
@@ -422,11 +428,11 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realSoloViolin: {
     key: 'realSoloViolin', name: 'Solo Violin (Real)', blurb: 'One recorded violin with vibrato, soft and loud: melodies', color: '#f87171', category: 'Orchestra', kind: 'sampled', range: realRange('solo-violin'),
-    samples: real('solo-violin', 0.5), shaping: 'violin', gain: 14, taper: [74, 3], bowed: { skip: 0.03, solo: true },
+    samples: real('solo-violin', 0.5), shaping: 'violin', gain: 14, taper: [74, 3], bowed: { skip: 0.03, solo: true }, dynamics: true,
   },
   realDoubleBass: {
     key: 'realDoubleBass', name: 'Double Bass (Real)', blurb: 'A recorded double bass, bowed: the floor of the orchestra', color: '#7c2d12', category: 'Orchestra', kind: 'sampled', range: realRange('double-bass'),
-    samples: real('double-bass', 0.5), gain: 20, taper: [51, 1.5], bowed: { skip: 0.1 },
+    samples: real('double-bass', 0.5), gain: 20, taper: [51, 1.5], bowed: { skip: 0.1 }, dynamics: true,
   },
   realHarp: {
     key: 'realHarp', name: 'Harp (Real)', blurb: 'A recorded concert harp: arpeggios, glissandos, magic', color: '#fbbf24', category: 'Orchestra', kind: 'sampled', range: realRange('harp'),
