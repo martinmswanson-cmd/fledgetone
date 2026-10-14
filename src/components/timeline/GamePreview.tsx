@@ -413,7 +413,8 @@ export const GamePanel: React.FC = () => {
     };
     if (!s.isPlaying || when === 'now') {
       jump();
-      if (!s.isPlaying) void s.togglePlay();
+      // play(), not togglePlay(): a second press while sounds load mustn't call the first off
+      if (!s.isPlaying) void s.play();
       if (cue && cue.leadIn === 0) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + 0.1);
       if (bridge && s.isPlaying) void fireStinger(bridge, 'now');
       return;
@@ -440,10 +441,10 @@ export const GamePanel: React.FC = () => {
       }
       timer.current = window.setTimeout(() => {
         const st = useTimelineStore.getState();
-        if (st.isPlaying) void st.togglePlay();
+        if (st.isPlaying) st.pause();
         timer.current = window.setTimeout(() => {
           jump();
-          void useTimelineStore.getState().togglePlay();
+          void useTimelineStore.getState().play();
         }, (Math.max(written ? 0 : 1, bridgeBars) * 240 * 1000) / tempoAt(next, songTempo(s)) - 40);
       }, Math.max(0, ms - 15));
       return;

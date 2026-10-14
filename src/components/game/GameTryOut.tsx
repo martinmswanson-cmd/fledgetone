@@ -66,7 +66,8 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   useEffect(() => {
     let cancelled = false;
     const st = useTimelineStore.getState();
-    if (st.isPlaying) void st.togglePlay();
+    // (A Play still waiting for sounds is called off too: it would start under the preview)
+    if (st.isPlaying || st.loadingToPlay) st.pause();
     (async () => {
       try {
         await initAudio();

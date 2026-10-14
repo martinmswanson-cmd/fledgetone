@@ -48,7 +48,7 @@ export const MicButton: React.FC = () => {
       const st = useTimelineStore.getState();
       if (!st.isPlaying) {
         const bar = st.playheadPosition;
-        await st.togglePlay();
+        await st.play();
         // Where and when the music starts: what's caught before then (the mic opens first) is cut,
         // and the take starts at that bar (the Transport reads bar 1 before it has started)
         const at = transportStartsAt();

@@ -189,6 +189,7 @@ export function syncLiveTracks(tracks: Track[]): void {
       lt.strip.dispose();
       live.delete(id);
       intensityLevels.delete(id);
+      awakeUntil.delete(id);
     }
   }
 
