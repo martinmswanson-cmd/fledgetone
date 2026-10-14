@@ -6,6 +6,7 @@ import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { STORY_BUILDERS } from './startersStory';
 import { FX_NOTES, INSTRUMENTS } from '../audio/instrumentCatalog';
+import { swellLane } from './swell';
 import { midiOf, nameOf } from './noteTools';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
 import { DEFAULT_MASTER_FX, durationToBars } from './timelineTypes';
@@ -1402,8 +1403,41 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  return inRange(BUILDERS[id]());
+  return withSwells(inRange(BUILDERS[id]()));
 }
+
+/** The held, bowed, blown and sung instruments a player shapes as they sustain (see withSwells). */
+const SWELLED = new Set<string>([
+  'strings', 'slowStrings', 'synthStrings', 'synthStrings2', 'violin', 'viola', 'cello', 'contrabass', 'tremolo',
+  'realViolins', 'realViolas', 'realCello', 'realSoloViolin', 'realDoubleBass', 'realTremolo',
+  'choir', 'voiceOohs', 'synthChoir', 'choirPad', 'haloPad', 'warmPad', 'newAgePad', 'glassPad', 'sweepPad', 'polysynthPad', 'soundtrackPad', 'atmosphere',
+  'frenchHorn', 'realHorn', 'tuba', 'realTuba', 'trombone', 'realTrombone', 'oboe', 'realOboe', 'clarinet', 'realClarinet', 'bassoon', 'realBassoon', 'englishHorn',
+]);
+
+/**
+ * Every starter's held parts breathe: a clip of strings, pads, voices, horns or woodwinds whose
+ * notes last a beat or more on average gets a gentle swell on the mod wheel (dynamics), each
+ * phrase growing to its middle and easing off, half as deep as the Swell tool's, so the part
+ * moves without falling back. A clip with its own mod wheel lane is left as it is.
+ */
+function withSwells(p: ProjectSnapshot): ProjectSnapshot {
+  const swelled = new Set(p.tracks.filter((t) => SWELLED.has(t.instrumentKey)).map((t) => t.id));
+  const shaped = new Set<string>();
+  const clips = p.clips.map((c) => {
+    if (!swelled.has(c.trackId) || !c.notes.length || c.audio || c.expression?.mod) return c;
+    const average = c.notes.reduce((sum, n) => sum + durationToBars(n.duration), 0) / c.notes.length;
+    if (average < 0.25 - 1e-6) return c;
+    shaped.add(c.trackId);
+    return { ...c, expression: { ...c.expression, mod: swellLane(undefined, c.notes, 'swell', SWELL_DEPTH) } };
+  });
+  // The swells' dips would leave the part quieter on the whole: its level made up, so the tops of
+  // the swells sit a little over where it was and the dips a little under
+  return { ...p, clips, tracks: p.tracks.map((t) => (shaped.has(t.id) ? { ...t, volume: t.volume + SWELL_MAKEUP_DB } : t)) };
+}
+/** The level the starters' swells cost a part, made up (dB). */
+const SWELL_MAKEUP_DB = 2.5;
+/** How deep the starters' swells are (the Swell tool's is 1). */
+const SWELL_DEPTH = 0.5;
 
 /**
  * Each pitched part's notes within what its instrument really plays: a note past the end moves an

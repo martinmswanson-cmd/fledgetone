@@ -570,6 +570,15 @@ const DYNAMICS_DB = 18;
 const DYNAMICS_TC = 0.03;
 /** A legato change on a bowed string: the new note starts this far in (past its attack) and the two crossfade over LEGATO_FADE seconds. */
 const LEGATO_SKIP = 0.07;
+/**
+ * A legato change's slide: the new note starts PORTAMENTO_REACH of the interval back toward the
+ * old one and reaches its own pitch in PORTAMENTO_BASE + PORTAMENTO_PER_SEMITONE a semitone
+ * (seconds, at most PORTAMENTO_MAX); leaps over an octave don't slide.
+ */
+const PORTAMENTO_REACH = 0.6;
+const PORTAMENTO_BASE = 0.045;
+const PORTAMENTO_PER_SEMITONE = 0.008;
+const PORTAMENTO_MAX = 0.12;
 const LEGATO_FADE = 0.05;
 /** How fast a note let go for a newer one fades (time constant, s: gone in about 50 ms). */
 const STEAL_TC = 0.01;
@@ -779,6 +788,29 @@ function samplerVoice(
     return s;
   };
 
+  /**
+   * Portamento on a legato change: the new note starts part of the way back toward the old pitch
+   * and slides into its own, while the old note bends toward the new one as it fades, as a string
+   * player's finger slides between positions. Wider intervals slide a little longer.
+   */
+  const slide = (old: Sounding, next: Sounding, at: number) => {
+    const interval = midiOfNote(old.note) - midiOfNote(next.note);
+    if (Math.abs(interval) < 0.5 || Math.abs(interval) > 12) return;
+    const glide = Math.min(PORTAMENTO_MAX, PORTAMENTO_BASE + PORTAMENTO_PER_SEMITONE * Math.abs(interval));
+    const when = Math.max(at, raw.currentTime);
+    const from = 2 ** ((interval * PORTAMENTO_REACH) / 12);
+    for (const [src, base] of [[next.src, next.base], ...(next.pair ? [[next.pair.src, next.pair.base] as const] : [])] as Array<readonly [AudioBufferSourceNode, number]>) {
+      const rate = base * bendRatio;
+      src.playbackRate.cancelScheduledValues(when);
+      src.playbackRate.setValueAtTime(rate * from, when);
+      src.playbackRate.exponentialRampToValueAtTime(rate, when + glide);
+    }
+    const toward = 2 ** ((-interval * (1 - PORTAMENTO_REACH)) / 12);
+    for (const [src, base] of [[old.src, old.base], ...(old.pair ? [[old.pair.src, old.pair.base] as const] : [])] as Array<readonly [AudioBufferSourceNode, number]>) {
+      src.playbackRate.setTargetAtTime(base * bendRatio * toward, when, glide / 3);
+    }
+  };
+
   /** Release `s` at `time`: its level falls away over the release, then it stops. */
   const releaseAt = (s: Sounding, time: number) => {
     const at = Math.max(time, s.start + options.attack);
@@ -821,6 +853,7 @@ function samplerVoice(
       for (const note of list) {
         const s = from ? start(note, at, velocity, Math.max(bowed.skip, LEGATO_SKIP), LEGATO_FADE) : short ? start(note, at, velocity, bowed.skip, 0.008) : start(note, at, velocity);
         if (s) releaseAt(s, end);
+        if (s && from) slide(from, s, at);
       }
       if (from) {
         const g = from.gain.gain;

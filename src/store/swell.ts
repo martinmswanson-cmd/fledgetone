@@ -48,8 +48,10 @@ function shapeOf(shape: SwellShape, a: number, b: number): ExprPoint[] {
  * The mod wheel lane with `shape` drawn over the phrases of `notes`: the lane's points inside each
  * phrase are replaced, the rest kept. (Values in the lane's 0..1, points in order.)
  */
-export function swellLane(lane: readonly ExprPoint[] | undefined, notes: readonly Pick<NoteEvent, 'startOffset' | 'duration'>[], shape: SwellShape): ExprPoint[] {
+export function swellLane(lane: readonly ExprPoint[] | undefined, notes: readonly Pick<NoteEvent, 'startOffset' | 'duration'>[], shape: SwellShape, depth = 1): ExprPoint[] {
   const spans = phrases(notes);
   const kept = (lane ?? []).filter((p) => !spans.some(([a, b]) => p.at >= a - EPS && p.at <= b + EPS));
-  return [...kept, ...spans.flatMap(([a, b]) => shapeOf(shape, Math.max(0, a), b))].sort((x, y) => x.at - y.at);
+  // A shallower swell (`depth` under 1) keeps nearer the top: 1 - depth * (1 - value)
+  const drawn = spans.flatMap(([a, b]) => shapeOf(shape, Math.max(0, a), b)).map((p) => ({ at: p.at, value: Math.round((1 - depth * (1 - p.value)) * 1000) / 1000 }));
+  return [...kept, ...drawn].sort((x, y) => x.at - y.at);
 }
