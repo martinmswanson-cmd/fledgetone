@@ -87,7 +87,7 @@ export const STARTERS = [
   { id: 'futurebass', group: 'Bass Music', name: 'Kawaii Future Bass', detail: '150 BPM half time, D major. Blooming, pumping add9 chords, a celesta sparkle, a chopped vocal topline doubled on marimba.' },
   { id: 'phonk', group: 'Hip-Hop & Phonk', name: 'Drift Phonk', detail: '130 BPM, D Phrygian. A cowbell riff, 808 on every kick (sliding up at the turn), house drums, a switch a fourth up.' },
   { id: 'drill', group: 'Hip-Hop & Phonk', name: 'UK Drill', detail: '142 BPM, G minor. A dark piano motif over strings and choir, the drill bounce with triplet hats, sliding 808s.' },
-  { id: 'rage', group: 'Hip-Hop & Phonk', name: 'Rage', detail: '160 BPM, F# Phrygian. A wide, blown-out lead, an 808 with grit an octave up, hat rolls and empty space.' },
+  { id: 'rage', group: 'Hip-Hop & Phonk', name: 'Hyper Trap', detail: '160 BPM, F# Phrygian. A wide, blown-out lead, an 808 with grit an octave up, hat rolls and empty space.' },
   { id: 'neosoul', group: 'Hip-Hop & Phonk', name: 'Neo-Soul', detail: '80 BPM, F, swung. Electric piano maj7 chords opening up, tenor sax, drums that drag, then a beat switch up a minor third.' },
   { id: 'bedroom', group: 'Pop & Jazz', name: 'Bedroom Pop', detail: '90 BPM, E minor, swung. Chorused clean guitar, a busy bass, lazy drums and a sax line behind the beat.' },
   { id: 'bossa', group: 'Pop & Jazz', name: 'Bossa Jazz-Pop', detail: '82 BPM, Db major. Nylon guitar bossa comping, upright bass, brushes, a flute melody and strings in the chorus.' },

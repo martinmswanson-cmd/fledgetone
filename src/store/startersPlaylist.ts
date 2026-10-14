@@ -168,7 +168,7 @@ const PATCH = {
       glide: 0.06,
       level: 0,
     }),
-  /** C. Square and saw, seven voices wide, cut at 3.5 kHz: the rage lead, played F#3 to F#4 */
+  /** C. Square and saw, seven voices wide, cut at 3.5 kHz: the hyper trap lead, played F#3 to F#4 */
   wideRageLead: (): SynthPatch =>
     withPatch(defaultSynthPatch(), {
       osc1: { wave: 'square' },
@@ -957,12 +957,12 @@ function drill(): ProjectSnapshot {
   );
 }
 
-// ---------- Rage ----------
+// ---------- Hyper Trap ----------
 
 function rage(): ProjectSnapshot {
   const room = darkRoom();
   // A blown-out, wide lead (driven, crushed, chorused) with a dirtier saw double under it; no bells
-  const saw = track('Rage lead', 'synthDesigner', {
+  const saw = track('Hyper lead', 'synthDesigner', {
     volume: -4,
     synth: PATCH.wideRageLead(),
     sends: send(room, 0.45),
@@ -997,7 +997,7 @@ function rage(): ProjectSnapshot {
   const padChords = progression([['F#3', 'A3', 'C#4'], ['D3', 'A3', 'E4']], 16, '1n', 0.5);
   return inSpace(
     project(
-      'Rage starter',
+      'Hyper Trap starter',
       160,
       0,
       [5, 17],
