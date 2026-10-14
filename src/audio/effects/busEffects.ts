@@ -37,7 +37,12 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     feedback: Math.max(0, Math.min(0.8, fx.delayFeedback)),
   });
 
-  reverbInput.connect(reverb);
+  // What goes into the hall is low-cut and damped above 5.5 kHz, as a real room soaks up the top:
+  // the reverb's own impulse is full-band noise, which kept bright parts' hiss in the tail and
+  // the bass's boom in the wash
+  const lowCut = new Tone.Filter({ type: 'highpass', frequency: 180, rolloff: -12 });
+  const damp = new Tone.Filter({ type: 'lowpass', frequency: 5500, rolloff: -12 });
+  reverbInput.chain(lowCut, damp, reverb);
   reverb.connect(destination);
   delayInput.connect(delay.input);
   delay.output.connect(destination);
@@ -57,7 +62,7 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
       current = { ...next };
     },
     dispose: () => {
-      [reverbInput, delayInput, reverb, delay].forEach((n) => n.dispose());
+      [reverbInput, lowCut, damp, delayInput, reverb, delay].forEach((n) => n.dispose());
     },
   };
 }

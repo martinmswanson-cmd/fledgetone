@@ -545,6 +545,9 @@ function audibleEnd(buffer: AudioBuffer): number {
 const SAME_PITCH = 3;
 /** At most this many notes of one instrument ring at once: past it, the oldest fades. */
 const MAX_NOTES = 64;
+/** A legato change on a bowed string: the new note starts this far in (past its attack) and the two crossfade over LEGATO_FADE seconds. */
+const LEGATO_SKIP = 0.07;
+const LEGATO_FADE = 0.05;
 /** How fast a note let go for a newer one fades (time constant, s: gone in about 50 ms). */
 const STEAL_TC = 0.01;
 
@@ -577,7 +580,8 @@ function samplerVoice(
   extra: { dispose: () => void }[],
   onNote?: (time: number) => void,
   taper?: InstrumentDef['taper'],
-  expressive?: Expressive | null
+  expressive?: Expressive | null,
+  bowed?: InstrumentDef['bowed']
 ): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
@@ -627,6 +631,8 @@ function samplerVoice(
     played: number;
     last: number;
     rate: number;
+    /** When it was let go (Infinity until then): a bowed note starting before this is a legato change */
+    releasedAt: number;
   }
   const sounding: Sounding[] = [];
   let bendRatio = 1;
@@ -673,8 +679,11 @@ function samplerVoice(
   const level = (note: string, velocity: number, at: number) =>
     expressive ? expressiveGain(velocity, expressive.rangeDb) * 10 ** ((0.6 * noteJitter(note, at, 7)) / 20) : velocity;
 
-  /** Start `note` at `at`; it plays to the end of its recording unless released. */
-  const start = (note: string, at: number, velocity: number): Sounding | null => {
+  /**
+   * Start `note` at `at`; it plays to the end of its recording unless released. `offset` starts it
+   * that far into its recording (past a bow's slow start), fading in over `fade` seconds.
+   */
+  const start = (note: string, at: number, velocity: number, offset = 0, fade = 0): Sounding | null => {
     const midiFloat = midiOfNote(note);
     const midi = Math.round(midiFloat);
     const found = nearest(bank.pick(velocity), midi);
@@ -688,22 +697,24 @@ function samplerVoice(
     src.playbackRate.value = base * bendRatio;
     const gain = raw.createGain();
     const v = level(note, velocity, at) * taperGain(taper, note);
-    if (options.attack > 0) {
+    const rise = Math.max(options.attack, fade);
+    if (rise > 0) {
       gain.gain.setValueAtTime(0, when);
-      gain.gain.linearRampToValueAtTime(v, when + options.attack);
+      gain.gain.linearRampToValueAtTime(v, when + rise);
     } else gain.gain.value = v;
     src.connect(gain);
     gain.connect(expressive ? filterFor(expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency())) : into);
-    src.start(when);
+    const from = Math.min(offset, audibleEnd(found.buffer) / 2);
+    src.start(when, from);
     // Let go once it has played (nodes made in an export are dropped with its context anyway)
     src.onended = () => {
       src.disconnect();
       gain.disconnect();
     };
-    const end = when + audibleEnd(found.buffer) / (base * bendRatio);
+    const end = when + (audibleEnd(found.buffer) - from) / (base * bendRatio);
     src.stop(end);
     makeRoom(note, when);
-    const s: Sounding = { src, gain, note, level: v, start: when, until: end, base, played: 0, last: when, rate: base * bendRatio };
+    const s: Sounding = { src, gain, note, level: v, start: when, until: end, base, played: from, last: when, rate: base * bendRatio, releasedAt: Infinity };
     sounding.push(s);
     return s;
   };
@@ -711,6 +722,7 @@ function samplerVoice(
   /** Release `s` at `time`: its level falls away over the release, then it stops. */
   const releaseAt = (s: Sounding, time: number) => {
     const at = Math.max(time, s.start + options.attack);
+    s.releasedAt = at;
     const g = s.gain.gain;
     g.cancelScheduledValues(at);
     g.setValueAtTime(s.level, at);
@@ -732,9 +744,35 @@ function samplerVoice(
       onNote?.(at);
       const end = at + output.toSeconds(duration);
       prune(at);
-      for (const note of notes) {
-        const s = start(note, at, velocity);
+      if (!bowed) {
+        for (const note of notes) {
+          const s = start(note, at, velocity);
+          if (s) releaseAt(s, end);
+        }
+        return;
+      }
+      // A solo string plays two notes at most (a double stop): the outer two of a chord
+      const list = bowed.solo && notes.length > 2 ? [...notes].sort((a, b) => midiOfNote(a) - midiOfNote(b)).filter((_, i, all) => i === 0 || i === all.length - 1) : notes;
+      // Legato: a single note starting while the last one is still held changes note without a new
+      // bow attack. It comes in past its own attack and the old one crossfades out under it.
+      const from = list.length === 1 ? sounding.find((x) => x.start < at - 0.01 && x.releasedAt > at + 0.03 && x.until > at && x.note !== list[0]) : undefined;
+      // A short note starts past the bow's slow start, so fast passages speak
+      const short = end - at < 0.25;
+      for (const note of list) {
+        const s = from ? start(note, at, velocity, Math.max(bowed.skip, LEGATO_SKIP), LEGATO_FADE) : short ? start(note, at, velocity, bowed.skip, 0.008) : start(note, at, velocity);
         if (s) releaseAt(s, end);
+      }
+      if (from) {
+        const g = from.gain.gain;
+        g.cancelScheduledValues(at);
+        // The old note fades slower than the new one comes in, so the change doesn't dip
+        g.setTargetAtTime(0, at, LEGATO_FADE);
+        const stop = at + LEGATO_FADE * 6;
+        if (stop < from.until) {
+          from.src.stop(stop);
+          from.until = stop;
+        }
+        from.releasedAt = at;
       }
     },
     attack: (note, time, velocity) => {
@@ -822,7 +860,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
       if (audio) bank[Number(l)][Number(t)].set(Math.round(midiOfNote(note)), audio);
     }
   });
-  return samplerVoice({ slots: bank.flat(), pick }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null);
+  return samplerVoice({ slots: bank.flat(), pick }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed);
 }
 
 /**

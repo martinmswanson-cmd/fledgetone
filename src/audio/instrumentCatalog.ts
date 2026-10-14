@@ -158,6 +158,14 @@ export interface InstrumentDef {
    * 300 Hz (negative: a cut of the boom a room adds).
    */
   tone?: { presence?: number; presenceHz?: number; mud?: number };
+  /**
+   * A bowed string, played as a string player would (see samplerManager.ts): a short note starts
+   * `skip` seconds into its recording, past the bow's slow start, so fast passages speak; a note
+   * starting while the one before still sounds is a legato change, crossfading from it without a
+   * new bow attack; and a `solo` instrument plays at most two notes at once (a double stop), the
+   * outer two of a chord.
+   */
+  bowed?: { skip: number; solo?: boolean };
   /** Its notes wobble at their clip's wobble rate (Clip.wobble), chosen in the piano roll */
   wobble?: boolean;
   /**
@@ -354,15 +362,15 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   violin: {
     key: 'violin', name: 'Violin', blurb: 'Solo violin, close and dry', color: '#f87171', category: 'Guitars & Strings', kind: 'sampled', range: [55, 96],
-    samples: { ...soundfont('MusyngKite', 'violin', 55, 96, 3, 0.6), sustain: SOUNDFONT_SUSTAIN, onset: -8 }, shaping: 'violin', gain: 25.5, taper: [76, 6],
+    samples: { ...soundfont('MusyngKite', 'violin', 55, 96, 3, 0.5), sustain: SOUNDFONT_SUSTAIN, onset: -8 }, shaping: 'violin', gain: 25.5, taper: [76, 6], bowed: { skip: 0.03, solo: true },
   },
   cello: {
     key: 'cello', name: 'Cello', blurb: 'Solo cello, close and dry', color: '#ea580c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 76],
-    samples: { ...soundfont('MusyngKite', 'cello', 36, 76, 3, 0.6), sustain: SOUNDFONT_SUSTAIN, onset: -6 }, gain: 22, taper: [57, 6], tone: { presence: 4, mud: -2 },
+    samples: { ...soundfont('MusyngKite', 'cello', 36, 76, 3, 0.6), sustain: SOUNDFONT_SUSTAIN, onset: -6 }, gain: 22, taper: [57, 6], tone: { presence: 4, mud: -2 }, bowed: { skip: 0.05, solo: true },
   },
   realCello: {
     key: 'realCello', name: 'Cellos (Real)', blurb: 'A recorded cello section, bowed with vibrato: soft and loud takes', color: '#c2410c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
-    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 3, taper: [65, 4],
+    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 3, taper: [65, 4], bowed: { skip: 0.08 },
   },
   realCelloShort: {
     key: 'realCelloShort', name: 'Cellos Short (Real)', blurb: 'Recorded cellos, short bouncing bow strokes: ostinatos, drive', color: '#9a3412', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
@@ -390,7 +398,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realViolins: {
     key: 'realViolins', name: 'Violins (Real)', blurb: 'A recorded violin section, bowed with vibrato: soft and loud takes', color: '#ef4444', category: 'Orchestra', kind: 'sampled', range: realRange('violins-sustain'),
-    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 14, taper: [70, 2.5],
+    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 14, taper: [70, 2.5], bowed: { skip: 0.12 },
   },
   realViolinsShort: {
     key: 'realViolinsShort', name: 'Violins Short (Real)', blurb: 'Recorded violins, short bouncing strokes: ostinatos, action', color: '#dc2626', category: 'Orchestra', kind: 'sampled', range: realRange('violins-spiccato'),
@@ -398,7 +406,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realViolas: {
     key: 'realViolas', name: 'Violas (Real)', blurb: 'A recorded viola section, bowed with vibrato: warm middle voices', color: '#f97316', category: 'Orchestra', kind: 'sampled', range: realRange('violas-sustain'),
-    samples: real('violas-sustain', 0.7), gain: 11, taper: [69, 1],
+    samples: real('violas-sustain', 0.7), gain: 11, taper: [69, 1], bowed: { skip: 0.1 },
   },
   realViolasShort: {
     key: 'realViolasShort', name: 'Violas Short (Real)', blurb: 'Recorded violas, short bouncing strokes', color: '#ea580c', category: 'Orchestra', kind: 'sampled', range: realRange('violas-spiccato'),
@@ -414,11 +422,11 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realSoloViolin: {
     key: 'realSoloViolin', name: 'Solo Violin (Real)', blurb: 'One recorded violin with vibrato, soft and loud: melodies', color: '#f87171', category: 'Orchestra', kind: 'sampled', range: realRange('solo-violin'),
-    samples: real('solo-violin', 0.6), shaping: 'violin', gain: 14, taper: [74, 3],
+    samples: real('solo-violin', 0.5), shaping: 'violin', gain: 14, taper: [74, 3], bowed: { skip: 0.03, solo: true },
   },
   realDoubleBass: {
     key: 'realDoubleBass', name: 'Double Bass (Real)', blurb: 'A recorded double bass, bowed: the floor of the orchestra', color: '#7c2d12', category: 'Orchestra', kind: 'sampled', range: realRange('double-bass'),
-    samples: real('double-bass', 0.5), gain: 20, taper: [51, 1.5],
+    samples: real('double-bass', 0.5), gain: 20, taper: [51, 1.5], bowed: { skip: 0.1 },
   },
   realHarp: {
     key: 'realHarp', name: 'Harp (Real)', blurb: 'A recorded concert harp: arpeggios, glissandos, magic', color: '#fbbf24', category: 'Orchestra', kind: 'sampled', range: realRange('harp'),
@@ -582,8 +590,8 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   goblins: { key: 'goblins', name: 'Goblins', blurb: 'Eerie swelling drone: horror', color: '#4d7c0f', category: 'Pads & Atmospheres', kind: 'sampled', range: [36, 84], samples: held('fx_6_goblins', 36, 84, 1.5), gain: 5, taper: [61, 5] },
 
   // Orchestra
-  viola: { key: 'viola', name: 'Viola', blurb: 'Solo viola, warm middle voice', color: '#f97316', category: 'Orchestra', kind: 'sampled', range: [48, 88], samples: held('viola', 48, 88, 0.6, -6), gain: 23, taper: [69, 2.5], tone: { presence: 2, mud: -1 } },
-  contrabass: { key: 'contrabass', name: 'Contrabass', blurb: 'Orchestral double bass, bowed', color: '#9a3412', category: 'Orchestra', kind: 'sampled', range: [28, 60], samples: held('contrabass', 28, 60, 0.6, -6), gain: 22.5, taper: [45, 2], tone: { presence: 5, presenceHz: 1800, mud: -3 } },
+  viola: { key: 'viola', name: 'Viola', blurb: 'Solo viola, warm middle voice', color: '#f97316', category: 'Orchestra', kind: 'sampled', range: [48, 88], samples: held('viola', 48, 88, 0.6, -6), bowed: { skip: 0.04, solo: true }, gain: 23, taper: [69, 2.5], tone: { presence: 2, mud: -1 } },
+  contrabass: { key: 'contrabass', name: 'Contrabass', blurb: 'Orchestral double bass, bowed', color: '#9a3412', category: 'Orchestra', kind: 'sampled', range: [28, 60], samples: held('contrabass', 28, 60, 0.6, -6), bowed: { skip: 0.03 }, gain: 22.5, taper: [45, 2], tone: { presence: 5, presenceHz: 1800, mud: -3 } },
   pizzicato: { key: 'pizzicato', name: 'Pizzicato Strings', blurb: 'Plucked string section', color: '#fda4af', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: soundfont('FluidR3_GM', 'pizzicato_strings', 36, 96, 1, 0.4), gain: 28, taper: [70, 1] },
   tremolo: { key: 'tremolo', name: 'Tremolo Strings', blurb: 'Trembling strings: tension, suspense', color: '#f43f5e', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: held('tremolo_strings', 36, 96, 0.8, -8), gain: 20, taper: [84, 6], tone: { presence: 2, mud: -1 } },
   slowStrings: { key: 'slowStrings', name: 'Slow Strings', blurb: 'Soft swelling string section', color: '#fecdd3', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: held('string_ensemble_2', 36, 96, 1), gain: 27, taper: [67, 3], tone: { presence: 3, mud: -2 } },

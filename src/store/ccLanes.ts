@@ -16,6 +16,8 @@ import { isLiveParam } from './freeze';
 export const DEFAULT_CC_PARAMS: Readonly<Record<number, AutomationParam>> = {
   7: 'volume',
   10: 'pan',
+  // Expression: a string or wind player's swell within a phrase, as volume (CC 7 sets the level)
+  11: 'volume',
   71: 'filterResonance',
   74: 'filterCutoff',
   91: 'reverbSend',
