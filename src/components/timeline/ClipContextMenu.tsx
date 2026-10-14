@@ -3,7 +3,8 @@
  * clip, insert pattern, paste, load audio, smart tools), and the menu items other menus share.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Drum, Music4, Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
+import { Drum, Music4, Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2 } from 'lucide-react';
+import { reverseBlock } from '../../store/reverseActions';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
@@ -266,6 +267,21 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         { key: 'paste', ...pasteHere },
         { key: 'duplicate', label: 'Duplicate', shortcut: `${MOD}D`, icon: <CopyPlus className="w-3.5 h-3.5" />, onClick: run(s.duplicateSelection), divider: true },
         { key: 'repeat', label: 'Repeat ×N…', icon: <Repeat2 className="w-3.5 h-3.5" />, onClick: () => setRepeating(true) },
+        ...(s.clips.find((c) => c.id === menu.clipId)?.notes.length && !s.clips.find((c) => c.id === menu.clipId)?.audio
+          ? [
+              {
+                key: 'backwards',
+                label: 'Play backwards',
+                shortcut: 'as audio',
+                icon: <FlipHorizontal2 className="w-3.5 h-3.5" />,
+                onClick: run(() => {
+                  const clip = s.clips.find((c) => c.id === menu.clipId)!;
+                  showToast(`Reversing "${clip.name}"…`);
+                  void reverseBlock(clip.startBar, clip.startBar + clip.lengthBars, clip.id).then(showToast, (err) => showToast(`Couldn't reverse it: ${err instanceof Error ? err.message : String(err)}`));
+                }),
+              },
+            ]
+          : []),
         {
           key: 'fill',
           label: 'Fill to loop Out',

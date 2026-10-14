@@ -239,3 +239,12 @@ export function ratchet(notes: NoteEvent[], count: number, newId: () => string, 
 export function roll(notes: NoteEvent[], rateBars: number, newId: () => string): NoteEvent[] {
   return notes.flatMap((n) => ratchet([n], Math.max(1, Math.round(lengthOf(n) / rateBars)), newId, 0.35));
 }
+
+/** Notes mirrored in time within `bars` (retrograde): the last note first, each keeping its length. */
+export function retrograde(notes: readonly NoteEvent[], bars: number): NoteEvent[] {
+  if (!notes.length) return [];
+  const spans = notes.map((n) => ({ n, end: n.startOffset + durationToBars(n.duration) }));
+  const first = Math.min(...notes.map((n) => n.startOffset));
+  const last = Math.min(bars, Math.max(...spans.map((x) => x.end)));
+  return spans.map(({ n, end }) => ({ ...n, startOffset: Math.max(0, first + last - end) }));
+}

@@ -9,6 +9,8 @@ import { useAudioStore } from '../../store/audioStore';
 import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
 import { canChooseSaveLocation, pickProjectFile, saveProjectAs, saveProjectFile } from '../timeline/projectFile';
 import { showToast } from '../timeline/toastStore';
+import { reverseBlock } from '../../store/reverseActions';
+import { formatBarCount } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
 
@@ -143,7 +145,15 @@ const MENUS: MenuDef[] = [
         { label: `Key change up a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, 1)) },
         { label: `Key change up a whole step from bar ${at}`, run: () => say(s.keyChangeFrom(at, 2)) },
         { label: `Key change down a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, -1)) },
-        { label: 'Cut song to length…', run: () => ui().setDialog('cut'), divider: true },
+        {
+          label: `Play bars ${formatBarCount(s.loopRegion.inBar)}–${formatBarCount(s.loopRegion.outBar)} backwards (In → Out)`,
+          run: () => {
+            showToast('Reversing…');
+            void reverseBlock(s.loopRegion.inBar, s.loopRegion.outBar).then(showToast, (err) => showToast(`Couldn't reverse it: ${err instanceof Error ? err.message : String(err)}`));
+          },
+          divider: true,
+        },
+        { label: 'Cut song to length…', run: () => ui().setDialog('cut') },
       ];
     },
   },

@@ -5,6 +5,7 @@
  * Positions are worked out in 96ths of a bar so notes never drift.
  */
 import { SWELL_SHAPES, swellLane, type SwellShape } from '../../store/swell';
+import { retrograde } from '../../store/noteTools';
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { NotationView } from './NotationView';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -198,6 +199,7 @@ const TOOLS = [
   { id: 'octaveUp', label: 'Octave up', drums: false },
   { id: 'octaveDown', label: 'Octave down', drums: false },
   { id: 'fitScale', label: 'Fit to scale', drums: false },
+  { id: 'retrograde', label: 'Reverse notes (last note first)', drums: true },
   ...SWELL_SHAPES.map((s) => ({ id: s.id, label: s.label, drums: false })),
 ] as const;
 type ToolId = (typeof TOOLS)[number]['id'];
@@ -516,6 +518,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         case 'octaveUp': return transpose(target, 12, lo, hi);
         case 'octaveDown': return transpose(target, -12, lo, hi);
         case 'fitScale': return scale ? fitToScale(target, scale) : target;
+        case 'retrograde': return retrograde(target, bars);
         default: return target;
       }
     })();

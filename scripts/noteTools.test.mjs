@@ -141,3 +141,17 @@ test('durations in whole bars ("1m", "2m") are read as bars', () => {
   assert.equal(durationToBars('3m'), 3);
   assert.equal(durationToBars('4n'), 0.25);
 });
+
+test('retrograde: the notes mirrored in time, each keeping its length', async () => {
+  const { retrograde } = await import('../src/store/noteTools.ts');
+  const notes = [
+    { id: 'a', note: 'C4', startOffset: 0, duration: '4n', velocity: 0.8 },
+    { id: 'b', note: 'D4', startOffset: 0.25, duration: '8n', velocity: 0.8 },
+    { id: 'c', note: 'E4', startOffset: 0.5, duration: '2n', velocity: 0.8 },
+  ];
+  const r = retrograde(notes, 1);
+  const at = Object.fromEntries(r.map((n) => [n.note, n.startOffset]));
+  // Spans 0..1: E (0.5-1.0) now first at 0, D (0.25-0.375) at 0.625, C (0-0.25) last at 0.75
+  assert.deepEqual(at, { E4: 0, D4: 0.625, C4: 0.75 });
+  assert.deepEqual(retrograde(retrograde(notes, 1), 1).map((n) => n.startOffset), notes.map((n) => n.startOffset));
+});
