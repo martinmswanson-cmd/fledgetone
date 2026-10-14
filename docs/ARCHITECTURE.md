@@ -175,8 +175,8 @@ Clean up per-note nodes when they're disposed, not when they report ending.
 - **Autosave**: every change, to localStorage (`writeAutosave` in `project.ts`).
 - **Save / Save As / Open**: `projectFile.ts`, with the File System Access API where the browser
   has it (Save then rewrites the same file), and a download elsewhere. Files embed their sounds.
-- **Share**: a link with the whole song (without sound files) compressed after `#song=`
-  (`shareLink.ts`); opening it is `SharedLinkOpener`.
+- **Share**: a link with the whole song (without sound files) packed and compressed after `#s=`
+  (`shareLink.ts`; older `#song=` links still open); opening it is `SharedLinkOpener`.
 - Anything that replaces the song (New, Open, a link, Restore) goes through `loadProject`, which
   tells `onProjectReplaced` listeners (for example, to forget which file Save writes to).
 

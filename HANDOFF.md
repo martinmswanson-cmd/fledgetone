@@ -66,7 +66,7 @@ For how the parts fit together see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
 | MP3 / OGG encoding (wasm-media-encoders), WAV loop chunk | `src/audio/encoders.ts`, `wavCues.ts` |
 | MP4 video (WebCodecs + Mediabunny) | `src/audio/videoExport.ts` |
 | Spectrum readouts (bars and character styles), master analyser, Mixer view | `src/audio/spectrumSkins.ts`, `masterSpectrum.ts`, `src/components/timeline/SpectrumView.tsx` |
-| Share link (`#song=`), Share dialog, opening a link | `src/store/shareLink.ts`, `ShareDialog.tsx`, `src/components/SharedLinkOpener.tsx` |
+| Share link (`#s=`; older `#song=` still opens), Share dialog, opening a link | `src/store/shareLink.ts`, `ShareDialog.tsx`, `src/components/SharedLinkOpener.tsx` |
 | Synth Designer (patch, presets, engine, panel) | `src/store/synthPatch.ts`, `src/audio/presets/designer.ts`, `src/components/inspector/SynthPanel.tsx` |
 | Recorded drum kits, extra drum rows (clap, toms, crash, ride) | `src/audio/presets/sampledKit.ts`, `kitExtras.ts`, `DRUM_NOTES` in `instruments.ts` |
 | Piano roll helpers (scales, chords, arp, strum, humanize) | `src/store/noteTools.ts` (unit tested) |
@@ -323,8 +323,10 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 - **MP4 video**: 1280x720 at 30 fps with a spectrum, waveform and section names. H.264/AAC is
   preferred, VP9 or AV1 with Opus the fallback. WebCodecs needs https (or localhost). H.264 is
   untested here (no encoder in the test Chromium). `mp4-muxer` is deprecated for Mediabunny.
-- **Share**: a link with the song deflated into `#song=` (short ids, packed notes; sounds and
-  freezes left out), an MP3 to the share sheet, or the project file. Discord cuts messages at
+- **Share**: a link with the song deflated into `#s=` (short ids, settings at their defaults left
+  out, notes as a few bytes each; sounds and freezes left out; `TRACK_DEFAULTS` and
+  `defaultTrackFx()` are part of the format, so changing them changes old links). Older `#song=`
+  links still open. An MP3 to the share sheet, or the project file. Discord cuts messages at
   2,000 characters, so the dialog warns over that.
 - **Chiptune** instruments (`src/audio/presets/chiptune.ts`) and four more starters: Cinematic,
   Lo-Fi, Chiptune, Hip-Hop.
