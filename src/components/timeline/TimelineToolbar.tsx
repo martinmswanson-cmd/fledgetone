@@ -20,6 +20,7 @@ import {
   Undo2,
   ZoomIn,
   ZoomOut,
+  Loader2,
 } from 'lucide-react';
 import { MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useSongTempo, useTimelineStore } from '../../store/timelineStore';
 import { frameRateLabel, TIMECODE_FORMATS } from '../../store/timelineTypes';
@@ -193,6 +194,7 @@ const ToolButton: React.FC<ToolButtonProps> = ({ active, onClick, title, childre
 
 export const TimelineToolbar: React.FC = () => {
   const isPlaying = useTimelineStore((s) => s.isPlaying);
+  const loadingToPlay = useTimelineStore((s) => s.loadingToPlay);
   const loopEnabled = useTimelineStore((s) => s.loopRegion.enabled);
   const activeTool = useTimelineStore((s) => s.activeTool);
   const snapGrid = useTimelineStore((s) => s.snapGrid);
@@ -226,7 +228,7 @@ export const TimelineToolbar: React.FC = () => {
         <button
           id="btn-play"
           type="button"
-          title="Play / Pause (Space)"
+          title={loadingToPlay ? 'Loading the instruments’ sounds: it plays once they’re in (click to cancel)' : 'Play / Pause (Space)'}
           onClick={() => void togglePlay()}
           className={`h-8 w-11 flex items-center justify-center rounded-md border transition-colors ${
             isPlaying
@@ -234,7 +236,7 @@ export const TimelineToolbar: React.FC = () => {
               : 'bg-emerald-600 border-emerald-400/80 text-white hover:bg-emerald-500'
           }`}
         >
-          {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+          {loadingToPlay ? <Loader2 className="w-4 h-4 animate-spin" /> : isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
         </button>
         <ToolButton id="btn-stop" title="Stop (return to In point)" onClick={stop}>
           <Square className="w-3.5 h-3.5 fill-current" />

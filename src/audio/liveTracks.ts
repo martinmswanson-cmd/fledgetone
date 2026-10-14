@@ -41,6 +41,10 @@ interface LiveTrack {
   failed: boolean;
   /** The bus track whose strip it plays into (null: the master) */
   outputId: string | null;
+  /** Its instrument has its sounds (downloaded and decoded, plugins started) */
+  loaded?: boolean;
+  /** Play waited the longest it waits for those once already: it doesn't wait again */
+  waited?: boolean;
 }
 
 /** The song's base tempo, which the strips' Delay inserts follow. */
@@ -78,10 +82,13 @@ const sampleKey = (track: Track) => {
 function watchDownload(lt: LiveTrack): void {
   const instrument = lt.instrument;
   lt.failed = false;
+  lt.loaded = false;
+  lt.waited = false;
   // Lanes of its plugins' parameters go to its plugins
   lt.strip.setPluginParams(instrument.setPluginParam ?? null);
   instrument.ready.then(
     () => {
+      if (lt.instrument === instrument) lt.loaded = true;
       // Its plugins' parameters, for the lane picker
       const plugins = [lt.applied?.plugin, ...(lt.applied?.pluginFx ?? [])].filter((p) => !!p);
       if (lt.instrument === instrument && plugins.length) void Promise.all(plugins.map((p) => readWamParams(p!.id, pluginParamInfo))).then(() => paramListeners.forEach((l) => l()));
@@ -337,8 +344,14 @@ export function scheduledInstrument(trackId: string): TrackInstrument | undefine
 const awakeUntil = new Map<string, number>();
 /** How long a track played from outside the song (a keyboard) stays awake */
 const HELD_SECONDS = 30;
-/** Seconds a track is kept awake after its last note ends: for its release, and longer for its echoes */
-const tailOf = (lt: LiveTrack) => (lt.applied?.fx.reverb.on || lt.applied?.fx.echo.on || lt.applied?.fx.chorus.on ? 14 : 6);
+/**
+ * Seconds a track is kept awake after its last note ends: for its release, and longer for its
+ * echoes, or a plugin's own (a bell model rings on, a synth may have its own delay)
+ */
+const tailOf = (lt: LiveTrack) => {
+  const fx = lt.applied?.fx;
+  return fx?.reverb.on || fx?.echo.on || fx?.chorus.on || lt.applied?.plugin || lt.applied?.pluginFx?.length ? 14 : 6;
+};
 let sleepTimer = 0;
 
 function wake(trackId: string, lt: LiveTrack, until: number) {
@@ -379,6 +392,24 @@ function watchSleep() {
   });
   transport.on('stop', check);
   sleepTimer = window.setInterval(check, 500);
+}
+
+/** Whether an instrument the song plays is still getting its sounds (downloading recordings, starting a plugin). */
+const stillLoading = (lt: LiveTrack) => lt.audible && !lt.loaded && !lt.failed && !lt.waited;
+export const liveSoundsLoading = (): boolean => [...live.values()].some(stillLoading);
+
+/**
+ * Resolves once every instrument the song plays has its sounds, or after `ms`. Play waits for it:
+ * notes played before their recordings arrived were lost, so a song opened and played at once
+ * started with its piano missing.
+ */
+export function liveSoundsReady(ms: number): Promise<void> {
+  const pending = [...live.values()].filter(stillLoading);
+  if (!pending.length) return Promise.resolve();
+  const all = Promise.all(pending.map((lt) => lt.instrument.ready.catch(() => undefined))).then(() => undefined);
+  const timeout = new Promise<void>((resolve) => setTimeout(resolve, ms));
+  // One that took too long (a plugin that never says it's ready) isn't waited for again
+  return Promise.race([all, timeout]).then(() => pending.forEach((lt) => (lt.waited = true)));
 }
 
 /** Where an Audio track's clips play, muted or not (its strip silences it, and un-muting mid-clip is then heard at once). */

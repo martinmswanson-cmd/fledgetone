@@ -51,7 +51,7 @@ import {
   transportStartsAt,
 } from '../audio/transport';
 import { releaseAllVoices, rescheduleClips, syncTransport } from '../audio/scheduler';
-import { holdAutomationAt, retimeAutomation, syncLiveTracks, applyLiveIntensity, setLiveDuck, setLiveStripTempo } from '../audio/liveTracks';
+import { holdAutomationAt, liveSoundsLoading, liveSoundsReady, retimeAutomation, syncLiveTracks, applyLiveIntensity, setLiveDuck, setLiveStripTempo } from '../audio/liveTracks';
 import { beginTake, discardTake, finishTake } from '../audio/recorder';
 import { heardTime } from '../audio/latency';
 import { countInClicks } from '../audio/metronome';
@@ -310,6 +310,8 @@ interface TimelineState {
   /** 1-based bar position; updated every animation frame while playing. */
   playheadPosition: number;
   isPlaying: boolean;
+  /** Play was pressed and waits for instruments still getting their sounds (see play) */
+  loadingToPlay: boolean;
   /** Record mode (the toolbar's Record button): with a track armed, playing records a take onto it. */
   isRecording: boolean;
   /** The tempo at bar 1 (the whole song's, unless there are tempo changes) */
@@ -883,6 +885,11 @@ function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; mas
 }
 
 let rafId = 0;
+/** Play is waiting for instruments' sounds; each Stop or Pause (and each Play) moves the token on, so a wait that's been stopped doesn't start */
+let waitingToPlay = false;
+let playToken = 0;
+/** The longest Play waits for sounds still downloading */
+const PLAY_WAIT_MS = 10000;
 /** How often, while playing, the store's playheadPosition follows the playhead (ms); playheadClock.ts has it every frame. */
 const STORE_PLAYHEAD_MS = 100;
 let tapTimes: number[] = [];
@@ -1190,6 +1197,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     clips: [],
     playheadPosition: 1,
     isPlaying: false,
+    loadingToPlay: false,
     isRecording: false,
     bpm: 122,
     tempoPoints: [],
@@ -1220,7 +1228,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     // ---------- Transport ----------
     play: async () => {
       await initAudio();
-      if (get().isPlaying) return;
+      if (get().isPlaying || waitingToPlay) return;
+      // Instruments still downloading: wait for them (a while at most), or the first notes are lost
+      if (liveSoundsLoading()) {
+        const token = ++playToken;
+        waitingToPlay = true;
+        set({ loadingToPlay: true });
+        try {
+          await liveSoundsReady(PLAY_WAIT_MS);
+        } finally {
+          waitingToPlay = false;
+          set({ loadingToPlay: false });
+        }
+        // Stopped (or started some other way) while it waited
+        if (token !== playToken || get().isPlaying) return;
+      }
       const s = get();
       const armed = s.isRecording ? s.tracks.find((t) => t.isArmed) : undefined;
       // A count-in: a bar of clicks first, the Transport (and the take) starting after them
@@ -1238,6 +1260,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     pause: () => {
+      playToken++;
       if (!get().isPlaying) return;
       const pos = getAudiblePositionBar();
       endTake();
@@ -1248,11 +1271,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     togglePlay: async () => {
-      if (get().isPlaying) get().pause();
+      if (get().isPlaying || get().loadingToPlay) get().pause();
       else await get().play();
     },
 
     stop: () => {
+      playToken++;
       if (get().isPlaying) endTake();
       stopTransport();
       stopFrameLoop();

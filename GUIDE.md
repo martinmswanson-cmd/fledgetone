@@ -675,6 +675,8 @@ While the song plays, the app watches for three signs that the computer isn't ke
 
 The app also steps in by itself. At the first late note or freeze of a playback, it hands notes to the sound engine further ahead of time (0.4 s instead of 0.1 s) until you press Stop, so the next busy moment is absorbed instead of heard; once a playback has needed that, later ones start with it. The only cost is that a fader, a mute or a jump you make while it plays takes a moment longer to be heard; playing your keyboard or MIDI keyboard isn't affected. And while it lags, the meters and the spectrum draw less often, to leave the computer's time to the music.
 
+If you press Play while instruments are still downloading their recordings (a song just opened), the Play button spins until they're in (ten seconds at most; click it to cancel), so the song doesn't start with them missing.
+
 Big songs also get help without asking. While a song plays, a track with nothing to play for a while rests: it's switched off until just before its next note, so thirty tracks waiting for their entry don't cost what thirty playing ones do (an orchestral test song needed about a third less of the sound engine). Tracks scrolled out of sight in the timeline and the mixer aren't drawn, and the spectrum moves at half speed in songs with more than 16 tracks. The badge's details show **Notes sent ahead: further** while this is on.
 
 Click the badge for the details, including **Audio engine speed** while playing (100% is keeping up). When the engine is what's behind, the warning offers **Use Stable playback** directly; it takes effect after a reload.
