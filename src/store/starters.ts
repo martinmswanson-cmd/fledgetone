@@ -9,7 +9,9 @@ import { FX_NOTES, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { swellLane } from './swell';
 import { midiOf, nameOf } from './noteTools';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
-import { DEFAULT_MASTER_FX, durationToBars } from './timelineTypes';
+import { barsToDuration, DEFAULT_MASTER_FX, durationToBars, uid } from './timelineTypes';
+import { breathe } from './breathe';
+import { FOUR_FOUR } from '../audio/tempoMap';
 import type { Clip, ClipExpression, MasterFx, MbcBand, PeqBand, Track } from './timelineTypes';
 import type { Step } from './demoSong';
 
@@ -1403,7 +1405,101 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  return wholeSong(withSwells(inRange(BUILDERS[id]())));
+  const p = wholeSong(withSwells(inRange(BUILDERS[id]())));
+  return withBreathing(id, withVibrato(id, withLegato(id, p)));
+}
+
+/** The starters whose solo string melodies play legato, sliding between notes (see withLegato). */
+const LEGATO_STARTERS = new Set<string>(['starlitCity', 'farewellPiano', 'cathedralBoss', 'classical', 'cinematic', 'title', 'melodicdub']);
+/** The starters whose long held melodies get a singer's vibrato (see withVibrato). */
+const VIBRATO_STARTERS = new Set<string>(['classical', 'title', 'wildField', 'starlitCity', 'farewellPiano', 'puzzle', 'shop', 'midnightCaper', 'ruinRequiem', 'angelic', 'neosoul']);
+/** The (non-game, unhurried) starters whose tempo breathes at phrase ends (see withBreathing). */
+const BREATHING_STARTERS = new Set<string>(['classical', 'angelic', 'cinematic']);
+/** The held melody voices vibrato suits */
+const SINGING = /violin|viola|cello|flute|oboe|clarinet|horn|voice|choir|sax|trumpet/i;
+
+/** A track's notes are a single line (a melody) when hardly any start together. */
+function isLine(notes: readonly { startOffset: number }[]): boolean {
+  const starts = new Map<number, number>();
+  for (const n of notes) starts.set(n.startOffset, (starts.get(n.startOffset) ?? 0) + 1);
+  return [...starts.values()].filter((v) => v > 1).length < notes.length * 0.15;
+}
+
+/**
+ * Solo string melodies played legato: a note that ends at (or just before) the next one's start
+ * runs a little into it, so the bowed instrument changes note without a new bow stroke and slides
+ * between the two (its portamento), as a string player connects a phrase. Leaps over an octave,
+ * repeated notes and chords are left as they are.
+ */
+function withLegato(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
+  if (!LEGATO_STARTERS.has(id)) return p;
+  const overlap = (0.06 * p.bpm) / 240; // 60 ms, in bars
+  const lines = new Set(
+    p.tracks.filter((t) => INSTRUMENTS[t.instrumentKey]?.bowed && isLine(p.clips.filter((c) => c.trackId === t.id).flatMap((c) => c.notes))).map((t) => t.id)
+  );
+  const clips = p.clips.map((c) => {
+    if (!lines.has(c.trackId) || c.audio || c.notes.length < 2) return c;
+    const sorted = [...c.notes].sort((a, b) => a.startOffset - b.startOffset);
+    const together = (n: (typeof sorted)[number]) => sorted.filter((m) => Math.abs(m.startOffset - n.startOffset) < 1e-6).length > 1;
+    const longer = new Map<string, string>();
+    sorted.forEach((n, i) => {
+      const next = sorted[i + 1];
+      if (!next || together(n) || together(next) || next.note === n.note) return;
+      const gap = next.startOffset - (n.startOffset + durationToBars(n.duration));
+      if (gap < -1e-6 || gap > 1 / 16 + 1e-6 || Math.abs(midiOf(next.note) - midiOf(n.note)) > 12) return;
+      longer.set(n.id, barsToDuration(next.startOffset - n.startOffset + overlap));
+    });
+    return longer.size ? { ...c, notes: c.notes.map((n) => (longer.has(n.id) ? { ...n, duration: longer.get(n.id)! } : n)) } : c;
+  });
+  return { ...p, clips };
+}
+
+/** How deep the vibrato grows (of the lane's 0..1, VIBRATO_CENTS at 1): about ±20 cents */
+const VIBRATO_DEPTH = 0.4;
+
+/**
+ * Long held melody notes (strings, winds, voices, horns) get vibrato as a player gives it: none as
+ * the note starts, blooming over its middle and held to near its end. Notes shorter than a beat
+ * (or half a second) stay plain. A clip with its own vibrato lane is left as it is.
+ */
+function withVibrato(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
+  if (!VIBRATO_STARTERS.has(id)) return p;
+  const barSeconds = 240 / p.bpm;
+  const singing = new Set(
+    p.tracks
+      .filter((t) => SINGING.test(t.instrumentKey))
+      .filter((t) => {
+        const notes = p.clips.filter((c) => c.trackId === t.id).flatMap((c) => c.notes);
+        return notes.length > 0 && isLine(notes) && notes.reduce((a, n) => a + durationToBars(n.duration), 0) / notes.length >= 0.5 - 1e-6;
+      })
+      .map((t) => t.id)
+  );
+  const clips = p.clips.map((c) => {
+    if (!singing.has(c.trackId) || c.audio || !c.notes.length || c.expression?.vibrato) return c;
+    const points: Array<{ at: number; value: number }> = [];
+    for (const n of [...c.notes].sort((a, b) => a.startOffset - b.startOffset)) {
+      const d = Math.min(durationToBars(n.duration), c.lengthBars - n.startOffset);
+      if (d < 0.25 - 1e-6 || d * barSeconds < 0.5) continue;
+      const at = (f: number) => Math.round((n.startOffset + d * f) * 10000) / 10000;
+      points.push({ at: at(0.3), value: 0 }, { at: at(0.7), value: VIBRATO_DEPTH }, { at: at(0.92), value: VIBRATO_DEPTH }, { at: at(1), value: 0 });
+    }
+    if (!points.length) return c;
+    // In order, and one point per place (a later one wins)
+    const lane = [...new Map(points.sort((a, b) => a.at - b.at).map((pt) => [pt.at, pt])).values()];
+    return { ...c, expression: { ...(c.expression ?? {}), vibrato: lane } };
+  });
+  return { ...p, clips };
+}
+
+/**
+ * The unhurried pieces breathe: the tempo eases into each 4-bar phrase end and slows into the
+ * last (the Song menu's Breathe). Not the game starters, whose beat-synced transitions and loops
+ * need a steady tempo, nor the dance tracks.
+ */
+function withBreathing(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
+  if (!BREATHING_STARTERS.has(id) || p.tempoPoints?.length) return p;
+  const tempoPoints = breathe([], { bpm: p.bpm, points: [] }, { base: p.meter ?? FOUR_FOUR, points: p.meterPoints ?? [] }, { from: 1, to: p.loopRegion.outBar, phrase: 4, amount: 0.06 }, () => uid('tempo'));
+  return typeof tempoPoints === 'string' ? p : { ...p, tempoPoints };
 }
 
 /**
