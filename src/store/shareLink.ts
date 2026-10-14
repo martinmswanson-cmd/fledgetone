@@ -246,7 +246,9 @@ function unpack(bytes: Uint8Array): unknown {
 export async function songLink(project: ProjectSnapshot, base: string): Promise<string> {
   // Sound files stay out: they'd make the link megabytes long (Save carries them)
   // Frozen tracks' sounds can't come either: the receiver's copy plays them live
-  const compact = shortIds({ ...project, tracks: project.tracks.map((t) => (t.frozen ? { ...t, frozen: undefined } : t)) });
+  // and a recorded room for the reverb stays out too (the receiver hears the generated hall)
+  const masterFx = project.masterFx?.room ? { ...project.masterFx, room: undefined } : project.masterFx;
+  const compact = shortIds({ ...project, masterFx, tracks: project.tracks.map((t) => (t.frozen ? { ...t, frozen: undefined } : t)) });
   const data = serializeProject({ ...compact, sounds: undefined });
   return `${base}${SHARE_PREFIX}${toBase64Url(await pipe(pack(data), new CompressionStream('deflate-raw')))}`;
 }

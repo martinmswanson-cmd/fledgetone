@@ -103,3 +103,14 @@ test('only song links are read', async () => {
   assert.equal(await projectFromHash('#settings'), null);
   await assert.rejects(projectFromHash('#s=not-a-song'));
 });
+
+test('a link keeps mod wheel lanes as dynamics, and leaves a recorded room out', async () => {
+  const lane = [{ at: 0, value: 0.2 }, { at: 1, value: 0.9 }];
+  const song = { ...SONG, masterFx: { reverbDecay: 3, delayTime: '8n', delayFeedback: 0.3, room: 'hall-sound' }, clips: SONG.clips.map((c, i) => (i === 0 ? { ...c, expression: { mod: lane } } : c)) };
+  const link = await songLink(song, 'https://example.com/app');
+  const back = await projectFromHash(link.slice(link.indexOf('#')));
+  assert.deepEqual(back.clips[0].expression.mod, lane);
+  assert.equal(back.clips[0].expression.vibrato, undefined);
+  assert.equal(back.masterFx.room, undefined);
+  assert.equal(back.masterFx.reverbDecay, 3);
+});

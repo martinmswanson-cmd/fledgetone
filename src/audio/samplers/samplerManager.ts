@@ -847,7 +847,9 @@ function samplerVoice(
       const list = bowed.solo && notes.length > 2 ? [...notes].sort((a, b) => midiOfNote(a) - midiOfNote(b)).filter((_, i, all) => i === 0 || i === all.length - 1) : notes;
       // Legato: a single note starting while the last one is still held changes note without a new
       // bow attack. It comes in past its own attack and the old one crossfades out under it.
-      const from = list.length === 1 ? sounding.find((x) => x.start < at - 0.01 && x.releasedAt > at + 0.03 && x.until > at && x.note !== list[0]) : undefined;
+      // Only from a single held note (a line): a note over a held chord leaves the chord sounding
+      const held = list.length === 1 ? sounding.filter((x) => x.start < at - 0.01 && x.releasedAt > at + 0.03 && x.until > at) : [];
+      const from = held.length === 1 && held[0].note !== list[0] ? held[0] : undefined;
       // A short note starts past the bow's slow start, so fast passages speak
       const short = end - at < 0.25;
       for (const note of list) {

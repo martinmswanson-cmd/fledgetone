@@ -2,7 +2,7 @@ import { masterFxOf, songTempo, splitClipAt, useTimelineStore } from './timeline
 import { isMixTrack } from './buses';
 import { defaultMasterSettings, defaultTrackFx, uid } from './timelineTypes';
 import type { Clip, Track } from './timelineTypes';
-import { encodeChannels, renderArrangement } from '../audio/exportWav';
+import { audibleTracks, encodeChannels, renderArrangement } from '../audio/exportWav';
 import { importSoundFile } from '../audio/soundLibrary';
 import { barToSeconds, secondsToBar } from '../audio/tempoMap';
 
@@ -43,7 +43,9 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
   const only = clipId ? s.clips.find((c) => c.id === clipId) : undefined;
   if (clipId && (!only || only.audio)) return 'Only a clip of notes can be reversed this way (an audio clip has its own Reverse, in its editor).';
   const inRange = (c: Clip) => c.startBar < to - EPS && c.startBar + c.lengthBars > from + EPS;
-  const source = only ? [only] : s.clips.filter(inRange);
+  // Only what's heard: a muted track's clips stay where they are, as they aren't in the render
+  const heard = new Set(audibleTracks(s.tracks).map((t) => t.id));
+  const source = only ? [only] : s.clips.filter((c) => inRange(c) && heard.has(c.trackId));
   if (!source.length) return 'There is no music between those bars to reverse.';
   s.pause();
   const tempo = songTempo(s);
@@ -80,7 +82,8 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
     color: sourceTrack?.color ?? '#22d3ee',
     instrumentKey: 'audio',
     isMuted: false,
-    isSoloed: false,
+    // Heard as what it came from was: soloed when soloing was on
+    isSoloed: now.tracks.some((t) => t.isSoloed),
     isArmed: false,
     volume: 0,
     pan: 0,
