@@ -10,6 +10,8 @@ import { liveTransport, liveDestination, liveContext } from './liveContext';
 import './toneFixes';
 import { createBusEffects } from './effects/busEffects';
 import { createMasterInserts } from './effects/masterChain';
+import { LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE } from './effects/limiter';
+import { createWorkletNode, loadWorklet } from './worklets';
 import { DEFAULT_MASTER_FX, defaultMasterSettings } from '../store/timelineTypes';
 import type { MasterFx, MasterSettings } from '../store/timelineTypes';
 
@@ -22,7 +24,7 @@ export const BUS_GAIN = 0.9;
 
 /**
  * Build the mix graph in the current Tone context:
- *   track strips -> master bus -> compressor -> (OTT, stereo width) -> limiter -> ceiling -> destination
+ *   track strips -> master bus -> compressor -> (OTT, stereo width) -> look-ahead limiter -> destination
  *   track sends  -> shared reverb / delay -> master bus
  * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
  * the sound deck's pads. Used once for live playback and again inside the WAV export render.
@@ -35,21 +37,63 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
 
   // Master mastering chain
   const compressor = new Tone.Compressor({ threshold: -18, ratio: 4, attack: 0.005, release: 0.1 });
-  // A hard-knee limiter: Tone.Limiter keeps Tone's 30 dB soft knee, which barely limits, so a
-  // dense mix went up to +7 dB over full scale and clipped in playback (exports were scaled
-  // down instead, so they sounded different). The compressor's 6 ms look-ahead catches peaks
-  // before they arrive; the ceiling then rounds off the little that a 20:1 ratio lets through.
+  // Where the inserts end and the limiter begins
+  const limiterIn = new Tone.Gain(1);
+  // The stand-in limiter until the look-ahead one (effects/limiter.ts, an AudioWorklet) has
+  // loaded, and where AudioWorklets can't run: a hard-knee compressor (Tone.Limiter keeps a 30 dB
+  // soft knee, which barely limits) and a ceiling that rounds off what its 20:1 ratio lets through
   const limiter = new Tone.Compressor({ threshold: -1, ratio: 20, attack: 0, release: 0.08, knee: 0 });
   const ceiling = new Tone.WaveShaper(ceilingCurve());
   bus.connect(compressor);
-  // Patches compressor -> limiter itself, with the OTT and width in between while they're on
-  const inserts = createMasterInserts(compressor, limiter, master);
+  // Patches compressor -> limiterIn itself, with the OTT and width in between while they're on
+  const inserts = createMasterInserts(compressor, limiterIn, master);
+  limiterIn.connect(limiter);
   limiter.connect(ceiling);
   ceiling.connect(destination);
+  let lookahead: AudioWorkletNode | null = null;
+  const context = bus.context;
+  // Resolves once the look-ahead limiter has taken over (or for good on the stand-in)
+  const limiterReady = loadWorklet(context, LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE)
+    .then(() => {
+      if (limiterIn.disposed) return;
+      const node = createWorkletNode(context, LIMITER_PROCESSOR, {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        channelCount: 2,
+        channelCountMode: 'explicit',
+        channelInterpretation: 'speakers',
+      });
+      Tone.connect(node, destination);
+      Tone.connect(limiterIn, node);
+      limiterIn.disconnect(limiter);
+      lookahead = node;
+    })
+    .catch((err) => console.warn('The look-ahead limiter could not start; using the stand-in:', err));
+  const disposeLimiter = () => {
+    if (limiterIn.disposed) return;
+    lookahead?.port.postMessage('dispose');
+    lookahead?.disconnect();
+    limiterIn.dispose();
+    limiter.dispose();
+    ceiling.dispose();
+  };
 
   const auditionInput = new Tone.Gain(1).connect(bus);
 
-  return { bus, busFx, compressor, inserts, limiter, ceiling, auditionInput };
+  return {
+    bus,
+    busFx,
+    compressor,
+    inserts,
+    limiter,
+    limiterReady,
+    /** Whether the look-ahead limiter is the one in use (its delay is LIMITER latency, not the stand-in's) */
+    lookahead: () => lookahead !== null,
+    disposeLimiter,
+    ceiling,
+    auditionInput,
+  };
 }
 
 export type MixChain = ReturnType<typeof createMixChain>;

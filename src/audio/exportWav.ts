@@ -12,6 +12,7 @@ import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } f
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { createMixChain, getMasterVolume } from './engine';
+import { createLimiterKernel } from './effects/limiter';
 import { delaySeconds } from './effects/busEffects';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
@@ -270,10 +271,12 @@ export function exportCues(opts: RenderOptions): WavCue[] {
 const masterLatency = new Map<number, Promise<number>>();
 
 /**
- * Frames the master compressor and limiter delay the sound by. Each is a DynamicsCompressorNode
- * with a fixed look-ahead (6 ms in Chrome, Firefox and Safari), so without allowing for it every
- * export came out 12 ms late, out of step with the timeline and with stems that skip the chain.
- * Measured once per sample rate by sending a click through the same pair of nodes.
+ * Frames the master compressor and limiter delay the sound by. The compressor is a
+ * DynamicsCompressorNode with a fixed look-ahead (6 ms in Chrome, Firefox and Safari), measured
+ * once per sample rate by sending a click through one; the look-ahead limiter (effects/limiter.ts)
+ * adds its own fixed delay, or, where AudioWorklets can't run, the stand-in limiter (another
+ * compressor) adds the compressor's. Without allowing for it every export came out late, out of
+ * step with the timeline and with stems that skip the chain.
  */
 function masterChainLatency(sampleRate: number): Promise<number> {
   let latency = masterLatency.get(sampleRate);
@@ -284,13 +287,12 @@ function masterChainLatency(sampleRate: number): Promise<number> {
       click.getChannelData(0)[0] = 0.01; // well under the threshold, so the gain stays put
       const source = probe.createBufferSource();
       source.buffer = click;
-      // The same two stages as createMixChain (engine.ts): compressor, then limiter
-      source.connect(probe.createDynamicsCompressor()).connect(probe.createDynamicsCompressor()).connect(probe.destination);
+      source.connect(probe.createDynamicsCompressor()).connect(probe.destination);
       source.start(0);
       const out = (await probe.startRendering()).getChannelData(0);
       let at = 0;
       for (let i = 1; i < out.length; i++) if (Math.abs(out[i]) > Math.abs(out[at])) at = i;
-      return at;
+      return at + (probe.audioWorklet ? createLimiterKernel(sampleRate).latency : at);
     })().catch(() => 0);
     masterLatency.set(sampleRate, latency);
   }
@@ -677,8 +679,7 @@ async function renderTracks(
       mix.bus.connect(context.destination);
       mix.inserts.dispose();
       mix.compressor.dispose();
-      mix.limiter.dispose();
-      mix.ceiling.dispose();
+      mix.disposeLimiter();
     }
 
     const strips: TrackStrip[] = [];
@@ -705,7 +706,7 @@ async function renderTracks(
       });
       if (sends.length) stripOf.get(track.id)!.setSends(sends, false);
     }
-    await Promise.all([mix.busFx.ready, mix.inserts.ready(), ...[...instruments.values()].map((i) => i.ready)]);
+    await Promise.all([mix.busFx.ready, mix.inserts.ready(), opts.bypassMaster ? undefined : mix.limiterReady, ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)
     const convolver = (mix.busFx.reverb as unknown as { _convolver: ConvolverNode })._convolver;
     if (opts.reverbImpulse?.sampleRate === sampleRate) convolver.buffer = opts.reverbImpulse;
@@ -763,7 +764,8 @@ async function renderTracks(
         strips.forEach((s) => s.dispose());
         mix.busFx.dispose();
         mix.inserts.dispose();
-        [mix.bus, mix.compressor, mix.limiter, mix.ceiling, mix.auditionInput].forEach((n) => n.disposed || n.dispose());
+        [mix.bus, mix.compressor, mix.auditionInput].forEach((n) => n.disposed || n.dispose());
+        mix.disposeLimiter();
       },
     };
   }
@@ -916,6 +918,14 @@ export function encodeChannels(
   text('data');
   u32(dataSize);
 
+  // The dither's random numbers: a fixed sequence, so the same mix makes the same file
+  let seed = 0x9e3779b9;
+  const random = () => {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 4294967296;
+  };
   for (let i = 0; i < frames; i++) {
     for (let c = 0; c < channels; c++) {
       if (float) {
@@ -925,7 +935,11 @@ export function encodeChannels(
       }
       const s = Math.max(-1, Math.min(1, data[c][i]));
       if (bitDepth === 16) {
-        view.setInt16(offset, Math.round(s < 0 ? s * 0x8000 : s * 0x7fff), true);
+        // TPDF dither (two random values, ±1 step in all): the rounding error becomes a steady,
+        // very quiet hiss instead of distortion that follows the music, which a fade or a soft
+        // reverb tail would otherwise end in. Digital silence stays silent.
+        const dither = s === 0 ? 0 : random() - random();
+        view.setInt16(offset, Math.max(-0x8000, Math.min(0x7fff, Math.round((s < 0 ? s * 0x8000 : s * 0x7fff) + dither))), true);
         offset += 2;
       } else {
         const v = Math.round(s < 0 ? s * 0x800000 : s * 0x7fffff);

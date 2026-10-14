@@ -14,7 +14,7 @@ import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
 import { barsToDuration, DEFAULT_MASTER_FX, durationToBars, uid } from './timelineTypes';
 import { breathe } from './breathe';
 import { FOUR_FOUR } from '../audio/tempoMap';
-import type { Clip, ClipExpression, MasterFx, MbcBand, PeqBand, Track } from './timelineTypes';
+import type { Clip, ClipExpression, MasterFx, MasterSettings, MbcBand, PeqBand, Track } from './timelineTypes';
 import type { Step } from './demoSong';
 
 /**
@@ -1409,7 +1409,7 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  const p = wholeSong(withSwells(inRange(recorded(BUILDERS[id]()))));
+  const p = withGlue(id, wholeSong(withSwells(inRange(recorded(BUILDERS[id]())))));
   return withBreathing(id, withVibrato(id, withLegato(id, p)));
 }
 
@@ -1494,6 +1494,25 @@ function recorded(p: ProjectSnapshot): ProjectSnapshot {
     return st.notes.every((n) => midiOf(n.note) >= lo && midiOf(n.note) <= hi) ? { ...st, instrumentKey: to } : st;
   });
   return { ...p, tracks, ...(stingers ? { stingers } : {}) };
+}
+
+/** The master compressor's style each group of starters suits (see GLUE_STYLES). */
+const GROUP_GLUE: Partial<Record<(typeof STARTER_GROUPS)[number], MasterSettings['glue']>> = {
+  'Bass Music': 'tight',
+  Electronic: 'tight',
+  'Orchestral & Choir': 'gentle',
+  'Chill & World': 'gentle',
+  'Hip-Hop & Phonk': 'punchy',
+  Band: 'punchy',
+  'Pop & Jazz': 'punchy',
+};
+
+/** A starter's master glue from its group, unless its builder chose one. */
+function withGlue(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
+  const group = STARTERS.find((s) => s.id === id)?.group;
+  const glue = group && GROUP_GLUE[group];
+  if (!glue || !p.master || p.master.glue !== 'standard') return p;
+  return { ...p, master: { ...p.master, glue } };
 }
 
 /** The starters whose solo string melodies play legato, sliding between notes (see withLegato). */

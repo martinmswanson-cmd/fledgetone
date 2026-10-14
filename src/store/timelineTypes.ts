@@ -398,7 +398,13 @@ export const DEFAULT_MASTER_FX: MasterFx = { reverbDecay: 2.4, delayTime: '8n', 
  * The master section: the inserts between the master compressor and the limiter (see
  * engine.ts). Each can be bypassed with `on`, which takes it out of the chain entirely.
  */
+/** How the master compressor holds the mix together (see GLUE_STYLES in effects/masterChain.ts). */
+export type GlueStyle = 'standard' | 'gentle' | 'punchy' | 'tight' | 'off';
+export const GLUE_STYLE_IDS: readonly GlueStyle[] = ['standard', 'gentle', 'punchy', 'tight', 'off'];
+
 export interface MasterSettings {
+  /** The master compressor's style ('standard' is how every project sounded before there was a choice) */
+  glue: GlueStyle;
   /** OTT-style multiband compression (three bands, upward and downward): see effects/ott.ts. */
   ott: {
     on: boolean;
@@ -427,6 +433,7 @@ export const WIDTH_MAX = 2;
 
 export function defaultMasterSettings(): MasterSettings {
   return {
+    glue: 'standard',
     ott: { on: false, depth: 0.5, time: 0.3, inGain: 0, outGain: 0 },
     width: { on: false, amount: 1.3, monoBass: true },
   };
@@ -442,6 +449,7 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
   const ott = obj(r.ott);
   const width = obj(r.width);
   return {
+    glue: GLUE_STYLE_IDS.includes(r.glue as GlueStyle) ? (r.glue as GlueStyle) : d.glue,
     ott: {
       on: ott.on === true,
       depth: num(ott.depth, d.ott.depth, 0, 1),
@@ -461,6 +469,7 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
 /** True when two master settings would sound the same (so the engine and autosave can skip no-ops). */
 export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolean {
   return (
+    a.glue === b.glue &&
     a.ott.on === b.ott.on &&
     a.ott.depth === b.ott.depth &&
     a.ott.time === b.ott.time &&

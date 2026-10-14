@@ -22,10 +22,10 @@ import {
   ringOutSeconds,
   SAMPLE_RATES,
   channelsOf,
-  scaleAudio,
   stemTracks,
 } from '../../audio/exportWav';
-import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb, NORMALIZE_CEILING_DBTP, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
+import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb, NORMALIZE_CEILING_DBTP } from '../../audio/loudness';
+import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
@@ -52,12 +52,14 @@ interface ExportSettings {
   bypassMaster: boolean;
   /** Mixdown only: turn the file up or down to the loudness streaming services play at. */
   normalize: boolean;
+  /** How loud to make it (see loudnessTarget.ts) */
+  target: string;
   format: AudioFormat;
   /** Intro + loop as WAV: also one file holding both, with the loop marked in it (Godot, samplers). */
   loopFile: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true, normalize: false, format: 'wav', loopFile: true };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -79,12 +81,29 @@ function loadSettings(): ExportSettings {
       bitDepth: oneOf(r.bitDepth, BIT_DEPTHS, d.bitDepth),
       bypassMaster: typeof r.bypassMaster === 'boolean' ? r.bypassMaster : d.bypassMaster,
       normalize: typeof r.normalize === 'boolean' ? r.normalize : d.normalize,
+      target: oneOf(r.target, LOUDNESS_TARGETS.map((t) => t.id), d.target),
       format: oneOf(r.format, AUDIO_FORMATS, d.format),
       loopFile: typeof r.loopFile === 'boolean' ? r.loopFile : d.loopFile,
     };
   } catch {
     return d;
   }
+}
+
+/** Where the file is going, which sets its loudness. */
+function TargetPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  return (
+    <label className="flex items-center gap-2 pl-6 text-forge-text">
+      For
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="h-7 bg-forge-bg border border-forge-border rounded px-1">
+        {LOUDNESS_TARGETS.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function saveSettings(settings: ExportSettings): void {
@@ -296,7 +315,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         let reading = stemsOnly ? null : await measureLoudness(parts[0].loop, sampleRate, controller.signal);
         let note = '';
         if (reading && settings.normalize) {
-          const { gainDb, limited } = normalizeGainDb(reading);
+          // Gain only: a limiter would change the sound across the loop's seam
+          const { gainDb, limited } = normalizeGainDb(reading, targetById(settings.target).lufs);
           const g = Math.pow(10, gainDb / 20);
           if (gainDb !== 0) for (const ch of [...parts[0].intro, ...parts[0].loop]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
           reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
@@ -331,9 +351,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         controller.signal.throwIfAborted();
         let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
         if (settings.normalize) {
-          const { gainDb } = normalizeGainDb(reading);
-          if (gainDb !== 0) scaleAudio(audio, gainDb);
-          reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
+          setStatus({ kind: 'rendering', fileName, progress: 0.3, detail: 'Matching the loudness' });
+          reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal)).reading;
         }
         const startSeconds = barToSeconds(opts.startBar, tempo);
         const sections = (opts.markers ?? [])
@@ -379,10 +398,12 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
         let note = '';
         if (settings.normalize) {
-          const { gainDb, limited } = normalizeGainDb(reading);
-          if (gainDb !== 0) scaleAudio(audio, gainDb);
-          reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
-          note = limited ? `. That's ${(NORMALIZE_TARGET_LUFS - reading.integrated).toFixed(1)} dB under the target, so peaks stay under ${NORMALIZE_CEILING_DBTP} dBTP. To get louder, turn on the master OTT and raise its Out gain` : '';
+          setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Matching the loudness' });
+          const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal);
+          reading = reached.reading;
+          if (reached.shortDb > 0.3)
+            note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the master OTT and raise its Out gain`;
+          else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;
         }
         if (format !== 'wav') setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${format.toUpperCase()}` });
         downloadBlob(format === 'wav' ? encodeWav(audio, settings.bitDepth, exportCues(opts), wholeFileLoop(opts, audio.length)) : await encodeAudio(channelsOf(audio), audio.sampleRate, format, encodeOpts), fileName);
@@ -547,10 +568,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
               <span>
-                Normalize to {NORMALIZE_TARGET_LUFS} LUFS
-                <span className="block text-forge-muted">YouTube plays at this loudness: matching it means your video isn't turned down.</span>
+                Match a loudness target
+                <span className="block text-forge-muted">YouTube plays at -14 LUFS: matching it means your video isn't turned down.</span>
               </span>
             </label>
+            {settings.normalize && <TargetPicker value={settings.target} onChange={(target) => update({ target })} />}
           </>
         ) : (
           <>
@@ -561,14 +583,15 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
               <span>
-                Normalize to {NORMALIZE_TARGET_LUFS} LUFS
+                Match a loudness target
                 <span className="block text-forge-muted">
                   {settings.normalize
-                    ? `Turns the whole file up or down to the loudness Spotify, YouTube and Apple Music play at, so it won't be turned down or sound quiet next to other tracks. Never pushes peaks over ${NORMALIZE_CEILING_DBTP} dBTP.`
+                    ? `${targetById(settings.target).about} ${game ? 'The intro and loop are turned up or down together (no limiting, which would change the loop\u2019s seam).' : 'If the mix is too quiet to get there by turning it up, a look-ahead limiter holds the peaks down (up to ' + MAX_LIMITING_DB + ' dB).'} Peaks never pass ${NORMALIZE_CEILING_DBTP} dBTP.`
                     : 'The file keeps the level of the mix.'}
                 </span>
               </span>
             </label>
+            {settings.normalize && <TargetPicker value={settings.target} onChange={(target) => update({ target })} />}
           </>
         )}
       </Section>

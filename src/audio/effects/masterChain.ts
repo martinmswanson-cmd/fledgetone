@@ -1,5 +1,5 @@
 import * as Tone from 'tone';
-import type { MasterSettings } from '../../store/timelineTypes';
+import type { GlueStyle, MasterSettings } from '../../store/timelineTypes';
 import { createWorkletNode, loadWorklet } from '../worklets';
 import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
 
@@ -296,8 +296,31 @@ function createWidth(context: Tone.BaseContext, width: MasterSettings['width']):
   return { input, output, set, dispose: () => nodes.forEach((n) => n.disconnect()) };
 }
 
+/**
+ * The master compressor's styles: how hard it squeezes the whole mix, and how fast. Standard is
+ * the one every project had before; Punchy's slow attack lets each drum hit through before
+ * holding the rest; Tight is for dense, loud electronic music; Gentle barely touches it.
+ */
+export const GLUE_STYLES: Record<GlueStyle, { name: string; about: string; threshold: number; ratio: number; attack: number; release: number }> = {
+  standard: { name: 'Standard', about: 'Holds the mix together evenly.', threshold: -18, ratio: 4, attack: 0.005, release: 0.1 },
+  gentle: { name: 'Gentle', about: 'Barely touches it: acoustic, orchestral and jazz.', threshold: -14, ratio: 2, attack: 0.03, release: 0.25 },
+  punchy: { name: 'Punchy', about: 'Lets each drum hit through before holding the rest: rock, hip-hop, pop.', threshold: -20, ratio: 4, attack: 0.03, release: 0.08 },
+  tight: { name: 'Tight', about: 'Firm and loud: dubstep, EDM, drum and bass.', threshold: -22, ratio: 6, attack: 0.003, release: 0.06 },
+  off: { name: 'Off', about: 'No master compression (the limiter still catches peaks).', threshold: 0, ratio: 1, attack: 0.005, release: 0.1 },
+};
+
 export function createMasterInserts(compressor: Tone.ToneAudioNode, limiter: Tone.ToneAudioNode, settings: MasterSettings): MasterInserts {
   const context = compressor.context;
+  const glue = (style: GlueStyle) => {
+    const comp = compressor as Tone.Compressor;
+    const g = GLUE_STYLES[style] ?? GLUE_STYLES.standard;
+    if (!('threshold' in comp)) return;
+    comp.threshold.value = g.threshold;
+    comp.ratio.value = g.ratio;
+    comp.attack.value = g.attack;
+    comp.release.value = g.release;
+  };
+  glue(settings.glue);
   const chain = createInsertChain(compressor, limiter);
   let ott: OttUnit | null = null;
   let width: WidthUnit | null = null;
@@ -310,6 +333,7 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, limiter: Ton
 
   const apply = (next: MasterSettings, ramp = 0.03) => {
     if (disposed) return;
+    if (next.glue !== wanted.glue) glue(next.glue);
     wanted = next;
     const retired: Array<{ dispose: () => void }> = [];
     if (next.ott.on) {

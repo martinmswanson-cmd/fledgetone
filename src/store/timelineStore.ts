@@ -561,6 +561,8 @@ interface TimelineState {
   setMasterOtt: (patch: Partial<MasterSettings['ott']>, record?: boolean) => void;
   /** Change the stereo width, recorded like setMasterOtt. */
   setMasterWidth: (patch: Partial<MasterSettings['width']>, record?: boolean) => void;
+  /** Choose the master compressor's style (recorded for undo). */
+  setMasterGlue: (glue: MasterSettings['glue']) => void;
 
   // Clips
   selectClip: (clipId: string, additive: boolean) => void;
@@ -2124,6 +2126,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setMasterOtt: (patch, record = false) => setMaster((m) => ({ ...m, ott: { ...m.ott, ...patch } }), record),
     setMasterWidth: (patch, record = false) => setMaster((m) => ({ ...m, width: { ...m.width, ...patch } }), record),
+    setMasterGlue: (glue) => setMaster((m) => ({ ...m, glue }), true),
 
     // ---------- Clips ----------
     selectClip: (clipId, additive) =>

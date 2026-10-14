@@ -60,9 +60,9 @@ export function clip(t: Track, name: string, startBar: number, bars: number, ste
   return { id: uid('clip'), trackId: t.id, name, startBar, lengthBars: bars * times, notes: toNotes(all), isSelected: false, ...(wobble ? { wobble } : {}) };
 }
 
-export function master(ott: Partial<MasterSettings['ott']>, width: Partial<MasterSettings['width']>): MasterSettings {
+export function master(ott: Partial<MasterSettings['ott']>, width: Partial<MasterSettings['width']>, glue: MasterSettings['glue'] = 'standard'): MasterSettings {
   const d = defaultMasterSettings();
-  return { ott: { ...d.ott, ...ott }, width: { ...d.width, ...width } };
+  return { glue, ott: { ...d.ott, ...ott }, width: { ...d.width, ...width } };
 }
 
 export function project(name: string, bpm: number, swing: number, loop: [number, number], tracks: Track[], clips: Clip[], sections: Array<[number, string]>, m: MasterSettings): ProjectSnapshot {

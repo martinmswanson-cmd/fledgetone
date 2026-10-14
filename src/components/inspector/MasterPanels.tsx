@@ -5,7 +5,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Snowflake, Timer } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { defaultMasterSettings, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
+import { defaultMasterSettings, GLUE_STYLE_IDS, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
+import type { GlueStyle } from '../../store/timelineTypes';
+import { GLUE_STYLES } from '../../audio/effects/masterChain';
 import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
 
 /** A reading, or a dash while there's nothing to measure. */
@@ -88,6 +90,31 @@ export const OttPanel: React.FC = () => {
       <FxSlider label="In gain" value={ott.inGain} min={OTT_GAIN_MIN} max={OTT_GAIN_MAX} step={0.5} format={db} onChange={(v) => set({ inGain: v })} reset={d.inGain} accent={accent} disabled={!ott.on} />
       <FxSlider label="Out gain" value={ott.outGain} min={OTT_GAIN_MIN} max={OTT_GAIN_MAX} step={0.5} format={db} onChange={(v) => set({ outGain: v })} reset={d.outGain} accent={accent} disabled={!ott.on} />
     </InsertPanel>
+  );
+};
+
+/** The master compressor's style: how hard and how fast it holds the whole mix together. */
+export const GluePanel: React.FC = () => {
+  const glue = useTimelineStore((s) => s.master.glue);
+  return (
+    <div className="rounded-md border border-forge-border bg-forge-panel/60 p-2 flex flex-col gap-1.5">
+      <label className="flex items-center gap-2 text-[11px] font-semibold text-forge-text">
+        <Gauge className="w-3.5 h-3.5 text-amber-300" />
+        Glue
+        <select
+          value={glue}
+          onChange={(e) => useTimelineStore.getState().setMasterGlue(e.target.value as GlueStyle)}
+          className="ml-auto h-6 bg-forge-bg border border-forge-border rounded px-1 text-[11px] font-normal"
+        >
+          {GLUE_STYLE_IDS.map((id) => (
+            <option key={id} value={id}>
+              {GLUE_STYLES[id].name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-[10px] text-forge-muted">The master compressor. {GLUE_STYLES[glue].about}</p>
+    </div>
   );
 };
 
@@ -291,6 +318,7 @@ export const OfflinePanel: React.FC = () => {
 export const MasterPanels: React.FC = () => (
   <div className="flex flex-col gap-3">
     <LoudnessPanel />
+    <GluePanel />
     <OttPanel />
     <WidthPanel />
     <PlaybackPanel />
