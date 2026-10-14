@@ -15,6 +15,7 @@ import { detectKey, keyOf } from '../../store/songKey';
 import { INSTRUMENTS, type InstrumentKey } from '../../audio/instrumentCatalog';
 import { fireStinger, playNotesAt, renderStinger } from '../../audio/stingerPlayer';
 import { ruleFor, transitionCue } from '../../store/transitions';
+import { bridgeFor } from '../../audio/gameKit';
 import { AuditionButton, TransitionMatrix } from './GameMatrix';
 import { gameKitSong } from './gameKitSong';
 import * as Tone from 'tone';
@@ -373,6 +374,7 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
  */
 
 type Quantize = 'bar' | 'beat' | 'now';
+// (A rule's own timing can also be 'phrase' or 'end')
 
 export const GamePanel: React.FC = () => {
   const markers = useTimelineStore((s) => s.markers);
@@ -398,7 +400,9 @@ export const GamePanel: React.FC = () => {
     const cue = transitionCue(rule.kind, s.tracks);
     // A stinger bridge: the stinger on the line, then the new state that many bars later
     const bridge = rule.kind === 'stinger' ? s.stingers.find((x) => x.id === rule.stingerId) : undefined;
-    const bridgeBars = bridge ? Math.max(1, Math.ceil(bridge.lengthBars - 1e-6)) : 0;
+    // A written bridge (see transitions.ts): its parts on their tracks' instruments, then the state
+    const written = rule.kind === 'bridge' ? bridgeFor(gameKitSong(), sec, rule.bridgeBars ?? 1, songTempo(s), { base: s.meter, points: s.meterPoints }) : null;
+    const bridgeBars = bridge ? Math.max(1, Math.ceil(bridge.lengthBars - 1e-6)) : written ? written.lengthBars : 0;
     const when = rule.quantize ?? quantize;
     const jump = () => {
       const st = useTimelineStore.getState();
@@ -416,22 +420,31 @@ export const GamePanel: React.FC = () => {
     }
     // On the next bar or beat line of the song, or a later one if the transition needs more room
     const at = getAudiblePositionBar();
-    const unit = when === 'bar' ? 1 : 0.25;
+    const unit = when === 'beat' ? 0.25 : 1;
     let next = Math.floor((at - 1) / unit + 1e-6) * unit + unit + 1;
+    // A phrase: every few bars from the state's start; the end: where its loop wraps
+    if (playingNow && when === 'phrase') {
+      const phrase = (rule.phraseBars ?? 4) * unit;
+      next = Math.min(playingNow.to, playingNow.from + Math.ceil((at - playingNow.from) / phrase - 1e-6) * phrase);
+    } else if (playingNow && when === 'end') next = playingNow.to;
     if (cue && next - at < cue.leadIn) next += Math.ceil((cue.leadIn - (next - at)) / unit - 1e-6) * unit;
     const ms = secondsBetween(at, next, songTempo(s)) * 1000;
     if (cue) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + ms / 1000);
     setPending(sec.id);
-    if (bridge) {
-      // The song stops on the line while the stinger plays, then comes in on the new state
-      void fireStinger(bridge, when === 'beat' ? 'beat' : 'bar');
+    if (bridge || written) {
+      // The song stops on the line while the stinger (or bridge) plays, then comes in on the new state
+      if (bridge) void fireStinger(bridge, when === 'beat' ? 'beat' : 'bar');
+      if (written) for (const c of written.clips) {
+        const key = s.tracks.find((t) => t.id === c.trackId)?.instrumentKey;
+        if (key) void playNotesAt(key, c.notes, Tone.getContext().currentTime + ms / 1000);
+      }
       timer.current = window.setTimeout(() => {
         const st = useTimelineStore.getState();
         if (st.isPlaying) void st.togglePlay();
         timer.current = window.setTimeout(() => {
           jump();
           void useTimelineStore.getState().togglePlay();
-        }, (bridgeBars * 240 * 1000) / tempoAt(next, songTempo(s)) - 40);
+        }, (Math.max(written ? 0 : 1, bridgeBars) * 240 * 1000) / tempoAt(next, songTempo(s)) - 40);
       }, Math.max(0, ms - 15));
       return;
     }

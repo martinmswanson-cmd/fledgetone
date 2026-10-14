@@ -1016,13 +1016,17 @@ export type MarkerAnchor = 'bar' | 'time';
 
 /** A named point on the timeline. Both positions are kept; the anchor says which one the other follows. */
 /** What happens as the music switches between game states (see transitions.ts). */
-export type TransitionKind = 'cut' | 'fill' | 'riser' | 'impact' | 'crossfade' | 'stinger';
+export type TransitionKind = 'cut' | 'fill' | 'riser' | 'impact' | 'crossfade' | 'stinger' | 'bridge';
 
 /** How one state hands over to another: a transition matrix entry (see transitions.ts). */
 export interface TransitionRule {
   kind: TransitionKind;
-  /** When the switch happens: the next bar (default), the next beat, or at once */
-  quantize?: 'bar' | 'beat' | 'now';
+  /** When the switch happens: the next bar (default), beat or phrase, the end of the loop, or at once */
+  quantize?: 'bar' | 'beat' | 'phrase' | 'end' | 'now';
+  /** A phrase's length in bars, counted from the state's start (quantize 'phrase'; default 4) */
+  phraseBars?: number;
+  /** A bridge's length in measures (kind 'bridge'; default 1) */
+  bridgeBars?: 1 | 2;
   /** A crossfade's length in beats */
   beats?: number;
   /** The stinger that bridges the gap (kind 'stinger') */

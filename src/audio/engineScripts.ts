@@ -308,7 +308,7 @@ ${m.states.map((s, i) => `| ${s.name} | ${s.bars} | ${s.seconds.toFixed(3)} | ${
 
 ## Transitions
 
-${m.transitions.length ? m.transitions.map((t) => `- ${t.from === '*' ? 'Any state' : t.from} → ${t.to}: ${t.kind}${t.kind === 'crossfade' ? ` over ${t.beats} beats` : ''}${t.stinger ? ` (stinger ${t.stinger})` : ''}, on the next ${t.quantize === 'now' ? 'moment' : t.quantize}${t.file ? ` (sound: ${t.file}${t.leadInSeconds ? `, starting ${t.leadInSeconds.toFixed(3)} s early` : ''})` : ''}`).join('\n') : '- None set: switch on the next bar line.'}
+${m.transitions.length ? m.transitions.map((t) => `- ${t.from === '*' ? 'Any state' : t.from} → ${t.to}: ${t.kind}${t.kind === 'crossfade' ? ` over ${t.beats} beats` : ''}${t.stinger ? ` (stinger ${t.stinger})` : ''}, ${t.quantize === 'now' ? 'at once' : t.quantize === 'end' ? 'at the end of the loop' : t.quantize === 'phrase' ? `on the next ${t.phraseBars ?? 4}-bar phrase` : `on the next ${t.quantize}`}${t.file ? ` (sound: ${t.file}${t.leadInSeconds ? `, starting ${t.leadInSeconds.toFixed(3)} s early` : ''}${t.bridgeSeconds ? `, the state coming in ${t.bridgeSeconds.toFixed(3)} s after it starts` : ''})` : ''}`).join('\n') : '- None set: switch on the next bar line.'}
 
 ${curves.length ? `## Intensity
 

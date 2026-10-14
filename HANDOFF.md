@@ -275,6 +275,13 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   on the audio clock, everything up front in an OfflineAudioContext; Godot: its own bus with a
   low-pass and reverb, pieces by timers; Unity: music on a child object with filters, pieces by
   PlayScheduled). Godot run headless; Unity compiled against stubs.
+- **Smarter transitions** (`src/store/transitions.ts`): rule `quantize` also 'phrase' (`phraseBars` 2/4/8
+  from the state's start) and 'end' (the loop's or piece's end); kind 'bridge' (`bridgeBars` 1/2):
+  `bridgeNotes` writes the new state's opening chord's dominant seventh (ii or iv before it for 2),
+  bass stepping in through the leading tone, a drum fill; the kit renders it on the song's chord part,
+  bass and drums (`bridgeFor` in gameKit.ts) as `transitions/bridge into <state>.wav`, and the players
+  play it on the line and start the state `bridgeSeconds` later (like a stinger bridge). Live pads in
+  the Game tab play it on preview instruments. Web and Godot timing checked.
 - **Game parameters** (`src/store/gameParams.ts`, `GameParams.tsx`): `gameParams` in the store and
   project; each has targets (intensity, filter, reverb, volume, a group's layer) over a window of the
   parameter. `paramMix` combines them (highest intensity and reverb, lowest filter, volumes and layers

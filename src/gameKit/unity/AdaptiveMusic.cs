@@ -25,7 +25,7 @@ public class AdaptiveMusic : MonoBehaviour
     [Serializable] public class Costume { public string name; public double tempo = 1; public string file; public double seconds; public Stem[] stems; }
     [Serializable] public class Gap { public double min; public double max; }
     [Serializable] public class State { public string name; public string file; public double bars; public double seconds; public double beatSeconds; public int beatsPerBar; public Stem[] stems; public Costume[] costumes; public int shuffleBars; public Gap gap; }
-    [Serializable] public class Rule { public string from; public string to; public string kind; public string quantize; public double beats; public string file; public double leadInSeconds; public string stinger; }
+    [Serializable] public class Rule { public string from; public string to; public string kind; public string quantize; public int phraseBars; public double beats; public string file; public double leadInSeconds; public string stinger; public double bridgeSeconds; }
     [Serializable] public class StingerInfo { public string name; public string kind; public string file; public string quantize; public double bridgeBars; public double bridgeSeconds; }
     [Serializable] public class Point { public float x; public float y; }
     [Serializable] public class Group { public string name; public Point[] points; }
@@ -192,14 +192,24 @@ public class AdaptiveMusic : MonoBehaviour
     }
 
     /// The dspTime of the next bar (or "beat") line of the state playing now.
-    public double NextLine(string unit = "bar")
+    /// A "phrase" is `phraseBars` bars from the state's start; "end" is where its loop (or piece) comes round.
+    public double NextLine(string unit = "bar", int phraseBars = 4)
     {
         double now = AudioSettings.dspTime + 0.05;
         if (Current == null || unit == "now") return now;
-        double line = Line(unit);
         double from = GridStart(now);
         if (now < from) return from;
+        if (unit == "end")
+            foreach (var p in pieceTimes) if (now >= p[0] && now < p[1]) return p[1];
+        double line = LineFor(unit, phraseBars);
         return from + Math.Ceiling((now - from) / line - 1e-6) * line;
+    }
+
+    double LineFor(string unit, int phraseBars = 4)
+    {
+        if (unit == "phrase") return Line("bar") * (phraseBars > 0 ? phraseBars : 4);
+        if (unit == "end") { var st = CurrentState(); if (st != null && st.seconds > 0) return st.seconds / tempoNow; }
+        return Line(unit == "beat" ? "beat" : "bar");
     }
 
     // Where the bar lines run from: the piece playing now (in a silence, the next one), else the loop's start
@@ -363,8 +373,8 @@ public class AdaptiveMusic : MonoBehaviour
         var s = Find(name);
         var r = RuleFor(name);
         string q = unit ?? (string.IsNullOrEmpty(r.quantize) ? "bar" : r.quantize);
-        double line = Line(q == "beat" ? "beat" : "bar");
-        double at = NextLine(q);
+        double line = LineFor(q, r.phraseBars);
+        double at = NextLine(q, r.phraseBars);
         double lead = r.leadInSeconds;
         while (at - AudioSettings.dspTime < lead + 0.05) at += line;
         var old = voices;
@@ -376,8 +386,14 @@ public class AdaptiveMusic : MonoBehaviour
             StartCoroutine(Crossfade(old, voices, at, fade));
             return;
         }
-        if (!string.IsNullOrEmpty(r.file)) PlayOnce(r.file, at - lead);
         double startAt = at;
+        if (r.kind == "bridge" && !string.IsNullOrEmpty(r.file))
+        {
+            // A bridge written into the new state: it plays on the line, the state comes in after it
+            PlayOnce(r.file, at);
+            startAt = at + (r.bridgeSeconds > 0 ? r.bridgeSeconds : Line("bar"));
+        }
+        else if (!string.IsNullOrEmpty(r.file)) PlayOnce(r.file, at - lead);
         if (r.kind == "stinger" && Data.stingers != null)
             foreach (var st in Data.stingers)
                 if (st.name == r.stinger) { PlayOnce(st.file, at); startAt = at + (st.bridgeSeconds > 0 ? st.bridgeSeconds : (st.bridgeBars > 0 ? st.bridgeBars : 1) * Line("bar")); }

@@ -134,15 +134,29 @@ export class AdaptiveMusic {
     return this.secondsPerBeat * (unit === 'bar' ? st?.beatsPerBar ?? this.data.beatsPerBar : 1);
   }
 
-  /** The audio time of the next bar or beat line of the state playing now. */
-  nextLine(unit = 'bar') {
+  /**
+   * The audio time of the next line of the state playing now: a 'bar' or 'beat', a 'phrase'
+   * (every `phraseBars` bars from the state's start), or the 'end' of its loop (or piece).
+   */
+  nextLine(unit = 'bar', phraseBars = 4) {
     const now = this.ctx.currentTime + 0.02;
     if (!this.current || unit === 'now') return now;
     // Where the bar lines run from: the piece playing now (or, in a silence, the next one)
     const from = this.current.gridStart(now);
     if (from >= now) return from;
-    const line = this.lineLength(unit);
+    if (unit === 'end') {
+      const piece = this.current.pieces?.find((p) => now >= p.at - 1e-3 && now < p.end);
+      if (piece) return piece.end;
+      if (this.current.loopSeconds) return from + Math.ceil((now - from) / this.current.loopSeconds - 1e-6) * this.current.loopSeconds;
+    }
+    const line = this.lineFor(unit, phraseBars);
     return from + Math.ceil((now - from) / line - 1e-6) * line;
+  }
+
+  /** How long a line of `unit` is in the state playing now. */
+  lineFor(unit, phraseBars = 4) {
+    if (unit === 'phrase') return this.lineLength('bar') * phraseBars;
+    return this.lineLength(unit === 'beat' ? 'beat' : 'bar');
   }
 
   state(name) {
@@ -280,6 +294,7 @@ export class AdaptiveMusic {
         playing.sources.add(source);
       }
       playing.gridStart = () => at - offset;
+      playing.loopSeconds = seconds;
       return playing;
     }
     // Pieces: bar-line boundaries a few bars (measures of the state's own time signature) apart,
@@ -422,8 +437,8 @@ export class AdaptiveMusic {
     const next = this.state(name);
     const r = this.rule(name);
     const q = unit ?? r.quantize ?? 'bar';
-    const line = this.lineLength(q === 'beat' ? 'beat' : 'bar');
-    let at = this.nextLine(q);
+    const line = q === 'end' && this.current.loopSeconds ? this.current.loopSeconds : this.lineFor(q, r.phraseBars);
+    let at = this.nextLine(q, r.phraseBars);
     const lead = r.leadInSeconds ?? 0;
     // A riser needs its whole lead-in: wait another line if there isn't room
     while (at - this.ctx.currentTime < lead) at += line;
@@ -442,6 +457,13 @@ export class AdaptiveMusic {
         this.current = this.startState(next, at + (s.bridgeSeconds ?? (s.bridgeBars ?? 1) * this.lineLength('bar')));
         return;
       }
+    }
+    if (r.kind === 'bridge' && r.file) {
+      // A bridge written into the new state: it plays on the line, the state comes in after it
+      this.playOnce(r.file, at);
+      this.stopState(old, at);
+      this.current = this.startState(next, at + (r.bridgeSeconds ?? this.lineLength('bar')));
+      return;
     }
     if (r.file) this.playOnce(r.file, at - lead);
     this.stopState(old, at);

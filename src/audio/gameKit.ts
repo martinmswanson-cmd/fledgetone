@@ -9,7 +9,9 @@ import { applyCostume, type Costume, type StateOptions } from '../store/costumes
 import { manifestParam, type GameParam } from '../store/gameParams';
 import { songSections } from '../store/cutToLength';
 import { detectKey } from '../store/songKey';
-import { ANY_STATE, transitionCue } from '../store/transitions';
+import { ANY_STATE, bridgeNotes, bridgeTarget, transitionCue } from '../store/transitions';
+import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
+import { midiOf, nameOf } from '../store/noteTools';
 import { stingerKind } from '../store/stingers';
 import type { Clip, Marker, MasterFx, MasterSettings, Stinger, Track, TransitionKind, TransitionRule } from '../store/timelineTypes';
 import webPlayer from '../gameKit/adaptive-music.js?raw';
@@ -107,7 +109,11 @@ export interface AudioManifest {
     /** Leave a silence between plays, `min` to `max` seconds (picked at random each time) */
     gap?: { min: number; max: number };
   }>;
-  transitions: Array<{ from: string; to: string; kind: TransitionKind; quantize: 'bar' | 'beat' | 'now'; beats?: number; file?: string; leadInSeconds?: number; stinger?: string }>;
+  /**
+   * `quantize` 'phrase': the next `phraseBars` bars counted from the state's start; 'end': where its
+   * loop (or piece) ends. A 'bridge' plays `file` on the line and the new state `bridgeSeconds` later.
+   */
+  transitions: Array<{ from: string; to: string; kind: TransitionKind; quantize: NonNullable<TransitionRule['quantize']>; phraseBars?: number; beats?: number; file?: string; leadInSeconds?: number; stinger?: string; bridgeBars?: number; bridgeSeconds?: number }>;
   /** `bridgeSeconds`: how long a stinger bridging a switch holds the new state back */
   stingers: Array<{ name: string; kind: string; label: string; file: string; quantize: 'beat'; bridgeBars: number; bridgeSeconds: number }>;
   /**
@@ -162,6 +168,7 @@ export async function buildGameKitParts(
   // States: each section a seamless loop (and its stems), named after its marker
   const states: AudioManifest['states'] = [];
   const stateOfMarker = new Map<string, string>();
+  const sectionOfMarker = new Map<string, (typeof sections)[number]>();
   const usedNames = new Set<string>();
   for (const sec of sections) {
     tick(`state ${sec.name}`);
@@ -170,7 +177,10 @@ export async function buildGameKitParts(
     usedNames.add(name);
     // (Sections start on the 16th grid; a marker a hair off it is still this state's)
     const marker = song.markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - sec.from) < 1 / 32);
-    if (marker) stateOfMarker.set(marker.id, name);
+    if (marker) {
+      stateOfMarker.set(marker.id, name);
+      sectionOfMarker.set(marker.id, sec);
+    }
     const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate };
     const file = `states/${safe(name)}.wav`;
     const seconds = secondsBetween(sec.from, sec.to, tempo);
@@ -255,6 +265,7 @@ export async function buildGameKitParts(
   // Transitions: the matrix by state name, and one sound per fill / riser / impact in use
   tick('transitions');
   const cueFiles = new Map<TransitionKind, { file: string; leadInSeconds: number }>();
+  const bridgeFiles = new Map<string, { file: string; bridgeBars: number; bridgeSeconds: number }>();
   const transitions: AudioManifest['transitions'] = [];
   for (const [k, rule] of Object.entries(song.transitions)) {
     const [fromId, toId] = k.split('>');
@@ -262,6 +273,28 @@ export async function buildGameKitParts(
     const to = stateOfMarker.get(toId);
     if (!from || !to) continue;
     const entry: AudioManifest['transitions'][number] = { from, to, kind: rule.kind, quantize: rule.quantize ?? 'bar' };
+    if (rule.quantize === 'phrase') entry.phraseBars = rule.phraseBars ?? 4;
+    if (rule.kind === 'bridge') {
+      const sec = sectionOfMarker.get(toId);
+      if (!sec) continue;
+      const bars = rule.bridgeBars ?? 1;
+      const key = `${toId}:${bars}`;
+      if (!bridgeFiles.has(key)) {
+        const made = bridgeFor(song, sec, bars, tempo, meterMap);
+        if (!made) {
+          // Nothing to play it on: a plain switch
+          entry.kind = 'cut';
+          transitions.push(entry);
+          continue;
+        }
+        const file = `transitions/bridge into ${safe(to)}${bars > 1 ? ` (${bars} bars)` : ''}.wav`;
+        const audio = await renderArrangement({ tracks: song.tracks, clips: made.clips, bpm: made.bpm, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: 1, endBar: 1 + made.lengthBars, sampleRate });
+        const channels = channelsOf(audio);
+        files.push({ name: file, data: encodeChannels(channels, audio.sampleRate, 16, [], undefined) });
+        bridgeFiles.set(key, { file, bridgeBars: bars, bridgeSeconds: +((made.lengthBars * 240) / made.bpm).toFixed(6) });
+      }
+      Object.assign(entry, bridgeFiles.get(key));
+    }
     if (rule.kind === 'crossfade') entry.beats = rule.beats ?? 4;
     if (rule.kind === 'stinger') {
       const name = rule.stingerId ? stingerName.get(rule.stingerId) : undefined;
@@ -566,4 +599,61 @@ Unity (players/unity/AdaptiveMusic.cs)
 Other engines and middleware (FMOD, Wwise...): the loops are exact, so set each as a looping
 sound and switch at bar lines (every ${(240 / bpm).toFixed(4)} s).
 `;
+}
+
+/**
+ * The clips of a bridge into a state (see bridgeNotes): its chords on the song's chord part, the
+ * bass on its bass part, the fill on its drums, at the state's tempo and in its time signature.
+ * Null when the song has nothing pitched to lead in with.
+ */
+export function bridgeFor(song: GameKitSong, sec: { from: number }, bars: 1 | 2, tempo: TempoMap, meterMap: MeterMap): { clips: Clip[]; lengthBars: number; bpm: number } | null {
+  const meter = meterAt(sec.from, meterMap);
+  const measure = meter.num / meter.den;
+  const beat = 1 / meter.den;
+  const audible = audibleTracks(song.tracks).filter((t) => INSTRUMENTS[t.instrumentKey] && t.instrumentKey !== 'bus' && t.instrumentKey !== 'return');
+  const pitched = audible.filter((t) => !isDrumKind(t.instrumentKey) && INSTRUMENTS[t.instrumentKey].kind !== 'audio' && t.instrumentKey !== 'fx');
+  if (!pitched.length) return null;
+  // What each pitched part plays over the state's first measure
+  const opening = new Map<string, Array<{ midi: number; at: number }>>();
+  for (const c of song.clips) {
+    if (c.audio || !pitched.some((t) => t.id === c.trackId)) continue;
+    for (const n of c.notes) {
+      const at = c.startBar + n.startOffset - sec.from;
+      if (at < -1e-6 || at >= measure - 1e-6 || n.startOffset >= c.lengthBars) continue;
+      const midi = midiOf(n.note);
+      if (!Number.isFinite(midi)) continue;
+      const list = opening.get(c.trackId) ?? [];
+      list.push({ midi, at });
+      opening.set(c.trackId, list);
+    }
+  }
+  const all = [...opening.values()].flat();
+  const avg = (id: string) => {
+    const l = opening.get(id);
+    return l?.length ? l.reduce((a, n) => a + n.midi, 0) / l.length : Infinity;
+  };
+  const bassTrack = pitched.find((t) => INSTRUMENTS[t.instrumentKey].category === 'Bass' && opening.has(t.id)) ?? [...pitched].filter((t) => opening.has(t.id)).sort((a, b) => avg(a.id) - avg(b.id))[0];
+  // The chords on the part that plays most notes at once (the busiest pitched part but the bass)
+  const chordTrack =
+    [...pitched].filter((t) => t !== bassTrack && opening.has(t.id)).sort((a, b) => opening.get(b.id)!.length - opening.get(a.id)!.length)[0] ??
+    pitched.find((t) => t !== bassTrack && /pad|keys|piano|strings|organ|guitar/i.test(INSTRUMENTS[t.instrumentKey].category + t.instrumentKey));
+  if (!chordTrack && !bassTrack) return null;
+  const notes = bridgeNotes(bridgeTarget(all, beat), bars, measure, meter.num);
+  const fit = (list: Clip['notes'], key: Track['instrumentKey']) => {
+    const range = INSTRUMENTS[key]?.range;
+    if (!range) return list;
+    return list.map((n) => {
+      let m = midiOf(n.note);
+      while (m < range[0] && m + 12 <= range[1]) m += 12;
+      while (m > range[1] && m - 12 >= range[0]) m -= 12;
+      return { ...n, note: nameOf(m) };
+    });
+  };
+  const clip = (track: Track, list: Clip['notes']): Clip => ({ id: `bridge-${track.id}`, trackId: track.id, name: 'Bridge', startBar: 1, lengthBars: notes.lengthBars, notes: list, isSelected: false });
+  const clips: Clip[] = [];
+  if (chordTrack) clips.push(clip(chordTrack, fit(notes.chords, chordTrack.instrumentKey)));
+  if (bassTrack) clips.push(clip(bassTrack, fit(notes.bass, bassTrack.instrumentKey)));
+  const drums = audible.find((t) => isDrumKind(t.instrumentKey));
+  if (drums) clips.push(clip(drums, notes.drums));
+  return { clips, lengthBars: notes.lengthBars, bpm: tempoAt(sec.from, tempo) };
 }

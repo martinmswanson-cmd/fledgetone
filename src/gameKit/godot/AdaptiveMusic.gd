@@ -153,10 +153,14 @@ func _seconds_per_beat() -> float:
 		return float(st.beatSeconds) / _tempo
 	return float(data.get("beatSeconds", 60.0 / float(data.bpm))) / _tempo
 
-func _line(unit: String) -> float:
+func _line(unit: String, phrase_bars := 4) -> float:
 	var st := _current_state()
 	var per_bar := float(st.get("beatsPerBar", data.beatsPerBar))
-	return _seconds_per_beat() * (per_bar if unit == "bar" else 1.0)
+	if unit == "phrase":
+		return _seconds_per_beat() * per_bar * phrase_bars
+	if unit == "end":
+		return float(st.get("seconds", 0.0)) / _tempo if not st.is_empty() else _seconds_per_beat() * per_bar
+	return _seconds_per_beat() * (per_bar if unit != "beat" else 1.0)
 
 ## A stem group's level at the intensity now (straight lines between its curve's points).
 ## A stem group's level now: its curve at the intensity, times what the parameters ask of it.
@@ -239,10 +243,11 @@ func _curve_level(group, x: float) -> float:
 	return 1.0
 
 ## Seconds from now to the next bar (or "beat") line of the state playing now.
-func time_to_next(unit := "bar") -> float:
+## A "phrase" is `phrase_bars` bars from the state's start; "end" is where its loop comes round.
+func time_to_next(unit := "bar", phrase_bars := 4) -> float:
 	if _voices.is_empty() or unit == "now":
 		return 0.0
-	var line := _line(unit)
+	var line := _line(unit, phrase_bars)
 	var p: AudioStreamPlayer = _voices[0].player
 	var pos := p.get_playback_position() + AudioServer.get_time_since_last_mix() - AudioServer.get_output_latency()
 	var left := line - fmod(pos, line)
@@ -387,15 +392,20 @@ func set_state(name: String, unit := "") -> void:
 	var s := _state(name)
 	var r := _rule(name)
 	var q: String = unit if unit != "" else String(r.get("quantize", "bar"))
-	var line := _line("beat" if q == "beat" else "bar")
-	var wait := time_to_next(q)
+	var phrase := int(r.get("phraseBars", 4))
+	var line := _line(q, phrase)
+	var wait := time_to_next(q, phrase)
 	var lead := float(r.get("leadInSeconds", 0.0))
 	while wait < lead:
 		wait += line
 	_pending = name
-	if r.get("file") != null:
-		_play_once_after(streams[r.file], wait - lead)
 	var bridge := 0.0
+	if r.kind == "bridge" and r.get("file") != null:
+		# A bridge written into the new state: it plays on the line, the state comes in after it
+		_play_once_after(streams[r.file], wait)
+		bridge = float(r.get("bridgeSeconds", _line("bar")))
+	elif r.get("file") != null:
+		_play_once_after(streams[r.file], wait - lead)
 	if r.kind == "stinger":
 		for st in data.stingers:
 			if st.name == r.get("stinger", ""):

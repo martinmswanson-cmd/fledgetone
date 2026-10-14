@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import { Loader2, Play, Square, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { ANY_STATE, transitionKey, TRANSITIONS } from '../../store/transitions';
+import { ANY_STATE, PHRASE_BARS, QUANTIZES, transitionKey, TRANSITIONS } from '../../store/transitions';
 import type { TransitionKind, TransitionRule } from '../../store/timelineTypes';
 import { buildGameKitParts, type AudioManifest } from '../../audio/gameKit';
 import { gameKitSong } from './gameKitSong';
@@ -22,14 +22,14 @@ export interface StateRef {
   name: string;
 }
 
-const SHORT: Record<TransitionKind, string> = { cut: 'Cut', fill: 'Fill', riser: 'Riser', impact: 'Hit', crossfade: 'XF', stinger: '★' };
-const QUANT: Record<string, string> = { bar: '', beat: '·beat', now: '·now' };
+const SHORT: Record<TransitionKind, string> = { cut: 'Cut', fill: 'Fill', riser: 'Riser', impact: 'Hit', crossfade: 'XF', stinger: '★', bridge: 'Bridge' };
+const QUANT: Record<string, string> = { bar: '', beat: '·beat', phrase: '·phr', end: '·end', now: '·now' };
 
 /** A cell's label: the kind, its option, and when (if not the bar). */
 function label(rule: TransitionRule | undefined, stingerName: (id?: string) => string | undefined): string {
   if (!rule) return '–';
-  const extra = rule.kind === 'crossfade' ? ` ${rule.beats ?? 4}` : rule.kind === 'stinger' ? ` ${stingerName(rule.stingerId) ?? '?'}` : '';
-  return `${SHORT[rule.kind]}${extra}${QUANT[rule.quantize ?? 'bar']}`;
+  const extra = rule.kind === 'crossfade' ? ` ${rule.beats ?? 4}` : rule.kind === 'stinger' ? ` ${stingerName(rule.stingerId) ?? '?'}` : rule.kind === 'bridge' && rule.bridgeBars === 2 ? ' 2' : '';
+  return `${SHORT[rule.kind]}${extra}${QUANT[rule.quantize ?? 'bar']}${rule.quantize === 'phrase' ? rule.phraseBars ?? 4 : ''}`;
 }
 
 /**
@@ -50,6 +50,8 @@ export const TransitionMatrix: React.FC<{ states: StateRef[] }> = ({ states }) =
     const next: TransitionRule = { ...(editing ?? { kind: 'cut' }), ...patch };
     if (next.kind !== 'crossfade') delete next.beats;
     if (next.kind !== 'stinger') delete next.stingerId;
+    if (next.kind !== 'bridge') delete next.bridgeBars;
+    if (next.quantize !== 'phrase') delete next.phraseBars;
     if (next.kind === 'stinger' && !next.stingerId) next.stingerId = stingers[0]?.id;
     st.setTransitionRule(cell.from, cell.to, next);
   };
@@ -117,10 +119,27 @@ export const TransitionMatrix: React.FC<{ states: StateRef[] }> = ({ states }) =
             ))}
           </select>
           {editing && (
-            <select value={editing.quantize ?? 'bar'} onChange={(e) => set({ quantize: e.target.value as TransitionRule['quantize'] })} className="h-6 bg-forge-bg border border-forge-border rounded px-1" aria-label="When">
-              <option value="bar">on the next bar</option>
-              <option value="beat">on the next beat</option>
-              <option value="now">at once</option>
+            <select value={editing.quantize ?? 'bar'} onChange={(e) => set({ quantize: e.target.value as TransitionRule['quantize'] })} className="h-6 bg-forge-bg border border-forge-border rounded px-1" aria-label="When" title="Phrase: every few bars from the state's start, so the music turns where a phrase does. End of the loop: when the state's loop (or shuffled piece) comes round">
+              {QUANTIZES.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {editing?.quantize === 'phrase' && (
+            <select value={editing.phraseBars ?? 4} onChange={(e) => set({ phraseBars: Number(e.target.value) })} className="h-6 bg-forge-bg border border-forge-border rounded px-1" aria-label="Phrase length">
+              {PHRASE_BARS.map((b) => (
+                <option key={b} value={b}>
+                  of {b} bars
+                </option>
+              ))}
+            </select>
+          )}
+          {editing?.kind === 'bridge' && (
+            <select value={editing.bridgeBars ?? 1} onChange={(e) => set({ bridgeBars: Number(e.target.value) === 2 ? 2 : 1 })} className="h-6 bg-forge-bg border border-forge-border rounded px-1" aria-label="Bridge length">
+              <option value={1}>1 bar: the pull into it</option>
+              <option value={2}>2 bars: a turn, then the pull</option>
             </select>
           )}
           {editing?.kind === 'crossfade' && (
