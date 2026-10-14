@@ -23,7 +23,7 @@ npm run build:single   # dist-single/index.html: the whole app in one HTML file
 ```
 
 `build:single` inlines the scripts, styles and icon into one file that can be hosted anywhere;
-that's the file published as `bos-beat-box.html` on twobirdsworkshop.com. The real instruments'
+that's the file published as `fledgetone.html` on twobirdsworkshop.com. The real instruments'
 recordings (`public/bos-beat-box-samples/`) are hosted next to it.
 
 ## Finding your way around

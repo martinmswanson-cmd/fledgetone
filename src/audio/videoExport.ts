@@ -1,7 +1,7 @@
 import { BufferTarget, EncodedAudioPacketSource, EncodedPacket, EncodedVideoPacketSource, Mp4OutputFormat, Output } from 'mediabunny';
 import { drawSpectrum, type SkinId, type SkinMemory } from './spectrumSkins';
 import { openVideo, seekVideo } from '../store/videoStore';
-import boLogo from '../assets/bo.svg';
+import fledgetoneLogo from '../assets/fledgetone.svg';
 
 /**
  * A song as an MP4 video, for YouTube, socials or a game's trailer: the rendered mix as its sound,
@@ -239,7 +239,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   canvas.width = W;
   canvas.height = H;
   const g = canvas.getContext('2d')!;
-  const logo = await loadImage(boLogo);
+  const logo = await loadImage(fledgetoneLogo);
   const background = g.createLinearGradient(0, 0, 0, H);
   background.addColorStop(0, '#16161a');
   background.addColorStop(1, '#0c0c0e');

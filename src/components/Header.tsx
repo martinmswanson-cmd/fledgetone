@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, GraduationCap, Search, Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
-import boLogo from '../assets/bo.svg';
+import logo from '../assets/fledgetone.svg';
 import { GuidePanel } from './guide/GuidePanel';
 import { FitTempoPopover, TempoField } from './TempoControls';
 import { shouldIgnoreShortcut } from './keyboard';
@@ -48,7 +48,7 @@ export const Header: React.FC = () => {
       {/* Menu bar and project */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 border-b border-forge-border">
         <div className="flex items-center gap-2 mr-1">
-          <img src={boLogo} alt="Bo wearing headphones" className="w-8 h-8 drop-shadow-[0_0_8px_rgba(61,158,224,0.45)]" />
+          <img src={logo} alt="Fledgetone" className="w-8 h-8 drop-shadow-[0_0_8px_rgba(61,158,224,0.45)]" />
           <h1 className="text-sm font-bold tracking-tight text-white font-sans whitespace-nowrap">Fledgetone</h1>
         </div>
         <MenuBar />

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Fledgetone">
+<g stroke-linejoin="round">
+<polygon points="12,104 40,122 50,92" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="12,104 20,134 40,122" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="20,134 44,150 40,122" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="50,92 78,76 76,110" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="40,122 50,92 76,110" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="44,150 40,122 76,110" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="44,150 76,110 88,160" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="44,150 88,160 68,172" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="76,110 78,76 96,130" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="76,110 96,130 88,160" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="78,76 128,98 96,130" fill="#f6ead0" stroke="#f6ead0" stroke-width="0.6"/>
+<polygon points="128,98 150,126 96,130" fill="#f6ead0" stroke="#f6ead0" stroke-width="0.6"/>
+<polygon points="150,126 120,142 96,130" fill="#e9d4ab" stroke="#e9d4ab" stroke-width="0.6"/>
+<polygon points="150,126 142,158 120,142" fill="#e9d4ab" stroke="#e9d4ab" stroke-width="0.6"/>
+<polygon points="142,158 108,178 120,142" fill="#d9bd8a" stroke="#d9bd8a" stroke-width="0.6"/>
+<polygon points="120,142 108,178 88,160" fill="#e9d4ab" stroke="#e9d4ab" stroke-width="0.6"/>
+<polygon points="96,130 120,142 88,160" fill="#f6ead0" stroke="#f6ead0" stroke-width="0.6"/>
+<polygon points="88,160 108,178 68,172" fill="#d9bd8a" stroke="#d9bd8a" stroke-width="0.6"/>
+<polygon points="86,64 96,40 108,52" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="96,40 122,28 108,52" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="122,28 148,40 126,66" fill="#6bb8ec" stroke="#6bb8ec" stroke-width="0.6"/>
+<polygon points="108,52 122,28 126,66" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="148,40 160,66 126,66" fill="#9fd3f5" stroke="#9fd3f5" stroke-width="0.6"/>
+<polygon points="160,66 150,90 126,66" fill="#6bb8ec" stroke="#6bb8ec" stroke-width="0.6"/>
+<polygon points="150,90 124,100 126,66" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="124,100 98,88 126,66" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="98,88 86,64 108,52" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="98,88 108,52 126,66" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="98,88 78,76 86,64" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="98,88 124,100 128,98" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="98,88 128,98 78,76" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="124,100 150,90 128,98" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="158,58 182,68 158,76" fill="#f2a33a" stroke="#f2a33a" stroke-width="0.6"/>
+<polygon points="158,76 174,74 154,84" fill="#d9822b" stroke="#d9822b" stroke-width="0.6"/>
+<polygon points="158,58 158,76 160,66" fill="#e8932f" stroke="#e8932f" stroke-width="0.6"/>
+<polygon points="92,176 86,190 100,190" fill="#d9822b" stroke="#d9822b" stroke-width="0.6"/>
+<polygon points="118,174 114,190 128,190" fill="#d9822b" stroke="#d9822b" stroke-width="0.6"/>
+<polygon points="133,56 140,49 147,56 140,63" fill="#121214"/><polygon points="139,53 141,51 143,53" fill="#ffffff"/>
+<polygon points="98,70 92,40 108,18 132,12 152,24 146,30 130,20 112,26 102,42 108,68" fill="#5a606e"/>
+<polygon points="132,12 152,24 146,30 130,20" fill="#8a91a1"/>
+<polygon points="88,62 98,50 114,52 120,68 112,84 96,84" fill="#e8c33a"/>
+<polygon points="98,50 114,52 104,66" fill="#f3d867"/><polygon points="104,66 120,68 112,84" fill="#c9a42a"/><polygon points="88,62 104,66 96,84" fill="#d8b232"/>
+</g></svg>

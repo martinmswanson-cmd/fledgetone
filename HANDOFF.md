@@ -14,7 +14,7 @@ loudness matter more than orchestral realism.
 - Work branch: `ccr-1ba142ee-suz8wp` (pull request #1). It holds everything finished. It has
   not been merged into `master`.
 - The owner publishes the site themselves from a **single HTML file**:
-  `npm run build:single` writes `dist-single/index.html`. Hand that over as `bos-beat-box.html`
+  `npm run build:single` writes `dist-single/index.html`. Hand that over as `fledgetone.html` (the old `bos-beat-box.html` on the site redirects to it)
   after every finished change.
 - Users read `GUIDE.md` (also shown in the app with `?`). Every user-visible change updates it.
 

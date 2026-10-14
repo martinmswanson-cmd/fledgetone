@@ -1,30 +1,45 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-  <!-- Bo wearing headphones -->
-  <!-- legs -->
-  <path d="M45 74 L43 103" stroke="#2b2140" stroke-width="11" stroke-linecap="round"/>
-  <path d="M45 74 L43 103" stroke="#e9dcc0" stroke-width="6.5" stroke-linecap="round"/>
-  <path d="M75 74 L77 103" stroke="#2b2140" stroke-width="11" stroke-linecap="round"/>
-  <path d="M75 74 L77 103" stroke="#e9dcc0" stroke-width="6.5" stroke-linecap="round"/>
-  <ellipse cx="41" cy="107" rx="10" ry="5.5" fill="#2b2140"/>
-  <ellipse cx="79" cy="107" rx="10" ry="5.5" fill="#2b2140"/>
-  <!-- stone body + blue band -->
-  <path d="M18 38 a42 13 0 0 1 84 0 v24 a42 13 0 0 1 -84 0 z" fill="#fffaf0" stroke="#2b2140" stroke-width="4" stroke-linejoin="round"/>
-  <path d="M18 57 a42 13 0 0 0 84 0 v8 a42 13 0 0 1 -84 0 z" fill="#3d9ee0" stroke="#2b2140" stroke-width="2.5" stroke-linejoin="round"/>
-  <ellipse cx="60" cy="38" rx="42" ry="13" fill="#fffaf0" stroke="#2b2140" stroke-width="2.5"/>
-  <ellipse cx="45" cy="34" rx="13" ry="4" fill="#fff" opacity="0.6"/>
-  <!-- headphone band over the top of the stone -->
-  <path d="M12 44 C12 9 108 9 108 44" fill="none" stroke="#2b2140" stroke-width="7.5" stroke-linecap="round"/>
-  <path d="M12 44 C12 9 108 9 108 44" fill="none" stroke="#3d9ee0" stroke-width="3.2" stroke-linecap="round"/>
-  <!-- ear cups -->
-  <rect x="3" y="36" width="17" height="27" rx="7" fill="#3d9ee0" stroke="#2b2140" stroke-width="3.5"/>
-  <rect x="100" y="36" width="17" height="27" rx="7" fill="#3d9ee0" stroke="#2b2140" stroke-width="3.5"/>
-  <rect x="7" y="41" width="5" height="17" rx="2.5" fill="#fff" opacity="0.45"/>
-  <rect x="104" y="41" width="5" height="17" rx="2.5" fill="#fff" opacity="0.45"/>
-  <!-- eyes (looking up a little, happy) -->
-  <circle cx="48" cy="52" r="8.5" fill="#fff" stroke="#2b2140" stroke-width="2.5"/>
-  <circle cx="72" cy="52" r="8.5" fill="#fff" stroke="#2b2140" stroke-width="2.5"/>
-  <circle cx="49" cy="51" r="4.2" fill="#2b2140"/>
-  <circle cx="73" cy="51" r="4.2" fill="#2b2140"/>
-  <circle cx="50.5" cy="49.5" r="1.4" fill="#fff"/>
-  <circle cx="74.5" cy="49.5" r="1.4" fill="#fff"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Fledgetone">
+<g stroke-linejoin="round">
+<polygon points="12,104 40,122 50,92" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="12,104 20,134 40,122" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="20,134 44,150 40,122" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="50,92 78,76 76,110" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="40,122 50,92 76,110" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="44,150 40,122 76,110" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="44,150 76,110 88,160" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="44,150 88,160 68,172" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="76,110 78,76 96,130" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="76,110 96,130 88,160" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="78,76 128,98 96,130" fill="#f6ead0" stroke="#f6ead0" stroke-width="0.6"/>
+<polygon points="128,98 150,126 96,130" fill="#f6ead0" stroke="#f6ead0" stroke-width="0.6"/>
+<polygon points="150,126 120,142 96,130" fill="#e9d4ab" stroke="#e9d4ab" stroke-width="0.6"/>
+<polygon points="150,126 142,158 120,142" fill="#e9d4ab" stroke="#e9d4ab" stroke-width="0.6"/>
+<polygon points="142,158 108,178 120,142" fill="#d9bd8a" stroke="#d9bd8a" stroke-width="0.6"/>
+<polygon points="120,142 108,178 88,160" fill="#e9d4ab" stroke="#e9d4ab" stroke-width="0.6"/>
+<polygon points="96,130 120,142 88,160" fill="#f6ead0" stroke="#f6ead0" stroke-width="0.6"/>
+<polygon points="88,160 108,178 68,172" fill="#d9bd8a" stroke="#d9bd8a" stroke-width="0.6"/>
+<polygon points="86,64 96,40 108,52" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="96,40 122,28 108,52" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="122,28 148,40 126,66" fill="#6bb8ec" stroke="#6bb8ec" stroke-width="0.6"/>
+<polygon points="108,52 122,28 126,66" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="148,40 160,66 126,66" fill="#9fd3f5" stroke="#9fd3f5" stroke-width="0.6"/>
+<polygon points="160,66 150,90 126,66" fill="#6bb8ec" stroke="#6bb8ec" stroke-width="0.6"/>
+<polygon points="150,90 124,100 126,66" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="124,100 98,88 126,66" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="98,88 86,64 108,52" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="98,88 108,52 126,66" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="98,88 78,76 86,64" fill="#1d4f7a" stroke="#1d4f7a" stroke-width="0.6"/>
+<polygon points="98,88 124,100 128,98" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="98,88 128,98 78,76" fill="#2f7fbf" stroke="#2f7fbf" stroke-width="0.6"/>
+<polygon points="124,100 150,90 128,98" fill="#3d9ee0" stroke="#3d9ee0" stroke-width="0.6"/>
+<polygon points="158,58 182,68 158,76" fill="#f2a33a" stroke="#f2a33a" stroke-width="0.6"/>
+<polygon points="158,76 174,74 154,84" fill="#d9822b" stroke="#d9822b" stroke-width="0.6"/>
+<polygon points="158,58 158,76 160,66" fill="#e8932f" stroke="#e8932f" stroke-width="0.6"/>
+<polygon points="92,176 86,190 100,190" fill="#d9822b" stroke="#d9822b" stroke-width="0.6"/>
+<polygon points="118,174 114,190 128,190" fill="#d9822b" stroke="#d9822b" stroke-width="0.6"/>
+<polygon points="133,56 140,49 147,56 140,63" fill="#121214"/><polygon points="139,53 141,51 143,53" fill="#ffffff"/>
+<polygon points="98,70 92,40 108,18 132,12 152,24 146,30 130,20 112,26 102,42 108,68" fill="#5a606e"/>
+<polygon points="132,12 152,24 146,30 130,20" fill="#8a91a1"/>
+<polygon points="88,62 98,50 114,52 120,68 112,84 96,84" fill="#e8c33a"/>
+<polygon points="98,50 114,52 104,66" fill="#f3d867"/><polygon points="104,66 120,68 112,84" fill="#c9a42a"/><polygon points="88,62 104,66 96,84" fill="#d8b232"/>
+</g></svg>

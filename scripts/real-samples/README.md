@@ -58,6 +58,6 @@ fetch). `SHOW_TRIM=1 convert.py ...` prints how much each note was evened out.
 The cello and the Black and Green guitar sets were converted by an earlier version of these
 scripts (without the evening out and looping); rebuilding them now would change them slightly.
 
-The published site must serve the folder next to `bos-beat-box.html`; the app loads it from
+The published site must serve the folder next to `fledgetone.html`; the app loads it from
 there, or from `https://twobirdsworkshop.com/bos-beat-box-samples/` when the page is opened from
 a file or hosted elsewhere (the site's `_headers` allows that cross-origin).
