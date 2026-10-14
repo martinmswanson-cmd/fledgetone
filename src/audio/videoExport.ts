@@ -1,7 +1,7 @@
 import { BufferTarget, EncodedAudioPacketSource, EncodedPacket, EncodedVideoPacketSource, Mp4OutputFormat, Output } from 'mediabunny';
 import { drawSpectrum, type SkinId, type SkinMemory } from './spectrumSkins';
 import { openVideo, seekVideo } from '../store/videoStore';
-import fledgetoneLogo from '../assets/fledgetone.svg';
+import fledgetoneLogo from '../assets/fledgetone.png';
 
 /**
  * A song as an MP4 video, for YouTube, socials or a game's trailer: the rendered mix as its sound,

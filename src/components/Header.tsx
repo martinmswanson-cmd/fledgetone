@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, GraduationCap, Search, Volume2, Power } from 'lucide-react';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
-import logo from '../assets/fledgetone.svg';
+import logo from '../assets/fledgetone.png';
 import { GuidePanel } from './guide/GuidePanel';
 import { FitTempoPopover, TempoField } from './TempoControls';
 import { shouldIgnoreShortcut } from './keyboard';
