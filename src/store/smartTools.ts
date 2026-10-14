@@ -52,6 +52,17 @@ export const CHORD_QUALITIES = {
   min6: [0, 3, 7, 9],
   mMaj7: [0, 3, 7, 11],
   dim7: [0, 3, 6, 9],
+  halfDim7: [0, 3, 6, 10],
+  // Extended and suspended: the colours of city-night, ballad and lo-fi harmony
+  maj6: [0, 4, 7, 9],
+  add9: [0, 4, 7, 14],
+  maj9: [0, 4, 7, 11, 14],
+  dom9: [0, 4, 7, 10, 14],
+  min9: [0, 3, 7, 10, 14],
+  min11: [0, 3, 7, 10, 14, 17],
+  sus4: [0, 5, 7],
+  dom7sus4: [0, 5, 7, 10],
+  dom13sus4: [0, 5, 10, 14, 21],
 } as const;
 export type ChordQuality = keyof typeof CHORD_QUALITIES;
 
@@ -75,20 +86,37 @@ export function degreeChord(key: SongKey, d: Degree, seventh = false): number[] 
   return out;
 }
 
-/** A chord's name from its pitch classes, root first: "C", "Am", "Bdim", "G7", "Fmaj7", "Dm7". */
+/**
+ * A chord's name from its pitch classes, root first: "C", "Am", "Bdim", "G7", "Fmaj7", "Dm7", and
+ * the extended ones: "Cadd9", "Fmaj9", "Am9", "Dm11", "C6", "C6/9", "Gsus4", "G7sus4", "G13sus4".
+ */
 export function chordName(pcs: readonly number[]): string {
   const [r, ...rest] = pcs;
-  const iv = rest.map((p) => pc(p - r));
+  const has = new Set(rest.map((p) => pc(p - r)));
   const root = NOTE_NAMES[r];
-  const minor = iv.includes(3);
-  const dim = minor && iv.includes(6);
-  if (iv.length >= 3) {
-    const sev = iv[2];
-    if (dim) return `${root}${sev === 9 ? 'dim7' : 'm7b5'}`;
-    if (minor) return `${root}${sev === 11 ? 'm(maj7)' : sev === 9 ? 'm6' : 'm7'}`;
-    return `${root}${sev === 11 ? 'maj7' : '7'}`;
+  const major = has.has(4);
+  const minor = !major && has.has(3);
+  const ninth = (major || minor || has.has(5)) && has.has(2);
+  if (minor && has.has(6) && !has.has(7)) return `${root}${has.has(10) ? 'm7b5' : has.has(9) ? 'dim7' : 'dim'}`;
+  if (major && has.has(8) && !has.has(7) && !has.has(10) && !has.has(11)) return `${root}+`;
+  if (minor) {
+    if (has.has(11)) return `${root}m(maj7)`;
+    if (has.has(10)) return `${root}${has.has(5) ? 'm11' : ninth ? 'm9' : 'm7'}`;
+    if (has.has(9)) return `${root}${ninth ? 'm6/9' : 'm6'}`;
+    return `${root}${ninth ? 'm(add9)' : 'm'}`;
   }
-  return `${root}${dim ? 'dim' : minor ? 'm' : iv.includes(8) && iv.includes(4) ? '+' : ''}`;
+  if (major) {
+    if (has.has(11)) return `${root}${has.has(9) ? 'maj13' : ninth ? 'maj9' : 'maj7'}`;
+    if (has.has(10)) return `${root}${has.has(9) ? '13' : ninth ? '9' : '7'}`;
+    if (has.has(9)) return `${root}${ninth ? '6/9' : '6'}`;
+    return `${root}${ninth ? 'add9' : ''}`;
+  }
+  if (has.has(5)) {
+    if (has.has(10)) return `${root}${has.has(9) ? '13sus4' : ninth ? '9sus4' : '7sus4'}`;
+    return `${root}sus4`;
+  }
+  if (has.has(2) && has.has(7)) return `${root}sus2`;
+  return root;
 }
 
 export interface Progression {
@@ -133,6 +161,16 @@ export const PROGRESSIONS: readonly Progression[] = [
   { id: 'cliche', name: 'i – i(maj7) – i7 – i6 (noir, melancholy)', mode: 'minor', chords: [X(0, 'min'), X(0, 'mMaj7'), X(0, 'min7'), X(0, 'min6')] },
   { id: 'triumph', name: 'i – ♭VI – ♭VII – I (triumph after struggle)', mode: 'minor', chords: [D(0), D(5), D(6), D(0, true)] },
   { id: 'picardy', name: 'i – iv – V – I (dark to light)', mode: 'minor', chords: [D(0), D(3), D(4, true), D(0, true)] },
+  // Extended colours (city at night, ballads, lo-fi, funk)
+  { id: 'cityNight', name: 'Imaj7 – iii7 – vi9 – IVmaj7 (city at night)', mode: 'major', chords: [X(0, 'maj7'), X(4, 'min7'), X(9, 'min9'), X(5, 'maj7')] },
+  { id: 'bittersweet', name: 'IVmaj7 – iv6 – Imaj7 – Imaj7 (bittersweet turn)', mode: 'major', chords: [X(5, 'maj7'), X(5, 'min6'), X(0, 'maj7'), X(0, 'maj7')] },
+  { id: 'royalRoad', name: 'IVmaj7 – V7 – iii7 – vi7 (royal road, city pop)', mode: 'major', chords: [X(5, 'maj7'), X(7, 'dom7'), X(4, 'min7'), X(9, 'min7')] },
+  { id: 'sunsetTurn', name: 'IVmaj7 – III7 – vi7 – I7 (sunset, city pop turn)', mode: 'major', chords: [X(5, 'maj7'), X(4, 'dom7'), X(9, 'min7'), X(0, 'dom7')] },
+  { id: 'loFiLoop', name: 'ii9 – V13sus – Imaj9 – Imaj9 (lo-fi, neo-soul)', mode: 'major', chords: [X(2, 'min9'), X(7, 'dom13sus4'), X(0, 'maj9'), X(0, 'maj9')] },
+  { id: 'nightSus', name: 'IVmaj7 – V7sus – iii7 – vi9 (night drive)', mode: 'major', chords: [X(5, 'maj7'), X(7, 'dom7sus4'), X(4, 'min7'), X(9, 'min9')] },
+  { id: 'dorianVamp', name: 'i9 – IV9 – i9 – IV9 (Dorian funk vamp)', mode: 'minor', chords: [X(0, 'min9'), X(5, 'dom9'), X(0, 'min9'), X(5, 'dom9')] },
+  { id: 'caperTurn', name: 'iiø7 – V7 – i7 – i7 (minor turnaround, caper)', mode: 'minor', chords: [X(2, 'halfDim7'), X(7, 'dom7'), X(0, 'min7'), X(0, 'min7')] },
+  { id: 'requiem', name: 'i – v – ♭VI – ♭III (requiem, ruins)', mode: 'minor', chords: [D(0), D(4), D(5), D(2)] },
   { id: 'dread', name: 'vii°7 – V7 – vii°7 – V7 (dread, horror)', mode: 'minor', chords: [X(11, 'dim7'), X(7, 'dom7'), X(11, 'dim7'), X(7, 'dom7')] },
 ];
 
@@ -571,7 +609,7 @@ const COWBELL = 'G#2';
 
 export type DrumStyle =
   | 'house' | 'rock' | 'hiphop' | 'trap' | 'dnb' | 'funk' | 'dembow' | 'halftime'
-  | 'waltz' | 'jig' | 'march' | 'shuffle' | 'swing' | 'bossa' | 'calypso' | 'maqsum' | 'battle' | 'tribal' | 'blast' | 'heartbeat';
+  | 'waltz' | 'jig' | 'march' | 'shuffle' | 'swing' | 'bossa' | 'calypso' | 'maqsum' | 'battle' | 'tribal' | 'blast' | 'heartbeat' | 'brushes';
 /**
  * The drummer's styles. A style with a `meter` is written in it (a waltz in 3/4, a jig in 6/8);
  * the others follow the song's time signature. A style with a `groove` gives its clip that swing.
@@ -597,6 +635,7 @@ export const DRUM_STYLES: ReadonlyArray<{ id: DrumStyle; name: string; bpm: stri
   { id: 'tribal', name: 'Tribal build (toms, sparse to dense)', bpm: '90–130' },
   { id: 'blast', name: 'Blast beat (metal, top combat)', bpm: '180–240' },
   { id: 'heartbeat', name: 'Heartbeat (horror, no kit)', bpm: '60–80' },
+  { id: 'brushes', name: 'Brushes (ballad, city at night)', bpm: '60–110', groove: { swing: 0.35, grid: 8 } },
 ];
 
 /**
@@ -758,6 +797,17 @@ function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => n
       }
       add(beats, CRASH, 0.5);
       break;
+    case 'brushes': {
+      // A brush swirling on the snare (soft, even 8ths, leaning on two and four), the hat foot on
+      // two and four, a feathered kick under one; busier, a ride joins and the kick answers on three
+      const two = every(8, 4);
+      for (const s of eighths) hits.push([s, SNARE, two.includes(s) ? 0.36 : 0.18 + rnd() * 0.06]);
+      add(two, HAT, 0.36);
+      add([0], KICK, 0.4);
+      if (mid) add(beats, RIDE, 0.38);
+      if (busy) add([8], KICK, 0.34);
+      break;
+    }
     case 'heartbeat': {
       // Lub-dub, faster with energy: once a measure, then every half, then every beat
       const gap = busy ? 4 : mid ? 8 : 16;
@@ -771,7 +821,7 @@ function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => n
   return hits;
 }
 
-const QUIET_STYLES = new Set<DrumStyle>(['heartbeat', 'bossa', 'swing', 'waltz']);
+const QUIET_STYLES = new Set<DrumStyle>(['heartbeat', 'bossa', 'swing', 'waltz', 'brushes']);
 
 export type FillKind = 'snare' | 'toms' | 'build' | 'kick';
 export const FILLS: ReadonlyArray<{ id: FillKind; name: string; beats: number }> = [

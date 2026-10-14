@@ -82,3 +82,31 @@ test('a fill replaces the end of the bar, keeping kicks on the beat', () => {
   // At the clip's end there's no next downbeat for a crash
   assert.ok(!S.fillBar(beat, 1, 'toms', 2, newId).some((x) => x.startOffset >= 2));
 });
+
+test('extended and suspended chords get their names; every progression names every chord', () => {
+  const name = (root, q) => S.chordName(S.CHORD_QUALITIES[q].map((i) => (root + i) % 12));
+  assert.deepEqual(
+    ['maj6', 'add9', 'maj9', 'dom9', 'min9', 'min11', 'sus4', 'dom7sus4', 'dom13sus4', 'halfDim7', 'min6', 'mMaj7', 'dim7'].map((q) => name(0, q)),
+    ['C6', 'Cadd9', 'Cmaj9', 'C9', 'Cm9', 'Cm11', 'Csus4', 'C7sus4', 'C13sus4', 'Cm7b5', 'Cm6', 'Cm(maj7)', 'Cdim7']
+  );
+  // The triads and 7ths name as they always have
+  assert.deepEqual(['maj', 'min', 'dim', 'aug', 'dom7', 'maj7', 'min7'].map((q) => name(7, q)), ['G', 'Gm', 'Gdim', 'G+', 'G7', 'Gmaj7', 'Gm7']);
+  for (const p of S.PROGRESSIONS) {
+    const key = keyOf(p.mode === 'major' ? 2 : 9, p.mode);
+    const chords = S.progressionChords(key, p, true);
+    assert.equal(chords.length, 4, p.id);
+    for (const c of names(chords)) assert.match(c, /^[A-G]#?/, p.id);
+  }
+  // The city-at-night turn in D: Dmaj7 - F#m7 - Bm9 - Gmaj7
+  assert.deepEqual(names(S.progressionChords(keyOf(2, 'major'), S.PROGRESSIONS.find((p) => p.id === 'cityNight'))), ['Dmaj7', 'F#m7', 'Bm9', 'Gmaj7']);
+});
+
+test('brushes: soft snare 8ths leaning on two and four, quiet throughout', () => {
+  const notes = S.drummer('brushes', 4, 0.5, 0, 1, () => 'n', { num: 4, den: 4 });
+  const snares = notes.filter((n) => n.note === 'D1');
+  assert.ok(snares.length >= 28, 'a swirl of 8ths');
+  assert.ok(notes.every((n) => n.velocity <= 0.6), 'nothing loud');
+  const onTwoFour = (n) => Math.abs(((n.startOffset * 4) % 2) - 1) < 1e-6;
+  const avg = (xs) => xs.reduce((a, n) => a + n.velocity, 0) / xs.length;
+  assert.ok(avg(snares.filter(onTwoFour)) > avg(snares.filter((n) => !onTwoFour(n))) + 0.05, 'two and four lean');
+});

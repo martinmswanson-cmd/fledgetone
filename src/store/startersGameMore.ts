@@ -885,3 +885,6 @@ export const MORE_GAME_BUILDERS = {
   cathedralBoss,
   arenaMetal,
 };
+
+/** The helpers above, for the story starters (startersStory.ts). */
+export const MORE_KIT = { clip, tr, shift, measures, drumClip, swung, inMeter, withTempo, held, waltz, rising, triplet, boost, cutoffAt };

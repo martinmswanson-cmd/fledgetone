@@ -4,6 +4,7 @@ import { clip, D, hats8, master, progression, project, snareRoll, track } from '
 import { PLAYLIST_BUILDERS } from './startersPlaylist';
 import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
+import { STORY_BUILDERS } from './startersStory';
 import { FX_NOTES, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
@@ -41,6 +42,16 @@ export const STARTERS = [
   { id: 'saveRoom', group: 'Game Moments', name: 'Save Room', detail: '66 BPM, A minor. Game-ready: Safe (two chords on electric piano and glass pad, a soft piano tune, never quite home) and Uneasy (a low tremolo, a faint heartbeat).' },
   { id: 'cathedralBoss', group: 'Game Moments', name: 'Cathedral Boss', detail: '150 BPM, D harmonic minor, 3/4. Game-ready: Phase 1 (organ, cello ostinato), Phase 2 a half step up with choir and a sudden chord, Phase 3 broken down, and a piano Lament.' },
   { id: 'arenaMetal', group: 'Game Moments', name: 'Arena Metal', detail: '130 BPM, D Phrygian. Game-ready: four combat levels: Exploration, Incidental bursts, Combat riffs and High combat with blast beats and a 7/8 lurch.' },
+  { id: 'starlitCity', group: 'Anime & Cartoon', name: 'Starlit City', detail: '84 BPM, D major, breathing tempo. Game-ready: the Theme on grand piano over maj7 and m9 chords (a borrowed iv6 for the bittersweet turn), then a Second Pass re-voiced bigger with a violin answer, strings and brushes.' },
+  { id: 'farewellPiano', group: 'Anime & Cartoon', name: 'Farewell Piano', detail: '68 BPM, A minor to C, no drums. Game-ready: Memory (a felt piano, rolling left hand, a 4-3 suspension) and Farewell (the tune on solo violin, cello, strings swelling into bar 8).' },
+  { id: 'sunsetDrive', group: 'Anime & Cartoon', name: 'Sunset Drive', detail: '112 BPM, F major. Game-ready: Cruise on the Royal Road (FM piano, chorus guitar chops, slap bass, drum machine) and Dusk, IVmaj7 - III7 - vi7 - I7, softer for a shop.' },
+  { id: 'midnightCaper', group: 'Anime & Cartoon', name: 'Midnight Caper', detail: '160 BPM, D Dorian, swung. Game-ready: Prowl (muted trumpet over a Dm7 - G7 vamp, walking bass, organ) and Chase (minor turnarounds, brass on the and of four, a stop-time break).' },
+  { id: 'velvetInfiltration', group: 'Anime & Cartoon', name: 'Velvet Infiltration', detail: '126 BPM, A Dorian, acid jazz. Game-ready: Lobby (an Am9 - D9 vamp, octave slap bass, wah guitar scratches) and Vault (the lead, a bVII - bVI lift, synth strings).' },
+  { id: 'wanderersRoad', group: 'Anime & Cartoon', name: "Wanderer's Road", detail: '88 BPM, F major, swung 16ths. Game-ready: Rest (dusty piano on ii9 - V13sus - Imaj9, warm pad, upright bass) and Road (a shakuhachi tune over a lazy boom bap).' },
+  { id: 'meadowWaltz', group: 'Anime & Cartoon', name: 'Meadow Waltz', detail: '152 BPM, G major with a Lydian II, 3/4. Game-ready: Meadow (flute, pizzicato oom-pah-pah, a harp glissando into each phrase) and Sky, a step up, with accordion and timpani.' },
+  { id: 'championShowdown', group: 'Anime & Cartoon', name: "Champion's Showdown", detail: '150 BPM half time, E minor. Game-ready: Standoff (a 16th string ostinato over a tonic pedal, taiko) and Clash (choir anthem, power chords, choir hits on every bar, rock kit).' },
+  { id: 'ruinRequiem', group: 'Anime & Cartoon', name: 'Ruin Requiem', detail: '84 BPM, D minor, i - v - bVI - bIII. Game-ready: Ruins (a piano ostinato, cellos, a low drum on one) and Requiem (wordless voices and strings layered in).' },
+  { id: 'neonRitual', group: 'Anime & Cartoon', name: 'Neon Ritual', detail: '98 BPM, E Phrygian. Game-ready: Trance (a drone, a gated glitch arp, a synth choir chant, a silent bar with a stutter) and Drop (bII stabs, processed kick, taiko).' },
   { id: 'dubstep', group: 'Electronic', name: 'Dubstep', detail: '140 BPM, F minor. Half-time drums on a techno kit, a gritty wobble and growl call-and-response over a clean sub, dark pad chords.' },
   { id: 'house', group: 'Electronic', name: 'House', detail: '126 BPM, A minor. Four-on-the-floor on a techno kit, off-beat bass, electric piano ninth stabs, a warm pad and a dark pluck in the peak.' },
   { id: 'trance', group: 'Electronic', name: 'Trance', detail: '138 BPM, A minor, dark. A broken pluck arp, a snare-roll build with a riser, then gated supersaws over a rolling bass.' },
@@ -85,7 +96,7 @@ export const STARTERS = [
   { id: 'mathrock', group: 'Band', name: 'Math Rock', detail: '150 BPM, E major. Twinkly guitar, tapping in triplets, 3+3+3+3+2+2 accents, then an easycore breakdown.' },
 ] as const;
 export type StarterId = (typeof STARTERS)[number]['id'];
-export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World'] as const;
+export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Anime & Cartoon', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World'] as const;
 
 export const isStarterId = (v: unknown): v is StarterId => STARTERS.some((s) => s.id === v);
 
@@ -1386,6 +1397,7 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   ...PLAYLIST_BUILDERS,
   ...GAME_BUILDERS,
   ...MORE_GAME_BUILDERS,
+  ...STORY_BUILDERS,
 };
 
 /** A fresh copy of a starter (new ids each time). */

@@ -131,6 +131,11 @@ const MENUS: MenuDef[] = [
         { label: 'Markers list…', run: () => press('button[title^="Markers:"]') },
         { label: 'Fit tempo / tempo finder…', run: () => press('button[title^="Fit to time"]'), divider: true },
         { label: 'Tap tempo', run: s.tapTempo },
+        {
+          label: `Breathe: ease into every 4-bar phrase end (${s.loopRegion.enabled ? 'the loop' : 'the whole song'})`,
+          run: () => say(s.breatheTempo(4, 0.08) ?? 'The tempo now eases into each phrase end, and slows into the last. Undo takes it out.'),
+        },
+        { label: 'Breathe: every 8-bar phrase, deeper', run: () => say(s.breatheTempo(8, 0.14) ?? 'The tempo now eases into each 8-bar phrase end. Undo takes it out.') },
         { label: `Insert 1 bar at bar ${at}`, run: () => say(s.insertBars(at, 1)), divider: true },
         { label: `Insert 4 bars at bar ${at}`, run: () => say(s.insertBars(at, 4)) },
         { label: 'Delete bars In → Out', run: () => say(s.removeBars(s.loopRegion.inBar, s.loopRegion.outBar)) },

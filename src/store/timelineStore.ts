@@ -77,6 +77,7 @@ import { foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, 
 import { ANY_STATE, transitionKey } from './transitions';
 import { defaultCurve, groupsInUse, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
+import { breathe } from './breathe';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, hasWork, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
@@ -362,6 +363,11 @@ interface TimelineState {
   setBpm: (bpm: number) => void;
   /** Every tempo (the song's and its changes) times `factor`, as one undo step. A message if one would leave 40 to 240 BPM. */
   scaleTempo: (factor: number) => string | null;
+  /**
+   * Let the music breathe (breathe.ts): the tempo eases back into the end of every `phrase`
+   * measures over the loop (the whole song when the loop is off), one undo step. A message if it can't.
+   */
+  breatheTempo: (phrase: number, amount: number) => string | null;
   /** Add a tempo change at `bar` (a jump, or a glide from the tempo before). Returns its id. */
   addTempoChange: (bar: number, bpm: number, ramp?: boolean) => string;
   /** `record`: its own undo step (a drag checkpoint()s once and passes false). */
@@ -1325,6 +1331,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       });
     },
 
+    breatheTempo: (phrase, amount) => {
+      const s = get();
+      const end = s.clips.reduce((m, c) => Math.max(m, c.startBar + c.lengthBars), 1);
+      const [from, to] = s.loopRegion.enabled ? [s.loopRegion.inBar, s.loopRegion.outBar] : [1, end];
+      const out = breathe(s.tempoPoints, songTempo(s), songMeterOf(s), { from, to, phrase, amount }, () => uid('tempo'));
+      if (typeof out === 'string') return out;
+      retempo(() => out);
+      return null;
+    },
     scaleTempo: (factor) => {
       const s = get();
       const all = [s.bpm, ...s.tempoPoints.map((p) => p.bpm)].map((b) => Math.round(b * factor * 100) / 100);
