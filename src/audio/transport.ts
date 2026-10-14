@@ -40,7 +40,9 @@ type TransportLike = ReturnType<typeof Tone.getTransport>;
 export function applyTempoAt(transport: TransportLike, tempo: Tempo, bar: number, time: number): void {
   const { bpm, glide } = tempoFrom(bar, tempo);
   const param = transport.bpm;
-  param.cancelScheduledValues(time);
+  // Hold, not cancel: a glide ending here is kept up to `time`. Cancelled, the Transport counted
+  // the whole glide at its starting tempo and jumped ahead (a beat and more) where it ended
+  param.cancelAndHoldAtTime(time);
   param.setValueAtTime(bpm, time);
   if (glide && glide.seconds > 0) param.linearRampToValueAtTime(glide.to, time + glide.seconds);
 }
