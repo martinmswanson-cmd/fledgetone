@@ -30,7 +30,7 @@ function thirdPartyLicenses(): Plugin {
         })
       // Libraries compiled into a package's WebAssembly, whose notices the package's own licence file doesn't carry
       if (roots.has('wasm-media-encoders')) sections.push(CODEC_NOTICES)
-      // The built-in plugins (public/bos-beat-box-plugins/, compiled from scripts/plugins/)
+      // The built-in plugins (public/fledgetone-plugins/, compiled from scripts/plugins/)
       sections.push(readFileSync(join(process.cwd(), 'scripts/plugins/LICENSES.txt'), 'utf8').trim())
       // The GPL ones, in the builds that have them (VITE_GPL_PLUGINS=1: npm run build:full)
       if (process.env.VITE_GPL_PLUGINS === '1') sections.push(readFileSync(join(process.cwd(), 'scripts/plugins/LICENSES-GPL.txt'), 'utf8').trim())

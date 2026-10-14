@@ -203,7 +203,7 @@ Each instrument also gets its level correction from the catalog (`gain`) and a h
 ## Built-in plugins
 
 The Plugins menu's effects and instruments are open-source plugins compiled to WebAssembly
-(`scripts/plugins/`, see its README), one file per family in `public/bos-beat-box-plugins/`,
+(`scripts/plugins/`, see its README), one file per family in `public/fledgetone-plugins/`,
 described by the generated `audio/plugins/pluginCatalog.ts`. On a track they're Web Audio Module
 plugins with a `builtin:<family>/<name>` address: `wamHost.loadWam` hands those to
 `plugins/builtinHost.ts`, which makes an AudioWorkletNode (`plugins/processor.ts`) that looks like
@@ -331,6 +331,6 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
 - `npm run build`: type check and production build into `dist/`.
 - `npm run build:single`: `dist-single/index.html`, the whole app inlined into one HTML file
   (`scripts/build-single.mjs`). That file is what's published. The real instruments' recordings
-  (`public/bos-beat-box-samples`) are served next to it, not inlined.
+  (`public/fledgetone-samples`) are served next to it, not inlined.
 - `npm run build:runtime`: `dist-runtime/bos-player.js`, the player that games use to play a
   saved project (`src/runtime/player.ts`).

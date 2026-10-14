@@ -133,7 +133,7 @@ to `scripts/plugins/families.json` (with its source, commit and licence), build 
 `node scripts/plugins/catalog.mjs` and `node --test scripts/plugins.test.mjs`. Add its credit to
 `src/credits.ts` and its licence notice to `scripts/plugins/LICENSES.txt`.
 
-A GPL family goes in `public/bos-beat-box-plugins/gpl/` with `"gpl": true`, its notice in
+A GPL family goes in `public/fledgetone-plugins/gpl/` with `"gpl": true`, its notice in
 `LICENSES-GPL.txt`, and is only in builds made with `VITE_GPL_PLUGINS=1`.
 
 ### A field in the project file
@@ -306,7 +306,7 @@ have the right to contribute it.
 - **No ripped or "found" material**: no samples from commercial libraries or records, no presets
   copied from commercial products, and no artist or song names in anything we ship.
 - **The website build** (`build:single`) leaves the GPL plugins out until the source is public;
-  the full build (`build:full`) has them. Don't copy `public/bos-beat-box-plugins/gpl/` anywhere
+  the full build (`build:full`) has them. Don't copy `public/fledgetone-plugins/gpl/` anywhere
   the website build is published.
 
 ## Being kind

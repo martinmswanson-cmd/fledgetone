@@ -13,7 +13,7 @@ export const pluginFamilies = (): PluginFamily[] => families;
 
 /** Where a family's files (its WebAssembly, preset files) are downloaded from: next to the page, else the site's copy. */
 export const pluginSource = (family: PluginFamily) => ({
-  baseUrl: 'bos-beat-box-plugins/',
-  fallbackUrl: 'https://twobirdsworkshop.com/bos-beat-box-plugins/',
+  baseUrl: 'fledgetone-plugins/',
+  fallbackUrl: 'https://twobirdsworkshop.com/fledgetone-plugins/',
   version: family.hash,
 });

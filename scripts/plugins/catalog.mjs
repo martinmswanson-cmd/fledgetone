@@ -1,4 +1,4 @@
-// Write the built-in plugin catalogs from the compiled families in public/bos-beat-box-plugins/
+// Write the built-in plugin catalogs from the compiled families in public/fledgetone-plugins/
 // (each family's plugins as its WebAssembly describes them): src/audio/plugins/pluginCatalog.ts
 // for the permissively licensed families, pluginCatalogGpl.ts for the GPL ones (only builds with
 // VITE_GPL_PLUGINS=1 include it). Run after building a family: node scripts/plugins/catalog.mjs
@@ -8,7 +8,7 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const pluginsDir = join(root, 'public/bos-beat-box-plugins');
+const pluginsDir = join(root, 'public/fledgetone-plugins');
 const families = JSON.parse(readFileSync(join(root, 'scripts/plugins/families.json'), 'utf8'));
 
 /** Every file under `dir` ending in `ext`, as "sub/folder/name" (no extension), sorted. */

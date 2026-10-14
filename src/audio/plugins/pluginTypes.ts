@@ -6,7 +6,7 @@ export interface PluginFamily {
   licence: string;
   /** GPL-licensed: only in builds made with VITE_GPL_PLUGINS (see pluginCatalog's users) */
   gpl: boolean;
-  /** Its WebAssembly, in bos-beat-box-plugins/ next to the page */
+  /** Its WebAssembly, in fledgetone-plugins/ next to the page */
   file: string;
   bytes: number;
   /** Changes with the file, so a kept copy is downloaded afresh */

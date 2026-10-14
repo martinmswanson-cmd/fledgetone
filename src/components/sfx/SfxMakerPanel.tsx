@@ -255,7 +255,7 @@ function download(blob: Blob, name: string) {
 }
 
 /** The settings of these sounds as a file the maker can open again (Import). */
-const recipesFile = (sounds: Made[]) => new Blob([JSON.stringify({ format: 'bos-beat-box-sounds', version: 1, sounds }, null, 1)], { type: 'application/json' });
+const recipesFile = (sounds: Made[]) => new Blob([JSON.stringify({ format: 'fledgetone-sounds', version: 1, sounds }, null, 1)], { type: 'application/json' });
 
 /** Sounds from a file made by recipesFile (or a single sound's settings). */
 function readRecipes(text: string): Made[] {

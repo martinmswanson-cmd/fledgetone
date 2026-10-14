@@ -238,11 +238,11 @@ function nb(folder: string, files: string[], release = 1, onset?: number): Sampl
   return { baseUrl: `https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/${folder}/`, samples, release, onset };
 }
 
-/** The site the app is published on, which hosts the recordings in public/bos-beat-box-samples too. */
-const SITE_SAMPLES = 'https://twobirdsworkshop.com/bos-beat-box-samples/';
+/** The site the app is published on, which hosts the recordings in public/fledgetone-samples too. */
+const SITE_SAMPLES = 'https://twobirdsworkshop.com/fledgetone-samples/';
 
 /**
- * Recordings hosted with the app (public/bos-beat-box-samples/<folder>, converted by
+ * Recordings hosted with the app (public/fledgetone-samples/<folder>, converted by
  * scripts/real-samples/README.md): the MIDI notes `notes`, each at the loudnesses `layers` (see
  * SampleSource.layers) in `takes` takes, as <note>_<layer>_<take>.mp3 ("Cs3" = C#3). Next to the
  * page (relative), else from the site.
@@ -253,7 +253,7 @@ function hosted(folder: string, notes: number[], layers: number[], takes: number
     const n = noteName(m);
     for (let l = 0; l < layers.length; l++) for (let t = 0; t < takes; t++) samples[`${n}|${l}|${t}`] = `${n.replace('#', 's')}_${l}_${t}.mp3`;
   }
-  return { baseUrl: `bos-beat-box-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release, layers, version: HOSTED_SETS[folder]?.hash };
+  return { baseUrl: `fledgetone-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release, layers, version: HOSTED_SETS[folder]?.hash };
 }
 /** Velocity tops for a set recorded at `n` loudnesses (see SampleSource.layers) */
 const LAYER_TOPS: Record<number, number[]> = { 1: [1], 2: [0.55, 1], 3: [0.35, 0.68, 1], 4: [0.3, 0.55, 0.8, 1] };

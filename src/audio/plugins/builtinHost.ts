@@ -7,7 +7,7 @@ import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
 
 /**
  * Built-in plugins: open-source effects and instruments compiled to WebAssembly (see
- * scripts/plugins/), hosted next to the page in bos-beat-box-plugins/ and downloaded the first
+ * scripts/plugins/), hosted next to the page in fledgetone-plugins/ and downloaded the first
  * time one of their family is used (then kept in this browser, like the instruments' recordings).
  *
  * On a track they're Web Audio Module plugins with a `builtin:<family>/<name>` address: wamHost's

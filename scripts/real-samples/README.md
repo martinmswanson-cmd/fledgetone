@@ -1,6 +1,6 @@
 # The real instruments' recordings
 
-`public/bos-beat-box-samples/` holds the recordings for the instruments marked **(Real)**, one
+`public/fledgetone-samples/` holds the recordings for the instruments marked **(Real)**, one
 folder per set (a set can serve several instruments: the Electric, Crunch and Distortion Guitars
 all play `guitar-black`). Each file is `<note>_<layer>_<take>.mp3`: the note (`Cs3` = C#3), the
 loudness (0 = softest) and the take. `src/audio/hostedSets.ts` lists each set's notes, loudnesses
@@ -59,5 +59,5 @@ The cello and the Black and Green guitar sets were converted by an earlier versi
 scripts (without the evening out and looping); rebuilding them now would change them slightly.
 
 The published site must serve the folder next to `fledgetone.html`; the app loads it from
-there, or from `https://twobirdsworkshop.com/bos-beat-box-samples/` when the page is opened from
+there, or from `https://twobirdsworkshop.com/fledgetone-samples/` when the page is opened from
 a file or hosted elsewhere (the site's `_headers` allows that cross-origin).

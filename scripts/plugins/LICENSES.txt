@@ -1,5 +1,5 @@
 Fledgetone built-in plugins: the open-source software compiled into the WebAssembly files in
-this folder (bos-beat-box-plugins/), and its licences. How they are built: scripts/plugins/ in the
+this folder (fledgetone-plugins/), and its licences. How they are built: scripts/plugins/ in the
 Fledgetone source.
 
 

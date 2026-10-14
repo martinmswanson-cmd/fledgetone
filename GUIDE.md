@@ -1176,7 +1176,7 @@ The synths and drum kits are generated in your browser. The recorded instruments
 | Faust: 22 effects, 32 instruments | Physical models and effects from the [Faust](https://faust.grame.fr) libraries and examples by GRAME and contributors, among them Romain Michon, Julius O. Smith III, Yann Orlarey and Stéphane Letz (the waveguide models after the Synthesis ToolKit by Perry Cook and Gary Scavone) | [MIT](https://opensource.org/license/mit), BSD and STK-4.3 (the library code is used under the Faust exception to its LGPL) |
 <!-- plugin-credits:end -->
 
-Their licence notices come with the app, in `third-party-licenses.txt` and in `bos-beat-box-plugins/LICENSES.txt` next to the plugin files.
+Their licence notices come with the app, in `third-party-licenses.txt` and in `fledgetone-plugins/LICENSES.txt` next to the plugin files.
 
 ### Software
 

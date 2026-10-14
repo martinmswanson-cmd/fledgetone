@@ -1,7 +1,7 @@
 # The built-in plugins
 
 The Plugins menu's effects and instruments are open-source plugins compiled to WebAssembly, one
-file per family in `public/bos-beat-box-plugins/` (published next to the app, downloaded when
+file per family in `public/fledgetone-plugins/` (published next to the app, downloaded when
 first used; see `src/audio/plugins/builtinHost.ts`). `families.json` lists the families, where
 their source comes from and the commit used; `LICENSES.txt` is their licence notices.
 
@@ -17,11 +17,11 @@ Faust, the Faust compiler 2.70 (Ubuntu's `faust` package). Each family's source 
 at the commit in `families.json`; then:
 
 ```sh
-sh airwindows/build.sh <airwin2rack checkout> ../../public/bos-beat-box-plugins/airwindows.wasm
-sh mda/build.sh <mda-vst-src-2015-06-18.zip's mda-vst/src> ../../public/bos-beat-box-plugins/mda.wasm
-sh open303/build.sh <Open303 checkout> ../../public/bos-beat-box-plugins/open303.wasm
-sh mutable/build.sh <eurorack checkout with stmlib> ../../public/bos-beat-box-plugins/mutable.wasm
-python3 faust/build.py ../../public/bos-beat-box-plugins/faust.wasm
+sh airwindows/build.sh <airwin2rack checkout> ../../public/fledgetone-plugins/airwindows.wasm
+sh mda/build.sh <mda-vst-src-2015-06-18.zip's mda-vst/src> ../../public/fledgetone-plugins/mda.wasm
+sh open303/build.sh <Open303 checkout> ../../public/fledgetone-plugins/open303.wasm
+sh mutable/build.sh <eurorack checkout with stmlib> ../../public/fledgetone-plugins/mutable.wasm
+python3 faust/build.py ../../public/fledgetone-plugins/faust.wasm
 node catalog.mjs   # rewrites src/audio/plugins/pluginCatalog.ts from the files
 ```
 
@@ -42,7 +42,7 @@ instrument) or passes it (an effect) without NaNs.
 
 ## GPL plugins
 
-Families marked `"gpl": true` (their files in `public/bos-beat-box-plugins/gpl/`, their catalog in
+Families marked `"gpl": true` (their files in `public/fledgetone-plugins/gpl/`, their catalog in
 `src/audio/plugins/pluginCatalogGpl.ts`) are only in builds made with `VITE_GPL_PLUGINS=1`: the
 dev server (`.env.development`) and `npm run build:full` (written to `dist-full/`, never to
 `dist-single/`). The website build leaves out their catalog, and their files are not copied to
@@ -50,11 +50,11 @@ the site, until the app's own source is published: the GPL asks that whoever get
 get its source. `LICENSES-GPL.txt` is their notice (in the full build's third-party licences).
 
 ```sh
-sh surge/build.sh <surge checkout, with submodules> ../../public/bos-beat-box-plugins/gpl/surge.wasm
-python3 surge/patches.py <surge checkout> ../../public/bos-beat-box-plugins/gpl/surge-patches
-sh dragonfly/build.sh <dragonfly-reverb checkout> ../../public/bos-beat-box-plugins/gpl/dragonfly.wasm
-sh plateau/build.sh <ValleyRackFree checkout> ../../public/bos-beat-box-plugins/gpl/plateau.wasm
-sh setbfree/build.sh <setBfree checkout> ../../public/bos-beat-box-plugins/gpl/setbfree.wasm
+sh surge/build.sh <surge checkout, with submodules> ../../public/fledgetone-plugins/gpl/surge.wasm
+python3 surge/patches.py <surge checkout> ../../public/fledgetone-plugins/gpl/surge-patches
+sh dragonfly/build.sh <dragonfly-reverb checkout> ../../public/fledgetone-plugins/gpl/dragonfly.wasm
+sh plateau/build.sh <ValleyRackFree checkout> ../../public/fledgetone-plugins/gpl/plateau.wasm
+sh setbfree/build.sh <setBfree checkout> ../../public/fledgetone-plugins/gpl/setbfree.wasm
 ```
 
 - **Surge XT**: its engine library built without JUCE or Lua (`surge/prepare.py` makes the few
@@ -71,5 +71,5 @@ sh setbfree/build.sh <setBfree checkout> ../../public/bos-beat-box-plugins/gpl/s
   in place of `b_synth/lv2.c`; settings go through setBfree's named MIDI controls.
   `setbfree/quiet.h` drops its status prints.
 
-When publishing the site, copy only the top-level files of `public/bos-beat-box-plugins/` (the
+When publishing the site, copy only the top-level files of `public/fledgetone-plugins/` (the
 `*.wasm` and `LICENSES.txt`), never `gpl/`.

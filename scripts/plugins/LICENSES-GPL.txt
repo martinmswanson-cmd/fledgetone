@@ -1,5 +1,5 @@
 Fledgetone's GPL-licensed built-in plugins (only in builds made with VITE_GPL_PLUGINS=1: the
-files in bos-beat-box-plugins/gpl/). Each is free software under the GNU General Public License,
+files in fledgetone-plugins/gpl/). Each is free software under the GNU General Public License,
 version 3 (setBfree: version 2 or later); the complete source of each, and of how it is built for Fledgetone
 (scripts/plugins/), is available with the app's own source.
 

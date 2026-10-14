@@ -19,7 +19,7 @@ register(
 const { fmodScript, wwiseScript, engineReadme, stateLayout } = await import('../src/audio/engineScripts.ts');
 
 const manifest = {
-  format: 'bos-beatbox-audio-manifest', version: 2, name: "Bo's \"Boss\" Theme", bpm: 120, timeSignature: [4, 4], beatsPerBar: 4, sampleRate: 48000, key: 'A minor',
+  format: 'fledgetone-audio-manifest', version: 2, name: "Bo's \"Boss\" Theme", bpm: 120, timeSignature: [4, 4], beatsPerBar: 4, sampleRate: 48000, key: 'A minor',
   intensity: { default: 1, groups: [{ name: 'Percussion', curve: [[0, 0], [0.5, 1], [1, 1]] }, { name: 'Main', curve: [[0, 1], [1, 1]] }] },
   states: [
     { name: 'Explore', file: 'states/Explore.wav', bars: 8, seconds: 16, samples: 768000, stems: [{ group: 'Percussion', file: 'stems/Explore/Percussion.wav', tracks: ['Drums'] }, { group: 'Main', file: 'stems/Explore/Main.wav', tracks: ['Bass'] }] },

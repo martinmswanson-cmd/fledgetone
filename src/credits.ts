@@ -19,8 +19,8 @@ const CC_BY_SA = '[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/
 const NB = 'https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/';
 const GLEITZ = "Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts)";
 const TONE_AUDIO = 'the [Tone.js audio collection](https://github.com/Tonejs/audio)';
-/** The recordings hosted with the app (public/bos-beat-box-samples/) */
-const HOSTED = 'bos-beat-box-samples/';
+/** The recordings hosted with the app (public/fledgetone-samples/) */
+const HOSTED = 'fledgetone-samples/';
 
 export const SAMPLE_CREDITS: SampleCredit[] = [
   { prefixes: ['https://tonejs.github.io/audio/salamander/'], samples: `Salamander Grand Piano by Alexander Holm, from ${TONE_AUDIO}`, licence: CC_BY },

@@ -2,7 +2,7 @@
 # how their names say the note, loudness and take, and how long to keep each note.
 #
 # fetch.py, measure.py and convert.py read this list. Each set becomes a folder in
-# public/bos-beat-box-samples/ holding <note>_<layer>_<take>.mp3 (see README.md).
+# public/fledgetone-samples/ holding <note>_<layer>_<take>.mp3 (see README.md).
 import re
 
 # The libraries, all public domain (CC0) or free to redistribute; see src/credits.ts

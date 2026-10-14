@@ -24,8 +24,9 @@ import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audi
  * Selection state is not saved; everything else needed to rebuild the arrangement is.
  * Files and autosaves from before the rename (GrooveForge) still load.
  */
-export const PROJECT_FORMAT = 'bos-beat-box-project';
-const LEGACY_FORMATS = ['grooveforge-project'];
+export const PROJECT_FORMAT = 'fledgetone-project';
+/** Earlier names of the format, still opened */
+const LEGACY_FORMATS = ['bos-beat-box-project', 'grooveforge-project'];
 export const PROJECT_VERSION = 1;
 const AUTOSAVE_KEY = 'bos-beat-box.autosave.v1';
 const LEGACY_AUTOSAVE_KEYS = ['grooveforge.autosave.v1'];

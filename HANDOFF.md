@@ -108,7 +108,7 @@ For how the parts fit together see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
 | Drum Rack, Multi Sampler | `src/store/sampleKits.ts` (pure, tested: pads, `mapZones`, `zoneFor`, names to roots), `src/audio/presets/sampleKits.ts` (buffer-source voices; a WaveShaper with no curve was silent live, so the drive stage is patched in only when used), `SampleKitPanels.tsx` |
 | CC lanes, per-note expression, MPE | `Clip.expression.cc<n>` lanes (`laneCc`, `lanesOf` in `expression.ts`); `src/store/ccLanes.ts` turns them into automation (`withControllerLanes`, used live in `connectTimelineToAudio` and in `renderTracks`); plugins get CC via `TrackInstrument.cc`. `NoteEvent.expr` (`noteExpression.ts`), played by `playExpressive` in `scheduler.ts` through `TrackInstrument.noteVoice` (Multi Sampler) or a whole-instrument bend; MPE input in `liveInput.ts` (`mpeNotes`), recorded by `Take.noteControl` |
 | Notation, MusicXML | `src/store/notation.ts` (pure, tested: `notate`, `spell`, `musicXml`), `NotationView.tsx` (VexFlow with the Bravura font, imported statically so the one-file build has it) |
-| Real instruments (hosted recordings, loudness layers, takes, guitar amps) | `hosted` in `instrumentCatalog.ts` (files in `public/bos-beat-box-samples`, rebuilt by `scripts/real-samples/`); `SampleSource.layers` played by a sampler per layer and take (`createSamplerVoice`); `AMPS` in `samplerManager.ts` (built in `shapingChain`); the site must serve the folder next to the page |
+| Real instruments (hosted recordings, loudness layers, takes, guitar amps) | `hosted` in `instrumentCatalog.ts` (files in `public/fledgetone-samples`, rebuilt by `scripts/real-samples/`); `SampleSource.layers` played by a sampler per layer and take (`createSamplerVoice`); `AMPS` in `samplerManager.ts` (built in `shapingChain`); the site must serve the folder next to the page |
 | App state, undo, project load | `src/store/timelineStore.ts`, `timelineTypes.ts` |
 | Project file format, autosave | `src/store/project.ts` |
 | Timeline UI | `src/components/timeline/` |
@@ -248,7 +248,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   (`PluginBrowser.tsx`), panel (`BuiltinPluginPanel.tsx`). Instruments are level-trimmed in their
   wrappers. GPL families (Surge XT with 607 factory patches fetched on demand, Dragonfly's four
   reverbs, Plateau reverb, setBfree organ) only in `VITE_GPL_PLUGINS=1` builds: the dev server and `npm run build:full`
-  (`dist-full/`). Never copy `public/bos-beat-box-plugins/gpl/` to the site before the app's source
+  (`dist-full/`). Never copy `public/fledgetone-plugins/gpl/` to the site before the app's source
   is published.
 - **Sound effects maker** (`src/audio/sfx/sfxSynth.ts`, `src/components/sfx/SfxMakerPanel.tsx`): layered
   sounds (up to 4 layers: waves, noise, FM, bell, crackle; SVF filter; seq notes) with drive, echo

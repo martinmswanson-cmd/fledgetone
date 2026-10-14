@@ -341,7 +341,7 @@ export async function buildGameKitParts(
   }
 
   const manifest: AudioManifest = {
-    format: 'bos-beatbox-audio-manifest',
+    format: 'fledgetone-audio-manifest',
     version: 2,
     name: song.name,
     bpm: song.bpm,

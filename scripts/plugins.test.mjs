@@ -1,4 +1,4 @@
-// Every built-in plugin (public/bos-beat-box-plugins/) loads, matches the catalog, and plays: an
+// Every built-in plugin (public/fledgetone-plugins/) loads, matches the catalog, and plays: an
 // instrument makes sound from a note, an effect passes a tone, and nothing gives NaN or blows up.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +8,7 @@ const { PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalog.ts'
 const { GPL_PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalogGpl.ts');
 
 for (const family of [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES]) {
-  const file = new URL(`../public/bos-beat-box-plugins/${family.file}`, import.meta.url);
+  const file = new URL(`../public/fledgetone-plugins/${family.file}`, import.meta.url);
   test(`${family.family}: every plugin plays`, { skip: !existsSync(file) && family.gpl ? 'GPL family not built here' : false }, async () => {
     const bytes = readFileSync(file);
     assert.equal(createHash('sha1').update(bytes).digest('hex').slice(0, 12), family.hash, 'run: node scripts/plugins/catalog.mjs');

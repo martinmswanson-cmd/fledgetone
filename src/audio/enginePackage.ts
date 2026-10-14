@@ -27,7 +27,7 @@ export async function buildEnginePackage(song: GameKitSong, target: EngineTarget
   const { manifest, files } = await buildGameKitParts({ ...song, costumes: [], stateOptions: {}, gameParams: [] }, (f, d) => onProgress?.(f * 0.97, d), sampleRate);
   const slug = manifest.name.replace(/[^A-Za-z0-9]+/g, '_');
   const out: ZipEntry[] = files.map((f) => ({ ...f, name: `Audio/${f.name}` }));
-  const cues = { ...manifest, format: 'bos-beatbox-cues', mainStem: MAIN_STEM, timeline: stateLayout(manifest) };
+  const cues = { ...manifest, format: 'fledgetone-cues', mainStem: MAIN_STEM, timeline: stateLayout(manifest) };
   out.push({ name: 'cues.json', data: new Blob([JSON.stringify(cues, null, 2)], { type: 'application/json' }) });
   if (target !== 'wwise') out.push({ name: `fmod/Fledgetone_${slug}.js`, data: new Blob([fmodScript(manifest)], { type: 'text/javascript' }) });
   if (target !== 'fmod') out.push({ name: `wwise/import_${slug}.py`, data: new Blob([wwiseScript(manifest)], { type: 'text/x-python' }) });

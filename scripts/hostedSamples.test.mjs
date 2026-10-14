@@ -1,4 +1,4 @@
-// The recordings hosted with the app (public/bos-beat-box-samples): every file an instrument asks
+// The recordings hosted with the app (public/fledgetone-samples): every file an instrument asks
 // for is there, and every note has each loudness layer and take. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
@@ -21,7 +21,7 @@ register(
 const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
-const hosted = Object.values(INSTRUMENTS).filter((d) => d.samples?.baseUrl.startsWith('bos-beat-box-samples/'));
+const hosted = Object.values(INSTRUMENTS).filter((d) => d.samples?.baseUrl.startsWith('fledgetone-samples/'));
 
 test('the real instruments are hosted with the app, and only they are', () => {
   const real = Object.values(INSTRUMENTS).filter((d) => d.name.endsWith('(Real)'));
@@ -39,9 +39,9 @@ test('every hosted recording an instrument plays is in public/', () => {
     }
   }
   // Nothing hosted that no instrument plays
-  for (const folder of readdirSync(join(PUBLIC, 'bos-beat-box-samples'), { withFileTypes: true }).filter((e) => e.isDirectory())) {
-    for (const file of readdirSync(join(PUBLIC, 'bos-beat-box-samples', folder.name)).filter((f) => f.endsWith('.mp3'))) {
-      assert.ok(used.has(`bos-beat-box-samples/${folder.name}/${file}`), `${folder.name}/${file} is hosted but unused`);
+  for (const folder of readdirSync(join(PUBLIC, 'fledgetone-samples'), { withFileTypes: true }).filter((e) => e.isDirectory())) {
+    for (const file of readdirSync(join(PUBLIC, 'fledgetone-samples', folder.name)).filter((f) => f.endsWith('.mp3'))) {
+      assert.ok(used.has(`fledgetone-samples/${folder.name}/${file}`), `${folder.name}/${file} is hosted but unused`);
     }
   }
 });
