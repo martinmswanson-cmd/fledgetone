@@ -4,7 +4,7 @@ import { useUiStore } from '../store/uiStore';
 import { PALETTE_SHORTCUT } from '../store/uiStore';
 
 /**
- * The first-visit tour and the three guided tutorials. A step points at a part of the screen (a CSS
+ * The first-visit tour and the guided tutorials. A step points at a part of the screen (a CSS
  * selector) and explains it. A step with a `task` waits for the person to do something and moves on
  * by itself once they have, checked against the app's state. Each task can note how things stood when
  * the step began (`begin`), so "add a track" means one more than there were.
@@ -78,7 +78,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'The menus',
-      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Tools**, **Video**, **Game**, **View** and **Help**. **New** offers a blank timeline, the demo song or one of 42 genre starters.',
+      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Tools**, **Video**, **Game**, **View** and **Help**. **New** offers a blank timeline, the demo song or one of 65 starters, game music among them.',
       target: '[role="menubar"]',
     },
     {
@@ -128,7 +128,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'Learn more',
-      body: '**LEARN** has this tour and three hands-on tutorials (Beginner, Intermediate, Expert). **GUIDE** (or **?**) explains everything in detail.',
+      body: '**LEARN** has this tour and six hands-on tutorials, from a first song to game music that reacts. **GUIDE** (or **?**) explains everything in detail.',
       target: 'button[title^="Tour and tutorials"]',
     },
   ],
@@ -413,6 +413,205 @@ const EXPERT: Lesson = {
   ],
 };
 
-export const LESSONS: Lesson[] = [TOUR, BEGINNER, INTERMEDIATE, EXPERT];
+
+/** Clips on the timeline, by id (a variation, a chord clip and an accompaniment each add one). */
+const clipIds = () => new Set(tl().clips.map((c) => c.id));
+const newClip = (before: unknown) => tl().clips.some((c) => !(before as Set<string>).has(c.id));
+/** A game starter is open: sections to switch between and stingers to fire. */
+const gameSongOpen = () => tl().markers.filter((m) => m.anchor !== 'time').length >= 2 && tl().stingers.length > 0;
+const inGameTab = () => ui().dockOpen && ui().dockTab === 'game';
+const GAME_TAB = () => (inGameTab() ? '[aria-label="Game preview"]' : '#btn-game');
+const gameTarget = (part: string) => () => (inGameTab() ? `[data-game="${part}"]` : '#btn-game');
+const auditionOpen = () => !!document.querySelector('[role="dialog"][aria-label="Audition like the game"]');
+
+const HELPERS: Lesson = {
+  id: 'helpers',
+  level: 'Intermediate',
+  title: 'Write with the helpers',
+  summary: 'Chords in a key, an accompaniment for them, a drummer, a melody turned another way, and a swing for one clip.',
+  minutes: 6,
+  steps: [
+    {
+      title: 'Write with the helpers',
+      body: 'The app can write the busy parts for you: chords in a key, a part that follows them, a drum beat in any style, and new versions of a tune. You choose; it does the notes. Everything here is one undo step.',
+    },
+    {
+      title: 'Chords in a key',
+      body: 'Right-click an empty spot on a pitched track (a piano, strings, a pad) and choose **Chord progression…**. Pick one: *Level clear*, *Journey*, *Wonder* and *Castle* are game moods. Then **Make the clip**.',
+      target: '[data-timeline-scroll]',
+      before: ensureTrack,
+      task: { hint: 'Right-click a lane, Chord progression…', begin: clipIds, done: newClip },
+    },
+    {
+      title: 'An accompaniment',
+      body: 'Right-click the chord clip and choose **Accompaniment for these chords…**: a walking bass, an oom-pah-pah, an Alberti bass, a strummed guitar, a harp glissando, a string ostinato and more, each on its own new track, following every chord change.',
+      target: '[data-timeline-scroll]',
+      task: { hint: 'Right-click the chords, Accompaniment…', begin: () => tl().tracks.length, done: (n) => tl().tracks.length > (n as number) },
+    },
+    {
+      title: 'A drummer',
+      body: 'Add a drum kit track (**Add track**, type *kit*), then right-click its lane and choose **Drummer…**: 20 styles from four-on-the-floor to a waltz, a march, a bossa nova or a 7/8 groove, with fills every few bars. Tick the time-signature box for a waltz to set 3/4 there.',
+      target: '[data-timeline-scroll]',
+      task: { hint: 'A kit track, then Drummer…', begin: clipIds, done: (b) => tl().clips.some((c) => !(b as Set<string>).has(c.id) && tl().tracks.find((t) => t.id === c.trackId && /kit|drum/i.test(t.instrumentKey))) },
+    },
+    {
+      title: 'A melody, another way',
+      body: 'Right-click a clip with a tune in it (the chords work too) and choose **Melody variations…**. Try **Answer phrase** (call and response), **Darker**, **Brighter** or **Harmony a third above**. Everything stays in the song’s key, which you can change there.',
+      target: '[data-timeline-scroll]',
+      task: { hint: 'Right-click a clip, Melody variations…', begin: () => ({ ids: clipIds(), notes: pitches() }), done: (b) => newClip((b as { ids: Set<string> }).ids) || pitches() !== (b as { notes: string }).notes },
+    },
+    {
+      title: 'A swing of its own',
+      body: 'Double-click a clip and set **FEEL** in the piano roll: light or hard swing, a triplet shuffle, in 8ths or 16ths. Only that clip swings, so a jazzy part can sit on a straight beat.',
+      target: () => (tl().editingClipId ? '[data-search="swing feel groove shuffle"]' : '[data-timeline-scroll]'),
+      task: { hint: 'Open a clip, set FEEL', done: () => tl().clips.some((c) => !!c.groove) },
+    },
+    {
+      title: 'That is the toolbox',
+      body: 'Right-click is where the helpers live: **Chords for this melody**, **Bass line from these chords**, **Fill** on a drum clip, and the ones you just used. The piano roll’s **SCALE** and **TOOLS** do the rest.',
+    },
+  ],
+};
+
+const GAME_MUSIC: Lesson = {
+  id: 'game-music',
+  level: 'Intermediate',
+  title: 'Game music that reacts',
+  summary: 'States a game switches between, how one hands over to the next, a bridge written into a state, and hearing it like the game.',
+  minutes: 6,
+  steps: [
+    {
+      title: 'Game music that reacts',
+      body: 'Game music is made of **states** (explore, danger, boss...) that loop until the game switches, and **transitions** that hand one over to the next on the beat. Here you’ll set them up and hear them the way the game will.',
+    },
+    {
+      title: 'Open a game starter',
+      body: 'Open **File › New…**, then the **Game Worlds** group, and pick one: *Overworld*, *Open Field* or *Cozy Village*. Each section is a state, the tracks are in layers, and the transitions and stingers are made. (This replaces the current timeline.)',
+      target: dialogOr('new', 'New arrangement', NEW_BUTTON),
+      task: { hint: 'New, Game Worlds, a starter', done: gameSongOpen },
+    },
+    {
+      title: 'The Game tab',
+      body: 'Open the **Game** tab in the bottom panel.',
+      target: GAME_TAB,
+      task: { hint: 'Click Game', done: inGameTab },
+    },
+    {
+      title: 'Switch states',
+      body: 'Click a state’s pad. The music switches on the next bar (or as its transition says), the way the game will when the player walks into danger.',
+      target: gameTarget('states'),
+      task: { hint: 'Click a state', begin: () => tl().loopRegion.inBar, done: (bar) => tl().loopRegion.inBar !== bar },
+    },
+    {
+      title: 'The transition matrix',
+      body: 'Open **Transitions**: a row for the state you come from, a column for the one you go to. Each cell is a rule: a cut, a fill, a riser, a hit, a crossfade, a stinger or a bridge.',
+      target: gameTarget('transitions'),
+      task: { hint: 'Open Transitions', done: () => !!document.querySelector('[data-game="transitions"] details[open]') },
+    },
+    {
+      title: 'Write a bridge',
+      body: 'Click a cell and choose **Bridge**: a bar written from your song to lead into that state (the chord that pulls into its first chord, the bass stepping in, a drum fill). **2 bars** turns through one more chord first.',
+      target: gameTarget('transitions'),
+      task: { hint: 'A cell, then Bridge', done: () => Object.values(tl().transitions).some((r) => r.kind === 'bridge') },
+    },
+    {
+      title: 'When it switches',
+      body: 'Set **When** to **on the next phrase** (every 2, 4 or 8 bars from the state’s start) or **at the end of the loop**, so the music turns where a phrase does instead of mid-sentence.',
+      target: gameTarget('transitions'),
+      task: { hint: 'When: phrase or end of the loop', done: () => Object.values(tl().transitions).some((r) => r.quantize === 'phrase' || r.quantize === 'end') },
+    },
+    {
+      title: 'Hear it like the game',
+      body: '**Audition like the game** renders the states exactly as the game kit exports them and plays them with the kit’s own player: pads for the states and stingers, and every rule as you set it, bridges and crossfades included.',
+      target: () => (auditionOpen() ? '[role="dialog"][aria-label="Audition like the game"]' : gameTarget('stingers')()),
+      task: { hint: 'Click Audition like the game', done: auditionOpen },
+    },
+    {
+      title: 'Switch and listen',
+      body: 'Click a state pad to start, then the one your bridge goes to. It waits for its line (the pad pulses), plays the bridge and lands on the new state’s downbeat. Close the audition when you’re done.',
+      target: () => (auditionOpen() ? '[role="dialog"][aria-label="Audition like the game"]' : null),
+      task: { hint: 'Close the audition', done: () => !auditionOpen() },
+    },
+    {
+      title: 'Ready for the game',
+      body: '**Game kit** (in this tab) exports it all for Godot, Unity or the web: every state as a seamless loop, the bridges and stingers, and a player that follows your rules. The next tutorial makes the music react to what the player does.',
+    },
+  ],
+};
+
+const GAME_REACT: Lesson = {
+  id: 'game-react',
+  level: 'Expert',
+  title: 'Make it react',
+  summary: 'Parameters the game sets, costumes that dress the same music another way, shuffled pieces and silences, effects, and a little game to try it in.',
+  minutes: 7,
+  steps: [
+    {
+      title: 'Make it react',
+      body: 'A game’s music follows more than its states: how close the enemy is, how much health is left, where the player is. Here you’ll set that up without the game needing to know how the music is mixed.',
+    },
+    {
+      title: 'A game starter',
+      body: 'This uses a song with game states. If you don’t have one open, open **File › New…**, **Game Worlds**, and pick one.',
+      target: () => (gameSongOpen() ? null : dialogOr('new', 'New arrangement', NEW_BUTTON)()),
+      task: { hint: 'Open a game starter', done: gameSongOpen },
+    },
+    {
+      title: 'The Game tab',
+      body: 'Open the **Game** tab in the bottom panel.',
+      target: GAME_TAB,
+      task: { hint: 'Click Game', done: inGameTab },
+    },
+    {
+      title: 'A parameter',
+      body: 'Under **Parameters**, pick **danger** and **Add parameter**: one number from the game (0 to 1) that raises the intensity and opens up the sound as enemies close in. The game calls `setParameter("danger", 0.7)`; the music does the rest.',
+      target: gameTarget('parameters'),
+      task: { hint: 'Add a parameter', begin: () => tl().gameParams.length, done: (n) => tl().gameParams.length > (n as number) },
+    },
+    {
+      title: 'Shape what it moves',
+      body: 'Each line is one thing it moves (the intensity, a filter, the reverb, the volume, one layer), from what to what, over which part of the parameter. Change a number, or add one with **move something else…**: health muffling the music below half is a classic.',
+      target: gameTarget('parameters'),
+      task: { hint: 'Change or add a line', begin: () => JSON.stringify(tl().gameParams.map((p) => p.targets)), done: (was) => JSON.stringify(tl().gameParams.map((p) => p.targets)) !== was },
+    },
+    {
+      title: 'A costume',
+      body: 'Under **Costumes**, add **8-bit** (or a music box, night, a hurry-up): the same music played another way, lined up so the game can swap it mid-loop and the tune carries on. Change any track’s instrument in it, or leave a track out.',
+      target: gameTarget('costumes'),
+      task: { hint: 'Add a costume', begin: () => tl().costumes.length, done: (n) => tl().costumes.length > (n as number) },
+    },
+    {
+      title: 'How each state plays',
+      body: 'Under **How each state plays**, shuffle a state’s 4-bar pieces (a long stay never sounds the same) or leave silences between plays (music that comes and goes, so it still means something when it returns).',
+      target: gameTarget('state-options'),
+      task: { hint: 'Shuffle or a silence', done: () => Object.keys(tl().stateOptions).length > 0 },
+    },
+    {
+      title: 'Hear it all',
+      body: 'Open **Audition like the game**. Under the state pads: **Costume** and **Effect** pads (underwater, muffled, low health, dream) and a slider for each parameter. Start a state and move them.',
+      target: () => (auditionOpen() ? '[role="dialog"][aria-label="Audition like the game"]' : gameTarget('stingers')()),
+      task: { hint: 'Open the audition', done: auditionOpen },
+    },
+    {
+      title: 'Close it',
+      body: 'Close the audition when you’ve heard enough.',
+      target: () => (auditionOpen() ? '[role="dialog"][aria-label="Audition like the game"]' : null),
+      task: { hint: 'Close the audition', done: () => !auditionOpen() },
+    },
+    {
+      title: 'Try it in a game',
+      body: '**Try it in a game** drops your song into a little 3D game: get close to the guard and the music switches to the chase and builds; a parameter called **danger** follows the guard, one called **health** follows your hearts. Esc closes it.',
+      target: () => (ui().dialog === 'tryOut' ? null : gameTarget('states')()),
+      task: { hint: 'Game › Try it in a game…', done: () => ui().dialog === 'tryOut' },
+    },
+    {
+      title: 'Ship it',
+      body: 'The **Game kit** carries all of it: the parameters, the costumes, the shuffled pieces and silences, and players for Godot, Unity and the web that do the same sums you just heard. Its README lists each one with the line of code that calls it.',
+      target: () => (ui().dialog === 'tryOut' ? null : gameTarget('export')()),
+    },
+  ],
+};
+
+export const LESSONS: Lesson[] = [TOUR, BEGINNER, INTERMEDIATE, HELPERS, GAME_MUSIC, EXPERT, GAME_REACT];
 
 export const lessonById = (id: string): Lesson | undefined => LESSONS.find((l) => l.id === id);

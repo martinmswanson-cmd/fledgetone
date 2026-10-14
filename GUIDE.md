@@ -7,7 +7,7 @@ Bo's Beatbox is a music maker that runs in your browser. You build a song on the
 It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen. On a phone a notice says so once; you can continue, but the timeline is cramped, drag-and-drop editing and keyboard shortcuts don't work, and audio may stutter.
 
 1. Click **START AUDIO** in the top-right corner. Browsers only allow sound after you click something, so the button glows red until audio is running. Pressing Play also starts it.
-2. To hear an example, open the **File** menu at the top, choose **New…** and pick **Demo song**, or one of the 53 starters (game music like Boss Fight, Stealth and Cozy Village, and genres like Drift Phonk, Bossa Jazz-Pop and Dubstep).
+2. To hear an example, open the **File** menu at the top, choose **New…** and pick **Demo song**, or one of the 65 starters (game music like Boss Fight, Stealth and Cozy Village, and genres like Drift Phonk, Bossa Jazz-Pop and Dubstep).
 3. Press **Space** (or the green Play button) to play, and Space again to pause.
 4. Double-click a clip to open its notes in the **piano roll** under the timeline.
 
@@ -35,12 +35,15 @@ Hover across the bar while a menu is open to move between menus; the arrow keys 
 
 ### Tour and tutorials
 
-The first time you open Bo's Beatbox it offers a one-minute **tour** and three hands-on **tutorials**; click **LEARN** in the header (or search for *tutorial*) to find them again any time.
+The first time you open Bo's Beatbox it offers a one-minute **tour** and six hands-on **tutorials**; click **LEARN** in the header (or search for *tutorial*) to find them again any time.
 
 - **Quick tour**: points at each part of the screen and says what it's for. Just read and click **Next**.
 - **Beginner: Your first song**: open a starter, play it, mute a track, change the tempo, write a note, undo, and export.
 - **Intermediate: Shape and mix a song**: add an instrument, use the Filter, Pump and reverb, draw automation, use the Mixer, add markers, a build-up and drop, and the loop.
 - **Expert: Pro techniques**: search, the Synth Designer, sidechaining from any track, the Gate, key changes, freezing, the Game preview and game-ready exports, and the fastest shortcuts.
+- **Intermediate: Write with the helpers**: a chord progression in a key, an accompaniment for it, the Drummer, melody variations, and a clip's own swing (FEEL).
+- **Intermediate: Game music that reacts**: open a game starter, switch states in the Game tab, the transition matrix, a written bridge, switching on the phrase, and Audition like the game.
+- **Expert: Make it react**: parameters the game sets, costumes, shuffled pieces and silences, effects and parameter sliders in Audition, Try it in a game, and what the game kit carries.
 
 A tutorial puts a glowing ring round the part of the screen to use, and its card sits in a corner out of the way: it moves only if a menu, picker or dialog you open would end up under it. Drag the card by its top row to put it anywhere, or shrink it to one line with **–** (the line still shows what to do). Steps marked **Your turn** wait for you to do it and move on by themselves once you have (with a tick); everything else just needs **Next**. The app works normally the whole time, shortcuts included. **Back** goes to the previous step, **Skip** moves past a task you'd rather not do, and the **X** closes the tutorial: **LEARN** then offers to **Resume** where you stopped. Finished tutorials are ticked. Progress is remembered in this browser.
 

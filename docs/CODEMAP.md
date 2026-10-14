@@ -466,5 +466,5 @@ The tour and tutorials' content and progress.
 
 | File | What it is |
 |---|---|
-| [`lessons.ts`](../src/tour/lessons.ts) | The first-visit tour and the three guided tutorials. A step points at a part of the screen (a CSS selector) and explains it. A step with a `task` waits for the person to do something and moves on by itself once they have, checked against the app's state. Each task can note how things stood when the step began (`begin`), so "add a track" means one more than there were. |
+| [`lessons.ts`](../src/tour/lessons.ts) | The first-visit tour and the guided tutorials. A step points at a part of the screen (a CSS selector) and explains it. A step with a `task` waits for the person to do something and moves on by itself once they have, checked against the app's state. Each task can note how things stood when the step began (`begin`), so "add a track" means one more than there were. |
 | [`tourStore.ts`](../src/tour/tourStore.ts) | Which tour or tutorial is running and at which step, and what this browser has done before: whether the welcome has been shown, and which lessons were finished (or where one was left). Kept in localStorage; if that's unavailable (private windows) everything still works, it just isn't remembered. |
