@@ -15,8 +15,14 @@ import { pluginFamilies, pluginSource } from './plugins/pluginSources';
 const DB_NAME = 'bos-beat-box-recordings';
 const STORE = 'recordings';
 
+/**
+ * A kept recording. Kept as a Blob: the browser stores it beside the database and hands it over
+ * without copying it through the page's thread (bytes kept as an ArrayBuffer were serialized
+ * there, half a second of a big song's first opening). Copies kept before are bytes.
+ */
 interface Stored {
-  bytes: ArrayBuffer;
+  blob?: Blob;
+  bytes?: ArrayBuffer;
   version: string;
 }
 
@@ -62,16 +68,28 @@ async function read(key: string, version: string): Promise<ArrayBuffer | null> {
   try {
     const db = await openDb();
     const hit = (await done(db.transaction(STORE).objectStore(STORE).get(key))) as Stored | undefined;
-    return hit && hit.version === version ? hit.bytes : null;
+    if (!hit || hit.version !== version) return null;
+    return hit.blob ? await hit.blob.arrayBuffer() : (hit.bytes ?? null);
   } catch {
     return null;
   }
 }
 
-async function write(key: string, version: string, bytes: ArrayBuffer): Promise<void> {
+/** Whether a recording is kept (without reading it). */
+async function has(key: string, version: string): Promise<boolean> {
   try {
     const db = await openDb();
-    await done(db.transaction(STORE, 'readwrite').objectStore(STORE).put({ bytes, version } satisfies Stored, key));
+    const hit = (await done(db.transaction(STORE).objectStore(STORE).get(key))) as Stored | undefined;
+    return !!hit && hit.version === version;
+  } catch {
+    return false;
+  }
+}
+
+async function write(key: string, version: string, blob: Blob): Promise<void> {
+  try {
+    const db = await openDb();
+    await done(db.transaction(STORE, 'readwrite').objectStore(STORE).put({ blob, version } satisfies Stored, key));
   } catch {
     // Not kept (storage full or unavailable): it's downloaded again next time
   }
@@ -105,7 +123,7 @@ export async function recordingBytes(source: Pick<SampleSource, 'baseUrl' | 'fal
   const kept = await read(addresses[0], version);
   if (kept) return kept;
   const bytes = await download(addresses);
-  void write(addresses[0], version, bytes.slice(0));
+  void write(addresses[0], version, new Blob([bytes]));
   return bytes;
 }
 
@@ -145,7 +163,8 @@ export async function keptRecordings(): Promise<{ count: number; bytes: number }
         const cursor = req.result;
         if (!cursor) return resolve({ count, bytes });
         count++;
-        bytes += (cursor.value as Stored).bytes.byteLength;
+        const kept = cursor.value as Stored;
+        bytes += kept.blob?.size ?? kept.bytes?.byteLength ?? 0;
         cursor.continue();
       };
       req.onerror = () => reject(req.error);
@@ -189,10 +208,10 @@ export async function downloadAll(onProgress: (p: DownloadProgress) => void, sig
   const worker = async () => {
     while (next < all.length && !signal.aborted) {
       const item = all[next++];
-      if (!(await read(item.key, item.version))) {
+      if (!(await has(item.key, item.version))) {
         try {
           const bytes = await download(item.addresses, signal);
-          await write(item.key, item.version, bytes);
+          await write(item.key, item.version, new Blob([bytes]));
           progress.bytes += bytes.byteLength;
         } catch {
           if (signal.aborted) break;
