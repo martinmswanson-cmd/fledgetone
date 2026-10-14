@@ -10,6 +10,7 @@ import type { Meter } from '../audio/tempoMap';
 import type { AccompStyle, BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
 import { INSTRUMENTS, isDrumKind } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
+import { melodyVariation, MELODY_VARIATIONS, surprisePair, type MelodyVariation, type VariationPlace } from './melodyVariations';
 
 /** The store side of the writing helpers (smartTools.ts): each makes or changes one clip, as one undo step. */
 
@@ -17,7 +18,7 @@ const tl = () => useTimelineStore.getState();
 const newId = () => uid('note');
 
 /** Which smart dialog is open, for which track and bar. */
-export const useSmartDialog = create<{ open: null | { mode: 'chords' | 'drummer' | 'accompany'; trackId: string; bar: number; clipId?: string } }>(() => ({ open: null }));
+export const useSmartDialog = create<{ open: null | { mode: 'chords' | 'drummer' | 'accompany' | 'melody'; trackId: string; bar: number; clipId?: string } }>(() => ({ open: null }));
 
 /** The song's key, from its notes (C major for a song with none yet). */
 export function songKey(): SongKey {
@@ -186,4 +187,40 @@ export function accompanyChords(clipId: string, style: AccompStyle, instrument?:
   const notes = fitToInstrument(accompany(clip.notes, clip.lengthBars, style, newId, meter, seed), key);
   if (!notes.length) return null;
   return trackWithClip(clip.trackId, key, def.track, { name: def.track, startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
+}
+
+/**
+ * A variation of a melody clip (see melodyVariations.ts), in the song's key: after it on its track
+ * (at the first free spot), in place of its notes, or on a new track under it with the same
+ * instrument (a harmony to play along). One undo step. Returns what happened, or null if the clip
+ * has no notes.
+ */
+export function varyMelody(clipId: string, kind: MelodyVariation, place: VariationPlace, seed = 1, inKey?: SongKey): string | null {
+  const s = tl();
+  const clip = s.clips.find((c) => c.id === clipId);
+  const track = clip && s.tracks.find((t) => t.id === clip.trackId);
+  if (!clip || !track || clip.audio || !clip.notes.length || isDrumKind(track.instrumentKey)) return null;
+  const key = inKey ?? songKey();
+  const meter = meterAt(clip.startBar, { base: s.meter, points: s.meterPoints });
+  const visible = clip.notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < clip.lengthBars - 1e-6);
+  const notes = fitToInstrument(melodyVariation(visible, kind, key, clip.lengthBars, meter.num / meter.den, meter.num, seed, newId), track.instrumentKey);
+  if (!notes.length) return null;
+  const what = kind === 'surprise' ? surprisePair(seed) : MELODY_VARIATIONS.find((v) => v.id === kind)!.name.toLowerCase();
+  const name = `${clip.name} (${kind === 'surprise' ? 'variation' : MELODY_VARIATIONS.find((v) => v.id === kind)!.name.toLowerCase()})`;
+  if (place === 'replace') {
+    s.checkpoint();
+    s.setClipNotes(clipId, notes);
+    return `The clip is now ${what}`;
+  }
+  if (place === 'track') {
+    trackWithClip(track.id, track.instrumentKey, `${track.name} ${kind === 'harmony' ? 'harmony' : 'variation'}`, { name, startBar: clip.startBar, lengthBars: clip.lengthBars, notes });
+    return `${what[0].toUpperCase()}${what.slice(1)} on a new track under "${track.name}"`;
+  }
+  // After it: the first spot on its track where the variation fits
+  const others = s.clips.filter((c) => c.trackId === track.id && c.id !== clip.id).sort((a, b) => a.startBar - b.startBar);
+  let at = clip.startBar + clip.lengthBars;
+  for (const c of others) if (c.startBar < at + clip.lengthBars - 1e-6 && c.startBar + c.lengthBars > at + 1e-6) at = c.startBar + c.lengthBars;
+  if (at + clip.lengthBars > TOTAL_BARS + 1 + 1e-6) return 'No room after this clip on its track: try a new track';
+  placeClip(track.id, at, clip.lengthBars, notes, name);
+  return `${what[0].toUpperCase()}${what.slice(1)} at bar ${Math.round(at * 100) / 100}`;
 }

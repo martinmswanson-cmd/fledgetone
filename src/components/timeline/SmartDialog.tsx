@@ -10,7 +10,8 @@ import { ACCOMP_STYLES, CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordName, prog
 import type { AccompStyle, ChordStyle, DrumStyle } from '../../store/smartTools';
 import type { InstrumentKey } from '../../store/timelineTypes';
 import { INSTRUMENTS } from '../../audio/instrumentCatalog';
-import { accompanyChords, drumMeterAt, makeChordClip, makeDrumClip, songKey, useSmartDialog } from '../../store/smartActions';
+import { accompanyChords, drumMeterAt, makeChordClip, makeDrumClip, songKey, useSmartDialog, varyMelody } from '../../store/smartActions';
+import { MELODY_VARIATIONS, type MelodyVariation, type VariationPlace } from '../../store/melodyVariations';
 import { meterAt } from '../../audio/tempoMap';
 import { showToast } from './toastStore';
 
@@ -24,6 +25,7 @@ export const SmartDialog: React.FC = () => {
   if (!open) return null;
   const close = () => useSmartDialog.setState({ open: null });
   if (open.mode === 'accompany' && open.clipId) return <AccompanyForm clipId={open.clipId} onClose={close} />;
+  if (open.mode === 'melody' && open.clipId) return <MelodyForm clipId={open.clipId} onClose={close} />;
   return open.mode === 'chords' ? <ChordsForm trackId={open.trackId} bar={open.bar} onClose={close} /> : <DrummerForm trackId={open.trackId} bar={open.bar} onClose={close} />;
 };
 
@@ -245,6 +247,88 @@ const AccompanyForm: React.FC<{ clipId: string; onClose: () => void }> = ({ clip
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>
             Make the track
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+let lastMelody: { kind: MelodyVariation; place: VariationPlace | null } = { kind: 'answer', place: null };
+let melodySeed = 1;
+
+const PLACES: ReadonlyArray<{ id: VariationPlace; label: string }> = [
+  { id: 'after', label: 'after it, on its track' },
+  { id: 'track', label: 'on a new track under it (to play together)' },
+  { id: 'replace', label: 'in place of it' },
+];
+
+/** Melody variations: an answer, the tune darker or brighter, simpler, busier... in the song's key. */
+const MelodyForm: React.FC<{ clipId: string; onClose: () => void }> = ({ clipId, onClose }) => {
+  const [kind, setKind] = useState<MelodyVariation>(lastMelody.kind);
+  const [place, setPlace] = useState<VariationPlace | null>(lastMelody.place);
+  const detected = useMemo(() => songKey(), []);
+  const [root, setRoot] = useState(detected.root);
+  const [mode, setMode] = useState(detected.mode);
+  const key = keyOf(root, mode);
+  const def = MELODY_VARIATIONS.find((v) => v.id === kind)!;
+  const where = place ?? def.place;
+  const make = () => {
+    lastMelody = { kind, place };
+    const said = varyMelody(clipId, kind, where, melodySeed++, key);
+    showToast(said ?? 'This clip has no notes to vary.');
+    onClose();
+  };
+  return (
+    <Modal title="Melody variations" onClose={onClose}>
+      <div className="flex flex-col gap-3 p-4 w-[30rem] max-w-full">
+        <div className="flex items-end gap-2">
+          <label className={field}>
+            Key
+            <select className={control} value={root} onChange={(e) => setRoot(Number(e.target.value))} aria-label="Key root">
+              {NOTE_NAMES.map((n, i) => (
+                <option key={n} value={i}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={field}>
+            <span className="sr-only">Mode</span>
+            <select className={control} value={mode} onChange={(e) => setMode(e.target.value as 'major' | 'minor')} aria-label="Major or minor">
+              <option value="major">major</option>
+              <option value="minor">minor</option>
+            </select>
+          </label>
+          <p className="flex-1 text-[11px] text-forge-muted">The song's key, from its notes ({detected.name}). Every note moves by the scale's own steps, so the result stays in key; a major key and its relative minor share their notes, so pick the one the tune feels like.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-1" role="radiogroup" aria-label="Variation">
+          {MELODY_VARIATIONS.map((v) => (
+            <label key={v.id} className={`flex items-start gap-2 rounded px-2 py-1 cursor-pointer ${v.id === kind ? 'bg-cyan-500/15' : 'hover:bg-white/5'}`}>
+              <input type="radio" name="melody-variation" className="mt-1 accent-cyan-500" checked={v.id === kind} onChange={() => {
+                setKind(v.id);
+                setPlace(null);
+              }} />
+              <span className="text-xs text-forge-text">
+                {v.name}
+                <span className="block text-[11px] text-forge-muted">{v.detail}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <label className={field}>
+          Put it
+          <select className={control} value={where} onChange={(e) => setPlace(e.target.value as VariationPlace)} aria-label="Where the variation goes">
+            {PLACES.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="flex justify-end">
+          <button type="button" className={primary} onClick={make}>
+            Make it
           </button>
         </div>
       </div>

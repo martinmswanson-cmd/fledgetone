@@ -199,6 +199,13 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
               divider: true,
             },
             {
+              key: 'melody',
+              label: 'Melody variations…',
+              shortcut: 'answer, darker…',
+              icon: <Music4 className="w-3.5 h-3.5" />,
+              onClick: run(() => useSmartDialog.setState({ open: { mode: 'melody', trackId: menu.trackId, bar: menu.bar, clipId: menu.clipId! } })),
+            },
+            {
               key: 'bassline',
               label: 'Bass line from these chords',
               shortcut: 'new track',

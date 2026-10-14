@@ -275,6 +275,11 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   on the audio clock, everything up front in an OfflineAudioContext; Godot: its own bus with a
   low-pass and reverb, pieces by timers; Unity: music on a child object with filters, pieces by
   PlayScheduled). Godot run headless; Unity compiled against stubs.
+- **Melody variations** (`src/store/melodyVariations.ts`, `varyMelody` in smartActions, MelodyForm in
+  SmartDialog): notes as scale degrees (`toDegree`/`fromDegree`, keeping chromatic alterations);
+  answer (inverted contour, starts a step from the call's end, lands on the tonic), remode to
+  minor/Phrygian or major/Lydian, simpler, busier (diatonic passing notes), syncopated, step up,
+  mirror, harmony (+2 degrees, new track), surprise (seeded pair). Placed after / replace / new track.
 - **Smarter transitions** (`src/store/transitions.ts`): rule `quantize` also 'phrase' (`phraseBars` 2/4/8
   from the state's start) and 'end' (the loop's or piece's end); kind 'bridge' (`bridgeBars` 1/2):
   `bridgeNotes` writes the new state's opening chord's dominant seventh (ii or iv before it for 2),
