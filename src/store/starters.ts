@@ -1403,7 +1403,17 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  return withSwells(inRange(BUILDERS[id]()));
+  return wholeSong(withSwells(inRange(BUILDERS[id]())));
+}
+
+/**
+ * Play loops the whole starter, its first bar to its last: someone new presses Play and hears all
+ * of it, rather than the first section over and over until they find the loop's Out point. (The
+ * song may not loop seamlessly end to start; that's for its writer to shape.)
+ */
+function wholeSong(p: ProjectSnapshot): ProjectSnapshot {
+  const end = Math.ceil(Math.max(2, ...p.clips.map((c) => c.startBar + c.lengthBars)) - 1e-6);
+  return { ...p, loopRegion: { inBar: 1, outBar: end, enabled: true } };
 }
 
 /** The held, bowed, blown and sung instruments a player shapes as they sustain (see withSwells). */
