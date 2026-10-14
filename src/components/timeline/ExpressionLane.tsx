@@ -72,11 +72,11 @@ export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, no
   const atOf = (x: number, shift: boolean) => Math.max(span[0], Math.min(span[1], shift ? x / barW : snap(x / barW)));
   const round = (v: number) => (isBend ? Math.round(v * 4) / 4 : Math.round(v * 100) / 100);
 
-  /** Drag a point (or a new one) with the pointer. */
-  const dragPoint = (e: React.PointerEvent, index: number, start: ExprPoint[]) => {
+  /** Drag a point (or a new one, whose undo step is taken already: `recorded`) with the pointer. */
+  const dragPoint = (e: React.PointerEvent, index: number, start: ExprPoint[], recorded = false) => {
     e.preventDefault();
     e.stopPropagation();
-    let moved = false;
+    let moved = recorded;
     const onMove = (ev: PointerEvent) => {
       const { x, y } = pointer(ev);
       if (!moved) {
@@ -130,7 +130,7 @@ export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, no
     const next = [...points.filter((p) => Math.abs(p.at - point.at) > 1e-9), point].sort((a, b) => a.at - b.at);
     store().checkpoint();
     write(next, false);
-    dragPoint(e, next.indexOf(point), next);
+    dragPoint(e, next.indexOf(point), next, true);
   };
 
   // The lane's line over its span: resting (or held at its first point) before it, between points, held after the last
