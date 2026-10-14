@@ -3,6 +3,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { Track } from '../../store/timelineTypes';
 import { liveTrackPeak } from '../../audio/liveTracks';
+import { isOffscreen, useSkipOffscreen } from '../offscreen';
 import { UndoableRange } from '../UndoableRange';
 import { busTargets, isBus, isReturn, sendTargets } from '../../store/buses';
 import { SpectrumView } from './SpectrumView';
@@ -27,6 +28,8 @@ const Meter: React.FC<{ trackId: string | null }> = ({ trackId }) => {
     let held = 0;
     let shown = '';
     return onFrame(() => {
+      // A strip scrolled out of sight isn't drawn: its meter needn't be read
+      if (isOffscreen(bar.current)) return;
       // Its own analyser only: reading every track's for every meter was N² work a frame
       const p = trackId ? liveTrackPeak(trackId) : 0;
       // Falls back at about 20 dB a second
@@ -59,8 +62,10 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
   const returns = sendTargets(track, tracks);
   const selected = useTimelineStore((st) => st.selectedTrackId === track.id);
   const inserts = (['human', 'distortion', 'peq', 'compressor', 'mbc', 'chorus', 'lofi', 'filter', 'echo', 'reverb', 'gate', 'pump'] as const).filter((k) => track.fx[k]?.on);
+  const root = useRef<HTMLDivElement>(null);
+  useSkipOffscreen(root);
   return (
-    <div className={`flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border p-2 ${bus ? 'bg-slate-500/10' : ret ? 'bg-sky-500/10' : 'bg-forge-bg'} ${selected ? 'border-cyan-500/70' : 'border-forge-border'}`} aria-label={`${track.name} ${bus ? 'bus' : ret ? 'return' : 'channel'}`}>
+    <div ref={root} className={`flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border p-2 ${bus ? 'bg-slate-500/10' : ret ? 'bg-sky-500/10' : 'bg-forge-bg'} ${selected ? 'border-cyan-500/70' : 'border-forge-border'}`} aria-label={`${track.name} ${bus ? 'bus' : ret ? 'return' : 'channel'}`}>
       <div className="w-full h-1 rounded" style={{ background: track.color }} />
       <button
         type="button"

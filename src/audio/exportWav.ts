@@ -80,6 +80,11 @@ export interface RenderOptions {
   reverbImpulse?: AudioBuffer;
   /** Aborting stops the render, which then rejects with the signal's reason (an AbortError). */
   signal?: AbortSignal;
+  /**
+   * Called between the render's steps, which wait for it: a background render (auto-freeze)
+   * pauses this way while the song plays, so it doesn't take the computer from the live sound.
+   */
+  hold?: () => Promise<void> | void;
   /** Markers: the ones in the range go into the file as cue points (see exportCues). */
   markers?: Marker[];
   /** Leave the master volume out (a freeze: live playback applies it to the frozen sound anyway). */
@@ -595,8 +600,9 @@ async function renderTracks(
     const lastSuspend = (Math.floor((length - 1) / 128) * 128) / sampleRate;
     // One suspend at a time, each scheduling the next, so a cancel leaves none behind
     const stepAt = (at: number) => {
-      void native.suspend(at).then(() => {
+      void native.suspend(at).then(async () => {
         try {
+          await opts.hold?.();
           if (signal?.aborted) {
             release();
             return;

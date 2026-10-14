@@ -2,9 +2,9 @@
  * The playhead: its line across the lanes and its handle in the ruler, and scrubbing it with the
  * mouse.
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { useLivePlayhead } from '../../store/playheadClock';
+import { livePlayhead, onPlayhead } from '../../store/playheadClock';
 import { snapBar } from '../../store/timelineTypes';
 import { HEADER_WIDTH } from './layout';
 
@@ -60,15 +60,25 @@ interface PlayheadProps {
  * (playheadClock.ts).
  */
 export const Playhead: React.FC<PlayheadProps> = ({ variant, onScrubStart }) => {
-  const position = useLivePlayhead();
   const zoom = useTimelineStore((s) => s.zoom);
-  const x = (position - 1) * zoom;
+  const x = (livePlayhead() - 1) * zoom;
+  // Moved straight on the page each frame, not by re-rendering: on a big song a render a frame
+  // (two playheads) was a good part of the page's time while it played
+  const el = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const move = () => {
+      if (el.current) el.current.style.transform = `translateX(${(livePlayhead() - 1) * zoom}px)`;
+    };
+    move();
+    return onPlayhead(move);
+  }, [zoom]);
 
   if (variant === 'head') {
     return (
       // Over the in/out brackets (z-20, earlier in the ruler) but under the marker flags (z-21), so a
       // flag the playhead sits on can still be clicked, dragged and renamed
       <div
+        ref={el}
         className="absolute top-0 bottom-0 z-20 w-0"
         style={{ transform: `translateX(${x}px)`, willChange: 'transform' }}
       >
@@ -88,6 +98,7 @@ export const Playhead: React.FC<PlayheadProps> = ({ variant, onScrubStart }) => 
 
   return (
     <div
+      ref={el}
       className="absolute top-0 bottom-0 z-[15] w-0"
       style={{ left: HEADER_WIDTH, transform: `translateX(${x}px)`, willChange: 'transform' }}
     >

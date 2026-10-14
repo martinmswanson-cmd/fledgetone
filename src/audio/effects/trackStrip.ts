@@ -107,6 +107,12 @@ export interface TrackStrip {
   /** Play into `target` (a bus track's strip input) instead of where it plays now (the master bus at first). */
   setOutput: (target: Tone.InputNode) => void;
   /**
+   * Put the channel to sleep, or wake it (live only). Asleep, it's cut off from everything after
+   * it, so the audio thread doesn't run it or its instrument: for a track with nothing to play for
+   * a while (see liveTracks.ts). Only for a channel that is silent: anything still ringing is cut.
+   */
+  sleep: (asleep: boolean) => void;
+  /**
    * Its sends to return tracks: each to `target` (the return's input) at `level`, taken after the
    * fader or (`pre`) before it. Sends not named go; a level changes smoothly. `muted`: the track
    * is muted (a pre-fader send goes quiet with it).
@@ -252,9 +258,16 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   const meterData = new Float32Array(512);
   reverbSend.connect(busFx.reverbInput);
   /** Sends to return tracks, by return id (see setSends) */
-  const sends = new Map<string, { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean; link: (need: boolean, ramp: number) => void }>();
+  const sends = new Map<string, { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean; link: ((need: boolean, ramp: number) => void) & { forget: () => void } }>();
   delaySend.connect(busFx.delayInput);
 
+  /**
+   * Asleep (live only; see sleep): nothing goes out of the strip (to its output, its sends, its
+   * meters), so the audio thread leaves the whole channel and the instrument feeding it alone.
+   */
+  let awake = true;
+  /** Every send link, to cut while asleep and join again on waking */
+  const linkSyncs = new Set<(ramp: number) => void>();
   /**
    * A send link that exists only while something goes through it. A send at 0 (most of them: a
    * track sends to one or two effects, if any) still processes every render block and keeps the
@@ -264,10 +277,13 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
    * played. In an export (set up once, before anything plays) it's simply joined or not.
    */
   const sendLink = (from: Tone.ToneAudioNode | AudioNode, to: Tone.Gain) => {
+    let want = false;
     let joined = false;
     let timer = 0;
-    return (need: boolean, ramp: number) => {
+    const sync = (ramp: number) => {
       window.clearTimeout(timer);
+      // Asleep (see sleep), nothing is joined; it's joined again on waking if still wanted
+      const need = want && awake;
       if (need && !joined) {
         Tone.connect(from, to);
         joined = true;
@@ -280,10 +296,16 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
           }
           joined = false;
         };
-        if (!barrier) cut();
+        if (!barrier || !awake) cut();
         else timer = window.setTimeout(cut, (ramp + 0.05) * 1000 + 50);
       }
     };
+    linkSyncs.add(sync);
+    const set = (need: boolean, ramp: number) => {
+      want = need;
+      sync(ramp);
+    };
+    return Object.assign(set, { forget: () => linkSyncs.delete(sync) });
   };
   const reverbLink = sendLink(duck, reverbSend);
   const delayLink = sendLink(duck, delaySend);
@@ -292,6 +314,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
    * An analyser read by the screen (the mixer's meter, the EQ's spectrum): joined when first read
    * and let go a second after the last read, so a track nobody is looking at doesn't feed one.
    */
+  /** Let go of the screen's analysers (asleep, nothing reaches them) */
+  const taps = new Set<() => void>();
   const screenTap = (fftSize: number, smoothing?: number) => {
     let node: AnalyserNode | null = null;
     let lastRead = 0;
@@ -310,6 +334,15 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       node = null;
       timer = 0;
     };
+    taps.add(() => {
+      if (!node) return;
+      try {
+        Tone.disconnect(duck, node);
+      } catch {
+        // The strip was let go
+      }
+      node = null;
+    });
     return (): AnalyserNode => {
       lastRead = performance.now();
       if (!node) {
@@ -732,6 +765,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         // Faded out, then let go
         send.writer.set(0, 0.03);
         const gone = send.gain;
+        send.link.forget();
         sends.delete(id);
         window.setTimeout(() => gone.dispose(), 120);
         version++;
@@ -740,6 +774,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         let send = sends.get(want.id);
         if (send && (send.target !== want.target || send.pre !== want.pre)) {
           const old = send.gain;
+          send.link.forget();
           old.dispose();
           sends.delete(want.id);
           send = undefined;
@@ -768,9 +803,21 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     },
     setOutput: (target) => {
       if (target === output) return;
-      Tone.disconnect(duck, output);
-      Tone.connect(duck, target);
+      if (awake) {
+        Tone.disconnect(duck, output);
+        Tone.connect(duck, target);
+      }
       output = target;
+    },
+    sleep: (asleep) => {
+      // Live only: an export plays every track from the start
+      if (!barrier || asleep === !awake) return;
+      awake = !asleep;
+      if (asleep) {
+        Tone.disconnect(duck, output);
+        taps.forEach((drop) => drop());
+      } else Tone.connect(duck, output);
+      linkSyncs.forEach((sync) => sync(0));
     },
     apply: (track, opts = {}) => {
       const ramp = opts.ramp ?? 0.03;
@@ -990,12 +1037,17 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       else param.setValueAtTime(g, t);
     },
     spectrum: (out) => {
+      if (!awake) {
+        out.fill(-Infinity);
+        return Math.min(out.length, 2048);
+      }
       const node = spectrumTap();
       if (out.length >= node.frequencyBinCount) node.getFloatFrequencyData(out.subarray(0, node.frequencyBinCount) as Float32Array<ArrayBuffer>);
       return node.frequencyBinCount;
     },
     mbcReduction: () => mbc?.reduction() ?? null,
     peak: () => {
+      if (!awake) return 0;
       meterTap().getFloatTimeDomainData(meterData);
       let p = 0;
       for (let i = 0; i < meterData.length; i++) p = Math.max(p, Math.abs(meterData[i]));

@@ -2,9 +2,9 @@
  * Auto-freeze: in a big song, the tracks nobody is working on are frozen by themselves in the
  * background, so playback has room for more. It's the same freeze as the snowflake's (see
  * freeze.ts), with three differences: the renders live in memory only (never in the project, the
- * sound library or undo), they're made and swapped in only while the song is stopped (so nothing
- * changes under a playing song), and a track is left alone until it has gone a few seconds
- * without a change.
+ * sound library or undo), they're made and swapped in only while the song is stopped (a render
+ * under way pauses while it plays, and nothing changes under a playing song), and a track is left
+ * alone until it has gone a few seconds without a change.
  *
  * A change to an auto-frozen track makes its render out of date at once (its fingerprint no
  * longer matches), so it plays live straight away, and is frozen again once it's left alone.
@@ -20,6 +20,7 @@ import { freezeFingerprint, freezeIsCurrent } from './freeze';
 import { isMixTrack } from './buses';
 import { renderTrackChannels, PLAYBACK_DB, useFreezing } from './freezeActions';
 import type { FrozenTrack, Track } from './timelineTypes';
+import { barToSeconds } from '../audio/tempoMap';
 import { INSTRUMENTS, isAudioKind, isDrumKind } from '../audio/instrumentCatalog';
 import { dropMemorySound, provideMemorySound, useSoundLibrary } from '../audio/soundLibrary';
 
@@ -92,8 +93,31 @@ function weight(t: Track, notes: number): number {
   return (notes + 20) * kindWeight * (1 + inserts * 0.5) + (t.plugin || t.pluginFx?.length ? 2000 : 0);
 }
 
+/**
+ * Resolves once the song isn't playing. A render started while it was stopped pauses here when
+ * Play is pressed: an offline render beside the live one took the computer from it (stutters on a
+ * big song), and doubled the work on the page's own thread.
+ */
+function untilStopped(): Promise<void> {
+  if (!useTimelineStore.getState().isPlaying) return Promise.resolve();
+  return new Promise((resolve) => {
+    const stop = useTimelineStore.subscribe((s) => {
+      if (s.isPlaying) return;
+      stop();
+      resolve();
+    });
+  });
+}
+
 /** When each track's fingerprint last changed, to wait until it settles. */
 const settled = new Map<string, { fingerprint: string; since: number }>();
+/**
+ * Tracks whose render didn't fit in the memory left, as they were then (fingerprint) and with how
+ * much memory taken (bytes): not tried again until they change or memory is let go. Without this
+ * the same track was rendered, found too big and thrown away, over and over (a long song keeps the
+ * page busy for good).
+ */
+const tooBig = new Map<string, { fingerprint: string; used: number }>();
 let lastEdit = 0;
 let counter = 0;
 
@@ -145,12 +169,26 @@ async function tick() {
   const used = Object.values(frozen).reduce((n, e) => n + e.bytes, 0);
   const notes = new Map<string, number>();
   for (const c of s.clips) notes.set(c.trackId, (notes.get(c.trackId) ?? 0) + c.notes.length);
+  // The least a render could take (one channel, no tail): one that couldn't fit isn't made at all
+  const span = new Map<string, [number, number]>();
+  for (const c of s.clips) {
+    const [a, b] = span.get(c.trackId) ?? [Infinity, -Infinity];
+    span.set(c.trackId, [Math.min(a, c.startBar), Math.max(b, c.startBar + c.lengthBars)]);
+  }
+  const tempo = { bpm: s.bpm, points: s.tempoPoints };
+  const leastBytes = (id: string) => {
+    const [a, b] = span.get(id) ?? [1, 1];
+    return (barToSeconds(b, tempo) - barToSeconds(a, tempo)) * 44100 * 4;
+  };
+  const budget = budgetBytes();
   const next = candidates
     .filter((t) => {
       const fingerprint = settled.get(t.id)!.fingerprint;
       return (
         frozen[t.id]?.fingerprint !== fingerprint &&
         now - settled.get(t.id)!.since >= SETTLE_MS &&
+        !(tooBig.get(t.id)?.fingerprint === fingerprint && used >= tooBig.get(t.id)!.used) &&
+        used - (frozen[t.id]?.bytes ?? 0) + leastBytes(t.id) <= budget &&
         !t.isArmed &&
         t.id !== editingTrack &&
         !freezeIsCurrent(t, all, soundMissing) // frozen by hand already
@@ -161,7 +199,7 @@ async function tick() {
 
   useAutoFreeze.setState({ rendering: next.id });
   try {
-    const r = await renderTrackChannels(next.id);
+    const r = await renderTrackChannels(next.id, undefined, untilStopped);
     const after = useTimelineStore.getState();
     const track = after.tracks.find((t) => t.id === next.id);
     // Changed while it rendered (or gone): out of date already, so it's tried again once it settles
@@ -177,7 +215,12 @@ async function tick() {
     const bytes = channels.length * left.length * 4;
     const current = useAutoFreeze.getState();
     const replaced = current.frozen[next.id]?.bytes ?? 0;
-    if (used - replaced + bytes > budgetBytes()) return; // over budget: this one stays live
+    if (used - replaced + bytes > budgetBytes()) {
+      // Over budget: this one stays live, and isn't tried again until it or the memory changes
+      tooBig.set(next.id, { fingerprint: r.fingerprint, used });
+      return;
+    }
+    tooBig.delete(next.id);
     const buffer = new AudioBuffer({ length: left.length, numberOfChannels: channels.length, sampleRate: r.sampleRate });
     channels.forEach((ch, i) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, i));
     const soundId = `autofreeze:${next.id}:${++counter}`;

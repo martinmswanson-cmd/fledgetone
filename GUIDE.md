@@ -673,7 +673,9 @@ While the song plays, the app watches for three signs that the computer isn't ke
 
 **Clear memory** (in the warning, or from the badge at any time) lets go of what the app holds but isn't using: downloaded recordings of instruments no track plays, decoded sounds no clip uses, the Instrument Browser's preview players, and any notes left hanging. Everything comes back by itself if needed (an instrument re-downloads when you use it again). Tick **Also empty the undo history** to free the most on a long session, but then earlier edits can't be undone.
 
-The app also steps in by itself. At the first late note or freeze of a playback, it hands notes to the sound engine further ahead of time (0.4 s instead of 0.1 s) until you press Stop, so the next busy moment is absorbed instead of heard; once a playback has needed that, later ones start with it. The only cost is that a fader, a mute or a jump you make while it plays takes a moment longer to be heard; playing your keyboard or MIDI keyboard isn't affected. And while it lags, the meters and the spectrum draw less often, to leave the computer's time to the music. The badge's details show **Notes sent ahead: further** while this is on.
+The app also steps in by itself. At the first late note or freeze of a playback, it hands notes to the sound engine further ahead of time (0.4 s instead of 0.1 s) until you press Stop, so the next busy moment is absorbed instead of heard; once a playback has needed that, later ones start with it. The only cost is that a fader, a mute or a jump you make while it plays takes a moment longer to be heard; playing your keyboard or MIDI keyboard isn't affected. And while it lags, the meters and the spectrum draw less often, to leave the computer's time to the music.
+
+Big songs also get help without asking. While a song plays, a track with nothing to play for a while rests: it's switched off until just before its next note, so thirty tracks waiting for their entry don't cost what thirty playing ones do (an orchestral test song needed about a third less of the sound engine). Tracks scrolled out of sight in the timeline and the mixer aren't drawn, and the spectrum moves at half speed in songs with more than 16 tracks. The badge's details show **Notes sent ahead: further** while this is on.
 
 Click the badge for the details, including **Audio engine speed** while playing (100% is keeping up). When the engine is what's behind, the warning offers **Use Stable playback** directly; it takes effect after a reload.
 
@@ -694,7 +696,7 @@ Big songs can ask more of the computer than it has, and playback starts to crack
 
 **Auto-freeze** does this for you in big songs. Once a song has 6 or more instrument tracks, the tracks you haven't changed for a few seconds are frozen in the background while the song is stopped (never while it plays, so nothing changes under you). Their snowflake shows a faint ring. Change one and it plays live again at once, then is frozen again a few seconds after you leave it alone. On a five-song test mix it cut the playback work by more than half.
 
-- Auto-frozen audio is kept in memory only, never in the project or the browser's storage, and stops at a limit set by the computer's memory (the busiest tracks go first).
+- Auto-frozen audio is kept in memory only, never in the project or the browser's storage, and stops at a limit set by the computer's memory (the busiest tracks go first). A track too long to fit is left live. A freeze already under way pauses while the song plays.
 - Click a ringed snowflake to freeze that track for good (a normal freeze).
 - Turn it off in **Master tab › Playback › Auto-freeze big songs**; it shows how many tracks are frozen and the memory they use. It's a setting for this browser, on by default.
 

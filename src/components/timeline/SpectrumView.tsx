@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { drawSpectrum, isSkin, SPECTRUM_SKINS, type SkinId, type SkinMemory } from '../../audio/spectrumSkins';
 import { readMasterBands, watchMasterSpectrum } from '../../audio/masterSpectrum';
 import { frameRate, onFrame } from '../frameTicker';
+import { useTimelineStore } from '../../store/timelineStore';
 
 /**
  * The live master spectrum, drawn in one of the readout styles (spectrumSkins.ts): plain bars, or
@@ -19,6 +20,9 @@ function savedSkin(): SkinId {
     return 'city';
   }
 }
+
+/** Songs with more tracks than this get the spectrum at 15 frames a second */
+const BIG_SONG_TRACKS = 16;
 
 export const SpectrumView: React.FC<{ className?: string }> = ({ className = '' }) => {
   const [skin, setSkin] = useState<SkinId>(savedSkin);
@@ -44,7 +48,8 @@ export const SpectrumView: React.FC<{ className?: string }> = ({ className = '' 
       }
       if (!readMasterBands(bands)) bands.fill(0);
       if (bands.some((b) => b > 0.01)) lastHeard = now;
-      frameRate(frame, now - lastHeard > 1000 ? 4 : 30);
+      // A big song leaves the page less room: the scenes move at half the rate there
+      frameRate(frame, now - lastHeard > 1000 ? 4 : useTimelineStore.getState().tracks.length > BIG_SONG_TRACKS ? 15 : 30);
       g.clearRect(0, 0, w, h);
       drawSpectrum(g, skin, { x: 4 * dpr, y: 4 * dpr, w: w - 8 * dpr, h: h - 8 * dpr }, bands, now / 1000, memory);
     };

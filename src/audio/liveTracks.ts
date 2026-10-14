@@ -8,7 +8,7 @@ import type { AutomationSchedule } from './automationSchedule';
 import { createInstrument, safely, trackInstrumentOptions } from './instruments';
 import { pluginEpoch, readWamParams } from './wamHost';
 import { pluginParamInfo } from './automation';
-import { isDrumKind } from './instrumentCatalog';
+import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, getLiveTempo } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { NativeBus } from './presets/native';
@@ -251,6 +251,7 @@ export function syncLiveTracks(tracks: Track[]): void {
   // The live mix's own Transport, even while a WAV export has made its offline context the global
   // one, over the whole timeline
   pumpClock ??= createPumpClock(liveMix.bus.context.transport, liveStrips, 0, barToTicks(TOTAL_BARS + 1));
+  if (!sleepTimer) watchSleep();
   pumpClock.update();
   // After the strips, which decide what each lane drives
   lastTracks = tracks;
@@ -309,7 +310,75 @@ export function pumpOnTrack(trackId: string, time: number): void {
 
 export function getLiveInstrument(trackId: string): TrackInstrument | undefined {
   const lt = live.get(trackId);
-  return lt?.audible ? lt.instrument : undefined;
+  if (!lt?.audible) return undefined;
+  // Played from a keyboard (or anything else outside the song): awake for a good while, as a key
+  // may be held
+  wake(trackId, lt, liveMix.bus.context.currentTime + HELD_SECONDS);
+  return lt.instrument;
+}
+
+/** A track's instrument for the song's own notes (the scheduler): trackActivity says how long it's needed. */
+export function scheduledInstrument(trackId: string): TrackInstrument | undefined {
+  const lt = live.get(trackId);
+  if (!lt?.audible) return undefined;
+  wake(trackId, lt, liveMix.bus.context.currentTime + 1);
+  return lt.instrument;
+}
+
+/**
+ * Sleeping channels. In a big song most tracks are silent most of the time (an orchestra's
+ * trumpets wait for their bars), but every channel and the instrument feeding it ran on the
+ * audio thread all the same: thirty silent channels took more of it than the few playing. So
+ * while the song plays, a track that has played nothing for a while (its last note's length and
+ * a tail for its release and its echoes) is cut off from the mix (see the strip's sleep), and it
+ * wakes when the scheduler gets to its next note, well before that note sounds. Stopped, every
+ * track is awake. Buses, returns and audio tracks never sleep; nor does a track with a Pump.
+ */
+const awakeUntil = new Map<string, number>();
+/** How long a track played from outside the song (a keyboard) stays awake */
+const HELD_SECONDS = 30;
+/** Seconds a track is kept awake after its last note ends: for its release, and longer for its echoes */
+const tailOf = (lt: LiveTrack) => (lt.applied?.fx.reverb.on || lt.applied?.fx.echo.on || lt.applied?.fx.chorus.on ? 14 : 6);
+let sleepTimer = 0;
+
+function wake(trackId: string, lt: LiveTrack, until: number) {
+  if ((awakeUntil.get(trackId) ?? 0) < until) awakeUntil.set(trackId, until);
+  lt.strip.sleep(false);
+}
+
+const canSleep = (lt: LiveTrack) => {
+  const kind = INSTRUMENTS[lt.instrumentKey]?.kind;
+  return !lt.instrument.clipBus && kind !== 'bus' && kind !== 'return' && !lt.applied?.fx.pump.on && !lt.applied?.isArmed;
+};
+
+/** What the scheduler plays on a track, at `time` for `seconds`: it stays awake until that's over and has rung out. */
+export function trackActivity(trackId: string, time: number, seconds: number): void {
+  const lt = live.get(trackId);
+  if (lt) wake(trackId, lt, time + seconds + tailOf(lt));
+}
+
+/** Check for tracks to put to sleep while the song plays; wake them all when it stops. */
+function watchSleep() {
+  const transport = liveMix.bus.context.transport;
+  const check = () => {
+    const playing = transport.state === 'started';
+    const now = liveMix.bus.context.currentTime;
+    for (const [id, lt] of live) {
+      if (!playing || !canSleep(lt)) {
+        lt.strip.sleep(false);
+        continue;
+      }
+      if (now > (awakeUntil.get(id) ?? 0)) lt.strip.sleep(true);
+    }
+    if (!playing) awakeUntil.clear();
+  };
+  // A track just started with nothing to play for a while goes to sleep after a moment
+  transport.on('start', () => {
+    const now = liveMix.bus.context.currentTime;
+    for (const id of live.keys()) awakeUntil.set(id, Math.max(awakeUntil.get(id) ?? 0, now + 2));
+  });
+  transport.on('stop', check);
+  sleepTimer = window.setInterval(check, 500);
 }
 
 /** Where an Audio track's clips play, muted or not (its strip silences it, and un-muting mid-clip is then heard at once). */
@@ -334,8 +403,10 @@ export function releaseAllLiveVoices(): void {
 
 /** Play notes right now through a track's instrument and effects (piano-roll previews). */
 export function previewTrackNotes(trackId: string, notes: PlayableNote[]): void {
-  const instrument = live.get(trackId)?.instrument;
-  if (instrument && notes.length) safely(() => instrument.play(notes, Tone.now()));
+  const lt = live.get(trackId);
+  if (!lt || !notes.length) return;
+  wake(trackId, lt, liveMix.bus.context.currentTime + HELD_SECONDS);
+  safely(() => lt.instrument.play(notes, Tone.now()));
 }
 
 /**

@@ -42,6 +42,7 @@ import { AddTrackMenu } from './AddTrackMenu';
 import { useUiStore } from '../../store/uiStore';
 import { useVideoStore } from '../../store/videoStore';
 import { laneTops } from './rows';
+import { useSkipOffscreen } from '../offscreen';
 import { trackRows } from '../../store/folders';
 import { FolderRow } from './FolderRow';
 import { TrackMenu, type TrackMenuState } from './TrackMenu';
@@ -118,6 +119,17 @@ const RulerUnitsToggle: React.FC = () => {
  * Premiere-style arrangement timeline: toolbar, ruler with loop brackets,
  * sticky track headers, clip lanes and a playhead spanning every lane.
  */
+/** A track's row (header and lane), skipped while it's scrolled out of sight (see offscreen.ts). */
+const TrackRow: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const row = useRef<HTMLDivElement>(null);
+  useSkipOffscreen(row);
+  return (
+    <div ref={row} className="flex">
+      {children}
+    </div>
+  );
+};
+
 export const Timeline: React.FC = () => {
   const tracks = useTimelineStore((s) => s.tracks);
   const zoom = useTimelineStore((s) => s.zoom);
@@ -423,10 +435,10 @@ export const Timeline: React.FC = () => {
               row.kind === 'folder' ? (
                 <FolderRow key={`folder-${row.folder.id}`} folder={row.folder} members={row.members} />
               ) : (
-                <div key={row.track.id} className="flex">
+                <TrackRow key={row.track.id}>
                   <TrackHeader track={row.track} onOpenMenu={setMenu} onTrackMenu={setTrackMenu} />
                   <TrackLane track={row.track} originRef={rulerRef} onOpenMenu={setMenu} />
-                </div>
+                </TrackRow>
               )
             )}
 

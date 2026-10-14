@@ -307,7 +307,20 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
   `liveView` takes them through its `autoFrozen` hook when the fingerprint still matches. Renders
   finished while playing wait in `pending` until stop. `renderTrackChannels` (freezeActions.ts) is
   the shared render. Heavy test song: audio-thread load 73% → 33%, 38 tracks, 208 MB, about a
-  minute to settle.
+  minute to settle. A render pauses between steps while the song plays (`hold` in RenderOptions);
+  a track whose render didn't fit is remembered (`tooBig`) and one that can't fit isn't rendered
+  (it used to re-render the same track forever once the budget was full).
+- **Sleeping channels** (`liveTracks.ts`, the strip's `sleep`): while playing, a track whose last
+  scheduled note (plus a tail: 6 s, 14 s with reverb/delay/chorus inserts) is over is cut off after
+  its `duck` gain (output, sends, meter taps), so the audio thread skips its strip and instrument.
+  The scheduler's `onActivity` and `scheduledInstrument` wake it ahead of its next note; keyboard
+  play (`getLiveInstrument`) and previews keep it awake 30 s. Never: buses, returns, audio/frozen
+  tracks, Pumps, armed tracks; everything wakes on stop. Idle Web Audio nodes are not free (about
+  3% of the audio thread per 100 here): a 37-track orchestral song went from 67% to 41%.
+- **Off-screen rows** (`src/components/offscreen.ts`): timeline rows and mixer strips out of sight
+  get `content-visibility: hidden` (not `auto`, which didn't help); hidden strips' meters aren't
+  read. The playhead line moves by style, not render. On the same song the page's main thread while
+  playing went from about 90% to 60%.
 - **Sampler voice limits** (`samplerManager.ts`): notes stop at their recording's last audible
   sample, releases end below -70 dB, at most 3 notes per pitch and 64 per instrument (oldest fades
   over ~50 ms). Renders differ from before by about -60 dB.

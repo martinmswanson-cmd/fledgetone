@@ -10,7 +10,7 @@ import { applyTempoAt, barToTicks, getLiveTempo, scheduleTempo, setLiveTempo, sw
 import type { Tempo } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
-import { getLiveClipBus, onClipBusRebuilt, getLiveInstrument, pumpOnKick, pumpOnTrack, releaseAllLiveVoices } from './liveTracks';
+import { getLiveClipBus, onClipBusRebuilt, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, trackActivity } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
@@ -145,7 +145,13 @@ export function createClipSchedule(
   onKick?: (trackId: string, time: number) => void,
   swing: () => number = () => 0,
   /** Every note group of every track as it plays (Pumps that follow a track) */
-  onNotes?: (trackId: string, time: number) => void
+  onNotes?: (trackId: string, time: number) => void,
+  /**
+   * Everything a track plays (notes, bends, controllers), at `time` for `seconds` (its longest
+   * note; 0 for the rest): the live mix wakes a sleeping track's channel for it (see sleep in
+   * liveTracks.ts)
+   */
+  onActivity?: (trackId: string, time: number, seconds: number) => void
 ): ClipSchedule {
   let byTick = new Map<number, NoteGroup[]>();
   let entries = new Map<string, ClipEntry>();
@@ -245,6 +251,10 @@ export function createClipSchedule(
         if (instrument) safely(() => playGroup(instrument, { trackId, notes, seeds, swung }, time));
       }
 
+      if (onActivity) {
+        const spb = 240 / transport.bpm.value;
+        for (const group of groups) onActivity(group.trackId, tickTime + lateOf(group), group.notes.reduce((most, n) => Math.max(most, durationToBars(n.duration) * spb), 0));
+      }
       if (onNotes) for (const group of groups) if (!group.pitch && !group.cc) onNotes(group.trackId, tickTime + lateOf(group));
       if (!onKick) return;
       for (const group of groups) {
@@ -302,7 +312,7 @@ let liveSwing = 0;
 
 /** Bring the live Transport's events in line with the timeline clips. */
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
-  liveSchedule ??= createClipSchedule(Tone.getTransport(), getLiveInstrument, pumpOnKick, () => liveSwing, pumpOnTrack);
+  liveSchedule ??= createClipSchedule(Tone.getTransport(), scheduledInstrument, pumpOnKick, () => liveSwing, pumpOnTrack, trackActivity);
   liveSchedule.update(tracks, clips);
   // Audio clips play their sound files on the live mix's own Transport (the global one is the
   // export's while a WAV render sets up)

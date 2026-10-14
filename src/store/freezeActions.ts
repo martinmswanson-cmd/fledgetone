@@ -60,7 +60,7 @@ export interface TrackRender {
  * holds the global audio context. Null when the track has no clips, plays recordings already, or
  * is silent.
  */
-export async function renderTrackChannels(trackId: string, onProgress?: (fraction: number) => void): Promise<TrackRender | null> {
+export async function renderTrackChannels(trackId: string, onProgress?: (fraction: number) => void, hold?: () => Promise<void> | void): Promise<TrackRender | null> {
   const store = useTimelineStore.getState();
   const track = store.tracks.find((t) => t.id === trackId);
   if (!track || isAudioKind(track.instrumentKey)) return null;
@@ -87,6 +87,7 @@ export async function renderTrackChannels(trackId: string, onProgress?: (fractio
       masterFx: { reverbDecay: store.masterReverbDecay, delayTime: store.masterDelayTime, delayFeedback: store.masterDelayFeedback },
       ending: 'ringOut',
       sampleRate,
+      hold,
     },
     subject,
     onProgress
