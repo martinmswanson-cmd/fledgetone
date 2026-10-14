@@ -20,11 +20,16 @@ npm install
 npm run dev            # dev server at http://localhost:5173
 npm test               # unit tests
 npm run build:single   # dist-single/index.html: the whole app in one HTML file
+npm run build:site     # dist-site/: fledgetone.com, the home page at / and the app at /app/
 ```
 
 `build:single` inlines the scripts, styles and icon into one file that can be hosted anywhere;
 that's the file published as `fledgetone.html` on twobirdsworkshop.com. The real instruments'
 recordings (`public/fledgetone-samples/`) are hosted next to it.
+
+`build:site` is what Netlify publishes on fledgetone.com (see `netlify.toml`): the home page in
+`site/` (plain HTML and CSS, no build step of its own) at `/`, and the app built under `/app/`.
+Old links to the app at the root (`fledgetone.com/#s=...`) are forwarded to `/app/`.
 
 ## Finding your way around
 

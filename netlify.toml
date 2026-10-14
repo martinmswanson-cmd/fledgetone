@@ -1,22 +1,46 @@
-# fledgetone.com: Netlify builds the app from this repository on every push to master.
-# The GPL plugins are never published (they're only for builds made with npm run build:full),
-# so the build removes their folder from what Vite copied out of public/.
+# fledgetone.com: Netlify builds the site from this repository on every push to master. The home
+# page (site/) is at /, the studio at /app/ (npm run build:site, see scripts/build-site.mjs). The
+# GPL plugins are never published (they're only for builds made with npm run build:full), so the
+# build leaves their folder out.
 [build]
-  command = "npm run build && rm -rf dist/fledgetone-plugins/gpl"
-  publish = "dist"
+  command = "npm run build:site"
+  publish = "dist-site"
 
 [build.environment]
   NODE_VERSION = "22"
 
+# The studio used to be at the root: its old addresses go to /app/ (share links, #s=..., are
+# forwarded by a line of script in site/index.html, since the part after # never reaches a server)
+[[redirects]]
+  from = "/fledgetone-samples/*"
+  to = "/app/fledgetone-samples/:splat"
+  status = 301
+
+[[redirects]]
+  from = "/fledgetone-plugins/*"
+  to = "/app/fledgetone-plugins/:splat"
+  status = 301
+
 # Instrument recordings and plugins rarely change: let browsers keep them a day
 [[headers]]
-  for = "/fledgetone-samples/*"
+  for = "/app/fledgetone-samples/*"
   [headers.values]
     Cache-Control = "public, max-age=86400"
     Access-Control-Allow-Origin = "*"
 
 [[headers]]
-  for = "/fledgetone-plugins/*"
+  for = "/app/fledgetone-plugins/*"
   [headers.values]
     Cache-Control = "public, max-age=86400"
     Access-Control-Allow-Origin = "*"
+
+# The app's and the home page's built files carry a hash or rarely change
+[[headers]]
+  for = "/app/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/img/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

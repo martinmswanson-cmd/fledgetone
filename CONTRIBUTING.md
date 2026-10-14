@@ -305,9 +305,9 @@ have the right to contribute it.
   redistribution and modification, and an entry in `src/credits.ts`.
 - **No ripped or "found" material**: no samples from commercial libraries or records, no presets
   copied from commercial products, and no artist or song names in anything we ship.
-- **The website build** (`build:single`) leaves the GPL plugins out until the source is public;
-  the full build (`build:full`) has them. Don't copy `public/fledgetone-plugins/gpl/` anywhere
-  the website build is published.
+- **The website builds** (`build:single`, and `build:site` for fledgetone.com) leave the GPL
+  plugins out until the source is public; the full build (`build:full`) has them. Don't copy
+  `public/fledgetone-plugins/gpl/` anywhere a website build is published.
 
 ## Being kind
 

@@ -45,6 +45,7 @@ npx oxlint             # lint (3 known warnings: Playhead.tsx x2, SoundAuditionP
 npm test               # node --test scripts/*.test.mjs
 npm run build          # production build
 npm run build:single   # the one-file site (dist-single/index.html)
+npm run build:site     # fledgetone.com: home page (site/) at /, the app at /app/ (Netlify runs this)
 npm run guide-tables   # rewrite GUIDE.md's instrument list and credits from the catalog
 npm run codemap        # rewrite docs/CODEMAP.md from the files' summary comments
 ```
