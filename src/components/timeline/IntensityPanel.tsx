@@ -135,7 +135,7 @@ export const IntensityPanel: React.FC = () => {
       <div className="flex flex-col gap-0.5 max-h-40 overflow-y-auto">
         {tracks.map((t) => (
           <div key={t.id} className="flex items-center gap-2 text-forge-text">
-            <input type="checkbox" checked={!t.isMuted} onChange={(e) => st().setTrackMuted(t.id, !e.target.checked)} className="accent-emerald-400" aria-label={`${t.name} on`} />
+            <input type="checkbox" checked={!t.isMuted} onChange={() => st().toggleMute(t.id)} className="accent-emerald-400" aria-label={`${t.name} on`} />
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: t.color }} />
             <span className="truncate flex-1 min-w-0">{t.name}</span>
             <select

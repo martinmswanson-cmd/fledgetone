@@ -488,8 +488,6 @@ interface TimelineState {
   toggleFolderSolo: (folderId: string) => void;
   setTrackInstrument: (trackId: string, instrumentKey: InstrumentKey) => void;
   toggleMute: (trackId: string) => void;
-  /** Mute or unmute without an undo step (the game preview switching layers while it plays). */
-  setTrackMuted: (trackId: string, muted: boolean) => void;
   toggleSolo: (trackId: string) => void;
   toggleArm: (trackId: string) => void;
   setTrackVolume: (trackId: string, db: number) => void;
@@ -1904,9 +1902,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
 
     toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted }), true),
-    setTrackMuted: (id, muted) => {
-      if (get().tracks.find((t) => t.id === id)?.isMuted !== muted) updateTrack(id, () => ({ isMuted: muted }));
-    },
     toggleSolo: (id) => updateTrack(id, (t) => ({ isSoloed: !t.isSoloed }), true),
 
     // One track records at a time: arming one disarms the others, and selects it, so what's played

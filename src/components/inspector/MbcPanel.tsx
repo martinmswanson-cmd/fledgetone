@@ -66,7 +66,10 @@ export const MbcControls: React.FC<{ track: Track; wide?: boolean }> = ({ track,
                 <span className="ml-1 font-normal text-forge-muted">{i === 0 ? `< ${hz(m.lowFreq)}` : i === 1 ? `${hz(m.lowFreq)}–${hz(m.highFreq)}` : `> ${hz(m.highFreq)}`}</span>
               </span>
               <label className="flex items-center gap-1 text-forge-muted" title="Let this band through uncompressed">
-                <input type="checkbox" checked={!!b.bypass} onChange={(e) => setBand(i, { bypass: e.target.checked || undefined })} disabled={off} />
+                <input type="checkbox" checked={!!b.bypass} onChange={(e) => {
+                    useTimelineStore.getState().checkpoint();
+                    setBand(i, { bypass: e.target.checked || undefined });
+                  }} disabled={off} />
                 bypass
               </label>
             </div>

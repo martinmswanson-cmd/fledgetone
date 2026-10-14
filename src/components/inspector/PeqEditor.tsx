@@ -8,6 +8,7 @@ import { bandDb, hasGain, hasQ, logFrequencies, peqDb } from '../../audio/peq';
 import { liveTrackSpectrum } from '../../audio/liveTracks';
 import { liveMix } from '../../audio/engine';
 import { InsertPanel } from './InsertFx';
+import { UndoableRange } from '../UndoableRange';
 
 /**
  * The parametric EQ, drawn: the curve the bands make (exactly what the filters do), the track's
@@ -57,6 +58,12 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
 
   const set = (next: PeqBand[]) => useTimelineStore.getState().setTrackFx(track.id, 'peq', { bands: next });
   const update = (i: number, patch: Partial<PeqBand>) => set(bands.map((b, k) => (k === i ? { ...b, ...patch } : b)));
+  /** A change of its own undo step (the band's switch and shape: the sliders are UndoableRanges) */
+  const recorded = (change: () => void) => {
+    useTimelineStore.getState().checkpoint();
+    change();
+  };
+  const wheelAt = useRef(0);
 
   // The total curve and the selected band's own shape
   const freqs = useMemo(() => logFrequencies(Math.max(60, Math.round(width / 3))), [width]);
@@ -173,6 +180,9 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
         onWheel={(e) => {
           if (!b || !hasQ(b.type)) return;
           e.preventDefault();
+          // A turn of the wheel (notches less than a second apart) is one undo step
+          if (performance.now() - wheelAt.current > 800) useTimelineStore.getState().checkpoint();
+          wheelAt.current = performance.now();
           update(sel, { q: Math.max(PEQ_Q_MIN, Math.min(PEQ_Q_MAX, Math.round(b.q * (e.deltaY < 0 ? 1.12 : 1 / 1.12) * 100) / 100)) });
         }}
         title="Drag a dot: frequency and gain (Shift: fine). Wheel: width. Double-click: add a band. Right-click a dot: remove it."
@@ -230,9 +240,9 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
             {sel + 1}
           </span>
           <label className="flex items-center gap-1">
-            <input type="checkbox" checked={b.on} onChange={(e) => update(sel, { on: e.target.checked })} aria-label={`Band ${sel + 1} on`} />
+            <input type="checkbox" checked={b.on} onChange={(e) => recorded(() => update(sel, { on: e.target.checked }))} aria-label={`Band ${sel + 1} on`} />
           </label>
-          <select value={b.type} onChange={(e) => update(sel, { type: e.target.value as PeqType })} className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-forge-text" aria-label="Band shape">
+          <select value={b.type} onChange={(e) => recorded(() => update(sel, { type: e.target.value as PeqType }))} className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-forge-text" aria-label="Band shape">
             {PEQ_TYPES.map((t) => (
               <option key={t} value={t}>
                 {TYPE_LABEL[t]}
@@ -241,20 +251,20 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
           </select>
           <label className="flex items-center gap-1">
             FREQ
-            <input type="range" min={0} max={1000} value={Math.round((xOf(b.freq) / width) * 1000)} onChange={(e) => update(sel, { freq: Math.round(hzOf((Number(e.target.value) / 1000) * width)) })} className={big ? 'w-40' : 'w-20'} aria-label="Band frequency" />
+            <UndoableRange min={0} max={1000} value={Math.round((xOf(b.freq) / width) * 1000)} onValue={(v) => update(sel, { freq: Math.round(hzOf((v / 1000) * width)) })} className={big ? 'w-40' : 'w-20'} aria-label="Band frequency" />
             <span className="w-14 text-forge-text tabular-nums">{fmtHz(b.freq)}</span>
           </label>
           {hasGain(b.type) && (
             <label className="flex items-center gap-1">
               GAIN
-              <input type="range" min={-PEQ_GAIN_MAX} max={PEQ_GAIN_MAX} step={0.1} value={b.gain} onChange={(e) => update(sel, { gain: Number(e.target.value) })} onDoubleClick={() => update(sel, { gain: 0 })} className={big ? 'w-32' : 'w-16'} aria-label="Band gain" />
+              <UndoableRange min={-PEQ_GAIN_MAX} max={PEQ_GAIN_MAX} step={0.1} value={b.gain} onValue={(v) => update(sel, { gain: v })} resetValue={0} className={big ? 'w-32' : 'w-16'} aria-label="Band gain" />
               <span className="w-14 text-forge-text tabular-nums">{fmtDb(b.gain)}</span>
             </label>
           )}
           {hasQ(b.type) && (
             <label className="flex items-center gap-1">
               Q
-              <input type="range" min={Math.log(PEQ_Q_MIN)} max={Math.log(PEQ_Q_MAX)} step={0.01} value={Math.log(b.q)} onChange={(e) => update(sel, { q: Math.round(Math.exp(Number(e.target.value)) * 100) / 100 })} className={big ? 'w-28' : 'w-14'} aria-label="Band width (Q)" />
+              <UndoableRange min={Math.log(PEQ_Q_MIN)} max={Math.log(PEQ_Q_MAX)} step={0.01} value={Math.log(b.q)} onValue={(v) => update(sel, { q: Math.round(Math.exp(v) * 100) / 100 })} className={big ? 'w-28' : 'w-14'} aria-label="Band width (Q)" />
               <span className="w-8 text-forge-text tabular-nums">{b.q.toFixed(2)}</span>
             </label>
           )}
