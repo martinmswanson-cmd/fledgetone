@@ -46,7 +46,7 @@ test('the sustain pedal holds notes let go while it is down', () => {
   assert.equal(x.sustainNotes(notes, undefined, 4), notes);
 });
 
-test('pitch events follow the bend, add vibrato where the wheel is up, and reset at the end', () => {
+test('pitch events follow the bend, add vibrato where the vibrato lane is up, and reset at the end', () => {
   assert.deepEqual(x.pitchEvents({ lengthBars: 2, expression: {} }), []);
   const ev = x.pitchEvents({ lengthBars: 2, expression: { bend: [{ at: 0, value: 0 }, { at: 1, value: 2 }] } });
   near(ev[0].cents, 0);
@@ -55,15 +55,15 @@ test('pitch events follow the bend, add vibrato where the wheel is up, and reset
   const after = ev.filter((e) => e.at > 1 + 1e-9);
   assert.equal(after.length, 16);
   assert.ok(after.slice(0, -1).every((e) => e.cents === 200));
-  assert.deepEqual(after[after.length - 1], { at: 2, cents: 0, mod: 0, end: true });
+  assert.deepEqual(after[after.length - 1], { at: 2, cents: 0, vib: 0, end: true, pitch: true });
   // At rest before the bend is said again every 16th too, so a loop back into it unbends at once
   const rest = ev.filter((e) => e.at < 1 - 1e-9 && e.at < 0.5 && e.cents === 0);
   assert.ok(rest.length >= 1);
   const late = x.pitchEvents({ lengthBars: 4, expression: { bend: [{ at: 3, value: 0 }, { at: 3.5, value: 2 }] } });
   assert.equal(late.filter((e) => e.at < 3 && e.cents === 0).length, 48);
-  const vib = x.pitchEvents({ lengthBars: 1, expression: { mod: [{ at: 0, value: 1 }] } });
+  const vib = x.pitchEvents({ lengthBars: 1, expression: { vibrato: [{ at: 0, value: 1 }] } });
   assert.equal(vib.length, 129);
-  near(x.pitchCents({ at: 0, cents: 0, mod: 1 }, 1 / (4 * x.VIBRATO_HZ)), x.VIBRATO_CENTS, 1e-6);
+  near(x.pitchCents({ at: 0, cents: 0, vib: 1 }, 1 / (4 * x.VIBRATO_HZ)), x.VIBRATO_CENTS, 1e-6);
 });
 
 test('lanes from a file are tidied and clamped', () => {
@@ -78,7 +78,23 @@ test('the mod wheel is offered as dynamics only by clips with a wheel lane', () 
   const bendOnly = x.pitchEvents({ lengthBars: 1, expression: { bend: [{ at: 0, value: 1 }] } });
   assert.ok(bendOnly.length && bendOnly.every((e) => e.dyn === undefined));
   const wheel = x.pitchEvents({ lengthBars: 1, expression: { mod: [{ at: 0, value: 0.2 }, { at: 1, value: 0.9 }] } });
-  assert.ok(wheel.filter((e) => !e.end).every((e) => e.dyn === e.mod));
+  const live = wheel.filter((e) => !e.end);
+  near(live[0].dyn, 0.2);
+  assert.ok(live.every((e, i) => i === 0 || e.dyn >= live[i - 1].dyn), 'rising');
+  assert.ok(live.every((e) => e.vib === 0 && !e.pitch), 'no vibrato, no bend');
   assert.equal(wheel.at(-1).end, true);
   assert.equal(wheel.at(-1).dyn, undefined);
+});
+
+test("an older file's mod wheel lane (vibrato then) opens as the Vibrato lane", async () => {
+  const { parseProject, serializeProject, PROJECT_FORMAT, PROJECT_VERSION } = await import('../src/store/project.ts');
+  const track = { id: 't', name: 'T', color: '#fff', instrumentKey: 'violin', isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, reverbSend: 0, delaySend: 0 };
+  const clip = { id: 'c', trackId: 't', name: 'c', startBar: 1, lengthBars: 1, notes: [], expression: { mod: [{ at: 0, value: 0.3 }] } };
+  const base = { format: PROJECT_FORMAT, version: PROJECT_VERSION, name: 'x', bpm: 100, swing: 0, loopRegion: { inBar: 1, outBar: 2, enabled: false }, tracks: [track], masterFx: { reverbDecay: 2, delayTime: '8n', delayFeedback: 0.3 } };
+  const old = parseProject(structuredClone({ ...base, clips: [clip] }));
+  assert.deepEqual(old.clips[0].expression, { vibrato: [{ at: 0, value: 0.3 }] });
+  // Saved now, the lane is the mod wheel (dynamics) and stays so
+  const saved = serializeProject({ ...old, clips: [{ ...old.clips[0], expression: { mod: [{ at: 0, value: 0.5 }] } }] });
+  assert.equal(saved.modWheel, 'dynamics');
+  assert.deepEqual(parseProject(JSON.parse(JSON.stringify(saved))).clips[0].expression, { mod: [{ at: 0, value: 0.5 }] });
 });

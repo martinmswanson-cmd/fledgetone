@@ -20,7 +20,8 @@ interface LaneSpec {
 }
 export const EXPR_LANES: ReadonlyArray<LaneSpec> = [
   { lane: 'bend', label: 'Pitch bend', min: -12, max: 12, step: false },
-  { lane: 'mod', label: 'Mod wheel', min: 0, max: 1, step: false },
+  { lane: 'mod', label: 'Mod wheel (dynamics)', min: 0, max: 1, step: false },
+  { lane: 'vibrato', label: 'Vibrato', min: 0, max: 1, step: false },
   { lane: 'sustain', label: 'Sustain pedal', min: 0, max: 1, step: true },
 ];
 
@@ -96,7 +97,7 @@ export function tidyLane(points: readonly ExprPoint[], lane: ExprLane): ExprPoin
 /** True when the clip has any expression that changes how it plays. */
 export function hasExpression(clip: Pick<Clip, 'expression'>): boolean {
   const e = clip.expression;
-  return !!e && (['bend', 'mod', 'sustain'] as const).some((k) => e[k]?.some((p) => p.value !== 0));
+  return !!e && (['bend', 'mod', 'vibrato', 'sustain'] as const).some((k) => e[k]?.some((p) => p.value !== 0));
 }
 
 /**
@@ -119,46 +120,52 @@ export function sustainNotes<N extends { startOffset: number; duration: string }
   });
 }
 
-/** One pitch event: from `at` bars into the clip, bend this many cents, vibrato this deep (0 to 1). */
+/**
+ * One expression event: from `at` bars into the clip, bend this many cents, vibrato this deep
+ * (0 to 1), and the mod wheel's dynamics (0 soft to 1 loud) when the clip has a mod wheel lane.
+ */
 export interface PitchEvent {
   /** The clip's end: back to rest (it goes before a clip starting at the same moment) */
   end?: boolean;
   at: number;
   cents: number;
-  mod: number;
-  /** The mod wheel as dynamics (InstrumentDef.dynamics): present when the clip has a mod wheel lane */
+  vib: number;
   dyn?: number;
+  /** The clip has a bend or vibrato lane (else these events only carry the dynamics) */
+  pitch?: boolean;
 }
 
 /**
- * The pitch events that play the clip's bend and mod wheel: every `step` bars where either moves
- * (or the wheel is up, for the vibrato to be drawn), and a reset to rest at the clip's end.
- * None when both rest throughout.
+ * The events that play the clip's bend, vibrato and mod wheel (dynamics): every `step` bars where
+ * one moves (or the vibrato is up, for it to be drawn), and a reset to rest at the clip's end.
+ * None when all rest throughout.
  */
 export function pitchEvents(clip: Pick<Clip, 'lengthBars' | 'expression'>, step = 1 / 128): PitchEvent[] {
   const bend = clip.expression?.bend;
+  const vibrato = clip.expression?.vibrato;
   const mod = clip.expression?.mod;
-  if (!bend?.some((p) => p.value !== 0) && !mod?.some((p) => p.value !== 0)) return [];
-  const out: PitchEvent[] = [];
   const wheel = !!mod?.some((p) => p.value !== 0);
+  if (!bend?.some((p) => p.value !== 0) && !vibrato?.some((p) => p.value !== 0) && !wheel) return [];
+  const out: PitchEvent[] = [];
+  const pitch = !!bend?.some((p) => p.value !== 0) || !!vibrato?.some((p) => p.value !== 0);
   let last: PitchEvent | null = null;
   const len = clip.lengthBars;
   for (let k = 0; k * step < len - EPS; k++) {
     const at = k * step;
-    const value = exprValueAt(mod, at);
-    const ev: PitchEvent = { at, cents: exprValueAt(bend, at) * 100, mod: value, ...(wheel ? { dyn: value } : {}) };
+    const ev: PitchEvent = { at, cents: exprValueAt(bend, at) * 100, vib: exprValueAt(vibrato, at), ...(wheel ? { dyn: exprValueAt(mod, at) } : {}), ...(pitch ? { pitch } : {}) };
     // Steady and without vibrato: nothing new to say (but a held value, at rest included, is said
     // again every 16th, so playback started or looped back into it is put right at once)
-    if (last && ev.mod === 0 && last.mod === 0 && Math.abs(ev.cents - last.cents) < 0.01 && at - last.at < 1 / 16 - EPS) continue;
+    const steady = !last || ev.dyn === undefined || Math.abs(ev.dyn - (last.dyn ?? 0)) < 0.002;
+    if (last && steady && ev.vib === 0 && last.vib === 0 && Math.abs(ev.cents - last.cents) < 0.01 && at - last.at < 1 / 16 - EPS) continue;
     out.push(ev);
     last = ev;
   }
-  if (last && (last.cents !== 0 || last.mod !== 0)) out.push({ at: len, cents: 0, mod: 0, end: true });
+  if (last && (last.cents !== 0 || last.vib !== 0 || last.dyn !== undefined)) out.push({ at: len, cents: 0, vib: 0, end: true, ...(pitch ? { pitch } : {}) });
   return out;
 }
 
 /** The bend in cents at audio time `time` for an event: its bend plus the vibrato's swing then. */
-export const pitchCents = (ev: PitchEvent, time: number) => ev.cents + (ev.mod ? ev.mod * VIBRATO_CENTS * Math.sin(2 * Math.PI * VIBRATO_HZ * time) : 0);
+export const pitchCents = (ev: PitchEvent, time: number) => ev.cents + (ev.vib ? ev.vib * VIBRATO_CENTS * Math.sin(2 * Math.PI * VIBRATO_HZ * time) : 0);
 
 /** Expression lanes from a project file (absent when there are none). */
 export function normalizeExpression(raw: unknown): ClipExpression | undefined {

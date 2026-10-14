@@ -167,9 +167,9 @@ export interface InstrumentDef {
    */
   bowed?: { skip: number; solo?: boolean };
   /**
-   * Recorded at several loudnesses: the mod wheel (CC 1) is its dynamics, crossfading the soft and
-   * loud recordings while a note sounds (as orchestral sample libraries do), instead of vibrato
-   * (the recordings have their own).
+   * Recorded at several loudnesses and sustained: the mod wheel (CC 1) crossfades the soft and loud
+   * recordings while a note sounds (as orchestral sample libraries do). Every other instrument
+   * takes the wheel as level and brightness (see instruments.ts).
    */
   dynamics?: boolean;
   /** Its notes wobble at their clip's wobble rate (Clip.wobble), chosen in the piano roll */
@@ -424,7 +424,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realTremolo: {
     key: 'realTremolo', name: 'Tremolo Section (Real)', blurb: 'Recorded strings trembling the bow: tension, suspense', color: '#e11d48', category: 'Orchestra', kind: 'sampled', range: realRange('strings-tremolo'),
-    samples: real('strings-tremolo', 0.6), gain: 11, taper: [69, 2.5],
+    samples: real('strings-tremolo', 0.6), gain: 11, taper: [69, 2.5], dynamics: true,
   },
   realSoloViolin: {
     key: 'realSoloViolin', name: 'Solo Violin (Real)', blurb: 'One recorded violin with vibrato, soft and loud: melodies', color: '#f87171', category: 'Orchestra', kind: 'sampled', range: realRange('solo-violin'),
@@ -448,19 +448,19 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realOboe: {
     key: 'realOboe', name: 'Oboe (Real)', blurb: 'A recorded oboe with vibrato: plaintive, pastoral', color: '#a3e635', category: 'Orchestra', kind: 'sampled', range: realRange('oboe'),
-    samples: real('oboe', 0.3), gain: 0.5, taper: [73, 0.5],
+    samples: real('oboe', 0.3), gain: 0.5, taper: [73, 0.5], dynamics: true,
   },
   realClarinet: {
     key: 'realClarinet', name: 'Clarinet (Real)', blurb: 'A recorded clarinet: soft, medium and loud, from dark low notes to a bright top', color: '#4ade80', category: 'Orchestra', kind: 'sampled', range: realRange('clarinet'),
-    samples: real('clarinet', 0.3), gain: 5, taper: [71, 10],
+    samples: real('clarinet', 0.3), gain: 5, taper: [71, 10], dynamics: true,
   },
   realBassoon: {
     key: 'realBassoon', name: 'Bassoon (Real)', blurb: 'A recorded bassoon with vibrato: woody, comic or noble', color: '#a16207', category: 'Orchestra', kind: 'sampled', range: realRange('bassoon'),
-    samples: real('bassoon', 0.3), gain: 0.5, taper: [55, 1.5],
+    samples: real('bassoon', 0.3), gain: 0.5, taper: [55, 1.5], dynamics: true,
   },
   realHorn: {
     key: 'realHorn', name: 'French Horn (Real)', blurb: 'A recorded French horn, low and middle register: soft, medium and loud, heroic and warm', color: '#facc15', category: 'Orchestra', kind: 'sampled', range: HORN_RANGE,
-    samples: real('horn', 0.4), gain: 16, taper: [45, 3],
+    samples: real('horn', 0.4), gain: 16, taper: [45, 3], dynamics: true,
   },
   realHornShort: {
     key: 'realHornShort', name: 'French Horn Short (Real)', blurb: 'Recorded horn, short punchy notes: fanfares, hits', color: '#eab308', category: 'Orchestra', kind: 'sampled', range: HORN_RANGE,
@@ -468,7 +468,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realTrumpet: {
     key: 'realTrumpet', name: 'Trumpet (Real)', blurb: 'A recorded trumpet with vibrato: soft and loud', color: '#fde047', category: 'Orchestra', kind: 'sampled', range: realRange('trumpet'),
-    samples: real('trumpet', 0.35), gain: -0.5, taper: [68, 4.5],
+    samples: real('trumpet', 0.35), gain: -0.5, taper: [68, 4.5], dynamics: true,
   },
   realTrumpetShort: {
     key: 'realTrumpetShort', name: 'Trumpet Short (Real)', blurb: 'Recorded trumpet, short stabs: fanfares, ska, funk', color: '#fcd34d', category: 'Orchestra', kind: 'sampled', range: realRange('trumpet-staccato'),
@@ -476,7 +476,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realTrombone: {
     key: 'realTrombone', name: 'Trombone (Real)', blurb: 'A recorded tenor trombone: soft, medium and loud', color: '#d97706', category: 'Orchestra', kind: 'sampled', range: realRange('trombone'),
-    samples: real('trombone', 0.4), gain: 14, taper: [49, 7.5],
+    samples: real('trombone', 0.4), gain: 14, taper: [49, 7.5], dynamics: true,
   },
   realTromboneShort: {
     key: 'realTromboneShort', name: 'Trombone Short (Real)', blurb: 'Recorded trombone, short notes at four loudnesses: stabs, hits', color: '#b45309', category: 'Orchestra', kind: 'sampled', range: realRange('trombone-staccato'),
@@ -484,7 +484,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realTuba: {
     key: 'realTuba', name: 'Tuba (Real)', blurb: 'A recorded tuba: soft, medium and loud, a deep brass floor', color: '#92400e', category: 'Orchestra', kind: 'sampled', range: realRange('tuba'),
-    samples: real('tuba', 0.4), gain: 4, taper: [44, 5],
+    samples: real('tuba', 0.4), gain: 4, taper: [44, 5], dynamics: true,
   },
   realGrandPiano: {
     key: 'realGrandPiano', name: 'Concert Grand (Real)', blurb: 'A recorded concert grand at four loudnesses: soft and warm to bright and hard', color: '#f8fafc', category: 'Keys & Synths', kind: 'sampled', range: realRange('grand-piano'),
@@ -516,11 +516,11 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realAltoSax: {
     key: 'realAltoSax', name: 'Alto Sax (Real)', blurb: 'A recorded alto saxophone, soft and loud: jazz, pop, soul', color: '#f59e0b', category: 'Winds & Brass', kind: 'sampled', range: realRange('alto-sax'),
-    samples: real('alto-sax', 0.25), gain: -1.5, taper: [61, 4],
+    samples: real('alto-sax', 0.25), gain: -1.5, taper: [61, 4], dynamics: true,
   },
   realBariSax: {
     key: 'realBariSax', name: 'Baritone Sax (Real)', blurb: 'A recorded 1920s baritone saxophone: big, buzzing low end', color: '#b45309', category: 'Winds & Brass', kind: 'sampled', range: realRange('baritone-sax'),
-    samples: real('baritone-sax', 0.25), gain: 11.5, taper: [49, 4],
+    samples: real('baritone-sax', 0.25), gain: 11.5, taper: [49, 4], dynamics: true,
   },
   realUprightBass: {
     key: 'realUprightBass', name: 'Upright Bass (Real)', blurb: 'A recorded double bass, plucked at four loudnesses: jazz, swing', color: '#155e75', category: 'Bass', kind: 'sampled', range: realRange('upright-bass'),

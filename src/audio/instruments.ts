@@ -320,10 +320,10 @@ const oneShot = (play: TrackInstrument['play']): TrackInstrument['noteOn'] => (n
  */
 export function createInstrument(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions = {}): TrackInstrument {
   const fx = options.pluginFx?.filter((p) => !p.bypass) ?? [];
-  if (!fx.length) return withTaper(key, buildGained(key, output, options));
+  if (!fx.length) return withDynamics(output, (to) => withTaper(key, buildGained(key, to, options)));
   // The track's plugin effects come first, between the instrument and its strip
   const chain = createPluginChain(output, fx);
-  const inst = withTaper(key, buildGained(key, chain.input, options));
+  const inst = withDynamics(chain.input, (to) => withTaper(key, buildGained(key, to, options)));
   return {
     ...inst,
     sendInput: chain.input,
@@ -332,6 +332,66 @@ export function createInstrument(key: InstrumentKey, output: Tone.InputNode, opt
     dispose: () => {
       inst.dispose();
       chain.dispose();
+    },
+  };
+}
+
+/** From the softest to the loudest under the mod wheel's dynamics, in dB (as the layered samplers' DYNAMICS_DB). */
+const WHEEL_DB = 18;
+/** The softest the mod wheel's dynamics make an instrument's top: this many octaves below fully open. */
+const WHEEL_DARK_OCTAVES = 4;
+/** How quickly the dynamics follow the wheel (time constant, s): smooth, without zipper noise. */
+const WHEEL_TC = 0.03;
+
+/**
+ * The mod wheel as dynamics for every instrument (TrackInstrument.dynamics): one recorded at
+ * several loudnesses crossfades them itself (see samplerManager.ts); any other is made quieter and
+ * darker as the wheel comes down, as a softer note of a real instrument is, by a level and a
+ * low-pass between it and `output`. Until a wheel moves, that stage is a plain gain of 1 (the
+ * low-pass is only put in on the first wheel), so a song without a wheel lane sounds as it did.
+ */
+function withDynamics(output: Tone.InputNode, build: (to: Tone.InputNode) => TrackInstrument): TrackInstrument {
+  const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  const level = raw.createGain();
+  Tone.connect(level, output);
+  const inst = build(level);
+  if (inst.dynamics) {
+    return {
+      ...inst,
+      dispose: () => {
+        inst.dispose();
+        level.disconnect();
+      },
+    };
+  }
+  let tone: BiquadFilterNode | null = null;
+  const open = raw.sampleRate / 2 - 1;
+  return {
+    ...inst,
+    dynamics: (value, time) => {
+      if (value === null) {
+        if (!tone) return;
+        level.gain.setTargetAtTime(1, time, WHEEL_TC);
+        tone.frequency.setTargetAtTime(open, time, WHEEL_TC);
+        return;
+      }
+      if (!tone) {
+        tone = raw.createBiquadFilter();
+        tone.type = 'lowpass';
+        tone.Q.value = 0.5;
+        tone.frequency.value = open;
+        level.disconnect();
+        level.connect(tone);
+        Tone.connect(tone, output);
+      }
+      const x = Math.max(0, Math.min(1, value));
+      level.gain.setTargetAtTime(10 ** ((-WHEEL_DB * (1 - x)) / 20), time, WHEEL_TC);
+      tone.frequency.setTargetAtTime(Math.min(open, 20000 * 2 ** (-WHEEL_DARK_OCTAVES * (1 - x))), time, WHEEL_TC);
+    },
+    dispose: () => {
+      inst.dispose();
+      level.disconnect();
+      tone?.disconnect();
     },
   };
 }

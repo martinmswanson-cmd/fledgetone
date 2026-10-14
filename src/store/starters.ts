@@ -176,7 +176,7 @@ const legato = (steps: Step[]): Step[] => steps.map(([s, n, v, d = '16n']): Step
 /** A clip with controller lanes: mod wheel vibrato, pitch bend, the sustain pedal. */
 const withLanes = (c: Clip, expression: ClipExpression): Clip => ({ ...c, expression });
 /** Light mod-wheel vibrato for the whole clip. */
-const VIBRATO: ClipExpression = { mod: [{ at: 0, value: 0.3 }] };
+const VIBRATO: ClipExpression = { vibrato: [{ at: 0, value: 0.3 }] };
 
 // ---------- Synth Designer patches (2.6) ----------
 
@@ -1036,7 +1036,7 @@ function synthwave(): ProjectSnapshot {
       clip(arp, 'Arp', 1, 4, arps, 4),
       clip(bass, 'Pulse', 5, 4, pulse, 3),
       clip(drums, 'Beat', 5, 1, beat, 12),
-      withLanes(clip(lead, 'Lead', 9, 4, melody, 2), { mod: [{ at: 0, value: 0.2 }] }),
+      withLanes(clip(lead, 'Lead', 9, 4, melody, 2), { vibrato: [{ at: 0, value: 0.2 }] }),
     ],
     [[1, 'Night drive'], [5, 'Groove'], [9, 'Lead']],
     master({ on: true, depth: 0.15 }, { on: true, amount: 1.3 })
@@ -1218,8 +1218,8 @@ function celtic(): ProjectSnapshot {
     [
       clip(guitar, 'Strum', 1, 4, strumming, 4),
       clip(bodhran, 'Bodhrán', 1, 1, drum, 16),
-      withLanes(clip(fiddle, 'Reel', 5, 4, reel, 3), { mod: [{ at: 0, value: 0.2 }] }),
-      withLanes(clip(whistle, 'Whistle', 9, 4, harmony, 2), { mod: [{ at: 0, value: 0.2 }] }),
+      withLanes(clip(fiddle, 'Reel', 5, 4, reel, 3), { vibrato: [{ at: 0, value: 0.2 }] }),
+      withLanes(clip(whistle, 'Whistle', 9, 4, harmony, 2), { vibrato: [{ at: 0, value: 0.2 }] }),
       clip(pipes, 'Drone', 13, 4, drone),
     ],
     [[1, 'Intro'], [5, 'Reel'], [9, 'Whistle'], [13, 'Pipes']],
@@ -1299,7 +1299,7 @@ function tavern(): ProjectSnapshot {
       clip(drum, 'Hand drum', 1, 1, drumPart, 16),
       clip(dulcimer, 'Tune', 5, 4, tune, 3),
       clip(accordion, 'Accordion', 9, 4, squeeze, 2),
-      withLanes(clip(recorder, 'Recorder', 13, 4, harmony), { mod: [{ at: 0, value: 0.2 }] }),
+      withLanes(clip(recorder, 'Recorder', 13, 4, harmony), { vibrato: [{ at: 0, value: 0.2 }] }),
     ],
     [[1, 'Intro'], [5, 'Tune'], [9, 'Full tavern']],
     master({ on: false }, { on: true, amount: 1.1 })
@@ -1325,7 +1325,7 @@ function eastern(): ProjectSnapshot {
   ];
   // Each phrase's long last note falls away (a bend of about -70 cents), as a shakuhachi player lets it go
   const fall = (end: number) => [{ at: end - 0.1, value: 0 }, { at: end - 0.01, value: -0.7 }, { at: end, value: 0 }];
-  const lanes: ClipExpression = { mod: [{ at: 0, value: 0.25 }], bend: [{ at: 0, value: 0 }, ...fall(0.5), ...fall(2), ...fall(3), ...fall(4)] };
+  const lanes: ClipExpression = { vibrato: [{ at: 0, value: 0.25 }], bend: [{ at: 0, value: 0 }, ...fall(0.5), ...fall(2), ...fall(3), ...fall(4)] };
   // Low taiko: D2, A2 and G1
   const drums = everyBar(2, (b): Step[] => [[0, 'D2', 0.85, '4n'], [6, 'D2', 0.55, '8n'], [8, 'A2', 0.75, '4n'], ...(b ? [[12, 'G1', 0.65, '8n'] as Step, [13, 'G1', 0.7, '8n'] as Step, [14, 'D2', 0.8, '8n'] as Step] : [[12, 'D2', 0.65, '4n'] as Step])]);
   const drone: Step[] = [[0, ['D3', 'A3', 'D4'], 0.6, '4m']];

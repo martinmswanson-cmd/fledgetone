@@ -4,6 +4,7 @@
  * (noteTools.ts), drum and Slicer rows, the expression lane and the notation view switch.
  * Positions are worked out in 96ths of a bar so notes never drift.
  */
+import { SWELL_SHAPES, swellLane, type SwellShape } from '../../store/swell';
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { NotationView } from './NotationView';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -197,6 +198,7 @@ const TOOLS = [
   { id: 'octaveUp', label: 'Octave up', drums: false },
   { id: 'octaveDown', label: 'Octave down', drums: false },
   { id: 'fitScale', label: 'Fit to scale', drums: false },
+  ...SWELL_SHAPES.map((s) => ({ id: s.id, label: s.label, drums: false })),
 ] as const;
 type ToolId = (typeof TOOLS)[number]['id'];
 
@@ -294,6 +296,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const [lengthUnits, setLengthUnits] = useState(isFxKind(instrument) ? UNITS_PER_BAR : isDrums ? 6 : 12);
   const [velocity, setVelocity] = useState(0.8);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** The expression lane a tool just drew in, to show it */
+  const [laneFocus, setLaneFocus] = useState<{ lane: 'mod'; n: number } | undefined>(undefined);
   const [scale, setScaleState] = useState<Scale | null>(rememberedScale);
   const [chord, setChordState] = useState<ChordId>(() => rememberedChords.get(clip.trackId) ?? 'off');
   const [ghosts, setGhostsState] = useState(rememberedGhosts);
@@ -480,6 +484,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const notes = currentNotes();
     const target = selected.size ? notes.filter((n) => selected.has(n.id)) : notes;
     if (!target.length) return;
+    if (SWELL_SHAPES.some((s) => s.id === tool)) {
+      // A swell is drawn in the mod wheel lane (dynamics), not made of notes: one undo step
+      store.setClipExpression(clip.id, 'mod', swellLane(clip.expression?.mod, target, tool as SwellShape));
+      setLaneFocus((f) => ({ lane: 'mod', n: (f?.n ?? 0) + 1 }));
+      return;
+    }
     const rest = notes.filter((n) => !target.includes(n));
     const bars = clip.lengthBars;
     const grid = gridUnits / UNITS_PER_BAR;
@@ -506,6 +516,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         case 'octaveUp': return transpose(target, 12, lo, hi);
         case 'octaveDown': return transpose(target, -12, lo, hi);
         case 'fitScale': return scale ? fitToScale(target, scale) : target;
+        default: return target;
       }
     })();
     store.checkpoint();
@@ -984,7 +995,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             </div>
           </div>
           {/* Pitch bend, mod wheel and sustain pedal (not for drums and FX) */}
-          {!isDrums && <ExpressionLane clip={clip} keyWidth={KEY_W} barW={UNITS_PER_BAR * unitW} snap={(at) => snapUnits(at * UNITS_PER_BAR) / UNITS_PER_BAR} note={selected.size === 1 ? clip.notes.find((n) => selected.has(n.id)) : undefined} />}
+          {!isDrums && <ExpressionLane clip={clip} keyWidth={KEY_W} barW={UNITS_PER_BAR * unitW} snap={(at) => snapUnits(at * UNITS_PER_BAR) / UNITS_PER_BAR} note={selected.size === 1 ? clip.notes.find((n) => selected.has(n.id)) : undefined} focus={laneFocus} />}
         </div>
       </div>
     </div>

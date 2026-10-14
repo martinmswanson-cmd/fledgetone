@@ -235,13 +235,9 @@ export function createClipSchedule(
         for (const { trackId, pitch } of groups) {
           if (!pitch || !!pitch.end !== ends) continue;
           const instrument = instrumentFor(trackId);
-          // An instrument recorded at several loudnesses plays the mod wheel as dynamics, not vibrato
-          if (instrument?.dynamics) {
-            safely(() => {
-              instrument.dynamics!(pitch.end ? null : (pitch.dyn ?? null), tickTime);
-              instrument.bend?.(pitch.cents, tickTime);
-            });
-          } else if (instrument?.bend) safely(() => instrument.bend!(pitchCents(pitch, tickTime), tickTime));
+          // Bend and vibrato; the mod wheel is dynamics (handed back to velocity at the clip's end)
+          if (pitch.pitch && instrument?.bend) safely(() => instrument.bend!(pitchCents(pitch, tickTime), tickTime));
+          if (instrument?.dynamics && (pitch.dyn !== undefined || pitch.end)) safely(() => instrument.dynamics!(pitch.end ? null : pitch.dyn!, tickTime));
         }
       }
       for (const { trackId, cc } of groups) {

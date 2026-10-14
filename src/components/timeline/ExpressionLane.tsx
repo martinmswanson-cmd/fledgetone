@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { Clip, ExprPoint, NoteEvent } from '../../store/timelineTypes';
 import { durationToBars } from '../../store/timelineTypes';
@@ -31,10 +31,17 @@ interface Props {
   snap: (at: number) => number;
   /** The one note selected (its own expression can be drawn), if any */
   note?: NoteEvent;
+  /** Show this clip lane (a tool just drew in it): `n` changes each time */
+  focus?: { lane: ExprLane; n: number };
 }
 
-export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, note }) => {
+export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, note, focus }) => {
   const [chosen, setMode] = useState<Mode>({ kind: 'clip', lane: 'bend' });
+  useEffect(() => {
+    if (focus) setMode({ kind: 'clip', lane: focus.lane });
+    // (Only when asked again, not on every render)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.n]);
   const [bendRange, setBendRange] = useState(2);
   const svgRef = useRef<SVGSVGElement>(null);
   // A note lane with no note selected shows the clip's bend

@@ -51,6 +51,11 @@ export interface ProjectData {
   fps?: FrameRate;
   /** 29.97 timecode counted in drop-frame (optional; absent means non-drop). */
   dropFrame?: boolean;
+  /**
+   * What clips' mod wheel lanes are: 'dynamics' (soft to loud) in files saved since it became so.
+   * In older files it was vibrato, and opening them moves those lanes to the Vibrato lane.
+   */
+  modWheel?: 'dynamics';
   /** Named points on the timeline (optional; older files have none). */
   markers?: Marker[];
   /**
@@ -133,6 +138,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
   return {
     format: PROJECT_FORMAT,
     version: PROJECT_VERSION,
+    modWheel: 'dynamics',
     name: p.name,
     bpm: p.bpm,
     swing: p.swing,
@@ -399,6 +405,25 @@ function parseClip(v: unknown): Clip {
   };
 }
 
+/**
+ * A file saved while the mod wheel lane was vibrato: every expression (clips', launcher slots',
+ * takes') gets its mod wheel lane moved to the Vibrato lane, so the song sounds as it did.
+ */
+function modWheelWasVibrato(raw: unknown, depth = 0): void {
+  if (depth > 8 || typeof raw !== 'object' || raw === null) return;
+  if (Array.isArray(raw)) {
+    for (const v of raw) modWheelWasVibrato(v, depth + 1);
+    return;
+  }
+  const o = raw as Record<string, unknown>;
+  const e = o.expression as Record<string, unknown> | undefined;
+  if (e && typeof e === 'object' && 'mod' in e && !('vibrato' in e)) {
+    const { mod, ...rest } = e;
+    o.expression = { ...rest, vibrato: mod };
+  }
+  for (const [k, v] of Object.entries(o)) if (k !== 'expression' && k !== 'notes' && typeof v === 'object') modWheelWasVibrato(v, depth + 1);
+}
+
 /** Validate untrusted JSON (a file or autosave) into a snapshot. Throws with a readable reason. */
 export function parseProject(raw: unknown): ProjectSnapshot {
   if (!isObj(raw) || !(raw.format === PROJECT_FORMAT || LEGACY_FORMATS.includes(raw.format as string))) {
@@ -408,6 +433,8 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     throw new Error("this project was saved by a newer version of Bo's Beatbox");
   }
   if (!Array.isArray(raw.tracks) || !Array.isArray(raw.clips)) throw new Error('tracks or clips are missing');
+  // (The file's own objects are changed: it was parsed for this)
+  if (raw.modWheel !== 'dynamics') modWheelWasVibrato([raw.clips, raw.tracks, raw.launcher]);
 
   // One of each id (a hand-edited or merged file can repeat one): the first is kept
   // A track or clip that can't be read (an instrument from a newer version, a damaged entry) is

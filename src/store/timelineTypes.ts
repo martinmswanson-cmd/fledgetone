@@ -938,7 +938,7 @@ export interface ExprPoint {
  * A clip's controller lanes: pitch bend, mod wheel, sustain pedal, and any MIDI controller by
  * number (`cc74`: values 0 to 1).
  */
-export type ClipExpression = Partial<Record<'bend' | 'mod' | 'sustain' | `cc${number}`, ExprPoint[]>>;
+export type ClipExpression = Partial<Record<'bend' | 'mod' | 'vibrato' | 'sustain' | `cc${number}`, ExprPoint[]>>;
 
 /**
  * Wobble rates, slowest first: one filter sweep per note value, restarted at the start of every
