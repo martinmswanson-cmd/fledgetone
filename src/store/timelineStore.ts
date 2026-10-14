@@ -192,6 +192,8 @@ interface HistoryEntry {
   stateOptions: Record<string, StateOptions>;
   transitions: Record<string, TransitionRule>;
   gameParams: GameParam[];
+  /** How each stem group fades in with the intensity (the intensity itself is a live control, like a game parameter's value) */
+  intensityCurves: Record<string, IntensityCurve>;
 }
 
 /** Everything undo restores, read from the store now. */
@@ -211,6 +213,7 @@ const historyEntry = (s: TimelineState): HistoryEntry => ({
   stateOptions: s.stateOptions,
   transitions: s.transitions,
   gameParams: s.gameParams,
+  intensityCurves: s.intensityCurves,
 });
 
 let tempoMemo: { bpm: number; points: TempoPoint[]; map: TempoMap } | null = null;
@@ -301,6 +304,7 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     stateOptions: entry.stateOptions,
     transitions: entry.transitions,
     gameParams: entry.gameParams,
+    intensityCurves: entry.intensityCurves,
   };
 }
 
@@ -556,6 +560,7 @@ interface TimelineState {
   trimClipStart: (clipId: string, newStartBar: number) => void;
   trimClipEnd: (clipId: string, newLengthBars: number) => void;
   splitClip: (clipId: string, atBar: number) => void;
+  /** A copy of a clip beside it. No undo step of its own: the caller checkpoints (an Alt+drag copies as it starts) */
   duplicateClip: (clipId: string) => string | null;
   deleteSelectedClips: () => void;
   /** Move several clips at once, optionally onto other tracks (no history: drags checkpoint() once). */
@@ -628,7 +633,8 @@ interface TimelineState {
   intensity: number;
   intensityCurves: Record<string, IntensityCurve>;
   setIntensity: (value: number) => void;
-  setIntensityCurve: (group: string, curve: IntensityCurve) => void;
+  /** A stem group's intensity curve; `record` false for the moves of a drag (checkpoint before it) */
+  setIntensityCurve: (group: string, curve: IntensityCurve, record?: boolean) => void;
   /** Make a track a dialogue / SFX proxy the others duck under by `depth` dB, or not (null); one undo step */
   setTrackDuckProxy: (trackId: string, depth: number | null, record?: boolean) => void;
   /** Put a track in a stem group (or none, with an empty name); one undo step */
@@ -2327,7 +2333,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     intensity: 1,
     intensityCurves: {},
     setIntensity: (value) => set({ intensity: Math.max(0, Math.min(1, value)) }),
-    setIntensityCurve: (group, curve) => set((s) => ({ intensityCurves: { ...s.intensityCurves, [group]: curve } })),
+    setIntensityCurve: (group, curve, record = true) => set((s) => ({ intensityCurves: { ...s.intensityCurves, [group]: curve }, ...(record ? pushPast(s) : {}) })),
     setTrackDuckProxy: (trackId, depth, record = true) =>
       updateTrack(trackId, () => ({ duckProxy: depth === null ? undefined : { depth: Math.max(1, Math.min(30, depth)) } }), record),
     setTrackStemGroup: (trackId, group) => {

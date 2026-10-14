@@ -48,6 +48,8 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
         onPointerDown={(e) => {
           const i = near(e);
           if (i >= 0) {
+            // One undo step for the whole drag
+            useTimelineStore.getState().checkpoint();
             setDrag(i);
           } else {
             const p = fromEvent(e);
@@ -65,7 +67,7 @@ const CurveEditor: React.FC<{ group: string; curve: IntensityCurve; color: strin
           const lo = drag > 0 ? next[drag - 1][0] : 0;
           const hi = drag < next.length - 1 ? next[drag + 1][0] : 1;
           next[drag] = [Math.max(lo, Math.min(hi, p[0])), p[1]];
-          useTimelineStore.getState().setIntensityCurve(group, next);
+          useTimelineStore.getState().setIntensityCurve(group, next, false);
         }}
         onPointerUp={() => setDrag(null)}
         onDoubleClick={(e) => {
