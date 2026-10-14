@@ -1,10 +1,10 @@
 /**
- * Rows and strips scrolled out of sight are skipped by the browser (content-visibility: auto, set
- * only once they're out of sight, so the rows on screen aren't clipped to their boxes):
- * not drawn, not laid out, and their meters not read. On a big song most of the timeline's
- * tracks and the mixer's strips are out of sight, and every frame the page changed (the
- * playhead's time, a meter) the browser went over all of them again: most of the page's time
- * while a big song played.
+ * Rows and strips scrolled out of sight are skipped by the browser (content-visibility: hidden,
+ * set only once they're out of sight, so the rows on screen aren't clipped to their boxes; `auto`
+ * didn't save the drawing): not drawn, not laid out, and their meters not read. On a big song
+ * most of the timeline's tracks and the mixer's strips are out of sight, and every frame the page
+ * changed (the playhead's time, a meter) the browser went over all of them again: most of the
+ * page's time while a big song played.
  *
  * One IntersectionObserver for all of them; each element is switched straight on the page, so a
  * row going in or out of sight doesn't re-render it. A margin keeps the ones just out of sight
@@ -24,9 +24,11 @@ function watch(): IntersectionObserver {
           hidden.delete(el);
           el.style.contentVisibility = '';
           el.style.containIntrinsicSize = '';
-        } else if (el.offsetWidth && el.offsetHeight) {
-          // Kept at the size it had, so the scrollbars and the rows under it don't move
-          el.style.containIntrinsicSize = `auto ${el.offsetWidth}px auto ${el.offsetHeight}px`;
+        } else if (e.boundingClientRect.width && e.boundingClientRect.height) {
+          // Kept at the size it had, so the scrollbars and the rows under it don't move (the
+          // observer's own measure: asking the element made the browser lay the page out again
+          // for each one, a sixth of a second when a big song opened)
+          el.style.containIntrinsicSize = `auto ${e.boundingClientRect.width}px auto ${e.boundingClientRect.height}px`;
           el.style.contentVisibility = 'hidden';
           hidden.add(el);
         }

@@ -32,10 +32,15 @@ const SETTLE_MS = 3000;
 /** How long the whole song must go without an edit before a render starts (ms) */
 const QUIET_MS = 1500;
 
-/** Memory for renders: about 64 MB per GB the browser reports, 256 MB to 1 GB. */
+/**
+ * Memory for renders: about 32 MB per GB the browser reports, 128 to 512 MB. (It was twice that.
+ * Since silent tracks sleep while the song plays (liveTracks.ts), freezing saves much less: on a
+ * 37-track orchestral song 510 MB of renders took the audio thread only from 42% to 37%, and the
+ * browser warned about the page's memory.)
+ */
 const budgetBytes = () => {
   const gb = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
-  return Math.max(256, Math.min(1024, gb * 64)) * 1024 * 1024;
+  return Math.max(128, Math.min(512, gb * 32)) * 1024 * 1024;
 };
 
 const readSetting = (): boolean => {
