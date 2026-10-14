@@ -47,6 +47,9 @@ const PHASES = [
 ].map((taps) => Float64Array.from(taps));
 const TAPS = 12;
 
+/** The most any interpolated point can be over the loudest sample under the filter */
+const GAIN = Math.max(...PHASES.map((taps) => taps.reduce((sum, t) => sum + Math.abs(t), 0)));
+
 /**
  * The true peak of audio (linear: 1 is full scale): the highest of its samples and the points the
  * 4x interpolation filter finds between them, where a converter's output can go over full scale
@@ -55,10 +58,15 @@ const TAPS = 12;
 export function truePeakOf(channels: readonly Float32Array[]): number {
   let peak = 0;
   for (const ch of channels) {
+    // A point between samples is at most GAIN times the loudest sample under the filter, so only
+    // where a sample in the window could beat the peak found so far is it worth working out (the
+    // same answer, a few times faster: most of a song is well under its peak)
+    let lastLoud = -TAPS;
     for (let i = 0; i < ch.length; i++) {
       const a = Math.abs(ch[i]);
       if (a > peak) peak = a;
-      if (i < TAPS - 1) continue;
+      if (a * GAIN > peak) lastLoud = i;
+      if (i < TAPS - 1 || i - lastLoud >= TAPS) continue;
       for (let p = 0; p < 4; p++) {
         const taps = PHASES[p];
         let acc = 0;
