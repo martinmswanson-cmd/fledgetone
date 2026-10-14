@@ -185,7 +185,7 @@ export const LoopRangeButton: React.FC = () => {
         aria-expanded={open}
         aria-haspopup="dialog"
         title="Loop In, Out and Length: type exact values"
-        className={`h-8 w-5 -ml-1 flex items-center justify-center rounded-md border text-xs transition-colors ${
+        className={`h-8 w-5 -ml-px flex items-center justify-center rounded-r-md rounded-l-none border text-xs transition-colors ${
           open ? 'bg-amber-500/15 border-amber-400/70 text-amber-300' : 'bg-forge-bg border-forge-border text-forge-muted hover:text-forge-text hover:border-forge-borderLight'
         }`}
       >

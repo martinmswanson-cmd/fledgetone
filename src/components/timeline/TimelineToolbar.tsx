@@ -173,16 +173,18 @@ interface ToolButtonProps {
   activeClass?: string;
   id?: string;
   disabled?: boolean;
+  /** Corner rounding in place of rounded-md (a split button joins its neighbour) */
+  className?: string;
 }
 
-const ToolButton: React.FC<ToolButtonProps> = ({ active, onClick, title, children, activeClass, id, disabled }) => (
+const ToolButton: React.FC<ToolButtonProps> = ({ active, onClick, title, children, activeClass, id, disabled, className }) => (
   <button
     id={id}
     type="button"
     title={title}
     onClick={onClick}
     disabled={disabled}
-    className={`h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 rounded-md border text-xs font-mono transition-colors disabled:opacity-35 disabled:pointer-events-none ${
+    className={`h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 ${className ?? 'rounded-md'} border text-xs font-mono transition-colors disabled:opacity-35 disabled:pointer-events-none ${
       active
         ? activeClass ?? 'bg-cyan-500/20 border-cyan-400/70 text-cyan-200'
         : 'bg-forge-bg border-forge-border text-forge-muted hover:text-forge-text hover:border-forge-borderLight'
@@ -248,6 +250,7 @@ export const TimelineToolbar: React.FC = () => {
             title="Loop In→Out (L)"
             active={loopEnabled}
             activeClass="bg-amber-500/15 border-amber-400/70 text-amber-300"
+            className="rounded-l-md rounded-r-none"
             onClick={toggleLoop}
           >
             <Repeat className="w-4 h-4" />
