@@ -62,7 +62,8 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   const promise = Promise.all(
     Object.entries(source.samples).map(async ([note, file]) => {
       const loaded = await fetchRecording(source, file);
-      const buffer = source.tune?.[note] ? retune(loaded, source.tune[note]) : loaded;
+      const tuned = source.tune?.[note] ? retune(loaded, source.tune[note]) : loaded;
+      const buffer = source.gains?.[note] ? louder(tuned, source.gains[note]) : tuned;
       const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
       return [note, source.onset === undefined ? held : trimOnset(held, source.onset)] as const;
     })
@@ -89,6 +90,20 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
  * faster or slower with cubic interpolation. A few cents changes its length by a fraction of a
  * percent, which nobody hears.
  */
+/** A copy of a recording `db` louder (an ensemble's sections levelled with each other: SampleSource.gains). */
+function louder(buffer: Tone.ToneAudioBuffer, db: number): Tone.ToneAudioBuffer {
+  const audio = buffer.get();
+  if (!audio) return buffer;
+  const k = 10 ** (db / 20);
+  const out = Tone.getContext().createBuffer(audio.numberOfChannels, audio.length, audio.sampleRate);
+  for (let c = 0; c < audio.numberOfChannels; c++) {
+    const x = audio.getChannelData(c);
+    const y = out.getChannelData(c);
+    for (let i = 0; i < x.length; i++) y[i] = x[i] * k;
+  }
+  return new Tone.ToneAudioBuffer(out);
+}
+
 function retune(buffer: Tone.ToneAudioBuffer, cents: number): Tone.ToneAudioBuffer {
   const audio = buffer.get();
   if (!audio || !cents) return buffer;

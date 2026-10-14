@@ -15,6 +15,8 @@ All public domain (CC0) or free to redistribute; `src/credits.ts` credits each o
   string sections, solo violin, harp, flute, oboe, clarinet, bassoon, horn, trumpet, trombone,
   tuba, marimba, xylophone, glockenspiel, pipe organ and upright piano (the piano by Simon Dalzell
   of Ivy Audio, redistributable as part of VSCO).
+- [VCSL](https://github.com/sgossner/VCSL) (Versilian Community Sample Library) by Versilian
+  Studios: timpani, tubular bells, vibraphone, harpsichord, kalimba and tenor saxophone.
 - Karoryfer Lecolds: electric guitars ([Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars),
   [Emily Guitar](https://github.com/sfzinstruments/karoryfer.emilyguitar)), saxophones
   ([Weresax](https://github.com/sfzinstruments/karoryfer.weresax), [Bear Sax](https://github.com/sfzinstruments/karoryfer.bear-sax)),

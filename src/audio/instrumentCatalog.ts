@@ -26,6 +26,7 @@ export const INSTRUMENT_KEYS = [
   'realHorn', 'realHornShort', 'realTrumpet', 'realTrumpetShort', 'realTrombone', 'realTromboneShort', 'realTuba',
   'realGrandPiano', 'realUprightPiano', 'realPipeOrgan', 'realChapelOrgan', 'realMarimba', 'realXylophone', 'realGlockenspiel',
   'realAltoSax', 'realBariSax', 'realUprightBass', 'realElectricBass', 'realFlatwoundGuitar',
+  'realTimpani', 'realTubularBells', 'realVibraphone', 'realHarpsichord', 'realKalimba', 'realTenorSax', 'realStrings', 'realBrass',
   // phase 3 additions
   'drumMachine', 'taiko',
   'subBass', 'bass808', 'bassGuitar',
@@ -94,6 +95,8 @@ export const CATEGORIES = [
   'FX',
   'Sound Effects',
   'Chiptune',
+  /** The older General MIDI and early sample sets that a recording now replaces: kept so older songs play as they were */
+  'Retro (GM)',
   'Your Sounds',
 ] as const;
 export type InstrumentCategory = (typeof CATEGORIES)[number];
@@ -118,6 +121,8 @@ export interface SampleSource {
   sustain?: { from: number; to: number; hold: number };
   /** Cents to re-pitch each recording by when it loads (out-of-tune recordings; see sampleTuning.ts). */
   tune?: Record<string, number>;
+  /** dB to raise or lower each recording by when it loads (an ensemble's sections, levelled with each other) */
+  gains?: Record<string, number>;
   /**
    * Recordings of each note played at several loudnesses, softest first: the highest velocity
    * (0..1) each plays up to (the last is 1). Their names in `samples` are `note|layer|take`; a
@@ -262,6 +267,41 @@ const real = (folder: string, release: number): SampleSource => {
   const set = HOSTED_SETS[folder];
   return hosted(folder, set.notes, LAYER_TOPS[set.layers], set.takes, release);
 };
+/**
+ * Sections of an orchestra as one instrument: each part plays its set's recordings from `from` up
+ * to the next part's `from` (MIDI), `gain` dB against the others so the sections match. A part
+ * recorded at fewer loudnesses than the most of them spreads its takes across the loudnesses.
+ */
+function ensemble(parts: Array<{ folder: string; from: number; gain: number }>, release: number): SampleSource {
+  const samples: Record<string, string> = {};
+  const gains: Record<string, number> = {};
+  const sets = parts.map((p) => HOSTED_SETS[p.folder]);
+  const layers = Math.max(...sets.map((x) => x.layers));
+  parts.forEach((part, i) => {
+    const set = sets[i];
+    const below = parts[i + 1]?.from ?? 128;
+    for (const m of set.notes) {
+      if (m < part.from || m >= below) continue;
+      const n = noteName(m);
+      for (let l = 0; l < layers; l++) {
+        const own = layers === 1 ? 0 : Math.round((l * (set.layers - 1)) / (layers - 1));
+        for (let t = 0; t < set.takes; t++) {
+          samples[`${n}|${l}|${t}`] = `${part.folder}/${n.replace('#', 's')}_${own}_${t}.mp3`;
+          if (part.gain) gains[`${n}|${l}|${t}`] = part.gain;
+        }
+      }
+    }
+  });
+  return {
+    baseUrl: 'fledgetone-samples/',
+    fallbackUrl: SITE_SAMPLES,
+    samples,
+    gains,
+    release,
+    layers: LAYER_TOPS[layers],
+    version: sets.map((x) => x.hash).join(''),
+  };
+}
 /** The notes a real set can play: from its lowest recording to a little past its highest (no higher than a piano's top C) */
 const realRange = (folder: string, extend = 2): [number, number] => {
   const { notes } = HOSTED_SETS[folder];
@@ -323,7 +363,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   growlBass: { key: 'growlBass', name: 'Growl Bass', blurb: 'Talking riddim growl', color: '#d946ef', category: 'Bass', kind: 'synth', range: [24, 60], wobble: true, gain: -14, taper: [43, 2.5] },
   reeseBass: { key: 'reeseBass', name: 'Reese Bass', blurb: 'Detuned drum & bass Reese', color: '#6366f1', category: 'Bass', kind: 'synth', range: [24, 55], gain: -8, taper: [41, 2.5] },
   bassGuitar: {
-    key: 'bassGuitar', name: 'Bass Guitar', blurb: 'Electric bass (recorded)', color: '#0891b2', category: 'Bass', kind: 'sampled', range: [28, 60],
+    key: 'bassGuitar', name: 'Bass Guitar', blurb: 'Electric bass (recorded)', color: '#0891b2', category: 'Retro (GM)', kind: 'sampled', range: [28, 60],
     samples: nb('bass-electric', ['E1', 'G1', 'As1', 'Cs2', 'E2', 'G2', 'As2', 'Cs3', 'E3', 'G3', 'As3', 'Cs4'], 0.4), taper: [45, 3], tone: { presence: 4, presenceHz: 1500, mud: -2 },
   },
 
@@ -347,7 +387,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   supersaw: { key: 'supersaw', name: 'Supersaw', blurb: 'Wide trance / house chords', color: '#fb7185', category: 'Keys & Synths', kind: 'synth', range: [36, 96], gain: -5, taper: [67, 2] },
   synthDesigner: { key: 'synthDesigner', name: 'Synth Designer', blurb: 'Build your own sound: oscillators, filter, LFO', color: '#22d3ee', category: 'Keys & Synths', kind: 'synth', range: [24, 108], taper: [67, 1] },
   pluck: { key: 'pluck', name: 'Pluck', blurb: 'Short bright EDM pluck', color: '#2dd4bf', category: 'Keys & Synths', kind: 'synth', range: [48, 96], gain: -6, taper: [73, 2] },
-  pipeOrgan: { key: 'pipeOrgan', name: 'Pipe Organ', blurb: 'Church organ (recorded)', color: '#d4a373', category: 'Keys & Synths', kind: 'sampled', range: [24, 96], samples: gm('church_organ', 24, 96, 3, 0.6), gain: 15, taper: [61, 1.5] },
+  pipeOrgan: { key: 'pipeOrgan', name: 'Pipe Organ', blurb: 'Church organ (recorded)', color: '#d4a373', category: 'Retro (GM)', kind: 'sampled', range: [24, 96], samples: gm('church_organ', 24, 96, 3, 0.6), gain: 15, taper: [61, 1.5] },
 
   // Guitars & Strings
   guitar: {
@@ -355,7 +395,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
     samples: nb('guitar-acoustic', ['D2', 'E2', 'Fs2', 'Gs2', 'As2', 'C3', 'D3', 'E3', 'Fs3', 'Gs3', 'As3', 'C4', 'D4', 'E4', 'Fs4', 'Gs4', 'As4', 'C5', 'D5']), shaping: 'acoustic', taper: [59, 8],
   },
   electricGuitar: {
-    key: 'electricGuitar', name: 'Electric Guitar', blurb: 'Clean electric (recorded)', color: '#dc2626', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
+    key: 'electricGuitar', name: 'Electric Guitar', blurb: 'Clean electric (recorded)', color: '#dc2626', category: 'Retro (GM)', kind: 'sampled', range: [40, 86],
     samples: nb('guitar-electric', ['Cs2', 'E2', 'Fs2', 'A2', 'C3', 'Ds3', 'Fs3', 'A3', 'C4', 'Ds4', 'Fs4', 'A4', 'C5', 'Ds5', 'Fs5', 'A5', 'C6']), shaping: 'amp', taper: [64, 2],
   },
   mandolin: {
@@ -363,15 +403,15 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
     samples: gm('acoustic_guitar_steel', 55, 88, 3, 0.6), shaping: 'mandolin', gain: 18,
   },
   harp: {
-    key: 'harp', name: 'Harp', blurb: 'Concert harp (recorded)', color: '#fde68a', category: 'Guitars & Strings', kind: 'sampled', range: [24, 100],
+    key: 'harp', name: 'Harp', blurb: 'Concert harp (recorded)', color: '#fde68a', category: 'Retro (GM)', kind: 'sampled', range: [24, 100],
     samples: nb('harp', ['E1', 'G1', 'B1', 'D2', 'F2', 'A2', 'C3', 'E3', 'G3', 'B3', 'D4', 'F4', 'A4', 'C5', 'E5', 'G5', 'B5', 'D6', 'F6', 'A6', 'B6', 'D7', 'F7'], 1.5),
   },
   violin: {
-    key: 'violin', name: 'Violin', blurb: 'Solo violin, close and dry', color: '#f87171', category: 'Guitars & Strings', kind: 'sampled', range: [55, 96],
+    key: 'violin', name: 'Violin', blurb: 'Solo violin, close and dry', color: '#f87171', category: 'Retro (GM)', kind: 'sampled', range: [55, 96],
     samples: { ...soundfont('MusyngKite', 'violin', 55, 96, 3, 0.5), sustain: SOUNDFONT_SUSTAIN, onset: -8 }, shaping: 'violin', gain: 25.5, taper: [76, 6], bowed: { skip: 0.03, solo: true },
   },
   cello: {
-    key: 'cello', name: 'Cello', blurb: 'Solo cello, close and dry', color: '#ea580c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 76],
+    key: 'cello', name: 'Cello', blurb: 'Solo cello, close and dry', color: '#ea580c', category: 'Retro (GM)', kind: 'sampled', range: [36, 76],
     samples: { ...soundfont('MusyngKite', 'cello', 36, 76, 3, 0.6), sustain: SOUNDFONT_SUSTAIN, onset: -6 }, gain: 22, taper: [57, 6], tone: { presence: 4, mud: -2 }, bowed: { skip: 0.05, solo: true },
   },
   realCello: {
@@ -530,33 +570,65 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
     key: 'realElectricBass', name: 'Electric Bass (Real)', blurb: 'A recorded fingered electric bass at four loudnesses', color: '#0e7490', category: 'Bass', kind: 'sampled', range: realRange('electric-bass'),
     samples: real('electric-bass', 0.25), gain: 9, taper: [46, 5],
   },
+  realStrings: {
+    key: 'realStrings', name: 'String Section (Real)', blurb: 'Recorded cellos, violas and violins as one section, low to high: pads, swells, film chords', color: '#f43f5e', category: 'Orchestra', kind: 'sampled', range: [36, 88],
+    samples: ensemble([{ folder: 'cello-sustain', from: 36, gain: -11 }, { folder: 'violas-sustain', from: 50, gain: -3 }, { folder: 'violins-sustain', from: 62, gain: 0 }], 0.7), gain: 14, taper: [79, 3], dynamics: true,
+  },
+  realBrass: {
+    key: 'realBrass', name: 'Brass Section (Real)', blurb: 'Recorded trombone, French horn and trumpet as one section, low to high: chords, swells, fanfares', color: '#f59e0b', category: 'Orchestra', kind: 'sampled', range: [34, 86],
+    samples: ensemble([{ folder: 'trombone', from: 34, gain: -2 }, { folder: 'horn', from: 50, gain: 0 }, { folder: 'trumpet', from: 60, gain: -16.5 }], 0.4), gain: 15, taper: [74, 3], dynamics: true,
+  },
+  realTimpani: {
+    key: 'realTimpani', name: 'Timpani (Real)', blurb: 'Five recorded kettle drums, three loudnesses: rolls, hits, drama', color: '#78350f', category: 'Orchestra', kind: 'sampled', range: [39, 58],
+    samples: real('timpani', 1.5), gain: 8,
+  },
+  realTubularBells: {
+    key: 'realTubularBells', name: 'Tubular Bells (Real)', blurb: 'Recorded orchestral chimes: soft and loud strikes', color: '#cbd5e1', category: 'Mallets & Bells', kind: 'sampled', range: realRange('tubular-bells', 3),
+    samples: real('tubular-bells', 2), gain: -0.5,
+  },
+  realVibraphone: {
+    key: 'realVibraphone', name: 'Vibraphone (Real)', blurb: 'A recorded vibraphone with soft mallets: jazz, lounge, dreamy', color: '#93c5fd', category: 'Mallets & Bells', kind: 'sampled', range: realRange('vibraphone'),
+    samples: real('vibraphone', 1.2), gain: -4, taper: [76, 5],
+  },
+  realHarpsichord: {
+    key: 'realHarpsichord', name: 'Harpsichord (Real)', blurb: 'A recorded Flemish harpsichord: baroque, spooky, bright', color: '#d4a373', category: 'Keys & Synths', kind: 'sampled', range: realRange('harpsichord'),
+    samples: real('harpsichord', 0.4), gain: 0.5,
+  },
+  realKalimba: {
+    key: 'realKalimba', name: 'Kalimba (Real)', blurb: 'A recorded thumb piano: soft plucked metal tines', color: '#a3e635', category: 'World', kind: 'sampled', range: realRange('kalimba', 3),
+    samples: real('kalimba', 1), gain: 5,
+  },
+  realTenorSax: {
+    key: 'realTenorSax', name: 'Tenor Sax (Real)', blurb: 'A recorded tenor saxophone, soft and loud: smoky jazz, soul, rock', color: '#d97706', category: 'Winds & Brass', kind: 'sampled', range: realRange('tenor-sax'),
+    samples: real('tenor-sax', 0.25), gain: 0, taper: [70, 2], dynamics: true,
+  },
   strings: {
-    key: 'strings', name: 'Strings', blurb: 'String section: pads and swells', color: '#fb7185', category: 'Guitars & Strings', kind: 'sampled', range: [36, 96],
+    key: 'strings', name: 'Strings', blurb: 'String section: pads and swells', color: '#fb7185', category: 'Retro (GM)', kind: 'sampled', range: [36, 96],
     samples: { ...soundfont('MusyngKite', 'string_ensemble_1', 36, 96, 3, 0.9), sustain: SOUNDFONT_SUSTAIN, onset: -7 }, gain: 17, taper: [84, 6], tone: { presence: 3, mud: -2 },
   },
 
   // Winds & Brass
   brass: { key: 'brass', name: 'Brass Stabs', blurb: 'Synth horn section', color: '#22c55e', category: 'Winds & Brass', kind: 'synth', range: [48, 84], taper: [67, 3] },
   saxophone: {
-    key: 'saxophone', name: 'Saxophone', blurb: 'Alto sax (recorded)', color: '#eab308', category: 'Winds & Brass', kind: 'sampled', range: [49, 80],
+    key: 'saxophone', name: 'Saxophone', blurb: 'Alto sax (recorded)', color: '#eab308', category: 'Retro (GM)', kind: 'sampled', range: [49, 80],
     samples: nb('saxophone', ['Cs3', 'Ds3', 'F3', 'G3', 'As3', 'C4', 'D4', 'E4', 'Fs4', 'Gs4', 'As4', 'C5', 'D5', 'E5', 'Fs5', 'Gs5'], 0.5), taper: [66, 5.5], gain: -1.5,
   },
   trumpet: {
-    key: 'trumpet', name: 'Trumpet', blurb: 'Solo trumpet (recorded)', color: '#f97316', category: 'Winds & Brass', kind: 'sampled', range: [52, 84],
+    key: 'trumpet', name: 'Trumpet', blurb: 'Solo trumpet (recorded)', color: '#f97316', category: 'Retro (GM)', kind: 'sampled', range: [52, 84],
     samples: nb('trumpet', ['F3', 'A3', 'C4', 'Ds4', 'F4', 'G4', 'As4', 'D5', 'F5', 'A5', 'C6'], 0.4), taper: [69, 6],
   },
   frenchHorn: {
-    key: 'frenchHorn', name: 'French Horn', blurb: 'Warm orchestral horn (recorded)', color: '#c2410c', category: 'Winds & Brass', kind: 'sampled', range: [33, 77],
+    key: 'frenchHorn', name: 'French Horn', blurb: 'Warm orchestral horn (recorded)', color: '#c2410c', category: 'Retro (GM)', kind: 'sampled', range: [33, 77],
     samples: nb('french-horn', ['A1', 'C2', 'Ds2', 'G2', 'D3', 'F3', 'A3', 'C4', 'D5', 'F5'], 0.6, -12), taper: [56, 4.5], tone: { presence: 6, mud: -3 },
   },
   flute: {
-    key: 'flute', name: 'Flute', blurb: 'Concert flute (recorded)', color: '#93c5fd', category: 'Winds & Brass', kind: 'sampled', range: [60, 96],
+    key: 'flute', name: 'Flute', blurb: 'Concert flute (recorded)', color: '#93c5fd', category: 'Retro (GM)', kind: 'sampled', range: [60, 96],
     samples: nb('flute', ['C4', 'E4', 'A4', 'C5', 'E5', 'A5', 'C6', 'E6', 'A6', 'C7'], 0.5), taper: [84, 8], gain: -4,
   },
 
   // Mallets & Bells
-  marimba: { key: 'marimba', name: 'Marimba', blurb: 'Wooden mallets (recorded)', color: '#a16207', category: 'Mallets & Bells', kind: 'sampled', range: [45, 96], samples: gm('marimba', 45, 96, 3, 0.8), gain: 14, taper: [72, 2.5] },
-  chimes: { key: 'chimes', name: 'Chimes', blurb: 'Tubular bells (recorded)', color: '#cbd5e1', category: 'Mallets & Bells', kind: 'sampled', range: [48, 84], samples: gm('tubular_bells', 48, 84, 3, 3), gain: 12 },
+  marimba: { key: 'marimba', name: 'Marimba', blurb: 'Wooden mallets (recorded)', color: '#a16207', category: 'Retro (GM)', kind: 'sampled', range: [45, 96], samples: gm('marimba', 45, 96, 3, 0.8), gain: 14, taper: [72, 2.5] },
+  chimes: { key: 'chimes', name: 'Chimes', blurb: 'Tubular bells (recorded)', color: '#cbd5e1', category: 'Retro (GM)', kind: 'sampled', range: [48, 84], samples: gm('tubular_bells', 48, 84, 3, 3), gain: 12 },
 
   // World
   erhu: {
@@ -576,7 +648,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   cr78: { key: 'cr78', name: 'CR-78', blurb: 'Vintage rhythm box', color: '#9a3412', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('CR78'), gain: -2 },
   technoKit: { key: 'technoKit', name: 'Techno Kit', blurb: 'Hard electronic kit', color: '#be185d', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('Techno') },
   bongos: { key: 'bongos', name: 'Bongos & Percussion', blurb: 'Hand drums for Latin grooves', color: '#a16207', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('Bongos'), gain: -1 },
-  timpani: { key: 'timpani', name: 'Timpani', blurb: 'Orchestral kettle drums', color: '#7f1d1d', category: 'Orchestra', kind: 'sampled', range: [36, 60], samples: struck('timpani', 36, 60, 2), gain: 16 },
+  timpani: { key: 'timpani', name: 'Timpani', blurb: 'Orchestral kettle drums', color: '#7f1d1d', category: 'Retro (GM)', kind: 'sampled', range: [36, 60], samples: struck('timpani', 36, 60, 2), gain: 16 },
 
   // Choir & Voices
   choir: { key: 'choir', name: 'Choir', blurb: 'Choir singing "aah": angelic, sacred', color: '#fef3c7', category: 'Choir & Voices', kind: 'sampled', range: [43, 84], samples: held('choir_aahs', 43, 84, 1.2, -16), gain: 21, taper: [65, 2.5], tone: { presence: 2, mud: -1 } },
@@ -596,42 +668,42 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   goblins: { key: 'goblins', name: 'Goblins', blurb: 'Eerie swelling drone: horror', color: '#4d7c0f', category: 'Pads & Atmospheres', kind: 'sampled', range: [36, 84], samples: held('fx_6_goblins', 36, 84, 1.5), gain: 5, taper: [61, 5] },
 
   // Orchestra
-  viola: { key: 'viola', name: 'Viola', blurb: 'Solo viola, warm middle voice', color: '#f97316', category: 'Orchestra', kind: 'sampled', range: [48, 88], samples: held('viola', 48, 88, 0.6, -6), bowed: { skip: 0.04, solo: true }, gain: 23, taper: [69, 2.5], tone: { presence: 2, mud: -1 } },
-  contrabass: { key: 'contrabass', name: 'Contrabass', blurb: 'Orchestral double bass, bowed', color: '#9a3412', category: 'Orchestra', kind: 'sampled', range: [28, 60], samples: held('contrabass', 28, 60, 0.6, -6), bowed: { skip: 0.03 }, gain: 22.5, taper: [45, 2], tone: { presence: 5, presenceHz: 1800, mud: -3 } },
-  pizzicato: { key: 'pizzicato', name: 'Pizzicato Strings', blurb: 'Plucked string section', color: '#fda4af', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: soundfont('FluidR3_GM', 'pizzicato_strings', 36, 96, 1, 0.4), gain: 28, taper: [70, 1] },
-  tremolo: { key: 'tremolo', name: 'Tremolo Strings', blurb: 'Trembling strings: tension, suspense', color: '#f43f5e', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: held('tremolo_strings', 36, 96, 0.8, -8), gain: 20, taper: [84, 6], tone: { presence: 2, mud: -1 } },
-  slowStrings: { key: 'slowStrings', name: 'Slow Strings', blurb: 'Soft swelling string section', color: '#fecdd3', category: 'Orchestra', kind: 'sampled', range: [36, 96], samples: held('string_ensemble_2', 36, 96, 1), gain: 27, taper: [67, 3], tone: { presence: 3, mud: -2 } },
+  viola: { key: 'viola', name: 'Viola', blurb: 'Solo viola, warm middle voice', color: '#f97316', category: 'Retro (GM)', kind: 'sampled', range: [48, 88], samples: held('viola', 48, 88, 0.6, -6), bowed: { skip: 0.04, solo: true }, gain: 23, taper: [69, 2.5], tone: { presence: 2, mud: -1 } },
+  contrabass: { key: 'contrabass', name: 'Contrabass', blurb: 'Orchestral double bass, bowed', color: '#9a3412', category: 'Retro (GM)', kind: 'sampled', range: [28, 60], samples: held('contrabass', 28, 60, 0.6, -6), bowed: { skip: 0.03 }, gain: 22.5, taper: [45, 2], tone: { presence: 5, presenceHz: 1800, mud: -3 } },
+  pizzicato: { key: 'pizzicato', name: 'Pizzicato Strings', blurb: 'Plucked string section', color: '#fda4af', category: 'Retro (GM)', kind: 'sampled', range: [36, 96], samples: soundfont('FluidR3_GM', 'pizzicato_strings', 36, 96, 1, 0.4), gain: 28, taper: [70, 1] },
+  tremolo: { key: 'tremolo', name: 'Tremolo Strings', blurb: 'Trembling strings: tension, suspense', color: '#f43f5e', category: 'Retro (GM)', kind: 'sampled', range: [36, 96], samples: held('tremolo_strings', 36, 96, 0.8, -8), gain: 20, taper: [84, 6], tone: { presence: 2, mud: -1 } },
+  slowStrings: { key: 'slowStrings', name: 'Slow Strings', blurb: 'Soft swelling string section', color: '#fecdd3', category: 'Retro (GM)', kind: 'sampled', range: [36, 96], samples: held('string_ensemble_2', 36, 96, 1), gain: 27, taper: [67, 3], tone: { presence: 3, mud: -2 } },
   synthStrings: { key: 'synthStrings', name: 'Synth Strings', blurb: '80s string machine', color: '#f9a8d4', category: 'Keys & Synths', kind: 'sampled', range: [36, 96], samples: held('synth_strings_1', 36, 96, 1, -8), gain: 23, taper: [67, 1], tone: { presence: 2 } },
   orchestraHit: { key: 'orchestraHit', name: 'Orchestra Hit', blurb: 'The whole orchestra in one stab', color: '#dc2626', category: 'Orchestra', kind: 'sampled', range: [48, 72], samples: struck('orchestra_hit', 48, 72, 0.6), gain: 24, taper: [61, 2] },
-  oboe: { key: 'oboe', name: 'Oboe', blurb: 'Reedy, singing woodwind', color: '#86efac', category: 'Orchestra', kind: 'sampled', range: [58, 91], samples: held('oboe', 58, 91, 0.4), gain: 21.5, taper: [81, 5] },
-  clarinet: { key: 'clarinet', name: 'Clarinet', blurb: 'Round, mellow woodwind', color: '#4ade80', category: 'Orchestra', kind: 'sampled', range: [50, 91], samples: held('clarinet', 50, 91, 0.4), gain: 17, taper: [72, 5.5] },
-  bassoon: { key: 'bassoon', name: 'Bassoon', blurb: 'Low woodwind, playful or dark', color: '#15803d', category: 'Orchestra', kind: 'sampled', range: [34, 72], samples: held('bassoon', 34, 72, 0.4, -12), gain: 22, tone: { presence: 5, mud: -2 } },
+  oboe: { key: 'oboe', name: 'Oboe', blurb: 'Reedy, singing woodwind', color: '#86efac', category: 'Retro (GM)', kind: 'sampled', range: [58, 91], samples: held('oboe', 58, 91, 0.4), gain: 21.5, taper: [81, 5] },
+  clarinet: { key: 'clarinet', name: 'Clarinet', blurb: 'Round, mellow woodwind', color: '#4ade80', category: 'Retro (GM)', kind: 'sampled', range: [50, 91], samples: held('clarinet', 50, 91, 0.4), gain: 17, taper: [72, 5.5] },
+  bassoon: { key: 'bassoon', name: 'Bassoon', blurb: 'Low woodwind, playful or dark', color: '#15803d', category: 'Retro (GM)', kind: 'sampled', range: [34, 72], samples: held('bassoon', 34, 72, 0.4, -12), gain: 22, tone: { presence: 5, mud: -2 } },
   englishHorn: { key: 'englishHorn', name: 'English Horn', blurb: 'Melancholy alto oboe', color: '#22c55e', category: 'Orchestra', kind: 'sampled', range: [52, 81], samples: held('english_horn', 52, 81, 0.4), gain: 15.5, taper: [68, 3] },
   piccolo: { key: 'piccolo', name: 'Piccolo', blurb: 'Tiny bright flute', color: '#bfdbfe', category: 'Orchestra', kind: 'sampled', range: [74, 102], samples: held('piccolo', 74, 102, 0.3), gain: 20.5, taper: [86, 8] },
   recorder: { key: 'recorder', name: 'Recorder', blurb: 'Pure wooden whistle: medieval, folk', color: '#d9f99d', category: 'Orchestra', kind: 'sampled', range: [60, 96], samples: held('recorder', 60, 96, 0.3), gain: 19, taper: [84, 8] },
-  trombone: { key: 'trombone', name: 'Trombone', blurb: 'Big low brass', color: '#ea580c', category: 'Orchestra', kind: 'sampled', range: [40, 72], samples: held('trombone', 40, 72, 0.4, -12), gain: 23.5, tone: { presence: 5, mud: -2 } },
-  tuba: { key: 'tuba', name: 'Tuba', blurb: 'The deepest brass', color: '#7c2d12', category: 'Orchestra', kind: 'sampled', range: [28, 58], samples: held('tuba', 28, 58, 0.4, -12), gain: 13, taper: [44, 2.5], tone: { presence: 5, presenceHz: 1800, mud: -2 } },
-  brassSection: { key: 'brassSection', name: 'Brass Section', blurb: 'Full brass: fanfares, epic', color: '#f59e0b', category: 'Orchestra', kind: 'sampled', range: [40, 84], samples: held('brass_section', 40, 84, 0.4, -14), gain: 21, taper: [63, 1.5] },
+  trombone: { key: 'trombone', name: 'Trombone', blurb: 'Big low brass', color: '#ea580c', category: 'Retro (GM)', kind: 'sampled', range: [40, 72], samples: held('trombone', 40, 72, 0.4, -12), gain: 23.5, tone: { presence: 5, mud: -2 } },
+  tuba: { key: 'tuba', name: 'Tuba', blurb: 'The deepest brass', color: '#7c2d12', category: 'Retro (GM)', kind: 'sampled', range: [28, 58], samples: held('tuba', 28, 58, 0.4, -12), gain: 13, taper: [44, 2.5], tone: { presence: 5, presenceHz: 1800, mud: -2 } },
+  brassSection: { key: 'brassSection', name: 'Brass Section', blurb: 'Full brass: fanfares, epic', color: '#f59e0b', category: 'Retro (GM)', kind: 'sampled', range: [40, 84], samples: held('brass_section', 40, 84, 0.4, -14), gain: 21, taper: [63, 1.5] },
   mutedTrumpet: { key: 'mutedTrumpet', name: 'Muted Trumpet', blurb: 'Jazzy muted trumpet', color: '#fb923c', category: 'Winds & Brass', kind: 'sampled', range: [52, 82], samples: held('muted_trumpet', 52, 82, 0.4), gain: 16, taper: [68, 8] },
-  tenorSax: { key: 'tenorSax', name: 'Tenor Sax', blurb: 'Smoky tenor saxophone', color: '#ca8a04', category: 'Winds & Brass', kind: 'sampled', range: [44, 75], samples: held('tenor_sax', 44, 75, 0.4), gain: 19, taper: [61, 7.5] },
+  tenorSax: { key: 'tenorSax', name: 'Tenor Sax', blurb: 'Smoky tenor saxophone', color: '#ca8a04', category: 'Retro (GM)', kind: 'sampled', range: [44, 75], samples: held('tenor_sax', 44, 75, 0.4), gain: 19, taper: [61, 7.5] },
 
   // Keys, mallets and bells
-  harpsichord: { key: 'harpsichord', name: 'Harpsichord', blurb: 'Baroque plucked keyboard', color: '#b45309', category: 'Keys & Synths', kind: 'sampled', range: [41, 89], samples: struck('harpsichord', 41, 89, 0.4), gain: 20, taper: [66, 1] },
+  harpsichord: { key: 'harpsichord', name: 'Harpsichord', blurb: 'Baroque plucked keyboard', color: '#b45309', category: 'Retro (GM)', kind: 'sampled', range: [41, 89], samples: struck('harpsichord', 41, 89, 0.4), gain: 20, taper: [66, 1] },
   drawbarOrgan: { key: 'drawbarOrgan', name: 'Drawbar Organ', blurb: 'Tonewheel organ: gospel, soul, jazz', color: '#a16207', category: 'Keys & Synths', kind: 'sampled', range: [36, 96], samples: held('drawbar_organ', 36, 96, 0.3), gain: 23, taper: [67, 1] },
   rockOrgan: { key: 'rockOrgan', name: 'Rock Organ', blurb: 'Gritty rock organ', color: '#92400e', category: 'Keys & Synths', kind: 'sampled', range: [36, 96], samples: held('rock_organ', 36, 96, 0.3), gain: 19, taper: [67, 3] },
   celesta: { key: 'celesta', name: 'Celesta', blurb: 'Music-box bells: magical, sugar-plum', color: '#fef08a', category: 'Mallets & Bells', kind: 'sampled', range: [60, 108], samples: struck('celesta', 60, 108, 1.5), gain: 14, taper: [85, 1.5] },
-  glockenspiel: { key: 'glockenspiel', name: 'Glockenspiel', blurb: 'Bright steel bells', color: '#e5e7eb', category: 'Mallets & Bells', kind: 'sampled', range: [72, 108], samples: struck('glockenspiel', 72, 108, 1.5), gain: 24 },
+  glockenspiel: { key: 'glockenspiel', name: 'Glockenspiel', blurb: 'Bright steel bells', color: '#e5e7eb', category: 'Retro (GM)', kind: 'sampled', range: [72, 108], samples: struck('glockenspiel', 72, 108, 1.5), gain: 24 },
   musicBox: { key: 'musicBox', name: 'Music Box', blurb: 'Tinkling music box', color: '#fbcfe8', category: 'Mallets & Bells', kind: 'sampled', range: [60, 96], samples: struck('music_box', 60, 96, 1.5), gain: 22 },
-  vibraphone: { key: 'vibraphone', name: 'Vibraphone', blurb: 'Jazz vibes, soft and round', color: '#a5b4fc', category: 'Mallets & Bells', kind: 'sampled', range: [53, 89], samples: struck('vibraphone', 53, 89, 1.5), gain: 16, taper: [72, 2] },
-  xylophone: { key: 'xylophone', name: 'Xylophone', blurb: 'Dry bright wood bars', color: '#fcd34d', category: 'Mallets & Bells', kind: 'sampled', range: [65, 96], samples: struck('xylophone', 65, 96, 0.6), gain: 17, taper: [82, 3] },
+  vibraphone: { key: 'vibraphone', name: 'Vibraphone', blurb: 'Jazz vibes, soft and round', color: '#a5b4fc', category: 'Retro (GM)', kind: 'sampled', range: [53, 89], samples: struck('vibraphone', 53, 89, 1.5), gain: 16, taper: [72, 2] },
+  xylophone: { key: 'xylophone', name: 'Xylophone', blurb: 'Dry bright wood bars', color: '#fcd34d', category: 'Retro (GM)', kind: 'sampled', range: [65, 96], samples: struck('xylophone', 65, 96, 0.6), gain: 17, taper: [82, 3] },
 
   // Guitars and basses
   nylonGuitar: { key: 'nylonGuitar', name: 'Classical Guitar', blurb: 'Nylon strings: Spanish, classical', color: '#d6a35c', category: 'Guitars & Strings', kind: 'sampled', range: [40, 84], samples: struck('acoustic_guitar_nylon', 40, 84, 0.8), gain: 20 },
-  distortionGuitar: { key: 'distortionGuitar', name: 'Distortion Guitar', blurb: 'Heavy rock and metal', color: '#991b1b', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86], samples: held('distortion_guitar', 40, 86, 0.3), gain: 16.5, taper: [64, 1.5] },
-  overdriveGuitar: { key: 'overdriveGuitar', name: 'Overdrive Guitar', blurb: 'Crunchy rock guitar', color: '#b91c1c', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86], samples: held('overdriven_guitar', 40, 86, 0.3), gain: 18, taper: [64, 2] },
+  distortionGuitar: { key: 'distortionGuitar', name: 'Distortion Guitar', blurb: 'Heavy rock and metal', color: '#991b1b', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: held('distortion_guitar', 40, 86, 0.3), gain: 16.5, taper: [64, 1.5] },
+  overdriveGuitar: { key: 'overdriveGuitar', name: 'Overdrive Guitar', blurb: 'Crunchy rock guitar', color: '#b91c1c', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: held('overdriven_guitar', 40, 86, 0.3), gain: 18, taper: [64, 2] },
   mutedGuitar: { key: 'mutedGuitar', name: 'Muted Guitar', blurb: 'Palm-muted funk and pop chugs', color: '#dc2626', category: 'Guitars & Strings', kind: 'sampled', range: [40, 76], samples: struck('electric_guitar_muted', 40, 76, 0.2), gain: 23, taper: [59, 3.5] },
   banjo: { key: 'banjo', name: 'Banjo', blurb: 'Bright twangy folk and country', color: '#eab308', category: 'Guitars & Strings', kind: 'sampled', range: [48, 84], samples: struck('banjo', 48, 84, 0.5), gain: 20, taper: [67, 1] },
-  uprightBass: { key: 'uprightBass', name: 'Upright Bass', blurb: 'Plucked double bass: jazz', color: '#155e75', category: 'Bass', kind: 'sampled', range: [28, 60], samples: struck('acoustic_bass', 28, 60, 0.4), gain: 20, taper: [45, 2.5], tone: { presence: 5, presenceHz: 1500, mud: -2 } },
+  uprightBass: { key: 'uprightBass', name: 'Upright Bass', blurb: 'Plucked double bass: jazz', color: '#155e75', category: 'Retro (GM)', kind: 'sampled', range: [28, 60], samples: struck('acoustic_bass', 28, 60, 0.4), gain: 20, taper: [45, 2.5], tone: { presence: 5, presenceHz: 1500, mud: -2 } },
   fretlessBass: { key: 'fretlessBass', name: 'Fretless Bass', blurb: 'Smooth singing bass', color: '#0e7490', category: 'Bass', kind: 'sampled', range: [28, 60], samples: struck('fretless_bass', 28, 60, 0.4), gain: 15, taper: [45, 2.5], tone: { presence: 5, presenceHz: 1500, mud: -2 } },
 
   // World and folk
@@ -645,7 +717,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   bagpipe: { key: 'bagpipe', name: 'Bagpipes', blurb: 'Scottish pipes and drone', color: '#65a30d', category: 'World', kind: 'sampled', range: [58, 84], samples: held('bagpipe', 58, 84, 0.3), gain: 20, taper: [72, 4.5] },
   accordion: { key: 'accordion', name: 'Accordion', blurb: 'French and folk squeezebox', color: '#dc2626', category: 'World', kind: 'sampled', range: [48, 89], samples: held('accordion', 48, 89, 0.3), gain: 22, taper: [70, 1.5] },
   harmonica: { key: 'harmonica', name: 'Harmonica', blurb: 'Blues harp', color: '#64748b', category: 'World', kind: 'sampled', range: [60, 84], samples: held('harmonica', 60, 84, 0.3), gain: 17 },
-  kalimba: { key: 'kalimba', name: 'Kalimba', blurb: 'African thumb piano: cozy, gentle', color: '#d97706', category: 'World', kind: 'sampled', range: [48, 84], samples: struck('kalimba', 48, 84, 1), gain: 22, taper: [67, 2.5] },
+  kalimba: { key: 'kalimba', name: 'Kalimba', blurb: 'African thumb piano: cozy, gentle', color: '#d97706', category: 'Retro (GM)', kind: 'sampled', range: [48, 84], samples: struck('kalimba', 48, 84, 1), gain: 22, taper: [67, 2.5] },
   steelDrums: { key: 'steelDrums', name: 'Steel Drums', blurb: 'Caribbean steel pan', color: '#06b6d4', category: 'World', kind: 'sampled', range: [52, 84], samples: struck('steel_drums', 52, 84, 1), gain: 21 },
   dulcimer: { key: 'dulcimer', name: 'Dulcimer', blurb: 'Hammered strings: medieval, folk', color: '#ca8a04', category: 'World', kind: 'sampled', range: [48, 88], samples: struck('dulcimer', 48, 88, 1.2), gain: 27 },
 
@@ -674,18 +746,18 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   soundtrackPad: { key: 'soundtrackPad', name: 'Soundtrack', blurb: 'Wide cinematic swell', color: '#c084fc', category: 'Pads & Atmospheres', kind: 'sampled', range: [36, 96], samples: held('fx_2_soundtrack', 36, 96, 1.5), gain: 30 },
   brightnessPad: { key: 'brightnessPad', name: 'Brightness', blurb: 'Bright airy pad with sparkle', color: '#fef08a', category: 'Pads & Atmospheres', kind: 'sampled', range: [36, 96], samples: held('fx_5_brightness', 36, 96, 1.5), gain: 20, taper: [67, 1.5] },
   echoesPad: { key: 'echoesPad', name: 'Echo Drops', blurb: 'Echoing droplets: caves, underwater', color: '#5eead4', category: 'Pads & Atmospheres', kind: 'sampled', range: [36, 96], samples: held('fx_7_echoes', 36, 96, 1.5), gain: 21, taper: [67, 1] },
-  jazzGuitar: { key: 'jazzGuitar', name: 'Jazz Guitar', blurb: 'Warm hollow-body electric', color: '#92400e', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86], samples: struck('electric_guitar_jazz', 40, 86, 0.6), gain: 15 },
-  cleanGuitar: { key: 'cleanGuitar', name: 'Clean Guitar', blurb: 'Bright clean electric: pop, funk, indie', color: '#ef4444', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86], samples: struck('electric_guitar_clean', 40, 86, 0.6), gain: 23, taper: [64, 2.5] },
+  jazzGuitar: { key: 'jazzGuitar', name: 'Jazz Guitar', blurb: 'Warm hollow-body electric', color: '#92400e', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: struck('electric_guitar_jazz', 40, 86, 0.6), gain: 15 },
+  cleanGuitar: { key: 'cleanGuitar', name: 'Clean Guitar', blurb: 'Bright clean electric: pop, funk, indie', color: '#ef4444', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: struck('electric_guitar_clean', 40, 86, 0.6), gain: 23, taper: [64, 2.5] },
   steelGuitar: { key: 'steelGuitar', name: 'Steel-String Guitar', blurb: 'Bright strummy acoustic', color: '#d97706', category: 'Guitars & Strings', kind: 'sampled', range: [40, 84], samples: struck('acoustic_guitar_steel', 40, 84, 0.8), gain: 22 },
   guitarHarmonics: { key: 'guitarHarmonics', name: 'Guitar Harmonics', blurb: 'Bell-like guitar harmonics', color: '#fde68a', category: 'Guitars & Strings', kind: 'sampled', range: [52, 88], samples: struck('guitar_harmonics', 52, 88, 1), gain: 21 },
-  fingerBass: { key: 'fingerBass', name: 'Finger Bass', blurb: 'Electric bass played with fingers', color: '#0e7490', category: 'Bass', kind: 'sampled', range: [28, 60], samples: struck('electric_bass_finger', 28, 60, 0.4), gain: 9, taper: [45, 3] },
-  pickBass: { key: 'pickBass', name: 'Pick Bass', blurb: 'Electric bass with a pick: rock, punk', color: '#155e75', category: 'Bass', kind: 'sampled', range: [28, 60], samples: struck('electric_bass_pick', 28, 60, 0.4), gain: 22, taper: [45, 2.5] },
+  fingerBass: { key: 'fingerBass', name: 'Finger Bass', blurb: 'Electric bass played with fingers', color: '#0e7490', category: 'Retro (GM)', kind: 'sampled', range: [28, 60], samples: struck('electric_bass_finger', 28, 60, 0.4), gain: 9, taper: [45, 3] },
+  pickBass: { key: 'pickBass', name: 'Pick Bass', blurb: 'Electric bass with a pick: rock, punk', color: '#155e75', category: 'Retro (GM)', kind: 'sampled', range: [28, 60], samples: struck('electric_bass_pick', 28, 60, 0.4), gain: 22, taper: [45, 2.5] },
   slappedBass: { key: 'slappedBass', name: 'Slapped Bass', blurb: 'Recorded slap bass: funk', color: '#0891b2', category: 'Bass', kind: 'sampled', range: [28, 60], samples: struck('slap_bass_1', 28, 60, 0.3), gain: 26, taper: [45, 3] },
   slappedBass2: { key: 'slappedBass2', name: 'Slapped Bass 2', blurb: 'Popped slap bass', color: '#06b6d4', category: 'Bass', kind: 'sampled', range: [28, 60], samples: struck('slap_bass_2', 28, 60, 0.3), gain: 21, taper: [45, 2.5] },
   synthBass1: { key: 'synthBass1', name: 'Analog Synth Bass', blurb: 'Recorded analog synth bass', color: '#4f46e5', category: 'Bass', kind: 'sampled', range: [24, 60], samples: held('synth_bass_1', 24, 60, 0.2), gain: 22, taper: [43, 1.5] },
   synthBass2: { key: 'synthBass2', name: 'Synth Bass 2', blurb: 'Round, rubbery synth bass', color: '#6366f1', category: 'Bass', kind: 'sampled', range: [24, 60], samples: held('synth_bass_2', 24, 60, 0.2), gain: 20, taper: [43, 2] },
   sopranoSax: { key: 'sopranoSax', name: 'Soprano Sax', blurb: 'Sweet, high saxophone', color: '#eab308', category: 'Winds & Brass', kind: 'sampled', range: [56, 87], samples: held('soprano_sax', 56, 87, 0.4), gain: 18, taper: [73, 4] },
-  baritoneSax: { key: 'baritoneSax', name: 'Baritone Sax', blurb: 'Deep, honking saxophone', color: '#a16207', category: 'Winds & Brass', kind: 'sampled', range: [36, 69], samples: held('baritone_sax', 36, 69, 0.4), gain: 20, taper: [54, 4] },
+  baritoneSax: { key: 'baritoneSax', name: 'Baritone Sax', blurb: 'Deep, honking saxophone', color: '#a16207', category: 'Retro (GM)', kind: 'sampled', range: [36, 69], samples: held('baritone_sax', 36, 69, 0.4), gain: 20, taper: [54, 4] },
   shanai: { key: 'shanai', name: 'Shehnai', blurb: 'Indian double-reed: weddings, temples', color: '#f97316', category: 'World', kind: 'sampled', range: [60, 91], samples: held('shanai', 60, 91, 0.4), gain: 14 },
   whistle: { key: 'whistle', name: 'Whistle', blurb: 'Clear whistling melody', color: '#e0f2fe', category: 'World', kind: 'sampled', range: [72, 96], samples: held('whistle', 72, 96, 0.3), gain: 17, taper: [85, 1] },
   melodicTom: { key: 'melodicTom', name: 'Melodic Toms', blurb: 'Tuned toms you can play as notes', color: '#b91c1c', category: 'Drums & Percussion', kind: 'sampled', range: [36, 72], samples: struck('melodic_tom', 36, 72, 0.5), gain: 15 },

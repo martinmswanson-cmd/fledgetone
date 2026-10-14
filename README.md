@@ -41,7 +41,7 @@ The stack: React 19, TypeScript, zustand, Tone.js 15 on the Web Audio API, Tailw
 
 The recorded instruments come from free sample libraries: the Salamander Grand Piano,
 tonejs-instruments (Karoryfer, University of Iowa and VSCO 2 recordings), the FluidR3 and Musyng
-Kite General MIDI soundfonts, Versilian Studios' VSCO 2 Community Edition and Karoryfer's Black
+Kite General MIDI soundfonts, Versilian Studios' VSCO 2 Community Edition and VCSL, and Karoryfer's Black
 And Green Guitars. Their licences differ (CC BY 3.0, CC BY-SA 3.0 and CC0, among others); the
 full list with links and licences is in the Credits section of [GUIDE.md](GUIDE.md#credits) and
 in the app under Guide > Credits, generated from `src/credits.ts`.

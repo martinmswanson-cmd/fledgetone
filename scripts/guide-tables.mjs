@@ -25,7 +25,9 @@ const playable = () => Object.values(INSTRUMENTS).filter((d) => d.kind !== 'slic
 const recorded = (d) => !!d.samples;
 
 /** Instruments whose samples come from no listed source. */
-export const uncredited = () => playable().filter((d) => recorded(d) && !creditFor(d.samples.baseUrl)).map((d) => d.key);
+// The first recording's whole path: an ensemble's baseUrl is the samples folder, its recordings in each set's folder
+const sourceOf = (d) => d.samples.baseUrl + Object.values(d.samples.samples)[0];
+export const uncredited = () => playable().filter((d) => recorded(d) && !creditFor(sourceOf(d))).map((d) => d.key);
 
 export function instrumentTable() {
   const all = playable();
@@ -44,7 +46,7 @@ export function instrumentTable() {
 }
 
 export function creditsTable() {
-  const rows = SAMPLE_CREDITS.map((c) => ({ c, names: playable().filter((d) => recorded(d) && creditFor(d.samples.baseUrl) === c).map((d) => d.name) })).filter((r) => r.names.length);
+  const rows = SAMPLE_CREDITS.map((c) => ({ c, names: playable().filter((d) => recorded(d) && creditFor(sourceOf(d)) === c).map((d) => d.name) })).filter((r) => r.names.length);
   return ['| Instruments | Samples | Licence |', '|---|---|---|', ...rows.map(({ c, names }) => `| ${names.join(', ')} | ${c.samples} | ${c.licence} |`)].join('\n');
 }
 

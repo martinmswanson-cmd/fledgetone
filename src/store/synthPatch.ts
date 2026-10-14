@@ -138,6 +138,26 @@ export const SYNTH_PRESETS: Array<{ name: string; patch: PatchEdit }> = [
     patch: { osc1: { wave: 'triangle' }, osc2: { on: true, wave: 'sawtooth', octave: 1, fine: 6, level: 0.25 }, unison: { voices: 5, spread: 18, width: 1 }, filter: { cutoff: 1800, envAmount: 1, resonance: 0.5 }, filterEnv: { attack: 1.5, decay: 2, sustain: 0.6, release: 2 }, amp: { attack: 1.2, decay: 1, sustain: 0.9, release: 2.5 }, lfo: { target: 'amp', shape: 'sine', sync: 'free', rate: 0.4, depth: 0.15 }, level: 4.5 },
   },
   { name: 'Warm pad', patch: { osc2: { on: true, wave: 'sawtooth', fine: 12, level: 0.7 }, unison: { voices: 3, spread: 12 }, filter: { cutoff: 900, envAmount: 1.5 }, filterEnv: { attack: 0.8, decay: 1.5, sustain: 0.4, release: 1.5 }, amp: { attack: 0.6, sustain: 0.9, release: 1.5 }, level: 0 } },
+  {
+    name: 'Glass pad',
+    patch: { osc1: { wave: 'triangle' }, osc2: { on: true, wave: 'sine', octave: 2, level: 0.35 }, unison: { voices: 3, spread: 10, width: 1 }, filter: { cutoff: 5000, envAmount: 0.5, resonance: 0.6 }, amp: { attack: 0.4, decay: 1.5, sustain: 0.75, release: 2 }, lfo: { target: 'amp', shape: 'sine', sync: 'free', rate: 0.3, depth: 0.1 }, level: 1.5 },
+  },
+  {
+    name: 'Halo pad',
+    patch: { osc1: { wave: 'sawtooth', level: 0.5 }, osc2: { on: true, wave: 'triangle', octave: 1, fine: 5, level: 0.7 }, unison: { voices: 5, spread: 14, width: 1 }, filter: { cutoff: 1400, envAmount: 0.8, resonance: 0.6 }, filterEnv: { attack: 1, decay: 2, sustain: 0.7, release: 2 }, amp: { attack: 0.9, decay: 1, sustain: 0.9, release: 2.5 }, lfo: { target: 'filter', shape: 'sine', sync: 'free', rate: 0.2, depth: 0.25 }, level: 0 },
+  },
+  {
+    name: 'Sweep pad',
+    patch: { osc2: { on: true, wave: 'sawtooth', fine: 10, level: 0.8 }, unison: { voices: 3, spread: 16, width: 0.9 }, filter: { cutoff: 600, envAmount: 0.5, resonance: 3 }, filterEnv: { attack: 1, decay: 1, sustain: 0.6, release: 1.5 }, amp: { attack: 0.5, sustain: 0.9, release: 1.8 }, lfo: { target: 'filter', shape: 'triangle', sync: '1/1', depth: 0.6 }, level: 1.5 },
+  },
+  {
+    name: 'Polysynth',
+    patch: { osc2: { on: true, wave: 'square', fine: -9, level: 0.5 }, unison: { voices: 2, spread: 12, width: 0.7 }, filter: { cutoff: 1500, envAmount: 1.5, resonance: 1 }, filterEnv: { attack: 0.01, decay: 0.6, sustain: 0.35, release: 0.4 }, amp: { attack: 0.01, decay: 0.4, sustain: 0.8, release: 0.5 }, level: 3.5 },
+  },
+  {
+    name: 'Soundtrack pad',
+    patch: { osc1: { wave: 'triangle' }, osc2: { on: true, wave: 'sawtooth', octave: -1, fine: 4, level: 0.4 }, noise: 0.04, unison: { voices: 3, spread: 20, width: 1 }, filter: { cutoff: 1100, envAmount: 1, resonance: 0.7 }, filterEnv: { attack: 2, decay: 2, sustain: 0.5, release: 2 }, amp: { attack: 1.5, decay: 1, sustain: 0.9, release: 3 }, lfo: { target: 'pitch', shape: 'sine', sync: 'free', rate: 0.25, depth: 0.05 }, level: 6 },
+  },
   { name: 'Pluck', patch: { osc2: { on: true, wave: 'square', fine: 8, level: 0.5 }, filter: { cutoff: 600, envAmount: 4, resonance: 2 }, filterEnv: { attack: 0.002, decay: 0.25, sustain: 0, release: 0.2 }, amp: { attack: 0.002, decay: 0.45, sustain: 0, release: 0.2 }, level: 0 } },
   { name: 'Bell', patch: { osc1: { wave: 'sine' }, osc2: { on: true, wave: 'sine', octave: 2, semi: 7, level: 0.45 }, filter: { cutoff: 8000, envAmount: 0 }, amp: { attack: 0.002, decay: 2.2, sustain: 0, release: 1.5 }, level: -1 } },
   { name: 'Brass', patch: { osc2: { on: true, wave: 'sawtooth', fine: -6, level: 0.8 }, filter: { cutoff: 700, envAmount: 2.5, resonance: 1.2 }, filterEnv: { attack: 0.06, decay: 0.4, sustain: 0.5, release: 0.2 }, amp: { attack: 0.04, sustain: 0.85, release: 0.2 }, lfo: { target: 'pitch', shape: 'sine', sync: 'free', rate: 5, depth: 0.08 }, level: -1.5 } },

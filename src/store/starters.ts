@@ -7,6 +7,7 @@ import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { STORY_BUILDERS } from './startersStory';
 import { MATH_BUILDERS } from './startersMath';
 import { FX_NOTES, INSTRUMENTS } from '../audio/instrumentCatalog';
+import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { swellLane } from './swell';
 import { midiOf, nameOf } from './noteTools';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
@@ -1408,8 +1409,91 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  const p = wholeSong(withSwells(inRange(BUILDERS[id]())));
+  const p = wholeSong(withSwells(inRange(recorded(BUILDERS[id]()))));
   return withBreathing(id, withVibrato(id, withLegato(id, p)));
+}
+
+/**
+ * The recorded instrument (or Synth Designer pad) each older General MIDI sound in the starters
+ * becomes, with `db` added to the track's volume so its level in the mix stays where it was
+ * (measured: the same notes through both, A-weighted). `short` plays parts of short notes (under an
+ * eighth on average) with the short-stroke recordings, and `high` takes parts too high for the
+ * recording (the horn's top, which the section's trumpet plays). `anyNote`: a note out of the
+ * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, electric piano, choir and the rest
+ * have no free recording yet and stay as they are.
+ */
+const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: InstrumentKey; shortDb?: number; high?: InstrumentKey; highDb?: number; preset?: string; anyNote?: boolean }> = {
+  cello: { to: 'realCello', db: 1.0, short: 'realCelloShort', shortDb: -2.5 },
+  brassSection: { to: 'realBrass', db: 3.5 },
+  distortionGuitar: { to: 'realLeadGuitar', db: -1.5 },
+  timpani: { to: 'realTimpani', db: 1.0, anyNote: true },
+  slowStrings: { to: 'realStrings', db: -12.5 },
+  strings: { to: 'realStrings', db: 2.5 },
+  tremolo: { to: 'realTremolo', db: 0.5 },
+  uprightBass: { to: 'realUprightBass', db: 1.5 },
+  cleanGuitar: { to: 'realGuitar', db: -1.0 },
+  harp: { to: 'realHarp', db: 0.5 },
+  flute: { to: 'realFlute', db: 0.0, short: 'realFluteShort', shortDb: -3.0 },
+  frenchHorn: { to: 'realHorn', db: 3.0, short: 'realHornShort', shortDb: -2.5, high: 'realBrass', highDb: 0.5 },
+  pizzicato: { to: 'realPizzicato', db: 5.5 },
+  contrabass: { to: 'realDoubleBass', db: 5.0 },
+  marimba: { to: 'realMarimba', db: 0.5 },
+  violin: { to: 'realSoloViolin', db: -0.5, short: 'realViolinsShort', shortDb: -2.5 },
+  viola: { to: 'realViolas', db: -1.0, short: 'realViolasShort', shortDb: -3.5 },
+  trombone: { to: 'realTrombone', db: -0.5, short: 'realTromboneShort', shortDb: 2.0 },
+  pickBass: { to: 'realElectricBass', db: -4.0 },
+  fingerBass: { to: 'realElectricBass', db: -5.5 },
+  vibraphone: { to: 'realVibraphone', db: -5.0 },
+  tenorSax: { to: 'realTenorSax', db: 0.5 },
+  saxophone: { to: 'realAltoSax', db: 1.5 },
+  glockenspiel: { to: 'realGlockenspiel', db: 4.0 },
+  overdriveGuitar: { to: 'realCrunchGuitar', db: -2.5 },
+  pipeOrgan: { to: 'realPipeOrgan', db: 5.0 },
+  kalimba: { to: 'realKalimba', db: 1.5 },
+  chimes: { to: 'realTubularBells', db: -1.0 },
+  trumpet: { to: 'realTrumpet', db: 3.0, short: 'realTrumpetShort', shortDb: -0.5 },
+  bassoon: { to: 'realBassoon', db: -0.5 },
+  clarinet: { to: 'realClarinet', db: -0.5 },
+  harpsichord: { to: 'realHarpsichord', db: -0.5 },
+  tuba: { to: 'realTuba', db: 1.5 },
+  glassPad: { to: 'synthDesigner', preset: 'Glass pad', db: -2.0 },
+  warmPad: { to: 'synthDesigner', preset: 'Warm pad', db: -13.0 },
+  haloPad: { to: 'synthDesigner', preset: 'Halo pad', db: -4.0 },
+  sweepPad: { to: 'synthDesigner', preset: 'Sweep pad', db: 1.5 },
+  polysynthPad: { to: 'synthDesigner', preset: 'Polysynth', db: 0.0 },
+  soundtrackPad: { to: 'synthDesigner', preset: 'Soundtrack pad', db: -6.5 },
+};
+
+/**
+ * Starters play the recorded instruments: each track on an older General MIDI sound moves to its
+ * recording (see RECORDED) when its notes fit the recording's range, at a level that keeps the mix.
+ */
+function recorded(p: ProjectSnapshot): ProjectSnapshot {
+  const tracks = p.tracks.map((t) => {
+    const swap = RECORDED[t.instrumentKey];
+    if (!swap) return t;
+    const notes = p.clips.filter((c) => c.trackId === t.id).flatMap((c) => c.notes);
+    const average = notes.length ? notes.reduce((a, n) => a + durationToBars(n.duration), 0) / notes.length : 1;
+    const fits = (key: InstrumentKey) => {
+      const [lo, hi] = INSTRUMENTS[key].range;
+      return key === 'synthDesigner' || swap.anyNote || notes.filter((n) => midiOf(n.note) >= lo && midiOf(n.note) <= hi).length >= notes.length * 0.9;
+    };
+    const choices: Array<[InstrumentKey | undefined, number | undefined]> = [
+      ...(average < 0.125 - 1e-6 ? [[swap.short, swap.shortDb] as [InstrumentKey | undefined, number | undefined]] : []),
+      [swap.to, swap.db],
+      [swap.high, swap.highDb],
+    ];
+    const [to, db] = choices.find(([key]) => key && fits(key)) ?? [];
+    if (!to) return t;
+    return { ...t, instrumentKey: to, volume: t.volume + db!, ...(swap.preset ? { synth: presetPatch(swap.preset) } : {}) };
+  });
+  const stingers = p.stingers?.map((st) => {
+    const to = RECORDED[st.instrumentKey]?.to;
+    if (!to || to === 'synthDesigner') return st;
+    const [lo, hi] = INSTRUMENTS[to].range;
+    return st.notes.every((n) => midiOf(n.note) >= lo && midiOf(n.note) <= hi) ? { ...st, instrumentKey: to } : st;
+  });
+  return { ...p, tracks, ...(stingers ? { stingers } : {}) };
 }
 
 /** The starters whose solo string melodies play legato, sliding between notes (see withLegato). */
@@ -1519,6 +1603,7 @@ function wholeSong(p: ProjectSnapshot): ProjectSnapshot {
 const SWELLED = new Set<string>([
   'strings', 'slowStrings', 'synthStrings', 'synthStrings2', 'violin', 'viola', 'cello', 'contrabass', 'tremolo',
   'realViolins', 'realViolas', 'realCello', 'realSoloViolin', 'realDoubleBass', 'realTremolo',
+  'realStrings', 'realBrass', 'realTenorSax',
   'choir', 'voiceOohs', 'synthChoir', 'choirPad', 'haloPad', 'warmPad', 'newAgePad', 'glassPad', 'sweepPad', 'polysynthPad', 'soundtrackPad', 'atmosphere',
   'frenchHorn', 'realHorn', 'tuba', 'realTuba', 'trombone', 'realTrombone', 'oboe', 'realOboe', 'clarinet', 'realClarinet', 'bassoon', 'realBassoon', 'englishHorn',
 ]);
@@ -1530,7 +1615,9 @@ const SWELLED = new Set<string>([
  * moves without falling back. A clip with its own mod wheel lane is left as it is.
  */
 function withSwells(p: ProjectSnapshot): ProjectSnapshot {
-  const swelled = new Set(p.tracks.filter((t) => SWELLED.has(t.instrumentKey)).map((t) => t.id));
+  // and the Synth Designer's slow-starting pads
+  const pad = (t: Track) => t.instrumentKey === 'synthDesigner' && (t.synth?.amp.attack ?? 0) >= 0.3;
+  const swelled = new Set(p.tracks.filter((t) => SWELLED.has(t.instrumentKey) || pad(t)).map((t) => t.id));
   const shaped = new Set<string>();
   const clips = p.clips.map((c) => {
     if (!swelled.has(c.trackId) || !c.notes.length || c.audio || c.expression?.mod) return c;

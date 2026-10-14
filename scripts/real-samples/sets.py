@@ -15,6 +15,7 @@ REPOS = {
     'growlybass': 'sfzinstruments/karoryfer.growlybass',
     'emily': 'sfzinstruments/karoryfer.emilyguitar',
     'splendid': 'sfzinstruments/SplendidGrandPiano',
+    'vcsl': 'sgossner/VCSL',
 }
 
 # How each kind of note is measured and cut:
@@ -125,6 +126,20 @@ SETS = [
     S('upright-bass', 'meatbass', [(rf'Samples/pizz/{NOTE}_(?P<layer>vl[1234])_(?P<take>rr[12])\.wav', 0)], ['vl1', 'vl2', 'vl3', 'vl4'], 'plucked'),
     S('electric-bass', 'growlybass', [(rf'sustain/{NOTE}_(?P<layer>pp|p|f|ff)_(?P<take>rr[12])\.wav', -1)], ['pp', 'p', 'f', 'ff'], 'plucked'),
     S('grand-piano', 'splendid', [(rf'Samples/(?P<layer>PP|Mp|MF|FF) {NOTE}\.flac', 1)], ['PP', 'Mp', 'MF', 'FF'], 'ringing', cap=9.0, retune=False),
+    # ---- more orchestra and colour (Versilian Community Sample Library, CC0) ----
+    # The timpani's five drums are named by number, not note: measuring names them
+    S('timpani', 'vcsl', [(r'Membranophones/Struck Membranophones/Timpani 1/Hit/Timpani(?P<index>\d)_Hit_(?P<layer>v[234])_(?P<take>rr\d)_Sum\.wav', 0, lambda i: None)],
+      ['v2', 'v3', 'v4'], 'ringing', cap=5.0),
+    S('tubular-bells', 'vcsl', [(rf'Idiophones/Struck Idiophones/Tubular Bells 1/chimes_{NOTE}_(?P<layer>pp|p|f|ff|fff)_(?P<take>rr\d)\.wav', 1)],
+      ['pp|p', 'f|ff|fff'], 'ringing', cap=8.0),
+    S('vibraphone', 'vcsl', [(rf'Idiophones/Struck Idiophones/Vibraphone/Soft Mallets/Vibes_soft_{NOTE}_(?P<layer>v[12])_(?P<take>rr1)_Main\.wav', 1)],
+      ['v1', 'v2'], 'ringing', cap=6.0),
+    S('harpsichord', 'vcsl', [(rf'Chordophones/Zithers/Harpsichord, Flemish/Sustains/(?:High|Low)/HarpsiRH_(?:High|Low)_Far_{NOTE}_(?P<take>rr\d)(?P<layer>)\.wav', 1)],
+      [''], 'plucked', cap=4.0),
+    S('kalimba', 'vcsl', [(rf'Idiophones/Plucked Idiophones/Kalimba, Kenya/Mbira6_Normal_MainSpirit_{NOTE}_k\d+_(?P<layer>vl3)_(?P<take>rr\d)\.wav', 1)],
+      ['vl3'], 'ringing', cap=4.0),
+    S('tenor-sax', 'vcsl', [(rf'Aerophones/Reed Aerophones/Tenor Saxophone/Non-Vibrato/BrettTenor_NV_Main_{NOTE}_(?P<layer>vl[23])_(?P<take>rr1)\.wav', 1)],
+      ['vl2', 'vl3'], 'sustain', every=2),
 ]
 
 
