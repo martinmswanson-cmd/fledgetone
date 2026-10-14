@@ -269,12 +269,18 @@ Violin and Erhu; drag a `.beatbox.json` onto the page to open it; a one-time not
 - **More game starters** (`src/store/startersGameMore.ts`): their `clip()` folds parts into each
   instrument's range; `boost()` levels a starter; a rule into '*' expands to every other state.
 - **Costumes and state options** (`src/store/costumes.ts`): `costumes` / `stateOptions` in the store
-  and project (saved, not undo steps). The kit renders each state per costume (`states/<s> (<c>).wav`,
+  and project (saved, and undo steps like the rest of the Game tab's parts). The kit renders each state per costume (`states/<s> (<c>).wav`,
   `stems/<s> (<c>)/`), manifest `state.costumes`, `shuffleBars`, `gap`. All three players have
   setCostume / setEffect / setFilter / setReverb and play shuffled pieces with silences (web: scheduled
   on the audio clock, everything up front in an OfflineAudioContext; Godot: its own bus with a
   low-pass and reverb, pieces by timers; Unity: music on a child object with filters, pieces by
   PlayScheduled). Godot run headless; Unity compiled against stubs.
+- **Game parameters** (`src/store/gameParams.ts`, `GameParams.tsx`): `gameParams` in the store and
+  project; each has targets (intensity, filter, reverb, volume, a group's layer) over a window of the
+  parameter. `paramMix` combines them (highest intensity and reverb, lowest filter, volumes and layers
+  multiply); the manifest's `parameters` carry them and all three players' `setParameter` do the same
+  sums (web `mix()`, Godot `_mix()`, Unity `Mix()`; keep them in step, `scripts/gameParams.test.mjs`
+  checks the web one). Audition has a slider per parameter; Try it drives danger/health by name.
 - **Try it in a game** (`src/components/game/GameTryOut.tsx`, `tryOutScene.ts`, `src/store/tryOut.ts`):
   three.js scene (a robot hero and a cube guard) whose events drive the kit's web player
   (`AdaptiveMusic`) on the live mix: notice/lose switch states, distance sets intensity, coins and

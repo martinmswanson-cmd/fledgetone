@@ -948,6 +948,24 @@ The timeline plays a state as written; the game kit's players (and Audition like
 
 The game kit's players can shape the music for what's going on, with no extra files: **underwater** (a low-pass and a big room), **muffled** (behind a wall, the pause menu), **low health** (duller, further away), **dream** (soft, washed in reverb) and **none**, gliding over a second or so. Try them in Audition like the game (the **Effect** buttons). In code it's `setEffect("underwater")` (web), `set_effect("underwater")` (Godot) or `SetEffect("underwater")` (Unity); `setFilter` and `setReverb` set the low-pass and the reverb directly. Sound effects aren't touched.
 
+### Parameters: one number from the game, several changes in the music
+
+A parameter is a number the game sets, 0 to 1, that moves several things in the music at once: **danger** raising the intensity as enemies close in, **health** muffling the music as it runs out, **depth** under water. The game doesn't need to know how the music is mixed; it just calls `setParameter("danger", 0.7)` (web), `set_parameter("danger", 0.7)` (Godot) or `SetParameter("danger", 0.7f)` (Unity). It's how games drive their music in FMOD and Wwise.
+
+In the Game tab, **Parameters** adds one from a preset (or **your own**, empty):
+
+- **danger**: the intensity rises from 15% to full, and the music opens up from a slightly dull 7 kHz over the first half.
+- **health** (starts at 100%): below half, the music muffles (down to 1.2 kHz) and dips to 75%.
+- **depth**: deeper is more muffled (down to 600 Hz) and roomier.
+- **distance**: far from where the music plays (a radio, a stage), quieter, duller and roomier.
+- **tension**: your stem groups come in one after another as it rises (each over its own stretch).
+
+Each thing a parameter moves is a line you can change: **what** it moves (**Intensity**, **Filter** in Hz, **Reverb**, **Volume**, or one stem group's **Layer** level), what it **goes from** and **to**, and over which part of the parameter (**as danger goes from 0 to 50%**: before that it holds its first value, after it its last). **move something else…** adds a line. **starts at** is where the parameter is when the game starts.
+
+When several parameters move the same thing, the strongest wins: the highest intensity and reverb, the lowest filter; volumes and a layer's levels multiply. The effects (above) and `setFilter` / `setReverb` combine the same way. A song whose parameters move the intensity follows them rather than `setIntensity`.
+
+Move them in **Audition like the game**: each parameter gets a slider under **Intensity**. **Try it in a game** drives a parameter called danger (or threat, tension, alert) with the guard, like the intensity, and one called health (or hp, life) with your hearts. The game kit carries them all (its README lists them); the FMOD and Wwise packages leave them out.
+
 ### Try it in a game
 
 **Game → Try it in a game…** (or **Try it in a game** in the Game tab) drops your song into a little 3D game so you can hear it react to play. You're a little robot; a one-eyed cube guard patrols the far side of a fenced field with eight coins.

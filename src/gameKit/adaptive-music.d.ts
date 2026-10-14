@@ -25,6 +25,11 @@ export class AdaptiveMusic {
   setEffect(name: 'none' | 'underwater' | 'muffled' | 'lowHealth' | 'dream', seconds?: number): void;
   setFilter(hz: number, seconds?: number): void;
   setReverb(amount: number, seconds?: number): void;
+  /** The song's parameters' names (see setParameter) */
+  readonly parameterNames: string[];
+  /** Set a parameter of the song's (0 to 1): what it was set up to move follows, over `seconds` */
+  setParameter(name: string, value: number, seconds?: number): void;
+  getParameter(name: string): number | undefined;
   readonly sfxNames: string[];
   playSfx(name: string, opts?: { volume?: number; pitch?: number; when?: number }): { stop(fade?: number): void };
   stopSfx(name?: string, fade?: number): void;

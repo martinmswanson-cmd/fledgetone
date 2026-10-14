@@ -14,6 +14,7 @@ import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
 import { parseGameSfx, type GameSfx } from './gameSfx';
 import { parseCostumes, parseStateOptions, type Costume, type StateOptions } from './costumes';
+import { parseGameParams, type GameParam } from './gameParams';
 import { parseTransitions } from './transitions';
 import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
@@ -66,6 +67,8 @@ export interface ProjectData {
   sfx?: GameSfx[];
   /** Game costumes: the song played other ways (optional; older files have none). */
   costumes?: Costume[];
+  /** Game parameters: named values the game sets, each moving several things (optional). */
+  gameParams?: GameParam[];
   /** How each game state plays (shuffled pieces, silences), by section marker id (optional). */
   stateOptions?: Record<string, StateOptions>;
   /** Transitions into game states, by section marker id (optional; absent means straight cuts). */
@@ -107,6 +110,8 @@ export interface ProjectSnapshot {
   sfx?: GameSfx[];
   /** Game costumes (older projects don't have any). */
   costumes?: Costume[];
+  /** Game parameters (older projects don't have any). */
+  gameParams?: GameParam[];
   /** How each game state plays, by section marker id. */
   stateOptions?: Record<string, StateOptions>;
   /** Transitions into game states, by section marker id. */
@@ -143,6 +148,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     ...(p.stingers?.length ? { stingers: p.stingers } : {}),
     ...(p.sfx?.length ? { sfx: p.sfx } : {}),
     ...(p.costumes?.length ? { costumes: p.costumes } : {}),
+    ...(p.gameParams?.length ? { gameParams: p.gameParams } : {}),
     ...(p.stateOptions && Object.keys(p.stateOptions).length ? { stateOptions: p.stateOptions } : {}),
     ...(p.transitions && Object.keys(p.transitions).length ? { transitions: p.transitions } : {}),
     ...(p.intensity && (Object.keys(p.intensity.curves).length || p.intensity.value !== 1) ? { intensity: p.intensity } : {}),
@@ -454,6 +460,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
     stingers: parseStingers(raw.stingers, isInstrumentKey),
     sfx: parseGameSfx(raw.sfx),
     costumes: parseCostumes(raw.costumes, new Set(tracks.map((t) => t.id)), isInstrumentKey),
+    gameParams: parseGameParams(raw.gameParams),
     stateOptions: parseStateOptions(raw.stateOptions, new Set(markers.map((m) => m.id))),
     transitions: parseTransitions(raw.transitions),
     intensity: {

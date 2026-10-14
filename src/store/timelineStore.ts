@@ -69,12 +69,13 @@ import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
 import { setLivePlayhead } from './playheadClock';
 import { createGameSfx, type GameSfx } from './gameSfx';
+import { cleanTarget, freeParamName, MAX_GAME_PARAMS, MAX_PARAM_TARGETS, paramFromPreset, TARGET_SPECS, type GameParam, type ParamPreset, type ParamTarget, type ParamTargetKind } from './gameParams';
 import { costumeFromPreset, freeCostumeName, MAX_COSTUMES, MAX_COSTUME_TEMPO, MIN_COSTUME_TEMPO, type Costume, type CostumePreset, type CostumeTrack, type StateOptions } from './costumes';
 import type { SfxSound } from '../audio/sfx/sfxSynth';
 import { projectVideo, useVideoStore } from './videoStore';
 import { foldersOf, groupTracks, moveToFolder, moveTrack, tidyFolders, ungroup, updateFolder } from './folders';
 import { ANY_STATE, transitionKey } from './transitions';
-import { defaultCurve, type IntensityCurve } from './intensity';
+import { defaultCurve, groupsInUse, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, hasWork, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
@@ -190,6 +191,7 @@ interface HistoryEntry {
   gameSfx: GameSfx[];
   stateOptions: Record<string, StateOptions>;
   transitions: Record<string, TransitionRule>;
+  gameParams: GameParam[];
 }
 
 /** Everything undo restores, read from the store now. */
@@ -208,6 +210,7 @@ const historyEntry = (s: TimelineState): HistoryEntry => ({
   gameSfx: s.gameSfx,
   stateOptions: s.stateOptions,
   transitions: s.transitions,
+  gameParams: s.gameParams,
 });
 
 let tempoMemo: { bpm: number; points: TempoPoint[]; map: TempoMap } | null = null;
@@ -297,6 +300,7 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     gameSfx: entry.gameSfx,
     stateOptions: entry.stateOptions,
     transitions: entry.transitions,
+    gameParams: entry.gameParams,
   };
 }
 
@@ -603,6 +607,17 @@ interface TimelineState {
   deleteCostume: (id: string) => void;
   /** How each game state plays (shuffled pieces, silences), by section marker id; saved, not undo steps */
   stateOptions: Record<string, StateOptions>;
+  /** Game parameters: named values the game sets, each moving several things (see gameParams.ts) */
+  gameParams: GameParam[];
+  addGameParam: (preset: ParamPreset) => GameParam | null;
+  /** Rename (undoable) */
+  renameGameParam: (id: string, name: string) => void;
+  /** Where the parameter is: its start in the game, and the Game tab's preview (not an undo step) */
+  setGameParamValue: (id: string, value: number) => void;
+  addParamTarget: (id: string, kind: ParamTargetKind) => void;
+  /** Replace target `index`, or remove it (null) */
+  setParamTarget: (id: string, index: number, target: ParamTarget | null) => void;
+  deleteGameParam: (id: string) => void;
   setStateOptions: (markerId: string, opts: StateOptions | null) => void;
   addStinger: (kind: StingerKind) => Stinger;
   updateStinger: (id: string, patch: Partial<Omit<Stinger, 'id'>>) => void;
@@ -2370,6 +2385,41 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         ...pushPast(s),
       })),
     deleteCostume: (id) => set((s) => ({ costumes: s.costumes.filter((c) => c.id !== id), ...pushPast(s) })),
+    gameParams: [],
+    addGameParam: (preset) => {
+      const s = get();
+      if (s.gameParams.length >= MAX_GAME_PARAMS) return null;
+      const p = paramFromPreset(preset, groupsInUse(s.tracks), s.gameParams);
+      set({ gameParams: [...s.gameParams, p], ...pushPast(s) });
+      return p;
+    },
+    renameGameParam: (id, name) =>
+      set((s) => {
+        const was = s.gameParams.find((p) => p.id === id);
+        if (!was) return s;
+        const next = freeParamName(name, s.gameParams.filter((p) => p.id !== id));
+        if (next === was.name) return s;
+        return { gameParams: s.gameParams.map((p) => (p === was ? { ...p, name: next } : p)), ...pushPast(s) };
+      }),
+    setGameParamValue: (id, value) =>
+      set((s) => ({ gameParams: s.gameParams.map((p) => (p.id === id ? { ...p, value: Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)) } : p)) })),
+    addParamTarget: (id, kind) =>
+      set((s) => {
+        const p = s.gameParams.find((x) => x.id === id);
+        if (!p || p.targets.length >= MAX_PARAM_TARGETS) return s;
+        const group = kind === 'layer' ? groupsInUse(s.tracks)[0] : undefined;
+        if (kind === 'layer' && !group) return s;
+        const t = cleanTarget({ kind, group, from: 0, to: 1, start: TARGET_SPECS[kind].start, end: TARGET_SPECS[kind].end });
+        return { gameParams: s.gameParams.map((x) => (x === p ? { ...x, targets: [...x.targets, t] } : x)), ...pushPast(s) };
+      }),
+    setParamTarget: (id, index, target) =>
+      set((s) => {
+        const p = s.gameParams.find((x) => x.id === id);
+        if (!p || index < 0 || index >= p.targets.length) return s;
+        const targets = target ? p.targets.map((t, i) => (i === index ? cleanTarget(target) : t)) : p.targets.filter((_, i) => i !== index);
+        return { gameParams: s.gameParams.map((x) => (x === p ? { ...x, targets } : x)), ...pushPast(s) };
+      }),
+    deleteGameParam: (id) => set((s) => ({ gameParams: s.gameParams.filter((p) => p.id !== id), ...pushPast(s) })),
     stateOptions: {},
     setStateOptions: (markerId, opts) =>
       set((s) => {
@@ -2753,6 +2803,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         stingers: p.stingers ?? [],
         gameSfx: p.sfx ?? [],
         costumes: p.costumes ?? [],
+        gameParams: p.gameParams ?? [],
         stateOptions: p.stateOptions ?? {},
         transitions: p.transitions ?? {},
         intensity: p.intensity?.value ?? 1,
@@ -2994,6 +3045,7 @@ export function currentProject(): ProjectSnapshot {
     stingers: s.stingers,
     sfx: s.gameSfx,
     costumes: s.costumes,
+    gameParams: s.gameParams,
     stateOptions: s.stateOptions,
     transitions: s.transitions,
     intensity: { value: s.intensity, curves: s.intensityCurves },
@@ -3091,6 +3143,7 @@ export function connectAutosave(): () => void {
       state.stingers === prev.stingers &&
       state.gameSfx === prev.gameSfx &&
       state.costumes === prev.costumes &&
+      state.gameParams === prev.gameParams &&
       state.stateOptions === prev.stateOptions &&
       state.transitions === prev.transitions &&
       state.intensity === prev.intensity &&

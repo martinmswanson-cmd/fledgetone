@@ -7,6 +7,8 @@
 //    var rain = music.PlaySfx("rain") loops until music.StopSfx("rain") (or Destroy(rain)).
 // 5. music.SetCostume("8-bit") plays the same music another way from the same point (null: back);
 //    music.SetEffect("underwater") muffles it ("muffled", "lowHealth", "dream", "none").
+// 6. music.SetParameter("danger", 0.7f) sets one of the song's parameters (0 to 1): whatever it was
+//    set up to move (the intensity, a filter, the reverb, the volume, a layer) follows.
 //
 // Every state is a seamless loop exactly a whole number of bars long (and, when the song has stem
 // groups, a set of stems of that length). A state can also play its pieces in a shuffled order or
@@ -29,7 +31,9 @@ public class AdaptiveMusic : MonoBehaviour
     [Serializable] public class Group { public string name; public Point[] points; }
     [Serializable] public class Intensity { public float @default = 1f; public Group[] groups; }
     [Serializable] public class SfxInfo { public string name; public string[] files; public bool loop; public double seconds; }
-    [Serializable] public class MusicData { public string name; public double bpm; public int beatsPerBar; public double beatSeconds; public string key; public Intensity intensity; public State[] states; public Rule[] transitions; public StingerInfo[] stingers; public SfxInfo[] sfx; }
+    [Serializable] public class ParamTarget { public string target; public string group; public float from; public float to = 1f; public float start; public float end; }
+    [Serializable] public class Parameter { public string name; public float @default; public ParamTarget[] targets; }
+    [Serializable] public class MusicData { public string name; public double bpm; public int beatsPerBar; public double beatSeconds; public string key; public Intensity intensity; public Parameter[] parameters; public State[] states; public Rule[] transitions; public StingerInfo[] stingers; public SfxInfo[] sfx; }
 
     public string resourcesFolder = "Music";
     [UnityEngine.Range(0f, 1f)] public float volume = 1f;
@@ -55,6 +59,10 @@ public class AdaptiveMusic : MonoBehaviour
     AudioReverbFilter reverb;
     float effectLevel = 1f;
     Coroutine effectGlide;
+    // The filter, reverb and level as SetFilter, SetReverb and SetEffect last left them
+    float baseFilter = 22000f, baseReverb = 0f, baseLevel = 1f;
+    // The song's parameters (name -> 0 to 1): see SetParameter
+    readonly Dictionary<string, float> parameters = new Dictionary<string, float>();
     // A state played piece by piece (shuffled, or with silences): its scheduler and where pieces start
     Coroutine pieces;
     int playId;
@@ -74,6 +82,65 @@ public class AdaptiveMusic : MonoBehaviour
         text = text.Replace("\"curve\":", "\"points\":");
         Data = JsonUtility.FromJson<MusicData>(text);
         IntensityNow = Data.intensity != null ? Data.intensity.@default : 1f;
+        if (Data.parameters != null) foreach (var p in Data.parameters) parameters[p.name] = Mathf.Clamp01(p.@default);
+        if (parameters.Count > 0) { var m = Mix(); ApplyEffect(Mathf.Min(baseFilter, m.filter), Mathf.Max(baseReverb, m.reverb), baseLevel * m.volume); }
+    }
+
+    /// What the parameters ask for together: the highest intensity and reverb, the lowest filter, the
+    /// volumes and each group's levels multiplied (the same sums as Bo's Beatbox's gameParams.ts).
+    public class ParamMix { public float intensity = -1f; public float filter = 20000f; public float reverb; public float volume = 1f; public Dictionary<string, float> layers = new Dictionary<string, float>(); }
+
+    public ParamMix Mix()
+    {
+        var m = new ParamMix();
+        if (Data?.parameters == null) return m;
+        foreach (var p in Data.parameters)
+        {
+            float v = parameters.TryGetValue(p.name, out var x) ? x : Mathf.Clamp01(p.@default);
+            if (p.targets == null) continue;
+            foreach (var t in p.targets)
+            {
+                float lo = Mathf.Min(t.from, t.to), hi = Mathf.Max(t.from, t.to);
+                float f = hi - lo < 1e-6f ? (v >= hi ? 1f : 0f) : Mathf.Clamp01((v - lo) / (hi - lo));
+                switch (t.target)
+                {
+                    case "filter":
+                        float a = Mathf.Max(60f, t.start), b = Mathf.Max(60f, t.end);
+                        m.filter = Mathf.Min(m.filter, Mathf.Clamp(a * Mathf.Pow(b / a, f), 60f, 20000f));
+                        break;
+                    case "intensity": m.intensity = Mathf.Max(m.intensity, Mathf.Clamp01(Mathf.Lerp(t.start, t.end, f))); break;
+                    case "reverb": m.reverb = Mathf.Max(m.reverb, Mathf.Clamp01(Mathf.Lerp(t.start, t.end, f))); break;
+                    case "volume": m.volume *= Mathf.Clamp01(Mathf.Lerp(t.start, t.end, f)); break;
+                    case "layer":
+                        if (!string.IsNullOrEmpty(t.group)) m.layers[t.group] = (m.layers.TryGetValue(t.group, out var l) ? l : 1f) * Mathf.Clamp01(Mathf.Lerp(t.start, t.end, f));
+                        break;
+                }
+            }
+        }
+        return m;
+    }
+
+    /// The song's parameters' names.
+    public IEnumerable<string> ParameterNames { get { if (Data.parameters != null) foreach (var p in Data.parameters) yield return p.name; } }
+
+    public float GetParameter(string name) => parameters.TryGetValue(name, out var v) ? v : 0f;
+
+    /// Set one of the song's parameters (0 to 1) over `seconds`: whatever it was set up to move follows.
+    public void SetParameter(string name, float value, float seconds = 0.5f)
+    {
+        if (!parameters.ContainsKey(name)) throw new ArgumentException("No parameter called " + name);
+        parameters[name] = Mathf.Clamp01(value);
+        GlideMix(seconds);
+        if (glide != null) StopCoroutine(glide);
+        glide = StartCoroutine(Glide(seconds));
+    }
+
+    // The filter, reverb and level as the effect, SetFilter / SetReverb and the parameters have them
+    void GlideMix(float seconds)
+    {
+        var m = Mix();
+        if (effectGlide != null) StopCoroutine(effectGlide);
+        effectGlide = StartCoroutine(GlideEffect(Mathf.Min(baseFilter, m.filter), Mathf.Max(baseReverb, m.reverb), baseLevel * m.volume, seconds));
     }
 
     AudioClip Clip(string file)
@@ -99,14 +166,22 @@ public class AdaptiveMusic : MonoBehaviour
     double SecondsPerBeat { get { var st = CurrentState(); return (st != null && st.beatSeconds > 0 ? st.beatSeconds : Data.beatSeconds > 0 ? Data.beatSeconds : 60.0 / Data.bpm) / tempoNow; } }
     double Line(string unit) { var st = CurrentState(); return SecondsPerBeat * (unit == "bar" ? (st != null && st.beatsPerBar > 0 ? st.beatsPerBar : Data.beatsPerBar) : 1); }
 
-    /// A stem group's level at the intensity now (straight lines between its curve's points).
+    /// A stem group's level now: its curve at the intensity, times what the parameters ask of it.
     public float Level(string group)
     {
-        if (string.IsNullOrEmpty(group) || Data.intensity == null || Data.intensity.groups == null) return 1f;
+        if (string.IsNullOrEmpty(group)) return 1f;
+        if (Data.parameters == null || Data.parameters.Length == 0) return CurveLevel(group, IntensityNow);
+        var m = Mix();
+        return CurveLevel(group, m.intensity >= 0f ? m.intensity : IntensityNow) * (m.layers.TryGetValue(group, out var l) ? l : 1f);
+    }
+
+    float CurveLevel(string group, float intensity)
+    {
+        if (Data.intensity == null || Data.intensity.groups == null) return 1f;
         foreach (var g in Data.intensity.groups)
         {
             if (g.name != group || g.points == null || g.points.Length == 0) continue;
-            float x = Mathf.Clamp01(IntensityNow);
+            float x = Mathf.Clamp01(intensity);
             var c = g.points;
             if (x <= c[0].x) return c[0].y;
             for (int i = 1; i < c.Length; i++)
@@ -417,22 +492,23 @@ public class AdaptiveMusic : MonoBehaviour
             case "none": break;
             default: throw new ArgumentException("No effect called " + name);
         }
-        if (effectGlide != null) StopCoroutine(effectGlide);
-        effectGlide = StartCoroutine(GlideEffect(hz, wet, level, seconds));
+        baseFilter = hz; baseReverb = wet; baseLevel = level;
+        GlideMix(seconds);
     }
 
-    /// The music through a low-pass at `hz` (22000: open), gliding over `seconds`.
+    /// The music through a low-pass at `hz` (22000: open), gliding over `seconds` (a parameter asking
+    /// for a lower one wins while it does).
     public void SetFilter(float hz, float seconds = 0.5f)
     {
-        if (effectGlide != null) StopCoroutine(effectGlide);
-        effectGlide = StartCoroutine(GlideEffect(hz, ReverbAmount, effectLevel, seconds));
+        baseFilter = Mathf.Clamp(hz, 40f, 22000f);
+        GlideMix(seconds);
     }
 
     /// How much of the music goes to the room reverb, 0 to 1, over `seconds`.
     public void SetReverb(float amount, float seconds = 0.5f)
     {
-        if (effectGlide != null) StopCoroutine(effectGlide);
-        effectGlide = StartCoroutine(GlideEffect(lowPass.cutoffFrequency, Mathf.Clamp01(amount), effectLevel, seconds));
+        baseReverb = Mathf.Clamp01(amount);
+        GlideMix(seconds);
     }
 
     float ReverbAmount => reverb.reverbPreset == AudioReverbPreset.Off ? 0f : Mathf.InverseLerp(-4000f, 0f, reverb.room);

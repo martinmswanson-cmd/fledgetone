@@ -9,6 +9,8 @@
 #    var rain = Music.play_sfx("rain") loops until rain.stop() (or Music.stop_sfx("rain")).
 # 5. Music.set_costume("8-bit") plays the same music another way from the same point ("": back);
 #    Music.set_effect("underwater") muffles it ("muffled", "lowHealth", "dream", "none").
+# 6. Music.set_parameter("danger", 0.7) sets one of the song's parameters (0 to 1): whatever it was
+#    set up to move (the intensity, a filter, the reverb, the volume, a layer) follows.
 #
 # Every state is a seamless loop exactly a whole number of bars long (and, when the song has stem
 # groups, a set of stems of that length), so switching on a bar line keeps the beat. A state can
@@ -37,6 +39,12 @@ var _music_bus := ""
 var _lowpass: AudioEffectLowPassFilter
 var _reverb: AudioEffectReverb
 var _effect_level := 1.0
+## The song's parameters (name -> 0 to 1): see set_parameter
+var params := {}
+# The filter, reverb and level as set_filter, set_reverb and set_effect last left them
+var _base_filter := 20000.0
+var _base_reverb := 0.0
+var _base_level := 1.0
 var _effect_tween: Tween
 
 const EFFECTS := {
@@ -88,6 +96,9 @@ func load_song(dir: String) -> void:
 		path = music_dir.path_join("music.json")
 	data = JSON.parse_string(FileAccess.open(path, FileAccess.READ).get_as_text())
 	intensity = float(data.get("intensity", {}).get("default", 1.0))
+	params = {}
+	for p in data.get("parameters", []):
+		params[p.name] = float(p.get("default", 0.0))
 	for s in data.states:
 		if s.get("file") != null:
 			_load_loop(s.file)
@@ -111,6 +122,9 @@ func load_song(dir: String) -> void:
 				st.loop_begin = 0
 				st.loop_end = int(st.get_length() * st.mix_rate)
 			streams[f] = st
+	# Where the parameters start
+	if not params.is_empty() and is_inside_tree():
+		_apply_mix(0.01)
 
 func _load_loop(file: String) -> void:
 	var stream: AudioStreamWAV = load(music_dir.path_join(file))
@@ -145,13 +159,73 @@ func _line(unit: String) -> float:
 	return _seconds_per_beat() * (per_bar if unit == "bar" else 1.0)
 
 ## A stem group's level at the intensity now (straight lines between its curve's points).
+## A stem group's level now: its curve at the intensity, times what the parameters ask of it.
 func level(group) -> float:
 	if group == null:
 		return 1.0
+	var m := _mix()
+	var x: float = intensity if m.intensity == null else float(m.intensity)
+	return _curve_level(group, x) * float(m.layers.get(group, 1.0))
+
+## The song's parameters' names.
+func parameter_names() -> Array:
+	var names := []
+	for p in data.get("parameters", []):
+		names.append(p.name)
+	return names
+
+## Set one of the song's parameters (0 to 1) over `seconds`: whatever it was set up to move follows.
+func set_parameter(name: String, value: float, seconds := 0.5) -> void:
+	if not params.has(name):
+		push_error("No parameter called %s" % name)
+		return
+	params[name] = clampf(value, 0.0, 1.0)
+	_apply_mix(seconds)
+
+func get_parameter(name: String) -> float:
+	return float(params.get(name, 0.0))
+
+# What the parameters ask for together: the highest intensity and reverb, the lowest filter, the
+# volumes and each group's levels multiplied (the same sums as Bo's Beatbox's gameParams.ts)
+func _mix() -> Dictionary:
+	var m := {"intensity": null, "filter": 20000.0, "reverb": 0.0, "volume": 1.0, "layers": {}}
+	for p in data.get("parameters", []):
+		var v := clampf(float(params.get(p.name, p.get("default", 0.0))), 0.0, 1.0)
+		for t in p.targets:
+			var lo := minf(float(t.from), float(t.to))
+			var hi := maxf(float(t.from), float(t.to))
+			var f: float = (1.0 if v >= hi else 0.0) if hi - lo < 1e-6 else clampf((v - lo) / (hi - lo), 0.0, 1.0)
+			var a := float(t.start)
+			var b := float(t.end)
+			match String(t.target):
+				"filter":
+					a = maxf(60.0, a)
+					b = maxf(60.0, b)
+					m.filter = minf(m.filter, clampf(a * pow(b / a, f), 60.0, 20000.0))
+				"intensity":
+					m.intensity = maxf(0.0 if m.intensity == null else float(m.intensity), clampf(a + (b - a) * f, 0.0, 1.0))
+				"reverb":
+					m.reverb = maxf(m.reverb, clampf(a + (b - a) * f, 0.0, 1.0))
+				"volume":
+					m.volume *= clampf(a + (b - a) * f, 0.0, 1.0)
+				"layer":
+					if t.get("group") != null:
+						m.layers[t.group] = float(m.layers.get(t.group, 1.0)) * clampf(a + (b - a) * f, 0.0, 1.0)
+	return m
+
+# The filter, reverb, level and group levels as the effect, set_filter / set_reverb and the parameters have them
+func _apply_mix(seconds: float) -> void:
+	var m := _mix()
+	_glide_effect(minf(_base_filter, m.filter), maxf(_base_reverb, m.reverb), _base_level * m.volume, seconds)
+	for v in _voices:
+		if is_instance_valid(v.player) and v.group != null:
+			create_tween().tween_property(v.player, "volume_db", linear_to_db(maxf(level(v.group), 0.0001)), maxf(0.01, seconds))
+
+func _curve_level(group, x: float) -> float:
 	for g in data.get("intensity", {}).get("groups", []):
 		if g.name == group:
 			var c: Array = g.curve
-			var x := clampf(intensity, 0.0, 1.0)
+			x = clampf(x, 0.0, 1.0)
 			if x <= float(c[0][0]):
 				return float(c[0][1])
 			for i in range(1, c.size()):
@@ -384,17 +458,21 @@ func set_effect(name: String, seconds := 1.0) -> void:
 		push_error("No effect called %s" % name)
 		return
 	var e: Array = EFFECTS[name]
-	_glide_effect(e[0], e[1], e[2], seconds)
+	_base_filter = e[0]
+	_base_reverb = e[1]
+	_base_level = e[2]
+	_apply_mix(seconds)
 
-## The music through a low-pass at `hz` (20000: open), gliding over `seconds`.
+## The music through a low-pass at `hz` (20000: open), gliding over `seconds` (a parameter asking
+## for a lower one wins while it does).
 func set_filter(hz: float, seconds := 0.5) -> void:
-	_ensure_bus()
-	_glide_effect(hz, _reverb.wet / 0.6, _effect_level, seconds)
+	_base_filter = clampf(hz, 40.0, 20000.0)
+	_apply_mix(seconds)
 
 ## How much of the music goes to the room reverb, 0 to 1, over `seconds`.
 func set_reverb(amount: float, seconds := 0.5) -> void:
-	_ensure_bus()
-	_glide_effect(_lowpass.cutoff_hz, amount, _effect_level, seconds)
+	_base_reverb = clampf(amount, 0.0, 1.0)
+	_apply_mix(seconds)
 
 func _glide_effect(hz: float, wet: float, lvl: float, seconds: float) -> void:
 	_ensure_bus()
@@ -410,13 +488,14 @@ func _set_level(v: float) -> void:
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(_music_bus), linear_to_db(maxf(v, 0.0001)))
 
 ## Crossfade the stem groups to `value` (0 to 1) along their curves, over `seconds`.
+## (A song whose parameters move the intensity follows them instead.)
 func set_intensity(value: float, seconds := 0.5) -> void:
 	intensity = clampf(value, 0.0, 1.0)
 	for v in _voices:
 		if not is_instance_valid(v.player):
 			continue
 		if v.group != null:
-			create_tween().tween_property(v.player, "volume_db", linear_to_db(maxf(level(v.group), 0.0001)), seconds)
+			create_tween().tween_property(v.player, "volume_db", linear_to_db(maxf(level(v.group), 0.0001)), maxf(0.01, seconds))
 
 ## Play a stinger over the music on the next beat (or "bar", or "now").
 func stinger(name: String, unit := "") -> void:

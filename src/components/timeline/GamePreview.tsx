@@ -4,6 +4,7 @@
  * runtime kit and the FMOD / Wwise package.
  */
 import { CostumesPanel, StateOptionsPanel } from './GameCostumes';
+import { GameParamsPanel } from './GameParams';
 import { secondsBetween, tempoAt } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
@@ -485,6 +486,7 @@ export const GamePanel: React.FC = () => {
       </section>
       <section className="flex flex-col gap-3 min-w-0" data-game="intensity">
         <IntensityPanel />
+        <GameParamsPanel />
         <div data-game="variations">
           <LoopVariations />
         </div>

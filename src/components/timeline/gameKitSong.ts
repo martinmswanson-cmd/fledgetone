@@ -22,6 +22,7 @@ export function gameKitSong(): GameKitSong {
     intensityCurves: s.intensityCurves,
     sfx: s.gameSfx,
     costumes: s.costumes,
+    gameParams: s.gameParams,
     stateOptions: s.stateOptions,
   };
 }

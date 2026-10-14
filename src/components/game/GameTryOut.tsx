@@ -35,6 +35,9 @@ type SfxMoment = keyof typeof OWN_SOUNDS;
 let cache: { key: string; manifest: AudioManifest; buffers: Map<string, AudioBuffer> } | null = null;
 
 const KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyJ', 'KeyR']);
+/** Parameter names the try-out drives: danger with the guard, health with the hearts. */
+const DANGER = /danger|threat|tension|enemy|alert/i;
+const HEALTH = /health|^hp$|life/i;
 
 export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const host = useRef<HTMLDivElement>(null);
@@ -158,6 +161,16 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     [say]
   );
 
+  /**
+   * The song's own parameters, where their names say what they're for: danger (or threat,
+   * tension) follows the guard like the intensity does, health follows the hearts.
+   */
+  const setParams = useCallback((re: RegExp, value: number, seconds: number) => {
+    const m = music.current;
+    if (!m) return;
+    for (const name of m.parameterNames) if (re.test(name)) m.setParameter(name, value, seconds);
+  }, []);
+
   const start = useCallback(() => {
     const m = music.current;
     const mp = mapRef.current;
@@ -168,8 +181,10 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     if (mp.calm) m.play(mp.calm);
     m.setIntensity(0.3, 0.1);
     lastIntensity.current = 0.3;
+    setParams(DANGER, 0.3, 0.1);
+    setParams(HEALTH, 1, 0.1);
     setLog([`Exploring: ${mp.calm || '(no state)'}`]);
-  }, []);
+  }, [setParams]);
 
   // The game starts at once; the music joins in when it's rendered
   useEffect(() => {
@@ -183,6 +198,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         lose: () => {
           toState(mapRef.current?.calm, 'The guard gave up');
           music.current?.setIntensity(0.3, 2);
+          setParams(DANGER, 0.3, 2);
           lastIntensity.current = 0.3;
         },
         distance: (d, chasing) => {
@@ -190,6 +206,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           if (Math.abs(v - lastIntensity.current) > 0.04) {
             lastIntensity.current = v;
             music.current?.setIntensity(v, 0.4);
+            setParams(DANGER, v, 0.4);
           }
         },
         coin: (left) => {
@@ -201,6 +218,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           sfx('hurtSfx');
           // One heart left: the music goes dull and far away (the player's low-health effect)
           if (hearts === 1) music.current?.setEffect('lowHealth', 0.6);
+          setParams(HEALTH, hearts / 3, 0.6);
           say(hearts > 0 ? `Ouch: ${hearts} heart${hearts === 1 ? '' : 's'} left` : 'Out of hearts');
         },
         step: () => sfx('stepSfx', Math.random() * 0.6 - 0.3),
@@ -216,6 +234,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         gameOver: () => {
           stinger(mapRef.current?.loseStinger);
           music.current?.setIntensity(0, 2);
+          setParams(DANGER, 0, 2);
           say('Game over: press R to try again');
         },
       });
@@ -253,7 +272,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       sc?.dispose();
       scene.current = null;
     };
-  }, [sfx, stinger, toState, say, start]);
+  }, [sfx, stinger, toState, say, start, setParams]);
 
   // Esc closes it
   useEffect(() => {

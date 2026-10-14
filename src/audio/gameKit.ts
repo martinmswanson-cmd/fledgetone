@@ -6,6 +6,7 @@ import { createZip, type ZipEntry } from './zip';
 import { renderSfx, sfxFileName, varySfx } from './sfx/sfxSynth';
 import type { GameSfx } from '../store/gameSfx';
 import { applyCostume, type Costume, type StateOptions } from '../store/costumes';
+import { manifestParam, type GameParam } from '../store/gameParams';
 import { songSections } from '../store/cutToLength';
 import { detectKey } from '../store/songKey';
 import { ANY_STATE, transitionCue } from '../store/transitions';
@@ -49,6 +50,8 @@ export interface GameKitSong {
   sfx?: GameSfx[];
   /** The song played other ways: each state is rendered in each (see costumes.ts) */
   costumes?: Costume[];
+  /** Named values the game sets, each moving several things (see gameParams.ts) */
+  gameParams?: GameParam[];
   /** How each state plays (shuffled pieces, silences), by section marker id */
   stateOptions?: Record<string, StateOptions>;
 }
@@ -76,6 +79,8 @@ export interface AudioManifest {
   sampleRate: number;
   key: string | null;
   intensity: { default: number; groups: Array<{ name: string; curve: IntensityCurve }> };
+  /** Named values the game sets (setParameter), each moving the intensity, filter, reverb, volume or a group's level over a window of it */
+  parameters?: Array<ReturnType<typeof manifestParam>>;
   /** `bpm`: the state's tempo where it starts (the song's when there are no tempo changes) */
   /**
    * `beatSeconds` and `beatsPerBar`: the state's beat (a quarter in 4/4, an eighth in 6/8) at its
@@ -317,6 +322,7 @@ export async function buildGameKitParts(
       default: song.intensity,
       groups: stemGroups.map((g) => ({ name: g.name, curve: g.name === MAIN_STEM && !groupNames.includes(MAIN_STEM) ? [[0, 1], [1, 1]] : (song.intensityCurves[g.name] ?? defaultCurve(g.name)) })),
     },
+    ...(song.gameParams?.length ? { parameters: song.gameParams.map(manifestParam) } : {}),
     states,
     transitions,
     stingers,
@@ -408,6 +414,17 @@ function costumeLine(m: AudioManifest, lang: 'js' | 'gd' | 'cs'): string {
   return `\n    music.setCostume('${c}');       // the same music another way (null to go back)`;
 }
 
+/** The README line that sets a parameter, in each engine's words (none when the song has none). */
+function paramLine(m: AudioManifest, lang: 'js' | 'gd' | 'cs'): string {
+  const p = m.parameters?.[0]?.name;
+  if (!p) return '';
+  if (lang === 'gd') return `\nMusic.set_parameter("${p}", 0.7)  # 0 to 1: moves what it was set up to move`;
+  if (lang === 'cs') return `\nmusic.SetParameter("${p}", 0.7f); // 0 to 1: moves what it was set up to move`;
+  return `\n    music.setParameter('${p}', 0.7); // 0 to 1: moves what it was set up to move`;
+}
+
+const TARGET_WORDS: Record<string, string> = { intensity: 'intensity', filter: 'filter', reverb: 'reverb', volume: 'volume', layer: 'layer' };
+
 function inventory(m: AudioManifest): string {
   const lines = [`- **States** (each loops until you switch): ${m.states.map((s) => s.name).join(', ')}`];
   if (m.intensity.groups.length) lines.push(`- **Intensity layers**: ${m.intensity.groups.map((g) => g.name).join(', ')}`);
@@ -415,6 +432,7 @@ function inventory(m: AudioManifest): string {
   if (m.sfx?.length) lines.push(`- **Sound effects**: ${m.sfx.map((s) => `${s.name}${s.files.length > 1 ? ` (${s.files.length} variations)` : ''}${s.loop ? ' (loop)' : ''}`).join(', ')}`);
   const costumes = m.states[0]?.costumes?.map((c) => c.name) ?? [];
   if (costumes.length) lines.push(`- **Costumes** (the same music played another way, swapped mid-loop): ${costumes.join(', ')}`);
+  if (m.parameters?.length) lines.push(`- **Parameters** (0 to 1, set by the game): ${m.parameters.map((p) => `${p.name} (moves ${[...new Set(p.targets.map((t) => (t.target === 'layer' ? `the ${t.group} layer` : TARGET_WORDS[t.target])))].join(', ') || 'nothing yet'}; starts at ${p.default})`).join('; ')}`);
   const shaped = m.states.filter((s) => s.shuffleBars || s.gap);
   if (shaped.length) lines.push(`- **Played in pieces**: ${shaped.map((s) => `${s.name} (${[s.shuffleBars ? `${s.shuffleBars}-bar pieces shuffled` : '', s.gap ? `${s.gap.min}-${s.gap.max} s silences` : ''].filter(Boolean).join(', ')})`).join('; ')}`);
   lines.push('- **Effects** (no files needed): underwater, muffled, lowHealth, dream, none');
@@ -451,7 +469,7 @@ Music.play("${c.first}")
 \`\`\`gdscript
 Music.set_state("${c.second}")         # switches on the beat, the way the song's transitions say
 Music.set_intensity(0.7)              # 0 to 1: the layers fade in and out
-Music.set_effect("underwater")        # or "muffled", "lowHealth", "dream", "none"${costumeLine(m, 'gd')}${c.sting ? `\nMusic.stinger("${c.sting}")         # plays over the music on the next beat` : ''}${c.sfx ? `\nMusic.play_sfx("${c.sfx}")          # a different variation each time` : ''}${c.loop ? `\nvar hum = Music.play_sfx("${c.loop}") # loops until hum.stop()` : ''}
+Music.set_effect("underwater")        # or "muffled", "lowHealth", "dream", "none"${costumeLine(m, 'gd')}${paramLine(m, 'gd')}${c.sting ? `\nMusic.stinger("${c.sting}")         # plays over the music on the next beat` : ''}${c.sfx ? `\nMusic.play_sfx("${c.sfx}")          # a different variation each time` : ''}${c.loop ? `\nvar hum = Music.play_sfx("${c.loop}") # loops until hum.stop()` : ''}
 Music.stop()
 \`\`\`
 
@@ -483,7 +501,7 @@ var music = FindObjectOfType<AdaptiveMusic>();
 music.Play("${c.first}");
 music.SetState("${c.second}");         // switches on the beat, the way the song's transitions say
 music.SetIntensity(0.7f);             // 0 to 1: the layers fade in and out
-music.SetEffect("underwater");        // or "muffled", "lowHealth", "dream", "none"${costumeLine(m, 'cs')}${c.sting ? `\nmusic.Stinger("${c.sting}");         // plays over the music on the next beat` : ''}${c.sfx ? `\nmusic.PlaySfx("${c.sfx}");          // a different variation each time` : ''}${c.loop ? `\nmusic.PlaySfx("${c.loop}");          // loops until music.StopSfx("${c.loop}")` : ''}
+music.SetEffect("underwater");        // or "muffled", "lowHealth", "dream", "none"${costumeLine(m, 'cs')}${paramLine(m, 'cs')}${c.sting ? `\nmusic.Stinger("${c.sting}");         // plays over the music on the next beat` : ''}${c.sfx ? `\nmusic.PlaySfx("${c.sfx}");          // a different variation each time` : ''}${c.loop ? `\nmusic.PlaySfx("${c.loop}");          // loops until music.StopSfx("${c.loop}")` : ''}
 music.Stop();
 \`\`\`
 
@@ -534,7 +552,7 @@ Web (players/web/adaptive-music.js)
     music.play('${first}');            // after the player clicks or presses a key
     music.setState('${second}');
     music.setIntensity(0.7);
-    music.setEffect('underwater');     // or 'muffled', 'lowHealth', 'dream', 'none'${costumeLine(m, 'js')}${sting ? `\n    music.stinger('${sting}');` : ''}${m.sfx?.length ? `\n    music.playSfx('${m.sfx[0].name}');      // sound effects: a different variation each time` : ''}
+    music.setEffect('underwater');     // or 'muffled', 'lowHealth', 'dream', 'none'${costumeLine(m, 'js')}${paramLine(m, 'js')}${sting ? `\n    music.stinger('${sting}');` : ''}${m.sfx?.length ? `\n    music.playSfx('${m.sfx[0].name}');      // sound effects: a different variation each time` : ''}
 
 Godot 4 (players/godot/AdaptiveMusic.gd)
     Copy this folder to res://music/, add the script as an autoload called Music, call

@@ -171,6 +171,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const [intensity, setIntensity] = useState(() => useTimelineStore.getState().intensity);
   const [costume, setCostume] = useState<string | null>(null);
   const [effect, setEffect] = useState<(typeof AUDITION_EFFECTS)[number]['id']>('none');
+  const [params, setParams] = useState<Record<string, number>>({});
   const player = useRef<AdaptiveMusic | null>(null);
 
   useEffect(() => {
@@ -320,6 +321,26 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               />
               <span className="w-10 text-right text-forge-text">{manifest.intensity.groups.length ? `${Math.round(intensity * 100)}%` : 'no stems'}</span>
             </label>
+            {(manifest.parameters ?? []).map((p) => (
+              <label key={p.name} className="flex items-center gap-2 font-mono text-[10px]" title="One of the song's parameters, as the game would set it">
+                <span className="w-20 truncate text-violet-200">{p.name}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={params[p.name] ?? p.default}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setParams((was) => ({ ...was, [p.name]: v }));
+                    player.current?.setParameter(p.name, v, 0.2);
+                  }}
+                  className="flex-1 accent-violet-400"
+                  aria-label={`Audition parameter ${p.name}`}
+                />
+                <span className="w-10 text-right text-forge-text">{Math.round((params[p.name] ?? p.default) * 100)}%</span>
+              </label>
+            ))}
             <div className="flex items-center gap-2">
               <button
                 type="button"

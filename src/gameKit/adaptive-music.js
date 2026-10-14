@@ -9,6 +9,7 @@
 //   music.stinger('Victory');            // plays over the music on the next beat
 //   music.setCostume('8-bit');           // the same music played another way, mid-loop (null: back)
 //   music.setEffect('underwater');       // muffled and roomy ('muffled', 'lowHealth', 'none')
+//   music.setParameter('danger', 0.7);   // a parameter of the song's: moves what it was set up to move
 //   music.playSfx('sword_hit');          // a sound effect (a different variation each time)
 //   const rain = music.playSfx('rain');  // a looping one plays until stopped: rain.stop()
 //   music.setVolume(0.8); music.setSfxVolume(0.6);
@@ -57,6 +58,10 @@ export class AdaptiveMusic {
     this.intensity = 1;
     this.costume = null;
     this.effect = 'none';
+    this.effectLevel = 1;
+    this.baseFilter = 20000; // the filter and reverb as setFilter, setReverb and setEffect last left them
+    this.baseReverb = 0;
+    this.params = new Map(); // the song's parameters (name -> value): see setParameter
     this.timer = null;
   }
 
@@ -91,6 +96,8 @@ export class AdaptiveMusic {
     this.data = data;
     this.buffers = buffers;
     this.intensity = data.intensity?.default ?? 1;
+    this.params = new Map((data.parameters ?? []).map((p) => [p.name, p.default ?? 0]));
+    this.applyMix(0);
   }
 
   /** Every sound file a manifest uses. */
@@ -144,11 +151,82 @@ export class AdaptiveMusic {
     return s;
   }
 
-  /** A stem group's level at the intensity now (straight lines between its curve's points). */
+  /** The names of the song's parameters (see setParameter). */
+  get parameterNames() {
+    return (this.data?.parameters ?? []).map((p) => p.name);
+  }
+
+  /**
+   * What the parameters ask for together: the highest intensity and reverb, the lowest filter, the
+   * volumes and each group's levels multiplied (the same sums as Bo's Beatbox's gameParams.ts).
+   */
+  mix() {
+    const m = { intensity: null, filter: 20000, reverb: 0, volume: 1, layers: {} };
+    const clamp = (x) => Math.max(0, Math.min(1, x));
+    for (const p of this.data?.parameters ?? []) {
+      const v = clamp(this.params.get(p.name) ?? p.default ?? 0);
+      for (const t of p.targets) {
+        const lo = Math.min(t.from, t.to);
+        const hi = Math.max(t.from, t.to);
+        const f = hi - lo < 1e-6 ? (v >= hi ? 1 : 0) : clamp((v - lo) / (hi - lo));
+        if (t.target === 'filter') {
+          const a = Math.max(60, t.start);
+          const b = Math.max(60, t.end);
+          m.filter = Math.min(m.filter, Math.max(60, Math.min(20000, a * Math.pow(b / a, f))));
+          continue;
+        }
+        const x = t.start + (t.end - t.start) * f;
+        if (t.target === 'intensity') m.intensity = Math.max(m.intensity ?? 0, clamp(x));
+        else if (t.target === 'reverb') m.reverb = Math.max(m.reverb, clamp(x));
+        else if (t.target === 'volume') m.volume *= clamp(x);
+        else if (t.target === 'layer' && t.group) m.layers[t.group] = (m.layers[t.group] ?? 1) * clamp(x);
+      }
+    }
+    return m;
+  }
+
+  /**
+   * Set one of the song's parameters (0 to 1), over `seconds`: whatever it was set up to move
+   * (the intensity, a filter, the reverb, the volume, a stem group's level) follows.
+   */
+  setParameter(name, value, seconds = 0.5) {
+    if (!this.params.has(name)) throw new Error(`No parameter called "${name}" (try ${this.parameterNames.join(', ') || 'none: this song has none'})`);
+    this.params.set(name, Math.max(0, Math.min(1, Number(value) || 0)));
+    this.applyMix(seconds);
+  }
+
+  /** Where a parameter is now. */
+  getParameter(name) {
+    return this.params.get(name);
+  }
+
+  /** The filter, reverb, level and group levels as the effect, setFilter / setReverb and the parameters have them. */
+  applyMix(seconds = 0.5) {
+    const m = this.mix();
+    const t = this.ctx.currentTime;
+    const hz = Math.max(40, Math.min(20000, Math.min(this.baseFilter, m.filter)));
+    this.filter.frequency.cancelScheduledValues(t);
+    this.filter.frequency.setValueAtTime(this.filter.frequency.value, t);
+    if (seconds > 0) this.filter.frequency.exponentialRampToValueAtTime(hz, t + seconds);
+    else this.filter.frequency.setValueAtTime(hz, t);
+    const ramp = Math.max(0.01, seconds / 3);
+    this.reverbSend.gain.setTargetAtTime(Math.max(this.baseReverb, m.reverb) * 0.6, t, ramp);
+    this.levelGain.gain.setTargetAtTime(this.effectLevel * m.volume, t, ramp);
+    if (this.current) for (const [group, g] of this.current.groups) if (group) g.gain.setTargetAtTime(this.level(group), t, ramp);
+  }
+
+  /** A stem group's level now: its curve at the intensity, times what the parameters ask of it. */
   level(group) {
+    const m = this.data?.parameters?.length ? this.mix() : null;
+    const layer = m?.layers[group] ?? 1;
+    return this.curveLevel(group, m?.intensity ?? this.intensity) * layer;
+  }
+
+  /** A stem group's level on its intensity curve at `intensity` (straight lines between its points). */
+  curveLevel(group, intensity) {
     const g = this.data.intensity?.groups?.find((x) => x.name === group);
     if (!g || !g.curve.length) return 1;
-    const x = Math.max(0, Math.min(1, this.intensity));
+    const x = Math.max(0, Math.min(1, intensity));
     const c = g.curve;
     if (x <= c[0][0]) return c[0][1];
     for (let i = 1; i < c.length; i++) {
@@ -418,32 +496,34 @@ export class AdaptiveMusic {
     const e = EFFECTS[name];
     if (!e) throw new Error(`No effect called "${name}" (try ${Object.keys(EFFECTS).join(', ')})`);
     this.effect = name;
-    this.setFilter(e.filter, seconds);
-    this.setReverb(e.reverb, seconds);
-    const t = this.ctx.currentTime;
-    this.levelGain.gain.setTargetAtTime(e.level, t, Math.max(0.01, seconds / 3));
+    this.baseFilter = e.filter;
+    this.baseReverb = e.reverb;
+    this.effectLevel = e.level;
+    this.applyMix(Math.max(0.01, seconds));
   }
 
-  /** The music through a low-pass at `hz` (20000: open), gliding over `seconds`. */
+  /**
+   * The music through a low-pass at `hz` (20000: open), gliding over `seconds`. A parameter asking
+   * for a lower one wins while it does.
+   */
   setFilter(hz, seconds = 0.5) {
-    const t = this.ctx.currentTime;
-    this.filter.frequency.cancelScheduledValues(t);
-    this.filter.frequency.setValueAtTime(this.filter.frequency.value, t);
-    this.filter.frequency.exponentialRampToValueAtTime(Math.max(40, Math.min(20000, hz)), t + Math.max(0.01, seconds));
+    this.baseFilter = Math.max(40, Math.min(20000, hz));
+    this.applyMix(Math.max(0.01, seconds));
   }
 
-  /** How much of the music goes to the room reverb, 0 to 1, over `seconds`. */
+  /** How much of the music goes to the room reverb, 0 to 1, over `seconds` (or more, while a parameter asks for more). */
   setReverb(amount, seconds = 0.5) {
-    this.reverbSend.gain.setTargetAtTime(Math.max(0, Math.min(1, amount)) * 0.6, this.ctx.currentTime, Math.max(0.01, seconds / 3));
+    this.baseReverb = Math.max(0, Math.min(1, amount));
+    this.applyMix(Math.max(0.01, seconds));
   }
 
-  /** Crossfade the stem groups to `value` (0 to 1) along their curves, over `seconds`. */
+  /**
+   * Crossfade the stem groups to `value` (0 to 1) along their curves, over `seconds`. (A song whose
+   * parameters move the intensity follows them instead.)
+   */
   setIntensity(value, seconds = 0.5) {
     this.intensity = Math.max(0, Math.min(1, value));
-    if (!this.current) return;
-    for (const [group, g] of this.current.groups) {
-      if (group) g.gain.setTargetAtTime(this.level(group), this.ctx.currentTime, Math.max(0.01, seconds / 3));
-    }
+    if (this.data) this.applyMix(seconds);
   }
 
   /** Play a stinger over the music on the next beat (or 'bar', or 'now'). */
