@@ -612,6 +612,66 @@ const GAME_REACT: Lesson = {
   ],
 };
 
-export const LESSONS: Lesson[] = [TOUR, BEGINNER, INTERMEDIATE, HELPERS, GAME_MUSIC, EXPERT, GAME_REACT];
+/** Every clip's mod wheel lane, so a swell drawn over one already there shows as a change */
+const modLanes = () => JSON.stringify(tl().clips.map((c) => c.expression?.mod ?? null));
+const vibratoPoints = () => tl().clips.reduce((n, c) => n + (c.expression?.vibrato?.length ?? 0), 0);
+const CONTROLLER_LANE = '[aria-label="Controller lane"]';
+const inEditor = (selector: string) => () => (tl().editingClipId ? selector : '[data-timeline-scroll]');
+
+const EXPRESSIVE: Lesson = {
+  id: 'expressive',
+  level: 'Intermediate',
+  title: 'Make it expressive',
+  summary: 'Swells and the mod wheel for dynamics, vibrato, a tempo that breathes, and a passage played backwards.',
+  minutes: 5,
+  steps: [
+    {
+      title: 'Make it expressive',
+      body: 'Real players never hold a note flat: they swell into it, let it sing, and ease the tempo at the end of a phrase. These tools do that for you. Strings, a pad, a choir or brass show it best; every step is one undo.',
+    },
+    {
+      title: 'Open a clip',
+      body: 'Double-click a clip of held notes (strings or a pad are ideal) to open it in the piano roll.',
+      target: '[data-timeline-scroll]',
+      before: ensureTrack,
+      task: { hint: 'Double-click a clip', done: () => !!tl().editingClipId },
+    },
+    {
+      title: 'Swell',
+      body: 'Open **TOOLS** and choose **Swell**: every phrase grows and fades again, the way a bow or a breath does. **Crescendo** only grows; **Diminuendo** only fades. Play it to hear the difference.',
+      target: inEditor('[data-search="tools"]'),
+      task: { hint: 'TOOLS › Swell', begin: modLanes, done: (m) => modLanes() !== m },
+    },
+    {
+      title: 'The mod wheel is dynamics',
+      body: 'The swell is drawn in the **Mod wheel (dynamics)** lane under the notes. Up is loud and bright, down is soft and dark, on every instrument (the strings, brass and winds change between their soft and loud recordings). Drag a point to reshape it, or click to add one. A MIDI keyboard’s wheel does the same live.',
+      target: inEditor(CONTROLLER_LANE),
+    },
+    {
+      title: 'Vibrato',
+      body: 'Pick **Vibrato** in the lane’s menu and draw a few points rising toward the end of a long note: a singer’s or violinist’s vibrato usually blooms late, not from the start.',
+      target: inEditor(CONTROLLER_LANE),
+      task: { hint: 'Vibrato lane: draw a point', begin: vibratoPoints, done: (n) => vibratoPoints() > (n as number) },
+    },
+    {
+      title: 'Let it breathe',
+      body: 'Close the piano roll and open the **Song** menu: **Breathe** eases the tempo back into the end of every phrase and picks it up again after, and slows into the last phrase, as a pianist playing rubato does. Set the loop around a part first to breathe only there.',
+      target: '#menu-song',
+      task: { hint: 'Song › Breathe', begin: () => tl().tempoPoints.length, done: (n) => tl().tempoPoints.length > (n as number) },
+    },
+    {
+      title: 'Play it backwards',
+      body: 'Right-click a clip and choose **Play backwards**: it turns into audio played in reverse, notes fading in with their reverb before them. **Song › Play bars … backwards** does a whole passage between the loop’s In and Out. Undo brings the music back.',
+      target: '[data-timeline-scroll]',
+      task: { hint: 'Right-click a clip, Play backwards', done: () => tl().clips.some((c) => !!c.audio?.reversedFrom) },
+    },
+    {
+      title: 'Expressive!',
+      body: 'Also worth a try: overlap two string notes a little and the second slides in without a new bow stroke (legato, with a small slide between the notes), and **Use a recorded room…** (the FX Rack’s **Master** tab) puts the whole song in a real hall.',
+    },
+  ],
+};
+
+export const LESSONS: Lesson[] = [TOUR, BEGINNER, INTERMEDIATE, HELPERS, EXPRESSIVE, GAME_MUSIC, EXPERT, GAME_REACT];
 
 export const lessonById = (id: string): Lesson | undefined => LESSONS.find((l) => l.id === id);

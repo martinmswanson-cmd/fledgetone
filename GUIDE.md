@@ -42,6 +42,7 @@ The first time you open Bo's Beatbox it offers a one-minute **tour** and six han
 - **Intermediate: Shape and mix a song**: add an instrument, use the Filter, Pump and reverb, draw automation, use the Mixer, add markers, a build-up and drop, and the loop.
 - **Expert: Pro techniques**: search, the Synth Designer, sidechaining from any track, the Gate, key changes, freezing, the Game preview and game-ready exports, and the fastest shortcuts.
 - **Intermediate: Write with the helpers**: a chord progression in a key, an accompaniment for it, the Drummer, melody variations, and a clip's own swing (FEEL).
+- **Intermediate: Make it expressive**: a Swell from the piano roll's TOOLS, the mod wheel as dynamics, a Vibrato lane, Breathe (a tempo that eases into phrase ends) and Play backwards.
 - **Intermediate: Game music that reacts**: open a game starter, switch states in the Game tab, the transition matrix, a written bridge, switching on the phrase, and Audition like the game.
 - **Expert: Make it react**: parameters the game sets, costumes, shuffled pieces and silences, effects and parameter sliders in Audition, Try it in a game, and what the game kit carries.
 

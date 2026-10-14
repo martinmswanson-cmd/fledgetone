@@ -4,7 +4,8 @@ import { barsToDuration, durationToBars } from './timelineTypes';
 /**
  * Expression: a note clip's controller lanes, as a MIDI keyboard's wheels and pedal would play them.
  * - Pitch bend (semitones): every note on the track bends together, gliding between points.
- * - Mod wheel (0 to 1): vibrato, as deep as the wheel is up.
+ * - Mod wheel (0 to 1): dynamics, from soft and dark to loud and bright, on every instrument.
+ * - Vibrato (0 to 1): as deep as the lane is up.
  * - Sustain pedal (down or up): a note let go while the pedal is down rings on until it comes up.
  * Before a lane's first point it rests (no bend, wheel down, pedal up). Pure, so it's unit tested
  * (scripts/expression.test.mjs).
