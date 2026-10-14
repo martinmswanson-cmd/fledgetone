@@ -35,6 +35,8 @@ interface DesignerVoice extends NativeVoice {
   patch: SynthPatch;
   filters: BiquadFilterNode[];
   oscs: OscillatorNode[];
+  /** Each oscillator's own detune (cents), before any bend */
+  detunes: number[];
 }
 
 export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch | undefined) {
@@ -43,6 +45,10 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
   const voices = createVoiceSet(raw, 0.3);
   let patch = initial ?? defaultSynthPatch();
   let last: { voice: DesignerVoice; freq: number } | null = null;
+  // Pitch bend (cents): the bend lane, vibrato and each note's own bend (scoops, slides) move every
+  // sounding voice's oscillators; a voice starting later starts at the bend reached
+  let bendCents = 0;
+  const live = new Set<DesignerVoice>();
 
   // A synced rate follows the tempo of this context's Transport (the export's has its own)
   const lfoHz = (p: SynthPatch) => (p.lfo.sync === 'free' ? p.lfo.rate : 1 / (bus.toSeconds('4n') * SYNC_BEATS[p.lfo.sync]));
@@ -64,11 +70,12 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     const sources: AudioScheduledSourceNode[] = [];
     const nodes: AudioNode[] = [];
     const oscs: OscillatorNode[] = [];
+    const detunes: number[] = [];
     const mix = raw.createGain();
     nodes.push(mix);
 
     const addOsc = (wave: OscillatorType, hz: number, detune: number, level: number, pan: number) => {
-      const o = createOsc(raw, wave, hz, start, detune);
+      const o = createOsc(raw, wave, hz, start, detune + bendCents);
       if (glideFrom !== null) {
         const ratio = hz / freq;
         o.frequency.setValueAtTime(glideFrom * ratio, start);
@@ -88,6 +95,7 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
       }
       sources.push(o);
       oscs.push(o);
+      detunes.push(detune);
       nodes.push(o, g);
     };
 
@@ -166,8 +174,10 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     }
     if (p.lfo.target !== 'amp' || p.lfo.depth <= 0) amp.connect(input);
 
-    const voice: DesignerVoice = { start, stopAt: end + releaseTail(p.amp.release), sources, nodes, amp, patch: p, filters: [filter], oscs };
+    const voice: DesignerVoice = { start, stopAt: end + releaseTail(p.amp.release), sources, nodes, amp, patch: p, filters: [filter], oscs, detunes };
     voices.add(voice);
+    for (const v of live) if (v.stopAt < raw.currentTime) live.delete(v);
+    live.add(voice);
     last = { voice, freq };
     return voice;
   };
@@ -191,6 +201,15 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
         voices.release(voice, t, voice.patch.amp.release);
         if (voice.patch.filter.envAmount !== 0) voice.filters.forEach((f) => releaseTo(f.detune, t, 0, voice.patch.filterEnv.release));
       };
+    },
+    bend: (cents: number, time: number) => {
+      if (Math.abs(cents - bendCents) < 0.01) return;
+      bendCents = cents;
+      const t = notLate(bus.context, time);
+      for (const v of live) {
+        if (v.stopAt <= t) continue;
+        v.oscs.forEach((o, i) => o.detune.setTargetAtTime(v.detunes[i] + cents, t, 0.006));
+      }
     },
     setPatch: (next: SynthPatch | undefined) => {
       patch = next ?? defaultSynthPatch();

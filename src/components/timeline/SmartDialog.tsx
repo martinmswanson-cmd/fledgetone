@@ -10,7 +10,8 @@ import { ACCOMP_STYLES, CHORD_STYLES, DRUM_STYLES, PROGRESSIONS, chordName, prog
 import type { AccompStyle, ChordStyle, DrumStyle } from '../../store/smartTools';
 import type { InstrumentKey } from '../../store/timelineTypes';
 import { INSTRUMENTS } from '../../audio/instrumentCatalog';
-import { accompanyChords, drumMeterAt, makeChordClip, makeDrumClip, songKey, useSmartDialog, varyMelody } from '../../store/smartActions';
+import { accompanyChords, drumMeterAt, makeChordClip, makeDrumClip, makeMathClip, songKey, useSmartDialog, varyMelody } from '../../store/smartActions';
+import { MATH_PATTERNS, type MathPatternId } from '../../store/mathPatterns';
 import { MELODY_VARIATIONS, type MelodyVariation, type VariationPlace } from '../../store/melodyVariations';
 import { meterAt } from '../../audio/tempoMap';
 import { showToast } from './toastStore';
@@ -26,6 +27,7 @@ export const SmartDialog: React.FC = () => {
   const close = () => useSmartDialog.setState({ open: null });
   if (open.mode === 'accompany' && open.clipId) return <AccompanyForm clipId={open.clipId} onClose={close} />;
   if (open.mode === 'melody' && open.clipId) return <MelodyForm clipId={open.clipId} onClose={close} />;
+  if (open.mode === 'math') return <MathForm trackId={open.trackId} bar={open.bar} onClose={close} />;
   return open.mode === 'chords' ? <ChordsForm trackId={open.trackId} bar={open.bar} onClose={close} /> : <DrummerForm trackId={open.trackId} bar={open.bar} onClose={close} />;
 };
 
@@ -329,6 +331,68 @@ const MelodyForm: React.FC<{ clipId: string; onClose: () => void }> = ({ clipId,
         <div className="flex justify-end">
           <button type="button" className={primary} onClick={make}>
             Make it
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+let lastMath = { pattern: 'pendulum' as MathPatternId, bars: 8 };
+
+/** Math patterns: a clip a formula writes, in the song's key. */
+const MathForm: React.FC<{ trackId: string; bar: number; onClose: () => void }> = ({ trackId, bar, onClose }) => {
+  const detected = useMemo(() => songKey(), []);
+  const [root, setRoot] = useState(detected.root);
+  const [mode, setMode] = useState(detected.mode);
+  const [opts, setOpts] = useState(lastMath);
+  const track = useTimelineStore((s) => s.tracks.find((t) => t.id === trackId));
+  const chosen = MATH_PATTERNS.find((m) => m.id === opts.pattern) ?? MATH_PATTERNS[0];
+  const make = () => {
+    lastMath = opts;
+    const key = keyOf(root, mode);
+    if (makeMathClip(trackId, bar, opts.pattern, key, opts.bars)) showToast(`${chosen.name} in ${key.name}`);
+    onClose();
+  };
+  return (
+    <Modal title={`Math patterns${track ? ` on ${track.name}` : ''}`} onClose={onClose}>
+      <div className="flex flex-col gap-3 p-4">
+        <div className="grid grid-cols-2 gap-3">
+          <label className={field}>
+            Pattern
+            <select className={control} value={opts.pattern} onChange={(e) => setOpts((o) => ({ ...o, pattern: e.target.value as MathPatternId }))}>
+              {MATH_PATTERNS.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className={field}>
+            Key {root === detected.root && mode === detected.mode && <span className="text-cyan-300">(the song's)</span>}
+            <div className="flex gap-1">
+              <select className={control} value={root} onChange={(e) => setRoot(Number(e.target.value))} aria-label="Key root">
+                {NOTE_NAMES.map((n, i) => (
+                  <option key={n} value={i}>{n}</option>
+                ))}
+              </select>
+              <select className={control} value={mode} onChange={(e) => setMode(e.target.value as 'major' | 'minor')} aria-label="Major or minor">
+                <option value="major">major</option>
+                <option value="minor">minor</option>
+              </select>
+            </div>
+          </label>
+          <label className={field}>
+            Length
+            <select className={control} value={opts.bars} onChange={(e) => setOpts((o) => ({ ...o, bars: Number(e.target.value) }))}>
+              {[4, 8, 16].map((n) => (
+                <option key={n} value={n}>{n} bars</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="text-xs text-forge-text">{chosen.detail}</p>
+        <div className="flex justify-end">
+          <button type="button" className={primary} onClick={make}>
+            Make clip at bar {bar}
           </button>
         </div>
       </div>

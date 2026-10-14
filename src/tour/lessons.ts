@@ -78,7 +78,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'The menus',
-      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Tools**, **Video**, **Game**, **View** and **Help**. **New** offers a blank timeline, the demo song or one of 75 starters, game music among them.',
+      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Tools**, **Video**, **Game**, **View** and **Help**. **New** offers a blank timeline, the demo song or one of 76 starters, game music among them.',
       target: '[role="menubar"]',
     },
     {

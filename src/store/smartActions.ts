@@ -1,3 +1,4 @@
+import { mathPattern, MATH_PATTERNS, type MathPatternId } from './mathPatterns';
 import { create } from 'zustand';
 import { useTimelineStore } from './timelineStore';
 import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
@@ -18,7 +19,7 @@ const tl = () => useTimelineStore.getState();
 const newId = () => uid('note');
 
 /** Which smart dialog is open, for which track and bar. */
-export const useSmartDialog = create<{ open: null | { mode: 'chords' | 'drummer' | 'accompany' | 'melody'; trackId: string; bar: number; clipId?: string } }>(() => ({ open: null }));
+export const useSmartDialog = create<{ open: null | { mode: 'chords' | 'drummer' | 'accompany' | 'melody' | 'math'; trackId: string; bar: number; clipId?: string } }>(() => ({ open: null }));
 
 /** The song's key, from its notes (C major for a song with none yet). */
 export function songKey(): SongKey {
@@ -223,4 +224,10 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
   if (at + clip.lengthBars > TOTAL_BARS + 1 + 1e-6) return 'No room after this clip on its track: try a new track';
   placeClip(track.id, at, clip.lengthBars, notes, name);
   return `${what[0].toUpperCase()}${what.slice(1)} at bar ${Math.round(at * 100) / 100}`;
+}
+
+/** A Math patterns clip (mathPatterns.ts) on a pitched track, in `key`, `bars` long. */
+export function makeMathClip(trackId: string, atBar: number, pattern: MathPatternId, key: SongKey, bars: number): string | null {
+  const notes = mathPattern(pattern, { root: key.root, steps: key.steps }, bars, newId);
+  return placeClip(trackId, atBar, bars, notes, MATH_PATTERNS.find((m) => m.id === pattern)?.name ?? 'Math pattern');
 }

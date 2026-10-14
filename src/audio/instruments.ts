@@ -525,7 +525,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     }
     case 'synthDesigner': {
       const synth = createDesignedSynth(output, options.synth);
-      return { play: synth.play, noteOn: synth.hold, releaseAll: synth.releaseAll, dispose: synth.dispose, setSynth: synth.setPatch, ready: Promise.resolve() };
+      return { play: synth.play, noteOn: synth.hold, bend: synth.bend, releaseAll: synth.releaseAll, dispose: synth.dispose, setSynth: synth.setPatch, ready: Promise.resolve() };
     }
     case 'chipDrums':
       return synthKit(createChipDrums(output), output);

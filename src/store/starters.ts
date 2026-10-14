@@ -5,6 +5,7 @@ import { PLAYLIST_BUILDERS } from './startersPlaylist';
 import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { STORY_BUILDERS } from './startersStory';
+import { MATH_BUILDERS } from './startersMath';
 import { FX_NOTES, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { swellLane } from './swell';
 import { midiOf, nameOf } from './noteTools';
@@ -57,6 +58,7 @@ export const STARTERS = [
   { id: 'neonRitual', group: 'Anime & Cartoon', name: 'Neon Ritual', detail: '98 BPM, E Phrygian. Game-ready: Trance (a drone, a gated glitch arp, a synth choir chant, a silent bar with a stutter) and Drop (bII stabs, processed kick, taiko).' },
   { id: 'dubstep', group: 'Electronic', name: 'Dubstep', detail: '140 BPM, F minor. Half-time drums on a techno kit, a gritty wobble and growl call-and-response over a clean sub, dark pad chords.' },
   { id: 'house', group: 'Electronic', name: 'House', detail: '126 BPM, A minor. Four-on-the-floor on a techno kit, off-beat bass, electric piano ninth stabs, a warm pad and a dark pluck in the peak.' },
+  { id: 'formulaRush', group: 'Electronic', name: 'Formula Rush', detail: '150 BPM, A minor. Every Math pattern at once: pendulum bells, Pascal\'s harp and an endless riser over a stutter build, then an 808 that bounces like a spring, a rave hoover walking the circle of fifths and a Fibonacci pluck.' },
   { id: 'trance', group: 'Electronic', name: 'Trance', detail: '138 BPM, A minor, dark. A broken pluck arp, a snare-roll build with a riser, then gated supersaws over a rolling bass.' },
   { id: 'dnb', group: 'Electronic', name: 'Drum & Bass', detail: '174 BPM, F minor. A two-step breakbeat, a gliding Reese over a clean sub, dark ninth pads and a low pluck arp.' },
   { id: 'synthwave', group: 'Electronic', name: 'Synthwave', detail: '100 BPM, A minor. LinnDrum with a big room snare, pulsing analog bass, chorused poly pads, a dark pluck arp and a saw lead: night drives.' },
@@ -1401,6 +1403,7 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   ...GAME_BUILDERS,
   ...MORE_GAME_BUILDERS,
   ...STORY_BUILDERS,
+  ...MATH_BUILDERS,
 };
 
 /** A fresh copy of a starter (new ids each time). */

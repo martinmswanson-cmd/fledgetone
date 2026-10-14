@@ -5,6 +5,7 @@
  * Positions are worked out in 96ths of a bar so notes never drift.
  */
 import { SWELL_SHAPES, swellLane, type SwellShape } from '../../store/swell';
+import { scoop, springBounce, stutterBuild, tritoneSlide } from '../../store/mathPatterns';
 import { retrograde } from '../../store/noteTools';
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { NotationView } from './NotationView';
@@ -19,7 +20,8 @@ import { padNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
 import type { DrumRack } from '../../store/timelineTypes';
 import { useLivePlayhead } from '../../store/playheadClock';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songTempo, useTimelineStore } from '../../store/timelineStore';
+import { tempoAt } from '../../audio/tempoMap';
 import type { Clip, ClipGroove, InstrumentKey, NoteEvent, SlicerSettings } from '../../store/timelineTypes';
 import { barsToDuration, durationToBars, SLICE_KEY_BASE, uid } from '../../store/timelineTypes';
 import { arpeggiate, chordNotes, CHORDS, fitToScale, humanize, inScale, legato, midiOf, nameOf, quantize, ratchet, roll, ROOT_NAMES, SCALES, strum, transpose } from '../../store/noteTools';
@@ -200,6 +202,10 @@ const TOOLS = [
   { id: 'octaveDown', label: 'Octave down', drums: false },
   { id: 'fitScale', label: 'Fit to scale', drums: false },
   { id: 'retrograde', label: 'Reverse notes (last note first)', drums: true },
+  { id: 'stutterBuild', label: 'Stutter build (last beat ×2, ×4, ×8, ×16)', drums: true },
+  { id: 'springBounce', label: 'Spring bounce (pitch boings and settles)', drums: false },
+  { id: 'tritoneSlide', label: 'Tritone slide (up half an octave)', drums: false },
+  { id: 'scoop', label: 'Scoop (swoop up into each note)', drums: false },
   ...SWELL_SHAPES.map((s) => ({ id: s.id, label: s.label, drums: false })),
 ] as const;
 type ToolId = (typeof TOOLS)[number]['id'];
@@ -497,6 +503,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const grid = gridUnits / UNITS_PER_BAR;
     const [lo, hi] = INSTRUMENTS[instrument].range;
     const newId = () => uid('note');
+    // Seconds in a bar where the clip starts, for the bend curves drawn in time
+    const barSeconds = 240 / tempoAt(clip.startBar, songTempo(store));
     const out = (() => {
       switch (tool) {
         case 'quantize': return quantize(target, grid, clip.startBar - 1);
@@ -519,6 +527,10 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         case 'octaveDown': return transpose(target, -12, lo, hi);
         case 'fitScale': return scale ? fitToScale(target, scale) : target;
         case 'retrograde': return retrograde(target, bars);
+        case 'stutterBuild': return stutterBuild(target, newId);
+        case 'springBounce': return springBounce(target, barSeconds);
+        case 'tritoneSlide': return tritoneSlide(target, barSeconds);
+        case 'scoop': return scoop(target, barSeconds);
         default: return target;
       }
     })();

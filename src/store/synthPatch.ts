@@ -143,6 +143,23 @@ export const SYNTH_PRESETS: Array<{ name: string; patch: PatchEdit }> = [
   { name: 'Brass', patch: { osc2: { on: true, wave: 'sawtooth', fine: -6, level: 0.8 }, filter: { cutoff: 700, envAmount: 2.5, resonance: 1.2 }, filterEnv: { attack: 0.06, decay: 0.4, sustain: 0.5, release: 0.2 }, amp: { attack: 0.04, sustain: 0.85, release: 0.2 }, lfo: { target: 'pitch', shape: 'sine', sync: 'free', rate: 5, depth: 0.08 }, level: -1.5 } },
   { name: '8-bit lead', patch: { osc1: { wave: 'square' }, filter: { cutoff: 12000, envAmount: 0 }, lfo: { target: 'pitch', shape: 'triangle', sync: 'free', rate: 6, depth: 0.15 }, amp: { attack: 0.002, sustain: 1, release: 0.05 }, level: -4 } },
   { name: 'Riser noise', patch: { osc1: { on: false }, noise: 0.9, filter: { type: 'bandpass', cutoff: 400, resonance: 3, envAmount: 5, keyTrack: 0 }, filterEnv: { attack: 4, decay: 0.1, sustain: 1, release: 0.5 }, amp: { attack: 3, sustain: 1, release: 0.5 }, level: 0 } },
+  {
+    // Three saws a little out of tune with each other and a saw an octave under, gliding from note
+    // to note (pair it with the piano roll's Scoop tool for the swoop into each note)
+    name: 'Rave hoover',
+    patch: {
+      osc2: { on: true, wave: 'sawtooth', octave: -1, fine: -12, level: 0.55 },
+      unison: { voices: 3, spread: 45, width: 0.8 },
+      filter: { cutoff: 3200, envAmount: 1.2, resonance: 1.4, keyTrack: 0.4 },
+      filterEnv: { attack: 0.01, decay: 0.5, sustain: 0.4 },
+      amp: { attack: 0.01, decay: 0.2, sustain: 0.85, release: 0.3 },
+      lfo: { target: 'pitch', shape: 'sine', sync: 'free', rate: 5, depth: 0.06 },
+      drive: 0.25,
+      mono: true,
+      glide: 0.09,
+      level: 0,
+    },
+  },
 ];
 
 export const presetPatch = (name: string): SynthPatch => withPatch(defaultSynthPatch(), SYNTH_PRESETS.find((p) => p.name === name)?.patch ?? {});
