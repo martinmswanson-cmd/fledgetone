@@ -268,7 +268,7 @@ const GUITAR_NOTES = Array.from({ length: 16 }, (_, i) => 40 + i * 3);
  * bowing, an amp for the electric guitar's dull direct recording, a brighter acoustic guitar, the
  * mandolin's doubled strings. See samplerManager.ts.
  */
-export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin' | AmpModel;
+export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin' | 'violin' | AmpModel;
 /** Guitar amps for the real electric guitar recordings (direct from the pickup): see samplerManager.ts. */
 export type AmpModel = 'cleanAmp' | 'crunchAmp' | 'leadAmp' | 'jazzAmp';
 
@@ -354,7 +354,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   violin: {
     key: 'violin', name: 'Violin', blurb: 'Solo violin, close and dry', color: '#f87171', category: 'Guitars & Strings', kind: 'sampled', range: [55, 96],
-    samples: { ...soundfont('MusyngKite', 'violin', 55, 96, 3, 0.6), sustain: SOUNDFONT_SUSTAIN, onset: -8 }, gain: 24.5, taper: [76, 6],
+    samples: { ...soundfont('MusyngKite', 'violin', 55, 96, 3, 0.6), sustain: SOUNDFONT_SUSTAIN, onset: -8 }, shaping: 'violin', gain: 25.5, taper: [76, 6],
   },
   cello: {
     key: 'cello', name: 'Cello', blurb: 'Solo cello, close and dry', color: '#ea580c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 76],
@@ -390,7 +390,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realViolins: {
     key: 'realViolins', name: 'Violins (Real)', blurb: 'A recorded violin section, bowed with vibrato: soft and loud takes', color: '#ef4444', category: 'Orchestra', kind: 'sampled', range: realRange('violins-sustain'),
-    samples: real('violins-sustain', 0.7), gain: 13, taper: [70, 2.5],
+    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 14, taper: [70, 2.5],
   },
   realViolinsShort: {
     key: 'realViolinsShort', name: 'Violins Short (Real)', blurb: 'Recorded violins, short bouncing strokes: ostinatos, action', color: '#dc2626', category: 'Orchestra', kind: 'sampled', range: realRange('violins-spiccato'),
@@ -414,7 +414,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realSoloViolin: {
     key: 'realSoloViolin', name: 'Solo Violin (Real)', blurb: 'One recorded violin with vibrato, soft and loud: melodies', color: '#f87171', category: 'Orchestra', kind: 'sampled', range: realRange('solo-violin'),
-    samples: real('solo-violin', 0.6), gain: 12,
+    samples: real('solo-violin', 0.6), shaping: 'violin', gain: 14, taper: [74, 3],
   },
   realDoubleBass: {
     key: 'realDoubleBass', name: 'Double Bass (Real)', blurb: 'A recorded double bass, bowed: the floor of the orchestra', color: '#7c2d12', category: 'Orchestra', kind: 'sampled', range: realRange('double-bass'),

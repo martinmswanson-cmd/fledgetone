@@ -290,6 +290,10 @@ const AMPS: Record<AmpModel, AmpSettings> = {
  *   amp does), then a speaker-like presence peak and top roll-off.
  * - acoustic: the steel-string recordings are dark too; brightened with a little edge.
  * - mandolin: doubled (paired) strings and a bright top.
+ * - violin: what string players' engineers do to a close violin. Rumble cut below 120 Hz, two
+ *   narrow 3 dB dips at 2.5 and 4 kHz (the bridge hill and the edge, right where hearing is most
+ *   sensitive) and a gentle shelf down above 6 kHz: the bite that made high lines piercing goes,
+ *   the bow and the body stay.
  */
 function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): ShapingChain {
   const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
@@ -394,6 +398,13 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     const trim = raw.createGain();
     trim.gain.value = Tone.dbToGain(-2);
     return chain([bright, sparkle, edge, trim]);
+  }
+  if (shape === 'violin') {
+    const rumble = biquad('highpass', 120, 0.6);
+    const bite = biquad('peaking', 2500, 2.2, -3);
+    const edge = biquad('peaking', 4000, 2.2, -3);
+    const air = biquad('highshelf', 6000, 0.7, -3);
+    return chain([rumble, bite, edge, air]);
   }
   if (shape === 'mandolin') {
     const courses = createLightChorus({ rate: 5, delayMs: 1.8, depth: 0.35, spread: 160, wet: 0.55 });
