@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import { measureAt } from './tempoMap';
 import { getSongMeter } from './transport';
 import { liveMix } from './engine';
+import { mixDelaySeconds } from './latency';
 
 /**
  * The metronome: a click on every beat, accented on the first beat of a bar, straight to the
@@ -36,8 +37,14 @@ function out(): Tone.Gain {
   return output;
 }
 
-/** One click at `time` (audio clock). Returns a function that silences it early (a cancelled count-in). */
-function click(time: number, accent: boolean): () => void {
+/**
+ * One click for the beat at `time` (audio clock). Returns a function that silences it early (a
+ * cancelled count-in). It sounds the live mix's delay later (its delay compensation and the master
+ * section's look-ahead: see mixDelaySeconds), as the music scheduled for that beat does: straight
+ * to the output it would otherwise come about 10 to 20 ms early, a flam against the drums.
+ */
+function click(beat: number, accent: boolean): () => void {
+  const time = beat + mixDelaySeconds();
   const bus = out();
   const raw = bus.context.rawContext;
   const osc = raw.createOscillator();
