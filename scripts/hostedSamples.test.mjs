@@ -88,3 +88,14 @@ test('each note has every loudness layer and take (a sparse set: one near it), l
     }
   }
 });
+
+test('the sets decoded at twice the rate name rows and sets that exist', () => {
+  const flagged = Object.values(INSTRUMENTS).filter((d) => d.samples?.doubleRate);
+  assert.ok(flagged.length >= 5);
+  for (const d of flagged) {
+    const rows = d.samples.doubleRate;
+    if (rows === true) continue;
+    const have = new Set(Object.keys(d.samples.samples).map((n) => n.split('|')[0]));
+    for (const row of rows) assert.ok(have.has(row), `${d.key} has no row ${row}`);
+  }
+});

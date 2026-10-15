@@ -157,6 +157,13 @@ export interface SampleSource {
   fallbackUrl?: string;
   /** Changes when the files at these addresses do, so a kept copy is downloaded afresh (see recordingStore.ts) */
   version?: string;
+  /**
+   * Decode at twice the sample rate it plays at: the whole set (true) or a drum kit's rows (their
+   * names in `samples` before the first |). For the brightest sets, chosen by measuring: a note
+   * played at another pitch is resampled with linear interpolation, whose error lands in the top
+   * octaves, and at twice the rate it's about half as much, for twice the memory (samplerManager.ts).
+   */
+  doubleRate?: true | readonly string[];
 }
 
 export interface InstrumentDef {
@@ -299,8 +306,18 @@ const LAYER_TOPS: Record<number, number[]> = { 1: [1], 2: [0.55, 1], 3: [0.35, 0
 /** A set converted by scripts/real-samples (its notes, loudnesses and takes from hostedSets.ts) */
 const real = (folder: string, release: number): SampleSource => {
   const set = HOSTED_SETS[folder];
-  return hosted(folder, set.notes, LAYER_TOPS[set.layers], set.takes, release);
+  return { ...hosted(folder, set.notes, LAYER_TOPS[set.layers], set.takes, release), ...(DOUBLE_RATE_SETS.has(folder) ? { doubleRate: true as const } : {}) };
 };
+/**
+ * The brightest hosted sets, decoded at twice the sample rate they play at (SampleSource.doubleRate):
+ * those with the most of their sound above 8 kHz, measured over the first second of the loudest
+ * recordings (harmonica -13 dB of the whole, trombone short notes -29, harpsichord -30,
+ * glockenspiel -31; next come the solo violin and short trumpet at -32, the kalimba at -34, and the
+ * xylophone, tubular bells, steel drums and vibraphone at -46 to -88, little to gain).
+ */
+const DOUBLE_RATE_SETS = new Set(['harmonica', 'trombone-staccato', 'harpsichord', 'glockenspiel']);
+/** The studio kit's brightest rows, measured the same way: closed hat -7 dB, crash -11, open hat -12, ride -16, snare -23 (the toms and kick -35 and under). */
+const STUDIO_KIT_BRIGHT_ROWS = ['F#1', 'C#2', 'A#1', 'D#2', 'D1'] as const;
 /** A hosted release set (see ReleaseSounds) */
 const releasesOf = (folder: string, db: number, decay?: number): ReleaseSounds => {
   const set = HOSTED_SETS[folder];
@@ -750,7 +767,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   // Recorded drum kits (the rows a kit has no recording of play synthesized hits)
   studioKit: {
     key: 'studioKit', name: 'Studio Kit (Real)', blurb: 'A recorded drum kit, close and room mics, four loudnesses, two takes each: rock, pop, funk', color: '#b45309', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],
-    samples: realKit('studio-kit', { C1: 36, D1: 38, 'F#1': 42, 'A#1': 46, F1: 41, B1: 45, D2: 48, 'C#2': 49, 'D#2': 51 }), gain: 11,
+    samples: { ...realKit('studio-kit', { C1: 36, D1: 38, 'F#1': 42, 'A#1': 46, F1: 41, B1: 45, D2: 48, 'C#2': 49, 'D#2': 51 }), doubleRate: STUDIO_KIT_BRIGHT_ROWS }, gain: 11,
   },
   acousticKit: { key: 'acousticKit', name: 'Acoustic Kit', blurb: 'Real drum kit (recorded): rock, pop, jazz', color: '#d97706', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('acoustic-kit'), gain: -1 },
   breakbeatKit: { key: 'breakbeatKit', name: 'Breakbeat Kit', blurb: 'Crunchy sampled break hits', color: '#c2410c', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('breakbeat9'), gain: 2 },

@@ -32,7 +32,7 @@ import { isWarped } from '../store/warp';
 import { withControllerLanes } from '../store/ccLanes';
 import { secondsPerBar, stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
-import { loadCustomSample, songSampleLoads } from './samplers/samplerManager';
+import { holdRecordingsAt, loadCustomSample, songSampleLoads } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
 import { markerCues } from './wavCues';
@@ -902,6 +902,23 @@ async function renderGraph(
   onProgress?: (fraction: number) => void,
   premaster?: { latency: number; slack?: number; reverbSends?: boolean }
 ): Promise<{ rendered: AudioBuffer; plan: RenderPlan; reverbImpulse: AudioBuffer | undefined }> {
+  // At a rate other than the live context's, the recorded instruments play recordings decoded at
+  // this rate, not the live ones resampled note by note (see holdRecordingsAt)
+  const letGo = holdRecordingsAt(opts.sampleRate ?? DEFAULT_SAMPLE_RATE);
+  try {
+    return await renderGraphHeld(opts, sounding, onProgress, premaster);
+  } finally {
+    letGo();
+  }
+}
+
+/** renderGraph, with the recordings at its rate held. */
+async function renderGraphHeld(
+  opts: RenderOptions,
+  sounding: Track[],
+  onProgress?: (fraction: number) => void,
+  premaster?: { latency: number; slack?: number; reverbSends?: boolean }
+): Promise<{ rendered: AudioBuffer; plan: RenderPlan; reverbImpulse: AudioBuffer | undefined }> {
   // The buses these tracks play through come too (a stem of a bused track has its bus's sound),
   // each made before the tracks that play into it
   // ...and the returns they or their buses send to (heard ones: a muted return takes nothing), with their buses
@@ -933,7 +950,7 @@ async function renderGraph(
   // each recorded instrument's for the notes it plays here (see songSamples.ts)
   // A download that hangs gives up by itself (recordingStore.ts), and anything else that holds an
   // instrument up (its kept copies, decoding) gives up after SAMPLE_WAIT_MS, naming the instrument
-  for (const [key, loading] of songSampleLoads(tracks, clips)) {
+  for (const [key, loading] of songSampleLoads(tracks, clips, sampleRate)) {
     const name = INSTRUMENTS[key].name;
     try {
       await withTimeout(loading, SAMPLE_WAIT_MS, `the ${name} recordings took too long to download. Check your internet connection and try again.`, signal);

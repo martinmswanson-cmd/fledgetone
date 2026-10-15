@@ -18,7 +18,7 @@ register(
 );
 
 const { keptLength, isDualMono, foldToMono, levelOutline, TAIL_KEEP, OUTLINE_STEP } = await import('../src/audio/samplers/recordingMaths.ts');
-const { indexRecordings, neededSamples, quickSamples, nearestMidi, layerOf, songNotesByInstrument, parseSampleName } = await import('../src/audio/samplers/songSamples.ts');
+const { indexRecordings, neededSamples, quickSamples, nearestMidi, layerOf, songNotesByInstrument, parseSampleName, decodeRateOf } = await import('../src/audio/samplers/songSamples.ts');
 const { chooseNoteToSteal, noteLevelNow, STEAL_GRACE } = await import('../src/audio/samplers/noteStealing.ts');
 
 const SR = 1000;
@@ -180,4 +180,12 @@ test('a note in its first moments is only let go when every note is that young',
   // Ties go to the oldest; nothing to choose from: none
   assert.equal(chooseNoteToSteal([{ start: 3, level: 0.2, held: true }, { start: 2, level: 0.2, held: true }], now), 1);
   assert.equal(chooseNoteToSteal([], now), -1);
+});
+
+test('the brightest sets decode at twice the rate: a whole set, or a kit\'s rows; never the release sounds', () => {
+  assert.equal(decodeRateOf(undefined, 'C4|0|0', 48000), 48000);
+  assert.equal(decodeRateOf(true, 'C4|0|0', 48000), 96000);
+  assert.equal(decodeRateOf(true, 'rel|C4|0', 44100), 44100);
+  assert.equal(decodeRateOf(['F#1', 'C#2'], 'F#1|3|1', 44100), 88200);
+  assert.equal(decodeRateOf(['F#1', 'C#2'], 'C1|3|1', 44100), 44100);
 });

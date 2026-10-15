@@ -3,6 +3,7 @@ import { createLightChorus } from '../effects/lightFx';
 import { breathOf, INSTRUMENTS, isSection } from '../instrumentCatalog';
 import type { AmpModel, InstrumentDef, InstrumentKey, SampleSource, Shaping } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
+import { liveContext } from '../liveContext';
 import { decodeSound } from '../soundLibrary';
 import { recordingBytes } from '../recordingStore';
 import { useAudioStore } from '../../store/audioStore';
@@ -11,7 +12,7 @@ import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { foldToMono, isDualMono, keptLength, levelOutline, OUTLINE_STEP } from './recordingMaths';
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
-import { BLEND_ZONE, indexRecordings, layerOf, neededSamples, quickLayer, quickSamples, songNotesByInstrument, STRETCH_SEMITONES } from './songSamples';
+import { BLEND_ZONE, decodeRateOf, indexRecordings, layerOf, neededSamples, quickLayer, quickSamples, songNotesByInstrument, STRETCH_SEMITONES } from './songSamples';
 import type { RecordingIndex, SongNotes } from './songSamples';
 
 /**
@@ -24,12 +25,25 @@ import type { RecordingIndex, SongNotes } from './songSamples';
  * become one. And an instrument loads what the song plays first (see songSamples.ts and
  * loadSongSamples), so it can start sooner; the rest of its recordings follow in the
  * background, one at a time, or at once when a note is played that needs one.
+ *
+ * Sample rates. A recording plays through an AudioBufferSourceNode, which Chromium resamples with
+ * linear interpolation whenever the buffer's rate isn't the context's or the note is re-pitched: a
+ * slight dulling above 8 kHz and faint grit, heard on bright sounds. So recordings are decoded at
+ * the rate they play at (decodeAudioData resamples with a high-quality filter): the live context's
+ * for live playback, and an export's own when it renders at another rate (holdRecordingsAt: the
+ * export decodes the recordings its song needs again, at its rate, and lets them go after). And
+ * the brightest sets (SampleSource.doubleRate) are decoded at twice the rate, which takes about
+ * 12 dB off the interpolation's error when they're re-pitched, for twice their memory (not on a
+ * device with little memory). Everything that counts
+ * samples uses the buffer's own sampleRate, never the context's.
  */
 type SampleSet = Record<string, Tone.ToneAudioBuffer>;
 
 /** One instrument's recordings, as they arrive. */
 interface Loading {
   source: SampleSource;
+  /** The sample rate they play at (the live context's, or an export's): see decodeRate */
+  rate: number;
   /** Every sample's name: the notes ("<note>|<layer>|<take>") and release sounds ("rel|<note>|<take>") */
   names: string[];
   index: RecordingIndex;
@@ -51,17 +65,68 @@ interface Loading {
 
 const loadings: Partial<Record<InstrumentKey, Loading>> = {};
 
-/** The instrument's loading state (made empty the first time). */
+/** The live context's sample rate: live playback's recordings are decoded for it. */
+const liveRate = () => liveContext.sampleRate;
+
+function newLoading(key: InstrumentKey, rate: number): Loading {
+  const source = INSTRUMENTS[key].samples!;
+  const names = [...Object.keys(source.samples), ...Object.keys(source.releases?.samples ?? {}).map((n) => `rel|${n}`)];
+  return { source, rate, names, index: indexRecordings(names, midiOfNote, source.layers ?? [1]), have: new Map(), pending: new Map(), listeners: new Set(), asked: new Set() };
+}
+
+/** The instrument's loading state for live playback (made empty the first time). */
 function loadingOf(key: InstrumentKey): Loading {
   let l = loadings[key];
   if (!l) {
-    const source = INSTRUMENTS[key].samples!;
-    const names = [...Object.keys(source.samples), ...Object.keys(source.releases?.samples ?? {}).map((n) => `rel|${n}`)];
-    l = { source, names, index: indexRecordings(names, midiOfNote, source.layers ?? [1]), have: new Map(), pending: new Map(), listeners: new Set(), asked: new Set() };
+    l = newLoading(key, liveRate());
     loadings[key] = l;
   }
   return l;
 }
+
+/**
+ * Recordings decoded at an export's sample rate (other than the live one), by rate, while an
+ * export at that rate holds them (holdRecordingsAt). Only what the export's songs need is decoded,
+ * from the kept compressed files; nothing here updates the loading badges or fills in the background.
+ */
+const atRate = new Map<number, { loadings: Partial<Record<InstrumentKey, Loading>>; holds: number; timer?: ReturnType<typeof setTimeout> }>();
+/** How long an export's recordings stay after its last render lets go (the next stem or take uses them again). */
+const RATE_KEEP_MS = 10000;
+
+/**
+ * An export at `rate` is rendering: until the returned function is called, its instruments play
+ * recordings decoded at its rate (where that isn't the live context's), so no note is resampled on
+ * the way. Holds overlap (the parts of a mix, stems); the recordings go a little after the last.
+ */
+export function holdRecordingsAt(rate: number): () => void {
+  if (rate === liveRate()) return () => {};
+  let entry = atRate.get(rate);
+  if (!entry) atRate.set(rate, (entry = { loadings: {}, holds: 0 }));
+  const held = entry;
+  held.holds++;
+  clearTimeout(held.timer);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    if (--held.holds > 0) return;
+    held.timer = setTimeout(() => {
+      if (held.holds > 0 || atRate.get(rate) !== held) return;
+      atRate.delete(rate);
+      for (const [id, ref] of decoded) if (!ref.deref()) decoded.delete(id);
+    }, RATE_KEEP_MS);
+  };
+}
+
+/** The instrument's recordings for a context at `rate`: an export's own at its rate while held, else the live ones. */
+function loadingAt(key: InstrumentKey, rate: number): Loading {
+  const entry = rate === liveRate() ? undefined : atRate.get(rate);
+  if (!entry) return loadingOf(key);
+  return (entry.loadings[key] ??= newLoading(key, rate));
+}
+
+/** Whether `l` is live playback's (with loading badges and background filling), not an export's (always at another rate). */
+const isLive = (l: Loading) => l.rate === liveRate();
 
 const isComplete = (l: Loading) => l.have.size === l.names.length;
 const setOf = (l: Loading): SampleSet => Object.fromEntries(l.have);
@@ -79,7 +144,7 @@ function loadNames(l: Loading, names: Iterable<string>, background = false): Pro
     let p = l.pending.get(name);
     if (!p) {
       if (!background) foreground++;
-      p = decodeEntry(l.source, name)
+      p = decodeEntry(l.source, name, l.rate)
         .then((buffer) => {
           l.have.set(name, buffer);
           for (const listener of l.listeners) listener(name, buffer);
@@ -166,17 +231,24 @@ export function loadSongSamples(tracks: Parameters<typeof songNotesByInstrument>
 }
 
 /**
- * Everything these tracks' clips play, for an export: each recorded instrument's recordings the
- * notes need (a drum kit's every one), by instrument. The export plays the same recordings live
- * playback does once every recording is in.
+ * Everything these tracks' clips play, for an export at `rate` (default: the live context's): each
+ * recorded instrument's recordings the notes need (a drum kit's every one), by instrument. At the
+ * live rate the export plays the same recordings live playback does once every recording is in;
+ * at another rate, held by holdRecordingsAt, recordings decoded at that rate.
  */
-export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1]): Array<[InstrumentKey, Promise<unknown>]> {
+export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1], rate = liveRate()): Array<[InstrumentKey, Promise<unknown>]> {
   const songs = songsOf(tracks, clips);
   return [...new Set(tracks.map((t) => t.instrumentKey))]
     .filter(hasRecordings)
     .map((key) => {
+      const l = loadingAt(key, rate);
+      if (!isLive(l)) {
+        // An export's own: what the song needs (a kit's every row), and the instrument starts with those
+        const needed = isSamplerKey(key) ? neededFor(key, l, songs.get(key)) : new Set(l.names);
+        if (isSamplerKey(key)) l.first = new Set([...(l.first ?? []), ...needed]);
+        return [key, loadNames(l, needed)];
+      }
       if (!isSamplerKey(key)) return [key, loadSamples(key)];
-      const l = loadingOf(key);
       return [key, isComplete(l) ? Promise.resolve() : loadSome(key, l, neededFor(key, l, songs.get(key)))];
     });
 }
@@ -213,14 +285,14 @@ const fullDurations = new WeakMap<AudioBuffer, number>();
  * of a loop or a stretch to be looped, nor where it's still above `ceiling`, the level the sampler
  * hears as the end of the sound: see audibleEnd), and folded to one channel if its two are the same.
  */
-function fetchRecording(source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl' | 'version'>, file: string, keep = 0, ceiling = SILENT): Promise<Tone.ToneAudioBuffer> {
-  const id = `${source.baseUrl}${file}|${keep}|${ceiling}`;
+function fetchRecording(source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl' | 'version'>, file: string, rate: number, keep = 0, ceiling = SILENT): Promise<Tone.ToneAudioBuffer> {
+  const id = `${source.baseUrl}${file}|${keep}|${ceiling}|${rate}`;
   const alive = decoded.get(id)?.deref();
   if (alive) return Promise.resolve(alive);
   let p = decoding.get(id);
   if (!p) {
     p = recordingBytes(source, file)
-      .then((bytes) => Tone.getContext().decodeAudioData(bytes))
+      .then((bytes) => decodeAt(bytes, rate))
       .then((audio) => new Tone.ToneAudioBuffer(compact(audio, keep, ceiling)));
     decoding.set(id, p);
     p.then(
@@ -232,6 +304,30 @@ function fetchRecording(source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl' | '
     );
   }
   return p;
+}
+
+/** Contexts that only decode, one per sample rate (never rendered, so they hold nothing but themselves). */
+const decoders = new Map<number, BaseAudioContext>();
+
+/**
+ * Decode a recording at `rate`: in the live context at its own rate, else in a small offline
+ * context at that rate. Either way decodeAudioData resamples from the file's rate with a
+ * high-quality filter, far cleaner than a buffer source's linear interpolation at play time.
+ */
+function decodeAt(bytes: ArrayBuffer, rate: number): Promise<AudioBuffer> {
+  if (rate === liveRate()) return liveContext.decodeAudioData(bytes);
+  let decoder = decoders.get(rate);
+  if (!decoder) decoders.set(rate, (decoder = new OfflineAudioContext(1, 1, rate)));
+  return decoder.decodeAudioData(bytes);
+}
+
+/**
+ * The rate one of an instrument's recordings is decoded at for a context at `rate`: twice that for
+ * the sets (or a kit's rows) marked doubleRate, so re-pitching them is cleaner (see the top), except
+ * on a device with little memory, where they'd take twice the room.
+ */
+function decodeRate(source: Pick<SampleSource, 'doubleRate'>, name: string, rate: number): number {
+  return LOW_MEMORY ? rate : decodeRateOf(source.doubleRate, name, rate);
 }
 
 /** `audio` without its silent tail, in one channel if its two are the same (see fetchRecording). */
@@ -270,10 +366,10 @@ function outline(audio: AudioBuffer): void {
 }
 
 /** One of an instrument's recordings by name (a note, or "rel|..." a release sound), decoded and readied to play. */
-async function decodeEntry(source: SampleSource, name: string): Promise<Tone.ToneAudioBuffer> {
+async function decodeEntry(source: SampleSource, name: string, rate: number): Promise<Tone.ToneAudioBuffer> {
   if (name.startsWith('rel|')) {
     const rel = source.releases!;
-    const loaded = await fetchRecording(rel, rel.samples[name.slice(4)]);
+    const loaded = await fetchRecording(rel, rel.samples[name.slice(4)], rate);
     if (loaded.get()) outline(loaded.get()!);
     return loaded;
   }
@@ -282,7 +378,7 @@ async function decodeEntry(source: SampleSource, name: string): Promise<Tone.Ton
   // Never cut into a loop, nor the stretch a held soundfont note loops (a little past it, as a
   // retune moves it by a hair); and a recording played louder keeps the tail that becomes audible
   const keep = Math.max(loop?.[1] ?? 0, source.sustain?.to ?? 0) + 0.05;
-  const loaded = await fetchRecording(source, source.samples[name], keep, SILENT * 10 ** (-Math.max(0, db) / 20));
+  const loaded = await fetchRecording(source, source.samples[name], decodeRate(source, name, rate), keep, SILENT * 10 ** (-Math.max(0, db) / 20));
   const tuned = source.tune?.[name] ? retune(loaded, source.tune[name]) : loaded;
   const buffer = db ? louder(tuned, db) : tuned;
   const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
@@ -294,6 +390,16 @@ async function decodeEntry(source: SampleSource, name: string): Promise<Tone.Ton
     outline(audio);
   }
   return ready;
+}
+
+/**
+ * An instrument's every recording for a context at `rate` (a recorded drum kit's): live playback's
+ * (loadSamples), or an export's at its own rate (see holdRecordingsAt).
+ */
+export function loadSamplesAt(key: InstrumentKey, rate: number): Promise<SampleSet> {
+  const l = INSTRUMENTS[key].samples ? loadingAt(key, rate) : undefined;
+  if (!l || isLive(l)) return loadSamples(key);
+  return loadNames(l, l.names).then(() => setOf(l));
 }
 
 /** Load an instrument's every recording (once). Updates the loading badge in audioStore. */
@@ -1463,14 +1569,15 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
   };
   // Playable once its first recordings are in (loadQuick: what the song plays, or one loudness of
   // every note); every other recording joins as it arrives
-  const loading = def.samples ? loadingOf(key) : undefined;
+  // (at the rate of the context it plays in: an export at another rate has its own, see holdRecordingsAt)
+  const loading = def.samples ? loadingAt(key, out.context.sampleRate) : undefined;
   const extra = [...chain.nodes];
   let attach: Promise<void>;
   if (loading) {
     for (const [name, buffer] of loading.have) fill(name, buffer);
     loading.listeners.add(fill);
     extra.push({ dispose: () => loading.listeners.delete(fill) });
-    attach = loadQuick(key).then(() => undefined);
+    attach = isLive(loading) ? loadQuick(key).then(() => undefined) : loadNames(loading, loading.first ?? quickSamples(loading.index));
   } else attach = Promise.reject(new Error(`${key} has no samples`));
   const rel = def.samples?.releases;
   // A note whose own loudness has nothing near plays the first-loaded one's

@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { InstrumentKey } from '../instrumentCatalog';
-import { loadSamples, noteJitter, recordedDuration } from '../samplers/samplerManager';
+import { loadSamplesAt, noteJitter, recordedDuration } from '../samplers/samplerManager';
 import { notLate } from './monotonic';
 import { createBus, createVoiceSet } from './native';
 
@@ -33,10 +33,11 @@ function layerGains(row: AudioBuffer[][]): number[] {
     let peak = 0;
     for (const b of all) {
       const n = Math.min(b.length, Math.round(LEVEL_WINDOW * b.sampleRate));
+      // (energy per second: the same whatever rate a recording was decoded at)
       for (let c = 0; c < b.numberOfChannels; c++) {
         const d = b.getChannelData(c);
         for (let i = 0; i < n; i++) {
-          sum += d[i] * d[i];
+          sum += (d[i] * d[i]) / b.sampleRate;
           peak = Math.max(peak, Math.abs(d[i]));
         }
       }
@@ -58,7 +59,8 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
   const tops = INSTRUMENTS[key].samples?.layers ?? [1];
   const turns = new Map<string, number>();
   let loaded = false;
-  const ready = loadSamples(key).then((set) => {
+  // (at the rate of the context it plays in: an export at another rate has recordings of its own)
+  const ready = loadSamplesAt(key, raw.sampleRate).then((set) => {
     const rows: Record<string, AudioBuffer[][]> = {};
     for (const [name, b] of Object.entries(set)) {
       const audio = b.get();

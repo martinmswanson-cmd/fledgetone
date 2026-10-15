@@ -37,6 +37,17 @@ export function parseSampleName(name: string): { note: string; layer: number; ta
 }
 
 /**
+ * The rate one of an instrument's recordings is decoded at for a context at `rate`: twice that for
+ * a set marked doubleRate (true), or for a drum kit's rows listed in it; release sounds never.
+ */
+export function decodeRateOf(doubleRate: true | readonly string[] | undefined, name: string, rate: number): number {
+  if (!doubleRate) return rate;
+  const { note, release } = parseSampleName(name);
+  if (release) return rate;
+  return doubleRate === true || doubleRate.includes(note) ? 2 * rate : rate;
+}
+
+/**
  * The MIDI note in `sorted` (ascending) a sampler plays `midi` from: the nearest, the higher on a
  * tie, within SEARCH semitones; undefined if none.
  */

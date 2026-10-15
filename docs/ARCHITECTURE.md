@@ -213,7 +213,10 @@ Clean up per-note nodes when they're disposed, not when they report ending.
 - **Recorded instruments** (`samplers/samplerManager.ts`): multi-sampled recordings downloaded
   once ever (kept in IndexedDB by `recordingStore.ts`, which can also download them all for
   offline use) and shared, with onset trimming, sustain looping, tuning fixes, tone shaping (including
-  guitar amps), loudness layers and round-robin takes, and Expressive playing.
+  guitar amps), loudness layers and round-robin takes, and Expressive playing. Recordings are decoded at the rate they play at
+  (an export at another rate than the live context's decodes the ones it needs again, at its own),
+  and the brightest sets at twice that (`doubleRate`), since a buffer source re-pitches with linear
+  interpolation; code that counts samples uses the buffer's own `sampleRate`.
 - **Your sounds**: the Sampler, Slicer, Drum Rack and Multi Sampler play sounds from the library;
   Plugin tracks host Web Audio Modules (`wamHost.ts`, `presets/wamPlugin.ts`).
 
