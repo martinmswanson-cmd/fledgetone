@@ -166,21 +166,24 @@ const hz = (f) => (f >= 1000 ? `${(f / 1000).toFixed(1)} kHz` : `${Math.round(f)
 const wide = window.matchMedia('(min-width: 1400px)');
 const el = (tag, cls, html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; e.innerHTML = html; return e; };
 
-// Left: the song-position ruler. The page is a 64-bar song at 120 BPM; the sections are its
-// markers (click one to go there) and the playhead is where you are.
+// The song-position ruler. The page is a 64-bar song at 120 BPM; the sections are its markers
+// (click one to go there) and the playhead is where you are. On wide screens it runs down the left
+// margin; narrower, it lies across the top under the menu bar, like the studio's own ruler.
 {
   const BARS = 64, BPM = 120;
   const ruler = el('nav', 'side-ruler', `
-    <div class="sr-read"><span class="sr-label">BAR</span><span class="sr-bar">001.1</span><span class="sr-tc">00:00:00:00</span></div>
+    <div class="sr-read"><span class="sr-label">BAR</span><span class="sr-bar">001.1</span><span class="sr-tc">00:00:00:00</span><span class="sr-sec">Intro</span></div>
     <div class="sr-track"><div class="sr-ticks"></div><div class="sr-marks"></div><div class="sr-head"></div></div>`);
   ruler.setAttribute('aria-label', 'Sections');
-  document.body.append(ruler);
+  const header = document.querySelector('header.nav');
+  const mount = () => (wide.matches ? document.body : header).append(ruler);
+  mount(); wide.addEventListener('change', () => { mount(); requestAnimationFrame(place); });
   const ticks = ruler.querySelector('.sr-ticks'), marks = ruler.querySelector('.sr-marks');
   const head = ruler.querySelector('.sr-head');
-  const barRead = ruler.querySelector('.sr-bar'), tcRead = ruler.querySelector('.sr-tc');
+  const barRead = ruler.querySelector('.sr-bar'), tcRead = ruler.querySelector('.sr-tc'), secRead = ruler.querySelector('.sr-sec');
   for (let b = 0; b <= BARS; b++) {
     const t = el('i', b % 8 === 0 ? 'major' : b % 4 === 0 ? 'mid' : '');
-    t.style.top = `${(b / BARS) * 100}%`;
+    t.style.setProperty('--pos', `${(b / BARS) * 100}%`);
     if (b % 8 === 0 && b < BARS) t.dataset.n = String(b + 1);
     ticks.append(t);
   }
@@ -192,27 +195,38 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
     f.href = target.id ? `#${target.id}` : '#main';
     f.style.setProperty('--c', `var(${c})`);
     f.addEventListener('click', (e) => { e.preventDefault(); target.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' }); });
+    f.title = name;
     marks.append(f);
-    return { f, target };
+    return { f, target, name, c, at: 0 };
   });
   const place = () => {
     const m = maxScroll();
-    flags.forEach(({ f, target }) => { f.style.top = `${clamp((target.getBoundingClientRect().top + scrollY - 70) / m) * 100}%`; });
+    flags.forEach((fl) => {
+      // Where scrolling to the section stops: its top, less the room it leaves under the menu bar
+      const gap = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+      fl.at = clamp((fl.target.getBoundingClientRect().top + scrollY - gap - 8) / m);
+      fl.f.style.setProperty('--pos', `${fl.at * 100}%`);
+    });
   };
   place();
   addEventListener('load', place); addEventListener('resize', place);
   if ('ResizeObserver' in window) new ResizeObserver(place).observe(document.body);
+  let shown = -1;
   parts.push(({ p }) => {
-    if (!wide.matches) return;
-    head.style.top = `${p * 100}%`;
+    head.style.setProperty('--pos', `${p * 100}%`);
     const pos = p * BARS, bar = Math.floor(pos) + 1, beat = Math.floor((pos % 1) * 4) + 1;
     barRead.textContent = `${String(Math.min(bar, BARS)).padStart(3, '0')}.${p >= 1 ? 4 : beat}`;
     const secs = pos * (240 / BPM), f = Math.floor((secs % 1) * 30);
     const two = (n) => String(Math.floor(n)).padStart(2, '0');
     tcRead.textContent = `00:${two(secs / 60)}:${two(secs % 60)}:${two(f)}`;
     let on = 0;
-    flags.forEach(({ f: fl }, i) => { if (p * 100 + 0.5 >= parseFloat(fl.style.top)) on = i; });
-    flags.forEach(({ f: fl }, i) => fl.classList.toggle('on', i === on));
+    flags.forEach((fl, i) => { if (p + 0.005 >= fl.at) on = i; });
+    if (on !== shown) {
+      shown = on;
+      flags.forEach((fl, i) => fl.f.classList.toggle('on', i === on));
+      secRead.textContent = flags[on].name;
+      secRead.style.setProperty('--c', `var(${flags[on].c})`);
+    }
   });
 }
 
