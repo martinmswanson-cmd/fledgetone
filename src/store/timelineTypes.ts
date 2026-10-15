@@ -8,6 +8,7 @@ import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { frameSeconds, isDropFrame } from '../audio/timecode';
+import { normalizeClipper, type ClipperSettings } from '../audio/effects/clipper';
 
 export type { InstrumentKey };
 
@@ -164,7 +165,28 @@ export interface TrackFx {
     /** Notes a touch sharp or flat, up to about 12 cents (pitched instruments only) */
     pitch: number;
   };
+  /** Saturation (a bus insert, see effects/busInserts.ts): warm, full-range soft clipping. Absent: off. */
+  saturate?: {
+    on: boolean;
+    /** Drive, 0 to 1 (0 to 24 dB into the curve) */
+    amount: number;
+    /** How much of the saturated sound, 0 to 1 */
+    mix: number;
+  };
+  /** Mono bass (a bus insert): everything under `freq` Hz in the middle. Absent: off. */
+  monoLow?: {
+    on: boolean;
+    /** The crossover, MONO_LOW_MIN to MONO_LOW_MAX Hz */
+    freq: number;
+  };
 }
+
+/** The Saturation insert as it's first switched on. */
+export const DEFAULT_SATURATE: NonNullable<TrackFx['saturate']> = { on: false, amount: 0.3, mix: 0.5 };
+/** The Mono bass insert as it's first switched on. */
+export const DEFAULT_MONO_LOW: NonNullable<TrackFx['monoLow']> = { on: false, freq: 120 };
+export const MONO_LOW_MIN = 40;
+export const MONO_LOW_MAX = 300;
 
 /** The shapes a parametric EQ band can take. */
 export const PEQ_TYPES = ['lowcut', 'lowshelf', 'bell', 'notch', 'highshelf', 'highcut'] as const;
@@ -375,6 +397,11 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
         };
       }) as [MbcBand, MbcBand, MbcBand],
     },
+    // The bus inserts: only kept once they've been used (older projects have neither)
+    ...(r.saturate !== undefined
+      ? { saturate: { on: obj(r.saturate).on === true, amount: num(obj(r.saturate).amount, DEFAULT_SATURATE.amount, 0, 1), mix: num(obj(r.saturate).mix, DEFAULT_SATURATE.mix, 0, 1) } }
+      : {}),
+    ...(r.monoLow !== undefined ? { monoLow: { on: obj(r.monoLow).on === true, freq: num(obj(r.monoLow).freq, DEFAULT_MONO_LOW.freq, MONO_LOW_MIN, MONO_LOW_MAX) } } : {}),
   };
 }
 
@@ -434,6 +461,11 @@ export interface MasterSettings {
    * always there (0 leaves the sound alone). Turning it up pushes the mix into the limiter.
    */
   level: number;
+  /**
+   * The master clipper, after the Level and before the limiter (see effects/clipper.ts). Absent:
+   * off (projects from before it existed, and every project that never switched it on).
+   */
+  clipper?: ClipperSettings;
 }
 
 export const OTT_GAIN_MIN = -12;
@@ -478,7 +510,14 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
     },
     // Absent in projects from before there was a Level: 0, as they sounded
     level: num(r.level, d.level, LEVEL_MIN, LEVEL_MAX),
+    ...(r.clipper !== undefined ? { clipper: normalizeClipper(r.clipper) } : {}),
   };
+}
+
+/** True when two clippers are set the same (absent counts as an unchanged default, off). */
+function sameClipper(a: ClipperSettings | undefined, b: ClipperSettings | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.on === b.on && a.drive === b.drive && a.softness === b.softness && a.ceiling === b.ceiling;
 }
 
 /** True when two master settings would sound the same (so the engine and autosave can skip no-ops). */
@@ -493,7 +532,8 @@ export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolea
     a.width.on === b.width.on &&
     a.width.amount === b.width.amount &&
     a.width.monoBass === b.width.monoBass &&
-    a.level === b.level
+    a.level === b.level &&
+    sameClipper(a.clipper, b.clipper)
   );
 }
 

@@ -7,6 +7,7 @@ import { HardDrive } from 'lucide-react';
 import { currentProject, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { referencedSoundIds } from '../../store/audioClips';
 import { freeUnusedSounds, librarySize, useSoundLibrary } from '../../audio/soundLibrary';
+import { keptSoundIds } from '../../audio/keptSounds';
 import { showToast } from '../timeline/toastStore';
 
 const megabytes = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
@@ -41,6 +42,8 @@ export const SoundLibraryFooter: React.FC = () => {
       e.tracks.forEach((t) => t.frozen && keep.add(t.frozen.soundId));
     }
     referencedSoundIds({ clips: st.clipboard, tracks: [] }).forEach((id) => keep.add(id));
+    // ...and the sounds this browser keeps for itself (the reference track, the producer tag)
+    keptSoundIds().forEach((id) => keep.add(id));
     if (!window.confirm("Delete the sounds in this browser that neither this project nor your last session uses?\n\nProjects saved as files keep their sounds inside the file, so they come back when opened.")) return;
     try {
       const gone = await freeUnusedSounds(keep);

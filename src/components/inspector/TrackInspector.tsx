@@ -27,6 +27,7 @@ import { SlicerPanel } from './SlicerPanel';
 import { MultiPanel, RackPanel } from './SampleKitPanels';
 import { PeqPanel } from './PeqEditor';
 import { MbcPanel } from './MbcPanel';
+import { BusFxPanels, BusPresetPanel } from './BusFxPanels';
 import { SynthPanel } from './SynthPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
@@ -282,6 +283,7 @@ export const TrackInspector: React.FC = () => {
               )}
             </div>
 
+            <BusPresetPanel track={currentTrack} />
             {currentTrack.instrumentKey === 'sampler' && <SampleLoader track={currentTrack} />}
             {isSlicerKind(currentTrack.instrumentKey) && <SlicerPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'drumRack' && <RackPanel track={currentTrack} />}
@@ -398,6 +400,7 @@ export const TrackInspector: React.FC = () => {
             <PeqPanel track={currentTrack} />
             <DynamicsAndChorusPanels track={currentTrack} />
             <MbcPanel track={currentTrack} />
+            <BusFxPanels track={currentTrack} />
             <FilterAndPumpPanels track={currentTrack} />
 
             {/* Aux FX Sends Section */}

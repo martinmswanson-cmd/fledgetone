@@ -14,7 +14,7 @@ import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel, LIMITER_CEILING_DBTP } from './effects/limiter';
-import { masterAfter } from './effects/masterAfter';
+import { masterAfter, type MasterStats } from './effects/masterAfter';
 import { lushReverbOf } from './effects/lushAfter';
 import { leadIntoLoop } from './introSeam';
 import { measureCompressorLatency } from './compressorLatency';
@@ -129,6 +129,8 @@ export interface RenderOptions {
    * renders them side by side; 1: in one piece.
    */
   threads?: number;
+  /** Told what the master section did after the render (how hard its clipper and limiter worked), for the Mix check. */
+  onMasterStats?: (stats: MasterStats) => void;
 }
 
 /** Seconds of audio rendered between scheduling passes. */
@@ -906,10 +908,11 @@ function addLushReverb(sum: AudioBuffer, decay: number): void {
  * render (an export's chain ends at its compressor: see createMixChain and masterAfter.ts), then
  * the master volume, which comes after it.
  */
-function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: Pick<RenderOptions, 'master' | 'peakCeilingDbtp'>, masterDb: number): void {
+function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: Pick<RenderOptions, 'master' | 'peakCeilingDbtp' | 'onMasterStats'>, masterDb: number): void {
   if (!limitsAfter) return;
   const [l, r] = channelsOf(rendered);
-  masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(opts.master), masterDb, opts.peakCeilingDbtp);
+  const stats = masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(opts.master), masterDb, opts.peakCeilingDbtp);
+  opts.onMasterStats?.(stats);
 }
 
 /**

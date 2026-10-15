@@ -1,6 +1,6 @@
 /**
  * The master section after the master compressor, run in plain JavaScript over an export's
- * finished render: the OTT, the stereo width, the Level, then the look-ahead limiter, in the order
+ * finished render: the OTT, the stereo width, the Level, the clipper, then the look-ahead limiter, in the order
  * the live graph has them (engine.ts, masterChain.ts). The master compressor (the glue, a native
  * DynamicsCompressorNode) stays in the render; the render stops after it.
  *
@@ -12,7 +12,8 @@
  * No Web Audio here, so Node can test it.
  */
 import { createOttKernel } from './ott';
-import { LIMITER_CEILING_DBTP, limitChannels } from './limiter';
+import { LIMITER_CEILING_DBTP, limitChannels, limiterAimDbtp } from './limiter';
+import { clipChannels, type ClipperReading } from './clipper';
 import type { MasterSettings } from '../../store/timelineTypes';
 
 /** Below this the Stereo width's "mono bass" keeps the sound in the middle. */
@@ -96,17 +97,73 @@ export function widthChannels(left: Float32Array, right: Float32Array, sampleRat
 }
 
 /**
- * The master section after the compressor, over a render's two channels in place: the OTT and
- * the width (where on), the Level, the limiter, then the master volume (`volumeDb`, which comes
- * after the limiter, as the live destination's volume does). The limiter holds the true peak under
- * `ceilingDbtp` (the export's: see exportCeilingDbtp in limiter.ts).
+ * What the master section did to a render, for the Mix check: how hot the sound reached it, how
+ * hard the clipper and the limiter worked.
  */
-export function masterAfter(left: Float32Array, right: Float32Array, sampleRate: number, master: MasterSettings, volumeDb = 0, ceilingDbtp = LIMITER_CEILING_DBTP): void {
+export interface MasterStats {
+  /** Sample peak arriving from the compressor, dBFS. */
+  inPeakDb: number;
+  /** Sample peak reaching the limiter (after the Level and the clipper), dBFS. */
+  limiterInPeakDb: number;
+  /** The most the limiter had to take off a peak, dB (about: the peak over its ceiling). */
+  limiterPeakDb: number;
+  /** The share of 50 ms blocks where the limiter had to take off more than 1 dB. */
+  limiterBusyShare: number;
+  /** The clipper's work (absent: it was off). */
+  clipper?: ClipperReading;
+}
+
+/**
+ * The master section after the compressor, over a render's two channels in place: the OTT and
+ * the width (where on), the Level, the clipper (where on), the limiter, then the master volume
+ * (`volumeDb`, which comes after the limiter, as the live destination's volume does). The limiter
+ * holds the true peak under `ceilingDbtp` (the export's: see exportCeilingDbtp in limiter.ts).
+ * Returns what the section did (see MasterStats).
+ */
+export function masterAfter(left: Float32Array, right: Float32Array, sampleRate: number, master: MasterSettings, volumeDb = 0, ceilingDbtp = LIMITER_CEILING_DBTP): MasterStats {
+  const inPeak = peakOf(left, right);
   if (master.ott.on) ottChannels(left, right, sampleRate, master.ott);
   if (master.width.on) widthChannels(left, right, sampleRate, master.width);
   scaleChannels(left, right, Math.fround(dbToGain(master.level)));
+  const clipper = master.clipper?.on ? clipChannels(left, right, sampleRate, master.clipper) : undefined;
+  const busy = limiterLoad(left, right, sampleRate, dbToGain(limiterAimDbtp(ceilingDbtp)));
   limitChannels(left, right, sampleRate, ceilingDbtp);
   scaleChannels(left, right, dbToGain(volumeDb));
+  const db = (v: number) => (v > 0 ? 20 * Math.log10(v) : -Infinity);
+  return { inPeakDb: db(inPeak), limiterInPeakDb: db(busy.peak), limiterPeakDb: busy.peakDb, limiterBusyShare: busy.share, ...(clipper ? { clipper } : {}) };
+}
+
+function peakOf(left: Float32Array, right: Float32Array): number {
+  let p = 0;
+  for (let i = 0; i < left.length; i++) {
+    const a = Math.abs(left[i]);
+    const b = Math.abs(right[i]);
+    if (a > p) p = a;
+    if (b > p) p = b;
+  }
+  return p;
+}
+
+/** How hard the limiter will have to work on this sound: its peak, the most over `ceiling`, and how often. */
+function limiterLoad(left: Float32Array, right: Float32Array, sampleRate: number, ceiling: number): { peak: number; peakDb: number; share: number } {
+  const block = Math.max(1, Math.round(sampleRate * 0.05));
+  let peak = 0;
+  let blocks = 0;
+  let busy = 0;
+  for (let start = 0; start < left.length; start += block) {
+    const end = Math.min(left.length, start + block);
+    let p = 0;
+    for (let i = start; i < end; i++) {
+      const a = Math.abs(left[i]);
+      const b = Math.abs(right[i]);
+      if (a > p) p = a;
+      if (b > p) p = b;
+    }
+    if (p > peak) peak = p;
+    blocks++;
+    if (p > ceiling * 1.122) busy++;
+  }
+  return { peak, peakDb: peak > ceiling ? 20 * Math.log10(peak / ceiling) : 0, share: blocks ? busy / blocks : 0 };
 }
 
 function scaleChannels(left: Float32Array, right: Float32Array, gain: number): void {
