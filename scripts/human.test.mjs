@@ -1,4 +1,4 @@
-// Unit tests for the Human insert's note drift (src/audio/human.ts), and the feel new tracks start with (playerFeel). Run with `npm test`.
+// Unit tests for the Human insert's note drift (src/audio/human.ts), what seeds it (noteSeed, and the stable ids starters are built with), and the feel new tracks start with (playerFeel). Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +15,8 @@ register(
 }`)
 );
 
-const { hashSeed, noteDrift, detuned, HUMAN_MAX_LATE, HUMAN_MAX_DYNAMICS, HUMAN_MAX_CENTS } = await import('../src/audio/human.ts');
+const { hashSeed, noteDrift, noteSeed, detuned, HUMAN_MAX_LATE, HUMAN_MAX_DYNAMICS, HUMAN_MAX_CENTS } = await import('../src/audio/human.ts');
+const { uid, withStableIds } = await import('../src/store/timelineTypes.ts');
 
 const full = { on: true, timing: 1, dynamics: 1, pitch: 1 };
 
@@ -24,6 +25,25 @@ test('the same note drifts the same way every time', () => {
   assert.deepEqual(noteDrift(seed, full), noteDrift(seed, full));
   assert.equal(hashSeed('a'), hashSeed('a'));
   assert.notEqual(hashSeed('clip1|note7|384'), hashSeed('clip2|note7|384'));
+});
+
+test("a note's drift doesn't hang on its id (notes get new ids from browser storage)", () => {
+  // The seed is the clip, the pitch and the tick: the same note drifts the same way whatever its id
+  assert.equal(noteSeed('clip1', 'C4', 384), noteSeed('clip1', 'C4', 384));
+  assert.notEqual(noteSeed('clip1', 'C4', 384), noteSeed('clip1', 'E4', 384), 'notes of a chord drift apart');
+  assert.notEqual(noteSeed('clip1', 'C4', 384), noteSeed('clip1', 'C4', 432));
+  assert.notEqual(noteSeed('clip1', 'C4', 384), noteSeed('clip2', 'C4', 384), 'a copied clip drifts its own way');
+});
+
+test('ids built under withStableIds are the same every time (a starter plays and exports alike)', () => {
+  const build = () => [uid('track'), uid('clip'), uid('note'), uid('note')];
+  const a = withStableIds('starter_metal', build);
+  const b = withStableIds('starter_metal', build);
+  assert.deepEqual(a, b);
+  assert.equal(new Set(a).size, a.length, 'and unique within one build');
+  assert.notDeepEqual(withStableIds('starter_rock', build), a);
+  // Outside it, ids are new each time again
+  assert.notEqual(uid('note'), uid('note'));
 });
 
 test('drift stays in range and varies from note to note', () => {

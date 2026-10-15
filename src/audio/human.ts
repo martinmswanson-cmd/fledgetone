@@ -3,9 +3,9 @@ import type { TrackFx } from '../store/timelineTypes';
 /**
  * The Human insert's maths: how far one note drifts from what's written, the way a player never
  * hits the same note quite the same way twice. Nothing here is random at play time: each note's
- * drift comes from a hash of its clip, its id and where it sits, so the song sounds the same on
- * every play, in the WAV export and in a frozen track, yet no two notes are alike (a copied clip
- * is a new clip, so it drifts differently from the one it was copied from).
+ * drift comes from a hash of its clip, its pitch and where it sits (noteSeed), so the song sounds
+ * the same on every play, in the WAV export and in a frozen track, yet no two notes are alike (a
+ * copied clip is a new clip, so it drifts differently from the one it was copied from).
  */
 
 /** At full Timing a note lands up to this late (seconds). Late only: an export can't play early. */
@@ -32,6 +32,15 @@ export function hashSeed(text: string): number {
     h = Math.imul(h, 0x01000193);
   }
   return h >>> 0;
+}
+
+/**
+ * The seed of one note's drift: its clip's id, its pitch and its tick (where it sits in the
+ * song). Not the note's id: notes get new ids when a song comes back from browser storage
+ * (project.ts), and the song must play and export the same before and after.
+ */
+export function noteSeed(clipId: string, note: string, tick: number): number {
+  return hashSeed(`${clipId}|${note}|${tick}`);
 }
 
 /** Three numbers in [0, 1) from one seed (mulberry32). */

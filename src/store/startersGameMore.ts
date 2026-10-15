@@ -320,7 +320,7 @@ function bigBandCity(): ProjectSnapshot {
 
 function quietWorld(): ProjectSnapshot {
   const piano = track('Soft piano', 'realGrandPiano', { volume: -9, reverbSend: 0.55, fx: { peq: EQ.piano(), human: human(0.35, 0.05) } });
-  const keys = grouped(track('Electric piano', 'rhodes', { volume: -15, pan: -0.2, reverbSend: 0.5, fx: { human: human(0.3) } }), 'Ambient');
+  const keys = grouped(track('Electric piano', 'rhodes', { volume: -14.5, pan: -0.2, reverbSend: 0.5, fx: { human: human(0.3) } }), 'Ambient');
   const pad = grouped(track('Glass pad', 'glassPad', { volume: -19, reverbSend: 0.5, fx: { peq: EQ.pad(7000) } }), 'Ambient');
   const halo = grouped(track('Halo pad', 'haloPad', { volume: -21, reverbSend: 0.55, fx: { peq: EQ.pad(6000) } }), 'Tension');
 
@@ -675,7 +675,7 @@ function fogTown(): ProjectSnapshot {
 // ---------- Save room: two chords, safe for now ----------
 
 function saveRoom(): ProjectSnapshot {
-  const keys = track('Electric piano', 'rhodes', { volume: -11, reverbSend: 0.5, fx: { human: human(0.3), chorus: { on: true, mix: 0.25 } } });
+  const keys = track('Electric piano', 'rhodes', { volume: -11.5, reverbSend: 0.5, fx: { human: human(0.3), chorus: { on: true, mix: 0.25 } } });
   const pad = grouped(track('Glass pad', 'glassPad', { volume: -18, reverbSend: 0.55, fx: { peq: EQ.pad(6000) } }), 'Ambient');
   const piano = grouped(track('Piano', 'realGrandPiano', { volume: -12, pan: 0.15, reverbSend: 0.55, fx: { peq: EQ.piano(), human: human(0.35, 0.05) } }), 'Tension');
   const bass = track('Bass', 'fretlessBass', { volume: -14, fx: { peq: peq(lowCut(35)) } });

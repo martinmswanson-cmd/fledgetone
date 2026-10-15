@@ -13,7 +13,7 @@ import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { swellLane } from './swell';
 import { midiOf, nameOf } from './noteTools';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
-import { barsToDuration, DEFAULT_MASTER_FX, durationToBars, uid } from './timelineTypes';
+import { barsToDuration, DEFAULT_MASTER_FX, durationToBars, uid, withStableIds } from './timelineTypes';
 import { breathe } from './breathe';
 import { FOUR_FOUR } from '../audio/tempoMap';
 import type { Clip, ClipExpression, MasterFx, MasterSettings, MbcBand, PeqBand, Track } from './timelineTypes';
@@ -306,7 +306,7 @@ function house(): ProjectSnapshot {
   const drums = track('Drums', 'technoKit', { volume: -4, reverbSend: 0.05, fx: { peq: peq(lowCut(30)), compressor: GLUE, human: humanVel(0.15) } });
   const bass = track('Bass', 'synthBass2', { volume: -6, fx: { peq: peq(lowCut(35)), pump: { on: true, depth: 0.4, release: 200, trigger: 'kick' } } });
   const stabs = track('Stabs', 'rhodes', {
-    volume: -8, delaySend: 0.1, sends: sendTo(room, 0.2),
+    volume: -11.5, delaySend: 0.1, sends: sendTo(room, 0.2),
     fx: { peq: peq(lowCut(150), highCut(9000)), pump: { on: true, depth: 0.5, release: 220, trigger: 'kick' }, chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.2 }, human: human(0.2) },
   });
   const pad = track('Pad', 'warmPad', { volume: -18, reverbSend: 0.3, fx: { peq: peq(lowCut(200)), pump: { on: true, depth: 0.6, release: 260, trigger: 'kick' } } });
@@ -526,7 +526,7 @@ function cinematic(): ProjectSnapshot {
 function lofi(): ProjectSnapshot {
   const tape = { crush: bits(12), tone: 5000, wow: 0.25, mix: 0.5 };
   const keys = track('Keys', 'rhodes', {
-    volume: -9, reverbSend: 0.3,
+    volume: -11.5, reverbSend: 0.3,
     fx: { lofi: { on: true, ...tape }, chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.3 }, filter: { on: true, type: 'lowpass', cutoff: 3000 }, human: human(0.4) },
   });
   const drums = track('Drums', 'breakbeatKit', {
@@ -639,7 +639,7 @@ function hiphop(): ProjectSnapshot {
     },
   });
   const keys = track('Keys', 'rhodes', {
-    volume: -8, sends: sendTo(room, 0.2),
+    volume: -11, sends: sendTo(room, 0.2),
     fx: { peq: peq(lowCut(120), highCut(6000)), lofi: { on: true, crush: bits(14), tone: 6000, wow: 0.2, mix: 0.4 }, filter: { on: true, type: 'lowpass', cutoff: 3000 }, human: human(0.3) },
   });
   const bass = track('Bass', 'uprightBass', { volume: -6, fx: { peq: peq(lowCut(40), highCut(3000)), compressor: { on: true, threshold: -18, ratio: 4, makeup: 2 }, human: human(0.25) } });
@@ -1411,11 +1411,16 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   ...MATH_BUILDERS,
 };
 
-/** A fresh copy of a starter (new ids each time). */
+/**
+ * A fresh copy of a starter. Its ids are the same every time (withStableIds), so every copy plays
+ * and exports exactly alike: the Human insert's drift, and the recordings it picks, follow them.
+ */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  const p = withRoom(id, withGlue(id, wholeSong(withSwells(inRange(withSeats(recorded(BUILDERS[id]())))))));
-  // Last, the level: each starter brought to its group's loudness (see startersLoudness.ts)
-  return trimMix(withBreathing(id, withVibrato(id, withLegato(id, p))), starterTrimDb(id));
+  return withStableIds(`starter_${id}`, () => {
+    const p = withRoom(id, withGlue(id, wholeSong(withSwells(inRange(withSeats(recorded(BUILDERS[id]())))))));
+    // Last, the level: each starter brought to its group's loudness (see startersLoudness.ts)
+    return trimMix(withBreathing(id, withVibrato(id, withLegato(id, p))), starterTrimDb(id));
+  });
 }
 
 /**
@@ -1469,9 +1474,10 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   sweepPad: { to: 'synthDesigner', preset: 'Sweep pad', db: 1.5 },
   polysynthPad: { to: 'synthDesigner', preset: 'Polysynth', db: 0.0 },
   soundtrackPad: { to: 'synthDesigner', preset: 'Soundtrack pad', db: 0.5 },
-  // The electric piano's recordings stop after 0.4 to 2.5 s, well before a held chord ends (with
-  // no steady part to loop), so only parts of short notes move to them
-  rhodes: { to: 'rhodes', db: 0, short: 'realElectricPiano', shortDb: 0 },
+  // The electric piano rings on for a held chord (up to 8 s), so every part moves to it. Matched
+  // part by part rather than here (A-weighted, each starter's part through both): against the old
+  // sound they ranged from -0.5 to +3.5 dB, so each starter's electric piano fader is set for it
+  rhodes: { to: 'realElectricPiano', db: 0 },
   acousticKit: { to: 'studioKit', db: 0, anyNote: true },
   banjo: { to: 'realBanjo', db: 0 },
   harmonica: { to: 'realHarmonica', db: 0 },

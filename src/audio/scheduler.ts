@@ -17,7 +17,7 @@ import { createAudioClipSchedule } from './audioClipSchedule';
 import type { AudioClipSchedule } from './audioClipSchedule';
 import type { Clip, ClipGroove, LoopRegion, Track, TrackFx } from '../store/timelineTypes';
 import { INSTRUMENTS } from './instrumentCatalog';
-import { detuned, hashSeed, noteDrift } from './human';
+import { detuned, noteDrift, noteSeed } from './human';
 import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
 import { isExpressive, noteSteps } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
@@ -89,7 +89,7 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
     const key = `${tick}|${note.duration}`;
     // The clip's wobble rate travels with each note to the instrument (the ones that wobble use it)
     const playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
-    const seed = hashSeed(`${clip.id}|${note.id}|${tick}`);
+    const seed = noteSeed(clip.id, note.note, tick);
     const group = groups.get(key);
     if (group) {
       group[1].notes.push(playable);

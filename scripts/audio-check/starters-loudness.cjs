@@ -11,7 +11,7 @@
 // takes off (its most, and the loudness it costs). One JSON line per starter: its integrated
 // loudness (LUFS) and true peak (dBTP) after the limiter, the gain reduction, its target
 // (startersLoudness.ts) and the trim that would land it there, its current trim included.
-// A trim changes what reaches the master compressor, so measure again after changing one.
+// A trim (the master Level) changes what reaches the limiter, so measure again after changing one.
 // APP_URL overrides http://localhost:5200/. Needs Playwright with Chromium.
 let playwright;
 try { playwright = require('playwright'); } catch { playwright = require('/opt/node22/lib/node_modules/playwright'); }
@@ -66,7 +66,7 @@ const MEASURE = async (id) => {
     lufsLost: r1(before.integrated - after.integrated),
     target,
     trim,
-    // About right for a few dB; the master compressor takes some of a bigger change
+    // About right while the limiter takes little; it takes some of a bigger change
     suggestedTrim: r1(trim + target - after.integrated),
   };
 };

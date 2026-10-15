@@ -649,7 +649,7 @@ function puzzle(): ProjectSnapshot {
 
 function shop(): ProjectSnapshot {
   const vibes = track('Vibraphone', 'vibraphone', { volume: -8, pan: 0.15, reverbSend: 0.3, fx: { human: human(0.3) } });
-  const keys = track('Electric piano', 'rhodes', { volume: -10, pan: -0.25, reverbSend: 0.25, fx: { peq: EQ.piano(), human: human(0.3) } });
+  const keys = track('Electric piano', 'rhodes', { volume: -11, pan: -0.25, reverbSend: 0.25, fx: { peq: EQ.piano(), human: human(0.3) } });
   const bass = track('Upright bass', 'uprightBass', { volume: -7, fx: { peq: peq(lowCut(35)), human: human(0.25) } });
   const drums = grouped(track('Drums', 'acousticKit', { volume: -12, reverbSend: 0.15, fx: { compressor: glue(-22), human: human(0.25) } }), 'Percussion');
   const steel = grouped(track('Steel drums', 'steelDrums', { volume: -11, pan: 0.3, reverbSend: 0.3 }), 'Climax');

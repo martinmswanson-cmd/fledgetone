@@ -440,7 +440,7 @@ function breakcore(): ProjectSnapshot {
     automation: [{ param: 'fx:gate.depth', points: [{ bar: 8, value: 0 }, { bar: 8, value: 0.85 }, { bar: 8.5, value: 0.85 }, { bar: 8.5, value: 0 }] }],
   });
   const kit = track('Hardcore kit', 'technoKit', { volume: -4, fx: { peq: EQ.kit(), compressor: glue() } });
-  const keys = track('Keys', 'rhodes', { volume: -8, sends: send(room, 0.3), fx: { lofi: { on: true, crush: 0, tone: 20000, wow: 0.2, mix: 1 }, chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.3 }, filter: { on: true, cutoff: 5000 }, human: human(0.2) } });
+  const keys = track('Keys', 'rhodes', { volume: -11, sends: send(room, 0.3), fx: { lofi: { on: true, crush: 0, tone: 20000, wow: 0.2, mix: 1 }, chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.3 }, filter: { on: true, cutoff: 5000 }, human: human(0.2) } });
   // The hook on a plain grand piano: breakcore's melodies cut through as they are, no synth stack or drive
   const hook = track('Hook', 'piano', { volume: -6, sends: send(room, 0.25), fx: { peq: peq(lowCut(120)), human: human(0.15) } });
   const atmos = track('Atmos', 'goblins', { volume: -22, reverbSend: 0.5, fx: { peq: EQ.pad(6000) } });
@@ -1024,7 +1024,7 @@ function rage(): ProjectSnapshot {
 
 function neoSoul(): ProjectSnapshot {
   const rhodes = track('Rhodes', 'rhodes', {
-    volume: -10,
+    volume: -12,
     reverbSend: 0.25,
     fx: { chorus: { on: true, rate: 0.8, mix: 0.3, depth: 0.4 }, filter: { on: true, cutoff: 6000 }, human: human(0.4) },
     automation: [{ param: 'filterCutoff', points: [{ bar: 1, value: 0.35 }, { bar: 5, value: 0.9 }, { bar: 17, value: 0.9 }] }],
@@ -1086,7 +1086,7 @@ function neoSoul(): ProjectSnapshot {
 
 function bedroomPop(): ProjectSnapshot {
   const gtr = track('Guitar', 'cleanGuitar', { volume: -2, pan: -0.2, reverbSend: 0.2, fx: { chorus: { on: true, rate: 0.8, depth: 0.6, mix: 0.4 }, filter: { on: true, cutoff: 4500, slope: 12 }, human: human(0.3, 0.1) } });
-  const rhodes = track('Rhodes', 'rhodes', { volume: -10, pan: 0.2, fx: { filter: { on: true, cutoff: 3000 }, human: human(0.35) } });
+  const rhodes = track('Rhodes', 'rhodes', { volume: -10.5, pan: 0.2, fx: { filter: { on: true, cutoff: 3000 }, human: human(0.35) } });
   const bass = track('Bass', 'fingerBass', { volume: -7, fx: { compressor: { on: true, threshold: -20, ratio: 4 }, human: human(0.35) } });
   const sax = track('Sax', 'saxophone', { volume: -3, reverbSend: 0.3, delaySend: 0.2, fx: { filter: { on: true, cutoff: 3500 }, human: human(0.3, 0.2) } });
   const pad = track('Pad', 'wavetable', { volume: -16, reverbSend: 0.4, fx: { filter: { on: true, cutoff: 1500 } } });

@@ -1199,7 +1199,28 @@ export function barsToDuration(bars: number): string {
 }
 
 let uidCounter = 0;
+/** Set while withStableIds runs: the ids' base, and how many it has given. */
+let stable: { base: string; count: number } | null = null;
+
+/** A new id: unique in this session (from the clock and a counter), or see withStableIds. */
 export function uid(prefix: string): string {
+  if (stable) return `${prefix}-${stable.base}-${(++stable.count).toString(36)}`;
   uidCounter += 1;
   return `${prefix}-${Date.now().toString(36)}-${uidCounter.toString(36)}`;
+}
+
+/**
+ * Run `fn` with uid giving ids made from `base` and their order alone, so building the same thing
+ * again gives the same ids. For a starter song: the Human insert's drift comes from its clips' ids
+ * (human.ts), so with ids from the clock every fresh copy played and exported a little
+ * differently, its recordings too (the velocity a note drifts to picks the recording).
+ */
+export function withStableIds<T>(base: string, fn: () => T): T {
+  const was = stable;
+  stable = { base, count: 0 };
+  try {
+    return fn();
+  } finally {
+    stable = was;
+  }
 }
