@@ -85,8 +85,8 @@ export const SHOTS = [
   },
   {
     file: 'courier', section: 'scoring-to-a-video', after: 'end', video: '/video/courier.mp4', poster: '/video/courier-poster.webp', sound: true, ai: true,
-    alt: 'An AI-generated film of a small courier drone crossing an alien world, with a synth score made in Fledgetone that hits each of its cuts.',
-    caption: 'Another style: synths, drums and a Reese bass, written to the cuts at 121.68 BPM.',
+    alt: 'AI-generated game-style footage of a small courier drone, with an electronic score made in Fledgetone that hits each of its cuts.',
+    caption: 'Another style: a modern electronic score with a growl bass, 808 slides, filter sweeps and a tempo change at each cut.',
   },
   {
     file: 'video-tab', section: 'scoring-to-a-video', after: 'end', ai: true,
