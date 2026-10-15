@@ -6,6 +6,8 @@ import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { STORY_BUILDERS } from './startersStory';
 import { MATH_BUILDERS } from './startersMath';
+import { CLASSICS_BUILDERS } from './startersClassics';
+import { FLIP_BUILDERS } from './startersFlips';
 import { starterTrimDb, trimMix } from './startersLoudness';
 import { FX_NOTES, INSTRUMENTS, seatOf } from '../audio/instrumentCatalog';
 import type { RoomStyle } from '../audio/effects/roomIR';
@@ -23,7 +25,8 @@ import type { Step } from './demoSong';
  * Genre starters for the New dialog: a 16-bar arrangement in each style, with its tempo, a
  * mixed set of tracks, sections marked (intro, build, drop...), the loop on the main section and
  * the master set up for the style. Built from data like the demo song, so they are ordinary
- * projects once opened. Steps are 16th notes: offset = step / 16 bars.
+ * projects once opened. Steps are 16th notes: offset = step / 16 bars. A starter may name a `sub`
+ * group, shown as a heading inside its group in the New dialog.
  */
 export const STARTERS = [
   { id: 'overworld', group: 'Game Worlds', name: 'Overworld Adventure', detail: '116 BPM, C major. Game-ready: Explore (harp, flute theme, strings) and Danger (horn hero theme, march, timpani), with layers for Intensity, a fill into Danger and stingers.' },
@@ -102,11 +105,24 @@ export const STARTERS = [
   { id: 'theatrical', group: 'Pop & Jazz', name: 'Theatrical Pop', detail: '132 BPM, D minor to F. A line-cliche verse with pizzicato and a music-box motif, then a disco chorus with brass fanfares.' },
   { id: 'raprock', group: 'Band', name: 'Rap-Rock', detail: '154 BPM, G minor. A Phrygian riff over half-time drums, a dead stop, then a double-time chant chorus with low brass.' },
   { id: 'mathrock', group: 'Band', name: 'Math Rock', detail: '150 BPM, E major. Twinkly guitar, tapping in triplets, 3+3+3+3+2+2 accents, then an easycore breakdown.' },
+  { id: 'canon', group: 'Classics', sub: 'Classics', name: 'Canon in D (Pachelbel)', detail: '58 BPM, D major, complete (about 4 minutes). The three violins in strict canon over the ground bass: solo Violin, Violin and Viola (Real), the ground on Cello and Contrabass (Real), the sections joining as it grows; legato, a slowing at the end.' },
+  { id: 'moonlight', group: 'Classics', sub: 'Classics', name: 'Moonlight Sonata, 1st mvt (Beethoven)', detail: '54 BPM, C sharp minor, complete first movement (about 5 minutes). The concert grand, pianissimo throughout, pedalled with each harmony, the tempo breathing.' },
+  { id: 'prelude', group: 'Classics', sub: 'Classics', name: 'Cello Suite No. 1: Prelude (Bach)', detail: '66 BPM, G major, complete (about 2.5 minutes). Solo Cello (Real), the dynamics rising into the held D and through the last climb, rubato and fermatas.' },
+  { id: 'mountainKing', group: 'Classics', sub: 'Classics', name: 'In the Hall of the Mountain King (Grieg)', detail: '116 to 240 BPM, B minor, complete (about 2 minutes). For orchestra from Grieg\'s piano version: bassoon and pizzicato, then strings, winds, brass, timpani, gathering speed to the end.' },
+  { id: 'clairDeLune', group: 'Classics', sub: 'Classics', name: 'Clair de lune (Debussy)', detail: '58 BPM, D flat major, 9/8, complete (about 5 minutes). The concert grand: hushed thirds, the rubato section warming, rippling arpeggios to the one forte, dying away.' },
+  { id: 'canonTrap', group: 'Classics', sub: 'Classical Flips', name: 'Canon in D: Trap Flip', detail: '140 BPM, D major. The Canon\'s sixteenths chopped on a violin over its chords, a gliding 808, hard trap drums with rolls, a half-time switch and a stop.' },
+  { id: 'moonlightDrill', group: 'Classics', sub: 'Classical Flips', name: 'Moonlight: Drill Flip', detail: '142 BPM, C sharp minor. Sparse dark piano from the triplets, the G sharp call, sliding 808s, the drill bounce with triplet hats, a half-time switch.' },
+  { id: 'preludeBoomBap', group: 'Classics', sub: 'Classical Flips', name: 'Cello Prelude: Boom Bap Flip', detail: '88 BPM, G major, swung. Chopped cello phrases through tape and crunch, a dusty Studio Kit boom bap, sub-bass, a half-time switch, electric piano.' },
+  { id: 'kingPhonk', group: 'Classics', sub: 'Classical Flips', name: 'Mountain King: Phonk Flip', detail: '130 to 146 BPM, B minor. The theme on a crushed phonk cowbell, a dark 808, drift drums, a Reese under the switch, speeding up like the original.' },
+  { id: 'clairTrap', group: 'Classics', sub: 'Classical Flips', name: 'Clair de lune: Melodic Trap Flip', detail: '140 BPM, D flat major. The falling thirds on piano over a rippling arpeggio and glass pad, a long 808, rolling hats, a slow, heavy switch with a Reese.' },
 ] as const;
 export type StarterId = (typeof STARTERS)[number]['id'];
-export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Anime & Cartoon', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World'] as const;
+export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Anime & Cartoon', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World', 'Classics'] as const;
 
 export const isStarterId = (v: unknown): v is StarterId => STARTERS.some((s) => s.id === v);
+
+/** A starter's subgroup inside its group, for the groups that have them (Classics: the pieces, then their flips). */
+export const starterSub = (s: (typeof STARTERS)[number]): string | undefined => ('sub' in s ? s.sub : undefined);
 
 // ---------- Mix helpers (the starter manual's toolkit, Part 2) ----------
 
@@ -1410,6 +1426,8 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   ...MORE_GAME_BUILDERS,
   ...STORY_BUILDERS,
   ...MATH_BUILDERS,
+  ...CLASSICS_BUILDERS,
+  ...FLIP_BUILDERS,
 };
 
 /**
@@ -1536,6 +1554,8 @@ const GROUP_GLUE: Partial<Record<(typeof STARTER_GROUPS)[number], MasterSettings
   'Hip-Hop & Phonk': 'punchy',
   Band: 'punchy',
   'Pop & Jazz': 'punchy',
+  // (the Classical Flips choose punchy glue themselves)
+  Classics: 'gentle',
 };
 
 /** The reverb's room for each group of starters (see roomIR.ts; the rest play in the hall). */
