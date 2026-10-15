@@ -1,6 +1,6 @@
 import * as Tone from 'tone';
 import { createLightChorus } from '../effects/lightFx';
-import { INSTRUMENTS } from '../instrumentCatalog';
+import { breathOf, INSTRUMENTS, isSection } from '../instrumentCatalog';
 import type { AmpModel, InstrumentDef, InstrumentKey, SampleSource, Shaping } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
 import { decodeSound } from '../soundLibrary';
@@ -19,6 +19,21 @@ type SampleSet = Record<string, Tone.ToneAudioBuffer>;
 const sampleSets: Partial<Record<InstrumentKey, Promise<SampleSet>>> = {};
 /** The sets that have finished loading (for counting what forgetting them frees). */
 const loadedSets: Partial<Record<InstrumentKey, SampleSet>> = {};
+/** The first loudness of each instrument's notes, loaded first (see loadSamples) */
+const quickSets: Partial<Record<InstrumentKey, Promise<SampleSet>>> = {};
+/** Which loudness loads first: one just above the middle, which suits most velocities */
+const quickLayer = (layers: number) => Math.min(layers - 1, Math.floor(layers * 0.6));
+
+/**
+ * The instrument's first loudness of every note (it can play once these are in), loading the
+ * rest in the background; the whole set if that's already loaded.
+ */
+export function loadQuick(key: InstrumentKey): Promise<SampleSet> {
+  const full = loadedSets[key];
+  if (full) return Promise.resolve(full);
+  const all = loadSamples(key);
+  return quickSets[key] ?? all;
+}
 
 /** True for instruments that stream recordings (piano, sax, marimba...). */
 export function isSamplerKey(key: InstrumentKey): boolean {
@@ -61,25 +76,38 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
 
   // Release sounds load with the notes, as "rel|<note>|<take>"
   const rel = source.releases;
-  const releases = rel ? Object.entries(rel.samples).map(async ([name, file]) => [`rel|${name}`, await fetchRecording(rel, file)] as const) : [];
-  const promise = Promise.all([
-    ...releases,
-    ...Object.entries(source.samples).map(async ([note, file]) => {
-      const loaded = await fetchRecording(source, file);
-      const tuned = source.tune?.[note] ? retune(loaded, source.tune[note]) : loaded;
-      const buffer = source.gains?.[note] ? louder(tuned, source.gains[note]) : tuned;
-      const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
-      const ready = source.onset === undefined ? held : trimOnset(held, source.onset);
-      // Its seamless loop, if it has one (and nothing above moved its timing)
-      const loop = source.loops?.[note];
-      const audio = ready.get();
-      if (loop && audio && ready === buffer && !source.tune?.[note]) loopsOf.set(audio, loop);
-      return [note, ready] as const;
-    }),
-  ]).then(
-    (entries) => {
+  const loadOne = async ([note, file]: [string, string]) => {
+    const loaded = await fetchRecording(source, file);
+    const tuned = source.tune?.[note] ? retune(loaded, source.tune[note]) : loaded;
+    const buffer = source.gains?.[note] ? louder(tuned, source.gains[note]) : tuned;
+    const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
+    const ready = source.onset === undefined ? held : trimOnset(held, source.onset);
+    // Its seamless loop, if it has one (and nothing above moved its timing)
+    const loop = source.loops?.[note];
+    const audio = ready.get();
+    if (loop && audio && ready === buffer && !source.tune?.[note]) loopsOf.set(audio, loop);
+    return [note, ready] as const;
+  };
+  // First one loudness of every note (QUICK_LAYER), so the instrument can play while the rest come
+  const entries = Object.entries(source.samples);
+  const layerCount = source.layers?.length ?? 1;
+  const isQuick = ([name]: [string, string]) => {
+    const [, l = '0', t = '0'] = name.split('|');
+    return Number(l) === quickLayer(layerCount) && t === '0';
+  };
+  const quick = Promise.all(entries.filter(isQuick).map(loadOne));
+  quickSets[key] = quick.then((e) => Object.fromEntries(e) as SampleSet);
+  quickSets[key]!.catch(() => {});
+  const rest = quick.then(() =>
+    Promise.all([
+      ...(rel ? Object.entries(rel.samples).map(async ([name, file]) => [`rel|${name}`, await fetchRecording(rel, file)] as const) : []),
+      ...entries.filter((e) => !isQuick(e)).map(loadOne),
+    ])
+  );
+  const promise = Promise.all([quick, rest]).then(
+    ([a, b]) => {
       setStatus(key, 'ready');
-      const set = Object.fromEntries(entries) as SampleSet;
+      const set = Object.fromEntries([...a, ...b]) as SampleSet;
       loadedSets[key] = set;
       return set;
     },
@@ -87,6 +115,7 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
       console.error(`Failed to load samples [${key}]:`, err);
       setStatus(key, 'error');
       delete sampleSets[key]; // allow a retry next time
+      delete quickSets[key];
       throw err;
     }
   );
@@ -551,6 +580,8 @@ interface SlotBank {
    * doesn't jump from one recording's tone to the other's. Null away from a boundary.
    */
   blend?: (velocity: number) => { low: Slot; high: Slot; x: number } | null;
+  /** The recordings loaded first (see loadQuick), for a note whose own slot isn't loaded yet */
+  fallback?: Slot;
   /** The sounds of keys being let go (ReleaseSounds), their takes in turn */
   releases?: { slots: Slot[]; db: number; decay?: number };
 }
@@ -638,6 +669,9 @@ const PORTAMENTO_MAX = 0.12;
 const LEGATO_FADE = 0.05;
 /** How fast a note let go for a newer one fades (time constant, s: gone in about 50 ms). */
 const STEAL_TC = 0.01;
+/** Out of breath, a held note fades towards this share of its level, with this time constant (s) */
+const BREATH_FLOOR = 0.5;
+const BREATH_TC = 2.5;
 
 const midiOfNote = (note: string) => 69 + 12 * Math.log2(Tone.Frequency(note).toFrequency() / 440);
 
@@ -669,7 +703,11 @@ function samplerVoice(
   onNote?: (time: number) => void,
   taper?: InstrumentDef['taper'],
   expressive?: Expressive | null,
-  bowed?: InstrumentDef['bowed']
+  bowed?: InstrumentDef['bowed'],
+  /** Seconds a note can be held before the player runs out of breath (see breathOf) */
+  breath?: number,
+  /** A section: a chord's notes start a few milliseconds apart (see isSection) */
+  section?: boolean
 ): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
@@ -792,9 +830,15 @@ function samplerVoice(
     const low = dyn !== null && bank.layer && span > 0 ? Math.min(span - 1, Math.floor(dyn * span)) : -1;
     // Off the mod wheel, a velocity near a loudness boundary blends the two recordings either side
     const blend = low < 0 && bank.blend ? bank.blend(velocity) : null;
-    const found = low >= 0 ? nearest(bank.layer!(low), midi) : blend ? nearest(blend.low, midi) : nearest(bank.pick(velocity), midi);
+    const near = (slot: Slot) => {
+      const f = nearest(slot, midi);
+      // (still loading: nothing within reach yet)
+      if (bank.fallback && slot !== bank.fallback && (!f || Math.abs(f.interval) > 3)) return nearest(bank.fallback, midi);
+      return f;
+    };
+    const found = low >= 0 ? near(bank.layer!(low)) : blend ? near(blend.low) : near(bank.pick(velocity));
     if (!found) return null;
-    const upper = low >= 0 ? nearest(bank.layer!(low + 1), midi) : blend ? nearest(blend.high, midi) : null;
+    const upper = low >= 0 ? near(bank.layer!(low + 1)) : blend ? near(blend.high) : null;
     // Each hit a hair off the last: up to ±3 cents
     const jitter = expressive ? 2 ** ((3 * noteJitter(note, at, 13)) / 1200) : 1;
     const rateOf = (interval: number) => 2 ** ((interval + midiFloat - midi) / 12) * jitter;
@@ -807,6 +851,11 @@ function samplerVoice(
       gain.gain.setValueAtTime(0, when);
       gain.gain.linearRampToValueAtTime(v, when + rise);
     } else gain.gain.value = v;
+    // Held past the player's breath, the note fades (by half over the next few seconds)
+    if (breath && hold > when + breath) {
+      gain.gain.setValueAtTime(v, when + breath);
+      gain.gain.setTargetAtTime(v * BREATH_FLOOR, when + breath, BREATH_TC);
+    }
     gain.connect(expressive ? filterFor(expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency())) : into);
     /** A source of `buffer` at `rate` into `to`, started `offset` in; returns it and when it runs out */
     const play = (buffer: AudioBuffer, rate: number, to: AudioNode, extra: AudioNode[] = []) => {
@@ -909,17 +958,24 @@ function samplerVoice(
     };
   };
 
+  /** The level `s` is at by `at` (lower once it has run out of breath). */
+  const levelAt = (s: Sounding, at: number) => {
+    if (!breath || at <= s.start + breath) return s.level;
+    return s.level * (BREATH_FLOOR + (1 - BREATH_FLOOR) * Math.exp(-(at - s.start - breath) / BREATH_TC));
+  };
+
   /** Release `s` at `time`: its level falls away over the release, then it stops (`sound`: with its release sound). */
   const releaseAt = (s: Sounding, time: number, sound = true) => {
     const at = Math.max(time, s.start + options.attack);
     if (sound) releaseSound(s, at);
     s.releasedAt = at;
     const g = s.gain.gain;
+    const from = levelAt(s, at);
     g.cancelScheduledValues(at);
-    g.setValueAtTime(s.level, at);
+    g.setValueAtTime(from, at);
     g.setTargetAtTime(0, at, releaseTc);
     const late = at + tail * 0.9;
-    g.setValueAtTime(s.level * Math.exp((-tail * 0.9) / releaseTc), late);
+    g.setValueAtTime(from * Math.exp((-tail * 0.9) / releaseTc), late);
     g.linearRampToValueAtTime(0, at + tail);
     const stop = at + tail + 0.01;
     if (stop < s.until) {
@@ -935,11 +991,13 @@ function samplerVoice(
       onNote?.(at);
       const end = at + output.toSeconds(duration);
       prune(at);
+      // A section's chord: each note a few milliseconds after the last (no two players start together)
+      const spread = (note: string, i: number) => (section && notes.length > 1 ? (i + 0.5 * (1 + noteJitter(note, at, 53))) * 0.006 : 0);
       if (!bowed) {
-        for (const note of notes) {
-          const s = start(note, at, velocity, 0, 0, end);
+        notes.forEach((note, i) => {
+          const s = start(note, at + spread(note, i), velocity, 0, 0, end);
           if (s) releaseAt(s, end);
-        }
+        });
         return;
       }
       // A solo string plays two notes at most (a double stop): the outer two of a chord
@@ -951,8 +1009,9 @@ function samplerVoice(
       const from = held.length === 1 && held[0].note !== list[0] ? held[0] : undefined;
       // A short note starts past the bow's slow start, so fast passages speak
       const short = end - at < 0.25;
-      for (const note of list) {
-        const s = from ? start(note, at, velocity, Math.max(bowed.skip, LEGATO_SKIP), LEGATO_FADE, end) : short ? start(note, at, velocity, bowed.skip, 0.008, end) : start(note, at, velocity, 0, 0, end);
+      for (const [i, note] of list.entries()) {
+        const at2 = at + spread(note, i);
+        const s = from ? start(note, at2, velocity, Math.max(bowed.skip, LEGATO_SKIP), LEGATO_FADE, end) : short ? start(note, at2, velocity, bowed.skip, 0.008, end) : start(note, at2, velocity, 0, 0, end);
         if (s) releaseAt(s, end);
         if (s && from) slide(from, s, at);
       }
@@ -1068,7 +1127,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     return bank[l][turn[l]++ % bank[l].length];
   };
   const releaseSlots: Slot[] = [];
-  const attach = loadSamples(key).then((set) => {
+  const fill = (set: SampleSet) => {
     for (const [name, buffer] of Object.entries(set)) {
       const audio = buffer.get();
       if (!audio) continue;
@@ -1081,8 +1140,15 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
       const [note, l = '0', t = '0'] = name.split('|');
       bank[Number(l)][Number(t)].set(Math.round(midiOfNote(note)), audio);
     }
+  };
+  // Playable once one loudness of every note is in (loadQuick); the rest join as they arrive
+  const attach = loadQuick(key).then((set) => {
+    fill(set);
+    if (set !== loadedSets[key]) void loadSamples(key).then(fill, () => {});
   });
   const rel = def.samples?.releases;
+  // While the other loudnesses load, a note whose own has nothing near plays the first one
+  const firstSlot = bank[quickLayer(layers.length)]?.[0];
   const layer = (l: number) => bank[l][turn[l]++ % bank[l].length];
   const blend = (velocity: number) => {
     for (let l = 0; l < layers.length - 1; l++) {
@@ -1091,7 +1157,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     }
     return null;
   };
-  return samplerVoice({ slots: bank.flat(), pick, ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed);
+  return samplerVoice({ slots: bank.flat(), pick, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key));
 }
 
 /**
@@ -1156,6 +1222,31 @@ export function forgetUnusedSamples(keep: Set<InstrumentKey>): number {
   // (The sets kept hold their own recordings)
   recordings.clear();
   return bytes;
+}
+
+/** The instruments whose recordings are loaded (or loading). */
+export const loadedSampleKeys = (): InstrumentKey[] => Object.keys(sampleSets) as InstrumentKey[];
+
+/**
+ * Let go of these instruments' recordings (no track plays them any more), leaving every other
+ * instrument and the instrument browser's previews as they are. They load again if needed.
+ */
+export function forgetSampleSets(keys: InstrumentKey[]): void {
+  for (const key of keys) {
+    const set = loadedSets[key];
+    if (!set) continue;
+    const source = INSTRUMENTS[key].samples;
+    delete sampleSets[key];
+    delete loadedSets[key];
+    delete quickSets[key];
+    // Their decoded recordings, unless another loaded instrument shares them (the guitars' amps)
+    const shared = new Set(Object.values(sampleSets).length ? Object.keys(loadedSets).flatMap((k) => Object.values(INSTRUMENTS[k as InstrumentKey].samples?.samples ?? {}).map((f) => INSTRUMENTS[k as InstrumentKey].samples!.baseUrl + f)) : []);
+    for (const file of Object.values(source?.samples ?? {})) {
+      const url = source!.baseUrl + file;
+      if (!shared.has(url)) recordings.delete(url);
+    }
+    useAudioStore.getState().setInstrumentStatus(key, 'unloaded');
+  }
 }
 
 export function releaseAuditionSamplers(): void {

@@ -965,3 +965,31 @@ const SEATS: Partial<Record<InstrumentKey, Seat>> = {
 
 /** Where `key` sits on the stage, or undefined (no usual place: band, synths, your sounds). */
 export const seatOf = (key: InstrumentKey): Seat | undefined => SEATS[key];
+
+/**
+ * Wind and brass players run out of breath: a note held longer than this many seconds starts to
+ * fade (see samplerManager.ts), as a real player's would, instead of holding forever at full level.
+ */
+const BREATH: Partial<Record<InstrumentKey, number>> = {
+  realFlute: 7,
+  realOboe: 8,
+  realClarinet: 9,
+  realBassoon: 8,
+  realHorn: 8,
+  realTrumpet: 7,
+  realTrombone: 7,
+  realTuba: 6,
+  realBrass: 8,
+  realAltoSax: 8,
+  realTenorSax: 8,
+  realBariSax: 7,
+};
+/** How long a player of `key` can hold a note before it starts to fade (seconds), if they breathe. */
+export const breathOf = (key: InstrumentKey): number | undefined => BREATH[key];
+
+/**
+ * Sections (several players on one part): the notes of a chord don't start in the same instant,
+ * a few milliseconds apart, as no two players start together.
+ */
+const SECTIONS = new Set<InstrumentKey>(['realViolins', 'realViolas', 'realCello', 'realStrings', 'realBrass', 'realTremolo', 'realPizzicato', 'realDoubleBass', 'choir', 'voiceOohs']);
+export const isSection = (key: InstrumentKey): boolean => SECTIONS.has(key);

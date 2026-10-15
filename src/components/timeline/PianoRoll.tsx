@@ -6,6 +6,7 @@
  */
 import { SWELL_SHAPES, swellLane, type SwellShape } from '../../store/swell';
 import { scoop, springBounce, stutterBuild, tritoneSlide } from '../../store/mathPatterns';
+import { shapeDynamics } from '../../store/phraseDynamics';
 import { retrograde } from '../../store/noteTools';
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { NotationView } from './NotationView';
@@ -206,6 +207,7 @@ const TOOLS = [
   { id: 'springBounce', label: 'Spring bounce (pitch boings and settles)', drums: false },
   { id: 'tritoneSlide', label: 'Tritone slide (up half an octave)', drums: false },
   { id: 'scoop', label: 'Scoop (swoop up into each note)', drums: false },
+  { id: 'shapeDynamics', label: 'Shape dynamics (phrases rise and fall)', drums: false },
   ...SWELL_SHAPES.map((s) => ({ id: s.id, label: s.label, drums: false })),
 ] as const;
 type ToolId = (typeof TOOLS)[number]['id'];
@@ -531,6 +533,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         case 'springBounce': return springBounce(target, barSeconds);
         case 'tritoneSlide': return tritoneSlide(target, barSeconds);
         case 'scoop': return scoop(target, barSeconds);
+        case 'shapeDynamics': return shapeDynamics(target);
         default: return target;
       }
     })();

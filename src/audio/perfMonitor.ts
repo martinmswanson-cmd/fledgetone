@@ -1,8 +1,9 @@
+import { chosenPlaybackMode, choosePlaybackMode, PLAYBACK_MODE } from './playbackMode';
 import { create } from 'zustand';
 import { lateNotes } from './presets/monotonic';
 import { useTimelineStore } from '../store/timelineStore';
 import { releaseAllLiveVoices } from './liveTracks';
-import { forgetUnusedSamples } from './samplers/samplerManager';
+import { forgetSampleSets, forgetUnusedSamples, loadedSampleKeys } from './samplers/samplerManager';
 import { forgetDecodedSounds } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
 import type { InstrumentKey } from './instrumentCatalog';
@@ -43,6 +44,8 @@ interface PerfState {
   smoothing: boolean;
   /** The warning was closed: don't show it again until playback stops and starts */
   dismissed: boolean;
+  /** Lag came back after smoothing in this session, so the next start uses Stable playback (playbackMode.ts) */
+  stableNext: boolean;
   dismiss: () => void;
 }
 
@@ -55,6 +58,7 @@ export const usePerfStore = create<PerfState>((set) => ({
   memoryMB: null,
   smoothing: false,
   dismissed: false,
+  stableNext: false,
   dismiss: () => set({ dismissed: true }),
 }));
 
@@ -78,11 +82,14 @@ let started = false;
 let needsSmoothing = false;
 /** Set by clearMemory: the monitor starts counting afresh. */
 let restart = false;
+/** How long an instrument's recordings stay loaded after no track uses it (ms) */
+const UNUSED_MS = 3 * 60 * 1000;
 
 /** Start watching (once, at startup). */
 export function startPerfMonitor(): void {
   if (started) return;
   started = true;
+  let episodes = 0;
   let lastFrame = performance.now();
   const hitchTimes: Array<{ at: number; ms: number }> = [];
   const lateTimes: number[] = [];
@@ -147,12 +154,46 @@ export function startPerfMonitor(): void {
     const lagging = struggling || (s.lagging && now - calmSince < 8000);
     const worst = Math.round(Math.max(0, ...hitchTimes.map((h) => h.ms)));
     if (lagging !== s.lagging) capFrameRate(lagging ? CALM_FPS : null);
+    // Lag again after the look-ahead was already widened: this computer needs the bigger buffer
+    // too, which only a restart can give, so the next start uses Stable playback
+    if (lagging && !s.lagging) {
+      episodes++;
+      if (episodes >= 2 && PLAYBACK_MODE === 'responsive' && chosenPlaybackMode() === 'responsive') {
+        choosePlaybackMode('stable');
+        usePerfStore.setState({ stableNext: true });
+      }
+    }
     if (lagging !== s.lagging || lateTimes.length !== s.lateNotes || hitchTimes.length !== s.hitches || worst !== s.worstFrame || speed !== s.audioSpeed) {
       usePerfStore.setState({ lagging, lateNotes: lateTimes.length, hitches: hitchTimes.length, worstFrame: worst, audioSpeed: speed });
     }
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
+  // Recordings of instruments no track (stinger or costume) has played for a few minutes are let
+  // go while the song is stopped, so a long session of trying instruments doesn't fill the memory
+  const unusedSince = new Map<InstrumentKey, number>();
+  setInterval(() => {
+    const s = useTimelineStore.getState();
+    if (s.isPlaying) return;
+    const used = new Set<InstrumentKey>(s.tracks.map((t) => t.instrumentKey));
+    for (const st of s.stingers ?? []) used.add(st.instrumentKey);
+    for (const c of s.costumes ?? []) for (const t of Object.values(c.tracks)) if (t.instrument) used.add(t.instrument);
+    const now = performance.now();
+    const drop: InstrumentKey[] = [];
+    for (const key of loadedSampleKeys()) {
+      if (used.has(key)) {
+        unusedSince.delete(key);
+        continue;
+      }
+      const since = unusedSince.get(key) ?? now;
+      unusedSince.set(key, since);
+      if (now - since > UNUSED_MS) drop.push(key);
+    }
+    if (drop.length) {
+      forgetSampleSets(drop);
+      drop.forEach((k) => unusedSince.delete(k));
+    }
+  }, 30000);
   const memory = () => usePerfStore.setState({ memoryMB: memoryMB() });
   memory();
   setInterval(memory, 3000);
