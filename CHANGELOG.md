@@ -8,6 +8,44 @@ Each version is the date it was released (a second release on the same day gets 
 When you release, add a section at the top and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-2 — Engine polish
+
+### Sound
+- **Lush** room for the master reverb: a smooth, dense, gently shimmering tail, as loud as the concert hall but much lighter on the computer.
+- Turning knobs, muting and soloing while a song plays no longer clicks.
+- Tracks with a compressor stay exactly in time with the rest of the mix (they used to run a few milliseconds late), live and in exports. The metronome and recorded takes line up with the mix too.
+- Recorded instruments get louder with every step of velocity; some used to get quieter where they crossed into their next recorded loudness.
+- **Electric Piano (Real)** notes ring on and fade naturally while held; the starters' held electric piano chords use it.
+- The glockenspiel, harmonica, short trombone and the studio kit's hats, cymbals and snare stay clearer when played away from their recorded pitch.
+- Long reverb rooms ring all the way down, and changing the room or decay while playing no longer cuts the tail or makes playback stutter.
+- When an instrument has too many notes ringing, the quietest gives way instead of the oldest.
+- Long held pad and drone notes keep sounding past 10 seconds.
+- A track set back with Distance keeps its extra reverb when its reverb send is automated.
+
+### Master
+- New **Level** control: turns the whole mix up or down just before the limiter.
+- Exports' peaks stay at or under -1 dBTP; ring-out exports fade their last moments instead of stopping on a long tail.
+
+### Starter songs
+- Every starter plays at a matching loudness for its kind of music (within 1 LU of its target), so switching between them no longer jumps in level. Their level sits on the master Level.
+- The double bass no longer drowns out the orchestral starters, and the drums no longer swamp the trap, drill, phonk, dubstep and riddim starters.
+- A starter sounds exactly the same every time you open it, and a song's human feel no longer changes when it's reopened, so exports repeat exactly.
+- Fixed silent hand drums in two game starters.
+
+### Speed and memory
+- Exports render on several processor cores at once: about twice as fast on big songs, and stems render several at a time.
+- Songs load the notes they play first and start sooner; the rest arrive in the background (on phones and smaller computers, only when needed). Memory at Play start is about a third of what it was.
+- Synth Designer sounds use about half as many audio parts per note.
+- Exports no longer stay in memory after they finish.
+- Exports at 44.1 or 48 kHz are equally clean whatever rate your sound card runs at.
+
+### Playing and settings
+- Keys played on screen (the instrument browser, piano roll previews, deck pads) sound at once instead of a tenth of a second later.
+- The Playback panel shows the delay from a key to its sound.
+- If you chose Responsive playback yourself, the app no longer switches you to Stable; when it switches by itself, it tells you.
+- An export waiting on a recording that won't download stops after a while and says which instrument failed.
+- Exported stems each get their own dither, and the intro + loop export no longer clicks where the loop begins.
+
 ## 2026.10.15 — Better sound
 
 ### New instruments (free recordings)

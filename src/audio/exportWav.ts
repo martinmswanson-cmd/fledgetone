@@ -123,6 +123,8 @@ const SCHEDULE_LEAD = 0.25;
 /** Exports are scaled down (never up) so their true peaks sit here: -1 dBTP, just under full scale even between samples. */
 const PEAK_CEILING = 10 ** (-1 / 20);
 /** Fade at the end of an exact-length file. */
+/** The fade at the very end of a ring-out export (see finishRender). */
+const RING_OUT_FADE_SECONDS = 0.3;
 const EXACT_FADE_SECONDS = 0.005;
 /** Crossfade at the end of a seamless loop into the end of the pass before it (see renderTracks). */
 const SEAM_FADE_SECONDS = 0.01;
@@ -871,6 +873,9 @@ function finishRender(rendered: AudioBuffer, plan: RenderPlan, opts: RenderOptio
   // Stereo: the sum of a render's parts can carry their reverb sends after it (see renderInParts)
   const channels = channelsOf(rendered).slice(0, 2).map((ch) => ch.subarray(plan.keepFrom, plan.keepFrom + plan.keepLength));
   if (ending === 'exact' && !opts.noEndFade) fadeOut(channels, Math.round(EXACT_FADE_SECONDS * plan.sampleRate));
+  // A ring-out's tail can still be sounding faintly when the file ends (a long cymbal, about -50 dB):
+  // fade its last moments so it dies away instead of stopping on a non-zero sample
+  if (ending === 'ringOut' && !opts.noEndFade) fadeOut(channels, Math.min(Math.round(RING_OUT_FADE_SECONDS * plan.sampleRate), Math.floor(plan.keepLength / 4)));
   return channels;
 }
 
