@@ -1,6 +1,6 @@
 /**
  * The Master tab of the Inspector: the loudness meter, the OTT and stereo width inserts, the
- * playback buffering choice, and the instruments kept for offline use.
+ * playback buffering choice and the browser's audio delay, and the instruments kept for offline use.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Snowflake, Timer } from 'lucide-react';
@@ -15,6 +15,7 @@ const show = (v: number, unit: (v: number) => string) => (Number.isFinite(v) ? u
 import { resetLoudness } from '../../audio/loudnessMeter';
 import { useLoudness } from './useLoudness';
 import { choosePlaybackMode, chosenPlaybackMode, PLAYBACK_MODE } from '../../audio/playbackMode';
+import { outputLatencySeconds } from '../../audio/latency';
 import type { PlaybackMode } from '../../audio/playbackMode';
 import { AUTO_FREEZE_MIN_TRACKS, setAutoFreeze, useAutoFreeze } from '../../store/autoFreeze';
 import { clearRecordings, downloadAll, keptRecordings, recordingCount, type DownloadProgress } from '../../audio/recordingStore';
@@ -188,6 +189,7 @@ export const PlaybackPanel: React.FC = () => {
         ))}
       </div>
       <p className="text-[10px] text-forge-muted">{MODES.find((m) => m.mode === chosen)!.detail}</p>
+      <AudioDelay />
       <AutoFreezeSetting />
       {chosen !== PLAYBACK_MODE && (
         <div className="flex items-center justify-between gap-2 text-[10px] text-amber-200">
@@ -198,6 +200,30 @@ export const PlaybackPanel: React.FC = () => {
         </div>
       )}
     </div>
+  );
+};
+
+/** The browser's own delay from sound made to sound heard (its buffer and the audio device), in ms; null where it doesn't say. */
+function audioDelayMs(): number | null {
+  const seconds = outputLatencySeconds();
+  return seconds > 0 ? Math.round(seconds * 1000) : null;
+}
+
+/**
+ * How long a key played live takes to be heard, as the browser measures it (it can change, as when
+ * headphones are plugged in, so it's read again every second). Live keys play at once on the audio
+ * clock, so this is all the delay there is.
+ */
+const AudioDelay: React.FC = () => {
+  const [ms, setMs] = useState(audioDelayMs);
+  useEffect(() => {
+    const id = window.setInterval(() => setMs(audioDelayMs()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <p className="text-[10px] text-sky-200" data-testid="audio-delay">
+      {ms === null ? "This browser doesn't say how long its sound takes to reach you." : `Delay from a key to sound: about ${ms} ms`}
+    </p>
   );
 };
 

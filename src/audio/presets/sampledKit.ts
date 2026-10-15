@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { InstrumentKey } from '../instrumentCatalog';
-import { loadSamples, noteJitter } from '../samplers/samplerManager';
+import { loadSamples, noteJitter, recordedDuration } from '../samplers/samplerManager';
 import { notLate } from './monotonic';
 import { createBus, createVoiceSet } from './native';
 
@@ -64,7 +64,8 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     const amp = raw.createGain();
     // Softer hits are quieter, as on the kits' own velocity curve (about -24 dB at the bottom)
     amp.gain.value = velocity * velocity * 10 ** ((0.8 * noteJitter(note, time, 37)) / 20);
-    const length = Math.min(opts.seconds ?? Infinity, buffer.duration / (opts.rate ?? 1));
+    // (Its length as recorded: a silent tail cut when it loaded doesn't move a shortened hit's fade)
+    const length = Math.min(opts.seconds ?? Infinity, recordedDuration(buffer) / (opts.rate ?? 1));
     if (opts.seconds) amp.gain.setTargetAtTime(0, t + length * 0.6, length * 0.15);
     src.connect(amp);
     amp.connect(input);

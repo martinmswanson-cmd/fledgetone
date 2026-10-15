@@ -26,7 +26,7 @@ import { isWarped } from '../store/warp';
 import { withControllerLanes } from '../store/ccLanes';
 import { secondsPerBar, stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
-import { hasRecordings, loadCustomSample, loadSamples } from './samplers/samplerManager';
+import { loadCustomSample, songSampleLoads } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
 import { cueChunks, loopChunk, markerCues } from './wavCues';
@@ -528,11 +528,11 @@ async function renderTracks(
   // Read live state before the global context is swapped
   const masterDb = opts.ignoreMasterVolume ? 0 : getMasterVolume();
 
-  // Download any sampled instruments first (shared with live playback, so usually instant)
-  for (const key of new Set(tracks.map((t) => t.instrumentKey))) {
-    if (!hasRecordings(key)) continue;
+  // Download the recordings the song plays first (shared with live playback, so usually instant):
+  // each recorded instrument's for the notes it plays here (see songSamples.ts)
+  for (const [key, loading] of songSampleLoads(tracks, clips)) {
     try {
-      await loadSamples(key);
+      await loading;
     } catch {
       throw new Error(`couldn't download the ${INSTRUMENTS[key].name} samples. Check your internet connection and try again.`);
     }

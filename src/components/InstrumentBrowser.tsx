@@ -3,7 +3,6 @@
  * onto a matching track to drop that note in.
  */
 import React, { useState } from 'react';
-import * as Tone from 'tone';
 import { Library, Loader2 } from 'lucide-react';
 import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
 import type { InstrumentDef, InstrumentKey } from '../audio/instrumentCatalog';
@@ -52,7 +51,8 @@ async function audition(key: InstrumentKey, note: string, duration: string) {
   } catch {
     return; // download failed: the status badge says so
   }
-  safely(() => inst.play([{ note, duration, velocity: 0.85 }], Tone.now()));
+  // At once, on the audio clock (Tone.now() would add the look-ahead)
+  safely(() => inst.play([{ note, duration, velocity: 0.85 }], auditionInput.context.currentTime));
 }
 
 function dragProps(payload: DragPayload) {

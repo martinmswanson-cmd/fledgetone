@@ -22,7 +22,9 @@ const LATE_MARGIN = 0.005;
 export const lateNotes = { count: 0 };
 
 export function notLate(context: Tone.BaseContext, time?: Tone.Unit.Time): number {
-  const requested = time === undefined ? context.now() : Tone.Time(time).toSeconds();
+  // No time is "now", played by hand (a deck pad, a preview): on the audio clock as it is, not
+  // context.now(), which adds the look-ahead the Transport schedules with (0.1 s or more)
+  const requested = time === undefined ? context.rawContext.currentTime : Tone.Time(time).toSeconds();
   // Only live playback counts (an export renders at its own pace); a note with no time is "now" by design
   if (time !== undefined && requested < context.rawContext.currentTime && !(context.rawContext instanceof OfflineAudioContext)) lateNotes.count++;
   // The raw context's clock is where audio is actually being rendered. (An OfflineContext's
