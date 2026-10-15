@@ -3,7 +3,8 @@
  * sounds: where its silent tail can be cut, whether its two channels are one sound twice (a mono
  * recording saved as stereo, as many soundfont files are), and a coarse outline of its level over
  * time (for choosing which note to let go when too many sound: see noteStealing.ts). Also
- * lengthening a recording that stops dead, and the stretch of it that loops for a note held longer.
+ * lengthening a recording that stops dead, and the stretch of it that loops for a note held longer,
+ * and taking out the DC some recordings carry.
  *
  * Plain arrays of samples in, numbers out: no Web Audio here, so Node can test it.
  */
@@ -77,6 +78,78 @@ export function foldToMono(left: Float32Array, right: Float32Array): Float32Arra
   const out = new Float32Array(left.length);
   for (let i = 0; i < out.length; i++) out[i] = (left[i] + right[i]) * 0.5;
   return out;
+}
+
+/**
+ * The window of the DC estimate (removeDc), in seconds: a 100 ms average taken twice, a triangle
+ * that passes nothing at 10, 20 and 30 Hz and under -42 dB of anything above 30 Hz, centred so it
+ * moves nothing in time.
+ */
+export const DC_WINDOW = 0.1;
+/**
+ * The DC a recording must carry on average, against its peak (-60 dB), to be corrected: below it,
+ * it's left alone. Measured: the recorded sets (a bass drum, timpani, double bass, electric bass)
+ * stay under 0.00075, while the soundfont sets that carry DC (a celesta, a steel-string guitar, a
+ * saxophone, an electric grand) reach 0.003 to 0.03. (The average, not the drift's highest: a
+ * drum hit moves the drift for an instant, which is its sound, and averages out.) Relative, as an
+ * instrument's level correction (InstrumentDef.gain, up to 20 dB and more) turns it up with the rest.
+ */
+export const DC_RATIO = 0.001;
+
+/** `data` averaged over `width` samples (odd), centred, with silence beyond its ends (into `out`). */
+function centredAverage(data: Float32Array, width: number, out: Float32Array): void {
+  const half = width >> 1;
+  const n = data.length;
+  // A running sum in doubles: a long recording's float sum would drift
+  let sum = 0;
+  for (let i = 0; i < Math.min(n, half); i++) sum += data[i];
+  for (let i = 0; i < n; i++) {
+    const enter = i + half;
+    const leave = i - half - 1;
+    if (enter < n) sum += data[enter];
+    if (leave >= 0) sum -= data[leave];
+    out[i] = sum / width;
+  }
+}
+
+/**
+ * The slow drift in one channel of a recording: its DC, and whatever moves it under about 10 Hz
+ * (see DC_WINDOW). Some soundfont recordings carry it: a celesta's notes start with an offset that
+ * dies away over 50 ms, a saxophone's builds up as it's held.
+ */
+export function dcOf(data: Float32Array, sampleRate: number): Float32Array<ArrayBuffer> {
+  const width = Math.max(1, Math.round(DC_WINDOW * sampleRate)) | 1;
+  const once = new Float32Array(data.length);
+  centredAverage(data, width, once);
+  const twice = new Float32Array(data.length);
+  centredAverage(once, width, twice);
+  return twice;
+}
+
+/**
+ * Take the drift (dcOf) out of a recording's channels, in place, once as it loads: it costs the
+ * mix headroom, adds up to a measurable offset over a song of repeated notes, and steps at a note's
+ * start or end. Only when it's measurable (an average over DC_RATIO of the peak in a channel): a
+ * recording without it is left exactly as it was. Returns whether it changed anything.
+ */
+export function removeDc(channels: Float32Array[], sampleRate: number): boolean {
+  let peak = 0;
+  let offset = 0;
+  for (const data of channels) {
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      sum += data[i];
+      const a = data[i] < 0 ? -data[i] : data[i];
+      if (a > peak) peak = a;
+    }
+    offset = Math.max(offset, Math.abs(sum / Math.max(1, data.length)));
+  }
+  if (!(offset > DC_RATIO * peak)) return false;
+  for (const data of channels) {
+    const drift = dcOf(data, sampleRate);
+    for (let i = 0; i < data.length; i++) data[i] -= drift[i];
+  }
+  return true;
 }
 
 /** The time step of a recording's level outline (levelOutline), in seconds. */

@@ -9,7 +9,7 @@ import { recordingBytes } from '../recordingStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { CustomSample, NoteEvent } from '../../store/timelineTypes';
 import { alwaysStereo, keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
-import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTLINE_STEP, sustainLoop } from './recordingMaths';
+import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTLINE_STEP, removeDc, sustainLoop } from './recordingMaths';
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { BLEND_ZONE, decodeRateOf, indexRecordings, layerOf, neededSamples, quickLayer, quickSamples, songNotesByInstrument, STRETCH_SEMITONES } from './songSamples';
@@ -330,9 +330,13 @@ function decodeRate(source: Pick<SampleSource, 'doubleRate'>, name: string, rate
   return LOW_MEMORY ? rate : decodeRateOf(source.doubleRate, name, rate);
 }
 
-/** `audio` without its silent tail, in one channel if its two are the same (see fetchRecording). */
+/**
+ * `audio` without its silent tail, in one channel if its two are the same (see fetchRecording), and
+ * without the DC some recordings carry (removeDc: only where it's measurable).
+ */
 function compact(audio: AudioBuffer, keep: number, ceiling: number): AudioBuffer {
   const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c));
+  removeDc(channels, audio.sampleRate);
   // Its outline first: it finds the tail without reading the whole recording again, and is kept
   const shape = levelOutline(channels, audio.sampleRate);
   const length = keptLength(channels, audio.sampleRate, Math.ceil(keep * audio.sampleRate), ceiling, shape);
