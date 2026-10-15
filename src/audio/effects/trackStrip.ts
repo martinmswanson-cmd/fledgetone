@@ -8,6 +8,7 @@ import * as Tone from 'tone';
 import type { AutomationParam, GateRate, PumpTrigger, Track } from '../../store/timelineTypes';
 import { GATE_TICKS } from '../../store/timelineTypes';
 import { activeLanes, parseParam, specOf } from '../automation';
+import { roomSendLevel } from './distance';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { BusEffects } from './busEffects';
 import { createEcho, createReverb, type EchoUnit, type ReverbUnit } from './spaceFx';
@@ -219,9 +220,6 @@ function monoPanner(raw: BaseAudioContext, interpretation: ChannelInterpretation
   return panner;
 }
 
-/** How much more of a track reaches the hall at full distance (added to its reverb send) */
-const DISTANCE_SEND = 0.35;
-
 export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackStrip {
   const input = new Tone.Gain(1);
   const raw = input.context.rawContext as unknown as BaseAudioContext;
@@ -266,6 +264,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
    * track is set back, between the pan and the fader; a track never set back has none of it.
    */
   let far: { shelf: BiquadFilterNode; trim: GainNode } | null = null;
+  /** The distance as last applied: its extra reverb send is added to a Reverb send lane's values too */
+  let distanceNow = 0;
   const setDistance = (distance: number, ramp: number) => {
     if (distance <= 0 && !far) return;
     if (!far) {
@@ -1089,7 +1089,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       // Set back on the stage, more of the track reaches the hall
       const distance = Math.max(0, Math.min(1, track.distance ?? 0));
       setDistance(distance, ramp);
-      const roomSend = Math.max(0, Math.min(1, track.reverbSend + DISTANCE_SEND * distance));
+      // (A lane writing the send adds the distance's extra to each value: read again when it changes)
+      if (distance !== distanceNow && owned.has('reverbSend')) version++;
+      distanceNow = distance;
+      const roomSend = roomSendLevel(track.reverbSend, distance);
       if (!owned.has('reverbSend')) reverbWriter.set(roomSend, ramp);
       if (!owned.has('delaySend')) delayWriter.set(Math.max(0, Math.min(1, track.delaySend)), ramp);
       reverbLink(owned.has('reverbSend') || roomSend > 0, ramp);
@@ -1142,8 +1145,11 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
             { writer: panLeft, map: same },
             { writer: panRight, map: (pan) => -pan },
           ];
-        case 'reverbSend':
-          return [{ writer: reverbWriter, map: same }];
+        case 'reverbSend': {
+          // Set back on the stage, the lane's send plus the distance's extra
+          const distance = distanceNow;
+          return [{ writer: reverbWriter, map: distance > 0 ? (send: number) => roomSendLevel(send, distance) : same }];
+        }
         case 'delaySend':
           return [{ writer: delayWriter, map: same }];
         case 'filterCutoff':
