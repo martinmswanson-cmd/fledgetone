@@ -121,9 +121,12 @@ export const TrackInspector: React.FC = () => {
   ];
 
   return (
+    // As tall as the timeline beside it, scrolling inside: a long FX rack never holds the timeline open
+    // past its last track (the panel is placed over a box that takes the row's height, not its own)
+    <div className="relative w-80 shrink-0">
     <aside
       ref={aside}
-      className="w-80 shrink-0 bg-forge-panel/95 backdrop-blur-md border-l border-forge-border flex flex-col shadow-2xl z-30 transition-all select-none overflow-y-auto max-h-[640px]"
+      className="absolute inset-0 bg-forge-panel/95 backdrop-blur-md border-l border-forge-border flex flex-col shadow-2xl z-30 transition-all select-none overflow-y-auto"
       aria-label="Audio Track Inspector and FX Rack"
     >
       {/* Header */}
@@ -685,6 +688,7 @@ export const TrackInspector: React.FC = () => {
         )}
       </div>
     </aside>
+    </div>
   );
 };
 

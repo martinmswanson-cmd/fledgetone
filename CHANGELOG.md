@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-7 — FX panel fits the timeline
+
+- With the track FX panel open, the timeline no longer stretches past its last track into empty grey space: the panel is as tall as the timeline and scrolls inside, so the resize bar sits right under the tracks.
+
 ## 2026.10.15-6 — Timeline stops at the last track
 
 - Dragging the timeline taller stops at the last track instead of leaving empty grey space under it.
