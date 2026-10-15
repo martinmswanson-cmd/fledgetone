@@ -96,6 +96,8 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     if (chain) return chain;
     const input = raw.createGain();
     const shaper = raw.createWaveShaper();
+    // (oversampled, so the drive's clipping doesn't fold back as fizz)
+    shaper.oversample = '4x';
     const highpass = raw.createBiquadFilter();
     highpass.type = 'highpass';
     highpass.Q.value = 0.7;

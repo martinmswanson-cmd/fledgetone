@@ -4,8 +4,13 @@
  * (Track.synth) and saved with the project; the sound engine is src/audio/presets/designer.ts.
  */
 
-export type OscWave = 'sine' | 'triangle' | 'sawtooth' | 'square';
-export const OSC_WAVES: OscWave[] = ['sawtooth', 'square', 'triangle', 'sine'];
+/**
+ * An oscillator's wave: the four classic shapes, and three tables (see designer.ts): `pulse` (a
+ * narrow pulse, nasal and hollow), `organ` (drawbar-style harmonics), `vowel` (an "ah" formant,
+ * vocal).
+ */
+export type OscWave = 'sine' | 'triangle' | 'sawtooth' | 'square' | 'pulse' | 'organ' | 'vowel';
+export const OSC_WAVES: OscWave[] = ['sawtooth', 'square', 'triangle', 'sine', 'pulse', 'organ', 'vowel'];
 
 export interface OscSettings {
   on: boolean;
@@ -31,7 +36,8 @@ export interface Envelope {
   release: number;
 }
 
-export type FilterType = 'lowpass' | 'highpass' | 'bandpass';
+/** `ladder`: a warm 24 dB low-pass (two poles of it resonant, driven a little), as on classic analog synths */
+export type FilterType = 'lowpass' | 'highpass' | 'bandpass' | 'ladder';
 export type LfoTarget = 'off' | 'pitch' | 'filter' | 'amp';
 export type LfoShape = 'sine' | 'triangle' | 'square' | 'sawtooth';
 /** An LFO rate as a note value (tempo-synced) or 'free' (Hz). */
@@ -63,6 +69,13 @@ export interface SynthPatch {
   lfo: { target: LfoTarget; shape: LfoShape; sync: LfoSync; /** Hz, when free */ rate: number; /** 0 to 1 */ depth: number };
   /** Soft clipping after the filter, 0 (off) to 1 */
   drive: number;
+  /**
+   * Analog drift, 0 to 1: each note's oscillators a few cents off from each other and its filter a
+   * little brighter or darker, as no two notes on an analog synth are quite the same. Absent: 0.
+   */
+  drift?: number;
+  /** Osc 2 bends osc 1's pitch at audio rate (FM), 0 (off) to 1: bells, electric pianos, metallic basses. Absent: 0. */
+  fm?: number;
   /** One note at a time, sliding between them */
   mono: boolean;
   /** Seconds to slide from the last note (mono) */
@@ -164,6 +177,21 @@ export const SYNTH_PRESETS: Array<{ name: string; patch: PatchEdit }> = [
   { name: '8-bit lead', patch: { osc1: { wave: 'square' }, filter: { cutoff: 12000, envAmount: 0 }, lfo: { target: 'pitch', shape: 'triangle', sync: 'free', rate: 6, depth: 0.15 }, amp: { attack: 0.002, sustain: 1, release: 0.05 }, level: -4 } },
   { name: 'Riser noise', patch: { osc1: { on: false }, noise: 0.9, filter: { type: 'bandpass', cutoff: 400, resonance: 3, envAmount: 5, keyTrack: 0 }, filterEnv: { attack: 4, decay: 0.1, sustain: 1, release: 0.5 }, amp: { attack: 3, sustain: 1, release: 0.5 }, level: 0 } },
   {
+    name: 'Analog poly',
+    patch: { osc2: { on: true, wave: 'sawtooth', fine: -7, level: 0.7 }, unison: { voices: 2, spread: 10, width: 0.6 }, filter: { type: 'ladder', cutoff: 1400, resonance: 3, envAmount: 2, keyTrack: 0.6 }, filterEnv: { attack: 0.01, decay: 0.5, sustain: 0.3, release: 0.4 }, amp: { attack: 0.01, decay: 0.3, sustain: 0.8, release: 0.45 }, drift: 0.6, level: 1 },
+  },
+  {
+    name: 'FM bell',
+    patch: { osc1: { wave: 'sine' }, osc2: { on: true, wave: 'sine', octave: 1, semi: 7, level: 0 }, fm: 0.55, filter: { cutoff: 12000, envAmount: 0 }, amp: { attack: 0.002, decay: 2.5, sustain: 0, release: 1.5 }, level: 2 },
+  },
+  {
+    name: 'FM electric piano',
+    patch: { osc1: { wave: 'sine' }, osc2: { on: true, wave: 'sine', octave: 0, level: 0 }, fm: 0.3, filter: { cutoff: 6000, envAmount: 0 }, amp: { attack: 0.003, decay: 1.6, sustain: 0.25, release: 0.5 }, drift: 0.2, level: 3 },
+  },
+  { name: 'Organ', patch: { osc1: { wave: 'organ' }, filter: { cutoff: 9000, envAmount: 0 }, amp: { attack: 0.005, decay: 0.1, sustain: 1, release: 0.08 }, lfo: { target: 'amp', shape: 'sine', sync: 'free', rate: 6, depth: 0.12 }, level: -1 } },
+  { name: 'Vowel lead', patch: { osc1: { wave: 'vowel' }, osc2: { on: true, wave: 'vowel', fine: 8, level: 0.6 }, filter: { cutoff: 5000, envAmount: 0.5 }, lfo: { target: 'pitch', shape: 'sine', sync: 'free', rate: 5.2, depth: 0.08 }, mono: true, glide: 0.07, drift: 0.3, level: 0 } },
+  { name: 'Pulse bass', patch: { osc1: { wave: 'pulse', octave: -1 }, sub: 0.5, filter: { type: 'ladder', cutoff: 700, resonance: 4, envAmount: 2.5, keyTrack: 0.3 }, filterEnv: { attack: 0.002, decay: 0.25, sustain: 0.2, release: 0.15 }, amp: { attack: 0.002, sustain: 0.9, release: 0.1 }, mono: true, glide: 0.04, drive: 0.3, drift: 0.3, level: 0 } },
+  {
     // Three saws a little out of tune with each other and a saw an octave under, gliding from note
     // to note (pair it with the piano roll's Scoop tool for the swoop into each note)
     name: 'Rave hoover',
@@ -222,7 +250,7 @@ export function normalizeSynthPatch(v: unknown): SynthPatch | undefined {
     noise: num(v.noise, d.noise, 0, 1),
     unison: { voices: Math.round(num(u.voices, d.unison.voices, 1, 7)), spread: num(u.spread, d.unison.spread, 0, 100), width: num(u.width, d.unison.width, 0, 1) },
     filter: {
-      type: pick(f.type, ['lowpass', 'highpass', 'bandpass'] as const, d.filter.type),
+      type: pick(f.type, ['lowpass', 'highpass', 'bandpass', 'ladder'] as const, d.filter.type),
       cutoff: num(f.cutoff, d.filter.cutoff, 20, 20000),
       resonance: num(f.resonance, d.filter.resonance, 0.1, 20),
       envAmount: num(f.envAmount, d.filter.envAmount, -6, 6),
@@ -238,6 +266,8 @@ export function normalizeSynthPatch(v: unknown): SynthPatch | undefined {
       depth: num(l.depth, d.lfo.depth, 0, 1),
     },
     drive: num(v.drive, d.drive, 0, 1),
+    ...(typeof v.drift === 'number' && v.drift > 0 ? { drift: num(v.drift, 0, 0, 1) } : {}),
+    ...(typeof v.fm === 'number' && v.fm > 0 ? { fm: num(v.fm, 0, 0, 1) } : {}),
     mono: bool(v.mono, d.mono),
     glide: num(v.glide, d.glide, 0, 2),
     level: num(v.level, d.level, -24, 6),

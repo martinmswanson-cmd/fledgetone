@@ -106,6 +106,7 @@ export const SynthPanel: React.FC<{ track: Track }> = ({ track }) => {
               <option value="lowpass">Low-pass</option>
               <option value="highpass">High-pass</option>
               <option value="bandpass">Band-pass</option>
+              <option value="ladder">Ladder (warm, 24 dB)</option>
             </select>
           </div>
           {logSlider('Cutoff', patch.filter.cutoff, 20, 20000, hz, (v) => set({ filter: { cutoff: v } }), d.filter.cutoff)}
@@ -113,6 +114,8 @@ export const SynthPanel: React.FC<{ track: Track }> = ({ track }) => {
           {slider('Env amt', patch.filter.envAmount, -6, 6, 0.1, (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} oct`, (v) => set({ filter: { envAmount: v } }), d.filter.envAmount)}
           {slider('Key trk', patch.filter.keyTrack, 0, 1, 0.01, pct, (v) => set({ filter: { keyTrack: v } }), d.filter.keyTrack)}
           {slider('Drive', patch.drive, 0, 1, 0.01, pct, (v) => set({ drive: v }), d.drive)}
+          {slider('Drift', patch.drift ?? 0, 0, 1, 0.01, pct, (v) => set({ drift: v }), 0)}
+          {slider('FM', patch.fm ?? 0, 0, 1, 0.01, pct, (v) => set({ fm: v }), 0, !patch.osc2.on)}
         </div>
         {envBlock('filterEnv', 'Filter envelope')}
         {envBlock('amp', 'Amp envelope')}

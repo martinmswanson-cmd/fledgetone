@@ -137,6 +137,12 @@ function everyRecording(): Array<{ key: string; version: string; addresses: stri
       const addresses = addressesOf(source, file);
       if (!seen.has(addresses[0])) seen.set(addresses[0], { key: addresses[0], version: source.version ?? '', addresses });
     }
+    // and its release sounds
+    const rel = source.releases;
+    for (const file of Object.values(rel?.samples ?? {})) {
+      const addresses = addressesOf(rel!, file);
+      if (!seen.has(addresses[0])) seen.set(addresses[0], { key: addresses[0], version: rel!.version ?? '', addresses });
+    }
   }
   // And the built-in plugins' WebAssembly (plugins/builtinHost.ts)
   for (const family of pluginFamilies()) {

@@ -258,7 +258,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const format = settings.format;
   const ext = FORMAT_EXTENSION[format];
   const room = useTimelineStore((s) => s.masterReverbRoom);
-  const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}) };
+  const roomStyle = useTimelineStore((s) => s.masterRoomStyle);
+  const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}), ...(roomStyle !== 'hall' ? { roomStyle } : {}) };
   const planned: RenderOptions = {
     tracks,
     clips,

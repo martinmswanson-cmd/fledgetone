@@ -47,9 +47,9 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
-    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'kalimba', 'tenor-sax'].map((set) => `${HOSTED}${set}/`),
+    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax'].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Timpani, tubular bells, vibraphone, harpsichord, kalimba and tenor saxophone from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
+      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {

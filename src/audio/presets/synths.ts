@@ -97,7 +97,7 @@ export function create808(output: Tone.InputNode, modern = false) {
    * 808 without the sub itself getting any louder or harsher. The attack is never sharper than
    * 6 ms and the pitch drop is gentler. Otherwise the original: the whole 808 through the drive.
    */
-  const drive = new Tone.Distortion({ distortion: modern ? 0.45 : 0.22, oversample: modern ? '4x' : '2x', wet: modern ? 1 : 0.6 });
+  const drive = new Tone.Distortion({ distortion: modern ? 0.45 : 0.22, oversample: '4x', wet: modern ? 1 : 0.6 });
   const synth = new Tone.MembraneSynth({
     // (The clean sub's peaks aren't clipped flat by the drive: a dB lower keeps them in line)
     volume: modern ? -3 : -2,

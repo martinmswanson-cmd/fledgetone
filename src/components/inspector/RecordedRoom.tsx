@@ -8,6 +8,7 @@ import { Building2, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { importSoundFile, SoundError, useSoundLibrary } from '../../audio/soundLibrary';
 import { pickAudioFiles } from '../timeline/audioFiles';
+import { ROOM_STYLE_IDS, ROOM_STYLES, type RoomStyle } from '../../audio/effects/roomIR';
 
 export const RecordedRoom: React.FC = () => {
   const room = useTimelineStore((s) => s.masterReverbRoom);
@@ -61,5 +62,31 @@ export const RecordedRoom: React.FC = () => {
       {room && <p className="text-[10px] text-forge-muted leading-snug">The recording sets the length of the tail, so the decay time is set aside while it's in use.</p>}
       {error && <p role="alert" className="text-[10px] text-red-300 leading-snug">{error}</p>}
     </div>
+  );
+};
+
+/** The kind of room the generated reverb is (see roomIR.ts): hall, chamber, church, studio or plate. */
+export const RoomStylePicker: React.FC = () => {
+  const style = useTimelineStore((s) => s.masterRoomStyle);
+  const recorded = useTimelineStore((s) => s.masterReverbRoom !== null);
+  return (
+    <label className={`flex flex-col gap-1 text-[10px] font-mono text-forge-muted ${recorded ? 'opacity-45' : ''}`} title={recorded ? 'A recorded room is in use: remove it to use these' : undefined}>
+      <span className="flex items-center gap-2">
+        Room
+        <select
+          value={style}
+          disabled={recorded}
+          onChange={(e) => useTimelineStore.getState().setMasterRoomStyle(e.target.value as RoomStyle)}
+          className="ml-auto h-6 bg-forge-bg border border-forge-border rounded px-1 text-[11px] text-forge-text"
+        >
+          {ROOM_STYLE_IDS.map((id) => (
+            <option key={id} value={id}>
+              {ROOM_STYLES[id].name}
+            </option>
+          ))}
+        </select>
+      </span>
+      <span>{ROOM_STYLES[style].about}</span>
+    </label>
   );
 };

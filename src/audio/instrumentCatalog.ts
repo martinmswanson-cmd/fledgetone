@@ -101,6 +101,21 @@ export const CATEGORIES = [
 ] as const;
 export type InstrumentCategory = (typeof CATEGORIES)[number];
 
+/**
+ * What a key sounds like as it's let go: a harpsichord's jack falling back, a piano's damper
+ * settling on the string. `samples` are by "<note>|<take>"; `db` is how loud they are against the
+ * note's own recording (as recorded together), and `decay` (seconds) how quickly they fade the
+ * longer a note was held, as the string has less left to damp (none: always as loud).
+ */
+export interface ReleaseSounds {
+  baseUrl: string;
+  fallbackUrl?: string;
+  version?: string;
+  samples: Record<string, string>;
+  db: number;
+  decay?: number;
+}
+
 export interface SampleSource {
   baseUrl: string;
   /** Tone note name -> file name under baseUrl */
@@ -123,6 +138,13 @@ export interface SampleSource {
   tune?: Record<string, number>;
   /** dB to raise or lower each recording by when it loads (an ensemble's sections, levelled with each other) */
   gains?: Record<string, number>;
+  /**
+   * The stretch of each recording (by its key) that repeats seamlessly, in seconds: a note held
+   * longer than its recording loops there for as long as the key is down (see hostedSets.ts).
+   */
+  loops?: Record<string, [number, number]>;
+  /** Sounds the instrument makes as a key is let go, played when a note is released early (see ReleaseSounds) */
+  releases?: ReleaseSounds;
   /**
    * Recordings of each note played at several loudnesses, softest first: the highest velocity
    * (0..1) each plays up to (the last is 1). Their names in `samples` are `note|layer|take`; a
@@ -258,7 +280,8 @@ function hosted(folder: string, notes: number[], layers: number[], takes: number
     const n = noteName(m);
     for (let l = 0; l < layers.length; l++) for (let t = 0; t < takes; t++) samples[`${n}|${l}|${t}`] = `${n.replace('#', 's')}_${l}_${t}.mp3`;
   }
-  return { baseUrl: `fledgetone-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release, layers, version: HOSTED_SETS[folder]?.hash };
+  const loops = HOSTED_SETS[folder]?.loops;
+  return { baseUrl: `fledgetone-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release, layers, version: HOSTED_SETS[folder]?.hash, ...(loops ? { loops: loopsOf(loops) } : {}) };
 }
 /** Velocity tops for a set recorded at `n` loudnesses (see SampleSource.layers) */
 const LAYER_TOPS: Record<number, number[]> = { 1: [1], 2: [0.55, 1], 3: [0.35, 0.68, 1], 4: [0.3, 0.55, 0.8, 1] };
@@ -267,6 +290,22 @@ const real = (folder: string, release: number): SampleSource => {
   const set = HOSTED_SETS[folder];
   return hosted(folder, set.notes, LAYER_TOPS[set.layers], set.takes, release);
 };
+/** A hosted release set (see ReleaseSounds) */
+const releasesOf = (folder: string, db: number, decay?: number): ReleaseSounds => {
+  const set = HOSTED_SETS[folder];
+  const samples: Record<string, string> = {};
+  for (const m of set.notes) for (let t = 0; t < set.takes; t++) samples[`${noteName(m)}|${t}`] = `${noteName(m).replace('#', 's')}_0_${t}.mp3`;
+  return { baseUrl: `fledgetone-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, version: set.hash, samples, db, ...(decay ? { decay } : {}) };
+};
+/** A set's loops ("<midi>_<layer>_<take>") by sample key ("<note>|<layer>|<take>"). */
+function loopsOf(loops: Record<string, [number, number]>): Record<string, [number, number]> {
+  return Object.fromEntries(
+    Object.entries(loops).map(([k, v]) => {
+      const [m, l, t] = k.split('_').map(Number);
+      return [`${noteName(m)}|${l}|${t}`, v];
+    })
+  );
+}
 /**
  * Sections of an orchestra as one instrument: each part plays its set's recordings from `from` up
  * to the next part's `from` (MIDI), `gain` dB against the others so the sections match. A part
@@ -275,6 +314,7 @@ const real = (folder: string, release: number): SampleSource => {
 function ensemble(parts: Array<{ folder: string; from: number; gain: number }>, release: number): SampleSource {
   const samples: Record<string, string> = {};
   const gains: Record<string, number> = {};
+  const loops: Record<string, [number, number]> = {};
   const sets = parts.map((p) => HOSTED_SETS[p.folder]);
   const layers = Math.max(...sets.map((x) => x.layers));
   parts.forEach((part, i) => {
@@ -288,6 +328,8 @@ function ensemble(parts: Array<{ folder: string; from: number; gain: number }>, 
         for (let t = 0; t < set.takes; t++) {
           samples[`${n}|${l}|${t}`] = `${part.folder}/${n.replace('#', 's')}_${own}_${t}.mp3`;
           if (part.gain) gains[`${n}|${l}|${t}`] = part.gain;
+          const loop = set.loops?.[`${m}_${own}_${t}`];
+          if (loop) loops[`${n}|${l}|${t}`] = loop;
         }
       }
     }
@@ -297,6 +339,7 @@ function ensemble(parts: Array<{ folder: string; from: number; gain: number }>, 
     fallbackUrl: SITE_SAMPLES,
     samples,
     gains,
+    loops,
     release,
     layers: LAYER_TOPS[layers],
     version: sets.map((x) => x.hash).join(''),
@@ -416,27 +459,27 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realCello: {
     key: 'realCello', name: 'Cellos (Real)', blurb: 'A recorded cello section, bowed with vibrato: soft and loud takes', color: '#c2410c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
-    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 3, taper: [65, 4], bowed: { skip: 0.08 }, dynamics: true,
+    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 16, taper: [65, 4], bowed: { skip: 0.08 }, dynamics: true,
   },
   realCelloShort: {
     key: 'realCelloShort', name: 'Cellos Short (Real)', blurb: 'Recorded cellos, short bouncing bow strokes: ostinatos, drive', color: '#9a3412', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
-    samples: hosted('cello-spiccato', CELLO_NOTES, [0.55, 1], 2, 0.25), gain: 7, taper: [65, 4],
+    samples: hosted('cello-spiccato', CELLO_NOTES, [0.55, 1], 2, 0.25), gain: 8.5, taper: [65, 4],
   },
   realGuitar: {
     key: 'realGuitar', name: 'Electric Guitar (Real)', blurb: 'A recorded electric through a clean amp: soft, medium and hard picking', color: '#e11d48', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.3), shaping: 'cleanAmp', gain: -4, taper: [64, 2],
+    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.3), shaping: 'cleanAmp', gain: -2, taper: [64, 2],
   },
   realCrunchGuitar: {
     key: 'realCrunchGuitar', name: 'Crunch Guitar (Real)', blurb: 'The recorded electric through a pushed amp: rock rhythm', color: '#be123c', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.25), shaping: 'crunchAmp', gain: -8.5, taper: [64, 2],
+    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.25), shaping: 'crunchAmp', gain: -7, taper: [64, 2],
   },
   realLeadGuitar: {
     key: 'realLeadGuitar', name: 'Distortion Guitar (Real)', blurb: 'The recorded electric through a high-gain amp: riffs, power chords, leads', color: '#9f1239', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.2), shaping: 'leadAmp', gain: -14, taper: [64, 2],
+    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.2), shaping: 'leadAmp', gain: -12, taper: [64, 2],
   },
   realHollowGuitar: {
     key: 'realHollowGuitar', name: 'Hollow-Body Guitar (Real)', blurb: 'A recorded hollow-body electric through a warm clean amp: jazz, soul, rockabilly', color: '#a16207', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: hosted('guitar-green', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.35), shaping: 'jazzAmp', gain: 4, taper: [64, 2],
+    samples: hosted('guitar-green', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.35), shaping: 'jazzAmp', gain: 5.5, taper: [64, 2],
   },
   realFlatwoundGuitar: {
     key: 'realFlatwoundGuitar', name: 'Flatwound Guitar (Real)', blurb: 'A recorded electric with flatwound strings, warm and round: jazz, soul', color: '#b45309', category: 'Guitars & Strings', kind: 'sampled', range: realRange('guitar-flatwound'),
@@ -444,31 +487,31 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realViolins: {
     key: 'realViolins', name: 'Violins (Real)', blurb: 'A recorded violin section, bowed with vibrato: soft and loud takes', color: '#ef4444', category: 'Orchestra', kind: 'sampled', range: realRange('violins-sustain'),
-    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 14, taper: [70, 2.5], bowed: { skip: 0.12 }, dynamics: true,
+    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 18.5, taper: [70, 2.5], bowed: { skip: 0.12 }, dynamics: true,
   },
   realViolinsShort: {
     key: 'realViolinsShort', name: 'Violins Short (Real)', blurb: 'Recorded violins, short bouncing strokes: ostinatos, action', color: '#dc2626', category: 'Orchestra', kind: 'sampled', range: realRange('violins-spiccato'),
-    samples: real('violins-spiccato', 0.25), gain: 5, taper: [70, 4],
+    samples: real('violins-spiccato', 0.25), gain: 9, taper: [70, 4],
   },
   realViolas: {
     key: 'realViolas', name: 'Violas (Real)', blurb: 'A recorded viola section, bowed with vibrato: warm middle voices', color: '#f97316', category: 'Orchestra', kind: 'sampled', range: realRange('violas-sustain'),
-    samples: real('violas-sustain', 0.7), gain: 11, taper: [69, 1], bowed: { skip: 0.1 }, dynamics: true,
+    samples: real('violas-sustain', 0.7), gain: 13, taper: [69, 1], bowed: { skip: 0.1 }, dynamics: true,
   },
   realViolasShort: {
     key: 'realViolasShort', name: 'Violas Short (Real)', blurb: 'Recorded violas, short bouncing strokes', color: '#ea580c', category: 'Orchestra', kind: 'sampled', range: realRange('violas-spiccato'),
-    samples: real('violas-spiccato', 0.25), gain: 7.5, taper: [69, 4.5],
+    samples: real('violas-spiccato', 0.25), gain: 11, taper: [69, 4.5],
   },
   realPizzicato: {
     key: 'realPizzicato', name: 'Pizzicato Section (Real)', blurb: 'Recorded cellos, violas and violins plucking, low to high', color: '#fb7185', category: 'Orchestra', kind: 'sampled', range: realRange('strings-pizzicato'),
-    samples: real('strings-pizzicato', 0.4), gain: 18, taper: [69, 1],
+    samples: real('strings-pizzicato', 0.4), gain: 22, taper: [69, 1],
   },
   realTremolo: {
     key: 'realTremolo', name: 'Tremolo Section (Real)', blurb: 'Recorded strings trembling the bow: tension, suspense', color: '#e11d48', category: 'Orchestra', kind: 'sampled', range: realRange('strings-tremolo'),
-    samples: real('strings-tremolo', 0.6), gain: 11, taper: [69, 2.5], dynamics: true,
+    samples: real('strings-tremolo', 0.6), gain: 16.5, taper: [69, 2.5], dynamics: true,
   },
   realSoloViolin: {
     key: 'realSoloViolin', name: 'Solo Violin (Real)', blurb: 'One recorded violin with vibrato, soft and loud: melodies', color: '#f87171', category: 'Orchestra', kind: 'sampled', range: realRange('solo-violin'),
-    samples: real('solo-violin', 0.5), shaping: 'violin', gain: 14, taper: [74, 3], bowed: { skip: 0.03, solo: true }, dynamics: true,
+    samples: real('solo-violin', 0.5), shaping: 'violin', gain: 17, taper: [74, 3], bowed: { skip: 0.03, solo: true }, dynamics: true,
   },
   realDoubleBass: {
     key: 'realDoubleBass', name: 'Double Bass (Real)', blurb: 'A recorded double bass, bowed: the floor of the orchestra', color: '#7c2d12', category: 'Orchestra', kind: 'sampled', range: realRange('double-bass'),
@@ -476,27 +519,27 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realHarp: {
     key: 'realHarp', name: 'Harp (Real)', blurb: 'A recorded concert harp: arpeggios, glissandos, magic', color: '#fbbf24', category: 'Orchestra', kind: 'sampled', range: realRange('harp'),
-    samples: real('harp', 1.5), gain: 4.5,
+    samples: real('harp', 1.5), gain: 7,
   },
   realFlute: {
     key: 'realFlute', name: 'Flute (Real)', blurb: 'A recorded flute with vibrato: soaring melodies', color: '#7dd3fc', category: 'Orchestra', kind: 'sampled', range: realRange('flute'),
-    samples: real('flute', 0.35), gain: 8, taper: [78, 12],
+    samples: real('flute', 0.35), gain: 10, taper: [78, 12],
   },
   realFluteShort: {
     key: 'realFluteShort', name: 'Flute Short (Real)', blurb: 'Recorded flute, short tongued notes: soft, medium and loud', color: '#38bdf8', category: 'Orchestra', kind: 'sampled', range: realRange('flute-staccato'),
-    samples: real('flute-staccato', 0.2), gain: 17.5, taper: [78, 9],
+    samples: real('flute-staccato', 0.2), gain: 23, taper: [78, 9],
   },
   realOboe: {
     key: 'realOboe', name: 'Oboe (Real)', blurb: 'A recorded oboe with vibrato: plaintive, pastoral', color: '#a3e635', category: 'Orchestra', kind: 'sampled', range: realRange('oboe'),
-    samples: real('oboe', 0.3), gain: 0.5, taper: [73, 0.5], dynamics: true,
+    samples: real('oboe', 0.3), gain: 2.5, taper: [73, 0.5], dynamics: true,
   },
   realClarinet: {
     key: 'realClarinet', name: 'Clarinet (Real)', blurb: 'A recorded clarinet: soft, medium and loud, from dark low notes to a bright top', color: '#4ade80', category: 'Orchestra', kind: 'sampled', range: realRange('clarinet'),
-    samples: real('clarinet', 0.3), gain: 5, taper: [71, 10], dynamics: true,
+    samples: real('clarinet', 0.3), gain: 9, taper: [71, 10], dynamics: true,
   },
   realBassoon: {
     key: 'realBassoon', name: 'Bassoon (Real)', blurb: 'A recorded bassoon with vibrato: woody, comic or noble', color: '#a16207', category: 'Orchestra', kind: 'sampled', range: realRange('bassoon'),
-    samples: real('bassoon', 0.3), gain: 0.5, taper: [55, 1.5], dynamics: true,
+    samples: real('bassoon', 0.3), gain: 2, taper: [55, 1.5], dynamics: true,
   },
   realHorn: {
     key: 'realHorn', name: 'French Horn (Real)', blurb: 'A recorded French horn, low and middle register: soft, medium and loud, heroic and warm', color: '#facc15', category: 'Orchestra', kind: 'sampled', range: HORN_RANGE,
@@ -504,51 +547,51 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realHornShort: {
     key: 'realHornShort', name: 'French Horn Short (Real)', blurb: 'Recorded horn, short punchy notes: fanfares, hits', color: '#eab308', category: 'Orchestra', kind: 'sampled', range: HORN_RANGE,
-    samples: real('horn-staccato', 0.25), gain: 18, taper: [45, 4.5],
+    samples: real('horn-staccato', 0.25), gain: 20.5, taper: [45, 4.5],
   },
   realTrumpet: {
     key: 'realTrumpet', name: 'Trumpet (Real)', blurb: 'A recorded trumpet with vibrato: soft and loud', color: '#fde047', category: 'Orchestra', kind: 'sampled', range: realRange('trumpet'),
-    samples: real('trumpet', 0.35), gain: -0.5, taper: [68, 4.5], dynamics: true,
+    samples: real('trumpet', 0.35), gain: 3.5, taper: [68, 4.5], dynamics: true,
   },
   realTrumpetShort: {
     key: 'realTrumpetShort', name: 'Trumpet Short (Real)', blurb: 'Recorded trumpet, short stabs: fanfares, ska, funk', color: '#fcd34d', category: 'Orchestra', kind: 'sampled', range: realRange('trumpet-staccato'),
-    samples: real('trumpet-staccato', 0.2), gain: 12, taper: [68, 7.5],
+    samples: real('trumpet-staccato', 0.2), gain: 14.5, taper: [68, 7.5],
   },
   realTrombone: {
     key: 'realTrombone', name: 'Trombone (Real)', blurb: 'A recorded tenor trombone: soft, medium and loud', color: '#d97706', category: 'Orchestra', kind: 'sampled', range: realRange('trombone'),
-    samples: real('trombone', 0.4), gain: 14, taper: [49, 7.5], dynamics: true,
+    samples: real('trombone', 0.4), gain: 17.5, taper: [49, 7.5], dynamics: true,
   },
   realTromboneShort: {
     key: 'realTromboneShort', name: 'Trombone Short (Real)', blurb: 'Recorded trombone, short notes at four loudnesses: stabs, hits', color: '#b45309', category: 'Orchestra', kind: 'sampled', range: realRange('trombone-staccato'),
-    samples: real('trombone-staccato', 0.25), gain: 11.5, taper: [49, 2.5],
+    samples: real('trombone-staccato', 0.25), gain: 13.5, taper: [49, 2.5],
   },
   realTuba: {
     key: 'realTuba', name: 'Tuba (Real)', blurb: 'A recorded tuba: soft, medium and loud, a deep brass floor', color: '#92400e', category: 'Orchestra', kind: 'sampled', range: realRange('tuba'),
-    samples: real('tuba', 0.4), gain: 4, taper: [44, 5], dynamics: true,
+    samples: real('tuba', 0.4), gain: 12, taper: [44, 5], dynamics: true,
   },
   realGrandPiano: {
     key: 'realGrandPiano', name: 'Concert Grand (Real)', blurb: 'A recorded concert grand at four loudnesses: soft and warm to bright and hard', color: '#f8fafc', category: 'Keys & Synths', kind: 'sampled', range: realRange('grand-piano'),
-    samples: real('grand-piano', 0.6), gain: -10,
+    samples: { ...real('grand-piano', 0.6), releases: releasesOf('piano-release', -19, 6) }, gain: -5.5,
   },
   realUprightPiano: {
     key: 'realUprightPiano', name: 'Upright Piano (Real)', blurb: 'A recorded upright piano, three loudnesses: intimate, homely', color: '#e7e5e4', category: 'Keys & Synths', kind: 'sampled', range: realRange('upright-piano'),
-    samples: real('upright-piano', 0.5), gain: -6.5,
+    samples: { ...real('upright-piano', 0.5), releases: releasesOf('piano-release', -19, 6) }, gain: -6,
   },
   realPipeOrgan: {
     key: 'realPipeOrgan', name: 'Pipe Organ (Real)', blurb: 'A recorded church organ, full and open, with its pedal pipes', color: '#c4b5fd', category: 'Keys & Synths', kind: 'sampled', range: realRange('pipe-organ'),
-    samples: real('pipe-organ', 0.4), gain: 14,
+    samples: real('pipe-organ', 0.4), gain: 16,
   },
   realChapelOrgan: {
     key: 'realChapelOrgan', name: 'Chapel Organ (Real)', blurb: 'The recorded organ on a quiet, gentle stop', color: '#a78bfa', category: 'Keys & Synths', kind: 'sampled', range: realRange('chapel-organ'),
-    samples: real('chapel-organ', 0.4), gain: 3.5, taper: [78, 5],
+    samples: real('chapel-organ', 0.4), gain: 9, taper: [78, 5],
   },
   realMarimba: {
     key: 'realMarimba', name: 'Marimba (Real)', blurb: 'A recorded marimba: warm wooden bars', color: '#d6a35c', category: 'Mallets & Bells', kind: 'sampled', range: realRange('marimba'),
-    samples: real('marimba', 0.8), gain: -4,
+    samples: real('marimba', 0.8), gain: 0.5,
   },
   realXylophone: {
     key: 'realXylophone', name: 'Xylophone (Real)', blurb: 'A recorded xylophone: bright, dry and quick', color: '#fb923c', category: 'Mallets & Bells', kind: 'sampled', range: realRange('xylophone'),
-    samples: real('xylophone', 0.4), gain: -1,
+    samples: real('xylophone', 0.4), gain: 0,
   },
   realGlockenspiel: {
     key: 'realGlockenspiel', name: 'Glockenspiel (Real)', blurb: 'A recorded glockenspiel: sparkling steel bars', color: '#e0f2fe', category: 'Mallets & Bells', kind: 'sampled', range: realRange('glockenspiel'),
@@ -564,7 +607,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realUprightBass: {
     key: 'realUprightBass', name: 'Upright Bass (Real)', blurb: 'A recorded double bass, plucked at four loudnesses: jazz, swing', color: '#155e75', category: 'Bass', kind: 'sampled', range: realRange('upright-bass'),
-    samples: real('upright-bass', 0.3), gain: 10, taper: [42, 1],
+    samples: real('upright-bass', 0.3), gain: 8.5, taper: [42, 1],
   },
   realElectricBass: {
     key: 'realElectricBass', name: 'Electric Bass (Real)', blurb: 'A recorded fingered electric bass at four loudnesses', color: '#0e7490', category: 'Bass', kind: 'sampled', range: realRange('electric-bass'),
@@ -572,35 +615,35 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realStrings: {
     key: 'realStrings', name: 'String Section (Real)', blurb: 'Recorded cellos, violas and violins as one section, low to high: pads, swells, film chords', color: '#f43f5e', category: 'Orchestra', kind: 'sampled', range: [36, 88],
-    samples: ensemble([{ folder: 'cello-sustain', from: 36, gain: -11 }, { folder: 'violas-sustain', from: 50, gain: -3 }, { folder: 'violins-sustain', from: 62, gain: 0 }], 0.7), gain: 14, taper: [79, 3], dynamics: true,
+    samples: ensemble([{ folder: 'cello-sustain', from: 36, gain: -2.5 }, { folder: 'violas-sustain', from: 50, gain: -5.5 }, { folder: 'violins-sustain', from: 62, gain: 0 }], 0.7), gain: 17.5, taper: [79, 3], dynamics: true,
   },
   realBrass: {
     key: 'realBrass', name: 'Brass Section (Real)', blurb: 'Recorded trombone, French horn and trumpet as one section, low to high: chords, swells, fanfares', color: '#f59e0b', category: 'Orchestra', kind: 'sampled', range: [34, 86],
-    samples: ensemble([{ folder: 'trombone', from: 34, gain: -2 }, { folder: 'horn', from: 50, gain: 0 }, { folder: 'trumpet', from: 60, gain: -16.5 }], 0.4), gain: 15, taper: [74, 3], dynamics: true,
+    samples: ensemble([{ folder: 'trombone', from: 34, gain: 1.5 }, { folder: 'horn', from: 50, gain: 0 }, { folder: 'trumpet', from: 60, gain: -12.5 }], 0.4), gain: 16, taper: [74, 3], dynamics: true,
   },
   realTimpani: {
     key: 'realTimpani', name: 'Timpani (Real)', blurb: 'Five recorded kettle drums, three loudnesses: rolls, hits, drama', color: '#78350f', category: 'Orchestra', kind: 'sampled', range: [39, 58],
-    samples: real('timpani', 1.5), gain: 8,
+    samples: real('timpani', 1.5), gain: 9.5,
   },
   realTubularBells: {
     key: 'realTubularBells', name: 'Tubular Bells (Real)', blurb: 'Recorded orchestral chimes: soft and loud strikes', color: '#cbd5e1', category: 'Mallets & Bells', kind: 'sampled', range: realRange('tubular-bells', 3),
-    samples: real('tubular-bells', 2), gain: -0.5,
+    samples: real('tubular-bells', 2), gain: 3.5,
   },
   realVibraphone: {
     key: 'realVibraphone', name: 'Vibraphone (Real)', blurb: 'A recorded vibraphone with soft mallets: jazz, lounge, dreamy', color: '#93c5fd', category: 'Mallets & Bells', kind: 'sampled', range: realRange('vibraphone'),
-    samples: real('vibraphone', 1.2), gain: -4, taper: [76, 5],
+    samples: real('vibraphone', 1.2), gain: -2.5, taper: [76, 5],
   },
   realHarpsichord: {
     key: 'realHarpsichord', name: 'Harpsichord (Real)', blurb: 'A recorded Flemish harpsichord: baroque, spooky, bright', color: '#d4a373', category: 'Keys & Synths', kind: 'sampled', range: realRange('harpsichord'),
-    samples: real('harpsichord', 0.4), gain: 0.5,
+    samples: { ...real('harpsichord', 0.4), releases: releasesOf('harpsichord-release', -14) }, gain: 3,
   },
   realKalimba: {
     key: 'realKalimba', name: 'Kalimba (Real)', blurb: 'A recorded thumb piano: soft plucked metal tines', color: '#a3e635', category: 'World', kind: 'sampled', range: realRange('kalimba', 3),
-    samples: real('kalimba', 1), gain: 5,
+    samples: real('kalimba', 1), gain: 6,
   },
   realTenorSax: {
     key: 'realTenorSax', name: 'Tenor Sax (Real)', blurb: 'A recorded tenor saxophone, soft and loud: smoky jazz, soul, rock', color: '#d97706', category: 'Winds & Brass', kind: 'sampled', range: realRange('tenor-sax'),
-    samples: real('tenor-sax', 0.25), gain: 0, taper: [70, 2], dynamics: true,
+    samples: real('tenor-sax', 0.25), gain: 5, taper: [70, 2], dynamics: true,
   },
   strings: {
     key: 'strings', name: 'Strings', blurb: 'String section: pads and swells', color: '#fb7185', category: 'Retro (GM)', kind: 'sampled', range: [36, 96],
@@ -870,3 +913,55 @@ export function instrumentsByCategory(): Array<{ category: InstrumentCategory; i
     instruments: INSTRUMENT_KEYS.map((k) => INSTRUMENTS[k]).filter((d) => d.category === category && d.kind !== 'bus' && d.kind !== 'plugin' && d.kind !== 'return'),
   })).filter((g) => g.instruments.length > 0);
 }
+
+/** Where an instrument sits on an orchestra's stage: its pan, and how far back (Track.distance). */
+export interface Seat {
+  pan: number;
+  distance: number;
+}
+
+/**
+ * The usual orchestral seating, seen from the audience: first violins on the left, cellos and basses
+ * to the right, violas between; woodwinds in the middle behind the strings; horns behind them on the
+ * left, trumpets, trombones and tuba to the right at the back; harp on the left; timpani and
+ * percussion at the very back. Solo instruments and pianos sit up front. A band's instruments have
+ * no seat: they're played close and placed by the mix.
+ */
+const SEATS: Partial<Record<InstrumentKey, Seat>> = {
+  realViolins: { pan: -0.45, distance: 0.15 },
+  realViolinsShort: { pan: -0.45, distance: 0.15 },
+  realViolas: { pan: 0.1, distance: 0.2 },
+  realViolasShort: { pan: 0.1, distance: 0.2 },
+  realCello: { pan: 0.35, distance: 0.2 },
+  realCelloShort: { pan: 0.35, distance: 0.2 },
+  realDoubleBass: { pan: 0.55, distance: 0.3 },
+  realStrings: { pan: 0, distance: 0.2 },
+  realPizzicato: { pan: 0, distance: 0.2 },
+  realTremolo: { pan: 0, distance: 0.2 },
+  realSoloViolin: { pan: -0.1, distance: 0.05 },
+  realHarp: { pan: -0.55, distance: 0.35 },
+  realFlute: { pan: -0.15, distance: 0.45 },
+  realFluteShort: { pan: -0.15, distance: 0.45 },
+  realOboe: { pan: 0.1, distance: 0.45 },
+  realClarinet: { pan: -0.1, distance: 0.5 },
+  realBassoon: { pan: 0.15, distance: 0.5 },
+  realHorn: { pan: -0.3, distance: 0.6 },
+  realHornShort: { pan: -0.3, distance: 0.6 },
+  realTrumpet: { pan: 0.15, distance: 0.65 },
+  realTrumpetShort: { pan: 0.15, distance: 0.65 },
+  realTrombone: { pan: 0.35, distance: 0.65 },
+  realTromboneShort: { pan: 0.35, distance: 0.65 },
+  realTuba: { pan: 0.45, distance: 0.65 },
+  realBrass: { pan: 0.1, distance: 0.6 },
+  realTimpani: { pan: 0, distance: 0.75 },
+  realTubularBells: { pan: 0.3, distance: 0.75 },
+  realGlockenspiel: { pan: 0.25, distance: 0.7 },
+  realXylophone: { pan: 0.25, distance: 0.7 },
+  taiko: { pan: 0, distance: 0.6 },
+  choir: { pan: 0, distance: 0.7 },
+  voiceOohs: { pan: 0, distance: 0.7 },
+  realPipeOrgan: { pan: 0, distance: 0.6 },
+};
+
+/** Where `key` sits on the stage, or undefined (no usual place: band, synths, your sounds). */
+export const seatOf = (key: InstrumentKey): Seat | undefined => SEATS[key];

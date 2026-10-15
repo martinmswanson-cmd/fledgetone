@@ -167,3 +167,13 @@ def match(st, path):
             return None
         return midi, g.get('layer') or '', g.get('take') or '', i
     return None
+
+# Release sounds: what a key makes as it's let go (a harpsichord's jack falling back, a piano's
+# damper settling on the string). The app plays them when a note is released early (see
+# SampleSource.releases); measure.py can't read a pitch from them, so release.py gives them their
+# main set's octave.
+RELEASES = [
+    S('harpsichord-release', 'vcsl', [(rf'Chordophones/Zithers/Harpsichord, Flemish/Releases/(?:High|Low)/HarpsiRH_(?:High|Low)Rel_Far_{NOTE}_(?P<take>rr\d)(?P<layer>)\.wav', 1)], [''], 'short', cap=1.5, retune=False),
+    S('piano-release', 'vcsl', [(rf'Chordophones/Zithers/Grand Piano, Kawai/Releases/GPiano_rel_{NOTE}_(?P<layer>v3)_(?P<take>rr1)_Player\.wav', 1)], ['v3'], 'short', cap=2.0, retune=False),
+]
+SETS += RELEASES

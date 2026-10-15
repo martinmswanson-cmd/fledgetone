@@ -1,3 +1,5 @@
+import { ROOM_STYLE_IDS } from '../audio/effects/roomIR';
+import type { RoomStyle } from '../audio/effects/roomIR';
 import { normalizeExpression } from './expression';
 import { normalizeNoteExpression } from './noteExpression';
 import { compSegments, normalizeTakes } from './takes';
@@ -267,6 +269,7 @@ function parseTrack(v: unknown): Track {
       high: isNum(eqObj.high) ? eqObj.high : 0,
     },
     reverbSend: isNum(v.reverbSend) ? Math.max(0, Math.min(1, v.reverbSend)) : 0,
+    ...(isNum(v.distance) && v.distance > 0 ? { distance: Math.min(1, v.distance) } : {}),
     delaySend: isNum(v.delaySend) ? Math.max(0, Math.min(1, v.delaySend)) : 0,
     fx: normalizeTrackFx(v.fx),
     sample: parseSample(v.sample),
@@ -517,6 +520,7 @@ function parseMasterFx(v: unknown): MasterFx {
     delayTime: isStr(v.delayTime) && ['4n', '8n', '8n.', '16n'].includes(v.delayTime) ? v.delayTime : d.delayTime,
     delayFeedback: isNum(v.delayFeedback) ? Math.max(0, Math.min(0.8, v.delayFeedback)) : d.delayFeedback,
     ...(isStr(v.room) && v.room ? { room: v.room } : {}),
+    ...(isStr(v.roomStyle) && (ROOM_STYLE_IDS as string[]).includes(v.roomStyle) ? { roomStyle: v.roomStyle as RoomStyle } : {}),
   };
 }
 

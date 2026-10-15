@@ -175,6 +175,9 @@ function driveCurve(amount: number): Float32Array<ArrayBuffer> {
 export function createDrive(raw: BaseAudioContext, amount: number): WaveShaperNode {
   const shaper = raw.createWaveShaper();
   shaper.curve = driveCurve(amount);
+  // Clipping makes harmonics above the top of hearing, which fold back down as harsh, out-of-tune
+  // fizz; shaped at four times the rate, they're filtered out before they can
+  shaper.oversample = '4x';
   return shaper;
 }
 

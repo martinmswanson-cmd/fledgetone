@@ -6,6 +6,7 @@
 import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
+import type { RoomStyle } from '../audio/effects/roomIR';
 import { frameSeconds, isDropFrame } from '../audio/timecode';
 
 export type { InstrumentKey };
@@ -390,6 +391,8 @@ export interface MasterFx {
    * in place of its generated one; absent: generated, `reverbDecay` long.
    */
   room?: string;
+  /** The kind of room the generated reverb is (see effects/roomIR.ts); absent: a concert hall */
+  roomStyle?: RoomStyle;
 }
 
 export const DEFAULT_MASTER_FX: MasterFx = { reverbDecay: 2.4, delayTime: '8n', delayFeedback: 0.35 };
@@ -497,6 +500,12 @@ export interface Track {
   eq: TrackEq;
   /** Distortion / Compressor / Chorus / Filter / Pump inserts */
   fx: TrackFx;
+  /**
+   * How far back on the stage it sits, 0 (up front, as recorded) to 1 (the back of the hall): a
+   * little darker, quieter and more in the room, as a far instrument sounds (see trackStrip.ts).
+   * Absent: 0.
+   */
+  distance?: number;
   /** Post-fader send to master Reverb (0.0 to 1.0) */
   reverbSend: number;
   /** Post-fader send to master Delay (0.0 to 1.0) */

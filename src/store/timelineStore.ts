@@ -34,6 +34,8 @@
  * (liveTracks.ts), the clip schedule (scheduler.ts), the Transport's loop, tempo and swing, the
  * master inserts and returns, ducking and intensity.
  */
+import type { RoomStyle } from '../audio/effects/roomIR';
+import { makeSpace } from './makeSpace';
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
@@ -85,7 +87,7 @@ import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import { durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
-import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
+import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
@@ -297,6 +299,7 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     masterDelayTime: masterFx.delayTime,
     masterDelayFeedback: masterFx.delayFeedback,
     masterReverbRoom: masterFx.room ?? null,
+    masterRoomStyle: masterFx.roomStyle ?? 'hall',
     master,
     // The song's tempo isn't undone, so markers held to their time are placed at today's tempo
     markers: retimeMarkers(entry.markers, now),
@@ -499,6 +502,10 @@ interface TimelineState {
   toggleArm: (trackId: string) => void;
   setTrackVolume: (trackId: string, db: number) => void;
   setTrackPan: (trackId: string, pan: number) => void;
+  /** Make space (makeSpace.ts): EQ moves so the parts stop covering each other, one undo step. Returns how many tracks changed. */
+  makeSpace: () => number;
+  /** How far back on the stage the track sits (Track.distance), 0 to 1 */
+  setTrackDistance: (trackId: string, distance: number) => void;
   setTrackEq: (trackId: string, eq: Partial<TrackEq>) => void;
   resetTrackEq: (trackId: string) => void;
   setTrackReverbSend: (trackId: string, send: number) => void;
@@ -549,6 +556,10 @@ interface TimelineState {
   masterDelayFeedback: number;
   /** The recorded room the master reverb plays through (a sound id), or null for its generated one */
   masterReverbRoom: string | null;
+  /** The kind of room the generated reverb is */
+  masterRoomStyle: RoomStyle;
+  /** Choose the generated reverb's room: one undo step. */
+  setMasterRoomStyle: (style: RoomStyle) => void;
   setMasterReverbDecay: (decay: number) => void;
   /** Play the master reverb through a recorded room (a sound id), or its generated one (null): one undo step. */
   setMasterReverbRoom: (soundId: string | null) => void;
@@ -839,7 +850,9 @@ function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: strin
     isSoloed: false,
     isArmed: false,
     volume: 0,
-    pan: 0,
+    // An orchestral instrument takes its usual seat on the stage (seatOf)
+    pan: seatOf(instrumentKey)?.pan ?? 0,
+    ...(seatOf(instrumentKey) ? { distance: seatOf(instrumentKey)!.distance } : {}),
     eq: { low: 0, mid: 0, high: 0 },
     fx: instrumentKey === 'return' ? returnFx() : defaultTrackFx(),
     reverbSend: 0.1,
@@ -898,8 +911,14 @@ export interface AutosaveStatus {
 
 /** The store's master reverb / delay settings as one object. */
 /** The master effects (the reverb and delay the sends go to) as the song has them now. */
-export function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number; masterReverbRoom?: string | null }): MasterFx {
-  return { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback, ...(s.masterReverbRoom ? { room: s.masterReverbRoom } : {}) };
+export function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number; masterReverbRoom?: string | null; masterRoomStyle?: RoomStyle }): MasterFx {
+  return {
+    reverbDecay: s.masterReverbDecay,
+    delayTime: s.masterDelayTime,
+    delayFeedback: s.masterDelayFeedback,
+    ...(s.masterReverbRoom ? { room: s.masterReverbRoom } : {}),
+    ...(s.masterRoomStyle && s.masterRoomStyle !== 'hall' ? { roomStyle: s.masterRoomStyle } : {}),
+  };
 }
 
 let rafId = 0;
@@ -1240,6 +1259,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     masterDelayTime: '8n',
     masterDelayFeedback: 0.35,
     masterReverbRoom: null,
+    masterRoomStyle: 'hall',
     master: defaultMasterSettings(),
     past: [],
     future: [],
@@ -1946,6 +1966,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
     setTrackVolume: (id, db) => updateTrack(id, () => ({ volume: Math.max(-60, Math.min(6, db)) })),
     setTrackPan: (id, pan) => updateTrack(id, () => ({ pan: Math.max(-1, Math.min(1, pan)) })),
+    makeSpace: () => {
+      const s = get();
+      const { tracks, changes } = makeSpace(s.tracks, s.clips);
+      if (!changes.length) return 0;
+      set((st) => ({ tracks, ...pushPast(st) }));
+      return changes.length;
+    },
+    setTrackDistance: (id, distance) => updateTrack(id, () => ({ distance: Math.max(0, Math.min(1, distance)) })),
 
     setTrackEq: (id, eqPatch) => {
       updateTrack(id, (t) => ({
@@ -2097,6 +2125,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setTrackFx: (id, effect, patch, record = false) => {
       updateTrack(id, (t) => ({ fx: normalizeTrackFx({ ...t.fx, [effect]: { ...t.fx[effect], ...patch } }) }), record);
+    },
+
+    setMasterRoomStyle: (style) => {
+      if (style === get().masterRoomStyle) return;
+      set((s) => ({ masterRoomStyle: style, ...pushPast(s) }));
+      applyMasterFx();
     },
 
     setMasterReverbRoom: (soundId) => {
@@ -2853,6 +2887,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         masterDelayTime: masterFx.delayTime,
         masterDelayFeedback: masterFx.delayFeedback,
         masterReverbRoom: masterFx.room ?? null,
+        masterRoomStyle: masterFx.roomStyle ?? 'hall',
         master: p.master ?? defaultMasterSettings(),
         fps: p.fps ?? DEFAULT_FRAME_RATE,
         dropFrame: p.dropFrame === true && p.fps === 29.97,
@@ -3194,6 +3229,7 @@ export function connectAutosave(): () => void {
       state.masterDelayTime === prev.masterDelayTime &&
       state.masterDelayFeedback === prev.masterDelayFeedback &&
       state.masterReverbRoom === prev.masterReverbRoom &&
+      state.masterRoomStyle === prev.masterRoomStyle &&
       state.master === prev.master &&
       state.fps === prev.fps &&
       state.dropFrame === prev.dropFrame &&

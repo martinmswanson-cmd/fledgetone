@@ -37,6 +37,12 @@ test('every hosted recording an instrument plays is in public/', () => {
       assert.ok(existsSync(join(PUBLIC, baseUrl, file)), `${def.key}: ${baseUrl}${file} is missing`);
       used.add(baseUrl + file);
     }
+    // and its release sounds
+    const rel = def.samples.releases;
+    for (const file of Object.values(rel?.samples ?? {})) {
+      assert.ok(existsSync(join(PUBLIC, rel.baseUrl, file)), `${def.key}: ${rel.baseUrl}${file} is missing`);
+      used.add(rel.baseUrl + file);
+    }
   }
   // Nothing hosted that no instrument plays
   for (const folder of readdirSync(join(PUBLIC, 'fledgetone-samples'), { withFileTypes: true }).filter((e) => e.isDirectory())) {

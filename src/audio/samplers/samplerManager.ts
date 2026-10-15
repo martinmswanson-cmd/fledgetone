@@ -36,7 +36,7 @@ export function hasRecordings(key: InstrumentKey): boolean {
  * `fallbackUrl` when that can't serve them) and kept for next time: see recordingStore.ts.
  */
 const recordings = new Map<string, Promise<Tone.ToneAudioBuffer>>();
-function fetchRecording(source: SampleSource, file: string): Promise<Tone.ToneAudioBuffer> {
+function fetchRecording(source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl' | 'version'>, file: string): Promise<Tone.ToneAudioBuffer> {
   const url = source.baseUrl + file;
   let p = recordings.get(url);
   if (!p) {
@@ -59,15 +59,24 @@ export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
   const setStatus = useAudioStore.getState().setInstrumentStatus;
   setStatus(key, 'loading');
 
-  const promise = Promise.all(
-    Object.entries(source.samples).map(async ([note, file]) => {
+  // Release sounds load with the notes, as "rel|<note>|<take>"
+  const rel = source.releases;
+  const releases = rel ? Object.entries(rel.samples).map(async ([name, file]) => [`rel|${name}`, await fetchRecording(rel, file)] as const) : [];
+  const promise = Promise.all([
+    ...releases,
+    ...Object.entries(source.samples).map(async ([note, file]) => {
       const loaded = await fetchRecording(source, file);
       const tuned = source.tune?.[note] ? retune(loaded, source.tune[note]) : loaded;
       const buffer = source.gains?.[note] ? louder(tuned, source.gains[note]) : tuned;
       const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
-      return [note, source.onset === undefined ? held : trimOnset(held, source.onset)] as const;
-    })
-  ).then(
+      const ready = source.onset === undefined ? held : trimOnset(held, source.onset);
+      // Its seamless loop, if it has one (and nothing above moved its timing)
+      const loop = source.loops?.[note];
+      const audio = ready.get();
+      if (loop && audio && ready === buffer && !source.tune?.[note]) loopsOf.set(audio, loop);
+      return [note, ready] as const;
+    }),
+  ]).then(
     (entries) => {
       setStatus(key, 'ready');
       const set = Object.fromEntries(entries) as SampleSet;
@@ -257,7 +266,7 @@ function saturator(drive: number): WaveShaperNode {
   const norm = Math.tanh(drive);
   for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(drive * ((i / (curve.length - 1)) * 2 - 1)) / norm;
   shaper.curve = curve;
-  shaper.oversample = '2x';
+  shaper.oversample = '4x';
   return shaper;
 }
 
@@ -520,6 +529,9 @@ export function noteJitter(note: string, time: number, salt: number): number {
   return ((h >>> 0) / 4294967295) * 2 - 1;
 }
 
+/** Each held recording's seamless loop in seconds (SampleSource.loops), once loaded. */
+const loopsOf = new WeakMap<AudioBuffer, [number, number]>();
+
 /** Recordings by MIDI note: what one sampler slot plays from (the nearest one, re-pitched). */
 type Slot = Map<number, AudioBuffer>;
 
@@ -533,7 +545,36 @@ interface SlotBank {
   /** The recordings at loudness `layer` (0 softest; its takes in turn), and how many loudnesses there are */
   layer?: (layer: number) => Slot;
   layers?: number;
+  /**
+   * Near the velocity where one loudness hands over to the next: the two recordings and how far
+   * across (0 all the softer, 1 all the louder), so a velocity just either side of the boundary
+   * doesn't jump from one recording's tone to the other's. Null away from a boundary.
+   */
+  blend?: (velocity: number) => { low: Slot; high: Slot; x: number } | null;
+  /** The sounds of keys being let go (ReleaseSounds), their takes in turn */
+  releases?: { slots: Slot[]; db: number; decay?: number };
 }
+
+const peaks = new WeakMap<AudioBuffer, number>();
+/** A recording's highest sample, for setting a release sound's level against its note's. */
+function peakOf(buffer: AudioBuffer): number {
+  let p = peaks.get(buffer);
+  if (p === undefined) {
+    p = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const d = buffer.getChannelData(c);
+      for (let i = 0; i < d.length; i++) {
+        const a = d[i] < 0 ? -d[i] : d[i];
+        if (a > p) p = a;
+      }
+    }
+    peaks.set(buffer, p);
+  }
+  return p;
+}
+
+/** How far either side of a loudness boundary (in velocity) two recordings are blended. */
+const BLEND_ZONE = 0.07;
 
 /** The recording nearest `midi` in `slot` and how many semitones it sits below (Tone.Sampler's search: the higher one on a tie). */
 function nearest(slot: Slot, midi: number): { buffer: AudioBuffer; interval: number } | null {
@@ -680,6 +721,10 @@ function samplerVoice(
     rate: number;
     /** When it was let go (Infinity until then): a bowed note starting before this is a legato change */
     releasedAt: number;
+    /** Its recording loops (a note held past the recording's end), so it plays until it's released */
+    looping?: boolean;
+    /** The (first) recording it plays, for its release sound's level */
+    buffer: AudioBuffer;
     /**
      * Played under the mod wheel's dynamics: the next louder recording sounds with it, the two
      * mixed by `soft` and `loud` (see dynamicsMix), `low` the softer one's loudness.
@@ -739,15 +784,17 @@ function samplerVoice(
    * Start `note` at `at`; it plays to the end of its recording unless released. `offset` starts it
    * that far into its recording (past a bow's slow start), fading in over `fade` seconds.
    */
-  const start = (note: string, at: number, velocity: number, offset = 0, fade = 0): Sounding | null => {
+  const start = (note: string, at: number, velocity: number, offset = 0, fade = 0, hold = 0): Sounding | null => {
     const midiFloat = midiOfNote(note);
     const midi = Math.round(midiFloat);
     // Under the mod wheel: the recording at the wheel's loudness and the next louder one
     const span = (bank.layers ?? 1) - 1;
     const low = dyn !== null && bank.layer && span > 0 ? Math.min(span - 1, Math.floor(dyn * span)) : -1;
-    const found = low >= 0 ? nearest(bank.layer!(low), midi) : nearest(bank.pick(velocity), midi);
+    // Off the mod wheel, a velocity near a loudness boundary blends the two recordings either side
+    const blend = low < 0 && bank.blend ? bank.blend(velocity) : null;
+    const found = low >= 0 ? nearest(bank.layer!(low), midi) : blend ? nearest(blend.low, midi) : nearest(bank.pick(velocity), midi);
     if (!found) return null;
-    const upper = low >= 0 ? nearest(bank.layer!(low + 1), midi) : null;
+    const upper = low >= 0 ? nearest(bank.layer!(low + 1), midi) : blend ? nearest(blend.high, midi) : null;
     // Each hit a hair off the last: up to ±3 cents
     const jitter = expressive ? 2 ** ((3 * noteJitter(note, at, 13)) / 1200) : 1;
     const rateOf = (interval: number) => 2 ** ((interval + midiFloat - midi) / 12) * jitter;
@@ -769,8 +816,15 @@ function samplerVoice(
       src.connect(to);
       const from = Math.min(offset, audibleEnd(buffer) / 2);
       src.start(when, from);
-      const end = when + (audibleEnd(buffer) - from) / (rate * bendRatio);
-      src.stop(end);
+      let end = when + (audibleEnd(buffer) - from) / (rate * bendRatio);
+      // Held past the end of its recording: it loops its steady stretch until it's released
+      const loop = loopsOf.get(buffer);
+      if (loop && hold > end - 0.5 && loop[0] > from) {
+        src.loop = true;
+        src.loopStart = loop[0];
+        src.loopEnd = loop[1];
+        end = Infinity;
+      } else src.stop(end);
       // Let go once it has played (nodes made in an export are dropped with its context anyway)
       src.onended = () => {
         src.disconnect();
@@ -782,7 +836,7 @@ function samplerVoice(
     if (upper) {
       const soft = raw.createGain();
       const loud = raw.createGain();
-      const [a, b] = dynamicsMix(dyn!, low, span);
+      const [a, b] = low >= 0 ? dynamicsMix(dyn!, low, span) : [Math.cos((blend!.x * Math.PI) / 2), Math.sin((blend!.x * Math.PI) / 2)];
       soft.gain.value = a;
       loud.gain.value = b;
       soft.connect(gain);
@@ -793,10 +847,10 @@ function samplerVoice(
       const one = play(found.buffer, base, soft, [soft, done]);
       const hiBase = rateOf(upper.interval);
       const two = play(upper.buffer, hiBase, loud, [loud, done]);
-      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, pair: { src: two.src, base: hiBase, soft, loud, low } };
+      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity || two.end === Infinity, buffer: found.buffer, pair: { src: two.src, base: hiBase, soft, loud, low } };
     } else {
       const one = play(found.buffer, base, gain, [gain]);
-      s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity };
+      s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity, buffer: found.buffer };
     }
     makeRoom(note, when);
     sounding.push(s);
@@ -826,9 +880,39 @@ function samplerVoice(
     }
   };
 
-  /** Release `s` at `time`: its level falls away over the release, then it stops. */
-  const releaseAt = (s: Sounding, time: number) => {
+  let releaseTurn = 0;
+  /**
+   * The sound of `s`'s key being let go at `at` (a harpsichord's jack, a piano's damper), if the
+   * instrument has them and the note is still ringing: as loud against the note as they were
+   * recorded together, quieter the longer the note was held when the instrument has a `decay`.
+   */
+  const releaseSound = (s: Sounding, at: number) => {
+    const rel = bank.releases;
+    if (!rel || at >= s.until - 0.05) return;
+    const slot = rel.slots[releaseTurn++ % rel.slots.length];
+    const found = slot && nearest(slot, Math.round(midiOfNote(s.note)));
+    if (!found) return;
+    const held = Math.max(0, at - s.start);
+    const fade = rel.decay ? Math.max(0.25, Math.exp(-held / rel.decay)) : 1;
+    const level = s.level * 10 ** (rel.db / 20) * (peakOf(s.buffer) / Math.max(1e-6, peakOf(found.buffer))) * fade;
+    if (!(level > 1e-5)) return;
+    const src = raw.createBufferSource();
+    src.buffer = found.buffer;
+    src.playbackRate.value = 2 ** (found.interval / 12);
+    const g = raw.createGain();
+    g.gain.value = Math.min(4, level);
+    src.connect(g).connect(into);
+    src.start(Math.max(at, raw.currentTime));
+    src.onended = () => {
+      src.disconnect();
+      g.disconnect();
+    };
+  };
+
+  /** Release `s` at `time`: its level falls away over the release, then it stops (`sound`: with its release sound). */
+  const releaseAt = (s: Sounding, time: number, sound = true) => {
     const at = Math.max(time, s.start + options.attack);
+    if (sound) releaseSound(s, at);
     s.releasedAt = at;
     const g = s.gain.gain;
     g.cancelScheduledValues(at);
@@ -853,7 +937,7 @@ function samplerVoice(
       prune(at);
       if (!bowed) {
         for (const note of notes) {
-          const s = start(note, at, velocity);
+          const s = start(note, at, velocity, 0, 0, end);
           if (s) releaseAt(s, end);
         }
         return;
@@ -868,7 +952,7 @@ function samplerVoice(
       // A short note starts past the bow's slow start, so fast passages speak
       const short = end - at < 0.25;
       for (const note of list) {
-        const s = from ? start(note, at, velocity, Math.max(bowed.skip, LEGATO_SKIP), LEGATO_FADE) : short ? start(note, at, velocity, bowed.skip, 0.008) : start(note, at, velocity);
+        const s = from ? start(note, at, velocity, Math.max(bowed.skip, LEGATO_SKIP), LEGATO_FADE, end) : short ? start(note, at, velocity, bowed.skip, 0.008, end) : start(note, at, velocity, 0, 0, end);
         if (s) releaseAt(s, end);
         if (s && from) slide(from, s, at);
       }
@@ -889,7 +973,7 @@ function samplerVoice(
       if (!loaded) return;
       onNote?.(time);
       prune(time);
-      const s = start(note, time, velocity);
+      const s = start(note, time, velocity, 0, 0, Infinity);
       if (s) s.until = Infinity;
     },
     bend: (cents, time) => {
@@ -903,7 +987,7 @@ function samplerVoice(
         s.last = Math.max(s.last, time);
         s.rate = s.base * next;
         // A held key rings until its recording runs out at the new speed
-        if (s.until === Infinity) for (const x of sourcesOf(s)) if (x.buffer) x.stop(time + Math.max(0, audibleEnd(x.buffer) - s.played) / s.rate);
+        if (s.until === Infinity && !s.looping) for (const x of sourcesOf(s)) if (x.buffer) x.stop(time + Math.max(0, audibleEnd(x.buffer) - s.played) / s.rate);
       }
       bendRatio = next;
     },
@@ -913,7 +997,8 @@ function samplerVoice(
       prune(time);
       const span = (bank.layers ?? 1) - 1;
       for (const s of sounding) {
-        if (!s.pair) continue;
+        // (a velocity blend, low -1, isn't the wheel's)
+        if (!s.pair || s.pair.low < 0) continue;
         const [a, b] = dynamicsMix(dyn, s.pair.low, span);
         s.pair.soft.gain.setTargetAtTime(a, time, DYNAMICS_TC);
         s.pair.loud.gain.setTargetAtTime(b, time, DYNAMICS_TC);
@@ -932,7 +1017,7 @@ function samplerVoice(
       // (Stopped: the wheel's dynamics wait for the next clip or wheel to set them)
       dyn = null;
       const now = raw.currentTime;
-      for (const s of sounding) if (s.until > now) releaseAt(s, now);
+      for (const s of sounding) if (s.until > now) releaseAt(s, now, false);
     },
     ready,
     dispose: () => {
@@ -982,15 +1067,31 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     const l = found < 0 ? layers.length - 1 : found;
     return bank[l][turn[l]++ % bank[l].length];
   };
+  const releaseSlots: Slot[] = [];
   const attach = loadSamples(key).then((set) => {
     for (const [name, buffer] of Object.entries(set)) {
-      const [note, l = '0', t = '0'] = name.split('|');
       const audio = buffer.get();
-      if (audio) bank[Number(l)][Number(t)].set(Math.round(midiOfNote(note)), audio);
+      if (!audio) continue;
+      if (name.startsWith('rel|')) {
+        const [, note, t = '0'] = name.split('|');
+        while (releaseSlots.length <= Number(t)) releaseSlots.push(new Map());
+        releaseSlots[Number(t)].set(Math.round(midiOfNote(note)), audio);
+        continue;
+      }
+      const [note, l = '0', t = '0'] = name.split('|');
+      bank[Number(l)][Number(t)].set(Math.round(midiOfNote(note)), audio);
     }
   });
+  const rel = def.samples?.releases;
   const layer = (l: number) => bank[l][turn[l]++ % bank[l].length];
-  return samplerVoice({ slots: bank.flat(), pick, ...(def.dynamics ? { layer, layers: layers.length } : {}) }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed);
+  const blend = (velocity: number) => {
+    for (let l = 0; l < layers.length - 1; l++) {
+      const edge = layers[l];
+      if (Math.abs(velocity - edge) < BLEND_ZONE) return { low: layer(l), high: layer(l + 1), x: (velocity - (edge - BLEND_ZONE)) / (2 * BLEND_ZONE) };
+    }
+    return null;
+  };
+  return samplerVoice({ slots: bank.flat(), pick, ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed);
 }
 
 /**

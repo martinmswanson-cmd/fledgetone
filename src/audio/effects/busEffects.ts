@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import type { MasterFx } from '../../store/timelineTypes';
 import { createLightPingPong, type LightPingPong } from './lightFx';
 import { decodeSound } from '../soundLibrary';
+import { roomChannels, type RoomStyle } from './roomIR';
 
 /**
  * Shared return effects fed by every track's post-fader sends: one reverb and one
@@ -51,19 +52,28 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   // A recorded room: its impulse response (a sound in the library) goes into the reverb's own
   // convolver in place of the generated one, so the sends, filters and exports all stay as they are
   const convolver = () => (reverb as unknown as { _convolver: ConvolverNode })._convolver;
+  // The generated room (roomIR.ts): designed for its style, in place of Tone's plain noise tail
+  const designed = (style: RoomStyle | undefined, decay: number) => {
+    const rate = reverb.context.sampleRate;
+    const [l, r] = roomChannels(style ?? 'hall', Math.max(0.8, Math.min(12, decay)), rate);
+    const buffer = reverb.context.createBuffer(2, l.length, rate);
+    buffer.copyToChannel(l, 0);
+    buffer.copyToChannel(r, 1);
+    convolver().buffer = buffer;
+  };
   let roomToken = 0;
   const loadRoom = async (room: string | undefined) => {
     const token = ++roomToken;
     if (!room) {
-      await reverb.generate();
+      designed(current.roomStyle, current.reverbDecay);
       return;
     }
     try {
       const buffer = roomImpulse(await decodeSound(room, reverb.context.sampleRate), reverb.context);
       if (token === roomToken) convolver().buffer = buffer;
     } catch {
-      // Not in this browser any more: the generated hall stands in
-      if (token === roomToken) await reverb.generate();
+      // Not in this browser any more: the generated room stands in
+      if (token === roomToken) designed(current.roomStyle, current.reverbDecay);
     }
   };
 
@@ -73,20 +83,18 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     delay,
     reverbInput,
     delayInput,
-    ready: reverb.ready.then(() => (fx.room ? loadRoom(fx.room) : undefined)),
+    ready: reverb.ready.then(() => (fx.room ? loadRoom(fx.room) : designed(fx.roomStyle, fx.reverbDecay))),
     apply: (next, tempo) => {
-      if (next.room !== current.room) {
-        if (!next.room && next.reverbDecay !== current.reverbDecay) {
-          roomToken++;
-          reverb.decay = Math.max(0.8, Math.min(12, next.reverbDecay));
-        } else void loadRoom(next.room);
-      } else if (!next.room && next.reverbDecay !== current.reverbDecay) {
-        // Regenerating the impulse response is costly, so only when the decay changes
-        reverb.decay = Math.max(0.8, Math.min(12, next.reverbDecay));
+      const before = current;
+      current = { ...next };
+      if (next.room !== before.room) void loadRoom(next.room);
+      else if (!next.room && (next.reverbDecay !== before.reverbDecay || next.roomStyle !== before.roomStyle)) {
+        // Rebuilding the impulse response takes a moment, so only when the room changes
+        roomToken++;
+        designed(next.roomStyle, next.reverbDecay);
       }
       delay.setDelayTime(delaySeconds(next.delayTime, tempo), 0.05);
       delay.setFeedback(Math.max(0, Math.min(0.8, next.delayFeedback)), 0.05);
-      current = { ...next };
     },
     dispose: () => {
       roomToken++;

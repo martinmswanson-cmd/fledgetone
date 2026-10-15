@@ -206,6 +206,9 @@ function monoPanner(raw: BaseAudioContext, interpretation: ChannelInterpretation
   return panner;
 }
 
+/** How much more of a track reaches the hall at full distance (added to its reverb send) */
+const DISTANCE_SEND = 0.35;
+
 export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackStrip {
   const input = new Tone.Gain(1);
   const raw = input.context.rawContext as unknown as BaseAudioContext;
@@ -244,6 +247,30 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   left.connect(merge, 0, 0);
   right.connect(merge, 0, 1);
   Tone.connect(merge, fader);
+  /**
+   * Distance (Track.distance): set back on the stage, a part loses some top (a high shelf), comes
+   * through a little quieter, and more of it reaches the hall (see apply). Made the first time a
+   * track is set back, between the pan and the fader; a track never set back has none of it.
+   */
+  let far: { shelf: BiquadFilterNode; trim: GainNode } | null = null;
+  const setDistance = (distance: number, ramp: number) => {
+    if (distance <= 0 && !far) return;
+    if (!far) {
+      const shelf = raw.createBiquadFilter();
+      shelf.type = 'highshelf';
+      shelf.frequency.value = 4500;
+      shelf.gain.value = 0;
+      const trim = raw.createGain();
+      Tone.disconnect(merge, fader);
+      merge.connect(shelf).connect(trim);
+      Tone.connect(trim, fader);
+      far = { shelf, trim };
+    }
+    const at = raw.currentTime;
+    const tc = Math.max(0.001, ramp / 3);
+    far.shelf.gain.setTargetAtTime(-9 * distance, at, tc);
+    far.trim.gain.setTargetAtTime(10 ** ((-2.5 * distance) / 20), at, tc);
+  };
 
   // Intensity (see intensity.ts): the track's stem-group level, after the fader and before the sends
   const level = new Tone.Gain(1);
@@ -1012,9 +1039,13 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       fader.mute = muted;
       if (opts.muteOverride === undefined) solo.solo = track.isSoloed;
 
-      if (!owned.has('reverbSend')) reverbWriter.set(Math.max(0, Math.min(1, track.reverbSend)), ramp);
+      // Set back on the stage, more of the track reaches the hall
+      const distance = Math.max(0, Math.min(1, track.distance ?? 0));
+      setDistance(distance, ramp);
+      const roomSend = Math.max(0, Math.min(1, track.reverbSend + DISTANCE_SEND * distance));
+      if (!owned.has('reverbSend')) reverbWriter.set(roomSend, ramp);
       if (!owned.has('delaySend')) delayWriter.set(Math.max(0, Math.min(1, track.delaySend)), ramp);
-      reverbLink(owned.has('reverbSend') || track.reverbSend > 0, ramp);
+      reverbLink(owned.has('reverbSend') || roomSend > 0, ramp);
       delayLink(owned.has('delaySend') || track.delaySend > 0, ramp);
     },
     pumpTrigger: () => pumpTrigger,
@@ -1099,7 +1130,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       clearTimeout(tidyTimer);
       gates.forEach((g) => g.gain.disconnect());
       [...leaving, distortion, eq, peq, mbc, compressorUnit, chorus, lofi, filter, echo, reverb, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend, ...[...sends.values()].map((x) => x.gain)].forEach((n) => n?.dispose());
-      [barrier, left, split, right, merge].forEach((n) => n?.disconnect());
+      [barrier, left, split, right, merge, far?.shelf, far?.trim].forEach((n) => n?.disconnect());
     },
   };
 }

@@ -6,7 +6,8 @@ import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { STORY_BUILDERS } from './startersStory';
 import { MATH_BUILDERS } from './startersMath';
-import { FX_NOTES, INSTRUMENTS } from '../audio/instrumentCatalog';
+import { FX_NOTES, INSTRUMENTS, seatOf } from '../audio/instrumentCatalog';
+import type { RoomStyle } from '../audio/effects/roomIR';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { swellLane } from './swell';
 import { midiOf, nameOf } from './noteTools';
@@ -1409,7 +1410,7 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
 
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  const p = withGlue(id, wholeSong(withSwells(inRange(recorded(BUILDERS[id]())))));
+  const p = withRoom(id, withGlue(id, wholeSong(withSwells(inRange(withSeats(recorded(BUILDERS[id]())))))));
   return withBreathing(id, withVibrato(id, withLegato(id, p)));
 }
 
@@ -1506,6 +1507,39 @@ const GROUP_GLUE: Partial<Record<(typeof STARTER_GROUPS)[number], MasterSettings
   Band: 'punchy',
   'Pop & Jazz': 'punchy',
 };
+
+/** The reverb's room for each group of starters (see roomIR.ts; the rest play in the hall). */
+const GROUP_ROOM: Partial<Record<(typeof STARTER_GROUPS)[number], RoomStyle>> = {
+  Band: 'studio',
+  'Hip-Hop & Phonk': 'studio',
+  'Pop & Jazz': 'chamber',
+  Electronic: 'plate',
+  'Bass Music': 'plate',
+  'Artcore & Rhythm Games': 'plate',
+};
+
+/** A starter's reverb room from its group, unless its builder recorded one. */
+function withRoom(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
+  const group = STARTERS.find((s) => s.id === id)?.group;
+  const roomStyle = group && GROUP_ROOM[group];
+  if (!roomStyle || p.masterFx?.room || p.masterFx?.roomStyle) return p;
+  return { ...p, masterFx: { ...DEFAULT_MASTER_FX, ...p.masterFx, roomStyle } };
+}
+
+/**
+ * Orchestral instruments take their seats on the stage (seatOf): their usual distance, and their
+ * usual side where the starter left them in the middle.
+ */
+function withSeats(p: ProjectSnapshot): ProjectSnapshot {
+  return {
+    ...p,
+    tracks: p.tracks.map((t) => {
+      const seat = seatOf(t.instrumentKey);
+      if (!seat || t.distance !== undefined) return t;
+      return { ...t, distance: seat.distance, pan: t.pan === 0 ? seat.pan : t.pan };
+    }),
+  };
+}
 
 /** A starter's master glue from its group, unless its builder chose one. */
 function withGlue(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {

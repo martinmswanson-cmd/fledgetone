@@ -5,7 +5,8 @@
 # Writes public/fledgetone-samples/<set>/<note>_<layer>_<take>.mp3 and the list of what each set
 # has, src/audio/hostedSets.ts (`convert.py <root> --index` rewrites just that).
 #
-# Each recording is folded to mono, tuned (unless the set keeps its tuning), started at the note,
+# Each recording keeps its channels (stereo stays stereo: the width and room of a section or a
+# piano), is tuned (unless the set keeps its tuning), started at the note,
 # and, for held instruments, looped where it's steady so a note can be held up to the set's `cap`.
 # A note far louder or quieter than its neighbours is brought in line with them, and a note's
 # softer recordings are set a fixed step under its loudest (velocity sets the level, the recording
@@ -22,9 +23,29 @@ NAMES = ['C', 'Cs', 'D', 'Ds', 'E', 'F', 'Fs', 'G', 'Gs', 'A', 'As', 'B']
 XFADE = 0.12  # seconds of crossfade at each loop seam
 
 
-def load(p):
-    raw = subprocess.run(['ffmpeg', '-v', 'quiet', '-i', p, '-ac', '1', '-ar', str(SR), '-f', 'f32le', '-'], capture_output=True).stdout
-    return np.frombuffer(raw, np.float32).astype(np.float64)
+def channels_of(p):
+    out = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=channels', '-of', 'csv=p=0', p], capture_output=True, text=True).stdout.strip()
+    return 2 if out and int(out) >= 2 else 1
+
+
+def load(p, stereo=True):
+    """The recording as a (channels, samples) array: two channels if it has two (and `stereo`), else one."""
+    ch = 2 if stereo and channels_of(p) == 2 else 1
+    raw = subprocess.run(['ffmpeg', '-v', 'quiet', '-i', p, '-ac', str(ch), '-ar', str(SR), '-f', 'f32le', '-'], capture_output=True).stdout
+    x = np.frombuffer(raw, np.float32).astype(np.float64)
+    return x.reshape(-1, ch).T.copy()
+
+
+def mono(x):
+    """One channel of a (channels, samples) array, for measuring."""
+    return x.mean(axis=0)
+
+
+def each(x, f):
+    """`f` applied to every channel of a (channels, samples) array, trimmed to the shortest result."""
+    ys = [f(c) for c in x]
+    n = min(len(y) for y in ys)
+    return np.stack([y[:n] for y in ys])
 
 
 def wav_loop(p):
@@ -81,9 +102,11 @@ def flatten_scoop(x, midi, hop=0.025):
     than 20 cents off, the correction fades out by 1.2 s, and it's kept only if it clearly brings
     the start closer to the note (a misread track is left alone).
     """
+    stereo = x
+    x = mono(stereo)
     c = pitch_track(x, midi, hop=hop)
     if len(c) < 8:
-        return x, 0.0
+        return stereo, 0.0
     env, h = envelope(x[: int((len(c) * hop + 0.1) * SR)], hop)
     loud = np.zeros(len(c), bool)
     loud[: min(len(c), len(env))] = env[: len(c)] > np.max(env) - 25
@@ -92,7 +115,7 @@ def flatten_scoop(x, midi, hop=0.025):
     smooth = np.where(loud, smooth, 0.0)
     head = slice(0, int(0.8 / hop))
     if np.max(np.abs(smooth[head])) <= 20:
-        return x, 0.0
+        return stereo, 0.0
     t = (np.arange(len(smooth)) * hop) + 0.05  # each frame's centre
     fade = np.clip((1.2 - t) / 0.6, 0, 1)
     fix = np.where(np.abs(smooth) > 10, smooth, 0) * fade
@@ -110,8 +133,8 @@ def flatten_scoop(x, midi, hop=0.025):
     before_err = np.mean(np.abs(c[:m][loud[:m]])) if loud[:m].any() else 0
     after_err = np.mean(np.abs(after[:m][loud[:m]])) if loud[:m].any() else 0
     if after_err > 0.7 * before_err:
-        return x, 0.0
-    return y, float(np.max(np.abs(smooth[head])))
+        return stereo, 0.0
+    return np.stack([ch[k0] * (1 - fr) + ch[k0 + 1] * fr for ch in stereo]), float(np.max(np.abs(smooth[head])))
 
 
 def start_of(x):
@@ -141,12 +164,34 @@ def steady(x):
     return (a, b) if b - a > int(0.6 * SR) else None
 
 
-def extend(x, loop, period, length):
-    """`x` held to `length` samples by repeating x[a:b], crossfaded, b - a a whole number of periods."""
+def loop_points(loop, period):
+    """The part of a held note extend() repeats: (a, b), b - a a whole number of the note's periods."""
     a, b = loop
     if period:
         k = max(1, round((b - a) / period))
         a = int(round(b - k * period))
+    return a, b
+
+
+def seamless_loop(loop, period, length):
+    """
+    (start, end) in seconds of a stretch of an extended note (extend()) that repeats seamlessly, so
+    the app can hold the note for as long as the key is down. From the first repeat (each repeat is
+    b - a long, so any whole number of them loops) to a little before the fade at the file's end.
+    """
+    a, b = loop_points(loop, period)
+    f = min(int(XFADE * SR), (b - a) // 2, a)
+    first = b + f
+    end = length - int(0.35 * SR)
+    count = (end - first) // (b - a)
+    if count < 1:
+        return None
+    return ((end - count * (b - a)) / SR, end / SR)
+
+
+def extend(x, loop, period, length):
+    """`x` held to `length` samples by repeating x[a:b], crossfaded, b - a a whole number of periods."""
+    a, b = loop_points(loop, period)
     f = min(int(XFADE * SR), (b - a) // 2, a)
     y = x[:b].copy()
     fade_in = np.sin(np.linspace(0, np.pi / 2, f)) ** 2
@@ -201,39 +246,51 @@ def convert(st, root, measured):
     ntakes = max(len(v) for v in recs.values())
     notes = sorted({k[0] for k in recs})
     sounds = {}
+    loops = {}
     scooped = []
     for (midi, layer), takes in recs.items():
         for t, (f, m) in enumerate(takes):
             path = os.path.join(d, f['file'])
-            x = load(path)
+            x = load(path, st.get('stereo', True))
             c = m['cents']
             if st['retune'] and abs(c) >= 55:
                 print(f"   not retuning {f['file']} ({c:+.0f} cents looks mismeasured)")
             r = 2 ** (-c / 1200) if st['retune'] and 2 < abs(c) < 55 else 1.0
             if r != 1.0:
-                x = retune(x, c)
-            s = start_of(x)
-            x = x[s:]
+                x = each(x, lambda ch: retune(ch, c))
+            s = start_of(mono(x))
+            x = x[:, s:]
             if st['kind'] == 'sustain' and st['retune'] and st['bend']:
                 x, scoop = flatten_scoop(x, midi)
                 if scoop:
                     scooped.append(f"{NAMES[midi % 12]}{midi // 12 - 1}:{scoop:.0f}")
-            if st['kind'] == 'sustain' and len(x) < cap + int(0.5 * SR):
+            if st['kind'] == 'sustain':
+                # Every held note gets a seamless loop (so it can be held as long as the key is):
+                # a recording shorter than the cap is extended from its steady part, a longer one
+                # from a steady stretch ending 3 s before the cap (what came after is replaced by
+                # repeats of it, close to what was there)
                 hz = 440 * 2 ** ((midi - 69) / 12)
                 lp = wav_loop(path)
                 if lp:
                     loop = (int(lp[0] * SR / r) - s, int(lp[1] * SR / r) - s)
                 else:
-                    loop = steady(x)
-                if loop and loop[0] > int(XFADE * SR):
-                    x = extend(x, loop, SR / hz, cap)
-                else:
+                    loop = steady(mono(x))
+                if loop:
+                    # (at most 1.5 s long, so the loop fits a few times in the note's last seconds)
+                    end = min(loop[1], cap - int(3 * SR))
+                    loop = (max(loop[0], end - int(1.5 * SR)), end)
+                if loop and loop[0] > int(XFADE * SR) and loop[1] - loop[0] >= int(0.6 * SR):
+                    x = each(x[:, : loop[1] + int(XFADE * SR)], lambda ch: extend(ch, loop, SR / hz, cap))
+                    seam = seamless_loop(loop, SR / hz, cap)
+                    if seam:
+                        loops[(midi, layer, t)] = seam
+                elif x.shape[1] < cap + int(0.5 * SR):
                     print(f"   no steady part to loop in {f['file']}")
-            sounds[(midi, layer, t)] = x[:cap]
+            sounds[(midi, layer, t)] = x[:, :cap]
     # How loud each note is at full velocity: its loudest recording, or, when a note has only
     # softer ones, those raised by the gap between the loudnesses on the set's other notes (a
     # library's softest takes can be 30 dB under its loudest)
-    lvl = {(midi, layer): float(np.mean([level(sounds[(midi, layer, t)], kind['level']) for t in range(len(takes))]))
+    lvl = {(midi, layer): float(np.mean([level(mono(sounds[(midi, layer, t)]), kind['level']) for t in range(len(takes))]))
            for (midi, layer), takes in recs.items()}
     top = nlayers - 1
     gap = {}
@@ -255,14 +312,17 @@ def convert(st, root, measured):
         trim = {m: 0.0 for m in notes}
     # Fill the grid: every note at every layer and take, each layer at its step under the loudest
     out = {}
+    out_loops = {}
     for midi in notes:
         for layer in range(nlayers):
             have = [l for (m, l) in recs if m == midi]
             src = min(have, key=lambda l: (abs(l - layer), -l))
             for t in range(ntakes):
                 x = sounds[(midi, src, t % len(recs[(midi, src)]))]
+                if (midi, src, t % len(recs[(midi, src)])) in loops:
+                    out_loops[f'{midi}_{layer}_{t}'] = [round(v, 5) for v in loops[(midi, src, t % len(recs[(midi, src)]))]]
                 target = lv[midi] + trim[midi] + offsets(nlayers)[layer]
-                out[(midi, layer, t)] = x * 10 ** ((target - level(x, kind['level'])) / 20)
+                out[(midi, layer, t)] = x * 10 ** ((target - level(mono(x), kind['level'])) / 20)
     gain = 0.89 / max(np.abs(x).max() for x in out.values())
     folder = os.path.join(root, 'public', 'fledgetone-samples', st['folder'])
     os.makedirs(folder, exist_ok=True)
@@ -271,18 +331,18 @@ def convert(st, root, measured):
             os.remove(os.path.join(folder, old))
     for (midi, layer, t), x in out.items():
         y = x * gain
-        fade = int(0.25 * SR) if len(y) >= cap - 1 else int(0.03 * SR)
-        y[-fade:] *= np.linspace(1, 0, fade) ** 2
-        y[: int(0.002 * SR)] *= np.linspace(0, 1, int(0.002 * SR))
+        fade = int(0.25 * SR) if y.shape[1] >= cap - 1 else int(0.03 * SR)
+        y[:, -fade:] *= np.linspace(1, 0, fade) ** 2
+        y[:, : int(0.002 * SR)] *= np.linspace(0, 1, int(0.002 * SR))
         name = f'{NAMES[midi % 12]}{midi // 12 - 1}_{layer}_{t}.mp3'
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'f64le', '-ar', str(SR), '-ac', '1', '-i', '-', '-codec:a', 'libmp3lame', '-q:a', '4',
-                        os.path.join(folder, name)], input=y.astype('<f8').tobytes(), check=True)
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'f64le', '-ar', str(SR), '-ac', str(y.shape[0]), '-i', '-', '-codec:a', 'libmp3lame', '-q:a', '4',
+                        os.path.join(folder, name)], input=y.T.astype('<f8').tobytes(), check=True)
     size = sum(os.path.getsize(os.path.join(folder, n)) for n in os.listdir(folder))
     if scooped:
         print(f"   bent onto pitch at the start (cents): {' '.join(sorted(set(scooped)))}")
     print(f"{st['folder']:20s} {len(notes):3d} notes x {nlayers} layers x {ntakes} takes, "
           f"evened {max(abs(v) for v in trim.values()):.1f} dB at most, gain {20 * np.log10(gain):+.1f} dB, {size / 1e6:.1f} MB")
-    return {'notes': notes, 'layers': nlayers, 'takes': ntakes}
+    return {'notes': notes, 'layers': nlayers, 'takes': ntakes, 'loops': out_loops}
 
 
 def write_index(root, done):
@@ -293,6 +353,10 @@ def write_index(root, done):
     if os.path.exists(path):
         for m in re.finditer(r"'([a-z0-9-]+)': \{ notes: \[([0-9, ]+)\], layers: (\d+), takes: (\d+)", open(path).read()):
             sets[m.group(1)] = {'notes': [int(n) for n in m.group(2).split(',')], 'layers': int(m.group(3)), 'takes': int(m.group(4))}
+        for line in open(path).read().splitlines():
+            m = re.match(r"  '([a-z0-9-]+)': .* loops: (\{.*\}) \},$", line)
+            if m and m.group(1) in sets:
+                sets[m.group(1)]['loops'] = json.loads(re.sub(r"'", '"', m.group(2)))
     sets.update(done)
     # Size and a fingerprint of the files as they are now (the app keeps downloaded recordings, and
     # a changed fingerprint makes it download a re-made set again)
@@ -322,13 +386,20 @@ def write_index(root, done):
         '  bytes: number;',
         '  /** Changes when the set\'s files do (see recordingStore.ts) */',
         '  hash: string;',
+        '  /**',
+        '   * Held notes: the stretch of each file ("<midi>_<layer>_<take>") that repeats seamlessly, in',
+        '   * seconds, so a note can be held for as long as its key is',
+        '   */',
+        '  loops?: Record<string, [number, number]>;',
         '}',
         '',
         'export const HOSTED_SETS: Record<string, HostedSet> = {',
     ]
     for k in sorted(sets):
         v = sets[k]
-        lines.append(f"  '{k}': {{ notes: [{', '.join(map(str, v['notes']))}], layers: {v['layers']}, takes: {v['takes']}, bytes: {v['bytes']}, hash: '{v['hash']}' }},")
+        loops = v.get('loops') or {}
+        tail = (', loops: {' + ', '.join(f"'{n}': [{a}, {b}]" for n, (a, b) in sorted(loops.items())) + '}') if loops else ''
+        lines.append(f"  '{k}': {{ notes: [{', '.join(map(str, v['notes']))}], layers: {v['layers']}, takes: {v['takes']}, bytes: {v['bytes']}, hash: '{v['hash']}'{tail} }},")
     lines += ['};', '']
     open(path, 'w').write('\n'.join(lines))
 

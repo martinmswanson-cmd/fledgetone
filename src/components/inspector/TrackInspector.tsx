@@ -30,8 +30,8 @@ import { MbcPanel } from './MbcPanel';
 import { SynthPanel } from './SynthPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
-import { RecordedRoom } from './RecordedRoom';
-import { INSTRUMENTS, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
+import { RecordedRoom, RoomStylePicker } from './RecordedRoom';
+import { INSTRUMENTS, isAudioKind, isSlicerKind, seatOf } from '../../audio/instrumentCatalog';
 
 /** Instruments Expressive playing changes: the recorded ones (but sound effects) and the drum kits. */
 const canPlayExpressively = (key: keyof typeof INSTRUMENTS) => {
@@ -539,6 +539,19 @@ export const TrackInspector: React.FC = () => {
                   );
                 }}
               </Automatable>
+              <div className="flex items-center justify-between gap-3 text-xs font-mono" title="How far back on the stage it sits: further back is a little darker, quieter and more in the room">
+                <span className="text-forge-muted text-[10px]">DIST</span>
+                <UndoableRange
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={currentTrack.distance ?? 0}
+                  onValue={(v) => useTimelineStore.getState().setTrackDistance(currentTrack.id, v)}
+                  resetValue={seatOf(currentTrack.instrumentKey)?.distance ?? 0}
+                  className="flex-1 accent-white cursor-pointer h-1.5 bg-zinc-800 rounded appearance-none"
+                />
+                <span className="w-12 text-right font-bold tabular-nums text-white">{(currentTrack.distance ?? 0) < 0.01 ? 'Front' : `${Math.round((currentTrack.distance ?? 0) * 100)}%`}</span>
+              </div>
             </div>
 
             <button
@@ -599,6 +612,7 @@ export const TrackInspector: React.FC = () => {
                     </button>
                   ))}
                 </div>
+                <RoomStylePicker />
               </div>
 
               <RecordedRoom />

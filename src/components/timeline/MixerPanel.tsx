@@ -1,3 +1,4 @@
+import { showToast } from './toastStore';
 import React, { useEffect, useRef } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
@@ -200,6 +201,20 @@ export const MixerPanel: React.FC = () => {
           <span className="text-[10px] font-mono tabular-nums text-forge-text">{db(masterVolume)} dB</span>
         </div>
         <SpectrumView className="w-[28rem] shrink-0 rounded-lg border border-cyan-500/30 bg-forge-bg/50 p-2" />
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            const made = useTimelineStore.getState().makeSpace();
+            showToast(made ? `Made space on ${made} track${made === 1 ? '' : 's'}: low cuts under each part, and room for the bass and the lead. Undo to take it back.` : 'Nothing to make space for: the parts don\u2019t overlap, or their EQs are already set.');
+          }}
+          className="px-2 py-1 rounded border border-cyan-500/50 text-cyan-200 hover:bg-cyan-500/15 text-[11px]"
+          title="Small EQ moves so the parts stop covering each other: each part loses the rumble under its lowest note, and parts in the lead's range give way to it"
+        >
+          Make space
+        </button>
+        <span className="text-[11px]">EQ moves that stop the parts covering each other (one undo step).</span>
       </div>
       <p className="text-[11px]">Double-click a fader or knob to reset it. Each drag is one undo step. Click a track's name to open it in the Inspector (inserts, EQ, automation).</p>
     </div>
