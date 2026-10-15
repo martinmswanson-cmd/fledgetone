@@ -30,9 +30,17 @@ const FADE = 0.01;
  * A DelayNode read once per render block (its time never moves). Live, the node is
  * standardized-audio-context's wrapper, whose params don't pass automationRate on, so it's set on
  * the native node the wrapper keeps.
+ *
+ * Always two channels (a mono sound is on both, as the strip's solo makes it next anyway). A
+ * DelayNode whose input goes from one channel to two or back starts its delay lines over in
+ * Chromium, dropping the few milliseconds it held: a click, on a delayed track, whenever a
+ * recorded note kept in one channel (recordingMaths.ts) started or stopped beside a stereo one.
  */
 export function fixedDelay(raw: BaseAudioContext, seconds: number): DelayNode {
   const node = raw.createDelay(Math.max(0.01, seconds * 2));
+  node.channelCount = 2;
+  node.channelCountMode = 'explicit';
+  node.channelInterpretation = 'speakers';
   node.delayTime.value = seconds;
   const native = (node as DelayNode & { _nativeAudioNode?: DelayNode })._nativeAudioNode ?? node;
   try {

@@ -3,6 +3,7 @@ import type { DrumRack, MultiSample, RackPad } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
 import { padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
 import { decodeSound } from '../soundLibrary';
+import { alwaysStereo } from '../nativeNodes';
 import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../instruments';
 
 /**
@@ -58,6 +59,8 @@ interface PadChain {
 
 export function createRackInstrument(output: Tone.InputNode, initial: DrumRack | undefined): TrackInstrument & { setRack: (rack: DrumRack | undefined) => void } {
   const out = new Tone.Gain(1).connect(output);
+  // Two channels from here on, whatever mix of one- and two-channel sounds it plays (see alwaysStereo)
+  alwaysStereo(out);
   const raw = out.context.rawContext as unknown as Raw;
   const into = out.input as unknown as AudioNode;
   let rack = initial;
@@ -251,6 +254,8 @@ interface Voice {
 
 export function createMultiInstrument(output: Tone.InputNode, initial: MultiSample | undefined): TrackInstrument & { setMulti: (multi: MultiSample | undefined) => void } {
   const out = new Tone.Gain(1).connect(output);
+  // Two channels from here on, whatever mix of one- and two-channel sounds it plays (see alwaysStereo)
+  alwaysStereo(out);
   const raw = out.context.rawContext as unknown as Raw;
   const into = out.input as unknown as AudioNode;
   let multi = initial;

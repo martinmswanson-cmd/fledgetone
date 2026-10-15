@@ -8,7 +8,7 @@ import { decodeSound } from '../soundLibrary';
 import { recordingBytes } from '../recordingStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { CustomSample, NoteEvent } from '../../store/timelineTypes';
-import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
+import { alwaysStereo, keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { foldToMono, isDualMono, keptLength, levelOutline, OUTLINE_STEP } from './recordingMaths';
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
@@ -1537,6 +1537,8 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
   const shaped = shapingChain(def.shaping, output);
   const chain = toneChain(def.tone, shaped);
   const out = new Tone.Gain(1).connect(chain.input);
+  // Two channels from here on, whether a note's recording has one or two (see alwaysStereo)
+  alwaysStereo(out);
   // A few ms of attack: a recording stretched to another pitch doesn't always start at zero
   const options = { attack: 0.004, release: def.samples?.release ?? 1 };
   const layers = def.samples?.layers ?? [1];

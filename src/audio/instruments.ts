@@ -23,6 +23,7 @@ import type { KitExtras } from './presets/kitExtras';
 import { createSampledKit } from './presets/sampledKit';
 import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
+import { alwaysStereo } from './nativeNodes';
 import type { NativeBus } from './presets/native';
 import { createCustomSamplerVoice, createSamplerVoice, noteJitter, taperGain } from './samplers/samplerManager';
 import type { NoteExpression } from '../store/timelineTypes';
@@ -443,6 +444,8 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
   if (kind === 'audio') {
     // An Audio track plays no notes: its clips play their sound files into this bus
     const bus = createBus(output);
+    // Two channels from here on, whatever mix of one- and two-channel sounds its clips play (see alwaysStereo)
+    alwaysStereo(bus.bus);
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => bus.bus.dispose(), clipBus: bus };
   }
   if (kind === 'slicer') return createSlicer(output, options.slicer);

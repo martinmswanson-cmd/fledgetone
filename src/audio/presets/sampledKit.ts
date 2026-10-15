@@ -4,6 +4,7 @@ import type { InstrumentKey } from '../instrumentCatalog';
 import { loadSamplesAt, noteJitter, recordedDuration } from '../samplers/samplerManager';
 import { notLate } from './monotonic';
 import { createBus, createVoiceSet } from './native';
+import { alwaysStereo } from '../nativeNodes';
 
 /**
  * A recorded drum kit: the recordings of each drum row (see the catalog's `samples`, keyed by the
@@ -51,6 +52,8 @@ function layerGains(row: AudioBuffer[][]): number[] {
 
 export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
   const { bus, raw, input } = createBus(output);
+  // Two channels from here on, whether a hit's recording has one or two (see alwaysStereo)
+  alwaysStereo(bus);
   const voices = createVoiceSet(raw);
   /** Each row's recordings: by loudness, then take */
   let buffers: Record<string, AudioBuffer[][]> = {};
