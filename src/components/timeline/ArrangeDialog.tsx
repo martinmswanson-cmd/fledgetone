@@ -1,9 +1,10 @@
 /**
  * The Arrange a beat dialog: the producer arrangement tools in four tabs. Dark melody (a short
  * seeded loop for trap, drill, rage or phonk), Drops & switches (drop-outs, stops, risers and
- * reverse cymbals, beat switches), Song form (a loop laid out as a whole song with section
- * markers) and Producer tag (record or import it once, place it with one click). The store side
- * is arrangeActions.ts; which tab is open lives in arrangeDialogStore.ts.
+ * reverse cymbals, beat switches, and speeding up into a drop: SpeedUpSection.tsx), Song form (a
+ * loop laid out as a whole song with section markers) and Producer tag (record or import it once,
+ * place it with one click). The store side is arrangeActions.ts; which tab is open lives in
+ * arrangeDialogStore.ts.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from './Modal';
@@ -20,7 +21,8 @@ import { addDropFx, addStop, beatSwitch, dropOut, importTag, layOutSong, loadTag
 import { startMic, type MicSession } from '../../audio/micRecorder';
 import { initAudio } from '../../audio/engine';
 import { pickAudioFiles } from './audioFiles';
-import { useArrangeDialog, type ArrangeTab } from './arrangeDialogStore';
+import { useArrangeDialog, type ArrangeRange, type ArrangeTab } from './arrangeDialogStore';
+import { SpeedUpSection } from './SpeedUpSection';
 
 const field = 'flex flex-col gap-1 text-[11px] text-forge-muted';
 const control = 'bg-forge-bg border border-forge-border rounded px-2 py-1 text-xs text-forge-text';
@@ -51,7 +53,7 @@ export const ArrangeDialog: React.FC = () => {
         ))}
       </div>
       {open.tab === 'melody' && <MelodyTab bar={open.bar} trackId={open.trackId} />}
-      {open.tab === 'drops' && <DropsTab bar={open.bar} />}
+      {open.tab === 'drops' && <DropsTab bar={open.bar} range={open.range} />}
       {open.tab === 'form' && <FormTab />}
       {open.tab === 'tag' && <TagTab />}
     </Modal>
@@ -159,7 +161,7 @@ const MelodyTab: React.FC<{ bar?: number; trackId?: string }> = ({ bar, trackId 
 
 // ---------- Drops & switches ----------
 
-const DropsTab: React.FC<{ bar?: number }> = ({ bar }) => {
+const DropsTab: React.FC<{ bar?: number; range?: ArrangeRange }> = ({ bar, range }) => {
   const tracks = useTimelineStore((s) => s.tracks);
   const loop = useTimelineStore((s) => s.loopRegion);
   const playhead = useTimelineStore((s) => s.playheadPosition);
@@ -257,6 +259,7 @@ const DropsTab: React.FC<{ bar?: number }> = ({ bar }) => {
         </div>
         <p className="text-[11px] text-forge-muted">{SWITCH_MODES.find((m) => m.id === mode)!.detail}.</p>
       </section>
+      <SpeedUpSection range={range} bar={bar} />
     </div>
   );
 };

@@ -6,8 +6,14 @@ import { create } from 'zustand';
 
 export type ArrangeTab = 'melody' | 'drops' | 'form' | 'tag';
 
-/** Which tab of the Arrange dialog is open, and the bar (and track) it was opened for. */
-export const useArrangeDialog = create<{ open: null | { tab: ArrangeTab; bar?: number; trackId?: string } }>(() => ({ open: null }));
+/** A block of bars a tool was opened for (Speed up into here: the loop, say). */
+export interface ArrangeRange {
+  from: number;
+  to: number;
+}
+
+/** Which tab of the Arrange dialog is open, and the bar (and track, or block of bars) it was opened for. */
+export const useArrangeDialog = create<{ open: null | { tab: ArrangeTab; bar?: number; trackId?: string; range?: ArrangeRange } }>(() => ({ open: null }));
 
 /** Open the Arrange dialog on a tab. */
-export const openArrange = (tab: ArrangeTab, bar?: number, trackId?: string): void => useArrangeDialog.setState({ open: { tab, bar, trackId } });
+export const openArrange = (tab: ArrangeTab, bar?: number, trackId?: string, range?: ArrangeRange): void => useArrangeDialog.setState({ open: { tab, bar, trackId, range } });

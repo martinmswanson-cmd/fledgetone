@@ -118,11 +118,13 @@ export const TempoRow = React.memo(function TempoRow({ originRef }: { originRef:
           <path d={line} fill="none" stroke="rgba(34,211,238,0.45)" strokeWidth={1} vectorEffect="non-scaling-stroke" />
         </svg>
       )}
-      {[...groups.values()].map((flags) => {
+      {[...groups.values()].sort((a, b) => a[0].bar - b[0].bar).map((flags, i, all) => {
         const x = Math.round((flags[0].bar - 1) * zoom);
         if (x < drawFrom - 200 || x > drawTo) return null;
+        // Flags close together (a speed-up's top and its snap back) are cut short, not drawn over each other
+        const room = i + 1 < all.length ? Math.max(8, Math.round((all[i + 1][0].bar - 1) * zoom) - x - 1) : undefined;
         return (
-          <div key={`${flags[0].bar}`} className="absolute top-0 flex items-center gap-px" style={{ left: x, height: TEMPO_ROW }}>
+          <div key={`${flags[0].bar}`} className="absolute top-0 flex items-center gap-px overflow-hidden" style={{ left: x, height: TEMPO_ROW, maxWidth: room }}>
             <div className="w-px h-full bg-cyan-300/60" />
             {flags.map((f) => (
               <button

@@ -10,7 +10,7 @@ import type { Clip, Track } from '../store/timelineTypes';
 import type { NativeBus } from './presets/native';
 import { nativeContextOf } from './nativeNodes';
 import { barToTicks } from './transport';
-import { decodedSound, ensureSound, requestStretch, requestWarp, stretchedSound, warpedSound } from './soundLibrary';
+import { decodedSound, ensureSound, requestStretch, requestWarp, stretchedSound, wantCopies, warpedSound, type WantedCopy } from './soundLibrary';
 import { DECLICK_SECONDS, envelopeAt, envelopeFrom, envelopeShape } from './clipEnvelope';
 import type { EnvelopePoint, EnvelopeShape } from './clipEnvelope';
 import { crossfades, envelopeDbAt, secondsPerBar, stretchRatio, type Crossfade } from '../store/audioClips';
@@ -56,6 +56,9 @@ export interface AudioClipSchedule {
   dispose: () => void;
 }
 
+/** Numbers the schedules, so each holds on to the stretched copies it plays (wantCopies). */
+let schedules = 0;
+
 /** A tick's worth of float noise: positions compared closer than this are the same tick. */
 const TICK_EPS = 1e-3;
 
@@ -95,6 +98,7 @@ export function createAudioClipSchedule(
     return x ? `${x.in}|${x.out}` : '';
   };
   const voices = new Set<Voice>();
+  const owner = `clips${++schedules}`;
   /** Between the Transport's start event and its stop: what plays now is known, and an edit can join in. */
   let running = false;
 
@@ -329,12 +333,19 @@ export function createAudioClipSchedule(
       const fresh: Entry[] = [];
       const stopped = new Set<string>();
       xfades = crossfades(clips.filter((c) => c.audio && trackIds.has(c.trackId)), baseBpm(tempo()));
+      /** The stretched and warped copies these clips play: kept, however many speeds of one sound */
+      const copies: WantedCopy[] = [];
       for (const clip of clips) {
         if (!clip.audio || !trackIds.has(clip.trackId)) continue;
         ensureSound(clip.audio.soundId);
         const ratio = stretchRatio(clip.audio, localBpm(clip));
-        if (isWarped(clip.audio)) requestWarp(clip.audio.soundId, raw.sampleRate, clip.audio, localBpm(clip));
-        else if (ratio !== 1) requestStretch(clip.audio.soundId, raw.sampleRate, ratio);
+        if (isWarped(clip.audio)) {
+          requestWarp(clip.audio.soundId, raw.sampleRate, clip.audio, localBpm(clip));
+          copies.push({ id: clip.audio.soundId, sampleRate: raw.sampleRate, warp: clip.audio, bpm: localBpm(clip) });
+        } else if (ratio !== 1) {
+          requestStretch(clip.audio.soundId, raw.sampleRate, ratio);
+          copies.push({ id: clip.audio.soundId, sampleRate: raw.sampleRate, ratio });
+        }
         const prev = entries.get(clip.id);
         const placement = placementOf(clip, localBpm(clip));
         if (prev && prev.placement === placement) {
@@ -362,6 +373,7 @@ export function createAudioClipSchedule(
         stopped.add(id);
       }
       entries = next;
+      wantCopies(owner, copies);
       if (!stopped.size && !fresh.length) return;
       // Clips deleted or moved while playing stop now. A clip that moved, or has just appeared
       // (pasted, brought back by undo) under the playhead starts from wherever the playhead is in
@@ -398,6 +410,7 @@ export function createAudioClipSchedule(
         voice.env?.disconnect();
       }
       voices.clear();
+      wantCopies(owner, []);
     },
   };
 }

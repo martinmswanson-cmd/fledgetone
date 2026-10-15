@@ -33,7 +33,7 @@ import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import { createAutomationSchedule } from './automationSchedule';
-import { decodeSound, stretchSound, useSoundLibrary, warpSound } from './soundLibrary';
+import { decodeSound, stretchSound, useSoundLibrary, wantCopies, warpSound } from './soundLibrary';
 import { isWarped } from '../store/warp';
 import { withControllerLanes } from '../store/ccLanes';
 import { secondsPerBar, stretchRatio } from '../store/audioClips';
@@ -1311,6 +1311,9 @@ async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar
     const ratio = stretchRatio(c.audio, tempoAt(c.startBar, tempo));
     if (ratio !== 1) stretches.set(`${c.audio.soundId}|${ratio}`, ratio);
   }
+  // Kept while they're made, however many speeds of one sound the song plays (the render's own
+  // clip schedule then holds them until it's done)
+  wantCopies('export', [...[...stretches.entries()].map(([key, ratio]) => ({ id: key.slice(0, key.lastIndexOf('|')), sampleRate, ratio })), ...warps.map((w) => ({ id: w.audio.soundId, sampleRate, warp: w.audio, bpm: w.bpm }))], false);
   for (const [id, label] of needed) {
     try {
       await decodeSound(id, sampleRate);

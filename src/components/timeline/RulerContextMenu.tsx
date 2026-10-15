@@ -1,9 +1,10 @@
 /**
  * The ruler's right-click menu: add a marker, tempo or time-signature change there, insert or
- * delete bars across every track, and key changes.
+ * delete bars across every track, key changes, and speeding up into a drop (on the loop or the
+ * selected clips there).
  */
 import React, { useRef, useState } from 'react';
-import { CircleDot, ArrowLeftToLine, ArrowRightFromLine, Flag, Gauge, KeyRound, Music2, Scissors, TrendingUp, Zap } from 'lucide-react';
+import { CircleDot, ArrowLeftToLine, ArrowRightFromLine, ChevronsRight, Flag, Gauge, KeyRound, Music2, Scissors, TrendingUp, Zap } from 'lucide-react';
 import { meterAt, tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
 import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
@@ -11,6 +12,7 @@ import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/tran
 import { formatBarCount } from '../../store/timelineTypes';
 import { MenuItem, MenuNotice } from './ClipContextMenu';
 import { openArrange } from './arrangeDialogStore';
+import { suggestBlock } from '../../store/speedUpActions';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
 import type { MenuItemProps } from './ClipContextMenu';
 
@@ -47,6 +49,8 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
   const at = useTimelineStore((st) =>
     st.rulerUnits === 'timecode' ? formatRulerTime(barToSeconds(menu.bar, songTempo(st)), st.fps, st.dropFrame) : formatBarsBeats(menu.bar)
   );
+  // Speed up into here: the loop or the selected clips under the pointer, else the 4 bars before it
+  const speedBlock = suggestBlock(menu.bar);
   const run = (action: () => string | null) => () => {
     const message = action();
     if (message) setNotice(message);
@@ -130,6 +134,16 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       onClick: () => {
         onClose();
         openArrange('drops', Math.round(menu.bar));
+      },
+    },
+    {
+      key: 'speed-up',
+      label: 'Speed up into here…',
+      shortcut: speedBlock.source === 'loop' ? 'the loop' : speedBlock.source === 'clips' ? 'selected clips' : `bars ${speedBlock.from}–${speedBlock.to}`,
+      icon: <ChevronsRight className="w-3.5 h-3.5" />,
+      onClick: () => {
+        onClose();
+        openArrange('drops', Math.round(speedBlock.to), undefined, { from: speedBlock.from, to: speedBlock.to });
       },
     },
     ...KEY_CHANGES.map(([semitones, label], i) => ({
