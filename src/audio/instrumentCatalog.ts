@@ -28,6 +28,7 @@ export const INSTRUMENT_KEYS = [
   'realAltoSax', 'realBariSax', 'realUprightBass', 'realElectricBass', 'realFlatwoundGuitar',
   'realTimpani', 'realTubularBells', 'realVibraphone', 'realHarpsichord', 'realKalimba', 'realTenorSax', 'realStrings', 'realBrass',
   'realSteelDrums', 'realElectricPiano', 'realBanjo', 'realHarmonica', 'realOcarina', 'realZither', 'realSoloVoice', 'realBassDrum', 'studioKit',
+  'realCelesta', 'realRecorder', 'realMutedTrumpet',
   // phase 3 additions
   'drumMachine', 'taiko',
   'subBass', 'bass808', 'bassGuitar',
@@ -315,8 +316,9 @@ const real = (folder: string, release: number): SampleSource => {
  * glockenspiel -31; next come the solo violin and short trumpet at -32, the kalimba at -34, and the
  * xylophone, tubular bells, steel drums and vibraphone at -46 to -88, little to gain). The harpsichord
  * is left out: its set is large (about 126 MB decoded), so doubling it would cost 100 MB for a small gain.
+ * The harmon-muted trumpet, measured the same way, is as bright as the harmonica.
  */
-const DOUBLE_RATE_SETS = new Set(['harmonica', 'trombone-staccato', 'glockenspiel']);
+const DOUBLE_RATE_SETS = new Set(['harmonica', 'trombone-staccato', 'glockenspiel', 'muted-trumpet']);
 /** The studio kit's brightest rows, measured the same way: closed hat -7 dB, crash -11, open hat -12, ride -16, snare -23 (the toms and kick -35 and under). */
 const STUDIO_KIT_BRIGHT_ROWS = ['F#1', 'C#2', 'A#1', 'D#2', 'D1'] as const;
 /** A hosted release set (see ReleaseSounds) */
@@ -722,6 +724,18 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
     key: 'realSoloVoice', name: 'Solo Voice (Real)', blurb: 'A recorded low male voice singing "aah": chant, drones, solemn', color: '#fde68a', category: 'Choir & Voices', kind: 'sampled', range: [36, 61],
     samples: real('solo-voice', 0.5), gain: -2, dynamics: true,
   },
+  realCelesta: {
+    key: 'realCelesta', name: 'Celesta (Real)', blurb: 'A recorded celesta, every key: little hammers on steel bars, sweet and twinkling', color: '#fef08a', category: 'Mallets & Bells', kind: 'sampled', range: realRange('celesta'),
+    samples: real('celesta', 1.5), gain: 5.3,
+  },
+  realRecorder: {
+    key: 'realRecorder', name: 'Recorder (Real)', blurb: 'Recorded wooden recorders (tenor, alto and soprano) played straight: pure, medieval, folk', color: '#d9f99d', category: 'Orchestra', kind: 'sampled', range: [60, 96],
+    samples: real('recorder', 0.3), gain: 8.4, taper: [80, 6], dynamics: true,
+  },
+  realMutedTrumpet: {
+    key: 'realMutedTrumpet', name: 'Muted Trumpet (Real)', blurb: 'A recorded trumpet with a harmon mute, soft and loud: cool jazz, late-night, noir', color: '#fb923c', category: 'Winds & Brass', kind: 'sampled', range: realRange('muted-trumpet'),
+    samples: real('muted-trumpet', 0.4), gain: 6.4, taper: [70, 8], dynamics: true,
+  },
   realBassDrum: {
     key: 'realBassDrum', name: 'Concert Bass Drum (Real)', blurb: 'A recorded orchestral bass drum, five loudnesses: booms, rolls, thunder', color: '#7f1d1d', category: 'Orchestra', kind: 'sampled', range: [33, 39],
     samples: real('concert-bass-drum', 2), gain: -3.4,
@@ -808,18 +822,18 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   bassoon: { key: 'bassoon', name: 'Bassoon', blurb: 'Low woodwind, playful or dark', color: '#15803d', category: 'Retro (GM)', kind: 'sampled', range: [34, 72], samples: held('bassoon', 34, 72, 0.4, -12), gain: 22, tone: { presence: 5, mud: -2 } },
   englishHorn: { key: 'englishHorn', name: 'English Horn', blurb: 'Melancholy alto oboe', color: '#22c55e', category: 'Orchestra', kind: 'sampled', range: [52, 81], samples: held('english_horn', 52, 81, 0.4), gain: 15.5, taper: [68, 3] },
   piccolo: { key: 'piccolo', name: 'Piccolo', blurb: 'Tiny bright flute', color: '#bfdbfe', category: 'Orchestra', kind: 'sampled', range: [74, 102], samples: held('piccolo', 74, 102, 0.3), gain: 20.5, taper: [86, 8] },
-  recorder: { key: 'recorder', name: 'Recorder', blurb: 'Pure wooden whistle: medieval, folk', color: '#d9f99d', category: 'Orchestra', kind: 'sampled', range: [60, 96], samples: held('recorder', 60, 96, 0.3), gain: 19, taper: [84, 8] },
+  recorder: { key: 'recorder', name: 'Recorder', blurb: 'Pure wooden whistle: medieval, folk', color: '#d9f99d', category: 'Retro (GM)', kind: 'sampled', range: [60, 96], samples: held('recorder', 60, 96, 0.3), gain: 19, taper: [84, 8] },
   trombone: { key: 'trombone', name: 'Trombone', blurb: 'Big low brass', color: '#ea580c', category: 'Retro (GM)', kind: 'sampled', range: [40, 72], samples: held('trombone', 40, 72, 0.4, -12), gain: 23.5, tone: { presence: 5, mud: -2 } },
   tuba: { key: 'tuba', name: 'Tuba', blurb: 'The deepest brass', color: '#7c2d12', category: 'Retro (GM)', kind: 'sampled', range: [28, 58], samples: held('tuba', 28, 58, 0.4, -12), gain: 13, taper: [44, 2.5], tone: { presence: 5, presenceHz: 1800, mud: -2 } },
   brassSection: { key: 'brassSection', name: 'Brass Section', blurb: 'Full brass: fanfares, epic', color: '#f59e0b', category: 'Retro (GM)', kind: 'sampled', range: [40, 84], samples: held('brass_section', 40, 84, 0.4, -14), gain: 21, taper: [63, 1.5] },
-  mutedTrumpet: { key: 'mutedTrumpet', name: 'Muted Trumpet', blurb: 'Jazzy muted trumpet', color: '#fb923c', category: 'Winds & Brass', kind: 'sampled', range: [52, 82], samples: held('muted_trumpet', 52, 82, 0.4), gain: 16, taper: [68, 8] },
+  mutedTrumpet: { key: 'mutedTrumpet', name: 'Muted Trumpet', blurb: 'Jazzy muted trumpet', color: '#fb923c', category: 'Retro (GM)', kind: 'sampled', range: [52, 82], samples: held('muted_trumpet', 52, 82, 0.4), gain: 16, taper: [68, 8] },
   tenorSax: { key: 'tenorSax', name: 'Tenor Sax', blurb: 'Smoky tenor saxophone', color: '#ca8a04', category: 'Retro (GM)', kind: 'sampled', range: [44, 75], samples: held('tenor_sax', 44, 75, 0.4), gain: 19, taper: [61, 7.5] },
 
   // Keys, mallets and bells
   harpsichord: { key: 'harpsichord', name: 'Harpsichord', blurb: 'Baroque plucked keyboard', color: '#b45309', category: 'Retro (GM)', kind: 'sampled', range: [41, 89], samples: struck('harpsichord', 41, 89, 0.4), gain: 20, taper: [66, 1] },
   drawbarOrgan: { key: 'drawbarOrgan', name: 'Drawbar Organ', blurb: 'Tonewheel organ: gospel, soul, jazz', color: '#a16207', category: 'Keys & Synths', kind: 'sampled', range: [36, 96], samples: held('drawbar_organ', 36, 96, 0.3), gain: 23, taper: [67, 1] },
   rockOrgan: { key: 'rockOrgan', name: 'Rock Organ', blurb: 'Gritty rock organ', color: '#92400e', category: 'Keys & Synths', kind: 'sampled', range: [36, 96], samples: held('rock_organ', 36, 96, 0.3), gain: 19, taper: [67, 3] },
-  celesta: { key: 'celesta', name: 'Celesta', blurb: 'Music-box bells: magical, sugar-plum', color: '#fef08a', category: 'Mallets & Bells', kind: 'sampled', range: [60, 108], samples: struck('celesta', 60, 108, 1.5), gain: 14, taper: [85, 1.5] },
+  celesta: { key: 'celesta', name: 'Celesta', blurb: 'Music-box bells: magical, sugar-plum', color: '#fef08a', category: 'Retro (GM)', kind: 'sampled', range: [60, 108], samples: struck('celesta', 60, 108, 1.5), gain: 14, taper: [85, 1.5] },
   glockenspiel: { key: 'glockenspiel', name: 'Glockenspiel', blurb: 'Bright steel bells', color: '#e5e7eb', category: 'Retro (GM)', kind: 'sampled', range: [72, 108], samples: struck('glockenspiel', 72, 108, 1.5), gain: 24 },
   musicBox: { key: 'musicBox', name: 'Music Box', blurb: 'Tinkling music box', color: '#fbcfe8', category: 'Mallets & Bells', kind: 'sampled', range: [60, 96], samples: struck('music_box', 60, 96, 1.5), gain: 22 },
   vibraphone: { key: 'vibraphone', name: 'Vibraphone', blurb: 'Jazz vibes, soft and round', color: '#a5b4fc', category: 'Retro (GM)', kind: 'sampled', range: [53, 89], samples: struck('vibraphone', 53, 89, 1.5), gain: 16, taper: [72, 2] },
@@ -1072,6 +1086,8 @@ const BREATH: Partial<Record<InstrumentKey, number>> = {
   realHarmonica: 6,
   realOcarina: 7,
   realSoloVoice: 9,
+  realRecorder: 7,
+  realMutedTrumpet: 7,
 };
 /** How long a player of `key` can hold a note before it starts to fade (seconds), if they breathe. */
 export const breathOf = (key: InstrumentKey): number | undefined => BREATH[key];

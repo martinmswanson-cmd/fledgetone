@@ -41,15 +41,21 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
       'cello-sustain', 'cello-spiccato', 'violins-sustain', 'violins-spiccato', 'violas-sustain', 'violas-spiccato', 'strings-pizzicato',
       'strings-tremolo', 'solo-violin', 'harp', 'flute', 'flute-staccato', 'oboe', 'clarinet', 'bassoon', 'horn', 'horn-staccato', 'trumpet',
       'trumpet-staccato', 'trombone', 'trombone-staccato', 'tuba', 'marimba', 'xylophone', 'glockenspiel', 'pipe-organ', 'chapel-organ',
+      'muted-trumpet',
     ].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Strings, woodwinds, brass, harp, mallets and organ from the [Versilian Community Sample Library, VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios (converted to MP3, hosted with the app)',
+      'Strings, woodwinds, brass (and a trumpet with a harmon mute), harp, mallets and organ from the [Versilian Community Sample Library, VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {
-    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax', 'harmonica', 'ocarina', 'zither', 'concert-bass-drum'].map((set) => `${HOSTED}${set}/`),
+    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax', 'harmonica', 'ocarina', 'zither', 'concert-bass-drum', 'recorder'].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica, ocarina, zither (dan tranh), concert bass drum, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
+      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica, ocarina, zither (dan tranh), concert bass drum, baroque recorders, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}celesta/`],
+    samples: 'Celesta from [A Sampled Celesta](https://gitlab.com/echoparallax/a-sampled-celesta) by Neil Bickford (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {

@@ -644,7 +644,7 @@ function hiphop(): ProjectSnapshot {
   });
   const bass = track('Bass', 'uprightBass', { volume: -6, fx: { peq: peq(lowCut(40), highCut(3000)), compressor: { on: true, threshold: -18, ratio: 4, makeup: 2 }, human: human(0.25) } });
   const horn = track('Trumpet', 'mutedTrumpet', {
-    volume: -12, delaySend: 0.1, sends: sendTo(room, 0.3), pan: 0.15,
+    volume: -8.5, delaySend: 0.1, sends: sendTo(room, 0.3), pan: 0.15,
     fx: { peq: peq(lowCut(250), highCut(6000)), lofi: { on: true, crush: bits(12), tone: 5000, wow: 0.1, mix: 0.5 }, human: human(0.3, 0.2) },
   });
   // Dm9 - Bbmaj7 - Gm9 - A7(b9), a bar each: dusty minor jazz, strummed on 1 and the "and" of 2
@@ -1429,7 +1429,7 @@ export function createStarter(id: StarterId): ProjectSnapshot {
  * (measured: the same notes through both, A-weighted). `short` plays parts of short notes (under an
  * eighth on average) with the short-stroke recordings, and `high` takes parts too high for the
  * recording (the horn's top, which the section's trumpet plays). `anyNote`: a note out of the
- * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, choir and the rest
+ * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, choir, music box and the rest
  * have no free recording yet and stay as they are.
  */
 const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: InstrumentKey; shortDb?: number; high?: InstrumentKey; highDb?: number; preset?: string; anyNote?: boolean }> = {
@@ -1483,6 +1483,12 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   harmonica: { to: 'realHarmonica', db: 0 },
   ocarina: { to: 'realOcarina', db: 0 },
   steelDrums: { to: 'realSteelDrums', db: 0 },
+  // (Matched part by part, A-weighted, each starter's part through both: the celesta's parts
+  // ranged from +0.3 to +2.4 dB, the recorder's +1.3 to +2.7, the muted trumpet's +1.7 to +7.5,
+  // its highest parts most; the farthest parts' faders are set for it)
+  celesta: { to: 'realCelesta', db: -1.0 },
+  recorder: { to: 'realRecorder', db: -2.0 },
+  mutedTrumpet: { to: 'realMutedTrumpet', db: -5.0 },
 };
 
 /**

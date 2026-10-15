@@ -90,7 +90,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   starlitCity: { trim: 6, lufs: -14.9 }, // -16
   farewellPiano: { trim: 3.5, lufs: -14.8 }, // -16.4
   sunsetDrive: { trim: 3.5, lufs: -15.1 }, // -15.1
-  midnightCaper: { trim: 0.5, lufs: -15.1 }, // -14.6
+  midnightCaper: { trim: 0.5, lufs: -15 }, // -14.6
   velvetInfiltration: { trim: -2, lufs: -15.1 }, // -14.6
   wanderersRoad: { trim: 3.5, lufs: -15.1 }, // -14.5
   meadowWaltz: { trim: -4, lufs: -14.7 }, // -14.3
@@ -99,7 +99,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   neonRitual: { trim: 6, lufs: -15.3 }, // -15.3
   dubstep: { trim: 10.5, lufs: -14.2 }, // -14.2
   house: { trim: 2.5, lufs: -13.8 }, // -13.8
-  formulaRush: { trim: 3, lufs: -13.9 }, // -13.9
+  formulaRush: { trim: 2.5, lufs: -13.6 }, // -13.9
   trance: { trim: 4, lufs: -14.2 }, // -14.2
   dnb: { trim: 3.5, lufs: -14 }, // -14
   synthwave: { trim: 2.5, lufs: -14.1 }, // -14.1
@@ -118,7 +118,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   trap: { trim: 12, lufs: -13.8 }, // -14.1
   lofi: { trim: 5, lufs: -14.7 }, // -14.7
   ambient: { trim: 10.5, lufs: -18.6 }, // -18.6
-  celtic: { trim: -1.5, lufs: -15.1 }, // -14.6
+  celtic: { trim: -1.5, lufs: -15 }, // -14.6
   tavern: { trim: 4, lufs: -14.9 }, // -14.9
   latin: { trim: -2.5, lufs: -14.8 }, // -14.2
   eastern: { trim: 4, lufs: -15.2 }, // -14.8

@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-15 — Celesta, recorder and muted trumpet
+
+- New real recordings: **Celesta (Real)** (every key, in stereo), **Recorder (Real)** (tenor, alto and soprano recorders as one instrument) and **Muted Trumpet (Real)** (harmon mute, soft and loud). The starters play them; the older Celesta, Recorder and Muted Trumpet move to Retro (GM), so older songs sound as they did.
+
 ## 2026.10.15-14 — A small thank-you
 
 - The terms' questions and answers now say how to credit Fledgetone if you'd like to (never required, always appreciated).

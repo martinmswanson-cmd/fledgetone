@@ -21,6 +21,8 @@ REPOS = {
     'ganjo': 'sfzinstruments/ganjo',
     'rustydrums': 'sfzinstruments/karoryfer.big-rusty-drums',
     'voice': 'sfzinstruments/legato_vocal_tutorial',
+    # A repository on GitLab rather than GitHub is written 'gitlab:<owner>/<name>'
+    'celesta': 'gitlab:echoparallax/a-sampled-celesta',  # audio CC0 (its LICENSE), by Neil Bickford
 }
 
 # How each kind of note is measured and cut:
@@ -51,7 +53,7 @@ def note_midi(name):
 
 
 def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=None, hi=None, retune=True, bend=True,
-      pitched=True, even=True, kit=None, tail=False, sparse=False):
+      pitched=True, even=True, kit=None, tail=False, sparse=False, sf2=None):
     """
     One set. `sources` is a list of (regex, octave[, midi function[, (lo, hi)]]): the regex matches a file's path in
     the repo, with the named groups `note` (or `index` plus a `midi` function), `layer` and,
@@ -74,17 +76,21 @@ def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=Non
     set's `cap` (see natural_tail in convert.py). `sparse` True keeps a library's gaps: a note
     recorded at fewer loudnesses than the set has gets no copies of its other recordings where the
     same loudness was recorded within a few semitones (the app stretches that one instead), and
-    shares a file rather than duplicating it elsewhere.
+    shares a file rather than duplicating it elsewhere. `sf2` names a SoundFont file in the repo
+    that holds the recordings instead of separate files: fetch.py downloads it and unpacks each of
+    its recordings (a left and right pair as one stereo file), and `sources` then match the
+    recordings' names in it.
     """
     return {'folder': folder, 'repo': repo, 'sources': sources, 'layers': layers, 'kind': kind,
             'takes': takes, 'every': every, 'cap': cap or KINDS[kind]['cap'], 'lo': lo, 'hi': hi, 'retune': retune, 'bend': bend,
-            'pitched': pitched, 'even': even, 'kit': kit, 'tail': tail, 'sparse': sparse}
+            'pitched': pitched, 'even': even, 'kit': kit, 'tail': tail, 'sparse': sparse, 'sf2': sf2}
 
 
 NOTE = r'(?P<note>[A-Ga-g][#sb]?-?\d)'
 V = 'Strings/Violin Section'
 VA = 'Strings/Viola Section'
 C = 'Strings/Cello Section'
+AE = 'Aerophones/Edge-blown Aerophones'
 
 # How many octaves a few libraries' note names sit below standard names (measure.py confirms: the
 # solo voice is a bass singing an octave under its files' names, as is the banjo)
@@ -213,6 +219,19 @@ SETS = [
       [''], 'plucked', takes=['', '_2']),
     S('solo-voice', 'voice', [(rf'Samples/vowel_sustain/a/vowel_a_{NOTE}(?P<layer>)\.wav', OCT_VOICE)],
       [''], 'sustain', every=2, lo=38),  # (his lowest note, C2, wavers in vocal fry)
+    # ---- a celesta, recorders and a muted trumpet ----
+    # A celesta recorded key by key in stereo (A Sampled Celesta, CC0): its recordings come in a
+    # SoundFont, one stroke a note
+    S('celesta', 'celesta', [(rf'{NOTE} (?P<take>rr1)(?P<layer>)', 0)], [''], 'ringing', cap=6.0,
+      sf2='Samples/Celesta Tuned Denoised Mix.sf2'),
+    # Baroque recorders played straight (no vibrato), as one instrument: the alto, with the tenor
+    # under it (below the alto's lowest F) and the soprano over it (above its highest E).
+    S('recorder', 'vcsl', [(rf'{AE}/Baroque Alto Recorder/Sustain/AltRecorder_Sus_{NOTE}_(?P<take>rr1)_Main(?P<layer>)\.wav', 1),
+                           (rf'{AE}/Baroque Tenor Recorder/Sustain/TenRecorder_Sus_{NOTE}_(?P<take>rr1)_Main(?P<layer>)\.wav', 1, None, (0, 64)),
+                           (rf'{AE}/Baroque Soprano Recorder/Sustain/SopRecorder_Sus_{NOTE}_(?P<take>rr1)_Main(?P<layer>)\.wav', 1, None, (89, 127))],
+      [''], 'sustain'),
+    # The trumpet with a harmon mute, held, soft and loud
+    S('muted-trumpet', 'vsco', [(rf'Brass/Trumpet/harmonM-sus/Sum_SHTrumpet_harmonM-sus_{NOTE}_(?P<layer>v[13])_rr1\.wav', 1)], ['v1', 'v3'], 'sustain'),
     # A studio drum kit: each hit mixed from its close microphones and the overheads by kit.py
     S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
 ]
