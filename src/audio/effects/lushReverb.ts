@@ -130,6 +130,13 @@ export function createLushKernel(sampleRate: number, options: LushOptions = {}):
   // The damping: each line's sound split into low, middle and high at 300 Hz and 4 kHz
   const cLow = 1 - Math.exp((-2 * Math.PI * 300) / fs);
   const cHigh = 1 - Math.exp((-2 * Math.PI * 4000) / fs);
+  // The same bands' weights in what goes in, as the hall's noise has them
+  const TILT_LOW = 1.6;
+  const TILT_HIGH = 0.8;
+  let tiltL1 = 0;
+  let tiltL2 = 0;
+  let tiltR1 = 0;
+  let tiltR2 = 0;
   const lp1 = new Float64Array(N);
   const lp2 = new Float64Array(N);
   const gLow = new Float64Array(N);
@@ -201,7 +208,7 @@ export function createLushKernel(sampleRate: number, options: LushOptions = {}):
   // spectrum (an impulse is flat, so most of it is above 4 kHz), and each side hears a sixteenth
   // of the lines. The calibration is measured against the hall, A-weighted, through the filters
   // in front of the reverb (scripts/lushReverb.test.mjs, and a song in the browser)
-  const CALIBRATION = 1.33;
+  const CALIBRATION = 1.21;
   const lowShare = 300 / (fs / 2);
   const midShare = 3700 / (fs / 2);
   const series = (len: number, t: number) => {
@@ -222,7 +229,7 @@ export function createLushKernel(sampleRate: number, options: LushOptions = {}):
       gLow[i] = hold(fall(rt * lowMult));
       gMid[i] = hold(fall(rt));
       gHigh[i] = hold(fall(rt * high));
-      energy += lowShare * series(len, t * lowMult) + midShare * series(len, t) + (1 - lowShare - midShare) * series(len, t * high);
+      energy += TILT_LOW * TILT_LOW * lowShare * series(len, t * lowMult) + midShare * series(len, t) + TILT_HIGH * TILT_HIGH * (1 - lowShare - midShare) * series(len, t * high);
     }
     energy /= N * N;
     return CALIBRATION * Math.sqrt(hallEnergy(t) / (2 * energy));
@@ -251,6 +258,7 @@ export function createLushKernel(sampleRate: number, options: LushOptions = {}):
     apState.fill(0);
     lp1.fill(0);
     lp2.fill(0);
+    tiltL1 = tiltL2 = tiltR1 = tiltR2 = 0;
     inHistL.fill(0);
     inHistR.fill(0);
     outHistL.fill(0);
@@ -320,8 +328,19 @@ export function createLushKernel(sampleRate: number, options: LushOptions = {}):
       const c = 2 * m + 10;
       const hl = inHistL;
       const hr = inHistR;
-      dL[m] = inGain * (0.5 * hl[c] + H0 * (hl[c - 1] + hl[c + 1]) + H1 * (hl[c - 3] + hl[c + 3]) + H2 * (hl[c - 5] + hl[c + 5]) + H3 * (hl[c - 7] + hl[c + 7]) + H4 * (hl[c - 9] + hl[c + 9]));
-      dR[m] = inGain * (0.5 * hr[c] + H0 * (hr[c - 1] + hr[c + 1]) + H1 * (hr[c - 3] + hr[c + 3]) + H2 * (hr[c - 5] + hr[c + 5]) + H3 * (hr[c - 7] + hr[c + 7]) + H4 * (hr[c - 9] + hr[c + 9]));
+      dL[m] = (0.5 * hl[c] + H0 * (hl[c - 1] + hl[c + 1]) + H1 * (hl[c - 3] + hl[c + 3]) + H2 * (hl[c - 5] + hl[c + 5]) + H3 * (hl[c - 7] + hl[c + 7]) + H4 * (hl[c - 9] + hl[c + 9]));
+      dR[m] = (0.5 * hr[c] + H0 * (hr[c - 1] + hr[c + 1]) + H1 * (hr[c - 3] + hr[c + 3]) + H2 * (hr[c - 5] + hr[c + 5]) + H3 * (hr[c - 7] + hr[c + 7]) + H4 * (hr[c - 9] + hr[c + 9]));
+    }
+    // The hall's colour (roomIR.ts): its lows a little stronger and its highs a little softer
+    for (let m = 0; m < M; m++) {
+      const l = dL[m];
+      const r = dR[m];
+      tiltL1 += cLow * (l - tiltL1);
+      tiltL2 += cHigh * (l - tiltL2);
+      tiltR1 += cLow * (r - tiltR1);
+      tiltR2 += cHigh * (r - tiltR2);
+      dL[m] = inGain * (TILT_LOW * tiltL1 + (tiltL2 - tiltL1) + TILT_HIGH * (l - tiltL2));
+      dR[m] = inGain * (TILT_LOW * tiltR1 + (tiltR2 - tiltR1) + TILT_HIGH * (r - tiltR2));
     }
     inHistL.copyWithin(0, frames, frames + 18);
     inHistR.copyWithin(0, frames, frames + 18);
