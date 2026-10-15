@@ -88,7 +88,9 @@ interface UiState {
   setVariationsClip: (clipId: string | null) => void;
   /** The audio clip whose Tune vocal dialog is open */
   tuneClipId: string | null;
-  setTuneClip: (clipId: string | null) => void;
+  /** The Tune vocal dialog opened as Hard tune (instant, full strength) */
+  tuneHard: boolean;
+  setTuneClip: (clipId: string | null, hard?: boolean) => void;
   /** The take folder whose Takes dialog is open */
   takesClipId: string | null;
   setTakesClip: (clipId: string | null) => void;
@@ -135,7 +137,8 @@ export const useUiStore = create<UiState>((set, get) => ({
   variationsClipId: null,
   setVariationsClip: (variationsClipId) => set({ variationsClipId }),
   tuneClipId: null,
-  setTuneClip: (tuneClipId) => set({ tuneClipId }),
+  tuneHard: false,
+  setTuneClip: (tuneClipId, hard = false) => set({ tuneClipId, tuneHard: hard }),
   takesClipId: null,
   setTakesClip: (takesClipId) => set({ takesClipId }),
   pluginWindow: null,

@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Drum, Music4, Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma } from 'lucide-react';
 import { reverseBlock } from '../../store/reverseActions';
+import { doubleClip } from '../../store/vocalActions';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
@@ -255,6 +256,25 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
                 icon: <Wand2 className="w-3.5 h-3.5" />,
                 onClick: run(() => useUiStore.getState().setTuneClip(menu.clipId!)),
                 // A take folder plays several sounds: tune it once it's flattened
+                disabled: takeCount > 1,
+              },
+              {
+                key: 'hardTune',
+                label: 'Hard tune…',
+                shortcut: takeCount > 1 ? 'flatten first' : 'robotic',
+                icon: <Wand2 className="w-3.5 h-3.5" />,
+                onClick: run(() => useUiStore.getState().setTuneClip(menu.clipId!, true)),
+                disabled: takeCount > 1,
+              },
+              {
+                key: 'double',
+                label: 'Double this take',
+                shortcut: takeCount > 1 ? 'flatten first' : 'L + R',
+                icon: <CopyPlus className="w-3.5 h-3.5" />,
+                onClick: run(() => {
+                  showToast('Doubling the take…');
+                  void doubleClip(menu.clipId!).then(showToast, (err) => showToast(`Couldn't double it: ${err instanceof Error ? err.message : String(err)}`));
+                }),
                 disabled: takeCount > 1,
               },
             ]

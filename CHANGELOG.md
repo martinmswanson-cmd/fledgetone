@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-19 — Rap vocal tools
+
+- Rap vocal tools: **vocal chain presets** on Audio tracks (Clean lead, Aggressive lead, Ad-lib, Phone / radio, Dark and wide, Backing stack: one click, one Undo step), **Hard tune** (fast pitch correction to the song's key, with a natural-to-instant Speed, note holding so it steps cleanly, and more scales: harmonic minor, phrygian, pentatonics), **Double this take** (two new performances panned left and right, a little early or late and a few cents apart, the same every time), and an **Ad-lib track** button that makes a new Audio track with the Ad-lib chain, ready to record.
+
 ## 2026.10.15-18 — Drum tools
 
 - **Drum Designer**: a new **Designed Kit** whose every drum you make yourself, synthesized: kicks (punch, pitch sweep, decay, distortion), snares (tone, noise, snap, body), claps (bursts, spread, tail), hats (metal, color, decay), rims, toms, shakers and cowbells, two layers each, with 30 presets named by sound (hard trap kick, punchy drill snare, crisp clap...). Saved with the project; plays the same live and in exports.
