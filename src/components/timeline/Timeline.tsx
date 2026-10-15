@@ -490,8 +490,8 @@ export const Timeline: React.FC = () => {
         <TrackInspector />
       </div>
 
-      <TimelineScrollbar scrollRef={scrollRef} />
       <TimelineResizer scrollRef={scrollRef} />
+      <TimelineScrollbar scrollRef={scrollRef} />
       <PianoRoll />
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
