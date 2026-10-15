@@ -353,6 +353,16 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   a take ends where the listener was when they stopped. Held keys use each instrument's `noteOn`
   (a Tone synth's `triggerAttack`, or for the native-node synths a long note let go early with
   `VoiceSet.release`); an instrument without one plays held keys as short sequenced notes.
+- An export renders the same samples every time (`scripts/audio-check/repeat.cjs` checks it).
+  Randomness is seeded from the song (`seededNoise.ts`, `noteSeed` in `human.ts`), never from
+  `Math.random` or the time. Two things in the browser varied too, and the export's offline
+  contexts work around them: Chromium adds up the connections into an input in an order that
+  changes from one render to the next, so with three or more the sum differed in its last bit
+  (`exactSums.ts` gives each node at most two, through pass-through links); and it reports a
+  source's end whenever the main thread gets to it, so the nodes a note let go of went at
+  different moments, and the filters after them rang out for different lengths
+  (`endedOnTime.ts` runs ended handlers at the render's suspends instead). A render is split into
+  parts the same way whether or not they run side by side.
 
 ## Builds
 
