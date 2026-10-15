@@ -68,13 +68,30 @@ mixed instead of fetched: run `kit.py studio-kit` before measuring and convertin
   note's steady part (or the loop the file marks) so it can be held up to the set's length.
   A note much louder or quieter than its neighbours is evened toward them (up to 9 dB; not in a
   drum kit, `even=False`, whose pieces keep their own levels), and a
-  note's softer recordings are matched to its loudest (by A-weighted loudness, over the first 0.8 s
-  for held notes), so the app's velocity curve sets the level and the recording the tone. Missing recordings are filled from the same note's nearest loudness or
-  other take. One gain per set leaves its loudest peak just under full scale. It writes the MP3s
-  and `src/audio/hostedSets.ts`.
+  note's softer recordings are matched to its loudest, so the app's velocity curve sets the level
+  and the recording the tone. That match is by unweighted energy and peak (the lowest of the
+  gains, so a softer recording never measures louder either way) over the first 0.1, 0.25 and
+  0.5 s and the kind's level window (the first 0.8 s for held notes): matched by A-weighted
+  loudness, as it once was, a drum's or a low note's soft recording, which has its energy in the lows the ear's curve hardly counts, came
+  out several dB louder than its loud one (the concert bass drum's softest by 7 dB), so turning
+  the velocity up across a loudness made it quieter. Before that, each of a note's recordings is
+  lined up with its loudest (moved later by up to one period of the note, at most 12 ms, and
+  turned over if need be): the app blends two loudnesses near a boundary, and two recordings out
+  of step partly cancel (a vibraphone's soft and hard strokes blended came out 6 dB quieter than
+  either). Missing recordings are filled from the same note's nearest loudness or other take; a
+  `sparse` set (the electric piano, recorded at one to four loudnesses a note) instead leaves out
+  a loudness a note within 3 semitones has (the app stretches that one, as the library's own
+  mapping does) and shares the same note's nearest loudness's file for the others (`shared` in
+  `hostedSets.ts`), so no file is a copy of another. A ringing set with `tail` (the electric
+  piano again, whose recordings were cut off 0.4 to 5 s in while still sounding) gives each note
+  the rest of its decay: its last 0.3 s repeated, each repeat quieter by the rate the recording
+  was dying away at (a recording too short to tell takes the rate its neighbours' fit gives), the
+  highs dying faster, until 60 dB down or the set's cap. One gain per set leaves its loudest peak
+  just under full scale. It writes the MP3s and `src/audio/hostedSets.ts`.
 
-The cello and the Black and Green guitar sets were converted by an earlier version of these
-scripts (without the evening out and looping); rebuilding them now would change them slightly.
+Every set recorded at several loudnesses has been rebuilt with the matching and lining up
+above. After rebuilding one, play a velocity sweep on it in the app (the same note at rising
+velocities, a few notes across its range): each should be at least as loud as the one before.
 
 The published site must serve the folder next to `fledgetone.html`; the app loads it from
 there, or from `https://twobirdsworkshop.com/fledgetone-samples/` when the page is opened from

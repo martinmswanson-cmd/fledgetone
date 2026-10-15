@@ -20,24 +20,32 @@ import { createBus, createVoiceSet } from './native';
 /** The start of a hit whose energy sets its level against the row's other loudnesses (seconds) */
 const LEVEL_WINDOW = 0.3;
 
-/** Each loudness's gain that brings its recordings' level to the loudest's (1 for the loudest). */
+/**
+ * Each loudness's gain that brings its recordings' level to the loudest's (1 for the loudest):
+ * by their energy over the first LEVEL_WINDOW seconds and by their peak, the lower of the two, so
+ * a softer hit never measures louder than a harder one either way.
+ */
 function layerGains(row: AudioBuffer[][]): number[] {
-  const energy = row.map((takes) => {
+  const level = row.map((takes) => {
     const all = (takes ?? []).filter(Boolean);
-    if (!all.length) return 0;
+    if (!all.length) return { energy: 0, peak: 0 };
     let sum = 0;
+    let peak = 0;
     for (const b of all) {
       const n = Math.min(b.length, Math.round(LEVEL_WINDOW * b.sampleRate));
       for (let c = 0; c < b.numberOfChannels; c++) {
         const d = b.getChannelData(c);
-        for (let i = 0; i < n; i++) sum += d[i] * d[i];
+        for (let i = 0; i < n; i++) {
+          sum += d[i] * d[i];
+          peak = Math.max(peak, Math.abs(d[i]));
+        }
       }
     }
-    return sum / all.length;
+    return { energy: sum / all.length, peak };
   });
-  const top = energy[energy.length - 1];
+  const top = level[level.length - 1];
   // (at most 12 dB either way: a recording far off is better left than turned to a whisper or a roar)
-  return energy.map((e) => (e > 0 && top > 0 ? Math.min(4, Math.max(0.25, Math.sqrt(top / e))) : 1));
+  return level.map((l) => (l.energy > 0 && top.energy > 0 ? Math.min(4, Math.max(0.25, Math.min(Math.sqrt(top.energy / l.energy), top.peak / l.peak))) : 1));
 }
 
 export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {

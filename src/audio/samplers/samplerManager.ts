@@ -10,6 +10,7 @@ import type { CustomSample, NoteEvent } from '../../store/timelineTypes';
 import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
 import { foldToMono, isDualMono, keptLength, levelOutline, OUTLINE_STEP } from './recordingMaths';
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
+import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { BLEND_ZONE, indexRecordings, layerOf, neededSamples, quickLayer, quickSamples, songNotesByInstrument, STRETCH_SEMITONES } from './songSamples';
 import type { RecordingIndex, SongNotes } from './songSamples';
 
@@ -908,16 +909,31 @@ function audibleEnd(buffer: AudioBuffer): number {
 const SAME_PITCH = 3;
 /** At most this many notes of one instrument ring at once: past it, the quietest fades (see makeRoom). */
 const MAX_NOTES = 64;
+/** How alike two of a note's recordings are (correlationOf), worked out once per pair. */
+const likeness = new WeakMap<AudioBuffer, WeakMap<AudioBuffer, number>>();
+function alike(a: AudioBuffer, b: AudioBuffer): number {
+  let row = likeness.get(a);
+  if (!row) likeness.set(a, (row = new WeakMap()));
+  let rho = row.get(b);
+  if (rho === undefined) {
+    const channels = (x: AudioBuffer) => Array.from({ length: x.numberOfChannels }, (_, c) => x.getChannelData(c));
+    rho = correlationOf(channels(a), channels(b), a.sampleRate);
+    row.set(b, rho);
+  }
+  return rho;
+}
+
 /**
  * The mod wheel's dynamics over a note playing loudness `low` and the next: the two recordings'
- * levels, crossfaded with equal power, times the loudness itself (DYNAMICS_DB from the softest to
+ * levels, blended (layerBlend.ts), times the loudness itself (DYNAMICS_DB from the softest to
  * the loudest, as the recordings are matched in level and the wheel sets it). A wheel outside the
  * pair's span holds its nearer end.
  */
 export function dynamicsMix(value: number, low: number, span: number): [soft: number, loud: number] {
   const x = Math.max(0, Math.min(1, value * span - low));
   const level = 10 ** ((-DYNAMICS_DB * (1 - Math.max(0, Math.min(1, value)))) / 20);
-  return [Math.cos((x * Math.PI) / 2) * level, Math.sin((x * Math.PI) / 2) * level];
+  const [a, b] = layerBlend(x);
+  return [a * level, b * level];
 }
 /** From the softest to the loudest under the mod wheel's dynamics, in dB. */
 const DYNAMICS_DB = 18;
@@ -1134,9 +1150,16 @@ function samplerVoice(
       }
       return best;
     };
-    const found = low >= 0 ? near(bank.layer!(low)) : blend ? near(blend.low) : near(bank.pick(velocity));
+    let found = low >= 0 ? near(bank.layer!(low)) : blend ? near(blend.low) : near(bank.pick(velocity));
     if (!found) return null;
-    const upper = low >= 0 ? near(bank.layer!(low + 1)) : blend ? near(blend.high) : null;
+    let upper = low >= 0 ? near(bank.layer!(low + 1)) : blend ? near(blend.high) : null;
+    // Two loudnesses whose nearest recordings are of different notes (a set recorded sparsely)
+    // aren't blended: a note's recordings are lined up with each other, not with a neighbour's, so
+    // blended they could partly cancel. The nearer loudness plays alone.
+    if (blend && upper && upper.interval !== found.interval) {
+      if (blend.x >= 0.5) found = upper;
+      upper = null;
+    }
     // Each hit a hair off the last: up to ±3 cents
     const jitter = expressive ? 2 ** ((3 * noteJitter(note, at, 13)) / 1200) : 1;
     const rateOf = (interval: number) => 2 ** ((interval + midiFloat - midi) / 12) * jitter;
@@ -1183,7 +1206,7 @@ function samplerVoice(
     if (upper) {
       const soft = raw.createGain();
       const loud = raw.createGain();
-      const [a, b] = low >= 0 ? dynamicsMix(dyn!, low, span) : [Math.cos((blend!.x * Math.PI) / 2), Math.sin((blend!.x * Math.PI) / 2)];
+      const [a, b] = low >= 0 ? dynamicsMix(dyn!, low, span) : blendFor(blend!.x, alike(found.buffer, upper.buffer));
       soft.gain.value = a;
       loud.gain.value = b;
       soft.connect(gain);

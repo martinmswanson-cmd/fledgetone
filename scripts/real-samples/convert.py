@@ -9,10 +9,12 @@
 # piano), is tuned (unless the set keeps its tuning), started at the note,
 # and, for held instruments, looped where it's steady so a note can be held up to the set's `cap`.
 # A note far louder or quieter than its neighbours is brought in line with them, and a note's
-# softer recordings are set a fixed step under its loudest (velocity sets the level, the recording
+# softer recordings are set to its loudest one's level (velocity sets the level, the recording
 # the tone, so moving between them is smooth). Missing recordings are filled from the same note's
-# nearest loudness or other take, so every note has every layer and take. One gain per set
-# leaves its loudest peak just under full scale.
+# nearest loudness or other take, so every note has every layer and take (or, in a `sparse` set,
+# left to a nearby note's recording at that loudness). A ringing note cut off while it still
+# sounds can be given the rest of its decay (`tail`). One gain per set leaves its loudest peak
+# just under full scale.
 import os, sys, json, struct, subprocess, re
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -21,6 +23,7 @@ from sets import SETS, KINDS
 SR = 44100
 NAMES = ['C', 'Cs', 'D', 'Ds', 'E', 'F', 'Fs', 'G', 'Gs', 'A', 'As', 'B']
 XFADE = 0.12  # seconds of crossfade at each loop seam
+STRETCH = 3  # semitones the app stretches a recording before it prefers another (songSamples.ts STRETCH_SEMITONES)
 
 
 def channels_of(p):
@@ -202,6 +205,86 @@ def extend(x, loop, period, length):
     return y[:length]
 
 
+# ---- ringing on: the rest of a decay a recording was cut off before (sets with `tail`) ----
+
+#: Seconds of the recording repeated (whole periods of the note) to ring on from its end
+RING_LOOP = 0.3
+#: How a tail that reaches the set's cap fades away (seconds)
+TAIL_FADE = 1.5
+
+
+def decay_rate(x):
+    """
+    How fast a ringing note is dying away at the end of its recording, in dB a second (negative):
+    a straight line through its level over the later part (from 45% of the way in, after its
+    peak, to 50 ms before the end), or None when there's too little of it to tell.
+    """
+    env, h = envelope(x)
+    hop = h / SR
+    a = max(int(np.argmax(env)) + int(0.2 / hop), int(len(env) * 0.45))
+    b = len(env) - int(0.05 / hop)
+    if b - a < int(0.3 / hop):
+        return None
+    return float(np.polyfit(np.arange(a, b) * hop, env[a:b], 1)[0])
+
+
+def natural_tail(x, midi, rate, length):
+    """
+    `x` (channels, samples), cut off while still ringing, given the rest of its decay: its last
+    RING_LOOP seconds (a whole number of the note's periods) repeated, each repeat `rate` dB a
+    second quieter than the one before so the level carries straight on down, crossfaded at each
+    join, until 60 dB under its peak or `length` samples (fading out over TAIL_FADE there). The
+    highs die half again as fast as the rest, as a real string's or tine's overtones do, so a
+    long tail darkens instead of freezing its tone.
+    """
+    m = mono(x)
+    n = x.shape[1]
+    env, h = envelope(m)
+    tail_db = float(np.mean(env[-int(0.15 * SR / h): -max(1, int(0.03 * SR / h))]))
+    to_go = 60 - (float(env.max()) - tail_db)
+    total = min(length, n + int(max(0.0, to_go / -rate) * SR))
+    if total < n + int(0.1 * SR):
+        return x
+    hz = 440 * 2 ** ((midi - 69) / 12)
+    period = SR / hz
+    b = n - int(0.03 * SR)
+    span = min(RING_LOOP * SR, b - 0.15 * SR)
+    k = int(span // period)
+    if k < 1:
+        return x
+    L = int(round(k * period))
+    a = b - L
+    f = min(int(0.04 * SR), L // 2, a)
+    g = 10 ** (rate * L / SR / 20)
+    fade_in = np.sin(np.linspace(0, np.pi / 2, f)) ** 2
+    fade_out = 1 - fade_in
+
+    def ring(ch):
+        y = ch[:b].copy()
+        seg = ch[a - f: b]
+        rep_ = 1
+        while len(y) < total:
+            s_ = seg * g ** rep_
+            y = np.concatenate([y[:-f], y[-f:] * fade_out + s_[:f] * fade_in, s_[f:]])
+            rep_ += 1
+        y = y[:total]
+        # The highs (over three times the note's pitch) die half again as fast from the join on
+        lp = np.empty_like(y)
+        c = 1 - np.exp(-2 * np.pi * min(3 * hz, 0.4 * SR) / SR)
+        acc = 0.0
+        for i, v in enumerate(y):
+            acc += c * (v - acc)
+            lp[i] = acc
+        t = np.maximum(0, np.arange(total) - b) / SR
+        return lp + (y - lp) * 10 ** (0.5 * rate * t / 20)
+
+    y = each(x, ring)
+    if y.shape[1] >= length:
+        fade = min(int(TAIL_FADE * SR), y.shape[1] - b)
+        y[:, -fade:] *= np.cos(np.linspace(0, np.pi / 2, fade)) ** 2
+    return y
+
+
 def a_weight(f):
     """The A-weighting curve (how loud the ear hears each frequency at moderate levels), ~1 at 1 kHz."""
     f2 = f * f
@@ -219,6 +302,109 @@ def level(x, window):
     spec = np.abs(np.fft.rfft(seg)) ** 2
     w = a_weight(np.maximum(np.fft.rfftfreq(len(seg), 1 / SR), 1.0)) ** 2
     return 10 * np.log10(np.sum(spec * w) / len(seg) ** 2 * 2 + 1e-20)
+
+
+#: Where a recording's loudness is measured for matching a note's loudnesses (seconds): its
+#: energy over each of these (and the kind's own window), and its peak over the first. The first
+#: 0.1 s is a short note's whole sound, and a loud staccato note can speak later than a soft one.
+MATCH_WINDOWS = [(0.0, 0.1), (0.0, 0.25), (0.0, 0.5)]
+MATCH_PEAK = (0.0, 0.3)
+
+
+def raw_levels(x, window):
+    """
+    How loud a recording measures, unweighted (dB): its energy over each of MATCH_WINDOWS and
+    `window` (the kind's), then its peak over MATCH_PEAK, for matching a note's loudnesses (see
+    match_layers).
+    """
+    out = []
+    for a, b in [*MATCH_WINDOWS, window]:
+        seg = x[int(a * SR): int(b * SR)]
+        out.append(10 * np.log10(np.mean(seg ** 2) + 1e-20) if len(seg) >= 256 else -200.0)
+    seg = x[int(MATCH_PEAK[0] * SR): int(MATCH_PEAK[1] * SR)]
+    out.append(20 * np.log10(np.max(np.abs(seg)) + 1e-12) if len(seg) else -200.0)
+    return np.array(out)
+
+
+#: How much of a note's start lines its recordings up with each other (seconds)
+ALIGN_WINDOW = 0.3
+#: The furthest a recording is moved to line up (seconds)
+ALIGN_MOST = 0.012
+
+
+def align(x, ref, period):
+    """
+    `x` (channels, samples) moved later by up to one period of its note (at most ALIGN_MOST; a
+    drum, `period` None, up to ALIGN_MOST), and turned over if need be, so that its start is in
+    step with `ref`'s: the app blends a note's two recordings either side of a loudness boundary,
+    and two recordings of a ringing note out of step cancel (a vibraphone's soft and hard strokes
+    came out up to 6 dB quieter blended than either alone). Only later, so no attack is cut; a
+    few milliseconds, or the sign, is inaudible on a recording heard alone. Returns it and the
+    move in samples.
+    """
+    a, b = mono(x), mono(ref)
+    n = min(len(a), len(b), int(ALIGN_WINDOW * SR))
+    if n < 256:
+        return x, 0
+    most = int(min(ALIGN_MOST * SR, period or ALIGN_MOST * SR))
+    a_, b_ = a[:n], b[:n]
+    best, lag = 0.0, 0
+    for k in range(0, most + 1):
+        # x moved later by k samples: compare x[i - k] with ref[i]
+        c = float(np.dot(a_[: n - k], b_[k:n]))
+        if abs(c) > abs(best):
+            best, lag = c, k
+    sign = -1.0 if best < 0 else 1.0
+    y = np.concatenate([np.zeros((x.shape[0], lag)), x], axis=1)[:, : x.shape[1]] if lag else x
+    return y * sign, lag
+
+
+def align_layers(out, notes, nlayers, ntakes, pitched):
+    """
+    Every recording of each note lined up with its loudest one's first take (see align). Returns
+    how far each was moved (samples, later), by key, for its loop points.
+    """
+    lags = {}
+    for midi in notes:
+        have = [k for k in out if k[0] == midi]
+        if len(have) < 2:
+            continue
+        top = max(l for _, l, _ in have)
+        ref = out[(midi, top, 0)]
+        period = SR / (440 * 2 ** ((midi - 69) / 12)) if pitched else None
+        for k in have:
+            if k != (midi, top, 0):
+                out[k], lags[k] = align(out[k], ref, period)
+    return lags
+
+
+def match_layers(out, notes, nlayers, ntakes, window):
+    """
+    Every softer recording set to the loudest loudness's level at its note, by unweighted energy
+    (over the start and over the kind's window) and peak: the lowest of those gains, so a softer
+    recording never measures louder than a harder one any of those ways. (Matched by A-weighted
+    loudness, which hardly hears the lows, a low note's or a drum's soft recording, its energy in
+    the lows, came out several dB louder than its loud one, and turning up the velocity across a
+    loudness made it quieter.) The loudest loudness's level at a note it wasn't recorded on (a
+    sparse set's) is its recordings' on the notes either side, in between.
+    """
+    top = nlayers - 1
+    tops = sorted(m for m in notes if (m, top, 0) in out)
+    if not tops:
+        return
+
+    def lv(m, layer):
+        return np.mean([raw_levels(mono(out[(m, layer, t)]), window) for t in range(ntakes) if (m, layer, t) in out], axis=0)
+
+    ref = np.array([lv(m, top) for m in tops])
+    for (midi, layer, t) in list(out):
+        if layer == top or t:
+            continue
+        want = np.array([np.interp(midi, tops, ref[:, i]) for i in range(ref.shape[1])])
+        gain = 10 ** (float(np.min(want - lv(midi, layer))) / 20)
+        for tt in range(ntakes):
+            if (midi, layer, tt) in out:
+                out[(midi, layer, tt)] = out[(midi, layer, tt)] * gain
 
 
 def offsets(n):
@@ -291,6 +477,15 @@ def convert(st, root, measured):
                 elif x.shape[1] < cap + int(0.5 * SR):
                     print(f"   no steady part to loop in {f['file']}")
             sounds[(midi, layer, t)] = x[:, :cap]
+    if st['tail']:
+        rates = {k: decay_rate(mono(v)) for k, v in sounds.items()}
+        known = [(k[0], r) for k, r in rates.items() if r is not None and r < 0 and sounds[k].shape[1] > 0.8 * SR]
+        fit = np.polyfit([m for m, _ in known], [r for _, r in known], 1) if len(known) >= 3 else None
+        for k, v in sounds.items():
+            r = rates[k] if rates[k] is not None and rates[k] < 0 and v.shape[1] > 0.8 * SR else (float(np.polyval(fit, k[0])) if fit is not None else -10.0)
+            sounds[k] = natural_tail(v, k[0], float(np.clip(r, -60, -1)), cap)
+        if os.environ.get('SHOW_TAIL'):
+            print('   ', ' '.join(f"{NAMES[k[0] % 12]}{k[0] // 12 - 1}_{k[1]}:{(rates[k] or 0):.0f}dB/s" for k in sorted(rates)))
     # How loud each note is at full velocity: its loudest recording, or, when a note has only
     # softer ones, those raised by the gap between the loudnesses on the set's other notes (a
     # library's softest takes can be 30 dB under its loudest)
@@ -315,19 +510,37 @@ def convert(st, root, measured):
             print('   ', ' '.join(f'{NAMES[m % 12]}{m // 12 - 1}:{lv[m]:.0f}{trim[m]:+.1f}' for m in notes))
     else:
         trim = {m: 0.0 for m in notes}
-    # Fill the grid: every note at every layer and take, each layer at its step under the loudest
+    # Fill the grid: every note at every layer and take, each layer at its step under the loudest.
+    # A sparse set leaves out a loudness a nearby note has (the app stretches that one), and plays
+    # the same note's nearest loudness's file for one nobody near has, rather than copying it
     out = {}
     out_loops = {}
+    shared = {}
     for midi in notes:
         for layer in range(nlayers):
             have = [l for (m, l) in recs if m == midi]
             src = min(have, key=lambda l: (abs(l - layer), -l))
+            if st['sparse'] and src != layer:
+                if any((m, layer) in recs and abs(m - midi) <= STRETCH for m in notes):
+                    for t in range(ntakes):
+                        shared[f'{midi}_{layer}_{t}'] = None
+                else:
+                    for t in range(ntakes):
+                        shared[f'{midi}_{layer}_{t}'] = f'{midi}_{src}_{t}'
+                continue
             for t in range(ntakes):
                 x = sounds[(midi, src, t % len(recs[(midi, src)]))]
                 if (midi, src, t % len(recs[(midi, src)])) in loops:
                     out_loops[f'{midi}_{layer}_{t}'] = [round(v, 5) for v in loops[(midi, src, t % len(recs[(midi, src)]))]]
                 target = lv[midi] + trim[midi] + offsets(nlayers)[layer]
                 out[(midi, layer, t)] = x * 10 ** ((target - level(mono(x), kind['level'])) / 20)
+    if nlayers > 1:
+        # (a recording moved to line up takes its loop with it)
+        for (midi, layer, t), lag in align_layers(out, notes, nlayers, ntakes, st['pitched']).items():
+            key = f'{midi}_{layer}_{t}'
+            if lag and key in out_loops:
+                out_loops[key] = [round(v + lag / SR, 5) for v in out_loops[key]]
+        match_layers(out, notes, nlayers, ntakes, kind['level'])
     gain = 0.89 / max(np.abs(x).max() for x in out.values())
     folder = os.path.join(root, 'public', 'fledgetone-samples', st['folder'])
     os.makedirs(folder, exist_ok=True)
@@ -347,7 +560,7 @@ def convert(st, root, measured):
         print(f"   bent onto pitch at the start (cents): {' '.join(sorted(set(scooped)))}")
     print(f"{st['folder']:20s} {len(notes):3d} notes x {nlayers} layers x {ntakes} takes, "
           f"evened {max(abs(v) for v in trim.values()):.1f} dB at most, gain {20 * np.log10(gain):+.1f} dB, {size / 1e6:.1f} MB")
-    return {'notes': notes, 'layers': nlayers, 'takes': ntakes, 'loops': out_loops}
+    return {'notes': notes, 'layers': nlayers, 'takes': ntakes, 'loops': out_loops, **({'shared': shared} if shared else {})}
 
 
 def write_index(root, done):
@@ -359,9 +572,12 @@ def write_index(root, done):
         for m in re.finditer(r"'([a-z0-9-]+)': \{ notes: \[([0-9, ]+)\], layers: (\d+), takes: (\d+)", open(path).read()):
             sets[m.group(1)] = {'notes': [int(n) for n in m.group(2).split(',')], 'layers': int(m.group(3)), 'takes': int(m.group(4))}
         for line in open(path).read().splitlines():
-            m = re.match(r"  '([a-z0-9-]+)': .* loops: (\{.*\}) \},$", line)
+            m = re.match(r"  '([a-z0-9-]+)': .* loops: (\{.*?\})(?:, shared: .*)? \},$", line)
             if m and m.group(1) in sets:
                 sets[m.group(1)]['loops'] = json.loads(re.sub(r"'", '"', m.group(2)))
+            m = re.match(r"  '([a-z0-9-]+)': .* shared: (\{.*\}) \},$", line)
+            if m and m.group(1) in sets:
+                sets[m.group(1)]['shared'] = json.loads(re.sub(r"'", '"', m.group(2)))
     sets.update(done)
     # Size and a fingerprint of the files as they are now (the app keeps downloaded recordings, and
     # a changed fingerprint makes it download a re-made set again)
@@ -396,6 +612,11 @@ def write_index(root, done):
         '   * seconds, so a note can be held for as long as its key is',
         '   */',
         '  loops?: Record<string, [number, number]>;',
+        '  /**',
+        '   * Recordings ("<midi>_<layer>_<take>") with no file of their own: another\'s file it plays,',
+        '   * or null for none (a nearby note\'s recording at that loudness is stretched instead)',
+        '   */',
+        '  shared?: Record<string, string | null>;',
         '}',
         '',
         'export const HOSTED_SETS: Record<string, HostedSet> = {',
@@ -404,6 +625,9 @@ def write_index(root, done):
         v = sets[k]
         loops = v.get('loops') or {}
         tail = (', loops: {' + ', '.join(f"'{n}': [{a}, {b}]" for n, (a, b) in sorted(loops.items())) + '}') if loops else ''
+        shared = v.get('shared') or {}
+        if shared:
+            tail += ', shared: {' + ', '.join(f"'{n}': " + (f"'{to}'" if to else 'null') for n, to in sorted(shared.items())) + '}'
         lines.append(f"  '{k}': {{ notes: [{', '.join(map(str, v['notes']))}], layers: {v['layers']}, takes: {v['takes']}, bytes: {v['bytes']}, hash: '{v['hash']}'{tail} }},")
     lines += ['};', '']
     open(path, 'w').write('\n'.join(lines))

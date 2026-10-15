@@ -51,7 +51,7 @@ def note_midi(name):
 
 
 def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=None, hi=None, retune=True, bend=True,
-      pitched=True, even=True, kit=None):
+      pitched=True, even=True, kit=None, tail=False, sparse=False):
     """
     One set. `sources` is a list of (regex, octave[, midi function[, (lo, hi)]]): the regex matches a file's path in
     the repo, with the named groups `note` (or `index` plus a `midi` function), `layer` and,
@@ -69,11 +69,16 @@ def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=Non
     recorded (drums). `even` False leaves every note at its recorded level instead of evening it
     toward its neighbours (a drum kit's kick and hi-hat must keep their own levels). `kit` names
     the pieces of a drum kit that kit.py mixes from several microphones (see KITS); fetch.py
-    leaves such a set to kit.py.
+    leaves such a set to kit.py. `tail` True gives a ringing note recorded shorter than it rings
+    (cut off while still sounding) the rest of its decay, at the rate it was dying away, up to the
+    set's `cap` (see natural_tail in convert.py). `sparse` True keeps a library's gaps: a note
+    recorded at fewer loudnesses than the set has gets no copies of its other recordings where the
+    same loudness was recorded within a few semitones (the app stretches that one instead), and
+    shares a file rather than duplicating it elsewhere.
     """
     return {'folder': folder, 'repo': repo, 'sources': sources, 'layers': layers, 'kind': kind,
             'takes': takes, 'every': every, 'cap': cap or KINDS[kind]['cap'], 'lo': lo, 'hi': hi, 'retune': retune, 'bend': bend,
-            'pitched': pitched, 'even': even, 'kit': kit}
+            'pitched': pitched, 'even': even, 'kit': kit, 'tail': tail, 'sparse': sparse}
 
 
 NOTE = r'(?P<note>[A-Ga-g][#sb]?-?\d)'
@@ -198,9 +203,11 @@ SETS = [
     S('steel-drums', 'steeldrum', [(rf'flac/jsdb_\d{{3}}_+{NOTE}_(?P<layer>[13])(?P<take>(?:-\d)?)\.flac', 0),
                                    (rf'flac/SteelDrum_\d{{3}}_+{NOTE}_(?P<layer>[134])(?P<take>(?:-\d)?)\.flac', 0)],
       ['1', '3', '4'], 'ringing', cap=4.0),
-    # Sampled every few notes, not every loudness on every note: convert.py fills the gaps
+    # Sampled every few notes, not every loudness on every note (each loudness is stretched from
+    # its own nearest recording, as the library's own mapping does), and cut off a few seconds in
+    # while still ringing: each note is given the rest of its decay
     S('electric-piano', 'epianos', [(rf'Wurlitzer EP200/Samples/{NOTE}(?P<layer>pp|mp|f|ff)\.flac', OCT_EPIANO)],
-      ['pp', 'mp', 'f', 'ff'], 'ringing', cap=6.0),
+      ['pp', 'mp', 'f', 'ff'], 'ringing', cap=8.0, tail=True, sparse=True),
     # A six-string banjo; its only articulation, with a second take where there is one
     S('banjo', 'ganjo', [(rf'Common/Banjo_Common - {NOTE}(?P<take>(?:_2)?)(?P<layer>)\.wav', OCT_BANJO)],
       [''], 'plucked', takes=['', '_2']),

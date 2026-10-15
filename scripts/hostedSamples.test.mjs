@@ -19,6 +19,7 @@ register(
 }`)
 );
 const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
+const { HOSTED_SETS } = await import('../src/audio/hostedSets.ts');
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 const hosted = Object.values(INSTRUMENTS).filter((d) => d.samples?.baseUrl.startsWith('fledgetone-samples/'));
@@ -52,30 +53,38 @@ test('every hosted recording an instrument plays is in public/', () => {
   }
 });
 
-test('each note has every loudness layer and take, layers rising to full velocity', () => {
+const midiOf = (n) => {
+  const m = n.match(/^([A-G]#?)(-?\d)$/);
+  return ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(m[1]) + 12 * (Number(m[2]) + 1);
+};
+
+test('each note has every loudness layer and take (a sparse set: one near it), layers rising to full velocity', () => {
   for (const def of hosted) {
     const { layers, samples } = def.samples;
     assert.ok(layers.length >= 1 && layers.at(-1) === 1, def.key);
     for (let i = 1; i < layers.length; i++) assert.ok(layers[i] > layers[i - 1], def.key);
     const byNote = new Map();
+    /** Each loudness and take's notes */
+    const bySlot = new Map();
     for (const name of Object.keys(samples)) {
       const [note, l, t] = name.split('|');
       assert.ok(Number(l) < layers.length, `${def.key} ${name}`);
       byNote.set(note, [...(byNote.get(note) ?? []), `${l}|${t}`]);
+      bySlot.set(`${l}|${t}`, [...(bySlot.get(`${l}|${t}`) ?? []), midiOf(note)]);
     }
+    const sparse = !!HOSTED_SETS[def.samples.baseUrl.split('/')[1]]?.shared;
     const shapes = new Set([...byNote.values()].map((v) => v.sort().join()));
-    assert.equal(shapes.size, 1, `${def.key}: every note has the same layers and takes`);
+    if (!sparse) assert.equal(shapes.size, 1, `${def.key}: every note has the same layers and takes`);
     const [lo, hi] = def.range;
-    const midis = [...byNote.keys()].map((n) => {
-      const m = n.match(/^([A-G]#?)(-?\d)$/);
-      return ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'].indexOf(m[1]) + 12 * (Number(m[2]) + 1);
-    });
     // No note in the playable range is more than 3 semitones from a recording (shifted further, a
-    // recording starts to sound like a different instrument). The harmonica has no reed between E4
-    // and C5 to record, so its middle stretches 4.
+    // recording starts to sound like a different instrument), at every loudness and take. The
+    // harmonica has no reed between E4 and C5 to record, so its middle stretches 4.
     const most = def.key === 'realHarmonica' ? 4 : 3;
     // (a kit's rows are drums, not pitches)
     if (def.kind === 'drums') continue;
-    for (let m = lo; m <= hi; m++) assert.ok(Math.min(...midis.map((r) => Math.abs(r - m))) <= most, `${def.key}: ${m} is far from any recording`);
+    assert.equal(bySlot.size, layers.length * Math.max(...[...bySlot.keys()].map((k) => Number(k.split('|')[1]) + 1)), `${def.key}: every loudness and take has recordings`);
+    for (const [slot, midis] of bySlot) {
+      for (let m = lo; m <= hi; m++) assert.ok(Math.min(...midis.map((r) => Math.abs(r - m))) <= most, `${def.key}: ${m} is far from any recording at ${slot}`);
+    }
   }
 });
