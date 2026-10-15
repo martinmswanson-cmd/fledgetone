@@ -4,7 +4,7 @@
  * push the peaks over the ceiling, the master limiter's kernel (effects/limiter.ts) holds them
  * down instead, as a mastering engineer's limiter would, up to MAX_LIMITING_DB of gain reduction.
  */
-import { createLimiterKernel, LIMITER_CEILING_DBTP } from './effects/limiter';
+import { createLimiterKernel, LIMITER_AIM_DBTP, LIMITER_CEILING_DBTP } from './effects/limiter';
 import { measureLoudness, normalizeGainDb } from './loudness';
 import type { LoudnessReading } from './loudness';
 
@@ -75,7 +75,7 @@ export async function reachTarget(
 function limitInto(source: Float32Array[], out: Float32Array[], sampleRate: number, gainDb: number) {
   const kernel = createLimiterKernel(sampleRate);
   const g = Math.pow(10, gainDb / 20);
-  const ceiling = Math.pow(10, LIMITER_CEILING_DBTP / 20);
+  const ceiling = Math.pow(10, LIMITER_AIM_DBTP / 20);
   const n = source[0].length;
   const l = source[0];
   const r = source[1] ?? source[0];

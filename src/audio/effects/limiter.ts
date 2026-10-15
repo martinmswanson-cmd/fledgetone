@@ -15,6 +15,13 @@
 
 /** The ceiling it holds the true peak under, in dBTP: room for MP3 / AAC encoding to overshoot a little. */
 export const LIMITER_CEILING_DBTP = -1;
+/**
+ * Where the limiter aims, a hair under the ceiling: the meter's true peak (loudness.ts) reads a
+ * render's every sample afresh, and an export aimed exactly at -1 dBTP read -0.99 now and then.
+ */
+export const LIMITER_AIM_DBTP = LIMITER_CEILING_DBTP - 0.05;
+/** How quickly the gain recovers after a peak (seconds) */
+export const LIMITER_RELEASE = 0.06;
 
 export interface LimiterKernel {
   /** Limit `frames` samples of each channel (in and out may be the same arrays). */
@@ -154,6 +161,25 @@ export function createLimiterKernel(sampleRate: number): LimiterKernel {
   return { process, latency: delay, gain: () => last };
 }
 
+/**
+ * The limiter run over whole rendered channels (stereo, changed in place), as the worklet would
+ * have played them: delayed by its latency, the last `latency` samples of sound left in the
+ * kernel. An export's master section limits this way after the render, as an AudioWorklet module
+ * added to an OfflineAudioContext keeps Chromium from ever freeing it (a whole render kept per
+ * export); the export plans for the latency, so the file lines up exactly as it did.
+ */
+export function limitChannels(left: Float32Array, right: Float32Array, sampleRate: number): void {
+  const kernel = createLimiterKernel(sampleRate);
+  const ceiling = Math.pow(10, LIMITER_AIM_DBTP / 20);
+  const block = 4096;
+  for (let start = 0; start < left.length; start += block) {
+    const end = Math.min(left.length, start + block);
+    const l = left.subarray(start, end);
+    const r = right.subarray(start, end);
+    kernel.process(l, r, l, r, end - start, ceiling, LIMITER_RELEASE);
+  }
+}
+
 /** The worklet processor's name. */
 export const LIMITER_PROCESSOR = 'bbx-limiter';
 
@@ -166,8 +192,8 @@ const createLimiterKernel = ${createLimiterKernel.toString()};
 class LimiterProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
-      { name: 'ceiling', defaultValue: ${Math.pow(10, LIMITER_CEILING_DBTP / 20)}, minValue: 0.01, maxValue: 1, automationRate: 'k-rate' },
-      { name: 'release', defaultValue: 0.06, minValue: 0.005, maxValue: 2, automationRate: 'k-rate' },
+      { name: 'ceiling', defaultValue: ${Math.pow(10, LIMITER_AIM_DBTP / 20)}, minValue: 0.01, maxValue: 1, automationRate: 'k-rate' },
+      { name: 'release', defaultValue: ${LIMITER_RELEASE}, minValue: 0.005, maxValue: 2, automationRate: 'k-rate' },
     ];
   }
   constructor() {

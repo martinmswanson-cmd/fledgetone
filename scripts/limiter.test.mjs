@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { createLimiterKernel, LIMITER_WORKLET_SOURCE } = await import('../src/audio/effects/limiter.ts');
+const { createLimiterKernel, limitChannels, LIMITER_CEILING_DBTP, LIMITER_WORKLET_SOURCE } = await import('../src/audio/effects/limiter.ts');
 const { truePeakOf, measureLoudness } = await import('../src/audio/loudness.ts');
 const { reachTarget, targetById, MAX_LIMITING_DB } = await import('../src/audio/loudnessTarget.ts');
 const SR = 48000;
@@ -134,4 +134,25 @@ test('a loudness target is reached with peaks under -1 dBTP, and the report says
       else assert.ok(Math.abs(after.integrated - target.lufs) < 0.35, `${id}: ${after.integrated.toFixed(2)} LUFS`);
     }
   }
+});
+
+test("an export's limiting after the render matches the worklet's: delayed by its latency, and the meter never reads over the ceiling", () => {
+  // Dense, bright and loud: a chord of saws, 6 dB over full scale
+  const n = SR * 2;
+  const l = new Float32Array(n);
+  const r = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let v = 0;
+    for (const f of [110, 277, 415, 1661, 7040]) v += ((i * f) / SR) % 1 - 0.5;
+    l[i] = v * 0.8;
+    r[i] = -v * 0.75;
+  }
+  const kernel = createLimiterKernel(SR);
+  const [wl] = run(kernel, l, r, 10 ** ((LIMITER_CEILING_DBTP - 0.05) / 20));
+  const al = l.slice();
+  const ar = r.slice();
+  limitChannels(al, ar, SR);
+  for (let i = 0; i < n; i += 997) assert.ok(Math.abs(al[i] - wl[i]) < 1e-6, `sample ${i}`);
+  const tp = 20 * Math.log10(truePeakOf([al, ar]));
+  assert.ok(tp <= LIMITER_CEILING_DBTP - 0.02, `true peak ${tp.toFixed(3)} dBTP`);
 });

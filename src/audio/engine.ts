@@ -29,6 +29,11 @@ export const BUS_GAIN = 0.9;
  * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
  * the sound deck's pads. Used once for live playback and again inside the WAV export render.
  * The master section's inserts (`master`, see masterChain.ts) are only built while switched on.
+ *
+ * In an export's offline context there's no limiter in the graph (`limitsAfter`): the export runs
+ * the same look-ahead limiter over the rendered sound (limitChannels), with the same delay. Chromium
+ * never frees an OfflineAudioContext an AudioWorklet module was added to, so loading the limiter's
+ * worklet into every export's context kept a whole render in memory per export.
  */
 export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx = DEFAULT_MASTER_FX, bpm = 122, master: MasterSettings = defaultMasterSettings()) {
   // Central master bus for every track and the effect returns
@@ -47,14 +52,19 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
   bus.connect(compressor);
   // Patches compressor -> limiterIn itself, with the OTT and width in between while they're on
   const inserts = createMasterInserts(compressor, limiterIn, master);
-  limiterIn.connect(limiter);
-  limiter.connect(ceiling);
-  ceiling.connect(destination);
   let lookahead: AudioWorkletNode | null = null;
   const context = bus.context;
+  const limitsAfter = context.isOffline;
+  if (limitsAfter) limiterIn.connect(destination);
+  else {
+    limiterIn.connect(limiter);
+    limiter.connect(ceiling);
+    ceiling.connect(destination);
+  }
   // Resolves once the look-ahead limiter has taken over (or for good on the stand-in)
-  const limiterReady = loadWorklet(context, LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE)
+  const limiterReady = (limitsAfter ? Promise.resolve() : loadWorklet(context, LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE))
     .then(() => {
+      if (limitsAfter) return;
       if (limiterIn.disposed) return;
       const node = createWorkletNode(context, LIMITER_PROCESSOR, {
         numberOfInputs: 1,
@@ -93,7 +103,9 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
     limiter,
     limiterReady,
     /** Whether the look-ahead limiter is the one in use (its delay is LIMITER latency, not the stand-in's) */
-    lookahead: () => lookahead !== null,
+    lookahead: () => limitsAfter || lookahead !== null,
+    /** An export's chain: the destination gets the sound unlimited, for limitChannels to limit after the render */
+    limitsAfter,
     disposeLimiter,
     ceiling,
     auditionInput,

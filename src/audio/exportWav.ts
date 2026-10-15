@@ -13,7 +13,7 @@ import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } f
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
-import { createLimiterKernel } from './effects/limiter';
+import { createLimiterKernel, limitChannels } from './effects/limiter';
 import { measureCompressorLatency } from './compressorLatency';
 import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds } from './effects/busEffects';
@@ -722,7 +722,8 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   const native = new OfflineAudioContext(2, plan.length, sampleRate);
   const context = new Tone.OfflineContext(native);
   const mix = await withContext(context, async () => {
-    context.destination.volume.value = masterDb;
+    // (Master volume comes after the limiter, which runs after the render: see limitAfter)
+    context.destination.volume.value = 0;
     const chain = createMixChain(context.destination, opts.masterFx, opts.bpm, opts.master);
     chain.auditionInput.dispose();
     if (!lush) {
@@ -760,8 +761,20 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
       mix.bus.dispose();
     }
   });
+  limitAfter(rendered, mix.limitsAfter, masterDb);
   onProgress?.(1);
   return { channels: finishRender(rendered, plan, opts), sampleRate, reverbImpulse };
+}
+
+/**
+ * The master section's limiter run over a finished render (an export's chain has none in its
+ * graph: see createMixChain), then the master volume, which comes after it.
+ */
+function limitAfter(rendered: AudioBuffer, limitsAfter: boolean, masterDb: number): void {
+  if (!limitsAfter) return;
+  const [l, r] = channelsOf(rendered);
+  limitChannels(l, r ?? l, rendered.sampleRate);
+  if (masterDb) scale(r ? [l, r] : [l], Math.pow(10, masterDb / 20));
 }
 
 /**
@@ -948,6 +961,7 @@ async function renderGraph(
     signal
   );
   const reverbImpulse = graph.reverbImpulse();
+  limitAfter(rendered, graph.limitsAfter, masterDb);
   try {
     release();
   } catch (err) {
@@ -959,7 +973,8 @@ async function renderGraph(
 
   /** Mix chain, one strip + instrument per track, and the Transport, inside the offline context. */
   async function buildGraph(context: Tone.OfflineContext) {
-    context.destination.volume.value = masterDb;
+    // (With the master section, master volume comes after its limiter, run after the render)
+    context.destination.volume.value = bypassMaster ? masterDb : 0;
     // Without the master section (stems, freezes, the parts of a mix) only the mix bus and the
     // shared reverb and delay are built, as createMixChain builds them, the bus straight to the
     // output (master volume still applies, as it's a plain gain). Then nothing loads an
@@ -1058,6 +1073,7 @@ async function renderGraph(
     return {
       /** The look-ahead limiter is in place (not the stand-in), where the master section is */
       lookahead: section ? section.lookahead() : expectsLookahead(),
+      limitsAfter: !!section?.limitsAfter,
       reverbImpulse: () => busFx.impulse(),
       dispose: () => {
         schedule.dispose();
