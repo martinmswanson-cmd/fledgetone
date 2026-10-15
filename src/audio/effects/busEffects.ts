@@ -4,6 +4,7 @@ import { createLightPingPong, type LightPingPong } from './lightFx';
 import { decodeSound } from '../soundLibrary';
 import { ROOM_STYLES, roomChannels, type RoomStyle } from './roomIR';
 import { LUSH_PROCESSOR, LUSH_WORKLET_SOURCE } from './lushReverb';
+import { LUSH_PRE_DELAY, lushDecay, REVERB_DAMP_HZ, REVERB_FILTER_Q, REVERB_LOW_CUT_HZ } from './lushAfter';
 import { createWorkletNode, loadWorklet } from '../worklets';
 
 /**
@@ -66,8 +67,8 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   // What goes into the hall is low-cut and damped above 5.5 kHz, as a real room soaks up the top:
   // the reverb's own impulse is full-band noise, which kept bright parts' hiss in the tail and
   // the bass's boom in the wash
-  const lowCut = new Tone.Filter({ type: 'highpass', frequency: 180, rolloff: -12 });
-  const damp = new Tone.Filter({ type: 'lowpass', frequency: 5500, rolloff: -12 });
+  const lowCut = new Tone.Filter({ type: 'highpass', frequency: REVERB_LOW_CUT_HZ, Q: REVERB_FILTER_Q, rolloff: -12 });
+  const damp = new Tone.Filter({ type: 'lowpass', frequency: REVERB_DAMP_HZ, Q: REVERB_FILTER_Q, rolloff: -12 });
   // Each reverb has its own level, for the crossfade between them. The convolvers are fed from
   // convIn, which is cut off from the input while the lush reverb plays instead.
   const convIn = new Tone.Gain(1);
@@ -209,7 +210,6 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   let convolverFed = true;
   let fadeTimer: ReturnType<typeof setTimeout> | undefined;
   const wantsLush = (f: MasterFx) => !f.room && f.roomStyle === 'lush';
-  const lushDecay = (decay: number) => Math.max(0.8, Math.min(12, decay));
   const loadLush = () => {
     lushLoading ??= loadWorklet(context, LUSH_PROCESSOR, LUSH_WORKLET_SOURCE).then(
       () => {
@@ -243,7 +243,7 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
           channelCount: 2,
           channelCountMode: 'explicit',
           channelInterpretation: 'speakers',
-          processorOptions: { low: lushDesign.low, preDelay: 0.01 },
+          processorOptions: { low: lushDesign.low, preDelay: LUSH_PRE_DELAY },
         });
         lush.parameters.get('high')!.value = lushDesign.high;
         damp.connect(lush);

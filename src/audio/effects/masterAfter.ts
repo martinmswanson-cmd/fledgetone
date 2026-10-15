@@ -37,8 +37,19 @@ export function webAudioHighpass(hz: number, q: number, sampleRate: number): Flo
   return Float64Array.of(beta / a0, (-2 * beta) / a0, beta / a0, (-2 * cosw) / a0, (1 - alpha) / a0);
 }
 
+/** A BiquadFilterNode's low-pass coefficients [b0, b1, b2, a1, a2], worked out as webAudioHighpass's. */
+export function webAudioLowpass(hz: number, q: number, sampleRate: number): Float64Array {
+  const f = Math.min(Math.fround(hz), sampleRate / 2);
+  const w = (2 * Math.PI * f) / sampleRate;
+  const cosw = Math.cos(w);
+  const alpha = Math.sin(w) / (2 * 10 ** (Math.fround(q) / 20));
+  const a0 = 1 + alpha;
+  const beta = (1 - cosw) / 2;
+  return Float64Array.of(beta / a0, (2 * beta) / a0, beta / a0, (-2 * cosw) / a0, (1 - alpha) / a0);
+}
+
 /** Run a biquad over `x` in place, its state in double precision and its output in single, as Chromium's. */
-function biquad(x: Float32Array, c: Float64Array): void {
+export function biquad(x: Float32Array, c: Float64Array): void {
   let x1 = 0;
   let x2 = 0;
   let y1 = 0;

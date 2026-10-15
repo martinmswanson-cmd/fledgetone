@@ -173,8 +173,9 @@ is split, where that sounds exactly the same, into parts rendered at once, each 
 before the master section is added up and the master section runs once over the sum
 (`renderParts.ts` says which tracks must stay together). The parts load no AudioWorklet unless a
 track's plugin does, since Chromium renders every offline context that has one on a single shared
-thread; with the lush reverb (a worklet) on, the parts send what they'd feed it and it plays
-once, over their sum, in the master pass. Every part uses the same delay compensation, worked out
+thread; with the lush reverb (a worklet live) on, the parts send what they'd feed it and it
+plays once, over their sum, in plain JavaScript (`effects/lushAfter.ts`; a render in one piece
+goes this way too, as one part). Every part uses the same delay compensation, worked out
 over the whole song. The master section after the compressor (the OTT, width, Level and limiter)
 is in no render: it runs in plain JavaScript over the finished one (`effects/masterAfter.ts`),
 because Chromium never frees an `OfflineAudioContext` an AudioWorklet was loaded into. The result

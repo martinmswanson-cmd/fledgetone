@@ -15,6 +15,7 @@ import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel } from './effects/limiter';
 import { masterAfter } from './effects/masterAfter';
+import { lushReverbOf } from './effects/lushAfter';
 import { measureCompressorLatency } from './compressorLatency';
 import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds } from './effects/busEffects';
@@ -615,7 +616,9 @@ interface Rendered {
  * it's rendered in one piece instead.
  */
 async function renderTracks(opts: RenderOptions, sounding: Track[], onProgress?: (fraction: number) => void): Promise<Rendered> {
-  const parts = await partsFor(opts, sounding);
+  // With the lush reverb fed, even a render in one piece goes the parts' way, as one part: its
+  // reverb then runs after the render (lushAfter.ts), never as a worklet in an offline context
+  const parts = (await partsFor(opts, sounding)) ?? (lushFed(opts) ? [sounding] : null);
   if (parts) {
     try {
       return await renderInParts(opts, parts, onProgress);
@@ -627,6 +630,14 @@ async function renderTracks(opts: RenderOptions, sounding: Track[], onProgress?:
   const { rendered, plan, reverbImpulse } = await renderGraph(opts, sounding, onProgress);
   return { channels: finishRender(rendered, plan, opts), sampleRate: plan.sampleRate, reverbImpulse };
 }
+
+/** Whether a render plays the lush reverb (the room style, no recorded room) and anything can reach it. */
+function lushFed(opts: Pick<RenderOptions, 'masterFx' | 'tracks'>): boolean {
+  return !opts.masterFx.room && opts.masterFx.roomStyle === 'lush' && feedsReverb(opts.tracks);
+}
+
+/** Whether any of these tracks can send to the shared reverb (a send, a distance, or a send lane). */
+const feedsReverb = (tracks: readonly Track[]) => tracks.some((t) => t.reverbSend > 0 || (t.distance ?? 0) > 0 || t.automation?.some((l) => l.param === 'reverbSend'));
 
 /** How many parts a render may run in at once on this computer, unless the options say. */
 function partsAllowed(opts: RenderOptions): number {
@@ -708,10 +719,11 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   const bypass = !!opts.bypassMaster;
   const latency = bypass ? 0 : await masterChainLatency(sampleRate);
   const slack = bypass ? 0 : await latencySlack(sampleRate);
-  // The lush reverb is an AudioWorklet, which would put every part on Chromium's one shared
-  // worklet thread, and its slow drift runs only while it hears something, so copies of it in
-  // the parts wouldn't add up to the one: the parts send what they'd feed it, and it plays once,
-  // in the master pass (see renderGraph's reverbSends)
+  // The lush reverb is an AudioWorklet live, which would put every part on Chromium's one shared
+  // worklet thread (and keep its render in memory for good), and its slow drift runs only while it
+  // hears something, so copies of it in the parts wouldn't add up to the one: the parts send what
+  // they'd feed it, and it plays once over their sum, in plain JavaScript (see renderGraph's
+  // reverbSends and lushAfter.ts)
   const lush = !opts.masterFx.room && opts.masterFx.roomStyle === 'lush';
   // Read live state before any context is swapped
   const masterDb = opts.ignoreMasterVolume ? 0 : getMasterVolume();
@@ -759,23 +771,27 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   const reverbImpulse = results[0].reverbImpulse;
   results = [];
   opts.signal?.throwIfAborted();
-  if (bypass) return { channels: finishRender(await bypassPass(opts, sum, lush, masterDb), plan, opts), sampleRate, reverbImpulse };
+  // The lush reverb, once, over the parts' summed sends (channels 3 and 4), into the sum where its
+  // return plays into the mix bus
+  if (lush) addLushReverb(sum, opts.masterFx.reverbDecay);
+  if (bypass) {
+    if (masterDb) scale(channelsOf(sum).slice(0, 2), Math.pow(10, masterDb / 20));
+    return { channels: finishRender(sum, plan, opts), sampleRate, reverbImpulse };
+  }
 
-  // The master section, fed the sum where the mix bus would feed it; with the lush reverb, it
-  // also plays the reverb, once, on the parts' summed sends (channels 3 and 4), into the mix bus
+  // The master section, fed the sum where the mix bus would feed it
   const native = new OfflineAudioContext(2, plan.length, sampleRate);
   const context = new Tone.OfflineContext(native);
   const mix = await withContext(context, async () => {
     // (Master volume comes after the limiter, which runs after the render: see finishMaster)
     context.destination.volume.value = 0;
-    const chain = createMixChain(context.destination, opts.masterFx, opts.bpm, opts.master);
+    // (No lush reverb here: the sum already has it, see above)
+    const chain = createMixChain(context.destination, { ...opts.masterFx, roomStyle: 'hall' }, opts.bpm, opts.master);
     chain.auditionInput.dispose();
-    if (!lush) {
-      // The parts' sound already has the bus's gain and the shared reverb and delay in it
-      chain.busFx.dispose();
-      chain.bus.dispose();
-    }
-    await Promise.all([chain.inserts.ready(), chain.limiterReady, lush ? chain.busFx.ready : undefined]);
+    // The parts' sound already has the bus's gain and the shared reverb and delay in it
+    chain.busFx.dispose();
+    chain.bus.dispose();
+    await Promise.all([chain.inserts.ready(), chain.limiterReady]);
     return chain;
   });
   // The sound comes out as late as the limiter actually in place makes it
@@ -788,22 +804,12 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   split.connect(dry, 0, 0);
   split.connect(dry, 1, 1);
   dry.connect(nativeInputOf(mix.compressor));
-  if (lush) {
-    const sends = native.createChannelMerger(2);
-    split.connect(sends, 2, 0);
-    split.connect(sends, 3, 1);
-    sends.connect(nativeInputOf(mix.busFx.reverbInput));
-  }
   source.start(0);
   const rendered = await abortable(native.startRendering(), opts.signal).finally(() => {
     source.disconnect();
     mix.inserts.dispose();
     mix.compressor.dispose();
     mix.disposeLimiter();
-    if (lush) {
-      mix.busFx.dispose();
-      mix.bus.dispose();
-    }
   });
   finishMaster(rendered, mix.limitsAfter, opts.master, masterDb);
   onProgress?.(1);
@@ -811,44 +817,18 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
 }
 
 /**
- * The sum of the parts of a render without the master section (renderInParts), finished as the one
- * render would be: the lush reverb played once over the parts' summed sends, where any track feeds
- * it, then the master volume.
+ * The lush reverb over a render's reverb sends (channels 3 and 4, see renderGraph's reverbSends),
+ * added into its stereo mix (channels 1 and 2) through the mix bus's gain, as its return plays into
+ * the bus (see lushAfter.ts).
  */
-async function bypassPass(opts: RenderOptions, sum: AudioBuffer, lush: boolean, masterDb: number): Promise<AudioBuffer> {
-  const fed = lush && opts.tracks.some((t) => t.reverbSend > 0 || (t.distance ?? 0) > 0 || t.automation?.some((l) => l.param === 'reverbSend'));
-  let out = sum;
-  if (fed) {
-    const native = new OfflineAudioContext(2, sum.length, sum.sampleRate);
-    const context = new Tone.OfflineContext(native);
-    const room = await withContext(context, async () => {
-      context.destination.volume.value = 0;
-      const bus = new Tone.Gain(BUS_GAIN).connect(context.destination);
-      const busFx = createBusEffects(bus, opts.masterFx, opts.bpm);
-      await busFx.ready;
-      return { bus, busFx };
-    });
-    const source = native.createBufferSource();
-    source.buffer = sum;
-    const split = native.createChannelSplitter(sum.numberOfChannels);
-    const dry = native.createChannelMerger(2);
-    const sends = native.createChannelMerger(2);
-    source.connect(split);
-    split.connect(dry, 0, 0);
-    split.connect(dry, 1, 1);
-    dry.connect(native.destination);
-    split.connect(sends, 2, 0);
-    split.connect(sends, 3, 1);
-    sends.connect(nativeInputOf(room.busFx.reverbInput));
-    source.start(0);
-    out = await abortable(native.startRendering(), opts.signal).finally(() => {
-      source.disconnect();
-      room.busFx.dispose();
-      room.bus.dispose();
-    });
+function addLushReverb(sum: AudioBuffer, decay: number): void {
+  if (sum.numberOfChannels < 4) return;
+  const [left, right, sendL, sendR] = channelsOf(sum);
+  const [wetL, wetR] = lushReverbOf(sendL, sendR, sum.sampleRate, decay);
+  for (let i = 0; i < left.length; i++) {
+    left[i] += BUS_GAIN * wetL[i];
+    right[i] += BUS_GAIN * wetR[i];
   }
-  if (masterDb) scale(channelsOf(out).slice(0, 2), Math.pow(10, masterDb / 20));
-  return out;
 }
 
 /**
@@ -1083,9 +1063,10 @@ async function renderGraphHeld(
     // output (master volume still applies, as it's a plain gain). Then nothing loads an
     // AudioWorklet (the limiter is one) unless a track's plugin does: Chromium renders every
     // offline context with one on a single shared thread, so the parts couldn't run side by side.
-    // The lush reverb (an AudioWorklet too) only where something can reach it: Chromium never lets
-    // go of an offline context an AudioWorklet was loaded into, nor the render it holds, so a freeze
-    // (whose sends stay live) kept every render it made with the lush reverb chosen
+    // The lush reverb (an AudioWorklet too) is never built here when something can reach it: such
+    // renders go through renderInParts, which plays it after the render (lushAfter.ts), since
+    // Chromium never lets go of an offline context an AudioWorklet was loaded into, nor the render
+    // it holds. (Only rendering in one piece after the parts failed builds it here.)
     const section = bypassMaster ? null : createMixChain(context.destination, masterFx, bpm, opts.master);
     const mixBus = section?.bus ?? new Tone.Gain(BUS_GAIN).connect(context.destination);
     const unfed = masterFx.roomStyle === 'lush' && !tracks.some((t) => t.reverbSend > 0 || (t.distance ?? 0) > 0 || t.automation?.some((l) => l.param === 'reverbSend'));
