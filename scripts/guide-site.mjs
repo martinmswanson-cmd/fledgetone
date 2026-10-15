@@ -35,6 +35,7 @@ const head = ({ title, description, path }) => `<!doctype html>
 </head>
 <body class="guide-page">
   <a class="skip" href="#main">Skip to content</a>
+  <div class="wip-bar" role="note"><span class="wip-tag">Work in progress</span> Fledgetone is still being built, so things may change or break.</div>
   <header class="nav">
     <div class="wrap nav-row">
       <a class="brand" href="/" aria-label="Fledgetone home"><img src="/img/logo.png" alt="" width="34" height="34" /><span>Fledgetone</span></a>

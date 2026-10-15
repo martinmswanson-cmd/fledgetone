@@ -209,6 +209,9 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
   let shown = -1;
   parts.push(({ p }) => {
     head.style.setProperty('--pos', `${p * 100}%`);
+    // On the side, start below the menu bar (lower while the notice above it is in view)
+    if (wide.matches) ruler.style.top = `${Math.max(84, Math.round(header.getBoundingClientRect().bottom) + 20)}px`;
+    else ruler.style.top = '';
     const pos = p * BARS, bar = Math.floor(pos) + 1, beat = Math.floor((pos % 1) * 4) + 1;
     barRead.textContent = `${String(Math.min(bar, BARS)).padStart(3, '0')}.${p >= 1 ? 4 : beat}`;
     const secs = pos * (240 / BPM), f = Math.floor((secs % 1) * 30);
