@@ -97,14 +97,11 @@ const col = (name) => css.getPropertyValue(name).trim();
 const dpr = () => Math.min(2, devicePixelRatio || 1);
 const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
 const maxScroll = () => Math.max(1, document.documentElement.scrollHeight - innerHeight);
-const cutoffHz = (p) => 80 * Math.pow(16000 / 80, 0.08 + p * 0.84);
-const hz = (f) => (f >= 1000 ? `${(f / 1000).toFixed(1)} kHz` : `${Math.round(f)} Hz`);
 
 // Scopes: canvases on the page that draw while they're on screen
 {
   const scopes = [...document.querySelectorAll('.scope')].map((el) => ({
     el, kind: el.dataset.scope, canvas: el.querySelector('canvas'), on: reduce,
-    reads: { cutoff: el.querySelector('[data-read="cutoff"]'), level: el.querySelector('[data-read="level"]') },
   }));
   const PALETTE = ['--cyan', '--green', '--amber', '--purple'].map(col);
   const BARS = 64, peaks = new Float32Array(BARS);
@@ -156,8 +153,6 @@ const hz = (f) => (f >= 1000 ? `${(f / 1000).toFixed(1)} kHz` : `${Math.round(f)
   parts.push((st) => {
     for (const s of scopes) {
       if (s.on) (s.kind === 'wave' ? wave : bars)(s, st);
-      if (s.reads.cutoff) s.reads.cutoff.textContent = hz(cutoffHz(st.p));
-      if (s.reads.level) s.reads.level.textContent = `${(st.energy > 0.001 ? Math.max(-60, 20 * Math.log10(st.energy)) : -60).toFixed(0)} dB`;
     }
   });
 }
@@ -230,13 +225,11 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
   });
 }
 
-// Right: the master channel strip. The cutoff knob turns with the filter sweep, the meters bounce
-// with the scroll, and the fader rides the song down to silence at the end of the page.
+// Right: the master channel strip. The meters bounce with the scroll, and the fader rides the
+// song down to silence at the end of the page.
 {
   const strip = el('aside', 'side-strip', `
     <div class="ss-name">MASTER</div>
-    <div class="ss-knob"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" class="ss-ring"/><path class="ss-arc" d=""/><line x1="20" y1="20" x2="20" y2="8" class="ss-ptr"/></svg>
-      <span class="ss-label">CUTOFF</span><span class="ss-val ss-cut">120 Hz</span></div>
     <div class="ss-body">
       <div class="ss-meter"><i class="ss-fill"></i><i class="ss-peak"></i></div>
       <div class="ss-meter"><i class="ss-fill"></i><i class="ss-peak"></i></div>
@@ -246,19 +239,12 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
     <div class="ss-btns"><span>M</span><span>S</span></div>`);
   strip.setAttribute('aria-hidden', 'true');
   document.body.append(strip);
-  const arc = strip.querySelector('.ss-arc'), needle = strip.querySelector('.ss-ptr');
-  const cut = strip.querySelector('.ss-cut'), dbRead = strip.querySelector('.ss-db');
+  const dbRead = strip.querySelector('.ss-db');
   const fills = [...strip.querySelectorAll('.ss-fill')], peaksEl = [...strip.querySelectorAll('.ss-peak')];
   const cap = strip.querySelector('.ss-cap');
   const peak = [0, 0];
-  const pt = (a) => [20 + 15 * Math.sin(a), 20 - 15 * Math.cos(a)];
   parts.push(({ p, energy, t }) => {
     if (!wide.matches) return;
-    const a = (-135 + p * 270) * (Math.PI / 180);
-    needle.setAttribute('transform', `rotate(${-135 + p * 270} 20 20)`);
-    const [x0, y0] = pt(-135 * Math.PI / 180), [x1, y1] = pt(a);
-    arc.setAttribute('d', `M${x0} ${y0} A15 15 0 ${p * 270 > 180 ? 1 : 0} 1 ${x1} ${y1}`);
-    cut.textContent = hz(cutoffHz(p));
     // The fader: 0 dB, easing down to -12 dB through the song, then a fade to silence at the end
     const gainDb = p < 0.9 ? -12 * (p / 0.9) ** 2 : -12 - ((p - 0.9) / 0.1) * 48;
     const faderPos = gainDb <= -60 ? 1 : clamp(-gainDb / 66);
