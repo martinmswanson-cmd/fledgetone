@@ -109,6 +109,12 @@ def main(only):
         if (only and st['folder'] not in only) or not os.path.exists(os.path.join(d, 'plan.json')):
             continue
         plan = json.load(open(os.path.join(d, 'plan.json')))['files']
+        if not st['pitched']:
+            # Drums: each file is the note its name or source gives it, as recorded
+            out[st['folder']] = {f['file']: {'midi': f['nominal'], 'cents': 0, 'yin': None} for f in plan}
+            print(f"{st['folder']:20s} unpitched: {len(plan)} files at their given notes")
+            json.dump(out, open('measure.json', 'w'), indent=1)
+            continue
         win = KINDS[st['kind']]['tune']
         rows = []
         for f in plan:

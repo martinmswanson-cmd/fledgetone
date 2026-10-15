@@ -16,6 +16,11 @@ REPOS = {
     'emily': 'sfzinstruments/karoryfer.emilyguitar',
     'splendid': 'sfzinstruments/SplendidGrandPiano',
     'vcsl': 'sgossner/VCSL',
+    'steeldrum': 'sfzinstruments/jlearman.SteelDrum',
+    'epianos': 'sfzinstruments/GregSullivan.E-Pianos',  # CC BY 3.0: credit Greg Sullivan
+    'ganjo': 'sfzinstruments/ganjo',
+    'rustydrums': 'sfzinstruments/karoryfer.big-rusty-drums',
+    'voice': 'sfzinstruments/legato_vocal_tutorial',
 }
 
 # How each kind of note is measured and cut:
@@ -45,7 +50,8 @@ def note_midi(name):
     return pc + 12 * (int(m.group(3)) + 1)
 
 
-def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=None, hi=None, retune=True, bend=True):
+def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=None, hi=None, retune=True, bend=True,
+      pitched=True, even=True, kit=None):
     """
     One set. `sources` is a list of (regex, octave[, midi function[, (lo, hi)]]): the regex matches a file's path in
     the repo, with the named groups `note` (or `index` plus a `midi` function), `layer` and,
@@ -58,15 +64,56 @@ def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=Non
     (a piano's upper notes are tuned sharp on purpose, as on every real piano). `bend` False leaves
     a held note's start as recorded (convert.py bends notes that scoop up into pitch; organ pipes
     don't, and their deep stops confuse the pitch tracking).
+    A source's third item can also be a fixed MIDI note, for a sound with no note in its name (a
+    drum). `pitched` False skips measuring: each file is the note its name or source says, as
+    recorded (drums). `even` False leaves every note at its recorded level instead of evening it
+    toward its neighbours (a drum kit's kick and hi-hat must keep their own levels). `kit` names
+    the pieces of a drum kit that kit.py mixes from several microphones (see KITS); fetch.py
+    leaves such a set to kit.py.
     """
     return {'folder': folder, 'repo': repo, 'sources': sources, 'layers': layers, 'kind': kind,
-            'takes': takes, 'every': every, 'cap': cap or KINDS[kind]['cap'], 'lo': lo, 'hi': hi, 'retune': retune, 'bend': bend}
+            'takes': takes, 'every': every, 'cap': cap or KINDS[kind]['cap'], 'lo': lo, 'hi': hi, 'retune': retune, 'bend': bend,
+            'pitched': pitched, 'even': even, 'kit': kit}
 
 
 NOTE = r'(?P<note>[A-Ga-g][#sb]?-?\d)'
 V = 'Strings/Violin Section'
 VA = 'Strings/Viola Section'
 C = 'Strings/Cello Section'
+
+# How many octaves a few libraries' note names sit below standard names (measure.py confirms: the
+# solo voice is a bass singing an octave under its files' names, as is the banjo)
+OCT_HARMONICA = 1
+OCT_OCARINA = 1
+OCT_ZITHER = 1
+OCT_EPIANO = 0
+OCT_BANJO = -1
+OCT_VOICE = -1
+
+# Drum kits kit.py mixes: each piece's General MIDI note, its articulation's folder under Samples/,
+# its files' prefix (<prefix>_vl<n>_rr<n>.flac) and the microphones mixed: each close one at that
+# many dB against the overheads ('oh', which set the pieces' levels against each other). The drums
+# sound mostly from their close microphones, the overheads 3 dB under (the snare has one on each
+# head), the cymbals mostly from the overheads, as their close microphones sit right on them.
+KITS = {
+    'studio-kit': {'repo': 'rustydrums', 'layers': 4, 'takes': ['rr1', 'rr2'], 'pieces': [
+        (36, 'kick_24/kick', 'k', {'kick': 3, 'oh': 0}),
+        (37, 'snare_14/sidestick', 'sn_ss', {'top': 3, 'btm': 0, 'oh': 0}),
+        (38, 'snare_14/center', 'sn_center', {'top': 3, 'btm': 0, 'oh': 0}),
+        (41, 'tom_22/center', 't22', {'cl': 3, 'oh': 0}),
+        (42, 'hihat_14/tc', 'ht_tc', {'cl': 3, 'oh': 0}),
+        (43, 'tom_18/center', 't18', {'cl': 3, 'oh': 0}),
+        (44, 'hihat_14/chik', 'ht_chik', {'cl': 3, 'oh': 0}),
+        (45, 'tom_15/center', 't15', {'cl': 3, 'oh': 0}),
+        (46, 'hihat_14/open', 'ht_open', {'cl': 3, 'oh': 0}),
+        (48, 'tom_14/center', 't14', {'cl': 3, 'oh': 0}),
+        (49, 'crash_17/cr', 'cr', {'cl': -3, 'oh': 0}),
+        (51, 'ride_22/rd', 'rd', {'cl': -3, 'oh': 0}),
+        (52, 'china_18/cn', 'cn', {'cl': -3, 'oh': 0}),
+        (53, 'ride_22/bl', 'rd_bl', {'cl': -3, 'oh': 0}),
+        (57, 'crash_sizzle_17/cr', 'crs', {'cl': -3, 'oh': 0}),
+    ]},
+}
 
 SETS = [
     # ---- strings (VSCO 2 CE) ----
@@ -140,6 +187,33 @@ SETS = [
       ['vl3'], 'ringing', cap=4.0),
     S('tenor-sax', 'vcsl', [(rf'Aerophones/Reed Aerophones/Tenor Saxophone/Non-Vibrato/BrettTenor_NV_Main_{NOTE}_(?P<layer>vl[23])_(?P<take>rr1)\.wav', 1)],
       ['vl2', 'vl3'], 'sustain', every=2),
+    S('harmonica', 'vcsl', [(rf'Aerophones/Free Aerophones/Harmonica-Hohner-Special20-C/Sustains/Normal/Hohner-Special20_Normal_{NOTE}(?P<layer>)\.wav', OCT_HARMONICA)],
+      [''], 'sustain'),
+    S('ocarina', 'vcsl', [(rf'Aerophones/Edge-blown Aerophones/Ocarina, Typical/Sustains/Sus/StdOcarina_Sus_{NOTE}(?P<layer>)\.wav', OCT_OCARINA)],
+      [''], 'sustain'),
+    S('zither', 'vcsl', [(rf'Chordophones/Zithers/Dan Tranh/Normal/{NOTE}_(?P<layer>mf|f|ff)_(?P<take>1)\.wav', OCT_ZITHER)],
+      ['mf', 'f', 'ff'], 'plucked'),
+    # A concert bass drum, struck at five loudnesses: one note (a drum), as recorded
+    S('concert-bass-drum', 'vcsl', [(r'Membranophones/Struck Membranophones/Bass Drum 2/bassdrum_hit_(?P<layer>pp|mp|mf|f|ff)(?P<take>[12]?)\.wav', 0, 36)],
+      ['pp', 'mp', 'mf', 'f', 'ff'], 'ringing', cap=5.0, retune=False, pitched=False, even=False),
+    # ---- more colour (jSteelDrum, Greg Sullivan's electric pianos, ganjo, Karoryfer's solo voice) ----
+    # The steel drum's lower octave was re-recorded (jsdb_*) for its three softer loudnesses; its
+    # loudest are the first recordings (SteelDrum_*), as its own mapping uses them. Of its five
+    # loudnesses: the softest, the middle and the loudest. Measured as ringing, not struck: a hard
+    # stroke starts sharp and settles
+    S('steel-drums', 'steeldrum', [(rf'flac/jsdb_\d{{3}}_+{NOTE}_(?P<layer>[13])(?P<take>(?:-\d)?)\.flac', 0),
+                                   (rf'flac/SteelDrum_\d{{3}}_+{NOTE}_(?P<layer>[134])(?P<take>(?:-\d)?)\.flac', 0)],
+      ['1', '3', '4'], 'ringing', cap=4.0),
+    # Sampled every few notes, not every loudness on every note: convert.py fills the gaps
+    S('electric-piano', 'epianos', [(rf'Wurlitzer EP200/Samples/{NOTE}(?P<layer>pp|mp|f|ff)\.flac', OCT_EPIANO)],
+      ['pp', 'mp', 'f', 'ff'], 'ringing', cap=6.0),
+    # A six-string banjo; its only articulation, with a second take where there is one
+    S('banjo', 'ganjo', [(rf'Common/Banjo_Common - {NOTE}(?P<take>(?:_2)?)(?P<layer>)\.wav', OCT_BANJO)],
+      [''], 'plucked', takes=['', '_2']),
+    S('solo-voice', 'voice', [(rf'Samples/vowel_sustain/a/vowel_a_{NOTE}(?P<layer>)\.wav', OCT_VOICE)],
+      [''], 'sustain', every=2, lo=38),  # (his lowest note, C2, wavers in vocal fry)
+    # A studio drum kit: each hit mixed from its close microphones and the overheads by kit.py
+    S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
 ]
 
 
@@ -161,6 +235,8 @@ def match(st, path):
         g = m.groupdict()
         if 'index' in g and g['index'] is not None:
             midi = src[2](int(g['index'])) if src[2] else None
+        elif g.get('note') is None and len(src) > 2 and isinstance(src[2], int):
+            midi = src[2]  # one fixed note (a drum)
         else:
             midi = note_midi(g['note']) + 12 * octave
         if len(src) > 3 and midi is not None and not src[3][0] <= midi <= src[3][1]:

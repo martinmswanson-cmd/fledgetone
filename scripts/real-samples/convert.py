@@ -253,9 +253,13 @@ def convert(st, root, measured):
             path = os.path.join(d, f['file'])
             x = load(path, st.get('stereo', True))
             c = m['cents']
-            if st['retune'] and abs(c) >= 55:
+            # Over 55 cents off looks mismeasured, unless YIN (in any octave) heard the same pitch:
+            # a whole library can be tuned a quarter tone off (the banjo), a singer drift flat
+            yin_agrees = m.get('yin') is not None and abs((m['yin'] - midi - c / 100 + 6) % 12 - 6) < 0.25
+            tunable = abs(c) < 55 or (abs(c) < 59.5 and yin_agrees)
+            if st['retune'] and not tunable:
                 print(f"   not retuning {f['file']} ({c:+.0f} cents looks mismeasured)")
-            r = 2 ** (-c / 1200) if st['retune'] and 2 < abs(c) < 55 else 1.0
+            r = 2 ** (-c / 1200) if st['retune'] and 2 < abs(c) and tunable else 1.0
             if r != 1.0:
                 x = each(x, lambda ch: retune(ch, c))
             s = start_of(mono(x))
@@ -302,8 +306,9 @@ def convert(st, root, measured):
     for midi in notes:
         loudest = max(l for (m, l) in recs if m == midi)
         lv[midi] = lvl[(midi, loudest)] + gap[loudest]
-    # Even out notes far louder or quieter than their neighbours
-    if len(notes) >= 4:
+    # Even out notes far louder or quieter than their neighbours (not a drum kit's pieces: a kick
+    # and a hi-hat keep the levels they were recorded at)
+    if st['even'] and len(notes) >= 4:
         fit = np.polyval(np.polyfit(notes, [lv[m] for m in notes], 2), notes)
         trim = {m: float(np.clip(fv - lv[m], -9, 9)) for m, fv in zip(notes, fit)}
         if os.environ.get('SHOW_TRIM'):

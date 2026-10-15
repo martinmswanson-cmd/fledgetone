@@ -69,6 +69,9 @@ def main(args):
     for st in SETS:
         if only and st['folder'] not in only:
             continue
+        if st['kit']:
+            print(f"{st['folder']:20s} mixed by kit.py")
+            continue
         head, files = plan(st)
         print(f"{st['folder']:20s} {len(files):4d} files, {len({f['nominal'] for f in files})} notes")
         if '--list' in args:
