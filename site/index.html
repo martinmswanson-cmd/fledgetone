@@ -107,6 +107,12 @@
       </div>
     </section>
 
+    <!-- The scroll synth: scroll speed is the level, how far down the page is the filter (main.js) -->
+    <div class="scope scope-bars" data-scope="bars" aria-hidden="true">
+      <canvas></canvas>
+      <span class="scope-read"><b>CUTOFF</b> <span data-read="cutoff">120 Hz</span> <b>LEVEL</b> <span data-read="level">-60 dB</span></span>
+    </div>
+
     <div class="ticker" aria-label="Exports to the web, Unity, Godot, FMOD Studio, Wwise, Premiere, DaVinci Resolve and Final Cut">
       <div class="ticker-track" aria-hidden="true">
         <span>Exports to</span><b>Web games</b><b>Unity</b><b>Godot</b><b>FMOD Studio</b><b>Wwise</b><b>Premiere</b><b>DaVinci Resolve</b><b>Final Cut</b><b>WAV &middot; MP3 &middot; Ogg</b><b>Stems</b><b>MP4</b><b>MusicXML</b>
@@ -125,6 +131,7 @@
 
     <!-- Scoring to video -->
     <section id="video" class="showcase" style="--c: var(--purple)" aria-labelledby="video-title">
+      <div class="scope scope-wave" data-scope="wave" aria-hidden="true"><canvas></canvas></div>
       <div class="wrap">
         <div class="show-head reveal">
           <p class="show-eyebrow">Scoring to video</p>
@@ -162,6 +169,7 @@
 
     <!-- Game music -->
     <section id="games" class="showcase" style="--c: var(--green)" aria-labelledby="games-title">
+      <div class="scope scope-wave" data-scope="wave" aria-hidden="true"><canvas></canvas></div>
       <div class="wrap">
         <div class="show-head reveal">
           <p class="show-eyebrow">Game music</p>
@@ -309,6 +317,8 @@
         and in <a href="/app/third-party-licenses.txt">third-party-licenses.txt</a>.
       </p>
     </section>
+
+    <div class="scope scope-bars scope-mirror" data-scope="bars" aria-hidden="true"><canvas></canvas></div>
 
     <!-- Final call -->
     <section class="final wrap">

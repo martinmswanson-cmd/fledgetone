@@ -385,3 +385,24 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   .hero::after { display: none; }
   .ticker-track { animation: none; }
 }
+
+/* The scroll synth: canvases main.js draws on (bars: a spectrum, wave: an oscilloscope) */
+.scope { position: relative; width: 100%; pointer-events: none; }
+.scope canvas { display: block; width: 100%; height: 100%; }
+.scope-bars { height: 140px; margin-top: 48px; }
+.scope-bars + .ticker { margin-top: 0; }
+.scope-mirror { height: 110px; margin-top: 96px; transform: scaleY(-1); opacity: .7; }
+.scope-wave { position: absolute; left: 0; right: 0; top: -1px; height: 90px; }
+.showcase { overflow: hidden; }
+.scope-read {
+  position: absolute; right: max(16px, calc((100% - var(--wrap)) / 2 + 24px)); top: 6px;
+  display: flex; gap: 8px; align-items: baseline;
+  font: 500 11px/1 var(--mono); letter-spacing: .1em; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.scope-read b { font-weight: 500; color: var(--cyan); margin-left: 10px; }
+.scope-read span { min-width: 7ch; color: var(--text); }
+@media (max-width: 640px) {
+  .scope-bars { height: 100px; }
+  .scope-wave { height: 70px; }
+}
