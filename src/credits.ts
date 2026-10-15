@@ -54,6 +54,12 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
+    prefixes: ['violin', 'viola', 'cello', 'contrabass'].map((set) => `${HOSTED}${set}/`),
+    samples:
+      'Solo violin, viola, cello and double bass, bowed, from the [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by Lawrence Fritts and the University of Iowa Electronic Music Studios (split into single notes and converted to MP3, hosted with the app)',
+    licence: 'Free to download and use for any project, without restrictions (the studios\' statement)',
+  },
+  {
     prefixes: [`${HOSTED}celesta/`],
     samples: 'Celesta from [A Sampled Celesta](https://gitlab.com/echoparallax/a-sampled-celesta) by Neil Bickford (converted to MP3, hosted with the app)',
     licence: CC0,

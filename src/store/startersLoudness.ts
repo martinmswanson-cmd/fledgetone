@@ -87,7 +87,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   saveRoom: { trim: 4, lufs: -19.2 }, // -19
   cathedralBoss: { trim: 2, lufs: -15.2 }, // -16.1
   arenaMetal: { trim: 6.5, lufs: -14.9 }, // -15.4
-  starlitCity: { trim: 6, lufs: -14.9 }, // -16
+  starlitCity: { trim: 6, lufs: -15 }, // -16
   farewellPiano: { trim: 3.5, lufs: -14.8 }, // -16.4
   sunsetDrive: { trim: 3.5, lufs: -15.1 }, // -15.1
   midnightCaper: { trim: 0.5, lufs: -15 }, // -14.6
@@ -104,9 +104,9 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   dnb: { trim: 3.5, lufs: -14 }, // -14
   synthwave: { trim: 2.5, lufs: -14.1 }, // -14.1
   chiptune: { trim: 1, lufs: -14 }, // -13.7
-  classical: { trim: 0.5, lufs: -15 }, // -16.1
+  classical: { trim: 0.5, lufs: -15.1 }, // -16.1
   angelic: { trim: -2, lufs: -15 }, // -14.4
-  cinematic: { trim: 3.5, lufs: -15.1 }, // -15.5
+  cinematic: { trim: 3.5, lufs: -14.6 }, // -15.5
   epic: { trim: -2, lufs: -15.2 }, // -15.5
   horror: { trim: 0, lufs: -14.7 }, // -16.2
   rock: { trim: -1, lufs: -12.8 }, // -12.8

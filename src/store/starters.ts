@@ -465,10 +465,10 @@ function trap(): ProjectSnapshot {
 
 function cinematic(): ProjectSnapshot {
   const harp = track('Harp', 'harp', { volume: -8, reverbSend: 0.45, pan: -0.2, fx: { human: human(0.3) } });
-  const strings = track('Strings', 'strings', { volume: -15, reverbSend: 0.45, pan: -0.3, fx: { peq: EQ.pad(), human: human(0.35, 0.3) } });
+  const strings = track('Strings', 'strings', { volume: -15, reverbSend: 0.55, pan: -0.3, fx: { peq: EQ.pad(), human: human(0.35, 0.3) } });
   const pad = track('Soundtrack', 'soundtrackPad', { volume: -18, reverbSend: 0.4, fx: { peq: EQ.pad(7000) } });
-  const cello = track('Cello', 'cello', { volume: -6, reverbSend: 0.3, pan: 0.2, fx: { peq: peq(lowCut(40)), human: human(0.3, 0.3) } });
-  const celloTheme = track('Cello theme', 'cello', { volume: -8, reverbSend: 0.35, pan: 0.25, fx: { peq: peq(lowCut(40)), human: human(0.35, 0.3) } });
+  const cello = track('Cello', 'cello', { volume: -6, reverbSend: 0.45, pan: 0.2, fx: { peq: peq(lowCut(40)), human: human(0.3, 0.3) } });
+  const celloTheme = track('Cello theme', 'cello', { volume: -8, reverbSend: 0.45, pan: 0.25, fx: { peq: peq(lowCut(40)), human: human(0.35, 0.3) } });
   const horns = track('Horns', 'frenchHorn', { volume: -4, reverbSend: 0.5, pan: -0.25, fx: { peq: EQ.brass(), human: human(0.3, 0.25) } });
   const taiko = track('Taiko', 'taiko', { volume: -5, reverbSend: 0.4, fx: { human: human(0.15) } });
   const sfx = track('FX', 'fx', { volume: -16, reverbSend: 0.3 });
@@ -702,12 +702,13 @@ const tomFill = (from: number): Step[] => [
 // ---------- Classical ----------
 
 function classical(): ProjectSnapshot {
-  // Played, not sequenced: HUMAN on every part, light vibrato on the held lines, notes that overlap
+  // A string quartet of single players (each note recorded, the app's vibrato on the held notes)
+  // played, not sequenced: HUMAN on every part, notes that overlap
   const strings = (amount = 0.4) => human(amount, 0.3);
-  const vln1 = track('Violin I', 'violin', { volume: -3, pan: -0.4, reverbSend: 0.35, fx: { human: strings() } });
-  const vln2 = track('Violin II', 'violin', { volume: -9, pan: -0.15, reverbSend: 0.35, fx: { human: strings() } });
-  const viola = track('Viola', 'viola', { volume: -4, pan: 0.15, reverbSend: 0.35, fx: { human: strings() } });
-  const cello = track('Cello', 'cello', { volume: -4, pan: 0.3, reverbSend: 0.35, fx: { peq: peq(lowCut(40)), human: strings() } });
+  const vln1 = track('Violin I', 'realViolin', { volume: -6, pan: -0.4, reverbSend: 0.5, fx: { human: strings() } });
+  const vln2 = track('Violin II', 'realViolin', { volume: -12, pan: -0.15, reverbSend: 0.5, fx: { human: strings() } });
+  const viola = track('Viola', 'realViola', { volume: -6, pan: 0.15, reverbSend: 0.5, fx: { human: strings() } });
+  const cello = track('Cello', 'realSoloCello', { volume: -10.5, pan: 0.3, reverbSend: 0.5, fx: { peq: peq(lowCut(40)), human: strings() } });
   const harpsi = track('Harpsichord', 'harpsichord', { volume: -10, reverbSend: 0.25, fx: { peq: peq(lowCut(150)), human: human(0.3) } });
   // D - A - Bm - F#m - G - D - G - A, two beats each (the Canon's ground)
   const roots = ['D3', 'A2', 'B2', 'F#2', 'G2', 'D2', 'G2', 'A2'];
@@ -725,11 +726,11 @@ function classical(): ProjectSnapshot {
     [9, 17],
     [vln1, vln2, viola, cello, harpsi],
     [
-      withLanes(clip(cello, 'Ground bass', 1, 4, ground, 4), VIBRATO),
+      clip(cello, 'Ground bass', 1, 4, ground, 4),
       clip(viola, 'Inner voice', 1, 4, violaPart, 4),
       clip(vln2, 'Arpeggios', 5, 4, broken, 3),
-      withLanes(clip(vln1, 'Theme', 9, 4, theme), VIBRATO),
-      withLanes(clip(vln1, 'Variation', 13, 4, legato(variation)), VIBRATO),
+      clip(vln1, 'Theme', 9, 4, theme),
+      clip(vln1, 'Variation', 13, 4, legato(variation)),
       clip(harpsi, 'Continuo', 9, 4, continuo, 2),
     ],
     [[1, 'Ground'], [5, 'Second violins'], [9, 'Theme'], [13, 'Variation']],
@@ -1419,7 +1420,7 @@ export function createStarter(id: StarterId): ProjectSnapshot {
   return withStableIds(`starter_${id}`, () => {
     const p = withRoom(id, withGlue(id, wholeSong(withSwells(inRange(withSeats(recorded(BUILDERS[id]())))))));
     // Last, the level: each starter brought to its group's loudness (see startersLoudness.ts)
-    return trimMix(withBreathing(id, withVibrato(id, withLegato(id, p))), starterTrimDb(id));
+    return trimMix(withBreathing(id, withVibrato(id, withLegato(id, ownVibrato(p)))), starterTrimDb(id));
   });
 }
 
@@ -1620,6 +1621,29 @@ function withLegato(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
   return { ...p, clips };
 }
 
+/**
+ * The bowed strings that already play with a vibrato: recorded with one (the sections and the
+ * solo violin of VSCO), or given one note by note (InstrumentDef.vibrato).
+ */
+const OWN_VIBRATO = new Set<string>(['realSoloViolin', 'realViolins', 'realViolas', 'realCello', 'realStrings']);
+const hasOwnVibrato = (key: InstrumentKey) => OWN_VIBRATO.has(key) || !!INSTRUMENTS[key]?.vibrato;
+
+/**
+ * A string part that plays its own vibrato loses the vibrato lane its starter drew for the older
+ * sound: the lane's even wobble on top of a player's vibrato is two vibratos at once, a seasick,
+ * synthetic sound.
+ */
+function ownVibrato(p: ProjectSnapshot): ProjectSnapshot {
+  const own = new Set(p.tracks.filter((t) => hasOwnVibrato(t.instrumentKey)).map((t) => t.id));
+  if (!own.size) return p;
+  const clips = p.clips.map((c) => {
+    if (!own.has(c.trackId) || !c.expression?.vibrato) return c;
+    const { vibrato: _, ...rest } = c.expression;
+    return { ...c, expression: rest };
+  });
+  return { ...p, clips };
+}
+
 /** How deep the vibrato grows (of the lane's 0..1, VIBRATO_CENTS at 1): about ±20 cents */
 const VIBRATO_DEPTH = 0.4;
 
@@ -1633,7 +1657,7 @@ function withVibrato(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
   const barSeconds = 240 / p.bpm;
   const singing = new Set(
     p.tracks
-      .filter((t) => SINGING.test(t.instrumentKey))
+      .filter((t) => SINGING.test(t.instrumentKey) && !hasOwnVibrato(t.instrumentKey))
       .filter((t) => {
         const notes = p.clips.filter((c) => c.trackId === t.id).flatMap((c) => c.notes);
         return notes.length > 0 && isLine(notes) && notes.reduce((a, n) => a + durationToBars(n.duration), 0) / notes.length >= 0.5 - 1e-6;
@@ -1682,6 +1706,7 @@ function wholeSong(p: ProjectSnapshot): ProjectSnapshot {
 const SWELLED = new Set<string>([
   'strings', 'slowStrings', 'synthStrings', 'synthStrings2', 'violin', 'viola', 'cello', 'contrabass', 'tremolo',
   'realViolins', 'realViolas', 'realCello', 'realSoloViolin', 'realDoubleBass', 'realTremolo',
+  'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
   'realStrings', 'realBrass', 'realTenorSax',
   'choir', 'voiceOohs', 'synthChoir', 'choirPad', 'haloPad', 'warmPad', 'newAgePad', 'glassPad', 'sweepPad', 'polysynthPad', 'soundtrackPad', 'atmosphere',
   'frenchHorn', 'realHorn', 'tuba', 'realTuba', 'trombone', 'realTrombone', 'oboe', 'realOboe', 'clarinet', 'realClarinet', 'bassoon', 'realBassoon', 'englishHorn',

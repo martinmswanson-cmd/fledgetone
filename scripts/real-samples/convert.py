@@ -140,6 +140,144 @@ def flatten_scoop(x, midi, hop=0.025):
     return np.stack([ch[k0] * (1 - fr) + ch[k0 + 1] * fr for ch in stereo]), float(np.max(np.abs(smooth[head])))
 
 
+def fine_track(x, midi, hop=0.02, win=0.08):
+    """Cents off `midi` every `hop` seconds over the whole of `x` (a harmonic sieve per frame, to a
+    cent: the coarse grid, then a parabola through the best and its neighbours)."""
+    hz = 440 * 2 ** ((midi - 69) / 12)
+    grid = np.arange(-80, 81, 2)
+    n = 1 << 14
+    f = np.fft.rfftfreq(n, 1 / SR)
+    ks = np.arange(1, 7)
+    w = int(win * SR)
+    out = []
+    for a in range(0, len(x) - w, int(hop * SR)):
+        seg = x[a: a + w]
+        mag = np.log1p(np.abs(np.fft.rfft(seg * np.hanning(w), n)) / (np.abs(seg).max() + 1e-12))
+        score = (np.interp(np.outer(hz * 2 ** (grid / 1200), ks), f, mag) / np.sqrt(ks)).sum(axis=1)
+        k = int(np.argmax(score))
+        d = 0.0
+        if 0 < k < len(grid) - 1:
+            y0, y1, y2 = score[k - 1], score[k], score[k + 1]
+            den = y0 - 2 * y1 + y2
+            d = 0.5 * (y0 - y2) / den if den else 0.0
+        out.append(float(grid[k] + 2 * d))
+    return np.array(out)
+
+
+def flatten_drift(stereo, midi, hop=0.02):
+    """
+    Hold a note played without vibrato on its pitch all the way through (sets.py `steady`): a bow
+    drifts a few cents over a long note, which the app's own vibrato (added on top) would otherwise
+    ride on. The pitch is followed every 20 ms, smoothed over a fifth of a second, and read faster
+    where it's flat and slower where it's sharp, only where the note is within 30 dB of its peak
+    (the release keeps its own). Returns it and the largest correction in cents.
+    """
+    x = mono(stereo)
+    c = fine_track(x, midi, hop)
+    if len(c) < 10:
+        return stereo, 0.0
+    env, _ = envelope(x, hop)
+    env = env[: len(c)]
+    loud = env > env.max() - 30
+    k = int(0.2 / hop)
+    # Each frame's smoothed pitch, from its loud neighbours only (a frame wildly off is misread)
+    ok = loud & (np.abs(c - np.median(c[loud])) < 40)
+    num = np.convolve(np.where(ok, c, 0.0), np.ones(k), mode='same')
+    den = np.convolve(ok.astype(float), np.ones(k), mode='same')
+    smooth = np.where(den > 0, num / np.maximum(den, 1e-9), 0.0)
+    # (more than 30 cents is a misreading, not a drift)
+    smooth = np.where(loud, np.clip(smooth, -30, 30), 0.0)
+    t = np.arange(len(smooth)) * hop + 0.04  # each frame's centre
+    n = x.shape[0]
+    rate = 2 ** (-np.interp(np.arange(n) / SR, t, smooth, left=smooth[0], right=0.0) / 1200)
+    pos = np.concatenate([[0], np.cumsum(rate[:-1])])
+    pos = pos[pos < n - 2]
+    k0 = pos.astype(int)
+    fr = pos - k0
+    return np.stack([ch[k0] * (1 - fr) + ch[k0 + 1] * fr for ch in stereo]), float(np.max(np.abs(smooth)))
+
+
+#: A held note's loop inside its own steady part (sets.py `xloop`): at most this long (seconds),
+#: its end crossfaded over XLOOP_FADE into what comes before its start
+XLOOP_MOST = 3.0
+XLOOP_FADE = 0.25
+
+
+def held_span(m):
+    """
+    (start, end) in samples of a held note's sustain, for its loop (inner_loop): from a quarter
+    second after it first comes within 6 dB of its loudest (past the bow's attack) to 0.15 s before
+    it last is within 15 dB of it (before the release); if that's under half a second (a short
+    note, or one that swells to its end), from 0.1 s after it first comes within 6 dB (0.3 s at
+    the latest) to 0.1 s before its end; None if even that's under 0.3 s.
+    """
+    env, h = envelope(m, 0.01)
+    if len(env) < 20:
+        return None
+    top = np.max(env)
+    first = int(np.argmax(env > top - 6))
+    last = len(env) - 1 - int(np.argmax(env[::-1] > top - 15))
+    a, b = (first + 25) * h, (last - 15) * h
+    if b - a < int(0.5 * SR):
+        a, b = min((first + 10) * h, int(0.3 * SR)), len(m) - int(0.1 * SR)
+    return (a, b) if b - a >= int(0.3 * SR) else None
+
+
+def inner_loop(x, midi, cap):
+    """
+    A held note looped inside its own recording (sets.py `xloop`): the longest stretch of its
+    sustain (held_span) up to XLOOP_MOST seconds, ending 0.4 s before the cap at the latest. Its
+    start is moved by up to two periods of the note to where the sound before it best matches the
+    sound before its end, and its last XLOOP_FADE seconds (less in a short loop) are crossfaded into
+    that, so the jump from its end back to its start is seamless. Its level is held steady from
+    just before the loop on (a bow's slow swell or fade, repeated, would pump): the level over each
+    0.15 s brought to the loop's middle level, by at most 6 dB, easing in over the 0.2 s before.
+    The file goes on past the loop's end with what follows its start (as a looping note would),
+    0.3 s of it. Returns the note and the loop's (start, end) in seconds, or the note unchanged
+    and None when its sustain is too short.
+    """
+    m = mono(x)
+    span = held_span(m)
+    if not span:
+        return x, None
+    b = min(span[1], cap - int(0.4 * SR))
+    a = max(span[0], b - int(XLOOP_MOST * SR))
+    f = min(int(XLOOP_FADE * SR), (b - a) // 3, a - int(0.01 * SR))
+    if b - a < int(0.3 * SR) or f < int(0.05 * SR):
+        return x, None
+    period = SR / (440 * 2 ** ((midi - 69) / 12))
+    ref = m[b - f: b]
+    best, best_a = -2.0, a
+    for d in range(-int(2 * period), int(2 * period) + 1):
+        s = m[a + d - f: a + d]
+        if len(s) != f or a + d - f < 0:
+            continue
+        r = float(np.dot(s, ref) / (np.linalg.norm(s) * np.linalg.norm(ref) + 1e-12))
+        if r > best:
+            best, best_a = r, a + d
+    a = best_a
+    # The level held steady from just before the loop
+    h = int(0.01 * SR)
+    n = len(m) // h
+    rms = np.sqrt(np.convolve(np.mean(m[: n * h].reshape(n, h) ** 2, axis=1), np.ones(15) / 15, mode='same')) + 1e-9
+    want = float(np.median(rms[a // h: b // h]))
+    g = np.clip(want / rms, 0.5, 2.0)
+    t0 = max(0, (a - f) // h - 20)
+    g[: t0] = 1.0
+    ramp = np.linspace(0, 1, (a - f) // h - t0 + 1)
+    g[t0: (a - f) // h + 1] = 1 + (g[t0: (a - f) // h + 1] - 1) * ramp
+    gain = np.interp(np.arange(x.shape[1]), np.arange(n) * h + h / 2, g)
+    x = x * gain
+    fade_in = np.sin(np.linspace(0, np.pi / 2, f)) ** 2
+    tail = int(0.3 * SR)
+
+    def build(ch):
+        y = ch[: b].copy()
+        y[b - f: b] = ch[b - f: b] * (1 - fade_in) + ch[a - f: a] * fade_in
+        return np.concatenate([y, ch[a: a + tail]])
+    return each(x, build), (a / SR, b / SR)
+
+
 def start_of(x):
     """Where the note starts: 4 ms before it first comes within 40 dB of its peak."""
     a = np.abs(x)
@@ -311,16 +449,24 @@ MATCH_WINDOWS = [(0.0, 0.1), (0.0, 0.25), (0.0, 0.5)]
 MATCH_PEAK = (0.0, 0.3)
 
 
-def raw_levels(x, window):
+#: A held note played without vibrato (sets.py `steady`) is matched over its first half second and
+#: its body, not its first tenths or its peak: a loud bowed note can start slower than a soft one,
+#: and matched over its first tenth too, its soft recordings came out up to 20 dB under it.
+STEADY_WINDOWS = [(0.05, 0.5), (0.3, 1.5)]
+
+
+def raw_levels(x, window, steady=False):
     """
     How loud a recording measures, unweighted (dB): its energy over each of MATCH_WINDOWS and
     `window` (the kind's), then its peak over MATCH_PEAK, for matching a note's loudnesses (see
     match_layers).
     """
     out = []
-    for a, b in [*MATCH_WINDOWS, window]:
+    for a, b in [*(STEADY_WINDOWS if steady else MATCH_WINDOWS), window]:
         seg = x[int(a * SR): int(b * SR)]
         out.append(10 * np.log10(np.mean(seg ** 2) + 1e-20) if len(seg) >= 256 else -200.0)
+    if steady:
+        return np.array(out)
     seg = x[int(MATCH_PEAK[0] * SR): int(MATCH_PEAK[1] * SR)]
     out.append(20 * np.log10(np.max(np.abs(seg)) + 1e-12) if len(seg) else -200.0)
     return np.array(out)
@@ -378,7 +524,7 @@ def align_layers(out, notes, nlayers, ntakes, pitched):
     return lags
 
 
-def match_layers(out, notes, nlayers, ntakes, window):
+def match_layers(out, notes, nlayers, ntakes, window, steady=False):
     """
     Every softer recording set to the loudest loudness's level at its note, by unweighted energy
     (over the start and over the kind's window) and peak: the lowest of those gains, so a softer
@@ -394,7 +540,7 @@ def match_layers(out, notes, nlayers, ntakes, window):
         return
 
     def lv(m, layer):
-        return np.mean([raw_levels(mono(out[(m, layer, t)]), window) for t in range(ntakes) if (m, layer, t) in out], axis=0)
+        return np.mean([raw_levels(mono(out[(m, layer, t)]), window, steady) for t in range(ntakes) if (m, layer, t) in out], axis=0)
 
     ref = np.array([lv(m, top) for m in tops])
     for (midi, layer, t) in list(out):
@@ -416,6 +562,24 @@ def offsets(n):
     return [0.0] * n
 
 
+def unsteady(x):
+    """
+    Why a held note played without vibrato (sets.py `steady`) isn't one steady note, or None: a
+    stretch of it (0.1 s) 12 dB or more over its middle level (another, louder sound caught with
+    it), or its start much quieter than its middle (a soft sound before the note itself).
+    """
+    env, h = envelope(x, 0.1)
+    if len(env) < 8:
+        return None
+    body = env[3: -3]
+    mid = float(np.median(body))
+    if body.max() - mid >= 12:
+        return f'a sound {body.max() - mid:.0f} dB over the note'
+    if np.median(env[2:6]) < mid - 12:
+        return 'a quiet start before the note'
+    return None
+
+
 def convert(st, root, measured):
     d = os.path.join('dl', st['folder'])
     plan = json.load(open(os.path.join(d, 'plan.json')))['files']
@@ -425,8 +589,13 @@ def convert(st, root, measured):
     recs = {}
     for f in sorted(plan, key=lambda f: f.get('src', 0)):
         m = measured[f['file']]
+        why = unsteady(mono(load(os.path.join(d, f['file']), False))) if st['steady'] else None
+        if why:
+            print(f"   left out {f['file']}: {why}")
+            continue
         takes = recs.setdefault((m['midi'], f['layer']), [])
-        if len(takes) < 2 and all(g.get('src', 0) == f.get('src', 0) for g, _ in takes):
+        # (a set of one take per note whose file turned out to be a neighbour's note keeps its first)
+        if len(takes) < 2 and all(g.get('src', 0) == f.get('src', 0) and not (st['iowa'] and g['take'] == f['take']) for g, _ in takes):
             takes.append((f, m))
     nlayers = len(st['layers'])
     ntakes = max(len(v) for v in recs.values())
@@ -454,7 +623,17 @@ def convert(st, root, measured):
                 x, scoop = flatten_scoop(x, midi)
                 if scoop:
                     scooped.append(f"{NAMES[midi % 12]}{midi // 12 - 1}:{scoop:.0f}")
-            if st['kind'] == 'sustain':
+            if st['steady']:
+                x, drift = flatten_drift(x, midi)
+                if drift > 8:
+                    scooped.append(f"{NAMES[midi % 12]}{midi // 12 - 1}~{drift:.0f}")
+            if st['kind'] == 'sustain' and st['xloop']:
+                x, seam = inner_loop(x[:, :cap], midi, cap)
+                if seam:
+                    loops[(midi, layer, t)] = seam
+                else:
+                    print(f"   no steady part to loop in {f['file']}")
+            elif st['kind'] == 'sustain':
                 # Every held note gets a seamless loop (so it can be held as long as the key is):
                 # a recording shorter than the cap is extended from its steady part, a longer one
                 # from a steady stretch ending 3 s before the cap (what came after is replaced by
@@ -540,7 +719,7 @@ def convert(st, root, measured):
             key = f'{midi}_{layer}_{t}'
             if lag and key in out_loops:
                 out_loops[key] = [round(v + lag / SR, 5) for v in out_loops[key]]
-        match_layers(out, notes, nlayers, ntakes, kind['level'])
+        match_layers(out, notes, nlayers, ntakes, kind['level'], st['steady'])
     gain = 0.89 / max(np.abs(x).max() for x in out.values())
     folder = os.path.join(root, 'public', 'fledgetone-samples', st['folder'])
     os.makedirs(folder, exist_ok=True)
