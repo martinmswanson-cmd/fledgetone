@@ -78,7 +78,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'The menus',
-      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Tools**, **Video**, **Game**, **View** and **Help**. **New** offers a blank timeline, the demo song or one of 76 starters, game music among them.',
+      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Plugins**, **Tools**, **Video**, **Game**, **View**, **Learn** and **Help**. **New** offers a blank timeline, the demo song or one of 76 starters, game music among them.',
       target: '[role="menubar"]',
     },
     {
@@ -128,7 +128,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'Learn more',
-      body: '**LEARN** has this tour and six hands-on tutorials, from a first song to game music that reacts. **GUIDE** (or **?**) explains everything in detail.',
+      body: 'The **Learn** menu at the top (or the **LEARN** button on the right of the toolbar) has this tour and seven hands-on tutorials, from a first song to game music that reacts. **GUIDE** (or **?**) explains everything in detail.',
       target: 'button[title^="Tour and tutorials"]',
     },
   ],

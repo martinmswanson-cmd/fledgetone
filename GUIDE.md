@@ -26,6 +26,7 @@ At the very top is the **menu bar**: every tool in the app, where a desktop DAW 
 - **Video**: load the reference video, its preview window, Find cuts, Dip under dialogue, the tempo finder, Cut to length, markers for editors, music onto the video, remove the video.
 - **Game**: the Game tab and its parts (transitions, intensity, stingers, loop variations), Sound effects maker, variations, and the game kit, web runtime and FMOD / Wwise exports.
 - **View**: the bottom panel's tabs, show or hide it, the Inspector, zoom, and bars or timecode on the ruler.
+- **Learn**: Tour & tutorials…, then the tour and each tutorial to start straight away (one you left part-way says *resume*; finished ones are ticked), and the Guide.
 - **Help**: Guide, Tour & tutorials, Search, Keyboard shortcuts, Report a problem, What's new, Terms of use.
 
 Hover across the bar while a menu is open to move between menus; the arrow keys work too, and `Esc` closes.
@@ -35,7 +36,7 @@ Hover across the bar while a menu is open to move between menus; the arrow keys 
 
 ### Tour and tutorials
 
-The first time you open Fledgetone it offers a one-minute **tour** and six hands-on **tutorials**; click **LEARN** in the header (or search for *tutorial*) to find them again any time.
+The first time you open Fledgetone it offers a one-minute **tour** and seven hands-on **tutorials**. Find them again any time in the **Learn** menu at the top (every tutorial is listed there, ticked once finished), with the **LEARN** button on the right of the toolbar under the menus, or by searching for *tutorial*.
 
 - **Quick tour**: points at each part of the screen and says what it's for. Just read and click **Next**.
 - **Beginner: Your first song**: open a starter, play it, mute a track, change the tempo, write a note, undo, and export.
@@ -46,7 +47,7 @@ The first time you open Fledgetone it offers a one-minute **tour** and six hands
 - **Intermediate: Game music that reacts**: open a game starter, switch states in the Game tab, the transition matrix, a written bridge, switching on the phrase, and Audition like the game.
 - **Expert: Make it react**: parameters the game sets, costumes, shuffled pieces and silences, effects and parameter sliders in Audition, Try it in a game, and what the game kit carries.
 
-A tutorial puts a glowing ring round the part of the screen to use, and its card sits in a corner out of the way: it moves only if a menu, picker or dialog you open would end up under it. Drag the card by its top row to put it anywhere, or shrink it to one line with **–** (the line still shows what to do). Steps marked **Your turn** wait for you to do it and move on by themselves once you have (with a tick); everything else just needs **Next**. The app works normally the whole time, shortcuts included. **Back** goes to the previous step, **Skip** moves past a task you'd rather not do, and the **X** closes the tutorial: **LEARN** then offers to **Resume** where you stopped. Finished tutorials are ticked. Progress is remembered in this browser.
+A tutorial puts a glowing ring round the part of the screen to use, and its card sits in a corner out of the way: it moves only if a menu, picker or dialog you open would end up under it. Drag the card by its top row to put it anywhere, or shrink it to one line with **–** (the line still shows what to do). Steps marked **Your turn** wait for you to do it and move on by themselves once you have (with a tick); everything else just needs **Next**. The app works normally the whole time, shortcuts included. **Back** goes to the previous step, **Skip** moves past a task you'd rather not do, and the **X** closes the tutorial: **LEARN** (or the **Learn** menu) then offers to **Resume** where you stopped. Finished tutorials are ticked. Progress is remembered in this browser.
 
 ### Search
 

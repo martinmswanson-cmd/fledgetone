@@ -16,6 +16,8 @@ import { formatBarCount } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { APP_VERSION } from '../../version';
+import { LESSONS } from '../../tour/lessons';
+import { useTourStore } from '../../tour/tourStore';
 
 /**
  * The menu bar: every tool in the app, in the place a DAW keeps it (File, Edit, Song, Track,
@@ -337,6 +339,28 @@ const MENUS: MenuDef[] = [
         { label: 'Zoom out', shortcut: '-', run: () => s.setZoom(s.zoom / 1.25) },
         { label: 'Ruler in bars', run: () => s.setRulerUnits('bars'), checked: s.rulerUnits === 'bars', divider: true },
         { label: 'Ruler in timecode', run: () => s.setRulerUnits('timecode'), checked: s.rulerUnits === 'timecode' },
+      ];
+    },
+  },
+  {
+    id: 'learn',
+    label: 'Learn',
+    // The tour and every tutorial, one click each (a tutorial left part-way picks up where it stopped)
+    items: () => {
+      const progress = useTourStore.getState().progress;
+      return [
+        { label: 'Tour & tutorials…', run: () => ui().setDialog('learn') },
+        ...LESSONS.map((l, i) => {
+          const p = progress[l.id];
+          const resume = !p?.done && p?.step !== undefined && p.step > 0;
+          return {
+            label: `${l.title}${resume ? ' (resume)' : ''}`,
+            checked: !!p?.done,
+            divider: i === 0,
+            run: () => useTourStore.getState().start(l.id, resume ? p.step : 0),
+          };
+        }),
+        { label: 'Guide', shortcut: '?', run: () => ui().openGuide(), divider: true },
       ];
     },
   },

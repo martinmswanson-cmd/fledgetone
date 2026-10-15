@@ -1,6 +1,6 @@
 /**
  * The list of the tour and tutorials (lessons.ts): shown as a welcome on someone's first visit,
- * and from LEARN in the header.
+ * and from LEARN in the header or the Learn menu.
  */
 import React from 'react';
 import { CheckCircle2, Compass, GraduationCap, Play, RotateCcw } from 'lucide-react';
@@ -76,7 +76,7 @@ export const LearnDialog: React.FC<{ onClose: () => void; welcome?: boolean }> =
         })}
       </div>
       <div className="flex items-center gap-2 pt-1">
-        <span className="text-[11px]">Find these again any time under <strong className="text-forge-text">LEARN</strong> at the top.</span>
+        <span className="text-[11px]">Find these again any time in the <strong className="text-forge-text">Learn</strong> menu at the top, or the <strong className="text-forge-text">LEARN</strong> button.</span>
         {welcome && (
           <button type="button" onClick={onClose} className="ml-auto h-8 px-3 rounded-md border border-forge-border text-forge-text hover:border-forge-borderLight">
             No thanks, I'll explore

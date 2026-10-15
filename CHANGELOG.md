@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-25 — A Learn menu
+
+- A **Learn** menu at the top lists the tour and every tutorial, one click each (finished ones ticked, a half-done one picks up where you stopped). The guide and the tour now say where to find them correctly.
+
 ## 2026.10.15-24 — New violin in the starters
 
 - The starters' solo violin is the new **Violin (Real)**: every note recorded, warmer and with a player's vibrato.

@@ -392,7 +392,7 @@ The first-visit tour and the tutorials' overlay.
 
 | File | What it is |
 |---|---|
-| [`LearnDialog.tsx`](../src/components/tour/LearnDialog.tsx) | The list of the tour and tutorials (lessons.ts): shown as a welcome on someone's first visit, and from LEARN in the header. |
+| [`LearnDialog.tsx`](../src/components/tour/LearnDialog.tsx) | The list of the tour and tutorials (lessons.ts): shown as a welcome on someone's first visit, and from LEARN in the header or the Learn menu. |
 | [`TourOverlay.tsx`](../src/components/tour/TourOverlay.tsx) | The running tour or tutorial: a ring round the part of the screen a step is about, and a card explaining it. A step with a task shows "Your turn" and moves on by itself once it's done; the app stays fully usable underneath (nothing here takes clicks or keys, and the card isn't a dialog, so keyboard shortcuts keep working). Back, Next and Skip are always there. |
 
 ## src/components/video/
