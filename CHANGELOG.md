@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-14 — A small thank-you
+
+- The terms' questions and answers now say how to credit Fledgetone if you'd like to (never required, always appreciated).
+
 ## 2026.10.15-13 — Terms: questions and answers
 
 - The terms of use start with plain questions and answers: owning and selling your music, credit, game kits in paid games, privacy, lost work, similar songs, content claims and more.

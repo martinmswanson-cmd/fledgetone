@@ -19,7 +19,7 @@ Yes, all of it: songs, project files, exports, stems, sound effects, videos and 
 Yes. Sell it, stream it, license it, put it in paid games and apps. (Sections 2 and 3.)
 
 **Do I have to credit Fledgetone?**
-No. A mention is always appreciated, but it's never required. A few built-in recordings ask for credit to *their* makers under their own licences; the guide's Credits section lists them. (Section 6.)
+No, it's never required. But we'd really appreciate it! :) If you'd like to, a line like "Made with Fledgetone" in your description, credits or game's about page helps other musicians find it, and it makes our day. Tell us about what you made, too: we love hearing it. A few built-in recordings ask for credit to *their* makers under their own licences; the guide's Credits section lists them. (Section 6.)
 
 **Can I put the game kit's scripts and players in my closed-source or paid game?**
 Yes. The files Fledgetone writes into exports can go in any project under any licence, with no need to share your code. Each such export includes a LICENSE-exported-files.txt that says so. (Section 3.)
