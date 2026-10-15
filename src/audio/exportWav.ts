@@ -566,8 +566,10 @@ async function partsFor(opts: RenderOptions, sounding: Track[]): Promise<Track[]
   if (opts.bypassMaster || opts.hold) return null;
   const plan = planRender(opts);
   if (plan.length / plan.sampleRate < MIN_PARTS_SECONDS) return null;
-  // Each part holds a whole render (stereo, 32-bit) until they're added up
-  const allowed = Math.min(partsAllowed(opts), Math.floor(PARTS_MEMORY / (plan.length * 8)));
+  // Each part holds a whole render (stereo, 32-bit; with the lush reverb, its sends too) until
+  // they're added up
+  const channels = !opts.masterFx.room && opts.masterFx.roomStyle === 'lush' ? 4 : 2;
+  const allowed = Math.min(partsAllowed(opts), Math.floor(PARTS_MEMORY / (plan.length * 4 * channels)));
   if (allowed < 2) return null;
   const parts = renderParts(opts.tracks, sounding, opts.clips, opts, allowed);
   if (parts.length < 2) return null;
@@ -763,10 +765,11 @@ async function renderGraph(
 ): Promise<{ rendered: AudioBuffer; plan: RenderPlan; reverbImpulse: AudioBuffer | undefined }> {
   // The buses these tracks play through come too (a stem of a bused track has its bus's sound),
   // each made before the tracks that play into it
-  // ...and the returns they send to (heard ones: a muted return takes nothing), with their buses
+  // ...and the returns they or their buses send to (heard ones: a muted return takes nothing), with their buses
   const heard = audibleIds(opts.tracks);
   const soundingIds = new Set(sounding.map((t) => t.id));
-  const returns = opts.tracks.filter((r) => !soundingIds.has(r.id) && heard.has(r.id) && sounding.some((t) => liveSends(t, opts.tracks).some((x) => x.to === r.id)));
+  const senders = [...sounding, ...sounding.flatMap((t) => busChain(t, opts.tracks))];
+  const returns = opts.tracks.filter((r) => !soundingIds.has(r.id) && heard.has(r.id) && senders.some((t) => liveSends(t, opts.tracks).some((x) => x.to === r.id)));
   const withReturns = [...sounding, ...returns];
   const busIds = new Set(withReturns.flatMap((t) => busChain(t, opts.tracks).map((b) => b.id)));
   const { clips, bpm, swing, startBar, endBar, masterFx, signal } = opts;

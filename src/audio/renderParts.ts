@@ -124,12 +124,16 @@ export function renderParts(
   };
   for (const t of players) {
     find(t.id);
-    // Every bus and return the track's sound reaches: its buses, the returns it sends to, and theirs
-    const reaches = [...busChain(t, tracks)];
-    for (const send of liveSends(t, tracks)) {
-      const ret = byId.get(send.to);
-      if (!ret || !heard.has(ret.id)) continue;
-      reaches.push(ret, ...busChain(ret, tracks));
+    // Every bus and return the track's sound reaches: its buses, the returns it or any of its
+    // buses sends to, and theirs
+    const buses = busChain(t, tracks);
+    const reaches = [...buses];
+    for (const from of [t, ...buses]) {
+      for (const send of liveSends(from, tracks)) {
+        const ret = byId.get(send.to);
+        if (!ret || !heard.has(ret.id)) continue;
+        reaches.push(ret, ...busChain(ret, tracks));
+      }
     }
     for (const mix of reaches) if (isNonLinearMix(mix)) union(t.id, mix.id);
     // Not for the sound but the speed: plugins run as AudioWorklets, and Chromium renders every
