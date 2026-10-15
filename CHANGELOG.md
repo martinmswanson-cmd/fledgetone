@@ -8,6 +8,15 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## Unreleased
+
+- MP3, OGG and video exports keep their peaks under -1.5 dBTP, so they still play back under -1 dBTP after compression.
+- Switching a compressor on or off while the song plays no longer makes a held bass note on the other tracks dip.
+- Recorded instruments from the older sound set (celesta, saxophone, steel-string guitar and others) no longer add a DC offset to the mix.
+- The Riddim starter plays at -14 LUFS like the rest of its group, with a softer snare and the growls up front.
+- Recorded electric guitars cost less to play, with no change in sound.
+- Ring-out exports end once the tails have died away instead of after a fixed time, so long reverbs and cymbals are no longer cut off.
+
 ## 2026.10.15-3 — Taller timeline
 
 - Drag the bar under the timeline to make it taller and see more tracks at once; double-click it to fit every track.
