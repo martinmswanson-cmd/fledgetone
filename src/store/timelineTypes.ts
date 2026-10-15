@@ -844,6 +844,10 @@ export interface ClipAudio {
   envelope?: GainPoint[];
   /** Reversed: the sound it was reversed from (the clip plays a reversed copy), to go back to */
   reversedFrom?: string;
+  /** Re-pitched into another key (see flipActions.ts): the sound it was moved from, to go back to */
+  shiftedFrom?: string;
+  /** ...and by how many semitones */
+  shift?: number;
 }
 
 /** One pad of a Drum Rack: a sound, and the effects it plays through (its own, not shared with the other pads). */
@@ -868,6 +872,11 @@ export interface RackPad {
   choke: number;
   /** Plays backwards */
   reverse?: boolean;
+  /** A chop: the stretch of the sound it plays, seconds (absent: all of it). See sampleFlip.ts */
+  start?: number;
+  end?: number;
+  /** Fade at the chop's edges, seconds (absent: none) */
+  fade?: number;
 }
 
 /** A Drum Rack: 16 pads, pad i on MIDI note RACK_BASE_NOTE + i. */

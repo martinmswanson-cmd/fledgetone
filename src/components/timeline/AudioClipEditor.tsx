@@ -1,7 +1,7 @@
 /**
  * The editor docked under the timeline for an audio clip (where the piano roll goes for note
  * clips): its stretch of the sound with warp markers and gain envelope, gain and fades, Follow
- * tempo (time-stretch), Tune, Chop to Slicer.
+ * tempo (time-stretch), the sample's tempo and key, Tune, Chop sample.
  */
 import React, { useEffect, useState } from 'react';
 import { AudioWaveform, FlipHorizontal2, Gauge, Magnet, Maximize2, Slice, Spline, Wand2, X } from 'lucide-react';
@@ -16,7 +16,8 @@ import { useSoundLibrary } from '../../audio/soundLibrary';
 import { dbToGain } from '../../audio/clipEnvelope';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
-import { ChopToSlicerDialog } from './ChopToSlicerDialog';
+import { ChopSampleDialog } from './ChopSampleDialog';
+import { SampleInfo } from './SampleInfo';
 import { ClipWaveform } from './Waveform';
 import { AudioWarpGain, type AudioTool } from './AudioWarpGain';
 import { normalizeClip, quantizeClipAudio, reverseClip } from '../../audio/audioEdits';
@@ -31,7 +32,7 @@ const formatDb = (db: number) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
 /**
  * Editor for one audio clip, docked under the timeline where the piano roll goes for note clips:
  * the stretch of the sound the clip plays, its gain and its fades (sliders, one undo step per
- * adjustment), and "Chop to Slicer…".
+ * adjustment), and "Chop sample…".
  */
 export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, track }) => {
   // The tempo where the clip starts, which its sound plays at
@@ -119,8 +120,8 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
         <button type="button" onClick={() => useUiStore.getState().setTuneClip(clip.id)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500 ${audio.tunedFrom ? '!border-cyan-500/70 text-cyan-200' : ''}`} title="Pull a vocal's pitch onto the notes of a key">
           <Wand2 className="w-3.5 h-3.5" /> {audio.tunedFrom ? 'Tuned…' : 'Tune vocal…'}
         </button>
-        <button type="button" onClick={() => setChopping(true)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500`} title="Cut this clip's sound into slices on a new Slicer track">
-          <Slice className="w-3.5 h-3.5" /> Chop to Slicer…
+        <button type="button" onClick={() => setChopping(true)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500`} title="Chop this sample into up to 16 pieces on the pads of a new Drum Rack (or a Slicer), with a pattern that flips them">
+          <Slice className="w-3.5 h-3.5" /> Chop sample…
         </button>
         <span className="hidden xl:inline text-[11px]">
           {meta ? `${meta.name} · ${formatSeconds(meta.seconds)}` : 'Sound'} · plays {formatSeconds(audio.offset)} to {formatSeconds(audio.offset + sourceSeconds)} · drag the clip's edges to trim, its top corners for the fades
@@ -131,6 +132,9 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
       </div>
 
       <div className="relative px-4 py-3 select-none">
+        <div className="mb-2">
+          <SampleInfo soundId={audio.shiftedFrom ?? audio.soundId} clipId={clip.id} />
+        </div>
         <div className="relative rounded-md overflow-hidden border border-forge-border bg-black/40" style={{ height: WAVE_H }}>
           <ClipWaveform audio={audio} bpm={bpm} seconds={seconds} columns={WAVE_COLUMNS} height={WAVE_H} gain={dbToGain(audio.gain)} color={track.color} className="block" />
           {/* The fades: the quiet corners shaded, as on the clip */}
@@ -195,7 +199,7 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
           </button>
         </div>
       </div>
-      {chopping && <ChopToSlicerDialog clipId={clip.id} onClose={() => setChopping(false)} />}
+      {chopping && <ChopSampleDialog clipId={clip.id} onClose={() => setChopping(false)} />}
     </div>
   );
 };

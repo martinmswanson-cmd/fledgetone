@@ -94,6 +94,8 @@ export async function doubleClip(clipId: string): Promise<string> {
   const audio = { ...still.audio, soundId: sound.id };
   delete audio.tunedFrom;
   delete audio.reversedFrom;
+  delete audio.shiftedFrom;
+  delete audio.shift;
   const copy: Clip = { ...still, id: uid('clip'), trackId: track.id, name: `${still.name} double`, isSelected: false, audio };
   delete copy.takes;
   delete copy.comp;

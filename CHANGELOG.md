@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-23 — Flip a sample
+
+- **Flipping a sample**: an audio clip's **tempo and key** are heard from its sound (with how sure, in the clip editor, on the clip and in the Audio track's panel), with one click to set the song to the sample's tempo, stretch the sample to the song's, or move it into the song's key (a re-pitched copy, same length). **Chop sample…** cuts it into up to 16 chops at its hits, in equal parts or by hand (drag, add and remove markers), onto a new Drum Rack's pads, each with its own start, end, fade, reverse, pitch, level and choke (one chop cuts the others, like a classic sampler); **Chop and play** writes a starting pattern that plays them in a new order, and **New idea** another. **Filter out the bass** clears a sample's low end for your own 808.
+
 ## 2026.10.15-22 — Warmer, more real strings
 
 - Strings that sound less sharp and more like a record. New real recordings: **Violin**, **Viola**, **Cello** and **Contrabass (Real)**, single players recorded on every note at soft, medium and loud, so no note is stretched from a neighbour's. They were recorded without vibrato in a dead room, so each held note gets a player's vibrato (starting a moment into the note, a little different every time, with the shimmer of the instrument's body), a small stage around it, and a hall's softening of the bow's bite.

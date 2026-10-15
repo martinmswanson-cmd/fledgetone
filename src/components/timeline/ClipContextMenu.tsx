@@ -34,7 +34,7 @@ export interface ContextMenuState {
 interface ClipContextMenuProps {
   menu: ContextMenuState;
   onClose: () => void;
-  /** "Chop to Slicer…" on an audio clip: open that dialog for the clip. */
+  /** "Chop sample…" on an audio clip: open that dialog for the clip. */
   onChop?: (clipId: string) => void;
   /** Open Generate variations for a clip */
   onVariations?: (clipId: string) => void;
@@ -128,7 +128,7 @@ const RepeatForm: React.FC<{ onRepeat: (times: number) => void }> = ({ onRepeat 
 
 /**
  * Right-click menu for clips (Edit / Copy / Cut / Duplicate / Repeat / Fill / Delete; an audio
- * clip: Gain and fades, Chop to Slicer) and empty lane space (New clip, Insert pattern, Paste; on
+ * clip: Gain and fades, Chop sample) and empty lane space (New clip, Insert pattern, Paste; on
  * an Audio track: Load audio file). Also opened by a track header's + button.
  */
 export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose, onChop, onVariations }) => {
@@ -249,7 +249,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
           : []),
         ...(audioClip && onChop
           ? [
-              { key: 'chop', label: 'Chop to Slicer…', icon: <Slice className="w-3.5 h-3.5" />, onClick: run(() => onChop(menu.clipId!)) },
+              { key: 'chop', label: 'Chop sample…', icon: <Slice className="w-3.5 h-3.5" />, onClick: run(() => onChop(menu.clipId!)) },
               {
                 key: 'tune',
                 label: 'Tune vocal…',

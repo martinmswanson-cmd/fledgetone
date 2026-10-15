@@ -16,6 +16,7 @@ import { pickAudioFiles } from '../timeline/audioFiles';
 import { Waveform } from '../timeline/Waveform';
 import { UndoableRange } from '../UndoableRange';
 import { SoundLibraryFooter } from './SoundLibraryFooter';
+import { BassCutToggle } from '../timeline/SampleInfo';
 
 const WAVE_H = 72;
 /** Closest two slice starts can be dragged, in seconds. */
@@ -249,6 +250,7 @@ export const SlicerPanel: React.FC<{ track: Track }> = ({ track }) => {
           </p>
         </>
       )}
+      {slicer && <BassCutToggle trackId={track.id} />}
       <SoundLibraryFooter />
     </div>
   );

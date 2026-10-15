@@ -13,6 +13,8 @@ export const RACK_GAIN_MIN = -60;
 export const RACK_GAIN_MAX = 12;
 export const RACK_DECAY_MAX = 10;
 export const RACK_CHOKE_GROUPS = 8;
+/** Longest fade at a chop's edges, seconds */
+export const RACK_FADE_MAX = 0.25;
 
 /** A pad with nothing loaded, at neutral settings. */
 export function emptyPad(i: number): RackPad {
@@ -28,6 +30,17 @@ export const padOfNote = (note: string): number => {
   const m = noteMidi(note);
   return m >= RACK_BASE_NOTE && m < RACK_BASE_NOTE + RACK_PADS ? m - RACK_BASE_NOTE : -1;
 };
+
+/**
+ * Where in its buffer a pad plays, and for how long, seconds: all of it, or a chop's stretch
+ * (start to end of the sound; in the reversed copy, the mirror of that stretch).
+ */
+export function chopSpan(pad: Pick<RackPad, 'start' | 'end' | 'reverse'>, duration: number): { offset: number; seconds: number } {
+  if (pad.start === undefined || pad.end === undefined) return { offset: 0, seconds: duration };
+  const start = Math.max(0, Math.min(duration, pad.start));
+  const end = Math.max(start, Math.min(duration, pad.end));
+  return { offset: pad.reverse ? duration - end : start, seconds: end - start };
+}
 
 export function normalizeRack(raw: unknown): DrumRack | undefined {
   if (!isObj(raw) || !Array.isArray(raw.pads)) return undefined;
@@ -48,6 +61,9 @@ export function normalizeRack(raw: unknown): DrumRack | undefined {
       drive: num(p.drive, 0, 0, 1),
       choke: Math.round(num(p.choke, 0, 0, RACK_CHOKE_GROUPS)),
       ...(p.reverse === true ? { reverse: true } : {}),
+      // A chop's stretch of its sound (both ends, in order, or neither)
+      ...(typeof p.start === 'number' && typeof p.end === 'number' && Number.isFinite(p.start) && Number.isFinite(p.end) && p.end > p.start && p.start >= 0 ? { start: p.start, end: p.end } : {}),
+      ...(typeof p.fade === 'number' && p.fade > 0 ? { fade: num(p.fade, 0, 0, RACK_FADE_MAX) } : {}),
     };
   });
   return { pads };

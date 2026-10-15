@@ -27,7 +27,7 @@ import './BuiltinPluginPanel';
 import { onPluginError } from '../../audio/presets/wamPlugin';
 
 import type { ContextMenuState } from './ClipContextMenu';
-import { ChopToSlicerDialog } from './ChopToSlicerDialog';
+import { ChopSampleDialog } from './ChopSampleDialog';
 import { VariationsDialog } from './VariationsDialog';
 import { TuneDialog } from './TuneDialog';
 import { SmartDialog } from './SmartDialog';
@@ -146,7 +146,7 @@ export const Timeline: React.FC = () => {
   const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
   const closeTrackMenu = useCallback(() => setTrackMenu(null), []);
   const closeRulerMenu = useCallback(() => setRulerMenu(null), []);
-  /** The audio clip "Chop to Slicer…" was chosen for, while its dialog is open. */
+  /** The audio clip "Chop sample…" was chosen for, while its dialog is open. */
   const [chopClipId, setChopClipId] = useState<string | null>(null);
   const variationsClipId = useUiStore((s) => s.variationsClipId);
   const setVariationsClipId = useUiStore.getState().setVariationsClip;
@@ -503,7 +503,7 @@ export const Timeline: React.FC = () => {
       {menu && <ClipContextMenu menu={menu} onClose={closeMenu} onChop={setChopClipId} onVariations={setVariationsClipId} />}
       {rulerMenu && <RulerContextMenu menu={rulerMenu} onClose={closeRulerMenu} />}
       {trackMenu && <TrackMenu menu={trackMenu} onClose={closeTrackMenu} />}
-      {chopClipId && <ChopToSlicerDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
+      {chopClipId && <ChopSampleDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
       {variationsClipId && <VariationsDialog clipId={variationsClipId} onClose={() => setVariationsClipId(null)} />}
       {tuneClipId &&
         // A take folder plays several sounds: it's tuned once flattened (Takes, Flatten)

@@ -538,6 +538,7 @@ The sound is kept in this browser and saved inside the project file (see **Where
 - **Load sounds**: **Load sounds…** in its Inspector panel fills the pads in order with the files you pick (up to 16). Drop files on a pad to load them from there on, or select a pad and click **Load…**. Each pad is named after its file (rename it in the name box above its settings).
 - **Each pad's own effects**: select a pad (clicking it plays it) for its **Level**, **Pan**, **Pitch** (±24 semitones), **Decay** (how long it rings before fading; "full" plays the whole sound), **Low-pass**, **High-pass**, **Drive** (saturation) and **reverse**.
 - **Choke groups**: pads in the same group cut each other off, as a closed hi-hat stops an open one ringing. Put the open and closed hats in group 1.
+- **Chops**: **Chop sample…** on an audio clip fills a new rack with chops of one sample (see Flipping a sample); a chop's pad also has **Start**, **End** and **Fade**.
 - In the piano roll each pad is a row, named as you named it, with the **STEPS** step sequencer. A MIDI keyboard plays the pads on C2 to D#3, and any other octave lands on them too.
 - The rack's sounds are kept like the Sampler's (see Where your sounds live) and saved inside the project file. The whole track also has the usual mixer, inserts and sends.
 
@@ -561,7 +562,7 @@ An **Audio** track holds sound files as clips instead of notes. Add one with **A
 - **Tune vocal** (right-click an audio clip, the clip editor, or **Tools › Tune vocal**): pulls a recorded voice (or any instrument playing one note at a time) onto the notes of a key, keeping its timing. Pick the **key** (it starts on the key the song's notes are in) and the scale: **major**, **minor**, **harmonic minor**, **phrygian**, the **pentatonics** or **chromatic** (any note); **Strength** is how far onto the note (100% lands right on it), **Speed** how fast it gets there, from **natural** (slides and vibrato kept) to **instant** (the hard tuned sound). **Natural** and **Hard tune** set both at once. The graph shows the pitch sung (grey) and tuned (colour) against the key's notes. **Hear tuned** and **Hear original** compare them; **Apply** makes a tuned copy for the clip (one Undo step). The original is kept: **Untune** in the same dialog goes back to it.
 - **Editing** works as for note clips: move, trim, razor, copy and paste, duplicate, Repeat, Fill to loop Out, Insert/Delete bars, undo. Trimming the left edge makes the clip play from further into the sound. Audio clips only move between Audio tracks.
 - **Fades**: drag the small square at either top corner of a clip (shown when the clip is wide enough).
-- **Gain and fades**: double-click a clip (or right-click > **Gain and fades**) for the clip editor under the timeline: the waveform, **GAIN** (-24 to +24 dB), **Fade in**, **Fade out**, and **Chop to Slicer…**. `Esc` closes it.
+- **Gain and fades**: double-click a clip (or right-click > **Gain and fades**) for the clip editor under the timeline: the waveform, **GAIN** (-24 to +24 dB), **Fade in**, **Fade out**, the sample's tempo and key, and **Chop sample…** (see Flipping a sample). `Esc` closes it.
 - **Warp markers** (the clip editor's **Warp** tool): pin a moment of the sound (a drum hit, a word) and move it in time; the audio either side stretches to fit, at the same pitch. Double-click the waveform to add a marker, drag one sideways to move that moment (it snaps to 16ths; Shift for anywhere), right-click to remove it. Markers work while the clip follows the tempo: adding one to a clip that doesn't sets **Follow tempo** at the song's tempo, so nothing else changes. **Clear warp** removes them all.
 - **Quantize audio**: finds the hits in the clip and pulls each onto the chosen grid (1/4 to 1/32) with warp markers, at 25 to 100% strength. Tighten a loose drum take or a strummed part; drag any marker to adjust, or Undo.
 - **Gain envelope** (the **Gain envelope** tool): draw the clip's level over its sound, on top of its gain and fades: click to add a point, drag points up and down (-60 dB, silent, to +12 dB), right-click to remove one. Duck a breath, lift a quiet word. **Clear envelope** removes it.
@@ -595,8 +596,22 @@ The **Slicer** (**Add Track > Your Sounds > Slicer**) cuts a sound into slices a
 - On the waveform, drag a marker to move a cut, double-click to add one, and right-click a marker to remove it. Click a slice to hear it.
 - In the piano roll the rows read **Slice 1**, **Slice 2** and so on. A note plays its slice from the start, for the note's length or the slice's length, whichever is shorter.
 - **Pitch** mode: every key plays the slice you last clicked, pitched from its own key, so you can play a chop as a melody.
-- **Chop to Slicer…** (right-click an audio clip, or in the clip editor) makes a Slicer track from that clip's sound, with a clip that plays the slices in order, ready to rearrange. The audio clip stays.
+- **Chop sample…** (right-click an audio clip, or in the clip editor) has **To a Slicer instead**: a Slicer track from that clip's sound, cut where the dialog's markers are, with a clip that plays the slices in order, ready to rearrange. The audio clip stays.
 - Slices play at the sound's own level; use the track fader to balance it.
+
+### Flipping a sample
+
+Tools for making a beat from a sample: a loop or a recording of your own (or one you have the rights to), dropped on an Audio track.
+
+- **Its tempo and key**: the clip editor (double-click the clip) shows the tempo and key the app hears in the sample, each with how sure it is (amber when it's a guess; a key it isn't sure of shows the next likeliest too, often the relative major or minor). Once heard, the clip shows them too (bottom left: *88 · D min*), and the Audio track's panel lists each sound on the track with them. A sample's answer is worked out once and remembered in this browser.
+- **Song to 88** sets the song's tempo to the sample's; the button beside it is the same beat counted the other way (half or double). **Stretch to song** makes the clip follow the song's tempo (time-stretched, same pitch; see Follow tempo above). **Into E min (+2 st)** moves the sample into the key the song's notes are in, by the nearest way (a minor sample in a major song goes to its relative minor), allowing for a sample that sits a few cents off: it makes a re-pitched copy, the same length and timing, as one Undo step. **Original key** goes back.
+- **Chop sample…** (right-click the clip, or in the clip editor) cuts the part of the sound the clip plays into up to 16 chops:
+  - **At the hits**: a chop starts at each drum hit, chord stab or word (**SENS**: how faint a hit still counts; the strongest 16 are kept). **Equal**: 4, 8, 12 or 16 equal parts (beats or bars of a loop). **By hand**: double-click the waveform to add a marker, drag one to move it, right-click to remove it. Dragging or adding a marker in the other modes takes them over by hand.
+  - Click a chop to hear it. **Fade** (0 to 50 ms) smooths each chop's edges. **One at a time** (on): a chop cuts off the one playing, as on a classic sampler; off, they ring over each other.
+  - **Chop to 16 pads** puts them on a new Drum Rack track under the sample's (chop 1 on pad 1, C2), so the pads, the computer keyboard and a MIDI pad controller play them, with note repeat, and the piano roll shows a row per chop. One Undo step takes it all away. **To a Slicer instead** puts the same chops on a Slicer.
+- **Chop and play** (on by default) writes a 2-bar starting pattern on the Drum Rack track that plays the chops in a new order on the beat grid: the same chop on each downbeat, the others shuffled, a stutter here and there. Off, the clip plays the chops in their own order and time, as the sample did. **New idea** (in the Drum Rack's panel) writes another pattern into the track's selected clip; the same sample always gives the same ideas in the same order, and the pattern is plain notes, so exports play exactly what you hear. Undo goes back to the last idea.
+- **Each chop** is a pad: select it for its **Start**, **End** and **Fade** (where in the sample it plays), and the usual **Level**, **Pan**, **Pitch**, **Decay**, filters, **Drive**, **Choke** group and **reverse** (the chop played backwards).
+- **Filter out the bass** (in the chop dialog, and on the Audio, Drum Rack and Slicer panels) turns the track's **Filter** insert into a steep low cut at 180 Hz: the sample's bass and kick go (about 22 dB less under 100 Hz) and its chords stay, so your own 808 has the low end to itself. Untick it to turn the filter off.
 
 ### Plugins
 
@@ -901,11 +916,11 @@ In the MIDI popover, tick **Computer keyboard piano**. `A` `S` `D` `F` `G` `H` `
 
 ### Recording from a microphone
 
-Click **Mic** in the toolbar to record your voice, a guitar, or anything on your computer's audio input. The browser asks for permission the first time. Playback starts from the playhead as you click it, so you can sing or play along; the button turns into **Stop** with a level meter. Click **Stop** and the take goes onto the selected Audio track (or a new one) exactly where you played it: the delays of the speakers and the mic are taken off, so it lines up with the beat. The take is saved in the sound library like a dropped sound file, so it can be trimmed, faded, chopped to the Slicer, frozen and exported.
+Click **Mic** in the toolbar to record your voice, a guitar, or anything on your computer's audio input. The browser asks for permission the first time. Playback starts from the playhead as you click it, so you can sing or play along; the button turns into **Stop** with a level meter. Click **Stop** and the take goes onto the selected Audio track (or a new one) exactly where you played it: the delays of the speakers and the mic are taken off, so it lines up with the beat. The take is saved in the sound library like a dropped sound file, so it can be trimmed, faded, chopped (Chop sample), frozen and exported.
 
 The input isn't played through the speakers while you record (no feedback); use headphones to hear the music. Microphone access needs a secure page (the published site, on https).
 
-To **resample** (record a part, then mangle it), export the part as a WAV and drop it back onto a lane, or right-click an audio clip for **Chop to Slicer…**.
+To **resample** (record a part, then mangle it), export the part as a WAV and drop it back onto a lane, or right-click an audio clip for **Chop sample…**.
 
 1. Arm a track with **R** on its header (one track at a time; Audio tracks can't be armed).
 2. Switch **Record** on (the red circle in the toolbar).
