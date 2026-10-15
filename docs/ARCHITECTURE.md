@@ -180,7 +180,8 @@ is in no render: it runs in plain JavaScript over the finished one (`effects/mas
 because Chromium never frees an `OfflineAudioContext` an AudioWorklet was loaded into. The result
 is scaled down if its
 true peak passes -1 dBTP, then encoded: WAV here (16/24/32-bit, markers as cue points), MP3 and
-Ogg in `encoders.ts`, MP4 video in `videoExport.ts`. Stems, intro-plus-loop, seamless loops,
+Ogg in `encoders.ts`, MP4 video in `videoExport.ts`. A render without the master section splits the same way (just the sum), and stems render
+several at once, each in a context of its own. Stems, intro-plus-loop, seamless loops,
 the game kit (`gameKit.ts`), FMOD / Wwise packages and freezing a track are all variations on
 the same render.
 

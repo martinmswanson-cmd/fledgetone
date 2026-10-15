@@ -391,17 +391,41 @@ export async function renderStems(
   const parked: Array<{ track: Track; samples: Blob; length: number }> = [];
   let reverbImpulse = opts.reverbImpulse;
   let peak = 0;
-  for (const [i, track] of tracks.entries()) {
+  const done = tracks.map(() => 0);
+  const renderStem = async (i: number, threads = opts.threads) => {
+    const track = tracks[i];
     const stem = { track, index: i, count: tracks.length };
-    const result = await renderTracks({ ...opts, reverbImpulse }, [track], (f) => onProgress?.((i + f) / tracks.length, stem));
+    const progress = (f: number) => {
+      done[i] = f;
+      onProgress?.(done.reduce((a, b) => a + b, 0) / tracks.length, stem);
+    };
+    const result = await renderTracks({ ...opts, reverbImpulse, threads }, [track], progress);
     // Every stem gets the first one's reverb, so the stems' reverb tails add up to exactly
     // what the mix's one shared reverb would make of them
     reverbImpulse ??= result.reverbImpulse;
     peak = Math.max(peak, peakOf(result.channels));
     // Parked in a Blob (kept by the browser outside the page's memory, on disk if need be)
     // until every stem's peak is known: a dozen long stems can be gigabytes of samples
-    parked.push({ track, samples: new Blob(result.channels), length: result.channels[0].length });
-  }
+    parked[i] = { track, samples: new Blob(result.channels), length: result.channels[0].length };
+  };
+  // The first stem alone (it makes the reverb the others share), then the rest several at a time,
+  // each in an OfflineAudioContext of its own on a processor core of its own (see renderTracks)
+  await renderStem(0);
+  const atOnce = await stemsAtOnce(opts, tracks.length - 1);
+  let next = 1;
+  let failed = false;
+  const worker = async () => {
+    while (next < tracks.length && !failed) {
+      const i = next++;
+      try {
+        await renderStem(i, atOnce > 1 ? 1 : opts.threads);
+      } catch (err) {
+        failed = true;
+        throw err;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, atOnce) }, worker));
 
   const gain = peakGain(peak);
   const cues = exportCues(opts);
@@ -414,6 +438,20 @@ export async function renderStems(
     stems.push({ track: stem.track, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues, wholeFileLoop(opts, channels[0].length), ditherSeedOf(stem.track.id)) });
   }
   return stems;
+}
+
+/**
+ * How many of `count` stems to render at once: as many as a mix's parts may be (partsAllowed,
+ * within PARTS_MEMORY), where the browser renders offline contexts side by side; one at a time
+ * for a background render.
+ */
+async function stemsAtOnce(opts: RenderOptions, count: number): Promise<number> {
+  if (count < 2 || opts.hold) return 1;
+  const plan = planRender(opts);
+  const allowed = Math.min(count, partsAllowed(opts), Math.floor(PARTS_MEMORY / (plan.length * 4 * 2)));
+  if (allowed < 2) return 1;
+  if (opts.threads === undefined && !(await sideBySideHelps())) return 1;
+  return allowed;
 }
 
 /** One file pair of an intro + loop export: the mix, or one track's layer. */
@@ -600,9 +638,10 @@ function partsAllowed(opts: RenderOptions): number {
 
 /** The parts to render `sounding` in, or null to render it in one piece. */
 async function partsFor(opts: RenderOptions, sounding: Track[]): Promise<Track[][] | null> {
-  // Renders without the master section (a stem, a freeze) are a track or a few; a background
-  // render (hold) shouldn't take more of the computer from the live sound
-  if (opts.bypassMaster || opts.hold) return null;
+  // A background render (hold) shouldn't take more of the computer from the live sound. Renders
+  // without the master section split the same way (a stem or a freeze of one track is one part,
+  // but a mix or a group of tracks without it isn't: in one piece it took twice as long)
+  if (opts.hold) return null;
   const plan = planRender(opts);
   if (plan.length / plan.sampleRate < MIN_PARTS_SECONDS) return null;
   // Each part holds a whole render (stereo, 32-bit; with the lush reverb, its sends too) until
@@ -665,8 +704,10 @@ async function sideBySideHelps(): Promise<boolean> {
  */
 async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?: (fraction: number) => void): Promise<Rendered> {
   const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
-  const latency = await masterChainLatency(sampleRate);
-  const slack = await latencySlack(sampleRate);
+  // Without the master section, the parts are planned as the one render without it would be
+  const bypass = !!opts.bypassMaster;
+  const latency = bypass ? 0 : await masterChainLatency(sampleRate);
+  const slack = bypass ? 0 : await latencySlack(sampleRate);
   // The lush reverb is an AudioWorklet, which would put every part on Chromium's one shared
   // worklet thread, and its slow drift runs only while it hears something, so copies of it in
   // the parts wouldn't add up to the one: the parts send what they'd feed it, and it plays once,
@@ -718,6 +759,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   const reverbImpulse = results[0].reverbImpulse;
   results = [];
   opts.signal?.throwIfAborted();
+  if (bypass) return { channels: finishRender(await bypassPass(opts, sum, lush, masterDb), plan, opts), sampleRate, reverbImpulse };
 
   // The master section, fed the sum where the mix bus would feed it; with the lush reverb, it
   // also plays the reverb, once, on the parts' summed sends (channels 3 and 4), into the mix bus
@@ -769,6 +811,47 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
 }
 
 /**
+ * The sum of the parts of a render without the master section (renderInParts), finished as the one
+ * render would be: the lush reverb played once over the parts' summed sends, where any track feeds
+ * it, then the master volume.
+ */
+async function bypassPass(opts: RenderOptions, sum: AudioBuffer, lush: boolean, masterDb: number): Promise<AudioBuffer> {
+  const fed = lush && opts.tracks.some((t) => t.reverbSend > 0 || (t.distance ?? 0) > 0 || t.automation?.some((l) => l.param === 'reverbSend'));
+  let out = sum;
+  if (fed) {
+    const native = new OfflineAudioContext(2, sum.length, sum.sampleRate);
+    const context = new Tone.OfflineContext(native);
+    const room = await withContext(context, async () => {
+      context.destination.volume.value = 0;
+      const bus = new Tone.Gain(BUS_GAIN).connect(context.destination);
+      const busFx = createBusEffects(bus, opts.masterFx, opts.bpm);
+      await busFx.ready;
+      return { bus, busFx };
+    });
+    const source = native.createBufferSource();
+    source.buffer = sum;
+    const split = native.createChannelSplitter(sum.numberOfChannels);
+    const dry = native.createChannelMerger(2);
+    const sends = native.createChannelMerger(2);
+    source.connect(split);
+    split.connect(dry, 0, 0);
+    split.connect(dry, 1, 1);
+    dry.connect(native.destination);
+    split.connect(sends, 2, 0);
+    split.connect(sends, 3, 1);
+    sends.connect(nativeInputOf(room.busFx.reverbInput));
+    source.start(0);
+    out = await abortable(native.startRendering(), opts.signal).finally(() => {
+      source.disconnect();
+      room.busFx.dispose();
+      room.bus.dispose();
+    });
+  }
+  if (masterDb) scale(channelsOf(out).slice(0, 2), Math.pow(10, masterDb / 20));
+  return out;
+}
+
+/**
  * The master section after the compressor (the OTT, width, Level and limiter) run over a finished
  * render (an export's chain ends at its compressor: see createMixChain and masterAfter.ts), then
  * the master volume, which comes after it.
@@ -793,15 +876,16 @@ function finishRender(rendered: AudioBuffer, plan: RenderPlan, opts: RenderOptio
     // the wrap from the last sample to the first could click.
     const fade = Math.min(Math.round(SEAM_FADE_SECONDS * plan.sampleRate), plan.keepLength);
     const end = plan.keepFrom + plan.keepLength;
-    for (const ch of channelsOf(rendered)) {
+    for (const ch of channelsOf(rendered).slice(0, 2)) {
       for (let i = end - fade; i < end; i++) {
         const w = (i - (end - fade) + 1) / fade;
         ch[i] += (ch[i - plan.keepLength] - ch[i]) * w;
       }
     }
   }
-  // Cut to the sample: the file starts where the range start comes out (a seamless loop's last pass)
-  const channels = channelsOf(rendered).map((ch) => ch.subarray(plan.keepFrom, plan.keepFrom + plan.keepLength));
+  // Cut to the sample: the file starts where the range start comes out (a seamless loop's last pass).
+  // Stereo: the sum of a render's parts can carry their reverb sends after it (see renderInParts)
+  const channels = channelsOf(rendered).slice(0, 2).map((ch) => ch.subarray(plan.keepFrom, plan.keepFrom + plan.keepLength));
   if (ending === 'exact' && !opts.noEndFade) fadeOut(channels, Math.round(EXACT_FADE_SECONDS * plan.sampleRate));
   return channels;
 }
