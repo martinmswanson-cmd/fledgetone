@@ -8,6 +8,14 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## Unreleased
+
+- **Clipper** on the master: shaves the tallest peaks flat before the limiter, for loud rap and electronic masters, with drive, a hard-to-soft character, a ceiling and a meter of how much it's clipping. Oversampled, so it stays clean, and the same in exports.
+- **Reference track**: load a finished song, hear it at your mix's loudness, flip between the two with one A/B button, and see where your tonal balance differs on a spectrum. It stays in your browser and is never exported.
+- **Mix check**: renders the song and each track and points out, in plain words and with the track to look at, wide bass, the kick and bass fighting, muddy or harsh spots, parts covering each other, a level wrong for where the song is going, and a master working too hard.
+- **Bus presets**: one-click drum, 808/bass, vocal and music buses, with two new bus inserts: **Saturation** and **Mono bass**.
+- **Beat store package**: one dialog makes a tagged MP3 preview, the untagged WAV, the stems and an optional cover in one .zip, named with the tempo and key.
+
 ## 2026.10.15-16 — Terms: not open source yet
 
 - The terms of use no longer describe Fledgetone as open source: it isn't yet. It's free to use for making your music, and the open-source parts and sounds inside it keep their own licences.
