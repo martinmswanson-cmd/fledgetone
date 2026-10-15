@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-13 — Terms: questions and answers
+
+- The terms of use start with plain questions and answers: owning and selling your music, credit, game kits in paid games, privacy, lost work, similar songs, content claims and more.
+
 ## 2026.10.15-12 — Clearer terms
 
 - The terms of use now cover more: lost work, loud sound and flashing visualisers, music written by the tools, sounds everyone shares, and an age of 13 or older.

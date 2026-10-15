@@ -8,6 +8,52 @@ These terms are an agreement between you and Martin Swanson, doing business as T
 
 The short version: what you make is yours, you're responsible for it, Fledgetone is free and comes with no promises, and we aren't responsible for anything that happens because you used it, including lost work.
 
+## Questions and answers
+
+Quick answers in plain words. They're a guide to the terms below, which are what count: if an answer and a section ever seem to differ, the section wins.
+
+**Do I own the music I make?**
+Yes, all of it: songs, project files, exports, stems, sound effects, videos and game kits. We claim nothing and don't need credit. (Section 2.)
+
+**Can I sell my music or use it in a commercial game, video or ad?**
+Yes. Sell it, stream it, license it, put it in paid games and apps. (Sections 2 and 3.)
+
+**Do I have to credit Fledgetone?**
+No. A mention is always appreciated, but it's never required. A few built-in recordings ask for credit to *their* makers under their own licences; the guide's Credits section lists them. (Section 6.)
+
+**Can I put the game kit's scripts and players in my closed-source or paid game?**
+Yes. The files Fledgetone writes into exports can go in any project under any licence, with no need to share your code. Each such export includes a LICENSE-exported-files.txt that says so. (Section 3.)
+
+**Does Fledgetone see or keep my songs?**
+No. Your songs stay on your computer, in your browser and your saved files. We never receive them. A Share link carries the song inside the link, so anyone you give it to can open it. (Section 2.)
+
+**My project disappeared. Can you get it back?**
+No, sorry: we never had a copy, and we aren't responsible for lost work. Browsers can clear their storage, and computers fail. Save your projects to files often and keep copies in more than one place. (Section 8.)
+
+**Someone made a song that sounds like mine. Is that allowed?**
+Everyone gets the same starters, sounds and tools, so similar songs can happen, and nobody owns those starting points. What you make is yours; the shared ingredients aren't anyone's alone. (Section 5.)
+
+**A video or music site flagged my track. What do I do?**
+Music made from shared sounds or starters can be flagged by mistake. You can dispute the claim with that site; we can't do it for you and aren't responsible for it. Keeping your project file helps show how you made the track. (Section 5.)
+
+**Can I use samples, recordings or plugins I found online?**
+Only if you have the right to. That's your responsibility, including recordings of other people (ask them first). (Sections 4 and 7.)
+
+**Is Fledgetone free? Will it stay free?**
+It's free. We may change, pause or stop parts of it at any time, so keep your own copies of anything important. (Section 9.)
+
+**Is the code open source?**
+Yes, under the GNU General Public License, version 3. The names "Fledgetone" and "Two Birds Workshop" and the logos aren't part of that licence, so a changed version needs its own name. (Section 9.)
+
+**Who can use it?**
+Anyone 13 or older. Under 18, read these terms with a parent or guardian. (Section 1.)
+
+**Is there anything I should be careful about?**
+Volume: start low, especially with headphones. Flashing visualisers: skip them if you're sensitive to flashing light. And don't rely on it for a live show without a backup. (Section 10.)
+
+**Something's broken. Who do I tell?**
+Use **Report a problem** at the bottom of the page, or email martin@twobirdsworkshop.com. (Sections 14 and 18.)
+
 ## 1. Who can use Fledgetone
 
 You must be 13 or older to use Fledgetone. If you're under 18, please read these terms with a parent or guardian, who agrees to them for you. If you use Fledgetone for a company or other organisation, you agree to these terms for it too.
