@@ -820,8 +820,13 @@ async function renderGraph(
     throw err;
   }
   // After a cancel: schedule nothing more, and free the graph so the rest of the render (which
-  // an OfflineAudioContext can't stop early) runs on silence and finishes at once
+  // an OfflineAudioContext can't stop early) runs on silence and finishes at once. And once it
+  // has rendered: its instruments are let go (a recorded instrument's sampler is otherwise held by
+  // the instrument's loading for good, its whole render with it, and keeps its recordings coming)
+  let released = false;
   const release = () => {
+    if (released) return;
+    released = true;
     graph.dispose();
     finishedSources.get(context)?.forEach((source) => source.disposed || source.dispose());
     finishedSources.delete(context);
@@ -895,8 +900,15 @@ async function renderGraph(
     }),
     signal
   );
+  const reverbImpulse = graph.reverbImpulse();
+  try {
+    release();
+  } catch (err) {
+    // (The render is done: a node that won't be let go doesn't spoil it)
+    console.warn('Letting go of a finished render failed:', err);
+  }
   onProgress?.(1);
-  return { rendered, plan, reverbImpulse: graph.reverbImpulse() };
+  return { rendered, plan, reverbImpulse };
 
   /** Mix chain, one strip + instrument per track, and the Transport, inside the offline context. */
   async function buildGraph(context: Tone.OfflineContext) {
@@ -906,9 +918,13 @@ async function renderGraph(
     // output (master volume still applies, as it's a plain gain). Then nothing loads an
     // AudioWorklet (the limiter is one) unless a track's plugin does: Chromium renders every
     // offline context with one on a single shared thread, so the parts couldn't run side by side.
+    // The lush reverb (an AudioWorklet too) only where something can reach it: Chromium never lets
+    // go of an offline context an AudioWorklet was loaded into, nor the render it holds, so a freeze
+    // (whose sends stay live) kept every render it made with the lush reverb chosen
     const section = bypassMaster ? null : createMixChain(context.destination, masterFx, bpm, opts.master);
     const mixBus = section?.bus ?? new Tone.Gain(BUS_GAIN).connect(context.destination);
-    const busFx = section?.busFx ?? createBusEffects(mixBus, reverbSends ? { ...masterFx, roomStyle: 'hall' } : masterFx, bpm);
+    const unfed = masterFx.roomStyle === 'lush' && !tracks.some((t) => t.reverbSend > 0 || (t.distance ?? 0) > 0 || t.automation?.some((l) => l.param === 'reverbSend'));
+    const busFx = section?.busFx ?? createBusEffects(mixBus, reverbSends || unfed ? { ...masterFx, roomStyle: 'hall' } : masterFx, bpm);
     if (reverbSends) {
       // Out on channels 3 and 4 (the stereo mix fills 1 and 2 and leaves them silent)
       const raw = native.destination;
