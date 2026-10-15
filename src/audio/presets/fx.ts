@@ -5,6 +5,7 @@ import { FX_NOTES } from '../instrumentCatalog';
 import { notLate } from './monotonic';
 import { createBus, createDrive, createFilter, createNoise, createOsc, createVoiceSet } from './native';
 import type { NativeVoice } from './native';
+import { noiseKey } from '../seededNoise';
 
 /**
  * The FX instrument: one transition effect per row (FX_ROWS). Risers, sweeps, the reverse crash,
@@ -25,7 +26,8 @@ const IMPACT_SECONDS = 3.5;
 /** Hits are fed by noise: let go of their nodes a moment after they end (see createVoiceSet). */
 const LINGER_SECONDS = 0.5;
 
-type Hit = (raw: BaseAudioContext, start: number, length: number, level: number) => Omit<NativeVoice, 'start'>;
+/** `noise`: the key of the hit's noise (see createNoise) */
+type Hit = (raw: BaseAudioContext, start: number, length: number, level: number, noise: number) => Omit<NativeVoice, 'start'>;
 
 /** A gain with `level` from now on (no automation). */
 function gain(raw: BaseAudioContext, level: number): GainNode {
@@ -36,9 +38,9 @@ function gain(raw: BaseAudioContext, level: number): GainNode {
 
 const HITS: Record<string, Hit> = {
   // Noise and a pair of saws rising three octaves, through a low-pass that opens, swelling up to the end
-  [FX_NOTES.riser]: (raw, start, length, level) => {
+  [FX_NOTES.riser]: (raw, start, length, level, key) => {
     const end = start + length;
-    const noise = createNoise(raw, start);
+    const noise = createNoise(raw, start, key);
     const saws = [-12, 12].map((cents) => createOsc(raw, 'sawtooth', 160, start, cents));
     saws.forEach((s) => s.frequency.exponentialRampToValueAtTime(1280, end));
     const sawLevel = gain(raw, 0.22);
@@ -58,9 +60,9 @@ const HITS: Record<string, Hit> = {
   },
 
   // White noise through a band-pass sweeping up from 150 Hz to 12 kHz, faded in and out
-  [FX_NOTES.noiseSweep]: (raw, start, length, level) => {
+  [FX_NOTES.noiseSweep]: (raw, start, length, level, key) => {
     const end = start + length;
-    const noise = createNoise(raw, start);
+    const noise = createNoise(raw, start, key);
     const filter = createFilter(raw, 'bandpass', 150, 2.5);
     filter.frequency.setValueAtTime(150, start);
     filter.frequency.exponentialRampToValueAtTime(12000, end);
@@ -77,9 +79,9 @@ const HITS: Record<string, Hit> = {
   },
 
   // A cymbal played backwards: noise swelling in (a reversed exponential decay), brightening, cut at the end
-  [FX_NOTES.reverseCrash]: (raw, start, length, level) => {
+  [FX_NOTES.reverseCrash]: (raw, start, length, level, key) => {
     const end = start + length;
-    const noise = createNoise(raw, start);
+    const noise = createNoise(raw, start, key);
     const highpass = createFilter(raw, 'highpass', 600, 0);
     const lowpass = createFilter(raw, 'lowpass', 3000, 0);
     lowpass.frequency.setValueAtTime(3000, start);
@@ -96,7 +98,7 @@ const HITS: Record<string, Hit> = {
   },
 
   // Boom (a sine dropping from 140 to 38 Hz, lightly driven) over a burst of noise with a long, darkening tail
-  [FX_NOTES.impact]: (raw, start, _length, level) => {
+  [FX_NOTES.impact]: (raw, start, _length, level, key) => {
     const end = start + IMPACT_SECONDS;
     const boom = createOsc(raw, 'sine', 140, start);
     boom.frequency.exponentialRampToValueAtTime(38, start + 0.4);
@@ -105,7 +107,7 @@ const HITS: Record<string, Hit> = {
     boomAmp.gain.linearRampToValueAtTime(1, start + 0.004);
     boomAmp.gain.setTargetAtTime(0, start + 0.01, 0.45);
     const drive = createDrive(raw, 2);
-    const noise = createNoise(raw, start);
+    const noise = createNoise(raw, start, key);
     const noiseFilter = createFilter(raw, 'lowpass', 7000, 0);
     noiseFilter.frequency.setValueAtTime(7000, start);
     noiseFilter.frequency.exponentialRampToValueAtTime(300, start + 1.8);
@@ -142,9 +144,9 @@ const HITS: Record<string, Hit> = {
   },
 
   // The riser in reverse: noise and saws falling, the low-pass closing, fading away over the note
-  [FX_NOTES.downlifter]: (raw, start, length, level) => {
+  [FX_NOTES.downlifter]: (raw, start, length, level, key) => {
     const end = start + length;
-    const noise = createNoise(raw, start);
+    const noise = createNoise(raw, start, key);
     const saws = [-12, 12].map((cents) => createOsc(raw, 'sawtooth', 1000, start, cents));
     saws.forEach((s) => s.frequency.exponentialRampToValueAtTime(70, end));
     const sawLevel = gain(raw, 0.22);
@@ -165,7 +167,8 @@ const HITS: Record<string, Hit> = {
   },
 };
 
-export function createFx(output: Tone.InputNode) {
+/** `seed`: the track's (see trackSeed), which with the row and the time picks each hit's noise. */
+export function createFx(output: Tone.InputNode, seed = 0) {
   const { bus, raw, input } = createBus(output);
   const voices = createVoiceSet(raw, LINGER_SECONDS);
 
@@ -176,7 +179,7 @@ export function createFx(output: Tone.InputNode) {
     const length = bus.toSeconds(n.duration);
     if (!Number.isFinite(length)) return; // garbled by hand-editing: skip it
     // Above zero: the swells are exponential ramps, which can't start or end at 0
-    const voice = hit(raw, start, Math.max(MIN_LENGTH, length), Math.max(0.01, n.velocity));
+    const voice = hit(raw, start, Math.max(MIN_LENGTH, length), Math.max(0.01, n.velocity), noiseKey(seed, n.note));
     voice.amp.connect(input);
     const added = { ...voice, start };
     voices.add(added);

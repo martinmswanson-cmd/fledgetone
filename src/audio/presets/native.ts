@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
+import { fillWhiteNoise, noiseStart } from '../seededNoise';
 
 /**
  * Building blocks for instruments made of plain Web Audio nodes, created for each note and let go
@@ -73,24 +74,37 @@ export function atAudioTime(raw: BaseAudioContext, at: number, then: () => void)
  * ended went on costing render time for good, so a long export got slower and slower. Left a
  * moment, Chrome retires the finished nodes first and the disconnect costs nothing. Voices of
  * oscillators don't need it (and keeping them connected longer isn't free).
+ *
+ * A voice's amp falls to exactly 0 when its sources stop (it is about 60 dB down by then), so
+ * whenever its nodes are let go, nothing is cut short: the ending is reported when the main
+ * thread gets to it, a moment that varies, and a filter's last ringing cut there made two exports
+ * of the same song differ (about -80 dB).
  */
 export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
   const voices = new Set<NativeVoice>();
   const disconnect = (v: NativeVoice) => v.nodes.forEach((n) => n.disconnect());
+  const silenceAtStop = (v: NativeVoice) => {
+    if (Number.isFinite(v.stopAt)) v.amp.gain.setValueAtTime(0, v.stopAt);
+  };
   return {
     add(v: NativeVoice): void {
       voices.add(v);
       v.sources.forEach((s) => s.stop(v.stopAt));
+      silenceAtStop(v);
       v.sources[0].onended = () => {
         voices.delete(v);
         if (lingerSeconds > 0) atAudioTime(raw, raw.currentTime + lingerSeconds, () => disconnect(v));
         else disconnect(v);
       };
     },
-    /** Let a voice ring until `stopAt` instead (a later stop() replaces an earlier one). */
+    /**
+     * Let a voice ring until `stopAt` instead (a later stop() replaces an earlier one). The caller
+     * has cancelled the amp's events from before the old stop (its silence there with them).
+     */
     extend(v: NativeVoice, stopAt: number): void {
       v.stopAt = stopAt;
       v.sources.forEach((s) => s.stop(stopAt));
+      silenceAtStop(v);
     },
     /** Fade every voice out from `now` (Stop): sounding ones over `fade` seconds, future ones never start. */
     releaseAll(now: number, fade = 0.03): void {
@@ -105,6 +119,7 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
           else gain.cancelScheduledValues(now);
           gain.setTargetAtTime(0, now, fade / 3);
           v.stopAt = Math.min(v.stopAt, now + fade * 3);
+          silenceAtStop(v);
         }
         v.sources.forEach((s) => s.stop(v.stopAt));
       }
@@ -123,6 +138,7 @@ export function createVoiceSet(raw: BaseAudioContext, lingerSeconds = 0) {
         else gain.cancelScheduledValues(at);
         gain.setTargetAtTime(0, at, releaseConstant(seconds));
         v.stopAt = Math.min(v.stopAt, at + releaseTail(seconds));
+        silenceAtStop(v);
       }
       v.sources.forEach((s) => s.stop(v.stopAt));
     },
@@ -412,20 +428,22 @@ function noiseBuffer(raw: BaseAudioContext): AudioBuffer {
   let buffer = noiseBuffers.get(raw);
   if (!buffer) {
     buffer = raw.createBuffer(2, Math.round(NOISE_SECONDS * raw.sampleRate), raw.sampleRate);
-    for (let c = 0; c < 2; c++) {
-      const data = buffer.getChannelData(c);
-      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * NOISE_LEVEL;
-    }
+    // (from a fixed seed per side: the same noise in every context and every export, see seededNoise.ts)
+    for (let c = 0; c < 2; c++) fillWhiteNoise(buffer.getChannelData(c), 0x51ed + c, NOISE_LEVEL);
     noiseBuffers.set(raw, buffer);
   }
   return buffer;
 }
 
-/** Looping stereo noise from `at`, starting at a random point of the loop. */
-export function createNoise(raw: BaseAudioContext, at: number): AudioBufferSourceNode {
+/**
+ * Looping stereo noise from `at`, starting at a point of the loop picked by `key` (see noiseKey:
+ * the instrument's seed and what plays) and `at`, so each burst differs from the next, the same
+ * way every time the song plays.
+ */
+export function createNoise(raw: BaseAudioContext, at: number, key: number): AudioBufferSourceNode {
   const noise = raw.createBufferSource();
   noise.buffer = noiseBuffer(raw);
   noise.loop = true;
-  noise.start(at, Math.random() * NOISE_SECONDS);
+  noise.start(at, noiseStart(key, at) * NOISE_SECONDS);
   return noise;
 }

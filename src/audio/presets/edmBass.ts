@@ -100,11 +100,16 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
   /** The voice the last note started or joined, which a note starting before `end` slides on from. */
   let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; end: number; note: string } | null = null;
 
-  /** Filters for one note, behind a gain that switches between legato notes' filters. */
+  /**
+   * Filters for one note, then a gain that switches between legato notes' filters. After them, not
+   * before: the filters let go are cut off when the main thread gets round to it, which varies,
+   * and their last ringing cut there made two exports of a song differ. Behind a closed gate,
+   * nothing of them is heard however long they ring.
+   */
   const section = (note: BassNote, until: number) => {
     const tone = patch.tone(raw, note, until);
     const gate = raw.createGain();
-    gate.connect(tone.input);
+    tone.output.connect(gate);
     return { gate, tone };
   };
 
@@ -138,9 +143,10 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
         if (patch.retone) {
           const next = section(note, stopAt);
           next.gate.gain.value = 0;
-          v.source.main.connect(next.gate);
-          next.tone.output.connect(v.voice.amp);
+          v.source.main.connect(next.tone.input);
+          next.gate.connect(v.voice.amp);
           const previous = [v.gate, ...v.tone.nodes];
+          const previousInput = v.tone.input;
           v.gate.gain.setValueAtTime(1, start);
           v.gate.gain.linearRampToValueAtTime(0, start + RETONE_FADE);
           next.gate.gain.setValueAtTime(0, start);
@@ -151,6 +157,11 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
           // Let the previous note's filters go once they're silent. Kept to the end of the voice, a
           // long legato run would pile up dozens of idle filters the audio thread still visits.
           atAudioTime(raw, start + RETONE_FADE + 0.05, () => {
+            try {
+              v.source.main.disconnect(previousInput);
+            } catch {
+              // (already let go: the voice ended or the instrument was disposed)
+            }
             previous.forEach((node) => node.disconnect());
             v.voice.nodes = v.voice.nodes.filter((node) => !previous.includes(node));
           });
@@ -166,8 +177,8 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
       const amp = raw.createGain();
       attackDecay(amp.gain, start, peak, patch.attack, patch.decay, patch.sustain);
       amp.gain.setTargetAtTime(0, end, releaseTc);
-      source.main.connect(first.gate);
-      first.tone.output.connect(amp);
+      source.main.connect(first.tone.input);
+      first.gate.connect(amp);
       source.direct?.connect(amp);
       amp.connect(input);
       const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };

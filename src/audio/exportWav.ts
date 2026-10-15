@@ -110,6 +110,12 @@ export interface RenderOptions {
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
   /** An exact-length render ends without its 5 ms fade (an intro that leads straight into a loop). */
   noEndFade?: boolean;
+  /**
+   * Keep a ring-out render whole, not cut where its tails die away: the caller turns it up or down
+   * to a loudness target first, then cuts it (cutRingOut), so the tails end under -70 dBFS in the
+   * file it saves, not in the render before it was turned up.
+   */
+  keepRingOut?: boolean;
   /** The least a ring-out render runs past its range (default RING_OUT_LISTEN): a freeze, which cuts its own silent tail, renders less. */
   ringOutMin?: number;
   /**
@@ -394,10 +400,25 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
   const rendered = await renderTracks(opts, audibleTracks(opts.tracks), onProgress);
   const { sampleRate } = rendered;
   scale(rendered.channels, peakGain(peakOf(rendered.channels), opts));
-  const channels = endRingOut(rendered.channels, sampleRate, opts, ringOutLength(rendered.channels, sampleRate, rangeFrames(opts)));
+  const channels = opts.keepRingOut ? rendered.channels : endRingOut(rendered.channels, sampleRate, opts, ringOutLength(rendered.channels, sampleRate, rangeFrames(opts)));
+  return toAudioBuffer(channels, sampleRate);
+}
+
+function toAudioBuffer(channels: Float32Array[], sampleRate: number): AudioBuffer {
   const audio = new AudioBuffer({ numberOfChannels: channels.length, length: channels[0].length, sampleRate });
-  channels.forEach((ch, c) => audio.copyToChannel(ch, c));
+  channels.forEach((ch, c) => audio.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
   return audio;
+}
+
+/**
+ * A render made with `keepRingOut`, cut where its tails have died away at the level it has now
+ * (after a loudness match) and faded there, as renderArrangement cuts the others. Anything but a
+ * ring-out comes back as it is.
+ */
+export function cutRingOut(audio: AudioBuffer, opts: RenderOptions): AudioBuffer {
+  const channels = channelsOf(audio);
+  const cut = endRingOut(channels, audio.sampleRate, opts, ringOutLength(channels, audio.sampleRate, rangeFrames(opts)));
+  return cut === channels ? audio : toAudioBuffer(cut, audio.sampleRate);
 }
 
 /**

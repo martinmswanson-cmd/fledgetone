@@ -8,6 +8,11 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-10 — Exports repeat exactly
+
+- Exporting the same song twice gives the same file: snares, hi-hats, claps, cymbals, risers and synth noise used to come out a little different every time. Each hit still sounds slightly different from the next.
+- With a loudness target, a ring-out export's tails are judged at the file's final level, so a quiet song turned up no longer ends its tails early.
+
 ## 2026.10.15-9 — Hear instruments in the menu
 
 - Every instrument in the instrument menus (Add Track and the Track Inspector) has a ▶ button: click it to hear that instrument before choosing it.

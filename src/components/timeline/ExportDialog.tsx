@@ -23,6 +23,7 @@ import {
   ringOutSeconds,
   SAMPLE_RATES,
   channelsOf,
+  cutRingOut,
   stemTracks,
 } from '../../audio/exportWav';
 import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb } from '../../audio/loudness';
@@ -352,8 +353,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         downloadBlob(await createZip(files), fileName);
         showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}` : ''}`);
       } else if (videoOut) {
-        // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs)
-        const audio = await renderArrangement({ ...opts, sampleRate: 48000 }, (progress) =>
+        // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs). A ring-out is
+        // cut where its tails die away once it has its final level (see keepRingOut)
+        const videoOpts = { ...opts, sampleRate: 48000 as const, keepRingOut: settings.normalize };
+        let audio = await renderArrangement(videoOpts, (progress) =>
           setStatus({ kind: 'rendering', fileName, progress: progress * 0.3, detail: 'Rendering the sound' })
         );
         controller.signal.throwIfAborted();
@@ -361,6 +364,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         if (settings.normalize) {
           setStatus({ kind: 'rendering', fileName, progress: 0.3, detail: 'Matching the loudness' });
           reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp)).reading;
+          audio = cutRingOut(audio, videoOpts);
         }
         const startSeconds = barToSeconds(opts.startBar, tempo);
         const sections = (opts.markers ?? [])
@@ -400,7 +404,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         controller.signal.throwIfAborted();
         downloadBlob(zip, fileName);
       } else {
-        const audio = await renderArrangement(opts, (progress) => setStatus({ kind: 'rendering', fileName, progress, detail: '' }));
+        // A ring-out is cut where its tails die away once it has its final level (see keepRingOut)
+        const mixOpts = { ...opts, keepRingOut: settings.normalize };
+        let audio = await renderArrangement(mixOpts, (progress) => setStatus({ kind: 'rendering', fileName, progress, detail: '' }));
         controller.signal.throwIfAborted();
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Measuring loudness' });
         let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
@@ -409,6 +415,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Matching the loudness' });
           const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp);
           reading = reached.reading;
+          audio = cutRingOut(audio, mixOpts);
           if (reached.shortDb > 0.3 && reached.capped)
             note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the master OTT and raise its Out gain`;
           else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;

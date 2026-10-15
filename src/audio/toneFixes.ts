@@ -4,6 +4,8 @@
  */
 import * as Tone from 'tone';
 import { smoothSet } from './effects/smoothParam';
+import { noiseStart, toneNoiseChannel } from './seededNoise';
+import type { NoiseColour } from './seededNoise';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -124,3 +126,59 @@ soloDisposer.dispose = function () {
   for (const all of [soloStatics._allSolos, soloStatics._soloed]) if (all.get(context)?.size === 0) all.delete(context);
   return result;
 };
+
+/**
+ * Tone.Noise fills its noise buffers from Math.random (once per page) and starts each burst at a
+ * random point of them, so the snare and hats of the synthesized kits came out different in every
+ * export of the same song. Its noise comes from a fixed seed here (seededNoise.ts), the way Tone
+ * makes it, and each burst starts at a point picked by the noise's key (seedToneNoise; 0 if it has
+ * none) and its start time: each hit still differs from the next, the same way every time.
+ * The buffers are made at 44.1 kHz whatever the context, as Tone's are, so the first context to
+ * play noise doesn't decide its samples.
+ */
+interface NoiseInside {
+  context: Tone.BaseContext;
+  output: Tone.InputNode;
+  _type: NoiseColour;
+  _source: Tone.ToneBufferSource | null;
+  _fadeIn: Tone.Unit.Time;
+  _fadeOut: Tone.Unit.Time;
+  _playbackRate: number;
+  onstop: (source: unknown) => void;
+  toSeconds: (time: Tone.Unit.Time) => number;
+  /** Set by seedToneNoise */
+  noiseKey?: number;
+}
+const TONE_NOISE_SECONDS = 5;
+const toneNoiseBuffers = new Map<NoiseColour, Tone.ToneAudioBuffer>();
+function toneNoiseBuffer(colour: NoiseColour): Tone.ToneAudioBuffer {
+  let buffer = toneNoiseBuffers.get(colour);
+  if (!buffer) {
+    const rate = 44100;
+    const audio = new AudioBuffer({ numberOfChannels: 2, length: TONE_NOISE_SECONDS * rate, sampleRate: rate });
+    for (let c = 0; c < 2; c++) audio.copyToChannel(toneNoiseChannel(colour, audio.length, 0x70e + c * 0x1000), c);
+    buffer = new Tone.ToneAudioBuffer(audio);
+    toneNoiseBuffers.set(colour, buffer);
+  }
+  return buffer;
+}
+const noiseProto = Tone.Noise.prototype as unknown as { _start: (this: NoiseInside, time: Tone.Unit.Time) => void };
+noiseProto._start = function (time) {
+  const buffer = toneNoiseBuffer(this._type);
+  const at = this.toSeconds(time);
+  this._source = new Tone.ToneBufferSource({
+    url: buffer,
+    context: this.context,
+    fadeIn: this._fadeIn,
+    fadeOut: this._fadeOut,
+    loop: true,
+    onended: () => this.onstop(this),
+    playbackRate: this._playbackRate,
+  }).connect(this.output);
+  this._source.start(at, noiseStart(this.noiseKey ?? 0, at) * (buffer.duration - 0.001));
+};
+
+/** Give a Tone.Noise (a NoiseSynth's `noise`) its key: see noiseKey, from the track's seed and which drum. */
+export function seedToneNoise(noise: Tone.Noise, key: number): void {
+  (noise as unknown as NoiseInside).noiseKey = key;
+}

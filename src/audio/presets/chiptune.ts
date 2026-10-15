@@ -3,6 +3,7 @@ import type { PlayableNote } from '../instruments';
 import { safely } from '../instruments';
 import { notLate } from './monotonic';
 import { createBus, createFilter, createNoise, createOsc, createVoiceSet, noteFrequency, releaseConstant, releaseTail } from './native';
+import { noiseKey } from '../seededNoise';
 import { HELD_NOTE } from './edmSynths';
 
 /**
@@ -136,7 +137,8 @@ function metallicNoise(raw: BaseAudioContext, at: number, rate: number): AudioBu
 }
 
 /** The kit, with the same hits as the other drum kits (kick, snare, hats, cowbell). */
-export function createChipDrums(output: Tone.InputNode) {
+/** `seed`: the track's (see trackSeed), which with the row and the time picks each hit's noise. */
+export function createChipDrums(output: Tone.InputNode, seed = 0) {
   const { bus, raw, input } = createBus(output);
   const voices = createVoiceSet(raw);
 
@@ -161,7 +163,7 @@ export function createChipDrums(output: Tone.InputNode) {
 
   const snare = (time: number, velocity: number) => {
     const t = notLate(bus.context, time);
-    const noise = createNoise(raw, t);
+    const noise = createNoise(raw, t, noiseKey(seed, 'snare'));
     const hp = createFilter(raw, 'highpass', 1200, 0.7);
     const amp = raw.createGain();
     amp.gain.setValueAtTime(0.5 * velocity, t);
@@ -181,7 +183,7 @@ export function createChipDrums(output: Tone.InputNode) {
 
   const hat = (open: boolean, time: number, velocity: number) => {
     const t = notLate(bus.context, time);
-    const src = open ? metallicNoise(raw, t, 2.2) : createNoise(raw, t);
+    const src = open ? metallicNoise(raw, t, 2.2) : createNoise(raw, t, noiseKey(seed, 'hat'));
     const hp = createFilter(raw, 'highpass', open ? 5000 : 7500, 0.7);
     const amp = raw.createGain();
     amp.gain.setValueAtTime((open ? 0.22 : 0.3) * velocity, t);

@@ -6,6 +6,8 @@
 import * as Tone from 'tone';
 import { monotonicTime } from './monotonic';
 import { createVoicePool } from './poly';
+import { noiseKey } from '../seededNoise';
+import { seedToneNoise } from '../toneFixes';
 
 /**
  * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
@@ -183,9 +185,10 @@ export function createLead(output: Tone.InputNode) {
 
 /**
  * Drum machine in the 808 style: long boomy kick, snappy noise snare, crisp hats and the
- * classic two-tone cowbell. Same hits (and note map) as the analog Drums kit.
+ * classic two-tone cowbell. Same hits (and note map) as the analog Drums kit. `seed` is the
+ * track's (see trackSeed), which with the time picks each snare's and hat's noise.
  */
-export function createDrumMachine(output: Tone.InputNode) {
+export function createDrumMachine(output: Tone.InputNode, seed = 0) {
   const kick = new Tone.MembraneSynth({
     pitchDecay: 0.09,
     octaves: 5,
@@ -200,6 +203,8 @@ export function createDrumMachine(output: Tone.InputNode) {
 
   const hatFilter = new Tone.BiquadFilter({ type: 'highpass', frequency: 7000 }).connect(output);
   const hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.03 }, volume: -10 }).connect(hatFilter);
+  seedToneNoise(snareNoise.noise, noiseKey(seed, 'snare'));
+  seedToneNoise(hat.noise, noiseKey(seed, 'hat'));
 
   // 808 cowbell: two square waves (540 + 800 Hz) through a bandpass
   const bellFilter = new Tone.BiquadFilter({ type: 'bandpass', frequency: 700, Q: 2 }).connect(output);
