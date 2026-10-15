@@ -663,15 +663,23 @@ interface ShapingChain {
   onNote?: (time: number) => void;
 }
 
-/** A soft clipper: `drive` times the input through tanh, scaled back so full scale stays full scale. */
-function saturator(drive: number): WaveShaperNode {
+/**
+ * A soft clipper: `drive` times the input through tanh, scaled back so full scale stays full scale.
+ * Oversampled 2x, not 4x, unless asked: the recordings it shapes are dull (little above a few
+ * kHz) and the cabinet after it rolls the top off, so what 2x lets fold back is under -88 dB of the
+ * guitar (a phrase through each amp, and the rock and metal guitars, against 4x). A 4x shaper cost
+ * as much as nine biquads; at 2x the rock and metal starters' guitars render 13% faster. The clean
+ * amp keeps 4x: it's brightened before and after its clip, and 2x came to -74 dB there, closer to
+ * hearing than the rest. (2x also holds the sound back 64 samples less, per stage.)
+ */
+function saturator(drive: number, oversample: OverSampleType = '2x'): WaveShaperNode {
   const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
   const shaper = raw.createWaveShaper();
   const curve = new Float32Array(2049);
   const norm = Math.tanh(drive);
   for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(drive * ((i / (curve.length - 1)) * 2 - 1)) / norm;
   shaper.curve = curve;
-  shaper.oversample = '4x';
+  shaper.oversample = oversample;
   return shaper;
 }
 
@@ -695,6 +703,8 @@ interface AmpSettings {
   treble: number;
   /** Where the speaker cabinet rolls the top off, Hz */
   cabTop: number;
+  /** The gain stages' oversampling (default 2x: see saturator) */
+  oversample?: OverSampleType;
 }
 
 /**
@@ -707,7 +717,7 @@ interface AmpSettings {
 // (An amp with a squeeze has a compressor: list it in COMPRESSED_SHAPINGS, instrumentCatalog.ts)
 const AMPS: Record<AmpModel, AmpSettings> = {
   // Bright and glassy, a touch of edge when picked hard
-  cleanAmp: { tight: 70, squeeze: [-26, 3], pre: [['highshelf', 1500, 0.7, 4]], stages: [1.4], bass: 1, mid: -2, midHz: 600, treble: 3, cabTop: 6500 },
+  cleanAmp: { tight: 70, squeeze: [-26, 3], pre: [['highshelf', 1500, 0.7, 4]], stages: [1.4], bass: 1, mid: -2, midHz: 600, treble: 3, cabTop: 6500, oversample: '4x' },
   // Warm and round: treble down, the neck pickup sound
   jazzAmp: { tight: 60, squeeze: [-30, 2], pre: [], stages: [1.2], bass: 2, mid: 0, midHz: 700, treble: -4, cabTop: 4200 },
   // An amp turned up until it breaks up: rock rhythm
@@ -809,7 +819,7 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     amp.stages.forEach((drive, i) => {
       // Between stages: the coupling that keeps a high-gain amp's lows tight and its fizz down
       if (i > 0) nodes.push(biquad('highpass', 180, 0.7), biquad('lowpass', 4500, 0.7));
-      nodes.push(saturator(drive));
+      nodes.push(saturator(drive, amp.oversample));
     });
     nodes.push(
       biquad('lowshelf', 120, 0.7, amp.bass),
