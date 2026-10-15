@@ -103,6 +103,7 @@ export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' 
       ids.add(audio.soundId);
       if (audio.tunedFrom) ids.add(audio.tunedFrom);
       if (audio.reversedFrom) ids.add(audio.reversedFrom);
+      if (audio.shiftedFrom) ids.add(audio.shiftedFrom);
     }
   }
   for (const t of p.tracks) {
@@ -136,6 +137,7 @@ export function normalizeClipAudio(raw: unknown): ClipAudio | undefined {
     ...(isNum(raw.stretchBpm) ? { stretchBpm: clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) } : {}),
     ...(typeof raw.tunedFrom === 'string' && raw.tunedFrom ? { tunedFrom: raw.tunedFrom } : {}),
     ...(typeof raw.reversedFrom === 'string' && raw.reversedFrom ? { reversedFrom: raw.reversedFrom } : {}),
+    ...(typeof raw.shiftedFrom === 'string' && raw.shiftedFrom && isNum(raw.shift) ? { shiftedFrom: raw.shiftedFrom, shift: clamp(raw.shift, -12, 12) } : {}),
     ...(() => {
       const warp = normalizeWarp(raw.warp, isNum(raw.stretchBpm) ? clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) : 60);
       return warp.length ? { warp } : {};

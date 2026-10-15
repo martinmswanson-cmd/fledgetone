@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import type { DrumRack, MultiSample, RackPad } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
-import { padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
+import { chopSpan, padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
 import { decodeSound } from '../soundLibrary';
 import { alwaysStereo } from '../nativeNodes';
 import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../instruments';
@@ -176,18 +176,31 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     source.playbackRate.value = Math.pow(2, pad.pitch / 12);
     const env = raw.createGain();
     const level = Math.max(0, Math.min(1, velocity)) ** 1.2;
-    env.gain.setValueAtTime(level, at);
-    const length = buffer.duration / source.playbackRate.value;
+    // A chop plays its stretch of the sound (mirrored when reversed: the buffer is the reversed copy),
+    // from a whole frame (a source read between two frames is interpolated, which blurs its top)
+    const chop = chopSpan(pad, buffer.duration);
+    const offset = Math.round(chop.offset * buffer.sampleRate) / buffer.sampleRate;
+    const length = chop.seconds / source.playbackRate.value;
+    if (!(length > 0)) return;
+    const fade = Math.min(pad.fade ?? 0, length / 2);
+    if (fade > 0) {
+      env.gain.setValueAtTime(0, at);
+      env.gain.linearRampToValueAtTime(level, at + fade);
+    } else env.gain.setValueAtTime(level, at);
     let stopAt = at + length;
     if (pad.decay > 0 && pad.decay < length) {
       // Holds a moment, then dies away to about -60 dB by `decay`
-      env.gain.setValueAtTime(level, at + pad.decay * 0.25);
-      env.gain.setTargetAtTime(0, at + pad.decay * 0.25, (pad.decay * 0.75) / 6.9);
+      env.gain.setValueAtTime(level, Math.max(at + fade, at + pad.decay * 0.25));
+      env.gain.setTargetAtTime(0, Math.max(at + fade, at + pad.decay * 0.25), (pad.decay * 0.75) / 6.9);
       stopAt = at + pad.decay + 0.02;
+    } else if (fade > 0) {
+      // Out at the chop's end as it came in, so a cut mid-note doesn't click
+      env.gain.setValueAtTime(level, stopAt - fade);
+      env.gain.linearRampToValueAtTime(0, stopAt);
     }
     source.connect(env);
     env.connect(chain.input);
-    source.start(at);
+    source.start(at, offset, chop.seconds);
     source.stop(stopAt);
     const h: Hit = { source, env, pad: i, stopAt };
     hits.add(h);

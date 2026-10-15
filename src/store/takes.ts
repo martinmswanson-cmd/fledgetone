@@ -55,7 +55,11 @@ export function applyComp(clip: Clip, makeId: () => string): Clip {
   if (clip.audio || first.audio) {
     // The folder's own gain, fades and stretch stay: only which sound, and where in it, is the take's
     const audio = first.audio && clip.audio ? { ...clip.audio, soundId: first.audio.soundId, offset: first.audio.offset } : (first.audio ?? clip.audio);
-    if (audio && clip.audio && audio.soundId !== clip.audio.soundId) delete audio.tunedFrom;
+    if (audio && clip.audio && audio.soundId !== clip.audio.soundId) {
+      delete audio.tunedFrom;
+      delete audio.shiftedFrom;
+      delete audio.shift;
+    }
     return { ...clip, comp: segs, ...(audio ? { audio } : {}) };
   }
   const next: Clip = { ...clip, comp: segs, notes: compNotes(clip).map((n) => ({ ...n, id: makeId() })) };

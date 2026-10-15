@@ -16,6 +16,14 @@ export const MINOR_STEPS = [0, 2, 3, 5, 7, 8, 10] as const;
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
 const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
 
+/** A weight per pitch class (tonic first) for each mode. */
+export interface KeyProfiles {
+  major: readonly number[];
+  minor: readonly number[];
+}
+/** Krumhansl-Kessler: listeners' ratings of how well each note fits a key. */
+export const KK_PROFILES: KeyProfiles = { major: MAJOR_PROFILE, minor: MINOR_PROFILE };
+
 export interface SongKey {
   /** 0 = C */
   root: number;
@@ -62,18 +70,23 @@ export function detectKey(clips: readonly Clip[], tracks: readonly Track[]): Son
     }
   }
   if (!any) return null;
-  let best: SongKey = keyOf(0, 'major');
-  let bestScore = -Infinity;
+  return rankKeys(weight)[0].key;
+}
+
+/**
+ * Every key, likeliest first, for a weight per pitch class (C first): the weights' correlation
+ * with the major and minor key profiles turned to each root. Notes (detectKey) and recordings
+ * (sampleAnalysis.ts) are matched the same way.
+ */
+export function rankKeys(weight: readonly number[], profiles: KeyProfiles = KK_PROFILES): Array<{ key: SongKey; score: number }> {
+  const all: Array<{ key: SongKey; score: number }> = [];
   for (let root = 0; root < 12; root++) {
     for (const mode of ['major', 'minor'] as const) {
-      const profile = mode === 'major' ? MAJOR_PROFILE : MINOR_PROFILE;
+      const profile = profiles[mode];
       const rotated = profile.map((_, i) => profile[(i - root + 12) % 12]);
-      const score = correlation(weight, rotated);
-      if (score > bestScore) {
-        bestScore = score;
-        best = keyOf(root, mode);
-      }
+      all.push({ key: keyOf(root, mode), score: correlation(weight, rotated) });
     }
   }
-  return best;
+  // Stable, so a tie goes to the earlier key (C before C#, major before minor), as it always has
+  return all.map((k, i) => ({ k, i })).sort((a, b) => b.k.score - a.k.score || a.i - b.i).map(({ k }) => k);
 }

@@ -18,6 +18,7 @@ import type { ContextMenuState } from './ClipContextMenu';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
 import { shadeNotes, type NoteRect } from './noteShades';
 import { ClipWaveform, Waveform } from './Waveform';
+import { SampleBadge } from './SampleInfo';
 import { isWarped } from '../../store/warp';
 import { padOfNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
@@ -562,6 +563,7 @@ const AudioClipBody: React.FC<AudioClipBodyProps> = ({ audio, xfade, stretch, bp
           <Waveform soundId={audio.soundId} from={audio.offset} to={audio.offset + seconds * stretch} width={width} height={height} gain={dbToGain(audio.gain)} color={color} className="block" />
         )}
         {audio.reversedFrom && <span className="absolute right-1 bottom-0.5 text-[8px] font-mono uppercase text-white/70">rev</span>}
+        <SampleBadge soundId={audio.shiftedFrom ?? audio.soundId} shift={audio.shift} />
       </div>
       {(inPx > 0 || outPx > 0) && (
         <svg className="absolute left-0 pointer-events-none" style={{ top, width, height }} width={width} height={height} aria-hidden="true">

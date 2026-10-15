@@ -3,12 +3,16 @@
  * Multi Sampler (sounds laid across the keys and velocities).
  */
 import React, { useState } from 'react';
-import { Drum, Piano, Trash2, Upload } from 'lucide-react';
+import { Drum, Piano, Sparkles, Trash2, Upload } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { DrumRack, MultiSample, RackPad, Track } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
-import { defaultMulti, defaultRack, mapZones, midiName, padNote, RACK_CHOKE_GROUPS, RACK_DECAY_MAX, RACK_GAIN_MAX, RACK_GAIN_MIN, rootFromName } from '../../store/sampleKits';
-import { decodeSound } from '../../audio/soundLibrary';
+import { defaultMulti, defaultRack, mapZones, midiName, padNote, RACK_CHOKE_GROUPS, RACK_DECAY_MAX, RACK_FADE_MAX, RACK_GAIN_MAX, RACK_GAIN_MIN, rootFromName } from '../../store/sampleKits';
+import { decodeSound, useSoundLibrary } from '../../audio/soundLibrary';
+import { DEFAULT_CHOP_FADE, MIN_CHOP } from '../../store/sampleFlip';
+import { newFlipIdea } from '../../store/flipActions';
+import { BassCutToggle } from '../timeline/SampleInfo';
+import { showToast } from '../timeline/toastStore';
 import { detectPitch, hzToMidi } from '../../audio/vocalTune';
 import { previewTrackNotes } from '../../audio/liveTracks';
 import { initAudio } from '../../audio/engine';
@@ -34,7 +38,7 @@ const Slider: React.FC<{ label: string; value: number; min: number; max: number;
 );
 
 /**
- * The Drum Rack: 16 pads (C2 up), each your own sound with its own level, pan, pitch, decay,
+ * The Drum Rack: 16 pads (C2 up), each your own sound (or a chop of one: its start, end and fade) with its own level, pan, pitch, decay,
  * filters, drive and choke group. Click a pad to hear and edit it; drop sound files on a pad, or
  * load several at once to fill the pads in order.
  */
@@ -128,6 +132,7 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
             </button>
           )}
         </div>
+        {pad.soundId && pad.start !== undefined && pad.end !== undefined && <ChopSliders pad={pad} onPad={(patch) => setPad(selected, patch)} />}
         <Slider label="Level" value={pad.gain} min={RACK_GAIN_MIN} max={RACK_GAIN_MAX} step={0.5} format={fmtDb} onValue={(v) => setPad(selected, { gain: v })} reset={0} />
         <Slider label="Pan" value={pad.pan} min={-1} max={1} step={0.01} format={(v) => (Math.abs(v) < 0.01 ? 'C' : `${v < 0 ? 'L' : 'R'}${Math.round(Math.abs(v) * 100)}`)} onValue={(v) => setPad(selected, { pan: v })} reset={0} />
         <Slider label="Pitch" value={pad.pitch} min={-24} max={24} step={1} format={(v) => `${v > 0 ? '+' : ''}${v} st`} onValue={(v) => setPad(selected, { pitch: v })} reset={0} />
@@ -152,7 +157,48 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
         </div>
       </div>
       <p className="text-[10px] text-forge-muted/80">Pads play on C2 to D#3 (any octave of a MIDI keyboard). In the piano roll each pad is a row, with STEPS for a step sequencer.</p>
+      <FlipControls trackId={track.id} />
       <SoundLibraryFooter />
+    </div>
+  );
+};
+
+/** A chop's own stretch of its sound: where it starts and ends, and its fade (see sampleFlip.ts). */
+const ChopSliders: React.FC<{ pad: RackPad; onPad: (patch: Partial<RackPad>) => void }> = ({ pad, onPad }) => {
+  const seconds = useSoundLibrary((s) => (pad.soundId ? s.metas[pad.soundId]?.seconds : undefined)) ?? Math.max(pad.end ?? 1, 1);
+  const start = pad.start ?? 0;
+  const end = pad.end ?? seconds;
+  const fmt = (v: number) => `${v.toFixed(3)} s`;
+  return (
+    <>
+      <Slider label="Start" value={start} min={0} max={Math.max(0, end - MIN_CHOP)} step={0.001} format={fmt} onValue={(v) => onPad({ start: Math.min(v, end - MIN_CHOP) })} reset={start} />
+      <Slider label="End" value={end} min={Math.min(seconds, start + MIN_CHOP)} max={seconds} step={0.001} format={fmt} onValue={(v) => onPad({ end: Math.max(v, start + MIN_CHOP) })} reset={end} />
+      <Slider label="Fade" value={pad.fade ?? 0} min={0} max={RACK_FADE_MAX} step={0.001} format={(v) => `${Math.round(v * 1000)} ms`} onValue={(v) => onPad({ fade: v > 0 ? v : undefined })} reset={DEFAULT_CHOP_FADE} />
+    </>
+  );
+};
+
+/**
+ * For a rack of chops (Chop sample): "New idea" writes the next starting pattern into the track's
+ * selected clip (or its first), and the bass cut for laying an 808 under it.
+ */
+const FlipControls: React.FC<{ trackId: string }> = ({ trackId }) => {
+  const chopped = useTimelineStore((s) => s.tracks.find((t) => t.id === trackId)?.rack?.pads[0]?.start !== undefined);
+  const clipId = useTimelineStore((s) => (s.clips.find((c) => c.trackId === trackId && c.isSelected) ?? s.clips.find((c) => c.trackId === trackId))?.id);
+  if (!chopped) return <BassCutToggle trackId={trackId} />;
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-forge-border pt-2">
+      <button
+        type="button"
+        className={small}
+        disabled={!clipId}
+        onClick={() => clipId && newFlipIdea(clipId) && showToast('A new idea for the chops (Undo for the last one).')}
+        title="Write a new pattern that plays the chops in another order on the beat grid, into this track's selected clip"
+      >
+        <Sparkles className="w-3 h-3 inline mr-1" />
+        New idea
+      </button>
+      <BassCutToggle trackId={trackId} />
     </div>
   );
 };
