@@ -104,11 +104,13 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
               aria-selected={def.key === current}
               onPointerMove={() => i !== active && setActive(i)}
               onClick={() => onPick(def.key)}
+              title={`${def.name}: ${def.category} · ${def.blurb}`}
               className={`w-full px-3 py-1.5 flex items-center gap-2 text-left cursor-pointer ${i === active ? 'bg-cyan-500/15' : ''}`}
             >
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: def.color }} />
               <span className={`font-medium whitespace-nowrap ${def.key === current ? 'text-cyan-200' : 'text-forge-text'}`}>{def.name}</span>
-              <span className="ml-auto text-[10px] text-forge-muted truncate pl-2">{query.trim() ? `${def.category} · ${def.blurb}` : def.blurb}</span>
+              {/* Cut short to fit; the row under the pointer (or the keys) opens up to show all of it */}
+              <span className={`ml-auto text-[10px] text-forge-muted pl-2 ${i === active ? 'whitespace-normal' : 'truncate'}`}>{query.trim() ? `${def.category} · ${def.blurb}` : def.blurb}</span>
               {(def.kind === 'synth' || def.kind === 'drums' || def.kind === 'sampled') && (
                 <button
                   type="button"
@@ -156,7 +158,7 @@ export const InstrumentPicker: React.FC<PickerProps> = ({ value, onChange, inclu
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`${label}: ${def.name}`}
-        title="Choose an instrument (type to search)"
+        title={`${def.name}${withBlurb ? ` (${def.blurb})` : ''}: choose an instrument (type to search)`}
         className={`flex items-center gap-2 text-left ${className}`}
       >
         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: def.color }} />

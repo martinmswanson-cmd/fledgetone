@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-28 — Full names on hover
+
+- In Search and the instrument menus, the result under the pointer (or chosen with the arrow keys) shows its whole name and description instead of cutting it off, and hovering shows it as a tooltip too.
+
 ## 2026.10.15-27 — Exports repeat exactly
 
 - Exporting the same song twice now gives exactly the same file, sample for sample, for every instrument, kit, effect and starter (before, two exports could differ by a rounding error in the last bit, more after a distortion).

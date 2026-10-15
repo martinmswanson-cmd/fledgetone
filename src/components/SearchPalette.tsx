@@ -112,6 +112,7 @@ const Palette: React.FC<{ onClose: (ran: boolean) => void }> = ({ onClose }) => 
                 aria-selected={i === active}
                 onPointerMove={() => i !== active && setActive(i)}
                 onClick={(e) => run(entry, e.shiftKey)}
+                title={sub ? `${entry.title}\n${sub}` : entry.title}
                 className={`px-4 py-2 flex items-start gap-2.5 cursor-pointer ${i === active ? 'bg-cyan-500/15' : ''}`}
               >
                 {entry.color ? (
@@ -120,8 +121,9 @@ const Palette: React.FC<{ onClose: (ran: boolean) => void }> = ({ onClose }) => 
                   <span className="w-2.5 shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="text-[13px] text-forge-text font-medium truncate">{entry.title}</div>
-                  {sub && <div className="text-[11px] text-forge-muted line-clamp-2">{sub}</div>}
+                  {/* Cut short to fit; the result under the pointer (or the keys) shows all of it */}
+                  <div className={`text-[13px] text-forge-text font-medium ${i === active ? 'break-words' : 'truncate'}`}>{entry.title}</div>
+                  {sub && <div className={`text-[11px] text-forge-muted ${i === active ? '' : 'line-clamp-2'}`}>{sub}</div>}
                   {i === active && entry.altHint && <div className="text-[10px] text-forge-muted/80 mt-0.5">Enter: add a track · {entry.altHint}</div>}
                 </div>
                 <span className={`shrink-0 mt-0.5 px-1.5 rounded border text-[9px] font-mono uppercase tracking-wider ${GROUP_STYLE[entry.group]}`}>{entry.group}</span>
