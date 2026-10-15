@@ -406,12 +406,10 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   .scope-wave { height: 70px; }
 }
 
-/* ---------- Beside the page (wide screens): the ruler, the channel strip and the bird ---------- */
-.side-strip, .side-bird { display: none; }
+/* ---------- Beside the page (wide screens): the ruler and the channel strip ---------- */
+.side-strip { display: none; }
 @media (min-width: 1400px) {
   .side-strip { display: flex; }
-  .side-bird { display: block; }
-  .has-bird .final > img { visibility: hidden; }
 }
 
 /* The ruler: the page as a song, bars down the side, sections as markers */
@@ -466,9 +464,6 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .ss-btns { display: flex; gap: 6px; }
 .ss-btns span { width: 22px; height: 18px; display: grid; place-items: center; font-size: 9px; color: var(--muted); border: 1px solid var(--border-2); border-radius: 4px; }
 
-/* The bird */
-.side-bird { position: fixed; z-index: 45; left: 0; top: 0; width: 88px; height: 66px; pointer-events: none; transform-origin: 50% 50%; will-change: transform; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45)); }
-.side-bird svg { width: 100%; height: 100%; overflow: visible; }
 
 .sr-sec { display: none; }
 

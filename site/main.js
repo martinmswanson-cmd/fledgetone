@@ -89,7 +89,7 @@ if (!reduce) {
 // The page as a session in the studio, played by scrolling. One loop measures the scroll: its
 // speed is the level (quick to rise, slow to fall, like a meter) and how far down the page you
 // are is the position in the song, which also sweeps a filter from the lows to the highs. The
-// scopes (spectrum bars, oscilloscope lines), the ruler, the channel strip and the bird all read it.
+// scopes (spectrum bars, oscilloscope lines), the ruler and the channel strip all read it.
 const state = { energy: 0, p: 0, vel: 0, t: 0, dt: 0 };
 const parts = [];
 const css = getComputedStyle(document.documentElement);
@@ -271,67 +271,6 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
       f.style.transform = `scaleY(${lvl.toFixed(3)})`;
       peaksEl[i].style.bottom = `${(peak[i] * 100).toFixed(1)}%`;
     });
-  });
-}
-
-// The bird: flies down the right margin as you scroll, flapping harder the faster you go and
-// gliding when you stop, then lands on the last Open the studio button at the end of the page.
-if (!reduce) {
-  const bird = el('div', 'side-bird', `
-    <svg viewBox="0 0 120 90" aria-hidden="true">
-      <g class="trail"><rect x="-22" y="30" width="3.2" height="16" rx="1" style="fill: var(--cyan)"/><rect x="-16" y="30" width="3.2" height="16" rx="1" style="fill: var(--cyan)"/><rect x="-10" y="30" width="3.2" height="16" rx="1" style="fill: var(--cyan)"/><rect x="-4" y="30" width="3.2" height="16" rx="1" style="fill: var(--cyan)"/></g>
-      <g class="wing-far"><polygon points="62,42 34,-4 50,6 70,40" fill="#7d838e"/></g>
-      <polygon points="30,50 8,43 15,51 4,60 33,56" fill="#9aa0aa"/>
-      <polygon points="30,50 60,37 88,36 104,42 92,50 70,58 44,61" fill="#cfd2d8"/>
-      <polygon points="44,61 70,58 92,50 62,66" fill="#a7acb5"/>
-      <polygon points="60,37 88,36 70,46" fill="#e2e4e8"/>
-      <polygon points="88,36 99,29 108,35 104,42" fill="#eceef1"/>
-      <polygon points="108,35 119,38 106,40" style="fill: var(--amber)"/>
-      <circle cx="101" cy="34.5" r="1.8" fill="#121214"/>
-      <path d="M62 64 L60 74 L56 77 M60 74 L64 77" fill="none" stroke="#7d838e" stroke-width="2" stroke-linecap="round"/>
-      <g class="wing-near"><polygon points="64,44 24,-8 42,-4 56,14 76,40" fill="#e9eaed"/><polygon points="64,44 42,-4 56,14" fill="#c6c9cf"/><polygon points="64,44 24,-8 34,-6" fill="#d7d9de"/></g>
-    </svg>`);
-  bird.setAttribute('aria-hidden', 'true');
-  document.body.append(bird);
-  const near = bird.querySelector('.wing-near'), far = bird.querySelector('.wing-far');
-  const trail = [...bird.querySelectorAll('.trail rect')];
-  const finalSection = document.querySelector('.final');
-  const perch = finalSection?.querySelector('.btn');
-  if (finalSection) document.documentElement.classList.add('has-bird');
-  let phase = 0, x = innerWidth - 120, y = innerHeight * 0.3, tilt = 0, wing = -40;
-  parts.push(({ t, dt, energy, vel }) => {
-    if (!wide.matches || !perch) { bird.style.opacity = '0'; return; }
-    bird.style.opacity = '1';
-    // Flying: drift about the right margin, nose down when you scroll down
-    const margin = (innerWidth - 1180) / 2;
-    const fx = innerWidth - margin / 2 - 44 + Math.sin(t * 0.7) * margin * 0.18;
-    const fy = innerHeight * 0.28 + Math.sin(t * 1.1) * 26 + Math.sin(t * 0.37) * 18;
-    // Landing: from when the button comes into view until the bottom of the page
-    const r = perch.getBoundingClientRect();
-    const startY = r.top + scrollY - innerHeight * 0.95, endY = maxScroll();
-    const s = clamp((scrollY - startY) / Math.max(1, endY - startY));
-    const ease = s * s * (3 - 2 * s);
-    const lx = r.left + r.width * 0.62 - 44, ly = r.top - 56;
-    const tx = fx + (lx - fx) * ease, ty = fy + (ly - fy) * ease;
-    x += (tx - x) * Math.min(1, dt * 8); y += (ty - y) * Math.min(1, dt * 8);
-    const landed = s > 0.97;
-    tilt += ((landed ? 0 : clamp(vel / 120, -20, 24)) - tilt) * Math.min(1, dt * 5);
-    // Wings: faster and wider with the scroll; a glide with the odd flap when it's still
-    phase += dt * (5 + energy * 24);
-    const amt = clamp(0.3 + energy * 1.6);
-    const flap = -38 + Math.sin(phase) * 52 * amt;
-    const target = landed ? -62 : s > 0.85 ? flap + (-62 - flap) * ((s - 0.85) / 0.12) : flap;
-    wing += (target - wing) * Math.min(1, dt * (landed ? 6 : 30));
-    near.setAttribute('transform', `rotate(${wing.toFixed(1)} 64 44)`);
-    far.setAttribute('transform', `rotate(${(wing * 0.85 + 6).toFixed(1)} 62 42)`);
-    // The logo's sound bars trail behind it, as loud as the scroll
-    trail.forEach((r, i) => {
-      const h = (1 - s) * (0.2 + energy * 0.9) * (0.55 + 0.45 * Math.sin(t * 9 + i * 1.9));
-      r.setAttribute('transform', `translate(0 ${(38 - 8 - h * 18).toFixed(1)}) scale(1 ${Math.max(0.05, h).toFixed(3)})`);
-      r.setAttribute('y', '0'); r.style.opacity = String((1 - s) * (0.35 + energy * 0.65));
-    });
-    const bob = landed ? Math.sin(t * 2.2) * 0.6 : 0;
-    bird.style.transform = `translate(${x.toFixed(1)}px, ${(y + bob).toFixed(1)}px) scaleX(-1) rotate(${tilt.toFixed(1)}deg)`;
   });
 }
 
