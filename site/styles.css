@@ -406,3 +406,67 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   .scope-bars { height: 100px; }
   .scope-wave { height: 70px; }
 }
+
+/* ---------- Beside the page (wide screens): the ruler, the channel strip and the bird ---------- */
+.side-ruler, .side-strip, .side-bird { display: none; }
+@media (min-width: 1400px) {
+  .side-ruler, .side-strip { display: flex; }
+  .side-bird { display: block; }
+  .has-bird .final > img { visibility: hidden; }
+}
+
+/* The ruler: the page as a song, bars down the side, sections as markers */
+.side-ruler {
+  position: fixed; z-index: 40; left: 18px; top: 84px; bottom: 24px; width: 100px;
+  flex-direction: column; gap: 14px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+.sr-read { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: rgba(26, 26, 30, .85); }
+.sr-label { font-size: 9px; letter-spacing: .16em; color: var(--muted); }
+.sr-bar { font-size: 17px; color: var(--text); line-height: 1.2; }
+.sr-tc { font-size: 10px; color: var(--cyan); }
+.sr-track { position: relative; flex: 1; margin-left: 4px; border-left: 1px solid var(--border-2); }
+.sr-ticks i { position: absolute; left: 0; width: 5px; height: 1px; background: var(--border-2); }
+.sr-ticks i.mid { width: 9px; background: #4a4a56; }
+.sr-ticks i.major { width: 14px; background: var(--muted); }
+.sr-ticks i[data-n]::after { content: attr(data-n); position: absolute; left: 17px; top: -6px; font-size: 9px; color: var(--muted); }
+.sr-flag {
+  position: absolute; left: 40px; transform: translateY(-50%);
+  padding: 2px 6px; border-radius: 3px; font-size: 10px; letter-spacing: .04em; white-space: nowrap;
+  color: #0b0b0d; background: var(--c); opacity: .55; transition: opacity .2s ease, transform .2s ease;
+  text-decoration: none; pointer-events: auto;
+}
+.sr-flag::before { content: ''; position: absolute; left: -10px; top: 50%; width: 10px; height: 1px; background: var(--c); }
+.sr-flag:hover { opacity: 1; text-decoration: none; }
+.sr-flag.on { opacity: 1; transform: translateY(-50%) translateX(3px); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 50%, transparent); }
+.sr-head { position: absolute; left: -6px; right: 0; height: 2px; margin-top: -1px; background: var(--red); box-shadow: 0 0 8px rgba(239, 68, 68, .7); }
+.sr-head::before { content: ''; position: absolute; left: -2px; top: -4px; border: 5px solid transparent; border-left-color: var(--red); }
+
+/* The channel strip, like the studio mixer's master */
+.side-strip {
+  position: fixed; z-index: 40; right: 22px; bottom: 24px; width: 84px;
+  flex-direction: column; align-items: center; gap: 10px; padding: 0 8px 10px;
+  border: 1px solid var(--border); border-radius: 10px; background: rgba(26, 26, 30, .9);
+  font-family: var(--mono); font-variant-numeric: tabular-nums; overflow: hidden;
+}
+.ss-name { align-self: stretch; margin: 0 -8px; padding: 8px 0 6px; text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .14em; color: var(--text); border-top: 3px solid var(--cyan); }
+.ss-knob { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.ss-knob svg { width: 40px; height: 40px; }
+.ss-ring { fill: var(--bg); stroke: var(--border-2); stroke-width: 3; }
+.ss-arc { fill: none; stroke: var(--cyan); stroke-width: 3; stroke-linecap: round; }
+.ss-ptr { stroke: var(--text); stroke-width: 2.5; stroke-linecap: round; }
+.ss-label { font-size: 8px; letter-spacing: .14em; color: var(--muted); }
+.ss-val { font-size: 10px; color: var(--text); white-space: nowrap; }
+.ss-body { display: flex; gap: 5px; height: 160px; align-items: stretch; }
+.ss-meter { position: relative; width: 7px; border-radius: 2px; background: #0b0b0d; overflow: hidden; }
+.ss-fill { position: absolute; inset: 0; transform-origin: bottom; transform: scaleY(0); background: linear-gradient(to top, var(--green) 0 60%, var(--amber) 80%, var(--red)); }
+.ss-peak { position: absolute; left: 0; right: 0; height: 2px; background: var(--text); }
+.ss-fader { position: relative; width: 6px; margin-left: 10px; border-radius: 3px; background: #0b0b0d; }
+.ss-cap { position: absolute; left: 50%; width: 26px; height: 12px; margin: -6px 0 0 -13px; border-radius: 3px; background: linear-gradient(#5a5a66, #34343c); border: 1px solid #6b6b78; box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
+.ss-cap::after { content: ''; position: absolute; left: 3px; right: 3px; top: 5px; height: 1px; background: var(--cyan); }
+.ss-btns { display: flex; gap: 6px; }
+.ss-btns span { width: 22px; height: 18px; display: grid; place-items: center; font-size: 9px; color: var(--muted); border: 1px solid var(--border-2); border-radius: 4px; }
+
+/* The bird */
+.side-bird { position: fixed; z-index: 45; left: 0; top: 0; width: 88px; height: 66px; pointer-events: none; transform-origin: 50% 50%; will-change: transform; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .45)); }
+.side-bird svg { width: 100%; height: 100%; overflow: visible; }
