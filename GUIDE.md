@@ -135,7 +135,7 @@ The **SNAP** menu in the toolbar sets the grid that clip moves, trims, razor cut
 - Zoom with the slider at the right of the toolbar, or `+` and `-` (they keep the playhead where it is on screen when it's visible). **Ctrl+mouse wheel** (Cmd on a Mac) or a trackpad pinch zooms around the pointer. Zoom goes from 12 to 1280 pixels per bar, deep enough to see single video frames.
 - Zoomed in, the lanes show faint lines on every 16th, or on every frame when SNAP is Frame.
 - Scroll in time with **Shift+mouse wheel**, a sideways trackpad swipe, or the **Overview** strip under the tracks: drag its cyan window to scroll, click anywhere on it to jump, and drag either end of the window to zoom.
-- **See more tracks at once**: drag the thin bar under the Overview strip down to make the timeline taller (or up to make it shorter). Double-click it to fit every track in, and again to go back to the usual height. The height is remembered in this browser.
+- **See more tracks at once**: drag the thin bar under the Overview strip down to make the timeline taller, pushing the panel under it down (or up to make it shorter). Double-click it to fit every track in, and again to go back to the usual height. The height is remembered in this browser.
 - While playing, the view follows the playhead. While stopped, a jump to a spot that's off screen (`,` and `.`, a position in the Markers list, **Go to In** or `Home`, or a position typed into a readout) scrolls the view to it.
 
 ### Undo

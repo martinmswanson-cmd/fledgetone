@@ -2,17 +2,16 @@ import React from 'react';
 import { TIMELINE_DEFAULT, useUiStore } from '../../store/uiStore';
 
 /**
- * The bar under the timeline: drag it down to make the timeline taller and see more tracks at once,
- * up to keep it compact. Double-click fits every track in (or, if they already fit, goes back to the
- * usual height). The height is kept in this browser.
+ * The bar under the timeline: drag it down to make the timeline taller (and push the panels under it
+ * down) to see more tracks at once, up to keep it compact. Double-click fits every track in exactly
+ * (or, if it already does, goes back to the usual height). The height is kept in this browser.
  */
 export const TimelineResizer: React.FC<{ scrollRef: React.RefObject<HTMLDivElement | null> }> = ({ scrollRef }) => {
   const startResize = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
     const y0 = e.clientY;
-    // Start from the height it shows now (a short song can show less than its limit)
-    const h0 = scrollRef.current?.clientHeight ?? useUiStore.getState().timelineHeight;
+    const h0 = useUiStore.getState().timelineHeight;
     const move = (ev: PointerEvent) => useUiStore.getState().setTimelineHeight(h0 + (ev.clientY - y0));
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -28,8 +27,10 @@ export const TimelineResizer: React.FC<{ scrollRef: React.RefObject<HTMLDivEleme
     const el = scrollRef.current;
     const { timelineHeight, setTimelineHeight } = useUiStore.getState();
     if (!el) return;
-    // Everything already shows: back to the usual height; else tall enough for every track
-    setTimelineHeight(el.scrollHeight <= timelineHeight ? TIMELINE_DEFAULT : el.scrollHeight);
+    // How tall the tracks are (the scroll area's content, not the empty space under them)
+    const content = (el.firstElementChild as HTMLElement | null)?.offsetHeight ?? el.scrollHeight;
+    // Already fitted: back to the usual height; else exactly tall enough for every track
+    setTimelineHeight(Math.abs(content - timelineHeight) <= 2 ? TIMELINE_DEFAULT : content);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
