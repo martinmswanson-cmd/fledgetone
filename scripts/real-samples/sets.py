@@ -53,7 +53,7 @@ def note_midi(name):
 
 
 def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=None, hi=None, retune=True, bend=True,
-      pitched=True, even=True, kit=None, tail=False, sparse=False, sf2=None):
+      pitched=True, even=True, kit=None, tail=False, sparse=False, sf2=None, iowa=None, xloop=False, steady=False):
     """
     One set. `sources` is a list of (regex, octave[, midi function[, (lo, hi)]]): the regex matches a file's path in
     the repo, with the named groups `note` (or `index` plus a `midi` function), `layer` and,
@@ -79,11 +79,17 @@ def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=Non
     shares a file rather than duplicating it elsewhere. `sf2` names a SoundFont file in the repo
     that holds the recordings instead of separate files: fetch.py downloads it and unpacks each of
     its recordings (a left and right pair as one stereo file), and `sources` then match the
-    recordings' names in it.
+    recordings' names in it. `iowa` names a zip of the University of Iowa's recordings (scales of
+    single notes) that iowa.py fetches and splits instead of fetch.py. `xloop` True loops a held
+    note inside its own steady part (a long loop whose end is crossfaded into its start) instead of
+    repeating a short stretch of it to the cap, and keeps the file only a little past the loop.
+    `steady` True holds a note recorded without vibrato on its pitch all through (a bow's slow
+    drift taken out), as the app gives it its vibrato.
     """
     return {'folder': folder, 'repo': repo, 'sources': sources, 'layers': layers, 'kind': kind,
             'takes': takes, 'every': every, 'cap': cap or KINDS[kind]['cap'], 'lo': lo, 'hi': hi, 'retune': retune, 'bend': bend,
-            'pitched': pitched, 'even': even, 'kit': kit, 'tail': tail, 'sparse': sparse, 'sf2': sf2}
+            'pitched': pitched, 'even': even, 'kit': kit, 'tail': tail, 'sparse': sparse, 'sf2': sf2,
+            'iowa': iowa, 'xloop': xloop, 'steady': steady}
 
 
 NOTE = r'(?P<note>[A-Ga-g][#sb]?-?\d)'
@@ -122,11 +128,11 @@ KITS = {
 
 SETS = [
     # ---- strings (VSCO 2 CE) ----
-    S('cello-sustain', 'vsco', [(rf'{C}/susvib/susvib_{NOTE}_(?P<layer>v[13])_1\.wav', 1)], ['v1', 'v3'], 'sustain'),
+    S('cello-sustain', 'vsco', [(rf'{C}/susvib/susvib_{NOTE}_(?P<layer>v[13])_1\.wav', 1)], ['v1', 'v3'], 'sustain', xloop=True),
     S('cello-spiccato', 'vsco', [(rf'{C}/spic/spic_{NOTE}_(?P<layer>v[12])_(?P<take>RR[12])\.wav', 1)], ['v1', 'v2'], 'short'),
-    S('violins-sustain', 'vsco', [(rf'{V}/susVib/VlnEns_susVib_{NOTE}_(?P<layer>v[12])\.wav', 1)], ['v1', 'v2'], 'sustain'),
+    S('violins-sustain', 'vsco', [(rf'{V}/susVib/VlnEns_susVib_{NOTE}_(?P<layer>v[12])\.wav', 1)], ['v1', 'v2'], 'sustain', xloop=True),
     S('violins-spiccato', 'vsco', [(rf'{V}/Spic/VlnEns_Spic_{NOTE}_(?P<layer>v[12])_(?P<take>rr[12])\.wav', 1)], ['v1', 'v2'], 'short'),
-    S('violas-sustain', 'vsco', [(rf'{VA}/susvib/ViolaEns_susvib_{NOTE}_(?P<layer>v[12])_1\.wav', 1)], ['v1', 'v2'], 'sustain'),
+    S('violas-sustain', 'vsco', [(rf'{VA}/susvib/ViolaEns_susvib_{NOTE}_(?P<layer>v[12])_1\.wav', 1)], ['v1', 'v2'], 'sustain', xloop=True),
     S('violas-spiccato', 'vsco', [(rf'{VA}/spic/Violas_spic_{NOTE}_(?P<layer>v[12])_(?P<take>rr[12])\.wav', 1)], ['v1', 'v2'], 'short'),
     # The three sections' pizzicato and tremolo as one string section, low to high
     S('strings-pizzicato', 'vsco', [
@@ -139,7 +145,7 @@ SETS = [
         (rf'{VA}/trem/(?:[A-Za-z]+_)?trem_{NOTE}_(?P<layer>v[12])[_0-9]*\.wav', 1),
         (rf'{V}/Trem/VlnEns_Trem_{NOTE}_(?P<layer>v[12])\.wav', 1),
     ], ['v1', 'v2'], 'sustain'),
-    S('solo-violin', 'vsco', [(rf'Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_{NOTE}_(?P<layer>[pf])\.wav', 0)], ['p', 'f'], 'sustain'),
+    S('solo-violin', 'vsco', [(rf'Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_{NOTE}_(?P<layer>[pf])\.wav', 0)], ['p', 'f'], 'sustain', xloop=True),
     S('harp', 'vsco', [(rf'Strings/Harp/KSHarp_{NOTE}_(?P<layer>mp|mf|f)\.wav', 0)], ['mp|mf|f'], 'ringing'),
     # ---- woodwinds (VSCO 2 CE) ----
     S('flute', 'vsco', [(rf'Woodwinds/Flute/susvib/LDFlute_susvib_{NOTE}_(?P<layer>v1)_(?P<take>1)\.wav', 1)], ['v1'], 'sustain'),
@@ -232,6 +238,13 @@ SETS = [
       [''], 'sustain'),
     # The trumpet with a harmon mute, held, soft and loud
     S('muted-trumpet', 'vsco', [(rf'Brass/Trumpet/harmonM-sus/Sum_SHTrumpet_harmonM-sus_{NOTE}_(?P<layer>v[13])_rr1\.wav', 1)], ['v1', 'v3'], 'sustain'),
+    # Solo strings by the University of Iowa (iowa.py): every semitone, pp, mf and ff, played
+    # without vibrato in an anechoic room (the app adds the vibrato and the room), kept 4.5 s (a
+    # long loop holds them on)
+    S('violin', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='violin2012/Violin.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('viola', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='viola2012/Viola.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('cello', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='cello2012/Cello.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('contrabass', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='doublebass2012/Bass.arco.mono.1644.1.zip', xloop=True, steady=True),
     # A studio drum kit: each hit mixed from its close microphones and the overheads by kit.py
     S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
 ]

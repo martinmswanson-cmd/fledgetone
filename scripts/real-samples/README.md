@@ -38,6 +38,17 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
   (its LICENSE: the audio files CC0, the code MIT): a celesta, every key, from its "Tuned Denoised
   Mix" SoundFont.
 
+- [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by
+  Lawrence Fritts and the University of Iowa Electronic Music Studios: the solo violin, viola,
+  cello and double bass, bowed (the 2012 recordings: every semitone at pp, mf and ff,
+  without vibrato, in an anechoic room; the centre microphone's 16-bit 44.1 kHz mono files). Their
+  terms, from the [MIS page](https://theremin.music.uiowa.edu/MIS.html): "Since 1997, these
+  recordings have been freely available on this website and may be downloaded and used for any
+  projects, without restrictions." Credited anyway.
+
+Also looked at, for strings: [FreePats](https://freepats.zenvoid.org/) has no bowed strings (its
+only orchestral string set is a harp).
+
 ## Rebuilding them
 
 Needs Python 3 with numpy, git, and ffmpeg with libmp3lame. From an empty working folder (the
@@ -51,7 +62,9 @@ python3 /path/to/bos-beat-box/scripts/real-samples/convert.py /path/to/bos-beat-
 
 Each script takes set names to work on just those (`fetch.py --list harp` shows what a set would
 fetch). `SHOW_TRIM=1 convert.py ...` prints how much each note was evened out. The drum kit is
-mixed instead of fetched: run `kit.py studio-kit` before measuring and converting it.
+mixed instead of fetched: run `kit.py studio-kit` before measuring and converting it. The Iowa
+strings are fetched by `iowa.py` instead (`iowa.py violin cello ...`, about 600 MB of zips; each is
+deleted once split).
 
 - **`sets.py`** says what each set is made of: the library, which files (a pattern that reads
   the note, loudness and take from each file's name), how its names count octaves, and what kind
@@ -62,6 +75,16 @@ mixed instead of fetched: run `kit.py studio-kit` before measuring and convertin
   `gitlab:<owner>/<name>` in `REPOS`. A set whose recordings come in a SoundFont (`sf2`, the
   celesta) downloads that file and unpacks the recordings it uses into WAVs (a left and right pair
   as one stereo file; `soundfont.py`), then deletes it.
+- **`iowa.py`** fetches a set of the University of Iowa's recordings (`iowa` in `sets.py`): a zip of
+  chromatic scales, one file a string and loudness, played note by note. It splits each scale at
+  the silences between its notes (10 dB over the room's noise; when that doesn't find the scale's
+  notes, the threshold that does), checks each note's pitch against the scale's (its harmonics
+  against the points between them, which octaves don't fool), and keeps one string per note and
+  loudness, where the note lies lowest on it (a semitone to a fifth over the open string, so
+  neighbouring notes share a tone). A bowed note shorter than 1.6 s, or whose first half second
+  stands over 6 dB above the rest (an accent that dies away, which some notes were played as),
+  is left out for the note's other loudnesses to stand in. The two viola zips hold sound recorded
+  at 96 kHz in files marked 44.1 kHz; it reads them at their real rate.
 - **`kit.py`** mixes a multi-microphone drum kit (KITS in `sets.py`): every hit's close
   microphones, placed where the overheads hear the piece, with the overheads, into one stereo file
   per piece, loudness and take. The overheads hear the whole kit at one gain, so each close
@@ -94,6 +117,16 @@ mixed instead of fetched: run `kit.py studio-kit` before measuring and convertin
   was dying away at (a recording too short to tell takes the rate its neighbours' fit gives), the
   highs dying faster, until 60 dB down or the set's cap. One gain per set leaves its loudest peak
   just under full scale. It writes the MP3s and `src/audio/hostedSets.ts`.
+  A set with `xloop` (the strings) loops a held note inside its own sustain instead: the longest
+  stretch of it up to 3 s, its start moved by up to two periods to where it best matches the sound
+  before the loop's end, its last quarter second crossfaded into what comes before its start, and
+  its level held steady from just before the loop (so a bow's swell isn't repeated); the file
+  stops 0.3 s past the loop. (Repeating a 1.5 s stretch to the cap, as the other held sets do, made
+  a held string's vibrato and bowing audibly cycle every 1.5 s.) A set with `steady` (played
+  without vibrato) has its slow pitch drift taken out, followed every 20 ms, as the app adds the
+  vibrato; its loudnesses are matched over their first half second and their body (0.3 to 1.5 s),
+  not their first tenth or their peak, as a loud bowed note can start slower than a soft one; and a recording that isn't one steady note (a louder sound
+  caught with it, or a quiet sound before it) is left out for the note's other loudnesses.
 
 Every set recorded at several loudnesses has been rebuilt with the matching and lining up
 above. After rebuilding one, play a velocity sweep on it in the app (the same note at rising

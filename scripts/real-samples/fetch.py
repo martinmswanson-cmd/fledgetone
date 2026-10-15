@@ -108,6 +108,9 @@ def main(args):
         if st['kit']:
             print(f"{st['folder']:20s} mixed by kit.py")
             continue
+        if st['iowa']:
+            print(f"{st['folder']:20s} fetched by iowa.py")
+            continue
         head, files = plan(st)
         print(f"{st['folder']:20s} {len(files):4d} files, {len({f['nominal'] for f in files})} notes")
         if '--list' in args:

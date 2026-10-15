@@ -745,6 +745,10 @@ const AMPS: Record<AmpModel, AmpSettings> = {
  *   narrow 3 dB dips at 2.5 and 4 kHz (the bridge hill and the edge, right where hearing is most
  *   sensitive) and a gentle shelf down above 6 kHz: the bite that made high lines piercing goes,
  *   the bow and the body stay.
+ * - hall: a solo string recorded close in a dead room, heard as in a hall from a few rows back:
+ *   rumble out below 90 Hz, a broad 9 dB dip centred at 2.4 kHz (the bow's bite and the bridge
+ *   hill, which a close microphone hears in full and a hall softens), 2 dB at 4.3 kHz,
+ *   and the top above 7 kHz rolled off by 3 dB.
  */
 function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): ShapingChain {
   const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
@@ -860,6 +864,13 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     const air = biquad('highshelf', 6000, 0.7, -3);
     return chain([rumble, bite, edge, air]);
   }
+  if (shape === 'hall') {
+    const rumble = biquad('highpass', 90, 0.6);
+    const bite = biquad('peaking', 2400, 0.7, -9);
+    const edge = biquad('peaking', 4300, 1.2, -2);
+    const air = biquad('highshelf', 7000, 0.7, -3);
+    return chain([rumble, bite, edge, air]);
+  }
   if (shape === 'mandolin') {
     const courses = createLightChorus({ rate: 5, delayMs: 1.8, depth: 0.35, spread: 160, wet: 0.55 });
     const bright = new Tone.BiquadFilter({ type: 'highshelf', frequency: 2500, gain: 4 });
@@ -886,6 +897,116 @@ function toneChain(tone: InstrumentDef['tone'], next: ShapingChain): ShapingChai
   presence.connect(mud);
   Tone.connect(mud, next.input);
   return { ...next, input: presence, nodes: [...next.nodes, { dispose: () => { presence.disconnect(); mud.disconnect(); } }] };
+}
+
+/**
+ * A string's body under the vibrato (InstrumentDef.vibrato.body): narrow resonances at these
+ * frequencies, each a few dB. A real string's vibrato moves its harmonics across its body's
+ * resonances, so each harmonic swells and dips at its own moment and the tone shimmers; a
+ * recording made without vibrato and only re-pitched has none of that, the giveaway of a
+ * synthetic vibrato. Played through fixed resonances after the pitch moves, its harmonics do the
+ * same (a tenth harmonic moves tens of hertz).
+ */
+function bodyChain(body: readonly number[] | undefined, next: ShapingChain): ShapingChain {
+  if (!body?.length) return next;
+  const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  const filters = body.map((hz) => {
+    const f = raw.createBiquadFilter();
+    f.type = 'peaking';
+    f.frequency.value = Math.min(hz, raw.sampleRate / 2 - 100);
+    f.Q.value = BODY_Q;
+    f.gain.value = BODY_DB;
+    return f;
+  });
+  for (let i = 0; i + 1 < filters.length; i++) filters[i].connect(filters[i + 1]);
+  Tone.connect(filters[filters.length - 1], next.input);
+  return { ...next, input: filters[0], nodes: [...next.nodes, { dispose: () => filters.forEach((f) => f.disconnect()) }] };
+}
+/** The body's resonances: how narrow (Q) and how strong (dB) */
+const BODY_Q = 14;
+const BODY_DB = 4;
+
+/**
+ * A small stage around an instrument recorded in a dead room (InstrumentDef.room): the direct
+ * sound, and beside it a convolution with the stage's response (stageResponse) `db` dB under it.
+ */
+function stageChain(db: number | undefined, next: ShapingChain): ShapingChain {
+  if (db === undefined) return next;
+  const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  const input = raw.createGain();
+  const stage = raw.createConvolver();
+  stage.normalize = false;
+  stage.buffer = stageResponse(raw.sampleRate);
+  const wet = raw.createGain();
+  wet.gain.value = Tone.dbToGain(db);
+  const into = raw.createGain();
+  input.connect(into);
+  input.connect(stage).connect(wet).connect(into);
+  Tone.connect(into, next.input);
+  return { ...next, input, nodes: [...next.nodes, { dispose: () => [input, stage, wet, into].forEach((n) => n.disconnect()) }] };
+}
+
+/** The stage's response by sample rate (made once each: an AudioBuffer isn't tied to a context). */
+const stageResponses = new Map<number, AudioBuffer>();
+/**
+ * A small concert stage heard from a few metres, in stereo: a dozen early reflections from 6 to
+ * 45 ms (the floor, the side walls and the shell behind the player, each a little duller and from
+ * one side or the other) and a diffuse tail dying away over about 0.8 s (60 dB), its highs going
+ * first as air and walls take them. Its energy is the direct sound's, so the instrument's `room`
+ * sets the level. The same every time (a seeded noise), so an export sounds as it plays live.
+ */
+export function stageResponse(rate: number): AudioBuffer {
+  const have = stageResponses.get(rate);
+  if (have) return have;
+  const length = Math.round(rate * 0.9);
+  const ir = new AudioBuffer({ length, sampleRate: rate, numberOfChannels: 2 });
+  let seed = 0x5eed;
+  const random = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const left = ir.getChannelData(0);
+  const right = ir.getChannelData(1);
+  // The early reflections: [ms, gain, side (-1 left .. 1 right)]
+  const early: Array<[number, number, number]> = [
+    [6, 0.55, 0], [11, 0.42, -0.8], [13, 0.4, 0.8], [17, 0.3, -0.4], [21, 0.33, 0.5], [24, 0.25, -0.9],
+    [28, 0.24, 0.9], [31, 0.2, -0.2], [35, 0.18, 0.4], [38, 0.15, -0.6], [42, 0.13, 0.7], [45, 0.12, -0.3],
+  ];
+  for (const [ms, g, side] of early) {
+    const i = Math.round((ms / 1000) * rate);
+    // a little duller each time: three samples' smear
+    for (let k = -1; k <= 1; k++) {
+      const w = k === 0 ? 0.5 : 0.25;
+      left[i + k] += g * w * Math.sqrt((1 - side) / 2) * 1.2;
+      right[i + k] += g * w * Math.sqrt((1 + side) / 2) * 1.2;
+    }
+  }
+  // The tail: noise from 20 ms, its level falling 60 dB in 0.8 s, low-passed ever lower (8 kHz to 2 kHz)
+  const begin = Math.round(0.02 * rate);
+  let lpL = 0;
+  let lpR = 0;
+  for (let i = begin; i < length; i++) {
+    const t = (i - begin) / rate;
+    const env = 0.11 * Math.min(1, t / 0.03) * 10 ** ((-60 * t) / 0.8 / 20);
+    const cutoff = 8000 * 0.25 ** Math.min(1, t / 0.6);
+    const c = 1 - Math.exp((-2 * Math.PI * cutoff) / rate);
+    lpL += c * ((random() * 2 - 1) - lpL);
+    lpR += c * ((random() * 2 - 1) - lpR);
+    left[i] += env * lpL * 1.7;
+    right[i] += env * lpR * 1.7;
+  }
+  // Its energy set to the direct sound's (1): `room` dB then says how much of it there is
+  let energy = 0;
+  for (let i = 0; i < length; i++) energy += (left[i] * left[i] + right[i] * right[i]) / 2;
+  const scale = 1 / Math.sqrt(energy);
+  for (let i = 0; i < length; i++) {
+    left[i] *= scale;
+    right[i] *= scale;
+  }
+  stageResponses.set(rate, ir);
+  return ir;
 }
 
 /** How much quieter `note` plays under an instrument's taper (1 = as it is). */
@@ -1081,6 +1202,18 @@ const PORTAMENTO_MAX = 0.12;
 const LEGATO_FADE = 0.05;
 /** How fast a note let go for a newer one fades (time constant, s: gone in about 50 ms). */
 const STEAL_TC = 0.01;
+/**
+ * A held bowed note's swell in (InstrumentDef.bowed.attack): `most` seconds at the softest, a few
+ * hundredths at full loudness (0..1: the velocity, or the mod wheel's dynamics), on a curve that
+ * stays short through the loud half. A real bow at mezzo-forte takes about a tenth of a second to
+ * bring the string to full level, and a soft note longer.
+ */
+export const bowAttack = (most: number, loudness: number) => BOW_ATTACK_FASTEST + most * (1 - Math.max(0, Math.min(1, loudness))) ** 1.3;
+const BOW_ATTACK_FASTEST = 0.02;
+/** A note shorter than this (seconds) is played straight, without the vibrato (InstrumentDef.vibrato) */
+const VIBRATO_SHORTEST = 0.33;
+/** How much the vibrato moves the level too (a share of it, either way): the bow's contact and the body's resonances follow the hand */
+const VIBRATO_LEVEL = 0.035;
 /** Out of breath, a held note fades towards this share of its level, with this time constant (s) */
 const BREATH_FLOOR = 0.5;
 const BREATH_TC = 2.5;
@@ -1119,7 +1252,9 @@ function samplerVoice(
   /** Seconds a note can be held before the player runs out of breath (see breathOf) */
   breath?: number,
   /** A section: a chord's notes start a few milliseconds apart (see isSection) */
-  section?: boolean
+  section?: boolean,
+  /** Recorded without vibrato: the vibrato each held note is given (see InstrumentDef.vibrato) */
+  vibrato?: InstrumentDef['vibrato']
 ): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
@@ -1182,6 +1317,8 @@ function samplerVoice(
      * mixed by `soft` and `loud` (see dynamicsMix), `low` the softer one's loudness.
      */
     pair?: { src: AudioBufferSourceNode; base: number; soft: GainNode; loud: GainNode; low: number };
+    /** Its vibrato's pull on the level (InstrumentDef.vibrato), let go with the note */
+    wobble?: GainNode;
   }
   /** Every source a note plays (two under the mod wheel's dynamics). */
   const sourcesOf = (s: Sounding) => (s.pair ? [s.src, s.pair.src] : [s.src]);
@@ -1199,6 +1336,7 @@ function samplerVoice(
     const g = s.gain.gain;
     g.cancelScheduledValues(at);
     g.setTargetAtTime(0, at, STEAL_TC);
+    s.wobble?.gain.setTargetAtTime(0, at, STEAL_TC);
     const stop = at + STEAL_TC * 6;
     if (stop < s.until) {
       for (const x of sourcesOf(s)) x.stop(stop);
@@ -1252,9 +1390,10 @@ function samplerVoice(
 
   /**
    * Start `note` at `at`; it plays to the end of its recording unless released. `offset` starts it
-   * that far into its recording (past a bow's slow start), fading in over `fade` seconds.
+   * that far into its recording (past a bow's slow start), fading in over `fade` seconds. A bowed
+   * note's `mode`: a legato change or a short stroke (neither swells in), else a held note.
    */
-  const start = (note: string, at: number, velocity: number, offset = 0, fade = 0, hold = 0): Sounding | null => {
+  const start = (note: string, at: number, velocity: number, offset = 0, fade = 0, hold = 0, mode?: 'legato' | 'short'): Sounding | null => {
     const midiFloat = midiOfNote(note);
     const midi = Math.round(midiFloat);
     // Under the mod wheel: the recording at the wheel's loudness and the next louder one
@@ -1295,7 +1434,11 @@ function samplerVoice(
     const when = Math.max(at, raw.currentTime);
     const gain = raw.createGain();
     const v = level(note, velocity, at) * taperGain(taper, note);
-    const rise = Math.max(options.attack, fade);
+    // How loud it's played: its velocity, or the mod wheel's dynamics when they choose the recording
+    const loudness = low >= 0 ? dyn! : velocity;
+    // A held bowed note swells in (not a legato change or a short stroke, nor a note too short for it)
+    const swell = bowed?.attack && !mode && hold - when >= 0.25 ? Math.min(bowAttack(bowed.attack, loudness), 0.35 * (hold - when)) : 0;
+    const rise = Math.max(options.attack, fade, swell);
     if (rise > 0) {
       gain.gain.setValueAtTime(0, when);
       gain.gain.linearRampToValueAtTime(v, when + rise);
@@ -1350,9 +1493,55 @@ function samplerVoice(
       const one = play(found.buffer, base, gain, [gain]);
       s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity, buffer: found.buffer };
     }
+    if (vibrato && mode !== 'short' && hold - when >= VIBRATO_SHORTEST) addVibrato(s, note, at, when, mode === 'legato', loudness);
     makeRoom(note, when);
     sounding.push(s);
     return s;
+  };
+
+  /**
+   * A player's vibrato on `s` (InstrumentDef.vibrato), for recordings made without one: a sine
+   * swinging the pitch `cents` either way, deeper the louder it's played. It comes in a fifth of a
+   * second or so after the note starts and grows over half a second (at once on a legato change, as
+   * the hand keeps going), starting a little slower than its rate and settling into it; and its
+   * rate and depth differ a little from note to note (seeded, so an export comes out the same). The
+   * level follows the pitch a little (VIBRATO_LEVEL), as a string's does.
+   */
+  const addVibrato = (s: Sounding, note: string, at: number, when: number, legato: boolean, loudness: number) => {
+    const { cents, hz } = vibrato!;
+    const rate = hz * (1 + 0.07 * noteJitter(note, at, 71));
+    const osc = raw.createOscillator();
+    osc.frequency.setValueAtTime(rate * (legato ? 0.95 : 0.82), when);
+    osc.frequency.linearRampToValueAtTime(rate, when + (legato ? 0.3 : 0.9));
+    const depth = raw.createGain();
+    const delay = legato ? 0.03 : 0.2 + 0.06 * noteJitter(note, at, 79);
+    depth.gain.setValueAtTime(0, when);
+    depth.gain.setValueAtTime(0, when + delay);
+    depth.gain.linearRampToValueAtTime(legato ? 0.8 : 1, when + delay + (legato ? 0.25 : 0.5));
+    if (legato) depth.gain.linearRampToValueAtTime(1, when + delay + 0.6);
+    osc.connect(depth);
+    const swing = cents * (0.75 + 0.35 * Math.max(0, Math.min(1, loudness))) * (1 + 0.12 * noteJitter(note, at, 83));
+    const nodes: AudioNode[] = [osc, depth];
+    for (const [src, base] of [[s.src, s.base], ...(s.pair ? [[s.pair.src, s.pair.base] as const] : [])] as Array<readonly [AudioBufferSourceNode, number]>) {
+      const k = raw.createGain();
+      k.gain.value = base * (2 ** (swing / 1200) - 1);
+      depth.connect(k).connect(src.playbackRate);
+      nodes.push(k);
+    }
+    const wobble = raw.createGain();
+    wobble.gain.value = VIBRATO_LEVEL * s.level;
+    depth.connect(wobble).connect(s.gain.gain);
+    nodes.push(wobble);
+    s.wobble = wobble;
+    osc.start(when);
+    // Let go with the note (whichever of its recordings runs out last)
+    let left = sourcesOf(s).length;
+    for (const src of sourcesOf(s))
+      src.addEventListener('ended', () => {
+        if (--left) return;
+        osc.stop();
+        for (const n of nodes) n.disconnect();
+      });
   };
 
   /**
@@ -1423,6 +1612,7 @@ function samplerVoice(
     g.cancelScheduledValues(at);
     g.setValueAtTime(from, at);
     g.setTargetAtTime(0, at, releaseTc);
+    s.wobble?.gain.setTargetAtTime(0, at, releaseTc / 2);
     const late = at + tail * 0.9;
     g.setValueAtTime(from * Math.exp((-tail * 0.9) / releaseTc), late);
     g.linearRampToValueAtTime(0, at + tail);
@@ -1461,12 +1651,13 @@ function samplerVoice(
       const short = end - at < 0.25;
       for (const [i, note] of list.entries()) {
         const at2 = at + spread(note, i);
-        const s = from ? start(note, at2, velocity, Math.max(bowed.skip, LEGATO_SKIP), LEGATO_FADE, end) : short ? start(note, at2, velocity, bowed.skip, 0.008, end) : start(note, at2, velocity, 0, 0, end);
+        const s = from ? start(note, at2, velocity, Math.max(bowed.skip, LEGATO_SKIP), LEGATO_FADE, end, 'legato') : short ? start(note, at2, velocity, bowed.skip, 0.008, end, 'short') : start(note, at2, velocity, 0, 0, end);
         if (s) releaseAt(s, end);
         if (s && from) slide(from, s, at);
       }
       if (from) {
         const g = from.gain.gain;
+        from.wobble?.gain.setTargetAtTime(0, at, LEGATO_FADE);
         g.cancelScheduledValues(at);
         // The old note fades slower than the new one comes in, so the change doesn't dip
         g.setTargetAtTime(0, at, LEGATO_FADE);
@@ -1557,7 +1748,7 @@ function samplerVoice(
 export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, expressive = false): SamplerVoice {
   const def = INSTRUMENTS[key];
   const shaped = shapingChain(def.shaping, output);
-  const chain = toneChain(def.tone, shaped);
+  const chain = bodyChain(def.vibrato?.body, stageChain(def.room, toneChain(def.tone, shaped)));
   const out = new Tone.Gain(1).connect(chain.input);
   // Two channels from here on, whether a note's recording has one or two (see alwaysStereo)
   alwaysStereo(out);
@@ -1615,7 +1806,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     return null;
   };
   const progress = loading ? { complete: () => isComplete(loading), want: (midi: number, velocity: number, wheel?: number) => wantNote(loading, midi, velocity, wheel) } : {};
-  return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key));
+  return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key), def.vibrato);
 }
 
 /**

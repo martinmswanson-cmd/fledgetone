@@ -8,6 +8,14 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-22 — Warmer, more real strings
+
+- Strings that sound less sharp and more like a record. New real recordings: **Violin**, **Viola**, **Cello** and **Contrabass (Real)**, single players recorded on every note at soft, medium and loud, so no note is stretched from a neighbour's. They were recorded without vibrato in a dead room, so each held note gets a player's vibrato (starting a moment into the note, a little different every time, with the shimmer of the instrument's body), a small stage around it, and a hall's softening of the bow's bite.
+- Every bowed string swells in as a bow does (slower the softer it's played) instead of starting at full level, and held notes loop a longer stretch of the recording (up to 3 s, its level held steady) instead of repeating the same 1.5 s.
+- A new orchestral track starts with more of the hall's reverb (strings on records sit in a hall).
+- The Classical starter's string quartet plays the new violin, viola and cello, in more of the hall; the Cinematic starter's strings and cellos sit further into the hall too.
+- The starters no longer add a second, even vibrato on top of strings that already play their own.
+
 ## 2026.10.15-21 — Mix and master tools
 
 - **Clipper** on the master: shaves the tallest peaks flat before the limiter, for loud rap and electronic masters, with drive, a hard-to-soft character, a ceiling and a meter of how much it's clipping. Oversampled, so it stays clean, and the same in exports.

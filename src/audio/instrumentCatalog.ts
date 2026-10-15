@@ -29,6 +29,7 @@ export const INSTRUMENT_KEYS = [
   'realTimpani', 'realTubularBells', 'realVibraphone', 'realHarpsichord', 'realKalimba', 'realTenorSax', 'realStrings', 'realBrass',
   'realSteelDrums', 'realElectricPiano', 'realBanjo', 'realHarmonica', 'realOcarina', 'realZither', 'realSoloVoice', 'realBassDrum', 'studioKit',
   'realCelesta', 'realRecorder', 'realMutedTrumpet',
+  'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
   // phase 3 additions
   'drumMachine', 'taiko',
   'subBass', 'bass808', 'bassGuitar',
@@ -201,9 +202,24 @@ export interface InstrumentDef {
    * `skip` seconds into its recording, past the bow's slow start, so fast passages speak; a note
    * starting while the one before still sounds is a legato change, crossfading from it without a
    * new bow attack; and a `solo` instrument plays at most two notes at once (a double stop), the
-   * outer two of a chord.
+   * outer two of a chord. A held note's bow comes in over up to `attack` seconds, the softer the
+   * longer (a full-velocity note in a few hundredths: see bowAttack in samplerManager.ts), as a
+   * bowed note swells in rather than starting at full level.
    */
-  bowed?: { skip: number; solo?: boolean };
+  bowed?: { skip: number; solo?: boolean; attack?: number };
+  /**
+   * Recorded without vibrato: each held note gets a player's, `cents` deep (either way) at about
+   * `hz`, coming in after the note has started and differing a little from note to note (see
+   * samplerManager.ts). A note under a third of a second plays straight. `body`: the frequencies
+   * (Hz) of the instrument's body resonances the vibrato moves its harmonics across (bodyChain).
+   */
+  vibrato?: { cents: number; hz: number; body?: readonly number[] };
+  /**
+   * Recorded in a dead (anechoic) room: the instrument plays in a small stage's early reflections
+   * and short tail, `room` dB under the direct sound, as the other recordings have their room in
+   * them. Before the track's own reverb send, which places it in the song's hall.
+   */
+  room?: number;
   /**
    * Recorded at several loudnesses and sustained: the mod wheel (CC 1) crossfades the soft and loud
    * recordings while a note sounds (as orchestral sample libraries do). Every other instrument
@@ -388,6 +404,14 @@ const realRange = (folder: string, extend = 2): [number, number] => {
  * either side's recordings across, so the real horns play up to D#4.
  */
 const HORN_RANGE: [number, number] = [33, 63];
+/**
+ * A violin's body resonances (Hz), for the vibrato's shimmer (InstrumentDef.vibrato.body): the
+ * air and wood modes at the bottom, then the bridge hill's peaks; a viola's, cello's and double
+ * bass's sit lower as the instruments are bigger (BODY_SCALE).
+ */
+const VIOLIN_BODY = [280, 470, 1050, 1650, 2350, 3050, 4200, 5400];
+export const BODY_SCALE = { viola: 0.82, cello: 0.48, contrabass: 0.3 };
+export const bodyOf = (scale: number) => VIOLIN_BODY.map((hz) => Math.round(hz * scale));
 /** The cello section's notes: every third or fourth semitone from the open C string up */
 const CELLO_NOTES = [36, 40, 43, 47, 50, 53, 57, 60, 64, 67, 71, 74, 77];
 /** The electric guitars' notes: every third semitone from the open low E */
@@ -396,9 +420,10 @@ const GUITAR_NOTES = Array.from({ length: 16 }, (_, i) => 40 + i * 3);
 /**
  * Extra processing that turns a recording into the instrument: the erhu's nasal, vibrato-laden
  * bowing, an amp for the electric guitar's dull direct recording, a brighter acoustic guitar, the
- * mandolin's doubled strings. See samplerManager.ts.
+ * mandolin's doubled strings, a string player's EQ on the violins, and a hall's softening of a
+ * close, dead-room solo string ('hall'). See samplerManager.ts.
  */
-export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin' | 'violin' | AmpModel;
+export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin' | 'violin' | 'hall' | AmpModel;
 /** Guitar amps for the real electric guitar recordings (direct from the pickup): see samplerManager.ts. */
 export type AmpModel = 'cleanAmp' | 'crunchAmp' | 'leadAmp' | 'jazzAmp';
 /**
@@ -513,7 +538,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realCello: {
     key: 'realCello', name: 'Cellos (Real)', blurb: 'A recorded cello section, bowed with vibrato: soft and loud takes', color: '#c2410c', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
-    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 14.1, taper: [65, 4], bowed: { skip: 0.08 }, dynamics: true,
+    samples: hosted('cello-sustain', CELLO_NOTES, [0.55, 1], 1, 0.7), gain: 14.1, taper: [65, 4], bowed: { skip: 0.08, attack: 0.15 }, dynamics: true,
   },
   realCelloShort: {
     key: 'realCelloShort', name: 'Cellos Short (Real)', blurb: 'Recorded cellos, short bouncing bow strokes: ostinatos, drive', color: '#9a3412', category: 'Guitars & Strings', kind: 'sampled', range: [36, 77],
@@ -541,7 +566,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realViolins: {
     key: 'realViolins', name: 'Violins (Real)', blurb: 'A recorded violin section, bowed with vibrato: soft and loud takes', color: '#ef4444', category: 'Orchestra', kind: 'sampled', range: realRange('violins-sustain'),
-    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 14.9, taper: [70, 2.5], bowed: { skip: 0.12 }, dynamics: true,
+    samples: real('violins-sustain', 0.7), shaping: 'violin', gain: 14.9, taper: [70, 2.5], bowed: { skip: 0.12, attack: 0.15 }, dynamics: true,
   },
   realViolinsShort: {
     key: 'realViolinsShort', name: 'Violins Short (Real)', blurb: 'Recorded violins, short bouncing strokes: ostinatos, action', color: '#dc2626', category: 'Orchestra', kind: 'sampled', range: realRange('violins-spiccato'),
@@ -549,7 +574,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realViolas: {
     key: 'realViolas', name: 'Violas (Real)', blurb: 'A recorded viola section, bowed with vibrato: warm middle voices', color: '#f97316', category: 'Orchestra', kind: 'sampled', range: realRange('violas-sustain'),
-    samples: real('violas-sustain', 0.7), gain: 13.9, taper: [69, 1], bowed: { skip: 0.1 }, dynamics: true,
+    samples: real('violas-sustain', 0.7), gain: 11.6, taper: [69, 1], bowed: { skip: 0.1, attack: 0.15 }, dynamics: true,
   },
   realViolasShort: {
     key: 'realViolasShort', name: 'Violas Short (Real)', blurb: 'Recorded violas, short bouncing strokes', color: '#ea580c', category: 'Orchestra', kind: 'sampled', range: realRange('violas-spiccato'),
@@ -565,11 +590,32 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realSoloViolin: {
     key: 'realSoloViolin', name: 'Solo Violin (Real)', blurb: 'One recorded violin with vibrato, soft and loud: melodies', color: '#f87171', category: 'Orchestra', kind: 'sampled', range: realRange('solo-violin'),
-    samples: real('solo-violin', 0.5), shaping: 'violin', gain: 17, taper: [74, 3], bowed: { skip: 0.03, solo: true }, dynamics: true,
+    samples: real('solo-violin', 0.5), shaping: 'violin', gain: 17, taper: [74, 3], bowed: { skip: 0.03, solo: true, attack: 0.3 }, dynamics: true,
+  },
+  // Solo strings, every semitone at three loudnesses, recorded without vibrato in a dead room:
+  // the app gives them a player's vibrato (with their body's shimmer), a small stage around them,
+  // and the bow's swell, and softens the bite a close microphone hears: the violin's (shaping
+  // 'hall') to the old solo violin's balance, the cello's a little (3 dB at 2.5 kHz) to the cello
+  // section's; the viola and bass, measured, are as dark as the sections as they are
+  realViolin: {
+    key: 'realViolin', name: 'Violin (Real)', blurb: 'One recorded violin, every note at three loudnesses, with a player\'s vibrato: melodies', color: '#fca5a5', category: 'Orchestra', kind: 'sampled', range: realRange('violin', 0),
+    samples: real('violin', 0.45), shaping: 'hall', gain: 8.4, taper: [74, 3], bowed: { skip: 0.04, solo: true, attack: 0.3 }, vibrato: { cents: 15, hz: 5.6, body: VIOLIN_BODY }, room: -9, dynamics: true,
+  },
+  realViola: {
+    key: 'realViola', name: 'Viola (Real)', blurb: 'One recorded viola, every note at three loudnesses, with a player\'s vibrato: warm middle lines', color: '#fdba74', category: 'Orchestra', kind: 'sampled', range: realRange('viola', 0),
+    samples: real('viola', 0.5), gain: -0.2, taper: [69, 1.5], bowed: { skip: 0.04, solo: true, attack: 0.3 }, vibrato: { cents: 14, hz: 5.4, body: bodyOf(BODY_SCALE.viola) }, room: -9, dynamics: true,
+  },
+  realSoloCello: {
+    key: 'realSoloCello', name: 'Cello (Real)', blurb: 'One recorded cello, every note at three loudnesses, with a player\'s vibrato: singing lines', color: '#fb923c', category: 'Orchestra', kind: 'sampled', range: realRange('cello', 0),
+    samples: real('cello', 0.6), gain: 4.2, tone: { presence: -3 }, taper: [65, 3], bowed: { skip: 0.05, solo: true, attack: 0.35 }, vibrato: { cents: 13, hz: 5.2, body: bodyOf(BODY_SCALE.cello) }, room: -9, dynamics: true,
+  },
+  realContrabass: {
+    key: 'realContrabass', name: 'Contrabass (Real)', blurb: 'One recorded double bass, every note at three loudnesses, bowed: deep held lines', color: '#9a3412', category: 'Orchestra', kind: 'sampled', range: realRange('contrabass', 0),
+    samples: real('contrabass', 0.6), gain: 10.1, taper: [51, 1.5], bowed: { skip: 0.06, attack: 0.4 }, vibrato: { cents: 10, hz: 5, body: bodyOf(BODY_SCALE.contrabass) }, room: -9, dynamics: true,
   },
   realDoubleBass: {
     key: 'realDoubleBass', name: 'Double Bass (Real)', blurb: 'A recorded double bass, bowed: the floor of the orchestra', color: '#7c2d12', category: 'Orchestra', kind: 'sampled', range: realRange('double-bass'),
-    samples: real('double-bass', 0.5), gain: 18.2, taper: [51, 1.5], bowed: { skip: 0.1 }, dynamics: true,
+    samples: real('double-bass', 0.5), gain: 18.2, taper: [51, 1.5], bowed: { skip: 0.1, attack: 0.2 }, dynamics: true,
   },
   realHarp: {
     key: 'realHarp', name: 'Harp (Real)', blurb: 'A recorded concert harp: arpeggios, glissandos, magic', color: '#fbbf24', category: 'Orchestra', kind: 'sampled', range: realRange('harp'),
@@ -669,7 +715,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realStrings: {
     key: 'realStrings', name: 'String Section (Real)', blurb: 'Recorded cellos, violas and violins as one section, low to high: pads, swells, film chords', color: '#f43f5e', category: 'Orchestra', kind: 'sampled', range: [36, 88],
-    samples: ensemble([{ folder: 'cello-sustain', from: 36, gain: -4.4 }, { folder: 'violas-sustain', from: 50, gain: -4.6 }, { folder: 'violins-sustain', from: 62, gain: -3.6 }], 0.7), gain: 17.5, taper: [79, 3], dynamics: true,
+    samples: ensemble([{ folder: 'cello-sustain', from: 36, gain: -4.4 }, { folder: 'violas-sustain', from: 50, gain: -6.9 }, { folder: 'violins-sustain', from: 62, gain: -3.6 }], 0.7), gain: 17.5, taper: [79, 3], bowed: { skip: 0.1, attack: 0.15 }, dynamics: true,
   },
   realBrass: {
     key: 'realBrass', name: 'Brass Section (Real)', blurb: 'Recorded trombone, French horn and trumpet as one section, low to high: chords, swells, fanfares', color: '#f59e0b', category: 'Orchestra', kind: 'sampled', range: [34, 86],
@@ -1042,6 +1088,10 @@ const SEATS: Partial<Record<InstrumentKey, Seat>> = {
   realPizzicato: { pan: 0, distance: 0.2 },
   realTremolo: { pan: 0, distance: 0.2 },
   realSoloViolin: { pan: -0.1, distance: 0.05 },
+  realViolin: { pan: -0.1, distance: 0.05 },
+  realViola: { pan: 0.05, distance: 0.08 },
+  realSoloCello: { pan: 0.2, distance: 0.1 },
+  realContrabass: { pan: 0.4, distance: 0.15 },
   realHarp: { pan: -0.55, distance: 0.35 },
   realFlute: { pan: -0.15, distance: 0.45 },
   realFluteShort: { pan: -0.15, distance: 0.45 },

@@ -871,11 +871,15 @@ function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: strin
     ...(seatOf(instrumentKey) ? { distance: seatOf(instrumentKey)!.distance } : {}),
     eq: { low: 0, mid: 0, high: 0 },
     fx: instrumentKey === 'return' ? returnFx() : withHumanFeel(instrumentKey, defaultTrackFx()),
-    reverbSend: 0.1,
+    // An orchestral instrument plays in the hall (a recording of one has as much of the room as of
+    // the instrument); anything else starts nearly dry
+    reverbSend: seatOf(instrumentKey) ? SEATED_SEND : 0.1,
     delaySend: 0,
     expressive: true,
   };
 }
+/** A new orchestral track's reverb send (its distance adds to it: see distance.ts) */
+const SEATED_SEND = 0.35;
 
 /** A recorded instrument starts with a player's feel (the Human insert, see playerFeel in the catalog). */
 function withHumanFeel(key: InstrumentKey, fx: Track['fx']): Track['fx'] {
