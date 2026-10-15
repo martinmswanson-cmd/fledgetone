@@ -19,7 +19,9 @@ import { lushReverbOf } from './effects/lushAfter';
 import { leadIntoLoop } from './introSeam';
 import { measureCompressorLatency } from './compressorLatency';
 import { compensateTracks } from './delayCompensation';
-import { createBusEffects, delaySeconds } from './effects/busEffects';
+import { createBusEffects, delaySeconds, designedDecay, ROOM_MAX_SECONDS } from './effects/busEffects';
+import { roomSeconds } from './effects/roomIR';
+import { ringOutLength, RING_OUT_FADE_SECONDS } from './ringOutTail';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument, trackInstrumentOptions } from './instruments';
@@ -108,6 +110,8 @@ export interface RenderOptions {
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
   /** An exact-length render ends without its 5 ms fade (an intro that leads straight into a loop). */
   noEndFade?: boolean;
+  /** The least a ring-out render runs past its range (default RING_OUT_LISTEN): a freeze, which cuts its own silent tail, renders less. */
+  ringOutMin?: number;
   /**
    * The true-peak ceiling (dBTP) the master limiter and the final scaling hold the file under.
    * Default -1; an MP3 or Ogg export passes exportCeilingDbtp's lower one, as encoding overshoots.
@@ -126,9 +130,13 @@ const RENDER_STEP = 1;
 /** How far past the render position notes are scheduled, so none are ever late. */
 const SCHEDULE_LEAD = 0.25;
 /** Fade at the end of an exact-length file. */
-/** The fade at the very end of a ring-out export (see finishRender). */
-const RING_OUT_FADE_SECONDS = 0.3;
 const EXACT_FADE_SECONDS = 0.005;
+/**
+ * The least a ring-out render runs past its range (seconds), so a cymbal, a long release or an echo
+ * has time to die away; the file is then cut once it has (ringOutTail.ts). A fixed two seconds or
+ * so ended drum and cymbal tails at about -55 dB, a lo-fi or jazz one at -46.
+ */
+export const RING_OUT_LISTEN = 6;
 /** Crossfade at the end of a seamless loop into the end of the pass before it (see renderTracks). */
 const SEAM_FADE_SECONDS = 0.01;
 /** Longest echo tail a seamless loop warms up for, however high the feedback. */
@@ -206,14 +214,26 @@ export function stemTracks(opts: Pick<RenderOptions, 'tracks' | 'clips' | 'start
   return audibleTracks(opts.tracks).filter((t) => used.has(t.id));
 }
 
-/** Seconds a ring-out export runs past the end of its range, for release and reverb tails. */
-export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], bpm = 120): number {
+/**
+ * The most seconds a ring-out export runs past the end of its range, for release, reverb and echo
+ * tails: as long as the reverb's impulse response, a track's own Delay or Reverb insert, or `least`
+ * (RING_OUT_LISTEN), whichever is longest. An export's file ends sooner once its tails have died
+ * away (see ringOutTail.ts).
+ */
+export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], bpm = 120, least = RING_OUT_LISTEN): number {
   // A track's own Delay or Reverb insert can ring on longer than the master reverb
   const inserts = audibleTracks(tracks).reduce((tail, t) => Math.max(tail, insertTailSeconds(t.fx, bpm)), 0);
-  // A recorded room rings as long as its recording (up to the 12 s the reverb keeps)
-  const hall = masterFx.room ? Math.min(12, useSoundLibrary.getState().metas[masterFx.room]?.seconds ?? masterFx.reverbDecay) : masterFx.reverbDecay;
-  return Math.max(2, hall + 0.5, inserts > 0 ? inserts + 0.5 : 0);
+  // The reverb rings as long as its impulse response: a recorded room's recording (up to the
+  // length the reverb keeps), or the designed room's, whose lows ring longer than its decay (up to
+  // 1.4 times, in a church: as much as 18 s)
+  const hall = masterFx.room
+    ? Math.min(ROOM_MAX_SECONDS, useSoundLibrary.getState().metas[masterFx.room]?.seconds ?? masterFx.reverbDecay)
+    : roomSeconds(masterFx.roomStyle ?? 'hall', designedDecay(masterFx.reverbDecay));
+  return Math.max(least, hall + 0.5, inserts > 0 ? inserts + 0.5 : 0);
 }
+
+/** The frames of a render's range (before any ring-out). */
+const rangeFrames = (opts: RenderOptions) => Math.round(secondsBetween(opts.startBar, opts.endBar, renderTempo(opts)) * (opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
 
 /**
  * How long a loop pass keeps sounding into the passes after it: the ring-out tail, or the echo
@@ -276,7 +296,7 @@ function planRender(opts: RenderOptions, latency = 0, slack = 0): RenderPlan {
     return { sampleRate, length: keepFrom + keepLength + slack, keepFrom, keepLength, startAt, stopAt: startAt + passes * loopSeconds, passes };
   }
   const keepLength =
-    ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutSeconds(opts.masterFx, opts.tracks, opts.bpm)) * sampleRate);
+    ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutSeconds(opts.masterFx, opts.tracks, opts.bpm, opts.ringOutMin)) * sampleRate);
   return { sampleRate, length: lead + keepLength + slack, keepFrom: lead, keepLength, startAt, stopAt: startAt + rangeSeconds, passes: 1 };
 }
 
@@ -371,8 +391,10 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined): Pro
 export async function renderArrangement(opts: RenderOptions, onProgress?: (fraction: number) => void): Promise<AudioBuffer> {
   // Solo is resolved here as mute rather than with Channel.solo. Silent tracks aren't built at
   // all (so their notes cost nothing) and their samples aren't needed.
-  const { channels, sampleRate } = await renderTracks(opts, audibleTracks(opts.tracks), onProgress);
-  scale(channels, peakGain(peakOf(channels), opts));
+  const rendered = await renderTracks(opts, audibleTracks(opts.tracks), onProgress);
+  const { sampleRate } = rendered;
+  scale(rendered.channels, peakGain(peakOf(rendered.channels), opts));
+  const channels = endRingOut(rendered.channels, sampleRate, opts, ringOutLength(rendered.channels, sampleRate, rangeFrames(opts)));
   const audio = new AudioBuffer({ numberOfChannels: channels.length, length: channels[0].length, sampleRate });
   channels.forEach((ch, c) => audio.copyToChannel(ch, c));
   return audio;
@@ -398,6 +420,7 @@ export async function renderStems(
   const parked: Array<{ track: Track; samples: Blob; length: number }> = [];
   let reverbImpulse = opts.reverbImpulse;
   let peak = 0;
+  let ringsUntil = 0;
   const done = tracks.map(() => 0);
   const renderStem = async (i: number, threads = opts.threads) => {
     const track = tracks[i];
@@ -411,6 +434,9 @@ export async function renderStems(
     // what the mix's one shared reverb would make of them
     reverbImpulse ??= result.reverbImpulse;
     peak = Math.max(peak, peakOf(result.channels));
+    // A ring-out ends once every stem's tail has died away (each at its level before the gain
+    // below, which only turns them down)
+    ringsUntil = Math.max(ringsUntil, ringOutLength(result.channels, sampleRate, rangeFrames(opts)));
     // Parked in a Blob (kept by the browser outside the page's memory, on disk if need be)
     // until every stem's peak is known: a dozen long stems can be gigabytes of samples
     parked[i] = { track, samples: new Blob(result.channels), length: result.channels[0].length };
@@ -440,7 +466,7 @@ export async function renderStems(
   for (const stem of parked) {
     opts.signal?.throwIfAborted();
     const samples = new Float32Array(await stem.samples.arrayBuffer());
-    const channels = [samples.subarray(0, stem.length), samples.subarray(stem.length)];
+    const channels = endRingOut([samples.subarray(0, stem.length), samples.subarray(stem.length)], sampleRate, opts, ringsUntil);
     scale(channels, gain);
     stems.push({ track: stem.track, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues, wholeFileLoop(opts, channels[0].length), ditherSeedOf(stem.track.id)) });
   }
@@ -573,13 +599,27 @@ export async function renderGroupStems(
   return { stems, sampleRate };
 }
 
+/** The least a freeze's ring-out runs (seconds): it cuts its own silent tail after (freezeActions.ts). */
+const FREEZE_RING_OUT = 2;
+
+/**
+ * A ring-out file cut to `length` frames (from ringOutLength) and faded there; anything else as it is.
+ * (Views into `channels`.)
+ */
+function endRingOut<T extends Float32Array>(channels: T[], sampleRate: number, opts: RenderOptions, length: number): T[] {
+  if ((opts.ending ?? 'ringOut') !== 'ringOut' || opts.noEndFade || length >= channels[0].length) return channels;
+  const cut = channels.map((ch) => ch.subarray(0, length) as T);
+  fadeOut(cut, Math.min(Math.round(RING_OUT_FADE_SECONDS * sampleRate), Math.floor(length / 4)));
+  return cut;
+}
+
 /**
  * Render one track for freezing (see src/store/freeze.ts): through its instrument, inserts and
  * strip, without the master chain or volume, at its true level (not scaled to fit), with every
  * other track's kicks still driving its Pump. `opts.tracks` is the whole arrangement.
  */
 export async function renderForFreeze(opts: RenderOptions, track: Track, onProgress?: (fraction: number) => void): Promise<{ channels: Float32Array[]; sampleRate: number }> {
-  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, ignoreMasterVolume: true }, [track], onProgress);
+  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, ignoreMasterVolume: true, ringOutMin: opts.ringOutMin ?? FREEZE_RING_OUT }, [track], onProgress);
   return { channels, sampleRate };
 }
 

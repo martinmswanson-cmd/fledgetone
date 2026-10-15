@@ -470,7 +470,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       : `Bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
   const endingDetail =
     ending === 'ringOut'
-      ? `Plays the range once, then ${formatBarCount(tail)} s more so release, reverb and echo tails ring out.`
+      ? `Plays the range once, then lets release, reverb and echo tails ring out: the file ends once they've died away (under -70 dBFS), at most ${formatBarCount(tail)} s after the range.`
       : ending === 'exact'
         ? `Exactly the range, ${frames.toLocaleString()} samples, with a 5 ms fade at the very end so it doesn't click.`
         : `Exactly one loop, ${frames.toLocaleString()} samples. Its start already holds what rings on from the pass before, so it repeats without a gap or click. (Renders ${passes} passes and keeps the last.)`;
@@ -683,7 +683,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           {fileName}
           <span className="text-forge-muted">
             {' · '}
-            {game ? `intro ${durationLabel(introFrames / settings.sampleRate)} + loop ${durationLabel(frames / settings.sampleRate)}` : durationLabel(frames / settings.sampleRate)}
+            {game ? `intro ${durationLabel(introFrames / settings.sampleRate)} + loop ${durationLabel(frames / settings.sampleRate)}` : `${ending === 'ringOut' ? 'up to ' : ''}${durationLabel(frames / settings.sampleRate)}`}
           </span>
         </span>
         <button

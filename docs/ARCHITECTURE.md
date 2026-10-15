@@ -180,8 +180,9 @@ goes this way too, as one part). Every part uses the same delay compensation, wo
 over the whole song. The master section after the compressor (the OTT, width, Level and limiter)
 is in no render: it runs in plain JavaScript over the finished one (`effects/masterAfter.ts`),
 because Chromium never frees an `OfflineAudioContext` an AudioWorklet was loaded into. The result
-is scaled down if its
-true peak passes -1 dBTP, then encoded: WAV here (16/24/32-bit, markers as cue points), MP3 and
+is scaled down if its true peak passes -1 dBTP (-1.5 for MP3 and Ogg, which encoding pushes up a
+little), a ring-out cut where its tails have fallen under -70 dBFS (`ringOutTail.ts`; the render
+runs as long as the reverb's impulse response, or 6 s at least), then encoded: WAV here (16/24/32-bit, markers as cue points), MP3 and
 Ogg in `encoders.ts`, MP4 video in `videoExport.ts`. A render without the master section splits the same way (just the sum), and stems render
 several at once, each in a context of its own. Stems, intro-plus-loop, seamless loops,
 the game kit (`gameKit.ts`), FMOD / Wwise packages and freezing a track are all variations on

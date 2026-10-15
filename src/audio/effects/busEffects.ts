@@ -150,7 +150,7 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   // The generated room (roomIR.ts): designed for its style
   const designed = (style: RoomStyle | undefined, decay: number) => {
     const rate = context.sampleRate;
-    const [l, r] = roomChannels(style ?? 'hall', Math.max(0.8, Math.min(12, decay)), rate);
+    const [l, r] = roomChannels(style ?? 'hall', designedDecay(decay), rate);
     const buffer = context.createBuffer(2, l.length, rate);
     buffer.copyToChannel(l, 0);
     buffer.copyToChannel(r, 1);
@@ -338,8 +338,10 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   };
 }
 
-/** Longest room kept (seconds): a longer tail is faded out there */
-const ROOM_MAX_SECONDS = 12;
+/** Longest recorded room kept (seconds): a longer tail is faded out there */
+export const ROOM_MAX_SECONDS = 12;
+/** The decay a designed room is built with, for the reverb's `decay` setting (seconds). */
+export const designedDecay = (decay: number) => Math.max(0.8, Math.min(12, decay));
 
 /**
  * A room recording made ready for the convolver: mono or stereo (a recording with more channels
