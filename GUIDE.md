@@ -702,7 +702,7 @@ If you press Play while instruments are still downloading their recordings (a so
 
 Big songs also get help without asking. While a song plays, a track with nothing to play for a while rests: it's switched off until just before its next note, so thirty tracks waiting for their entry don't cost what thirty playing ones do (an orchestral test song needed about a third less of the sound engine). Tracks scrolled out of sight in the timeline and the mixer aren't drawn, and the spectrum moves at half speed in songs with more than 16 tracks. The badge's details show **Notes sent ahead: further** while this is on.
 
-Click the badge for the details, including **Audio engine speed** while playing (100% is keeping up). When the engine is what's behind, the warning offers **Use Stable playback** directly; it takes effect after a reload. If playback lags a second time in a session even after notes are sent further ahead, the app switches to Stable playback for next time by itself, and says so in the badge's details.
+Click the badge for the details, including **Audio engine speed** while playing (100% is keeping up). When the engine is what's behind, the warning offers **Use Stable playback** directly; it takes effect after a reload. If playback lags a second time in a session even after notes are sent further ahead, the app switches to Stable playback for next time by itself and tells you so, unless you chose a Playback setting yourself (then yours is kept).
 
 Recordings of instruments no track (stinger or costume) has used for three minutes are let go while the song is stopped, so trying many instruments in a long session doesn't fill the memory; they download again (from this browser's store, at once) if you use them again.
 

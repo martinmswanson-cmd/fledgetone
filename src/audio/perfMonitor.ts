@@ -1,4 +1,6 @@
-import { chosenPlaybackMode, choosePlaybackMode, PLAYBACK_MODE } from './playbackMode';
+import { PLAYBACK_MODE, storedPlaybackChoice, switchToStableByItself } from './playbackMode';
+import { shouldSwitchToStable } from './playbackChoice';
+import { showToast } from '../components/timeline/toastStore';
 import { create } from 'zustand';
 import { lateNotes } from './presets/monotonic';
 import { useTimelineStore } from '../store/timelineStore';
@@ -155,12 +157,15 @@ export function startPerfMonitor(): void {
     const worst = Math.round(Math.max(0, ...hitchTimes.map((h) => h.ms)));
     if (lagging !== s.lagging) capFrameRate(lagging ? CALM_FPS : null);
     // Lag again after the look-ahead was already widened: this computer needs the bigger buffer
-    // too, which only a restart can give, so the next start uses Stable playback
+    // too, which only a restart can give, so the next start uses Stable playback. Not when the
+    // person picked a mode themselves (Responsive on purpose, for playing live): theirs is kept.
     if (lagging && !s.lagging) {
       episodes++;
-      if (episodes >= 2 && PLAYBACK_MODE === 'responsive' && chosenPlaybackMode() === 'responsive') {
-        choosePlaybackMode('stable');
+      if (shouldSwitchToStable(episodes, PLAYBACK_MODE, storedPlaybackChoice())) {
+        switchToStableByItself();
         usePerfStore.setState({ stableNext: true });
+        // Said once: from now on the setting reads Stable, so this doesn't happen again
+        showToast('Playback kept lagging, so Fledgetone will use Stable playback (a bigger audio buffer) from the next reload. You can change it in Inspector › Master › Playback.');
       }
     }
     if (lagging !== s.lagging || lateTimes.length !== s.lateNotes || hitchTimes.length !== s.hitches || worst !== s.worstFrame || speed !== s.audioSpeed) {

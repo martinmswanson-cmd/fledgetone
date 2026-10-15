@@ -67,6 +67,10 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
       Tone.connect(node, destination);
       Tone.connect(limiterIn, node);
       limiterIn.disconnect(limiter);
+      // The stand-in and its ceiling hear nothing from now on: out of the graph, so the audio
+      // thread doesn't keep running them on silence
+      limiter.disconnect();
+      ceiling.disconnect();
       lookahead = node;
     })
     .catch((err) => console.warn('The look-ahead limiter could not start; using the stand-in:', err));

@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { AUTO_STABLE, readPlaybackChoice, type PlaybackMode } from './playbackChoice';
 
 /**
  * How the browser buffers live audio, chosen per browser (Inspector > Master > Playback) and
@@ -10,28 +11,43 @@ import * as Tone from 'tone';
  * - stable: the browser's playback-sized buffer and a 0.25 s look-ahead, so a busy moment (on the
  *   audio thread or the page) is absorbed instead of heard as a crackle or a late note. Adds a
  *   few tens of milliseconds of delay to live playing.
+ *
+ * The setting remembers whether the person chose it or the app switched to Stable by itself
+ * (playbackChoice.ts), so the app never overrides a choice made on purpose.
  */
-export type PlaybackMode = 'responsive' | 'stable';
+export type { PlaybackMode } from './playbackChoice';
 
 const KEY = 'bosBeatbox.playbackMode';
 
-function read(): PlaybackMode {
+/** The setting as stored (null: never set, or storage blocked). */
+export function storedPlaybackChoice(): string | null {
   try {
-    return localStorage.getItem(KEY) === 'stable' ? 'stable' : 'responsive';
+    return localStorage.getItem(KEY);
   } catch {
-    return 'responsive';
+    return null;
   }
 }
+
+const read = (): PlaybackMode => readPlaybackChoice(storedPlaybackChoice()).mode;
 
 /** The mode this page started with. */
 export const PLAYBACK_MODE: PlaybackMode = read();
 
-/** Remember a mode for the next start (it applies after a reload). */
+/** Remember a mode the person chose for the next start (it applies after a reload). */
 export function choosePlaybackMode(mode: PlaybackMode): void {
   try {
     localStorage.setItem(KEY, mode);
   } catch {
     // Storage blocked: the choice can't be kept
+  }
+}
+
+/** The app switches to Stable for the next start by itself (see perfMonitor.ts): not a choice the person made. */
+export function switchToStableByItself(): void {
+  try {
+    localStorage.setItem(KEY, AUTO_STABLE);
+  } catch {
+    // Storage blocked
   }
 }
 
