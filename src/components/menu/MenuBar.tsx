@@ -243,6 +243,15 @@ const MENUS: MenuDef[] = [
           ui().setInspectorTab('track');
           void reveal('[aria-label="Synth Designer"]');
         } },
+        { label: 'Drum Designer', run: () => {
+          const s = tl();
+          const existing = s.tracks.find((t) => t.instrumentKey === 'designedKit');
+          if (existing) s.selectTrack(existing.id);
+          else s.addTrack('designedKit');
+          s.toggleInspector(true);
+          ui().setInspectorTab('track');
+          void reveal('[aria-label="Drum Designer"]');
+        } },
         { label: 'Record from the microphone', run: () => press('button[title^="Record from the microphone"], button[title^="Stop recording"]'), divider: true },
         { label: 'MIDI keyboard…', run: () => press('button[title^="MIDI input"]') },
         { label: 'Metronome', run: () => press('button[title^="Metronome:"]') },

@@ -28,6 +28,7 @@ import { SlicerPanel } from './SlicerPanel';
 import { MultiPanel, RackPanel } from './SampleKitPanels';
 import { PeqPanel } from './PeqEditor';
 import { MbcPanel } from './MbcPanel';
+import { DrumDesignPanel } from './DrumDesignPanel';
 import { SynthPanel } from './SynthPanel';
 import { Bass808Panel, BassDrivePanel, GlidePanel, KickClashPanel, SubLayerPanel } from './BassPanels';
 import { AudioTrackPanel } from './AudioTrackPanel';
@@ -293,6 +294,7 @@ export const TrackInspector: React.FC = () => {
             <GlidePanel track={currentTrack} />
             <SubLayerPanel track={currentTrack} />
             {INSTRUMENTS[currentTrack.instrumentKey].category === 'Bass' && <KickClashPanel track={currentTrack} />}
+            {currentTrack.instrumentKey === 'designedKit' && <DrumDesignPanel track={currentTrack} />}
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
             {/* Human works on the notes before the instrument plays them */}

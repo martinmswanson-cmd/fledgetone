@@ -215,6 +215,18 @@ const SETTINGS: Item[] = [
     ui().setInspectorTab('track');
     void reveal('[aria-label="Synth Designer"]');
   } },
+  { title: 'Drum Designer', keywords: 'drum designer design drums kick snare clap hat hihat perc rim tom shaker 808 trap drill punch distortion layer kit', detail: 'Design your own kicks, snares, claps, hats and percs (the Designed Kit).', run: () => {
+    const s = timeline();
+    const current = s.tracks.find((t) => t.id === s.selectedTrackId);
+    if (current?.instrumentKey !== 'designedKit') {
+      const existing = s.tracks.find((t) => t.instrumentKey === 'designedKit');
+      if (existing) s.selectTrack(existing.id);
+      else s.addTrack('designedKit');
+    }
+    s.toggleInspector(true);
+    ui().setInspectorTab('track');
+    void reveal('[aria-label="Drum Designer"]');
+  } },
   { title: 'Master reverb', keywords: 'reverb hall room space cathedral decay plate', run: masterPanel('master-reverb') },
   { title: 'Master delay', keywords: 'delay echo feedback time', run: masterPanel('master-delay') },
   { title: 'OTT', keywords: 'ott multiband compression loud edm upward', run: masterPanel('OTT') },

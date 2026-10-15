@@ -232,12 +232,88 @@ export function ratchet(notes: NoteEvent[], count: number, newId: () => string, 
   });
 }
 
+/** The roll painter's rates: how far apart the hits are, in bars (1/16T: three in the time of two 16ths). */
+export const ROLL_RATES = [
+  { id: '1/16', label: '1/16', bars: 1 / 16 },
+  { id: '1/16T', label: '1/16 triplet', bars: 1 / 24 },
+  { id: '1/32', label: '1/32', bars: 1 / 32 },
+  { id: '1/32T', label: '1/32 triplet', bars: 1 / 48 },
+  { id: '1/64', label: '1/64', bars: 1 / 64 },
+] as const;
+export type RollRateId = (typeof ROLL_RATES)[number]['id'];
+
+/** How a roll's velocity moves from its first hit to its last. */
+export type RollVelocity = 'flat' | 'up' | 'down' | 'swell';
+
+/** A roll's shape (see roll). */
+export interface RollShape {
+  /** Velocity across the roll: flat, rising (into a drop), falling, or up and back down */
+  velocity: RollVelocity;
+  /** Where the ramp starts (or, falling, ends), as a share of the note's velocity */
+  from: number;
+  /** A stutter: exactly this many hits across each note, whatever its length, instead of hits at the rate */
+  count?: number;
+  /** Pitch across the roll, semitones from the first hit to the last (rising drill hats: +5, +7, +12) */
+  pitch: number;
+  /**
+   * How the pitch is written: `bend`, each hit's own starting bend (drum rows, whose note only says
+   * which drum: the kits play it as the hit's pitch), or `notes`, each hit moved to the nearest
+   * semitone (inside [lo, hi])
+   */
+  pitchBy: 'bend' | 'notes';
+  lo?: number;
+  hi?: number;
+}
+
+const ROLL_DEFAULT: RollShape = { velocity: 'up', from: 0.35, pitch: 0, pitchBy: 'bend' };
+
+/** A roll's velocity at `x` (0 at its first hit, 1 at its last) as a share of the note's. */
+export function rollLevel(shape: RollVelocity, from: number, x: number): number {
+  switch (shape) {
+    case 'flat':
+      return 1;
+    case 'up':
+      return from + (1 - from) * x;
+    case 'down':
+      return 1 - (1 - from) * x;
+    case 'swell':
+      return from + (1 - from) * Math.sin(Math.PI * x);
+  }
+}
+
 /**
- * A roll: each note repeated every `rateBars` for as long as it lasts, rising from a third of its
- * velocity to its own (snare rolls into a drop, hat rolls in trap).
+ * A roll: each note repeated every `rateBars` for as long as it lasts (or, with a `count`, that
+ * many times across it), its velocity following `velocity` and its pitch moving `pitch`
+ * semitones over the roll (snare rolls into a drop, trap and drill hat rolls). The hits sit on
+ * exact multiples of the rate from the note's start, so a roll drawn on the grid stays on it; a
+ * note that isn't a whole number of hits long ends on a shorter one. With no shape, it rises from
+ * a third of the note's velocity to its own at an even pitch, as the TOOLS menu's Roll always has.
  */
-export function roll(notes: NoteEvent[], rateBars: number, newId: () => string): NoteEvent[] {
-  return notes.flatMap((n) => ratchet([n], Math.max(1, Math.round(lengthOf(n) / rateBars)), newId, 0.35));
+export function roll(notes: NoteEvent[], rateBars: number, newId: () => string, shape: Partial<RollShape> = {}): NoteEvent[] {
+  const s = { ...ROLL_DEFAULT, ...shape };
+  return notes.flatMap((n) => {
+    const len = lengthOf(n);
+    const count = s.count ? Math.max(1, Math.round(s.count)) : Math.max(1, Math.round(len / rateBars - 1e-9));
+    const step = s.count ? len / count : rateBars;
+    const midi = s.pitchBy === 'notes' ? midiOf(n.note) : NaN;
+    return Array.from({ length: count }, (_, i) => {
+      const x = count === 1 ? 1 : i / (count - 1);
+      const start = n.startOffset + i * step;
+      const rest = n.startOffset + len - start;
+      const hit: NoteEvent = {
+        ...n,
+        id: i === 0 ? n.id : newId(),
+        startOffset: start,
+        duration: barsToDuration(Math.max(1 / 768, Math.min(step, rest))),
+        velocity: Math.max(0.05, Math.min(1, n.velocity * rollLevel(s.velocity, s.from, x))),
+      };
+      const semis = s.pitch * x;
+      if (!semis) return hit;
+      if (s.pitchBy === 'bend') return { ...hit, expr: { ...hit.expr, bend: [{ at: 0, value: Math.round(semis * 100) / 100 }] } };
+      const m = Math.round(midi + semis);
+      return Number.isFinite(m) && m >= (s.lo ?? 0) && m <= (s.hi ?? 127) ? { ...hit, note: nameOf(m) } : hit;
+    });
+  });
 }
 
 /** Notes mirrored in time within `bars` (retrograde): the last note first, each keeping its length. */

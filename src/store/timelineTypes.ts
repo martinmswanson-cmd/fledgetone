@@ -3,6 +3,7 @@
  * master settings and the rest) with their defaults, limits and small helpers (snapping,
  * durations, frame grids). Everything the store, the engine and the project file share.
  */
+import type { DrumDesign } from './drumDesign';
 import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
@@ -542,6 +543,8 @@ export interface Track {
   rack?: DrumRack;
   /** A Multi Sampler's sounds and how they're laid across the keys (absent: none yet) */
   multi?: MultiSample;
+  /** The Designed Kit's drum sounds by row (see drumDesign.ts; absent: each row's default preset) */
+  drumDesign?: DrumDesign;
   /** How settings change over the song: at most one lane per setting (older projects have none). */
   automation?: AutomationLane[];
   /** Rendered to audio to save CPU (see src/store/freeze.ts); absent when the track plays live. */
@@ -960,6 +963,27 @@ export interface Clip {
 export interface ClipGroove {
   swing: number;
   grid: 8 | 16;
+  /**
+   * Rows with a feel of their own, by note name (a drum clip's hats swing while its kick and snare
+   * stay straight; see drumGroove.ts). Absent: every row plays the clip's swing.
+   */
+  rows?: Record<string, RowFeel>;
+  /** The groove template it was set from (GROOVE_TEMPLATES), shown until a row is changed */
+  template?: string;
+}
+
+/** One row's own feel in a clip's groove. */
+export interface RowFeel {
+  /** Its own swing, 0 (straight) to MAX_CLIP_SWING, in place of the clip's; absent: the clip's */
+  swing?: number;
+  /** The grid its swing works on (absent: the clip's) */
+  grid?: 8 | 16;
+  /** Early (negative) or late, as a share of a 16th note (-0.25 to 0.25): pushed or laid back */
+  shift?: number;
+  /** Its velocities scaled (0.4 to 1.25; absent: 1) */
+  vel?: number;
+  /** Its notes off the 8th-note grid scaled again (softer or accented off-beats; absent: 1) */
+  offbeat?: number;
 }
 export const MAX_CLIP_SWING = 0.75;
 

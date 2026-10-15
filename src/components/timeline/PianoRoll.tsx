@@ -31,6 +31,8 @@ import { DEFAULT_WOBBLE, WOBBLE_RATES, type WobbleRate } from '../../store/timel
 import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
 import { AudioClipEditor } from './AudioClipEditor';
+import { RollPainter } from './RollPainter';
+import { DrumGroovePanel } from './DrumGroovePanel';
 
 const KEY_W = 72;
 const RULER_H = 20;
@@ -255,6 +257,8 @@ const FEELS: ReadonlyArray<{ id: string; name: string; groove: ClipGroove | null
 ];
 const grooveValue = (g: ClipGroove | undefined) => {
   if (!g) return 'song';
+  // A per-row groove (GROOVE…) is its own thing, not one of these
+  if (g.rows || (g.template && g.template !== 'straight')) return 'rows';
   if (g.swing === 0) return 'straight';
   return FEELS.reduce((best, f) => (f.groove && f.groove.grid === g.grid && Math.abs(f.groove.swing - g.swing) < Math.abs((best.groove?.swing ?? 9) - g.swing) ? f : best), FEELS[1]).id;
 };
@@ -488,13 +492,16 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     return midi;
   };
 
-  /** Run a tool over the selected notes (all of the clip's, with none selected): one undo step. */
-  const applyTool = (tool: ToolId) => {
+  /**
+   * Run a tool over the selected notes (all of the clip's, with none selected): one undo step. A
+   * function is a tool of its own (the roll painter's roll), given the notes and a new-id maker.
+   */
+  const applyTool = (tool: ToolId | ((target: NoteEvent[], newId: () => string) => NoteEvent[])) => {
     const store = useTimelineStore.getState();
     const notes = currentNotes();
     const target = selected.size ? notes.filter((n) => selected.has(n.id)) : notes;
     if (!target.length) return;
-    if (SWELL_SHAPES.some((s) => s.id === tool)) {
+    if (typeof tool === 'string' && SWELL_SHAPES.some((s) => s.id === tool)) {
       // A swell is drawn in the mod wheel lane (dynamics), not made of notes: one undo step
       store.setClipExpression(clip.id, 'mod', swellLane(clip.expression?.mod, target, tool as SwellShape));
       setLaneFocus((f) => ({ lane: 'mod', n: (f?.n ?? 0) + 1 }));
@@ -508,6 +515,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     // Seconds in a bar where the clip starts, for the bend curves drawn in time
     const barSeconds = 240 / tempoAt(clip.startBar, songTempo(store));
     const out = (() => {
+      if (typeof tool === 'function') return tool(target, newId);
       switch (tool) {
         case 'quantize': return quantize(target, grid, clip.startBar - 1);
         case 'quantizeEnds': return quantize(target, grid, clip.startBar - 1, 1, true);
@@ -772,14 +780,16 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             <select
               className={select}
               value={grooveValue(clip.groove)}
-              onChange={(e) => useTimelineStore.getState().setClipGroove(clip.id, FEELS.find((f) => f.id === e.target.value)?.groove ?? null)}
+              onChange={(e) => e.target.value !== 'rows' && useTimelineStore.getState().setClipGroove(clip.id, FEELS.find((f) => f.id === e.target.value)?.groove ?? null)}
             >
               {FEELS.map((f) => (
                 <option key={f.id} value={f.id}>{f.name}</option>
               ))}
+              {grooveValue(clip.groove) === 'rows' && <option value="rows">Per-row groove (GROOVE…)</option>}
             </select>
           </label>
         )}
+        {!clip.audio && isDrumKind(instrument) && <DrumGroovePanel clip={clip} rows={DRUM_ROWS} />}
         {!namedRows && (
           <label data-search="scale" className="flex items-center gap-1.5" title="Shade the notes outside a key; clicks land on the key's notes">
             SCALE
@@ -845,6 +855,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             ))}
           </select>
         </label>
+        <RollPainter drums={namedRows} range={INSTRUMENTS[instrument].range} selected={selected.size} onApply={applyTool} />
         {!namedRows && (
           <label data-search="ghosts" className="flex items-center gap-1.5 cursor-pointer" title="Show the other tracks' notes at these bars, faintly, behind this clip's">
             <input type="checkbox" checked={ghosts} onChange={(e) => setGhosts(e.target.checked)} className="accent-cyan-500" />
