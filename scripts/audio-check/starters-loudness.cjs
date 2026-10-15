@@ -23,7 +23,7 @@ const TIMEOUT = Number(process.env.TIMEOUT || 300000);
 // section (run after the render, masterAfter.ts) skips the limiter, and renderArrangement doesn't
 // turn the result down to its peak
 const PATCHES = [
-  [/\/src\/audio\/effects\/masterAfter\.ts/, 'limitChannels(left, right, sampleRate);', ''],
+  [/\/src\/audio\/effects\/masterAfter\.ts/, 'limitChannels(left, right, sampleRate, ceilingDbtp);', ''],
   [/\/src\/audio\/exportWav\.ts/, 'scale(channels, peakGain(peakOf(channels)));', ''],
 ];
 

@@ -4,7 +4,7 @@
  * push the peaks over the ceiling, the master limiter's kernel (effects/limiter.ts) holds them
  * down instead, as a mastering engineer's limiter would, up to MAX_LIMITING_DB of gain reduction.
  */
-import { createLimiterKernel, LIMITER_AIM_DBTP, LIMITER_CEILING_DBTP } from './effects/limiter';
+import { createLimiterKernel, LIMITER_CEILING_DBTP, limiterAimDbtp } from './effects/limiter';
 import { measureLoudness, normalizeGainDb } from './loudness';
 import type { LoudnessReading } from './loudness';
 
@@ -34,16 +34,18 @@ export const MAX_LIMITING_DB = 8;
  * Bring `channels` (changed in place) to `target`. Returns the new reading, how many dB the
  * limiter took off the peaks (0: it wasn't needed), how far under the target the file stayed (0:
  * on target), and whether that's because reaching it would have needed more than
- * MAX_LIMITING_DB (`capped`).
+ * MAX_LIMITING_DB (`capped`). Peaks stay under `ceilingDbtp` (lower for MP3 and Ogg: see
+ * exportCeilingDbtp in limiter.ts).
  */
 export async function reachTarget(
   channels: Float32Array[],
   sampleRate: number,
   reading: LoudnessReading,
   target: LoudnessTarget,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  ceilingDbtp = LIMITER_CEILING_DBTP
 ): Promise<{ reading: LoudnessReading; limitedDb: number; shortDb: number; capped: boolean }> {
-  const { gainDb, limited } = normalizeGainDb(reading, target.lufs, LIMITER_CEILING_DBTP);
+  const { gainDb, limited } = normalizeGainDb(reading, target.lufs, ceilingDbtp);
   if (!limited) {
     const g = Math.pow(10, gainDb / 20);
     if (gainDb !== 0) for (const ch of channels) for (let i = 0; i < ch.length; i++) ch[i] *= g;
@@ -59,7 +61,7 @@ export async function reachTarget(
   let result = reading;
   let before: { push: number; lufs: number } | null = null;
   for (let pass = 0; ; pass++) {
-    limitInto(original, channels, sampleRate, push);
+    limitInto(original, channels, sampleRate, push, ceilingDbtp);
     result = await measureLoudness(channels, sampleRate, signal);
     const missing = target.lufs - result.integrated;
     if (pass === 2 || Math.abs(missing) < 0.3 || (missing > 0 && push >= most)) break;
@@ -72,10 +74,10 @@ export async function reachTarget(
 }
 
 /** `out` = `source` turned up by `gainDb` through the look-ahead limiter, lined up in time. */
-function limitInto(source: Float32Array[], out: Float32Array[], sampleRate: number, gainDb: number) {
+function limitInto(source: Float32Array[], out: Float32Array[], sampleRate: number, gainDb: number, ceilingDbtp: number) {
   const kernel = createLimiterKernel(sampleRate);
   const g = Math.pow(10, gainDb / 20);
-  const ceiling = Math.pow(10, LIMITER_AIM_DBTP / 20);
+  const ceiling = Math.pow(10, limiterAimDbtp(ceilingDbtp) / 20);
   const n = source[0].length;
   const l = source[0];
   const r = source[1] ?? source[0];

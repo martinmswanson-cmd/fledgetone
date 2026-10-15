@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { createLimiterKernel, limitChannels, LIMITER_CEILING_DBTP, LIMITER_WORKLET_SOURCE } = await import('../src/audio/effects/limiter.ts');
+const { createLimiterKernel, limitChannels, LIMITER_CEILING_DBTP, LIMITER_WORKLET_SOURCE, LOSSY_CEILING_DBTP, exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
 const { truePeakOf, measureLoudness } = await import('../src/audio/loudness.ts');
 const { reachTarget, targetById, MAX_LIMITING_DB } = await import('../src/audio/loudnessTarget.ts');
 const SR = 48000;
@@ -155,4 +155,23 @@ test("an export's limiting after the render matches the worklet's: delayed by it
   for (let i = 0; i < n; i += 997) assert.ok(Math.abs(al[i] - wl[i]) < 1e-6, `sample ${i}`);
   const tp = 20 * Math.log10(truePeakOf([al, ar]));
   assert.ok(tp <= LIMITER_CEILING_DBTP - 0.02, `true peak ${tp.toFixed(3)} dBTP`);
+});
+
+test('MP3, Ogg and video exports aim lower than WAV (encoding overshoots), on a target and after the render alike', async () => {
+  assert.equal(exportCeilingDbtp('wav'), LIMITER_CEILING_DBTP);
+  for (const f of ['mp3', 'ogg', 'mp4']) assert.equal(exportCeilingDbtp(f), LOSSY_CEILING_DBTP);
+  // Measured: decoded MP3 / Ogg files peaked up to 0.2 dB over what they were given
+  assert.ok(LOSSY_CEILING_DBTP <= LIMITER_CEILING_DBTP - 0.3);
+  const lossy = 10 ** (LOSSY_CEILING_DBTP / 20);
+  for (const make of BRIGHT) {
+    const l = Float32Array.from({ length: SR * 4 }, (_, i) => 0.3 * make(i));
+    const r = l.slice();
+    const reading = await measureLoudness([l, r], SR);
+    const got = await reachTarget([l, r], SR, reading, targetById('loud'), undefined, LOSSY_CEILING_DBTP);
+    assert.ok(truePeakOf([l, r]) <= lossy * 1.001, `target: ${got.reading.truePeakMax.toFixed(2)} dBTP`);
+    const al = Float32Array.from({ length: SR * 2 }, (_, i) => 3 * make(i));
+    const ar = al.slice();
+    limitChannels(al, ar, SR, LOSSY_CEILING_DBTP);
+    assert.ok(truePeakOf([al, ar]) <= lossy, `after the render: ${(20 * Math.log10(truePeakOf([al, ar]))).toFixed(2)} dBTP`);
+  }
 });

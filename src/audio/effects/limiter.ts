@@ -20,6 +20,16 @@ export const LIMITER_CEILING_DBTP = -1;
  * render's every sample afresh, and an export aimed exactly at -1 dBTP read -0.99 now and then.
  */
 export const LIMITER_AIM_DBTP = LIMITER_CEILING_DBTP - 0.05;
+/**
+ * The ceiling for MP3 and Ogg exports, in dBTP. Encoding overshoots the peaks it was given: up to
+ * 0.2 dB on loud, limited mixes (measured on decoded files), which took -1 dBTP files to -0.85. Half
+ * a dB lower keeps the decoded file under -1 dBTP with room to spare.
+ */
+export const LOSSY_CEILING_DBTP = -1.5;
+/** The true-peak ceiling (dBTP) for an export in `format` ('wav', 'mp3', 'ogg', 'mp4'): -1, or LOSSY_CEILING_DBTP for the compressed ones. */
+export const exportCeilingDbtp = (format: string): number => (format === 'wav' ? LIMITER_CEILING_DBTP : LOSSY_CEILING_DBTP);
+/** Where the limiter aims for `ceilingDbtp`: a hair under it, as LIMITER_AIM_DBTP is under -1. */
+export const limiterAimDbtp = (ceilingDbtp: number): number => ceilingDbtp + (LIMITER_AIM_DBTP - LIMITER_CEILING_DBTP);
 /** How quickly the gain recovers after a peak (seconds) */
 export const LIMITER_RELEASE = 0.06;
 
@@ -167,10 +177,11 @@ export function createLimiterKernel(sampleRate: number): LimiterKernel {
  * kernel. An export's master section limits this way after the render, as an AudioWorklet module
  * added to an OfflineAudioContext keeps Chromium from ever freeing it (a whole render kept per
  * export); the export plans for the latency, so the file lines up exactly as it did.
+ * `ceilingDbtp` is the export's ceiling (lower for MP3 and Ogg, see exportCeilingDbtp).
  */
-export function limitChannels(left: Float32Array, right: Float32Array, sampleRate: number): void {
+export function limitChannels(left: Float32Array, right: Float32Array, sampleRate: number, ceilingDbtp = LIMITER_CEILING_DBTP): void {
   const kernel = createLimiterKernel(sampleRate);
-  const ceiling = Math.pow(10, LIMITER_AIM_DBTP / 20);
+  const ceiling = Math.pow(10, limiterAimDbtp(ceilingDbtp) / 20);
   const block = 4096;
   for (let start = 0; start < left.length; start += block) {
     const end = Math.min(left.length, start + block);

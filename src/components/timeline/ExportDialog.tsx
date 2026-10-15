@@ -25,7 +25,8 @@ import {
   channelsOf,
   stemTracks,
 } from '../../audio/exportWav';
-import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb, NORMALIZE_CEILING_DBTP } from '../../audio/loudness';
+import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb } from '../../audio/loudness';
+import { exportCeilingDbtp } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
@@ -258,6 +259,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const ending: ExportEnding = game ? 'seamless' : range === 'song' && settings.ending === 'seamless' ? 'ringOut' : settings.ending;
   const format = settings.format;
   const ext = FORMAT_EXTENSION[format];
+  // MP3, Ogg and a video's sound keep their peaks a little lower: encoding overshoots them
+  const ceilingDbtp = exportCeilingDbtp(videoOut ? 'mp4' : format);
   const room = useTimelineStore((s) => s.masterReverbRoom);
   const roomStyle = useTimelineStore((s) => s.masterRoomStyle);
   const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}), ...(roomStyle !== 'hall' ? { roomStyle } : {}) };
@@ -306,6 +309,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       signal: controller.signal,
       // The mix plays at the Intensity you hear; stems and layers stay at full level for the game to mix
       ...(stemsOnly ? {} : { intensity: { value: s.intensity, curves: s.intensityCurves } }),
+      peakCeilingDbtp: ceilingDbtp,
     };
     const encodeOpts = { bitDepth: settings.bitDepth, cues: exportCues(opts) };
     try {
@@ -318,11 +322,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         let note = '';
         if (reading && settings.normalize) {
           // Gain only: a limiter would change the sound across the loop's seam
-          const { gainDb, limited } = normalizeGainDb(reading, targetById(settings.target).lufs);
+          const { gainDb, limited } = normalizeGainDb(reading, targetById(settings.target).lufs, ceilingDbtp);
           const g = Math.pow(10, gainDb / 20);
           if (gainDb !== 0) for (const ch of [...parts[0].intro, ...parts[0].loop]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
           reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
-          note = limited ? ` (held under the target so peaks stay under ${NORMALIZE_CEILING_DBTP} dBTP)` : '';
+          note = limited ? ` (held under the target so peaks stay under ${ceilingDbtp} dBTP)` : '';
         }
         const files: Array<{ name: string; data: Blob }> = [];
         for (const [i, part] of parts.entries()) {
@@ -356,7 +360,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
         if (settings.normalize) {
           setStatus({ kind: 'rendering', fileName, progress: 0.3, detail: 'Matching the loudness' });
-          reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal)).reading;
+          reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp)).reading;
         }
         const startSeconds = barToSeconds(opts.startBar, tempo);
         const sections = (opts.markers ?? [])
@@ -403,7 +407,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         let note = '';
         if (settings.normalize) {
           setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Matching the loudness' });
-          const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal);
+          const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp);
           reading = reached.reading;
           if (reached.shortDb > 0.3 && reached.capped)
             note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the master OTT and raise its Out gain`;
@@ -590,7 +594,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 Match a loudness target
                 <span className="block text-forge-muted">
                   {settings.normalize
-                    ? `${targetById(settings.target).about} ${game ? 'The intro and loop are turned up or down together (no limiting, which would change the loop\u2019s seam).' : 'If the mix is too quiet to get there by turning it up, a look-ahead limiter holds the peaks down (up to ' + MAX_LIMITING_DB + ' dB).'} Peaks never pass ${NORMALIZE_CEILING_DBTP} dBTP.`
+                    ? `${targetById(settings.target).about} ${game ? 'The intro and loop are turned up or down together (no limiting, which would change the loop\u2019s seam).' : 'If the mix is too quiet to get there by turning it up, a look-ahead limiter holds the peaks down (up to ' + MAX_LIMITING_DB + ' dB).'} Peaks never pass ${ceilingDbtp} dBTP.`
                     : 'The file keeps the level of the mix.'}
                 </span>
               </span>
@@ -661,8 +665,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           </label>
         )}
         <p>
-          Stereo. True peaks are kept under -1 dBTP (between samples too), so nothing clips.
-          {format !== 'wav' && ' MP3 and OGG are compressed: a small file that sounds the same to most ears. An MP3 can have a few milliseconds of silence added at its start, so for seamless loops in games use OGG or WAV.'}
+          Stereo. True peaks are kept under {ceilingDbtp} dBTP (between samples too), so nothing clips.
+          {format !== 'wav' && ' MP3 and OGG are compressed: a small file that sounds the same to most ears. Compressing nudges the peaks up a little, which is why they start half a dB lower than a WAV\u2019s. An MP3 can have a few milliseconds of silence added at its start, so for seamless loops in games use OGG or WAV.'}
           {format === 'wav' && !game && cueCount > 0 &&
             ` ${cueCount === 1 ? 'The marker in the range goes' : `The ${cueCount} markers in the range go`} into ${
               stemsOnly ? 'every file' : 'the file'

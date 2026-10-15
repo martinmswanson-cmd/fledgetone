@@ -13,7 +13,7 @@ import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } f
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
-import { createLimiterKernel } from './effects/limiter';
+import { createLimiterKernel, LIMITER_CEILING_DBTP } from './effects/limiter';
 import { masterAfter } from './effects/masterAfter';
 import { lushReverbOf } from './effects/lushAfter';
 import { leadIntoLoop } from './introSeam';
@@ -109,6 +109,11 @@ export interface RenderOptions {
   /** An exact-length render ends without its 5 ms fade (an intro that leads straight into a loop). */
   noEndFade?: boolean;
   /**
+   * The true-peak ceiling (dBTP) the master limiter and the final scaling hold the file under.
+   * Default -1; an MP3 or Ogg export passes exportCeilingDbtp's lower one, as encoding overshoots.
+   */
+  peakCeilingDbtp?: number;
+  /**
    * How many parts a mix may be rendered in at once, each on a processor core of its own (see
    * renderTracks). Default: one fewer than the computer has, up to MAX_PARTS, where the browser
    * renders them side by side; 1: in one piece.
@@ -120,8 +125,6 @@ export interface RenderOptions {
 const RENDER_STEP = 1;
 /** How far past the render position notes are scheduled, so none are ever late. */
 const SCHEDULE_LEAD = 0.25;
-/** Exports are scaled down (never up) so their true peaks sit here: -1 dBTP, just under full scale even between samples. */
-const PEAK_CEILING = 10 ** (-1 / 20);
 /** Fade at the end of an exact-length file. */
 /** The fade at the very end of a ring-out export (see finishRender). */
 const RING_OUT_FADE_SECONDS = 0.3;
@@ -369,7 +372,7 @@ export async function renderArrangement(opts: RenderOptions, onProgress?: (fract
   // Solo is resolved here as mute rather than with Channel.solo. Silent tracks aren't built at
   // all (so their notes cost nothing) and their samples aren't needed.
   const { channels, sampleRate } = await renderTracks(opts, audibleTracks(opts.tracks), onProgress);
-  scale(channels, peakGain(peakOf(channels)));
+  scale(channels, peakGain(peakOf(channels), opts));
   const audio = new AudioBuffer({ numberOfChannels: channels.length, length: channels[0].length, sampleRate });
   channels.forEach((ch, c) => audio.copyToChannel(ch, c));
   return audio;
@@ -431,7 +434,7 @@ export async function renderStems(
   };
   await Promise.all(Array.from({ length: Math.max(1, atOnce) }, worker));
 
-  const gain = peakGain(peak);
+  const gain = peakGain(peak, opts);
   const cues = exportCues(opts);
   const stems: Array<{ track: Track; wav: Blob }> = [];
   for (const stem of parked) {
@@ -506,7 +509,7 @@ export async function renderIntroLoop(
     leadIntoLoop(part.intro, part.loop, sampleRate);
     parts.push(part);
   }
-  const gain = peakGain(peak);
+  const gain = peakGain(peak, opts);
   for (const part of parts) {
     scale(part.intro, gain);
     scale(part.loop, gain);
@@ -540,7 +543,7 @@ export async function renderLoopTakes(
     peak = Math.max(peak, peakOf(r.channels));
     out.push(r.channels.map((c) => c.slice()));
   }
-  const gain = peakGain(peak);
+  const gain = peakGain(peak, opts);
   for (const take of out) scale(take, gain);
   return { takes: out, sampleRate };
 }
@@ -565,7 +568,7 @@ export async function renderGroupStems(
     peak = Math.max(peak, peakOf(r.channels));
     stems.push({ name: group.name, channels: r.channels.map((c) => c.slice()) });
   }
-  const gain = peakGain(peak);
+  const gain = peakGain(peak, opts);
   for (const stem of stems) scale(stem.channels, gain);
   return { stems, sampleRate };
 }
@@ -817,7 +820,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
     mix.compressor.dispose();
     mix.disposeLimiter();
   });
-  finishMaster(rendered, mix.limitsAfter, opts.master, masterDb);
+  finishMaster(rendered, mix.limitsAfter, opts, masterDb);
   onProgress?.(1);
   return { channels: finishRender(rendered, plan, opts), sampleRate, reverbImpulse };
 }
@@ -842,10 +845,10 @@ function addLushReverb(sum: AudioBuffer, decay: number): void {
  * render (an export's chain ends at its compressor: see createMixChain and masterAfter.ts), then
  * the master volume, which comes after it.
  */
-function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, master: MasterSettings | undefined, masterDb: number): void {
+function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: Pick<RenderOptions, 'master' | 'peakCeilingDbtp'>, masterDb: number): void {
   if (!limitsAfter) return;
   const [l, r] = channelsOf(rendered);
-  masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(master), masterDb);
+  masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(opts.master), masterDb, opts.peakCeilingDbtp);
 }
 
 /**
@@ -1053,7 +1056,7 @@ async function renderGraphHeld(
     signal
   );
   const reverbImpulse = graph.reverbImpulse();
-  finishMaster(rendered, graph.limitsAfter, opts.master, masterDb);
+  finishMaster(rendered, graph.limitsAfter, opts, masterDb);
   try {
     release();
   } catch (err) {
@@ -1246,10 +1249,13 @@ const peakOf = (channels: Float32Array[]): number => truePeakOf(channels);
 /**
  * The master limiter catches sample peaks only, so peaks between samples can overshoot 0 dBFS
  * (by 2 dB or more on a loud mix). Exports are scaled down (never up) so their true peaks stay
- * under -1 dBTP instead of clipping. Float WAVs get the
+ * under -1 dBTP (or the lower ceiling an MP3 or Ogg export asks for) instead of clipping. Float WAVs get the
  * same treatment: most players and game engines clip them at full scale anyway.
  */
-const peakGain = (peak: number) => (peak > PEAK_CEILING ? PEAK_CEILING / peak : 1);
+const peakGain = (peak: number, opts: Pick<RenderOptions, 'peakCeilingDbtp'>) => {
+  const ceiling = 10 ** ((opts.peakCeilingDbtp ?? LIMITER_CEILING_DBTP) / 20);
+  return peak > ceiling ? ceiling / peak : 1;
+};
 
 function scale(channels: Float32Array[], gain: number): void {
   if (gain === 1) return;

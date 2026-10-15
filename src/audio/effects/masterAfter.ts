@@ -12,7 +12,7 @@
  * No Web Audio here, so Node can test it.
  */
 import { createOttKernel } from './ott';
-import { limitChannels } from './limiter';
+import { LIMITER_CEILING_DBTP, limitChannels } from './limiter';
 import type { MasterSettings } from '../../store/timelineTypes';
 
 /** Below this the Stereo width's "mono bass" keeps the sound in the middle. */
@@ -98,13 +98,14 @@ export function widthChannels(left: Float32Array, right: Float32Array, sampleRat
 /**
  * The master section after the compressor, over a render's two channels in place: the OTT and
  * the width (where on), the Level, the limiter, then the master volume (`volumeDb`, which comes
- * after the limiter, as the live destination's volume does).
+ * after the limiter, as the live destination's volume does). The limiter holds the true peak under
+ * `ceilingDbtp` (the export's: see exportCeilingDbtp in limiter.ts).
  */
-export function masterAfter(left: Float32Array, right: Float32Array, sampleRate: number, master: MasterSettings, volumeDb = 0): void {
+export function masterAfter(left: Float32Array, right: Float32Array, sampleRate: number, master: MasterSettings, volumeDb = 0, ceilingDbtp = LIMITER_CEILING_DBTP): void {
   if (master.ott.on) ottChannels(left, right, sampleRate, master.ott);
   if (master.width.on) widthChannels(left, right, sampleRate, master.width);
   scaleChannels(left, right, Math.fround(dbToGain(master.level)));
-  limitChannels(left, right, sampleRate);
+  limitChannels(left, right, sampleRate, ceilingDbtp);
   scaleChannels(left, right, dbToGain(volumeDb));
 }
 
