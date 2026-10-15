@@ -14,6 +14,7 @@ import { Timeline } from './components/timeline/Timeline';
 import { ProjectDrop } from './components/ProjectDrop';
 import { MobileNotice } from './components/MobileNotice';
 import { SharedLinkOpener } from './components/SharedLinkOpener';
+import { UpdateNotice } from './components/UpdateNotice';
 import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import { LearnDialog } from './components/tour/LearnDialog';
@@ -26,7 +27,8 @@ import { LifeBuoy } from 'lucide-react';
 import changelogMarkdown from '../CHANGELOG.md?raw';
 import termsMarkdown from '../TERMS.md?raw';
 import { GuidePanel } from './components/guide/GuidePanel';
-import { APP_BUILT, versionLabel } from './version';
+import { APP_BUILT, APP_VERSION, versionLabel } from './version';
+import { splitSections } from './components/guide/markdown';
 
 /** A computer-sized screen (the phone notice covers small touch screens instead). */
 const roomy = () => typeof window !== 'undefined' && window.innerWidth >= 900;
@@ -70,11 +72,14 @@ const Engines: React.FC = () => {
   return open ? <EnginesDialog onClose={() => useUiStore.getState().setDialog(null)} /> : null;
 };
 
+/** The changelog section of the version running ("## 2026.10.15-24 — ..."), where What's new opens; else its top. */
+const RUNNING_ENTRIES = splitSections(changelogMarkdown).find((sec) => sec.title.startsWith(`${APP_VERSION} `) || sec.title === APP_VERSION)?.id;
+
 /** What's new (CHANGELOG.md), when it's open. */
 const WhatsNew: React.FC = () => {
   const open = useUiStore((s) => s.dialog === 'changes');
   const close = React.useCallback(() => useUiStore.getState().setDialog(null), []);
-  return open ? <GuidePanel markdown={changelogMarkdown} title="What's new" onClose={close} /> : null;
+  return open ? <GuidePanel markdown={changelogMarkdown} section={RUNNING_ENTRIES} title="What's new" onClose={close} /> : null;
 };
 
 /** The terms of use (TERMS.md), when they're open. */
@@ -100,6 +105,7 @@ export const App: React.FC = () => {
       <VideoPreview />
       <MobileNotice />
       <SharedLinkOpener />
+      <UpdateNotice />
       <SearchPalette />
       <ReportProblem />
       <CutToLength />

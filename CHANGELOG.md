@@ -8,6 +8,13 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## Unreleased
+
+- Install Fledgetone as an app (Help › Install Fledgetone…, or Safari's Add to Dock / Home Screen): its own window, and it opens offline after one visit.
+- The app is kept in your browser, so it opens at once and isn't downloaded again; recordings you've used aren't downloaded again either.
+- New versions download in the background and show "Version … is ready: Reload". The app never reloads by itself: Reload autosaves first, and What's new opens after it.
+- Master tab › Instruments offline shows whether the browser will keep your work when the disk gets full (Storage: protected), with Protect to ask.
+
 ## 2026.10.15-24 — New violin in the starters
 
 - The starters' solo violin is the new **Violin (Real)**: every note recorded, warmer and with a player's vibrato.

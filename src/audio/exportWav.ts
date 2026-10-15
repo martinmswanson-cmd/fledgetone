@@ -47,6 +47,7 @@ import { duckPoints } from '../store/duck';
 import type { WavCue } from './wavCues';
 import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 import { normalizeMasterSettings } from '../store/timelineTypes';
+import { countedRender } from './renderBusy';
 
 /** Sample rates the export offers. */
 export const SAMPLE_RATES = [44100, 48000] as const;
@@ -688,6 +689,11 @@ interface Rendered {
  * it's rendered in one piece instead.
  */
 async function renderTracks(opts: RenderOptions, sounding: Track[], onProgress?: (fraction: number) => void): Promise<Rendered> {
+  // Counted, so the update notice waits for it (renderBusy.ts)
+  return countedRender(() => renderTracksNow(opts, sounding, onProgress));
+}
+
+async function renderTracksNow(opts: RenderOptions, sounding: Track[], onProgress?: (fraction: number) => void): Promise<Rendered> {
   // With the lush reverb fed, even a render in one piece goes the parts' way, as one part: its
   // reverb then runs after the render (lushAfter.ts), never as a worklet in an offline context
   const parts = (await partsFor(opts, sounding)) ?? (lushFed(opts) ? [sounding] : null);

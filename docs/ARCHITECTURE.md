@@ -363,3 +363,14 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   (`public/fledgetone-samples`) are served next to it, not inlined.
 - `npm run build:runtime`: `dist-runtime/bos-player.js`, the player that games use to play a
   saved project (`src/runtime/player.ts`).
+
+The production build (fledgetone.com) is an installable web app: `public/manifest.webmanifest`
+and its icons, and `dist/sw.js`, written by the `serviceWorker` plugin in `vite.config.ts` from
+`src/pwa/sw.js` with the build's file list. The worker keeps the page, the hashed scripts and
+styles and the fonts, and leaves recordings and plugins to `recordingStore.ts` (IndexedDB, keyed
+by address and set fingerprint, downloaded with `?v=<fingerprint>`). A new worker waits until the
+person clicks Reload (`src/pwa/pwa.ts`, `UpdateNotice.tsx`). Only production builds register it;
+the dev server removes any it finds. The one-file build has neither manifest nor worker
+(`build-single.mjs` marks it with `<meta name="fledgetone-build" content="single">`).
+`public/_headers` sets Netlify's cache rules: no-cache for `sw.js`, the manifest and
+`version.json`, a year (immutable) for `assets/` and the versioned recordings and plugins.

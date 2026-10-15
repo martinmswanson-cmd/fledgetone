@@ -1,6 +1,6 @@
 import { INSTRUMENTS, type SampleSource } from './instrumentCatalog';
 import { pluginFamilies, pluginSource } from './plugins/pluginSources';
-import { fetchBytes, withTimeout } from './waitFor';
+import { fetchBytes, versionedUrl, withTimeout } from './waitFor';
 
 /**
  * The instruments' recordings, kept in this browser (IndexedDB) once downloaded, so each one is
@@ -104,11 +104,11 @@ const STALL_MS = 20000;
 /** Looking for a kept copy gives up after this long (ms) and downloads instead (the database can be held up by another tab) */
 const KEPT_LOOKUP_MS = 8000;
 
-async function download(addresses: string[], signal?: AbortSignal): Promise<ArrayBuffer> {
+async function download(addresses: string[], version: string, signal?: AbortSignal): Promise<ArrayBuffer> {
   let last: unknown;
   for (const url of addresses) {
     try {
-      return await fetchBytes(url, STALL_MS, signal);
+      return await fetchBytes(versionedUrl(url, version), STALL_MS, signal);
     } catch (err) {
       if (signal?.aborted) throw err;
       last = err;
@@ -126,7 +126,7 @@ export async function recordingBytes(source: Pick<SampleSource, 'baseUrl' | 'fal
   const version = source.version ?? '';
   const kept = await withTimeout(read(addresses[0], version), KEPT_LOOKUP_MS, 'slow').catch(() => null);
   if (kept) return kept;
-  const bytes = await download(addresses);
+  const bytes = await download(addresses, version);
   void write(addresses[0], version, new Blob([bytes]));
   return bytes;
 }
@@ -220,7 +220,7 @@ export async function downloadAll(onProgress: (p: DownloadProgress) => void, sig
       const item = all[next++];
       if (!(await has(item.key, item.version))) {
         try {
-          const bytes = await download(item.addresses, signal);
+          const bytes = await download(item.addresses, item.version, signal);
           await write(item.key, item.version, new Blob([bytes]));
           progress.bytes += bytes.byteLength;
         } catch {

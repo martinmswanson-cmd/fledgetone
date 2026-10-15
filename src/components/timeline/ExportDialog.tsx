@@ -4,6 +4,7 @@
  * the render with progress and cancel.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { countedRender } from '../../audio/renderBusy';
 import { useVideoStore } from '../../store/videoStore';
 import { Download, Loader2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -291,7 +292,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * settings.sampleRate);
   const tail = ringOutSeconds(masterFx, tracks, bpm);
 
-  const startExport = async () => {
+  // Counted as a render the whole way (encoding too), so the update notice waits for it (renderBusy.ts)
+  const startExport = () => countedRender(async () => {
     const s = useTimelineStore.getState();
     // The render swaps the global audio context while it sets up, so halt live playback first
     s.pause();
@@ -431,7 +433,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
-  };
+  });
 
   if (status.kind === 'rendering') {
     const percent = Math.round(status.progress * 100);

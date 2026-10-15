@@ -8,15 +8,5 @@
 [build.environment]
   NODE_VERSION = "22"
 
-# Instrument recordings and plugins rarely change: let browsers keep them a day
-[[headers]]
-  for = "/fledgetone-samples/*"
-  [headers.values]
-    Cache-Control = "public, max-age=86400"
-    Access-Control-Allow-Origin = "*"
-
-[[headers]]
-  for = "/fledgetone-plugins/*"
-  [headers.values]
-    Cache-Control = "public, max-age=86400"
-    Access-Control-Allow-Origin = "*"
+# How long browsers keep each file (the app, the recordings, the service worker): public/_headers,
+# which Vite copies into dist/. Keep header rules there only, so the two don't both set one.

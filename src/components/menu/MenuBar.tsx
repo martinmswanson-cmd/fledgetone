@@ -16,6 +16,7 @@ import { formatBarCount } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { APP_VERSION } from '../../version';
+import { installApp, usePwa } from '../../pwa/pwa';
 
 /**
  * The menu bar: every tool in the app, in the place a DAW keeps it (File, Edit, Song, Track,
@@ -348,6 +349,7 @@ const MENUS: MenuDef[] = [
       { label: 'Tour & tutorials', run: () => ui().setDialog('learn') },
       { label: 'Search everything', shortcut: PALETTE_SHORTCUT, run: () => ui().setPaletteOpen(true) },
       { label: 'Keyboard shortcuts', run: () => ui().openGuide('keyboard-shortcuts'), divider: true },
+      ...(usePwa.getState().installed ? [] : [{ label: 'Install Fledgetone…', run: installApp, divider: true, title: 'Install Fledgetone as an app: its own window, and it opens offline' }]),
       { label: 'Report a problem…', run: () => ui().setDialog('report'), divider: true },
       { label: `What's new (version ${APP_VERSION})`, run: () => ui().setDialog('changes') },
       { label: 'Terms of use', run: () => ui().setDialog('terms') },
