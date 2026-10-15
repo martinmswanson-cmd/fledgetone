@@ -14,7 +14,7 @@ import { ExportDialog } from './ExportDialog';
 import { BeatStoreDialog } from './BeatStoreDialog';
 import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
-import { STARTER_GROUPS, STARTERS } from '../../store/starters';
+import { STARTER_GROUPS, STARTERS, starterSub } from '../../store/starters';
 import type { StarterId } from '../../store/starters';
 
 const barButton =
@@ -88,11 +88,16 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 <span className="text-[10px] font-mono text-forge-muted">{list.length}</span>
                 <span className="ml-auto truncate text-[10px] text-forge-muted hidden sm:block group-open:hidden">{list.map((s) => s.name).join(' · ')}</span>
               </summary>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2 pt-0">
-                {list.map((s) => (
-                  <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
-                ))}
-              </div>
+              {[...new Set(list.map(starterSub))].map((sub) => (
+                <div key={sub ?? ''} className="p-2 pt-0">
+                  {sub && <h5 className="pb-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">{sub}</h5>}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    {list.filter((s) => starterSub(s) === sub).map((s) => (
+                      <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </details>
           );
         })

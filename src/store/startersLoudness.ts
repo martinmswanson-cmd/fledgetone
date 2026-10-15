@@ -40,20 +40,31 @@ export const GROUP_LOUDNESS: Readonly<Record<string, number>> = {
   'Game Worlds': -15,
   'Game Moments': -15,
   'Anime & Cartoon': -15,
+  // The classical pieces keep their wide dynamics (their flips aim higher: HARD_LOUDNESS)
+  Classics: -16,
 };
 
 /** The gentle pieces (ambient, a title screen and its menu, a save room, a calm piano world) sit lower, at this. */
 export const GENTLE_LOUDNESS = -19;
 
 /** The starters meant to be gentle, whatever their group. */
-export const GENTLE_STARTERS: ReadonlySet<string> = new Set(['ambient', 'title', 'saveRoom', 'quietWorld']);
+export const GENTLE_STARTERS: ReadonlySet<string> = new Set(['ambient', 'title', 'saveRoom', 'quietWorld', 'moonlight', 'clairDeLune']);
+
+/**
+ * The hard beats (the Classical Flips, mastered through the clipper) sit higher, at this: the
+ * clipper shaves the drums' peaks first, so the limiter has little left to take.
+ */
+export const HARD_LOUDNESS = -13;
+
+/** The starters mastered hard, whatever their group. */
+export const HARD_STARTERS: ReadonlySet<string> = new Set(['canonTrap', 'moonlightDrill', 'preludeBoomBap', 'kingPhonk', 'clairTrap']);
 
 /** The highest loudness any starter may aim for (LUFS). */
 export const MAX_STARTER_LOUDNESS = -11;
 
 /** A starter's loudness target (LUFS), from its id and group. */
 export function starterLoudness(id: string, group: string): number {
-  return GENTLE_STARTERS.has(id) ? GENTLE_LOUDNESS : (GROUP_LOUDNESS[group] ?? -14);
+  return GENTLE_STARTERS.has(id) ? GENTLE_LOUDNESS : HARD_STARTERS.has(id) ? HARD_LOUDNESS : (GROUP_LOUDNESS[group] ?? -14);
 }
 
 /**
@@ -140,6 +151,17 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   theatrical: { trim: 0.5, lufs: -13.7 }, // -13.7
   raprock: { trim: -0.5, lufs: -13.1 }, // -13.2
   mathrock: { trim: 1, lufs: -13 }, // -13.6
+  // The Classics, measured with these trims (no older level to compare: new with the trims)
+  canon: { trim: 5.3, lufs: -16 },
+  moonlight: { trim: 5.5, lufs: -19 },
+  prelude: { trim: 5.7, lufs: -16.1 },
+  mountainKing: { trim: -3.6, lufs: -15.9 },
+  clairDeLune: { trim: 3.6, lufs: -19.1 },
+  canonTrap: { trim: -1.6, lufs: -13 },
+  moonlightDrill: { trim: -0.1, lufs: -13 },
+  preludeBoomBap: { trim: -1, lufs: -13 },
+  kingPhonk: { trim: -2.7, lufs: -12.9 },
+  clairTrap: { trim: -0.5, lufs: -13 },
 };
 
 /** A starter's trim (dB); 0 for one not measured yet. */
