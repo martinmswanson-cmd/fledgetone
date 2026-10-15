@@ -73,7 +73,7 @@ const foot = `
  */
 export function figuresFor(sectionId, sizes) {
   return SHOTS.filter((s) => s.section === sectionId && (s.video || sizes[s.file])).map((s) => {
-    const note = s.ai ? ` <span class="ai-note">${s.sound ? 'Film: AI-generated (made with Higgsfield). Music: made in Fledgetone.' : 'The film in the picture is AI-generated (made with Higgsfield).'}</span>` : '';
+    const note = s.ai ? ` <span class="ai-note">${s.sound ? 'Film: AI-generated. Music: made in Fledgetone.' : `The film in the ${s.video ? 'clip' : 'picture'} is AI-generated.`}</span>` : '';
     const caption = `<figcaption>${escape(s.caption)}${note}</figcaption>`;
     if (s.video) {
       const play = s.sound ? 'controls preload="none"' : 'muted loop playsinline autoplay preload="metadata"';

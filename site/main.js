@@ -143,7 +143,7 @@ const hz = (f) => (f >= 1000 ? `${(f / 1000).toFixed(1)} kHz` : `${Math.round(f)
       for (let x = 0; x <= W; x += 3) {
         const u = x / W, env = Math.sin(Math.PI * u);
         const y = H / 2 + env * amp * (Math.sin(u * f * Math.PI * 2 - t * 4 + shift) * 0.7 + Math.sin(u * f * 2.01 * Math.PI * 2 - t * 6.3) * 0.3);
-        x ? g.lineTo(x, y) : g.moveTo(x, y);
+        if (x) g.lineTo(x, y); else g.moveTo(x, y);
       }
       g.strokeStyle = c; g.globalAlpha = alpha; g.lineWidth = lw * dpr(); g.stroke();
     }
