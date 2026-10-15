@@ -413,7 +413,7 @@ export const Timeline: React.FC = () => {
           ref={scrollRef}
           data-timeline-scroll=""
           className={`flex-1 overflow-x-hidden overflow-y-auto ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
-          style={{ height: timelineHeight }}
+          style={{ maxHeight: timelineHeight }}
           onWheel={(e) => {
             // The native horizontal bar is replaced by TimelineScrollbar, so handle sideways scrolling here
             const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;

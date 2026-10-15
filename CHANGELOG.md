@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-6 — Timeline stops at the last track
+
+- Dragging the timeline taller stops at the last track instead of leaving empty grey space under it.
+
 ## 2026.10.15-5 — Timeline grows with new tracks
 
 - Adding an instrument grows the timeline just enough to show its track, moving the panels below down with it, instead of hiding it below.
