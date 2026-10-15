@@ -2,12 +2,19 @@ import * as Tone from 'tone';
 import type { MasterFx } from '../../store/timelineTypes';
 import { createLightPingPong, type LightPingPong } from './lightFx';
 import { decodeSound } from '../soundLibrary';
-import { roomChannels, type RoomStyle } from './roomIR';
+import { ROOM_STYLES, roomChannels, type RoomStyle } from './roomIR';
+import { LUSH_PROCESSOR, LUSH_WORKLET_SOURCE } from './lushReverb';
+import { createWorkletNode, loadWorklet } from '../worklets';
 
 /**
  * Shared return effects fed by every track's post-fader sends: one reverb and one
  * ping-pong delay. One instance of each keeps CPU low however many tracks there are.
  * Built per context (live, and again inside the offline export render).
+ *
+ * The reverb is a convolver (a designed room from roomIR.ts, or a recorded one), except for the
+ * 'lush' style, which is the algorithmic reverb in lushReverb.ts (an AudioWorklet), made only
+ * while it's chosen. Switching between them crossfades on the audio clock; until the worklet has
+ * loaded, or where AudioWorklets can't run, the hall convolver plays instead.
  */
 export interface BusEffects {
   reverb: Tone.Reverb;
@@ -44,8 +51,11 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   // the bass's boom in the wash
   const lowCut = new Tone.Filter({ type: 'highpass', frequency: 180, rolloff: -12 });
   const damp = new Tone.Filter({ type: 'lowpass', frequency: 5500, rolloff: -12 });
-  reverbInput.chain(lowCut, damp, reverb);
-  reverb.connect(destination);
+  // Each reverb has its own level, for the crossfade between them
+  const convOut = new Tone.Gain(1);
+  const lushOut = new Tone.Gain(0);
+  reverbInput.chain(lowCut, damp, reverb, convOut, destination);
+  lushOut.connect(destination);
   delayInput.connect(delay.input);
   delay.output.connect(destination);
 
@@ -68,6 +78,8 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
       designed(current.roomStyle, current.reverbDecay);
       return;
     }
+    // A recorded room plays on the convolver
+    setLush(false);
     try {
       const buffer = roomImpulse(await decodeSound(room, reverb.context.sampleRate), reverb.context);
       if (token === roomToken) convolver().buffer = buffer;
@@ -77,28 +89,131 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     }
   };
 
+  // The lush reverb: loaded into the context the first time it's wanted, its node made while
+  // it's chosen and let go once it has faded out
+  const context = reverb.context;
+  const lushDesign = ROOM_STYLES.lush;
+  let lushLoaded = false;
+  let lushLoading: Promise<void> | null = null;
+  let lush: AudioWorkletNode | null = null;
+  let lushOn = false;
+  let convolverFed = true;
+  let fadeTimer: ReturnType<typeof setTimeout> | undefined;
+  const wantsLush = (f: MasterFx) => !f.room && f.roomStyle === 'lush';
+  const lushDecay = (decay: number) => Math.max(0.8, Math.min(12, decay));
+  const loadLush = () => {
+    lushLoading ??= loadWorklet(context, LUSH_PROCESSOR, LUSH_WORKLET_SOURCE).then(
+      () => {
+        lushLoaded = true;
+        if (!disposed && wantsLush(current)) setLush(true);
+      },
+      (err) => {
+        // Stays on the hall convolver
+        console.warn('The lush reverb could not start; using the hall:', err);
+      }
+    );
+    return lushLoading;
+  };
+  // Switch with a quarter-second crossfade while playing, so the sound never drops out; at once
+  // before the sound starts (an export's first moment, or before the first click)
+  const setLush = (on: boolean) => {
+    if (on && !lushLoaded) {
+      void loadLush();
+      return;
+    }
+    if (on === lushOn) return;
+    lushOn = on;
+    clearTimeout(fadeTimer);
+    const fade = context.state === 'running' ? 0.25 : 0;
+    if (on) {
+      if (!lush) {
+        lush = createWorkletNode(context, LUSH_PROCESSOR, {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2],
+          channelCount: 2,
+          channelCountMode: 'explicit',
+          channelInterpretation: 'speakers',
+          processorOptions: { low: lushDesign.low, preDelay: 0.01 },
+        });
+        lush.parameters.get('high')!.value = lushDesign.high;
+        damp.connect(lush);
+        Tone.connect(lush, lushOut);
+      }
+      lush.parameters.get('decay')!.value = lushDecay(current.reverbDecay);
+    } else if (!convolverFed) {
+      damp.connect(reverb);
+      convolverFed = true;
+    }
+    if (fade > 0) {
+      convOut.gain.rampTo(on ? 0 : 1, fade);
+      lushOut.gain.rampTo(on ? 1 : 0, fade);
+    } else {
+      convOut.gain.cancelScheduledValues(0);
+      lushOut.gain.cancelScheduledValues(0);
+      convOut.gain.value = on ? 0 : 1;
+      lushOut.gain.value = on ? 1 : 0;
+    }
+    // Once faded out, the one not playing stops costing anything: the convolver gets no more
+    // sound (so it goes quiet), and the worklet is let go
+    const settle = () => {
+      if (disposed) return;
+      if (on && convolverFed) {
+        damp.disconnect(reverb);
+        convolverFed = false;
+      } else if (!on && lush) {
+        dropLush();
+      }
+    };
+    if (fade > 0) fadeTimer = setTimeout(settle, (fade + 0.1) * 1000);
+    else settle();
+  };
+  const dropLush = () => {
+    if (!lush) return;
+    lush.port.postMessage('dispose');
+    damp.disconnect(lush);
+    lush.disconnect();
+    lush = null;
+  };
+
+  let disposed = false;
   let current = { ...fx };
+  const start = async () => {
+    await reverb.ready;
+    // (The room as it is now: the song may have changed it while Tone made its own)
+    if (current.room) return loadRoom(current.room);
+    // An export waits for the lush reverb, so it renders with it from the first sample (and only
+    // needs the hall's impulse response if it can't run)
+    if (wantsLush(current)) await loadLush();
+    if (!lushOn) designed(current.roomStyle, current.reverbDecay);
+  };
   return {
     reverb,
     delay,
     reverbInput,
     delayInput,
-    ready: reverb.ready.then(() => (fx.room ? loadRoom(fx.room) : designed(fx.roomStyle, fx.reverbDecay))),
+    ready: start(),
     apply: (next, tempo) => {
       const before = current;
       current = { ...next };
       if (next.room !== before.room) void loadRoom(next.room);
       else if (!next.room && (next.reverbDecay !== before.reverbDecay || next.roomStyle !== before.roomStyle)) {
-        // Rebuilding the impulse response takes a moment, so only when the room changes
+        // Rebuilding the impulse response takes a moment, so only when the room changes (the
+        // lush style's is the hall's, for when the lush reverb isn't running)
         roomToken++;
-        designed(next.roomStyle, next.reverbDecay);
+        if (!(lushOn && next.roomStyle === 'lush' && before.roomStyle === 'lush')) designed(next.roomStyle, next.reverbDecay);
       }
+      setLush(wantsLush(next));
+      if (lush) lush.parameters.get('decay')!.value = lushDecay(next.reverbDecay);
       delay.setDelayTime(delaySeconds(next.delayTime, tempo), 0.05);
       delay.setFeedback(Math.max(0, Math.min(0.8, next.delayFeedback)), 0.05);
     },
     dispose: () => {
       roomToken++;
-      [reverbInput, lowCut, damp, delayInput, reverb, delay].forEach((n) => n.dispose());
+      disposed = true;
+      clearTimeout(fadeTimer);
+      dropLush();
+      [reverbInput, lowCut, damp, convOut, lushOut, delayInput, reverb, delay].forEach((n) => n.dispose());
     },
   };
 }
