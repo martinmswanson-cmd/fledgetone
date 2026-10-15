@@ -13,6 +13,8 @@ import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel } from './effects/limiter';
+import { measureCompressorLatency } from './compressorLatency';
+import { compensateTracks } from './delayCompensation';
 import { delaySeconds } from './effects/busEffects';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
@@ -215,7 +217,7 @@ interface RenderPlan {
   passes: number;
 }
 
-/** `latency`: frames the output lags the Transport by (the master chain's look-ahead). */
+/** `latency`: frames the output lags the Transport by (the master chain's look-ahead and the tracks' delay compensation). */
 function planRender(opts: RenderOptions, latency = 0): RenderPlan {
   const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
   // 0.3 of a frame past the pre-roll. At round tempos many notes fall exactly on a frame (every
@@ -268,35 +270,16 @@ export function exportCues(opts: RenderOptions): WavCue[] {
   });
 }
 
-const masterLatency = new Map<number, Promise<number>>();
-
 /**
  * Frames the master compressor and limiter delay the sound by. The compressor is a
- * DynamicsCompressorNode with a fixed look-ahead (6 ms in Chrome, Firefox and Safari), measured
- * once per sample rate by sending a click through one; the look-ahead limiter (effects/limiter.ts)
- * adds its own fixed delay, or, where AudioWorklets can't run, the stand-in limiter (another
- * compressor) adds the compressor's. Without allowing for it every export came out late, out of
- * step with the timeline and with stems that skip the chain.
+ * DynamicsCompressorNode with a fixed look-ahead (measured: see compressorLatency.ts); the
+ * look-ahead limiter (effects/limiter.ts) adds its own fixed delay, or, where AudioWorklets can't
+ * run, the stand-in limiter (another compressor) adds the compressor's. Without allowing for it
+ * every export came out late, out of step with the timeline and with stems that skip the chain.
  */
-function masterChainLatency(sampleRate: number): Promise<number> {
-  let latency = masterLatency.get(sampleRate);
-  if (!latency) {
-    latency = (async () => {
-      const probe = new OfflineAudioContext(1, 4096, sampleRate);
-      const click = probe.createBuffer(1, 1, sampleRate);
-      click.getChannelData(0)[0] = 0.01; // well under the threshold, so the gain stays put
-      const source = probe.createBufferSource();
-      source.buffer = click;
-      source.connect(probe.createDynamicsCompressor()).connect(probe.destination);
-      source.start(0);
-      const out = (await probe.startRendering()).getChannelData(0);
-      let at = 0;
-      for (let i = 1; i < out.length; i++) if (Math.abs(out[i]) > Math.abs(out[at])) at = i;
-      return at + (probe.audioWorklet ? createLimiterKernel(sampleRate).latency : at);
-    })().catch(() => 0);
-    masterLatency.set(sampleRate, latency);
-  }
-  return latency;
+async function masterChainLatency(sampleRate: number): Promise<number> {
+  const compressor = await measureCompressorLatency(sampleRate);
+  return compressor + (typeof AudioWorkletNode !== 'undefined' ? createLimiterKernel(sampleRate).latency : compressor);
 }
 
 /** `promise`, or a rejection as soon as `signal` aborts. */
@@ -520,7 +503,11 @@ async function renderTracks(
   // Clips' controller lanes play as their tracks' automation (see ccLanes.ts)
   const tracks = withControllerLanes(busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]), clips);
   const ending = opts.ending ?? 'ringOut';
-  const plan = planRender(opts, opts.bypassMaster ? 0 : await masterChainLatency(opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
+  // Every track is held back to the slowest path through the mix (see delayCompensation.ts),
+  // worked out over the whole song so a stem lines up with the full mix and the other stems
+  const rate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  const alignment = compensateTracks(opts.tracks, await measureCompressorLatency(rate));
+  const plan = planRender(opts, alignment.total + (opts.bypassMaster ? 0 : await masterChainLatency(rate)));
   const { sampleRate, length } = plan;
   if (plan.keepLength < 1) throw new Error('the range is empty');
   const duration = length / sampleRate;
@@ -706,6 +693,7 @@ async function renderTracks(
       });
       if (sends.length) stripOf.get(track.id)!.setSends(sends, false);
     }
+    for (const [id, strip] of stripOf) strip.setAlignment(alignment.delays.get(id) ?? null);
     await Promise.all([mix.busFx.ready, mix.inserts.ready(), opts.bypassMaster ? undefined : mix.limiterReady, ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)
     const convolver = (mix.busFx.reverb as unknown as { _convolver: ConvolverNode })._convolver;

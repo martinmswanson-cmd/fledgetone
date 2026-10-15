@@ -1,5 +1,5 @@
 import { liveMix } from './engine';
-import { outputLatencySeconds } from './latency';
+import { mixDelaySeconds, outputLatencySeconds } from './latency';
 import { transportBarAt } from './recorder';
 
 /**
@@ -89,7 +89,8 @@ export async function startMic(): Promise<MicSession> {
         }
         return out;
       });
-      const heardAt = firstTime - outputLatencySeconds() - inputLatency;
+      // (The music heard then was scheduled the mix's delay compensation earlier)
+      const heardAt = firstTime - outputLatencySeconds() - mixDelaySeconds() - inputLatency;
       return { channels, sampleRate: ctx.sampleRate, startBar: transportBarAt(heardAt), heardAt };
     },
   };

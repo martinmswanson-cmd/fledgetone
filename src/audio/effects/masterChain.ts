@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import type { GlueStyle, MasterSettings } from '../../store/timelineTypes';
 import { createWorkletNode, loadWorklet } from '../worklets';
 import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
+import { paramSetter as smoothParamSetter } from './smoothParam';
 
 /**
  * The master section's inserts, between the master compressor and the limiter (see engine.ts):
@@ -48,25 +49,8 @@ interface Gate {
 const SWITCH_LEAD = 0.02;
 const SWITCH_FADE = 0.01;
 
-/**
- * Set native params, ramping over `ramp` seconds (0 = at once) from the last value set here:
- * an AudioParam's .value doesn't show scheduled values until the context renders.
- */
-function paramSetter(raw: BaseAudioContext): (param: AudioParam, value: number, ramp: number) => void {
-  const current = new Map<AudioParam, number>();
-  return (param, value, ramp) => {
-    const at = raw.currentTime;
-    param.cancelScheduledValues(at);
-    const from = current.get(param);
-    if (ramp > 0 && from !== undefined && from !== value) {
-      param.setValueAtTime(from, at);
-      param.linearRampToValueAtTime(value, at + ramp);
-    } else {
-      param.setValueAtTime(value, at);
-    }
-    current.set(param, value);
-  };
-}
+/** Set native params, gliding over about `ramp` seconds (0 = at once), now (see smoothParam.ts). */
+const paramSetter = (raw: BaseAudioContext) => smoothParamSetter(() => raw.currentTime);
 
 /** head -> inserts -> tail, re-patched without gaps live (see above). */
 function createInsertChain(head: Tone.ToneAudioNode, tail: Tone.ToneAudioNode) {

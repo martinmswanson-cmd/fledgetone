@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import type { TrackFx } from '../../store/timelineTypes';
 import { ECHO_BEATS, REVERB_DECAY_MAX } from '../../store/timelineTypes';
 import { writeTime } from './lightFx';
+import { paramSetter as smoothParamSetter } from './smoothParam';
 
 /**
  * The Delay and Reverb inserts: a track's own echoes and room, as against the shared master
@@ -15,19 +16,8 @@ export interface SpaceUnit {
   dispose: () => void;
 }
 
-function paramSetter(raw: BaseAudioContext) {
-  const current = new Map<AudioParam, number>();
-  return (param: AudioParam, value: number, ramp: number) => {
-    const at = writeTime(raw);
-    param.cancelScheduledValues(at);
-    const from = current.get(param);
-    if (ramp > 0 && from !== undefined && from !== value) {
-      param.setValueAtTime(from, at);
-      param.linearRampToValueAtTime(value, at + ramp);
-    } else param.setValueAtTime(value, at);
-    current.set(param, value);
-  };
-}
+/** Set native params, gliding over about `ramp` seconds (0 = at once), at writeTime (see smoothParam.ts). */
+const paramSetter = (raw: BaseAudioContext) => smoothParamSetter(() => writeTime(raw));
 
 /** An equal-power wet/dry pair for a mix of 0 to 1. */
 const mixGains = (mix: number): [wet: number, dry: number] => {

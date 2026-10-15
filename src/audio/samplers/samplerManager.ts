@@ -328,6 +328,7 @@ interface AmpSettings {
  * resonance, the cone's upper-mid bite, a dip where cabinets honk, and a steep top roll-off: what
  * makes an amp sound like an amp rather than a fuzz box).
  */
+// (An amp with a squeeze has a compressor: list it in COMPRESSED_SHAPINGS, instrumentCatalog.ts)
 const AMPS: Record<AmpModel, AmpSettings> = {
   // Bright and glassy, a touch of edge when picked hard
   cleanAmp: { tight: 70, squeeze: [-26, 3], pre: [['highshelf', 1500, 0.7, 4]], stages: [1.4], bass: 1, mid: -2, midHz: 600, treble: 3, cabTop: 6500 },
