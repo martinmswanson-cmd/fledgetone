@@ -73,14 +73,14 @@ document.querySelectorAll('.player').forEach((player) => {
 
 // Sections fade up as they arrive
 if (!reduce) {
-  const els = document.querySelectorAll('.reveal, .track, .card, .doc, .help-item, .section-title, .terminal, .intro p');
+  const els = document.querySelectorAll('.reveal, .track, .card, .section-title, .intro p');
   const io = seen((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }, 0.12);
   if (io) {
     document.documentElement.classList.add('motion');
     els.forEach((el) => {
       // Cards in a row arrive one after another
       const sib = el.parentElement ? [...el.parentElement.children].indexOf(el) : 0;
-      if (el.matches('.card, .doc, .help-item')) el.style.transitionDelay = `${(sib % 3) * 80}ms`;
+      if (el.matches('.card')) el.style.transitionDelay = `${(sib % 3) * 80}ms`;
       io.observe(el);
     });
   }
