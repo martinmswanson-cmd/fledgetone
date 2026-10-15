@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { createLightChorus } from '../effects/lightFx';
+import { fixedDelay } from '../effects/delayLink';
 import { breathOf, INSTRUMENTS, isSection } from '../instrumentCatalog';
 import type { AmpModel, InstrumentDef, InstrumentKey, SampleSource, Shaping } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
@@ -668,9 +669,11 @@ interface ShapingChain {
  * Oversampled 2x, not 4x, unless asked: the recordings it shapes are dull (little above a few
  * kHz) and the cabinet after it rolls the top off, so what 2x lets fold back is under -88 dB of the
  * guitar (a phrase through each amp, and the rock and metal guitars, against 4x). A 4x shaper cost
- * as much as nine biquads; at 2x the rock and metal starters' guitars render 13% faster. The clean
+ * as much as nine biquads; at 2x the metal starter's two guitars render 16% faster. The clean
  * amp keeps 4x: it's brightened before and after its clip, and 2x came to -74 dB there, closer to
- * hearing than the rest. (2x also holds the sound back 64 samples less, per stage.)
+ * hearing than the rest. 2x holds the sound back 64 samples less than 4x (Chromium's shapers: 128
+ * against 192), which moved the guitars against the bass enough to change a mix's loudness by 0.2
+ * LU: a delay line after the stages (inStep) puts them back where they were.
  */
 function saturator(drive: number, oversample: OverSampleType = '2x'): WaveShaperNode {
   const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
@@ -682,6 +685,9 @@ function saturator(drive: number, oversample: OverSampleType = '2x'): WaveShaper
   shaper.oversample = oversample;
   return shaper;
 }
+
+/** How many samples less a 2x shaper holds the sound back than a 4x one (see saturator). */
+const SHAPER_2X_EARLIER = 64;
 
 /** The erhu's vibrato: how far the delay swings, in seconds, once a note has settled (about ±20 cents at 5.5 Hz). */
 const ERHU_VIBRATO = 0.00035;
@@ -750,6 +756,8 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     f.gain.value = gain;
     return f;
   };
+  /** A delay line that holds back `stages` 2x shapers' sound as 4x ones would (see saturator). */
+  const inStep = (stages: number) => fixedDelay(raw, (stages * SHAPER_2X_EARLIER) / raw.sampleRate);
   const chain = (nodes: AudioNode[]) => {
     for (let i = 0; i + 1 < nodes.length; i++) nodes[i].connect(nodes[i + 1]);
     Tone.connect(nodes[nodes.length - 1], output);
@@ -801,7 +809,7 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     const cab = biquad('lowpass', 4800, 1.1);
     const trim = raw.createGain();
     trim.gain.value = Tone.dbToGain(-6);
-    return chain([tight, sustain, pre, drive, thump, scoop, presence, cab, trim]);
+    return chain([tight, sustain, pre, drive, inStep(1), thump, scoop, presence, cab, trim]);
   }
   if (shape && shape in AMPS) {
     const amp = AMPS[shape as AmpModel];
@@ -821,6 +829,7 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
       if (i > 0) nodes.push(biquad('highpass', 180, 0.7), biquad('lowpass', 4500, 0.7));
       nodes.push(saturator(drive, amp.oversample));
     });
+    if ((amp.oversample ?? '2x') === '2x') nodes.push(inStep(amp.stages.length));
     nodes.push(
       biquad('lowshelf', 120, 0.7, amp.bass),
       biquad('peaking', amp.midHz, 0.7, amp.mid),
@@ -842,7 +851,7 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     const edge = saturator(1.3);
     const trim = raw.createGain();
     trim.gain.value = Tone.dbToGain(-2);
-    return chain([bright, sparkle, edge, trim]);
+    return chain([bright, sparkle, edge, inStep(1), trim]);
   }
   if (shape === 'violin') {
     const rumble = biquad('highpass', 120, 0.6);
