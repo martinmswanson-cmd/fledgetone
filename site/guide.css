@@ -101,6 +101,7 @@ kbd {
 }
 .g-shot.narrow { max-width: min(100%, var(--w)); }
 .g-shot figcaption { margin-top: 10px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.g-shot .ai-note { display: block; margin-top: 4px; }
 .g-shot.narrow figcaption { max-width: 420px; }
 
 /* ---- Narrower screens ---- */

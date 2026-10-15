@@ -73,9 +73,11 @@ const foot = `
  */
 export function figuresFor(sectionId, sizes) {
   return SHOTS.filter((s) => s.section === sectionId && (s.video || sizes[s.file])).map((s) => {
-    const caption = `<figcaption>${escape(s.caption)}</figcaption>`;
+    const note = s.ai ? ` <span class="ai-note">${s.sound ? 'Film: AI-generated (made with Higgsfield). Music: made in Fledgetone.' : 'The film in the picture is AI-generated (made with Higgsfield).'}</span>` : '';
+    const caption = `<figcaption>${escape(s.caption)}${note}</figcaption>`;
     if (s.video) {
-      return { after: s.after, html: `<figure class="g-shot wide"><video src="${s.video}" poster="${s.poster}" muted loop playsinline autoplay preload="metadata" aria-label="${escape(s.alt)}"></video>${caption}</figure>` };
+      const play = s.sound ? 'controls preload="none"' : 'muted loop playsinline autoplay preload="metadata"';
+      return { after: s.after, html: `<figure class="g-shot wide"><video src="${s.video}" poster="${s.poster}" ${play} aria-label="${escape(s.alt)}"></video>${caption}</figure>` };
     }
     const [w, h] = sizes[s.file];
     const css = w / 2; // taken at twice the size, for sharp screens

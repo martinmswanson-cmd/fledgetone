@@ -3,6 +3,9 @@
 // and how to set the studio up to take it. capture.mjs takes them; scripts/guide-site.mjs places
 // them. GUIDE.md itself has no pictures, since the app's guide shows text only.
 //
+// `ai: true` marks a picture or clip showing the AI-generated test film (trailer.webm): its caption
+// says so.
+//
 // Each setup gets `s`, the capture helpers (see capture.mjs), and returns the box to keep: an
 // element, a list of elements (their union), or { x, y, width, height } in page pixels.
 
@@ -71,24 +74,29 @@ export const SHOTS = [
     },
   },
   {
-    file: 'scoring', section: 'scoring-to-a-video', after: null, video: '/video/score.mp4', poster: '/video/score-poster.webp',
+    file: 'scoring', section: 'scoring-to-a-video', after: null, video: '/video/score.mp4', poster: '/video/score-poster.webp', ai: true,
     alt: 'Scoring to a short film: the video on its lane, its three cuts marked, FIT finds 117.76 BPM so all three land on a bar, then it plays in the preview window.',
     caption: 'Load a video, find its cuts, and fit the tempo so each cut lands on a bar.',
   },
   {
-    file: 'video-tab', section: 'scoring-to-a-video', after: 'end',
+    file: 'first-flight', section: 'scoring-to-a-video', after: 'end', video: '/video/first-flight.mp4', poster: '/video/first-flight-poster.webp', sound: true, ai: true,
+    alt: 'An AI-generated film of a young bird\'s first flight, with an orchestral score made in Fledgetone that hits each of its cuts.',
+    caption: 'The finished result: strings, horns, harp, flute and taiko written to the film\'s cuts at 117.76 BPM.',
+  },
+  {
+    file: 'video-tab', section: 'scoring-to-a-video', after: 'end', ai: true,
     alt: 'The Video tab: the reference video, its start, Find cuts, Dip under dialogue, hit points, the tempo finder and exports.',
     caption: 'The Video tab has everything for scoring in one place.',
     setup: async (s) => { await s.starter('Cinematic'); await s.loadVideo(); await s.view('Video'); return s.panel(); },
   },
   {
-    file: 'marker-flags', section: 'markers', after: 'flags-on-the-ruler',
+    file: 'marker-flags', section: 'markers', after: 'flags-on-the-ruler', ai: true,
     alt: 'Markers on the ruler: Intro, Build and Climax flags, and two hit points locked to time.',
     caption: 'Markers are flags on the ruler; hit points carry a lock.',
     setup: async (s) => { await s.starter('Cinematic'); await s.loadVideo(); await s.findCuts(); await s.zoomOut(1); return s.ruler(); },
   },
   {
-    file: 'markers-list', section: 'markers', after: 'the-markers-list',
+    file: 'markers-list', section: 'markers', after: 'the-markers-list', ai: true,
     alt: 'The Markers list: every marker and hit point with its bar, timecode and lock.',
     caption: 'The Markers list.',
     setup: async (s) => { await s.starter('Cinematic'); await s.loadVideo(); await s.findCuts(); await s.menu('Song', /^Markers list/); return s.dialog(); },

@@ -358,3 +358,21 @@ if (!reduce) {
     requestAnimationFrame(loop);
   }
 }
+
+// The scored film: muted until asked (browsers only play sound after a click); the button turns
+// the sound on from the start, and off again
+document.querySelectorAll('.scored').forEach((fig) => {
+  const v = fig.querySelector('video'), btn = fig.querySelector('.sound-btn'), label = btn?.querySelector('span');
+  if (!v || !btn) return;
+  btn.addEventListener('click', () => {
+    const on = v.muted;
+    v.muted = !on;
+    if (on) { v.currentTime = 0; v.loop = false; v.preload = 'auto'; v.play().catch(() => {}); }
+    btn.setAttribute('aria-pressed', String(on));
+    label.textContent = on ? 'Sound off' : 'Play with sound';
+  });
+  v.addEventListener('ended', () => {
+    v.muted = true; v.loop = true; btn.setAttribute('aria-pressed', 'false'); label.textContent = 'Play again with sound';
+    v.play().catch(() => {});
+  });
+});
