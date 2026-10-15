@@ -16,6 +16,7 @@ import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel } from './effects/limiter';
 import { masterAfter } from './effects/masterAfter';
 import { lushReverbOf } from './effects/lushAfter';
+import { leadIntoLoop } from './introSeam';
 import { measureCompressorLatency } from './compressorLatency';
 import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds } from './effects/busEffects';
@@ -466,7 +467,7 @@ export interface IntroLoopPart {
 /**
  * Render a game's music the way game engines play it: an intro, from bar 1 to the loop's In,
  * played once, then the loop region as a seamless loop, repeated. The intro ends without a fade,
- * straight into the loop. With `layers`, one pair per track that plays (for adaptive music: the
+ * straight into the loop, its last few milliseconds crossfaded so it leads into the loop's start. With `layers`, one pair per track that plays (for adaptive music: the
  * game fades layers in and out, and they all line up); otherwise one pair for the mix. Every file
  * shares one reverb and one gain (set by the loudest peak of all, never up), so intro and loop,
  * and the layers, match each other.
@@ -498,7 +499,10 @@ export async function renderIntroLoop(
     sampleRate = a.sampleRate;
     peak = Math.max(peak, peakOf(a.channels), peakOf(b.channels));
     // Copies: the renders' channels are views into much larger buffers
-    parts.push({ track: group.track, intro: a.channels.map((c) => c.slice()), loop: b.channels.map((c) => c.slice()) });
+    const part = { track: group.track, intro: a.channels.map((c) => c.slice()), loop: b.channels.map((c) => c.slice()) };
+    // The intro's end leads into the loop's start without a step (see introSeam.ts)
+    leadIntoLoop(part.intro, part.loop, sampleRate);
+    parts.push(part);
   }
   const gain = peakGain(peak);
   for (const part of parts) {
