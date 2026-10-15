@@ -19,6 +19,7 @@ import {
   renderArrangement,
   renderIntroLoop,
   renderStems,
+  ditherSeedOf,
   ringOutSeconds,
   SAMPLE_RATES,
   channelsOf,
@@ -327,8 +328,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         for (const [i, part] of parts.entries()) {
           const name = part.track ? stemFileNames(fileBase, parts.map((p) => p.track!), '')[i].replace(/\.$/, '') : fileBase;
           setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${part.track ? part.track.name : 'the music'}` });
-          files.push({ name: `${name} intro.${ext}`, data: await encodeAudio(part.intro, sampleRate, format, { bitDepth: settings.bitDepth }) });
-          files.push({ name: `${name} loop.${ext}`, data: await encodeAudio(part.loop, sampleRate, format, { bitDepth: settings.bitDepth }) });
+          // (Each stem its own dither, so the stems' dither doesn't add up in step when they're mixed)
+          const ditherSeed = part.track ? ditherSeedOf(part.track.id) : 0;
+          files.push({ name: `${name} intro.${ext}`, data: await encodeAudio(part.intro, sampleRate, format, { bitDepth: settings.bitDepth, ditherSeed }) });
+          files.push({ name: `${name} loop.${ext}`, data: await encodeAudio(part.loop, sampleRate, format, { bitDepth: settings.bitDepth, ditherSeed }) });
           if (format === 'wav' && settings.loopFile) {
             const whole = part.intro.map((ch, c) => {
               const out = new Float32Array(ch.length + part.loop[c].length);
@@ -337,7 +340,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               return out;
             });
             const start = part.intro[0].length;
-            files.push({ name: `${name} intro+loop (loop points).wav`, data: await encodeAudio(whole, sampleRate, 'wav', { bitDepth: settings.bitDepth, loop: { start, end: start + part.loop[0].length } }) });
+            files.push({ name: `${name} intro+loop (loop points).wav`, data: await encodeAudio(whole, sampleRate, 'wav', { bitDepth: settings.bitDepth, loop: { start, end: start + part.loop[0].length }, ditherSeed }) });
           }
           controller.signal.throwIfAborted();
         }

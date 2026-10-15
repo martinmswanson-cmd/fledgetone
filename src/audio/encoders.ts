@@ -19,6 +19,8 @@ export interface EncodeOptions {
   bitDepth: BitDepth;
   cues?: readonly WavCue[];
   loop?: { start: number; end: number };
+  /** A 16-bit WAV's dither sequence: each stem its own (see wavFile.ts) */
+  ditherSeed?: number;
 }
 
 /** Samples handed to an encoder at a time, so a long song never needs one huge copy. */
@@ -41,7 +43,7 @@ async function compress(encoder: WasmMediaEncoder<'audio/mpeg'> | WasmMediaEncod
 
 /** Encode rendered channels (one or two) in `format`. MP3 at 320 kb/s, Ogg Vorbis at quality 8 (about 256 kb/s). */
 export async function encodeAudio(channels: Float32Array[], sampleRate: number, format: AudioFormat, opts: EncodeOptions): Promise<Blob> {
-  if (format === 'wav') return encodeChannels(channels, sampleRate, opts.bitDepth, opts.cues ?? [], opts.loop);
+  if (format === 'wav') return encodeChannels(channels, sampleRate, opts.bitDepth, opts.cues ?? [], opts.loop, opts.ditherSeed);
   if (format === 'mp3') {
     const encoder = await createMp3Encoder();
     encoder.configure({ sampleRate, channels: channels.length as 1 | 2, bitrate: 320 });

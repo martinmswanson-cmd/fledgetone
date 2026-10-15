@@ -1,5 +1,5 @@
 import { FOUR_FOUR, meterAt, secondsBetween, tempoAt, type Meter, type MeterMap, type MeterPoint, type TempoMap, type TempoPoint } from './tempoMap';
-import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, channelsOf, type SampleRate } from './exportWav';
+import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, ditherSeedOf, channelsOf, type SampleRate } from './exportWav';
 import { defaultCurve, groupsInUse, type IntensityCurve } from '../store/intensity';
 import { renderStinger } from './stingerPlayer';
 import { createZip, type ZipEntry } from './zip';
@@ -197,7 +197,7 @@ export async function buildGameKitParts(
       const r = await renderGroupStems(range, stemGroups, within);
       for (const [k, stem] of r.stems.entries()) {
         const stemFile = `stems/${safe(name)}/${safe(stem.name)}.wav`;
-        files.push({ name: stemFile, data: encodeChannels(stem.channels, r.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }) });
+        files.push({ name: stemFile, data: encodeChannels(stem.channels, r.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }, ditherSeedOf(stem.name)) });
         stems.push({ group: stem.name, file: stemFile, tracks: stemGroups[k].tracks.map((t) => t.name) });
       }
     }
@@ -224,7 +224,7 @@ export async function buildGameKitParts(
           const rs = await renderGroupStems(crange, groups);
           for (const stem of rs.stems) {
             const stemFile = `stems/${base}/${safe(stem.name)}.wav`;
-            files.push({ name: stemFile, data: encodeChannels(stem.channels, rs.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }) });
+            files.push({ name: stemFile, data: encodeChannels(stem.channels, rs.sampleRate, 16, [], { start: 0, end: stem.channels[0].length }, ditherSeedOf(stem.name)) });
             cstems.push({ group: stem.name, file: stemFile });
           }
         }

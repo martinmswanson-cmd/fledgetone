@@ -1,5 +1,6 @@
 import { INSTRUMENTS, type SampleSource } from './instrumentCatalog';
 import { pluginFamilies, pluginSource } from './plugins/pluginSources';
+import { fetchBytes, withTimeout } from './waitFor';
 
 /**
  * The instruments' recordings, kept in this browser (IndexedDB) once downloaded, so each one is
@@ -98,13 +99,16 @@ async function write(key: string, version: string, blob: Blob): Promise<void> {
 /** The addresses a recording can come from, in order (its own, then the site's copy). */
 const addressesOf = (source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl'>, file: string) => [source.baseUrl + file, ...(source.fallbackUrl ? [source.fallbackUrl + file] : [])];
 
+/** A download that gets nothing for this long (ms) is given up, and the next address tried: a stuck connection never finishes on its own */
+const STALL_MS = 20000;
+/** Looking for a kept copy gives up after this long (ms) and downloads instead (the database can be held up by another tab) */
+const KEPT_LOOKUP_MS = 8000;
+
 async function download(addresses: string[], signal?: AbortSignal): Promise<ArrayBuffer> {
   let last: unknown;
   for (const url of addresses) {
     try {
-      const res = await fetch(url, { signal });
-      if (res.ok) return await res.arrayBuffer();
-      last = new Error(`${url}: ${res.status}`);
+      return await fetchBytes(url, STALL_MS, signal);
     } catch (err) {
       if (signal?.aborted) throw err;
       last = err;
@@ -120,7 +124,7 @@ async function download(addresses: string[], signal?: AbortSignal): Promise<Arra
 export async function recordingBytes(source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl' | 'version'>, file: string): Promise<ArrayBuffer> {
   const addresses = addressesOf(source, file);
   const version = source.version ?? '';
-  const kept = await read(addresses[0], version);
+  const kept = await withTimeout(read(addresses[0], version), KEPT_LOOKUP_MS, 'slow').catch(() => null);
   if (kept) return kept;
   const bytes = await download(addresses);
   void write(addresses[0], version, new Blob([bytes]));

@@ -34,7 +34,9 @@ import { expandAudioComps } from '../store/takes';
 import { loadCustomSample, songSampleLoads } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
-import { cueChunks, loopChunk, markerCues } from './wavCues';
+import { markerCues } from './wavCues';
+import { ditherSeedOf, encodeChannels } from './wavFile';
+import { withTimeout } from './waitFor';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import { duckPoints } from '../store/duck';
 import type { WavCue } from './wavCues';
@@ -45,6 +47,9 @@ export const SAMPLE_RATES = [44100, 48000] as const;
 export type SampleRate = (typeof SAMPLE_RATES)[number];
 const DEFAULT_SAMPLE_RATE: SampleRate = 44100;
 
+export { encodeChannels, ditherSeedOf } from './wavFile';
+/** The longest an export waits for one instrument's recordings before it gives up (ms) */
+const SAMPLE_WAIT_MS = 120000;
 /** WAV sample formats: 16 and 24 are integer PCM, 32 is IEEE float. */
 export const BIT_DEPTHS = [16, 24, 32] as const;
 export type BitDepth = (typeof BIT_DEPTHS)[number];
@@ -234,8 +239,12 @@ interface RenderPlan {
   passes: number;
 }
 
-/** `latency`: frames the output lags the Transport by (the master chain's look-ahead and the tracks' delay compensation). */
-function planRender(opts: RenderOptions, latency = 0): RenderPlan {
+/**
+ * `latency`: frames the output lags the Transport by (the master chain's look-ahead and the tracks'
+ * delay compensation). `slack`: frames rendered past the end, so the kept frames can still move
+ * that much later (see settleLatency).
+ */
+function planRender(opts: RenderOptions, latency = 0, slack = 0): RenderPlan {
   const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
   // 0.3 of a frame past the pre-roll. At round tempos many notes fall exactly on a frame (every
   // beat at 120 BPM and 44.1 kHz), and floating-point noise rounded each one to that frame or
@@ -255,11 +264,11 @@ function planRender(opts: RenderOptions, latency = 0): RenderPlan {
     const passes = 2 + Math.ceil(loopTailSeconds(opts) / loopSeconds);
     const keepFrom = lead + Math.round((passes - 1) * loopSeconds * sampleRate);
     const keepLength = Math.round(loopSeconds * sampleRate);
-    return { sampleRate, length: keepFrom + keepLength, keepFrom, keepLength, startAt, stopAt: startAt + passes * loopSeconds, passes };
+    return { sampleRate, length: keepFrom + keepLength + slack, keepFrom, keepLength, startAt, stopAt: startAt + passes * loopSeconds, passes };
   }
   const keepLength =
     ending === 'exact' ? Math.round(rangeSeconds * sampleRate) : Math.ceil((rangeSeconds + ringOutSeconds(opts.masterFx, opts.tracks, opts.bpm)) * sampleRate);
-  return { sampleRate, length: lead + keepLength, keepFrom: lead, keepLength, startAt, stopAt: startAt + rangeSeconds, passes: 1 };
+  return { sampleRate, length: lead + keepLength + slack, keepFrom: lead, keepLength, startAt, stopAt: startAt + rangeSeconds, passes: 1 };
 }
 
 /** The length of the file a render makes, in frames, and how many times the range plays in it. */
@@ -290,13 +299,41 @@ export function exportCues(opts: RenderOptions): WavCue[] {
 /**
  * Frames the master compressor and limiter delay the sound by. The compressor is a
  * DynamicsCompressorNode with a fixed look-ahead (measured: see compressorLatency.ts); the
- * look-ahead limiter (effects/limiter.ts) adds its own fixed delay, or, where AudioWorklets can't
- * run, the stand-in limiter (another compressor) adds the compressor's. Without allowing for it
- * every export came out late, out of step with the timeline and with stems that skip the chain.
+ * look-ahead limiter (effects/limiter.ts) adds its own fixed delay, or, where its AudioWorklet
+ * can't run or didn't load, the stand-in limiter (another compressor) adds the compressor's.
+ * Without allowing for it every export came out late, out of step with the timeline and with
+ * stems that skip the chain.
  */
+function masterLatencyWith(compressor: number, sampleRate: number, lookahead: boolean): number {
+  return compressor + (lookahead ? createLimiterKernel(sampleRate).latency : compressor);
+}
+
+/** Whether a render plans for the look-ahead limiter: where AudioWorklets exist (settleLatency corrects it if it doesn't load). */
+const expectsLookahead = () => typeof AudioWorkletNode !== 'undefined';
+
+/** The master section's latency a render is planned with (see masterLatencyWith). */
 async function masterChainLatency(sampleRate: number): Promise<number> {
+  return masterLatencyWith(await measureCompressorLatency(sampleRate), sampleRate, expectsLookahead());
+}
+
+/** Frames a plan with the master section keeps past its end, so settleLatency can move it either way. */
+async function latencySlack(sampleRate: number): Promise<number> {
   const compressor = await measureCompressorLatency(sampleRate);
-  return compressor + (typeof AudioWorkletNode !== 'undefined' ? createLimiterKernel(sampleRate).latency : compressor);
+  return Math.abs(masterLatencyWith(compressor, sampleRate, false) - masterLatencyWith(compressor, sampleRate, true));
+}
+
+/**
+ * The plan with its kept frames where the sound comes out with the limiter actually in place
+ * (`lookahead`: the look-ahead one, else the stand-in), once the render's chain is built: it was
+ * planned for the look-ahead limiter wherever AudioWorklets exist, but the worklet can still
+ * fail to load, and the stand-in delays the sound by another amount.
+ */
+async function settleLatency(plan: RenderPlan, lookahead: boolean): Promise<RenderPlan> {
+  if (lookahead === expectsLookahead()) return plan;
+  const compressor = await measureCompressorLatency(plan.sampleRate);
+  const shift = masterLatencyWith(compressor, plan.sampleRate, lookahead) - masterLatencyWith(compressor, plan.sampleRate, expectsLookahead());
+  const keepFrom = Math.max(0, Math.min(plan.length - plan.keepLength, plan.keepFrom + shift));
+  return { ...plan, keepFrom };
 }
 
 /** `promise`, or a rejection as soon as `signal` aborts. */
@@ -372,7 +409,7 @@ export async function renderStems(
     const samples = new Float32Array(await stem.samples.arrayBuffer());
     const channels = [samples.subarray(0, stem.length), samples.subarray(stem.length)];
     scale(channels, gain);
-    stems.push({ track: stem.track, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues, wholeFileLoop(opts, channels[0].length)) });
+    stems.push({ track: stem.track, wav: encode ? await encode(channels, sampleRate) : encodeChannels(channels, sampleRate, bitDepth, cues, wholeFileLoop(opts, channels[0].length), ditherSeedOf(stem.track.id)) });
   }
   return stems;
 }
@@ -625,6 +662,7 @@ async function sideBySideHelps(): Promise<boolean> {
 async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?: (fraction: number) => void): Promise<Rendered> {
   const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const latency = await masterChainLatency(sampleRate);
+  const slack = await latencySlack(sampleRate);
   // The lush reverb is an AudioWorklet, which would put every part on Chromium's one shared
   // worklet thread, and its slow drift runs only while it hears something, so copies of it in
   // the parts wouldn't add up to the one: the parts send what they'd feed it, and it plays once,
@@ -654,7 +692,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
           done[i] = f;
           report();
         };
-        return renderGraph({ ...opts, signal: stop.signal }, part, progress, { latency, reverbSends: lush }).catch((err: unknown) => {
+        return renderGraph({ ...opts, signal: stop.signal }, part, progress, { latency, slack, reverbSends: lush }).catch((err: unknown) => {
           stop.abort(err);
           throw err;
         });
@@ -663,7 +701,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   } finally {
     opts.signal?.removeEventListener('abort', cancel);
   }
-  const plan = results[0].plan;
+  let plan = results[0].plan;
   // The sum, in the first part's buffer (and the others let go of)
   const sum = results[0].rendered;
   for (let c = 0; c < sum.numberOfChannels; c++) {
@@ -693,6 +731,8 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
     await Promise.all([chain.inserts.ready(), chain.limiterReady, lush ? chain.busFx.ready : undefined]);
     return chain;
   });
+  // The sound comes out as late as the limiter actually in place makes it
+  plan = await settleLatency(plan, mix.lookahead());
   const source = native.createBufferSource();
   source.buffer = sum;
   const split = native.createChannelSplitter(sum.numberOfChannels);
@@ -759,7 +799,7 @@ async function renderGraph(
   opts: RenderOptions,
   sounding: Track[],
   onProgress?: (fraction: number) => void,
-  premaster?: { latency: number; reverbSends?: boolean }
+  premaster?: { latency: number; slack?: number; reverbSends?: boolean }
 ): Promise<{ rendered: AudioBuffer; plan: RenderPlan; reverbImpulse: AudioBuffer | undefined }> {
   // The buses these tracks play through come too (a stem of a bused track has its bus's sound),
   // each made before the tracks that play into it
@@ -778,7 +818,8 @@ async function renderGraph(
   // worked out over the whole song so a stem, or a part of a mix, lines up with the full mix
   const rate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const alignment = compensateTracks(opts.tracks, await measureCompressorLatency(rate));
-  const plan = planRender(opts, alignment.total + (premaster ? premaster.latency : opts.bypassMaster ? 0 : await masterChainLatency(rate)));
+  const withMaster = !premaster && !opts.bypassMaster;
+  let plan = planRender(opts, alignment.total + (premaster ? premaster.latency : withMaster ? await masterChainLatency(rate) : 0), premaster ? (premaster.slack ?? 0) : withMaster ? await latencySlack(rate) : 0);
   const { sampleRate, length } = plan;
   if (plan.keepLength < 1) throw new Error('the range is empty');
   const duration = length / sampleRate;
@@ -788,13 +829,17 @@ async function renderGraph(
 
   // Download the recordings the song plays first (shared with live playback, so usually instant):
   // each recorded instrument's for the notes it plays here (see songSamples.ts)
+  // A download that hangs gives up by itself (recordingStore.ts), and anything else that holds an
+  // instrument up (its kept copies, decoding) gives up after SAMPLE_WAIT_MS, naming the instrument
   for (const [key, loading] of songSampleLoads(tracks, clips)) {
+    const name = INSTRUMENTS[key].name;
     try {
-      await loading;
-    } catch {
-      throw new Error(`couldn't download the ${INSTRUMENTS[key].name} samples. Check your internet connection and try again.`);
+      await withTimeout(loading, SAMPLE_WAIT_MS, `the ${name} recordings took too long to download. Check your internet connection and try again.`, signal);
+    } catch (err) {
+      signal?.throwIfAborted();
+      if (err instanceof Error && err.message.startsWith(`the ${name} recordings`)) throw err;
+      throw new Error(`couldn't download the ${name} recordings. Check your internet connection and try again.`);
     }
-    signal?.throwIfAborted();
   }
   // ...and the sounds this render plays (audio clips, Slicer and Sampler tracks), at its sample rate
   await loadSounds(tracks, clips, startBar, endBar, sampleRate, renderTempo(opts));
@@ -816,6 +861,8 @@ async function renderGraph(
     finishedSources.delete(context);
     throw err;
   }
+  // The sound comes out as late as the limiter actually in place makes it
+  if (withMaster) plan = await settleLatency(plan, graph.lookahead);
   // After a cancel: schedule nothing more, and free the graph so the rest of the render (which
   // an OfflineAudioContext can't stop early) runs on silence and finishes at once
   const release = () => {
@@ -990,6 +1037,8 @@ async function renderGraph(
     transport.stop(plan.stopAt);
 
     return {
+      /** The look-ahead limiter is in place (not the stand-in), where the master section is */
+      lookahead: section ? section.lookahead() : expectsLookahead(),
       reverbImpulse: () => busFx.impulse(),
       dispose: () => {
         schedule.dispose();
@@ -1097,101 +1146,6 @@ export function encodeWav(audio: AudioBuffer, bitDepth: BitDepth = 16, cues: rea
 
 /** Loop points for a seamless loop render: the whole file loops (a 'smpl' chunk engines and samplers read). */
 export const wholeFileLoop = (opts: Pick<RenderOptions, 'ending'>, frames: number) => (opts.ending === 'seamless' ? { start: 0, end: frames } : undefined);
-
-export function encodeChannels(
-  data: Float32Array[],
-  sampleRate: number,
-  bitDepth: BitDepth,
-  cues: readonly WavCue[] = [],
-  /** Frames [start, end) the file loops (written as a 'smpl' chunk). */
-  loop?: { start: number; end: number }
-): Blob {
-  const channels = data.length;
-  const frames = data[0].length;
-  const float = bitDepth === 32;
-  const blockAlign = channels * (bitDepth / 8);
-  const dataSize = frames * blockAlign;
-  // Float WAVs need the extended 18-byte format chunk and a fact chunk (the frame count)
-  const formatSize = float ? 18 : 16;
-  const headerSize = 12 + 8 + formatSize + (float ? 12 : 0) + 8;
-  // Chunks after the audio (readers that expect the audio straight after the header still find
-  // it there). A chunk of odd length is padded to an even one before the next.
-  const cueBytes = cueChunks(cues);
-  const loopBytes = loop ? loopChunk(sampleRate, loop.start, loop.end) : new Uint8Array(0);
-  const trailer = new Uint8Array(cueBytes.length + loopBytes.length);
-  trailer.set(cueBytes);
-  trailer.set(loopBytes, cueBytes.length);
-  const pad = trailer.length ? dataSize & 1 : 0;
-  const view = new DataView(new ArrayBuffer(headerSize + dataSize + pad + trailer.length));
-
-  let offset = 0;
-  const text = (s: string) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i));
-  };
-  const u16 = (v: number) => {
-    view.setUint16(offset, v, true);
-    offset += 2;
-  };
-  const u32 = (v: number) => {
-    view.setUint32(offset, v, true);
-    offset += 4;
-  };
-
-  text('RIFF');
-  u32(headerSize - 8 + dataSize + pad + trailer.length);
-  text('WAVE');
-  text('fmt ');
-  u32(formatSize);
-  u16(float ? 3 : 1); // WAVE_FORMAT_IEEE_FLOAT or WAVE_FORMAT_PCM
-  u16(channels);
-  u32(sampleRate);
-  u32(sampleRate * blockAlign);
-  u16(blockAlign);
-  u16(bitDepth);
-  if (float) {
-    u16(0); // no extension
-    text('fact');
-    u32(4);
-    u32(frames);
-  }
-  text('data');
-  u32(dataSize);
-
-  // The dither's random numbers: a fixed sequence, so the same mix makes the same file
-  let seed = 0x9e3779b9;
-  const random = () => {
-    seed ^= seed << 13;
-    seed ^= seed >>> 17;
-    seed ^= seed << 5;
-    return (seed >>> 0) / 4294967296;
-  };
-  for (let i = 0; i < frames; i++) {
-    for (let c = 0; c < channels; c++) {
-      if (float) {
-        view.setFloat32(offset, data[c][i], true);
-        offset += 4;
-        continue;
-      }
-      const s = Math.max(-1, Math.min(1, data[c][i]));
-      if (bitDepth === 16) {
-        // TPDF dither (two random values, ±1 step in all): the rounding error becomes a steady,
-        // very quiet hiss instead of distortion that follows the music, which a fade or a soft
-        // reverb tail would otherwise end in. Digital silence stays silent.
-        const dither = s === 0 ? 0 : random() - random();
-        view.setInt16(offset, Math.max(-0x8000, Math.min(0x7fff, Math.round((s < 0 ? s * 0x8000 : s * 0x7fff) + dither))), true);
-        offset += 2;
-      } else {
-        const v = Math.round(s < 0 ? s * 0x800000 : s * 0x7fffff);
-        view.setUint8(offset, v & 0xff);
-        view.setUint8(offset + 1, (v >> 8) & 0xff);
-        view.setUint8(offset + 2, (v >> 16) & 0xff);
-        offset += 3;
-      }
-    }
-  }
-  new Uint8Array(view.buffer).set(trailer, offset + pad);
-  return new Blob([view], { type: 'audio/wav' });
-}
 
 /** Trigger a browser download for a Blob. */
 export function downloadBlob(blob: Blob, filename: string): void {
