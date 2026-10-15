@@ -451,3 +451,11 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 ## Waiting on the owner
 
 - Whether the new starters, chiptune sounds and the build-up & drop sound right.
+- **Remake the website's First Flight score** once the instrument updates are done (the owner asked
+  to hold it until then). The film is AI-generated (`scripts/guide-shots/trailer.webm` is a small
+  copy; the full 1280x720 one is in the owner's Higgsfield library). The score is
+  `site/video/first-flight.fledgetone.json` (117.76 BPM; cuts on bars 3, 5 and 7). To redo it: open
+  it in the studio, rework it, Export > Mixdown, WAV, Ring out; then put it on the film with the last
+  frame held while the chord rings, as `site/video/first-flight.mp4` (H.264 + AAC, faststart):
+  `ffmpeg -i film.mp4 -i song.wav -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=2.6,fade=t=out:st=16.4:d=1.2,format=yuv420p[v];[1:a]atrim=0:17.6,afade=t=out:st=16.2:d=1.4[a]" -map "[v]" -map "[a]" -c:v libx264 -crf 22 -c:a aac -b:a 192k -movflags +faststart -t 17.6 site/video/first-flight.mp4`.
+  Every picture or clip of the film carries an "AI-generated" note; the music doesn't need one.
