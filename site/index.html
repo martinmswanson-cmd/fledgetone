@@ -1,7 +1,8 @@
 <!doctype html>
 <!--
   fledgetone.com: the project's home page. Plain HTML and CSS, no build step: scripts/build-site.mjs
-  copies this folder next to the app, which is built into /app/ (see netlify.toml).
+  copies this folder next to the app, which is built into /app/ (see netlify.toml). The clips in
+  video/ are screen recordings of the app itself (H.264, no sound); main.js plays them on screen.
 -->
 <html lang="en">
 <head>
@@ -32,6 +33,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <script src="/main.js" defer></script>
 
   <script type="application/ld+json">
   {
@@ -58,10 +60,11 @@
         <span>Fledgetone</span>
       </a>
       <nav class="nav-links" aria-label="Sections">
+        <a href="#video">For video</a>
+        <a href="#games">For games</a>
         <a href="#features">Features</a>
         <a href="#open-source">Open source</a>
         <a href="#help">Get involved</a>
-        <a href="#credits">Credits</a>
       </nav>
       <div class="nav-cta">
         <a class="btn btn-ghost btn-sm" href="https://github.com/martinmswanson-cmd/fledgetone">
@@ -99,8 +102,9 @@
 
       <figure class="wrap shot shot-hero">
         <div class="shot-frame">
-          <img src="/img/timeline.webp" width="1600" height="1000" fetchpriority="high"
-               alt="The Fledgetone studio with the Boss Fight starter open: drums, taiko, timpani, brass and string tracks on an arrangement timeline, with the mixer below." />
+          <video class="clip" src="/video/hero.mp4" poster="/video/hero-poster.webp" width="1600" height="1000"
+                 muted loop playsinline preload="auto" data-autoplay
+                 aria-label="The Fledgetone studio playing the Boss Fight starter: the playhead runs across drums, taiko, timpani, brass and string tracks, with the mixer below."></video>
         </div>
       </figure>
 
@@ -112,6 +116,13 @@
       </div>
     </section>
 
+    <div class="ticker" aria-label="Exports to the web, Unity, Godot, FMOD Studio, Wwise, Premiere, DaVinci Resolve and Final Cut">
+      <div class="ticker-track" aria-hidden="true">
+        <span>Exports to</span><b>Web games</b><b>Unity</b><b>Godot</b><b>FMOD Studio</b><b>Wwise</b><b>Premiere</b><b>DaVinci Resolve</b><b>Final Cut</b><b>WAV &middot; MP3 &middot; Ogg</b><b>Stems</b><b>MP4</b><b>MusicXML</b>
+        <span>Exports to</span><b>Web games</b><b>Unity</b><b>Godot</b><b>FMOD Studio</b><b>Wwise</b><b>Premiere</b><b>DaVinci Resolve</b><b>Final Cut</b><b>WAV &middot; MP3 &middot; Ogg</b><b>Stems</b><b>MP4</b><b>MusicXML</b>
+      </div>
+    </div>
+
     <!-- Who it's for -->
     <section class="intro wrap">
       <p>
@@ -120,6 +131,79 @@
         for <strong>beginners who want something that sounds good on day one</strong>. Open a
         starter song, press Space, and start changing things.
       </p>
+    </section>
+
+    <!-- Showcase: scoring to picture -->
+    <section id="video" class="showcase" style="--c: var(--purple)" aria-labelledby="video-title">
+      <div class="wrap">
+        <div class="show-head reveal">
+          <p class="show-eyebrow">For video &middot; Score to picture</p>
+          <h2 id="video-title">Edit music the way you edit picture.</h2>
+          <p class="show-lede">
+            Drop in your cut and it lands on the timeline as a strip of frames, with a preview that
+            follows the playhead. Fledgetone finds the hard cuts, marks each one as a hit point, and
+            finds a tempo that puts every cut on a bar line.
+          </p>
+        </div>
+
+        <figure class="player reveal">
+          <div class="shot-frame">
+            <video class="clip" src="/video/score.mp4" poster="/video/score-poster.webp" width="1600" height="900"
+                   muted playsinline preload="none" data-autoplay data-steps
+                   aria-label="Scoring to a trailer: the video sits on its own lane with two hit points at its cuts; FIT, Hit points finds 137.14 BPM, the bars move so both cuts land on a bar line, and the song plays with the trailer in the preview window."></video>
+          </div>
+          <div class="steps" role="list" aria-label="What happens in the clip">
+            <button class="step" role="listitem" data-start="0">Your cut on the timeline<i></i></button>
+            <button class="step" role="listitem" data-start="1.2">FIT &rsaquo; Hit points<i></i></button>
+            <button class="step" role="listitem" data-start="3.9">Every cut on a bar line<i></i></button>
+            <button class="step" role="listitem" data-start="6.3">Plays in sync with the picture<i></i></button>
+            <span class="steps-head" aria-hidden="true"></span>
+          </div>
+        </figure>
+
+        <ul class="points reveal">
+          <li><strong>Timecode at your frame rate</strong>23.976, 24, 25, 29.97 (drop-frame too), 30 and 60 fps, with hit points locked to the frame.</li>
+          <li><strong>Cut to length</strong>Make 6, 15, 30, 60 and 90-second versions of a song that still end on the downbeat.</li>
+          <li><strong>Dip under dialogue</strong>It listens to the video for voices and writes volume dips under every line.</li>
+          <li><strong>Out to your editor</strong>Markers for Premiere, Resolve and Final Cut, or the finished music right on your MP4.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Showcase: game music -->
+    <section id="games" class="showcase" style="--c: var(--green)" aria-labelledby="games-title">
+      <div class="wrap">
+        <div class="show-head reveal">
+          <p class="show-eyebrow">For games &middot; Adaptive music</p>
+          <h2 id="games-title">Music that plays the game with you.</h2>
+          <p class="show-lede">
+            Every section of a song becomes a game state. Press <em>Try it in a game</em> and walk a
+            little robot around a real 3D level: the music explores with you, switches when the guard
+            spots you, builds as it closes in, and lands a stinger when you win.
+          </p>
+        </div>
+
+        <figure class="player reveal">
+          <div class="shot-frame">
+            <video class="clip" src="/video/game.mp4" poster="/video/game-poster.webp" width="1152" height="668"
+                   muted playsinline preload="none" data-autoplay data-steps
+                   aria-label="Try it in a game: a robot collects coins while the music plays its Phase 1 state; the guard spots it and the music switches to Phase 2 as intensity rises; the robot jumps on the guard and the music plays the Defeated state with a stinger."></video>
+          </div>
+          <div class="steps" role="list" aria-label="What happens in the clip">
+            <button class="step" role="listitem" data-start="0">Exploring &middot; Phase 1<i></i></button>
+            <button class="step" role="listitem" data-start="5.4">Spotted &middot; Phase 2, intensity up<i></i></button>
+            <button class="step" role="listitem" data-start="8.8">Guard beaten &middot; stinger<i></i></button>
+            <span class="steps-head" aria-hidden="true"></span>
+          </div>
+        </figure>
+
+        <ul class="points reveal">
+          <li><strong>States, stems and intensity</strong>Sections loop on their own; an Intensity slider builds stem groups up and down.</li>
+          <li><strong>Transitions and stingers</strong>A fill into the fight, a crossfade back out, stingers written in the song's key.</li>
+          <li><strong>Drop-in players</strong>A game kit with players and example scenes for the web, Unity and Godot.</li>
+          <li><strong>Middleware ready</strong>Packages for FMOD Studio and Wwise, with scripts that build the events for you.</li>
+        </ul>
+      </div>
     </section>
 
     <!-- Features: three big "tracks" -->
@@ -169,32 +253,11 @@
         </div></figure>
       </article>
 
-      <article class="track" style="--c: var(--green)">
-        <div class="track-copy">
-          <p class="track-id">03 &middot; Game</p>
-          <h3>Music that reacts to play</h3>
-          <p>
-            Each section of a song becomes a game state that loops on its own. An Intensity slider
-            builds stem groups up and down, transitions carry you between states, and stingers
-            land in key. Audition it like the game would, then export.
-          </p>
-          <ul class="ticks">
-            <li>Game kits with players for the web, Unity and Godot</li>
-            <li>Ready-made packages for FMOD Studio and Wwise</li>
-            <li>A sound effects maker for the rest of your game's audio</li>
-          </ul>
-        </div>
-        <figure class="shot"><div class="shot-frame">
-          <img src="/img/game.webp" width="1568" height="452" loading="lazy"
-               alt="The Game tab: states for Phase 1, Phase 2 and Defeated, intensity curves for the percussion and tension stems, stingers, and export buttons for a game kit and FMOD or Wwise." />
-        </div></figure>
-      </article>
-
       <!-- Smaller cards -->
       <div class="cards">
         <article class="card" style="--c: var(--purple)">
-          <h3>Score to picture</h3>
-          <p>Load a reference video, read timecode at any frame rate, mark hit points and let the tempo finder land the music on them. Cut 6 to 90-second versions and export the music onto the video.</p>
+          <h3>Sound effects maker</h3>
+          <p>Coins, jumps, sword swings, menu clicks, level-ups and ambience loops: about seventy kinds, layered and tweakable, ready to drop into your game.</p>
         </article>
         <article class="card" style="--c: var(--amber)">
           <h3>198 instruments</h3>
