@@ -1,6 +1,7 @@
 /**
  * The Track Inspector (the side panel): the selected track's instrument and its own panel (Slicer,
- * Drum Rack, Multi Sampler, Synth Designer, Sampler, Audio track), Expressive playing, the insert
+ * Drum Rack, Multi Sampler, Synth Designer, 808 designer, Sampler, Audio track), the heavy bass
+ * tools (Glide, Sub enhancer, kick clash check), Expressive playing, the insert
  * effects in chain order, sends to returns, and the Master tab.
  */
 import React, { useEffect, useRef } from 'react';
@@ -28,6 +29,7 @@ import { MultiPanel, RackPanel } from './SampleKitPanels';
 import { PeqPanel } from './PeqEditor';
 import { MbcPanel } from './MbcPanel';
 import { SynthPanel } from './SynthPanel';
+import { Bass808Panel, BassDrivePanel, GlidePanel, KickClashPanel, SubLayerPanel } from './BassPanels';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
 import { RecordedRoom, RoomStylePicker } from './RecordedRoom';
@@ -287,14 +289,19 @@ export const TrackInspector: React.FC = () => {
             {currentTrack.instrumentKey === 'drumRack' && <RackPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'multiSampler' && <MultiPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'synthDesigner' && <SynthPanel track={currentTrack} />}
+            {currentTrack.instrumentKey === 'bass808' && <Bass808Panel track={currentTrack} />}
+            <GlidePanel track={currentTrack} />
+            <SubLayerPanel track={currentTrack} />
+            {INSTRUMENTS[currentTrack.instrumentKey].category === 'Bass' && <KickClashPanel track={currentTrack} />}
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
             {/* Human works on the notes before the instrument plays them */}
             {!isAudioKind(currentTrack.instrumentKey) && !isMixTrack(currentTrack) && <HumanPanel track={currentTrack} />}
             {!isMixTrack(currentTrack) && <DuckProxyPanel track={currentTrack} />}
 
-            {/* Insert chain, in signal order: Distortion -> EQ -> Pro EQ -> Compressor -> Multiband -> Chorus -> Lo-fi -> Filter -> Gate -> Pump */}
+            {/* Insert chain, in signal order: Distortion -> Bass Drive -> EQ -> Pro EQ -> Compressor -> Multiband -> Chorus -> Lo-fi -> Filter -> Gate -> Pump */}
             <DistortionPanel track={currentTrack} />
+            {!isMixTrack(currentTrack) && <BassDrivePanel track={currentTrack} />}
 
             {/* 3-Band Parametric EQ Panel */}
             <div data-search="eq" className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">

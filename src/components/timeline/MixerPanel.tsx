@@ -62,7 +62,7 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
   const targets = busTargets(track, tracks);
   const returns = sendTargets(track, tracks);
   const selected = useTimelineStore((st) => st.selectedTrackId === track.id);
-  const inserts = (['human', 'distortion', 'peq', 'compressor', 'mbc', 'chorus', 'lofi', 'filter', 'echo', 'reverb', 'gate', 'pump'] as const).filter((k) => track.fx[k]?.on);
+  const inserts = (['human', 'distortion', 'bassDrive', 'peq', 'compressor', 'mbc', 'chorus', 'lofi', 'filter', 'echo', 'reverb', 'gate', 'pump'] as const).filter((k) => track.fx[k]?.on);
   const root = useRef<HTMLDivElement>(null);
   useSkipOffscreen(root);
   return (

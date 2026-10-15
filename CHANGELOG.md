@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## Unreleased
+
+- Heavy bass tools for trap, drill, rage, phonk and bass music: an **808 designer** on 808 Bass tracks (drive and clip character with a tone control, punch, slide time, decay, a top layer that phones and laptops can hear, tune to key, and six presets from clean and deep to blown out), a **Bass Drive** insert that distorts the mids and highs while the sub stays clean and mono, a **Sub enhancer** (a clean sine under a bass's notes), **Glide** for the monophonic synths, a kick and bass clash check with one-click **Duck under the kick**, and **Reese bass**, **Dark reese** and **Formant growl** presets in the Synth Designer (the Growl bass preset's low end is now centred).
+
 ## 2026.10.15-16 — Terms: not open source yet
 
 - The terms of use no longer describe Fledgetone as open source: it isn't yet. It's free to use for making your music, and the open-source parts and sounds inside it keep their own licences.

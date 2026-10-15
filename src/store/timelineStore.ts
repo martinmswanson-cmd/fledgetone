@@ -543,6 +543,8 @@ interface TimelineState {
   setTrackMulti: (trackId: string, multi: MultiSample | undefined, record?: boolean) => void;
   /** Change a Synth Designer track's patch (`record` false while a knob is dragged: checkpoint() first). */
   setTrackSynth: (trackId: string, synth: SynthPatch, record?: boolean) => void;
+  /** The heavy bass tools on a track: the 808 designer, legato glide, the Sub enhancer (undefined: off / back to the original). */
+  setTrackBass: (trackId: string, edit: Partial<Pick<Track, 'bass808' | 'glide' | 'subLayer'>>, record?: boolean) => void;
   /**
    * "Chop to Slicer": a Slicer track playing `slicer`, right after the audio clip's track, with a
    * clip at the audio clip's place that plays the slices in order (one undo step). Returns the
@@ -2087,6 +2089,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }),
 
     setTrackSynth: (trackId, synth, record = true) => updateTrack(trackId, () => ({ synth }), record),
+
+    setTrackBass: (trackId, edit, record = true) => updateTrack(trackId, () => edit, record),
 
     setTrackRack: (trackId, rack, record = true) => {
       for (const pad of rack?.pads ?? []) if (pad.soundId) ensureSound(pad.soundId);

@@ -232,6 +232,9 @@ export function syncLiveTracks(tracks: Track[]): void {
       // The Slicer follows its slices and modes without a rebuild
       lt.instrument.setSlicer?.(track.slicer);
       lt.instrument.setSynth?.(track.synth);
+      lt.instrument.setBass808?.(track.bass808);
+      lt.instrument.setGlide?.(track.glide);
+      lt.instrument.setSubLayer?.(track.subLayer);
       lt.instrument.setRack?.(track.rack);
       lt.instrument.setMulti?.(track.multi);
     }

@@ -1,13 +1,15 @@
 import * as Tone from 'tone';
 import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
+import type { GlideRef } from '../instruments';
+import { legatoGlide } from './synths';
 
 /**
  * Funk Slap Bass (Monophonic)
  * Tight slap/squelch bass with fast transient attack and resonant filter sweep.
  * Built by a factory so offline (WAV export) rendering can recreate it in its own context.
  */
-export function createBassVoice(output: Tone.InputNode) {
+export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
   const distortion = new Tone.Distortion(0.06);
 
   const synth = new Tone.MonoSynth({
@@ -41,6 +43,7 @@ export function createBassVoice(output: Tone.InputNode) {
 
   // Monophonic: overlapping bass clips could land two notes on one instant
   const safeTime = monotonicTime(synth.context);
+  const glideFor = legatoGlide(synth, glide);
 
   return {
     synth,
@@ -49,7 +52,9 @@ export function createBassVoice(output: Tone.InputNode) {
       distortion.dispose();
     },
     trigger: (note: string, duration: Tone.Unit.Time = '16n', time?: Tone.Unit.Time, velocity: number = 0.9) => {
-      synth.triggerAttackRelease(note, duration, safeTime(time), velocity);
+      const start = safeTime(time);
+      glideFor(start, start + synth.toSeconds(duration));
+      synth.triggerAttackRelease(note, duration, start, velocity);
     },
     // A key held on a MIDI keyboard: sounds until released
     attack: (note: string, time: number, velocity: number) => synth.triggerAttack(note, safeTime(time), velocity),

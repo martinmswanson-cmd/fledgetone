@@ -8,6 +8,8 @@ import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { frameSeconds, isDropFrame } from '../audio/timecode';
+import type { Bass808Settings } from './bass808';
+import { normalizeBassDrive, type BassDriveFx, type SubLayer } from './bassTools';
 
 export type { InstrumentKey };
 
@@ -164,6 +166,11 @@ export interface TrackFx {
     /** Notes a touch sharp or flat, up to about 12 cents (pitched instruments only) */
     pitch: number;
   };
+  /**
+   * Bass Drive: distortion on the mids and highs only, the sub below the crossover kept clean and
+   * mono (see bassTools.ts). Absent on tracks that never had it.
+   */
+  bassDrive?: BassDriveFx;
 }
 
 /** The shapes a parametric EQ band can take. */
@@ -281,6 +288,7 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
   const hum = obj(r.human);
   const peq = obj(r.peq);
   const mbc = obj(r.mbc);
+  const bassDrive = normalizeBassDrive(r.bassDrive);
   const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
   return {
     distortion: { on: dist.on === true, amount: num(dist.amount, d.distortion.amount, 0, 1) },
@@ -375,6 +383,7 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
         };
       }) as [MbcBand, MbcBand, MbcBand],
     },
+    ...(bassDrive ? { bassDrive } : {}),
   };
 }
 
@@ -563,6 +572,12 @@ export interface Track {
    * velocity in tone too. On for tracks made since it existed; older projects keep their sound.
    */
   expressive?: boolean;
+  /** An 808 Bass track's designer settings (see bass808.ts); absent: the original 808 */
+  bass808?: Bass808Settings;
+  /** A monophonic synth's slide time between overlapping notes, seconds (see bassTools.ts); absent: the instrument's own */
+  glide?: number;
+  /** The Sub enhancer: a clean sine under every note (see bassTools.ts); absent: off */
+  subLayer?: SubLayer;
 }
 
 /** What a clip launcher slot holds: a clip, without a place in the song. */

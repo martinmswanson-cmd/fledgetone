@@ -142,8 +142,26 @@ export const SYNTH_PRESETS: Array<{ name: string; patch: PatchEdit }> = [
     patch: { osc1: { octave: -1 }, osc2: { on: true, wave: 'square', octave: -1, fine: -8, level: 0.7 }, sub: 0.7, filter: { cutoff: 300, resonance: 6, envAmount: 0, keyTrack: 0 }, lfo: { target: 'filter', shape: 'sine', sync: '1/8', depth: 0.9 }, drive: 0.5, mono: true, amp: { attack: 0.003, sustain: 1, release: 0.08 }, level: -3 },
   },
   {
+    // Its unison voices stay centred (width 0): spread wide, its low end was a third stereo
     name: 'Growl bass',
-    patch: { osc1: { octave: -1, wave: 'square' }, osc2: { on: true, wave: 'sawtooth', octave: -1, semi: 7, level: 0.5 }, sub: 0.6, unison: { voices: 3, spread: 15 }, filter: { type: 'bandpass', cutoff: 700, resonance: 8, envAmount: 0 }, lfo: { target: 'filter', shape: 'triangle', sync: '1/16', depth: 0.8 }, drive: 0.85, mono: true, amp: { attack: 0.003, sustain: 1, release: 0.06 }, level: 3 },
+    patch: { osc1: { octave: -1, wave: 'square' }, osc2: { on: true, wave: 'sawtooth', octave: -1, semi: 7, level: 0.5 }, sub: 0.6, unison: { voices: 3, spread: 15, width: 0 }, filter: { type: 'bandpass', cutoff: 700, resonance: 8, envAmount: 0 }, lfo: { target: 'filter', shape: 'triangle', sync: '1/16', depth: 0.8 }, drive: 0.85, mono: true, amp: { attack: 0.003, sustain: 1, release: 0.06 }, level: 3 },
+  },
+  {
+    // Detuned saws beating slowly against each other (the movement), a sine sub under them, a
+    // warm ladder filter drifting open and closed over a bar. Kept mono (no unison width), so the
+    // low end stays centred
+    name: 'Reese bass',
+    patch: { osc1: { octave: -1 }, osc2: { on: true, wave: 'sawtooth', octave: -1, fine: 14, level: 0.8 }, sub: 0.55, unison: { voices: 3, spread: 18, width: 0 }, filter: { type: 'ladder', cutoff: 900, resonance: 2, envAmount: 0.6, keyTrack: 0.4 }, filterEnv: { attack: 0.01, decay: 0.6, sustain: 0.5, release: 0.2 }, amp: { attack: 0.006, sustain: 1, release: 0.12 }, lfo: { target: 'filter', shape: 'sine', sync: '1/1', depth: 0.3 }, drive: 0.35, drift: 0.5, mono: true, glide: 0.07, level: -3.5 },
+  },
+  {
+    // The reese pushed: wider detune, harder drive, the filter moving every half bar
+    name: 'Dark reese (heavy)',
+    patch: { osc1: { octave: -1 }, osc2: { on: true, wave: 'sawtooth', octave: -1, fine: -23, level: 0.9 }, sub: 0.6, unison: { voices: 5, spread: 30, width: 0 }, filter: { type: 'ladder', cutoff: 600, resonance: 3.5, envAmount: 0, keyTrack: 0.3 }, amp: { attack: 0.006, sustain: 1, release: 0.12 }, lfo: { target: 'filter', shape: 'triangle', sync: '1/2', depth: 0.45 }, drive: 0.75, drift: 0.6, mono: true, glide: 0.08, level: -3 },
+  },
+  {
+    // A vowel-shaped wave, bent by FM and swept through a resonant band-pass: it talks ("yoi", "wow")
+    name: 'Formant growl',
+    patch: { osc1: { wave: 'vowel', octave: -1 }, osc2: { on: true, wave: 'sawtooth', octave: -1, fine: 9, level: 0.45 }, fm: 0.3, sub: 0.6, filter: { type: 'bandpass', cutoff: 800, resonance: 5, envAmount: 0, keyTrack: 0 }, lfo: { target: 'filter', shape: 'triangle', sync: '1/8', depth: 0.75 }, drive: 0.9, mono: true, glide: 0.05, amp: { attack: 0.003, sustain: 1, release: 0.06 }, level: 6 },
   },
   { name: 'Sub bass', patch: { osc1: { wave: 'sine', octave: -1 }, sub: 0.3, filter: { cutoff: 400, envAmount: 0, keyTrack: 0 }, mono: true, glide: 0.04, amp: { attack: 0.004, sustain: 1, release: 0.1 }, level: 3.5 } },
   {

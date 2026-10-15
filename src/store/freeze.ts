@@ -59,8 +59,8 @@ export function freezeFingerprint(track: Track, all: { tracks: Track[]; clips: C
 }
 
 function fxPrint(fx: Track['fx']): Partial<Track['fx']> {
-  const { peq, mbc, ...rest } = fx;
-  return { ...rest, ...(peq?.on ? { peq } : {}), ...(mbc?.on ? { mbc } : {}) };
+  const { peq, mbc, bassDrive, ...rest } = fx;
+  return { ...rest, ...(peq?.on ? { peq } : {}), ...(mbc?.on ? { mbc } : {}), ...(bassDrive?.on ? { bassDrive } : {}) };
 }
 
 function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] }): string {
@@ -95,6 +95,9 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       ...(track.plugin ? { plugin: track.plugin } : {}),
       ...(track.pluginFx?.length ? { pluginFx: track.pluginFx } : {}),
       ...(track.expressive ? { expressive: true } : {}),
+      ...(track.bass808 ? { bass808: track.bass808 } : {}),
+      ...(track.glide !== undefined ? { glide: track.glide } : {}),
+      ...(track.subLayer ? { subLayer: track.subLayer } : {}),
       // (The newer inserts only while on, so tracks frozen before they existed stay frozen)
       fx: fxPrint(track.fx),
       eq: track.eq,

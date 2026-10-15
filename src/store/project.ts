@@ -7,6 +7,7 @@ import { TOTAL_BARS, isAutomationParam } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LauncherSlot, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
+import { parseBassFields } from './bassTools';
 import { normalizeMulti, normalizeRack } from './sampleKits';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, MAX_CLIP_SWING, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
@@ -331,6 +332,8 @@ function parseTrack(v: unknown): Track {
           },
         }
       : {}),
+    // Optional: the heavy bass tools (the 808 designer, glide, the Sub enhancer)
+    ...parseBassFields(v),
     // Optional: a dialogue / SFX proxy the other tracks duck under
     ...(isObj(v.duckProxy) && isNum(v.duckProxy.depth) ? { duckProxy: { depth: Math.max(1, Math.min(30, v.duckProxy.depth)) } } : {}),
   };

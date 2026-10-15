@@ -33,6 +33,11 @@ import { createPluginChain, createPluginInstrument } from './presets/wamPlugin';
 import type { SynthPatch } from '../store/synthPatch';
 import { createDesignedSynth } from './presets/designer';
 import { trackSeed } from './seededNoise';
+import type { Bass808Settings } from '../store/bass808';
+import type { SubLayer } from '../store/bassTools';
+import { createBass808Designer } from './presets/bass808Designer';
+import { createSubLayer } from './subLayer';
+import { isPitched } from '../store/keyChange';
 
 /** Drum note map (GM-style). Drum clips store one note name per voice. */
 export const DRUM_NOTES = {
@@ -118,6 +123,12 @@ export interface TrackInstrument {
   setSlicer?: (settings: SlicerSettings | undefined) => void;
   /** The Synth Designer's: its patch as it changes (from the next note), without a rebuild. */
   setSynth?: (patch: SynthPatch | undefined) => void;
+  /** The 808's: its designer settings as they change (undefined: the original 808), without a rebuild. */
+  setBass808?: (settings: Bass808Settings | undefined) => void;
+  /** A monophonic synth's legato glide time as it changes (undefined: its own), without a rebuild. */
+  setGlide?: (seconds: number | undefined) => void;
+  /** A pitched instrument's Sub enhancer as it changes (undefined: off), without a rebuild. */
+  setSubLayer?: (sub: SubLayer | undefined) => void;
   /** The Drum Rack's: its pads as they change, without a rebuild. */
   setRack?: (rack: DrumRack | undefined) => void;
   /** The Multi Sampler's: its sounds and shape as they change, without a rebuild. */
@@ -139,12 +150,38 @@ export interface InstrumentOptions {
   expressive?: boolean;
   /** The track's seed (trackSeed): with each note's time it picks the noise in its drums and synths, the same on every play */
   seed?: number;
+  /** The 808 designer's settings (Track.bass808) */
+  bass808?: Bass808Settings;
+  /** Legato glide seconds for a monophonic synth (Track.glide) */
+  glide?: number;
+  /** The Sub enhancer (Track.subLayer) */
+  subLayer?: SubLayer;
+  /** (Built by createInstrument) where a monophonic synth reads its glide, kept up to date by setGlide */
+  glideRef?: GlideRef;
+}
+
+/** A monophonic synth's legato glide, read at each note: seconds, or undefined for the synth's own. */
+export interface GlideRef {
+  seconds: number | undefined;
 }
 
 /** What a track's instrument is built with (its sound, slices, patch, plugins). */
-export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'expressive'> | null | undefined): InstrumentOptions {
+export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'expressive' | 'bass808' | 'glide' | 'subLayer'> | null | undefined): InstrumentOptions {
   if (!track) return {};
-  return { sample: track.sample, slicer: track.slicer, synth: track.synth, plugin: track.plugin, pluginFx: track.pluginFx, rack: track.rack, multi: track.multi, ...(track.expressive ? { expressive: true } : {}), seed: trackSeed(track.id) };
+  return {
+    sample: track.sample,
+    slicer: track.slicer,
+    synth: track.synth,
+    plugin: track.plugin,
+    pluginFx: track.pluginFx,
+    rack: track.rack,
+    multi: track.multi,
+    ...(track.expressive ? { expressive: true } : {}),
+    seed: trackSeed(track.id),
+    ...(track.bass808 ? { bass808: track.bass808 } : {}),
+    ...(track.glide !== undefined ? { glide: track.glide } : {}),
+    ...(track.subLayer ? { subLayer: track.subLayer } : {}),
+  };
 }
 
 /**
@@ -297,6 +334,51 @@ function mono(voice: MonoVoice): TrackInstrument {
   };
 }
 
+/**
+ * The 808: the designed one (bass808Designer.ts) while the track has designer settings, else the
+ * original. Switching between them needs no rebuild: the one let go fades and is disposed.
+ */
+function create808Instrument(output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
+  let legacy: TrackInstrument | null = null;
+  let designed: ReturnType<typeof createBass808Designer> | null = null;
+  let useDesigned = !!options.bass808;
+  const getLegacy = () => (legacy ??= mono(create808(output, !!options.expressive)));
+  const getDesigned = () => (designed ??= createBass808Designer(output, options.bass808));
+  if (useDesigned) getDesigned();
+  else getLegacy();
+  const retire = (inst: { releaseAll: () => void; dispose: () => void }) => {
+    inst.releaseAll();
+    setTimeout(() => inst.dispose(), 1000);
+  };
+  return {
+    play: (notes, time) => (useDesigned ? getDesigned().play(notes, time) : getLegacy().play(notes, time)),
+    noteOn: (n, time) => (useDesigned ? getDesigned().hold(n, time) : getLegacy().noteOn!(n, time)),
+    bend: (cents, time) => (useDesigned ? getDesigned().bend(cents, time) : getLegacy().bend?.(cents, time)),
+    setBass808: (settings) => {
+      if (!!settings !== useDesigned) {
+        useDesigned = !!settings;
+        if (useDesigned && legacy) {
+          retire(legacy);
+          legacy = null;
+        } else if (!useDesigned && designed) {
+          retire(designed);
+          designed = null;
+        }
+      }
+      if (settings) getDesigned().setSettings(settings);
+    },
+    releaseAll: () => {
+      legacy?.releaseAll();
+      designed?.releaseAll();
+    },
+    ready: Promise.resolve(),
+    dispose: () => {
+      legacy?.dispose();
+      designed?.dispose();
+    },
+  };
+}
+
 /** A pool synth (chords): a held key gets a voice of its own until it's let go. */
 function poly(
   synth: { attack: (note: string, t: number, v: number) => { release: (t: number) => void }; bend: (cents: number, t: number) => void },
@@ -324,10 +406,10 @@ const oneShot = (play: TrackInstrument['play']): TrackInstrument['noteOn'] => (n
  */
 export function createInstrument(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions = {}): TrackInstrument {
   const fx = options.pluginFx?.filter((p) => !p.bypass) ?? [];
-  if (!fx.length) return withDynamics(output, (to) => withTaper(key, buildGained(key, to, options)));
+  if (!fx.length) return withDynamics(output, (to) => withTaper(key, withBassTools(key, to, options)));
   // The track's plugin effects come first, between the instrument and its strip
   const chain = createPluginChain(output, fx);
-  const inst = withDynamics(chain.input, (to) => withTaper(key, buildGained(key, to, options)));
+  const inst = withDynamics(chain.input, (to) => withTaper(key, withBassTools(key, to, options)));
   return {
     ...inst,
     sendInput: chain.input,
@@ -419,6 +501,56 @@ function withTaper(key: InstrumentKey, inst: TrackInstrument): TrackInstrument {
   };
 }
 
+/**
+ * The heavy bass tools a track's instrument may carry: a legato glide it reads at each note (see
+ * GlideRef), and for a pitched instrument the Sub enhancer, a sine under its notes (subLayer.ts),
+ * which has no nodes while it's off.
+ */
+function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
+  const glideRef: GlideRef = { seconds: options.glide };
+  const inst = buildGained(key, output, { ...options, glideRef });
+  const withGlide: TrackInstrument = { ...inst, setGlide: (seconds) => void (glideRef.seconds = seconds) };
+  if (!isPitched(key)) return withGlide;
+  const sub = createSubLayer(output, options.subLayer);
+  const glide = () => glideRef.seconds ?? options.bass808?.glide;
+  return {
+    ...withGlide,
+    play: (notes, time) => {
+      inst.play(notes, time);
+      sub.play(notes, time, glide());
+    },
+    ...(inst.noteOn
+      ? {
+          noteOn: (n: PlayableNote, time: number) => {
+            const letGo = inst.noteOn!(n, time);
+            const subGo = sub.hold(n, time, glide());
+            return (at: number) => {
+              letGo(at);
+              subGo(at);
+            };
+          },
+        }
+      : {}),
+    ...(inst.noteVoice
+      ? {
+          noteVoice: (n: PlayableNote, time: number) => {
+            sub.play([n], time, glide());
+            return inst.noteVoice!(n, time);
+          },
+        }
+      : {}),
+    setSubLayer: sub.set,
+    releaseAll: () => {
+      inst.releaseAll();
+      sub.releaseAll();
+    },
+    dispose: () => {
+      inst.dispose();
+      sub.dispose();
+    },
+  };
+}
+
 function buildGained(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
   const gain = INSTRUMENTS[key].gain;
   if (!gain) return buildInstrument(key, output, options);
@@ -476,15 +608,15 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     case 'drumMachine':
       return synthKit(createDrumMachine(output, options.seed), output, !!options.expressive, options.seed);
     case 'bass': {
-      const bass = createBassVoice(output);
+      const bass = createBassVoice(output, options.glideRef);
       return mono({ ...bass, releaseAll: () => bass.synth.triggerRelease() });
     }
     case 'subBass':
-      return mono(createSubBass(output));
+      return mono(createSubBass(output, options.glideRef));
     case 'bass808':
-      return mono(create808(output, !!options.expressive));
+      return create808Instrument(output, options);
     case 'lead':
-      return mono(createLead(output));
+      return mono(createLead(output, options.glideRef));
     case 'keys': {
       const keys = createKeysVoice(output);
       return poly(keys, {
@@ -516,7 +648,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     case 'growlBass':
     case 'reeseBass': {
       const create = key === 'wobbleBass' ? createWobbleBass : key === 'growlBass' ? createGrowlBass : createReeseBass;
-      const bass = create(output);
+      const bass = create(output, options.glideRef);
       // Monophonic: the loudest note at each tick wins. A held key is a long note let go early.
       return {
         play: (notes, time) => bass.trigger(loudestNote(notes), time),

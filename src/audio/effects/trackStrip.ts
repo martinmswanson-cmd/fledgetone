@@ -17,6 +17,7 @@ import { smoothSet } from './smoothParam';
 import { createDelayLink, fixedDelay, glidingDelay, type DelayLink } from './delayLink';
 import { glideAt, planGlide, type Glide } from '../delayGlide';
 import type { PathDelays } from '../delayCompensation';
+import { createBassDrive, type BassDriveUnit } from './bassDrive';
 import {
   atControlTime,
   createLightChorus,
@@ -42,7 +43,7 @@ import {
 
 /**
  * One mixer channel per track:
- *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Lo-fi -> Filter -> Delay
+ *   input -> Distortion -> Bass Drive -> EQ3 -> Compressor -> makeup gain -> Chorus -> Lo-fi -> Filter -> Delay
  *         -> Reverb -> Gate
  *         -> Pump -> (Volume lane) -> (alignment delay) -> solo -> pan -> fader -> level (Intensity, mute)
  *   level -> duck -> (dry delay) -> master bus, plus post-fader sends to the shared reverb and
@@ -414,6 +415,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   const spectrumTap = screenTap(4096, 0.75);
 
   let distortion: LightDistortion | null = null;
+  let bassDrive: BassDriveUnit | null = null;
   let eq: LightEq3 | null = null;
   let peq: LightPeq | null = null;
   let mbc: LightMbc | null = null;
@@ -574,6 +576,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     leaving.push(...retired);
     const next: Insert[] = [];
     if (distortion) next.push(distortion);
+    if (bassDrive) next.push(bassDrive);
     if (eq) next.push(eq);
     if (peq) next.push(peq);
     if (compressorUnit) next.push(compressorUnit);
@@ -949,6 +952,14 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         distortion = null;
       }
 
+      if (fx.bassDrive?.on) {
+        if (bassDrive) bassDrive.set(fx.bassDrive, ramp);
+        else bassDrive = createBassDrive(fx.bassDrive);
+      } else if (bassDrive) {
+        retired.push(bassDrive);
+        bassDrive = null;
+      }
+
       const eqLanes = owned.has('eqLow') || owned.has('eqMid') || owned.has('eqHigh');
       if (bands.low !== 0 || bands.mid !== 0 || bands.high !== 0 || eqLanes) {
         if (!eq) version++;
@@ -1208,7 +1219,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       dryLink.dispose();
       sends.forEach((x) => x.out.dispose());
       tailDelay?.dispose();
-      [...leaving, distortion, eq, peq, mbc, compressorUnit, chorus, lofi, filter, echo, reverb, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend, ...[...sends.values()].map((x) => x.gain)].forEach((n) => n?.dispose());
+      [...leaving, distortion, bassDrive, eq, peq, mbc, compressorUnit, chorus, lofi, filter, echo, reverb, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend, ...[...sends.values()].map((x) => x.gain)].forEach((n) => n?.dispose());
       [barrier, left, split, right, merge, far?.shelf, far?.trim].forEach((n) => n?.disconnect());
     },
   };

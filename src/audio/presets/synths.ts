@@ -8,6 +8,7 @@ import { monotonicTime } from './monotonic';
 import { createVoicePool } from './poly';
 import { noiseKey } from '../seededNoise';
 import { seedToneNoise } from '../toneFixes';
+import type { GlideRef } from '../instruments';
 
 /**
  * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
@@ -63,8 +64,23 @@ export function createWavetable(output: Tone.InputNode) {
   };
 }
 
+/**
+ * Legato glide on a Tone monophonic synth (Track.glide): before each note, its portamento is set to
+ * the glide when the note starts before the last one ended, and to `own` (the synth's usual
+ * portamento) otherwise. With no glide set it keeps `own` throughout, as before.
+ */
+export function legatoGlide(synth: { portamento: Tone.Unit.Time }, glide: GlideRef | undefined, own = 0) {
+  let soundingUntil = -Infinity;
+  return (start: number, end: number) => {
+    const legato = start < soundingUntil - 0.001;
+    soundingUntil = end;
+    const seconds = glide?.seconds;
+    synth.portamento = seconds === undefined ? own : legato ? seconds : 0;
+  };
+}
+
 /** Clean, deep sine sub-bass (monophonic). */
-export function createSubBass(output: Tone.InputNode) {
+export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
   const synth = new Tone.MonoSynth({
     volume: 0,
     oscillator: { type: 'sine' },
@@ -73,9 +89,13 @@ export function createSubBass(output: Tone.InputNode) {
     envelope: { attack: 0.008, decay: 0.3, sustain: 0.85, release: 0.25 },
   }).connect(output);
   const safeTime = monotonicTime(synth.context);
+  const glideFor = legatoGlide(synth, glide, 0);
   return {
-    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) =>
-      synth.triggerAttackRelease(note, duration, safeTime(time), velocity),
+    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
+      const start = safeTime(time);
+      glideFor(start, start + synth.toSeconds(duration));
+      synth.triggerAttackRelease(note, duration, start, velocity);
+    },
     ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
     dispose: () => synth.dispose(),
@@ -164,7 +184,7 @@ export function create808(output: Tone.InputNode, modern = false) {
 }
 
 /** Analog-style lead: detuned saws, filter envelope and a short glide between notes. */
-export function createLead(output: Tone.InputNode) {
+export function createLead(output: Tone.InputNode, glide?: GlideRef) {
   const synth = new Tone.MonoSynth({
     volume: -8,
     portamento: 0.035,
@@ -174,9 +194,13 @@ export function createLead(output: Tone.InputNode) {
     envelope: { attack: 0.01, decay: 0.2, sustain: 0.75, release: 0.25 },
   }).connect(output);
   const safeTime = monotonicTime(synth.context);
+  const glideFor = legatoGlide(synth, glide, 0.035);
   return {
-    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) =>
-      synth.triggerAttackRelease(note, duration, safeTime(time), velocity),
+    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
+      const start = safeTime(time);
+      glideFor(start, start + synth.toSeconds(duration));
+      synth.triggerAttackRelease(note, duration, start, velocity);
+    },
     ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
     dispose: () => synth.dispose(),

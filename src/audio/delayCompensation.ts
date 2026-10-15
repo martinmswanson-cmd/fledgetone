@@ -19,6 +19,9 @@ import type { Track } from '../store/timelineTypes';
 import { COMPRESSED_SHAPINGS, INSTRUMENTS } from './instrumentCatalog';
 import { busOf, isBus, isReturn, liveSends } from '../store/buses';
 
+/** Frames the Bass Drive insert delays a track by (its 4x oversampled shaper: see effects/bassDrive.ts). */
+export const BASS_DRIVE_FRAMES = 192;
+
 /** One strip of the mix, for compensateDelays. */
 export interface MixNode {
   id: string;
@@ -110,7 +113,7 @@ export function mixNodes(tracks: readonly Track[], compressorFrames: number): Mi
     const bus = busOf(track, tracks);
     return {
       id: track.id,
-      own: trackCompressors(track) * compressorFrames,
+      own: trackCompressors(track) * compressorFrames + (track.fx.bassDrive?.on ? BASS_DRIVE_FRAMES : 0),
       source: !isBus(track) && !isReturn(track),
       out: bus ? bus.id : null,
       sends: liveSends(track, tracks).map((s) => s.to),
