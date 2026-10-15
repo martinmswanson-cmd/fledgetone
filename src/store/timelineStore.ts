@@ -86,6 +86,7 @@ import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, Inst
 import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
+import type { DrumDesign } from './drumDesign';
 import { durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
@@ -543,6 +544,8 @@ interface TimelineState {
   setTrackMulti: (trackId: string, multi: MultiSample | undefined, record?: boolean) => void;
   /** Change a Synth Designer track's patch (`record` false while a knob is dragged: checkpoint() first). */
   setTrackSynth: (trackId: string, synth: SynthPatch, record?: boolean) => void;
+  /** A Designed Kit's drum sounds (see drumDesign.ts); `record`: its own undo step (a slider records once per drag itself). */
+  setTrackDrumDesign: (trackId: string, design: DrumDesign | undefined, record?: boolean) => void;
   /**
    * "Chop to Slicer": a Slicer track playing `slicer`, right after the audio clip's track, with a
    * clip at the audio clip's place that plays the slices in order (one undo step). Returns the
@@ -720,7 +723,7 @@ interface TimelineState {
   /** Set how fast a Wobble / Growl Bass clip wobbles (undoable). */
   setClipWobble: (clipId: string, wobble: WobbleRate) => void;
   /** Give a clip its own swing, or (null) let it follow the song's (undoable). */
-  setClipGroove: (clipId: string, groove: ClipGroove | null) => void;
+  setClipGroove: (clipId: string, groove: ClipGroove | null, record?: boolean) => void;
   /** Add notes to a clip (undoable). Returns the new note ids. */
   addNotes: (clipId: string, notes: Omit<NoteEvent, 'id'>[]) => string[];
   /** Replace a clip's notes without recording history (drag gestures checkpoint() once first). */
@@ -2087,6 +2090,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }),
 
     setTrackSynth: (trackId, synth, record = true) => updateTrack(trackId, () => ({ synth }), record),
+    setTrackDrumDesign: (trackId, drumDesign, record = true) => updateTrack(trackId, () => ({ drumDesign }), record),
 
     setTrackRack: (trackId, rack, record = true) => {
       for (const pad of rack?.pads ?? []) if (pad.soundId) ensureSound(pad.soundId);
@@ -2997,12 +3001,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         return { clips: s.clips.map((c) => (c === clip ? { ...c, wobble } : c)), ...pushPast(s) };
       }),
 
-    setClipGroove: (clipId, groove) =>
+    setClipGroove: (clipId, groove, record = true) =>
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip || JSON.stringify(clip.groove ?? null) === JSON.stringify(groove)) return s;
         const { groove: _old, ...rest } = clip;
-        return { clips: s.clips.map((c) => (c === clip ? (groove ? { ...rest, groove } : rest) : c)), ...pushPast(s) };
+        return { clips: s.clips.map((c) => (c === clip ? (groove ? { ...rest, groove } : rest) : c)), ...(record ? pushPast(s) : {}) };
       }),
 
     addNotes: (clipId, notes) => {

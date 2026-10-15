@@ -8,6 +8,14 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## Unreleased
+
+- **Drum Designer**: a new **Designed Kit** whose every drum you make yourself, synthesized: kicks (punch, pitch sweep, decay, distortion), snares (tone, noise, snap, body), claps (bursts, spread, tail), hats (metal, color, decay), rims, toms, shakers and cowbells, two layers each, with 30 presets named by sound (hard trap kick, punchy drill snare, crisp clap...). Saved with the project; plays the same live and in exports.
+- **Hat roll painter** (ROLL… in the piano roll): turn a hat note or a span into a roll at 1/16, 1/16 triplet, 1/32, 1/32 triplet, 1/64 or a stutter, its velocity rising, falling or swelling and its pitch climbing like drill hats.
+- **Swing per drum** (GROOVE… in a drum clip's piano roll): swing the hats while the kick and snare stay straight, with groove templates (straight, light swing, heavy swing, lazy, pushed) that set each row's timing and velocity.
+- **Note repeat** for finger drumming (MIDI popover): hold a pad and it repeats at 1/8, 1/16, 1/32 or a triplet rate, on the song's grid, its loudness following the pad's pressure; recorded hit by hit.
+- Changing a clip's swing (FEEL) while the song plays is now heard at once, and a frozen track follows a change of its clips' swing or a note's own expression.
+
 ## 2026.10.15-16 — Terms: not open source yet
 
 - The terms of use no longer describe Fledgetone as open source: it isn't yet. It's free to use for making your music, and the open-source parts and sounds inside it keep their own licences.

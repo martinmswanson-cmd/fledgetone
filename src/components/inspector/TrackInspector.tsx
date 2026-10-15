@@ -27,6 +27,7 @@ import { SlicerPanel } from './SlicerPanel';
 import { MultiPanel, RackPanel } from './SampleKitPanels';
 import { PeqPanel } from './PeqEditor';
 import { MbcPanel } from './MbcPanel';
+import { DrumDesignPanel } from './DrumDesignPanel';
 import { SynthPanel } from './SynthPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
@@ -287,6 +288,7 @@ export const TrackInspector: React.FC = () => {
             {currentTrack.instrumentKey === 'drumRack' && <RackPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'multiSampler' && <MultiPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'synthDesigner' && <SynthPanel track={currentTrack} />}
+            {currentTrack.instrumentKey === 'designedKit' && <DrumDesignPanel track={currentTrack} />}
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
             {/* Human works on the notes before the instrument plays them */}

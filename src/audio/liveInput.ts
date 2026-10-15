@@ -2,7 +2,9 @@ import { liveMix } from './engine';
 import { getLiveInstrument } from './liveTracks';
 import { DRUM_NOTES, safely } from './instruments';
 import type { NoteOff, TrackInstrument, VoiceControl } from './instruments';
-import { isDrumKind, isMixKind, isRackKind } from './instrumentCatalog';
+import { isDrumKind, isMixKind, isRackKind, isSlicerKind } from './instrumentCatalog';
+import { noteRepeatOff, noteRepeatOn, noteRepeatPressure, stopNoteRepeats } from './noteRepeat';
+import { liveTransport } from './liveContext';
 import { heardTime, outputLatencySeconds } from './latency';
 import { decodeMidi, midiNoteLabel, midiNoteName, MPE_BEND_RANGE_CENTS, PIANO_OCTAVE_KEYS, PITCH_BEND_RANGE_CENTS, pianoKeyNote } from './midi';
 import type { MidiMessage } from './midi';
@@ -121,9 +123,24 @@ export function playMidi(message: MidiMessage, heard: number): void {
         }
       }
       recorded = { ...message, name };
+      // Note repeat: a held pad on a kit, the Drum Rack or the Slicer plays again at the rate until let go
+      const rate = useMidiStore.getState().noteRepeat;
+      if (rate !== 'off' && track && instrument && (isDrumKind(track.instrumentKey) || isRackKind(track.instrumentKey) || isSlicerKind(track.instrumentKey))) {
+        noteRepeatOn({
+          midi: message.note,
+          name,
+          trackId: track.id,
+          rate,
+          velocity: message.velocity,
+          struckAt: now,
+          struckTick: liveTransport.state === 'started' ? liveTransport.getTicksAtTime(heard) : null,
+          now: liveNow,
+        });
+      }
       break;
     }
     case 'noteOff': {
+      noteRepeatOff(message.note);
       if (message.channel !== undefined && mpeNotes.get(message.channel)?.note === message.note) mpeNotes.delete(message.channel);
       const off = held.get(message.note);
       if (!off) break;
@@ -153,6 +170,8 @@ export function playMidi(message: MidiMessage, heard: number): void {
       break;
     }
     case 'pressure': {
+      // A repeating pad's pressure sets its repeats' loudness (channel pressure: every pad's)
+      noteRepeatPressure(message.note, message.value);
       const own = message.note !== undefined ? [...mpeNotes.values()].find((m) => m.note === message.note) : message.channel ? mpeNotes.get(message.channel) : undefined;
       if (!own) break;
       if (own.voice) safely(() => own.voice!.pressure(message.value, now));
@@ -176,6 +195,7 @@ export function playMidi(message: MidiMessage, heard: number): void {
 
 /** End every note being played live (Stop, a window losing focus, a panic). */
 export function releaseLiveNotes(): void {
+  stopNoteRepeats();
   const now = liveNow();
   for (const off of held.values()) safely(() => off(now));
   for (const off of sustained.values()) safely(() => off(now));

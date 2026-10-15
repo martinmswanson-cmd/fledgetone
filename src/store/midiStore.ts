@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { DEFAULT_PIANO_OCTAVE, PIANO_OCTAVE_MAX, PIANO_OCTAVE_MIN } from '../audio/midi';
+import { isNoteRepeat, type NoteRepeatSetting } from './noteRepeat';
 
 /**
  * MIDI input state for the MIDI popover: whether the browser gave the app its MIDI devices,
@@ -42,6 +43,9 @@ interface MidiState {
   /** An MPE keyboard: each note on its own channel, whose bend and pressure move only that note */
   mpe: boolean;
   setMpe: (on: boolean) => void;
+  /** Note repeat: a held drum pad plays again at this rate (see noteRepeat.ts), or 'off' */
+  noteRepeat: NoteRepeatSetting;
+  setNoteRepeat: (rate: NoteRepeatSetting) => void;
 
   setSupport: (support: MidiSupport) => void;
   setInputs: (inputs: MidiInputInfo[]) => void;
@@ -60,6 +64,7 @@ interface MidiPrefs {
   /** The user connected MIDI before: ask the browser for the devices again at startup. */
   connected: boolean;
   mpe?: boolean;
+  noteRepeat?: NoteRepeatSetting;
 }
 
 export function readMidiPrefs(): MidiPrefs {
@@ -73,6 +78,7 @@ export function readMidiPrefs(): MidiPrefs {
       octave: typeof r.octave === 'number' ? Math.max(PIANO_OCTAVE_MIN, Math.min(PIANO_OCTAVE_MAX, Math.round(r.octave))) : d.octave,
       connected: r.connected === true,
       mpe: r.mpe === true,
+      ...(isNoteRepeat(r.noteRepeat) && r.noteRepeat !== 'off' ? { noteRepeat: r.noteRepeat } : {}),
     };
   } catch {
     return d;
@@ -90,7 +96,7 @@ export function writeMidiPrefs(prefs: MidiPrefs): void {
 const prefs = readMidiPrefs();
 
 export const useMidiStore = create<MidiState>((set, get) => {
-  const remember = () => writeMidiPrefs({ inputId: get().inputId, octave: get().octave, connected: get().support === 'ready', mpe: get().mpe });
+  const remember = () => writeMidiPrefs({ inputId: get().inputId, octave: get().octave, connected: get().support === 'ready', mpe: get().mpe, noteRepeat: get().noteRepeat });
   return {
     support: typeof navigator !== 'undefined' && 'requestMIDIAccess' in navigator ? 'unknown' : 'unsupported',
     inputs: [],
@@ -102,6 +108,11 @@ export const useMidiStore = create<MidiState>((set, get) => {
     mpe: prefs.mpe === true,
     setMpe: (on) => {
       set({ mpe: on });
+      remember();
+    },
+    noteRepeat: prefs.noteRepeat ?? 'off',
+    setNoteRepeat: (noteRepeat) => {
+      set({ noteRepeat });
       remember();
     },
 

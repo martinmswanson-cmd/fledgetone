@@ -44,6 +44,8 @@ export const INSTRUMENT_KEYS = [
   'fx',
   // a synth you design
   'synthDesigner',
+  // drums you design
+  'designedKit',
   // the rest of the General MIDI set: more keys, leads, pads, guitars, basses, winds, percussion, sound effects
   'brightPiano', 'electricGrand', 'honkyTonk', 'fmPiano', 'clavinet', 'percussiveOrgan', 'reedOrgan', 'squareLead',
   'sawLead', 'calliope', 'chiffLead', 'charang', 'voiceLead', 'fifthsLead', 'bassLead', 'synthBrass',
@@ -447,6 +449,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   // Drums & Percussion
   drums: { key: 'drums', name: 'Drums', blurb: 'Analog groove kit', color: '#f59e0b', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
   drumMachine: { key: 'drumMachine', name: 'Drum Machine', blurb: '808-style boom kit', color: '#ef4444', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
+  designedKit: { key: 'designedKit', name: 'Designed Kit', blurb: 'Drums you design: hard kicks, snares, claps, hats and percs (Drum Designer)', color: '#dc2626', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
   taiko: { key: 'taiko', name: 'Taiko Drums', blurb: 'Big Japanese drums', color: '#b91c1c', category: 'Drums & Percussion', kind: 'sampled', range: [36, 72], samples: gm('taiko_drum', 36, 72, 4, 1.5), gain: 9 },
 
   // Bass

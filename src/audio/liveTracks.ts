@@ -234,6 +234,7 @@ export function syncLiveTracks(tracks: Track[]): void {
       lt.instrument.setSynth?.(track.synth);
       lt.instrument.setRack?.(track.rack);
       lt.instrument.setMulti?.(track.multi);
+      lt.instrument.setDrumDesign?.(track.drumDesign);
     }
     lt.applied = view;
     // A silent track's notes are skipped rather than played into a muted channel (or bus), saving CPU

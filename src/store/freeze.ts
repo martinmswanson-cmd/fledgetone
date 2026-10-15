@@ -40,7 +40,9 @@ const clipContent = (c: Clip) => ({
   lengthBars: c.lengthBars,
   wobble: c.wobble,
   audio: c.audio,
-  notes: c.notes.map((n) => [n.note, n.startOffset, n.duration, n.velocity]),
+  // (A note's own expression and the clip's groove only when present, so freezes made before they counted stay current)
+  notes: c.notes.map((n) => (n.expr ? [n.note, n.startOffset, n.duration, n.velocity, n.expr] : [n.note, n.startOffset, n.duration, n.velocity])),
+  ...(c.groove ? { groove: c.groove } : {}),
   // (Only when present, so freezes made before these existed stay current)
   ...(c.expression ? { expression: c.expression } : {}),
   ...(c.takes?.length ? { comp: c.comp, takes: c.takes.map((t) => t.audio ?? null) } : {}),
@@ -92,6 +94,7 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       synth: track.synth,
       ...(track.rack ? { rack: track.rack } : {}),
       ...(track.multi ? { multi: track.multi } : {}),
+      ...(track.drumDesign ? { drumDesign: track.drumDesign } : {}),
       ...(track.plugin ? { plugin: track.plugin } : {}),
       ...(track.pluginFx?.length ? { pluginFx: track.pluginFx } : {}),
       ...(track.expressive ? { expressive: true } : {}),
