@@ -250,6 +250,18 @@ export const Timeline: React.FC = () => {
   // A track just added (or selected from elsewhere) is scrolled into view
   const trackCount = useTimelineStore((s) => s.tracks.length);
   const selectedTrack = useTimelineStore((s) => s.selectedTrackId);
+  // A track added: the timeline grows just enough to show it (the panels under it move down with it),
+  // up to most of the window, after which the new track is scrolled to instead
+  const shownCount = useRef(trackCount);
+  useLayoutEffect(() => {
+    const added = trackCount > shownCount.current;
+    shownCount.current = trackCount;
+    const content = contentRef.current?.offsetHeight ?? 0;
+    const { timelineHeight, setTimelineHeight } = useUiStore.getState();
+    if (!added || content <= timelineHeight) return;
+    const roomy = Math.max(timelineHeight, Math.round(window.innerHeight * 0.75));
+    setTimelineHeight(Math.min(content, roomy));
+  }, [trackCount]);
   useEffect(() => {
     const lane = selectedTrack ? document.querySelector<HTMLElement>(`[data-lane="${CSS.escape(selectedTrack)}"]`) : null;
     if (!lane) return;

@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-5 — Timeline grows with new tracks
+
+- Adding an instrument grows the timeline just enough to show its track, moving the panels below down with it, instead of hiding it below.
+
 ## 2026.10.15-4 — Engine polish 2
 
 - The timeline resize bar now really changes the timeline's height and moves the Mixer and Instruments panel down with it, whatever the song's length.
