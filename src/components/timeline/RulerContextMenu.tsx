@@ -10,6 +10,7 @@ import { songMeterOf, songTempo, useTimelineStore } from '../../store/timelineSt
 import { barToSeconds, formatBarsBeats, formatRulerTime } from '../../audio/transport';
 import { formatBarCount } from '../../store/timelineTypes';
 import { MenuItem, MenuNotice } from './ClipContextMenu';
+import { openArrange } from './arrangeDialogStore';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
 import type { MenuItemProps } from './ClipContextMenu';
 
@@ -120,6 +121,16 @@ export const RulerContextMenu: React.FC<{ menu: RulerMenuState; onClose: () => v
       shortcut: `bar ${Math.round(menu.bar)}`,
       icon: <Zap className="w-3.5 h-3.5" />,
       onClick: run(() => s.addBuildAndDrop(menu.bar)),
+    },
+    {
+      key: 'arrange',
+      label: 'Drop, stop or beat switch here…',
+      shortcut: 'arrange',
+      icon: <Zap className="w-3.5 h-3.5" />,
+      onClick: () => {
+        onClose();
+        openArrange('drops', Math.round(menu.bar));
+      },
     },
     ...KEY_CHANGES.map(([semitones, label], i) => ({
       key: `key${semitones}`,

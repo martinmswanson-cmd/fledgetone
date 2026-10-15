@@ -31,6 +31,7 @@ import { ChopToSlicerDialog } from './ChopToSlicerDialog';
 import { VariationsDialog } from './VariationsDialog';
 import { TuneDialog } from './TuneDialog';
 import { SmartDialog } from './SmartDialog';
+import { ArrangeDialog } from './ArrangeDialog';
 import { NewAudioTrackDrop } from './NewAudioTrackDrop';
 import { RulerContextMenu } from './RulerContextMenu';
 import type { RulerMenuState } from './RulerContextMenu';
@@ -516,6 +517,7 @@ export const Timeline: React.FC = () => {
           <TuneDialog clipId={tuneClipId} onClose={() => useUiStore.getState().setTuneClip(null)} />
         ))}
       <SmartDialog />
+      <ArrangeDialog />
       {takesClipId && <TakesDialog clipId={takesClipId} onClose={() => useUiStore.getState().setTakesClip(null)} />}
       {pluginBrowser && (
         <PluginBrowser

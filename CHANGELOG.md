@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## Unreleased
+
+- **Arrange a beat** (Song menu, the ruler's right-click menu, or search *arrange*): a **Dark melody** generator for trap, drill, rage and phonk (minor, harmonic minor or phrygian with the flat second for tension, sparse rhythms, a repeating motif with a new ending, density, register and **New idea**, the same idea number always writing the same melody), **Drop out** and **Stop** before a drop, **Riser** and **Reverse cymbal** into it, a **Beat switch** (half time, double time or a new drum pattern with the bass following its kicks), **Song form** (intro, hook, verse, hook, verse, bridge, hook, outro from a 4- or 8-bar loop, with section markers) and a **Producer tag** kept in the browser for every project, placed at the start or every few bars with the beat ducking under it. Each is one Undo step.
+
 ## 2026.10.15-19 — Rap vocal tools
 
 - Rap vocal tools: **vocal chain presets** on Audio tracks (Clean lead, Aggressive lead, Ad-lib, Phone / radio, Dark and wide, Backing stack: one click, one Undo step), **Hard tune** (fast pitch correction to the song's key, with a natural-to-instant Speed, note holding so it steps cleanly, and more scales: harmonic minor, phrygian, pentatonics), **Double this take** (two new performances panned left and right, a little early or late and a few cents apart, the same every time), and an **Ad-lib track** button that makes a new Audio track with the Ad-lib chain, ready to record.

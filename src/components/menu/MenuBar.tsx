@@ -10,6 +10,7 @@ import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/
 import { canChooseSaveLocation, pickProjectFile, saveProjectAs, saveProjectFile } from '../timeline/projectFile';
 import { showToast } from '../timeline/toastStore';
 import { reverseBlock } from '../../store/reverseActions';
+import { openArrange } from '../timeline/arrangeDialogStore';
 import { formatBarCount } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
@@ -143,6 +144,8 @@ const MENUS: MenuDef[] = [
         { label: `Insert 4 bars at bar ${at}`, run: () => say(s.insertBars(at, 4)) },
         { label: 'Delete bars In → Out', run: () => say(s.removeBars(s.loopRegion.inBar, s.loopRegion.outBar)) },
         { label: `Build-up & drop at bar ${Math.max(2, at)}`, run: () => say(s.addBuildAndDrop(Math.max(2, at))), divider: true },
+        { label: 'Arrange a beat: drops, beat switch, song form, tag…', run: () => openArrange('drops', Math.max(2, at)) },
+        { label: 'Dark melody…', run: () => openArrange('melody', at) },
         { label: `Key change up a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, 1)) },
         { label: `Key change up a whole step from bar ${at}`, run: () => say(s.keyChangeFrom(at, 2)) },
         { label: `Key change down a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, -1)) },

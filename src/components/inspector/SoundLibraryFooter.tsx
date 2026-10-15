@@ -3,6 +3,7 @@
  * refers to).
  */
 import React, { useEffect, useState } from 'react';
+import { loadTag } from '../../store/arrangeActions';
 import { HardDrive } from 'lucide-react';
 import { currentProject, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { referencedSoundIds } from '../../store/audioClips';
@@ -41,6 +42,9 @@ export const SoundLibraryFooter: React.FC = () => {
       e.tracks.forEach((t) => t.frozen && keep.add(t.frozen.soundId));
     }
     referencedSoundIds({ clips: st.clipboard, tracks: [] }).forEach((id) => keep.add(id));
+    // ...and the producer tag, kept for every project
+    const tag = loadTag();
+    if (tag) keep.add(tag.soundId);
     if (!window.confirm("Delete the sounds in this browser that neither this project nor your last session uses?\n\nProjects saved as files keep their sounds inside the file, so they come back when opened.")) return;
     try {
       const gone = await freeUnusedSounds(keep);

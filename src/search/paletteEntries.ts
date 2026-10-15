@@ -1,4 +1,5 @@
 import guideMarkdown from '../../GUIDE.md?raw';
+import { openArrange } from '../components/timeline/arrangeDialogStore';
 import { INSTRUMENTS, INSTRUMENT_KEYS, isAudioKind, isMixKind } from '../audio/instrumentCatalog';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { useAudioStore } from '../store/audioStore';
@@ -137,6 +138,10 @@ const TOOLS: Item[] = [
     const s = timeline();
     return s.addBuildAndDrop(Math.max(2, Math.round(s.playheadPosition))) ?? undefined;
   } },
+  { title: 'Dark melody (trap, drill, rage, phonk)', keywords: 'dark melody generator trap drill rage phonk minor phrygian harmonic bells pluck piano loop idea', detail: 'A short seeded loop in the song\u2019s key, onto a track or a new bell, pluck or piano track.', run: () => openArrange('melody', Math.max(1, Math.floor(timeline().playheadPosition))) },
+  { title: 'Drop out, stop, riser or beat switch', keywords: 'drop out mute stop silence riser reverse cymbal beat switch half time double time arrange', detail: 'Into a drop at the playhead; a beat switch on the loop\u2019s bars.', run: () => openArrange('drops', Math.max(2, Math.round(timeline().playheadPosition))) },
+  { title: 'Song form: loop to full song', keywords: 'song form arrange structure intro hook chorus verse bridge outro sections loop full song', detail: 'Intro, hook, verse, hook, verse, bridge, hook, outro from a 4- or 8-bar loop, with markers.', run: () => openArrange('form') },
+  { title: 'Producer tag', keywords: 'producer tag watermark voice tag beat store preview record import duck', detail: 'Record or import it once; place it at the start or every few bars.', run: () => openArrange('tag') },
   { title: 'Key change', keywords: 'key change modulation transpose semitone whole step lift final chorus', detail: 'Right-click the ruler where the new key starts: up a semitone, up a whole step or down a semitone.', run: () => void ui().openGuide('the-timeline') },
   { title: 'Undo', keywords: 'undo back revert ctrl z', run: () => timeline().undo() },
   { title: 'Redo', keywords: 'redo again ctrl y', run: () => timeline().redo() },
