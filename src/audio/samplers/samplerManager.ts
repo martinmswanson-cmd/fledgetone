@@ -101,6 +101,11 @@ function loadSome(key: InstrumentKey, l: Loading, names: Iterable<string>): Prom
   return loadNames(l, names).then(
     () => {
       setStatus(key, 'ready');
+      // Downloading again: the background filling stopped at a failed one carries on
+      if (l.stalled && !isComplete(l)) {
+        l.stalled = false;
+        fillInBackground(key);
+      }
       return setOf(l);
     },
     (err) => {
@@ -348,7 +353,9 @@ function fillNext(): void {
   while (backlog.length) {
     const key = backlog[0];
     const l = loadings[key];
-    const next = l && !l.stalled ? l.names.find((n) => !l.have.has(n) && !l.pending.has(n)) : undefined;
+    // (Only while a sampler plays it: an instrument switched away from, or a song closed, stops
+    // filling. A sampler made for it later asks for the rest again: see loadQuick)
+    const next = l && !l.stalled && l.listeners.size > 0 ? l.names.find((n) => !l.have.has(n) && !l.pending.has(n)) : undefined;
     if (!l || !next) {
       backlog.shift();
       continue;
@@ -370,13 +377,16 @@ function fillNext(): void {
   }
 }
 
-/** A note the song or a player asks of an instrument still loading: its own recordings, at once. */
-function wantNote(l: Loading, midi: number, velocity: number): void {
+/**
+ * A note the song or a player asks of an instrument still loading: its own recordings, at once
+ * (`wheel`: played under the mod wheel's dynamics at that value, which picks its loudnesses).
+ */
+function wantNote(l: Loading, midi: number, velocity: number, wheel?: number): void {
   if (isComplete(l)) return;
-  const ask = `${midi}:${layerOf(l.index.tops, velocity)}`;
+  const ask = `${midi}:${layerOf(l.index.tops, velocity)}${wheel === undefined ? '' : `:${Math.round(wheel * 100)}`}`;
   if (l.asked.has(ask)) return;
   l.asked.add(ask);
-  loadNames(l, neededSamples(l.index, [{ midi, velocity, loudest: velocity }])).catch(() => l.asked.delete(ask));
+  loadNames(l, neededSamples(l.index, [{ midi, velocity, loudest: velocity }], wheel === undefined ? null : [wheel, wheel])).catch(() => l.asked.delete(ask));
 }
 
 /**
@@ -841,8 +851,8 @@ interface SlotBank {
   fallback?: Slot;
   /** False while some recordings are still to load (then a note plays the nearest loaded anywhere) */
   complete?: () => boolean;
-  /** A note is playing whose own recordings may not be loaded yet: load them now */
-  want?: (midi: number, velocity: number) => void;
+  /** A note is playing whose own recordings may not be loaded yet: load them now (`wheel`: the mod wheel's dynamics it plays under) */
+  want?: (midi: number, velocity: number, wheel?: number) => void;
   /** The sounds of keys being let go (ReleaseSounds), their takes in turn */
   releases?: { slots: Slot[]; db: number; decay?: number };
 }
@@ -1111,7 +1121,7 @@ function samplerVoice(
     // Still loading: the note's own recordings are asked for, and meanwhile it plays the nearest
     // one loaded, so it's never silent
     const loading = bank.complete ? !bank.complete() : false;
-    if (loading) bank.want?.(midi, velocity);
+    if (loading) bank.want?.(midi, velocity, low >= 0 ? dyn! : undefined);
     const near = (slot: Slot) => {
       const f = nearest(slot, midi);
       if (f && Math.abs(f.interval) <= STRETCH_SEMITONES) return f;
@@ -1450,7 +1460,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     }
     return null;
   };
-  const progress = loading ? { complete: () => isComplete(loading), want: (midi: number, velocity: number) => wantNote(loading, midi, velocity) } : {};
+  const progress = loading ? { complete: () => isComplete(loading), want: (midi: number, velocity: number, wheel?: number) => wantNote(loading, midi, velocity, wheel) } : {};
   return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key));
 }
 

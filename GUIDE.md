@@ -880,7 +880,7 @@ Click **NT**, or right-click the clip and choose **Takes (N)…**, to **comp**: 
 
 ### Metronome
 
-The **metronome** button in the toolbar clicks on every beat while playing, louder on beat 1 of each bar. It follows the tempo, ignores swing, and is never in an exported WAV. The count-in clicks even when the metronome is off.
+The **metronome** button in the toolbar clicks on every beat while playing, louder on beat 1 of each bar. It follows the tempo, ignores swing, and is never in an exported WAV. It clicks in time with the music as you hear it, allowing for the few milliseconds the master section and any compressors hold the music back. The count-in clicks even when the metronome is off.
 
 ## Exporting audio
 

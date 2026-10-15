@@ -100,6 +100,13 @@ test('a return playing into a non-linear bus joins its senders to that bus\'s tr
   assert.equal(where.get('a'), where.get('b'));
 });
 
+test('a bus sending to a non-linear return keeps the tracks it plays together with the return\'s other senders', () => {
+  const tracks = [ret('crush', { fx: withFx('compressor') }), bus('grp', { sends: [{ to: 'crush', level: 0.6 }] }), track('a', { output: 'grp' }), track('b', { output: 'grp' }), track('c', { sends: [{ to: 'crush', level: 0.4 }] }), track('d')];
+  const where = placed(rp.renderParts(tracks, tracks, clipsFor(tracks), range, 4), tracks.slice(2));
+  assert.equal(where.get('a'), where.get('b'));
+  assert.equal(where.get('a'), where.get('c'));
+});
+
 test('the Pump and ducking follow notes, not sound, so they hold nothing together', () => {
   const tracks = [track('kick', { instrumentKey: 'drums' }), track('bass', { fx: withFx('pump', { trigger: 'kick' }) }), track('pad', { fx: withFx('pump', { trigger: 'track', source: 'bass' }) }), track('voice', { duckProxy: { depth: 10 } })];
   const parts = rp.renderParts(tracks, tracks, clipsFor(tracks), range, 4);

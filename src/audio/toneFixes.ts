@@ -16,7 +16,8 @@ import { smoothSet } from './effects/smoothParam';
  */
 
 type Wave = object;
-const madeIn = new WeakMap<Wave, unknown>();
+/** (Held weakly: Tone keeps every wave for good, and a WAV export's context must still be let go) */
+const madeIn = new WeakMap<Wave, WeakRef<object>>();
 
 const contextProto = Tone.Context.prototype as unknown as {
   createPeriodicWave: (this: Tone.Context, ...args: unknown[]) => Wave;
@@ -24,7 +25,7 @@ const contextProto = Tone.Context.prototype as unknown as {
 const createPeriodicWave = contextProto.createPeriodicWave;
 contextProto.createPeriodicWave = function (...args) {
   const wave = createPeriodicWave.apply(this, args);
-  madeIn.set(wave, this.rawContext);
+  madeIn.set(wave, new WeakRef(this.rawContext as unknown as object));
   return wave;
 };
 
@@ -34,9 +35,10 @@ const Oscillator = Tone.Oscillator as unknown as {
 };
 const getCached = Oscillator.prototype._getCachedPeriodicWave;
 Oscillator.prototype._getCachedPeriodicWave = function () {
-  const all = Oscillator._periodicWaveCache;
+  // (Less the waves of contexts gone, such as finished exports')
+  const all = Oscillator._periodicWaveCache.filter((entry) => madeIn.get(entry.wave)?.deref() !== undefined);
   // Tone looks the wave up in this list; let it see only waves made in this oscillator's context
-  Oscillator._periodicWaveCache = all.filter((entry) => madeIn.get(entry.wave) === this.context.rawContext);
+  Oscillator._periodicWaveCache = all.filter((entry) => madeIn.get(entry.wave)?.deref() === (this.context.rawContext as unknown as object));
   try {
     return getCached.call(this);
   } finally {
@@ -106,4 +108,19 @@ soloProto._updateSolo = function () {
     return;
   }
   smoothSet(gain, level, this.now());
+};
+
+/**
+ * Tone.Solo keeps every context's solos in a Map keyed by the context, and never lets go of the
+ * key, so every WAV export's offline context (and the render it holds) stayed in memory for good.
+ * The key goes with the context's last solo.
+ */
+const soloStatics = Tone.Solo as unknown as { _allSolos: Map<unknown, Set<unknown>>; _soloed: Map<unknown, Set<unknown>> };
+const soloDisposer = Tone.Solo.prototype as unknown as { dispose: (this: Tone.Solo) => Tone.Solo };
+const disposeSolo = soloDisposer.dispose;
+soloDisposer.dispose = function () {
+  const context = this.context;
+  const result = disposeSolo.call(this);
+  for (const all of [soloStatics._allSolos, soloStatics._soloed]) if (all.get(context)?.size === 0) all.delete(context);
+  return result;
 };
