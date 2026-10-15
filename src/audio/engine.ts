@@ -1,7 +1,7 @@
 /**
  * The master section and the live audio context. createMixChain builds the mix graph (master bus,
- * compressor, the OTT and width inserts, limiter and ceiling, plus the shared reverb and delay
- * returns) in whatever context is current: once for live playback (liveMix) and again inside every
+ * compressor, the OTT and width inserts, the Level, limiter and ceiling, plus the shared reverb and
+ * delay returns) in whatever context is current: once for live playback (liveMix) and again inside every
  * export render. Also starting the audio, its running / suspended state, and the master volume.
  */
 import * as Tone from 'tone';
@@ -24,16 +24,18 @@ export const BUS_GAIN = 0.9;
 
 /**
  * Build the mix graph in the current Tone context:
- *   track strips -> master bus -> compressor -> (OTT, stereo width) -> look-ahead limiter -> destination
+ *   track strips -> master bus -> compressor -> (OTT, stereo width) -> Level -> look-ahead limiter -> destination
  *   track sends  -> shared reverb / delay -> master bus
  * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
  * the sound deck's pads. Used once for live playback and again inside the WAV export render.
- * The master section's inserts (`master`, see masterChain.ts) are only built while switched on.
+ * The master section's inserts (`master`, see masterChain.ts) are only built while switched on;
+ * the Level (a plain gain, MasterSettings.level) is always there.
  *
- * In an export's offline context there's no limiter in the graph (`limitsAfter`): the export runs
- * the same look-ahead limiter over the rendered sound (limitChannels), with the same delay. Chromium
- * never frees an OfflineAudioContext an AudioWorklet module was added to, so loading the limiter's
- * worklet into every export's context kept a whole render in memory per export.
+ * In an export's offline context the graph ends after the compressor (`limitsAfter`): the export
+ * runs the OTT, width, Level and the same look-ahead limiter over the rendered sound
+ * (masterAfter.ts), the limiter with the same delay. Chromium never frees an OfflineAudioContext an
+ * AudioWorklet module was added to, so loading the limiter's or the OTT's worklet into an export's
+ * context kept a whole render in memory per export.
  */
 export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx = DEFAULT_MASTER_FX, bpm = 122, master: MasterSettings = defaultMasterSettings()) {
   // Central master bus for every track and the effect returns
@@ -42,22 +44,24 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
 
   // Master mastering chain
   const compressor = new Tone.Compressor({ threshold: -18, ratio: 4, attack: 0.005, release: 0.1 });
-  // Where the inserts end and the limiter begins
-  const limiterIn = new Tone.Gain(1);
+  // Where the inserts end and the limiter begins: the Level, a plain gain (unity in an export, whose
+  // Level is applied after the render, see masterAfter.ts)
+  const context = bus.context;
+  const level = (context.rawContext as unknown as BaseAudioContext).createGain();
   // The stand-in limiter until the look-ahead one (effects/limiter.ts, an AudioWorklet) has
   // loaded, and where AudioWorklets can't run: a hard-knee compressor (Tone.Limiter keeps a 30 dB
   // soft knee, which barely limits) and a ceiling that rounds off what its 20:1 ratio lets through
   const limiter = new Tone.Compressor({ threshold: -1, ratio: 20, attack: 0, release: 0.08, knee: 0 });
   const ceiling = new Tone.WaveShaper(ceilingCurve());
   bus.connect(compressor);
-  // Patches compressor -> limiterIn itself, with the OTT and width in between while they're on
-  const inserts = createMasterInserts(compressor, limiterIn, master);
+  // Patches compressor -> level itself, with the OTT and width in between while they're on
+  const inserts = createMasterInserts(compressor, level, master);
   let lookahead: AudioWorkletNode | null = null;
-  const context = bus.context;
   const limitsAfter = context.isOffline;
-  if (limitsAfter) limiterIn.connect(destination);
+  let released = false;
+  if (limitsAfter) Tone.connect(level, destination);
   else {
-    limiterIn.connect(limiter);
+    Tone.connect(level, limiter);
     limiter.connect(ceiling);
     ceiling.connect(destination);
   }
@@ -65,7 +69,7 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
   const limiterReady = (limitsAfter ? Promise.resolve() : loadWorklet(context, LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE))
     .then(() => {
       if (limitsAfter) return;
-      if (limiterIn.disposed) return;
+      if (released) return;
       const node = createWorkletNode(context, LIMITER_PROCESSOR, {
         numberOfInputs: 1,
         numberOfOutputs: 1,
@@ -75,8 +79,8 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
         channelInterpretation: 'speakers',
       });
       Tone.connect(node, destination);
-      Tone.connect(limiterIn, node);
-      limiterIn.disconnect(limiter);
+      Tone.connect(level, node);
+      Tone.disconnect(level, limiter);
       // The stand-in and its ceiling hear nothing from now on: out of the graph, so the audio
       // thread doesn't keep running them on silence
       limiter.disconnect();
@@ -85,10 +89,11 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
     })
     .catch((err) => console.warn('The look-ahead limiter could not start; using the stand-in:', err));
   const disposeLimiter = () => {
-    if (limiterIn.disposed) return;
+    if (released) return;
+    released = true;
     lookahead?.port.postMessage('dispose');
     lookahead?.disconnect();
-    limiterIn.dispose();
+    level.disconnect();
     limiter.dispose();
     ceiling.dispose();
   };
@@ -104,10 +109,12 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
     limiterReady,
     /** Whether the look-ahead limiter is the one in use (its delay is LIMITER latency, not the stand-in's) */
     lookahead: () => limitsAfter || lookahead !== null,
-    /** An export's chain: the destination gets the sound unlimited, for limitChannels to limit after the render */
+    /** An export's chain: the destination gets the compressor's sound, for masterAfter to finish after the render */
     limitsAfter,
     disposeLimiter,
     ceiling,
+    /** The Level: a plain gain just before the limiter (unity in an export, whose Level is applied after the render) */
+    level,
     auditionInput,
   };
 }

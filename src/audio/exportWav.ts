@@ -13,7 +13,8 @@ import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } f
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
-import { createLimiterKernel, limitChannels } from './effects/limiter';
+import { createLimiterKernel } from './effects/limiter';
+import { masterAfter } from './effects/masterAfter';
 import { measureCompressorLatency } from './compressorLatency';
 import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds } from './effects/busEffects';
@@ -41,6 +42,7 @@ import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import { duckPoints } from '../store/duck';
 import type { WavCue } from './wavCues';
 import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
+import { normalizeMasterSettings } from '../store/timelineTypes';
 
 /** Sample rates the export offers. */
 export const SAMPLE_RATES = [44100, 48000] as const;
@@ -722,7 +724,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   const native = new OfflineAudioContext(2, plan.length, sampleRate);
   const context = new Tone.OfflineContext(native);
   const mix = await withContext(context, async () => {
-    // (Master volume comes after the limiter, which runs after the render: see limitAfter)
+    // (Master volume comes after the limiter, which runs after the render: see finishMaster)
     context.destination.volume.value = 0;
     const chain = createMixChain(context.destination, opts.masterFx, opts.bpm, opts.master);
     chain.auditionInput.dispose();
@@ -761,20 +763,20 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
       mix.bus.dispose();
     }
   });
-  limitAfter(rendered, mix.limitsAfter, masterDb);
+  finishMaster(rendered, mix.limitsAfter, opts.master, masterDb);
   onProgress?.(1);
   return { channels: finishRender(rendered, plan, opts), sampleRate, reverbImpulse };
 }
 
 /**
- * The master section's limiter run over a finished render (an export's chain has none in its
- * graph: see createMixChain), then the master volume, which comes after it.
+ * The master section after the compressor (the OTT, width, Level and limiter) run over a finished
+ * render (an export's chain ends at its compressor: see createMixChain and masterAfter.ts), then
+ * the master volume, which comes after it.
  */
-function limitAfter(rendered: AudioBuffer, limitsAfter: boolean, masterDb: number): void {
+function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, master: MasterSettings | undefined, masterDb: number): void {
   if (!limitsAfter) return;
   const [l, r] = channelsOf(rendered);
-  limitChannels(l, r ?? l, rendered.sampleRate);
-  if (masterDb) scale(r ? [l, r] : [l], Math.pow(10, masterDb / 20));
+  masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(master), masterDb);
 }
 
 /**
@@ -961,7 +963,7 @@ async function renderGraph(
     signal
   );
   const reverbImpulse = graph.reverbImpulse();
-  limitAfter(rendered, graph.limitsAfter, masterDb);
+  finishMaster(rendered, graph.limitsAfter, opts.master, masterDb);
   try {
     release();
   } catch (err) {

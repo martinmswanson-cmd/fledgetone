@@ -1,19 +1,24 @@
+/**
+ * The master section's inserts, between the master compressor and the Level and limiter (see
+ * engine.ts):
+ *   compressor -> [OTT] -> [Stereo width] -> Level -> limiter
+ * Each insert exists only while it's switched on, like a track's inserts: off, it is taken out of
+ * the chain and disposed, so it costs nothing. The OTT is an AudioWorklet (ott.ts); the width is a
+ * handful of plain nodes doing mid/side; the Level is one gain, always there. A switch crossfades
+ * between the old and the new chain on the audio clock the way a track strip does (trackStrip.ts,
+ * rewire), so switching while the song plays opens no gap.
+ *
+ * In an export's offline context the inserts and the Level aren't built at all: the render stops
+ * after the compressor, and masterAfter.ts runs the OTT, width, Level and limiter over the finished
+ * render in plain JavaScript (an AudioWorklet would keep the whole render in memory for good).
+ */
 import * as Tone from 'tone';
 import type { GlueStyle, MasterSettings } from '../../store/timelineTypes';
 import { createWorkletNode, loadWorklet } from '../worklets';
 import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
+import { MONO_BASS_HZ, MONO_BASS_Q } from './masterAfter';
 import { paramSetter as smoothParamSetter } from './smoothParam';
 
-/**
- * The master section's inserts, between the master compressor and the limiter (see engine.ts):
- *   compressor -> [OTT] -> [Stereo width] -> limiter
- * Each exists only while it's switched on, like a track's inserts: off, it is taken out of the
- * chain and disposed, so it costs nothing. The OTT is an AudioWorklet (ott.ts); the width is a
- * handful of plain nodes doing mid/side. Live, a switch crossfades between the old and the new
- * chain on the audio clock the way a track strip does (trackStrip.ts, rewire), so switching while
- * the song plays opens no gap; in the WAV export's offline context the links are made directly,
- * since nothing plays while the graph is set up.
- */
 export interface MasterInserts {
   /** Apply settings, ramping continuous ones over `ramp` seconds (0: at once). */
   apply: (settings: MasterSettings, ramp?: number) => void;
@@ -22,8 +27,7 @@ export interface MasterInserts {
   dispose: () => void;
 }
 
-/** Below this the Stereo width's "mono bass" keeps the sound in the middle. */
-export const MONO_BASS_HZ = 120;
+export { MONO_BASS_HZ };
 
 type Node = Tone.ToneAudioNode | AudioNode;
 type Link = [from: Node, to: Node];
@@ -53,9 +57,8 @@ const SWITCH_FADE = 0.01;
 const paramSetter = (raw: BaseAudioContext) => smoothParamSetter(() => raw.currentTime);
 
 /** head -> inserts -> tail, re-patched without gaps live (see above). */
-function createInsertChain(head: Tone.ToneAudioNode, tail: Tone.ToneAudioNode) {
+function createInsertChain(head: Tone.ToneAudioNode, tail: Node, live: boolean) {
   const raw = head.context.rawContext as unknown as BaseAudioContext;
-  const live = !(typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext);
   let chain: Insert[] = [];
   let gates: Gate[] = [];
   let leaving: Array<{ dispose: () => void }> = [];
@@ -238,7 +241,7 @@ function createWidth(context: Tone.BaseContext, width: MasterSettings['width']):
     const f = raw.createBiquadFilter();
     f.type = 'highpass';
     f.frequency.value = MONO_BASS_HZ;
-    f.Q.value = Math.SQRT1_2;
+    f.Q.value = MONO_BASS_Q;
     return f;
   };
   const hp1 = highpass();
@@ -293,8 +296,16 @@ export const GLUE_STYLES: Record<GlueStyle, { name: string; about: string; thres
   off: { name: 'Off', about: 'No master compression (the limiter still catches peaks).', threshold: 0, ratio: 1, attack: 0.005, release: 0.1 },
 };
 
-export function createMasterInserts(compressor: Tone.ToneAudioNode, limiter: Tone.ToneAudioNode, settings: MasterSettings): MasterInserts {
+/**
+ * The inserts from `compressor` into `level` (a gain just before the limiter, which applies the
+ * Level), with the glue style on the compressor. In an offline context (an export) only the glue:
+ * the compressor plays straight into `level`, left at unity, and masterAfter.ts does the rest.
+ */
+export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainNode, settings: MasterSettings): MasterInserts {
   const context = compressor.context;
+  const raw = context.rawContext as unknown as BaseAudioContext;
+  const live = !(typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext);
+  const ramped = paramSetter(raw);
   const glue = (style: GlueStyle) => {
     const comp = compressor as Tone.Compressor;
     const g = GLUE_STYLES[style] ?? GLUE_STYLES.standard;
@@ -305,7 +316,7 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, limiter: Ton
     comp.release.value = g.release;
   };
   glue(settings.glue);
-  const chain = createInsertChain(compressor, limiter);
+  const chain = createInsertChain(compressor, level, live);
   let ott: OttUnit | null = null;
   let width: WidthUnit | null = null;
   let wanted = settings;
@@ -319,6 +330,8 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, limiter: Ton
     if (disposed) return;
     if (next.glue !== wanted.glue) glue(next.glue);
     wanted = next;
+    if (!live) return;
+    ramped(level.gain, Tone.dbToGain(next.level), ramp);
     const retired: Array<{ dispose: () => void }> = [];
     if (next.ott.on) {
       if (ott) ott.set(next.ott, ramp);

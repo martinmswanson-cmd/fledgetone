@@ -397,14 +397,15 @@ export interface MasterFx {
 
 export const DEFAULT_MASTER_FX: MasterFx = { reverbDecay: 2.4, delayTime: '8n', delayFeedback: 0.35 };
 
-/**
- * The master section: the inserts between the master compressor and the limiter (see
- * engine.ts). Each can be bypassed with `on`, which takes it out of the chain entirely.
- */
 /** How the master compressor holds the mix together (see GLUE_STYLES in effects/masterChain.ts). */
 export type GlueStyle = 'standard' | 'gentle' | 'punchy' | 'tight' | 'off';
 export const GLUE_STYLE_IDS: readonly GlueStyle[] = ['standard', 'gentle', 'punchy', 'tight', 'off'];
 
+/**
+ * The master section (see engine.ts): the compressor's style, the inserts between the master
+ * compressor and the limiter (each can be bypassed with `on`, which takes it out of the chain
+ * entirely), and the Level, a plain gain after them, just before the limiter.
+ */
 export interface MasterSettings {
   /** The master compressor's style ('standard' is how every project sounded before there was a choice) */
   glue: GlueStyle;
@@ -428,17 +429,26 @@ export interface MasterSettings {
     /** Keep everything below about 120 Hz in the middle, however wide the rest goes */
     monoBass: boolean;
   };
+  /**
+   * dB, LEVEL_MIN to LEVEL_MAX: a plain gain after the OTT and the width, before the limiter,
+   * always there (0 leaves the sound alone). Turning it up pushes the mix into the limiter.
+   */
+  level: number;
 }
 
 export const OTT_GAIN_MIN = -12;
 export const OTT_GAIN_MAX = 12;
 export const WIDTH_MAX = 2;
+/** The master Level's range in dB (see MasterSettings.level). */
+export const LEVEL_MIN = -24;
+export const LEVEL_MAX = 12;
 
 export function defaultMasterSettings(): MasterSettings {
   return {
     glue: 'standard',
     ott: { on: false, depth: 0.5, time: 0.3, inGain: 0, outGain: 0 },
     width: { on: false, amount: 1.3, monoBass: true },
+    level: 0,
   };
 }
 
@@ -466,6 +476,8 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
       // Absent means on, as for a new project
       monoBass: width.monoBass !== false,
     },
+    // Absent in projects from before there was a Level: 0, as they sounded
+    level: num(r.level, d.level, LEVEL_MIN, LEVEL_MAX),
   };
 }
 
@@ -480,7 +492,8 @@ export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolea
     a.ott.outGain === b.ott.outGain &&
     a.width.on === b.width.on &&
     a.width.amount === b.width.amount &&
-    a.width.monoBass === b.width.monoBass
+    a.width.monoBass === b.width.monoBass &&
+    a.level === b.level
   );
 }
 

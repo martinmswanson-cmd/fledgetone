@@ -62,7 +62,7 @@ export function clip(t: Track, name: string, startBar: number, bars: number, ste
 
 export function master(ott: Partial<MasterSettings['ott']>, width: Partial<MasterSettings['width']>, glue: MasterSettings['glue'] = 'standard'): MasterSettings {
   const d = defaultMasterSettings();
-  return { glue, ott: { ...d.ott, ...ott }, width: { ...d.width, ...width } };
+  return { ...d, glue, ott: { ...d.ott, ...ott }, width: { ...d.width, ...width } };
 }
 
 export function project(name: string, bpm: number, swing: number, loop: [number, number], tracks: Track[], clips: Clip[], sections: Array<[number, string]>, m: MasterSettings): ProjectSnapshot {

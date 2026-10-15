@@ -141,8 +141,8 @@ clock, ahead of time, so the main thread being busy doesn't make notes late:
 
 Each instrument plays into its track's **channel strip** (`effects/trackStrip.ts`): inserts in a
 fixed order, then pan, solo and mute, the fader, and sends. Strips play into the **master chain**
-(`createMixChain` in `engine.ts`): master bus, compressor, the OTT and width inserts, limiter
-and a soft ceiling, plus the shared reverb and delay returns.
+(`createMixChain` in `engine.ts`): master bus, compressor, the OTT and width inserts, the Level
+(a plain gain), limiter and a soft ceiling, plus the shared reverb and delay returns.
 
 A compressor looks ahead, so it holds back the sound through it by a few milliseconds. **Delay
 compensation** lines every path up again: `delayCompensation.ts` works out, from the tracks, how
@@ -175,7 +175,10 @@ before the master section is added up and the master section runs once over the 
 track's plugin does, since Chromium renders every offline context that has one on a single shared
 thread; with the lush reverb (a worklet) on, the parts send what they'd feed it and it plays
 once, over their sum, in the master pass. Every part uses the same delay compensation, worked out
-over the whole song. The result is scaled down if its
+over the whole song. The master section after the compressor (the OTT, width, Level and limiter)
+is in no render: it runs in plain JavaScript over the finished one (`effects/masterAfter.ts`),
+because Chromium never frees an `OfflineAudioContext` an AudioWorklet was loaded into. The result
+is scaled down if its
 true peak passes -1 dBTP, then encoded: WAV here (16/24/32-bit, markers as cue points), MP3 and
 Ogg in `encoders.ts`, MP4 video in `videoExport.ts`. Stems, intro-plus-loop, seamless loops,
 the game kit (`gameKit.ts`), FMOD / Wwise packages and freezing a track are all variations on

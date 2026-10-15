@@ -19,10 +19,11 @@ try { playwright = require('playwright'); } catch { playwright = require('/opt/n
 const APP = process.env.APP_URL || 'http://localhost:5200/';
 // How long one starter may take (ms; TIMEOUT overrides) before it's tried again
 const TIMEOUT = Number(process.env.TIMEOUT || 300000);
-// The two places the page is changed so the limiter's input can be read: the limiter worklet
-// passes its input through, and renderArrangement doesn't turn the result down to its peak
+// The two places the page is changed so the limiter's input can be read: the export's master
+// section (run after the render, masterAfter.ts) skips the limiter, and renderArrangement doesn't
+// turn the result down to its peak
 const PATCHES = [
-  [/\/src\/audio\/effects\/limiter\.ts/, 'this.kernel.process(inL, inR, outL, outR, frames, parameters.ceiling[0], parameters.release[0]);', 'outL.set(inL); outR.set(inR);'],
+  [/\/src\/audio\/effects\/masterAfter\.ts/, 'limitChannels(left, right, sampleRate);', ''],
   [/\/src\/audio\/exportWav\.ts/, 'scale(channels, peakGain(peakOf(channels)));', ''],
 ];
 

@@ -16,7 +16,7 @@ register(
 }`)
 );
 const { serializeProject, parseProject } = await import('../src/store/project.ts');
-const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
+const { defaultTrackFx, defaultMasterSettings, LEVEL_MAX } = await import('../src/store/timelineTypes.ts');
 
 test('built-in and web plugins survive saving and opening a project', () => {
   const p = { name: 'Plugins', bpm: 120, swing: 0, loopRegion: { inBar: 1, outBar: 5, enabled: false }, tracks: [], clips: [] };
@@ -57,4 +57,18 @@ test('a recorded room for the master reverb survives saving and opening, and is 
   assert.deepEqual(referencedSoundIds(back), ['hall-sound']);
   const plain = parseProject(JSON.parse(JSON.stringify(serializeProject({ ...p, masterFx: { ...masterFx, room: "" } }))));
   assert.equal(plain.masterFx.room, undefined);
+});
+
+test('the master Level survives saving and opening; files without one open at 0 dB', () => {
+  const p = { name: 'Level', bpm: 120, swing: 0, loopRegion: { inBar: 1, outBar: 5, enabled: false }, tracks: [], clips: [], masterFx: { reverbDecay: 2, delayTime: '8n', delayFeedback: 0.3 } };
+  const loud = parseProject(JSON.parse(JSON.stringify(serializeProject({ ...p, master: { ...defaultMasterSettings(), level: 3.5 } }))));
+  assert.equal(loud.master.level, 3.5);
+  // At 0 dB a file doesn't carry it, and one without it (an older file) opens at 0
+  const file = serializeProject({ ...p, master: defaultMasterSettings() });
+  assert.equal('level' in file.master, false);
+  assert.equal(parseProject(JSON.parse(JSON.stringify(file))).master.level, 0);
+  // Out of range is brought into range
+  const wild = JSON.parse(JSON.stringify(file));
+  wild.master.level = 99;
+  assert.equal(parseProject(wild).master.level, LEVEL_MAX);
 });

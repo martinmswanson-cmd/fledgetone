@@ -67,8 +67,8 @@ export interface ProjectData {
    * sounds themselves stay in the browser's sound library, see src/audio/soundLibrary.ts).
    */
   sounds?: EmbeddedSound[];
-  /** The master section's OTT and stereo width (optional; older files have them off). */
-  master?: MasterSettings;
+  /** The master section's glue, OTT, stereo width and Level (optional; older files have the inserts off and no Level: 0 dB). */
+  master?: Omit<MasterSettings, 'level'> & { level?: number };
   /** Game stingers (optional; older files have none). */
   stingers?: Stinger[];
   /** Game sound effects for the game kit (optional; older files have none). */
@@ -137,6 +137,11 @@ export interface ProjectSnapshot {
 }
 
 
+/** The master settings as a file has them: the Level only when it isn't 0 dB (files keep opening in older versions the same). */
+function masterForFile({ level, ...rest }: MasterSettings): Omit<MasterSettings, 'level'> & { level?: number } {
+  return level ? { ...rest, level } : rest;
+}
+
 export function serializeProject(p: ProjectSnapshot): ProjectData {
   return {
     format: PROJECT_FORMAT,
@@ -153,7 +158,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     dropFrame: p.dropFrame === true && p.fps === 29.97,
     markers: p.markers ?? [],
     ...(p.sounds?.length ? { sounds: p.sounds } : {}),
-    master: normalizeMasterSettings(p.master),
+    master: masterForFile(normalizeMasterSettings(p.master)),
     ...(p.stingers?.length ? { stingers: p.stingers } : {}),
     ...(p.sfx?.length ? { sfx: p.sfx } : {}),
     ...(p.costumes?.length ? { costumes: p.costumes } : {}),

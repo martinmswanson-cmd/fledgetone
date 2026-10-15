@@ -1,11 +1,11 @@
 /**
- * The Master tab of the Inspector: the loudness meter, the OTT and stereo width inserts, the
- * playback buffering choice and the browser's audio delay, and the instruments kept for offline use.
+ * The Master tab of the Inspector: the loudness meter, the glue, the OTT and stereo width inserts,
+ * the Level before the limiter, the playback buffering choice and the browser's audio delay, and the instruments kept for offline use.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Snowflake, Timer } from 'lucide-react';
+import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Snowflake, Timer, Volume2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { defaultMasterSettings, GLUE_STYLE_IDS, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
+import { defaultMasterSettings, GLUE_STYLE_IDS, LEVEL_MAX, LEVEL_MIN, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
 import type { GlueStyle } from '../../store/timelineTypes';
 import { GLUE_STYLES } from '../../audio/effects/masterChain';
 import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
@@ -152,6 +152,22 @@ export const WidthPanel: React.FC = () => {
         <span>Keep the bass in the middle (below 120 Hz), so it stays strong on club systems and phones</span>
       </label>
     </InsertPanel>
+  );
+};
+
+/** The master Level: the whole mix up or down, after the OTT and width, just before the limiter. */
+export const LevelPanel: React.FC = () => {
+  const level = useTimelineStore((s) => s.master.level);
+  const accent = '#34d399';
+  return (
+    <div data-search="master level" className="rounded-md border border-forge-border bg-forge-panel/60 p-2 flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[11px] font-semibold text-forge-text">
+        <Volume2 className="w-3.5 h-3.5" style={{ color: accent }} />
+        Level
+      </div>
+      <FxSlider label="Level" value={level} min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} format={db} onChange={(v) => useTimelineStore.getState().setMasterLevel(v)} reset={0} accent={accent} disabled={false} />
+      <p className="text-[10px] text-forge-muted">Turns the whole mix up or down just before the limiter. Up makes the song louder, and the limiter holds the peaks down.</p>
+    </div>
   );
 };
 
@@ -347,6 +363,7 @@ export const MasterPanels: React.FC = () => (
     <GluePanel />
     <OttPanel />
     <WidthPanel />
+    <LevelPanel />
     <PlaybackPanel />
     <OfflinePanel />
   </div>
