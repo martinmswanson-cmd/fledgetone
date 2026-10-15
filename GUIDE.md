@@ -1188,7 +1188,7 @@ The synths and drum kits are generated in your browser. The recorded instruments
 <!-- credits:end -->
 
 - The guitar, bass, saxophone, strings, harp, flute and brass samples were collected and edited (trimmed, volume-matched, cleaned up and tuned) by Nicholaus Brosowsky for [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments). Its samples are released under CC BY 3.0.
-- The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app. The Violin, Cello and Strings notes are 3 seconds long in the soundfont, so the app loops their steady part when it loads them and a note can be held for about 10 seconds. The top octave of the Violin, Erhu, Strings and Flute plays quieter so it doesn't pierce.
+- The Erhu is shaped in the app from the VSCO violin, and the Mandolin from the FluidR3 steel-string guitar. The Electric and Acoustic Guitar recordings go through an amp stage and a brightening in the app. The Violin, Cello and Strings notes are 3 seconds long in the soundfont, so the app loops their steady part when it loads them and a note can be held as long as you like. The top octave of the Violin, Erhu, Strings and Flute plays quieter so it doesn't pierce.
 - Fledgetone loads these samples straight from the projects above; it doesn't copy or change the files.
 
 ### Plugins

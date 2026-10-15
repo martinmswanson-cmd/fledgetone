@@ -82,11 +82,11 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   wildField: { trim: 5.5, lufs: -15.1 }, // -15.9
   underwaterWaltz: { trim: 4.5, lufs: -14.9 }, // -14.4
   desertBazaar: { trim: 6, lufs: -15.4 }, // -16.1
-  fogTown: { trim: 7, lufs: -15.3 }, // -15.8
+  fogTown: { trim: 7, lufs: -15 }, // -15.8
   countdownTown: { trim: -2, lufs: -15.1 }, // -14.1
   saveRoom: { trim: 4, lufs: -19.2 }, // -19
   cathedralBoss: { trim: 2, lufs: -15.2 }, // -16.1
-  arenaMetal: { trim: 6.5, lufs: -15 }, // -15.4
+  arenaMetal: { trim: 6.5, lufs: -14.9 }, // -15.4
   starlitCity: { trim: 6, lufs: -14.9 }, // -16
   farewellPiano: { trim: 3.5, lufs: -14.8 }, // -16.4
   sunsetDrive: { trim: 3.5, lufs: -15.1 }, // -15.1
@@ -108,7 +108,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   angelic: { trim: -2, lufs: -15 }, // -14.4
   cinematic: { trim: 3.5, lufs: -15.1 }, // -15.5
   epic: { trim: -2, lufs: -15.2 }, // -15.5
-  horror: { trim: 0, lufs: -14.9 }, // -16.2
+  horror: { trim: 0, lufs: -14.7 }, // -16.2
   rock: { trim: -1, lufs: -12.8 }, // -12.8
   metal: { trim: -1, lufs: -12.9 }, // -12.8
   pop: { trim: 1.5, lufs: -13.1 }, // -13.4

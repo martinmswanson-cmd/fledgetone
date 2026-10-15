@@ -2,7 +2,8 @@
  * Maths on a recording's samples as it loads, to keep it small in memory without changing how it
  * sounds: where its silent tail can be cut, whether its two channels are one sound twice (a mono
  * recording saved as stereo, as many soundfont files are), and a coarse outline of its level over
- * time (for choosing which note to let go when too many sound: see noteStealing.ts).
+ * time (for choosing which note to let go when too many sound: see noteStealing.ts). Also
+ * lengthening a recording that stops dead, and the stretch of it that loops for a note held longer.
  *
  * Plain arrays of samples in, numbers out: no Web Audio here, so Node can test it.
  */
@@ -101,4 +102,41 @@ export function levelOutline(channels: Float32Array[], sampleRate: number): Floa
     }
   }
   return out;
+}
+
+/**
+ * A recording that stops dead lengthened to `out.length` samples (into `out`): `data` up to `end`,
+ * then its steady stretch [start, end) over and over, each repeat crossfading in over `xf` samples
+ * (equal power) from the end of the one before; the last `fade` samples fade out.
+ */
+export function lengthenSustain(out: Float32Array, data: Float32Array, start: number, end: number, xf: number, fade: number): void {
+  const length = out.length;
+  out.set(data.subarray(0, Math.min(end, length)));
+  let pos = end;
+  while (pos < length) {
+    const at = pos - xf;
+    for (let k = 0; k < end - start && at + k < length; k++) {
+      const v = data[start + k];
+      if (k < xf) {
+        const t = (k / xf) * (Math.PI / 2);
+        out[at + k] = out[at + k] * Math.cos(t) + v * Math.sin(t);
+      } else out[at + k] = v;
+    }
+    pos = at + (end - start);
+  }
+  const n = Math.min(length, fade);
+  for (let k = 0; k < n; k++) out[length - 1 - k] *= k / n;
+}
+
+/**
+ * The samples [from, to) of a lengthened sustain (lengthenSustain) that loop seamlessly: its second
+ * repeat, join included. Every repeat crossfades in from the same sound (the end of the steady
+ * stretch), so each is the same as the next, and playing the second one over and over continues
+ * the sound exactly. Null when the lengthened recording isn't long enough to hold it before its fade.
+ */
+export function sustainLoop(start: number, end: number, xf: number, length: number, fade: number): [number, number] | null {
+  const period = end - start - xf;
+  if (period <= 0) return null;
+  const from = end - xf + period;
+  return from + period <= length - fade ? [from, from + period] : null;
 }

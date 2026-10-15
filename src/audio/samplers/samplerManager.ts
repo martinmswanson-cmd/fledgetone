@@ -9,7 +9,7 @@ import { recordingBytes } from '../recordingStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { CustomSample, NoteEvent } from '../../store/timelineTypes';
 import { alwaysStereo, keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
-import { foldToMono, isDualMono, keptLength, levelOutline, OUTLINE_STEP } from './recordingMaths';
+import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTLINE_STEP, sustainLoop } from './recordingMaths';
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { BLEND_ZONE, decodeRateOf, indexRecordings, layerOf, neededSamples, quickLayer, quickSamples, songNotesByInstrument, STRETCH_SEMITONES } from './songSamples';
@@ -387,6 +387,13 @@ async function decodeEntry(source: SampleSource, name: string, rate: number): Pr
   if (audio) {
     // Its seamless loop, if it has one (and nothing above moved its timing)
     if (loop && ready === buffer && !source.tune?.[name]) loopsOf.set(audio, loop);
+    else {
+      // A lengthened sustain loops one of its own repeats for a note held longer still (moved
+      // with the start, where the onset was trimmed off after: see extendSustain)
+      const repeat = held !== buffer ? loopsOf.get(held.get()!) : undefined;
+      const shift = repeat ? (held.get()!.length - audio.length) / audio.sampleRate : 0;
+      if (repeat && repeat[0] - shift > 0) loopsOf.set(audio, [repeat[0] - shift, repeat[1] - shift]);
+    }
     outline(audio);
   }
   return ready;
@@ -574,6 +581,11 @@ function trimOnset(buffer: Tone.ToneAudioBuffer, onsetDb: number): Tone.ToneAudi
  * Lengthen a recording that stops dead by looping its steady part, crossfading 120 ms at each
  * join, until it is `hold` seconds long; the last 300 ms fade out. Two identical channels (a mono
  * recording saved as stereo) are folded to one, halving the memory it takes.
+ *
+ * Every repeat after the first is the same sound, its join included, so the second repeat is a
+ * seamless loop (kept in loopsOf): a note held longer than `hold` plays on, looping it, until it's
+ * released. Without it an ambience or a drone written as one long note (rain under a whole song)
+ * went silent after `hold` seconds.
  */
 function extendSustain(buffer: Tone.ToneAudioBuffer, { from, to, hold }: { from: number; to: number; hold: number }): Tone.ToneAudioBuffer {
   const audio = buffer.get();
@@ -591,25 +603,12 @@ function extendSustain(buffer: Tone.ToneAudioBuffer, { from, to, hold }: { from:
     if (diff < sum * 1e-4) channels = [l];
   }
   const length = Math.max(end, Math.round(hold * sr));
+  const fade = Math.round(0.3 * sr);
   const out = Tone.getContext().createBuffer(channels.length, length, sr);
-  channels.forEach((data, c) => {
-    const o = out.getChannelData(c);
-    o.set(data.subarray(0, end));
-    let pos = end;
-    while (pos < length) {
-      const at = pos - xf;
-      for (let k = 0; k < end - start && at + k < length; k++) {
-        const v = data[start + k];
-        if (k < xf) {
-          const t = (k / xf) * (Math.PI / 2);
-          o[at + k] = o[at + k] * Math.cos(t) + v * Math.sin(t);
-        } else o[at + k] = v;
-      }
-      pos = at + (end - start);
-    }
-    const fade = Math.min(length, Math.round(0.3 * sr));
-    for (let k = 0; k < fade; k++) o[length - 1 - k] *= k / fade;
-  });
+  channels.forEach((data, c) => lengthenSustain(out.getChannelData(c), data, start, end, xf, fade));
+  // The second repeat, if it ends before the fade out (see above)
+  const repeat = sustainLoop(start, end, xf, length, fade);
+  if (repeat) loopsOf.set(out, [repeat[0] / sr, repeat[1] / sr]);
   return new Tone.ToneAudioBuffer(out);
 }
 
