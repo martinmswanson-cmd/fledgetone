@@ -172,7 +172,7 @@ Run all of these before every commit; they must all pass.
 
 ```sh
 npx tsc -b             # type check
-npx oxlint src         # lint (3 known warnings: Playhead.tsx x2, SoundAuditionPanel.tsx x1)
+npx oxlint src         # lint (2 known warnings: Playhead.tsx x2)
 npm test               # unit tests (node --test scripts/*.test.mjs)
 npm run build          # production build
 npm run build:single   # the one-file build that gets published (dist-single/index.html)

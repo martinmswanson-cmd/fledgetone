@@ -323,7 +323,7 @@ const MidiPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null>; on
         </div>
         <p className="text-[11px] leading-snug">
           A S D F G H J K L ; ' are the white keys from C, W E T Y U O P the black ones, Z and X move an octave. While the piano is on,
-          those keys play notes instead of their usual jobs (the Audition Deck pads, L loop, O set Out); the rest still work.
+          those keys play notes instead of their usual jobs (L loop, O set Out); the rest still work.
         </p>
       </div>
       <MidiMappings />

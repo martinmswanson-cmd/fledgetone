@@ -165,14 +165,6 @@ const TOOLS: Item[] = [
     s.toggleInspector(true);
     ui().setInspectorTab('track');
   } },
-  { title: 'Instrument browser', keywords: 'browse try audition preview listen instruments', run: () => {
-    ui().openDock('instruments');
-    void reveal('section[aria-label="Instrument Browser"]');
-  } },
-  { title: 'Sound deck', keywords: 'pads audition deck trigger keys patterns', run: () => {
-    ui().openDock('instruments');
-    void reveal('section[aria-label="Soundbank Audition Panel"]');
-  } },
   { title: 'Start audio', keywords: 'start audio sound on enable power', run: () => void useAudioStore.getState().initializeAudio() },
 ];
 

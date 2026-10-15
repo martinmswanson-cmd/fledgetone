@@ -21,7 +21,7 @@ const FOLDERS = {
   'src/audio/presets': 'The instruments\' sound design: one factory per instrument (or family), each building its nodes in whatever audio context is current, so the export can rebuild the same sound offline.',
   'src/audio/samplers': 'Recorded instruments: downloading, decoding and playing multi-sampled recordings, with tone shaping, guitar amps and expressive playing.',
   'src/audio/sfx': 'The sound effects maker\'s synth (plain maths, no Web Audio).',
-  'src/components': 'The React UI outside the timeline: the header, the instrument browser and sound deck, popovers, and shared controls.',
+  'src/components': 'The React UI outside the timeline: the header, the instrument menu, popovers, and shared controls.',
   'src/components/dock': 'The dock under the timeline (Mixer, Launcher, EQ, Instruments, Game, Video and Sound FX tabs) and its dialogs.',
   'src/components/guide': 'The in-app user guide, rendered from GUIDE.md.',
   'src/components/inspector': 'The Track Inspector side panel: instrument panels, insert effects, the EQ editors and the Master tab.',

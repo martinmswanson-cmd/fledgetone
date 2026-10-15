@@ -495,7 +495,7 @@ export const Timeline: React.FC = () => {
       <PianoRoll />
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
-        + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads (Instruments tab below), or sound files, onto a track •
+        + or double-click a lane to add a clip • double-click a clip to edit notes • drag sound files onto a track •
         Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • M marker • , and . previous / next marker • curve button: automation • ? guide
       </div>
 

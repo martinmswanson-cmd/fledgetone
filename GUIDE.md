@@ -14,7 +14,7 @@ It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen
 At the very top is the **menu bar**: every tool in the app, where a desktop DAW keeps it (see The menu bar below), with the project's name, **Save**, **Export** and **Share** on the right. Under it is the header: **TEMPO** and **TAP**, **Swing**, **Intensity**, **MASTER** volume, the loudness reading (once audio runs), **SEARCH**, **LEARN**, **GUIDE** and **START AUDIO**. Under that, top to bottom:
 
 - **Arrangement Timeline**: the toolbar, the ruler, your tracks (in folders, if you make some), the Overview strip and the piano roll or audio editor.
-- **The bottom panel**: tabs for the **Mixer**, the **Launcher** (see Clip launcher), **EQ & Dynamics**, **Instruments** (the Instrument Browser, the sound deck pads and patterns), **Game**, **Video** and **Sound FX**. Click a tab to show it; click the open tab (or the arrow on the right) to fold the panel away. Drag its top edge to make it taller or shorter (double-click the edge to reset). The tab and height are remembered in this browser.
+- **The bottom panel**: tabs for the **Mixer**, the **Launcher** (see Clip launcher), **EQ & Dynamics**, **Game**, **Video** and **Sound FX**. Click a tab to show it; click the open tab (or the arrow on the right) to fold the panel away. Drag its top edge to make it taller or shorter (double-click the edge to reset). The tab and height are remembered in this browser.
 
 ### The menu bar
 
@@ -22,7 +22,7 @@ At the very top is the **menu bar**: every tool in the app, where a desktop DAW 
 - **Edit**: Undo, Redo, Cut, Copy, Paste at the playhead, Duplicate, Delete, Select all / nothing, and the Selection and Razor tools.
 - **Song**: markers and hit points, the Markers list, Fit tempo / tempo finder, Tap tempo, Breathe (see Tempo changes), Play bars In → Out backwards (see Play backwards), insert and delete bars, Build-up & drop and key changes at the playhead, Cut song to length.
 - **Track** (the selected track): Add track…, Delete, Freeze, Move up / down, New folder with this track, Mute, Solo, Arm, the Inspector, EQ, Pro EQ, Multiband, Human feel, Duck others under this track, Automation.
-- **Tools**: Mixer, Instruments & sounds, Sound effects maker, Generate variations, Tune vocal, Synth Designer, the microphone, MIDI keyboard, metronome, Performance & memory.
+- **Tools**: Mixer, Sound effects maker, Generate variations, Tune vocal, Synth Designer, the microphone, MIDI keyboard, metronome, Performance & memory.
 - **Video**: load the reference video, its preview window, Find cuts, Dip under dialogue, the tempo finder, Cut to length, markers for editors, music onto the video, remove the video.
 - **Game**: the Game tab and its parts (transitions, intensity, stingers, loop variations), Sound effects maker, variations, and the game kit, web runtime and FMOD / Wwise exports.
 - **View**: the bottom panel's tabs, show or hide it, the Inspector, zoom, and bars or timecode on the ruler.
@@ -122,7 +122,6 @@ Right-click the ruler where the new key starts and choose **Key change here: up 
 - With the Selection tool, double-click empty lane space for a new 1-bar clip starting on that beat (whatever SNAP is set to). It opens in the piano roll.
 - Right-click empty lane space for empty clips of 1, 2 or 4 bars, ready-made patterns (Drums, Drum Machine, Slap Bass, Space Clav and Brass Stabs have them), and Paste.
 - The **+** in a track header opens the same menu at the playhead.
-- Drag a pad from the Audition Deck onto a matching track (any drum kit accepts drum pads). Dropping inside a clip adds the notes to it; dropping on empty space makes a new clip.
 
 ### Snap
 
@@ -434,7 +433,7 @@ It's on for every track of a new song and every track you add. Songs made before
 
 For **classical and angelic** music: Choir and Voices "Ooh" for heavenly voices, Halo Pad, Glass Pad and Choir Pad underneath, Harp, Celesta and Glockenspiel for sparkle, and the Orchestra group for everything from a string quartet (Violin, Viola, Cello, Contrabass) to a full orchestra with woodwinds, brass and Timpani.
 
-- **Recorded instruments** download their sounds the first time you use them, so they need an internet connection then; after that they're kept in this browser and load at once, even offline (Master tab › **Instruments offline** can download them all ahead of time). A spinner shows on the track header while they load, and the Inspector shows **Loading CDN...**, **Ready** or **Error**. When a song opens, each instrument fetches the recordings of the notes the song plays first, and plays as soon as those have arrived; the rest download behind it, one at a time, and join in as they come (an instrument added to a song starts with one loudness of every note). A note whose own recording hasn't arrived yet plays the nearest one that has, while its own is fetched. Exports wait for every recording the song plays. To save memory, recordings are kept without their silent ends, and ones whose two sides are the same sound are kept as one; neither changes how anything sounds. On a phone or a computer with little memory (4 GB or less), the rest of an instrument's recordings download only when a note needs them. If a download fails, the track header shows a red **!** in place of its coloured dot and the Inspector shows **Error** with a **Retry** button; click either to try again. Failed downloads are also retried when your connection comes back, and when you play that instrument in the Instrument Browser or Audition Deck, add another track with it or export. Once it downloads, every track using it plays from its next note, with no reload.
+- **Recorded instruments** download their sounds the first time you use them, so they need an internet connection then; after that they're kept in this browser and load at once, even offline (Master tab › **Instruments offline** can download them all ahead of time). A spinner shows on the track header while they load, and the Inspector shows **Loading CDN...**, **Ready** or **Error**. When a song opens, each instrument fetches the recordings of the notes the song plays first, and plays as soon as those have arrived; the rest download behind it, one at a time, and join in as they come (an instrument added to a song starts with one loudness of every note). A note whose own recording hasn't arrived yet plays the nearest one that has, while its own is fetched. Exports wait for every recording the song plays. To save memory, recordings are kept without their silent ends, and ones whose two sides are the same sound are kept as one; neither changes how anything sounds. On a phone or a computer with little memory (4 GB or less), the rest of an instrument's recordings download only when a note needs them. If a download fails, the track header shows a red **!** in place of its coloured dot and the Inspector shows **Error** with a **Retry** button; click either to try again. Failed downloads are also retried when your connection comes back, and when you hear it with ▶ in the instrument menu, add another track with it or export. Once it downloads, every track using it plays from its next note, with no reload.
 - **Tuning**: every recording of the recorded instruments was measured for pitch, and the ones that were out of tune (some soundfont recordings are off by up to half a semitone, so neighbouring notes clashed) are re-pitched as they load, or replaced by a steadier recording a semitone away. Across the instruments, 99.8% of notes are within 10 cents (a tenth of a semitone) of true pitch. **Pizzicato Strings** now uses a steadier set of recordings, one for every key. Bells, drums and the piano (tuned slightly wide on purpose, as real pianos are) are left as recorded.
 - **Balance across the range**: every instrument's level was measured in its low, middle and top register with a weighting close to how ears hear at normal volume. Instruments that got louder or harsher up high play their top notes softer (a taper), the brightest ones (Flute, Recorder, Pan Flute, Ocarina, Violin, Erhu, Saxophone) start a little quieter, and the deep instruments and strings (Cello, Viola, Contrabass, Strings, Tremolo, French Horn, Trombone, Tuba, Bassoon, the basses, the choirs) have their slow recorded swell trimmed so notes speak at once, more upper-mid presence and less low-mid boom, so they sound close instead of in the next room.
 - Every drum kit has the same eleven rows: **Kick**, **Snare**, **Clap**, **Closed Hat**, **Open Hat**, **Tom Low**, **Tom Mid**, **Tom High**, **Cowbell**, **Ride** and **Crash**, so drum parts move between kits. The recorded kits play their own recordings of the kick, snare, hats and toms, and synthesized hits for the rows they have no recording of. On a MIDI keyboard, the drum pads land on the matching rows. Taiko and Timpani are played like pitched instruments.
@@ -559,28 +558,9 @@ Plugins are programs from their sites, so only load ones you trust. A project yo
 
 Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.fledgetone.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen or restorable session uses. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
 
-## Trying sounds: Instrument Browser and Audition Deck
+## Hearing an instrument before you choose it
 
-Both are in the **Instruments** tab of the bottom panel.
-
-### Instrument Browser
-
-Pick any instrument except the Sampler from the menu (it has the same search field as Add Track) and play the on-screen keyboard (or drum pads) with the mouse. Drag a key or pad onto a track that uses the same instrument to add that note. The browser plays instruments "dry", without any track's volume or effects.
-
-### Soundbank Audition Deck
-
-Pads for Slap Bass, Space Clav chords, Brass Stabs, the Drums kit, four recorded instruments and the stock patterns. Click a pad to hear it, or play it from the computer keyboard:
-
-| Keys | Sound |
-|---|---|
-| `Q` `W` `E` `R` `T` | Kick, snare, closed hat, cowbell, open hat |
-| `1` `2` `3` `4` | Slap Bass D1, F1, G1, A1 |
-| `A` `S` `D` | Space Clav chords Dm9, G13, Bbmaj7 |
-| `Z` `X` | Brass stabs Dm and C |
-
-These keys work while the Instruments tab is showing, anywhere on the page except while typing in a box or with a dialog open. So pressing `R` plays a cowbell rather than arming a track.
-
-Drag a pad or a pattern chip (**Lazy Beat**, **Hats Intro**, **Walking Bass**, **Soul Chords**, **Horn Hook**) onto a matching track: the lanes that accept it light up, the others fade. Drum pads and drum patterns fit either drum kit.
+Every instrument menu (Add Track, and the instrument at the top of the Track Inspector) has a **▶** button on each row: click it to hear that instrument play a short rising phrase and a chord (a drum kit plays a short beat), without choosing it. It plays "dry", without any track's volume or effects. The first time, a recorded instrument downloads its sounds before it plays.
 
 ## Mixing and effects
 
@@ -696,7 +676,7 @@ Mixer and effect changes, tempo changes and time signatures can be undone with `
 
 While the song plays, the app watches for three signs that the computer isn't keeping up: notes reaching the sound engine too late, the page freezing for a moment, and the sound engine itself falling behind (it can't make the sound as fast as it plays, which you hear as crackles). A few of the first two in a few seconds, or the engine running behind, turns the badge in the header (next to LUFS) into an amber **LAG**, and a warning appears at the top with **Clear memory**. Close the warning with **×** (it stays away until you next press Play). When all is well the badge shows how much memory the page is using (in Chrome).
 
-**Clear memory** (in the warning, or from the badge at any time) lets go of what the app holds but isn't using: downloaded recordings of instruments no track plays, decoded sounds no clip uses, the Instrument Browser's preview players, and any notes left hanging. Everything comes back by itself if needed (an instrument re-downloads when you use it again). Tick **Also empty the undo history** to free the most on a long session, but then earlier edits can't be undone.
+**Clear memory** (in the warning, or from the badge at any time) lets go of what the app holds but isn't using: downloaded recordings of instruments no track plays, decoded sounds no clip uses, the instrument menu's preview players, and any notes left hanging. Everything comes back by itself if needed (an instrument re-downloads when you use it again). Tick **Also empty the undo history** to free the most on a long session, but then earlier edits can't be undone.
 
 The app also steps in by itself. At the first late note or freeze of a playback, it hands notes to the sound engine further ahead of time (0.4 s instead of 0.1 s) until you press Stop, so the next busy moment is absorbed instead of heard; once a playback has needed that, later ones start with it. The only cost is that a fader, a mute or a jump you make while it plays takes a moment longer to be heard; playing your keyboard or MIDI keyboard isn't affected. And while it lags, the meters and the spectrum draw less often, to leave the computer's time to the music.
 
@@ -835,7 +815,7 @@ Click the **MIDI** button (the keyboard icon) in the toolbar, then **Connect MID
 
 ### The computer keyboard as a piano
 
-In the MIDI popover, tick **Computer keyboard piano**. `A` `S` `D` `F` `G` `H` `J` `K` `L` `;` `'` are the white keys from C, `W` `E` `T` `Y` `U` `O` `P` the black keys, and `Z` / `X` move an octave down or up. Notes play at a fixed velocity. While it's on, those keys play notes instead of their usual jobs (the Audition Deck pads, `L`, `O`); Space and the other shortcuts still work. It's off by default.
+In the MIDI popover, tick **Computer keyboard piano**. `A` `S` `D` `F` `G` `H` `J` `K` `L` `;` `'` are the white keys from C, `W` `E` `T` `Y` `U` `O` `P` the black keys, and `Z` / `X` move an octave down or up. Notes play at a fixed velocity. While it's on, those keys play notes instead of their usual jobs (`L`, `O`); Space and the other shortcuts still work. It's off by default.
 
 ## Recording
 
@@ -1103,7 +1083,7 @@ Shortcuts don't work while you're typing in a box, or while a dialog or panel (G
 | `+` / `-` | Zoom in / out (around the playhead) |
 | `Ctrl+K` | Search tools, settings, instruments, starters and the guide |
 | `?` | Open this guide |
-| `Q` `W` `E` `R` `T`, `1`–`4`, `A` `S` `D`, `Z` `X` | Play Audition Deck pads (see Trying sounds); with the computer keyboard piano on, `A`–`'` and `W`–`P` play notes and `Z` / `X` change octave |
+| `A`–`'`, `W`–`P`, `Z` / `X` | With the computer keyboard piano on: play notes, and change octave |
 
 On a Mac, use `Cmd` instead of `Ctrl`.
 

@@ -231,7 +231,6 @@ const MENUS: MenuDef[] = [
       const clip = selectedClips()[0];
       return [
         { label: 'Mixer', run: inDock('mixer') },
-        { label: 'Instruments & sounds', run: inDock('instruments') },
         { label: 'Sound effects maker', run: inDock('sfx') },
         { label: 'Generate variations of the selected clip…', run: () => (clip ? ui().setVariationsClip(clip.id) : 'Select a short clip first.'), disabled: !clip, divider: true },
         { label: 'Tune vocal (selected audio clip)…', run: () => (clip?.audio ? ui().setTuneClip(clip.id) : 'Select an audio clip (a recorded vocal) first.'), disabled: !clip?.audio },
@@ -304,7 +303,6 @@ const MENUS: MenuDef[] = [
       return [
         tab('mixer', 'Mixer'),
         tab('eq', 'EQ & Dynamics'),
-        tab('instruments', 'Instruments & sounds'),
         tab('game', 'Game'),
         tab('video', 'Video'),
         tab('sfx', 'Sound effects'),

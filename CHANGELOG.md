@@ -8,6 +8,11 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-9 — Hear instruments in the menu
+
+- Every instrument in the instrument menus (Add Track and the Track Inspector) has a ▶ button: click it to hear that instrument before choosing it.
+- The Instruments tab of the bottom panel is gone: hearing instruments moved into the menus, and its old pads and patterns had been replaced by the starters, the piano roll and the step sequencer. The bottom panel now has more room for the Mixer, EQ and Game panels.
+
 ## 2026.10.15-8 — Clearer timeline resize
 
 - The timeline's resize bar sits right under the tracks with a grip on it, and says "more tracks below: drag down" when some tracks are out of view.

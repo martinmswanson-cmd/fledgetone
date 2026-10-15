@@ -1,6 +1,7 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFloatingMenu } from './useFloatingMenu';
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown, Play, Search } from 'lucide-react';
+import { previewInstrument } from '../audio/instrumentPreview';
 import type { InstrumentDef, InstrumentKey } from '../audio/instrumentCatalog';
 import { INSTRUMENTS, instrumentsByCategory } from '../audio/instrumentCatalog';
 import { searchInstruments } from '../search/instrumentSearch';
@@ -24,6 +25,12 @@ interface ListProps {
 
 /** The search field and the list it filters. */
 export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, heading }) => {
+  /** The instrument whose preview is playing (or loading) */
+  const [previewing, setPreviewing] = useState<InstrumentKey | null>(null);
+  const preview = (key: InstrumentKey) => {
+    setPreviewing(key);
+    void previewInstrument(key).finally(() => setPreviewing((k) => (k === key ? null : k)));
+  };
   const [query, setQuery] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const idBase = `inst${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -102,6 +109,21 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: def.color }} />
               <span className={`font-medium whitespace-nowrap ${def.key === current ? 'text-cyan-200' : 'text-forge-text'}`}>{def.name}</span>
               <span className="ml-auto text-[10px] text-forge-muted truncate pl-2">{query.trim() ? `${def.category} · ${def.blurb}` : def.blurb}</span>
+              {(def.kind === 'synth' || def.kind === 'drums' || def.kind === 'sampled') && (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    preview(def.key);
+                  }}
+                  aria-label={`Hear ${def.name}`}
+                  title={`Hear ${def.name}`}
+                  className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center border transition-colors ${previewing === def.key ? 'border-cyan-400 text-cyan-300 bg-cyan-500/15' : 'border-forge-border text-forge-muted hover:text-cyan-300 hover:border-cyan-500/60'}`}
+                >
+                  <Play className={`w-3 h-3 ${previewing === def.key ? 'animate-pulse fill-current' : ''}`} />
+                </button>
+              )}
             </div>
           </React.Fragment>
         ))}
