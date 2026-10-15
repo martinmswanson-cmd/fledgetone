@@ -14,11 +14,11 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
 
 - [VSCO 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios: the
   string sections, solo violin, harp, flute, oboe, clarinet, bassoon, horn, trumpet, trombone,
-  tuba, marimba, xylophone, glockenspiel, pipe organ and upright piano (the piano by Simon Dalzell
-  of Ivy Audio, redistributable as part of VSCO).
+  tuba, muted trumpet (harmon mute), marimba, xylophone, glockenspiel, pipe organ and upright piano
+  (the piano by Simon Dalzell of Ivy Audio, redistributable as part of VSCO).
 - [VCSL](https://github.com/sgossner/VCSL) (Versilian Community Sample Library) by Versilian
   Studios: timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica,
-  ocarina, zither (a dan tranh) and concert bass drum.
+  ocarina, zither (a dan tranh), concert bass drum and baroque recorders (tenor, alto and soprano).
 - Karoryfer Lecolds: electric guitars ([Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars),
   [Emily Guitar](https://github.com/sfzinstruments/karoryfer.emilyguitar)), saxophones
   ([Weresax](https://github.com/sfzinstruments/karoryfer.weresax), [Bear Sax](https://github.com/sfzinstruments/karoryfer.bear-sax)),
@@ -34,6 +34,9 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
 - [E-Pianos](https://github.com/sfzinstruments/GregSullivan.E-Pianos): an electric piano recorded
   by Greg Sullivan (CC BY 3.0; credit "Greg Sullivan").
 - [ganjo](https://github.com/sfzinstruments/ganjo) by itsclipping (CC0): a six-string banjo.
+- [A Sampled Celesta](https://gitlab.com/echoparallax/a-sampled-celesta) by Neil Bickford, on GitLab
+  (its LICENSE: the audio files CC0, the code MIT): a celesta, every key, from its "Tuned Denoised
+  Mix" SoundFont.
 
 ## Rebuilding them
 
@@ -55,7 +58,10 @@ mixed instead of fetched: run `kit.py studio-kit` before measuring and convertin
   of note it is (held, short, plucked, ringing or struck), which sets how it's measured and how
   long a note is kept.
 - **`fetch.py`** lists each library's files (a clone without their contents) and downloads the
-  ones a set uses, at most two takes per note and loudness.
+  ones a set uses, at most two takes per note and loudness. A library on GitLab is written
+  `gitlab:<owner>/<name>` in `REPOS`. A set whose recordings come in a SoundFont (`sf2`, the
+  celesta) downloads that file and unpacks the recordings it uses into WAVs (a left and right pair
+  as one stereo file; `soundfont.py`), then deletes it.
 - **`kit.py`** mixes a multi-microphone drum kit (KITS in `sets.py`): every hit's close
   microphones, placed where the overheads hear the piece, with the overheads, into one stereo file
   per piece, loudness and take. The overheads hear the whole kit at one gain, so each close

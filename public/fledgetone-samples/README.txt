@@ -6,7 +6,7 @@ From VSCO 2 Community Edition by Versilian Studios
   cello-sustain, cello-spiccato, violins-sustain, violins-spiccato, violas-sustain, violas-spiccato,
   strings-pizzicato, strings-tremolo, solo-violin, harp, flute, flute-staccato, oboe, clarinet,
   bassoon, horn, horn-staccato, trumpet, trumpet-staccato, trombone, trombone-staccato, tuba,
-  marimba, xylophone, glockenspiel, pipe-organ, chapel-organ
+  marimba, xylophone, glockenspiel, pipe-organ, chapel-organ, muted-trumpet
   upright-piano: sampled by Simon Dalzell of Ivy Audio, redistributable as part of VSCO 2 CE
 
 From Karoryfer Lecolds (CC0 1.0, public domain):
@@ -22,3 +22,11 @@ From Karoryfer Lecolds (CC0 1.0, public domain):
 
 grand-piano: Splendid Grand Piano, public-domain samples by AKAI
   https://github.com/sfzinstruments/SplendidGrandPiano
+
+From the Versilian Community Sample Library (VCSL) by Versilian Studios
+  https://github.com/sgossner/VCSL (CC0 1.0, public domain):
+  timpani, tubular-bells, vibraphone, harpsichord, harpsichord-release, piano-release, kalimba,
+  tenor-sax, harmonica, ocarina, zither, concert-bass-drum, recorder
+
+celesta: A Sampled Celesta by Neil Bickford (audio CC0 1.0, public domain)
+  https://gitlab.com/echoparallax/a-sampled-celesta
