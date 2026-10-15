@@ -35,7 +35,6 @@
  * master inserts and returns, ducking and intensity.
  */
 import type { RoomStyle } from '../audio/effects/roomIR';
-import type { InstrumentCategory } from '../audio/instrumentCatalog';
 import { makeSpace } from './makeSpace';
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
@@ -88,7 +87,7 @@ import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import { durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
-import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, seatOf } from '../audio/instrumentCatalog';
+import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
@@ -862,29 +861,10 @@ function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: strin
   };
 }
 
-/**
- * A recorded instrument starts with a player's feel (the Human insert, see human.ts) suited to it:
- * an orchestra's players a little loose in time and touch, a band's a little less, keyboards and
- * mallets tighter, a drum kit tight in time with only its hits' strength varying. Synths, buses and
- * your own sounds start exact, as a machine plays.
- */
+/** A recorded instrument starts with a player's feel (the Human insert, see playerFeel in the catalog). */
 function withHumanFeel(key: InstrumentKey, fx: Track['fx']): Track['fx'] {
-  const def = INSTRUMENTS[key];
-  if (!def || !(def.kind === 'sampled' || def.kind === 'drums')) return fx;
-  const feel: Partial<Record<InstrumentCategory, [timing: number, dynamics: number]>> = {
-    Orchestra: [0.25, 0.3],
-    'Choir & Voices': [0.25, 0.25],
-    'Guitars & Strings': [0.2, 0.3],
-    'Winds & Brass': [0.2, 0.25],
-    World: [0.2, 0.25],
-    Bass: [0.12, 0.2],
-    'Keys & Synths': [0.1, 0.2],
-    'Mallets & Bells': [0.1, 0.2],
-    'Drums & Percussion': [0.06, 0.2],
-  };
-  const f = feel[def.category];
-  if (!f) return fx;
-  return { ...fx, human: { ...fx.human, on: true, timing: f[0], dynamics: f[1], pitch: 0 } };
+  const feel = playerFeel(key);
+  return feel ? { ...fx, human: { ...fx.human, on: true, ...feel, pitch: 0 } } : fx;
 }
 
 /** A return's effects start fully wet (the dry sound plays from the tracks that send to it), so its Delay and Reverb show the mix they'll use. */

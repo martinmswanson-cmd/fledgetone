@@ -158,7 +158,8 @@ export async function freezeTrack(trackId: string): Promise<void> {
 /**
  * Bounce in place (one undo step): the track's sound, instrument, inserts and EQ included, as one
  * audio clip on a new Audio track just under it, which takes over its volume, pan, sends, output
- * and their automation. The original is muted and kept, to go back to. Returns the new track's id.
+ * distance and their automation. The original is muted and kept, to go back to. Returns the new
+ * track's id.
  */
 export async function bounceTrack(trackId: string): Promise<string | null> {
   const r = await renderTrackSound(trackId, 'bounce');
@@ -178,6 +179,7 @@ export async function bounceTrack(trackId: string): Promise<string | null> {
       pan: source.pan,
       reverbSend: source.reverbSend,
       delaySend: source.delaySend,
+      ...(source.distance ? { distance: source.distance } : {}),
       ...(source.sends ? { sends: source.sends } : {}),
       ...(source.output ? { output: source.output } : {}),
       ...(source.folder ? { folder: source.folder } : {}),

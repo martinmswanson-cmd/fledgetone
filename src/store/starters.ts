@@ -1463,7 +1463,9 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   sweepPad: { to: 'synthDesigner', preset: 'Sweep pad', db: 1.5 },
   polysynthPad: { to: 'synthDesigner', preset: 'Polysynth', db: 0.0 },
   soundtrackPad: { to: 'synthDesigner', preset: 'Soundtrack pad', db: 0.5 },
-  rhodes: { to: 'realElectricPiano', db: 0 },
+  // The electric piano's recordings stop after 0.4 to 2.5 s, well before a held chord ends (with
+  // no steady part to loop), so only parts of short notes move to them
+  rhodes: { to: 'rhodes', db: 0, short: 'realElectricPiano', shortDb: 0 },
   acousticKit: { to: 'studioKit', db: 0, anyNote: true },
   banjo: { to: 'realBanjo', db: 0 },
   harmonica: { to: 'realHarmonica', db: 0 },

@@ -56,3 +56,19 @@ test('a band the user moved is left alone', () => {
   const out = makeSpace(tracks, clips).tracks.find((t) => t.id === 'pad');
   assert.equal(out.fx.peq.bands[3].gain, 4);
 });
+
+test('a synth patch that sounds an octave under its notes keeps its fundamental', () => {
+  // Written from A3 (220 Hz), but one plays its oscillator an octave down and the other has a sub
+  // an octave down: both sound from 110 Hz
+  const osc = (on, octave) => ({ on, wave: 'sawtooth', octave, semi: 0, fine: 0, level: on ? 0.8 : 0 });
+  const hoover = { ...track('hoover', 'synthDesigner'), synth: { osc1: osc(true, -1), osc2: osc(false, 0), sub: 0 } };
+  const subby = { ...track('sub', 'synthDesigner'), synth: { osc1: osc(true, 0), osc2: osc(false, 0), sub: 0.5 } };
+  const tracks = [track('lead', 'realFlute'), hoover, subby];
+  const notes = ['A3', 'C4', 'E4', 'A3', 'C4', 'E4'];
+  const clips = [clip('lead', ['C5', 'D5', 'E5', 'G5', 'E5', 'D5']), clip('hoover', notes), clip('sub', notes)];
+  const out = makeSpace(tracks, clips).tracks;
+  for (const id of ['hoover', 'sub']) {
+    const cut = out.find((t) => t.id === id).fx.peq.bands[0];
+    assert.ok(!cut.on || cut.freq < 110, `${id}: low cut at ${cut.freq} Hz`);
+  }
+});

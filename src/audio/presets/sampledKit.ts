@@ -11,12 +11,42 @@ import { createBus, createVoiceSet } from './native';
  * takes ("<note>|<layer>|<take>", see SampleSource.layers) plays the recording for each hit's
  * velocity, its takes in turn, as a drummer never hits the same way twice. Rows the kit has no
  * recording of are left to the synthesized extras (kitExtras.ts).
+ *
+ * The velocity sets a hit's level (velocity squared, as below) and the loudness picks its tone, so
+ * each row's loudnesses are played back at one level: their recordings' own levels vary (a soft
+ * kick was converted louder than a hard one: matched by an A-weighted level, which hardly hears
+ * a kick's boom), and as they were a harder hit could come out quieter than a softer one.
  */
+/** The start of a hit whose energy sets its level against the row's other loudnesses (seconds) */
+const LEVEL_WINDOW = 0.3;
+
+/** Each loudness's gain that brings its recordings' level to the loudest's (1 for the loudest). */
+function layerGains(row: AudioBuffer[][]): number[] {
+  const energy = row.map((takes) => {
+    const all = (takes ?? []).filter(Boolean);
+    if (!all.length) return 0;
+    let sum = 0;
+    for (const b of all) {
+      const n = Math.min(b.length, Math.round(LEVEL_WINDOW * b.sampleRate));
+      for (let c = 0; c < b.numberOfChannels; c++) {
+        const d = b.getChannelData(c);
+        for (let i = 0; i < n; i++) sum += d[i] * d[i];
+      }
+    }
+    return sum / all.length;
+  });
+  const top = energy[energy.length - 1];
+  // (at most 12 dB either way: a recording far off is better left than turned to a whisper or a roar)
+  return energy.map((e) => (e > 0 && top > 0 ? Math.min(4, Math.max(0.25, Math.sqrt(top / e))) : 1));
+}
+
 export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
   const { bus, raw, input } = createBus(output);
   const voices = createVoiceSet(raw);
   /** Each row's recordings: by loudness, then take */
   let buffers: Record<string, AudioBuffer[][]> = {};
+  /** Each row's gain per loudness (see layerGains) */
+  let gains: Record<string, number[]> = {};
   const tops = INSTRUMENTS[key].samples?.layers ?? [1];
   const turns = new Map<string, number>();
   let loaded = false;
@@ -30,13 +60,13 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
       (row[Number(l)] ??= [])[Number(t)] = audio;
     }
     buffers = rows;
+    gains = Object.fromEntries(Object.entries(rows).map(([note, row]) => [note, layerGains(row)]));
     loaded = true;
   });
   ready.catch(() => {}); // the loading badge reports it
 
-  /** Play the row's recording; false if the kit has none. */
-  /** The recording for a hit on `note` at `velocity`: its loudness's, the next take of it. */
-  const pick = (note: string, velocity: number): AudioBuffer | undefined => {
+  /** The recording for a hit on `note` at `velocity`: its loudness's, the next take of it, and its gain. */
+  const pick = (note: string, velocity: number): { buffer: AudioBuffer; gain: number } | undefined => {
     const row = buffers[note];
     if (!row) return undefined;
     let l = tops.findIndex((top) => velocity <= top + 1e-6);
@@ -47,12 +77,14 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     const k = `${note}|${l}`;
     const turn = turns.get(k) ?? 0;
     turns.set(k, turn + 1);
-    return takes[turn % takes.length];
+    return { buffer: takes[turn % takes.length], gain: gains[note]?.[l] ?? 1 };
   };
 
+  /** Play the row's recording; false if the kit has none. */
   const hit = (note: string, time: number, velocity: number, opts: { seconds?: number; rate?: number } = {}): boolean => {
-    const buffer = pick(note, velocity);
-    if (!buffer) return false;
+    const picked = pick(note, velocity);
+    if (!picked) return false;
+    const { buffer } = picked;
     const t = notLate(bus.context, time);
     const src = raw.createBufferSource();
     src.buffer = buffer;
@@ -63,7 +95,7 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     src.playbackRate.value = (opts.rate ?? 1) * tune;
     const amp = raw.createGain();
     // Softer hits are quieter, as on the kits' own velocity curve (about -24 dB at the bottom)
-    amp.gain.value = velocity * velocity * 10 ** ((0.8 * noteJitter(note, time, 37)) / 20);
+    amp.gain.value = picked.gain * velocity * velocity * 10 ** ((0.8 * noteJitter(note, time, 37)) / 20);
     // (Its length as recorded: a silent tail cut when it loaded doesn't move a shortened hit's fade)
     const length = Math.min(opts.seconds ?? Infinity, recordedDuration(buffer) / (opts.rate ?? 1));
     if (opts.seconds) amp.gain.setTargetAtTime(0, t + length * 0.6, length * 0.15);

@@ -1054,3 +1054,33 @@ export const breathOf = (key: InstrumentKey): number | undefined => BREATH[key];
  */
 const SECTIONS = new Set<InstrumentKey>(['realViolins', 'realViolas', 'realCello', 'realStrings', 'realBrass', 'realTremolo', 'realPizzicato', 'realDoubleBass', 'choir', 'voiceOohs']);
 export const isSection = (key: InstrumentKey): boolean => SECTIONS.has(key);
+
+/** How loose a player of each kind of instrument is: the Human insert's [timing, dynamics]. */
+const FEEL: Partial<Record<InstrumentCategory, [timing: number, dynamics: number]>> = {
+  Orchestra: [0.25, 0.3],
+  'Choir & Voices': [0.25, 0.25],
+  'Guitars & Strings': [0.2, 0.3],
+  'Winds & Brass': [0.2, 0.25],
+  World: [0.2, 0.25],
+  Bass: [0.12, 0.2],
+  'Keys & Synths': [0.1, 0.2],
+  'Mallets & Bells': [0.1, 0.2],
+  'Drums & Percussion': [0.06, 0.2],
+};
+/** Recorded drum machines: a machine plays them, exactly. */
+const MACHINES = new Set<InstrumentKey>(['linnDrum', 'cr78', 'technoKit']);
+
+/**
+ * The feel a new track on `key` starts with (the Human insert's timing and dynamics), or undefined
+ * to start exact: a recorded instrument plays like its player (an orchestra's a little loose in
+ * time and touch, a band's a little less, keyboards and mallets tighter, a drum kit tight in time
+ * with only its hits' strength varying); synths, drum machines (synthesized or recorded), buses
+ * and your own sounds play exactly, as a machine does.
+ */
+export function playerFeel(key: InstrumentKey): { timing: number; dynamics: number } | undefined {
+  const def = INSTRUMENTS[key];
+  if (!def || MACHINES.has(key)) return undefined;
+  if (!(def.kind === 'sampled' || (def.kind === 'drums' && def.samples))) return undefined;
+  const f = FEEL[def.category];
+  return f ? { timing: f[0], dynamics: f[1] } : undefined;
+}
