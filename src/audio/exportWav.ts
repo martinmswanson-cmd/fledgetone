@@ -945,9 +945,7 @@ async function renderGraph(
     }
     for (const [id, strip] of stripOf) strip.setAlignment(alignment.delays.get(id) ?? null);
     await Promise.all([busFx.ready, section?.inserts.ready(), section?.limiterReady, ...[...instruments.values()].map((i) => i.ready)]);
-    // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)
-    const convolver = (busFx.reverb as unknown as { _convolver: ConvolverNode })._convolver;
-    if (opts.reverbImpulse?.sampleRate === sampleRate) convolver.buffer = opts.reverbImpulse;
+    if (opts.reverbImpulse?.sampleRate === sampleRate) busFx.useImpulse(opts.reverbImpulse);
 
     const transport = context.transport;
     const tempo = renderTempo(opts);
@@ -992,7 +990,7 @@ async function renderGraph(
     transport.stop(plan.stopAt);
 
     return {
-      reverbImpulse: () => convolver.buffer ?? undefined,
+      reverbImpulse: () => busFx.impulse(),
       dispose: () => {
         schedule.dispose();
         audioClips.dispose();

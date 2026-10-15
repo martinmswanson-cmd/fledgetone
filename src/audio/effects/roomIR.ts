@@ -99,24 +99,47 @@ function noise(seed: number) {
 }
 
 /**
+ * Longest impulse response made (seconds). Every style's every band fits up to the longest decay
+ * the app offers (12 s: a church's lows ring 1.4 times that); past it, the bands that would ring
+ * longer are shortened to end there, so the tail still dies away instead of stopping.
+ */
+export const ROOM_IR_MAX_SECONDS = 18;
+/** The fade at the very end of an impulse response (seconds), so whatever is left stops without a click */
+const END_FADE = 0.05;
+
+/**
+ * How long `style`'s impulse response is at a middle decay of `decay` seconds: until its
+ * longest-ringing band has fallen 60 dB, plus the end fade, at most ROOM_IR_MAX_SECONDS.
+ */
+export function roomSeconds(style: RoomStyle, decay: number): number {
+  const room = style === 'lush' ? HALL : (ROOM_STYLES[style] ?? HALL);
+  const rt = Math.max(0.2, decay);
+  return Math.min(ROOM_IR_MAX_SECONDS, room.preDelay + rt * Math.max(1, room.low, room.high) + END_FADE);
+}
+
+/**
  * The impulse response's two channels for `style` with a middle decay of `decay` seconds (to
  * -60 dB), at `sampleRate`. Its total energy is 1, so changing style or decay keeps the reverb's
- * level about the same.
+ * level about the same. It lasts until every band has fallen 60 dB (see roomSeconds), and ends
+ * with a short fade.
  */
 export function roomChannels(style: RoomStyle, decay: number, sampleRate: number): [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] {
   const room = style === 'lush' ? HALL : (ROOM_STYLES[style] ?? HALL);
   const rt = Math.max(0.2, decay);
-  const seconds = Math.min(12, room.preDelay + rt * Math.max(1, room.low) * 1.1);
+  const seconds = roomSeconds(style, decay);
   const n = Math.max(1, Math.round(seconds * sampleRate));
+  // The time each band has to fall 60 dB: its own, or less if that would run past the end
+  const room60 = seconds - room.preDelay - END_FADE;
+  const t60 = (k: number) => Math.min(rt * k, room60);
   const out: [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] = [new Float32Array(n), new Float32Array(n)];
   // Crossovers between the low, middle and high bands of the tail (one-pole filters)
   const cLow = 1 - Math.exp((-2 * Math.PI * 300) / sampleRate);
   const cHigh = 1 - Math.exp((-2 * Math.PI * 4000) / sampleRate);
   // Per sample, how much each band falls (to -60 dB over its decay time)
   const fall = (t60: number) => Math.exp(-6.908 / (t60 * sampleRate));
-  const fLow = fall(rt * room.low);
-  const fMid = fall(rt);
-  const fHigh = fall(rt * room.high);
+  const fLow = fall(t60(room.low));
+  const fMid = fall(t60(1));
+  const fHigh = fall(t60(room.high));
   const start = Math.round(room.preDelay * sampleRate);
   const build = Math.max(1, Math.round(room.build * sampleRate));
   for (let c = 0; c < 2; c++) {
@@ -151,6 +174,9 @@ export function roomChannels(style: RoomStyle, decay: number, sampleRate: number
       for (let j = 0; j < width && at + j < n; j++) data[at + j] += (g * (1 - j / width)) / width;
     }
   }
+  // The end fade (raised cosine)
+  const fade = Math.min(n, Math.round(END_FADE * sampleRate));
+  for (const d of out) for (let k = 0; k < fade; k++) d[n - 1 - k] *= 0.5 - 0.5 * Math.cos((Math.PI * k) / fade);
   // Total energy 1 across both channels
   let energy = 0;
   for (const d of out) for (let i = 0; i < n; i++) energy += d[i] * d[i];

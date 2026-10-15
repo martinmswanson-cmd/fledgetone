@@ -1,8 +1,8 @@
-// The designed reverb rooms (src/audio/effects/roomIR.ts): the highs die before the lows, the two sides differ, longer decays ring longer, and the level is the same whatever the room.
+// The designed reverb rooms (src/audio/effects/roomIR.ts): the highs die before the lows, the two sides differ, longer decays ring longer, the level is the same whatever the room, and every tail has died away (not stopped) by its end.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { roomChannels, ROOM_STYLE_IDS } = await import('../src/audio/effects/roomIR.ts');
+const { roomChannels, roomSeconds, ROOM_STYLE_IDS, ROOM_IR_MAX_SECONDS } = await import('../src/audio/effects/roomIR.ts');
 const SR = 48000;
 const energy = (x, a, b) => x.subarray(a, b).reduce((s, v) => s + v * v, 0);
 
@@ -40,4 +40,29 @@ test('in a hall the highs die before the lows', () => {
     return hi / lo;
   };
   assert.ok(split(Math.round(1.5 * SR), Math.round(2 * SR)) < split(Math.round(0.1 * SR), Math.round(0.5 * SR)) * 0.6);
+});
+
+test('every band has fallen 60 dB by the end, which fades to silence, even at the longest decays', () => {
+  // A one-pole low-pass picks out the lows, which ring longest
+  const lows = (x) => {
+    const y = new Float32Array(x.length);
+    let a = 0;
+    for (let i = 0; i < x.length; i++) y[i] = a += 0.01 * (x[i] - a);
+    return y;
+  };
+  for (const style of ROOM_STYLE_IDS) {
+    for (const decay of [2.4, 12, 30]) {
+      const [l] = roomChannels(style, decay, SR);
+      assert.ok(l.length <= ROOM_IR_MAX_SECONDS * SR + 1, `${style} ${decay}: capped`);
+      assert.equal(l.length, Math.round(roomSeconds(style, decay) * SR));
+      const win = Math.round(0.1 * SR);
+      for (const [band, x] of [['all', l], ['lows', lows(l)]]) {
+        const start = energy(x, Math.round(0.15 * SR), Math.round(0.15 * SR) + win);
+        // The 100 ms before the end fade
+        const end = energy(x, x.length - Math.round(0.05 * SR) - win, x.length - Math.round(0.05 * SR));
+        assert.ok(10 * Math.log10(end / start) < -54, `${style} ${decay} ${band}: ${(10 * Math.log10(end / start)).toFixed(1)} dB at the end`);
+      }
+      assert.ok(Math.abs(l[l.length - 1]) < 1e-6, `${style} ${decay}: faded`);
+    }
+  }
 });
