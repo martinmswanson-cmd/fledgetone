@@ -1464,7 +1464,7 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   polysynthPad: { to: 'synthDesigner', preset: 'Polysynth', db: 0.0 },
   soundtrackPad: { to: 'synthDesigner', preset: 'Soundtrack pad', db: 0.5 },
   rhodes: { to: 'realElectricPiano', db: 0 },
-  acousticKit: { to: 'studioKit', db: 0 },
+  acousticKit: { to: 'studioKit', db: 0, anyNote: true },
   banjo: { to: 'realBanjo', db: 0 },
   harmonica: { to: 'realHarmonica', db: 0 },
   ocarina: { to: 'realOcarina', db: 0 },
