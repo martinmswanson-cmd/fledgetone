@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { createLoudnessAnalyser, normalizeGainDb, LOUDNESS_WORKLET_SOURCE, formatLufs, formatDbtp } = await import('../src/audio/loudness.ts');
+const { createLoudnessAnalyser, normalizeGainDb, LOUDNESS_WORKLET_SOURCE, LOUDNESS_WORKER_SOURCE, formatLufs, formatDbtp } = await import('../src/audio/loudness.ts');
 
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
 
@@ -154,4 +154,29 @@ test('the worklet source is self-contained: it runs with only the worklet global
   assert.equal(p.process([[]]), true);
   p.port.onmessage({ data: 'dispose' });
   assert.equal(p.process([[]]), false);
+});
+
+test('the meter worklet and the export Worker run their own copy of the analyser', () => {
+  // Their source is the analyser's text plus the constants it's given (in a minified build, its
+  // module's own names don't exist there, so nothing may be left for it to find outside)
+  const sr = 48000;
+  const x = new Float32Array(sr * 3);
+  for (let i = 0; i < x.length; i++) x[i] = 0.1 * Math.sin((2 * Math.PI * 1000 * i) / sr);
+  const direct = createLoudnessAnalyser(sr);
+  direct.feed(x, x, x.length);
+  const want = direct.read().integrated;
+
+  let workerReading;
+  const self = { postMessage: (m) => (workerReading = m) };
+  new Function('self', LOUDNESS_WORKER_SOURCE)(self);
+  self.onmessage({ data: { channels: [x, x], sampleRate: sr } });
+  assert.ok(Math.abs(workerReading.integrated - want) < 1e-6);
+
+  let Proc;
+  let posted;
+  const AudioWorkletProcessor = class { constructor() { this.port = { postMessage: (m) => (posted = m) }; } };
+  new Function('sampleRate', 'AudioWorkletProcessor', 'registerProcessor', LOUDNESS_WORKLET_SOURCE)(sr, AudioWorkletProcessor, (_, c) => (Proc = c));
+  const p = new Proc();
+  for (let at = 0; at < x.length; at += 128) p.process([[x.subarray(at, at + 128), x.subarray(at, at + 128)]]);
+  assert.ok(Math.abs(posted.integrated - want) < 0.01);
 });

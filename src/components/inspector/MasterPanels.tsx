@@ -1,6 +1,6 @@
 /**
  * The Master tab of the Inspector: the loudness meter, the glue, the OTT and stereo width inserts,
- * the Level and the clipper before the limiter, the reference track and the mix check, the playback buffering choice and the browser's audio delay, and the instruments kept for offline use.
+ * the Level and the clipper before the limiter, the reference track and the mix check, the playback buffering choice and the browser's audio delay, and the instruments kept for offline use (with whether the browser keeps this storage).
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Scissors, Snowflake, Timer, Volume2 } from 'lucide-react';
@@ -23,6 +23,7 @@ import type { PlaybackMode } from '../../audio/playbackMode';
 import { AUTO_FREEZE_MIN_TRACKS, setAutoFreeze, useAutoFreeze } from '../../store/autoFreeze';
 import { clearRecordings, downloadAll, keptRecordings, recordingCount, type DownloadProgress } from '../../audio/recordingStore';
 import { FxSlider, InsertPanel } from './InsertFx';
+import { StorageStatus } from './StorageStatus';
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const db = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
@@ -415,6 +416,7 @@ export const OfflinePanel: React.FC = () => {
             : 'Every instrument is kept: they all work offline now.'}
         </p>
       )}
+      <StorageStatus refreshKey={kept} />
     </div>
   );
 };

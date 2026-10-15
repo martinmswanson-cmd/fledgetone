@@ -3195,6 +3195,18 @@ export function currentProject(): ProjectSnapshot {
 /** Autosave right away (set while connectAutosave is connected). */
 let autosaveNow: (() => void) | null = null;
 
+/** Write an autosave that's waiting (set while connectAutosave is connected). */
+let autosaveFlush: (() => void) | null = null;
+
+/**
+ * Write any edit not autosaved yet, right now (before the app reloads into a new version).
+ * False when the autosave fails (the browser's storage is full): the work is then only on screen.
+ */
+export function flushAutosave(): boolean {
+  autosaveFlush?.();
+  return useTimelineStore.getState().autosaveStatus?.ok !== false;
+}
+
 /** Try a failing autosave again now, e.g. once Restore or Dismiss frees the set-aside session's space. */
 export function retryAutosave(): void {
   if (useTimelineStore.getState().autosaveStatus?.ok === false) autosaveNow?.();
@@ -3301,6 +3313,7 @@ export function connectAutosave(): () => void {
     later();
   });
 
+  autosaveFlush = flush;
   // Don't lose an edit made in the last half-second before the tab closes
   window.addEventListener('pagehide', flush);
   window.addEventListener('storage', onStorage);
@@ -3310,6 +3323,7 @@ export function connectAutosave(): () => void {
     window.removeEventListener('pagehide', flush);
     window.removeEventListener('storage', onStorage);
     if (autosaveNow === saveNow) autosaveNow = null;
+    if (autosaveFlush === flush) autosaveFlush = null;
     unsubscribe();
     unwatchVideo();
   };

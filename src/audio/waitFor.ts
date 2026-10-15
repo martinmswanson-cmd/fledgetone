@@ -1,7 +1,8 @@
 /**
  * Waiting with a limit: a promise that gives up after a while, and a download that gives up when
  * no bytes have come for a while (a stuck connection, which the browser itself can wait on for
- * minutes). Either way the timer and the listeners are let go, so nothing is left behind. No audio
+ * minutes). Either way the timer and the listeners are let go, so nothing is left behind. Also a
+ * download's address with its set's fingerprint (versionedUrl). No audio
  * engine here, so Node can test it; recordingStore.ts and exportWav.ts use it.
  */
 
@@ -84,3 +85,9 @@ export async function fetchBytes(url: string, stallMs: number, signal?: AbortSig
     signal?.removeEventListener('abort', onAbort);
   }
 }
+
+/**
+ * The address downloaded: with the set's fingerprint as `?v=`, so the server can let browsers keep a
+ * recording for good (public/_headers) and a re-made set still arrives fresh, at a new address.
+ */
+export const versionedUrl = (url: string, version: string): string => (version ? `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}` : url);

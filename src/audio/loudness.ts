@@ -79,7 +79,10 @@ export function truePeakOf(channels: readonly Float32Array[]): number {
   return peak;
 }
 
-export function createLoudnessAnalyser(sampleRate: number): LoudnessAnalyser {
+// Its constants come in as arguments (TAPS and PHASES by default): the function is also inlined
+// into the meter worklet and the export Worker as source text, where the minifier's names for
+// module constants don't exist, so the inlined copies pass their own.
+export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS, PHASE_TAPS: readonly Float64Array[] = PHASES): LoudnessAnalyser {
   const ABSOLUTE_GATE_LUFS = -70;
   const RELATIVE_GATE_LU = 10;
   const MOMENTARY_BLOCKS = 4;
@@ -111,7 +114,7 @@ export function createLoudnessAnalyser(sampleRate: number): LoudnessAnalyser {
   const memory = [new Float64Array(8), new Float64Array(8)];
 
   /** The last 12 samples of each channel, twice over so a window is always contiguous. */
-  const history = [new Float64Array(TAPS * 2), new Float64Array(TAPS * 2)];
+  const history = [new Float64Array(TAPS_N * 2), new Float64Array(TAPS_N * 2)];
   let historyAt = 0;
 
   /** Power (sum of the channels' mean squares) of each banked 100 ms block, newest last. */
@@ -184,19 +187,19 @@ export function createLoudnessAnalyser(sampleRate: number): LoudnessAnalyser {
         // True peak: the sample itself and the three points interpolated after it
         const h = history[ch];
         h[historyAt] = x;
-        h[historyAt + TAPS] = x;
-        const base = historyAt + TAPS;
+        h[historyAt + TAPS_N] = x;
+        const base = historyAt + TAPS_N;
         const a = Math.abs(x);
         if (a > peak) peak = a;
         for (let p = 0; p < 4; p++) {
-          const taps = PHASES[p];
+          const taps = PHASE_TAPS[p];
           let acc = 0;
-          for (let k = 0; k < TAPS; k++) acc += taps[k] * h[base - k];
+          for (let k = 0; k < TAPS_N; k++) acc += taps[k] * h[base - k];
           const v = Math.abs(acc);
           if (v > peak) peak = v;
         }
       }
-      historyAt = historyAt + 1 === TAPS ? 0 : historyAt + 1;
+      historyAt = historyAt + 1 === TAPS_N ? 0 : historyAt + 1;
       sum += power;
       count++;
       if (peak > blockPeak) blockPeak = peak;
@@ -260,7 +263,8 @@ export const METER_RATE_HZ = 10;
 export const LOUDNESS_WORKLET_SOURCE = `
 const TAPS = ${TAPS};
 const PHASES = ${JSON.stringify(PHASES.map((p) => Array.from(p)))}.map((taps) => Float64Array.from(taps));
-const createLoudnessAnalyser = ${createLoudnessAnalyser.toString()};
+const analyserSource = ${createLoudnessAnalyser.toString()};
+const createLoudnessAnalyser = (sr) => analyserSource(sr, TAPS, PHASES);
 class LoudnessProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -291,8 +295,11 @@ registerProcessor('${LOUDNESS_PROCESSOR}', LoudnessProcessor);
 `;
 
 /** A Worker that measures whole channels off the main thread: { channels, sampleRate } in, a LoudnessReading out. */
-const LOUDNESS_WORKER_SOURCE = `
-const createLoudnessAnalyser = ${createLoudnessAnalyser.toString()};
+export const LOUDNESS_WORKER_SOURCE = `
+const TAPS = ${TAPS};
+const PHASES = ${JSON.stringify(PHASES.map((p) => Array.from(p)))}.map((taps) => Float64Array.from(taps));
+const analyserSource = ${createLoudnessAnalyser.toString()};
+const createLoudnessAnalyser = (sr) => analyserSource(sr, TAPS, PHASES);
 self.onmessage = (e) => {
   const { channels, sampleRate } = e.data;
   const analyser = createLoudnessAnalyser(sampleRate);

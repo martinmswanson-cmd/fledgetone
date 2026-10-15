@@ -741,7 +741,7 @@ The Inspector's second tab, **Master**, works on the whole mix. At the top:
 - **Mix check**: **Check the mix** renders the song and each track (up to two minutes) and tells you, in plain words, what to look at, with buttons that select the track to blame: bass that isn't in the middle (sound under about 120 Hz that differs left and right), the kick and the bass fighting (the same low notes, as loud, at the same time: a Pump on the bass following the kick fixes most), muddy low mids (too much 200 to 500 Hz), harsh upper mids (too much 2 to 5 kHz), parts covering each other (two parts in the same range at the same level), a level too quiet or too loud for where the song is going (**Going to** picks the same loudness targets as the Export dialog), and peaks hitting the limiter or the clipper hard. Problems are marked red, things worth a look amber; a clean mix gets a green "nothing to flag". It was tuned on the starter songs, which it passes, and on the same songs spoiled on purpose.
 
 - **Playback**: how this browser buffers live audio. **Responsive** (the default) has the least delay between a key you play and its sound. **Stable** gives the audio a bigger buffer and more time to schedule notes, so busy moments in big songs play through instead of crackling; Play then starts about a quarter of a second later, and live playing has a few hundredths of a second more delay. It's a setting for this browser, not the project, and takes effect after a reload (the panel offers one; your work is kept, click **Restore** after it). Below the choice, **Delay from a key to sound** is the delay the browser measures between a note leaving the app and you hearing it (its audio buffer and your sound device), in milliseconds; keys you play, from a MIDI keyboard, the computer keyboard or the screen, start at once, so this is the delay you feel. Some browsers don't report it.
-- **Instruments offline**: recordings are kept in this browser once an instrument has downloaded them, so a song opens at once the next time and the instruments you've used work without an internet connection. The panel shows how many are kept. **Download all** fetches every instrument's recordings now (about 320 MB, a few minutes on a fast connection) so they all work offline: a bar shows the progress and **Stop** pauses it (what's done is kept; **Download all** carries on from there). **Remove** frees the space; instruments download their recordings again when next used.
+- **Instruments offline**: recordings are kept in this browser once an instrument has downloaded them, so a song opens at once the next time and the instruments you've used work without an internet connection. The panel shows how many are kept. **Download all** fetches every instrument's recordings now (about 320 MB, a few minutes on a fast connection) so they all work offline: a bar shows the progress and **Stop** pauses it (what's done is kept; **Download all** carries on from there). **Remove** frees the space; instruments download their recordings again when next used. Under it, **Storage** says whether the browser has agreed to keep Fledgetone's storage (your autosave, sounds and recordings) when the disk gets full, with **Protect** to ask, and how much space Fledgetone uses in this browser (see *Working offline*).
 
 OTT and Stereo Width sit between the master compressor and the limiter, are off in a new project, are saved with it, can be undone, and switch on or off while the song plays without a gap. The Level (0 dB in a new project) and the Clipper (off in a new project, after the Level) are saved and undone the same way. All of them are in exports too.
 
@@ -1223,6 +1223,31 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 | Arrow keys | Nudge selected notes (time, or one semitone) |
 | `Shift+Up` / `Shift+Down` | Move selected notes an octave |
 | `Esc` | Clear the note selection, or close the piano roll |
+
+## Installing Fledgetone
+
+Fledgetone can be installed as an app from fledgetone.com: it opens in a window of its own, with its own icon in your Start menu, Dock or app list, and it opens even without an internet connection.
+
+- **Chrome or Edge on a computer**: choose **Help › Install Fledgetone…**, or click the install icon at the right of the address bar.
+- **Safari on a Mac**: **File › Add to Dock** (or **Share › Add to Dock**).
+- **Safari on an iPhone or iPad**: tap **Share**, then **Add to Home Screen**.
+- **Android**: the browser's menu (⋮) › **Install app** or **Add to Home screen**.
+- Firefox on a computer doesn't install web apps; Fledgetone works in it as a web page.
+
+Once it's installed, the Help menu no longer offers it. The installed app and the web page share everything: your autosave, your sounds and the kept recordings. The one-file copy of Fledgetone (fledgetone.html) can't be installed; Help › Install Fledgetone tells you to open fledgetone.com instead.
+
+**New versions.** Fledgetone looks for a new version when it opens and about every half hour while it's open (only while you're online, and not while a song plays or an export renders). A new version downloads quietly in the background; then a small notice in the bottom right says **Version … is ready** with a **Reload** button. Nothing changes until you click it: your work is autosaved first, the app reloads into the new version, **Restore** brings your song back, and **What's new** opens at the new version's changes. If a new version arrives while you play or export, the notice waits until you stop. Close it with **×** to carry on: the new version opens next time you start Fledgetone. Only the files that changed are downloaded.
+
+## Working offline
+
+After you've opened Fledgetone once from fledgetone.com (in Chrome, Edge, Safari or Firefox), it opens and works without an internet connection, installed or not:
+
+- **The app itself** is kept in the browser and opens from there, offline or not, so it starts at once and isn't downloaded again.
+- **Recorded instruments** download their recordings the first time a song uses them; then they're kept (Master tab › **Instruments offline** shows how many and how much space, and **Download all** gets every instrument now, for a trip). A recording is downloaded again only when its instrument is re-recorded in a new version.
+- **Synths, drum machines, effects, exports and the sound effects maker** need nothing from the internet.
+- **The built-in plugins** download the first time you use one and are then kept too.
+
+**Keeping your work.** Browsers can clear a website's storage when the disk is nearly full. Fledgetone asks the browser to keep it (when you install the app, or once you've made a song); Master tab › **Instruments offline** shows **Storage: protected**, or **may be cleared by the browser if the disk gets full** with a **Protect** button to ask again. Browsers decide for themselves; installing Fledgetone usually lets it keep your storage. Whatever the browser says, **File › Save** your songs to files: that's the copy nothing can clear.
 
 ## Tips and limits
 

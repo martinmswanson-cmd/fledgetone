@@ -31,6 +31,7 @@ const FOLDERS = {
   'src/components/tour': 'The first-visit tour and the tutorials\' overlay.',
   'src/components/video': 'Scoring to a reference video: its lane, its preview window and the Video tab.',
   'src/gameKit': 'The adaptive music players shipped in the game kit (web, Unity, Godot), copied into its .zip as they are, and the web player\'s types.',
+  'src/pwa': 'Fledgetone as an installed app: the service worker (sw.js, filled in by the production build), its registration and updates, the install prompt and instructions.',
   'src/runtime': 'bos-player.js: plays a saved project in a web game, built separately (vite.runtime.config.ts).',
   'src/search': 'The search palette (Ctrl+K) and instrument search.',
   'src/store':

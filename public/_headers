@@ -1,0 +1,35 @@
+# How long browsers keep each file on fledgetone.com (Netlify reads this file from dist/).
+# The rules for the recordings and plugins used to be in netlify.toml; they're only here now, so
+# the two never add up to two Cache-Control headers.
+
+# The service worker, the manifest and version.json: always checked with the server, so a new
+# version is seen at once
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+  Content-Type: application/manifest+json
+/version.json
+  Cache-Control: no-cache
+
+# The app's scripts and styles: named by their content, so a file at an address never changes
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Recordings and plugins: the app asks for them with the set's fingerprint (?v=<hash>, see
+# versionedUrl in src/audio/recordingStore.ts), so a re-made set has a new address and an old
+# copy is never played for it. Kept for a year; pages on other sites may load them too.
+/fledgetone-samples/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+/fledgetone-plugins/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+
+# Icons: a day
+/icon-*
+  Cache-Control: public, max-age=86400
+/favicon.svg
+  Cache-Control: public, max-age=86400
+/apple-touch-icon.png
+  Cache-Control: public, max-age=86400
