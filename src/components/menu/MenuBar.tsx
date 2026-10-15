@@ -325,6 +325,7 @@ const MENUS: MenuDef[] = [
       { label: 'Keyboard shortcuts', run: () => ui().openGuide('keyboard-shortcuts'), divider: true },
       { label: 'Report a problem…', run: () => ui().setDialog('report'), divider: true },
       { label: `What's new (version ${APP_VERSION})`, run: () => ui().setDialog('changes') },
+      { label: 'Terms of use', run: () => ui().setDialog('terms') },
     ],
   },
 ];

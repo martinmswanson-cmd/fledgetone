@@ -26,7 +26,7 @@ At the very top is the **menu bar**: every tool in the app, where a desktop DAW 
 - **Video**: load the reference video, its preview window, Find cuts, Dip under dialogue, the tempo finder, Cut to length, markers for editors, music onto the video, remove the video.
 - **Game**: the Game tab and its parts (transitions, intensity, stingers, loop variations), Sound effects maker, variations, and the game kit, web runtime and FMOD / Wwise exports.
 - **View**: the bottom panel's tabs, show or hide it, the Inspector, zoom, and bars or timecode on the ruler.
-- **Help**: Guide, Tour & tutorials, Search, Keyboard shortcuts, Report a problem.
+- **Help**: Guide, Tour & tutorials, Search, Keyboard shortcuts, Report a problem, What's new, Terms of use.
 
 Hover across the bar while a menu is open to move between menus; the arrow keys work too, and `Esc` closes.
 
@@ -1130,6 +1130,8 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 ## Reporting a problem
 
 Something not working, sounding wrong or crashing? Click **Report a problem** at the bottom of the page (or search for *report*). Describe what you were doing, what you expected and what happened instead, and add your email if you'd like a reply. **Email it** opens your email program with the report addressed to martin@twobirdsworkshop.com; **Copy report** copies it to paste anywhere. You can also use the contact form at twobirdsworkshop.com (pick **SOMETHING'S BROKEN**).
+
+**Your music is yours.** Everything you make with Fledgetone belongs to you, to use, sell or share as you like; your songs stay on your computer. **Terms** at the bottom of the page (or **Help › Terms of use**) has the full terms, including what you're responsible for and what Fledgetone isn't.
 
 With **Include technical details** ticked (it is unless you untick it), the report also carries your browser, audio settings, the size of the song (tracks, clips, notes, tempo, instruments) and the last few errors the page hit; **See exactly what's included** shows all of it. Your song itself isn't sent: if the problem is in one song, **Save** it and attach the file.
 

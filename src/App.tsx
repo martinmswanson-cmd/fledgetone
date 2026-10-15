@@ -24,6 +24,7 @@ import { useUiStore } from './store/uiStore';
 import { startErrorLog } from './support/problemReport';
 import { LifeBuoy } from 'lucide-react';
 import changelogMarkdown from '../CHANGELOG.md?raw';
+import termsMarkdown from '../TERMS.md?raw';
 import { GuidePanel } from './components/guide/GuidePanel';
 import { APP_BUILT, versionLabel } from './version';
 
@@ -76,6 +77,13 @@ const WhatsNew: React.FC = () => {
   return open ? <GuidePanel markdown={changelogMarkdown} title="What's new" onClose={close} /> : null;
 };
 
+/** The terms of use (TERMS.md), when they're open. */
+const Terms: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'terms');
+  const close = React.useCallback(() => useUiStore.getState().setDialog(null), []);
+  return open ? <GuidePanel markdown={termsMarkdown} title="Terms of use" onClose={close} /> : null;
+};
+
 /** Try it in a game, when it's open. */
 const TryOut: React.FC = () => {
   const open = useUiStore((s) => s.dialog === 'tryOut');
@@ -98,6 +106,7 @@ export const App: React.FC = () => {
       <Engines />
       <TryOut />
       <WhatsNew />
+      <Terms />
       <Learn />
 
       {/* Main Workstation Canvas: the arrangement, and the dock under it */}
@@ -130,6 +139,9 @@ export const App: React.FC = () => {
             title="Something not working? Tell us"
           >
             <LifeBuoy className="w-3.5 h-3.5" /> Report a problem
+          </button>
+          <button type="button" onClick={() => useUiStore.getState().setDialog('terms')} className="hover:text-forge-text transition-colors" title="Fledgetone's terms of use: your music is yours">
+            Terms
           </button>
           <a href="https://twobirdsworkshop.com" target="_blank" rel="noopener" className="hover:text-forge-text transition-colors">
             twobirdsworkshop.com
