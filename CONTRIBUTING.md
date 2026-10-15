@@ -99,11 +99,15 @@ Each recipe lists the files to touch. The checks below catch most mistakes; run 
 2. Add its entry to `STARTERS` in `starters.ts` (id, group, name, a one-line description with its
    tempo and key) and its builder to `BUILDERS` (or `GAME_BUILDERS`).
 3. Mark its sections (they become the game states), put the loop on the main section, and mix
-   it: no track should poke out, and the whole should sit around -20 dB RMS like the others.
+   it: no track should poke out of the balance.
 4. Game starters also get stem groups (`grouped(track, 'Percussion')`), transitions and
    stingers through `gameReady()`.
-5. Listen to it all the way through, and render it (see [Checking sound](#checking-sound)) to
-   compare its level with a few others. Update the starter list in `GUIDE.md`.
+5. Listen to it all the way through. Then measure its loudness with
+   `IDS=<id> node scripts/audio-check/starters-loudness.cjs` and add its line to `STARTER_LEVELS`
+   in `startersLoudness.ts`: the trim it suggests, then the loudness it measures with that trim
+   (within 1.5 LU of its group's target; a test checks every starter has a line). If it needs
+   more than about 4 dB of limiting to get there, look for a part whose peaks stand far over the
+   rest. Update the starter list in `GUIDE.md`.
 
 ### A kind of sound effect
 
