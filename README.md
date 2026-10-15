@@ -28,7 +28,9 @@ that's the file published as `fledgetone.html` on twobirdsworkshop.com. The real
 recordings (`public/fledgetone-samples/`) are hosted next to it.
 
 `build:site` is what Netlify publishes on fledgetone.com (see `netlify.toml`): the home page in
-`site/` (plain HTML and CSS, no build step of its own) at `/`, and the app built under `/app/`.
+`site/` (plain HTML and CSS, no build step of its own) at `/`, the app built under `/app/`, and
+the guide at `/guide/`, a page per section of GUIDE.md (`scripts/guide-site.mjs`), so the site's
+guide always matches the app's.
 Old links to the app at the root (`fledgetone.com/#s=...`) are forwarded to `/app/`.
 
 ## Finding your way around
