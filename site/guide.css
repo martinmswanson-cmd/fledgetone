@@ -91,6 +91,18 @@ kbd {
 .g-pager a:hover { text-decoration: none; border-color: var(--cyan); }
 .g-next { text-align: right; }
 
+/* Screenshots and clips */
+.g-shot { margin: 22px 0 28px; }
+.g-shot a { display: block; }
+.g-shot img, .g-shot video {
+  display: block; width: 100%; height: auto; border-radius: 10px;
+  border: 1px solid var(--border-2); background: var(--panel);
+  box-shadow: 0 18px 50px -20px rgba(0, 0, 0, .8);
+}
+.g-shot.narrow { max-width: min(100%, var(--w)); }
+.g-shot figcaption { margin-top: 10px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.g-shot.narrow figcaption { max-width: 420px; }
+
 /* ---- Narrower screens ---- */
 @media (max-width: 1100px) {
   .g-layout { grid-template-columns: 200px minmax(0, 1fr); }

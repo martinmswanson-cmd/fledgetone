@@ -30,7 +30,9 @@ recordings (`public/fledgetone-samples/`) are hosted next to it.
 `build:site` is what Netlify publishes on fledgetone.com (see `netlify.toml`): the home page in
 `site/` (plain HTML and CSS, no build step of its own) at `/`, the app built under `/app/`, and
 the guide at `/guide/`, a page per section of GUIDE.md (`scripts/guide-site.mjs`), so the site's
-guide always matches the app's.
+guide always matches the app's. Its screenshots are taken from the studio by
+`scripts/guide-shots/capture.mjs` (the list, with where each one goes, is `shots.mjs`): run it
+again after changing the look of something they show.
 Old links to the app at the root (`fledgetone.com/#s=...`) are forwarded to `/app/`.
 
 ## Finding your way around

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const { slug, splitSections, inline, renderSection, summary, guidePages } = await import('./guide-pages.mjs');
+const { SHOTS } = await import('./guide-shots/shots.mjs');
 
 test('slugs match the in-app guide', () => {
   assert.equal(slug('Timecode and frame rates'), 'timecode-and-frame-rates');
@@ -39,6 +40,14 @@ test('blocks: headings, lists with continuation lines, tables with | in code, ti
   assert.match(html, /<aside class="g-tip">A tip<\/aside>/);
 });
 
+test('figures go after the opening block, after the first block under their heading, or at the end', () => {
+  const fig = (after, n) => ({ after, html: `<fig${n}>` });
+  const { html } = renderSection(['Intro.', '', 'More.', '### A', 'Under A.', '', 'Again.', '### B', '### C', 'Under C.'],
+    [fig(null, 0), fig('a', 1), fig('b', 2), fig('end', 3)]);
+  assert.deepEqual(html.split('\n').map((l) => l.replace(/<h3 id="(\w)".*/, 'h3-$1')),
+    ['<p>Intro.</p>', '<fig0>', '<p>More.</p>', 'h3-a', '<p>Under A.</p>', '<fig1>', '<p>Again.</p>', 'h3-b', '<fig2>', 'h3-c', '<p>Under C.</p>', '<fig3>']);
+});
+
 test('a summary is the first paragraph as plain text, cut at a word', () => {
   assert.equal(summary(['', '### Skip', 'Press **Play** or `Space`.']), 'Press Play or Space.');
   assert.equal(summary(['word '.repeat(60)], 20), 'word word word word…');
@@ -52,4 +61,11 @@ test('the real guide makes an index and a page per section', () => {
   assert.equal(pages[0].path, 'guide/index.html');
   assert.ok(pages.some((p) => p.path === 'guide/getting-started/index.html'));
   assert.equal(new Set(pages.map((p) => p.path)).size, pages.length, 'no two sections share a page');
+});
+
+test("every screenshot points at a section and heading the guide has (rename it in shots.mjs too)", () => {
+  const md = readFileSync(new URL('../GUIDE.md', import.meta.url), 'utf8');
+  const ids = new Map(splitSections(md).map((s) => [s.id, renderSection(s.body).headings.map((h) => h.id)]));
+  const lost = SHOTS.filter((s) => !ids.has(s.section) || (s.after && s.after !== 'end' && !ids.get(s.section).includes(s.after)));
+  assert.deepEqual(lost.map((s) => `${s.file}: ${s.section} / ${s.after}`), []);
 });

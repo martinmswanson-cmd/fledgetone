@@ -56,12 +56,19 @@ function cells(row) {
   return out;
 }
 
-/** One section's body as HTML, and its ### headings (for the page's "On this page" list). */
-export function renderSection(lines) {
+/**
+ * One section's body as HTML, and its ### headings (for the page's "On this page" list). Figures
+ * ({ after, html }) go after the first block under the ### heading whose id is `after`, after the
+ * section's opening block when `after` is null, or at the end for 'end'.
+ */
+export function renderSection(lines, figures = []) {
   const out = [];
   const headings = [];
   let i = 0;
   const LIST = /^\s*([-*]|\d+\.) /;
+  const under = (key) => figures.filter((f) => f.after === key).map((f) => f.html);
+  let pending = under(null);
+  const block = (html) => { out.push(html); out.push(...pending); pending = []; };
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) { i++; continue; }
@@ -70,7 +77,9 @@ export function renderSection(lines) {
     if (h3) {
       const id = slug(h3[1]);
       headings.push({ id, title: h3[1].trim() });
+      out.push(...pending);
       out.push(`<h3 id="${id}"><a href="#${id}">${inline(h3[1].trim())}</a></h3>`);
+      pending = under(id);
       i++;
       continue;
     }
@@ -79,7 +88,7 @@ export function renderSection(lines) {
       const rows = [];
       while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(lines[i++]);
       const [head, , ...body] = rows; // the second row is the |---| divider
-      out.push(
+      block(
         `<div class="g-table"><table><thead><tr>${cells(head).map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead>` +
           `<tbody>${body.map((r) => `<tr>${cells(r).map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`,
       );
@@ -96,22 +105,23 @@ export function renderSection(lines) {
         items.push(item);
       }
       const tag = ordered ? 'ol' : 'ul';
-      out.push(`<${tag}>${items.map((it) => `<li>${inline(it)}</li>`).join('')}</${tag}>`);
+      block(`<${tag}>${items.map((it) => `<li>${inline(it)}</li>`).join('')}</${tag}>`);
       continue;
     }
 
     if (line.startsWith('>')) {
       const parts = [];
       while (i < lines.length && lines[i].startsWith('>')) parts.push(lines[i++].replace(/^>\s?/, ''));
-      out.push(`<aside class="g-tip">${inline(parts.join(' '))}</aside>`);
+      block(`<aside class="g-tip">${inline(parts.join(' '))}</aside>`);
       continue;
     }
 
     // Always take at least this line, so an odd line can't stall the loop
     const para = [lines[i++].trim()];
     while (i < lines.length && lines[i].trim() && !/^(#{2,3}\s|\s*\||\s*([-*]|\d+\.) |>)/.test(lines[i])) para.push(lines[i++].trim());
-    out.push(`<p>${inline(para.join(' '))}</p>`);
+    block(`<p>${inline(para.join(' '))}</p>`);
   }
+  out.push(...pending, ...under('end'));
   return { html: out.join('\n'), headings };
 }
 
@@ -125,9 +135,9 @@ export function summary(lines, max = 155) {
   return `${/\s/.test(text[max - 1]) ? cut.trimEnd() : cut.replace(/\s+\S*$/, '')}…`;
 }
 
-/** Every page of the guide: [{ path, html }], with paths relative to the site root. */
-export function guidePages(markdown, page) {
-  const sections = splitSections(markdown).map((s) => ({ ...s, ...renderSection(s.body), summary: summary(s.body) }));
+/** Every page of the guide: [{ path, html }], with paths relative to the site root. figures(id) gives a section's figures. */
+export function guidePages(markdown, page, figures = () => []) {
+  const sections = splitSections(markdown).map((s) => ({ ...s, ...renderSection(s.body, figures(s.id)), summary: summary(s.body) }));
   const pages = sections.map((s, i) => ({
     path: `guide/${s.id}/index.html`,
     html: page.section({ section: s, sections, prev: sections[i - 1], next: sections[i + 1] }),

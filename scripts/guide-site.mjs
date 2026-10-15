@@ -1,10 +1,12 @@
 // The guide's pages for fledgetone.com, written into the site build: an index at /guide/ and a
 // page per section at /guide/<section>/ (scripts/guide-pages.mjs turns GUIDE.md into their HTML;
-// this wraps it in the site's header, navigation and footer). Styles: site/guide.css.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// this wraps it in the site's header, navigation and footer, and adds the screenshots listed in
+// scripts/guide-shots/shots.mjs). Styles: site/guide.css.
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { escape, guidePages } from './guide-pages.mjs';
+import { SHOTS } from './guide-shots/shots.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SITE = 'https://fledgetone.com';
@@ -63,6 +65,28 @@ const foot = `
 </body>
 </html>
 `;
+
+/**
+ * A section's screenshots and clips as figures. Pictures not taken yet (no entry in sizes.json) are
+ * left out, so the guide builds without them. Wide ones may spread beside the text; narrow ones
+ * (popovers, panels) keep their own size.
+ */
+export function figuresFor(sectionId, sizes) {
+  return SHOTS.filter((s) => s.section === sectionId && (s.video || sizes[s.file])).map((s) => {
+    const caption = `<figcaption>${escape(s.caption)}</figcaption>`;
+    if (s.video) {
+      return { after: s.after, html: `<figure class="g-shot wide"><video src="${s.video}" poster="${s.poster}" muted loop playsinline autoplay preload="metadata" aria-label="${escape(s.alt)}"></video>${caption}</figure>` };
+    }
+    const [w, h] = sizes[s.file];
+    const css = w / 2; // taken at twice the size, for sharp screens
+    const kind = css >= 1100 ? ' wide' : css < 700 ? ' narrow' : '';
+    const src = `/guide/img/${s.file}.webp`;
+    return {
+      after: s.after,
+      html: `<figure class="g-shot${kind}"${kind === ' narrow' ? ` style="--w: ${Math.round(css)}px"` : ''}><a href="${src}"><img src="${src}" width="${w}" height="${h}" alt="${escape(s.alt)}" loading="lazy" decoding="async" /></a>${caption}</figure>`,
+    };
+  });
+}
 
 const sectionList = (sections, current) =>
   sections
@@ -147,15 +171,18 @@ export const page = {
     }
   </div>
   <script>
-    // On small screens the section list starts folded
+    // On small screens the section list starts folded; clips stay still for reduced motion
     if (matchMedia('(max-width: 900px)').matches) document.querySelector('.g-sections').open = false;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) document.querySelectorAll('.g-shot video').forEach((v) => { v.pause(); v.controls = true; });
   </script>` +
     foot,
 };
 
 /** Write the guide's pages into outDir (the site build). Returns how many. */
 export function writeGuide(outDir) {
-  const pages = guidePages(readFileSync(join(ROOT, 'GUIDE.md'), 'utf8'), page);
+  const sizesFile = join(ROOT, 'site', 'guide', 'img', 'sizes.json');
+  const sizes = existsSync(sizesFile) ? JSON.parse(readFileSync(sizesFile, 'utf8')) : {};
+  const pages = guidePages(readFileSync(join(ROOT, 'GUIDE.md'), 'utf8'), page, (id) => figuresFor(id, sizes));
   for (const p of pages) {
     const file = join(outDir, p.path);
     mkdirSync(dirname(file), { recursive: true });
