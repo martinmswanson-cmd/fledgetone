@@ -6,7 +6,13 @@ import { readFileSync } from 'node:fs';
 
 const changelog = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-const versions = [...changelog.matchAll(/^## (\S+)/gm)].map((m) => m[1]);
+// (Changes not released yet gather under an "Unreleased" heading at the top)
+const headings = [...changelog.matchAll(/^## (\S+)/gm)].map((m) => m[1]);
+const versions = headings.filter((h) => h !== 'Unreleased');
+
+test('an Unreleased section, if any, comes first', () => {
+  assert.ok(!headings.slice(1).includes('Unreleased'));
+});
 
 test('the newest changelog entry is the version in package.json', () => {
   assert.equal(versions[0], version);

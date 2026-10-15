@@ -5,8 +5,12 @@ the app (with the build it came from), so you can check the site is running the 
 click it to read this list. To check from outside the app, open `/version.json` on the site.
 
 Each version is the date it was released (a second release on the same day gets `-2`, and so on).
-When you release, add a section at the top and set `version` in package.json to match (a test
+Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
+
+## 2026.10.15-3 — Taller timeline
+
+- Drag the bar under the timeline to make it taller and see more tracks at once; double-click it to fit every track.
 
 ## 2026.10.15-2 — Engine polish
 
