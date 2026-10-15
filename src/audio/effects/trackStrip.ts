@@ -12,6 +12,7 @@ import { roomSendLevel } from './distance';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { BusEffects } from './busEffects';
 import { createEcho, createReverb, type EchoUnit, type ReverbUnit } from './spaceFx';
+import { createMonoBass, createSaturation, type MonoBassInsert, type SaturationInsert } from './busInserts';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
 import { smoothSet } from './smoothParam';
 import { createDelayLink, fixedDelay, glidingDelay, type DelayLink } from './delayLink';
@@ -43,9 +44,9 @@ import {
 
 /**
  * One mixer channel per track:
- *   input -> Distortion -> Bass Drive -> EQ3 -> Compressor -> makeup gain -> Chorus -> Lo-fi -> Filter -> Delay
- *         -> Reverb -> Gate
- *         -> Pump -> (Volume lane) -> (alignment delay) -> solo -> pan -> fader -> level (Intensity, mute)
+ *   input -> Distortion -> Bass Drive -> EQ3 -> Pro EQ -> Compressor -> makeup gain -> Multiband
+ *         -> Saturation -> Chorus -> Lo-fi -> Filter -> Delay -> Reverb -> Gate
+ *         -> Pump -> (Volume lane) -> Mono bass -> (alignment delay) -> solo -> pan -> fader -> level (Intensity, mute)
  *   level -> duck -> (dry delay) -> master bus, plus post-fader sends to the shared reverb and
  *   delay; sends to returns (each with its own delay, when it needs one) after the pan or the duck.
  *
@@ -419,6 +420,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   let eq: LightEq3 | null = null;
   let peq: LightPeq | null = null;
   let mbc: LightMbc | null = null;
+  /** The bus inserts (busInserts.ts): Saturation after the dynamics, Mono bass at the end of the inserts. */
+  let saturate: SaturationInsert | null = null;
+  let monoLow: MonoBassInsert | null = null;
   let compressor: Tone.Compressor | null = null;
   let makeup: Tone.Gain | null = null;
   /** The Compressor and its makeup gain as one insert. */
@@ -581,6 +585,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     if (peq) next.push(peq);
     if (compressorUnit) next.push(compressorUnit);
     if (mbc) next.push(mbc);
+    if (saturate) next.push(saturate);
     if (chorus) next.push(chorus);
     if (lofi) next.push(lofi);
     if (filter) next.push(filter);
@@ -589,6 +594,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     if (gateUnit) next.push(gateUnit);
     if (pump) next.push(pump);
     if (laneGain) next.push({ input: laneGain.node, output: laneGain.node });
+    if (monoLow) next.push(monoLow);
     if (fold) next.push(fold);
     if (tailDelay) next.push(tailDelay);
     const unchanged = next.length === chain.length && next.every((ins, i) => ins.input === chain[i].input && ins.output === chain[i].output);
@@ -994,6 +1000,22 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         mbc = null;
       }
 
+      if (fx.saturate?.on) {
+        if (saturate) saturate.set(fx.saturate);
+        else saturate = createSaturation(fx.saturate);
+      } else if (saturate) {
+        retired.push(saturate);
+        saturate = null;
+      }
+
+      if (fx.monoLow?.on) {
+        if (monoLow) monoLow.set(fx.monoLow, ramp);
+        else monoLow = createMonoBass(fx.monoLow);
+      } else if (monoLow) {
+        retired.push(monoLow);
+        monoLow = null;
+      }
+
       if (fx.compressor.on) {
         if (!compressor || !makeup || !compressorUnit) {
           // Made with their settings: set afterwards, they'd only apply a look-ahead (0.1 s) later
@@ -1219,7 +1241,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       dryLink.dispose();
       sends.forEach((x) => x.out.dispose());
       tailDelay?.dispose();
-      [...leaving, distortion, bassDrive, eq, peq, mbc, compressorUnit, chorus, lofi, filter, echo, reverb, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend, ...[...sends.values()].map((x) => x.gain)].forEach((n) => n?.dispose());
+      [...leaving, distortion, bassDrive, eq, peq, mbc, saturate, monoLow, compressorUnit, chorus, lofi, filter, echo, reverb, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend, ...[...sends.values()].map((x) => x.gain)].forEach((n) => n?.dispose());
       [barrier, left, split, right, merge, far?.shelf, far?.trim].forEach((n) => n?.disconnect());
     },
   };

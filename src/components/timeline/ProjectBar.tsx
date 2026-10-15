@@ -11,6 +11,7 @@ import { useUiStore } from '../../store/uiStore';
 import { autosaveUnreadable, clearPreviousSession } from '../../store/project';
 import { saveProjectFile, useProjectFile } from './projectFile';
 import { ExportDialog } from './ExportDialog';
+import { BeatStoreDialog } from './BeatStoreDialog';
 import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
 import { STARTER_GROUPS, STARTERS } from '../../store/starters';
@@ -264,6 +265,7 @@ export const ProjectBar: React.FC = () => {
 
       {dialog === 'new' && <NewProjectDialog onClose={() => setDialog(null)} />}
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
+      {dialog === 'beatStore' && <BeatStoreDialog onClose={() => setDialog(null)} />}
       {dialog === 'share' && <ShareDialog onClose={() => setDialog(null)} />}
     </div>
   );

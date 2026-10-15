@@ -1,7 +1,7 @@
 /**
  * The master section's inserts, between the master compressor and the Level and limiter (see
  * engine.ts):
- *   compressor -> [OTT] -> [Stereo width] -> Level -> limiter
+ *   compressor -> [OTT] -> [Stereo width] -> Level -> [Clipper] -> limiter
  * Each insert exists only while it's switched on, like a track's inserts: off, it is taken out of
  * the chain and disposed, so it costs nothing. The OTT is an AudioWorklet (ott.ts); the width is a
  * handful of plain nodes doing mid/side; the Level is one gain, always there. A switch crossfades
@@ -17,6 +17,7 @@ import type { GlueStyle, MasterSettings } from '../../store/timelineTypes';
 import { createWorkletNode, loadWorklet } from '../worklets';
 import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
 import { MONO_BASS_HZ, MONO_BASS_Q } from './masterAfter';
+import { CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE, clipperParams, type ClipperReading, type ClipperSettings } from './clipper';
 import { paramSetter as smoothParamSetter } from './smoothParam';
 
 export interface MasterInserts {
@@ -57,8 +58,7 @@ const SWITCH_FADE = 0.01;
 const paramSetter = (raw: BaseAudioContext) => smoothParamSetter(() => raw.currentTime);
 
 /** head -> inserts -> tail, re-patched without gaps live (see above). */
-function createInsertChain(head: Tone.ToneAudioNode, tail: Node, live: boolean) {
-  const raw = head.context.rawContext as unknown as BaseAudioContext;
+function createInsertChain(raw: BaseAudioContext, head: Node, tail: Node, live: boolean) {
   let chain: Insert[] = [];
   let gates: Gate[] = [];
   let leaving: Array<{ dispose: () => void }> = [];
@@ -205,6 +205,54 @@ async function createOtt(context: Tone.BaseContext, ott: MasterSettings['ott']):
   };
 }
 
+interface ClipperUnit extends Unit {
+  set: (clipper: ClipperSettings, ramp: number) => void;
+}
+
+/** Listeners to the live clipper's readings (the Master tab's meter). */
+const clipperListeners = new Set<(reading: ClipperReading) => void>();
+
+/** Hear what the live clipper does, a few times a second while it's on; returns a function that stops listening. */
+export function onClipperReading(listener: (reading: ClipperReading) => void): () => void {
+  clipperListeners.add(listener);
+  return () => clipperListeners.delete(listener);
+}
+
+/** The clipper worklet (clipper.ts), once its module is in the context. */
+async function createClipper(context: Tone.BaseContext, settings: ClipperSettings): Promise<ClipperUnit> {
+  await loadWorklet(context, CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE);
+  const p = clipperParams(settings);
+  const node = createWorkletNode(context, CLIPPER_PROCESSOR, {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+    channelCount: 2,
+    channelCountMode: 'explicit',
+    channelInterpretation: 'speakers',
+    parameterData: p,
+  });
+  node.port.onmessage = (e: MessageEvent<ClipperReading>) => clipperListeners.forEach((l) => l(e.data));
+  const raw = context.rawContext as unknown as BaseAudioContext;
+  const ramped = paramSetter(raw);
+  const param = (name: string) => node.parameters.get(name)!;
+  const set = (s: ClipperSettings, ramp: number) => {
+    const v = clipperParams(s);
+    ramped(param('drive'), v.drive, ramp);
+    ramped(param('ceiling'), v.ceiling, ramp);
+    ramped(param('softness'), v.softness, ramp);
+  };
+  return {
+    input: node,
+    output: node,
+    set,
+    dispose: () => {
+      node.port.onmessage = null;
+      node.port.postMessage('dispose');
+      node.disconnect();
+    },
+  };
+}
+
 interface WidthUnit extends Unit {
   set: (width: MasterSettings['width'], ramp: number) => void;
 }
@@ -301,7 +349,7 @@ export const GLUE_STYLES: Record<GlueStyle, { name: string; about: string; thres
  * Level), with the glue style on the compressor. In an offline context (an export) only the glue:
  * the compressor plays straight into `level`, left at unity, and masterAfter.ts does the rest.
  */
-export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainNode, settings: MasterSettings): MasterInserts {
+export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainNode, settings: MasterSettings, limiterIn?: GainNode): MasterInserts {
   const context = compressor.context;
   const raw = context.rawContext as unknown as BaseAudioContext;
   const live = !(typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext);
@@ -316,7 +364,12 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     comp.release.value = g.release;
   };
   glue(settings.glue);
-  const chain = createInsertChain(compressor, level, live);
+  const chain = createInsertChain(raw, compressor, level, live);
+  // The clipper sits after the Level, before the limiter: a chain of its own, level -> [clipper] -> limiterIn
+  const clipChain = limiterIn ? createInsertChain(raw, level, limiterIn, live) : null;
+  let clipper: ClipperUnit | null = null;
+  let clipLoading: Promise<void> | null = null;
+  let clipUnavailable = false;
   let ott: OttUnit | null = null;
   let width: WidthUnit | null = null;
   let wanted = settings;
@@ -366,15 +419,46 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
       width = null;
     }
     rewire(retired);
+    if (!clipChain) return;
+    const wantClip = next.clipper?.on === true;
+    if (wantClip) {
+      if (clipper) clipper.set(next.clipper!, ramp);
+      else if (!clipLoading && !clipUnavailable) {
+        clipLoading = createClipper(context, next.clipper!).then(
+          (unit) => {
+            clipLoading = null;
+            if (disposed || !wanted.clipper?.on) {
+              unit.dispose();
+              return;
+            }
+            unit.set(wanted.clipper, 0);
+            clipper = unit;
+            clipChain.set([unit], []);
+          },
+          (err) => {
+            clipLoading = null;
+            clipUnavailable = true;
+            console.warn('The clipper could not start:', err);
+          }
+        );
+      }
+    } else if (clipper) {
+      const old = clipper;
+      clipper = null;
+      clipChain.set([], [old]);
+    }
   };
   apply(settings, 0);
 
   return {
     apply,
-    ready: () => loading ?? Promise.resolve(),
+    ready: () => Promise.all([loading, clipLoading]).then(() => undefined),
     dispose: () => {
       disposed = true;
       chain.dispose();
+      clipChain?.dispose();
+      clipper?.dispose();
+      clipper = null;
       ott?.dispose();
       width?.dispose();
       ott = null;

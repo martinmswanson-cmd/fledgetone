@@ -1,6 +1,6 @@
 /**
  * The master section and the live audio context. createMixChain builds the mix graph (master bus,
- * compressor, the OTT and width inserts, the Level, limiter and ceiling, plus the shared reverb and
+ * compressor, the OTT and width inserts, the Level, the clipper, limiter and ceiling, plus the shared reverb and
  * delay returns) in whatever context is current: once for live playback (liveMix) and again inside every
  * export render. Also starting the audio, its running / suspended state, and the master volume.
  */
@@ -24,7 +24,7 @@ export const BUS_GAIN = 0.9;
 
 /**
  * Build the mix graph in the current Tone context:
- *   track strips -> master bus -> compressor -> (OTT, stereo width) -> Level -> look-ahead limiter -> destination
+ *   track strips -> master bus -> compressor -> (OTT, stereo width) -> Level -> (clipper) -> look-ahead limiter -> destination
  *   track sends  -> shared reverb / delay -> master bus
  * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
  * the sound deck's pads. Used once for live playback and again inside the WAV export render.
@@ -48,6 +48,8 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
   // Level is applied after the render, see masterAfter.ts)
   const context = bus.context;
   const level = (context.rawContext as unknown as BaseAudioContext).createGain();
+  // Where the limiter's input is: after the clipper, which sits between it and the Level while it's on
+  const limiterIn = (context.rawContext as unknown as BaseAudioContext).createGain();
   // The stand-in limiter until the look-ahead one (effects/limiter.ts, an AudioWorklet) has
   // loaded, and where AudioWorklets can't run: a hard-knee compressor (Tone.Limiter keeps a 30 dB
   // soft knee, which barely limits) and a ceiling that rounds off what its 20:1 ratio lets through
@@ -55,13 +57,13 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
   const ceiling = new Tone.WaveShaper(ceilingCurve());
   bus.connect(compressor);
   // Patches compressor -> level itself, with the OTT and width in between while they're on
-  const inserts = createMasterInserts(compressor, level, master);
+  const inserts = createMasterInserts(compressor, level, master, limiterIn);
   let lookahead: AudioWorkletNode | null = null;
   const limitsAfter = context.isOffline;
   let released = false;
-  if (limitsAfter) Tone.connect(level, destination);
+  if (limitsAfter) Tone.connect(limiterIn, destination);
   else {
-    Tone.connect(level, limiter);
+    Tone.connect(limiterIn, limiter);
     limiter.connect(ceiling);
     ceiling.connect(destination);
   }
@@ -79,8 +81,8 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
         channelInterpretation: 'speakers',
       });
       Tone.connect(node, destination);
-      Tone.connect(level, node);
-      Tone.disconnect(level, limiter);
+      Tone.connect(limiterIn, node);
+      Tone.disconnect(limiterIn, limiter);
       // The stand-in and its ceiling hear nothing from now on: out of the graph, so the audio
       // thread doesn't keep running them on silence
       limiter.disconnect();
@@ -94,6 +96,7 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
     lookahead?.port.postMessage('dispose');
     lookahead?.disconnect();
     level.disconnect();
+    limiterIn.disconnect();
     limiter.dispose();
     ceiling.dispose();
   };

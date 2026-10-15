@@ -8,6 +8,14 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-21 — Mix and master tools
+
+- **Clipper** on the master: shaves the tallest peaks flat before the limiter, for loud rap and electronic masters, with drive, a hard-to-soft character, a ceiling and a meter of how much it's clipping. Oversampled, so it stays clean, and the same in exports.
+- **Reference track**: load a finished song, hear it at your mix's loudness, flip between the two with one A/B button, and see where your tonal balance differs on a spectrum. It stays in your browser and is never exported.
+- **Mix check**: renders the song and each track and points out, in plain words and with the track to look at, wide bass, the kick and bass fighting, muddy or harsh spots, parts covering each other, a level wrong for where the song is going, and a master working too hard.
+- **Bus presets**: one-click drum, 808/bass, vocal and music buses, with two new bus inserts: **Saturation** and **Mono bass**.
+- **Beat store package**: one dialog makes a tagged MP3 preview, the untagged WAV, the stems and an optional cover in one .zip, named with the tempo and key.
+
 ## 2026.10.15-20 — Arrange a beat
 
 - **Arrange a beat** (Song menu, the ruler's right-click menu, or search *arrange*): a **Dark melody** generator for trap, drill, rage and phonk (minor, harmonic minor or phrygian with the flat second for tension, sparse rhythms, a repeating motif with a new ending, density, register and **New idea**, the same idea number always writing the same melody), **Drop out** and **Stop** before a drop, **Riser** and **Reverse cymbal** into it, a **Beat switch** (half time, double time or a new drum pattern with the bass following its kicks), **Song form** (intro, hook, verse, hook, verse, bridge, hook, outro from a 4- or 8-bar loop, with section markers) and a **Producer tag** kept in the browser for every project, placed at the start or every few bars with the beat ducking under it. Each is one Undo step.

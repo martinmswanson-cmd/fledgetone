@@ -10,7 +10,7 @@
  * any insert is fine there. What tracks share is the catch:
  * - A group bus or a return with a non-linear insert (a Compressor, Distortion, Lo-fi, multiband
  *   compressor or a plugin effect) must hear all its tracks at once, so they all go in one part.
- *   A bus or return with only linear inserts (EQ, Filter, Chorus, Delay, Reverb, Gate, Pump) is
+ *   A bus or return with only linear inserts (EQ, Filter, Chorus, Delay, Reverb, Gate, Pump, Mono bass) is
  *   built again in each part that plays into it, and the copies add up to the one.
  * - The shared reverb (a convolver with a fixed impulse response) and delay (delay lines with a
  *   feedback gain, no saturation) are linear, so every part carries its own copy of them.
@@ -31,7 +31,7 @@ import { INSTRUMENTS, type InstrumentKind } from './instrumentCatalog';
  * into several parts. Anything else that's on (and any insert added later, until it's listed
  * here) keeps the tracks playing into it together.
  */
-const LINEAR_INSERTS = new Set(['chorus', 'filter', 'pump', 'gate', 'echo', 'reverb', 'peq', 'human']);
+const LINEAR_INSERTS = new Set(['chorus', 'filter', 'pump', 'gate', 'echo', 'reverb', 'peq', 'human', 'monoLow']);
 
 /** Whether a bus or return's strip changes its sound depending on how loud it is (so its tracks can't be split). */
 export function isNonLinearMix(track: Pick<Track, 'fx' | 'pluginFx' | 'plugin'>): boolean {
@@ -59,7 +59,7 @@ const NOTE_COST = 2;
 /** Every bar of the range, for the track's strip and instrument, which run throughout. */
 const TRACK_COST = 60;
 /** Every bar, for each insert that's on (the ones not listed: 4). */
-const INSERT_COST: Record<string, number> = { distortion: 30, compressor: 10, mbc: 40, reverb: 60, echo: 10, chorus: 10, lofi: 20 };
+const INSERT_COST: Record<string, number> = { distortion: 30, compressor: 10, mbc: 40, reverb: 60, echo: 10, chorus: 10, lofi: 20, saturate: 20, monoLow: 5 };
 /** Every bar, for what each part renders whatever its tracks: the shared reverb and delay, the schedule. */
 const PART_COST = 50;
 

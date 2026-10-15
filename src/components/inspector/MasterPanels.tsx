@@ -1,13 +1,16 @@
 /**
  * The Master tab of the Inspector: the loudness meter, the glue, the OTT and stereo width inserts,
- * the Level before the limiter, the playback buffering choice and the browser's audio delay, and the instruments kept for offline use.
+ * the Level and the clipper before the limiter, the reference track and the mix check, the playback buffering choice and the browser's audio delay, and the instruments kept for offline use.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Snowflake, Timer, Volume2 } from 'lucide-react';
+import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Scissors, Snowflake, Timer, Volume2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { defaultMasterSettings, GLUE_STYLE_IDS, LEVEL_MAX, LEVEL_MIN, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
 import type { GlueStyle } from '../../store/timelineTypes';
-import { GLUE_STYLES } from '../../audio/effects/masterChain';
+import { GLUE_STYLES, onClipperReading } from '../../audio/effects/masterChain';
+import { CLIPPER_CEILING_MIN, CLIPPER_DRIVE_MAX, defaultClipper } from '../../audio/effects/clipper';
+import { ReferencePanel } from './ReferencePanel';
+import { MixCheckPanel } from './MixCheckPanel';
 import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
 
 /** A reading, or a dash while there's nothing to measure. */
@@ -168,6 +171,66 @@ export const LevelPanel: React.FC = () => {
       <FxSlider label="Level" value={level} min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} format={db} onChange={(v) => useTimelineStore.getState().setMasterLevel(v)} reset={0} accent={accent} disabled={false} />
       <p className="text-[10px] text-forge-muted">Turns the whole mix up or down just before the limiter. Up makes the song louder, and the limiter holds the peaks down.</p>
     </div>
+  );
+};
+
+/**
+ * The master clipper: drive into a soft or hard clip just before the limiter, shaving the tallest
+ * peaks so the song can be louder with less limiting. Its meter shows how much it's taking off.
+ */
+export const ClipperPanel: React.FC = () => {
+  const clipper = useTimelineStore((s) => s.master.clipper) ?? defaultClipper();
+  const d = defaultClipper();
+  const set = useTimelineStore.getState().setMasterClipper;
+  const accent = '#fb923c';
+  const [heard, setReading] = useState<{ peakDb: number; share: number } | null>(null);
+  useEffect(() => {
+    if (!clipper.on) return;
+    // The meter falls back slowly, so a peak can be read
+    let held = { peakDb: 0, share: 0 };
+    const stop = onClipperReading((r) => {
+      held = { peakDb: Math.max(r.peakDb, held.peakDb - 0.4), share: held.share * 0.8 + r.share * 0.2 };
+      setReading(held);
+    });
+    return () => {
+      stop();
+      setReading(null);
+    };
+  }, [clipper.on]);
+  const reading = clipper.on ? heard : null;
+  const dbAmount = reading?.peakDb ?? 0;
+  return (
+    <InsertPanel title="Clipper" icon={<Scissors className="w-3.5 h-3.5" style={{ color: accent }} />} on={clipper.on} onToggle={() => set({ on: !clipper.on })} accent={accent}>
+      <p className="text-[10px] text-forge-muted">
+        Shaves the tallest peaks (mostly drum hits) flat before the limiter, so the song gets louder with less squashing. Loud rap and electronic masters do this. Drive pushes more into it.
+      </p>
+      <FxSlider label="Drive" value={clipper.drive} min={0} max={CLIPPER_DRIVE_MAX} step={0.5} format={db} onChange={(v) => set({ drive: v })} reset={d.drive} accent={accent} disabled={!clipper.on} />
+      <FxSlider
+        label="Character"
+        value={clipper.softness}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(v) => (v < 0.15 ? 'Hard' : v > 0.85 ? 'Soft' : `${Math.round(v * 100)}% soft`)}
+        onChange={(v) => set({ softness: v })}
+        reset={d.softness}
+        accent={accent}
+        disabled={!clipper.on}
+      />
+      <FxSlider label="Ceiling" value={clipper.ceiling} min={CLIPPER_CEILING_MIN} max={0} step={0.1} format={(v) => `${v.toFixed(1)} dBFS`} onChange={(v) => set({ ceiling: v })} reset={d.ceiling} accent={accent} disabled={!clipper.on} />
+      {clipper.on && (
+        <div className="flex flex-col gap-1" data-testid="clipper-meter">
+          <div className="h-1.5 rounded bg-black/40 overflow-hidden" title="How many dB the clipper is taking off the peaks">
+            <div className="h-full transition-[width] duration-75" style={{ width: `${Math.min(100, (dbAmount / 8) * 100)}%`, background: dbAmount > 4 ? '#f87171' : accent }} />
+          </div>
+          <p className={`text-[10px] font-mono ${dbAmount > 4 ? 'text-red-300' : 'text-forge-muted'}`}>
+            {reading && dbAmount > 0.05
+              ? `Clipping up to ${dbAmount.toFixed(1)} dB, ${(reading.share * 100).toFixed(reading.share < 0.01 ? 1 : 0)}% of the time${dbAmount > 4 ? ': that much can sound crunchy' : ''}`
+              : 'Not clipping. Play the song and raise the Drive.'}
+          </p>
+        </div>
+      )}
+    </InsertPanel>
   );
 };
 
@@ -364,6 +427,9 @@ export const MasterPanels: React.FC = () => (
     <OttPanel />
     <WidthPanel />
     <LevelPanel />
+    <ClipperPanel />
+    <ReferencePanel />
+    <MixCheckPanel />
     <PlaybackPanel />
     <OfflinePanel />
   </div>

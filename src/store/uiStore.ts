@@ -22,7 +22,7 @@ const isDockTab = (d: string | null): d is DockTab => d !== null && (DOCK_TABS a
  * Which dialogs and panels are open: kept here rather than in the components that show them, so
  * the search palette and the menus can open any of them.
  */
-export type AppDialog = 'new' | 'export' | 'share' | 'mixer' | 'game' | 'report' | 'learn' | 'cut' | 'sfx' | 'engines' | 'tryOut' | 'changes' | 'terms';
+export type AppDialog = 'new' | 'export' | 'share' | 'mixer' | 'game' | 'report' | 'learn' | 'cut' | 'sfx' | 'engines' | 'tryOut' | 'changes' | 'terms' | 'beatStore';
 
 export const DOCK_MIN = 160;
 export const DOCK_MAX = 900;

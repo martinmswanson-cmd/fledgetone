@@ -34,8 +34,10 @@
  * (liveTracks.ts), the clip schedule (scheduler.ts), the Transport's loop, tempo and swing, the
  * master inserts and returns, ducking and intensity.
  */
+import { defaultClipper, type ClipperSettings } from '../audio/effects/clipper';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { makeSpace } from './makeSpace';
+import { busPresetById, busPresetFx, busPresetMembers, type BusPresetId } from './busPresets';
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
@@ -483,6 +485,11 @@ interface TimelineState {
   addAudioTakes: (trackId: string | null, startBar: number, lengthBars: number, takes: Array<{ audio: ClipAudio; name?: string }>, clipName: string) => string | null;
   /** A new bus with these tracks playing into it, placed after the last of them (one undo step). Returns its id. */
   groupIntoBus: (trackIds: readonly string[], name?: string) => string | null;
+  /**
+   * A bus preset (busPresets.ts): set bus `busId` up for the job, or, with no bus, group the tracks
+   * that do it into a new bus set up so. One undo step. Returns the bus's id (null: nothing to do).
+   */
+  applyBusPreset: (preset: BusPresetId, busId?: string) => string | null;
   /** Put tracks in a new folder (one undo step). Returns its id. */
   groupIntoFolder: (trackIds: readonly string[], name?: string) => string | null;
   /** Take every track out of a folder (one undo step). */
@@ -581,6 +588,8 @@ interface TimelineState {
   setMasterGlue: (glue: MasterSettings['glue']) => void;
   /** Set the master Level (dB, a gain just before the limiter), recorded like setMasterOtt. */
   setMasterLevel: (db: number, record?: boolean) => void;
+  /** Change the master clipper (after the Level, before the limiter), recorded like setMasterOtt. */
+  setMasterClipper: (patch: Partial<ClipperSettings>, record?: boolean) => void;
 
   // Clips
   selectClip: (clipId: string, additive: boolean) => void;
@@ -1862,6 +1871,24 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return bus.id;
     },
 
+    applyBusPreset: (preset, busId) => {
+      const s = get();
+      const name = busPresetById(preset).name;
+      if (busId) {
+        const bus = s.tracks.find((t) => t.id === busId && isBus(t));
+        if (!bus) return null;
+        // A bus still called "Bus N" takes the preset's name
+        const renamed = /^Bus \d+$/.test(bus.name) ? { name } : {};
+        set({ tracks: s.tracks.map((t) => (t === bus ? { ...t, ...renamed, fx: busPresetFx(preset, t.fx) } : t)), ...pushPast(s) });
+        return busId;
+      }
+      const members = busPresetMembers(preset, s.tracks, s.clips, isMixTrack);
+      const id = members.length ? get().groupIntoBus(members.map((t) => t.id), name) : null;
+      // (groupIntoBus made the undo step; the bus's effects belong to it)
+      if (id) set((st) => ({ tracks: st.tracks.map((t) => (t.id === id ? { ...t, fx: busPresetFx(preset, t.fx) } : t)) }));
+      return id;
+    },
+
     // Undoable: history entries carry the tracks, so Undo brings the track and its clips back together
     groupIntoFolder: (trackIds, name) => {
       const s = get();
@@ -2178,6 +2205,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     setMasterWidth: (patch, record = false) => setMaster((m) => ({ ...m, width: { ...m.width, ...patch } }), record),
     setMasterGlue: (glue) => setMaster((m) => ({ ...m, glue }), true),
     setMasterLevel: (db, record = false) => setMaster((m) => ({ ...m, level: db }), record),
+    setMasterClipper: (patch, record = false) => setMaster((m) => ({ ...m, clipper: { ...(m.clipper ?? defaultClipper()), ...patch } }), record),
 
     // ---------- Clips ----------
     selectClip: (clipId, additive) =>
