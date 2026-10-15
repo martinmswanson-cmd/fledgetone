@@ -10,6 +10,7 @@ import { livePlayhead, onPlayhead } from '../../store/playheadClock';
 import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { RestoreSessionBanner } from './ProjectBar';
 import { TimelineScrollbar } from './TimelineScrollbar';
+import { TimelineResizer } from './TimelineResizer';
 import { PianoRoll } from './PianoRoll';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TimeRuler } from './TimeRuler';
@@ -134,6 +135,7 @@ export const Timeline: React.FC = () => {
   const tracks = useTimelineStore((s) => s.tracks);
   const zoom = useTimelineStore((s) => s.zoom);
   const activeTool = useTimelineStore((s) => s.activeTool);
+  const timelineHeight = useUiStore((s) => s.timelineHeight);
   const rulerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const onScrubStart = useScrub(rulerRef);
@@ -398,7 +400,8 @@ export const Timeline: React.FC = () => {
         <div
           ref={scrollRef}
           data-timeline-scroll=""
-          className={`flex-1 overflow-x-hidden overflow-y-auto max-h-[520px] ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
+          className={`flex-1 overflow-x-hidden overflow-y-auto ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
+          style={{ maxHeight: timelineHeight }}
           onWheel={(e) => {
             // The native horizontal bar is replaced by TimelineScrollbar, so handle sideways scrolling here
             const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
@@ -476,6 +479,7 @@ export const Timeline: React.FC = () => {
       </div>
 
       <TimelineScrollbar scrollRef={scrollRef} />
+      <TimelineResizer scrollRef={scrollRef} />
       <PianoRoll />
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">

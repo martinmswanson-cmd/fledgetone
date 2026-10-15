@@ -27,6 +27,20 @@ export type AppDialog = 'new' | 'export' | 'share' | 'mixer' | 'game' | 'report'
 export const DOCK_MIN = 160;
 export const DOCK_MAX = 900;
 const DOCK_KEY = 'bosBeatbox.dock';
+/** The timeline's height in pixels: drag the bar under it to see more tracks at once. */
+export const TIMELINE_MIN = 300;
+export const TIMELINE_MAX = 4000;
+export const TIMELINE_DEFAULT = 520;
+const TIMELINE_KEY = 'bosBeatbox.timelineHeight';
+
+function loadTimelineHeight(): number {
+  try {
+    const raw = Number(localStorage.getItem(TIMELINE_KEY));
+    return Number.isFinite(raw) && raw > 0 ? Math.max(TIMELINE_MIN, Math.min(TIMELINE_MAX, raw)) : TIMELINE_DEFAULT;
+  } catch {
+    return TIMELINE_DEFAULT;
+  }
+}
 
 interface DockPrefs {
   tab: DockTab;
@@ -66,6 +80,9 @@ interface UiState {
   dockTab: DockTab;
   dockOpen: boolean;
   dockHeight: number;
+  /** How tall the timeline is (pixels; see TIMELINE_MIN/MAX), kept in this browser */
+  timelineHeight: number;
+  setTimelineHeight: (height: number) => void;
   /** The clip whose Generate variations dialog is open */
   variationsClipId: string | null;
   setVariationsClip: (clipId: string | null) => void;
@@ -105,6 +122,16 @@ export const useUiStore = create<UiState>((set, get) => ({
   dockTab: dock.tab,
   dockOpen: dock.open,
   dockHeight: dock.height,
+  timelineHeight: loadTimelineHeight(),
+  setTimelineHeight: (height) => {
+    const timelineHeight = Math.round(Math.max(TIMELINE_MIN, Math.min(TIMELINE_MAX, height)));
+    set({ timelineHeight });
+    try {
+      localStorage.setItem(TIMELINE_KEY, String(timelineHeight));
+    } catch {
+      // Storage blocked: the timeline keeps its height until the page reloads
+    }
+  },
   variationsClipId: null,
   setVariationsClip: (variationsClipId) => set({ variationsClipId }),
   tuneClipId: null,
