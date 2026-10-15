@@ -6,6 +6,7 @@ import { snapBar } from '../../store/timelineTypes';
 import { MAX_SOUND_BYTES } from '../../audio/soundLibrary';
 import { dropAudioFiles, pickAudioFiles } from '../timeline/audioFiles';
 import { SoundLibraryFooter } from './SoundLibraryFooter';
+import { VocalChainPanel } from './VocalChainPanel';
 
 /** An Audio track's panel: load sound files as clips (at the playhead), and where the sounds live. */
 export const AudioTrackPanel: React.FC<{ track: Track }> = ({ track }) => {
@@ -25,6 +26,7 @@ export const AudioTrackPanel: React.FC<{ track: Track }> = ({ track }) => {
   };
 
   return (
+    <>
     <div className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-sky-500/40 shadow-md">
       <div className="flex items-center gap-1.5">
         <AudioWaveform className="w-3.5 h-3.5 text-sky-400" />
@@ -47,5 +49,7 @@ export const AudioTrackPanel: React.FC<{ track: Track }> = ({ track }) => {
       <p className="text-[10px] text-forge-muted/80">Files up to {MAX_SOUND_BYTES / 1048576} MB. The clip keeps its length in seconds when the tempo changes.</p>
       <SoundLibraryFooter />
     </div>
+    <VocalChainPanel track={track} />
+    </>
   );
 };
