@@ -3,7 +3,8 @@
  * takes, or one track for a freeze) is rendered faster than real time in an OfflineAudioContext,
  * built from the same instrument, strip, schedule and master factories as live playback, so an
  * export sounds like the app. Endings are ring-out, exact length or a seamless loop; WAVs are 16,
- * 24 or 32-bit with markers as cue points and loop points.
+ * 24 or 32-bit with markers as cue points and loop points. A mix is rendered in parts on several
+ * processor cores at once where that sounds exactly the same (see renderTracks and renderParts.ts).
  */
 import { truePeakOf } from './loudness';
 import { audibleIds, busChain, busFirst, busOf, liveSends } from '../store/buses';
@@ -11,12 +12,14 @@ import { insertTailSeconds } from './effects/spaceFx';
 import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
-import { createMixChain, getMasterVolume } from './engine';
+import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel } from './effects/limiter';
-import { delaySeconds } from './effects/busEffects';
+import { createBusEffects, delaySeconds } from './effects/busEffects';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument, trackInstrumentOptions } from './instruments';
+import { nativeInputOf } from './nativeNodes';
+import { renderParts, trackCost } from './renderParts';
 import type { TrackInstrument } from './instruments';
 import { createClipSchedule } from './scheduler';
 import { createAudioClipSchedule } from './audioClipSchedule';
@@ -94,6 +97,12 @@ export interface RenderOptions {
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
   /** An exact-length render ends without its 5 ms fade (an intro that leads straight into a loop). */
   noEndFade?: boolean;
+  /**
+   * How many parts a mix may be rendered in at once, each on a processor core of its own (see
+   * renderTracks). Default: one fewer than the computer has, up to MAX_PARTS, where the browser
+   * renders them side by side; 1: in one piece.
+   */
+  threads?: number;
 }
 
 /** Seconds of audio rendered between scheduling passes. */
@@ -116,6 +125,14 @@ const MAX_ECHO_TAIL = 60;
  * due less than 5 ms after the render position as late and push it back (see monotonic.ts).
  */
 const PREROLL_SECONDS = 0.25;
+/** The most parts a mix renders in at once (see renderTracks). */
+const MAX_PARTS = 4;
+/** A render shorter than this (seconds, tails included) is done in one piece: setting up the parts would cost more than they save. */
+const MIN_PARTS_SECONDS = 4;
+/** Memory the parts of a render may take between them (bytes): a long song gets fewer parts, or none. */
+const PARTS_MEMORY = 2 ** 30;
+/** The share of the progress bar the parts fill; the master section over their sum fills the rest. */
+const PARTS_PROGRESS = 0.97;
 
 /** The fields of Tone's one-shot sources (ToneOscillatorNode, ToneBufferSource) read here. */
 interface OneShotSource {
@@ -496,18 +513,247 @@ export async function renderForFreeze(opts: RenderOptions, track: Track, onProgr
   return { channels, sampleRate };
 }
 
-/** Renders taking turns at the global context (see renderTracks). */
+/** Renders taking turns at the global context (see withContext). */
 let contextSwaps: Promise<void> = Promise.resolve();
 
 /**
- * Render `tracks` (already filtered to the ones that sound) as planned by planRender. Returns
- * the file's samples per channel, views into the render.
+ * Run `build` with `context` as Tone's global one (so the factories make their nodes in it), and
+ * put the live one back after. Two renders at once (a game matrix still rendering behind another
+ * export, or the parts of one) take turns, so neither takes the other's offline context for the
+ * live one and leaves it in place.
  */
-async function renderTracks(
+function withContext<T>(context: Tone.BaseContext, build: () => Promise<T>): Promise<T> {
+  const swap = contextSwaps.then(async () => {
+    const original = Tone.getContext();
+    Tone.setContext(context);
+    try {
+      return await build();
+    } finally {
+      Tone.setContext(original);
+    }
+  });
+  contextSwaps = swap.then(
+    () => undefined,
+    () => undefined
+  );
+  return swap;
+}
+
+/** What renderTracks makes: the file's samples per channel (views into the render), and the reverb it used. */
+interface Rendered {
+  channels: Float32Array<ArrayBuffer>[];
+  sampleRate: number;
+  reverbImpulse: AudioBuffer | undefined;
+}
+
+/**
+ * Render `sounding` (already filtered to the tracks that sound) as planned by planRender. A mix
+ * through the master section is split, where that sounds exactly the same (see renderParts.ts),
+ * into parts rendered at the same time, each in an OfflineAudioContext of its own, which the
+ * browser runs on a processor core of its own; the parts' sound before the master section is
+ * added up and the master section runs once over the sum. If anything goes wrong with the parts,
+ * it's rendered in one piece instead.
+ */
+async function renderTracks(opts: RenderOptions, sounding: Track[], onProgress?: (fraction: number) => void): Promise<Rendered> {
+  const parts = await partsFor(opts, sounding);
+  if (parts) {
+    try {
+      return await renderInParts(opts, parts, onProgress);
+    } catch (err) {
+      if (opts.signal?.aborted) throw err;
+      console.warn('Rendering in parts failed, so rendering in one piece:', err);
+    }
+  }
+  const { rendered, plan, reverbImpulse } = await renderGraph(opts, sounding, onProgress);
+  return { channels: finishRender(rendered, plan, opts), sampleRate: plan.sampleRate, reverbImpulse };
+}
+
+/** How many parts a render may run in at once on this computer, unless the options say. */
+function partsAllowed(opts: RenderOptions): number {
+  if (opts.threads !== undefined) return Math.max(1, Math.min(MAX_PARTS, Math.floor(opts.threads)));
+  const cores = typeof navigator === 'undefined' ? 1 : navigator.hardwareConcurrency || 1;
+  // One core stays with the page, which schedules every part's notes
+  return Math.max(1, Math.min(MAX_PARTS, cores - 1));
+}
+
+/** The parts to render `sounding` in, or null to render it in one piece. */
+async function partsFor(opts: RenderOptions, sounding: Track[]): Promise<Track[][] | null> {
+  // Renders without the master section (a stem, a freeze) are a track or a few; a background
+  // render (hold) shouldn't take more of the computer from the live sound
+  if (opts.bypassMaster || opts.hold) return null;
+  const plan = planRender(opts);
+  if (plan.length / plan.sampleRate < MIN_PARTS_SECONDS) return null;
+  // Each part holds a whole render (stereo, 32-bit) until they're added up
+  const allowed = Math.min(partsAllowed(opts), Math.floor(PARTS_MEMORY / (plan.length * 8)));
+  if (allowed < 2) return null;
+  const parts = renderParts(opts.tracks, sounding, opts.clips, opts, allowed);
+  if (parts.length < 2) return null;
+  // Asked for by number, it's done whatever the browser makes of it
+  if (opts.threads === undefined && !(await sideBySideHelps())) return null;
+  return parts;
+}
+
+/** What sideBySideHelps found: true for good; false to look again at a later export (up to 3 looks). */
+let sideBySide: Promise<boolean> | undefined;
+let sideBySideLooks = 0;
+
+/**
+ * Whether this browser renders two OfflineAudioContexts at once faster than one after the other
+ * (Chromium gives each a thread of its own). Timed on a second of a chain of filters (one thread's
+ * work: a convolver would bring threads of its own), the best of two tries each, so a busy moment
+ * doesn't decide it: two at once must take well under twice as long as one. About a third of a
+ * second, once.
+ */
+async function sideBySideHelps(): Promise<boolean> {
+  sideBySide ??= (async () => {
+    sideBySideLooks++;
+    const rate = 44100;
+    const probe = () => {
+      const ctx = new OfflineAudioContext(2, rate, rate);
+      const source = ctx.createOscillator();
+      let node: AudioNode = source;
+      for (let i = 0; i < 100; i++) node = node.connect(ctx.createBiquadFilter());
+      node.connect(ctx.destination);
+      source.start();
+      return ctx.startRendering();
+    };
+    const time = async (n: number) => {
+      const t0 = performance.now();
+      await Promise.all(Array.from({ length: n }, probe));
+      return performance.now() - t0;
+    };
+    await time(1);
+    const one = [await time(1)];
+    const two = [await time(2)];
+    one.push(await time(1));
+    two.push(await time(2));
+    return Math.min(...two) < 1.7 * Math.min(...one);
+  })().catch(() => false);
+  const helps = await sideBySide;
+  if (!helps && sideBySideLooks < 3) sideBySide = undefined;
+  return helps;
+}
+
+/**
+ * Render `parts` at the same time, each without the master section, add them up, and run the
+ * master section over the sum (see renderTracks). Every part is planned with the master section's
+ * latency, so the parts and the sum line up sample for sample with the one render they replace.
+ */
+async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?: (fraction: number) => void): Promise<Rendered> {
+  const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  const latency = await masterChainLatency(sampleRate);
+  // Read live state before any context is swapped
+  const masterDb = opts.ignoreMasterVolume ? 0 : getMasterVolume();
+  // The bar moves as the work does: each part counts by its rough cost
+  const costs = parts.map((p) => p.reduce((sum, t) => sum + trackCost(t, opts.clips, opts.startBar, opts.endBar), 0));
+  const total = costs.reduce((a, b) => a + b, 0) || 1;
+  const done = parts.map(() => 0);
+  let shown = 0;
+  const report = () => {
+    const fraction = (PARTS_PROGRESS * done.reduce((sum, f, i) => sum + f * costs[i], 0)) / total;
+    if (fraction > shown) onProgress?.((shown = fraction));
+  };
+  // A cancel stops every part, and so does one part failing (the whole is then rendered in one piece)
+  const stop = new AbortController();
+  const cancel = () => stop.abort(opts.signal?.reason);
+  if (opts.signal?.aborted) cancel();
+  opts.signal?.addEventListener('abort', cancel, { once: true });
+  let results: Array<Awaited<ReturnType<typeof renderGraph>>>;
+  try {
+    results = await Promise.all(
+      parts.map((part, i) => {
+        const progress = (f: number) => {
+          done[i] = f;
+          report();
+        };
+        return renderGraph({ ...opts, signal: stop.signal }, part, progress, { latency }).catch((err: unknown) => {
+          stop.abort(err);
+          throw err;
+        });
+      })
+    );
+  } finally {
+    opts.signal?.removeEventListener('abort', cancel);
+  }
+  const plan = results[0].plan;
+  // The sum, in the first part's buffer (and the others let go of)
+  const sum = results[0].rendered;
+  for (let c = 0; c < sum.numberOfChannels; c++) {
+    const into = sum.getChannelData(c);
+    for (const r of results.slice(1)) {
+      const from = r.rendered.getChannelData(c);
+      for (let i = 0; i < into.length; i++) into[i] += from[i];
+    }
+  }
+  const reverbImpulse = results[0].reverbImpulse;
+  results = [];
+  opts.signal?.throwIfAborted();
+
+  // The master section, fed the sum where the mix bus would feed it
+  const native = new OfflineAudioContext(2, plan.length, sampleRate);
+  const context = new Tone.OfflineContext(native);
+  const mix = await withContext(context, async () => {
+    context.destination.volume.value = masterDb;
+    const chain = createMixChain(context.destination, opts.masterFx, opts.bpm, opts.master);
+    // The parts' sound already has the bus's gain and the shared reverb and delay in it
+    chain.busFx.dispose();
+    [chain.bus, chain.auditionInput].forEach((n) => n.dispose());
+    await Promise.all([chain.inserts.ready(), chain.limiterReady]);
+    return chain;
+  });
+  const source = native.createBufferSource();
+  source.buffer = sum;
+  source.connect(nativeInputOf(mix.compressor));
+  source.start(0);
+  const rendered = await abortable(native.startRendering(), opts.signal).finally(() => {
+    source.disconnect();
+    mix.inserts.dispose();
+    mix.compressor.dispose();
+    mix.disposeLimiter();
+  });
+  onProgress?.(1);
+  return { channels: finishRender(rendered, plan, opts), sampleRate, reverbImpulse };
+}
+
+/**
+ * Cut a whole render (`plan`'s) down to the file: a seamless loop's end crossfaded into the pass
+ * before, an exact length's last few milliseconds faded. Returns views into the render.
+ */
+function finishRender(rendered: AudioBuffer, plan: RenderPlan, opts: RenderOptions): Float32Array<ArrayBuffer>[] {
+  const ending = opts.ending ?? 'ringOut';
+  if (ending === 'seamless') {
+    // The render ran the pass before straight into the kept one. So that the file's end leads
+    // into its start exactly as that pass led into this one, the last 10 ms crossfade into the
+    // end of the pass before. Passes aren't sample-for-sample repeats (free-running chorus and
+    // filter sweeps, voices whose phase depends on what they played before), so without this
+    // the wrap from the last sample to the first could click.
+    const fade = Math.min(Math.round(SEAM_FADE_SECONDS * plan.sampleRate), plan.keepLength);
+    const end = plan.keepFrom + plan.keepLength;
+    for (const ch of channelsOf(rendered)) {
+      for (let i = end - fade; i < end; i++) {
+        const w = (i - (end - fade) + 1) / fade;
+        ch[i] += (ch[i - plan.keepLength] - ch[i]) * w;
+      }
+    }
+  }
+  // Cut to the sample: the file starts where the range start comes out (a seamless loop's last pass)
+  const channels = channelsOf(rendered).map((ch) => ch.subarray(plan.keepFrom, plan.keepFrom + plan.keepLength));
+  if (ending === 'exact' && !opts.noEndFade) fadeOut(channels, Math.round(EXACT_FADE_SECONDS * plan.sampleRate));
+  return channels;
+}
+
+/**
+ * Render `sounding`'s graph in one OfflineAudioContext as planned by planRender, and return the
+ * whole render (pre-roll and tail included: finishRender cuts it). With `premaster`, the sound is
+ * taken before the master section and master volume (a part, for renderInParts), planned with the
+ * master section's latency as if it were there.
+ */
+async function renderGraph(
   opts: RenderOptions,
   sounding: Track[],
-  onProgress?: (fraction: number) => void
-): Promise<{ channels: Float32Array<ArrayBuffer>[]; sampleRate: number; reverbImpulse: AudioBuffer | undefined }> {
+  onProgress?: (fraction: number) => void,
+  premaster?: { latency: number }
+): Promise<{ rendered: AudioBuffer; plan: RenderPlan; reverbImpulse: AudioBuffer | undefined }> {
   // The buses these tracks play through come too (a stem of a bused track has its bus's sound),
   // each made before the tracks that play into it
   // ...and the returns they send to (heard ones: a muted return takes nothing), with their buses
@@ -520,13 +766,14 @@ async function renderTracks(
   // Clips' controller lanes play as their tracks' automation (see ccLanes.ts)
   const tracks = withControllerLanes(busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]), clips);
   const ending = opts.ending ?? 'ringOut';
-  const plan = planRender(opts, opts.bypassMaster ? 0 : await masterChainLatency(opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
+  const bypassMaster = opts.bypassMaster || !!premaster;
+  const plan = planRender(opts, premaster ? premaster.latency : opts.bypassMaster ? 0 : await masterChainLatency(opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
   const { sampleRate, length } = plan;
   if (plan.keepLength < 1) throw new Error('the range is empty');
   const duration = length / sampleRate;
   signal?.throwIfAborted();
   // Read live state before the global context is swapped
-  const masterDb = opts.ignoreMasterVolume ? 0 : getMasterVolume();
+  const masterDb = opts.ignoreMasterVolume || premaster ? 0 : getMasterVolume();
 
   // Download any sampled instruments first (shared with live playback, so usually instant)
   for (const key of new Set(tracks.map((t) => t.instrumentKey))) {
@@ -549,24 +796,9 @@ async function renderTracks(
   const context = new Tone.OfflineContext(native);
   finishedSources.set(context, []);
   let graph: Awaited<ReturnType<typeof buildGraph>>;
-  // The global context is this render's while its graph is built. Two renders at once (a game
-  // matrix still rendering behind another export) take turns, so neither takes the other's
-  // offline context for the live one and leaves it in place
-  const swap = contextSwaps.then(async () => {
-    const original = Tone.getContext();
-    Tone.setContext(context);
-    try {
-      return await buildGraph(context);
-    } finally {
-      Tone.setContext(original);
-    }
-  });
-  contextSwaps = swap.then(
-    () => undefined,
-    () => undefined
-  );
+  // The global context is this render's while its graph is built
   try {
-    graph = await swap;
+    graph = await withContext(context, () => buildGraph(context));
   } catch (err) {
     finishedSources.delete(context);
     throw err;
@@ -648,39 +880,19 @@ async function renderTracks(
     signal
   );
   onProgress?.(1);
-
-  if (ending === 'seamless') {
-    // The render ran the pass before straight into the kept one. So that the file's end leads
-    // into its start exactly as that pass led into this one, the last 10 ms crossfade into the
-    // end of the pass before. Passes aren't sample-for-sample repeats (free-running chorus and
-    // filter sweeps, voices whose phase depends on what they played before), so without this
-    // the wrap from the last sample to the first could click.
-    const fade = Math.min(Math.round(SEAM_FADE_SECONDS * sampleRate), plan.keepLength);
-    const end = plan.keepFrom + plan.keepLength;
-    for (const ch of channelsOf(rendered)) {
-      for (let i = end - fade; i < end; i++) {
-        const w = (i - (end - fade) + 1) / fade;
-        ch[i] += (ch[i - plan.keepLength] - ch[i]) * w;
-      }
-    }
-  }
-  // Cut to the sample: the file starts where the range start comes out (a seamless loop's last pass)
-  const channels = channelsOf(rendered).map((ch) => ch.subarray(plan.keepFrom, plan.keepFrom + plan.keepLength));
-  if (ending === 'exact' && !opts.noEndFade) fadeOut(channels, Math.round(EXACT_FADE_SECONDS * sampleRate));
-  return { channels, sampleRate, reverbImpulse: graph.reverbImpulse() };
+  return { rendered, plan, reverbImpulse: graph.reverbImpulse() };
 
   /** Mix chain, one strip + instrument per track, and the Transport, inside the offline context. */
   async function buildGraph(context: Tone.OfflineContext) {
     context.destination.volume.value = masterDb;
-    const mix = createMixChain(context.destination, masterFx, bpm, opts.master);
-    if (opts.bypassMaster) {
-      // The bus straight to the output (master volume still applies, as it's a plain gain)
-      mix.bus.disconnect();
-      mix.bus.connect(context.destination);
-      mix.inserts.dispose();
-      mix.compressor.dispose();
-      mix.disposeLimiter();
-    }
+    // Without the master section (stems, freezes, the parts of a mix) only the mix bus and the
+    // shared reverb and delay are built, as createMixChain builds them, the bus straight to the
+    // output (master volume still applies, as it's a plain gain). Then nothing loads an
+    // AudioWorklet (the limiter is one) unless a track's plugin does: Chromium renders every
+    // offline context with one on a single shared thread, so the parts couldn't run side by side.
+    const section = bypassMaster ? null : createMixChain(context.destination, masterFx, bpm, opts.master);
+    const mixBus = section?.bus ?? new Tone.Gain(BUS_GAIN).connect(context.destination);
+    const busFx = section?.busFx ?? createBusEffects(mixBus, masterFx, bpm);
 
     const strips: TrackStrip[] = [];
     const stripOf = new Map<string, TrackStrip>();
@@ -688,7 +900,7 @@ async function renderTracks(
     for (const track of tracks) {
       // Into its bus's strip (made already: buses come first), or the master
       const bus = busOf(track, opts.tracks);
-      const strip = createTrackStrip((bus && stripOf.get(bus.id)?.input) || mix.bus, mix.busFx);
+      const strip = createTrackStrip((bus && stripOf.get(bus.id)?.input) || mixBus, busFx);
       strip.setTempo(bpm);
       strip.apply(track, { ramp: 0, muteOverride: false });
       if (opts.intensity) strip.setIntensityLevel(trackIntensityLevel(track, opts.intensity.curves, opts.intensity.value));
@@ -706,9 +918,9 @@ async function renderTracks(
       });
       if (sends.length) stripOf.get(track.id)!.setSends(sends, false);
     }
-    await Promise.all([mix.busFx.ready, mix.inserts.ready(), opts.bypassMaster ? undefined : mix.limiterReady, ...[...instruments.values()].map((i) => i.ready)]);
+    await Promise.all([busFx.ready, section?.inserts.ready(), section?.limiterReady, ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)
-    const convolver = (mix.busFx.reverb as unknown as { _convolver: ConvolverNode })._convolver;
+    const convolver = (busFx.reverb as unknown as { _convolver: ConvolverNode })._convolver;
     if (opts.reverbImpulse?.sampleRate === sampleRate) convolver.buffer = opts.reverbImpulse;
 
     const transport = context.transport;
@@ -762,10 +974,13 @@ async function renderTracks(
         automation.dispose();
         instruments.forEach((i) => i.dispose());
         strips.forEach((s) => s.dispose());
-        mix.busFx.dispose();
-        mix.inserts.dispose();
-        [mix.bus, mix.compressor, mix.auditionInput].forEach((n) => n.disposed || n.dispose());
-        mix.disposeLimiter();
+        busFx.dispose();
+        if (!mixBus.disposed) mixBus.dispose();
+        if (section) {
+          section.inserts.dispose();
+          [section.compressor, section.auditionInput].forEach((n) => n.disposed || n.dispose());
+          section.disposeLimiter();
+        }
       },
     };
   }

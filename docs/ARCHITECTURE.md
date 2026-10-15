@@ -160,7 +160,13 @@ Microphone recording is `micRecorder.ts`.
 the same factories as live: the master chain, a strip and instrument per audible track, and the
 note, audio clip and automation schedules on the offline Transport. Rather than scheduling the
 whole song up front, it renders in steps (`suspend()`), scheduling a little ahead each time and
-disposing finished notes, so long songs render in linear time. The result is scaled down if its
+disposing finished notes, so long songs render in linear time. A mix through the master section
+is split, where that sounds exactly the same, into parts rendered at once, each in an
+`OfflineAudioContext` of its own, which Chromium runs on a core of its own: the parts' sound
+before the master section is added up and the master section runs once over the sum
+(`renderParts.ts` says which tracks must stay together). The parts load no AudioWorklet unless a
+track's plugin does, since Chromium renders every offline context that has one on a single shared
+thread. The result is scaled down if its
 true peak passes -1 dBTP, then encoded: WAV here (16/24/32-bit, markers as cue points), MP3 and
 Ogg in `encoders.ts`, MP4 video in `videoExport.ts`. Stems, intro-plus-loop, seamless loops,
 the game kit (`gameKit.ts`), FMOD / Wwise packages and freezing a track are all variations on
