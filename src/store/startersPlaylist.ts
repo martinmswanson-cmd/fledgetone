@@ -728,7 +728,8 @@ function riddim(): ProjectSnapshot {
   const wobble = track('Wobble', 'wobbleBass', { volume: -8, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
   const reese = track('Reese', 'reeseBass', { volume: -14, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
   const sub = track('Sub', 'subBass', { volume: -10, fx: { peq: EQ.sub(120), pump: { on: true, depth: 0.5, release: 200, trigger: 'kick' } } });
-  const drums = track('Drums', 'technoKit', { volume: -4, output: kit.id, fx: { peq: peq(lowCut(30), bell(350, -3)), distortion: { on: true, amount: 0.08 } } });
+  // (4 dB under where they were: their peaks stood 9 dB over the growl and wobble, the lead here)
+  const drums = track('Drums', 'technoKit', { volume: -8, output: kit.id, fx: { peq: peq(lowCut(30), bell(350, -3)), distortion: { on: true, amount: 0.08 } } });
   const taiko = track('Taiko', 'taiko', { volume: -5, output: kit.id });
   const sfx = track('FX', 'fx', { volume: -16 });
 
@@ -858,7 +859,8 @@ function phonk(): ProjectSnapshot {
     reverbSend: 0.1,
     fx: { peq: peq(lowCut(300), highCut(8000)), lofi: { on: true, crush: bits(10), tone: 8000, wow: 0, mix: 0.4 }, distortion: { on: true, amount: 0.25 }, pump: { on: true, depth: 0.45, release: 180, trigger: 'kick' } },
   });
-  const drums = track('Drums', 'drumMachine', { volume: -4, fx: { peq: peq(lowCut(30), highCut(12000)), lofi: { on: true, crush: bits(12), tone: 9000, wow: 0, mix: 0.3 }, compressor: glue() } });
+  // (4 dB under where they were: they stood 8 dB over the cowbell and the 808)
+  const drums = track('Drums', 'drumMachine', { volume: -8, fx: { peq: peq(lowCut(30), highCut(12000)), lofi: { on: true, crush: bits(12), tone: 9000, wow: 0, mix: 0.3 }, compressor: glue() } });
   const bass = track('808', 'bass808', { volume: -8, fx: { peq: EQ.eight() } });
   const dirt = track('808 grit', 'growlBass', { volume: -16, fx: { peq: peq(lowCut(150), bell(1000, 3)), distortion: { on: true, amount: 0.1 }, pump: { on: true, depth: 0.5, release: 180, trigger: 'kick' } } });
   const pad = track('Pad', 'synthDesigner', { volume: -18, synth: PATCH.darkPad(), reverbSend: 0.3, fx: { peq: peq(lowCut(200)), pump: { on: true, depth: 0.5, release: 220, trigger: 'kick' } } });
@@ -913,7 +915,8 @@ function drill(): ProjectSnapshot {
   const tremolo = track('Tremolo', 'tremolo', { volume: -20, sends: send(room, 0.35), fx: { peq: peq(lowCut(150), highCut(7000)) } });
   const choir = track('Choir', 'choirPad', { volume: -20, reverbSend: 0.4, fx: { peq: peq(lowCut(200)) } });
   const bass = track('808', 'bass808', { volume: -8, fx: { peq: EQ.eight() } });
-  const drums = track('Drums', 'drumMachine', { volume: -4, fx: { peq: peq(lowCut(30)), compressor: glue() } });
+  // (6 dB under where they were: they stood 11 dB over the piano and the 808)
+  const drums = track('Drums', 'drumMachine', { volume: -10, fx: { peq: peq(lowCut(30)), compressor: glue() } });
 
   // A four-bar motif in G harmonic minor with a gap in every bar; the last bar turns on the eerie F#
   const motif = phrase(

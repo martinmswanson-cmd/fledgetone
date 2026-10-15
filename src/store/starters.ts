@@ -6,6 +6,7 @@ import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { STORY_BUILDERS } from './startersStory';
 import { MATH_BUILDERS } from './startersMath';
+import { starterTrimDb, trimMix } from './startersLoudness';
 import { FX_NOTES, INSTRUMENTS, seatOf } from '../audio/instrumentCatalog';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
@@ -237,7 +238,8 @@ const ROLLING_BASS = () => designer({
 
 function dubstep(): ProjectSnapshot {
   const room = darkRoom();
-  const drums = track('Drums', 'technoKit', { volume: -4, reverbSend: 0.08, fx: { peq: EQ.kit(350), compressor: GLUE, distortion: { on: true, amount: 0.12 } } });
+  // (4 dB under where they were: they stood 6 dB over the wobble and growl, their peaks 10 dB over)
+  const drums = track('Drums', 'technoKit', { volume: -8, reverbSend: 0.08, fx: { peq: EQ.kit(350), compressor: GLUE, distortion: { on: true, amount: 0.12 } } });
   const sub = track('Sub', 'subBass', { volume: -10, fx: { peq: EQ.sub(150), pump: { on: true, depth: 0.6, release: 150, trigger: 'kick' } } });
   const wobble = track('Wobble', 'wobbleBass', { volume: -6, fx: { peq: peq(lowCut(120), bell(900, 3), highCut(10000)), distortion: { on: true, amount: 0.1 }, mbc: TAME_FIZZ } });
   const growl = track('Growl', 'growlBass', { volume: -7, fx: { peq: peq(lowCut(120), highCut(9000)), distortion: { on: true, amount: 0.1 } } });
@@ -401,7 +403,8 @@ function dnb(): ProjectSnapshot {
 function trap(): ProjectSnapshot {
   const room = darkRoom();
   // The 808 kit is right for trap; HUMAN stays off (hats are programmed, not played)
-  const drums = track('Drums', 'drumMachine', { volume: -4, reverbSend: 0.05, fx: { peq: peq(lowCut(30), highCut(13000)), compressor: GLUE } });
+  // The drums 6 dB under where they were: they stood 15 dB over the 808, the piano and the pad
+  const drums = track('Drums', 'drumMachine', { volume: -10, reverbSend: 0.05, fx: { peq: peq(lowCut(30), highCut(13000)), compressor: GLUE } });
   const bass = track('808', 'bass808', { volume: -8, fx: { peq: peq(lowCut(28)), mbc: { on: true, bands: [{ threshold: -20, ratio: 2, gain: 0 }, { threshold: -20, ratio: 1.5, gain: 0 }, { threshold: -20, ratio: 1.5, gain: 0 }] } } });
   // A quiet, low, dusty piano instead of a bright pluck with delay (a ringtone)
   const melody = track('Melody', 'piano', {
@@ -1411,7 +1414,8 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
 /** A fresh copy of a starter (new ids each time). */
 export function createStarter(id: StarterId): ProjectSnapshot {
   const p = withRoom(id, withGlue(id, wholeSong(withSwells(inRange(withSeats(recorded(BUILDERS[id]())))))));
-  return withBreathing(id, withVibrato(id, withLegato(id, p)));
+  // Last, the level: each starter brought to its group's loudness (see startersLoudness.ts)
+  return trimMix(withBreathing(id, withVibrato(id, withLegato(id, p))), starterTrimDb(id));
 }
 
 /**
@@ -1437,7 +1441,9 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   flute: { to: 'realFlute', db: 0.0, short: 'realFluteShort', shortDb: -3.0 },
   frenchHorn: { to: 'realHorn', db: 3.0, short: 'realHornShort', shortDb: -2.5, high: 'realBrass', highDb: -4 },
   pizzicato: { to: 'realPizzicato', db: -3.5 },
-  contrabass: { to: 'realDoubleBass', db: -3.5 },
+  // (Matched A-weighted, which hardly hears a double bass's low notes: at -3.5 it played 3 to 10 dB
+  // over every other part in all five starters that have one; now it sits a little under the cellos)
+  contrabass: { to: 'realDoubleBass', db: -12 },
   marimba: { to: 'realMarimba', db: 0.5 },
   violin: { to: 'realSoloViolin', db: -0.5, short: 'realViolinsShort', shortDb: -2.5 },
   viola: { to: 'realViolas', db: -1.0, short: 'realViolasShort', shortDb: -3.5 },
