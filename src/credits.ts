@@ -47,9 +47,34 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
-    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax'].map((set) => `${HOSTED}${set}/`),
+    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax', 'harmonica', 'ocarina', 'zither', 'concert-bass-drum'].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
+      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica, ocarina, zither (dan tranh), concert bass drum, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}steel-drums/`],
+    samples: 'Steel drums from [jSteelDrum](https://github.com/sfzinstruments/jlearman.SteelDrum) by jlearman (converted to MP3, hosted with the app)',
+    licence: 'The Unlicense (public domain)',
+  },
+  {
+    prefixes: [`${HOSTED}electric-piano/`],
+    samples: 'Electric piano from [E-Pianos](https://github.com/sfzinstruments/GregSullivan.E-Pianos) by Greg Sullivan (converted to MP3, hosted with the app)',
+    licence: CC_BY,
+  },
+  {
+    prefixes: [`${HOSTED}banjo/`],
+    samples: 'Banjo from [ganjo](https://github.com/sfzinstruments/ganjo) by itsclipping (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}solo-voice/`],
+    samples: 'Solo voice from the [legato vocal tutorial](https://github.com/sfzinstruments/legato_vocal_tutorial) by Karoryfer Samples (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}studio-kit/`],
+    samples: 'Studio drum kit from [Big Rusty Drums](https://github.com/sfzinstruments/karoryfer.big-rusty-drums) by Karoryfer Samples, close and overhead microphones mixed (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {

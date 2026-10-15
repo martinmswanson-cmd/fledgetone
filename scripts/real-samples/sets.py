@@ -98,20 +98,14 @@ OCT_VOICE = -1
 KITS = {
     'studio-kit': {'repo': 'rustydrums', 'layers': 4, 'takes': ['rr1', 'rr2'], 'pieces': [
         (36, 'kick_24/kick', 'k', {'kick': 3, 'oh': 0}),
-        (37, 'snare_14/sidestick', 'sn_ss', {'top': 3, 'btm': 0, 'oh': 0}),
         (38, 'snare_14/center', 'sn_center', {'top': 3, 'btm': 0, 'oh': 0}),
         (41, 'tom_22/center', 't22', {'cl': 3, 'oh': 0}),
         (42, 'hihat_14/tc', 'ht_tc', {'cl': 3, 'oh': 0}),
-        (43, 'tom_18/center', 't18', {'cl': 3, 'oh': 0}),
-        (44, 'hihat_14/chik', 'ht_chik', {'cl': 3, 'oh': 0}),
         (45, 'tom_15/center', 't15', {'cl': 3, 'oh': 0}),
         (46, 'hihat_14/open', 'ht_open', {'cl': 3, 'oh': 0}),
         (48, 'tom_14/center', 't14', {'cl': 3, 'oh': 0}),
         (49, 'crash_17/cr', 'cr', {'cl': -3, 'oh': 0}),
         (51, 'ride_22/rd', 'rd', {'cl': -3, 'oh': 0}),
-        (52, 'china_18/cn', 'cn', {'cl': -3, 'oh': 0}),
-        (53, 'ride_22/bl', 'rd_bl', {'cl': -3, 'oh': 0}),
-        (57, 'crash_sizzle_17/cr', 'crs', {'cl': -3, 'oh': 0}),
     ]},
 }
 

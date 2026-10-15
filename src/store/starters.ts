@@ -1420,7 +1420,7 @@ export function createStarter(id: StarterId): ProjectSnapshot {
  * (measured: the same notes through both, A-weighted). `short` plays parts of short notes (under an
  * eighth on average) with the short-stroke recordings, and `high` takes parts too high for the
  * recording (the horn's top, which the section's trumpet plays). `anyNote`: a note out of the
- * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, electric piano, choir and the rest
+ * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, choir and the rest
  * have no free recording yet and stay as they are.
  */
 const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: InstrumentKey; shortDb?: number; high?: InstrumentKey; highDb?: number; preset?: string; anyNote?: boolean }> = {
@@ -1463,6 +1463,12 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   sweepPad: { to: 'synthDesigner', preset: 'Sweep pad', db: 1.5 },
   polysynthPad: { to: 'synthDesigner', preset: 'Polysynth', db: 0.0 },
   soundtrackPad: { to: 'synthDesigner', preset: 'Soundtrack pad', db: 0.5 },
+  rhodes: { to: 'realElectricPiano', db: 0 },
+  acousticKit: { to: 'studioKit', db: 0 },
+  banjo: { to: 'realBanjo', db: 0 },
+  harmonica: { to: 'realHarmonica', db: 0 },
+  ocarina: { to: 'realOcarina', db: 0 },
+  steelDrums: { to: 'realSteelDrums', db: 0 },
 };
 
 /**
