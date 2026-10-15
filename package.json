@@ -2,7 +2,7 @@
   "name": "fledgetone",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "version": "2026.10.15-19",
+  "version": "2026.10.15-20",
   "type": "module",
   "scripts": {
     "dev": "npm run build:runtime && vite",

@@ -8,7 +8,7 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
-## Unreleased
+## 2026.10.15-20 — Arrange a beat
 
 - **Arrange a beat** (Song menu, the ruler's right-click menu, or search *arrange*): a **Dark melody** generator for trap, drill, rage and phonk (minor, harmonic minor or phrygian with the flat second for tension, sparse rhythms, a repeating motif with a new ending, density, register and **New idea**, the same idea number always writing the same melody), **Drop out** and **Stop** before a drop, **Riser** and **Reverse cymbal** into it, a **Beat switch** (half time, double time or a new drum pattern with the bass following its kicks), **Song form** (intro, hook, verse, hook, verse, bridge, hook, outro from a 4- or 8-bar loop, with section markers) and a **Producer tag** kept in the browser for every project, placed at the start or every few bars with the beat ducking under it. Each is one Undo step.
 
