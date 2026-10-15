@@ -25,6 +25,8 @@ import { ringOutLength, RING_OUT_FADE_SECONDS } from './ringOutTail';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
 import { createInstrument, trackInstrumentOptions } from './instruments';
+import { exactSumsIn, settleSums } from './exactSums';
+import { deliverEnded, endedOnTimeIn } from './endedOnTime';
 import { nativeInputOf } from './nativeNodes';
 import { renderParts, trackCost } from './renderParts';
 import type { TrackInstrument } from './instruments';
@@ -126,8 +128,8 @@ export interface RenderOptions {
   peakCeilingDbtp?: number;
   /**
    * How many parts a mix may be rendered in at once, each on a processor core of its own (see
-   * renderTracks). Default: one fewer than the computer has, up to MAX_PARTS, where the browser
-   * renders them side by side; 1: in one piece.
+   * renderTracks). Default: one fewer than the computer has, up to MAX_PARTS (rendered one after
+   * another where the browser doesn't render them side by side); 1: in one piece.
    */
   threads?: number;
   /** Told what the master section did after the render (how hard its clipper and limiter worked), for the Mix check. */
@@ -739,10 +741,10 @@ async function partsFor(opts: RenderOptions, sounding: Track[]): Promise<Track[]
   const allowed = Math.min(partsAllowed(opts), Math.floor(PARTS_MEMORY / (plan.length * 4 * channels)));
   if (allowed < 2) return null;
   const parts = renderParts(opts.tracks, sounding, opts.clips, opts, allowed);
-  if (parts.length < 2) return null;
-  // Asked for by number, it's done whatever the browser makes of it
-  if (opts.threads === undefined && !(await sideBySideHelps())) return null;
-  return parts;
+  // (Split the same way whether or not the browser renders the parts side by side, which a timing
+  // decides: in one piece, the same song came out a rounding error different, so two exports of it
+  // could differ. Where they don't run side by side, renderInParts renders them one after another.)
+  return parts.length < 2 ? null : parts;
 }
 
 /** What sideBySideHelps found: true for good; false to look again at a later export (up to 3 looks). */
@@ -820,19 +822,24 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   if (opts.signal?.aborted) cancel();
   opts.signal?.addEventListener('abort', cancel, { once: true });
   let results: Array<Awaited<ReturnType<typeof renderGraph>>>;
+  const renderPart = (part: Track[], i: number) => {
+    const progress = (f: number) => {
+      done[i] = f;
+      report();
+    };
+    return renderGraph({ ...opts, signal: stop.signal }, part, progress, { latency, slack, reverbSends: lush }).catch((err: unknown) => {
+      stop.abort(err);
+      throw err;
+    });
+  };
   try {
-    results = await Promise.all(
-      parts.map((part, i) => {
-        const progress = (f: number) => {
-          done[i] = f;
-          report();
-        };
-        return renderGraph({ ...opts, signal: stop.signal }, part, progress, { latency, slack, reverbSends: lush }).catch((err: unknown) => {
-          stop.abort(err);
-          throw err;
-        });
-      })
-    );
+    // At once where the browser renders them side by side (or asked for by number: done whatever
+    // the browser makes of it); otherwise one after another, which adds up to the same
+    if (opts.threads !== undefined || (await sideBySideHelps())) results = await Promise.all(parts.map(renderPart));
+    else {
+      results = [];
+      for (const [i, part] of parts.entries()) results.push(await renderPart(part, i));
+    }
   } finally {
     opts.signal?.removeEventListener('abort', cancel);
   }
@@ -859,6 +866,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
 
   // The master section, fed the sum where the mix bus would feed it
   const native = new OfflineAudioContext(2, plan.length, sampleRate);
+  exactSumsIn(native);
   const context = new Tone.OfflineContext(native);
   const mix = await withContext(context, async () => {
     // (Master volume comes after the limiter, which runs after the render: see finishMaster)
@@ -888,6 +896,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
     mix.inserts.dispose();
     mix.compressor.dispose();
     mix.disposeLimiter();
+    settleSums(native);
   });
   finishMaster(rendered, mix.limitsAfter, opts, masterDb);
   onProgress?.(1);
@@ -1032,6 +1041,10 @@ async function renderGraphHeld(
   // A part's reverb sends come out on channels 3 and 4, in place of the shared reverb (renderInParts)
   const reverbSends = !!premaster?.reverbSends;
   const native = new OfflineAudioContext(reverbSends ? 4 : 2, length, sampleRate);
+  // So that it renders the same every time: its sums are added up in the same order (see
+  // exactSums.ts), and its notes let go of their nodes on its own clock (endedOnTime.ts)
+  exactSumsIn(native);
+  endedOnTimeIn(native);
   const context = new Tone.OfflineContext(native);
   finishedSources.set(context, []);
   let graph: Awaited<ReturnType<typeof buildGraph>>;
@@ -1055,6 +1068,8 @@ async function renderGraphHeld(
     graph.dispose();
     finishedSources.get(context)?.forEach((source) => source.disposed || source.dispose());
     finishedSources.delete(context);
+    deliverEnded(native, Infinity);
+    settleSums(native);
   };
   if (signal?.aborted) {
     release();
@@ -1089,7 +1104,10 @@ async function renderGraphHeld(
             release();
             return;
           }
+          deliverEnded(native, at);
           disposeFinishedSources(context, at);
+          // Paused: the links of finished notes can go without landing between two render blocks
+          settleSums(native);
           const next = at + RENDER_STEP;
           if (next < lastSuspend) {
             advanceClock(next + SCHEDULE_LEAD);

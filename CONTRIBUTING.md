@@ -283,6 +283,10 @@ python3 scripts/audio-check/phrases.py /tmp/after
 It needs Playwright with Chromium, ffmpeg, and Python with numpy. When a change is meant to be
 heard, attach a short before-and-after recording of the same phrase to the pull request.
 
+Exports must repeat exactly. `node scripts/audio-check/repeat.cjs` renders every generated
+instrument, kit, insert and a few starters twice and says which differ (`KEYS`, `FX`, `STARTERS`
+and `THREADS` pick what it renders; see its header). Run it after touching an instrument or effect.
+
 ## Pull requests
 
 - **One topic per pull request.** A fix and an unrelated tidy-up are two pull requests.

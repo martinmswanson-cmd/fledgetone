@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-27 — Exports repeat exactly
+
+- Exporting the same song twice now gives exactly the same file, sample for sample, for every instrument, kit, effect and starter (before, two exports could differ by a rounding error in the last bit, more after a distortion).
+
 ## 2026.10.15-26 — Install Fledgetone
 
 - Fixed: in the published app the live loudness meter, and the loudness measured for exports, could fail with an error: they work again.
