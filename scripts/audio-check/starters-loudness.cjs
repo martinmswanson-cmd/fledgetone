@@ -24,7 +24,7 @@ const TIMEOUT = Number(process.env.TIMEOUT || 300000);
 // turn the result down to its peak
 const PATCHES = [
   [/\/src\/audio\/effects\/masterAfter\.ts/, 'limitChannels(left, right, sampleRate, ceilingDbtp);', ''],
-  [/\/src\/audio\/exportWav\.ts/, 'scale(channels, peakGain(peakOf(channels)));', ''],
+  [/\/src\/audio\/exportWav\.ts/, 'scale(channels, peakGain(peakOf(channels), opts));', ''],
 ];
 
 // In the page: render starter `id` and measure it (see above)

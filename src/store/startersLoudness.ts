@@ -128,7 +128,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   rpg: { trim: -1, lufs: -15 }, // -14.4
   metaldub: { trim: 0, lufs: -14.2 }, // -14.3
   melodicdub: { trim: 2.5, lufs: -14 }, // -13.9
-  riddim: { trim: 11.5, lufs: -15 }, // -15
+  riddim: { trim: 12, lufs: -13.9 }, // -15
   futurebass: { trim: 2.5, lufs: -14.2 }, // -14.2
   phonk: { trim: 11.5, lufs: -14 }, // -14
   drill: { trim: 12, lufs: -14.1 }, // -14.4

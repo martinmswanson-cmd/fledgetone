@@ -719,15 +719,16 @@ function melodicDubstep(): ProjectSnapshot {
 function riddim(): ProjectSnapshot {
   const kit = drumBus();
   const organ = track('Organ drone', 'pipeOrgan', { volume: -18, reverbSend: 0.4, fx: { peq: peq(lowCut(200), highCut(5000)) } });
-  // Growl and wobble (gritty already) with a touch of drive behind a low cut; the growl's drive creeps up through the drop
+  // Growl and wobble (gritty already) with a touch of drive behind a low cut; the growl's drive creeps up through the drop.
+  // They lead, 3 dB up on the drums (and the sub 1.5): with the snare softer (see below), there's room
   const growl = track('Growl', 'growlBass', {
-    volume: -5,
+    volume: -2,
     fx: { peq: peq(lowCut(120), bell(1000, 3)), distortion: { on: true, amount: 0.1 }, mbc: tameFizz() },
     automation: [{ param: 'fx:distortion.amount', points: [{ bar: 9, value: 0.1 }, { bar: 17, value: 0.2 }] }],
   });
-  const wobble = track('Wobble', 'wobbleBass', { volume: -8, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
-  const reese = track('Reese', 'reeseBass', { volume: -14, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
-  const sub = track('Sub', 'subBass', { volume: -10, fx: { peq: EQ.sub(120), pump: { on: true, depth: 0.5, release: 200, trigger: 'kick' } } });
+  const wobble = track('Wobble', 'wobbleBass', { volume: -5, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
+  const reese = track('Reese', 'reeseBass', { volume: -11, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
+  const sub = track('Sub', 'subBass', { volume: -8.5, fx: { peq: EQ.sub(120), pump: { on: true, depth: 0.5, release: 200, trigger: 'kick' } } });
   // (4 dB under where they were: their peaks stood 9 dB over the growl and wobble, the lead here)
   const drums = track('Drums', 'technoKit', { volume: -8, output: kit.id, fx: { peq: peq(lowCut(30), bell(350, -3)), distortion: { on: true, amount: 0.08 } } });
   const taiko = track('Taiko', 'taiko', { volume: -5, output: kit.id });
@@ -738,7 +739,12 @@ function riddim(): ProjectSnapshot {
   const call: Step[] = [[0, 'G1', 0.85, '16n'], [t, 'G1', 0.7, '16n'], [2 * t, 'G#1', 0.8, '16n'], [8, 'G1', 0.85, '16n'], [8 + t, 'G1', 0.7, '16n'], [8 + 2 * t, 'G2', 0.8, '16n']];
   // The answer: a held G, an Ab, back to G
   const answer: Step[] = [[0, 'G1', 0.85, '4n'], [8 + 2 * t, 'G#1', 0.75, '16n'], [12, 'G1', 0.8, '8n']];
-  const drop = beat([[D.kick, 'X...........g...'], [D.snare, '........X.......'], [D.clap, '........x.......'], [D.closedHat, '..x...x...x...x.']], 0.8);
+  // The snare plays softer than the rest of the kit (0.8 of its velocity in the drop, 0.7 in the
+  // build's roll): it stood over everything else at the limiter (with the clap on the same step, and
+  // the roll's crescendo), so reaching -14 LUFS took 6 dB of limiting (held for 1% of the song).
+  // Now it takes under 3, with the growls up
+  const softSnare = (steps: Step[], by: number) => steps.map(([s, n, v, d]): Step => [s, n, n === D.snare ? v * by : v, d]);
+  const drop = softSnare(beat([[D.kick, 'X...........g...'], [D.snare, '........X.......'], [D.clap, '........x.......'], [D.closedHat, '..x...x...x...x.']], 0.8), 0.8);
   return inSpace(
     project(
       'Riddim starter',
@@ -751,7 +757,7 @@ function riddim(): ProjectSnapshot {
         clip(taiko, 'Toll', 1, 2, [[0, 'G2', 0.6]], 2),
         clip(sub, 'Pulse', 5, 4, pulse(['G1', 'G1', 'G1', 'G1'], [0, 4, 8, 12], 2, 0.6)),
         clip(growl, 'Tease', 7, 1, call, 1, '1/8T'),
-        clip(drums, 'Snare roll', 5, 4, rollWithGap),
+        clip(drums, 'Snare roll', 5, 4, softSnare(rollWithGap, 0.7)),
         clip(sfx, 'Build-up', 5, 4, softBuild(4)),
         // Call and response, the wobble rate changing every two bars; the gaps are the style
         clip(growl, 'Call', 9, 1, call, 1, '1/8T'),

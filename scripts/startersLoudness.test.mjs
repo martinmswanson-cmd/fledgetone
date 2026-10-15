@@ -19,6 +19,7 @@ register(
 }`)
 );
 const { GENTLE_STARTERS, GROUP_LOUDNESS, MAX_STARTER_LOUDNESS, STARTER_LEVELS, starterLoudness, starterTrimDb, trimMix } = await import('../src/store/startersLoudness.ts');
+const { LEVEL_MAX, LEVEL_MIN } = await import('../src/store/timelineTypes.ts');
 
 // The starter list, read from its source (importing starters.ts would load every instrument)
 const source = readFileSync(new URL('../src/store/starters.ts', import.meta.url), 'utf8');
@@ -47,6 +48,9 @@ test('every starter measured within 1.5 LU of its target, with a sane trim', () 
     assert.ok(Math.abs(lufs - target) <= 1.5, `${id}: ${lufs} LUFS, target ${target}`);
     assert.ok(lufs <= MAX_STARTER_LOUDNESS + 0.5, `${id}: ${lufs} LUFS is too loud`);
     assert.ok(Math.abs(trim) <= 15, `${id}: a ${trim} dB trim means its mix needs fixing`);
+    // The trim is the master Level, which stops at its range: a trim past it would be cut short
+    // without a word, and the starter would play quieter than its measured loudness
+    assert.ok(trim >= LEVEL_MIN && trim <= LEVEL_MAX, `${id}: a ${trim} dB trim is past the master Level's range (${LEVEL_MIN} to ${LEVEL_MAX}): raise its faders instead`);
     assert.equal(starterTrimDb(id), trim);
   }
   assert.equal(starterTrimDb('not a starter'), 0);
