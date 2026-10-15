@@ -17,7 +17,7 @@ import { SHOTS } from './shots.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const OUT = join(HERE, '..', '..', 'site', 'guide', 'img');
 const URL_ = process.env.STUDIO_URL ?? 'http://localhost:8765/app/';
-const TRAILER = join(HERE, 'trailer.webm'); // a 14-second test trailer with three hard cuts
+const TRAILER = join(HERE, 'trailer.webm'); // a 15-second film (made with Higgsfield) with three hard cuts
 // Tall enough that the whole studio fits without scrolling: a full-page shot resizes the window,
 // which closes open menus and popovers
 const W = 1440, H = 1250, SCALE = 2;

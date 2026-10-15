@@ -72,7 +72,7 @@ export const SHOTS = [
   },
   {
     file: 'scoring', section: 'scoring-to-a-video', after: null, video: '/video/score.mp4', poster: '/video/score-poster.webp',
-    alt: 'Scoring to a trailer: the video on its lane, two cuts marked, FIT finds 137.14 BPM so both land on a bar, then it plays with the preview window.',
+    alt: 'Scoring to a short film: the video on its lane, its three cuts marked, FIT finds 117.76 BPM so all three land on a bar, then it plays in the preview window.',
     caption: 'Load a video, find its cuts, and fit the tempo so each cut lands on a bar.',
   },
   {
