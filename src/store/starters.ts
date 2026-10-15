@@ -1451,7 +1451,7 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   // over every other part in all five starters that have one; now it sits a little under the cellos)
   contrabass: { to: 'realDoubleBass', db: -12 },
   marimba: { to: 'realMarimba', db: 0.5 },
-  violin: { to: 'realSoloViolin', db: -0.5, short: 'realViolinsShort', shortDb: -2.5 },
+  violin: { to: 'realViolin', db: -3, short: 'realViolinsShort', shortDb: -2.5 },
   viola: { to: 'realViolas', db: -1.0, short: 'realViolasShort', shortDb: -3.5 },
   trombone: { to: 'realTrombone', db: -0.5, short: 'realTromboneShort', shortDb: 2.0 },
   pickBass: { to: 'realElectricBass', db: 1 },

@@ -87,8 +87,8 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   saveRoom: { trim: 4, lufs: -19.2 }, // -19
   cathedralBoss: { trim: 2, lufs: -15.2 }, // -16.1
   arenaMetal: { trim: 6.5, lufs: -14.9 }, // -15.4
-  starlitCity: { trim: 6, lufs: -15 }, // -16
-  farewellPiano: { trim: 3.5, lufs: -14.8 }, // -16.4
+  starlitCity: { trim: 6, lufs: -14.7 }, // -16
+  farewellPiano: { trim: 3.5, lufs: -15 }, // -16.4
   sunsetDrive: { trim: 3.5, lufs: -15.1 }, // -15.1
   midnightCaper: { trim: 0.5, lufs: -15 }, // -14.6
   velvetInfiltration: { trim: -2, lufs: -15.1 }, // -14.6
@@ -122,12 +122,12 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   tavern: { trim: 4, lufs: -14.9 }, // -14.9
   latin: { trim: -2.5, lufs: -14.8 }, // -14.2
   eastern: { trim: 4, lufs: -15.2 }, // -14.8
-  artcore: { trim: 2, lufs: -12.8 }, // -12.8
+  artcore: { trim: 2, lufs: -13.2 }, // -12.8
   hardcore: { trim: 2, lufs: -13.2 }, // -13
   breakcore: { trim: 3.5, lufs: -13.2 }, // -13
   rpg: { trim: -1, lufs: -15 }, // -14.4
   metaldub: { trim: 0, lufs: -14.2 }, // -14.3
-  melodicdub: { trim: 2.5, lufs: -14 }, // -13.9
+  melodicdub: { trim: 2.5, lufs: -13.7 }, // -13.9
   riddim: { trim: 12, lufs: -13.9 }, // -15
   futurebass: { trim: 2.5, lufs: -14.2 }, // -14.2
   phonk: { trim: 11.5, lufs: -14 }, // -14

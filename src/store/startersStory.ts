@@ -48,7 +48,7 @@ const breathing = (p: ProjectSnapshot, from: number, to: number, phrase: number,
 
 function starlitCity(): ProjectSnapshot {
   const piano = track('Grand piano', 'realGrandPiano', { volume: -7, reverbSend: 0.45, fx: { peq: EQ.piano(), human: human(0.3, 0.05) } });
-  const violin = grouped(track('Violin', 'realSoloViolin', { volume: -11, pan: 0.25, reverbSend: 0.45, fx: { human: human(0.3) } }), 'Tension');
+  const violin = grouped(track('Violin', 'realViolin', { volume: -13, pan: 0.25, reverbSend: 0.45, fx: { human: human(0.3) } }), 'Tension');
   const strings = grouped(track('Strings', 'slowStrings', { volume: -17, pan: -0.15, reverbSend: 0.5, fx: { peq: EQ.pad(8000) } }), 'Ambient');
   const bass = track('Upright bass', 'realUprightBass', { volume: -9, reverbSend: 0.2, fx: { peq: peq(lowCut(35)), human: human(0.25) } });
   const kit = drumBus(-20);
@@ -106,7 +106,7 @@ function starlitCity(): ProjectSnapshot {
 
 function farewellPiano(): ProjectSnapshot {
   const piano = track('Felt piano', 'realUprightPiano', { volume: -3, reverbSend: 0.5, fx: { peq: peq(lowCut(70), highCut(5000)), human: human(0.45, 0.05) } });
-  const violin = grouped(track('Solo violin', 'realSoloViolin', { volume: -10, pan: 0.2, reverbSend: 0.5, fx: { human: human(0.35) } }), 'Climax');
+  const violin = grouped(track('Solo violin', 'realViolin', { volume: -12, pan: 0.2, reverbSend: 0.5, fx: { human: human(0.35) } }), 'Climax');
   const cello = grouped(track('Cello', 'realCello', { volume: -12, pan: -0.2, reverbSend: 0.45, fx: { peq: peq(lowCut(40)), human: human(0.3) } }), 'Tension');
   const strings = grouped(track('Strings', 'slowStrings', { volume: -18, reverbSend: 0.55, fx: { peq: EQ.pad(7000) } }), 'Ambient');
 

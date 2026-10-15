@@ -730,7 +730,7 @@ function cathedralBoss(): ProjectSnapshot {
   const cellos = grouped(track('Cellos short', 'realCelloShort', { volume: -10, pan: 0.2, reverbSend: 0.35, fx: { human: human(0.25) } }), 'Tension');
   const bones = grouped(track('Trombones', 'realTrombone', { volume: -11, pan: -0.25, reverbSend: 0.45, fx: { peq: EQ.brass() } }), 'Climax');
   const tuba = grouped(track('Tuba', 'realTuba', { volume: -12, reverbSend: 0.35 }), 'Climax');
-  const violin = track('Solo violin', 'realSoloViolin', { volume: -10, pan: 0.15, reverbSend: 0.5, fx: { human: human(0.35, 0.15) } });
+  const violin = track('Solo violin', 'realViolin', { volume: -10, pan: 0.15, reverbSend: 0.5, fx: { human: human(0.35, 0.15) } });
   const timpani = grouped(track('Timpani', 'timpani', { volume: -9, reverbSend: 0.45 }), 'Percussion');
   const kit = grouped(track('Toms & cymbals', 'acousticKit', { volume: -13, reverbSend: 0.4, fx: { peq: EQ.kit() } }), 'Percussion');
   const bells = grouped(track('Chimes', 'chimes', { volume: -16, reverbSend: 0.55 }), 'Ambient');
