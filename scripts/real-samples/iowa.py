@@ -1,10 +1,11 @@
 # Fetch a set recorded by the University of Iowa Electronic Music Studios (Musical Instrument
 # Samples, sets.py IOWA) into dl/<set>/, as fetch.py does for the other libraries:
-#   python3 iowa.py solo-violin-iowa ...
-# Each set is one zip of the studios' 2012 recordings (the centre microphone, 16-bit 44.1 kHz
-# mono), whose files are chromatic scales played note by note on one string at one loudness
-# ("Violin.arco.mf.sulA.C5B5.mono.aif": C5 to B5 on the A string). Each scale is split at the
-# silences between its notes, each note's pitch is checked against the scale's (a note that isn't
+#   python3 iowa.py violin nylon-guitar ...
+# Each set is one zip of the studios' recordings (16-bit 44.1 kHz mono: the strings' 2012 centre
+# microphone, the guitar's 2011 recordings), whose files are chromatic scales played note by note
+# on one string at one loudness ("Violin.arco.mf.sulA.C5B5.mono.aif": C5 to B5 on the A string).
+# Each scale is split at the silences between its notes (a plucked one at its plucks: see
+# plucks), each note's pitch is checked against the scale's (a note that isn't
 # where the scale says is left out), and one string is chosen for each note and loudness: the one
 # where it lies in the lowest positions, a semitone to a fifth over the open string (a note a
 # string's open pitch plays stopped on the string below, as players usually do), so neighbouring
@@ -17,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sets import SETS, note_midi
 
 SR = 44100
-BASE = 'https://theremin.music.uiowa.edu/sound%20files/MIS/Strings/'
+BASE = 'https://theremin.music.uiowa.edu/sound%20files/MIS/'
 #: Each string's open note (MIDI) by instrument
 OPEN = {
     'Violin': {'G': 55, 'D': 62, 'A': 69, 'E': 76},
@@ -25,12 +26,14 @@ OPEN = {
     'Cello': {'C': 36, 'G': 43, 'D': 50, 'A': 57},
     # (the bass's low C extension, recorded for a few notes, is below its E string)
     'Bass': {'C': 24, 'E': 28, 'A': 33, 'D': 38, 'G': 43},
+    # (the guitar's files name the high E string "sul_E", its low one "sulE")
+    'Guitar': {'E': 40, 'A': 45, 'D': 50, 'G': 55, 'B': 59, '_E': 64},
 }
 
 
 #: Zips whose files are marked 44.1 kHz but hold sound recorded at another rate (they play 13.4
 #: semitones low and 2.18 times as long as they should): the rate they really are
-TRUE_RATE = {'viola2012/Viola.arco.mono.1644.1.zip': 96000, 'viola2012/Viola.pizz.mono.1644.1.zip': 96000}
+TRUE_RATE = {'Strings/viola2012/Viola.arco.mono.1644.1.zip': 96000, 'Strings/viola2012/Viola.pizz.mono.1644.1.zip': 96000}
 
 
 def load(p, rate=None):
@@ -157,15 +160,75 @@ def held_flaw(x):
     return f'an accent {accent:.0f} dB over the rest' if accent > MOST_ACCENT else None
 
 
-def note_of(x, candidates):
+def highpass(x, hz):
+    """`x` with what's under `hz` taken out (one FFT, padded so the end doesn't wrap onto the start; a smooth half-octave edge up to `hz`)."""
+    n = len(x)
+    m = 1 << int(np.ceil(np.log2(n + SR)))
+    f = np.fft.rfftfreq(m, 1 / SR)
+    edge = np.clip(np.log2(f / hz + 1e-12) / 0.5 + 1, 0, 1)
+    return np.fft.irfft(np.fft.rfft(x, m) * np.sin(edge * np.pi / 2) ** 2, m)[:n]
+
+
+def plucks(x, notes):
     """
-    Which of `candidates` (MIDI) the note is, from a second of its middle: the one whose harmonics
+    The notes of a plucked scale (the guitar): [(MIDI, (start, end) in samples)]. A plucked string
+    rings on until the next is played, often with no silence between them, a soft pluck rises only
+    a few dB over the string before it, and a player sometimes plucks a note twice, so the notes are
+    found by their onsets and named by their pitch, not counted off in order: an onset is a frame
+    (10 ms) at least 6 dB over the lowest of the 60 ms before it, within 35 dB of the scale's
+    loudest, at least 0.3 s after the last, moved on to the pluck itself where the finger's touch
+    came first; each runs to 50 ms before the next. Each of the scale's
+    notes takes the loudest onset that sounds as it and rings for at least 0.8 s (else its longest).
+    The onsets are read over 300 Hz (a pluck's snap; the room's rumble, which swells and fades
+    under 100 Hz, set off false ones) and the pitch over 0.7 of the scale's lowest note.
+    """
+    h = int(0.01 * SR)
+    n = len(x) // h
+    snap = highpass(x, 300)
+    env = 10 * np.log10(np.mean(snap[: n * h].reshape(n, h) ** 2, axis=1) + 1e-20)
+    x = highpass(x, 0.7 * 440 * 2 ** ((notes[0] - 69) / 12))
+    found = []
+    for i in range(1, n):
+        if env[i] - env[max(0, i - 6): i].min() < 6:
+            continue
+        peak = float(env[i: i + 5].max())
+        if found and i - found[-1][0] < 30:
+            continue
+        found.append((i, peak))
+    if not found:
+        return []
+    top = max(p for _, p in found)
+    found = [(i, p) for i, p in found if p > top - 35]
+    # A soft pluck can follow the finger's touch on the string by 50 ms (a click 10 to 15 dB
+    # under it): each onset starts at the pluck, the first frame within 6 dB of the loudest of the
+    # next 150 ms
+    found = [(i + int(np.argmax(env[i: i + 15] > env[i: i + 15].max() - 6)), p) for i, p in found]
+    # (10 ms before it: the touch is 50 ms before)
+    starts = [max(0, (i - 1) * h) for i, _ in found]
+    spans = [(a, (starts[k + 1] - int(0.05 * SR)) if k + 1 < len(starts) else len(x)) for k, a in enumerate(starts)]
+    near = range(notes[0] - 2, notes[-1] + 3)
+    pitch = [note_of(x[a:b], near, True) if b - a > int(0.3 * SR) else None for a, b in spans]
+    out = []
+    for m in notes:
+        mine = [k for k, p in enumerate(pitch) if p == m]
+        if not mine:
+            continue
+        long = [k for k in mine if spans[k][1] - spans[k][0] >= int(0.8 * SR)]
+        k = max(long, key=lambda k: found[k][1]) if long else max(mine, key=lambda k: spans[k][1] - spans[k][0])
+        out.append((m, spans[k]))
+    return out
+
+
+def note_of(x, candidates, plucked=False):
+    """
+    Which of `candidates` (MIDI) the note is, from a second of its middle (a plucked note: from just
+    after its attack to 0.8 s, before its harmonics have died away): the one whose harmonics
     (the first six, in dB over the spectrum's floor) stand highest over the points halfway between
     them. Halfway points are where a pitch an octave under the note would have harmonics the note
     hasn't, and an octave over it has the note's odd harmonics, so octaves don't fool it.
     """
-    a = int(len(x) * 0.25)
-    seg = x[a: a + int(1.0 * SR)] if len(x) - a > int(0.3 * SR) else x
+    a = int(0.06 * SR) if plucked else int(len(x) * 0.25)
+    seg = x[a: a + int((0.74 if plucked else 1.0) * SR)] if len(x) - a > int(0.3 * SR) else x
     n = 1 << 17
     mag = 20 * np.log10(np.abs(np.fft.rfft(seg * np.hanning(len(seg)), n)) + 1e-12)
     mag = np.maximum(mag - (mag.max() - 70), 0)
@@ -192,6 +255,7 @@ def fetch(st):
     if not os.path.exists(zp):
         urllib.request.urlretrieve(BASE + st['iowa'], zp)
     found = {}  # (midi, layer) -> [(string, file)]
+    levels = {}  # (midi, layer, string) -> a plucked note's level over its first half second (dB)
     plucked = st['kind'] in ('plucked', 'short')
     with zipfile.ZipFile(zp) as z:
         for info in z.infolist():
@@ -207,13 +271,18 @@ def fetch(st):
                 f.write(z.read(info))
             x = load(tmp, TRUE_RATE.get(st['iowa']))
             os.remove(tmp)
-            regs = regions(x, 0.12 if plucked else 0.3, len(notes))
+            # (a plucked scale's notes are found by their onsets and named by their pitch)
+            pairs = plucks(x, notes) if plucked else []
+            regs = [r for _, r in pairs] if plucked else regions(x, 0.3, len(notes))
             # The scale's notes in order; a scale with more or fewer stretches than notes is
             # matched by pitch instead
-            pairs = list(zip(notes, regs)) if len(regs) == len(notes) else []
-            if not pairs:
+            if plucked and len(pairs) < len(notes):
+                print(f'   {name}: no pluck sounds as {sorted(set(notes) - {m for m, _ in pairs})}')
+            if not plucked:
+                pairs = list(zip(notes, regs)) if len(regs) == len(notes) else []
+            if not pairs and not plucked:
                 near = list(range(notes[0] - 2, notes[-1] + 3))
-                ps = [note_of(x[a:b], near) for a, b in regs]
+                ps = [note_of(x[a:b], near, plucked) for a, b in regs]
                 for m in notes:
                     k = [i for i, p in enumerate(ps) if p == m]
                     if k:  # (played twice: the longer)
@@ -226,8 +295,12 @@ def fetch(st):
                 if not plucked:
                     a, b = bowed_bounds(x, a, b)
                     after = min(after, b + int(0.1 * SR))
-                seg = x[max(0, a - int(0.01 * SR)): min(after, b + int(0.4 * SR))]
-                p = note_of(seg, range(m - 2, m + 3))
+                # (a plucked note ends where the next starts)
+                seg = x[a if plucked else max(0, a - int(0.01 * SR)): b if plucked else min(after, b + int(0.4 * SR))]
+                if plucked:
+                    # (without the room's rumble under the note: it swells and fades under 100 Hz)
+                    seg = highpass(seg, 0.7 * 440 * 2 ** ((m - 69) / 12))
+                p = note_of(seg, range(m - 2, m + 3), plucked)
                 if p != m:
                     print(f'   {name}: the note for {m} sounds as {p}, left out')
                     continue
@@ -235,15 +308,25 @@ def fetch(st):
                 subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'f64le', '-ar', str(SR), '-ac', '1', '-i', '-', '-c:a', 'pcm_s16le', os.path.join(d, out)],
                                input=seg.astype('<f8').tobytes(), check=True)
                 found.setdefault((m, st['layers'].index(loud)), []).append((string, out, inst, held_flaw(seg) if not plucked else None))
+                if plucked:
+                    on = int(np.argmax(np.abs(seg) > 0.1 * np.abs(seg).max()))
+                    levels[(m, st['layers'].index(loud), string)] = 10 * np.log10(np.mean(seg[on: on + int(0.5 * SR)] ** 2) + 1e-20)
     files = []
     for (m, layer), options in sorted(found.items()):
         if st['lo'] is not None and m < st['lo'] or st['hi'] is not None and m > st['hi']:
             continue
 
+        def rises(string):
+            """A plucked note's loudnesses on `string` each at least 1 dB over the softer one (some
+            scales were played unevenly: the guitar's C3 on the A string is quieter ff than pp)."""
+            lv = [levels[(m, k, string)] for k in range(len(st['layers'])) if (m, k, string) in levels]
+            return all(b > a + 1 for a, b in zip(lv, lv[1:]))
+
         def rank(o):
             # Lowest positions: a semitone to a fifth over the open string; then the nearest above
+            # (a plucked note: first a string it was played on evenly, soft to loud)
             above = m - OPEN[o[2]][o[0]]
-            return (0 if 1 <= above <= 7 else 1 if above == 0 else 2, abs(above))
+            return (0 if not plucked or rises(o[0]) else 1, 0 if 1 <= above <= 7 else 1 if above == 0 else 2, abs(above))
         # A bowed note too short to hold, or that dies away after an accent, isn't used: the
         # note's nearest other loudness stands in for it (convert.py)
         usable = [o for o in options if not o[3]]

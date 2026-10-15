@@ -366,6 +366,32 @@ def decay_rate(x):
     return float(np.polyfit(np.arange(a, b) * hop, env[a:b], 1)[0])
 
 
+def unfade(x):
+    """
+    `x` (channels, samples) up to where its library faded it out (sets.py `tail='faded'`): the
+    guitars' softer notes were faded from 40 dB down over their last second or so, which the
+    straight line of a ringing note's decay doesn't do. Its level over the body of the note (from
+    0.2 s after its peak to half way) is a straight line in dB; it's cut where it first falls 6 dB
+    under that line, carried on, in the later half, and the decay rate is that line's (dB a
+    second, or None when there's too little to tell). Unfaded, it's returned whole with the rate
+    of its later part (decay_rate).
+    """
+    m = mono(x)
+    env, h = envelope(m)
+    hop = h / SR
+    a = int(np.argmax(env)) + int(0.2 / hop)
+    b = max(a + int(0.3 / hop), len(env) // 2)
+    if b >= len(env) or b - a < int(0.3 / hop):
+        return x, decay_rate(m)
+    slope, icept = np.polyfit(np.arange(a, b) * hop, env[a:b], 1)
+    line = icept + slope * np.arange(len(env)) * hop
+    under = np.nonzero(env[b:] < line[b:] - 6)[0]
+    if not len(under) or slope >= 0:
+        return x, decay_rate(m)
+    cut = (b + int(under[0])) * h
+    return x[:, :cut], float(slope)
+
+
 def natural_tail(x, midi, rate, length):
     """
     `x` (channels, samples), cut off while still ringing, given the rest of its decay: its last
@@ -657,7 +683,12 @@ def convert(st, root, measured):
                     print(f"   no steady part to loop in {f['file']}")
             sounds[(midi, layer, t)] = x[:, :cap]
     if st['tail']:
-        rates = {k: decay_rate(mono(v)) for k, v in sounds.items()}
+        if st['tail'] == 'faded':
+            rates = {}
+            for k, v in sounds.items():
+                sounds[k], rates[k] = unfade(v)
+        else:
+            rates = {k: decay_rate(mono(v)) for k, v in sounds.items()}
         known = [(k[0], r) for k, r in rates.items() if r is not None and r < 0 and sounds[k].shape[1] > 0.8 * SR]
         fit = np.polyfit([m for m, _ in known], [r for _, r in known], 1) if len(known) >= 3 else None
         for k, v in sounds.items():

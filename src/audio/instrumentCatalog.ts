@@ -30,6 +30,7 @@ export const INSTRUMENT_KEYS = [
   'realSteelDrums', 'realElectricPiano', 'realBanjo', 'realHarmonica', 'realOcarina', 'realZither', 'realSoloVoice', 'realBassDrum', 'studioKit',
   'realCelesta', 'realRecorder', 'realMutedTrumpet',
   'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
+  'realNylonGuitar',
   // phase 3 additions
   'drumMachine', 'taiko',
   'subBass', 'bass808', 'bassGuitar',
@@ -220,6 +221,12 @@ export interface InstrumentDef {
    * them. Before the track's own reverb send, which places it in the song's hall.
    */
   room?: number;
+  /**
+   * Recorded straight from the pickup or in a dead room (the guitars): it plays in a studio room's
+   * short reflections and tail, `studio` dB under the direct sound, after its amp (see studioChain
+   * in samplerManager.ts), as a microphone in front of the speaker or the guitar hears the room.
+   */
+  studio?: number;
   /**
    * Recorded at several loudnesses and sustained: the mod wheel (CC 1) crossfades the soft and loud
    * recordings while a note sounds (as orchestral sample libraries do). Every other instrument
@@ -416,6 +423,19 @@ export const bodyOf = (scale: number) => VIOLIN_BODY.map((hz) => Math.round(hz *
 const CELLO_NOTES = [36, 40, 43, 47, 50, 53, 57, 60, 64, 67, 71, 74, 77];
 /** The electric guitars' notes: every third semitone from the open low E */
 const GUITAR_NOTES = Array.from({ length: 16 }, (_, i) => 40 + i * 3);
+/**
+ * The black guitar's strings damped as a note is let go (the library's own release recordings),
+ * as its clean and crunch amps play them: 26 dB under the note, fading the longer it rang (the
+ * library's own 5 dB a second). The high-gain amp lifts them, so it plays them softer.
+ */
+const GUITAR_BLACK_RELEASES = releasesOf('guitar-black-release', -26, 1.7);
+/**
+ * The velocities each of the black guitar's loudnesses plays up to. Its hard-picked recordings
+ * are 10 dB brighter from 2 to 5 kHz than its medium ones (picked near the bridge), so they play
+ * only for accents (over 0.88: a new note's 0.8 plays the medium ones), not from 0.68 as before,
+ * which made most notes sharp.
+ */
+const BLACK_LAYERS = [0.4, 0.88, 1];
 
 /**
  * Extra processing that turns a recording into the instrument: the erhu's nasal, vibrato-laden
@@ -513,12 +533,12 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
 
   // Guitars & Strings
   guitar: {
-    key: 'guitar', name: 'Acoustic Guitar', blurb: 'Steel-string (recorded)', color: '#b45309', category: 'Guitars & Strings', kind: 'sampled', range: [40, 76],
-    samples: nb('guitar-acoustic', ['D2', 'E2', 'Fs2', 'Gs2', 'As2', 'C3', 'D3', 'E3', 'Fs3', 'Gs3', 'As3', 'C4', 'D4', 'E4', 'Fs4', 'Gs4', 'As4', 'C5', 'D5']), shaping: 'acoustic', taper: [59, 8],
+    key: 'guitar', name: 'Acoustic Guitar (Real)', blurb: 'A recorded acoustic guitar voiced bright for strumming: folk, pop, campfire', color: '#b45309', category: 'Guitars & Strings', kind: 'sampled', range: [40, 76],
+    samples: real('nylon-guitar', 1), shaping: 'acoustic', studio: -14, taper: [64, 2], gain: 7.4,
   },
   electricGuitar: {
     key: 'electricGuitar', name: 'Electric Guitar', blurb: 'Clean electric (recorded)', color: '#dc2626', category: 'Retro (GM)', kind: 'sampled', range: [40, 86],
-    samples: nb('guitar-electric', ['Cs2', 'E2', 'Fs2', 'A2', 'C3', 'Ds3', 'Fs3', 'A3', 'C4', 'Ds4', 'Fs4', 'A4', 'C5', 'Ds5', 'Fs5', 'A5', 'C6']), shaping: 'amp', taper: [64, 2],
+    samples: nb('guitar-electric', ['Cs2', 'E2', 'Fs2', 'A2', 'C3', 'Ds3', 'Fs3', 'A3', 'C4', 'Ds4', 'Fs4', 'A4', 'C5', 'Ds5', 'Fs5', 'A5', 'C6']), shaping: 'amp', taper: [64, 2], studio: -15, gain: 2.2,
   },
   mandolin: {
     key: 'mandolin', name: 'Mandolin', blurb: 'Modeled: bright steel strings, doubled', color: '#ca8a04', category: 'Guitars & Strings', kind: 'sampled', range: [55, 88],
@@ -546,23 +566,27 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   realGuitar: {
     key: 'realGuitar', name: 'Electric Guitar (Real)', blurb: 'A recorded electric through a clean amp: soft, medium and hard picking', color: '#e11d48', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.3), shaping: 'cleanAmp', gain: -2, taper: [64, 2],
+    samples: { ...hosted('guitar-black', GUITAR_NOTES, BLACK_LAYERS, 2, 0.3), releases: GUITAR_BLACK_RELEASES }, shaping: 'cleanAmp', gain: 0, taper: [64, 2], studio: -15,
   },
   realCrunchGuitar: {
     key: 'realCrunchGuitar', name: 'Crunch Guitar (Real)', blurb: 'The recorded electric through a pushed amp: rock rhythm', color: '#be123c', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.25), shaping: 'crunchAmp', gain: -7, taper: [64, 2],
+    samples: { ...hosted('guitar-black', GUITAR_NOTES, BLACK_LAYERS, 2, 0.25), releases: GUITAR_BLACK_RELEASES }, shaping: 'crunchAmp', gain: -5.7, taper: [64, 2], studio: -15,
   },
   realLeadGuitar: {
     key: 'realLeadGuitar', name: 'Distortion Guitar (Real)', blurb: 'The recorded electric through a high-gain amp: riffs, power chords, leads', color: '#9f1239', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: hosted('guitar-black', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.2), shaping: 'leadAmp', gain: -12, taper: [64, 2],
+    samples: { ...hosted('guitar-black', GUITAR_NOTES, BLACK_LAYERS, 2, 0.2), releases: releasesOf('guitar-black-release', -32, 1.7) }, shaping: 'leadAmp', gain: -9.5, taper: [64, 2], studio: -16,
   },
   realHollowGuitar: {
     key: 'realHollowGuitar', name: 'Hollow-Body Guitar (Real)', blurb: 'A recorded hollow-body electric through a warm clean amp: jazz, soul, rockabilly', color: '#a16207', category: 'Guitars & Strings', kind: 'sampled', range: [40, 86],
-    samples: hosted('guitar-green', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.35), shaping: 'jazzAmp', gain: 5.5, taper: [64, 2],
+    samples: { ...hosted('guitar-green', GUITAR_NOTES, [0.35, 0.68, 1], 2, 0.35), releases: releasesOf('guitar-green-release', -26, 1.7) }, shaping: 'jazzAmp', gain: 5.7, taper: [64, 2], studio: -14,
   },
   realFlatwoundGuitar: {
     key: 'realFlatwoundGuitar', name: 'Flatwound Guitar (Real)', blurb: 'A recorded electric with flatwound strings, warm and round: jazz, soul', color: '#b45309', category: 'Guitars & Strings', kind: 'sampled', range: realRange('guitar-flatwound'),
-    samples: real('guitar-flatwound', 0.3), gain: 4.5, taper: [70, 4.5], shaping: 'cleanAmp',
+    samples: real('guitar-flatwound', 0.3), gain: 4.9, taper: [70, 4.5], shaping: 'cleanAmp', studio: -15, tone: { presence: 1 },
+  },
+  realNylonGuitar: {
+    key: 'realNylonGuitar', name: 'Classical Guitar (Real)', blurb: 'A recorded nylon-string guitar, every note soft, medium and hard: Spanish, bossa nova, fingerpicking', color: '#c2884a', category: 'Guitars & Strings', kind: 'sampled', range: realRange('nylon-guitar'),
+    samples: real('nylon-guitar', 0.8), studio: -13, taper: [71, 2], gain: 5.1,
   },
   realViolins: {
     key: 'realViolins', name: 'Violins (Real)', blurb: 'A recorded violin section, bowed with vibrato: soft and loud takes', color: '#ef4444', category: 'Orchestra', kind: 'sampled', range: realRange('violins-sustain'),
@@ -889,10 +913,10 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   xylophone: { key: 'xylophone', name: 'Xylophone', blurb: 'Dry bright wood bars', color: '#fcd34d', category: 'Retro (GM)', kind: 'sampled', range: [65, 96], samples: struck('xylophone', 65, 96, 0.6), gain: 17, taper: [82, 3] },
 
   // Guitars and basses
-  nylonGuitar: { key: 'nylonGuitar', name: 'Classical Guitar', blurb: 'Nylon strings: Spanish, classical', color: '#d6a35c', category: 'Guitars & Strings', kind: 'sampled', range: [40, 84], samples: struck('acoustic_guitar_nylon', 40, 84, 0.8), gain: 20 },
-  distortionGuitar: { key: 'distortionGuitar', name: 'Distortion Guitar', blurb: 'Heavy rock and metal', color: '#991b1b', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: held('distortion_guitar', 40, 86, 0.3), gain: 16.5, taper: [64, 1.5] },
-  overdriveGuitar: { key: 'overdriveGuitar', name: 'Overdrive Guitar', blurb: 'Crunchy rock guitar', color: '#b91c1c', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: held('overdriven_guitar', 40, 86, 0.3), gain: 18, taper: [64, 2] },
-  mutedGuitar: { key: 'mutedGuitar', name: 'Muted Guitar', blurb: 'Palm-muted funk and pop chugs', color: '#dc2626', category: 'Guitars & Strings', kind: 'sampled', range: [40, 76], samples: struck('electric_guitar_muted', 40, 76, 0.2), gain: 23, taper: [59, 3.5] },
+  nylonGuitar: { key: 'nylonGuitar', name: 'Classical Guitar', blurb: 'Nylon strings: Spanish, classical', color: '#d6a35c', category: 'Guitars & Strings', kind: 'sampled', range: [40, 84], samples: struck('acoustic_guitar_nylon', 40, 84, 0.8), gain: 20, studio: -17 },
+  distortionGuitar: { key: 'distortionGuitar', name: 'Distortion Guitar', blurb: 'Heavy rock and metal', color: '#991b1b', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: held('distortion_guitar', 40, 86, 0.3), gain: 19.9, taper: [64, 1.5], studio: -17 },
+  overdriveGuitar: { key: 'overdriveGuitar', name: 'Overdrive Guitar', blurb: 'Crunchy rock guitar', color: '#b91c1c', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: held('overdriven_guitar', 40, 86, 0.3), gain: 20.9, taper: [64, 2], studio: -17 },
+  mutedGuitar: { key: 'mutedGuitar', name: 'Muted Guitar', blurb: 'Palm-muted funk and pop chugs', color: '#dc2626', category: 'Guitars & Strings', kind: 'sampled', range: [40, 76], samples: struck('electric_guitar_muted', 40, 76, 0.2), gain: 24.1, taper: [59, 3.5], studio: -17 },
   banjo: { key: 'banjo', name: 'Banjo', blurb: 'Bright twangy folk and country', color: '#eab308', category: 'Retro (GM)', kind: 'sampled', range: [48, 84], samples: struck('banjo', 48, 84, 0.5), gain: 20, taper: [67, 1] },
   uprightBass: { key: 'uprightBass', name: 'Upright Bass', blurb: 'Plucked double bass: jazz', color: '#155e75', category: 'Retro (GM)', kind: 'sampled', range: [28, 60], samples: struck('acoustic_bass', 28, 60, 0.4), gain: 20, taper: [45, 2.5], tone: { presence: 5, presenceHz: 1500, mud: -2 } },
   fretlessBass: { key: 'fretlessBass', name: 'Fretless Bass', blurb: 'Smooth singing bass', color: '#0e7490', category: 'Bass', kind: 'sampled', range: [28, 60], samples: struck('fretless_bass', 28, 60, 0.4), gain: 15, taper: [45, 2.5], tone: { presence: 5, presenceHz: 1500, mud: -2 } },
@@ -937,9 +961,9 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   soundtrackPad: { key: 'soundtrackPad', name: 'Soundtrack', blurb: 'Wide cinematic swell', color: '#c084fc', category: 'Pads & Atmospheres', kind: 'sampled', range: [36, 96], samples: held('fx_2_soundtrack', 36, 96, 1.5), gain: 30 },
   brightnessPad: { key: 'brightnessPad', name: 'Brightness', blurb: 'Bright airy pad with sparkle', color: '#fef08a', category: 'Pads & Atmospheres', kind: 'sampled', range: [36, 96], samples: held('fx_5_brightness', 36, 96, 1.5), gain: 20, taper: [67, 1.5] },
   echoesPad: { key: 'echoesPad', name: 'Echo Drops', blurb: 'Echoing droplets: caves, underwater', color: '#5eead4', category: 'Pads & Atmospheres', kind: 'sampled', range: [36, 96], samples: held('fx_7_echoes', 36, 96, 1.5), gain: 21, taper: [67, 1] },
-  jazzGuitar: { key: 'jazzGuitar', name: 'Jazz Guitar', blurb: 'Warm hollow-body electric', color: '#92400e', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: struck('electric_guitar_jazz', 40, 86, 0.6), gain: 15 },
-  cleanGuitar: { key: 'cleanGuitar', name: 'Clean Guitar', blurb: 'Bright clean electric: pop, funk, indie', color: '#ef4444', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: struck('electric_guitar_clean', 40, 86, 0.6), gain: 23, taper: [64, 2.5] },
-  steelGuitar: { key: 'steelGuitar', name: 'Steel-String Guitar', blurb: 'Bright strummy acoustic', color: '#d97706', category: 'Guitars & Strings', kind: 'sampled', range: [40, 84], samples: struck('acoustic_guitar_steel', 40, 84, 0.8), gain: 22 },
+  jazzGuitar: { key: 'jazzGuitar', name: 'Jazz Guitar', blurb: 'Warm hollow-body electric', color: '#92400e', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: struck('electric_guitar_jazz', 40, 86, 0.6), gain: 17.8, studio: -17 },
+  cleanGuitar: { key: 'cleanGuitar', name: 'Clean Guitar', blurb: 'Bright clean electric: pop, funk, indie', color: '#ef4444', category: 'Retro (GM)', kind: 'sampled', range: [40, 86], samples: struck('electric_guitar_clean', 40, 86, 0.6), gain: 26.3, taper: [64, 2.5], studio: -17 },
+  steelGuitar: { key: 'steelGuitar', name: 'Steel-String Guitar', blurb: 'Bright strummy acoustic', color: '#d97706', category: 'Guitars & Strings', kind: 'sampled', range: [40, 84], samples: struck('acoustic_guitar_steel', 40, 84, 0.8), gain: 22, studio: -17 },
   guitarHarmonics: { key: 'guitarHarmonics', name: 'Guitar Harmonics', blurb: 'Bell-like guitar harmonics', color: '#fde68a', category: 'Guitars & Strings', kind: 'sampled', range: [52, 88], samples: struck('guitar_harmonics', 52, 88, 1), gain: 21 },
   fingerBass: { key: 'fingerBass', name: 'Finger Bass', blurb: 'Electric bass played with fingers', color: '#0e7490', category: 'Retro (GM)', kind: 'sampled', range: [28, 60], samples: struck('electric_bass_finger', 28, 60, 0.4), gain: 9, taper: [45, 3] },
   pickBass: { key: 'pickBass', name: 'Pick Bass', blurb: 'Electric bass with a pick: rock, punk', color: '#155e75', category: 'Retro (GM)', kind: 'sampled', range: [28, 60], samples: struck('electric_bass_pick', 28, 60, 0.4), gain: 22, taper: [45, 2.5] },

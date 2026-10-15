@@ -73,7 +73,8 @@ def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=Non
     the pieces of a drum kit that kit.py mixes from several microphones (see KITS); fetch.py
     leaves such a set to kit.py. `tail` True gives a ringing note recorded shorter than it rings
     (cut off while still sounding) the rest of its decay, at the rate it was dying away, up to the
-    set's `cap` (see natural_tail in convert.py). `sparse` True keeps a library's gaps: a note
+    set's `cap` (see natural_tail in convert.py); `tail='faded'` does the same for notes the
+    library faded out early, first taking its fade off (see unfade). `sparse` True keeps a library's gaps: a note
     recorded at fewer loudnesses than the set has gets no copies of its other recordings where the
     same loudness was recorded within a few semitones (the app stretches that one instead), and
     shares a file rather than duplicating it elsewhere. `sf2` names a SoundFont file in the repo
@@ -173,10 +174,14 @@ SETS = [
                              (r'Keys/Organ/Loud/Rode_Pedal_(?P<index>\d{2})(?P<layer>)\.wav', 0, lambda i: 23 + i, (0, 35))], [''], 'sustain', bend=False),
     S('chapel-organ', 'vsco', [(r'Keys/Organ/Quiet/NT5_Man3Quiet_(?P<index>\d{3})_rr1(?P<layer>)\.wav', 0, lambda i: i - 86)], [''], 'sustain', bend=False),
     # ---- band (Karoryfer Lecolds, Splendid Grand Piano) ----
+    # (The library faded its softer notes out from 40 dB down, 1.5 to 4 s in, and the amps lift a
+    # note's tail, so a held note stopped short: `tail='faded'` takes the fade off and gives each
+    # the rest of its decay at the rate it was dying away, to 5 and 6 s, as long as a hard-picked
+    # note rings)
     S('guitar-black', 'guitars', [(rf'Samples/black/ord/twang_{NOTE}_(?P<layer>p|mf|f)_(?P<take>rr[123])\.wav', -1)], ['p', 'mf', 'f'], 'plucked',
-      takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3),
+      takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3, cap=5.0, tail='faded'),
     S('guitar-green', 'guitars', [(rf'Samples/green/ord/twang_{NOTE}_(?P<layer>p|mf|f)_(?P<take>rr[123])\.wav', -1)], ['p', 'mf', 'f'], 'plucked',
-      takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3),
+      takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3, cap=6.0, tail='faded'),
     S('guitar-flatwound', 'emily', [(rf'notes/{NOTE}_(?P<layer>p|mp|mf|f)_(?P<take>rr[12])\.wav', 0)], ['p', 'mp', 'mf', 'f'], 'plucked'),
     S('alto-sax', 'weresax', [(rf'Samples/alto/{NOTE}_(?P<layer>[pf])_(?P<take>rr[12])_cnd\.wav', 1)], ['p', 'f'], 'sustain', every=2),
     S('baritone-sax', 'bearsax', [(rf'Samples/{NOTE}_looped_(?P<layer>[pf])\.wav', 1)], ['p', 'f'], 'sustain', every=3),
@@ -241,10 +246,13 @@ SETS = [
     # Solo strings by the University of Iowa (iowa.py): every semitone, pp, mf and ff, played
     # without vibrato in an anechoic room (the app adds the vibrato and the room), kept 4.5 s (a
     # long loop holds them on)
-    S('violin', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='violin2012/Violin.arco.mono.1644.1.zip', xloop=True, steady=True),
-    S('viola', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='viola2012/Viola.arco.mono.1644.1.zip', xloop=True, steady=True),
-    S('cello', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='cello2012/Cello.arco.mono.1644.1.zip', xloop=True, steady=True),
-    S('contrabass', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='doublebass2012/Bass.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('violin', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Strings/violin2012/Violin.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('viola', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Strings/viola2012/Viola.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('cello', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Strings/cello2012/Cello.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('contrabass', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Strings/doublebass2012/Bass.arco.mono.1644.1.zip', xloop=True, steady=True),
+    # A nylon-string classical guitar by the University of Iowa (iowa.py): every semitone from the
+    # low E to the high B, pp, mf and ff, plucked in an anechoic room (the app adds the room)
+    S('nylon-guitar', 'iowa', [], ['pp', 'mf', 'ff'], 'plucked', cap=5.0, iowa='Piano_Other/guitar/Guitar.mono.1644.1.zip'),
     # A studio drum kit: each hit mixed from its close microphones and the overheads by kit.py
     S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
 ]
@@ -283,6 +291,10 @@ def match(st, path):
 # main set's octave.
 RELEASES = [
     S('harpsichord-release', 'vcsl', [(rf'Chordophones/Zithers/Harpsichord, Flemish/Releases/(?:High|Low)/HarpsiRH_(?:High|Low)Rel_Far_{NOTE}_(?P<take>rr\d)(?P<layer>)\.wav', 1)], [''], 'short', cap=1.5, retune=False),
-    S('piano-release', 'vcsl', [(rf'Chordophones/Zithers/Grand Piano, Kawai/Releases/GPiano_rel_{NOTE}_(?P<layer>v3)_(?P<take>rr1)_Player\.wav', 1)], ['v3'], 'short', cap=2.0, retune=False),
+    # The two electric guitars' strings damped by the fretting hand as a note is let go (the
+    # library's own release sounds, every third note from the low E as the guitars' notes are)
+    S('guitar-black-release', 'guitars', [(rf'Samples/black/rel/release_{NOTE}_(?P<take>rr[12])(?P<layer>)\.wav', -1)], [''], 'short', every=3, cap=1.0, retune=False, pitched=False),
+    S('guitar-green-release', 'guitars', [(rf'Samples/green/rel/release_{NOTE}_(?P<take>rr[12])(?P<layer>)\.wav', -1)], [''], 'short', every=3, cap=1.0, retune=False, pitched=False),
+    S('piano-release', 'vcsl',[(rf'Chordophones/Zithers/Grand Piano, Kawai/Releases/GPiano_rel_{NOTE}_(?P<layer>v3)_(?P<take>rr1)_Player\.wav', 1)], ['v3'], 'short', cap=2.0, retune=False),
 ]
 SETS += RELEASES

@@ -30,7 +30,6 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: 'Not stated by the collection (see its [drum-samples folder](https://github.com/Tonejs/audio/tree/master/drum-samples))',
   },
   { prefixes: [`${NB}bass-electric/`, `${NB}guitar-electric/`, `${NB}saxophone/`], samples: 'Karoryfer Samples, via [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments)', licence: CC_BY },
-  { prefixes: [`${NB}guitar-acoustic/`], samples: 'University of Iowa Electronic Music Studios, via [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments)', licence: CC_BY },
   {
     prefixes: [`${NB}violin/`, `${NB}harp/`, `${NB}trumpet/`, `${NB}french-horn/`, `${NB}flute/`],
     samples: 'Versilian Studios Orchestra (VSCO 2), via [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments)',
@@ -54,9 +53,9 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
-    prefixes: ['violin', 'viola', 'cello', 'contrabass'].map((set) => `${HOSTED}${set}/`),
+    prefixes: ['violin', 'viola', 'cello', 'contrabass', 'nylon-guitar'].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Solo violin, viola, cello and double bass, bowed, from the [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by Lawrence Fritts and the University of Iowa Electronic Music Studios (split into single notes and converted to MP3, hosted with the app)',
+      'Solo violin, viola, cello and double bass, bowed, and a nylon-string classical guitar (played by Brian Penkrot), from the [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by Lawrence Fritts and the University of Iowa Electronic Music Studios (split into single notes and converted to MP3, hosted with the app)',
     licence: 'Free to download and use for any project, without restrictions (the studios\' statement)',
   },
   {
@@ -126,8 +125,8 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
-    prefixes: [`${HOSTED}guitar-black/`, `${HOSTED}guitar-green/`],
-    samples: 'Electric guitars from [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars) by Karoryfer Lecolds, recorded by Brian Wood (converted to MP3, hosted with the app)',
+    prefixes: ['guitar-black', 'guitar-green', 'guitar-black-release', 'guitar-green-release'].map((set) => `${HOSTED}${set}/`),
+    samples: 'Electric guitars and their release sounds from [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars) by Karoryfer Lecolds, recorded by Brian Wood (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/MusyngKite/'], samples: `Musyng Kite SoundFont, rendered by ${GLEITZ}`, licence: CC_BY_SA },

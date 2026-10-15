@@ -1490,6 +1490,9 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   celesta: { to: 'realCelesta', db: -1.0 },
   recorder: { to: 'realRecorder', db: -2.0 },
   mutedTrumpet: { to: 'realMutedTrumpet', db: -5.0 },
+  // (Matched part by part, by loudness, each starter's part through both: the classical guitar's
+  // four parts came out 0.5 to 1.2 dB louder)
+  nylonGuitar: { to: 'realNylonGuitar', db: -0.8 },
 };
 
 /**

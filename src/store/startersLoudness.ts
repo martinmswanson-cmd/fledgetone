@@ -66,11 +66,11 @@ export function starterLoudness(id: string, group: string): number {
 export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: number }>> = {
   overworld: { trim: 0, lufs: -15 }, // -14.9
   dungeon: { trim: 3, lufs: -15.1 }, // -14.6
-  village: { trim: 6.5, lufs: -15.1 }, // -15.2
+  village: { trim: 6.5, lufs: -14.9 }, // -15.2
   spacestation: { trim: 4, lufs: -14.8 }, // -14.8
-  racing: { trim: 3.5, lufs: -15.1 }, // -15.1
+  racing: { trim: 3.5, lufs: -14.8 }, // -15.1
   platformer: { trim: 4.5, lufs: -14.8 }, // -15
-  boss: { trim: -0.5, lufs: -15.2 }, // -15.3
+  boss: { trim: -0.5, lufs: -15.1 }, // -15.3
   stealth: { trim: 4.5, lufs: -15 }, // -14.9
   title: { trim: 4, lufs: -19.1 }, // -20.1
   puzzle: { trim: 4, lufs: -14.7 }, // -14.4
@@ -82,19 +82,19 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   wildField: { trim: 5.5, lufs: -15.1 }, // -15.9
   underwaterWaltz: { trim: 4.5, lufs: -14.9 }, // -14.4
   desertBazaar: { trim: 6, lufs: -15.4 }, // -16.1
-  fogTown: { trim: 7, lufs: -15 }, // -15.8
+  fogTown: { trim: 6, lufs: -14.7 }, // -15.8
   countdownTown: { trim: -2, lufs: -15.1 }, // -14.1
   saveRoom: { trim: 4, lufs: -19.2 }, // -19
   cathedralBoss: { trim: 2, lufs: -15.2 }, // -16.1
-  arenaMetal: { trim: 6.5, lufs: -14.9 }, // -15.4
+  arenaMetal: { trim: 5.5, lufs: -14.6 }, // -15.4
   starlitCity: { trim: 6, lufs: -14.7 }, // -16
   farewellPiano: { trim: 3.5, lufs: -15 }, // -16.4
-  sunsetDrive: { trim: 3.5, lufs: -15.1 }, // -15.1
+  sunsetDrive: { trim: 3.5, lufs: -15 }, // -15.1
   midnightCaper: { trim: 0.5, lufs: -15 }, // -14.6
   velvetInfiltration: { trim: -2, lufs: -15.1 }, // -14.6
   wanderersRoad: { trim: 3.5, lufs: -15.1 }, // -14.5
   meadowWaltz: { trim: -4, lufs: -14.7 }, // -14.3
-  championShowdown: { trim: 1.5, lufs: -15.3 }, // -15.3
+  championShowdown: { trim: 1.5, lufs: -15.1 }, // -15.3
   ruinRequiem: { trim: 4, lufs: -14.9 }, // -15.9
   neonRitual: { trim: 6, lufs: -15.3 }, // -15.3
   dubstep: { trim: 10.5, lufs: -14.2 }, // -14.2
@@ -109,24 +109,24 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   cinematic: { trim: 3.5, lufs: -14.6 }, // -15.5
   epic: { trim: -2, lufs: -15.2 }, // -15.5
   horror: { trim: 0, lufs: -14.7 }, // -16.2
-  rock: { trim: -1, lufs: -12.8 }, // -12.8
-  metal: { trim: -1, lufs: -12.9 }, // -12.8
-  pop: { trim: 1.5, lufs: -13.1 }, // -13.4
-  funk: { trim: 0.5, lufs: -13.3 }, // -13.4
+  rock: { trim: -2, lufs: -12.9 }, // -12.8
+  metal: { trim: -2, lufs: -13.2 }, // -12.8
+  pop: { trim: 2.5, lufs: -13.1 }, // -13.4
+  funk: { trim: 0.5, lufs: -13.2 }, // -13.4
   jazz: { trim: -0.5, lufs: -12.8 }, // -12.3
   hiphop: { trim: 3.5, lufs: -12.8 }, // -13.1
   trap: { trim: 12, lufs: -13.8 }, // -14.1
   lofi: { trim: 5, lufs: -14.7 }, // -14.7
   ambient: { trim: 10.5, lufs: -18.6 }, // -18.6
-  celtic: { trim: -1.5, lufs: -15 }, // -14.6
+  celtic: { trim: -1.5, lufs: -14.8 }, // -14.6
   tavern: { trim: 4, lufs: -14.9 }, // -14.9
-  latin: { trim: -2.5, lufs: -14.8 }, // -14.2
+  latin: { trim: -3, lufs: -14.9 }, // -14.2
   eastern: { trim: 4, lufs: -15.2 }, // -14.8
   artcore: { trim: 2, lufs: -13.2 }, // -12.8
   hardcore: { trim: 2, lufs: -13.2 }, // -13
   breakcore: { trim: 3.5, lufs: -13.2 }, // -13
-  rpg: { trim: -1, lufs: -15 }, // -14.4
-  metaldub: { trim: 0, lufs: -14.2 }, // -14.3
+  rpg: { trim: -1, lufs: -14.9 }, // -14.4
+  metaldub: { trim: -0.5, lufs: -13.8 }, // -14.3
   melodicdub: { trim: 2.5, lufs: -13.7 }, // -13.9
   riddim: { trim: 12, lufs: -13.9 }, // -15
   futurebass: { trim: 2.5, lufs: -14.2 }, // -14.2
@@ -134,12 +134,12 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   drill: { trim: 12, lufs: -14.1 }, // -14.4
   rage: { trim: 1.5, lufs: -14.2 }, // -14.2
   neosoul: { trim: 3.5, lufs: -13.9 }, // -14.1
-  bedroom: { trim: 3, lufs: -14.2 }, // -14.5
+  bedroom: { trim: 2.5, lufs: -13.9 }, // -14.5
   bossa: { trim: 5, lufs: -13.9 }, // -14.1
   citypop: { trim: 1, lufs: -14.1 }, // -14.3
   theatrical: { trim: 0.5, lufs: -13.7 }, // -13.7
-  raprock: { trim: 0.5, lufs: -13.1 }, // -13.2
-  mathrock: { trim: 2, lufs: -13.3 }, // -13.6
+  raprock: { trim: -0.5, lufs: -13.1 }, // -13.2
+  mathrock: { trim: 1, lufs: -13 }, // -13.6
 };
 
 /** A starter's trim (dB); 0 for one not measured yet. */
