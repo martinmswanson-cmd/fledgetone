@@ -8,8 +8,8 @@ import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../a
  * playback plays that instead, so a frozen track costs about as much as one audio clip.
  *
  * The live engine never knows: liveView() hands it each frozen track as an Audio track with one
- * audio clip of the frozen sound, inserts off and EQ flat (they're in the sound). Volume, pan and
- * the sends, and their automation, stay live, so a frozen track can still be mixed.
+ * audio clip of the frozen sound, inserts off and EQ flat (they're in the sound). Volume, pan,
+ * distance and the sends, and their automation, stay live, so a frozen track can still be mixed.
  *
  * Anything else that went into the render (notes, instrument, inserts, EQ and their automation,
  * tempo, swing, and the kicks a kick-triggered Pump follows) is summed up in a fingerprint. Once
@@ -109,7 +109,10 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
   );
 }
 
-/** The track as the freeze renders it: centred, at 0 dB, no sends (those stay live). */
+/**
+ * The track as the freeze renders it: centred, at 0 dB, up front, no sends (those stay live: the
+ * frozen sound plays through the track's strip, which sets it back on the stage again).
+ */
 export function trackForFreezing(track: Track): Track {
   return {
     ...track,
@@ -118,6 +121,7 @@ export function trackForFreezing(track: Track): Track {
     pan: 0,
     reverbSend: 0,
     delaySend: 0,
+    distance: undefined,
     isMuted: false,
     isSoloed: false,
     automation: (track.automation ?? []).filter((l) => !isLiveParam(l.param)),
