@@ -8,6 +8,11 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-30 — No sound on its own
+
+- Fledgetone makes no sound until you start the audio (a click or a key), even when Chrome would allow it: a song Chrome reopens after a restart no longer starts playing by itself. Closing or leaving the page silences it at once, even if Chrome keeps running in the background.
+- Effects that make their own sound (the Shepard tone, noise sources, click tracks) fade out a few seconds after their track goes quiet and come back when it plays, instead of droning on through the whole song and while stopped. Reverb and delay tails fade as before; the infinite reverbs still hold.
+
 ## 2026.10.15-29 — Real-sounding guitars
 
 - Guitars that sound like the ones on records: less sharp, in a room, and played the way a guitarist plays. New **Classical Guitar (Real)**: a nylon-string guitar recorded on every note, soft, medium and hard, so no note is stretched from a neighbour's. The starters' classical guitar parts play it, and the **Acoustic Guitar (Real)** (until now the Acoustic Guitar) plays it too, voiced brighter for strumming (it used to be sharpened with an 8 dB treble boost and distortion).

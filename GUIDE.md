@@ -625,6 +625,7 @@ The **Plugins** menu holds hundreds of built-in effects and instruments: open-so
 - **Its window** opens when you add it, with what it does and a slider for each setting, showing the value as the plugin does. Double-click a slider to put it back; **Reset all** puts them all back. Plugins that come with presets have a **Preset** list at the top.
 - **★** a plugin in the browser to keep it under **Favourites**, and on the Plugins menu (added to the selected track in one click). **Recently used** lists the last ones you added.
 - Everything works as for any plugin: automation lanes for every setting, MIDI learn, freezing, bouncing, exports, and the settings saved with the project.
+- **Effects that make their own sound** (Shepard's tones, the noise sources, click tracks) play while their track plays: a few seconds after the track goes quiet they fade out, and they come back with its next sound, so they can't drone on through the song or while it's stopped. Reverb and delay tails fade by themselves as usual; **Infinity** and **Infinity2**, made to hold a sound forever, still do.
 - The plugins download the first time you open the browser or use one (about 9 MB in all, in a few files) and are kept in this browser. **Master tab › Instruments offline › Download all** includes them, for working offline.
 
 ### Plugins from the web (Web Audio Modules)

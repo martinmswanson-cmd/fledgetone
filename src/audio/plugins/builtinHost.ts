@@ -21,6 +21,9 @@ import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
  * it loads it as missing (the track plays on without it).
  */
 
+
+/** Effects whose point is to sound on with nothing going in (infinite, freezing reverbs): never faded. */
+const HOLDS_FOREVER = new Set(['Infinity', 'Infinity2']);
 export const BUILTIN_PREFIX = 'builtin:';
 export { GPL_PLUGINS, pluginFamilies };
 
@@ -174,6 +177,9 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       values: valuesOf(state),
       program: (state as Partial<BuiltinState> | undefined)?.program,
       preset: presetData,
+      // Effects fade out once they go on sounding by themselves after their track has gone quiet
+      // (see followInput in processor.ts); the reverbs made to hold a sound forever are left be
+      followInput: !ref.info.instrument && !HOLDS_FOREVER.has(ref.info.name),
     },
   });
 

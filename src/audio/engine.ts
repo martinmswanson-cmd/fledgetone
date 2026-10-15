@@ -154,6 +154,28 @@ export const auditionInput = liveMix.auditionInput;
 // Transport's: the clip schedule delays the off-beat 16ths itself, see swungNotes.)
 liveTransport.bpm.value = 122;
 
+/**
+ * No sound until someone asks for it. Chrome lets a page it trusts (one used often, or installed)
+ * start its audio without a click, so a song reopened by Chrome after a restart (its tabs
+ * restored) would play on its own: an effect that makes its own sound, a drone, with nobody at
+ * the computer. The context is held suspended until a click or key starts the audio (initAudio).
+ * And once the page is closed or put away (pagehide), it's silenced at once, so a Chrome kept
+ * running in the background can't go on playing it.
+ */
+let soundAllowed = false;
+const holdUntilAsked = () => {
+  const raw = liveContext.rawContext as unknown as { state: string; suspend?: () => Promise<void> };
+  if (!soundAllowed && raw.state === 'running') void raw.suspend?.().catch(() => {});
+};
+liveContext.on('statechange', holdUntilAsked);
+holdUntilAsked();
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => {
+    soundAllowed = false;
+    holdUntilAsked();
+  });
+}
+
 let audioStateChangeListeners: Array<(state: AudioState) => void> = [];
 
 /**
@@ -175,6 +197,7 @@ function notifyState(state: AudioState) {
  * Must be triggered by a user gesture (e.g., button click).
  */
 export async function initAudio(): Promise<AudioState> {
+  soundAllowed = true;
   if (liveContext.state !== 'running') {
     await Tone.start();
     // In case Tone's underlying raw context needs resuming
