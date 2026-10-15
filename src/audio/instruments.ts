@@ -32,6 +32,7 @@ import { createMultiInstrument, createRackInstrument } from './presets/sampleKit
 import { createPluginChain, createPluginInstrument } from './presets/wamPlugin';
 import type { SynthPatch } from '../store/synthPatch';
 import { createDesignedSynth } from './presets/designer';
+import { trackSeed } from './seededNoise';
 
 /** Drum note map (GM-style). Drum clips store one note name per voice. */
 export const DRUM_NOTES = {
@@ -136,12 +137,14 @@ export interface InstrumentOptions {
   multi?: MultiSample;
   /** Expressive playing (Track.expressive) */
   expressive?: boolean;
+  /** The track's seed (trackSeed): with each note's time it picks the noise in its drums and synths, the same on every play */
+  seed?: number;
 }
 
 /** What a track's instrument is built with (its sound, slices, patch, plugins). */
-export function trackInstrumentOptions(track: Pick<Track, 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'expressive'> | null | undefined): InstrumentOptions {
+export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'expressive'> | null | undefined): InstrumentOptions {
   if (!track) return {};
-  return { sample: track.sample, slicer: track.slicer, synth: track.synth, plugin: track.plugin, pluginFx: track.pluginFx, rack: track.rack, multi: track.multi, ...(track.expressive ? { expressive: true } : {}) };
+  return { sample: track.sample, slicer: track.slicer, synth: track.synth, plugin: track.plugin, pluginFx: track.pluginFx, rack: track.rack, multi: track.multi, ...(track.expressive ? { expressive: true } : {}), seed: trackSeed(track.id) };
 }
 
 /**
@@ -218,8 +221,8 @@ function playDrums(play: DrumPlayer, notes: PlayableNote[], time: number, expres
 }
 
 /** A synthesized kit as a track instrument. */
-function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNode, expressive = false): TrackInstrument {
-  const extras = createKitExtras(output);
+function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNode, expressive = false, seed = 0): TrackInstrument {
+  const extras = createKitExtras(output, seed);
   const play: TrackInstrument['play'] = (notes, time) => playDrums(synthKitPlayer(kit, extras), notes, time, expressive);
   return {
     play,
@@ -234,9 +237,9 @@ function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNod
 }
 
 /** A recorded kit: its recordings, the hats shortened or let ring, the extras for rows it lacks. */
-function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = false): TrackInstrument {
+function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = false, seed = 0): TrackInstrument {
   const kit = createSampledKit(key, output);
-  const extras = createKitExtras(output);
+  const extras = createKitExtras(output, seed);
   const player: DrumPlayer = (row, time, v, r = 1) => {
     const opts = row === 'closedHat' ? { seconds: 0.14, rate: r } : row === 'openHat' ? { rate: 0.94 * r } : { rate: r };
     const note = row === 'openHat' && !kit.has(DRUM_NOTES.openHat) ? DRUM_NOTES.closedHat : DRUM_NOTES[row];
@@ -449,7 +452,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => bus.bus.dispose(), clipBus: bus };
   }
   if (kind === 'slicer') return createSlicer(output, options.slicer);
-  if (kind === 'drums' && INSTRUMENTS[key].samples) return recordedKit(key, output, !!options.expressive);
+  if (kind === 'drums' && INSTRUMENTS[key].samples) return recordedKit(key, output, !!options.expressive, options.seed);
 
   if (kind === 'sampled' || kind === 'custom') {
     const voice = kind === 'sampled' ? createSamplerVoice(key, output, !!options.expressive) : createCustomSamplerVoice(options.sample, output);
@@ -469,9 +472,9 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
 
   switch (key) {
     case 'drums':
-      return synthKit(createDrumKit(output), output, !!options.expressive);
+      return synthKit(createDrumKit(output, options.seed), output, !!options.expressive, options.seed);
     case 'drumMachine':
-      return synthKit(createDrumMachine(output), output, !!options.expressive);
+      return synthKit(createDrumMachine(output, options.seed), output, !!options.expressive, options.seed);
     case 'bass': {
       const bass = createBassVoice(output);
       return mono({ ...bass, releaseAll: () => bass.synth.triggerRelease() });
@@ -527,11 +530,11 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
       };
     }
     case 'synthDesigner': {
-      const synth = createDesignedSynth(output, options.synth);
+      const synth = createDesignedSynth(output, options.synth, options.seed);
       return { play: synth.play, noteOn: synth.hold, bend: synth.bend, releaseAll: synth.releaseAll, dispose: synth.dispose, setSynth: synth.setPatch, ready: Promise.resolve() };
     }
     case 'chipDrums':
-      return synthKit(createChipDrums(output), output);
+      return synthKit(createChipDrums(output, options.seed), output, false, options.seed);
     case 'chipLead':
     case 'chipBass': {
       const synth = key === 'chipLead' ? createChipLead(output) : createChipBass(output);
@@ -540,7 +543,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     case 'supersaw':
     case 'pluck':
     case 'fx': {
-      const synth = key === 'supersaw' ? createSupersaw(output) : key === 'pluck' ? createPluck(output) : createFx(output);
+      const synth = key === 'supersaw' ? createSupersaw(output) : key === 'pluck' ? createPluck(output) : createFx(output, options.seed);
       return { play: synth.play, noteOn: synth.hold, releaseAll: synth.releaseAll, dispose: synth.dispose, ready: Promise.resolve() };
     }
     default:

@@ -16,6 +16,7 @@ checks they agree).
 - The Riddim starter plays at -14 LUFS like the rest of its group, with a softer snare and the growls up front.
 - Recorded electric guitars cost less to play, with no change in sound.
 - Ring-out exports end once the tails have died away instead of after a fixed time, so long reverbs and cymbals are no longer cut off.
+- Exporting the same song twice gives the same file: snares, hi-hats, claps, cymbals, risers and synth noise used to come out a little different every time. Each hit still sounds slightly different from the next.
 
 ## 2026.10.15-3 — Taller timeline
 

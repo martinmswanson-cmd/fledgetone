@@ -4,6 +4,7 @@ import { safely } from '../instruments';
 import { notLate } from './monotonic';
 import { builtinWave, createBus, createDrive, createFilter, createNoise, createOsc, createVoiceSet, noteFrequency, phasedSaw, releaseConstant, releaseTail, scaledWave } from './native';
 import { noteJitter } from '../samplers/samplerManager';
+import { noiseKey } from '../seededNoise';
 import type { NativeVoice } from './native';
 import { HELD_NOTE } from './edmSynths';
 import type { Envelope, LfoSync, OscWave, SynthPatch } from '../../store/synthPatch';
@@ -107,7 +108,8 @@ interface DesignerVoice extends NativeVoice {
   filterEarly: number;
 }
 
-export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch | undefined) {
+/** `seed`: the track's (see trackSeed), which with the note and its time picks the noise of each note. */
+export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch | undefined, seed = 0) {
   const { bus, raw, input } = createBus(output);
   // Noise-fed voices linger before disconnecting (see createVoiceSet)
   const voices = createVoiceSet(raw, 0.3);
@@ -228,7 +230,7 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     }
     if (p.sub > 0) addOsc(builtinWave(raw, 'sine', p.sub * 0.45), freq / 2, 0, 0);
     if (p.noise > 0) {
-      const noise = createNoise(raw, start);
+      const noise = createNoise(raw, start, noiseKey(seed, n.note));
       const g = raw.createGain();
       g.gain.value = p.noise * 0.25;
       noise.connect(g);
