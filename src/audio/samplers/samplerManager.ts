@@ -1,6 +1,9 @@
 import * as Tone from 'tone';
 import { createLightChorus } from '../effects/lightFx';
 import { fixedDelay } from '../effects/delayLink';
+import { roomChannels } from '../effects/roomIR';
+import { STRUMMED, strumPlan } from '../guitarStrum';
+import type { LastStrum } from '../guitarStrum';
 import { breathOf, INSTRUMENTS, isSection } from '../instrumentCatalog';
 import type { AmpModel, InstrumentDef, InstrumentKey, SampleSource, Shaping } from '../instrumentCatalog';
 import { auditionInput } from '../engine';
@@ -722,14 +725,14 @@ interface AmpSettings {
  */
 // (An amp with a squeeze has a compressor: list it in COMPRESSED_SHAPINGS, instrumentCatalog.ts)
 const AMPS: Record<AmpModel, AmpSettings> = {
-  // Bright and glassy, a touch of edge when picked hard
-  cleanAmp: { tight: 70, squeeze: [-26, 3], pre: [['highshelf', 1500, 0.7, 4]], stages: [1.4], bass: 1, mid: -2, midHz: 600, treble: 3, cabTop: 6500, oversample: '4x' },
+  // Clear and glassy, a touch of edge when picked hard
+  cleanAmp: { tight: 70, squeeze: [-26, 3], pre: [['highshelf', 1500, 0.7, 4.5]], stages: [1.4], bass: 1, mid: -1, midHz: 600, treble: 2.5, cabTop: 6000, oversample: '4x' },
   // Warm and round: treble down, the neck pickup sound
-  jazzAmp: { tight: 60, squeeze: [-30, 2], pre: [], stages: [1.2], bass: 2, mid: 0, midHz: 700, treble: -4, cabTop: 4200 },
+  jazzAmp: { tight: 60, squeeze: [-30, 2], pre: [], stages: [1.2], bass: 2, mid: 0, midHz: 700, treble: -1.5, cabTop: 4500 },
   // An amp turned up until it breaks up: rock rhythm
-  crunchAmp: { tight: 110, pre: [['peaking', 800, 0.8, 6], ['highshelf', 1800, 0.7, 4]], stages: [5], bass: 0, mid: 1, midHz: 700, treble: 2, cabTop: 5000 },
+  crunchAmp: { tight: 110, pre: [['peaking', 800, 0.8, 6], ['highshelf', 1800, 0.7, 8.5]], stages: [5], bass: 0, mid: 1, midHz: 700, treble: 5, cabTop: 5000 },
   // Two gain stages, scooped mids: riffs and leads
-  leadAmp: { tight: 150, pre: [['peaking', 900, 0.8, 6], ['highshelf', 2000, 0.7, 3]], stages: [8, 4], bass: 3, mid: -4, midHz: 500, treble: 0, cabTop: 4200 },
+  leadAmp: { tight: 150, pre: [['peaking', 900, 0.8, 6], ['highshelf', 2000, 0.7, 4.5]], stages: [8, 4], bass: 3, mid: -4, midHz: 500, treble: 1.5, cabTop: 4500 },
 };
 
 /**
@@ -805,12 +808,12 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
     sustain.ratio.value = 3;
     sustain.attack.value = 0.004;
     sustain.release.value = 0.15;
-    const pre = biquad('highshelf', 1200, 0.7, 9);
+    const pre = biquad('highshelf', 1200, 0.7, 6);
     const drive = saturator(3);
     const thump = biquad('peaking', 120, 1, 3);
     const scoop = biquad('peaking', 450, 1, -3);
-    const presence = biquad('peaking', 2600, 1.2, 4);
-    const cab = biquad('lowpass', 4800, 1.1);
+    const presence = biquad('peaking', 2200, 1, 1.5);
+    const cab = biquad('lowpass', 4800, 0.8);
     const trim = raw.createGain();
     trim.gain.value = Tone.dbToGain(-6);
     return chain([tight, sustain, pre, drive, inStep(1), thump, scoop, presence, cab, trim]);
@@ -838,24 +841,28 @@ function shapingChain(shape: Shaping | undefined, output: Tone.InputNode): Shapi
       biquad('lowshelf', 120, 0.7, amp.bass),
       biquad('peaking', amp.midHz, 0.7, amp.mid),
       biquad('highshelf', 2500, 0.7, amp.treble),
-      // The cabinet
+      // The cabinet as a microphone in front of it hears it, mixed as on a record: its presence
+      // a little lower and broader, and the cone's narrow peak near 4 kHz (a close microphone's
+      // ice-pick, the sharpest thing in the guitar: the clean amp measured 3 dB over its
+      // neighbours there) taken down rather than up
       biquad('highpass', 70, 0.8),
       biquad('peaking', 115, 1.2, 2.5),
       biquad('peaking', 400, 1, -2.5),
-      biquad('peaking', 2200, 1, 2),
-      biquad('peaking', 3800, 2.5, 3),
+      biquad('peaking', 1900, 1, 1.5),
+      biquad('peaking', 3600, 1.6, -1.5),
       biquad('lowpass', amp.cabTop, 0.7),
       biquad('lowpass', amp.cabTop * 1.15, 0.7)
     );
     return chain(nodes);
   }
   if (shape === 'acoustic') {
-    const bright = biquad('highshelf', 1800, 0.7, 8);
-    const sparkle = biquad('peaking', 3200, 1.2, 3);
-    const edge = saturator(1.3);
-    const trim = raw.createGain();
-    trim.gain.value = Tone.dbToGain(-2);
-    return chain([bright, sparkle, edge, inStep(1), trim]);
+    // (a shelf of 8 dB from 1.8 kHz, 3 more at 3.2 kHz and a soft clip used to make it sharp:
+    // the bite, 2 to 5 kHz, is left as recorded and the brightness goes over it)
+    const rumble = biquad('highpass', 75, 0.7);
+    const boom = biquad('peaking', 220, 1, -2);
+    const presence = biquad('peaking', 2800, 0.8, 4.5);
+    const fizz = biquad('highshelf', 9000, 0.7, -2);
+    return chain([rumble, boom, presence, fizz]);
   }
   if (shape === 'violin') {
     const rumble = biquad('highpass', 120, 0.6);
@@ -944,6 +951,44 @@ function stageChain(db: number | undefined, next: ShapingChain): ShapingChain {
   input.connect(stage).connect(wet).connect(into);
   Tone.connect(into, next.input);
   return { ...next, input, nodes: [...next.nodes, { dispose: () => [input, stage, wet, into].forEach((n) => n.disconnect()) }] };
+}
+
+/**
+ * A studio room around a guitar recorded straight from its pickup or in a dead room
+ * (InstrumentDef.studio): the direct sound, and beside it the room's short early reflections and
+ * tail (the shared reverb's studio room, roomIR.ts, dying away over STUDIO_DECAY), `db` dB under
+ * it. It comes after the amp, as a microphone in front of the speaker hears the room (a room in
+ * front of an amp's distortion would smear into it), and before the track's own reverb send.
+ */
+function studioChain(db: number, output: Tone.InputNode): { input: AudioNode; nodes: { dispose: () => void }[] } {
+  const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  const input = raw.createGain();
+  const room = raw.createConvolver();
+  room.normalize = false;
+  room.buffer = studioResponse(raw.sampleRate);
+  const wet = raw.createGain();
+  wet.gain.value = Tone.dbToGain(db);
+  const into = raw.createGain();
+  input.connect(into);
+  input.connect(room).connect(wet).connect(into);
+  Tone.connect(into, output);
+  return { input, nodes: [{ dispose: () => [input, room, wet, into].forEach((n) => n.disconnect()) }] };
+}
+/** The studio room's decay (seconds to fall 60 dB, its middle; its highs die sooner) */
+const STUDIO_DECAY = 0.45;
+/** The studio room's response by sample rate (made once each). */
+const studioResponses = new Map<number, AudioBuffer>();
+function studioResponse(rate: number): AudioBuffer {
+  const have = studioResponses.get(rate);
+  if (have) return have;
+  const [left, right] = roomChannels('studio', STUDIO_DECAY, rate);
+  const ir = new AudioBuffer({ length: left.length, sampleRate: rate, numberOfChannels: 2 });
+  // (energy 1 over both sides together: each side's own energy is about a half, so twice that
+  // leaves the room `db` under the direct sound in each ear)
+  ir.copyToChannel(left.map((v) => v * Math.SQRT2), 0);
+  ir.copyToChannel(right.map((v) => v * Math.SQRT2), 1);
+  studioResponses.set(rate, ir);
+  return ir;
 }
 
 /** The stage's response by sample rate (made once each: an AudioBuffer isn't tied to a context). */
@@ -1045,9 +1090,13 @@ const EXPRESSIVE_BY_CATEGORY: Partial<Record<InstrumentDef['category'], Expressi
   'Drums & Percussion': { depth: 1.6, rangeDb: 18 },
 };
 
-/** How an instrument plays expressively (null: as recorded, e.g. drum kits and sound effects). */
+/**
+ * How an instrument plays expressively (null: as recorded, e.g. drum kits and sound effects). The
+ * guitars in the older General MIDI group play as the other guitars do: before, a soft note there
+ * was only quieter, never darker.
+ */
 export function expressiveFor(def: InstrumentDef): Expressive | null {
-  const base = EXPRESSIVE_BY_CATEGORY[def.category] ?? null;
+  const base = EXPRESSIVE_BY_CATEGORY[STRUMMED.has(def.key) ? 'Guitars & Strings' : def.category] ?? null;
   // Recorded at several loudnesses: a soft recording is already darker, so less filtering on top
   // (their levels are matched when converted, so velocity still sets the loudness)
   return base && (def.samples?.layers?.length ?? 0) > 1 ? { ...base, depth: base.depth * 0.4 } : base;
@@ -1210,6 +1259,8 @@ const STEAL_TC = 0.01;
  */
 export const bowAttack = (most: number, loudness: number) => BOW_ATTACK_FASTEST + most * (1 - Math.max(0, Math.min(1, loudness))) ** 1.3;
 const BOW_ATTACK_FASTEST = 0.02;
+/** A guitar's note picked again within this many seconds of being let go cancels its release sound */
+const RE_PICK = 0.08;
 /** A note shorter than this (seconds) is played straight, without the vibrato (InstrumentDef.vibrato) */
 const VIBRATO_SHORTEST = 0.33;
 /** How much the vibrato moves the level too (a share of it, either way): the bow's contact and the body's resonances follow the hand */
@@ -1254,7 +1305,9 @@ function samplerVoice(
   /** A section: a chord's notes start a few milliseconds apart (see isSection) */
   section?: boolean,
   /** Recorded without vibrato: the vibrato each held note is given (see InstrumentDef.vibrato) */
-  vibrato?: InstrumentDef['vibrato']
+  vibrato?: InstrumentDef['vibrato'],
+  /** A guitar (or banjo, mandolin): a chord's notes are strummed (see guitarStrum.ts) */
+  strummed?: boolean
 ): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
@@ -1324,6 +1377,8 @@ function samplerVoice(
   const sourcesOf = (s: Sounding) => (s.pair ? [s.src, s.pair.src] : [s.src]);
   /** The mod wheel's dynamics now (null: off, each note's velocity sets it). */
   let dyn: number | null = null;
+  /** The last chord strummed (a guitar's: the next one's direction follows the hand) */
+  let lastStrum: LastStrum | null = null;
   const sounding: Sounding[] = [];
   let bendRatio = 1;
   const prune = (time: number) => {
@@ -1392,8 +1447,9 @@ function samplerVoice(
    * Start `note` at `at`; it plays to the end of its recording unless released. `offset` starts it
    * that far into its recording (past a bow's slow start), fading in over `fade` seconds. A bowed
    * note's `mode`: a legato change or a short stroke (neither swells in), else a held note.
+   * `scale` scales its level (a strummed chord's later strings: see guitarStrum.ts).
    */
-  const start = (note: string, at: number, velocity: number, offset = 0, fade = 0, hold = 0, mode?: 'legato' | 'short'): Sounding | null => {
+  const start = (note: string, at: number, velocity: number, offset = 0, fade = 0, hold = 0, mode?: 'legato' | 'short', scale = 1): Sounding | null => {
     const midiFloat = midiOfNote(note);
     const midi = Math.round(midiFloat);
     // Under the mod wheel: the recording at the wheel's loudness and the next louder one
@@ -1433,7 +1489,7 @@ function samplerVoice(
     const base = rateOf(found.interval);
     const when = Math.max(at, raw.currentTime);
     const gain = raw.createGain();
-    const v = level(note, velocity, at) * taperGain(taper, note);
+    const v = level(note, velocity, at) * taperGain(taper, note) * scale;
     // How loud it's played: its velocity, or the mod wheel's dynamics when they choose the recording
     const loudness = low >= 0 ? dyn! : velocity;
     // A held bowed note swells in (not a legato change or a short stroke, nor a note too short for it)
@@ -1494,6 +1550,14 @@ function samplerVoice(
       s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity, buffer: found.buffer };
     }
     if (vibrato && mode !== 'short' && hold - when >= VIBRATO_SHORTEST) addVibrato(s, note, at, when, mode === 'legato', loudness);
+    // The same string picked again as it was let go: no damping sound (see comingReleases)
+    // (only one not yet begun, so nothing already sounding is cut off)
+    for (let i = comingReleases.length - 1; i >= 0; i--) {
+      const r = comingReleases[i];
+      if (r.note !== note || Math.abs(r.at - when) >= RE_PICK || r.at <= raw.currentTime) continue;
+      r.src.stop(r.at);
+      comingReleases.splice(i, 1);
+    }
     makeRoom(note, when);
     sounding.push(s);
     return s;
@@ -1569,6 +1633,12 @@ function samplerVoice(
 
   let releaseTurn = 0;
   /**
+   * A guitar's release sounds still to come (strummed instruments): a string picked again as it's
+   * let go isn't damped, so a note of the same pitch starting within RE_PICK of one cancels it
+   * (tremolo picking and chugs would otherwise damp every string between picks).
+   */
+  const comingReleases: Array<{ note: string; at: number; src: AudioBufferSourceNode }> = [];
+  /**
    * The sound of `s`'s key being let go at `at` (a harpsichord's jack, a piano's damper), if the
    * instrument has them and the note is still ringing: as loud against the note as they were
    * recorded together, quieter the longer the note was held when the instrument has a `decay`.
@@ -1590,6 +1660,10 @@ function samplerVoice(
     g.gain.value = Math.min(4, level);
     src.connect(g).connect(into);
     src.start(Math.max(at, raw.currentTime));
+    if (strummed) {
+      for (let i = comingReleases.length - 1; i >= 0; i--) if (comingReleases[i].at < at - 1) comingReleases.splice(i, 1);
+      comingReleases.push({ note: s.note, at: Math.max(at, raw.currentTime), src });
+    }
     src.onended = () => {
       src.disconnect();
       g.disconnect();
@@ -1634,8 +1708,12 @@ function samplerVoice(
       // A section's chord: each note a few milliseconds after the last (no two players start together)
       const spread = (note: string, i: number) => (section && notes.length > 1 ? (i + 0.5 * (1 + noteJitter(note, at, 53))) * 0.006 : 0);
       if (!bowed) {
+        // A guitar's chord is strummed: low to high, or high to low on the way back up
+        const plan = strummed && notes.length > 1 ? strumPlan(notes.map(midiOfNote), at, end - at, velocity, lastStrum, Math.floor((noteJitter(notes.join(' '), at, 61) + 1) * 1e9)) : null;
+        if (plan?.strum) lastStrum = plan.strum;
         notes.forEach((note, i) => {
-          const s = start(note, at + spread(note, i), velocity, 0, 0, end);
+          const one = plan?.notes[i];
+          const s = start(note, at + (one ? one.delay : spread(note, i)), velocity, 0, 0, end, undefined, one?.gain ?? 1);
           if (s) releaseAt(s, end);
         });
         return;
@@ -1747,7 +1825,10 @@ function samplerVoice(
 /** A sampled instrument's voice in the current context, connected to `output`. */
 export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, expressive = false): SamplerVoice {
   const def = INSTRUMENTS[key];
-  const shaped = shapingChain(def.shaping, output);
+  // (a guitar's studio room after its amp: see studioChain)
+  const studio = def.studio !== undefined ? studioChain(def.studio, output) : null;
+  const shaped = shapingChain(def.shaping, studio?.input ?? output);
+  if (studio) shaped.nodes.push(...studio.nodes);
   const chain = bodyChain(def.vibrato?.body, stageChain(def.room, toneChain(def.tone, shaped)));
   const out = new Tone.Gain(1).connect(chain.input);
   // Two channels from here on, whether a note's recording has one or two (see alwaysStereo)
@@ -1806,7 +1887,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     return null;
   };
   const progress = loading ? { complete: () => isComplete(loading), want: (midi: number, velocity: number, wheel?: number) => wantNote(loading, midi, velocity, wheel) } : {};
-  return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key), def.vibrato);
+  return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key), def.vibrato, STRUMMED.has(key));
 }
 
 /**

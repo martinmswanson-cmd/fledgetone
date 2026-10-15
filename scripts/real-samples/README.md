@@ -41,13 +41,30 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
 - [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by
   Lawrence Fritts and the University of Iowa Electronic Music Studios: the solo violin, viola,
   cello and double bass, bowed (the 2012 recordings: every semitone at pp, mf and ff,
-  without vibrato, in an anechoic room; the centre microphone's 16-bit 44.1 kHz mono files). Their
-  terms, from the [MIS page](https://theremin.music.uiowa.edu/MIS.html): "Since 1997, these
-  recordings have been freely available on this website and may be downloaded and used for any
-  projects, without restrictions." Credited anyway.
+  without vibrato, in an anechoic room; the centre microphone's 16-bit 44.1 kHz mono files), and
+  the nylon-string classical guitar (a Raimundo 118, played by Brian Penkrot in 2011 in the
+  anechoic chamber, every semitone of every string at pp, mf and ff; the 16-bit 44.1 kHz mono
+  files, `Piano_Other/guitar/Guitar.mono.1644.1.zip`). Their terms, from the
+  [MIS page](https://theremin.music.uiowa.edu/MIS.html): "Since 1997, these recordings have been
+  freely available on this website and may be downloaded and used for any projects, without
+  restrictions." Credited anyway.
+- The electric guitars' release sounds (the strings damped as a note is let go) are the
+  [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars)
+  library's own (`Samples/black/rel`, `Samples/green/rel`; CC0, as the rest of it).
 
 Also looked at, for strings: [FreePats](https://freepats.zenvoid.org/) has no bowed strings (its
 only orchestral string set is a harp).
+
+Also looked at, for guitars: FreePats' steel-string acoustic (FSS Steel-String Guitar) is GPL-3.0
+"with a special exception", not allowed here; its nylon guitar (Spanish Classical Guitar, CC0) was
+recorded, its page says, in conditions "far from ideal" and filtered, and is sampled sparsely,
+where Iowa's is every note at three loudnesses; its FSBS electric guitars (CC0) are another
+direct-recorded electric like the Karoryfer ones, with no picking loudnesses to add. The SFZ
+Instruments list's other free guitars are commercial (Karoryfer's paid libraries), custom-licensed
+(Unreal Instruments) or MIT (Blue Jeans And Moonbeams, outside the allowed licences). Archive.org's
+"CC0" steel-string guitar sets are taken from commercial sample CDs and synthesizer ROMs, which the
+uploader couldn't put in the public domain. No free steel-string acoustic recorded note by note
+was found, so the Acoustic Guitar plays the Iowa nylon guitar voiced brighter.
 
 ## Rebuilding them
 
@@ -63,8 +80,8 @@ python3 /path/to/bos-beat-box/scripts/real-samples/convert.py /path/to/bos-beat-
 Each script takes set names to work on just those (`fetch.py --list harp` shows what a set would
 fetch). `SHOW_TRIM=1 convert.py ...` prints how much each note was evened out. The drum kit is
 mixed instead of fetched: run `kit.py studio-kit` before measuring and converting it. The Iowa
-strings are fetched by `iowa.py` instead (`iowa.py violin cello ...`, about 600 MB of zips; each is
-deleted once split).
+strings and guitar are fetched by `iowa.py` instead (`iowa.py violin cello nylon-guitar ...`,
+about 720 MB of zips; each is deleted once split).
 
 - **`sets.py`** says what each set is made of: the library, which files (a pattern that reads
   the note, loudness and take from each file's name), how its names count octaves, and what kind
@@ -84,7 +101,13 @@ deleted once split).
   neighbouring notes share a tone). A bowed note shorter than 1.6 s, or whose first half second
   stands over 6 dB above the rest (an accent that dies away, which some notes were played as),
   is left out for the note's other loudnesses to stand in. The two viola zips hold sound recorded
-  at 96 kHz in files marked 44.1 kHz; it reads them at their real rate.
+  at 96 kHz in files marked 44.1 kHz; it reads them at their real rate. A plucked scale (the
+  guitar's) rings on into the next note, often with no silence between, so its notes are found
+  by their onsets instead (6 dB rises over 300 Hz, where the chamber's rumble doesn't reach) and
+  named by their pitch, read from just after the pluck; each starts at the pluck itself (a soft
+  one can follow the finger's touch on the string by 50 ms) and loses the rumble under 0.7 of its
+  note. A note's string is one it was played on evenly, soft to loud (the C3 on the A string is
+  quieter ff than pp), then the lowest position as for the strings.
 - **`kit.py`** mixes a multi-microphone drum kit (KITS in `sets.py`): every hit's close
   microphones, placed where the overheads hear the piece, with the overheads, into one stereo file
   per piece, loudness and take. The overheads hear the whole kit at one gain, so each close
@@ -115,7 +138,11 @@ deleted once split).
   piano again, whose recordings were cut off 0.4 to 5 s in while still sounding) gives each note
   the rest of its decay: its last 0.3 s repeated, each repeat quieter by the rate the recording
   was dying away at (a recording too short to tell takes the rate its neighbours' fit gives), the
-  highs dying faster, until 60 dB down or the set's cap. One gain per set leaves its loudest peak
+  highs dying faster, until 60 dB down or the set's cap. `tail='faded'` (the electric guitars,
+  whose library faded its softer notes out from 40 dB down, 1.5 to 4 s in, which the amps' lift
+  of a tail made a held chord's sudden end) first cuts the fade off, where the level falls 6 dB
+  under the straight line of its decay over the note's body, and carries on at that line's rate.
+  One gain per set leaves its loudest peak
   just under full scale. It writes the MP3s and `src/audio/hostedSets.ts`.
   A set with `xloop` (the strings) loops a held note inside its own sustain instead: the longest
   stretch of it up to 3 s, its start moved by up to two periods to where it best matches the sound

@@ -8,6 +8,14 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## Unreleased
+
+- Guitars that sound like the ones on records: less sharp, in a room, and played the way a guitarist plays. New **Classical Guitar (Real)**: a nylon-string guitar recorded on every note, soft, medium and hard, so no note is stretched from a neighbour's. The starters' classical guitar parts play it, and the **Acoustic Guitar (Real)** (until now the Acoustic Guitar) plays it too, voiced brighter for strumming (it used to be sharpened with an 8 dB treble boost and distortion).
+- The real electric guitars' amps sound like a miked amp on a record: the speaker's piercing peak near 4 kHz is taken down, the hardest-picked recordings (much brighter than the rest) play only for accents, and a held chord rings on for 5 or 6 seconds, dying away, instead of stopping after 3 or 4.
+- Every guitar plays in a small studio room after its amp (they were recorded dry, in mono), and the electric guitars make the sound of the strings being damped when a note is let go early.
+- A chord written as one block on a guitar, banjo or mandolin is strummed: low to high on the way down, high to low when the hand comes back up for a chord that follows closely, quicker the harder it's played.
+- The older General MIDI guitars sound darker as well as quieter when played softly, as the other guitars do.
+
 ## 2026.10.15-23 — Flip a sample
 
 - **Flipping a sample**: an audio clip's **tempo and key** are heard from its sound (with how sure, in the clip editor, on the clip and in the Audio track's panel), with one click to set the song to the sample's tempo, stretch the sample to the song's, or move it into the song's key (a re-pitched copy, same length). **Chop sample…** cuts it into up to 16 chops at its hits, in equal parts or by hand (drag, add and remove markers), onto a new Drum Rack's pads, each with its own start, end, fade, reverse, pitch, level and choke (one chop cuts the others, like a classic sampler); **Chop and play** writes a starting pattern that plays them in a new order, and **New idea** another. **Filter out the bass** clears a sample's low end for your own 808.

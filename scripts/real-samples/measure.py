@@ -62,7 +62,8 @@ def pitch(x, window):
     hz = []
     for i in range(0, max(1, len(seg) - 4096), 2048):
         f = yin(seg[i: i + 4096 + int(SR / 24)])
-        if f:
+        # (a frame of silence at a plucked note's end reads as no pitch, or a negative one)
+        if f and np.isfinite(f) and f > 0:
             hz.append(f)
     if not hz:
         return None
