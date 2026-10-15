@@ -144,6 +144,13 @@ fixed order, then pan, solo and mute, the fader, and sends. Strips play into the
 (`createMixChain` in `engine.ts`): master bus, compressor, the OTT and width inserts, limiter
 and a soft ceiling, plus the shared reverb and delay returns.
 
+A compressor looks ahead, so it holds back the sound through it by a few milliseconds. **Delay
+compensation** lines every path up again: `delayCompensation.ts` works out, from the tracks, how
+long to hold back each strip (after its inserts, on its way out, on each send) so that every path
+reaches the master together, and the strips apply it with delay lines that crossfade when the
+amount changes (`effects/delayLink.ts`). The compressor's delay is measured once per sample rate
+(`compressorLatency.ts`). Live and in exports alike; an export trims the delay off its start.
+
 ### Someone plays a MIDI keyboard or records
 
 `liveInput.ts` takes Web MIDI messages (decoded by `midi.ts`) and computer-keyboard notes, and
@@ -166,7 +173,9 @@ is split, where that sounds exactly the same, into parts rendered at once, each 
 before the master section is added up and the master section runs once over the sum
 (`renderParts.ts` says which tracks must stay together). The parts load no AudioWorklet unless a
 track's plugin does, since Chromium renders every offline context that has one on a single shared
-thread. The result is scaled down if its
+thread; with the lush reverb (a worklet) on, the parts send what they'd feed it and it plays
+once, over their sum, in the master pass. Every part uses the same delay compensation, worked out
+over the whole song. The result is scaled down if its
 true peak passes -1 dBTP, then encoded: WAV here (16/24/32-bit, markers as cue points), MP3 and
 Ogg in `encoders.ts`, MP4 video in `videoExport.ts`. Stems, intro-plus-loop, seamless loops,
 the game kit (`gameKit.ts`), FMOD / Wwise packages and freezing a track are all variations on
@@ -312,6 +321,10 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   on the audio clock, then takes the old ones apart (`rewire` in `trackStrip.ts`).
   `cancelAndHoldAtTime()` holds nothing when no ramp is under way, so a fade that follows it
   needs a `setValueAtTime()` first, or it ramps from the param's last event.
+- A param that is sounding never jumps: setting `.value` or `setValueAtTime()` clicks, and
+  `cancelScheduledValues()` throws away a ramp under way (the param snaps back first). A control
+  the user moves goes through `smoothSet` (`effects/smoothParam.ts`): hold where it is, then glide
+  there with `setTargetAtTime()`. Automation lanes go through `ParamWriter` (`paramWriter.ts`).
 - Transport positions are written in ticks (`` `${ticks}i` ``). Tone converts those through seconds,
   so `toneFixes.ts` makes results within float noise of a whole tick whole again; otherwise about
   one tick in ten was filed a tick early (skipped when playback started on it or a loop came back

@@ -369,6 +369,12 @@ const GUITAR_NOTES = Array.from({ length: 16 }, (_, i) => 40 + i * 3);
 export type Shaping = 'erhu' | 'amp' | 'acoustic' | 'mandolin' | 'violin' | AmpModel;
 /** Guitar amps for the real electric guitar recordings (direct from the pickup): see samplerManager.ts. */
 export type AmpModel = 'cleanAmp' | 'crunchAmp' | 'leadAmp' | 'jazzAmp';
+/**
+ * The shapings with a compressor in them (samplerManager.ts: the amp's sustain, and the amps with a
+ * squeeze), each of which holds the sound back by a compressor's look-ahead (see delayCompensation.ts).
+ * Keep in step with shapingChain.
+ */
+export const COMPRESSED_SHAPINGS: ReadonlySet<Shaping> = new Set<Shaping>(['amp', 'cleanAmp', 'jazzAmp']);
 
 /** The solo violin set, every file it has (so no note is stretched more than a few semitones). */
 const VIOLIN_FILES = ['A3', 'C4', 'E4', 'G4', 'A4', 'C5', 'E5', 'G5', 'A5', 'C6', 'E6', 'G6', 'A6', 'C7'];

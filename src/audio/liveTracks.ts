@@ -19,6 +19,9 @@ import { loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
 import { TOTAL_BARS } from '../store/timelineTypes';
 import { audibleIds, busChain, busOf, liveSends, soloLit } from '../store/buses';
+import { compensateTracks } from './delayCompensation';
+import { compressorLatencyNow, measureCompressorLatency } from './compressorLatency';
+import { setMixDelay } from './latency';
 
 /**
  * Live playback graph: one effects strip + one instrument per timeline track, kept in step
@@ -256,6 +259,7 @@ export function syncLiveTracks(tracks: Track[]): void {
     if (sends.length || lt.hadSends) lt.strip.setSends(sends, !!(lt.applied?.isMuted));
     lt.hadSends = sends.length > 0;
   }
+  alignLive(tracks);
   // The live mix's own Transport, even while a WAV export has made its offline context the global
   // one, over the whole timeline
   pumpClock ??= createPumpClock(liveMix.bus.context.transport, liveStrips, 0, barToTicks(TOTAL_BARS + 1));
@@ -264,6 +268,28 @@ export function syncLiveTracks(tracks: Track[]): void {
   // After the strips, which decide what each lane drives
   lastTracks = tracks;
   liveAutomation().update(tracks, liveDuck);
+}
+
+/**
+ * Delay compensation (see delayCompensation.ts): every track held back to the slowest path through
+ * the mix, worked out again whenever the tracks change (an effect switched on or off, a re-routing);
+ * a strip whose delays change crossfades to them. Until the compressor's delay has been measured
+ * (a moment after the page opens) nothing is held back, and then the tracks are lined up.
+ */
+let alignedTracks: Track[] = [];
+function alignLive(tracks: Track[]): void {
+  alignedTracks = tracks;
+  const rate = liveMix.bus.context.sampleRate;
+  const frames = compressorLatencyNow(rate);
+  if (frames === undefined) {
+    void measureCompressorLatency(rate).then(() => {
+      if (alignedTracks === tracks && Tone.getContext() === liveMix.bus.context) alignLive(tracks);
+    });
+    return;
+  }
+  const { total, delays } = compensateTracks(tracks, frames);
+  for (const [id, lt] of live) lt.strip.setAlignment(delays.get(id) ?? null);
+  setMixDelay(total / rate);
 }
 
 /** Stopped with the playhead at `bar`: automated settings sit at their lanes' values there. */
@@ -429,7 +455,7 @@ export function releaseAllLiveVoices(): void {
   for (const lt of live.values()) {
     safely(() => lt.instrument.releaseAll());
     // A bend left by a clip's expression ends with playback
-    if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, Tone.now()));
+    if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, liveMix.bus.context.currentTime));
   }
 }
 
@@ -438,7 +464,8 @@ export function previewTrackNotes(trackId: string, notes: PlayableNote[]): void 
   const lt = live.get(trackId);
   if (!lt || !notes.length) return;
   wake(trackId, lt, liveMix.bus.context.currentTime + HELD_SECONDS);
-  safely(() => lt.instrument.play(notes, Tone.now()));
+  // On the audio clock as it is now: Tone.now() would add the look-ahead (a tenth of a second or more)
+  safely(() => lt.instrument.play(notes, liveMix.bus.context.currentTime));
 }
 
 /**

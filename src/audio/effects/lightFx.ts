@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
+import { paramSetter as smoothParamSetter, smoothSet, SMOOTH_TC } from './smoothParam';
 import { PEQ_MAX_BANDS, type PeqBand } from '../../store/timelineTypes';
 import { BIQUAD_TYPE, biquadQ, hasGain } from '../peq';
 
@@ -16,11 +17,6 @@ import { BIQUAD_TYPE, biquadQ, hasGain } from '../peq';
  * plain node parameters that only change when the user moves a control.
  */
 
-/**
- * Set native params, ramping over `ramp` seconds (0 = at once). Ramps start from the last value
- * set here: an AudioParam's .value doesn't show scheduled values until the context renders (an
- * offline export sets these up before it starts).
- */
 /**
  * While automation applies a setting (see the track strip's controls), the time it applies it for:
  * in an export that is ahead of the render, which waits while the page schedules. Else -Infinity,
@@ -40,21 +36,8 @@ export function atControlTime<T>(time: number, fn: () => T): T {
 /** When a change made now takes effect on `raw`'s clock. */
 export const writeTime = (raw: BaseAudioContext): number => Math.max(raw.currentTime, controlAt);
 
-function paramSetter(raw: BaseAudioContext): (param: AudioParam, value: number, ramp: number) => void {
-  const current = new Map<AudioParam, number>();
-  return (param, value, ramp) => {
-    const at = writeTime(raw);
-    param.cancelScheduledValues(at);
-    const from = current.get(param);
-    if (ramp > 0 && from !== undefined && from !== value) {
-      param.setValueAtTime(from, at);
-      param.linearRampToValueAtTime(value, at + ramp);
-    } else {
-      param.setValueAtTime(value, at);
-    }
-    current.set(param, value);
-  };
-}
+/** Set native params, gliding over about `ramp` seconds (0 = at once), at writeTime (see smoothParam.ts). */
+const paramSetter = (raw: BaseAudioContext) => smoothParamSetter(() => writeTime(raw));
 
 /** The parts of an insert the track strip patches together. */
 export interface LightInsert {
@@ -168,13 +151,7 @@ export function createLightDistortion(amount: number): LightDistortion {
     applied = value;
     const next = settings(value);
     const now = writeTime(raw);
-    for (const [param, target] of [[drive.gain, next.drive], [tone.frequency, next.tone], [makeup.gain, next.makeup]] as const) {
-      param.cancelScheduledValues(now);
-      if (ramp > 0) {
-        param.setValueAtTime(param.value, now);
-        param.linearRampToValueAtTime(target, now + ramp);
-      } else param.setValueAtTime(target, now);
-    }
+    for (const [param, target] of [[drive.gain, next.drive], [tone.frequency, next.tone], [makeup.gain, next.makeup]] as const) smoothSet(param, target, now, ramp / 3);
   };
   input.connect(tight);
   tight.connect(drive);
@@ -257,15 +234,19 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
   dry.connect(output);
   wet.connect(output);
 
+  let depthSet = false;
   const setDepth = (depth: number) => {
     // Tone's LFO runs from max(centre - deviation, 0) to centre + deviation
     const deviation = centre * depth;
     const min = Math.max(centre - deviation, 0);
     const max = centre + deviation;
     const at = writeTime(raw);
+    // Glides once sounding: a jump in a delay's time is a jump in the wave coming out of it
+    const tc = depthSet ? SMOOTH_TC : 0;
+    depthSet = true;
     for (const s of [left, right]) {
-      s.delay.delayTime.setValueAtTime((min + max) / 2, at);
-      s.swing.gain.setValueAtTime((max - min) / 2, at);
+      smoothSet(s.delay.delayTime, (min + max) / 2, at, tc);
+      smoothSet(s.swing.gain, (max - min) / 2, at, tc);
     }
   };
   const ramped = (param: Tone.Param<'gain'>, value: number, ramp: number) => {
@@ -288,16 +269,7 @@ export function createLightChorus(opts: { rate: number; delayMs: number; depth: 
     setWet,
     setRate: (hz, ramp) => {
       if (hz === rate) return;
-      for (const { osc } of [left, right]) {
-        const at = writeTime(raw);
-        osc.frequency.cancelScheduledValues(at);
-        if (ramp > 0) {
-          osc.frequency.setValueAtTime(rate, at);
-          osc.frequency.linearRampToValueAtTime(hz, at + ramp);
-        } else {
-          osc.frequency.setValueAtTime(hz, at);
-        }
-      }
+      for (const { osc } of [left, right]) smoothSet(osc.frequency, hz, writeTime(raw), ramp / 3);
       rate = hz;
     },
     dispose: () => {

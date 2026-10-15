@@ -3,6 +3,7 @@
  * imports it before any oscillator exists). See each fix's comment below.
  */
 import * as Tone from 'tone';
+import { smoothSet } from './effects/smoothParam';
 
 /**
  * Tone.Oscillator caches the PeriodicWave of every custom waveform (and any waveform with a
@@ -81,4 +82,28 @@ crossFadeProto.dispose = function () {
     // Already disconnected
   }
   return disposeCrossFade.call(this);
+};
+
+/**
+ * Tone.Solo silences the channels not soloed by setting their gain to 0 at once (and back to 1),
+ * a click on every one of them that was sounding when a solo went on or off. It glides there
+ * instead (see smoothParam.ts). A Solo just made isn't sounding yet, so it takes its gain at once.
+ */
+interface SoloInside {
+  input: Tone.Gain;
+  now: () => number;
+  _isSoloed: () => boolean;
+  _noSolos: () => boolean;
+}
+const soloProto = Tone.Solo.prototype as unknown as { _updateSolo: (this: SoloInside) => void };
+const settled = new WeakSet<SoloInside>();
+soloProto._updateSolo = function () {
+  const gain = this.input.gain;
+  const level = this._isSoloed() || this._noSolos() ? 1 : 0;
+  if (!settled.has(this)) {
+    settled.add(this);
+    gain.value = level;
+    return;
+  }
+  smoothSet(gain, level, this.now());
 };

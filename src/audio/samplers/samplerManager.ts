@@ -6,33 +6,178 @@ import { auditionInput } from '../engine';
 import { decodeSound } from '../soundLibrary';
 import { recordingBytes } from '../recordingStore';
 import { useAudioStore } from '../../store/audioStore';
-import type { CustomSample } from '../../store/timelineTypes';
+import type { CustomSample, NoteEvent } from '../../store/timelineTypes';
 import { keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
+import { foldToMono, isDualMono, keptLength, levelOutline, OUTLINE_STEP } from './recordingMaths';
+import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
+import { BLEND_ZONE, indexRecordings, layerOf, neededSamples, quickLayer, quickSamples, songNotesByInstrument, STRETCH_SEMITONES } from './songSamples';
+import type { RecordingIndex, SongNotes } from './songSamples';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
  * shared by every sampler that plays it: each track's own sampler, the instrument browser's
  * audition sampler, and the offline export (AudioBuffers aren't tied to a context).
+ *
+ * Decoded sound takes eight to ten times the room of the downloaded files, so recordings are kept
+ * small as they load (see recordingMaths.ts): a silent tail is cut, and two identical channels
+ * become one. And an instrument loads what the song plays first (see songSamples.ts and
+ * loadSongSamples), so it can start sooner; the rest of its recordings follow in the
+ * background, one at a time, or at once when a note is played that needs one.
  */
 type SampleSet = Record<string, Tone.ToneAudioBuffer>;
 
-const sampleSets: Partial<Record<InstrumentKey, Promise<SampleSet>>> = {};
-/** The sets that have finished loading (for counting what forgetting them frees). */
-const loadedSets: Partial<Record<InstrumentKey, SampleSet>> = {};
-/** The first loudness of each instrument's notes, loaded first (see loadSamples) */
-const quickSets: Partial<Record<InstrumentKey, Promise<SampleSet>>> = {};
-/** Which loudness loads first: one just above the middle, which suits most velocities */
-const quickLayer = (layers: number) => Math.min(layers - 1, Math.floor(layers * 0.6));
+/** One instrument's recordings, as they arrive. */
+interface Loading {
+  source: SampleSource;
+  /** Every sample's name: the notes ("<note>|<layer>|<take>") and release sounds ("rel|<note>|<take>") */
+  names: string[];
+  index: RecordingIndex;
+  /** Loaded so far, by name */
+  have: Map<string, Tone.ToneAudioBuffer>;
+  /** Loading now, by name */
+  pending: Map<string, Promise<void>>;
+  /** Told of each recording as it arrives: the samplers playing the instrument */
+  listeners: Set<(name: string, buffer: Tone.ToneAudioBuffer) => void>;
+  /** What the song plays (loadSongSamples), loaded first; unset: one loudness of every note */
+  first?: Set<string>;
+  /** The whole set loading (loadSamples) */
+  full?: Promise<SampleSet>;
+  /** Notes asked for while playing (wantNote), so each is looked up once */
+  asked: Set<string>;
+  /** The background filling stopped at a failed download (Retry or an export tries again) */
+  stalled?: boolean;
+}
+
+const loadings: Partial<Record<InstrumentKey, Loading>> = {};
+
+/** The instrument's loading state (made empty the first time). */
+function loadingOf(key: InstrumentKey): Loading {
+  let l = loadings[key];
+  if (!l) {
+    const source = INSTRUMENTS[key].samples!;
+    const names = [...Object.keys(source.samples), ...Object.keys(source.releases?.samples ?? {}).map((n) => `rel|${n}`)];
+    l = { source, names, index: indexRecordings(names, midiOfNote, source.layers ?? [1]), have: new Map(), pending: new Map(), listeners: new Set(), asked: new Set() };
+    loadings[key] = l;
+  }
+  return l;
+}
+
+const isComplete = (l: Loading) => l.have.size === l.names.length;
+const setOf = (l: Loading): SampleSet => Object.fromEntries(l.have);
+const setStatus = (key: InstrumentKey, status: 'loading' | 'ready' | 'error' | 'unloaded') => useAudioStore.getState().setInstrumentStatus(key, status);
+const isReady = (key: InstrumentKey) => useAudioStore.getState().instrumentStatus[key] === 'ready';
+
+/** Recordings being loaded for playing now (not the background filling): the background waits for them. */
+let foreground = 0;
+
+/** Load `names` of an instrument (each once), telling its samplers as each arrives. */
+function loadNames(l: Loading, names: Iterable<string>, background = false): Promise<void> {
+  const waits: Promise<void>[] = [];
+  for (const name of names) {
+    if (l.have.has(name)) continue;
+    let p = l.pending.get(name);
+    if (!p) {
+      if (!background) foreground++;
+      p = decodeEntry(l.source, name)
+        .then((buffer) => {
+          l.have.set(name, buffer);
+          for (const listener of l.listeners) listener(name, buffer);
+        })
+        .finally(() => {
+          l.pending.delete(name);
+          if (!background && --foreground === 0) fillSoon();
+        });
+      p.catch(() => {}); // (whoever waits for it hears of a failure)
+      l.pending.set(name, p);
+    }
+    waits.push(p);
+  }
+  return Promise.all(waits).then(() => undefined);
+}
+
+/** Load `names` of an instrument, showing it loading on its badge until they're in. */
+function loadSome(key: InstrumentKey, l: Loading, names: Iterable<string>): Promise<SampleSet> {
+  if (!isReady(key)) setStatus(key, 'loading');
+  return loadNames(l, names).then(
+    () => {
+      setStatus(key, 'ready');
+      return setOf(l);
+    },
+    (err) => {
+      console.error(`Failed to load samples [${key}]:`, err);
+      setStatus(key, 'error');
+      throw err;
+    }
+  );
+}
 
 /**
- * The instrument's first loudness of every note (it can play once these are in), loading the
- * rest in the background; the whole set if that's already loaded.
+ * The instrument's first recordings: what the song plays (loadSongSamples), or one loudness of
+ * every note when that isn't known; the whole set once that's loaded. It plays once these are in;
+ * the rest follow in the background.
  */
 export function loadQuick(key: InstrumentKey): Promise<SampleSet> {
-  const full = loadedSets[key];
-  if (full) return Promise.resolve(full);
-  const all = loadSamples(key);
-  return quickSets[key] ?? all;
+  const l = loadingOf(key);
+  if (isComplete(l)) return Promise.resolve(setOf(l));
+  return loadSome(key, l, l.first ?? quickSamples(l.index)).then((set) => {
+    fillInBackground(key);
+    return set;
+  });
+}
+
+/** What each instrument plays in these tracks' clips (see songSamples.ts). */
+function songsOf(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1]) {
+  const midiOf = (note: string) => {
+    try {
+      return midiOfNote(note);
+    } catch {
+      return NaN; // (not a note: skipped)
+    }
+  };
+  return songNotesByInstrument(tracks, clips, midiOf);
+}
+
+/** The recordings `song` needs of an instrument (see songSamples.ts). */
+const neededFor = (key: InstrumentKey, l: Loading, song: SongNotes | undefined) =>
+  song?.notes.length ? neededSamples(l.index, song.notes, INSTRUMENTS[key].dynamics ? song.wheel : null) : new Set<string>();
+
+/**
+ * A song is opening: start loading every recorded instrument it plays, each with what the song
+ * plays on it first, then the rest in the background (the recorded drum kits load whole: they're
+ * small, and every row is a hit).
+ */
+export function loadSongSamples(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1]): void {
+  const songs = songsOf(tracks, clips);
+  for (const key of new Set(tracks.map((t) => t.instrumentKey))) {
+    if (!hasRecordings(key)) continue;
+    if (isSamplerKey(key)) {
+      const l = loadingOf(key);
+      const needed = neededFor(key, l, songs.get(key));
+      l.first = needed.size ? needed : undefined;
+    }
+    (isSamplerKey(key) ? loadQuick(key) : loadSamples(key)).catch(() => {}); // the loading badge reports it
+  }
+}
+
+/**
+ * Everything these tracks' clips play, for an export: each recorded instrument's recordings the
+ * notes need (a drum kit's every one), by instrument. The export plays the same recordings live
+ * playback does once every recording is in.
+ */
+export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1]): Array<[InstrumentKey, Promise<unknown>]> {
+  const songs = songsOf(tracks, clips);
+  return [...new Set(tracks.map((t) => t.instrumentKey))]
+    .filter(hasRecordings)
+    .map((key) => {
+      if (!isSamplerKey(key)) return [key, loadSamples(key)];
+      const l = loadingOf(key);
+      return [key, isComplete(l) ? Promise.resolve() : loadSome(key, l, neededFor(key, l, songs.get(key)))];
+    });
+}
+
+/** The recordings `notes` need of an instrument (a drum kit's every one), loaded: for a stinger or a transition's notes. */
+export function loadSamplesForNotes(key: InstrumentKey, notes: readonly NoteEvent[]): Promise<unknown> {
+  return songSampleLoads([{ id: 'notes', instrumentKey: key }], [{ trackId: 'notes', notes: [...notes] }])[0]?.[1] ?? Promise.resolve();
 }
 
 /** True for instruments that stream recordings (piano, sax, marimba...). */
@@ -46,81 +191,192 @@ export function hasRecordings(key: InstrumentKey): boolean {
 }
 
 /**
- * Recordings decoded, by URL: instruments that play the same recordings through different amps
- * share them. The bytes come from this browser's kept copy, or are downloaded (from `baseUrl`, or
- * `fallbackUrl` when that can't serve them) and kept for next time: see recordingStore.ts.
+ * Recordings decoded, by URL (and how they were trimmed): instruments that play the same
+ * recordings through different amps share them. Held weakly, so a recording only an instrument
+ * since let go (or one copied louder or retuned on loading) is freed. The bytes come from this
+ * browser's kept copy, or are downloaded (from `baseUrl`, or `fallbackUrl` when that can't serve
+ * them) and kept for next time: see recordingStore.ts.
  */
-const recordings = new Map<string, Promise<Tone.ToneAudioBuffer>>();
-function fetchRecording(source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl' | 'version'>, file: string): Promise<Tone.ToneAudioBuffer> {
-  const url = source.baseUrl + file;
-  let p = recordings.get(url);
+const decoded = new Map<string, WeakRef<Tone.ToneAudioBuffer>>();
+const decoding = new Map<string, Promise<Tone.ToneAudioBuffer>>();
+/** Each trimmed recording's length before it was trimmed, in seconds (see recordedDuration). */
+const fullDurations = new WeakMap<AudioBuffer, number>();
+
+/**
+ * A recording, decoded and made compact: its silent tail cut (never before `keep` seconds, the end
+ * of a loop or a stretch to be looped, nor where it's still above `ceiling`, the level the sampler
+ * hears as the end of the sound: see audibleEnd), and folded to one channel if its two are the same.
+ */
+function fetchRecording(source: Pick<SampleSource, 'baseUrl' | 'fallbackUrl' | 'version'>, file: string, keep = 0, ceiling = SILENT): Promise<Tone.ToneAudioBuffer> {
+  const id = `${source.baseUrl}${file}|${keep}|${ceiling}`;
+  const alive = decoded.get(id)?.deref();
+  if (alive) return Promise.resolve(alive);
+  let p = decoding.get(id);
   if (!p) {
     p = recordingBytes(source, file)
       .then((bytes) => Tone.getContext().decodeAudioData(bytes))
-      .then((audio) => new Tone.ToneAudioBuffer(audio));
-    p.catch(() => recordings.delete(url));
-    recordings.set(url, p);
+      .then((audio) => new Tone.ToneAudioBuffer(compact(audio, keep, ceiling)));
+    decoding.set(id, p);
+    p.then(
+      (b) => {
+        decoded.set(id, new WeakRef(b));
+        decoding.delete(id);
+      },
+      () => decoding.delete(id)
+    );
   }
   return p;
 }
 
-/** Download + decode an instrument's samples (once). Updates the loading badge in audioStore. */
-export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
-  const existing = sampleSets[key];
-  if (existing) return existing;
+/** `audio` without its silent tail, in one channel if its two are the same (see fetchRecording). */
+function compact(audio: AudioBuffer, keep: number, ceiling: number): AudioBuffer {
+  const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c));
+  // Its outline first: it finds the tail without reading the whole recording again, and is kept
+  const shape = levelOutline(channels, audio.sampleRate);
+  const length = keptLength(channels, audio.sampleRate, Math.ceil(keep * audio.sampleRate), ceiling, shape);
+  const kept = channels.map((d) => d.subarray(0, length));
+  const mono = kept.length === 2 && isDualMono(kept[0], kept[1]);
+  if (length === audio.length && !mono) {
+    outlines.set(audio, shape);
+    return audio;
+  }
+  const out = new AudioBuffer({ numberOfChannels: mono ? 1 : kept.length, length, sampleRate: audio.sampleRate });
+  if (mono) out.copyToChannel(foldToMono(kept[0], kept[1]), 0);
+  else kept.forEach((d, c) => out.copyToChannel(d, c));
+  fullDurations.set(out, audio.duration);
+  outlines.set(out, shape.subarray(0, Math.ceil(length / Math.max(1, Math.round(OUTLINE_STEP * audio.sampleRate)))));
+  return out;
+}
 
-  const source = INSTRUMENTS[key].samples;
-  if (!source) return Promise.reject(new Error(`${key} has no samples`));
-  const setStatus = useAudioStore.getState().setInstrumentStatus;
-  setStatus(key, 'loading');
+/**
+ * How long a recording was before its silent tail was cut (see fetchRecording): what a drum hit
+ * shortened to a length fades over, so the fade is the same as on the whole recording.
+ */
+export function recordedDuration(buffer: AudioBuffer): number {
+  return fullDurations.get(buffer) ?? buffer.duration;
+}
 
-  // Release sounds load with the notes, as "rel|<note>|<take>"
-  const rel = source.releases;
-  const loadOne = async ([note, file]: [string, string]) => {
-    const loaded = await fetchRecording(source, file);
-    const tuned = source.tune?.[note] ? retune(loaded, source.tune[note]) : loaded;
-    const buffer = source.gains?.[note] ? louder(tuned, source.gains[note]) : tuned;
-    const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
-    const ready = source.onset === undefined ? held : trimOnset(held, source.onset);
+/** Each recording's level outline (see recordingMaths.ts), for choosing which note to let go. */
+const outlines = new WeakMap<AudioBuffer, Float32Array>();
+function outline(audio: AudioBuffer): void {
+  if (outlines.has(audio)) return;
+  outlines.set(audio, levelOutline(Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c)), audio.sampleRate));
+}
+
+/** One of an instrument's recordings by name (a note, or "rel|..." a release sound), decoded and readied to play. */
+async function decodeEntry(source: SampleSource, name: string): Promise<Tone.ToneAudioBuffer> {
+  if (name.startsWith('rel|')) {
+    const rel = source.releases!;
+    const loaded = await fetchRecording(rel, rel.samples[name.slice(4)]);
+    if (loaded.get()) outline(loaded.get()!);
+    return loaded;
+  }
+  const loop = source.loops?.[name];
+  const db = source.gains?.[name] ?? 0;
+  // Never cut into a loop, nor the stretch a held soundfont note loops (a little past it, as a
+  // retune moves it by a hair); and a recording played louder keeps the tail that becomes audible
+  const keep = Math.max(loop?.[1] ?? 0, source.sustain?.to ?? 0) + 0.05;
+  const loaded = await fetchRecording(source, source.samples[name], keep, SILENT * 10 ** (-Math.max(0, db) / 20));
+  const tuned = source.tune?.[name] ? retune(loaded, source.tune[name]) : loaded;
+  const buffer = db ? louder(tuned, db) : tuned;
+  const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
+  const ready = source.onset === undefined ? held : trimOnset(held, source.onset);
+  const audio = ready.get();
+  if (audio) {
     // Its seamless loop, if it has one (and nothing above moved its timing)
-    const loop = source.loops?.[note];
-    const audio = ready.get();
-    if (loop && audio && ready === buffer && !source.tune?.[note]) loopsOf.set(audio, loop);
-    return [note, ready] as const;
-  };
-  // First one loudness of every note (QUICK_LAYER), so the instrument can play while the rest come
-  const entries = Object.entries(source.samples);
-  const layerCount = source.layers?.length ?? 1;
-  const isQuick = ([name]: [string, string]) => {
-    const [, l = '0', t = '0'] = name.split('|');
-    return Number(l) === quickLayer(layerCount) && t === '0';
-  };
-  const quick = Promise.all(entries.filter(isQuick).map(loadOne));
-  quickSets[key] = quick.then((e) => Object.fromEntries(e) as SampleSet);
-  quickSets[key]!.catch(() => {});
-  const rest = quick.then(() =>
-    Promise.all([
-      ...(rel ? Object.entries(rel.samples).map(async ([name, file]) => [`rel|${name}`, await fetchRecording(rel, file)] as const) : []),
-      ...entries.filter((e) => !isQuick(e)).map(loadOne),
-    ])
-  );
-  const promise = Promise.all([quick, rest]).then(
-    ([a, b]) => {
+    if (loop && ready === buffer && !source.tune?.[name]) loopsOf.set(audio, loop);
+    outline(audio);
+  }
+  return ready;
+}
+
+/** Load an instrument's every recording (once). Updates the loading badge in audioStore. */
+export function loadSamples(key: InstrumentKey): Promise<SampleSet> {
+  if (!INSTRUMENTS[key].samples) return Promise.reject(new Error(`${key} has no samples`));
+  const l = loadingOf(key);
+  if (l.full) return l.full;
+  if (!isComplete(l) && !isReady(key)) setStatus(key, 'loading');
+  const full: Promise<SampleSet> = loadNames(l, l.names).then(
+    () => {
+      l.stalled = false;
       setStatus(key, 'ready');
-      const set = Object.fromEntries([...a, ...b]) as SampleSet;
-      loadedSets[key] = set;
-      return set;
+      return setOf(l);
     },
     (err) => {
       console.error(`Failed to load samples [${key}]:`, err);
       setStatus(key, 'error');
-      delete sampleSets[key]; // allow a retry next time
-      delete quickSets[key];
+      if (l.full === full) l.full = undefined; // allow a retry next time
       throw err;
     }
   );
-  sampleSets[key] = promise;
-  return promise;
+  l.full = full;
+  return full;
+}
+
+/** Instruments with recordings still to load in the background, in the order they asked. */
+const backlog: InstrumentKey[] = [];
+let filling = false;
+
+/**
+ * On a device with little memory (4 GB or less, where the browser says: a phone, an older laptop),
+ * the rest of an instrument's recordings load only as notes need them, never all in the background.
+ */
+const LOW_MEMORY = typeof navigator !== 'undefined' && ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? Infinity) <= 4;
+
+/** Load the rest of an instrument's recordings in the background, one at a time, when nothing more pressing loads. */
+function fillInBackground(key: InstrumentKey): void {
+  if (LOW_MEMORY) return;
+  if (!backlog.includes(key)) backlog.push(key);
+  fillSoon();
+}
+
+/** The next background recording when the page is idle. */
+function fillSoon(): void {
+  if (filling || !backlog.length) return;
+  filling = true;
+  const go = () => {
+    filling = false;
+    fillNext();
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 1000 });
+  else setTimeout(go, 50);
+}
+
+function fillNext(): void {
+  // Recordings a song or a note is waiting for go first (this resumes when they're in)
+  if (foreground > 0 || filling) return;
+  while (backlog.length) {
+    const key = backlog[0];
+    const l = loadings[key];
+    const next = l && !l.stalled ? l.names.find((n) => !l.have.has(n) && !l.pending.has(n)) : undefined;
+    if (!l || !next) {
+      backlog.shift();
+      continue;
+    }
+    filling = true;
+    loadNames(l, [next], true).then(
+      () => {
+        filling = false;
+        fillSoon();
+      },
+      (err) => {
+        console.warn(`Couldn't load a recording of ${INSTRUMENTS[key].name} in the background:`, err);
+        l.stalled = true;
+        filling = false;
+        fillSoon();
+      }
+    );
+    return;
+  }
+}
+
+/** A note the song or a player asks of an instrument still loading: its own recordings, at once. */
+function wantNote(l: Loading, midi: number, velocity: number): void {
+  if (isComplete(l)) return;
+  const ask = `${midi}:${layerOf(l.index.tops, velocity)}`;
+  if (l.asked.has(ask)) return;
+  l.asked.add(ask);
+  loadNames(l, neededSamples(l.index, [{ midi, velocity, loudest: velocity }])).catch(() => l.asked.delete(ask));
 }
 
 /**
@@ -328,6 +584,7 @@ interface AmpSettings {
  * resonance, the cone's upper-mid bite, a dip where cabinets honk, and a steep top roll-off: what
  * makes an amp sound like an amp rather than a fuzz box).
  */
+// (An amp with a squeeze has a compressor: list it in COMPRESSED_SHAPINGS, instrumentCatalog.ts)
 const AMPS: Record<AmpModel, AmpSettings> = {
   // Bright and glassy, a touch of edge when picked hard
   cleanAmp: { tight: 70, squeeze: [-26, 3], pre: [['highshelf', 1500, 0.7, 4]], stages: [1.4], bass: 1, mid: -2, midHz: 600, treble: 3, cabTop: 6500 },
@@ -580,8 +837,12 @@ interface SlotBank {
    * doesn't jump from one recording's tone to the other's. Null away from a boundary.
    */
   blend?: (velocity: number) => { low: Slot; high: Slot; x: number } | null;
-  /** The recordings loaded first (see loadQuick), for a note whose own slot isn't loaded yet */
+  /** The recordings loaded first when nothing is known of the song (see loadQuick), for a note whose own slot has nothing near */
   fallback?: Slot;
+  /** False while some recordings are still to load (then a note plays the nearest loaded anywhere) */
+  complete?: () => boolean;
+  /** A note is playing whose own recordings may not be loaded yet: load them now */
+  want?: (midi: number, velocity: number) => void;
   /** The sounds of keys being let go (ReleaseSounds), their takes in turn */
   releases?: { slots: Slot[]; db: number; decay?: number };
 }
@@ -603,9 +864,6 @@ function peakOf(buffer: AudioBuffer): number {
   }
   return p;
 }
-
-/** How far either side of a loudness boundary (in velocity) two recordings are blended. */
-const BLEND_ZONE = 0.07;
 
 /** The recording nearest `midi` in `slot` and how many semitones it sits below (Tone.Sampler's search: the higher one on a tie). */
 function nearest(slot: Slot, midi: number): { buffer: AudioBuffer; interval: number } | null {
@@ -638,7 +896,7 @@ function audibleEnd(buffer: AudioBuffer): number {
 
 /** At most this many notes of one pitch ring at once: a further repeat fades the oldest (as a re-struck string damps itself). */
 const SAME_PITCH = 3;
-/** At most this many notes of one instrument ring at once: past it, the oldest fades. */
+/** At most this many notes of one instrument ring at once: past it, the quietest fades (see makeRoom). */
 const MAX_NOTES = 64;
 /**
  * The mod wheel's dynamics over a note playing loudness `low` and the next: the two recordings'
@@ -761,6 +1019,8 @@ function samplerVoice(
     releasedAt: number;
     /** Its recording loops (a note held past the recording's end), so it plays until it's released */
     looping?: boolean;
+    /** Fading out for a newer note (see steal) */
+    stolen?: boolean;
     /** The (first) recording it plays, for its release sound's level */
     buffer: AudioBuffer;
     /**
@@ -781,6 +1041,7 @@ function samplerVoice(
 
   /** Fade `s` out quickly from `at` (its place taken by a newer note), and stop it. */
   const steal = (s: Sounding, at: number) => {
+    s.stolen = true;
     const g = s.gain.gain;
     g.cancelScheduledValues(at);
     g.setTargetAtTime(0, at, STEAL_TC);
@@ -791,27 +1052,44 @@ function samplerVoice(
     }
   };
 
+  /** About how loud `s` is at `at` (see noteStealing.ts). */
+  const loudnessAt = (s: Sounding, at: number) =>
+    noteLevelNow(
+      {
+        gain: levelAt(s, at),
+        position: s.played + Math.max(0, at - s.last) * s.rate,
+        outline: outlines.get(s.buffer),
+        loop: s.looping ? loopsOf.get(s.buffer) : undefined,
+        releasedAt: s.releasedAt,
+        releaseTc,
+      },
+      at
+    );
+
   /**
-   * Before a note starts at `at`: if SAME_PITCH notes of its pitch, or MAX_NOTES in all, are still
-   * ringing then, the oldest fade out. A fast repeat on a long-ringing note otherwise stacks up
-   * dozens of copies of it, which cost a voice each and blur together.
+   * Before a note starts at `at`: if SAME_PITCH notes of its pitch are still ringing then, the
+   * oldest of them fades out (as a re-struck string damps itself); if MAX_NOTES in all are, the
+   * one quietest by then does (see noteStealing.ts). A fast repeat on a long-ringing note otherwise
+   * stacks up dozens of copies of it, which cost a voice each and blur together. Notes already
+   * fading out for a newer one don't count.
    */
   const makeRoom = (note: string, at: number) => {
     let same: Sounding | null = null;
     let sameCount = 0;
-    let oldest: Sounding | null = null;
-    let count = 0;
+    const ringing: Sounding[] = [];
     for (const x of sounding) {
-      if (x.start >= at || x.until <= at) continue;
-      count++;
-      if (!oldest || x.start < oldest.start) oldest = x;
+      if (x.start >= at || x.until <= at || x.stolen) continue;
+      ringing.push(x);
       if (x.note === note) {
         sameCount++;
         if (!same || x.start < same.start) same = x;
       }
     }
     if (same && sameCount >= SAME_PITCH) steal(same, at);
-    else if (oldest && count >= MAX_NOTES) steal(oldest, at);
+    else if (ringing.length >= MAX_NOTES) {
+      const i = chooseNoteToSteal(ringing.map((x) => ({ start: x.start, level: loudnessAt(x, at), held: x.releasedAt > at })), at);
+      if (i >= 0) steal(ringing[i], at);
+    }
   };
 
   /** The velocity a note is triggered at: as given, or on the dB curve with a little variation. */
@@ -830,11 +1108,21 @@ function samplerVoice(
     const low = dyn !== null && bank.layer && span > 0 ? Math.min(span - 1, Math.floor(dyn * span)) : -1;
     // Off the mod wheel, a velocity near a loudness boundary blends the two recordings either side
     const blend = low < 0 && bank.blend ? bank.blend(velocity) : null;
+    // Still loading: the note's own recordings are asked for, and meanwhile it plays the nearest
+    // one loaded, so it's never silent
+    const loading = bank.complete ? !bank.complete() : false;
+    if (loading) bank.want?.(midi, velocity);
     const near = (slot: Slot) => {
       const f = nearest(slot, midi);
-      // (still loading: nothing within reach yet)
-      if (bank.fallback && slot !== bank.fallback && (!f || Math.abs(f.interval) > 3)) return nearest(bank.fallback, midi);
-      return f;
+      if (f && Math.abs(f.interval) <= STRETCH_SEMITONES) return f;
+      // Nothing near at its loudness: the first-loaded loudness's nearest
+      if (!loading) return bank.fallback && slot !== bank.fallback ? nearest(bank.fallback, midi) : f;
+      let best = bank.fallback ? nearest(bank.fallback, midi) : null;
+      for (const other of [slot, ...bank.slots]) {
+        const g = other === slot ? f : nearest(other, midi);
+        if (g && (!best || Math.abs(g.interval) < Math.abs(best.interval))) best = g;
+      }
+      return best;
     };
     const found = low >= 0 ? near(bank.layer!(low)) : blend ? near(blend.low) : near(bank.pick(velocity));
     if (!found) return null;
@@ -987,7 +1275,8 @@ function samplerVoice(
   return {
     play: (notes, duration, time, velocity) => {
       if (!loaded || notes.length === 0) return; // still downloading: skip rather than throw
-      const at = time ?? output.now();
+      // (No time: now, on the audio clock; output.now() would add Tone's look-ahead)
+      const at = time ?? raw.currentTime;
       onNote?.(at);
       const end = at + output.toSeconds(duration);
       prune(at);
@@ -1127,27 +1416,31 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     return bank[l][turn[l]++ % bank[l].length];
   };
   const releaseSlots: Slot[] = [];
-  const fill = (set: SampleSet) => {
-    for (const [name, buffer] of Object.entries(set)) {
-      const audio = buffer.get();
-      if (!audio) continue;
-      if (name.startsWith('rel|')) {
-        const [, note, t = '0'] = name.split('|');
-        while (releaseSlots.length <= Number(t)) releaseSlots.push(new Map());
-        releaseSlots[Number(t)].set(Math.round(midiOfNote(note)), audio);
-        continue;
-      }
-      const [note, l = '0', t = '0'] = name.split('|');
-      bank[Number(l)][Number(t)].set(Math.round(midiOfNote(note)), audio);
+  const fill = (name: string, buffer: Tone.ToneAudioBuffer) => {
+    const audio = buffer.get();
+    if (!audio) return;
+    if (name.startsWith('rel|')) {
+      const [, note, t = '0'] = name.split('|');
+      while (releaseSlots.length <= Number(t)) releaseSlots.push(new Map());
+      releaseSlots[Number(t)].set(Math.round(midiOfNote(note)), audio);
+      return;
     }
+    const [note, l = '0', t = '0'] = name.split('|');
+    bank[Number(l)][Number(t)].set(Math.round(midiOfNote(note)), audio);
   };
-  // Playable once one loudness of every note is in (loadQuick); the rest join as they arrive
-  const attach = loadQuick(key).then((set) => {
-    fill(set);
-    if (set !== loadedSets[key]) void loadSamples(key).then(fill, () => {});
-  });
+  // Playable once its first recordings are in (loadQuick: what the song plays, or one loudness of
+  // every note); every other recording joins as it arrives
+  const loading = def.samples ? loadingOf(key) : undefined;
+  const extra = [...chain.nodes];
+  let attach: Promise<void>;
+  if (loading) {
+    for (const [name, buffer] of loading.have) fill(name, buffer);
+    loading.listeners.add(fill);
+    extra.push({ dispose: () => loading.listeners.delete(fill) });
+    attach = loadQuick(key).then(() => undefined);
+  } else attach = Promise.reject(new Error(`${key} has no samples`));
   const rel = def.samples?.releases;
-  // While the other loudnesses load, a note whose own has nothing near plays the first one
+  // A note whose own loudness has nothing near plays the first-loaded one's
   const firstSlot = bank[quickLayer(layers.length)]?.[0];
   const layer = (l: number) => bank[l][turn[l]++ % bank[l].length];
   const blend = (velocity: number) => {
@@ -1157,7 +1450,8 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     }
     return null;
   };
-  return samplerVoice({ slots: bank.flat(), pick, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, chain.nodes, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key));
+  const progress = loading ? { complete: () => isComplete(loading), want: (midi: number, velocity: number) => wantNote(loading, midi, velocity) } : {};
+  return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key));
 }
 
 /**
@@ -1201,6 +1495,32 @@ export async function triggerAuditionSampler(key: InstrumentKey, notes: string[]
   }
 }
 
+/** About how many bytes an instrument's loaded recordings take (each counted once). */
+function bytesOf(l: Loading | undefined, seen = new Set<AudioBuffer>()): number {
+  let bytes = 0;
+  for (const b of l?.have.values() ?? []) {
+    const audio = b.get();
+    if (!audio || seen.has(audio)) continue;
+    seen.add(audio);
+    bytes += audio.length * audio.numberOfChannels * 4;
+  }
+  return bytes;
+}
+
+/** About how many bytes every instrument's loaded recordings take (a recording two share counted once). */
+export function decodedSampleBytes(): number {
+  const seen = new Set<AudioBuffer>();
+  return Object.values(loadings).reduce((n, l) => n + bytesOf(l, seen), 0);
+}
+
+/** Let go of an instrument's recordings: they load again when next needed. */
+function forget(key: InstrumentKey): void {
+  delete loadings[key];
+  const at = backlog.indexOf(key);
+  if (at >= 0) backlog.splice(at, 1);
+  setStatus(key, 'unloaded');
+}
+
 /**
  * Let go of downloaded recordings no track uses (`keep`), and the instrument browser's preview
  * players: they're downloaded or rebuilt again when next needed. Returns about how many bytes of
@@ -1212,43 +1532,31 @@ export function forgetUnusedSamples(keep: Set<InstrumentKey>): number {
     auditionVoices[key]?.dispose();
     delete auditionVoices[key];
   }
-  for (const key of Object.keys(sampleSets) as InstrumentKey[]) {
+  for (const key of Object.keys(loadings) as InstrumentKey[]) {
     if (keep.has(key)) continue;
-    delete sampleSets[key];
-    for (const b of Object.values(loadedSets[key] ?? {})) bytes += b.length * b.numberOfChannels * 4;
-    delete loadedSets[key];
-    useAudioStore.getState().setInstrumentStatus(key, 'unloaded');
+    bytes += bytesOf(loadings[key]);
+    forget(key);
   }
-  // (The sets kept hold their own recordings)
-  recordings.clear();
   return bytes;
 }
 
 /** The instruments whose recordings are loaded (or loading). */
-export const loadedSampleKeys = (): InstrumentKey[] => Object.keys(sampleSets) as InstrumentKey[];
+export const loadedSampleKeys = (): InstrumentKey[] => Object.keys(loadings) as InstrumentKey[];
 
 /**
  * Let go of these instruments' recordings (no track plays them any more), leaving every other
- * instrument and the instrument browser's previews as they are. They load again if needed.
+ * instrument and the instrument browser's previews as they are. They load again if needed. One
+ * still downloading is left to finish. (A recording another instrument shares, as the guitars'
+ * amps do, stays with that one.)
  */
 export function forgetSampleSets(keys: InstrumentKey[]): void {
   for (const key of keys) {
-    const set = loadedSets[key];
-    if (!set) continue;
-    const source = INSTRUMENTS[key].samples;
-    delete sampleSets[key];
-    delete loadedSets[key];
-    delete quickSets[key];
-    // Their decoded recordings, unless another loaded instrument shares them (the guitars' amps)
-    const shared = new Set(Object.values(sampleSets).length ? Object.keys(loadedSets).flatMap((k) => Object.values(INSTRUMENTS[k as InstrumentKey].samples?.samples ?? {}).map((f) => INSTRUMENTS[k as InstrumentKey].samples!.baseUrl + f)) : []);
-    for (const file of Object.values(source?.samples ?? {})) {
-      const url = source!.baseUrl + file;
-      if (!shared.has(url)) recordings.delete(url);
-    }
-    useAudioStore.getState().setInstrumentStatus(key, 'unloaded');
+    const l = loadings[key];
+    if (l && !l.pending.size) forget(key);
   }
 }
 
 export function releaseAuditionSamplers(): void {
   Object.values(auditionVoices).forEach((v) => v?.releaseAll());
 }
+

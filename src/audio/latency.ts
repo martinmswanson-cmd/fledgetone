@@ -19,6 +19,16 @@ function nativeContext(): AudioContext {
   return raw._nativeAudioContext ?? (raw as unknown as AudioContext);
 }
 
+/**
+ * How long the live mix holds every track back (seconds): its delay compensation (see
+ * delayCompensation.ts), set by liveTracks.ts. The music heard now was scheduled this much earlier.
+ */
+let mixDelay = 0;
+export function setMixDelay(seconds: number): void {
+  mixDelay = seconds;
+}
+export const mixDelaySeconds = (): number => mixDelay;
+
 /** Seconds from a sample leaving the graph to the listener hearing it, as the browser reports it. */
 export function outputLatencySeconds(): number {
   const native = nativeContext();
@@ -39,7 +49,7 @@ export function heardTime(eventTime: number = performance.now()): number {
   const native = nativeContext();
   const stamp = typeof native.getOutputTimestamp === 'function' ? native.getOutputTimestamp() : undefined;
   if (stamp && stamp.contextTime !== undefined && stamp.performanceTime !== undefined && stamp.performanceTime > 0 && Math.abs(now - stamp.performanceTime) < 2000) {
-    return stamp.contextTime + (now - stamp.performanceTime) / 1000 - ago;
+    return stamp.contextTime + (now - stamp.performanceTime) / 1000 - ago - mixDelay;
   }
-  return liveContext().rawContext.currentTime - ago - outputLatencySeconds();
+  return liveContext().rawContext.currentTime - ago - outputLatencySeconds() - mixDelay;
 }

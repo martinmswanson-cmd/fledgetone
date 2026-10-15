@@ -14,6 +14,9 @@
  *   built again in each part that plays into it, and the copies add up to the one.
  * - The shared reverb (a convolver with a fixed impulse response) and delay (delay lines with a
  *   feedback gain, no saturation) are linear, so every part carries its own copy of them.
+ *   The lush reverb (an AudioWorklet whose slow drift runs only while it hears something) is the
+ *   exception: the parts send what they'd feed it, and it plays once over their sum, before the
+ *   master section (renderInParts in exportWav.ts).
  * - The Pump and ducking under a proxy track follow notes and clips, not sound: every part
  *   schedules the triggering notes (playing no instrument) and works out the same duck curve from
  *   the whole song, so they are the same in every part and need no grouping.

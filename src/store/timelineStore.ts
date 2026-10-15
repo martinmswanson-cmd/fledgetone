@@ -89,7 +89,7 @@ import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import { durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, seatOf } from '../audio/instrumentCatalog';
-import { hasRecordings, loadSamples } from '../audio/samplers/samplerManager';
+import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
@@ -1628,7 +1628,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         isInspectorOpen: true,
         ...pushPast(s),
       }));
-      if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
+      if (hasRecordings(instrumentKey)) void loadQuick(instrumentKey).catch(() => {});
       return newTrack.id;
     },
 
@@ -1968,7 +1968,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       );
       // A bus that becomes an instrument: the tracks that played into it go back to the master
       if (isMixTrack(current)) set((s) => ({ tracks: tidySends(tidyRoutes(s.tracks)) }));
-      if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
+      if (hasRecordings(instrumentKey)) void loadQuick(instrumentKey).catch(() => {});
     },
 
     toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted }), true),
@@ -2569,7 +2569,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         isSelected: true,
         notes: fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range).map((n) => ({ ...n, id: uid('note') })),
       };
-      if (hasRecordings(track.instrumentKey)) void loadSamples(track.instrumentKey).catch(() => {});
+      if (hasRecordings(track.instrumentKey)) void loadQuick(track.instrumentKey).catch(() => {});
       set((st) => ({
         tracks: [...st.tracks, track],
         clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
@@ -2887,10 +2887,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         isArmed: t.id === armedId,
       }));
 
-      // Start downloading samples for any sampled instruments
-      safeTracks.forEach((t: Track) => {
-        if (hasRecordings(t.instrumentKey)) void loadSamples(t.instrumentKey).catch(() => {});
-      });
+      // Start downloading the recorded instruments, what the song plays on each first
+      loadSongSamples(safeTracks, p.clips);
       const masterFx = p.masterFx ?? DEFAULT_MASTER_FX;
 
       set({

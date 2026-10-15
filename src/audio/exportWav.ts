@@ -14,6 +14,8 @@ import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel } from './effects/limiter';
+import { measureCompressorLatency } from './compressorLatency';
+import { compensateTracks } from './delayCompensation';
 import { createBusEffects, delaySeconds } from './effects/busEffects';
 import { createPumpClock, createTrackStrip } from './effects/trackStrip';
 import type { TrackStrip } from './effects/trackStrip';
@@ -29,7 +31,7 @@ import { isWarped } from '../store/warp';
 import { withControllerLanes } from '../store/ccLanes';
 import { secondsPerBar, stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
-import { hasRecordings, loadCustomSample, loadSamples } from './samplers/samplerManager';
+import { loadCustomSample, songSampleLoads } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
 import { cueChunks, loopChunk, markerCues } from './wavCues';
@@ -232,7 +234,7 @@ interface RenderPlan {
   passes: number;
 }
 
-/** `latency`: frames the output lags the Transport by (the master chain's look-ahead). */
+/** `latency`: frames the output lags the Transport by (the master chain's look-ahead and the tracks' delay compensation). */
 function planRender(opts: RenderOptions, latency = 0): RenderPlan {
   const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
   // 0.3 of a frame past the pre-roll. At round tempos many notes fall exactly on a frame (every
@@ -285,35 +287,16 @@ export function exportCues(opts: RenderOptions): WavCue[] {
   });
 }
 
-const masterLatency = new Map<number, Promise<number>>();
-
 /**
  * Frames the master compressor and limiter delay the sound by. The compressor is a
- * DynamicsCompressorNode with a fixed look-ahead (6 ms in Chrome, Firefox and Safari), measured
- * once per sample rate by sending a click through one; the look-ahead limiter (effects/limiter.ts)
- * adds its own fixed delay, or, where AudioWorklets can't run, the stand-in limiter (another
- * compressor) adds the compressor's. Without allowing for it every export came out late, out of
- * step with the timeline and with stems that skip the chain.
+ * DynamicsCompressorNode with a fixed look-ahead (measured: see compressorLatency.ts); the
+ * look-ahead limiter (effects/limiter.ts) adds its own fixed delay, or, where AudioWorklets can't
+ * run, the stand-in limiter (another compressor) adds the compressor's. Without allowing for it
+ * every export came out late, out of step with the timeline and with stems that skip the chain.
  */
-function masterChainLatency(sampleRate: number): Promise<number> {
-  let latency = masterLatency.get(sampleRate);
-  if (!latency) {
-    latency = (async () => {
-      const probe = new OfflineAudioContext(1, 4096, sampleRate);
-      const click = probe.createBuffer(1, 1, sampleRate);
-      click.getChannelData(0)[0] = 0.01; // well under the threshold, so the gain stays put
-      const source = probe.createBufferSource();
-      source.buffer = click;
-      source.connect(probe.createDynamicsCompressor()).connect(probe.destination);
-      source.start(0);
-      const out = (await probe.startRendering()).getChannelData(0);
-      let at = 0;
-      for (let i = 1; i < out.length; i++) if (Math.abs(out[i]) > Math.abs(out[at])) at = i;
-      return at + (probe.audioWorklet ? createLimiterKernel(sampleRate).latency : at);
-    })().catch(() => 0);
-    masterLatency.set(sampleRate, latency);
-  }
-  return latency;
+async function masterChainLatency(sampleRate: number): Promise<number> {
+  const compressor = await measureCompressorLatency(sampleRate);
+  return compressor + (typeof AudioWorkletNode !== 'undefined' ? createLimiterKernel(sampleRate).latency : compressor);
 }
 
 /** `promise`, or a rejection as soon as `signal` aborts. */
@@ -642,6 +625,11 @@ async function sideBySideHelps(): Promise<boolean> {
 async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?: (fraction: number) => void): Promise<Rendered> {
   const sampleRate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
   const latency = await masterChainLatency(sampleRate);
+  // The lush reverb is an AudioWorklet, which would put every part on Chromium's one shared
+  // worklet thread, and its slow drift runs only while it hears something, so copies of it in
+  // the parts wouldn't add up to the one: the parts send what they'd feed it, and it plays once,
+  // in the master pass (see renderGraph's reverbSends)
+  const lush = !opts.masterFx.room && opts.masterFx.roomStyle === 'lush';
   // Read live state before any context is swapped
   const masterDb = opts.ignoreMasterVolume ? 0 : getMasterVolume();
   // The bar moves as the work does: each part counts by its rough cost
@@ -666,7 +654,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
           done[i] = f;
           report();
         };
-        return renderGraph({ ...opts, signal: stop.signal }, part, progress, { latency }).catch((err: unknown) => {
+        return renderGraph({ ...opts, signal: stop.signal }, part, progress, { latency, reverbSends: lush }).catch((err: unknown) => {
           stop.abort(err);
           throw err;
         });
@@ -689,27 +677,46 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   results = [];
   opts.signal?.throwIfAborted();
 
-  // The master section, fed the sum where the mix bus would feed it
+  // The master section, fed the sum where the mix bus would feed it; with the lush reverb, it
+  // also plays the reverb, once, on the parts' summed sends (channels 3 and 4), into the mix bus
   const native = new OfflineAudioContext(2, plan.length, sampleRate);
   const context = new Tone.OfflineContext(native);
   const mix = await withContext(context, async () => {
     context.destination.volume.value = masterDb;
     const chain = createMixChain(context.destination, opts.masterFx, opts.bpm, opts.master);
-    // The parts' sound already has the bus's gain and the shared reverb and delay in it
-    chain.busFx.dispose();
-    [chain.bus, chain.auditionInput].forEach((n) => n.dispose());
-    await Promise.all([chain.inserts.ready(), chain.limiterReady]);
+    chain.auditionInput.dispose();
+    if (!lush) {
+      // The parts' sound already has the bus's gain and the shared reverb and delay in it
+      chain.busFx.dispose();
+      chain.bus.dispose();
+    }
+    await Promise.all([chain.inserts.ready(), chain.limiterReady, lush ? chain.busFx.ready : undefined]);
     return chain;
   });
   const source = native.createBufferSource();
   source.buffer = sum;
-  source.connect(nativeInputOf(mix.compressor));
+  const split = native.createChannelSplitter(sum.numberOfChannels);
+  const dry = native.createChannelMerger(2);
+  source.connect(split);
+  split.connect(dry, 0, 0);
+  split.connect(dry, 1, 1);
+  dry.connect(nativeInputOf(mix.compressor));
+  if (lush) {
+    const sends = native.createChannelMerger(2);
+    split.connect(sends, 2, 0);
+    split.connect(sends, 3, 1);
+    sends.connect(nativeInputOf(mix.busFx.reverbInput));
+  }
   source.start(0);
   const rendered = await abortable(native.startRendering(), opts.signal).finally(() => {
     source.disconnect();
     mix.inserts.dispose();
     mix.compressor.dispose();
     mix.disposeLimiter();
+    if (lush) {
+      mix.busFx.dispose();
+      mix.bus.dispose();
+    }
   });
   onProgress?.(1);
   return { channels: finishRender(rendered, plan, opts), sampleRate, reverbImpulse };
@@ -752,7 +759,7 @@ async function renderGraph(
   opts: RenderOptions,
   sounding: Track[],
   onProgress?: (fraction: number) => void,
-  premaster?: { latency: number }
+  premaster?: { latency: number; reverbSends?: boolean }
 ): Promise<{ rendered: AudioBuffer; plan: RenderPlan; reverbImpulse: AudioBuffer | undefined }> {
   // The buses these tracks play through come too (a stem of a bused track has its bus's sound),
   // each made before the tracks that play into it
@@ -767,7 +774,11 @@ async function renderGraph(
   const tracks = withControllerLanes(busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]), clips);
   const ending = opts.ending ?? 'ringOut';
   const bypassMaster = opts.bypassMaster || !!premaster;
-  const plan = planRender(opts, premaster ? premaster.latency : opts.bypassMaster ? 0 : await masterChainLatency(opts.sampleRate ?? DEFAULT_SAMPLE_RATE));
+  // Every track is held back to the slowest path through the mix (see delayCompensation.ts),
+  // worked out over the whole song so a stem, or a part of a mix, lines up with the full mix
+  const rate = opts.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  const alignment = compensateTracks(opts.tracks, await measureCompressorLatency(rate));
+  const plan = planRender(opts, alignment.total + (premaster ? premaster.latency : opts.bypassMaster ? 0 : await masterChainLatency(rate)));
   const { sampleRate, length } = plan;
   if (plan.keepLength < 1) throw new Error('the range is empty');
   const duration = length / sampleRate;
@@ -775,11 +786,11 @@ async function renderGraph(
   // Read live state before the global context is swapped
   const masterDb = opts.ignoreMasterVolume || premaster ? 0 : getMasterVolume();
 
-  // Download any sampled instruments first (shared with live playback, so usually instant)
-  for (const key of new Set(tracks.map((t) => t.instrumentKey))) {
-    if (!hasRecordings(key)) continue;
+  // Download the recordings the song plays first (shared with live playback, so usually instant):
+  // each recorded instrument's for the notes it plays here (see songSamples.ts)
+  for (const [key, loading] of songSampleLoads(tracks, clips)) {
     try {
-      await loadSamples(key);
+      await loading;
     } catch {
       throw new Error(`couldn't download the ${INSTRUMENTS[key].name} samples. Check your internet connection and try again.`);
     }
@@ -792,7 +803,9 @@ async function renderGraph(
   // A native OfflineAudioContext, not Tone's default standardized-audio-context wrapper: the
   // wrapper only builds the real audio graph when rendering starts, so notes created while
   // the render is suspended would never be heard. Native nodes join the live graph at once.
-  const native = new OfflineAudioContext(2, length, sampleRate);
+  // A part's reverb sends come out on channels 3 and 4, in place of the shared reverb (renderInParts)
+  const reverbSends = !!premaster?.reverbSends;
+  const native = new OfflineAudioContext(reverbSends ? 4 : 2, length, sampleRate);
   const context = new Tone.OfflineContext(native);
   finishedSources.set(context, []);
   let graph: Awaited<ReturnType<typeof buildGraph>>;
@@ -892,7 +905,19 @@ async function renderGraph(
     // offline context with one on a single shared thread, so the parts couldn't run side by side.
     const section = bypassMaster ? null : createMixChain(context.destination, masterFx, bpm, opts.master);
     const mixBus = section?.bus ?? new Tone.Gain(BUS_GAIN).connect(context.destination);
-    const busFx = section?.busFx ?? createBusEffects(mixBus, masterFx, bpm);
+    const busFx = section?.busFx ?? createBusEffects(mixBus, reverbSends ? { ...masterFx, roomStyle: 'hall' } : masterFx, bpm);
+    if (reverbSends) {
+      // Out on channels 3 and 4 (the stereo mix fills 1 and 2 and leaves them silent)
+      const raw = native.destination;
+      raw.channelInterpretation = 'discrete';
+      const split = native.createChannelSplitter(2);
+      const out = native.createChannelMerger(4);
+      busFx.reverbInput.disconnect();
+      Tone.connect(busFx.reverbInput, split);
+      split.connect(out, 0, 2);
+      split.connect(out, 1, 3);
+      out.connect(raw);
+    }
 
     const strips: TrackStrip[] = [];
     const stripOf = new Map<string, TrackStrip>();
@@ -918,6 +943,7 @@ async function renderGraph(
       });
       if (sends.length) stripOf.get(track.id)!.setSends(sends, false);
     }
+    for (const [id, strip] of stripOf) strip.setAlignment(alignment.delays.get(id) ?? null);
     await Promise.all([busFx.ready, section?.inserts.ready(), section?.limiterReady, ...[...instruments.values()].map((i) => i.ready)]);
     // Tone.Reverb keeps its impulse response on a native ConvolverNode (set by the time it's ready)
     const convolver = (busFx.reverb as unknown as { _convolver: ConvolverNode })._convolver;

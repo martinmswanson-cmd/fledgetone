@@ -12,6 +12,9 @@ import { INSTRUMENTS } from '../instrumentCatalog';
 import type { BusEffects } from './busEffects';
 import { createEcho, createReverb, type EchoUnit, type ReverbUnit } from './spaceFx';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
+import { smoothSet } from './smoothParam';
+import { createDelayLink, fixedDelay, type DelayLink } from './delayLink';
+import type { PathDelays } from '../delayCompensation';
 import {
   atControlTime,
   createLightChorus,
@@ -39,8 +42,12 @@ import {
  * One mixer channel per track:
  *   input -> Distortion -> EQ3 -> Compressor -> makeup gain -> Chorus -> Lo-fi -> Filter -> Delay
  *         -> Reverb -> Gate
- *         -> Pump -> (Volume lane) -> solo -> pan -> fader (vol/mute)
- *   fader -> master bus, plus post-fader sends to the shared reverb and delay.
+ *         -> Pump -> (Volume lane) -> (alignment delay) -> solo -> pan -> fader -> level (Intensity, mute)
+ *   level -> duck -> (dry delay) -> master bus, plus post-fader sends to the shared reverb and
+ *   delay; sends to returns (each with its own delay, when it needs one) after the pan or the duck.
+ *
+ * The three delays are delay compensation (see delayCompensation.ts and setAlignment): each
+ * exists only while it holds the sound back, and a change crossfades.
  *
  * An insert only exists while it's switched on (the EQ while any band is boosted or cut).
  * A bypassed insert is disposed and patched out of the chain rather than left running at
@@ -118,6 +125,12 @@ export interface TrackStrip {
    * is muted (a pre-fader send goes quiet with it).
    */
   setSends: (sends: ReadonlyArray<{ id: string; target: Tone.InputNode; level: number; pre: boolean }>, muted: boolean) => void;
+  /**
+   * Delay compensation (see delayCompensation.ts), in frames: `tail` after the inserts (before the
+   * sends are taken), `dry` on the way out, `sends` on each send to a return. Null: none. A change
+   * crossfades while playing.
+   */
+  setAlignment: (delays: PathDelays | null) => void;
   /** A send's level param, for its automation lane (null if it has no such send). */
   sendTarget: (returnId: string) => AutomationTarget | null;
   /**
@@ -138,8 +151,8 @@ type Link = [from: Tone.ToneAudioNode | AudioNode, to: Tone.ToneAudioNode | Audi
 
 /** An insert in the chain: where the signal goes in and where it comes out. */
 interface Insert {
-  input: Tone.ToneAudioNode;
-  output: Tone.ToneAudioNode;
+  input: Tone.ToneAudioNode | AudioNode;
+  output: Tone.ToneAudioNode | AudioNode;
 }
 
 /** An insert that can be disposed. */
@@ -268,24 +281,37 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     }
     const at = raw.currentTime;
     const tc = Math.max(0.001, ramp / 3);
-    far.shelf.gain.setTargetAtTime(-9 * distance, at, tc);
-    far.trim.gain.setTargetAtTime(10 ** ((-2.5 * distance) / 20), at, tc);
+    smoothSet(far.shelf.gain, -9 * distance, at, tc);
+    smoothSet(far.trim.gain, 10 ** ((-2.5 * distance) / 20), at, tc);
   };
 
-  // Intensity (see intensity.ts): the track's stem-group level, after the fader and before the sends
+  // Intensity (see intensity.ts): the track's stem-group level, after the fader and before the
+  // sends. Mute is here too (the level times 0 or 1), gliding like any other control: Tone's own
+  // mute on the fader jumped to silence and back, a click on a track that was sounding.
   const level = new Tone.Gain(1);
+  let intensity = 1;
+  let muted = false;
+  /** Glide the level to the Intensity times the mute, over about `ramp` seconds (0: at once). */
+  const writeLevel = (ramp: number) => smoothSet(level.gain, muted ? 0 : intensity, now(), ramp / 3);
   // Ducking under a dialogue / SFX proxy track (see duck.ts), played by the automation schedule
   const duck = new Tone.Gain(1);
   fader.connect(level);
   level.connect(duck);
-  duck.connect(bus);
   /** Where the strip plays into: the master bus, or a bus track's strip (setOutput) */
   let output: Tone.InputNode = bus;
+  /** Into it, held back by the dry part of the track's delay compensation (see setAlignment) */
+  const dryLink = createDelayLink(duck, bus);
   // The mixer's meter's samples (see peak)
   const meterData = new Float32Array(512);
   reverbSend.connect(busFx.reverbInput);
   /** Sends to return tracks, by return id (see setSends) */
-  const sends = new Map<string, { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean; link: ((need: boolean, ramp: number) => void) & { forget: () => void } }>();
+  const sends = new Map<
+    string,
+    { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean; link: ((need: boolean, ramp: number) => void) & { forget: () => void }; out: DelayLink }
+  >();
+  /** Delay compensation (see setAlignment): the tail's delay line in the chain, and the sends' delays by return id, in seconds */
+  let tailDelay: { input: DelayNode; output: DelayNode; seconds: number; dispose: () => void } | null = null;
+  let sendDelays: Record<string, number> = {};
   delaySend.connect(busFx.delayInput);
 
   /**
@@ -559,6 +585,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     if (pump) next.push(pump);
     if (laneGain) next.push({ input: laneGain.node, output: laneGain.node });
     if (fold) next.push(fold);
+    if (tailDelay) next.push(tailDelay);
     const unchanged = next.length === chain.length && next.every((ins, i) => ins.input === chain[i].input && ins.output === chain[i].output);
     const before = linksOf(chain);
     const links = linksOf(next);
@@ -693,9 +720,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
           break;
         case 'compressor':
           if (compressor && makeup) {
+            // (The compressor's own attack and release smooth a change of threshold or ratio)
             compressor.threshold.setValueAtTime(fx.compressor.threshold, Math.max(at, compressor.now()));
             compressor.ratio.setValueAtTime(fx.compressor.ratio, Math.max(at, compressor.now()));
-            makeup.gain.setValueAtTime(Tone.dbToGain(fx.compressor.makeup), Math.max(at, makeup.now()));
+            smoothSet(makeup.gain, Tone.dbToGain(fx.compressor.makeup), Math.max(at, makeup.now()), ramp / 3);
           }
           break;
         case 'chorus':
@@ -791,25 +819,28 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         if (wanted.has(id)) continue;
         // Faded out, then let go
         send.writer.set(0, 0.03);
-        const gone = send.gain;
+        const gone = send;
         send.link.forget();
         sends.delete(id);
-        window.setTimeout(() => gone.dispose(), 120);
+        window.setTimeout(() => {
+          gone.out.dispose();
+          gone.gain.dispose();
+        }, 120);
         version++;
       }
       for (const want of list) {
         let send = sends.get(want.id);
         if (send && (send.target !== want.target || send.pre !== want.pre)) {
-          const old = send.gain;
           send.link.forget();
-          old.dispose();
+          send.out.dispose();
+          send.gain.dispose();
           sends.delete(want.id);
           send = undefined;
         }
         if (!send) {
           const gain = new Tone.Gain(0);
-          gain.connect(want.target);
-          send = { gain, writer: writer(gain.gain, 0), target: want.target, pre: want.pre, link: sendLink(want.pre ? merge : duck, gain) };
+          const out = createDelayLink(gain, want.target, (sendDelays[want.id] ?? 0) / raw.sampleRate);
+          send = { gain, writer: writer(gain.gain, 0), target: want.target, pre: want.pre, link: sendLink(want.pre ? merge : duck, gain), out };
           sends.set(want.id, send);
           version++;
         }
@@ -818,6 +849,22 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         if (!lane) send.writer.set(level, 0.02);
         send.link(lane || level > 0, 0.02);
       }
+    },
+    setAlignment: (delays) => {
+      const seconds = (frames: number) => Math.max(0, frames) / raw.sampleRate;
+      sendDelays = delays?.sends ?? {};
+      dryLink.set(seconds(delays?.dry ?? 0));
+      for (const [id, send] of sends) send.out.set(seconds(sendDelays[id] ?? 0));
+      // The tail is a delay line at the end of the inserts, swapped in and out like any insert (a
+      // new length is a new one), so the change crossfades (see rewire)
+      const tail = seconds(delays?.tail ?? 0);
+      if (Math.abs((tailDelay?.seconds ?? 0) - tail) < 1e-9) return;
+      const retired = tailDelay ? [tailDelay] : [];
+      if (tail > 0) {
+        const node = fixedDelay(raw, tail);
+        tailDelay = { input: node, output: node, seconds: tail, dispose: () => node.disconnect() };
+      } else tailDelay = null;
+      rewire(retired);
     },
     sendTarget: (returnId) => {
       const send = sends.get(returnId);
@@ -830,10 +877,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     },
     setOutput: (target) => {
       if (target === output) return;
-      if (awake) {
-        Tone.disconnect(duck, output);
-        Tone.connect(duck, target);
-      }
+      if (awake) dryLink.retarget(target);
       output = target;
     },
     sleep: (asleep) => {
@@ -841,9 +885,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       if (!barrier || asleep === !awake) return;
       awake = !asleep;
       if (asleep) {
-        Tone.disconnect(duck, output);
+        dryLink.retarget(null);
         taps.forEach((drop) => drop());
-      } else Tone.connect(duck, output);
+      } else dryLink.retarget(output);
       linkSyncs.forEach((sync) => sync(0));
     },
     apply: (track, opts = {}) => {
@@ -853,7 +897,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       const busMakeup = INSTRUMENTS[track.instrumentKey]?.kind === 'bus' || INSTRUMENTS[track.instrumentKey]?.kind === 'return' ? Math.SQRT2 : 1;
       if (input.gain.value !== busMakeup) input.gain.value = busMakeup;
       const { eq: bands } = track;
-      const muted = opts.muteOverride ?? track.isMuted;
+      const mute = opts.muteOverride ?? track.isMuted;
       // A lane of an insert's setting only counts while the insert is on
       owned = new Set(
         activeLanes(track)
@@ -1013,9 +1057,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       }
 
       if (owned.has('volume')) {
-        if (!laneGain || retiring) takeVolume(track, muted, ramp);
+        if (!laneGain || retiring) takeVolume(track, mute, ramp);
       } else if (laneGain && !retiring) {
-        giveVolumeBack(track, muted, ramp);
+        giveVolumeBack(track, mute, ramp);
       }
 
       if (INSTRUMENTS[track.instrumentKey]?.mono) {
@@ -1036,7 +1080,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         panLeft.set(track.pan, ramp);
         panRight.set(-track.pan, ramp);
       }
-      fader.mute = muted;
+      if (mute !== muted) {
+        muted = mute;
+        writeLevel(ramp);
+      }
       if (opts.muteOverride === undefined) solo.solo = track.isSoloed;
 
       // Set back on the stage, more of the track reaches the hall
@@ -1060,12 +1107,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     },
     duckTarget: () => ({ writer: duckWriter, map: (v) => v }),
     setIntensityLevel: (gain, ramp = 0) => {
-      const g = Math.max(0, Math.min(1, gain));
-      const param = level.gain;
-      const t = now();
-      param.cancelScheduledValues(t);
-      if (ramp > 0) param.setTargetAtTime(g, t, ramp / 3);
-      else param.setValueAtTime(g, t);
+      intensity = Math.max(0, Math.min(1, gain));
+      writeLevel(ramp);
     },
     spectrum: (out) => {
       if (!awake) {
@@ -1129,6 +1172,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       clearTimeout(retireTimer);
       clearTimeout(tidyTimer);
       gates.forEach((g) => g.gain.disconnect());
+      dryLink.dispose();
+      sends.forEach((x) => x.out.dispose());
+      tailDelay?.dispose();
       [...leaving, distortion, eq, peq, mbc, compressorUnit, chorus, lofi, filter, echo, reverb, gateUnit, pump, fold, laneGain?.node, input, solo, fader, level, duck, reverbSend, delaySend, ...[...sends.values()].map((x) => x.gain)].forEach((n) => n?.dispose());
       [barrier, left, split, right, merge, far?.shelf, far?.trim].forEach((n) => n?.disconnect());
     },

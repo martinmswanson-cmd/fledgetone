@@ -573,7 +573,7 @@ export const TrackInspector: React.FC = () => {
                 <div className="flex items-center gap-1.5">
                   <Waves className="w-4 h-4 text-cyan-400" />
                   <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-                    Master Convolution Reverb
+                    Master Reverb
                   </span>
                 </div>
                 <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/30">
