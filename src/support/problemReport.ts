@@ -1,5 +1,6 @@
 import { liveContext } from '../audio/liveContext';
 import { chosenPlaybackMode } from '../audio/playbackMode';
+import { versionLabel } from '../version';
 import { usePerfStore } from '../audio/perfMonitor';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { useAudioStore } from '../store/audioStore';
@@ -41,6 +42,7 @@ export function technicalDetails(): string {
   const instruments = [...new Set(s.tracks.map((t) => INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey))];
   const notes = s.clips.reduce((n, c) => n + c.notes.length, 0);
   const lines = [
+    `Version: ${versionLabel()}`,
     `Page: ${location.origin}${location.pathname}`,
     `Browser: ${navigator.userAgent}`,
     `Screen: ${window.innerWidth}x${window.innerHeight} at ${window.devicePixelRatio}x`,

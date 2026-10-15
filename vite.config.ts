@@ -1,5 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 
@@ -78,6 +79,37 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
 THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.`
 
 // https://vite.dev/config/
+/**
+ * Which build this is, shown at the bottom of the app and written to dist/version.json, so a
+ * glance tells whether the site runs the version expected: the version (package.json, the top of
+ * CHANGELOG.md), the commit it was built from (Netlify's COMMIT_REF, else git's) and when.
+ */
+const pkgVersion: string = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).version
+const commit = (() => {
+  if (process.env.COMMIT_REF) return process.env.COMMIT_REF.slice(0, 7)
+  try {
+    return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  } catch {
+    return 'unknown'
+  }
+})()
+const builtAt = new Date().toISOString()
+
+function versionFile(): Plugin {
+  return {
+    name: 'version-file',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: `${JSON.stringify({ version: pkgVersion, commit, builtAt }, null, 2)}\n` })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), thirdPartyLicenses()],
+  plugins: [react(), thirdPartyLicenses(), versionFile()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkgVersion),
+    __APP_COMMIT__: JSON.stringify(commit),
+    __APP_BUILT__: JSON.stringify(builtAt),
+  },
 })

@@ -23,6 +23,9 @@ import { useTourStore } from './tour/tourStore';
 import { useUiStore } from './store/uiStore';
 import { startErrorLog } from './support/problemReport';
 import { LifeBuoy } from 'lucide-react';
+import changelogMarkdown from '../CHANGELOG.md?raw';
+import { GuidePanel } from './components/guide/GuidePanel';
+import { APP_BUILT, versionLabel } from './version';
 
 /** A computer-sized screen (the phone notice covers small touch screens instead). */
 const roomy = () => typeof window !== 'undefined' && window.innerWidth >= 900;
@@ -66,6 +69,13 @@ const Engines: React.FC = () => {
   return open ? <EnginesDialog onClose={() => useUiStore.getState().setDialog(null)} /> : null;
 };
 
+/** What's new (CHANGELOG.md), when it's open. */
+const WhatsNew: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'changes');
+  const close = React.useCallback(() => useUiStore.getState().setDialog(null), []);
+  return open ? <GuidePanel markdown={changelogMarkdown} title="What's new" onClose={close} /> : null;
+};
+
 /** Try it in a game, when it's open. */
 const TryOut: React.FC = () => {
   const open = useUiStore((s) => s.dialog === 'tryOut');
@@ -87,6 +97,7 @@ export const App: React.FC = () => {
       <CutToLength />
       <Engines />
       <TryOut />
+      <WhatsNew />
       <Learn />
 
       {/* Main Workstation Canvas: the arrangement, and the dock under it */}
@@ -102,6 +113,14 @@ export const App: React.FC = () => {
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
           <span>Fledgetone</span>
+          <button
+            type="button"
+            onClick={() => useUiStore.getState().setDialog('changes')}
+            className="hover:text-forge-text transition-colors"
+            title={`What's new in this version${APP_BUILT ? ` (built ${APP_BUILT.slice(0, 16).replace('T', ' ')} UTC)` : ''}`}
+          >
+            {versionLabel()}
+          </button>
         </div>
         <div className="flex items-center gap-4">
           <button

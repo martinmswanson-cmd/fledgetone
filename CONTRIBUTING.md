@@ -286,6 +286,8 @@ heard, attach a short before-and-after recording of the same phrase to the pull 
 - **Show it.** Screenshots for anything on screen; a before-and-after recording for anything you
   hear.
 - **Tests and the guide.** Pure logic gets a test; user-visible changes update `GUIDE.md`.
+- **The changelog.** A user-visible change adds a line, in plain words, to the newest section of
+  `CHANGELOG.md` (the maintainer starts a new dated section when releasing).
 - **All checks pass** (see [The checks](#the-checks)), including the one-file build.
 - **Small commits with clear messages** are easier to review than one large one.
 

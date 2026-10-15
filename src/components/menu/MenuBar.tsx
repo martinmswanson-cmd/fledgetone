@@ -13,6 +13,7 @@ import { reverseBlock } from '../../store/reverseActions';
 import { formatBarCount } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
+import { APP_VERSION } from '../../version';
 
 /**
  * The menu bar: every tool in the app, in the place a DAW keeps it (File, Edit, Song, Track,
@@ -325,6 +326,7 @@ const MENUS: MenuDef[] = [
       { label: 'Search everything', shortcut: PALETTE_SHORTCUT, run: () => ui().setPaletteOpen(true) },
       { label: 'Keyboard shortcuts', run: () => ui().openGuide('keyboard-shortcuts'), divider: true },
       { label: 'Report a problem…', run: () => ui().setDialog('report'), divider: true },
+      { label: `What's new (version ${APP_VERSION})`, run: () => ui().setDialog('changes') },
     ],
   },
 ];
