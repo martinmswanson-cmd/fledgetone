@@ -158,23 +158,36 @@ export const releaseConstant = (seconds: number) => seconds / Math.log(100);
 /** Release tail to let ring before stopping the sources: about -60 dB. */
 export const releaseTail = (seconds: number) => seconds * 1.5;
 
-const driveCurves = new Map<number, Float32Array<ArrayBuffer>>();
+const driveCurves = new Map<string, Float32Array<ArrayBuffer>>();
 
-/** A soft-clipping WaveShaper curve (tanh), `amount` 1 = gentle, 4 = hard. Shared, as nodes copy it. */
-function driveCurve(amount: number): Float32Array<ArrayBuffer> {
-  let curve = driveCurves.get(amount);
+/**
+ * A soft-clipping WaveShaper curve (tanh), `amount` 1 = gentle, 4 = hard. Shared, as nodes copy it.
+ * `pre` and `post` are gains before and after it, folded in: the input is scaled by `pre`, clipped
+ * to the curve's ends as a shaper would, and the result scaled by `post`. Points are spaced as
+ * finely as the plain curve's over the part the input really uses.
+ */
+function driveCurve(amount: number, pre: number, post: number): Float32Array<ArrayBuffer> {
+  const key = `${amount}|${pre}|${post}`;
+  let curve = driveCurves.get(key);
   if (!curve) {
-    curve = new Float32Array(2049);
+    const half = 1024 * Math.max(1, Math.ceil(pre));
+    curve = new Float32Array(2 * half + 1);
     const norm = Math.tanh(amount);
-    for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh((i / 1024 - 1) * amount) / norm;
-    driveCurves.set(amount, curve);
+    for (let i = 0; i < curve.length; i++) curve[i] = (post * Math.tanh(Math.max(-1, Math.min(1, (i / half - 1) * pre)) * amount)) / norm;
+    // A patch's drive knob makes a new curve per setting: keep the most recent few
+    if (driveCurves.size >= 32) driveCurves.delete(driveCurves.keys().next().value!);
+    driveCurves.set(key, curve);
   }
   return curve;
 }
 
-export function createDrive(raw: BaseAudioContext, amount: number): WaveShaperNode {
+/**
+ * A tanh drive. `pre` and `post` are a gain before and after it, built into its curve instead of
+ * being two more nodes (the same sound: gains commute with the shaper's oversampling filters).
+ */
+export function createDrive(raw: BaseAudioContext, amount: number, pre = 1, post = 1): WaveShaperNode {
   const shaper = raw.createWaveShaper();
-  shaper.curve = driveCurve(amount);
+  shaper.curve = driveCurve(amount, pre, post);
   // Clipping makes harmonics above the top of hearing, which fold back down as harsh, out-of-tune
   // fizz; shaped at four times the rate, they're filtered out before they can
   shaper.oversample = '4x';
@@ -221,20 +234,137 @@ export function phasedSaws(raw: BaseAudioContext, phases: readonly number[]): Pe
   let waves = sets.get(key);
   if (!waves) {
     waves = phases.map((phase) => {
-      const real = new Float32Array(SAW_PARTIALS + 1);
-      const imag = new Float32Array(SAW_PARTIALS + 1);
-      const shift = phase * 2 * Math.PI;
-      for (let k = 1; k <= SAW_PARTIALS; k++) {
-        // The saw's sine series, each partial rotated by k times the shift
-        const b = (k % 2 ? 2 : -2) / (Math.PI * k);
-        real[k] = b * Math.sin(k * shift);
-        imag[k] = b * Math.cos(k * shift);
-      }
+      const { real, imag } = phasedSawSeries(phase);
       return raw.createPeriodicWave(real, imag);
     });
     sets.set(key, waves);
   }
   return waves;
+}
+
+/** A sawtooth's harmonics with its cycle shifted by `phase` (0-1). */
+function phasedSawSeries(phase: number): { real: Float32Array; imag: Float32Array } {
+  const real = new Float32Array(SAW_PARTIALS + 1);
+  const imag = new Float32Array(SAW_PARTIALS + 1);
+  const shift = phase * 2 * Math.PI;
+  for (let k = 1; k <= SAW_PARTIALS; k++) {
+    // The saw's sine series, each partial rotated by k times the shift
+    const b = (k % 2 ? 2 : -2) / (Math.PI * k);
+    real[k] = b * Math.sin(k * shift);
+    imag[k] = b * Math.cos(k * shift);
+  }
+  return { real, imag };
+}
+
+/** One of phasedSaws' waves at `level` (see scaledWave): the oscillator needs no gain node after it. */
+export const phasedSaw = (raw: BaseAudioContext, phase: number, level: number): PeriodicWave =>
+  scaledWave(raw, `saw@${phase}`, () => phasedSawSeries(phase), level);
+
+/**
+ * The size of the table a browser builds a PeriodicWave in at `rate`, whose peak a normalized wave
+ * is scaled to 1 by (Chrome's sizes; Firefox and Safari normalize the same way).
+ */
+const waveTableSize = (rate: number) => (rate <= 24000 ? 2048 : rate <= 88200 ? 4096 : 16384);
+
+/** 1 / the peak of a wave's full-band table, as the browser normalizes it. Keyed by the wave's id and table size. */
+const normalizers = new Map<string, number>();
+
+function normalizer(id: string, real: Float32Array, imag: Float32Array, size: number): number {
+  const key = `${id}|${size}`;
+  let scale = normalizers.get(key);
+  if (scale === undefined) {
+    const partials = Math.min(real.length - 1, size / 2 - 1);
+    const table = new Float64Array(size);
+    for (let k = 1; k <= partials; k++) {
+      const a = real[k];
+      const b = imag[k];
+      if (!a && !b) continue;
+      // cos and sin of 2 pi k i / size, by turning a unit vector a step per sample (renormalized now and then)
+      const stepCos = Math.cos((2 * Math.PI * k) / size);
+      const stepSin = Math.sin((2 * Math.PI * k) / size);
+      let c = 1;
+      let s = 0;
+      for (let i = 0; i < size; i++) {
+        table[i] += a * c + b * s;
+        const turned = c * stepCos - s * stepSin;
+        s = s * stepCos + c * stepSin;
+        c = turned;
+        if ((i & 255) === 255) {
+          const r = Math.hypot(c, s);
+          c /= r;
+          s /= r;
+        }
+      }
+    }
+    let peak = 0;
+    for (let i = 0; i < size; i++) peak = Math.max(peak, Math.abs(table[i]));
+    scale = peak > 0 ? 1 / peak : 1;
+    normalizers.set(key, scale);
+  }
+  return scale;
+}
+
+const scaledWaves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>();
+
+/**
+ * A wave played at `level` of its normalized self: exactly what the browser's normalized wave
+ * through a gain of `level` sounds like, from one oscillator and no gain node. `id` names the
+ * coefficients (`make` builds them); built once per context and level, the most recent 48 kept.
+ * `phase` (0-1) starts it that far into its cycle.
+ */
+export function scaledWave(raw: BaseAudioContext, id: string, make: () => { real: Float32Array; imag: Float32Array }, level: number, phase = 0): PeriodicWave {
+  let waves = scaledWaves.get(raw);
+  if (!waves) scaledWaves.set(raw, (waves = new Map()));
+  const key = `${id}|${level}|${phase}`;
+  let wave = waves.get(key);
+  if (!wave) {
+    const { real, imag } = make();
+    const scale = level * normalizer(id, real, imag, waveTableSize(raw.sampleRate));
+    const r = real.map((v) => v * scale);
+    const i = imag.map((v) => v * scale);
+    if (phase) {
+      // Each harmonic turned by k times the shift: the same wave, `phase` of a cycle further on
+      for (let k = 1; k < r.length; k++) {
+        const c = Math.cos(2 * Math.PI * k * phase);
+        const sn = Math.sin(2 * Math.PI * k * phase);
+        const a = r[k];
+        const b = i[k];
+        r[k] = a * c + b * sn;
+        i[k] = b * c - a * sn;
+      }
+    }
+    wave = raw.createPeriodicWave(r, i, { disableNormalization: true });
+    // A patch's level knob makes a new wave per setting: keep the most recent ones
+    if (waves.size >= 48) waves.delete(waves.keys().next().value!);
+    waves.set(key, wave);
+  }
+  return wave;
+}
+
+/**
+ * The browser's own sine, square, sawtooth or triangle at `level` (see scaledWave): the same
+ * series and number of harmonics as its built-in waves.
+ */
+export function builtinWave(raw: BaseAudioContext, type: 'sine' | 'square' | 'sawtooth' | 'triangle', level: number, phase = 0): PeriodicWave {
+  const size = waveTableSize(raw.sampleRate);
+  return scaledWave(
+    raw,
+    `builtin:${type}:${size}`,
+    () => {
+      const n = size / 2;
+      const real = new Float32Array(n);
+      const imag = new Float32Array(n);
+      for (let k = 1; k < n; k++) {
+        if (type === 'sine') imag[k] = k === 1 ? 1 : 0;
+        else if (type === 'square') imag[k] = k % 2 ? 4 / (Math.PI * k) : 0;
+        else if (type === 'sawtooth') imag[k] = (k % 2 ? 2 : -2) / (Math.PI * k);
+        else imag[k] = k % 2 ? (8 / (Math.PI * k) ** 2) * ((k - 1) % 4 ? -1 : 1) : 0;
+      }
+      return { real, imag };
+    },
+    level,
+    phase
+  );
 }
 
 const leveledWaves = new WeakMap<BaseAudioContext, Map<string, PeriodicWave>>();
