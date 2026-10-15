@@ -8,20 +8,37 @@
  * shorter its lows and highs ring than its middle. The `decay` (seconds) is the middle's.
  *
  * Pure numbers (no Web Audio), so it can be tested; the result goes into the reverb's convolver.
+ * One style, 'lush', isn't a convolution: it's the algorithmic reverb in lushReverb.ts, which takes
+ * its low and high multipliers from here; its impulse response here is the hall's, which stands in
+ * where that reverb can't run.
  */
 
-export type RoomStyle = 'hall' | 'chamber' | 'church' | 'studio' | 'plate';
+export type RoomStyle = 'hall' | 'chamber' | 'church' | 'studio' | 'plate' | 'lush';
 
-export const ROOM_STYLES: Record<RoomStyle, { name: string; about: string; preDelay: number; build: number; low: number; high: number; reflections: Array<[time: number, gain: number, side: number]> }> = {
-  hall: {
-    name: 'Concert hall',
-    about: 'A large hall: warm, wide, the lows ringing a little longer.',
-    preDelay: 0.022,
-    build: 0.06,
-    low: 1.25,
-    high: 0.5,
-    reflections: [[0.019, 0.5, -0.6], [0.027, 0.45, 0.7], [0.041, 0.35, -0.3], [0.053, 0.3, 0.4], [0.067, 0.25, -0.8], [0.079, 0.2, 0.9]],
-  },
+/** A room style's design. `algorithmic`: played by the lush reverb (lushReverb.ts), not the convolver. */
+export interface RoomDesign {
+  name: string;
+  about: string;
+  preDelay: number;
+  build: number;
+  low: number;
+  high: number;
+  reflections: Array<[time: number, gain: number, side: number]>;
+  algorithmic?: boolean;
+}
+
+const HALL: RoomDesign = {
+  name: 'Concert hall',
+  about: 'A large hall: warm, wide, the lows ringing a little longer.',
+  preDelay: 0.022,
+  build: 0.06,
+  low: 1.25,
+  high: 0.5,
+  reflections: [[0.019, 0.5, -0.6], [0.027, 0.45, 0.7], [0.041, 0.35, -0.3], [0.053, 0.3, 0.4], [0.067, 0.25, -0.8], [0.079, 0.2, 0.9]],
+};
+
+export const ROOM_STYLES: Record<RoomStyle, RoomDesign> = {
+  hall: HALL,
   chamber: {
     name: 'Chamber',
     about: 'A smaller room for a few players: close, clear, a quick bloom.',
@@ -58,6 +75,14 @@ export const ROOM_STYLES: Record<RoomStyle, { name: string; about: string; preDe
     high: 0.9,
     reflections: [],
   },
+  lush: {
+    ...HALL,
+    name: 'Lush',
+    about: 'A smooth, dense, slowly shimmering tail with no hard echoes. Pads, ballads, ambient; light on the computer even when long.',
+    low: 1.25,
+    high: 0.55,
+    algorithmic: true,
+  },
 };
 
 export const ROOM_STYLE_IDS = Object.keys(ROOM_STYLES) as RoomStyle[];
@@ -79,7 +104,7 @@ function noise(seed: number) {
  * level about the same.
  */
 export function roomChannels(style: RoomStyle, decay: number, sampleRate: number): [Float32Array<ArrayBuffer>, Float32Array<ArrayBuffer>] {
-  const room = ROOM_STYLES[style] ?? ROOM_STYLES.hall;
+  const room = style === 'lush' ? HALL : (ROOM_STYLES[style] ?? HALL);
   const rt = Math.max(0.2, decay);
   const seconds = Math.min(12, room.preDelay + rt * Math.max(1, room.low) * 1.1);
   const n = Math.max(1, Math.round(seconds * sampleRate));
