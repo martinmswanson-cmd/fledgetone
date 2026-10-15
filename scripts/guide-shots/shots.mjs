@@ -86,7 +86,7 @@ export const SHOTS = [
   {
     file: 'courier', section: 'scoring-to-a-video', after: 'end', video: '/video/courier.mp4', poster: '/video/courier-poster.webp', sound: true, ai: true,
     alt: 'AI-generated game-style footage of a small courier drone, with an electronic score made in Fledgetone that hits each of its cuts.',
-    caption: 'Another style: a modern electronic score with a growl bass, 808 slides, filter sweeps and a tempo change at each cut.',
+    caption: 'Another style: a modern electronic score with a growl bass, 808 slides, filter sweeps and a tempo change at each cut, plus sound effects from the sound effects maker.',
   },
   {
     file: 'video-tab', section: 'scoring-to-a-video', after: 'end', ai: true,
