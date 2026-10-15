@@ -459,3 +459,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   frame held while the chord rings, as `site/video/first-flight.mp4` (H.264 + AAC, faststart):
   `ffmpeg -i film.mp4 -i song.wav -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=2.6,fade=t=out:st=16.4:d=1.2,format=yuv420p[v];[1:a]atrim=0:17.6,afade=t=out:st=16.2:d=1.4[a]" -map "[v]" -map "[a]" -c:v libx264 -crf 22 -c:a aac -b:a 192k -movflags +faststart -t 17.6 site/video/first-flight.mp4`.
   Every picture or clip of the film carries an "AI-generated" note; the music doesn't need one.
+- **Courier**, the second scored film on the website (synths, 121.68 BPM, cuts on bars 3, 5 and 7):
+  `site/video/courier.fledgetone.json`, shown as `site/video/courier.mp4`. The film is AI-generated
+  (an original drone-courier story, deliberately not based on any existing game); it's in the owner's
+  Higgsfield library. Re-export it the same way as First Flight if the synths change.

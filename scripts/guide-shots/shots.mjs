@@ -84,6 +84,11 @@ export const SHOTS = [
     caption: 'The finished result: strings, horns, harp, flute and taiko written to the film\'s cuts at 117.76 BPM.',
   },
   {
+    file: 'courier', section: 'scoring-to-a-video', after: 'end', video: '/video/courier.mp4', poster: '/video/courier-poster.webp', sound: true, ai: true,
+    alt: 'An AI-generated film of a small courier drone crossing an alien world, with a synth score made in Fledgetone that hits each of its cuts.',
+    caption: 'Another style: synths, drums and a Reese bass, written to the cuts at 121.68 BPM.',
+  },
+  {
     file: 'video-tab', section: 'scoring-to-a-video', after: 'end', ai: true,
     alt: 'The Video tab: the reference video, its start, Find cuts, Dip under dialogue, hit points, the tempo finder and exports.',
     caption: 'The Video tab has everything for scoring in one place.',
