@@ -1,4 +1,4 @@
-// Unit tests for the Human insert's note drift (src/audio/human.ts). Run with `npm test`.
+// Unit tests for the Human insert's note drift (src/audio/human.ts), and the feel new tracks start with (playerFeel). Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -52,4 +52,12 @@ test('detuned moves a note by cents as a frequency', () => {
   assert.equal(detuned('A4', 1200, freq), '880.000hz');
   assert.equal(detuned('A4', -10, freq), `${(440 * 2 ** (-10 / 1200)).toFixed(3)}hz`);
   assert.equal(detuned('???', 10, freq), '???');
+});
+
+const { playerFeel } = await import('../src/audio/instrumentCatalog.ts');
+
+test('new tracks on recorded instruments start with a player\u2019s feel; synths and drum machines play exactly', () => {
+  for (const key of ['realViolins', 'realFlute', 'studioKit', 'acousticKit', 'realElectricBass']) assert.ok(playerFeel(key), key);
+  assert.ok(playerFeel('studioKit').timing < playerFeel('realViolins').timing, 'a drummer is tighter in time than a section');
+  for (const key of ['drums', 'drumMachine', 'chipDrums', 'linnDrum', 'cr78', 'technoKit', 'supersaw', 'synthDesigner', 'audio']) assert.equal(playerFeel(key), undefined, key);
 });
