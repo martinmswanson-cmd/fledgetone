@@ -91,7 +91,7 @@ test('each note has every loudness layer and take (a sparse set: one near it), l
 
 test('the sets decoded at twice the rate name rows and sets that exist', () => {
   const flagged = Object.values(INSTRUMENTS).filter((d) => d.samples?.doubleRate);
-  assert.ok(flagged.length >= 5);
+  assert.ok(flagged.length >= 4);
   for (const d of flagged) {
     const rows = d.samples.doubleRate;
     if (rows === true) continue;

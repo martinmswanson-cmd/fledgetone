@@ -313,9 +313,10 @@ const real = (folder: string, release: number): SampleSource => {
  * those with the most of their sound above 8 kHz, measured over the first second of the loudest
  * recordings (harmonica -13 dB of the whole, trombone short notes -29, harpsichord -30,
  * glockenspiel -31; next come the solo violin and short trumpet at -32, the kalimba at -34, and the
- * xylophone, tubular bells, steel drums and vibraphone at -46 to -88, little to gain).
+ * xylophone, tubular bells, steel drums and vibraphone at -46 to -88, little to gain). The harpsichord
+ * is left out: its set is large (about 126 MB decoded), so doubling it would cost 100 MB for a small gain.
  */
-const DOUBLE_RATE_SETS = new Set(['harmonica', 'trombone-staccato', 'harpsichord', 'glockenspiel']);
+const DOUBLE_RATE_SETS = new Set(['harmonica', 'trombone-staccato', 'glockenspiel']);
 /** The studio kit's brightest rows, measured the same way: closed hat -7 dB, crash -11, open hat -12, ride -16, snare -23 (the toms and kick -35 and under). */
 const STUDIO_KIT_BRIGHT_ROWS = ['F#1', 'C#2', 'A#1', 'D#2', 'D1'] as const;
 /** A hosted release set (see ReleaseSounds) */
