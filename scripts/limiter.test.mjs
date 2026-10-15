@@ -1,8 +1,23 @@
-// The master limiter (src/audio/effects/limiter.ts): true peaks stay under the ceiling, quiet sound passes untouched, and it delays by its stated latency.
+// The master limiter (src/audio/effects/limiter.ts): true peaks stay under the ceiling, quiet sound passes untouched, and it delays by its stated latency. Also the export's loudness targets (loudnessTarget.ts), which use it.
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
+
 const { createLimiterKernel, LIMITER_WORKLET_SOURCE } = await import('../src/audio/effects/limiter.ts');
+const { truePeakOf, measureLoudness } = await import('../src/audio/loudness.ts');
+const { reachTarget, targetById, MAX_LIMITING_DB } = await import('../src/audio/loudnessTarget.ts');
 const SR = 48000;
 
 function run(kernel, l, r, ceiling = 10 ** (-1 / 20), release = 0.06) {
@@ -68,4 +83,55 @@ test('the gain comes down smoothly before a peak, not as a step', () => {
 test('the worklet module embeds the kernel', () => {
   assert.match(LIMITER_WORKLET_SOURCE, /registerProcessor\('bbx-limiter'/);
   assert.doesNotThrow(() => new Function('AudioWorkletProcessor', 'registerProcessor', 'sampleRate', LIMITER_WORKLET_SOURCE)(class {}, () => {}, 48000));
+});
+
+// Bright, dense material whose peaks between samples a cubic estimate misses: a drum hit starting
+// mid-cycle, a tone near the top of hearing, a square wave and noise
+const BRIGHT = [
+  (i) => (i % 11025 < 300 ? 0.9 * Math.sin(i * 0.3) * Math.exp(-(i % 11025) / 60) : 0) + 0.02 * Math.sin((2 * Math.PI * 110 * i) / SR),
+  (i) => 0.9 * Math.sin((2 * Math.PI * 15000 * i) / SR + 0.3),
+  (i) => (i % 100 < 50 ? 0.9 : -0.9),
+  (i) => ((Math.sin(i * 12.9898) * 43758.5453) % 1),
+];
+
+test('true peaks stay under the ceiling as a true-peak meter (BS.1770, as the export reports) reads them', () => {
+  const ceiling = 10 ** (-1 / 20);
+  for (const make of BRIGHT) {
+    for (const gainDb of [0, 8]) {
+      const g = 10 ** (gainDb / 20);
+      const x = Float32Array.from({ length: SR }, (_, i) => make(i) * g);
+      const [y, z] = run(createLimiterKernel(SR), x, x, ceiling);
+      assert.ok(truePeakOf([y, z]) <= ceiling * 1.001, `${make} at +${gainDb} dB: ${(20 * Math.log10(truePeakOf([y, z]))).toFixed(2)} dBTP`);
+    }
+  }
+});
+
+test('NaN and infinity in come out as silence, and the sound after them is untouched', () => {
+  const k = createLimiterKernel(SR);
+  const x = Float32Array.from({ length: 4800 }, (_, i) => 0.3 * Math.sin((2 * Math.PI * 440 * i) / SR));
+  x[1000] = NaN;
+  x[2000] = Infinity;
+  const [y] = run(k, x, x);
+  assert.ok(y.every(Number.isFinite));
+  for (let i = 2100 + k.latency; i < x.length; i++) assert.ok(Math.abs(y[i] - x[i - k.latency]) < 1e-6);
+});
+
+test('a loudness target is reached with peaks under -1 dBTP, and the report says what was done', async () => {
+  const ceiling = 10 ** (-1 / 20);
+  for (const make of BRIGHT) {
+    for (const id of ['streaming', 'loud']) {
+      const l = Float32Array.from({ length: SR * 4 }, (_, i) => 0.3 * make(i));
+      const r = l.slice();
+      const reading = await measureLoudness([l, r], SR);
+      const target = targetById(id);
+      const got = await reachTarget([l, r], SR, reading, target);
+      const after = await measureLoudness([l, r], SR);
+      assert.ok(truePeakOf([l, r]) <= ceiling * 1.001, `${id}: ${after.truePeakMax.toFixed(2)} dBTP`);
+      assert.ok(Math.abs(after.integrated - got.reading.integrated) < 0.05, 'the reading is the file\u2019s');
+      assert.ok(got.limitedDb <= MAX_LIMITING_DB + 1e-9);
+      // Short of the target only when the limiting it would take is more than allowed
+      if (got.shortDb > 0.3) assert.ok(got.capped, `${id}: ${got.shortDb.toFixed(2)} dB short with ${got.limitedDb.toFixed(1)} dB of limiting`);
+      else assert.ok(Math.abs(after.integrated - target.lufs) < 0.35, `${id}: ${after.integrated.toFixed(2)} LUFS`);
+    }
+  }
 });

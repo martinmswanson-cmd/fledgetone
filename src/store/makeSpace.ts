@@ -1,7 +1,8 @@
 /**
  * Make space: small EQ moves so the parts of a mix stop covering each other, the way a mix engineer
- * carves room. From the notes each track plays it works out who does what (the bass, the lead
- * melody, the parts supporting them) and then, on each track's parametric EQ:
+ * carves room. From the notes each track plays (where they sound: a synth patch playing an octave
+ * down counts an octave down) it works out who does what (the bass, the lead melody, the parts
+ * supporting them) and then, on each track's parametric EQ:
  *   - every part above the bass loses the rumble under its lowest note (a low cut), so the bass
  *     owns the bottom;
  *   - parts reaching down into the bass's octaves are thinned a little there (a low shelf);
@@ -19,6 +20,19 @@ const median = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.floor(s.length / 2)];
 };
+
+/**
+ * How far a Synth Designer track's lowest sound is from its written notes, in semitones: a patch's
+ * oscillators can play octaves down, and its sub is an octave under the note, so a part written
+ * at C3 can sound at C2. Its low cut has to be under that, or it takes the part's fundamental.
+ */
+function lowestShift(t: Track): number {
+  const p = t.synth;
+  if (!p) return 0;
+  const shifts = [p.osc1, p.osc2].filter((o) => o.on && o.level > 0).map((o) => o.octave * 12 + o.semi);
+  if (p.sub > 0) shifts.push(-12);
+  return shifts.length ? Math.min(...shifts) : 0;
+}
 
 /** A track's notes are a single line (a melody) when hardly any start together. */
 function isLine(notes: Clip['notes']): boolean {
@@ -40,7 +54,8 @@ export function makeSpace(tracks: Track[], clips: Clip[]): { tracks: Track[]; ch
       const category = INSTRUMENTS[t.instrumentKey]?.category;
       if (!kind || ['drums', 'fx', 'audio', 'bus', 'return', 'slicer', 'rack'].includes(kind) || category === 'Drums & Percussion' || category === 'Sound Effects') return null;
       const notes = clips.filter((c) => c.trackId === t.id && !c.audio).flatMap((c) => c.notes);
-      const midis = notes.map((n) => midiOf(n.note)).filter(Number.isFinite);
+      const shift = lowestShift(t);
+      const midis = notes.map((n) => midiOf(n.note) + shift).filter(Number.isFinite);
       if (midis.length < 4) return null;
       return { track: t, notes, midis, low: Math.min(...midis), high: Math.max(...midis), mid: median(midis), line: isLine(notes) };
     })

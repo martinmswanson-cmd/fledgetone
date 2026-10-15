@@ -32,8 +32,9 @@ export const MAX_LIMITING_DB = 8;
 
 /**
  * Bring `channels` (changed in place) to `target`. Returns the new reading, how many dB the
- * limiter took off the peaks (0: it wasn't needed), and how far under the target the file stayed
- * (0: on target) when reaching it would have needed more than MAX_LIMITING_DB.
+ * limiter took off the peaks (0: it wasn't needed), how far under the target the file stayed (0:
+ * on target), and whether that's because reaching it would have needed more than
+ * MAX_LIMITING_DB (`capped`).
  */
 export async function reachTarget(
   channels: Float32Array[],
@@ -41,28 +42,33 @@ export async function reachTarget(
   reading: LoudnessReading,
   target: LoudnessTarget,
   signal?: AbortSignal
-): Promise<{ reading: LoudnessReading; limitedDb: number; shortDb: number }> {
+): Promise<{ reading: LoudnessReading; limitedDb: number; shortDb: number; capped: boolean }> {
   const { gainDb, limited } = normalizeGainDb(reading, target.lufs, LIMITER_CEILING_DBTP);
   if (!limited) {
     const g = Math.pow(10, gainDb / 20);
     if (gainDb !== 0) for (const ch of channels) for (let i = 0; i < ch.length; i++) ch[i] *= g;
-    return { reading: { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb }, limitedDb: 0, shortDb: 0 };
+    return { reading: { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb }, limitedDb: 0, shortDb: 0, capped: false };
   }
   // Turn it up to the target (or as far as the limiter may go), then limit. Limiting takes a
-  // little loudness off, so the gain is nudged once more after measuring.
+  // little loudness off, more the harder it works, so the gain is nudged after measuring: by what
+  // was missing, then by what was missing over how much of the last nudge came through
   const wanted = target.lufs - reading.integrated;
   const most = gainDb + MAX_LIMITING_DB;
   const original = channels.map((ch) => ch.slice());
   let push = Math.min(wanted, most);
   let result = reading;
-  for (let pass = 0; pass < 2; pass++) {
+  let before: { push: number; lufs: number } | null = null;
+  for (let pass = 0; ; pass++) {
     limitInto(original, channels, sampleRate, push);
     result = await measureLoudness(channels, sampleRate, signal);
     const missing = target.lufs - result.integrated;
-    if (Math.abs(missing) < 0.3 || push >= most) break;
-    push = Math.min(most, push + missing);
+    if (pass === 2 || Math.abs(missing) < 0.3 || (missing > 0 && push >= most)) break;
+    const through = before && push !== before.push ? (result.integrated - before.lufs) / (push - before.push) : 1;
+    before = { push, lufs: result.integrated };
+    push = Math.min(most, push + missing / Math.max(0.25, Math.min(1, through)));
   }
-  return { reading: result, limitedDb: Math.max(0, push - gainDb), shortDb: Math.max(0, target.lufs - result.integrated) };
+  const shortDb = Math.max(0, target.lufs - result.integrated);
+  return { reading: result, limitedDb: Math.max(0, push - gainDb), shortDb, capped: shortDb > 0 && push >= most };
 }
 
 /** `out` = `source` turned up by `gainDb` through the look-ahead limiter, lined up in time. */

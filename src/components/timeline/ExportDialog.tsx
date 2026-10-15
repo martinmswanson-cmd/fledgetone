@@ -402,7 +402,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Matching the loudness' });
           const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal);
           reading = reached.reading;
-          if (reached.shortDb > 0.3)
+          if (reached.shortDb > 0.3 && reached.capped)
             note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the master OTT and raise its Out gain`;
           else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;
         }
