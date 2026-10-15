@@ -1,5 +1,6 @@
 import { FOUR_FOUR, meterAt, secondsBetween, tempoAt, type Meter, type MeterMap, type MeterPoint, type TempoMap, type TempoPoint } from './tempoMap';
 import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, ditherSeedOf, channelsOf, type SampleRate } from './exportWav';
+import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
 import { defaultCurve, groupsInUse, type IntensityCurve } from '../store/intensity';
 import { renderStinger } from './stingerPlayer';
 import { createZip, type ZipEntry } from './zip';
@@ -406,6 +407,7 @@ export async function buildGameKit(song: GameKitSong, onProgress?: (fraction: nu
     out.push({ name: 'players/unity/AdaptiveMusicExample.cs', data: text(unityExample) });
     out.push({ name: 'README.txt', data: text(readme(manifest)) });
   }
+  out.push({ name: EXPORTED_FILES_LICENCE_NAME, data: text(EXPORTED_FILES_LICENCE) });
   onProgress?.(1, 'zip');
   return createZip(out);
 }

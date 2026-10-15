@@ -8,6 +8,11 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-12 — Clearer terms
+
+- The terms of use now cover more: lost work, loud sound and flashing visualisers, music written by the tools, sounds everyone shares, and an age of 13 or older.
+- The scripts and players Fledgetone writes into game kits and FMOD/Wwise packages can be used in any game or app, closed-source and paid ones included, under any licence. Each such export carries a LICENSE-exported-files.txt saying so.
+
 ## 2026.10.15-11 — Terms of use
 
 - Fledgetone has terms of use (**Terms** at the bottom of the page, or **Help › Terms of use**): everything you make is yours, and you're responsible for what you make and use.

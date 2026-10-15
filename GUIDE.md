@@ -1131,7 +1131,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 
 Something not working, sounding wrong or crashing? Click **Report a problem** at the bottom of the page (or search for *report*). Describe what you were doing, what you expected and what happened instead, and add your email if you'd like a reply. **Email it** opens your email program with the report addressed to martin@twobirdsworkshop.com; **Copy report** copies it to paste anywhere. You can also use the contact form at twobirdsworkshop.com (pick **SOMETHING'S BROKEN**).
 
-**Your music is yours.** Everything you make with Fledgetone belongs to you, to use, sell or share as you like; your songs stay on your computer. **Terms** at the bottom of the page (or **Help › Terms of use**) has the full terms, including what you're responsible for and what Fledgetone isn't.
+**Your music is yours.** Everything you make with Fledgetone belongs to you, to use, sell or share as you like; your songs stay on your computer. **Terms** at the bottom of the page (or **Help › Terms of use**) has the full terms, including what you're responsible for and what Fledgetone isn't. Keep backups of your projects: Fledgetone isn't responsible for lost work. The scripts and players Fledgetone writes into game kits can go in any game, closed-source and paid ones included (each such export has a LICENSE-exported-files.txt saying so).
 
 With **Include technical details** ticked (it is unless you untick it), the report also carries your browser, audio settings, the size of the song (tracks, clips, notes, tempo, instruments) and the last few errors the page hit; **See exactly what's included** shows all of it. Your song itself isn't sent: if the problem is in one song, **Save** it and attach the file.
 
