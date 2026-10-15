@@ -187,31 +187,31 @@ const MUTOPIA = 'https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=';
 const IMSLP = 'https://imslp.org/wiki/Special:ImagefromIndex/';
 export const SCORE_CREDITS: ScoreCredit[] = [
   {
-    starters: ['canon', 'canonTrap'],
+    starters: ['canon'],
     piece: 'Canon in D, Johann Pachelbel (complete)',
     source: `Written out from Max Seiffert's edition (Kistner & Siegel, 1929, [IMSLP #44549](${IMSLP}44549)), the violins' line checked note by note against Alan Ernest Bonds's edition ([IMSLP #1022928](${IMSLP}1022928), CC0); the editors' dynamics, ornaments and keyboard part are not used`,
     licence: `${PD} (the edition it was checked against: ${CC0})`,
   },
   {
-    starters: ['moonlight', 'moonlightDrill'],
+    starters: ['moonlight'],
     piece: 'Piano Sonata No. 14 in C sharp minor, Op. 27 No. 2, first movement, Ludwig van Beethoven (complete)',
     source: `Transcribed from the Breitkopf & Härtel complete edition (Beethovens Werke, Serie 16, [IMSLP #994719](${IMSLP}994719)), checked against the Mutopia Project's guitar-duo arrangement typeset by Jeffrey Olson after Francisco Tárrega ([Mutopia 2101](${MUTOPIA}2101))`,
     licence: PD,
   },
   {
-    starters: ['prelude', 'preludeBoomBap'],
+    starters: ['prelude'],
     piece: 'Cello Suite No. 1 in G, BWV 1007, Prelude, Johann Sebastian Bach (complete)',
     source: `[Mutopia Project 517](${MUTOPIA}517), typeset by Andreas Scherer from the Schirmer edition (1916)`,
     licence: PD,
   },
   {
-    starters: ['mountainKing', 'kingPhonk'],
+    starters: ['mountainKing'],
     piece: 'In the Hall of the Mountain King, Op. 46 No. 4, Edvard Grieg (complete, orchestrated in the app from his piano version)',
     source: `[Mutopia Project 1888](${MUTOPIA}1888), typeset by Coyau from The University Society edition (1918)`,
     licence: PD,
   },
   {
-    starters: ['clairDeLune', 'clairTrap'],
+    starters: ['clairDeLune'],
     piece: 'Clair de lune, Suite bergamasque, Claude Debussy (complete)',
     source: `[Mutopia Project 1778](${MUTOPIA}1778), typeset by Keith OHara from the E. Fromont edition (1905)`,
     licence: PD,

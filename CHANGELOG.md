@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-34 — Classics without the flips
+
+- The five Classical Flips are gone from the starters; the five classical pieces stay.
+
 ## 2026.10.15-33 — The Classics
 
 - A new **Classics** group of starters in **New**: five complete public-domain pieces (Pachelbel's Canon in D for solo strings and sections, the first movement of Beethoven's "Moonlight" sonata and Debussy's Clair de lune on the concert grand with the pedal, the Prelude of Bach's first cello suite on the solo cello, and Grieg's In the Hall of the Mountain King for orchestra, speeding up to the end), each with its dynamics, rubato and phrasing, and **Classical Flips**: the same five flipped into hard trap, drill, boom bap, phonk and melodic trap beats with 808s, designed drums, hat rolls, beat switches and the master clipper. Where their notes come from is in the guide's Credits.
