@@ -147,8 +147,9 @@ fixed order, then pan, solo and mute, the fader, and sends. Strips play into the
 A compressor looks ahead, so it holds back the sound through it by a few milliseconds. **Delay
 compensation** lines every path up again: `delayCompensation.ts` works out, from the tracks, how
 long to hold back each strip (after its inserts, on its way out, on each send) so that every path
-reaches the master together, and the strips apply it with delay lines that crossfade when the
-amount changes (`effects/delayLink.ts`). The compressor's delay is measured once per sample rate
+reaches the master together, and the strips apply it with delay lines that glide to a new amount
+too slowly to hear (`effects/delayLink.ts`, `delayGlide.ts`): crossfading to it mixed two copies a
+few milliseconds apart, which made a held low note dip. The compressor's delay is measured once per sample rate
 (`compressorLatency.ts`). Live and in exports alike; an export trims the delay off its start.
 
 ### Someone plays a MIDI keyboard or records

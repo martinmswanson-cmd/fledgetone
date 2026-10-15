@@ -4,13 +4,19 @@
  * see delayCompensation.ts).
  *
  * Live, the sound goes through a gain of its own (and a delay line, when it's delayed). A new delay
- * is a second path, silent at first, and the two crossfade on the audio clock in 10 ms; the old one
- * is taken apart once that has played. Changing a delay line's time instead would bend the pitch
- * while it moved, and making or breaking a connection outright is heard whenever the audio thread
- * renders between the two (see rewire in trackStrip.ts). In an export nothing plays while the graph
- * is set up, so there the link is joined (or rebuilt) directly, with no gain.
+ * glides there: a second path, silent at first, with a delay line as long as the old one's, takes
+ * over in a 10 ms crossfade (the two paths play the same sound in step, so nothing changes), then
+ * its delay glides to the new length slowly enough to bend the pitch by under 9 cents (delayGlide.ts),
+ * and once there a plain delay line of that length takes over the same way. Crossfading straight
+ * to the new length mixed two copies a few milliseconds apart, which partly cancel on a low note:
+ * a held 78 Hz tone dipped by 20 dB or more for an instant when another track's compressor was
+ * switched. Making or breaking a connection outright is heard whenever the audio thread renders
+ * between the two (see rewire in trackStrip.ts). The old paths are taken apart once their fades
+ * have played. In an export nothing plays while the graph is set up, so there the link is joined
+ * (or rebuilt) directly, with no gain.
  */
 import * as Tone from 'tone';
+import { glideAt, planGlide, type Glide } from '../delayGlide';
 
 type Node = Tone.ToneAudioNode | AudioNode;
 
@@ -26,6 +32,27 @@ export interface DelayLink {
 const LEAD = 0.02;
 const FADE = 0.01;
 
+/** Two channels always, as fixedDelay says. */
+function twoChannels(node: DelayNode): void {
+  node.channelCount = 2;
+  node.channelCountMode = 'explicit';
+  node.channelInterpretation = 'speakers';
+}
+
+/**
+ * A DelayNode whose time follows `glide`, read every sample while it moves (a time read once per
+ * block would step, a faint buzz on high sounds). Only for the glide: a plain fixedDelay takes over
+ * once it's there.
+ */
+export function glidingDelay(raw: BaseAudioContext, glide: Glide): DelayNode {
+  const node = raw.createDelay(Math.max(0.01, 2 * Math.max(glide.from, glide.to)));
+  twoChannels(node);
+  node.delayTime.value = glide.from;
+  node.delayTime.setValueAtTime(glide.from, glide.start);
+  node.delayTime.linearRampToValueAtTime(glide.to, glide.end);
+  return node;
+}
+
 /**
  * A DelayNode read once per render block (its time never moves). Live, the node is
  * standardized-audio-context's wrapper, whose params don't pass automationRate on, so it's set on
@@ -38,9 +65,7 @@ const FADE = 0.01;
  */
 export function fixedDelay(raw: BaseAudioContext, seconds: number): DelayNode {
   const node = raw.createDelay(Math.max(0.01, seconds * 2));
-  node.channelCount = 2;
-  node.channelCountMode = 'explicit';
-  node.channelInterpretation = 'speakers';
+  twoChannels(node);
   node.delayTime.value = seconds;
   const native = (node as DelayNode & { _nativeAudioNode?: DelayNode })._nativeAudioNode ?? node;
   try {
@@ -52,7 +77,10 @@ export function fixedDelay(raw: BaseAudioContext, seconds: number): DelayNode {
 }
 
 interface Path {
+  /** The delay it holds the sound back by (where a gliding one is going). */
   seconds: number;
+  /** A gliding path's glide (see glidingDelay). */
+  glide?: Glide;
   gain: GainNode | null;
   delay: DelayNode | null;
   /** Its last fade: from `from` at `start` to `to` at `end` (audio clock). */
@@ -67,6 +95,7 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
   let target = to;
   let paths: Path[] = [];
   let timer = 0;
+  let settleTimer = 0;
 
   /** The path's last node, which plays into the target. */
   const end = (p: Path): Node => p.delay ?? p.gain ?? from;
@@ -80,12 +109,12 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
       // Not joined
     }
   };
-  const make = (s: number, level: number): Path => {
+  const make = (s: number, level: number, glide?: Glide): Path => {
     const gain = live ? raw.createGain() : null;
     if (gain) gain.gain.value = level;
-    const delay = s > 0 ? fixedDelay(raw, s) : null;
+    const delay = glide ? glidingDelay(raw, glide) : s > 0 ? fixedDelay(raw, s) : null;
     if (gain && delay) gain.connect(delay);
-    const p: Path = { seconds: s, gain, delay, fade: { from: level, to: level, start: 0, end: 0 } };
+    const p: Path = { seconds: s, glide, gain, delay, fade: { from: level, to: level, start: 0, end: 0 } };
     join(p);
     // Fed last, so nothing reaches the target before the path is whole
     if (gain) Tone.connect(from, gain);
@@ -124,6 +153,24 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
     paths = paths.slice(-1);
   };
 
+  /** Crossfade from every path to `fresh` (added last), and take the old ones apart after. */
+  const takeOver = (fresh: Path, at: number) => {
+    paths.push(fresh);
+    for (const p of paths) fadeTo(p, p === fresh ? 1 : 0, at);
+    window.clearTimeout(timer);
+    timer = window.setTimeout(tidy, (at + FADE - raw.currentTime) * 1000 + 50);
+  };
+  /** Once a glide is there, a plain path of its length takes over (the same sound, so seamless). */
+  const settle = () => {
+    const last = paths[paths.length - 1];
+    if (!last?.glide) return;
+    if (raw.currentTime < last.glide.end) {
+      settleTimer = window.setTimeout(settle, (last.glide.end - raw.currentTime) * 1000 + 50);
+      return;
+    }
+    takeOver(make(last.seconds, 0), raw.currentTime + LEAD);
+  };
+
   paths.push(make(Math.max(0, seconds), 1));
 
   return {
@@ -136,13 +183,14 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
         paths = [make(s, 1)];
         return;
       }
-      // The new path (the last one) fades in as every other fades out
-      const fresh = make(s, 0);
-      paths.push(fresh);
+      // A gliding path, starting where the current one is when it takes over, fades in as every
+      // other fades out; then it glides, and settles (see the top)
       const at = raw.currentTime + LEAD;
-      for (const p of paths) fadeTo(p, p === fresh ? 1 : 0, at);
-      window.clearTimeout(timer);
-      timer = window.setTimeout(tidy, (LEAD + FADE) * 1000 + 50);
+      const from = current.glide ? glideAt(current.glide, at) : current.seconds;
+      const glide = planGlide(from, s, at + FADE);
+      takeOver(make(s, 0, glide), at);
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(settle, (glide.end - raw.currentTime) * 1000 + 50);
     },
     retarget: (next) => {
       if (next === target) return;
@@ -152,6 +200,7 @@ export function createDelayLink(from: Node, to: Tone.InputNode | null, seconds =
     },
     dispose: () => {
       window.clearTimeout(timer);
+      window.clearTimeout(settleTimer);
       paths.forEach(drop);
       paths = [];
     },

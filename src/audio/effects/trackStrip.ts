@@ -14,7 +14,8 @@ import type { BusEffects } from './busEffects';
 import { createEcho, createReverb, type EchoUnit, type ReverbUnit } from './spaceFx';
 import { createParamWriter, type AutomationTarget, type ParamWriter } from './paramWriter';
 import { smoothSet } from './smoothParam';
-import { createDelayLink, fixedDelay, type DelayLink } from './delayLink';
+import { createDelayLink, fixedDelay, glidingDelay, type DelayLink } from './delayLink';
+import { glideAt, planGlide, type Glide } from '../delayGlide';
 import type { PathDelays } from '../delayCompensation';
 import {
   atControlTime,
@@ -48,7 +49,7 @@ import {
  *   delay; sends to returns (each with its own delay, when it needs one) after the pan or the duck.
  *
  * The three delays are delay compensation (see delayCompensation.ts and setAlignment): each
- * exists only while it holds the sound back, and a change crossfades.
+ * exists only while it holds the sound back, and a change glides (see delayLink.ts).
  *
  * An insert only exists while it's switched on (the EQ while any band is boosted or cut).
  * A bypassed insert is disposed and patched out of the chain rather than left running at
@@ -310,7 +311,8 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     { gain: Tone.Gain; writer: ParamWriter; target: Tone.InputNode; pre: boolean; link: ((need: boolean, ramp: number) => void) & { forget: () => void }; out: DelayLink }
   >();
   /** Delay compensation (see setAlignment): the tail's delay line in the chain, and the sends' delays by return id, in seconds */
-  let tailDelay: { input: DelayNode; output: DelayNode; seconds: number; dispose: () => void } | null = null;
+  let tailDelay: { input: DelayNode; output: DelayNode; seconds: number; glide?: Glide; dispose: () => void } | null = null;
+  let tailTimer = 0;
   let sendDelays: Record<string, number> = {};
   delaySend.connect(busFx.delayInput);
 
@@ -856,11 +858,35 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       dryLink.set(seconds(delays?.dry ?? 0));
       for (const [id, send] of sends) send.out.set(seconds(sendDelays[id] ?? 0));
       // The tail is a delay line at the end of the inserts, swapped in and out like any insert (a
-      // new length is a new one), so the change crossfades (see rewire)
+      // new length is a new one), so the change crossfades (see rewire). Live, it glides there as
+      // a delay link does (delayLink.ts): a delay line as long as the old one's takes over, glides
+      // to the new length, then a plain one of that length takes over, all without a dip
       const tail = seconds(delays?.tail ?? 0);
       if (Math.abs((tailDelay?.seconds ?? 0) - tail) < 1e-9) return;
       const retired = tailDelay ? [tailDelay] : [];
-      if (tail > 0) {
+      clearTimeout(tailTimer);
+      if (barrier) {
+        // (Its crossfade starts at switchAt and takes SWITCH_FADE; the glide starts after it)
+        const at = switchAt();
+        const from = tailDelay?.glide ? glideAt(tailDelay.glide, at) : (tailDelay?.seconds ?? 0);
+        const glide = planGlide(from, tail, at + SWITCH_FADE + 0.01);
+        const node = glidingDelay(raw, glide);
+        tailDelay = { input: node, output: node, seconds: tail, glide, dispose: () => node.disconnect() };
+        const settle = () => {
+          if (tailDelay?.glide !== glide) return;
+          if (raw.currentTime < glide.end) {
+            tailTimer = window.setTimeout(settle, (glide.end - raw.currentTime) * 1000 + 50);
+            return;
+          }
+          const gliding = tailDelay;
+          if (tail > 0) {
+            const plain = fixedDelay(raw, tail);
+            tailDelay = { input: plain, output: plain, seconds: tail, dispose: () => plain.disconnect() };
+          } else tailDelay = null;
+          rewire([gliding]);
+        };
+        tailTimer = window.setTimeout(settle, (glide.end - raw.currentTime) * 1000 + 50);
+      } else if (tail > 0) {
         const node = fixedDelay(raw, tail);
         tailDelay = { input: node, output: node, seconds: tail, dispose: () => node.disconnect() };
       } else tailDelay = null;
@@ -1177,6 +1203,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       listenControls();
       clearTimeout(retireTimer);
       clearTimeout(tidyTimer);
+      clearTimeout(tailTimer);
       gates.forEach((g) => g.gain.disconnect());
       dryLink.dispose();
       sends.forEach((x) => x.out.dispose());
