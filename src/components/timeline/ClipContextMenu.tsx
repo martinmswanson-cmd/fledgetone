@@ -3,7 +3,7 @@
  * clip, insert pattern, paste, load audio, smart tools), and the menu items other menus share.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Drum, Music4, Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma } from 'lucide-react';
+import { Drum, Music4, Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma, ChevronsRight } from 'lucide-react';
 import { reverseBlock } from '../../store/reverseActions';
 import { doubleClip } from '../../store/vocalActions';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -19,6 +19,8 @@ import { dropAudioFiles, pickAudioFiles } from './audioFiles';
 import { openArrange } from './arrangeDialogStore';
 import { sendSelectionToLauncher } from '../../store/launcher';
 import { showToast } from './toastStore';
+import { speedUpIntoDrop } from '../../store/speedUpActions';
+import { SPEED_UP_DEFAULTS } from '../../store/speedUp';
 
 export interface ContextMenuState {
   x: number;
@@ -288,6 +290,32 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         { key: 'paste', ...pasteHere },
         { key: 'duplicate', label: 'Duplicate', shortcut: `${MOD}D`, icon: <CopyPlus className="w-3.5 h-3.5" />, onClick: run(s.duplicateSelection), divider: true },
         { key: 'repeat', label: 'Repeat ×N…', icon: <Repeat2 className="w-3.5 h-3.5" />, onClick: () => setRepeating(true) },
+        // Speed up the end of the block under the pointer (this clip, or every selected clip with it)
+        // into what follows: two one-click versions, and the options
+        ...(() => {
+          const picked = menuClip?.isSelected ? s.clips.filter((c) => c.isSelected) : menuClip ? [menuClip] : [];
+          if (!picked.length) return [];
+          const from = Math.min(...picked.map((c) => c.startBar));
+          const to = Math.max(...picked.map((c) => c.startBar + c.lengthBars));
+          const quick = (amount: number, roll: boolean) => () => {
+            onClose();
+            showToast(speedUpIntoDrop({ ...SPEED_UP_DEFAULTS, from, to, amount, curve: roll ? 'build' : 'steady' }, { roll }));
+          };
+          return [
+            { key: 'speed-up', label: 'Speed up the end', shortcut: 'last 25%, +25%', icon: <ChevronsRight className="w-3.5 h-3.5" />, onClick: quick(0.25, false), divider: true },
+            { key: 'speed-up-roll', label: 'Speed up the end + drum roll', shortcut: '+50%', icon: <ChevronsRight className="w-3.5 h-3.5" />, onClick: quick(0.5, true) },
+            {
+              key: 'speed-up-more',
+              label: 'Speed up the end…',
+              shortcut: 'options',
+              icon: <ChevronsRight className="w-3.5 h-3.5" />,
+              onClick: () => {
+                onClose();
+                openArrange('drops', Math.round(to), undefined, { from, to });
+              },
+            },
+          ];
+        })(),
         ...(s.clips.find((c) => c.id === menu.clipId)?.notes.length && !s.clips.find((c) => c.id === menu.clipId)?.audio
           ? [
               {

@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.15-32 — Speed up from the clip menu
+
+- Right-click a clip: **Speed up the end** speeds up the last 25% of the block 25% and snaps back (one click), **Speed up the end + drum roll** goes 50% faster with the roll, and **Speed up the end…** opens the options.
+
 ## 2026.10.15-31 — Speed up into the drop
 
 - **Speed up into the drop** (Arrange a beat › Drops & switches, right-click the ruler › **Speed up into here…**, or search *speed up*): the tempo rises over the last part of a block of music (the last 10 to 100%, 25% to start with) by up to double time, evenly or slow-then-fast, and snaps back to the old tempo on the drop (or stays fast). It can roll the snare up into the drop too (8ths, 16ths, then 32nds). It writes ordinary tempo glides, so playback, exports, the metronome and the grid follow it, and one Undo takes it out.
