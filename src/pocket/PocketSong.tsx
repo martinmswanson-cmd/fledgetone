@@ -7,7 +7,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, History, Minus, Plus, ZoomIn, ZoomOut } from 'lucide-react';
-import { CATEGORIES, INSTRUMENTS } from '../audio/instrumentCatalog';
+import { CATEGORIES, INSTRUMENTS, listedCategory } from '../audio/instrumentCatalog';
 import { STARTER_GROUPS, STARTERS } from '../store/starters';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
 import { clearPreviousSession } from '../store/project';
@@ -18,18 +18,19 @@ import { buildAndDrop, repeatLoop, speedUpLoop } from './pocketArrange';
 import { showToast } from '../components/timeline/toastStore';
 
 /** Instruments Pocket can play and edit, by category (the ones that need a computer left out). */
-function pocketInstruments(): Array<{ category: string; keys: InstrumentKey[] }> {
-  const all = Object.values(INSTRUMENTS).filter((d) => editorOf(d.key) !== null && d.category !== 'Retro (GM)');
-  return CATEGORIES.map((category) => ({ category, keys: all.filter((d) => d.category === category).map((d) => d.key) })).filter((g) => g.keys.length > 0);
+function pocketInstruments(current?: InstrumentKey): Array<{ category: string; keys: InstrumentKey[] }> {
+  // (The retro instruments stay out of Pocket's lists: the recorded ones are the ones to pick on a phone)
+  const all = Object.values(INSTRUMENTS).filter((d) => editorOf(d.key) !== null && (!d.retro || d.key === current));
+  return CATEGORIES.map((category) => ({ category, keys: all.filter((d) => listedCategory(d) === category).map((d) => d.key) })).filter((g) => g.keys.length > 0);
 }
 
 /** Pick an instrument from the ones Pocket can edit, by category. */
 export const InstrumentSheet: React.FC<{ title: string; current?: InstrumentKey; onPick: (key: InstrumentKey) => void; onClose: () => void }> = ({ title, current, onPick, onClose }) => {
-  const groups = useMemo(() => pocketInstruments(), []);
+  const groups = useMemo(() => pocketInstruments(current), [current]);
   const kind = current ? editorOf(current) : null;
   // Swapping keeps a drum track's notes on drums and a pitched track's on pitched instruments
   const shown = kind ? groups.map((g) => ({ ...g, keys: g.keys.filter((k) => editorOf(k) === kind) })).filter((g) => g.keys.length) : groups;
-  const [open, setOpen] = useState<string | null>((current && INSTRUMENTS[current]?.category) ?? shown[0]?.category ?? null);
+  const [open, setOpen] = useState<string | null>((current && INSTRUMENTS[current] && listedCategory(INSTRUMENTS[current])) ?? shown[0]?.category ?? null);
   return (
     <Sheet title={title} onClose={onClose}>
       {shown.map(({ category, keys }) => (

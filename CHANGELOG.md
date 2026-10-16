@@ -8,6 +8,12 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-12 — Recordings first, retro instruments optional
+
+- The 128 instruments built on the 1990s General MIDI soundfonts and early sample sets are now **retro instruments**, all in one group, **Retro (1990s soundfonts)**, which the instrument lists hide until you click **Show … retro instruments** at the bottom of a list (remembered in this browser). Songs and starters that use them play them as before, and a track on one always shows it in its own list.
+- Each group in the instrument lists starts with its recorded instruments.
+- The studio's footer says it's made by Martin Swanson, in place of the link to twobirdsworkshop.com.
+
 ## 2026.10.16-11 — Surge XT and more plugins on fledgetone.com
 
 - Now that Fledgetone's source is public, the website has the GPL-licensed built-in plugins too: the **Surge XT** synth with its factory patches, the **Dragonfly** hall, room, plate and early-reflection reverbs, the **Plateau** reverb and the **setBfree** tonewheel organ. They're in the Plugins menu and the plugin browser, and credited in the guide. (The one-file copy still leaves them out.)
