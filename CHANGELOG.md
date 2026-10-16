@@ -72,7 +72,7 @@ second update on the same day gets `-2`, and so on).
 - The guide matches the app again: the menu bar list covers every menu and item (Plugins and Learn included), game music has a chapter of its own, the Track Inspector is described in its real order, and wrong counts, menu paths and button names are fixed.
 - The tour and tutorials describe the screen as it is now (the bottom panel's tabs, the Pump's Trigger, how Save works, the Drummer's 21 styles).
 - **Download all** (Master tab › Instruments offline) says how much it fetches: about 280 MB, the built-in plugins included.
-- Three instruments are renamed so they no longer carry product names: **80s Drum Machine** (was LinnDrum), **Rhythm Box** (was CR-78) and **Synth Drum** (was Syndrum). They sound the same, and songs that use them open as before. The starters' "Rhodes" tracks are now called "E. Piano".
+- Three drum instruments have plain new names: **80s Drum Machine**, **Rhythm Box** and **Synth Drum**. They sound the same, and songs that use them open as before. The starters' electric piano tracks are now called "E. Piano".
 - The terms of use (section 6) now say that a few recorded drum kits come from a collection that states no licence, as the guide's Credits do.
 - Opening a shared song link for the first time no longer puts the welcome window over the song.
 - **View** lists the **Launcher** tab with the bottom panel's other tabs.
@@ -80,7 +80,7 @@ second update on the same day gets `-2`, and so on).
 
 ## 2026.10.16 — Demo songs
 
-- **New** has a **Demo songs** section: the demo song (Sunset Stroll) and the five Classics, right under Blank timeline, to open and listen to. Fledgetone's old pages on twobirdsworkshop.com now go to fledgetone.com.
+- **New** has a **Demo songs** section: the demo song (Sunset Stroll) and the five Classics, right under Blank timeline, to open and listen to.
 
 ## 2026.10.15-34 — The Classics, settled
 
@@ -100,7 +100,7 @@ second update on the same day gets `-2`, and so on).
 
 ## 2026.10.15-30 — No sound on its own
 
-- Fledgetone makes no sound until you start the audio (a click or a key), even when Chrome would allow it: a song Chrome reopens after a restart no longer starts playing by itself. Closing or leaving the page silences it at once, even if Chrome keeps running in the background.
+- Fledgetone makes no sound until you start the audio (a click or a key), even when the browser would allow it: a song the browser reopens after a restart no longer starts playing by itself. Closing or leaving the page silences it at once, even if the browser keeps running in the background.
 - Effects that make their own sound (the Shepard tone, noise sources, click tracks) fade out a few seconds after their track goes quiet and come back when it plays, instead of droning on through the whole song and while stopped. Reverb and delay tails fade as before; the infinite reverbs still hold.
 
 ## 2026.10.15-29 — Real-sounding guitars
@@ -109,7 +109,7 @@ second update on the same day gets `-2`, and so on).
 - The real electric guitars' amps sound like a miked amp on a record: the speaker's piercing peak near 4 kHz is taken down, the hardest-picked recordings (much brighter than the rest) play only for accents, and a held chord rings on for 5 or 6 seconds, dying away, instead of stopping after 3 or 4.
 - Every guitar plays in a small studio room after its amp (they were recorded dry, in mono), and the electric guitars make the sound of the strings being damped when a note is let go early.
 - A chord written as one block on a guitar, banjo or mandolin is strummed: low to high on the way down, high to low when the hand comes back up for a chord that follows closely, quicker the harder it's played.
-- The older General MIDI guitars sound darker as well as quieter when played softly, as the other guitars do.
+- The older retro guitars sound darker as well as quieter when played softly, as the other guitars do.
 
 ## 2026.10.15-28 — Full names on hover
 
@@ -122,7 +122,7 @@ second update on the same day gets `-2`, and so on).
 ## 2026.10.15-26 — Install Fledgetone
 
 - Fixed: in the published app the live loudness meter, and the loudness measured for exports, could fail with an error: they work again.
-- Install Fledgetone as an app (Help › Install Fledgetone…, or Safari's Add to Dock / Home Screen): its own window, and it opens offline after one visit.
+- Install Fledgetone as an app (Help › Install Fledgetone…, or your browser's Add to Dock / Add to Home Screen): its own window, and it opens offline after one visit.
 - The app is kept in your browser, so it opens at once and isn't downloaded again; recordings you've used aren't downloaded again either.
 - New versions download in the background and show "Version … is ready: Reload". The app never reloads by itself: Reload autosaves first, and What's new opens after it.
 - Master tab › Instruments offline shows whether the browser will keep your work when the disk gets full (Storage: protected), with Protect to ask.
@@ -175,13 +175,9 @@ second update on the same day gets `-2`, and so on).
 
 - Heavy bass tools for trap, drill, rage, phonk and bass music: an **808 designer** on 808 Bass tracks (drive and clip character with a tone control, punch, slide time, decay, a top layer that phones and laptops can hear, tune to key, and six presets from clean and deep to blown out), a **Bass Drive** insert that distorts the mids and highs while the sub stays clean and mono, a **Sub enhancer** (a clean sine under a bass's notes), **Glide** for the monophonic synths, a kick and bass clash check with one-click **Duck under the kick**, and **Reese bass**, **Dark reese** and **Formant growl** presets in the Synth Designer (the Growl bass preset's low end is now centred).
 
-## 2026.10.15-16 — Terms: not open source yet
-
-- The terms of use no longer describe Fledgetone as open source: it isn't yet. It's free to use for making your music, and the open-source parts and sounds inside it keep their own licences.
-
 ## 2026.10.15-15 — Celesta, recorder and muted trumpet
 
-- New real recordings: **Celesta (Real)** (every key, in stereo), **Recorder (Real)** (tenor, alto and soprano recorders as one instrument) and **Muted Trumpet (Real)** (harmon mute, soft and loud). The starters play them; the older Celesta, Recorder and Muted Trumpet move to Retro (GM), so older songs sound as they did.
+- New real recordings: **Celesta (Real)** (every key, in stereo), **Recorder (Real)** (tenor, alto and soprano recorders as one instrument) and **Muted Trumpet (Real)** (harmon mute, soft and loud). The starters play them; the older Celesta, Recorder and Muted Trumpet move to the Retro group, so older songs sound as they did.
 
 ## 2026.10.15-14 — A small thank-you
 
@@ -194,7 +190,7 @@ second update on the same day gets `-2`, and so on).
 ## 2026.10.15-12 — Clearer terms
 
 - The terms of use now cover more: lost work, loud sound and flashing visualisers, music written by the tools, sounds everyone shares, and an age of 13 or older.
-- The scripts and players Fledgetone writes into game kits and FMOD/Wwise packages can be used in any game or app, closed-source and paid ones included, under any licence. Each such export carries a LICENSE-exported-files.txt saying so.
+- The scripts and players Fledgetone adds to game kits and game-audio packages can be used in any game or app, closed-source and paid ones included, under any licence. Each such export includes a short licence file saying so.
 
 ## 2026.10.15-11 — Terms of use
 
@@ -226,12 +222,12 @@ second update on the same day gets `-2`, and so on).
 
 - Adding an instrument grows the timeline just enough to show its track, moving the panels below down with it, instead of hiding it below.
 
-## 2026.10.15-4 — Engine polish 2
+## 2026.10.15-4 — Sound and export fixes
 
 - The timeline resize bar now really changes the timeline's height and moves the Mixer and Instruments panel down with it, whatever the song's length.
 - MP3, OGG and video exports keep their peaks under -1.5 dBTP, so they still play back under -1 dBTP after compression.
 - Switching a compressor on or off while the song plays no longer makes a held bass note on the other tracks dip.
-- Recorded instruments from the older sound set (celesta, saxophone, steel-string guitar and others) no longer add a DC offset to the mix.
+- Some older recorded instruments (celesta, saxophone, steel-string guitar and others) no longer push the whole mix slightly off centre, which wasted loudness.
 - The Riddim starter plays at -14 LUFS like the rest of its group, with a softer snare and the growls up front.
 - Recorded electric guitars cost less to play, with no change in sound.
 - Ring-out exports end once the tails have died away instead of after a fixed time, so long reverbs and cymbals are no longer cut off.
@@ -240,7 +236,7 @@ second update on the same day gets `-2`, and so on).
 
 - Drag the bar under the timeline to make it taller and see more tracks at once; double-click it to fit every track.
 
-## 2026.10.15-2 — Engine polish
+## 2026.10.15-2 — Smoother sound, faster exports
 
 ### Sound
 - **Lush** room for the master reverb: a smooth, dense, gently shimmering tail, as loud as the concert hall but much lighter on the computer.
@@ -265,9 +261,9 @@ second update on the same day gets `-2`, and so on).
 - Fixed silent hand drums in two game starters.
 
 ### Speed and memory
-- Exports render on several processor cores at once: about twice as fast on big songs, and stems render several at a time.
+- Exports use more of your computer at once: about twice as fast on big songs, and stems render several at a time.
 - Songs load the notes they play first and start sooner; the rest arrive in the background (on phones and smaller computers, only when needed). Memory at Play start is about a third of what it was.
-- Synth Designer sounds use about half as many audio parts per note.
+- Synth Designer sounds take about half as much computer power per note.
 - Exports no longer stay in memory after they finish.
 - Exports at 44.1 or 48 kHz are equally clean whatever rate your sound card runs at.
 
@@ -283,7 +279,7 @@ second update on the same day gets `-2`, and so on).
 ### New instruments (free recordings)
 - **Studio Kit (Real)**: a recorded drum kit (kick, snare, hats, three toms, crash and ride), each at four loudnesses with two takes, so repeated hits never sound identical. The starters' drum parts use it.
 - **Electric Piano (Real)**, **Banjo (Real)**, **Harmonica (Real)**, **Ocarina (Real)**, **Steel Drums (Real)**, **Zither (Real)**, **Solo Voice (Real)** and **Concert Bass Drum (Real)**.
-- The older versions they replace moved to the **Retro (GM)** group; songs using them sound as before.
+- The older versions they replace moved to the **Retro** group; songs using them sound as before.
 
 ### Recordings play more like the real thing
 - Recordings are in stereo.
@@ -307,7 +303,7 @@ second update on the same day gets `-2`, and so on).
 ### Synths
 - Ladder filter, drift (analog wander), FM, organ, pulse and vowel waves, wider unison.
 - New presets: Analog poly, FM bell, FM electric piano, Organ, Vowel lead, Pulse bass, and five pads.
-- Less harshness on distortion (it's processed at 4x the sample rate).
+- Distortion sounds smoother and less harsh.
 
 ### Playing
 - New tracks get a human feel that suits the instrument.
@@ -322,7 +318,7 @@ second update on the same day gets `-2`, and so on).
 ## 2026.10.14 — Fledgetone
 
 - The app is now called Fledgetone, with its own logo.
-- The starters play recorded orchestral, band and keyboard instruments; the older sounds are in a new **Retro (GM)** group.
+- The starters play recorded orchestral, band and keyboard instruments; the older sounds are in a new **Retro** group.
 - Mod wheel is dynamics on every instrument; new Vibrato lane and Swell tools.
 - Strings play like strings: portamento on legato, short notes, double stops.
 - Recorded rooms for the master reverb.
