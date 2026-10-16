@@ -1,0 +1,466 @@
+<!doctype html>
+<!--
+  fledgetone.com: the home page. Plain HTML and CSS, no build step: scripts/build-site.mjs copies
+  this folder next to the app, which is built into /app/ (see netlify.toml). The clips in video/
+  are screen recordings of the app itself (H.264, no sound); main.js plays them on screen.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fledgetone: make music in your browser</title>
+  <meta name="description" content="Fledgetone is a music studio that runs in your browser. Write songs, score video and make music for games. Nothing to install and no account." />
+  <link rel="canonical" href="https://fledgetone.com/" />
+  <script>
+    // Share links made when the studio lived at the site's root (fledgetone.com/#s=...) open in the studio
+    if (/^#(s|song)=/.test(location.hash)) location.replace('/app/' + location.hash);
+    // The studio installed as an app before it moved to /app/ still opens the site's root: go on to the studio
+    else if (matchMedia('(display-mode: standalone)').matches) location.replace('/app/');
+  </script>
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Fledgetone" />
+  <meta property="og:title" content="Fledgetone: make music in your browser" />
+  <meta property="og:description" content="Write songs, score video and make music for games. Nothing to install and no account." />
+  <meta property="og:url" content="https://fledgetone.com/" />
+  <meta property="og:image" content="https://fledgetone.com/img/og.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" type="image/svg+xml" href="/app/favicon.svg" />
+  <link rel="apple-touch-icon" href="/app/apple-touch-icon.png" />
+  <!-- The studio's manifest: its scope is the whole site, so this page can offer the install too -->
+  <link rel="manifest" href="/app/manifest.webmanifest" />
+  <meta name="theme-color" content="#121214" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/main.js" defer></script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Fledgetone",
+    "url": "https://fledgetone.com/",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Any (runs in a web browser)",
+    "description": "A music studio that runs in your browser. Write songs, score video and make music for games."
+  }
+  </script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div class="wip-bar" role="note"><span class="wip-tag">Work in progress</span> Fledgetone is still being built, so things may change or break.</div>
+
+  <header class="nav">
+    <div class="wrap nav-row">
+      <a class="brand" href="/" aria-label="Fledgetone home">
+        <img src="/img/logo.png" alt="" width="34" height="34" />
+        <span>Fledgetone</span>
+      </a>
+      <nav class="nav-links" aria-label="Sections">
+        <a href="#video">Video</a>
+        <a href="#games">Games</a>
+        <a href="#features">Features</a>
+        <a href="/guide/">Guide</a>
+      </nav>
+      <div class="nav-cta">
+        <a class="btn btn-primary btn-sm" href="/app/">Open the studio</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="wrap hero-copy">
+        <p class="eyebrow">
+          <span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+          Music for games and video <span class="eyebrow-wip">Work in progress</span>
+        </p>
+        <h1>Make music in your browser.</h1>
+        <p class="lede">
+          Fledgetone is a music studio that runs in a web page. Write songs, score video, and
+          export music for games. Use it in a browser tab or install it as an app. There's no
+          account to make, and your songs stay on your computer.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="/app/">
+            Open the studio
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+          <a class="btn btn-ghost" href="#install">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            Download the app
+          </a>
+        </div>
+        <p class="fineprint">Works best on a computer with a keyboard and mouse.</p>
+      </div>
+
+      <figure class="wrap shot shot-hero">
+        <div class="shot-frame">
+          <video class="clip" src="/video/hero.mp4" poster="/video/hero-poster.webp" width="1600" height="1000"
+                 muted loop playsinline preload="auto" data-autoplay
+                 aria-label="The Fledgetone studio playing the Boss Fight starter song, with drum, taiko, timpani, brass and string tracks on a timeline and the mixer below."></video>
+        </div>
+      </figure>
+
+      <div class="wrap readouts" role="list">
+        <div class="readout" role="listitem"><span class="ro-label">Instruments</span><span class="ro-value">198</span></div>
+        <div class="readout" role="listitem"><span class="ro-label">Starter songs</span><span class="ro-value">70+</span></div>
+        <div class="readout" role="listitem"><span class="ro-label">Built-in effects</span><span class="ro-value">644</span></div>
+        <div class="readout" role="listitem"><span class="ro-label">Accounts needed</span><span class="ro-value ro-cyan">0</span></div>
+      </div>
+    </section>
+
+    <!-- The scroll synth: scroll speed is the level, how far down the page is the filter (main.js) -->
+    <div class="scope scope-bars" data-scope="bars" aria-hidden="true">
+      <canvas></canvas>
+    </div>
+
+    <div class="ticker" aria-label="Exports to the web, Unity, Godot, FMOD Studio, Wwise, Premiere, DaVinci Resolve and Final Cut">
+      <div class="ticker-track" aria-hidden="true">
+        <span>Exports to</span><b>Web games</b><b>Unity</b><b>Godot</b><b>FMOD Studio</b><b>Wwise</b><b>Premiere</b><b>DaVinci Resolve</b><b>Final Cut</b><b>WAV &middot; MP3 &middot; Ogg</b><b>Stems</b><b>MP4</b><b>MusicXML</b>
+        <span>Exports to</span><b>Web games</b><b>Unity</b><b>Godot</b><b>FMOD Studio</b><b>Wwise</b><b>Premiere</b><b>DaVinci Resolve</b><b>Final Cut</b><b>WAV &middot; MP3 &middot; Ogg</b><b>Stems</b><b>MP4</b><b>MusicXML</b>
+      </div>
+    </div>
+
+    <!-- Who it's for -->
+    <section class="intro wrap">
+      <p>
+        Fledgetone is laid out like a video editor, with tracks and clips on a timeline. It's made
+        for <strong>people who write music for games and video</strong>, and for
+        <strong>beginners</strong>. Open one of the starter songs and press Space to hear it.
+      </p>
+    </section>
+
+    <!-- Scoring to video -->
+    <section id="video" class="showcase" style="--c: var(--purple)" aria-labelledby="video-title">
+      <div class="scope scope-wave" data-scope="wave" aria-hidden="true"><canvas></canvas></div>
+      <div class="wrap">
+        <div class="show-head reveal">
+          <p class="show-eyebrow">Scoring to video</p>
+          <h2 id="video-title">Line your music up with your video.</h2>
+          <p class="show-lede">
+            Load a video and it appears on the timeline, with a preview window that plays along.
+            Fledgetone finds the cuts, marks each one, and can change the tempo so every cut lands
+            on a bar.
+          </p>
+        </div>
+
+        <figure class="player reveal">
+          <div class="shot-frame">
+            <video class="clip" src="/video/score.mp4" poster="/video/score-poster.webp" width="1600" height="900"
+                   muted playsinline preload="none" data-autoplay data-steps
+                   aria-label="A short film of a young bird's first flight on the timeline, its three cuts marked. FIT, Hit points changes the tempo to 117.76 BPM so all three cuts land on a bar, then the song plays with the film in the preview window."></video>
+          </div>
+          <div class="steps" role="list" aria-label="What happens in the clip">
+            <button class="step" role="listitem" data-start="0">Video on the timeline<i></i></button>
+            <button class="step" role="listitem" data-start="1.2">FIT &rsaquo; Hit points<i></i></button>
+            <button class="step" role="listitem" data-start="3.9">Cuts land on bars<i></i></button>
+            <button class="step" role="listitem" data-start="6.3">Plays with the video<i></i></button>
+            <span class="steps-head" aria-hidden="true"></span>
+          </div>
+          <figcaption class="ai-note">The film is AI-generated. The studio and the music are Fledgetone.</figcaption>
+        </figure>
+
+        <!-- Two films scored in Fledgetone, with sound -->
+        <div class="scored-set reveal">
+          <div class="scored-head">
+            <p class="show-eyebrow">Scored in Fledgetone</p>
+            <h3>Two films, two kinds of score</h3>
+            <p>Each film was loaded into the studio, its cuts found and the tempo fitted to them. The music was then written, mixed and exported in Fledgetone.</p>
+          </div>
+          <div class="scored-grid">
+            <figure class="scored">
+              <div class="shot-frame">
+                <video class="clip" src="/video/first-flight.mp4" poster="/video/first-flight-poster.webp" width="1280" height="720"
+                       muted loop playsinline preload="none" data-autoplay
+                       aria-label="An AI-generated film of a young bird's first flight: on the nest at dawn, the leap into the forest, soaring over a river valley at sunset, and landing against the sun, with an orchestral score made in Fledgetone."></video>
+              </div>
+              <figcaption>
+                <h4>First Flight <span>Orchestral &middot; 117.76 BPM</span></h4>
+                <p>A hesitant flute on the nest, a hit and driving cellos on the leap, horns and choir as it soars, and a D major chord as it lands.</p>
+                <button class="btn btn-primary sound-btn" type="button" aria-pressed="false">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3z"/><path class="wave" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 8.5a5 5 0 0 1 0 7M19 5.5a9 9 0 0 1 0 13"/></svg>
+                <span>Play with sound</span>
+              </button>
+                <a class="scored-link" href="/video/first-flight.fledgetone.json" download>Download the project</a>
+                <span class="ai-note">Film: AI-generated. Music: made in Fledgetone.</span>
+              </figcaption>
+            </figure>
+            <figure class="scored">
+              <div class="shot-frame">
+                <video class="clip" src="/video/courier.mp4" poster="/video/courier-poster.webp" width="1280" height="720"
+                       muted loop playsinline preload="none" data-autoplay
+                       aria-label="AI-generated game-style footage of a small courier drone carrying a glowing core: boosting off a floating island, racing through a crystal canyon, dodging rocks in a lightning storm, and lighting a beacon tower, with an electronic score and sound effects made in Fledgetone."></video>
+              </div>
+              <figcaption>
+                <h4>Courier <span>Electronic &middot; 116&ndash;125 BPM</span></h4>
+                <p>A synth charging up as the drone powers on, a braam and an 808 on the dive, a wobbling growl bass in the storm, and open supersaws as the beacon lights. A tempo change at each cut lands it on a bar, and the boosts, whooshes and rock hits come from the studio's sound effects maker.</p>
+                <button class="btn btn-primary sound-btn" type="button" aria-pressed="false">
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3z"/><path class="wave" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 8.5a5 5 0 0 1 0 7M19 5.5a9 9 0 0 1 0 13"/></svg>
+                <span>Play with sound</span>
+              </button>
+                <a class="scored-link" href="/video/courier.fledgetone.json" download>Download the project</a>
+                <span class="ai-note">Film: AI-generated. Music: made in Fledgetone.</span>
+              </figcaption>
+            </figure>
+          </div>
+          <p class="scored-tip">Open a downloaded project in the studio with File &rsaquo; Open.</p>
+        </div>
+
+        <ul class="points reveal">
+          <li><strong>Timecode</strong>23.976 to 60 fps, including 29.97 drop-frame.</li>
+          <li><strong>Short versions</strong>Make 6, 15, 30, 60 and 90-second versions of a song.</li>
+          <li><strong>Lower under dialogue</strong>Turns the music down while people talk in the video.</li>
+          <li><strong>Export</strong>Send markers to Premiere, Resolve or Final Cut, or put the music on your MP4.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Game music -->
+    <section id="games" class="showcase" style="--c: var(--green)" aria-labelledby="games-title">
+      <div class="scope scope-wave" data-scope="wave" aria-hidden="true"><canvas></canvas></div>
+      <div class="wrap">
+        <div class="show-head reveal">
+          <p class="show-eyebrow">Game music</p>
+          <h2 id="games-title">Music that changes as you play.</h2>
+          <p class="show-lede">
+            Each section of a song can be a game state. <em>Try it in a game</em> puts your song in
+            a small 3D level, so you can hear it switch states, build up and play stingers while
+            you play.
+          </p>
+        </div>
+
+        <figure class="player reveal">
+          <div class="shot-frame">
+            <video class="clip" src="/video/game.mp4" poster="/video/game-poster.webp" width="1152" height="668"
+                   muted playsinline preload="none" data-autoplay data-steps
+                   aria-label="Try it in a game. A robot collects coins while the music plays Phase 1. The guard spots it and the music switches to Phase 2 as the intensity rises. The robot jumps on the guard and the music plays the Defeated state with a stinger."></video>
+          </div>
+          <div class="steps" role="list" aria-label="What happens in the clip">
+            <button class="step" role="listitem" data-start="0">Exploring &middot; Phase 1<i></i></button>
+            <button class="step" role="listitem" data-start="5.4">Spotted &middot; Phase 2<i></i></button>
+            <button class="step" role="listitem" data-start="8.8">Guard beaten &middot; stinger<i></i></button>
+            <span class="steps-head" aria-hidden="true"></span>
+          </div>
+        </figure>
+
+        <ul class="points reveal">
+          <li><strong>States and intensity</strong>Sections loop on their own. An Intensity slider adds and removes layers.</li>
+          <li><strong>Transitions and stingers</strong>Choose how states change, and add short cues in the song's key.</li>
+          <li><strong>Unity, Godot and web</strong>Export a game kit with a player and an example scene.</li>
+          <li><strong>FMOD and Wwise</strong>Export a package with scripts that set up the events.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Writing and mixing -->
+    <section id="features" class="features wrap" aria-labelledby="features-title">
+      <h2 id="features-title" class="section-title"><span class="mono-label">Features</span>Writing and mixing</h2>
+
+      <article class="track" style="--c: var(--amber)">
+        <div class="track-copy">
+          <p class="track-id">Write</p>
+          <h3>Piano roll</h3>
+          <p>
+            Write notes on a grid, add chords in a key, and use the tools to add a bass line,
+            drums and fills. Switch to sheet music to print a part or export MusicXML.
+          </p>
+          <ul class="ticks">
+            <li>Scales, chords, arpeggios and swing</li>
+            <li>Mod wheel, vibrato and legato</li>
+            <li>Record from a MIDI keyboard or a microphone</li>
+          </ul>
+        </div>
+        <figure class="shot"><div class="shot-frame">
+          <img src="/img/pianoroll.webp" width="1600" height="450" loading="lazy"
+               alt="The piano roll editing a brass melody, with grid, velocity, feel, scale and chord controls." />
+        </div></figure>
+      </article>
+
+      <article class="track" style="--c: var(--cyan)">
+        <div class="track-copy">
+          <p class="track-id">Mix</p>
+          <h3>Mixer and effects</h3>
+          <p>
+            Each track has its own effects, sends to reverb and delay, and automation. Group
+            tracks into buses and finish on the master channel.
+          </p>
+          <ul class="ticks">
+            <li>644 built-in effects and instruments</li>
+            <li>Load Web Audio Module plugins</li>
+            <li>Freeze tracks to save CPU</li>
+          </ul>
+        </div>
+        <figure class="shot"><div class="shot-frame">
+          <img src="/img/mixer.webp" width="1568" height="452" loading="lazy"
+               alt="The mixer, with a channel strip per track, a drum bus, the master fader and a spectrum display." />
+        </div></figure>
+      </article>
+
+      <div class="cards">
+        <article class="card" style="--c: var(--purple)">
+          <h3>Sound effects</h3>
+          <p>Make coins, jumps, hits, menu clicks and about 70 other kinds of game sounds.</p>
+        </article>
+        <article class="card" style="--c: var(--amber)">
+          <h3>198 instruments</h3>
+          <p>Synths, EDM basses, drum kits, and recorded pianos, guitars, strings, brass and winds.</p>
+        </article>
+        <article class="card" style="--c: var(--cyan)">
+          <h3>Export</h3>
+          <p>WAV, MP3, Ogg, stems, MP4 video and game loops. You can also share a song as a link.</p>
+        </article>
+        <article class="card" style="--c: var(--green)">
+          <h3>Tutorials</h3>
+          <p>A short tour, step-by-step tutorials, and a <a href="/guide/">full guide</a> in the app and here.</p>
+        </article>
+        <article class="card" style="--c: var(--red)">
+          <h3>Your own sounds</h3>
+          <p>Record from a mic, import audio files, chop samples and build your own instruments.</p>
+        </article>
+        <article class="card" style="--c: var(--purple)">
+          <h3>Private</h3>
+          <p>No account and no server. Songs save in your browser and to files on your computer.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Install: the button uses the browser's own install prompt where there is one (Chrome,
+         Edge), and otherwise says how (main.js, the same advice as the studio's Help › Install) -->
+    <section id="install" class="install wrap" aria-labelledby="install-title">
+      <div class="install-head">
+        <h2 id="install-title" class="section-title"><span class="mono-label">Download</span>Install Fledgetone as an app</h2>
+        <p>
+          The installed app is the same studio, in its own window. It's free, takes a few seconds,
+          and needs no installer or account. Your browser installs it and keeps it up to date.
+        </p>
+        <div class="install-action">
+          <button class="btn btn-primary" type="button" id="install-btn">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+            Install Fledgetone
+          </button>
+          <p class="install-advice" id="install-advice" role="status" aria-live="polite"></p>
+        </div>
+      </div>
+      <ul class="install-list">
+        <li style="--c: var(--cyan)">
+          <h3>Your work is kept safe</h3>
+          <p>
+            A browser can clear a website's saved data when your disk gets full. The installed app
+            asks it not to, so your autosave, sound library and recordings stay put.
+          </p>
+        </li>
+        <li style="--c: var(--green)">
+          <h3>Works offline</h3>
+          <p>
+            Once installed, the studio opens without the internet. Instruments you've played before
+            are kept too; new ones download the first time you use them.
+          </p>
+        </li>
+        <li style="--c: var(--purple)">
+          <h3>Private</h3>
+          <p>
+            Nothing is uploaded. Your songs and recordings live on your computer, not on a server,
+            and there's no account to sign in to.
+          </p>
+        </li>
+        <li style="--c: var(--amber)">
+          <h3>Its own window</h3>
+          <p>
+            Open it from your dock, Start menu or home screen like any other app, with no tabs
+            or address bar in the way.
+          </p>
+        </li>
+        <li style="--c: var(--red)">
+          <h3>Updates when you're ready</h3>
+          <p>
+            New versions download in the background. The app tells you when one is ready and only
+            switches when you click Reload, never in the middle of your work.
+          </p>
+        </li>
+      </ul>
+      <p class="fineprint">
+        Keep saving important songs to files too (File &rsaquo; Save). To remove the app, open its
+        window menu and choose Uninstall, or remove it like any other app.
+      </p>
+    </section>
+
+    <!-- Credits -->
+    <section id="credits" class="credits wrap" aria-labelledby="credits-title">
+      <h2 id="credits-title" class="section-title"><span class="mono-label">Credits</span>Sounds and effects</h2>
+      <p>The recorded instruments and built-in effects come from these free libraries.</p>
+      <div class="credit-cols">
+        <div>
+          <h3 class="mono-label">Recordings</h3>
+          <ul>
+            <li><a href="https://tonejs.github.io/audio/salamander/">Salamander Grand Piano</a> by Alexander Holm</li>
+            <li><a href="https://github.com/nbrosowsky/tonejs-instruments">tonejs-instruments</a> (Karoryfer, University of Iowa and VSCO&nbsp;2 recordings)</li>
+            <li><a href="https://github.com/sgossner/VSCO-2-CE">VSCO 2 Community Edition</a> by Versilian Studios</li>
+            <li><a href="https://github.com/sfzinstruments/karoryfer.black-and-green-guitars">Black And Green Guitars</a> and more by Karoryfer Samples</li>
+            <li><a href="https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/">FluidR3 GM</a> and <a href="https://gleitz.github.io/midi-js-soundfonts/MusyngKite/">Musyng Kite</a> soundfonts</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="mono-label">Effects</h3>
+          <ul>
+            <li><a href="https://www.airwindows.com">Airwindows</a> by Chris Johnson</li>
+            <li><a href="https://sourceforge.net/projects/mda-vst/">MDA</a> by Paul Kellett</li>
+            <li><a href="https://github.com/RobinSchmidt/Open303">Open303</a> by Robin Schmidt</li>
+            <li><a href="https://github.com/pichenettes/eurorack">Mutable Instruments</a> by &Eacute;milie Gillet</li>
+            <li><a href="https://faust.grame.fr">Faust</a> by GRAME</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="mono-label">Software</h3>
+          <ul>
+            <li><a href="https://tonejs.github.io">Tone.js</a> and the Web Audio API</li>
+            <li><a href="https://react.dev">React</a> and <a href="https://zustand.docs.pmnd.rs">zustand</a></li>
+            <li><a href="https://www.vexflow.com">VexFlow</a> for sheet music</li>
+            <li><a href="https://mediabunny.dev">Mediabunny</a> for video</li>
+            <li><a href="https://github.com/arseneyr/wasm-media-encoders">wasm-media-encoders</a> (LAME, Vorbis)</li>
+          </ul>
+        </div>
+      </div>
+      <p class="fineprint">
+        Each library has its own licence. The full list is in the app under Guide &rsaquo; Credits,
+        and on the <a href="/licenses/">licences page</a>.
+      </p>
+    </section>
+
+    <div class="scope scope-bars scope-mirror" data-scope="bars" aria-hidden="true"><canvas></canvas></div>
+
+    <!-- Final call -->
+    <section class="final wrap">
+      <img src="/img/logo.png" alt="" width="96" height="96" />
+      <h2>Try Fledgetone</h2>
+      <p>It runs in your browser, or install it as an app.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="/app/">Open the studio</a>
+        <a class="btn btn-ghost" href="#install">Download the app</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap foot-row">
+      <div class="brand">
+        <img src="/img/logo.png" alt="" width="26" height="26" />
+        <span>Fledgetone</span>
+      </div>
+      <p>A music studio in your browser.</p>
+      <nav aria-label="Footer">
+        <a href="/app/">Studio</a>
+        <a href="/guide/">Guide</a>
+        <a href="/licenses/">Licences</a>
+        <a href="https://twobirdsworkshop.com">twobirdsworkshop.com</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

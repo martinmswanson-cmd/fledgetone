@@ -8,6 +8,12 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-3 — A home page
+
+- fledgetone.com has a home page: what Fledgetone does, with videos, how to install it as an app, and a button to open the studio. The studio itself moves to **fledgetone.com/app/**.
+- The guide is on the site too, a page per chapter at fledgetone.com/guide/, and the open-source licences at fledgetone.com/licenses/.
+- Old links still work: shared song links made before the move open in the studio, and the app installed before it opens the studio as before.
+
 ## 2026.10.16-2 — Up-to-date guide
 
 - The guide matches the app again: the menu bar list covers every menu and item (Plugins and Learn included), game music has a chapter of its own, the Track Inspector is described in its real order, and wrong counts, menu paths and button names are fixed.

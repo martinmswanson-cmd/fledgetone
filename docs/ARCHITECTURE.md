@@ -397,9 +397,13 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
 - `npm run build:runtime`: `dist-runtime/bos-player.js`, the player that games use to play a
   saved project (`src/runtime/player.ts`).
 
-fledgetone.com is the production build (`npm run build`), made by Netlify from `master` on every
-push (`netlify.toml`, which also removes the GPL plugins' folder from `dist/`), with
-`public/fledgetone-samples/` and `public/fledgetone-plugins/` served next to the app.
+fledgetone.com is made by Netlify from `master` on every push (`netlify.toml`: `npm run
+build:site`): the home page (`site/`, plain HTML and CSS) at `/`, the guide's pages at `/guide/`
+and the licences at `/licenses/`, and the production build of the app at `/app/`
+(`scripts/build-site.mjs`, which also removes the GPL plugins' folder), with
+`public/fledgetone-samples/` and `public/fledgetone-plugins/` served next to the app. The app
+uses relative addresses throughout, so it runs under any folder; `site/sw.js` retires the worker
+installed while the app lived at the root.
 twobirdsworkshop.com's old addresses for the app redirect there, and it still serves those two
 folders as the app's fallback download addresses (`SITE_SAMPLES` in `instrumentCatalog.ts`,
 `pluginSources.ts`).
@@ -412,5 +416,5 @@ by address and set fingerprint, downloaded with `?v=<fingerprint>`). A new worke
 person clicks Reload (`src/pwa/pwa.ts`, `UpdateNotice.tsx`). Only production builds register it;
 the dev server removes any it finds. The one-file build has neither manifest nor worker
 (`build-single.mjs` marks it with `<meta name="fledgetone-build" content="single">`).
-`public/_headers` sets Netlify's cache rules: no-cache for `sw.js`, the manifest and
+`public/_headers` sets Netlify's cache rules (moved under `/app/` by `scripts/site-headers.mjs`): no-cache for `sw.js`, the manifest and
 `version.json`, a year (immutable) for `assets/` and the versioned recordings and plugins.

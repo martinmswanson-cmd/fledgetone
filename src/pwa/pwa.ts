@@ -204,9 +204,11 @@ export function startPwa(): void {
   }
   if (isSingleFileBuild() || !window.isSecureContext) return;
   // Registering looks for a new version too, as every opening of the app does (when online)
+  // Under the build's base: / for the app on its own, /app/ on fledgetone.com (npm run build:site)
+  const base = import.meta.env.BASE_URL;
   const register = () =>
     navigator.serviceWorker
-      .register('/sw.js', { scope: '/', updateViaCache: 'none' })
+      .register(`${base}sw.js`, { scope: base, updateViaCache: 'none' })
       .then(watchForUpdates)
       .catch(() => {});
   // After the page has loaded, so the worker's downloads don't compete with the app's own

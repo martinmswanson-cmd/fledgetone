@@ -30,3 +30,4 @@ songs/
 __pycache__/
 scripts/plugins/faust/gen/
 dist-full
+dist-site

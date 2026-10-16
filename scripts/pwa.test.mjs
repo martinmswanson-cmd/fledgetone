@@ -14,7 +14,11 @@ test('the manifest names the app, opens in its own window and has its icons at t
   const m = JSON.parse(readFileSync(join(ROOT, 'public/manifest.webmanifest'), 'utf8'));
   assert.equal(m.name, 'Fledgetone');
   assert.equal(m.display, 'standalone');
-  assert.equal(m.start_url, '/');
+  // Relative, so the same file works with the app at / or at /app/ (fledgetone.com); the scope is
+  // the whole site, so the home page can offer the install too
+  assert.equal(m.start_url, './');
+  assert.equal(m.scope, '/');
+  assert.equal(m.id, '/');
   assert.equal(m.background_color, '#121214');
   assert.equal(m.theme_color, '#121214');
   const want = [['192x192', 'any'], ['512x512', 'any'], ['512x512', 'maskable']];
@@ -186,4 +190,17 @@ test('install instructions fit the browser', () => {
   assert.match(at('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'), /install icon/);
   assert.match(at('Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0'), /Chrome, Edge or Safari/);
   assert.match(at(mac, 0, false), /fledgetone\.com/);
+});
+
+test('fledgetone.com: the app\'s cache rules move to the top of the site, under /app/', async () => {
+  const { siteHeaders } = await import('./site-headers.mjs');
+  const out = siteHeaders(readFileSync(join(ROOT, 'public/_headers'), 'utf8'));
+  const rule = (path) => out.split(/\n(?=\/)/).find((b) => b.startsWith(path + '\n'));
+  assert.match(rule('/app/sw.js'), /Cache-Control: no-cache/);
+  assert.match(rule('/app/manifest.webmanifest'), /application\/manifest\+json/);
+  assert.match(rule('/app/assets/*'), /immutable/);
+  assert.match(rule('/video/*'), /max-age=86400/);
+  // The root's own worker (site/sw.js, retiring the one from when the app lived there), once
+  assert.match(rule('/sw.js'), /Cache-Control: no-cache/);
+  assert.equal(out.split('\n').filter((l) => l === '/sw.js').length, 1);
 });

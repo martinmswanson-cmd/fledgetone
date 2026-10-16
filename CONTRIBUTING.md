@@ -59,7 +59,8 @@ npm run build:single   # dist-single/index.html: the whole app in one file, to r
 npm run build:full     # dist-full/: the one-file app with the GPL plugins (Surge XT, Dragonfly...) in it
 ```
 
-fledgetone.com is built by Netlify from `master` (see `netlify.toml`) and is an installable web app
+fledgetone.com is built by Netlify from `master` (see `netlify.toml`): a home page at `/` and the
+app at `/app/`, an installable web app
 with a service worker; only production builds register the worker. The one-file build isn't
 published; it fetches the recordings and plugins from their fallback address on
 twobirdsworkshop.com.
@@ -359,9 +360,9 @@ have the right to contribute it.
 - **No ripped or "found" material**: no samples from commercial libraries or records, no presets
   copied from commercial products, and no artist or song names in anything we ship.
 - **The name and logo** aren't covered by the GPL; see `TRADEMARKS.md`.
-- **The published build** (`npm run build`, as Netlify runs it) leaves the GPL plugins out of
-  the app, and Netlify deletes their folder from `dist/`; the full build (`build:full`) has them.
-  Don't copy `public/fledgetone-plugins/gpl/` anywhere the app is published.
+- **The published build** (`build:site`, as Netlify runs it for fledgetone.com: the home page at
+  `/`, the app at `/app/`) leaves the GPL plugins out, and so does `build:single`; the full build
+  (`build:full`) has them. Don't copy `public/fledgetone-plugins/gpl/` anywhere the app is published.
 
 ## Being kind
 

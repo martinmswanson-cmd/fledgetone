@@ -14,8 +14,8 @@ loudness matter more than orchestral realism.
 - Work branch: `ccr-1ba142ee-suz8wp` (pull request #1). It holds everything finished, and
   `master` follows it.
 - **Publishing**: fledgetone.com is built by Netlify from `master` on every push (`netlify.toml`:
-  `npm run build`, the GPL plugins' folder removed) and served from `dist/`, with the recordings
-  and plugins next to it, as an installable app with a service worker. The old addresses on
+  `npm run build:site`, the GPL plugins' folder removed): the home page (`site/`) at `/`, the app
+  at `/app/` with the recordings and plugins next to it, as an installable app with a service worker. The old addresses on
   twobirdsworkshop.com (`/fledgetone.html`, `/fledgetone`, `/bos-beat-box`, `/bos-beat-box.html`)
   redirect to fledgetone.com with a 301; twobirdsworkshop.com still serves `fledgetone-samples/`
   and `fledgetone-plugins/` as the app's fallback download addresses.
@@ -48,8 +48,9 @@ npm run dev            # dev server
 npx tsc -b             # type check
 npx oxlint src         # lint (2 known warnings: Playhead.tsx x2)
 npm test               # node --test scripts/*.test.mjs
-npm run build          # production build (what fledgetone.com publishes)
+npm run build          # production build of the app alone
 npm run build:single   # the one-file build (dist-single/index.html)
+npm run build:site     # fledgetone.com: home page (site/) at /, the app at /app/, GUIDE.md as pages at /guide/ (Netlify runs this)
 npm run guide-tables   # rewrite GUIDE.md's instrument list and credits from the catalog
 npm run codemap        # rewrite docs/CODEMAP.md from the files' summary comments
 ```
@@ -475,3 +476,16 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 ## Waiting on the owner
 
 - Whether the new starters, chiptune sounds and the build-up & drop sound right.
+- **Remake the website's First Flight score** once the instrument updates are done (the owner asked
+  to hold it until then). The film is AI-generated (`scripts/guide-shots/trailer.webm` is a small
+  copy; the full 1280x720 one is in the owner's Higgsfield library). The score is
+  `site/video/first-flight.fledgetone.json` (117.76 BPM; cuts on bars 3, 5 and 7). To redo it: open
+  it in the studio, rework it, Export > Mixdown, WAV, Ring out; then put it on the film with the last
+  frame held while the chord rings, as `site/video/first-flight.mp4` (H.264 + AAC, faststart):
+  `ffmpeg -i film.mp4 -i song.wav -filter_complex "[0:v]tpad=stop_mode=clone:stop_duration=2.6,fade=t=out:st=16.4:d=1.2,format=yuv420p[v];[1:a]atrim=0:17.6,afade=t=out:st=16.2:d=1.4[a]" -map "[v]" -map "[a]" -c:v libx264 -crf 22 -c:a aac -b:a 192k -movflags +faststart -t 17.6 site/video/first-flight.mp4`.
+  Every picture or clip of the film carries an "AI-generated" note; the music doesn't need one.
+- **Courier**, the second scored film on the website (modern electronic; a tempo map, 123.87 then 116.36 at bar 3 and 125.22 at bar 5, puts its cuts exactly on bars 3, 5 and 7):
+  `site/video/courier.fledgetone.json`, shown as `site/video/courier.mp4`. Its sound effects (17, made
+  in the sound effects maker and placed with Add to song) are on the SFX, SFX 2 and Ambience tracks. The film is AI-generated
+  (stylized game-style footage of an original drone courier, deliberately not based on any existing game); it's in the owner's
+  Higgsfield library. Re-export it the same way as First Flight if the synths change.
