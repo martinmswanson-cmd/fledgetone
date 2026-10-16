@@ -15,6 +15,9 @@ const EQ = {
 };
 const STAGES = ['levels', 'pan', 'eq', 'comp', 'sends', 'bus', 'master'];
 
+/** A slider (or checkbox) by its exact label. */
+const range = (scope, label) => scope.locator(`input[aria-label="${label}"]`);
+
 /** Set a range slider to a value with the arrow keys, as a reader can. */
 async function setRange(s, locator, target) {
   const el = locator.first();
@@ -51,13 +54,14 @@ async function insert(s, title) {
 
 /** The Synthwave starter, its recordings allowed to download, mixed up to `upto`. */
 async function build(s, upto = 'master') {
+  const T = Date.now();
   await s.page.unroute(/github\.io|githubusercontent/);
   await s.starter('Synthwave');
   await s.wait(4000);
   const done = (st) => STAGES.indexOf(st) <= STAGES.indexOf(upto);
   await s.view('Mixer');
-  if (done('levels')) for (const [t, v] of Object.entries(LEVELS)) await setRange(s, s.page.getByLabel(`${t} volume`, { exact: true }), v);
-  if (done('pan')) for (const [t, v] of Object.entries(PANS)) await setRange(s, s.page.getByLabel(`${t} pan`, { exact: true }), v);
+  if (done('levels')) for (const [t, v] of Object.entries(LEVELS)) await setRange(s, range(s.page, `${t} volume`), v);
+  if (done('pan')) for (const [t, v] of Object.entries(PANS)) await setRange(s, range(s.page, `${t} pan`), v);
   if (done('eq')) {
     for (const [t, moves] of Object.entries(EQ)) {
       await inspect(s, t);
@@ -68,25 +72,25 @@ async function build(s, upto = 'master') {
         await panel.locator('circle').nth(band - 1).dispatchEvent('pointerdown');
         await s.page.mouse.up();
         await s.wait(150);
-        const on = panel.getByLabel(`Band ${band} on`);
+        const on = range(panel, `Band ${band} on`);
         if (!(await on.isChecked())) await on.check();
-        await setRange(s, panel.getByLabel('Band frequency'), freq);
-        if (gain !== undefined) await setRange(s, panel.getByLabel('Band gain'), gain);
-        if (q !== undefined) await setRange(s, panel.getByLabel('Band width (Q)'), q);
+        await setRange(s, range(panel, 'Band frequency'), freq);
+        if (gain !== undefined) await setRange(s, range(panel, 'Band gain'), gain);
+        if (q !== undefined) await setRange(s, range(panel, 'Band width (Q)'), q);
       }
     }
   }
   if (done('comp')) {
     await inspect(s, 'Bass');
     const c = await insert(s, 'Compressor');
-    await setRange(s, c.getByLabel('Threshold'), -18);
-    await setRange(s, c.getByLabel('Ratio'), 3);
-    await setRange(s, c.getByLabel('Makeup'), 2);
+    await setRange(s, range(c, 'Threshold'), -18);
+    await setRange(s, range(c, 'Ratio'), 3);
+    await setRange(s, range(c, 'Makeup'), 2);
   }
   if (done('sends')) {
     for (const [t, [rev, dly]] of Object.entries(SENDS)) {
-      await setRange(s, s.page.getByLabel(`${t} reverb send`, { exact: true }), rev);
-      await setRange(s, s.page.getByLabel(`${t} delay send`, { exact: true }), dly);
+      await setRange(s, range(s.page, `${t} reverb send`), rev);
+      await setRange(s, range(s.page, `${t} delay send`), dly);
     }
     await inspect(s, 'Lead');
     await s.tab('Master');
@@ -97,19 +101,21 @@ async function build(s, upto = 'master') {
   if (done('master')) {
     await inspect(s, 'Lead');
     await s.tab('Master');
-    await s.page.getByLabel('Glue').selectOption({ label: 'Punchy' });
-    await setRange(s, s.page.locator('[data-search="OTT"]').getByLabel('Depth'), 0.2);
-    await setRange(s, s.page.locator('[data-search="Stereo Width"]').getByLabel('Width'), 1.2);
-    await setRange(s, s.page.getByLabel('Level', { exact: true }), 3);
+    await s.page.locator('select').filter({ has: s.page.locator('option', { hasText: 'Punchy' }) }).first().selectOption({ label: 'Punchy' });
+    await setRange(s, range(s.page.locator('[data-search="OTT"]'), 'Depth'), 0.2);
+    await setRange(s, range(s.page.locator('[data-search="Stereo Width"]'), 'Width'), 1.2);
+    await setRange(s, range(s.page, 'Level'), 3);
     const clip = await insert(s, 'Clipper');
-    await setRange(s, clip.getByLabel('Drive'), 2);
+    await setRange(s, range(clip, 'Drive'), 2);
   }
   await s.page.mouse.move(700, 4);
+  if (process.env.DEBUG) console.log('built', upto, (Date.now() - T) / 1000);
 }
 
 /** Play from the start of the Groove section (bar 5) for a while. */
 async function play(s, ms) {
-  await s.page.getByText('5.1', { exact: true }).first().click();
+  const bar5 = await s.page.getByText('5.1', { exact: true }).first().boundingBox();
+  await s.page.mouse.click(bar5.x + 4, bar5.y + bar5.height / 2);
   await s.wait(200);
   await s.page.keyboard.press('Space');
   await s.wait(ms);
@@ -120,7 +126,11 @@ export const SHOTS = [
     file: 'mix-levels',
     alt: 'The Mixer with the Synthwave starter: Drums at -4 dB, Bass -6, Poly pad -16, Strings -14 panned L30, Arp -12 panned R30, Lead -8, and the master on the right.',
     caption: 'The levels from the worked example: drums loudest, the pad furthest back.',
-    setup: async (s) => { await build(s, 'pan'); return s.panel(); },
+    setup: async (s) => {
+      await build(s, 'pan');
+      await play(s, 4000);
+      return s.union([s.q('[aria-label="Drums channel"]'), s.q('[aria-label="Master channel"]')], 10);
+    },
   },
   {
     file: 'mix-eq',
@@ -154,7 +164,8 @@ export const SHOTS = [
     caption: 'Track › Bus preset: Drum bus puts the drums through one bus with glue compression.',
     setup: async (s) => {
       await build(s, 'bus');
-      return s.union([s.own('Tracks'), s.page.getByText('Bass', { exact: true }).first()], 12);
+      const b = await s.union([s.own('Tracks'), s.page.getByText('BUS · 1', { exact: true })], 12);
+      return { ...b, height: b.height + 70 };
     },
   },
   {
@@ -178,7 +189,7 @@ export const SHOTS = [
       await play(s, 9000);
       const clip = s.page.locator('[data-search="Clipper"]').last();
       await clip.scrollIntoViewIfNeeded();
-      return s.union([s.page.getByLabel('Level', { exact: true }), clip], 12);
+      return s.union([range(s.page, 'Level').locator('xpath=ancestor::div[contains(@class,"rounded")][1]'), clip], 8);
     },
   },
 ];

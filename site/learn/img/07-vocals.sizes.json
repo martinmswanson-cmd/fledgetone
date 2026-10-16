@@ -1,0 +1,30 @@
+{
+  "vocals-settings": [
+    1600,
+    671
+  ],
+  "vocals-recording": [
+    1600,
+    808
+  ],
+  "vocals-takes": [
+    1536,
+    688
+  ],
+  "vocals-chain": [
+    622,
+    660
+  ],
+  "vocals-tune": [
+    1536,
+    790
+  ],
+  "vocals-hard-tune": [
+    1536,
+    790
+  ],
+  "vocals-stack": [
+    1600,
+    1024
+  ]
+}

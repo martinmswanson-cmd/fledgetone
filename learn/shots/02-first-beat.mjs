@@ -16,9 +16,9 @@ async function context(s, x, y, item) {
 
 /** The piano roll's grid: where beat 1 starts and how wide a 16th is, from its ruler. */
 async function grid(s) {
-  const ruler = s.page.locator('xpath=//*[normalize-space(text())="NEW NOTE"]/ancestor::div[.//button[normalize-space(.)="Kick"]][1]');
-  const one = await ruler.locator('xpath=.//*[normalize-space(text())="1.1"]').first().boundingBox();
-  const two = await ruler.locator('xpath=.//*[normalize-space(text())="1.2"]').first().boundingBox();
+  const ruler = s.page.locator('[aria-label="Piano roll"]').last();
+  const one = await ruler.locator('xpath=.//*[not(*) and normalize-space(.)="1.1"]').first().boundingBox();
+  const two = await ruler.locator('xpath=.//*[not(*) and normalize-space(.)="1.2"]').first().boundingBox();
   return { x0: one.x - 2, step: (two.x - one.x) / 4 };
 }
 
@@ -100,7 +100,8 @@ export const SHOTS = [
     caption: 'A backbeat in the drum rows: kick on 1 and 3, snare on 2 and 4, hats on every 8th.',
     setup: async (s) => {
       await backbeat(s);
-      await s.page.mouse.move(1300, 1000);
+      for (let i = 0; i < 4; i++) await s.page.locator('[aria-label="Piano roll"] [title="Zoom in"]').click();
+      await s.page.mouse.move(1300, 120);
       await kickInView(s);
       return s.pianoRoll();
     },
@@ -135,9 +136,7 @@ export const SHOTS = [
       await pop.locator('select').first().selectOption({ label: '1/32' });
       await s.page.mouse.move(1300, 1000);
       await s.wait(300);
-      const pr = await s.pianoRoll();
-      const pb = await pop.boundingBox();
-      return { x: pr.x, y: pr.y, width: Math.max(pb.x + pb.width + 16, 760) - pr.x, height: pr.height };
+      return s.pianoRoll();
     },
   },
   {
@@ -149,9 +148,9 @@ export const SHOTS = [
       await s.page.mouse.click(1300, await laneY(s, 'Brass Stabs'));
       await s.page.mouse.move(1300, 120);
       await s.wait(300);
-      const tracks = await s.own('Tracks').first().boundingBox();
+      const top = await s.q('[title^="The song\'s tempo"]').first().boundingBox();
       const lane = await laneY(s, 'Drums');
-      return { x: 17, y: tracks.y - 30, width: 900, height: lane + 50 - (tracks.y - 30) };
+      return { x: 17, y: top.y - 8, width: 900, height: lane + 52 - (top.y - 8) };
     },
   },
   {
@@ -165,7 +164,7 @@ export const SHOTS = [
       await s.page.mouse.click(330, await laneY(s, 'Drums'), { button: 'right' });
       await s.wait(500);
       const menu = s.page.locator('[role=menu]').last();
-      return s.union([menu, s.own('Drums').first()], 10);
+      return s.union([menu, s.text('Drums 1').first()], 10);
     },
   },
   {

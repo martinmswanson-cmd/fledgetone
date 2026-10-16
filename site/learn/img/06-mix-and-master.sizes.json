@@ -1,0 +1,22 @@
+{
+  "mix-levels": [
+    1600,
+    505
+  ],
+  "mix-compressor": [
+    614,
+    256
+  ],
+  "mix-drum-bus": [
+    528,
+    524
+  ],
+  "mix-master": [
+    630,
+    1100
+  ],
+  "mix-clipper": [
+    630,
+    610
+  ]
+}
