@@ -73,11 +73,14 @@ async function paintBeat(s) {
   await s.page.waitForTimeout(300);
 }
 
-/** Beat: Repeat three times (bars 1 to 4), then a snare roll at the end of bar 4. */
+/** Beat: Repeat, tap the copy, three times over (bars 1 to 4), then a snare roll at the end of bar 4. */
 async function repeatAndFill(s) {
   await s.page.evaluate(() => window.scrollTo(0, 0));
-  for (let i = 0; i < 3; i++) {
+  for (let n = 2; n <= 4; n++) {
     await button(s, 'Repeat').click();
+    await s.page.waitForTimeout(400);
+    // The copy, to repeat next (and, after the last, the bar the fill goes in)
+    await s.page.locator('main button', { hasText: new RegExp(`^Bar ${n}1 bar$`) }).first().click();
     await s.page.waitForTimeout(300);
   }
   await button(s, 'Fill').click();
@@ -100,6 +103,9 @@ async function newPart(s, track) {
 /** Notes: Space Clav plays the chords as off-beat stabs. */
 async function chords(s, open = false) {
   await newPart(s, 'Space Clav');
+  // The key picked, so the rows stay put as notes go in (else they follow the key worked out from the notes)
+  await s.page.getByLabel('Key').selectOption('9-minor');
+  await s.page.waitForTimeout(300);
   await button(s, 'Chords').click();
   await s.page.waitForTimeout(400);
   await s.page.getByRole('dialog').locator('button', { hasText: 'Off-beat stabs' }).click();

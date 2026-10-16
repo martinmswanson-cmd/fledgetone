@@ -83,3 +83,9 @@ test('the licences page: entries, licence names and groups from third-party-lice
   assert.match(html, /<h2>In the built-in effects and instruments<\/h2>/);
   assert.match(html, /<a href="\/licenses\/">Licences<\/a>/);
 });
+
+test("links to the site's own pages work, as well as full addresses", async () => {
+  const { inline } = await import('./guide-pages.mjs');
+  assert.equal(inline('[Next](/learn/first-beat/)'), '<a href="/learn/first-beat/">Next</a>');
+  assert.equal(inline('[Site](https://fledgetone.com)'), '<a href="https://fledgetone.com" rel="noopener">Site</a>');
+});

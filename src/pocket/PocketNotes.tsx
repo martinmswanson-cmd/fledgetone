@@ -4,14 +4,14 @@
  * key. Tap an empty cell for a note as long as the length chosen, tap a note to take it away, tap
  * a row's name to hear it. The key is the song's (as detected from its notes) unless one is picked.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { ChevronDown, ChevronUp, Eraser, Plus } from 'lucide-react';
 import { CHORD_STYLES, chordNotesFor, PROGRESSIONS, progressionChords, type ChordStyle, type Progression } from '../store/smartTools';
 import { fitToInstrument } from '../store/smartActions';
 import { paintHandlers } from './pocketPaint';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { useTimelineStore } from '../store/timelineStore';
-import { detectKey, keyOf, NOTE_NAMES } from '../store/songKey';
+import { detectKey, keyOf, NOTE_NAMES, type SongKey } from '../store/songKey';
 import { Card, pill, pillOn, Sheet, SheetItem } from './pocketUi';
 import { clipsOf, editorOf, pickClip, pocketNoteId, usePlayPosition, usePocket } from './pocketStore';
 import { noteSteps, noteToMidi, scaleRows, stepsPerBar, toggleCovering } from './pocketGrid';
@@ -44,21 +44,23 @@ export const PocketNotes: React.FC = () => {
   const track = pitched.find((t) => t.id === noteTrackId) ?? pitched[0] ?? null;
   const clips = clipsOf(allClips, track?.id ?? null);
   const clip = pickClip(clips, noteClipId, playhead);
-  const detected = useMemo(() => detectKey(allClips, tracks), [allClips, tracks]);
-  const key = chosenKey ?? detected ?? keyOf(9, 'minor');
   const perBar = stepsPerBar(meter);
 
   // The grid's middle: the clip's notes' middle, else the instrument's, moved by whole octaves
   const range = track ? INSTRUMENTS[track.instrumentKey].range : ([48, 72] as [number, number]);
-  // Worked out when the clip opens, not on every note, so the rows stay put while writing
+  // The middle and the song's key are worked out when the clip opens, not on every note, so the
+  // rows stay put while writing (a few notes can make the song's key read differently)
   const anchorKey = `${track?.id}|${clip?.id}`;
-  const [anchor, setAnchor] = useState<{ key: string; midi: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ key: string; midi: number; detected: SongKey | null } | null>(null);
   let base = anchor?.midi ?? 60;
+  let detected = anchor?.detected ?? null;
   if (anchor?.key !== anchorKey) {
     const midis = (clip?.notes ?? []).map((n) => noteToMidi(n.note)).filter((m): m is number => m !== null);
     base = midis.length ? Math.round(midis.reduce((a, b) => a + b, 0) / midis.length) : Math.round((range[0] + range[1]) / 2);
-    setAnchor({ key: anchorKey, midi: base });
+    detected = detectKey(allClips, tracks);
+    setAnchor({ key: anchorKey, midi: base, detected });
   }
+  const key = chosenKey ?? detected ?? keyOf(9, 'minor');
   const centre = base + 12 * (shift[track?.id ?? ''] ?? 0);
   const rows = scaleRows(key, range, centre);
   const rowMidis = new Set(rows.map(noteToMidi));

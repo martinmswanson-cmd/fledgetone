@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { CircleDot, Copy, Eraser, Plus, Repeat, Trash2 } from 'lucide-react';
 import { loopClip } from './pocketArrange';
+import { showToast } from '../components/timeline/toastStore';
 import { drummer, DRUM_STYLES, FILLS, type DrumStyle } from '../store/smartTools';
 import { fillClipBar } from '../store/smartActions';
 import { paintHandlers } from './pocketPaint';
@@ -49,12 +50,16 @@ export const ClipPicker: React.FC<{
   const repeat = () => {
     if (!clip) return;
     s().selectClip(clip.id, false);
-    const id = s().repeatSelection(1);
+    // (A message back means there was no room for the copy)
+    const problem = s().repeatSelection(1);
     s().clearSelection();
-    if (id) {
-      const copy = useTimelineStore.getState().clips.find((c) => c.trackId === clip.trackId && Math.abs(c.startBar - (clip.startBar + clip.lengthBars)) < 1e-6);
-      if (copy) onClip(copy.id);
+    if (problem) {
+      showToast(problem);
+      return;
     }
+    // On to the copy, so tapping Repeat again adds the next one after it
+    const copy = useTimelineStore.getState().clips.find((c) => c.id !== clip.id && c.trackId === clip.trackId && Math.abs(c.startBar - (clip.startBar + clip.lengthBars)) < 1e-6);
+    if (copy) onClip(copy.id);
   };
   const remove = () => {
     if (!clip) return;
