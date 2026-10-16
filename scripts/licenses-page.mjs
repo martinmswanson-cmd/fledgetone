@@ -54,7 +54,7 @@ export function licensesPage(groups) {
     <div class="g-hero">
       <p class="mono-label">Licences</p>
       <h1>Open-source software in Fledgetone</h1>
-      <p class="lede">Fledgetone is built on ${count} pieces of open-source software. Here is each one with its licence. Click a name for the full text.</p>
+      <p class="lede">Fledgetone is built on ${count} pieces of open-source software. Here is each one with its licence. Click a name for the full text. Fledgetone itself is free software under the GNU General Public License, version 3, and <a href="https://github.com/martinmswanson-cmd/fledgetone">its source code is on GitHub</a>.</p>
       <p class="fineprint">The recorded instruments and their licences are listed in the guide, under <a href="/guide/credits/">Credits</a>. The same list is in the studio: Guide &rsaquo; Credits. As one text file: <a href="/app/third-party-licenses.txt">third-party-licenses.txt</a>.</p>
     </div>
     ${groups

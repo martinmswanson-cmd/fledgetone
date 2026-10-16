@@ -378,6 +378,7 @@ const MENUS: MenuDef[] = [
       ...(usePwa.getState().installed ? [] : [{ label: 'Install Fledgetone…', run: installApp, divider: true, title: 'Install Fledgetone as an app: its own window, and it opens offline' }]),
       { label: 'Pocket, the phone version', run: () => chooseInterface('pocket'), title: 'Switch to Fledgetone Pocket: big pads, a step grid and a note grid in key, made for a phone. The same song opens in both' },
       { label: 'Report a problem…', run: () => ui().setDialog('report'), divider: true },
+      { label: 'Source code', run: () => window.open('https://github.com/martinmswanson-cmd/fledgetone', '_blank', 'noopener'), title: "Fledgetone is free software under the GNU GPL, version 3: its code on GitHub" },
       { label: `What's new (version ${APP_VERSION})`, run: () => ui().setDialog('changes') },
       { label: 'Terms of use', run: () => ui().setDialog('terms') },
     ],

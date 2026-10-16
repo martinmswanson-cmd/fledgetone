@@ -5,6 +5,9 @@ people who make music for games and video, and for beginners who want something 
 on day one. Every kind of help counts: a clear bug report, a sound that's off, a starter song, a
 better sentence in the guide, or code.
 
+Everyone taking part agrees to the [code of conduct](CODE_OF_CONDUCT.md): be kind, give feedback
+on the work rather than the person, and email martin@twobirdsworkshop.com if something's wrong.
+
 This page covers:
 
 1. [Ways to help](#ways-to-help) (no code needed for most)

@@ -61,10 +61,13 @@ export const foot = `
         <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
         <a href="/licenses/">Licences</a>
+        <a href="https://github.com/martinmswanson-cmd/fledgetone">Source code</a>
+        <a href="https://github.com/martinmswanson-cmd/fledgetone/blob/master/CODE_OF_CONDUCT.md">Code of conduct</a>
         <a href="https://twobirdsworkshop.com">twobirdsworkshop.com</a>
       </nav>
     </div>
     <p class="wrap foot-note">Fledgetone is an independent project. It is not affiliated with, endorsed by or sponsored by any company or product named on this site. Unity, Godot, FMOD Studio, Wwise, Premiere, DaVinci Resolve, Final Cut, Chrome, Edge, Safari, Firefox and the other names here are trademarks of their owners, used only to say what Fledgetone works with.</p>
+    <p class="wrap foot-note"><a href="https://www.netlify.com">This site is powered by Netlify</a></p>
   </footer>
 </body>
 </html>

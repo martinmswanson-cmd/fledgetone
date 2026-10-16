@@ -8,6 +8,12 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-10 — Fledgetone is open source
+
+- Fledgetone's code is now free software under the GNU General Public License, version 3, with its source on GitHub (github.com/martinmswanson-cmd/fledgetone). The home page, the guide, the licences page and Help › **Source code** link to it.
+- The terms of use say so (a new question and answer, and sections 3, 9 and 14), and the permission that comes with the files Fledgetone writes into exports (players, game-engine scripts, manifests) says it's in addition to the GPL: those files stay free to use in any project, closed-source and paid ones included.
+- A code of conduct for the project (CODE_OF_CONDUCT.md), linked from the site's footer, the README and the contributor guide. The site's footer also says it's powered by Netlify.
+
 ## 2026.10.16-9 — Pocket: swipe through the song
 
 - Pocket's Song screen: the tracks now scroll sideways with a swipe instead of squeezing the whole song into the screen, with zoom buttons, the track names staying put on the left, and the view following the playhead while the song plays. Tap a bar number to move there.

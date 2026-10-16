@@ -94,6 +94,10 @@ Copyright (C) 2026 the Fledgetone authors.
 
 The recorded sounds and built-in plugins keep their own licences (see Credits above).
 
+Taking part in the project (issues, pull requests, discussions) is covered by the
+[code of conduct](CODE_OF_CONDUCT.md). The site, fledgetone.com, is hosted by Netlify on its
+Open Source plan.
+
 ### The name and logo
 
 The licence covers the code, not the Fledgetone name or logo (`src/assets/fledgetone.png`,
