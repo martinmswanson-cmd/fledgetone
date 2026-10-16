@@ -7,7 +7,7 @@
 // The website build has the GPL plugins (VITE_GPL_PLUGINS=1 in package.json's build:site), since
 // the app's source is published with them. The app's cache rules move to the top of the site
 // (scripts/site-headers.mjs).
-import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeGuide } from './guide-site.mjs';
@@ -36,4 +36,21 @@ const learn = await writeLearn(OUT);
 // The home page's Learn section lists the lessons
 const home = join(OUT, 'index.html');
 writeFileSync(home, readFileSync(home, 'utf8').replace('<!-- learn-cards -->', learnCards(await lessons())));
+// The sitemap for search engines (robots.txt points to it): every page of the site, and the studio
+const pages = [];
+const walk = (dir, path) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory() && e.name !== 'app') walk(join(dir, e.name), `${path}${e.name}/`);
+    else if (e.name === 'index.html') pages.push(path);
+  }
+};
+walk(OUT, '/');
+pages.splice(1, 0, '/app/');
+writeFileSync(
+  join(OUT, 'sitemap.xml'),
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
+    .sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b))
+    .map((p) => `  <url><loc>https://fledgetone.com${p}</loc></url>`)
+    .join('\n')}\n</urlset>\n`
+);
 console.log(`dist-site/: the home page at /, the studio at /app/, the lessons at /learn/ (${learn}), the guide at /guide/ (${guide} pages), the licences at /licenses/ (${licences})`);
