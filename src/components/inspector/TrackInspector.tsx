@@ -10,7 +10,6 @@ import {
   X,
   RotateCcw,
   Waves,
-  Sparkles,
   Radio,
   CheckCircle2,
   AlertCircle,
@@ -415,7 +414,7 @@ export const TrackInspector: React.FC = () => {
             {/* Aux FX Sends Section */}
             <div data-search="sends" className="flex flex-col gap-3 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
               <div className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <Waves className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-white">
                   Post-Fader Aux Sends
                 </span>

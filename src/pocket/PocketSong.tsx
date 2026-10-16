@@ -5,7 +5,7 @@
  * and add an instrument from the catalog.
  */
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, History, Minus, Plus, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, History, Minus, Plus } from 'lucide-react';
 import { CATEGORIES, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { STARTER_GROUPS, STARTERS } from '../store/starters';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
@@ -196,7 +196,7 @@ export const PocketSong: React.FC = () => {
         }
         right={
           <button type="button" className={pill} onClick={() => setSheet('new')}>
-            <Sparkles className="w-4 h-4" /> New
+            <Plus className="w-4 h-4" /> New
           </button>
         }
       >

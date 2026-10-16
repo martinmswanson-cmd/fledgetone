@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-5 — Plain icons
+
+- Pocket's **New** button shows a plus, and the studio's **New idea** (sample chops) and **Aux Sends** show a shuffle and waves: no more sparkles, which suggest AI-made music. Nothing in Fledgetone writes music with AI.
+
 ## 2026.10.16-4 — Fledgetone Pocket, for phones
 
 - **Pocket**: on a phone, Fledgetone now opens a version made for one. Big drum pads and a step grid for beats, a note grid that has only the notes of the song's key, a whole-song view to tap into any clip, a simple mixer, and an MP3 export straight to the phone's share sheet. It plays the same instruments and songs as the studio: a song started on a phone opens on a computer, and back. See the guide's **Fledgetone Pocket: on a phone**.

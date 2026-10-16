@@ -3,7 +3,7 @@
  * Multi Sampler (sounds laid across the keys and velocities).
  */
 import React, { useState } from 'react';
-import { Drum, Piano, Sparkles, Trash2, Upload } from 'lucide-react';
+import { Drum, Piano, Shuffle, Trash2, Upload } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { DrumRack, MultiSample, RackPad, Track } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
@@ -195,7 +195,7 @@ const FlipControls: React.FC<{ trackId: string }> = ({ trackId }) => {
         onClick={() => clipId && newFlipIdea(clipId) && showToast('A new idea for the chops (Undo for the last one).')}
         title="Write a new pattern that plays the chops in another order on the beat grid, into this track's selected clip"
       >
-        <Sparkles className="w-3 h-3 inline mr-1" />
+        <Shuffle className="w-3 h-3 inline mr-1" />
         New idea
       </button>
       <BassCutToggle trackId={trackId} />
