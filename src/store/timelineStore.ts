@@ -89,7 +89,7 @@ import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
-import { durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
+import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
@@ -2037,7 +2037,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setTrackReverbSend: (id, send) => {
       updateTrack(id, () => ({
-        reverbSend: Math.max(0, Math.min(1, send)),
+        reverbSend: Math.max(0, Math.min(REVERB_SEND_MAX, send)),
       }));
     },
 

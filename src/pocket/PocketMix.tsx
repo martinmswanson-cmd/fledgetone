@@ -12,7 +12,7 @@ import { editorOf } from './pocketStore';
 import { showToast } from '../components/timeline/toastStore';
 import { useTimelineStore } from '../store/timelineStore';
 import { defaultClipper } from '../audio/effects/clipper';
-import { LEVEL_MAX, LEVEL_MIN } from '../store/timelineTypes';
+import { LEVEL_MAX, LEVEL_MIN, REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX } from '../store/timelineTypes';
 import { isMixKind } from '../audio/instrumentCatalog';
 import { Card, pillOn } from './pocketUi';
 
@@ -108,7 +108,7 @@ export const PocketMix: React.FC = () => {
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-            <Fader label="Reverb" value={t.reverbSend} min={0} max={1} step={0.01} show={`${Math.round(t.reverbSend * 100)}%`} onChange={(v) => s().setTrackReverbSend(t.id, v)} />
+            <Fader label="Reverb" value={t.reverbSend} min={0} max={t.reverbSend > REVERB_SEND_KNOB_MAX ? REVERB_SEND_MAX : REVERB_SEND_KNOB_MAX} step={0.01} show={`${Math.round(t.reverbSend * 100)}%`} onChange={(v) => s().setTrackReverbSend(t.id, v)} />
           </Card>
         ))}
       {swapping && (

@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.16-13 — More reverb
+
+- A track's reverb send now goes up to **200%**, and to **300%** with one click on the **300%** button beside it in the Track Inspector, for very wet and drenched sounds. The mixer's REV knobs go to 200% too.
+
 ## 2026.10.16-12 — Recordings first, retro instruments optional
 
 - The instrument lists now lead with the high-quality recorded instruments: each group starts with its recordings.
