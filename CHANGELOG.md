@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-9 — Pocket: swipe through the song
+
+- Pocket's Song screen: the tracks now scroll sideways with a swipe instead of squeezing the whole song into the screen, with zoom buttons, the track names staying put on the left, and the view following the playhead while the song plays. Tap a bar number to move there.
+
 ## 2026.10.16-8 — Learn: hands-on lessons on fledgetone.com
 
 - **fledgetone.com/learn/**: twelve step-by-step lessons, separate from the guide, each building a real example with screenshots from the studio and an **Open the example in the studio** button: a tour, your first beat, chords and a melody, bass lines and 808s, arranging a song, mixing and mastering, vocals, sound design, scoring a video, game music, exporting and sharing, and making music on your phone. The home page lists them in a new **Learn** section.

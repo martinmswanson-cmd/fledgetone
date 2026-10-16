@@ -5,8 +5,8 @@
  * and add an instrument from the catalog. Arrange: repeat the loop, a build-up and drop, and a
  * speed-up into the drop.
  */
-import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, History, Minus, Plus } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, History, Minus, Plus, ZoomIn, ZoomOut } from 'lucide-react';
 import { CATEGORIES, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { STARTER_GROUPS, STARTERS } from '../store/starters';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
@@ -138,57 +138,99 @@ const RestoreCard: React.FC = () => {
   );
 };
 
-/** Each track a row of its clips across the song; the bar numbers move the playhead. */
+/** Each track a row of its clips across the song, scrolled sideways with a swipe and zoomed with the buttons; a tap on the bar numbers moves the playhead. */
+const ZOOM_MIN = 10, ZOOM_MAX = 96, ZOOM_DEFAULT = 28;
 const Overview: React.FC = () => {
   const tracks = useTimelineStore((s) => s.tracks);
   const clips = useTimelineStore((s) => s.clips);
   const loop = useTimelineStore((s) => s.loopRegion);
+  const isPlaying = useTimelineStore((s) => s.isPlaying);
   const bar = usePlayPosition();
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const scroller = useRef<HTMLDivElement>(null);
   const end = Math.max(9, loop.outBar, ...clips.map((c) => c.startBar + c.lengthBars));
-  const bars = Math.ceil(end - 1);
-  const pct = (b: number) => `${((b - 1) / bars) * 100}%`;
-  const marks = Array.from({ length: Math.floor(bars / 4) + 1 }, (_, i) => 1 + i * 4).filter((b) => b < end);
-  const seek = (e: React.PointerEvent<HTMLDivElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const at = 1 + Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * bars;
-    useTimelineStore.getState().seek(Math.floor(at));
-  };
+  // Room past the end of the song to write into
+  const bars = Math.ceil(end - 1) + 8;
+  const x = (b: number) => (b - 1) * zoom;
+  const every = zoom >= 48 ? 1 : zoom >= 24 ? 2 : 4;
+  const marks = Array.from({ length: Math.floor(bars / every) + 1 }, (_, i) => 1 + i * every);
   const shown = tracks.filter((t) => editorOf(t.instrumentKey) !== null || clips.some((c) => c.trackId === t.id));
+
+  // While playing, the view turns the page when the playhead reaches its right edge
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !isPlaying) return;
+    const at = x(bar);
+    if (at < el.scrollLeft || at > el.scrollLeft + el.clientWidth - 24) el.scrollLeft = Math.max(0, at - el.clientWidth * 0.15);
+  });
+
+  /** Zoom about the middle of the view, so what you're looking at stays put. */
+  const zoomTo = (next: number) => {
+    const el = scroller.current;
+    const z = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+    if (!el) return setZoom(z);
+    const mid = (el.scrollLeft + el.clientWidth / 2) / zoom;
+    setZoom(z);
+    requestAnimationFrame(() => (el.scrollLeft = mid * z - el.clientWidth / 2));
+  };
+
+  // A tap on the ruler moves the playhead (a swipe across it scrolls instead: click only fires for a tap)
+  const seek = (e: React.MouseEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    useTimelineStore.getState().seek(Math.max(1, Math.floor(1 + (e.clientX - r.left) / zoom)));
+  };
+
   return (
     <div>
-      <div className="flex">
-        <div className="w-20 shrink-0" />
-        <div className="relative flex-1 h-7 border-b border-forge-border" onPointerDown={seek} role="slider" aria-label="Song position" aria-valuenow={Math.floor(bar)}>
-          {marks.map((b) => (
-            <span key={b} className="absolute top-1 text-[10px] font-mono text-forge-muted -translate-x-1/2 first:translate-x-0" style={{ left: pct(b) }}>
-              {b}
-            </span>
-          ))}
-          {loop.enabled && <span className="absolute bottom-0 h-1 bg-amber-400/70 rounded" style={{ left: pct(loop.inBar), width: `${((loop.outBar - loop.inBar) / bars) * 100}%` }} />}
-        </div>
+      <div className="flex items-center justify-end gap-1.5 mb-2">
+        <span className="text-[11px] text-forge-muted mr-auto">Swipe to scroll the song</span>
+        <button type="button" aria-label="Zoom out" className={`${pill} !h-9 !px-2.5`} onClick={() => zoomTo(zoom / 1.5)} disabled={zoom <= ZOOM_MIN}>
+          <ZoomOut className="w-4 h-4" />
+        </button>
+        <button type="button" aria-label="Zoom in" className={`${pill} !h-9 !px-2.5`} onClick={() => zoomTo(zoom * 1.5)} disabled={zoom >= ZOOM_MAX}>
+          <ZoomIn className="w-4 h-4" />
+        </button>
       </div>
-      <div className="relative">
-        {shown.map((t) => (
-          <div key={t.id} className="flex items-center h-11 border-b border-forge-border/50">
-            <div className="w-20 shrink-0 pr-2 text-xs truncate flex items-center gap-1.5">
+      <div className="flex">
+        {/* The track names stay put while the song scrolls beside them */}
+        <div className="w-20 shrink-0">
+          <div className="h-7 border-b border-forge-border" />
+          {shown.map((t) => (
+            <div key={t.id} className="h-11 pr-2 text-xs flex items-center gap-1.5 border-b border-forge-border/50 min-w-0">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: t.color }} />
-              <span className={t.isMuted ? 'text-forge-muted line-through' : ''}>{t.name}</span>
+              <span className={`truncate ${t.isMuted ? 'text-forge-muted line-through' : ''}`}>{t.name}</span>
             </div>
-            <div className="relative flex-1 h-8">
-              {clipsOf(clips, t.id).map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  aria-label={`${t.name}: ${c.name || 'clip'}, bar ${c.startBar}`}
-                  onClick={() => usePocket.getState().openClip(c, t)}
-                  className="absolute top-0 bottom-0 rounded-md border border-black/30"
-                  style={{ left: pct(c.startBar), width: `max(6px, calc(${(c.lengthBars / bars) * 100}% - 1px))`, background: `${t.color}cc` }}
-                />
+          ))}
+        </div>
+        <div ref={scroller} className="flex-1 min-w-0 overflow-x-auto overscroll-x-contain touch-pan-x touch-pan-y" aria-label="The song, scrolling sideways">
+          <div className="relative" style={{ width: bars * zoom }}>
+            <div className="relative h-7 border-b border-forge-border" onClick={seek} role="slider" aria-label="Song position" aria-valuenow={Math.floor(bar)}>
+              {marks.map((b) => (
+                <span key={b} className="absolute top-1 text-[10px] font-mono text-forge-muted pl-1 border-l border-forge-border h-5" style={{ left: x(b) }}>
+                  {b}
+                </span>
               ))}
+              {loop.enabled && <span className="absolute bottom-0 h-1 bg-amber-400/70 rounded" style={{ left: x(loop.inBar), width: (loop.outBar - loop.inBar) * zoom }} />}
             </div>
+            {shown.map((t) => (
+              <div key={t.id} className="relative h-11 border-b border-forge-border/50">
+                {clipsOf(clips, t.id).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-label={`${t.name}: ${c.name || 'clip'}, bar ${c.startBar}`}
+                    onClick={() => usePocket.getState().openClip(c, t)}
+                    className="absolute top-1.5 bottom-1.5 rounded-md border border-black/30 overflow-hidden text-left px-1 text-[10px] text-black/70 font-semibold truncate"
+                    style={{ left: x(c.startBar), width: Math.max(6, c.lengthBars * zoom - 1), background: `${t.color}cc` }}
+                  >
+                    {zoom >= 32 ? c.name : ''}
+                  </button>
+                ))}
+              </div>
+            ))}
+            <div className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-red-500" style={{ left: x(bar) }} />
           </div>
-        ))}
-        <div className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-red-500" style={{ left: `calc(5rem + (100% - 5rem) * ${(bar - 1) / bars})` }} />
+        </div>
       </div>
     </div>
   );
@@ -261,7 +303,7 @@ export const PocketSong: React.FC = () => {
         }
       >
         <Overview />
-        <p className="text-[11px] text-forge-muted mt-2">Tap a clip to edit it. Tap the bar numbers to move to that bar.</p>
+        <p className="text-[11px] text-forge-muted mt-2">Swipe sideways to move through the song. Tap a clip to edit it, tap a bar number to move there.</p>
       </Card>
       <ArrangeCard />
       {sheet === 'new' && <NewSongSheet onClose={() => setSheet(null)} />}
