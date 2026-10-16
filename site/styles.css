@@ -135,6 +135,8 @@ h1 {
 .lede { margin: 24px auto 0; max-width: 680px; font-size: clamp(17px, 2vw, 20px); color: #c4c4cc; font-weight: 300; }
 .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 34px; }
 .fineprint { color: var(--muted); font-size: 14px; margin: 16px 0 0; }
+.hero .fineprint a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+.hero .fineprint a:hover { text-decoration-color: var(--cyan); }
 
 /* Screenshots */
 .shot { margin: 0; }
