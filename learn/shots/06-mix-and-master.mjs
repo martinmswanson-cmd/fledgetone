@@ -69,8 +69,7 @@ async function build(s, upto = 'master') {
       await panel.getByTitle('Back to the starting bands, all flat').click();
       await s.wait(200);
       for (const [band, freq, gain, q] of moves) {
-        await panel.locator('circle').nth(band - 1).dispatchEvent('pointerdown');
-        await s.page.mouse.up();
+        await panel.locator('circle').nth(band - 1).click({ force: true });
         await s.wait(150);
         const on = range(panel, `Band ${band} on`);
         if (!(await on.isChecked())) await on.check();
@@ -139,8 +138,7 @@ export const SHOTS = [
     setup: async (s) => {
       await build(s, 'eq');
       await inspect(s, 'Poly pad');
-      await s.page.locator('[data-search="Pro EQ"] circle').nth(2).dispatchEvent('pointerdown');
-      await s.page.mouse.up();
+      await s.page.locator('[data-search="Pro EQ"] circle').nth(2).click({ force: true });
       await s.view('EQ & Dynamics');
       await play(s, 5000);
       return s.panel();

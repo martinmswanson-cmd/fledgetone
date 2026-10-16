@@ -35,8 +35,6 @@ function drumFiles() {
 
 const SD = 'section[aria-label="Synth Designer"]';
 
-/** The Inspector panel (the bordered box) headed `title`. */
-const box = (s, title) => s.own(title).locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]');
 
 /** Set a range slider to `value` (for a log slider, `log` is its [low, high] and `value` the real value). */
 async function slide(locator, value, log) {
@@ -96,7 +94,7 @@ async function inspectorBox(locator) {
     let p = el.parentElement;
     while (p && !(p.scrollHeight > p.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(p).overflowY))) p = p.parentElement;
     const r = p.getBoundingClientRect();
-    return { x: r.x + scrollX - 4, y: r.y + scrollY - 4, width: r.width + 8, height: r.height + 8 };
+    return { x: r.x + scrollX - 1, y: r.y + scrollY - 4, width: r.width + 2, height: r.height + 8 };
   });
 }
 
@@ -212,7 +210,7 @@ export const SHOTS = [
   },
   {
     file: 'sound-drum-designer',
-    alt: 'The Drum Designer with the Snare row picked: preset Crisp trap snare, Layer 1 a snare, and Layer 2 a clap at -8 dB, 8 ms behind it.',
+    alt: 'The Drum Designer with the Snare row picked: Layer 1 the Crisp trap snare (Tone 230 Hz, Noise 100%, Snap 70%), Layer 2 a clap at -8 dB with Delay 8.0 ms. The preset box now reads Your own sound.',
     caption: 'A designed snare: Crisp trap snare with a clap layered 8 ms behind.',
     setup: async (s) => {
       await s.starter('Space Station');
@@ -243,7 +241,9 @@ export const SHOTS = [
       await s.page.getByRole('button', { name: /Load a sound/ }).first().click();
       await (await chooser).setFiles({ name: 'my-vocal.wav', mimeType: 'audio/wav', buffer: voiceWav() });
       await s.wait(2500);
-      return s.union(box(s, 'SLICER'), 8);
+      const panel = s.page.getByLabel('Slice sensitivity').locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]');
+      await scrollTo(panel);
+      return s.union(panel, 8);
     },
   },
   {
@@ -259,7 +259,9 @@ export const SHOTS = [
       await s.wait(2500);
       await s.text('my-hat').first().click();
       await s.wait(400);
-      return s.union(box(s, 'DRUM RACK'), 8);
+      const panel = s.q('[data-search="drum rack pads"]');
+      await scrollTo(panel);
+      return s.union(panel, 8);
     },
   },
   {

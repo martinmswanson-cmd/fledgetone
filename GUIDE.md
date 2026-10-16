@@ -139,7 +139,7 @@ Right-click the time ruler on the bar where the drop lands and choose **Build-up
 - an **impact** with a **sub drop** on the drop itself, and a downlifter a bar later;
 - markers called **Build** and **Drop**, unless there's already one on those bars.
 
-It uses an FX track and a drum track that are empty there, or adds new ones (Build FX, Snare Roll) so nothing you wrote is covered up. Near the start of the song the build is shorter (a drop at bar 3 gets 2 bars). They're ordinary clips: change, move or delete them as you like.
+It uses an FX track and a drum track that are empty there, or adds new ones (an FX track, called Build FX if the song has one already, and Snare Roll) so nothing you wrote is covered up. Near the start of the song the build is shorter (a drop at bar 3 gets 2 bars). They're ordinary clips: change, move or delete them as you like.
 
 ### Key change
 

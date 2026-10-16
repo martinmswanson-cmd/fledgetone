@@ -183,7 +183,7 @@ export const SHOTS = [
   },
   {
     file: 'arrange-build',
-    alt: 'Bars 1 to 28 of the song: Build and Drop markers at bars 21 and 25, a Build FX track with the riser and impact, a Snare Roll track over bars 21 to 24, and tempo flags on the ruler where it speeds up.',
+    alt: 'Bars 1 to 28 of the song: Build and Drop markers at bars 21 and 25, an FX track with the Build-up and Drop hit clips, a Snare Roll track over bars 21 to 24, and tempo flags on the ruler where it speeds up.',
     caption: 'Build-up & drop adds the riser, the snare roll, the impact and two markers; Speed up the end rushes the tempo into bar 25.',
     setup: async (s) => {
       await finished(s);
