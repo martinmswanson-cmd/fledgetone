@@ -10,11 +10,10 @@ than a classic DAW: an arrangement timeline with tracks and clips, a timecode re
 a ripple-editing toolbar. It's used mostly for **dubstep and EDM**, so bass sounds, drops and
 loudness matter more than orchestral realism.
 
-- Repository: `martinmswanson-cmd/bos-beat-box`, default branch `master`.
-- Work branch: `ccr-1ba142ee-suz8wp` (pull request #1). It holds everything finished, and
-  `master` follows it.
+- Repository: `martinmswanson-cmd/fledgetone` (public, GPL-3.0), default branch `master`.
+- Work branch: `ccr-1ba142ee-suz8wp`. It holds everything finished, and `master` follows it.
 - **Publishing**: fledgetone.com is built by Netlify from `master` on every push (`netlify.toml`:
-  `npm run build:site`, the GPL plugins' folder removed): the home page (`site/`) at `/`, the app
+  `npm run build:site`, with the GPL plugins): the home page (`site/`) at `/`, the app
   at `/app/` with the recordings and plugins next to it, as an installable app with a service worker. The old addresses on
   twobirdsworkshop.com (`/fledgetone.html`, `/fledgetone`, `/bos-beat-box`, `/bos-beat-box.html`)
   redirect to fledgetone.com with a 301; twobirdsworkshop.com still serves `fledgetone-samples/`
@@ -22,20 +21,6 @@ loudness matter more than orchestral realism.
 - `npm run build:single` (`dist-single/index.html`) still makes the whole app in one HTML file,
   to run from a file; it isn't published any more.
 - Users read `GUIDE.md` (also shown in the app with `?`). Every user-visible change updates it.
-
-## Working with the owner
-
-- Don't name artists, songs, games, brands or people anywhere in the software (starters, blurbs, comments, the guide): describe styles by genre, tempo and sound instead. The exceptions: the public-domain classical works and their composers in the Classics, the credits of the sound and score sources, and the owner's name and contact in TERMS.md.
-- They judge by ear. Describe changes in plain musical terms, not code, and send **before and
-  after audio clips** (MP3) of the same phrase when a sound changes.
-- Their words so far: instruments that "sound like toys", Distortion that "makes everything sound
-  bad", a Wobble Bass that was "squishy, kinda gross", Violin "coming from another room", high
-  notes that "hurt my ears". Each was fixed by measuring the rendered audio, finding the cause,
-  then checking the fix the same way (see **Checking sound** below).
-- They prefer one agent doing the work over a fan-out of subagents.
-- They are usage-conscious. Pick a stopping point, commit and push before long jobs.
-- Don't open pull requests unless asked. Don't push branches other than the work branch without
-  asking.
 
 ## Stack and commands
 
@@ -180,7 +165,7 @@ START=1 OUT=/tmp/before node scripts/audio-check/run.cjs scripts/audio-check/phr
 START=1 OUT=/tmp/after  node scripts/audio-check/run.cjs scripts/audio-check/phrases.js '{"keys":["violin","cello"]}'
 python3 scripts/audio-check/phrases.py /tmp/before
 python3 scripts/audio-check/phrases.py /tmp/after
-ffmpeg -i /tmp/after/violin.wav -q:a 2 violin-after.mp3   # for the owner to listen to
+ffmpeg -i /tmp/after/violin.wav -q:a 2 violin-after.mp3   # to listen to
 ```
 
 `phrases.js` plays eight rising notes and a held note per instrument. `phrases.py` prints, per
@@ -390,10 +375,10 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   `reveal.ts` scrolls to, focuses and rings. Add a mark and a `SETTINGS` entry for a new panel.
   Add Track and the Inspector's SOUND GENERATOR use a searchable list (with a ▶ to hear each instrument).
 
-- **From the owner's style report** (Oct 2026): 808 slides
+- **From the style report** (Oct 2026): 808 slides
   (overlapping 808 notes glide, `create808`), key change from the ruler, Ratchet / Roll / Semitone
   tools, Lo-fi (bit crush, tone, tape wow) and Gate (tempo-synced chop) inserts, and 18 starters
-  for the owner's styles. Starters there keep the owner's ear-safety rules: kicks at 0.8, no sub
+  for those styles. Starters there keep the report's ear-safety rules: kicks at 0.8, no sub
   drop, soft impacts, distortion on one track at most (0.08). The report's other asks still open:
   a tempo map, time signatures, a piano sustain-pedal lane, per-note pitch bend, a break slicer
   with per-slice pitch, amp-sim / saturation, and more drum rows (rim, shaker, tambourine).
@@ -459,7 +444,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   kits; live mod-wheel vibrato while playing (it's recorded, and plays back, but isn't heard live).
 - Notation: editing in the staff, triplets and second voices (it shows one voice per staff on a
   16th grid); a whole-song score.
-- A desktop app in Rust, once the web version peaks (the owner wants to wait).
+- A desktop app in Rust, once the web version peaks (on hold for now).
 - Time-stretch and vocal tuning run on the main thread (about 0.2 s and 1 s per 30 s of audio):
   a Worker would keep the page smooth on long takes.
 - The FMOD and Wwise scripts haven't been run against the real tools (none here): each step
@@ -473,12 +458,12 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   can't be told from a triplet pattern).
 - Supersaw chords lean up to about 0.6 dB per bar (single notes within 0.15 dB): inaudible.
 
-## Waiting on the owner
+## On hold
 
 - Whether the new starters, chiptune sounds and the build-up & drop sound right.
-- **Remake the website's First Flight score** once the instrument updates are done (the owner asked
-  to hold it until then). The film is AI-generated (`scripts/guide-shots/trailer.webm` is a small
-  copy; the full 1280x720 one is in the owner's Higgsfield library). The score is
+- **Remake the website's First Flight score** once the instrument updates are done (held until
+  then). The film is AI-generated (`scripts/guide-shots/trailer.webm` is a small
+  copy; the full 1280x720 one is in the Higgsfield library). The score is
   `site/video/first-flight.fledgetone.json` (117.76 BPM; cuts on bars 3, 5 and 7). To redo it: open
   it in the studio, rework it, Export > Mixdown, WAV, Ring out; then put it on the film with the last
   frame held while the chord rings, as `site/video/first-flight.mp4` (H.264 + AAC, faststart):
@@ -487,5 +472,5 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 - **Courier**, the second scored film on the website (modern electronic; a tempo map, 123.87 then 116.36 at bar 3 and 125.22 at bar 5, puts its cuts exactly on bars 3, 5 and 7):
   `site/video/courier.fledgetone.json`, shown as `site/video/courier.mp4`. Its sound effects (17, made
   in the sound effects maker and placed with Add to song) are on the SFX, SFX 2 and Ambience tracks. The film is AI-generated
-  (stylized game-style footage of an original drone courier, deliberately not based on any existing game); it's in the owner's
+  (stylized game-style footage of an original drone courier, deliberately not based on any existing game); it's in the
   Higgsfield library. Re-export it the same way as First Flight if the synths change.

@@ -10,7 +10,7 @@ import type { SynthPatch } from './synthPatch';
 import { clip, D, master, progression, project, snareRoll, track } from './starterKit';
 
 /**
- * More genre starters, for the styles the owner listens to most: artcore boss fights, bass music,
+ * More genre starters, for the most-requested styles: artcore boss fights, bass music,
  * internet rap and phonk, bedroom pop and jazz-pop, theatrical pop and two band styles. Melodies
  * are written for these starters (not copied from any song); progressions, tempos and grooves
  * follow each style's conventions.
