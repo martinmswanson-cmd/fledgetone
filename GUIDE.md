@@ -28,7 +28,7 @@ At the very top is the **menu bar**: every tool in the app, where a desktop DAW 
 - **Tools**: Mixer, Sound effects maker, Generate variations of the selected clip…, Tune vocal…, Synth Designer, Drum Designer, Record from the microphone, MIDI keyboard…, Metronome, Performance & memory.
 - **Video**: Load reference video…, Show preview window, Find cuts, Dip music under dialogue…, Tempo finder for hit points…, Cut song to length…, Export markers for editors…, Export music onto the video…, Remove the video.
 - **Game**: the Game panel and its parts (Transition matrix, Intensity & stem groups, Stingers, Loop variations), Try it in a game…, Sound effects maker, Generate variations…, and the game kit, web runtime kit and FMOD / Wwise exports.
-- **View**: the bottom panel's Mixer, EQ & Dynamics, Game, Video and Sound effects tabs, show or hide the panel, Inspector & FX rack, zoom in and out, and bars or timecode on the ruler.
+- **View**: the bottom panel's Mixer, Launcher, EQ & Dynamics, Game, Video and Sound effects tabs, show or hide the panel, Inspector & FX rack, zoom in and out, and bars or timecode on the ruler.
 - **Learn**: Tour & tutorials…, then the tour and each tutorial to start straight away (one you left part-way says *resume*; finished ones are ticked), and the Guide.
 - **Help**: Guide, Tour & tutorials, Search everything, Keyboard shortcuts, Install Fledgetone… (until it's installed, see Installing Fledgetone), Report a problem…, What's new, Terms of use.
 

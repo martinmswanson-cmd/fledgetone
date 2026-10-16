@@ -8,13 +8,16 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
-## Unreleased
+## 2026.10.16-2 — Up-to-date guide
 
 - The guide matches the app again: the menu bar list covers every menu and item (Plugins and Learn included), game music has a chapter of its own, the Track Inspector is described in its real order, and wrong counts, menu paths and button names are fixed.
 - The tour and tutorials describe the screen as it is now (the bottom panel's tabs, the Pump's Trigger, how Save works, the Drummer's 21 styles).
 - **Download all** (Master tab › Instruments offline) says how much it fetches: about 280 MB, the built-in plugins included.
 - Three instruments are renamed so they no longer carry product names: **80s Drum Machine** (was LinnDrum), **Rhythm Box** (was CR-78) and **Synth Drum** (was Syndrum). They sound the same, and songs that use them open as before. The starters' "Rhodes" tracks are now called "E. Piano".
 - The terms of use (section 6) now say that a few recorded drum kits come from a collection that states no licence, as the guide's Credits do.
+- Opening a shared song link for the first time no longer puts the welcome window over the song.
+- **View** lists the **Launcher** tab with the bottom panel's other tabs.
+- The open-source licences that come with the app include the notation view's music font (Bravura, SIL Open Font License).
 
 ## 2026.10.16 — Demo songs
 

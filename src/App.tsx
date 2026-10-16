@@ -35,12 +35,12 @@ const roomy = () => typeof window !== 'undefined' && window.innerWidth >= 900;
 
 /**
  * Tour and tutorials: the welcome on someone's first visit (not when they arrive through a shared
- * song link, which opens that song), LEARN from the header, and the running lesson.
+ * song link, #s=... or the older #song=..., which opens that song), LEARN from the header, and the running lesson.
  */
 const Learn: React.FC = () => {
   const open = useUiStore((s) => s.dialog === 'learn');
   const welcomeSeen = useTourStore((s) => s.welcomeSeen);
-  const [welcome, setWelcome] = React.useState(() => !welcomeSeen && roomy() && !location.hash.includes('song='));
+  const [welcome, setWelcome] = React.useState(() => !welcomeSeen && roomy() && !/^#(s|song)=/.test(location.hash));
   const close = () => {
     setWelcome(false);
     useTourStore.getState().markWelcomeSeen();

@@ -330,6 +330,7 @@ const MENUS: MenuDef[] = [
       const tab = (t: DockTab, label: string, divider = false): MenuAction => ({ label, run: () => u.openDock(t), checked: u.dockOpen && u.dockTab === t, divider });
       return [
         tab('mixer', 'Mixer'),
+        tab('launcher', 'Launcher'),
         tab('eq', 'EQ & Dynamics'),
         tab('game', 'Game'),
         tab('video', 'Video'),
