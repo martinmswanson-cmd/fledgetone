@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeGuide } from './guide-site.mjs';
 import { siteHeaders } from './site-headers.mjs';
+import { writeLicenses } from './licenses-page.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'dist-site');
@@ -26,4 +27,5 @@ const appHeaders = join(OUT, 'app', '_headers');
 writeFileSync(join(OUT, '_headers'), siteHeaders(readFileSync(appHeaders, 'utf8')));
 rmSync(appHeaders);
 const guide = writeGuide(OUT);
-console.log(`dist-site/: the home page at /, the studio at /app/, the guide at /guide/ (${guide} pages)`);
+const licences = writeLicenses(OUT);
+console.log(`dist-site/: the home page at /, the studio at /app/, the guide at /guide/ (${guide} pages), the licences at /licenses/ (${licences})`);

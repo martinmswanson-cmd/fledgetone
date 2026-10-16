@@ -11,7 +11,7 @@ import { SHOTS } from './guide-shots/shots.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SITE = 'https://fledgetone.com';
 
-const head = ({ title, description, path }) => `<!doctype html>
+export const head = ({ title, description, path, current = 'guide' }) => `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -43,14 +43,14 @@ const head = ({ title, description, path }) => `<!doctype html>
         <a href="/#video">Video</a>
         <a href="/#games">Games</a>
         <a href="/#features">Features</a>
-        <a href="/guide/" aria-current="page">Guide</a>
+        <a href="/guide/"${current === 'guide' ? ' aria-current="page"' : ''}>Guide</a>
       </nav>
       <div class="nav-cta"><a class="btn btn-primary btn-sm" href="/app/">Open the studio</a></div>
     </div>
   </header>
 `;
 
-const foot = `
+export const foot = `
   <footer class="footer">
     <div class="wrap foot-row">
       <div class="brand"><img src="/img/logo.png" alt="" width="26" height="26" /><span>Fledgetone</span></div>
@@ -58,7 +58,7 @@ const foot = `
       <nav aria-label="Footer">
         <a href="/app/">Studio</a>
         <a href="/guide/">Guide</a>
-        <a href="/app/third-party-licenses.txt">Licences</a>
+        <a href="/licenses/">Licences</a>
         <a href="https://twobirdsworkshop.com">twobirdsworkshop.com</a>
       </nav>
     </div>

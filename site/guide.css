@@ -127,3 +127,18 @@ kbd {
   .g-next { text-align: left; }
   .g-article h3 { margin-top: 36px; font-size: 20px; }
 }
+
+/* The licences page */
+.licenses .fineprint a, .licenses .lede a { text-decoration: underline; text-underline-offset: 3px; }
+.lic-group { margin-top: 56px; }
+.lic-group h2 { margin: 0 0 14px; font-size: 22px; font-weight: 700; }
+.lic-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+.lic-list li { border-bottom: 1px solid var(--border); }
+.lic-list summary { display: flex; align-items: baseline; gap: 12px; padding: 12px 4px; cursor: pointer; list-style: none; }
+.lic-list summary::-webkit-details-marker { display: none; }
+.lic-list summary::before { content: '›'; color: var(--muted); transition: transform .15s ease; display: inline-block; width: 10px; }
+.lic-list details[open] summary::before { transform: rotate(90deg); }
+.lic-list summary:hover .lic-name { color: var(--cyan); }
+.lic-name { flex: 1 1 auto; font-weight: 500; overflow-wrap: anywhere; }
+.lic-tag { margin-left: auto; flex: 0 1 auto; max-width: 45%; text-align: right; font: 500 12px/1.4 var(--mono); color: var(--muted); }
+.lic-list pre { margin: 0 0 16px; padding: 16px; max-height: 420px; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; font: 12.5px/1.55 var(--mono); color: #c4c4cc; white-space: pre-wrap; overflow-wrap: anywhere; }

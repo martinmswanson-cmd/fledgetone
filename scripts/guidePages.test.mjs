@@ -69,3 +69,17 @@ test("every screenshot points at a section and heading the guide has (rename it 
   const lost = SHOTS.filter((s) => !ids.has(s.section) || (s.after && s.after !== 'end' && !ids.get(s.section).includes(s.after)));
   assert.deepEqual(lost.map((s) => `${s.file}: ${s.section} / ${s.after}`), []);
 });
+
+test('the licences page: entries, licence names and groups from third-party-licenses.txt', async () => {
+  const { parseLicenses, licensesPage } = await import('./licenses-page.mjs');
+  const rule = '='.repeat(60);
+  const txt = `Fledgetone includes the following open-source software.\n\nreact 19.3.0 (MIT)\n${rule}\nMIT text\n\n\nmediabunny 1.0 (MPL-2.0)\n${rule}\nMozilla\n${'='.repeat(34)}\nmore\n\n\nFledgetone built-in plugins: the\nsoftware.\n\n\nmda.wasm: the mda plug-ins (MIT; offered by the author under MIT or GPL 2+)\n${rule}\nCopyright\n`;
+  const groups = parseLicenses(txt);
+  assert.equal(groups.length, 2);
+  assert.deepEqual(groups[0].entries.map((e) => [e.name, e.licence]), [['react 19.3.0', 'MIT'], ['mediabunny 1.0', 'MPL-2.0']]);
+  assert.match(groups[0].entries[1].text, /more$/);
+  assert.equal(groups[1].entries[0].name, 'mda.wasm: the mda plug-ins');
+  const html = licensesPage(groups);
+  assert.match(html, /<h2>In the built-in effects and instruments<\/h2>/);
+  assert.match(html, /<a href="\/licenses\/">Licences<\/a>/);
+});
