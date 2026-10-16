@@ -1,28 +1,24 @@
 # Changelog
 
-What changed in each version of Fledgetone, newest first. The version shows at the bottom left of
-the app (with the build it came from), so you can check the site is running the one you expect;
-click it to read this list. To check from outside the app, open `/version.json` on the site.
-
-Each version is the date it was released (a second release on the same day gets `-2`, and so on).
-Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
-checks they agree).
+What's new in each version of Fledgetone, newest first. Your version is shown at the bottom left
+of the studio: click it to read this list. Each version is named after the day it came out (a
+second update on the same day gets `-2`, and so on).
 
 ## 2026.10.16-12 — Recordings first, retro instruments optional
 
-- The 128 instruments built on the 1990s General MIDI soundfonts and early sample sets are now **retro instruments**, all in one group, **Retro (1990s soundfonts)**, which the instrument lists hide until you click **Show … retro instruments** at the bottom of a list (remembered in this browser). Songs and starters that use them play them as before, and a track on one always shows it in its own list.
-- Each group in the instrument lists starts with its recorded instruments.
-- The studio's footer says it's made by Martin Swanson, in place of the link to twobirdsworkshop.com.
+- The instrument lists now lead with the high-quality recorded instruments: each group starts with its recordings.
+- The older, lower-quality instruments (the basic computer sounds of the 1990s that Fledgetone started with) are now tucked away in one **Retro** group, hidden until you want them: click **Show retro instruments** at the bottom of any instrument list. Fledgetone remembers your choice.
+- Songs that already use a retro instrument still play it exactly as before.
 
 ## 2026.10.16-11 — Surge XT and more plugins on fledgetone.com
 
-- Now that Fledgetone's source is public, the website has the GPL-licensed built-in plugins too: the **Surge XT** synth with its factory patches, the **Dragonfly** hall, room, plate and early-reflection reverbs, the **Plateau** reverb and the **setBfree** tonewheel organ. They're in the Plugins menu and the plugin browser, and credited in the guide. (The one-file copy still leaves them out.)
+- Four more free plugins in the studio: the **Surge XT** synth with hundreds of ready-made sounds, the **Dragonfly** reverbs (hall, room and plate), the **Plateau** reverb and the **setBfree** organ. Find them in the Plugins menu.
 
 ## 2026.10.16-10 — Fledgetone is open source
 
 - Fledgetone's code is now free software under the GNU General Public License, version 3, with its source on GitHub (github.com/martinmswanson-cmd/fledgetone). The home page, the guide, the licences page and Help › **Source code** link to it.
-- The terms of use say so (a new question and answer, and sections 3, 9 and 14), and the permission that comes with the files Fledgetone writes into exports (players, game-engine scripts, manifests) says it's in addition to the GPL: those files stay free to use in any project, closed-source and paid ones included.
-- A code of conduct for the project (CODE_OF_CONDUCT.md), linked from the site's footer, the README and the contributor guide. The site's footer also says it's powered by Netlify.
+- The terms of use explain what that means. The files Fledgetone adds to your exports (players and game-engine scripts) are still yours to use in any project, including closed-source and paid games and apps.
+- A code of conduct for everyone taking part in the project, linked at the bottom of every page of the site.
 
 ## 2026.10.16-9 — Pocket: swipe through the song
 

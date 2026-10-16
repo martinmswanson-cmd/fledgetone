@@ -341,8 +341,12 @@ and `THREADS` pick what it renders; see its header). Run it after touching an in
 - **Show it.** Screenshots for anything on screen; a before-and-after recording for anything you
   hear.
 - **Tests and the guide.** Pure logic gets a test; user-visible changes update `GUIDE.md`.
-- **The changelog.** A user-visible change adds a line, in plain words, to the newest section of
-  `CHANGELOG.md` (the maintainer starts a new dated section when releasing).
+- **The changelog.** A change people will notice adds a line to the newest section of
+  `CHANGELOG.md`, written for the people using the app: what changed for them, in plain words, no
+  file names or code. Small fixes and tweaks don't need one. Changes not released yet gather under
+  an **Unreleased** heading at the top; to release, the maintainer renames it to the new version
+  (the date, `-2` and so on for a second release that day) and sets `version` in package.json to
+  match (a test checks they agree). The site serves the version as `/version.json`.
 - **All checks pass** (see [The checks](#the-checks)), including the one-file build.
 - **Small commits with clear messages** are easier to review than one large one.
 
