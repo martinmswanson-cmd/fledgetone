@@ -1,6 +1,7 @@
 /**
- * The one-time notice on phones that the studio is made for a computer, with the way to Pocket (the
- * phone version) or on anyway. A phone opens Pocket unless the person chose the studio (pocketMode.ts).
+ * The notice on phones that the studio is made for a computer, with the way to Pocket (the
+ * phone version) or on anyway. A phone opens Pocket unless the person chose the studio
+ * (pocketMode.ts). It shows each time until "Don't show this again" is ticked.
  */
 import React, { useState } from 'react';
 import { Monitor } from 'lucide-react';
@@ -19,15 +20,17 @@ const dismissed = (): boolean => {
 };
 
 /**
- * Tells someone opening the app on a phone that it's made for a computer, once per browser.
+ * Tells someone opening the studio on a phone that it's made for a computer, each time until
+ * they tick "Don't show this again".
  * The app still runs after "Continue anyway"; the notice is a warning, not a wall.
  */
 export const MobileNotice: React.FC = () => {
   const [open, setOpen] = useState(() => onPhone() && !dismissed());
+  const [hide, setHide] = useState(false);
   if (!open) return null;
   const close = () => {
     try {
-      localStorage.setItem(DISMISSED_KEY, '1');
+      if (hide) localStorage.setItem(DISMISSED_KEY, '1');
     } catch {
       // private browsing: the notice shows again next time, which is fine
     }
@@ -44,7 +47,11 @@ export const MobileNotice: React.FC = () => {
         </p>
       </div>
       <ChoiceButton title="Use Pocket, the phone version" detail="Big pads, a step grid and notes in key, made for a phone. Your song opens in it, and back here on a computer." autoFocus onClick={() => { close(); chooseInterface('pocket'); }} />
-      <ChoiceButton title="Continue anyway" detail="Have a look around the full studio on this phone. This notice won't show again." onClick={close} />
+      <label className="flex items-center gap-2 text-sm text-forge-muted">
+        <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} className="w-4 h-4 accent-cyan-500" />
+        Don't show this again
+      </label>
+      <ChoiceButton title="Continue anyway" detail="Have a look around the full studio on this phone." onClick={close} />
     </Modal>
   );
 };

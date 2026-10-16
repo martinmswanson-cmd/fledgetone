@@ -8,6 +8,12 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-7 — Pocket's early-version notice
+
+- Pocket opens with a notice that the phone version is in its early stages and the desktop experience is much better. It shows each time until you tick **Don't show this again**.
+- The studio's phone notice works the same way now (it showed once before), with its own **Don't show this again**.
+- The tempo in Pocket's top bar no longer wraps on narrow phones.
+
 ## 2026.10.16-6 — Pocket: vocals, drummer, chords and arranging
 
 - **Vocals** in Pocket: record over the song from the phone's microphone (the loop once, or from the playhead), pick a vocal sound, and double, tune or delete each take.

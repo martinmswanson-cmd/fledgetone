@@ -1261,7 +1261,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 
 ## Fledgetone Pocket: on a phone
 
-On a phone, Fledgetone opens **Pocket**: the same studio underneath (the same instruments, effects and songs) with a simpler screen made for a thumb. A song started in Pocket opens in the studio on a computer, and back. The song you were working on opens again by itself when you come back.
+On a phone, Fledgetone opens **Pocket**: the same studio underneath (the same instruments, effects and songs) with a simpler screen made for a thumb. A song started in Pocket opens in the studio on a computer, and back. The song you were working on opens again by itself when you come back. Pocket is in its early stages, and the studio on a computer is the full experience: a notice says so each time Pocket opens, until you tick **Don't show this again**.
 
 Across the top: play, stop, the loop, the **metronome** (the stopwatch), where the song is, undo and redo. The screen stays on while the song plays. Six tabs along the bottom:
 

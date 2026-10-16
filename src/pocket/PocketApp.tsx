@@ -12,6 +12,7 @@ import { recoverFailedDownloads } from '../audio/liveTracks';
 import { installLiveInput } from '../audio/liveInput';
 import { reopenLastSong, useWakeWhilePlaying } from './pocketSession';
 import { PocketVocals } from './PocketVocals';
+import { PocketNotice } from './PocketNotice';
 import { SharedLinkOpener } from '../components/SharedLinkOpener';
 import { UpdateNotice } from '../components/UpdateNotice';
 import { Toast } from '../components/timeline/Toast';
@@ -72,7 +73,7 @@ const Transport: React.FC = () => {
         </button>
         <div className="flex-1 min-w-0 text-center font-mono leading-tight">
           <div className="text-lg text-forge-text tabular-nums">{Math.max(1, Math.floor(bar))}.{Math.floor(((bar % 1) + 1) % 1 * 4) + 1}</div>
-          <div className="text-[11px] text-forge-muted">{Math.round(bpm)} BPM</div>
+          <div className="text-[11px] text-forge-muted whitespace-nowrap">{Math.round(bpm)} BPM</div>
         </div>
         <button type="button" aria-label="Undo" disabled={!canUndo} onClick={() => s().undo()} className={btn}>
           <Undo2 className="w-5 h-5" />
@@ -104,6 +105,7 @@ export const PocketApp: React.FC = () => {
       <Transport />
       <SharedLinkOpener />
       <UpdateNotice />
+      <PocketNotice />
       <main className="flex-1 px-3 pt-3 pb-24">
         {tab === 'song' && <PocketSong />}
         {tab === 'beat' && <PocketBeat />}
