@@ -137,6 +137,30 @@ h1 {
 .fineprint { color: var(--muted); font-size: 14px; margin: 16px 0 0; }
 .hero .fineprint a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
 .hero .fineprint a:hover { text-decoration-color: var(--cyan); }
+/* The open-source badge: a small clip on a timeline lane, with trim handles at its ends */
+.oss-clip {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 9px;
+  margin-top: 18px;
+  height: 30px;
+  padding: 0 4px;
+  border: 1px solid var(--border-2);
+  border-top: 2px solid rgba(16, 185, 129, .55);
+  border-radius: 5px;
+  background: linear-gradient(180deg, rgba(16, 185, 129, .10), rgba(26, 26, 30, .6));
+  font: 500 12px/1 var(--mono);
+  letter-spacing: .05em;
+  color: var(--muted);
+  text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.oss-clip:hover, .oss-clip:focus-visible { color: var(--text); border-color: var(--green); }
+.oss-handle { width: 3px; height: 14px; border-radius: 2px; background: var(--border-2); transition: background .15s; }
+.oss-clip:hover .oss-handle, .oss-clip:focus-visible .oss-handle { background: var(--green); }
+.oss-notes { fill: var(--green); opacity: .75; }
+.oss-name { color: var(--text); text-transform: uppercase; }
+.oss-meta { padding-right: 4px; }
+@media (max-width: 420px) { .oss-meta { display: none; } }
 
 /* Screenshots */
 .shot { margin: 0; }
@@ -264,6 +288,8 @@ h1 {
 .foot-row nav a { color: var(--muted); font-size: 14px; }
 .foot-row nav a:hover { color: var(--text); }
 .foot-note { margin: 18px auto 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; opacity: .8; }
+.foot-end { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.foot-credit { margin-left: auto; font-size: 11px; letter-spacing: .02em; opacity: .7; }
 
 /* Narrower screens */
 @media (max-width: 1000px) {
@@ -313,7 +339,10 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   background: linear-gradient(to bottom, rgba(239, 68, 68, .55), transparent);
   box-shadow: 0 0 14px rgba(239, 68, 68, .45);
   animation: sweep 9s linear infinite; pointer-events: none;
+  z-index: 0;
 }
+/* (the text, buttons and pictures sit above the bar lines and the playhead) */
+.hero > * { position: relative; z-index: 1; }
 @keyframes sweep { from { transform: translateX(0); } to { transform: translateX(100vw); } }
 
 /* Ticker of where the music goes */

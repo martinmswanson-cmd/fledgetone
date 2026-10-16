@@ -8,6 +8,12 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-13 — An open-source badge
+
+- The home page has a small **Open source** badge under the buttons at the top, drawn as a clip on a timeline, linking to the source code on GitHub.
+- "Made by Martin Swanson" moved to the footer's bottom right corner, in smaller type.
+- The red playhead sweeping across the top of the home page now passes behind the text, buttons and pictures instead of over them.
+
 ## 2026.10.16-12 — Footer
 
 - The site's footer says it's made by Martin Swanson, in place of the link to twobirdsworkshop.com.
