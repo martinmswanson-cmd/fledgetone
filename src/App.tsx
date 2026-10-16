@@ -149,9 +149,7 @@ export const App: React.FC = () => {
           <button type="button" onClick={() => useUiStore.getState().setDialog('terms')} className="hover:text-forge-text transition-colors" title="Fledgetone's terms of use: your music is yours">
             Terms
           </button>
-          <a href="https://twobirdsworkshop.com" target="_blank" rel="noopener" className="hover:text-forge-text transition-colors">
-            twobirdsworkshop.com
-          </a>
+          <span className="text-[10px] opacity-70">Made by Martin Swanson</span>
         </div>
       </footer>
     </div>
