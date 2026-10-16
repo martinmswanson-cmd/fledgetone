@@ -4,7 +4,7 @@
 
 Fledgetone is a music maker that runs in your browser. You build a song on the **Arrangement Timeline** out of **tracks** (one instrument each) and **clips** (blocks of notes on a track), mix it, and export it as a WAV file.
 
-It's made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen. On a phone a notice says so once; you can continue, but the timeline is cramped, drag-and-drop editing and keyboard shortcuts don't work, and audio may stutter.
+The studio is made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen. On a phone, Fledgetone opens **Pocket**, a simpler version made for a phone, instead (see [Fledgetone Pocket: on a phone](#fledgetone-pocket-on-a-phone)).
 
 1. Click **START AUDIO** in the top-right corner. Browsers only allow sound after you click something, so the button glows red until audio is running. Pressing Play also starts it.
 2. To hear an example, open the **File** menu at the top, choose **New…** and pick one of the **Demo songs** (Sunset Stroll, a neo-soul groove, and the five Classics: complete public-domain pieces), or one of the 76 starters (game music like Boss Fight, Stealth and Cozy Village, and genres like Drift Phonk, Bossa Jazz-Pop and Dubstep).
@@ -1258,6 +1258,18 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 | Arrow keys | Nudge selected notes (time, or one semitone) |
 | `Shift+Up` / `Shift+Down` | Move selected notes an octave |
 | `Esc` | Clear the note selection, or close the piano roll |
+
+## Fledgetone Pocket: on a phone
+
+On a phone, Fledgetone opens **Pocket**: the same studio underneath (the same instruments, effects and songs) with a simpler screen made for a thumb. A song started in Pocket opens in the studio on a computer, and back. Five tabs along the bottom:
+
+- **Song**: **New** starts a song from any starter, or an empty one (the song you had is kept: **Restore** brings it back). The song's name and tempo (**−**, **+**, or **Tap** it). **Tracks** shows the whole song, each track a row of its clips: tap a clip to edit it, tap the bar numbers to move the playhead there. **+ Instrument** adds a track with an empty clip to write into.
+- **Beat**: a drum track's patterns (its clips: **New**, **Repeat** one after itself, its length, delete). Eleven big pads play the kit; with **Rec** on, pads you play while the song plays inside the pattern are written into it, on the nearest 16th. The **Steps** grid turns 16ths on and off a bar at a time (the numbers above pick the bar; it follows the song while playing); **More sounds** adds the toms, cymbals and cowbell.
+- **Notes**: melodies, chords and basslines on a grid that has only the notes of the song's key, two octaves at a time (the arrows move it an octave), so every note fits. Tap an empty cell for a note as long as the length chosen (1/16 to a bar), tap a note to take it away, tap a row's name to hear it. The key is the song's, as worked out from its notes; pick another from the list.
+- **Mix**: each track's level, mute (**M**), solo (**S**) and reverb; the master's level and its **Clipper** (louder, with the peaks shaved).
+- **Share**: **Export an MP3** of the whole song (matched to the streaming loudness, -14 LUFS), handed to the phone's share sheet or saved; **Share a link** to the song; **Save** and **Open** the project file; and **Use the full studio here** to switch (Help › **Pocket, the phone version** switches back from the studio).
+
+Play, stop, the loop, where the song is, undo and redo stay across the top. What Pocket doesn't show (automation, plugins, inserts, game music, video) is kept as it is and edited in the studio. Adding `?pocket` or `?studio` to the address opens either one on any device.
 
 ## Installing Fledgetone
 

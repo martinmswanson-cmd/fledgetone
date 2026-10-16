@@ -103,6 +103,13 @@ on `pagehide`, so a page nobody is looking at never plays on its own. `main.tsx`
 installed-app support (`startPwa` in `src/pwa/pwa.ts`), which registers the service worker in a
 production build (see Builds).
 
+`main.tsx` mounts one of two interfaces, each loaded only when it's used: the studio (`App.tsx`)
+or, on a phone, Pocket (`src/pocket/PocketApp.tsx`; `pocketMode.ts` decides, `?pocket` and
+`?studio` override). Pocket is only screens: it connects the same store to the engine and the
+autosave as the studio's timeline does and edits the song through the store's own actions
+(`setClipNotes`, `addTrack`, `createEmptyClip`...), so both edit one song in one format. Its grids'
+logic is plain functions in `pocketGrid.ts`.
+
 ### Someone edits the song
 
 Take dragging a clip. `ClipView` calls `checkpoint()` when the drag starts (one undo step per

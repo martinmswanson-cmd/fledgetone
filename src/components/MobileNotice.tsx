@@ -1,21 +1,14 @@
 /**
- * The one-time notice on phones that the app is made for a computer (it still runs after Continue
- * anyway).
+ * The one-time notice on phones that the studio is made for a computer, with the way to Pocket (the
+ * phone version) or on anyway. A phone opens Pocket unless the person chose the studio (pocketMode.ts).
  */
 import React, { useState } from 'react';
 import { Monitor } from 'lucide-react';
 import { Modal } from './timeline/Modal';
 import { ChoiceButton } from './timeline/ProjectBar';
+import { chooseInterface, onPhone } from '../pocket/pocketMode';
 
 const DISMISSED_KEY = 'bosBeatbox.mobileNoticeDismissed';
-
-/** A phone: a narrow screen driven by touch (a tablet in landscape or a laptop with a touch screen is not one). */
-const onPhone = (): boolean => {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-  const touchOnly = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
-  const narrow = Math.min(window.screen.width, window.screen.height) < 600;
-  return touchOnly && narrow;
-};
 
 const dismissed = (): boolean => {
   try {
@@ -50,7 +43,8 @@ export const MobileNotice: React.FC = () => {
           thing, open this page on a computer.
         </p>
       </div>
-      <ChoiceButton title="Continue anyway" detail="Have a look around on this phone. This notice won't show again." autoFocus onClick={close} />
+      <ChoiceButton title="Use Pocket, the phone version" detail="Big pads, a step grid and notes in key, made for a phone. Your song opens in it, and back here on a computer." autoFocus onClick={() => { close(); chooseInterface('pocket'); }} />
+      <ChoiceButton title="Continue anyway" detail="Have a look around the full studio on this phone. This notice won't show again." onClick={close} />
     </Modal>
   );
 };
