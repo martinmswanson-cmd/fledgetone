@@ -306,3 +306,43 @@ scored.forEach((fig) => {
     v.play().catch(() => {});
   });
 });
+
+// Install: Chrome and Edge hand the page their install prompt (the studio's manifest covers the
+// whole site), so the button opens it; other browsers get a sentence saying how, the same advice as
+// the studio's Help › Install Fledgetone (src/pwa/installAdvice.ts: change both together).
+const installBtn = document.getElementById('install-btn'), installNote = document.getElementById('install-advice');
+let installPrompt = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+addEventListener('appinstalled', () => {
+  installPrompt = null;
+  if (installNote) installNote.innerHTML = '<strong>Installed.</strong> Open Fledgetone from your apps, dock or home screen.';
+});
+function installAdvice() {
+  const ua = navigator.userAgent;
+  const ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const edge = /Edg\//.test(ua);
+  const chrome = /Chrome\/|CriOS\//.test(ua) && !edge;
+  const firefox = /Firefox\/|FxiOS\//.test(ua);
+  const safari = /Safari\//.test(ua) && !chrome && !edge && !firefox && !/Android/.test(ua);
+  if (ios) return 'In Safari, tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>.';
+  if (safari) return 'In Safari, choose <strong>File › Add to Dock</strong> (or Share › Add to Dock).';
+  if (edge) return 'In Edge, open the menu (…) › <strong>Apps › Install Fledgetone</strong>, or click the install icon at the right of the address bar.';
+  if (/Android/.test(ua)) return firefox ? 'In Firefox, open the menu (⋮) › <strong>Install</strong>.' : 'Open the browser menu (⋮) › <strong>Install app</strong> (or Add to Home screen).';
+  if (chrome) return 'In Chrome, click the install icon at the right of the address bar, or open the menu (⋮) › <strong>Cast, save and share › Install page as app</strong>. Already installed? The same icon opens it.';
+  if (firefox) return "Firefox on a computer doesn't install web apps: open fledgetone.com in Chrome, Edge or Safari to install it. The studio works in Firefox as it is.";
+  return "This browser doesn't install web apps: open fledgetone.com in Chrome, Edge or Safari to install it.";
+}
+if (installBtn && installNote) {
+  if (matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+    installBtn.hidden = true;
+    installNote.innerHTML = "<strong>You're using the installed app.</strong>";
+  }
+  installBtn.addEventListener('click', async () => {
+    if (!installPrompt) { installNote.innerHTML = installAdvice(); return; }
+    const e = installPrompt;
+    installPrompt = null;
+    await e.prompt();
+    const { outcome } = await e.userChoice;
+    if (outcome !== 'accepted') installNote.innerHTML = 'Not installed. You can install it any time from here, or in the studio from <strong>Help › Install Fledgetone</strong>.';
+  });
+}
