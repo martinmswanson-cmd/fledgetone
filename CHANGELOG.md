@@ -8,6 +8,10 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16 — Demo songs
+
+- **New** has a **Demo songs** section: the demo song (Sunset Stroll) and the five Classics, right under Blank timeline, to open and listen to. Fledgetone's old pages on twobirdsworkshop.com now go to fledgetone.com.
+
 ## 2026.10.15-34 — Classics without the flips
 
 - The five Classical Flips are gone from the starters; the five classical pieces stay.
