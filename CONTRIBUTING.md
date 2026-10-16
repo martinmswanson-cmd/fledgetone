@@ -364,8 +364,10 @@ have the right to contribute it.
   copied from commercial products, and no artist or song names in anything we ship.
 - **The name and logo** aren't covered by the GPL; see `TRADEMARKS.md`.
 - **The published build** (`build:site`, as Netlify runs it for fledgetone.com: the home page at
-  `/`, the app at `/app/`) leaves the GPL plugins out, and so does `build:single`; the full build
-  (`build:full`) has them. Don't copy `public/fledgetone-plugins/gpl/` anywhere the app is published.
+  `/`, the app at `/app/`) has the GPL plugins, since this repository publishes the app's source
+  with them; `build:single` leaves them out and `build:full` has them. Anywhere you publish a build
+  with `public/fledgetone-plugins/gpl/`, publish its source too (a link to the repository at the
+  same commit will do).
 
 ## Being kind
 

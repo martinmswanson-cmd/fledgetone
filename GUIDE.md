@@ -628,7 +628,7 @@ Tools for making a beat from a sample: a loop or a recording of your own (or one
 
 ### Plugins
 
-The **Plugins** menu holds hundreds of built-in effects and instruments: open-source plugins from Airwindows, MDA, Mutable Instruments, Faust and Open303, compiled to run in the browser (see Credits for who made them). They need no address and nothing to allow.
+The **Plugins** menu holds hundreds of built-in effects and instruments: open-source plugins from Airwindows, MDA, Mutable Instruments, Faust and Open303, plus the Surge XT synth, the Dragonfly and Plateau reverbs and the setBfree tonewheel organ, compiled to run in the browser (see Credits for who made them). They need no address and nothing to allow.
 
 - **Plugins › Browse plugins…** opens the plugin browser: search by name or by what it does ("tape", "warm", "bell", "granular"), or pick a group down the side: **Instruments**, **Recommended** and **Basic** (the Airwindows picks), then each kind of effect (Reverb, Saturation, Dynamics, Filter, Lo-Fi and more). **Effects go on** chooses the track. **Add** puts an effect on that track; an instrument's **New track** makes a track that plays it. The menu also has shortcuts straight to the reverbs, delays, saturation, tape, dynamics, filters and others.
 - **Effects** go after the track's instrument and before its own inserts, in the order you add them, like the web plugins below. Right-click a track's name for **Add plugin effect…**, and to open or remove each one.
@@ -1367,6 +1367,10 @@ The synths and the synthesized drum kits are generated in your browser. The reco
 | Open303: 1 instrument | [Open303](https://github.com/RobinSchmidt/Open303) by Robin Schmidt | [MIT](https://opensource.org/license/mit) |
 | Mutable Instruments: 6 effects, 32 instruments | Plaits, Braids, Rings, Elements and Clouds by Emilie Gillet ([Mutable Instruments eurorack](https://github.com/pichenettes/eurorack) code) | [MIT](https://opensource.org/license/mit) |
 | Faust: 22 effects, 32 instruments | Physical models and effects from the [Faust](https://faust.grame.fr) libraries and examples by GRAME and contributors, among them Romain Michon, Julius O. Smith III, Yann Orlarey and Stéphane Letz (the waveguide models after the Synthesis ToolKit by Perry Cook and Gary Scavone) | [MIT](https://opensource.org/license/mit), BSD and STK-4.3 (the library code is used under the Faust exception to its LGPL) |
+| Surge XT: 1 instrument (not in the one-file copy) | [Surge XT](https://surge-synthesizer.github.io) by the Surge Synth Team, with its factory patches | [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html) |
+| Dragonfly: 4 effects (not in the one-file copy) | [Dragonfly Reverb](https://michaelwillis.github.io/dragonfly-reverb/) by Michael Willis and Rob van den Berg | [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html) |
+| Plateau: 1 effect (not in the one-file copy) | Plateau by Dale Johnson ([Valley Audio ValleyRackFree](https://github.com/ValleyAudio/ValleyRackFree)) | [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.html) |
+| setBfree: 1 instrument (not in the one-file copy) | [setBfree](https://setbfree.org/) tonewheel organ by Fredrik Kilander, Robin Gareus and Will Panther | [GPL-2.0-or-later](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html) |
 <!-- plugin-credits:end -->
 
 Their licence notices come with the app, in `third-party-licenses.txt` and in `fledgetone-plugins/LICENSES.txt` next to the plugin files.

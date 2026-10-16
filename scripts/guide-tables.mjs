@@ -52,7 +52,7 @@ export function creditsTable() {
 
 /** The built-in plugins' credits: each family, how many plugins it gives, who made them. */
 export function pluginCreditsTable() {
-  const rows = PLUGIN_FAMILIES.map((f) => ({ f, c: PLUGIN_CREDITS.find((c) => c.family === f.family) }));
+  const rows = [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES].map((f) => ({ f, c: PLUGIN_CREDITS.find((c) => c.family === f.family) }));
   return [
     '| Plugins | Made by | Licence |',
     '|---|---|---|',
@@ -60,7 +60,7 @@ export function pluginCreditsTable() {
       const inst = f.plugins.filter((p) => p.instrument).length;
       const fx = f.plugins.length - inst;
       const what = [fx && `${fx} effect${fx === 1 ? '' : 's'}`, inst && `${inst} instrument${inst === 1 ? '' : 's'}`].filter(Boolean).join(', ');
-      return `| ${f.label}: ${what}${f.gpl ? ' (full build only)' : ''} | ${c?.made ?? '?'} | ${c?.licence ?? f.licence} |`;
+      return `| ${f.label}: ${what}${f.gpl ? ' (not in the one-file copy)' : ''} | ${c?.made ?? '?'} | ${c?.licence ?? f.licence} |`;
     }),
   ].join('\n');
 }

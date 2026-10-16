@@ -1,7 +1,6 @@
 # fledgetone.com: Netlify builds the site from this repository on every push to master. The home
-# page (site/) is at /, the studio at /app/ (npm run build:site, see scripts/build-site.mjs). The
-# GPL plugins are never published (they're only for builds made with npm run build:full), so the
-# build leaves their folder out.
+# page (site/) is at /, the studio at /app/ (npm run build:site, see scripts/build-site.mjs), with
+# the GPL plugins: the app's source is public (GPL-3.0), as their licences ask.
 [build]
   command = "npm run build:site"
   publish = "dist-site"

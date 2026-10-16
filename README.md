@@ -32,7 +32,7 @@ npm run build:site     # dist-site/: fledgetone.com, the home page at / and the 
 ## Publishing
 
 fledgetone.com is built by Netlify from `master` on every push (`netlify.toml`: `npm run
-build:site`, without the GPL plugins, below): the home page at `/` and the app at `/app/`, with the real instruments' recordings
+build:site`, with the GPL plugins): the home page at `/` and the app at `/app/`, with the real instruments' recordings
 (`public/fledgetone-samples/`) and the built-in plugins (`public/fledgetone-plugins/`) next to
 the app, and the service worker that makes it installable and offline-ready (production builds
 only). `public/_headers` sets the app's cache rules (moved under `/app/` by `scripts/site-headers.mjs`);

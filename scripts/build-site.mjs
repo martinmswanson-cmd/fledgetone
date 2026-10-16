@@ -4,9 +4,9 @@
 // CSS with no build step of its own. The Learn section's lessons (learn/, scripts/learn-site.mjs) go
 // to /learn/.
 //
-// The GPL plugins stay out of the website build until the app's source is published (see
-// CONTRIBUTING.md), so their folder is removed from what Vite copied out of public/. The app's cache
-// rules move to the top of the site (scripts/site-headers.mjs).
+// The website build has the GPL plugins (VITE_GPL_PLUGINS=1 in package.json's build:site), since
+// the app's source is published with them. The app's cache rules move to the top of the site
+// (scripts/site-headers.mjs).
 import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +23,6 @@ if (!existsSync(join(OUT, 'app', 'index.html'))) {
   process.exit(1);
 }
 cpSync(join(ROOT, 'site'), OUT, { recursive: true });
-rmSync(join(OUT, 'app', 'fledgetone-plugins', 'gpl'), { recursive: true, force: true });
 // Netlify reads the cache rules from the top of the site only
 const appHeaders = join(OUT, 'app', '_headers');
 // (Run again over the same build, as when re-making the lessons, the rules have moved already)

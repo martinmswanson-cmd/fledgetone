@@ -250,7 +250,7 @@ WebAssembly is downloaded once (kept like the instruments' recordings, `recordin
 compiled once per page, and instantiated once per audio context; every plugin of the family in
 that context lives in that one instance's memory. Exports render in steps (suspend, schedule,
 resume): `syncBuiltinPlugins` waits for every plugin's processor to have the step's events
-before the render resumes. Families marked GPL are only in builds with `VITE_GPL_PLUGINS=1`.
+before the render resumes. Families marked GPL are only in builds with `VITE_GPL_PLUGINS=1` (the website, the dev server and `build:full`).
 
 An effect plugin can make sound with nothing going in (a Shepard tone, a noise source, a filter
 left oscillating), which would drone on through the song and while it's stopped. So the processor
@@ -400,14 +400,14 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   (`scripts/build-single.mjs`), to run from a file. It isn't published; the real instruments'
   recordings and the plugins aren't inlined, so it downloads them from their fallback address on
   twobirdsworkshop.com.
-- `npm run build:full`: the one-file build with the GPL plugins, in `dist-full/` (never published).
+- `npm run build:full`: the one-file build with the GPL plugins, in `dist-full/`.
 - `npm run build:runtime`: `dist-runtime/bos-player.js`, the player that games use to play a
   saved project (`src/runtime/player.ts`).
 
 fledgetone.com is made by Netlify from `master` on every push (`netlify.toml`: `npm run
 build:site`): the home page (`site/`, plain HTML and CSS) at `/`, the guide's pages at `/guide/`,
 the Learn lessons (`learn/`, `scripts/learn-site.mjs`) at `/learn/` and the licences at `/licenses/`, and the production build of the app at `/app/`
-(`scripts/build-site.mjs`, which also removes the GPL plugins' folder), with
+(`scripts/build-site.mjs`; built with `VITE_GPL_PLUGINS=1`, so the GPL plugins are in it), with
 `public/fledgetone-samples/` and `public/fledgetone-plugins/` served next to the app. The app
 uses relative addresses throughout, so it runs under any folder; `site/sw.js` retires the worker
 installed while the app lived at the root.

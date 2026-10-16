@@ -16,9 +16,9 @@ import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
  * automation lanes, saving, freezing and exports all work as they do for any WAM. Each runs in an
  * AudioWorklet (processor.ts).
  *
- * GPL-licensed families are only offered by builds made with VITE_GPL_PLUGINS=1 (the GPL asks
- * that the app's own source be published with them); a project naming one in a build without
- * it loads it as missing (the track plays on without it).
+ * GPL-licensed families are only offered by builds made with VITE_GPL_PLUGINS=1 (the website and
+ * the dev server, whose source is published with them, as the GPL asks); a project naming one in
+ * a build without it (the one-file build) loads it as missing (the track plays on without it).
  */
 
 

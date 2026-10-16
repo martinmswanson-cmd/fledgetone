@@ -2,7 +2,7 @@
   "name": "fledgetone",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "version": "2026.10.16-10",
+  "version": "2026.10.16-11",
   "type": "module",
   "scripts": {
     "dev": "npm run build:runtime && vite",
@@ -14,7 +14,7 @@
     "guide-tables": "node scripts/guide-tables.mjs",
     "preview": "vite preview",
     "build:single": "npm run build && node scripts/build-single.mjs",
-    "build:site": "npm run build -- --base=/app/ --outDir=dist-site/app && node scripts/build-site.mjs",
+    "build:site": "VITE_GPL_PLUGINS=1 npm run build -- --base=/app/ --outDir=dist-site/app && node scripts/build-site.mjs",
     "build:full": "VITE_GPL_PLUGINS=1 npm run build && VITE_GPL_PLUGINS=1 node scripts/build-single.mjs"
   },
   "dependencies": {
