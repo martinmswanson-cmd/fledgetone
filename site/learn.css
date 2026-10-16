@@ -1,0 +1,27 @@
+/* fledgetone.com/learn/: the lessons (written by scripts/learn-site.mjs). Builds on styles.css and guide.css. */
+
+.l-group { margin: 48px 0 0; font-size: 22px; font-weight: 600; color: var(--text); }
+.l-group + .g-cards { margin-top: 16px; }
+.l-cards .l-num { color: var(--cyan); }
+
+.l-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: -4px 0 28px; font-size: 14px; color: var(--muted); }
+.l-level { font: 500 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; padding: 6px 9px; border-radius: 999px; border: 1px solid currentColor; }
+.l-beginner { color: var(--green); }
+.l-intermediate { color: var(--amber); }
+.l-advanced { color: var(--purple); }
+
+/* A step pattern: a cell a 16th, lit where there's a hit, a brighter one for an accent */
+.l-grid { overflow-x: auto; margin: 22px 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.l-grid table { border-collapse: separate; border-spacing: 3px; }
+.l-grid th { font: 500 11px var(--mono); color: var(--muted); text-align: left; padding: 0 10px 0 0; white-space: nowrap; }
+.l-grid thead th { text-align: center; padding: 0 0 2px; }
+.l-grid td { width: 22px; height: 22px; min-width: 22px; border-radius: 4px; background: #1d1d22; }
+.l-grid td.beat { background: #2a2a31; }
+.l-grid td.on { background: var(--cyan); }
+.l-grid td.on.acc { background: #67e8f9; box-shadow: 0 0 8px rgba(103, 232, 249, .5); }
+
+.l-example { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin: 28px 0; padding: 18px 20px; border: 1px solid var(--border); border-left: 3px solid var(--cyan); border-radius: 12px; background: var(--panel); }
+.l-example span { color: var(--muted); font-size: 15px; flex: 1; min-width: 200px; }
+
+/* Phone screenshots (Pocket) stay phone-sized */
+.g-shot.phone { max-width: 320px; margin-inline: auto; }

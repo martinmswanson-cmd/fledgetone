@@ -4,18 +4,27 @@
 //   npm run build:site                      # the studio under dist-site/app/
 //   npx http-server dist-site -p 8765       # or any static server on that port
 //   node scripts/guide-shots/capture.mjs [file ...]   # all shots, or just the named ones
+//   node scripts/guide-shots/capture.mjs --learn [lesson ...]   # the Learn lessons' shots
+//
+// With --learn it takes the shots of learn/shots/<lesson>.mjs (all lessons, or the ones named, e.g.
+// 01-tour) into site/learn/img/, with their sizes in <lesson>.sizes.json, and makes each lesson's
+// EXAMPLES: it builds the example in the studio, opens File › Share and keeps the song's link in
+// <lesson>.links.json (pointing at fledgetone.com). A shot with `phone: true` is taken in Pocket on a
+// phone-sized screen.
 //
 // Needs Playwright with Chromium (it isn't a dependency: `npx playwright install chromium`, or set
 // PLAYWRIGHT to where it's installed) and ffmpeg for the WebP. Recordings that can't download are
 // muted from view (their red "!" is hidden), so the shots work offline too.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHOTS } from './shots.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const OUT = join(HERE, '..', '..', 'site', 'guide', 'img');
+const LEARN = process.argv[2] === '--learn';
+const LEARN_DIR = join(HERE, '..', '..', 'learn', 'shots');
+const OUT = join(HERE, '..', '..', 'site', LEARN ? 'learn' : 'guide', 'img');
 const URL_ = process.env.STUDIO_URL ?? 'http://localhost:8765/app/';
 const TRAILER = join(HERE, 'trailer.webm'); // a 15-second film (made with Higgsfield) with three hard cuts
 // Tall enough that the whole studio fits without scrolling: a full-page shot resizes the window,
@@ -24,11 +33,22 @@ const W = 1440, H = 1250, SCALE = 2;
 const pw = await import(process.env.PLAYWRIGHT ?? 'playwright');
 const { chromium } = pw.chromium ? pw : pw.default;
 
-const only = process.argv.slice(2);
-const todo = SHOTS.filter((s) => s.setup && (!only.length || only.includes(s.file)));
+const only = process.argv.slice(LEARN ? 3 : 2);
 mkdirSync(OUT, { recursive: true });
-const sizesFile = join(OUT, 'sizes.json');
-const sizes = existsSync(sizesFile) ? JSON.parse(readFileSync(sizesFile, 'utf8')) : {};
+/** The sets of shots to take: the guide's, or each lesson's (with its examples). */
+const sets = LEARN
+  ? await Promise.all(
+      readdirSync(LEARN_DIR)
+        .filter((f) => f.endsWith('.mjs') && (!only.length || only.includes(f.replace(/\.mjs$/, ''))))
+        .sort()
+        .map(async (f) => {
+          const m = await import(join(LEARN_DIR, f));
+          const name = f.replace(/\.mjs$/, '');
+          return { shots: m.SHOTS ?? [], examples: m.EXAMPLES ?? [], sizesFile: join(OUT, `${name}.sizes.json`), linksFile: join(OUT, `${name}.links.json`) };
+        })
+    )
+  : [{ shots: SHOTS.filter((s) => s.setup && (!only.length || only.includes(s.file))), examples: [], sizesFile: join(OUT, 'sizes.json') }];
+const PHONE = { viewport: { width: 412, height: 860 }, deviceScaleFactor: 2.625, isMobile: true, hasTouch: true };
 
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 
@@ -68,6 +88,8 @@ function helpers(page) {
     own: (t) => page.locator(`xpath=//*[normalize-space(text())="${t}"]`),
     union: (ls, pad = 0) => boxOf(page, ls, pad),
     viewport: async () => ({ x: 0, y: 0, width: W, height: 900 }),
+    /** The whole phone screen, for a Pocket shot */
+    phoneScreen: async () => ({ x: 0, y: 0, width: PHONE.viewport.width, height: PHONE.viewport.height }),
     async starter(name) {
       await page.getByRole('menuitem', { name: 'File', exact: true }).click();
       await page.getByRole('menuitem', { name: /^New/ }).click();
@@ -102,6 +124,13 @@ function helpers(page) {
       await page.waitForTimeout(4500); // the toast goes
       await page.evaluate(() => document.querySelectorAll('*').forEach((e) => { if (e.scrollLeft > 0) e.scrollLeft = 0; }));
     },
+    /** File › New › Blank timeline (four empty tracks) */
+    async blank() {
+      await page.getByRole('menuitem', { name: 'File', exact: true }).click();
+      await page.getByRole('menuitem', { name: /^New/ }).click();
+      await page.locator('[role=dialog] button', { hasText: 'Blank timeline' }).first().click();
+      await page.waitForTimeout(1200);
+    },
     async openClip(name) { await page.getByText(name, { exact: true }).first().dblclick(); await page.waitForTimeout(1200); },
     dialog: () => boxOf(page, page.locator('[role=dialog]').last(), 0),
     async popover() {
@@ -134,29 +163,66 @@ function helpers(page) {
   return s;
 }
 
-for (const shot of todo) {
-  const ctx = await browser.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: SCALE });
+/** A context and a page with the studio open (or Pocket, on a phone-sized screen). */
+async function open(phone) {
+  const ctx = await browser.newContext(phone ? PHONE : { viewport: { width: W, height: H }, deviceScaleFactor: SCALE });
   const page = await ctx.newPage();
-  await page.addInitScript(() => localStorage.setItem('bosBeatbox.welcomeSeen', 'true'));
+  await page.addInitScript(() => {
+    localStorage.setItem('bosBeatbox.welcomeSeen', 'true');
+    localStorage.setItem('fledgetone.pocketNoticeHidden', '1');
+  });
   await page.route(/github\.io|githubusercontent/, (r) => r.abort());
-  await page.goto(URL_, { waitUntil: 'networkidle' });
+  await page.goto(phone ? `${URL_}?pocket` : `${URL_}?studio`, { waitUntil: 'networkidle' });
   await page.addStyleTag({ content: 'button.rounded-full.bg-red-500{display:none!important} *{caret-color:transparent!important}' });
-  try {
-    const clip = await shot.setup(helpers(page));
-    clip.width = Math.round(Math.min(clip.width, W - clip.x)); clip.height = Math.round(clip.height);
-    clip.x = Math.round(clip.x); clip.y = Math.round(clip.y);
-    const png = join(OUT, `${shot.file}.png`);
-    await page.screenshot({ path: png, clip });
-    const webp = join(OUT, `${shot.file}.webp`);
-    execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-i', png, '-vf', "scale='min(1600,iw)':-2:flags=lanczos", '-c:v', 'libwebp', '-quality', '82', webp]);
-    rmSync(png);
-    const w = Math.min(1600, clip.width * SCALE);
-    sizes[shot.file] = [w, Math.round((clip.height * SCALE * w) / (clip.width * SCALE))];
-    console.log(`${shot.file}: ${clip.width}x${clip.height}`);
-  } catch (e) {
-    console.error(`${shot.file}: ${e.message.split('\n')[0]}`);
-  }
-  await ctx.close();
+  return { ctx, page };
 }
-writeFileSync(sizesFile, `${JSON.stringify(sizes, null, 2)}\n`);
+
+for (const set of sets) {
+  const sizes = existsSync(set.sizesFile) ? JSON.parse(readFileSync(set.sizesFile, 'utf8')) : {};
+  for (const shot of set.shots) {
+    const { ctx, page } = await open(shot.phone);
+    try {
+      const vw = shot.phone ? PHONE.viewport.width : W;
+      const scale = shot.phone ? PHONE.deviceScaleFactor : SCALE;
+      const clip = await shot.setup(helpers(page));
+      clip.width = Math.round(Math.min(clip.width, vw - clip.x)); clip.height = Math.round(clip.height);
+      clip.x = Math.round(clip.x); clip.y = Math.round(clip.y);
+      const png = join(OUT, `${shot.file}.png`);
+      // Past the bottom of the window (a big song pushes the bottom panel down): the whole page
+      const vh = shot.phone ? PHONE.viewport.height : H;
+      await page.screenshot({ path: png, clip, fullPage: clip.y + clip.height > vh });
+      const webp = join(OUT, `${shot.file}.webp`);
+      execFileSync('ffmpeg', ['-loglevel', 'error', '-y', '-i', png, '-vf', "scale='min(1600,iw)':-2:flags=lanczos", '-c:v', 'libwebp', '-quality', '82', webp]);
+      rmSync(png);
+      // Phone shots are kept as if taken at twice the size, like the others, so the page shows them phone-sized
+      const w = Math.min(1600, Math.round(clip.width * scale));
+      const h = Math.round((clip.height * scale * w) / (clip.width * scale));
+      sizes[shot.file] = shot.phone ? [clip.width * 2, clip.height * 2] : [w, h];
+      console.log(`${shot.file}: ${clip.width}x${clip.height}`);
+    } catch (e) {
+      console.error(`${shot.file}: ${e.message.split('\n')[0]}`);
+    }
+    await ctx.close();
+  }
+  writeFileSync(set.sizesFile, `${JSON.stringify(sizes, null, 2)}\n`);
+  if (!set.examples.length) continue;
+  const links = existsSync(set.linksFile) ? JSON.parse(readFileSync(set.linksFile, 'utf8')) : {};
+  for (const ex of set.examples) {
+    const { ctx, page } = await open(false);
+    try {
+      const s = helpers(page);
+      await ex.setup(s);
+      await s.menu('File', 'Share');
+      const field = page.getByLabel('Song link');
+      await field.waitFor({ timeout: 20000 });
+      const url = (await field.inputValue()).replace(/^https?:\/\/[^#]*/, 'https://fledgetone.com/app/');
+      links[ex.name] = { url, ...(ex.label ? { label: ex.label } : {}) };
+      console.log(`example ${ex.name}: ${url.length} characters`);
+    } catch (e) {
+      console.error(`example ${ex.name}: ${e.message.split('\n')[0]}`);
+    }
+    await ctx.close();
+  }
+  writeFileSync(set.linksFile, `${JSON.stringify(links, null, 2)}\n`);
+}
 await browser.close();

@@ -43,6 +43,7 @@ export const head = ({ title, description, path, current = 'guide' }) => `<!doct
         <a href="/#video">Video</a>
         <a href="/#games">Games</a>
         <a href="/#features">Features</a>
+        <a href="/learn/"${current === 'learn' ? ' aria-current="page"' : ''}>Learn</a>
         <a href="/guide/"${current === 'guide' ? ' aria-current="page"' : ''}>Guide</a>
       </nav>
       <div class="nav-cta"><a class="btn btn-primary btn-sm" href="/app/">Open the studio</a></div>
@@ -57,6 +58,7 @@ export const foot = `
       <p>A music studio in your browser.</p>
       <nav aria-label="Footer">
         <a href="/app/">Studio</a>
+        <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
         <a href="/licenses/">Licences</a>
         <a href="https://twobirdsworkshop.com">twobirdsworkshop.com</a>

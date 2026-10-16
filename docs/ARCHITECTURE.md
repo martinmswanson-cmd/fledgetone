@@ -405,8 +405,8 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   saved project (`src/runtime/player.ts`).
 
 fledgetone.com is made by Netlify from `master` on every push (`netlify.toml`: `npm run
-build:site`): the home page (`site/`, plain HTML and CSS) at `/`, the guide's pages at `/guide/`
-and the licences at `/licenses/`, and the production build of the app at `/app/`
+build:site`): the home page (`site/`, plain HTML and CSS) at `/`, the guide's pages at `/guide/`,
+the Learn lessons (`learn/`, `scripts/learn-site.mjs`) at `/learn/` and the licences at `/licenses/`, and the production build of the app at `/app/`
 (`scripts/build-site.mjs`, which also removes the GPL plugins' folder), with
 `public/fledgetone-samples/` and `public/fledgetone-plugins/` served next to the app. The app
 uses relative addresses throughout, so it runs under any folder; `site/sw.js` retires the worker

@@ -51,6 +51,10 @@ the guide at `/guide/`, a page per section of GUIDE.md (`scripts/guide-site.mjs`
 guide always matches the app's. Its screenshots are taken from the studio by
 `scripts/guide-shots/capture.mjs` (the list, with where each one goes, is `shots.mjs`): run it
 again after changing the look of something they show.
+The **Learn** section at `/learn/` is separate from the guide: hands-on lessons written for the
+website, one Markdown file each in `learn/` (format in `scripts/learn-site.mjs`), with screenshots
+and example song links taken from the studio by `capture.mjs --learn` (each lesson's shots and
+examples are in `learn/shots/`). The home page lists the lessons in its Learn section.
 Old links to the app at the root (`fledgetone.com/#s=...`) are forwarded to `/app/`.
 
 ## Finding your way around
