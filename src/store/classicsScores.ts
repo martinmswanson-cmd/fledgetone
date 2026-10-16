@@ -1,5 +1,5 @@
 /**
- * The notes of the five public-domain pieces behind the Classics starters (startersClassics.ts),
+ * The notes of the five public-domain pieces behind the Classics (demo songs in New, arranged in startersClassics.ts),
  * as plain data: packed scores (see scoreNotes.ts for the format) and one line written out by hand.
  * Times are quarter notes from the piece's first beat. Where each comes from (all public domain;
  * the editions and their makers are credited in SCORE_CREDITS, src/credits.ts):

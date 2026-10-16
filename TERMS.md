@@ -2,7 +2,7 @@
 
 ## About these terms
 
-Last updated: October 15, 2026
+Last updated: October 16, 2026
 
 These terms are an agreement between you and Martin Swanson, doing business as Two Birds Workshop ("we", "us" and "our"), about Fledgetone, the music app, and everything it exports. By using Fledgetone, you agree to them. If you don't agree, please don't use it.
 
@@ -85,7 +85,7 @@ Fledgetone gives everyone the same starter songs, presets, patterns, sounds and 
 
 ## 6. The built-in sounds
 
-The recorded instruments, sound effects and built-in plugins come from free, openly licensed sources, listed in the guide's **Credits** section and in the open-source licences that come with the app. You may use them in your own music, including music you sell, as their licences allow. A few are under licences that ask for credit (for example Creative Commons Attribution): where a licence asks for credit, giving it is your responsibility. Those licences, not these terms, decide how the sounds themselves may be reused outside your music. We list the licences as their makers published them and can't promise they're correct.
+The recorded instruments, sound effects and built-in plugins come from free sources, almost all of them openly licensed, listed in the guide's **Credits** section and in the open-source licences that come with the app. A few recorded drum kits come from a collection that states no licence; the Credits say which, and which kits to use instead for a commercial release. You may use them in your own music, including music you sell, as their licences allow. A few are under licences that ask for credit (for example Creative Commons Attribution): where a licence asks for credit, giving it is your responsibility. Those licences, not these terms, decide how the sounds themselves may be reused outside your music. We list the licences as their makers published them and can't promise they're correct.
 
 ## 7. Plugins, downloads and anything else from other sites
 

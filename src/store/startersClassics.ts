@@ -10,7 +10,8 @@ import type { TempoPoint } from '../audio/tempoMap';
 import { swellLane } from './swell';
 
 /**
- * The Classics starters: five public-domain pieces, complete, on the app's best instruments, each
+ * The Classics: five public-domain pieces, complete, built like starters but listed in New under
+ * Demo songs (ProjectBar.tsx), not with the starters. Each is on the app's best instruments and
  * shaped as a player would: Pachelbel's Canon in D for solo strings and sections over the ground
  * bass, the first movement of Beethoven's "Moonlight" sonata and Debussy's Clair de lune on the
  * concert grand with the sustain pedal, Bach's first cello suite's Prelude on the solo cello, and

@@ -2,7 +2,8 @@ import type { InstrumentKey } from './timelineTypes';
 import { INSTRUMENT_KEYS, isInstrumentKey } from '../audio/instrumentCatalog';
 
 /**
- * Drag-and-drop payloads from the sound deck onto the timeline.
+ * Drag-and-drop payloads from the sound deck onto the timeline. The deck (the bottom panel's old
+ * Instruments tab) is retired, so nothing sets them any more; the lanes still read them.
  * The instrument is encoded in the MIME type because dragover handlers can only see
  * dataTransfer.types, not the data, and lanes need to know whether to accept the drop.
  */

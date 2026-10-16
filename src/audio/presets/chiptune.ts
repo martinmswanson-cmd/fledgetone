@@ -8,7 +8,7 @@ import { HELD_NOTE } from './edmSynths';
 
 /**
  * Chiptune: the sound chips of 8-bit consoles, as plain Web Audio nodes (see native.ts).
- * - Chip Lead: a 25% pulse wave (the classic "NES lead"), a hard gate, and a vibrato that
+ * - Chip Lead: a 25% pulse wave (the classic 8-bit console lead), a hard gate, and a vibrato that
  *   comes in after the note has sounded a moment.
  * - Chip Bass: the 4-bit stepped triangle those chips played bass lines on: no volume envelope
  *   (the real one had none), so it's gated on and off.

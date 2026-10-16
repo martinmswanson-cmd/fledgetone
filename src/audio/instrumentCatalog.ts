@@ -1,6 +1,6 @@
 /**
  * Every instrument Fledgetone can play, in one place. The Add Track menu, the inspector,
- * the piano roll's note range, the instrument browser and project validation all read this.
+ * the piano roll's note range, the instrument menus and project validation all read this.
  *
  * kind:
  *   synth   - generated live (no download)
@@ -299,7 +299,12 @@ function nb(folder: string, files: string[], release = 1, onset?: number): Sampl
   return { baseUrl: `https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/${folder}/`, samples, release, onset };
 }
 
-/** The site the app is published on, which hosts the recordings in public/fledgetone-samples too. */
+/**
+ * The recordings' fallback address, for a page that doesn't have them next to it (the one-file
+ * build opened from a file, a copy hosted elsewhere): twobirdsworkshop.com still serves
+ * public/fledgetone-samples there. The app itself is published at fledgetone.com, with the
+ * recordings next to it.
+ */
 const SITE_SAMPLES = 'https://twobirdsworkshop.com/fledgetone-samples/';
 
 /**
@@ -859,8 +864,8 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   },
   acousticKit: { key: 'acousticKit', name: 'Acoustic Kit', blurb: 'Real drum kit (recorded): rock, pop, jazz', color: '#d97706', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('acoustic-kit'), gain: -1 },
   breakbeatKit: { key: 'breakbeatKit', name: 'Breakbeat Kit', blurb: 'Crunchy sampled break hits', color: '#c2410c', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('breakbeat9'), gain: 2 },
-  linnDrum: { key: 'linnDrum', name: 'LinnDrum', blurb: '80s drum machine: synthwave, pop', color: '#e11d48', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('LINN'), gain: -3 },
-  cr78: { key: 'cr78', name: 'CR-78', blurb: 'Vintage rhythm box', color: '#9a3412', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('CR78'), gain: -2 },
+  linnDrum: { key: 'linnDrum', name: '80s Drum Machine', blurb: 'A sampled 80s drum machine: synthwave, pop', color: '#e11d48', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('LINN'), gain: -3 },
+  cr78: { key: 'cr78', name: 'Rhythm Box', blurb: 'A sampled vintage rhythm box', color: '#9a3412', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('CR78'), gain: -2 },
   technoKit: { key: 'technoKit', name: 'Techno Kit', blurb: 'Hard electronic kit', color: '#be185d', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('Techno') },
   bongos: { key: 'bongos', name: 'Bongos & Percussion', blurb: 'Hand drums for Latin grooves', color: '#a16207', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('Bongos'), gain: -1 },
   timpani: { key: 'timpani', name: 'Timpani', blurb: 'Orchestral kettle drums', color: '#7f1d1d', category: 'Retro (GM)', kind: 'sampled', range: [36, 60], samples: struck('timpani', 36, 60, 2), gain: 16 },
@@ -976,7 +981,7 @@ export const INSTRUMENTS: Record<InstrumentKey, InstrumentDef> = {
   shanai: { key: 'shanai', name: 'Shehnai', blurb: 'Indian double-reed: weddings, temples', color: '#f97316', category: 'World', kind: 'sampled', range: [60, 91], samples: held('shanai', 60, 91, 0.4), gain: 14 },
   whistle: { key: 'whistle', name: 'Whistle', blurb: 'Clear whistling melody', color: '#e0f2fe', category: 'World', kind: 'sampled', range: [72, 96], samples: held('whistle', 72, 96, 0.3), gain: 17, taper: [85, 1] },
   melodicTom: { key: 'melodicTom', name: 'Melodic Toms', blurb: 'Tuned toms you can play as notes', color: '#b91c1c', category: 'Drums & Percussion', kind: 'sampled', range: [36, 72], samples: struck('melodic_tom', 36, 72, 0.5), gain: 15 },
-  synthDrum: { key: 'synthDrum', name: 'Syndrum', blurb: '80s electronic tom sweeps', color: '#dc2626', category: 'Drums & Percussion', kind: 'sampled', range: [36, 72], samples: struck('synth_drum', 36, 72, 0.5), gain: 17 },
+  synthDrum: { key: 'synthDrum', name: 'Synth Drum', blurb: '80s electronic tom sweeps', color: '#dc2626', category: 'Drums & Percussion', kind: 'sampled', range: [36, 72], samples: struck('synth_drum', 36, 72, 0.5), gain: 17 },
   woodblock: { key: 'woodblock', name: 'Woodblock', blurb: 'Hollow wood clicks', color: '#a16207', category: 'Drums & Percussion', kind: 'sampled', range: [48, 84], samples: struck('woodblock', 48, 84, 0.2), gain: 18 },
   agogo: { key: 'agogo', name: 'Agogô', blurb: 'Brazilian cowbells', color: '#ca8a04', category: 'Drums & Percussion', kind: 'sampled', range: [48, 84], samples: struck('agogo', 48, 84, 0.4), gain: 21 },
   tinkleBell: { key: 'tinkleBell', name: 'Tinkle Bell', blurb: 'Small bright bells: magic, sparkle', color: '#fef3c7', category: 'Mallets & Bells', kind: 'sampled', range: [60, 96], samples: struck('tinkle_bell', 60, 96, 1.5), gain: 21, taper: [79, 3] },

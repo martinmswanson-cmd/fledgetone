@@ -1,5 +1,5 @@
 /**
- * Shared rules for the app's global keyboard shortcuts (timeline, piano roll, sound deck, guide).
+ * Shared rules for the app's global keyboard shortcuts (timeline, piano roll, guide).
  * Shortcuts must never steal keys from something the user is typing into, but a slider or menu
  * that merely has focus shouldn't switch them off either.
  */

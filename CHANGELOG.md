@@ -8,21 +8,29 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## Unreleased
+
+- The guide matches the app again: the menu bar list covers every menu and item (Plugins and Learn included), game music has a chapter of its own, the Track Inspector is described in its real order, and wrong counts, menu paths and button names are fixed.
+- The tour and tutorials describe the screen as it is now (the bottom panel's tabs, the Pump's Trigger, how Save works, the Drummer's 21 styles).
+- **Download all** (Master tab › Instruments offline) says how much it fetches: about 280 MB, the built-in plugins included.
+- Three instruments are renamed so they no longer carry product names: **80s Drum Machine** (was LinnDrum), **Rhythm Box** (was CR-78) and **Synth Drum** (was Syndrum). They sound the same, and songs that use them open as before. The starters' "Rhodes" tracks are now called "E. Piano".
+- The terms of use (section 6) now say that a few recorded drum kits come from a collection that states no licence, as the guide's Credits do.
+
 ## 2026.10.16 — Demo songs
 
 - **New** has a **Demo songs** section: the demo song (Sunset Stroll) and the five Classics, right under Blank timeline, to open and listen to. Fledgetone's old pages on twobirdsworkshop.com now go to fledgetone.com.
 
-## 2026.10.15-34 — Classics without the flips
+## 2026.10.15-34 — The Classics, settled
 
-- The five Classical Flips are gone from the starters; the five classical pieces stay.
+- The Classics group keeps just the five classical pieces.
 
 ## 2026.10.15-33 — The Classics
 
-- A new **Classics** group of starters in **New**: five complete public-domain pieces (Pachelbel's Canon in D for solo strings and sections, the first movement of Beethoven's "Moonlight" sonata and Debussy's Clair de lune on the concert grand with the pedal, the Prelude of Bach's first cello suite on the solo cello, and Grieg's In the Hall of the Mountain King for orchestra, speeding up to the end), each with its dynamics, rubato and phrasing, and **Classical Flips**: the same five flipped into hard trap, drill, boom bap, phonk and melodic trap beats with 808s, designed drums, hat rolls, beat switches and the master clipper. Where their notes come from is in the guide's Credits.
+- A new **Classics** group of starters in **New**: five complete public-domain pieces (Pachelbel's Canon in D for solo strings and sections, the first movement of Beethoven's "Moonlight" sonata and Debussy's Clair de lune on the concert grand with the pedal, the Prelude of Bach's first cello suite on the solo cello, and Grieg's In the Hall of the Mountain King for orchestra, speeding up to the end), each with its dynamics, rubato and phrasing. Where their notes come from is in the guide's Credits.
 
 ## 2026.10.15-32 — Speed up from the clip menu
 
-- Right-click a clip: **Speed up the end** speeds up the last 25% of the block 25% and snaps back (one click), **Speed up the end + drum roll** goes 50% faster with the roll, and **Speed up the end…** opens the options.
+- Right-click a clip: **Speed up the end** speeds up the last 25% of the block by 25% and snaps back (one click), **Speed up the end + drum roll** goes 50% faster with the roll, and **Speed up the end…** opens the options.
 
 ## 2026.10.15-31 — Speed up into the drop
 

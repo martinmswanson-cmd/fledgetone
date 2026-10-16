@@ -103,7 +103,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'Add a track',
-      body: 'Pick from 198 instruments. Type to search: a name, or a style such as *8-bit*, *orchestral* or *jazz*.',
+      body: 'Pick from more than 200 instruments, and click ▶ on any of them to hear it first. Type to search: a name, or a style such as *8-bit*, *orchestral* or *jazz*.',
       target: 'button[title="Add a new instrument track"]',
     },
     {
@@ -113,7 +113,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'The bottom panel',
-      body: 'Tabs under the timeline: the **Mixer** (every track side by side), **Instruments** (try any sound, play pads, drag patterns), **Game**, **Video** tools and the **Sound FX** maker. Drag its top edge to resize it.',
+      body: 'Tabs under the timeline: the **Mixer** (every track side by side), the clip **Launcher**, **EQ & Dynamics** (the selected track’s EQ, big), **Game**, **Video** tools and the **Sound FX** maker. Drag its top edge to resize it.',
       target: '[role="tablist"][aria-label="Bottom panel tabs"]',
     },
     {
@@ -128,7 +128,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'Learn more',
-      body: 'The **Learn** menu at the top (or the **LEARN** button on the right of the toolbar) has this tour and seven hands-on tutorials, from a first song to game music that reacts. **GUIDE** (or **?**) explains everything in detail.',
+      body: 'The **Learn** menu at the top (or the **LEARN** button here) has this tour and seven hands-on tutorials, from a first song to game music that reacts. **GUIDE** (or **?**) explains everything in detail.',
       target: 'button[title^="Tour and tutorials"]',
     },
   ],
@@ -153,7 +153,7 @@ const BEGINNER: Lesson = {
     },
     {
       title: 'Open a starter',
-      body: 'Open the **File** menu, click **New…**, then pick any genre starter. *Lo-Fi* is a gentle first one. (This replaces the current timeline.)',
+      body: 'Open the **File** menu, click **New…**, then open a group of starters and pick one. *Lo-Fi* (in **Chill & World**) is a gentle first one. (This replaces the current timeline.)',
       target: dialogOr('new', 'New arrangement', NEW_BUTTON),
       task: { hint: 'New, then a starter', begin: () => tl().projectName, done: (name) => tl().projectName !== name && tl().clips.length > 0 },
     },
@@ -213,7 +213,7 @@ const BEGINNER: Lesson = {
     },
     {
       title: 'Export your song',
-      body: 'Click **Export**. Choose **MP3** for sharing or **WAV** for the best quality, then **Export** in the dialog to download it.',
+      body: 'Click **Export**. Under **Format**, choose **MP3** for sharing or **WAV** for the best quality, then click **Export** at the bottom of the dialog to save the file.',
       target: dialogOr('export', 'Export audio', EXPORT_BUTTON),
       task: { hint: 'Open Export', done: () => ui().dialog === 'export' },
     },
@@ -237,7 +237,7 @@ const INTERMEDIATE: Lesson = {
     },
     {
       title: 'Add a track',
-      body: 'Click **Add Track** under the last track and search for an instrument: try *strings*, *8-bit* or *choir*. Enter picks it.',
+      body: 'Click **Add Track** under the last track and search for an instrument: try *strings*, *8-bit* or *choir*. Enter picks it (▶ on a row lets you hear one first).',
       target: 'button[title="Add a new instrument track"]',
       task: { hint: 'Add any instrument track', begin: () => tl().tracks.length, done: (n) => tl().tracks.length > (n as number) },
     },
@@ -261,7 +261,7 @@ const INTERMEDIATE: Lesson = {
     },
     {
       title: 'Make it pump',
-      body: 'Switch the **Pump** ON. With **Kick drum** chosen, the track ducks under every kick: the classic sidechain feel of dance music.',
+      body: 'Switch the **Pump** ON. With its **Trigger** on **Kick**, the track ducks under every kick: the classic sidechain feel of dance music.',
       target: '[data-search="Pump"]',
       task: { hint: 'Switch the Pump on', done: () => !!selected()?.fx.pump.on },
     },
@@ -313,7 +313,7 @@ const INTERMEDIATE: Lesson = {
     },
     {
       title: 'Save a copy',
-      body: 'Your work autosaves in this browser, but a file is safer. **Save** downloads a project file with its sounds; **Open** (or dropping the file on the page) loads it on any computer.',
+      body: 'Your work autosaves in this browser, but a file is safer. **Save** writes a project file with its sounds (the first time, you choose where; in some browsers it goes to your downloads); **File › Open…** (or dropping the file on the page) loads it on any computer.',
       target: '#btn-save-project',
     },
     {
@@ -358,7 +358,7 @@ const EXPERT: Lesson = {
     },
     {
       title: 'Sidechain from any track',
-      body: 'On the **Pump**, choose **A track** and pick which track it follows: the pad can duck under the bass, or the chords under a lead. The followed track can even be muted, as a silent trigger.',
+      body: 'On the **Pump**, set **Trigger** to **Track** and pick which track it **Follows**: the pad can duck under the bass, or the chords under a lead. The followed track can even be muted, as a silent trigger.',
       target: '[data-search="Pump"]',
       before: () => {
         ensureTrack();
@@ -437,7 +437,7 @@ const HELPERS: Lesson = {
     },
     {
       title: 'Chords in a key',
-      body: 'Right-click an empty spot on a pitched track (a piano, strings, a pad) and choose **Chord progression…**. Pick one: *Level clear*, *Journey*, *Wonder* and *Castle* are game moods. Then **Make the clip**.',
+      body: 'Right-click an empty spot on a pitched track (a piano, strings, a pad) and choose **Chord progression…**. Pick one: *level clear*, *hero’s journey*, *wonder* and *castle* are game moods. Then **Make clip**.',
       target: '[data-timeline-scroll]',
       before: ensureTrack,
       task: { hint: 'Right-click a lane, Chord progression…', begin: clipIds, done: newClip },
@@ -450,7 +450,7 @@ const HELPERS: Lesson = {
     },
     {
       title: 'A drummer',
-      body: 'Add a drum kit track (**Add track**, type *kit*), then right-click its lane and choose **Drummer…**: 20 styles from four-on-the-floor to a waltz, a march, a bossa nova or a 7/8 groove, with fills every few bars. Tick the time-signature box for a waltz to set 3/4 there.',
+      body: 'Add a drum kit track (**Add Track**, type *kit*), then right-click its lane and choose **Drummer…**: 21 styles from four-on-the-floor to a waltz, a march, a bossa nova or a blast beat, with fills every few bars. For a waltz, leave the time-signature box ticked to set 3/4 there.',
       target: '[data-timeline-scroll]',
       task: { hint: 'A kit track, then Drummer…', begin: clipIds, done: (b) => tl().clips.some((c) => !(b as Set<string>).has(c.id) && tl().tracks.find((t) => t.id === c.trackId && /kit|drum/i.test(t.instrumentKey))) },
     },
@@ -486,7 +486,7 @@ const GAME_MUSIC: Lesson = {
     },
     {
       title: 'Open a game starter',
-      body: 'Open **File › New…**, then the **Game Worlds** group, and pick one: *Overworld*, *Open Field* or *Cozy Village*. Each section is a state, the tracks are in layers, and the transitions and stingers are made. (This replaces the current timeline.)',
+      body: 'Open **File › New…**, then the **Game Worlds** group, and pick one: *Overworld Adventure*, *Open Field* or *Cozy Village*. Each section is a state, the tracks are in layers, and the transitions and stingers are made. (This replaces the current timeline.)',
       target: dialogOr('new', 'New arrangement', NEW_BUTTON),
       task: { hint: 'New, Game Worlds, a starter', done: gameSongOpen },
     },

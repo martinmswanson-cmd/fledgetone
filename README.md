@@ -1,13 +1,18 @@
 # Fledgetone
 
 A music studio that runs in the browser. Arrange tracks and clips on a timeline, write in a piano
-roll, play 198 instruments (synths, EDM basses, drum kits, recorded instruments and your own
-sounds), mix with per-track effects, buses, returns and automation, record from MIDI or a
-microphone, and export WAV, MP3, Ogg, stems or video. It also scores to picture (timecode, hit
-points, a reference video) and exports adaptive music for games (states, stems, stingers and
-players for the web, Unity, Godot, FMOD and Wwise).
+roll, play more than 200 instruments (synths, EDM basses, drum kits, recorded instruments and your
+own sounds) and hundreds of built-in plugins, mix with per-track effects, buses, returns and
+automation, record from MIDI or a microphone, and export WAV, MP3, Ogg, stems or video. Producer
+tools help with beats (an 808 designer, a drum designer, flipping samples, vocal chains, arranging
+a loop into a song). It also scores to picture (timecode, hit points, a reference video) and
+exports adaptive music for games (states, stems, stingers and players for the web, Unity, Godot,
+FMOD and Wwise).
 
 Nothing is uploaded anywhere: songs autosave in the browser and save to `.fledgetone.json` files.
+
+It's published at [fledgetone.com](https://fledgetone.com), where it can also be installed as an
+app that works offline.
 
 **Using it:** [GUIDE.md](GUIDE.md), also inside the app (the Guide button, or press `?`).
 
@@ -19,12 +24,24 @@ Requires Node 22.
 npm install
 npm run dev            # dev server at http://localhost:5173
 npm test               # unit tests
+npm run build          # dist/: the production build, as published
 npm run build:single   # dist-single/index.html: the whole app in one HTML file
 ```
 
-`build:single` inlines the scripts, styles and icon into one file that can be hosted anywhere;
-that's the file published as `fledgetone.html` on twobirdsworkshop.com. The real instruments'
-recordings (`public/fledgetone-samples/`) are hosted next to it.
+## Publishing
+
+fledgetone.com is built by Netlify from `master` on every push (`netlify.toml`: `npm run build`,
+without the GPL plugins) and served from `dist/`, with the real instruments' recordings
+(`public/fledgetone-samples/`) and the built-in plugins (`public/fledgetone-plugins/`) next to
+the app, and the service worker that makes it installable and offline-ready (production builds
+only). `public/_headers` sets the cache rules. The old addresses on twobirdsworkshop.com
+(`/fledgetone.html`, `/fledgetone`, `/bos-beat-box` and `/bos-beat-box.html`) redirect there;
+twobirdsworkshop.com still serves `fledgetone-samples/` and `fledgetone-plugins/` as the app's
+fallback download addresses.
+
+`build:single` inlines the scripts, styles and icon into one file that runs when opened from a
+file (it fetches the recordings and plugins from the fallback addresses). It isn't published; it
+has no service worker and can't be installed.
 
 ## Finding your way around
 
@@ -40,11 +57,13 @@ The stack: React 19, TypeScript, zustand, Tone.js 15 on the Web Audio API, Tailw
 ## Credits
 
 The recorded instruments come from free sample libraries: the Salamander Grand Piano,
-tonejs-instruments (Karoryfer, University of Iowa and VSCO 2 recordings), the FluidR3 and Musyng
-Kite General MIDI soundfonts, Versilian Studios' VSCO 2 Community Edition and VCSL, and Karoryfer's Black
-And Green Guitars. Their licences differ (CC BY 3.0, CC BY-SA 3.0 and CC0, among others); the
-full list with links and licences is in the Credits section of [GUIDE.md](GUIDE.md#credits) and
-in the app under Guide > Credits, generated from `src/credits.ts`.
+tonejs-instruments (Karoryfer and VSCO 2 recordings), the FluidR3 and Musyng Kite General MIDI
+soundfonts, Versilian Studios' VSCO 2 Community Edition and VCSL, the University of Iowa Musical
+Instrument Samples, Karoryfer's libraries (guitars, saxophones, basses, a drum kit) and a few
+more. Their licences differ (CC BY 3.0, CC BY-SA 3.0 and CC0, among others); the built-in plugins
+are open source (MIT, BSD), and the Classics play public-domain scores. The full list with links
+and licences is in the Credits section of [GUIDE.md](GUIDE.md#credits) and in the app under
+Guide > Credits, generated from `src/credits.ts`.
 
 ## Licence
 

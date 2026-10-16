@@ -10,8 +10,9 @@
  * (UpdateNotice.tsx waits for busyNow to clear).
  *
  * The dev server never registers a worker, and removes any left by a production preview on the
- * same address, so it always serves the code being edited. The one-file build (published as
- * fledgetone.html) has no worker: it says so with <meta name="fledgetone-build" content="single">.
+ * same address, so it always serves the code being edited. The one-file build (npm run
+ * build:single, for running from a file; not published) has no worker: it says so with
+ * <meta name="fledgetone-build" content="single">.
  */
 import { create } from 'zustand';
 import { flushAutosave, useTimelineStore } from '../store/timelineStore';

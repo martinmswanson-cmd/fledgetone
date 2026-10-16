@@ -22,7 +22,7 @@ import { installApp, usePwa } from '../../pwa/pwa';
 
 /**
  * The menu bar: every tool in the app, in the place a DAW keeps it (File, Edit, Song, Track,
- * Tools, Video, Game, View, Help), so the toolbar only has to carry what's used all the time.
+ * Plugins, Tools, Video, Game, View, Learn, Help), so the toolbar only has to carry what's used all the time.
  * Hovering across the bar while a menu is open moves to the next menu, as desktop menus do.
  */
 
@@ -94,7 +94,7 @@ const MENUS: MenuDef[] = [
     id: 'file',
     label: 'File',
     items: () => [
-      { label: 'New…', run: () => ui().setDialog('new'), title: 'Start again from a blank timeline, the demo song or a genre starter' },
+      { label: 'New…', run: () => ui().setDialog('new'), title: 'Start again from a blank timeline, a demo song or a genre starter' },
       { label: 'Open…', shortcut: `${MOD_KEY}O`, run: pickProjectFile },
       { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
       { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },

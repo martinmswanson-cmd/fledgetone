@@ -1,13 +1,13 @@
 # Restoring the open-source wording at launch
 
-Fledgetone isn't open source yet. When it is (planned with the open-source release), put these back into TERMS.md, in the places named, and update its date and the changelog. Also check README.md, CONTRIBUTING.md, LICENSE and TRADEMARKS.md, which already describe the GPL release, and the permission text in src/audio/exportLicence.ts (its line about the GNU General Public License).
+Fledgetone isn't open source yet. When it is (planned with the open-source release), put these back into TERMS.md, in the places named, and update its date and the changelog. Also check README.md, CONTRIBUTING.md, LICENSE and TRADEMARKS.md, which already describe the GPL release, and the permission text in src/audio/exportLicence.ts: its sentence "applies to these exported files whatever applies to the rest of Fledgetone" said, before, "applies to these exported files in addition to the GNU General Public License that covers Fledgetone's own code". The GPL plugins stay out of the published build (netlify.toml, and builtinHost.ts on why) until the app's own source is published with them.
 
 ## Questions and answers: before "Who can use it?"
 
 **Is the code open source?**
 Yes, under the GNU General Public License, version 3. The names "Fledgetone" and "Two Birds Workshop" and the logos aren't part of that licence, so a changed version needs its own name. (Section 9.)
 
-## Section 3: replace its "in addition to" sentence with
+## Section 3: replace its sentence "This permission applies to those exported files whatever applies to the rest of Fledgetone." with
 
 This permission is in addition to the licence of Fledgetone's code (section 9) and overrides it for those exported files.
 
