@@ -6,7 +6,6 @@
 import { renderArrangement, channelsOf } from './exportWav';
 import type { Clip, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 import { takeNotes, trimmedLength, type VariationTake } from '../store/microVariations';
-import { hasRecordings, loadSamples } from './samplers/samplerManager';
 
 /**
  * Render a clip's micro-variations (see microVariations.ts): each take through the clip's track
@@ -23,7 +22,6 @@ export async function renderVariations(
   keepSends: boolean,
   onProgress?: (fraction: number) => void
 ): Promise<{ takes: Float32Array[][]; sampleRate: number }> {
-  if (hasRecordings(track.instrumentKey)) await loadSamples(track.instrumentKey);
   const sampleRate = 44100;
   const out: Float32Array[][] = [];
   for (const [i, take] of takes.entries()) {

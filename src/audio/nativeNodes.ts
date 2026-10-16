@@ -50,3 +50,16 @@ export function keepActive(node: Tone.ToneAudioNode): () => void {
     }
   };
 }
+
+/**
+ * Make `node` always pass two channels on (a one-channel sound on both), whatever plays into it. A
+ * recorded instrument's notes come one channel or two (a recording whose sides are the same is kept
+ * in one: recordingMaths.ts), and every filter, delay and shaper after it starts over, its memory
+ * cleared, whenever the number of channels reaching it changes (Chromium re-creates its per-channel
+ * kernels): a click each time a one-channel note started or stopped beside a two-channel one.
+ */
+export function alwaysStereo(node: Tone.ToneAudioNode): void {
+  node.channelCount = 2;
+  node.channelCountMode = 'explicit';
+  node.channelInterpretation = 'speakers';
+}

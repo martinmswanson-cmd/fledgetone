@@ -1,7 +1,7 @@
 /**
  * The master section and the live audio context. createMixChain builds the mix graph (master bus,
- * compressor, the OTT and width inserts, limiter and ceiling, plus the shared reverb and delay
- * returns) in whatever context is current: once for live playback (liveMix) and again inside every
+ * compressor, the OTT and width inserts, the Level, the clipper, limiter and ceiling, plus the shared reverb and
+ * delay returns) in whatever context is current: once for live playback (liveMix) and again inside every
  * export render. Also starting the audio, its running / suspended state, and the master volume.
  */
 import * as Tone from 'tone';
@@ -10,6 +10,8 @@ import { liveTransport, liveDestination, liveContext } from './liveContext';
 import './toneFixes';
 import { createBusEffects } from './effects/busEffects';
 import { createMasterInserts } from './effects/masterChain';
+import { LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE } from './effects/limiter';
+import { createWorkletNode, loadWorklet } from './worklets';
 import { DEFAULT_MASTER_FX, defaultMasterSettings } from '../store/timelineTypes';
 import type { MasterFx, MasterSettings } from '../store/timelineTypes';
 
@@ -22,11 +24,18 @@ export const BUS_GAIN = 0.9;
 
 /**
  * Build the mix graph in the current Tone context:
- *   track strips -> master bus -> compressor -> (OTT, stereo width) -> limiter -> ceiling -> destination
+ *   track strips -> master bus -> compressor -> (OTT, stereo width) -> Level -> (clipper) -> look-ahead limiter -> destination
  *   track sends  -> shared reverb / delay -> master bus
  * Track strips are created per track (see trackStrip.ts). `auditionInput` is a dry input for
  * the sound deck's pads. Used once for live playback and again inside the WAV export render.
- * The master section's inserts (`master`, see masterChain.ts) are only built while switched on.
+ * The master section's inserts (`master`, see masterChain.ts) are only built while switched on;
+ * the Level (a plain gain, MasterSettings.level) is always there.
+ *
+ * In an export's offline context the graph ends after the compressor (`limitsAfter`): the export
+ * runs the OTT, width, Level and the same look-ahead limiter over the rendered sound
+ * (masterAfter.ts), the limiter with the same delay. Chromium never frees an OfflineAudioContext an
+ * AudioWorklet module was added to, so loading the limiter's or the OTT's worklet into an export's
+ * context kept a whole render in memory per export.
  */
 export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx = DEFAULT_MASTER_FX, bpm = 122, master: MasterSettings = defaultMasterSettings()) {
   // Central master bus for every track and the effect returns
@@ -35,21 +44,82 @@ export function createMixChain(destination: Tone.InputNode, masterFx: MasterFx =
 
   // Master mastering chain
   const compressor = new Tone.Compressor({ threshold: -18, ratio: 4, attack: 0.005, release: 0.1 });
-  // A hard-knee limiter: Tone.Limiter keeps Tone's 30 dB soft knee, which barely limits, so a
-  // dense mix went up to +7 dB over full scale and clipped in playback (exports were scaled
-  // down instead, so they sounded different). The compressor's 6 ms look-ahead catches peaks
-  // before they arrive; the ceiling then rounds off the little that a 20:1 ratio lets through.
+  // Where the inserts end and the limiter begins: the Level, a plain gain (unity in an export, whose
+  // Level is applied after the render, see masterAfter.ts)
+  const context = bus.context;
+  const level = (context.rawContext as unknown as BaseAudioContext).createGain();
+  // Where the limiter's input is: after the clipper, which sits between it and the Level while it's on
+  const limiterIn = (context.rawContext as unknown as BaseAudioContext).createGain();
+  // The stand-in limiter until the look-ahead one (effects/limiter.ts, an AudioWorklet) has
+  // loaded, and where AudioWorklets can't run: a hard-knee compressor (Tone.Limiter keeps a 30 dB
+  // soft knee, which barely limits) and a ceiling that rounds off what its 20:1 ratio lets through
   const limiter = new Tone.Compressor({ threshold: -1, ratio: 20, attack: 0, release: 0.08, knee: 0 });
   const ceiling = new Tone.WaveShaper(ceilingCurve());
   bus.connect(compressor);
-  // Patches compressor -> limiter itself, with the OTT and width in between while they're on
-  const inserts = createMasterInserts(compressor, limiter, master);
-  limiter.connect(ceiling);
-  ceiling.connect(destination);
+  // Patches compressor -> level itself, with the OTT and width in between while they're on
+  const inserts = createMasterInserts(compressor, level, master, limiterIn);
+  let lookahead: AudioWorkletNode | null = null;
+  const limitsAfter = context.isOffline;
+  let released = false;
+  if (limitsAfter) Tone.connect(limiterIn, destination);
+  else {
+    Tone.connect(limiterIn, limiter);
+    limiter.connect(ceiling);
+    ceiling.connect(destination);
+  }
+  // Resolves once the look-ahead limiter has taken over (or for good on the stand-in)
+  const limiterReady = (limitsAfter ? Promise.resolve() : loadWorklet(context, LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE))
+    .then(() => {
+      if (limitsAfter) return;
+      if (released) return;
+      const node = createWorkletNode(context, LIMITER_PROCESSOR, {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        channelCount: 2,
+        channelCountMode: 'explicit',
+        channelInterpretation: 'speakers',
+      });
+      Tone.connect(node, destination);
+      Tone.connect(limiterIn, node);
+      Tone.disconnect(limiterIn, limiter);
+      // The stand-in and its ceiling hear nothing from now on: out of the graph, so the audio
+      // thread doesn't keep running them on silence
+      limiter.disconnect();
+      ceiling.disconnect();
+      lookahead = node;
+    })
+    .catch((err) => console.warn('The look-ahead limiter could not start; using the stand-in:', err));
+  const disposeLimiter = () => {
+    if (released) return;
+    released = true;
+    lookahead?.port.postMessage('dispose');
+    lookahead?.disconnect();
+    level.disconnect();
+    limiterIn.disconnect();
+    limiter.dispose();
+    ceiling.dispose();
+  };
 
   const auditionInput = new Tone.Gain(1).connect(bus);
 
-  return { bus, busFx, compressor, inserts, limiter, ceiling, auditionInput };
+  return {
+    bus,
+    busFx,
+    compressor,
+    inserts,
+    limiter,
+    limiterReady,
+    /** Whether the look-ahead limiter is the one in use (its delay is LIMITER latency, not the stand-in's) */
+    lookahead: () => limitsAfter || lookahead !== null,
+    /** An export's chain: the destination gets the compressor's sound, for masterAfter to finish after the render */
+    limitsAfter,
+    disposeLimiter,
+    ceiling,
+    /** The Level: a plain gain just before the limiter (unity in an export, whose Level is applied after the render) */
+    level,
+    auditionInput,
+  };
 }
 
 export type MixChain = ReturnType<typeof createMixChain>;
@@ -84,6 +154,28 @@ export const auditionInput = liveMix.auditionInput;
 // Transport's: the clip schedule delays the off-beat 16ths itself, see swungNotes.)
 liveTransport.bpm.value = 122;
 
+/**
+ * No sound until someone asks for it. Chrome lets a page it trusts (one used often, or installed)
+ * start its audio without a click, so a song reopened by Chrome after a restart (its tabs
+ * restored) would play on its own: an effect that makes its own sound, a drone, with nobody at
+ * the computer. The context is held suspended until a click or key starts the audio (initAudio).
+ * And once the page is closed or put away (pagehide), it's silenced at once, so a Chrome kept
+ * running in the background can't go on playing it.
+ */
+let soundAllowed = false;
+const holdUntilAsked = () => {
+  const raw = liveContext.rawContext as unknown as { state: string; suspend?: () => Promise<void> };
+  if (!soundAllowed && raw.state === 'running') void raw.suspend?.().catch(() => {});
+};
+liveContext.on('statechange', holdUntilAsked);
+holdUntilAsked();
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => {
+    soundAllowed = false;
+    holdUntilAsked();
+  });
+}
+
 let audioStateChangeListeners: Array<(state: AudioState) => void> = [];
 
 /**
@@ -105,6 +197,7 @@ function notifyState(state: AudioState) {
  * Must be triggered by a user gesture (e.g., button click).
  */
 export async function initAudio(): Promise<AudioState> {
+  soundAllowed = true;
   if (liveContext.state !== 'running') {
     await Tone.start();
     // In case Tone's underlying raw context needs resuming

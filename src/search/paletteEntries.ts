@@ -1,4 +1,6 @@
 import guideMarkdown from '../../GUIDE.md?raw';
+import { openArrange } from '../components/timeline/arrangeDialogStore';
+import { suggestBlock } from '../store/speedUpActions';
 import { INSTRUMENTS, INSTRUMENT_KEYS, isAudioKind, isMixKind } from '../audio/instrumentCatalog';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { useAudioStore } from '../store/audioStore';
@@ -81,6 +83,8 @@ const TOOLS: Item[] = [
   { title: 'Share', keywords: 'share link url send friend mp3', detail: 'A link that opens the song, an MP3, or the project file.', run: () => ui().setDialog('share') },
   { title: 'Mixer', keywords: 'mixer faders meters levels channels desk console balance', detail: "Every track's fader, meter, pan and sends side by side.", run: () => ui().setDialog('mixer') },
   { title: 'Game preview', keywords: 'game adaptive interactive layers sections intensity dynamic music', detail: 'Switch between sections and layers live, the way adaptive game music does.', run: () => ui().setDialog('game') },
+  { title: 'Terms of use', keywords: 'terms of use legal license licence rights ownership copyright liability own my music', detail: 'Your music is yours; what Fledgetone is responsible for and what it isn\'t.', run: () => ui().setDialog('terms') },
+  { title: "What's new", keywords: 'whats new changelog changes version release notes update', detail: 'What changed in each version, and which version this is.', run: () => ui().setDialog('changes') },
   { title: 'Report a problem', keywords: 'report problem bug broken crash error issue help contact support email feedback', detail: 'Tell Two Birds Workshop something went wrong.', run: () => ui().setDialog('report') },
   { title: 'Tour and tutorials', keywords: 'learn tutorial tour lesson help beginner intermediate expert getting started how to teach walkthrough onboarding', detail: 'A one-minute tour and hands-on tutorials for beginner, intermediate and expert users.', run: () => ui().setDialog('learn') },
   { title: 'Guide', keywords: 'guide help manual how docs documentation tutorial', detail: 'How everything works.', run: () => ui().openGuide() },
@@ -135,6 +139,11 @@ const TOOLS: Item[] = [
     const s = timeline();
     return s.addBuildAndDrop(Math.max(2, Math.round(s.playheadPosition))) ?? undefined;
   } },
+  { title: 'Dark melody (trap, drill, rage, phonk)', keywords: 'dark melody generator trap drill rage phonk minor phrygian harmonic bells pluck piano loop idea', detail: 'A short seeded loop in the song\u2019s key, onto a track or a new bell, pluck or piano track.', run: () => openArrange('melody', Math.max(1, Math.floor(timeline().playheadPosition))) },
+  { title: 'Drop out, stop, riser or beat switch', keywords: 'drop out mute stop silence riser reverse cymbal beat switch half time double time arrange', detail: 'Into a drop at the playhead; a beat switch on the loop\u2019s bars.', run: () => openArrange('drops', Math.max(2, Math.round(timeline().playheadPosition))) },
+  { title: 'Speed up into the drop', keywords: 'speed up faster tempo ramp accelerate accelerando rush build drop double time roll arrange', detail: 'The tempo rises over the end of the loop (or the selected clips) and snaps back on the drop.', run: () => openArrange('drops', undefined, undefined, (({ from, to }) => ({ from, to }))(suggestBlock())) },
+  { title: 'Song form: loop to full song', keywords: 'song form arrange structure intro hook chorus verse bridge outro sections loop full song', detail: 'Intro, hook, verse, hook, verse, bridge, hook, outro from a 4- or 8-bar loop, with markers.', run: () => openArrange('form') },
+  { title: 'Producer tag', keywords: 'producer tag watermark voice tag beat store preview record import duck', detail: 'Record or import it once; place it at the start or every few bars.', run: () => openArrange('tag') },
   { title: 'Key change', keywords: 'key change modulation transpose semitone whole step lift final chorus', detail: 'Right-click the ruler where the new key starts: up a semitone, up a whole step or down a semitone.', run: () => void ui().openGuide('the-timeline') },
   { title: 'Undo', keywords: 'undo back revert ctrl z', run: () => timeline().undo() },
   { title: 'Redo', keywords: 'redo again ctrl y', run: () => timeline().redo() },
@@ -163,14 +172,6 @@ const TOOLS: Item[] = [
     if (!s.tracks.length) return NO_TRACKS;
     s.toggleInspector(true);
     ui().setInspectorTab('track');
-  } },
-  { title: 'Instrument browser', keywords: 'browse try audition preview listen instruments', run: () => {
-    ui().openDock('instruments');
-    void reveal('section[aria-label="Instrument Browser"]');
-  } },
-  { title: 'Sound deck', keywords: 'pads audition deck trigger keys patterns', run: () => {
-    ui().openDock('instruments');
-    void reveal('section[aria-label="Soundbank Audition Panel"]');
   } },
   { title: 'Start audio', keywords: 'start audio sound on enable power', run: () => void useAudioStore.getState().initializeAudio() },
 ];
@@ -220,6 +221,18 @@ const SETTINGS: Item[] = [
     s.toggleInspector(true);
     ui().setInspectorTab('track');
     void reveal('[aria-label="Synth Designer"]');
+  } },
+  { title: 'Drum Designer', keywords: 'drum designer design drums kick snare clap hat hihat perc rim tom shaker 808 trap drill punch distortion layer kit', detail: 'Design your own kicks, snares, claps, hats and percs (the Designed Kit).', run: () => {
+    const s = timeline();
+    const current = s.tracks.find((t) => t.id === s.selectedTrackId);
+    if (current?.instrumentKey !== 'designedKit') {
+      const existing = s.tracks.find((t) => t.instrumentKey === 'designedKit');
+      if (existing) s.selectTrack(existing.id);
+      else s.addTrack('designedKit');
+    }
+    s.toggleInspector(true);
+    ui().setInspectorTab('track');
+    void reveal('[aria-label="Drum Designer"]');
   } },
   { title: 'Master reverb', keywords: 'reverb hall room space cathedral decay plate', run: masterPanel('master-reverb') },
   { title: 'Master delay', keywords: 'delay echo feedback time', run: masterPanel('master-delay') },

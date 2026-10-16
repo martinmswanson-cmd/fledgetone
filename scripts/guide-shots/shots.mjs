@@ -119,12 +119,6 @@ export const SHOTS = [
     setup: async (s) => { await s.starter('Boss Fight'); await s.openClip('Boss theme'); await s.page.getByText('NOTATION', { exact: true }).click(); await s.wait(1200); return s.pianoRoll(); },
   },
   {
-    file: 'instruments', section: 'trying-sounds-instrument-browser-and-audition-deck', after: 'instrument-browser',
-    alt: 'The Instruments tab: the instrument browser by family, and the sound deck pads.',
-    caption: 'The Instruments tab: browse instruments and play the sound deck.',
-    setup: async (s) => { await s.starter('Boss Fight'); await s.view('Instruments & sounds'); return s.panel(); },
-  },
-  {
     file: 'synth-designer', section: 'instruments', after: 'synth-designer',
     alt: 'The Synth Designer: oscillators, sub and noise, filter, filter and amp envelopes and an LFO for a synth patch.',
     caption: 'The Synth Designer, beside the timeline.',

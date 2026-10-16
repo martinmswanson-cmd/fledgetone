@@ -1,0 +1,164 @@
+/**
+ * Rendering the song to study its mix: the Mix check (a render of the mix through the master
+ * section, and one of each track's stem, measured by mixAnalysis.ts and judged by mixCheck.ts),
+ * and the mix's loudness and spectrum that the reference track is matched and compared against
+ * (referenceTrack.ts). Kept in a small store of its own; nothing here is saved with the song.
+ */
+import { create } from 'zustand';
+import { useTimelineStore, masterFxOf } from '../store/timelineStore';
+import { audibleTracks, channelsOf, renderArrangement, renderStems, stemTracks, type RenderOptions } from './exportWav';
+import { measureLoudness } from './loudness';
+import { bandEnvelope, bandSpectrum, type BandSpectrum } from './mixAnalysis';
+import { checkMix, trackRole, type Finding, type TrackMeasure } from './mixCheck';
+import { targetById } from './loudnessTarget';
+import { getMasterVolume } from './engine';
+import { busChain } from '../store/buses';
+import { INSTRUMENTS } from './instrumentCatalog';
+import type { MasterStats } from './effects/masterAfter';
+import type { Track } from '../store/timelineTypes';
+
+/** The longest stretch of a song analysed, seconds (from bar 1): enough to know a mix by. */
+export const ANALYSE_SECONDS = 120;
+
+/** The mix as last analysed. */
+export interface MixAnalysis {
+  lufs: number;
+  truePeakDb: number;
+  spectrum: BandSpectrum;
+  stats?: MasterStats;
+  /** The master volume it was rendered at (the live mix plays at it too), dB. */
+  masterDb: number;
+  /** Bars analysed, [from, to). */
+  bars: [number, number];
+}
+
+interface MixStudioState {
+  analysis: MixAnalysis | null;
+  findings: Finding[] | null;
+  /** The loudness target the findings were judged against. */
+  targetId: string;
+  /** A render under way: what it's doing and how far (0 to 1). */
+  busy: { what: string; progress: number } | null;
+  error: string | null;
+  /** The last Mix check's measurements of each track (kept for a second look, and for tuning the rules). */
+  measures: TrackMeasure[] | null;
+}
+
+export const useMixStudio = create<MixStudioState>(() => ({ analysis: null, findings: null, targetId: 'streaming', busy: null, error: null, measures: null }));
+
+let running: AbortController | null = null;
+
+/** Stop a render under way. */
+export function cancelMixRender(): void {
+  running?.abort();
+}
+
+/** The song as the export would render it, bar 1 to the end (at most ANALYSE_SECONDS). */
+function songOptions(signal: AbortSignal): RenderOptions {
+  const s = useTimelineStore.getState();
+  const ids = new Set(audibleTracks(s.tracks).map((t) => t.id));
+  const end = Math.max(2, ...s.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+  const most = 1 + Math.max(1, Math.floor((ANALYSE_SECONDS * s.bpm) / 240));
+  return {
+    tracks: s.tracks,
+    clips: s.clips,
+    bpm: s.bpm,
+    tempoPoints: s.tempoPoints,
+    swing: s.swing,
+    startBar: 1,
+    endBar: Math.min(end, most),
+    masterFx: masterFxOf(s),
+    master: s.master,
+    ending: 'exact',
+    sampleRate: 44100,
+    markers: [],
+    intensity: { value: s.intensity, curves: s.intensityCurves },
+    signal,
+  };
+}
+
+/** Whether a track is ducked to the kick already: a Pump on it or on a bus it plays through. */
+function ducked(track: Track, tracks: Track[]): boolean {
+  return [track, ...busChain(track, tracks)].some((t) => t.fx.pump.on || !!t.duckProxy);
+}
+
+async function run<T>(what: string, job: (signal: AbortSignal, progress: (f: number, what?: string) => void) => Promise<T>): Promise<T | null> {
+  running?.abort();
+  const controller = new AbortController();
+  running = controller;
+  useTimelineStore.getState().pause();
+  useMixStudio.setState({ busy: { what, progress: 0 }, error: null });
+  try {
+    return await job(controller.signal, (progress, detail) => {
+      if (running === controller) useMixStudio.setState({ busy: { what: detail ?? what, progress } });
+    });
+  } catch (err) {
+    if (!controller.signal.aborted) useMixStudio.setState({ error: err instanceof Error ? err.message : String(err) });
+    return null;
+  } finally {
+    if (running === controller) {
+      running = null;
+      useMixStudio.setState({ busy: null });
+    }
+  }
+}
+
+/** Render the mix through the master section and measure it (its loudness, spectrum and what the master did). */
+async function analyseMixRender(opts: RenderOptions, progress: (f: number) => void): Promise<MixAnalysis> {
+  let stats: MasterStats | undefined;
+  const masterDb = getMasterVolume();
+  const audio = await renderArrangement({ ...opts, onMasterStats: (s) => (stats = s) }, progress);
+  const channels = channelsOf(audio);
+  const reading = await measureLoudness(channels, audio.sampleRate, opts.signal);
+  return { lufs: reading.integrated, truePeakDb: reading.truePeakMax, spectrum: bandSpectrum(channels, audio.sampleRate), ...(stats ? { stats } : {}), masterDb, bars: [opts.startBar, opts.endBar] };
+}
+
+/** Render and measure the mix alone (for the reference's level match and spectrum). */
+export function analyseMix(): Promise<MixAnalysis | null> {
+  return run('Rendering the mix', async (signal, progress) => {
+    const analysis = await analyseMixRender(songOptions(signal), progress);
+    useMixStudio.setState({ analysis });
+    return analysis;
+  });
+}
+
+/** The Mix check: render the mix and every track's stem, measure them, and judge the mix against `targetId`. */
+export function runMixCheck(targetId = useMixStudio.getState().targetId): Promise<Finding[] | null> {
+  return run('Rendering the mix', async (signal, progress) => {
+    const opts = songOptions(signal);
+    const analysis = await analyseMixRender(opts, (f) => progress(f * 0.3));
+    useMixStudio.setState({ analysis });
+    const s = useTimelineStore.getState();
+    const measures: TrackMeasure[] = [];
+    // The stems' tracks, in the order renderStems encodes them
+    const pending = stemTracks(opts);
+    await renderStems(
+      { ...opts, bypassMaster: true, ignoreMasterVolume: true },
+      16,
+      (f, stem) => progress(0.3 + f * 0.7, `Rendering ${stem.track.name} (${stem.index + 1} of ${stem.count})`),
+      async (channels, sampleRate) => {
+        // (Called once per stem, in order, after every stem has rendered)
+        const track = pending.shift()!;
+        measures.push({
+          id: track.id,
+          name: track.name,
+          role: trackRole(track, s.clips),
+          spectrum: bandSpectrum(channels, sampleRate),
+          lowEnv: bandEnvelope(channels, sampleRate, 40, 140),
+          env: bandEnvelope(channels, sampleRate, 0, sampleRate / 2),
+          ducked: ducked(track, s.tracks),
+          category: INSTRUMENTS[track.instrumentKey]?.category,
+        });
+        return new Blob();
+      }
+    );
+    const target = targetById(targetId);
+    const findings = checkMix(
+      { lufs: analysis.lufs, truePeakDb: analysis.truePeakDb, spectrum: analysis.spectrum, stats: analysis.stats },
+      measures,
+      { lufs: target.lufs, name: `the ${target.name.replace(/\s*\(.*\)$/, '').toLowerCase()} target (${target.lufs} LUFS)` }
+    );
+    useMixStudio.setState({ findings, targetId, measures });
+    return findings;
+  });
+}

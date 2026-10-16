@@ -3,7 +3,7 @@ import { liveMix, initAudio } from './engine';
 import { liveTransport } from './liveContext';
 import { createInstrument, type TrackInstrument } from './instruments';
 import { INSTRUMENTS, type InstrumentKey } from './instrumentCatalog';
-import { hasRecordings, loadSamples } from './samplers/samplerManager';
+import { hasRecordings, loadSamplesForNotes } from './samplers/samplerManager';
 import { renderArrangement, encodeWav, type SampleRate } from './exportWav';
 import { fitNotesToRange } from '../store/stingers';
 import type { Clip, MasterFx, MasterSettings, NoteEvent, Stinger, Track } from '../store/timelineTypes';
@@ -33,7 +33,7 @@ export type StingerTiming = 'bar' | 'beat' | 'now';
  * would start in the past are left out. For the Game preview's transitions.
  */
 export async function playNotesAt(key: InstrumentKey, notes: readonly NoteEvent[], start: number): Promise<void> {
-  if (hasRecordings(key)) await loadSamples(key);
+  if (hasRecordings(key)) await loadSamplesForNotes(key, notes);
   const inst = player(key);
   await inst.ready;
   const now = Tone.getContext().currentTime;
@@ -56,7 +56,7 @@ export function nextLineTime(unit: 'bar' | 'beat'): number | null {
  */
 export async function fireStinger(stinger: Stinger, timing: StingerTiming): Promise<number> {
   await initAudio();
-  if (hasRecordings(stinger.instrumentKey)) await loadSamples(stinger.instrumentKey);
+  if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range));
   const inst = player(stinger.instrumentKey);
   await inst.ready;
   const now = Tone.getContext().currentTime + 0.05;
@@ -78,7 +78,7 @@ interface RenderContext {
 
 /** A stinger rendered on its own through the song's master section, ringing out, as a WAV. */
 export async function renderStinger(stinger: Stinger, song: RenderContext, sampleRate: SampleRate = 44100): Promise<Blob> {
-  if (hasRecordings(stinger.instrumentKey)) await loadSamples(stinger.instrumentKey);
+  if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range));
   const track: Track = {
     id: 'stinger',
     name: stinger.name,

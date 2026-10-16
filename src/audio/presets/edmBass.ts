@@ -16,6 +16,7 @@ import {
   releaseTail,
 } from './native';
 import type { NativeVoice } from './native';
+import type { GlideRef } from '../instruments';
 
 /**
  * The EDM basses: Wobble, Growl and Reese. Monophonic, built from plain Web Audio nodes per note
@@ -91,7 +92,7 @@ function sweepCurve(start: number, end: number, cycle: number, value: (t: number
   return curve;
 }
 
-function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
+function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideRef) {
   const { bus, raw, input } = createBus(output);
   const voices = createVoiceSet(raw);
   // Overlapping clips can land two notes on one instant: keep start times strictly increasing
@@ -100,11 +101,16 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
   /** The voice the last note started or joined, which a note starting before `end` slides on from. */
   let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; end: number; note: string } | null = null;
 
-  /** Filters for one note, behind a gain that switches between legato notes' filters. */
+  /**
+   * Filters for one note, then a gain that switches between legato notes' filters. After them, not
+   * before: the filters let go are cut off when the main thread gets round to it, which varies,
+   * and their last ringing cut there made two exports of a song differ. Behind a closed gate,
+   * nothing of them is heard however long they ring.
+   */
   const section = (note: BassNote, until: number) => {
     const tone = patch.tone(raw, note, until);
     const gate = raw.createGain();
-    gate.connect(tone.input);
+    tone.output.connect(gate);
     return { gate, tone };
   };
 
@@ -130,7 +136,7 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
       if (v && v.end > start) {
         // Legato: slide the playing voice to the new pitch. The envelope carries on (towards this
         // note's level) instead of starting again, and the release moves to this note's end.
-        v.source.glide(note.freq, start, patch.glide);
+        v.source.glide(note.freq, start, glide?.seconds ?? patch.glide);
         const amp = v.voice.amp.gain;
         amp.cancelScheduledValues(start);
         amp.setTargetAtTime(peak * patch.sustain, start, 0.01);
@@ -138,9 +144,10 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
         if (patch.retone) {
           const next = section(note, stopAt);
           next.gate.gain.value = 0;
-          v.source.main.connect(next.gate);
-          next.tone.output.connect(v.voice.amp);
+          v.source.main.connect(next.tone.input);
+          next.gate.connect(v.voice.amp);
           const previous = [v.gate, ...v.tone.nodes];
+          const previousInput = v.tone.input;
           v.gate.gain.setValueAtTime(1, start);
           v.gate.gain.linearRampToValueAtTime(0, start + RETONE_FADE);
           next.gate.gain.setValueAtTime(0, start);
@@ -151,6 +158,11 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
           // Let the previous note's filters go once they're silent. Kept to the end of the voice, a
           // long legato run would pile up dozens of idle filters the audio thread still visits.
           atAudioTime(raw, start + RETONE_FADE + 0.05, () => {
+            try {
+              v.source.main.disconnect(previousInput);
+            } catch {
+              // (already let go: the voice ended or the instrument was disposed)
+            }
             previous.forEach((node) => node.disconnect());
             v.voice.nodes = v.voice.nodes.filter((node) => !previous.includes(node));
           });
@@ -166,8 +178,8 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
       const amp = raw.createGain();
       attackDecay(amp.gain, start, peak, patch.attack, patch.decay, patch.sustain);
       amp.gain.setTargetAtTime(0, end, releaseTc);
-      source.main.connect(first.gate);
-      first.tone.output.connect(amp);
+      source.main.connect(first.tone.input);
+      first.gate.connect(amp);
       source.direct?.connect(amp);
       amp.connect(input);
       const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };
@@ -202,7 +214,7 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch) {
 
 /** Oscillators gliding together; `ratios` are each one's frequency relative to the note's. */
 function glider(params: Array<[AudioParam, number]>): BassSource['glide'] {
-  return (freq, at, seconds) => params.forEach(([param, ratio]) => param.setTargetAtTime(freq * ratio, at, seconds / 3));
+  return (freq, at, seconds) => params.forEach(([param, ratio]) => param.setTargetAtTime(freq * ratio, at, Math.max(0.003, seconds) / 3));
 }
 
 /**
@@ -210,7 +222,7 @@ function glider(params: Array<[AudioParam, number]>): BassSource['glide'] {
  * wobble, with a little grit after the filter; a clean sub underneath that skips the filter, so
  * the low end stays solid while the wobble moves above it.
  */
-export function createWobbleBass(output: Tone.InputNode) {
+export function createWobbleBass(output: Tone.InputNode, glide?: GlideRef) {
   return createMonoBass(output, {
     glide: 0.06,
     attack: 0.004,
@@ -255,7 +267,7 @@ export function createWobbleBass(output: Tone.InputNode) {
       lp2.frequency.setValueCurveAtTime(curve, note.start, until - note.start);
       return { input: lp1, output: grit, nodes: [lp1, lp2, grit] };
     },
-  });
+  }, glide);
 }
 
 /** Vowel formants (F1, F2 in Hz) along the growl's wobble, closed to open: "oo", "ah", "eh". */
@@ -333,7 +345,7 @@ function growlWave(raw: BaseAudioContext): PeriodicWave {
  * series) that the wobble moves between vowels ("wow", "yoi"), with a clean sine sub underneath.
  * Few nodes per note: the audio thread visits every node of every sounding voice in every block.
  */
-export function createGrowlBass(output: Tone.InputNode) {
+export function createGrowlBass(output: Tone.InputNode, glide?: GlideRef) {
   return createMonoBass(output, {
     glide: 0.05,
     attack: 0.004,
@@ -373,11 +385,11 @@ export function createGrowlBass(output: Tone.InputNode) {
       sweep(body.frequency, (t) => 700 * 2 ** (2.3 * m(t)));
       return { input: f1, output: body, nodes: [f1, f2, body] };
     },
-  });
+  }, glide);
 }
 
 /** Reese Bass: three saws detuned so they beat slowly (and a sine for weight), through a gentle drive and a low-pass. */
-export function createReeseBass(output: Tone.InputNode) {
+export function createReeseBass(output: Tone.InputNode, glide?: GlideRef) {
   return createMonoBass(output, {
     glide: 0.08,
     attack: 0.01,
@@ -406,5 +418,5 @@ export function createReeseBass(output: Tone.InputNode) {
       const lp = createFilter(raw, 'lowpass', Math.min(4000, 520 + note.freq * 6), 3);
       return { input: lp, output: lp, nodes: [lp] };
     },
-  });
+  }, glide);
 }

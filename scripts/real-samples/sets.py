@@ -15,6 +15,14 @@ REPOS = {
     'growlybass': 'sfzinstruments/karoryfer.growlybass',
     'emily': 'sfzinstruments/karoryfer.emilyguitar',
     'splendid': 'sfzinstruments/SplendidGrandPiano',
+    'vcsl': 'sgossner/VCSL',
+    'steeldrum': 'sfzinstruments/jlearman.SteelDrum',
+    'epianos': 'sfzinstruments/GregSullivan.E-Pianos',  # CC BY 3.0: credit Greg Sullivan
+    'ganjo': 'sfzinstruments/ganjo',
+    'rustydrums': 'sfzinstruments/karoryfer.big-rusty-drums',
+    'voice': 'sfzinstruments/legato_vocal_tutorial',
+    # A repository on GitLab rather than GitHub is written 'gitlab:<owner>/<name>'
+    'celesta': 'gitlab:echoparallax/a-sampled-celesta',  # audio CC0 (its LICENSE), by Neil Bickford
 }
 
 # How each kind of note is measured and cut:
@@ -44,7 +52,8 @@ def note_midi(name):
     return pc + 12 * (int(m.group(3)) + 1)
 
 
-def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=None, hi=None, retune=True, bend=True):
+def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=None, hi=None, retune=True, bend=True,
+      pitched=True, even=True, kit=None, tail=False, sparse=False, sf2=None, iowa=None, xloop=False, steady=False):
     """
     One set. `sources` is a list of (regex, octave[, midi function[, (lo, hi)]]): the regex matches a file's path in
     the repo, with the named groups `note` (or `index` plus a `midi` function), `layer` and,
@@ -57,23 +66,74 @@ def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=Non
     (a piano's upper notes are tuned sharp on purpose, as on every real piano). `bend` False leaves
     a held note's start as recorded (convert.py bends notes that scoop up into pitch; organ pipes
     don't, and their deep stops confuse the pitch tracking).
+    A source's third item can also be a fixed MIDI note, for a sound with no note in its name (a
+    drum). `pitched` False skips measuring: each file is the note its name or source says, as
+    recorded (drums). `even` False leaves every note at its recorded level instead of evening it
+    toward its neighbours (a drum kit's kick and hi-hat must keep their own levels). `kit` names
+    the pieces of a drum kit that kit.py mixes from several microphones (see KITS); fetch.py
+    leaves such a set to kit.py. `tail` True gives a ringing note recorded shorter than it rings
+    (cut off while still sounding) the rest of its decay, at the rate it was dying away, up to the
+    set's `cap` (see natural_tail in convert.py); `tail='faded'` does the same for notes the
+    library faded out early, first taking its fade off (see unfade). `sparse` True keeps a library's gaps: a note
+    recorded at fewer loudnesses than the set has gets no copies of its other recordings where the
+    same loudness was recorded within a few semitones (the app stretches that one instead), and
+    shares a file rather than duplicating it elsewhere. `sf2` names a SoundFont file in the repo
+    that holds the recordings instead of separate files: fetch.py downloads it and unpacks each of
+    its recordings (a left and right pair as one stereo file), and `sources` then match the
+    recordings' names in it. `iowa` names a zip of the University of Iowa's recordings (scales of
+    single notes) that iowa.py fetches and splits instead of fetch.py. `xloop` True loops a held
+    note inside its own steady part (a long loop whose end is crossfaded into its start) instead of
+    repeating a short stretch of it to the cap, and keeps the file only a little past the loop.
+    `steady` True holds a note recorded without vibrato on its pitch all through (a bow's slow
+    drift taken out), as the app gives it its vibrato.
     """
     return {'folder': folder, 'repo': repo, 'sources': sources, 'layers': layers, 'kind': kind,
-            'takes': takes, 'every': every, 'cap': cap or KINDS[kind]['cap'], 'lo': lo, 'hi': hi, 'retune': retune, 'bend': bend}
+            'takes': takes, 'every': every, 'cap': cap or KINDS[kind]['cap'], 'lo': lo, 'hi': hi, 'retune': retune, 'bend': bend,
+            'pitched': pitched, 'even': even, 'kit': kit, 'tail': tail, 'sparse': sparse, 'sf2': sf2,
+            'iowa': iowa, 'xloop': xloop, 'steady': steady}
 
 
 NOTE = r'(?P<note>[A-Ga-g][#sb]?-?\d)'
 V = 'Strings/Violin Section'
 VA = 'Strings/Viola Section'
 C = 'Strings/Cello Section'
+AE = 'Aerophones/Edge-blown Aerophones'
+
+# How many octaves a few libraries' note names sit below standard names (measure.py confirms: the
+# solo voice is a bass singing an octave under its files' names, as is the banjo)
+OCT_HARMONICA = 1
+OCT_OCARINA = 1
+OCT_ZITHER = 1
+OCT_EPIANO = 0
+OCT_BANJO = -1
+OCT_VOICE = -1
+
+# Drum kits kit.py mixes: each piece's General MIDI note, its articulation's folder under Samples/,
+# its files' prefix (<prefix>_vl<n>_rr<n>.flac) and the microphones mixed: each close one at that
+# many dB against the overheads ('oh', which set the pieces' levels against each other). The drums
+# sound mostly from their close microphones, the overheads 3 dB under (the snare has one on each
+# head), the cymbals mostly from the overheads, as their close microphones sit right on them.
+KITS = {
+    'studio-kit': {'repo': 'rustydrums', 'layers': 4, 'takes': ['rr1', 'rr2'], 'pieces': [
+        (36, 'kick_24/kick', 'k', {'kick': 3, 'oh': 0}),
+        (38, 'snare_14/center', 'sn_center', {'top': 3, 'btm': 0, 'oh': 0}),
+        (41, 'tom_22/center', 't22', {'cl': 3, 'oh': 0}),
+        (42, 'hihat_14/tc', 'ht_tc', {'cl': 3, 'oh': 0}),
+        (45, 'tom_15/center', 't15', {'cl': 3, 'oh': 0}),
+        (46, 'hihat_14/open', 'ht_open', {'cl': 3, 'oh': 0}),
+        (48, 'tom_14/center', 't14', {'cl': 3, 'oh': 0}),
+        (49, 'crash_17/cr', 'cr', {'cl': -3, 'oh': 0}),
+        (51, 'ride_22/rd', 'rd', {'cl': -3, 'oh': 0}),
+    ]},
+}
 
 SETS = [
     # ---- strings (VSCO 2 CE) ----
-    S('cello-sustain', 'vsco', [(rf'{C}/susvib/susvib_{NOTE}_(?P<layer>v[13])_1\.wav', 1)], ['v1', 'v3'], 'sustain'),
+    S('cello-sustain', 'vsco', [(rf'{C}/susvib/susvib_{NOTE}_(?P<layer>v[13])_1\.wav', 1)], ['v1', 'v3'], 'sustain', xloop=True),
     S('cello-spiccato', 'vsco', [(rf'{C}/spic/spic_{NOTE}_(?P<layer>v[12])_(?P<take>RR[12])\.wav', 1)], ['v1', 'v2'], 'short'),
-    S('violins-sustain', 'vsco', [(rf'{V}/susVib/VlnEns_susVib_{NOTE}_(?P<layer>v[12])\.wav', 1)], ['v1', 'v2'], 'sustain'),
+    S('violins-sustain', 'vsco', [(rf'{V}/susVib/VlnEns_susVib_{NOTE}_(?P<layer>v[12])\.wav', 1)], ['v1', 'v2'], 'sustain', xloop=True),
     S('violins-spiccato', 'vsco', [(rf'{V}/Spic/VlnEns_Spic_{NOTE}_(?P<layer>v[12])_(?P<take>rr[12])\.wav', 1)], ['v1', 'v2'], 'short'),
-    S('violas-sustain', 'vsco', [(rf'{VA}/susvib/ViolaEns_susvib_{NOTE}_(?P<layer>v[12])_1\.wav', 1)], ['v1', 'v2'], 'sustain'),
+    S('violas-sustain', 'vsco', [(rf'{VA}/susvib/ViolaEns_susvib_{NOTE}_(?P<layer>v[12])_1\.wav', 1)], ['v1', 'v2'], 'sustain', xloop=True),
     S('violas-spiccato', 'vsco', [(rf'{VA}/spic/Violas_spic_{NOTE}_(?P<layer>v[12])_(?P<take>rr[12])\.wav', 1)], ['v1', 'v2'], 'short'),
     # The three sections' pizzicato and tremolo as one string section, low to high
     S('strings-pizzicato', 'vsco', [
@@ -86,7 +146,7 @@ SETS = [
         (rf'{VA}/trem/(?:[A-Za-z]+_)?trem_{NOTE}_(?P<layer>v[12])[_0-9]*\.wav', 1),
         (rf'{V}/Trem/VlnEns_Trem_{NOTE}_(?P<layer>v[12])\.wav', 1),
     ], ['v1', 'v2'], 'sustain'),
-    S('solo-violin', 'vsco', [(rf'Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_{NOTE}_(?P<layer>[pf])\.wav', 0)], ['p', 'f'], 'sustain'),
+    S('solo-violin', 'vsco', [(rf'Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_{NOTE}_(?P<layer>[pf])\.wav', 0)], ['p', 'f'], 'sustain', xloop=True),
     S('harp', 'vsco', [(rf'Strings/Harp/KSHarp_{NOTE}_(?P<layer>mp|mf|f)\.wav', 0)], ['mp|mf|f'], 'ringing'),
     # ---- woodwinds (VSCO 2 CE) ----
     S('flute', 'vsco', [(rf'Woodwinds/Flute/susvib/LDFlute_susvib_{NOTE}_(?P<layer>v1)_(?P<take>1)\.wav', 1)], ['v1'], 'sustain'),
@@ -114,10 +174,14 @@ SETS = [
                              (r'Keys/Organ/Loud/Rode_Pedal_(?P<index>\d{2})(?P<layer>)\.wav', 0, lambda i: 23 + i, (0, 35))], [''], 'sustain', bend=False),
     S('chapel-organ', 'vsco', [(r'Keys/Organ/Quiet/NT5_Man3Quiet_(?P<index>\d{3})_rr1(?P<layer>)\.wav', 0, lambda i: i - 86)], [''], 'sustain', bend=False),
     # ---- band (Karoryfer Lecolds, Splendid Grand Piano) ----
+    # (The library faded its softer notes out from 40 dB down, 1.5 to 4 s in, and the amps lift a
+    # note's tail, so a held note stopped short: `tail='faded'` takes the fade off and gives each
+    # the rest of its decay at the rate it was dying away, to 5 and 6 s, as long as a hard-picked
+    # note rings)
     S('guitar-black', 'guitars', [(rf'Samples/black/ord/twang_{NOTE}_(?P<layer>p|mf|f)_(?P<take>rr[123])\.wav', -1)], ['p', 'mf', 'f'], 'plucked',
-      takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3),
+      takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3, cap=5.0, tail='faded'),
     S('guitar-green', 'guitars', [(rf'Samples/green/ord/twang_{NOTE}_(?P<layer>p|mf|f)_(?P<take>rr[123])\.wav', -1)], ['p', 'mf', 'f'], 'plucked',
-      takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3),
+      takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3, cap=6.0, tail='faded'),
     S('guitar-flatwound', 'emily', [(rf'notes/{NOTE}_(?P<layer>p|mp|mf|f)_(?P<take>rr[12])\.wav', 0)], ['p', 'mp', 'mf', 'f'], 'plucked'),
     S('alto-sax', 'weresax', [(rf'Samples/alto/{NOTE}_(?P<layer>[pf])_(?P<take>rr[12])_cnd\.wav', 1)], ['p', 'f'], 'sustain', every=2),
     S('baritone-sax', 'bearsax', [(rf'Samples/{NOTE}_looped_(?P<layer>[pf])\.wav', 1)], ['p', 'f'], 'sustain', every=3),
@@ -125,6 +189,72 @@ SETS = [
     S('upright-bass', 'meatbass', [(rf'Samples/pizz/{NOTE}_(?P<layer>vl[1234])_(?P<take>rr[12])\.wav', 0)], ['vl1', 'vl2', 'vl3', 'vl4'], 'plucked'),
     S('electric-bass', 'growlybass', [(rf'sustain/{NOTE}_(?P<layer>pp|p|f|ff)_(?P<take>rr[12])\.wav', -1)], ['pp', 'p', 'f', 'ff'], 'plucked'),
     S('grand-piano', 'splendid', [(rf'Samples/(?P<layer>PP|Mp|MF|FF) {NOTE}\.flac', 1)], ['PP', 'Mp', 'MF', 'FF'], 'ringing', cap=9.0, retune=False),
+    # ---- more orchestra and colour (Versilian Community Sample Library, CC0) ----
+    # The timpani's five drums are named by number, not note: measuring names them
+    S('timpani', 'vcsl', [(r'Membranophones/Struck Membranophones/Timpani 1/Hit/Timpani(?P<index>\d)_Hit_(?P<layer>v[234])_(?P<take>rr\d)_Sum\.wav', 0, lambda i: None)],
+      ['v2', 'v3', 'v4'], 'ringing', cap=5.0),
+    S('tubular-bells', 'vcsl', [(rf'Idiophones/Struck Idiophones/Tubular Bells 1/chimes_{NOTE}_(?P<layer>pp|p|f|ff|fff)_(?P<take>rr\d)\.wav', 1)],
+      ['pp|p', 'f|ff|fff'], 'ringing', cap=8.0),
+    S('vibraphone', 'vcsl', [(rf'Idiophones/Struck Idiophones/Vibraphone/Soft Mallets/Vibes_soft_{NOTE}_(?P<layer>v[12])_(?P<take>rr1)_Main\.wav', 1)],
+      ['v1', 'v2'], 'ringing', cap=6.0),
+    S('harpsichord', 'vcsl', [(rf'Chordophones/Zithers/Harpsichord, Flemish/Sustains/(?:High|Low)/HarpsiRH_(?:High|Low)_Far_{NOTE}_(?P<take>rr\d)(?P<layer>)\.wav', 1)],
+      [''], 'plucked', cap=4.0),
+    S('kalimba', 'vcsl', [(rf'Idiophones/Plucked Idiophones/Kalimba, Kenya/Mbira6_Normal_MainSpirit_{NOTE}_k\d+_(?P<layer>vl3)_(?P<take>rr\d)\.wav', 1)],
+      ['vl3'], 'ringing', cap=4.0),
+    S('tenor-sax', 'vcsl', [(rf'Aerophones/Reed Aerophones/Tenor Saxophone/Non-Vibrato/BrettTenor_NV_Main_{NOTE}_(?P<layer>vl[23])_(?P<take>rr1)\.wav', 1)],
+      ['vl2', 'vl3'], 'sustain', every=2),
+    S('harmonica', 'vcsl', [(rf'Aerophones/Free Aerophones/Harmonica-Hohner-Special20-C/Sustains/Normal/Hohner-Special20_Normal_{NOTE}(?P<layer>)\.wav', OCT_HARMONICA)],
+      [''], 'sustain'),
+    S('ocarina', 'vcsl', [(rf'Aerophones/Edge-blown Aerophones/Ocarina, Typical/Sustains/Sus/StdOcarina_Sus_{NOTE}(?P<layer>)\.wav', OCT_OCARINA)],
+      [''], 'sustain'),
+    S('zither', 'vcsl', [(rf'Chordophones/Zithers/Dan Tranh/Normal/{NOTE}_(?P<layer>mf|f|ff)_(?P<take>1)\.wav', OCT_ZITHER)],
+      ['mf', 'f', 'ff'], 'plucked'),
+    # A concert bass drum, struck at five loudnesses: one note (a drum), as recorded
+    S('concert-bass-drum', 'vcsl', [(r'Membranophones/Struck Membranophones/Bass Drum 2/bassdrum_hit_(?P<layer>pp|mp|mf|f|ff)(?P<take>[12]?)\.wav', 0, 36)],
+      ['pp', 'mp', 'mf', 'f', 'ff'], 'ringing', cap=5.0, retune=False, pitched=False, even=False),
+    # ---- more colour (jSteelDrum, Greg Sullivan's electric pianos, ganjo, Karoryfer's solo voice) ----
+    # The steel drum's lower octave was re-recorded (jsdb_*) for its three softer loudnesses; its
+    # loudest are the first recordings (SteelDrum_*), as its own mapping uses them. Of its five
+    # loudnesses: the softest, the middle and the loudest. Measured as ringing, not struck: a hard
+    # stroke starts sharp and settles
+    S('steel-drums', 'steeldrum', [(rf'flac/jsdb_\d{{3}}_+{NOTE}_(?P<layer>[13])(?P<take>(?:-\d)?)\.flac', 0),
+                                   (rf'flac/SteelDrum_\d{{3}}_+{NOTE}_(?P<layer>[134])(?P<take>(?:-\d)?)\.flac', 0)],
+      ['1', '3', '4'], 'ringing', cap=4.0),
+    # Sampled every few notes, not every loudness on every note (each loudness is stretched from
+    # its own nearest recording, as the library's own mapping does), and cut off a few seconds in
+    # while still ringing: each note is given the rest of its decay
+    S('electric-piano', 'epianos', [(rf'Wurlitzer EP200/Samples/{NOTE}(?P<layer>pp|mp|f|ff)\.flac', OCT_EPIANO)],
+      ['pp', 'mp', 'f', 'ff'], 'ringing', cap=8.0, tail=True, sparse=True),
+    # A six-string banjo; its only articulation, with a second take where there is one
+    S('banjo', 'ganjo', [(rf'Common/Banjo_Common - {NOTE}(?P<take>(?:_2)?)(?P<layer>)\.wav', OCT_BANJO)],
+      [''], 'plucked', takes=['', '_2']),
+    S('solo-voice', 'voice', [(rf'Samples/vowel_sustain/a/vowel_a_{NOTE}(?P<layer>)\.wav', OCT_VOICE)],
+      [''], 'sustain', every=2, lo=38),  # (his lowest note, C2, wavers in vocal fry)
+    # ---- a celesta, recorders and a muted trumpet ----
+    # A celesta recorded key by key in stereo (A Sampled Celesta, CC0): its recordings come in a
+    # SoundFont, one stroke a note
+    S('celesta', 'celesta', [(rf'{NOTE} (?P<take>rr1)(?P<layer>)', 0)], [''], 'ringing', cap=6.0,
+      sf2='Samples/Celesta Tuned Denoised Mix.sf2'),
+    # Baroque recorders played straight (no vibrato), as one instrument: the alto, with the tenor
+    # under it (below the alto's lowest F) and the soprano over it (above its highest E).
+    S('recorder', 'vcsl', [(rf'{AE}/Baroque Alto Recorder/Sustain/AltRecorder_Sus_{NOTE}_(?P<take>rr1)_Main(?P<layer>)\.wav', 1),
+                           (rf'{AE}/Baroque Tenor Recorder/Sustain/TenRecorder_Sus_{NOTE}_(?P<take>rr1)_Main(?P<layer>)\.wav', 1, None, (0, 64)),
+                           (rf'{AE}/Baroque Soprano Recorder/Sustain/SopRecorder_Sus_{NOTE}_(?P<take>rr1)_Main(?P<layer>)\.wav', 1, None, (89, 127))],
+      [''], 'sustain'),
+    # The trumpet with a harmon mute, held, soft and loud
+    S('muted-trumpet', 'vsco', [(rf'Brass/Trumpet/harmonM-sus/Sum_SHTrumpet_harmonM-sus_{NOTE}_(?P<layer>v[13])_rr1\.wav', 1)], ['v1', 'v3'], 'sustain'),
+    # Solo strings by the University of Iowa (iowa.py): every semitone, pp, mf and ff, played
+    # without vibrato in an anechoic room (the app adds the vibrato and the room), kept 4.5 s (a
+    # long loop holds them on)
+    S('violin', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Strings/violin2012/Violin.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('viola', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Strings/viola2012/Viola.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('cello', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Strings/cello2012/Cello.arco.mono.1644.1.zip', xloop=True, steady=True),
+    S('contrabass', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Strings/doublebass2012/Bass.arco.mono.1644.1.zip', xloop=True, steady=True),
+    # A nylon-string classical guitar by the University of Iowa (iowa.py): every semitone from the
+    # low E to the high B, pp, mf and ff, plucked in an anechoic room (the app adds the room)
+    S('nylon-guitar', 'iowa', [], ['pp', 'mf', 'ff'], 'plucked', cap=5.0, iowa='Piano_Other/guitar/Guitar.mono.1644.1.zip'),
+    # A studio drum kit: each hit mixed from its close microphones and the overheads by kit.py
+    S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
 ]
 
 
@@ -146,9 +276,25 @@ def match(st, path):
         g = m.groupdict()
         if 'index' in g and g['index'] is not None:
             midi = src[2](int(g['index'])) if src[2] else None
+        elif g.get('note') is None and len(src) > 2 and isinstance(src[2], int):
+            midi = src[2]  # one fixed note (a drum)
         else:
             midi = note_midi(g['note']) + 12 * octave
         if len(src) > 3 and midi is not None and not src[3][0] <= midi <= src[3][1]:
             return None
         return midi, g.get('layer') or '', g.get('take') or '', i
     return None
+
+# Release sounds: what a key makes as it's let go (a harpsichord's jack falling back, a piano's
+# damper settling on the string). The app plays them when a note is released early (see
+# SampleSource.releases); measure.py can't read a pitch from them, so release.py gives them their
+# main set's octave.
+RELEASES = [
+    S('harpsichord-release', 'vcsl', [(rf'Chordophones/Zithers/Harpsichord, Flemish/Releases/(?:High|Low)/HarpsiRH_(?:High|Low)Rel_Far_{NOTE}_(?P<take>rr\d)(?P<layer>)\.wav', 1)], [''], 'short', cap=1.5, retune=False),
+    # The two electric guitars' strings damped by the fretting hand as a note is let go (the
+    # library's own release sounds, every third note from the low E as the guitars' notes are)
+    S('guitar-black-release', 'guitars', [(rf'Samples/black/rel/release_{NOTE}_(?P<take>rr[12])(?P<layer>)\.wav', -1)], [''], 'short', every=3, cap=1.0, retune=False, pitched=False),
+    S('guitar-green-release', 'guitars', [(rf'Samples/green/rel/release_{NOTE}_(?P<take>rr[12])(?P<layer>)\.wav', -1)], [''], 'short', every=3, cap=1.0, retune=False, pitched=False),
+    S('piano-release', 'vcsl',[(rf'Chordophones/Zithers/Grand Piano, Kawai/Releases/GPiano_rel_{NOTE}_(?P<layer>v3)_(?P<take>rr1)_Player\.wav', 1)], ['v3'], 'short', cap=2.0, retune=False),
+]
+SETS += RELEASES

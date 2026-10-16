@@ -62,7 +62,8 @@ def pitch(x, window):
     hz = []
     for i in range(0, max(1, len(seg) - 4096), 2048):
         f = yin(seg[i: i + 4096 + int(SR / 24)])
-        if f:
+        # (a frame of silence at a plucked note's end reads as no pitch, or a negative one)
+        if f and np.isfinite(f) and f > 0:
             hz.append(f)
     if not hz:
         return None
@@ -109,6 +110,12 @@ def main(only):
         if (only and st['folder'] not in only) or not os.path.exists(os.path.join(d, 'plan.json')):
             continue
         plan = json.load(open(os.path.join(d, 'plan.json')))['files']
+        if not st['pitched']:
+            # Drums: each file is the note its name or source gives it, as recorded
+            out[st['folder']] = {f['file']: {'midi': f['nominal'], 'cents': 0, 'yin': None} for f in plan}
+            print(f"{st['folder']:20s} unpitched: {len(plan)} files at their given notes")
+            json.dump(out, open('measure.json', 'w'), indent=1)
+            continue
         win = KINDS[st['kind']]['tune']
         rows = []
         for f in plan:

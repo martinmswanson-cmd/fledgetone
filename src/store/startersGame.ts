@@ -205,7 +205,7 @@ function village(): ProjectSnapshot {
   const eve = [['D3', 'F3', 'A3'], ['D3', 'F3', 'A#3'], ['C3', 'F3', 'A3'], ['C3', 'E3', 'G3']];
   const eveRoots = ['D2', 'A#1', 'F2', 'C2'];
   const lullaby = melody([[0, 'A4', 6], [6, 'G4', 2], [8, 'F4', 8], [16, 'F4', 4], [20, 'D4', 4], [24, 'F4', 8], [32, 'C5', 6], [38, 'A#4', 2], [40, 'A4', 8], [48, 'G4', 16]], 0.6);
-  const handDrum = beat([['C3', 'X..x..x.X..x.x..'], ['D3', '....x.......x...']], 0.6);
+  const handDrum = beat([['F1', 'X..x..x.X..x.x..'], ['D2', '....x.......x...']], 0.6);
   return gameReady(
     inSpace(
       project(
@@ -627,7 +627,7 @@ function puzzle(): ProjectSnapshot {
           clip(block, 'Tick', 1, 1, beat([['C4', 'x...x...x...x...']], 0.4), 16),
           clip(clarinet, 'Almost there', 9, 4, counter, 2),
           clip(kalimba, 'Almost there', 13, 4, tune.filter(([s]) => s % 4 === 0 && s < 64).map(([s, n, v]): Step => [s, octave(n as string, 1), v * 0.7, '8n'])),
-          clip(shaker, 'Almost there', 9, 1, beat([['C3', 'x..x..x.x..x..x.'], ['D3', '....x.......x...']], 0.45), 8),
+          clip(shaker, 'Almost there', 9, 1, beat([['F1', 'x..x..x.x..x..x.'], ['D2', '....x.......x...']], 0.45), 8),
         ],
         [[1, 'Thinking'], [9, 'Almost There']],
         master({ on: false }, { on: true, amount: 1.1 })
@@ -649,7 +649,7 @@ function puzzle(): ProjectSnapshot {
 
 function shop(): ProjectSnapshot {
   const vibes = track('Vibraphone', 'vibraphone', { volume: -8, pan: 0.15, reverbSend: 0.3, fx: { human: human(0.3) } });
-  const keys = track('Electric piano', 'rhodes', { volume: -10, pan: -0.25, reverbSend: 0.25, fx: { peq: EQ.piano(), human: human(0.3) } });
+  const keys = track('Electric piano', 'rhodes', { volume: -11, pan: -0.25, reverbSend: 0.25, fx: { peq: EQ.piano(), human: human(0.3) } });
   const bass = track('Upright bass', 'uprightBass', { volume: -7, fx: { peq: peq(lowCut(35)), human: human(0.25) } });
   const drums = grouped(track('Drums', 'acousticKit', { volume: -12, reverbSend: 0.15, fx: { compressor: glue(-22), human: human(0.25) } }), 'Percussion');
   const steel = grouped(track('Steel drums', 'steelDrums', { volume: -11, pan: 0.3, reverbSend: 0.3 }), 'Climax');

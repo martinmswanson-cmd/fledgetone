@@ -4,6 +4,7 @@ import { safely } from '../instruments';
 import { notLate } from './monotonic';
 import {
   attackDecay,
+  builtinWave,
   createBus,
   createFilter,
   createOsc,
@@ -124,10 +125,9 @@ export function createPluck(output: Tone.InputNode) {
     const freq = noteFrequency(n.note);
     if (!Number.isFinite(length) || !(freq > 0)) return; // garbled by hand-editing: skip it
     const end = start + Math.max(0.005, length);
-    const saw = createOsc(raw, 'sawtooth', freq, start);
-    const square = createOsc(raw, 'square', freq, start, 8);
-    const mix = raw.createGain();
-    mix.gain.value = 0.5;
+    // At half level each, built into their waves (no mixing gain node)
+    const saw = createOsc(raw, builtinWave(raw, 'sawtooth', 0.5), freq, start);
+    const square = createOsc(raw, builtinWave(raw, 'square', 0.5), freq, start, 8);
     const filter = createFilter(raw, 'lowpass', freq, 4);
     // Bright on the attack (more so when played harder), closing within about a tenth of a second
     filter.frequency.setValueAtTime(Math.min(16000, freq * 16 + 3000 * n.velocity), start);
@@ -136,14 +136,13 @@ export function createPluck(output: Tone.InputNode) {
     attackDecay(amp.gain, start, 0.45 * n.velocity, 0.003, decay, 0);
     // A note let go before the pluck has died away stops sooner
     amp.gain.setTargetAtTime(0, end, releaseConstant(release));
-    saw.connect(mix);
-    square.connect(mix);
-    mix.connect(filter);
+    saw.connect(filter);
+    square.connect(filter);
     filter.connect(amp);
     amp.connect(input);
     // Down 50 dB by twice the decay time
     const stopAt = Math.min(start + 0.003 + 2 * decay, end + releaseTail(release));
-    const voice = { start, stopAt, sources: [saw, square], nodes: [saw, square, mix, filter, amp], amp };
+    const voice = { start, stopAt, sources: [saw, square], nodes: [saw, square, filter, amp], amp };
     voices.add(voice);
     return voice;
   };

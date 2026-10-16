@@ -141,8 +141,16 @@ clock, ahead of time, so the main thread being busy doesn't make notes late:
 
 Each instrument plays into its track's **channel strip** (`effects/trackStrip.ts`): inserts in a
 fixed order, then pan, solo and mute, the fader, and sends. Strips play into the **master chain**
-(`createMixChain` in `engine.ts`): master bus, compressor, the OTT and width inserts, limiter
-and a soft ceiling, plus the shared reverb and delay returns.
+(`createMixChain` in `engine.ts`): master bus, compressor, the OTT and width inserts, the Level
+(a plain gain), limiter and a soft ceiling, plus the shared reverb and delay returns.
+
+A compressor looks ahead, so it holds back the sound through it by a few milliseconds. **Delay
+compensation** lines every path up again: `delayCompensation.ts` works out, from the tracks, how
+long to hold back each strip (after its inserts, on its way out, on each send) so that every path
+reaches the master together, and the strips apply it with delay lines that glide to a new amount
+too slowly to hear (`effects/delayLink.ts`, `delayGlide.ts`): crossfading to it mixed two copies a
+few milliseconds apart, which made a held low note dip. The compressor's delay is measured once per sample rate
+(`compressorLatency.ts`). Live and in exports alike; an export trims the delay off its start.
 
 ### Someone plays a MIDI keyboard or records
 
@@ -160,9 +168,23 @@ Microphone recording is `micRecorder.ts`.
 the same factories as live: the master chain, a strip and instrument per audible track, and the
 note, audio clip and automation schedules on the offline Transport. Rather than scheduling the
 whole song up front, it renders in steps (`suspend()`), scheduling a little ahead each time and
-disposing finished notes, so long songs render in linear time. The result is scaled down if its
-true peak passes -1 dBTP, then encoded: WAV here (16/24/32-bit, markers as cue points), MP3 and
-Ogg in `encoders.ts`, MP4 video in `videoExport.ts`. Stems, intro-plus-loop, seamless loops,
+disposing finished notes, so long songs render in linear time. A mix through the master section
+is split, where that sounds exactly the same, into parts rendered at once, each in an
+`OfflineAudioContext` of its own, which Chromium runs on a core of its own: the parts' sound
+before the master section is added up and the master section runs once over the sum
+(`renderParts.ts` says which tracks must stay together). The parts load no AudioWorklet unless a
+track's plugin does, since Chromium renders every offline context that has one on a single shared
+thread; with the lush reverb (a worklet live) on, the parts send what they'd feed it and it
+plays once, over their sum, in plain JavaScript (`effects/lushAfter.ts`; a render in one piece
+goes this way too, as one part). Every part uses the same delay compensation, worked out
+over the whole song. The master section after the compressor (the OTT, width, Level and limiter)
+is in no render: it runs in plain JavaScript over the finished one (`effects/masterAfter.ts`),
+because Chromium never frees an `OfflineAudioContext` an AudioWorklet was loaded into. The result
+is scaled down if its true peak passes -1 dBTP (-1.5 for MP3 and Ogg, which encoding pushes up a
+little), a ring-out cut where its tails have fallen under -70 dBFS (`ringOutTail.ts`; the render
+runs as long as the reverb's impulse response, or 6 s at least), then encoded: WAV here (16/24/32-bit, markers as cue points), MP3 and
+Ogg in `encoders.ts`, MP4 video in `videoExport.ts`. A render without the master section splits the same way (just the sum), and stems render
+several at once, each in a context of its own. Stems, intro-plus-loop, seamless loops,
 the game kit (`gameKit.ts`), FMOD / Wwise packages and freezing a track are all variations on
 the same render.
 
@@ -194,7 +216,10 @@ Clean up per-note nodes when they're disposed, not when they report ending.
 - **Recorded instruments** (`samplers/samplerManager.ts`): multi-sampled recordings downloaded
   once ever (kept in IndexedDB by `recordingStore.ts`, which can also download them all for
   offline use) and shared, with onset trimming, sustain looping, tuning fixes, tone shaping (including
-  guitar amps), loudness layers and round-robin takes, and Expressive playing.
+  guitar amps), loudness layers and round-robin takes, and Expressive playing. Recordings are decoded at the rate they play at
+  (an export at another rate than the live context's decodes the ones it needs again, at its own),
+  and the brightest sets at twice that (`doubleRate`), since a buffer source re-pitches with linear
+  interpolation; code that counts samples uses the buffer's own `sampleRate`.
 - **Your sounds**: the Sampler, Slicer, Drum Rack and Multi Sampler play sounds from the library;
   Plugin tracks host Web Audio Modules (`wamHost.ts`, `presets/wamPlugin.ts`).
 
@@ -306,6 +331,10 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   on the audio clock, then takes the old ones apart (`rewire` in `trackStrip.ts`).
   `cancelAndHoldAtTime()` holds nothing when no ramp is under way, so a fade that follows it
   needs a `setValueAtTime()` first, or it ramps from the param's last event.
+- A param that is sounding never jumps: setting `.value` or `setValueAtTime()` clicks, and
+  `cancelScheduledValues()` throws away a ramp under way (the param snaps back first). A control
+  the user moves goes through `smoothSet` (`effects/smoothParam.ts`): hold where it is, then glide
+  there with `setTargetAtTime()`. Automation lanes go through `ParamWriter` (`paramWriter.ts`).
 - Transport positions are written in ticks (`` `${ticks}i` ``). Tone converts those through seconds,
   so `toneFixes.ts` makes results within float noise of a whole tick whole again; otherwise about
   one tick in ten was filed a tick early (skipped when playback started on it or a loop came back
@@ -324,6 +353,16 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   a take ends where the listener was when they stopped. Held keys use each instrument's `noteOn`
   (a Tone synth's `triggerAttack`, or for the native-node synths a long note let go early with
   `VoiceSet.release`); an instrument without one plays held keys as short sequenced notes.
+- An export renders the same samples every time (`scripts/audio-check/repeat.cjs` checks it).
+  Randomness is seeded from the song (`seededNoise.ts`, `noteSeed` in `human.ts`), never from
+  `Math.random` or the time. Two things in the browser varied too, and the export's offline
+  contexts work around them: Chromium adds up the connections into an input in an order that
+  changes from one render to the next, so with three or more the sum differed in its last bit
+  (`exactSums.ts` gives each node at most two, through pass-through links); and it reports a
+  source's end whenever the main thread gets to it, so the nodes a note let go of went at
+  different moments, and the filters after them rang out for different lengths
+  (`endedOnTime.ts` runs ended handlers at the render's suspends instead). A render is split into
+  parts the same way whether or not they run side by side.
 
 ## Builds
 
@@ -334,3 +373,14 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
   (`public/fledgetone-samples`) are served next to it, not inlined.
 - `npm run build:runtime`: `dist-runtime/bos-player.js`, the player that games use to play a
   saved project (`src/runtime/player.ts`).
+
+The production build (fledgetone.com) is an installable web app: `public/manifest.webmanifest`
+and its icons, and `dist/sw.js`, written by the `serviceWorker` plugin in `vite.config.ts` from
+`src/pwa/sw.js` with the build's file list. The worker keeps the page, the hashed scripts and
+styles and the fonts, and leaves recordings and plugins to `recordingStore.ts` (IndexedDB, keyed
+by address and set fingerprint, downloaded with `?v=<fingerprint>`). A new worker waits until the
+person clicks Reload (`src/pwa/pwa.ts`, `UpdateNotice.tsx`). Only production builds register it;
+the dev server removes any it finds. The one-file build has neither manifest nor worker
+(`build-single.mjs` marks it with `<meta name="fledgetone-build" content="single">`).
+`public/_headers` sets Netlify's cache rules: no-cache for `sw.js`, the manifest and
+`version.json`, a year (immutable) for `assets/` and the versioned recordings and plugins.

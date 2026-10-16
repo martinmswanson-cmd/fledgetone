@@ -6,9 +6,10 @@ import { renderBlocks, splitSections } from './markdown';
 /**
  * The user guide, shown in the app. Its text is GUIDE.md at the repository root, so the same
  * guide reads on GitHub and here. Sections are listed on the left; Esc or the backdrop closes it.
+ * Given `markdown` and a `title`, it shows that document instead (What's new: CHANGELOG.md).
  */
-export const GuidePanel: React.FC<{ onClose: () => void; section?: string }> = ({ onClose, section: startAt }) => {
-  const sections = useMemo(() => splitSections(guideMarkdown), []);
+export const GuidePanel: React.FC<{ onClose: () => void; section?: string; markdown?: string; title?: string }> = ({ onClose, section: startAt, markdown = guideMarkdown, title = 'Guide' }) => {
+  const sections = useMemo(() => splitSections(markdown), [markdown]);
   const [active, setActive] = useState(startAt && sections.some((s) => s.id === startAt) ? startAt : (sections[0]?.id ?? ''));
   const bodyRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -55,21 +56,21 @@ export const GuidePanel: React.FC<{ onClose: () => void; section?: string }> = (
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label="Fledgetone guide"
+        aria-label={`Fledgetone ${title.toLowerCase()}`}
         className="focus:outline-none w-full max-w-5xl h-full max-h-[85vh] flex flex-col rounded-xl border border-forge-borderLight bg-forge-panel shadow-2xl overflow-hidden"
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-forge-border">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-forge-text">
             <BookOpen className="w-4 h-4 text-cyan-400" />
-            Guide
+            {title}
           </h2>
-          <button type="button" onClick={onClose} className="text-forge-muted hover:text-forge-text" title="Close (Esc)" aria-label="Close guide">
+          <button type="button" onClick={onClose} className="text-forge-muted hover:text-forge-text" title="Close (Esc)" aria-label={`Close ${title.toLowerCase()}`}>
             <X className="w-4 h-4" />
           </button>
         </div>
         <div className="flex flex-1 min-h-0 flex-col sm:flex-row">
           <nav
-            aria-label="Guide sections"
+            aria-label={`${title} sections`}
             className="shrink-0 sm:w-56 border-b sm:border-b-0 sm:border-r border-forge-border overflow-auto p-2 flex sm:flex-col gap-1"
           >
             {sections.map((s) => (
@@ -86,7 +87,7 @@ export const GuidePanel: React.FC<{ onClose: () => void; section?: string }> = (
               </button>
             ))}
           </nav>
-          <div ref={bodyRef} tabIndex={0} aria-label="Guide text" className="flex-1 min-h-0 overflow-auto px-5 py-4 text-[13px] text-forge-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50">
+          <div ref={bodyRef} tabIndex={0} aria-label={`${title} text`} className="flex-1 min-h-0 overflow-auto px-5 py-4 text-[13px] text-forge-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50">
             {section && (
               <article>
                 <h3 className="text-base font-semibold text-forge-text mb-2">{section.title}</h3>

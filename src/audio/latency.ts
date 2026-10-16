@@ -1,4 +1,6 @@
 import { liveMix } from './engine';
+import { compressorLatencyNow, measureCompressorLatency } from './compressorLatency';
+import { createLimiterKernel } from './effects/limiter';
 
 /**
  * When the listener hears what the live context renders. The clock (currentTime) says what the
@@ -18,6 +20,43 @@ function nativeContext(): AudioContext {
   const raw = liveContext().rawContext as unknown as { _nativeAudioContext?: AudioContext };
   return raw._nativeAudioContext ?? (raw as unknown as AudioContext);
 }
+
+/**
+ * How long the live mix holds every track back (seconds): its delay compensation (see
+ * delayCompensation.ts), set by liveTracks.ts.
+ */
+let mixDelay = 0;
+export function setMixDelay(seconds: number): void {
+  mixDelay = seconds;
+}
+
+/** The master section's delay at a sample rate, once worked out (see masterSeconds). */
+let master: { rate: number; lookahead: boolean; seconds: number } | null = null;
+
+/**
+ * How long the master section holds the sound back (seconds): its compressor's look-ahead and the
+ * limiter's (the look-ahead one's, or the stand-in compressor's until that has loaded), as an
+ * export allows for them (masterChainLatency in exportWav.ts). 0 until the compressor's is measured.
+ */
+function masterSeconds(): number {
+  const rate = liveContext().sampleRate;
+  const lookahead = liveMix.lookahead();
+  if (master?.rate === rate && master.lookahead === lookahead) return master.seconds;
+  const compressor = compressorLatencyNow(rate);
+  if (compressor === undefined) {
+    void measureCompressorLatency(rate);
+    return 0;
+  }
+  master = { rate, lookahead, seconds: (compressor + (lookahead ? createLimiterKernel(rate).latency : compressor)) / rate };
+  return master.seconds;
+}
+
+/**
+ * How much later than it was scheduled the live mix plays a note (seconds): the tracks' delay
+ * compensation and the master section's own delay. The music heard now was scheduled this much
+ * earlier; the metronome, which plays straight to the output, waits this long to stay with it.
+ */
+export const mixDelaySeconds = (): number => mixDelay + masterSeconds();
 
 /** Seconds from a sample leaving the graph to the listener hearing it, as the browser reports it. */
 export function outputLatencySeconds(): number {
@@ -39,7 +78,7 @@ export function heardTime(eventTime: number = performance.now()): number {
   const native = nativeContext();
   const stamp = typeof native.getOutputTimestamp === 'function' ? native.getOutputTimestamp() : undefined;
   if (stamp && stamp.contextTime !== undefined && stamp.performanceTime !== undefined && stamp.performanceTime > 0 && Math.abs(now - stamp.performanceTime) < 2000) {
-    return stamp.contextTime + (now - stamp.performanceTime) / 1000 - ago;
+    return stamp.contextTime + (now - stamp.performanceTime) / 1000 - ago - mixDelaySeconds();
   }
-  return liveContext().rawContext.currentTime - ago - outputLatencySeconds();
+  return liveContext().rawContext.currentTime - ago - outputLatencySeconds() - mixDelaySeconds();
 }

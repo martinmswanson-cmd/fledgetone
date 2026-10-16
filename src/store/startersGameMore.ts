@@ -266,7 +266,7 @@ function bigBandCity(): ProjectSnapshot {
   const tenor = grouped(track('Tenor sax', 'tenorSax', { volume: -12, pan: -0.1, reverbSend: 0.25, fx: { human: human(0.35, 0.15) } }), 'Tension');
   const trumpets = grouped(track('Trumpets', 'realTrumpet', { volume: -10, pan: 0.3, reverbSend: 0.3, fx: { peq: EQ.brass(), human: human(0.3, 0.1) } }), 'Climax');
   const bones = grouped(track('Trombones', 'realTrombone', { volume: -11, pan: -0.3, reverbSend: 0.3, fx: { peq: EQ.brass(), human: human(0.3, 0.1) } }), 'Climax');
-  const muted = grouped(track('Muted trumpet', 'mutedTrumpet', { volume: -14, pan: 0.4, reverbSend: 0.25 }), 'Ambient');
+  const muted = grouped(track('Muted trumpet', 'mutedTrumpet', { volume: -16.5, pan: 0.4, reverbSend: 0.25 }), 'Ambient');
 
   // C: ii7 - V7 - Imaj7 - VI7 | ii7 - V7 - I6 - I6 (a swinging ii-V-I), then the festival a whole step up
   const comp = [['F3', 'A3', 'C4', 'E4'], ['F3', 'B3', 'D4', 'G4'], ['E3', 'G3', 'B3', 'D4'], ['G3', 'C#4', 'E4', 'G4'], ['F3', 'A3', 'C4', 'E4'], ['F3', 'B3', 'D4', 'G4'], ['E3', 'G3', 'A3', 'C4'], ['E3', 'G3', 'A3', 'D4']];
@@ -320,7 +320,7 @@ function bigBandCity(): ProjectSnapshot {
 
 function quietWorld(): ProjectSnapshot {
   const piano = track('Soft piano', 'realGrandPiano', { volume: -9, reverbSend: 0.55, fx: { peq: EQ.piano(), human: human(0.35, 0.05) } });
-  const keys = grouped(track('Electric piano', 'rhodes', { volume: -15, pan: -0.2, reverbSend: 0.5, fx: { human: human(0.3) } }), 'Ambient');
+  const keys = grouped(track('Electric piano', 'rhodes', { volume: -14.5, pan: -0.2, reverbSend: 0.5, fx: { human: human(0.3) } }), 'Ambient');
   const pad = grouped(track('Glass pad', 'glassPad', { volume: -19, reverbSend: 0.5, fx: { peq: EQ.pad(7000) } }), 'Ambient');
   const halo = grouped(track('Halo pad', 'haloPad', { volume: -21, reverbSend: 0.55, fx: { peq: EQ.pad(6000) } }), 'Tension');
 
@@ -371,7 +371,7 @@ function wildField(): ProjectSnapshot {
   const piano = track('Piano', 'realGrandPiano', { volume: 0, reverbSend: 0.5, fx: { peq: EQ.piano(), human: human(0.4, 0.05) } });
   const birds = grouped(track('Birds', 'birdTweet', { volume: -26, pan: 0.4, reverbSend: 0.4 }), 'Ambient');
   const wind = grouped(track('Wind', 'seashore', { volume: -28, reverbSend: 0.2 }), 'Ambient');
-  const celesta = track('Celesta', 'celesta', { volume: -11, pan: 0.2, reverbSend: 0.55, fx: { peq: EQ.bells() } });
+  const celesta = track('Celesta', 'celesta', { volume: -12.5, pan: 0.2, reverbSend: 0.55, fx: { peq: EQ.bells() } });
   const strings = grouped(track('Violins', 'realViolins', { volume: -15, reverbSend: 0.5, fx: { peq: EQ.pad(8000) } }), 'Tension');
   const horn = grouped(track('French horn', 'realHorn', { volume: -11, pan: -0.15, reverbSend: 0.45, fx: { peq: EQ.brass(), human: human(0.3, 0.1) } }), 'Climax');
   const cellos = grouped(track('Cellos', 'realCello', { volume: -13, pan: 0.2, reverbSend: 0.35, fx: { peq: peq(lowCut(40)), human: human(0.3) } }), 'Tension');
@@ -675,7 +675,7 @@ function fogTown(): ProjectSnapshot {
 // ---------- Save room: two chords, safe for now ----------
 
 function saveRoom(): ProjectSnapshot {
-  const keys = track('Electric piano', 'rhodes', { volume: -11, reverbSend: 0.5, fx: { human: human(0.3), chorus: { on: true, mix: 0.25 } } });
+  const keys = track('Electric piano', 'rhodes', { volume: -11.5, reverbSend: 0.5, fx: { human: human(0.3), chorus: { on: true, mix: 0.25 } } });
   const pad = grouped(track('Glass pad', 'glassPad', { volume: -18, reverbSend: 0.55, fx: { peq: EQ.pad(6000) } }), 'Ambient');
   const piano = grouped(track('Piano', 'realGrandPiano', { volume: -12, pan: 0.15, reverbSend: 0.55, fx: { peq: EQ.piano(), human: human(0.35, 0.05) } }), 'Tension');
   const bass = track('Bass', 'fretlessBass', { volume: -14, fx: { peq: peq(lowCut(35)) } });
@@ -730,7 +730,7 @@ function cathedralBoss(): ProjectSnapshot {
   const cellos = grouped(track('Cellos short', 'realCelloShort', { volume: -10, pan: 0.2, reverbSend: 0.35, fx: { human: human(0.25) } }), 'Tension');
   const bones = grouped(track('Trombones', 'realTrombone', { volume: -11, pan: -0.25, reverbSend: 0.45, fx: { peq: EQ.brass() } }), 'Climax');
   const tuba = grouped(track('Tuba', 'realTuba', { volume: -12, reverbSend: 0.35 }), 'Climax');
-  const violin = track('Solo violin', 'realSoloViolin', { volume: -10, pan: 0.15, reverbSend: 0.5, fx: { human: human(0.35, 0.15) } });
+  const violin = track('Solo violin', 'realViolin', { volume: -10, pan: 0.15, reverbSend: 0.5, fx: { human: human(0.35, 0.15) } });
   const timpani = grouped(track('Timpani', 'timpani', { volume: -9, reverbSend: 0.45 }), 'Percussion');
   const kit = grouped(track('Toms & cymbals', 'acousticKit', { volume: -13, reverbSend: 0.4, fx: { peq: EQ.kit() } }), 'Percussion');
   const bells = grouped(track('Chimes', 'chimes', { volume: -16, reverbSend: 0.55 }), 'Ambient');

@@ -440,7 +440,7 @@ function breakcore(): ProjectSnapshot {
     automation: [{ param: 'fx:gate.depth', points: [{ bar: 8, value: 0 }, { bar: 8, value: 0.85 }, { bar: 8.5, value: 0.85 }, { bar: 8.5, value: 0 }] }],
   });
   const kit = track('Hardcore kit', 'technoKit', { volume: -4, fx: { peq: EQ.kit(), compressor: glue() } });
-  const keys = track('Keys', 'rhodes', { volume: -8, sends: send(room, 0.3), fx: { lofi: { on: true, crush: 0, tone: 20000, wow: 0.2, mix: 1 }, chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.3 }, filter: { on: true, cutoff: 5000 }, human: human(0.2) } });
+  const keys = track('Keys', 'rhodes', { volume: -11, sends: send(room, 0.3), fx: { lofi: { on: true, crush: 0, tone: 20000, wow: 0.2, mix: 1 }, chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.3 }, filter: { on: true, cutoff: 5000 }, human: human(0.2) } });
   // The hook on a plain grand piano: breakcore's melodies cut through as they are, no synth stack or drive
   const hook = track('Hook', 'piano', { volume: -6, sends: send(room, 0.25), fx: { peq: peq(lowCut(120)), human: human(0.15) } });
   const atmos = track('Atmos', 'goblins', { volume: -22, reverbSend: 0.5, fx: { peq: EQ.pad(6000) } });
@@ -719,16 +719,18 @@ function melodicDubstep(): ProjectSnapshot {
 function riddim(): ProjectSnapshot {
   const kit = drumBus();
   const organ = track('Organ drone', 'pipeOrgan', { volume: -18, reverbSend: 0.4, fx: { peq: peq(lowCut(200), highCut(5000)) } });
-  // Growl and wobble (gritty already) with a touch of drive behind a low cut; the growl's drive creeps up through the drop
+  // Growl and wobble (gritty already) with a touch of drive behind a low cut; the growl's drive creeps up through the drop.
+  // They lead, 3 dB up on the drums (and the sub 1.5): with the snare softer (see below), there's room
   const growl = track('Growl', 'growlBass', {
-    volume: -5,
+    volume: -2,
     fx: { peq: peq(lowCut(120), bell(1000, 3)), distortion: { on: true, amount: 0.1 }, mbc: tameFizz() },
     automation: [{ param: 'fx:distortion.amount', points: [{ bar: 9, value: 0.1 }, { bar: 17, value: 0.2 }] }],
   });
-  const wobble = track('Wobble', 'wobbleBass', { volume: -8, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
-  const reese = track('Reese', 'reeseBass', { volume: -14, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
-  const sub = track('Sub', 'subBass', { volume: -10, fx: { peq: EQ.sub(120), pump: { on: true, depth: 0.5, release: 200, trigger: 'kick' } } });
-  const drums = track('Drums', 'technoKit', { volume: -4, output: kit.id, fx: { peq: peq(lowCut(30), bell(350, -3)), distortion: { on: true, amount: 0.08 } } });
+  const wobble = track('Wobble', 'wobbleBass', { volume: -5, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
+  const reese = track('Reese', 'reeseBass', { volume: -11, fx: { peq: peq(lowCut(120)), distortion: { on: true, amount: 0.1 } } });
+  const sub = track('Sub', 'subBass', { volume: -8.5, fx: { peq: EQ.sub(120), pump: { on: true, depth: 0.5, release: 200, trigger: 'kick' } } });
+  // (4 dB under where they were: their peaks stood 9 dB over the growl and wobble, the lead here)
+  const drums = track('Drums', 'technoKit', { volume: -8, output: kit.id, fx: { peq: peq(lowCut(30), bell(350, -3)), distortion: { on: true, amount: 0.08 } } });
   const taiko = track('Taiko', 'taiko', { volume: -5, output: kit.id });
   const sfx = track('FX', 'fx', { volume: -16 });
 
@@ -737,7 +739,12 @@ function riddim(): ProjectSnapshot {
   const call: Step[] = [[0, 'G1', 0.85, '16n'], [t, 'G1', 0.7, '16n'], [2 * t, 'G#1', 0.8, '16n'], [8, 'G1', 0.85, '16n'], [8 + t, 'G1', 0.7, '16n'], [8 + 2 * t, 'G2', 0.8, '16n']];
   // The answer: a held G, an Ab, back to G
   const answer: Step[] = [[0, 'G1', 0.85, '4n'], [8 + 2 * t, 'G#1', 0.75, '16n'], [12, 'G1', 0.8, '8n']];
-  const drop = beat([[D.kick, 'X...........g...'], [D.snare, '........X.......'], [D.clap, '........x.......'], [D.closedHat, '..x...x...x...x.']], 0.8);
+  // The snare plays softer than the rest of the kit (0.8 of its velocity in the drop, 0.7 in the
+  // build's roll): it stood over everything else at the limiter (with the clap on the same step, and
+  // the roll's crescendo), so reaching -14 LUFS took 6 dB of limiting (held for 1% of the song).
+  // Now it takes under 3, with the growls up
+  const softSnare = (steps: Step[], by: number) => steps.map(([s, n, v, d]): Step => [s, n, n === D.snare ? v * by : v, d]);
+  const drop = softSnare(beat([[D.kick, 'X...........g...'], [D.snare, '........X.......'], [D.clap, '........x.......'], [D.closedHat, '..x...x...x...x.']], 0.8), 0.8);
   return inSpace(
     project(
       'Riddim starter',
@@ -750,7 +757,7 @@ function riddim(): ProjectSnapshot {
         clip(taiko, 'Toll', 1, 2, [[0, 'G2', 0.6]], 2),
         clip(sub, 'Pulse', 5, 4, pulse(['G1', 'G1', 'G1', 'G1'], [0, 4, 8, 12], 2, 0.6)),
         clip(growl, 'Tease', 7, 1, call, 1, '1/8T'),
-        clip(drums, 'Snare roll', 5, 4, rollWithGap),
+        clip(drums, 'Snare roll', 5, 4, softSnare(rollWithGap, 0.7)),
         clip(sfx, 'Build-up', 5, 4, softBuild(4)),
         // Call and response, the wobble rate changing every two bars; the gaps are the style
         clip(growl, 'Call', 9, 1, call, 1, '1/8T'),
@@ -858,7 +865,8 @@ function phonk(): ProjectSnapshot {
     reverbSend: 0.1,
     fx: { peq: peq(lowCut(300), highCut(8000)), lofi: { on: true, crush: bits(10), tone: 8000, wow: 0, mix: 0.4 }, distortion: { on: true, amount: 0.25 }, pump: { on: true, depth: 0.45, release: 180, trigger: 'kick' } },
   });
-  const drums = track('Drums', 'drumMachine', { volume: -4, fx: { peq: peq(lowCut(30), highCut(12000)), lofi: { on: true, crush: bits(12), tone: 9000, wow: 0, mix: 0.3 }, compressor: glue() } });
+  // (4 dB under where they were: they stood 8 dB over the cowbell and the 808)
+  const drums = track('Drums', 'drumMachine', { volume: -8, fx: { peq: peq(lowCut(30), highCut(12000)), lofi: { on: true, crush: bits(12), tone: 9000, wow: 0, mix: 0.3 }, compressor: glue() } });
   const bass = track('808', 'bass808', { volume: -8, fx: { peq: EQ.eight() } });
   const dirt = track('808 grit', 'growlBass', { volume: -16, fx: { peq: peq(lowCut(150), bell(1000, 3)), distortion: { on: true, amount: 0.1 }, pump: { on: true, depth: 0.5, release: 180, trigger: 'kick' } } });
   const pad = track('Pad', 'synthDesigner', { volume: -18, synth: PATCH.darkPad(), reverbSend: 0.3, fx: { peq: peq(lowCut(200)), pump: { on: true, depth: 0.5, release: 220, trigger: 'kick' } } });
@@ -913,7 +921,8 @@ function drill(): ProjectSnapshot {
   const tremolo = track('Tremolo', 'tremolo', { volume: -20, sends: send(room, 0.35), fx: { peq: peq(lowCut(150), highCut(7000)) } });
   const choir = track('Choir', 'choirPad', { volume: -20, reverbSend: 0.4, fx: { peq: peq(lowCut(200)) } });
   const bass = track('808', 'bass808', { volume: -8, fx: { peq: EQ.eight() } });
-  const drums = track('Drums', 'drumMachine', { volume: -4, fx: { peq: peq(lowCut(30)), compressor: glue() } });
+  // (6 dB under where they were: they stood 11 dB over the piano and the 808)
+  const drums = track('Drums', 'drumMachine', { volume: -10, fx: { peq: peq(lowCut(30)), compressor: glue() } });
 
   // A four-bar motif in G harmonic minor with a gap in every bar; the last bar turns on the eerie F#
   const motif = phrase(
@@ -1021,7 +1030,7 @@ function rage(): ProjectSnapshot {
 
 function neoSoul(): ProjectSnapshot {
   const rhodes = track('Rhodes', 'rhodes', {
-    volume: -10,
+    volume: -12,
     reverbSend: 0.25,
     fx: { chorus: { on: true, rate: 0.8, mix: 0.3, depth: 0.4 }, filter: { on: true, cutoff: 6000 }, human: human(0.4) },
     automation: [{ param: 'filterCutoff', points: [{ bar: 1, value: 0.35 }, { bar: 5, value: 0.9 }, { bar: 17, value: 0.9 }] }],
@@ -1083,7 +1092,7 @@ function neoSoul(): ProjectSnapshot {
 
 function bedroomPop(): ProjectSnapshot {
   const gtr = track('Guitar', 'cleanGuitar', { volume: -2, pan: -0.2, reverbSend: 0.2, fx: { chorus: { on: true, rate: 0.8, depth: 0.6, mix: 0.4 }, filter: { on: true, cutoff: 4500, slope: 12 }, human: human(0.3, 0.1) } });
-  const rhodes = track('Rhodes', 'rhodes', { volume: -10, pan: 0.2, fx: { filter: { on: true, cutoff: 3000 }, human: human(0.35) } });
+  const rhodes = track('Rhodes', 'rhodes', { volume: -10.5, pan: 0.2, fx: { filter: { on: true, cutoff: 3000 }, human: human(0.35) } });
   const bass = track('Bass', 'fingerBass', { volume: -7, fx: { compressor: { on: true, threshold: -20, ratio: 4 }, human: human(0.35) } });
   const sax = track('Sax', 'saxophone', { volume: -3, reverbSend: 0.3, delaySend: 0.2, fx: { filter: { on: true, cutoff: 3500 }, human: human(0.3, 0.2) } });
   const pad = track('Pad', 'wavetable', { volume: -16, reverbSend: 0.4, fx: { filter: { on: true, cutoff: 1500 } } });

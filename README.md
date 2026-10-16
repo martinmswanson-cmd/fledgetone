@@ -50,11 +50,29 @@ The stack: React 19, TypeScript, zustand, Tone.js 15 on the Web Audio API, Tailw
 
 The recorded instruments come from free sample libraries: the Salamander Grand Piano,
 tonejs-instruments (Karoryfer, University of Iowa and VSCO 2 recordings), the FluidR3 and Musyng
-Kite General MIDI soundfonts, Versilian Studios' VSCO 2 Community Edition and Karoryfer's Black
+Kite General MIDI soundfonts, Versilian Studios' VSCO 2 Community Edition and VCSL, and Karoryfer's Black
 And Green Guitars. Their licences differ (CC BY 3.0, CC BY-SA 3.0 and CC0, among others); the
 full list with links and licences is in the Credits section of [GUIDE.md](GUIDE.md#credits) and
 in the app under Guide > Credits, generated from `src/credits.ts`.
 
 ## Licence
 
-Not chosen yet.
+Using the app is covered by the [terms of use](TERMS.md): what you make with Fledgetone is yours.
+
+
+Fledgetone is free software: you can redistribute it and/or modify it under the terms of the
+GNU General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
+
+Copyright (C) 2026 the Fledgetone authors.
+
+The recorded sounds and built-in plugins keep their own licences (see Credits above).
+
+### The name and logo
+
+The licence covers the code, not the Fledgetone name or logo (`src/assets/fledgetone.png`,
+`public/favicon.svg`, `public/apple-touch-icon.png`). You're welcome to fork and change
+Fledgetone, but please give your version its own name and logo, so nobody mistakes it for this
+one. Saying your version is "based on Fledgetone" is fine. See [TRADEMARKS.md](TRADEMARKS.md).

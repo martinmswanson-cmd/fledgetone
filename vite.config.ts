@@ -1,5 +1,7 @@
 import react from '@vitejs/plugin-react'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { execSync } from 'node:child_process'
 import { join } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 
@@ -78,6 +80,73 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
 THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.`
 
 // https://vite.dev/config/
+/**
+ * Which build this is, shown at the bottom of the app and written to dist/version.json, so a
+ * glance tells whether the site runs the version expected: the version (package.json, the top of
+ * CHANGELOG.md), the commit it was built from (Netlify's COMMIT_REF, else git's) and when.
+ */
+const pkgVersion: string = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).version
+const commit = (() => {
+  if (process.env.COMMIT_REF) return process.env.COMMIT_REF.slice(0, 7)
+  try {
+    return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  } catch {
+    return 'unknown'
+  }
+})()
+const builtAt = new Date().toISOString()
+
+function versionFile(): Plugin {
+  return {
+    name: 'version-file',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: `${JSON.stringify({ version: pkgVersion, commit, builtAt }, null, 2)}\n` })
+    },
+  }
+}
+
+/**
+ * Files in public/ the app needs offline. Not the install icons: the browser keeps its own copy
+ * when installing, so keeping them too would only add to the first visit's download. Nor the
+ * recordings and plugins: the app keeps those itself (recordingStore.ts).
+ */
+const SHELL_PUBLIC_FILES = ['favicon.svg', 'manifest.webmanifest']
+
+/**
+ * Write dist/sw.js, the service worker (src/pwa/sw.js), with this build's list of files to keep:
+ * the page, everything Vite emitted (scripts, styles, images) and the favicon. Its id is a hash of
+ * those files, so a build that changes nothing makes the same worker and browsers see no update.
+ */
+function serviceWorker(): Plugin {
+  return {
+    name: 'service-worker',
+    apply: 'build',
+    writeBundle(options, bundle) {
+      const out = options.dir ?? join(process.cwd(), 'dist')
+      const emitted = Object.keys(bundle).filter((f) => f !== 'index.html' && !f.endsWith('.map') && f !== 'version.json' && f !== 'third-party-licenses.txt')
+      const files = ['index.html', ...SHELL_PUBLIC_FILES.filter((f) => existsSync(join(out, f))), ...emitted.sort()]
+      const hash = createHash('sha256')
+      for (const f of files) hash.update(f).update(readFileSync(join(out, f)))
+      const html = readFileSync(join(out, 'index.html'), 'utf8')
+      const fontCss = [...html.matchAll(/<link[^>]+href="(https:\/\/fonts\.googleapis\.com\/css2[^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, '&'))
+      // The page is kept under the scope's own address ('./'), which is what a visit asks for
+      const precache = files.map((f) => (f === 'index.html' ? './' : f))
+      const source = readFileSync(join(process.cwd(), 'src/pwa/sw.js'), 'utf8')
+        .replace("'__FLEDGETONE_BUILD__'", JSON.stringify(hash.digest('hex').slice(0, 12)))
+        .replace("'__FLEDGETONE_VERSION__'", JSON.stringify(pkgVersion))
+        .replace('__FLEDGETONE_PRECACHE__', JSON.stringify(precache))
+        .replace('__FLEDGETONE_FONT_CSS__', JSON.stringify(fontCss))
+      writeFileSync(join(out, 'sw.js'), source)
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), thirdPartyLicenses()],
+  plugins: [react(), thirdPartyLicenses(), versionFile(), serviceWorker()],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkgVersion),
+    __APP_COMMIT__: JSON.stringify(commit),
+    __APP_BUILT__: JSON.stringify(builtAt),
+  },
 })

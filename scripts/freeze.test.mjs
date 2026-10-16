@@ -30,7 +30,7 @@ const never = () => false;
 test('mixing a frozen track keeps its freeze: volume, pan, sends, mute, solo, name', () => {
   const all = base();
   const before = fp(synth, all);
-  for (const change of [{ volume: -6 }, { pan: 0.5 }, { reverbSend: 0.8 }, { delaySend: 0.4 }, { isMuted: true }, { isSoloed: true }, { name: 'Renamed' }, { color: '#fff' }]) {
+  for (const change of [{ volume: -6 }, { pan: 0.5 }, { distance: 0.7 }, { reverbSend: 0.8 }, { delaySend: 0.4 }, { isMuted: true }, { isSoloed: true }, { name: 'Renamed' }, { color: '#fff' }]) {
     const t = { ...synth, ...change };
     assert.equal(fp(t, { ...all, tracks: [t, drums] }), before, JSON.stringify(change));
   }
@@ -78,9 +78,9 @@ test('a frozen drum track still says it is drums, so its kicks keep driving Pump
   assert.deepEqual([v.tracks[1].instrumentKey, v.tracks[1].frozenFrom], ['audio', 'drumMachine']);
 });
 
-test('the render copy is centred at 0 dB with no sends, its live automation left out', () => {
-  const t = trackForFreezing({ ...synth, volume: -8, pan: -1, reverbSend: 1, delaySend: 1, isMuted: true, automation: [{ param: 'pan', points: [] }, { param: 'eqLow', points: [] }] });
-  assert.deepEqual([t.volume, t.pan, t.reverbSend, t.delaySend, t.isMuted], [0, 0, 0, 0, false]);
+test('the render copy is centred at 0 dB, up front, with no sends, its live automation left out', () => {
+  const t = trackForFreezing({ ...synth, volume: -8, pan: -1, reverbSend: 1, delaySend: 1, distance: 0.6, isMuted: true, automation: [{ param: 'pan', points: [] }, { param: 'eqLow', points: [] }] });
+  assert.deepEqual([t.volume, t.pan, t.reverbSend, t.delaySend, t.distance, t.isMuted], [0, 0, 0, 0, undefined, false]);
   assert.deepEqual(t.automation.map((l) => l.param), ['eqLow']);
 });
 

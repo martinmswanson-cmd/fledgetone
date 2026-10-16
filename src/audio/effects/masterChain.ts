@@ -1,18 +1,25 @@
+/**
+ * The master section's inserts, between the master compressor and the Level and limiter (see
+ * engine.ts):
+ *   compressor -> [OTT] -> [Stereo width] -> Level -> [Clipper] -> limiter
+ * Each insert exists only while it's switched on, like a track's inserts: off, it is taken out of
+ * the chain and disposed, so it costs nothing. The OTT is an AudioWorklet (ott.ts); the width is a
+ * handful of plain nodes doing mid/side; the Level is one gain, always there. A switch crossfades
+ * between the old and the new chain on the audio clock the way a track strip does (trackStrip.ts,
+ * rewire), so switching while the song plays opens no gap.
+ *
+ * In an export's offline context the inserts and the Level aren't built at all: the render stops
+ * after the compressor, and masterAfter.ts runs the OTT, width, Level and limiter over the finished
+ * render in plain JavaScript (an AudioWorklet would keep the whole render in memory for good).
+ */
 import * as Tone from 'tone';
-import type { MasterSettings } from '../../store/timelineTypes';
+import type { GlueStyle, MasterSettings } from '../../store/timelineTypes';
 import { createWorkletNode, loadWorklet } from '../worklets';
 import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
+import { MONO_BASS_HZ, MONO_BASS_Q } from './masterAfter';
+import { CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE, clipperParams, type ClipperReading, type ClipperSettings } from './clipper';
+import { paramSetter as smoothParamSetter } from './smoothParam';
 
-/**
- * The master section's inserts, between the master compressor and the limiter (see engine.ts):
- *   compressor -> [OTT] -> [Stereo width] -> limiter
- * Each exists only while it's switched on, like a track's inserts: off, it is taken out of the
- * chain and disposed, so it costs nothing. The OTT is an AudioWorklet (ott.ts); the width is a
- * handful of plain nodes doing mid/side. Live, a switch crossfades between the old and the new
- * chain on the audio clock the way a track strip does (trackStrip.ts, rewire), so switching while
- * the song plays opens no gap; in the WAV export's offline context the links are made directly,
- * since nothing plays while the graph is set up.
- */
 export interface MasterInserts {
   /** Apply settings, ramping continuous ones over `ramp` seconds (0: at once). */
   apply: (settings: MasterSettings, ramp?: number) => void;
@@ -21,8 +28,7 @@ export interface MasterInserts {
   dispose: () => void;
 }
 
-/** Below this the Stereo width's "mono bass" keeps the sound in the middle. */
-export const MONO_BASS_HZ = 120;
+export { MONO_BASS_HZ };
 
 type Node = Tone.ToneAudioNode | AudioNode;
 type Link = [from: Node, to: Node];
@@ -48,30 +54,11 @@ interface Gate {
 const SWITCH_LEAD = 0.02;
 const SWITCH_FADE = 0.01;
 
-/**
- * Set native params, ramping over `ramp` seconds (0 = at once) from the last value set here:
- * an AudioParam's .value doesn't show scheduled values until the context renders.
- */
-function paramSetter(raw: BaseAudioContext): (param: AudioParam, value: number, ramp: number) => void {
-  const current = new Map<AudioParam, number>();
-  return (param, value, ramp) => {
-    const at = raw.currentTime;
-    param.cancelScheduledValues(at);
-    const from = current.get(param);
-    if (ramp > 0 && from !== undefined && from !== value) {
-      param.setValueAtTime(from, at);
-      param.linearRampToValueAtTime(value, at + ramp);
-    } else {
-      param.setValueAtTime(value, at);
-    }
-    current.set(param, value);
-  };
-}
+/** Set native params, gliding over about `ramp` seconds (0 = at once), now (see smoothParam.ts). */
+const paramSetter = (raw: BaseAudioContext) => smoothParamSetter(() => raw.currentTime);
 
 /** head -> inserts -> tail, re-patched without gaps live (see above). */
-function createInsertChain(head: Tone.ToneAudioNode, tail: Tone.ToneAudioNode) {
-  const raw = head.context.rawContext as unknown as BaseAudioContext;
-  const live = !(typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext);
+function createInsertChain(raw: BaseAudioContext, head: Node, tail: Node, live: boolean) {
   let chain: Insert[] = [];
   let gates: Gate[] = [];
   let leaving: Array<{ dispose: () => void }> = [];
@@ -218,6 +205,54 @@ async function createOtt(context: Tone.BaseContext, ott: MasterSettings['ott']):
   };
 }
 
+interface ClipperUnit extends Unit {
+  set: (clipper: ClipperSettings, ramp: number) => void;
+}
+
+/** Listeners to the live clipper's readings (the Master tab's meter). */
+const clipperListeners = new Set<(reading: ClipperReading) => void>();
+
+/** Hear what the live clipper does, a few times a second while it's on; returns a function that stops listening. */
+export function onClipperReading(listener: (reading: ClipperReading) => void): () => void {
+  clipperListeners.add(listener);
+  return () => clipperListeners.delete(listener);
+}
+
+/** The clipper worklet (clipper.ts), once its module is in the context. */
+async function createClipper(context: Tone.BaseContext, settings: ClipperSettings): Promise<ClipperUnit> {
+  await loadWorklet(context, CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE);
+  const p = clipperParams(settings);
+  const node = createWorkletNode(context, CLIPPER_PROCESSOR, {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+    channelCount: 2,
+    channelCountMode: 'explicit',
+    channelInterpretation: 'speakers',
+    parameterData: p,
+  });
+  node.port.onmessage = (e: MessageEvent<ClipperReading>) => clipperListeners.forEach((l) => l(e.data));
+  const raw = context.rawContext as unknown as BaseAudioContext;
+  const ramped = paramSetter(raw);
+  const param = (name: string) => node.parameters.get(name)!;
+  const set = (s: ClipperSettings, ramp: number) => {
+    const v = clipperParams(s);
+    ramped(param('drive'), v.drive, ramp);
+    ramped(param('ceiling'), v.ceiling, ramp);
+    ramped(param('softness'), v.softness, ramp);
+  };
+  return {
+    input: node,
+    output: node,
+    set,
+    dispose: () => {
+      node.port.onmessage = null;
+      node.port.postMessage('dispose');
+      node.disconnect();
+    },
+  };
+}
+
 interface WidthUnit extends Unit {
   set: (width: MasterSettings['width'], ramp: number) => void;
 }
@@ -254,7 +289,7 @@ function createWidth(context: Tone.BaseContext, width: MasterSettings['width']):
     const f = raw.createBiquadFilter();
     f.type = 'highpass';
     f.frequency.value = MONO_BASS_HZ;
-    f.Q.value = Math.SQRT1_2;
+    f.Q.value = MONO_BASS_Q;
     return f;
   };
   const hp1 = highpass();
@@ -296,9 +331,45 @@ function createWidth(context: Tone.BaseContext, width: MasterSettings['width']):
   return { input, output, set, dispose: () => nodes.forEach((n) => n.disconnect()) };
 }
 
-export function createMasterInserts(compressor: Tone.ToneAudioNode, limiter: Tone.ToneAudioNode, settings: MasterSettings): MasterInserts {
+/**
+ * The master compressor's styles: how hard it squeezes the whole mix, and how fast. Standard is
+ * the one every project had before; Punchy's slow attack lets each drum hit through before
+ * holding the rest; Tight is for dense, loud electronic music; Gentle barely touches it.
+ */
+export const GLUE_STYLES: Record<GlueStyle, { name: string; about: string; threshold: number; ratio: number; attack: number; release: number }> = {
+  standard: { name: 'Standard', about: 'Holds the mix together evenly.', threshold: -18, ratio: 4, attack: 0.005, release: 0.1 },
+  gentle: { name: 'Gentle', about: 'Barely touches it: acoustic, orchestral and jazz.', threshold: -14, ratio: 2, attack: 0.03, release: 0.25 },
+  punchy: { name: 'Punchy', about: 'Lets each drum hit through before holding the rest: rock, hip-hop, pop.', threshold: -20, ratio: 4, attack: 0.03, release: 0.08 },
+  tight: { name: 'Tight', about: 'Firm and loud: dubstep, EDM, drum and bass.', threshold: -22, ratio: 6, attack: 0.003, release: 0.06 },
+  off: { name: 'Off', about: 'No master compression (the limiter still catches peaks).', threshold: 0, ratio: 1, attack: 0.005, release: 0.1 },
+};
+
+/**
+ * The inserts from `compressor` into `level` (a gain just before the limiter, which applies the
+ * Level), with the glue style on the compressor. In an offline context (an export) only the glue:
+ * the compressor plays straight into `level`, left at unity, and masterAfter.ts does the rest.
+ */
+export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainNode, settings: MasterSettings, limiterIn?: GainNode): MasterInserts {
   const context = compressor.context;
-  const chain = createInsertChain(compressor, limiter);
+  const raw = context.rawContext as unknown as BaseAudioContext;
+  const live = !(typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext);
+  const ramped = paramSetter(raw);
+  const glue = (style: GlueStyle) => {
+    const comp = compressor as Tone.Compressor;
+    const g = GLUE_STYLES[style] ?? GLUE_STYLES.standard;
+    if (!('threshold' in comp)) return;
+    comp.threshold.value = g.threshold;
+    comp.ratio.value = g.ratio;
+    comp.attack.value = g.attack;
+    comp.release.value = g.release;
+  };
+  glue(settings.glue);
+  const chain = createInsertChain(raw, compressor, level, live);
+  // The clipper sits after the Level, before the limiter: a chain of its own, level -> [clipper] -> limiterIn
+  const clipChain = limiterIn ? createInsertChain(raw, level, limiterIn, live) : null;
+  let clipper: ClipperUnit | null = null;
+  let clipLoading: Promise<void> | null = null;
+  let clipUnavailable = false;
   let ott: OttUnit | null = null;
   let width: WidthUnit | null = null;
   let wanted = settings;
@@ -310,7 +381,10 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, limiter: Ton
 
   const apply = (next: MasterSettings, ramp = 0.03) => {
     if (disposed) return;
+    if (next.glue !== wanted.glue) glue(next.glue);
     wanted = next;
+    if (!live) return;
+    ramped(level.gain, Tone.dbToGain(next.level), ramp);
     const retired: Array<{ dispose: () => void }> = [];
     if (next.ott.on) {
       if (ott) ott.set(next.ott, ramp);
@@ -345,15 +419,46 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, limiter: Ton
       width = null;
     }
     rewire(retired);
+    if (!clipChain) return;
+    const wantClip = next.clipper?.on === true;
+    if (wantClip) {
+      if (clipper) clipper.set(next.clipper!, ramp);
+      else if (!clipLoading && !clipUnavailable) {
+        clipLoading = createClipper(context, next.clipper!).then(
+          (unit) => {
+            clipLoading = null;
+            if (disposed || !wanted.clipper?.on) {
+              unit.dispose();
+              return;
+            }
+            unit.set(wanted.clipper, 0);
+            clipper = unit;
+            clipChain.set([unit], []);
+          },
+          (err) => {
+            clipLoading = null;
+            clipUnavailable = true;
+            console.warn('The clipper could not start:', err);
+          }
+        );
+      }
+    } else if (clipper) {
+      const old = clipper;
+      clipper = null;
+      clipChain.set([], [old]);
+    }
   };
   apply(settings, 0);
 
   return {
     apply,
-    ready: () => loading ?? Promise.resolve(),
+    ready: () => Promise.all([loading, clipLoading]).then(() => undefined),
     dispose: () => {
       disposed = true;
       chain.dispose();
+      clipChain?.dispose();
+      clipper?.dispose();
+      clipper = null;
       ott?.dispose();
       width?.dispose();
       ott = null;

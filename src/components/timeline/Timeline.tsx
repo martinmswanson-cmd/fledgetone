@@ -10,6 +10,7 @@ import { livePlayhead, onPlayhead } from '../../store/playheadClock';
 import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
 import { RestoreSessionBanner } from './ProjectBar';
 import { TimelineScrollbar } from './TimelineScrollbar';
+import { TimelineResizer } from './TimelineResizer';
 import { PianoRoll } from './PianoRoll';
 import { TimelineToolbar } from './TimelineToolbar';
 import { TimeRuler } from './TimeRuler';
@@ -26,10 +27,11 @@ import './BuiltinPluginPanel';
 import { onPluginError } from '../../audio/presets/wamPlugin';
 
 import type { ContextMenuState } from './ClipContextMenu';
-import { ChopToSlicerDialog } from './ChopToSlicerDialog';
+import { ChopSampleDialog } from './ChopSampleDialog';
 import { VariationsDialog } from './VariationsDialog';
 import { TuneDialog } from './TuneDialog';
 import { SmartDialog } from './SmartDialog';
+import { ArrangeDialog } from './ArrangeDialog';
 import { NewAudioTrackDrop } from './NewAudioTrackDrop';
 import { RulerContextMenu } from './RulerContextMenu';
 import type { RulerMenuState } from './RulerContextMenu';
@@ -134,6 +136,7 @@ export const Timeline: React.FC = () => {
   const tracks = useTimelineStore((s) => s.tracks);
   const zoom = useTimelineStore((s) => s.zoom);
   const activeTool = useTimelineStore((s) => s.activeTool);
+  const timelineHeight = useUiStore((s) => s.timelineHeight);
   const rulerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const onScrubStart = useScrub(rulerRef);
@@ -143,7 +146,7 @@ export const Timeline: React.FC = () => {
   const [trackMenu, setTrackMenu] = useState<TrackMenuState | null>(null);
   const closeTrackMenu = useCallback(() => setTrackMenu(null), []);
   const closeRulerMenu = useCallback(() => setRulerMenu(null), []);
-  /** The audio clip "Chop to Slicer…" was chosen for, while its dialog is open. */
+  /** The audio clip "Chop sample…" was chosen for, while its dialog is open. */
   const [chopClipId, setChopClipId] = useState<string | null>(null);
   const variationsClipId = useUiStore((s) => s.variationsClipId);
   const setVariationsClipId = useUiStore.getState().setVariationsClip;
@@ -248,6 +251,18 @@ export const Timeline: React.FC = () => {
   // A track just added (or selected from elsewhere) is scrolled into view
   const trackCount = useTimelineStore((s) => s.tracks.length);
   const selectedTrack = useTimelineStore((s) => s.selectedTrackId);
+  // A track added: the timeline grows just enough to show it (the panels under it move down with it),
+  // up to most of the window, after which the new track is scrolled to instead
+  const shownCount = useRef(trackCount);
+  useLayoutEffect(() => {
+    const added = trackCount > shownCount.current;
+    shownCount.current = trackCount;
+    const content = contentRef.current?.offsetHeight ?? 0;
+    const { timelineHeight, setTimelineHeight } = useUiStore.getState();
+    if (!added || content <= timelineHeight) return;
+    const roomy = Math.max(timelineHeight, Math.round(window.innerHeight * 0.75));
+    setTimelineHeight(Math.min(content, roomy));
+  }, [trackCount]);
   useEffect(() => {
     const lane = selectedTrack ? document.querySelector<HTMLElement>(`[data-lane="${CSS.escape(selectedTrack)}"]`) : null;
     if (!lane) return;
@@ -398,7 +413,8 @@ export const Timeline: React.FC = () => {
         <div
           ref={scrollRef}
           data-timeline-scroll=""
-          className={`flex-1 overflow-x-hidden overflow-y-auto max-h-[520px] ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
+          className={`flex-1 overflow-x-hidden overflow-y-auto ${activeTool === 'razor' ? 'cursor-crosshair' : ''}`}
+          style={{ maxHeight: timelineHeight }}
           onWheel={(e) => {
             // The native horizontal bar is replaced by TimelineScrollbar, so handle sideways scrolling here
             const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
@@ -475,18 +491,19 @@ export const Timeline: React.FC = () => {
         <TrackInspector />
       </div>
 
+      <TimelineResizer scrollRef={scrollRef} />
       <TimelineScrollbar scrollRef={scrollRef} />
       <PianoRoll />
 
       <div className="px-4 py-1.5 border-t border-forge-border text-[11px] font-mono text-forge-muted hidden md:block">
-        + or double-click a lane to add a clip • double-click a clip to edit notes • drag pads (Instruments tab below), or sound files, onto a track •
+        + or double-click a lane to add a clip • double-click a clip to edit notes • drag sound files onto a track •
         Drag box / Shift-click multi-select • Ctrl+Z undo • Ctrl+C/X/V • Ctrl+D duplicate • C razor • Del delete • M marker • , and . previous / next marker • curve button: automation • ? guide
       </div>
 
       {menu && <ClipContextMenu menu={menu} onClose={closeMenu} onChop={setChopClipId} onVariations={setVariationsClipId} />}
       {rulerMenu && <RulerContextMenu menu={rulerMenu} onClose={closeRulerMenu} />}
       {trackMenu && <TrackMenu menu={trackMenu} onClose={closeTrackMenu} />}
-      {chopClipId && <ChopToSlicerDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
+      {chopClipId && <ChopSampleDialog clipId={chopClipId} onClose={() => setChopClipId(null)} />}
       {variationsClipId && <VariationsDialog clipId={variationsClipId} onClose={() => setVariationsClipId(null)} />}
       {tuneClipId &&
         // A take folder plays several sounds: it's tuned once flattened (Takes, Flatten)
@@ -500,6 +517,7 @@ export const Timeline: React.FC = () => {
           <TuneDialog clipId={tuneClipId} onClose={() => useUiStore.getState().setTuneClip(null)} />
         ))}
       <SmartDialog />
+      <ArrangeDialog />
       {takesClipId && <TakesDialog clipId={takesClipId} onClose={() => useUiStore.getState().setTakesClip(null)} />}
       {pluginBrowser && (
         <PluginBrowser

@@ -6,6 +6,9 @@
 import * as Tone from 'tone';
 import { monotonicTime } from './monotonic';
 import { createVoicePool } from './poly';
+import { noiseKey } from '../seededNoise';
+import { seedToneNoise } from '../toneFixes';
+import type { GlideRef } from '../instruments';
 
 /**
  * A key held on a MIDI keyboard on a monophonic Tone synth: it sounds from `attack` until
@@ -61,8 +64,23 @@ export function createWavetable(output: Tone.InputNode) {
   };
 }
 
+/**
+ * Legato glide on a Tone monophonic synth (Track.glide): before each note, its portamento is set to
+ * the glide when the note starts before the last one ended, and to `own` (the synth's usual
+ * portamento) otherwise. With no glide set it keeps `own` throughout, as before.
+ */
+export function legatoGlide(synth: { portamento: Tone.Unit.Time }, glide: GlideRef | undefined, own = 0) {
+  let soundingUntil = -Infinity;
+  return (start: number, end: number) => {
+    const legato = start < soundingUntil - 0.001;
+    soundingUntil = end;
+    const seconds = glide?.seconds;
+    synth.portamento = seconds === undefined ? own : legato ? seconds : 0;
+  };
+}
+
 /** Clean, deep sine sub-bass (monophonic). */
-export function createSubBass(output: Tone.InputNode) {
+export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
   const synth = new Tone.MonoSynth({
     volume: 0,
     oscillator: { type: 'sine' },
@@ -71,9 +89,13 @@ export function createSubBass(output: Tone.InputNode) {
     envelope: { attack: 0.008, decay: 0.3, sustain: 0.85, release: 0.25 },
   }).connect(output);
   const safeTime = monotonicTime(synth.context);
+  const glideFor = legatoGlide(synth, glide, 0);
   return {
-    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) =>
-      synth.triggerAttackRelease(note, duration, safeTime(time), velocity),
+    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
+      const start = safeTime(time);
+      glideFor(start, start + synth.toSeconds(duration));
+      synth.triggerAttackRelease(note, duration, start, velocity);
+    },
     ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
     dispose: () => synth.dispose(),
@@ -97,7 +119,7 @@ export function create808(output: Tone.InputNode, modern = false) {
    * 808 without the sub itself getting any louder or harsher. The attack is never sharper than
    * 6 ms and the pitch drop is gentler. Otherwise the original: the whole 808 through the drive.
    */
-  const drive = new Tone.Distortion({ distortion: modern ? 0.45 : 0.22, oversample: modern ? '4x' : '2x', wet: modern ? 1 : 0.6 });
+  const drive = new Tone.Distortion({ distortion: modern ? 0.45 : 0.22, oversample: '4x', wet: modern ? 1 : 0.6 });
   const synth = new Tone.MembraneSynth({
     // (The clean sub's peaks aren't clipped flat by the drive: a dB lower keeps them in line)
     volume: modern ? -3 : -2,
@@ -162,7 +184,7 @@ export function create808(output: Tone.InputNode, modern = false) {
 }
 
 /** Analog-style lead: detuned saws, filter envelope and a short glide between notes. */
-export function createLead(output: Tone.InputNode) {
+export function createLead(output: Tone.InputNode, glide?: GlideRef) {
   const synth = new Tone.MonoSynth({
     volume: -8,
     portamento: 0.035,
@@ -172,9 +194,13 @@ export function createLead(output: Tone.InputNode) {
     envelope: { attack: 0.01, decay: 0.2, sustain: 0.75, release: 0.25 },
   }).connect(output);
   const safeTime = monotonicTime(synth.context);
+  const glideFor = legatoGlide(synth, glide, 0.035);
   return {
-    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) =>
-      synth.triggerAttackRelease(note, duration, safeTime(time), velocity),
+    trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
+      const start = safeTime(time);
+      glideFor(start, start + synth.toSeconds(duration));
+      synth.triggerAttackRelease(note, duration, start, velocity);
+    },
     ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
     dispose: () => synth.dispose(),
@@ -183,9 +209,10 @@ export function createLead(output: Tone.InputNode) {
 
 /**
  * Drum machine in the 808 style: long boomy kick, snappy noise snare, crisp hats and the
- * classic two-tone cowbell. Same hits (and note map) as the analog Drums kit.
+ * classic two-tone cowbell. Same hits (and note map) as the analog Drums kit. `seed` is the
+ * track's (see trackSeed), which with the time picks each snare's and hat's noise.
  */
-export function createDrumMachine(output: Tone.InputNode) {
+export function createDrumMachine(output: Tone.InputNode, seed = 0) {
   const kick = new Tone.MembraneSynth({
     pitchDecay: 0.09,
     octaves: 5,
@@ -200,6 +227,8 @@ export function createDrumMachine(output: Tone.InputNode) {
 
   const hatFilter = new Tone.BiquadFilter({ type: 'highpass', frequency: 7000 }).connect(output);
   const hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.03 }, volume: -10 }).connect(hatFilter);
+  seedToneNoise(snareNoise.noise, noiseKey(seed, 'snare'));
+  seedToneNoise(hat.noise, noiseKey(seed, 'hat'));
 
   // 808 cowbell: two square waves (540 + 800 Hz) through a bandpass
   const bellFilter = new Tone.BiquadFilter({ type: 'bandpass', frequency: 700, Q: 2 }).connect(output);

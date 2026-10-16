@@ -333,7 +333,7 @@ export function stretchSound(id: string, sampleRate: number, ratio: number): Pro
         stretchedBuffers.set(key, buffer);
         // Forget the oldest speeds of this sound beyond the last few
         const prefix = `${id}|${sampleRate}|`;
-        const mine = [...stretchedBuffers.keys()].filter((k) => k.startsWith(prefix));
+        const mine = [...stretchedBuffers.keys()].filter((k) => k.startsWith(prefix) && !isWanted(k));
         for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_STRETCHES))) {
           stretchedBuffers.delete(old);
           stretching.delete(old);
@@ -417,7 +417,7 @@ export function warpSound(id: string, sampleRate: number, audio: Pick<ClipAudio,
       (buffer) => {
         warpedBuffers.set(key, buffer);
         const prefix = `${id}|${sampleRate}|`;
-        const mine = [...warpedBuffers.keys()].filter((k) => k.startsWith(prefix));
+        const mine = [...warpedBuffers.keys()].filter((k) => k.startsWith(prefix) && !isWanted(k));
         for (const old of mine.slice(0, Math.max(0, mine.length - KEEP_WARPS))) {
           warpedBuffers.delete(old);
           warping.delete(old);
@@ -429,6 +429,46 @@ export function warpSound(id: string, sampleRate: number, audio: Pick<ClipAudio,
     warping.set(key, promise);
   }
   return promise;
+}
+
+// ---------- copies the song plays ----------
+
+/** A stretched or warped copy a player wants (see wantCopies). */
+export type WantedCopy = { id: string; sampleRate: number; ratio: number } | { id: string; sampleRate: number; warp: Pick<ClipAudio, 'stretchBpm' | 'warp'>; bpm: number };
+
+/** The copies each player (an audio clip schedule, an export) plays, by player: never forgotten to make room. */
+const wanted = new Map<string, Set<string>>();
+const wantTimers = new Map<string, number>();
+const copyKey = (c: WantedCopy) => ('warp' in c ? warpBufferKey(c.id, c.sampleRate, c.warp, c.bpm) : stretchKey(c.id, c.sampleRate, c.ratio));
+function isWanted(key: string): boolean {
+  for (const keys of wanted.values()) if (keys.has(key)) return true;
+  return false;
+}
+
+/**
+ * The stretched and warped copies `owner` plays now (an empty list lets them go). Only the last
+ * few speeds of a sound are kept, for a tempo being dragged; a song that plays one sound at many
+ * speeds at once (an audio loop cut on every beat of a tempo glide) keeps every one it uses. With
+ * `make`, the missing ones are made a moment after the song stops changing.
+ */
+export function wantCopies(owner: string, copies: readonly WantedCopy[], make = true): void {
+  const keys = new Set(copies.map(copyKey));
+  if (keys.size) wanted.set(owner, keys);
+  else wanted.delete(owner);
+  clearTimeout(wantTimers.get(owner));
+  wantTimers.delete(owner);
+  if (!make || !copies.length) return;
+  wantTimers.set(
+    owner,
+    window.setTimeout(() => {
+      wantTimers.delete(owner);
+      for (const c of copies) {
+        if ('warp' in c) {
+          if (!warpedSound(c.id, c.sampleRate, c.warp, c.bpm)) void warpSound(c.id, c.sampleRate, c.warp, c.bpm).catch(() => {});
+        } else if (c.ratio !== 1 && !stretchedSound(c.id, c.sampleRate, c.ratio)) void stretchSound(c.id, c.sampleRate, c.ratio).catch(() => {});
+      }
+    }, 300)
+  );
 }
 
 /** A channel cut or padded with silence to `length` samples. */

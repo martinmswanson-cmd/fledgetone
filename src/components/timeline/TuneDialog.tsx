@@ -4,8 +4,10 @@ import { Loader2, Play, Square, Undo2, Wand2 } from 'lucide-react';
 import { Modal } from './Modal';
 import { useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
-import { detectKey, NOTE_NAMES, MAJOR_STEPS, MINOR_STEPS } from '../../store/songKey';
-import { CHROMATIC, hzToMidi, tuneChannels, type PitchFrame } from '../../audio/vocalTune';
+import { detectKey, NOTE_NAMES } from '../../store/songKey';
+import { hzToMidi, type PitchFrame } from '../../audio/vocalTune';
+import { hardTuneChannels, msToSpeed, speedToMs, TUNE_SCALE_NAMES, TUNE_SCALES, type TuneScale } from '../../audio/hardTune';
+import { useUiStore } from '../../store/uiStore';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../../audio/soundLibrary';
 import { encodeChannels } from '../../audio/exportWav';
 import { audioSourceSeconds } from '../../store/audioClips';
@@ -16,9 +18,13 @@ import { showToast } from './toastStore';
  * Tune a vocal (or any one-note-at-a-time recording): its pitch pulled onto the notes of a key.
  * The graph shows the pitch sung (grey) and where it goes (colour) against the key's notes. Apply
  * makes a tuned copy of the sound for the clip; the original is kept, and Untune goes back to it.
+ * Opened as Hard tune (or with that button) it starts at full strength and instant speed: the
+ * robotic sound (hardTune.ts). It's a processing step on the clip, so exports play the result.
  */
 
-type Scale = 'major' | 'minor' | 'chromatic';
+/** Natural tuning's starting settings: most of the way, gently (slides and vibrato kept). */
+const NATURAL = { strength: 0.8, speed: msToSpeed(40) };
+const HARD = { strength: 1, speed: 100 };
 const RATE = 44100;
 
 export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ clipId, onClose }) => {
@@ -30,9 +36,11 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
     return detectKey(s.clips, s.tracks);
   }, []);
   const [root, setRoot] = useState(songKey?.root ?? 0);
-  const [scale, setScale] = useState<Scale>(songKey?.mode ?? 'major');
-  const [strength, setStrength] = useState(0.8);
-  const [speed, setSpeed] = useState(40);
+  const [scale, setScale] = useState<TuneScale>(songKey?.mode ?? 'major');
+  const hard = useUiStore((s) => s.tuneHard);
+  const [strength, setStrength] = useState(hard ? HARD.strength : NATURAL.strength);
+  /** 0 (natural) to 100 (instant) */
+  const [speed, setSpeed] = useState(hard ? HARD.speed : NATURAL.speed);
   const [source, setSource] = useState<AudioBuffer | null>(null);
   const [busy, setBusy] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -47,20 +55,20 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
   }, [original]);
   useEffect(() => () => player.current?.stop(), []);
 
-  const steps = scale === 'chromatic' ? CHROMATIC : scale === 'major' ? MAJOR_STEPS : MINOR_STEPS;
+  const steps = TUNE_SCALES[scale];
   const settings = { root, steps, strength, speed };
   // The part of the sound the clip plays
   const from = audio?.offset ?? 0;
   const to = clip ? from + audioSourceSeconds(clip, bpm) : 0;
   // Worked out a moment after the settings stop moving (it takes a little while on a long take)
-  const [result, setResult] = useState<ReturnType<typeof tuneChannels> | null>(null);
+  const [result, setResult] = useState<ReturnType<typeof hardTuneChannels> | null>(null);
   useEffect(() => {
     if (!source) return;
     const timer = window.setTimeout(() => {
       const a = Math.floor(from * RATE);
       const b = Math.min(source.length, Math.ceil(to * RATE));
       const part = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c).slice(a, b));
-      setResult(tuneChannels(part, RATE, { root, steps, strength, speed }));
+      setResult(hardTuneChannels(part, RATE, { root, steps, strength, speed }));
     }, 200);
     return () => clearTimeout(timer);
   }, [source, from, to, root, steps, strength, speed]);
@@ -95,11 +103,11 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
     try {
       // The whole recording, so the clip keeps its place in it
       const all = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c));
-      const tuned = tuneChannels(all, RATE, settings).channels;
+      const tuned = hardTuneChannels(all, RATE, settings).channels;
       const name = `${(meta?.name ?? clip.name).replace(/\.[a-z0-9]+$/i, '')} (tuned).wav`;
       const sound = await importSoundFile(new Blob([encodeChannels(tuned, RATE, 24)], { type: 'audio/wav' }), name);
       useTimelineStore.getState().setClipAudio(clip.id, { soundId: sound.id, tunedFrom: original }, true);
-      showToast(`Tuned to ${NOTE_NAMES[root]} ${scale}. Untune (in the same dialog) goes back to the original.`);
+      showToast(`Tuned to ${NOTE_NAMES[root]} ${TUNE_SCALE_NAMES[scale]}. Untune (in the same dialog) goes back to the original.`);
       onClose();
     } catch (err) {
       showToast(`Couldn't tune it: ${err instanceof Error ? err.message : String(err)}`);
@@ -115,7 +123,7 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
   };
 
   return (
-    <Modal title="Tune vocal" onClose={onClose} wide>
+    <Modal title={hard ? 'Hard tune' : 'Tune vocal'} onClose={onClose} wide>
       <p>
         Pulls the pitch of <span className="text-forge-text">{clip.name}</span> onto the notes of a key, keeping its timing. Best on one voice or one instrument
         playing one note at a time.{songKey ? ` The song's notes are in ${songKey.name}.` : ''}
@@ -130,21 +138,46 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
               </option>
             ))}
           </select>
-          <select value={scale} onChange={(e) => setScale(e.target.value as Scale)} className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text" aria-label="Scale">
-            <option value="major">major</option>
-            <option value="minor">minor</option>
-            <option value="chromatic">chromatic (any note)</option>
+          <select value={scale} onChange={(e) => setScale(e.target.value as TuneScale)} className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text" aria-label="Scale">
+            {(Object.keys(TUNE_SCALES) as TuneScale[]).map((k) => (
+              <option key={k} value={k}>
+                {TUNE_SCALE_NAMES[k]}
+              </option>
+            ))}
           </select>
         </label>
+        <span className="flex items-center gap-1">
+          {(
+            [
+              ['Natural', NATURAL, 'Most of the way onto the notes, gently: slides and vibrato kept'],
+              ['Hard tune', HARD, 'All the way, instantly: the robotic stepped sound'],
+            ] as const
+          ).map(([label, preset, title]) => (
+            <button
+              key={label}
+              type="button"
+              title={title}
+              onClick={() => {
+                setStrength(preset.strength);
+                setSpeed(preset.speed);
+              }}
+              className={`h-7 px-2 rounded border ${strength === preset.strength && speed === preset.speed ? 'border-cyan-400/70 text-cyan-100 bg-cyan-500/15' : 'border-forge-border hover:text-forge-text'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
         <label className="flex items-center gap-1.5" title="How far onto the note: 100% lands right on it">
           STRENGTH
           <input type="range" min={0} max={1} step={0.05} value={strength} onChange={(e) => setStrength(Number(e.target.value))} className="w-28 accent-cyan-400" aria-label="Strength" />
           <span className="w-10 text-forge-text">{Math.round(strength * 100)}%</span>
         </label>
-        <label className="flex items-center gap-1.5" title="How fast it gets there: 0 ms is the hard, robotic tuned sound; 50 ms and up keeps slides and vibrato">
+        <label className="flex items-center gap-1.5" title="How fast it gets onto the note: natural keeps slides and vibrato; instant is the hard, robotic tuned sound">
           SPEED
-          <input type="range" min={0} max={300} step={5} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} className="w-28 accent-cyan-400" aria-label="Speed" />
-          <span className="w-14 text-forge-text">{speed === 0 ? 'instant' : `${speed} ms`}</span>
+          <span className="text-forge-muted">natural</span>
+          <input type="range" min={0} max={100} step={1} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} className="w-28 accent-cyan-400" aria-label="Speed" />
+          <span className="text-forge-muted">instant</span>
+          <span className="w-14 text-forge-text">{speedToMs(speed)} ms</span>
         </label>
       </div>
 

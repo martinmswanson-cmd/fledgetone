@@ -1,7 +1,8 @@
 {
-  "name": "bos-beat-box",
+  "name": "fledgetone",
   "private": true,
-  "version": "0.0.0",
+  "license": "GPL-3.0-or-later",
+  "version": "2026.10.15-34",
   "type": "module",
   "scripts": {
     "dev": "npm run build:runtime && vite",

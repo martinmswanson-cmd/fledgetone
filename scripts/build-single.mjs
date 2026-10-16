@@ -33,6 +33,12 @@ html = html.replace(/<link rel="apple-touch-icon" href="([^"]+)"\s*\/?>/, (_, hr
   `<link rel="apple-touch-icon" href="data:image/png;base64,${readFileSync(join(dist, href.replace(/^\.?\//, ""))).toString('base64')}" />`
 );
 
+// No web app manifest or service worker: they're separate files on fledgetone.com, and a one-file
+// copy has neither (the meta tells the app not to look for a worker: src/pwa/pwa.ts)
+html = html.replace(/\s*<link rel="manifest"[^>]*>/, '');
+html = html.replace(/<meta charset="UTF-8" \/>/, (tag) => `${tag}\n    <meta name="fledgetone-build" content="single" />`);
+if (!html.includes('name="fledgetone-build"')) throw new Error('No <meta charset="UTF-8" /> to put the one-file marker after');
+
 // The bundled libraries' licence notices travel with the file (see thirdPartyLicenses in
 // vite.config.ts). "--" can't appear inside an HTML comment.
 const licenses = read('third-party-licenses.txt').replace(/--/g, '- -');

@@ -25,6 +25,7 @@ const CATEGORY_WORDS: Record<InstrumentCategory, string> = {
   FX: 'fx transition riser sweep impact build buildup drop whoosh',
   'Sound Effects': 'sfx sound effect effects foley noise',
   Chiptune: 'chip chiptune 8 bit 8bit retro nes gameboy game pixel arcade',
+  'Retro (GM)': 'retro general midi gm old older classic 90s soundfont',
   'Your Sounds': 'sample samples your own audio import slicer chop recording',
 };
 

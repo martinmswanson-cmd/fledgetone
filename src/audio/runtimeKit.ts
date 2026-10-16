@@ -1,5 +1,6 @@
 import runtimeSource from '../../dist-runtime/bos-player.js?raw';
 import { createZip } from './zip';
+import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
 import { embedSounds } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
 import { serializeProject, type ProjectSnapshot } from '../store/project';
@@ -82,5 +83,6 @@ index.html is a small test page: serve this folder (for example "npx serve") and
     { name: 'bos-player.js', data: new Blob([runtimeSource], { type: 'text/javascript' }) },
     { name: 'index.html', data: new Blob([example], { type: 'text/html' }) },
     { name: 'README.txt', data: new Blob([readme], { type: 'text/plain' }) },
+    { name: EXPORTED_FILES_LICENCE_NAME, data: new Blob([EXPORTED_FILES_LICENCE], { type: 'text/plain' }) },
   ]);
 }

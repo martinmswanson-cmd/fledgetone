@@ -474,7 +474,7 @@ export const ACCOMP_STYLES: ReadonlyArray<{ id: AccompStyle; name: string; detai
   { id: 'strum', name: 'Strummed guitar', detail: 'Down, down-up, up, down-up: campfires, villages, travel', instrument: 'guitar', track: 'Strums' },
   { id: 'gliss', name: 'Harp glissando', detail: 'A sweep up the chord on each change: wonder, magic, reveals', instrument: 'realHarp', track: 'Harp sweeps' },
   { id: 'ostinato', name: 'String ostinato (3+3+2)', detail: 'Driving 16ths on root and fifth, accented 3+3+2: battles, chases', instrument: 'realViolinsShort', track: 'Ostinato' },
-  { id: 'sparkle', name: 'Sparkle', detail: 'A few high chord notes here and there: stars, ice, fairy lights', instrument: 'celesta', track: 'Sparkle' },
+  { id: 'sparkle', name: 'Sparkle', detail: 'A few high chord notes here and there: stars, ice, fairy lights', instrument: 'realCelesta', track: 'Sparkle' },
   { id: 'fanfare', name: 'Horn fanfare', detail: 'A triplet pickup, then up the chord to the octave: heroes, titles, victories', instrument: 'realHorn', track: 'Fanfare' },
   { id: 'drone', name: 'Drone', detail: 'The first chord\'s root and fifth held under everything: folk, deserts, ancient places', instrument: 'slowStrings', track: 'Drone' },
 ];

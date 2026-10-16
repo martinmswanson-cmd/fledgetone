@@ -1,8 +1,9 @@
 import * as Tone from 'tone';
 import type { DrumRack, MultiSample, RackPad } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
-import { padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
+import { chopSpan, padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
 import { decodeSound } from '../soundLibrary';
+import { alwaysStereo } from '../nativeNodes';
 import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../instruments';
 
 /**
@@ -58,6 +59,8 @@ interface PadChain {
 
 export function createRackInstrument(output: Tone.InputNode, initial: DrumRack | undefined): TrackInstrument & { setRack: (rack: DrumRack | undefined) => void } {
   const out = new Tone.Gain(1).connect(output);
+  // Two channels from here on, whatever mix of one- and two-channel sounds it plays (see alwaysStereo)
+  alwaysStereo(out);
   const raw = out.context.rawContext as unknown as Raw;
   const into = out.input as unknown as AudioNode;
   let rack = initial;
@@ -96,6 +99,8 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     if (chain) return chain;
     const input = raw.createGain();
     const shaper = raw.createWaveShaper();
+    // (oversampled, so the drive's clipping doesn't fold back as fizz)
+    shaper.oversample = '4x';
     const highpass = raw.createBiquadFilter();
     highpass.type = 'highpass';
     highpass.Q.value = 0.7;
@@ -171,18 +176,31 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     source.playbackRate.value = Math.pow(2, pad.pitch / 12);
     const env = raw.createGain();
     const level = Math.max(0, Math.min(1, velocity)) ** 1.2;
-    env.gain.setValueAtTime(level, at);
-    const length = buffer.duration / source.playbackRate.value;
+    // A chop plays its stretch of the sound (mirrored when reversed: the buffer is the reversed copy),
+    // from a whole frame (a source read between two frames is interpolated, which blurs its top)
+    const chop = chopSpan(pad, buffer.duration);
+    const offset = Math.round(chop.offset * buffer.sampleRate) / buffer.sampleRate;
+    const length = chop.seconds / source.playbackRate.value;
+    if (!(length > 0)) return;
+    const fade = Math.min(pad.fade ?? 0, length / 2);
+    if (fade > 0) {
+      env.gain.setValueAtTime(0, at);
+      env.gain.linearRampToValueAtTime(level, at + fade);
+    } else env.gain.setValueAtTime(level, at);
     let stopAt = at + length;
     if (pad.decay > 0 && pad.decay < length) {
       // Holds a moment, then dies away to about -60 dB by `decay`
-      env.gain.setValueAtTime(level, at + pad.decay * 0.25);
-      env.gain.setTargetAtTime(0, at + pad.decay * 0.25, (pad.decay * 0.75) / 6.9);
+      env.gain.setValueAtTime(level, Math.max(at + fade, at + pad.decay * 0.25));
+      env.gain.setTargetAtTime(0, Math.max(at + fade, at + pad.decay * 0.25), (pad.decay * 0.75) / 6.9);
       stopAt = at + pad.decay + 0.02;
+    } else if (fade > 0) {
+      // Out at the chop's end as it came in, so a cut mid-note doesn't click
+      env.gain.setValueAtTime(level, stopAt - fade);
+      env.gain.linearRampToValueAtTime(0, stopAt);
     }
     source.connect(env);
     env.connect(chain.input);
-    source.start(at);
+    source.start(at, offset, chop.seconds);
     source.stop(stopAt);
     const h: Hit = { source, env, pad: i, stopAt };
     hits.add(h);
@@ -249,6 +267,8 @@ interface Voice {
 
 export function createMultiInstrument(output: Tone.InputNode, initial: MultiSample | undefined): TrackInstrument & { setMulti: (multi: MultiSample | undefined) => void } {
   const out = new Tone.Gain(1).connect(output);
+  // Two channels from here on, whatever mix of one- and two-channel sounds it plays (see alwaysStereo)
+  alwaysStereo(out);
   const raw = out.context.rawContext as unknown as Raw;
   const into = out.input as unknown as AudioNode;
   let multi = initial;

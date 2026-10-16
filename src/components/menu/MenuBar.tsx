@@ -1,3 +1,4 @@
+import { BUS_PRESETS } from '../../store/busPresets';
 import { isBus } from '../../store/buses';
 import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, type BuiltinEntry } from '../../store/builtinPlugins';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -10,9 +11,14 @@ import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/
 import { canChooseSaveLocation, pickProjectFile, saveProjectAs, saveProjectFile } from '../timeline/projectFile';
 import { showToast } from '../timeline/toastStore';
 import { reverseBlock } from '../../store/reverseActions';
+import { openArrange } from '../timeline/arrangeDialogStore';
 import { formatBarCount } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
+import { APP_VERSION } from '../../version';
+import { LESSONS } from '../../tour/lessons';
+import { useTourStore } from '../../tour/tourStore';
+import { installApp, usePwa } from '../../pwa/pwa';
 
 /**
  * The menu bar: every tool in the app, in the place a DAW keeps it (File, Edit, Song, Track,
@@ -93,6 +99,7 @@ const MENUS: MenuDef[] = [
       { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
       { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },
       { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export'), divider: true },
+      { label: 'Beat store package…', run: () => ui().setDialog('beatStore'), title: 'A tagged MP3 preview, the WAV, the stems and a cover in one .zip, named with the tempo and key' },
       { label: 'Share…', run: () => ui().setDialog('share') },
       { label: 'Cut song to length…', run: () => ui().setDialog('cut'), divider: true },
       { label: 'Export markers for video editors…', run: inDock('video', () => reveal('[aria-label="Export the markers for video editing software"]')) },
@@ -142,6 +149,8 @@ const MENUS: MenuDef[] = [
         { label: `Insert 4 bars at bar ${at}`, run: () => say(s.insertBars(at, 4)) },
         { label: 'Delete bars In → Out', run: () => say(s.removeBars(s.loopRegion.inBar, s.loopRegion.outBar)) },
         { label: `Build-up & drop at bar ${Math.max(2, at)}`, run: () => say(s.addBuildAndDrop(Math.max(2, at))), divider: true },
+        { label: 'Arrange a beat: drops, beat switch, song form, tag…', run: () => openArrange('drops', Math.max(2, at)) },
+        { label: 'Dark melody…', run: () => openArrange('melody', at) },
         { label: `Key change up a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, 1)) },
         { label: `Key change up a whole step from bar ${at}`, run: () => say(s.keyChangeFrom(at, 2)) },
         { label: `Key change down a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, -1)) },
@@ -182,6 +191,17 @@ const MENUS: MenuDef[] = [
         t?.folder
           ? { label: `Take out of “${t.folder.name}”`, run: () => tl().setTrackFolder(t.id, null) }
           : { label: 'New folder with this track', run: () => (t ? tl().groupIntoFolder([t.id]) : NEED_TRACK), disabled: !t, title: 'Right-click other tracks to move them into it' },
+        ...BUS_PRESETS.map((p, i) => ({
+          label: `Bus preset: ${p.name}`,
+          divider: i === 0,
+          title: `${p.about} On a selected bus, sets it up; otherwise groups the ${p.role === 'music' ? 'music' : p.role} tracks into a new bus.`,
+          run: () => {
+            const onBus = t && isBus(t) ? t.id : undefined;
+            const id = tl().applyBusPreset(p.id, onBus);
+            if (!id) return `No ${p.role === 'music' ? 'music' : p.role} tracks playing straight to the master to put on a ${p.name.toLowerCase()}.`;
+            return onBus ? `${t!.name} is set up as a ${p.name.toLowerCase()}` : undefined;
+          },
+        })),
         { label: 'Colour, folders and more: right-click a track’s name', run: () => undefined, disabled: true },
         { label: 'Mute', shortcut: '', run: () => (t ? tl().toggleMute(t.id) : NEED_TRACK), checked: !!t?.isMuted, disabled: !t, divider: true },
         { label: 'Solo', run: () => (t ? tl().toggleSolo(t.id) : NEED_TRACK), checked: !!t?.isSoloed, disabled: !t },
@@ -230,7 +250,6 @@ const MENUS: MenuDef[] = [
       const clip = selectedClips()[0];
       return [
         { label: 'Mixer', run: inDock('mixer') },
-        { label: 'Instruments & sounds', run: inDock('instruments') },
         { label: 'Sound effects maker', run: inDock('sfx') },
         { label: 'Generate variations of the selected clip…', run: () => (clip ? ui().setVariationsClip(clip.id) : 'Select a short clip first.'), disabled: !clip, divider: true },
         { label: 'Tune vocal (selected audio clip)…', run: () => (clip?.audio ? ui().setTuneClip(clip.id) : 'Select an audio clip (a recorded vocal) first.'), disabled: !clip?.audio },
@@ -242,6 +261,15 @@ const MENUS: MenuDef[] = [
           s.toggleInspector(true);
           ui().setInspectorTab('track');
           void reveal('[aria-label="Synth Designer"]');
+        } },
+        { label: 'Drum Designer', run: () => {
+          const s = tl();
+          const existing = s.tracks.find((t) => t.instrumentKey === 'designedKit');
+          if (existing) s.selectTrack(existing.id);
+          else s.addTrack('designedKit');
+          s.toggleInspector(true);
+          ui().setInspectorTab('track');
+          void reveal('[aria-label="Drum Designer"]');
         } },
         { label: 'Record from the microphone', run: () => press('button[title^="Record from the microphone"], button[title^="Stop recording"]'), divider: true },
         { label: 'MIDI keyboard…', run: () => press('button[title^="MIDI input"]') },
@@ -303,7 +331,6 @@ const MENUS: MenuDef[] = [
       return [
         tab('mixer', 'Mixer'),
         tab('eq', 'EQ & Dynamics'),
-        tab('instruments', 'Instruments & sounds'),
         tab('game', 'Game'),
         tab('video', 'Video'),
         tab('sfx', 'Sound effects'),
@@ -317,6 +344,28 @@ const MENUS: MenuDef[] = [
     },
   },
   {
+    id: 'learn',
+    label: 'Learn',
+    // The tour and every tutorial, one click each (a tutorial left part-way picks up where it stopped)
+    items: () => {
+      const progress = useTourStore.getState().progress;
+      return [
+        { label: 'Tour & tutorials…', run: () => ui().setDialog('learn') },
+        ...LESSONS.map((l, i) => {
+          const p = progress[l.id];
+          const resume = !p?.done && p?.step !== undefined && p.step > 0;
+          return {
+            label: `${l.title}${resume ? ' (resume)' : ''}`,
+            checked: !!p?.done,
+            divider: i === 0,
+            run: () => useTourStore.getState().start(l.id, resume ? p.step : 0),
+          };
+        }),
+        { label: 'Guide', shortcut: '?', run: () => ui().openGuide(), divider: true },
+      ];
+    },
+  },
+  {
     id: 'help',
     label: 'Help',
     items: () => [
@@ -324,7 +373,10 @@ const MENUS: MenuDef[] = [
       { label: 'Tour & tutorials', run: () => ui().setDialog('learn') },
       { label: 'Search everything', shortcut: PALETTE_SHORTCUT, run: () => ui().setPaletteOpen(true) },
       { label: 'Keyboard shortcuts', run: () => ui().openGuide('keyboard-shortcuts'), divider: true },
+      ...(usePwa.getState().installed ? [] : [{ label: 'Install Fledgetone…', run: installApp, divider: true, title: 'Install Fledgetone as an app: its own window, and it opens offline' }]),
       { label: 'Report a problem…', run: () => ui().setDialog('report'), divider: true },
+      { label: `What's new (version ${APP_VERSION})`, run: () => ui().setDialog('changes') },
+      { label: 'Terms of use', run: () => ui().setDialog('terms') },
     ],
   },
 ];

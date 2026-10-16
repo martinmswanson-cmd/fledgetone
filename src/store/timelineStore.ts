@@ -34,6 +34,10 @@
  * (liveTracks.ts), the clip schedule (scheduler.ts), the Transport's loop, tempo and swing, the
  * master inserts and returns, ducking and intensity.
  */
+import { defaultClipper, type ClipperSettings } from '../audio/effects/clipper';
+import type { RoomStyle } from '../audio/effects/roomIR';
+import { makeSpace } from './makeSpace';
+import { busPresetById, busPresetFx, busPresetMembers, type BusPresetId } from './busPresets';
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
@@ -84,9 +88,10 @@ import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, Inst
 import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
+import type { DrumDesign } from './drumDesign';
 import { durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
-import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind } from '../audio/instrumentCatalog';
-import { hasRecordings, loadSamples } from '../audio/samplers/samplerManager';
+import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
+import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
@@ -297,6 +302,7 @@ function restoreEntry(s: TimelineState, entry: HistoryEntry): Partial<TimelineSt
     masterDelayTime: masterFx.delayTime,
     masterDelayFeedback: masterFx.delayFeedback,
     masterReverbRoom: masterFx.room ?? null,
+    masterRoomStyle: masterFx.roomStyle ?? 'hall',
     master,
     // The song's tempo isn't undone, so markers held to their time are placed at today's tempo
     markers: retimeMarkers(entry.markers, now),
@@ -479,6 +485,11 @@ interface TimelineState {
   addAudioTakes: (trackId: string | null, startBar: number, lengthBars: number, takes: Array<{ audio: ClipAudio; name?: string }>, clipName: string) => string | null;
   /** A new bus with these tracks playing into it, placed after the last of them (one undo step). Returns its id. */
   groupIntoBus: (trackIds: readonly string[], name?: string) => string | null;
+  /**
+   * A bus preset (busPresets.ts): set bus `busId` up for the job, or, with no bus, group the tracks
+   * that do it into a new bus set up so. One undo step. Returns the bus's id (null: nothing to do).
+   */
+  applyBusPreset: (preset: BusPresetId, busId?: string) => string | null;
   /** Put tracks in a new folder (one undo step). Returns its id. */
   groupIntoFolder: (trackIds: readonly string[], name?: string) => string | null;
   /** Take every track out of a folder (one undo step). */
@@ -499,6 +510,10 @@ interface TimelineState {
   toggleArm: (trackId: string) => void;
   setTrackVolume: (trackId: string, db: number) => void;
   setTrackPan: (trackId: string, pan: number) => void;
+  /** Make space (makeSpace.ts): EQ moves so the parts stop covering each other, one undo step. Returns how many tracks changed. */
+  makeSpace: () => number;
+  /** How far back on the stage the track sits (Track.distance), 0 to 1 */
+  setTrackDistance: (trackId: string, distance: number) => void;
   setTrackEq: (trackId: string, eq: Partial<TrackEq>) => void;
   resetTrackEq: (trackId: string) => void;
   setTrackReverbSend: (trackId: string, send: number) => void;
@@ -536,6 +551,10 @@ interface TimelineState {
   setTrackMulti: (trackId: string, multi: MultiSample | undefined, record?: boolean) => void;
   /** Change a Synth Designer track's patch (`record` false while a knob is dragged: checkpoint() first). */
   setTrackSynth: (trackId: string, synth: SynthPatch, record?: boolean) => void;
+  /** The heavy bass tools on a track: the 808 designer, legato glide, the Sub enhancer (undefined: off / back to the original). */
+  setTrackBass: (trackId: string, edit: Partial<Pick<Track, 'bass808' | 'glide' | 'subLayer'>>, record?: boolean) => void;
+  /** A Designed Kit's drum sounds (see drumDesign.ts); `record`: its own undo step (a slider records once per drag itself). */
+  setTrackDrumDesign: (trackId: string, design: DrumDesign | undefined, record?: boolean) => void;
   /**
    * "Chop to Slicer": a Slicer track playing `slicer`, right after the audio clip's track, with a
    * clip at the audio clip's place that plays the slices in order (one undo step). Returns the
@@ -549,6 +568,10 @@ interface TimelineState {
   masterDelayFeedback: number;
   /** The recorded room the master reverb plays through (a sound id), or null for its generated one */
   masterReverbRoom: string | null;
+  /** The kind of room the generated reverb is */
+  masterRoomStyle: RoomStyle;
+  /** Choose the generated reverb's room: one undo step. */
+  setMasterRoomStyle: (style: RoomStyle) => void;
   setMasterReverbDecay: (decay: number) => void;
   /** Play the master reverb through a recorded room (a sound id), or its generated one (null): one undo step. */
   setMasterReverbRoom: (soundId: string | null) => void;
@@ -561,6 +584,12 @@ interface TimelineState {
   setMasterOtt: (patch: Partial<MasterSettings['ott']>, record?: boolean) => void;
   /** Change the stereo width, recorded like setMasterOtt. */
   setMasterWidth: (patch: Partial<MasterSettings['width']>, record?: boolean) => void;
+  /** Choose the master compressor's style (recorded for undo). */
+  setMasterGlue: (glue: MasterSettings['glue']) => void;
+  /** Set the master Level (dB, a gain just before the limiter), recorded like setMasterOtt. */
+  setMasterLevel: (db: number, record?: boolean) => void;
+  /** Change the master clipper (after the Level, before the limiter), recorded like setMasterOtt. */
+  setMasterClipper: (patch: Partial<ClipperSettings>, record?: boolean) => void;
 
   // Clips
   selectClip: (clipId: string, additive: boolean) => void;
@@ -705,7 +734,7 @@ interface TimelineState {
   /** Set how fast a Wobble / Growl Bass clip wobbles (undoable). */
   setClipWobble: (clipId: string, wobble: WobbleRate) => void;
   /** Give a clip its own swing, or (null) let it follow the song's (undoable). */
-  setClipGroove: (clipId: string, groove: ClipGroove | null) => void;
+  setClipGroove: (clipId: string, groove: ClipGroove | null, record?: boolean) => void;
   /** Add notes to a clip (undoable). Returns the new note ids. */
   addNotes: (clipId: string, notes: Omit<NoteEvent, 'id'>[]) => string[];
   /** Replace a clip's notes without recording history (drag gestures checkpoint() once first). */
@@ -837,13 +866,25 @@ function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: strin
     isSoloed: false,
     isArmed: false,
     volume: 0,
-    pan: 0,
+    // An orchestral instrument takes its usual seat on the stage (seatOf)
+    pan: seatOf(instrumentKey)?.pan ?? 0,
+    ...(seatOf(instrumentKey) ? { distance: seatOf(instrumentKey)!.distance } : {}),
     eq: { low: 0, mid: 0, high: 0 },
-    fx: instrumentKey === 'return' ? returnFx() : defaultTrackFx(),
-    reverbSend: 0.1,
+    fx: instrumentKey === 'return' ? returnFx() : withHumanFeel(instrumentKey, defaultTrackFx()),
+    // An orchestral instrument plays in the hall (a recording of one has as much of the room as of
+    // the instrument); anything else starts nearly dry
+    reverbSend: seatOf(instrumentKey) ? SEATED_SEND : 0.1,
     delaySend: 0,
     expressive: true,
   };
+}
+/** A new orchestral track's reverb send (its distance adds to it: see distance.ts) */
+const SEATED_SEND = 0.35;
+
+/** A recorded instrument starts with a player's feel (the Human insert, see playerFeel in the catalog). */
+function withHumanFeel(key: InstrumentKey, fx: Track['fx']): Track['fx'] {
+  const feel = playerFeel(key);
+  return feel ? { ...fx, human: { ...fx.human, on: true, ...feel, pitch: 0 } } : fx;
 }
 
 /** A return's effects start fully wet (the dry sound plays from the tracks that send to it), so its Delay and Reverb show the mix they'll use. */
@@ -896,8 +937,14 @@ export interface AutosaveStatus {
 
 /** The store's master reverb / delay settings as one object. */
 /** The master effects (the reverb and delay the sends go to) as the song has them now. */
-export function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number; masterReverbRoom?: string | null }): MasterFx {
-  return { reverbDecay: s.masterReverbDecay, delayTime: s.masterDelayTime, delayFeedback: s.masterDelayFeedback, ...(s.masterReverbRoom ? { room: s.masterReverbRoom } : {}) };
+export function masterFxOf(s: { masterReverbDecay: number; masterDelayTime: string; masterDelayFeedback: number; masterReverbRoom?: string | null; masterRoomStyle?: RoomStyle }): MasterFx {
+  return {
+    reverbDecay: s.masterReverbDecay,
+    delayTime: s.masterDelayTime,
+    delayFeedback: s.masterDelayFeedback,
+    ...(s.masterReverbRoom ? { room: s.masterReverbRoom } : {}),
+    ...(s.masterRoomStyle && s.masterRoomStyle !== 'hall' ? { roomStyle: s.masterRoomStyle } : {}),
+  };
 }
 
 let rafId = 0;
@@ -1238,6 +1285,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     masterDelayTime: '8n',
     masterDelayFeedback: 0.35,
     masterReverbRoom: null,
+    masterRoomStyle: 'hall',
     master: defaultMasterSettings(),
     past: [],
     future: [],
@@ -1580,7 +1628,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         isInspectorOpen: true,
         ...pushPast(s),
       }));
-      if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
+      if (hasRecordings(instrumentKey)) void loadQuick(instrumentKey).catch(() => {});
       return newTrack.id;
     },
 
@@ -1827,6 +1875,24 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return bus.id;
     },
 
+    applyBusPreset: (preset, busId) => {
+      const s = get();
+      const name = busPresetById(preset).name;
+      if (busId) {
+        const bus = s.tracks.find((t) => t.id === busId && isBus(t));
+        if (!bus) return null;
+        // A bus still called "Bus N" takes the preset's name
+        const renamed = /^Bus \d+$/.test(bus.name) ? { name } : {};
+        set({ tracks: s.tracks.map((t) => (t === bus ? { ...t, ...renamed, fx: busPresetFx(preset, t.fx) } : t)), ...pushPast(s) });
+        return busId;
+      }
+      const members = busPresetMembers(preset, s.tracks, s.clips, isMixTrack);
+      const id = members.length ? get().groupIntoBus(members.map((t) => t.id), name) : null;
+      // (groupIntoBus made the undo step; the bus's effects belong to it)
+      if (id) set((st) => ({ tracks: st.tracks.map((t) => (t.id === id ? { ...t, fx: busPresetFx(preset, t.fx) } : t)) }));
+      return id;
+    },
+
     // Undoable: history entries carry the tracks, so Undo brings the track and its clips back together
     groupIntoFolder: (trackIds, name) => {
       const s = get();
@@ -1920,7 +1986,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       );
       // A bus that becomes an instrument: the tracks that played into it go back to the master
       if (isMixTrack(current)) set((s) => ({ tracks: tidySends(tidyRoutes(s.tracks)) }));
-      if (hasRecordings(instrumentKey)) void loadSamples(instrumentKey).catch(() => {});
+      if (hasRecordings(instrumentKey)) void loadQuick(instrumentKey).catch(() => {});
     },
 
     toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted }), true),
@@ -1944,6 +2010,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     },
     setTrackVolume: (id, db) => updateTrack(id, () => ({ volume: Math.max(-60, Math.min(6, db)) })),
     setTrackPan: (id, pan) => updateTrack(id, () => ({ pan: Math.max(-1, Math.min(1, pan)) })),
+    makeSpace: () => {
+      const s = get();
+      const { tracks, changes } = makeSpace(s.tracks, s.clips);
+      if (!changes.length) return 0;
+      set((st) => ({ tracks, ...pushPast(st) }));
+      return changes.length;
+    },
+    setTrackDistance: (id, distance) => updateTrack(id, () => ({ distance: Math.max(0, Math.min(1, distance)) })),
 
     setTrackEq: (id, eqPatch) => {
       updateTrack(id, (t) => ({
@@ -2019,7 +2093,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         if (!clip?.audio || !audio) return s;
         if (patch.tunedFrom === undefined && 'tunedFrom' in patch) delete audio.tunedFrom;
         const same =
-          (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut', 'tunedFrom', 'reversedFrom'] as const).every((k) => audio[k] === clip.audio![k]) &&
+          (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut', 'tunedFrom', 'reversedFrom', 'shiftedFrom', 'shift'] as const).every((k) => audio[k] === clip.audio![k]) &&
           JSON.stringify(audio.warp ?? []) === JSON.stringify(clip.audio.warp ?? []) &&
           JSON.stringify(audio.envelope ?? []) === JSON.stringify(clip.audio.envelope ?? []);
         if (same) return s;
@@ -2049,6 +2123,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       }),
 
     setTrackSynth: (trackId, synth, record = true) => updateTrack(trackId, () => ({ synth }), record),
+    setTrackDrumDesign: (trackId, drumDesign, record = true) => updateTrack(trackId, () => ({ drumDesign }), record),
+
+    setTrackBass: (trackId, edit, record = true) => updateTrack(trackId, () => edit, record),
 
     setTrackRack: (trackId, rack, record = true) => {
       for (const pad of rack?.pads ?? []) if (pad.soundId) ensureSound(pad.soundId);
@@ -2097,6 +2174,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       updateTrack(id, (t) => ({ fx: normalizeTrackFx({ ...t.fx, [effect]: { ...t.fx[effect], ...patch } }) }), record);
     },
 
+    setMasterRoomStyle: (style) => {
+      if (style === get().masterRoomStyle) return;
+      set((s) => ({ masterRoomStyle: style, ...pushPast(s) }));
+      applyMasterFx();
+    },
+
     setMasterReverbRoom: (soundId) => {
       if (soundId === get().masterReverbRoom) return;
       set((s) => ({ masterReverbRoom: soundId, ...pushPast(s) }));
@@ -2124,6 +2207,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
 
     setMasterOtt: (patch, record = false) => setMaster((m) => ({ ...m, ott: { ...m.ott, ...patch } }), record),
     setMasterWidth: (patch, record = false) => setMaster((m) => ({ ...m, width: { ...m.width, ...patch } }), record),
+    setMasterGlue: (glue) => setMaster((m) => ({ ...m, glue }), true),
+    setMasterLevel: (db, record = false) => setMaster((m) => ({ ...m, level: db }), record),
+    setMasterClipper: (patch, record = false) => setMaster((m) => ({ ...m, clipper: { ...(m.clipper ?? defaultClipper()), ...patch } }), record),
 
     // ---------- Clips ----------
     selectClip: (clipId, additive) =>
@@ -2506,7 +2592,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         isSelected: true,
         notes: fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range).map((n) => ({ ...n, id: uid('note') })),
       };
-      if (hasRecordings(track.instrumentKey)) void loadSamples(track.instrumentKey).catch(() => {});
+      if (hasRecordings(track.instrumentKey)) void loadQuick(track.instrumentKey).catch(() => {});
       set((st) => ({
         tracks: [...st.tracks, track],
         clips: [...st.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip],
@@ -2824,10 +2910,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         isArmed: t.id === armedId,
       }));
 
-      // Start downloading samples for any sampled instruments
-      safeTracks.forEach((t: Track) => {
-        if (hasRecordings(t.instrumentKey)) void loadSamples(t.instrumentKey).catch(() => {});
-      });
+      // Start downloading the recorded instruments, what the song plays on each first
+      loadSongSamples(safeTracks, p.clips);
       const masterFx = p.masterFx ?? DEFAULT_MASTER_FX;
 
       set({
@@ -2850,6 +2934,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         masterDelayTime: masterFx.delayTime,
         masterDelayFeedback: masterFx.delayFeedback,
         masterReverbRoom: masterFx.room ?? null,
+        masterRoomStyle: masterFx.roomStyle ?? 'hall',
         master: p.master ?? defaultMasterSettings(),
         fps: p.fps ?? DEFAULT_FRAME_RATE,
         dropFrame: p.dropFrame === true && p.fps === 29.97,
@@ -2952,12 +3037,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         return { clips: s.clips.map((c) => (c === clip ? { ...c, wobble } : c)), ...pushPast(s) };
       }),
 
-    setClipGroove: (clipId, groove) =>
+    setClipGroove: (clipId, groove, record = true) =>
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip || JSON.stringify(clip.groove ?? null) === JSON.stringify(groove)) return s;
         const { groove: _old, ...rest } = clip;
-        return { clips: s.clips.map((c) => (c === clip ? (groove ? { ...rest, groove } : rest) : c)), ...pushPast(s) };
+        return { clips: s.clips.map((c) => (c === clip ? (groove ? { ...rest, groove } : rest) : c)), ...(record ? pushPast(s) : {}) };
       }),
 
     addNotes: (clipId, notes) => {
@@ -3110,6 +3195,18 @@ export function currentProject(): ProjectSnapshot {
 /** Autosave right away (set while connectAutosave is connected). */
 let autosaveNow: (() => void) | null = null;
 
+/** Write an autosave that's waiting (set while connectAutosave is connected). */
+let autosaveFlush: (() => void) | null = null;
+
+/**
+ * Write any edit not autosaved yet, right now (before the app reloads into a new version).
+ * False when the autosave fails (the browser's storage is full): the work is then only on screen.
+ */
+export function flushAutosave(): boolean {
+  autosaveFlush?.();
+  return useTimelineStore.getState().autosaveStatus?.ok !== false;
+}
+
 /** Try a failing autosave again now, e.g. once Restore or Dismiss frees the set-aside session's space. */
 export function retryAutosave(): void {
   if (useTimelineStore.getState().autosaveStatus?.ok === false) autosaveNow?.();
@@ -3191,6 +3288,7 @@ export function connectAutosave(): () => void {
       state.masterDelayTime === prev.masterDelayTime &&
       state.masterDelayFeedback === prev.masterDelayFeedback &&
       state.masterReverbRoom === prev.masterReverbRoom &&
+      state.masterRoomStyle === prev.masterRoomStyle &&
       state.master === prev.master &&
       state.fps === prev.fps &&
       state.dropFrame === prev.dropFrame &&
@@ -3215,6 +3313,7 @@ export function connectAutosave(): () => void {
     later();
   });
 
+  autosaveFlush = flush;
   // Don't lose an edit made in the last half-second before the tab closes
   window.addEventListener('pagehide', flush);
   window.addEventListener('storage', onStorage);
@@ -3224,6 +3323,7 @@ export function connectAutosave(): () => void {
     window.removeEventListener('pagehide', flush);
     window.removeEventListener('storage', onStorage);
     if (autosaveNow === saveNow) autosaveNow = null;
+    if (autosaveFlush === flush) autosaveFlush = null;
     unsubscribe();
     unwatchVideo();
   };

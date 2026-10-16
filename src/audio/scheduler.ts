@@ -17,10 +17,11 @@ import { createAudioClipSchedule } from './audioClipSchedule';
 import type { AudioClipSchedule } from './audioClipSchedule';
 import type { Clip, ClipGroove, LoopRegion, Track, TrackFx } from '../store/timelineTypes';
 import { INSTRUMENTS } from './instrumentCatalog';
-import { detuned, hashSeed, noteDrift } from './human';
+import { detuned, noteDrift, noteSeed } from './human';
 import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
 import { isExpressive, noteSteps } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
+import { feelVelocity } from '../store/drumGroove';
 
 export { DRUM_NOTES } from './instruments';
 
@@ -38,6 +39,10 @@ interface NoteGroup {
   swung: boolean;
   /** The clip's own swing, in place of the song's */
   groove?: ClipGroove;
+  /** Its row's own swing, in place of the clip's and the song's (see drumGroove.ts) */
+  rowSwing?: { swing: number; grid: 8 | 16 };
+  /** Its row plays early (negative) or late by this share of a 16th */
+  shift?: number;
 }
 
 /** A track's Human settings while they're on, and whether its notes can be detuned. */
@@ -81,20 +86,40 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
   );
   const ticks = notes.map((note) => barToTicks(clip.startBar + note.startOffset));
   const groove = clip.groove && clip.groove.swing > 0 ? clip.groove : undefined;
-  const swung = clip.groove && !groove ? ticks.map(() => false) : swungNotes(ticks, barToTicks(clip.startBar), liveTransport.PPQ, groove?.grid ?? 16);
-  // Group notes by tick (and length) so chords trigger as one instrument call
+  const clipStart = barToTicks(clip.startBar);
+  const swung = clip.groove && !groove ? ticks.map(() => false) : swungNotes(ticks, clipStart, liveTransport.PPQ, groove?.grid ?? 16);
+  // Rows with a swing of their own swing by their own notes (a roll on the hats keeps only the hats' 8th straight)
+  const rows = clip.groove?.rows;
+  const rowSwing = new Map<string, { swing: number; grid: 8 | 16 }>();
+  if (rows) {
+    for (const [row, feel] of Object.entries(rows)) {
+      if (feel.swing === undefined) continue;
+      const own = { swing: feel.swing, grid: feel.grid ?? clip.groove?.grid ?? 16 };
+      rowSwing.set(row, own);
+      const mine = notes.flatMap((n, i) => (n.note === row ? [i] : []));
+      const flags = own.swing > 0 ? swungNotes(mine.map((i) => ticks[i]), clipStart, liveTransport.PPQ, own.grid) : mine.map(() => false);
+      mine.forEach((i, k) => (swung[i] = flags[k]));
+    }
+  }
+  // Group notes by tick (and length) so chords trigger as one instrument call; a row with a feel
+  // of its own plays apart from the rest (its swing and shift move it alone)
   const groups = new Map<string, [number, NoteGroup]>();
   notes.forEach((note, i) => {
     const tick = ticks[i];
-    const key = `${tick}|${note.duration}`;
+    const feel = rows?.[note.note];
+    const key = `${tick}|${note.duration}${feel ? `|${note.note}` : ''}`;
     // The clip's wobble rate travels with each note to the instrument (the ones that wobble use it)
-    const playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
-    const seed = hashSeed(`${clip.id}|${note.id}|${tick}`);
+    let playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
+    if (feel && (feel.vel !== undefined || feel.offbeat !== undefined)) playable = { ...playable, velocity: feelVelocity(feel, note.velocity, tick, liveTransport.PPQ) };
+    const seed = noteSeed(clip.id, note.note, tick);
     const group = groups.get(key);
     if (group) {
       group[1].notes.push(playable);
       group[1].seeds.push(seed);
-    } else groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}) }]);
+    } else {
+      const own = feel ? rowSwing.get(note.note) : undefined;
+      groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}), ...(own ? { rowSwing: own } : {}), ...(feel?.shift ? { shift: feel.shift } : {}) }]);
+    }
   });
   // Pitch bend and vibrato, as events of their own (played before the notes of the same tick)
   const pitch: ClipEntry['groups'] = pitchEvents(clip).map((ev) => [barToTicks(clip.startBar + ev.at), { trackId: clip.trackId, notes: [], seeds: [], swung: false, pitch: ev }]);
@@ -123,6 +148,7 @@ const sameNotes = (prev: Clip, next: Clip) =>
   prev.lengthBars === next.lengthBars &&
   prev.trackId === next.trackId &&
   prev.wobble === next.wobble &&
+  prev.groove === next.groove &&
   prev.expression === next.expression;
 
 /**
@@ -228,7 +254,9 @@ export function createClipSchedule(
       const groups = byTick.get(tick);
       if (!groups) return;
       const songLate = swingDelay(swing(), transport.bpm.value, transport.PPQ);
-      const lateOf = (g: NoteGroup) => (!g.swung ? 0 : g.groove ? swingDelay(g.groove.swing, transport.bpm.value, transport.PPQ, g.groove.grid) : songLate);
+      const bpm = transport.bpm.value;
+      const swingOf = (g: NoteGroup) => (!g.swung ? 0 : g.rowSwing ? swingDelay(g.rowSwing.swing, bpm, transport.PPQ, g.rowSwing.grid) : g.groove ? swingDelay(g.groove.swing, bpm, transport.PPQ, g.groove.grid) : songLate);
+      const lateOf = (g: NoteGroup) => swingOf(g) + (g.shift ? (g.shift * 15) / bpm : 0);
       // Bends first, so notes starting on the same tick start bent; a clip's end before the
       // next clip's start, so the next clip's bend wins
       for (const ends of [true, false]) {

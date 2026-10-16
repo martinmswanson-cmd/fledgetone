@@ -1,6 +1,8 @@
 import * as Tone from 'tone';
 import { auditionInput } from '../engine';
 import { monotonicTime } from './monotonic';
+import { noiseKey } from '../seededNoise';
+import { seedToneNoise } from '../toneFixes';
 
 /**
  * Groove Drum Kit (Synthesized Analog Drums)
@@ -10,9 +12,10 @@ import { monotonicTime } from './monotonic';
  * 4. Funk Cowbell: High-pitched punchy square wave at 800Hz
  *
  * createDrumKit builds the kit in whatever Tone context is current, so the same sound
- * design serves live playback and offline (WAV export) rendering.
+ * design serves live playback and offline (WAV export) rendering. `seed` is the track's (see
+ * trackSeed), which with the time picks each snare's noise.
  */
-export function createDrumKit(output: Tone.InputNode) {
+export function createDrumKit(output: Tone.InputNode, seed = 0) {
   // 1. Kick
   const kick = new Tone.MembraneSynth({
     pitchDecay: 0.04,
@@ -43,6 +46,7 @@ export function createDrumKit(output: Tone.InputNode) {
   });
   snareNoise.connect(snareFilter);
   snareFilter.connect(output);
+  seedToneNoise(snareNoise.noise, noiseKey(seed, 'snare'));
 
   const snareSnap = new Tone.MembraneSynth({
     pitchDecay: 0.015,

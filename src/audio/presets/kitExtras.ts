@@ -1,6 +1,7 @@
 import * as Tone from 'tone';
 import { notLate } from './monotonic';
 import { createBus, createFilter, createNoise, createOsc, createVoiceSet } from './native';
+import { noiseKey } from '../seededNoise';
 
 /**
  * The drum rows past the original five (clap, three toms, crash, ride), synthesized from plain
@@ -11,16 +12,17 @@ export type TomPitch = 'low' | 'mid' | 'high';
 
 const TOM_HZ: Record<TomPitch, number> = { low: 90, mid: 125, high: 170 };
 
-export function createKitExtras(output: Tone.InputNode) {
+/** `seed`: the track's (see trackSeed), which with the row and the time picks each hit's noise. */
+export function createKitExtras(output: Tone.InputNode, seed = 0) {
   const { bus, raw, input } = createBus(output);
   // Noise-fed voices linger before disconnecting (see createVoiceSet)
   const voices = createVoiceSet(raw, 0.5);
   const add = (start: number, seconds: number, sources: AudioScheduledSourceNode[], nodes: AudioNode[], amp: GainNode) =>
     voices.add({ start, stopAt: start + seconds, sources, nodes, amp });
 
-  /** A noise burst through a filter, with an exponential tail. */
-  const noiseHit = (t: number, type: BiquadFilterType, hz: number, q: number, level: number, tail: number, seconds: number) => {
-    const noise = createNoise(raw, t);
+  /** A noise burst through a filter, with an exponential tail (`what`: which, for its noise). */
+  const noiseHit = (what: string, t: number, type: BiquadFilterType, hz: number, q: number, level: number, tail: number, seconds: number) => {
+    const noise = createNoise(raw, t, noiseKey(seed, what));
     const filter = createFilter(raw, type, hz, q);
     const amp = raw.createGain();
     amp.gain.setValueAtTime(level, t);
@@ -36,8 +38,8 @@ export function createKitExtras(output: Tone.InputNode) {
     clap: (time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);
       // Three quick slaps, then the room
-      for (const [i, offset] of [0, 0.011, 0.023].entries()) noiseHit(t + offset, 'bandpass', 1300 * ratio, 1.2, (0.55 - i * 0.08) * velocity, 0.006, 0.05);
-      noiseHit(t + 0.03, 'bandpass', 1100 * ratio, 0.9, 0.38 * velocity, 0.07, 0.45);
+      for (const [i, offset] of [0, 0.011, 0.023].entries()) noiseHit(`clap${i}`, t + offset, 'bandpass', 1300 * ratio, 1.2, (0.55 - i * 0.08) * velocity, 0.006, 0.05);
+      noiseHit('clapRoom', t + 0.03, 'bandpass', 1100 * ratio, 0.9, 0.38 * velocity, 0.07, 0.45);
     },
     tom: (pitch: TomPitch, time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);
@@ -50,12 +52,12 @@ export function createKitExtras(output: Tone.InputNode) {
       osc.connect(amp);
       amp.connect(input);
       add(t, 0.8, [osc], [osc, amp], amp);
-      noiseHit(t, 'bandpass', hz * 8, 0.8, 0.12 * velocity, 0.015, 0.1);
+      noiseHit(`tom-${pitch}`, t, 'bandpass', hz * 8, 0.8, 0.12 * velocity, 0.015, 0.1);
     },
     crash: (time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);
-      noiseHit(t, 'highpass', 4500 * ratio, 0.5, 0.32 * velocity, 0.55, 2.8);
-      noiseHit(t, 'bandpass', 7500 * ratio, 2, 0.18 * velocity, 0.25, 1.4);
+      noiseHit('crash', t, 'highpass', 4500 * ratio, 0.5, 0.32 * velocity, 0.55, 2.8);
+      noiseHit('crash2', t, 'bandpass', 7500 * ratio, 2, 0.18 * velocity, 0.25, 1.4);
     },
     ride: (time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);
@@ -71,7 +73,7 @@ export function createKitExtras(output: Tone.InputNode) {
       hp.connect(amp);
       amp.connect(input);
       add(t, 0.8, [bell, bell2], [bell, bell2, hp, amp], amp);
-      noiseHit(t, 'highpass', 6000, 0.6, 0.12 * velocity, 0.35, 1.8);
+      noiseHit('ride', t, 'highpass', 6000, 0.6, 0.12 * velocity, 0.35, 1.8);
     },
     cowbell: (time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);

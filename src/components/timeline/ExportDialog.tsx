@@ -4,6 +4,7 @@
  * the render with progress and cancel.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { countedRender } from '../../audio/renderBusy';
 import { useVideoStore } from '../../store/videoStore';
 import { Download, Loader2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -19,13 +20,16 @@ import {
   renderArrangement,
   renderIntroLoop,
   renderStems,
+  ditherSeedOf,
   ringOutSeconds,
   SAMPLE_RATES,
   channelsOf,
-  scaleAudio,
+  cutRingOut,
   stemTracks,
 } from '../../audio/exportWav';
-import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb, NORMALIZE_CEILING_DBTP, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
+import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb } from '../../audio/loudness';
+import { exportCeilingDbtp } from '../../audio/effects/limiter';
+import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
@@ -52,12 +56,14 @@ interface ExportSettings {
   bypassMaster: boolean;
   /** Mixdown only: turn the file up or down to the loudness streaming services play at. */
   normalize: boolean;
+  /** How loud to make it (see loudnessTarget.ts) */
+  target: string;
   format: AudioFormat;
   /** Intro + loop as WAV: also one file holding both, with the loop marked in it (Godot, samplers). */
   loopFile: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true, normalize: false, format: 'wav', loopFile: true };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -79,12 +85,29 @@ function loadSettings(): ExportSettings {
       bitDepth: oneOf(r.bitDepth, BIT_DEPTHS, d.bitDepth),
       bypassMaster: typeof r.bypassMaster === 'boolean' ? r.bypassMaster : d.bypassMaster,
       normalize: typeof r.normalize === 'boolean' ? r.normalize : d.normalize,
+      target: oneOf(r.target, LOUDNESS_TARGETS.map((t) => t.id), d.target),
       format: oneOf(r.format, AUDIO_FORMATS, d.format),
       loopFile: typeof r.loopFile === 'boolean' ? r.loopFile : d.loopFile,
     };
   } catch {
     return d;
   }
+}
+
+/** Where the file is going, which sets its loudness. */
+function TargetPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  return (
+    <label className="flex items-center gap-2 pl-6 text-forge-text">
+      For
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="h-7 bg-forge-bg border border-forge-border rounded px-1">
+        {LOUDNESS_TARGETS.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function saveSettings(settings: ExportSettings): void {
@@ -238,8 +261,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const ending: ExportEnding = game ? 'seamless' : range === 'song' && settings.ending === 'seamless' ? 'ringOut' : settings.ending;
   const format = settings.format;
   const ext = FORMAT_EXTENSION[format];
+  // MP3, Ogg and a video's sound keep their peaks a little lower: encoding overshoots them
+  const ceilingDbtp = exportCeilingDbtp(videoOut ? 'mp4' : format);
   const room = useTimelineStore((s) => s.masterReverbRoom);
-  const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}) };
+  const roomStyle = useTimelineStore((s) => s.masterRoomStyle);
+  const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}), ...(roomStyle !== 'hall' ? { roomStyle } : {}) };
   const planned: RenderOptions = {
     tracks,
     clips,
@@ -266,7 +292,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * settings.sampleRate);
   const tail = ringOutSeconds(masterFx, tracks, bpm);
 
-  const startExport = async () => {
+  // Counted as a render the whole way (encoding too), so the update notice waits for it (renderBusy.ts)
+  const startExport = () => countedRender(async () => {
     const s = useTimelineStore.getState();
     // The render swaps the global audio context while it sets up, so halt live playback first
     s.pause();
@@ -285,6 +312,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       signal: controller.signal,
       // The mix plays at the Intensity you hear; stems and layers stay at full level for the game to mix
       ...(stemsOnly ? {} : { intensity: { value: s.intensity, curves: s.intensityCurves } }),
+      peakCeilingDbtp: ceilingDbtp,
     };
     const encodeOpts = { bitDepth: settings.bitDepth, cues: exportCues(opts) };
     try {
@@ -296,18 +324,21 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         let reading = stemsOnly ? null : await measureLoudness(parts[0].loop, sampleRate, controller.signal);
         let note = '';
         if (reading && settings.normalize) {
-          const { gainDb, limited } = normalizeGainDb(reading);
+          // Gain only: a limiter would change the sound across the loop's seam
+          const { gainDb, limited } = normalizeGainDb(reading, targetById(settings.target).lufs, ceilingDbtp);
           const g = Math.pow(10, gainDb / 20);
           if (gainDb !== 0) for (const ch of [...parts[0].intro, ...parts[0].loop]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
           reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
-          note = limited ? ` (held under the target so peaks stay under ${NORMALIZE_CEILING_DBTP} dBTP)` : '';
+          note = limited ? ` (held under the target so peaks stay under ${ceilingDbtp} dBTP)` : '';
         }
         const files: Array<{ name: string; data: Blob }> = [];
         for (const [i, part] of parts.entries()) {
           const name = part.track ? stemFileNames(fileBase, parts.map((p) => p.track!), '')[i].replace(/\.$/, '') : fileBase;
           setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${part.track ? part.track.name : 'the music'}` });
-          files.push({ name: `${name} intro.${ext}`, data: await encodeAudio(part.intro, sampleRate, format, { bitDepth: settings.bitDepth }) });
-          files.push({ name: `${name} loop.${ext}`, data: await encodeAudio(part.loop, sampleRate, format, { bitDepth: settings.bitDepth }) });
+          // (Each stem its own dither, so the stems' dither doesn't add up in step when they're mixed)
+          const ditherSeed = part.track ? ditherSeedOf(part.track.id) : 0;
+          files.push({ name: `${name} intro.${ext}`, data: await encodeAudio(part.intro, sampleRate, format, { bitDepth: settings.bitDepth, ditherSeed }) });
+          files.push({ name: `${name} loop.${ext}`, data: await encodeAudio(part.loop, sampleRate, format, { bitDepth: settings.bitDepth, ditherSeed }) });
           if (format === 'wav' && settings.loopFile) {
             const whole = part.intro.map((ch, c) => {
               const out = new Float32Array(ch.length + part.loop[c].length);
@@ -316,7 +347,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               return out;
             });
             const start = part.intro[0].length;
-            files.push({ name: `${name} intro+loop (loop points).wav`, data: await encodeAudio(whole, sampleRate, 'wav', { bitDepth: settings.bitDepth, loop: { start, end: start + part.loop[0].length } }) });
+            files.push({ name: `${name} intro+loop (loop points).wav`, data: await encodeAudio(whole, sampleRate, 'wav', { bitDepth: settings.bitDepth, loop: { start, end: start + part.loop[0].length }, ditherSeed }) });
           }
           controller.signal.throwIfAborted();
         }
@@ -324,16 +355,18 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         downloadBlob(await createZip(files), fileName);
         showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}` : ''}`);
       } else if (videoOut) {
-        // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs)
-        const audio = await renderArrangement({ ...opts, sampleRate: 48000 }, (progress) =>
+        // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs). A ring-out is
+        // cut where its tails die away once it has its final level (see keepRingOut)
+        const videoOpts = { ...opts, sampleRate: 48000 as const, keepRingOut: settings.normalize };
+        let audio = await renderArrangement(videoOpts, (progress) =>
           setStatus({ kind: 'rendering', fileName, progress: progress * 0.3, detail: 'Rendering the sound' })
         );
         controller.signal.throwIfAborted();
         let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
         if (settings.normalize) {
-          const { gainDb } = normalizeGainDb(reading);
-          if (gainDb !== 0) scaleAudio(audio, gainDb);
-          reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
+          setStatus({ kind: 'rendering', fileName, progress: 0.3, detail: 'Matching the loudness' });
+          reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp)).reading;
+          audio = cutRingOut(audio, videoOpts);
         }
         const startSeconds = barToSeconds(opts.startBar, tempo);
         const sections = (opts.markers ?? [])
@@ -373,16 +406,21 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         controller.signal.throwIfAborted();
         downloadBlob(zip, fileName);
       } else {
-        const audio = await renderArrangement(opts, (progress) => setStatus({ kind: 'rendering', fileName, progress, detail: '' }));
+        // A ring-out is cut where its tails die away once it has its final level (see keepRingOut)
+        const mixOpts = { ...opts, keepRingOut: settings.normalize };
+        let audio = await renderArrangement(mixOpts, (progress) => setStatus({ kind: 'rendering', fileName, progress, detail: '' }));
         controller.signal.throwIfAborted();
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Measuring loudness' });
         let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
         let note = '';
         if (settings.normalize) {
-          const { gainDb, limited } = normalizeGainDb(reading);
-          if (gainDb !== 0) scaleAudio(audio, gainDb);
-          reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
-          note = limited ? `. That's ${(NORMALIZE_TARGET_LUFS - reading.integrated).toFixed(1)} dB under the target, so peaks stay under ${NORMALIZE_CEILING_DBTP} dBTP. To get louder, turn on the master OTT and raise its Out gain` : '';
+          setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Matching the loudness' });
+          const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp);
+          reading = reached.reading;
+          audio = cutRingOut(audio, mixOpts);
+          if (reached.shortDb > 0.3 && reached.capped)
+            note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the master OTT and raise its Out gain`;
+          else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;
         }
         if (format !== 'wav') setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${format.toUpperCase()}` });
         downloadBlob(format === 'wav' ? encodeWav(audio, settings.bitDepth, exportCues(opts), wholeFileLoop(opts, audio.length)) : await encodeAudio(channelsOf(audio), audio.sampleRate, format, encodeOpts), fileName);
@@ -395,7 +433,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
-  };
+  });
 
   if (status.kind === 'rendering') {
     const percent = Math.round(status.progress * 100);
@@ -441,7 +479,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       : `Bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
   const endingDetail =
     ending === 'ringOut'
-      ? `Plays the range once, then ${formatBarCount(tail)} s more so release, reverb and echo tails ring out.`
+      ? `Plays the range once, then lets release, reverb and echo tails ring out: the file ends once they've died away (under -70 dBFS), at most ${formatBarCount(tail)} s after the range.`
       : ending === 'exact'
         ? `Exactly the range, ${frames.toLocaleString()} samples, with a 5 ms fade at the very end so it doesn't click.`
         : `Exactly one loop, ${frames.toLocaleString()} samples. Its start already holds what rings on from the pass before, so it repeats without a gap or click. (Renders ${passes} passes and keeps the last.)`;
@@ -547,10 +585,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
               <span>
-                Normalize to {NORMALIZE_TARGET_LUFS} LUFS
-                <span className="block text-forge-muted">YouTube plays at this loudness: matching it means your video isn't turned down.</span>
+                Match a loudness target
+                <span className="block text-forge-muted">YouTube plays at -14 LUFS: matching it means your video isn't turned down.</span>
               </span>
             </label>
+            {settings.normalize && <TargetPicker value={settings.target} onChange={(target) => update({ target })} />}
           </>
         ) : (
           <>
@@ -561,14 +600,15 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
               <span>
-                Normalize to {NORMALIZE_TARGET_LUFS} LUFS
+                Match a loudness target
                 <span className="block text-forge-muted">
                   {settings.normalize
-                    ? `Turns the whole file up or down to the loudness Spotify, YouTube and Apple Music play at, so it won't be turned down or sound quiet next to other tracks. Never pushes peaks over ${NORMALIZE_CEILING_DBTP} dBTP.`
+                    ? `${targetById(settings.target).about} ${game ? 'The intro and loop are turned up or down together (no limiting, which would change the loop\u2019s seam).' : 'If the mix is too quiet to get there by turning it up, a look-ahead limiter holds the peaks down (up to ' + MAX_LIMITING_DB + ' dB).'} Peaks never pass ${ceilingDbtp} dBTP.`
                     : 'The file keeps the level of the mix.'}
                 </span>
               </span>
             </label>
+            {settings.normalize && <TargetPicker value={settings.target} onChange={(target) => update({ target })} />}
           </>
         )}
       </Section>
@@ -634,8 +674,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           </label>
         )}
         <p>
-          Stereo. True peaks are kept under -1 dBTP (between samples too), so nothing clips.
-          {format !== 'wav' && ' MP3 and OGG are compressed: a small file that sounds the same to most ears. An MP3 can have a few milliseconds of silence added at its start, so for seamless loops in games use OGG or WAV.'}
+          Stereo. True peaks are kept under {ceilingDbtp} dBTP (between samples too), so nothing clips.
+          {format !== 'wav' && ' MP3 and OGG are compressed: a small file that sounds the same to most ears. Compressing nudges the peaks up a little, which is why they start half a dB lower than a WAV\u2019s. An MP3 can have a few milliseconds of silence added at its start, so for seamless loops in games use OGG or WAV.'}
           {format === 'wav' && !game && cueCount > 0 &&
             ` ${cueCount === 1 ? 'The marker in the range goes' : `The ${cueCount} markers in the range go`} into ${
               stemsOnly ? 'every file' : 'the file'
@@ -652,7 +692,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           {fileName}
           <span className="text-forge-muted">
             {' · '}
-            {game ? `intro ${durationLabel(introFrames / settings.sampleRate)} + loop ${durationLabel(frames / settings.sampleRate)}` : durationLabel(frames / settings.sampleRate)}
+            {game ? `intro ${durationLabel(introFrames / settings.sampleRate)} + loop ${durationLabel(frames / settings.sampleRate)}` : `${ending === 'ringOut' ? 'up to ' : ''}${durationLabel(frames / settings.sampleRate)}`}
           </span>
         </span>
         <button

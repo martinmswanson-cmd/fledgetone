@@ -8,8 +8,8 @@ import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../a
  * playback plays that instead, so a frozen track costs about as much as one audio clip.
  *
  * The live engine never knows: liveView() hands it each frozen track as an Audio track with one
- * audio clip of the frozen sound, inserts off and EQ flat (they're in the sound). Volume, pan and
- * the sends, and their automation, stay live, so a frozen track can still be mixed.
+ * audio clip of the frozen sound, inserts off and EQ flat (they're in the sound). Volume, pan,
+ * distance and the sends, and their automation, stay live, so a frozen track can still be mixed.
  *
  * Anything else that went into the render (notes, instrument, inserts, EQ and their automation,
  * tempo, swing, and the kicks a kick-triggered Pump follows) is summed up in a fingerprint. Once
@@ -40,7 +40,9 @@ const clipContent = (c: Clip) => ({
   lengthBars: c.lengthBars,
   wobble: c.wobble,
   audio: c.audio,
-  notes: c.notes.map((n) => [n.note, n.startOffset, n.duration, n.velocity]),
+  // (A note's own expression and the clip's groove only when present, so freezes made before they counted stay current)
+  notes: c.notes.map((n) => (n.expr ? [n.note, n.startOffset, n.duration, n.velocity, n.expr] : [n.note, n.startOffset, n.duration, n.velocity])),
+  ...(c.groove ? { groove: c.groove } : {}),
   // (Only when present, so freezes made before these existed stay current)
   ...(c.expression ? { expression: c.expression } : {}),
   ...(c.takes?.length ? { comp: c.comp, takes: c.takes.map((t) => t.audio ?? null) } : {}),
@@ -59,8 +61,8 @@ export function freezeFingerprint(track: Track, all: { tracks: Track[]; clips: C
 }
 
 function fxPrint(fx: Track['fx']): Partial<Track['fx']> {
-  const { peq, mbc, ...rest } = fx;
-  return { ...rest, ...(peq?.on ? { peq } : {}), ...(mbc?.on ? { mbc } : {}) };
+  const { peq, mbc, bassDrive, ...rest } = fx;
+  return { ...rest, ...(peq?.on ? { peq } : {}), ...(mbc?.on ? { mbc } : {}), ...(bassDrive?.on ? { bassDrive } : {}) };
 }
 
 function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] }): string {
@@ -92,9 +94,13 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       synth: track.synth,
       ...(track.rack ? { rack: track.rack } : {}),
       ...(track.multi ? { multi: track.multi } : {}),
+      ...(track.drumDesign ? { drumDesign: track.drumDesign } : {}),
       ...(track.plugin ? { plugin: track.plugin } : {}),
       ...(track.pluginFx?.length ? { pluginFx: track.pluginFx } : {}),
       ...(track.expressive ? { expressive: true } : {}),
+      ...(track.bass808 ? { bass808: track.bass808 } : {}),
+      ...(track.glide !== undefined ? { glide: track.glide } : {}),
+      ...(track.subLayer ? { subLayer: track.subLayer } : {}),
       // (The newer inserts only while on, so tracks frozen before they existed stay frozen)
       fx: fxPrint(track.fx),
       eq: track.eq,
@@ -109,7 +115,10 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
   );
 }
 
-/** The track as the freeze renders it: centred, at 0 dB, no sends (those stay live). */
+/**
+ * The track as the freeze renders it: centred, at 0 dB, up front, no sends (those stay live: the
+ * frozen sound plays through the track's strip, which sets it back on the stage again).
+ */
 export function trackForFreezing(track: Track): Track {
   return {
     ...track,
@@ -118,6 +127,7 @@ export function trackForFreezing(track: Track): Track {
     pan: 0,
     reverbSend: 0,
     delaySend: 0,
+    distance: undefined,
     isMuted: false,
     isSoloed: false,
     automation: (track.automation ?? []).filter((l) => !isLiveParam(l.param)),

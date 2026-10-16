@@ -14,6 +14,7 @@ import { Timeline } from './components/timeline/Timeline';
 import { ProjectDrop } from './components/ProjectDrop';
 import { MobileNotice } from './components/MobileNotice';
 import { SharedLinkOpener } from './components/SharedLinkOpener';
+import { UpdateNotice } from './components/UpdateNotice';
 import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import { LearnDialog } from './components/tour/LearnDialog';
@@ -23,6 +24,11 @@ import { useTourStore } from './tour/tourStore';
 import { useUiStore } from './store/uiStore';
 import { startErrorLog } from './support/problemReport';
 import { LifeBuoy } from 'lucide-react';
+import changelogMarkdown from '../CHANGELOG.md?raw';
+import termsMarkdown from '../TERMS.md?raw';
+import { GuidePanel } from './components/guide/GuidePanel';
+import { APP_BUILT, APP_VERSION, versionLabel } from './version';
+import { splitSections } from './components/guide/markdown';
 
 /** A computer-sized screen (the phone notice covers small touch screens instead). */
 const roomy = () => typeof window !== 'undefined' && window.innerWidth >= 900;
@@ -66,6 +72,23 @@ const Engines: React.FC = () => {
   return open ? <EnginesDialog onClose={() => useUiStore.getState().setDialog(null)} /> : null;
 };
 
+/** The changelog section of the version running ("## 2026.10.15-24 — ..."), where What's new opens; else its top. */
+const RUNNING_ENTRIES = splitSections(changelogMarkdown).find((sec) => sec.title.startsWith(`${APP_VERSION} `) || sec.title === APP_VERSION)?.id;
+
+/** What's new (CHANGELOG.md), when it's open. */
+const WhatsNew: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'changes');
+  const close = React.useCallback(() => useUiStore.getState().setDialog(null), []);
+  return open ? <GuidePanel markdown={changelogMarkdown} section={RUNNING_ENTRIES} title="What's new" onClose={close} /> : null;
+};
+
+/** The terms of use (TERMS.md), when they're open. */
+const Terms: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'terms');
+  const close = React.useCallback(() => useUiStore.getState().setDialog(null), []);
+  return open ? <GuidePanel markdown={termsMarkdown} title="Terms of use" onClose={close} /> : null;
+};
+
 /** Try it in a game, when it's open. */
 const TryOut: React.FC = () => {
   const open = useUiStore((s) => s.dialog === 'tryOut');
@@ -82,11 +105,14 @@ export const App: React.FC = () => {
       <VideoPreview />
       <MobileNotice />
       <SharedLinkOpener />
+      <UpdateNotice />
       <SearchPalette />
       <ReportProblem />
       <CutToLength />
       <Engines />
       <TryOut />
+      <WhatsNew />
+      <Terms />
       <Learn />
 
       {/* Main Workstation Canvas: the arrangement, and the dock under it */}
@@ -102,6 +128,14 @@ export const App: React.FC = () => {
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
           <span>Fledgetone</span>
+          <button
+            type="button"
+            onClick={() => useUiStore.getState().setDialog('changes')}
+            className="hover:text-forge-text transition-colors"
+            title={`What's new in this version${APP_BUILT ? ` (built ${APP_BUILT.slice(0, 16).replace('T', ' ')} UTC)` : ''}`}
+          >
+            {versionLabel()}
+          </button>
         </div>
         <div className="flex items-center gap-4">
           <button
@@ -111,6 +145,9 @@ export const App: React.FC = () => {
             title="Something not working? Tell us"
           >
             <LifeBuoy className="w-3.5 h-3.5" /> Report a problem
+          </button>
+          <button type="button" onClick={() => useUiStore.getState().setDialog('terms')} className="hover:text-forge-text transition-colors" title="Fledgetone's terms of use: your music is yours">
+            Terms
           </button>
           <a href="https://twobirdsworkshop.com" target="_blank" rel="noopener" className="hover:text-forge-text transition-colors">
             twobirdsworkshop.com

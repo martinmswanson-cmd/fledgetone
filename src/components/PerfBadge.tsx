@@ -64,6 +64,7 @@ export const PerfBadge: React.FC = () => {
   const memory = usePerfStore((s) => s.memoryMB);
   const dismissed = usePerfStore((s) => s.dismissed);
   const smoothing = usePerfStore((s) => s.smoothing);
+  const stableNext = usePerfStore((s) => s.stableNext);
   const [open, setOpen] = useState(false);
   const [history, setHistory] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -86,6 +87,7 @@ export const PerfBadge: React.FC = () => {
         <Popover label="Performance" onClose={() => setOpen(false)} anchorRef={anchor} className="right-0">
           <span className="text-sm font-semibold text-forge-text">Performance</span>
           <p className={lagging ? 'text-amber-200' : 'text-emerald-300'}>{lagging ? 'Playback is lagging.' : 'Playback is keeping up.'}</p>
+          {stableNext && <p className="text-amber-100 text-[11px]">This computer needs a bigger audio buffer for this song, so Fledgetone will start in Stable playback from now on (reload the page to use it now). You can change it in Inspector &gt; Master &gt; Playback.</p>}
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[11px]">
             <span className="text-forge-muted">Late notes (4 s)</span>
             <span className="text-forge-text tabular-nums">{late}</span>

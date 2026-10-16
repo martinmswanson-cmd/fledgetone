@@ -201,7 +201,7 @@ const DrummerForm: React.FC<{ trackId: string; bar: number; onClose: () => void 
 };
 
 /** Instruments an accompaniment can go on besides its own suggestion. */
-const ACCOMP_INSTRUMENTS: InstrumentKey[] = ['realGrandPiano', 'realUprightPiano', 'rhodes', 'realHarp', 'guitar', 'nylonGuitar', 'mandolin', 'realViolinsShort', 'realPizzicato', 'slowStrings', 'celesta', 'realGlockenspiel', 'musicBox', 'realMarimba', 'vibraphone', 'realHorn', 'realTrumpet', 'accordion', 'realUprightBass', 'realElectricBass', 'chipLead', 'pluck'];
+const ACCOMP_INSTRUMENTS: InstrumentKey[] = ['realGrandPiano', 'realUprightPiano', 'rhodes', 'realHarp', 'guitar', 'nylonGuitar', 'mandolin', 'realViolinsShort', 'realPizzicato', 'slowStrings', 'realCelesta', 'realGlockenspiel', 'musicBox', 'realMarimba', 'vibraphone', 'realHorn', 'realTrumpet', 'accordion', 'realUprightBass', 'realElectricBass', 'chipLead', 'pluck'];
 
 let lastAccomp: { style: AccompStyle; instrument: InstrumentKey | null } = { style: 'waltz', instrument: null };
 let accompSeed = 1;

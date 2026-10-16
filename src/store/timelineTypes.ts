@@ -3,10 +3,15 @@
  * master settings and the rest) with their defaults, limits and small helpers (snapping,
  * durations, frame grids). Everything the store, the engine and the project file share.
  */
+import type { DrumDesign } from './drumDesign';
 import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
 import type { SynthPatch } from './synthPatch';
+import type { RoomStyle } from '../audio/effects/roomIR';
 import { frameSeconds, isDropFrame } from '../audio/timecode';
+import type { Bass808Settings } from './bass808';
+import { normalizeBassDrive, type BassDriveFx, type SubLayer } from './bassTools';
+import { normalizeClipper, type ClipperSettings } from '../audio/effects/clipper';
 
 export type { InstrumentKey };
 
@@ -163,7 +168,33 @@ export interface TrackFx {
     /** Notes a touch sharp or flat, up to about 12 cents (pitched instruments only) */
     pitch: number;
   };
+  /**
+   * Bass Drive: distortion on the mids and highs only, the sub below the crossover kept clean and
+   * mono (see bassTools.ts). Absent on tracks that never had it.
+   */
+  bassDrive?: BassDriveFx;
+  /** Saturation (a bus insert, see effects/busInserts.ts): warm, full-range soft clipping. Absent: off. */
+  saturate?: {
+    on: boolean;
+    /** Drive, 0 to 1 (0 to 24 dB into the curve) */
+    amount: number;
+    /** How much of the saturated sound, 0 to 1 */
+    mix: number;
+  };
+  /** Mono bass (a bus insert): everything under `freq` Hz in the middle. Absent: off. */
+  monoLow?: {
+    on: boolean;
+    /** The crossover, MONO_LOW_MIN to MONO_LOW_MAX Hz */
+    freq: number;
+  };
 }
+
+/** The Saturation insert as it's first switched on. */
+export const DEFAULT_SATURATE: NonNullable<TrackFx['saturate']> = { on: false, amount: 0.3, mix: 0.5 };
+/** The Mono bass insert as it's first switched on. */
+export const DEFAULT_MONO_LOW: NonNullable<TrackFx['monoLow']> = { on: false, freq: 120 };
+export const MONO_LOW_MIN = 40;
+export const MONO_LOW_MAX = 300;
 
 /** The shapes a parametric EQ band can take. */
 export const PEQ_TYPES = ['lowcut', 'lowshelf', 'bell', 'notch', 'highshelf', 'highcut'] as const;
@@ -280,6 +311,7 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
   const hum = obj(r.human);
   const peq = obj(r.peq);
   const mbc = obj(r.mbc);
+  const bassDrive = normalizeBassDrive(r.bassDrive);
   const oneOf = <T>(v: unknown, options: readonly T[], fallback: T): T => (options.includes(v as T) ? (v as T) : fallback);
   return {
     distortion: { on: dist.on === true, amount: num(dist.amount, d.distortion.amount, 0, 1) },
@@ -374,6 +406,12 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
         };
       }) as [MbcBand, MbcBand, MbcBand],
     },
+    ...(bassDrive ? { bassDrive } : {}),
+    // The bus inserts: only kept once they've been used (older projects have neither)
+    ...(r.saturate !== undefined
+      ? { saturate: { on: obj(r.saturate).on === true, amount: num(obj(r.saturate).amount, DEFAULT_SATURATE.amount, 0, 1), mix: num(obj(r.saturate).mix, DEFAULT_SATURATE.mix, 0, 1) } }
+      : {}),
+    ...(r.monoLow !== undefined ? { monoLow: { on: obj(r.monoLow).on === true, freq: num(obj(r.monoLow).freq, DEFAULT_MONO_LOW.freq, MONO_LOW_MIN, MONO_LOW_MAX) } } : {}),
   };
 }
 
@@ -390,15 +428,24 @@ export interface MasterFx {
    * in place of its generated one; absent: generated, `reverbDecay` long.
    */
   room?: string;
+  /** The kind of room the generated reverb is (see effects/roomIR.ts); absent: a concert hall */
+  roomStyle?: RoomStyle;
 }
 
 export const DEFAULT_MASTER_FX: MasterFx = { reverbDecay: 2.4, delayTime: '8n', delayFeedback: 0.35 };
 
+/** How the master compressor holds the mix together (see GLUE_STYLES in effects/masterChain.ts). */
+export type GlueStyle = 'standard' | 'gentle' | 'punchy' | 'tight' | 'off';
+export const GLUE_STYLE_IDS: readonly GlueStyle[] = ['standard', 'gentle', 'punchy', 'tight', 'off'];
+
 /**
- * The master section: the inserts between the master compressor and the limiter (see
- * engine.ts). Each can be bypassed with `on`, which takes it out of the chain entirely.
+ * The master section (see engine.ts): the compressor's style, the inserts between the master
+ * compressor and the limiter (each can be bypassed with `on`, which takes it out of the chain
+ * entirely), and the Level, a plain gain after them, just before the limiter.
  */
 export interface MasterSettings {
+  /** The master compressor's style ('standard' is how every project sounded before there was a choice) */
+  glue: GlueStyle;
   /** OTT-style multiband compression (three bands, upward and downward): see effects/ott.ts. */
   ott: {
     on: boolean;
@@ -419,16 +466,31 @@ export interface MasterSettings {
     /** Keep everything below about 120 Hz in the middle, however wide the rest goes */
     monoBass: boolean;
   };
+  /**
+   * dB, LEVEL_MIN to LEVEL_MAX: a plain gain after the OTT and the width, before the limiter,
+   * always there (0 leaves the sound alone). Turning it up pushes the mix into the limiter.
+   */
+  level: number;
+  /**
+   * The master clipper, after the Level and before the limiter (see effects/clipper.ts). Absent:
+   * off (projects from before it existed, and every project that never switched it on).
+   */
+  clipper?: ClipperSettings;
 }
 
 export const OTT_GAIN_MIN = -12;
 export const OTT_GAIN_MAX = 12;
 export const WIDTH_MAX = 2;
+/** The master Level's range in dB (see MasterSettings.level). */
+export const LEVEL_MIN = -24;
+export const LEVEL_MAX = 12;
 
 export function defaultMasterSettings(): MasterSettings {
   return {
+    glue: 'standard',
     ott: { on: false, depth: 0.5, time: 0.3, inGain: 0, outGain: 0 },
     width: { on: false, amount: 1.3, monoBass: true },
+    level: 0,
   };
 }
 
@@ -442,6 +504,7 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
   const ott = obj(r.ott);
   const width = obj(r.width);
   return {
+    glue: GLUE_STYLE_IDS.includes(r.glue as GlueStyle) ? (r.glue as GlueStyle) : d.glue,
     ott: {
       on: ott.on === true,
       depth: num(ott.depth, d.ott.depth, 0, 1),
@@ -455,12 +518,22 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
       // Absent means on, as for a new project
       monoBass: width.monoBass !== false,
     },
+    // Absent in projects from before there was a Level: 0, as they sounded
+    level: num(r.level, d.level, LEVEL_MIN, LEVEL_MAX),
+    ...(r.clipper !== undefined ? { clipper: normalizeClipper(r.clipper) } : {}),
   };
+}
+
+/** True when two clippers are set the same (absent counts as an unchanged default, off). */
+function sameClipper(a: ClipperSettings | undefined, b: ClipperSettings | undefined): boolean {
+  if (!a || !b) return a === b;
+  return a.on === b.on && a.drive === b.drive && a.softness === b.softness && a.ceiling === b.ceiling;
 }
 
 /** True when two master settings would sound the same (so the engine and autosave can skip no-ops). */
 export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolean {
   return (
+    a.glue === b.glue &&
     a.ott.on === b.ott.on &&
     a.ott.depth === b.ott.depth &&
     a.ott.time === b.ott.time &&
@@ -468,7 +541,9 @@ export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolea
     a.ott.outGain === b.ott.outGain &&
     a.width.on === b.width.on &&
     a.width.amount === b.width.amount &&
-    a.width.monoBass === b.width.monoBass
+    a.width.monoBass === b.width.monoBass &&
+    a.level === b.level &&
+    sameClipper(a.clipper, b.clipper)
   );
 }
 
@@ -488,6 +563,12 @@ export interface Track {
   eq: TrackEq;
   /** Distortion / Compressor / Chorus / Filter / Pump inserts */
   fx: TrackFx;
+  /**
+   * How far back on the stage it sits, 0 (up front, as recorded) to 1 (the back of the hall): a
+   * little darker, quieter and more in the room, as a far instrument sounds (see trackStrip.ts).
+   * Absent: 0.
+   */
+  distance?: number;
   /** Post-fader send to master Reverb (0.0 to 1.0) */
   reverbSend: number;
   /** Post-fader send to master Delay (0.0 to 1.0) */
@@ -502,6 +583,8 @@ export interface Track {
   rack?: DrumRack;
   /** A Multi Sampler's sounds and how they're laid across the keys (absent: none yet) */
   multi?: MultiSample;
+  /** The Designed Kit's drum sounds by row (see drumDesign.ts; absent: each row's default preset) */
+  drumDesign?: DrumDesign;
   /** How settings change over the song: at most one lane per setting (older projects have none). */
   automation?: AutomationLane[];
   /** Rendered to audio to save CPU (see src/store/freeze.ts); absent when the track plays live. */
@@ -532,6 +615,12 @@ export interface Track {
    * velocity in tone too. On for tracks made since it existed; older projects keep their sound.
    */
   expressive?: boolean;
+  /** An 808 Bass track's designer settings (see bass808.ts); absent: the original 808 */
+  bass808?: Bass808Settings;
+  /** A monophonic synth's slide time between overlapping notes, seconds (see bassTools.ts); absent: the instrument's own */
+  glide?: number;
+  /** The Sub enhancer: a clean sine under every note (see bassTools.ts); absent: off */
+  subLayer?: SubLayer;
 }
 
 /** What a clip launcher slot holds: a clip, without a place in the song. */
@@ -755,6 +844,10 @@ export interface ClipAudio {
   envelope?: GainPoint[];
   /** Reversed: the sound it was reversed from (the clip plays a reversed copy), to go back to */
   reversedFrom?: string;
+  /** Re-pitched into another key (see flipActions.ts): the sound it was moved from, to go back to */
+  shiftedFrom?: string;
+  /** ...and by how many semitones */
+  shift?: number;
 }
 
 /** One pad of a Drum Rack: a sound, and the effects it plays through (its own, not shared with the other pads). */
@@ -779,6 +872,11 @@ export interface RackPad {
   choke: number;
   /** Plays backwards */
   reverse?: boolean;
+  /** A chop: the stretch of the sound it plays, seconds (absent: all of it). See sampleFlip.ts */
+  start?: number;
+  end?: number;
+  /** Fade at the chop's edges, seconds (absent: none) */
+  fade?: number;
 }
 
 /** A Drum Rack: 16 pads, pad i on MIDI note RACK_BASE_NOTE + i. */
@@ -914,6 +1012,27 @@ export interface Clip {
 export interface ClipGroove {
   swing: number;
   grid: 8 | 16;
+  /**
+   * Rows with a feel of their own, by note name (a drum clip's hats swing while its kick and snare
+   * stay straight; see drumGroove.ts). Absent: every row plays the clip's swing.
+   */
+  rows?: Record<string, RowFeel>;
+  /** The groove template it was set from (GROOVE_TEMPLATES), shown until a row is changed */
+  template?: string;
+}
+
+/** One row's own feel in a clip's groove. */
+export interface RowFeel {
+  /** Its own swing, 0 (straight) to MAX_CLIP_SWING, in place of the clip's; absent: the clip's */
+  swing?: number;
+  /** The grid its swing works on (absent: the clip's) */
+  grid?: 8 | 16;
+  /** Early (negative) or late, as a share of a 16th note (-0.25 to 0.25): pushed or laid back */
+  shift?: number;
+  /** Its velocities scaled (0.4 to 1.25; absent: 1) */
+  vel?: number;
+  /** Its notes off the 8th-note grid scaled again (softer or accented off-beats; absent: 1) */
+  offbeat?: number;
 }
 export const MAX_CLIP_SWING = 0.75;
 
@@ -1168,7 +1287,28 @@ export function barsToDuration(bars: number): string {
 }
 
 let uidCounter = 0;
+/** Set while withStableIds runs: the ids' base, and how many it has given. */
+let stable: { base: string; count: number } | null = null;
+
+/** A new id: unique in this session (from the clock and a counter), or see withStableIds. */
 export function uid(prefix: string): string {
+  if (stable) return `${prefix}-${stable.base}-${(++stable.count).toString(36)}`;
   uidCounter += 1;
   return `${prefix}-${Date.now().toString(36)}-${uidCounter.toString(36)}`;
+}
+
+/**
+ * Run `fn` with uid giving ids made from `base` and their order alone, so building the same thing
+ * again gives the same ids. For a starter song: the Human insert's drift comes from its clips' ids
+ * (human.ts), so with ids from the clock every fresh copy played and exported a little
+ * differently, its recordings too (the velocity a note drifts to picks the recording).
+ */
+export function withStableIds<T>(base: string, fn: () => T): T {
+  const was = stable;
+  stable = { base, count: 0 };
+  try {
+    return fn();
+  } finally {
+    stable = was;
+  }
 }

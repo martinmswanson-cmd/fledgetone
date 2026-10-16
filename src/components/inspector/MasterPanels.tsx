@@ -1,11 +1,16 @@
 /**
- * The Master tab of the Inspector: the loudness meter, the OTT and stereo width inserts, the
- * playback buffering choice, and the instruments kept for offline use.
+ * The Master tab of the Inspector: the loudness meter, the glue, the OTT and stereo width inserts,
+ * the Level and the clipper before the limiter, the reference track and the mix check, the playback buffering choice and the browser's audio delay, and the instruments kept for offline use (with whether the browser keeps this storage).
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Snowflake, Timer } from 'lucide-react';
+import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Scissors, Snowflake, Timer, Volume2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { defaultMasterSettings, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
+import { defaultMasterSettings, GLUE_STYLE_IDS, LEVEL_MAX, LEVEL_MIN, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
+import type { GlueStyle } from '../../store/timelineTypes';
+import { GLUE_STYLES, onClipperReading } from '../../audio/effects/masterChain';
+import { CLIPPER_CEILING_MIN, CLIPPER_DRIVE_MAX, defaultClipper } from '../../audio/effects/clipper';
+import { ReferencePanel } from './ReferencePanel';
+import { MixCheckPanel } from './MixCheckPanel';
 import { formatDbtp, formatLufs, NORMALIZE_TARGET_LUFS } from '../../audio/loudness';
 
 /** A reading, or a dash while there's nothing to measure. */
@@ -13,10 +18,12 @@ const show = (v: number, unit: (v: number) => string) => (Number.isFinite(v) ? u
 import { resetLoudness } from '../../audio/loudnessMeter';
 import { useLoudness } from './useLoudness';
 import { choosePlaybackMode, chosenPlaybackMode, PLAYBACK_MODE } from '../../audio/playbackMode';
+import { outputLatencySeconds } from '../../audio/latency';
 import type { PlaybackMode } from '../../audio/playbackMode';
 import { AUTO_FREEZE_MIN_TRACKS, setAutoFreeze, useAutoFreeze } from '../../store/autoFreeze';
 import { clearRecordings, downloadAll, keptRecordings, recordingCount, type DownloadProgress } from '../../audio/recordingStore';
 import { FxSlider, InsertPanel } from './InsertFx';
+import { StorageStatus } from './StorageStatus';
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const db = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
@@ -91,6 +98,31 @@ export const OttPanel: React.FC = () => {
   );
 };
 
+/** The master compressor's style: how hard and how fast it holds the whole mix together. */
+export const GluePanel: React.FC = () => {
+  const glue = useTimelineStore((s) => s.master.glue);
+  return (
+    <div className="rounded-md border border-forge-border bg-forge-panel/60 p-2 flex flex-col gap-1.5">
+      <label className="flex items-center gap-2 text-[11px] font-semibold text-forge-text">
+        <Gauge className="w-3.5 h-3.5 text-amber-300" />
+        Glue
+        <select
+          value={glue}
+          onChange={(e) => useTimelineStore.getState().setMasterGlue(e.target.value as GlueStyle)}
+          className="ml-auto h-6 bg-forge-bg border border-forge-border rounded px-1 text-[11px] font-normal"
+        >
+          {GLUE_STYLE_IDS.map((id) => (
+            <option key={id} value={id}>
+              {GLUE_STYLES[id].name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="text-[10px] text-forge-muted">The master compressor. {GLUE_STYLES[glue].about}</p>
+    </div>
+  );
+};
+
 /** Stereo width by mid/side, with the bass kept in the middle. */
 export const WidthPanel: React.FC = () => {
   const width = useTimelineStore((s) => s.master.width);
@@ -123,6 +155,82 @@ export const WidthPanel: React.FC = () => {
         />
         <span>Keep the bass in the middle (below 120 Hz), so it stays strong on club systems and phones</span>
       </label>
+    </InsertPanel>
+  );
+};
+
+/** The master Level: the whole mix up or down, after the OTT and width, just before the limiter. */
+export const LevelPanel: React.FC = () => {
+  const level = useTimelineStore((s) => s.master.level);
+  const accent = '#34d399';
+  return (
+    <div data-search="master level" className="rounded-md border border-forge-border bg-forge-panel/60 p-2 flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[11px] font-semibold text-forge-text">
+        <Volume2 className="w-3.5 h-3.5" style={{ color: accent }} />
+        Level
+      </div>
+      <FxSlider label="Level" value={level} min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} format={db} onChange={(v) => useTimelineStore.getState().setMasterLevel(v)} reset={0} accent={accent} disabled={false} />
+      <p className="text-[10px] text-forge-muted">Turns the whole mix up or down just before the limiter. Up makes the song louder, and the limiter holds the peaks down.</p>
+    </div>
+  );
+};
+
+/**
+ * The master clipper: drive into a soft or hard clip just before the limiter, shaving the tallest
+ * peaks so the song can be louder with less limiting. Its meter shows how much it's taking off.
+ */
+export const ClipperPanel: React.FC = () => {
+  const clipper = useTimelineStore((s) => s.master.clipper) ?? defaultClipper();
+  const d = defaultClipper();
+  const set = useTimelineStore.getState().setMasterClipper;
+  const accent = '#fb923c';
+  const [heard, setReading] = useState<{ peakDb: number; share: number } | null>(null);
+  useEffect(() => {
+    if (!clipper.on) return;
+    // The meter falls back slowly, so a peak can be read
+    let held = { peakDb: 0, share: 0 };
+    const stop = onClipperReading((r) => {
+      held = { peakDb: Math.max(r.peakDb, held.peakDb - 0.4), share: held.share * 0.8 + r.share * 0.2 };
+      setReading(held);
+    });
+    return () => {
+      stop();
+      setReading(null);
+    };
+  }, [clipper.on]);
+  const reading = clipper.on ? heard : null;
+  const dbAmount = reading?.peakDb ?? 0;
+  return (
+    <InsertPanel title="Clipper" icon={<Scissors className="w-3.5 h-3.5" style={{ color: accent }} />} on={clipper.on} onToggle={() => set({ on: !clipper.on })} accent={accent}>
+      <p className="text-[10px] text-forge-muted">
+        Shaves the tallest peaks (mostly drum hits) flat before the limiter, so the song gets louder with less squashing. Loud rap and electronic masters do this. Drive pushes more into it.
+      </p>
+      <FxSlider label="Drive" value={clipper.drive} min={0} max={CLIPPER_DRIVE_MAX} step={0.5} format={db} onChange={(v) => set({ drive: v })} reset={d.drive} accent={accent} disabled={!clipper.on} />
+      <FxSlider
+        label="Character"
+        value={clipper.softness}
+        min={0}
+        max={1}
+        step={0.01}
+        format={(v) => (v < 0.15 ? 'Hard' : v > 0.85 ? 'Soft' : `${Math.round(v * 100)}% soft`)}
+        onChange={(v) => set({ softness: v })}
+        reset={d.softness}
+        accent={accent}
+        disabled={!clipper.on}
+      />
+      <FxSlider label="Ceiling" value={clipper.ceiling} min={CLIPPER_CEILING_MIN} max={0} step={0.1} format={(v) => `${v.toFixed(1)} dBFS`} onChange={(v) => set({ ceiling: v })} reset={d.ceiling} accent={accent} disabled={!clipper.on} />
+      {clipper.on && (
+        <div className="flex flex-col gap-1" data-testid="clipper-meter">
+          <div className="h-1.5 rounded bg-black/40 overflow-hidden" title="How many dB the clipper is taking off the peaks">
+            <div className="h-full transition-[width] duration-75" style={{ width: `${Math.min(100, (dbAmount / 8) * 100)}%`, background: dbAmount > 4 ? '#f87171' : accent }} />
+          </div>
+          <p className={`text-[10px] font-mono ${dbAmount > 4 ? 'text-red-300' : 'text-forge-muted'}`}>
+            {reading && dbAmount > 0.05
+              ? `Clipping up to ${dbAmount.toFixed(1)} dB, ${(reading.share * 100).toFixed(reading.share < 0.01 ? 1 : 0)}% of the time${dbAmount > 4 ? ': that much can sound crunchy' : ''}`
+              : 'Not clipping. Play the song and raise the Drive.'}
+          </p>
+        </div>
+      )}
     </InsertPanel>
   );
 };
@@ -161,6 +269,7 @@ export const PlaybackPanel: React.FC = () => {
         ))}
       </div>
       <p className="text-[10px] text-forge-muted">{MODES.find((m) => m.mode === chosen)!.detail}</p>
+      <AudioDelay />
       <AutoFreezeSetting />
       {chosen !== PLAYBACK_MODE && (
         <div className="flex items-center justify-between gap-2 text-[10px] text-amber-200">
@@ -171,6 +280,30 @@ export const PlaybackPanel: React.FC = () => {
         </div>
       )}
     </div>
+  );
+};
+
+/** The browser's own delay from sound made to sound heard (its buffer and the audio device), in ms; null where it doesn't say. */
+function audioDelayMs(): number | null {
+  const seconds = outputLatencySeconds();
+  return seconds > 0 ? Math.round(seconds * 1000) : null;
+}
+
+/**
+ * How long a key played live takes to be heard, as the browser measures it (it can change, as when
+ * headphones are plugged in, so it's read again every second). Live keys play at once on the audio
+ * clock, so this is all the delay there is.
+ */
+const AudioDelay: React.FC = () => {
+  const [ms, setMs] = useState(audioDelayMs);
+  useEffect(() => {
+    const id = window.setInterval(() => setMs(audioDelayMs()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <p className="text-[10px] text-sky-200" data-testid="audio-delay">
+      {ms === null ? "This browser doesn't say how long its sound takes to reach you." : `Delay from a key to sound: about ${ms} ms`}
+    </p>
   );
 };
 
@@ -283,6 +416,7 @@ export const OfflinePanel: React.FC = () => {
             : 'Every instrument is kept: they all work offline now.'}
         </p>
       )}
+      <StorageStatus refreshKey={kept} />
     </div>
   );
 };
@@ -291,8 +425,13 @@ export const OfflinePanel: React.FC = () => {
 export const MasterPanels: React.FC = () => (
   <div className="flex flex-col gap-3">
     <LoudnessPanel />
+    <GluePanel />
     <OttPanel />
     <WidthPanel />
+    <LevelPanel />
+    <ClipperPanel />
+    <ReferencePanel />
+    <MixCheckPanel />
     <PlaybackPanel />
     <OfflinePanel />
   </div>

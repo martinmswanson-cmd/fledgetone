@@ -6,21 +6,26 @@ import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { STORY_BUILDERS } from './startersStory';
 import { MATH_BUILDERS } from './startersMath';
-import { FX_NOTES, INSTRUMENTS } from '../audio/instrumentCatalog';
+import { CLASSICS_BUILDERS } from './startersClassics';
+import { starterTrimDb, trimMix } from './startersLoudness';
+import { FX_NOTES, INSTRUMENTS, seatOf } from '../audio/instrumentCatalog';
+import type { RoomStyle } from '../audio/effects/roomIR';
+import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { swellLane } from './swell';
 import { midiOf, nameOf } from './noteTools';
 import { defaultSynthPatch, presetPatch, withPatch } from './synthPatch';
-import { barsToDuration, DEFAULT_MASTER_FX, durationToBars, uid } from './timelineTypes';
+import { barsToDuration, DEFAULT_MASTER_FX, durationToBars, uid, withStableIds } from './timelineTypes';
 import { breathe } from './breathe';
 import { FOUR_FOUR } from '../audio/tempoMap';
-import type { Clip, ClipExpression, MasterFx, MbcBand, PeqBand, Track } from './timelineTypes';
+import type { Clip, ClipExpression, MasterFx, MasterSettings, MbcBand, PeqBand, Track } from './timelineTypes';
 import type { Step } from './demoSong';
 
 /**
  * Genre starters for the New dialog: a 16-bar arrangement in each style, with its tempo, a
  * mixed set of tracks, sections marked (intro, build, drop...), the loop on the main section and
  * the master set up for the style. Built from data like the demo song, so they are ordinary
- * projects once opened. Steps are 16th notes: offset = step / 16 bars.
+ * projects once opened. Steps are 16th notes: offset = step / 16 bars. A starter may name a `sub`
+ * group, shown as a heading inside its group in the New dialog.
  */
 export const STARTERS = [
   { id: 'overworld', group: 'Game Worlds', name: 'Overworld Adventure', detail: '116 BPM, C major. Game-ready: Explore (harp, flute theme, strings) and Danger (horn hero theme, march, timpani), with layers for Intensity, a fill into Danger and stingers.' },
@@ -99,11 +104,17 @@ export const STARTERS = [
   { id: 'theatrical', group: 'Pop & Jazz', name: 'Theatrical Pop', detail: '132 BPM, D minor to F. A line-cliche verse with pizzicato and a music-box motif, then a disco chorus with brass fanfares.' },
   { id: 'raprock', group: 'Band', name: 'Rap-Rock', detail: '154 BPM, G minor. A Phrygian riff over half-time drums, a dead stop, then a double-time chant chorus with low brass.' },
   { id: 'mathrock', group: 'Band', name: 'Math Rock', detail: '150 BPM, E major. Twinkly guitar, tapping in triplets, 3+3+3+3+2+2 accents, then an easycore breakdown.' },
+  { id: 'canon', group: 'Classics', name: 'Canon in D (Pachelbel)', detail: '58 BPM, D major, complete (about 4 minutes). The three violins in strict canon over the ground bass: solo Violin, Violin and Viola (Real), the ground on Cello and Contrabass (Real), the sections joining as it grows; legato, a slowing at the end.' },
+  { id: 'moonlight', group: 'Classics', name: 'Moonlight Sonata, 1st mvt (Beethoven)', detail: '54 BPM, C sharp minor, complete first movement (about 5 minutes). The concert grand, pianissimo throughout, pedalled with each harmony, the tempo breathing.' },
+  { id: 'prelude', group: 'Classics', name: 'Cello Suite No. 1: Prelude (Bach)', detail: '66 BPM, G major, complete (about 2.5 minutes). Solo Cello (Real), the dynamics rising into the held D and through the last climb, rubato and fermatas.' },
+  { id: 'mountainKing', group: 'Classics', name: 'In the Hall of the Mountain King (Grieg)', detail: '116 to 240 BPM, B minor, complete (about 2 minutes). For orchestra from Grieg\'s piano version: bassoon and pizzicato, then strings, winds, brass, timpani, gathering speed to the end.' },
+  { id: 'clairDeLune', group: 'Classics', name: 'Clair de lune (Debussy)', detail: '58 BPM, D flat major, 9/8, complete (about 5 minutes). The concert grand: hushed thirds, the rubato section warming, rippling arpeggios to the one forte, dying away.' },
 ] as const;
 export type StarterId = (typeof STARTERS)[number]['id'];
-export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Anime & Cartoon', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World'] as const;
+export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Anime & Cartoon', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World', 'Classics'] as const;
 
 export const isStarterId = (v: unknown): v is StarterId => STARTERS.some((s) => s.id === v);
+
 
 // ---------- Mix helpers (the starter manual's toolkit, Part 2) ----------
 
@@ -235,7 +246,8 @@ const ROLLING_BASS = () => designer({
 
 function dubstep(): ProjectSnapshot {
   const room = darkRoom();
-  const drums = track('Drums', 'technoKit', { volume: -4, reverbSend: 0.08, fx: { peq: EQ.kit(350), compressor: GLUE, distortion: { on: true, amount: 0.12 } } });
+  // (4 dB under where they were: they stood 6 dB over the wobble and growl, their peaks 10 dB over)
+  const drums = track('Drums', 'technoKit', { volume: -8, reverbSend: 0.08, fx: { peq: EQ.kit(350), compressor: GLUE, distortion: { on: true, amount: 0.12 } } });
   const sub = track('Sub', 'subBass', { volume: -10, fx: { peq: EQ.sub(150), pump: { on: true, depth: 0.6, release: 150, trigger: 'kick' } } });
   const wobble = track('Wobble', 'wobbleBass', { volume: -6, fx: { peq: peq(lowCut(120), bell(900, 3), highCut(10000)), distortion: { on: true, amount: 0.1 }, mbc: TAME_FIZZ } });
   const growl = track('Growl', 'growlBass', { volume: -7, fx: { peq: peq(lowCut(120), highCut(9000)), distortion: { on: true, amount: 0.1 } } });
@@ -302,7 +314,7 @@ function house(): ProjectSnapshot {
   const drums = track('Drums', 'technoKit', { volume: -4, reverbSend: 0.05, fx: { peq: peq(lowCut(30)), compressor: GLUE, human: humanVel(0.15) } });
   const bass = track('Bass', 'synthBass2', { volume: -6, fx: { peq: peq(lowCut(35)), pump: { on: true, depth: 0.4, release: 200, trigger: 'kick' } } });
   const stabs = track('Stabs', 'rhodes', {
-    volume: -8, delaySend: 0.1, sends: sendTo(room, 0.2),
+    volume: -11.5, delaySend: 0.1, sends: sendTo(room, 0.2),
     fx: { peq: peq(lowCut(150), highCut(9000)), pump: { on: true, depth: 0.5, release: 220, trigger: 'kick' }, chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.2 }, human: human(0.2) },
   });
   const pad = track('Pad', 'warmPad', { volume: -18, reverbSend: 0.3, fx: { peq: peq(lowCut(200)), pump: { on: true, depth: 0.6, release: 260, trigger: 'kick' } } });
@@ -399,7 +411,8 @@ function dnb(): ProjectSnapshot {
 function trap(): ProjectSnapshot {
   const room = darkRoom();
   // The 808 kit is right for trap; HUMAN stays off (hats are programmed, not played)
-  const drums = track('Drums', 'drumMachine', { volume: -4, reverbSend: 0.05, fx: { peq: peq(lowCut(30), highCut(13000)), compressor: GLUE } });
+  // The drums 6 dB under where they were: they stood 15 dB over the 808, the piano and the pad
+  const drums = track('Drums', 'drumMachine', { volume: -10, reverbSend: 0.05, fx: { peq: peq(lowCut(30), highCut(13000)), compressor: GLUE } });
   const bass = track('808', 'bass808', { volume: -8, fx: { peq: peq(lowCut(28)), mbc: { on: true, bands: [{ threshold: -20, ratio: 2, gain: 0 }, { threshold: -20, ratio: 1.5, gain: 0 }, { threshold: -20, ratio: 1.5, gain: 0 }] } } });
   // A quiet, low, dusty piano instead of a bright pluck with delay (a ringtone)
   const melody = track('Melody', 'piano', {
@@ -460,10 +473,10 @@ function trap(): ProjectSnapshot {
 
 function cinematic(): ProjectSnapshot {
   const harp = track('Harp', 'harp', { volume: -8, reverbSend: 0.45, pan: -0.2, fx: { human: human(0.3) } });
-  const strings = track('Strings', 'strings', { volume: -15, reverbSend: 0.45, pan: -0.3, fx: { peq: EQ.pad(), human: human(0.35, 0.3) } });
+  const strings = track('Strings', 'strings', { volume: -15, reverbSend: 0.55, pan: -0.3, fx: { peq: EQ.pad(), human: human(0.35, 0.3) } });
   const pad = track('Soundtrack', 'soundtrackPad', { volume: -18, reverbSend: 0.4, fx: { peq: EQ.pad(7000) } });
-  const cello = track('Cello', 'cello', { volume: -6, reverbSend: 0.3, pan: 0.2, fx: { peq: peq(lowCut(40)), human: human(0.3, 0.3) } });
-  const celloTheme = track('Cello theme', 'cello', { volume: -8, reverbSend: 0.35, pan: 0.25, fx: { peq: peq(lowCut(40)), human: human(0.35, 0.3) } });
+  const cello = track('Cello', 'cello', { volume: -6, reverbSend: 0.45, pan: 0.2, fx: { peq: peq(lowCut(40)), human: human(0.3, 0.3) } });
+  const celloTheme = track('Cello theme', 'cello', { volume: -8, reverbSend: 0.45, pan: 0.25, fx: { peq: peq(lowCut(40)), human: human(0.35, 0.3) } });
   const horns = track('Horns', 'frenchHorn', { volume: -4, reverbSend: 0.5, pan: -0.25, fx: { peq: EQ.brass(), human: human(0.3, 0.25) } });
   const taiko = track('Taiko', 'taiko', { volume: -5, reverbSend: 0.4, fx: { human: human(0.15) } });
   const sfx = track('FX', 'fx', { volume: -16, reverbSend: 0.3 });
@@ -521,7 +534,7 @@ function cinematic(): ProjectSnapshot {
 function lofi(): ProjectSnapshot {
   const tape = { crush: bits(12), tone: 5000, wow: 0.25, mix: 0.5 };
   const keys = track('Keys', 'rhodes', {
-    volume: -9, reverbSend: 0.3,
+    volume: -11.5, reverbSend: 0.3,
     fx: { lofi: { on: true, ...tape }, chorus: { on: true, rate: 0.8, depth: 0.5, mix: 0.3 }, filter: { on: true, type: 'lowpass', cutoff: 3000 }, human: human(0.4) },
   });
   const drums = track('Drums', 'breakbeatKit', {
@@ -634,12 +647,12 @@ function hiphop(): ProjectSnapshot {
     },
   });
   const keys = track('Keys', 'rhodes', {
-    volume: -8, sends: sendTo(room, 0.2),
+    volume: -11, sends: sendTo(room, 0.2),
     fx: { peq: peq(lowCut(120), highCut(6000)), lofi: { on: true, crush: bits(14), tone: 6000, wow: 0.2, mix: 0.4 }, filter: { on: true, type: 'lowpass', cutoff: 3000 }, human: human(0.3) },
   });
   const bass = track('Bass', 'uprightBass', { volume: -6, fx: { peq: peq(lowCut(40), highCut(3000)), compressor: { on: true, threshold: -18, ratio: 4, makeup: 2 }, human: human(0.25) } });
   const horn = track('Trumpet', 'mutedTrumpet', {
-    volume: -12, delaySend: 0.1, sends: sendTo(room, 0.3), pan: 0.15,
+    volume: -8.5, delaySend: 0.1, sends: sendTo(room, 0.3), pan: 0.15,
     fx: { peq: peq(lowCut(250), highCut(6000)), lofi: { on: true, crush: bits(12), tone: 5000, wow: 0.1, mix: 0.5 }, human: human(0.3, 0.2) },
   });
   // Dm9 - Bbmaj7 - Gm9 - A7(b9), a bar each: dusty minor jazz, strummed on 1 and the "and" of 2
@@ -697,12 +710,13 @@ const tomFill = (from: number): Step[] => [
 // ---------- Classical ----------
 
 function classical(): ProjectSnapshot {
-  // Played, not sequenced: HUMAN on every part, light vibrato on the held lines, notes that overlap
+  // A string quartet of single players (each note recorded, the app's vibrato on the held notes)
+  // played, not sequenced: HUMAN on every part, notes that overlap
   const strings = (amount = 0.4) => human(amount, 0.3);
-  const vln1 = track('Violin I', 'violin', { volume: -3, pan: -0.4, reverbSend: 0.35, fx: { human: strings() } });
-  const vln2 = track('Violin II', 'violin', { volume: -9, pan: -0.15, reverbSend: 0.35, fx: { human: strings() } });
-  const viola = track('Viola', 'viola', { volume: -4, pan: 0.15, reverbSend: 0.35, fx: { human: strings() } });
-  const cello = track('Cello', 'cello', { volume: -4, pan: 0.3, reverbSend: 0.35, fx: { peq: peq(lowCut(40)), human: strings() } });
+  const vln1 = track('Violin I', 'realViolin', { volume: -6, pan: -0.4, reverbSend: 0.5, fx: { human: strings() } });
+  const vln2 = track('Violin II', 'realViolin', { volume: -12, pan: -0.15, reverbSend: 0.5, fx: { human: strings() } });
+  const viola = track('Viola', 'realViola', { volume: -6, pan: 0.15, reverbSend: 0.5, fx: { human: strings() } });
+  const cello = track('Cello', 'realSoloCello', { volume: -10.5, pan: 0.3, reverbSend: 0.5, fx: { peq: peq(lowCut(40)), human: strings() } });
   const harpsi = track('Harpsichord', 'harpsichord', { volume: -10, reverbSend: 0.25, fx: { peq: peq(lowCut(150)), human: human(0.3) } });
   // D - A - Bm - F#m - G - D - G - A, two beats each (the Canon's ground)
   const roots = ['D3', 'A2', 'B2', 'F#2', 'G2', 'D2', 'G2', 'A2'];
@@ -720,11 +734,11 @@ function classical(): ProjectSnapshot {
     [9, 17],
     [vln1, vln2, viola, cello, harpsi],
     [
-      withLanes(clip(cello, 'Ground bass', 1, 4, ground, 4), VIBRATO),
+      clip(cello, 'Ground bass', 1, 4, ground, 4),
       clip(viola, 'Inner voice', 1, 4, violaPart, 4),
       clip(vln2, 'Arpeggios', 5, 4, broken, 3),
-      withLanes(clip(vln1, 'Theme', 9, 4, theme), VIBRATO),
-      withLanes(clip(vln1, 'Variation', 13, 4, legato(variation)), VIBRATO),
+      clip(vln1, 'Theme', 9, 4, theme),
+      clip(vln1, 'Variation', 13, 4, legato(variation)),
       clip(harpsi, 'Continuo', 9, 4, continuo, 2),
     ],
     [[1, 'Ground'], [5, 'Second violins'], [9, 'Theme'], [13, 'Variation']],
@@ -1404,12 +1418,176 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   ...MORE_GAME_BUILDERS,
   ...STORY_BUILDERS,
   ...MATH_BUILDERS,
+  ...CLASSICS_BUILDERS,
 };
 
-/** A fresh copy of a starter (new ids each time). */
+/**
+ * A fresh copy of a starter. Its ids are the same every time (withStableIds), so every copy plays
+ * and exports exactly alike: the Human insert's drift, and the recordings it picks, follow them.
+ */
 export function createStarter(id: StarterId): ProjectSnapshot {
-  const p = wholeSong(withSwells(inRange(BUILDERS[id]())));
-  return withBreathing(id, withVibrato(id, withLegato(id, p)));
+  return withStableIds(`starter_${id}`, () => {
+    const p = withRoom(id, withGlue(id, wholeSong(withSwells(inRange(withSeats(recorded(BUILDERS[id]())))))));
+    // Last, the level: each starter brought to its group's loudness (see startersLoudness.ts)
+    return trimMix(withBreathing(id, withVibrato(id, withLegato(id, ownVibrato(p)))), starterTrimDb(id));
+  });
+}
+
+/**
+ * The recorded instrument (or Synth Designer pad) each older General MIDI sound in the starters
+ * becomes, with `db` added to the track's volume so its level in the mix stays where it was
+ * (measured: the same notes through both, A-weighted). `short` plays parts of short notes (under an
+ * eighth on average) with the short-stroke recordings, and `high` takes parts too high for the
+ * recording (the horn's top, which the section's trumpet plays). `anyNote`: a note out of the
+ * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, choir, music box and the rest
+ * have no free recording yet and stay as they are.
+ */
+const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: InstrumentKey; shortDb?: number; high?: InstrumentKey; highDb?: number; preset?: string; anyNote?: boolean }> = {
+  cello: { to: 'realCello', db: -4, short: 'realCelloShort', shortDb: -2.5 },
+  brassSection: { to: 'realBrass', db: -3 },
+  distortionGuitar: { to: 'realLeadGuitar', db: 1.5 },
+  timpani: { to: 'realTimpani', db: 1.0, anyNote: true },
+  slowStrings: { to: 'realStrings', db: -15 },
+  strings: { to: 'realStrings', db: 0 },
+  tremolo: { to: 'realTremolo', db: 2 },
+  uprightBass: { to: 'realUprightBass', db: 1.5 },
+  cleanGuitar: { to: 'realGuitar', db: -1.0 },
+  harp: { to: 'realHarp', db: -2 },
+  flute: { to: 'realFlute', db: 0.0, short: 'realFluteShort', shortDb: -3.0 },
+  frenchHorn: { to: 'realHorn', db: 3.0, short: 'realHornShort', shortDb: -2.5, high: 'realBrass', highDb: -4 },
+  pizzicato: { to: 'realPizzicato', db: -3.5 },
+  // (Matched A-weighted, which hardly hears a double bass's low notes: at -3.5 it played 3 to 10 dB
+  // over every other part in all five starters that have one; now it sits a little under the cellos)
+  contrabass: { to: 'realDoubleBass', db: -12 },
+  marimba: { to: 'realMarimba', db: 0.5 },
+  violin: { to: 'realViolin', db: -3, short: 'realViolinsShort', shortDb: -2.5 },
+  viola: { to: 'realViolas', db: -1.0, short: 'realViolasShort', shortDb: -3.5 },
+  trombone: { to: 'realTrombone', db: -0.5, short: 'realTromboneShort', shortDb: 2.0 },
+  pickBass: { to: 'realElectricBass', db: 1 },
+  fingerBass: { to: 'realElectricBass', db: -0.5 },
+  vibraphone: { to: 'realVibraphone', db: -5.0 },
+  tenorSax: { to: 'realTenorSax', db: 0.5 },
+  saxophone: { to: 'realAltoSax', db: 1.5 },
+  glockenspiel: { to: 'realGlockenspiel', db: 4.0 },
+  overdriveGuitar: { to: 'realCrunchGuitar', db: 5 },
+  pipeOrgan: { to: 'realPipeOrgan', db: -3.5 },
+  kalimba: { to: 'realKalimba', db: -3.5 },
+  chimes: { to: 'realTubularBells', db: -1.0 },
+  trumpet: { to: 'realTrumpet', db: 3.0, short: 'realTrumpetShort', shortDb: -0.5 },
+  bassoon: { to: 'realBassoon', db: -0.5 },
+  clarinet: { to: 'realClarinet', db: -0.5 },
+  harpsichord: { to: 'realHarpsichord', db: -0.5 },
+  tuba: { to: 'realTuba', db: 1.5 },
+  glassPad: { to: 'synthDesigner', preset: 'Glass pad', db: -8 },
+  warmPad: { to: 'synthDesigner', preset: 'Warm pad', db: -5 },
+  haloPad: { to: 'synthDesigner', preset: 'Halo pad', db: -4.0 },
+  sweepPad: { to: 'synthDesigner', preset: 'Sweep pad', db: 1.5 },
+  polysynthPad: { to: 'synthDesigner', preset: 'Polysynth', db: 0.0 },
+  soundtrackPad: { to: 'synthDesigner', preset: 'Soundtrack pad', db: 0.5 },
+  // The electric piano rings on for a held chord (up to 8 s), so every part moves to it. Matched
+  // part by part rather than here (A-weighted, each starter's part through both): against the old
+  // sound they ranged from -0.5 to +3.5 dB, so each starter's electric piano fader is set for it
+  rhodes: { to: 'realElectricPiano', db: 0 },
+  acousticKit: { to: 'studioKit', db: 0, anyNote: true },
+  banjo: { to: 'realBanjo', db: 0 },
+  harmonica: { to: 'realHarmonica', db: 0 },
+  ocarina: { to: 'realOcarina', db: 0 },
+  steelDrums: { to: 'realSteelDrums', db: 0 },
+  // (Matched part by part, A-weighted, each starter's part through both: the celesta's parts
+  // ranged from +0.3 to +2.4 dB, the recorder's +1.3 to +2.7, the muted trumpet's +1.7 to +7.5,
+  // its highest parts most; the farthest parts' faders are set for it)
+  celesta: { to: 'realCelesta', db: -1.0 },
+  recorder: { to: 'realRecorder', db: -2.0 },
+  mutedTrumpet: { to: 'realMutedTrumpet', db: -5.0 },
+  // (Matched part by part, by loudness, each starter's part through both: the classical guitar's
+  // four parts came out 0.5 to 1.2 dB louder)
+  nylonGuitar: { to: 'realNylonGuitar', db: -0.8 },
+};
+
+/**
+ * Starters play the recorded instruments: each track on an older General MIDI sound moves to its
+ * recording (see RECORDED) when its notes fit the recording's range, at a level that keeps the mix.
+ */
+function recorded(p: ProjectSnapshot): ProjectSnapshot {
+  const tracks = p.tracks.map((t) => {
+    const swap = RECORDED[t.instrumentKey];
+    if (!swap) return t;
+    const notes = p.clips.filter((c) => c.trackId === t.id).flatMap((c) => c.notes);
+    const average = notes.length ? notes.reduce((a, n) => a + durationToBars(n.duration), 0) / notes.length : 1;
+    const fits = (key: InstrumentKey) => {
+      const [lo, hi] = INSTRUMENTS[key].range;
+      return key === 'synthDesigner' || swap.anyNote || notes.filter((n) => midiOf(n.note) >= lo && midiOf(n.note) <= hi).length >= notes.length * 0.9;
+    };
+    const choices: Array<[InstrumentKey | undefined, number | undefined]> = [
+      ...(average < 0.125 - 1e-6 ? [[swap.short, swap.shortDb] as [InstrumentKey | undefined, number | undefined]] : []),
+      [swap.to, swap.db],
+      [swap.high, swap.highDb],
+    ];
+    const [to, db] = choices.find(([key]) => key && fits(key)) ?? [];
+    if (!to) return t;
+    return { ...t, instrumentKey: to, volume: t.volume + db!, ...(swap.preset ? { synth: presetPatch(swap.preset) } : {}) };
+  });
+  const stingers = p.stingers?.map((st) => {
+    const to = RECORDED[st.instrumentKey]?.to;
+    if (!to || to === 'synthDesigner') return st;
+    const [lo, hi] = INSTRUMENTS[to].range;
+    return st.notes.every((n) => midiOf(n.note) >= lo && midiOf(n.note) <= hi) ? { ...st, instrumentKey: to } : st;
+  });
+  return { ...p, tracks, ...(stingers ? { stingers } : {}) };
+}
+
+/** The master compressor's style each group of starters suits (see GLUE_STYLES). */
+const GROUP_GLUE: Partial<Record<(typeof STARTER_GROUPS)[number], MasterSettings['glue']>> = {
+  'Bass Music': 'tight',
+  Electronic: 'tight',
+  'Orchestral & Choir': 'gentle',
+  'Chill & World': 'gentle',
+  'Hip-Hop & Phonk': 'punchy',
+  Band: 'punchy',
+  'Pop & Jazz': 'punchy',
+  // (the Classical Flips choose punchy glue themselves)
+  Classics: 'gentle',
+};
+
+/** The reverb's room for each group of starters (see roomIR.ts; the rest play in the hall). */
+const GROUP_ROOM: Partial<Record<(typeof STARTER_GROUPS)[number], RoomStyle>> = {
+  Band: 'studio',
+  'Hip-Hop & Phonk': 'studio',
+  'Pop & Jazz': 'chamber',
+  Electronic: 'plate',
+  'Bass Music': 'plate',
+  'Artcore & Rhythm Games': 'plate',
+};
+
+/** A starter's reverb room from its group, unless its builder recorded one. */
+function withRoom(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
+  const group = STARTERS.find((s) => s.id === id)?.group;
+  const roomStyle = group && GROUP_ROOM[group];
+  if (!roomStyle || p.masterFx?.room || p.masterFx?.roomStyle) return p;
+  return { ...p, masterFx: { ...DEFAULT_MASTER_FX, ...p.masterFx, roomStyle } };
+}
+
+/**
+ * Orchestral instruments take their seats on the stage (seatOf): their usual distance, and their
+ * usual side where the starter left them in the middle.
+ */
+function withSeats(p: ProjectSnapshot): ProjectSnapshot {
+  return {
+    ...p,
+    tracks: p.tracks.map((t) => {
+      const seat = seatOf(t.instrumentKey);
+      if (!seat || t.distance !== undefined) return t;
+      return { ...t, distance: seat.distance, pan: t.pan === 0 ? seat.pan : t.pan };
+    }),
+  };
+}
+
+/** A starter's master glue from its group, unless its builder chose one. */
+function withGlue(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
+  const group = STARTERS.find((s) => s.id === id)?.group;
+  const glue = group && GROUP_GLUE[group];
+  if (!glue || !p.master || p.master.glue !== 'standard') return p;
+  return { ...p, master: { ...p.master, glue } };
 }
 
 /** The starters whose solo string melodies play legato, sliding between notes (see withLegato). */
@@ -1457,6 +1635,29 @@ function withLegato(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
   return { ...p, clips };
 }
 
+/**
+ * The bowed strings that already play with a vibrato: recorded with one (the sections and the
+ * solo violin of VSCO), or given one note by note (InstrumentDef.vibrato).
+ */
+const OWN_VIBRATO = new Set<string>(['realSoloViolin', 'realViolins', 'realViolas', 'realCello', 'realStrings']);
+const hasOwnVibrato = (key: InstrumentKey) => OWN_VIBRATO.has(key) || !!INSTRUMENTS[key]?.vibrato;
+
+/**
+ * A string part that plays its own vibrato loses the vibrato lane its starter drew for the older
+ * sound: the lane's even wobble on top of a player's vibrato is two vibratos at once, a seasick,
+ * synthetic sound.
+ */
+function ownVibrato(p: ProjectSnapshot): ProjectSnapshot {
+  const own = new Set(p.tracks.filter((t) => hasOwnVibrato(t.instrumentKey)).map((t) => t.id));
+  if (!own.size) return p;
+  const clips = p.clips.map((c) => {
+    if (!own.has(c.trackId) || !c.expression?.vibrato) return c;
+    const { vibrato: _, ...rest } = c.expression;
+    return { ...c, expression: rest };
+  });
+  return { ...p, clips };
+}
+
 /** How deep the vibrato grows (of the lane's 0..1, VIBRATO_CENTS at 1): about ±20 cents */
 const VIBRATO_DEPTH = 0.4;
 
@@ -1470,7 +1671,7 @@ function withVibrato(id: StarterId, p: ProjectSnapshot): ProjectSnapshot {
   const barSeconds = 240 / p.bpm;
   const singing = new Set(
     p.tracks
-      .filter((t) => SINGING.test(t.instrumentKey))
+      .filter((t) => SINGING.test(t.instrumentKey) && !hasOwnVibrato(t.instrumentKey))
       .filter((t) => {
         const notes = p.clips.filter((c) => c.trackId === t.id).flatMap((c) => c.notes);
         return notes.length > 0 && isLine(notes) && notes.reduce((a, n) => a + durationToBars(n.duration), 0) / notes.length >= 0.5 - 1e-6;
@@ -1519,6 +1720,8 @@ function wholeSong(p: ProjectSnapshot): ProjectSnapshot {
 const SWELLED = new Set<string>([
   'strings', 'slowStrings', 'synthStrings', 'synthStrings2', 'violin', 'viola', 'cello', 'contrabass', 'tremolo',
   'realViolins', 'realViolas', 'realCello', 'realSoloViolin', 'realDoubleBass', 'realTremolo',
+  'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
+  'realStrings', 'realBrass', 'realTenorSax',
   'choir', 'voiceOohs', 'synthChoir', 'choirPad', 'haloPad', 'warmPad', 'newAgePad', 'glassPad', 'sweepPad', 'polysynthPad', 'soundtrackPad', 'atmosphere',
   'frenchHorn', 'realHorn', 'tuba', 'realTuba', 'trombone', 'realTrombone', 'oboe', 'realOboe', 'clarinet', 'realClarinet', 'bassoon', 'realBassoon', 'englishHorn',
 ]);
@@ -1530,7 +1733,9 @@ const SWELLED = new Set<string>([
  * moves without falling back. A clip with its own mod wheel lane is left as it is.
  */
 function withSwells(p: ProjectSnapshot): ProjectSnapshot {
-  const swelled = new Set(p.tracks.filter((t) => SWELLED.has(t.instrumentKey)).map((t) => t.id));
+  // and the Synth Designer's slow-starting pads
+  const pad = (t: Track) => t.instrumentKey === 'synthDesigner' && (t.synth?.amp.attack ?? 0) >= 0.3;
+  const swelled = new Set(p.tracks.filter((t) => SWELLED.has(t.instrumentKey) || pad(t)).map((t) => t.id));
   const shaped = new Set<string>();
   const clips = p.clips.map((c) => {
     if (!swelled.has(c.trackId) || !c.notes.length || c.audio || c.expression?.mod) return c;

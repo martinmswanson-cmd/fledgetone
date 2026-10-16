@@ -1,6 +1,7 @@
 /**
  * The Track Inspector (the side panel): the selected track's instrument and its own panel (Slicer,
- * Drum Rack, Multi Sampler, Synth Designer, Sampler, Audio track), Expressive playing, the insert
+ * Drum Rack, Multi Sampler, Synth Designer, 808 designer, Sampler, Audio track), the heavy bass
+ * tools (Glide, Sub enhancer, kick clash check), Expressive playing, the insert
  * effects in chain order, sends to returns, and the Master tab.
  */
 import React, { useEffect, useRef } from 'react';
@@ -27,11 +28,14 @@ import { SlicerPanel } from './SlicerPanel';
 import { MultiPanel, RackPanel } from './SampleKitPanels';
 import { PeqPanel } from './PeqEditor';
 import { MbcPanel } from './MbcPanel';
+import { DrumDesignPanel } from './DrumDesignPanel';
+import { BusFxPanels, BusPresetPanel } from './BusFxPanels';
 import { SynthPanel } from './SynthPanel';
+import { Bass808Panel, BassDrivePanel, GlidePanel, KickClashPanel, SubLayerPanel } from './BassPanels';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
-import { RecordedRoom } from './RecordedRoom';
-import { INSTRUMENTS, isAudioKind, isSlicerKind } from '../../audio/instrumentCatalog';
+import { RecordedRoom, RoomStylePicker } from './RecordedRoom';
+import { INSTRUMENTS, isAudioKind, isSlicerKind, seatOf } from '../../audio/instrumentCatalog';
 
 /** Instruments Expressive playing changes: the recorded ones (but sound effects) and the drum kits. */
 const canPlayExpressively = (key: keyof typeof INSTRUMENTS) => {
@@ -121,9 +125,12 @@ export const TrackInspector: React.FC = () => {
   ];
 
   return (
+    // As tall as the timeline beside it, scrolling inside: a long FX rack never holds the timeline open
+    // past its last track (the panel is placed over a box that takes the row's height, not its own)
+    <div className="relative w-80 shrink-0">
     <aside
       ref={aside}
-      className="w-80 shrink-0 bg-forge-panel/95 backdrop-blur-md border-l border-forge-border flex flex-col shadow-2xl z-30 transition-all select-none overflow-y-auto max-h-[640px]"
+      className="absolute inset-0 bg-forge-panel/95 backdrop-blur-md border-l border-forge-border flex flex-col shadow-2xl z-30 transition-all select-none overflow-y-auto"
       aria-label="Audio Track Inspector and FX Rack"
     >
       {/* Header */}
@@ -279,19 +286,26 @@ export const TrackInspector: React.FC = () => {
               )}
             </div>
 
+            <BusPresetPanel track={currentTrack} />
             {currentTrack.instrumentKey === 'sampler' && <SampleLoader track={currentTrack} />}
             {isSlicerKind(currentTrack.instrumentKey) && <SlicerPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'drumRack' && <RackPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'multiSampler' && <MultiPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'synthDesigner' && <SynthPanel track={currentTrack} />}
+            {currentTrack.instrumentKey === 'bass808' && <Bass808Panel track={currentTrack} />}
+            <GlidePanel track={currentTrack} />
+            <SubLayerPanel track={currentTrack} />
+            {INSTRUMENTS[currentTrack.instrumentKey].category === 'Bass' && <KickClashPanel track={currentTrack} />}
+            {currentTrack.instrumentKey === 'designedKit' && <DrumDesignPanel track={currentTrack} />}
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
             {/* Human works on the notes before the instrument plays them */}
             {!isAudioKind(currentTrack.instrumentKey) && !isMixTrack(currentTrack) && <HumanPanel track={currentTrack} />}
             {!isMixTrack(currentTrack) && <DuckProxyPanel track={currentTrack} />}
 
-            {/* Insert chain, in signal order: Distortion -> EQ -> Pro EQ -> Compressor -> Multiband -> Chorus -> Lo-fi -> Filter -> Gate -> Pump */}
+            {/* Insert chain, in signal order: Distortion -> Bass Drive -> EQ -> Pro EQ -> Compressor -> Multiband -> Chorus -> Lo-fi -> Filter -> Gate -> Pump */}
             <DistortionPanel track={currentTrack} />
+            {!isMixTrack(currentTrack) && <BassDrivePanel track={currentTrack} />}
 
             {/* 3-Band Parametric EQ Panel */}
             <div data-search="eq" className="flex flex-col gap-2 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
@@ -395,6 +409,7 @@ export const TrackInspector: React.FC = () => {
             <PeqPanel track={currentTrack} />
             <DynamicsAndChorusPanels track={currentTrack} />
             <MbcPanel track={currentTrack} />
+            <BusFxPanels track={currentTrack} />
             <FilterAndPumpPanels track={currentTrack} />
 
             {/* Aux FX Sends Section */}
@@ -539,6 +554,19 @@ export const TrackInspector: React.FC = () => {
                   );
                 }}
               </Automatable>
+              <div className="flex items-center justify-between gap-3 text-xs font-mono" title="How far back on the stage it sits: further back is a little darker, quieter and more in the room">
+                <span className="text-forge-muted text-[10px]">DIST</span>
+                <UndoableRange
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={currentTrack.distance ?? 0}
+                  onValue={(v) => useTimelineStore.getState().setTrackDistance(currentTrack.id, v)}
+                  resetValue={seatOf(currentTrack.instrumentKey)?.distance ?? 0}
+                  className="flex-1 accent-white cursor-pointer h-1.5 bg-zinc-800 rounded appearance-none"
+                />
+                <span className="w-12 text-right font-bold tabular-nums text-white">{(currentTrack.distance ?? 0) < 0.01 ? 'Front' : `${Math.round((currentTrack.distance ?? 0) * 100)}%`}</span>
+              </div>
             </div>
 
             <button
@@ -560,7 +588,7 @@ export const TrackInspector: React.FC = () => {
                 <div className="flex items-center gap-1.5">
                   <Waves className="w-4 h-4 text-cyan-400" />
                   <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
-                    Master Convolution Reverb
+                    Master Reverb
                   </span>
                 </div>
                 <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/30">
@@ -599,6 +627,7 @@ export const TrackInspector: React.FC = () => {
                     </button>
                   ))}
                 </div>
+                <RoomStylePicker />
               </div>
 
               <RecordedRoom />
@@ -671,6 +700,7 @@ export const TrackInspector: React.FC = () => {
         )}
       </div>
     </aside>
+    </div>
   );
 };
 

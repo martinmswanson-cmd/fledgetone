@@ -3,6 +3,7 @@
  * quantize, punch, takes), the metronome, and the MIDI popover (devices, activity, the computer
  * keyboard piano).
  */
+import { NoteRepeatPicker } from './NoteRepeatPicker';
 import { isMixKind } from '../../audio/instrumentCatalog';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Circle, KeyboardMusic, Triangle } from 'lucide-react';
@@ -306,6 +307,7 @@ const MidiPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null>; on
       )}
       <PlaysOn />
       <MpeToggle />
+      <NoteRepeatPicker />
       <div className="border-t border-forge-border pt-2 flex flex-col gap-1.5">
         <label className="flex items-center gap-2 text-forge-text">
           <input type="checkbox" className="accent-cyan-400 cursor-pointer" checked={keyboardPiano} onChange={(e) => setKeyboardPiano(e.target.checked)} />
@@ -323,7 +325,7 @@ const MidiPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | null>; on
         </div>
         <p className="text-[11px] leading-snug">
           A S D F G H J K L ; ' are the white keys from C, W E T Y U O P the black ones, Z and X move an octave. While the piano is on,
-          those keys play notes instead of their usual jobs (the Audition Deck pads, L loop, O set Out); the rest still work.
+          those keys play notes instead of their usual jobs (L loop, O set Out); the rest still work.
         </p>
       </div>
       <MidiMappings />

@@ -72,6 +72,16 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     const o = options.processorOptions;
     this.events = [];
     this.alive = false;
+    // Follow the input (effects, see followInput below): its gain, where it's heading, and the
+    // windows that tell a fading tail from a sound the plugin keeps making by itself
+    this.follow = !!o.followInput;
+    this.gain = 1;
+    this.target = 1;
+    this.quiet = 0;
+    this.winE = 0;
+    this.winN = 0;
+    this.prevE = -1;
+    this.steady = 0;
     this.port.onmessage = (m) => this.message(m.data);
     try {
       this.e = familyOf(o.family, o.module).e;
@@ -212,7 +222,56 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       if (out[1]) out[1].set(this.buf[3].subarray(0, n), pos);
       pos = end;
     }
+    if (this.follow) this.followInput(input, out, frames);
     return true;
+  }
+
+  /**
+   * An effect makes sound from its track's sound: one that goes on making its own once the track
+   * has gone quiet (a Shepard tone, a noise source, a click track, a filter stuck oscillating)
+   * would drone on through the whole song and while it's stopped. So once the input has been
+   * silent for a second, the output is watched a second at a time: a tail (reverb, delay) keeps
+   * fading, a sound the plugin makes itself doesn't. Two seconds that don't fade by 1 dB and it's
+   * faded out (over half a second); the track's next sound opens it again at once. Decided from
+   * the samples alone, so live and export behave the same.
+   */
+  followInput(input, out, frames) {
+    const l = input[0], r = input[1] || input[0];
+    let peak = 0;
+    if (l) for (let i = 0; i < frames; i++) { const a = Math.abs(l[i]), b = Math.abs(r[i]); if (a > peak) peak = a; if (b > peak) peak = b; }
+    if (peak > 1e-5) {
+      this.quiet = 0;
+      this.steady = 0;
+      this.prevE = -1;
+      this.winE = 0;
+      this.winN = 0;
+      this.target = 1;
+    } else {
+      this.quiet += frames;
+    }
+    const o0 = out[0], o1 = out[1] || out[0];
+    if (this.quiet >= sampleRate && o0) {
+      for (let i = 0; i < frames; i++) this.winE += o0[i] * o0[i] + o1[i] * o1[i];
+      this.winN += frames;
+      if (this.winN >= sampleRate) {
+        const e = this.winE / this.winN;
+        // Not fading (by less than 1 dB in the second) and above the floor of silence
+        if (this.prevE > 0 && e > 1e-12 && e >= this.prevE * 0.794) this.steady++;
+        else this.steady = 0;
+        if (this.steady >= 2) this.target = 0;
+        this.prevE = e;
+        this.winE = 0;
+        this.winN = 0;
+      }
+    }
+    if (this.target === 1 && this.gain === 1) return;
+    // Opening takes 5 ms, closing half a second
+    const step = this.target > this.gain ? 1 / (0.005 * sampleRate) : 1 / (0.5 * sampleRate);
+    for (let i = 0; i < frames; i++) {
+      this.gain = this.target > this.gain ? Math.min(this.target, this.gain + step) : Math.max(this.target, this.gain - step);
+      if (out[0]) out[0][i] *= this.gain;
+      if (out[1]) out[1][i] *= this.gain;
+    }
   }
 }
 

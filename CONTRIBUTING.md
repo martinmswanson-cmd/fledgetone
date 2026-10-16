@@ -99,11 +99,15 @@ Each recipe lists the files to touch. The checks below catch most mistakes; run 
 2. Add its entry to `STARTERS` in `starters.ts` (id, group, name, a one-line description with its
    tempo and key) and its builder to `BUILDERS` (or `GAME_BUILDERS`).
 3. Mark its sections (they become the game states), put the loop on the main section, and mix
-   it: no track should poke out, and the whole should sit around -20 dB RMS like the others.
+   it: no track should poke out of the balance.
 4. Game starters also get stem groups (`grouped(track, 'Percussion')`), transitions and
    stingers through `gameReady()`.
-5. Listen to it all the way through, and render it (see [Checking sound](#checking-sound)) to
-   compare its level with a few others. Update the starter list in `GUIDE.md`.
+5. Listen to it all the way through. Then measure its loudness with
+   `IDS=<id> node scripts/audio-check/starters-loudness.cjs` and add its line to `STARTER_LEVELS`
+   in `startersLoudness.ts`: the trim it suggests, then the loudness it measures with that trim
+   (within 1.5 LU of its group's target; a test checks every starter has a line). If it needs
+   more than about 4 dB of limiting to get there, look for a part whose peaks stand far over the
+   rest. Update the starter list in `GUIDE.md`.
 
 ### A kind of sound effect
 
@@ -168,7 +172,7 @@ Run all of these before every commit; they must all pass.
 
 ```sh
 npx tsc -b             # type check
-npx oxlint src         # lint (3 known warnings: Playhead.tsx x2, SoundAuditionPanel.tsx x1)
+npx oxlint src         # lint (2 known warnings: Playhead.tsx x2)
 npm test               # unit tests (node --test scripts/*.test.mjs)
 npm run build          # production build
 npm run build:single   # the one-file build that gets published (dist-single/index.html)
@@ -279,6 +283,10 @@ python3 scripts/audio-check/phrases.py /tmp/after
 It needs Playwright with Chromium, ffmpeg, and Python with numpy. When a change is meant to be
 heard, attach a short before-and-after recording of the same phrase to the pull request.
 
+Exports must repeat exactly. `node scripts/audio-check/repeat.cjs` renders every generated
+instrument, kit, insert and a few starters twice and says which differ (`KEYS`, `FX`, `STARTERS`
+and `THREADS` pick what it renders; see its header). Run it after touching an instrument or effect.
+
 ## Pull requests
 
 - **One topic per pull request.** A fix and an unrelated tidy-up are two pull requests.
@@ -286,6 +294,8 @@ heard, attach a short before-and-after recording of the same phrase to the pull 
 - **Show it.** Screenshots for anything on screen; a before-and-after recording for anything you
   hear.
 - **Tests and the guide.** Pure logic gets a test; user-visible changes update `GUIDE.md`.
+- **The changelog.** A user-visible change adds a line, in plain words, to the newest section of
+  `CHANGELOG.md` (the maintainer starts a new dated section when releasing).
 - **All checks pass** (see [The checks](#the-checks)), including the one-file build.
 - **Small commits with clear messages** are easier to review than one large one.
 
@@ -305,6 +315,7 @@ have the right to contribute it.
   redistribution and modification, and an entry in `src/credits.ts`.
 - **No ripped or "found" material**: no samples from commercial libraries or records, no presets
   copied from commercial products, and no artist or song names in anything we ship.
+- **The name and logo** aren't covered by the GPL; see `TRADEMARKS.md`.
 - **The website builds** (`build:single`, and `build:site` for fledgetone.com) leave the GPL
   plugins out until the source is public; the full build (`build:full`) has them. Don't copy
   `public/fledgetone-plugins/gpl/` anywhere a website build is published.

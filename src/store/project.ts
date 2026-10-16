@@ -1,3 +1,5 @@
+import { ROOM_STYLE_IDS } from '../audio/effects/roomIR';
+import type { RoomStyle } from '../audio/effects/roomIR';
 import { normalizeExpression } from './expression';
 import { normalizeNoteExpression } from './noteExpression';
 import { compSegments, normalizeTakes } from './takes';
@@ -5,8 +7,11 @@ import { TOTAL_BARS, isAutomationParam } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LauncherSlot, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
+import { parseBassFields } from './bassTools';
+import { normalizeDrumDesign } from './drumDesign';
+import { normalizeClipGroove } from './drumGroove';
 import { normalizeMulti, normalizeRack } from './sampleKits';
-import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, MAX_CLIP_SWING, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
+import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
 import { isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
@@ -65,8 +70,8 @@ export interface ProjectData {
    * sounds themselves stay in the browser's sound library, see src/audio/soundLibrary.ts).
    */
   sounds?: EmbeddedSound[];
-  /** The master section's OTT and stereo width (optional; older files have them off). */
-  master?: MasterSettings;
+  /** The master section's glue, OTT, stereo width and Level (optional; older files have the inserts off and no Level: 0 dB). */
+  master?: Omit<MasterSettings, 'level'> & { level?: number };
   /** Game stingers (optional; older files have none). */
   stingers?: Stinger[];
   /** Game sound effects for the game kit (optional; older files have none). */
@@ -135,6 +140,11 @@ export interface ProjectSnapshot {
 }
 
 
+/** The master settings as a file has them: the Level only when it isn't 0 dB (files keep opening in older versions the same). */
+function masterForFile({ level, ...rest }: MasterSettings): Omit<MasterSettings, 'level'> & { level?: number } {
+  return level ? { ...rest, level } : rest;
+}
+
 export function serializeProject(p: ProjectSnapshot): ProjectData {
   return {
     format: PROJECT_FORMAT,
@@ -151,7 +161,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     dropFrame: p.dropFrame === true && p.fps === 29.97,
     markers: p.markers ?? [],
     ...(p.sounds?.length ? { sounds: p.sounds } : {}),
-    master: normalizeMasterSettings(p.master),
+    master: masterForFile(normalizeMasterSettings(p.master)),
     ...(p.stingers?.length ? { stingers: p.stingers } : {}),
     ...(p.sfx?.length ? { sfx: p.sfx } : {}),
     ...(p.costumes?.length ? { costumes: p.costumes } : {}),
@@ -267,6 +277,7 @@ function parseTrack(v: unknown): Track {
       high: isNum(eqObj.high) ? eqObj.high : 0,
     },
     reverbSend: isNum(v.reverbSend) ? Math.max(0, Math.min(1, v.reverbSend)) : 0,
+    ...(isNum(v.distance) && v.distance > 0 ? { distance: Math.min(1, v.distance) } : {}),
     delaySend: isNum(v.delaySend) ? Math.max(0, Math.min(1, v.delaySend)) : 0,
     fx: normalizeTrackFx(v.fx),
     sample: parseSample(v.sample),
@@ -279,6 +290,8 @@ function parseTrack(v: unknown): Track {
     // Optional: a Drum Rack's pads, a Multi Sampler's sounds
     ...(normalizeRack(v.rack) ? { rack: normalizeRack(v.rack)! } : {}),
     ...(normalizeMulti(v.multi) ? { multi: normalizeMulti(v.multi)! } : {}),
+    // Optional: a Designed Kit's drum sounds
+    ...(normalizeDrumDesign(v.drumDesign) ? { drumDesign: normalizeDrumDesign(v.drumDesign)! } : {}),
     // Optional: a frozen track
     ...(frozen ? { frozen } : {}),
     // Optional: the bus it plays into (checked against the other tracks after they're read)
@@ -323,6 +336,8 @@ function parseTrack(v: unknown): Track {
           },
         }
       : {}),
+    // Optional: the heavy bass tools (the 808 designer, glide, the Sub enhancer)
+    ...parseBassFields(v),
     // Optional: a dialogue / SFX proxy the other tracks duck under
     ...(isObj(v.duckProxy) && isNum(v.duckProxy.depth) ? { duckProxy: { depth: Math.max(1, Math.min(30, v.duckProxy.depth)) } } : {}),
   };
@@ -394,9 +409,7 @@ function parseClip(v: unknown): Clip {
     // Optional: a rate this version doesn't know plays at the default
     ...(isWobbleRate(v.wobble) ? { wobble: v.wobble } : {}),
     // Optional: the clip's own swing
-    ...(isObj(v.groove) && isNum(v.groove.swing) && (v.groove.grid === 8 || v.groove.grid === 16)
-      ? { groove: { swing: Math.max(0, Math.min(MAX_CLIP_SWING, v.groove.swing)), grid: v.groove.grid } }
-      : {}),
+    ...(normalizeClipGroove(v.groove) ? { groove: normalizeClipGroove(v.groove)! } : {}),
     // Optional: an audio clip (on an Audio track) plays a sound file instead of notes
     ...(audio ? { audio } : {}),
     // Optional: pitch bend, mod wheel and sustain pedal lanes
@@ -517,6 +530,7 @@ function parseMasterFx(v: unknown): MasterFx {
     delayTime: isStr(v.delayTime) && ['4n', '8n', '8n.', '16n'].includes(v.delayTime) ? v.delayTime : d.delayTime,
     delayFeedback: isNum(v.delayFeedback) ? Math.max(0, Math.min(0.8, v.delayFeedback)) : d.delayFeedback,
     ...(isStr(v.room) && v.room ? { room: v.room } : {}),
+    ...(isStr(v.roomStyle) && (ROOM_STYLE_IDS as string[]).includes(v.roomStyle) ? { roomStyle: v.roomStyle as RoomStyle } : {}),
   };
 }
 

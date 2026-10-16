@@ -1,5 +1,6 @@
-import json
-T=json.load(open('tuning.json'))
+import json, os
+HERE=os.path.dirname(os.path.abspath(__file__))
+T=json.load(open(os.path.join(HERE,'tuning.json')))
 lines=["/**",
 " * Tuning corrections for the recorded instruments, measured. Each recording's pitch was read two",
 " * ways (by its period, YIN, and from its harmonics; voices by their period only) over the loud part",
@@ -19,5 +20,5 @@ for k in sorted(T):
     parts.append("cents: { "+", ".join(f"'{n}': {c}" for n,c in sorted(v['cents'].items()))+" }")
     lines.append(f"  {k}: {{ {', '.join(parts)} }},")
 lines.append("};")
-open('/home/user/bos-beat-box/src/audio/sampleTuning.ts','w').write('\n'.join(lines)+'\n')
+open(os.path.join(HERE,'..','..','src','audio','sampleTuning.ts'),'w').write('\n'.join(lines)+'\n')
 print(sum(len(T[k]['cents']) for k in T),'corrections')

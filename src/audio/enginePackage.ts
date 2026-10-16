@@ -1,5 +1,6 @@
 import { buildGameKitParts, MAIN_STEM, type GameKitSong } from './gameKit';
 import { engineReadme, fmodScript, stateLayout, wwiseScript, type EngineTarget } from './engineScripts';
+import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
 import { createZip, type ZipEntry } from './zip';
 import type { SampleRate } from './exportWav';
 
@@ -32,6 +33,7 @@ export async function buildEnginePackage(song: GameKitSong, target: EngineTarget
   if (target !== 'wwise') out.push({ name: `fmod/Fledgetone_${slug}.js`, data: new Blob([fmodScript(manifest)], { type: 'text/javascript' }) });
   if (target !== 'fmod') out.push({ name: `wwise/import_${slug}.py`, data: new Blob([wwiseScript(manifest)], { type: 'text/x-python' }) });
   out.push({ name: 'README.md', data: new Blob([engineReadme(manifest, target)], { type: 'text/markdown' }) });
+  out.push({ name: EXPORTED_FILES_LICENCE_NAME, data: new Blob([EXPORTED_FILES_LICENCE], { type: 'text/plain' }) });
   onProgress?.(1, 'zip');
   return createZip(out);
 }
