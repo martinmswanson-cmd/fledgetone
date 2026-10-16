@@ -14,7 +14,7 @@ import { FxSlider } from './InsertFx';
 /** A slider over a range that's best felt in ratios (Hz, seconds): 0..1 on a log scale. */
 const toLog = (v: number, lo: number, hi: number) => Math.log(v / lo) / Math.log(hi / lo);
 const fromLog = (x: number, lo: number, hi: number) => lo * (hi / lo) ** x;
-const secs = (v: number) => (v < 1 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2)} s`);
+const secs = (v: number) => (Math.round(v * 1000) < 1000 ? `${Math.round(v * 1000)} ms` : `${v.toFixed(2)} s`);
 const hz = (v: number) => (v < 1000 ? `${Math.round(v)} Hz` : `${(v / 1000).toFixed(1)} kHz`);
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 

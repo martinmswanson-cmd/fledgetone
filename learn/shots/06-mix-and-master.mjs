@@ -35,19 +35,16 @@ async function setRange(s, locator, target) {
 }
 
 /**
- * Set the Pro EQ's FREQ slider by clicking along it, as dragging does (its arrow keys can't move a
- * low band: one step is less than a hertz there and rounds back).
+ * Set the Pro EQ's FREQ slider: a click along it for the rough place, as dragging does, then the
+ * arrow keys (alone they can't move a low band: a step there is under a hertz and rounds back).
  */
 async function setFreq(s, slider, target) {
+  await slider.scrollIntoViewIfNeeded();
   const box = await slider.boundingBox();
-  let x = box.x + 8 + ((box.width - 16) * target) / 1000;
-  for (let i = 0; i < 8; i++) {
-    await s.page.mouse.click(x, box.y + box.height / 2);
-    await s.wait(80);
-    const v = Number(await slider.inputValue());
-    if (Math.abs(v - target) <= 1) break;
-    x += ((target - v) * (box.width - 16)) / 1000;
-  }
+  await s.page.mouse.click(box.x + 8 + ((box.width - 16) * target) / 1000, box.y + box.height / 2);
+  await s.wait(80);
+  await setRange(s, slider, target);
+  if (process.env.DEBUG) console.log('freq', target, await slider.inputValue());
 }
 
 /** Open a track in the Inspector (Track FX). */
@@ -121,10 +118,13 @@ async function build(s, upto = 'master') {
     await setRange(s, range(s.page.locator('[data-search="Stereo Width"]'), 'Width'), 1.2);
     await setRange(s, range(s.page, 'Level'), 3);
     const clip = await insert(s, 'Clipper');
-    await setRange(s, range(clip, 'Drive'), 2);
+    await setRange(s, range(clip, 'Drive'), 4);
   }
   await s.page.mouse.move(700, 4);
-  if (process.env.DEBUG) console.log('built', upto, (Date.now() - T) / 1000);
+  if (process.env.DEBUG) {
+    console.log('built', upto, (Date.now() - T) / 1000);
+    console.log(await s.page.evaluate(() => [...document.querySelectorAll('input[type=range],select')].filter((e) => e.offsetParent).map((e) => `${e.getAttribute('aria-label') ?? e.closest('label')?.innerText?.slice(0, 12)}=${e.value}`).join(' ; ')));
+  }
 }
 
 /** Play from the start of the Groove section (bar 5) for a while. */

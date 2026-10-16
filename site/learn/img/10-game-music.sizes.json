@@ -1,0 +1,26 @@
+{
+  "game-states": [
+    1052,
+    276
+  ],
+  "game-transitions": [
+    1052,
+    644
+  ],
+  "game-intensity": [
+    884,
+    1188
+  ],
+  "game-stingers": [
+    884,
+    1436
+  ],
+  "game-audition": [
+    1600,
+    1389
+  ],
+  "game-try": [
+    1600,
+    1389
+  ]
+}
