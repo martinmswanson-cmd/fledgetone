@@ -55,7 +55,7 @@ export const foot = `
   <footer class="footer">
     <div class="wrap foot-row">
       <div class="brand"><img src="/img/logo.png" alt="" width="26" height="26" /><span>Fledgetone</span></div>
-      <p>A music studio in your browser.</p>
+      <p>A music studio in your browser. Made by Martin Swanson.</p>
       <nav aria-label="Footer">
         <a href="/app/">Studio</a>
         <a href="/learn/">Learn</a>
@@ -63,7 +63,6 @@ export const foot = `
         <a href="/licenses/">Licences</a>
         <a href="https://github.com/martinmswanson-cmd/fledgetone">Source code</a>
         <a href="https://github.com/martinmswanson-cmd/fledgetone/blob/master/CODE_OF_CONDUCT.md">Code of conduct</a>
-        <a href="https://twobirdsworkshop.com">twobirdsworkshop.com</a>
       </nav>
     </div>
     <p class="wrap foot-note">Fledgetone is an independent project. It is not affiliated with, endorsed by or sponsored by any company or product named on this site. Unity, Godot, FMOD Studio, Wwise, Premiere, DaVinci Resolve, Final Cut, Chrome, Edge, Safari, Firefox and the other names here are trademarks of their owners, used only to say what Fledgetone works with.</p>
