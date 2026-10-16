@@ -11,7 +11,7 @@ import { useTimelineStore } from '../store/timelineStore';
 import type { Clip, InstrumentKey, Track } from '../store/timelineTypes';
 import type { SongKey } from '../store/songKey';
 
-export type PocketTab = 'song' | 'beat' | 'notes' | 'mix' | 'share';
+export type PocketTab = 'song' | 'beat' | 'notes' | 'vocals' | 'mix' | 'share';
 
 interface PocketState {
   tab: PocketTab;

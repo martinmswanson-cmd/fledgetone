@@ -1,9 +1,15 @@
 /**
  * Pocket's Mix screen: a light mixer. Each track's level, mute, solo and how much reverb it sends;
  * the master's level and its clipper (louder, with the peaks shaved). The rest of the mixer
- * (inserts, EQ, buses, automation) stays as set and is edited on a computer.
+ * (inserts, EQ, buses, automation) stays as set and is edited on a computer. A track's
+ * instrument can be swapped (drums for drums, pitched for pitched) and a track deleted.
  */
-import React from 'react';
+import React, { useState } from 'react';
+import { Trash2 } from 'lucide-react';
+import { INSTRUMENTS } from '../audio/instrumentCatalog';
+import { InstrumentSheet } from './PocketSong';
+import { editorOf } from './pocketStore';
+import { showToast } from '../components/timeline/toastStore';
 import { useTimelineStore } from '../store/timelineStore';
 import { defaultClipper } from '../audio/effects/clipper';
 import { LEVEL_MAX, LEVEL_MIN } from '../store/timelineTypes';
@@ -44,6 +50,8 @@ export const PocketMix: React.FC = () => {
   const master = useTimelineStore((s) => s.master);
   const s = useTimelineStore.getState;
   const clipper = master.clipper ?? defaultClipper();
+  const [swap, setSwap] = useState<string | null>(null);
+  const swapping = tracks.find((t) => t.id === swap);
   return (
     <>
       <Card title="Master">
@@ -80,9 +88,37 @@ export const PocketMix: React.FC = () => {
             }
           >
             <Fader label="Level" value={t.volume} min={-60} max={6} step={0.5} show={t.volume <= -59.9 ? '-inf' : t.volume.toFixed(1)} onChange={(v) => s().setTrackVolume(t.id, v)} />
+            <div className="flex items-center gap-2 mb-1">
+              {editorOf(t.instrumentKey) ? (
+                <button type="button" className="flex-1 min-w-0 h-9 rounded-lg border border-forge-border bg-forge-panel text-xs truncate px-2 text-left" onClick={() => setSwap(t.id)}>
+                  Sound: <span className="text-forge-text">{INSTRUMENTS[t.instrumentKey]?.name}</span>
+                </button>
+              ) : (
+                <span className="flex-1 text-xs text-forge-muted">{INSTRUMENTS[t.instrumentKey]?.name}</span>
+              )}
+              <button
+                type="button"
+                aria-label={`Delete ${t.name}`}
+                className="h-9 w-9 rounded-lg border border-forge-border bg-forge-panel flex items-center justify-center text-forge-muted"
+                onClick={() => {
+                  s().deleteTrack(t.id);
+                  showToast(`Deleted ${t.name} (Undo brings it back)`);
+                }}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
             <Fader label="Reverb" value={t.reverbSend} min={0} max={1} step={0.01} show={`${Math.round(t.reverbSend * 100)}%`} onChange={(v) => s().setTrackReverbSend(t.id, v)} />
           </Card>
         ))}
+      {swapping && (
+        <InstrumentSheet
+          title={`A new sound for ${swapping.name}`}
+          current={swapping.instrumentKey}
+          onClose={() => setSwap(null)}
+          onPick={(key) => s().setTrackInstrument(swapping.id, key)}
+        />
+      )}
     </>
   );
 };

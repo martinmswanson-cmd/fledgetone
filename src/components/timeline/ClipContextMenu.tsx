@@ -3,7 +3,7 @@
  * clip, insert pattern, paste, load audio, smart tools), and the menu items other menus share.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Drum, Music4, Grid3x3, Wand2, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma, ChevronsRight } from 'lucide-react';
+import { Drum, Music4, Grid3x3, AudioLines, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma, ChevronsRight } from 'lucide-react';
 import { reverseBlock } from '../../store/reverseActions';
 import { doubleClip } from '../../store/vocalActions';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -256,7 +256,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
                 key: 'tune',
                 label: 'Tune vocal…',
                 shortcut: takeCount ? 'flatten first' : '',
-                icon: <Wand2 className="w-3.5 h-3.5" />,
+                icon: <AudioLines className="w-3.5 h-3.5" />,
                 onClick: run(() => useUiStore.getState().setTuneClip(menu.clipId!)),
                 // A take folder plays several sounds: tune it once it's flattened
                 disabled: takeCount > 1,
@@ -265,7 +265,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
                 key: 'hardTune',
                 label: 'Hard tune…',
                 shortcut: takeCount > 1 ? 'flatten first' : 'robotic',
-                icon: <Wand2 className="w-3.5 h-3.5" />,
+                icon: <AudioLines className="w-3.5 h-3.5" />,
                 onClick: run(() => useUiStore.getState().setTuneClip(menu.clipId!, true)),
                 disabled: takeCount > 1,
               },

@@ -2,7 +2,8 @@
  * Pocket's Song screen: carry on with the last song, start one from a starter or empty, the name
  * and tempo, and the whole song at a glance: each track a row of its clips across the song. Tap a
  * clip to edit it (drums in Beat, the rest in Notes), tap the bar numbers to move the playhead,
- * and add an instrument from the catalog.
+ * and add an instrument from the catalog. Arrange: repeat the loop, a build-up and drop, and a
+ * speed-up into the drop.
  */
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, History, Minus, Plus } from 'lucide-react';
@@ -13,6 +14,8 @@ import { clearPreviousSession } from '../store/project';
 import type { InstrumentKey } from '../store/timelineTypes';
 import { Card, pill, Sheet, SheetItem } from './pocketUi';
 import { clipsOf, editorOf, usePlayPosition, usePocket } from './pocketStore';
+import { buildAndDrop, repeatLoop, speedUpLoop } from './pocketArrange';
+import { showToast } from '../components/timeline/toastStore';
 
 /** Instruments Pocket can play and edit, by category (the ones that need a computer left out). */
 function pocketInstruments(): Array<{ category: string; keys: InstrumentKey[] }> {
@@ -20,13 +23,16 @@ function pocketInstruments(): Array<{ category: string; keys: InstrumentKey[] }>
   return CATEGORIES.map((category) => ({ category, keys: all.filter((d) => d.category === category).map((d) => d.key) })).filter((g) => g.keys.length > 0);
 }
 
-/** Pick an instrument for a new track. */
-const AddTrackSheet: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+/** Pick an instrument from the ones Pocket can edit, by category. */
+export const InstrumentSheet: React.FC<{ title: string; current?: InstrumentKey; onPick: (key: InstrumentKey) => void; onClose: () => void }> = ({ title, current, onPick, onClose }) => {
   const groups = useMemo(() => pocketInstruments(), []);
-  const [open, setOpen] = useState<string | null>(groups[0]?.category ?? null);
+  const kind = current ? editorOf(current) : null;
+  // Swapping keeps a drum track's notes on drums and a pitched track's on pitched instruments
+  const shown = kind ? groups.map((g) => ({ ...g, keys: g.keys.filter((k) => editorOf(k) === kind) })).filter((g) => g.keys.length) : groups;
+  const [open, setOpen] = useState<string | null>((current && INSTRUMENTS[current]?.category) ?? shown[0]?.category ?? null);
   return (
-    <Sheet title="Add an instrument" onClose={onClose}>
-      {groups.map(({ category, keys }) => (
+    <Sheet title={title} onClose={onClose}>
+      {shown.map(({ category, keys }) => (
         <div key={category} className="mb-1">
           <button type="button" className="w-full flex items-center gap-2 px-2 h-11 text-sm font-semibold" onClick={() => setOpen(open === category ? null : category)}>
             {open === category ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -37,20 +43,12 @@ const AddTrackSheet: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             keys.map((key) => (
               <SheetItem
                 key={key}
-                title={INSTRUMENTS[key].name}
+                title={`${INSTRUMENTS[key].name}${key === current ? ' (now)' : ''}`}
                 detail={INSTRUMENTS[key].blurb}
                 color={INSTRUMENTS[key].color}
                 onClick={() => {
-                  const s = useTimelineStore.getState();
-                  const trackId = s.addTrack(key);
-                  // A first clip to write into, where the loop is (or at the start)
-                  const at = s.loopRegion.enabled ? s.loopRegion.inBar : 1;
-                  const clipId = useTimelineStore.getState().createEmptyClip(trackId, at, editorOf(key) === 'beat' ? 1 : 2);
-                  const st = useTimelineStore.getState();
-                  const track = st.tracks.find((t) => t.id === trackId);
-                  const clip = st.clips.find((c) => c.id === clipId);
                   onClose();
-                  if (track && clip) usePocket.getState().openClip(clip, track);
+                  onPick(key);
                 }}
               />
             ))}
@@ -59,6 +57,25 @@ const AddTrackSheet: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     </Sheet>
   );
 };
+
+/** Pick an instrument for a new track, with an empty clip to write into. */
+const AddTrackSheet: React.FC<{ onClose: () => void }> = ({ onClose }) => (
+  <InstrumentSheet
+    title="Add an instrument"
+    onClose={onClose}
+    onPick={(key) => {
+      const s = useTimelineStore.getState();
+      const trackId = s.addTrack(key);
+      // A first clip to write into, where the loop is (or at the start)
+      const at = s.loopRegion.enabled ? s.loopRegion.inBar : 1;
+      const clipId = useTimelineStore.getState().createEmptyClip(trackId, at, editorOf(key) === 'beat' ? 1 : 2);
+      const st = useTimelineStore.getState();
+      const track = st.tracks.find((t) => t.id === trackId);
+      const clip = st.clips.find((c) => c.id === clipId);
+      if (track && clip) usePocket.getState().openClip(clip, track);
+    }}
+  />
+);
 
 /** Start a song: from a starter (by group) or empty. */
 const NewSongSheet: React.FC<{ onClose: () => void }> = ({ onClose }) => {
@@ -177,6 +194,27 @@ const Overview: React.FC = () => {
   );
 };
 
+/** Arranging tools, on the loop (or the bars around the playhead when it's off). */
+const ArrangeCard: React.FC = () => {
+  const loop = useTimelineStore((s) => s.loopRegion);
+  const where = loop.enabled ? `bars ${loop.inBar} to ${loop.outBar}` : 'the bars around the playhead';
+  const tools: Array<{ title: string; detail: string; run: () => string; needsLoop?: boolean }> = [
+    { title: 'Repeat the loop', detail: 'Copies everything in the loop to right after it, and moves the loop onto the copy.', run: repeatLoop, needsLoop: true },
+    { title: 'Build-up and drop', detail: `A riser and snare roll into a drop at ${loop.enabled ? `bar ${loop.outBar}` : 'the next bar'}, with an impact on it.`, run: buildAndDrop },
+    { title: 'Speed up into the drop', detail: `The last quarter of ${where} gets 25% faster, then snaps back.`, run: () => speedUpLoop(false) },
+    { title: 'Speed up + drum roll', detail: 'The same, 50% faster, with the snare rolling into the drop.', run: () => speedUpLoop(true) },
+  ];
+  return (
+    <Card title="Arrange">
+      <div className="space-y-1">
+        {tools.map((t) => (
+          <SheetItem key={t.title} title={t.title} detail={t.needsLoop && !loop.enabled ? 'Turn the loop on first (the loop button at the top).' : t.detail} onClick={() => (t.needsLoop && !loop.enabled ? undefined : showToast(t.run()))} />
+        ))}
+      </div>
+    </Card>
+  );
+};
+
 export const PocketSong: React.FC = () => {
   const name = useTimelineStore((s) => s.projectName);
   const bpm = useTimelineStore((s) => s.bpm);
@@ -225,6 +263,7 @@ export const PocketSong: React.FC = () => {
         <Overview />
         <p className="text-[11px] text-forge-muted mt-2">Tap a clip to edit it. Tap the bar numbers to move to that bar.</p>
       </Card>
+      <ArrangeCard />
       {sheet === 'new' && <NewSongSheet onClose={() => setSheet(null)} />}
       {sheet === 'add' && <AddTrackSheet onClose={() => setSheet(null)} />}
     </>

@@ -5,11 +5,14 @@
  * a row's name to hear it. The key is the song's (as detected from its notes) unless one is picked.
  */
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eraser, Plus } from 'lucide-react';
+import { CHORD_STYLES, chordNotesFor, PROGRESSIONS, progressionChords, type ChordStyle, type Progression } from '../store/smartTools';
+import { fitToInstrument } from '../store/smartActions';
+import { paintHandlers } from './pocketPaint';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { useTimelineStore } from '../store/timelineStore';
 import { detectKey, keyOf, NOTE_NAMES } from '../store/songKey';
-import { Card, pill, pillOn } from './pocketUi';
+import { Card, pill, pillOn, Sheet, SheetItem } from './pocketUi';
 import { clipsOf, editorOf, pickClip, pocketNoteId, usePlayPosition, usePocket } from './pocketStore';
 import { noteSteps, noteToMidi, scaleRows, stepsPerBar, toggleCovering } from './pocketGrid';
 import { BarPager, ClipPicker } from './PocketBeat';
@@ -32,6 +35,8 @@ export const PocketNotes: React.FC = () => {
   const { noteTrackId, noteClipId, key: chosenKey } = usePocket();
   const [length, setLength] = useState(2);
   const [page, setPage] = useState(0);
+  const [chordSheet, setChordSheet] = useState(false);
+  const [chordStyle, setChordStyle] = useState<ChordStyle>('sustain');
   const [shift, setShift] = useState<Record<string, number>>({});
   const bar = usePlayPosition();
 
@@ -60,7 +65,7 @@ export const PocketNotes: React.FC = () => {
   const offGrid = (clip?.notes ?? []).filter((n) => !rowMidis.has(noteToMidi(n.note))).length;
 
   const pages = clip ? Math.max(1, Math.ceil(clip.lengthBars - 1e-6)) : 1;
-  const inClip = clip && bar >= clip.startBar && bar < clip.startBar + clip.lengthBars;
+  const inClip = isPlaying && clip && bar >= clip.startBar && bar < clip.startBar + clip.lengthBars;
   const nowStep = inClip ? Math.floor((bar - clip.startBar) * perBar) : -1;
   const shownPage = isPlaying && inClip ? Math.floor(nowStep / perBar) : Math.min(page, pages - 1);
   const steps = Array.from({ length: perBar }, (_, i) => shownPage * perBar + i);
@@ -74,14 +79,40 @@ export const PocketNotes: React.FC = () => {
     );
   }
 
-  const toggle = (row: string, step: number) => {
+  const noteLength = LENGTHS.find((l) => l.steps === length)?.steps ?? 2;
+  /** Whether a note on `row` sounds over `step` (one starting earlier and held through it counts). */
+  const covered = (row: string, step: number) => {
+    const m = noteToMidi(row);
+    return (useTimelineStore.getState().clips.find((c) => c.id === clip?.id)?.notes ?? []).some((n) => {
+      if (noteToMidi(n.note) !== m) return false;
+      const from = Math.round(n.startOffset * perBar);
+      return step >= from && step < from + noteSteps(n, perBar);
+    });
+  };
+  const paint = paintHandlers(
+    ({ row, step }) => covered(row, step),
+    ({ row, step }, on) => {
+      if (!clip) return;
+      const s = useTimelineStore.getState();
+      const before = s.clips.find((c) => c.id === clip.id)?.notes ?? [];
+      s.setClipNotes(clip.id, toggleCovering(before, row, step, perBar, noteLength, 0.8, pocketNoteId));
+      if (on) void audition(track.id, row, 0.8);
+    }
+  );
+
+  /** A chord progression in the key, filling the clip, in place of what's there. */
+  const writeChords = (prog: Progression) => {
     if (!clip) return;
+    const chords = progressionChords(key, prog);
+    // A chord a bar in a clip of 4 bars or more (two in one of 8 or more), else as many as fit
+    const chordBars = clip.lengthBars >= 8 ? 2 : clip.lengthBars >= 4 ? 1 : clip.lengthBars / 4;
+    const count = Math.max(1, Math.round(clip.lengthBars / chordBars));
+    const all = Array.from({ length: count }, (_, i) => chords[i % chords.length]);
+    const notes = fitToInstrument(chordNotesFor(all, chordBars, chordStyle, pocketNoteId), track.instrumentKey);
     const s = useTimelineStore.getState();
-    const before = s.clips.find((c) => c.id === clip.id)?.notes ?? [];
-    const after = toggleCovering(before, row, step, perBar, LENGTHS.find((l) => l.steps === length)?.steps ?? 2, 0.8, pocketNoteId);
     s.checkpoint();
-    s.setClipNotes(clip.id, after);
-    if (after.length > before.length) void audition(track.id, row, 0.8);
+    s.setClipNotes(clip.id, notes);
+    setChordSheet(false);
   };
 
   // Which cell each note covers, by row and step (start cells marked)
@@ -151,7 +182,7 @@ export const PocketNotes: React.FC = () => {
         {clip ? (
           <>
             <BarPager bars={pages} page={shownPage} onPage={setPage} />
-            <div className="space-y-[3px]">
+            <div className="space-y-[3px] touch-pan-y" {...paint}>
               {rows.map((row) => {
                 const root = noteToMidi(row)! % 12 === key.root;
                 return (
@@ -171,9 +202,10 @@ export const PocketNotes: React.FC = () => {
                           <button
                             key={step}
                             type="button"
+                            data-row={row}
+                            data-step={step}
                             aria-label={`${row}, step ${step + 1}`}
                             aria-pressed={!!cell}
-                            onClick={() => toggle(row, step)}
                             className={`h-8 ${cell === 'held' ? 'rounded-r-[4px] -ml-[2px]' : 'rounded-[4px]'} ${step === nowStep ? 'ring-2 ring-white/70' : ''}`}
                             style={{ background: cell ? (cell === 'start' ? track.color : `${track.color}aa`) : root ? (beat ? '#26303a' : '#1f262d') : beat ? '#2a2a31' : '#1d1d22' }}
                           />
@@ -183,6 +215,22 @@ export const PocketNotes: React.FC = () => {
                   </div>
                 );
               })}
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button type="button" className={pill} onClick={() => setChordSheet(true)}>
+                Chords
+              </button>
+              <button
+                type="button"
+                className={pill}
+                onClick={() => {
+                  const s = useTimelineStore.getState();
+                  s.checkpoint();
+                  s.setClipNotes(clip.id, []);
+                }}
+              >
+                <Eraser className="w-4 h-4" /> Clear
+              </button>
             </div>
             {offGrid > 0 && <p className="text-[11px] text-forge-muted mt-2">{offGrid} note{offGrid === 1 ? ' is' : 's are'} outside these rows (another octave, or out of the key). They still play.</p>}
           </>
@@ -199,6 +247,21 @@ export const PocketNotes: React.FC = () => {
           </button>
         )}
       </Card>
+      {chordSheet && (
+        <Sheet title={`Chords in ${key.name}`} onClose={() => setChordSheet(false)}>
+          <div className="flex gap-1.5 flex-wrap mb-2 px-1">
+            {CHORD_STYLES.map((st) => (
+              <button key={st.id} type="button" className={`${pill} !h-9 !px-3 text-xs ${chordStyle === st.id ? pillOn : ''}`} onClick={() => setChordStyle(st.id)}>
+                {st.name}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-forge-muted px-2 mb-1">Fills this part with the progression (in place of what's there; Undo brings it back).</p>
+          {PROGRESSIONS.filter((p) => p.mode === key.mode).map((p) => (
+            <SheetItem key={p.id} title={p.name} onClick={() => writeChords(p)} />
+          ))}
+        </Sheet>
+      )}
     </>
   );
 };

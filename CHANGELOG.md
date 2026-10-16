@@ -8,6 +8,17 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-6 — Pocket: vocals, drummer, chords and arranging
+
+- **Vocals** in Pocket: record over the song from the phone's microphone (the loop once, or from the playhead), pick a vocal sound, and double, tune or delete each take.
+- **Beat**: slide along a row to paint steps, the **Drummer** writes a whole pattern in any of 21 styles, **Fill**, **Clear**, a **Swing** slider, **Loop** a pattern, and a light buzz on the pads (Android).
+- **Notes**: slide to paint notes, **Chords** fills a part with a progression in the key (held, pulsing, stabs or an arpeggio), and **Clear**.
+- **Song**: **Arrange** tools: repeat the loop, a build-up and drop, and a speed-up into the drop (with or without a drum roll).
+- **Mix**: swap a track's instrument, and delete a track.
+- A metronome button, the screen stays on while the song plays, the last song opens again by itself, and a MIDI keyboard plugged into an Android phone plays.
+- The pattern buttons fit the narrowest phones, and the grids only ring the step playing while the song plays.
+- Tune vocal shows a sound-wave icon instead of a magic wand, in the studio too.
+
 ## 2026.10.16-5 — Plain icons
 
 - Pocket's **New** button shows a plus, and the studio's **New idea** (sample chops) and **Aux Sends** show a shuffle and waves: no more sparkles, which suggest AI-made music. Nothing in Fledgetone writes music with AI.
