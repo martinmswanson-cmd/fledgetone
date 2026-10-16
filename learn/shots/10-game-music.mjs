@@ -47,6 +47,9 @@ async function bridgeRule(s) {
 
 /** A floating window: the nearest box around a heading at least this big. */
 async function windowOf(s, heading, minW, minH) {
+  // Windows are fixed on screen: measure them with the page scrolled to the top
+  await s.page.evaluate(() => scrollTo(0, 0));
+  await s.wait(200);
   return s.text(heading).last().evaluate((el, [mw, mh]) => {
     let e = el;
     while (e.parentElement && (e.getBoundingClientRect().width < mw || e.getBoundingClientRect().height < mh)) e = e.parentElement;

@@ -31,6 +31,9 @@ export async function reveal(selector: string): Promise<boolean> {
   if (!el) return false;
   // Inside a folded section (a <details>): unfold it, and any it sits in
   for (let d = el.closest('details'); d; d = d.parentElement?.closest('details') ?? null) d.open = true;
+  // A folded section that is the thing asked for (or wraps it straight away): open it too
+  const own = el.matches('details') ? el : el.querySelector<HTMLDetailsElement>(':scope > details');
+  if (own instanceof HTMLDetailsElement) own.open = true;
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
   const target = el.matches(FOCUSABLE) ? el : el.querySelector<HTMLElement>(FOCUSABLE);
   target?.focus({ preventScroll: true });

@@ -74,8 +74,8 @@ export const SHOTS = [
   },
   {
     file: 'score-video-tab',
-    alt: 'The Video tab with trailer.webm loaded: its length and size, where it starts, Find cuts, Dip under dialogue, Tempo finder, Cut to length, the marker exports and Export music onto the video.',
-    caption: 'The Video tab with the film loaded: everything for scoring in one place.',
+    alt: 'The Video tab with trailer.webm loaded: the Video, Preview and Sound buttons, its length and size, where it starts, and the Find cuts and Dip under dialogue buttons.',
+    caption: 'The Video tab with the film loaded: its length, where it starts, Find cuts and Dip under dialogue.',
     setup: async (s) => {
       await scored(s, { cuts: false });
       await s.view('Video');
@@ -83,7 +83,7 @@ export const SHOTS = [
       await s.page.getByTitle(/^Hide \(show it again/).first().click();
       await s.wait(300);
       const box = await s.panel();
-      return { ...box, height: 300 };
+      return { ...box, width: 706, height: 290 };
     },
   },
   {

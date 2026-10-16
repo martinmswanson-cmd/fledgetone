@@ -5,7 +5,7 @@
 const LEVELS = { Drums: -4, Bass: -6, Lead: -8, Arp: -12, Strings: -14, 'Poly pad': -16 };
 const PANS = { Strings: -0.3, Arp: 0.3 };
 const SENDS = { Drums: [0.1, 0], Bass: [0, 0], 'Poly pad': [0.4, 0], Strings: [0.3, 0], Arp: [0, 0.25], Lead: [0.3, 0.2] };
-/** Pro EQ moves: [band (1-6), on, frequency slider position, gain, Q slider position] */
+/** Pro EQ moves: [band (1-6), FREQ slider position, gain, Q slider position] */
 const hz = (f) => Math.round((1000 * Math.log(f / 20)) / Math.log(1000));
 const EQ = {
   'Poly pad': [[1, hz(150)], [3, hz(300), -3, Math.log(1.4)]],
@@ -13,7 +13,9 @@ const EQ = {
   Arp: [[1, hz(250)]],
   Lead: [[1, hz(200)], [4, hz(2500), 2]],
 };
-const STAGES = ['levels', 'pan', 'eq', 'comp', 'sends', 'bus', 'master'];
+/** What the Mix check asks for: the lead gives way to the bass at 300 Hz */
+const FIX = [[3, hz(300), -3]];
+const STAGES = ['levels', 'pan', 'eq', 'comp', 'sends', 'bus', 'master', 'fix', 'club'];
 
 /** A slider (or checkbox) by its exact label. */
 const range = (scope, label) => scope.locator(`input[aria-label="${label}"]`);
@@ -44,7 +46,6 @@ async function setFreq(s, slider, target) {
   await s.page.mouse.click(box.x + 8 + ((box.width - 16) * target) / 1000, box.y + box.height / 2);
   await s.wait(80);
   await setRange(s, slider, target);
-  if (process.env.DEBUG) console.log('freq', target, await slider.inputValue());
 }
 
 /** Open a track in the Inspector (Track FX). */
@@ -65,9 +66,27 @@ async function insert(s, title) {
   return panel;
 }
 
-/** The Synthwave starter, its recordings allowed to download, mixed up to `upto`. */
+/** Pro EQ moves on a track, from flat when `reset`. */
+async function eq(s, track, moves, reset = false) {
+  await inspect(s, track);
+  const panel = await insert(s, 'Pro EQ');
+  if (reset) {
+    await panel.getByTitle('Back to the starting bands, all flat').click();
+    await s.wait(200);
+  }
+  for (const [band, freq, gain, q] of moves) {
+    await panel.locator('circle').nth(band - 1).click({ force: true });
+    await s.wait(150);
+    const on = range(panel, `Band ${band} on`);
+    if (!(await on.isChecked())) await on.check();
+    await setFreq(s, range(panel, 'Band frequency'), freq);
+    if (gain !== undefined) await setRange(s, range(panel, 'Band gain'), gain);
+    if (q !== undefined) await setRange(s, range(panel, 'Band width (Q)'), q);
+  }
+}
+
+/** The Synthwave starter, mixed up to `upto`. Its recordings may download (the meters and loudness need the real sound). */
 async function build(s, upto = 'master') {
-  const T = Date.now();
   await s.page.unroute(/github\.io|githubusercontent/);
   await s.starter('Synthwave');
   await s.wait(4000);
@@ -75,23 +94,7 @@ async function build(s, upto = 'master') {
   await s.view('Mixer');
   if (done('levels')) for (const [t, v] of Object.entries(LEVELS)) await setRange(s, range(s.page, `${t} volume`), v);
   if (done('pan')) for (const [t, v] of Object.entries(PANS)) await setRange(s, range(s.page, `${t} pan`), v);
-  if (done('eq')) {
-    for (const [t, moves] of Object.entries(EQ)) {
-      await inspect(s, t);
-      const panel = await insert(s, 'Pro EQ');
-      await panel.getByTitle('Back to the starting bands, all flat').click();
-      await s.wait(200);
-      for (const [band, freq, gain, q] of moves) {
-        await panel.locator('circle').nth(band - 1).click({ force: true });
-        await s.wait(150);
-        const on = range(panel, `Band ${band} on`);
-        if (!(await on.isChecked())) await on.check();
-        await setFreq(s, range(panel, 'Band frequency'), freq);
-        if (gain !== undefined) await setRange(s, range(panel, 'Band gain'), gain);
-        if (q !== undefined) await setRange(s, range(panel, 'Band width (Q)'), q);
-      }
-    }
-  }
+  if (done('eq')) for (const [t, moves] of Object.entries(EQ)) await eq(s, t, moves, true);
   if (done('comp')) {
     await inspect(s, 'Bass');
     const c = await insert(s, 'Compressor');
@@ -116,15 +119,19 @@ async function build(s, upto = 'master') {
     await s.page.locator('select').filter({ has: s.page.locator('option', { hasText: 'Punchy' }) }).first().selectOption({ label: 'Punchy' });
     await setRange(s, range(s.page.locator('[data-search="OTT"]'), 'Depth'), 0.2);
     await setRange(s, range(s.page.locator('[data-search="Stereo Width"]'), 'Width'), 1.2);
+    await setRange(s, range(s.page, 'Level'), -0.5);
+  }
+  if (done('fix')) {
+    await eq(s, 'Lead', FIX);
+    await inspect(s, 'Lead');
+    await s.tab('Master');
+  }
+  if (done('club')) {
     await setRange(s, range(s.page, 'Level'), 3);
     const clip = await insert(s, 'Clipper');
     await setRange(s, range(clip, 'Drive'), 4);
   }
   await s.page.mouse.move(700, 4);
-  if (process.env.DEBUG) {
-    console.log('built', upto, (Date.now() - T) / 1000);
-    console.log(await s.page.evaluate(() => [...document.querySelectorAll('input[type=range],select')].filter((e) => e.offsetParent).map((e) => `${e.getAttribute('aria-label') ?? e.closest('label')?.innerText?.slice(0, 12)}=${e.value}`).join(' ; ')));
-  }
 }
 
 /** Play from the start of the Groove section (bar 5) for a while. */
@@ -178,7 +185,7 @@ export const SHOTS = [
     caption: 'Track › Bus preset: Drum bus puts the drums through one bus with glue compression.',
     setup: async (s) => {
       await build(s, 'bus');
-      const b = await s.union([s.own('Tracks'), s.page.getByText('BUS · 1', { exact: true })], 12);
+      const b = await s.union([s.own('Tracks'), s.page.getByText(/^bus · 1$/i)], 12);
       return { ...b, height: b.height + 70 };
     },
   },
@@ -195,11 +202,26 @@ export const SHOTS = [
     },
   },
   {
-    file: 'mix-clipper',
-    alt: 'The master Level at +3 dB and the Clipper switched on with Drive +2 dB, its meter showing the dB it takes off the peaks.',
-    caption: 'Level pushes the mix into the limiter; the Clipper shaves the drum peaks first.',
+    file: 'mix-check',
+    alt: 'The Mix check after a check of the mix: it flags Bass and Lead covering each other between 250 and 400 Hz, with buttons to select each track.',
+    caption: 'Check the mix: here it finds the bass and the lead covering each other around 300 Hz.',
     setup: async (s) => {
       await build(s, 'master');
+      const run = s.page.getByTestId('mix-check-run');
+      await run.scrollIntoViewIfNeeded();
+      await run.click();
+      const found = s.page.getByTestId('mix-check-findings');
+      await found.waitFor({ timeout: 120000 });
+      await found.scrollIntoViewIfNeeded();
+      return s.union([s.page.locator('[data-search^="mix check"]').last()], 8);
+    },
+  },
+  {
+    file: 'mix-clipper',
+    alt: 'The master Level at +3 dB and the Clipper switched on with Drive +4 dB, its meter showing how much it takes off the peaks.',
+    caption: 'For a loud club master: Level +3 dB and the Clipper at +4 dB, shaving the drum peaks.',
+    setup: async (s) => {
+      await build(s, 'club');
       await play(s, 9000);
       const clip = s.page.locator('[data-search="Clipper"]').last();
       await clip.scrollIntoViewIfNeeded();
@@ -212,6 +234,6 @@ export const EXAMPLES = [
   {
     name: 'synthwave-mix',
     label: 'The Synthwave starter with this lesson\'s mix: levels, pans, EQ, compression, sends, a drum bus and the master.',
-    setup: async (s) => { await build(s, 'master'); },
+    setup: async (s) => { await build(s, 'fix'); },
   },
 ];
