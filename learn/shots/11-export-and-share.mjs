@@ -89,6 +89,8 @@ export const SHOTS = [
       await song(s);
       await s.page.getByTitle(/^Share the song/).click();
       await s.page.getByLabel('Song link').waitFor({ timeout: 20000 });
+      // The link as it reads on fledgetone.com, not the local test server
+      await s.page.getByLabel('Song link').evaluate((el) => { el.value = el.value.replace(/^https?:\/\/[^#]*/, 'https://fledgetone.com/app/'); });
       await s.wait(500);
       return s.dialog();
     },

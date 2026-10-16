@@ -150,7 +150,15 @@ export const SHOTS = [
     caption: 'The levels from the worked example: drums loudest, the pad furthest back.',
     setup: async (s) => {
       await build(s, 'pan');
-      await play(s, 4000);
+      // A taller bottom panel, so the strips show whole
+      const grip = await s.page.getByRole('separator', { name: 'Resize the bottom panel' }).boundingBox();
+      await s.page.mouse.move(grip.x + grip.width / 2, grip.y + 2);
+      await s.page.mouse.down();
+      await s.page.mouse.move(grip.x + grip.width / 2, grip.y - 160, { steps: 8 });
+      await s.page.mouse.up();
+      await play(s, 8000);
+      await s.page.keyboard.press('Space');
+      await play(s, 3000);
       return s.union([s.q('[aria-label="Drums channel"]'), s.q('[aria-label="Master channel"]')], 10);
     },
   },
@@ -186,7 +194,7 @@ export const SHOTS = [
     setup: async (s) => {
       await build(s, 'bus');
       const b = await s.union([s.own('Tracks'), s.page.getByText(/^bus · 1$/i)], 12);
-      return { ...b, height: b.height + 70 };
+      return { ...b, width: b.width - 12, height: b.height + 82 };
     },
   },
   {
@@ -195,7 +203,11 @@ export const SHOTS = [
     caption: 'The Master tab while the song plays: loudness at the top, then Glue, OTT and Stereo Width.',
     setup: async (s) => {
       await build(s, 'master');
-      await play(s, 9000);
+      // A first play lets every instrument's recordings arrive; the second is the one measured
+      await play(s, 8000);
+      await s.page.keyboard.press('Space');
+      await s.page.getByTitle('Start measuring again').click();
+      await play(s, 10000);
       const top = s.page.getByText('Loudness', { exact: true }).first();
       await top.scrollIntoViewIfNeeded();
       return s.union([top, s.page.locator('[data-search="Stereo Width"]')], 12);

@@ -8,6 +8,17 @@ Each version is the date it was released (a second release on the same day gets 
 Changes not released yet gather under **Unreleased** at the top. When you release, rename it to the new version and set `version` in package.json to match (a test
 checks they agree).
 
+## 2026.10.16-8 — Learn: hands-on lessons on fledgetone.com
+
+- **fledgetone.com/learn/**: twelve step-by-step lessons, separate from the guide, each building a real example with screenshots from the studio and an **Open the example in the studio** button: a tour, your first beat, chords and a melody, bass lines and 808s, arranging a song, mixing and mastering, vocals, sound design, scoring a video, game music, exporting and sharing, and making music on your phone. The home page lists them in a new **Learn** section.
+- Every page of the site notes that Fledgetone isn't affiliated with the companies and products it names.
+- Pocket: **Repeat** moves on to the copy it made (tapping it again carries on after it, instead of stacking copies), and the note grid works out the song's key when a part opens, so its rows no longer move while you paint.
+- The tempo finder (FIT › Hit points) says when the song has tempo changes, since its tempos assume one steady tempo.
+- **Game › Transition matrix** opens the matrix, not just scrolls to it.
+- Export's **Video (MP4)** describes your own video when the music goes on it.
+- The Pro EQ's frequency moves with the arrow keys down low too (it kept snapping back under about 150 Hz).
+- The Synth Designer shows one second as **1.00 s**, not 1000 ms.
+
 ## 2026.10.16-7 — Pocket's early-version notice
 
 - Pocket opens with a notice that the phone version is in its early stages and the desktop experience is much better. It shows each time until you tick **Don't show this again**.
