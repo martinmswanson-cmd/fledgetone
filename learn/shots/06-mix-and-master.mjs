@@ -34,6 +34,22 @@ async function setRange(s, locator, target) {
   await el.blur();
 }
 
+/**
+ * Set the Pro EQ's FREQ slider by clicking along it, as dragging does (its arrow keys can't move a
+ * low band: one step is less than a hertz there and rounds back).
+ */
+async function setFreq(s, slider, target) {
+  const box = await slider.boundingBox();
+  let x = box.x + 8 + ((box.width - 16) * target) / 1000;
+  for (let i = 0; i < 8; i++) {
+    await s.page.mouse.click(x, box.y + box.height / 2);
+    await s.wait(80);
+    const v = Number(await slider.inputValue());
+    if (Math.abs(v - target) <= 1) break;
+    x += ((target - v) * (box.width - 16)) / 1000;
+  }
+}
+
 /** Open a track in the Inspector (Track FX). */
 async function inspect(s, name) {
   await s.page.getByTitle(`${name}: open in the Inspector`, { exact: true }).last().click();
@@ -73,7 +89,7 @@ async function build(s, upto = 'master') {
         await s.wait(150);
         const on = range(panel, `Band ${band} on`);
         if (!(await on.isChecked())) await on.check();
-        await setRange(s, range(panel, 'Band frequency'), freq);
+        await setFreq(s, range(panel, 'Band frequency'), freq);
         if (gain !== undefined) await setRange(s, range(panel, 'Band gain'), gain);
         if (q !== undefined) await setRange(s, range(panel, 'Band width (Q)'), q);
       }

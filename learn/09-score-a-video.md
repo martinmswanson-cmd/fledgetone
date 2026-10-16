@@ -33,7 +33,7 @@ The tab shows the film's length (0:15.04 for the test film) and where it starts 
 
 1. Click **Find cuts** in the **Video** tab (or the scissors on the film strip's header).
 2. After a second or two, three violet flags with a small lock appear on the ruler: **Cut 1**, **Cut 2** and **Cut 3**, each on the first frame of a new shot.
-3. Press **.** (full stop) to jump from cut to cut, and watch the preview window change shot.
+3. Press **Home**, then **.** (full stop) to jump to the next marker. Cuts and section markers both count, so keep pressing it and watch the preview window change shot at each cut.
 
 {{shot:score-cuts}}
 
@@ -111,9 +111,9 @@ Clients often want the music on its own in set lengths: a 30-second spot, a 6-se
 
 1. Save first with **File › Save**, because this rebuilds the song.
 2. Right-click the ruler and choose **Cut song to length…**, then pick **30 s**.
-3. The dialog lists the sections it will use and the tempo it will nudge to. Click **Cut to 0:30.00**.
+3. The dialog lists the sections it keeps. With the build-up in, it leaves one out and nudges the tempo to 112 BPM so the result lasts exactly 0:30.00. Click **Cut to 0:30.00**.
 
-It drops or repeats whole sections between your markers, so this version won't match the film any more. That's expected: it's for the music on its own. **Ctrl+Z** brings the full song back.
+It drops or repeats whole sections between your markers, so this version won't match the film any more. That's expected: it's for the music on its own. **Ctrl+Z** brings the full song back, but not the tempo: open your saved file again to get the scored version back exactly.
 
 ### What's next
 
