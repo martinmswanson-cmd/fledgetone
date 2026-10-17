@@ -91,11 +91,23 @@ function helpers(page) {
     /** The whole phone screen, for a Pocket shot */
     phoneScreen: async () => ({ x: 0, y: 0, width: PHONE.viewport.width, height: PHONE.viewport.height }),
     async starter(name) {
+      // A game-ready starter opens the Game tab with a note: the shot keeps the dock as it was
+      const tabBefore = await page.locator('[role=tab][aria-selected=true]').first().textContent().catch(() => null);
       await page.getByRole('menuitem', { name: 'File', exact: true }).click();
       await page.getByRole('menuitem', { name: /^New/ }).click();
       await page.getByPlaceholder(/starter/i).fill(name);
       await page.locator('[role=dialog] button', { hasText: name }).first().click();
       await page.waitForTimeout(2500);
+      const note = page.getByText(/This starter is game-ready/);
+      if (await note.count()) await note.first().click();
+      const tabAfter = await page.locator('[role=tab][aria-selected=true]').first().textContent().catch(() => null);
+      if (tabAfter !== tabBefore) {
+        if (tabBefore) await page.locator('[role=tab]', { hasText: tabBefore.trim() }).first().click();
+        else if (tabAfter) await page.locator('[role=tab][aria-selected=true]').first().click();
+        await page.waitForTimeout(400);
+      }
+      // (Opening the Game tab scrolled the page down to it)
+      await page.evaluate(() => window.scrollTo(0, 0));
       await page.mouse.move(W / 2, 4);
     },
     async zoomOut(n) { for (let i = 0; i < n; i++) await page.getByTitle(/^Zoom out/).first().click(); await page.waitForTimeout(300); },
@@ -170,6 +182,8 @@ async function open(phone) {
   await page.addInitScript(() => {
     localStorage.setItem('bosBeatbox.welcomeSeen', 'true');
     localStorage.setItem('fledgetone.pocketNoticeHidden', '1');
+    // (The one-time "saved in this browser only" note would cover the header)
+    localStorage.setItem('bosBeatbox.storageNoticeSeen', '1');
   });
   await page.route(/github\.io|githubusercontent/, (r) => r.abort());
   await page.goto(phone ? `${URL_}?pocket` : `${URL_}?studio`, { waitUntil: 'networkidle' });
