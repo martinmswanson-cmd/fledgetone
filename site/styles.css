@@ -312,6 +312,11 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   animation: sweep 9s linear infinite; pointer-events: none;
 }
 @keyframes sweep { from { transform: translateX(0); } to { transform: translateX(100vw); } }
+/* With main.js the playhead is drawn on the piano roll instead */
+.hero-roll { position: absolute; left: 0; top: 0; width: 100%; height: 0; display: block; pointer-events: none; }
+.has-roll::after { display: none; }
+.has-roll.pencil { cursor: crosshair; }
+.has-roll.pencil :is(a, button, video, .shot-frame) { cursor: pointer; }
 
 /* Ticker of where the music goes */
 .ticker {

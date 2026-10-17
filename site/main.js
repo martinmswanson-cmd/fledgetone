@@ -346,3 +346,188 @@ if (installBtn && installNote) {
     if (outcome !== 'accepted') installNote.innerHTML = 'Not installed. You can install it any time from here, or in the studio from <strong>Help › Install Fledgetone</strong>.';
   });
 }
+
+// Hero: a piano roll behind the headline. The red playhead plays it at 120 BPM (a beat is one of
+// the 80px bar lines); notes light up and ripple as it hits them, and each pass rewrites a bar of
+// the melody, like someone writing. On a computer, click the roll to add a note of your own.
+{
+  const hero = document.querySelector('.hero'), canvas = hero?.querySelector('.hero-roll');
+  const ctx = canvas?.getContext('2d');
+  if (hero && ctx) {
+    hero.classList.add('has-roll');
+    const C = { cyan: col('--cyan'), green: col('--green'), amber: col('--amber'), purple: col('--purple'), red: col('--red') };
+    const STEP = 20, BEAT = 80, LOOP = 64; // a 16th note is 20px; the pattern is 4 bars (64 steps)
+    const LOW = 33, HIGH = 86; // the pitches the roll shows
+    // A minor: Am, F, C, G, a bar each
+    const CHORDS = [[57, 60, 64], [53, 57, 60], [55, 60, 64], [55, 59, 62]];
+    const SCALE = [57, 59, 60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79];
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const notes = [];
+    const add = (step, len, pitch, color, kind) => notes.push({ step, len, pitch, color, kind, glow: 0, fade: 1 });
+    CHORDS.forEach((ch, bar) => {
+      const b = bar * 16;
+      ch.forEach((p) => add(b, 15, p - 12, C.purple, 'pad'));
+      add(b, 6, ch[0] - 24, C.green, 'bass'); add(b + 8, 3, ch[0] - 24, C.green, 'bass'); add(b + 11, 4, ch[0] - 12, C.green, 'bass');
+      for (let i = 0; i < 8; i++) add(b + i * 2, 1.6, ch[i % 3] + (i >= 4 ? 12 : 0), C.amber, 'arp');
+    });
+    // The melody, one bar at a time: chord tones on the beats, steps of the scale between
+    const melodyBar = (bar) => {
+      const out = [], ch = CHORDS[bar];
+      let s = bar * 16;
+      while (s < bar * 16 + 16) {
+        const len = [2, 2, 4, 3, 1, 6][Math.floor(rnd() * 6)];
+        const onBeat = s % 4 === 0;
+        const pool = onBeat ? ch.map((p) => p + 12) : SCALE.slice(4);
+        if (rnd() > 0.18) out.push({ step: s, len: Math.min(len, bar * 16 + 16 - s) - 0.3, pitch: pool[Math.floor(rnd() * pool.length)], color: C.cyan, kind: 'lead', glow: 0, fade: 0 });
+        s += len;
+      }
+      return out;
+    };
+    let melody = [0, 1, 2, 3].flatMap(melodyBar);
+    melody.forEach((n) => (n.fade = 1));
+    const mine = [];
+    const rings = [];
+    let w = 0, h = 0, band = 0, lane = 10, copy = null, headX = 0, pass = 0, visible = true, hover = null;
+
+    const fit = () => {
+      const r = hero.getBoundingClientRect(), shot = hero.querySelector('.shot-hero');
+      w = r.width; band = Math.max(320, (shot ? shot.getBoundingClientRect().top - r.top : r.height * 0.6) + 60);
+      h = band;
+      canvas.style.height = `${h}px`;
+      canvas.width = Math.round(w * dpr()); canvas.height = Math.round(h * dpr());
+      lane = (band - 70) / (HIGH - LOW);
+      const c = hero.querySelector('.hero-copy').getBoundingClientRect();
+      copy = { x: c.left - r.left + c.width / 2, y: c.top - r.top + c.height / 2, rx: c.width / 2 + 40, ry: c.height / 2 + 30 };
+    };
+    const yOf = (pitch) => 30 + (HIGH - pitch) * lane;
+    // Quieter behind the words, and fading out toward the video
+    const dim = (x, y) => {
+      const dx = (x - copy.x) / copy.rx, dy = (y - copy.y) / copy.ry;
+      const inside = clamp(1.25 - Math.sqrt(dx * dx + dy * dy));
+      return (1 - 0.72 * inside) * clamp((band - y) / 140);
+    };
+    const roundRect = (x, y, rw, rh, r) => { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, rw, rh, r) : ctx.rect(x, y, rw, rh); };
+    const drawNote = (n, x0, now) => {
+      const x = x0 + n.step * STEP, nw = n.len * STEP - 2, y = yOf(n.pitch), nh = Math.max(3, lane - 1.5);
+      if (x > w || x + nw < 0) return;
+      const playing = headX >= x && headX <= x + nw;
+      const pad = n.kind === 'pad', glow = pad ? n.glow * 0.35 : n.glow;
+      const a = dim(x + nw / 2, y) * n.fade * (pad ? 0.55 : 1);
+      if (a <= 0.01) return;
+      ctx.globalAlpha = a * (0.16 + 0.5 * glow + (playing ? (pad ? 0.08 : 0.2) : 0));
+      ctx.fillStyle = n.color; roundRect(x, y, nw, nh, 2); ctx.fill();
+      ctx.globalAlpha = a * (0.35 + 0.5 * glow);
+      ctx.strokeStyle = n.color; ctx.lineWidth = 1; ctx.stroke();
+      if (glow > 0.05) { ctx.globalAlpha = a * glow * 0.5; ctx.shadowColor = n.color; ctx.shadowBlur = 16; ctx.fill(); ctx.shadowBlur = 0; }
+    };
+    const all = () => notes.concat(melody, mine);
+    const draw = (now) => {
+      ctx.setTransform(dpr(), 0, 0, dpr(), 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      const span = LOOP * STEP;
+      for (let x0 = 0; x0 < w; x0 += span) for (const n of all()) drawNote(n, x0, now);
+      for (const r of rings) {
+        ctx.globalAlpha = r.life * 0.6 * dim(r.x, r.y); ctx.strokeStyle = r.color; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(r.x, r.y, (1 - r.life) * 26 + 3, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (hover) {
+        ctx.globalAlpha = 0.5; ctx.strokeStyle = C.cyan; ctx.setLineDash([3, 3]);
+        roundRect(hover.x, yOf(hover.pitch), 4 * STEP - 2, Math.max(3, lane - 1.5), 2); ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (!reduce) {
+        // The playhead: a line with a marker at the top, like the studio's
+        const g = ctx.createLinearGradient(0, 0, 0, band);
+        g.addColorStop(0, 'rgba(239, 68, 68, .75)'); g.addColorStop(1, 'rgba(239, 68, 68, 0)');
+        ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.shadowColor = C.red; ctx.shadowBlur = 12;
+        ctx.fillRect(headX - 1, 0, 2, band); ctx.shadowBlur = 0;
+        ctx.fillStyle = C.red; ctx.beginPath(); ctx.moveTo(headX - 6, 0); ctx.lineTo(headX + 6, 0); ctx.lineTo(headX, 8); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    };
+    const hit = (from, to) => {
+      const span = LOOP * STEP;
+      for (const n of all()) {
+        for (let x0 = 0; x0 < w; x0 += span) {
+          const x = x0 + n.step * STEP;
+          if (x > from && x <= to) {
+            n.glow = 1;
+            if (n.kind !== 'pad' && rings.length < 40) rings.push({ x, y: yOf(n.pitch) + lane / 2, color: n.color, life: 1 });
+          }
+        }
+      }
+    };
+    let last = 0;
+    const frame = (now) => {
+      const dt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
+      const prev = headX;
+      headX += dt * BEAT * 2; // two beats a second: 120 BPM
+      if (headX > w) {
+        headX = 0; pass++;
+        // Rewrite one bar of the melody: the old notes fade out, the new ones in
+        const bar = pass % 4;
+        melody.forEach((n) => { if (Math.floor(n.step / 16) === bar) n.out = true; });
+        melody.push(...melodyBar(bar));
+      } else hit(prev, headX);
+      for (const n of all()) n.glow *= Math.exp(-dt * 3.2);
+      for (const n of melody) n.fade = clamp(n.fade + (n.out ? -dt * 1.5 : dt * 1.2));
+      melody = melody.filter((n) => !(n.out && n.fade <= 0));
+      for (const r of rings) r.life -= dt * 1.6;
+      while (rings.length && rings[0].life <= 0) rings.shift();
+      draw(now);
+      if (visible) requestAnimationFrame(frame); else last = 0;
+    };
+
+    fit();
+    addEventListener('resize', () => { fit(); if (reduce) draw(0); });
+    if (reduce) draw(0);
+    else {
+      const io = seen((e) => { const was = visible; visible = e.isIntersecting; if (visible && !was) requestAnimationFrame(frame); }, 0);
+      io?.observe(canvas);
+      requestAnimationFrame(frame);
+    }
+
+    // Writing notes: a dashed note follows the mouse on the grid; a click puts it there
+    if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      const busy = (t) => t.closest('a, button, video, input, .shot-hero, .readouts, .eyebrow');
+      const at = (e) => {
+        const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+        if (y < 20 || y > band - 60 || busy(e.target)) return null;
+        const step = Math.floor(x / STEP / 2) * 2 % LOOP, pitch = Math.round(HIGH - (y - 30) / lane);
+        return { step, x: Math.floor(x / STEP / 2) * 2 * STEP, pitch: clamp(pitch, LOW, HIGH) };
+      };
+      hero.addEventListener('pointermove', (e) => { hover = at(e); hero.classList.toggle('pencil', !!hover); if (reduce) draw(0); });
+      hero.addEventListener('pointerleave', () => { hover = null; hero.classList.remove('pencil'); if (reduce) draw(0); });
+      hero.addEventListener('click', (e) => {
+        const n = at(e);
+        if (!n || getSelection()?.toString()) return;
+        if (mine.length >= 32) mine.shift();
+        mine.push({ step: n.step, pitch: n.pitch, len: 3.7, color: C.cyan, kind: 'lead', glow: 1, fade: 1 });
+        rings.push({ x: n.x, y: yOf(n.pitch) + lane / 2, color: C.cyan, life: 1 });
+        if (reduce) draw(0);
+      });
+    }
+  }
+}
+
+// The readouts count up the first time they're on screen
+{
+  const vals = [...document.querySelectorAll('.ro-value')].map((el) => {
+    const m = el.textContent.match(/^(\d+)(.*)$/);
+    return m && { el, to: +m[1], rest: m[2] };
+  }).filter(Boolean);
+  const box = document.querySelector('.readouts');
+  if (!reduce && box && vals.length) {
+    const run = () => {
+      const t0 = performance.now();
+      const tick = (now) => {
+        const k = clamp((now - t0) / 1400), e = 1 - Math.pow(1 - k, 3);
+        vals.forEach((v) => (v.el.textContent = Math.round(v.to * e) + v.rest));
+        if (k < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    };
+    const io = seen((e) => { if (e.isIntersecting) { io.disconnect(); run(); } }, 0.6);
+    if (io) io.observe(box);
+  }
+}
