@@ -227,9 +227,41 @@
           <p class="scored-tip">Open a downloaded project in the studio with File &rsaquo; Open.</p>
         </div>
 
+        <!-- Cut to length: the rows are what the planner (src/store/cutToLength.ts) picks for this example song -->
+        <div class="cutdown reveal">
+          <div class="scored-head">
+            <p class="show-eyebrow">Cut to length</p>
+            <h3>One song, every length</h3>
+            <p>Make <strong>6, 15, 30, 60 and 90-second</strong> versions of a song for an ad, a trailer or a social clip, in a few clicks. Fledgetone leaves out or repeats whole sections, so every edit falls on a bar line where the music changes anyway. It always ends on the song's own ending and keeps the parts that matter most, like the chorus and the drop. It can nudge the tempo a little so the version lasts exactly as long as you need, to a hundredth of a second.</p>
+          </div>
+          <ol class="cut-rows" aria-label="An example song at 128 BPM and the shorter versions Cut to length makes of it">
+            <li class="cut-row">
+              <span class="cut-label">Full song<span>2:00</span></span>
+              <span class="cut-track"><span class="cut-bar" style="width:100.00%"><span class="cut-seg cut-intro" style="flex-grow:8" title="Intro, 8 bars"><span class="cut-long">Intro</span><span class="cut-short" aria-hidden="true">In</span></span><span class="cut-seg cut-verse" style="flex-grow:16" title="Verse, 16 bars"><span class="cut-long">Verse</span><span class="cut-short" aria-hidden="true">V</span></span><span class="cut-seg cut-chorus" style="flex-grow:16" title="Chorus, 16 bars"><span class="cut-long">Chorus</span><span class="cut-short" aria-hidden="true">Ch</span></span><span class="cut-seg cut-brk" style="flex-grow:8" title="Break, 8 bars"><span class="cut-long">Break</span><span class="cut-short" aria-hidden="true">Br</span></span><span class="cut-seg cut-drop" style="flex-grow:8" title="Drop, 8 bars"><span class="cut-long">Drop</span><span class="cut-short" aria-hidden="true">Dr</span></span><span class="cut-seg cut-outro" style="flex-grow:8" title="Outro, 8 bars"><span class="cut-long">Outro</span><span class="cut-short" aria-hidden="true">Out</span></span></span></span>
+            </li>
+            <li class="cut-row">
+              <span class="cut-label">90 s<span>1:30</span></span>
+              <span class="cut-track"><span class="cut-bar" style="width:75.00%"><span class="cut-seg cut-intro" style="flex-grow:8" title="Intro, 8 bars"><span class="cut-long">Intro</span><span class="cut-short" aria-hidden="true">In</span></span><span class="cut-seg cut-chorus" style="flex-grow:16" title="Chorus, 16 bars"><span class="cut-long">Chorus</span><span class="cut-short" aria-hidden="true">Ch</span></span><span class="cut-seg cut-brk" style="flex-grow:8" title="Break, 8 bars"><span class="cut-long">Break</span><span class="cut-short" aria-hidden="true">Br</span></span><span class="cut-seg cut-drop" style="flex-grow:8" title="Drop, 8 bars"><span class="cut-long">Drop</span><span class="cut-short" aria-hidden="true">Dr</span></span><span class="cut-seg cut-outro" style="flex-grow:8" title="Outro, 8 bars"><span class="cut-long">Outro</span><span class="cut-short" aria-hidden="true">Out</span></span></span></span>
+            </li>
+            <li class="cut-row">
+              <span class="cut-label">60 s<span>1:00</span></span>
+              <span class="cut-track"><span class="cut-bar" style="width:50.00%"><span class="cut-seg cut-chorus" style="flex-grow:16" title="Chorus, 16 bars"><span class="cut-long">Chorus</span><span class="cut-short" aria-hidden="true">Ch</span></span><span class="cut-seg cut-drop" style="flex-grow:8" title="Drop, 8 bars"><span class="cut-long">Drop</span><span class="cut-short" aria-hidden="true">Dr</span></span><span class="cut-seg cut-outro" style="flex-grow:8" title="Outro, 8 bars"><span class="cut-long">Outro</span><span class="cut-short" aria-hidden="true">Out</span></span></span></span>
+            </li>
+            <li class="cut-row">
+              <span class="cut-label">30 s<span>0:30</span></span>
+              <span class="cut-track"><span class="cut-bar" style="width:25.00%"><span class="cut-seg cut-drop" style="flex-grow:8" title="Drop, 8 bars"><span class="cut-long">Drop</span><span class="cut-short" aria-hidden="true">Dr</span></span><span class="cut-seg cut-outro" style="flex-grow:8" title="Outro, 8 bars"><span class="cut-long">Outro</span><span class="cut-short" aria-hidden="true">Out</span></span></span></span>
+            </li>
+            <li class="cut-row">
+              <span class="cut-label">15 s<span>0:15</span></span>
+              <span class="cut-track"><span class="cut-bar" style="width:12.50%"><span class="cut-seg cut-outro" style="flex-grow:8" title="Outro, 8 bars"><span class="cut-long">Outro</span><span class="cut-short" aria-hidden="true">Out</span></span></span></span>
+            </li>
+          </ol>
+          <p class="scored-tip">An example song at 128 BPM. Each version is the sections Cut to length picks, in order, and every one ends on the outro.</p>
+        </div>
+
         <ul class="points reveal">
           <li><strong>Timecode</strong>23.976 to 60 fps, including 29.97 drop-frame.</li>
-          <li><strong>Short versions</strong>Make 6, 15, 30, 60 and 90-second versions of a song.</li>
+          <li><strong>Tap tempo</strong>Tap along with the picture to set the song's tempo.</li>
           <li><strong>Lower under dialogue</strong>Turns the music down while people talk in the video.</li>
           <li><strong>Export</strong>Send markers to Premiere, Resolve or Final Cut, or put the music on your MP4.</li>
         </ul>

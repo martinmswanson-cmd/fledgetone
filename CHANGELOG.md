@@ -4,6 +4,11 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.16-16 — Game tools up front
+
+- A **Game** button at the top right opens the game tools (states, intensity, stingers and the game kit export) in one click.
+- Picking a game-ready starter opens the Game tab straight away, so you can switch between its states and try its stingers.
+
 ## 2026.10.16-15 — Linked clips, chords and riffs, sample packs
 
 - **Linked clips**: **Duplicate linked** (`Ctrl+Shift+D`, or right-click a clip) makes copies that play the same pattern as the original. Edit the notes of any of them and they all change together. Linked clips show a badge (**P1**, **P2**…), and **Make unique** gives a clip back its own notes.

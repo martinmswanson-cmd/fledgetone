@@ -4,7 +4,7 @@
  * last session.
  */
 import React, { useState } from 'react';
-import { Download, History, Music2, Save, Share2 } from 'lucide-react';
+import { Download, Gamepad2, History, Music2, Save, Share2 } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
@@ -14,6 +14,7 @@ import { ExportDialog } from './ExportDialog';
 import { BeatStoreDialog } from './BeatStoreDialog';
 import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
+import { showToast } from './toastStore';
 import { STARTER_GROUPS, STARTERS } from '../../store/starters';
 import type { StarterId } from '../../store/starters';
 
@@ -52,6 +53,13 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const choose = (template: 'blank' | 'demo' | StarterId) => {
     useTimelineStore.getState().newProject(template);
     onClose();
+    // A game-ready starter (its sections are game states, with transitions and stingers): open the
+    // Game tab, where they're played and exported, so the game side isn't missed
+    const s = useTimelineStore.getState();
+    if (template !== 'blank' && template !== 'demo' && (s.stingers.length > 0 || Object.keys(s.transitions).length > 0)) {
+      useUiStore.getState().openDock('game');
+      showToast("This starter is game-ready: its sections are game states. Switch between them, try the stingers and export a game kit in the Game tab below.");
+    }
   };
   return (
     <Modal title="New arrangement" onClose={onClose} wide>
@@ -280,6 +288,22 @@ const StorageNotice: React.FC = () => {
   );
 };
 
+/** The Game tools (states, intensity, stingers, game kits), one click from the header. */
+const GameButton: React.FC = () => {
+  const on = useUiStore((s) => s.dockOpen && s.dockTab === 'game');
+  return (
+    <button
+      type="button"
+      className={`${barButton} ${on ? '!text-violet-200 !border-violet-400/70 !bg-violet-500/15' : ''}`}
+      onClick={() => (on ? useUiStore.getState().setDockOpen(false) : useUiStore.getState().openDock('game'))}
+      aria-pressed={on}
+      title="Game music: switch between states, change the intensity, fire stingers, try it in a game and export a kit for Godot, Unity or the web"
+    >
+      <Gamepad2 className="w-3.5 h-3.5" /> Game
+    </button>
+  );
+};
+
 /**
  * Project controls in the top bar: the editable name, Save, Export and Share (New and Open are in
  * the File menu). The arrangement also autosaves to this browser.
@@ -325,6 +349,7 @@ export const ProjectBar: React.FC = () => {
       <button type="button" className={barButton} onClick={() => setDialog('share')} title="Share the song: a link that opens it, an MP3, or the project file">
         <Share2 className="w-3.5 h-3.5" /> Share
       </button>
+      <GameButton />
 
       {dialog === 'new' && <NewProjectDialog onClose={() => setDialog(null)} />}
       {dialog === 'export' && <ExportDialog onClose={() => setDialog(null)} />}
