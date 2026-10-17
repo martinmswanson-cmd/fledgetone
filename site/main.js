@@ -333,7 +333,6 @@ if (installBtn && installNote) {
     CHORDS.forEach((ch, bar) => {
       const b = bar * 16;
       ch.forEach((p) => add(b, 15, p - 12, C.purple, 'pad'));
-      add(b, 6, ch[0] - 24, C.green, 'bass'); add(b + 8, 3, ch[0] - 24, C.green, 'bass'); add(b + 11, 4, ch[0] - 12, C.green, 'bass');
       for (let i = 0; i < 8; i++) add(b + i * 2, 1.6, ch[i % 3] + (i >= 4 ? 12 : 0), C.amber, 'arp');
     });
     // The melody, one bar at a time: chord tones on the beats, steps of the scale between
