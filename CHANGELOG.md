@@ -187,13 +187,10 @@ second update on the same day gets `-2`, and so on).
 
 - New real recordings: **Celesta (Real)** (every key, in stereo), **Recorder (Real)** (tenor, alto and soprano recorders as one instrument) and **Muted Trumpet (Real)** (harmon mute, soft and loud). The starters play them; the older Celesta, Recorder and Muted Trumpet move to the Retro group, so older songs sound as they did.
 
-## 2026.10.15-13 — Terms: questions and answers
+## 2026.10.15-13 — Clearer terms
 
 - The terms of use start with plain questions and answers: owning and selling your music, credit, game kits in paid games, privacy, lost work, similar songs, content claims and more.
-
-## 2026.10.15-12 — Clearer terms
-
-- The terms of use now cover more: lost work, loud sound and flashing visualisers, music written by the tools, sounds everyone shares, and an age of 13 or older.
+- They also cover loud sound and flashing visualisers, music written by the tools, sounds everyone shares, and an age of 13 or older.
 - The scripts and players Fledgetone adds to game kits and game-audio packages can be used in any game or app, closed-source and paid ones included, under any licence. Each such export includes a short licence file saying so.
 
 ## 2026.10.15-11 — Terms of use
