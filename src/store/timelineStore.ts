@@ -42,7 +42,7 @@ import { busPresetById, busPresetFx, busPresetMembers, type BusPresetId } from '
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
-import { create } from 'zustand';
+import { create, type StateCreator } from 'zustand';
 import { initAudio } from '../audio/engine';
 import {
   formatBarsBeats,
@@ -133,6 +133,7 @@ import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRan
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
+import { canLink, syncPatterns, unlinked } from './patterns';
 
 // Defined with the data types (project parsing and the automation maths need it too); much of
 // the app reads it from here
@@ -612,6 +613,14 @@ interface TimelineState {
   // selects the copies. They return a message for the user when there's no room, else null.
   /** One copy of the block right after it (Ctrl+D). Copies nothing if it would pass the end of the timeline. */
   duplicateSelection: () => string | null;
+  /**
+   * Linked copies of the selected note clips, after the block (as Duplicate): each copy plays the
+   * same pattern as its original, so editing any of them changes them all (see patterns.ts).
+   * Returns a message when nothing could be linked.
+   */
+  duplicateLinked: () => string | null;
+  /** Unlink clips from their patterns: each keeps what it plays, as a clip of its own (one undo step). */
+  makeClipsUnique: (clipIds: readonly string[]) => void;
   /** `times` copies of the block end to end. Copies nothing if they wouldn't all fit. */
   repeatSelection: (times: number) => string | null;
   /** Copies of the block end to end up to the loop's Out; the last one is cut short at Out. */
@@ -1013,7 +1022,27 @@ function tidyMeters(points: MeterPoint[], base: Meter): MeterPoint[] {
   return out;
 }
 
-export const useTimelineStore = create<TimelineState>((set, get) => {
+/**
+ * Linked clips follow the one edited (see patterns.ts), in the same update as the edit: everything
+ * that watches the store (the live engine, the views) sees them change together, and one Undo
+ * takes the whole edit back. Every way in is covered: the store's own `set` and setState from outside.
+ */
+type SetState = (partial: TimelineState | Partial<TimelineState> | ((s: TimelineState) => TimelineState | Partial<TimelineState>), replace?: boolean) => void;
+function withLinkedClips(config: (set: SetState, get: () => TimelineState, api: { setState: SetState }) => TimelineState) {
+  return (rawSet: SetState, get: () => TimelineState, api: { setState: SetState }) => {
+    const set: SetState = (partial, replace) =>
+      rawSet((s) => {
+        const next = typeof partial === 'function' ? partial(s) : partial;
+        if (!next.clips || next.clips === s.clips) return next;
+        const synced = syncPatterns(s.clips, next.clips);
+        return synced ? { ...next, clips: synced } : next;
+      }, replace);
+    api.setState = set;
+    return config(set, get, api);
+  };
+}
+
+export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, get) => {
   /**
    * Change one track. `record` makes it its own undo step (clicks, menus); continuous controls
    * (sliders) leave it false because their gesture checkpoint()s once at its start.
@@ -2343,6 +2372,29 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
     // ---------- Copies of the selection ----------
     duplicateSelection: () => get().repeatSelection(1),
 
+    duplicateLinked: () => {
+      const s = get();
+      const block = selectionBlock(s.clips);
+      if (!block) return null;
+      const linkable = block.selected.filter(canLink);
+      if (!linkable.length) return 'Audio clips and take folders play their own recordings: only note clips can be linked.';
+      if (block.start + 2 * block.span > TOTAL_BARS + 1 + EPS) return `No room for a copy before the end of the timeline (bar ${TOTAL_BARS + 1}).`;
+      // The originals join a pattern (their own, or a new one), and the copies share it and its notes
+      const patternOf = new Map(linkable.map((c) => [c.id, c.pattern ?? uid('pattern')]));
+      const copies = block.selected.map((c) => (patternOf.has(c.id) ? { ...c, id: uid('clip'), startBar: c.startBar + block.span, isSelected: true, pattern: patternOf.get(c.id)! } : copyClip(c, block.span)));
+      set((st) => ({
+        clips: [...st.clips.map((c) => (patternOf.has(c.id) ? { ...c, pattern: patternOf.get(c.id)!, isSelected: false } : c.isSelected ? { ...c, isSelected: false } : c)), ...copies],
+        ...pushPast(st),
+      }));
+      return null;
+    },
+
+    makeClipsUnique: (clipIds) => {
+      const ids = new Set(clipIds);
+      if (!get().clips.some((c) => ids.has(c.id) && c.pattern)) return;
+      set((st) => ({ clips: st.clips.map((c) => (ids.has(c.id) && c.pattern ? unlinked(c) : c)), ...pushPast(st) }));
+    },
+
     repeatSelection: (times) => {
       const block = selectionBlock(get().clips);
       const count = Math.floor(times);
@@ -3168,7 +3220,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       return true;
     },
   };
-});
+}) as unknown as StateCreator<TimelineState>);
 
 /** Everything a project file or autosave stores, read from the store now. */
 // Positions are counted (and typed) in the song's time signatures

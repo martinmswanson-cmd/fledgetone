@@ -3,7 +3,7 @@
  * Multi Sampler (sounds laid across the keys and velocities).
  */
 import React, { useState } from 'react';
-import { Drum, Piano, Shuffle, Trash2, Upload } from 'lucide-react';
+import { Drum, FolderOpen, Piano, Shuffle, Trash2, Upload } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { DrumRack, MultiSample, RackPad, Track } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
@@ -16,7 +16,9 @@ import { showToast } from '../timeline/toastStore';
 import { detectPitch, hzToMidi } from '../../audio/vocalTune';
 import { previewTrackNotes } from '../../audio/liveTracks';
 import { initAudio } from '../../audio/engine';
-import { hasFiles, importAudioFiles, pickAudioFiles } from '../timeline/audioFiles';
+import { dropHasFolder, filesFromDrop, hasFiles, importAudioFiles, pickAudioFiles, pickAudioFolder, type PathFile } from '../timeline/audioFiles';
+import { kitFromFolder } from '../timeline/samplePackImport';
+import { isAudioPath } from '../../store/samplePack';
 import { UndoableRange } from '../UndoableRange';
 import { SoundLibraryFooter } from './SoundLibraryFooter';
 
@@ -66,6 +68,17 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
       setBusy(false);
     }
   };
+  /** A folder of drums onto the pads, in kit order (kick on pad 1, snare on 2, hats on 5 and 6…). */
+  const fromFolder = async (files: PathFile[]) => {
+    if (!files.length) return;
+    setBusy(true);
+    try {
+      const next = await kitFromFolder(files, rack);
+      if (next) setRack(next);
+    } finally {
+      setBusy(false);
+    }
+  };
   const audition = async (i: number) => {
     await initAudio();
     previewTrackNotes(track.id, [{ note: padNote(i), duration: '8n', velocity: 0.9 }]);
@@ -79,6 +92,10 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
         <button type="button" disabled={busy} className={small} onClick={() => void pickAudioFiles(true).then((f) => (f.length ? fill(f, 0) : undefined))} title="Load up to 16 sounds: they fill the pads in order, from pad 1">
           <Upload className="w-3 h-3 inline mr-1" />
           {busy ? 'Loading…' : 'Load sounds…'}
+        </button>
+        <button type="button" disabled={busy} className={small} onClick={() => void pickAudioFolder().then(fromFolder)} title="Load a kit from a folder (a sample pack's drums): kick on pad 1, snare on 2, clap on 3, hats on 5 and 6… sorted by their names and folders">
+          <FolderOpen className="w-3 h-3 inline mr-1" />
+          Kit folder…
         </button>
       </div>
       <div className="grid grid-cols-4 gap-1" role="grid" aria-label="Pads">
@@ -98,6 +115,11 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
               onDrop={(e) => {
                 if (!hasFiles(e)) return;
                 e.preventDefault();
+                // A folder: a whole kit, sorted onto the pads
+                if (dropHasFolder(e.dataTransfer)) {
+                  void filesFromDrop(e.dataTransfer).then(fromFolder);
+                  return;
+                }
                 setSelected(i);
                 void fill(Array.from(e.dataTransfer.files), i);
               }}
@@ -268,6 +290,11 @@ export const MultiPanel: React.FC<{ track: Track }> = ({ track }) => {
       onDrop={(e) => {
         if (!hasFiles(e)) return;
         e.preventDefault();
+        // (A folder of notes: every sound file in it)
+        if (dropHasFolder(e.dataTransfer)) {
+          void filesFromDrop(e.dataTransfer).then((files) => add(files.filter((f) => isAudioPath(f.path)).map((f) => f.file)));
+          return;
+        }
         void add(Array.from(e.dataTransfer.files));
       }}
     >
@@ -277,6 +304,10 @@ export const MultiPanel: React.FC<{ track: Track }> = ({ track }) => {
         <button type="button" disabled={busy} className={small} onClick={() => void pickAudioFiles(true).then((f) => (f.length ? add(f) : undefined))} title="Add sounds: each is placed by its pitch (from its file name, or heard)">
           <Upload className="w-3 h-3 inline mr-1" />
           {busy ? 'Listening…' : 'Add sounds…'}
+        </button>
+        <button type="button" disabled={busy} className={small} onClick={() => void pickAudioFolder().then((files) => (files.length ? add(files.filter((f) => isAudioPath(f.path)).map((f) => f.file)) : undefined))} title="Add every sound in a folder (an instrument's notes, e.g. Piano C2.wav, Piano C3.wav…)">
+          <FolderOpen className="w-3 h-3 inline mr-1" />
+          Folder…
         </button>
       </div>
       {multi.zones.length === 0 ? (

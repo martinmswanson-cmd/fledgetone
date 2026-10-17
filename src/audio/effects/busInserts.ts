@@ -106,7 +106,7 @@ export function createMonoBass(settings: NonNullable<TrackFx['monoLow']>): MonoB
   const hp = () => {
     const f = raw.createBiquadFilter();
     f.type = 'highpass';
-    f.Q.value = Math.SQRT1_2;
+    f.Q.value = 20 * Math.log10(Math.SQRT1_2); // Butterworth: lowpass/highpass Q is in dB
     f.frequency.value = settings.freq;
     return f;
   };

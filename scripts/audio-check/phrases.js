@@ -38,7 +38,7 @@ for (const { track, wav } of stems) {
     const re = new Float32Array(N / 2), im = new Float32Array(N / 2);
     // Goertzel-free: use a real FFT via the AudioContext? keep it simple: compute band energies with a few hundred bins
     const bins = 256; const bandE = new Float64Array(bins);
-    for (let b = 1; b < bins; b++) { const f = (b * sr) / N / 2 * 2; let sr_ = 0, si = 0; const w = (2 * Math.PI * b * 16) / N; for (let k = 0; k < N; k += 4) { sr_ += seg[k] * Math.cos(w * k); si -= seg[k] * Math.sin(w * k); } bandE[b] = sr_ * sr_ + si * si; }
+    for (let b = 1; b < bins; b++) { const f = (b * sr) / N / 2 * 2; let sr_ = 0, si = 0; const w = (2 * Math.PI * b * 16) / N; for (let k = 0; k < N; k++) { sr_ += seg[k] * Math.cos(w * k); si -= seg[k] * Math.sin(w * k); } bandE[b] = sr_ * sr_ + si * si; }
     let tot = 0, cs = 0, hi = 0; for (let b = 1; b < bins; b++) { const f = (b * 16 * sr) / N; tot += bandE[b]; cs += bandE[b] * f; if (f > 2500) hi += bandE[b]; }
     const rms = 20 * Math.log10(Math.sqrt(best / 4410) + 1e-9);
     // how long the note sounds: time until the envelope falls 30 dB below its peak within the note

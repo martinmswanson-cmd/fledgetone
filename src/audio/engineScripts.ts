@@ -9,13 +9,12 @@ export type EngineTarget = 'fmod' | 'wwise' | 'both';
 
 /** Where each state sits on one timeline (seconds), states end to end with a bar's gap. */
 export function stateLayout(m: AudioManifest): Array<{ name: string; start: number; length: number; bpm: number; num: number; den: number }> {
-  const gap = (240 / m.bpm) * 1;
   let at = 0;
   return m.states.map((s) => {
     // Each state at its own tempo and time signature (older manifests: the song's)
     const [num, den] = s.timeSignature ?? m.timeSignature ?? [4, 4];
     const entry = { name: s.name, start: +at.toFixed(6), length: s.seconds, bpm: s.bpm ?? m.bpm, num, den };
-    at += s.seconds + gap;
+    at += s.seconds + (60 / entry.bpm) * (4 / den) * num;
     return entry;
   });
 }
@@ -283,7 +282,8 @@ with WaapiClient() as client:
 /** The README: what's in the package and the manual steps. */
 export function engineReadme(m: AudioManifest, target: EngineTarget): string {
   const layout = stateLayout(m);
-  const bar = 240 / m.bpm;
+  const [tsNum, tsDen] = m.timeSignature ?? [4, 4];
+  const bar = (60 / m.bpm) * (4 / tsDen) * tsNum;
   const curves = m.intensity.groups;
   const fmod = target !== 'wwise';
   const wwise = target !== 'fmod';

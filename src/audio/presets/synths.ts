@@ -75,7 +75,7 @@ export function legatoGlide(synth: { portamento: Tone.Unit.Time }, glide: GlideR
     const legato = start < soundingUntil - 0.001;
     soundingUntil = end;
     const seconds = glide?.seconds;
-    synth.portamento = seconds === undefined ? own : legato ? seconds : 0;
+    synth.portamento = seconds === undefined ? own : legato ? seconds : own;
   };
 }
 

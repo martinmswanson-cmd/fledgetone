@@ -4,7 +4,9 @@
  */
 import React, { useRef, useState } from 'react';
 import { Gauge, MemoryStick, TriangleAlert, X } from 'lucide-react';
-import { clearMemory, usePerfStore } from '../audio/perfMonitor';
+import { clearMemory, heaviestTracks, usePerfStore } from '../audio/perfMonitor';
+import { useTimelineStore } from '../store/timelineStore';
+import { canFreeze, freezeTrack } from '../store/freezeActions';
 import { chosenPlaybackMode, choosePlaybackMode, PLAYBACK_MODE } from '../audio/playbackMode';
 import { Popover } from './Popover';
 import { showToast } from './timeline/toastStore';
@@ -35,6 +37,34 @@ const StableButton: React.FC = () => {
 const runClear = (history: boolean) => {
   const mb = clearMemory({ history });
   showToast(`Memory cleared${mb > 0 ? `: about ${mb} MB of sound let go` : ''}${history ? ', undo history emptied' : ''}`);
+};
+
+/** Freeze one of the heaviest tracks, in one click (from the warning). */
+const FreezeHeaviest: React.FC = () => {
+  const tracks = useTimelineStore((s) => s.tracks);
+  const heavy = heaviestTracks(tracks, 2).filter((t) => canFreeze(t.id));
+  if (!heavy.length) return null;
+  return (
+    <>
+      {heavy.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          onClick={() => {
+            showToast(`Freezing ${t.name}…`);
+            void freezeTrack(t.id).then(
+              () => showToast(`${t.name} is frozen: it plays as audio now (unfreeze it to edit its notes)`),
+              (err) => showToast(`Couldn't freeze ${t.name}: ${err instanceof Error ? err.message : String(err)}`)
+            );
+          }}
+          className="h-8 px-3 rounded-md border border-sky-400/70 bg-sky-500/15 text-sky-100 font-semibold hover:bg-sky-500/25"
+          title="Render it to audio: it then costs about as much as playing a sound file"
+        >
+          Freeze {t.name}
+        </button>
+      ))}
+    </>
+  );
 };
 
 /** What to try when it lags, beyond clearing memory. */
@@ -127,10 +157,11 @@ export const PerfBadge: React.FC = () => {
           </div>
           <p className="text-forge-muted">
             {behind
-              ? `The audio engine can't keep up (it ran at ${Math.round((audioSpeed ?? 0) * 100)}% of real time), so the sound may crackle. Freeze your busiest tracks, or use Stable playback.`
-              : `${late > 0 ? `${late} notes played late` : 'The page froze'}${hitches > 0 && late > 0 ? ` and the page froze ${hitches} times` : ''} in the last few seconds.`}
+              ? `This computer couldn't make the sound fast enough: the audio engine ran at ${Math.round((audioSpeed ?? 0) * 100)}% of real time for a few seconds, so you may hear crackles. It depends on how much plays at once (plugin and recorded instruments, reverbs), not on how long the song is. Freezing the heaviest tracks below helps most; Stable playback gives the engine more room; other tabs and programs, battery saving and power-saver modes take time from it.`
+              : `The page was busy (${late > 0 ? `${late} notes reached the audio engine late` : 'it froze'}${hitches > 0 && late > 0 ? `, and it froze ${hitches} times` : ''}), not the audio engine. Fledgetone now sends notes further ahead so it isn't heard again; closing other tabs and keeping this one in front helps.`}
           </p>
           <div className="flex flex-wrap gap-2">
+            {behind && <FreezeHeaviest />}
             {behind && <StableButton />}
             <button type="button" onClick={() => runClear(false)} className="h-8 px-3 flex items-center gap-1.5 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-cyan-100 font-semibold hover:bg-cyan-500/25">
               <MemoryStick className="w-4 h-4" /> Clear memory

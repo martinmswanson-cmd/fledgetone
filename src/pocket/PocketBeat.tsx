@@ -19,7 +19,7 @@ import { useTimelineStore } from '../store/timelineStore';
 import type { Clip, Track } from '../store/timelineTypes';
 import { Card, pill, pillOn, Sheet, SheetItem } from './pocketUi';
 import { clipsOf, editorOf, pickClip, pocketNoteId, usePlayPosition, usePocket } from './pocketStore';
-import { noteSteps, stepsPerBar, toggleStep } from './pocketGrid';
+import { STEPS_PER_WHOLE, noteSteps, stepsPerBar, toggleStep } from './pocketGrid';
 import { audition, DRUM_PADS } from './pocketSound';
 
 /** Each Drummer pick plays a new take on the style (the same order every session) */
@@ -152,13 +152,13 @@ export const PocketBeat: React.FC = () => {
   const clips = clipsOf(allClips, track?.id ?? null);
   const clip = pickClip(clips, beatClipId, playhead);
   const perBar = stepsPerBar(meter);
-  const pages = clip ? Math.max(1, Math.ceil(clip.lengthBars - 1e-6)) : 1;
+  const pages = clip ? Math.max(1, Math.ceil((clip.lengthBars * STEPS_PER_WHOLE) / perBar - 1e-6)) : 1;
   const shownPage = Math.min(page, pages - 1);
   const rows = more ? DRUM_PADS : DRUM_PADS.slice(0, 5);
 
   // The step playing now, when the song is inside this clip
   const inClip = isPlaying && clip && bar >= clip.startBar && bar < clip.startBar + clip.lengthBars;
-  const nowStep = inClip ? Math.floor((bar - clip.startBar) * perBar) : -1;
+  const nowStep = inClip ? Math.floor((bar - clip.startBar) * STEPS_PER_WHOLE) : -1;
   // While playing, the grid follows the bar that's playing
   const followPage = isPlaying && inClip ? Math.floor(nowStep / perBar) : shownPage;
 
@@ -187,11 +187,11 @@ export const PocketBeat: React.FC = () => {
     if (!rec || !isPlaying || !clip) return;
     const at = getAudiblePositionBar();
     if (at < clip.startBar || at >= clip.startBar + clip.lengthBars) return;
-    const steps = Math.round(clip.lengthBars * perBar);
-    const step = Math.round((at - clip.startBar) * perBar) % steps;
+    const steps = Math.round(clip.lengthBars * STEPS_PER_WHOLE);
+    const step = Math.round((at - clip.startBar) * STEPS_PER_WHOLE) % steps;
     const notes = useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? [];
-    if (notes.some((n) => n.note === note && Math.round(n.startOffset * perBar) === step)) return;
-    useTimelineStore.getState().addNotes(clip.id, [{ note, startOffset: step / perBar, duration: '16n', velocity: 0.85 }]);
+    if (notes.some((n) => n.note === note && Math.round(n.startOffset * STEPS_PER_WHOLE) === step)) return;
+    useTimelineStore.getState().addNotes(clip.id, [{ note, startOffset: step / STEPS_PER_WHOLE, duration: '16n', velocity: 0.85 }]);
   };
 
   /** Turn one step on or off (the paint stroke made the undo step). */
@@ -199,11 +199,11 @@ export const PocketBeat: React.FC = () => {
     if (!clip) return;
     const s = useTimelineStore.getState();
     const before = s.clips.find((c) => c.id === clip.id)?.notes ?? [];
-    s.setClipNotes(clip.id, toggleStep(before, note, step, perBar, 1, 0.85, pocketNoteId));
+    s.setClipNotes(clip.id, toggleStep(before, note, step, STEPS_PER_WHOLE, 1, 0.85, pocketNoteId));
     if (on) void audition(track.id, note);
   };
   const stepOn = (note: string, step: number) =>
-    (useTimelineStore.getState().clips.find((c) => c.id === clip?.id)?.notes ?? []).some((n) => n.note === note && Math.round(n.startOffset * perBar) === step);
+    (useTimelineStore.getState().clips.find((c) => c.id === clip?.id)?.notes ?? []).some((n) => n.note === note && Math.round(n.startOffset * STEPS_PER_WHOLE) === step);
   const paint = paintHandlers(
     ({ row, step }) => stepOn(row, step),
     ({ row, step }, on) => setStep(row, step, on)
@@ -274,7 +274,7 @@ export const PocketBeat: React.FC = () => {
                 <span className="w-14 shrink-0 text-[11px] text-forge-muted truncate">{r.label}</span>
                 <div className="flex-1 grid gap-[3px]" style={{ gridTemplateColumns: `repeat(${perBar}, minmax(0, 1fr))` }}>
                   {steps.map((step) => {
-                    const on = clip.notes.some((n) => n.note === r.note && Math.round(n.startOffset * perBar) === step && noteSteps(n, perBar) > 0);
+                    const on = clip.notes.some((n) => n.note === r.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === step && noteSteps(n, STEPS_PER_WHOLE) > 0);
                     const beat = (step % perBar) % beatEvery === 0;
                     return (
                       <button
@@ -347,7 +347,8 @@ export const PocketBeat: React.FC = () => {
               key={f.id}
               title={f.name}
               onClick={() => {
-                fillClipBar(clip.id, clip.startBar + followPage + 0.5, f.id);
+                // (A page is one measure: perBar steps of a 16th, in whole-note bars)
+                fillClipBar(clip.id, clip.startBar + ((followPage + 0.5) * perBar) / STEPS_PER_WHOLE, f.id);
                 setSheet(null);
               }}
             />

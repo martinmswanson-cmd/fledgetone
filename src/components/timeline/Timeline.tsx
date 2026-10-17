@@ -339,8 +339,8 @@ export const Timeline: React.FC = () => {
         s.selectAll();
       } else if (mod && key === 'd') {
         e.preventDefault();
-        // No menu to explain a refusal in, so say it in a toast
-        const message = s.duplicateSelection();
+        // No menu to explain a refusal in, so say it in a toast (with Shift: linked copies)
+        const message = e.shiftKey ? s.duplicateLinked() : s.duplicateSelection();
         if (message) showToast(message);
       } else if (mod && (key === 'c' || key === 'x')) {
         // Only hijack copy/cut when clips are selected, so page text copying still works

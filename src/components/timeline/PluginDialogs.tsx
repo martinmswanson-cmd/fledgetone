@@ -23,6 +23,15 @@ import { showToast } from './toastStore';
  * and the bar asking before an opened project's plugins load.
  */
 
+/** A url's host, or the url itself when it has none or can't be read (a saved url may be relative or malformed) */
+function hostOf(u: string): string {
+  try {
+    return new URL(u, location.href).host || u;
+  } catch {
+    return u;
+  }
+}
+
 const RECENT_KEY = 'bosBeatbox.recentPlugins';
 const readRecent = (): Array<{ url: string; name: string }> => {
   try {
@@ -120,7 +129,7 @@ export const PluginUrlDialog: React.FC<{ trackId: string | null; onClose: () => 
                 title={r.url}
               >
                 <Plug className="inline w-3 h-3 mr-1.5 text-fuchsia-300" />
-                {r.name} <span className="text-forge-muted">{new URL(r.url).host}</span>
+                {r.name} <span className="text-forge-muted">{hostOf(r.url)}</span>
               </button>
             ))}
           </div>
@@ -250,7 +259,7 @@ export const PluginPermissionBar: React.FC = () => {
   const urls = blockedPluginUrls();
   const key = urls.join('|');
   if (!urls.length || dismissed === key) return null;
-  const hosts = [...new Set(urls.map((u) => new URL(u).host))];
+  const hosts = [...new Set(urls.map(hostOf))];
   return (
     <div role="alert" className="fixed top-14 left-1/2 -translate-x-1/2 z-50 max-w-xl flex items-center gap-3 px-4 py-2 rounded-lg border border-amber-400/60 bg-forge-panel shadow-xl text-xs text-forge-text">
       <ShieldAlert className="w-4 h-4 text-amber-300 shrink-0" />

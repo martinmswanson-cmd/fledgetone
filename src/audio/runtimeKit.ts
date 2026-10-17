@@ -12,7 +12,10 @@ import { serializeProject, type ProjectSnapshot } from '../store/project';
  * README.
  */
 
-const safe = (name: string) => name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'song';
+// ('#' and '%' too: in the URL loadSong fetches they'd start a fragment or an escape)
+const safe = (name: string) => name.replace(/[\\/:*?"<>|#%]+/g, '-').trim() || 'song';
+/** A string as a JS literal that's safe inside an HTML <script> ('</script>' can't end it) */
+const scriptString = (v: string) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 export async function buildRuntimeKit(project: ProjectSnapshot): Promise<Blob> {
   const sounds = await embedSounds(referencedSoundIds(project));
@@ -24,14 +27,14 @@ export async function buildRuntimeKit(project: ProjectSnapshot): Promise<Blob> {
   const sting = project.stingers?.[0]?.name;
   const example = `<!doctype html>
 <meta charset="utf-8">
-<title>${project.name}: music test</title>
+<title>${project.name.replace(/&/g, '&amp;').replace(/</g, '&lt;')}: music test</title>
 <button id="start">Load and play</button> <progress id="bar" max="1" value="0"></progress>
 <div id="pads"></div>
 <script type="module">
   import { loadSong } from './bos-player.js';
   document.getElementById('start').onclick = async () => {
-    const music = await loadSong('./${songFile}', { onProgress: (f) => (document.getElementById('bar').value = f) });
-    music.play(${JSON.stringify(first)});
+    const music = await loadSong(${scriptString('./' + songFile)}, { onProgress: (f) => (document.getElementById('bar').value = f) });
+    music.play(${scriptString(first)});
     for (const s of music.data.states) {
       const b = document.createElement('button');
       b.textContent = s.name;
@@ -63,7 +66,7 @@ stem groups), the stingers and the transitions, with the same engine as Fledgeto
 plays like the game kit's player: transitions by your rules, on the beat, and intensity.
 
     import { loadSong } from './bos-player.js';
-    const music = await loadSong('./${songFile}', { onProgress: (f) => console.log(f) });
+    const music = await loadSong(${JSON.stringify('./' + songFile)}, { onProgress: (f) => console.log(f) });
     music.play(${JSON.stringify(first)});          // after the player clicks or presses a key
     music.setState(${JSON.stringify(second)});
     music.setIntensity(0.7);${sting ? `\n    music.stinger(${JSON.stringify(sting)});` : ''}

@@ -172,7 +172,9 @@ export function pedalPoints(changes: readonly number[], end: number, catchAfter 
   for (const c of [...changes].sort((a, b) => a - b)) {
     if (c >= end) break;
     if (out.length && c - out[out.length - 1][0] < catchAfter * 2) continue;
-    out.push([c, 0], [Math.min(end, c + catchAfter), 1]);
+    // (Too close to the end to catch: it stays up, rather than going down and up at `end`)
+    if (c + catchAfter >= end) break;
+    out.push([c, 0], [c + catchAfter, 1]);
   }
   out.push([end, 0]);
   return out;

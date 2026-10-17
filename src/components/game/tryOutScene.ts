@@ -35,6 +35,8 @@ const JUMP = 8.5;
 interface Guy {
   root: T.Group;
   body: T.Group;
+  /** The body's rest height (the walk bobs on top of it) */
+  baseY: number;
   legs: Array<{ hip: T.Group; knee: T.Group }>;
 }
 
@@ -97,7 +99,7 @@ function buildHero(): Guy {
   body.add(tip);
   body.position.y = 0.62;
   const legs = blockLegs(root, 0x5b6474, 0.16, 0.4);
-  return { root, body, legs };
+  return { root, body, baseY: body.position.y, legs };
 }
 
 /** The guard: a purple cube with one big eye and two horns. */
@@ -123,7 +125,7 @@ function buildGuard(): Guy {
   }
   body.position.y = 0.72;
   const legs = blockLegs(root, 0x45286b, 0.22, 0.38);
-  return { root, body, legs };
+  return { root, body, baseY: body.position.y, legs };
 }
 
 /** A seeded random number in [0, 1), so the arena is the same every time. */
@@ -361,7 +363,7 @@ export class TryOutScene {
       l.hip.rotation.x = s * 0.7;
       l.knee.rotation.x = Math.max(0, -s) * 1.1;
     });
-    g.body.position.y = 0.88 + Math.abs(Math.sin(phase)) * 0.06 * amount;
+    g.body.position.y = g.baseY + Math.abs(Math.sin(phase)) * 0.06 * amount;
   }
 
   private update(dt: number) {

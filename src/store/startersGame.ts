@@ -382,7 +382,20 @@ function platformer(): ProjectSnapshot {
   const roots = ['C2', 'A1', 'F1', 'G1'];
   const bounce = everyBar(4, (b): Step[] => [0, 4, 6, 8, 12, 14].map((s, i): Step => [s, i % 2 ? octave(roots[b], 1) : roots[b], i === 0 ? 0.8 : 0.6, '16n']));
   const tune = melody([[0, 'E5', 2], [2, 'G5', 2], [4, 'C6', 4], [8, 'B5', 2], [10, 'G5', 2], [12, 'E5', 4], [16, 'A5', 2], [18, 'C6', 2], [20, 'E6', 4], [24, 'D6', 4], [28, 'C6', 4], [32, 'F5', 2], [34, 'A5', 2], [36, 'C6', 4], [40, 'A5', 4], [44, 'F5', 4], [48, 'G5', 4], [52, 'B5', 4], [56, 'D6', 4], [60, 'G5', 4]], 0.75);
-  const thirds = tune.map(([s, n, v, d]): Step => [s, transpose(n as string, -4), v * 0.8, d]);
+  // A third below in C major (a scale step of two, not a fixed four semitones, which is out of key)
+  const SCALE = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  const thirdBelow = (note: string): string => {
+    const m = /^([A-G])(\d)$/.exec(note);
+    if (!m) return transpose(note, -4);
+    let i = SCALE.indexOf(m[1]) - 2;
+    let octave = Number(m[2]);
+    if (i < 0) {
+      i += 7;
+      octave--;
+    }
+    return `${SCALE[i]}${octave}`;
+  };
+  const thirds = tune.map(([s, n, v, d]): Step => [s, thirdBelow(n as string), v * 0.8, d]);
   const chip = beat([[D.kick, 'X.......X.x.....'], [D.snare, '....X.......X...'], [D.closedHat, 'x.x.x.x.x.x.x.x.']], 0.8);
   const comp = stabs([['C4', 'E4', 'G4'], ['A3', 'C4', 'E4'], ['A3', 'C4', 'F4'], ['B3', 'D4', 'G4']], [2, 6, 10, 14], 1, 0.55);
   // Underground: A minor, slow and echoing
@@ -668,7 +681,7 @@ function shop(): ProjectSnapshot {
         'Shop starter',
         112,
         0.35,
-        [1, 5],
+        [1, 9],
         [vibes, keys, bass, drums, steel, flute],
         [
           clip(vibes, 'Theme', 1, 4, tune, 2),

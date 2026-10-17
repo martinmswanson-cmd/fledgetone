@@ -1,9 +1,11 @@
 import React from 'react';
-import { Plug, Plus, Radio, Waypoints } from 'lucide-react';
+import { FolderOpen, Plug, Plus, Radio, Waypoints } from 'lucide-react';
 import { useUiStore } from '../../store/uiStore';
 import { useTimelineStore } from '../../store/timelineStore';
 import { InstrumentList } from '../InstrumentMenu';
 import { useFloatingMenu } from '../useFloatingMenu';
+import { pickAudioFolder } from './audioFiles';
+import { importSamplePack } from './samplePackImport';
 
 /**
  * "Add Track" button and its instrument picker: a search field over every instrument by category.
@@ -84,6 +86,19 @@ export const AddTrackMenu: React.FC = () => {
             <Plug className="w-3.5 h-3.5 text-fuchsia-300" />
             <span className="flex-1">Plugin instrument (WAM)…</span>
             <span className="text-[10px] text-forge-muted">by URL</span>
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-rose-200 hover:bg-rose-500/15 border-b border-forge-border"
+            onClick={() => {
+              close();
+              void pickAudioFolder().then((files) => importSamplePack(files));
+            }}
+            title="Pick a sample pack's folder: its drums become Drum Rack kits (kick, snare, hats… on their pads), an instrument's notes a Multi Sampler, its loops an Audio track. You can also drop the folder under the tracks."
+          >
+            <FolderOpen className="w-3.5 h-3.5 text-rose-300" />
+            <span className="flex-1">Sample pack (folder)…</span>
+            <span className="text-[10px] text-forge-muted">kits from your sounds</span>
           </button>
           <InstrumentList
             heading="Add Instrument Track"

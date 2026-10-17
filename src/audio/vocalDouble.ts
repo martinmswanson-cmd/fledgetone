@@ -55,7 +55,7 @@ export function phrasesOf(frames: readonly PitchFrame[], loud: readonly boolean[
       if (start < 0) start = i;
       quiet = 0;
     } else if (start >= 0 && ++quiet >= gapFrames) {
-      out.push({ start: frames[start].time - HOP / 2, end: frames[i - quiet + 1].time });
+      out.push({ start: frames[start].time - HOP / 2, end: frames[i - quiet].time + HOP / 2 });
       start = -1;
       quiet = 0;
     }

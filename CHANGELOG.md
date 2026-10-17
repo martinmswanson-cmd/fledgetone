@@ -4,6 +4,16 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.16-15 — Linked clips, chords and riffs, sample packs
+
+- **Linked clips**: **Duplicate linked** (`Ctrl+Shift+D`, or right-click a clip) makes copies that play the same pattern as the original. Edit the notes of any of them and they all change together. Linked clips show a badge (**P1**, **P2**…), and **Make unique** gives a clip back its own notes.
+- **Chords, arpeggios and riffs** in the piano roll: click the chords of your key (**I ii iii IV V vi vii°**, or with 7ths) to write a progression from the playhead, voiced smoothly. A fuller **ARP** with eight patterns over one to three octaves. **New riff** writes a pluck riff, lead line or bass line in the key that follows the chords on your other tracks.
+- **Sample packs**: **Add Track › Sample pack (folder)…**, or drop a pack's folder under the tracks. Its drums become Drum Rack kits with each sound on its pad (kick, snare, clap, hats…), an instrument's notes become a Multi Sampler, its loops go on an Audio track and its other one-shots on pads of their own. The Drum Rack and the Multi Sampler can load a whole folder too.
+- Export: WAV at **88.2** and **96 kHz**, and **24-bit** is now the default.
+- The **LAG** warning is more accurate (it could warn when nothing was wrong on some computers or over Bluetooth), and it names your heaviest tracks with a one-click **Freeze** for each.
+- The first time your work is saved, a note explains it's kept in this browser only, with a **Save a file** button.
+- Many small fixes: mic recordings land exactly in time, some plugin instruments no longer get stuck on a note, MIDI and MPE bends, notation, Pocket in other time signatures, game kits in other time signatures, and more.
+
 ## 2026.10.16-14 — Glue
 
 - A new **Glue** switch in the Mixer, for songs that sound like instruments playing side by side rather than one song. It gives each part its own room in the mix, groups the drums and the music on their own buses, ducks the bass under the kick, puts everything in one shared space and spreads the parts out a little. Switch it off at any time, even days later, and your mix goes back to how it was, keeping anything you've changed by hand since.

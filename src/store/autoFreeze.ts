@@ -205,6 +205,8 @@ async function tick() {
   useAutoFreeze.setState({ rendering: next.id });
   try {
     const r = await renderTrackChannels(next.id, undefined, untilStopped);
+    // Turned off while it rendered: Off lets go of every render, this one too
+    if (!useAutoFreeze.getState().on) return;
     const after = useTimelineStore.getState();
     const track = after.tracks.find((t) => t.id === next.id);
     // Changed while it rendered (or gone): out of date already, so it's tried again once it settles

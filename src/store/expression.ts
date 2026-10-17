@@ -198,7 +198,12 @@ export function shiftExpression(expression: ClipExpression | undefined, shift: n
     if (!points?.length) continue;
     const startValue = exprValueAt(points, -shift, step);
     const moved = points.map((p) => ({ at: p.at + shift, value: p.value })).filter((p) => p.at > EPS && p.at < length - EPS);
-    const next = [...(startValue !== 0 || moved.length ? [{ at: 0, value: startValue }] : []), ...moved];
+    // A gliding lane cut in the middle of a glide keeps its slope: a point at the cut with the
+    // value it had reached there
+    const endValue = exprValueAt(points, length - shift, step);
+    const cutsGlide = !step && points.some((p) => p.at + shift >= length - EPS) && endValue !== (moved.length ? moved[moved.length - 1].value : startValue);
+    const tail = cutsGlide ? [{ at: length, value: endValue }] : [];
+    const next = [...(startValue !== 0 || moved.length || tail.length ? [{ at: 0, value: startValue }] : []), ...moved, ...tail];
     if (next.some((p) => p.value !== 0)) out[lane] = next;
   }
   return Object.keys(out).length ? out : undefined;

@@ -53,7 +53,8 @@ export function makeSpace(tracks: Track[], clips: Clip[]): { tracks: Track[]; ch
       const kind = INSTRUMENTS[t.instrumentKey]?.kind;
       const category = INSTRUMENTS[t.instrumentKey]?.category;
       if (!kind || ['drums', 'fx', 'audio', 'bus', 'return', 'slicer', 'rack'].includes(kind) || category === 'Drums & Percussion' || category === 'Sound Effects') return null;
-      const notes = clips.filter((c) => c.trackId === t.id && !c.audio).flatMap((c) => c.notes);
+      // (At their place in the song, so notes of different clips at the same offset aren't taken for a chord)
+      const notes = clips.filter((c) => c.trackId === t.id && !c.audio).flatMap((c) => c.notes.map((n) => ({ ...n, startOffset: c.startBar + n.startOffset })));
       const shift = lowestShift(t);
       const midis = notes.map((n) => midiOf(n.note) + shift).filter(Number.isFinite);
       if (midis.length < 4) return null;

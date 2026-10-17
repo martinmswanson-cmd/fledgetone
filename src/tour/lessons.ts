@@ -49,8 +49,11 @@ const pointCount = () => tl().tracks.reduce((n, t) => n + (t.automation ?? []).r
 /** A fingerprint of every note's pitch, so a key change shows as a change */
 const pitches = () => tl().clips.map((c) => c.notes.map((n) => n.note).join(',')).join('|');
 const ensureTrack = () => {
-  const s = tl();
-  if (!s.tracks.length) s.addTrack('piano');
+  let s = tl();
+  if (!s.tracks.length) {
+    s.addTrack('piano');
+    s = tl();
+  }
   if (!s.tracks.some((t) => t.id === s.selectedTrackId)) s.selectTrack(s.tracks[0].id);
 };
 

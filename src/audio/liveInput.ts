@@ -166,6 +166,9 @@ export function playMidi(message: MidiMessage, heard: number): void {
         recorded = { kind: 'noteExpr', note: own.note, lane: 'bend', value: cents / 100 };
         break;
       }
+      // In MPE only the master channel bends every note: a member channel with no note held
+      // (its bend comes just before the note, or after it ended) bends nothing
+      if (useMidiStore.getState().mpe && message.channel) break;
       if (instrument?.bend) safely(() => instrument.bend!(message.cents, now));
       break;
     }

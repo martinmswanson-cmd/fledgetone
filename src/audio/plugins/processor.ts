@@ -196,10 +196,35 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     let pos = 0;
     while (pos < frames) {
       let end = frames;
+      // Notes started since the last render, and how late they started. Late events arrive
+      // together (a plugin that just loaded, a busy main thread). A late note's end is moved later
+      // by as much as its start was late, so it still sounds as long as written; and a note's end
+      // (or all-notes-off) is never applied in the same render as its start: an instrument that
+      // restrikes a voice by dropping its gate for one render (the Faust instruments) could miss
+      // the note or, before their fix, drone on until the next stop.
+      const started = new Map();
       while (this.events.length) {
-        const at = Math.round(this.events[0].time * sampleRate) - start;
-        if (at <= pos) this.apply(this.events.shift());
-        else {
+        const ev = this.events[0];
+        const at = Math.round(ev.time * sampleRate) - start;
+        if (at <= pos) {
+          const b = ev.type === 'wam-midi' ? ev.data.bytes : null;
+          const kind = b ? b[0] & 0xf0 : 0;
+          const late = b && (kind === 0x80 || (kind === 0x90 && !b[2])) ? started.get(b[1]) : undefined;
+          if (late !== undefined) {
+            const moved = Math.max(ev.time + late, (start + pos + 1) / sampleRate);
+            this.events.shift();
+            let k = 0;
+            while (k < this.events.length && this.events[k].time <= moved) k++;
+            this.events.splice(k, 0, { ...ev, time: moved });
+            continue;
+          }
+          if (b && kind === 0xb0 && (b[1] === 120 || b[1] === 123) && started.size > 0) {
+            end = Math.min(frames, pos + 1);
+            break;
+          }
+          this.apply(this.events.shift());
+          if (b && kind === 0x90 && b[2]) started.set(b[1], Math.max(0, (start + pos) / sampleRate - ev.time));
+        } else {
           end = Math.min(frames, at);
           break;
         }

@@ -80,7 +80,11 @@ export function createVoicePool(makeVoice: (context: Tone.BaseContext) => PoolVo
         busy.push(v);
       }
     }
-    if (free) return free;
+    if (free) {
+      // An idle voice takes up the bend now (bend() only moves the sounding ones)
+      free.voice.detune.setTargetAtTime(bendCents, time, 0.001);
+      return free;
+    }
     if (voices.length < maxVoices) {
       const v = { voice: makeVoice(out.context), start: -Infinity, end: -Infinity, serial: 0, velocity: 0, releasedAt: -Infinity };
       v.voice.connect(out);

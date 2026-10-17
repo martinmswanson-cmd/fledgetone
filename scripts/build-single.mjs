@@ -41,7 +41,7 @@ if (!html.includes('name="fledgetone-build"')) throw new Error('No <meta charset
 
 // The bundled libraries' licence notices travel with the file (see thirdPartyLicenses in
 // vite.config.ts). "--" can't appear inside an HTML comment.
-const licenses = read('third-party-licenses.txt').replace(/--/g, '- -');
+const licenses = read('third-party-licenses.txt').replace(/-(?=-)/g, '- ');
 html = html.replace(/<html([^>]*)>/, (tag) => `${tag}\n<!--\n${licenses}-->`);
 
 const leftovers = html.match(/(src|href)="\/(assets|favicon|apple-touch-icon)[^"]*"/g);

@@ -416,6 +416,8 @@ function parseClip(v: unknown): Clip {
     ...(expression ? { expression } : {}),
     // Optional: a take folder (its takes, and which plays where)
     ...(takes ? { takes, comp: compSegments({ takes, comp, lengthBars }) } : {}),
+    // Optional: linked to the other clips of its pattern (a note clip only)
+    ...(isStr(v.pattern) && v.pattern && !audio && !takes ? { pattern: v.pattern.slice(0, 40) } : {}),
   };
 }
 

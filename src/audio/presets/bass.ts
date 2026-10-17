@@ -10,7 +10,7 @@ import { legatoGlide } from './synths';
  * Built by a factory so offline (WAV export) rendering can recreate it in its own context.
  */
 export function createBassVoice(output: Tone.InputNode, glide?: GlideRef) {
-  const distortion = new Tone.Distortion(0.06);
+  const distortion = new Tone.Distortion({ distortion: 0.06, oversample: '4x' });
 
   const synth = new Tone.MonoSynth({
     volume: -2,

@@ -51,7 +51,9 @@ export function detectPitch(input: Float32Array, rate: number): PitchFrame[] {
     for (let i = 0; i < x.length; i++) x[i] = 0.5 * (input[2 * i] + input[2 * i + 1]);
     sampleRate = rate / 2;
   }
-  const hop = Math.round(HOP_SECONDS * sampleRate);
+  // Fractional hop: frame k starts at round(k * hop), so frames sit exactly HOP_SECONDS apart
+  // (a rounded hop drifts, e.g. 221 samples at 22050 Hz is 10.023 ms)
+  const hop = HOP_SECONDS * sampleRate;
   const maxLag = Math.floor(sampleRate / MIN_HZ);
   const minLag = Math.floor(sampleRate / MAX_HZ);
   const w = maxLag; // integration window
@@ -61,7 +63,7 @@ export function detectPitch(input: Float32Array, rate: number): PitchFrame[] {
   let peak = 0;
   for (let i = 0; i < x.length; i++) peak = Math.max(peak, Math.abs(x[i]));
   const floor = peak * 0.03;
-  for (let start = 0; start + w + maxLag < x.length; start += hop) {
+  for (let k = 0, start = 0; start + w + maxLag < x.length; k++, start = Math.round(k * hop)) {
     let level = 0;
     for (let i = start; i < start + w; i++) level = Math.max(level, Math.abs(x[i]));
     const time = (start + w / 2) / sampleRate;

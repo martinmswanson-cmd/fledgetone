@@ -297,7 +297,11 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     v.released = true;
     const at = Math.max(time, raw.currentTime);
     const r = Math.max(0.005, multi?.release ?? 0.3);
-    v.env.gain.cancelScheduledValues(at);
+    // Hold the level the attack has reached (cancelScheduledValues would drop an unfinished
+    // attack ramp and fall back to 0, silencing a note shorter than its attack)
+    const g = v.env.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+    if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(at);
+    else g.cancelScheduledValues(at);
     v.env.gain.setTargetAtTime(0, at, r / 5);
     const end = Math.min(v.stopAt, at + r + 0.05);
     v.source.stop(end);
@@ -315,7 +319,8 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     const semis = midi - zone.root;
     const source = raw.createBufferSource();
     source.buffer = buffer;
-    source.playbackRate.setValueAtTime(rateOf(semis), at);
+    const rate = rateOf(semis);
+    source.playbackRate.setValueAtTime(rate, at);
     const env = raw.createGain();
     const level = Math.max(0, Math.min(1, velocity));
     const attack = Math.max(0.001, multi.attack);
@@ -324,7 +329,8 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     source.connect(env);
     env.connect(into);
     source.start(at);
-    const stopAt = at + buffer.duration / source.playbackRate.value;
+    // (playbackRate.value still reads 1 until the scheduled rate is reached: use the rate itself)
+    const stopAt = at + buffer.duration / rate;
     source.stop(stopAt);
     const v: Voice = { source, env, semis, stopAt, released: false };
     voices.add(v);

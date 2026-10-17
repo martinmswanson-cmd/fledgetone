@@ -85,7 +85,9 @@ export function moveToFolder(tracks: Track[], trackId: string, id: string | null
   if (id === null) {
     const { folder: _folder, ...plain } = track;
     const lastMember = rest.map((t) => t.folder?.id).lastIndexOf(track.folder!.id);
-    return [...rest.slice(0, lastMember + 1), plain, ...rest.slice(lastMember + 1)];
+    // (Its folder's only member: it stays where it is)
+    const at = lastMember >= 0 ? lastMember + 1 : tracks.indexOf(track);
+    return [...rest.slice(0, at), plain, ...rest.slice(at)];
   }
   const folder = tracks.find((t) => t.folder?.id === id)?.folder;
   if (!folder) return tracks;
@@ -113,6 +115,12 @@ export function moveTrack(tracks: Track[], trackId: string, direction: -1 | 1): 
     const { folder: _folder, ...plain } = t;
     const rest = tracks.filter((x) => x.id !== trackId);
     const ids = rest.map((x) => x.folder?.id);
+    // (Its folder's only member: it just leaves the folder, in place)
+    if (!ids.includes(t.folder.id)) {
+      const out = [...tracks];
+      out[i] = plain;
+      return out;
+    }
     const at = direction < 0 ? ids.indexOf(t.folder.id) : ids.lastIndexOf(t.folder.id) + 1;
     return [...rest.slice(0, at), plain, ...rest.slice(at)];
   }

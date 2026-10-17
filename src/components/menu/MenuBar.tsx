@@ -444,7 +444,7 @@ export const MenuBar: React.FC = () => {
   const close = useCallback(() => setWhere(null), []);
   const place = useCallback((id: string | null) => {
     const r = id ? buttons.current[id]?.getBoundingClientRect() : undefined;
-    setWhere(id && r ? { id, left: Math.min(r.left, window.innerWidth - 280), top: r.bottom + 2 } : null);
+    setWhere(id && r ? { id, left: Math.max(0, Math.min(r.left, window.innerWidth - 280)), top: r.bottom + 2 } : null);
   }, []);
   const setOpen = place;
   // A click outside, Esc or a resize closes the menu; scrolling the page carries it along with its button

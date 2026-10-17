@@ -74,6 +74,6 @@ const MAILTO_MAX = 1800;
 
 export function mailtoLink(report: ProblemReport): string {
   let body = reportText(report);
-  if (body.length > MAILTO_MAX) body = `${body.slice(0, MAILTO_MAX)}\n[cut short]`;
+  if (body.length > MAILTO_MAX) body = `${body.slice(0, MAILTO_MAX).replace(/[\uD800-\uDBFF]$/, '')}\n[cut short]`;
   return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Fledgetone problem report")}&body=${encodeURIComponent(body)}`;
 }

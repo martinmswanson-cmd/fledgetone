@@ -1043,6 +1043,8 @@ export interface Clip {
   takes?: ClipTake[];
   /** Which take plays where (the comp), when there are takes */
   comp?: CompSegment[];
+  /** Linked clips: every clip with the same pattern plays the same notes, lanes and groove (see patterns.ts) */
+  pattern?: string;
 }
 
 /**

@@ -173,9 +173,10 @@ export async function buildGameKitParts(
   const usedNames = new Set<string>();
   for (const sec of sections) {
     tick(`state ${sec.name}`);
+    // Unique as a file name too: 'Boss/Fight' and 'Boss-Fight' make the same one
     let name = sec.name;
-    for (let n = 2; usedNames.has(name); n++) name = `${sec.name} ${n}`;
-    usedNames.add(name);
+    for (let n = 2; usedNames.has(safe(name)); n++) name = `${sec.name} ${n}`;
+    usedNames.add(safe(name));
     // (Sections start on the 16th grid; a marker a hair off it is still this state's)
     const marker = song.markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - sec.from) < 1 / 32);
     if (marker) {
@@ -255,9 +256,13 @@ export async function buildGameKitParts(
   // Stingers (some also bridge transitions)
   const stingers: AudioManifest['stingers'] = [];
   const stingerName = new Map<string, string>();
+  const stingerFiles = new Set<string>();
   for (const s of song.stingers) {
     tick(`stinger ${s.name}`);
-    const file = `stingers/${safe(s.name)}.wav`;
+    let base = safe(s.name);
+    for (let n = 2; stingerFiles.has(base); n++) base = `${safe(s.name)} ${n}`;
+    stingerFiles.add(base);
+    const file = `stingers/${base}.wav`;
     files.push({ name: file, data: await renderStinger(s, song, sampleRate) });
     stingers.push({ name: s.name, kind: s.kind, label: stingerKind(s.kind).label, file, quantize: 'beat', bridgeBars: Math.max(1, Math.ceil(s.lengthBars - 1e-6)), bridgeSeconds: +(Math.max(1, Math.ceil(s.lengthBars - 1e-6)) * secondsPerBar).toFixed(6) });
     stingerName.set(s.id, s.name);
@@ -546,6 +551,8 @@ Changes are scheduled on Unity's audio clock, so they land exactly on the beat. 
 
 function readme(m: AudioManifest): string {
   const { name, bpm } = m;
+  const [tsNum, tsDen] = m.timeSignature ?? [4, 4];
+  const barSeconds = (60 / bpm) * (4 / tsDen) * tsNum;
   const states = m.states.map((s) => s.name);
   const stingers = m.stingers.map((s) => s.name);
   const first = states[0] ?? 'Main';
@@ -555,7 +562,7 @@ function readme(m: AudioManifest): string {
   return `${name}: game music kit, made with Fledgetone
 ${'='.repeat(name.length + 49)}
 
-${bpm} BPM, 4/4.
+${bpm} BPM, ${tsNum}/${tsDen}.
 States (each a seamless loop): ${states.join(', ')}
 ${stems.length ? `Stem groups (crossfaded by intensity): ${stems.join(', ')}\n` : ''}${stingers.length ? `Stingers: ${stingers.join(', ')}\n` : ''}
 What's here
@@ -599,7 +606,7 @@ Unity (players/unity/AdaptiveMusic.cs)
     Changes are scheduled on the audio clock (PlayScheduled), so they land on the beat exactly.
 
 Other engines and middleware (FMOD, Wwise...): the loops are exact, so set each as a looping
-sound and switch at bar lines (every ${(240 / bpm).toFixed(4)} s).
+sound and switch at bar lines (every ${barSeconds.toFixed(4)} s).
 `;
 }
 

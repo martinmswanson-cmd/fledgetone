@@ -84,6 +84,7 @@ The timeline is 400 bars long, in 4/4 at one tempo. Each row is a track: its hea
 - **Scroll while dragging**: bring the pointer to the edge of the track area and the timeline scrolls that way, faster the closer you get. The mouse wheel works mid-drag too.
 - **Alt-drag**: hold **Alt** (Option on a Mac) and drag. Copies stay behind and the originals move.
 - **Duplicate** (`Ctrl+D`, or right-click a clip > Duplicate): copies the selected clips as one block right after the end of the selection, so a section spread over several tracks stays lined up. The copies become the selection, so pressing `Ctrl+D` again keeps extending the section. If the copy wouldn't fit before bar 401, nothing is copied and a message says why.
+- **Duplicate linked** (`Ctrl+Shift+D`, or right-click a clip > Duplicate linked): like Duplicate, but each copy is **linked** to its original, as a pattern is in a pattern-based DAW: edit the notes of any of them (in the piano roll, with a tool, by recording into it) and every linked clip changes with it, wherever it is. Linked clips show a badge with the pattern's name (**P1**, **P2**…). Each keeps its own place, length and track; they share their notes, controller lanes, groove and wobble. Duplicate linked again (of an original or a copy) adds more clips to the same pattern. **Make unique** (right-click, or in the piano roll) unlinks a clip: it keeps its notes, and edits stop reaching the others. Trimming a linked clip's start or splitting it makes those clips their own, since their notes move; moving, copying to the end and trimming the end don't. Edits that move notes across the whole song (a key change from a bar) change a pattern everywhere it plays. Only note clips can be linked.
 - **Repeat ×N…** (right-click a clip): type how many copies you want (1 to 64) and press Enter. They go end to end after the selection, like Duplicate. If they wouldn't all fit before bar 401, the menu says how many would.
 - **Fill to loop Out** (right-click a clip): repeats the selection end to end up to the loop's OUT. The last copy is cut short at OUT (its hidden notes come back if you drag its edge out). Fill makes at most 2,000 clips at a time.
 - **Trim**: drag a clip's left or right edge. Trimming hides notes rather than deleting them, so dragging the edge back brings them back. Zoom in if a clip is too narrow to show its edge handles.
@@ -350,6 +351,12 @@ The header has the clip's name (click to rename), **GRID** (1/32, 1/16T, 1/16, 1
 - **GROOVE…** (drum clips): swing per drum. Pick a template, **Straight**, **Light swing (hats)**, **Heavy swing (hats)**, **Lazy** (snare and clap a hair late, the hats swung and late) or **Pushed** (the hats rush ahead of the beat, off-beats accented), or set each row in use on its own: its **Swing** (0 to 75%, its own in place of the clip's), **Timing** (early or late by up to a quarter of a 16th), **Velocity** and **Off-beats** (the velocity of its notes between the 8ths). The templates keep the kick, and but for Lazy the snare, straight and on time, so the hats swing over a straight kick and snare. A row's swing counts only its own notes, so a hat roll keeps just that 8th of the hats even. It plays the same live, in exports, frozen and in the game kit, and FEEL then reads **Per-row groove**.
 - **GHOSTS** shows the other tracks' notes over the same bars as faint outlines in their colours, so a melody can follow the chords.
 
+**Chords, arpeggios and riffs** (the row under the piano roll's header, on pitched clips):
+
+- **IN (key) I ii iii IV V vi vii°**: the seven chords of the key, named as musicians name them (upper case major, lower case minor, ° diminished; in a minor key i ii° III iv v VI VII). The key is the **SCALE** when it's set to a seven-note scale, else the song's key as heard. Click one to add that chord at the playhead, **NEW NOTE** long: the playhead then moves on by that much, so clicking **I**, **V**, **vi**, **IV** writes a whole progression, each chord voiced close to the one before as a keyboard player would. Hover a button for the chord's name; **7THS** makes them four-note 7th chords.
+- **ARP**: turns each chord (notes starting together) into an arpeggio for as long as it lasts: **Up**, **Down**, **Up and down**, **Down and up**, **Converge** (outside in), **Pinky** (the top note between the others) or **Thumb** (the bottom note between), **Random**; over 1, 2 or 3 octaves; at the GRID's speed or 1/8, 1/8T, 1/16, 1/16T, 1/32; and **staccato** to **legato**. **Apply** changes the selected chords, or every chord in the clip with none selected. (The four quick arpeggios in **TOOLS** are still there.)
+- **RIFF**: **New riff** writes a riff in the key over the whole clip, replacing its notes: a **Pluck riff** (short, syncopated 16ths), a **Lead line** (longer notes that sing) or a **Bass line** (low, on the chord roots with passing notes). It's a one-bar rhythm played as a call and an answer, with its strong beats on the chords your other tracks play there (the track with the most chords over the clip), within the instrument's range. Press it again for another riff; each press is one Undo step, and the same clip gives the same riffs in the same order.
+
 **Expression lanes** (at the bottom of the piano roll, for every instrument except the drum kits and FX): what a keyboard's wheels, pedal and knobs would play over the clip, and each note's own expression. Pick the lane in the menu at the left of the lane.
 
 - **Pitch bend**: every note bends together. Click to add a point, drag one to move it (it snaps to the grid; Shift for none), and right-click or double-click a point to remove it; the bend glides from point to point. The lane shows ±2 semitones; **±2 st** switches it to ±12 for big swoops. Bends reach up to an octave either way.
@@ -554,6 +561,7 @@ The sound is kept in this browser and saved inside the project file (see **Where
 
 **Add Track > Your Sounds > Drum Rack** gives 16 pads, each playing a sound of your own, laid out like a pad controller (pad 1, C2, bottom left; pad 16, D#3, top right).
 
+- **Kit folder…** (or drop a folder on the pads) loads a kit from a folder of drum sounds, each on its pad by what it is: kick on pad 1, snare 2, clap 3, rim 4, closed and open hat 5 and 6, toms 7 to 9, crash 10, ride 11, perc 12, shaker 13, 808 14, snap 15, FX 16. What a sound is comes from its name ("Kick 01", "BD_3", "HH Closed", "OpenHat") or the folder it's in ("Kicks", "Hats"); pads the folder has nothing for get spare kicks, snares and hats.
 - **Load sounds**: **Load sounds…** in its Inspector panel fills the pads in order with the files you pick (up to 16). Drop files on a pad to load them from there on, or select a pad and click **Load…**. Each pad is named after its file (rename it in the name box above its settings).
 - **Each pad's own effects**: select a pad (clicking it plays it) for its **Level**, **Pan**, **Pitch** (±24 semitones), **Decay** (how long it rings before fading; "full" plays the whole sound), **Low-pass**, **High-pass**, **Drive** (saturation) and **reverse**.
 - **Choke groups**: pads in the same group cut each other off, as a closed hi-hat stops an open one ringing. Put the open and closed hats in group 1.
@@ -561,11 +569,22 @@ The sound is kept in this browser and saved inside the project file (see **Where
 - In the piano roll each pad is a row, named as you named it, with the **STEPS** step sequencer. A MIDI keyboard plays the pads on C2 to D#3, and any other octave lands on them too.
 - The rack's sounds are kept like the Sampler's (see Where your sounds live) and saved inside the project file. The whole track also has the usual mixer, inserts and sends.
 
+### Loading a sample pack
+
+**Add Track > Sample pack (folder)…** (or drop the pack's folder in the space under the tracks, or search "sample pack") sorts a whole downloaded pack into tracks:
+
+- **Drums** (kicks, snares, hats… by their names or folders) become **Drum Rack** kits, laid out as above: the first kick, snare, hat… of the pack in the first kit, the next ones in a second, up to four kits.
+- **An instrument's notes** (a folder of at least three files named by their notes, "Keys C3.wav", "Keys C4.wav"…) become a **Multi Sampler**.
+- **Loops** (named "loop", "break", or with a tempo like "140 BPM") go end to end on an **Audio track**, muted so they don't play over your song: unmute it to audition them and drag the ones you want onto your tracks.
+- **Other one-shots** (a vocal "hey", a synth stab) go on the pads of a Drum Rack of their own (up to 32).
+
+Up to 400 sounds are loaded from one pack; a message says what was made, and what was left out and why (files that aren't audio, files over 50 MB, sounds past the first 400). Each sound file can be up to 50 MB because the sounds are kept in this browser and saved inside the project file; drum hits and samples are far smaller, and a long recording saved as MP3 is a tenth of the size of a WAV.
+
 ### Multi Sampler: an instrument from your own recordings
 
 **Add Track > Your Sounds > Multi Sampler** plays several of your sounds across the keyboard: record or collect a few notes of an instrument (a C every octave, or every few notes) and it becomes a playable instrument, each key using the nearest recording, played higher or lower.
 
-- **Add sounds…** (or drop files on the panel). Each sound's own pitch is read from its file name ("Piano C4.wav", "Strings A#2.flac") or, if the name doesn't say, worked out by listening to it. Each then plays the keys nearest it.
+- **Add sounds…** (or drop files on the panel, or **Folder…** / drop a folder for every sound in it). Each sound's own pitch is read from its file name ("Piano C4.wav", "Strings A#2.flac") or, if the name doesn't say, worked out by listening to it. Each then plays the keys nearest it.
 - **Velocity layers**: sounds of the same note marked by loudness in their names (pp, p, mp, mf, f, ff, soft, hard) become layers: soft playing uses the soft recording, hard playing the hard one.
 - The table lists each sound's **Root** (the key it plays at its own pitch), **Keys** (the lowest and highest it plays) and **Vel** (the softest and hardest velocity), all editable. Click a sound's name to hear it. **Re-map by root** lays them out again from their roots. **Attack** and **Release** shape every note.
 - Pitch bend and per-note expression (see the piano roll) play on each note's own voice.
@@ -1228,6 +1247,7 @@ Shortcuts don't work while you're typing in a box, or while a dialog or panel (G
 | `Ctrl+A` | Select all clips |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / cut / paste at the playhead |
 | `Ctrl+D` | Duplicate the selection as a block right after itself |
+| `Ctrl+Shift+D` | Duplicate it linked (the copies play the same pattern as their originals) |
 | `Delete` or `Backspace` | Delete selected clips (or selected automation points) |
 | `Esc` | Clear the selection |
 | `+` / `-` | Zoom in / out (around the playhead) |

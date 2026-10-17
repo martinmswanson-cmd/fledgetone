@@ -1369,7 +1369,7 @@ function samplerVoice(
      * Played under the mod wheel's dynamics: the next louder recording sounds with it, the two
      * mixed by `soft` and `loud` (see dynamicsMix), `low` the softer one's loudness.
      */
-    pair?: { src: AudioBufferSourceNode; base: number; soft: GainNode; loud: GainNode; low: number };
+    pair?: { src: AudioBufferSourceNode; base: number; soft: GainNode; loud: GainNode; low: number; from: number; mainFrom: number; looping: boolean; mainLooping: boolean };
     /** Its vibrato's pull on the level (InstrumentDef.vibrato), let go with the note */
     wobble?: GainNode;
   }
@@ -1544,7 +1544,7 @@ function samplerVoice(
       const one = play(found.buffer, base, soft, [soft, done]);
       const hiBase = rateOf(upper.interval);
       const two = play(upper.buffer, hiBase, loud, [loud, done]);
-      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity || two.end === Infinity, buffer: found.buffer, pair: { src: two.src, base: hiBase, soft, loud, low } };
+      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity || two.end === Infinity, buffer: found.buffer, pair: { src: two.src, base: hiBase, soft, loud, low, from: two.from, mainFrom: one.from, looping: two.end === Infinity, mainLooping: one.end === Infinity } };
     } else {
       const one = play(found.buffer, base, gain, [gain]);
       s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity, buffer: found.buffer };
@@ -1765,7 +1765,17 @@ function samplerVoice(
         s.last = Math.max(s.last, time);
         s.rate = s.base * next;
         // A held key rings until its recording runs out at the new speed
-        if (s.until === Infinity && !s.looping) for (const x of sourcesOf(s)) if (x.buffer) x.stop(time + Math.max(0, audibleEnd(x.buffer) - s.played) / s.rate);
+        // (Each recording by its own loop: in a pair one can loop while the other runs out)
+        if (s.until === Infinity) {
+          const mainLoops = s.pair ? s.pair.mainLooping : s.looping;
+          if (!mainLoops && s.src.buffer) s.src.stop(time + Math.max(0, audibleEnd(s.src.buffer) - s.played) / s.rate);
+          // The louder recording plays at its own speed from its own start: how far it has got
+          const p = s.pair;
+          if (p && !p.looping && p.src.buffer) {
+            const played = p.from + (s.played - p.mainFrom) * (p.base / s.base);
+            p.src.stop(time + Math.max(0, audibleEnd(p.src.buffer) - played) / (p.base * next));
+          }
+        }
       }
       bendRatio = next;
     },

@@ -437,12 +437,12 @@ export const AutomationLane: React.FC<{ track: Track; param: AutomationParam }> 
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  useTimelineStore.getState().setTrackFx(track.id, 'filter', { on: true }, true);
+                  useTimelineStore.getState().setTrackFx(track.id, spec.insert!, { on: true }, true);
                 }}
               >
-                Turn filter on
+                Turn {spec.insert} on
               </button>
-              The Filter is off: this lane is silent
+              The {spec.insert} is off: this lane is silent
             </div>
           ) : (
             points.length === 0 && (

@@ -230,7 +230,8 @@ export function createClipSchedule(
     };
     if (f.together) {
       const first = drifted(group.notes[0], group.seeds[0]);
-      const gain = first.note.velocity / group.notes[0].velocity;
+      // (A silent first note: the others keep their own velocities)
+      const gain = group.notes[0].velocity > 0 ? first.note.velocity / group.notes[0].velocity : 1;
       const notes = group.notes.map((n, i) => (i === 0 ? first.note : { ...drifted(n, group.seeds[0]).note, velocity: Math.max(0.05, Math.min(1, n.velocity * gain)) }));
       playNotes(instrument, notes, time + first.late);
       return;

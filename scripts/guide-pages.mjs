@@ -127,7 +127,12 @@ export function renderSection(lines, figures = []) {
 
 /** Plain text of the section's first paragraph, cut to a length that suits a meta description. */
 export function summary(lines, max = 155) {
-  const first = lines.find((l) => l.trim() && !/^(#{2,3}\s|\s*\||\s*([-*]|\d+\.) |>)/.test(l)) ?? '';
+  const start = lines.findIndex((l) => l.trim() && !/^(#{2,3}\s|\s*\||\s*([-*]|\d+\.) |>)/.test(l));
+  // The whole paragraph: a paragraph in GUIDE.md can run over several lines
+  const para = [];
+  // (A paragraph ends at a blank line, or where a heading, table, list or quote starts, as renderSection reads it)
+  for (let i = start; i >= 0 && i < lines.length && lines[i].trim() && (i === start || !/^(#{2,3}\s|\s*\||\s*([-*]|\d+\.) |>)/.test(lines[i])); i++) para.push(lines[i].trim());
+  const first = para.join(' ');
   const text = first.replace(/`([^`]+)`/g, '$1').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/\*+/g, '').trim();
   if (text.length <= max) return text;
   // Cut to leave room for the ellipsis, dropping a word only if the cut lands inside it

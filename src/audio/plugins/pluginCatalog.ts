@@ -4144,8 +4144,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "MIT / BSD / STK-4.3 (Faust library exception)",
   "gpl": false,
   "file": "faust.wasm",
-  "bytes": 543584,
-  "hash": "2c2498363a18",
+  "bytes": 547499,
+  "hash": "5ec99ae14964",
   "plugins": [
    {
     "name": "Brass Model",

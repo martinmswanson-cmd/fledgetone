@@ -169,7 +169,8 @@ export function createAutomationSchedule(
       };
       if (targets.some(away)) {
         // Not where the lane is (a seek, a wrap, an edit, a jump): glide there
-        const to = Math.min(t + JUMP_GLIDE, r.endTime);
+        // (Never a glide of no length or less: t can be past the range's end by the scheduling margin)
+        const to = Math.max(t + 1e-4, Math.min(t + JUMP_GLIDE, r.endTime));
         const arrive = laneValueAt(points, barAt(r, to))!;
         let end = to;
         for (const tg of targets) end = Math.max(end, tg.writer.curve(new Float32Array([tg.writer.valueAt(t), tg.native(arrive)]), t, to - t));

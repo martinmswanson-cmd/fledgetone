@@ -23,6 +23,7 @@ import {
   ditherSeedOf,
   ringOutSeconds,
   SAMPLE_RATES,
+  lossyRate,
   channelsOf,
   cutRingOut,
   stemTracks,
@@ -63,7 +64,7 @@ interface ExportSettings {
   loopFile: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 16, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -260,6 +261,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const game = range === 'game';
   const ending: ExportEnding = game ? 'seamless' : range === 'song' && settings.ending === 'seamless' ? 'ringOut' : settings.ending;
   const format = settings.format;
+  // (MP3 stops at 48 kHz: a hi-res rate is a WAV's; compressed files get its base rate)
+  const exportRate = format === 'wav' ? settings.sampleRate : lossyRate(settings.sampleRate);
   const ext = FORMAT_EXTENSION[format];
   // MP3, Ogg and a video's sound keep their peaks a little lower: encoding overshoots them
   const ceilingDbtp = exportCeilingDbtp(videoOut ? 'mp4' : format);
@@ -277,7 +280,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     masterFx,
     master,
     ending,
-    sampleRate: settings.sampleRate,
+    sampleRate: exportRate,
     markers,
   };
   const { frames, passes } = exportFrames(planned);
@@ -289,7 +292,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const suffix = range === 'song' || game ? '' : ending === 'seamless' ? ' (seamless loop)' : ' (loop)';
   const fileBase = `${safeFileName(projectName)}${suffix}`;
   const fileName = game ? `${fileBase} ${stemsOnly ? 'layers' : 'game music'}.zip` : stemsOnly ? `${fileBase} stems.zip` : videoOut ? `${fileBase}.mp4` : `${fileBase}.${ext}`;
-  const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * settings.sampleRate);
+  const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * exportRate);
   const tail = ringOutSeconds(masterFx, tracks, bpm);
 
   // Counted as a render the whole way (encoding too), so the update notice waits for it (renderBusy.ts)
@@ -652,11 +655,17 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         <div className="grid grid-cols-1 sm:grid-cols-[2fr_3fr] gap-1.5">
           <Segmented<SampleRate>
             label="Sample rate"
-            value={settings.sampleRate}
+            value={exportRate}
             onChange={(value) => update({ sampleRate: value })}
             options={[
               { value: 44100, label: '44.1 kHz' },
               { value: 48000, label: '48 kHz' },
+              ...(format === 'wav'
+                ? ([
+                    { value: 88200, label: '88.2', title: '88.2 kHz: for mastering or video work at high rates (a bigger file and a slower export)' },
+                    { value: 96000, label: '96', title: '96 kHz: for mastering or video work at high rates (a bigger file and a slower export)' },
+                  ] as const)
+                : []),
             ]}
           />
           {format === 'wav' && <Segmented<BitDepth>
@@ -698,7 +707,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           {fileName}
           <span className="text-forge-muted">
             {' · '}
-            {game ? `intro ${durationLabel(introFrames / settings.sampleRate)} + loop ${durationLabel(frames / settings.sampleRate)}` : `${ending === 'ringOut' ? 'up to ' : ''}${durationLabel(frames / settings.sampleRate)}`}
+            {game ? `intro ${durationLabel(introFrames / exportRate)} + loop ${durationLabel(frames / exportRate)}` : `${ending === 'ringOut' ? 'up to ' : ''}${durationLabel(frames / exportRate)}`}
           </span>
         </span>
         <button

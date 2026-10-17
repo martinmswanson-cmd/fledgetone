@@ -323,7 +323,7 @@ export class AdaptiveMusic {
 
   /** How many bars (measures of its time signature) a state is. */
   static measures(state, data) {
-    const bar = (state.beatsPerBar ?? data.beatsPerBar) * (state.beatSeconds ?? data.beatSeconds);
+    const bar = (state.beatsPerBar ?? data.beatsPerBar) * (state.beatSeconds ?? data.beatSeconds ?? 60 / data.bpm);
     return bar > 0 ? Math.max(1, Math.round(state.seconds / bar)) : Math.max(1, Math.round(state.bars));
   }
 

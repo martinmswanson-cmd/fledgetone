@@ -3,7 +3,7 @@
  * clip, insert pattern, paste, load audio, smart tools), and the menu items other menus share.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Drum, Music4, Grid3x3, AudioLines, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma, ChevronsRight } from 'lucide-react';
+import { Drum, Music4, Grid3x3, AudioLines, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma, ChevronsRight, Link2, Unlink } from 'lucide-react';
 import { reverseBlock } from '../../store/reverseActions';
 import { doubleClip } from '../../store/vocalActions';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -19,6 +19,7 @@ import { dropAudioFiles, pickAudioFiles } from './audioFiles';
 import { openArrange } from './arrangeDialogStore';
 import { sendSelectionToLauncher } from '../../store/launcher';
 import { showToast } from './toastStore';
+import { patternSize } from '../../store/patterns';
 import { speedUpIntoDrop } from '../../store/speedUpActions';
 import { SPEED_UP_DEFAULTS } from '../../store/speedUp';
 
@@ -255,7 +256,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
               {
                 key: 'tune',
                 label: 'Tune vocal…',
-                shortcut: takeCount ? 'flatten first' : '',
+                shortcut: takeCount > 1 ? 'flatten first' : '',
                 icon: <AudioLines className="w-3.5 h-3.5" />,
                 onClick: run(() => useUiStore.getState().setTuneClip(menu.clipId!)),
                 // A take folder plays several sounds: tune it once it's flattened
@@ -289,6 +290,31 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         { key: 'cut', label: 'Cut', shortcut: `${MOD}X`, icon: <Scissors className="w-3.5 h-3.5" />, onClick: run(s.cutSelectedClips) },
         { key: 'paste', ...pasteHere },
         { key: 'duplicate', label: 'Duplicate', shortcut: `${MOD}D`, icon: <CopyPlus className="w-3.5 h-3.5" />, onClick: run(s.duplicateSelection), divider: true },
+        ...(menuClip && !menuClip.audio
+          ? [
+              {
+                key: 'duplicateLinked',
+                label: 'Duplicate linked',
+                shortcut: `${MOD}⇧D`,
+                icon: <Link2 className="w-3.5 h-3.5" />,
+                onClick: run(() => {
+                  const message = s.duplicateLinked();
+                  if (message) showToast(message);
+                }),
+              },
+            ]
+          : []),
+        ...(menuClip && patternSize(s.clips, menuClip.pattern) > 1
+          ? [
+              {
+                key: 'unique',
+                label: 'Make unique',
+                shortcut: `linked ×${patternSize(s.clips, menuClip.pattern)}`,
+                icon: <Unlink className="w-3.5 h-3.5" />,
+                onClick: run(() => s.makeClipsUnique(menuClip.isSelected ? s.clips.filter((c) => c.isSelected).map((c) => c.id) : [menuClip.id])),
+              },
+            ]
+          : []),
         { key: 'repeat', label: 'Repeat ×N…', icon: <Repeat2 className="w-3.5 h-3.5" />, onClick: () => setRepeating(true) },
         // Speed up the end of the block under the pointer (this clip, or every selected clip with it)
         // into what follows: two one-click versions, and the options

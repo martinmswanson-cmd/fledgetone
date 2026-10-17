@@ -334,6 +334,12 @@ export function layOutSong(loopFrom: number, loopBars: number, lengths: SectionL
         const left = splitClipAt(c, from, tempo)?.[0];
         if (left) kept.push(left);
       }
+      // ...and one that runs past it keeps what's after it (when the song is no longer than the
+      // loop, nothing has split it at `to` first)
+      if (c.startBar + c.lengthBars > to + EPS) {
+        const right = splitClipAt(c, to, tempo)?.[1];
+        if (right) kept.push(right);
+      }
     }
     const made: Clip[] = [];
     sections.forEach((sec, i) => {

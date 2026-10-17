@@ -15,9 +15,9 @@ import { parseTimecode } from '../../audio/transport';
 const LENGTHS = [6, 15, 30, 60, 90];
 
 const clock = (seconds: number) => {
-  const m = Math.floor(seconds / 60);
-  const s = seconds - m * 60;
-  return `${m}:${s.toFixed(2).padStart(5, '0')}`;
+  const c = Math.round(seconds * 100);
+  const m = Math.floor(c / 6000);
+  return `${m}:${((c - m * 6000) / 100).toFixed(2).padStart(5, '0')}`;
 };
 
 /**

@@ -51,9 +51,13 @@ import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/tim
 import { normalizeMasterSettings } from '../store/timelineTypes';
 import { countedRender } from './renderBusy';
 
-/** Sample rates the export offers. */
-export const SAMPLE_RATES = [44100, 48000] as const;
+/** Sample rates the export offers (88.2 and 96 kHz for WAV only: MP3 stops at 48 kHz). */
+export const SAMPLE_RATES = [44100, 48000, 88200, 96000] as const;
 export type SampleRate = (typeof SAMPLE_RATES)[number];
+/** The rates every format can use (MP3 and Ogg, the game kits, freezing). */
+export const BASE_SAMPLE_RATES = [44100, 48000] as const;
+/** The rate a compressed file is made at for a chosen `rate`: the hi-res rates' base rate (88.2 → 44.1, 96 → 48). */
+export const lossyRate = (rate: SampleRate): SampleRate => (rate === 88200 ? 44100 : rate === 96000 ? 48000 : rate);
 const DEFAULT_SAMPLE_RATE: SampleRate = 44100;
 
 export { encodeChannels, ditherSeedOf } from './wavFile';

@@ -293,7 +293,7 @@ export function roll(notes: NoteEvent[], rateBars: number, newId: () => string, 
   const s = { ...ROLL_DEFAULT, ...shape };
   return notes.flatMap((n) => {
     const len = lengthOf(n);
-    const count = s.count ? Math.max(1, Math.round(s.count)) : Math.max(1, Math.round(len / rateBars - 1e-9));
+    const count = s.count ? Math.max(1, Math.round(s.count)) : Math.max(1, Math.ceil(len / rateBars - 1e-9));
     const step = s.count ? len / count : rateBars;
     const midi = s.pitchBy === 'notes' ? midiOf(n.note) : NaN;
     return Array.from({ length: count }, (_, i) => {

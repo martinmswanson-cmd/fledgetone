@@ -138,8 +138,9 @@ export function createLightDistortion(amount: number): LightDistortion {
   tone.Q.value = 0.8;
   const makeup = raw.createGain();
   const settings = (value: number) => {
-    const d = driveOf(Math.max(0, Math.min(1, value)));
-    return { drive: d, tone: 8000 - 4500 * value, makeup: driveMakeup(d) };
+    const v = Math.max(0, Math.min(1, value));
+    const d = driveOf(v);
+    return { drive: d, tone: 8000 - 4500 * v, makeup: driveMakeup(d) };
   };
   const first = settings(amount);
   drive.gain.value = first.drive;

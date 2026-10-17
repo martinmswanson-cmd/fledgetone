@@ -45,7 +45,8 @@ export function encodeChannels(
   const trailer = new Uint8Array(cueBytes.length + loopBytes.length);
   trailer.set(cueBytes);
   trailer.set(loopBytes, cueBytes.length);
-  const pad = trailer.length ? dataSize & 1 : 0;
+  // (RIFF pads every odd-sized chunk, the last one too)
+  const pad = dataSize & 1;
   const view = new DataView(new ArrayBuffer(headerSize + dataSize + pad + trailer.length));
 
   let offset = 0;

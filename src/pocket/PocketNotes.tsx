@@ -14,7 +14,7 @@ import { useTimelineStore } from '../store/timelineStore';
 import { detectKey, keyOf, NOTE_NAMES, type SongKey } from '../store/songKey';
 import { Card, pill, pillOn, Sheet, SheetItem } from './pocketUi';
 import { clipsOf, editorOf, pickClip, pocketNoteId, usePlayPosition, usePocket } from './pocketStore';
-import { noteSteps, noteToMidi, scaleRows, stepsPerBar, toggleCovering } from './pocketGrid';
+import { STEPS_PER_WHOLE, noteSteps, noteToMidi, scaleRows, stepsPerBar, toggleCovering } from './pocketGrid';
 import { BarPager, ClipPicker } from './PocketBeat';
 import { audition } from './pocketSound';
 
@@ -66,9 +66,9 @@ export const PocketNotes: React.FC = () => {
   const rowMidis = new Set(rows.map(noteToMidi));
   const offGrid = (clip?.notes ?? []).filter((n) => !rowMidis.has(noteToMidi(n.note))).length;
 
-  const pages = clip ? Math.max(1, Math.ceil(clip.lengthBars - 1e-6)) : 1;
+  const pages = clip ? Math.max(1, Math.ceil((clip.lengthBars * STEPS_PER_WHOLE) / perBar - 1e-6)) : 1;
   const inClip = isPlaying && clip && bar >= clip.startBar && bar < clip.startBar + clip.lengthBars;
-  const nowStep = inClip ? Math.floor((bar - clip.startBar) * perBar) : -1;
+  const nowStep = inClip ? Math.floor((bar - clip.startBar) * STEPS_PER_WHOLE) : -1;
   const shownPage = isPlaying && inClip ? Math.floor(nowStep / perBar) : Math.min(page, pages - 1);
   const steps = Array.from({ length: perBar }, (_, i) => shownPage * perBar + i);
   const beatEvery = Math.max(1, Math.round(perBar / meter.num));
@@ -87,8 +87,8 @@ export const PocketNotes: React.FC = () => {
     const m = noteToMidi(row);
     return (useTimelineStore.getState().clips.find((c) => c.id === clip?.id)?.notes ?? []).some((n) => {
       if (noteToMidi(n.note) !== m) return false;
-      const from = Math.round(n.startOffset * perBar);
-      return step >= from && step < from + noteSteps(n, perBar);
+      const from = Math.round(n.startOffset * STEPS_PER_WHOLE);
+      return step >= from && step < from + noteSteps(n, STEPS_PER_WHOLE);
     });
   };
   const paint = paintHandlers(
@@ -97,7 +97,7 @@ export const PocketNotes: React.FC = () => {
       if (!clip) return;
       const s = useTimelineStore.getState();
       const before = s.clips.find((c) => c.id === clip.id)?.notes ?? [];
-      s.setClipNotes(clip.id, toggleCovering(before, row, step, perBar, noteLength, 0.8, pocketNoteId));
+      s.setClipNotes(clip.id, toggleCovering(before, row, step, STEPS_PER_WHOLE, noteLength, 0.8, pocketNoteId));
       if (on) void audition(track.id, row, 0.8);
     }
   );
@@ -123,8 +123,8 @@ export const PocketNotes: React.FC = () => {
     const m = noteToMidi(n.note);
     const row = rows.find((r) => noteToMidi(r) === m);
     if (!row) continue;
-    const from = Math.round(n.startOffset * perBar);
-    for (let i = 0; i < noteSteps(n, perBar); i++) cells.set(`${row}|${from + i}`, i === 0 ? 'start' : 'held');
+    const from = Math.round(n.startOffset * STEPS_PER_WHOLE);
+    for (let i = 0; i < noteSteps(n, STEPS_PER_WHOLE); i++) cells.set(`${row}|${from + i}`, i === 0 ? 'start' : 'held');
   }
 
   return (

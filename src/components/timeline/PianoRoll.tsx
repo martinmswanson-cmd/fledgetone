@@ -33,6 +33,7 @@ import { UndoableRange } from '../UndoableRange';
 import { AudioClipEditor } from './AudioClipEditor';
 import { RollPainter } from './RollPainter';
 import { DrumGroovePanel } from './DrumGroovePanel';
+import { ChordRiffBar } from './ChordRiffBar';
 
 const KEY_W = 72;
 const RULER_H = 20;
@@ -392,7 +393,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const allTracks = useTimelineStore((st) => st.tracks);
   const ghostNotes = useMemo(() => {
     if (!ghosts || namedRows) return [];
-    const pitched = new Set(allTracks.filter((t) => !isDrumKind(t.instrumentKey) && !isFxKind(t.instrumentKey) && !isSlicerKind(t.instrumentKey)).map((t) => t.id));
+    const pitched = new Set(allTracks.filter((t) => !isDrumKind(t.instrumentKey) && !isFxKind(t.instrumentKey) && !isSlicerKind(t.instrumentKey) && !isRackKind(t.instrumentKey)).map((t) => t.id));
     const from = clip.startBar;
     const to = clip.startBar + clip.lengthBars;
     const out: { key: string; note: string; start: number; length: number; color: string }[] = [];
@@ -426,6 +427,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   };
 
   const currentNotes = () => useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? [];
+  /** In STEPS: the cell under the pointer (its row and first unit), outlined so it's clear what a click toggles */
+  const [hoverCell, setHoverCell] = useState<{ row: number; unit: number } | null>(null);
+  const trackHover = (e: React.PointerEvent) => {
+    if (!stepping || e.buttons) return setHoverCell(null);
+    const p = local(e.clientX, e.clientY);
+    if (!rows[p.row]) return setHoverCell(null);
+    const unit = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
+    setHoverCell((h) => (h && h.row === p.row && h.unit === unit ? h : unit < totalUnits ? { row: p.row, unit } : null));
+  };
 
   /** Drag the given notes; mode move = time + pitch, resize = length. */
   const startDrag = (e: React.PointerEvent, ids: Set<string>, mode: 'move' | 'resize', alreadyRecorded: boolean, primaryId: string) => {
@@ -883,6 +893,27 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         </button>
       </div>
 
+      {!clip.audio && (
+        <ChordRiffBar
+          clip={clip}
+          instrument={instrument}
+          scale={scale}
+          gridBars={gridUnits / UNITS_PER_BAR}
+          noteBars={lengthUnits / UNITS_PER_BAR}
+          velocity={velocity}
+          selected={selected}
+          pitched={!namedRows}
+          apply={(next, select) => {
+            const store = useTimelineStore.getState();
+            store.checkpoint();
+            store.setClipNotes(clip.id, next);
+            setSelected(new Set(select ?? []));
+            // Rows grow to fit notes past them
+            const needed = rowsFor(instrument, next, slicer);
+            if (!namedRows && needed.length > rows.length) setRows(needed);
+          }}
+        />
+      )}
       {notation && fullTrack && <NotationView clip={clip} track={fullTrack} scale={scale} />}
       {/* Body */}
       <div ref={scrollRef} className={`relative overflow-auto max-h-[340px] select-none ${notation ? 'hidden' : ''}`}>
@@ -939,8 +970,9 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                         : 'bg-zinc-200 text-zinc-600 hover:bg-white'
                   }`}
                   style={{ height: rowH }}
-                  title={`Preview ${r.label}`}
+                  title={stepping ? `Hear ${r.label} (this is its name: click the steps to the right to add hits)` : `Preview ${r.label}`}
                 >
+                  {stepping && <span className="mr-auto pl-1 text-[9px] opacity-60" aria-hidden>▶</span>}
                   {namedRows || r.label !== r.note || (r.note.startsWith('C') && !r.note.startsWith('C#')) ? r.label : ''}
                 </button>
               ))}
@@ -952,7 +984,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               className="relative cursor-crosshair"
               style={{ width: gridW, height: gridH }}
               onPointerDown={onGridPointerDown}
+              onPointerMove={trackHover}
+              onPointerLeave={() => setHoverCell(null)}
             >
+              {stepping && hoverCell && (
+                <div
+                  className="absolute pointer-events-none rounded-[3px] border border-cyan-300/80 bg-cyan-300/15 z-[5]"
+                  style={{ left: hoverCell.unit * unitW, width: Math.min(gridUnits, totalUnits - hoverCell.unit) * unitW, top: hoverCell.row * rowH, height: rowH }}
+                />
+              )}
               {rows.map((r, i) => {
                 // With a scale: notes outside it darker, its root lit
                 const m = scale && !namedRows ? midiOf(r.note) : NaN;

@@ -342,7 +342,7 @@ const TagTab: React.FC = () => {
   };
   const stop = async () => {
     if (!session) return;
-    const take = session.stop();
+    const take = await session.stop();
     setSession(null);
     if (!take) return showToast('Nothing was recorded.');
     setBusy(true);

@@ -225,8 +225,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
           // (A preset file's values are its own defaults: Reset puts the patch back)
           params = d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: files ? p.value : (params[i]?.defaultValue ?? p.value) }));
           changed();
-          loaded?.();
-          loaded = null;
+          // Loads answer in the order they were sent: this reply ends the oldest
+          loaded.shift()?.();
         }
       }
     };
@@ -242,6 +242,11 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   let pending: unknown[] = [];
   const flush = () => {
     if (!pending.length) return;
+    // (Events queued just before destroy: the processor is gone)
+    if (destroyed) {
+      pending = [];
+      return;
+    }
     node.port.postMessage({ type: 'events', events: pending });
     pending = [];
   };
@@ -286,6 +291,11 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     destroy: () => {
       if (destroyed) return;
       destroyed = true;
+      // A load still in flight never gets its reply now: let its caller go on
+      for (const done of loaded.splice(0)) done();
+      // Nor do parameter requests: end them with the values as they are
+      for (const reply of [...replies.values()]) reply(params);
+      replies.clear();
       ctxSyncers.delete(sync);
       synced.forEach((resolve) => resolve());
       synced.clear();
@@ -314,12 +324,12 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     // (Another was chosen meanwhile: that one wins)
     if (destroyed || program !== index) return;
     await new Promise<void>((resolve) => {
-      loaded = resolve;
+      loaded.push(resolve);
       node.port.postMessage({ type: 'load', data }, [data]);
     });
   };
   /** Resolves a file preset's load once the plugin has sent its new parameters */
-  let loaded: (() => void) | null = null;
+  const loaded: Array<() => void> = [];
   /** Ask the plugin for every parameter's value and text (after automation moved them). */
   const refresh = () =>
     new Promise<void>((resolve) => {

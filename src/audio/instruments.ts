@@ -529,6 +529,7 @@ function withTaper(key: InstrumentKey, inst: TrackInstrument): TrackInstrument {
     ...inst,
     play: (notes, time) => inst.play(notes.map(soften), time),
     ...(inst.noteOn ? { noteOn: (n: PlayableNote, time: number) => inst.noteOn!(soften(n), time) } : {}),
+    ...(inst.noteVoice ? { noteVoice: (n: PlayableNote, time: number) => inst.noteVoice!(soften(n), time) } : {}),
   };
 }
 
@@ -565,8 +566,17 @@ function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: Inst
     ...(inst.noteVoice
       ? {
           noteVoice: (n: PlayableNote, time: number) => {
-            sub.play([n], time, glide());
-            return inst.noteVoice!(n, time);
+            const voice = inst.noteVoice!(n, time);
+            if (!voice) return voice;
+            // Held with the note, and let go with it (not a fixed length)
+            const subGo = sub.hold(n, time, glide());
+            return {
+              ...voice,
+              off: (at: number) => {
+                voice.off(at);
+                subGo(at);
+              },
+            };
           },
         }
       : {}),

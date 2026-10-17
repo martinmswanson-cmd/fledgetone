@@ -214,9 +214,20 @@ struct FaustPlugin : BBPlugin
             v.silent = 0;
             setFreq(v);
             if (v.gain) *v.gain = 0.25f + 0.75f * d2 / 127.f;
-            // A voice still sounding is restruck: its gate drops for this block
-            if (v.gate) *v.gate = 0;
-            retrigger[pick] = true;
+            // The DSP starts a note when it sees the gate go up between two renders. A voice whose
+            // gate the last render saw up is restruck: one render with it down, then up again.
+            // Otherwise it goes up now.
+            releaseAfter[pick] = false;
+            if (lastGate[pick] > 0)
+            {
+                if (v.gate) *v.gate = 0;
+                raiseAfter[pick] = true;
+            }
+            else
+            {
+                if (v.gate) *v.gate = 1;
+                raiseAfter[pick] = false;
+            }
         }
         else if (type == 0x80 || type == 0x90)
         {
@@ -242,11 +253,21 @@ struct FaustPlugin : BBPlugin
         else if (type == 0xb0 && (d1 == 123 || d1 == 120))
             for (auto &v : voices) v.held = false, release(v);
     }
-    bool retrigger[VOICES] = {};
+    /** Raise the gate after the next render (a restruck voice's render with it down) */
+    bool raiseAfter[VOICES] = {};
+    /** Lower the gate after the next render (a note that ended before any render saw it up) */
+    bool releaseAfter[VOICES] = {};
+    /** The gate the last render saw */
+    float lastGate[VOICES] = {};
     void release(Voice &v)
     {
         v.on = false;
-        if (v.gate) *v.gate = 0;
+        if (!v.gate) return;
+        int vi = (int)(&v - voices.data());
+        // A note no render has heard yet (its start and end arrived together, or it is shorter
+        // than a render) still gets one render with the gate up, so it sounds and ends
+        if (instrument && vi < VOICES && (raiseAfter[vi] || (lastGate[vi] <= 0 && *v.gate > 0))) releaseAfter[vi] = true;
+        else *v.gate = 0;
     }
     void process(const float *il, const float *ir, float *ol, float *orr, int n) override
     {
@@ -255,13 +276,8 @@ struct FaustPlugin : BBPlugin
         {
             Voice &v = voices[vi];
             v.age++;
-            if (instrument && !v.on && v.silent > (int)(sr * 3)) continue;
-            if (instrument && retrigger[vi])
-            {
-                // One block with the gate down, then up: a clean new attack
-                retrigger[vi] = false;
-                if (v.gate) *v.gate = 1;
-            }
+            bool pending = instrument && vi < VOICES && (raiseAfter[vi] || releaseAfter[vi]);
+            if (instrument && !v.on && !pending && v.silent > (int)(sr * 3)) continue;
             int nin = v.dsp->getNumInputs(), nout = v.dsp->getNumOutputs();
             float zero[BB_BLOCK] = {};
             float *ins[8] = {(float *)(il ? il : zero), (float *)(ir ? ir : zero), zero, zero, zero, zero, zero, zero};
@@ -274,6 +290,12 @@ struct FaustPlugin : BBPlugin
             float o0[BB_BLOCK], o1[BB_BLOCK], spare[6][BB_BLOCK];
             float *outs[8] = {o0, o1, spare[0], spare[1], spare[2], spare[3], spare[4], spare[5]};
             v.dsp->compute(n, ins, outs);
+            if (instrument && vi < VOICES && v.gate)
+            {
+                lastGate[vi] = *v.gate;
+                if (raiseAfter[vi]) *v.gate = 1, raiseAfter[vi] = false;
+                else if (releaseAfter[vi]) *v.gate = 0, releaseAfter[vi] = false;
+            }
             float *right = nout > 1 ? o1 : o0;
             float peak = 0;
             for (int k = 0; k < n; k++)

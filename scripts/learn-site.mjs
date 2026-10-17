@@ -234,8 +234,10 @@ function lessonPage(l, all) {
 /** The lessons as cards for the home page's Learn section (the first of each level, then the rest). */
 export function learnCards(all) {
   if (!all.length) return '';
+  const firsts = all.filter((l, i) => all.findIndex((o) => o.level === l.level) === i);
+  const ordered = [...firsts, ...all.filter((l) => !firsts.includes(l))];
   return `<ol class="g-cards l-cards l-home">
-        ${all
+        ${ordered
           .map(
             (l) => `<li><a href="/learn/${l.slug}/"><span class="l-num mono-label">${l.level} · ${escape(l.time)}</span><h3>${escape(l.title)}</h3><p>${escape(l.summary)}</p></a></li>`
           )

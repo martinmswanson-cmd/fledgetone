@@ -115,7 +115,7 @@ export function loopChunk(sampleRate: number, start: number, end: number): Uint8
   u32(44, 0); // loop id
   u32(48, 0); // forward loop
   u32(52, start);
-  u32(56, end - 1); // the loop's last frame, inclusive
+  u32(56, Math.max(start, end - 1)); // the loop's last frame, inclusive (an empty loop: its start)
   u32(60, 0); // fraction
   u32(64, 0); // play count: forever
   return bytes;

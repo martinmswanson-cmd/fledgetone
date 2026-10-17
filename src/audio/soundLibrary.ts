@@ -576,7 +576,7 @@ export function ensureSound(id: string): void {
  */
 export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_SOUND_BYTES): Promise<SoundMeta> {
   if (file.size > maxBytes) {
-    throw new SoundError(`"${name}" is ${megabytes(file.size)} MB. Sounds up to ${MAX_SOUND_BYTES / 1048576} MB can be loaded: trim it, or save it as MP3 or OGG.`);
+    throw new SoundError(`"${name}" is ${megabytes(file.size)} MB. Sounds up to ${maxBytes / 1048576} MB can be loaded, because each is kept in this browser and saved inside your project file: trim it, or save it as MP3 or OGG (a tenth of the size).`);
   }
   const bytes = await file.arrayBuffer();
   const id = await hashBytes(bytes);

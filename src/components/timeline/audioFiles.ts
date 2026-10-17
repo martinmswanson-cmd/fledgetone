@@ -52,3 +52,82 @@ export async function dropAudioFiles(trackId: string | null, bar: number, files:
   const message = useTimelineStore.getState().addAudioClips(trackId, bar, sounds);
   if (message) showToast(message);
 }
+
+// ---------- folders (sample packs) ----------
+
+/** A file and where it sat in the dropped or picked folder ("Pack/Kicks/Kick 01.wav"). */
+export interface PathFile {
+  file: File;
+  path: string;
+}
+
+/** Most files read from one folder (a whole sound library dropped by mistake stops here). */
+const MAX_FOLDER_FILES = 5000;
+
+/** True if a drop holds a folder (the browser gives it as an entry, not as a file). */
+export function dropHasFolder(dt: DataTransfer): boolean {
+  return Array.from(dt.items ?? []).some((item) => item.kind === 'file' && item.webkitGetAsEntry?.()?.isDirectory);
+}
+
+/**
+ * Every file of a drop, folders opened all the way down, each with its path. The entries are taken
+ * from the drop at once (the browser empties it after the drop event), then read.
+ */
+export async function filesFromDrop(dt: DataTransfer): Promise<PathFile[]> {
+  const entries = Array.from(dt.items ?? [])
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.webkitGetAsEntry?.())
+    .filter((e): e is FileSystemEntry => !!e);
+  if (!entries.length) return Array.from(dt.files).map((file) => ({ file, path: file.name }));
+  const out: PathFile[] = [];
+  const fileOf = (entry: FileSystemFileEntry) => new Promise<File>((resolve, reject) => entry.file(resolve, reject));
+  const readAll = async (dir: FileSystemDirectoryEntry): Promise<FileSystemEntry[]> => {
+    const reader = dir.createReader();
+    const all: FileSystemEntry[] = [];
+    // readEntries gives a batch at a time (Chrome: 100), until an empty one
+    for (;;) {
+      const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
+      if (!batch.length) return all;
+      all.push(...batch);
+    }
+  };
+  const walk = async (entry: FileSystemEntry, path: string): Promise<void> => {
+    if (out.length >= MAX_FOLDER_FILES) return;
+    if (entry.isFile) {
+      // (Hidden files, like macOS's "._" copies and .DS_Store, aren't sounds)
+      if (entry.name.startsWith('.')) return;
+      try {
+        out.push({ file: await fileOf(entry as FileSystemFileEntry), path });
+      } catch {
+        // Unreadable: left out
+      }
+      return;
+    }
+    if (!entry.isDirectory || entry.name.startsWith('.') || entry.name === '__MACOSX') return;
+    for (const child of await readAll(entry as FileSystemDirectoryEntry)) await walk(child, `${path}/${child.name}`);
+  };
+  for (const entry of entries) await walk(entry, entry.name);
+  return out;
+}
+
+/** Open the browser's folder picker. Resolves with every file in the folder (none if cancelled). */
+export function pickAudioFolder(): Promise<PathFile[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    (input as HTMLInputElement & { webkitdirectory: boolean }).webkitdirectory = true;
+    input.multiple = true;
+    input.style.display = 'none';
+    const done = () => {
+      const files = Array.from(input.files ?? [])
+        .filter((f) => !f.name.startsWith('.') && !f.webkitRelativePath.includes('/__MACOSX/'))
+        .slice(0, MAX_FOLDER_FILES);
+      resolve(files.map((file) => ({ file, path: file.webkitRelativePath || file.name })));
+      input.remove();
+    };
+    input.addEventListener('change', done);
+    input.addEventListener('cancel', done);
+    document.body.appendChild(input);
+    input.click();
+  });
+}

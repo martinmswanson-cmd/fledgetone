@@ -9,6 +9,9 @@ import { forgetSampleSets, forgetUnusedSamples, loadedSampleKeys } from './sampl
 import { forgetDecodedSounds } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
 import type { InstrumentKey } from './instrumentCatalog';
+import type { Track } from '../store/timelineTypes';
+import { hasRecordings } from './samplers/samplerManager';
+import { isMixTrack } from '../store/buses';
 import { liveContext, restoreLookAhead, widenLookAhead } from './liveContext';
 import { capFrameRate } from '../components/frameTicker';
 
@@ -71,8 +74,28 @@ const SMOOTH_MS = 70;
 /** The readouts' frame rate while lagging. */
 const CALM_FPS = 10;
 /** The audio clock is measured over this long (ms), and counts as behind under this share of real time. */
-const AUDIO_WINDOW_MS = 3000;
+const AUDIO_WINDOW_MS = 4000;
 const AUDIO_BEHIND = 0.97;
+/** Not measured in a playback's first moments (instruments and effects starting up stall the audio thread once) */
+const AUDIO_WARMUP_MS = 2500;
+/** Behind only when it stays behind this long (ms): one slow moment isn't lag */
+const AUDIO_SUSTAIN_MS = 2000;
+
+/**
+ * The audio clock at a moment of the wall clock, as exactly as the browser says. currentTime moves
+ * in steps of the audio device's buffer (tens of ms on some computers, more over Bluetooth or in
+ * Stable playback), so read against performance.now() at a frame it can look several percent slow
+ * over a few seconds when nothing is wrong. getOutputTimestamp gives a matching pair.
+ */
+function audioClockNow(now: number): { wall: number; audio: number } {
+  const raw = liveContext.rawContext as unknown as AudioContext & { _nativeAudioContext?: AudioContext };
+  const native = raw._nativeAudioContext ?? raw;
+  const stamp = typeof native.getOutputTimestamp === 'function' ? native.getOutputTimestamp() : undefined;
+  if (stamp?.contextTime !== undefined && stamp.performanceTime !== undefined && stamp.performanceTime > 0 && Math.abs(now - stamp.performanceTime) < 1000) {
+    return { wall: stamp.performanceTime, audio: stamp.contextTime };
+  }
+  return { wall: now, audio: liveContext.currentTime };
+}
 
 const memoryMB = (): number | null => {
   const m = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory;
@@ -100,6 +123,9 @@ export function startPerfMonitor(): void {
   let wasPlaying = false;
   /** (wall clock ms, audio clock s) while playing, over the last AUDIO_WINDOW_MS */
   const clocks: Array<{ wall: number; audio: number }> = [];
+  /** When this playback started, and since when the audio clock has been behind (ms) */
+  let playingSince = 0;
+  let behindSince: number | null = null;
 
   const frame = () => {
     const now = performance.now();
@@ -107,6 +133,7 @@ export function startPerfMonitor(): void {
     lastFrame = now;
     const playing = useTimelineStore.getState().isPlaying;
     if (playing && !wasPlaying) {
+      playingSince = now;
       usePerfStore.setState({ dismissed: false });
       // A playback that needed it once starts with it next time (this page): a heavy song's first
       // seconds are its busiest
@@ -139,15 +166,20 @@ export function startPerfMonitor(): void {
     while (lateTimes.length && now - lateTimes[0] > WINDOW_MS) lateTimes.shift();
 
     // The audio clock against the wall clock, while playing with the audio running
-    if (playing && liveContext.state === 'running') {
-      clocks.push({ wall: now, audio: liveContext.currentTime });
-      while (clocks.length > 2 && now - clocks[0].wall > AUDIO_WINDOW_MS) clocks.shift();
+    if (playing && liveContext.state === 'running' && now - playingSince > AUDIO_WARMUP_MS && !document.hidden) {
+      const sample = audioClockNow(now);
+      // (A pair the browser hasn't moved on since the last frame adds nothing)
+      if (!clocks.length || sample.wall > clocks[clocks.length - 1].wall) clocks.push(sample);
+      while (clocks.length > 2 && clocks[clocks.length - 1].wall - clocks[0].wall > AUDIO_WINDOW_MS) clocks.shift();
     } else clocks.length = 0;
     const span = clocks.length > 1 ? clocks[clocks.length - 1].wall - clocks[0].wall : 0;
     // (To the percent: what the badge shows, and the store isn't set every frame)
     const measured = span > AUDIO_WINDOW_MS * 0.8 ? (clocks[clocks.length - 1].audio - clocks[0].audio) / (span / 1000) : null;
     const speed = measured === null ? null : Math.round(Math.min(1, measured) * 100) / 100;
-    const behind = speed !== null && speed < AUDIO_BEHIND;
+    // Behind only when it stays behind: one slow window (a tab switch, a burst of loading) isn't lag
+    if (speed !== null && speed < AUDIO_BEHIND) behindSince ??= now;
+    else behindSince = null;
+    const behind = behindSince !== null && now - behindSince >= AUDIO_SUSTAIN_MS;
 
     const struggling = lateTimes.length >= 4 || hitchTimes.length >= 3 || behind;
     if (struggling) calmSince = now;
@@ -223,4 +255,26 @@ export function clearMemory(opts: { history: boolean }): number {
   capFrameRate(null);
   usePerfStore.setState({ lagging: false, lateNotes: 0, hitches: 0, worstFrame: 0 });
   return Math.round(bytes / 1048576);
+}
+
+/**
+ * About how much a track asks of the audio engine, to name the ones worth freezing first: a plugin
+ * instrument most, then a recorded instrument, then a synth; each plugin effect and each heavier
+ * insert (reverb, multiband, echo) on it adds. A rough ranking, not a measurement.
+ */
+export function trackWeight(t: Pick<Track, 'instrumentKey' | 'plugin' | 'pluginFx' | 'fx' | 'frozen' | 'isMuted'>): number {
+  if (t.frozen || t.isMuted) return 0;
+  let w = t.plugin ? 3 : hasRecordings(t.instrumentKey) ? 2 : 1;
+  w += t.pluginFx?.filter((p) => !p.bypass).length ?? 0;
+  const fx = t.fx as unknown as Record<string, { on?: boolean } | undefined>;
+  for (const k of ['reverb', 'mbc', 'echo', 'chorus']) if (fx[k]?.on) w += k === 'reverb' ? 1.5 : 0.5;
+  return w;
+}
+
+/** The heaviest tracks that can be frozen, heaviest first (at most `n`). */
+export function heaviestTracks(tracks: readonly Track[], n = 2): Track[] {
+  return tracks
+    .filter((t) => trackWeight(t) > 0 && !isMixTrack(t))
+    .sort((a, b) => trackWeight(b) - trackWeight(a))
+    .slice(0, n);
 }

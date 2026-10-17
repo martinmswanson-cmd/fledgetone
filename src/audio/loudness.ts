@@ -62,15 +62,22 @@ export function truePeakOf(channels: readonly Float32Array[]): number {
     // where a sample in the window could beat the peak found so far is it worth working out (the
     // same answer, a few times faster: most of a song is well under its peak)
     let lastLoud = -TAPS;
-    for (let i = 0; i < ch.length; i++) {
-      const a = Math.abs(ch[i]);
+    // Silence before the audio (as a streaming meter starts): the first few samples have points
+    // between them too, and a clip shorter than the filter still has its peaks found. (Not after
+    // it: the export's limiter and meters read a file's end as they read it, without a tail.)
+    const end = ch.length;
+    for (let i = 0; i < end; i++) {
+      const a = i < ch.length ? Math.abs(ch[i]) : 0;
       if (a > peak) peak = a;
       if (a * GAIN > peak) lastLoud = i;
-      if (i < TAPS - 1 || i - lastLoud >= TAPS) continue;
+      if (i - lastLoud >= TAPS) continue;
       for (let p = 0; p < 4; p++) {
         const taps = PHASES[p];
         let acc = 0;
-        for (let k = 0; k < TAPS; k++) acc += taps[k] * ch[i - k];
+        for (let k = 0; k < TAPS; k++) {
+          const j = i - k;
+          if (j >= 0 && j < ch.length) acc += taps[k] * ch[j];
+        }
         const v = acc < 0 ? -acc : acc;
         if (v > peak) peak = v;
       }

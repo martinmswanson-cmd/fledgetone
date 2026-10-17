@@ -210,7 +210,7 @@ const AutosaveStatusChip: React.FC = () => {
     return (
       <span
         className="flex items-center gap-1 px-1 text-[11px] font-mono text-forge-muted"
-        title="Your work is saved in this browser half a second after every change. Use Save to keep a file."
+        title="Your work is saved in this browser half a second after every change, in this browser only: clearing its data loses it. Use Save to keep a file."
       >
         <HardDrive className="w-3 h-3" />
         Saved in this browser · {clockTime(status.at)}
@@ -229,6 +229,57 @@ const AutosaveStatusChip: React.FC = () => {
   );
 };
 
+const STORAGE_NOTICE_KEY = 'bosBeatbox.storageNoticeSeen';
+const seenStorageNotice = () => {
+  try {
+    return localStorage.getItem(STORAGE_NOTICE_KEY) === '1';
+  } catch {
+    return true;
+  }
+};
+
+/**
+ * Once, after the first autosave: the work is kept in this browser only, and Save keeps a file. A
+ * small card under the status, not a dialog; Save or Got it closes it for good.
+ */
+const StorageNotice: React.FC = () => {
+  const ok = useTimelineStore((s) => s.autosaveStatus?.ok === true);
+  const savedTo = useProjectFile((s) => s.handle?.name ?? null);
+  const [seen, setSeen] = React.useState(seenStorageNotice);
+  if (seen || !ok || savedTo) return null;
+  const done = () => {
+    try {
+      localStorage.setItem(STORAGE_NOTICE_KEY, '1');
+    } catch {
+      // Storage blocked: it shows again next time
+    }
+    setSeen(true);
+  };
+  return (
+    <div role="note" className="absolute top-full left-0 mt-1 z-40 w-[min(92vw,360px)] rounded-lg border border-cyan-500/50 bg-forge-panel shadow-xl p-3 text-xs flex flex-col gap-2">
+      <p className="text-forge-text">
+        <b>Your work is saved in this browser only.</b> Clearing your browsing data, a private window, or another browser or computer won't have it.{' '}
+        <b>Save</b> keeps a project file you own (with its sounds).
+      </p>
+      <div className="flex gap-2 justify-end">
+        <button type="button" className="h-7 px-3 rounded-md border border-forge-border text-forge-muted hover:text-forge-text" onClick={done}>
+          Got it
+        </button>
+        <button
+          type="button"
+          className="h-7 px-3 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-cyan-100 font-semibold hover:bg-cyan-500/25"
+          onClick={() => {
+            done();
+            void saveProjectFile();
+          }}
+        >
+          Save a file
+        </button>
+      </div>
+    </div>
+  );
+};
+
 /**
  * Project controls in the top bar: the editable name, Save, Export and Share (New and Open are in
  * the File menu). The arrangement also autosaves to this browser.
@@ -240,8 +291,9 @@ export const ProjectBar: React.FC = () => {
   const setDialog = useUiStore.getState().setDialog;
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="relative flex flex-wrap items-center gap-1.5">
       <AutosaveStatusChip />
+      <StorageNotice />
       <label className="flex items-center gap-1.5 mr-1" title="Project name (used for file names)">
         <Music2 className="w-3.5 h-3.5 text-forge-muted" />
         <input

@@ -46,12 +46,13 @@ export function breathe(points: readonly TempoPoint[], tempo: Tempo, meter: Mete
     const last = i === ends.length - 1 && ends.length > 1;
     // Where the ease starts: the last measure of the phrase (the last two for the final one)
     const back = measureAt(end - EPS, meter);
-    const start = Math.max(from, last ? measureAt(back.start - EPS, meter).start : back.start);
+    // (Never back past the phrase before: a short last phrase would tangle with its ease)
+    const start = Math.max(from, i > 0 ? ends[i - 1] : from, last ? measureAt(back.start - EPS, meter).start : back.start);
     if (end - 1 / 16 - start < EPS) return;
     const held = tempoAt(start, tempo);
     const slow = held * (1 - (last ? Math.min(0.4, amount * 2) : amount));
     const after = tempoAt(end + EPS, tempo);
-    if (start > 1 + EPS) added.push({ id: newId(), bar: start, bpm: held, ramp: false });
+    if (start > 1 + EPS && !added.some((p) => Math.abs(p.bar - start) < EPS)) added.push({ id: newId(), bar: start, bpm: held, ramp: false });
     added.push({ id: newId(), bar: end - 1 / 16, bpm: slow, ramp: true });
     added.push({ id: newId(), bar: end, bpm: after, ramp: false });
   });

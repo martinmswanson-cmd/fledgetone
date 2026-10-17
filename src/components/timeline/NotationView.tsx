@@ -105,8 +105,10 @@ function draw(VF: VF, el: HTMLDivElement, score: Score, width: number, drumsRack
         if (!g.keys.length) {
           note = new StaveNote({ keys: [clef === 'bass' ? 'd/3' : 'b/4'], duration: `${duration}r`, dots, clef: clef === 'bass' ? 'bass' : 'treble' });
         } else if (clef === 'percussion') {
-          const keys = [...new Set(g.keys.map((k) => drumKey(k, !!drumsRack)))];
-          note = new StaveNote({ keys: keys.map((k) => (k.x ? `${k.key}/x2` : k.key)), duration, dots, clef: 'percussion' });
+          // Drums that share a place on the staff (closed and open hat) are one notehead: dedupe
+          // by the key's text (drumKey makes a new object each time, so a Set of them keeps all)
+          const keys = [...new Set(g.keys.map((k) => { const d = drumKey(k, !!drumsRack); return d.x ? `${d.key}/x2` : d.key; }))];
+          note = new StaveNote({ keys, duration, dots, clef: 'percussion' });
         } else {
           const keys = g.keys.map((k) => {
             const p = spellPitch(k, score.key);
@@ -142,9 +144,11 @@ function draw(VF: VF, el: HTMLDivElement, score: Score, width: number, drumsRack
       pending[s] = null;
       glyphs.forEach((g, gi) => {
         if (!g.tie) return;
-        const idx = Array.from({ length: g.keys.length }, (_, i) => i);
+        // (As many as the note has noteheads: drums that share a place are one)
+        const count = notes[gi].getKeys().length;
+        const idx = Array.from({ length: count }, (_, i) => i);
         if (gi + 1 < glyphs.length) new StaveTie({ firstNote: notes[gi], lastNote: notes[gi + 1], firstIndexes: idx, lastIndexes: idx }).setContext(ctx).draw();
-        else pending[s] = { note: notes[gi], count: g.keys.length };
+        else pending[s] = { note: notes[gi], count };
       });
     });
   });

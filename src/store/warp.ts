@@ -165,7 +165,11 @@ export function quantizeWarp(
     taken.add(line);
     const shift = (line * grid - song) * strength;
     if (Math.abs(shift) < 1e-4) continue;
-    moved.push({ src, beat: beat + shift });
+    // Kept between the two anchors, which hold the rest of the clip (a hit moved past one would
+    // push the anchor out instead)
+    const nb = beat + shift;
+    if (nb <= anchors[0].beat + WARP_MIN_GAP || nb >= anchors[1].beat - WARP_MIN_GAP) continue;
+    moved.push({ src, beat: nb });
   }
   return normalizeWarp([...keep, ...anchors, ...moved], audio.stretchBpm ?? 60);
 }

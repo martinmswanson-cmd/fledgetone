@@ -8,11 +8,18 @@ import type { NoteEvent } from '../store/timelineTypes';
 import { barsToDuration, durationToBars } from '../store/timelineTypes';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
 
+/**
+ * Note offsets and clip lengths are in 4/4 bars (whole notes), so a 16th step is always 1/16 of
+ * one, whatever the meter. Convert steps to and from offsets with this; stepsPerBar is only how
+ * many steps one measure (one page of the grid) shows.
+ */
+export const STEPS_PER_WHOLE = 16;
+
 /** Steps in a bar: 16ths (16 in 4/4, 12 in 6/8, 12 in 3/4). */
 export const stepsPerBar = (meter: { num: number; den: number }): number => Math.max(1, Math.round((meter.num * 16) / meter.den));
 
 /** Bars a step lasts. */
-export const stepBars = (meter: { num: number; den: number }): number => 1 / stepsPerBar(meter);
+export const stepBars = (_meter: { num: number; den: number }): number => 1 / STEPS_PER_WHOLE;
 
 /** A note's step in the clip (rounded to the nearest), from its offset in bars. */
 export const stepOf = (startOffset: number, perBar: number): number => Math.round(startOffset * perBar);

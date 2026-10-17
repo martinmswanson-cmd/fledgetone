@@ -98,7 +98,7 @@ export const SampleLoader: React.FC<{ track: Track }> = ({ track }) => {
       )}
 
       {status.kind === 'error' && <p className="text-[11px] text-red-400">{status.text}</p>}
-      <p className="text-[10px] text-forge-muted/80">Sounds are kept in this browser and saved inside the project file. Max {MAX_SOUND_BYTES / 1048576} MB.</p>
+      <p className="text-[10px] text-forge-muted/80">Sounds are kept in this browser and saved inside the project file, so each can be up to {MAX_SOUND_BYTES / 1048576} MB (minutes of WAV; drum hits and samples are far smaller).</p>
       <SoundLibraryFooter />
     </div>
   );

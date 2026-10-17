@@ -54,14 +54,15 @@ export function nextLineTime(unit: 'bar' | 'beat'): number | null {
  * Play `stinger` over whatever is playing: on the next bar or beat while the song plays, or at
  * once. Resolves with the audio time it starts at.
  */
-export async function fireStinger(stinger: Stinger, timing: StingerTiming): Promise<number> {
+export async function fireStinger(stinger: Stinger, timing: StingerTiming, atTime?: number): Promise<number> {
   await initAudio();
   if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range));
   const inst = player(stinger.instrumentKey);
   await inst.ready;
   const now = Tone.getContext().currentTime + 0.05;
   const playing = liveTransport.state === 'started';
-  const start = playing && timing !== 'now' ? Math.max(now, liveTransport.nextSubdivision(timing === 'bar' ? '1m' : '4n')) : now;
+  // (`atTime`: a context time worked out by the caller, e.g. a transition's line)
+  const start = atTime !== undefined ? Math.max(now, atTime) : playing && timing !== 'now' ? Math.max(now, liveTransport.nextSubdivision(timing === 'bar' ? '1m' : '4n')) : now;
   const secondsPerBar = 240 / liveTransport.bpm.value;
   const notes = fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range);
   const byStart = new Map<number, typeof notes>();

@@ -716,7 +716,8 @@ const SoundMaker: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
             <button
               type="button"
               onClick={() => {
-                useTimelineStore.getState().updateGameSfx(inGame.id, { sound: heard, variations: exp.variations, spread: exp.spread });
+                // (Only the sound: its variations and spread are set on the game sound itself)
+                useTimelineStore.getState().updateGameSfx(inGame.id, { sound: heard });
                 setNotice(`Updated ${inGame.name} in the game kit.`);
               }}
               className={button}

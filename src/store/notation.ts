@@ -202,7 +202,7 @@ export function notate(clip: Pick<Clip, 'startBar' | 'lengthBars' | 'notes'>, me
 
 // ---------- spelling the pitches ----------
 
-const SHARP_KEYS = new Set(['G', 'D', 'A', 'E', 'B', 'F#', 'C#']);
+const SHARP_KEYS = new Set(['G', 'D', 'A', 'E', 'B', 'F#']);
 /** The key signature's name for VexFlow / MusicXML: its major (or minor, with "m") root, spelled sharp or flat as that key is. */
 export function keySpec(key: SongKey | null): string {
   if (!key) return 'C';

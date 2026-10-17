@@ -120,7 +120,10 @@ export const ExpressionLane: React.FC<Props> = ({ clip, keyWidth, barW, snap, no
         const a = Math.min(from, to);
         const b = Math.max(from, to, a + 1 / 16);
         const kept = points.filter((p) => p.at < a - 1e-9 || p.at > b + 1e-9);
-        write([...kept, { at: a, value: 1 }, ...(b < clip.lengthBars - 1e-9 ? [{ at: b, value: 0 }] : [])], false);
+        // (Up again at the end only if it wasn't already held there: painting adds a hold, it
+        // doesn't cut one that runs past the drag)
+        const up = b < clip.lengthBars - 1e-9 && exprValueAt(points, b, true) < 0.5;
+        write([...kept, { at: a, value: 1 }, ...(up ? [{ at: b, value: 0 }] : [])].sort((p, q) => p.at - q.at), false);
       };
       paint(from);
       const onMove = (ev: PointerEvent) => paint(atOf(pointer(ev).x, ev.shiftKey));

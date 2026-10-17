@@ -5,10 +5,10 @@
  */
 import { CostumesPanel, StateOptionsPanel } from './GameCostumes';
 import { GameParamsPanel } from './GameParams';
-import { secondsBetween, tempoAt } from '../../audio/tempoMap';
+import { measureAt, secondsBetween, tempoAt } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
-import { currentProject, masterFxOf, songTempo, useTimelineStore } from '../../store/timelineStore';
+import { currentProject, masterFxOf, songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
 import { getAudiblePositionBar } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
@@ -421,8 +421,10 @@ export const GamePanel: React.FC = () => {
     }
     // On the next bar or beat line of the song, or a later one if the transition needs more room
     const at = getAudiblePositionBar();
-    const unit = when === 'beat' ? 0.25 : 1;
-    let next = Math.floor((at - 1) / unit + 1e-6) * unit + unit + 1;
+    // The song's own measure and beat lines (a 3/4 measure is 3/4 of a whole note)
+    const measure = measureAt(at, songMeterOf(s));
+    const unit = when === 'beat' ? measure.length / measure.meter.num : measure.length;
+    let next = measure.start + (Math.floor((at - measure.start) / unit + 1e-6) + 1) * unit;
     // A phrase: every few bars from the state's start; the end: where its loop wraps
     if (playingNow && when === 'phrase') {
       const phrase = (rule.phraseBars ?? 4) * unit;
@@ -434,7 +436,8 @@ export const GamePanel: React.FC = () => {
     setPending(sec.id);
     if (bridge || written) {
       // The song stops on the line while the stinger (or bridge) plays, then comes in on the new state
-      if (bridge) void fireStinger(bridge, when === 'beat' ? 'beat' : 'bar');
+      // (On the line worked out above, which a phrase, the loop's end or a lead-in may have moved)
+      if (bridge) void fireStinger(bridge, 'now', Tone.getContext().currentTime + ms / 1000);
       if (written) for (const c of written.clips) {
         const key = s.tracks.find((t) => t.id === c.trackId)?.instrumentKey;
         if (key) void playNotesAt(key, c.notes, Tone.getContext().currentTime + ms / 1000);

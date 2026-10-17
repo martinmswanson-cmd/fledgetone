@@ -83,8 +83,12 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     const row = buffers[note];
     if (!row) return undefined;
     let l = tops.findIndex((top) => velocity <= top + 1e-6);
-    if (l < 0 || !row[l]) l = row.length - 1;
+    if (l < 0) l = row.length - 1;
+    // A loudness this row has no recording of: the nearest softer one, else the nearest harder
+    // (not the loudest: a medium hit mustn't play the hardest recording)
+    const wanted = l;
     while (l > 0 && !row[l]) l--;
+    if (!row[l]) for (l = wanted; l < row.length - 1 && !row[l]; l++);
     const takes = (row[l] ?? []).filter(Boolean);
     if (!takes.length) return undefined;
     const k = `${note}|${l}`;

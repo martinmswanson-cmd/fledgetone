@@ -49,7 +49,7 @@ export const PocketVocals: React.FC = () => {
   const stop = async (sess: MicSession) => {
     if (stopping.current) return;
     stopping.current = true;
-    let take = sess.stop();
+    let take = await sess.stop();
     const begun = playStart.current;
     // What the mic caught before the music started is cut, and the take starts on its bar
     if (take && begun && take.heardAt < begun.at) {

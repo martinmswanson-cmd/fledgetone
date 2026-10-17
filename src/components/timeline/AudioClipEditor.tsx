@@ -26,7 +26,10 @@ import { showToast } from './toastStore';
 const WAVE_H = 120;
 const WAVE_COLUMNS = 1200;
 
-const formatSeconds = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, '0')}`;
+const formatSeconds = (s: number) => {
+  const c = Math.round(s * 100);
+  return `${Math.floor(c / 6000)}:${((c % 6000) / 100).toFixed(2).padStart(5, '0')}`;
+};
 const formatDb = (db: number) => `${db > 0 ? '+' : ''}${db.toFixed(1)} dB`;
 
 /**

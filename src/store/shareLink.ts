@@ -67,7 +67,8 @@ function shortIds(project: ProjectSnapshot): ProjectSnapshot {
     for (const item of list ?? []) if (item.id && !ids.has(item.id)) ids.set(item.id, `${letter}${next()}`);
   if (!ids.size) return renamed;
   const escape = (id: string) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const any = new RegExp([...ids.keys()].sort((a, b) => b.length - a.length).map(escape).join('|'), 'g');
+  // Whole ids only (an id inside a name, like 't1' in 'Beat1', stays): not next to a letter, digit, '_' or '-'
+  const any = new RegExp('(?<![\\w-])(?:' + [...ids.keys()].sort((a, b) => b.length - a.length).map(escape).join('|') + ')(?![\\w-])', 'g');
   return JSON.parse(JSON.stringify(renamed).replace(any, (id) => ids.get(id)!)) as ProjectSnapshot;
 }
 

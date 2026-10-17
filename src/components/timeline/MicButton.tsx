@@ -62,7 +62,7 @@ export const MicButton: React.FC = () => {
 
   const stop = async () => {
     if (!session) return;
-    let take = session.stop();
+    let take = await session.stop();
     const begun = playStart.current;
     if (take && begun && take.heardAt < begun.at) {
       const lead = Math.round((begun.at - take.heardAt) * take.sampleRate);

@@ -19,8 +19,8 @@ const THUMB_W = 72;
 
 const clock = (s: number) => {
   const sign = s < 0 ? '-' : '';
-  const a = Math.abs(s);
-  return `${sign}${Math.floor(a / 60)}:${(a % 60).toFixed(2).padStart(5, '0')}`;
+  const c = Math.round(Math.abs(s) * 100);
+  return `${sign}${Math.floor(c / 6000)}:${((c % 6000) / 100).toFixed(2).padStart(5, '0')}`;
 };
 
 /**

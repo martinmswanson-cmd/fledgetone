@@ -128,19 +128,27 @@ def main(only):
         for f, x, p in rows:
             score = sieve(x, win)
             if f['nominal'] is None:
+                if p is None:
+                    # A numbered file with no pitch found (silent or unpitched): nothing to name it by
+                    print('    no pitch:', f['file'])
+                    continue
                 midi = int(round(p))
             else:
                 midi = f['nominal'] + 12 * shift
             c, best = cents(score, midi)
-            # A file named a semitone or two off its real note (it happens): the sound decides
-            for d in (-2, -1, 1, 2):
-                c2, s2 = cents(score, midi + d)
+            # A file named a semitone or two off its real note (it happens): the sound decides,
+            # every offset measured from the named note (not from one picked on the way)
+            named, pick = midi, 0
+            for off in (-2, -1, 1, 2):
+                c2, s2 = cents(score, named + off)
                 if s2 > best * 1.15 and abs(c2) < 40:
-                    odd.append((f['file'], midi, midi + d))
-                    midi, c, best = midi + d, c2, s2
+                    pick, c, best = off, c2, s2
+            if pick:
+                odd.append((f['file'], named, named + pick))
+                midi = named + pick
             res[f['file']] = {'midi': midi, 'cents': round(c, 1), 'yin': None if p is None else round(float(p), 2)}
         out[st['folder']] = res
-        cs = [r['cents'] for r in res.values()]
+        cs = [r['cents'] for r in res.values()] or [0.0]
         print(f"{st['folder']:20s} octave shift {shift:+d}, cents median {np.median(cs):+6.1f} range {min(cs):+6.1f}..{max(cs):+6.1f}, {len(odd)} renamed")
         for o in odd[:8]:
             print('    renamed:', *o)

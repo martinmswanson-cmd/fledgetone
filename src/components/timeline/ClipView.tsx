@@ -4,6 +4,8 @@
  */
 import { midiOf } from '../../store/noteTools';
 import React, { useMemo, useState } from 'react';
+import { Link2 } from 'lucide-react';
+import { patternLabelOf } from '../../store/patterns';
 import { TOTAL_BARS, useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
 import { useUiStore } from '../../store/uiStore';
@@ -133,6 +135,8 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   const zoom = useTimelineStore((s) => s.zoom);
   const activeTool = useTimelineStore((s) => s.activeTool);
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
+  // Its pattern's badge, when other clips play the same pattern
+  const patternLabel = useTimelineStore((s) => patternLabelOf(s.clips, clip.pattern));
   // Only audio clips follow the tempo here (their width in bars already changed with it)
   // The tempo where the clip starts, which its sound plays at (as audioClipSchedule does)
   const bpm = useTimelineStore((s) => (clip.audio ? tempoAt(clip.startBar, songTempo(s)) : 0));
@@ -449,6 +453,15 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         className="absolute inset-x-0 top-0 px-1.5 flex items-center text-[10px] font-semibold text-black/90 truncate"
         style={{ height: LABEL_HEIGHT, backgroundColor: track.color }}
       >
+        {patternLabel && (
+          <span
+            className="mr-1 shrink-0 inline-flex items-center gap-0.5 rounded-sm bg-black/30 px-1 font-mono text-[9px] font-bold text-white/90"
+            title={`Linked (${patternLabel}): editing this clip's notes changes every clip marked ${patternLabel}. Right-click › Make unique to edit it on its own.`}
+          >
+            <Link2 className="w-2.5 h-2.5" />
+            {patternLabel}
+          </span>
+        )}
         <span className="truncate">{clip.name}</span>
         {clip.takes && clip.takes.length > 1 && (
           <button

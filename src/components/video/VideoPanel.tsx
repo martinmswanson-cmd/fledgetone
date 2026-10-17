@@ -17,7 +17,10 @@ import { press } from '../../search/reveal';
 
 const BUTTON = 'h-8 px-3 flex items-center gap-1.5 rounded-md border border-forge-border bg-forge-bg text-forge-text hover:border-cyan-400/60 disabled:opacity-50';
 
-const clock = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, '0')}`;
+const clock = (s: number) => {
+  const c = Math.round(s * 100);
+  return `${Math.floor(c / 6000)}:${((c % 6000) / 100).toFixed(2).padStart(5, '0')}`;
+};
 
 const Card: React.FC<{ title: string; children: React.ReactNode; label?: string }> = ({ title, children, label }) => (
   <section className="flex flex-col gap-2 rounded-lg border border-forge-border bg-forge-bg/50 p-3 min-w-0" aria-label={label ?? title}>

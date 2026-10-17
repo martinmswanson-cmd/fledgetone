@@ -5,7 +5,7 @@
  * a short beat; sound effects a few of their sounds.
  */
 import type { InstrumentKey } from './instrumentCatalog';
-import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
+import { FX_NOTES, INSTRUMENTS, isDrumKind, isFxKind } from './instrumentCatalog';
 import { auditionInstrument, DRUM_NOTES, safely } from './instruments';
 import { auditionInput, initAudio } from './engine';
 
@@ -32,6 +32,14 @@ export function previewNotes(key: InstrumentKey): PreviewNote[] {
       { note: kick, at: 0.8, duration: '8n' },
       { note: kick, at: 1.0, duration: '8n' },
       { note: snare, at: 1.2, duration: '8n' },
+    ];
+  }
+  if (isFxKind(key)) {
+    // A few of its sounds, one after another (not an arpeggio of whatever rows a chord lands on)
+    return [
+      { note: FX_NOTES.impact, at: 0, duration: '2n' },
+      { note: FX_NOTES.riser, at: 0.9, duration: '2n' },
+      { note: FX_NOTES.subDrop, at: 1.9, duration: '2n' },
     ];
   }
   const [lo, hi] = def.range;

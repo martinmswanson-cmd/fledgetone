@@ -559,6 +559,30 @@ export function movePoints(
   return { points: entries.map((e) => e.p), moved };
 }
 
+/** A point's bend as a spread-able field (none when it's straight) */
+const withCurve = (curve: number | undefined): { curve?: number } => (curve ? { curve } : {});
+
+/**
+ * The lane with every curved segment that a cut at one of `cuts` would split replaced by straight
+ * steps sampled from it (every 1/32 bar). One power bend can't describe part of itself, so a split
+ * would otherwise change the shape on both sides of the cut.
+ */
+function flattenCurvesAt(points: AutomationPoint[], cuts: number[]): AutomationPoint[] {
+  const out: AutomationPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const next = points[i + 1];
+    if (!p.curve || !next || !cuts.some((c) => c > p.bar + EPS && c < next.bar - EPS)) {
+      out.push(p);
+      continue;
+    }
+    out.push({ bar: p.bar, value: p.value });
+    const step = 1 / 32;
+    for (let b = p.bar + step; b < next.bar - EPS; b += step) out.push({ bar: b, value: laneValueAt(points, b)! });
+  }
+  return out;
+}
+
 /**
  * The lane after inserting `bars` empty bars at `at` (Insert bars on the ruler): later points move
  * right with the music, and the value arriving at `at` holds across the new bars. Points pushed
@@ -567,15 +591,17 @@ export function movePoints(
  */
 export function insertLaneBars(points: AutomationPoint[], at: number, bars: number): AutomationPoint[] {
   if (bars <= 0 || !points.some((p) => p.bar >= at - EPS)) return points;
+  points = flattenCurvesAt(points, [at]);
   const held = laneValueBefore(points, at)!;
   const leaving = laneValueAt(points, at)!;
   const move = (p: AutomationPoint) => ({ ...p, bar: p.bar + bars });
+  // A point on the insert point starts the segment after it: its bend goes with that segment
+  const curve = withCurve([...points].reverse().find((p) => Math.abs(p.bar - at) <= EPS)?.curve);
   const shifted: AutomationPoint[] = points.some((p) => p.bar < at - EPS)
     ? [
         ...points.filter((p) => p.bar < at - EPS),
         { bar: at, value: held },
-        { bar: at + bars, value: held },
-        ...(leaving !== held ? [{ bar: at + bars, value: leaving }] : []),
+        ...(leaving !== held ? [{ bar: at + bars, value: held }, { bar: at + bars, value: leaving, ...curve }] : [{ bar: at + bars, value: held, ...curve }]),
         ...points.filter((p) => p.bar > at + EPS).map(move),
       ]
     : // Nothing before the insert point: the lane holds its first value up to there anyway
@@ -593,12 +619,14 @@ export function insertLaneBars(points: AutomationPoint[], at: number, bars: numb
 export function removeLaneBars(points: AutomationPoint[], from: number, to: number): AutomationPoint[] {
   const length = to - from;
   if (length <= EPS || !points.some((p) => p.bar >= from - EPS)) return points;
+  points = flattenCurvesAt(points, [from, to]);
   const arriving = laneValueBefore(points, from)!;
   const leaving = laneValueAt(points, to)!;
+  // The point at `to` starts the segment after the cut: its bend goes with it
+  const curve = withCurve([...points].reverse().find((p) => Math.abs(p.bar - to) <= EPS)?.curve);
   return [
     ...points.filter((p) => p.bar < from - EPS),
-    { bar: from, value: arriving },
-    ...(leaving !== arriving ? [{ bar: from, value: leaving }] : []),
+    ...(leaving !== arriving ? [{ bar: from, value: arriving }, { bar: from, value: leaving, ...curve }] : [{ bar: from, value: arriving, ...curve }]),
     ...points.filter((p) => p.bar > to + EPS).map((p) => ({ ...p, bar: p.bar - length })),
   ];
 }
