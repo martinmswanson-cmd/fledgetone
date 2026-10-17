@@ -102,7 +102,6 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   neonRitual: { trim: 6, lufs: -15.3 }, // -15.3
   dubstep: { trim: 10.5, lufs: -14.2 }, // -14.2
   house: { trim: 2.5, lufs: -13.8 }, // -13.8
-  formulaRush: { trim: 2.5, lufs: -13.6 }, // -13.9
   trance: { trim: 4, lufs: -14.2 }, // -14.2
   dnb: { trim: 3.5, lufs: -14 }, // -14
   synthwave: { trim: 2.5, lufs: -14.1 }, // -14.1

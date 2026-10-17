@@ -8,7 +8,7 @@ Fledgetone is a whole music studio in a browser tab. In ten minutes you'll open 
 
 ### Open a song
 
-The quickest way to learn a studio is to open something that already sounds good. Fledgetone comes with 76 **starters**: short songs in every style, ready to play and change.
+The quickest way to learn a studio is to open something that already sounds good. Fledgetone comes with 75 **starters**: short songs in every style, ready to play and change.
 
 1. Open the **File** menu at the top left and choose **New…**.
 2. Type *boss* in the search box and click **Boss Fight**.

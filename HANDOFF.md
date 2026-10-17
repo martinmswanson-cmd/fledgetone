@@ -1,6 +1,6 @@
 # Fledgetone: handoff
 
-Read this first when picking the project up in a new session. (Updated for version 2026.10.16: 224 instruments, 76 starters and six demo songs, about 640 built-in plugins, the producer tools, the installable app.) It covers what the app is, how
+Read this first when picking the project up in a new session. (Updated for version 2026.10.16: 224 instruments, 75 starters and six demo songs, about 640 built-in plugins, the producer tools, the installable app.) It covers what the app is, how
 the code is laid out, how to check changes (including sound), what's finished, and what's next.
 
 ## The app and who it's for
