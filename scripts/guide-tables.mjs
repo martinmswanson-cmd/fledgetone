@@ -31,13 +31,16 @@ export const uncredited = () => playable().filter((d) => recorded(d) && !creditF
 
 export function instrumentTable() {
   const all = playable();
-  const groups = CATEGORIES.filter((c) => all.some((d) => d.category === c));
+  // As the app lists them: the retro instruments together under their own heading, last
+  const group = (d) => (d.retro ? 'Retro (1990s soundfonts)' : d.category);
+  const groups = CATEGORIES.filter((c) => all.some((d) => group(d) === c));
+  const retro = all.filter((d) => d.retro).length;
   const lines = [
-    `There are ${all.length} instruments in ${groups.length} groups:`,
+    `There are ${all.length} instruments in ${groups.length} groups. ${retro} of them are retro instruments (the 1990s General MIDI soundfonts and early sample sets), which the lists hide until you show them: see *Retro instruments* below.`,
     '',
     '| Group | Instruments |',
     '|---|---|',
-    ...groups.map((c) => `| ${c} | ${all.filter((d) => d.category === c).map((d) => d.name).join(', ')} |`),
+    ...groups.map((c) => `| ${c} | ${all.filter((d) => group(d) === c).map((d) => d.name).join(', ')} |`),
     '',
     `- **Generated in the browser** (they work offline): ${all.filter((d) => !recorded(d) && !['custom', 'rack', 'multi'].includes(d.kind)).map((d) => d.name).join(', ')}.`,
     `- **Recorded** (${all.filter(recorded).length} instruments and kits, downloaded the first time you use them): all the others, except the Sampler, Drum Rack and Multi Sampler, which play your own sound files.`,
@@ -52,7 +55,7 @@ export function creditsTable() {
 
 /** The built-in plugins' credits: each family, how many plugins it gives, who made them. */
 export function pluginCreditsTable() {
-  const rows = PLUGIN_FAMILIES.map((f) => ({ f, c: PLUGIN_CREDITS.find((c) => c.family === f.family) }));
+  const rows = [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES].map((f) => ({ f, c: PLUGIN_CREDITS.find((c) => c.family === f.family) }));
   return [
     '| Plugins | Made by | Licence |',
     '|---|---|---|',
@@ -60,7 +63,7 @@ export function pluginCreditsTable() {
       const inst = f.plugins.filter((p) => p.instrument).length;
       const fx = f.plugins.length - inst;
       const what = [fx && `${fx} effect${fx === 1 ? '' : 's'}`, inst && `${inst} instrument${inst === 1 ? '' : 's'}`].filter(Boolean).join(', ');
-      return `| ${f.label}: ${what}${f.gpl ? ' (full build only)' : ''} | ${c?.made ?? '?'} | ${c?.licence ?? f.licence} |`;
+      return `| ${f.label}: ${what}${f.gpl ? ' (not in the one-file copy)' : ''} | ${c?.made ?? '?'} | ${c?.licence ?? f.licence} |`;
     }),
   ].join('\n');
 }

@@ -200,5 +200,7 @@ test('fledgetone.com: the app\'s cache rules move to the top of the site, under 
   assert.match(rule('/app/manifest.webmanifest'), /application\/manifest\+json/);
   assert.match(rule('/app/assets/*'), /immutable/);
   assert.match(rule('/video/*'), /max-age=86400/);
-  assert.equal(rule('/sw.js'), undefined);
+  // The root's own worker (site/sw.js, retiring the one from when the app lived there), once
+  assert.match(rule('/sw.js'), /Cache-Control: no-cache/);
+  assert.equal(out.split('\n').filter((l) => l === '/sw.js').length, 1);
 });

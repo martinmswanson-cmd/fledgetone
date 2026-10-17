@@ -96,7 +96,19 @@ the sounds it uses; the browser autosave doesn't (they're already in IndexedDB).
 and the error log. The app always opens on an empty timeline; if the last session had work,
 `RestoreSessionBanner` offers it back (the previous autosave is set aside at startup by
 `project.ts`). Browsers only allow sound after a click, so the audio context starts on the first
-Play or Start Audio (`initAudio` in `engine.ts`).
+Play or Start Audio (`initAudio` in `engine.ts`). Even where the browser would allow sound
+without one (Chrome trusts an installed or often-used page, and reopens its tabs after a restart),
+`engine.ts` holds the live context suspended until `initAudio` is called, and suspends it again
+on `pagehide`, so a page nobody is looking at never plays on its own. `main.tsx` also starts the
+installed-app support (`startPwa` in `src/pwa/pwa.ts`), which registers the service worker in a
+production build (see Builds).
+
+`main.tsx` mounts one of two interfaces, each loaded only when it's used: the studio (`App.tsx`)
+or, on a phone, Pocket (`src/pocket/PocketApp.tsx`; `pocketMode.ts` decides, `?pocket` and
+`?studio` override). Pocket is only screens: it connects the same store to the engine and the
+autosave as the studio's timeline does and edits the song through the store's own actions
+(`setClipNotes`, `addTrack`, `createEmptyClip`...), so both edit one song in one format. Its grids'
+logic is plain functions in `pocketGrid.ts`.
 
 ### Someone edits the song
 
@@ -238,7 +250,16 @@ WebAssembly is downloaded once (kept like the instruments' recordings, `recordin
 compiled once per page, and instantiated once per audio context; every plugin of the family in
 that context lives in that one instance's memory. Exports render in steps (suspend, schedule,
 resume): `syncBuiltinPlugins` waits for every plugin's processor to have the step's events
-before the render resumes. Families marked GPL are only in builds with `VITE_GPL_PLUGINS=1`.
+before the render resumes. Families marked GPL are only in builds with `VITE_GPL_PLUGINS=1` (the website, the dev server and `build:full`).
+
+An effect plugin can make sound with nothing going in (a Shepard tone, a noise source, a filter
+left oscillating), which would drone on through the song and while it's stopped. So the processor
+follows its input (`followInput` in `plugins/processor.ts`): once the input has been silent for a
+second, it watches the output a second at a time, and output that doesn't fade (by 1 dB a second)
+for two seconds is faded out over half a second, while a reverb's or delay's tail, which fades,
+is left alone. The next sound in opens it again in 5 ms. It's decided from the samples alone, so
+live and exports agree. Instruments, and the reverbs made to hold a sound for ever
+(`HOLDS_FOREVER` in `builtinHost.ts`), don't follow their input.
 
 ## Keeping it fast
 
@@ -294,8 +315,15 @@ Web Audio keeps processing every connected node, even silent ones, and Tone's `S
   the store if undo should cover it.
 - **Add a menu item, button or palette entry**: menus are `MenuBar.tsx`; the search palette's
   entries are `paletteEntries.ts`; dialogs open through `uiStore.ts`.
-- **Add a genre starter**: `starters.ts` or `startersPlaylist.ts`, built with the helpers in
-  `starterKit.ts`.
+- **Add a genre starter**: `starters.ts` or `startersPlaylist.ts` (game music: `startersGame.ts`,
+  `startersGameMore.ts`, `startersStory.ts`), built with the helpers in `starterKit.ts`, with its
+  level in `startersLoudness.ts`. The Classics are built the same way (`startersClassics.ts`, their
+  notes in `classicsScores.ts`), but New lists them under Demo songs.
+- **A tool that changes the tempo**: write tempo points (`tempoPoints` in the store, `tempoMap.ts`)
+  in one undo step, as Breathe (`breathe.ts`) and Speed up into the drop (`speedUp.ts` for the
+  maths, `speedUpActions.ts` to apply it: it also cuts audio clips that follow the tempo on the
+  beats and keeps markers locked to time at their times) do; playback, exports, the metronome and the grid follow
+  the map with nothing more.
 
 ## Audio engine details
 
@@ -304,7 +332,7 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
 - Every Tone.js `Signal` is a `ConstantSourceNode` that Chrome processes all the time, even
   when nothing is connected to it. Idle nodes cost CPU, so effects are created only while
   they're switched on, polyphonic voices are disposed after a few seconds of silence, and the
-  sound deck's instruments are built on first use.
+  instrument menus' preview players are built on first use.
 - The WAV export drives Tone's offline clock by hand (`exportWav.ts`): it renders a second at a
   time, and before each second runs the clock in 128-sample steps to a quarter of a second past
   it. So Tone's callbacks run ahead of the audio; anything that disposes nodes must wait until
@@ -369,12 +397,25 @@ The hard-won rules of the engine. Each one is there because breaking it caused a
 - `npm run dev`: Vite dev server.
 - `npm run build`: type check and production build into `dist/`.
 - `npm run build:single`: `dist-single/index.html`, the whole app inlined into one HTML file
-  (`scripts/build-single.mjs`). That file is what's published. The real instruments' recordings
-  (`public/fledgetone-samples`) are served next to it, not inlined.
+  (`scripts/build-single.mjs`), to run from a file. It isn't published; the real instruments'
+  recordings and the plugins aren't inlined, so it downloads them from their fallback address on
+  twobirdsworkshop.com.
+- `npm run build:full`: the one-file build with the GPL plugins, in `dist-full/`.
 - `npm run build:runtime`: `dist-runtime/bos-player.js`, the player that games use to play a
   saved project (`src/runtime/player.ts`).
 
-The production build (fledgetone.com) is an installable web app: `public/manifest.webmanifest`
+fledgetone.com is made by Netlify from `master` on every push (`netlify.toml`: `npm run
+build:site`): the home page (`site/`, plain HTML and CSS) at `/`, the guide's pages at `/guide/`,
+the Learn lessons (`learn/`, `scripts/learn-site.mjs`) at `/learn/` and the licences at `/licenses/`, and the production build of the app at `/app/`
+(`scripts/build-site.mjs`; built with `VITE_GPL_PLUGINS=1`, so the GPL plugins are in it), with
+`public/fledgetone-samples/` and `public/fledgetone-plugins/` served next to the app. The app
+uses relative addresses throughout, so it runs under any folder; `site/sw.js` retires the worker
+installed while the app lived at the root.
+twobirdsworkshop.com's old addresses for the app redirect there, and it still serves those two
+folders as the app's fallback download addresses (`SITE_SAMPLES` in `instrumentCatalog.ts`,
+`pluginSources.ts`).
+
+The production build is an installable web app: `public/manifest.webmanifest`
 and its icons, and `dist/sw.js`, written by the `serviceWorker` plugin in `vite.config.ts` from
 `src/pwa/sw.js` with the build's file list. The worker keeps the page, the hashed scripts and
 styles and the fonts, and leaves recordings and plugins to `recordingStore.ts` (IndexedDB, keyed
@@ -382,5 +423,5 @@ by address and set fingerprint, downloaded with `?v=<fingerprint>`). A new worke
 person clicks Reload (`src/pwa/pwa.ts`, `UpdateNotice.tsx`). Only production builds register it;
 the dev server removes any it finds. The one-file build has neither manifest nor worker
 (`build-single.mjs` marks it with `<meta name="fledgetone-build" content="single">`).
-`public/_headers` sets Netlify's cache rules: no-cache for `sw.js`, the manifest and
+`public/_headers` sets Netlify's cache rules (moved under `/app/` by `scripts/site-headers.mjs`): no-cache for `sw.js`, the manifest and
 `version.json`, a year (immutable) for `assets/` and the versioned recordings and plugins.

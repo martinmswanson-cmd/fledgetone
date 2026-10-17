@@ -266,6 +266,7 @@ const HitFinder: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const fps = useTimelineStore((s) => s.fps);
   const dropFrame = useTimelineStore((s) => s.dropFrame);
   const markers = useTimelineStore((s) => s.markers);
+  const tempoPoints = useTimelineStore((s) => s.tempoPoints);
   const hits = useMemo(() => markers.filter((m) => m.anchor === 'time' && m.seconds > 0), [markers]);
   const [grid, setGrid] = useState<HitGrid>('beat');
   const [minText, setMinText] = useState('70');
@@ -332,6 +333,11 @@ const HitFinder: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       <p className="text-[11px]">
         Now, at {formatBpm(bpm)} BPM: {now.onGrid} of {hits.length} on {gridWord} (within a frame).
       </p>
+      {tempoPoints.length > 0 && (
+        <p className="text-[11px] text-amber-300">
+          This song has tempo changes, and these tempos assume one steady tempo: Apply sets the tempo from bar 1 only, so hits after a change can miss. Remove the changes first (the TEMPO row) for every hit to land.
+        </p>
+      )}
       <ul className="flex flex-col gap-1" aria-label="Suggested tempos">
         {suggestions.map((sg, i) => (
           <li key={sg.bpm} className={`flex items-center gap-2 rounded-md border px-2 py-1 ${i === picked ? 'border-cyan-400/60 bg-cyan-500/10' : 'border-forge-border'}`}>

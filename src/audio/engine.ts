@@ -147,7 +147,7 @@ export const masterBus = liveMix.bus;
 export const masterBusEffects = liveMix.busFx;
 export const masterCompressor = liveMix.compressor;
 export const masterLimiter = liveMix.limiter;
-/** Where the sound deck's audition instruments play (dry, straight to the master bus). */
+/** Where previews and auditions play (dry, straight to the master bus): the game previews' players, stingers, and the original synths' trigger helpers. */
 export const auditionInput = liveMix.auditionInput;
 
 // Configure default transport clock settings for modern electric funk. (Swing isn't the

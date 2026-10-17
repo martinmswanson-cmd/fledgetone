@@ -41,6 +41,10 @@ export const ChoiceButton: React.FC<{ title: string; detail: string; onClick: ()
   </button>
 );
 
+/** The Classics are listed with the demo song (complete pieces to listen to), not among the starter groups. */
+const DEMO_GROUP = 'Classics';
+const DEMO_SONGS = STARTERS.filter((s) => s.group === DEMO_GROUP);
+
 const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [filter, setFilter] = useState('');
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
@@ -61,12 +65,19 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         onClick={() => choose('blank')}
         autoFocus
       />
-      <ChoiceButton title="Demo song" detail="Sunset Stroll: a 12-bar neo-soul groove at 88 BPM (intro, groove, horn hook)." onClick={() => choose('demo')} />
+      {/* Demo songs: the demo groove, then the Classics (complete public-domain pieces) to listen to */}
+      <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Demo songs: press Play and listen</h4>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5" aria-label="Demo songs">
+        <ChoiceButton title="Sunset Stroll" detail="The demo song: a 12-bar neo-soul groove at 88 BPM (intro, groove, horn hook)." onClick={() => choose('demo')} />
+        {DEMO_SONGS.map((s) => (
+          <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
+        ))}
+      </div>
       <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Starters: sections marked, the master set up; game ones come with states, layers and stingers</h4>
       <input
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
-        placeholder={`Find a starter (${STARTERS.length}): boss, cozy, 140, minor…`}
+        placeholder={`Find a starter (${STARTERS.length - DEMO_SONGS.length}) or demo song: boss, cozy, 140, minor…`}
         aria-label="Find a starter"
         className="h-8 w-full bg-forge-bg border border-forge-border rounded-md px-2.5 text-xs text-forge-text focus:outline-none focus:border-cyan-500"
       />
@@ -78,7 +89,7 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           {!found.length && <p className="text-xs text-forge-muted p-2">No starter matches.</p>}
         </div>
       ) : (
-        STARTER_GROUPS.map((group) => {
+        STARTER_GROUPS.filter((g) => g !== DEMO_GROUP).map((group) => {
           const list = STARTERS.filter((s) => s.group === group);
           return (
             <details key={group} aria-label={group} className="group rounded-lg border border-forge-border bg-forge-bg/40 open:bg-transparent">

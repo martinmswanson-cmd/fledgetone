@@ -3,14 +3,16 @@ import { useFloatingMenu } from './useFloatingMenu';
 import { ChevronDown, Play, Search } from 'lucide-react';
 import { previewInstrument } from '../audio/instrumentPreview';
 import type { InstrumentDef, InstrumentKey } from '../audio/instrumentCatalog';
-import { INSTRUMENTS, instrumentsByCategory } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, RETRO_CATEGORY, instrumentsByCategory } from '../audio/instrumentCatalog';
+import { useRetroInstruments } from '../store/retroInstruments';
 import { searchInstruments } from '../search/instrumentSearch';
 
 /**
  * Choosing an instrument by typing: a search field over the instrument list. With nothing typed
  * the list is grouped as in the catalog; typing narrows it to the best matches first (by name,
  * then by style or mood words like "8-bit", "angelic" or "orchestral", then by description).
- * Up and Down move through it, Enter picks.
+ * Up and Down move through it, Enter picks. The retro instruments (1990s soundfonts) are left out
+ * unless shown (a switch at the bottom), except the one a track already plays.
  */
 
 interface ListProps {
@@ -35,14 +37,21 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
   const listRef = useRef<HTMLDivElement>(null);
   const idBase = `inst${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
+  const showRetro = useRetroInstruments((s) => s.shown);
   // Rows in display order, with the group headings to show before some of them
-  const rows = useMemo(() => {
+  const { rows, hiddenRetro } = useMemo(() => {
     const allow = include ?? (() => true);
-    if (query.trim()) return searchInstruments(query, allow).map((def) => ({ def, heading: null as string | null }));
-    return instrumentsByCategory().flatMap(({ category, instruments }) =>
-      instruments.filter(allow).map((def, i) => ({ def, heading: i === 0 ? category : null }))
-    );
-  }, [query, include]);
+    const listed = (def: InstrumentDef) => allow(def) && (showRetro || !def.retro || def.key === current);
+    if (query.trim()) {
+      const found = searchInstruments(query, allow);
+      return { rows: found.filter(listed).map((def) => ({ def, heading: null as string | null })), hiddenRetro: found.filter((d) => !listed(d)).length };
+    }
+    const groups = instrumentsByCategory().map(({ category, instruments }) => ({ category, instruments: instruments.filter(listed) }));
+    return {
+      rows: groups.flatMap(({ category, instruments }) => instruments.map((def, i) => ({ def, heading: i === 0 ? (category as string | null) : null }))),
+      hiddenRetro: showRetro ? 0 : instrumentsByCategory().find((g) => g.category === RETRO_CATEGORY)?.instruments.filter((d) => allow(d) && d.key !== current).length ?? 0,
+    };
+  }, [query, include, showRetro, current]);
 
   const [active, setActive] = useState(() => Math.max(0, rows.findIndex((r) => r.def.key === current)));
   const changeQuery = (q: string) => {
@@ -94,7 +103,7 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
         <span className="text-[10px] text-forge-muted tabular-nums">{rows.length}</span>
       </label>
       <div ref={listRef} id={`${idBase}-list`} role="listbox" aria-label="Instruments" className="overflow-y-auto py-1 min-h-0">
-        {rows.length === 0 && <div className="px-3 py-3 text-forge-muted font-sans">No instrument matches “{query}”.</div>}
+        {rows.length === 0 && <div className="px-3 py-3 text-forge-muted font-sans">No instrument matches “{query}”{hiddenRetro ? ' (except retro ones, below)' : ''}.</div>}
         {rows.map(({ def, heading: group }, i) => (
           <React.Fragment key={def.key}>
             {group && <div className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-widest text-forge-muted/80 font-bold">{group}</div>}
@@ -129,6 +138,17 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
             </div>
           </React.Fragment>
         ))}
+        {(hiddenRetro > 0 || showRetro) && (
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => useRetroInstruments.getState().setShown(!showRetro)}
+            title="The 1990s General MIDI soundfont instruments, kept so older songs sound as they did: most have a recorded instrument now"
+            className="w-full mt-1 px-3 py-2 border-t border-forge-border text-left text-[10px] text-forge-muted hover:text-cyan-300 font-sans"
+          >
+            {showRetro ? 'Hide the retro instruments (1990s soundfonts)' : `Show ${hiddenRetro} retro instrument${hiddenRetro === 1 ? '' : 's'} (1990s soundfonts)${query.trim() ? ' that match' : ''}`}
+          </button>
+        )}
       </div>
     </>
   );

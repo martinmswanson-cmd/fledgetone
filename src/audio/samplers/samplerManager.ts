@@ -21,8 +21,8 @@ import type { RecordingIndex, SongNotes } from './songSamples';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
- * shared by every sampler that plays it: each track's own sampler, the instrument browser's
- * audition sampler, and the offline export (AudioBuffers aren't tied to a context).
+ * shared by every sampler that plays it: each track's own sampler, the instrument menus'
+ * preview sampler, and the offline export (AudioBuffers aren't tied to a context).
  *
  * Decoded sound takes eight to ten times the room of the downloaded files, so recordings are kept
  * small as they load (see recordingMaths.ts): a silent tail is cut, and two identical channels

@@ -566,10 +566,16 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 )}
               </div>
             )}
-            <p>
-              An MP4 video ({VIDEO_WIDTH}×{VIDEO_HEIGHT}, {VIDEO_FPS} fps) of the mix with a visualizer: the project's name, a spectrum that moves with the music, the whole song's waveform with a
-              playhead, the section from your markers, and the time. Ready for YouTube, socials or a game's trailer. It's drawn faster than real time.
-            </p>
+            {refVideo && useFootage ? (
+              <p>
+                An MP4 video ({VIDEO_WIDTH}×{VIDEO_HEIGHT}, {VIDEO_FPS} fps): your video with the mix as its sound, where it sits on the timeline. It's drawn faster than real time.
+              </p>
+            ) : (
+              <p>
+                An MP4 video ({VIDEO_WIDTH}×{VIDEO_HEIGHT}, {VIDEO_FPS} fps) of the mix with a visualizer: the project's name, a spectrum that moves with the music, the whole song's waveform with a
+                playhead, the section from your markers, and the time. Ready for YouTube, socials or a game's trailer. It's drawn faster than real time.
+              </p>
+            )}
             {!(refVideo && useFootage) && (
               <label className="flex items-center gap-2 text-forge-text">
                 Visualizer style

@@ -1,13 +1,18 @@
 # Fledgetone
 
 A music studio that runs in the browser. Arrange tracks and clips on a timeline, write in a piano
-roll, play 198 instruments (synths, EDM basses, drum kits, recorded instruments and your own
-sounds), mix with per-track effects, buses, returns and automation, record from MIDI or a
-microphone, and export WAV, MP3, Ogg, stems or video. It also scores to picture (timecode, hit
-points, a reference video) and exports adaptive music for games (states, stems, stingers and
-players for the web, Unity, Godot, FMOD and Wwise).
+roll, play more than 200 instruments (synths, EDM basses, drum kits, recorded instruments and your
+own sounds) and hundreds of built-in plugins, mix with per-track effects, buses, returns and
+automation, record from MIDI or a microphone, and export WAV, MP3, Ogg, stems or video. Producer
+tools help with beats (an 808 designer, a drum designer, flipping samples, vocal chains, arranging
+a loop into a song). It also scores to picture (timecode, hit points, a reference video) and
+exports adaptive music for games (states, stems, stingers and players for the web, Unity, Godot,
+FMOD and Wwise).
 
 Nothing is uploaded anywhere: songs autosave in the browser and save to `.fledgetone.json` files.
+
+It's published at [fledgetone.com](https://fledgetone.com), where it can also be installed as an
+app that works offline.
 
 **Using it:** [GUIDE.md](GUIDE.md), also inside the app (the Guide button, or press `?`).
 
@@ -19,13 +24,26 @@ Requires Node 22.
 npm install
 npm run dev            # dev server at http://localhost:5173
 npm test               # unit tests
+npm run build          # dist/: the production build, as published
 npm run build:single   # dist-single/index.html: the whole app in one HTML file
 npm run build:site     # dist-site/: fledgetone.com, the home page at / and the app at /app/
 ```
 
-`build:single` inlines the scripts, styles and icon into one file that can be hosted anywhere;
-that's the file published as `fledgetone.html` on twobirdsworkshop.com. The real instruments'
-recordings (`public/fledgetone-samples/`) are hosted next to it.
+## Publishing
+
+fledgetone.com is built by Netlify from `master` on every push (`netlify.toml`: `npm run
+build:site`, with the GPL plugins): the home page at `/` and the app at `/app/`, with the real instruments' recordings
+(`public/fledgetone-samples/`) and the built-in plugins (`public/fledgetone-plugins/`) next to
+the app, and the service worker that makes it installable and offline-ready (production builds
+only). `public/_headers` sets the app's cache rules (moved under `/app/` by `scripts/site-headers.mjs`);
+`site/sw.js` retires the worker installed when the app lived at the root. The old addresses on twobirdsworkshop.com
+(`/fledgetone.html`, `/fledgetone`, `/bos-beat-box` and `/bos-beat-box.html`) redirect there;
+twobirdsworkshop.com still serves `fledgetone-samples/` and `fledgetone-plugins/` as the app's
+fallback download addresses.
+
+`build:single` inlines the scripts, styles and icon into one file that runs when opened from a
+file (it fetches the recordings and plugins from the fallback addresses). It isn't published; it
+has no service worker and can't be installed.
 
 `build:site` is what Netlify publishes on fledgetone.com (see `netlify.toml`): the home page in
 `site/` (plain HTML and CSS, no build step of its own) at `/`, the app built under `/app/`, and
@@ -33,6 +51,10 @@ the guide at `/guide/`, a page per section of GUIDE.md (`scripts/guide-site.mjs`
 guide always matches the app's. Its screenshots are taken from the studio by
 `scripts/guide-shots/capture.mjs` (the list, with where each one goes, is `shots.mjs`): run it
 again after changing the look of something they show.
+The **Learn** section at `/learn/` is separate from the guide: hands-on lessons written for the
+website, one Markdown file each in `learn/` (format in `scripts/learn-site.mjs`), with screenshots
+and example song links taken from the studio by `capture.mjs --learn` (each lesson's shots and
+examples are in `learn/shots/`). The home page lists the lessons in its Learn section.
 Old links to the app at the root (`fledgetone.com/#s=...`) are forwarded to `/app/`.
 
 ## Finding your way around
@@ -49,11 +71,13 @@ The stack: React 19, TypeScript, zustand, Tone.js 15 on the Web Audio API, Tailw
 ## Credits
 
 The recorded instruments come from free sample libraries: the Salamander Grand Piano,
-tonejs-instruments (Karoryfer, University of Iowa and VSCO 2 recordings), the FluidR3 and Musyng
-Kite General MIDI soundfonts, Versilian Studios' VSCO 2 Community Edition and VCSL, and Karoryfer's Black
-And Green Guitars. Their licences differ (CC BY 3.0, CC BY-SA 3.0 and CC0, among others); the
-full list with links and licences is in the Credits section of [GUIDE.md](GUIDE.md#credits) and
-in the app under Guide > Credits, generated from `src/credits.ts`.
+tonejs-instruments (Karoryfer and VSCO 2 recordings), the FluidR3 and Musyng Kite General MIDI
+soundfonts, Versilian Studios' VSCO 2 Community Edition and VCSL, the University of Iowa Musical
+Instrument Samples, Karoryfer's libraries (guitars, saxophones, basses, a drum kit) and a few
+more. Their licences differ (CC BY 3.0, CC BY-SA 3.0 and CC0, among others); the built-in plugins
+are open source (MIT, BSD), and the Classics play public-domain scores. The full list with links
+and licences is in the Credits section of [GUIDE.md](GUIDE.md#credits) and in the app under
+Guide > Credits, generated from `src/credits.ts`.
 
 ## Licence
 
@@ -69,6 +93,12 @@ FOR A PARTICULAR PURPOSE. See [LICENSE](LICENSE) for the full text.
 Copyright (C) 2026 the Fledgetone authors.
 
 The recorded sounds and built-in plugins keep their own licences (see Credits above).
+
+Taking part in the project (issues, pull requests, discussions) is covered by the
+[code of conduct](CODE_OF_CONDUCT.md). The site, fledgetone.com, is hosted by Netlify on its
+Open Source plan.
+
+Fledgetone is made by Martin Swanson, with help from [Claude Code](https://claude.com/claude-code).
 
 ### The name and logo
 

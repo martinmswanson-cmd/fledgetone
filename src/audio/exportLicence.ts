@@ -13,8 +13,8 @@ The scripts, players, example scenes, manifests and other files Fledgetone wrote
 (not your music, which is yours) may be used, copied, changed and distributed by anyone, in any
 project, including closed-source and paid games and apps, under any licence, with no obligation to
 share your own code and no need to credit Fledgetone. This permission comes from Two Birds Workshop,
-which makes Fledgetone, and applies to these exported files whatever applies to the rest of
-Fledgetone.
+which makes Fledgetone, and applies to these exported files in addition to the GNU General Public
+License that covers Fledgetone's own code.
 
 The files are provided "as is", without warranty of any kind. In no event shall the authors be
 liable for any claim, damages or other liability arising from the files or their use.

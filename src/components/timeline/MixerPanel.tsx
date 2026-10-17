@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { Track } from '../../store/timelineTypes';
+import { REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX } from '../../store/timelineTypes';
 import { liveTrackPeak } from '../../audio/liveTracks';
 import { isOffscreen, useSkipOffscreen } from '../offscreen';
 import { UndoableRange } from '../UndoableRange';
@@ -89,7 +90,7 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
       </div>
       <label className="w-full flex flex-col gap-0.5 text-[9px] font-mono text-forge-muted">
         REV {Math.round(track.reverbSend * 100)}%
-        <UndoableRange min={0} max={1} step={0.01} value={track.reverbSend} onValue={(v) => s.setTrackReverbSend(track.id, v)} resetValue={0} className="w-full h-1 accent-cyan-400" aria-label={`${track.name} reverb send`} />
+        <UndoableRange min={0} max={track.reverbSend > REVERB_SEND_KNOB_MAX ? REVERB_SEND_MAX : REVERB_SEND_KNOB_MAX} step={0.01} value={track.reverbSend} onValue={(v) => s.setTrackReverbSend(track.id, v)} resetValue={0} className="w-full h-1 accent-cyan-400" aria-label={`${track.name} reverb send`} />
       </label>
       <label className="w-full flex flex-col gap-0.5 text-[9px] font-mono text-forge-muted">
         DLY {Math.round(track.delaySend * 100)}%

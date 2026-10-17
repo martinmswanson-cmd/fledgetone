@@ -3,7 +3,7 @@
 // so the site's guide is always the same text as the app's (src/components/guide/, which reads the
 // same file). The Markdown here is the same small set the app's renderer handles: ## and ###
 // headings, paragraphs, - and 1. lists, | tables |, > tips, **bold**, *italic*, `code` and
-// [links](https://...). Pure, so it's unit tested (scripts/guidePages.test.mjs).
+// [links](https://...) (or to the site's own pages, /learn/...). Pure, so it's unit tested (scripts/guidePages.test.mjs).
 
 /** URL-safe id for a heading, e.g. "Timecode & frame rates" -> "timecode-frame-rates" (as the app's). */
 export function slug(text) {
@@ -26,9 +26,9 @@ export const escape = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').repl
 /** **bold**, *italic* and [links](https://...) in text that has no code spans (escaped first). */
 function emphasis(text) {
   return escape(text).replace(
-    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|\*\*(\S(?:[^*]*\S)?)\*\*|\*(\S(?:[^*]*\S)?)\*/g,
+    /\[([^\]]+)\]\((https?:\/\/[^)\s]+|\/[^)\s]*)\)|\*\*(\S(?:[^*]*\S)?)\*\*|\*(\S(?:[^*]*\S)?)\*/g,
     (_, label, href, bold, italic) =>
-      label !== undefined ? `<a href="${href}" rel="noopener">${label}</a>` : bold !== undefined ? `<strong>${bold}</strong>` : `<em>${italic}</em>`,
+      label !== undefined ? href.startsWith('/') ? `<a href="${href}">${label}</a>` : `<a href="${href}" rel="noopener">${label}</a>` : bold !== undefined ? `<strong>${bold}</strong>` : `<em>${italic}</em>`,
   );
 }
 

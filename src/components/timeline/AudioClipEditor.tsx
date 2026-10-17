@@ -4,7 +4,7 @@
  * tempo (time-stretch), the sample's tempo and key, Tune, Chop sample.
  */
 import React, { useEffect, useState } from 'react';
-import { AudioWaveform, FlipHorizontal2, Gauge, Magnet, Maximize2, Slice, Spline, Wand2, X } from 'lucide-react';
+import { AudioWaveform, FlipHorizontal2, Gauge, Magnet, Maximize2, Slice, Spline, AudioLines, X } from 'lucide-react';
 import { useUiStore } from '../../store/uiStore';
 import { useLivePlayhead } from '../../store/playheadClock';
 import { useTimelineStore, songTempo } from '../../store/timelineStore';
@@ -118,7 +118,7 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
         {fadeSlider('Fade out', audio.fadeOut, 'fadeOut')}
         <StretchControls clip={clip} bpm={bpm} />
         <button type="button" onClick={() => useUiStore.getState().setTuneClip(clip.id)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500 ${audio.tunedFrom ? '!border-cyan-500/70 text-cyan-200' : ''}`} title="Pull a vocal's pitch onto the notes of a key">
-          <Wand2 className="w-3.5 h-3.5" /> {audio.tunedFrom ? 'Tuned…' : 'Tune vocal…'}
+          <AudioLines className="w-3.5 h-3.5" /> {audio.tunedFrom ? 'Tuned…' : 'Tune vocal…'}
         </button>
         <button type="button" onClick={() => setChopping(true)} className={`${select} flex items-center gap-1.5 hover:border-cyan-500`} title="Chop this sample into up to 16 pieces on the pads of a new Drum Rack (or a Slicer), with a pattern that flips them">
           <Slice className="w-3.5 h-3.5" /> Chop sample…

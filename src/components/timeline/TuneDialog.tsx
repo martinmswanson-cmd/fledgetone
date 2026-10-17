@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
-import { Loader2, Play, Square, Undo2, Wand2 } from 'lucide-react';
+import { Loader2, Play, Square, Undo2, AudioLines } from 'lucide-react';
 import { Modal } from './Modal';
 import { useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
@@ -196,7 +196,7 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
           </button>
         )}
         <button type="button" disabled={!source || busy} onClick={() => void apply()} className="ml-auto h-8 px-3 flex items-center gap-1.5 rounded-md border border-cyan-400/60 bg-cyan-500/15 text-cyan-100 font-semibold hover:bg-cyan-500/25 disabled:opacity-50">
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />} Apply
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <AudioLines className="w-3.5 h-3.5" />} Apply
         </button>
       </div>
     </Modal>

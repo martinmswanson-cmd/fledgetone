@@ -10,6 +10,9 @@ import { liveMix } from '../../audio/engine';
 import { InsertPanel } from './InsertFx';
 import { UndoableRange } from '../UndoableRange';
 
+
+/** A band's frequency from the slider: whole hertz up high, tenths down low, where a step of the slider is under 1 Hz (so the arrow keys move it). */
+const fineHz = (hz: number): number => (hz < 1000 ? Math.round(hz * 10) / 10 : Math.round(hz));
 /**
  * The parametric EQ, drawn: the curve the bands make (exactly what the filters do), the track's
  * sound behind it while it plays, and a dot per band to drag. Drag a dot sideways for its
@@ -251,7 +254,7 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
           </select>
           <label className="flex items-center gap-1">
             FREQ
-            <UndoableRange min={0} max={1000} value={Math.round((xOf(b.freq) / width) * 1000)} onValue={(v) => update(sel, { freq: Math.round(hzOf((v / 1000) * width)) })} className={big ? 'w-40' : 'w-20'} aria-label="Band frequency" />
+            <UndoableRange min={0} max={1000} value={Math.round((xOf(b.freq) / width) * 1000)} onValue={(v) => update(sel, { freq: fineHz(hzOf((v / 1000) * width)) })} className={big ? 'w-40' : 'w-20'} aria-label="Band frequency" />
             <span className="w-14 text-forge-text tabular-nums">{fmtHz(b.freq)}</span>
           </label>
           {hasGain(b.type) && (

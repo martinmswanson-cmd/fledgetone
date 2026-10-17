@@ -2,6 +2,9 @@
 // the app's own rules (public/_headers) land in dist-site/app/ with the app: this puts /app in front
 // of each of their addresses and adds the home page's rules (its videos and pictures).
 const SITE_RULES = `
+# The worker that retires the studio's old one (site/sw.js): always checked afresh
+/sw.js
+  Cache-Control: no-cache
 # The home page's videos and pictures: a day
 /video/*
   Cache-Control: public, max-age=86400

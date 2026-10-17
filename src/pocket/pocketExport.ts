@@ -1,0 +1,59 @@
+/**
+ * Pocket's one export: the whole song as an MP3 at the streaming loudness (the studio's Export
+ * dialog with its defaults: the song from bar 1, ringing out, matched to the default loudness
+ * target, peaks held under the lossy ceiling). Uses the same render as the studio, so the file
+ * sounds the same whichever made it.
+ */
+import { countedRender } from '../audio/renderBusy';
+import { audibleTracks, channelsOf, cutRingOut, renderArrangement, type RenderOptions } from '../audio/exportWav';
+import { measureLoudness } from '../audio/loudness';
+import { DEFAULT_TARGET, reachTarget, targetById } from '../audio/loudnessTarget';
+import { exportCeilingDbtp } from '../audio/effects/limiter';
+import { encodeAudio } from '../audio/encoders';
+import { useTimelineStore } from '../store/timelineStore';
+import { safeFileName } from '../store/project';
+
+/** Render the song to an MP3 (`onProgress` 0 to 1 while rendering). Null when the song has nothing in it. */
+export function renderSongMp3(onProgress: (fraction: number, detail: string) => void): Promise<{ blob: Blob; name: string } | null> {
+  return countedRender(async () => {
+    const s = useTimelineStore.getState();
+    // The render swaps the global audio context while it sets up, so live playback halts first
+    s.pause();
+    const audible = new Set(audibleTracks(s.tracks).map((t) => t.id));
+    const songEnd = Math.max(1, ...s.clips.filter((c) => audible.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
+    if (songEnd <= 1) return null;
+    const ceilingDbtp = exportCeilingDbtp('mp3');
+    const masterFx = {
+      reverbDecay: s.masterReverbDecay,
+      delayTime: s.masterDelayTime,
+      delayFeedback: s.masterDelayFeedback,
+      ...(s.masterReverbRoom ? { room: s.masterReverbRoom } : {}),
+      ...(s.masterRoomStyle !== 'hall' ? { roomStyle: s.masterRoomStyle } : {}),
+    };
+    const opts: RenderOptions = {
+      tracks: s.tracks,
+      clips: s.clips,
+      bpm: s.bpm,
+      tempoPoints: s.tempoPoints,
+      swing: s.swing,
+      startBar: 1,
+      endBar: songEnd,
+      masterFx,
+      master: s.master,
+      ending: 'ringOut',
+      sampleRate: 44100,
+      markers: s.markers,
+      intensity: { value: s.intensity, curves: s.intensityCurves },
+      peakCeilingDbtp: ceilingDbtp,
+      keepRingOut: true,
+    };
+    let audio = await renderArrangement(opts, (f) => onProgress(f, 'Playing the song through'));
+    onProgress(1, 'Matching the loudness');
+    const reading = await measureLoudness(channelsOf(audio), audio.sampleRate);
+    await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(DEFAULT_TARGET), undefined, ceilingDbtp);
+    audio = cutRingOut(audio, opts);
+    onProgress(1, 'Making the MP3');
+    const blob = await encodeAudio(channelsOf(audio), audio.sampleRate, 'mp3', { bitDepth: 16 });
+    return { blob, name: `${safeFileName(s.projectName)}.mp3` };
+  });
+}

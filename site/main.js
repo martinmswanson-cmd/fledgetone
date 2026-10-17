@@ -89,7 +89,7 @@ if (!reduce) {
 // The page as a session in the studio, played by scrolling. One loop measures the scroll: its
 // speed is the level (quick to rise, slow to fall, like a meter) and how far down the page you
 // are is the position in the song, which also sweeps a filter from the lows to the highs. The
-// scopes (spectrum bars, oscilloscope lines), the ruler and the channel strip all read it.
+// scopes (spectrum bars, oscilloscope lines) and the ruler read it.
 const state = { energy: 0, p: 0, vel: 0, t: 0, dt: 0 };
 const parts = [];
 const css = getComputedStyle(document.documentElement);
@@ -225,41 +225,6 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
       secRead.textContent = flags[on].name;
       secRead.style.setProperty('--c', `var(${flags[on].c})`);
     }
-  });
-}
-
-// Right: the master channel strip. The meters bounce with the scroll, and the fader rides the
-// song down to silence at the end of the page.
-{
-  const strip = el('aside', 'side-strip', `
-    <div class="ss-name">MASTER</div>
-    <div class="ss-body">
-      <div class="ss-meter"><i class="ss-fill"></i><i class="ss-peak"></i></div>
-      <div class="ss-meter"><i class="ss-fill"></i><i class="ss-peak"></i></div>
-      <div class="ss-fader"><span class="ss-cap"></span></div>
-    </div>
-    <span class="ss-val ss-db">0.0 dB</span>
-    <div class="ss-btns"><span>M</span><span>S</span></div>`);
-  strip.setAttribute('aria-hidden', 'true');
-  document.body.append(strip);
-  const dbRead = strip.querySelector('.ss-db');
-  const fills = [...strip.querySelectorAll('.ss-fill')], peaksEl = [...strip.querySelectorAll('.ss-peak')];
-  const cap = strip.querySelector('.ss-cap');
-  const peak = [0, 0];
-  parts.push(({ p, energy, t }) => {
-    if (!wide.matches) return;
-    // The fader: 0 dB, easing down to -12 dB through the song, then a fade to silence at the end
-    const gainDb = p < 0.9 ? -12 * (p / 0.9) ** 2 : -12 - ((p - 0.9) / 0.1) * 48;
-    const faderPos = gainDb <= -60 ? 1 : clamp(-gainDb / 66);
-    cap.style.top = `${faderPos * 100}%`;
-    dbRead.textContent = gainDb <= -59.9 ? '-inf dB' : `${gainDb.toFixed(1)} dB`;
-    const g = gainDb <= -59.9 ? 0 : 10 ** (gainDb / 40);
-    fills.forEach((f, i) => {
-      const lvl = clamp((0.06 + energy * 0.95) * g * (0.88 + 0.12 * Math.sin(t * (11 + i * 3) + i)));
-      peak[i] = Math.max(lvl, peak[i] - 0.006);
-      f.style.transform = `scaleY(${lvl.toFixed(3)})`;
-      peaksEl[i].style.bottom = `${(peak[i] * 100).toFixed(1)}%`;
-    });
   });
 }
 

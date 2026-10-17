@@ -19,10 +19,11 @@ import { APP_VERSION } from '../../version';
 import { LESSONS } from '../../tour/lessons';
 import { useTourStore } from '../../tour/tourStore';
 import { installApp, usePwa } from '../../pwa/pwa';
+import { chooseInterface } from '../../pocket/pocketMode';
 
 /**
  * The menu bar: every tool in the app, in the place a DAW keeps it (File, Edit, Song, Track,
- * Tools, Video, Game, View, Help), so the toolbar only has to carry what's used all the time.
+ * Plugins, Tools, Video, Game, View, Learn, Help), so the toolbar only has to carry what's used all the time.
  * Hovering across the bar while a menu is open moves to the next menu, as desktop menus do.
  */
 
@@ -94,7 +95,7 @@ const MENUS: MenuDef[] = [
     id: 'file',
     label: 'File',
     items: () => [
-      { label: 'New…', run: () => ui().setDialog('new'), title: 'Start again from a blank timeline, the demo song or a genre starter' },
+      { label: 'New…', run: () => ui().setDialog('new'), title: 'Start again from a blank timeline, a demo song or a genre starter' },
       { label: 'Open…', shortcut: `${MOD_KEY}O`, run: pickProjectFile },
       { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
       { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },
@@ -330,6 +331,7 @@ const MENUS: MenuDef[] = [
       const tab = (t: DockTab, label: string, divider = false): MenuAction => ({ label, run: () => u.openDock(t), checked: u.dockOpen && u.dockTab === t, divider });
       return [
         tab('mixer', 'Mixer'),
+        tab('launcher', 'Launcher'),
         tab('eq', 'EQ & Dynamics'),
         tab('game', 'Game'),
         tab('video', 'Video'),
@@ -374,7 +376,9 @@ const MENUS: MenuDef[] = [
       { label: 'Search everything', shortcut: PALETTE_SHORTCUT, run: () => ui().setPaletteOpen(true) },
       { label: 'Keyboard shortcuts', run: () => ui().openGuide('keyboard-shortcuts'), divider: true },
       ...(usePwa.getState().installed ? [] : [{ label: 'Install Fledgetone…', run: installApp, divider: true, title: 'Install Fledgetone as an app: its own window, and it opens offline' }]),
+      { label: 'Pocket, the phone version', run: () => chooseInterface('pocket'), title: 'Switch to Fledgetone Pocket: big pads, a step grid and a note grid in key, made for a phone. The same song opens in both' },
       { label: 'Report a problem…', run: () => ui().setDialog('report'), divider: true },
+      { label: 'Source code', run: () => window.open('https://github.com/martinmswanson-cmd/fledgetone', '_blank', 'noopener'), title: "Fledgetone is free software under the GNU GPL, version 3: its code on GitHub" },
       { label: `What's new (version ${APP_VERSION})`, run: () => ui().setDialog('changes') },
       { label: 'Terms of use', run: () => ui().setDialog('terms') },
     ],

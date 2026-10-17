@@ -183,19 +183,19 @@ export const SHOTS = [
     setup: async (s) => { await s.starter('Boss Fight'); await s.page.getByTitle(/^Render the song or the loop/).click(); await s.wait(800); return s.dialog(); },
   },
   {
-    file: 'game-tab', section: 'exporting-audio', after: 'game-preview-hear-it-the-way-the-game-will-play-it',
+    file: 'game-tab', section: 'game-music', after: 'game-preview-hear-it-the-way-the-game-will-play-it',
     alt: 'The Game tab: the states, the intensity curves for each stem group, the stingers and the game exports.',
     caption: 'The Game tab: states, intensity, stingers and the game exports.',
     setup: async (s) => { await s.starter('Boss Fight'); await s.view('Game'); return s.panel(); },
   },
   {
-    file: 'sfx', section: 'exporting-audio', after: 'sound-effects-maker',
+    file: 'sfx', section: 'game-music', after: 'sound-effects-maker',
     alt: 'The Sound FX tab: groups of sound kinds, the layers of the current sound and its finish settings.',
     caption: 'The sound effects maker, in the Sound FX tab.',
     setup: async (s) => { await s.starter('Boss Fight'); await s.view('Sound effects'); return s.panel(); },
   },
   {
-    file: 'try-game', section: 'exporting-audio', after: 'try-it-in-a-game', video: '/video/game.mp4', poster: '/video/game-poster.webp',
+    file: 'try-game', section: 'game-music', after: 'try-it-in-a-game', video: '/video/game.mp4', poster: '/video/game-poster.webp',
     alt: 'Try it in a game: the music plays Phase 1 while exploring, switches to Phase 2 when the guard spots the robot, and plays a stinger when it is beaten.',
     caption: 'Try it in a game: the music follows what happens in the level.',
   },

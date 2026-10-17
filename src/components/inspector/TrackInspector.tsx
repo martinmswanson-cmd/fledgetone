@@ -4,13 +4,12 @@
  * tools (Glide, Sub enhancer, kick clash check), Expressive playing, the insert
  * effects in chain order, sends to returns, and the Master tab.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   SlidersHorizontal,
   X,
   RotateCcw,
   Waves,
-  Sparkles,
   Radio,
   CheckCircle2,
   AlertCircle,
@@ -50,6 +49,7 @@ import { AutoBadge, Automatable } from '../timeline/AutoBadge';
 import { AUTOMATED_TIP } from '../timeline/automationHooks';
 import { isBus, isMixTrack, sendTargets } from '../../store/buses';
 import type { Track } from '../../store/timelineTypes';
+import { REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX } from '../../store/timelineTypes';
 
 /** One click to a kind of space: the master reverb's length. */
 const notAudio = (def: InstrumentDef) => !isAudioKind(def.key);
@@ -65,6 +65,9 @@ const REVERB_SPACES = [
 export const TrackInspector: React.FC = () => {
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
   const tracks = useTimelineStore((s) => s.tracks);
+  // The reverb send's 300% top, turned on with a click for the track shown (another track starts at 200%)
+  const [boostedTrack, setBoostedTrack] = useState<string | null>(null);
+  const reverbBoost = boostedTrack !== null && boostedTrack === selectedTrackId;
   // Another track's settings start from the top (a new Drum Rack's Load sounds is there)
   const aside = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -415,7 +418,7 @@ export const TrackInspector: React.FC = () => {
             {/* Aux FX Sends Section */}
             <div data-search="sends" className="flex flex-col gap-3 bg-forge-bg p-2.5 rounded-lg border border-forge-border shadow-md">
               <div className="flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <Waves className="w-3.5 h-3.5 text-amber-400" />
                 <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-white">
                   Post-Fader Aux Sends
                 </span>
@@ -425,6 +428,8 @@ export const TrackInspector: React.FC = () => {
               <Automatable track={currentTrack} param="reverbSend">
                 {(auto) => {
                   const send = auto ?? currentTrack.reverbSend ?? 0;
+                  // Up to 200%, or 300% once the 300% button is on (or the send is already past 200%)
+                  const top = reverbBoost || send > REVERB_SEND_KNOB_MAX ? REVERB_SEND_MAX : REVERB_SEND_KNOB_MAX;
                   return (
                     <div className="flex flex-col gap-1" title={auto !== null ? AUTOMATED_TIP : undefined}>
                       <div className="flex justify-between items-center gap-1.5 text-[10px] font-mono">
@@ -433,12 +438,27 @@ export const TrackInspector: React.FC = () => {
                           Studio Reverb Send
                         </span>
                         {auto !== null && <AutoBadge trackId={currentTrack.id} param="reverbSend" />}
+                        <button
+                          type="button"
+                          aria-pressed={top === REVERB_SEND_MAX}
+                          disabled={auto !== null}
+                          onClick={() => {
+                            if (top === REVERB_SEND_MAX) {
+                              setBoostedTrack(null);
+                              if (send > REVERB_SEND_KNOB_MAX) setTrackReverbSend(currentTrack.id, REVERB_SEND_KNOB_MAX);
+                            } else setBoostedTrack(currentTrack.id);
+                          }}
+                          title={top === REVERB_SEND_MAX ? 'Back to a 200% top' : 'Let the send go up to 300%: drenched, for washes and effects'}
+                          className={`px-1 rounded border text-[9px] leading-tight ${top === REVERB_SEND_MAX ? 'border-cyan-400 text-cyan-200 bg-cyan-500/15' : 'border-zinc-700 text-zinc-400 hover:text-cyan-200'} disabled:opacity-40`}
+                        >
+                          300%
+                        </button>
                         <span className={`tabular-nums font-bold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>{Math.round(send * 100)}%</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <UndoableRange
                           min={0}
-                          max={1}
+                          max={top}
                           step={0.01}
                           value={send}
                           onValue={(v) => setTrackReverbSend(currentTrack.id, v)}
@@ -451,7 +471,7 @@ export const TrackInspector: React.FC = () => {
                         >
                           <div
                             className="h-full bg-cyan-400 shadow-[0_0_8px_#22d3ee] transition-all"
-                            style={{ width: `${send * 100}%` }}
+                            style={{ width: `${(send / top) * 100}%` }}
                           />
                         </div>
                       </div>

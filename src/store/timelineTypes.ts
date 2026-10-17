@@ -482,6 +482,9 @@ export const OTT_GAIN_MIN = -12;
 export const OTT_GAIN_MAX = 12;
 export const WIDTH_MAX = 2;
 /** The master Level's range in dB (see MasterSettings.level). */
+/** The reverb send's range: up to 200% on the knobs, and 300% after a click on the Inspector's 300% (automation lanes stay 0 to 100%). */
+export const REVERB_SEND_KNOB_MAX = 2;
+export const REVERB_SEND_MAX = 3;
 export const LEVEL_MIN = -24;
 export const LEVEL_MAX = 12;
 

@@ -47,7 +47,7 @@ Families marked `"gpl": true` (their files in `public/fledgetone-plugins/gpl/`, 
 dev server (`.env.development`) and `npm run build:full` (written to `dist-full/`, never to
 `dist-single/`). The website build leaves out their catalog, and their files are not copied to
 the site, until the app's own source is published: the GPL asks that whoever gets the program can
-get its source. `LICENSES-GPL.txt` is their notice (in the full build's third-party licences).
+get its source. `LICENSES-GPL.txt` is their notice (in the third-party licences of the builds that have them: the website and the full build; a copy sits next to them as public/fledgetone-plugins/gpl/LICENSES.txt).
 
 ```sh
 sh surge/build.sh <surge checkout, with submodules> ../../public/fledgetone-plugins/gpl/surge.wasm

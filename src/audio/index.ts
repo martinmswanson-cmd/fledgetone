@@ -1,7 +1,7 @@
 /**
- * The sound deck's audio entry point (SoundAuditionPanel.tsx): the original synth instruments'
- * factories and trigger helpers, re-exported, and the chords, brass stabs and bass notes its pads
- * play.
+ * The audio engine's entry point for the store (audioStore.ts: starting the audio, its state, the
+ * master volume), with the original synth instruments' factories and trigger helpers re-exported,
+ * and the chords, brass stabs and bass notes the retired sound deck's pads played.
  */
 export * from './engine';
 export * from './presets/bass';

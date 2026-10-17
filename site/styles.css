@@ -135,6 +135,32 @@ h1 {
 .lede { margin: 24px auto 0; max-width: 680px; font-size: clamp(17px, 2vw, 20px); color: #c4c4cc; font-weight: 300; }
 .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 34px; }
 .fineprint { color: var(--muted); font-size: 14px; margin: 16px 0 0; }
+.hero .fineprint a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+.hero .fineprint a:hover { text-decoration-color: var(--cyan); }
+/* The open-source badge: a small clip on a timeline lane, with trim handles at its ends */
+.oss-clip {
+  position: relative;
+  display: inline-flex; align-items: center; gap: 9px;
+  margin-top: 18px;
+  height: 30px;
+  padding: 0 4px;
+  border: 1px solid var(--border-2);
+  border-top: 2px solid rgba(16, 185, 129, .55);
+  border-radius: 5px;
+  background: linear-gradient(180deg, rgba(16, 185, 129, .10), rgba(26, 26, 30, .6));
+  font: 500 12px/1 var(--mono);
+  letter-spacing: .05em;
+  color: var(--muted);
+  text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.oss-clip:hover, .oss-clip:focus-visible { color: var(--text); border-color: var(--green); }
+.oss-handle { width: 3px; height: 14px; border-radius: 2px; background: var(--border-2); transition: background .15s; }
+.oss-clip:hover .oss-handle, .oss-clip:focus-visible .oss-handle { background: var(--green); }
+.oss-notes { fill: var(--green); opacity: .75; }
+.oss-name { color: var(--text); text-transform: uppercase; }
+.oss-meta { padding-right: 4px; }
+@media (max-width: 420px) { .oss-meta { display: none; } }
 
 /* Screenshots */
 .shot { margin: 0; }
@@ -261,6 +287,9 @@ h1 {
 .foot-row nav { display: flex; gap: 18px; flex-wrap: wrap; }
 .foot-row nav a { color: var(--muted); font-size: 14px; }
 .foot-row nav a:hover { color: var(--text); }
+.foot-note { margin: 18px auto 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; opacity: .8; }
+.foot-end { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.foot-credit { margin-left: auto; font-size: 11px; letter-spacing: .02em; opacity: .7; }
 
 /* Narrower screens */
 @media (max-width: 1000px) {
@@ -310,7 +339,10 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   background: linear-gradient(to bottom, rgba(239, 68, 68, .55), transparent);
   box-shadow: 0 0 14px rgba(239, 68, 68, .45);
   animation: sweep 9s linear infinite; pointer-events: none;
+  z-index: 0;
 }
+/* (the text, buttons and pictures sit above the bar lines and the playhead) */
+.hero > * { position: relative; z-index: 1; }
 @keyframes sweep { from { transform: translateX(0); } to { transform: translateX(100vw); } }
 /* With main.js the playhead is drawn on the piano roll instead */
 .hero-roll { position: absolute; left: 0; top: 0; width: 100%; height: 0; display: block; pointer-events: none; }
@@ -422,11 +454,7 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   .scope-wave { height: 70px; }
 }
 
-/* ---------- Beside the page (wide screens): the ruler and the channel strip ---------- */
-.side-strip { display: none; }
-@media (min-width: 1400px) {
-  .side-strip { display: flex; }
-}
+/* ---------- Beside the page (wide screens): the ruler ---------- */
 
 /* The ruler: the page as a song, bars down the side, sections as markers */
 .side-ruler {
@@ -454,26 +482,6 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .sr-flag.on { opacity: 1; transform: translateY(-50%) translateX(3px); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 50%, transparent); }
 .sr-head { position: absolute; top: var(--pos); left: -6px; right: 0; height: 2px; margin-top: -1px; background: var(--red); box-shadow: 0 0 8px rgba(239, 68, 68, .7); }
 .sr-head::before { content: ''; position: absolute; left: -2px; top: -4px; border: 5px solid transparent; border-left-color: var(--red); }
-
-/* The channel strip, like the studio mixer's master */
-.side-strip {
-  position: fixed; z-index: 40; right: 22px; bottom: 24px; width: 84px;
-  flex-direction: column; align-items: center; gap: 10px; padding: 0 8px 10px;
-  border: 1px solid var(--border); border-radius: 10px; background: rgba(26, 26, 30, .9);
-  font-family: var(--mono); font-variant-numeric: tabular-nums; overflow: hidden;
-}
-.ss-name { align-self: stretch; margin: 0 -8px; padding: 8px 0 6px; text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .14em; color: var(--text); border-top: 3px solid var(--cyan); }
-.ss-val { font-size: 10px; color: var(--text); white-space: nowrap; }
-.ss-body { display: flex; gap: 5px; height: 160px; align-items: stretch; }
-.ss-meter { position: relative; width: 7px; border-radius: 2px; background: #0b0b0d; overflow: hidden; }
-.ss-fill { position: absolute; inset: 0; transform-origin: bottom; transform: scaleY(0); background: linear-gradient(to top, var(--green) 0 60%, var(--amber) 80%, var(--red)); }
-.ss-peak { position: absolute; left: 0; right: 0; height: 2px; background: var(--text); }
-.ss-fader { position: relative; width: 6px; margin-left: 10px; border-radius: 3px; background: #0b0b0d; }
-.ss-cap { position: absolute; left: 50%; width: 26px; height: 12px; margin: -6px 0 0 -13px; border-radius: 3px; background: linear-gradient(#5a5a66, #34343c); border: 1px solid #6b6b78; box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
-.ss-cap::after { content: ''; position: absolute; left: 3px; right: 3px; top: 5px; height: 1px; background: var(--cyan); }
-.ss-btns { display: flex; gap: 6px; }
-.ss-btns span { width: 22px; height: 18px; display: grid; place-items: center; font-size: 9px; color: var(--muted); border: 1px solid var(--border-2); border-radius: 4px; }
-
 
 .sr-sec { display: none; }
 
@@ -557,3 +565,19 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 @media (max-width: 640px) {
   .eyebrow-wip { display: none; }
 }
+
+/* ---------- Learn: the lessons' cards (written in by scripts/build-site.mjs) ---------- */
+.learn { padding-block: 40px 72px; }
+.l-home { list-style: none; padding: 0; margin: 28px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.l-home a {
+  display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 20px 22px;
+  border-radius: var(--radius); border: 1px solid var(--border); background: var(--panel); color: var(--text);
+  transition: border-color .2s ease, transform .2s ease;
+}
+.l-home a:hover { text-decoration: none; border-color: var(--cyan); transform: translateY(-2px); }
+.l-home h3 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.3; }
+.l-home p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); flex: 1; }
+.l-home .l-num { color: var(--cyan); }
+.learn-all { margin: 24px 0 0; }
+@media (max-width: 900px) { .l-home { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .l-home { grid-template-columns: 1fr; } }

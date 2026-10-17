@@ -14,6 +14,8 @@
   <script>
     // Share links made when the studio lived at the site's root (fledgetone.com/#s=...) open in the studio
     if (/^#(s|song)=/.test(location.hash)) location.replace('/app/' + location.hash);
+    // The studio installed as an app before it moved to /app/ still opens the site's root: go on to the studio
+    else if (matchMedia('(display-mode: standalone)').matches) location.replace('/app/');
   </script>
 
   <meta property="og:type" content="website" />
@@ -63,6 +65,7 @@
         <a href="#video">Video</a>
         <a href="#games">Games</a>
         <a href="#features">Features</a>
+        <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
       </nav>
       <div class="nav-cta">
@@ -96,8 +99,19 @@
             <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
             Download the app
           </a>
+          <a class="btn btn-ghost" href="/learn/">
+            <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg>
+            Learn how
+          </a>
         </div>
-        <p class="fineprint">Works best on a computer with a keyboard and mouse.</p>
+        <p class="fineprint">New here? Start with the <a href="/learn/">step-by-step lessons</a>, or look anything up in the <a href="/guide/">guide</a>. Works best on a computer with a keyboard and mouse.</p>
+        <a class="oss-clip" href="https://github.com/martinmswanson-cmd/fledgetone" title="Fledgetone's source code on GitHub">
+          <span class="oss-handle" aria-hidden="true"></span>
+          <svg class="oss-notes" aria-hidden="true" viewBox="0 0 28 14" width="28" height="14"><rect x="0" y="9" width="7" height="2.5" rx="1"/><rect x="8" y="5" width="5" height="2.5" rx="1"/><rect x="14" y="7" width="5" height="2.5" rx="1"/><rect x="20" y="2" width="8" height="2.5" rx="1"/></svg>
+          <span class="oss-name">Open source</span>
+          <span class="oss-meta">GPL-3.0 &middot; view the code</span>
+          <span class="oss-handle" aria-hidden="true"></span>
+        </a>
       </div>
 
       <figure class="wrap shot shot-hero">
@@ -109,7 +123,7 @@
       </figure>
 
       <div class="wrap readouts" role="list">
-        <div class="readout" role="listitem"><span class="ro-label">Instruments</span><span class="ro-value">198</span></div>
+        <div class="readout" role="listitem"><span class="ro-label">Recorded instruments</span><span class="ro-value">73</span></div>
         <div class="readout" role="listitem"><span class="ro-label">Starter songs</span><span class="ro-value">70+</span></div>
         <div class="readout" role="listitem"><span class="ro-label">Built-in effects</span><span class="ro-value">644</span></div>
         <div class="readout" role="listitem"><span class="ro-label">Accounts needed</span><span class="ro-value ro-cyan">0</span></div>
@@ -318,7 +332,7 @@
         </article>
         <article class="card" style="--c: var(--green)">
           <h3>Tutorials</h3>
-          <p>A short tour, step-by-step tutorials, and a <a href="/guide/">full guide</a> in the app and here.</p>
+          <p>A tour and tutorials in the app, <a href="/learn/">hands-on lessons</a> here, and a <a href="/guide/">full guide</a>.</p>
         </article>
         <article class="card" style="--c: var(--red)">
           <h3>Your own sounds</h3>
@@ -329,6 +343,19 @@
           <p>No account and no server. Songs save in your browser and to files on your computer.</p>
         </article>
       </div>
+    </section>
+
+    <!-- Learn: the lessons' cards are written in here by scripts/build-site.mjs (learn-site.mjs) -->
+    <section id="learn" class="learn wrap" aria-labelledby="learn-title">
+      <div class="install-head">
+        <h2 id="learn-title" class="section-title"><span class="mono-label">Learn</span>Learn by making</h2>
+        <p>
+          Step-by-step lessons with screenshots and examples, from your first beat to mixing, vocals,
+          scoring a video and music for games. Open the studio beside the lesson and follow along.
+        </p>
+      </div>
+      <!-- learn-cards -->
+      <p class="learn-all"><a class="btn btn-ghost" href="/learn/">All the lessons</a></p>
     </section>
 
     <!-- Install: the button uses the browser's own install prompt where there is one (Chrome,
@@ -429,7 +456,8 @@
       </div>
       <p class="fineprint">
         Each library has its own licence. The full list is in the app under Guide &rsaquo; Credits,
-        and on the <a href="/licenses/">licences page</a>.
+        and on the <a href="/licenses/">licences page</a>. Fledgetone itself is free software under the
+        GNU General Public License, version 3: <a href="https://github.com/martinmswanson-cmd/fledgetone">its source code is on GitHub</a>.
       </p>
     </section>
 
@@ -456,11 +484,15 @@
       <p>A music studio in your browser.</p>
       <nav aria-label="Footer">
         <a href="/app/">Studio</a>
+        <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
         <a href="/licenses/">Licences</a>
-        <a href="https://twobirdsworkshop.com">twobirdsworkshop.com</a>
+        <a href="https://github.com/martinmswanson-cmd/fledgetone">Source code</a>
+        <a href="https://github.com/martinmswanson-cmd/fledgetone/blob/master/CODE_OF_CONDUCT.md">Code of conduct</a>
       </nav>
     </div>
+    <p class="wrap foot-note">Fledgetone is an independent project. It is not affiliated with, endorsed by or sponsored by any company or product named on this site. Unity, Godot, FMOD Studio, Wwise, Premiere, DaVinci Resolve, Final Cut, Chrome, Edge, Safari, Firefox and the other names here are trademarks of their owners, used only to say what Fledgetone works with.</p>
+    <div class="wrap foot-note foot-end"><a href="https://www.netlify.com">This site is powered by Netlify</a><span class="foot-credit">Made by Martin Swanson</span></div>
   </footer>
 </body>
 </html>

@@ -5,6 +5,9 @@ people who make music for games and video, and for beginners who want something 
 on day one. Every kind of help counts: a clear bug report, a sound that's off, a starter song, a
 better sentence in the guide, or code.
 
+Everyone taking part agrees to the [code of conduct](CODE_OF_CONDUCT.md): be kind, give feedback
+on the work rather than the person, and email martin@twobirdsworkshop.com if something's wrong.
+
 This page covers:
 
 1. [Ways to help](#ways-to-help) (no code needed for most)
@@ -51,12 +54,19 @@ The app needs a click before it can make sound (a browser rule): press Play or S
 welcome dialog shows on a fresh page; close it, or see [Things that bite](#things-that-bite) for
 browser tests.
 
-Two builds matter:
+Three builds matter:
 
 ```sh
-npm run build:single   # dist-single/index.html: the whole app in one file, as published
-npm run build:full     # dist-full/: the same with the GPL plugins (Surge XT, Dragonfly...) in it
+npm run build          # dist/: the production build, as fledgetone.com publishes it
+npm run build:single   # dist-single/index.html: the whole app in one file, to run from a file
+npm run build:full     # dist-full/: the one-file app with the GPL plugins (Surge XT, Dragonfly...) in it
 ```
+
+fledgetone.com is built by Netlify from `master` (see `netlify.toml`): a home page at `/` and the
+app at `/app/`, an installable web app
+with a service worker; only production builds register the worker. The one-file build isn't
+published; it fetches the recordings and plugins from their fallback address on
+twobirdsworkshop.com.
 
 The dev server includes the GPL plugins (`.env.development` sets `VITE_GPL_PLUGINS=1`), so you
 see everything while you work.
@@ -93,7 +103,7 @@ Each recipe lists the files to touch. The checks below catch most mistakes; run 
 ### A starter song
 
 1. Write a function that returns the project, in `src/store/starters.ts`, `startersPlaylist.ts`
-   or (for game music) `startersGame.ts`, using the helpers in `starterKit.ts` and the `KIT`
+   or (for game music) `startersGame.ts` / `startersGameMore.ts` / `startersStory.ts`, using the helpers in `starterKit.ts` and the `KIT`
    export at the end of `startersPlaylist.ts`: `track`, `clip`, `melody`, `beat`, `progression`,
    `stabs`... Steps are 16th notes: step 4 is beat 2 of the first bar.
 2. Add its entry to `STARTERS` in `starters.ts` (id, group, name, a one-line description with its
@@ -107,7 +117,12 @@ Each recipe lists the files to touch. The checks below catch most mistakes; run 
    in `startersLoudness.ts`: the trim it suggests, then the loudness it measures with that trim
    (within 1.5 LU of its group's target; a test checks every starter has a line). If it needs
    more than about 4 dB of limiting to get there, look for a part whose peaks stand far over the
-   rest. Update the starter list in `GUIDE.md`.
+   rest. Update the starter list and count in `GUIDE.md`, and the count in the tour
+   (`src/tour/lessons.ts`).
+
+The **Classics** (complete public-domain pieces) are built the same way in `startersClassics.ts`,
+with their notes in `classicsScores.ts` and their sources in `SCORE_CREDITS` (`src/credits.ts`),
+but New lists them under **Demo songs**, not with the starters.
 
 ### A kind of sound effect
 
@@ -171,11 +186,19 @@ add **Adaptive Music Example** to an empty GameObject and press Play.
 Run all of these before every commit; they must all pass.
 
 ```sh
-npx tsc -b             # type check
+npx tsc -b             # type check (what npm run build runs; tsc -p . checks nothing here)
 npx oxlint src         # lint (2 known warnings: Playhead.tsx x2)
 npm test               # unit tests (node --test scripts/*.test.mjs)
-npm run build          # production build
-npm run build:single   # the one-file build that gets published (dist-single/index.html)
+npm run build          # production build (what fledgetone.com publishes)
+npm run build:single   # the one-file build (dist-single/index.html)
+```
+
+When a change touches sound, also run the sound checks (they need the dev server on port 5200,
+`npx vite --port 5200`, and Playwright; see [Checking sound](#checking-sound)):
+
+```sh
+node scripts/audio-check/repeat.cjs              # exports repeat exactly, sample for sample
+node scripts/audio-check/starters-loudness.cjs   # every starter's loudness (IDS=<id> for some)
 ```
 
 Two generated files are checked by the tests. Regenerate them when you change what they're built
@@ -241,8 +264,10 @@ default when it's missing; `parseProject` checks and repairs every field it read
 
 The user guide is `GUIDE.md` (also shown inside the app); every user-visible change updates it.
 Interface text is plain and short: say what a thing does for the musician, not how it's built.
-Don't name artists or songs anywhere in the software (starters, presets, descriptions, comments,
-the guide): describe a style by its genre, tempo and sound.
+Don't name artists, songs, games, brands or people anywhere in the software (starters, presets,
+descriptions, comments, the guide): describe a style by its genre, tempo and sound. The exceptions
+are the public-domain classical works and their composers in the Classics, the credits of the sound
+and score sources, and the owner's name and contact in `TERMS.md`.
 
 ## Things that bite
 
@@ -265,6 +290,28 @@ the guide): describe a style by its genre, tempo and sound.
   browser checks, or the page can import a stale copy of a module.
 - **Built-in plugins talk by message.** A plugin's notes reach its AudioWorklet as messages, so an
   export waits for every plugin to have its notes (`syncBuiltinPlugins`) before each step renders.
+- **Built-in effects that make their own sound are faded.** An effect plugin that goes on sounding
+  once its track is quiet (a Shepard tone, a noise source) is faded out after a few seconds
+  (`followInput` in `plugins/processor.ts`), live and in exports. One meant to hold a sound for
+  ever goes in `HOLDS_FOREVER` (`plugins/builtinHost.ts`).
+- **Exports must repeat exactly.** The same song must export to the same samples every time.
+  Seed any randomness from the song (`seededNoise.ts`, `noteSeed` in `human.ts`), never
+  `Math.random` or the time. The export's offline contexts add up a node's inputs in a fixed order
+  (`exactSums.ts`) and run sources' ended handlers on the render's clock (`endedOnTime.ts`); both
+  hook into `connect` and the sources' `onended` / `'ended'` listeners, so new code gets them by
+  using those as usual. Run `scripts/audio-check/repeat.cjs` after touching an
+  instrument or effect.
+- **Code inlined into a worklet or a Worker as text sees no module constants.** A function sent as
+  source text (`fn.toString()`) works in the dev server, then fails in a production build, where
+  the minifier has renamed the constants it reads. Pass its constants in as arguments, as
+  `createLoudnessAnalyser` (`loudness.ts`) does, and check it in `npm run build && npm run preview`.
+- **The service worker is only in production builds.** The dev server never registers one (and
+  removes any a preview left on the same address), so offline, update and install behaviour can
+  only be tried with `npm run build && npm run preview` (`scripts/pwa.test.mjs` covers the worker's
+  logic).
+- **No sound until asked.** The live audio context is held suspended until a click or key calls
+  `initAudio` (`engine.ts`), and suspended again on `pagehide`. Start audio through `initAudio`
+  (browser tests: click START AUDIO, or call it), never by resuming the context directly.
 
 ## Checking sound
 
@@ -294,8 +341,12 @@ and `THREADS` pick what it renders; see its header). Run it after touching an in
 - **Show it.** Screenshots for anything on screen; a before-and-after recording for anything you
   hear.
 - **Tests and the guide.** Pure logic gets a test; user-visible changes update `GUIDE.md`.
-- **The changelog.** A user-visible change adds a line, in plain words, to the newest section of
-  `CHANGELOG.md` (the maintainer starts a new dated section when releasing).
+- **The changelog.** A change people will notice adds a line to the newest section of
+  `CHANGELOG.md`, written for the people using the app: what changed for them, in plain words, no
+  file names or code. Small fixes and tweaks don't need one. Changes not released yet gather under
+  an **Unreleased** heading at the top; to release, the maintainer renames it to the new version
+  (the date, `-2` and so on for a second release that day) and sets `version` in package.json to
+  match (a test checks they agree). The site serves the version as `/version.json`.
 - **All checks pass** (see [The checks](#the-checks)), including the one-file build.
 - **Small commits with clear messages** are easier to review than one large one.
 
@@ -316,9 +367,11 @@ have the right to contribute it.
 - **No ripped or "found" material**: no samples from commercial libraries or records, no presets
   copied from commercial products, and no artist or song names in anything we ship.
 - **The name and logo** aren't covered by the GPL; see `TRADEMARKS.md`.
-- **The website builds** (`build:single`, and `build:site` for fledgetone.com) leave the GPL
-  plugins out until the source is public; the full build (`build:full`) has them. Don't copy
-  `public/fledgetone-plugins/gpl/` anywhere a website build is published.
+- **The published build** (`build:site`, as Netlify runs it for fledgetone.com: the home page at
+  `/`, the app at `/app/`) has the GPL plugins, since this repository publishes the app's source
+  with them; `build:single` leaves them out and `build:full` has them. Anywhere you publish a build
+  with `public/fledgetone-plugins/gpl/`, publish its source too (a link to the repository at the
+  same commit will do).
 
 ## Being kind
 

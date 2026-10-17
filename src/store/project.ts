@@ -3,7 +3,7 @@ import type { RoomStyle } from '../audio/effects/roomIR';
 import { normalizeExpression } from './expression';
 import { normalizeNoteExpression } from './noteExpression';
 import { compSegments, normalizeTakes } from './takes';
-import { TOTAL_BARS, isAutomationParam } from './timelineTypes';
+import { REVERB_SEND_MAX, TOTAL_BARS, isAutomationParam } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
 import type { AutomationParam, CustomSample, EmbeddedSound, FrozenTrack, MasterFx, MasterSettings, Clip, CompSegment, InstrumentKey, LauncherSlot, LoopRegion, Marker, NoteEvent, Stinger, Track, TransitionRule, ProjectVideo, WamPlugin } from './timelineTypes';
 import { normalizeSynthPatch } from './synthPatch';
@@ -276,7 +276,7 @@ function parseTrack(v: unknown): Track {
       mid: isNum(eqObj.mid) ? eqObj.mid : 0,
       high: isNum(eqObj.high) ? eqObj.high : 0,
     },
-    reverbSend: isNum(v.reverbSend) ? Math.max(0, Math.min(1, v.reverbSend)) : 0,
+    reverbSend: isNum(v.reverbSend) ? Math.max(0, Math.min(REVERB_SEND_MAX, v.reverbSend)) : 0,
     ...(isNum(v.distance) && v.distance > 0 ? { distance: Math.min(1, v.distance) } : {}),
     delaySend: isNum(v.delaySend) ? Math.max(0, Math.min(1, v.delaySend)) : 0,
     fx: normalizeTrackFx(v.fx),

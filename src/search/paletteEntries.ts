@@ -75,7 +75,7 @@ const AUDIO_FIRST = 'Start the audio first (the START AUDIO button at the top ri
 type Item = Omit<PaletteEntry, 'id' | 'group'> & { id?: string };
 
 const TOOLS: Item[] = [
-  { title: 'New arrangement', keywords: 'new project blank start over template starter demo', detail: 'Start again from a blank timeline, the demo song or a genre starter.', run: () => ui().setDialog('new') },
+  { title: 'New arrangement', keywords: 'new project blank start over template starter demo', detail: 'Start again from a blank timeline, a demo song (Sunset Stroll or one of the Classics) or a genre starter.', run: () => ui().setDialog('new') },
   { title: 'Open project', keywords: 'open load file json import project', detail: 'Open a .fledgetone.json project file.', run: () => pickProjectFile() },
   { title: 'Save project', keywords: 'save download keep backup file json', detail: 'Save this arrangement as a project file, with its sounds (the first time, choose where).', run: async () => void (await press('#btn-save-project')) },
   { title: 'Save as…', keywords: 'save as copy location folder where file name', detail: 'Choose the folder and file name to save the project to.', run: async () => void (await import('../components/timeline/projectFile')).saveProjectAs() },
@@ -116,7 +116,7 @@ const TOOLS: Item[] = [
     void reveal('[aria-label="Export the markers for video editing software"]');
   } },
   { title: 'Video tools', keywords: 'video tools panel scoring picture film edit editor cuts dialogue hit points', detail: 'The reference video, its cuts and dialogue, hit points, markers for editors (the Video tab).', run: () => ui().openDock('video') },
-  { title: 'Menu bar', keywords: 'menu menus file edit song track tools view help', detail: 'Every tool, by where a DAW keeps it.', run: () => void reveal('#menu-file') },
+  { title: 'Menu bar', keywords: 'menu menus file edit song track plugins tools video game view learn help', detail: 'Every tool, by where a DAW keeps it.', run: () => void reveal('#menu-file') },
   { title: 'Tempo change', keywords: 'tempo change map ritardando accelerando glide ramp speed up slow down bpm automation', detail: 'Double-click the ruler\'s top row, or right-click the ruler: Tempo change here / Tempo glide to here.', run: () => 'Double-click the top row of the ruler for a tempo change there, or right-click the ruler for a jump or a glide.' },
   { title: 'Time signature', keywords: 'time signature meter 3/4 6/8 7/8 5/4 odd measure waltz', detail: 'Right-click the ruler: Time signature change here (or click the one at the start of the ruler\'s top row).', run: () => 'Right-click the ruler and choose Time signature change here, or click the time signature at the start of the ruler\'s top row.' },
   { title: 'Return (effect return)', keywords: 'return aux fx effect send reverb delay shared parallel', detail: 'A track for a shared effect; send any track to it.', run: () => void useTimelineStore.getState().addReturn(useTimelineStore.getState().selectedTrackId ?? undefined) },
@@ -125,7 +125,7 @@ const TOOLS: Item[] = [
   { title: 'Punch in / out', keywords: 'punch in out record replace drop in overdub range', detail: 'Record only between two points (the Record button\'s settings).', run: async () => void (await press('button[title^="Recording settings"]')) },
   { title: 'Takes and comping', keywords: 'takes comp comping take folder loop record best bits playlist lanes', detail: 'Loop passes as takes, then pick the best parts (Recording settings: Loop passes are takes).', run: async () => void (await press('button[title^="Recording settings"]')) },
   { title: 'Plugin instrument (WAM)', keywords: 'plugin wam web audio module vst instrument third party external synth', detail: 'Load a Web Audio Module instrument by its address.', run: () => useUiStore.getState().setPluginDialog({ trackId: null }) },
-  { title: 'Plugin effect (WAM)', keywords: 'plugin wam web audio module vst effect insert third party external fx', detail: 'Right-click a track: Add plugin effect (WAM)…', run: () => {
+  { title: 'Plugin effect (WAM)', keywords: 'plugin wam web audio module vst effect insert third party external fx', detail: 'Right-click a track: Add plugin from a web address (WAM)…', run: () => {
     const st = useTimelineStore.getState();
     const id = st.selectedTrackId;
     if (!id) return 'Select a track first (or right-click its name: Add plugin effect (WAM)…).';

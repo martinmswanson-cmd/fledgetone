@@ -10,7 +10,7 @@ import type { SynthPatch } from './synthPatch';
 import { clip, D, master, progression, project, snareRoll, track } from './starterKit';
 
 /**
- * More genre starters, for the styles the owner listens to most: artcore boss fights, bass music,
+ * More genre starters, for the most-requested styles: artcore boss fights, bass music,
  * internet rap and phonk, bedroom pop and jazz-pop, theatrical pop and two band styles. Melodies
  * are written for these starters (not copied from any song); progressions, tempos and grooves
  * follow each style's conventions.
@@ -1029,7 +1029,7 @@ function rage(): ProjectSnapshot {
 // ---------- Neo-soul (chord-first hip-hop) ----------
 
 function neoSoul(): ProjectSnapshot {
-  const rhodes = track('Rhodes', 'rhodes', {
+  const rhodes = track('E. Piano', 'rhodes', {
     volume: -12,
     reverbSend: 0.25,
     fx: { chorus: { on: true, rate: 0.8, mix: 0.3, depth: 0.4 }, filter: { on: true, cutoff: 6000 }, human: human(0.4) },
@@ -1092,7 +1092,7 @@ function neoSoul(): ProjectSnapshot {
 
 function bedroomPop(): ProjectSnapshot {
   const gtr = track('Guitar', 'cleanGuitar', { volume: -2, pan: -0.2, reverbSend: 0.2, fx: { chorus: { on: true, rate: 0.8, depth: 0.6, mix: 0.4 }, filter: { on: true, cutoff: 4500, slope: 12 }, human: human(0.3, 0.1) } });
-  const rhodes = track('Rhodes', 'rhodes', { volume: -10.5, pan: 0.2, fx: { filter: { on: true, cutoff: 3000 }, human: human(0.35) } });
+  const rhodes = track('E. Piano', 'rhodes', { volume: -10.5, pan: 0.2, fx: { filter: { on: true, cutoff: 3000 }, human: human(0.35) } });
   const bass = track('Bass', 'fingerBass', { volume: -7, fx: { compressor: { on: true, threshold: -20, ratio: 4 }, human: human(0.35) } });
   const sax = track('Sax', 'saxophone', { volume: -3, reverbSend: 0.3, delaySend: 0.2, fx: { filter: { on: true, cutoff: 3500 }, human: human(0.3, 0.2) } });
   const pad = track('Pad', 'wavetable', { volume: -16, reverbSend: 0.4, fx: { filter: { on: true, cutoff: 1500 } } });
@@ -1206,7 +1206,7 @@ function cityPop(): ProjectSnapshot {
   const drums = track('Drums', 'acousticKit', { volume: -6, fx: { compressor: glue(-20), human: human(0.25) } });
   const slap = track('Slap bass', 'slappedBass', { volume: -2, fx: { human: human(0.2) } });
   const ep = track('Electric grand', 'electricGrand', { volume: -4, reverbSend: 0.2, fx: { human: human(0.25) } });
-  const rhodes = track('Rhodes', 'rhodes', { volume: -12, reverbSend: 0.25, fx: { human: human(0.3) } });
+  const rhodes = track('E. Piano', 'rhodes', { volume: -12, reverbSend: 0.25, fx: { human: human(0.3) } });
   const cut = track('Cutting guitar', 'cleanGuitar', { volume: -10, pan: 0.3, fx: { chorus: { on: true, rate: 0.8, depth: 0.4, mix: 0.25 }, human: human(0.2, 0.1) } });
   const brass = track('Horns', 'brassSection', { volume: -7, reverbSend: 0.2, fx: { peq: peq(lowCut(100), highCut(10000)), human: human(0.25) } });
   const sax = track('Sax', 'saxophone', { volume: -3, reverbSend: 0.25, delaySend: 0.1, fx: { human: human(0.3, 0.2) } });

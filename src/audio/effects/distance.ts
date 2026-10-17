@@ -8,8 +8,11 @@
 /** How much more of a track reaches the hall at full distance (added to its reverb send) */
 export const DISTANCE_SEND = 0.35;
 
-/** The reverb send a track plays at: its send (setting or lane value) plus its distance's extra, 0..1. */
+/** The highest reverb send (300%: REVERB_SEND_MAX in timelineTypes.ts, kept here so Node can test this file alone) */
+const SEND_MAX = 3;
+
+/** The reverb send a track plays at: its send (setting or lane value) plus its distance's extra, 0 to 3 (300%). */
 export function roomSendLevel(send: number, distance: number): number {
   const d = Math.max(0, Math.min(1, distance || 0));
-  return Math.max(0, Math.min(1, (send || 0) + DISTANCE_SEND * d));
+  return Math.max(0, Math.min(SEND_MAX, (send || 0) + DISTANCE_SEND * d));
 }

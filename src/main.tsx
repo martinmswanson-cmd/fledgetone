@@ -1,18 +1,23 @@
 /**
  * App entry point. Picks how the live audio context buffers (playbackMode.ts) before anything
- * builds on it, then mounts the React app and starts the installed-app support (pwa.ts).
+ * builds on it, then mounts the React app (the full studio, or Pocket, the phone version: see
+ * pocketMode.ts; each loads only its own interface) and starts the installed-app support (pwa.ts).
  */
 // First: picks the live audio context's buffering before anything builds on it
 import './audio/playbackMode'
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.tsx'
 import { startPwa } from './pwa/pwa'
+import { wantsPocket } from './pocket/pocketMode'
+
+const Root = wantsPocket() ? lazy(() => import('./pocket/PocketApp')) : lazy(() => import('./App.tsx'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <Suspense fallback={null}>
+      <Root />
+    </Suspense>
   </StrictMode>,
 )
 

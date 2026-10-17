@@ -2,7 +2,7 @@
 
 ## About these terms
 
-Last updated: October 15, 2026
+Last updated: October 16, 2026
 
 These terms are an agreement between you and Martin Swanson, doing business as Two Birds Workshop ("we", "us" and "our"), about Fledgetone, the music app, and everything it exports. By using Fledgetone, you agree to them. If you don't agree, please don't use it.
 
@@ -42,6 +42,9 @@ Only if you have the right to. That's your responsibility, including recordings 
 **Is Fledgetone free? Will it stay free?**
 It's free. We may change, pause or stop parts of it at any time, so keep your own copies of anything important. (Section 9.)
 
+**Is the code open source?**
+Yes, under the GNU General Public License, version 3. The names "Fledgetone" and "Two Birds Workshop" and the logos aren't part of that licence, so a changed version needs its own name. (Section 9.)
+
 **Who can use it?**
 Anyone 13 or older. Under 18, read these terms with a parent or guardian. (Section 1.)
 
@@ -63,7 +66,7 @@ Fledgetone runs in your browser. Your songs are kept on your own computer, in yo
 
 ## 3. Files Fledgetone puts in your exports
 
-Some exports include files written by Fledgetone, not by you: the web player script, the Godot and Unity scripts and example scenes in game kits, manifests and similar files. You may use, copy, change and distribute those files in any project, including closed-source and paid games and apps, under any licence you choose, with no obligation to share your own code and no need to credit us. This permission applies to those exported files whatever applies to the rest of Fledgetone. The open-source libraries inside the web player keep their own permissive licences, whose notices travel with the file.
+Some exports include files written by Fledgetone, not by you: the web player script, the Godot and Unity scripts and example scenes in game kits, manifests and similar files. You may use, copy, change and distribute those files in any project, including closed-source and paid games and apps, under any licence you choose, with no obligation to share your own code and no need to credit us. This permission is in addition to the licence of Fledgetone's code (section 9) and overrides it for those exported files. The open-source libraries inside the web player keep their own permissive licences, whose notices travel with the file.
 
 ## 4. You're responsible for what you make and do
 
@@ -85,7 +88,7 @@ Fledgetone gives everyone the same starter songs, presets, patterns, sounds and 
 
 ## 6. The built-in sounds
 
-The recorded instruments, sound effects and built-in plugins come from free, openly licensed sources, listed in the guide's **Credits** section and in the open-source licences that come with the app. You may use them in your own music, including music you sell, as their licences allow. A few are under licences that ask for credit (for example Creative Commons Attribution): where a licence asks for credit, giving it is your responsibility. Those licences, not these terms, decide how the sounds themselves may be reused outside your music. We list the licences as their makers published them and can't promise they're correct.
+The recorded instruments, sound effects and built-in plugins come from free sources, almost all of them openly licensed, listed in the guide's **Credits** section and in the open-source licences that come with the app. A few recorded drum kits come from a collection that states no licence; the Credits say which, and which kits to use instead for a commercial release. You may use them in your own music, including music you sell, as their licences allow. A few are under licences that ask for credit (for example Creative Commons Attribution): where a licence asks for credit, giving it is your responsibility. Those licences, not these terms, decide how the sounds themselves may be reused outside your music. We list the licences as their makers published them and can't promise they're correct.
 
 ## 7. Plugins, downloads and anything else from other sites
 
@@ -106,7 +109,7 @@ Save your projects to files often, and keep copies of anything that matters to y
 
 ## 9. Fledgetone itself
 
-Fledgetone, including its code, design, sounds we made, names and logos, belongs to Martin Swanson, doing business as Two Birds Workshop. You may use it, free, to make your own music and sounds, and these terms don't give you any other rights to it: please don't copy, sell, host or share copies of the app, or make your own version of it, without our written permission. The names "Fledgetone" and "Two Birds Workshop" and their logos are ours: please don't use them in a way that suggests we made or endorse something we didn't. Copies of Fledgetone on other sites aren't ours, and we aren't responsible for them. The open-source software and the openly licensed sounds inside Fledgetone are covered by their own licences, listed in the app, and nothing in these terms limits what those licences allow.
+Fledgetone's code is free software under the GNU General Public License, version 3, which comes with it. That licence, not these terms, decides what you may do with the code (apart from the exported files in section 3), and nothing in these terms limits it. The names "Fledgetone" and "Two Birds Workshop" and their logos are ours and aren't part of that licence: please don't use them for a version of the app you've changed, or in a way that suggests we made or endorse something we didn't. Copies of Fledgetone on other sites aren't ours, and we aren't responsible for them. The open-source software and the openly licensed sounds inside Fledgetone are covered by their own licences, listed in the app.
 
 Fledgetone is free. We may change, pause or stop any part of it at any time, including removing features, instruments or sounds, without notice and without owing you anything.
 
@@ -136,7 +139,7 @@ If anyone makes a claim against us because of your work, the material you used, 
 
 ## 14. Ideas, feedback and contributions
 
-If you send us ideas, suggestions or bug reports (for example with **Report a problem**), we may use them to improve Fledgetone, and we won't owe you anything for them. A problem report includes only what you see in the report window before you send it.
+If you send us ideas, suggestions or bug reports (for example with **Report a problem**), we may use them to improve Fledgetone, and we won't owe you anything for them. A problem report includes only what you see in the report window before you send it. If you contribute code, sounds or other work to Fledgetone's project, you agree that it's shared under the project's licences (including the permission in section 3, for code that ends up in exported files), and that we owe you nothing for it.
 
 ## 15. The law that applies
 
