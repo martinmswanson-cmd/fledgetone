@@ -187,10 +187,6 @@ second update on the same day gets `-2`, and so on).
 
 - New real recordings: **Celesta (Real)** (every key, in stereo), **Recorder (Real)** (tenor, alto and soprano recorders as one instrument) and **Muted Trumpet (Real)** (harmon mute, soft and loud). The starters play them; the older Celesta, Recorder and Muted Trumpet move to the Retro group, so older songs sound as they did.
 
-## 2026.10.15-14 — A small thank-you
-
-- The terms' questions and answers now say how to credit Fledgetone if you'd like to (never required, always appreciated).
-
 ## 2026.10.15-13 — Terms: questions and answers
 
 - The terms of use start with plain questions and answers: owning and selling your music, credit, game kits in paid games, privacy, lost work, similar songs, content claims and more.
