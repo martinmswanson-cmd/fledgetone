@@ -391,7 +391,9 @@ if (installBtn && installNote) {
       ctx.setTransform(dpr(), 0, 0, dpr(), 0, 0);
       ctx.clearRect(0, 0, w, h);
       const span = LOOP * STEP;
-      for (let x0 = 0; x0 < w; x0 += span) for (const n of all()) drawNote(n, x0, now);
+      for (let x0 = 0; x0 < w; x0 += span) for (const n of notes.concat(melody)) drawNote(n, x0, now);
+      // A note you placed is where you put it, once (the written pattern repeats across wide screens)
+      for (const n of mine) drawNote(n, 0, now);
       for (const r of rings) {
         ctx.globalAlpha = r.life * 0.6 * dim(r.x, r.y); ctx.strokeStyle = r.color; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.arc(r.x, r.y, (1 - r.life) * 26 + 3, 0, Math.PI * 2); ctx.stroke();
@@ -413,7 +415,7 @@ if (installBtn && installNote) {
     const hit = (from, to) => {
       const span = LOOP * STEP;
       for (const n of all()) {
-        for (let x0 = 0; x0 < w; x0 += span) {
+        for (let x0 = 0; x0 < (n.placed ? 1 : w); x0 += span) {
           const x = x0 + n.step * STEP;
           if (x > from && x <= to) {
             n.glow = 1;
@@ -458,7 +460,7 @@ if (installBtn && installNote) {
       const at = (e) => {
         const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
         if (y < 20 || y > band - 60 || busy(e.target)) return null;
-        const step = Math.floor(x / STEP / 2) * 2 % LOOP, pitch = Math.round(HIGH - (y - 30) / lane);
+        const step = Math.floor(x / STEP / 2) * 2, pitch = Math.round(HIGH - (y - 30) / lane);
         return { step, x: Math.floor(x / STEP / 2) * 2 * STEP, pitch: clamp(pitch, LOW, HIGH) };
       };
       hero.addEventListener('pointermove', (e) => { hover = at(e); hero.classList.toggle('pencil', !!hover); if (reduce) draw(0); });
@@ -467,7 +469,7 @@ if (installBtn && installNote) {
         const n = at(e);
         if (!n || getSelection()?.toString()) return;
         if (mine.length >= 32) mine.shift();
-        mine.push({ step: n.step, pitch: n.pitch, len: 3.7, color: C.cyan, kind: 'lead', glow: 1, fade: 1 });
+        mine.push({ step: n.step, pitch: n.pitch, len: 3.7, color: C.cyan, kind: 'lead', glow: 1, fade: 1, placed: true });
         rings.push({ x: n.x, y: yOf(n.pitch) + lane / 2, color: C.cyan, life: 1 });
         if (reduce) draw(0);
       });
