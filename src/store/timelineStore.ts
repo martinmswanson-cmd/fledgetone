@@ -37,6 +37,7 @@
 import { defaultClipper, type ClipperSettings } from '../audio/effects/clipper';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { makeSpace } from './makeSpace';
+import { applyGlue, removeGlue } from './glueMix';
 import { busPresetById, busPresetFx, busPresetMembers, type BusPresetId } from './busPresets';
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
@@ -512,6 +513,8 @@ interface TimelineState {
   setTrackPan: (trackId: string, pan: number) => void;
   /** Make space (makeSpace.ts): EQ moves so the parts stop covering each other, one undo step. Returns how many tracks changed. */
   makeSpace: () => number;
+  /** Glue (glueMix.ts) on or off: the parts tied into one mix, or what it changed put back. Returns how many settings it changed (on) or 0. */
+  setGlueMix: (on: boolean) => number;
   /** How far back on the stage the track sits (Track.distance), 0 to 1 */
   setTrackDistance: (trackId: string, distance: number) => void;
   setTrackEq: (trackId: string, eq: Partial<TrackEq>) => void;
@@ -2016,6 +2019,20 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       if (!changes.length) return 0;
       set((st) => ({ tracks, ...pushPast(st) }));
       return changes.length;
+    },
+    setGlueMix: (on) => {
+      const s = get();
+      if (on === !!s.master.glueMix) return 0;
+      if (on) {
+        const { tracks, record } = applyGlue(s.tracks, s.clips, (name, members) => ({ ...makeTrack('bus', s.tracks, name), reverbSend: 0, color: members[0].color }));
+        set({ tracks, master: { ...s.master, glueMix: record }, ...pushPast(s) });
+        return record.changes.length;
+      }
+      const tracks = removeGlue(s.tracks, s.master.glueMix!);
+      const master = { ...s.master };
+      delete master.glueMix;
+      set({ tracks, master, ...(tracks.some((t) => t.id === s.selectedTrackId) ? {} : { selectedTrackId: null }), ...pushPast(s) });
+      return 0;
     },
     setTrackDistance: (id, distance) => updateTrack(id, () => ({ distance: Math.max(0, Math.min(1, distance)) })),
 

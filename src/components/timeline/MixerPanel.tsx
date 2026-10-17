@@ -176,6 +176,7 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
 
 export const MixerPanel: React.FC = () => {
   const tracks = useTimelineStore((st) => st.tracks);
+  const glued = useTimelineStore((st) => !!st.master.glueMix);
   const masterVolume = useAudioStore((st) => st.masterVolume);
   return (
     <div className="flex flex-col gap-2 p-3 text-xs text-forge-muted" role="region" aria-label="Mixer">
@@ -216,6 +217,28 @@ export const MixerPanel: React.FC = () => {
           Make space
         </button>
         <span className="text-[11px]">EQ moves that stop the parts covering each other (one undo step).</span>
+      </div>
+      <div className="flex items-center gap-2" data-search="glue">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={glued}
+          onClick={() => {
+            const s = useTimelineStore.getState();
+            if (glued) {
+              s.setGlueMix(false);
+              showToast('Glue off: what it changed is back as it was (anything you changed since stays).');
+            } else {
+              const made = s.setGlueMix(true);
+              showToast(made ? `Glue on: ${made} change${made === 1 ? '' : 's'} so the parts sound like one song. Switch it off any time to compare.` : 'Glue on, but there was nothing to change: the mix is already tied together.');
+            }
+          }}
+          className={`px-2 py-1 rounded border text-[11px] ${glued ? 'border-emerald-400 bg-emerald-500/20 text-emerald-200' : 'border-emerald-500/50 text-emerald-200 hover:bg-emerald-500/15'}`}
+          title="Ties the parts into one mix: room for each part, a drum bus and a music bus with gentle glue, the bass ducking under the kick, one shared room, and the parts spread a little apart. Switch it off to put it all back."
+        >
+          Glue {glued ? 'on' : 'off'}
+        </button>
+        <span className="text-[11px]">Makes the parts sound like one song instead of instruments side by side. Switch it off any time to compare.</span>
       </div>
       <p className="text-[11px]">Double-click a fader or knob to reset it. Each drag is one undo step. Click a track's name to open it in the Inspector (inserts, EQ, automation).</p>
     </div>

@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.16-14 — Glue
+
+- A new **Glue** switch in the Mixer, for songs that sound like instruments playing side by side rather than one song. It gives each part its own room in the mix, groups the drums and the music on their own buses, ducks the bass under the kick, puts everything in one shared space and spreads the parts out a little. Switch it off at any time, even days later, and your mix goes back to how it was, keeping anything you've changed by hand since.
+
 ## 2026.10.16-13 — More reverb
 
 - A track's reverb send now goes up to **200%**, and to **300%** with one click on the **300%** button beside it in the Track Inspector, for very wet and drenched sounds. The mixer's REV knobs go to 200% too.

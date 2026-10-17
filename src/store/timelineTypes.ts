@@ -443,6 +443,40 @@ export const GLUE_STYLE_IDS: readonly GlueStyle[] = ['standard', 'gentle', 'punc
  * compressor and the limiter (each can be bypassed with `on`, which takes it out of the chain
  * entirely), and the Level, a plain gain after them, just before the limiter.
  */
+/** Glue (store/glueMix.ts): what it changes on a track. */
+export type GlueField = 'pan' | 'reverbSend' | 'output' | 'peq' | 'pump';
+export const GLUE_FIELDS: readonly GlueField[] = ['pan', 'reverbSend', 'output', 'peq', 'pump'];
+
+export interface GlueChange {
+  trackId: string;
+  field: GlueField;
+  /** The value before (undefined: none, as for a track playing to the master) */
+  from: unknown;
+  /** The value glue set */
+  to: unknown;
+}
+
+/** What glue did, kept while it's on (see the header). */
+export interface GlueRecord {
+  /** The buses it made */
+  buses: string[];
+  changes: GlueChange[];
+}
+
+/** A saved record read back safely (anything malformed is dropped). */
+export function normalizeGlueRecord(raw: unknown): GlueRecord | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const r = raw as Record<string, unknown>;
+  const buses = Array.isArray(r.buses) ? r.buses.filter((b): b is string => typeof b === 'string') : [];
+  const changes = Array.isArray(r.changes)
+    ? r.changes.filter(
+        (c): c is GlueChange =>
+          typeof c === 'object' && c !== null && typeof (c as GlueChange).trackId === 'string' && GLUE_FIELDS.includes((c as GlueChange).field)
+      )
+    : [];
+  return { buses, changes };
+}
+
 export interface MasterSettings {
   /** The master compressor's style ('standard' is how every project sounded before there was a choice) */
   glue: GlueStyle;
@@ -476,6 +510,8 @@ export interface MasterSettings {
    * off (projects from before it existed, and every project that never switched it on).
    */
   clipper?: ClipperSettings;
+  /** Glue (store/glueMix.ts): present while it's on, with what it changed so switching it off can put it back. */
+  glueMix?: GlueRecord;
 }
 
 export const OTT_GAIN_MIN = -12;
@@ -524,6 +560,7 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
     // Absent in projects from before there was a Level: 0, as they sounded
     level: num(r.level, d.level, LEVEL_MIN, LEVEL_MAX),
     ...(r.clipper !== undefined ? { clipper: normalizeClipper(r.clipper) } : {}),
+    ...(r.glueMix !== undefined && normalizeGlueRecord(r.glueMix) ? { glueMix: normalizeGlueRecord(r.glueMix) } : {}),
   };
 }
 
