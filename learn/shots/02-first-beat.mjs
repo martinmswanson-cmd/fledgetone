@@ -24,7 +24,8 @@ async function grid(s) {
 
 /** A drum row's y in the piano roll. */
 async function rowY(s, name) {
-  const b = await s.page.locator('button', { hasText: new RegExp(`^${name}$`) }).last().boundingBox();
+  // (In STEPS a row's name has a ▶ before it: click it to hear the sound)
+  const b = await s.page.locator('button', { hasText: new RegExp(`^(▶\\s*)?${name}$`) }).last().boundingBox();
   return b.y + b.height / 2;
 }
 
@@ -48,7 +49,7 @@ async function steps(s, rows) {
 /** Scroll the drum rows to the bottom, so the Kick row shows whole. */
 async function kickInView(s) {
   await s.page.evaluate(() => {
-    const k = [...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Kick').pop();
+    const k = [...document.querySelectorAll('button')].filter((b) => b.textContent.replace('▶', '').trim() === 'Kick').pop();
     let e = k;
     while (e && !/(auto|scroll)/.test(getComputedStyle(e).overflowY)) e = e.parentElement;
     if (e) e.scrollTop = e.scrollHeight;

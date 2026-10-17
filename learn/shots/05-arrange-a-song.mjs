@@ -94,7 +94,8 @@ async function marker(s, bar, name) {
 /** Right-click the ruler on a bar line (its number's label starts 4 px after the line) */
 async function rulerMenu(s, bar) {
   const label = await s.page.getByText(`${bar}.1`, { exact: true }).first().boundingBox();
-  await s.page.mouse.click(label.x - 4, 250, { button: 'right' });
+  // (On the ruler itself, at the bar's line: where the ruler sits depends on the header above it)
+  await s.page.mouse.click(label.x - 4, label.y + label.height / 2, { button: 'right' });
   await s.wait(300);
 }
 
