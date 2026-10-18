@@ -132,6 +132,37 @@ h1 {
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* The headline's last word: a clip on a timeline lane, coloured by what it names, with trim handles;
+   a playhead sweeps across it and cuts to the next word */
+.cycle {
+  --w: var(--green);
+  position: relative; display: inline-block; vertical-align: baseline;
+  padding: 0 .36em .04em;
+  border: 2px solid color-mix(in srgb, var(--w) 60%, transparent);
+  border-radius: .14em;
+  background: color-mix(in srgb, var(--w) 14%, transparent);
+  overflow: hidden; white-space: nowrap; text-decoration: none; line-height: 1.12;
+  transition: width .45s cubic-bezier(.2, .8, .2, 1), border-color .35s, background-color .35s;
+}
+.cycle::before, .cycle::after {
+  content: ''; position: absolute; top: 24%; bottom: 24%; width: 2px; border-radius: 2px;
+  background: color-mix(in srgb, var(--w) 75%, #fff);
+}
+.cycle::before { left: 3px; }
+.cycle::after { right: 3px; }
+.cycle-word {
+  display: inline-block;
+  color: var(--w); -webkit-text-fill-color: var(--w);
+  transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .25s;
+}
+.cycle-word.out { transform: translateY(-70%); opacity: 0; }
+.cycle-word.in { transform: translateY(70%); opacity: 0; transition: none; }
+.cycle-head { position: absolute; top: 0; bottom: 0; left: -3px; width: 3px; background: var(--red); box-shadow: 0 0 10px var(--red); opacity: 0; }
+.cycle-head.sweep { animation: cycle-sweep .6s linear; }
+@keyframes cycle-sweep { 0% { left: -3px; opacity: 1; } 95% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+.h1-clip { display: block; margin-top: .12em; }
+.tagline { margin: 16px 0 0; text-wrap: balance; font: 500 clamp(13px, 1.6vw, 15px)/1.4 var(--mono); letter-spacing: .03em; color: var(--muted); }
 .lede { margin: 24px auto 0; max-width: 680px; font-size: clamp(17px, 2vw, 20px); color: #c4c4cc; font-weight: 300; }
 .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 34px; }
 .fineprint { color: var(--muted); font-size: 14px; margin: 16px 0 0; }

@@ -498,3 +498,62 @@ if (installBtn && installNote) {
     if (io) io.observe(box);
   }
 }
+
+// The headline's last word: every few seconds a playhead sweeps across its clip and cuts to the next
+// word (game, video, project...), the clip resizing to fit. Paused while the pointer or focus is on
+// the headline, while the tab is hidden or the hero is off screen, and never with reduced motion.
+const cycle = document.querySelector('.cycle');
+if (cycle) {
+  const words = JSON.parse(cycle.dataset.words || '[]');
+  const word = cycle.querySelector('.cycle-word');
+  const head = cycle.querySelector('.cycle-head');
+  const pad = () => { const cs = getComputedStyle(cycle); return parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth); };
+  const widthOf = (text) => {
+    const probe = word.cloneNode();
+    probe.textContent = text;
+    probe.className = 'cycle-word';
+    probe.style.cssText = 'position:absolute;visibility:hidden;left:0;top:0';
+    cycle.appendChild(probe);
+    const w = probe.getBoundingClientRect().width;
+    probe.remove();
+    return w;
+  };
+  let i = 0;
+  const fit = () => { cycle.style.width = `${widthOf(words[i][0]) + pad()}px`; };
+  const show = (k) => {
+    const [text, href, color] = words[k];
+    word.textContent = text;
+    cycle.href = href;
+    cycle.style.setProperty('--w', `var(--${color})`);
+  };
+  fit();
+  window.addEventListener('resize', fit);
+  if (!reduce && words.length > 1) {
+    let paused = false, inView = true;
+    const h1 = cycle.closest('h1');
+    h1.addEventListener('pointerenter', () => { paused = true; });
+    h1.addEventListener('pointerleave', () => { paused = false; });
+    const io = seen((e) => { inView = e.isIntersecting; }, 0);
+    io?.observe(h1);
+    const step = () => {
+      if (paused || !inView || document.hidden) return;
+      head.classList.remove('sweep');
+      void head.offsetWidth;
+      head.classList.add('sweep');
+      // The cut, as the playhead crosses the middle
+      setTimeout(() => {
+        word.classList.add('out');
+        setTimeout(() => {
+          i = (i + 1) % words.length;
+          show(i);
+          fit();
+          word.classList.remove('out');
+          word.classList.add('in');
+          void word.offsetWidth;
+          word.classList.remove('in');
+        }, 260);
+      }, 300);
+    };
+    setInterval(step, 2800);
+  }
+}

@@ -84,11 +84,16 @@
           <span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
           Music for games and video <span class="eyebrow-wip">Work in progress</span>
         </p>
-        <h1>Make music in your browser.</h1>
+        <!-- The last word is a clip on a timeline: a playhead cuts it and the next word comes in (main.js) -->
+        <h1>
+          <span class="sr-only">Make music for your game, video, project or app.</span>
+          <span aria-hidden="true">Make music for your</span>
+          <span class="h1-clip" aria-hidden="true"><a class="cycle" href="#games" aria-hidden="true" tabindex="-1" style="--w: var(--green)" data-words='[["game","#games","green"],["video","#video","purple"],["project","/app/","cyan"],["app","#games","amber"],["short film","#video","red"],["podcast","#cut","green"],["trailer","#cut","purple"],["boss fight","#games","red"]]'><span class="cycle-word">game</span><span class="cycle-head"></span></a></span>
+        </h1>
+        <p class="tagline">Works in your web browser or as an app.</p>
         <p class="lede">
           Fledgetone is a music studio that runs in a web page. Write songs, score video, and
-          export music for games. Use it in a browser tab or install it as an app. There's no
-          account to make, and your songs stay on your computer.
+          export music for games. There's no account to make, and your songs stay on your computer.
         </p>
         <div class="hero-cta">
           <a class="btn btn-primary" href="/app/">
@@ -228,7 +233,7 @@
         </div>
 
         <!-- Cut to length: the rows are what the planner (src/store/cutToLength.ts) picks for this example song -->
-        <div class="cutdown reveal">
+        <div id="cut" class="cutdown reveal">
           <div class="scored-head">
             <p class="show-eyebrow">Cut to length</p>
             <h3>One song, every length</h3>
