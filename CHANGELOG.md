@@ -8,6 +8,7 @@ second update on the same day gets `-2`, and so on).
 
 - **Showcase video** (File › **Showcase video…**, or Export › Video): an MP4 of your song with every note on a piano roll that scrolls past a red playhead, each note lighting up as it plays, as on fledgetone.com. The tracks playing light up above it.
 - Videos now come in two shapes: **Widescreen** (1920×1080) for YouTube and **Portrait** (1080×1920) for TikTok, Shorts and Reels, both in full HD.
+- Big songs read clearly: a **lane per track** for a big arrangement (or one roll, your choice), doubled parts no longer merge into one note, and notes hit with small **sparkles** (or rings, or just the glow) that shrink as the song gets busier.
 
 ## 2026.10.16-16 — Game tools up front
 

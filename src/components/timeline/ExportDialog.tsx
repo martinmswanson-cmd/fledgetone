@@ -38,6 +38,7 @@ import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encode
 import type { AudioFormat } from '../../audio/encoders';
 import { isSkin, SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
 import { canExportVideo, renderVideo, VIDEO_FPS, VIDEO_SIZES, type VideoShape } from '../../audio/videoExport';
+import type { ShowcaseHits, ShowcaseLayout } from '../../audio/showcaseDraw';
 import { showcaseData } from '../../store/showcase';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
 import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
@@ -66,9 +67,12 @@ interface ExportSettings {
   /** Video: the picture (Showcase, the notes on a piano roll, or a spectrum style) and its shape */
   picture: 'showcase' | SkinId;
   shape: VideoShape;
+  /** Showcase: the tracks on one roll or a lane each (Auto: lanes for a big arrangement), and what a hit note does */
+  showcaseLayout: ShowcaseLayout;
+  showcaseHits: ShowcaseHits;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide' };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', showcaseLayout: 'auto', showcaseHits: 'sparkles' };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -95,6 +99,8 @@ function loadSettings(): ExportSettings {
       loopFile: typeof r.loopFile === 'boolean' ? r.loopFile : d.loopFile,
       picture: r.picture === 'showcase' || isSkin(r.picture) ? r.picture : d.picture,
       shape: oneOf(r.shape, ['wide', 'tall'] as const, d.shape),
+      showcaseLayout: oneOf(r.showcaseLayout, ['auto', 'together', 'lanes'] as const, d.showcaseLayout),
+      showcaseHits: oneOf(r.showcaseHits, ['sparkles', 'rings', 'glow'] as const, d.showcaseHits),
     };
   } catch {
     return d;
@@ -407,6 +413,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           skin: settings.picture === 'showcase' ? 'bars' : settings.picture,
           shape: settings.shape,
           showcase,
+          showcaseLook: { layout: settings.showcaseLayout, hits: settings.showcaseHits },
           channels,
           sampleRate: audio.sampleRate,
           title: projectName,
@@ -630,6 +637,36 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   ))}
                 </select>
               </label>
+            )}
+            {!(refVideo && useFootage) && settings.picture === 'showcase' && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-forge-text">
+                <label className="flex items-center gap-2">
+                  Tracks
+                  <select
+                    value={settings.showcaseLayout}
+                    onChange={(e) => update({ showcaseLayout: e.target.value as ShowcaseLayout })}
+                    className="h-7 bg-forge-bg border border-forge-border rounded px-1"
+                    title="One roll: every track's notes together, like a piano roll. A lane per track: each track in its own band, so a big arrangement stays readable. Auto: lanes from 7 tracks."
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="together">One roll</option>
+                    <option value="lanes">A lane per track</option>
+                  </select>
+                </label>
+                <label className="flex items-center gap-2">
+                  Hits
+                  <select
+                    value={settings.showcaseHits}
+                    onChange={(e) => update({ showcaseHits: e.target.value as ShowcaseHits })}
+                    className="h-7 bg-forge-bg border border-forge-border rounded px-1"
+                    title="What a note does as the playhead reaches it, besides lighting up"
+                  >
+                    <option value="sparkles">Sparkles</option>
+                    <option value="rings">Rings</option>
+                    <option value="glow">Just the glow</option>
+                  </select>
+                </label>
+              </div>
             )}
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />

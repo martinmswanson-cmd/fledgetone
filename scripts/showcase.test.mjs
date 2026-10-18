@@ -60,3 +60,20 @@ test('firstFrom finds the first note starting at or after a time', () => {
   assert.equal(firstFrom(notes, 9), 5);
   assert.equal(firstFrom(notes, -1), 0);
 });
+
+test('doubled parts share their row, and a big arrangement gets a lane per track', async () => {
+  const { prepare, showcaseLayoutFor } = await import('../src/audio/showcaseDraw.ts');
+  const tracks = [track('cellos', 'cello'), track('basses', 'contrabass'), track('flute', 'flute')];
+  // The cellos and basses play the same C3 at once; the flute plays alone
+  const clips = [clip('a', 'cellos', 1, 1, [note('C3', 0, '2n')]), clip('b', 'basses', 1, 1, [note('C3', 0, '4n')]), clip('c', 'flute', 1, 1, [note('C3', 0.75, '4n')])];
+  const d = showcaseData(tracks, clips, 1, 2, toSeconds);
+  const p = prepare(d);
+  const of = (name) => d.notes.findIndex((n) => d.tracks[n.track].name === name);
+  assert.deepEqual([p.slots[of('cellos')], p.slots[of('basses')], p.slots[of('flute')]], [2, 2, 1]);
+  assert.notEqual(p.slot[of('cellos')], p.slot[of('basses')]);
+  assert.equal(showcaseLayoutFor(d, 'auto'), 'together');
+  assert.equal(showcaseLayoutFor(d, 'lanes'), 'lanes');
+  const big = { ...d, tracks: Array.from({ length: 7 }, (_, i) => ({ name: `t${i}`, color: '#fff' })) };
+  assert.equal(showcaseLayoutFor(big, 'auto'), 'lanes');
+  assert.equal(showcaseLayoutFor(big, 'together'), 'together');
+});

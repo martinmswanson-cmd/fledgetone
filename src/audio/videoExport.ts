@@ -2,7 +2,7 @@ import { BufferTarget, EncodedAudioPacketSource, EncodedPacket, EncodedVideoPack
 import { drawSpectrum, type SkinId, type SkinMemory } from './spectrumSkins';
 import { openVideo, seekVideo } from '../store/videoStore';
 import fledgetoneLogo from '../assets/fledgetone.png';
-import { drawShowcase } from './showcaseDraw';
+import { drawShowcase, type ShowcaseLook } from './showcaseDraw';
 import type { ShowcaseData } from '../store/showcase';
 
 /**
@@ -55,6 +55,8 @@ export interface VideoOptions {
   shape?: VideoShape;
   /** The song's notes: draws the Showcase piano roll in place of the spectrum */
   showcase?: ShowcaseData;
+  /** How Showcase lays out the tracks and lights the notes it hits */
+  showcaseLook?: ShowcaseLook;
 }
 
 /** True where this browser can make a video at all (WebCodecs in a secure page). */
@@ -322,7 +324,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
 
     if (opts.showcase) {
       // The notes on a piano roll that scrolls past the playhead (showcaseDraw.ts)
-      drawShowcase(g, opts.showcase, picture, t, { secondsShown: tall ? 4.5 : 8, headAt: tall ? 0.3 : 0.28 });
+      drawShowcase(g, opts.showcase, picture, t, { secondsShown: tall ? 4.5 : 8, headAt: tall ? 0.3 : 0.28, look: opts.showcaseLook });
     } else {
       // Spectrum: LED bars or one of the characters (spectrumSkins.ts), as in the Mixer
       drawSpectrum(g, opts.skin ?? 'bars', picture, spectrum(t), t, skinMemory);
