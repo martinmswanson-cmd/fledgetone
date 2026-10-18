@@ -40,7 +40,7 @@ const write = (t: Track, field: GlueField, v: unknown): Track => {
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** Sound effects, risers and the like take no part (they're not part of the band). */
-function isEffect(t: Track): boolean {
+export function isEffect(t: Track): boolean {
   const info = INSTRUMENTS[t.instrumentKey];
   return !info || info.kind === 'fx' || info.kind === 'audio' || info.category === 'Sound Effects' || info.category === 'FX';
 }

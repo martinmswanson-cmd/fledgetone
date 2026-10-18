@@ -39,6 +39,7 @@ import type { AudioFormat } from '../../audio/encoders';
 import { isSkin, SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
 import { canExportVideo, renderVideo, VIDEO_FPS, VIDEO_SIZES, type VideoShape } from '../../audio/videoExport';
 import type { ShowcaseHits, ShowcaseLayout } from '../../audio/showcaseDraw';
+import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } from '../../store/songVersions';
 import { showcaseData } from '../../store/showcase';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
 import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
@@ -70,9 +71,12 @@ interface ExportSettings {
   /** Showcase: the tracks on one roll or a lane each (Auto: lanes for a big arrangement), and what a hit note does */
   showcaseLayout: ShowcaseLayout;
   showcaseHits: ShowcaseHits;
+  /** Mixdown: also the version without the lead melody, and the one without drums (songVersions.ts) */
+  underscore: boolean;
+  noDrums: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', showcaseLayout: 'auto', showcaseHits: 'sparkles' };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', showcaseLayout: 'auto', showcaseHits: 'sparkles', underscore: false, noDrums: false };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -101,6 +105,8 @@ function loadSettings(): ExportSettings {
       shape: oneOf(r.shape, ['wide', 'tall'] as const, d.shape),
       showcaseLayout: oneOf(r.showcaseLayout, ['auto', 'together', 'lanes'] as const, d.showcaseLayout),
       showcaseHits: oneOf(r.showcaseHits, ['sparkles', 'rings', 'glow'] as const, d.showcaseHits),
+      underscore: typeof r.underscore === 'boolean' ? r.underscore : d.underscore,
+      noDrums: typeof r.noDrums === 'boolean' ? r.noDrums : d.noDrums,
     };
   } catch {
     return d;
@@ -315,7 +321,20 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
   const suffix = range === 'song' || game ? '' : ending === 'seamless' ? ' (seamless loop)' : ' (loop)';
   const fileBase = `${safeFileName(projectName)}${suffix}`;
-  const fileName = game ? `${fileBase} ${stemsOnly ? 'layers' : 'game music'}.zip` : stemsOnly ? `${fileBase} stems.zip` : videoOut ? `${fileBase}.mp4` : `${fileBase}.${ext}`;
+  // Versions of a mixdown: the full mix, and the others asked for that this song can make
+  const leftOut = useMemo(() => versionLeavesOut(tracks, clips), [tracks, clips]);
+  const mixdown = !game && !stemsOnly && !videoOut;
+  const versions: SongVersion[] = mixdown ? ['full', ...(settings.underscore && leftOut.underscore.length ? (['underscore'] as const) : []), ...(settings.noDrums && leftOut.noDrums.length ? (['noDrums'] as const) : [])] : ['full'];
+  const versionFile = (v: SongVersion) => (v === 'full' ? `${fileBase}.${ext}` : `${fileBase} (${VERSION_LABELS[v].toLowerCase()}).${ext}`);
+  const fileName = game
+    ? `${fileBase} ${stemsOnly ? 'layers' : 'game music'}.zip`
+    : stemsOnly
+      ? `${fileBase} stems.zip`
+      : videoOut
+        ? `${fileBase}.mp4`
+        : versions.length > 1
+          ? `${fileBase} versions.zip`
+          : `${fileBase}.${ext}`;
   const introFrames = Math.round(barToSeconds(loop.inBar, tempo) * exportRate);
   const tail = ringOutSeconds(masterFx, tracks, bpm);
 
@@ -438,25 +457,42 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         controller.signal.throwIfAborted();
         downloadBlob(zip, fileName);
       } else {
-        // A ring-out is cut where its tails die away once it has its final level (see keepRingOut)
-        const mixOpts = { ...opts, keepRingOut: settings.normalize };
-        let audio = await renderArrangement(mixOpts, (progress) => setStatus({ kind: 'rendering', fileName, progress, detail: '' }));
-        controller.signal.throwIfAborted();
-        setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Measuring loudness' });
-        let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
-        let note = '';
-        if (settings.normalize) {
-          setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Matching the loudness' });
-          const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp);
-          reading = reached.reading;
-          audio = cutRingOut(audio, mixOpts);
-          if (reached.shortDb > 0.3 && reached.capped)
-            note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the master OTT and raise its Out gain`;
-          else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;
+        // Each version (the full mix, and the underscore or no-drums ones asked for) rendered the same way
+        const made: Array<{ name: string; data: Blob; label: string; reading: Awaited<ReturnType<typeof measureLoudness>>; note: string }> = [];
+        for (const [vi, version] of versions.entries()) {
+          const many = versions.length > 1;
+          const label = VERSION_LABELS[version];
+          const at = (f: number) => (vi + f) / versions.length;
+          const detail = (what: string) => (many ? `${label}${what ? `: ${what}` : ''}` : what);
+          // A ring-out is cut where its tails die away once it has its final level (see keepRingOut)
+          const mixOpts = { ...opts, tracks: versionTracks(opts.tracks, opts.clips, version) ?? opts.tracks, keepRingOut: settings.normalize };
+          let audio = await renderArrangement(mixOpts, (progress) => setStatus({ kind: 'rendering', fileName, progress: at(progress * 0.95), detail: detail('') }));
+          controller.signal.throwIfAborted();
+          setStatus({ kind: 'rendering', fileName, progress: at(0.95), detail: detail('Measuring loudness') });
+          let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
+          let note = '';
+          if (settings.normalize) {
+            setStatus({ kind: 'rendering', fileName, progress: at(0.97), detail: detail('Matching the loudness') });
+            const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp);
+            reading = reached.reading;
+            audio = cutRingOut(audio, mixOpts);
+            if (reached.shortDb > 0.3 && reached.capped)
+              note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the master OTT and raise its Out gain`;
+            else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;
+          }
+          if (format !== 'wav') setStatus({ kind: 'rendering', fileName, progress: at(0.99), detail: detail(`Encoding ${format.toUpperCase()}`) });
+          const data = format === 'wav' ? encodeWav(audio, settings.bitDepth, exportCues(opts), wholeFileLoop(opts, audio.length)) : await encodeAudio(channelsOf(audio), audio.sampleRate, format, encodeOpts);
+          made.push({ name: versionFile(version), data, label, reading, note });
         }
-        if (format !== 'wav') setStatus({ kind: 'rendering', fileName, progress: 1, detail: `Encoding ${format.toUpperCase()}` });
-        downloadBlob(format === 'wav' ? encodeWav(audio, settings.bitDepth, exportCues(opts), wholeFileLoop(opts, audio.length)) : await encodeAudio(channelsOf(audio), audio.sampleRate, format, encodeOpts), fileName);
-        showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}`);
+        if (made.length === 1) {
+          const [m] = made;
+          downloadBlob(m.data, fileName);
+          showToast(`Exported ${fileName}: ${formatLufs(m.reading.integrated)}, peak ${formatDbtp(m.reading.truePeakMax)}${m.note}`);
+        } else {
+          setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
+          downloadBlob(await createZip(made.map((m) => ({ name: m.name, data: m.data }))), fileName);
+          showToast(`Exported ${fileName}: ${made.map((m) => `${m.label.toLowerCase()} ${formatLufs(m.reading.integrated)}`).join(', ')}`);
+        }
       }
       onClose();
     } catch (err) {
@@ -683,6 +719,45 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
               {game ? 'An intro file and a loop file of everything that plays, in one .zip.' : `One stereo ${format.toUpperCase()} of everything that plays.`} When it's done, its loudness and true peak
               show at the bottom of the screen.
             </p>
+            {!game && (
+              <div className="flex flex-col gap-1.5">
+                <label className={`flex items-start gap-2 text-forge-text ${leftOut.underscore.length ? 'cursor-pointer' : 'opacity-50'}`}>
+                  <input
+                    type="checkbox"
+                    checked={settings.underscore && leftOut.underscore.length > 0}
+                    disabled={!leftOut.underscore.length}
+                    onChange={(e) => update({ underscore: e.target.checked })}
+                    className="mt-0.5 accent-cyan-400"
+                    data-testid="version-underscore"
+                  />
+                  <span>
+                    Underscore version too
+                    <span className="block text-forge-muted">
+                      {leftOut.underscore.length
+                        ? `Without ${leftOut.underscore.map((t) => t.name).join(', ')}: to sit under someone talking in a video or podcast.`
+                        : 'No lead melody found to leave out (name a track "Lead" to choose one).'}
+                    </span>
+                  </span>
+                </label>
+                <label className={`flex items-start gap-2 text-forge-text ${leftOut.noDrums.length ? 'cursor-pointer' : 'opacity-50'}`}>
+                  <input
+                    type="checkbox"
+                    checked={settings.noDrums && leftOut.noDrums.length > 0}
+                    disabled={!leftOut.noDrums.length}
+                    onChange={(e) => update({ noDrums: e.target.checked })}
+                    className="mt-0.5 accent-cyan-400"
+                    data-testid="version-no-drums"
+                  />
+                  <span>
+                    No-drums version too
+                    <span className="block text-forge-muted">
+                      {leftOut.noDrums.length ? `Without ${leftOut.noDrums.map((t) => t.name).join(', ')}: for a calmer moment.` : 'This song has no drums to leave out.'}
+                    </span>
+                  </span>
+                </label>
+                {versions.length > 1 && <span className="text-forge-muted">The versions come in one .zip, each its own file.</span>}
+              </div>
+            )}
             <label className="flex items-start gap-2 cursor-pointer text-forge-text">
               <input type="checkbox" checked={settings.normalize} onChange={(e) => update({ normalize: e.target.checked })} className="mt-0.5 accent-cyan-400" />
               <span>

@@ -4,6 +4,11 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.18-2 — For streamers and video makers
+
+- **Channel kit** (File › **Channel kit (streams, videos)…**): one song made into a .zip of everything a stream or channel needs: an intro and an outro, seamless loops for Starting soon, Be right back and Ending, three alerts in the song's key and a transition whoosh, all at one loudness, with a README on using them in OBS.
+- **Underscore and no-drums versions**: a mixdown can now come with a version without the lead melody (to sit under someone talking) and one without the drums, in one .zip.
+
 ## 2026.10.18 — Showcase videos
 
 - **Showcase video** (File › **Showcase video…**, or Export › Video): an MP4 of your song with every note on a piano roll that scrolls past a red playhead, each note lighting up as it plays, as on fledgetone.com. The tracks playing light up above it.

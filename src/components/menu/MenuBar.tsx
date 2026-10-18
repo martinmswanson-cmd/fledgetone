@@ -108,6 +108,7 @@ const MENUS: MenuDef[] = [
         }),
         divider: true,
       },
+      { label: 'Channel kit (streams, videos)…', run: () => ui().setDialog('channelKit'), title: 'An intro, an outro, loops for your stream’s screens, alerts and a transition whoosh, all from this song, in one .zip' },
       { label: 'Beat store package…', run: () => ui().setDialog('beatStore'), title: 'A tagged MP3 preview, the WAV, the stems and a cover in one .zip, named with the tempo and key' },
       { label: 'Share…', run: () => ui().setDialog('share') },
       { label: 'Cut song to length…', run: () => ui().setDialog('cut'), divider: true },
