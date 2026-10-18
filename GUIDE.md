@@ -1064,7 +1064,14 @@ The **Key** comes from the notes (you can pick another, or leave it out of the n
 
 ### Video (MP4)
 
-Choose **Export: Video (MP4)** to turn the song (or the loop region) into a video for YouTube, socials or a game's trailer: 1280×720 at 30 frames a second, with the mix as its sound and a visualizer as its picture. It shows the project's name, a spectrum that moves with the music, the whole song's waveform with a playhead, the section you're in (from your markers) and the time. It's made faster than real time: a 30-second song takes about 20 seconds. **Visualizer style** draws the spectrum in any of the Mixer's spectrum styles (LED bars, Neon city, Grid terrain, Radar HUD, Data rain, Holo pigeons). **Match a loudness target** turns it up or down to a target (YouTube plays at -14 LUFS). With a reference video loaded, **Put the music on** *your video* uses your video as the picture instead (see Scoring to a video).
+Choose **Export: Video (MP4)** to turn the song (or the loop region) into a video for YouTube, TikTok, socials or a game's trailer, at 30 frames a second with the mix as its sound. Pick its **Shape**: **Widescreen 16:9** (1920×1080, for YouTube, a trailer or a website) or **Portrait 9:16** (1080×1920, for TikTok, YouTube Shorts and Instagram Reels). Every video shows the project's name, the whole song's waveform with a playhead, the section you're in (from your markers), the time, and *made with fledgetone.com*. It's made faster than real time: a 30-second song takes about 20 seconds.
+
+**Picture** chooses what fills the middle:
+
+- **Showcase: the notes playing** (File › **Showcase video…** opens Export set to it, or search *showcase*): every note of the song on a piano roll that scrolls past a red playhead. Each note lights up and sends out a ring as the playhead reaches it, glows while it's held and dims once it's played, in its track's colour; the drums have a band of their own under the pitched parts. Above the roll, the tracks that play, each name lighting up while its track plays. Only what you hear is shown: muted tracks (and tracks a solo leaves out) are left out, and notes hidden by a trimmed clip edge aren't drawn. Portrait shows less of the song at once (about 4½ seconds across, widescreen about 8), so the notes stay big on a phone.
+- **Spectrum** in any of the Mixer's spectrum styles (LED bars, Neon city, Grid terrain, Radar HUD, Data rain, Holo pigeons), moving with the music.
+
+**Match a loudness target** turns it up or down to a target (YouTube plays at -14 LUFS). With a reference video loaded, **Put the music on** *your video* uses your video as the picture instead (see Scoring to a video); in Portrait it's fitted into the tall frame.
 
 Videos need Chrome or Edge (or another browser with WebCodecs) on a site served over https. On Windows and Mac they're H.264 with AAC sound, which plays everywhere; where the browser doesn't have those, they're VP9 or AV1 with Opus sound, which browsers, VLC, YouTube and Discord play but some older players don't.
 

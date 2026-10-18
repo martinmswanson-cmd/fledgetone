@@ -4,6 +4,11 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.18 — Showcase videos
+
+- **Showcase video** (File › **Showcase video…**, or Export › Video): an MP4 of your song with every note on a piano roll that scrolls past a red playhead, each note lighting up as it plays, as on fledgetone.com. The tracks playing light up above it.
+- Videos now come in two shapes: **Widescreen** (1920×1080) for YouTube and **Portrait** (1080×1920) for TikTok, Shorts and Reels, both in full HD.
+
 ## 2026.10.16-16 — Game tools up front
 
 - A **Game** button at the top right opens the game tools (states, intensity, stingers and the game kit export) in one click.

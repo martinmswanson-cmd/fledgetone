@@ -99,7 +99,15 @@ const MENUS: MenuDef[] = [
       { label: 'Open…', shortcut: `${MOD_KEY}O`, run: pickProjectFile },
       { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
       { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },
-      { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export'), divider: true },
+      { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export') },
+      {
+        label: 'Showcase video (YouTube, TikTok)…',
+        run: () => void import('../timeline/ExportDialog').then(({ presetShowcaseExport }) => {
+          presetShowcaseExport('wide');
+          ui().setDialog('export');
+        }),
+        divider: true,
+      },
       { label: 'Beat store package…', run: () => ui().setDialog('beatStore'), title: 'A tagged MP3 preview, the WAV, the stems and a cover in one .zip, named with the tempo and key' },
       { label: 'Share…', run: () => ui().setDialog('share') },
       { label: 'Cut song to length…', run: () => ui().setDialog('cut'), divider: true },

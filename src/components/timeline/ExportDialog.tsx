@@ -36,8 +36,9 @@ import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../au
 import { createZip } from '../../audio/zip';
 import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encoders';
 import type { AudioFormat } from '../../audio/encoders';
-import { SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
-import { canExportVideo, renderVideo, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '../../audio/videoExport';
+import { isSkin, SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
+import { canExportVideo, renderVideo, VIDEO_FPS, VIDEO_SIZES, type VideoShape } from '../../audio/videoExport';
+import { showcaseData } from '../../store/showcase';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
 import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
 import type { Track } from '../../store/timelineTypes';
@@ -62,9 +63,12 @@ interface ExportSettings {
   format: AudioFormat;
   /** Intro + loop as WAV: also one file holding both, with the loop marked in it (Godot, samplers). */
   loopFile: boolean;
+  /** Video: the picture (Showcase, the notes on a piano roll, or a spectrum style) and its shape */
+  picture: 'showcase' | SkinId;
+  shape: VideoShape;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide' };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -89,9 +93,24 @@ function loadSettings(): ExportSettings {
       target: oneOf(r.target, LOUDNESS_TARGETS.map((t) => t.id), d.target),
       format: oneOf(r.format, AUDIO_FORMATS, d.format),
       loopFile: typeof r.loopFile === 'boolean' ? r.loopFile : d.loopFile,
+      picture: r.picture === 'showcase' || isSkin(r.picture) ? r.picture : d.picture,
+      shape: oneOf(r.shape, ['wide', 'tall'] as const, d.shape),
     };
   } catch {
     return d;
+  }
+}
+
+/**
+ * Open Export set up for a Showcase video (the notes playing on a piano roll), of the whole song,
+ * in the shape asked for: what File › Showcase video… and the search do. Other settings are kept.
+ */
+export function presetShowcaseExport(shape: VideoShape = 'wide'): void {
+  const s = loadSettings();
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...s, range: 'song', what: 'video', picture: 'showcase', shape }));
+  } catch {
+    // Storage blocked: the dialog opens with its usual settings
   }
 }
 
@@ -237,7 +256,6 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const videoStart = useVideoStore((st) => st.start);
   const [useFootage, setUseFootage] = useState(true);
   const [keepVideoSound, setKeepVideoSound] = useState(false);
-  const [skin, setSkin] = useState<SkinId>('bars');
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const abortRef = useRef<AbortController | null>(null);
   // A render still going when the dialog goes away is stopped
@@ -382,9 +400,13 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           setStatus({ kind: 'rendering', fileName, progress: 0.3, detail: "Reading the video's sound" });
           await mixVideoSound(refVideo!.file, channels, audio.sampleRate, footage.offset);
         }
+        // Showcase: the notes of the range, timed by the song's tempo map
+        const showcase = !footage && settings.picture === 'showcase' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo)) : undefined;
         const blob = await renderVideo({
           footage,
-          skin,
+          skin: settings.picture === 'showcase' ? 'bars' : settings.picture,
+          shape: settings.shape,
+          showcase,
           channels,
           sampleRate: audio.sampleRate,
           title: projectName,
@@ -569,23 +591,41 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 )}
               </div>
             )}
+            <Segmented<VideoShape>
+              label="Shape"
+              value={settings.shape}
+              onChange={(value) => update({ shape: value })}
+              options={[
+                { value: 'wide', label: 'Widescreen 16:9', title: '1920×1080: YouTube, a game trailer, a website' },
+                { value: 'tall', label: 'Portrait 9:16', title: '1080×1920: TikTok, YouTube Shorts, Instagram Reels' },
+              ]}
+            />
             {refVideo && useFootage ? (
               <p>
-                An MP4 video ({VIDEO_WIDTH}×{VIDEO_HEIGHT}, {VIDEO_FPS} fps): your video with the mix as its sound, where it sits on the timeline. It's drawn faster than real time.
+                An MP4 video ({VIDEO_SIZES[settings.shape].w}×{VIDEO_SIZES[settings.shape].h}, {VIDEO_FPS} fps): your video with the mix as its sound, where it sits on the timeline{settings.shape === 'tall' ? ', fitted into the tall frame' : ''}. It's drawn faster than real time.
               </p>
             ) : (
               <p>
-                An MP4 video ({VIDEO_WIDTH}×{VIDEO_HEIGHT}, {VIDEO_FPS} fps) of the mix with a visualizer: the project's name, a spectrum that moves with the music, the whole song's waveform with a
-                playhead, the section from your markers, and the time. Ready for YouTube, socials or a game's trailer. It's drawn faster than real time.
+                An MP4 video ({VIDEO_SIZES[settings.shape].w}×{VIDEO_SIZES[settings.shape].h}, {VIDEO_FPS} fps) of the mix: the project's name,{' '}
+                {settings.picture === 'showcase'
+                  ? 'the notes of every track on a piano roll that scrolls past the playhead, each lighting up as it plays, the tracks playing'
+                  : 'a spectrum that moves with the music'}
+                , the whole song's waveform with a playhead, the section from your markers, and the time. Ready for {settings.shape === 'tall' ? 'TikTok, Shorts and Reels' : 'YouTube, socials or a game\'s trailer'}. It's drawn faster than real time.
               </p>
             )}
             {!(refVideo && useFootage) && (
               <label className="flex items-center gap-2 text-forge-text">
-                Visualizer style
-                <select value={skin} onChange={(e) => setSkin(e.target.value as SkinId)} className="h-7 bg-forge-bg border border-forge-border rounded px-1" title={SPECTRUM_SKINS.find((k) => k.id === skin)?.blurb}>
+                Picture
+                <select
+                  value={settings.picture}
+                  onChange={(e) => update({ picture: e.target.value as ExportSettings['picture'] })}
+                  className="h-7 bg-forge-bg border border-forge-border rounded px-1"
+                  title={settings.picture === 'showcase' ? 'The notes of every track on a piano roll, lighting up as the playhead plays them' : SPECTRUM_SKINS.find((k) => k.id === settings.picture)?.blurb}
+                >
+                  <option value="showcase">Showcase: the notes playing</option>
                   {SPECTRUM_SKINS.map((k) => (
                     <option key={k.id} value={k.id}>
-                      {k.name}
+                      Spectrum: {k.name}
                     </option>
                   ))}
                 </select>

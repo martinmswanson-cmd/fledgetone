@@ -2,6 +2,8 @@ import { BufferTarget, EncodedAudioPacketSource, EncodedPacket, EncodedVideoPack
 import { drawSpectrum, type SkinId, type SkinMemory } from './spectrumSkins';
 import { openVideo, seekVideo } from '../store/videoStore';
 import fledgetoneLogo from '../assets/fledgetone.png';
+import { drawShowcase } from './showcaseDraw';
+import type { ShowcaseData } from '../store/showcase';
 
 /**
  * A song as an MP4 video, for YouTube, socials or a game's trailer: the rendered mix as its sound,
@@ -12,11 +14,19 @@ import fledgetoneLogo from '../assets/fledgetone.png';
  * H.264 video and AAC sound play everywhere; browsers without those encoders (Chromium builds
  * without the licensed codecs, Firefox on some systems) fall back to VP9 or AV1 video and Opus
  * sound, which browsers, VLC and YouTube play but some older players don't.
+ *
+ * Two shapes: widescreen (1920×1080, YouTube) and portrait (1080×1920, TikTok, Shorts, Reels).
+ * Either picture is drawn in design units (1280×720 or 720×1280) on a canvas scaled to the video.
+ * Showcase draws the song's notes on a scrolling piano roll instead of the spectrum (showcaseDraw.ts).
  */
 
-export const VIDEO_WIDTH = 1280;
-export const VIDEO_HEIGHT = 720;
+export type VideoShape = 'wide' | 'tall';
+/** The video's size in pixels, per shape */
+export const VIDEO_SIZES: Record<VideoShape, { w: number; h: number }> = { wide: { w: 1920, h: 1080 }, tall: { w: 1080, h: 1920 } };
 export const VIDEO_FPS = 30;
+/** Design units per shape (the canvas is scaled from these to the video's size) */
+const DESIGN: Record<VideoShape, { w: number; h: number }> = { wide: { w: 1280, h: 720 }, tall: { w: 720, h: 1280 } };
+const BITRATE = 10e6;
 
 export interface VideoSection {
   /** Seconds from the start of the video. */
@@ -41,6 +51,10 @@ export interface VideoOptions {
   footage?: { url: string; offset: number };
   /** How the spectrum is drawn (spectrumSkins.ts): LED bars (the default), or a character. */
   skin?: SkinId;
+  /** Widescreen (the default) or portrait */
+  shape?: VideoShape;
+  /** The song's notes: draws the Showcase piano roll in place of the spectrum */
+  showcase?: ShowcaseData;
 }
 
 /** True where this browser can make a video at all (WebCodecs in a secure page). */
@@ -58,10 +72,10 @@ const AUDIO_CODECS = [
   { codec: 'opus', mux: 'opus' },
 ] as const;
 
-async function pickCodecs(sampleRate: number) {
+async function pickCodecs(sampleRate: number, width: number, height: number) {
   let video: (typeof VIDEO_CODECS)[number] | undefined;
   for (const c of VIDEO_CODECS) {
-    const ok = await VideoEncoder.isConfigSupported({ codec: c.codec, width: VIDEO_WIDTH, height: VIDEO_HEIGHT, bitrate: 6e6, framerate: VIDEO_FPS }).catch(() => null);
+    const ok = await VideoEncoder.isConfigSupported({ codec: c.codec, width, height, bitrate: BITRATE, framerate: VIDEO_FPS }).catch(() => null);
     if (ok?.supported) {
       video = c;
       break;
@@ -181,7 +195,9 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   const { channels, sampleRate, signal } = opts;
   const frames = channels[0].length;
   const seconds = frames / sampleRate;
-  const { video, audio } = await pickCodecs(sampleRate);
+  const shape = opts.shape ?? 'wide';
+  const size = VIDEO_SIZES[shape];
+  const { video, audio } = await pickCodecs(sampleRate, size.w, size.h);
 
   const target = new BufferTarget();
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target });
@@ -202,7 +218,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     },
     error: (e) => (failure = e),
   });
-  videoEncoder.configure({ codec: video.codec, width: VIDEO_WIDTH, height: VIDEO_HEIGHT, bitrate: 6e6, framerate: VIDEO_FPS, ...(video.mux === 'avc' ? { avc: { format: 'avc' as const } } : {}) });
+  videoEncoder.configure({ codec: video.codec, width: size.w, height: size.h, bitrate: BITRATE, framerate: VIDEO_FPS, ...(video.mux === 'avc' ? { avc: { format: 'avc' as const } } : {}) });
   const audioEncoder = new AudioEncoder({
     output: (chunk, meta) => {
       const packet = EncodedPacket.fromEncodedChunk(chunk);
@@ -230,15 +246,24 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   const mono = new Float32Array(frames);
   for (let i = 0; i < frames; i++) mono[i] = (left[i] + right[i]) / 2;
   const spectrum = createSpectrum(mono, sampleRate);
-  const W = VIDEO_WIDTH;
-  const H = VIDEO_HEIGHT;
-  const stripX = 80;
-  const stripW = W - 160;
+  const tall = shape === 'tall';
+  const W = DESIGN[shape].w;
+  const H = DESIGN[shape].h;
+  const stripX = tall ? 48 : 80;
+  const stripW = W - 2 * stripX;
   const wave = overview(mono, stripW / 2);
   const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
+  canvas.width = size.w;
+  canvas.height = size.h;
   const g = canvas.getContext('2d')!;
+  // Drawn in design units, scaled to the video's pixels
+  g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
+  // Where things go: the title at the top, the picture in the middle, the waveform and time at the bottom
+  const titleY = tall ? 150 : 64;
+  const footY = H - 60;
+  const waveY = footY - 70;
+  const pictureY = titleY + (tall ? 120 : 106);
+  const picture = { x: stripX, y: pictureY, w: stripW, h: waveY - 50 - pictureY };
   const logo = await loadImage(fledgetoneLogo);
   const background = g.createLinearGradient(0, 0, 0, H);
   background.addColorStop(0, '#16161a');
@@ -286,20 +311,24 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     g.fillRect(0, 0, W, H);
 
     // Title block
-    if (logo) g.drawImage(logo, stripX, 64, 72, 72);
+    if (logo) g.drawImage(logo, stripX, titleY, 72, 72);
     g.fillStyle = '#e4e4e7';
-    g.font = '600 44px system-ui, -apple-system, Segoe UI, sans-serif';
+    g.font = `600 ${tall ? 38 : 44}px system-ui, -apple-system, Segoe UI, sans-serif`;
     g.textBaseline = 'alphabetic';
-    g.fillText(opts.title, stripX + 96, 108, stripW - 96);
+    g.fillText(opts.title, stripX + 96, titleY + 44, stripW - 96);
     g.fillStyle = '#9ca3af';
     g.font = '400 22px system-ui, -apple-system, Segoe UI, sans-serif';
-    g.fillText(opts.subtitle, stripX + 96, 140, stripW - 96);
+    g.fillText(opts.subtitle, stripX + 96, titleY + 76, stripW - 96);
 
-    // Spectrum: LED bars or one of the characters (spectrumSkins.ts), as in the Mixer
-    drawSpectrum(g, opts.skin ?? 'bars', { x: stripX, y: 170, w: stripW, h: 360 }, spectrum(t), t, skinMemory);
+    if (opts.showcase) {
+      // The notes on a piano roll that scrolls past the playhead (showcaseDraw.ts)
+      drawShowcase(g, opts.showcase, picture, t, { secondsShown: tall ? 4.5 : 8, headAt: tall ? 0.3 : 0.28 });
+    } else {
+      // Spectrum: LED bars or one of the characters (spectrumSkins.ts), as in the Mixer
+      drawSpectrum(g, opts.skin ?? 'bars', picture, spectrum(t), t, skinMemory);
+    }
 
     // Waveform of the whole song, with the playhead
-    const waveY = 590;
     const waveH = 56;
     const played = (t / seconds) * stripW;
     for (let c = 0; c < wave.length; c++) {
@@ -315,11 +344,16 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     const section = [...opts.sections].reverse().find((s) => s.at <= t + 1e-6);
     g.font = '600 20px system-ui, -apple-system, Segoe UI, sans-serif';
     g.fillStyle = '#f59e0b';
-    if (section) g.fillText(section.name.toUpperCase(), stripX, 660);
+    if (section) g.fillText(section.name.toUpperCase(), stripX, footY, stripW / 2);
     g.fillStyle = '#9ca3af';
     g.font = '400 20px ui-monospace, SFMono-Regular, Menlo, monospace';
     const time = `${clock(t)} / ${clock(seconds)}`;
-    g.fillText(time, stripX + stripW - g.measureText(time).width, 660);
+    g.fillText(time, stripX + stripW - g.measureText(time).width, footY);
+    // Where it was made (portrait videos are shared on their own, away from any description)
+    g.fillStyle = '#6b7280';
+    g.font = '500 16px ui-monospace, SFMono-Regular, Menlo, monospace';
+    const mark = 'made with fledgetone.com';
+    g.fillText(mark, (W - g.measureText(mark).width) / 2, footY + 34);
 
     await encodeFrame(f, t);
   }
