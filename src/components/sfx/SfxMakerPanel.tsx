@@ -479,6 +479,8 @@ const LayerControls: React.FC<{ l: SfxLayer; i: number; count: number; modern: b
               <Row label="Pan" value={l.pan ?? 0} min={-1} max={1} step={0.01} show={(v) => (Math.abs(v) < 0.01 ? 'centre' : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? 'L' : 'R'}`)} onChange={(pan) => c({ pan, ...(l.panTo === undefined || l.panTo === l.pan ? { panTo: pan } : {}) })} />
               <Row label="Pan to" value={l.panTo ?? l.pan ?? 0} min={-1} max={1} step={0.01} show={(v) => (Math.abs(v) < 0.01 ? 'centre' : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? 'L' : 'R'}`)} onChange={(panTo) => c({ panTo })} title="Where it ends up: a sound moving past" />
               <Row label="Width" value={l.width ?? 0} min={0} max={1} step={0.01} show={(v) => (v ? pct(v) : 'narrow')} onChange={(width) => c({ width })} title="Noise spread across both sides" />
+              <Row label="Gusts" value={l.gust ?? 0} min={0} max={1} step={0.01} show={(v) => (v ? pct(v) : 'off')} onChange={(gust) => c({ gust, gustRate: l.gustRate ?? 0.3 })} title="The layer swelling and dropping at random, as wind does; Wobble then moves the filter with the gusts" />
+              {(l.gust ?? 0) > 0 && <Row label="Gust speed" value={l.gustRate ?? 0.3} min={0.05} max={2} step={0.01} show={(v) => `${v.toFixed(2)}/s`} onChange={(gustRate) => c({ gustRate })} />}
             </>
           )}
         </div>

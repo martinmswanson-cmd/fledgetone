@@ -25,3 +25,5 @@ With thanks to the people who made them:
     fire
   pyranostudios: https://opengameart.org/content/air-whoosh
     whoosh
+  SketchMan3 (from JaggedStone's Loopable Dungeon Ambience): https://opengameart.org/content/wind-whoosh-loop
+    wind

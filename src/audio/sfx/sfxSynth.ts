@@ -103,6 +103,12 @@ export interface SfxLayer {
   panTo?: number;
   /** Stereo spread, 0 to 1: the right channel's noise is its own, so noise sounds wide */
   width?: number;
+  /**
+   * Gusts, 0 to 1: the layer swelling and dropping at random, as wind does (Wobble then moves the
+   * filter with the gusts instead of evenly), about `gustRate` times a second
+   */
+  gust?: number;
+  gustRate?: number;
 }
 
 export const SFX_LEVELS = ['soft', 'normal', 'loud'] as const;
@@ -146,7 +152,7 @@ export const SFX_GROUPS = [
   { name: 'Magic & Sci-fi', kinds: ['laserModern', 'teleport', 'chargeUp', 'spell', 'shieldUp', 'powerDown', 'robotBeep', 'scan'] },
   { name: 'Jingles', kinds: ['victory', 'gameOver', 'questComplete', 'secret', 'countdown'] },
   { name: 'Foley', kinds: ['doorOpen', 'doorClose', 'pageTurn', 'bookPlace', 'cardDeal', 'diceRoll', 'glassBreak', 'bubble', 'slime', 'sciFiDoor'] },
-  { name: 'Loops', kinds: ['engineHum', 'wind', 'fire', 'rain', 'alarm', 'forceField', 'spaceship', 'water'] },
+  { name: 'Loops', kinds: ['engineHum', 'wind', 'windGusty', 'windStorm', 'windHowl', 'fire', 'rain', 'alarm', 'forceField', 'spaceship', 'water'] },
 ] as const;
 
 export type SfxCategory = (typeof SFX_GROUPS)[number]['kinds'][number];
@@ -214,13 +220,16 @@ export const SFX_LABELS: Record<SfxCategory, string> = {
   secret: 'Secret found',
   countdown: 'Countdown',
   engineHum: 'Engine',
-  wind: 'Wind',
+  wind: 'Breeze',
   fire: 'Fire',
   rain: 'Rain',
   alarm: 'Alarm',
   forceField: 'Force field',
   spaceship: 'Spaceship hum',
   water: 'Stream',
+  windGusty: 'Gusty wind',
+  windStorm: 'Storm',
+  windHowl: 'Howling wind',
   doorOpen: 'Door opens',
   doorClose: 'Door closes',
   pageTurn: 'Page turn',
@@ -243,7 +252,7 @@ export const SFX_SETS = [
   { id: 'rpg', name: 'Action RPG', folder: 'rpg', kinds: ['swordSwing', 'slash', 'block', 'hurt', 'impactHeavy', 'magicBolt', 'heal', 'footstep', 'gem', 'levelUp', 'questComplete', 'gameOver'] },
   { id: 'shooter', name: 'Sci-fi shooter', folder: 'scifi', kinds: ['laserModern', 'gunshot', 'reload', 'chargeUp', 'shieldUp', 'powerDown', 'teleport', 'robotBeep', 'scan', 'alarm', 'impactHeavy'] },
   { id: 'casual', name: 'Casual & puzzle', folder: 'casual', kinds: ['uiClick', 'uiConfirm', 'coinModern', 'gem', 'bounce', 'whoosh', 'collectAll', 'secret', 'countdown', 'victory', 'gameOver'] },
-  { id: 'ambience', name: 'Ambience loops', folder: 'ambience', kinds: ['wind', 'rain', 'fire', 'water', 'spaceship', 'engineHum', 'forceField'] },
+  { id: 'ambience', name: 'Ambience loops', folder: 'ambience', kinds: ['wind', 'windStorm', 'rain', 'fire', 'water', 'spaceship', 'engineHum', 'forceField'] },
   { id: 'foley', name: 'Foley & props', folder: 'foley', kinds: ['doorOpen', 'doorClose', 'pageTurn', 'bookPlace', 'cardDeal', 'diceRoll', 'glassBreak', 'footstep', 'land', 'unlock'] },
 ] as const satisfies ReadonlyArray<{ id: string; name: string; folder: string; kinds: readonly SfxCategory[] }>;
 export type SfxSetId = (typeof SFX_SETS)[number]['id'];
@@ -583,8 +592,46 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
       const f = between(40, 65);
       return M([rec('engine'), L({ wave: 'saw', freq: f, lowpass: between(300, 500), reso: 0.3, trem: between(0.15, 0.3), tremRate: f / 4, gain: 0.4 }), L({ wave: 'brown', lowpass: 300, gain: 0.3, width: 0.6 })], { loop: true, loopLength: 4 });
     }
+    // Wind: a bed of air (wide noise), its gusts swelling at random; a whistle where it catches an
+    // edge (a narrow resonant band whose pitch rises with each gust); a rumble; a recording of real
+    // wind under it all
     case 'wind':
-      return M([L({ wave: 'pink', bandpass: true, lowpass: between(400, 700), reso: between(0.4, 0.6), wobble: between(0.8, 1.4), wobbleRate: 0.5, width: 0.9 }), L({ wave: 'brown', lowpass: 350, gain: 0.5, trem: 0.3, tremRate: 0.25, width: 0.9 }), L({ wave: 'pink', bandpass: true, lowpass: between(1500, 2500), reso: 0.6, wobble: 1, wobbleRate: 0.33, gain: 0.15, width: 1 })], { level: 'soft', loop: true, loopLength: 6 });
+      return M([
+        rec('wind', { gain: 0.45 }),
+        L({ wave: 'pink', lowpass: between(900, 1400), reso: 0.1, gust: 0.6, gustRate: between(0.12, 0.2), width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: between(450, 650), reso: 0.35, wobble: 0.7, gust: 0.7, gustRate: between(0.15, 0.22), gain: 0.5, width: 0.8 }),
+        L({ wave: 'brown', lowpass: 300, gust: 0.4, gustRate: 0.1, gain: 0.35, width: 0.6 }),
+      ], { level: 'soft', loop: true, loopLength: 8 });
+    case 'windGusty': {
+      const rate = between(0.3, 0.45);
+      return M([
+        rec('wind', { gain: 0.4, gust: 0.6, gustRate: rate }),
+        L({ wave: 'pink', lowpass: between(1800, 2800), reso: 0.1, gust: 0.95, gustRate: rate, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: between(700, 1100), reso: 0.75, wobble: 0.8, gust: 0.95, gustRate: rate, gain: 0.25, pan: -0.3 }),
+        L({ wave: 'brown', lowpass: 280, gust: 0.8, gustRate: rate, gain: 0.5, width: 0.7 }),
+        L({ wave: 'crackle', freq: between(250, 450), highpass: 3000, gust: 0.95, gustRate: rate, gain: 0.12, width: 1 }),
+      ], { level: 'soft', loop: true, loopLength: 10 });
+    }
+    case 'windStorm': {
+      const howl = between(500, 750);
+      return M([
+        rec('wind', { gain: 0.5 }),
+        L({ wave: 'brown', lowpass: between(350, 500), gust: 0.6, gustRate: between(0.25, 0.4), gain: 0.9, width: 0.8 }),
+        L({ wave: 'pink', lowpass: between(3500, 5000), reso: 0.1, gust: 0.85, gustRate: between(0.3, 0.45), gain: 0.8, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: howl, reso: 0.82, wobble: 1, gust: 0.9, gustRate: between(0.3, 0.4), gain: 0.3, pan: -0.4 }),
+        L({ wave: 'pink', bandpass: true, lowpass: howl * between(1.9, 2.4), reso: 0.85, wobble: 1, gust: 0.9, gustRate: between(0.35, 0.5), gain: 0.18, pan: 0.45 }),
+        L({ wave: 'crackle', freq: between(600, 1000), highpass: 2500, gust: 0.95, gustRate: 0.4, gain: 0.15, width: 1 }),
+      ], { level: 'normal', drive: 0.12, loop: true, loopLength: 10 });
+    }
+    case 'windHowl': {
+      const f = between(320, 520);
+      return M([
+        L({ wave: 'pink', bandpass: true, lowpass: f, reso: 0.9, wobble: 0.9, gust: 0.85, gustRate: between(0.12, 0.2), pan: -0.25 }),
+        L({ wave: 'pink', bandpass: true, lowpass: f * 1.5, reso: 0.88, wobble: 0.9, gust: 0.85, gustRate: between(0.15, 0.22), gain: 0.55, pan: 0.3 }),
+        L({ wave: 'pink', lowpass: 1500, gust: 0.6, gustRate: 0.15, gain: 0.35, width: 1 }),
+        rec('wind', { gain: 0.3 }),
+      ], { level: 'soft', reverb: 0.35, room: 0.85, loop: true, loopLength: 10 });
+    }
     case 'fire':
       return M([rec('fire'), L({ wave: 'crackle', freq: between(15, 30), highpass: 1500, gain: 0.5, width: 1 }), L({ wave: 'brown', lowpass: between(300, 450), gain: 0.5, trem: 0.25, tremRate: 1, width: 0.6 })], { level: 'soft', loop: true, loopLength: 4 });
     case 'rain':
@@ -900,6 +947,18 @@ function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate:
   const body = l.body ? new ModalBody(l.body, l.freq * shift, l.ring ?? 1, sampleRate, rng((l.seed * 7 + 3) >>> 0)) : null;
   const bodyMix = l.body ? clamp(l.bodyMix ?? 0.7, 0, 1) : 0;
   const ringFor = l.body && !s.loop ? bodyRing(l.body, l.ring ?? 1) : 0;
+  // Gusts: smooth random swells (value noise, a slower and a faster one), the same on both sides
+  const gust = clamp(l.gust ?? 0, 0, 1);
+  const gustRate = clamp(l.gustRate ?? 0.3, 0.02, 4);
+  const knots = gust > 0 ? Float32Array.from({ length: Math.ceil(((length / sampleRate) * gustRate) * 2.7) + 6 }, rng((l.seed ^ 0x6a09e667) >>> 0)) : null;
+  const smooth = (x: number) => {
+    const k = Math.floor(x);
+    const f = x - k;
+    const w = (1 - Math.cos(Math.PI * f)) / 2;
+    return knots![k] * (1 - w) + knots![k + 1] * w;
+  };
+  // (Spread back out: the average of two noises sits near the middle, and wind has lulls and blasts)
+  const gustAt = (t: number) => clamp(((smooth(t * gustRate) * 2 + smooth(t * gustRate * 2.7 + 3)) / 3 - 0.5) * 2.2 + 0.5, 0, 1);
   let phase = 0;
   let modPhase = 0;
   let recPos = 0;
@@ -999,10 +1058,11 @@ function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate:
           // (The 8-bit noise has no place in a modern sound: plain white noise)
           v = noise() * 2 - 1;
       }
+      const g = knots ? gustAt(t) : 0;
       if (filtered) {
         if ((i - start) % 8 === 0) {
-          const sweep = l.lpSweep * (s.loop ? 0 : x) + (l.wobble ? l.wobble * Math.sin(2 * Math.PI * l.wobbleRate * t) : 0);
-          svf.set(l.lowpass * Math.pow(2, sweep), l.reso, sampleRate);
+          const move = !l.wobble ? 0 : knots ? l.wobble * (g * 2 - 1) : l.wobble * Math.sin(2 * Math.PI * l.wobbleRate * t);
+          svf.set(l.lowpass * Math.pow(2, l.lpSweep * (s.loop ? 0 : x) + move), l.reso, sampleRate);
         }
         v = svf.run(v, l.bandpass);
       }
@@ -1017,6 +1077,8 @@ function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate:
         const levels = Math.pow(2, Math.round(16 - l.crush * 14)) / 2;
         v = Math.round(v * levels) / levels;
       }
+      // A gust swells the layer (strongest gusts loudest: squared)
+      if (knots) v *= 1 - gust + gust * 1.6 * g * g;
       // Envelope: attack, hold (punch fading over it), then a natural decay to -60 dB
       let env: number;
       if (s.loop) env = 1;
@@ -1396,6 +1458,7 @@ export function parseSfx(v: unknown): SfxSound | null {
       ...(typeof l.pan === 'number' ? { pan: num(l.pan, 0, -1, 1) } : {}),
       ...(typeof l.panTo === 'number' ? { panTo: num(l.panTo, 0, -1, 1) } : {}),
       ...(typeof l.width === 'number' ? { width: num(l.width, 0, 0, 1) } : {}),
+      ...(typeof l.gust === 'number' ? { gust: num(l.gust, 0, 0, 1), gustRate: num(l.gustRate, 0.3, 0.02, 4) } : {}),
     };
   };
   // A sound from before layers: one layer's settings at the top

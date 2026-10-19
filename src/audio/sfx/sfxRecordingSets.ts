@@ -63,6 +63,7 @@ export const SFX_RECORDING_SETS: Record<string, SfxRecordingSet> = {
   'water': { label: "Water (loop)", takes: 4, seconds: [3.408, 7.056, 3.576, 1.92], loop: true, bytes: 206580, hash: 'a5b26ba2f5' },
   'bubbles': { label: "Bubbling (loop)", takes: 3, seconds: [7.368, 4.44, 4.536], loop: true, bytes: 205287, hash: '96b055954a' },
   'fire': { label: "Fire (loop)", takes: 1, seconds: [2.904], loop: true, bytes: 27405, hash: '2362bf28c8' },
+  'wind': { label: "Wind (loop)", takes: 1, seconds: [6.0], loop: true, bytes: 54765, hash: '6575ca772f' },
   'engine': { label: "Engine (loop)", takes: 8, seconds: [5.04, 5.04, 5.04, 5.04, 5.04, 5.04, 5.04, 5.04], loop: true, bytes: 546144, hash: 'c5a7cc3231' },
   'spaceship': { label: "Spaceship (loop)", takes: 8, seconds: [5.04, 5.04, 5.04, 5.04, 5.04, 5.04, 5.04, 5.04], loop: true, bytes: 817488, hash: '1a2960b4b9' },
   'thruster': { label: "Thruster (loop)", takes: 5, seconds: [5.04, 5.04, 5.04, 5.04, 5.04], loop: true, bytes: 449937, hash: '223c440198' },

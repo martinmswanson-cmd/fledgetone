@@ -35,6 +35,7 @@ SOURCES = [
     ('swish', 'https://opengameart.org/sites/default/files/swishes.zip', 'zip', 'artisticdude', 'https://opengameart.org/content/swishes-sound-pack'),
     ('fire', 'https://opengameart.org/sites/default/files/fire-1.wav', 'file', 'AntumDeluge', 'https://opengameart.org/content/fire-crackling'),
     ('whoosh', 'https://opengameart.org/sites/default/files/whoosh2_0.wav', 'file', 'pyranostudios', 'https://opengameart.org/content/air-whoosh'),
+    ('wind', 'https://opengameart.org/sites/default/files/wind%20woosh%20loop.ogg', 'file', 'SketchMan3 (from JaggedStone\'s Loopable Dungeon Ambience)', 'https://opengameart.org/content/wind-whoosh-loop'),
 ]
 
 # The groups: id, label, the files (source, glob), whether it's a loop (kept whole, not trimmed)
@@ -87,6 +88,7 @@ GROUPS = [
     ('water', 'Water (loop)', [('water', '**/loop_water_*.ogg'), ('loops', '**/water_flowing.ogg')], True),
     ('bubbles', 'Bubbling (loop)', [('water', '**/loop_bubbles_*.ogg'), ('loops', '**/water_boiling.ogg')], True),
     ('fire', 'Fire (loop)', [('fire', '*.wav')], True),
+    ('wind', 'Wind (loop)', [('wind', '*.ogg')], True),
     ('engine', 'Engine (loop)', [('scifi', '**/spaceEngineLow_*.ogg'), ('scifi', '**/engineCircular_*.ogg')], True),
     ('spaceship', 'Spaceship (loop)', [('scifi', '**/spaceEngineLarge_*.ogg'), ('scifi', '**/spaceEngine_*.ogg')], True),
     ('thruster', 'Thruster (loop)', [('scifi', '**/thrusterFire_*.ogg')], True),
