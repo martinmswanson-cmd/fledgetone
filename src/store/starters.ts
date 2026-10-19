@@ -5,6 +5,7 @@ import { PLAYLIST_BUILDERS } from './startersPlaylist';
 import { GAME_BUILDERS } from './startersGame';
 import { MORE_GAME_BUILDERS } from './startersGameMore';
 import { STORY_BUILDERS } from './startersStory';
+import { SHOWCASE_BUILDERS } from './startersShowcase';
 import { CLASSICS_BUILDERS } from './startersClassics';
 import { starterTrimDb, trimMix } from './startersLoudness';
 import { FX_NOTES, INSTRUMENTS, seatOf } from '../audio/instrumentCatalog';
@@ -70,6 +71,7 @@ export const STARTERS = [
   { id: 'angelic', group: 'Orchestral & Choir', name: 'Angelic', detail: '66 BPM, C Lydian. Choir and soft voices, a halo pad, harp and celesta: heaven, healing, sacred places.' },
   { id: 'cinematic', group: 'Orchestral & Choir', name: 'Cinematic', detail: '100 BPM, D minor. Harp and strings, a cello ostinato with taiko building, then French horns and cellos on the theme: title screens.' },
   { id: 'epic', group: 'Orchestral & Choir', name: 'Epic Orchestral', detail: '130 BPM, C minor. Driving cellos, timpani, tremolo strings and choir, then a horn battle theme over low brass and taiko: boss fights.' },
+  { id: 'cathedral', group: 'Orchestral & Choir', name: 'Cathedral', detail: '72 BPM, D minor. Organ and a choir on "ooh", a harp rising, then the full choir sings a hymn over strings, timpani and tubular bells.' },
   { id: 'horror', group: 'Orchestral & Choir', name: 'Horror', detail: '72 BPM. An eerie drone, low string clusters, a warped music-box lullaby and timpani, a bar of silence, then a chase.' },
   { id: 'rock', group: 'Band', name: 'Rock', detail: '124 BPM, E minor. A real drum kit through a drum bus with fills, double-tracked power chords, pick bass and organ.' },
   { id: 'metal', group: 'Band', name: 'Metal', detail: '170 BPM, E Phrygian. Double-kick blast beat, twin chugging guitars, then a breakdown with choir.' },
@@ -83,6 +85,8 @@ export const STARTERS = [
   { id: 'celtic', group: 'Chill & World', name: 'Celtic', detail: '112 BPM, D major. A fiddle reel over strummed guitar and bodhrán, a tin whistle, then the pipes.' },
   { id: 'tavern', group: 'Chill & World', name: 'Fantasy Tavern', detail: '110 BPM, D minor jig. Hammered dulcimer, lute, hand drum, accordion and recorder: inns and villages.' },
   { id: 'latin', group: 'Chill & World', name: 'Latin', detail: '130 BPM, bossa nova. Nylon guitar comping, upright bass, bongos, shaker and agogô bells, a flute melody.' },
+  { id: 'plaza', group: 'Chill & World', name: 'Plaza', detail: '104 BPM, A minor. Congas, bongos, claves and shaker in son clave, a nylon guitar montuno, an upright bass tumbao and a muted trumpet theme.' },
+  { id: 'mbiraMorning', group: 'Chill & World', name: 'Mbira Morning', detail: '96 BPM, D major pentatonic. Two interlocking mbira lines over a didgeridoo drone, folk harp, a balafon answering and hand chimes.' },
   { id: 'eastern', group: 'Chill & World', name: 'Eastern', detail: '84 BPM, D in-scale. Koto, shakuhachi, taiko and shamisen over a glass drone: temples and gardens.' },
   { id: 'artcore', group: 'Artcore & Rhythm Games', name: 'Final Boss Artcore', detail: '174 BPM, D minor. Piano octave lead and violin over chopped jungle breaks, cello and contrabass, choir, taiko; the last drop a semitone up.' },
   { id: 'hardcore', group: 'Artcore & Rhythm Games', name: 'Melodic Hardcore', detail: '180 BPM, E minor. Rhythm-game piano: 16th arpeggios, a stuttered build, then a four-on-the-floor bittersweet Royal Road drop.' },
@@ -99,6 +103,7 @@ export const STARTERS = [
   { id: 'bedroom', group: 'Pop & Jazz', name: 'Bedroom Pop', detail: '90 BPM, E minor, swung. Chorused clean guitar, a busy bass, lazy drums and a sax line behind the beat.' },
   { id: 'bossa', group: 'Pop & Jazz', name: 'Bossa Jazz-Pop', detail: '82 BPM, Db major. Nylon guitar bossa comping, upright bass, brushes, a flute melody and strings in the chorus.' },
   { id: 'citypop', group: 'Pop & Jazz', name: 'City Pop', detail: '113 BPM, E major. Slap bass, FM piano, cutting guitar, horn hits and a sax theme on the Royal Road.' },
+  { id: 'afterHours', group: 'Pop & Jazz', name: 'After Hours', detail: '84 BPM, F major. A late-night ballad: grand piano and upright bass on brushes, then a tenor sax theme.' },
   { id: 'theatrical', group: 'Pop & Jazz', name: 'Theatrical Pop', detail: '132 BPM, D minor to F. A line-cliche verse with pizzicato and a music-box motif, then a disco chorus with brass fanfares.' },
   { id: 'raprock', group: 'Band', name: 'Rap-Rock', detail: '154 BPM, G minor. A Phrygian riff over half-time drums, a dead stop, then a double-time chant chorus with low brass.' },
   { id: 'mathrock', group: 'Band', name: 'Math Rock', detail: '150 BPM, E major. Twinkly guitar, tapping in triplets, 3+3+3+3+2+2 accents, then an easycore breakdown.' },
@@ -1415,6 +1420,7 @@ const BUILDERS: Record<StarterId, () => ProjectSnapshot> = {
   ...GAME_BUILDERS,
   ...MORE_GAME_BUILDERS,
   ...STORY_BUILDERS,
+  ...SHOWCASE_BUILDERS,
   ...CLASSICS_BUILDERS,
 };
 
@@ -1436,7 +1442,7 @@ export function createStarter(id: StarterId): ProjectSnapshot {
  * (measured: the same notes through both, A-weighted). `short` plays parts of short notes (under an
  * eighth on average) with the short-stroke recordings, and `high` takes parts too high for the
  * recording (the horn's top, which the section's trumpet plays). `anyNote`: a note out of the
- * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, choir, music box and the rest
+ * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, music box and the rest
  * have no free recording yet and stay as they are.
  */
 const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: InstrumentKey; shortDb?: number; high?: InstrumentKey; highDb?: number; preset?: string; anyNote?: boolean }> = {
