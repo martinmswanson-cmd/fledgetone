@@ -350,6 +350,27 @@ SETS = [
     S('bass-flute', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/bassflute/BassFlute.zip', xloop=True),
     S('bass-clarinet', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/bassclarinet/BassClarinet.zip', xloop=True),
     S('bass-trombone', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Brass/basstrombone/BassTrombone.zip', xloop=True),
+    # ---- world and special instruments (VCSL, CC0) ----
+    # A folk (lever) harp at two loudnesses; a glass harp (wine glasses rubbed: slow and fast
+    # strokes as soft and loud, four glasses stretched over the range); a mbira (the Nyamaropa
+    # tuning); a balafon struck with its traditional mallets; a bowed psaltery's long strokes;
+    # hand chimes; a gong at four loudnesses (one note, as recorded); and a didgeridoo's drone
+    S('folk-harp', 'vcsl', [(rf'Chordophones/Composite Chordophones/Folk Harp/EWHarp_Normal_{NOTE}_(?P<layer>v[23])_(?P<take>RR1)\.wav', 1)],
+      ['v2', 'v3'], 'ringing', cap=10.0, tail=True),
+    S('glass-harp', 'vcsl', [(rf'Idiophones/Friction Idiophones/Wine Glasses/Sustains/(?:Slow|Fast)/glass\d_{NOTE}_(?P<layer>Slow|Fast)_(?P<take>[12])_[Mm]ain\.wav', 1)],
+      ['Slow', 'Fast'], 'sustain', cap=6.0, xloop=True),
+    S('mbira', 'vcsl', [(rf'Idiophones/Plucked Idiophones/Mbira dzaVadzimu Nyamaropa, Zimbabwe, Low B/MBira4_pluck_Main_{NOTE}_\d+_50_100_(?P<take>rr\d)(?P<layer>)\.wav', 1)],
+      [''], 'ringing', cap=5.0, tail=True),
+    S('balafon', 'vcsl', [(rf'Idiophones/Struck Idiophones/Balafon/Traditional Mallet/EthnicXylo_tradM_{NOTE}_(?P<layer>vl[123])_(?P<take>rr1)_Mid\.wav', 1)],
+      ['vl1', 'vl2', 'vl3'], 'mallet', cap=3.0),
+    S('bowed-psaltery', 'vcsl', [(rf'Chordophones/Zithers/Psaltery, Bowed and Plucked/LongBow/BowedPsaltery_{NOTE}_Main_LongBow_(?P<take>rr\d)(?P<layer>)\.wav', 1)],
+      [''], 'sustain', cap=6.0, xloop=True),
+    S('hand-chimes', 'vcsl', [(rf'Idiophones/Struck Idiophones/Hand Chimes/sus_{NOTE}_(?P<take>r01)_main(?P<layer>)\.wav', 1)],
+      [''], 'ringing', cap=10.0, tail=True),
+    S('gong', 'vcsl', [(r'Idiophones/Struck Idiophones/Gong 1/gong_(?P<layer>p|mf|f|fff)(?P<take>)\.wav', 0, 36)],
+      ['p', 'mf', 'f', 'fff'], 'ringing', cap=14.0, retune=False, pitched=False, even=False),
+    S('didgeridoo', 'vcsl', [(r'Aerophones/Lip Aerophones/Didgeridoo/Didgeridoo1_Sus(?P<take>[238])_Main(?P<layer>)\.wav', 0, 37)],
+      [''], 'sustain', cap=8.0, xloop=True, retune=False, pitched=False),  # (its drone is C#2, about 70 Hz: measuring hears some takes an octave low)
     # A studio drum kit: each hit mixed from its close microphones and the overheads by kit.py
     S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
     S('session-kit', 'virtuosity', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='session-kit'),

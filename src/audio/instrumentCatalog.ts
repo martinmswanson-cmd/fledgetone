@@ -34,6 +34,7 @@ export const INSTRUMENT_KEYS = [
   'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
   'realNylonGuitar',
   'realStudioGrand', 'realOldUpright', 'realPiccolo', 'realMutedHorn', 'realSopranoSax', 'realAltoFlute', 'realBassFlute', 'realBassClarinet', 'realBassTrombone',
+  'realFolkHarp', 'realGlassHarp', 'realMbira', 'realBalafon', 'realBowedPsaltery', 'realHandChimes', 'realGong', 'realDidgeridoo',
   // phase 3 additions
   'drumMachine', 'taiko',
   'subBass', 'bass808', 'bassGuitar',
@@ -678,6 +679,38 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
     key: 'realBassTrombone', name: 'Bass Trombone (Real)', blurb: 'A recorded bass trombone, every note at three loudnesses: deep, heavy brass', color: '#b45309', category: 'Orchestra', kind: 'sampled', range: realRange('bass-trombone'),
     samples: real('bass-trombone', 0.4), gain: 5, room: -10, dynamics: true,
   },
+  realFolkHarp: {
+    key: 'realFolkHarp', name: 'Folk Harp (Real)', blurb: 'A recorded lever harp, warm and close, soft and loud: Celtic, folk, fantasy taverns', color: '#f59e0b', category: 'World', kind: 'sampled', range: realRange('folk-harp'),
+    samples: real('folk-harp', 1.5), gain: 8.5,
+  },
+  realGlassHarp: {
+    key: 'realGlassHarp', name: 'Glass Harp (Real)', blurb: 'Recorded wine glasses sung with a wet finger: eerie, crystalline, dreams', color: '#a5f3fc', category: 'Mallets & Bells', kind: 'sampled', range: realRange('glass-harp', 3),
+    samples: real('glass-harp', 0.8), gain: 1, dynamics: true,
+  },
+  realMbira: {
+    key: 'realMbira', name: 'Mbira (Real)', blurb: 'A recorded Zimbabwean mbira: buzzing metal keys over a gourd, interlocking patterns', color: '#84cc16', category: 'World', kind: 'sampled', range: realRange('mbira', 2),
+    samples: real('mbira', 1), gain: 9,
+  },
+  realBalafon: {
+    key: 'realBalafon', name: 'Balafon (Real)', blurb: 'A recorded West African wooden xylophone with gourd resonators: bright, buzzy, rhythmic', color: '#ca8a04', category: 'World', kind: 'sampled', range: realRange('balafon', 3),
+    samples: real('balafon', 0.4), gain: 10,
+  },
+  realBowedPsaltery: {
+    key: 'realBowedPsaltery', name: 'Bowed Psaltery (Real)', blurb: 'A recorded bowed psaltery: a sweet, glassy bowed tone, medieval and haunting', color: '#e879f9', category: 'World', kind: 'sampled', range: realRange('bowed-psaltery', 2),
+    samples: real('bowed-psaltery', 0.6), gain: 2,
+  },
+  realHandChimes: {
+    key: 'realHandChimes', name: 'Hand Chimes (Real)', blurb: 'Recorded hand chimes: pure, soft bells that ring on, for carols and calm', color: '#e2e8f0', category: 'Mallets & Bells', kind: 'sampled', range: realRange('hand-chimes'),
+    samples: real('hand-chimes', 2), gain: 7,
+  },
+  realGong: {
+    key: 'realGong', name: 'Gong (Real)', blurb: 'A recorded gong, four loudnesses from a shimmer to a crash: endings, temples, drama', color: '#b45309', category: 'Orchestra', kind: 'sampled', range: [33, 39],
+    samples: real('gong', 3), gain: -6,
+  },
+  realDidgeridoo: {
+    key: 'realDidgeridoo', name: 'Didgeridoo (Real)', blurb: 'A recorded didgeridoo drone, held as long as the note: earthy, hypnotic', color: '#92400e', category: 'World', kind: 'sampled', range: [34, 40],
+    samples: real('didgeridoo', 0.5), gain: 3,
+  },
   realPipeOrgan: {
     key: 'realPipeOrgan', name: 'Pipe Organ (Real)', blurb: 'A recorded church organ, full and open, with its pedal pipes', color: '#c4b5fd', category: 'Keys & Synths', kind: 'sampled', range: realRange('pipe-organ'),
     samples: real('pipe-organ', 0.4), gain: 16,
@@ -989,6 +1022,7 @@ const SEATS: Partial<Record<InstrumentKey, Seat>> = {
   realBassClarinet: { pan: -0.05, distance: 0.5 },
   realMutedHorn: { pan: -0.3, distance: 0.6 },
   realBassTrombone: { pan: 0.4, distance: 0.65 },
+  realGong: { pan: -0.1, distance: 0.75 },
   realStrings: { pan: 0, distance: 0.2 },
   realPizzicato: { pan: 0, distance: 0.2 },
   realTremolo: { pan: 0, distance: 0.2 },
@@ -1053,6 +1087,7 @@ const BREATH: Partial<Record<InstrumentKey, number>> = {
   realBassTrombone: 6,
   realMutedHorn: 8,
   realSopranoSax: 8,
+  realDidgeridoo: 9,
 };
 /** How long a player of `key` can hold a note before it starts to fade (seconds), if they breathe. */
 export const breathOf = (key: InstrumentKey): number | undefined => BREATH[key];

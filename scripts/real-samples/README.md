@@ -20,7 +20,8 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
 - [VCSL](https://github.com/sgossner/VCSL) (Versilian Community Sample Library) by Versilian
   Studios: timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica,
   ocarina, zither (a dan tranh), concert bass drum, baroque recorders (tenor, alto and soprano),
-  a grand piano (a Steinway model B) and an old upright (a Knight).
+  a grand piano (a Steinway model B), an old upright (a Knight), a folk harp, wine glasses (a glass
+  harp), a mbira, a balafon, a bowed psaltery, hand chimes, a gong and a didgeridoo.
 - Karoryfer Lecolds: electric guitars ([Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars),
   [Emily Guitar](https://github.com/sfzinstruments/karoryfer.emilyguitar)), saxophones
   ([Weresax](https://github.com/sfzinstruments/karoryfer.weresax), [Bear Sax](https://github.com/sfzinstruments/karoryfer.bear-sax)),

@@ -47,9 +47,9 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
-    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax', 'harmonica', 'ocarina', 'zither', 'concert-bass-drum', 'recorder', 'studio-grand', 'old-upright'].map((set) => `${HOSTED}${set}/`),
+    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax', 'harmonica', 'ocarina', 'zither', 'concert-bass-drum', 'recorder', 'studio-grand', 'old-upright', 'folk-harp', 'glass-harp', 'mbira', 'balafon', 'bowed-psaltery', 'hand-chimes', 'gong', 'didgeridoo'].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica, ocarina, zither (dan tranh), concert bass drum, baroque recorders, a grand and an upright piano, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
+      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica, ocarina, zither (dan tranh), concert bass drum, baroque recorders, a grand and an upright piano, a folk harp, wine glasses, a mbira, a balafon, a bowed psaltery, hand chimes, a gong, a didgeridoo, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {
