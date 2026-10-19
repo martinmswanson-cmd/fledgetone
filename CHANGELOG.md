@@ -4,6 +4,14 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.19 — Real instruments, real sounds
+
+- **New recorded drum kits**: a **Session Kit**, a **Brush Kit** for jazz and ballads, **Latin Percussion** (congas, bongos, timbale, shaker, bells) and **Percussion Extras** (guiro, cabasa, sleigh bells, vibraslap, woodblocks, bell tree, whistle). The piano roll names their rows for what they play.
+- **17 more recorded instruments**: a **Studio Grand** and an **Old Upright** piano, **Piccolo**, **Alto Flute**, **Bass Flute**, **Bass Clarinet**, **Soprano Sax**, **Bass Trombone**, **Muted French Horn**, and from around the world a **Folk Harp**, **Glass Harp**, **Mbira**, **Balafon**, **Bowed Psaltery**, **Hand Chimes**, **Gong** and **Didgeridoo**.
+- **Longer, fuller notes**: the pianos, harp, bells and pizzicato strings ring for much longer, as the real ones do. A new **Ring** control (Track Inspector) lets any recorded instrument's notes ring on after they end, for dramatic and ambient music, and **Breathe** can be switched off so wind and brass hold long notes without tiring.
+- **Sound effects that sound real**: the sound effects maker has a new engine with stereo, real rooms and recordings of the real thing under its sounds (footsteps, doors, glass, metal, cloth, water, fire and more). Three new groups: **Nature** (forest, night, river, ocean, downpour, thunderstorm, thunder, cave, wind in trees), **Places** (city street, cafe, market) and **Creatures** (birds, dogs, cats, wolves, farm animals, bees, and monsters for games). Your old sounds stay exactly as they were.
+- Fixed: a plugin's settings window could stay on "Loading the plugin…" in bigger songs. It now always opens.
+
 ## 2026.10.18-2 — For streamers and video makers
 
 - **Channel kit** (File › **Channel kit (streams, videos)…**): one song made into a .zip of everything a stream or channel needs: an intro and an outro, seamless loops for Starting soon, Be right back and Ending, three alerts in the song's key and a transition whoosh, all at one loudness, with a README on using them in OBS.
