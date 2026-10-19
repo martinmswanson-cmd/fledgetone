@@ -4,6 +4,13 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.19-2 — Pocket on one screen
+
+- **Pocket, the phone version, is now one screen**: the whole song as a grid at the top (a row for each section, a column for each track), and the bottom of the screen becomes the instrument of whichever cell you tap. No more tabs: the song, its instruments, singing and the mixer are all on the one screen, as in the studio.
+- **Arrange with a tap**: tap a section's letter to loop it; its **⋯** plays it twice (a linked copy), moves it, adds a build-up into it or takes it out. Sections that play the same thing share a letter, and Pocket's sections are the song's markers, so the studio shows them on its timeline.
+- **Pads like an MPC** (kick, snare, clap and hat under your thumb), pads and chords in the song's key, one drum's steps at a time, and a **piano roll** made for a phone: draw, stretch and move notes with one finger, scroll with two, and fine-tune a selected note with buttons.
+- **Turn the phone** on its side and the grid becomes the studio's timeline, with the instrument beside it. A new song starts with **What are we making?**: a kind of music, a starter, and it plays.
+
 ## 2026.10.19 — Real instruments, real sounds
 
 - **New recorded drum kits**: a **Session Kit**, a **Brush Kit** for jazz and ballads, **Latin Percussion** (congas, bongos, timbale, shaker, bells) and **Percussion Extras** (guiro, cabasa, sleigh bells, vibraslap, woodblocks, bell tree, whistle). The piano roll names their rows for what they play.

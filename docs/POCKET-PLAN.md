@@ -7,7 +7,10 @@ own thing: the easiest way to make a song on a phone, in Fledgetone's look, over
 and the same project files.
 
 **Where it stands:** two designs were prototyped: four tabs (below) and **everything on one
-screen**. The one-screen design is the one being taken forward. Pocket will be an **app in the
+screen**. The one-screen design is the one taken forward, and it's **built** (2026.10.19-2,
+src/pocket/): the song grid, the transport, the drawer with pads, steps and the piano roll, the
+mixer, landscape, the starters screen, on the real engine and the real arrangement (sections are
+the song's markers; arranging uses the studio's insert and remove bars). Pocket will be an **app in the
 App Store and Google Play**, built from the same web code as the studio (see "An app, from the
 same code"). Clickable prototypes of both designs go with the plan (see "Prototype" at the end).
 

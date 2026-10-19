@@ -1,0 +1,122 @@
+/* Pocket's one screen: the song grid, the transport and the drawer (src/pocket/PocketApp.tsx).
+   The colours are the studio's (tailwind.config.js). */
+
+.pk-app {
+  --bg: #121214;
+  --panel: #1a1a1e;
+  --panel-2: #222228;
+  --border: #2a2a30;
+  --border-2: #3a3a44;
+  --text: #e4e4e7;
+  --muted: #9ca3af;
+  --cyan: #06b6d4;
+  --cyan-hi: #67e8f9;
+  --dh: 40%;
+  --gx: max(12px, env(safe-area-inset-left, 0px));
+  --gxr: max(12px, env(safe-area-inset-right, 0px));
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* The song grid: sections down and tracks across in portrait, turned on its side in landscape */
+.pk-arr { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.pk-grid { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; gap: 4px; padding: 0 var(--gxr) 8px var(--gx); align-content: start; scrollbar-width: none; }
+.pk-grid::-webkit-scrollbar { display: none; }
+.pk-grid > * { min-width: 0; }
+.pk-stick-top { position: sticky; top: 0; z-index: 2; }
+.pk-stick-left { position: sticky; left: 0; z-index: 2; }
+.pk-stick-both { position: sticky; top: 0; left: 0; z-index: 3; }
+.pk-corner { background: var(--bg); display: flex; align-items: flex-end; padding: 0 0 6px 2px; box-shadow: 0 0 0 4px var(--bg); font: 500 10px 'JetBrains Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.pk-chip { position: relative; display: flex; align-items: center; justify-content: center; gap: 3px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); font: 600 17px 'JetBrains Mono', monospace; box-shadow: 0 0 0 4px var(--bg); }
+.pk-chip.sel { color: var(--text); border-color: var(--cyan); }
+.pk-chip.now { color: var(--cyan-hi); background: rgba(6, 182, 212, .14); border-color: var(--cyan); }
+.pk-chip .more { width: 20px; height: 20px; border-radius: 6px; background: rgba(6, 182, 212, .22); color: var(--cyan-hi); display: grid; place-items: center; }
+.pk-chip small { position: absolute; bottom: 1px; left: 0; right: 0; text-align: center; font: 500 8px 'JetBrains Mono', monospace; color: #f59e0b; letter-spacing: .04em; }
+.pk-chip.add { border-style: dashed; font-size: 22px; }
+.pk-thd { display: flex; background: var(--bg); box-shadow: 0 0 0 4px var(--bg); }
+.pk-thname { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 12px; border: 1px solid var(--border); border-bottom: 3px solid var(--c); background: var(--panel); font-size: 12.5px; text-align: left; }
+.pk-thname b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-thname svg { width: 15px; height: 15px; color: var(--c); flex: 0 0 auto; }
+.pk-thd.sel .pk-thname { border-color: var(--c); background: color-mix(in srgb, var(--c) 22%, var(--panel)); }
+.pk-thd.silent .pk-thname { opacity: .45; }
+.pk-thd.add { align-items: center; justify-content: center; border-radius: 12px; border: 1px dashed var(--border-2); color: var(--muted); font-size: 22px; }
+.pk-cell { position: relative; border-radius: 10px; border: 1px solid var(--border); background: var(--panel); overflow: hidden; }
+.pk-cell.colsel { background: color-mix(in srgb, var(--c) 7%, var(--panel)); }
+.pk-cell.rowsel { border-color: var(--border-2); }
+.pk-cell.full { background: color-mix(in srgb, var(--c) 16%, var(--panel)); border-color: color-mix(in srgb, var(--c) 40%, transparent); }
+.pk-cell.cur { border: 2px solid var(--c); box-shadow: 0 0 12px color-mix(in srgb, var(--c) 40%, transparent); }
+.pk-cell canvas { position: absolute; inset: 5px; width: calc(100% - 10px); height: calc(100% - 10px); pointer-events: none; }
+.pk-cell .ph { position: absolute; top: 0; bottom: 0; left: var(--at, 0); width: 2px; background: var(--cyan-hi); display: none; }
+.pk-cell[data-active] .ph { display: block; }
+
+/* The transport */
+.pk-tport { flex: 0 0 auto; display: grid; grid-template-columns: 44px auto minmax(0, 1fr) 44px; gap: 8px; align-items: center; padding: 8px var(--gxr) 8px var(--gx); border-top: 1px solid var(--border); background: var(--panel); }
+
+/* The drawer */
+.pk-drawer { flex: 0 0 var(--dh); min-height: 0; display: flex; flex-direction: column; background: color-mix(in srgb, var(--c) 6%, var(--panel)); border-top: 2px solid var(--c); transition: flex-basis .18s ease-out; padding-bottom: env(safe-area-inset-bottom, 0px); }
+@media (prefers-reduced-motion: reduce) { .pk-drawer { transition: none; } }
+.pk-handle { height: 26px; display: flex; align-items: center; justify-content: center; gap: 8px; touch-action: none; flex: 0 0 auto; color: var(--muted); }
+.pk-handle i { width: 44px; height: 5px; border-radius: 3px; background: var(--border-2); }
+.pk-handle span { font: 500 10px 'JetBrains Mono', monospace; letter-spacing: .08em; text-transform: uppercase; width: 64px; }
+.pk-handle span:first-child { text-align: right; }
+.pk-dbody { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 0 var(--gxr) 10px var(--gx); }
+.pk-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.pk-scroll::-webkit-scrollbar { display: none; }
+
+/* Fixed-size blocks: a bigger drawer shows more of them */
+.pk-pads { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 60px; gap: 6px; overflow-y: auto; overscroll-behavior: contain; align-content: start; scrollbar-width: none; }
+.pk-pads::-webkit-scrollbar { display: none; }
+.pk-pads.steps { grid-auto-rows: 54px; }
+.pk-pads.chords { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 54px; }
+.pk-fade-below { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent); }
+.pk-fade-above { -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 28px), transparent); }
+.pk-fade-above.pk-fade-below { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to bottom, transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+.pk-pad { border-radius: 14px; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); background: linear-gradient(160deg, color-mix(in srgb, var(--c) 34%, var(--panel)), color-mix(in srgb, var(--c) 12%, var(--panel))); font-weight: 600; font-size: 12.5px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; padding: 6px 9px; text-align: left; touch-action: manipulation; transition: transform .06s, filter .06s; }
+.pk-pad:active, .pk-pad.hit { transform: scale(.95); filter: brightness(1.5); }
+.pk-pad.root { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c) 80%, transparent); }
+.pk-pad span { font: 500 10.5px 'JetBrains Mono', monospace; color: var(--muted); }
+.pk-step { position: relative; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); }
+.pk-step.beat { border-color: var(--border-2); }
+.pk-step.on { background: var(--c); border-color: transparent; box-shadow: 0 0 12px color-mix(in srgb, var(--c) 55%, transparent); }
+.pk-step.now { outline: 2px solid var(--cyan-hi); outline-offset: 1px; }
+.pk-step small { position: absolute; left: 6px; top: 4px; font: 500 10px 'JetBrains Mono', monospace; color: var(--muted); }
+
+/* The piano roll */
+.pk-roll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; position: relative; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); scrollbar-width: none; }
+.pk-roll::-webkit-scrollbar { display: none; }
+.pk-rinner { display: grid; width: max-content; }
+.pk-rcorner { position: sticky; left: 0; top: 0; z-index: 4; background: var(--panel); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.pk-rruler { position: sticky; top: 0; z-index: 3; background: var(--panel); border-bottom: 1px solid var(--border); touch-action: pan-x; }
+.pk-rruler span { position: absolute; top: 4px; padding-left: 6px; font: 500 11px 'JetBrains Mono', monospace; color: var(--muted); border-left: 1px solid var(--border-2); height: 16px; }
+.pk-rkeys { position: sticky; left: 0; z-index: 2; background: var(--panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; touch-action: pan-y; }
+.pk-rkey { font: 500 11px 'JetBrains Mono', monospace; color: var(--muted); text-align: left; padding-left: 8px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.pk-rkey.root { color: var(--text); background: color-mix(in srgb, var(--c) 10%, var(--panel)); }
+.pk-rsurf { position: relative; touch-action: none;
+  background:
+    repeating-linear-gradient(90deg, var(--border-2) 0 1px, transparent 1px calc(var(--rw) * 4)),
+    repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px var(--rw)),
+    repeating-linear-gradient(180deg, var(--border) 0 1px, transparent 1px var(--rh)); }
+.pk-rootband { position: absolute; left: 0; right: 0; background: color-mix(in srgb, var(--c) 7%, transparent); pointer-events: none; }
+.pk-rnote { position: absolute; border-radius: 7px; background: var(--c); box-shadow: inset 0 -2px 0 rgba(0,0,0,.25), 0 0 10px color-mix(in srgb, var(--c) 35%, transparent); display: flex; align-items: center; overflow: hidden; pointer-events: none; }
+.pk-rnote::after { content: ''; position: absolute; right: 3px; top: 25%; bottom: 25%; width: 3px; border-radius: 2px; background: rgba(0,0,0,.3); }
+.pk-rnote span { font: 600 10px 'JetBrains Mono', monospace; color: rgba(0,0,0,.65); padding-left: 6px; }
+.pk-rnote.sel { outline: 2px solid var(--text); outline-offset: 1px; }
+.pk-rph { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--cyan-hi); pointer-events: none; z-index: 1; display: none; }
+
+/* Mix all: a strip per track */
+.pk-strips { flex: 1; min-height: 0; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.pk-strip { flex: 0 0 76px; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 6px 8px; border-radius: 14px; border: 1px solid var(--border); border-top: 3px solid var(--c); background: var(--panel); min-height: 0; }
+.pk-vfader { flex: 1; min-height: 60px; writing-mode: vertical-lr; direction: rtl; width: 36px; accent-color: var(--c); margin: 0; }
+
+/* Landscape: the song runs left to right, like the studio's timeline, with the instrument beside it */
+.pk-app.land { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 44%); grid-template-rows: auto minmax(0, 1fr) auto; }
+.pk-app.land > .pk-top { grid-column: 1 / -1; }
+.pk-app.land > .pk-arr { grid-column: 1; grid-row: 2; }
+.pk-app.land > .pk-tport { grid-column: 1; grid-row: 3; padding-block: 6px; }
+.pk-app.land > .pk-drawer { grid-column: 2; grid-row: 2 / 4; border-top: 0; border-left: 2px solid var(--c); padding-top: 8px; }
+.pk-app.land .pk-handle { display: none; }
+@media (max-width: 720px) { .pk-app.land .pk-rec-label { display: none; } }
