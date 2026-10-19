@@ -697,7 +697,7 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   },
   realBowedPsaltery: {
     key: 'realBowedPsaltery', name: 'Bowed Psaltery (Real)', blurb: 'A recorded bowed psaltery: a sweet, glassy bowed tone, medieval and haunting', color: '#e879f9', category: 'World', kind: 'sampled', range: realRange('bowed-psaltery', 2),
-    samples: real('bowed-psaltery', 0.6), gain: 2,
+    samples: real('bowed-psaltery', 0.6), gain: 7,
   },
   realHandChimes: {
     key: 'realHandChimes', name: 'Hand Chimes (Real)', blurb: 'Recorded hand chimes: pure, soft bells that ring on, for carols and calm', color: '#e2e8f0', category: 'Mallets & Bells', kind: 'sampled', range: realRange('hand-chimes'),
