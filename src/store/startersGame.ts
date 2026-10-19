@@ -132,7 +132,7 @@ function dungeon(): ProjectSnapshot {
   const pizz = grouped(track('Pizzicato', 'pizzicato', { volume: -12, pan: 0.3, reverbSend: 0.35, fx: { human: human(0.3) } }), 'Tension');
   const trem = grouped(track('Tremolo strings', 'tremolo', { volume: -12, reverbSend: 0.4, fx: { peq: EQ.pad(8000) } }), 'Tension');
   const taiko = grouped(track('Taiko', 'taiko', { volume: -6, reverbSend: 0.4 }), 'Percussion');
-  const choir = grouped(track('Choir', 'choir', { volume: -12, reverbSend: 0.5, fx: { peq: EQ.choir() } }), 'Climax');
+  const choir = grouped(track('Choir', 'realChoir', { volume: -12, reverbSend: 0.5, fx: { peq: EQ.choir() } }), 'Climax');
   const bones = grouped(track('Trombones', 'trombone', { volume: -11, pan: 0.2, reverbSend: 0.45, fx: { peq: EQ.brass() } }), 'Climax');
 
   // D minor: Dm - Bb - Gm - A, the music box limping over it
@@ -445,7 +445,7 @@ function bossFight(): ProjectSnapshot {
   const contra = track('Low strings', 'contrabass', { volume: -7, reverbSend: 0.3, fx: { human: human(0.25) } });
   const gtr = grouped(track('Guitar', 'distortionGuitar', { volume: -12, pan: 0.45, fx: { peq: EQ.guitar() } }), 'Tension');
   const organ = grouped(track('Organ', 'pipeOrgan', { volume: -12, reverbSend: 0.5 }), 'Climax');
-  const choir = grouped(track('Choir', 'choir', { volume: -9, reverbSend: 0.5, fx: { peq: EQ.choir() } }), 'Climax');
+  const choir = grouped(track('Choir', 'realChoir', { volume: -9, reverbSend: 0.5, fx: { peq: EQ.choir() } }), 'Climax');
   const fx = track('FX', 'fx', { volume: -12 });
 
   // C minor: Cm - Ab - Bb - G; Phase 2 the same, with choir and organ, the drums doubled

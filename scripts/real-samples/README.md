@@ -9,7 +9,7 @@ and `scripts/hostedSamples.test.mjs` checks every file an instrument plays is th
 
 ## Where they come from
 
-All public domain (CC0, The Unlicense) or free to redistribute (one with credit, CC BY 3.0);
+All public domain (CC0, The Unlicense) or free to redistribute (with credit: CC BY 3.0, CC BY 4.0);
 `src/credits.ts` credits each one.
 
 - [VSCO 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios: the
@@ -56,6 +56,9 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
   [MIS page](https://theremin.music.uiowa.edu/MIS.html): "Since 1997, these recordings have been
   freely available on this website and may be downloaded and used for any projects, without
   restrictions." Credited anyway.
+- [VocalSet](https://zenodo.org/records/1193957) by Julia Wilkins, Prem Seetharaman, Alison Wahl
+  and Bryan Pardo (CC BY 4.0; credited): the choir, made by `vocalset.py` from its 20 singers' held
+  "a" vowels (soft, straight and loud), each moved onto the choir's notes.
 - The electric guitars' release sounds (the strings damped as a note is let go) are the
   [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars)
   library's own (`Samples/black/rel`, `Samples/green/rel`; CC0, as the rest of it).
@@ -116,6 +119,12 @@ about 720 MB of zips; each is deleted once split).
   one can follow the finger's touch on the string by 50 ms) and loses the rumble under 0.7 of its
   note. A note's string is one it was played on evenly, soft to loud (the C3 on the A string is
   quieter ff than pp), then the lowest position as for the strings.
+- **`vocalset.py`** makes the choir (`made` in `sets.py`, so `fetch.py` leaves it be): it reads
+  only the 60 files it uses out of VocalSet's 2 GB zip (by HTTP range requests), splits each into
+  its held notes by its pitch track, and moves every singer whose note is within a fifth onto each
+  choir note with the WORLD vocoder (`pip install pyworld`), keeping their vowel and vibrato; the
+  singers of a note are spread over the stage and a few milliseconds apart. Run it before measuring
+  and converting `choir`.
 - **`kit.py`** mixes a multi-microphone drum kit (KITS in `sets.py`): every hit's close
   microphones, placed where the overheads hear the piece, with the overheads, into one stereo file
   per piece, loudness and take. The overheads hear the whole kit at one gain, so each close

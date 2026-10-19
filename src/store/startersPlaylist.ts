@@ -242,7 +242,7 @@ function artcore(): ProjectSnapshot {
   const cello = track('Cello', 'cello', { volume: -7, pan: 0.2, reverbSend: 0.3, fx: { peq: peq(lowCut(50)), human: human(0.2, 0.2) } });
   const contra = track('Contrabass', 'contrabass', { volume: -10, pan: 0.35, reverbSend: 0.2, fx: { peq: peq(lowCut(35)), human: human(0.2, 0.2) } });
   const strings = track('Tremolo strings', 'tremolo', { volume: -16, reverbSend: 0.4, fx: { peq: EQ.pad() } });
-  const choir = track('Choir', 'choir', { volume: -12, reverbSend: 0.45, fx: { peq: EQ.choir() } });
+  const choir = track('Choir', 'realChoir', { volume: -12, reverbSend: 0.45, fx: { peq: EQ.choir() } });
   const saw = track('Supersaw', 'synthDesigner', { volume: -8, synth: PATCH.darkSupersaw(), sends: send(room, 0.2), fx: { peq: peq(lowCut(200), highCut(9000)), pump: { on: true, depth: 0.45, release: 160, trigger: 'kick' } } });
   const reese = track('Reese', 'synthDesigner', { volume: -10, synth: PATCH.nightReese(), fx: { peq: peq(lowCut(60), highCut(6000)), distortion: { on: true, amount: 0.25 } } });
   const drums = track('Breaks', 'breakbeatKit', { volume: -3, output: kit.id, reverbSend: 0.08, fx: { peq: EQ.kit() } });
@@ -585,7 +585,7 @@ function metalDubstep(): ProjectSnapshot {
   const taiko = track('Taiko', 'taiko', { volume: -5, output: kit.id, reverbSend: 0.15 });
   const trombone = track('Trombone', 'trombone', { volume: -12, pan: 0.3, sends: send(room, 0.3), fx: { peq: peq(lowCut(60), highCut(8000)), human: human(0.3) } });
   const tuba = track('Tuba', 'tuba', { volume: -12, pan: 0.3, sends: send(room, 0.25), fx: { peq: peq(lowCut(40), highCut(8000)), human: human(0.3) } });
-  const choir = track('Choir', 'choir', { volume: -14, reverbSend: 0.4, fx: { peq: peq(lowCut(150)) } });
+  const choir = track('Choir', 'realChoir', { volume: -14, reverbSend: 0.4, fx: { peq: peq(lowCut(150)) } });
   const sfx = track('FX', 'fx', { volume: -16 });
 
   // E Phrygian power chords, root and fifth: F is the flat second, Bb the tritone. One bar of 16th

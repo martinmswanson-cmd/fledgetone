@@ -55,7 +55,7 @@ def note_midi(name):
 
 
 def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=None, hi=None, retune=True, bend=True,
-      pitched=True, even=True, kit=None, tail=False, sparse=False, sf2=None, iowa=None, xloop=False, steady=False):
+      pitched=True, even=True, kit=None, tail=False, sparse=False, sf2=None, iowa=None, xloop=False, steady=False, made=None):
     """
     One set. `sources` is a list of (regex, octave[, midi function[, (lo, hi)]]): the regex matches a file's path in
     the repo, with the named groups `note` (or `index` plus a `midi` function), `layer` and,
@@ -87,12 +87,13 @@ def S(folder, repo, sources, layers, kind, takes=None, every=1, cap=None, lo=Non
     note inside its own steady part (a long loop whose end is crossfaded into its start) instead of
     repeating a short stretch of it to the cap, and keeps the file only a little past the loop.
     `steady` True holds a note recorded without vibrato on its pitch all through (a bow's slow
-    drift taken out), as the app gives it its vibrato.
+    drift taken out), as the app gives it its vibrato. `made` names the script that makes the set's
+    recordings itself instead of fetch.py (vocalset.py, the choir).
     """
     return {'folder': folder, 'repo': repo, 'sources': sources, 'layers': layers, 'kind': kind,
             'takes': takes, 'every': every, 'cap': cap or KINDS[kind]['cap'], 'lo': lo, 'hi': hi, 'retune': retune, 'bend': bend,
             'pitched': pitched, 'even': even, 'kit': kit, 'tail': tail, 'sparse': sparse, 'sf2': sf2,
-            'iowa': iowa, 'xloop': xloop, 'steady': steady}
+            'iowa': iowa, 'xloop': xloop, 'steady': steady, 'made': made}
 
 
 NOTE = r'(?P<note>[A-Ga-g][#sb]?-?\d)'
@@ -307,6 +308,11 @@ SETS = [
     # A six-string banjo; its only articulation, with a second take where there is one
     S('banjo', 'ganjo', [(rf'Common/Banjo_Common - {NOTE}(?P<take>(?:_2)?)(?P<layer>)\.wav', OCT_BANJO)],
       [''], 'plucked', takes=['', '_2']),
+    # A choir singing "aah", soft and loud: 20 singers of VocalSet (CC BY 4.0), each moved onto
+    # the note from their own nearest held note and spread over the stage (vocalset.py). Each
+    # singer is put exactly on the note there, so the notes aren't retuned or bent here (a whole
+    # section's vibrato fools the measuring by up to half a semitone)
+    S('choir', 'vocalset', [], ['soft', 'loud'], 'sustain', cap=4.5, made='vocalset.py', xloop=True, retune=False, bend=False),
     S('solo-voice', 'voice', [(rf'Samples/vowel_sustain/a/vowel_a_{NOTE}(?P<layer>)\.wav', OCT_VOICE)],
       [''], 'sustain', every=2, lo=38),  # (his lowest note, C2, wavers in vocal fry)
     # ---- a celesta, recorders and a muted trumpet ----

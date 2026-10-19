@@ -450,7 +450,7 @@ function meadowWaltz(): ProjectSnapshot {
 // ---------- Champion's showdown: orchestra, choir, guitars and kit ----------
 
 function championShowdown(): ProjectSnapshot {
-  const choir = track('Choir "ah"', 'choir', { volume: -9, reverbSend: 0.45, fx: { peq: EQ.choir() } });
+  const choir = track('Choir "ah"', 'realChoir', { volume: -9, reverbSend: 0.45, fx: { peq: EQ.choir() } });
   const spicc = grouped(track('Violins short', 'realViolinsShort', { volume: -11, pan: -0.25, reverbSend: 0.3, fx: { human: human(0.15) } }), 'Tension');
   const guitar = grouped(track('Power chords', 'realCrunchGuitar', { volume: -13, pan: 0.3, fx: { peq: EQ.guitar() } }), 'Climax');
   const hit = grouped(track('Choir hit', 'orchestraHit', { volume: -15, reverbSend: 0.5 }), 'Climax');

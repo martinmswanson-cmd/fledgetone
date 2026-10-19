@@ -725,7 +725,7 @@ function saveRoom(): ProjectSnapshot {
 // ---------- Cathedral boss: a dark waltz, three phases and a lament ----------
 
 function cathedralBoss(): ProjectSnapshot {
-  const choir = grouped(track('Choir', 'choir', { volume: -11, reverbSend: 0.55, fx: { peq: EQ.choir() } }), 'Climax');
+  const choir = grouped(track('Choir', 'realChoir', { volume: -11, reverbSend: 0.55, fx: { peq: EQ.choir() } }), 'Climax');
   const organ = track('Chapel organ', 'realChapelOrgan', { volume: -14, reverbSend: 0.5 });
   const cellos = grouped(track('Cellos short', 'realCelloShort', { volume: -10, pan: 0.2, reverbSend: 0.35, fx: { human: human(0.25) } }), 'Tension');
   const bones = grouped(track('Trombones', 'realTrombone', { volume: -11, pan: -0.25, reverbSend: 0.45, fx: { peq: EQ.brass() } }), 'Climax');

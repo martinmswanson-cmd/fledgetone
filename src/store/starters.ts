@@ -747,7 +747,7 @@ function classical(): ProjectSnapshot {
 // ---------- Angelic ----------
 
 function angelic(): ProjectSnapshot {
-  const choir = track('Choir', 'choir', { volume: -4, reverbSend: 0.5, fx: { peq: EQ.choir(), human: human(0.3, 0.3) } });
+  const choir = track('Choir', 'realChoir', { volume: -4, reverbSend: 0.5, fx: { peq: EQ.choir(), human: human(0.3, 0.3) } });
   const voices = track('Voices', 'voiceOohs', { volume: -1, reverbSend: 0.55, delaySend: 0.15, fx: { peq: EQ.choir(), human: human(0.3, 0.3) } });
   const halo = track('Halo', 'haloPad', { volume: -16, reverbSend: 0.45 });
   const harp = track('Harp', 'harp', { volume: -6, pan: -0.25, reverbSend: 0.45, fx: { human: human(0.3) } });
@@ -791,7 +791,7 @@ function epic(): ProjectSnapshot {
   const trem = track('Tremolo', 'tremolo', { volume: -10, pan: -0.3, reverbSend: 0.45, fx: { peq: EQ.pad(), human: human(0.35, 0.3) } });
   const horns = track('Horns', 'frenchHorn', { volume: -3, pan: -0.25, reverbSend: 0.45, fx: { peq: EQ.brass(), human: human(0.3, 0.25) } });
   const brass = track('Low brass', 'brassSection', { volume: -6, pan: 0.3, reverbSend: 0.5, fx: { peq: EQ.brass(), human: human(0.3, 0.2) } });
-  const choir = track('Choir', 'choir', { volume: -6, reverbSend: 0.55, fx: { peq: EQ.choir(), human: human(0.3, 0.3) } });
+  const choir = track('Choir', 'realChoir', { volume: -6, reverbSend: 0.55, fx: { peq: EQ.choir(), human: human(0.3, 0.3) } });
   const timp = track('Timpani', 'timpani', { volume: -3, reverbSend: 0.4, fx: { human: human(0.2) } });
   const taiko = track('Taiko', 'taiko', { volume: -5, reverbSend: 0.45, fx: { human: human(0.2) } });
   const perc = track('Percussion', 'acousticKit', { volume: -3, reverbSend: 0.35, fx: { human: human(0.2) } });
@@ -924,7 +924,7 @@ function metal(): ProjectSnapshot {
   const right = track('Guitar R', 'distortionGuitar', { volume: -6, pan: 0.6, fx: { peq: EQ.guitar(), compressor: { on: true, threshold: -16, ratio: 3, makeup: 1 }, human: human(0.2, 0.25) } });
   const bass = track('Bass', 'pickBass', { volume: -2, fx: { peq: peq(lowCut(35)), distortion: { on: true, amount: 0.25 }, human: human(0.15) } });
   // Low and wide, in its own hall (the master stays a tight room)
-  const choir = track('Choir', 'choir', { volume: -12, reverbSend: 0.2, fx: { peq: EQ.choir(), reverb: { on: true, decay: 3.2, preDelay: 25, tone: 6000, mix: 0.4 }, human: human(0.3, 0.3) } });
+  const choir = track('Choir', 'realChoir', { volume: -12, reverbSend: 0.2, fx: { peq: EQ.choir(), reverb: { on: true, decay: 3.2, preDelay: 25, tone: 6000, mix: 0.4 }, human: human(0.3, 0.3) } });
   // E Phrygian: chugs on low E with stabs up to F, G and A#; accents 0.95, chugs 0.7
   const riff = everyBar(2, (b): Step[] => [
     ...[0, 1, 2, 4, 5, 6, 8, 9].map((i): Step => [i, ['E2', 'B2'], i % 4 === 0 ? 0.95 : 0.7, '16n']),
@@ -1719,7 +1719,7 @@ const SWELLED = new Set<string>([
   'realViolins', 'realViolas', 'realCello', 'realSoloViolin', 'realDoubleBass', 'realTremolo',
   'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
   'realStrings', 'realBrass', 'realTenorSax',
-  'choir', 'voiceOohs', 'synthChoir', 'choirPad', 'haloPad', 'warmPad', 'newAgePad', 'glassPad', 'sweepPad', 'polysynthPad', 'soundtrackPad', 'atmosphere',
+  'realChoir', 'choir', 'voiceOohs', 'synthChoir', 'choirPad', 'haloPad', 'warmPad', 'newAgePad', 'glassPad', 'sweepPad', 'polysynthPad', 'soundtrackPad', 'atmosphere',
   'frenchHorn', 'realHorn', 'tuba', 'realTuba', 'trombone', 'realTrombone', 'oboe', 'realOboe', 'clarinet', 'realClarinet', 'bassoon', 'realBassoon', 'englishHorn',
 ]);
 

@@ -4,6 +4,12 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.19-3 — A real choir, and your own sounds
+
+- **Choir (Real)**: a choir of twenty real singers, men and women, singing "aah" soft and loud, across the stage as a choir stands. The starters that had a choir sing with it now.
+- **Favourites**: star any instrument (★ on its row) to keep it at the top of every instrument list, in the studio and in Pocket.
+- **My sounds**: set a sound up once and keep it. The bookmark button beside the instrument in the Track Inspector saves the whole sound (the instrument with its settings, a synth patch, an 808 or kit design, a plugin's knobs, its effects, EQ and sends) under a name, to pick from the top of any instrument list in any song, in the studio or Pocket.
+
 ## 2026.10.19-2 — Pocket on one screen
 
 - **Pocket, the phone version, is now one screen**: the whole song as a grid at the top (a row for each section, a column for each track), and the bottom of the screen becomes the instrument of whichever cell you tap. No more tabs: the song, its instruments, singing and the mixer are all on the one screen, as in the studio.

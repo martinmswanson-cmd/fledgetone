@@ -108,6 +108,9 @@ def main(args):
         if st['kit']:
             print(f"{st['folder']:20s} mixed by kit.py")
             continue
+        if st['made']:
+            print(f"{st['folder']:20s} made by {st['made']}")
+            continue
         if st['iowa']:
             print(f"{st['folder']:20s} fetched by iowa.py")
             continue

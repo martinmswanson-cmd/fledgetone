@@ -15,6 +15,7 @@ export interface SampleCredit {
 
 const CC_BY = '[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)';
 const CC0 = '[CC0](https://creativecommons.org/publicdomain/zero/1.0/) (public domain)';
+const CC_BY_4 = '[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)';
 const CC_BY_SA = '[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/)';
 const NB = 'https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/';
 const GLEITZ = "Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts)";
@@ -77,6 +78,11 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     prefixes: [`${HOSTED}banjo/`],
     samples: 'Banjo from [ganjo](https://github.com/sfzinstruments/ganjo) by itsclipping (converted to MP3, hosted with the app)',
     licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}choir/`],
+    samples: 'Choir made from the held "a" vowels of [VocalSet](https://zenodo.org/records/1193957) by Julia Wilkins, Prem Seetharaman, Alison Wahl and Bryan Pardo (20 singers, each moved onto the choir\'s notes with the WORLD vocoder and layered into sections; converted to MP3, hosted with the app)',
+    licence: CC_BY_4,
   },
   {
     prefixes: [`${HOSTED}solo-voice/`],
