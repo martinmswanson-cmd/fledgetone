@@ -748,7 +748,7 @@ function classical(): ProjectSnapshot {
 
 function angelic(): ProjectSnapshot {
   const choir = track('Choir', 'realChoir', { volume: -4, reverbSend: 0.5, fx: { peq: EQ.choir(), human: human(0.3, 0.3) } });
-  const voices = track('Voices', 'voiceOohs', { volume: -1, reverbSend: 0.55, delaySend: 0.15, fx: { peq: EQ.choir(), human: human(0.3, 0.3) } });
+  const voices = track('Voices', 'realChoirOoh', { volume: -1, reverbSend: 0.55, delaySend: 0.15, fx: { peq: EQ.choir(), human: human(0.3, 0.3) } });
   const halo = track('Halo', 'haloPad', { volume: -16, reverbSend: 0.45 });
   const harp = track('Harp', 'harp', { volume: -6, pan: -0.25, reverbSend: 0.45, fx: { human: human(0.3) } });
   const celesta = track('Celesta', 'celesta', { volume: -4, pan: 0.3, reverbSend: 0.5, delaySend: 0.25 });
@@ -1719,7 +1719,7 @@ const SWELLED = new Set<string>([
   'realViolins', 'realViolas', 'realCello', 'realSoloViolin', 'realDoubleBass', 'realTremolo',
   'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
   'realStrings', 'realBrass', 'realTenorSax',
-  'realChoir', 'choir', 'voiceOohs', 'synthChoir', 'choirPad', 'haloPad', 'warmPad', 'newAgePad', 'glassPad', 'sweepPad', 'polysynthPad', 'soundtrackPad', 'atmosphere',
+  'realChoir', 'realChoirOoh', 'choir', 'voiceOohs', 'synthChoir', 'choirPad', 'haloPad', 'warmPad', 'newAgePad', 'glassPad', 'sweepPad', 'polysynthPad', 'soundtrackPad', 'atmosphere',
   'frenchHorn', 'realHorn', 'tuba', 'realTuba', 'trombone', 'realTrombone', 'oboe', 'realOboe', 'clarinet', 'realClarinet', 'bassoon', 'realBassoon', 'englishHorn',
 ]);
 

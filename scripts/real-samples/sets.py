@@ -313,6 +313,8 @@ SETS = [
     # singer is put exactly on the note there, so the notes aren't retuned or bent here (a whole
     # section's vibrato fools the measuring by up to half a semitone)
     S('choir', 'vocalset', [], ['soft', 'loud'], 'sustain', cap=4.5, made='vocalset.py', xloop=True, retune=False, bend=False),
+    # The same singers on "ooh" (their held "u"): softer and rounder, for pads and film scores
+    S('choir-ooh', 'vocalset', [], ['soft', 'loud'], 'sustain', cap=4.5, made='vocalset.py', xloop=True, retune=False, bend=False),
     S('solo-voice', 'voice', [(rf'Samples/vowel_sustain/a/vowel_a_{NOTE}(?P<layer>)\.wav', OCT_VOICE)],
       [''], 'sustain', every=2, lo=38),  # (his lowest note, C2, wavers in vocal fry)
     # ---- a celesta, recorders and a muted trumpet ----

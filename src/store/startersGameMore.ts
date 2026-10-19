@@ -186,7 +186,7 @@ function cosmicWaltz(): ProjectSnapshot {
   const pizz = grouped(track('Pizzicato', 'realPizzicato', { volume: -12, pan: 0.15, reverbSend: 0.35, fx: { human: human(0.25) } }), 'Tension');
   const bass = track('Double bass', 'realDoubleBass', { volume: -11, reverbSend: 0.3, fx: { peq: peq(lowCut(35)), human: human(0.2) } });
   const strings = grouped(track('Violins', 'realViolins', { volume: -13, reverbSend: 0.45, fx: { peq: EQ.pad(9000) } }), 'Climax');
-  const voices = grouped(track('Voices', 'voiceOohs', { volume: -15, reverbSend: 0.55, fx: { peq: EQ.choir() } }), 'Climax');
+  const voices = grouped(track('Voices', 'realChoirOoh', { volume: -15, reverbSend: 0.55, fx: { peq: EQ.choir() } }), 'Climax');
   const horn = grouped(track('French horn', 'realHorn', { volume: -9, pan: -0.1, reverbSend: 0.45, fx: { peq: EQ.brass(), human: human(0.3, 0.1) } }), 'Climax');
   const glock = grouped(track('Glockenspiel', 'realGlockenspiel', { volume: -16, pan: 0.35, reverbSend: 0.5 }), 'Percussion');
   const timpani = grouped(track('Timpani', 'timpani', { volume: -13, reverbSend: 0.45 }), 'Percussion');

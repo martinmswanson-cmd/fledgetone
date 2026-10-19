@@ -29,7 +29,7 @@ export const INSTRUMENT_KEYS = [
   'realGrandPiano', 'realUprightPiano', 'realPipeOrgan', 'realChapelOrgan', 'realMarimba', 'realXylophone', 'realGlockenspiel',
   'realAltoSax', 'realBariSax', 'realUprightBass', 'realElectricBass', 'realFlatwoundGuitar',
   'realTimpani', 'realTubularBells', 'realVibraphone', 'realHarpsichord', 'realKalimba', 'realTenorSax', 'realStrings', 'realBrass',
-  'realSteelDrums', 'realElectricPiano', 'realBanjo', 'realHarmonica', 'realOcarina', 'realZither', 'realChoir', 'realSoloVoice', 'realBassDrum', 'studioKit', 'sessionKit', 'brushKit', 'latinPercussion', 'percussionExtras',
+  'realSteelDrums', 'realElectricPiano', 'realBanjo', 'realHarmonica', 'realOcarina', 'realZither', 'realChoir', 'realChoirOoh', 'realSoloVoice', 'realBassDrum', 'studioKit', 'sessionKit', 'brushKit', 'latinPercussion', 'percussionExtras',
   'realCelesta', 'realRecorder', 'realMutedTrumpet',
   'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
   'realNylonGuitar',
@@ -811,6 +811,10 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
     key: 'realChoir', name: 'Choir (Real)', blurb: 'Recorded singers, men and women, holding "aah" together: sacred, epic, angelic', color: '#fef3c7', category: 'Choir & Voices', kind: 'sampled', range: realRange('choir'),
     samples: real('choir', 1.2), gain: 4.3, dynamics: true,
   },
+  realChoirOoh: {
+    key: 'realChoirOoh', name: 'Choir "Ooh" (Real)', blurb: 'Recorded singers, men and women, on a soft "ooh": pads, lullabies, film scores', color: '#fde68a', category: 'Choir & Voices', kind: 'sampled', range: realRange('choir-ooh'),
+    samples: real('choir-ooh', 1.2), gain: -0.3, dynamics: true,
+  },
   realSoloVoice: {
     key: 'realSoloVoice', name: 'Solo Voice (Real)', blurb: 'A recorded low male voice singing "aah": chant, drones, solemn', color: '#fde68a', category: 'Choir & Voices', kind: 'sampled', range: [36, 61],
     samples: real('solo-voice', 0.5), gain: -2, dynamics: true,
@@ -1056,6 +1060,7 @@ const SEATS: Partial<Record<InstrumentKey, Seat>> = {
   taiko: { pan: 0, distance: 0.6 },
   choir: { pan: 0, distance: 0.7 },
   realChoir: { pan: 0, distance: 0.7 },
+  realChoirOoh: { pan: 0, distance: 0.7 },
   voiceOohs: { pan: 0, distance: 0.7 },
   realPipeOrgan: { pan: 0, distance: 0.6 },
 };
@@ -1101,7 +1106,7 @@ export const breathOf = (key: InstrumentKey): number | undefined => BREATH[key];
  * Sections (several players on one part): the notes of a chord don't start in the same instant,
  * a few milliseconds apart, as no two players start together.
  */
-const SECTIONS = new Set<InstrumentKey>(['realViolins', 'realViolas', 'realCello', 'realStrings', 'realBrass', 'realTremolo', 'realPizzicato', 'realDoubleBass', 'realChoir', 'choir', 'voiceOohs']);
+const SECTIONS = new Set<InstrumentKey>(['realViolins', 'realViolas', 'realCello', 'realStrings', 'realBrass', 'realTremolo', 'realPizzicato', 'realDoubleBass', 'realChoir', 'realChoirOoh', 'choir', 'voiceOohs']);
 export const isSection = (key: InstrumentKey): boolean => SECTIONS.has(key);
 
 /** How loose a player of each kind of instrument is: the Human insert's [timing, dynamics]. */

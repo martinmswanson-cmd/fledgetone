@@ -80,8 +80,8 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
-    prefixes: [`${HOSTED}choir/`],
-    samples: 'Choir made from the held "a" vowels of [VocalSet](https://zenodo.org/records/1193957) by Julia Wilkins, Prem Seetharaman, Alison Wahl and Bryan Pardo (20 singers, each moved onto the choir\'s notes with the WORLD vocoder and layered into sections; converted to MP3, hosted with the app)',
+    prefixes: [`${HOSTED}choir/`, `${HOSTED}choir-ooh/`],
+    samples: 'Choirs made from the held "a" and "u" vowels of [VocalSet](https://zenodo.org/records/1193957) by Julia Wilkins, Prem Seetharaman, Alison Wahl and Bryan Pardo (20 singers, each moved onto the choir\'s notes with the WORLD vocoder and layered into sections; converted to MP3, hosted with the app)',
     licence: CC_BY_4,
   },
   {

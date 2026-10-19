@@ -57,8 +57,8 @@ All public domain (CC0, The Unlicense) or free to redistribute (with credit: CC 
   freely available on this website and may be downloaded and used for any projects, without
   restrictions." Credited anyway.
 - [VocalSet](https://zenodo.org/records/1193957) by Julia Wilkins, Prem Seetharaman, Alison Wahl
-  and Bryan Pardo (CC BY 4.0; credited): the choir, made by `vocalset.py` from its 20 singers' held
-  "a" vowels (soft, straight and loud), each moved onto the choir's notes.
+  and Bryan Pardo (CC BY 4.0; credited): the two choirs, made by `vocalset.py` from its 20 singers'
+  held "a" and "u" vowels (soft, straight and loud), each moved onto the choir's notes.
 - The electric guitars' release sounds (the strings damped as a note is let go) are the
   [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars)
   library's own (`Samples/black/rel`, `Samples/green/rel`; CC0, as the rest of it).

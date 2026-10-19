@@ -504,7 +504,7 @@ function championShowdown(): ProjectSnapshot {
 // ---------- Ruin requiem: wordless voices, layering every eight bars ----------
 
 function ruinRequiem(): ProjectSnapshot {
-  const voices = grouped(track('Voices "oo"', 'voiceOohs', { volume: -9, reverbSend: 0.55, fx: { peq: EQ.choir() } }), 'Climax');
+  const voices = grouped(track('Voices "oo"', 'realChoirOoh', { volume: -9, reverbSend: 0.55, fx: { peq: EQ.choir() } }), 'Climax');
   const piano = track('Piano ostinato', 'realGrandPiano', { volume: -6, reverbSend: 0.45, fx: { peq: EQ.piano(), human: human(0.2) } });
   const strings = grouped(track('Strings', 'realViolins', { volume: -15, pan: -0.2, reverbSend: 0.5, fx: { peq: EQ.pad(8000) } }), 'Tension');
   const cello = track('Cellos', 'realCello', { volume: -11, pan: 0.2, reverbSend: 0.4, fx: { peq: peq(lowCut(40)), human: human(0.25) } });

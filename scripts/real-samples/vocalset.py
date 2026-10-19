@@ -6,10 +6,12 @@
 # moves, the voice's formants, the vowel, stay where they are, so nothing goes chipmunk or giant)
 # with their own vibrato and wobble kept, and spread over the stage a few milliseconds apart, as
 # a real section stands and starts. The soft layer is the soft and straight takes, the loud the
-# forte ones. Writes dl/choir/<note>_<layer>.wav and dl/choir/plan.json for measure.py and
-# convert.py. Needs Python 3 with numpy and pyworld (pip install pyworld).
-#   python3 vocalset.py
-# Fetches only the 60 files it uses (about 40 MB) out of the 2 GB zip, by HTTP range requests.
+# forte ones. The "ooh" choir (choir-ooh) is the same, from their held "u" vowels. Writes
+# dl/<set>/<note>_<layer>.wav and dl/<set>/plan.json for measure.py and convert.py. Needs Python 3
+# with numpy and pyworld (pip install pyworld).
+#   python3 vocalset.py              both choirs
+#   python3 vocalset.py choir-ooh    just that one
+# Fetches only the 60 files a choir uses (about 40 MB) out of the 2 GB zip, by HTTP range requests.
 import os, sys, json, struct, zlib, wave, urllib.request
 import numpy as np
 import pyworld as pw
@@ -20,6 +22,8 @@ URL = 'https://zenodo.org/records/1193957/files/VocalSet.zip?download=1'
 SR = 44100
 FP = 5  # WORLD frame period, ms
 TAKES = {0: ('pp', 'straight'), 1: ('forte',)}
+# Each choir's vowel
+VOWELS = {'choir': 'a', 'choir-ooh': 'u'}
 # The choir's notes: every 3 semitones from F2 (the basses' lowest, a fifth under their C3) to
 # B5; the men sing up to F4, the women from G3 (tenors and altos together in between)
 NOTES = list(range(41, 84, 3))
@@ -179,13 +183,14 @@ def write(path, y):
     w.close()
 
 
-def main():
-    st = next(s for s in SETS if s['folder'] == 'choir')
-    d = os.path.join('dl', 'choir')
+def build(folder, entries):
+    st = next(s for s in SETS if s['folder'] == folder)
+    vowel = VOWELS[folder]
+    d = os.path.join('dl', folder)
     src = os.path.join(d, 'source')
     os.makedirs(src, exist_ok=True)
-    wanted = [e for e in listing() if e['name'].startswith('FULL/') and '/long_tones/' in e['name']
-              and any(e['name'].endswith(f'_long_{k}_a.wav') for ks in TAKES.values() for k in ks)]
+    wanted = [e for e in entries if e['name'].startswith('FULL/') and '/long_tones/' in e['name']
+              and any(e['name'].endswith(f'_long_{k}_{vowel}.wav') for ks in TAKES.values() for k in ks)]
     takes = {0: [], 1: []}
     for e in wanted:
         path = os.path.join(src, os.path.basename(e['name']))
@@ -205,8 +210,10 @@ def main():
             files.append({'path': name, 'file': name, 'nominal': target, 'layer': layer, 'take': '', 'src': 0})
             print(f'   {target} {st["layers"][layer]}: {n} singers')
     json.dump({'source': URL, 'files': files}, open(os.path.join(d, 'plan.json'), 'w'), indent=1)
-    print(f"choir                {len(files)} notes")
+    print(f"{folder:20s} {len(files)} notes")
 
 
 if __name__ == '__main__':
-    main()
+    entries = listing()
+    for folder in sys.argv[1:] or list(VOWELS):
+        build(folder, entries)
