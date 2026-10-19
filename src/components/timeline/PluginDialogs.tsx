@@ -16,6 +16,8 @@ import {
   wamVersion,
 } from '../../audio/wamHost';
 import { showToast } from './toastStore';
+import { freezeIsCurrent } from '../../store/freeze';
+import { useSoundLibrary } from '../../audio/soundLibrary';
 
 /**
  * Web Audio Module plugins in the app: the dialog that adds one by URL (as a new Plugin track's
@@ -154,6 +156,11 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
   const track = useTimelineStore((s) => s.tracks.find((t) => t.id === trackId));
   const plugin = track?.plugin?.id === pluginId ? track.plugin : track?.pluginFx?.find((p) => p.id === pluginId);
   const inst = liveWam(pluginId);
+  // Frozen by hand (the snowflake): it plays its render, and the plugin isn't running
+  const frozen = useTimelineStore((s) => {
+    const t = s.tracks.find((x) => x.id === trackId);
+    return !!t?.frozen && freezeIsCurrent(t, s, (id) => ['missing', 'error'].includes(useSoundLibrary.getState().status[id] ?? ''));
+  });
   const holder = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: Math.max(16, window.innerWidth / 2 - 220), y: 90 });
   const [failed, setFailed] = useState<string | null>(null);
@@ -245,7 +252,7 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
       <div ref={holder} className="overflow-auto max-h-[80vh] bg-black/30" />
       {(!inst || failed) && (
         <p className="p-4 text-xs text-forge-muted max-w-sm">
-          {failed ?? (plugin.bypass ? 'Bypassed: its window opens when it’s back in.' : blockedPluginUrls().includes(plugin.url) ? 'Not loaded: allow this project’s plugins first (the bar at the top).' : 'Loading the plugin…')}
+          {failed ?? (plugin.bypass ? 'Bypassed: its window opens when it’s back in.' : frozen ? 'This track is frozen (the snowflake on the track): unfreeze it to change the plugin’s settings.' : blockedPluginUrls().includes(plugin.url) ? 'Not loaded: allow this project’s plugins first (the bar at the top).' : 'Loading the plugin…')}
         </p>
       )}
     </div>

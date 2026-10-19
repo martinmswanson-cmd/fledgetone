@@ -13,6 +13,9 @@
  *
  * Renders take memory (decoded audio), so the busiest tracks go first and they stop at a budget
  * set by the computer's memory. It's a setting for this browser, on by default.
+ *
+ * A track whose plugin window is open plays live and isn't frozen: the window works the plugin
+ * itself, which a render has in place of it (opening the window lets go of the track's render).
  */
 import { create } from 'zustand';
 import { useTimelineStore } from './timelineStore';
@@ -23,6 +26,7 @@ import type { FrozenTrack, Track } from './timelineTypes';
 import { barToSeconds } from '../audio/tempoMap';
 import { INSTRUMENTS, isAudioKind, isDrumKind } from '../audio/instrumentCatalog';
 import { dropMemorySound, provideMemorySound, useSoundLibrary } from '../audio/soundLibrary';
+import { useUiStore } from './uiStore';
 
 const SETTING_KEY = 'bosBeatbox.autoFreeze';
 /** Songs with fewer instrument tracks than this play fine live: nothing is frozen */
@@ -79,6 +83,18 @@ export function setAutoFreeze(on: boolean): void {
   }
   if (!on) dropAll();
   useAutoFreeze.setState({ on });
+}
+
+/** Let go of a track's render (and one waiting to go in), so it plays live. */
+function thaw(trackId: string) {
+  const { frozen, pending } = useAutoFreeze.getState();
+  if (!frozen[trackId] && !pending[trackId]) return;
+  for (const e of [frozen[trackId], pending[trackId]]) if (e) dropMemorySound(e.soundId);
+  const nextFrozen = { ...frozen };
+  const nextPending = { ...pending };
+  delete nextFrozen[trackId];
+  delete nextPending[trackId];
+  useAutoFreeze.setState({ frozen: nextFrozen, pending: nextPending });
 }
 
 function dropAll() {
@@ -169,6 +185,7 @@ async function tick() {
   if (Object.keys(useFreezing.getState()).length) return; // a freeze the person asked for comes first
 
   const editingTrack = s.clips.find((c) => c.id === s.editingClipId)?.trackId;
+  const pluginOpen = useUiStore.getState().pluginWindow?.trackId;
   const soundMissing = (id: string) => ['missing', 'error'].includes(useSoundLibrary.getState().status[id] ?? '');
   const { frozen } = useAutoFreeze.getState();
   const used = Object.values(frozen).reduce((n, e) => n + e.bytes, 0);
@@ -196,6 +213,7 @@ async function tick() {
         used - (frozen[t.id]?.bytes ?? 0) + leastBytes(t.id) <= budget &&
         !t.isArmed &&
         t.id !== editingTrack &&
+        t.id !== pluginOpen &&
         !freezeIsCurrent(t, all, soundMissing) // frozen by hand already
       );
     })
@@ -210,7 +228,7 @@ async function tick() {
     const after = useTimelineStore.getState();
     const track = after.tracks.find((t) => t.id === next.id);
     // Changed while it rendered (or gone): out of date already, so it's tried again once it settles
-    if (!r || !track || freezeFingerprint(track, { tracks: after.tracks, clips: after.clips, bpm: after.bpm, swing: after.swing, tempoPoints: after.tempoPoints }) !== r.fingerprint) return;
+    if (!r || !track || useUiStore.getState().pluginWindow?.trackId === next.id || freezeFingerprint(track, { tracks: after.tracks, clips: after.clips, bpm: after.bpm, swing: after.swing, tempoPoints: after.tempoPoints }) !== r.fingerprint) return;
     // A track whose two sides are the same (most instruments, centred) is kept as one channel
     const [left, right] = r.channels;
     let mono = !right;
@@ -255,9 +273,15 @@ export function startAutoFreeze(): () => void {
   const unsubscribe = useTimelineStore.subscribe((state, prev) => {
     if (state.tracks !== prev.tracks || state.clips !== prev.clips || state.bpm !== prev.bpm || state.swing !== prev.swing || state.tempoPoints !== prev.tempoPoints) lastEdit = performance.now();
   });
+  // A plugin's window opened: its track plays live while it's open
+  const unwatchWindow = useUiStore.subscribe((state, prev) => {
+    const id = state.pluginWindow?.trackId;
+    if (id && id !== prev.pluginWindow?.trackId) thaw(id);
+  });
   const timer = window.setInterval(() => void tick(), 1000);
   return () => {
     unsubscribe();
+    unwatchWindow();
     window.clearInterval(timer);
   };
 }
