@@ -154,6 +154,9 @@ export const SFX_GROUPS = [
   { name: 'Jingles', kinds: ['victory', 'gameOver', 'questComplete', 'secret', 'countdown'] },
   { name: 'Foley', kinds: ['doorOpen', 'doorClose', 'pageTurn', 'bookPlace', 'cardDeal', 'diceRoll', 'glassBreak', 'bubble', 'slime', 'sciFiDoor'] },
   { name: 'Loops', kinds: ['engineHum', 'wind', 'windGusty', 'windStorm', 'windHowl', 'fire', 'rain', 'alarm', 'forceField', 'spaceship', 'water'] },
+  { name: 'Nature', kinds: ['forest', 'night', 'trees', 'river', 'ocean', 'rainHeavy', 'thunderstorm', 'thunder', 'cave'] },
+  { name: 'Places', kinds: ['city', 'cafe', 'market'] },
+  { name: 'Creatures', kinds: ['songbird', 'crow', 'owl', 'seagull', 'dog', 'cat', 'catPurr', 'wolf', 'frog', 'horse', 'cow', 'rooster', 'chicken', 'sheep', 'pig', 'bee', 'flies', 'monsterRoar', 'zombie', 'goblin', 'squeak'] },
 ] as const;
 
 export type SfxCategory = (typeof SFX_GROUPS)[number]['kinds'][number];
@@ -241,6 +244,39 @@ export const SFX_LABELS: Record<SfxCategory, string> = {
   bubble: 'Bubble',
   slime: 'Slime',
   sciFiDoor: 'Sci-fi door',
+  forest: 'Forest',
+  night: 'Night',
+  trees: 'Wind in trees',
+  river: 'River',
+  ocean: 'Ocean waves',
+  rainHeavy: 'Downpour',
+  thunderstorm: 'Thunderstorm',
+  thunder: 'Thunder',
+  cave: 'Cave',
+  city: 'City street',
+  cafe: 'Cafe',
+  market: 'Market',
+  songbird: 'Songbird',
+  crow: 'Crow',
+  owl: 'Owl',
+  seagull: 'Seagull',
+  dog: 'Dog',
+  cat: 'Cat',
+  catPurr: 'Purring cat',
+  wolf: 'Wolf',
+  frog: 'Frog',
+  horse: 'Horse',
+  cow: 'Cow',
+  rooster: 'Rooster',
+  chicken: 'Chicken',
+  sheep: 'Sheep',
+  pig: 'Pig',
+  bee: 'Bee',
+  flies: 'Flies',
+  monsterRoar: 'Monster roar',
+  zombie: 'Zombie',
+  goblin: 'Goblin',
+  squeak: 'Squeak',
 };
 
 /** The group a kind of sound is in. */
@@ -254,6 +290,8 @@ export const SFX_SETS = [
   { id: 'shooter', name: 'Sci-fi shooter', folder: 'scifi', kinds: ['laserModern', 'gunshot', 'reload', 'chargeUp', 'shieldUp', 'powerDown', 'teleport', 'robotBeep', 'scan', 'alarm', 'impactHeavy'] },
   { id: 'casual', name: 'Casual & puzzle', folder: 'casual', kinds: ['uiClick', 'uiConfirm', 'coinModern', 'gem', 'bounce', 'whoosh', 'collectAll', 'secret', 'countdown', 'victory', 'gameOver'] },
   { id: 'ambience', name: 'Ambience loops', folder: 'ambience', kinds: ['wind', 'windStorm', 'rain', 'fire', 'water', 'spaceship', 'engineHum', 'forceField'] },
+  { id: 'nature', name: 'Nature & places', folder: 'nature', kinds: ['forest', 'night', 'trees', 'river', 'ocean', 'rainHeavy', 'thunderstorm', 'thunder', 'cave', 'city', 'cafe', 'market'] },
+  { id: 'creatures', name: 'Animals & creatures', folder: 'creatures', kinds: ['songbird', 'crow', 'owl', 'dog', 'cat', 'wolf', 'horse', 'cow', 'rooster', 'sheep', 'pig', 'monsterRoar', 'zombie', 'goblin'] },
   { id: 'foley', name: 'Foley & props', folder: 'foley', kinds: ['doorOpen', 'doorClose', 'pageTurn', 'bookPlace', 'cardDeal', 'diceRoll', 'glassBreak', 'footstep', 'land', 'unlock'] },
 ] as const satisfies ReadonlyArray<{ id: string; name: string; folder: string; kinds: readonly SfxCategory[] }>;
 export type SfxSetId = (typeof SFX_SETS)[number]['id'];
@@ -363,6 +401,12 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
   const M = (layers: SfxLayer[], patch: Partial<Omit<SfxSound, 'layers'>> = {}): SfxSound => sound(layers, { ...patch, modern: true });
   /** A recording, played through (Hold covers it), its speed nudged a little */
   const rec = (group: string, patch: Partial<SfxLayer> = {}) => L({ wave: 'rec', rec: group, freq: 440 * 2 ** (between(-1, 1) / 12), hold: 4, decay: 0.05, ...patch });
+  /** A field recording looped as it was (its pitch untouched), opened out a little */
+  const field = (group: string, patch: Partial<SfxLayer> = {}) => rec(group, { freq: 440, width: 0.5, ...patch });
+  /** A place: its recording, a 20-second loop */
+  const place = (group: string, patch: Partial<SfxLayer> = {}, level: SfxSound['level'] = 'soft') => M([field(group, patch)], { level, loop: true, loopLength: 20 });
+  /** An animal's call, pitched a little up or down, in a little of the space it was in */
+  const call = (group: string, reverb: number) => M([rec(group)], { reverb, room: 0.5 });
   /** A struck body: a short noise strike ringing `material` at `freq` */
   const strike = (material: SfxMaterial, freq: number, ring: number, gain = 1, delay = 0, patch: Partial<SfxLayer> = {}) =>
     L({ wave: 'pink', lowpass: 9000, hold: 0, decay: between(0.005, 0.009), punch: 0.5, body: material, ring, bodyMix: 0.9, freq, gain, delay, ...patch });
@@ -656,6 +700,79 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
     }
     case 'water':
       return M([rec('water'), L({ wave: 'crackle', freq: between(150, 300), bandpass: true, lowpass: between(1500, 2500), reso: 0.6, gain: 0.4, width: 1 })], { level: 'soft', loop: true, loopLength: 4 });
+
+    // ---- Nature and places: field recordings (20 s takes), as they were, each variation a
+    // different stretch; a touch of width and air so a mono recording opens out ----
+    case 'forest':
+      return place('forest');
+    case 'night':
+      return place('night');
+    case 'trees':
+      return place('trees', { gust: 0.35, gustRate: between(0.12, 0.2) });
+    case 'river':
+      return place('river');
+    case 'ocean':
+      return place('ocean');
+    case 'rainHeavy':
+      return place('rain-heavy', {}, 'normal');
+    case 'thunderstorm':
+      return place('storm', {}, 'normal');
+    case 'cave':
+      return M([field('cave')], { level: 'soft', loop: true, loopLength: 20, reverb: 0.35, room: 0.85 });
+    case 'city':
+      return place('city');
+    case 'cafe':
+      return place('crowd');
+    case 'market':
+      return place('market');
+    case 'thunder':
+      // A real clap and its roll, a deep rumble under it, from one side of the sky
+      return M([rec('thunder', { freq: 440 * 2 ** (between(-2, 0.5) / 12), hold: 9, pan: between(-0.4, 0.4), width: 0.8 }), L({ wave: 'brown', lowpass: between(90, 140), attack: between(0.05, 0.2), hold: between(0.5, 1.5), decay: between(2.5, 4), gain: 0.5, width: 0.6 })], { level: 'loud', reverb: 0.25, room: 0.9 });
+
+    // ---- Creatures: recorded calls, a little higher or lower each time (another animal) ----
+    case 'songbird':
+      return M([rec('songbird', { width: 0.3, pan: between(-0.5, 0.5) })], { level: 'soft', reverb: 0.15, room: 0.6 });
+    case 'crow':
+      return call('crow', 0.25);
+    case 'owl':
+      return M([rec('owl', { freq: 440 * 2 ** (between(-1, 1) / 12), hold: 5 })], { level: 'soft', reverb: 0.3, room: 0.8 });
+    case 'seagull':
+      return call('gull', 0.3);
+    case 'dog':
+      return call('dog', 0.12);
+    case 'cat':
+      return call('cat', 0.08);
+    case 'catPurr':
+      return M([field('purr', { width: 0.2 })], { level: 'soft', loop: true, loopLength: 12 });
+    case 'wolf':
+      return M([rec('wolf', { hold: 9 })], { reverb: 0.35, room: 0.9 });
+    case 'frog':
+      return call('frog', 0.1);
+    case 'horse':
+      return call('horse', 0.15);
+    case 'cow':
+      return call('cow', 0.2);
+    case 'rooster':
+      return call('rooster', 0.2);
+    case 'chicken':
+      return call('chicken', 0.1);
+    case 'sheep':
+      return call('sheep', 0.15);
+    case 'pig':
+      return call('pig', 0.08);
+    case 'bee':
+      return M([rec('bee', { pan: -0.5 * (r() < 0.5 ? -1 : 1), panTo: 0.5 * (r() < 0.5 ? -1 : 1) })], { level: 'soft' });
+    case 'flies':
+      return M([field('flies', { width: 0.6 })], { level: 'soft', loop: true, loopLength: 12 });
+    case 'monsterRoar':
+      // A beast's roar, deeper than life, with a low growl under it
+      return M([rec('roar', { freq: 440 * 2 ** (between(-5, 0) / 12), hold: 5 }), L({ wave: 'brown', lowpass: between(120, 200), attack: 0.05, hold: between(0.4, 0.9), decay: 0.6, trem: 0.5, tremRate: between(18, 30), gain: 0.35 })], { level: 'loud', reverb: 0.2, room: 0.6 });
+    case 'zombie':
+      return M([rec('groan', { freq: 440 * 2 ** (between(-3, 1) / 12) })], { reverb: 0.2, room: 0.5 });
+    case 'goblin':
+      return M([rec('goblin', { freq: 440 * 2 ** (between(-1, 3) / 12) })], { reverb: 0.12, room: 0.4 });
+    case 'squeak':
+      return M([rec('squeak', { freq: 440 * 2 ** (between(-2, 4) / 12) })], { level: 'soft', reverb: 0.08, room: 0.3 });
   }
 }
 

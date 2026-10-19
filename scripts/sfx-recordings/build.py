@@ -8,7 +8,9 @@ describing them (generated: don't edit by hand) and public/fledgetone-sfx/README
     python3 scripts/sfx-recordings/build.py <cache dir>
 
 Needs curl, unzip and ffmpeg (with libmp3lame). Every source is CC0 1.0 (public domain); the
-README names who made each, as thanks (it isn't required).
+README names who made each, as thanks (it isn't required). The nature, places and creature
+recordings come from Freesound: each sound's page says "Creative Commons 0" (checked by hand for
+every one), and its high-quality preview (an MP3 anyone can download) is what's fetched.
 """
 import glob
 import hashlib
@@ -17,6 +19,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(ROOT, 'public', 'fledgetone-sfx')
@@ -38,7 +41,49 @@ SOURCES = [
     ('wind', 'https://opengameart.org/sites/default/files/wind%20woosh%20loop.ogg', 'file', 'SketchMan3 (from JaggedStone\'s Loopable Dungeon Ambience)', 'https://opengameart.org/content/wind-whoosh-loop'),
 ]
 
-# The groups: id, label, the files (source, glob), whether it's a loop (kept whole, not trimmed)
+
+def fs(name, sound, user, who):
+    """A recording on Freesound (CC0): its high-quality preview, by the sound's id and its maker's."""
+    return (name, f'https://cdn.freesound.org/previews/{sound // 1000}/{sound}_{user}-hq.mp3', 'file', who, f'https://freesound.org/s/{sound}/')
+
+
+SOURCES += [
+    # ---- nature ----
+    fs('birds-spring', 463903, 7241289, 'BurghRecords'), fs('wind-birds', 288899, 2367139, 'petebuchwald'),
+    fs('crickets', 333221, 2098408, 'hdfreema'), fs('frogs-crickets', 32655, 189568, 'greysound'),
+    fs('rain-thunder', 237729, 3839718, 'FlatHill'),
+    fs('thunder-strike', 446753, 1790434, 'BlueDelta'), fs('thunder-clap', 194364, 1985044, 'Dave Welsh'), fs('thunder-loud', 2689, 2211, 'Pingel'), fs('thunder-ogg', 244053, 2971247, 'lennyboy'),
+    fs('rain-heavy', 507902, 9004329, 'inuetc'), fs('rain-rural', 200272, 2322692, 'jmbphilmes'),
+    fs('waves', 531015, 9818404, 'Noted451'), fs('waves-big', 412308, 7707368, 'straget'),
+    fs('stream-close', 433589, 5618682, 'jackthemurray'), fs('stream', 382322, 3899984, 'sterferny'),
+    fs('cave-drips', 177958, 985466, 'Sclolex'), fs('cave-water', 443061, 6229882, 'Klangkobold'),
+    fs('trees-birds', 538197, 11335579, 'HighPeakEmma'), fs('breeze', 181801, 3153523, 'keweldog'), fs('forest-day', 517042, 11333374, 'sonidosreales245'),
+    # ---- places ----
+    fs('big-city', 495302, 10725617, 'tosha73'), fs('city-street', 36734, 43834, 'moxobna'),
+    fs('cafe', 482990, 8972317, 'priesjensen'), fs('cafeteria', 625112, 12946258, 'sonically_sound'), fs('market', 173013, 773642, 'ninebilly'),
+    # ---- creatures ----
+    fs('crow-caw', 361470, 6512973, 'Jofae'), fs('crow', 75162, 1088850, 'nigelcoop'), fs('crows', 386768, 5768130, 'ken788'),
+    fs('owl-hoot', 465697, 9159316, 'Breviceps'), fs('owl', 398734, 5923045, 'Anthousai'),
+    fs('gulls', 166703, 33044, 'Snapper4298'), fs('gull-beach', 353416, 1149179, 'squashy555'), fs('gulls-m', 32930, 250170, 'DaveGould'),
+    fs('robin', 671058, 13598434, 'Andrew.soundscape'), fs('bird-call', 364663, 3124312, 'jmiddlesworth'),
+    fs('dog-small', 163459, 2965892, 'LittleBigSounds'), fs('dogs', 337101, 3474310, 'ivolipa'), fs('dog-mr', 276267, 5284496, 'ScouseMouseJB'),
+    fs('cat-meow', 110011, 1537422, 'tuberatanka'), fs('cat-meowing', 333916, 4930786, 'lextrack'), fs('cat-purr', 260881, 525245, 'Trautwein'),
+    fs('wolf-howl', 398430, 3862281, 'NaturesTemper'), fs('howl-echo', 380156, 2940947, 'taure'),
+    fs('frog', 536759, 1415754, 'egomassive'),
+    fs('horse-neigh', 269571, 4564240, 'shadoWisp'), fs('horse-neighing', 510903, 11157357, 'Lydmakeren'), fs('horse', 59569, 571436, '3bagbrew'),
+    fs('cow-moos', 177253, 276010, 'JosephSardin'), fs('cow-limousin', 163727, 1661766, 'felix.blume'), fs('moo', 59245, 91975, 'Zozzy'),
+    fs('rooster', 435508, 1196020, 'BenjaminNelan'), fs('rooster-calls', 43382, 50975, 'AGFX'), fs('chicken', 456803, 9159316, 'Breviceps'),
+    fs('sheep', 172712, 3223402, 'Gitanki'), fs('sheep-bleat', 362283, 676927, 'zachrau'), fs('goat', 161194, 2905564, 'shadeslayer99'),
+    fs('pig-oink', 442906, 71257, 'qubodup'), fs('pig-angry', 352698, 6512973, 'Jofae'), fs('pig-scream', 233151, 4056007, 'JarredGibb'),
+    fs('bee', 481647, 9580304, 'JonCon_Library'), fs('bee-2', 103047, 861714, 'Department64'), fs('flies', 46938, 529006, 'galeku'), fs('flies-2', 198278, 224081, 'miklovan'),
+    fs('dragon-roar', 85568, 1206321, 'JoelAudio'), fs('monster-roar', 398908, 5411212, 'quadraslayer'), fs('dino-roar', 320345, 5286377, '999999990'), fs('beast', 170454, 2840087, 'husky70'),
+    fs('zombie', 213509, 3997324, 'soykevin'), fs('goblin-scream', 202100, 3756348, 'spookymodem'), fs('goblin-death', 249813, 3756348, 'spookymodem'),
+    fs('rat-squeak', 288941, 34567, 'toefur'), fs('squeak', 468442, 9159316, 'Breviceps'),
+]
+
+# The groups: id, label, the files, whether it's a loop (kept whole, not trimmed), and optionally
+# its takes' longest length (seconds; else MAX_SECONDS). A file is (source, glob), or (source, glob,
+# [start seconds...]) for takes cut from one long recording, each starting there.
 GROUPS = [
     ('step-stone', 'Footstep: stone', [('impact', '**/footstep_concrete_*.ogg')], False),
     ('step-grass', 'Footstep: grass', [('impact', '**/footstep_grass_*.ogg')], False),
@@ -94,6 +139,41 @@ GROUPS = [
     ('thruster', 'Thruster (loop)', [('scifi', '**/thrusterFire_*.ogg')], True),
     ('force-field', 'Force field (loop)', [('scifi', '**/forceField_*.ogg')], True),
     ('machine', 'Machine (loop)', [('loops', '**/machine_0[1-6].ogg')], True),
+    # ---- nature and places: 20-second stretches of long field recordings ----
+    ('forest', 'Forest birdsong (loop)', [('birds-spring', '*.mp3', [10, 60, 110]), ('wind-birds', '*.mp3', [20])], True, 20),
+    ('night', 'Night insects (loop)', [('crickets', '*.mp3', [20, 110]), ('frogs-crickets', '*.mp3', [10])], True, 20),
+    ('storm', 'Rain and thunder (loop)', [('rain-thunder', '*.mp3', [2])], True, 20),
+    ('rain-heavy', 'Heavy rain (loop)', [('rain-heavy', '*.mp3', [5, 30]), ('rain-rural', '*.mp3', [20])], True, 20),
+    ('waves', 'Ocean waves (loop)', [('waves', '*.mp3', [0, 35]), ('waves-big', '*.mp3', [60])], True, 20),
+    ('river', 'River (loop)', [('stream-close', '*.mp3', [0, 40]), ('stream', '*.mp3', [5])], True, 20),
+    ('cave', 'Cave drips (loop)', [('cave-drips', '*.mp3', [0, 45]), ('cave-water', '*.mp3', [10])], True, 20),
+    ('trees', 'Wind in trees (loop)', [('trees-birds', '*.mp3', [5]), ('breeze', '*.mp3', [10]), ('forest-day', '*.mp3', [40])], True, 20),
+    ('city', 'City street (loop)', [('big-city', '*.mp3', [10, 90]), ('city-street', '*.mp3', [30])], True, 20),
+    ('crowd', 'Cafe crowd (loop)', [('cafe', '*.mp3', [10, 70]), ('cafeteria', '*.mp3', [20])], True, 20),
+    ('market', 'Market (loop)', [('market', '*.mp3', [20, 100])], True, 20),
+    ('thunder', 'Thunder', [('thunder-strike', '*.mp3', [0, 25]), ('thunder-clap', '*.mp3', [0, 30]), ('thunder-loud', '*.mp3'), ('thunder-ogg', '*.mp3')], False, 9),
+    # ---- creatures ----
+    ('crow', 'Crow', [('crow-caw', '*.mp3'), ('crow', '*.mp3'), ('crows', '*.mp3', [5, 30, 60])], False, 3),
+    ('owl', 'Owl', [('owl-hoot', '*.mp3'), ('owl', '*.mp3')], False, 4.5),
+    ('gull', 'Seagull', [('gulls', '*.mp3'), ('gull-beach', '*.mp3', [0, 12]), ('gulls-m', '*.mp3', [0, 25])], False, 4),
+    ('songbird', 'Songbird', [('robin', '*.mp3', [0, 12, 25]), ('bird-call', '*.mp3', [0, 40, 80])], False, 4),
+    ('dog', 'Dog bark', [('dog-small', '*.mp3'), ('dogs', '*.mp3', [0, 8]), ('dog-mr', '*.mp3', [0, 30])], False, 3),
+    ('cat', 'Cat meow', [('cat-meow', '*.mp3'), ('cat-meowing', '*.mp3')], False, 2),
+    ('purr', 'Cat purr (loop)', [('cat-purr', '*.mp3', [5, 30])], True, 12),
+    ('wolf', 'Wolf howl', [('wolf-howl', '*.mp3'), ('howl-echo', '*.mp3', [0, 12])], False, 9),
+    ('frog', 'Frog', [('frog', '*.mp3')], False, 1.5),
+    ('horse', 'Horse', [('horse-neigh', '*.mp3'), ('horse-neighing', '*.mp3'), ('horse', '*.mp3')], False, 4),
+    ('cow', 'Cow', [('cow-moos', '*.mp3', [0, 6]), ('cow-limousin', '*.mp3', [0, 7]), ('moo', '*.mp3')], False, 4),
+    ('rooster', 'Rooster', [('rooster', '*.mp3'), ('rooster-calls', '*.mp3')], False, 3),
+    ('chicken', 'Chicken', [('chicken', '*.mp3', [0, 5, 10])], False, 3),
+    ('sheep', 'Sheep', [('sheep', '*.mp3'), ('sheep-bleat', '*.mp3', [0, 7]), ('goat', '*.mp3')], False, 3.5),
+    ('pig', 'Pig', [('pig-oink', '*.mp3'), ('pig-angry', '*.mp3', [0, 4]), ('pig-scream', '*.mp3')], False, 2.5),
+    ('bee', 'Bee', [('bee', '*.mp3'), ('bee-2', '*.mp3')], False, 2.7),
+    ('flies', 'Flies (loop)', [('flies', '*.mp3', [5]), ('flies-2', '*.mp3', [20])], True, 12),
+    ('roar', 'Monster roar', [('dragon-roar', '*.mp3'), ('monster-roar', '*.mp3'), ('dino-roar', '*.mp3'), ('beast', '*.mp3', [0, 6])], False, 5),
+    ('groan', 'Zombie groan', [('zombie', '*.mp3', [0, 4])], False, 4),
+    ('goblin', 'Goblin', [('goblin-scream', '*.mp3'), ('goblin-death', '*.mp3')], False, 2.5),
+    ('squeak', 'Squeak', [('rat-squeak', '*.mp3'), ('squeak', '*.mp3')], False, 1.5),
 ]
 
 MAX_TAKES = 8
@@ -113,7 +193,13 @@ def fetch(cache):
             continue
         os.makedirs(d, exist_ok=True)
         target = os.path.join(cache, f'{name}.{"zip" if kind == "zip" else url.rsplit(".", 1)[1]}')
-        run('curl', '-sSL', '-m', '300', '-o', target, url)
+        # (a server can turn a request away now and then, and serve it a few seconds later)
+        for attempt in range(8):
+            if subprocess.run(['curl', '-sSL', '-m', '300', '-f', '-o', target, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+                break
+            time.sleep(4 * (attempt + 1))
+        else:
+            sys.exit(f'could not download {url}')
         if kind == 'zip':
             run('unzip', '-q', '-o', target, '-d', d)
         else:
@@ -127,14 +213,15 @@ def peak_db(path):
     return float(m.group(1)) if m else 0.0
 
 
-def convert(src, dst, loop):
-    # Mono, 48 kHz; a one-shot starts at its first sound and ends at its last (then a short fade);
-    # a loop is kept whole (its join is made by the synth's crossfade); peaks levelled to -1 dBFS
+def convert(src, dst, loop, start=0.0, seconds=None):
+    # Mono, 48 kHz, from `start` seconds in; a one-shot starts at its first sound and ends at its
+    # last (then a short fade); a loop is kept whole (its join is made by the synth's crossfade);
+    # peaks levelled to -1 dBFS
     tmp = dst + '.wav'
-    filters = ['aformat=channel_layouts=mono', 'aresample=48000']
+    filters = [f'atrim=start={start}', 'asetpts=PTS-STARTPTS', 'aformat=channel_layouts=mono', 'aresample=48000']
     if not loop:
         filters += ['silenceremove=start_periods=1:start_threshold=-55dB:start_silence=0.002', 'areverse', 'silenceremove=start_periods=1:start_threshold=-60dB', 'areverse', 'afade=t=in:st=0:d=0.001', 'areverse', 'afade=t=in:st=0:d=0.004', 'areverse']
-    filters.append(f'atrim=0:{MAX_SECONDS[loop]}')
+    filters.append(f'atrim=0:{seconds or MAX_SECONDS[loop]}')
     run('ffmpeg', '-y', '-i', src, '-af', ','.join(filters), tmp)
     gain = -1.0 - peak_db(tmp)
     run('ffmpeg', '-y', '-i', tmp, '-af', f'volume={gain:.2f}dB', '-c:a', 'libmp3lame', '-q:a', '3', dst)
@@ -149,10 +236,11 @@ def main():
     dirs = fetch(sys.argv[1])
     os.makedirs(OUT, exist_ok=True)
     sets = {}
-    for gid, label, patterns, loop in GROUPS:
+    for gid, label, patterns, loop, *longest in GROUPS:
         files = []
-        for source, pattern in patterns:
-            files += sorted(f for f in glob.glob(os.path.join(dirs[source], pattern), recursive=True) if not os.path.basename(f).startswith('._'))
+        for source, pattern, *starts in patterns:
+            found = sorted(f for f in glob.glob(os.path.join(dirs[source], pattern), recursive=True) if not os.path.basename(f).startswith('._'))
+            files += [(f, at) for f in found for at in (starts[0] if starts else [0])]
         files = files[:MAX_TAKES]
         if not files:
             sys.exit(f'no files for {gid}')
@@ -163,14 +251,16 @@ def main():
         seconds = []
         digest = hashlib.sha256()
         size = 0
-        for i, f in enumerate(files):
+        for i, (f, at) in enumerate(files):
             dst = os.path.join(folder, f'{i}.mp3')
-            seconds.append(round(convert(f, dst, loop), 3))
+            seconds.append(round(convert(f, dst, loop, at, longest[0] if longest else None), 3))
             with open(dst, 'rb') as fh:
                 data = fh.read()
             digest.update(data)
             size += len(data)
         sources = sorted({p[0] for p in patterns})
+        if not seconds or min(seconds) < 0.05:
+            sys.exit(f'{gid}: a take came out empty')
         sets[gid] = {'label': label, 'takes': len(files), 'seconds': seconds, 'loop': loop, 'bytes': size, 'hash': digest.hexdigest()[:10], 'from': sources}
         print(f'{gid}: {len(files)} takes, {size // 1024} KB')
 
