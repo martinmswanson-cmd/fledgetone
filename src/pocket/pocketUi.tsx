@@ -45,12 +45,16 @@ export const Sheet: React.FC<{ title: string; onClose: () => void; children: Rea
 };
 
 /** A row in a sheet's list: a name and a line about it. */
-export const SheetItem: React.FC<{ title: string; detail?: string; onClick: () => void; color?: string }> = ({ title, detail, onClick, color }) => (
-  <button type="button" onClick={onClick} className="w-full text-left px-3 py-3 rounded-xl active:bg-white/5 flex items-start gap-3">
-    {color && <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />}
-    <span className="min-w-0">
-      <span className="block text-sm text-forge-text">{title}</span>
-      {detail && <span className="block text-xs text-forge-muted mt-0.5 line-clamp-2">{detail}</span>}
-    </span>
-  </button>
-);
+export const SheetItem: React.FC<{ title: string; detail?: string; onClick: () => void; color?: string; trailing?: React.ReactNode }> = ({ title, detail, onClick, color, trailing }) => {
+  const item = (
+    <button type="button" onClick={onClick} className="w-full min-w-0 text-left px-3 py-3 rounded-xl active:bg-white/5 flex items-start gap-3">
+      {color && <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />}
+      <span className="min-w-0">
+        <span className="block text-sm text-forge-text">{title}</span>
+        {detail && <span className="block text-xs text-forge-muted mt-0.5 line-clamp-2">{detail}</span>}
+      </span>
+    </button>
+  );
+  // (A star or a bin beside the row, not inside its button)
+  return trailing ? <div className="flex items-center">{item}{trailing}</div> : item;
+};

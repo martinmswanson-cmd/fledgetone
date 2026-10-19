@@ -6,12 +6,13 @@
  * makes it bigger or smaller (tap to step, or drag); the piano roll opens it full and puts it back.
  */
 import React, { useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Star, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { CATEGORIES, INSTRUMENTS, listedCategory } from '../audio/instrumentCatalog';
 import { defaultClipper } from '../audio/effects/clipper';
 import { LEVEL_MAX, LEVEL_MIN, REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX, type InstrumentKey, type Track } from '../store/timelineTypes';
 import { showToast } from '../components/timeline/toastStore';
+import { useMySounds, type MySound } from '../store/mySounds';
 import { gridTracks, type PocketSection } from './pocketSections';
 import { useSelection, useSongKey } from './pocketCell';
 import { editorOf, usePocket, type DrawerSize, type PocketTool } from './pocketStore';
@@ -47,14 +48,45 @@ export function setTool(tool: PocketTool, track: Track | null, land: boolean): v
   else p.set({ tool });
 }
 
-/** Instruments Pocket can play and edit, by category (the retro ones left out unless already in use). */
+/**
+ * Instruments Pocket can play and edit, by category (the retro ones left out unless already in
+ * use), the starred ones first under Favourites, as in the studio's lists (mySounds.ts).
+ */
 export function pocketInstruments(current?: InstrumentKey): Array<{ category: string; keys: InstrumentKey[] }> {
   const all = Object.values(INSTRUMENTS).filter((d) => {
     const how = editorOf(d.key);
     return (how === 'beat' || how === 'notes') && (!d.retro || d.key === current);
   });
-  return CATEGORIES.map((category) => ({ category, keys: all.filter((d) => listedCategory(d) === category).map((d) => d.key) })).filter((g) => g.keys.length > 0);
+  const favourites = useMySounds.getState().favourites.filter((k) => all.some((d) => d.key === k));
+  return [
+    { category: 'Favourites', keys: favourites },
+    ...CATEGORIES.map((category) => ({ category, keys: all.filter((d) => listedCategory(d) === category).map((d) => d.key) })),
+  ].filter((g) => g.keys.length > 0);
 }
+
+/** The sounds saved in the studio (My sounds) that Pocket can play: those of an instrument it edits. */
+export function pocketSounds(sounds: MySound[]): MySound[] {
+  return sounds.filter((s) => {
+    const how = editorOf(s.settings.instrumentKey);
+    return how === 'beat' || how === 'notes';
+  });
+}
+
+/** The star beside an instrument: in Favourites, at the top of the lists here and in the studio. */
+export const FavouriteStar: React.FC<{ instrument: InstrumentKey }> = ({ instrument }) => {
+  const on = useMySounds((s) => s.favourites.includes(instrument));
+  return (
+    <button
+      type="button"
+      className={`shrink-0 w-11 h-11 flex items-center justify-center ${on ? 'text-amber-300' : 'text-forge-muted'}`}
+      aria-label={`${on ? 'Unstar' : 'Star'} ${INSTRUMENTS[instrument].name}`}
+      aria-pressed={on}
+      onClick={() => useMySounds.getState().toggleFavourite(instrument)}
+    >
+      <Star className="w-4 h-4" fill={on ? 'currentColor' : 'none'} />
+    </button>
+  );
+};
 
 const Handle: React.FC<{ appRef: React.RefObject<HTMLDivElement | null> }> = ({ appRef }) => {
   const size = usePocket((p) => p.drawer);
@@ -157,15 +189,46 @@ const TrackMix: React.FC<{ track: Track }> = ({ track }) => {
 };
 
 const SoundList: React.FC<{ track: Track }> = ({ track }) => {
-  const groups = useMemo(() => {
-    const kind = editorOf(track.instrumentKey);
-    return pocketInstruments(track.instrumentKey)
-      .map((g) => ({ ...g, keys: g.keys.filter((k) => editorOf(k) === kind) }))
-      .filter((g) => g.keys.length);
-  }, [track.instrumentKey]);
+  const favourites = useMySounds((s) => s.favourites);
+  const saved = useMySounds((s) => s.sounds);
+  const kind = editorOf(track.instrumentKey);
+  const groups = useMemo(
+    () =>
+      pocketInstruments(track.instrumentKey)
+        .map((g) => ({ ...g, keys: g.keys.filter((k) => editorOf(k) === kind) }))
+        .filter((g) => g.keys.length),
+    // (favourites: the Favourites group follows the stars)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [track.instrumentKey, kind, favourites]
+  );
+  const mine = pocketSounds(saved).filter((s) => editorOf(s.settings.instrumentKey) === kind);
   const [open, setOpen] = useState<string | null>(listedCategory(INSTRUMENTS[track.instrumentKey]) ?? groups[0]?.category ?? null);
   return (
     <div className="pk-scroll">
+      {mine.length > 0 && (
+        <div>
+          <button type="button" className="w-full flex items-center gap-2 h-11 text-sm font-semibold" onClick={() => setOpen(open === 'My sounds' ? null : 'My sounds')}>
+            {open === 'My sounds' ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4 rotate-90" />}
+            My sounds
+            <span className="ml-auto text-xs text-forge-muted font-normal">{mine.length}</span>
+          </button>
+          {open === 'My sounds' &&
+            mine.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 active:bg-white/5"
+                onClick={() => useTimelineStore.getState().setTrackSound(track.id, s)}
+              >
+                <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ background: INSTRUMENTS[s.settings.instrumentKey].color }} />
+                <span className="min-w-0">
+                  <span className="block text-sm">{s.name}</span>
+                  <span className="block text-xs text-forge-muted line-clamp-1">{INSTRUMENTS[s.settings.instrumentKey].name}, with your settings</span>
+                </span>
+              </button>
+            ))}
+        </div>
+      )}
       {groups.map(({ category, keys }) => (
         <div key={category}>
           <button type="button" className="w-full flex items-center gap-2 h-11 text-sm font-semibold" onClick={() => setOpen(open === category ? null : category)}>
@@ -175,22 +238,24 @@ const SoundList: React.FC<{ track: Track }> = ({ track }) => {
           </button>
           {open === category &&
             keys.map((key) => (
-              <button
-                key={key}
-                type="button"
-                className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 ${key === track.instrumentKey ? 'bg-white/5 ring-1 ring-inset' : 'active:bg-white/5'}`}
-                style={key === track.instrumentKey ? { ['--tw-ring-color' as string]: track.color } : undefined}
-                onClick={() => useTimelineStore.getState().setTrackInstrument(track.id, key)}
-              >
-                <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ background: INSTRUMENTS[key].color }} />
-                <span className="min-w-0">
-                  <span className="block text-sm">
-                    {INSTRUMENTS[key].name}
-                    {key === track.instrumentKey ? ' (now)' : ''}
+              <div key={key} className="flex items-center">
+                <button
+                  type="button"
+                  className={`flex-1 min-w-0 text-left px-3 py-2.5 rounded-xl flex items-start gap-3 ${key === track.instrumentKey ? 'bg-white/5 ring-1 ring-inset' : 'active:bg-white/5'}`}
+                  style={key === track.instrumentKey ? { ['--tw-ring-color' as string]: track.color } : undefined}
+                  onClick={() => useTimelineStore.getState().setTrackInstrument(track.id, key)}
+                >
+                  <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ background: INSTRUMENTS[key].color }} />
+                  <span className="min-w-0">
+                    <span className="block text-sm">
+                      {INSTRUMENTS[key].name}
+                      {key === track.instrumentKey ? ' (now)' : ''}
+                    </span>
+                    <span className="block text-xs text-forge-muted line-clamp-1">{INSTRUMENTS[key].blurb}</span>
                   </span>
-                  <span className="block text-xs text-forge-muted line-clamp-1">{INSTRUMENTS[key].blurb}</span>
-                </span>
-              </button>
+                </button>
+                <FavouriteStar instrument={key} />
+              </div>
             ))}
         </div>
       ))}

@@ -21,7 +21,8 @@ import { Sheet, SheetItem, pill, pillOn } from './pocketUi';
 import { usePocket } from './pocketStore';
 import { editCell, useSelection, useSongKey } from './pocketCell';
 import { cellClip, copySection, moveSection, pocketSections, removeSection, sectionIsLinked, unlinkSection } from './pocketSections';
-import { pocketInstruments, selectTrack } from './PocketDrawer';
+import { FavouriteStar, pocketInstruments, pocketSounds, selectTrack } from './PocketDrawer';
+import { useMySounds } from '../store/mySounds';
 import { goToSection } from './PocketGrid';
 import { addVocalTrack } from './PocketVocals';
 import { PocketShare } from './PocketShare';
@@ -107,7 +108,9 @@ const SongSheet: React.FC = () => {
 };
 
 const AddSheet: React.FC = () => {
+  useMySounds((s) => s.favourites);
   const groups = pocketInstruments();
+  const mine = pocketSounds(useMySounds((s) => s.sounds));
   const [open, setOpen] = useState<string | null>(null);
   const added = (trackId: string) => {
     close();
@@ -127,16 +130,34 @@ const AddSheet: React.FC = () => {
           if (t) selectTrack(t);
         }}
       />
-      {groups.map(({ category, keys }) => (
+      {[...(mine.length ? [{ category: 'My sounds', keys: [] }] : []), ...groups].map(({ category, keys }) => (
         <div key={category}>
           <button type="button" className="w-full flex items-center gap-2 px-2 h-11 text-sm font-semibold" onClick={() => setOpen(open === category ? null : category)}>
             {open === category ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             {category}
-            <span className="ml-auto text-xs text-forge-muted font-normal">{keys.length}</span>
+            <span className="ml-auto text-xs text-forge-muted font-normal">{category === 'My sounds' ? mine.length : keys.length}</span>
           </button>
           {open === category &&
+            category === 'My sounds' &&
+            mine.map((s) => (
+              <SheetItem
+                key={s.id}
+                title={s.name}
+                detail={`${INSTRUMENTS[s.settings.instrumentKey].name}, with the settings you saved`}
+                color={INSTRUMENTS[s.settings.instrumentKey].color}
+                onClick={() => added(useTimelineStore.getState().addSoundTrack(s))}
+              />
+            ))}
+          {open === category &&
             keys.map((key) => (
-              <SheetItem key={key} title={INSTRUMENTS[key].name} detail={INSTRUMENTS[key].blurb} color={INSTRUMENTS[key].color} onClick={() => added(useTimelineStore.getState().addTrack(key))} />
+              <SheetItem
+                key={key}
+                title={INSTRUMENTS[key].name}
+                detail={INSTRUMENTS[key].blurb}
+                color={INSTRUMENTS[key].color}
+                onClick={() => added(useTimelineStore.getState().addTrack(key))}
+                trailing={<FavouriteStar instrument={key} />}
+              />
             ))}
         </div>
       ))}
