@@ -20,6 +20,8 @@ REPOS = {
     'epianos': 'sfzinstruments/GregSullivan.E-Pianos',  # CC BY 3.0: credit Greg Sullivan
     'ganjo': 'sfzinstruments/ganjo',
     'rustydrums': 'sfzinstruments/karoryfer.big-rusty-drums',
+    'virtuosity': 'sfzinstruments/virtuosity_drums',  # CC0
+    'unruly': 'sfzinstruments/karoryfer.unruly-drums',  # CC0
     'voice': 'sfzinstruments/legato_vocal_tutorial',
     # A repository on GitLab rather than GitHub is written 'gitlab:<owner>/<name>'
     'celesta': 'gitlab:echoparallax/a-sampled-celesta',  # audio CC0 (its LICENSE), by Neil Bickford
@@ -108,22 +110,81 @@ OCT_EPIANO = 0
 OCT_BANJO = -1
 OCT_VOICE = -1
 
-# Drum kits kit.py mixes: each piece's General MIDI note, its articulation's folder under Samples/,
-# its files' prefix (<prefix>_vl<n>_rr<n>.flac) and the microphones mixed: each close one at that
+# Drum kits kit.py mixes: each piece's General MIDI note, its files' path ({mic}, {layer} and {take}
+# standing for the microphone, loudness and take) and the microphones mixed: each close one at that
 # many dB against the overheads ('oh', which set the pieces' levels against each other). The drums
 # sound mostly from their close microphones, the overheads 3 dB under (the snare has one on each
 # head), the cymbals mostly from the overheads, as their close microphones sit right on them.
+RUSTY = 'Samples/{folder}/{{mic}}/{prefix}_vl{{layer}}_rr{{take}}.flac'
+VIRT = 'Samples/{{mic}}/{piece}/{{mic}}_{piece}_{art}_vl{{layer}}'
+UNRULY = 'Samples/{piece}/{{mic}}/rr{{take}}/{name}_vl{{layer}}_rr{{take}}.flac'
 KITS = {
-    'studio-kit': {'repo': 'rustydrums', 'layers': 4, 'takes': ['rr1', 'rr2'], 'pieces': [
-        (36, 'kick_24/kick', 'k', {'kick': 3, 'oh': 0}),
-        (38, 'snare_14/center', 'sn_center', {'top': 3, 'btm': 0, 'oh': 0}),
-        (41, 'tom_22/center', 't22', {'cl': 3, 'oh': 0}),
-        (42, 'hihat_14/tc', 'ht_tc', {'cl': 3, 'oh': 0}),
-        (45, 'tom_15/center', 't15', {'cl': 3, 'oh': 0}),
-        (46, 'hihat_14/open', 'ht_open', {'cl': 3, 'oh': 0}),
-        (48, 'tom_14/center', 't14', {'cl': 3, 'oh': 0}),
-        (49, 'crash_17/cr', 'cr', {'cl': -3, 'oh': 0}),
-        (51, 'ride_22/rd', 'rd', {'cl': -3, 'oh': 0}),
+    'studio-kit': {'repo': 'rustydrums', 'layers': 4, 'takes': 2, 'pieces': [
+        (36, RUSTY.format(folder='kick_24/kick', prefix='k'), {'kick': 3, 'oh': 0}),
+        (38, RUSTY.format(folder='snare_14/center', prefix='sn_center'), {'top': 3, 'btm': 0, 'oh': 0}),
+        (41, RUSTY.format(folder='tom_22/center', prefix='t22'), {'cl': 3, 'oh': 0}),
+        (42, RUSTY.format(folder='hihat_14/tc', prefix='ht_tc'), {'cl': 3, 'oh': 0}),
+        (45, RUSTY.format(folder='tom_15/center', prefix='t15'), {'cl': 3, 'oh': 0}),
+        (46, RUSTY.format(folder='hihat_14/open', prefix='ht_open'), {'cl': 3, 'oh': 0}),
+        (48, RUSTY.format(folder='tom_14/center', prefix='t14'), {'cl': 3, 'oh': 0}),
+        (49, RUSTY.format(folder='crash_17/cr', prefix='cr'), {'cl': -3, 'oh': 0}),
+        (51, RUSTY.format(folder='ride_22/rd', prefix='rd'), {'cl': -3, 'oh': 0}),
+    ]},
+    # Virtuosity Drums: a kick and a snare microphone (each hears the whole kit), the overheads
+    # and a room pair. Two toms: the low tom on the low row, the high tom's centre and off-centre
+    # hits on the middle and high rows. Pieces recorded once a loudness (the snare, the toms) take
+    # their next softer loudness as the second take. The clap row is the snare's rimshot, the
+    # cowbell's the percussion's own cowbell (its middle microphone). The trims (last) balance the
+    # pieces as the studio kit's are: the overheads hear the ride far under the snare (and the kick,
+    # so its own microphone is far over them).
+    'session-kit': {'repo': 'virtuosity', 'layers': 4, 'takes': 2, 'stereo': ('oh', 'room', 'mid'), 'pieces': [
+        (36, VIRT.format(piece='kick', art='snon') + '_rr{take}.flac', {'kickmic': 20, 'oh': 0, 'room': -6}),
+        (38, VIRT.format(piece='snare', art='center') + '.flac', {'snaremic': 3, 'oh': 0, 'room': -6}),
+        (39, VIRT.format(piece='snare', art='rimshot') + '.flac', {'snaremic': 3, 'oh': 0, 'room': -6}, 1.5),
+        (41, VIRT.format(piece='ltom', art='center') + '.flac', {'room': -3, 'oh': 0}),
+        (42, VIRT.format(piece='hh', art='closed') + '_rr{take}.flac', {'room': -6, 'oh': 0}, 7),
+        (45, VIRT.format(piece='htom', art='offcenter') + '.flac', {'room': -3, 'oh': 0}, 3.5),
+        (46, VIRT.format(piece='hh', art='open') + '_rr{take}.flac', {'room': -6, 'oh': 0}, -1),
+        (48, VIRT.format(piece='htom', art='center') + '.flac', {'room': -3, 'oh': 0}, -3),
+        (49, VIRT.format(piece='crash', art='crash') + '_rr{take}.flac', {'room': -6, 'oh': 0}),
+        (51, VIRT.format(piece='ride', art='ride') + '_rr{take}.flac', {'room': -6, 'oh': 0}, 9),
+        (56, 'Samples/perc/{mic}/cowbell/Cowbell1_Normal_v{layer}_rr{take}_{Mic}.wav', {'mid': -14}, 9.5),
+    ]},
+    # Unruly Drums played with brushes: a 20-inch kick, the 14-inch snare, the three snares with
+    # their snares off as toms (22, 14 and 13 inches), hi-hat, crash and ride swept with brushes
+    # (close microphones and overheads; the snares' overheads two mono files). The clap row is the
+    # snare's brushed rimshot, the cowbell's a woodblock. The trims lift the swept cymbals, which
+    # are near silent against a brushed snare, and bring down the 14 and 13-inch toms.
+    'brush-kit': {'repo': 'unruly', 'layers': 4, 'takes': 2, 'pieces': [
+        (36, UNRULY.format(piece='k20', name='kick_clean'), {'in': 3, 'out': 0, 'oh': 0}, -1.5),
+        (38, UNRULY.format(piece='s14', name='s14_b_center'), {'top': 3, 'btm': 0, 'oh': 0}),
+        (39, UNRULY.format(piece='s14', name='s14_b_rimshot'), {'top': 3, 'btm': 0, 'oh': 0}, -2.5),
+        (41, UNRULY.format(piece='s22', name='s22_tom_clean'), {'top': 3, 'oh': 0}, -2.5),
+        (42, UNRULY.format(piece='h14', name='hh_closed_brush'), {'cl': 0, 'oh': 0}),
+        (45, UNRULY.format(piece='s14', name='s14_tom_clean'), {'top': 3, 'oh': 0}, -9),
+        (46, UNRULY.format(piece='h14', name='hh_open_brush'), {'cl': 0, 'oh': 0}, 8),
+        (48, UNRULY.format(piece='s13', name='s13_tom_clean'), {'top': 3, 'oh': 0}, -6),
+        (49, UNRULY.format(piece='c16', name='cr_brush'), {'cl': -3, 'oh': 0}, 12),
+        (51, UNRULY.format(piece='r20', name='ride_brush'), {'cl': -3, 'oh': 0}, 14),
+        (56, UNRULY.format(piece='wb', name='woodblock_hi'), {'cl': 0, 'oh': 0}, -1),
+    ]},
+    # The same library's hand percussion (its middle microphone, a stereo pair; the timbale only
+    # has the overheads) on a kit's rows: tumba and conga for kick and snare, claves for clap,
+    # shaker and tambourine for the hats, low and high bongo and a timbale for the toms, cowbell,
+    # triangle for crash and agogo bell for ride. The trims bring the loud timbale and cowbell down
+    # to the drums and lift the ringing triangle.
+    'latin-percussion': {'repo': 'virtuosity', 'layers': 4, 'takes': 2, 'stereo': ('mid', 'oh'), 'pieces': [
+        (36, 'Samples/perc/{mic}/tumba/Tumba_24_HitN_{layer}_rr{take}_{Mic}.wav', {'mid': 0}),
+        (38, 'Samples/perc/{mic}/conga/Conga_22_HitN_{layer}_rr{take}_{Mic}.wav', {'mid': 0}),
+        (39, 'Samples/perc/{mic}/claves/Claves1_Hit_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}, 2),
+        (41, 'Samples/perc/{mic}/bongol/BongoL_Hit1_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}),
+        (42, 'Samples/perc/{mic}/shaker/LShaker_Shake1D_rr{take}_{Mic}.wav', {'mid': 0}),
+        (45, 'Samples/perc/{mic}/bongoh/BongoH_Hit1_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}),
+        (46, 'Samples/perc/{mic}/tambourine/Tamb1_Shake_rr{take}_{Mic}.wav', {'mid': 0}, 3),
+        (48, 'Samples/perc/{mic}/timbales/timb13_vl{layer}_rr{take}.wav', {'oh': 0}, -6),
+        (49, 'Samples/perc/{mic}/triangle/Triangle1_Hit_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}, 8),
+        (51, 'Samples/perc/{mic}/agogo/Agogo_High_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}, 3),
+        (56, 'Samples/perc/{mic}/cowbell/Cowbell1_Normal_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}, -6),
     ]},
 }
 
@@ -255,6 +316,9 @@ SETS = [
     S('nylon-guitar', 'iowa', [], ['pp', 'mf', 'ff'], 'plucked', cap=5.0, iowa='Piano_Other/guitar/Guitar.mono.1644.1.zip'),
     # A studio drum kit: each hit mixed from its close microphones and the overheads by kit.py
     S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
+    S('session-kit', 'virtuosity', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='session-kit'),
+    S('latin-percussion', 'virtuosity', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='latin-percussion'),
+    S('brush-kit', 'unruly', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='brush-kit'),
 ]
 
 

@@ -29,7 +29,7 @@ export const INSTRUMENT_KEYS = [
   'realGrandPiano', 'realUprightPiano', 'realPipeOrgan', 'realChapelOrgan', 'realMarimba', 'realXylophone', 'realGlockenspiel',
   'realAltoSax', 'realBariSax', 'realUprightBass', 'realElectricBass', 'realFlatwoundGuitar',
   'realTimpani', 'realTubularBells', 'realVibraphone', 'realHarpsichord', 'realKalimba', 'realTenorSax', 'realStrings', 'realBrass',
-  'realSteelDrums', 'realElectricPiano', 'realBanjo', 'realHarmonica', 'realOcarina', 'realZither', 'realSoloVoice', 'realBassDrum', 'studioKit',
+  'realSteelDrums', 'realElectricPiano', 'realBanjo', 'realHarmonica', 'realOcarina', 'realZither', 'realSoloVoice', 'realBassDrum', 'studioKit', 'sessionKit', 'brushKit', 'latinPercussion',
   'realCelesta', 'realRecorder', 'realMutedTrumpet',
   'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
   'realNylonGuitar',
@@ -237,6 +237,8 @@ export interface InstrumentDef {
    * takes the wheel as level and brightness (see instruments.ts).
    */
   dynamics?: boolean;
+  /** A drum kit's own names for its rows, by the row's note (a percussion kit plays congas on the kick and snare rows) */
+  rowLabels?: Readonly<Record<string, string>>;
   /** Its notes wobble at their clip's wobble rate (Clip.wobble), chosen in the piano roll */
   wobble?: boolean;
   /**
@@ -775,6 +777,21 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   studioKit: {
     key: 'studioKit', name: 'Studio Kit (Real)', blurb: 'A recorded drum kit, close and room mics, four loudnesses, two takes each: rock, pop, funk', color: '#b45309', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],
     samples: { ...realKit('studio-kit', { C1: 36, D1: 38, 'F#1': 42, 'A#1': 46, F1: 41, B1: 45, D2: 48, 'C#2': 49, 'D#2': 51 }), doubleRate: STUDIO_KIT_BRIGHT_ROWS }, gain: 11,
+  },
+  sessionKit: {
+    key: 'sessionKit', name: 'Session Kit (Real)', blurb: 'A recorded drum kit with its room, rimshot and cowbell, four loudnesses, two takes each: pop, soul, rock', color: '#a16207', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],
+    samples: realKit('session-kit', { C1: 36, D1: 38, 'D#1': 39, F1: 41, 'F#1': 42, B1: 45, 'A#1': 46, D2: 48, 'C#2': 49, 'D#2': 51, 'G#2': 56 }), gain: 6,
+    rowLabels: { 'D#1': 'Rimshot' },
+  },
+  brushKit: {
+    key: 'brushKit', name: 'Brush Kit (Real)', blurb: 'A recorded drum kit played with brushes, soft and warm: jazz, lounge, ballads', color: '#92400e', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],
+    samples: realKit('brush-kit', { C1: 36, D1: 38, 'D#1': 39, F1: 41, 'F#1': 42, B1: 45, 'A#1': 46, D2: 48, 'C#2': 49, 'D#2': 51, 'G#2': 56 }), gain: 6.5,
+    rowLabels: { 'D#1': 'Rimshot', 'G#2': 'Woodblock' },
+  },
+  latinPercussion: {
+    key: 'latinPercussion', name: 'Latin Percussion (Real)', blurb: 'Recorded congas, bongos, timbale, shaker, tambourine and bells: salsa, samba, Latin pop', color: '#b45309', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],
+    samples: realKit('latin-percussion', { C1: 36, D1: 38, 'D#1': 39, F1: 41, 'F#1': 42, B1: 45, 'A#1': 46, D2: 48, 'C#2': 49, 'D#2': 51, 'G#2': 56 }), gain: 1,
+    rowLabels: { C1: 'Tumba', D1: 'Conga', 'D#1': 'Claves', F1: 'Bongo Low', 'F#1': 'Shaker', B1: 'Bongo High', 'A#1': 'Tambourine', D2: 'Timbale', 'C#2': 'Triangle', 'D#2': 'Agogo', 'G#2': 'Cowbell' },
   },
   acousticKit: { key: 'acousticKit', name: 'Acoustic Kit', blurb: 'Real drum kit (recorded): rock, pop, jazz', color: '#d97706', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('acoustic-kit'), gain: -1 },
   breakbeatKit: { key: 'breakbeatKit', name: 'Breakbeat Kit', blurb: 'Crunchy sampled break hits', color: '#c2410c', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('breakbeat9'), gain: 2 },

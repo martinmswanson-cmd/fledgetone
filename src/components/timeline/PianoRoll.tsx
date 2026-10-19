@@ -110,8 +110,14 @@ function rackRows(rack: DrumRack | undefined): Row[] {
   });
 }
 
+/** A kit's rows, named as the kit names what it plays on them (a percussion kit's congas on the kick and snare rows) */
+function drumRowsOf(instrument: InstrumentKey): Row[] {
+  const names = INSTRUMENTS[instrument].rowLabels;
+  return names ? DRUM_ROWS.map((r) => (names[r.note] ? { ...r, label: names[r.note] } : r)) : DRUM_ROWS;
+}
+
 function rowsFor(instrument: InstrumentKey, notes: NoteEvent[], slicer?: SlicerSettings, rack?: DrumRack): Row[] {
-  if (isDrumKind(instrument)) return DRUM_ROWS;
+  if (isDrumKind(instrument)) return drumRowsOf(instrument);
   if (isRackKind(instrument)) return rackRows(rack);
   if (isFxKind(instrument)) return FX_ROW_LIST;
   if (isSlicerKind(instrument)) return slicerRows(slicer, notes);
@@ -799,7 +805,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             </select>
           </label>
         )}
-        {!clip.audio && isDrumKind(instrument) && <DrumGroovePanel clip={clip} rows={DRUM_ROWS} />}
+        {!clip.audio && isDrumKind(instrument) && <DrumGroovePanel clip={clip} rows={drumRowsOf(instrument)} />}
         {!namedRows && (
           <label data-search="scale" className="flex items-center gap-1.5" title="Shade the notes outside a key; clicks land on the key's notes">
             SCALE

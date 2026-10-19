@@ -89,6 +89,16 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
+    prefixes: [`${HOSTED}session-kit/`, `${HOSTED}latin-percussion/`],
+    samples: 'Session drum kit and Latin percussion from [Virtuosity Drums](https://github.com/sfzinstruments/virtuosity_drums), microphones mixed (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}brush-kit/`],
+    samples: 'Brush drum kit from [Unruly Drums](https://github.com/sfzinstruments/karoryfer.unruly-drums) by Karoryfer Samples, close and overhead microphones mixed (converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
     prefixes: [`${HOSTED}upright-piano/`],
     samples:
       'Upright piano sampled by Simon Dalzell of Ivy Audio, from the [VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) library by Versilian Studios, which may redistribute it (converted to MP3, hosted with the app)',

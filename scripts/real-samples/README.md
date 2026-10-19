@@ -24,9 +24,12 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
   ([Weresax](https://github.com/sfzinstruments/karoryfer.weresax), [Bear Sax](https://github.com/sfzinstruments/karoryfer.bear-sax)),
   double bass ([Meatbass](https://github.com/sfzinstruments/karoryfer.meatbass)) and electric bass
   ([Growlybass](https://github.com/sfzinstruments/karoryfer.growlybass)), the studio drum kit
-  ([Big Rusty Drums](https://github.com/sfzinstruments/karoryfer.big-rusty-drums)) and the solo
+  ([Big Rusty Drums](https://github.com/sfzinstruments/karoryfer.big-rusty-drums)), the brush kit
+  ([Unruly Drums](https://github.com/sfzinstruments/karoryfer.unruly-drums)) and the solo
   voice (the "a" vowel of the [legato vocal tutorial](https://github.com/sfzinstruments/legato_vocal_tutorial)),
   all CC0.
+- [Virtuosity Drums](https://github.com/sfzinstruments/virtuosity_drums) (CC0): the session drum kit
+  and the Latin percussion.
 - [Splendid Grand Piano](https://github.com/sfzinstruments/SplendidGrandPiano): public-domain
   samples by AKAI.
 - [jSteelDrum](https://github.com/sfzinstruments/jlearman.SteelDrum) by jlearman (The Unlicense,
@@ -78,8 +81,8 @@ python3 /path/to/bos-beat-box/scripts/real-samples/convert.py /path/to/bos-beat-
 ```
 
 Each script takes set names to work on just those (`fetch.py --list harp` shows what a set would
-fetch). `SHOW_TRIM=1 convert.py ...` prints how much each note was evened out. The drum kit is
-mixed instead of fetched: run `kit.py studio-kit` before measuring and converting it. The Iowa
+fetch). `SHOW_TRIM=1 convert.py ...` prints how much each note was evened out. The drum kits are
+mixed instead of fetched: run `kit.py studio-kit` (or `session-kit`, `brush-kit`, `latin-percussion`) before measuring and converting them. The Iowa
 strings and guitar are fetched by `iowa.py` instead (`iowa.py violin cello nylon-guitar ...`,
 about 720 MB of zips; each is deleted once split).
 
