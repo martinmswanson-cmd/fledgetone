@@ -10,10 +10,10 @@
 import { create } from 'zustand';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { INSTRUMENTS, isAudioKind } from '../audio/instrumentCatalog';
-import { referencedSoundIds } from './audioClips';
+import { parseEmbeddedSounds, referencedSoundIds } from './audioClips';
 import { isMixTrack } from './buses';
 import { parseTrack } from './project';
-import type { Track, WamPlugin } from './timelineTypes';
+import type { EmbeddedSound, Track, WamPlugin } from './timelineTypes';
 import { uid } from './timelineTypes';
 
 export const FAVOURITE_INSTRUMENTS_KEY = 'fledgetone.favouriteInstruments';
@@ -126,6 +126,50 @@ function readSounds(): MySound[] {
 
 export type SaveResult = 'saved' | 'replaced' | 'too-big' | 'not-kept';
 
+/** What a My sounds file holds (mySoundsFile.ts saves and opens it). */
+export const MY_SOUNDS_FORMAT = 'fledgetone-my-sounds';
+
+export interface MySoundsFile {
+  format: typeof MY_SOUNDS_FORMAT;
+  version: 1;
+  favourites: InstrumentKey[];
+  sounds: MySound[];
+  /** The recordings the sounds play (a Sampler's, a Drum Rack's...), as a project file carries them */
+  recordings: EmbeddedSound[];
+}
+
+/** A My sounds file's contents, checked as the browser's own are; throws if it isn't one. */
+export function parseMySoundsFile(raw: unknown): Omit<MySoundsFile, 'format' | 'version'> {
+  const v = raw as Partial<MySoundsFile> | null;
+  if (typeof v !== 'object' || v === null || v.format !== MY_SOUNDS_FORMAT) throw new Error('it is not a My sounds file');
+  return {
+    favourites: Array.isArray(v.favourites) ? v.favourites.filter((k): k is InstrumentKey => typeof k === 'string' && k in INSTRUMENTS) : [],
+    sounds: Array.isArray(v.sounds) ? v.sounds.map(parseSound).filter((x): x is MySound => !!x) : [],
+    recordings: parseEmbeddedSounds(v.recordings),
+  };
+}
+
+/**
+ * `sounds` added to `mine`: one of the same name (any case) is replaced, as saving it again
+ * would; the rest are added after. Returns the list and how many were added and replaced.
+ */
+export function mergeSounds(mine: readonly MySound[], sounds: readonly MySound[]): { sounds: MySound[]; added: number; replaced: number } {
+  const out = [...mine];
+  let added = 0;
+  let replaced = 0;
+  for (const s of sounds) {
+    const i = out.findIndex((m) => m.name.toLowerCase() === s.name.toLowerCase());
+    if (i >= 0) {
+      out[i] = { ...s, id: out[i].id };
+      replaced++;
+    } else {
+      out.push({ ...s, id: uid('sound') });
+      added++;
+    }
+  }
+  return { sounds: out.slice(-MAX_SOUNDS), added, replaced };
+}
+
 interface MySoundsState {
   favourites: InstrumentKey[];
   sounds: MySound[];
@@ -134,6 +178,8 @@ interface MySoundsState {
   saveSound: (name: string, track: Track) => SaveResult;
   removeSound: (id: string) => void;
   renameSound: (id: string, name: string) => void;
+  /** Add a file's sounds and stars to this browser's (see mergeSounds); false if the browser wouldn't keep them. */
+  importSounds: (sounds: readonly MySound[], favourites: readonly InstrumentKey[]) => { added: number; replaced: number } | false;
 }
 
 export const useMySounds = create<MySoundsState>((set, get) => ({
@@ -162,6 +208,14 @@ export const useMySounds = create<MySoundsState>((set, get) => ({
     const sounds = get().sounds.filter((s) => s.id !== id);
     writeJson(MY_SOUNDS_KEY, sounds);
     set({ sounds });
+  },
+  importSounds: (incoming, stars) => {
+    const merged = mergeSounds(get().sounds, incoming);
+    const favourites = [...get().favourites, ...stars.filter((k) => !get().favourites.includes(k))];
+    if (!writeJson(MY_SOUNDS_KEY, merged.sounds)) return false;
+    writeJson(FAVOURITE_INSTRUMENTS_KEY, favourites);
+    set({ sounds: merged.sounds, favourites });
+    return { added: merged.added, replaced: merged.replaced };
   },
   renameSound: (id, rawName) => {
     const name = rawName.trim().slice(0, 60);

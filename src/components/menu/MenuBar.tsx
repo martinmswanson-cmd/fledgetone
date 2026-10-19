@@ -9,6 +9,7 @@ import { useVideoStore } from '../../store/videoStore';
 import { useAudioStore } from '../../store/audioStore';
 import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
 import { canChooseSaveLocation, pickProjectFile, saveProjectAs, saveProjectFile } from '../timeline/projectFile';
+import { exportMySounds, pickMySoundsFile } from '../mySoundsFile';
 import { showToast } from '../timeline/toastStore';
 import { reverseBlock } from '../../store/reverseActions';
 import { openArrange } from '../timeline/arrangeDialogStore';
@@ -99,7 +100,9 @@ const MENUS: MenuDef[] = [
       { label: 'Open…', shortcut: `${MOD_KEY}O`, run: pickProjectFile },
       { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
       { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },
-      { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export') },
+      { label: 'Save my sounds to a file…', run: () => void exportMySounds(), title: 'Your saved sounds (My sounds) and starred instruments in one file, to keep safe or open in another browser', divider: true },
+      { label: 'Open a my sounds file…', run: pickMySoundsFile, title: 'Add the sounds and stars from a my sounds file to the ones in this browser' },
+      { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export'), divider: true },
       {
         label: 'Showcase video (YouTube, TikTok)…',
         run: () => void import('../timeline/ExportDialog').then(({ presetShowcaseExport }) => {

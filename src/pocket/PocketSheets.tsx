@@ -16,6 +16,7 @@ import { fillClipBar } from '../store/smartActions';
 import { CHORD_STYLES, chordNotesFor, PROGRESSIONS, progressionChords, type ChordStyle, type Progression } from '../store/smartTools';
 import { fitToInstrument } from '../store/smartActions';
 import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
+import { exportMySounds, pickMySoundsFile } from '../components/mySoundsFile';
 import { showToast } from '../components/timeline/toastStore';
 import { Sheet, SheetItem, pill, pillOn } from './pocketUi';
 import { usePocket } from './pocketStore';
@@ -86,6 +87,14 @@ const SongSheet: React.FC = () => {
           </button>
           <button type="button" className={pill} onClick={() => pickProjectFile()}>
             <FolderOpen className="w-4 h-4" /> Open file
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className={pill} onClick={() => void exportMySounds()}>
+            <Save className="w-4 h-4" /> Save my sounds
+          </button>
+          <button type="button" className={pill} onClick={pickMySoundsFile}>
+            <FolderOpen className="w-4 h-4" /> Open my sounds
           </button>
         </div>
         <button

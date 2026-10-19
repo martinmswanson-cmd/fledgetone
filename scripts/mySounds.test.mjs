@@ -18,7 +18,7 @@ register(
 // A stand-in for the browser's storage
 const stored = new Map();
 globalThis.localStorage = { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, String(v)), removeItem: (k) => stored.delete(k) };
-const { soundOf, withSound, parseSound, useMySounds } = await import('../src/store/mySounds.ts');
+const { soundOf, withSound, parseSound, useMySounds, parseMySoundsFile, mergeSounds, MY_SOUNDS_FORMAT } = await import('../src/store/mySounds.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 const { presetPatch, SYNTH_PRESETS } = await import('../src/store/synthPatch.ts');
 
@@ -79,4 +79,30 @@ test('favourites toggle, and saving under a name already used updates that sound
   assert.deepEqual(back, useMySounds.getState().sounds);
   useMySounds.getState().removeSound(pad.id);
   assert.equal(useMySounds.getState().sounds.length, 0);
+});
+
+test('a My sounds file is read back checked: bad sounds and unknown instruments dropped, anything else refused', () => {
+  const good = { id: 'a', name: 'Pad', settings: soundOf(track('x', 'realCello', { ring: 6 })) };
+  const file = { format: MY_SOUNDS_FORMAT, version: 1, favourites: ['realCello', 'notAnInstrument'], sounds: [good, { id: 'b', name: '', settings: {} }], recordings: [{ id: 'r1', name: 'kick.wav', type: 'audio/wav', size: 4, seconds: 1, data: 'AAAA' }, { nope: 1 }] };
+  const back = parseMySoundsFile(JSON.parse(JSON.stringify(file)));
+  assert.deepEqual(back.favourites, ['realCello']);
+  assert.equal(back.sounds.length, 1);
+  assert.equal(back.sounds[0].settings.ring, 6);
+  assert.equal(back.recordings.length, 1);
+  assert.throws(() => parseMySoundsFile({ format: 'fledgetone-project' }), /not a My sounds file/);
+});
+
+test('opening a file adds its sounds, replaces those of the same name, and keeps the ids already in use', () => {
+  const mine = [{ id: 'm1', name: 'Pad', settings: soundOf(track('x', 'realCello', { ring: 2 })) }];
+  const incoming = [
+    { id: 'f1', name: 'pad', settings: soundOf(track('x', 'realCello', { ring: 9 })) },
+    { id: 'f2', name: 'Lead', settings: soundOf(track('x', 'synthDesigner')) },
+  ];
+  const { sounds, added, replaced } = mergeSounds(mine, incoming);
+  assert.equal(added, 1);
+  assert.equal(replaced, 1);
+  assert.equal(sounds.length, 2);
+  assert.equal(sounds[0].id, 'm1');
+  assert.equal(sounds[0].settings.ring, 9);
+  assert.notEqual(sounds[1].id, 'f2');
 });
