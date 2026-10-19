@@ -1,0 +1,384 @@
+/**
+ * What opens over Pocket's one screen, for the things done now and then: the song (its name,
+ * tempo, key, metronome, a new song, the file), sharing it, adding an instrument, arranging the
+ * song from a section (repeat it, make it its own, move it, a build-up, take it out), a chord
+ * progression for the piano roll, and the starters screen ("What are we making?").
+ */
+import React, { useState } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
+import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
+import { clearPreviousSession } from '../store/project';
+import { STARTER_GROUPS, STARTERS } from '../store/starters';
+import { INSTRUMENTS } from '../audio/instrumentCatalog';
+import { keyOf, NOTE_NAMES } from '../store/songKey';
+import { DRUM_STYLES, FILLS, drummer, type DrumStyle } from '../store/smartTools';
+import { fillClipBar } from '../store/smartActions';
+import { CHORD_STYLES, chordNotesFor, PROGRESSIONS, progressionChords, type ChordStyle, type Progression } from '../store/smartTools';
+import { fitToInstrument } from '../store/smartActions';
+import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
+import { showToast } from '../components/timeline/toastStore';
+import { Sheet, SheetItem, pill, pillOn } from './pocketUi';
+import { usePocket } from './pocketStore';
+import { editCell, useSelection, useSongKey } from './pocketCell';
+import { cellClip, copySection, moveSection, pocketSections, removeSection, sectionIsLinked, unlinkSection } from './pocketSections';
+import { pocketInstruments, selectTrack } from './PocketDrawer';
+import { goToSection } from './PocketGrid';
+import { addVocalTrack } from './PocketVocals';
+import { PocketShare } from './PocketShare';
+import { chooseInterface } from './pocketMode';
+import { pocketNoteId } from './pocketStore';
+
+const close = () => usePocket.getState().set({ sheet: null });
+
+const SongSheet: React.FC = () => {
+  const name = useTimelineStore((s) => s.projectName);
+  const bpm = useTimelineStore((s) => s.bpm);
+  const click = useTimelineStore((s) => s.recordOptions.metronome);
+  const picked = usePocket((p) => p.key);
+  const songKey = useSongKey();
+  const s = useTimelineStore.getState;
+  return (
+    <Sheet title="Song" onClose={close}>
+      <div className="px-1 space-y-4">
+        <input aria-label="Song name" className="w-full h-11 rounded-xl border border-forge-border bg-forge-bg px-3 text-base font-semibold outline-none focus:border-cyan-400" value={name} onChange={(e) => s().setProjectName(e.target.value)} />
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-forge-muted w-16">Tempo</span>
+          <button type="button" aria-label="Slower" className={pill} onClick={() => s().setBpm(Math.max(40, Math.round(bpm) - 1))}>
+            <Minus className="w-4 h-4" />
+          </button>
+          <span className="w-14 text-center font-mono text-lg tabular-nums">{Math.round(bpm)}</span>
+          <button type="button" aria-label="Faster" className={pill} onClick={() => s().setBpm(Math.min(300, Math.round(bpm) + 1))}>
+            <Plus className="w-4 h-4" />
+          </button>
+          <button type="button" className={`${pill} ml-auto`} onClick={() => s().tapTempo()}>
+            Tap
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-forge-muted w-16">Key</span>
+          <select
+            aria-label="Key"
+            className="flex-1 h-11 rounded-xl border border-forge-border bg-forge-panel px-2 text-sm"
+            value={picked ? `${picked.root}-${picked.mode}` : 'song'}
+            onChange={(e) => {
+              if (e.target.value === 'song') return usePocket.getState().set({ key: null });
+              const [root, mode] = e.target.value.split('-');
+              usePocket.getState().set({ key: keyOf(Number(root), mode as 'major' | 'minor') });
+            }}
+          >
+            <option value="song">The song's ({songKey.name})</option>
+            {(['minor', 'major'] as const).flatMap((mode) =>
+              NOTE_NAMES.map((n, root) => (
+                <option key={`${root}-${mode}`} value={`${root}-${mode}`}>
+                  {n} {mode}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+        <button type="button" aria-pressed={click} className={`${pill} w-full ${click ? pillOn : ''}`} onClick={() => s().setRecordOptions({ metronome: !click })}>
+          Metronome {click ? 'on' : 'off'}
+        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className={pill} onClick={() => void saveProjectFile()}>
+            <Save className="w-4 h-4" /> Save file
+          </button>
+          <button type="button" className={pill} onClick={() => pickProjectFile()}>
+            <FolderOpen className="w-4 h-4" /> Open file
+          </button>
+        </div>
+        <button
+          type="button"
+          className={`${pill} w-full`}
+          onClick={() => {
+            close();
+            usePocket.getState().set({ starting: true });
+          }}
+        >
+          <Plus className="w-4 h-4" /> New song
+        </button>
+        <button type="button" className={`${pill} w-full`} onClick={() => chooseInterface('studio')}>
+          <Monitor className="w-4 h-4" /> Use the full studio here
+        </button>
+        <p className="text-[11px] text-forge-muted">The song saves itself in this browser as you work. Save the file to keep a copy anywhere.</p>
+      </div>
+    </Sheet>
+  );
+};
+
+const AddSheet: React.FC = () => {
+  const groups = pocketInstruments();
+  const [open, setOpen] = useState<string | null>(null);
+  const added = (trackId: string) => {
+    close();
+    const t = useTimelineStore.getState().tracks.find((x) => x.id === trackId);
+    if (t) selectTrack(t);
+  };
+  return (
+    <Sheet title="Add an instrument" onClose={close}>
+      <SheetItem
+        title="Vocals"
+        detail="Sing or rap over the song, with a vocal sound on (Clean lead to start)."
+        color="#ec4899"
+        onClick={() => {
+          const id = addVocalTrack();
+          close();
+          const t = useTimelineStore.getState().tracks.find((x) => x.id === id);
+          if (t) selectTrack(t);
+        }}
+      />
+      {groups.map(({ category, keys }) => (
+        <div key={category}>
+          <button type="button" className="w-full flex items-center gap-2 px-2 h-11 text-sm font-semibold" onClick={() => setOpen(open === category ? null : category)}>
+            {open === category ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            {category}
+            <span className="ml-auto text-xs text-forge-muted font-normal">{keys.length}</span>
+          </button>
+          {open === category &&
+            keys.map((key) => (
+              <SheetItem key={key} title={INSTRUMENTS[key].name} detail={INSTRUMENTS[key].blurb} color={INSTRUMENTS[key].color} onClick={() => added(useTimelineStore.getState().addTrack(key))} />
+            ))}
+        </div>
+      ))}
+    </Sheet>
+  );
+};
+
+const SectionSheet: React.FC = () => {
+  const i = usePocket((p) => p.sheetSection);
+  const clips = useTimelineStore((s) => s.clips);
+  const sections = pocketSections();
+  const sec = sections[i];
+  if (!sec) return null;
+  const linked = sectionIsLinked(sec, clips);
+  const run = (fn: () => string | null | void, after?: (fresh: ReturnType<typeof pocketSections>) => number, done?: string) => {
+    const problem = fn();
+    close();
+    if (problem) return showToast(problem);
+    const fresh = pocketSections();
+    if (after) goToSection(Math.max(0, Math.min(fresh.length - 1, after(fresh))), fresh);
+    if (done) showToast(done);
+  };
+  return (
+    <Sheet title={`${sec.letter}: ${sec.name}, bars ${sec.from}–${sec.to - 1}`} onClose={close}>
+      <SheetItem title="Play it twice" detail="A copy right after it, linked: change either and both change." onClick={() => run(() => copySection(i), () => i + 1)} />
+      {linked && <SheetItem title="Make it its own" detail={`Changes to it stop changing the other ${sec.letter}s.`} onClick={() => run(() => unlinkSection(i), () => i, 'Its own now: change it without changing the others')} />}
+      {i > 0 && <SheetItem title="Move earlier" detail="Swap it with the section before." onClick={() => run(() => moveSection(i, -1), () => i - 1)} />}
+      {i < sections.length - 1 && <SheetItem title="Move later" detail="Swap it with the section after." onClick={() => run(() => moveSection(i, 1), () => i + 1)} />}
+      {i > 0 && (
+        <SheetItem
+          title="Build-up into it"
+          detail="A riser and a snare roll over the bars before it, and a hit on its first beat."
+          onClick={() => run(() => useTimelineStore.getState().addBuildAndDrop(sec.from), () => i, 'A build-up into it')}
+        />
+      )}
+      <SheetItem title="Take it out" detail="Its bars go, and the rest of the song moves up. Undo brings it back." onClick={() => run(() => removeSection(i), () => Math.max(0, i - 1))} />
+    </Sheet>
+  );
+};
+
+const ChordsSheet: React.FC = () => {
+  const { track, sec } = useSelection();
+  const songKey = useSongKey();
+  const [style, setStyle] = useState<ChordStyle>('sustain');
+  if (!track || !sec) return null;
+  const write = (prog: Progression) => {
+    const len = sec.to - sec.from;
+    const chords = progressionChords(songKey, prog);
+    // A chord a bar in a section of 4 bars or more (two in one of 8 or more), else as many as fit
+    const chordBars = len >= 8 ? 2 : len >= 4 ? 1 : len / 4;
+    const count = Math.max(1, Math.round(len / chordBars));
+    const all = Array.from({ length: count }, (_, k) => chords[k % chords.length]);
+    const notes = fitToInstrument(chordNotesFor(all, chordBars, style, pocketNoteId), track.instrumentKey);
+    editCell(track.id, sec, () => notes);
+    close();
+  };
+  return (
+    <Sheet title={`Chords in ${songKey.name}`} onClose={close}>
+      <div className="flex gap-1.5 flex-wrap mb-2 px-1">
+        {CHORD_STYLES.map((st) => (
+          <button key={st.id} type="button" className={`${pill} !h-9 !px-3 text-xs ${style === st.id ? pillOn : ''}`} onClick={() => setStyle(st.id)}>
+            {st.name}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-forge-muted px-2 mb-1">Fills {track.name} in {sec.letter} with the progression, in place of what's there (Undo brings it back).</p>
+      {PROGRESSIONS.filter((p) => p.mode === songKey.mode).map((p) => (
+        <SheetItem key={p.id} title={p.name} onClick={() => write(p)} />
+      ))}
+    </Sheet>
+  );
+};
+
+/** Each Drummer pick plays a new take on the style (the same order every session) */
+let drumSeed = 0;
+const nextDrumSeed = () => (drumSeed = (drumSeed * 7919 + 104729) % 1000003);
+
+const DrummerSheet: React.FC = () => {
+  const { track, sec } = useSelection();
+  const meter = useTimelineStore((s) => s.meter);
+  if (!track || !sec) return null;
+  const write = (style: DrumStyle) => {
+    const len = sec.to - sec.from;
+    const bars = Math.max(1, Math.round((len * meter.den) / meter.num));
+    const notes = drummer(style, bars, 0.5, bars >= 4 ? 4 : 0, nextDrumSeed(), pocketNoteId, meter).filter((n) => n.startOffset < len - 1e-6);
+    editCell(track.id, sec, () => notes);
+    const id = cellClip(track.id, sec, false);
+    const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
+    if (id) useTimelineStore.getState().setClipGroove(id, groove ?? null, false);
+    close();
+  };
+  return (
+    <Sheet title={`Drummer: ${track.name} in ${sec.letter}`} onClose={close}>
+      <p className="text-xs text-forge-muted px-2 mb-2">Writes the whole section's beat in a style, in place of what's there (Undo brings it back). Pick again for another take on it.</p>
+      {DRUM_STYLES.map((d) => (
+        <SheetItem key={d.id} title={d.name} detail={`${d.bpm} BPM`} onClick={() => write(d.id)} />
+      ))}
+    </Sheet>
+  );
+};
+
+const FillSheet: React.FC = () => {
+  const { track, sec } = useSelection();
+  if (!track || !sec) return null;
+  return (
+    <Sheet title={`A fill at the end of ${sec.letter}`} onClose={close}>
+      {FILLS.map((f) => (
+        <SheetItem
+          key={f.id}
+          title={f.name}
+          onClick={() => {
+            const id = cellClip(track.id, sec, true);
+            // (The middle of the section's last bar: the fill goes at that bar's end)
+            if (id) fillClipBar(id, sec.to - 0.5, f.id);
+            close();
+          }}
+        />
+      ))}
+    </Sheet>
+  );
+};
+
+const ShareSheet: React.FC = () => (
+  <Sheet title="Share" onClose={close}>
+    <PocketShare />
+  </Sheet>
+);
+
+/** The sheet open now, if any. */
+export const PocketSheets: React.FC = () => {
+  const sheet = usePocket((p) => p.sheet);
+  if (sheet === 'song') return <SongSheet />;
+  if (sheet === 'share') return <ShareSheet />;
+  if (sheet === 'add') return <AddSheet />;
+  if (sheet === 'section') return <SectionSheet />;
+  if (sheet === 'chords') return <ChordsSheet />;
+  if (sheet === 'drummer') return <DrummerSheet />;
+  if (sheet === 'fill') return <FillSheet />;
+  return null;
+};
+
+/** The groups shown first on the starters screen (the rest under More). */
+const FIRST_GROUPS = ['Hip-Hop & Phonk', 'Electronic', 'Pop & Jazz', 'Chill & World', 'Bass Music', 'Band'];
+const GROUP_COLOURS = ['#a855f7', '#06b6d4', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#22d3ee', '#f97316', '#84cc16', '#eab308', '#38bdf8'];
+
+/** "What are we making?": a starter by kind of music, or an empty song; and the last song, to carry on. */
+export const StartScreen: React.FC<{ canGoBack: boolean }> = ({ canGoBack }) => {
+  const name = useTimelineStore((s) => s.projectName);
+  const session = useLastSession((s) => s.session);
+  const [group, setGroup] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
+  const groups = more ? [...STARTER_GROUPS] : FIRST_GROUPS.filter((g) => (STARTER_GROUPS as readonly string[]).includes(g));
+  const start = (template: Parameters<ReturnType<typeof useTimelineStore.getState>['newProject']>[0]) => {
+    const s = useTimelineStore.getState();
+    s.stop();
+    s.newProject(template);
+    const p = usePocket.getState();
+    p.set({ starting: false, section: 0, trackId: null, tool: 'play', mixAll: false, key: null, sheet: null, ...(p.sizeBeforeRoll ? { drawer: p.sizeBeforeRoll, sizeBeforeRoll: null } : {}) });
+    // Loop the first section, and play it: a starter should be heard
+    requestAnimationFrame(() => {
+      const first = pocketSections()[0];
+      const st = useTimelineStore.getState();
+      st.setLoopRange(first.from, first.to);
+      if (!useTimelineStore.getState().loopRegion.enabled) st.toggleLoop();
+      st.seek(first.from);
+      if (template !== 'blank') void st.play();
+    });
+  };
+  return (
+    <div className="fixed inset-0 z-40 bg-forge-bg overflow-y-auto px-[max(16px,env(safe-area-inset-left))] pt-[max(20px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]">
+      {canGoBack && (
+        <button type="button" className="h-11 -ml-2 px-2 flex items-center gap-1 text-cyan-300 font-medium" onClick={() => usePocket.getState().set({ starting: false })}>
+          <ChevronLeft className="w-5 h-5" /> Back to {name}
+        </button>
+      )}
+      <div className="flex items-center gap-2.5 font-bold text-lg mt-2">
+        <img src={`${import.meta.env.BASE_URL}icon-192.png`} alt="" className="w-8 h-8 rounded-lg" />
+        Fledgetone Pocket
+      </div>
+      <h1 className="text-3xl font-bold leading-tight mt-6 mb-1.5">What are we making?</h1>
+      <p className="text-forge-muted mb-5">Pick a starter and it plays straight away. Everything in it can be changed.</p>
+      {session && !canGoBack && (
+        <button
+          type="button"
+          className="w-full mb-3 rounded-2xl border border-cyan-400/60 bg-cyan-500/10 p-4 text-left flex items-center gap-3"
+          onClick={() => {
+            clearPreviousSession(false);
+            retryAutosave();
+            useLastSession.setState({ session: null });
+            useTimelineStore.getState().loadProject(session.project);
+            usePocket.getState().set({ starting: false, section: 0, trackId: null });
+          }}
+        >
+          <History className="w-6 h-6 text-cyan-300 shrink-0" />
+          <span className="min-w-0">
+            <span className="block font-semibold truncate">Carry on with {session.project.name}</span>
+            <span className="block text-xs text-forge-muted">Your last song, as you left it</span>
+          </span>
+        </button>
+      )}
+      <div className="grid grid-cols-2 gap-2.5">
+        {groups.map((g, k) => {
+          const c = GROUP_COLOURS[STARTER_GROUPS.indexOf(g as (typeof STARTER_GROUPS)[number]) % GROUP_COLOURS.length] ?? GROUP_COLOURS[k];
+          return (
+            <button
+              key={g}
+              type="button"
+              aria-expanded={group === g}
+              className="h-24 rounded-[20px] p-3.5 text-left flex flex-col justify-between border"
+              style={{ borderColor: `${c}88`, background: `linear-gradient(150deg, ${c}55, #1a1a1e 75%)` }}
+              onClick={() => setGroup(group === g ? null : g)}
+            >
+              <span className="font-mono text-[11px] text-forge-muted tracking-wide">{STARTERS.filter((x) => x.group === g).length} STARTERS</span>
+              <b className="text-lg leading-tight">{g}</b>
+            </button>
+          );
+        })}
+        <button type="button" className="h-24 rounded-[20px] p-3.5 text-left flex flex-col justify-between border border-dashed border-forge-borderLight bg-forge-panel" onClick={() => start('blank')}>
+          <span className="font-mono text-[11px] text-forge-muted tracking-wide">START FROM</span>
+          <b className="text-lg">Empty</b>
+        </button>
+        {!more && (
+          <button type="button" className="h-24 rounded-[20px] p-3.5 text-left flex flex-col justify-between border border-forge-border bg-forge-panel" onClick={() => setMore(true)}>
+            <span className="font-mono text-[11px] text-forge-muted tracking-wide">GAMES, ORCHESTRA…</span>
+            <b className="text-lg">More</b>
+          </button>
+        )}
+      </div>
+      {group && (
+        <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })} className="mt-4 rounded-2xl border border-forge-border bg-forge-panel p-2">
+          <h2 className="px-2 pt-1 pb-2 text-sm font-semibold">{group}</h2>
+          {STARTERS.filter((x) => x.group === group).map((st) => (
+            <SheetItem key={st.id} title={st.name} detail={st.detail} onClick={() => start(st.id)} />
+          ))}
+        </div>
+      )}
+      <button type="button" className={`${pill} w-full mt-4`} onClick={() => pickProjectFile()}>
+        <FolderOpen className="w-4 h-4" /> Open a project file
+      </button>
+      <p className="text-[11px] text-forge-muted mt-4 flex items-center gap-1.5">
+        <Mic className="w-3.5 h-3.5" /> Wear headphones when you sing, so the song stays out of your take.
+      </p>
+    </div>
+  );
+};

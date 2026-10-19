@@ -3,7 +3,8 @@
  * while the song plays (from the loop's start when the loop is on, stopping by itself at its end;
  * else from the playhead until tapped again), and the take lands on a vocal track where it was
  * sung. Each vocal track wears one of the vocal chains (clean lead, aggressive, ad-lib...); each
- * take can be doubled, hard-tuned (the studio's Tune dialog) or deleted.
+ * take can be doubled, hard-tuned (the studio's Tune dialog) or deleted. In the drawer it's the
+ * selected vocal track's (`trackId`), and the transport's Rec starts and stops it (singRequest).
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Copy, Loader2, Mic, Plus, Square, Trash2, AudioLines } from 'lucide-react';
@@ -18,11 +19,12 @@ import { applyVocalChain, doubleClip } from '../store/vocalActions';
 import { showToast } from '../components/timeline/toastStore';
 import { TuneDialog } from '../components/timeline/TuneDialog';
 import { Card, pill, pillOn } from './pocketUi';
+import { usePocket } from './pocketStore';
 
 let takeCount = 0;
 
 /** A new vocal track with the clean lead chain on. Returns its id. */
-function addVocalTrack(): string {
+export function addVocalTrack(): string {
   const s = useTimelineStore.getState();
   const count = s.tracks.filter((t) => /^Vocals\b/.test(t.name)).length;
   const id = s.addTrack('audio', count ? `Vocals ${count + 1}` : 'Vocals');
@@ -32,13 +34,15 @@ function addVocalTrack(): string {
   return id;
 }
 
-export const PocketVocals: React.FC = () => {
+export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed }) => {
   const tracks = useTimelineStore((s) => s.tracks);
   const clips = useTimelineStore((s) => s.clips);
   const loop = useTimelineStore((s) => s.loopRegion);
   const vocalTracks = tracks.filter((t) => isAudioKind(t.instrumentKey));
   const [trackId, setTrackId] = useState<string | null>(null);
-  const track = vocalTracks.find((t) => t.id === trackId) ?? vocalTracks[0] ?? null;
+  const track = vocalTracks.find((t) => t.id === (fixed ?? trackId)) ?? (fixed ? null : vocalTracks[0]) ?? null;
+  const singRequest = usePocket((p) => p.singRequest);
+  const seenRequest = useRef(singRequest);
   const [session, setSession] = useState<MicSession | null>(null);
   const [busy, setBusy] = useState(false);
   const [tuning, setTuning] = useState<string | null>(null);
@@ -112,7 +116,16 @@ export const PocketVocals: React.FC = () => {
     }
   };
 
-  const takes = clips.filter((c) => c.audio && vocalTracks.some((t) => t.id === c.trackId)).sort((a, b) => a.startBar - b.startBar);
+  // The transport's Rec on a vocal track: start, or stop the take going
+  useEffect(() => {
+    if (singRequest === seenRequest.current) return;
+    seenRequest.current = singRequest;
+    if (busy) return;
+    void (session ? stop(session) : start());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [singRequest]);
+
+  const takes = clips.filter((c) => c.audio && (fixed ? c.trackId === fixed : vocalTracks.some((t) => t.id === c.trackId))).sort((a, b) => a.startBar - b.startBar);
   const chain = track ? matchingVocalChain(track) : null;
 
   return (
@@ -138,14 +151,16 @@ export const PocketVocals: React.FC = () => {
         </p>
       </Card>
       <Card
-        title="Vocal track"
+        title={fixed ? 'Voice' : 'Vocal track'}
         right={
-          <button type="button" className={`${pill} !h-9`} onClick={() => setTrackId(addVocalTrack())}>
-            <Plus className="w-4 h-4" /> Track
-          </button>
+          fixed ? undefined : (
+            <button type="button" className={`${pill} !h-9`} onClick={() => setTrackId(addVocalTrack())}>
+              <Plus className="w-4 h-4" /> Track
+            </button>
+          )
         }
       >
-        {vocalTracks.length > 1 && (
+        {!fixed && vocalTracks.length > 1 && (
           <div className="flex gap-2 overflow-x-auto pb-2">
             {vocalTracks.map((t) => (
               <button key={t.id} type="button" className={`${pill} shrink-0 ${t.id === track?.id ? pillOn : ''}`} onClick={() => setTrackId(t.id)}>

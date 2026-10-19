@@ -1,156 +1,132 @@
 // Screenshots and examples for learn/12-pocket.md (taken by scripts/guide-shots/capture.mjs --learn).
 // Every shot is taken in Pocket on a phone-sized screen. The helpers below build the lesson's song
-// step by step, the way the lesson does it, by tapping and sliding on Pocket's own buttons.
+// step by step, the way the lesson does it, by tapping Pocket's own buttons.
 
-/** One of the six tabs along the bottom. */
-async function tab(s, name) {
-  await s.page.locator('nav button', { hasText: name }).click();
-  await s.page.waitForTimeout(600);
+const wait = (s, ms = 400) => s.page.waitForTimeout(ms);
+
+/** A button in the drawer (the instrument at the bottom) by its whole text. */
+const drawerButton = (s, text) => s.page.locator('.pk-drawer button', { hasText: new RegExp(`^\\s*${text}\\s*$`) }).first();
+
+/** A track's cell in the song's section `i` (0 for the first). */
+const cell = (s, track, i) => s.page.locator(`.pk-cell[data-i="${i}"][aria-label^="${track} in"]`).first();
+
+/** Close the sheet that's open. */
+async function closeSheet(s) {
+  await s.page.getByRole('dialog').getByRole('button', { name: 'Close' }).last().click();
+  await wait(s, 300);
 }
 
-/** A button in the screen (not the tabs) by its whole text. */
-const button = (s, text) => s.page.locator('main button', { hasText: new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`) }).first();
-
-/** A box in the phone's window (not the page): what a shot keeps once the page has scrolled. */
-async function inView(s, locators, pad = 8) {
-  const boxes = [];
-  for (const l of [].concat(locators)) {
-    const b = await l.first().boundingBox();
-    if (b) boxes.push(b);
-  }
-  const x0 = Math.max(0, Math.min(...boxes.map((b) => b.x)) - pad), y0 = Math.max(0, Math.min(...boxes.map((b) => b.y)) - pad);
-  const x1 = Math.min(412, Math.max(...boxes.map((b) => b.x + b.width)) + pad), y1 = Math.min(860, Math.max(...boxes.map((b) => b.y + b.height)) + pad);
-  return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
-}
-
-/** Scroll the page so an element sits just under the transport. */
-async function scrollTo(s, locator) {
-  await locator.first().evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 72));
-  await s.page.waitForTimeout(300);
-}
-
-/** The card a heading belongs to. */
-const card = (s, title) => s.page.locator('main section').filter({ has: s.page.locator('h2', { hasText: title }) }).first();
-
-/** Song › New › Empty song. */
+/** What are we making? › Empty, then the song's name and key (A minor). */
 async function emptySong(s) {
-  await s.page.getByRole('button', { name: 'New' }).first().click();
-  await s.page.waitForTimeout(400);
-  await s.page.getByText('Empty song').click();
-  await s.page.waitForTimeout(1500);
-  await s.page.getByLabel('Song name').fill('Pocket House');
-}
-
-/** A cell's middle, for a finger. */
-async function cell(s, row, step) {
-  const b = await s.page.getByLabel(`${row}, step ${step}`, { exact: true }).boundingBox();
-  return [b.x + b.width / 2, b.y + b.height / 2];
-}
-async function tapCell(s, row, step) {
-  const [x, y] = await cell(s, row, step);
-  await s.page.mouse.click(x, y);
-}
-/** Press a cell and slide along its row to another. */
-async function slide(s, row, from, to) {
-  const [x0, y] = await cell(s, row, from);
-  const [x1] = await cell(s, row, to);
-  await s.page.mouse.move(x0, y);
-  await s.page.mouse.down();
-  for (let i = 1; i <= 60; i++) await s.page.mouse.move(x0 + ((x1 - x0) * i) / 60, y);
-  await s.page.mouse.up();
-}
-
-/** Beat: a new one-bar pattern with the lesson's beat painted in, and a little swing. */
-async function paintBeat(s) {
-  await tab(s, 'Beat');
-  await button(s, 'New').click();
-  await s.page.waitForTimeout(500);
-  await scrollTo(s, card(s, 'Steps'));
-  for (const st of [1, 5, 9, 13]) await tapCell(s, 'Kick', st);
-  for (const st of [5, 13]) await tapCell(s, 'Clap', st);
-  await slide(s, 'Hat', 1, 16);
-  await s.page.getByLabel('Swing').fill('0.2');
-  await s.page.waitForTimeout(300);
-}
-
-/** Beat: Repeat, tap the copy, three times over (bars 1 to 4), then a snare roll at the end of bar 4. */
-async function repeatAndFill(s) {
-  await s.page.evaluate(() => window.scrollTo(0, 0));
-  for (let n = 2; n <= 4; n++) {
-    await button(s, 'Repeat').click();
-    await s.page.waitForTimeout(400);
-    // The copy, to repeat next (and, after the last, the bar the fill goes in)
-    await s.page.locator('main button', { hasText: new RegExp(`^Bar ${n}1 bar$`) }).first().click();
-    await s.page.waitForTimeout(300);
+  if (!(await s.page.getByText('What are we making?').count())) {
+    await s.page.getByRole('button', { name: /^Your songs/ }).click();
+    await wait(s);
   }
-  await button(s, 'Fill').click();
-  await s.page.waitForTimeout(400);
+  await s.page.locator('button', { hasText: /^START FROMEmpty$/ }).click();
+  await wait(s, 1500);
+  await s.page.getByRole('button', { name: 'The song: name, tempo, key' }).click();
+  await wait(s);
+  await s.page.getByLabel('Song name').fill('Pocket House');
+  await s.page.getByLabel('Key', { exact: true }).selectOption('9-minor');
+  await closeSheet(s);
+}
+
+/** Drums › Draw: the lesson's beat in bar 1, copied to all four bars, with a little swing. */
+async function paintBeat(s) {
+  await cell(s, 'Drums', 0).click();
+  await wait(s, 300);
+  await drawerButton(s, 'Draw').click();
+  await wait(s);
+  const pick = async (drum) => {
+    await s.page.locator('.pk-drawer button', { hasText: new RegExp(`^(● )?${drum}$`) }).first().click();
+    await wait(s, 200);
+  };
+  const step = (drum, n) => s.page.getByLabel(`${drum}, step ${n}`, { exact: true }).click();
+  await pick('Kick');
+  for (const n of [1, 5, 9, 13]) await step('Kick', n);
+  await pick('Clap');
+  for (const n of [5, 13]) await step('Clap', n);
+  await pick('Hat');
+  for (let n = 1; n <= 16; n++) await step('Hat', n);
+  await drawerButton(s, 'Copy to all bars').click();
+  await wait(s, 200);
+  await s.page.locator('.pk-drawer button', { hasText: /^Swing/ }).click();
+  await wait(s, 200);
+}
+
+/** Drums › Fill: a snare roll at the end of the section. */
+async function fill(s) {
+  await drawerButton(s, 'Fill').click();
+  await wait(s);
   await s.page.getByRole('dialog').getByText('Snare roll (last beat)').click();
-  await s.page.waitForTimeout(400);
+  await wait(s);
 }
 
-/** Notes: a new part on a track, four bars long. */
-async function newPart(s, track) {
-  await tab(s, 'Notes');
-  await s.page.locator('main button', { hasText: track }).first().click();
-  await s.page.waitForTimeout(300);
-  await s.page.getByText('Start a part').click();
-  await s.page.waitForTimeout(400);
-  await s.page.getByLabel('Length in bars').selectOption('4');
-  await s.page.waitForTimeout(400);
-}
-
-/** Notes: Space Clav plays the chords as off-beat stabs. */
+/** Space Clav › Draw › Chords: off-beat stabs, i – VI – III – VII. */
 async function chords(s, open = false) {
-  await newPart(s, 'Space Clav');
-  // The key picked, so the rows stay put as notes go in (else they follow the key worked out from the notes)
-  await s.page.getByLabel('Key').selectOption('9-minor');
-  await s.page.waitForTimeout(300);
-  await button(s, 'Chords').click();
-  await s.page.waitForTimeout(400);
+  await cell(s, 'Space Clav', 0).click();
+  await wait(s, 300);
+  await drawerButton(s, 'Draw').click();
+  await wait(s, 600);
+  await drawerButton(s, 'Chords').click();
+  await wait(s);
   await s.page.getByRole('dialog').locator('button', { hasText: 'Off-beat stabs' }).click();
   if (open) return;
   await s.page.getByRole('dialog').getByText('i – VI – III – VII (epic)').click();
-  await s.page.waitForTimeout(400);
+  await wait(s);
 }
 
-/** Notes: the bass, a quarter note at a time: A, F, C and G, a bar each. */
+/** Slap Bass › Draw: a bar-long note on each chord's root, A2, F2, C3 and G2. */
 async function bass(s, bars = 4) {
-  await newPart(s, 'Slap Bass');
-  await button(s, '1/4').click();
+  // (With the piano roll open the drawer fills the screen: the track names stay, and the roll stays open)
+  await s.page.locator('.pk-thname', { hasText: 'Slap Bass' }).click();
+  await wait(s, 300);
+  const draw = drawerButton(s, 'Draw');
+  if ((await draw.getAttribute('aria-pressed')) !== 'true') await draw.click();
+  await wait(s, 600);
+  // The pen's length: 1/8 › 1/4 › 1/2 › 1 bar
+  for (let i = 0; i < 3; i++) await s.page.getByRole('button', { name: 'Length of new notes' }).click();
   const roots = ['A2', 'F2', 'C3', 'G2'];
   for (let b = 0; b < bars; b++) {
-    await s.page.locator('main button', { hasText: new RegExp(`^${b + 1}$`) }).first().click();
-    await s.page.waitForTimeout(250);
-    const row = s.page.getByLabel(`${roots[b]}, step ${b * 16 + 1}`, { exact: true });
-    await row.scrollIntoViewIfNeeded();
-    await slide(s, roots[b], b * 16 + 1, b * 16 + 16);
-    await s.page.waitForTimeout(200);
+    const key = s.page.locator('.pk-rkey', { hasText: new RegExp(`^${roots[b]}$`) }).first();
+    await s.page.locator('.pk-roll').evaluate((el, b) => (el.scrollLeft = b * 16 * 40), b);
+    await key.evaluate((el) => {
+      const roll = el.closest('.pk-roll');
+      roll.scrollTop = el.offsetTop - roll.clientHeight / 2;
+    });
+    await wait(s, 200);
+    const row = await key.boundingBox();
+    const surf = await s.page.locator('.pk-rsurf').boundingBox();
+    await s.page.mouse.click(surf.x + b * 16 * 40 + 20, row.y + row.height / 2);
+    await wait(s, 300);
   }
 }
 
-/** Song: Repeat the loop twice, loop the part at bar 5, then a build-up into a drop at bar 9. */
+/** + Track › Vocals. */
+async function vocals(s) {
+  await s.page.locator('.pk-arr button', { hasText: 'Track' }).click();
+  await wait(s);
+  await s.page.getByRole('dialog').locator('button', { hasText: /^Vocals/ }).click();
+  await wait(s, 600);
+}
+
+/** A's ⋯ › Play it twice, twice (A A A), then a build-up into the third. */
 async function arrange(s) {
-  await tab(s, 'Song');
-  for (let i = 0; i < 2; i++) {
-    await s.page.getByText('Repeat the loop', { exact: true }).click();
-    await s.page.waitForTimeout(500);
+  await drawerButton(s, 'Play').click().catch(() => {});
+  await wait(s);
+  for (const item of ['Play it twice', 'Play it twice', 'Build-up into it']) {
+    await s.page.locator('.pk-chip.sel').click();
+    await wait(s);
+    await s.page.getByRole('dialog').getByText(item, { exact: true }).click();
+    await wait(s, 700);
   }
-  await s.page.getByRole('button', { name: /^Space Clav: .*bar 5$/ }).click();
-  await s.page.waitForTimeout(500);
-  await s.page.evaluate(() => window.scrollTo(0, 0));
-  await s.page.getByLabel('Loop this clip').click();
-  await s.page.waitForTimeout(300);
-  await tab(s, 'Song');
-  await s.page.getByText('Build-up and drop', { exact: true }).click();
-  await s.page.waitForTimeout(800);
 }
 
 /** The whole song, as the lesson makes it. */
 async function wholeSong(s) {
   await emptySong(s);
   await paintBeat(s);
-  await repeatAndFill(s);
+  await fill(s);
   await chords(s);
   await bass(s);
   await arrange(s);
@@ -160,33 +136,25 @@ export const SHOTS = [
   {
     file: 'pocket-new',
     phone: true,
-    alt: 'Pocket on a phone with the New song sheet open: Empty song at the top, then the starters in groups such as Game Worlds and Electronic.',
-    caption: 'Song › New: an empty song, or any starter.',
-    setup: async (s) => {
-      await s.page.getByRole('button', { name: 'New' }).first().click();
-      await s.page.waitForTimeout(400);
-      await s.page.getByRole('dialog').locator('button', { hasText: 'Electronic' }).click();
-      await s.page.waitForTimeout(400);
-      return s.phoneScreen();
-    },
+    alt: 'Pocket on a phone: What are we making?, with kinds of music to start from (Hip-Hop & Phonk, Electronic, Pop & Jazz and more) and Empty.',
+    caption: 'What are we making?: a starter, or an empty song.',
+    setup: async (s) => s.phoneScreen(),
   },
   {
     file: 'pocket-steps',
     phone: true,
-    alt: 'The Steps grid on the Beat tab: kicks on every beat, claps on beats 2 and 4, a hat on every 16th, and the Swing slider at 20%.',
-    caption: 'Tap a step, or slide along a row to paint a run of them.',
+    alt: 'Pocket with the Drums cell of section A selected and Draw open: the hat on every 16th of bar 1, and Drummer, Fill, Swing, Clear and Copy to all bars above it.',
+    caption: 'One drum at a time: tap its steps, then copy the bar to all four.',
     setup: async (s) => {
       await emptySong(s);
       await paintBeat(s);
-      const steps = card(s, 'Steps');
-      await scrollTo(s, steps);
-      return inView(s, steps, 6);
+      return s.phoneScreen();
     },
   },
   {
     file: 'pocket-chords',
     phone: true,
-    alt: 'The Chords sheet over the Notes tab: the styles Held chords, Quarter-note pulse, Off-beat stabs and Arpeggio, then progressions in A minor.',
+    alt: 'The Chords sheet over the piano roll: the styles Held chords, Quarter-note pulse, Off-beat stabs and Arpeggio, then progressions in A minor.',
     caption: 'Chords: pick a style, then a progression in the song\'s key.',
     setup: async (s) => {
       await emptySong(s);
@@ -197,64 +165,61 @@ export const SHOTS = [
   {
     file: 'pocket-bass',
     phone: true,
-    alt: 'The Notes tab with the Slap Bass part: only the notes of A minor down the side, and four quarter notes painted on A2 in bar 1.',
-    caption: 'The Notes grid only has the notes of the key, so every note fits.',
+    alt: 'The piano roll with the Slap Bass part: only the notes of A minor down the side, and a bar-long A2.',
+    caption: 'The piano roll only has the notes of the key, so every note fits.',
     setup: async (s) => {
       await emptySong(s);
       await chords(s);
       await bass(s, 1);
-      const key = s.page.locator('main section').filter({ has: s.page.getByLabel('Key') });
-      await scrollTo(s, key);
-      return inView(s, key, 6);
+      await s.page.locator('.pk-roll').evaluate((el) => (el.scrollLeft = 0));
+      await wait(s, 300);
+      return s.phoneScreen();
     },
   },
   {
     file: 'pocket-vocals',
     phone: true,
-    alt: 'The Vocals tab: a big Record button, then the vocal track\'s sounds: Clean lead, Aggressive lead, Ad-lib, Phone / radio, Dark and wide and Backing stack.',
-    caption: 'Vocals: Record over the loop, and pick the take\'s sound.',
+    alt: 'Pocket with a Vocals track added: its cell selected, and the drawer showing a big Record button and the voice\'s sounds.',
+    caption: 'Vocals: Record over the section, and pick the voice\'s sound.',
     setup: async (s) => {
       await emptySong(s);
-      await tab(s, 'Vocals');
-      await s.page.locator('main button', { hasText: 'Track' }).click();
-      await s.page.waitForTimeout(600);
-      return inView(s, [card(s, 'Record'), card(s, 'Vocal track')], 6);
+      await vocals(s);
+      return s.phoneScreen();
     },
   },
   {
     file: 'pocket-mix',
     phone: true,
-    alt: 'The Mix tab: the master\'s level and Clipper, then a card for each track with its level, M and S, its sound and its reverb.',
-    caption: 'Mix: each track\'s level, sound and reverb, the master at the top.',
+    alt: 'Mix all: a strip for each track (Drums, Slap Bass, Space Clav, Brass Stabs) with a fader, M and S, and the master with Loud.',
+    caption: 'Mix all: every track\'s level, mute and solo, and the master.',
     setup: async (s) => {
       await emptySong(s);
-      await tab(s, 'Mix');
-      return inView(s, [card(s, 'Master'), card(s, 'Drums'), card(s, 'Slap Bass')], 6);
+      await s.page.locator('.pk-arr button', { hasText: 'Mix all' }).click();
+      await wait(s);
+      return s.phoneScreen();
     },
   },
   {
     file: 'pocket-arrange',
     phone: true,
-    alt: 'The Tracks card on the Song tab: twelve bars of drums, bass and chords, a build-up on new tracks before bar 9, and the Arrange tools below.',
-    caption: 'Repeat the loop, then a build-up and drop at bar 9.',
+    alt: 'The song grid with three sections, A, A and a third marked BUILD, the drums, bass and chords in each, and the build-up\'s new tracks.',
+    caption: 'Play it twice, twice, then a build-up into the third.',
     setup: async (s) => {
       await wholeSong(s);
-      await s.page.evaluate(() => window.scrollTo(0, 0));
-      await scrollTo(s, card(s, 'Tracks'));
-      return inView(s, [card(s, 'Tracks'), s.page.getByText('Repeat the loop', { exact: true })], 6);
+      return s.phoneScreen();
     },
   },
   {
     file: 'pocket-share',
     phone: true,
-    alt: 'The Share tab: Export an MP3, Share a link to the song, Save and Open for the project file, and Use the full studio here.',
+    alt: 'The Share sheet: Export an MP3, Share a link to the song, Save and Open for the project file, and Use the full studio here.',
     caption: 'Share: an MP3 for the share sheet, or a link to the song.',
     setup: async (s) => {
       await emptySong(s);
       await paintBeat(s);
-      await tab(s, 'Share');
-      await s.page.evaluate(() => window.scrollTo(0, 0));
-      return inView(s, [card(s, 'Share the song'), card(s, 'On a computer')], 6);
+      await s.page.getByRole('button', { name: 'Share' }).click();
+      await wait(s);
+      return s.phoneScreen();
     },
   },
 ];
@@ -266,16 +231,17 @@ export const EXAMPLES = [
     // Made in Pocket (on the studio's window), then opened in the studio the way the lesson ends
     setup: async (s) => {
       await s.page.goto(s.page.url().replace(/\?studio.*$/, '?pocket'), { waitUntil: 'networkidle' });
-      await s.page.waitForTimeout(800);
+      await wait(s, 800);
       await wholeSong(s);
-      await s.page.waitForTimeout(1500); // the autosave
-      await tab(s, 'Share');
+      await wait(s, 1500); // the autosave
+      await s.page.getByRole('button', { name: 'The song: name, tempo, key' }).click();
+      await wait(s);
       await s.page.getByText('Use the full studio here').click();
       await s.page.waitForLoadState('networkidle');
-      await s.page.waitForTimeout(1500);
+      await wait(s, 1500);
       const restore = s.page.getByRole('button', { name: /^Restore/ });
       if (await restore.count()) await restore.first().click();
-      await s.page.waitForTimeout(1500);
+      await wait(s, 1500);
     },
   },
 ];

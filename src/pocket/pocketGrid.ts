@@ -1,11 +1,10 @@
 /**
- * Pocket's step grids, as plain functions over a clip's notes: how many steps a bar has, which
- * notes sit on a step, turning a step on or off, and the rows of the note grid (the song's scale
- * over two octaves). The screens in src/pocket/ call these, then hand the notes to the store
- * (setClipNotes / addNotes), so a song edited on a phone is the same song on a computer.
+ * Pocket's note maths, as plain functions: how many 16th steps a bar has, how many steps a note
+ * covers, note names to MIDI numbers and back, and the notes of the song's key over an
+ * instrument's range (the rows of the pads and the piano roll).
  */
 import type { NoteEvent } from '../store/timelineTypes';
-import { barsToDuration, durationToBars } from '../store/timelineTypes';
+import { durationToBars } from '../store/timelineTypes';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
 
 /**
@@ -20,36 +19,6 @@ export const stepsPerBar = (meter: { num: number; den: number }): number => Math
 
 /** Bars a step lasts. */
 export const stepBars = (_meter: { num: number; den: number }): number => 1 / STEPS_PER_WHOLE;
-
-/** A note's step in the clip (rounded to the nearest), from its offset in bars. */
-export const stepOf = (startOffset: number, perBar: number): number => Math.round(startOffset * perBar);
-
-/** The notes on `row` (a note name) that start on `step`. */
-export function notesAt(notes: readonly NoteEvent[], row: string, step: number, perBar: number): NoteEvent[] {
-  return notes.filter((n) => n.note === row && stepOf(n.startOffset, perBar) === step && Math.abs(n.startOffset * perBar - step) < 0.5);
-}
-
-/**
- * Turn a step on or off: removes the notes on `row` that start on `step`, or (when there are
- * none) adds one `length` steps long. Returns the clip's new notes (ids for new notes come from
- * `newId`).
- */
-export function toggleStep(
-  notes: readonly NoteEvent[],
-  row: string,
-  step: number,
-  perBar: number,
-  length: number,
-  velocity: number,
-  newId: () => string
-): NoteEvent[] {
-  const hit = notesAt(notes, row, step, perBar);
-  if (hit.length > 0) {
-    const gone = new Set(hit.map((n) => n.id));
-    return notes.filter((n) => !gone.has(n.id));
-  }
-  return [...notes, { id: newId(), note: row, startOffset: step / perBar, duration: barsToDuration(length / perBar), velocity }];
-}
 
 /** How many steps a note covers (at least 1), for drawing held notes across the grid. */
 export const noteSteps = (n: Pick<NoteEvent, 'duration'>, perBar: number): number => Math.max(1, Math.round(durationToBars(n.duration) * perBar));
@@ -80,28 +49,4 @@ export function scaleRows(key: SongKey, range: readonly [number, number], centre
   const rows: string[] = [];
   for (let m = end; m >= start; m--) if (inKey.has(((m % 12) + 12) % 12)) rows.push(midiToNote(m));
   return rows;
-}
-
-/**
- * The note grid's tap: removes the note on `row` that sounds over `step` (one starting earlier and
- * held through it counts), or adds one `length` steps long starting there. Returns the new notes.
- */
-export function toggleCovering(
-  notes: readonly NoteEvent[],
-  row: string,
-  step: number,
-  perBar: number,
-  length: number,
-  velocity: number,
-  newId: () => string
-): NoteEvent[] {
-  // By pitch, so a note written "Bb3" elsewhere is the grid's "A#3"
-  const midi = noteToMidi(row);
-  const over = notes.find((n) => {
-    if (n.note !== row && (midi === null || noteToMidi(n.note) !== midi)) return false;
-    const from = n.startOffset * perBar;
-    return step >= Math.round(from) && step < Math.round(from) + noteSteps(n, perBar);
-  });
-  if (over) return notes.filter((n) => n !== over);
-  return [...notes, { id: newId(), note: row, startOffset: step / perBar, duration: barsToDuration(length / perBar), velocity }];
 }

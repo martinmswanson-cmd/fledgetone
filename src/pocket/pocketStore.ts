@@ -1,65 +1,69 @@
 /**
- * Pocket's own view state (which tab is open, which track and clip each editor shows, the key the
- * note grid uses), apart from the song (useTimelineStore), plus the helpers its screens share:
- * which tracks Pocket can edit and how, a track's clips in order, and the playhead while playing.
+ * Pocket's own view state, apart from the song (useTimelineStore): which track and section are
+ * selected (the drawer edits that cell), which of its tools the drawer shows and how tall it is,
+ * the mixer, Rec, the open sheet and the key the note editors use. Plus the helpers its screens
+ * share: which editor a track opens in, and the playhead while playing.
  */
 import { create } from 'zustand';
 import { useEffect, useState } from 'react';
-import { INSTRUMENTS } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isAudioKind } from '../audio/instrumentCatalog';
 import { getAudiblePositionBar } from '../audio/transport';
 import { useTimelineStore } from '../store/timelineStore';
-import type { Clip, InstrumentKey, Track } from '../store/timelineTypes';
+import type { InstrumentKey } from '../store/timelineTypes';
 import type { SongKey } from '../store/songKey';
 
-export type PocketTab = 'song' | 'beat' | 'notes' | 'vocals' | 'mix' | 'share';
+/** The drawer's tools: play the instrument, draw its notes, change its sound, its mix; or sing (vocal tracks). */
+export type PocketTool = 'play' | 'draw' | 'sound' | 'mix' | 'sing';
+export type DrawerSize = 'low' | 'mid' | 'high';
+export type PocketSheet = 'song' | 'share' | 'add' | 'section' | 'chords' | 'drummer' | 'fill' | null;
 
 interface PocketState {
-  tab: PocketTab;
-  /** The drum track the Beat tab shows, and the clip it edits */
-  beatTrackId: string | null;
-  beatClipId: string | null;
-  /** The pitched track the Notes tab shows, and the clip it edits */
-  noteTrackId: string | null;
-  noteClipId: string | null;
-  /** The key the note grid's rows follow (null: the song's, as detected) */
+  /** The selected track (the drawer is its instrument), and the section, by its place in the song */
+  trackId: string | null;
+  section: number;
+  tool: PocketTool;
+  drawer: DrawerSize;
+  /** The size the drawer had before the piano roll opened it full (put back when it closes) */
+  sizeBeforeRoll: DrawerSize | null;
+  /** The drawer shows the mixer for every track */
+  mixAll: boolean;
+  /** Pads and keys played while the song plays are written in */
+  rec: boolean;
+  /** Bumped to ask the vocal recorder to start or stop (the transport's Rec on a vocal track) */
+  singRequest: number;
+  sheet: PocketSheet;
+  /** The section a section sheet is about */
+  sheetSection: number;
+  /** The key the note editors follow (null: the song's, as detected) */
   key: SongKey | null;
-  setTab: (tab: PocketTab) => void;
-  /** Open a clip in the editor its track uses (Beat for drums, Notes for the rest). */
-  openClip: (clip: Clip, track: Track) => void;
-  set: (patch: Partial<Omit<PocketState, 'setTab' | 'openClip' | 'set'>>) => void;
+  /** Whether the starters screen is open (on top of the song) */
+  starting: boolean;
+  set: (patch: Partial<Omit<PocketState, 'set'>>) => void;
 }
 
 export const usePocket = create<PocketState>((set) => ({
-  tab: 'song',
-  beatTrackId: null,
-  beatClipId: null,
-  noteTrackId: null,
-  noteClipId: null,
+  trackId: null,
+  section: 0,
+  tool: 'play',
+  drawer: 'mid',
+  sizeBeforeRoll: null,
+  mixAll: false,
+  rec: false,
+  singRequest: 0,
+  sheet: null,
+  sheetSection: 0,
   key: null,
-  setTab: (tab) => set({ tab }),
-  openClip: (clip, track) => {
-    const how = editorOf(track.instrumentKey);
-    if (how === 'beat') set({ tab: 'beat', beatTrackId: track.id, beatClipId: clip.id });
-    else if (how === 'notes') set({ tab: 'notes', noteTrackId: track.id, noteClipId: clip.id });
-  },
+  starting: false,
   set: (patch) => set(patch),
 }));
 
-/** Which Pocket editor a track's clips open in, or null (edited on a computer: samplers, audio, plugins, buses). */
-export function editorOf(key: InstrumentKey): 'beat' | 'notes' | null {
+/** Which drawer a track's cells open in: drums, notes, vocals (recordings), or null (edited on a computer: samplers, plugins). */
+export function editorOf(key: InstrumentKey): 'beat' | 'notes' | 'vocals' | null {
+  if (isAudioKind(key)) return 'vocals';
   const kind = INSTRUMENTS[key]?.kind;
   if (kind === 'drums') return 'beat';
   if (kind === undefined || ['custom', 'rack', 'multi', 'slicer', 'audio', 'plugin', 'return', 'bus', 'fx'].includes(kind)) return null;
   return 'notes';
-}
-
-/** A track's clips, earliest first (audio clips left out). */
-export const clipsOf = (clips: readonly Clip[], trackId: string | null): Clip[] =>
-  clips.filter((c) => c.trackId === trackId && !c.audio).sort((a, b) => a.startBar - b.startBar);
-
-/** The clip to show for a track: the one asked for if it's still there, else the one under the playhead, else the first. */
-export function pickClip(clips: readonly Clip[], wanted: string | null, playhead: number): Clip | null {
-  return clips.find((c) => c.id === wanted) ?? clips.find((c) => playhead >= c.startBar && playhead < c.startBar + c.lengthBars) ?? clips[0] ?? null;
 }
 
 let idCount = 0;
