@@ -195,7 +195,12 @@ function markAt(bar: number, name: string): void {
   useTimelineStore.setState((x) => ({ markers: retimeMarkers([...x.markers, createMarker(bar, songTempo(x), name)], songTempo(x)) }));
 }
 
-const markerNameAt = (bar: number, fallback: string) => tl().markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - bar) < EPS)?.name ?? fallback;
+/** The name of the marker at `bar`, or `fallback` (no marker there, or one Pocket numbered). */
+const markerNameAt = (bar: number, fallback: string) => {
+  const name = tl().markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - bar) < EPS)?.name;
+  // (Pocket's own numbered names follow the section's new place; a name someone gave stays)
+  return name && !/^(Section \d+|Start)$/.test(name) ? name : fallback;
+};
 
 /** Copy section `i` to right after itself (linked), moving the rest of the song later. Returns a message when it can't. */
 export function copySection(i: number): string | null {
@@ -212,7 +217,8 @@ export function copySection(i: number): string | null {
     error = tl().insertBars(sec.to, len);
     if (error) return;
     addCopies(copies);
-    markAt(sec.to, markerNameAt(sec.from, sec.name));
+    // A copy of a named section ("Verse") is named the same; one with no marker after its place in the song
+    markAt(sec.to, markerNameAt(sec.from, `Section ${i + 2}`));
   });
   if (error) {
     tl().undo();
@@ -249,7 +255,7 @@ export function moveSection(i: number, dir: -1 | 1): string | null {
   let error: string | null = null;
   oneStep(() => {
     pinSections(sections, true);
-    const name = markerNameAt(b.from, b.name);
+    const name = markerNameAt(b.from, `Section ${(dir < 0 ? i : i + 1) + 1}`);
     // B's bars copied to where A starts, after making room there; then B's own bars (now
     // later by its length) taken out. The copies keep B's links to sections elsewhere.
     const { copies } = copiesOf(b.from, b.to, a.from - b.from);

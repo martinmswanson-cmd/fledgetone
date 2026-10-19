@@ -46,7 +46,7 @@ export const MobileNotice: React.FC = () => {
           thing, open this page on a computer.
         </p>
       </div>
-      <ChoiceButton title="Use Pocket, the phone version" detail="Big pads, a step grid and notes in key, made for a phone. Your song opens in it, and back here on a computer." autoFocus onClick={() => { close(); chooseInterface('pocket'); }} />
+      <ChoiceButton title="Use Pocket, the phone version" detail="The whole song on one screen, with pads, steps and a piano roll made for a thumb. Your song opens in it, and back here on a computer." autoFocus onClick={() => { close(); chooseInterface('pocket'); }} />
       <label className="flex items-center gap-2 text-sm text-forge-muted">
         <input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} className="w-4 h-4 accent-cyan-500" />
         Don't show this again
