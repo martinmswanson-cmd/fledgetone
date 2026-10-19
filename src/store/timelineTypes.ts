@@ -520,6 +520,8 @@ export const WIDTH_MAX = 2;
 /** The master Level's range in dB (see MasterSettings.level). */
 /** The reverb send's range: up to 200% on the knobs, and 300% after a click on the Inspector's 300% (automation lanes stay 0 to 100%). */
 export const REVERB_SEND_KNOB_MAX = 2;
+/** The longest a track's notes can ring once let go (Track.ring), seconds */
+export const RING_MAX = 30;
 export const REVERB_SEND_MAX = 3;
 export const LEVEL_MIN = -24;
 export const LEVEL_MAX = 12;
@@ -659,6 +661,10 @@ export interface Track {
   bass808?: Bass808Settings;
   /** A monophonic synth's slide time between overlapping notes, seconds (see bassTools.ts); absent: the instrument's own */
   glide?: number;
+  /** A recorded instrument's ring: seconds its notes take to die away once let go (see PlayFeel); absent: the instrument's own */
+  ring?: number;
+  /** False: a wind or brass player who never runs out of breath (held notes hold at full level); absent: they breathe */
+  breathe?: false;
   /** The Sub enhancer: a clean sine under every note (see bassTools.ts); absent: off */
   subLayer?: SubLayer;
 }

@@ -557,6 +557,8 @@ interface TimelineState {
   setTrackSynth: (trackId: string, synth: SynthPatch, record?: boolean) => void;
   /** The heavy bass tools on a track: the 808 designer, legato glide, the Sub enhancer (undefined: off / back to the original). */
   setTrackBass: (trackId: string, edit: Partial<Pick<Track, 'bass808' | 'glide' | 'subLayer'>>, record?: boolean) => void;
+  /** A recorded instrument's ring and breath (Track.ring, Track.breathe) */
+  setTrackFeel: (trackId: string, edit: Partial<Pick<Track, 'ring' | 'breathe'>>, record?: boolean) => void;
   /** A Designed Kit's drum sounds (see drumDesign.ts); `record`: its own undo step (a slider records once per drag itself). */
   setTrackDrumDesign: (trackId: string, design: DrumDesign | undefined, record?: boolean) => void;
   /**
@@ -2172,6 +2174,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     setTrackDrumDesign: (trackId, drumDesign, record = true) => updateTrack(trackId, () => ({ drumDesign }), record),
 
     setTrackBass: (trackId, edit, record = true) => updateTrack(trackId, () => edit, record),
+    setTrackFeel: (trackId, edit, record = true) => updateTrack(trackId, () => edit, record),
 
     setTrackRack: (trackId, rack, record = true) => {
       for (const pad of rack?.pads ?? []) if (pad.soundId) ensureSound(pad.soundId);

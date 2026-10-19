@@ -1,5 +1,5 @@
 // Unit tests for the heavy bass tools: the distortion curves, the 808 designer's settings, the Sub
-// enhancer, glide and Bass Drive settings, the kick clash check, and saving them. Run with `npm test`.
+// enhancer, glide and Bass Drive settings, the kick clash check, a recorded instrument's ring and breath, and saving them. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -144,4 +144,17 @@ test('the kick clash check finds kicks on low 808 notes, and the duck clears the
   assert.equal(findKickClash([drums, ducked], clips, 'b').ducked, true);
   // A muted kit's kicks don't count
   assert.equal(findKickClash([{ ...drums, isMuted: true }, bass], clips, 'b').kicks, 0);
+});
+
+test("a recorded instrument's ring and breath survive saving and opening; out-of-range rings are clamped", () => {
+  const p = {
+    name: 'Ring', bpm: 90, swing: 0, loopRegion: { inBar: 1, outBar: 5, enabled: false }, clips: [],
+    tracks: [track('piano', 'realGrandPiano', { ring: 12 }), track('flute', 'realFlute', { breathe: false }), track('cello', 'realCello', { ring: 400 }), track('old', 'realCello')],
+  };
+  const back = parseProject(JSON.parse(JSON.stringify(serializeProject(p))));
+  assert.equal(back.tracks[0].ring, 12);
+  assert.equal(back.tracks[1].breathe, false);
+  assert.equal(back.tracks[2].ring, 30);
+  assert.equal(back.tracks[3].ring, undefined);
+  assert.equal(back.tracks[3].breathe, undefined);
 });

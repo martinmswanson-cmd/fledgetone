@@ -25,7 +25,7 @@ import { createSlicer } from './presets/slicer';
 import { createBus } from './presets/native';
 import { alwaysStereo } from './nativeNodes';
 import type { NativeBus } from './presets/native';
-import { createCustomSamplerVoice, createSamplerVoice, noteJitter, taperGain } from './samplers/samplerManager';
+import { createCustomSamplerVoice, createSamplerVoice, noteJitter, taperGain, type PlayFeel } from './samplers/samplerManager';
 import type { NoteExpression } from '../store/timelineTypes';
 import type { CustomSample, DrumRack, MultiSample, SlicerSettings, Track, WamPlugin, WobbleRate } from '../store/timelineTypes';
 import { createMultiInstrument, createRackInstrument } from './presets/sampleKits';
@@ -131,6 +131,8 @@ export interface TrackInstrument {
   setGlide?: (seconds: number | undefined) => void;
   /** A pitched instrument's Sub enhancer as it changes (undefined: off), without a rebuild. */
   setSubLayer?: (sub: SubLayer | undefined) => void;
+  /** A recorded instrument's ring and breath (Track.ring, Track.breathe) as they change, from the next note, without a rebuild. */
+  setFeel?: (ring: number | undefined, breathe: boolean | undefined) => void;
   /** The Drum Rack's: its pads as they change, without a rebuild. */
   setRack?: (rack: DrumRack | undefined) => void;
   /** The Multi Sampler's: its sounds and shape as they change, without a rebuild. */
@@ -164,6 +166,12 @@ export interface InstrumentOptions {
   subLayer?: SubLayer;
   /** (Built by createInstrument) where a monophonic synth reads its glide, kept up to date by setGlide */
   glideRef?: GlideRef;
+  /** How long a recorded instrument's notes ring once let go (Track.ring) */
+  ring?: number;
+  /** False: wind and brass players never run out of breath (Track.breathe) */
+  breathe?: boolean;
+  /** (Built by createInstrument) where a recorded instrument reads its ring and breath, kept up to date by setFeel */
+  feel?: PlayFeel;
 }
 
 /** A monophonic synth's legato glide, read at each note: seconds, or undefined for the synth's own. */
@@ -172,7 +180,7 @@ export interface GlideRef {
 }
 
 /** What a track's instrument is built with (its sound, slices, patch, plugins). */
-export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'drumDesign' | 'expressive' | 'bass808' | 'glide' | 'subLayer'> | null | undefined): InstrumentOptions {
+export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'slicer' | 'synth' | 'plugin' | 'pluginFx' | 'rack' | 'multi' | 'drumDesign' | 'expressive' | 'bass808' | 'glide' | 'subLayer' | 'ring' | 'breathe'> | null | undefined): InstrumentOptions {
   if (!track) return {};
   return {
     sample: track.sample,
@@ -188,6 +196,8 @@ export function trackInstrumentOptions(track: Pick<Track, 'id' | 'sample' | 'sli
     ...(track.bass808 ? { bass808: track.bass808 } : {}),
     ...(track.glide !== undefined ? { glide: track.glide } : {}),
     ...(track.subLayer ? { subLayer: track.subLayer } : {}),
+    ...(track.ring !== undefined ? { ring: track.ring } : {}),
+    ...(track.breathe === false ? { breathe: false } : {}),
   };
 }
 
@@ -540,8 +550,13 @@ function withTaper(key: InstrumentKey, inst: TrackInstrument): TrackInstrument {
  */
 function withBassTools(key: InstrumentKey, output: Tone.InputNode, options: InstrumentOptions): TrackInstrument {
   const glideRef: GlideRef = { seconds: options.glide };
-  const inst = buildGained(key, output, { ...options, glideRef });
-  const withGlide: TrackInstrument = { ...inst, setGlide: (seconds) => void (glideRef.seconds = seconds) };
+  const feel: PlayFeel = { ring: options.ring, breathe: options.breathe };
+  const inst = buildGained(key, output, { ...options, glideRef, feel });
+  const withGlide: TrackInstrument = {
+    ...inst,
+    setGlide: (seconds) => void (glideRef.seconds = seconds),
+    setFeel: (ring, breathe) => Object.assign(feel, { ring, breathe }),
+  };
   if (!isPitched(key)) return withGlide;
   const sub = createSubLayer(output, options.subLayer);
   const glide = () => glideRef.seconds ?? options.bass808?.glide;
@@ -628,7 +643,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
   if (kind === 'drums' && INSTRUMENTS[key].samples) return recordedKit(key, output, !!options.expressive, options.seed);
 
   if (kind === 'sampled' || kind === 'custom') {
-    const voice = kind === 'sampled' ? createSamplerVoice(key, output, !!options.expressive) : createCustomSamplerVoice(options.sample, output);
+    const voice = kind === 'sampled' ? createSamplerVoice(key, output, !!options.expressive, options.feel) : createCustomSamplerVoice(options.sample, output);
     return {
       play: (notes, time) => voice.play(notes.map((n) => n.note), notes[0].duration, time, loudest(notes)),
       noteOn: (n, time) => {

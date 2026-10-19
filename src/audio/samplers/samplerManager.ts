@@ -1265,6 +1265,17 @@ const RE_PICK = 0.08;
 const VIBRATO_SHORTEST = 0.33;
 /** How much the vibrato moves the level too (a share of it, either way): the bow's contact and the body's resonances follow the hand */
 const VIBRATO_LEVEL = 0.035;
+/**
+ * How a track plays its recorded instrument (Track.ring, Track.breathe), read as each note starts
+ * and ends so a change is heard from the next note: `ring` seconds for a note to die away once
+ * it's let go (when longer than the instrument's own release), `breathe` false for wind and brass
+ * players who never run out of breath.
+ */
+export interface PlayFeel {
+  ring?: number;
+  breathe?: boolean;
+}
+
 /** Out of breath, a held note fades towards this share of its level, with this time constant (s) */
 const BREATH_FLOOR = 0.5;
 const BREATH_TC = 2.5;
@@ -1307,7 +1318,9 @@ function samplerVoice(
   /** Recorded without vibrato: the vibrato each held note is given (see InstrumentDef.vibrato) */
   vibrato?: InstrumentDef['vibrato'],
   /** A guitar (or banjo, mandolin): a chord's notes are strummed (see guitarStrum.ts) */
-  strummed?: boolean
+  strummed?: boolean,
+  /** The track's ring and breath (see PlayFeel) */
+  feel?: PlayFeel
 ): SamplerVoice {
   let loaded = false;
   const ready = attach.then(() => {
@@ -1324,6 +1337,20 @@ function samplerVoice(
   const releaseTc = Math.log(release + 1) / Math.log(200);
   /** How long a release really lasts: a long one is inaudible (below -70 dB) well before it ends, so it stops there. */
   const tail = Math.min(release, releaseTc * 8);
+  /**
+   * A release as the track has it: the instrument's own, or a longer ring (Track.ring). A note
+   * that dies away by itself (a piano's, a harp's: its recording doesn't loop) rings on untouched
+   * for that many seconds, as if the pedal were down, then is damped; a held one (a bow, a breath)
+   * fades 60 dB over them, as a string left to sound in the hall does. `hold`: seconds before the fall.
+   */
+  const releaseNow = (s: Sounding): { tc: number; tail: number; hold: number } => {
+    const ring = feel?.ring;
+    if (!ring || ring <= tail) return { tc: releaseTc, tail, hold: 0 };
+    // (held: its recording has a loop, whether or not this note was long enough to reach it)
+    return s.looping || loopsOf.has(s.buffer) ? { tc: ring / 6.9, tail: ring, hold: 0 } : { tc: releaseTc, tail: ring + tail, hold: ring };
+  };
+  /** Seconds a note can be held before the player runs out of breath, as the track has it now */
+  const breathNow = () => (feel?.breathe === false ? undefined : breath);
   /** Expressive filters, by cutoff step (see CUTOFF_STEPS_PER_OCTAVE). */
   const filters = new Map<number, BiquadFilterNode>();
   const filterFor = (cutoff: number): AudioNode => {
@@ -1359,6 +1386,10 @@ function samplerVoice(
     rate: number;
     /** When it was let go (Infinity until then): a bowed note starting before this is a legato change */
     releasedAt: number;
+    /** Its release's time constant once let go (a track's ring makes it longer: see releaseNow) */
+    releaseTc?: number;
+    /** When its release starts to fall (later than releasedAt while a track's ring holds it: see releaseNow) */
+    fallsAt?: number;
     /** Its recording loops (a note held past the recording's end), so it plays until it's released */
     looping?: boolean;
     /** Fading out for a newer note (see steal) */
@@ -1407,8 +1438,8 @@ function samplerVoice(
         position: s.played + Math.max(0, at - s.last) * s.rate,
         outline: outlines.get(s.buffer),
         loop: s.looping ? loopsOf.get(s.buffer) : undefined,
-        releasedAt: s.releasedAt,
-        releaseTc,
+        releasedAt: s.fallsAt ?? s.releasedAt,
+        releaseTc: s.releaseTc ?? releaseTc,
       },
       at
     );
@@ -1500,6 +1531,7 @@ function samplerVoice(
       gain.gain.linearRampToValueAtTime(v, when + rise);
     } else gain.gain.value = v;
     // Held past the player's breath, the note fades (by half over the next few seconds)
+    const breath = breathNow();
     if (breath && hold > when + breath) {
       gain.gain.setValueAtTime(v, when + breath);
       gain.gain.setTargetAtTime(v * BREATH_FLOOR, when + breath, BREATH_TC);
@@ -1672,6 +1704,7 @@ function samplerVoice(
 
   /** The level `s` is at by `at` (lower once it has run out of breath). */
   const levelAt = (s: Sounding, at: number) => {
+    const breath = breathNow();
     if (!breath || at <= s.start + breath) return s.level;
     return s.level * (BREATH_FLOOR + (1 - BREATH_FLOOR) * Math.exp(-(at - s.start - breath) / BREATH_TC));
   };
@@ -1681,14 +1714,20 @@ function samplerVoice(
     const at = Math.max(time, s.start + options.attack);
     if (sound) releaseSound(s, at);
     s.releasedAt = at;
+    const { tc, tail, hold } = releaseNow(s);
+    s.releaseTc = tc;
     const g = s.gain.gain;
     const from = levelAt(s, at);
     g.cancelScheduledValues(at);
     g.setValueAtTime(from, at);
-    g.setTargetAtTime(0, at, releaseTc);
-    s.wobble?.gain.setTargetAtTime(0, at, releaseTc / 2);
-    const late = at + tail * 0.9;
-    g.setValueAtTime(from * Math.exp((-tail * 0.9) / releaseTc), late);
+    // (rung on untouched for `hold`, then the fall)
+    const fall = at + hold;
+    s.fallsAt = fall;
+    if (hold > 0) g.setValueAtTime(from, fall);
+    g.setTargetAtTime(0, fall, tc);
+    s.wobble?.gain.setTargetAtTime(0, fall, tc / 2);
+    const late = fall + (tail - hold) * 0.9;
+    g.setValueAtTime(from * Math.exp((-(tail - hold) * 0.9) / tc), late);
     g.linearRampToValueAtTime(0, at + tail);
     const stop = at + tail + 0.01;
     if (stop < s.until) {
@@ -1833,7 +1872,7 @@ function samplerVoice(
 }
 
 /** A sampled instrument's voice in the current context, connected to `output`. */
-export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, expressive = false): SamplerVoice {
+export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, expressive = false, feel?: PlayFeel): SamplerVoice {
   const def = INSTRUMENTS[key];
   // (a guitar's studio room after its amp: see studioChain)
   const studio = def.studio !== undefined ? studioChain(def.studio, output) : null;
@@ -1897,7 +1936,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     return null;
   };
   const progress = loading ? { complete: () => isComplete(loading), want: (midi: number, velocity: number, wheel?: number) => wantNote(loading, midi, velocity, wheel) } : {};
-  return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key), def.vibrato, STRUMMED.has(key));
+  return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key), def.vibrato, STRUMMED.has(key), feel);
 }
 
 /**

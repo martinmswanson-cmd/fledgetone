@@ -31,6 +31,7 @@ import { DrumDesignPanel } from './DrumDesignPanel';
 import { BusFxPanels, BusPresetPanel } from './BusFxPanels';
 import { SynthPanel } from './SynthPanel';
 import { Bass808Panel, BassDrivePanel, GlidePanel, KickClashPanel, SubLayerPanel } from './BassPanels';
+import { RingPanel } from './RingPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
 import { RecordedRoom, RoomStylePicker } from './RecordedRoom';
@@ -296,6 +297,7 @@ export const TrackInspector: React.FC = () => {
             {currentTrack.instrumentKey === 'multiSampler' && <MultiPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'synthDesigner' && <SynthPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'bass808' && <Bass808Panel track={currentTrack} />}
+            <RingPanel track={currentTrack} />
             <GlidePanel track={currentTrack} />
             <SubLayerPanel track={currentTrack} />
             {INSTRUMENTS[currentTrack.instrumentKey].category === 'Bass' && <KickClashPanel track={currentTrack} />}

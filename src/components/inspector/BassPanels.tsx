@@ -29,7 +29,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
 const st = useTimelineStore.getState;
 
 /** A slider over a range best felt in ratios (Hz, seconds): 0..1 on a log scale. */
-function LogSlider(props: { label: string; value: number; lo: number; hi: number; format: (v: number) => string; onChange: (v: number) => void; reset: number; accent: string; disabled?: boolean }) {
+export function LogSlider(props: { label: string; value: number; lo: number; hi: number; format: (v: number) => string; onChange: (v: number) => void; reset: number; accent: string; disabled?: boolean }) {
   const { label, value, lo, hi, format, onChange, reset, accent, disabled = false } = props;
   return (
     <FxSlider
