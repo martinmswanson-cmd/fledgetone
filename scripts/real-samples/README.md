@@ -13,12 +13,14 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
 `src/credits.ts` credits each one.
 
 - [VSCO 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios: the
-  string sections, solo violin, harp, flute, oboe, clarinet, bassoon, horn, trumpet, trombone,
+  string sections, solo violin, harp, flute, piccolo, oboe, clarinet, bassoon, horn (open and
+  muted), trumpet, trombone,
   tuba, muted trumpet (harmon mute), marimba, xylophone, glockenspiel, pipe organ and upright piano
   (the piano by Simon Dalzell of Ivy Audio, redistributable as part of VSCO).
 - [VCSL](https://github.com/sgossner/VCSL) (Versilian Community Sample Library) by Versilian
   Studios: timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica,
-  ocarina, zither (a dan tranh), concert bass drum and baroque recorders (tenor, alto and soprano).
+  ocarina, zither (a dan tranh), concert bass drum, baroque recorders (tenor, alto and soprano),
+  a grand piano (a Steinway model B) and an old upright (a Knight).
 - Karoryfer Lecolds: electric guitars ([Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars),
   [Emily Guitar](https://github.com/sfzinstruments/karoryfer.emilyguitar)), saxophones
   ([Weresax](https://github.com/sfzinstruments/karoryfer.weresax), [Bear Sax](https://github.com/sfzinstruments/karoryfer.bear-sax)),
@@ -47,7 +49,9 @@ All public domain (CC0, The Unlicense) or free to redistribute (one with credit,
   without vibrato, in an anechoic room; the centre microphone's 16-bit 44.1 kHz mono files), and
   the nylon-string classical guitar (a Raimundo 118, played by Brian Penkrot in 2011 in the
   anechoic chamber, every semitone of every string at pp, mf and ff; the 16-bit 44.1 kHz mono
-  files, `Piano_Other/guitar/Guitar.mono.1644.1.zip`). Their terms, from the
+  files, `Piano_Other/guitar/Guitar.mono.1644.1.zip`), and the soprano saxophone (with vibrato),
+  alto and bass flutes, bass clarinet and bass trombone (the earlier recordings, every semitone at
+  pp, mf and ff, one zip each, whose scales name no string). Their terms, from the
   [MIS page](https://theremin.music.uiowa.edu/MIS.html): "Since 1997, these recordings have been
   freely available on this website and may be downloaded and used for any projects, without
   restrictions." Credited anyway.

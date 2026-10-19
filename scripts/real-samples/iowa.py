@@ -1,5 +1,6 @@
 # Fetch a set recorded by the University of Iowa Electronic Music Studios (Musical Instrument
-# Samples, sets.py IOWA) into dl/<set>/, as fetch.py does for the other libraries:
+# Samples, sets.py IOWA) into dl/<set>/, as fetch.py does for the other libraries (strings, the
+# guitar, and winds, whose scales name no string):
 #   python3 iowa.py violin nylon-guitar ...
 # Each set is one zip of the studios' recordings (16-bit 44.1 kHz mono: the strings' 2012 centre
 # microphone, the guitar's 2011 recordings), whose files are chromatic scales played note by note
@@ -47,16 +48,18 @@ def load(p, rate=None):
 
 
 def scale_of(name):
-    """(instrument, loudness, string, [MIDI notes]) a scale file's name says, or None."""
+    """(instrument, loudness, string, [MIDI notes]) a scale file's name says, or None (a wind has no string: '')."""
     toks = name.split('.')
     inst = toks[0]
     loud = next((t for t in toks if t in ('pp', 'mf', 'ff')), None)
-    string = next((t[3:] for t in toks if t.startswith('sul')), None)
+    string = next((t[3:] for t in toks if t.startswith('sul')), None if inst in OPEN else '')
     rng = next((t.strip() for t in toks[1:] if re.fullmatch(r'\s*([A-G]b?\d)([A-G]b?\d)?\s*', t)), None)
-    if not (loud and string and rng):
+    if not (loud and string is not None and rng):
         return None
     a, b = re.fullmatch(r'([A-G]b?\d)([A-G]b?\d)?', rng).groups()
     lo, hi = note_midi(a), note_midi(b or a)
+    if hi < lo:
+        hi += 12  # (a scale named Db2C2 runs to the C above)
     return inst, loud, string, list(range(lo, hi + 1))
 
 
@@ -323,6 +326,8 @@ def fetch(st):
             return all(b > a + 1 for a, b in zip(lv, lv[1:]))
 
         def rank(o):
+            if o[2] not in OPEN:
+                return (0,)  # (a wind plays each note one way)
             # Lowest positions: a semitone to a fifth over the open string; then the nearest above
             # (a plucked note: first a string it was played on evenly, soft to loud)
             above = m - OPEN[o[2]][o[0]]

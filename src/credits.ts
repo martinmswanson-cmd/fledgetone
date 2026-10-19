@@ -40,22 +40,22 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
       'cello-sustain', 'cello-spiccato', 'violins-sustain', 'violins-spiccato', 'violas-sustain', 'violas-spiccato', 'strings-pizzicato',
       'strings-tremolo', 'solo-violin', 'harp', 'flute', 'flute-staccato', 'oboe', 'clarinet', 'bassoon', 'horn', 'horn-staccato', 'trumpet',
       'trumpet-staccato', 'trombone', 'trombone-staccato', 'tuba', 'marimba', 'xylophone', 'glockenspiel', 'pipe-organ', 'chapel-organ',
-      'muted-trumpet',
+      'muted-trumpet', 'piccolo', 'muted-horn',
     ].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Strings, woodwinds, brass (and a trumpet with a harmon mute), harp, mallets and organ from the [Versilian Community Sample Library, VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios (converted to MP3, hosted with the app)',
+      'Strings, woodwinds (and a piccolo), brass (and a trumpet with a harmon mute and a muted horn), harp, mallets and organ from the [Versilian Community Sample Library, VSCO 2 CE](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {
-    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax', 'harmonica', 'ocarina', 'zither', 'concert-bass-drum', 'recorder'].map((set) => `${HOSTED}${set}/`),
+    prefixes: ['timpani', 'tubular-bells', 'vibraphone', 'harpsichord', 'harpsichord-release', 'piano-release', 'kalimba', 'tenor-sax', 'harmonica', 'ocarina', 'zither', 'concert-bass-drum', 'recorder', 'studio-grand', 'old-upright'].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica, ocarina, zither (dan tranh), concert bass drum, baroque recorders, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
+      'Timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica, ocarina, zither (dan tranh), concert bass drum, baroque recorders, a grand and an upright piano, and the harpsichord and piano release sounds from the [Versilian Community Sample Library (VCSL)](https://github.com/sgossner/VCSL) by Versilian Studios (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {
-    prefixes: ['violin', 'viola', 'cello', 'contrabass', 'nylon-guitar'].map((set) => `${HOSTED}${set}/`),
+    prefixes: ['violin', 'viola', 'cello', 'contrabass', 'nylon-guitar', 'soprano-sax', 'alto-flute', 'bass-flute', 'bass-clarinet', 'bass-trombone'].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Solo violin, viola, cello and double bass, bowed, and a nylon-string classical guitar (played by Brian Penkrot), from the [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by Lawrence Fritts and the University of Iowa Electronic Music Studios (split into single notes and converted to MP3, hosted with the app)',
+      'Solo violin, viola, cello and double bass, bowed, a nylon-string classical guitar (played by Brian Penkrot), soprano saxophone, alto and bass flutes, bass clarinet and bass trombone, from the [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by Lawrence Fritts and the University of Iowa Electronic Music Studios (split into single notes and converted to MP3, hosted with the app)',
     licence: 'Free to download and use for any project, without restrictions (the studios\' statement)',
   },
   {

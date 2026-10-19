@@ -33,6 +33,7 @@ export const INSTRUMENT_KEYS = [
   'realCelesta', 'realRecorder', 'realMutedTrumpet',
   'realViolin', 'realViola', 'realSoloCello', 'realContrabass',
   'realNylonGuitar',
+  'realStudioGrand', 'realOldUpright', 'realPiccolo', 'realMutedHorn', 'realSopranoSax', 'realAltoFlute', 'realBassFlute', 'realBassClarinet', 'realBassTrombone',
   // phase 3 additions
   'drumMachine', 'taiko',
   'subBass', 'bass808', 'bassGuitar',
@@ -645,6 +646,38 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
     key: 'realUprightPiano', name: 'Upright Piano (Real)', blurb: 'A recorded upright piano, three loudnesses: intimate, homely', color: '#e7e5e4', category: 'Keys & Synths', kind: 'sampled', range: realRange('upright-piano'),
     samples: { ...real('upright-piano', 0.5), releases: releasesOf('piano-release', -19, 6) }, gain: -6.8,
   },
+  realStudioGrand: {
+    key: 'realStudioGrand', name: 'Studio Grand (Real)', blurb: 'A recorded grand piano, close and clear, three loudnesses: pop, ballads, film', color: '#f1f5f9', category: 'Keys & Synths', kind: 'sampled', range: realRange('studio-grand'),
+    samples: { ...real('studio-grand', 0.6), releases: releasesOf('piano-release', -19, 6) }, gain: -5.3,
+  },
+  realOldUpright: {
+    key: 'realOldUpright', name: 'Old Upright (Real)', blurb: 'A recorded old upright piano, a little out of tune, two loudnesses: saloon, lo-fi, folk', color: '#d6d3d1', category: 'Keys & Synths', kind: 'sampled', range: realRange('old-upright'),
+    samples: { ...real('old-upright', 0.5), releases: releasesOf('piano-release', -19, 6) }, gain: -6.8,
+  },
+  realPiccolo: {
+    key: 'realPiccolo', name: 'Piccolo (Real)', blurb: 'A recorded piccolo, high and bright: marches, sparkle over the orchestra', color: '#bae6fd', category: 'Orchestra', kind: 'sampled', range: realRange('piccolo'),
+    samples: real('piccolo', 0.3), gain: -7,
+  },
+  realMutedHorn: {
+    key: 'realMutedHorn', name: 'Muted French Horn (Real)', blurb: 'A recorded French horn with a mute, soft and loud: distant, mysterious', color: '#eab308', category: 'Orchestra', kind: 'sampled', range: realRange('muted-horn'),
+    samples: real('muted-horn', 0.4), gain: 5.6, dynamics: true,
+  },
+  realAltoFlute: {
+    key: 'realAltoFlute', name: 'Alto Flute (Real)', blurb: 'A recorded alto flute, every note at three loudnesses: dark, breathy, film', color: '#38bdf8', category: 'Orchestra', kind: 'sampled', range: realRange('alto-flute'),
+    samples: real('alto-flute', 0.35), gain: 8.3, room: -10, dynamics: true,
+  },
+  realBassFlute: {
+    key: 'realBassFlute', name: 'Bass Flute (Real)', blurb: 'A recorded bass flute, low, airy and hushed: ambient, film', color: '#0ea5e9', category: 'Orchestra', kind: 'sampled', range: realRange('bass-flute'),
+    samples: real('bass-flute', 0.35), gain: -0.8, room: -10, dynamics: true,
+  },
+  realBassClarinet: {
+    key: 'realBassClarinet', name: 'Bass Clarinet (Real)', blurb: 'A recorded bass clarinet, every note at three loudnesses: dark, woody, suspense', color: '#16a34a', category: 'Orchestra', kind: 'sampled', range: realRange('bass-clarinet'),
+    samples: real('bass-clarinet', 0.3), gain: 6.8, room: -10, dynamics: true,
+  },
+  realBassTrombone: {
+    key: 'realBassTrombone', name: 'Bass Trombone (Real)', blurb: 'A recorded bass trombone, every note at three loudnesses: deep, heavy brass', color: '#b45309', category: 'Orchestra', kind: 'sampled', range: realRange('bass-trombone'),
+    samples: real('bass-trombone', 0.4), gain: 5, room: -10, dynamics: true,
+  },
   realPipeOrgan: {
     key: 'realPipeOrgan', name: 'Pipe Organ (Real)', blurb: 'A recorded church organ, full and open, with its pedal pipes', color: '#c4b5fd', category: 'Keys & Synths', kind: 'sampled', range: realRange('pipe-organ'),
     samples: real('pipe-organ', 0.4), gain: 16,
@@ -712,6 +745,10 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   realTenorSax: {
     key: 'realTenorSax', name: 'Tenor Sax (Real)', blurb: 'A recorded tenor saxophone, soft and loud: smoky jazz, soul, rock', color: '#d97706', category: 'Winds & Brass', kind: 'sampled', range: realRange('tenor-sax'),
     samples: real('tenor-sax', 0.25), gain: 5, taper: [70, 2], dynamics: true,
+  },
+  realSopranoSax: {
+    key: 'realSopranoSax', name: 'Soprano Sax (Real)', blurb: 'A recorded soprano saxophone with vibrato, three loudnesses: smooth jazz, ballads', color: '#f59e0b', category: 'Winds & Brass', kind: 'sampled', range: realRange('soprano-sax'),
+    samples: real('soprano-sax', 0.25), gain: 2, room: -10, dynamics: true,
   },
   realSteelDrums: {
     key: 'realSteelDrums', name: 'Steel Drums (Real)', blurb: 'A recorded steel pan, soft to hard strokes: island, sunny, playful', color: '#06b6d4', category: 'World', kind: 'sampled', range: [57, 86],
@@ -790,7 +827,7 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   },
   latinPercussion: {
     key: 'latinPercussion', name: 'Latin Percussion (Real)', blurb: 'Recorded congas, bongos, timbale, shaker, tambourine and bells: salsa, samba, Latin pop', color: '#b45309', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],
-    samples: realKit('latin-percussion', { C1: 36, D1: 38, 'D#1': 39, F1: 41, 'F#1': 42, B1: 45, 'A#1': 46, D2: 48, 'C#2': 49, 'D#2': 51, 'G#2': 56 }), gain: 1,
+    samples: realKit('latin-percussion', { C1: 36, D1: 38, 'D#1': 39, F1: 41, 'F#1': 42, B1: 45, 'A#1': 46, D2: 48, 'C#2': 49, 'D#2': 51, 'G#2': 56 }), gain: 2,
     rowLabels: { C1: 'Tumba', D1: 'Conga', 'D#1': 'Claves', F1: 'Bongo Low', 'F#1': 'Shaker', B1: 'Bongo High', 'A#1': 'Tambourine', D2: 'Timbale', 'C#2': 'Triangle', 'D#2': 'Agogo', 'G#2': 'Cowbell' },
   },
   percussionExtras: {
@@ -946,6 +983,12 @@ const SEATS: Partial<Record<InstrumentKey, Seat>> = {
   realCelloShort: { pan: 0.35, distance: 0.2 },
   realDoubleBass: { pan: 0.55, distance: 0.3 },
   realBassDrum: { pan: 0.1, distance: 0.75 },
+  realPiccolo: { pan: -0.2, distance: 0.45 },
+  realAltoFlute: { pan: -0.15, distance: 0.45 },
+  realBassFlute: { pan: -0.15, distance: 0.45 },
+  realBassClarinet: { pan: -0.05, distance: 0.5 },
+  realMutedHorn: { pan: -0.3, distance: 0.6 },
+  realBassTrombone: { pan: 0.4, distance: 0.65 },
   realStrings: { pan: 0, distance: 0.2 },
   realPizzicato: { pan: 0, distance: 0.2 },
   realTremolo: { pan: 0, distance: 0.2 },
@@ -1003,6 +1046,13 @@ const BREATH: Partial<Record<InstrumentKey, number>> = {
   realSoloVoice: 9,
   realRecorder: 7,
   realMutedTrumpet: 7,
+  realPiccolo: 6,
+  realAltoFlute: 7,
+  realBassFlute: 6,
+  realBassClarinet: 8,
+  realBassTrombone: 6,
+  realMutedHorn: 8,
+  realSopranoSax: 8,
 };
 /** How long a player of `key` can hold a note before it starts to fade (seconds), if they breathe. */
 export const breathOf = (key: InstrumentKey): number | undefined => BREATH[key];

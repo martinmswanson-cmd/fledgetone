@@ -332,6 +332,24 @@ SETS = [
     # A nylon-string classical guitar by the University of Iowa (iowa.py): every semitone from the
     # low E to the high B, pp, mf and ff, plucked in an anechoic room (the app adds the room)
     S('nylon-guitar', 'iowa', [], ['pp', 'mf', 'ff'], 'plucked', cap=5.0, iowa='Piano_Other/guitar/Guitar.mono.1644.1.zip'),
+    # ---- more pianos, winds and brass ----
+    # A studio grand (a Steinway model B, its close microphones), every other note at three
+    # loudnesses, and an old upright (a Knight) at two, both from the VCSL (CC0)
+    S('studio-grand', 'vcsl', [(rf'Chordophones/Zithers/Grand Piano, Steinway B/Sus/JHPiano_Sus_Close_{NOTE}_(?P<layer>vl[234])_(?P<take>rr1)\.wav', 0)],
+      ['vl2', 'vl3', 'vl4'], 'ringing', cap=9.0, retune=False),
+    S('old-upright', 'vcsl', [(rf'Chordophones/Zithers/Upright Piano, Knight/Sustains/Player_(?P<layer>vl[12])_(?P<take>rr1)_{NOTE}\.wav', 1)],
+      ['vl1', 'vl2'], 'ringing', cap=8.0, retune=False, hi=106),  # (its top keys measure a semitone out)
+    # The piccolo, held (five notes, each stretched over its neighbours), and the French horn muted
+    S('piccolo', 'vsco', [(rf'Woodwinds/Piccolo/Sus/piccolo_{NOTE}_sustain(?P<take>1)(?P<layer>)\.wav', 0)], [''], 'sustain', xloop=True),
+    S('muted-horn', 'vsco', [(rf'Brass/F Horn/mute/MOHorn_mute_{NOTE}_(?P<layer>v[12])_1\.wav', 1)], ['v1', 'v2'], 'sustain'),
+    # Winds and a bass trombone by the University of Iowa (iowa.py), every semitone at pp, mf and ff
+    # in an anechoic room (the app adds the room): the soprano sax with vibrato, alto and bass
+    # flutes, bass clarinet
+    S('soprano-sax', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/sopranosaxophone/SopSax.Vib.zip', xloop=True),
+    S('alto-flute', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/altoflute/AltoFlute.zip', xloop=True),
+    S('bass-flute', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/bassflute/BassFlute.zip', xloop=True),
+    S('bass-clarinet', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/bassclarinet/BassClarinet.zip', xloop=True),
+    S('bass-trombone', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Brass/basstrombone/BassTrombone.zip', xloop=True),
     # A studio drum kit: each hit mixed from its close microphones and the overheads by kit.py
     S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
     S('session-kit', 'virtuosity', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='session-kit'),
