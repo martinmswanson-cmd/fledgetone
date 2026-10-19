@@ -7,7 +7,7 @@ second update on the same day gets `-2`, and so on).
 ## 2026.10.20 — An "ooh" choir and four new starters
 
 - **Choir "Ooh" (Real)**: the same twenty singers on a soft, round "ooh", for pads, lullabies and film scores. The starters' "ooh" voices sing with it now.
-- **Four new starters** on the newest recordings: **Cathedral** (both choirs, organ, harp, strings, timpani and bells), **After Hours** (a late-night ballad on brushes, grand piano, upright bass and tenor sax), **Plaza** (congas, bongos and claves in son clave, a nylon guitar montuno and a muted trumpet) and **Mbira Morning** (mbira, balafon, folk harp, hand chimes and a didgeridoo drone).
+- **Four new starters** on the newest recordings: **Cathedral** (both choirs, organ, harp, strings, timpani and bells), **After Hours** (a late-night ballad on brushes, grand piano, upright bass and vibraphone), **Plaza** (congas, bongos and claves in son clave, a nylon guitar montuno and a marimba) and **Mbira Morning** (mbira, balafon, folk harp, hand chimes and a didgeridoo drone).
 - **Keep My sounds safe**: File › **Save my sounds to a file…** puts your saved sounds and starred instruments (and any recordings they play) in one file, and **Open a my sounds file…** brings them into another browser. In Pocket, both are in the song's settings.
 - More real **cat**, **frog**, **purr**, **thunderstorm** and **thunder** recordings in the sound effects maker.
 - Pocket's short messages now show at the top of the screen, and taps go through them, so they never cover the pads while you record.

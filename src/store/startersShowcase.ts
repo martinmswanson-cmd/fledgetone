@@ -7,8 +7,8 @@ import { MORE_KIT } from './startersGameMore';
 
 /**
  * Starters that show off the newer recordings: a cathedral of both choirs, organ, strings and
- * bells; a late-night ballad on brushes, grand piano, upright bass and tenor sax; a plaza groove on
- * the Latin percussion with nylon guitar and muted trumpet; and a morning in the garden on mbira,
+ * bells; a late-night ballad on brushes, grand piano, upright bass and vibraphone; a plaza groove on
+ * the Latin percussion with nylon guitar and marimba; and a morning in the garden on mbira,
  * balafon, folk harp, hand chimes and a didgeridoo drone. Every part plays a recorded instrument.
  */
 
@@ -76,12 +76,9 @@ function cathedral(): ProjectSnapshot {
 // ---------- After Hours: a brushes ballad ----------
 
 function afterHours(): ProjectSnapshot {
-  // The sax (and Plaza's trumpet) were recorded close and dry, and stop within a quarter second of
-  // being let go: Ring lets each note die away into the room with the piano and drums, and a little
-  // distance puts it on the same stage, so the phrases don't stop dead in front of the band
   const piano = track('Grand piano', 'realStudioGrand', { volume: -6, pan: -0.1, reverbSend: 0.25, fx: { peq: EQ.piano(), human: human(0.25) } });
   const bass = track('Upright bass', 'realUprightBass', { volume: -8, fx: { peq: peq(lowCut(35)), human: human(0.25) } });
-  const sax = grouped(track('Tenor sax', 'realTenorSax', { volume: -9, pan: 0.2, reverbSend: 0.55, distance: 0.3, ring: 2, fx: { human: human(0.3) } }), 'Climax');
+  const vibes = grouped(track('Vibraphone', 'realVibraphone', { volume: -8, pan: 0.2, reverbSend: 0.35, fx: { human: human(0.25) } }), 'Climax');
   const kit = drumBus(-18);
   const drums = grouped(track('Brushes', 'brushKit', { volume: -9, output: kit.id, reverbSend: 0.2, fx: { peq: EQ.kit(), human: human(0.2) } }), 'Percussion');
 
@@ -102,7 +99,7 @@ function afterHours(): ProjectSnapshot {
     84,
     0,
     [1, 17],
-    [piano, bass, sax, kit, drums],
+    [piano, bass, vibes, kit, drums],
     [
       clip(piano, 'Ballad', 1, 4, chords(comp), 2),
       clip(bass, 'Ballad', 1, 4, walking(roots, 0.6), 2),
@@ -110,7 +107,7 @@ function afterHours(): ProjectSnapshot {
       clip(piano, 'Chorus', 9, 8, chords([...comp2, ...comp])),
       clip(bass, 'Chorus', 9, 8, walking([...roots2, ...roots], 0.65)),
       drumClip(drums, 'Brushes', 9, 'brushes', 8, 0.5, 4, 7),
-      clip(sax, 'Theme', 9, 8, tune),
+      clip(vibes, 'Theme', 9, 8, tune),
     ],
     [[1, 'Ballad'], [9, 'Theme']],
     master({ on: false }, { on: true, amount: 1.1 })
@@ -122,7 +119,7 @@ function afterHours(): ProjectSnapshot {
 function plaza(): ProjectSnapshot {
   const guitar = track('Nylon guitar', 'realNylonGuitar', { volume: -7, pan: -0.25, reverbSend: 0.2, fx: { human: human(0.3) } });
   const bass = track('Upright bass', 'realUprightBass', { volume: -7, fx: { peq: peq(lowCut(35)), human: human(0.25) } });
-  const trumpet = grouped(track('Muted trumpet', 'realMutedTrumpet', { volume: -9, pan: 0.2, reverbSend: 0.55, distance: 0.3, ring: 2, fx: { peq: EQ.brass(), human: human(0.3) } }), 'Climax');
+  const marimba = grouped(track('Marimba', 'realMarimba', { volume: -8, pan: 0.2, reverbSend: 0.3, fx: { human: human(0.25) } }), 'Climax');
   const perc = grouped(track('Latin percussion', 'latinPercussion', { volume: -6, reverbSend: 0.15, fx: { human: human(0.3) } }), 'Percussion');
   const extras = grouped(track('Guiro & woodblock', 'percussionExtras', { volume: -13, pan: 0.35, reverbSend: 0.15, fx: { human: human(0.3) } }), 'Percussion');
 
@@ -154,7 +151,7 @@ function plaza(): ProjectSnapshot {
     104,
     0,
     [1, 17],
-    [guitar, bass, trumpet, perc, extras],
+    [guitar, bass, marimba, perc, extras],
     [
       clip(perc, 'Groove', 1, 1, groove, 16),
       clip(guitar, 'Verse', 1, 4, montuno(verse), 2),
@@ -164,7 +161,7 @@ function plaza(): ProjectSnapshot {
       clip(bass, 'Montuno', 9, 4, tumbao(tRoots), 1),
       clip(guitar, 'Montuno', 13, 4, montuno(verse), 1),
       clip(bass, 'Montuno', 13, 4, tumbao(vRoots), 1),
-      clip(trumpet, 'Theme', 9, 4, tune, 2),
+      clip(marimba, 'Theme', 9, 4, tune, 2),
     ],
     [[1, 'Verse'], [9, 'Montuno']],
     master({ on: false }, { on: true, amount: 1.1 })
