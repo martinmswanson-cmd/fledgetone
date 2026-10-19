@@ -106,6 +106,10 @@ export const AddTrackMenu: React.FC = () => {
               useTimelineStore.getState().addTrack(key);
               close();
             }}
+            onPickSound={(sound) => {
+              useTimelineStore.getState().addSoundTrack(sound);
+              close();
+            }}
           />
         </>
       )}

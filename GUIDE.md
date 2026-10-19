@@ -424,6 +424,13 @@ There are 245 instruments in 13 groups. 128 of them are retro instruments (the 1
 
 Every instrument menu (Add Track, and the instrument at the top of the Track Inspector) has a **▶** button on each row: click it to hear that instrument play a short rising phrase and a chord (a drum kit plays a short beat), without choosing it. It plays "dry", without any track's volume or effects. The first time, a recorded instrument downloads its sounds before it plays. A row too long for the menu shows its whole name and description when you point at it or reach it with the arrow keys.
 
+### Favourites and My sounds
+
+- **★ an instrument** (point at its row in any instrument list, then the star) to keep it under **Favourites**, at the top of every instrument list. Click the star again to take it off.
+- **Save a sound you've set up** with the **bookmark** button beside the instrument in the Track Inspector. It keeps the whole sound under a name you give it: the instrument with all its settings (the Synth Designer patch, the 808 or Designed Kit, a plugin's knobs, Ring and Breathe, glide, the Sub), the track's EQ, inserts, plugin effects and reverb and delay sends. The track's level, pan and routing stay with the song.
+- Saved sounds are under **My sounds**, at the top of every instrument list (and found by typing their name). Picking one in the Track Inspector puts it on that track (Undo takes it back); picking one in **Add Track** makes a new track with it. Save again under the same name to update it, and delete one with the bin on its row; tracks already playing it keep their settings.
+- Favourites and saved sounds are kept in this browser for every project. A song you save as a file has its tracks' settings in it whether or not they're saved sounds.
+
 ### Real recordings
 
 The instruments marked **(Real)** are proper multi-sampled recordings, made the way commercial sample libraries are, rather than the general-purpose (General MIDI) soundfont sounds of the 1990s many of the others use:

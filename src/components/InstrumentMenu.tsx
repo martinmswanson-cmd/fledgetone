@@ -1,19 +1,33 @@
 import React, { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useFloatingMenu } from './useFloatingMenu';
-import { ChevronDown, Play, Search } from 'lucide-react';
+import { ChevronDown, Play, Search, Star, Trash2 } from 'lucide-react';
 import { previewInstrument } from '../audio/instrumentPreview';
 import type { InstrumentDef, InstrumentKey } from '../audio/instrumentCatalog';
 import { INSTRUMENTS, RETRO_CATEGORY, instrumentsByCategory } from '../audio/instrumentCatalog';
 import { useRetroInstruments } from '../store/retroInstruments';
 import { searchInstruments } from '../search/instrumentSearch';
+import { useMySounds, type MySound } from '../store/mySounds';
 
 /**
  * Choosing an instrument by typing: a search field over the instrument list. With nothing typed
  * the list is grouped as in the catalog; typing narrows it to the best matches first (by name,
  * then by style or mood words like "8-bit", "angelic" or "orchestral", then by description).
  * Up and Down move through it, Enter picks. The retro instruments (1990s soundfonts) are left out
- * unless shown (a switch at the bottom), except the one a track already plays.
+ * unless shown (a switch at the bottom), except the one a track already plays. Starred instruments
+ * are listed first under Favourites, and where a list can take them, the sounds you've saved
+ * (mySounds.ts) above those, under My sounds.
  */
+
+/** A row of the list: an instrument, or a saved sound (which plays one) */
+interface Row {
+  def: InstrumentDef;
+  sound?: MySound;
+  heading: string | null;
+  key: string;
+}
+
+const MY_SOUNDS = 'My sounds';
+const FAVOURITES = 'Favourites';
 
 interface ListProps {
   /** Which instruments to offer (all when left out) */
@@ -21,12 +35,14 @@ interface ListProps {
   /** The one chosen now: marked, and where the list starts */
   current?: InstrumentKey;
   onPick: (key: InstrumentKey) => void;
+  /** Where saved sounds can be picked: what picking one does (left out, they aren't listed) */
+  onPickSound?: (sound: MySound) => void;
   /** Heading over the search field */
   heading?: string;
 }
 
 /** The search field and the list it filters. */
-export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, heading }) => {
+export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, onPickSound, heading }) => {
   /** The instrument whose preview is playing (or loading) */
   const [previewing, setPreviewing] = useState<InstrumentKey | null>(null);
   const preview = (key: InstrumentKey) => {
@@ -38,22 +54,39 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
   const idBase = `inst${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
 
   const showRetro = useRetroInstruments((s) => s.shown);
+  const favourites = useMySounds((s) => s.favourites);
+  const mySounds = useMySounds((s) => s.sounds);
   // Rows in display order, with the group headings to show before some of them
   const { rows, hiddenRetro } = useMemo(() => {
     const allow = include ?? (() => true);
     const listed = (def: InstrumentDef) => allow(def) && (showRetro || !def.retro || def.key === current);
-    if (query.trim()) {
+    const sounds = onPickSound ? mySounds.filter((s) => allow(INSTRUMENTS[s.settings.instrumentKey])) : [];
+    const soundRows = (list: MySound[]): Row[] =>
+      list.map((sound, i) => ({ def: INSTRUMENTS[sound.settings.instrumentKey], sound, heading: i === 0 ? MY_SOUNDS : null, key: `sound-${sound.id}` }));
+    const q = query.trim().toLowerCase();
+    if (q) {
       const found = searchInstruments(query, allow);
-      return { rows: found.filter(listed).map((def) => ({ def, heading: null as string | null })), hiddenRetro: found.filter((d) => !listed(d)).length };
+      const words = q.split(/\s+/);
+      const soundsFound = sounds.filter((s) => words.every((w) => `${s.name} ${INSTRUMENTS[s.settings.instrumentKey].name}`.toLowerCase().includes(w)));
+      return {
+        rows: [...soundRows(soundsFound).map((r) => ({ ...r, heading: null })), ...found.filter(listed).map((def) => ({ def, heading: null, key: def.key }))] as Row[],
+        hiddenRetro: found.filter((d) => !listed(d)).length,
+      };
     }
+    const starred = favourites.map((k) => INSTRUMENTS[k]).filter((def) => def && listed(def));
     const groups = instrumentsByCategory().map(({ category, instruments }) => ({ category, instruments: instruments.filter(listed) }));
     return {
-      rows: groups.flatMap(({ category, instruments }) => instruments.map((def, i) => ({ def, heading: i === 0 ? (category as string | null) : null }))),
+      rows: [
+        ...soundRows(sounds),
+        ...starred.map((def, i) => ({ def, heading: i === 0 ? FAVOURITES : null, key: `fav-${def.key}` })),
+        ...groups.flatMap(({ category, instruments }) => instruments.map((def, i) => ({ def, heading: i === 0 ? (category as string | null) : null, key: def.key }))),
+      ] as Row[],
       hiddenRetro: showRetro ? 0 : instrumentsByCategory().find((g) => g.category === RETRO_CATEGORY)?.instruments.filter((d) => allow(d) && d.key !== current).length ?? 0,
     };
-  }, [query, include, showRetro, current]);
+  }, [query, include, showRetro, current, favourites, mySounds, onPickSound]);
 
-  const [active, setActive] = useState(() => Math.max(0, rows.findIndex((r) => r.def.key === current)));
+  const [active, setActive] = useState(() => Math.max(0, rows.findIndex((r) => !r.sound && r.def.key === current)));
+  const pick = (row: Row) => (row.sound ? onPickSound?.(row.sound) : onPick(row.def.key));
   const changeQuery = (q: string) => {
     setQuery(q);
     setActive(0);
@@ -75,7 +108,7 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const row = rows[active];
-      if (row) onPick(row.def.key);
+      if (row) pick(row);
     }
   };
 
@@ -104,23 +137,58 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
       </label>
       <div ref={listRef} id={`${idBase}-list`} role="listbox" aria-label="Instruments" className="overflow-y-auto py-1 min-h-0">
         {rows.length === 0 && <div className="px-3 py-3 text-forge-muted font-sans">No instrument matches “{query}”{hiddenRetro ? ' (except retro ones, below)' : ''}.</div>}
-        {rows.map(({ def, heading: group }, i) => (
-          <React.Fragment key={def.key}>
+        {rows.map((row, i) => {
+          const { def, sound, heading: group } = row;
+          const starred = !sound && favourites.includes(def.key);
+          return (
+          <React.Fragment key={row.key}>
             {group && <div className="px-3 pt-2 pb-1 text-[9px] uppercase tracking-widest text-forge-muted/80 font-bold">{group}</div>}
             <div
               id={`${idBase}-${i}`}
               role="option"
-              aria-selected={def.key === current}
+              aria-selected={!sound && def.key === current}
               onPointerMove={() => i !== active && setActive(i)}
-              onClick={() => onPick(def.key)}
-              title={`${def.name}: ${def.category} · ${def.blurb}`}
+              onClick={() => pick(row)}
+              title={sound ? `${sound.name}: your saved sound (${def.name} with your settings)` : `${def.name}: ${def.category} · ${def.blurb}`}
               className={`w-full px-3 py-1.5 flex items-center gap-2 text-left cursor-pointer ${i === active ? 'bg-cyan-500/15' : ''}`}
             >
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: def.color }} />
-              <span className={`font-medium whitespace-nowrap ${def.key === current ? 'text-cyan-200' : 'text-forge-text'}`}>{def.name}</span>
+              <span className={`font-medium whitespace-nowrap ${!sound && def.key === current ? 'text-cyan-200' : 'text-forge-text'}`}>{sound ? sound.name : def.name}</span>
               {/* Cut short to fit; the row under the pointer (or the keys) opens up to show all of it */}
-              <span className={`ml-auto text-[10px] text-forge-muted pl-2 ${i === active ? 'whitespace-normal' : 'truncate'}`}>{query.trim() ? `${def.category} · ${def.blurb}` : def.blurb}</span>
-              {(def.kind === 'synth' || def.kind === 'drums' || def.kind === 'sampled') && (
+              <span className={`ml-auto text-[10px] text-forge-muted pl-2 ${i === active ? 'whitespace-normal' : 'truncate'}`}>
+                {sound ? `${def.name} · your settings` : query.trim() ? `${def.category} · ${def.blurb}` : def.blurb}
+              </span>
+              {sound ? (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Delete your saved sound "${sound.name}"? Tracks playing it keep their settings.`)) useMySounds.getState().removeSound(sound.id);
+                  }}
+                  aria-label={`Delete ${sound.name}`}
+                  title={`Delete ${sound.name} from My sounds`}
+                  className={`shrink-0 w-6 h-6 rounded flex items-center justify-center text-forge-muted hover:text-red-300 ${i === active ? '' : 'invisible'}`}
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    useMySounds.getState().toggleFavourite(def.key);
+                  }}
+                  aria-label={`${starred ? 'Unstar' : 'Star'} ${def.name}`}
+                  aria-pressed={starred}
+                  title={starred ? 'Remove from Favourites' : 'Add to Favourites (listed first)'}
+                  className={`shrink-0 w-6 h-6 rounded flex items-center justify-center ${starred ? 'text-amber-300' : `text-forge-muted hover:text-amber-200 ${i === active ? '' : 'invisible'}`}`}
+                >
+                  <Star className="w-3 h-3" fill={starred ? 'currentColor' : 'none'} />
+                </button>
+              )}
+              {!sound && (def.kind === 'synth' || def.kind === 'drums' || def.kind === 'sampled') && (
                 <button
                   type="button"
                   tabIndex={-1}
@@ -137,7 +205,8 @@ export const InstrumentList: React.FC<ListProps> = ({ include, current, onPick, 
               )}
             </div>
           </React.Fragment>
-        ))}
+          );
+        })}
         {(hiddenRetro > 0 || showRetro) && (
           <button
             type="button"
@@ -163,10 +232,12 @@ interface PickerProps {
   className?: string;
   /** Show the instrument's description after its name on the button */
   withBlurb?: boolean;
+  /** Offer the saved sounds too: what picking one does */
+  onPickSound?: (sound: MySound) => void;
 }
 
 /** A button showing the chosen instrument that opens the searchable list. */
-export const InstrumentPicker: React.FC<PickerProps> = ({ value, onChange, include, label, className = '', withBlurb }) => {
+export const InstrumentPicker: React.FC<PickerProps> = ({ value, onChange, include, label, className = '', withBlurb, onPickSound }) => {
   const { open, toggle, close, buttonRef, render } = useFloatingMenu();
   const def = INSTRUMENTS[value];
   return (
@@ -197,6 +268,13 @@ export const InstrumentPicker: React.FC<PickerProps> = ({ value, onChange, inclu
             close(true);
             if (key !== value) onChange(key);
           }}
+          onPickSound={
+            onPickSound &&
+            ((sound) => {
+              close(true);
+              onPickSound(sound);
+            })
+          }
         />
       )}
     </>

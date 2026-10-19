@@ -16,6 +16,7 @@ import {
   Loader2,
   Sliders,
   Trash2,
+  Bookmark,
 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
@@ -44,6 +45,9 @@ const canPlayExpressively = (key: keyof typeof INSTRUMENTS) => {
 };
 import type { InstrumentDef } from '../../audio/instrumentCatalog';
 import { InstrumentPicker } from '../InstrumentMenu';
+import { useMySounds } from '../../store/mySounds';
+import { captureWamStates } from '../../audio/wamHost';
+import { showToast } from '../timeline/toastStore';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
 import { AutoBadge, Automatable } from '../timeline/AutoBadge';
@@ -54,6 +58,26 @@ import { REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX } from '../../store/timelineTypes
 
 /** One click to a kind of space: the master reverb's length. */
 const notAudio = (def: InstrumentDef) => !isAudioKind(def.key);
+
+/** Keep a track's whole sound under a name, to pick from the instrument lists (My sounds) in any song. */
+async function saveTrackSound(trackId: string): Promise<void> {
+  const before = useTimelineStore.getState().tracks.find((t) => t.id === trackId);
+  if (!before) return;
+  const name = window.prompt('Save this sound as (it appears under My sounds in the instrument lists):', before.name);
+  if (name === null) return;
+  // A plugin's knobs are read now, so the sound keeps what was just turned
+  if (before.plugin || before.pluginFx?.length) await captureWamStates();
+  const track = useTimelineStore.getState().tracks.find((t) => t.id === trackId);
+  if (!track) return;
+  const saved = useMySounds.getState().saveSound(name, track);
+  showToast(
+    saved === 'too-big'
+      ? "That sound's plugin settings are too big for the browser to keep."
+      : saved === 'not-kept'
+        ? "The browser wouldn't keep it (its storage is full or blocked)."
+        : `${saved === 'replaced' ? 'Updated' : 'Saved'} "${name.trim() || track.name}": pick it from My sounds at the top of any instrument list.`
+  );
+}
 
 const REVERB_SPACES = [
   { name: 'Room', decay: 1, hint: 'Tight and close: drums, rock, hip-hop' },
@@ -256,14 +280,27 @@ export const TrackInspector: React.FC = () => {
                   {INSTRUMENTS[currentTrack.instrumentKey].name} track ({INSTRUMENTS[currentTrack.instrumentKey].blurb.toLowerCase()})
                 </div>
               ) : (
-                <InstrumentPicker
-                  value={currentTrack.instrumentKey}
-                  onChange={(key) => setTrackInstrument(currentTrack.id, key)}
-                  include={notAudio}
-                  label="Instrument"
-                  withBlurb
-                  className="w-full bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white cursor-pointer hover:border-cyan-400/60 focus:border-cyan-400 focus:outline-none"
-                />
+                <div className="flex items-stretch gap-1.5">
+                  <InstrumentPicker
+                    value={currentTrack.instrumentKey}
+                    onChange={(key) => setTrackInstrument(currentTrack.id, key)}
+                    onPickSound={(sound) => useTimelineStore.getState().setTrackSound(currentTrack.id, sound)}
+                    include={notAudio}
+                    label="Instrument"
+                    withBlurb
+                    className="flex-1 min-w-0 bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white cursor-pointer hover:border-cyan-400/60 focus:border-cyan-400 focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    data-search="save sound my sounds favourite preset"
+                    onClick={() => void saveTrackSound(currentTrack.id)}
+                    title="Save this sound (the instrument with all its settings, plugin knobs and effects) to My sounds, to pick in any song"
+                    aria-label="Save this sound to My sounds"
+                    className="shrink-0 px-2 rounded border border-forge-border bg-forge-panel text-forge-muted hover:text-amber-200 hover:border-amber-400/60"
+                  >
+                    <Bookmark className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               )}
               {INSTRUMENTS[currentTrack.instrumentKey].kind === 'sampled' && (
                 <span className="text-[10px] text-forge-muted">Recorded samples, downloaded the first time you use them (needs internet).</span>

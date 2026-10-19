@@ -87,6 +87,7 @@ import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSt
 import { autosaveRemovedBy, hasWork, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
 import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
+import { withSound, type MySound } from './mySounds';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
@@ -507,6 +508,10 @@ interface TimelineState {
   toggleFolderMute: (folderId: string) => void;
   toggleFolderSolo: (folderId: string) => void;
   setTrackInstrument: (trackId: string, instrumentKey: InstrumentKey) => void;
+  /** Put a saved sound (mySounds.ts) on a track: its instrument and every setting of it (one undo step). */
+  setTrackSound: (trackId: string, sound: MySound) => void;
+  /** A new track playing a saved sound. Returns its id. */
+  addSoundTrack: (sound: MySound) => string;
   toggleMute: (trackId: string) => void;
   toggleSolo: (trackId: string) => void;
   toggleArm: (trackId: string) => void;
@@ -2021,6 +2026,24 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // A bus that becomes an instrument: the tracks that played into it go back to the master
       if (isMixTrack(current)) set((s) => ({ tracks: tidySends(tidyRoutes(s.tracks)) }));
       if (hasRecordings(instrumentKey)) void loadQuick(instrumentKey).catch(() => {});
+    },
+
+    setTrackSound: (id, sound) => {
+      const current = get().tracks.find((t) => t.id === id);
+      // (Not a bus, a return or an Audio track: those play other tracks' sound, or sound files)
+      if (!current || isMixTrack(current) || isAudioKind(current.instrumentKey)) return;
+      set((s) => ({
+        tracks: s.tracks.map((t) => (t.id === id ? { ...withSound(t, sound.settings), name: sound.name } : t)),
+        ...pushPast(s),
+      }));
+      if (hasRecordings(sound.settings.instrumentKey)) void loadQuick(sound.settings.instrumentKey).catch(() => {});
+    },
+
+    addSoundTrack: (sound) => {
+      const made = withSound(makeTrack(sound.settings.instrumentKey, get().tracks, sound.name), sound.settings);
+      set((s) => ({ tracks: [...s.tracks, made], selectedTrackId: made.id, isInspectorOpen: true, ...pushPast(s) }));
+      if (hasRecordings(made.instrumentKey)) void loadQuick(made.instrumentKey).catch(() => {});
+      return made.id;
     },
 
     toggleMute: (id) => updateTrack(id, (t) => ({ isMuted: !t.isMuted }), true),

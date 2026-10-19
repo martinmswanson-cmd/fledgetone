@@ -251,7 +251,7 @@ function parseSlots(raw: unknown, trackId: string): LauncherSlot[] {
   return out.sort((a, b) => a.scene - b.scene);
 }
 
-function parseTrack(v: unknown): Track {
+export function parseTrack(v: unknown): Track {
   if (!isObj(v) || !isStr(v.id) || !isStr(v.name) || !isInstrumentKey(v.instrumentKey)) {
     throw new Error('a track is missing its id, name or instrument');
   }
