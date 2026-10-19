@@ -177,7 +177,7 @@ export const PocketApp: React.FC = () => {
       <PocketNotice />
       <PocketSheets />
       {starting && <StartScreen canGoBack={hasWork(currentProject())} />}
-      <Toast />
+      <Toast top />
     </div>
   );
 };

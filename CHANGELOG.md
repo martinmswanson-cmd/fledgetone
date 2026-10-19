@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.19-3 — Pocket's messages out of the way
+
+- Pocket's short messages (like "Recording Drums") now show at the top, under the song's name, and taps go through them, so they never cover the pads while you record.
+
 ## 2026.10.19-2 — Pocket on one screen
 
 - **Pocket, the phone version, is now one screen**: the whole song as a grid at the top (a row for each section, a column for each track), and the bottom of the screen becomes the instrument of whichever cell you tap. No more tabs: the song, its instruments, singing and the mixer are all on the one screen, as in the studio.
