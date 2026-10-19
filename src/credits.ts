@@ -89,8 +89,8 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
-    prefixes: [`${HOSTED}session-kit/`, `${HOSTED}latin-percussion/`],
-    samples: 'Session drum kit and Latin percussion from [Virtuosity Drums](https://github.com/sfzinstruments/virtuosity_drums), microphones mixed (converted to MP3, hosted with the app)',
+    prefixes: [`${HOSTED}session-kit/`, `${HOSTED}latin-percussion/`, `${HOSTED}percussion-extras/`],
+    samples: 'Session drum kit, Latin percussion and percussion extras from [Virtuosity Drums](https://github.com/sfzinstruments/virtuosity_drums), microphones mixed (converted to MP3, hosted with the app)',
     licence: CC0,
   },
   {

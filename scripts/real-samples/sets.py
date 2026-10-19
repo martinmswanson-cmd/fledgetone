@@ -186,6 +186,24 @@ KITS = {
         (51, 'Samples/perc/{mic}/agogo/Agogo_High_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}, 3),
         (56, 'Samples/perc/{mic}/cowbell/Cowbell1_Normal_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}, -6),
     ]},
+    # The rest of that percussion, as a second kit to layer with it: low timbale, woodblocks, guiro
+    # (slow and fast scrapes), vibraslap, cabasa, sleigh bells, low agogo bell, bell tree and a
+    # whistle (the woodblocks and timbale only have the overheads; the whistle is played at one
+    # loudness, its middle microphone's files named apart from the others'). The trims lift the
+    # scrapes, shakes and the bell tree, recorded far softer than the struck pieces.
+    'percussion-extras': {'repo': 'virtuosity', 'layers': 4, 'takes': 2, 'stereo': ('mid', 'oh'), 'pieces': [
+        (36, 'Samples/perc/{mic}/timbales/timb14_vl{layer}_rr{take}.wav', {'oh': 0}, -3),
+        (38, 'Samples/perc/{mic}/woodblock/woodblock_lo_vl{layer}_rr{take}.wav', {'oh': 0}, -4),
+        (39, 'Samples/perc/{mic}/woodblock/woodblock_hi_vl{layer}_rr{take}.wav', {'oh': 0}, -4),
+        (41, 'Samples/perc/{mic}/guiro/Guiro_Med_rr{take}_{Mic}.wav', {'mid': 0}, 20),
+        (42, 'Samples/perc/{mic}/cabasa/Cabasa1_Rub_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}, 8),
+        (45, 'Samples/perc/{mic}/guiro/Guiro_Fast_rr{take}_{Mic}.wav', {'mid': 0}, 16),
+        (46, 'Samples/perc/{mic}/sleighbells/Sleighbells_Hit_rr{take}_{Mic}.wav', {'mid': 0}, 10),
+        (48, 'Samples/perc/{mic}/vibraslap/Vibraslap1_1_Hit_{layer}_rr{take}_{Mic}.wav', {'mid': 0}, 10),
+        (49, 'Samples/perc/{mic}/belltree/BellTree_Stroke_rr{take}_{Mic}.wav', {'mid': 0}, 22),
+        (51, 'Samples/perc/mid/whistle/Main_BallWhistle_Short-00{take}.wav', {'mid': 0}, -3),
+        (56, 'Samples/perc/{mic}/agogo/Agogo_Low_v{layer}_rr{take}_{Mic}.wav', {'mid': 0}, 7),
+    ]},
 }
 
 SETS = [
@@ -318,6 +336,7 @@ SETS = [
     S('studio-kit', 'rustydrums', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='studio-kit'),
     S('session-kit', 'virtuosity', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='session-kit'),
     S('latin-percussion', 'virtuosity', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='latin-percussion'),
+    S('percussion-extras', 'virtuosity', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='percussion-extras'),
     S('brush-kit', 'unruly', [], ['1', '2', '3', '4'], 'ringing', cap=3.0, retune=False, pitched=False, even=False, kit='brush-kit'),
 ]
 
