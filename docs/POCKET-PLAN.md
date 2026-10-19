@@ -6,8 +6,10 @@ transport across the top where a thumb can't reach, and six tabs. This plan rede
 own thing: the easiest way to make a song on a phone, in Fledgetone's look, over the same engine
 and the same project files.
 
-A clickable prototype of the screens goes with it (see "Prototype" at the end). Try it on a real
-phone before any of this is built.
+**Where it stands:** two designs were prototyped: four tabs (below) and **everything on one
+screen**. The one-screen design is the one being taken forward. Pocket will be an **app in the
+App Store and Google Play**, built from the same web code as the studio (see "An app, from the
+same code"). Clickable prototypes of both designs go with the plan (see "Prototype" at the end).
 
 ## What the research says
 
@@ -59,7 +61,11 @@ editing patterns.
 12. **Sounds good without touching a knob.** The mixer is a level, mute, solo and one or two
     big macros per track. Starters load a finished-sounding loop.
 
-## The screens
+## The screens (the four-tab design)
+
+The first design, prototyped and compared with the one-screen design below, which replaced it.
+Its parts (the editors, Sing, the mixer's macros, Share, the first run) carry over into the
+one-screen design's drawer and sheets.
 
 ```
  ┌─────────────────────────────┐
@@ -141,30 +147,69 @@ A grid of starters by mood (Trap, Lo-fi, House, Pop, Drill, Ambient, Empty). Tap
 Three tips, one at a time, pointing at Loops, the instrument and Sing, never more, and never
 again once dismissed.
 
-## Idea A: everything on one screen
+## The one-screen design (the one going ahead)
 
-An alternative to the four tabs, after the studio on a computer, where nothing is more than a
-click away on the one window: the timeline on top, the dock under it, and clicking a track
-changes what the dock shows. On a phone the same, stacked:
+After the studio on a computer, where nothing is more than a click away in the one window: the
+timeline on top, the dock under it, and clicking a track changes what the dock shows. On a phone,
+the same thing stacked, with no tabs.
 
-- **The song strip** across the top: the sections in order as chips (A A B A C, +). Tap one
-  to loop it and edit it, tap it again to arrange (repeat, its own copy, move, build-up, drop,
-  remove). **+** copies the section into a new one after it. **Loop / Song** at its start picks
-  what Play plays, and Play says which ("Loop A" or "Song").
-- **The tracks** under it: a slim row each with its pattern in the section being edited and
-  its level. **Mix all** turns the rows into faders with mute and solo, in place.
-- **The transport**: Undo, Rec (named for the selected track: "Rec drums", "Rec vocal"), Play,
+```
+ ┌──────────────────────────────┐
+ │ ‹ Night Drive · 92 · A min ⤴ │  back to the starters; song settings; share
+ │ Loop        Mix all  + Track │
+ ├──────┬──────┬──────┬──────┬──┤
+ │      │Drums │ 808  │ Keys │Vo│  tracks across (tap to select)
+ │ A  ⋯ │▮▯▮▮▯ │ ▬ ▬  │ ═══  │  │  sections down, in song order
+ │ A    │▮▯▮▮▯ │ ▬ ▬  │ ═══  │∿∿│  each cell: that track's part there
+ │ B    │▮▮▮▮▮ │ ▬▬ ▬ │ ═══  │∿∿│
+ │ +    │      │      │      │  │
+ ├──────┴──────┴──────┴──────┴──┤
+ │  ↶   ● Rec drums  ▶ Loop A  ↷│  the transport
+ ├──────────────────────────────┤
+ │ BIGGER ⌃ ━━━ ⌃ OR DRAG       │  the drawer: the selected track's
+ │ ● Drums · A  Play Draw Sound │  Play, Draw, Sound and Mix
+ │ [Open hat][Low tom][Mid][Hi] │
+ │ [Kick][Snare][Clap][Hat]     │
+ └──────────────────────────────┘
+```
+
+- **The song is a grid.** In portrait the sections run down the page in song order and the
+  tracks across, so the whole song shows at once and reads like a lyric sheet: each line left to
+  right, the lines down. It scrolls both ways with the section letters and track names pinned.
+  **Turning the phone** turns the grid into the studio's timeline (sections left to right, tracks
+  as rows) with the drawer beside it. Landscape is a bonus, never required.
+- **Tap a cell** to edit that track in that section: the drawer becomes its instrument. Tap a
+  section's letter to loop it (from the next bar line); its **⋯** (or holding any letter)
+  arranges the song: play it twice, make it its own copy, move it, build-up, drop, remove.
+  **+** under the sections copies the selected one into a new one; **+** after the tracks adds an
+  instrument. **Loop / Song** picks what Play plays, and Play says which ("Loop A", "Song").
+- **The transport:** Undo, Rec (named for the selected track: "Rec drums", "Rec vocal"), Play,
   Redo.
-- **The drawer** at the bottom, in the selected track's colour: its **Play**, **Draw**,
-  **Sound** and **Mix** (for vocals: **Sing** and **Mix**). Drag its handle up for a bigger
-  editor, down to see more tracks.
+- **The drawer** at the bottom, in the selected track's colour: **Play**, **Draw**, **Sound** and
+  **Mix** (vocals: **Sing** and **Mix**). Its handle says which way a tap takes it (Bigger,
+  Smaller) and can be dragged.
+  - **Blocks never shrink.** Pads, steps and piano roll rows are a fixed size (pads 60 px, steps
+    54, roll rows 34): a bigger drawer shows more of them, a smaller one fewer, and the rest
+    scroll, with a fade at the edge that has more.
+  - **The rows that matter stay under the thumb.** Drum pads are laid out like an MPC: kick,
+    snare, clap and hat along the bottom, and the drawer grows upwards from them. Keys have six
+    rows of the key's notes, low ones at the bottom. Steps keep beat 1 at the top.
+  - **Mix all** turns the drawer into a mixer for every track (a fader, mute and solo each, and
+    the master), like the Mixer tab of the studio's dock.
+- **The piano roll** (Draw, for keys, bass and synths) opens the drawer full and puts it back
+  when you leave. Rows are the key's notes over five octaves, columns are 16ths, both a fixed
+  size. Tap to draw a note, drag right to make it longer; drag a note to move it, its right edge
+  to stretch it; dragging to an edge scrolls the roll. Pens: **Note**, **Chord** (a chord in key
+  in one tap), **Erase**, and the length of new notes. Tap a note to select it: a bar with
+  shorter, longer, down, up, copy and delete edits it in steps. One finger draws, two fingers
+  scroll (and so do the note names and the ruler); tap a note name to hear it; **Home** goes
+  back to the key's home note; the roll turns its page to follow the playhead.
+- Only rare things open over the screen: adding an instrument, sharing, the song's settings and
+  the lyrics. The back button (and the phone's own back) goes to the starters, with a way back
+  to the song.
 
-Song, Sing and Mix stop being places to go: the song is always across the top, singing is the
-vocal track's drawer, and each track's mix is in its drawer. Only rare things open over the
-screen: adding an instrument, sharing, the song's settings and the lyrics.
-
-On an iPhone SE (667 px tall) the drawer at its middle size leaves room for three tracks; more
-tracks scroll, with the selected one kept in view. Try both prototypes, then test them with people who haven't seen either before picking one.
+On an iPhone SE (667 px tall) the drawer at its middle size leaves room for two or three
+sections of the grid; on an iPhone 13, four.
 
 ## How it fits the studio
 
@@ -181,6 +226,47 @@ tracks scroll, with the selected one kept in view. Try both prototypes, then tes
   vocal chains, tuning, the starters, the export and session code. Mostly a new shell and new
   layouts, not new audio.
 
+## An app, from the same code
+
+Pocket goes in the App Store (and Google Play), built from the same web code as the studio. On
+an iPhone a web page can't do what a music app needs:
+
+- **Sound you can count on:** the silent switch mutes web audio, and a page stops when the phone
+  locks or another app opens. An app sets its own audio session, plays in the background and
+  handles AirPods and headphones.
+- **Songs that aren't lost:** Safari may clear a site's storage after a week without a visit. An
+  app's storage is its own, and songs can live in Files and iCloud.
+- **MIDI:** Safari on iPhone has none. **Haptics:** none from the web on iPhone.
+- **Recording:** an app can ask for low-latency audio and manage the microphone, which is what
+  decides whether a vocal lands in time.
+- **Being found:** people look for music apps in the stores, not "Add to Home Screen".
+
+On Android the web does better (Chrome has MIDI, vibration and installing), so there a store app
+is mostly about being found; the web version stays for anyone who wants it.
+
+**How:** a native shell (Capacitor or similar) around Fledgetone's own web code, not a rewrite,
+so there is one engine and one project format: a song made in the app still opens in the studio,
+and fixes reach both. Small native pieces do what Safari can't: the audio session (the silent
+switch, background playback), haptics, Files and iCloud, MIDI, keeping the screen awake,
+recording. If the web audio inside the app is ever the limit (most likely recording latency), that
+one piece moves to native code later, without touching the rest.
+
+**Before submitting:**
+- **Apple turns down apps that are only a website in a wrapper** (guideline 4.2). The native
+  pieces above, working offline and Files support make it an app; they're in the first version
+  sent for review.
+- **Licences:** Fledgetone's code is GPL-3.0, and the GPL and the App Store's terms don't fit
+  together (VLC was taken down over it in 2011). Fledgetone's own code can go to the store under
+  its owner's own terms. The GPL plugins (Surge XT, Dragonfly and the others) can't, and the app
+  is built without them (no `VITE_GPL_PLUGINS`), as the plain build already is. Recordings keep
+  their credits (`src/credits.ts`). Have this checked by someone who knows open-source licensing
+  before launch.
+- **Accounts:** Apple's developer programme ($99 a year), Google Play ($25 once). Apple's review
+  usually takes a day or two per submission.
+- **A Mac with Xcode** to build and send the iPhone app, and real iPhones to test on (which also
+  settles what the prototype can't: the feel of the pads, two-finger scrolling, recording
+  latency, speed while playing).
+
 ## Phones (things to get right)
 
 - **iPhone silent switch:** set `navigator.audioSession.type = 'playback'` on the first tap
@@ -194,21 +280,26 @@ tracks scroll, with the selected one kept in view. Try both prototypes, then tes
 - **Haptics:** a short buzz on Android (as `buzz` does now); iPhones don't allow it from the web,
   so every press also lights up.
 - **Test on real phones.** WebKit can't be tested from the build environment.
+- In the app, the native audio session, storage and haptics replace the browser workarounds above;
+  the workarounds stay for the web version.
 
 ## Stages
 
 | Stage | What | Done when |
 |---|---|---|
-| 0 | The prototype, tried on an iPhone and an Android phone | The screens and words feel right in the hand |
-| 1 | The shell: top bar, the dock, four tabs; Share as a sheet; the silent switch; storage.persist | Today's screens all reachable from the new shell |
-| 2 | Loops on the launcher's scenes; + Next; the instrument sheet with today's Beat and Notes inside | A loop made without the old tabs |
-| 3 | Play modes: scale pads, chord strips, one-drum-at-a-time steps, note repeat | A beat and a melody played in, in time |
-| 4 | Sing: takes, voice chips, lyrics, the latency check | A vocal recorded and kept without nudging |
-| 5 | Song: the chain written to the arrangement, transitions, round trips with the studio | A song made in Pocket opens finished in the studio, and back |
-| 6 | Mix strips with macros; the portrait video | A shared MP3 and video from the phone |
-| 7 | First run, tips, the install prompt; speed and memory on older phones | A first loop in under 30 seconds, no reloads on an iPhone 12 |
+| 0 | The prototypes, tried on an iPhone and an Android phone, and with people who haven't seen them | The one-screen design and its words feel right in the hand |
+| 1 | The app shell: Pocket in a native wrapper, the audio session, haptics, storage, Files; builds for iPhone and Android | Today's Pocket runs as an app on a real iPhone, from a test build |
+| 2 | The one-screen layout: the song grid on the launcher's scenes, the transport, the drawer with today's Beat, Notes and Vocals inside, landscape | A loop made and arranged without the old tabs |
+| 3 | The drawer's editors: fixed-size pads (MPC layout), scale pads and chords, steps, the piano roll, note repeat | A beat and a melody played in and drawn, in time |
+| 4 | Longer parts (2, 4, 8 bars), velocity, swing, quantise, notes outside the key, 808 glide | A real song's parts fit, not just one-bar loops |
+| 5 | Sing in the drawer: real recording through the app, takes, voice presets, lyrics, latency handled | A vocal recorded and kept without nudging |
+| 6 | Song: the order written to the arrangement, transitions, round trips with the studio | A song made in Pocket opens finished in the studio, and back |
+| 7 | Effects per track as one-knob presets, Mix all, drawn automation, samples onto pads | A mixed song with a filter sweep and a chopped sample |
+| 8 | Sharing (MP3, WAV, stems, the portrait video), first run and tips, speed and memory on older phones | A first loop in under 30 seconds; no crashes on an iPhone 12 |
+| 9 | Store listings, privacy details, licences checked, review | Pocket in the App Store and Google Play |
 
-Each stage ships on its own; the old screens go when their replacement is in.
+Each stage ships on its own (to testers first: TestFlight on iPhone); the old screens go when
+their replacement is in.
 
 ## How we'll know it's easy
 
@@ -219,14 +310,17 @@ Each stage ships on its own; the old screens go when their replacement is in.
 
 ## To decide
 
-- The names: Loops / Sing / Song / Mix (or Make / Sing / Arrange / Mix).
-- Whether Pocket keeps a read-only view of the timeline for songs made in the studio.
-- Landscape for the pads only (more room for 16 pads and two hands), or portrait everywhere.
-- Whether the portrait video is in stage 6 or later.
+- **Liquid glass:** frosted, see-through layers for what floats over the song (the transport,
+  the drawer's header, sheets, the piano roll's bar), tinted dark with Fledgetone's cyan edge,
+  never on pads or grids. To try in the prototype with a switch, and on a real iPhone while a
+  song plays (blur behind moving content costs battery and smoothness).
+- Free, or paid, or free with something extra, and what the app is called in the stores.
+- Whether Android ships with iPhone or after it.
+- Whether the portrait video is in stage 8 or later.
 
 ## Prototype
 
 Two clickable prototypes, made to be tried on a phone, are kept outside the repository until
-the design is settled: the four-tab design above and idea A (one screen). They are sketches for
+the design is settled: the four-tab design and the one-screen design. They are sketches for
 trying the layout, not code for the app; their drums are the Drum Designer's presets rendered
 by the studio's drum synth, the keys the electric piano recordings, and recording is simulated.
