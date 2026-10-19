@@ -218,7 +218,7 @@ def convert(src, dst, loop, start=0.0, seconds=None):
     # last (then a short fade); a loop is kept whole (its join is made by the synth's crossfade);
     # peaks levelled to -1 dBFS
     tmp = dst + '.wav'
-    filters = [f'atrim=start={start}', 'asetpts=PTS-STARTPTS', 'aformat=channel_layouts=mono', 'aresample=48000']
+    filters = ([f'atrim=start={start}', 'asetpts=PTS-STARTPTS'] if start else []) + ['aformat=channel_layouts=mono', 'aresample=48000']
     if not loop:
         filters += ['silenceremove=start_periods=1:start_threshold=-55dB:start_silence=0.002', 'areverse', 'silenceremove=start_periods=1:start_threshold=-60dB', 'areverse', 'afade=t=in:st=0:d=0.001', 'areverse', 'afade=t=in:st=0:d=0.004', 'areverse']
     filters.append(f'atrim=0:{seconds or MAX_SECONDS[loop]}')
@@ -259,7 +259,7 @@ def main():
             digest.update(data)
             size += len(data)
         sources = sorted({p[0] for p in patterns})
-        if not seconds or min(seconds) < 0.05:
+        if not seconds or min(seconds) < 0.005:
             sys.exit(f'{gid}: a take came out empty')
         sets[gid] = {'label': label, 'takes': len(files), 'seconds': seconds, 'loop': loop, 'bytes': size, 'hash': digest.hexdigest()[:10], 'from': sources}
         print(f'{gid}: {len(files)} takes, {size // 1024} KB')

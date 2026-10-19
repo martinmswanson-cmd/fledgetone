@@ -712,7 +712,7 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
     case 'river':
       return place('river');
     case 'ocean':
-      return place('ocean');
+      return place('waves');
     case 'rainHeavy':
       return place('rain-heavy', {}, 'normal');
     case 'thunderstorm':
