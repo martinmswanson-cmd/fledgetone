@@ -356,7 +356,7 @@ SETS = [
     # tuning); a balafon struck with its traditional mallets; a bowed psaltery's long strokes;
     # hand chimes; a gong at four loudnesses (one note, as recorded); and a didgeridoo's drone
     S('folk-harp', 'vcsl', [(rf'Chordophones/Composite Chordophones/Folk Harp/EWHarp_Normal_{NOTE}_(?P<layer>v[23])_(?P<take>RR1)\.wav', 1)],
-      ['v2', 'v3'], 'ringing', cap=10.0, tail=True),
+      ['v2', 'v3'], 'ringing', cap=10.0),
     S('glass-harp', 'vcsl', [(rf'Idiophones/Friction Idiophones/Wine Glasses/Sustains/(?:Slow|Fast)/glass\d_{NOTE}_(?P<layer>Slow|Fast)_(?P<take>[12])_[Mm]ain\.wav', 1)],
       ['Slow', 'Fast'], 'sustain', cap=6.0, xloop=True),
     S('mbira', 'vcsl', [(rf'Idiophones/Plucked Idiophones/Mbira dzaVadzimu Nyamaropa, Zimbabwe, Low B/MBira4_pluck_Main_{NOTE}_\d+_50_100_(?P<take>rr\d)(?P<layer>)\.wav', 1)],

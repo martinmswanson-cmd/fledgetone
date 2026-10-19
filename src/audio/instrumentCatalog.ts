@@ -681,7 +681,7 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   },
   realFolkHarp: {
     key: 'realFolkHarp', name: 'Folk Harp (Real)', blurb: 'A recorded lever harp, warm and close, soft and loud: Celtic, folk, fantasy taverns', color: '#f59e0b', category: 'World', kind: 'sampled', range: realRange('folk-harp'),
-    samples: real('folk-harp', 1.5), gain: 8.5,
+    samples: real('folk-harp', 1.5), gain: 8.5, room: -9,
   },
   realGlassHarp: {
     key: 'realGlassHarp', name: 'Glass Harp (Real)', blurb: 'Recorded wine glasses sung with a wet finger: eerie, crystalline, dreams', color: '#a5f3fc', category: 'Mallets & Bells', kind: 'sampled', range: realRange('glass-harp', 3),
@@ -705,7 +705,7 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   },
   realGong: {
     key: 'realGong', name: 'Gong (Real)', blurb: 'A recorded gong, four loudnesses from a shimmer to a crash: endings, temples, drama', color: '#b45309', category: 'Orchestra', kind: 'sampled', range: [33, 39],
-    samples: real('gong', 3), gain: -6,
+    samples: real('gong', 3), gain: 2,
   },
   realDidgeridoo: {
     key: 'realDidgeridoo', name: 'Didgeridoo (Real)', blurb: 'A recorded didgeridoo drone, held as long as the note: earthy, hypnotic', color: '#92400e', category: 'World', kind: 'sampled', range: [34, 40],
