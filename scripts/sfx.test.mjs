@@ -46,7 +46,8 @@ test('every kind of sound renders: audible, never over -1 dBFS, no clicks at the
       const x = renderSfx(s, 44100);
       assert.ok(x.every(Number.isFinite), `${c} finite`);
       assert.ok(peakOf(x) <= SFX_CEILING + 1e-6, `${c} peak ${peakOf(x)}`);
-      assert.ok(peakOf(x) > 0.05, `${c} audible`);
+      // (A modern loop is ambience, levelled well under everything else)
+      assert.ok(peakOf(x) > (s.modern && s.loop ? 0.01 : 0.05), `${c} audible`);
       assert.ok(x.length <= Math.round(sfxLength(s) * 44100) + 1, `${c} length`);
       if (!s.loop) assert.ok(Math.abs(x[0]) < 1e-6 && Math.abs(x[x.length - 1]) < 1e-6, `${c} ends`);
     }

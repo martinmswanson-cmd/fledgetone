@@ -104,8 +104,9 @@ export interface SfxLayer {
   /** Stereo spread, 0 to 1: the right channel's noise is its own, so noise sounds wide */
   width?: number;
   /**
-   * Gusts, 0 to 1: the layer swelling and dropping at random, as wind does (Wobble then moves the
-   * filter with the gusts instead of evenly), about `gustRate` times a second
+   * Gusts, 0 to 1: the layer coming and going at random, as wind does (Wobble then moves the filter
+   * with the gusts instead of evenly), about `gustRate` times a second. Every layer of a sound gusts
+   * together; at 1 the lulls between gusts are silent, lower keeps some of the layer there throughout
    */
   gust?: number;
   gustRate?: number;
@@ -595,41 +596,48 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
     // Wind: a bed of air (wide noise), its gusts swelling at random; a whistle where it catches an
     // edge (a narrow resonant band whose pitch rises with each gust); a rumble; a recording of real
     // wind under it all
-    case 'wind':
+    // Wind: air (wide noise) coming and going in gusts, every layer together; a soft whistle where
+    // it catches an edge, rising as it blows harder; a recording of real wind gusting with it
+    case 'wind': {
+      // A breeze: comes, passes, and leaves near-silence
+      const rate = between(0.2, 0.28);
       return M([
-        rec('wind', { gain: 0.4, lowpass: 3000 }),
-        L({ wave: 'pink', lowpass: between(600, 900), gust: 0.4, gustRate: between(0.08, 0.14), width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: between(350, 500), reso: 0.25, wobble: 0.5, gust: 0.5, gustRate: between(0.1, 0.15), gain: 0.4, width: 0.8 }),
-        L({ wave: 'brown', lowpass: 250, gust: 0.3, gustRate: 0.08, gain: 0.4, width: 0.6 }),
-      ], { level: 'soft', loop: true, loopLength: 8 });
+        rec('wind', { gain: 0.35, lowpass: 2500, gust: 1, gustRate: rate }),
+        L({ wave: 'pink', lowpass: between(500, 750), gust: 1, gustRate: rate, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: between(320, 450), reso: 0.2, wobble: 0.5, gust: 1, gustRate: rate, gain: 0.35, width: 0.8 }),
+        L({ wave: 'pink', lowpass: 400, gust: 0.9, gustRate: rate, gain: 0.25, width: 1 }),
+      ], { level: 'soft', loop: true, loopLength: 16 });
+    }
     case 'windGusty': {
-      const rate = between(0.15, 0.22);
+      const rate = between(0.3, 0.4);
       return M([
-        rec('wind', { gain: 0.4, lowpass: 3000, gust: 0.4, gustRate: rate }),
-        L({ wave: 'pink', lowpass: between(1000, 1500), gust: 0.7, gustRate: rate, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: between(550, 800), reso: 0.55, wobble: 0.6, gust: 0.75, gustRate: rate, gain: 0.15, pan: -0.3 }),
-        L({ wave: 'brown', lowpass: 250, gust: 0.6, gustRate: rate, gain: 0.5, width: 0.7 }),
-        L({ wave: 'crackle', freq: between(60, 120), highpass: 2500, lowpass: 7000, gust: 0.8, gustRate: rate, gain: 0.04, width: 1 }),
-      ], { level: 'soft', loop: true, loopLength: 10 });
+        rec('wind', { gain: 0.4, lowpass: 3000, gust: 0.95, gustRate: rate }),
+        L({ wave: 'pink', lowpass: between(900, 1300), gust: 0.95, gustRate: rate, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: between(500, 700), reso: 0.45, wobble: 0.6, gust: 1, gustRate: rate, gain: 0.12, pan: -0.3 }),
+        L({ wave: 'brown', lowpass: 220, gust: 0.85, gustRate: rate, gain: 0.45, width: 0.7 }),
+      ], { level: 'soft', loop: true, loopLength: 14 });
     }
     case 'windStorm': {
+      // A storm never stops, it only rises and falls
+      const rate = between(0.3, 0.4);
       const howl = between(420, 600);
       return M([
-        rec('wind', { gain: 0.45, lowpass: 3500 }),
-        L({ wave: 'brown', lowpass: between(250, 350), gust: 0.5, gustRate: between(0.15, 0.25), gain: 0.9, width: 0.8 }),
-        L({ wave: 'pink', lowpass: between(1800, 2500), gust: 0.65, gustRate: between(0.18, 0.28), gain: 0.6, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: howl, reso: 0.65, wobble: 0.7, gust: 0.7, gustRate: between(0.18, 0.25), gain: 0.15, pan: -0.4 }),
-        L({ wave: 'pink', bandpass: true, lowpass: howl * between(1.6, 1.9), reso: 0.65, wobble: 0.7, gust: 0.7, gustRate: between(0.2, 0.3), gain: 0.08, pan: 0.45 }),
-      ], { level: 'normal', loop: true, loopLength: 10 });
+        rec('wind', { gain: 0.45, lowpass: 3000, gust: 0.6, gustRate: rate }),
+        L({ wave: 'brown', lowpass: between(220, 300), gust: 0.5, gustRate: rate, gain: 0.9, width: 0.8 }),
+        L({ wave: 'pink', lowpass: between(1400, 2000), gust: 0.65, gustRate: rate, gain: 0.55, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: howl, reso: 0.55, wobble: 0.6, gust: 0.8, gustRate: rate, gain: 0.1, pan: -0.4 }),
+        L({ wave: 'pink', bandpass: true, lowpass: howl * between(1.6, 1.9), reso: 0.55, wobble: 0.6, gust: 0.8, gustRate: rate, gain: 0.05, pan: 0.45 }),
+      ], { level: 'normal', loop: true, loopLength: 12 });
     }
     case 'windHowl': {
+      const rate = between(0.15, 0.2);
       const f = between(300, 450);
       return M([
-        L({ wave: 'pink', lowpass: 900, gust: 0.4, gustRate: 0.1, gain: 0.7, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: f, reso: 0.75, wobble: 0.6, gust: 0.6, gustRate: between(0.08, 0.13), gain: 0.35, pan: -0.25 }),
-        L({ wave: 'pink', bandpass: true, lowpass: f * 1.5, reso: 0.72, wobble: 0.6, gust: 0.6, gustRate: between(0.1, 0.15), gain: 0.18, pan: 0.3 }),
-        rec('wind', { gain: 0.35, lowpass: 2500 }),
-      ], { level: 'soft', reverb: 0.3, room: 0.8, loop: true, loopLength: 10 });
+        L({ wave: 'pink', lowpass: 800, gust: 0.9, gustRate: rate, gain: 0.6, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: f, reso: 0.7, wobble: 0.6, gust: 1, gustRate: rate, gain: 0.3, pan: -0.25 }),
+        L({ wave: 'pink', bandpass: true, lowpass: f * 1.5, reso: 0.68, wobble: 0.6, gust: 1, gustRate: rate, gain: 0.15, pan: 0.3 }),
+        rec('wind', { gain: 0.3, lowpass: 2200, gust: 0.9, gustRate: rate }),
+      ], { level: 'soft', reverb: 0.3, room: 0.8, loop: true, loopLength: 16 });
     }
     case 'fire':
       return M([rec('fire'), L({ wave: 'crackle', freq: between(15, 30), highpass: 1500, gain: 0.5, width: 1 }), L({ wave: 'brown', lowpass: between(300, 450), gain: 0.5, trem: 0.25, tremRate: 1, width: 0.6 })], { level: 'soft', loop: true, loopLength: 4 });
@@ -946,18 +954,31 @@ function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate:
   const body = l.body ? new ModalBody(l.body, l.freq * shift, l.ring ?? 1, sampleRate, rng((l.seed * 7 + 3) >>> 0)) : null;
   const bodyMix = l.body ? clamp(l.bodyMix ?? 0.7, 0, 1) : 0;
   const ringFor = l.body && !s.loop ? bodyRing(l.body, l.ring ?? 1) : 0;
-  // Gusts: smooth random swells (value noise, a slower and a faster one), the same on both sides
+  // Gusts: separate gusts, each rising, peaking and falling away (rising faster than it falls),
+  // at random times and strengths with lulls between, about `gustRate` a second. Placed from the
+  // sound's seed, so its layers gust together as one wind; in a loop they go round with it.
   const gust = clamp(l.gust ?? 0, 0, 1);
   const gustRate = clamp(l.gustRate ?? 0.3, 0.02, 4);
-  const knots = gust > 0 ? Float32Array.from({ length: Math.ceil(((length / sampleRate) * gustRate) * 2.7) + 6 }, rng((l.seed ^ 0x6a09e667) >>> 0)) : null;
-  const smooth = (x: number) => {
-    const k = Math.floor(x);
-    const f = x - k;
-    const w = (1 - Math.cos(Math.PI * f)) / 2;
-    return knots![k] * (1 - w) + knots![k + 1] * w;
+  const span = s.loop ? s.loopLength : length / sampleRate;
+  const gusts: Array<{ at: number; long: number; strength: number }> = [];
+  if (gust > 0) {
+    const gr = rng((s.seed ^ 0x6a09e667) >>> 0);
+    for (let at = gr() / gustRate; at < span; at += (0.6 + gr() * 0.9) / gustRate) gusts.push({ at, long: (0.55 + gr() * 0.6) / gustRate, strength: 0.45 + gr() * 0.55 });
+  }
+  const gustOne = (t: number, g: { at: number; long: number; strength: number }) => {
+    const x = (t - g.at) / g.long;
+    if (x <= 0 || x >= 1) return 0;
+    const up = 0.35;
+    const k = x < up ? x / up : 1 - (x - up) / (1 - up);
+    return g.strength * k * k * (3 - 2 * k);
   };
-  // (Spread back out: the average of two noises sits near the middle, and wind has lulls and blasts)
-  const gustAt = (t: number) => clamp(((smooth(t * gustRate) * 2 + smooth(t * gustRate * 2.7 + 3)) / 3 - 0.5) * 2.2 + 0.5, 0, 1);
+  const gustAt = (t: number) => {
+    let v = 0;
+    for (const g of gusts) v = Math.max(v, gustOne(t, g), s.loop ? Math.max(gustOne(t + span, g), gustOne(t - span, g)) : 0);
+    return v;
+  };
+  const knots = gusts.length ? gusts : null;
+  const gustFloor = (1 - gust) * (1 - gust);
   let phase = 0;
   let modPhase = 0;
   let recPos = 0;
@@ -1057,7 +1078,7 @@ function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate:
           // (The 8-bit noise has no place in a modern sound: plain white noise)
           v = noise() * 2 - 1;
       }
-      const g = knots ? gustAt(t) : 0;
+      const g = knots ? gustAt(s.loop ? t % span : t) : 0;
       if (filtered) {
         if ((i - start) % 8 === 0) {
           const move = !l.wobble ? 0 : knots ? l.wobble * (g * 2 - 1) : l.wobble * Math.sin(2 * Math.PI * l.wobbleRate * t);
@@ -1076,8 +1097,8 @@ function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate:
         const levels = Math.pow(2, Math.round(16 - l.crush * 14)) / 2;
         v = Math.round(v * levels) / levels;
       }
-      // A gust swells the layer (strongest gusts loudest: squared)
-      if (knots) v *= 1 - gust + gust * 1.6 * g * g;
+      // A gust brings the layer in and takes it away again; between gusts, a lull
+      if (knots) v *= gustFloor + (1 - gustFloor) * g;
       // Envelope: attack, hold (punch fading over it), then a natural decay to -60 dB
       let env: number;
       if (s.loop) env = 1;
@@ -1180,17 +1201,15 @@ function renderModern(s: SfxSound, sampleRate: number): [Float32Array, Float32Ar
       }
   }
   // Level: a one-shot's loudest 50 ms to the level's loudness; a loop (ambience, there the whole
-  // time) by its average, much lower, so it sits under the game instead of over it. The peak
-  // stays under the ceiling.
+  // time) its loudest second, much lower, so even its strongest gust sits under the game instead
+  // of over it. The peak stays under the ceiling.
   const mid = new Float32Array(L.length);
   let peak = 0;
-  let sum = 0;
   for (let i = 0; i < L.length; i++) {
     mid[i] = Math.sqrt((L[i] * L[i] + R[i] * R[i]) / 2);
-    sum += mid[i] * mid[i];
     peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
   }
-  const rms = s.loop ? Math.sqrt(sum / Math.max(1, L.length)) : loudestRms(mid, sampleRate);
+  const rms = s.loop ? loudestRms(mid, sampleRate, 1) : loudestRms(mid, sampleRate);
   const target = s.loop ? LOOP_DB[s.level] : LEVEL_DB[s.level];
   if (peak > 0 && rms > 0) {
     const gain = Math.min(10 ** (target / 20) / rms, SFX_CEILING / peak) * clamp(s.volume, 0, 1);
@@ -1256,13 +1275,13 @@ function effects(x: Float32Array, s: SfxSound, sampleRate: number): void {
 /** Loudness each level is made to, as the RMS of its loudest 50 ms (dBFS) */
 const LEVEL_DB: Record<SfxLevel, number> = { soft: -20, normal: -16, loud: -12 };
 /** A modern loop's average loudness (RMS, dBFS): ambience sits well under music and dialogue */
-const LOOP_DB: Record<SfxLevel, number> = { soft: -32, normal: -28, loud: -24 };
+const LOOP_DB: Record<SfxLevel, number> = { soft: -36, normal: -32, loud: -28 };
 /** The highest a sample goes: -1 dBFS */
 export const SFX_CEILING = 0.89;
 
-/** RMS of the loudest 50 ms. */
-function loudestRms(x: Float32Array, sampleRate: number): number {
-  const win = Math.max(1, Math.round(0.05 * sampleRate));
+/** RMS of the loudest `seconds` (50 ms unless given). */
+function loudestRms(x: Float32Array, sampleRate: number, seconds = 0.05): number {
+  const win = Math.max(1, Math.round(seconds * sampleRate));
   let sum = 0;
   let best = 0;
   for (let i = 0; i < x.length; i++) {

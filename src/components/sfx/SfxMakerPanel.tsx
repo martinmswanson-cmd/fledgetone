@@ -529,7 +529,7 @@ const FinishControls: React.FC<{ s: SfxSound }> = ({ s }) => (
       <label className="flex items-center gap-2 text-[10px] font-mono" title="A seamless loop for engines, ambience and alarms: the file loops in a game">
         <span className="w-16 shrink-0 uppercase text-forge-muted">Loop</span>
         <input type="checkbox" checked={s.loop} onChange={(e) => editSound({ loop: e.target.checked })} aria-label="Loop" />
-        {s.loop && <input type="range" min={0.5} max={10} step={0.25} value={s.loopLength} onChange={(e) => editSound({ loopLength: Number(e.target.value) })} className="flex-1 min-w-0 h-1.5 accent-cyan-400" aria-label="Loop length" />}
+        {s.loop && <input type="range" min={0.5} max={30} step={0.25} value={s.loopLength} onChange={(e) => editSound({ loopLength: Number(e.target.value) })} className="flex-1 min-w-0 h-1.5 accent-cyan-400" aria-label="Loop length" />}
         {s.loop && <span className="w-16 text-right tabular-nums text-forge-text">{s.loopLength} s</span>}
       </label>
     </div>
