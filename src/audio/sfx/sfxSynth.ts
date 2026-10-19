@@ -7,10 +7,17 @@
  * so its sounds belong together. Sounds are levelled to a loudness for their kind, trimmed and
  * faded; loops render seamless. Rendering is plain maths into a Float32Array, with no Web Audio,
  * so Node can unit-test it and the files are the same everywhere.
+ *
+ * Two engines. Classic (the Retro kinds, and every sound saved before the modern engine) renders
+ * mono as it always has. Modern (`modern` on: the other kinds as generated now) adds what makes a
+ * sound sound like now rather than a 1980s console (sfxModern.ts): band-limited waves, natural
+ * (exponential) decays, material bodies, recorded layers, stereo (each layer panned and moving,
+ * noise spread wide) and a stereo space with early reflections.
  */
 import { loopChunk } from '../wavCues';
+import { bodyRing, ModalBody, polyBlep, recordingFor, stereoSpace, SFX_MATERIALS, type SfxMaterial } from './sfxModern';
 
-export const SFX_WAVES = ['square', 'saw', 'triangle', 'sine', 'noise', 'pink', 'brown', 'fm', 'metal', 'crackle'] as const;
+export const SFX_WAVES = ['square', 'saw', 'triangle', 'sine', 'noise', 'pink', 'brown', 'fm', 'metal', 'crackle', 'rec'] as const;
 export type SfxWave = (typeof SFX_WAVES)[number];
 export const SFX_WAVE_LABELS: Record<SfxWave, string> = {
   square: 'square',
@@ -23,9 +30,10 @@ export const SFX_WAVE_LABELS: Record<SfxWave, string> = {
   fm: 'FM',
   metal: 'bell',
   crackle: 'crackle',
+  rec: 'recording',
 };
 /** Sources with no pitch of their own (their Pitch does nothing, or sets a rate) */
-export const UNPITCHED: ReadonlySet<SfxWave> = new Set(['noise', 'pink', 'brown', 'crackle']);
+export const UNPITCHED: ReadonlySet<SfxWave> = new Set(['noise', 'pink', 'brown', 'crackle', 'rec']);
 
 /** One layer: a source with its pitch movement, filter and envelope. */
 export interface SfxLayer {
@@ -82,6 +90,19 @@ export interface SfxLayer {
   on: boolean;
   /** For noise, so the same sound renders the same */
   seed: number;
+  // ---- Modern engine only (a classic sound ignores them) ----
+  /** A recording (a group in sfxRecordings.ts) for the Recording source; the seed picks the take */
+  rec?: string;
+  /** What the sound strikes: a body of this material ringing at the layer's pitch */
+  body?: SfxMaterial;
+  /** How long the body rings, times the material's own (0.2 to 3); how much of it is heard, 0 to 1 */
+  ring?: number;
+  bodyMix?: number;
+  /** Where it sits, -1 (left) to 1 (right), and where it ends up (a sound moving past) */
+  pan?: number;
+  panTo?: number;
+  /** Stereo spread, 0 to 1: the right channel's noise is its own, so noise sounds wide */
+  width?: number;
 }
 
 export const SFX_LEVELS = ['soft', 'normal', 'loud'] as const;
@@ -109,6 +130,8 @@ export interface SfxSound {
   loop: boolean;
   loopLength: number;
   seed: number;
+  /** The modern engine (stereo, material bodies, recordings); off: the classic one */
+  modern?: boolean;
 }
 
 /** Earlier sound settings (one layer, no `layers`): what the maker made before layers. */
@@ -122,6 +145,7 @@ export const SFX_GROUPS = [
   { name: 'Rewards', kinds: ['coinModern', 'gem', 'healthPickup', 'unlock', 'levelUp', 'achievement', 'collectAll'] },
   { name: 'Magic & Sci-fi', kinds: ['laserModern', 'teleport', 'chargeUp', 'spell', 'shieldUp', 'powerDown', 'robotBeep', 'scan'] },
   { name: 'Jingles', kinds: ['victory', 'gameOver', 'questComplete', 'secret', 'countdown'] },
+  { name: 'Foley', kinds: ['doorOpen', 'doorClose', 'pageTurn', 'bookPlace', 'cardDeal', 'diceRoll', 'glassBreak', 'bubble', 'slime', 'sciFiDoor'] },
   { name: 'Loops', kinds: ['engineHum', 'wind', 'fire', 'rain', 'alarm', 'forceField', 'spaceship', 'water'] },
 ] as const;
 
@@ -197,6 +221,16 @@ export const SFX_LABELS: Record<SfxCategory, string> = {
   forceField: 'Force field',
   spaceship: 'Spaceship hum',
   water: 'Stream',
+  doorOpen: 'Door opens',
+  doorClose: 'Door closes',
+  pageTurn: 'Page turn',
+  bookPlace: 'Book',
+  cardDeal: 'Card dealt',
+  diceRoll: 'Dice roll',
+  glassBreak: 'Glass breaks',
+  bubble: 'Bubble',
+  slime: 'Slime',
+  sciFiDoor: 'Sci-fi door',
 };
 
 /** The group a kind of sound is in. */
@@ -210,6 +244,7 @@ export const SFX_SETS = [
   { id: 'shooter', name: 'Sci-fi shooter', folder: 'scifi', kinds: ['laserModern', 'gunshot', 'reload', 'chargeUp', 'shieldUp', 'powerDown', 'teleport', 'robotBeep', 'scan', 'alarm', 'impactHeavy'] },
   { id: 'casual', name: 'Casual & puzzle', folder: 'casual', kinds: ['uiClick', 'uiConfirm', 'coinModern', 'gem', 'bounce', 'whoosh', 'collectAll', 'secret', 'countdown', 'victory', 'gameOver'] },
   { id: 'ambience', name: 'Ambience loops', folder: 'ambience', kinds: ['wind', 'rain', 'fire', 'water', 'spaceship', 'engineHum', 'forceField'] },
+  { id: 'foley', name: 'Foley & props', folder: 'foley', kinds: ['doorOpen', 'doorClose', 'pageTurn', 'bookPlace', 'cardDeal', 'diceRoll', 'glassBreak', 'footstep', 'land', 'unlock'] },
 ] as const satisfies ReadonlyArray<{ id: string; name: string; folder: string; kinds: readonly SfxCategory[] }>;
 export type SfxSetId = (typeof SFX_SETS)[number]['id'];
 
@@ -274,7 +309,7 @@ const BASE_SOUND: Omit<SfxSound, 'layers'> = {
   seed: 1,
 };
 
-export const MAX_LAYERS = 4;
+export const MAX_LAYERS = 6;
 
 /** A sound's shared character in a set: its tone, register and space. */
 interface Style {
@@ -309,14 +344,25 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
   const sound = (layers: SfxLayer[], patch: Partial<Omit<SfxSound, 'layers'>> = {}): SfxSound => ({ ...BASE_SOUND, seed, ...patch, layers });
   /** A short bright tick, the front of many sounds */
   const click = (gain: number, delay = 0, freq = between(2500, 6000)) => L({ wave: 'pink', bandpass: true, lowpass: freq, reso: 0.3, hold: 0, decay: between(0.006, 0.014), gain, delay });
-  /** A noise swish through a sweeping band-pass */
-  const swish = (from: number, octaves: number, attack: number, decay: number, gain = 1, delay = 0) =>
-    L({ wave: 'pink', bandpass: true, lowpass: from, lpSweep: octaves, reso: between(0.35, 0.65), attack, hold: between(0.01, 0.05), decay, gain, delay });
   /** A low thump with a fast pitch drop */
   const thump = (freq: number, decay: number, gain = 1, delay = 0) => L({ wave: 'sine', freq, slide: -between(8, 14), curve: 0.9, hold: 0, decay, punch: 0.7, gain, delay });
   const bell = (freq: number, decay: number, gain = 1, delay = 0, extra: Partial<SfxLayer> = {}) => L({ wave: 'metal', freq, hold: 0, decay, gain, delay, ...extra });
   const tone = (patch: Partial<SfxLayer>) => L({ wave: S.tone, fmRatio: S.ratio, fmIndex: between(0.8, 2.5), duty: 0.35, ...patch });
   const major = [0, 4, 7, 12];
+  // ---- The modern engine's pieces ----
+  const M = (layers: SfxLayer[], patch: Partial<Omit<SfxSound, 'layers'>> = {}): SfxSound => sound(layers, { ...patch, modern: true });
+  /** A recording, played through (Hold covers it), its speed nudged a little */
+  const rec = (group: string, patch: Partial<SfxLayer> = {}) => L({ wave: 'rec', rec: group, freq: 440 * 2 ** (between(-1, 1) / 12), hold: 4, decay: 0.05, ...patch });
+  /** A struck body: a short noise strike ringing `material` at `freq` */
+  const strike = (material: SfxMaterial, freq: number, ring: number, gain = 1, delay = 0, patch: Partial<SfxLayer> = {}) =>
+    L({ wave: 'pink', lowpass: 9000, hold: 0, decay: between(0.005, 0.009), punch: 0.5, body: material, ring, bodyMix: 0.9, freq, gain, delay, ...patch });
+  /** Air moving past: wide noise through a sweeping band, from one side to the other */
+  const air = (from: number, octaves: number, attack: number, decay: number, gain = 1, delay = 0) => {
+    const side = r() < 0.5 ? -1 : 1;
+    return L({ wave: 'pink', bandpass: true, lowpass: from, lpSweep: octaves, reso: between(0.3, 0.55), attack, hold: between(0.01, 0.05), decay, gain, delay, width: 0.7, pan: -0.6 * side, panTo: 0.6 * side });
+  };
+  /** The set's tone for UI and rewards, never a raw square */
+  const mtone = (patch: Partial<SfxLayer>) => tone({ ...(S.tone === 'square' ? { wave: 'triangle' as const } : {}), ...patch });
 
   switch (category) {
     // ---- Retro: the classic 8-bit generator's kinds ----
@@ -341,136 +387,145 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
     case 'retroBounce':
       return sound([L({ wave: pick(['square', 'triangle'] as const), freq: between(150, 260), slide: between(14, 24), curve: 0.2, vibDepth: between(0.8, 2), vibRate: between(14, 22), hold: 0.05, decay: between(0.2, 0.35) })]);
 
-    // ---- UI ----
+    // ---- UI (modern from here on: clean tones, real clicks, glass and plastic, stereo) ----
     case 'uiClick':
-      return sound([L({ wave: 'sine', freq: between(1800, 3200) * S.reg, slide: -between(6, 14), curve: 0.85, hold: 0, decay: between(0.012, 0.03), punch: 0.5 }), click(between(0.25, 0.5))], { level: 'soft', reverb: S.space * 0.4, room: 0.2 });
+      return M([rec('ui-click', { gain: 0.8 }), strike('plastic', between(1800, 3200) * S.reg, 0.6, 0.35)], { level: 'soft', reverb: S.space * 0.3, room: 0.15 });
     case 'uiHover':
-      return sound([tone({ freq: between(900, 1500) * S.reg, attack: 0.003, hold: 0.004, decay: between(0.03, 0.06), fmIndex: between(0.3, 1) })], { level: 'soft', volume: 0.7, reverb: S.space * 0.4, room: 0.2 });
-    case 'uiConfirm':
-      return sound([tone({ freq: between(600, 900) * S.reg, seq: [0, pick([4, 5, 7, 12])], seqStep: between(0.05, 0.08), hold: 0.09, decay: between(0.12, 0.2) }), click(0.3)], { reverb: S.space, room: 0.3 });
+      return M([mtone({ freq: between(900, 1500) * S.reg, attack: 0.003, hold: 0.004, decay: between(0.04, 0.07), fmIndex: between(0.3, 0.8) }), strike('glass', between(2500, 3500) * S.reg, 0.3, 0.15)], { level: 'soft', volume: 0.7, reverb: S.space * 0.4, room: 0.2 });
+    case 'uiConfirm': {
+      const f = between(600, 900) * S.reg;
+      return M([mtone({ freq: f, seq: [0, pick([4, 5, 7, 12])], seqStep: between(0.05, 0.08), hold: 0.09, decay: between(0.15, 0.25) }), rec('ui-select', { gain: 0.45 }), strike('glass', f * 2, 0.5, 0.25, between(0.05, 0.08))], { reverb: Math.max(0.1, S.space), room: 0.3 });
+    }
     case 'uiBack':
-      return sound([tone({ freq: between(600, 850) * S.reg, seq: [0, -pick([3, 5, 7])], seqStep: between(0.05, 0.07), hold: 0.07, decay: between(0.1, 0.16), lowpass: 4000 }), click(0.25)], { level: 'soft', reverb: S.space, room: 0.3 });
+      return M([mtone({ freq: between(600, 850) * S.reg, seq: [0, -pick([3, 5, 7])], seqStep: between(0.05, 0.07), hold: 0.07, decay: between(0.12, 0.2), lowpass: 4000 }), rec('ui-switch', { gain: 0.4, lowpass: 5000 })], { level: 'soft', reverb: S.space, room: 0.3 });
     case 'uiError': {
       const f = between(140, 220);
-      const buzz = (delay: number) => L({ wave: pick(['square', 'saw'] as const), freq: f, duty: 0.4, lowpass: between(1200, 2000), reso: 0.3, hold: 0.07, decay: 0.03, delay });
-      return sound([buzz(0), buzz(between(0.11, 0.14))], { reverb: S.space * 0.5, room: 0.3 });
+      const buzz = (delay: number) => L({ wave: 'saw', freq: f, lowpass: between(900, 1400), reso: 0.25, hold: 0.07, decay: 0.05, delay });
+      return M([buzz(0), buzz(between(0.11, 0.14)), strike('plastic', f * 4, 0.5, 0.3)], { reverb: S.space * 0.5, room: 0.3 });
     }
     case 'uiOpen':
-      return sound([swish(between(600, 900), between(2, 3), 0.03, between(0.1, 0.14)), tone({ freq: between(600, 800) * S.reg, slide: between(4, 7), hold: 0.02, decay: 0.08, gain: 0.5, delay: 0.05 })], { level: 'soft', reverb: S.space, room: 0.3 });
+      return M([air(between(600, 900), between(2, 3), 0.03, between(0.12, 0.16), 0.8), mtone({ freq: between(600, 800) * S.reg, slide: between(4, 7), hold: 0.02, decay: 0.1, gain: 0.5, delay: 0.05 })], { level: 'soft', reverb: S.space, room: 0.3 });
     case 'uiClose':
-      return sound([swish(between(3000, 4500), -between(2, 3), 0.01, between(0.1, 0.14)), tone({ freq: between(700, 900) * S.reg, slide: -between(4, 7), hold: 0.02, decay: 0.08, gain: 0.5, delay: 0.02 })], { level: 'soft', reverb: S.space, room: 0.3 });
+      return M([air(between(3000, 4500), -between(2, 3), 0.01, between(0.12, 0.16), 0.8), mtone({ freq: between(700, 900) * S.reg, slide: -between(4, 7), hold: 0.02, decay: 0.1, gain: 0.5, delay: 0.02 })], { level: 'soft', reverb: S.space, room: 0.3 });
     case 'uiToggle': {
       const f = between(1000, 1800) * S.reg;
-      return sound([L({ wave: 'sine', freq: f, hold: 0, decay: 0.02, punch: 0.6 }), L({ wave: 'sine', freq: f * pick([0.75, 1.5]), hold: 0, decay: 0.03, delay: between(0.03, 0.05), gain: 0.8 }), click(0.3)], { level: 'soft' });
+      return M([rec('ui-switch', { gain: 0.8 }), L({ wave: 'sine', freq: f * pick([0.75, 1.5]), hold: 0, decay: 0.04, delay: between(0.02, 0.04), gain: 0.4 })], { level: 'soft' });
     }
     case 'uiNotify': {
       const f = between(700, 1300) * S.reg;
-      return sound([bell(f, between(0.5, 0.9)), bell(f * 2 ** (pick([5, 7, 12]) / 12), between(0.6, 1.0), 0.8, between(0.08, 0.12))], { reverb: Math.max(0.15, S.space), room: 0.4 });
+      return M([strike('glass', f, between(1, 1.5)), strike('glass', f * 2 ** (pick([5, 7, 12]) / 12), between(1, 1.6), 0.8, between(0.08, 0.12), { pan: 0.3 })], { reverb: Math.max(0.2, S.space), room: 0.45 });
     }
     case 'uiType':
-      return sound([L({ wave: pick(['square', 'sine', 'triangle'] as const), duty: 0.25, freq: between(400, 900) * S.reg, hold: 0, decay: between(0.02, 0.035), crush: r() < 0.4 ? 0.4 : 0 })], { level: 'soft', volume: 0.8 });
+      return M([rec('ui-click', { freq: between(380, 520), gain: 0.9 }), strike('plastic', between(1800, 2800), 0.4, 0.25)], { level: 'soft', volume: 0.8 });
     case 'uiPurchase': {
       const f = between(1500, 2100);
-      return sound([bell(f, 0.35), bell(f * 2 ** (7 / 12), 0.6, 0.9, 0.07), L({ wave: 'crackle', freq: between(250, 400), highpass: 4000, hold: 0.1, decay: 0.2, gain: 0.3 })], { reverb: Math.max(0.12, S.space), room: 0.3 });
+      return M([rec('coins', { gain: 0.7 }), strike('metal', f, 0.7, 0.6), strike('metal', f * 2 ** (7 / 12), 0.9, 0.55, 0.07, { pan: 0.25 })], { reverb: Math.max(0.15, S.space), room: 0.35 });
     }
     case 'uiSwipe':
-      return sound([swish(between(1500, 2500), between(1, 1.6), 0.02, between(0.08, 0.12))], { level: 'soft', reverb: S.space * 0.5, room: 0.2 });
+      return M([air(between(1500, 2500), between(1, 1.6), 0.02, between(0.1, 0.14))], { level: 'soft', reverb: S.space * 0.5, room: 0.2 });
 
     // ---- Combat ----
     case 'swordSwing':
-      return sound([swish(between(500, 900), between(1.5, 2.5), between(0.03, 0.06), between(0.12, 0.2)), bell(between(2500, 4000), between(0.25, 0.4), 0.2, 0.05, { highpass: 2000 })]);
+      return M([rec('swish'), air(between(500, 900), between(1.5, 2.5), between(0.03, 0.06), between(0.14, 0.2), 0.6), strike('metal', between(2500, 4000), 0.4, 0.12, 0.04)], { reverb: 0.08, room: 0.3 });
     case 'slash':
-      return sound([swish(between(1000, 1600), between(1, 1.8), 0.01, 0.07), bell(between(1500, 2200), between(0.2, 0.35), 0.5, 0.06), L({ wave: 'pink', lowpass: 4000, hold: 0, decay: 0.08, punch: 0.8, gain: 0.8, delay: 0.06 }), thump(between(110, 160), 0.1, 0.6, 0.06)], { level: 'loud', drive: 0.2 });
+      return M([rec('blade-slice'), rec('swish', { gain: 0.5 }), strike('metal', between(1500, 2200), 0.5, 0.35, 0.05), thump(between(110, 160), 0.1, 0.5, 0.05)], { level: 'loud', drive: 0.15, reverb: 0.08, room: 0.3 });
     case 'punch':
-      return sound([thump(between(110, 160), between(0.1, 0.15)), L({ wave: 'brown', lowpass: between(1500, 2500), hold: 0, decay: between(0.05, 0.08), punch: 0.8, gain: 0.7 }), click(0.4)], { level: 'loud', drive: between(0.2, 0.4) });
+      return M([rec('punch'), thump(between(90, 130), between(0.1, 0.15), 0.8), strike('skin', between(110, 160), 0.6, 0.4)], { level: 'loud', drive: between(0.15, 0.3), reverb: 0.05, room: 0.2 });
     case 'impactHeavy':
-      return sound([thump(between(50, 75), between(0.4, 0.6)), L({ wave: 'brown', lowpass: between(700, 1100), lpSweep: -1.5, hold: 0.02, decay: between(0.3, 0.5), punch: 0.6, gain: 0.9 }), click(0.4, 0, 2500)], { level: 'loud', drive: between(0.3, 0.5), reverb: 0.15, room: 0.5 });
+      return M([rec(pick(['soft', 'punch'])), thump(between(45, 70), between(0.4, 0.6)), rec('stone-hit', { gain: 0.35, delay: 0.005 }), L({ wave: 'brown', lowpass: between(400, 700), lpSweep: -1.5, hold: 0.02, decay: between(0.4, 0.7), punch: 0.6, gain: 0.6, width: 0.6 })], { level: 'loud', drive: between(0.25, 0.4), reverb: 0.18, room: 0.55 });
     case 'block':
-      return sound([bell(between(600, 1100), between(0.4, 0.7)), click(0.6, 0, 3000), thump(between(180, 240), 0.08, 0.4)], { level: 'loud', reverb: 0.1, room: 0.3 });
-    case 'arrow':
-      return sound([swish(between(2500, 3500), -1, 0.01, 0.12, 0.8), thump(between(150, 210), 0.08, 0.8, between(0.18, 0.25)), L({ wave: 'brown', lowpass: 1200, hold: 0, decay: 0.05, gain: 0.5, delay: between(0.18, 0.25) })]);
+      return M([rec('metal-heavy'), strike('metal', between(600, 1100), between(0.8, 1.2), 0.5), thump(between(160, 220), 0.08, 0.4)], { level: 'loud', reverb: 0.12, room: 0.35 });
+    case 'arrow': {
+      const side = pick([-1, 1]);
+      return M([L({ wave: 'pink', bandpass: true, lowpass: between(2500, 3500), lpSweep: -1, reso: 0.4, attack: 0.01, hold: 0.02, decay: 0.12, gain: 0.7, width: 0.5, pan: -0.8 * side, panTo: 0.5 * side }), rec('wood-light', { delay: between(0.18, 0.25) }), strike('wood', between(180, 260), 0.8, 0.5, between(0.18, 0.25), { pan: 0.5 * side })], { reverb: 0.1, room: 0.35 });
+    }
     case 'gunshot':
-      return sound([L({ wave: 'pink', lowpass: between(5000, 8000), lpSweep: -2, hold: 0, decay: between(0.2, 0.3), punch: 1 }), thump(between(70, 100), 0.15), click(0.6)], { level: 'loud', drive: between(0.4, 0.6), reverb: between(0.15, 0.3), room: between(0.6, 0.85) });
+      return M([L({ wave: 'pink', lowpass: between(5000, 8000), lpSweep: -2, hold: 0, decay: between(0.15, 0.25), punch: 1, width: 0.4 }), thump(between(60, 90), 0.15), rec('explosion', { freq: between(600, 760), gain: 0.55, decay: 0.3, hold: 0.25 }), click(0.6)], { level: 'loud', drive: between(0.4, 0.6), reverb: between(0.2, 0.35), room: between(0.65, 0.9) });
     case 'reload': {
-      const metal = (delay: number, f: number) => [L({ wave: 'metal', freq: f, hold: 0, decay: 0.06, highpass: 1500, gain: 0.7, delay }), click(0.6, delay, between(2000, 4000))];
-      return sound([...metal(0, between(1800, 2600)), ...metal(between(0.18, 0.28), between(1300, 1900))], { reverb: 0.05, room: 0.2 });
+      const second = between(0.18, 0.28);
+      return M([rec('latch'), strike('metal', between(1800, 2600), 0.25, 0.3), rec('latch', { delay: second, seed: (seed + 17) >>> 0 }), strike('metal', between(1300, 1900), 0.3, 0.3, second)], { reverb: 0.06, room: 0.2 });
     }
     case 'magicBolt':
-      return sound([L({ wave: 'fm', freq: between(800, 1200), fmRatio: between(2.5, 4), fmIndex: between(2, 4), slide: -between(10, 20), curve: 0.6, hold: 0.05, decay: between(0.25, 0.4), vibDepth: 0.3, vibRate: 20 }), swish(between(1500, 2500), -1.5, 0.01, 0.3, 0.4)], { reverb: 0.25, room: 0.5 });
-    case 'heal':
-      return sound([L({ wave: pick(['sine', 'triangle'] as const), freq: between(500, 700), seq: [0, 4, 7, 12, 16], seqStep: between(0.05, 0.07), hold: 0.3, decay: 0.4 }), bell(between(2000, 3000), 0.6, 0.3, 0.1, { seq: [0, 7, 12], seqStep: 0.08 })], { level: 'soft', reverb: 0.35, room: 0.6 });
+      return M([L({ wave: 'fm', freq: between(800, 1200), fmRatio: between(2.5, 4), fmIndex: between(2, 4), slide: -between(10, 20), curve: 0.6, hold: 0.05, decay: between(0.3, 0.45), vibDepth: 0.3, vibRate: 20, width: 0.3 }), air(between(1500, 2500), -1.5, 0.01, 0.3, 0.45), strike('glass', between(2500, 3500), 0.8, 0.2)], { echo: 0.2, echoTime: between(0.08, 0.12), echoFeedback: 0.3, reverb: 0.3, room: 0.55 });
+    case 'heal': {
+      const f = between(500, 700);
+      return M([L({ wave: pick(['sine', 'triangle'] as const), freq: f, seq: [0, 4, 7, 12, 16], seqStep: between(0.05, 0.07), hold: 0.3, decay: 0.5 }), strike('glass', f * 4, 1.2, 0.3, 0.1, { pan: -0.3 }), strike('glass', f * 4 * 2 ** (7 / 12), 1.2, 0.25, 0.18, { pan: 0.3 })], { level: 'soft', reverb: 0.4, room: 0.65 });
+    }
     case 'hurt':
-      return sound([L({ wave: pick(['saw', 'square'] as const), freq: between(250, 400), slide: -between(5, 10), vibDepth: between(0.5, 1.2), vibRate: between(25, 40), lowpass: between(1800, 3000), hold: 0.04, decay: between(0.15, 0.25) }), thump(between(120, 160), 0.08, 0.6)], { drive: 0.2 });
+      return M([rec('punch', { gain: 0.7 }), L({ wave: 'saw', freq: between(250, 400), slide: -between(5, 10), vibDepth: between(0.5, 1.2), vibRate: between(25, 40), bandpass: true, lowpass: between(700, 1000), reso: 0.4, hold: 0.04, decay: between(0.15, 0.25), gain: 0.6 }), thump(between(110, 150), 0.08, 0.5)], { drive: 0.2, reverb: 0.06, room: 0.25 });
 
     // ---- Movement ----
     case 'whoosh':
-      return sound([swish(between(250, 500), between(1.5, 2.5), between(0.08, 0.14), between(0.18, 0.3)), L({ wave: 'brown', lowpass: 400, attack: 0.08, hold: 0.02, decay: 0.2, gain: 0.4 })]);
+      return M([rec(pick(['whoosh', 'swish', 'swish'])), air(between(250, 500), between(1.5, 2.5), between(0.08, 0.14), between(0.2, 0.32), 0.6), L({ wave: 'brown', lowpass: 400, attack: 0.08, hold: 0.02, decay: 0.2, gain: 0.3 })], { reverb: 0.08, room: 0.35 });
     case 'dash':
-      return sound([swish(between(800, 1200), between(1, 2), 0.02, between(0.1, 0.15)), L({ wave: 'sine', freq: between(200, 300), slide: -12, curve: 0.7, hold: 0, decay: 0.12, gain: 0.35 })]);
+      return M([rec('swish', { freq: between(480, 600) }), air(between(800, 1200), between(1, 2), 0.02, between(0.1, 0.15), 0.6), L({ wave: 'sine', freq: between(200, 300), slide: -12, curve: 0.7, hold: 0, decay: 0.12, gain: 0.25 })]);
     case 'jumpSoft':
-      return sound([L({ wave: pick(['sine', 'triangle'] as const), freq: between(220, 340), slide: between(5, 9), curve: 0.6, hold: 0.03, decay: between(0.1, 0.15) }), swish(between(800, 1200), 1, 0.01, 0.08, 0.35)], { level: 'soft' });
+      return M([rec('cloth', { gain: 0.8 }), L({ wave: pick(['sine', 'triangle'] as const), freq: between(220, 340), slide: between(5, 9), curve: 0.6, hold: 0.03, decay: between(0.1, 0.15), gain: 0.5 })], { level: 'soft' });
     case 'land':
-      return sound([L({ wave: 'brown', lowpass: between(500, 800), hold: 0, decay: between(0.1, 0.14), punch: 0.6 }), thump(between(80, 110), 0.1, 0.7)], { level: 'normal' });
+      return M([rec(pick(['soft', 'step-dirt'])), thump(between(70, 100), 0.12, 0.7), rec('cloth', { gain: 0.35, delay: 0.01 })], { level: 'normal', reverb: 0.05, room: 0.25 });
     case 'footstep': {
-      const surface = pick(['stone', 'grass', 'wood'] as const);
-      const layers =
-        surface === 'stone'
-          ? [click(0.7, 0, between(1500, 3000)), L({ wave: 'brown', lowpass: between(800, 1200), hold: 0, decay: between(0.05, 0.08), gain: 0.8 })]
-          : surface === 'grass'
-            ? [L({ wave: 'crackle', freq: between(1500, 3000), highpass: 2000, attack: 0.005, hold: 0.01, decay: between(0.07, 0.11) }), L({ wave: 'brown', lowpass: 500, hold: 0, decay: 0.06, gain: 0.6 })]
-            : [thump(between(140, 200), 0.06), L({ wave: 'pink', bandpass: true, lowpass: between(600, 900), reso: 0.5, hold: 0, decay: 0.05, gain: 0.6 })];
-      return sound(layers, { level: 'soft', reverb: 0.05, room: 0.3 });
+      const surface = pick(['stone', 'grass', 'snow', 'wood', 'carpet', 'dirt'] as const);
+      return M([rec(`step-${surface}`), ...(surface === 'wood' ? [strike('wood', between(140, 220), 0.6, 0.25)] : surface === 'stone' ? [strike('stone', between(200, 400), 1, 0.2)] : [])], { level: 'soft', reverb: 0.06, room: 0.3 });
     }
     case 'splash':
-      return sound([L({ wave: 'pink', lowpass: between(2500, 4000), lpSweep: -1, attack: 0.01, hold: 0.03, decay: between(0.4, 0.6) }), L({ wave: 'crackle', freq: between(1000, 2000), bandpass: true, lowpass: 3000, attack: 0.01, decay: 0.5, gain: 0.6 }), L({ wave: 'sine', freq: between(250, 400), slide: -12, curve: 0.8, hold: 0, decay: 0.1, gain: 0.35 })]);
+      return M([rec('splash'), L({ wave: 'pink', lowpass: between(2500, 4000), lpSweep: -1, attack: 0.01, hold: 0.03, decay: between(0.4, 0.6), gain: 0.35, width: 0.8 }), L({ wave: 'sine', freq: between(250, 400), slide: -12, curve: 0.8, hold: 0, decay: 0.1, gain: 0.25 })], { reverb: 0.1, room: 0.4 });
     case 'bounce':
-      return sound([L({ wave: 'sine', freq: between(180, 280) * S.reg, slide: between(7, 12), curve: 0.4, vibDepth: between(0.5, 1), vibRate: between(10, 16), hold: 0.04, decay: between(0.15, 0.25) }), thump(between(90, 120), 0.06, 0.5)]);
+      return M([rec('soft', { gain: 0.6 }), L({ wave: 'sine', freq: between(180, 280) * S.reg, slide: between(7, 12), curve: 0.4, vibDepth: between(0.3, 0.7), vibRate: between(10, 16), hold: 0.04, decay: between(0.18, 0.28) }), strike('skin', between(90, 130), 0.8, 0.4)], { reverb: 0.08, room: 0.3 });
 
     // ---- Rewards ----
     case 'coinModern': {
       const f = between(1500, 2100) * S.reg;
-      return sound([bell(f, 0.25), bell(f * 2 ** (pick([5, 7]) / 12), 0.5, 1, between(0.05, 0.07))], { level: 'soft', reverb: Math.max(0.1, S.space), room: 0.3 });
+      return M([strike('metal', f, 0.6), strike('metal', f * 2 ** (pick([5, 7]) / 12), 1, 1, between(0.05, 0.07), { pan: 0.2 }), rec('coins', { gain: 0.3 })], { level: 'soft', reverb: Math.max(0.12, S.space), room: 0.35 });
     }
     case 'gem': {
       const f = between(1800, 2600) * S.reg;
-      return sound([bell(f, between(0.6, 0.9)), bell(f * 2 ** (pick([7, 12]) / 12), between(0.6, 1), 0.8, between(0.05, 0.08)), L({ wave: 'crackle', freq: between(150, 300), highpass: 6000, hold: 0.1, decay: 0.4, gain: 0.25 })], { reverb: 0.3, room: 0.5 });
+      return M([strike('glass', f, between(1.2, 1.6)), strike('glass', f * 2 ** (pick([7, 12]) / 12), between(1.2, 1.8), 0.8, between(0.05, 0.08), { pan: 0.3 }), L({ wave: 'crackle', freq: between(150, 300), highpass: 6000, hold: 0.1, decay: 0.4, gain: 0.2, width: 1 })], { reverb: 0.3, room: 0.55 });
     }
-    case 'healthPickup':
-      return sound([tone({ freq: between(500, 700) * S.reg, seq: [0, 7, 12], seqStep: between(0.045, 0.06), hold: 0.12, decay: 0.2 }), bell(between(2500, 3500), 0.4, 0.25, 0.1)], { reverb: Math.max(0.15, S.space), room: 0.4 });
-    case 'unlock':
-      return sound([click(0.8, 0, 2500), click(0.7, between(0.07, 0.1), 1800), thump(between(250, 350), 0.04, 0.4, 0.08), bell(between(1200, 1800), 0.5, 0.7, between(0.15, 0.2))], { reverb: 0.15, room: 0.4 });
-    case 'levelUp':
-      return sound([L({ wave: pick(['square', 'triangle'] as const), duty: 0.35, freq: between(400, 600), seq: pick([major, [0, 4, 7, 12, 16], [0, 5, 7, 12]]), seqStep: between(0.06, 0.08), hold: 0.35, decay: 0.35 }), L({ wave: 'triangle', freq: between(400, 600) * 2, seq: major, seqStep: 0.07, hold: 0.35, decay: 0.35, gain: 0.3 })], { reverb: 0.2, room: 0.5 });
+    case 'healthPickup': {
+      const f = between(500, 700) * S.reg;
+      return M([mtone({ freq: f, seq: [0, 7, 12], seqStep: between(0.045, 0.06), hold: 0.12, decay: 0.25 }), strike('glass', f * 4, 1, 0.25, 0.1, { pan: 0.25 })], { reverb: Math.max(0.18, S.space), room: 0.45 });
+    }
+    case 'unlock': {
+      const second = between(0.07, 0.1);
+      return M([rec('latch'), rec('latch', { delay: second, seed: (seed + 29) >>> 0, gain: 0.8 }), strike('metal', between(250, 350), 0.4, 0.4, second), strike('glass', between(1200, 1800), 1.2, 0.6, between(0.15, 0.2))], { reverb: 0.18, room: 0.45 });
+    }
+    case 'levelUp': {
+      const f = between(400, 600);
+      const run = pick([major, [0, 4, 7, 12, 16], [0, 5, 7, 12]]);
+      return M([L({ wave: pick(['saw', 'triangle'] as const), freq: f, seq: run, seqStep: between(0.06, 0.08), lowpass: 3500, reso: 0.15, hold: 0.35, decay: 0.45, width: 0.2 }), L({ wave: 'triangle', freq: f * 2, seq: major, seqStep: 0.07, hold: 0.35, decay: 0.45, gain: 0.3, pan: 0.3 }), strike('glass', f * 4, 1.4, 0.35, 0.28, { pan: -0.3 })], { reverb: 0.25, room: 0.55 });
+    }
     case 'achievement': {
       const f = between(330, 440);
       const run = [0, 4, 7, 12, 7, 12];
-      return sound([L({ wave: 'saw', freq: f, seq: run, seqStep: between(0.09, 0.11), lowpass: 2800, reso: 0.2, hold: 0.55, decay: 0.5, vibDepth: 0.15, vibRate: 5.5 }), L({ wave: 'square', duty: 0.3, freq: f / 2, seq: run, seqStep: 0.1, lowpass: 1500, hold: 0.55, decay: 0.5, gain: 0.45 }), bell(f * 4, 0.8, 0.25, 0.5)], { reverb: 0.3, room: 0.6 });
+      return M([L({ wave: 'saw', freq: f, seq: run, seqStep: between(0.09, 0.11), lowpass: 2600, reso: 0.2, hold: 0.55, decay: 0.6, vibDepth: 0.15, vibRate: 5.5, width: 0.2 }), L({ wave: 'saw', freq: f / 2, seq: run, seqStep: 0.1, lowpass: 1200, hold: 0.55, decay: 0.6, gain: 0.4 }), strike('metal', f * 4, 1.5, 0.3, 0.5)], { reverb: 0.3, room: 0.6 });
     }
-    case 'collectAll':
-      return sound([tone({ freq: between(500, 700) * S.reg, seq: [0, 2, 4, 7, 9, 12, 16, 19, 24], seqStep: between(0.035, 0.05), hold: 0.4, decay: 0.4 }), bell(between(2500, 3200), 0.9, 0.3, 0.35)], { reverb: 0.3, room: 0.5 });
+    case 'collectAll': {
+      const f = between(500, 700) * S.reg;
+      return M([mtone({ freq: f, seq: [0, 2, 4, 7, 9, 12, 16, 19, 24], seqStep: between(0.035, 0.05), hold: 0.4, decay: 0.45 }), strike('glass', f * 4, 1.6, 0.3, 0.35, { pan: 0.3 })], { reverb: 0.3, room: 0.55 });
+    }
 
     // ---- Magic & sci-fi ----
     case 'laserModern':
-      return sound([L({ wave: 'fm', freq: between(1200, 2200), fmRatio: pick([0.5, 1.5, 2]), fmIndex: between(3, 6), slide: -between(18, 30), curve: 0.9, hold: 0.01, decay: between(0.15, 0.25), punch: 0.4 }), click(0.3)], { echo: between(0.2, 0.35), echoTime: between(0.07, 0.11), echoFeedback: 0.3, reverb: 0.1, room: 0.4 });
+      return M([rec('laser'), L({ wave: 'fm', freq: between(1200, 2200), fmRatio: pick([0.5, 1.5, 2]), fmIndex: between(3, 6), slide: -between(18, 30), curve: 0.9, hold: 0.01, decay: between(0.15, 0.25), punch: 0.4, gain: 0.6 })], { echo: between(0.2, 0.35), echoTime: between(0.07, 0.11), echoFeedback: 0.3, reverb: 0.12, room: 0.45 });
     case 'teleport':
-      return sound([L({ wave: pick(['square', 'saw'] as const), duty: 0.3, freq: between(200, 350), slide: between(20, 30), curve: 0, repeat: between(8, 14), hold: between(0.3, 0.45), decay: 0.15, lowpass: 3500 }), swish(between(400, 700), 3, 0.15, 0.3, 0.5)], { reverb: 0.3, room: 0.6 });
+      return M([L({ wave: 'saw', freq: between(200, 350), slide: between(20, 30), curve: 0, repeat: between(8, 14), hold: between(0.3, 0.45), decay: 0.15, lowpass: 3000, reso: 0.2, width: 0.4 }), air(between(400, 700), 3, 0.15, 0.3, 0.5), strike('glass', between(2000, 3000), 1.4, 0.3, 0.35)], { reverb: 0.35, room: 0.65 });
     case 'chargeUp':
-      return sound([L({ wave: 'saw', freq: between(90, 160), slide: between(20, 28), curve: 0, attack: 0.05, hold: between(0.9, 1.4), decay: 0.08, lowpass: between(600, 900), lpSweep: 3, reso: 0.45, vibDepth: 0.2, vibRate: 8 }), L({ wave: 'sine', freq: between(180, 320), slide: between(20, 28), curve: 0, attack: 0.05, hold: between(0.9, 1.4), decay: 0.08, trem: 0.5, tremRate: 14, gain: 0.4 })]);
+      return M([L({ wave: 'saw', freq: between(90, 160), slide: between(20, 28), curve: 0, attack: 0.05, hold: between(0.9, 1.4), decay: 0.08, lowpass: between(600, 900), lpSweep: 3, reso: 0.45, vibDepth: 0.2, vibRate: 8, width: 0.3 }), L({ wave: 'sine', freq: between(180, 320), slide: between(20, 28), curve: 0, attack: 0.05, hold: between(0.9, 1.4), decay: 0.08, trem: 0.5, tremRate: 14, gain: 0.4 }), L({ wave: 'pink', bandpass: true, lowpass: 500, lpSweep: 3.5, reso: 0.5, attack: 0.6, hold: between(0.3, 0.8), decay: 0.08, gain: 0.3, width: 1 })], { reverb: 0.12, room: 0.4 });
     case 'spell': {
       const scale = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
       const steps = Array.from({ length: 6 + Math.floor(r() * 4) }, () => pick(scale));
-      return sound([bell(between(900, 1400), 0.6, 1, 0, { seq: steps, seqStep: between(0.035, 0.05), hold: steps.length * 0.04 }), L({ wave: 'crackle', freq: between(200, 400), highpass: 5000, hold: 0.25, decay: 0.4, gain: 0.3 }), swish(between(1000, 1500), 1.5, 0.05, 0.3, 0.3)], { reverb: 0.4, room: 0.7 });
+      return M([bell(between(900, 1400), 0.6, 1, 0, { seq: steps, seqStep: between(0.035, 0.05), hold: steps.length * 0.04, width: 0.3 }), L({ wave: 'crackle', freq: between(200, 400), highpass: 5000, hold: 0.25, decay: 0.4, gain: 0.25, width: 1 }), air(between(1000, 1500), 1.5, 0.05, 0.3, 0.3)], { reverb: 0.45, room: 0.75 });
     }
     case 'shieldUp':
-      return sound([L({ wave: 'fm', freq: between(150, 250), fmRatio: 1.5, fmIndex: between(3, 5), slide: between(10, 14), curve: 0.5, hold: 0.3, decay: 0.3, trem: 0.4, tremRate: between(16, 24) })], { reverb: 0.25, room: 0.5 });
+      return M([L({ wave: 'fm', freq: between(150, 250), fmRatio: 1.5, fmIndex: between(3, 5), slide: between(10, 14), curve: 0.5, hold: 0.3, decay: 0.35, trem: 0.4, tremRate: between(16, 24), width: 0.3 }), rec('force-field', { gain: 0.4, hold: 0.5, decay: 0.2 })], { reverb: 0.25, room: 0.5 });
     case 'powerDown':
-      return sound([L({ wave: 'saw', freq: between(500, 800), slide: -between(20, 30), curve: 0.3, hold: 0.3, decay: 0.4, lowpass: 3000, lpSweep: -3, vibDepth: 0.4, vibRate: 7 })], { reverb: 0.15, room: 0.4 });
+      return M([L({ wave: 'saw', freq: between(500, 800), slide: -between(20, 30), curve: 0.3, hold: 0.3, decay: 0.45, lowpass: 3000, lpSweep: -3, reso: 0.2, vibDepth: 0.4, vibRate: 7, width: 0.2 }), rec('computer', { gain: 0.25, hold: 0.4, decay: 0.2, freq: between(300, 380) })], { reverb: 0.18, room: 0.45 });
     case 'robotBeep': {
       const notes = Array.from({ length: 3 + Math.floor(r() * 3) }, () => pick([0, 3, 5, 7, 10, 12, 15]));
-      return sound([L({ wave: 'square', duty: pick([0.25, 0.5]), freq: between(500, 1000), seq: notes, seqStep: between(0.05, 0.08), hold: notes.length * 0.065, decay: 0.03, crush: between(0.2, 0.4), lowpass: 5000 })], { level: 'soft' });
+      return M([L({ wave: pick(['square', 'sine'] as const), duty: pick([0.25, 0.5]), freq: between(500, 1000), seq: notes, seqStep: between(0.05, 0.08), hold: notes.length * 0.065, decay: 0.04, lowpass: 4000 }), rec('computer', { gain: 0.2, hold: notes.length * 0.065, decay: 0.05 })], { level: 'soft', reverb: 0.08, room: 0.3 });
     }
     case 'scan':
-      return sound([L({ wave: 'sine', freq: between(1000, 1600), slide: between(6, 12), curve: 0, repeat: between(2, 4), hold: between(0.6, 0.9), decay: 0.1, trem: 0.3, tremRate: 30 })], { level: 'soft', echo: 0.3, echoTime: 0.12, echoFeedback: 0.4 });
+      return M([L({ wave: 'sine', freq: between(1000, 1600), slide: between(6, 12), curve: 0, repeat: between(2, 4), hold: between(0.6, 0.9), decay: 0.1, trem: 0.3, tremRate: 30, pan: -0.5, panTo: 0.5 })], { level: 'soft', echo: 0.3, echoTime: 0.12, echoFeedback: 0.4 });
 
     // ---- Jingles: short tunes (Tune to key puts them in the song's key) ----
     case 'victory': {
@@ -480,49 +535,72 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
         [0, 0, 0, 4, 7, 12],
         [0, 4, 7, 9, 12],
       ]);
-      return sound([L({ wave: 'square', duty: 0.3, freq: f, seq: run, seqStep: between(0.1, 0.13), hold: run.length * 0.11 + 0.3, decay: 0.4, lowpass: 4000, vibDepth: 0.12, vibRate: 6 }), L({ wave: 'triangle', freq: f / 2, seq: run.map((s) => (s >= 7 ? 7 : 0)), seqStep: 0.12, hold: run.length * 0.11 + 0.3, decay: 0.4, gain: 0.6 })], { reverb: 0.2, room: 0.5 });
+      const long = run.length * 0.11 + 0.3;
+      return M([L({ wave: 'saw', freq: f, seq: run, seqStep: between(0.1, 0.13), hold: long, decay: 0.5, lowpass: 3200, reso: 0.15, vibDepth: 0.12, vibRate: 6, width: 0.2 }), L({ wave: 'triangle', freq: f / 2, seq: run.map((s) => (s >= 7 ? 7 : 0)), seqStep: 0.12, hold: long, decay: 0.5, gain: 0.6 }), strike('metal', f * 4, 1.5, 0.25, run.length * 0.11, { pan: 0.3 })], { reverb: 0.25, room: 0.55 });
     }
     case 'gameOver': {
       const f = between(300, 440);
-      return sound([L({ wave: pick(['square', 'triangle'] as const), duty: 0.4, freq: f, seq: [0, -1, -2, -3, -4], seqStep: between(0.28, 0.34), hold: 1.4, decay: 0.6, vibDepth: 0.25, vibRate: 5, lowpass: 3000 }), L({ wave: 'triangle', freq: f / 2, seq: [0, -1, -2, -3, -4], seqStep: 0.31, hold: 1.4, decay: 0.6, gain: 0.5 })], { reverb: 0.25, room: 0.6 });
+      return M([L({ wave: pick(['saw', 'triangle'] as const), freq: f, seq: [0, -1, -2, -3, -4], seqStep: between(0.28, 0.34), hold: 1.4, decay: 0.7, vibDepth: 0.25, vibRate: 5, lowpass: 2400 }), L({ wave: 'triangle', freq: f / 2, seq: [0, -1, -2, -3, -4], seqStep: 0.31, hold: 1.4, decay: 0.7, gain: 0.5 })], { reverb: 0.3, room: 0.65 });
     }
     case 'questComplete': {
       const f = between(400, 550);
-      return sound([bell(f * 2, 1.2, 0.6, 0, { seq: [0, 7, 12, 16], seqStep: 0.12 }), L({ wave: 'triangle', freq: f, seq: [0, 4, 7, 12], seqStep: 0.12, hold: 0.6, decay: 0.6 })], { reverb: 0.35, room: 0.6 });
+      return M([bell(f * 2, 1.2, 0.6, 0, { seq: [0, 7, 12, 16], seqStep: 0.12, width: 0.2 }), L({ wave: 'triangle', freq: f, seq: [0, 4, 7, 12], seqStep: 0.12, hold: 0.6, decay: 0.7 }), strike('glass', f * 4, 1.5, 0.3, 0.36, { pan: 0.3 })], { reverb: 0.4, room: 0.65 });
     }
     case 'secret': {
       const f = between(500, 700);
-      return sound([L({ wave: pick(['square', 'triangle'] as const), duty: 0.25, freq: f, seq: [0, 6, 11, 15, 12, 8, 13, 17], seqStep: between(0.07, 0.09), hold: 0.75, decay: 0.3, lowpass: 5000 })], { reverb: 0.25, room: 0.5 });
+      return M([L({ wave: pick(['triangle', 'sine'] as const), freq: f, seq: [0, 6, 11, 15, 12, 8, 13, 17], seqStep: between(0.07, 0.09), hold: 0.75, decay: 0.4, lowpass: 5000, pan: -0.3, panTo: 0.3 }), strike('glass', f * 2, 1.4, 0.3, 0.6)], { reverb: 0.3, room: 0.55 });
     }
     case 'countdown': {
       const f = between(600, 900);
-      const beep = (delay: number, up: number) => L({ wave: 'sine', freq: f * 2 ** (up / 12), hold: 0.12, decay: 0.08, delay });
-      return sound([beep(0, 0), beep(0.5, 0), beep(1, 0), L({ wave: 'sine', freq: f * 2, hold: 0.4, decay: 0.3, delay: 1.5 })], { level: 'normal', reverb: 0.1, room: 0.3 });
+      const beep = (delay: number) => L({ wave: 'sine', freq: f, hold: 0.12, decay: 0.1, delay });
+      return M([beep(0), beep(0.5), beep(1), L({ wave: 'sine', freq: f * 2, hold: 0.4, decay: 0.35, delay: 1.5 }), strike('glass', f * 4, 1, 0.25, 1.5)], { level: 'normal', reverb: 0.12, room: 0.35 });
     }
+
+    // ---- Foley: recorded things being handled ----
+    case 'doorOpen':
+      return M([rec('door-open'), thump(between(80, 110), 0.1, 0.3)], { reverb: 0.12, room: 0.45 });
+    case 'doorClose':
+      return M([rec('door-close'), thump(between(60, 90), 0.15, 0.5), strike('wood', between(90, 140), 0.8, 0.3)], { reverb: 0.15, room: 0.5 });
+    case 'pageTurn':
+      return M([rec('page')], { level: 'soft', reverb: 0.05, room: 0.25 });
+    case 'bookPlace':
+      return M([rec('book'), strike('wood', between(150, 250), 0.6, 0.25)], { level: 'soft', reverb: 0.06, room: 0.3 });
+    case 'cardDeal':
+      return M([rec('card')], { level: 'soft', reverb: 0.05, room: 0.25 });
+    case 'diceRoll':
+      return M([rec('dice')], { reverb: 0.08, room: 0.3 });
+    case 'glassBreak':
+      return M([rec('glass-heavy'), rec('glass', { delay: between(0.03, 0.06), gain: 0.6 }), thump(between(80, 120), 0.08, 0.3)], { level: 'loud', reverb: 0.15, room: 0.5 });
+    case 'bubble':
+      return M([rec('bubble'), L({ wave: 'sine', freq: between(500, 900), slide: between(8, 14), curve: 0.6, hold: 0, decay: 0.06, gain: 0.3 })], { level: 'soft', reverb: 0.1, room: 0.35 });
+    case 'slime':
+      return M([rec('slime')], { reverb: 0.06, room: 0.3 });
+    case 'sciFiDoor':
+      return M([rec('scifi-door'), air(between(400, 700), 1, 0.05, 0.25, 0.4)], { reverb: 0.15, room: 0.5 });
 
     // ---- Loops: seamless, for engines and places ----
     case 'engineHum': {
       const f = between(40, 65);
-      return sound([L({ wave: 'saw', freq: f, lowpass: between(300, 500), reso: 0.3, trem: between(0.15, 0.3), tremRate: f / 4 }), L({ wave: 'square', freq: f * 2, lowpass: 600, gain: 0.3 }), L({ wave: 'brown', lowpass: 300, gain: 0.4 })], { loop: true, loopLength: 2 });
+      return M([rec('engine'), L({ wave: 'saw', freq: f, lowpass: between(300, 500), reso: 0.3, trem: between(0.15, 0.3), tremRate: f / 4, gain: 0.4 }), L({ wave: 'brown', lowpass: 300, gain: 0.3, width: 0.6 })], { loop: true, loopLength: 4 });
     }
     case 'wind':
-      return sound([L({ wave: 'pink', bandpass: true, lowpass: between(400, 700), reso: between(0.4, 0.6), wobble: between(0.8, 1.4), wobbleRate: 0.5 }), L({ wave: 'brown', lowpass: 350, gain: 0.5, trem: 0.3, tremRate: 0.25 })], { level: 'soft', loop: true, loopLength: 4 });
+      return M([L({ wave: 'pink', bandpass: true, lowpass: between(400, 700), reso: between(0.4, 0.6), wobble: between(0.8, 1.4), wobbleRate: 0.5, width: 0.9 }), L({ wave: 'brown', lowpass: 350, gain: 0.5, trem: 0.3, tremRate: 0.25, width: 0.9 }), L({ wave: 'pink', bandpass: true, lowpass: between(1500, 2500), reso: 0.6, wobble: 1, wobbleRate: 0.33, gain: 0.15, width: 1 })], { level: 'soft', loop: true, loopLength: 6 });
     case 'fire':
-      return sound([L({ wave: 'crackle', freq: between(25, 50), highpass: 1500 }), L({ wave: 'brown', lowpass: between(300, 450), gain: 0.6, trem: 0.25, tremRate: 1 }), L({ wave: 'pink', bandpass: true, lowpass: 900, reso: 0.2, gain: 0.25, wobble: 0.5, wobbleRate: 0.5 })], { level: 'soft', loop: true, loopLength: 4 });
+      return M([rec('fire'), L({ wave: 'crackle', freq: between(15, 30), highpass: 1500, gain: 0.5, width: 1 }), L({ wave: 'brown', lowpass: between(300, 450), gain: 0.5, trem: 0.25, tremRate: 1, width: 0.6 })], { level: 'soft', loop: true, loopLength: 4 });
     case 'rain':
-      return sound([L({ wave: 'crackle', freq: between(1500, 2500), bandpass: true, lowpass: between(3500, 5000), gain: 0.6 }), L({ wave: 'pink', lowpass: between(5000, 7000), gain: 0.7 }), L({ wave: 'brown', lowpass: 300, gain: 0.3 })], { level: 'soft', loop: true, loopLength: 4 });
+      return M([rec('rain'), L({ wave: 'pink', lowpass: between(5000, 7000), gain: 0.35, width: 1 }), L({ wave: 'crackle', freq: between(800, 1500), bandpass: true, lowpass: between(3500, 5000), gain: 0.3, width: 1 })], { level: 'soft', loop: true, loopLength: 6 });
     case 'alarm':
-      return sound([L({ wave: pick(['square', 'saw'] as const), duty: 0.4, freq: between(600, 900), seq: [0, pick([3, 5, 7])], seqStep: 0.25, lowpass: 3000 })], { loop: true, loopLength: 1, reverb: 0.15, room: 0.4 });
+      return M([L({ wave: pick(['square', 'saw'] as const), duty: 0.4, freq: between(600, 900), seq: [0, pick([3, 5, 7])], seqStep: 0.25, lowpass: 2500, reso: 0.2 })], { loop: true, loopLength: 1, reverb: 0.2, room: 0.5 });
     case 'forceField': {
       const f = between(90, 130);
-      return sound([L({ wave: 'saw', freq: f, lowpass: between(800, 1400), reso: 0.4, wobble: 0.6, wobbleRate: 4, trem: 0.25, tremRate: 8 }), L({ wave: 'saw', freq: f * 1.01, lowpass: 1000, gain: 0.7 }), L({ wave: 'sine', freq: f / 2, gain: 0.5 })], { level: 'soft', loop: true, loopLength: 2 });
+      return M([rec('force-field'), L({ wave: 'saw', freq: f, lowpass: between(800, 1400), reso: 0.4, wobble: 0.6, wobbleRate: 4, trem: 0.25, tremRate: 8, gain: 0.5, pan: -0.3 }), L({ wave: 'saw', freq: f * 1.01, lowpass: 1000, gain: 0.4, pan: 0.3 })], { level: 'soft', loop: true, loopLength: 2 });
     }
     case 'spaceship': {
       const f = between(45, 65);
-      return sound([L({ wave: 'brown', lowpass: between(250, 400), gain: 1 }), L({ wave: 'sine', freq: f, gain: 0.5 }), L({ wave: 'sine', freq: f * 2, gain: 0.25, trem: 0.3, tremRate: 0.5 }), L({ wave: 'pink', bandpass: true, lowpass: 2000, reso: 0.6, gain: 0.08, wobble: 1, wobbleRate: 0.25 })], { level: 'soft', loop: true, loopLength: 4 });
+      return M([rec('spaceship'), L({ wave: 'sine', freq: f, gain: 0.4 }), L({ wave: 'pink', bandpass: true, lowpass: 2000, reso: 0.6, gain: 0.08, wobble: 1, wobbleRate: 0.25, width: 1 })], { level: 'soft', loop: true, loopLength: 4 });
     }
     case 'water':
-      return sound([L({ wave: 'crackle', freq: between(150, 300), bandpass: true, lowpass: between(1500, 2500), reso: 0.6, gain: 0.8 }), L({ wave: 'pink', bandpass: true, lowpass: between(1200, 1800), reso: 0.3, gain: 0.6, wobble: 0.4, wobbleRate: 0.75 })], { level: 'soft', loop: true, loopLength: 4 });
+      return M([rec('water'), L({ wave: 'crackle', freq: between(150, 300), bandpass: true, lowpass: between(1500, 2500), reso: 0.6, gain: 0.4, width: 1 })], { level: 'soft', loop: true, loopLength: 4 });
   }
 }
 
@@ -597,7 +675,8 @@ export function tuneSfx(s: SfxSound, root: number, steps: readonly number[]): Sf
   return {
     ...s,
     layers: s.layers.map((l) => {
-      if (UNPITCHED.has(l.wave)) return l;
+      // (A struck body has a pitch whatever strikes it; a recording's Pitch is its speed)
+      if (l.wave === 'rec' || (UNPITCHED.has(l.wave) && !l.body)) return l;
       // The heard pitch includes the sound's Pitch: snap that, then take the Pitch back out
       const freq = snapToScale(l.freq * shift, root, steps) / shift;
       const heard = freq * shift;
@@ -611,13 +690,24 @@ export function tuneSfx(s: SfxSound, root: number, steps: readonly number[]): Sf
   };
 }
 
-/** When a layer ends, seconds from the start. */
-const layerEnd = (l: SfxLayer) => l.delay + l.attack + l.hold + l.decay;
+/** When a layer ends, seconds from the start (modern: a recording when it runs out, a body once it's rung out). */
+function layerEnd(l: SfxLayer, modern = false): number {
+  let length = l.attack + l.hold + l.decay;
+  if (modern && l.wave === 'rec' && l.rec) {
+    const r = recordingFor(l.rec, l.seed);
+    length = r ? Math.min(length, r.samples.length / r.sampleRate / recRate(l)) : 0.005;
+  }
+  if (modern && l.body) length += bodyRing(l.body, l.ring ?? 1);
+  return l.delay + length;
+}
+
+/** How fast a recording plays (Pitch 440 Hz: as recorded) */
+const recRate = (l: SfxLayer) => clamp(l.freq / 440, 0.25, 4);
 
 /** How long the dry sound lasts, seconds (a loop: its length). */
 export function dryLength(s: SfxSound): number {
   if (s.loop) return s.loopLength;
-  return Math.max(0.005, ...s.layers.filter((l) => l.on).map(layerEnd));
+  return Math.max(0.005, ...s.layers.filter((l) => l.on).map((l) => layerEnd(l, !!s.modern)));
 }
 
 /** How much the echo and reverb add after the dry sound, seconds. */
@@ -790,6 +880,270 @@ function renderLayer(l: SfxLayer, s: SfxSound, length: number, sampleRate: numbe
   return out;
 }
 
+/**
+ * One layer through the modern engine, dry and mono (the stereo renderer pans it): band-limited
+ * square and saw, a recording as a source, natural (exponential) decays, and the struck body
+ * ringing on after the layer's own sound has stopped. `seedXor` gives the right channel of a wide
+ * layer its own noise.
+ */
+function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate: number, seedXor = 0): Float32Array {
+  const out = new Float32Array(length);
+  const noise = rng((l.seed ^ 0x9e3779b9 ^ seedXor) >>> 0);
+  const start = Math.round(l.delay * sampleRate);
+  let total = s.loop ? s.loopLength : l.attack + l.hold + l.decay;
+  const shift = 2 ** (s.pitch / 12);
+  const svf = new Svf();
+  const filtered = l.lowpass < 19999 || l.lpSweep !== 0 || l.bandpass || l.wobble > 0;
+  const rec = l.wave === 'rec' && l.rec ? recordingFor(l.rec, l.seed) : undefined;
+  if (l.wave === 'rec' && !rec) return out;
+  if (rec && !s.loop) total = Math.min(total, rec.samples.length / rec.sampleRate / (recRate(l) * shift));
+  const body = l.body ? new ModalBody(l.body, l.freq * shift, l.ring ?? 1, sampleRate, rng((l.seed * 7 + 3) >>> 0)) : null;
+  const bodyMix = l.body ? clamp(l.bodyMix ?? 0.7, 0, 1) : 0;
+  const ringFor = l.body && !s.loop ? bodyRing(l.body, l.ring ?? 1) : 0;
+  let phase = 0;
+  let modPhase = 0;
+  let recPos = 0;
+  const partials = new Float64Array(METAL_RATIOS.length);
+  let b0 = 0,
+    b1 = 0,
+    b2 = 0,
+    brown = 0,
+    pop = 0;
+  let hpIn = 0,
+    hpOut = 0;
+  const repeatEvery = l.repeat > 0 ? 1 / l.repeat : Infinity;
+  const steps = l.seq.length;
+  for (let i = start; i < length; i++) {
+    const t = (i - start) / sampleRate;
+    if (!s.loop && t > total + ringFor) break;
+    const sounding = s.loop || t <= total;
+    let dry = 0;
+    if (sounding) {
+      const x = Math.min(1, t / Math.max(1e-6, total));
+      const tr = l.repeat > 0 ? t % repeatEvery : t;
+      const span = l.repeat > 0 ? repeatEvery : total;
+      const xr = Math.min(1, tr / Math.max(1e-6, span));
+      let semis = l.slide * (l.curve > 0 ? 1 - Math.pow(1 - xr, 1 + l.curve * 4) : xr);
+      if (l.arp && t >= l.arpAt * total) semis += l.arp;
+      if (steps) {
+        const at = Math.floor(t / Math.max(0.005, l.seqStep));
+        semis += l.seq[s.loop ? at % steps : Math.min(steps - 1, at)];
+      }
+      if (l.vibDepth) semis += l.vibDepth * Math.sin(2 * Math.PI * l.vibRate * t);
+      const f = clamp(l.freq * shift * Math.pow(2, semis / 12), 5, sampleRate / 2.2);
+      const dt = f / sampleRate;
+      phase = (phase + dt) % 1;
+      let v: number;
+      switch (l.wave) {
+        case 'rec': {
+          // The recording at its speed (and the sound's pitch and slide), read between samples
+          const len = rec!.samples.length;
+          const p = s.loop ? recPos % len : recPos;
+          const k = Math.floor(p);
+          const a = rec!.samples[k] ?? 0;
+          const b = rec!.samples[s.loop ? (k + 1) % len : k + 1] ?? 0;
+          v = a + (b - a) * (p - k);
+          recPos += (rec!.sampleRate / sampleRate) * recRate(l) * shift * Math.pow(2, semis / 12);
+          break;
+        }
+        case 'square': {
+          v = phase < l.duty ? 1 : -1;
+          v += polyBlep(phase, dt) - polyBlep((phase - l.duty + 1) % 1, dt);
+          break;
+        }
+        case 'saw':
+          v = 2 * phase - 1 - polyBlep(phase, dt);
+          break;
+        case 'triangle':
+          v = phase < 0.5 ? 4 * phase - 1 : 3 - 4 * phase;
+          break;
+        case 'sine':
+          v = Math.sin(2 * Math.PI * phase);
+          break;
+        case 'fm': {
+          modPhase = (modPhase + (f * l.fmRatio) / sampleRate) % 1;
+          const index = l.fmIndex * (s.loop ? 1 : 1 - 0.7 * x);
+          v = Math.sin(2 * Math.PI * phase + index * Math.sin(2 * Math.PI * modPhase));
+          break;
+        }
+        case 'metal': {
+          v = 0;
+          for (let k = 0; k < partials.length; k++) {
+            const fk = f * METAL_RATIOS[k];
+            if (fk >= sampleRate / 2.2) continue;
+            partials[k] = (partials[k] + fk / sampleRate) % 1;
+            const fade = s.loop ? 1 : Math.exp(-t * (2 + k * 6));
+            v += METAL_LEVELS[k] * fade * Math.sin(2 * Math.PI * partials[k]);
+          }
+          v *= 0.6;
+          break;
+        }
+        case 'pink': {
+          const w = noise() * 2 - 1;
+          b0 = 0.99765 * b0 + w * 0.099046;
+          b1 = 0.963 * b1 + w * 0.2965164;
+          b2 = 0.57 * b2 + w * 1.0526913;
+          v = (b0 + b1 + b2 + w * 0.1848) * 0.25;
+          break;
+        }
+        case 'brown':
+          brown = (brown + 0.02 * (noise() * 2 - 1)) / 1.02;
+          v = brown * 3.5;
+          break;
+        case 'crackle':
+          if (noise() < f / sampleRate) pop = (noise() * 2 - 1) * (0.4 + 0.6 * noise());
+          v = pop;
+          pop *= 0.92;
+          break;
+        default:
+          // (The 8-bit noise has no place in a modern sound: plain white noise)
+          v = noise() * 2 - 1;
+      }
+      if (filtered) {
+        if ((i - start) % 8 === 0) {
+          const sweep = l.lpSweep * (s.loop ? 0 : x) + (l.wobble ? l.wobble * Math.sin(2 * Math.PI * l.wobbleRate * t) : 0);
+          svf.set(l.lowpass * Math.pow(2, sweep), l.reso, sampleRate);
+        }
+        v = svf.run(v, l.bandpass);
+      }
+      if (l.highpass > 20) {
+        const rc = 1 / (2 * Math.PI * l.highpass);
+        const hpA = rc / (rc + 1 / sampleRate);
+        hpOut = hpA * (hpOut + v - hpIn);
+        hpIn = v;
+        v = hpOut;
+      }
+      if (l.crush > 0) {
+        const levels = Math.pow(2, Math.round(16 - l.crush * 14)) / 2;
+        v = Math.round(v * levels) / levels;
+      }
+      // Envelope: attack, hold (punch fading over it), then a natural decay to -60 dB
+      let env: number;
+      if (s.loop) env = 1;
+      else if (t < l.attack) env = t / l.attack;
+      else if (t < l.attack + l.hold) env = 1 + l.punch * (1 - (t - l.attack) / Math.max(1e-6, l.hold));
+      else {
+        const u = Math.min(1, (t - l.attack - l.hold) / Math.max(1e-6, l.decay));
+        // (Exponential, eased to zero over the last tenth so it ends without a step)
+        env = Math.exp(-6.9 * u) * Math.min(1, (1 - u) * 10);
+      }
+      // A recording ends on its own: a short fade where the layer cuts it off early
+      if (rec && !s.loop) env *= Math.min(1, (total - t) * 200);
+      if (l.trem) env *= 1 - l.trem * (0.5 + 0.5 * Math.sin(2 * Math.PI * l.tremRate * t));
+      dry = v * env * l.gain;
+    }
+    out[i] = body ? dry * (1 - bodyMix) + body.run(dry) * bodyMix * 2 : dry;
+  }
+  return out;
+}
+
+/** The sound through the modern engine: [left, right], dry (the space is added after). */
+function modernDry(s: SfxSound, length: number, sampleRate: number, loop: boolean): [Float32Array, Float32Array] {
+  const L = new Float32Array(length);
+  const R = new Float32Array(length);
+  for (const l of s.layers.filter((x) => x.on)) {
+    const layer = loop ? { ...l, delay: 0 } : l;
+    const a = renderLayerModern(layer, s, length, sampleRate);
+    const width = clamp(l.width ?? 0, 0, 1);
+    const b = width > 0 ? renderLayerModern(layer, s, length, sampleRate, 0x5bd1e995) : a;
+    const p0 = clamp(l.pan ?? 0, -1, 1);
+    const p1 = clamp(l.panTo ?? p0, -1, 1);
+    const start = Math.round(layer.delay * sampleRate);
+    const span = Math.max(1, Math.round((layerEnd(layer, true) - layer.delay) * sampleRate));
+    for (let i = start; i < length; i++) {
+      const va = a[i];
+      const vb = b[i];
+      if (va === 0 && vb === 0) continue;
+      const p = loop ? p0 : p0 + (p1 - p0) * Math.min(1, (i - start) / span);
+      // Equal-power pan; a wide layer's right side its own noise
+      const angle = ((p + 1) * Math.PI) / 4;
+      L[i] += va * Math.cos(angle) * Math.SQRT2;
+      R[i] += (va * (1 - width) + vb * width) * Math.sin(angle) * Math.SQRT2;
+    }
+  }
+  return [L, R];
+}
+
+/** Soft clipping over a channel, as Drive does in the classic engine */
+function driveChannel(x: Float32Array, drive: number): void {
+  if (drive <= 0) return;
+  const g = 1 + drive * 8;
+  const norm = Math.tanh(g);
+  for (let i = 0; i < x.length; i++) x[i] = Math.tanh(x[i] * g) / norm;
+}
+
+/** The modern engine's render: stereo, trimmed, faded and levelled as renderSfx does mono. */
+function renderModern(s: SfxSound, sampleRate: number): [Float32Array, Float32Array] {
+  let L: Float32Array;
+  let R: Float32Array;
+  const space = { echo: s.echo, echoTime: s.echoTime, echoFeedback: s.echoFeedback, reverb: s.reverb, room: s.room };
+  if (s.loop) {
+    const len = Math.max(1, Math.round(s.loopLength * sampleRate));
+    const xf = Math.min(Math.round(len / 4), Math.round(0.3 * sampleRate));
+    const [dl, dr] = modernDry(s, len + xf, sampleRate, true);
+    const fold = (dry: Float32Array) => {
+      const loop = dry.slice(0, len);
+      for (let i = 0; i < xf; i++) {
+        const a = i / xf;
+        loop[i] = dry[len + i] * Math.cos((a * Math.PI) / 2) + dry[i] * Math.sin((a * Math.PI) / 2);
+      }
+      const twice = new Float32Array(len * 2);
+      twice.set(loop, 0);
+      twice.set(loop, len);
+      driveChannel(twice, s.drive);
+      return twice;
+    };
+    const tl = fold(dl);
+    const tr = fold(dr);
+    stereoSpace(tl, tr, space, sampleRate);
+    L = tl.slice(len);
+    R = tr.slice(len);
+  } else {
+    const length = Math.max(1, Math.round(sfxLength(s) * sampleRate));
+    [L, R] = modernDry(s, length, sampleRate, false);
+    driveChannel(L, s.drive);
+    driveChannel(R, s.drive);
+    stereoSpace(L, R, space, sampleRate);
+    let peak = 0;
+    for (let i = 0; i < L.length; i++) peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
+    let end = L.length;
+    while (end > 1 && Math.abs(L[end - 1]) < peak * 0.002 && Math.abs(R[end - 1]) < peak * 0.002) end--;
+    const keep = Math.min(L.length, end + Math.round(0.005 * sampleRate));
+    L = L.slice(0, keep);
+    R = R.slice(0, keep);
+    const fade = Math.min(keep >> 1, Math.round(0.002 * sampleRate));
+    for (const x of [L, R])
+      for (let i = 0; i < fade; i++) {
+        x[i] *= i / fade;
+        x[x.length - 1 - i] *= i / fade;
+      }
+  }
+  // Level: the loudest 50 ms of both channels to the level's loudness, the peak under the ceiling
+  const mid = new Float32Array(L.length);
+  let peak = 0;
+  for (let i = 0; i < L.length; i++) {
+    mid[i] = Math.sqrt((L[i] * L[i] + R[i] * R[i]) / 2);
+    peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
+  }
+  const rms = loudestRms(mid, sampleRate);
+  if (peak > 0 && rms > 0) {
+    const gain = Math.min(10 ** (LEVEL_DB[s.level] / 20) / rms, SFX_CEILING / peak) * clamp(s.volume, 0, 1);
+    for (let i = 0; i < L.length; i++) {
+      L[i] *= gain;
+      R[i] *= gain;
+    }
+  }
+  return [L, R];
+}
+
+/**
+ * The sound as channels: a classic sound mono ([one]), a modern one stereo ([left, right]). What
+ * exports use; renderSfx is the mono mix of it.
+ */
+export function renderSfxStereo(s: SfxSound, sampleRate = 44100): Float32Array[] {
+  return s.modern ? renderModern(s, sampleRate) : [renderSfx(s, sampleRate)];
+}
+
 /** Feedback echo and a small Freeverb-style reverb, in place over `x` (whose end is room for the tail). */
 function effects(x: Float32Array, s: SfxSound, sampleRate: number): void {
   if (s.drive > 0) {
@@ -856,6 +1210,12 @@ function loudestRms(x: Float32Array, sampleRate: number): number {
  * and the ends faded so it never clicks. A loop renders exactly `loopLength` long and joins up.
  */
 export function renderSfx(s: SfxSound, sampleRate = 44100): Float32Array {
+  if (s.modern) {
+    const [L, R] = renderModern(s, sampleRate);
+    const mono = new Float32Array(L.length);
+    for (let i = 0; i < L.length; i++) mono[i] = (L[i] + R[i]) / 2;
+    return mono;
+  }
   const layers = s.layers.filter((l) => l.on);
   let out: Float32Array;
   if (s.loop) {
@@ -934,6 +1294,50 @@ export function sfxWav(samples: Float32Array, sampleRate = 44100, loop = false):
   return bytes;
 }
 
+/** A WAV of `channels` (mono or stereo) at `bits` (16 or 24); a loop gets a 'smpl' chunk marking the whole file. */
+export function sfxWavChannels(channels: Float32Array[], sampleRate = 44100, loop = false, bits: 16 | 24 = 24): Uint8Array {
+  const n = channels[0]?.length ?? 0;
+  const ch = channels.length;
+  const bytesPer = bits / 8;
+  const smpl = loop ? loopChunk(sampleRate, 0, n) : new Uint8Array(0);
+  const data = n * ch * bytesPer;
+  const bytes = new Uint8Array(44 + data + smpl.length);
+  const view = new DataView(bytes.buffer);
+  const text = (at: number, t: string) => [...t].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
+  text(0, 'RIFF');
+  view.setUint32(4, 36 + data + smpl.length, true);
+  text(8, 'WAVE');
+  text(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, ch, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * ch * bytesPer, true);
+  view.setUint16(32, ch * bytesPer, true);
+  view.setUint16(34, bits, true);
+  text(36, 'data');
+  view.setUint32(40, data, true);
+  const full = bits === 24 ? 8388607 : 32767;
+  let at = 44;
+  for (let i = 0; i < n; i++)
+    for (let c = 0; c < ch; c++) {
+      const v = Math.round(clamp(channels[c][i], -1, 1) * full);
+      if (bits === 24) {
+        view.setUint8(at, v & 0xff);
+        view.setUint8(at + 1, (v >> 8) & 0xff);
+        view.setUint8(at + 2, (v >> 16) & 0xff);
+      } else view.setInt16(at, v, true);
+      at += bytesPer;
+    }
+  bytes.set(smpl, 44 + data);
+  return bytes;
+}
+
+/** The file for a sound: a classic one 16-bit mono, as before; a modern one 24-bit stereo. */
+export function sfxFile(s: SfxSound, sampleRate = 44100): Uint8Array {
+  return s.modern ? sfxWavChannels(renderSfxStereo(s, sampleRate), sampleRate, s.loop, 24) : sfxWav(renderSfx(s, sampleRate), sampleRate, s.loop);
+}
+
 /** A file name for games: lower case, words joined by underscores ("ui_open_menu_02"). */
 export function sfxFileName(name: string, variation?: number): string {
   const base =
@@ -987,6 +1391,11 @@ export function parseSfx(v: unknown): SfxSound | null {
       delay: num(l.delay, 0, 0, 5),
       on: l.on !== false,
       seed: num(l.seed, 1, 0, 2 ** 32 - 1) >>> 0,
+      ...(typeof l.rec === 'string' && /^[a-z0-9-]{1,40}$/.test(l.rec) ? { rec: l.rec } : {}),
+      ...(SFX_MATERIALS.includes(l.body as SfxMaterial) ? { body: l.body as SfxMaterial, ring: num(l.ring, 1, 0.2, 3), bodyMix: num(l.bodyMix, 0.7, 0, 1) } : {}),
+      ...(typeof l.pan === 'number' ? { pan: num(l.pan, 0, -1, 1) } : {}),
+      ...(typeof l.panTo === 'number' ? { panTo: num(l.panTo, 0, -1, 1) } : {}),
+      ...(typeof l.width === 'number' ? { width: num(l.width, 0, 0, 1) } : {}),
     };
   };
   // A sound from before layers: one layer's settings at the top
@@ -1010,5 +1419,6 @@ export function parseSfx(v: unknown): SfxSound | null {
     loop: o.loop === true,
     loopLength: num(o.loopLength, 2, 0.25, 30),
     seed: num(o.seed, 1, 0, 2 ** 32 - 1) >>> 0,
+    ...(o.modern === true ? { modern: true } : {}),
   };
 }

@@ -18,7 +18,8 @@ import { exportCeilingDbtp } from './effects/limiter';
 import { measureLoudness, normalizeGainDb } from './loudness';
 import { targetById } from './loudnessTarget';
 import { renderStinger } from './stingerPlayer';
-import { generateSfx, renderSfx } from './sfx/sfxSynth';
+import { generateSfx, renderSfxStereo } from './sfx/sfxSynth';
+import { ensureSfxRecordings } from './sfx/sfxRecordings';
 import { createZip, type ZipEntry } from './zip';
 import { barToSeconds, FOUR_FOUR, type MeterMap } from './tempoMap';
 import { songEnd, songSections } from '../store/cutToLength';
@@ -216,10 +217,12 @@ export async function buildChannelKit(song: GameKitSong, opts: { target: string;
 
   // The whoosh: a little under the target (a transition shouldn't jump out)
   tick('Making the whoosh');
-  const whoosh = [renderSfx(generateSfx('whoosh', 7), KIT_RATE)];
+  const whooshSound = generateSfx('whoosh', 7);
+  await ensureSfxRecordings(whooshSound);
+  const whoosh = renderSfxStereo(whooshSound, KIT_RATE);
   const wr = await measureLoudness(whoosh, KIT_RATE, opts.signal);
   const wg = Math.pow(10, normalizeGainDb(wr, targetById(opts.target).lufs - 4, ceiling).gainDb / 20);
-  for (let i = 0; i < whoosh[0].length; i++) whoosh[0][i] *= wg;
+  for (const ch of whoosh) for (let i = 0; i < ch.length; i++) ch[i] *= wg;
   files.push({ name: 'Transition whoosh.wav', data: await encodeAudio(whoosh, KIT_RATE, 'wav', { bitDepth: 24 }) });
 
   tick('Packing the .zip');

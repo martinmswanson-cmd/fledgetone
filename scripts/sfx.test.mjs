@@ -17,6 +17,25 @@ register(
 
 const { generateSfx, renderSfx, sfxLength, sfxWav, snapToScale, mutateSfx, varySfx, tuneSfx, parseSfx, fromParams, sfxFileName, SFX_CATEGORIES, SFX_GROUPS, SFX_SETS, SFX_LABELS, SFX_CEILING } = await import('../src/audio/sfx/sfxSynth.ts');
 const { detectKey } = await import('../src/store/songKey.ts');
+const { setSfxRecordings } = await import('../src/audio/sfx/sfxModern.ts');
+const { SFX_RECORDING_SETS } = await import('../src/audio/sfx/sfxRecordingSets.ts');
+
+// Stand-ins for the recordings (the app loads the real ones): a decaying noise burst per take, as
+// long as the real one; a loop's take steady noise
+const fakeTakes = new Map();
+for (const [group, set] of Object.entries(SFX_RECORDING_SETS)) {
+  set.seconds.forEach((sec, take) => {
+    const n = Math.round(sec * 48000);
+    const x = new Float32Array(n);
+    let seed = (take + 1) * 2654435761 + group.length;
+    for (let i = 0; i < n; i++) {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      x[i] = ((seed / 2 ** 32) * 2 - 1) * (set.loop ? 0.5 : Math.exp((-6 * i) / n));
+    }
+    fakeTakes.set(`${group}/${take}`, { samples: x, sampleRate: 48000 });
+  });
+}
+setSfxRecordings((g, t) => fakeTakes.get(`${g}/${t}`), (g) => SFX_RECORDING_SETS[g]?.takes ?? 0);
 
 const peakOf = (x) => x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
 
@@ -128,4 +147,56 @@ test('key detection from notes', () => {
   const g = detectKey([clip('t', ['G2', 'B3', 'D4', 'G4', 'C3', 'E4', 'G4', 'D3', 'F#4', 'A4', 'G2', 'B3', 'D4'])], tracks);
   assert.equal(g.name, 'G major');
   assert.equal(detectKey([clip('d', ['C1'])], tracks), null);
+});
+
+test('sounds made before the modern engine (and every classic sound) render exactly as they did', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { createHash } = await import('node:crypto');
+  const fixtures = JSON.parse(readFileSync(new URL('./fixtures/sfx-classic.json', import.meta.url), 'utf8'));
+  assert.ok(fixtures.length > 100);
+  for (const f of fixtures) {
+    const x = renderSfx(f.sound, 22050);
+    const h = createHash('sha256').update(Buffer.from(Int32Array.from(x, (v) => Math.round(v * 1e5)).buffer)).digest('hex').slice(0, 16);
+    assert.equal(`${f.category} ${x.length} ${h}`, `${f.category} ${f.length} ${f.hash}`);
+  }
+});
+
+test('the modern engine: every kind but Retro is modern, renders stereo, joins its loops on both sides', async () => {
+  const { renderSfxStereo, sfxWavChannels } = await import('../src/audio/sfx/sfxSynth.ts');
+  const retro = new Set(SFX_GROUPS.find((g) => g.name === 'Retro').kinds);
+  for (const c of SFX_CATEGORIES) {
+    const s = generateSfx(c, 4);
+    assert.equal(!!s.modern, !retro.has(c), c);
+    const ch = renderSfxStereo(s, 32000);
+    assert.equal(ch.length, s.modern ? 2 : 1, c);
+    for (const x of ch) {
+      assert.ok(x.every(Number.isFinite), `${c} finite`);
+      assert.ok(peakOf(x) <= SFX_CEILING + 1e-6, `${c} peak`);
+    }
+    if (s.modern && s.loop) {
+      for (const x of ch) {
+        let typical = 0;
+        for (let i = 1; i < x.length; i++) typical = Math.max(typical, Math.abs(x[i] - x[i - 1]));
+        assert.ok(Math.abs(x[0] - x[x.length - 1]) <= typical + 1e-6, `${c} loop joins`);
+      }
+    }
+  }
+  // A stereo 24-bit file
+  const wav = sfxWavChannels(renderSfxStereo(generateSfx('gem', 2), 48000), 48000, false, 24);
+  const view = new DataView(wav.buffer);
+  assert.equal(view.getUint16(22, true), 2);
+  assert.equal(view.getUint16(34, true), 24);
+});
+
+test('a struck body rings on after the strike; a moving layer moves', async () => {
+  const { renderSfxStereo } = await import('../src/audio/sfx/sfxSynth.ts');
+  const strike = (body) => ({ ...generateSfx('uiNotify', 1), layers: [{ ...generateSfx('uiNotify', 1).layers[0], wave: 'pink', hold: 0, decay: 0.005, freq: 800, delay: 0, body: undefined, ...(body ? { body: 'metal', ring: 1, bodyMix: 0.9 } : {}) }], reverb: 0, echo: 0 });
+  assert.ok(renderSfxStereo(strike(true), 32000)[0].length > 10 * renderSfxStereo(strike(false), 32000)[0].length);
+  const pass = { ...generateSfx('uiSwipe', 1), reverb: 0 };
+  pass.layers = pass.layers.map((l) => ({ ...l, width: 0, pan: -1, panTo: 1 }));
+  const [L, R] = renderSfxStereo(pass, 32000);
+  const energy = (x, from, to) => x.slice(from, to).reduce((e, v) => e + v * v, 0);
+  const half = L.length >> 1;
+  assert.ok(energy(L, 0, half) > energy(R, 0, half));
+  assert.ok(energy(R, half, L.length) > energy(L, half, L.length));
 });

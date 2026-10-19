@@ -22,6 +22,7 @@ import {
   mutateSfx,
   parseSfx,
   renderSfx,
+  renderSfxStereo,
   SFX_GROUPS,
   SFX_LABELS,
   SFX_LEVELS,
@@ -30,6 +31,7 @@ import {
   SFX_WAVES,
   sfxFileName,
   sfxWav,
+  sfxWavChannels,
   tuneSfx,
   UNPITCHED,
   varySfx,
@@ -38,6 +40,9 @@ import {
   type SfxSetId,
   type SfxSound,
 } from '../../audio/sfx/sfxSynth';
+import { SFX_MATERIAL_LABELS, SFX_MATERIALS } from '../../audio/sfx/sfxModern';
+import { ensureSfxRecordings, sfxRecordingsReady } from '../../audio/sfx/sfxRecordings';
+import { SFX_RECORDING_SETS } from '../../audio/sfx/sfxRecordingSets';
 
 interface Made {
   name: string;
@@ -191,12 +196,13 @@ function stop() {
   playListeners.forEach((l) => l());
 }
 
-/** Play rendered samples now (a loop goes round until stopped), stopping whatever was playing. */
-async function audition(samples: Float32Array, sampleRate: number, loop = false, when = 0) {
+/** Play rendered samples (mono, or stereo channels) now (a loop goes round until stopped), stopping whatever was playing. */
+async function audition(samples: Float32Array | Float32Array[], sampleRate: number, loop = false, when = 0) {
   await initAudio();
   const ctx = Tone.getContext().rawContext as AudioContext;
-  const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-  buffer.copyToChannel(samples as Float32Array<ArrayBuffer>, 0);
+  const channels = Array.isArray(samples) ? samples : [samples];
+  const buffer = ctx.createBuffer(channels.length, channels[0].length, sampleRate);
+  channels.forEach((x, c) => buffer.copyToChannel(x as Float32Array<ArrayBuffer>, c));
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = loop;
@@ -214,16 +220,18 @@ async function audition(samples: Float32Array, sampleRate: number, loop = false,
 }
 
 const PREVIEW_RATE = 44100;
-const hear = (s: SfxSound) => void audition(renderSfx(s, PREVIEW_RATE), PREVIEW_RATE, s.loop);
+/** Play a sound (once the recordings it layers have loaded) */
+const hear = (s: SfxSound) => void ensureSfxRecordings(s).then(() => audition(renderSfxStereo(s, PREVIEW_RATE), PREVIEW_RATE, s.loop));
 
 /** Each variation in turn, a moment apart. */
 async function hearVariations(s: SfxSound, count: number, spread: number) {
   stop();
+  await ensureSfxRecordings(s);
   let at = 0;
   for (let i = 0; i < count; i++) {
-    const x = renderSfx({ ...varySfx(s, i, spread), loop: false }, PREVIEW_RATE);
+    const x = renderSfxStereo({ ...varySfx(s, i, spread), loop: false }, PREVIEW_RATE);
     await audition(x, PREVIEW_RATE, false, at + 0.01);
-    at += Math.min(1.2, x.length / PREVIEW_RATE) + 0.25;
+    at += Math.min(1.2, x[0].length / PREVIEW_RATE) + 0.25;
   }
 }
 
@@ -234,13 +242,18 @@ async function filesOf(made: Made, key: SongKey | null, tune: boolean, exp: Expo
   const sound = tuned(made.sound, key, tune);
   const count = exp.variations;
   const out: ZipEntry[] = [];
+  await ensureSfxRecordings(sound);
   for (let i = 0; i < count; i++) {
-    const samples = renderSfx(varySfx(sound, i, exp.spread), exp.rate);
+    // A classic sound a 16-bit mono WAV as before; a modern one stereo, 24-bit
+    const channels = renderSfxStereo(varySfx(sound, i, exp.spread), exp.rate);
     const name = `${folder}${sfxFileName(made.name, count > 1 ? i + 1 : undefined)}.${exp.format}`;
     if (exp.format === 'ogg') {
       const { encodeAudio } = await import('../../audio/encoders');
-      out.push({ name, data: await encodeAudio([samples], exp.rate, 'ogg', { bitDepth: 16 }) });
-    } else out.push({ name, data: new Blob([sfxWav(samples, exp.rate, sound.loop) as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }) });
+      out.push({ name, data: await encodeAudio(channels, exp.rate, 'ogg', { bitDepth: 16 }) });
+    } else {
+      const wav = sound.modern ? sfxWavChannels(channels, exp.rate, sound.loop, 24) : sfxWav(channels[0], exp.rate, sound.loop);
+      out.push({ name, data: new Blob([wav as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }) });
+    }
   }
   return out;
 }
@@ -332,7 +345,7 @@ const semis = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 10) / 10} st`;
 const hz = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)} kHz` : `${Math.round(v)} Hz`);
 
 /** A sound's layer: its source, pitch movement, filter and envelope. */
-const LayerControls: React.FC<{ l: SfxLayer; i: number; count: number }> = ({ l, i, count }) => {
+const LayerControls: React.FC<{ l: SfxLayer; i: number; count: number; modern: boolean }> = ({ l, i, count, modern }) => {
   const c = (patch: Partial<SfxLayer>) => editLayer(i, patch);
   // (The panel remounts this when the notes change from outside: see its key)
   const [notes, setNotes] = useState(l.seq.join(' '));
@@ -341,8 +354,8 @@ const LayerControls: React.FC<{ l: SfxLayer; i: number; count: number }> = ({ l,
     <div className="flex flex-col gap-1.5">
       <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Source">
         <span className="w-16 shrink-0 text-[10px] font-mono uppercase">Source</span>
-        {SFX_WAVES.map((w) => (
-          <Chip key={w} on={l.wave === w} onClick={() => c({ wave: w })}>
+        {SFX_WAVES.filter((w) => modern || w !== 'rec').map((w) => (
+          <Chip key={w} on={l.wave === w} onClick={() => c(w === 'rec' ? { wave: w, rec: l.rec ?? 'cloth', freq: 440, hold: Math.max(l.hold, 2) } : { wave: w })} title={w === 'rec' ? 'A recording of a real sound (public domain), loaded when used' : undefined}>
             {SFX_WAVE_LABELS[w]}
           </Chip>
         ))}
@@ -362,9 +375,25 @@ const LayerControls: React.FC<{ l: SfxLayer; i: number; count: number }> = ({ l,
           )}
         </span>
       </div>
+      {l.wave === 'rec' && (
+        <label className="flex items-center gap-2 text-[10px] font-mono" title="Each variation of the sound plays a different take">
+          <span className="w-16 shrink-0 uppercase text-forge-muted">Recording</span>
+          <select value={l.rec ?? ''} onChange={(e) => c({ rec: e.target.value })} className="h-6 min-w-0 bg-forge-bg border border-forge-border rounded px-1 text-forge-text" aria-label="Recording">
+            {Object.entries(SFX_RECORDING_SETS).map(([id, set]) => (
+              <option key={id} value={id}>
+                {set.label} ({set.takes} {set.takes === 1 ? 'take' : 'takes'})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5">
         <div className="flex flex-col gap-1.5">
+          {l.wave === 'rec' ? (
+            <Row label="Speed" value={Math.log2(l.freq / 440)} min={-2} max={2} step={0.01} show={(v) => `×${(2 ** v).toFixed(2)}`} onChange={(v) => c({ freq: 440 * 2 ** v })} title="Faster is higher and shorter, as a tape played fast" />
+          ) : (
           <Row label={l.wave === 'crackle' ? 'Pops' : pitched ? 'Pitch' : 'Rate'} value={Math.log2(l.freq)} min={Math.log2(20)} max={Math.log2(8000)} step={0.01} show={(v) => (l.wave === 'crackle' ? `${Math.round(2 ** v)}/s` : hz(2 ** v))} onChange={(v) => c({ freq: 2 ** v })} />
+          )}
           <Row label="Slide" value={l.slide} min={-48} max={48} step={1} show={semis} onChange={(slide) => c({ slide })} title="Pitch change over the sound" />
           <Row label="Curve" value={l.curve} min={0} max={1} step={0.01} show={pct} onChange={(curve) => c({ curve })} title="0: an even glide; up: most of it at the start" />
           <Row label="Jump" value={l.arp} min={-12} max={24} step={1} show={(v) => (v ? semis(v) : 'off')} onChange={(arp) => c({ arp })} title="A jump in pitch partway through, as in a coin" />
@@ -428,6 +457,30 @@ const LayerControls: React.FC<{ l: SfxLayer; i: number; count: number }> = ({ l,
           <Row label="Wob rate" value={l.wobbleRate} min={0.05} max={20} step={0.05} show={(v) => `${v} Hz`} onChange={(wobbleRate) => c({ wobbleRate })} />
           <Row label="High-pass" value={Math.log2(l.highpass)} min={Math.log2(20)} max={Math.log2(8000)} step={0.01} show={(v) => (2 ** v <= 21 ? 'off' : hz(2 ** v))} onChange={(v) => c({ highpass: 2 ** v })} />
           <Row label="Crush" value={l.crush} min={0} max={1} step={0.01} show={(v) => (v ? `${Math.round(16 - v * 14)}-bit` : 'off')} onChange={(crush) => c({ crush })} />
+          {modern && (
+            <>
+              <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Body" title="What the layer strikes: an object of this material ringing at the layer's pitch">
+                <span className="w-16 shrink-0 text-[10px] font-mono uppercase">Body</span>
+                <Chip on={!l.body} onClick={() => c({ body: undefined })}>
+                  none
+                </Chip>
+                {SFX_MATERIALS.map((m) => (
+                  <Chip key={m} on={l.body === m} onClick={() => c({ body: m, ring: l.ring ?? 1, bodyMix: l.bodyMix ?? 0.7 })}>
+                    {SFX_MATERIAL_LABELS[m].toLowerCase()}
+                  </Chip>
+                ))}
+              </div>
+              {l.body && (
+                <>
+                  <Row label="Ring" value={l.ring ?? 1} min={0.2} max={3} step={0.05} show={(v) => `×${v.toFixed(2)}`} onChange={(ring) => c({ ring })} title="How long the body rings" />
+                  <Row label="Body mix" value={l.bodyMix ?? 0.7} min={0} max={1} step={0.01} show={pct} onChange={(bodyMix) => c({ bodyMix })} title="How much of the ringing body you hear, against the strike itself" />
+                </>
+              )}
+              <Row label="Pan" value={l.pan ?? 0} min={-1} max={1} step={0.01} show={(v) => (Math.abs(v) < 0.01 ? 'centre' : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? 'L' : 'R'}`)} onChange={(pan) => c({ pan, ...(l.panTo === undefined || l.panTo === l.pan ? { panTo: pan } : {}) })} />
+              <Row label="Pan to" value={l.panTo ?? l.pan ?? 0} min={-1} max={1} step={0.01} show={(v) => (Math.abs(v) < 0.01 ? 'centre' : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? 'L' : 'R'}`)} onChange={(panTo) => c({ panTo })} title="Where it ends up: a sound moving past" />
+              <Row label="Width" value={l.width ?? 0} min={0} max={1} step={0.01} show={(v) => (v ? pct(v) : 'narrow')} onChange={(width) => c({ width })} title="Noise spread across both sides" />
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -438,6 +491,17 @@ const LayerControls: React.FC<{ l: SfxLayer; i: number; count: number }> = ({ l,
 const FinishControls: React.FC<{ s: SfxSound }> = ({ s }) => (
   <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-1.5">
     <div className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-1" role="group" aria-label="Engine">
+        <span className="w-16 shrink-0 text-[10px] font-mono uppercase" title="Modern: clean waves, natural decays, struck bodies, recordings and stereo. Classic: the old 8-bit-style engine, mono">
+          Engine
+        </span>
+        <Chip on={!!s.modern} onClick={() => editSound({ modern: true })}>
+          modern
+        </Chip>
+        <Chip on={!s.modern} onClick={() => editSound({ modern: false })}>
+          classic
+        </Chip>
+      </div>
       <Row label="Pitch" value={s.pitch} min={-24} max={24} step={0.5} show={semis} onChange={(pitch) => editSound({ pitch })} title="Every layer up or down" />
       <Row label="Drive" value={s.drive} min={0} max={1} step={0.01} show={(v) => (v ? pct(v) : 'off')} onChange={(drive) => editSound({ drive })} title="Soft clipping: grit and weight" />
       <div className="flex items-center gap-1" role="group" aria-label="Loudness">
@@ -526,7 +590,18 @@ const SoundMaker: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
   const s = current.sound;
   const heard = useMemo(() => tuned(s, keyOf, tune), [s, keyOf, tune]);
   const deferred = useDeferredValue(heard);
-  const samples = useMemo(() => renderSfx(deferred, PREVIEW_RATE), [deferred]);
+  // (Drawn again once the recordings the sound layers have loaded)
+  const [arrived, setArrived] = useState(0);
+  useEffect(() => {
+    if (sfxRecordingsReady(deferred)) return;
+    let live = true;
+    void ensureSfxRecordings(deferred).then(() => live && setArrived((n) => n + 1));
+    return () => {
+      live = false;
+    };
+  }, [deferred]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const samples = useMemo(() => renderSfx(deferred, PREVIEW_RATE), [deferred, arrived]);
   const isPlaying = usePlaying();
   const [notice, setNotice] = useState('');
   const kinds = SFX_GROUPS.find((g) => g.name === group)?.kinds ?? [];
@@ -544,7 +619,9 @@ const SoundMaker: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
     const t = useTimelineStore.getState();
     const selected = t.tracks.find((x) => x.id === t.selectedTrackId);
     const target = selected && isAudioKind(selected.instrumentKey) ? selected.id : null;
-    const file = new File([sfxWav(renderSfx(heard, 44100), 44100) as Uint8Array<ArrayBuffer>], `${current.name.trim() || 'Sound effect'}.wav`, { type: 'audio/wav' });
+    await ensureSfxRecordings(heard);
+    const wav = heard.modern ? sfxWavChannels(renderSfxStereo(heard, 48000), 48000, false, 24) : sfxWav(renderSfx(heard, 44100), 44100);
+    const file = new File([wav as Uint8Array<ArrayBuffer>], `${current.name.trim() || 'Sound effect'}.wav`, { type: 'audio/wav' });
     await dropAudioFiles(target, t.playheadPosition, [file]);
     setNotice(`Added "${current.name}" at the playhead${target ? ` on ${selected!.name}` : ' on a new Audio track'}.`);
   };
@@ -673,7 +750,7 @@ const SoundMaker: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
             </button>
           )}
         </div>
-        <LayerControls key={`${layer}-${s.layers.length}-${l.seq.join(',')}`} l={l} i={Math.min(layer, s.layers.length - 1)} count={s.layers.length} />
+        <LayerControls key={`${layer}-${s.layers.length}-${l.seq.join(',')}`} l={l} i={Math.min(layer, s.layers.length - 1)} count={s.layers.length} modern={!!s.modern} />
       </section>
 
       <section aria-label="Finish" className="flex flex-col gap-2 rounded-lg border border-forge-border p-2.5">
@@ -811,11 +888,12 @@ const SetMaker: React.FC<{ keyOf: SongKey | null }> = ({ keyOf }) => {
               type="button"
               onClick={async () => {
                 stop();
+                await ensureSfxRecordings(set.map((m) => m.sound));
                 let at = 0;
                 for (const m of set) {
-                  const x = renderSfx({ ...tuned(m.sound, keyOf, tune), loop: false, loopLength: Math.min(1.5, m.sound.loopLength) }, PREVIEW_RATE);
+                  const x = renderSfxStereo({ ...tuned(m.sound, keyOf, tune), loop: false, loopLength: Math.min(1.5, m.sound.loopLength) }, PREVIEW_RATE);
                   await audition(x, PREVIEW_RATE, false, at + 0.01);
-                  at += Math.min(1.5, x.length / PREVIEW_RATE) + 0.3;
+                  at += Math.min(1.5, x[0].length / PREVIEW_RATE) + 0.3;
                 }
               }}
               className={button}

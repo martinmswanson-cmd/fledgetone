@@ -4,7 +4,8 @@ import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLic
 import { defaultCurve, groupsInUse, type IntensityCurve } from '../store/intensity';
 import { renderStinger } from './stingerPlayer';
 import { createZip, type ZipEntry } from './zip';
-import { renderSfx, sfxFileName, varySfx } from './sfx/sfxSynth';
+import { renderSfxStereo, sfxFileName, varySfx } from './sfx/sfxSynth';
+import { ensureSfxRecordings } from './sfx/sfxRecordings';
 import type { GameSfx } from '../store/gameSfx';
 import { applyCostume, type Costume, type StateOptions } from '../store/costumes';
 import { manifestParam, type GameParam } from '../store/gameParams';
@@ -328,17 +329,20 @@ export async function buildGameKitParts(
     transitions.push(entry);
   }
 
-  // Sound effects: every variation as a file (mono, levelled like the maker makes them)
+  // Sound effects: every variation as a file (levelled like the maker makes them: a classic sound
+  // 16-bit mono, a modern one 24-bit stereo), after the recordings they layer have loaded
   const sfx: NonNullable<AudioManifest['sfx']> = [];
+  await ensureSfxRecordings(gameSfx.map((g) => g.sound));
   for (const g of gameSfx) {
     tick(`sound effect ${g.name}`);
     const variants = Math.max(1, g.variations);
     const names: string[] = [];
     let seconds = 0;
     for (let i = 0; i < variants; i++) {
-      const samples = renderSfx(varySfx(g.sound, i, g.spread), sampleRate);
+      const channels = renderSfxStereo(varySfx(g.sound, i, g.spread), sampleRate);
+      const samples = channels[0];
       const file = `sfx/${g.name}${variants > 1 ? `_${String(i + 1).padStart(2, '0')}` : ''}.wav`;
-      files.push({ name: file, data: encodeChannels([samples], sampleRate, 16, [], g.sound.loop ? { start: 0, end: samples.length } : undefined) });
+      files.push({ name: file, data: encodeChannels(channels, sampleRate, g.sound.modern ? 24 : 16, [], g.sound.loop ? { start: 0, end: samples.length } : undefined) });
       names.push(file);
       seconds = Math.max(seconds, samples.length / sampleRate);
       if (i % 2 === 1) await new Promise((r) => setTimeout(r, 0));

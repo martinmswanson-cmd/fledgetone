@@ -16,7 +16,8 @@ import { gameKitSong } from '../timeline/gameKitSong';
 import { AdaptiveMusic } from '../../gameKit/adaptive-music.js';
 import { initAudio, liveMix } from '../../audio/engine';
 import { showToast } from '../timeline/toastStore';
-import { generateSfx, renderSfx, varySfx, type SfxCategory } from '../../audio/sfx/sfxSynth';
+import { generateSfx, renderSfxStereo, varySfx, type SfxCategory } from '../../audio/sfx/sfxSynth';
+import { ensureSfxRecordings } from '../../audio/sfx/sfxRecordings';
 import { guessTryOutMap, intensityFor, TRY_OUT_MOMENTS, type TryOutMap } from '../../store/tryOut';
 import type { TryOutScene } from './tryOutScene';
 
@@ -76,12 +77,13 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         // The preview's own sounds first (quick), so the game has sound while the music renders
         for (const [moment, o] of Object.entries(OWN_SOUNDS) as Array<[SfxMoment, (typeof OWN_SOUNDS)[SfxMoment]]>) {
           const base = generateSfx(o.kind, o.seed);
+          await ensureSfxRecordings(base);
           own.current.set(
             moment,
             [0, 1, 2].map((i) => {
-              const x = renderSfx(varySfx(base, i, 1), ctx.sampleRate);
-              const b = ctx.createBuffer(1, x.length, ctx.sampleRate);
-              b.copyToChannel(x as Float32Array<ArrayBuffer>, 0);
+              const channels = renderSfxStereo(varySfx(base, i, 1), ctx.sampleRate);
+              const b = ctx.createBuffer(channels.length, channels[0].length, ctx.sampleRate);
+              channels.forEach((x, c) => b.copyToChannel(x as Float32Array<ArrayBuffer>, c));
               return b;
             })
           );
