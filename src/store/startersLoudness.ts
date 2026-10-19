@@ -100,8 +100,8 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   championShowdown: { trim: 1.5, lufs: -15.1 }, // -15.3
   ruinRequiem: { trim: 4, lufs: -14.9 }, // -15.9
   cathedral: { trim: 3.9, lufs: -15 },
-  afterHours: { trim: 8.1, lufs: -14.1 },
-  plaza: { trim: 6, lufs: -15 },
+  afterHours: { trim: 8.1, lufs: -14.2 },
+  plaza: { trim: 6, lufs: -15.1 },
   mbiraMorning: { trim: 8, lufs: -15.1 },
   neonRitual: { trim: 6, lufs: -15.3 }, // -15.3
   dubstep: { trim: 10.5, lufs: -14.2 }, // -14.2

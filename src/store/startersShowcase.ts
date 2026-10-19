@@ -76,9 +76,12 @@ function cathedral(): ProjectSnapshot {
 // ---------- After Hours: a brushes ballad ----------
 
 function afterHours(): ProjectSnapshot {
+  // The sax (and Plaza's trumpet) were recorded close and dry, and stop within a quarter second of
+  // being let go: Ring lets each note die away into the room with the piano and drums, and a little
+  // distance puts it on the same stage, so the phrases don't stop dead in front of the band
   const piano = track('Grand piano', 'realStudioGrand', { volume: -6, pan: -0.1, reverbSend: 0.25, fx: { peq: EQ.piano(), human: human(0.25) } });
   const bass = track('Upright bass', 'realUprightBass', { volume: -8, fx: { peq: peq(lowCut(35)), human: human(0.25) } });
-  const sax = grouped(track('Tenor sax', 'realTenorSax', { volume: -9, pan: 0.2, reverbSend: 0.3, fx: { human: human(0.3) } }), 'Climax');
+  const sax = grouped(track('Tenor sax', 'realTenorSax', { volume: -9, pan: 0.2, reverbSend: 0.55, distance: 0.3, ring: 2, fx: { human: human(0.3) } }), 'Climax');
   const kit = drumBus(-18);
   const drums = grouped(track('Brushes', 'brushKit', { volume: -9, output: kit.id, reverbSend: 0.2, fx: { peq: EQ.kit(), human: human(0.2) } }), 'Percussion');
 
@@ -119,7 +122,7 @@ function afterHours(): ProjectSnapshot {
 function plaza(): ProjectSnapshot {
   const guitar = track('Nylon guitar', 'realNylonGuitar', { volume: -7, pan: -0.25, reverbSend: 0.2, fx: { human: human(0.3) } });
   const bass = track('Upright bass', 'realUprightBass', { volume: -7, fx: { peq: peq(lowCut(35)), human: human(0.25) } });
-  const trumpet = grouped(track('Muted trumpet', 'realMutedTrumpet', { volume: -9, pan: 0.2, reverbSend: 0.3, fx: { peq: EQ.brass(), human: human(0.3) } }), 'Climax');
+  const trumpet = grouped(track('Muted trumpet', 'realMutedTrumpet', { volume: -9, pan: 0.2, reverbSend: 0.55, distance: 0.3, ring: 2, fx: { peq: EQ.brass(), human: human(0.3) } }), 'Climax');
   const perc = grouped(track('Latin percussion', 'latinPercussion', { volume: -6, reverbSend: 0.15, fx: { human: human(0.3) } }), 'Percussion');
   const extras = grouped(track('Guiro & woodblock', 'percussionExtras', { volume: -13, pan: 0.35, reverbSend: 0.15, fx: { human: human(0.3) } }), 'Percussion');
 
