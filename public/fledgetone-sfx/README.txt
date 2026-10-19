@@ -115,6 +115,32 @@ With thanks to the people who made them:
     wolf
   egomassive: https://freesound.org/s/536759/
     frog
+  Uliah: https://freesound.org/s/745965/
+    frog
+  quality83: https://freesound.org/s/546159/
+    frog
+  AlanCat: https://freesound.org/s/381721/
+    frog
+  Vrymaa: https://freesound.org/s/756236/
+    cat
+  cribbler: https://freesound.org/s/511448/
+    cat
+  Lupsi: https://freesound.org/s/448018/
+    cat
+  springtwister: https://freesound.org/s/516516/
+    cat
+  Karola3206: https://freesound.org/s/459673/
+    cat
+  Minscer: https://freesound.org/s/424355/
+    purr
+  msalvado: https://freesound.org/s/509524/
+    purr
+  SoundsLikeYukon: https://freesound.org/s/864002/
+    storm
+  iscence: https://freesound.org/s/817640/
+    storm
+  Fugeni: https://freesound.org/s/559804/
+    thunder
   shadoWisp: https://freesound.org/s/269571/
     horse
   Lydmakeren: https://freesound.org/s/510903/
