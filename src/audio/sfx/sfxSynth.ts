@@ -599,45 +599,46 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
     // Wind: air (wide noise) coming and going in gusts, every layer together; a soft whistle where
     // it catches an edge, rising as it blows harder; a recording of real wind gusting with it
     case 'wind': {
-      // A breeze: comes, passes, and leaves near-silence
-      const rate = between(0.2, 0.28);
+      // A breeze: gusts come and go over air that never quite stops
+      const rate = between(0.18, 0.26);
       return M([
-        rec('wind', { gain: 0.35, lowpass: 2500, gust: 1, gustRate: rate }),
-        L({ wave: 'pink', lowpass: between(500, 750), gust: 1, gustRate: rate, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: between(320, 450), reso: 0.2, wobble: 0.5, gust: 1, gustRate: rate, gain: 0.35, width: 0.8 }),
-        L({ wave: 'pink', lowpass: 400, gust: 0.9, gustRate: rate, gain: 0.25, width: 1 }),
-      ], { level: 'soft', loop: true, loopLength: 16 });
+        rec('wind', { gain: 0.35, lowpass: 2500, gust: 0.75, gustRate: rate }),
+        L({ wave: 'pink', lowpass: between(500, 750), gust: 0.8, gustRate: rate, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: between(320, 450), reso: 0.2, wobble: 0.4, gust: 0.85, gustRate: rate, gain: 0.3, width: 0.8 }),
+        L({ wave: 'pink', lowpass: 450, gust: 0.4, gustRate: rate, gain: 0.3, width: 1 }),
+      ], { level: 'soft', loop: true, loopLength: 28 });
     }
     case 'windGusty': {
-      const rate = between(0.3, 0.4);
+      const rate = between(0.28, 0.36);
       return M([
-        rec('wind', { gain: 0.4, lowpass: 3000, gust: 0.95, gustRate: rate }),
-        L({ wave: 'pink', lowpass: between(900, 1300), gust: 0.95, gustRate: rate, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: between(500, 700), reso: 0.45, wobble: 0.6, gust: 1, gustRate: rate, gain: 0.12, pan: -0.3 }),
-        L({ wave: 'brown', lowpass: 220, gust: 0.85, gustRate: rate, gain: 0.45, width: 0.7 }),
-      ], { level: 'soft', loop: true, loopLength: 14 });
+        rec('wind', { gain: 0.4, lowpass: 3000, gust: 0.8, gustRate: rate }),
+        L({ wave: 'pink', lowpass: between(900, 1300), gust: 0.85, gustRate: rate, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: between(500, 700), reso: 0.45, wobble: 0.5, gust: 0.9, gustRate: rate, gain: 0.1, pan: -0.3 }),
+        L({ wave: 'brown', lowpass: 220, gust: 0.7, gustRate: rate, gain: 0.45, width: 0.7 }),
+        L({ wave: 'pink', lowpass: 500, gust: 0.4, gustRate: rate, gain: 0.3, width: 1 }),
+      ], { level: 'soft', loop: true, loopLength: 24 });
     }
     case 'windStorm': {
       // A storm never stops, it only rises and falls
-      const rate = between(0.3, 0.4);
+      const rate = between(0.28, 0.36);
       const howl = between(420, 600);
       return M([
         rec('wind', { gain: 0.45, lowpass: 3000, gust: 0.6, gustRate: rate }),
         L({ wave: 'brown', lowpass: between(220, 300), gust: 0.5, gustRate: rate, gain: 0.9, width: 0.8 }),
         L({ wave: 'pink', lowpass: between(1400, 2000), gust: 0.65, gustRate: rate, gain: 0.55, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: howl, reso: 0.55, wobble: 0.6, gust: 0.8, gustRate: rate, gain: 0.1, pan: -0.4 }),
-        L({ wave: 'pink', bandpass: true, lowpass: howl * between(1.6, 1.9), reso: 0.55, wobble: 0.6, gust: 0.8, gustRate: rate, gain: 0.05, pan: 0.45 }),
-      ], { level: 'normal', loop: true, loopLength: 12 });
+        L({ wave: 'pink', bandpass: true, lowpass: howl, reso: 0.55, wobble: 0.5, gust: 0.8, gustRate: rate, gain: 0.1, pan: -0.4 }),
+        L({ wave: 'pink', bandpass: true, lowpass: howl * between(1.6, 1.9), reso: 0.55, wobble: 0.5, gust: 0.8, gustRate: rate, gain: 0.05, pan: 0.45 }),
+      ], { level: 'normal', loop: true, loopLength: 24 });
     }
     case 'windHowl': {
-      const rate = between(0.15, 0.2);
+      const rate = between(0.14, 0.2);
       const f = between(300, 450);
       return M([
-        L({ wave: 'pink', lowpass: 800, gust: 0.9, gustRate: rate, gain: 0.6, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: f, reso: 0.7, wobble: 0.6, gust: 1, gustRate: rate, gain: 0.3, pan: -0.25 }),
-        L({ wave: 'pink', bandpass: true, lowpass: f * 1.5, reso: 0.68, wobble: 0.6, gust: 1, gustRate: rate, gain: 0.15, pan: 0.3 }),
-        rec('wind', { gain: 0.3, lowpass: 2200, gust: 0.9, gustRate: rate }),
-      ], { level: 'soft', reverb: 0.3, room: 0.8, loop: true, loopLength: 16 });
+        L({ wave: 'pink', lowpass: 800, gust: 0.55, gustRate: rate, gain: 0.6, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: f, reso: 0.7, wobble: 0.5, gust: 0.85, gustRate: rate, gain: 0.3, pan: -0.25 }),
+        L({ wave: 'pink', bandpass: true, lowpass: f * 1.5, reso: 0.68, wobble: 0.5, gust: 0.85, gustRate: rate, gain: 0.15, pan: 0.3 }),
+        rec('wind', { gain: 0.3, lowpass: 2200, gust: 0.7, gustRate: rate }),
+      ], { level: 'soft', reverb: 0.3, room: 0.8, loop: true, loopLength: 28 });
     }
     case 'fire':
       return M([rec('fire'), L({ wave: 'crackle', freq: between(15, 30), highpass: 1500, gain: 0.5, width: 1 }), L({ wave: 'brown', lowpass: between(300, 450), gain: 0.5, trem: 0.25, tremRate: 1, width: 0.6 })], { level: 'soft', loop: true, loopLength: 4 });
@@ -954,28 +955,42 @@ function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate:
   const body = l.body ? new ModalBody(l.body, l.freq * shift, l.ring ?? 1, sampleRate, rng((l.seed * 7 + 3) >>> 0)) : null;
   const bodyMix = l.body ? clamp(l.bodyMix ?? 0.7, 0, 1) : 0;
   const ringFor = l.body && !s.loop ? bodyRing(l.body, l.ring ?? 1) : 0;
-  // Gusts: separate gusts, each rising, peaking and falling away (rising faster than it falls),
-  // at random times and strengths with lulls between, about `gustRate` a second. Placed from the
-  // sound's seed, so its layers gust together as one wind; in a loop they go round with it.
+  // Gusts: separate gusts at random: random gaps (some close together, some apart), lengths,
+  // strengths and shapes (some build slowly, some arrive at once), overlapping where they meet,
+  // about `gustRate` a second. Placed from the sound's seed, so its layers gust together as one
+  // wind; each layer also flutters a little on its own; in a loop they all go round with it.
   const gust = clamp(l.gust ?? 0, 0, 1);
   const gustRate = clamp(l.gustRate ?? 0.3, 0.02, 4);
   const span = s.loop ? s.loopLength : length / sampleRate;
-  const gusts: Array<{ at: number; long: number; strength: number }> = [];
+  const gusts: Array<{ at: number; long: number; strength: number; up: number }> = [];
   if (gust > 0) {
     const gr = rng((s.seed ^ 0x6a09e667) >>> 0);
-    for (let at = gr() / gustRate; at < span; at += (0.6 + gr() * 0.9) / gustRate) gusts.push({ at, long: (0.55 + gr() * 0.6) / gustRate, strength: 0.45 + gr() * 0.55 });
+    for (let at = (gr() * 0.8) / gustRate; at < span; at += (0.2 - Math.log(1 - gr() * 0.95) * 0.75) / gustRate)
+      gusts.push({ at, long: (0.4 + gr() * 1.3) / gustRate, strength: 0.35 + gr() * 0.65, up: 0.2 + gr() * 0.45 });
   }
-  const gustOne = (t: number, g: { at: number; long: number; strength: number }) => {
+  const gustOne = (t: number, g: { at: number; long: number; strength: number; up: number }) => {
     const x = (t - g.at) / g.long;
     if (x <= 0 || x >= 1) return 0;
-    const up = 0.35;
-    const k = x < up ? x / up : 1 - (x - up) / (1 - up);
+    const k = x < g.up ? x / g.up : 1 - (x - g.up) / (1 - g.up);
     return g.strength * k * k * (3 - 2 * k);
   };
   const gustAt = (t: number) => {
-    let v = 0;
-    for (const g of gusts) v = Math.max(v, gustOne(t, g), s.loop ? Math.max(gustOne(t + span, g), gustOne(t - span, g)) : 0);
-    return v;
+    // Overlapping gusts add up softly (two strong ones don't make one twice as strong)
+    let quiet = 1;
+    for (const g of gusts) {
+      quiet *= 1 - gustOne(t, g);
+      if (s.loop) quiet *= (1 - gustOne(t + span, g)) * (1 - gustOne(t - span, g));
+    }
+    return 1 - quiet;
+  };
+  // The layer's own flutter: quick small changes inside a gust (value noise, round the loop)
+  const flutterKnots = gust > 0 ? Float32Array.from({ length: Math.max(4, Math.round(span * 1.7)) }, rng((l.seed ^ 0x3c6ef372) >>> 0)) : null;
+  const flutterAt = (t: number) => {
+    const n = flutterKnots!.length;
+    const x = ((t / span) * n) % n;
+    const k = Math.floor(x);
+    const w = (1 - Math.cos(Math.PI * (x - k))) / 2;
+    return flutterKnots![k] * (1 - w) + flutterKnots![(k + 1) % n] * w;
   };
   const knots = gusts.length ? gusts : null;
   const gustFloor = (1 - gust) * (1 - gust);
@@ -1097,8 +1112,9 @@ function renderLayerModern(l: SfxLayer, s: SfxSound, length: number, sampleRate:
         const levels = Math.pow(2, Math.round(16 - l.crush * 14)) / 2;
         v = Math.round(v * levels) / levels;
       }
-      // A gust brings the layer in and takes it away again; between gusts, a lull
-      if (knots) v *= gustFloor + (1 - gustFloor) * g;
+      // A gust brings the layer in and takes it away again; between gusts, a lull (as quiet as Gusts
+      // asks); a little flutter of the layer's own
+      if (knots) v *= (gustFloor + (1 - gustFloor) * g) * (0.82 + 0.36 * flutterAt(s.loop ? t % span : t));
       // Envelope: attack, hold (punch fading over it), then a natural decay to -60 dB
       let env: number;
       if (s.loop) env = 1;
