@@ -597,40 +597,39 @@ export function generateSfx(category: SfxCategory, seed: number, styleSeed = see
     // wind under it all
     case 'wind':
       return M([
-        rec('wind', { gain: 0.45 }),
-        L({ wave: 'pink', lowpass: between(900, 1400), reso: 0.1, gust: 0.6, gustRate: between(0.12, 0.2), width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: between(450, 650), reso: 0.35, wobble: 0.7, gust: 0.7, gustRate: between(0.15, 0.22), gain: 0.5, width: 0.8 }),
-        L({ wave: 'brown', lowpass: 300, gust: 0.4, gustRate: 0.1, gain: 0.35, width: 0.6 }),
+        rec('wind', { gain: 0.4, lowpass: 3000 }),
+        L({ wave: 'pink', lowpass: between(600, 900), gust: 0.4, gustRate: between(0.08, 0.14), width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: between(350, 500), reso: 0.25, wobble: 0.5, gust: 0.5, gustRate: between(0.1, 0.15), gain: 0.4, width: 0.8 }),
+        L({ wave: 'brown', lowpass: 250, gust: 0.3, gustRate: 0.08, gain: 0.4, width: 0.6 }),
       ], { level: 'soft', loop: true, loopLength: 8 });
     case 'windGusty': {
-      const rate = between(0.3, 0.45);
+      const rate = between(0.15, 0.22);
       return M([
-        rec('wind', { gain: 0.4, gust: 0.6, gustRate: rate }),
-        L({ wave: 'pink', lowpass: between(1800, 2800), reso: 0.1, gust: 0.95, gustRate: rate, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: between(700, 1100), reso: 0.75, wobble: 0.8, gust: 0.95, gustRate: rate, gain: 0.25, pan: -0.3 }),
-        L({ wave: 'brown', lowpass: 280, gust: 0.8, gustRate: rate, gain: 0.5, width: 0.7 }),
-        L({ wave: 'crackle', freq: between(250, 450), highpass: 3000, gust: 0.95, gustRate: rate, gain: 0.12, width: 1 }),
+        rec('wind', { gain: 0.4, lowpass: 3000, gust: 0.4, gustRate: rate }),
+        L({ wave: 'pink', lowpass: between(1000, 1500), gust: 0.7, gustRate: rate, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: between(550, 800), reso: 0.55, wobble: 0.6, gust: 0.75, gustRate: rate, gain: 0.15, pan: -0.3 }),
+        L({ wave: 'brown', lowpass: 250, gust: 0.6, gustRate: rate, gain: 0.5, width: 0.7 }),
+        L({ wave: 'crackle', freq: between(60, 120), highpass: 2500, lowpass: 7000, gust: 0.8, gustRate: rate, gain: 0.04, width: 1 }),
       ], { level: 'soft', loop: true, loopLength: 10 });
     }
     case 'windStorm': {
-      const howl = between(500, 750);
+      const howl = between(420, 600);
       return M([
-        rec('wind', { gain: 0.5 }),
-        L({ wave: 'brown', lowpass: between(350, 500), gust: 0.6, gustRate: between(0.25, 0.4), gain: 0.9, width: 0.8 }),
-        L({ wave: 'pink', lowpass: between(3500, 5000), reso: 0.1, gust: 0.85, gustRate: between(0.3, 0.45), gain: 0.8, width: 1 }),
-        L({ wave: 'pink', bandpass: true, lowpass: howl, reso: 0.82, wobble: 1, gust: 0.9, gustRate: between(0.3, 0.4), gain: 0.3, pan: -0.4 }),
-        L({ wave: 'pink', bandpass: true, lowpass: howl * between(1.9, 2.4), reso: 0.85, wobble: 1, gust: 0.9, gustRate: between(0.35, 0.5), gain: 0.18, pan: 0.45 }),
-        L({ wave: 'crackle', freq: between(600, 1000), highpass: 2500, gust: 0.95, gustRate: 0.4, gain: 0.15, width: 1 }),
-      ], { level: 'normal', drive: 0.12, loop: true, loopLength: 10 });
+        rec('wind', { gain: 0.45, lowpass: 3500 }),
+        L({ wave: 'brown', lowpass: between(250, 350), gust: 0.5, gustRate: between(0.15, 0.25), gain: 0.9, width: 0.8 }),
+        L({ wave: 'pink', lowpass: between(1800, 2500), gust: 0.65, gustRate: between(0.18, 0.28), gain: 0.6, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: howl, reso: 0.65, wobble: 0.7, gust: 0.7, gustRate: between(0.18, 0.25), gain: 0.15, pan: -0.4 }),
+        L({ wave: 'pink', bandpass: true, lowpass: howl * between(1.6, 1.9), reso: 0.65, wobble: 0.7, gust: 0.7, gustRate: between(0.2, 0.3), gain: 0.08, pan: 0.45 }),
+      ], { level: 'normal', loop: true, loopLength: 10 });
     }
     case 'windHowl': {
-      const f = between(320, 520);
+      const f = between(300, 450);
       return M([
-        L({ wave: 'pink', bandpass: true, lowpass: f, reso: 0.9, wobble: 0.9, gust: 0.85, gustRate: between(0.12, 0.2), pan: -0.25 }),
-        L({ wave: 'pink', bandpass: true, lowpass: f * 1.5, reso: 0.88, wobble: 0.9, gust: 0.85, gustRate: between(0.15, 0.22), gain: 0.55, pan: 0.3 }),
-        L({ wave: 'pink', lowpass: 1500, gust: 0.6, gustRate: 0.15, gain: 0.35, width: 1 }),
-        rec('wind', { gain: 0.3 }),
-      ], { level: 'soft', reverb: 0.35, room: 0.85, loop: true, loopLength: 10 });
+        L({ wave: 'pink', lowpass: 900, gust: 0.4, gustRate: 0.1, gain: 0.7, width: 1 }),
+        L({ wave: 'pink', bandpass: true, lowpass: f, reso: 0.75, wobble: 0.6, gust: 0.6, gustRate: between(0.08, 0.13), gain: 0.35, pan: -0.25 }),
+        L({ wave: 'pink', bandpass: true, lowpass: f * 1.5, reso: 0.72, wobble: 0.6, gust: 0.6, gustRate: between(0.1, 0.15), gain: 0.18, pan: 0.3 }),
+        rec('wind', { gain: 0.35, lowpass: 2500 }),
+      ], { level: 'soft', reverb: 0.3, room: 0.8, loop: true, loopLength: 10 });
     }
     case 'fire':
       return M([rec('fire'), L({ wave: 'crackle', freq: between(15, 30), highpass: 1500, gain: 0.5, width: 1 }), L({ wave: 'brown', lowpass: between(300, 450), gain: 0.5, trem: 0.25, tremRate: 1, width: 0.6 })], { level: 'soft', loop: true, loopLength: 4 });
@@ -1180,16 +1179,21 @@ function renderModern(s: SfxSound, sampleRate: number): [Float32Array, Float32Ar
         x[x.length - 1 - i] *= i / fade;
       }
   }
-  // Level: the loudest 50 ms of both channels to the level's loudness, the peak under the ceiling
+  // Level: a one-shot's loudest 50 ms to the level's loudness; a loop (ambience, there the whole
+  // time) by its average, much lower, so it sits under the game instead of over it. The peak
+  // stays under the ceiling.
   const mid = new Float32Array(L.length);
   let peak = 0;
+  let sum = 0;
   for (let i = 0; i < L.length; i++) {
     mid[i] = Math.sqrt((L[i] * L[i] + R[i] * R[i]) / 2);
+    sum += mid[i] * mid[i];
     peak = Math.max(peak, Math.abs(L[i]), Math.abs(R[i]));
   }
-  const rms = loudestRms(mid, sampleRate);
+  const rms = s.loop ? Math.sqrt(sum / Math.max(1, L.length)) : loudestRms(mid, sampleRate);
+  const target = s.loop ? LOOP_DB[s.level] : LEVEL_DB[s.level];
   if (peak > 0 && rms > 0) {
-    const gain = Math.min(10 ** (LEVEL_DB[s.level] / 20) / rms, SFX_CEILING / peak) * clamp(s.volume, 0, 1);
+    const gain = Math.min(10 ** (target / 20) / rms, SFX_CEILING / peak) * clamp(s.volume, 0, 1);
     for (let i = 0; i < L.length; i++) {
       L[i] *= gain;
       R[i] *= gain;
@@ -1251,6 +1255,8 @@ function effects(x: Float32Array, s: SfxSound, sampleRate: number): void {
 
 /** Loudness each level is made to, as the RMS of its loudest 50 ms (dBFS) */
 const LEVEL_DB: Record<SfxLevel, number> = { soft: -20, normal: -16, loud: -12 };
+/** A modern loop's average loudness (RMS, dBFS): ambience sits well under music and dialogue */
+const LOOP_DB: Record<SfxLevel, number> = { soft: -32, normal: -28, loud: -24 };
 /** The highest a sample goes: -1 dBFS */
 export const SFX_CEILING = 0.89;
 
