@@ -2,6 +2,8 @@
 
 **Stage 1 is in (2026.10.16-4, src/pocket/):** Song (starters, the whole song, add instruments), Beat (pads with Rec, step grid), Notes (grid in key), Mix (level, mute, solo, reverb, master level and clipper), Share (MP3, link, project file). Phones open it (pocketMode.ts); `?pocket` / `?studio` choose. **Stage 2 (2026.10.16-6):** Vocals (record, vocal chains, double, tune), the Drummer, fills, swing, painting steps and notes, chords, arrange (repeat the loop, build-up and drop, speed up into the drop), instrument swap, metronome, screen awake, reopening the last song. Still to do: song form and beat switches, Bass Drive, and trying it on real phones (iPhone above all).
 
+**Next: the redesign in [POCKET-PLAN.md](POCKET-PLAN.md)** (loops first, the controls under the thumb, four tabs).
+
 A separate, simpler phone interface over the same engine and project files, so a song started on a phone opens on a computer and back.
 
 ## In it
