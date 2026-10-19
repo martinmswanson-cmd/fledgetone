@@ -219,14 +219,14 @@ SETS = [
         (rf'{C}/pizzT/pizzT_{NOTE}_(?P<layer>v[12])_(?P<take>RR[12])\.wav', 1),
         (rf'{VA}/pizz/(?:[A-Za-z]+_)?pizz_{NOTE}_(?P<layer>v[12])_(?P<take>rr[12])\.wav', 1),
         (rf'{V}/Pizz/VlnEns_Pizz_{NOTE}_(?P<layer>v[12])_(?P<take>rr[12])\.wav', 1),
-    ], ['v1', 'v2'], 'plucked', cap=2.5),
+    ], ['v1', 'v2'], 'plucked', cap=4.0),
     S('strings-tremolo', 'vsco', [
         (rf'{C}/trem/(?:[A-Za-z]+_)?trem_{NOTE}_(?P<layer>v[12])[_0-9]*\.wav', 1),
         (rf'{VA}/trem/(?:[A-Za-z]+_)?trem_{NOTE}_(?P<layer>v[12])[_0-9]*\.wav', 1),
         (rf'{V}/Trem/VlnEns_Trem_{NOTE}_(?P<layer>v[12])\.wav', 1),
     ], ['v1', 'v2'], 'sustain'),
     S('solo-violin', 'vsco', [(rf'Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_{NOTE}_(?P<layer>[pf])\.wav', 0)], ['p', 'f'], 'sustain', xloop=True),
-    S('harp', 'vsco', [(rf'Strings/Harp/KSHarp_{NOTE}_(?P<layer>mp|mf|f)\.wav', 0)], ['mp|mf|f'], 'ringing'),
+    S('harp', 'vsco', [(rf'Strings/Harp/KSHarp_{NOTE}_(?P<layer>mp|mf|f)\.wav', 0)], ['mp|mf|f'], 'ringing', cap=14.0, tail=True),
     # ---- woodwinds (VSCO 2 CE) ----
     S('flute', 'vsco', [(rf'Woodwinds/Flute/susvib/LDFlute_susvib_{NOTE}_(?P<layer>v1)_(?P<take>1)\.wav', 1)], ['v1'], 'sustain'),
     S('flute-staccato', 'vsco', [(rf'Woodwinds/Flute/stac/LDFlute_stac_{NOTE}_(?P<layer>v[123])_(?P<take>rr[12])\.wav', 1)], ['v1', 'v2', 'v3'], 'short'),
@@ -246,7 +246,7 @@ SETS = [
     S('xylophone', 'vsco', [(rf'Percussion/Xylo/Xylo_Medium_{NOTE}_(?P<layer>ff)_01_far\.wav', 1)], ['ff'], 'mallet', cap=2.5),
     S('glockenspiel', 'vsco', [(rf'Percussion/Glock/glock_medium_{NOTE}(?P<layer>)\.wav', 1)], [''], 'ringing', cap=5.0),
     S('upright-piano', 'vsco', [(r'Keys/Upright Piano/Player_(?P<layer>dyn[123])_rr1_(?P<index>\d{3})\.wav', 0, lambda i: 21 + 2 * i)],
-      ['dyn1', 'dyn2', 'dyn3'], 'ringing', retune=False),
+      ['dyn1', 'dyn2', 'dyn3'], 'ringing', cap=20.0, retune=False),
     # The organ's files are numbered by key; its stops sound an octave under the key too, which is
     # why measuring can't name them. The pedal fills in below the manual's lowest note.
     S('pipe-organ', 'vsco', [(r'Keys/Organ/Loud/Rode_Man3Open_(?P<index>\d{2})(?P<layer>)\.wav', 0, lambda i: 35 + i),
@@ -267,15 +267,15 @@ SETS = [
     S('double-bass', 'meatbass', [(rf'Samples/arco/{NOTE}_(?P<layer>vl[123])_(?P<take>down|up)\.wav', 0)], ['vl1', 'vl2', 'vl3'], 'sustain'),
     S('upright-bass', 'meatbass', [(rf'Samples/pizz/{NOTE}_(?P<layer>vl[1234])_(?P<take>rr[12])\.wav', 0)], ['vl1', 'vl2', 'vl3', 'vl4'], 'plucked'),
     S('electric-bass', 'growlybass', [(rf'sustain/{NOTE}_(?P<layer>pp|p|f|ff)_(?P<take>rr[12])\.wav', -1)], ['pp', 'p', 'f', 'ff'], 'plucked'),
-    S('grand-piano', 'splendid', [(rf'Samples/(?P<layer>PP|Mp|MF|FF) {NOTE}\.flac', 1)], ['PP', 'Mp', 'MF', 'FF'], 'ringing', cap=9.0, retune=False),
+    S('grand-piano', 'splendid', [(rf'Samples/(?P<layer>PP|Mp|MF|FF) {NOTE}\.flac', 1)], ['PP', 'Mp', 'MF', 'FF'], 'ringing', cap=24.0, tail='faded', retune=False),
     # ---- more orchestra and colour (Versilian Community Sample Library, CC0) ----
     # The timpani's five drums are named by number, not note: measuring names them
     S('timpani', 'vcsl', [(r'Membranophones/Struck Membranophones/Timpani 1/Hit/Timpani(?P<index>\d)_Hit_(?P<layer>v[234])_(?P<take>rr\d)_Sum\.wav', 0, lambda i: None)],
       ['v2', 'v3', 'v4'], 'ringing', cap=5.0),
     S('tubular-bells', 'vcsl', [(rf'Idiophones/Struck Idiophones/Tubular Bells 1/chimes_{NOTE}_(?P<layer>pp|p|f|ff|fff)_(?P<take>rr\d)\.wav', 1)],
-      ['pp|p', 'f|ff|fff'], 'ringing', cap=8.0),
+      ['pp|p', 'f|ff|fff'], 'ringing', cap=16.0),
     S('vibraphone', 'vcsl', [(rf'Idiophones/Struck Idiophones/Vibraphone/Soft Mallets/Vibes_soft_{NOTE}_(?P<layer>v[12])_(?P<take>rr1)_Main\.wav', 1)],
-      ['v1', 'v2'], 'ringing', cap=6.0),
+      ['v1', 'v2'], 'ringing', cap=12.0),
     S('harpsichord', 'vcsl', [(rf'Chordophones/Zithers/Harpsichord, Flemish/Sustains/(?:High|Low)/HarpsiRH_(?:High|Low)_Far_{NOTE}_(?P<take>rr\d)(?P<layer>)\.wav', 1)],
       [''], 'plucked', cap=4.0),
     S('kalimba', 'vcsl', [(rf'Idiophones/Plucked Idiophones/Kalimba, Kenya/Mbira6_Normal_MainSpirit_{NOTE}_k\d+_(?P<layer>vl3)_(?P<take>rr\d)\.wav', 1)],
@@ -303,7 +303,7 @@ SETS = [
     # its own nearest recording, as the library's own mapping does), and cut off a few seconds in
     # while still ringing: each note is given the rest of its decay
     S('electric-piano', 'epianos', [(rf'Wurlitzer EP200/Samples/{NOTE}(?P<layer>pp|mp|f|ff)\.flac', OCT_EPIANO)],
-      ['pp', 'mp', 'f', 'ff'], 'ringing', cap=8.0, tail=True, sparse=True),
+      ['pp', 'mp', 'f', 'ff'], 'ringing', cap=16.0, tail=True, sparse=True),
     # A six-string banjo; its only articulation, with a second take where there is one
     S('banjo', 'ganjo', [(rf'Common/Banjo_Common - {NOTE}(?P<take>(?:_2)?)(?P<layer>)\.wav', OCT_BANJO)],
       [''], 'plucked', takes=['', '_2']),
@@ -312,7 +312,7 @@ SETS = [
     # ---- a celesta, recorders and a muted trumpet ----
     # A celesta recorded key by key in stereo (A Sampled Celesta, CC0): its recordings come in a
     # SoundFont, one stroke a note
-    S('celesta', 'celesta', [(rf'{NOTE} (?P<take>rr1)(?P<layer>)', 0)], [''], 'ringing', cap=6.0,
+    S('celesta', 'celesta', [(rf'{NOTE} (?P<take>rr1)(?P<layer>)', 0)], [''], 'ringing', cap=10.0, tail=True,
       sf2='Samples/Celesta Tuned Denoised Mix.sf2'),
     # Baroque recorders played straight (no vibrato), as one instrument: the alto, with the tenor
     # under it (below the alto's lowest F) and the soprano over it (above its highest E).
@@ -336,9 +336,9 @@ SETS = [
     # A studio grand (a Steinway model B, its close microphones), every other note at three
     # loudnesses, and an old upright (a Knight) at two, both from the VCSL (CC0)
     S('studio-grand', 'vcsl', [(rf'Chordophones/Zithers/Grand Piano, Steinway B/Sus/JHPiano_Sus_Close_{NOTE}_(?P<layer>vl[234])_(?P<take>rr1)\.wav', 0)],
-      ['vl2', 'vl3', 'vl4'], 'ringing', cap=9.0, retune=False),
+      ['vl2', 'vl3', 'vl4'], 'ringing', cap=24.0, retune=False),
     S('old-upright', 'vcsl', [(rf'Chordophones/Zithers/Upright Piano, Knight/Sustains/Player_(?P<layer>vl[12])_(?P<take>rr1)_{NOTE}\.wav', 1)],
-      ['vl1', 'vl2'], 'ringing', cap=8.0, retune=False, hi=106),  # (its top keys measure a semitone out)
+      ['vl1', 'vl2'], 'ringing', cap=20.0, retune=False, hi=106),  # (its top keys measure a semitone out)
     # The piccolo, held (five notes, each stretched over its neighbours), and the French horn muted
     S('piccolo', 'vsco', [(rf'Woodwinds/Piccolo/Sus/piccolo_{NOTE}_sustain(?P<take>1)(?P<layer>)\.wav', 0)], [''], 'sustain', xloop=True),
     S('muted-horn', 'vsco', [(rf'Brass/F Horn/mute/MOHorn_mute_{NOTE}_(?P<layer>v[12])_1\.wav', 1)], ['v1', 'v2'], 'sustain'),
