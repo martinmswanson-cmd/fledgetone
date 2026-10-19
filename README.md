@@ -98,7 +98,7 @@ Taking part in the project (issues, pull requests, discussions) is covered by th
 [code of conduct](CODE_OF_CONDUCT.md). The site, fledgetone.com, is hosted by Netlify on its
 Open Source plan.
 
-Fledgetone is made by Martin Swanson, with help from [Claude Code](https://claude.com/claude-code).
+Fledgetone is made by Martin Swanson.
 
 ### The name and logo
 
