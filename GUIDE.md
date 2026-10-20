@@ -1264,7 +1264,7 @@ In the game: `const music = await loadSong('./song.json', { onProgress })`, then
 
 ## Keyboard shortcuts
 
-Shortcuts don't work while you're typing in a box, or while a dialog or panel (Guide, Search, Export, New, FIT, Loop range, Markers) is open. `Ctrl+K` (search) works everywhere. On a focused slider, the arrow keys, Home, End, Page Up and Page Down move the slider and every other key is still a shortcut. A drop-down menu lets go of the keyboard after you pick from it with the mouse.
+Shortcuts don't work while you're typing in a box, or while a dialog or panel (Guide, Search, Export, New, FIT, Loop range, Markers) is open. `Ctrl+K` (search) and `Ctrl+S` (save) work everywhere. On a focused slider, the arrow keys, Home, End, Page Up and Page Down move the slider and every other key is still a shortcut. A drop-down menu lets go of the keyboard after you pick from it with the mouse.
 
 ### Timeline
 
@@ -1290,10 +1290,12 @@ Shortcuts don't work while you're typing in a box, or while a dialog or panel (G
 | `Ctrl+Shift+D` | Duplicate it linked (the copies play the same pattern as their originals) |
 | `Delete` or `Backspace` | Delete selected clips (or selected automation points) |
 | `Esc` | Clear the selection |
-| `+` / `-` | Zoom in / out (around the playhead) |
+| `+` / `-` | Zoom in / out (around the playhead, or the middle of the view when the playhead is off screen) |
 | `Ctrl+K` | Search tools, settings, instruments, starters and the guide |
 | `?` | Open this guide |
 | `A`–`'`, `W`–`P`, `Z` / `X` | With the computer keyboard piano on: play notes, and change octave |
+| `Tab` to a marker flag, then `Enter` / `F2` / `Delete` / `←` `→` | Go there / rename / delete / move it a SNAP step (with `Shift`: a bar) |
+| `Esc` (audio clip editor) | Close it |
 
 On a Mac, use `Cmd` instead of `Ctrl`.
 
@@ -1324,18 +1326,18 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 | `Ctrl+A` | Select all notes |
 | `Delete` or `Backspace` | Delete selected notes |
 | Arrow keys | Nudge selected notes (time, or one semitone) |
-| `Shift+Up` / `Shift+Down` | Move selected notes an octave |
+| `Shift+Up` / `Shift+Down` | Move selected notes an octave (on drum and slice parts, one row) |
 | `Esc` | Clear the note selection, or close the piano roll |
 
 ## Fledgetone Pocket: on a phone
 
-On a phone, Fledgetone opens **Pocket**: the same studio underneath (the same instruments, effects and songs) on one screen made for a thumb. A song started in Pocket opens in the studio on a computer, and back. The song you were working on opens again by itself when you come back; with none, Pocket starts with **What are we making?**: tap a kind of music, then a starter, and it plays straight away (or start **Empty**, or open a project file). The round button at the top left comes back here for a new song, with a way back to the one you were on. Pocket is in its early stages, and the studio on a computer is the full experience: a notice says so each time Pocket opens, until you tick **Don't show this again**.
+On a phone, Fledgetone opens **Pocket**: the same studio underneath (the same instruments, effects and songs) on one screen made for a thumb. A song started in Pocket opens in the studio on a computer, and back. The song you were working on opens again by itself when you come back; with none, Pocket starts with **What are we making?**: tap a kind of music, then a starter, and it plays straight away (or start **Empty**, or open a project file). The disc button at the top left comes back here for a new song, with a way back to the one you were on. Pocket is in its early stages, and the studio on a computer is the full experience: a notice says so each time Pocket opens, until you tick **Don't show this again**.
 
 The screen, top to bottom:
 
-- **The song**, its name, tempo and where it's playing. Tap it for the song's settings: its name, tempo (**−**, **+**, or **Tap** it), the key the notes follow, the **metronome**, saving and opening the project file, a new song, and **Use the full studio here**. **Share** (top right): an MP3 of the whole song (matched to the streaming loudness, -14 LUFS) to the phone's share sheet, a link to the song, and the project file.
+- **The song**, its name, tempo and where it's playing. Tap it for the song's settings: its name, tempo (**−**, **+**, or **Tap** it), the key the notes follow, the **metronome**, saving and opening the project file, saving and opening your **My sounds**, a new song, and **Use the full studio here**. **Share** (top right): an MP3 of the whole song (matched to the streaming loudness, -14 LUFS) to the phone's share sheet, a link to the song, and the project file.
 - **The song as a grid.** Each row is a **section** of the song, in order, and each column a track; each cell shows what that track plays in that section. Sections are the song's markers (the ones the studio shows on its timeline), or every 4 or 8 bars in a song without any, and each has a letter: sections that play the same thing share one (A A B A). Scroll the grid both ways; the letters and track names stay put.
-  - **Tap a cell** to work on that track in that section: the bottom of the screen becomes its instrument. **Tap a letter** to loop that section (while the song plays it moves there on the next bar line).
+  - **Tap a cell** to work on that track in that section: the bottom of the screen becomes its instrument. **Tap a letter** to pick that section: with **Loop** on, Play loops it (while the song plays it moves there on the next bar line); with **Song** on, it is just selected.
   - The selected section's **⋯** (or holding any letter) arranges the song from there: **Play it twice** (a linked copy right after it: change either and both change, until you **Make it its own**), **Move earlier** or **later**, **Build-up into it** (a riser, a snare roll and a hit on its first beat), and **Take it out** (its bars go and the rest of the song moves up). **+** under the letters adds a section: a linked copy of the selected one, after it.
   - **+** after the tracks (or **+ Track**) adds an instrument, or **Vocals** to sing on. Your **My sounds** (saved in the studio) and starred **Favourites** are listed first; **★** an instrument to star it, here or in the studio.
   - **Loop / Song** picks what Play plays: the selected section over and over, or the whole song in order.
@@ -1351,7 +1353,7 @@ The screen, top to bottom:
   - **Vocals, Sing**: **Record** (or **Rec vocal** below the grid) sings over the song from the phone's microphone: with the loop on it records the section once and stops by itself, else from the playhead until **Stop**. Wear headphones, or the microphone records the song too. Pick the voice's sound (Clean lead, Aggressive lead, Ad-lib, Phone / radio, Dark and wide, Backing stack); each take can be **doubled** (two more performances either side), **tuned** (pitch correction to the key, gentle to robotic) or deleted.
   - **Mix all** (above the grid): a mixer for every track, with a fader, mute (**M**) and solo (**S**) each, and the master's level and **Loud** (the clipper: louder, with the peaks shaved).
 
-What Pocket doesn't show (automation, plugins, inserts, game music, video) is kept as it is and edited in the studio; a track Pocket can't edit (a sampler or a plugin instrument) still plays, with its level, mute and solo under Mix. A MIDI keyboard plugged into an Android phone plays the selected track. Adding `?pocket` or `?studio` to the address opens either one on any device.
+What Pocket doesn't show (automation, plugins, inserts, game music, video) is kept as it is and edited in the studio; a track Pocket can't edit (a sampler or a plugin instrument) still plays, with its level, mute and solo under Mix. A MIDI keyboard plugged into an Android phone plays the selected track. **Use the full studio here** switches this phone to the studio, and it stays there next time; **Help › Pocket, the phone version** switches back. Adding `?pocket` or `?studio` to the address does the same on any device, and is remembered too.
 
 ## Installing Fledgetone
 
@@ -1363,7 +1365,7 @@ Fledgetone can be installed as an app from fledgetone.com: it opens in a window 
 - **Android**: the browser's menu (⋮) › **Install app** or **Add to Home screen**.
 - Firefox on a computer doesn't install web apps; Fledgetone works in it as a web page.
 
-Once it's installed, the Help menu no longer offers it. The installed app and the web page share everything: your autosave, your sounds and the kept recordings. A one-file copy of Fledgetone (an HTML file opened from your computer) can't be installed; Help › Install Fledgetone tells you to open fledgetone.com instead.
+In the installed app, the Help menu no longer offers it. The installed app and the web page share everything: your autosave, your sounds and the kept recordings. A one-file copy of Fledgetone (an HTML file opened from your computer) can't be installed; Help › Install Fledgetone tells you to open fledgetone.com instead.
 
 **New versions.** Fledgetone looks for a new version when it opens and about every half hour while it's open (only while you're online, and not while a song plays or an export renders). A new version downloads quietly in the background; then a small notice in the bottom right says **Version … is ready** with a **Reload** button. Nothing changes until you click it: your work is autosaved first, the app reloads into the new version, **Restore** brings your song back, and **What's new** opens at the new version's changes. If a new version arrives while you play or export, the notice waits until you stop. Close it with **×** to carry on: the new version opens next time you start Fledgetone. Only the files that changed are downloaded.
 
@@ -1382,7 +1384,7 @@ After you've opened Fledgetone once from fledgetone.com (in Chrome, Edge, Safari
 
 - Songs can be up to 400 bars long, with any number of tempo changes (40 to 240 BPM, to 0.01 BPM) and time signatures. The shortest loop is a 16th note.
 - For EDM, set **Swing** to 0% (new blank projects start at 20%). Dubstep is usually 140 BPM with the snare on beat 3 (half-time), house around 124 to 128, drum & bass around 174.
-- Projects that use Wobble Bass, Growl Bass, Reese Bass, Supersaw, Pluck, FX, Audio tracks or the Slicer only open in this version of the app or later.
+- A project saved in this version may not open in an older copy of Fledgetone (such as a one-file copy saved earlier): open it at fledgetone.com instead.
 - Recorded instruments need an internet connection the first time you use them; then they work offline (see Working offline).
 - Muted tracks, and tracks silenced by another track's Solo, don't play their notes at all, which saves processing power on big songs.
 - If playback stutters on a big song, freeze the tracks you aren't changing (the snowflake in each track's header), switch **Playback** to **Stable** in the Inspector's Master tab, mute tracks you aren't working on, or switch off effects you don't need. Exporting never stutters, it just takes longer.
