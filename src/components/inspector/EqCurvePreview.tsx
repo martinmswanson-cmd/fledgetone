@@ -13,7 +13,7 @@ interface EqCurvePreviewProps {
 }
 
 /**
- * Interactive SVG visualizer for 3-band parametric EQ (Low Shelf @ 400Hz, Mid Bell @ 1.0kHz, High Shelf @ 2.5kHz).
+ * The 3-band EQ's response: low below 400 Hz, mid from 400 Hz to 2.5 kHz, high above 2.5 kHz.
  * Range: -24 dB to +12 dB.
  */
 export const EqCurvePreview: React.FC<EqCurvePreviewProps> = ({
@@ -46,22 +46,13 @@ export const EqCurvePreview: React.FC<EqCurvePreviewProps> = ({
       const logFreq = 1.301 + frac * 3.0;
       const freq = Math.pow(10, logFreq);
 
-      // Low shelf around 400Hz
-      // Transition from full lowGain at <150Hz to 0 at >600Hz
-      const lowWeight = 1 / (1 + Math.pow(freq / 400, 2));
-      const lowContrib = lowGain * lowWeight;
-
-      // Mid bell around 1000Hz (Q ~ 1.2)
-      const octavesDiff = Math.log2(freq / 1000);
-      const midWeight = Math.exp(-0.5 * Math.pow(octavesDiff / 0.8, 2));
-      const midContrib = midGain * midWeight;
-
-      // High shelf around 2500Hz
-      // Transition from 0 at <1500Hz to highGain at >5000Hz
-      const highWeight = Math.pow(freq / 2500, 2) / (1 + Math.pow(freq / 2500, 2));
-      const highContrib = highGain * highWeight;
-
-      const totalDb = lowContrib + midContrib + highContrib;
+      // Three bands split by Linkwitz-Riley crossovers at 400 Hz and 2.5 kHz (as lightFx.ts builds
+      // them): each band's share of the sound, which add up to 1, times its own gain
+      const lp = (fc: number) => 1 / (1 + Math.pow(freq / fc, 4));
+      const hp = (fc: number) => 1 - lp(fc);
+      const gain = (db: number) => Math.pow(10, db / 20);
+      const amp = lp(400) * gain(lowGain) + hp(400) * lp(2500) * gain(midGain) + hp(2500) * gain(highGain);
+      const totalDb = 20 * Math.log10(Math.max(amp, 1e-4));
       const y = Math.max(2, Math.min(height - 2, zeroY - totalDb * pxPerDb));
       points.push([x, y]);
     }

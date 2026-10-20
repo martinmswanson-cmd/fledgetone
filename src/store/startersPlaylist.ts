@@ -886,7 +886,7 @@ function phonk(): ProjectSnapshot {
   const eight: Step[] = [[0, 'D2', 0.8, '8n'], [4, 'D2', 0.72, '8n'], [8, 'D2', 0.78, '8n'], [12, 'D2', 0.72, '8n'], [16, 'D2', 0.8, '8n'], [20, 'D2', 0.72, '8n'], [24, 'D2', 0.78, '8n'], [28, 'C2', 0.78, '4n']];
   return inSpace(
     project(
-      'Drift Phonk starter',
+      'Cowbell Drive starter',
       130,
       0.04,
       [5, 17],
@@ -945,7 +945,7 @@ function drill(): ProjectSnapshot {
   const eight: Step[] = [[0, 'G1', 0.8, dur(11.5)], [11, 'A#1', 0.72, dur(7.5)], [18, 'D#1', 0.78, dur(8.5)], [26, 'F#1', 0.72, dur(6.5)]];
   return inSpace(
     project(
-      'UK Drill starter',
+      'Dark Bounce starter',
       142,
       0,
       [5, 17],
@@ -1006,7 +1006,7 @@ function rage(): ProjectSnapshot {
   const padChords = progression([['F#3', 'A3', 'C#4'], ['D3', 'A3', 'E4']], 16, '1n', 0.5);
   return inSpace(
     project(
-      'Hyper Trap starter',
+      'Blown-Out Hype starter',
       160,
       0,
       [5, 17],

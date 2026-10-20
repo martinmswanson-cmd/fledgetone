@@ -379,7 +379,7 @@ export const TrackInspector: React.FC = () => {
                   {(auto) => (
                     <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80" title={auto !== null ? AUTOMATED_TIP : undefined}>
                       <span className="text-[10px] font-mono font-bold text-cyan-300">LOW</span>
-                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqLow" /> : '400Hz'}</span>
+                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqLow" /> : '<400Hz'}</span>
                       <UndoableRange
                         min={-24}
                         max={12}
@@ -389,7 +389,7 @@ export const TrackInspector: React.FC = () => {
                         resetValue={0}
                         disabled={auto !== null}
                         className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer disabled:cursor-default accent-cyan-400 [writing-mode:vertical-lr] [direction:rtl]"
-                        title={auto !== null ? AUTOMATED_TIP : 'Low Shelf (-24dB to +12dB)'}
+                        title={auto !== null ? AUTOMATED_TIP : 'Low band, below 400 Hz (-24dB to +12dB)'}
                       />
                       <span className={`text-[10px] font-mono tabular-nums mt-1.5 font-semibold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>
                         {formatDb(auto ?? currentTrack.eq?.low ?? 0)}
@@ -403,7 +403,7 @@ export const TrackInspector: React.FC = () => {
                   {(auto) => (
                     <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80" title={auto !== null ? AUTOMATED_TIP : undefined}>
                       <span className="text-[10px] font-mono font-bold text-emerald-300">MID</span>
-                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqMid" /> : '1.0kHz'}</span>
+                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqMid" /> : '400Hz–2.5k'}</span>
                       <UndoableRange
                         min={-24}
                         max={12}
@@ -413,7 +413,7 @@ export const TrackInspector: React.FC = () => {
                         resetValue={0}
                         disabled={auto !== null}
                         className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer disabled:cursor-default accent-emerald-400 [writing-mode:vertical-lr] [direction:rtl]"
-                        title={auto !== null ? AUTOMATED_TIP : 'Mid Bell (-24dB to +12dB)'}
+                        title={auto !== null ? AUTOMATED_TIP : 'Mid band, 400 Hz to 2.5 kHz (-24dB to +12dB)'}
                       />
                       <span className={`text-[10px] font-mono tabular-nums mt-1.5 font-semibold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>
                         {formatDb(auto ?? currentTrack.eq?.mid ?? 0)}
@@ -427,7 +427,7 @@ export const TrackInspector: React.FC = () => {
                   {(auto) => (
                     <div className="flex flex-col items-center bg-black/40 p-2 rounded border border-forge-border/80" title={auto !== null ? AUTOMATED_TIP : undefined}>
                       <span className="text-[10px] font-mono font-bold text-amber-300">HIGH</span>
-                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqHigh" /> : '2.5kHz'}</span>
+                      <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqHigh" /> : '>2.5kHz'}</span>
                       <UndoableRange
                         min={-24}
                         max={12}
@@ -437,7 +437,7 @@ export const TrackInspector: React.FC = () => {
                         resetValue={0}
                         disabled={auto !== null}
                         className="h-24 w-1.5 appearance-none bg-zinc-700 rounded cursor-pointer disabled:cursor-default accent-amber-400 [writing-mode:vertical-lr] [direction:rtl]"
-                        title={auto !== null ? AUTOMATED_TIP : 'High Shelf (-24dB to +12dB)'}
+                        title={auto !== null ? AUTOMATED_TIP : 'High band, above 2.5 kHz (-24dB to +12dB)'}
                       />
                       <span className={`text-[10px] font-mono tabular-nums mt-1.5 font-semibold ${auto !== null ? 'text-amber-200' : 'text-white'}`}>
                         {formatDb(auto ?? currentTrack.eq?.high ?? 0)}

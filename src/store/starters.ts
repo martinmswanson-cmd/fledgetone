@@ -451,7 +451,7 @@ function trap(): ProjectSnapshot {
   // Bar 12 is empty (only the melody and pad): the drop-out before the switch-up
   const firstThree = (steps: Step[]) => steps.filter(([s]) => s < 48);
   return inSpace(project(
-    'Trap starter',
+    'Rap Beat starter',
     140,
     0,
     [5, 17],
