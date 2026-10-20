@@ -399,7 +399,7 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
         ...(drumLane ? [{ key: 'drummer', label: 'Drummer…', shortcut: 'make a beat', icon: <Drum className="w-3.5 h-3.5" />, onClick: openSmart('drummer') }] : []),
         ...(pitchedLane ? [{ key: 'chords', label: 'Chord progression…', shortcut: 'in key', icon: <Music4 className="w-3.5 h-3.5" />, onClick: openSmart('chords') }] : []),
         ...(pitchedLane ? [{ key: 'math', label: 'Math patterns…', shortcut: 'formulas', icon: <Sigma className="w-3.5 h-3.5" />, onClick: openSmart('math') }] : []),
-        ...(pitchedLane ? [{ key: 'dark', label: 'Dark melody…', shortcut: 'trap, drill', icon: <Music4 className="w-3.5 h-3.5" />, onClick: run(() => openArrange('melody', Math.max(1, Math.floor(menu.bar + 1e-6)), menu.trackId)) }] : []),
+        ...(pitchedLane ? [{ key: 'dark', label: 'Dark melody…', shortcut: 'bells, piano', icon: <Music4 className="w-3.5 h-3.5" />, onClick: run(() => openArrange('melody', Math.max(1, Math.floor(menu.bar + 1e-6)), menu.trackId)) }] : []),
         ...(track
           ? patternsFor(track.instrumentKey).map((p, i) => ({
               key: `pattern-${p.id}`,

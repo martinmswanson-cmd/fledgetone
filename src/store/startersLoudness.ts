@@ -33,7 +33,7 @@ export const GROUP_LOUDNESS: Readonly<Record<string, number>> = {
   Electronic: -14,
   'Artcore & Rhythm Games': -13,
   Band: -13,
-  'Hip-Hop & Phonk': -14,
+  'Hip-Hop & Rap': -14,
   'Pop & Jazz': -14,
   'Chill & World': -15,
   'Orchestral & Choir': -15,

@@ -50,7 +50,8 @@ const DEMO_SONGS = STARTERS.filter((s) => s.group === DEMO_GROUP);
 const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [filter, setFilter] = useState('');
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-  const found = STARTERS.filter((s) => words.every((w) => `${s.name} ${s.group} ${s.detail}`.toLowerCase().includes(w)));
+  // (its id too, so a style's usual name, like trap or drill, still finds its starter)
+  const found = STARTERS.filter((s) => words.every((w) => `${s.id} ${s.name} ${s.group} ${s.detail}`.toLowerCase().includes(w)));
   const choose = (template: 'blank' | 'demo' | StarterId) => {
     useTimelineStore.getState().newProject(template);
     onClose();

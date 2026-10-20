@@ -618,7 +618,7 @@ export const DRUM_STYLES: ReadonlyArray<{ id: DrumStyle; name: string; bpm: stri
   { id: 'house', name: 'Four on the floor (house, disco, techno)', bpm: '118–130' },
   { id: 'rock', name: 'Backbeat (rock, pop)', bpm: '90–140' },
   { id: 'hiphop', name: 'Boom bap (hip-hop)', bpm: '85–98' },
-  { id: 'trap', name: 'Trap (half time, hat rolls)', bpm: '130–150' },
+  { id: 'trap', name: 'Rap beat (half time, hat rolls)', bpm: '130–150' },
   { id: 'dnb', name: 'Two-step (drum & bass)', bpm: '170–176' },
   { id: 'funk', name: 'Funk (ghost notes)', bpm: '95–115' },
   { id: 'dembow', name: 'Dembow (reggaeton)', bpm: '88–100' },

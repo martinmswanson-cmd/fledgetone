@@ -94,7 +94,7 @@ export const RollPainter: React.FC<Props> = ({ drums, range, selected, onApply }
                 ))}
               </select>
             </label>
-            <label className="flex items-center justify-between gap-2" title={drums ? 'Each hit plays higher or lower than the last (drill hats rise)' : 'Each hit moves up or down by semitones'}>
+            <label className="flex items-center justify-between gap-2" title={drums ? 'Each hit plays higher or lower than the last (hats that climb)' : 'Each hit moves up or down by semitones'}>
               PITCH
               <select className={select} value={s.pitch} onChange={(e) => update({ pitch: Number(e.target.value) })}>
                 {PITCHES.map((p) => (

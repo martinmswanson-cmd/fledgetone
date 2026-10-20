@@ -177,15 +177,15 @@ export interface DrumPreset {
 /** The presets, named by how they sound. */
 export const DRUM_PRESETS: readonly DrumPreset[] = [
   // Kicks
-  { id: 'hardTrapKick', name: 'Hard trap kick', group: 'Kicks', sound: one('kick', { pitch: 46, sweep: 40, sweepTime: 0.028, decay: 0.75, click: 0.7, drive: 0.35 }) },
+  { id: 'hardTrapKick', name: 'Hard hitting kick', group: 'Kicks', sound: one('kick', { pitch: 46, sweep: 40, sweepTime: 0.028, decay: 0.75, click: 0.7, drive: 0.35 }) },
   { id: 'punchyKick', name: 'Punchy short kick', group: 'Kicks', sound: one('kick', { pitch: 55, sweep: 32, sweepTime: 0.02, decay: 0.28, click: 0.85, drive: 0.15 }) },
   { id: 'distortedBoomKick', name: 'Distorted boom kick', group: 'Kicks', sound: one('kick', { pitch: 42, sweep: 36, sweepTime: 0.04, decay: 1.2, click: 0.5, drive: 0.75 }) },
-  { id: 'drillKick', name: 'Tight drill kick', group: 'Kicks', sound: one('kick', { pitch: 52, sweep: 30, sweepTime: 0.018, decay: 0.32, click: 0.9, noise: 0.1, drive: 0.3 }) },
+  { id: 'drillKick', name: 'Tight kick', group: 'Kicks', sound: one('kick', { pitch: 52, sweep: 30, sweepTime: 0.018, decay: 0.32, click: 0.9, noise: 0.1, drive: 0.3 }) },
   { id: 'clickySubKick', name: 'Clicky sub kick', group: 'Kicks', sound: two(['kick', { pitch: 40, sweep: 24, sweepTime: 0.05, decay: 0.9, click: 0.2, drive: 0.1 }], ['rim', { pitch: 2200, decay: 0.012, click: 1, noise: 0.4, level: -10 }]) },
   { id: 'dustyKick', name: 'Dusty lo-fi kick', group: 'Kicks', sound: one('kick', { pitch: 58, sweep: 24, sweepTime: 0.03, decay: 0.3, click: 0.3, noise: 0.25, color: 1200, noiseDecay: 0.05, drive: 0.5 }, -1) },
   // Snares
-  { id: 'drillSnare', name: 'Punchy drill snare', group: 'Snares', sound: one('snare', { pitch: 210, sweep: 9, body: 0.75, decay: 0.09, noise: 0.85, color: 5200, noiseDecay: 0.16, click: 0.8, drive: 0.3 }) },
-  { id: 'trapSnare', name: 'Crisp trap snare', group: 'Snares', sound: one('snare', { pitch: 230, sweep: 5, body: 0.5, decay: 0.07, noise: 1, color: 7000, noiseDecay: 0.22, click: 0.7, drive: 0.15 }) },
+  { id: 'drillSnare', name: 'Punchy snare', group: 'Snares', sound: one('snare', { pitch: 210, sweep: 9, body: 0.75, decay: 0.09, noise: 0.85, color: 5200, noiseDecay: 0.16, click: 0.8, drive: 0.3 }) },
+  { id: 'trapSnare', name: 'Crisp snare', group: 'Snares', sound: one('snare', { pitch: 230, sweep: 5, body: 0.5, decay: 0.07, noise: 1, color: 7000, noiseDecay: 0.22, click: 0.7, drive: 0.15 }) },
   { id: 'fatSnare', name: 'Fat layered snare', group: 'Snares', sound: two(['snare', { pitch: 180, sweep: 10, body: 0.9, decay: 0.14, noise: 0.7, color: 3800, noiseDecay: 0.2, click: 0.6, drive: 0.35 }], ['clap', { bursts: 3, spread: 8, color: 1500, noiseDecay: 0.25, level: -5, delay: 2 }]) },
   { id: 'tightSnare', name: 'Tight dry snare', group: 'Snares', sound: one('snare', { pitch: 250, sweep: 4, body: 0.7, decay: 0.07, noise: 0.8, color: 6000, noiseDecay: 0.12, click: 0.7 }) },
   { id: 'dustySnare', name: 'Dusty lo-fi snare', group: 'Snares', sound: one('snare', { pitch: 170, sweep: 6, body: 0.7, decay: 0.1, noise: 0.7, color: 2600, noiseDecay: 0.17, click: 0.4, drive: 0.55 }, -1) },
@@ -196,7 +196,7 @@ export const DRUM_PRESETS: readonly DrumPreset[] = [
   { id: 'clapSnare', name: 'Clap and snare stack', group: 'Claps', sound: two(['clap', { bursts: 4, spread: 10, color: 1400, noiseDecay: 0.3 }], ['snare', { pitch: 200, body: 0.8, decay: 0.08, noise: 0.4, noiseDecay: 0.1, level: -6 }]) },
   // Hats
   { id: 'tightHat', name: 'Tight closed hat', group: 'Hats', sound: one('hat', { pitch: 360, color: 10000, decay: 0.035, noise: 0.35, click: 0.4 }) },
-  { id: 'trapHat', name: 'Bright trap hat', group: 'Hats', sound: one('hat', { pitch: 420, color: 12000, decay: 0.05, noise: 0.5, click: 0.5 }) },
+  { id: 'trapHat', name: 'Bright hat', group: 'Hats', sound: one('hat', { pitch: 420, color: 12000, decay: 0.05, noise: 0.5, click: 0.5 }) },
   { id: 'darkHat', name: 'Dark closed hat', group: 'Hats', sound: one('hat', { pitch: 280, color: 6500, decay: 0.06, noise: 0.25, click: 0.25 }) },
   { id: 'openHat', name: 'Open hat', group: 'Hats', sound: one('hat', { pitch: 360, color: 9500, decay: 0.42, noise: 0.4, click: 0.3 }) },
   { id: 'longOpenHat', name: 'Long sizzling open hat', group: 'Hats', sound: one('hat', { pitch: 400, color: 11000, decay: 0.9, noise: 0.6, click: 0.2 }) },

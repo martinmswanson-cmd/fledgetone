@@ -22,10 +22,10 @@ export type DarkSound = 'bell' | 'pluck' | 'piano';
 
 /** The styles: what each one's rhythm leans on, its usual scale and sound. */
 export const DARK_STYLES: ReadonlyArray<{ id: DarkStyle; name: string; detail: string; scale: DarkScale; sound: DarkSound; density: number }> = [
-  { id: 'trap', name: 'Trap', detail: 'sparse bells, syncopated, lots of space (130-150 BPM)', scale: 'minor', sound: 'bell', density: 0.4 },
-  { id: 'drill', name: 'Drill', detail: 'sliding piano, the bounce, triplet runs (140-145 BPM)', scale: 'harmonicMinor', sound: 'piano', density: 0.45 },
-  { id: 'rage', name: 'Rage', detail: 'busy 16th riffs, octave jumps (150-165 BPM)', scale: 'phrygian', sound: 'pluck', density: 0.7 },
-  { id: 'phonk', name: 'Phonk', detail: 'repeated 3+3+2 riff, low and stubborn (125-135 BPM)', scale: 'phrygian', sound: 'bell', density: 0.6 },
+  { id: 'trap', name: 'Sparse bells', detail: 'sparse bells, syncopated, lots of space (130-150 BPM)', scale: 'minor', sound: 'bell', density: 0.4 },
+  { id: 'drill', name: 'Sliding piano', detail: 'sliding piano, the bounce, triplet runs (140-145 BPM)', scale: 'harmonicMinor', sound: 'piano', density: 0.45 },
+  { id: 'rage', name: 'Fast riff', detail: 'busy 16th riffs, octave jumps (150-165 BPM)', scale: 'phrygian', sound: 'pluck', density: 0.7 },
+  { id: 'phonk', name: 'Cowbell riff', detail: 'repeated 3+3+2 riff, low and stubborn (125-135 BPM)', scale: 'phrygian', sound: 'bell', density: 0.6 },
 ];
 
 export const DARK_SCALES: ReadonlyArray<{ id: DarkScale; name: string }> = [

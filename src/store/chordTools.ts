@@ -138,7 +138,7 @@ export function arpeggiateChords(notes: readonly NoteEvent[], opts: ArpOptions, 
 
 export type RiffStyle = 'pluck' | 'lead' | 'bass';
 export const RIFF_STYLES: ReadonlyArray<{ id: RiffStyle; name: string; detail: string }> = [
-  { id: 'pluck', name: 'Pluck riff', detail: 'Short, syncopated 16ths: house, trap and pop hooks' },
+  { id: 'pluck', name: 'Pluck riff', detail: 'Short, syncopated 16ths: house, rap and pop hooks' },
   { id: 'lead', name: 'Lead line', detail: 'Longer notes that sing: a topline or a synth lead' },
   { id: 'bass', name: 'Bass line', detail: 'Low, rhythmic, on the chord roots with passing notes' },
 ];

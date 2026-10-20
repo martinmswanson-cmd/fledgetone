@@ -46,9 +46,9 @@ export const BASS808_PRESETS: ReadonlyArray<{ name: string; blurb: string; setti
   { name: 'Clean deep', blurb: 'A pure, long sine sub: felt more than heard', settings: {} },
   { name: 'Punchy', blurb: 'A hard pitch drop and a short tail that hits like a kick', settings: { drive: 0.25, tone: 5000, punch: 14, punchTime: 0.03, decay: 0.9, top: 0.35, level: 2 } },
   { name: 'Distorted', blurb: 'Warm saturation all the way down: growls on small speakers', settings: { drive: 0.6, tone: 4000, punch: 10, decay: 1.8, top: 0.4 } },
-  { name: 'Blown-out (rage)', blurb: 'Clipped flat and loud, buzzing through everything', settings: { drive: 1, character: 'hard', tone: 7000, punch: 12, punchTime: 0.05, decay: 2.2, top: 0.6, level: -1 } },
-  { name: 'Drill slide', blurb: 'A long tail with slow, wide slides between notes', settings: { drive: 0.35, tone: 3500, punch: 5, punchTime: 0.03, glide: 0.16, decay: 3.2, top: 0.4 } },
-  { name: 'Phonk dark (room for cowbell)', blurb: 'Folded grit kept dark, under the cowbell, with a tight tail', settings: { drive: 0.4, character: 'fold', tone: 800, punch: 9, punchTime: 0.035, glide: 0.06, decay: 0.8, top: 0.15 } },
+  { name: 'Blown-out', blurb: 'Clipped flat and loud, buzzing through everything', settings: { drive: 1, character: 'hard', tone: 7000, punch: 12, punchTime: 0.05, decay: 2.2, top: 0.6, level: -1 } },
+  { name: 'Long slide', blurb: 'A long tail with slow, wide slides between notes', settings: { drive: 0.35, tone: 3500, punch: 5, punchTime: 0.03, glide: 0.16, decay: 3.2, top: 0.4 } },
+  { name: 'Dark (room for cowbell)', blurb: 'Folded grit kept dark, under the cowbell, with a tight tail', settings: { drive: 0.4, character: 'fold', tone: 800, punch: 9, punchTime: 0.035, glide: 0.06, decay: 0.8, top: 0.15 } },
 ];
 
 /** A preset's full settings (unknown name: the default). */

@@ -309,7 +309,7 @@ export const PocketSheets: React.FC = () => {
 };
 
 /** The groups shown first on the starters screen (the rest under More). */
-const FIRST_GROUPS = ['Hip-Hop & Phonk', 'Electronic', 'Pop & Jazz', 'Chill & World', 'Bass Music', 'Band'];
+const FIRST_GROUPS = ['Hip-Hop & Rap', 'Electronic', 'Pop & Jazz', 'Chill & World', 'Bass Music', 'Band'];
 const GROUP_COLOURS = ['#a855f7', '#06b6d4', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#22d3ee', '#f97316', '#84cc16', '#eab308', '#38bdf8'];
 
 /** "What are we making?": a starter by kind of music, or an empty song; and the last song, to carry on. */

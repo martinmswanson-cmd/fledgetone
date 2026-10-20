@@ -79,7 +79,7 @@ export const STARTERS = [
   { id: 'funk', group: 'Band', name: 'Funk', detail: '104 BPM, E9. Ghost-note groove, recorded slap bass, scratchy muted guitar, clavinet, organ and horn hits.' },
   { id: 'jazz', group: 'Band', name: 'Jazz', detail: '132 BPM, swing. Ride cymbal, walking upright bass, piano comping, alto sax and vibes on a ii-V-I.' },
   { id: 'hiphop', group: 'Band', name: 'Hip-Hop', detail: '90 BPM, D minor, boom bap. A swung, dusty breakbeat, electric piano chords, upright bass and a trumpet in the hook.' },
-  { id: 'trap', group: 'Band', name: 'Trap', detail: '140 BPM, C minor. Half-time drums with claps, hat rolls and a drop-out, a sliding 808, a low dusty piano over a choir pad.' },
+  { id: 'trap', group: 'Band', name: 'Rap Beat', detail: '140 BPM, C minor. Half-time drums with claps, hat rolls and a drop-out, a sliding 808, a low dusty piano over a choir pad.' },
   { id: 'lofi', group: 'Chill & World', name: 'Lo-Fi', detail: '82 BPM, D minor, swung. Electric piano ninths through tape, a dusty breakbeat, upright bass, a flute line and rain: calm levels and menus.' },
   { id: 'ambient', group: 'Chill & World', name: 'Ambient', detail: '70 BPM, D major. Warm and glass pads, a kalimba melody and crystal sparkles: exploring, resting.' },
   { id: 'celtic', group: 'Chill & World', name: 'Celtic', detail: '112 BPM, D major. A fiddle reel over strummed guitar and bodhrán, a tin whistle, then the pipes.' },
@@ -96,10 +96,10 @@ export const STARTERS = [
   { id: 'melodicdub', group: 'Bass Music', name: 'Melodic Dubstep', detail: '150 BPM, D minor. Piano intro, a quiet build, a wobble drop with off-beat supersaws and a violin and voice hook.' },
   { id: 'riddim', group: 'Bass Music', name: 'Riddim', detail: '140 BPM, G. An organ drone, then a call-and-response of triplet growls and wobbles on two notes, G and Ab.' },
   { id: 'futurebass', group: 'Bass Music', name: 'Kawaii Future Bass', detail: '150 BPM half time, D major. Blooming, pumping add9 chords, a celesta sparkle, a chopped vocal topline doubled on marimba.' },
-  { id: 'phonk', group: 'Hip-Hop & Phonk', name: 'Drift Phonk', detail: '130 BPM, D Phrygian. A cowbell riff, 808 on every kick (sliding up at the turn), house drums, a switch a fourth up.' },
-  { id: 'drill', group: 'Hip-Hop & Phonk', name: 'UK Drill', detail: '142 BPM, G minor. A dark piano motif over strings and choir, the drill bounce with triplet hats, sliding 808s.' },
-  { id: 'rage', group: 'Hip-Hop & Phonk', name: 'Hyper Trap', detail: '160 BPM, F# Phrygian. A wide, blown-out lead, an 808 with grit an octave up, hat rolls and empty space.' },
-  { id: 'neosoul', group: 'Hip-Hop & Phonk', name: 'Neo-Soul', detail: '80 BPM, F, swung. Electric piano maj7 chords opening up, alto sax, drums that drag, then a beat switch up a minor third.' },
+  { id: 'phonk', group: 'Hip-Hop & Rap', name: 'Cowbell Drive', detail: '130 BPM, D Phrygian. A cowbell riff, 808 on every kick (sliding up at the turn), house drums, a switch a fourth up.' },
+  { id: 'drill', group: 'Hip-Hop & Rap', name: 'Dark Bounce', detail: '142 BPM, G minor. A dark piano motif over strings and choir, bouncing drums with triplet hats, sliding 808s.' },
+  { id: 'rage', group: 'Hip-Hop & Rap', name: 'Blown-Out Hype', detail: '160 BPM, F# Phrygian. A wide, blown-out lead, an 808 with grit an octave up, hat rolls and empty space.' },
+  { id: 'neosoul', group: 'Hip-Hop & Rap', name: 'Neo-Soul', detail: '80 BPM, F, swung. Electric piano maj7 chords opening up, alto sax, drums that drag, then a beat switch up a minor third.' },
   { id: 'bedroom', group: 'Pop & Jazz', name: 'Bedroom Pop', detail: '90 BPM, E minor, swung. Chorused clean guitar, a busy bass, lazy drums and a sax line behind the beat.' },
   { id: 'bossa', group: 'Pop & Jazz', name: 'Bossa Jazz-Pop', detail: '82 BPM, Db major. Nylon guitar bossa comping, upright bass, brushes, a flute melody and strings in the chorus.' },
   { id: 'citypop', group: 'Pop & Jazz', name: 'City Pop', detail: '113 BPM, E major. Slap bass, FM piano, cutting guitar, horn hits and a sax theme on the Royal Road.' },
@@ -114,7 +114,7 @@ export const STARTERS = [
   { id: 'clairDeLune', group: 'Classics', name: 'Clair de lune (Debussy)', detail: '58 BPM, D flat major, 9/8, complete (about 5 minutes). The concert grand: hushed thirds, the rubato section warming, rippling arpeggios to the one forte, dying away.' },
 ] as const;
 export type StarterId = (typeof STARTERS)[number]['id'];
-export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Anime & Cartoon', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Phonk', 'Pop & Jazz', 'Band', 'Chill & World', 'Classics'] as const;
+export const STARTER_GROUPS = ['Game Worlds', 'Game Moments', 'Anime & Cartoon', 'Electronic', 'Artcore & Rhythm Games', 'Bass Music', 'Orchestral & Choir', 'Hip-Hop & Rap', 'Pop & Jazz', 'Band', 'Chill & World', 'Classics'] as const;
 
 export const isStarterId = (v: unknown): v is StarterId => STARTERS.some((s) => s.id === v);
 
@@ -1547,7 +1547,7 @@ const GROUP_GLUE: Partial<Record<(typeof STARTER_GROUPS)[number], MasterSettings
   Electronic: 'tight',
   'Orchestral & Choir': 'gentle',
   'Chill & World': 'gentle',
-  'Hip-Hop & Phonk': 'punchy',
+  'Hip-Hop & Rap': 'punchy',
   Band: 'punchy',
   'Pop & Jazz': 'punchy',
   // (the Classical Flips choose punchy glue themselves)
@@ -1557,7 +1557,7 @@ const GROUP_GLUE: Partial<Record<(typeof STARTER_GROUPS)[number], MasterSettings
 /** The reverb's room for each group of starters (see roomIR.ts; the rest play in the hall). */
 const GROUP_ROOM: Partial<Record<(typeof STARTER_GROUPS)[number], RoomStyle>> = {
   Band: 'studio',
-  'Hip-Hop & Phonk': 'studio',
+  'Hip-Hop & Rap': 'studio',
   'Pop & Jazz': 'chamber',
   Electronic: 'plate',
   'Bass Music': 'plate',
