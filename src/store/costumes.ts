@@ -182,7 +182,7 @@ export interface StateOptions {
 export const SHUFFLE_BARS = [2, 4, 8] as const;
 /** Silences between plays, as a game might offer them (min to max seconds). */
 export const GAP_PRESETS: ReadonlyArray<{ id: string; name: string; gap: { min: number; max: number } | null }> = [
-  { id: 'none', name: 'none: loops straight on', gap: null },
+  { id: 'none', name: 'none', gap: null },
   { id: 'short', name: 'short: 4 to 12 s', gap: { min: 4, max: 12 } },
   { id: 'medium', name: 'medium: 15 to 45 s', gap: { min: 15, max: 45 } },
   { id: 'long', name: 'long: 1 to 3 min', gap: { min: 60, max: 180 } },

@@ -203,7 +203,7 @@ const MENUS: MenuDef[] = [
         { label: 'Move down', run: () => (t ? tl().moveTrackRow(t.id, 1) : NEED_TRACK), disabled: !t },
         t?.folder
           ? { label: `Take out of “${t.folder.name}”`, run: () => tl().setTrackFolder(t.id, null) }
-          : { label: 'New folder with this track', run: () => (t ? tl().groupIntoFolder([t.id]) : NEED_TRACK), disabled: !t, title: 'Right-click other tracks to move them into it' },
+          : { label: 'New folder with this track', run: () => (t ? void tl().groupIntoFolder([t.id]) : NEED_TRACK), disabled: !t, title: 'Right-click other tracks to move them into it' },
         ...BUS_PRESETS.map((p, i) => ({
           label: `Bus preset: ${p.name}`,
           divider: i === 0,

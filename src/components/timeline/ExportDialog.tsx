@@ -288,6 +288,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const abortRef = useRef<AbortController | null>(null);
   // A render still going when the dialog goes away is stopped
   useEffect(() => () => abortRef.current?.abort(), []);
+  // Enter exports at once, but the dialog opens at its top (autoFocus would scroll down to the button)
+  const exportButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => exportButton.current?.focus({ preventScroll: true }), []);
 
   const update = (patch: Partial<ExportSettings>) => setSettings((s) => ({ ...s, ...patch }));
 
@@ -942,7 +945,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         </span>
         <button
           type="button"
-          autoFocus
+          ref={exportButton}
           disabled={!canExport}
           onClick={() => void startExport()}
           className="h-8 px-3 ml-auto flex items-center gap-1.5 rounded-md border border-emerald-500/60 bg-emerald-500/10 text-xs font-mono text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40 disabled:pointer-events-none focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-400"
