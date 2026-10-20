@@ -243,7 +243,9 @@ export async function captureWamStates(): Promise<void> {
   await Promise.all(
     [...live].map(async ([id, inst]) => {
       try {
-        const state = await inst.audioNode.getState?.();
+        // (A plugin that never answers, crashed say, is skipped after a second, keeping what
+        // was saved: saving, exporting and freezing never wait on it for ever)
+        const state = await Promise.race([inst.audioNode.getState?.(), new Promise<undefined>((r) => setTimeout(() => r(undefined), 1000))]);
         if (state === undefined) return;
         const json = JSON.stringify(state);
         if (json.length > 2_000_000 || states.get(id) === json) return;

@@ -792,6 +792,9 @@ impl Synth {
         let sr = self.sr;
         let seed = self.rng.next();
         let rand = self.rng.bipolar();
+        // Fresh random levels for the LFOs that start with the note (Steps and Drift are random
+        // from the note's first cycle, and in One shot, which never wraps to draw new ones)
+        let held: [(f32, f32); 4] = std::array::from_fn(|_| (self.rng.bipolar(), self.rng.bipolar()));
         let v = &mut self.voices[i];
         let was_active = v.active;
         v.active = true;
@@ -813,6 +816,7 @@ impl Synth {
         for k in 0..4 {
             if cfg.lfo[k].mode > 0 {
                 v.lfo_phase[k] = cfg.lfo[k].phase;
+                v.lfo_held[k] = held[k];
             }
         }
         if fresh || !was_active {
@@ -1604,6 +1608,40 @@ mod tests {
         set(&mut s, "OTT", 0.5);
         let (peak, _) = render(&mut s, 10);
         assert!(peak < 1e-3, "popped to {peak}");
+    }
+
+
+    #[test]
+    fn a_sustain_change_glides_on_a_held_note() {
+        let mut s = Synth::new(48000.0);
+        s.midi(0x90, 60, 100);
+        render(&mut s, 200);
+        set(&mut s, "Amp sustain", 0.1);
+        s.process(1);
+        assert!(s.voices[0].amp.value > 0.9, "jumped to {}", s.voices[0].amp.value);
+        render(&mut s, 400);
+        assert!((s.voices[0].amp.value - 0.1).abs() < 0.01);
+    }
+
+    #[test]
+    fn steps_lfos_are_random_from_each_notes_first_cycle() {
+        for mode in [1.0, 2.0] {
+            let mut s = Synth::new(48000.0);
+            set(&mut s, "LFO 1 shape", 6.0);
+            set(&mut s, "LFO 1 sync", 0.0);
+            set(&mut s, "LFO 1 rate (Hz)", 2.0);
+            set(&mut s, "LFO 1 mode", mode);
+            let mut seen = vec![];
+            for n in 0..6 {
+                s.midi(0x90, 60 + n, 100);
+                render(&mut s, 2);
+                let v = s.voices.iter().find(|v| v.active && v.note == 60 + n).unwrap();
+                seen.push(v.lfo_held[0].1);
+                s.midi(0x80, 60 + n, 0);
+                render(&mut s, 100);
+            }
+            assert!(seen.iter().any(|&x| x != 0.0) && seen.windows(2).any(|w| w[0] != w[1]), "mode {mode}: {seen:?}");
+        }
     }
 
 }

@@ -338,7 +338,8 @@ impl Env {
                     self.stage = Stage::Sustain;
                 }
             }
-            Stage::Sustain => self.value = self.s,
+            // (Glides to a changed sustain level at the decay's pace, rather than jumping)
+            Stage::Sustain => self.value += (self.s - self.value) * self.d,
             Stage::Release => {
                 self.value += (0.0 - self.value) * self.r;
                 if self.value < 1e-5 {

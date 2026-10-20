@@ -177,6 +177,8 @@ pub struct Effects {
     damp: [f32; REVERB_LINES],
     reverb_mod: f32,
     was_on: [bool; 4],
+    /// The phaser unit was a flanger last block
+    was_flanger: bool,
 }
 
 impl Effects {
@@ -202,6 +204,7 @@ impl Effects {
             damp: [0.0; REVERB_LINES],
             reverb_mod: 0.0,
             was_on: [false; 4],
+            was_flanger: false,
         }
     }
 
@@ -224,13 +227,16 @@ impl Effects {
         if c.chorus && !self.was_on[0] {
             self.chorus.iter_mut().for_each(Line::clear);
         }
-        if (c.phaser && !self.was_on[1]) || !c.phaser {
+        // The phaser or the flanger, coming in (switched on, or the mode changed), starts clean
+        let was_running = |flanger: bool| self.was_on[1] && self.was_flanger == flanger;
+        if c.phaser && c.flanger && !was_running(true) {
+            self.flanger.iter_mut().for_each(Line::clear);
+        }
+        if c.phaser && !c.flanger && !was_running(false) {
             self.phaser_ap = [[0.0; 6]; 2];
             self.phaser_last = [0.0; 2];
-            if !self.was_on[1] {
-                self.flanger.iter_mut().for_each(Line::clear);
-            }
         }
+        self.was_flanger = c.flanger;
         self.was_on = on;
 
         if c.eq {
@@ -544,6 +550,26 @@ mod tests {
             fx.process(&mut l, &mut r, 128, &on, &mods, 16);
             assert!(l.iter().all(|x| x.abs() < 1e-6), "flanger {flanger}: old sound came back");
         }
+    }
+
+
+    #[test]
+    fn flanger_after_a_mode_switch_plays_no_old_sound() {
+        let mut fx = Effects::new(48000.0);
+        let mods = [FxMods::default(); 8];
+        let fl = FxCfg { phaser: true, flanger: true, phaser_rate: 0.5, phaser_depth: 1.0, phaser_fb: 1.0, phaser_mix: 1.0, ..Default::default() };
+        let ph = FxCfg { flanger: false, ..fl };
+        for (c, x, blocks) in [(&fl, 0.5f32, 50), (&ph, 0.0, 50)] {
+            for _ in 0..blocks {
+                let mut l = [x; 128];
+                let mut r = [x; 128];
+                fx.process(&mut l, &mut r, 128, c, &mods, 16);
+            }
+        }
+        let mut l = [0.0f32; 128];
+        let mut r = [0.0f32; 128];
+        fx.process(&mut l, &mut r, 128, &fl, &mods, 16);
+        assert!(l.iter().all(|x| x.abs() < 1e-6));
     }
 
 }

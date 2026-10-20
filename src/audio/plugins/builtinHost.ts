@@ -187,6 +187,12 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   });
 
   let params: BuiltinParam[] = [];
+  /**
+   * Sets sent per parameter and not yet answered: a late answer to an older one mustn't put the
+   * value back (a knob stepped quickly would lose steps)
+   */
+  const inFlight = new Map<number, number>();
+  const keepSent = (fresh: BuiltinParam[]) => fresh.map((p, i) => (inFlight.get(i) ? { ...p, value: params[i]?.value ?? p.value } : p));
   let programs: string[] = [];
   let program = -1;
   const listeners = new Set<() => void>();
@@ -212,6 +218,13 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
         clearTimeout(timer);
         reject(new Error(d.message));
       } else if (d.type === 'display') {
+        const waiting = (inFlight.get(d.index) ?? 1) - 1;
+        if (waiting > 0) {
+          // A newer set is on its way: its own answer will say what it shows
+          inFlight.set(d.index, waiting);
+          return;
+        }
+        inFlight.delete(d.index);
         // A new array each time: the panel redraws when the array changes
         params = params.map((p, i) => (i === d.index ? { ...p, value: d.value, text: d.text } : p));
         changed();
@@ -226,7 +239,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
         else {
           // A preset was chosen: every parameter may have moved
           // (A preset file's values are its own defaults: Reset puts the patch back)
-          params = d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: files ? p.value : (params[i]?.defaultValue ?? p.value) }));
+          params = keepSent(d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: files ? p.value : (params[i]?.defaultValue ?? p.value) })));
           changed();
           // Loads answer in the order they were sent: this reply ends the oldest
           loaded.shift()?.();
@@ -311,6 +324,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     if (!p || destroyed) return;
     const v = Math.max(0, Math.min(1, value));
     params = params.map((x, i) => (i === index ? { ...x, value: v } : x));
+    inFlight.set(index, (inFlight.get(index) ?? 0) + 1);
     node.port.postMessage({ type: 'set', index, value: v });
     changed();
   };
@@ -338,7 +352,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     new Promise<void>((resolve) => {
       const id = nextReply++;
       replies.set(id, (fresh) => {
-        params = fresh.map((p, i) => ({ ...p, defaultValue: params[i]?.defaultValue ?? p.value }));
+        params = keepSent(fresh.map((p, i) => ({ ...p, defaultValue: params[i]?.defaultValue ?? p.value })));
         changed();
         resolve();
       });
