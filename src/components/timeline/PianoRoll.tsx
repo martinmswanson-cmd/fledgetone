@@ -12,8 +12,10 @@ import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { NotationView } from './NotationView';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
-import { Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Keyboard, Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { initAudio } from '../../audio/engine';
+import { noteNameOn, onLiveNote } from '../../audio/liveInput';
+import { usePianoPanel } from '../../store/pianoPanel';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { previewTrackNotes } from '../../audio/liveTracks';
 import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
@@ -435,6 +437,74 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   };
 
   const currentNotes = () => useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? [];
+
+  // Note entry (with the on-screen piano, pianoPanel.ts): each key played goes in at a cursor, which
+  // then moves on by the New note length (or the grid, if that's longer); keys held together are a chord
+  const noteEntry = usePianoPanel((s) => s.noteEntry && s.open);
+  /** The cursor, in units from the clip's start: it starts after the clip's last note */
+  const [entryAt, setEntryAt] = useState(() => Math.min(totalUnits, clip.notes.reduce((end, n) => Math.max(end, unitsOf(n.startOffset) + noteUnits(n)), 0)));
+  const entryRef = useRef({ at: entryAt, step: Math.max(lengthUnits, gridUnits), length: lengthUnits, totalUnits });
+  entryRef.current = { at: entryAt, step: Math.max(lengthUnits, gridUnits), length: lengthUnits, totalUnits };
+  /** The steps entered, newest last, for Backspace to take out again */
+  const entered = useRef<Array<{ at: number; ids: string[] }>>([]);
+  /** Scroll the grid (not the page) so `selector`'s element shows, clear of the keys and the ruler */
+  const keepInView = (selector: string) =>
+    requestAnimationFrame(() => {
+      const box = scrollRef.current;
+      const el = box?.querySelector<HTMLElement>(selector);
+      if (!box || !el) return;
+      const r = el.getBoundingClientRect();
+      const c = box.getBoundingClientRect();
+      const pad = 24;
+      // (the part of the grid on screen: the roll can reach past the window's bottom)
+      const top = Math.max(c.top, 0) + RULER_H + pad;
+      // (and above the expression lane pinned to its bottom)
+      const bottom = Math.min(c.bottom, window.innerHeight) - pad - (isDrums ? 0 : EXPRESSION_LANE_H);
+      if (r.top < top) box.scrollTop -= top - r.top;
+      else if (r.bottom > bottom) box.scrollTop += r.bottom - bottom;
+      if (r.left < c.left + KEY_W + pad) box.scrollLeft -= c.left + KEY_W + pad - r.left;
+      else if (r.right > c.right - pad) box.scrollLeft += r.right - (c.right - pad);
+    });
+  useEffect(() => {
+    if (!noteEntry) return;
+    // What's played sounds on this clip's track (unless another one is armed)
+    useTimelineStore.getState().selectTrack(clip.trackId);
+    const held = new Set<number>();
+    let chord: { at: number; ids: string[] } | null = null;
+    return onLiveNote((n) => {
+      const store = useTimelineStore.getState();
+      const live = store.clips.find((c) => c.id === clip.id);
+      if (!live) return;
+      if (n.on) {
+        if (held.has(n.midi)) return;
+        held.add(n.midi);
+        if (!chord) {
+          chord = { at: entryRef.current.at, ids: [] };
+          entered.current.push(chord);
+        }
+        const length = entryRef.current.length;
+        // Past the clip's end: it grows to the bar the note ends in
+        const endBars = (chord.at + length) / UNITS_PER_BAR;
+        if (endBars > live.lengthBars + 1e-9) store.trimClipEnd(clip.id, Math.ceil(endBars - 1e-9));
+        const track = store.tracks.find((t) => t.id === clip.trackId);
+        const note = { note: noteNameOn(n.midi, track), startOffset: chord.at / UNITS_PER_BAR, duration: barsToDuration(length / UNITS_PER_BAR), velocity: n.velocity };
+        const ids = store.addNotes(clip.id, [note]);
+        chord.ids.push(...ids);
+        // (a frame later, once its row is drawn)
+        if (ids[0]) requestAnimationFrame(() => keepInView(`[data-note-id="${ids[0]}"]`));
+      } else {
+        if (!held.delete(n.midi) || held.size > 0 || !chord) return;
+        setEntryAt(chord.at + entryRef.current.step);
+        chord = null;
+      }
+    });
+  }, [noteEntry, clip.id, clip.trackId]);
+  useEffect(() => {
+    if (noteEntry) keepInView('[data-entry-cursor]');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- when the cursor moves
+  }, [noteEntry, entryAt]);
+  const noteEntryRef = useRef(noteEntry);
+  noteEntryRef.current = noteEntry;
   /** In STEPS: the cell under the pointer (its row and first unit), outlined so it's clear what a click toggles */
   const [hoverCell, setHoverCell] = useState<{ row: number; unit: number } | null>(null);
   const trackHover = (e: React.PointerEvent) => {
@@ -674,6 +744,23 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         else store.closeEditor();
         return;
       }
+      // Note entry, with nothing selected: the arrows move the cursor (→ leaves a gap), Backspace takes the last step out
+      if (noteEntryRef.current && !mod && selected.size === 0) {
+        const { step, totalUnits: end } = entryRef.current;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          handled();
+          setEntryAt((at) => Math.max(0, Math.min(end, at + (e.key === 'ArrowRight' ? step : -step))));
+          return;
+        }
+        if (e.key === 'Backspace') {
+          handled();
+          const last = entered.current.pop();
+          if (!last) return;
+          store.deleteNotes(clip.id, new Set(last.ids));
+          setEntryAt(last.at);
+          return;
+        }
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         // Taken even with no notes selected: let through, the timeline would delete the clip itself
         handled();
@@ -748,6 +835,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             aria-label="Clip name"
           />
           <span className="text-[11px]">{trackName}</span>
+          <button
+            type="button"
+            onClick={() => usePianoPanel.getState().setNoteEntry(!noteEntry)}
+            aria-pressed={noteEntry}
+            title="Type notes in with the computer keyboard (or a MIDI keyboard): each key you play goes in at the cursor, one after another"
+            className={`h-7 px-2 flex items-center gap-1.5 rounded-md border text-[11px] ${noteEntry ? 'border-cyan-400/70 bg-cyan-500/15 text-cyan-100' : 'border-forge-border text-forge-text hover:border-forge-borderLight'}`}
+          >
+            <Keyboard className="w-3.5 h-3.5" /> Type notes
+          </button>
         </div>
         <label className="flex items-center gap-1.5">
           GRID
@@ -1071,6 +1167,13 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               })}
 
               <GridPlayhead startBar={clip.startBar} stepW={stepW} gridW={gridW} />
+              {noteEntry && (
+                <div
+                  data-entry-cursor
+                  className="absolute top-0 bottom-0 w-[2px] bg-cyan-300 pointer-events-none z-20 shadow-[0_0_6px_rgba(103,232,249,0.8)]"
+                  style={{ left: entryAt * unitW }}
+                />
+              )}
             </div>
           </div>
           {/* Pitch bend, mod wheel and sustain pedal (not for drums and FX) */}

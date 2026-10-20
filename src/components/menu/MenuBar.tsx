@@ -4,6 +4,7 @@ import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, type Bui
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
+import { usePianoPanel } from '../../store/pianoPanel';
 import { MOD_KEY, PALETTE_SHORTCUT, useUiStore, type DockTab } from '../../store/uiStore';
 import { useVideoStore } from '../../store/videoStore';
 import { useAudioStore } from '../../store/audioStore';
@@ -285,6 +286,7 @@ const MENUS: MenuDef[] = [
           void reveal('[aria-label="Drum Designer"]');
         } },
         { label: 'Record from the microphone', run: () => press('button[title^="Record from the microphone"], button[title^="Stop recording"]'), divider: true },
+        { label: 'Piano (play and type notes with the keyboard)', run: () => usePianoPanel.getState().setOpen(!usePianoPanel.getState().open) },
         { label: 'MIDI keyboard…', run: () => press('button[title^="MIDI input"]') },
         { label: 'Metronome', run: () => press('button[title^="Metronome:"]') },
         { label: 'Performance & memory', run: () => {

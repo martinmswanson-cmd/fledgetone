@@ -979,6 +979,20 @@ Click the **MIDI** button (the keyboard icon) in the toolbar, then **Connect MID
 
 In the MIDI popover, tick **Computer keyboard piano**. `A` `S` `D` `F` `G` `H` `J` `K` `L` `;` `'` are the white keys from C, `W` `E` `T` `Y` `U` `O` `P` the black keys, and `Z` / `X` move an octave down or up. Notes play at a fixed velocity. While it's on, those keys play notes instead of their usual jobs (`L`, `O`); Space and the other shortcuts still work. It's off by default.
 
+**Tools › Piano** (or search *piano*) opens the **on-screen piano**: the same keys drawn as a keyboard, each with its letter, lit as you play them (from the computer keyboard, a MIDI keyboard or a click). Opening it turns the computer keyboard piano on; closing it turns it off again (unless it was on before). Its **Z** and **X** buttons change the octave. Drag it by its top row to move it out of the way.
+
+### Typing notes in (note entry)
+
+Placing notes one by one with the mouse is slow. Instead, open a clip in the piano roll and click **Type notes** at the top of it (or tick **Note entry** on the on-screen piano). A cyan cursor appears in the grid, after the clip's last note:
+
+- **Each key you play goes in at the cursor**, and the cursor moves on by the **New note** length (or the **Grid**, if that's longer). You don't have to play in time: one key after another writes a melody.
+- **Keys held down together make a chord**: they all land at the same step, and the cursor moves on once you let go of them all.
+- **→** leaves a gap (a rest) and **←** steps back, while no notes are selected.
+- **Backspace** takes the last step out again (and puts the cursor back there); **Ctrl+Z** undoes as usual.
+- Past the clip's end, the clip grows to fit.
+
+It works with the computer keyboard, a MIDI keyboard and clicks on the on-screen piano, on drum tracks too (each key is a drum, as when playing them live). The notes sound on the clip's track as you play them. To change the length of the next notes, change **New note** in the piano roll; for a different loudness, play softer or harder on a MIDI keyboard, or change the notes' **Vel** afterwards.
+
 ## Recording
 
 ### Recording from a microphone
@@ -1295,6 +1309,7 @@ Shortcuts don't work while you're typing in a box, or while a dialog or panel (G
 | `Ctrl+K` | Search tools, settings, instruments, starters and the guide |
 | `?` | Open this guide |
 | `A`–`'`, `W`–`P`, `Z` / `X` | With the computer keyboard piano on: play notes, and change octave |
+| `→` / `←`, `Backspace` | With note entry on and no notes selected: move the cursor a step (a rest), or take the last step out |
 | `Tab` to a marker flag, then `Enter` / `F2` / `Delete` / `←` `→` | Go there / rename / delete / move it a SNAP step (with `Shift`: a bar) |
 | `Esc` (audio clip editor) | Close it |
 

@@ -161,6 +161,7 @@ const TOOLS: Item[] = [
   { title: 'Quantize recorded notes', keywords: 'quantize recording snap timing tighten', run: () => void openAndReveal(RECORD_OPTIONS, '[aria-label="Quantize recorded notes"]') },
   { title: 'Metronome', keywords: 'metronome click beat tick tempo', detail: 'A click on every beat while playing (never in exports).', run: show('button[title^="Metronome:"]') },
   { title: 'Metronome volume', keywords: 'metronome click level loudness', run: () => void openAndReveal(RECORD_OPTIONS, '[aria-label="Metronome volume"]') },
+  { title: 'Piano', keywords: 'piano keyboard type notes note entry step input computer keyboard play letters', detail: 'Play with the computer keyboard, and type notes into the piano roll one after another.', run: async () => (await import('../store/pianoPanel')).usePianoPanel.getState().setOpen(true) },
   { title: 'MIDI keyboard', keywords: 'midi keyboard controller input device computer keyboard piano typing', detail: 'Choose a MIDI keyboard, or play the computer keyboard.', run: async () => void (await press('button[title^="MIDI input"]')) },
   { title: 'Record from the microphone', keywords: 'mic microphone voice vocals singing audio record guitar', run: show('button[title^="Record from the microphone"], button[title^="Stop recording"]') },
   { title: 'Reference video', keywords: 'video movie film gameplay trailer cutscene score picture sync mp4', detail: 'Load a video to score to; it plays in sync with the playhead.', run: () => {

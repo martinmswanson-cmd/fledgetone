@@ -249,7 +249,7 @@ const BEGINNER: Lesson = {
     },
     {
       title: 'Write a note',
-      body: 'Click an empty spot in the grid to add a note there; it plays as you add it. Drag a note to move it, drag its end to make it longer, right-click it to delete it.',
+      body: 'Click an empty spot in the grid to add a note there; it plays as you add it. Drag a note to move it, drag its end to make it longer, right-click it to delete it. (Later, **Type notes** at the top lets you type a whole melody in with your keyboard.)',
       target: '[aria-label="Piano roll"]',
       task: { hint: 'Click in the grid to add a note', begin: noteCount, done: (n) => noteCount() > (n as number) },
     },

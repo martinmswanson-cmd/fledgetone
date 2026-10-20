@@ -95,6 +95,30 @@ function endNote(midi: number, at: number): void {
   }
 }
 
+// ---------- listening to what's played ----------
+
+/** A key played or let go, live (a MIDI keyboard, the computer keyboard or the on-screen piano). */
+export interface LiveNote {
+  on: boolean;
+  midi: number;
+  velocity: number;
+}
+const noteListeners = new Set<(note: LiveNote) => void>();
+const emitNote = (note: LiveNote) => noteListeners.forEach((l) => safely(() => l(note)));
+
+/** Hear every key played live (the on-screen piano lights them, note entry writes them). Returns a stop function. */
+export function onLiveNote(listener: (note: LiveNote) => void): () => void {
+  noteListeners.add(listener);
+  return () => noteListeners.delete(listener);
+}
+
+/** A key of the on-screen piano pressed (or let go), played like a key of the computer keyboard. */
+export function pressScreenKey(midi: number, down: boolean): void {
+  const message: MidiMessage = down ? { kind: 'noteOn', note: midi, velocity: KEYBOARD_VELOCITY } : { kind: 'noteOff', note: midi };
+  playMidi(message, heardTime());
+  useMidiStore.getState().noteActivity(describe(message));
+}
+
 /** Play `message` now (live), and record it as heard at `heard` (a drum pad as the row it played, see noteNameOn). */
 export function playMidi(message: MidiMessage, heard: number): void {
   const now = liveNow();
@@ -123,6 +147,7 @@ export function playMidi(message: MidiMessage, heard: number): void {
         }
       }
       recorded = { ...message, name };
+      emitNote({ on: true, midi: message.note, velocity: message.velocity });
       // Note repeat: a held pad on a kit, the Drum Rack or the Slicer plays again at the rate until let go
       const rate = useMidiStore.getState().noteRepeat;
       if (rate !== 'off' && track && instrument && (isDrumKind(track.instrumentKey) || isRackKind(track.instrumentKey) || isSlicerKind(track.instrumentKey))) {
@@ -140,6 +165,7 @@ export function playMidi(message: MidiMessage, heard: number): void {
       break;
     }
     case 'noteOff': {
+      emitNote({ on: false, midi: message.note, velocity: 0 });
       noteRepeatOff(message.note);
       if (message.channel !== undefined && mpeNotes.get(message.channel)?.note === message.note) mpeNotes.delete(message.channel);
       const off = held.get(message.note);

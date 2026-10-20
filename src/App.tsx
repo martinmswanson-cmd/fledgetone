@@ -15,6 +15,7 @@ import { ProjectDrop } from './components/ProjectDrop';
 import { MobileNotice } from './components/MobileNotice';
 import { SharedLinkOpener } from './components/SharedLinkOpener';
 import { UpdateNotice } from './components/UpdateNotice';
+import { PianoPanel } from './components/PianoPanel';
 import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import { LearnDialog } from './components/tour/LearnDialog';
@@ -106,6 +107,7 @@ export const App: React.FC = () => {
       <MobileNotice />
       <SharedLinkOpener />
       <UpdateNotice />
+      <PianoPanel />
       <SearchPalette />
       <ReportProblem />
       <CutToLength />

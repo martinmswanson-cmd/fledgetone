@@ -4,8 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## 2026.10.20-8 — Clearer headings on phones
+## 2026.10.20-8 — Type your notes in
 
+- **Type notes in instead of placing them one by one**: open a clip in the piano roll and click **Type notes**. Each key you play on your computer keyboard (or a MIDI keyboard) goes in at a cursor that then moves on, so you can write a melody without playing in time; keys held together make a chord, → leaves a gap and Backspace takes the last step out.
+- **An on-screen piano** (**Tools › Piano**) shows which letter plays which note and lights the keys as you play. Drag it anywhere.
 - **The big headings on fledgetone.com no longer lose parts of letters on phones**: they're drawn in a solid colour now, which phone browsers can't clip while the moving timeline behind them redraws.
 - In **Your first song**, the steps after you open the piano roll scroll the button they point at fully into view, instead of leaving it half off the top of the screen.
 
