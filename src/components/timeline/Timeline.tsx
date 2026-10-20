@@ -218,8 +218,13 @@ export const Timeline: React.FC = () => {
       base.forEach((id) => hits.add(id));
       useTimelineStore.getState().setSelection(hits);
     };
+    // (a click on an empty spot also selects that lane's track: what's pasted goes there)
+    const laneTrack = (e.target as HTMLElement).closest<HTMLElement>('[data-lane]')?.dataset.lane;
     const onUp = () => {
-      if (!dragging && !additive) useTimelineStore.getState().clearSelection();
+      if (!dragging && !additive) {
+        useTimelineStore.getState().clearSelection();
+        if (laneTrack) useTimelineStore.getState().selectTrack(laneTrack);
+      }
       setMarquee(null);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
@@ -378,7 +383,9 @@ export const Timeline: React.FC = () => {
         else s.cutSelectedClips();
       } else if (mod && key === 'v') {
         e.preventDefault();
-        s.pasteClips();
+        // Clips copied from one track go onto the selected track (when they can play there)
+        const from = new Set(s.clipboard.map((c) => c.trackId));
+        s.pasteClips(undefined, from.size === 1 && s.selectedTrackId ? s.selectedTrackId : undefined);
       } else if (mod || e.altKey) {
         return;
       } else if (key === 'v') {

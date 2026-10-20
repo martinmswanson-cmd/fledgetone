@@ -1,6 +1,7 @@
 import { showToast } from './toastStore';
 import React, { useEffect, useRef } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
+import { useUiStore } from '../../store/uiStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { Track } from '../../store/timelineTypes';
 import { REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX } from '../../store/timelineTypes';
@@ -84,9 +85,22 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
         {bus && <span className="px-1 rounded bg-slate-400/25 text-[8px] font-mono uppercase text-slate-100" title="A bus: tracks routed here play through its strip">bus</span>}
         {ret && <span className="px-1 rounded bg-sky-400/25 text-[8px] font-mono uppercase text-sky-100" title="A return: tracks send to it, it plays its effects back">return</span>}
         {track.duckProxy && <span className="px-1 rounded bg-sky-500/20 text-[8px] font-mono uppercase text-sky-200" title="The other tracks duck under this one">proxy</span>}
-        {inserts.length ? inserts.map((k) => (
-          <span key={k} className="px-1 rounded bg-cyan-500/15 text-[8px] font-mono uppercase text-cyan-200">{k.slice(0, 4)}</span>
-        )) : <span className="text-[8px] font-mono text-forge-muted">no inserts</span>}
+        {/* The effects: a click opens them in the Inspector (where they're switched on and set) */}
+        <button
+          type="button"
+          onClick={() => {
+            const s = useTimelineStore.getState();
+            s.selectTrack(track.id);
+            s.toggleInspector(true);
+            useUiStore.getState().setInspectorTab('track');
+          }}
+          title={inserts.length ? `Effects: ${inserts.join(', ')}. Click to change them in the Inspector` : 'Add effects to this track (in the Inspector)'}
+          className="flex flex-wrap justify-center gap-0.5 rounded hover:bg-white/5"
+        >
+          {inserts.length ? inserts.map((k) => (
+            <span key={k} className="px-1 rounded bg-cyan-500/15 text-[8px] font-mono uppercase text-cyan-200">{k.slice(0, 4)}</span>
+          )) : <span className="px-1 text-[9px] font-mono text-forge-muted hover:text-cyan-200">+ Effects</span>}
+        </button>
       </div>
       <label className="w-full flex flex-col gap-0.5 text-[9px] font-mono text-forge-muted">
         REV {Math.round(track.reverbSend * 100)}%

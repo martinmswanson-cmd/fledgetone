@@ -132,7 +132,7 @@ const MENUS: MenuDef[] = [
         { label: 'Redo', shortcut: `${MOD_KEY}Y`, run: s.redo, disabled: !s.future.length },
         { label: 'Cut', shortcut: `${MOD_KEY}X`, run: s.cutSelectedClips, disabled: !any, divider: true },
         { label: 'Copy', shortcut: `${MOD_KEY}C`, run: s.copySelectedClips, disabled: !any },
-        { label: 'Paste at the playhead', shortcut: `${MOD_KEY}V`, run: () => say(s.pasteClips()) },
+        { label: 'Paste at the playhead', shortcut: `${MOD_KEY}V`, title: 'On the selected track, when what you copied came from one track', run: () => say(s.pasteClips(undefined, new Set(s.clipboard.map((c) => c.trackId)).size === 1 && s.selectedTrackId ? s.selectedTrackId : undefined)) },
         { label: 'Duplicate', shortcut: `${MOD_KEY}D`, run: () => say(s.duplicateSelection()), disabled: !any },
         { label: 'Delete', shortcut: 'Del', run: s.deleteSelectedClips, disabled: !any },
         { label: 'Select all', shortcut: `${MOD_KEY}A`, run: s.selectAll, divider: true },

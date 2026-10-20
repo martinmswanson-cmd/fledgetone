@@ -503,12 +503,16 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         if (!chord) {
           chord = { at: entryRef.current.at, ids: [] };
           entered.current.push(chord);
+          // One undo step for the whole chord (and the clip growing for it)
+          store.checkpoint();
         }
         // Past the clip's end: it grows to the bar the note ends in (no further than the room)
         const endBars = (chord.at + length) / UNITS_PER_BAR;
         if (endBars > live.lengthBars + 1e-9) store.trimClipEnd(clip.id, Math.min(room, Math.ceil(endBars - 1e-9)));
         const note = { note: name, startOffset: chord.at / UNITS_PER_BAR, duration: barsToDuration(length / UNITS_PER_BAR), velocity: n.velocity };
-        const ids = store.addNotes(clip.id, [note]);
+        const id = uid('note');
+        store.setClipNotes(clip.id, [...(useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? []), { ...note, id }]);
+        const ids = [id];
         chord.ids.push(...ids);
         // (a frame later, once its row is drawn)
         if (ids[0]) requestAnimationFrame(() => keepInView(`[data-note-id="${ids[0]}"]`));

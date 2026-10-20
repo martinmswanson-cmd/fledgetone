@@ -4,6 +4,13 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-10 — Paste where you mean
+
+- **Paste lands on the track you picked**: click an empty spot on a track's lane (which selects that track) and Ctrl+V puts clips copied from one track there, at the playhead.
+- **A typed chord undoes in one go**, along with the clip growing to fit it.
+- In the mixer, the effects row of each channel opens that track's effects in the Inspector (**+ Effects** when it has none).
+- **Pocket**: on a phone held upright, track names take two lines instead of being cut short.
+
 ## 2026.10.20-9 — Your song opens again
 
 - **Your last song opens again by itself** when you come back or reload the page, as it already did on phones. Before, the studio opened an empty song and offered your last one in a small banner, which was easy to miss, and a newer song could replace it. The banner now only offers back a song that **New**, **Open** or a shared link replaced.
