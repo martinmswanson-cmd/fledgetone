@@ -277,6 +277,11 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   let ctxSyncers = syncers.get(ctx);
   if (!ctxSyncers) syncers.set(ctx, (ctxSyncers = new Set()));
   ctxSyncers.add(sync);
+  const stateNow = (): BuiltinState => ({
+    builtin: 1,
+    ...(program >= 0 ? (files ? { preset: files.names[program] } : { program }) : {}),
+    values: params.map((p) => p.value),
+  });
   const audioNode = Object.assign(node, {
     getParameterInfo: async () =>
       Object.fromEntries(params.map((p, i) => [String(i), { id: String(i), label: p.name, type: 'float', minValue: 0, maxValue: 1, defaultValue: p.defaultValue }])),
@@ -290,11 +295,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       pending = [];
       if (!destroyed) node.port.postMessage({ type: 'clear' });
     },
-    getState: async (): Promise<BuiltinState> => ({
-      builtin: 1,
-      ...(program >= 0 ? (files ? { preset: files.names[program] } : { program }) : {}),
-      values: params.map((p) => p.value),
-    }),
+    getState: async (): Promise<BuiltinState> => stateNow(),
+    getStateNow: (): BuiltinState => stateNow(),
     setState: async (s: unknown) => {
       const saved = s as Partial<BuiltinState> | undefined;
       const p = files ? (saved?.preset ? files.names.indexOf(saved.preset) : -1) : saved?.program;

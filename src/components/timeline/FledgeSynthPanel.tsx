@@ -73,7 +73,10 @@ const Knob: React.FC<{ c: Ctl<'knob'>; get: Get; set: Set; size?: number }> = ({
         }}
         onPointerMove={(e) => {
           if (!drag.current) return;
-          put(drag.current.v + (drag.current.y - e.clientY) / (e.shiftKey ? 1000 : 180));
+          // Each move adds its own step at the scale held now (Shift mid-drag doesn't jump)
+          const next = Math.max(0, Math.min(1, drag.current.v + (drag.current.y - e.clientY) / (e.shiftKey ? 1000 : 180)));
+          drag.current = { y: e.clientY, v: next };
+          put(next);
         }}
         onPointerUp={() => (drag.current = null)}
         onPointerCancel={() => (drag.current = null)}

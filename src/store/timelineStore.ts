@@ -86,7 +86,7 @@ import { breathe } from './breathe';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { autosaveRemovedBy, hasWork, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
-import { liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
+import { captureWamStatesNow, liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import { withSound, type MySound } from './mySounds';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
@@ -3032,6 +3032,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
 
     loadProject: (p: ProjectSnapshot) => {
       // The song being replaced is kept for the Restore banner, so New, Open or a link never loses work
+      // (with the plugins' latest settings: they otherwise reach the tracks every few seconds)
+      captureWamStatesNow();
       const replaced = currentProject();
       if (hasWork(replaced)) useLastSession.setState({ session: setAsideSession(replaced) });
       replacedListeners.forEach((l) => l());

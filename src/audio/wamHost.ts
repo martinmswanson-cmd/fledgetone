@@ -19,6 +19,8 @@ export interface WamInstance {
     scheduleEvents?: (...events: unknown[]) => void;
     clearEvents?: () => void;
     getState?: () => Promise<unknown>;
+    /** The settings at once (the built-in plugins can say without asking the audio thread) */
+    getStateNow?: () => unknown;
     setState?: (state: unknown) => Promise<void>;
     destroy?: () => void;
   };
@@ -71,11 +73,20 @@ export function allowPluginUrls(urls: Iterable<string>): void {
  * asked for, and rebuild every plugin, so each starts from the settings its project saved.
  */
 export function resetWamSession(): void {
+  // The old project's instances still answer while they're let go: what they say is theirs, not
+  // the new project's
+  for (const inst of live.values()) stale.add(inst);
+  session++;
   states.clear();
   blocked.clear();
   epoch++;
   notify();
 }
+
+/** Instances that belong to a project already replaced (their settings are never kept). */
+const stale = new WeakSet<WamInstance>();
+/** Bumped when a project is replaced: a read begun before then doesn't count. */
+let session = 0;
 
 /** Plugin URLs a project asked for that haven't been allowed yet. */
 const blocked = new Set<string>();
@@ -199,7 +210,7 @@ export function retireLiveWam(pluginId: string, inst: WamInstance): void {
   inst.audioNode.disconnect();
   const read = Promise.race([
     Promise.resolve(inst.audioNode.getState?.()).then((state) => {
-      if (state === undefined) return;
+      if (state === undefined || stale.has(inst)) return;
       const json = JSON.stringify(state);
       if (json.length > 2_000_000 || states.get(pluginId) === json) return;
       states.set(pluginId, json);
@@ -240,6 +251,7 @@ export function onWamStates(listener: StateListener): () => void {
 /** Read every live plugin's settings; the ones that changed go to the listeners (to be saved). */
 export async function captureWamStates(): Promise<void> {
   const changed = new Map<string, unknown>();
+  const began = session;
   await Promise.all(
     [...live].map(async ([id, inst]) => {
       try {
@@ -256,6 +268,25 @@ export async function captureWamStates(): Promise<void> {
       }
     })
   );
+  // (A project replaced meanwhile: these were the old one's)
+  if (changed.size && began === session) stateListeners.forEach((l) => l(changed));
+}
+
+/**
+ * Read at once the plugins that can say without waiting (the built-in ones), so a song set aside
+ * this instant (New, Open: the Restore banner's copy) has their latest settings. Others keep the
+ * settings last read (at most a few seconds old).
+ */
+export function captureWamStatesNow(): void {
+  const changed = new Map<string, unknown>();
+  for (const [id, inst] of live) {
+    const state = inst.audioNode.getStateNow?.();
+    if (state === undefined) continue;
+    const json = JSON.stringify(state);
+    if (json.length > 2_000_000 || states.get(id) === json) continue;
+    states.set(id, json);
+    changed.set(id, JSON.parse(json));
+  }
   if (changed.size) stateListeners.forEach((l) => l(changed));
 }
 
