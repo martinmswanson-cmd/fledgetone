@@ -4,6 +4,11 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-2 — Sharper videos
+
+- **Video (MP4) export looks sharper**: more data for each frame, and a fine grain in the dark background so it no longer breaks into blocks and stripes, even after TikTok or YouTube compress it again.
+- **Smooth 60 fps videos**: pick **Frame rate** in the export, **Smooth 60 fps** (the default) or **30 fps**. The notes in a Showcase video glide past the playhead.
+
 ## 2026.10.20 — New horns, an "ooh" choir and four new starters
 
 - **New horns**: the **Trumpet**, **Alto Sax**, **French Horn**, **Trombone** and **Tuba (Real)**, and the **Brass Section** made from them, are new recordings with every note at three loudnesses (the trumpet and sax with real vibrato), so they sit in a song with the band. Your songs that use them play the new recordings. The starters' tenor sax and muted trumpet parts now play the new alto sax and trumpet.

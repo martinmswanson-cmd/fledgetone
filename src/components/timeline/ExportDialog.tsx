@@ -37,7 +37,7 @@ import { createZip } from '../../audio/zip';
 import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encoders';
 import type { AudioFormat } from '../../audio/encoders';
 import { isSkin, SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
-import { canExportVideo, renderVideo, VIDEO_FPS, VIDEO_SIZES, type VideoShape } from '../../audio/videoExport';
+import { canExportVideo, renderVideo, VIDEO_SIZES, type VideoFps, type VideoShape } from '../../audio/videoExport';
 import type { ShowcaseHits, ShowcaseLayout } from '../../audio/showcaseDraw';
 import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } from '../../store/songVersions';
 import { showcaseData } from '../../store/showcase';
@@ -68,6 +68,8 @@ interface ExportSettings {
   /** Video: the picture (Showcase, the notes on a piano roll, or a spectrum style) and its shape */
   picture: 'showcase' | SkinId;
   shape: VideoShape;
+  /** Video: frames a second (60: smooth scrolling notes) */
+  fps: VideoFps;
   /** Showcase: the tracks on one roll or a lane each (Auto: lanes for a big arrangement), and what a hit note does */
   showcaseLayout: ShowcaseLayout;
   showcaseHits: ShowcaseHits;
@@ -76,7 +78,7 @@ interface ExportSettings {
   noDrums: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', showcaseLayout: 'auto', showcaseHits: 'sparkles', underscore: false, noDrums: false };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', fps: 60, showcaseLayout: 'auto', showcaseHits: 'sparkles', underscore: false, noDrums: false };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -103,6 +105,7 @@ function loadSettings(): ExportSettings {
       loopFile: typeof r.loopFile === 'boolean' ? r.loopFile : d.loopFile,
       picture: r.picture === 'showcase' || isSkin(r.picture) ? r.picture : d.picture,
       shape: oneOf(r.shape, ['wide', 'tall'] as const, d.shape),
+      fps: oneOf(r.fps, [30, 60] as const, d.fps),
       showcaseLayout: oneOf(r.showcaseLayout, ['auto', 'together', 'lanes'] as const, d.showcaseLayout),
       showcaseHits: oneOf(r.showcaseHits, ['sparkles', 'rings', 'glow'] as const, d.showcaseHits),
       underscore: typeof r.underscore === 'boolean' ? r.underscore : d.underscore,
@@ -431,6 +434,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           footage,
           skin: settings.picture === 'showcase' ? 'bars' : settings.picture,
           shape: settings.shape,
+          fps: settings.fps,
           showcase,
           showcaseLook: { layout: settings.showcaseLayout, hits: settings.showcaseHits },
           channels,
@@ -643,13 +647,22 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 { value: 'tall', label: 'Portrait 9:16', title: '1080×1920: TikTok, YouTube Shorts, Instagram Reels' },
               ]}
             />
+            <Segmented<VideoFps>
+              label="Frame rate"
+              value={settings.fps}
+              onChange={(value) => update({ fps: value })}
+              options={[
+                { value: 60, label: 'Smooth 60 fps', title: 'The notes and playhead move smoothly; the file is bigger and takes longer to make' },
+                { value: 30, label: '30 fps', title: 'A smaller file, made faster' },
+              ]}
+            />
             {refVideo && useFootage ? (
               <p>
-                An MP4 video ({VIDEO_SIZES[settings.shape].w}×{VIDEO_SIZES[settings.shape].h}, {VIDEO_FPS} fps): your video with the mix as its sound, where it sits on the timeline{settings.shape === 'tall' ? ', fitted into the tall frame' : ''}. It's drawn faster than real time.
+                An MP4 video ({VIDEO_SIZES[settings.shape].w}×{VIDEO_SIZES[settings.shape].h}, {settings.fps} fps): your video with the mix as its sound, where it sits on the timeline{settings.shape === 'tall' ? ', fitted into the tall frame' : ''}. It's drawn faster than real time.
               </p>
             ) : (
               <p>
-                An MP4 video ({VIDEO_SIZES[settings.shape].w}×{VIDEO_SIZES[settings.shape].h}, {VIDEO_FPS} fps) of the mix: the project's name,{' '}
+                An MP4 video ({VIDEO_SIZES[settings.shape].w}×{VIDEO_SIZES[settings.shape].h}, {settings.fps} fps) of the mix: the project's name,{' '}
                 {settings.picture === 'showcase'
                   ? 'the notes of every track on a piano roll that scrolls past the playhead, each lighting up as it plays, the tracks playing'
                   : 'a spectrum that moves with the music'}

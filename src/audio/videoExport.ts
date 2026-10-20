@@ -15,18 +15,24 @@ import type { ShowcaseData } from '../store/showcase';
  * without the licensed codecs, Firefox on some systems) fall back to VP9 or AV1 video and Opus
  * sound, which browsers, VLC and YouTube play but some older players don't.
  *
- * Two shapes: widescreen (1920×1080, YouTube) and portrait (1080×1920, TikTok, Shorts, Reels).
- * Either picture is drawn in design units (1280×720 or 720×1280) on a canvas scaled to the video.
+ * Two shapes: widescreen (1920×1080, YouTube) and portrait (1080×1920, TikTok, Shorts, Reels), at
+ * 30 or 60 frames a second (60: the scrolling notes move smoothly). Either picture is drawn in
+ * design units (1280×720 or 720×1280) on a canvas scaled to the video.
+ *
+ * Made to survive a social site's own re-encoding: a high bitrate, and a background with a fine
+ * grain baked in (drawn once), so its dark gradient can't break into bands or blocks.
  * Showcase draws the song's notes on a scrolling piano roll instead of the spectrum (showcaseDraw.ts).
  */
 
 export type VideoShape = 'wide' | 'tall';
 /** The video's size in pixels, per shape */
 export const VIDEO_SIZES: Record<VideoShape, { w: number; h: number }> = { wide: { w: 1920, h: 1080 }, tall: { w: 1080, h: 1920 } };
-export const VIDEO_FPS = 30;
+export type VideoFps = 30 | 60;
+export const VIDEO_FPS: VideoFps = 30;
 /** Design units per shape (the canvas is scaled from these to the video's size) */
 const DESIGN: Record<VideoShape, { w: number; h: number }> = { wide: { w: 1280, h: 720 }, tall: { w: 720, h: 1280 } };
-const BITRATE = 10e6;
+/** Bits a second per frame rate, at 1080p (a site re-encodes it, so it starts from plenty) */
+const BITRATE: Record<VideoFps, number> = { 30: 16e6, 60: 24e6 };
 
 export interface VideoSection {
   /** Seconds from the start of the video. */
@@ -57,27 +63,30 @@ export interface VideoOptions {
   showcase?: ShowcaseData;
   /** How Showcase lays out the tracks and lights the notes it hits */
   showcaseLook?: ShowcaseLook;
+  /** Frames a second (30 if not given) */
+  fps?: VideoFps;
 }
 
 /** True where this browser can make a video at all (WebCodecs in a secure page). */
 export const canExportVideo = (): boolean => typeof VideoEncoder !== 'undefined' && typeof AudioEncoder !== 'undefined';
 
+/** H.264 High, Main, then Baseline (level 4.2: 1080p at 60 fps), then VP9, then AV1 */
 const VIDEO_CODECS = [
-  { codec: 'avc1.640028', mux: 'avc' },
-  { codec: 'avc1.4d0028', mux: 'avc' },
-  { codec: 'avc1.42001f', mux: 'avc' },
-  { codec: 'vp09.00.31.08', mux: 'vp9' },
-  { codec: 'av01.0.08M.08', mux: 'av1' },
+  { codec: 'avc1.64002a', mux: 'avc' },
+  { codec: 'avc1.4d002a', mux: 'avc' },
+  { codec: 'avc1.42002a', mux: 'avc' },
+  { codec: 'vp09.00.41.08', mux: 'vp9' },
+  { codec: 'av01.0.09M.08', mux: 'av1' },
 ] as const;
 const AUDIO_CODECS = [
   { codec: 'mp4a.40.2', mux: 'aac' },
   { codec: 'opus', mux: 'opus' },
 ] as const;
 
-async function pickCodecs(sampleRate: number, width: number, height: number) {
+async function pickCodecs(sampleRate: number, width: number, height: number, fps: VideoFps) {
   let video: (typeof VIDEO_CODECS)[number] | undefined;
   for (const c of VIDEO_CODECS) {
-    const ok = await VideoEncoder.isConfigSupported({ codec: c.codec, width, height, bitrate: BITRATE, framerate: VIDEO_FPS }).catch(() => null);
+    const ok = await VideoEncoder.isConfigSupported({ codec: c.codec, width, height, bitrate: BITRATE[fps], framerate: fps }).catch(() => null);
     if (ok?.supported) {
       video = c;
       break;
@@ -183,6 +192,36 @@ function overview(mono: Float32Array, columns: number): Float32Array {
 
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
+/**
+ * The background, drawn once: a dark gradient with a grain of a level or so on each pixel (fixed,
+ * so it costs the encoder nothing after the first frame), which hides the gradient's steps.
+ */
+function grainedBackground(width: number, height: number): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = width;
+  c.height = height;
+  const g = c.getContext('2d')!;
+  const gradient = g.createLinearGradient(0, 0, 0, height);
+  gradient.addColorStop(0, '#16161a');
+  gradient.addColorStop(1, '#0c0c0e');
+  g.fillStyle = gradient;
+  g.fillRect(0, 0, width, height);
+  const img = g.getImageData(0, 0, width, height);
+  const d = img.data;
+  // A small hash per pixel (the same every time): -1.5 to +1.5 levels, the same on each channel
+  for (let i = 0, p = 0; i < d.length; i += 4, p++) {
+    let h = Math.imul(p ^ 0x9e3779b9, 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    const n = (((h >>> 0) % 1000) / 1000 - 0.5) * 3;
+    d[i] += n;
+    d[i + 1] += n;
+    d[i + 2] += n;
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
 function loadImage(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -199,13 +238,14 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   const seconds = frames / sampleRate;
   const shape = opts.shape ?? 'wide';
   const size = VIDEO_SIZES[shape];
-  const { video, audio } = await pickCodecs(sampleRate, size.w, size.h);
+  const fps = opts.fps ?? VIDEO_FPS;
+  const { video, audio } = await pickCodecs(sampleRate, size.w, size.h, fps);
 
   const target = new BufferTarget();
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target });
   const videoTrack = new EncodedVideoPacketSource(video.mux);
   const audioTrack = new EncodedAudioPacketSource(audio.mux);
-  output.addVideoTrack(videoTrack, { frameRate: VIDEO_FPS });
+  output.addVideoTrack(videoTrack, { frameRate: fps });
   output.addAudioTrack(audioTrack);
   await output.start();
   let failure: unknown = null;
@@ -220,7 +260,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     },
     error: (e) => (failure = e),
   });
-  videoEncoder.configure({ codec: video.codec, width: size.w, height: size.h, bitrate: BITRATE, framerate: VIDEO_FPS, ...(video.mux === 'avc' ? { avc: { format: 'avc' as const } } : {}) });
+  videoEncoder.configure({ codec: video.codec, width: size.w, height: size.h, bitrate: BITRATE[fps], framerate: fps, latencyMode: 'quality', ...(video.mux === 'avc' ? { avc: { format: 'avc' as const } } : {}) });
   const audioEncoder = new AudioEncoder({
     output: (chunk, meta) => {
       const packet = EncodedPacket.fromEncodedChunk(chunk);
@@ -267,16 +307,14 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   const pictureY = titleY + (tall ? 120 : 106);
   const picture = { x: stripX, y: pictureY, w: stripW, h: waveY - 50 - pictureY };
   const logo = await loadImage(fledgetoneLogo);
-  const background = g.createLinearGradient(0, 0, 0, H);
-  background.addColorStop(0, '#16161a');
-  background.addColorStop(1, '#0c0c0e');
-  const total = Math.ceil(seconds * VIDEO_FPS);
+  const background = grainedBackground(size.w, size.h);
+  const total = Math.ceil(seconds * fps);
   const footage = opts.footage ? await openVideo(opts.footage.url) : null;
   const skinMemory: SkinMemory = {};
 
   const encodeFrame = async (f: number, t: number) => {
-    const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / VIDEO_FPS) });
-    videoEncoder.encode(frame, { keyFrame: f % (VIDEO_FPS * 2) === 0 });
+    const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / fps) });
+    videoEncoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
     frame.close();
     // Don't run ahead of the encoder (memory), and let the page update its progress bar
     while (videoEncoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 1));
@@ -293,7 +331,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       signal.throwIfAborted();
     }
     if (failure) throw failure;
-    const t = f / VIDEO_FPS;
+    const t = f / fps;
     if (footage && opts.footage) {
       g.fillStyle = '#000';
       g.fillRect(0, 0, W, H);
@@ -309,8 +347,10 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
       await encodeFrame(f, t);
       continue;
     }
-    g.fillStyle = background;
-    g.fillRect(0, 0, W, H);
+    // (in pixels: the grain is one per pixel)
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.drawImage(background, 0, 0);
+    g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
 
     // Title block
     if (logo) g.drawImage(logo, stripX, titleY, 72, 72);
