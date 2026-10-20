@@ -4,6 +4,12 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-3 — Two new games to try your song in
+
+- **Try it in a game** has three games now: pick one at the top.
+- **2D platformer**: run and jump to the flag past gaps, spikes and one-eyed blobs, grabbing coins. A blob chasing you switches your song to its chase music and builds the intensity; squash it by landing on it; reach the flag for the win stinger.
+- **Rhythm game**: your song plays and its own notes fall down four lanes (kicks left, snares right, the melody moving the way the tune does). Hit D F J K in time for Perfect, Great or Good; a miss muffles the song for a moment. Easy, Normal or Hard, held notes, combos and a grade at the end, and a Timing setting for headphones that play late.
+
 ## 2026.10.20-2 — Sharper videos
 
 - **Video (MP4) export looks sharper**: more data for each frame, and a fine grain in the dark background so it no longer breaks into blocks and stripes, even after TikTok or YouTube compress it again.

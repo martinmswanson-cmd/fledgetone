@@ -1174,11 +1174,17 @@ Move them in **Audition like the game**: each parameter gets a slider under **In
 
 ### Try it in a game
 
-**Game → Try it in a game…** (or **Try it in a game** in the Game tab) drops your song into a little 3D game so you can hear it react to play. You're a little robot; a one-eyed cube guard patrols the far side of a fenced field with eight coins.
+**Game → Try it in a game…** (or **Try it in a game** in the Game tab) drops your song into a little game so you can hear it react to play. Pick the game at the top (it remembers your pick):
 
-- **Arrows** or **WASD** walk, **Space** jumps (land on the guard to beat it), **R** restarts, **Esc** closes. While it's open the game takes these keys, so Space jumps instead of playing the song.
-- The game starts at once. The music renders the way the game kit exports it (the first time takes a while for a long song; opening it again on an unchanged song is instant) The guard naps until the music is ready, so you can walk around and grab coins meanwhile.
-- Get close and the guard spots you: the music switches to the chase state through your transition matrix, and **Intensity** rises the closer the guard gets. Get away and it gives up, back to exploring. A hit costs a heart; three and it's game over (at one heart left the music goes dull and far away: the players' low-health effect). Bonking the guard plays the win stinger and the win state.
+- **3D arena**: you're a little robot; a one-eyed cube guard patrols the far side of a fenced field with eight coins.
+- **2D platformer**: run and jump to the flag at the end of a side-scrolling level, past gaps, spikes and one-eyed blobs, collecting twelve coins. **Arrows** or **A/D** run, **Space**, **W** or **Up** jumps (hold it to jump higher), and landing on a blob squashes it. A blob that spots you chases you (the chase state, with the intensity rising as it gets closer); falling into a gap or onto spikes costs a heart; reaching the flag plays the win stinger and the win state.
+- **Rhythm game**: your whole song plays and its own notes fall down four lanes; hit **D F J K** (or the arrows) as each reaches the line. The notes are the song's: kicks on the left, snares on the right, and the melody moving across the lanes the way the tune moves. **Difficulty**: **Easy** keeps the beat, **Normal** adds the tune and holds (keep the key down to the end of a long note for a bonus), **Hard** adds its quick notes and pairs. Each hit is **Perfect**, **Great** or **Good** (early or late is shown), a note let past is a **Miss** and muffles the song for a moment, and the end shows your grade (S to D), accuracy and best combo. If every hit feels late (Bluetooth headphones play late), set **Timing** to move the notes to what you hear. It renders the song first, like an export, then counts you in.
+
+In the 3D arena and the platformer:
+
+- In the arena **Arrows** or **WASD** walk and **Space** jumps (land on the guard to beat it). In every game **R** restarts and **Esc** closes; while it's open the game takes its keys, so Space jumps instead of playing the song.
+- The game starts at once. The music renders the way the game kit exports it (the first time takes a while for a long song; opening it again on an unchanged song is instant). The guard (or the blobs) nap until the music is ready, so you can walk around and grab coins meanwhile.
+- Get close and the guard spots you: the music switches to the chase state through your transition matrix, and **Intensity** rises the closer the guard gets. Get away and it gives up, back to exploring. A hit costs a heart; three and it's game over (at one heart left the music goes dull and far away: the players' low-health effect). Bonking the guard (or reaching the platformer's flag) plays the win stinger and the win state.
 - Coins, footsteps, jumps, hits and the bonk play your song's game sounds when it has fitting ones, else the preview's own.
 - **Music wiring** shows what plays for each moment (exploring, chasing, beaten, each stinger and sound), guessed from your names; change any of them there. The panel at the top left shows the state playing and the intensity, and the list under it says what the music just did and why.
 

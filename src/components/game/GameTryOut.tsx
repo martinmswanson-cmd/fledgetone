@@ -1,9 +1,11 @@
 /**
- * Try it in a game: a little 3D game (a robot hero, a guard and coins: see tryOutScene.ts) that plays the song
- * the way a real game would, through the game kit's own web player. Exploring plays the calm state,
- * The guard spotting the hero switches to the fight state by the song's transition rule and turns the
- * intensity up as it closes in, coins fire the item stinger and a coin sound, and beating the guard or
- * losing plays the win or lose stinger. A panel picks which state, stinger and sound each moment
+ * Try it in a game: little games that play the song the way a real game would. Three to pick from:
+ * a 3D arena (a robot hero, a guard and coins: tryOutScene.ts), a 2D platformer (blobs, gaps and a
+ * flag: platformerScene.ts), both through the game kit's own web player, and a rhythm game whose
+ * notes are the song's own (RhythmTryOut.tsx). In the first two, exploring plays the calm state, an
+ * enemy spotting the hero switches to the fight state by the song's transition rule and turns the
+ * intensity up as it closes in, coins fire the item stinger and a coin sound, and winning (beating
+ * the guard, reaching the flag) or losing plays the win or lose stinger. A panel picks which state, stinger and sound each moment
  * plays (guessed from their names: tryOut.ts). Sounds the song doesn't have come from the sound
  * effects maker.
  */
@@ -19,7 +21,27 @@ import { showToast } from '../timeline/toastStore';
 import { generateSfx, renderSfxStereo, varySfx, type SfxCategory } from '../../audio/sfx/sfxSynth';
 import { ensureSfxRecordings } from '../../audio/sfx/sfxRecordings';
 import { guessTryOutMap, intensityFor, TRY_OUT_MOMENTS, type TryOutMap } from '../../store/tryOut';
-import type { TryOutScene } from './tryOutScene';
+import type { PlatformerEvents } from './platformerScene';
+import type { TryOutEvents } from './tryOutScene';
+import { RhythmTryOut } from './RhythmTryOut';
+
+/** What the preview needs from either adventure scene (3D or 2D) */
+interface GameScene {
+  readonly state: { hearts: number; coins: number; coinsTotal: number; chasing: boolean; beaten: boolean; over: boolean };
+  reset(): void;
+  wake(): void;
+  key(code: string, down: boolean): void;
+  start(): void;
+  dispose(): void;
+}
+
+export type TryOutGame = 'arena' | 'platformer' | 'rhythm';
+const GAMES: Array<{ id: TryOutGame; label: string; title: string }> = [
+  { id: 'arena', label: '3D arena', title: 'A robot, a guard and coins in a little 3D arena' },
+  { id: 'platformer', label: '2D platformer', title: 'Run and jump to the flag past blobs, gaps and spikes' },
+  { id: 'rhythm', label: 'Rhythm game', title: "Your song's own notes fall down four lanes: hit them in time" },
+];
+const GAME_KEY = 'fledgetone.tryOutGame';
 
 /** Sounds the preview makes itself when the song has none for a moment */
 const OWN_SOUNDS: Record<'coinSfx' | 'stepSfx' | 'hurtSfx' | 'jumpSfx' | 'bonkSfx', { kind: SfxCategory; seed: number; volume: number }> = {
@@ -40,9 +62,47 @@ const KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'KeyW',
 const DANGER = /danger|threat|tension|enemy|alert/i;
 const HEALTH = /health|^hp$|life/i;
 
+/** Try it in a game, on the game picked last time. */
 export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const [game, setGame] = useState<TryOutGame>(() => {
+    try {
+      const saved = localStorage.getItem(GAME_KEY);
+      return GAMES.some((g) => g.id === saved) ? (saved as TryOutGame) : 'arena';
+    } catch {
+      return 'arena';
+    }
+  });
+  const pick = (id: TryOutGame) => {
+    setGame(id);
+    try {
+      localStorage.setItem(GAME_KEY, id);
+    } catch {
+      // (a private window: it's only remembered for now)
+    }
+  };
+  const picker = (
+    <div className="flex rounded-md border border-forge-border overflow-hidden" role="group" aria-label="Which game">
+      {GAMES.map((g) => (
+        <button
+          key={g.id}
+          type="button"
+          onClick={() => pick(g.id)}
+          aria-pressed={game === g.id}
+          title={g.title}
+          className={`h-7 px-2 ${game === g.id ? 'bg-emerald-500/20 text-emerald-200' : 'hover:text-forge-text'}`}
+        >
+          {g.label}
+        </button>
+      ))}
+    </div>
+  );
+  return game === 'rhythm' ? <RhythmTryOut key="rhythm" picker={picker} onClose={onClose} /> : <AdventureTryOut key={game} kind={game} picker={picker} onClose={onClose} />;
+};
+
+/** The arena and the platformer: the song's states, stingers and sounds following the game. */
+const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.ReactNode; onClose: () => void }> = ({ kind, picker, onClose }) => {
   const host = useRef<HTMLDivElement>(null);
-  const scene = useRef<TryOutScene | null>(null);
+  const scene = useRef<GameScene | null>(null);
   const music = useRef<AdaptiveMusic | null>(null);
   const own = useRef<Map<SfxMoment, AudioBuffer[]>>(new Map());
   /** The music is loaded (a scene made after this wakes the guard straight away) */
@@ -115,7 +175,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         // The guard naps until now, so the music is there for the chase
         musicReady.current = true;
         scene.current?.wake();
-        say(`Music ready: ${guess.calm || '(no state)'}. The guard woke up!`);
+        say(`Music ready: ${guess.calm || '(no state)'}. ${kind === 'platformer' ? 'The blobs woke up!' : 'The guard woke up!'}`);
       } catch (err) {
         if (!cancelled) showToast(`Couldn't make the game preview: ${err instanceof Error ? err.message : String(err)}.`);
         onClose();
@@ -126,7 +186,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       music.current?.stop();
       music.current?.stopSfx();
     };
-  }, [onClose, say]);
+  }, [onClose, say, kind]);
 
   /** A sound effect for a moment: the song's, or the preview's own. */
   const sfx = useCallback((moment: SfxMoment, pitch = 0) => {
@@ -193,54 +253,68 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   useEffect(() => {
     if (!host.current) return;
     let disposed = false;
-    let sc: TryOutScene | null = null;
-    void import('./tryOutScene').then(({ TryOutScene }) => {
-      if (disposed || !host.current) return;
-      sc = new TryOutScene(host.current, {
-        notice: () => toState(mapRef.current?.fight, 'The guard spotted you'),
-        lose: () => {
-          toState(mapRef.current?.calm, 'The guard gave up');
-          music.current?.setIntensity(0.3, 2);
-          setParams(DANGER, 0.3, 2);
-          lastIntensity.current = 0.3;
-        },
-        distance: (d, chasing) => {
-          const v = intensityFor(d, chasing);
-          if (Math.abs(v - lastIntensity.current) > 0.04) {
-            lastIntensity.current = v;
-            music.current?.setIntensity(v, 0.4);
-            setParams(DANGER, v, 0.4);
-          }
-        },
-        coin: (left) => {
-          stinger(mapRef.current?.coinStinger);
-          sfx('coinSfx');
-          say(left ? `Coin! ${left} left` : 'Every coin!');
-        },
-        hurt: (hearts) => {
-          sfx('hurtSfx');
-          // One heart left: the music goes dull and far away (the player's low-health effect)
-          if (hearts === 1) music.current?.setEffect('lowHealth', 0.6);
-          setParams(HEALTH, hearts / 3, 0.6);
-          say(hearts > 0 ? `Ouch: ${hearts} heart${hearts === 1 ? '' : 's'} left` : 'Out of hearts');
-        },
-        step: () => sfx('stepSfx', Math.random() * 0.6 - 0.3),
-        jump: () => sfx('jumpSfx'),
-        bonk: () => {
-          sfx('bonkSfx');
-          const mp = mapRef.current;
-          stinger(mp?.winStinger);
-          if (mp?.win) toState(mp.win, 'Guard beaten');
-          else toState(mp?.calm, 'Guard beaten');
-          music.current?.setIntensity(0.6, 1);
-        },
-        gameOver: () => {
-          stinger(mapRef.current?.loseStinger);
-          music.current?.setIntensity(0, 2);
-          setParams(DANGER, 0, 2);
-          say('Game over: press R to try again');
-        },
-      });
+    let sc: GameScene | null = null;
+    const win = () => {
+      const mp = mapRef.current;
+      stinger(mp?.winStinger);
+      if (mp?.win) toState(mp.win, kind === 'platformer' ? 'Level clear' : 'Guard beaten');
+      else toState(mp?.calm, kind === 'platformer' ? 'Level clear' : 'Guard beaten');
+      music.current?.setIntensity(0.6, 1);
+    };
+    const events: TryOutEvents & PlatformerEvents = {
+      notice: () => toState(mapRef.current?.fight, kind === 'platformer' ? 'A blob spotted you' : 'The guard spotted you'),
+      lose: () => {
+        toState(mapRef.current?.calm, kind === 'platformer' ? 'The blobs gave up' : 'The guard gave up');
+        music.current?.setIntensity(0.3, 2);
+        setParams(DANGER, 0.3, 2);
+        lastIntensity.current = 0.3;
+      },
+      distance: (d, chasing) => {
+        const v = intensityFor(d, chasing);
+        if (Math.abs(v - lastIntensity.current) > 0.04) {
+          lastIntensity.current = v;
+          music.current?.setIntensity(v, 0.4);
+          setParams(DANGER, v, 0.4);
+        }
+      },
+      coin: (left) => {
+        stinger(mapRef.current?.coinStinger);
+        sfx('coinSfx');
+        say(left ? `Coin! ${left} left` : 'Every coin!');
+      },
+      hurt: (hearts) => {
+        sfx('hurtSfx');
+        // One heart left: the music goes dull and far away (the player's low-health effect)
+        if (hearts === 1) music.current?.setEffect('lowHealth', 0.6);
+        setParams(HEALTH, hearts / 3, 0.6);
+        say(hearts > 0 ? `Ouch: ${hearts} heart${hearts === 1 ? '' : 's'} left` : 'Out of hearts');
+      },
+      step: () => sfx('stepSfx', Math.random() * 0.6 - 0.3),
+      jump: () => sfx('jumpSfx'),
+      bonk: () => {
+        sfx('bonkSfx');
+        win();
+      },
+      stomp: () => {
+        sfx('bonkSfx');
+        say('Squashed a blob');
+      },
+      win,
+      gameOver: () => {
+        stinger(mapRef.current?.loseStinger);
+        music.current?.setIntensity(0, 2);
+        setParams(DANGER, 0, 2);
+        say('Game over: press R to try again');
+      },
+    };
+    const made = kind === 'platformer' ? import('./platformerScene').then(({ PlatformerScene }) => (host.current ? new PlatformerScene(host.current, events) : null)) : import('./tryOutScene').then(({ TryOutScene }) => (host.current ? new TryOutScene(host.current, events) : null));
+    void made.then((created) => {
+      if (!created) return;
+      if (disposed) {
+        created.dispose();
+        return;
+      }
+      sc = created;
       scene.current = sc;
       if (musicReady.current) sc.wake();
       sc.start();
@@ -264,8 +338,9 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     const hudTimer = window.setInterval(() => {
       const s = scene.current?.state;
       const m = music.current;
-      if (!s || !m) return;
-      setHud({ ...s, state: m.current && m.current.startTime <= m.ctx.currentTime + 0.01 ? m.current.name : (m.current?.name ?? '') + ' …', intensity: m.intensity });
+      if (!s) return;
+      // (before the music is ready, the game's own counts still show)
+      setHud({ ...s, state: !m ? '' : m.current && m.current.startTime <= m.ctx.currentTime + 0.01 ? m.current.name : (m.current?.name ?? '') + ' …', intensity: m ? m.intensity : 0.3 });
     }, 120);
     return () => {
       disposed = true;
@@ -275,7 +350,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       sc?.dispose();
       scene.current = null;
     };
-  }, [sfx, stinger, toState, say, start, setParams]);
+  }, [sfx, stinger, toState, say, start, setParams, kind]);
 
   // Esc closes it
   useEffect(() => {
@@ -293,7 +368,10 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         <div className="flex items-center gap-2 px-3 py-2 border-b border-forge-border">
           <Gamepad2 className="w-4 h-4 text-emerald-300" />
           <span className="text-sm font-semibold text-forge-text">Try it in a game</span>
-          <span className="hidden md:inline">Arrows or WASD walk · Space jumps (land on the guard to beat it) · R restarts · Esc closes</span>
+          {picker}
+          <span className="hidden xl:inline">
+            {kind === 'platformer' ? 'Arrows or A/D run · Space, W or Up jumps (land on a blob to squash it) · R restarts · Esc closes' : 'Arrows or WASD walk · Space jumps (land on the guard to beat it) · R restarts · Esc closes'}
+          </span>
           <button type="button" onClick={() => setPanel((p) => !p)} aria-pressed={panel} className="ml-auto h-7 px-2 flex items-center gap-1 rounded-md border border-forge-border hover:text-forge-text" title="Which state, stinger and sound each moment plays">
             <SlidersHorizontal className="w-3.5 h-3.5" /> Music wiring
           </button>
@@ -316,7 +394,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             <div ref={host} className="absolute inset-0" />
             {!manifest && (
               <div className="absolute left-1/2 -translate-x-1/2 top-3 flex items-center gap-2 rounded-lg bg-black/65 px-3 py-2 text-white text-[11px] pointer-events-none">
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> {progress} The guard naps until it's ready: walk around and grab coins meanwhile.
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" /> {progress} {kind === 'platformer' ? 'The blobs nap' : 'The guard naps'} until it's ready: {kind === 'platformer' ? 'run' : 'walk around'} and grab coins meanwhile.
               </div>
             )}
             {(
@@ -349,7 +427,7 @@ export const GameTryOut: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                 </ul>
                 {(hud.over || hud.beaten) && (
                   <div className="absolute inset-x-0 top-1/3 text-center pointer-events-none">
-                    <span className="inline-block rounded-xl bg-black/60 px-5 py-3 text-lg font-bold text-white">{hud.over ? 'Game over: press R' : 'Guard beaten! Press R to play again'}</span>
+                    <span className="inline-block rounded-xl bg-black/60 px-5 py-3 text-lg font-bold text-white">{hud.over ? 'Game over: press R' : kind === 'platformer' ? 'Level clear! Press R to play again' : 'Guard beaten! Press R to play again'}</span>
                   </div>
                 )}
               </>
