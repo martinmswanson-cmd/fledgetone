@@ -147,19 +147,27 @@ async function renderTrackSound(trackId: string, label: string): Promise<Rendere
   }
 }
 
+/** How a freeze ended: done, already under way, or let go (another song opened, or the track went away). */
+export type FreezeResult = 'done' | 'busy' | 'gone';
+
+/** What to tell the person when a freeze didn't happen. */
+export const notFrozenMessage = (name: string, result: Exclude<FreezeResult, 'done'>): string =>
+  result === 'busy' ? `${name} is already being frozen` : `${name} wasn't frozen (another song was opened, or the track changed)`;
+
 /**
  * Render a track to a sound and mark it frozen (one undo step). Playback stops first: a render
  * swaps the global audio context while it sets up. Rejects with a message to show.
  */
-export async function freezeTrack(trackId: string): Promise<boolean> {
+export async function freezeTrack(trackId: string): Promise<FreezeResult> {
+  if (useFreezing.getState()[trackId] !== undefined) return 'busy';
   const r = await renderTrackSound(trackId, 'frozen');
-  // (Nothing done: another song was opened, or the track went away or is already freezing)
-  if (!r) return false;
+  // (Nothing done: another song was opened, or the track went away)
+  if (!r) return 'gone';
   useTimelineStore.getState().checkpoint();
   useTimelineStore.setState((s) => ({
     tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, frozen: { soundId: r.soundId, startBar: r.startBar, seconds: r.seconds, gainDb: r.gainDb, fingerprint: r.fingerprint } } : t)),
   }));
-  return true;
+  return 'done';
 }
 
 /**

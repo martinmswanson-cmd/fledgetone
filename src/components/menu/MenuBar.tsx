@@ -8,7 +8,7 @@ import { usePianoPanel } from '../../store/pianoPanel';
 import { MOD_KEY, PALETTE_SHORTCUT, useUiStore, type DockTab } from '../../store/uiStore';
 import { useVideoStore } from '../../store/videoStore';
 import { useAudioStore } from '../../store/audioStore';
-import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
+import { bounceTrack, canFreeze, freezeTrack, notFrozenMessage, unfreezeTrack } from '../../store/freezeActions';
 import { canChooseSaveLocation, pickProjectFile, saveProjectAs, saveProjectFile } from '../timeline/projectFile';
 import { exportMySounds, pickMySoundsFile } from '../mySoundsFile';
 import { showToast } from '../timeline/toastStore';
@@ -193,7 +193,7 @@ const MENUS: MenuDef[] = [
           if (!t) return NEED_TRACK;
           if (frozen) return unfreezeTrack(t.id);
           if (!canFreeze(t.id)) return 'This track has nothing to freeze.';
-          return freezeTrack(t.id).then((done) => (done ? undefined : `${t.name} wasn't frozen (another song was opened, or the track changed)`));
+          return freezeTrack(t.id).then((r) => (r === 'done' ? undefined : notFrozenMessage(t.name, r)));
         } },
         { label: t ? `Bounce “${t.name}” in place` : 'Bounce in place', disabled: !t, run: () => {
           if (!t) return NEED_TRACK;
@@ -493,6 +493,8 @@ export const MenuBar: React.FC = () => {
       if (key !== 's' && key !== 'o' && key !== 'e') return;
       if (shouldIgnoreShortcut(e) && key !== 's') return;
       e.preventDefault();
+      // (A held key repeats: one save, one picker)
+      if (e.repeat) return;
       if (key === 's') void (e.shiftKey ? saveProjectAs() : saveProjectFile());
       else if (key === 'o') pickProjectFile();
       else ui().setDialog('export');

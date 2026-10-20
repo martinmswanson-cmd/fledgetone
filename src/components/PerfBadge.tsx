@@ -6,7 +6,7 @@ import React, { useRef, useState } from 'react';
 import { Gauge, MemoryStick, TriangleAlert, X } from 'lucide-react';
 import { clearMemory, heaviestTracks, usePerfStore } from '../audio/perfMonitor';
 import { useTimelineStore } from '../store/timelineStore';
-import { canFreeze, freezeTrack } from '../store/freezeActions';
+import { canFreeze, freezeTrack, notFrozenMessage, useFreezing } from '../store/freezeActions';
 import { chosenPlaybackMode, choosePlaybackMode, PLAYBACK_MODE } from '../audio/playbackMode';
 import { Popover } from './Popover';
 import { showToast } from './timeline/toastStore';
@@ -43,6 +43,7 @@ const runClear = (history: boolean) => {
 const FreezeHeaviest: React.FC = () => {
   const tracks = useTimelineStore((s) => s.tracks);
   const heavy = heaviestTracks(tracks, 2).filter((t) => canFreeze(t.id));
+  const freezing = useFreezing();
   if (!heavy.length) return null;
   return (
     <>
@@ -50,14 +51,15 @@ const FreezeHeaviest: React.FC = () => {
         <button
           key={t.id}
           type="button"
+          disabled={freezing[t.id] !== undefined}
           onClick={() => {
             showToast(`Freezing ${t.name}…`);
             void freezeTrack(t.id).then(
-              (done) => showToast(done ? `${t.name} is frozen: it plays as audio now (unfreeze it to edit its notes)` : `${t.name} wasn't frozen (another song was opened, or the track changed)`),
+              (r) => showToast(r === 'done' ? `${t.name} is frozen: it plays as audio now (unfreeze it to edit its notes)` : notFrozenMessage(t.name, r)),
               (err) => showToast(`Couldn't freeze ${t.name}: ${err instanceof Error ? err.message : String(err)}`)
             );
           }}
-          className="h-8 px-3 rounded-md border border-sky-400/70 bg-sky-500/15 text-sky-100 font-semibold hover:bg-sky-500/25"
+          className="h-8 px-3 rounded-md border border-sky-400/70 bg-sky-500/15 text-sky-100 font-semibold hover:bg-sky-500/25 disabled:opacity-50"
           title="Render it to audio: it then costs about as much as playing a sound file"
         >
           Freeze {t.name}

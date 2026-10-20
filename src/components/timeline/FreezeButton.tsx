@@ -4,7 +4,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import type { Track } from '../../store/timelineTypes';
 import { freezeFingerprint, freezeIsCurrent } from '../../store/freeze';
 import { useAutoFreeze } from '../../store/autoFreeze';
-import { freezeTrack, unfreezeTrack, useFreezing } from '../../store/freezeActions';
+import { freezeTrack, notFrozenMessage, unfreezeTrack, useFreezing } from '../../store/freezeActions';
 import { useSoundLibrary } from '../../audio/soundLibrary';
 import { showToast } from './toastStore';
 
@@ -27,7 +27,7 @@ export const FreezeButton: React.FC<{ track: Track }> = ({ track }) => {
 
   const freeze = () =>
     freezeTrack(track.id).then(
-      (done) => showToast(done ? `Froze ${track.name}: it plays as audio now` : `${track.name} wasn't frozen (another song was opened, or the track changed)`),
+      (r) => showToast(r === 'done' ? `Froze ${track.name}: it plays as audio now` : notFrozenMessage(track.name, r)),
       (err) => showToast(`Couldn't freeze ${track.name}: ${err instanceof Error ? err.message : String(err)}`)
     );
 

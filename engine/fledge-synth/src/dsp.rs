@@ -203,6 +203,8 @@ pub fn vowel_formants(vowel: f32) -> [f32; 3] {
 pub struct Shaper {
     x1: f32,
     f1: f32,
+    /// The shape used last sample (another one needs its own integral there)
+    kind: u32,
 }
 
 #[inline]
@@ -259,12 +261,24 @@ fn log_cosh(x: f32) -> f32 {
 impl Shaper {
     #[inline]
     pub fn tick(&mut self, kind: u32, x: f32) -> f32 {
-        let f = shape_integral(kind, x);
+        // Only the part the shape adds (shape(x) - x) is antialiased: the straight part passes
+        // as it is, rather than through a two-sample average that dulls the treble
+        if kind != self.kind {
+            // Another shape: its own integral at the last sample (else a one-sample spike)
+            self.kind = kind;
+            self.f1 = shape_integral(kind, self.x1) - self.x1 * self.x1 / 2.0;
+        }
+        let f = shape_integral(kind, x) - x * x / 2.0;
         let dx = x - self.x1;
-        let y = if dx.abs() < 1e-4 { shape(kind, 0.5 * (x + self.x1)) } else { (f - self.f1) / dx };
+        let r = if dx.abs() < 1e-4 {
+            let m = 0.5 * (x + self.x1);
+            shape(kind, m) - m
+        } else {
+            (f - self.f1) / dx
+        };
         self.x1 = x;
         self.f1 = f;
-        y
+        x + r
     }
     pub fn reset(&mut self) {
         *self = Shaper::default();
@@ -506,9 +520,16 @@ fn knee_integral(x: f32) -> f32 {
 impl SafetyClip {
     #[inline]
     pub fn tick(&mut self, x: f32) -> f32 {
-        let f = knee_integral(x);
+        // Only what the knee takes off (knee(x) - x) is antialiased: below the knee the sound
+        // passes exactly, at every frequency
+        let f = knee_integral(x) - x * x / 2.0;
         let dx = x - self.x1;
-        let y = if dx.abs() < 1e-4 { knee(0.5 * (x + self.x1)) } else { (f - self.f1) / dx };
+        let y = x + if dx.abs() < 1e-4 {
+            let m = 0.5 * (x + self.x1);
+            knee(m) - m
+        } else {
+            (f - self.f1) / dx
+        };
         self.x1 = x;
         self.f1 = f;
         // (Huge inputs lose precision in the step above: the ceiling holds whatever comes in)
@@ -612,6 +633,35 @@ mod tests {
         };
         let (a, b) = (gain(48000.0), gain(96000.0));
         assert!((a - b).abs() < 1.5, "48 kHz {a} dB, 96 kHz {b} dB");
+    }
+
+
+    #[test]
+    fn quiet_sound_passes_the_ceiling_and_drive_untouched() {
+        for sr in [44100.0f32, 96000.0] {
+            let mut c = SafetyClip::default();
+            let mut peak: f32 = 0.0;
+            for i in 0..4800 {
+                let x = 0.3 * (2.0 * PI * 15000.0 * i as f32 / sr).sin();
+                let y = c.tick(x);
+                if i > 100 {
+                    peak = peak.max((y - x).abs());
+                }
+            }
+            assert!(peak < 1e-5, "{sr}: changed by {peak}");
+        }
+    }
+
+    #[test]
+    fn changing_the_drive_shape_does_not_spike() {
+        let mut s = Shaper::default();
+        let mut worst: f32 = 0.0;
+        for i in 0..4000 {
+            let kind = if i < 2000 { 1 } else { 4 };
+            let x = 0.05 * (i as f32 * 0.02).sin();
+            worst = worst.max(s.tick(kind, x).abs());
+        }
+        assert!(worst < 0.1, "spiked to {worst}");
     }
 
 }

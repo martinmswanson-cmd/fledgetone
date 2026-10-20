@@ -11,7 +11,7 @@ import { foldersOf } from '../../store/folders';
 import { MenuItem } from './ClipContextMenu';
 import type { MenuItemProps } from './ClipContextMenu';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
-import { bounceTrack, canFreeze, freezeTrack, unfreezeTrack } from '../../store/freezeActions';
+import { bounceTrack, canFreeze, freezeTrack, notFrozenMessage, unfreezeTrack, useFreezing } from '../../store/freezeActions';
 import { showToast } from './toastStore';
 
 /**
@@ -37,6 +37,8 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
   useKeepOnScreen(ref, menu.x, menu.y);
   const tracks = useTimelineStore((s) => s.tracks);
   const [naming, setNaming] = useState(false);
+  // (A track freezing or bouncing already: its freeze and bounce wait)
+  const freezing = useFreezing((f) => f[menu.trackId] !== undefined);
   const track = tracks.find((t) => t.id === menu.trackId);
   if (!track) return null;
   const s = useTimelineStore.getState();
@@ -134,7 +136,12 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
     ]),
     track.frozen
       ? { key: 'freeze', label: 'Unfreeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => unfreezeTrack(track.id)), divider: true }
-      : { key: 'freeze', label: 'Freeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() => void freezeTrack(track.id)), disabled: isMixTrack(track) || !canFreeze(track.id), divider: true },
+      : { key: 'freeze', label: 'Freeze', icon: <Snowflake className="w-3.5 h-3.5" />, onClick: run(() =>
+          freezeTrack(track.id).then(
+            (r) => showToast(r === 'done' ? `Froze ${track.name}: it plays as audio now` : notFrozenMessage(track.name, r)),
+            (err) => showToast(`Couldn't freeze ${track.name}: ${err instanceof Error ? err.message : String(err)}`)
+          )
+        ), disabled: isMixTrack(track) || !canFreeze(track.id) || freezing, divider: true },
     {
       key: 'bounce',
       label: 'Bounce in place',
@@ -145,7 +152,7 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
           (err) => showToast(`Couldn't bounce ${track.name}: ${err instanceof Error ? err.message : String(err)}`)
         )
       ),
-      disabled: isMixTrack(track) || !canFreeze(track.id),
+      disabled: isMixTrack(track) || !canFreeze(track.id) || freezing,
     },
     { key: 'delete', label: 'Delete track', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(() => s.deleteTrack(track.id)) },
   ];
