@@ -528,12 +528,15 @@ impl Synth {
     pub fn new(sr: f32) -> Self {
         // The tables are made when a sound first uses one (a few ms each), not all at once here:
         // this runs on the audio thread, and making all sixteen would hold it up
+        let mut rng = Rng::new(0x9E37_79B9);
+        // Free Steps and Drift LFOs are random from their first cycle
+        let lfo_held: [(f32, f32); 4] = std::array::from_fn(|_| (rng.bipolar(), rng.bipolar()));
         Synth {
             sr,
             params: p::defaults(),
             tempo: 120.0,
             voices: (0..VOICES).map(|_| Voice::new(sr)).collect(),
-            rng: Rng::new(0x9E37_79B9),
+            rng,
             age: 0,
             bend: 0.0,
             modwheel: 0.0,
@@ -541,7 +544,7 @@ impl Synth {
             pedal: false,
             stack: Vec::with_capacity(32),
             lfo_phase: [0.0; 4],
-            lfo_held: [(0.0, 0.0); 4],
+            lfo_held,
             lfo_read: [0.0; 4],
             lfo_rate_mod: [0.0; 4],
             ott: Ott::new(sr),
@@ -1709,6 +1712,13 @@ mod tests {
         };
         assert!((pitch_of(0.0) as i32 - 110).abs() <= 2);
         assert!((pitch_of(2.0) as i32 - 110).abs() <= 2);
+    }
+
+
+    #[test]
+    fn a_free_steps_lfo_is_random_from_its_first_cycle() {
+        let s = Synth::new(48000.0);
+        assert!(s.lfo_held.iter().all(|h| h.0 != 0.0 && h.1 != 0.0));
     }
 
 }

@@ -310,7 +310,7 @@ fn rate(secs: f32, sr: f32) -> f32 {
 impl Env {
     pub fn set(&mut self, a: f32, d: f32, s: f32, r: f32, sr: f32) {
         // The attack rises toward 1.25 and stops at 1: this coefficient gets there in `a` seconds
-        self.a = 1.0 - (-(5f32.ln()) / (a.max(0.0005) * sr)).exp();
+        self.a = 1.0 - (-(5f32.ln()) / (a.max(0.0003) * sr)).exp();
         self.d = rate(d, sr);
         self.s = s;
         self.r = rate(r, sr);

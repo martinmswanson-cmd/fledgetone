@@ -167,7 +167,7 @@ macro_rules! mod_slot {
 macro_rules! env_params {
     ($p:literal, $a:expr, $d:expr, $s:expr, $r:expr) => {
         [
-            pr(concat!($p, " attack"), Kind::Log { min: 0.001, max: 10.0, unit: " s" }, $a),
+            pr(concat!($p, " attack"), Kind::Log { min: 0.0004, max: 10.0, unit: " s" }, $a),
             pr(concat!($p, " decay"), SECONDS, $d),
             pr(concat!($p, " sustain"), Kind::Percent, $s),
             pr(concat!($p, " release"), SECONDS, $r),
@@ -201,13 +201,14 @@ const FILTER2: [Param; 6] = [
     pr("Filter 1 into 2", Kind::Toggle, 0.0),
 ];
 const AMP_ENV: [Param; 4] = [
-    pr("Amp attack", Kind::Log { min: 0.003, max: 10.0, unit: " s" }, 0.003),
+    // (Its fastest, 1.2 ms, is a clean start: no click, no softening)
+    pr("Amp attack", Kind::Log { min: 0.0012, max: 10.0, unit: " s" }, 0.0012),
     pr("Amp decay", SECONDS, 0.3),
     pr("Amp sustain", Kind::Percent, 1.0),
     pr("Amp release", SECONDS, 0.12),
 ];
-const FILTER_ENV: [Param; 4] = env_params!("Filter", 0.001, 0.4, 0.0, 0.2);
-const MOD_ENV: [Param; 4] = env_params!("Mod env", 0.001, 0.5, 0.0, 0.3);
+const FILTER_ENV: [Param; 4] = env_params!("Filter", 0.0004, 0.4, 0.0, 0.2);
+const MOD_ENV: [Param; 4] = env_params!("Mod env", 0.0004, 0.5, 0.0, 0.3);
 const PITCH_ENV: [Param; 2] = [
     pr("Pitch envelope", Kind::Lin { min: -24.0, max: 24.0, unit: " st" }, 0.0),
     pr("Pitch decay", Kind::Log { min: 0.005, max: 2.0, unit: " s" }, 0.08),
