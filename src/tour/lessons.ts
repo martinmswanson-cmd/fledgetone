@@ -66,7 +66,7 @@ const EXPORT_BUTTON = 'button[title^="Render the song"]';
 const RULER = '[data-tour="ruler"]';
 const FIRST_HEADER = '[data-tour="track-header"]';
 const dialogOr = (dialog: string, label: string, fallback: string) => () => (ui().dialog === dialog ? `[role="dialog"][aria-label="${label}"]` : fallback);
-const EXPORT_DIALOG = '[role="dialog"][aria-label="Export audio"]';
+const EXPORT_DIALOG = '[role="dialog"][aria-label="Export audio / video"]';
 /** The pressed button of one of the Export dialog's button rows (Shape, Frame rate), or '' */
 const pressedIn = (group: string) => document.querySelector(`${EXPORT_DIALOG} [role="group"][aria-label="${group}"] button[aria-pressed="true"]`)?.textContent ?? '';
 /** The Export dialog is open on a Showcase video */
@@ -251,7 +251,7 @@ const BEGINNER: Lesson = {
     {
       title: 'Export your song',
       body: 'Click **Export**. Under **Export**, pick **Mixdown**; then under **Format**, choose **MP3** for sharing or **WAV** for the best quality, then click **Export** at the bottom of the dialog to save the file.',
-      target: dialogOr('export', 'Export audio', EXPORT_BUTTON),
+      target: dialogOr('export', 'Export audio / video', EXPORT_BUTTON),
       task: { hint: 'Open Export', done: () => ui().dialog === 'export' },
     },
     {
@@ -462,7 +462,7 @@ const INTERMEDIATE: Lesson = {
     },
     {
       title: 'Nicely done!',
-      body: 'You can arrange, shape, automate and mix. The **Expert** tutorial covers sound design, sidechains, key changes, freezing and game-ready exports.',
+      body: 'You can arrange, shape, automate and mix. The **Pro techniques** tutorial covers sound design, sidechains, key changes, freezing and game-ready exports.',
     },
   ],
 };
@@ -538,7 +538,7 @@ const EXPERT: Lesson = {
     {
       title: 'Export for a game',
       body: 'In **Export**, the **Intro + loop** range renders an intro and a seamless loop with loop points a game engine reads, and **Layers** exports each track for adaptive music. (Move the loop’s In past bar 1 first: everything before it is the intro. With **Intro + loop** chosen, **Stems** becomes **Layers**.)',
-      target: dialogOr('export', 'Export audio', EXPORT_BUTTON),
+      target: dialogOr('export', 'Export audio / video', EXPORT_BUTTON),
       task: { hint: 'Open Export', done: () => ui().dialog === 'export' },
     },
     {
@@ -677,7 +677,7 @@ const GAME_MUSIC: Lesson = {
     },
     {
       title: 'Ready for the game',
-      body: '**Export game kit** (in this tab) exports it all for Godot, Unity or the web: every state as a seamless loop, the bridges and stingers, and a player that follows your rules. The next tutorial makes the music react to what the player does.',
+      body: '**Export game kit** (in this tab) exports it all for Godot, Unity or the web: every state as a seamless loop, the bridges and stingers, and a player that follows your rules. The **Make it react** tutorial makes the music react to what the player does.',
     },
   ],
 };

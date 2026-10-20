@@ -277,7 +277,7 @@ const StorageNotice: React.FC = () => {
   return (
     <div role="note" className="absolute top-full left-0 mt-1 z-40 w-[min(92vw,360px)] rounded-lg border border-cyan-500/50 bg-forge-panel shadow-xl p-3 text-xs flex flex-col gap-2">
       <p className="text-forge-text">
-        <b>Your work is saved in this browser only.</b> Clearing your browsing data, a private window, or another browser or computer won't have it.{' '}
+        <b>Your work is saved in this browser only.</b> Clearing your browsing data deletes it, and a private window, another browser or another computer won't have it.{' '}
         <b>Save</b> keeps a project file you own (with its sounds).
       </p>
       <div className="flex gap-2 justify-end">

@@ -101,7 +101,7 @@ const MENUS: MenuDef[] = [
       { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
       { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },
       { label: 'Save my sounds to a file…', run: () => void exportMySounds(), title: 'Your saved sounds (My sounds) and starred instruments in one file, to keep safe or open in another browser', divider: true },
-      { label: 'Open a my sounds file…', run: pickMySoundsFile, title: 'Add the sounds and stars from a my sounds file to the ones in this browser' },
+      { label: 'Open a My sounds file…', run: pickMySoundsFile, title: 'Add the sounds and stars from a My sounds file to the ones in this browser' },
       { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export'), divider: true },
       {
         label: 'Showcase video (YouTube, TikTok)…',
@@ -308,7 +308,7 @@ const MENUS: MenuDef[] = [
           if (await press('button[title^="Fit to time"]')) await press('[aria-label="What to fit"] button:last-child');
         } },
         { label: 'Cut song to length…', run: () => ui().setDialog('cut') },
-        { label: 'Export markers for editors…', run: inDock('video', () => reveal('[aria-label="Export the markers for video editing software"]')), divider: true },
+        { label: 'Export markers for video editors…', run: inDock('video', () => reveal('[aria-label="Export the markers for video editing software"]')), divider: true },
         { label: 'Export music onto the video…', run: () => ui().setDialog('export') },
         { label: 'Remove the video', run: v.remove, disabled: !v.video, divider: true },
       ];
@@ -384,7 +384,7 @@ const MENUS: MenuDef[] = [
     label: 'Help',
     items: () => [
       { label: 'Guide', shortcut: '?', run: () => ui().openGuide() },
-      { label: 'Tour & tutorials', run: () => ui().setDialog('learn') },
+      { label: 'Tour & tutorials…', run: () => ui().setDialog('learn') },
       { label: 'Search everything', shortcut: PALETTE_SHORTCUT, run: () => ui().setPaletteOpen(true) },
       { label: 'Keyboard shortcuts', run: () => ui().openGuide('keyboard-shortcuts'), divider: true },
       ...(usePwa.getState().installed ? [] : [{ label: 'Install Fledgetone…', run: installApp, divider: true, title: 'Install Fledgetone as an app: its own window, and it opens offline' }]),

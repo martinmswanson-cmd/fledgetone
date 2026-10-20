@@ -530,7 +530,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const percent = Math.round(status.progress * 100);
     // Closing the dialog stops the render (see the effect above); Cancel keeps it open to try again
     return (
-      <Modal title="Export audio" onClose={onClose}>
+      <Modal title="Export audio / video" onClose={onClose}>
         <div className="flex items-center gap-2 text-forge-text">
           <Loader2 className="w-4 h-4 shrink-0 animate-spin text-cyan-400" />
           <span className="min-w-0 break-words">Rendering {status.fileName}…</span>
@@ -576,7 +576,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         : `Exactly one loop, ${frames.toLocaleString()} samples. Its start already holds what rings on from the pass before, so it repeats without a gap or click. (Renders ${passes} passes and keeps the last.)`;
 
   return (
-    <Modal title="Export audio" onClose={onClose}>
+    <Modal title="Export audio / video" onClose={onClose}>
       <p>Renders the current mix (volume, pan, mute, solo, every effect and the master volume) faster than real time. Muted and un-soloed tracks are left out.</p>
 
       <Section title="Range">

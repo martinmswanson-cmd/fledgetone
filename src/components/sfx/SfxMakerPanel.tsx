@@ -1060,7 +1060,7 @@ const GameSounds: React.FC = () => {
   return (
     <div className="flex flex-col gap-3">
       <p>
-        Sounds that go into this song's <b>game kit</b> (File › Export, Game kit) next to the music: each saved with its variations, named for the game, and played with <code className="text-forge-text">playSfx("name")</code> in the web, Godot and Unity players (a different variation each time). They're saved with the song.
+        Sounds that go into this song's <b>game kit</b> (File › Game kit) next to the music: each saved with its variations, named for the game, and played with <code className="text-forge-text">playSfx("name")</code> in the web, Godot and Unity players (a different variation each time). They're saved with the song.
       </p>
       {list.length === 0 ? (
         <p className="p-3 rounded-md border border-dashed border-forge-border">None yet: press <b>Add to game</b> on a sound, or <b>Add all to game</b> on a set.</p>

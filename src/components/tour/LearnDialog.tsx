@@ -82,7 +82,7 @@ export const LearnDialog: React.FC<{ onClose: () => void; welcome?: boolean }> =
       </div>
       {!all && (
         <button type="button" onClick={() => setAll(true)} className="self-start flex items-center gap-1 text-[12px] text-cyan-200 hover:text-cyan-100">
-          <ChevronDown className="w-3.5 h-3.5" /> All {LESSONS.length} tutorials
+          <ChevronDown className="w-3.5 h-3.5" /> Show all the tutorials
         </button>
       )}
       <div className="flex items-center gap-2 pt-1">

@@ -79,7 +79,7 @@ export const PluginUrlDialog: React.FC<{ trackId: string | null; onClose: () => 
       if (asEffect) {
         const id = s.addTrackPluginFx(trackId!, u, name);
         if (id) useUiStore.getState().setPluginWindow({ trackId: trackId!, pluginId: id });
-        if (isInstrument) showToast(`${name} is an instrument: as an effect it may make no sound. Add it as a Plugin track instead.`);
+        if (isInstrument) showToast(`${name} is an instrument: as an effect it may make no sound. Add it with Plugins › Instrument from a web address (WAM)… instead.`);
       } else {
         const id = s.addPluginTrack(u, name);
         const plugin = useTimelineStore.getState().tracks.find((t) => t.id === id)?.plugin;

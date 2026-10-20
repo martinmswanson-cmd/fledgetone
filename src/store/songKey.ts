@@ -53,11 +53,20 @@ function correlation(a: readonly number[], b: readonly number[]): number {
   return da && db ? num / Math.sqrt(da * db) : 0;
 }
 
+/**
+ * How much the song's opening bass note counts towards a key on that root. The notes alone can't
+ * tell a key from its relative (A minor and C major share every note); where the song starts
+ * usually can. Tuned on the starters: their stated keys, 17 of 57 wrong without it, 9 with it.
+ */
+const OPENING_BASS_WEIGHT = 0.2;
+
 /** The likeliest key of the pitched notes, or null if there are none. */
 export function detectKey(clips: readonly Clip[], tracks: readonly Track[]): SongKey | null {
   const pitched = new Set(tracks.filter((t) => isPitched(t.instrumentKey)).map((t) => t.id));
   const weight = new Array(12).fill(0);
-  let any = false;
+  // The lowest note starting in the song's first beat (bars from the song's start)
+  let first = Infinity;
+  const starts: Array<[number, number]> = [];
   for (const c of clips) {
     if (!pitched.has(c.trackId) || c.audio) continue;
     for (const n of c.notes) {
@@ -66,11 +75,18 @@ export function detectKey(clips: readonly Clip[], tracks: readonly Track[]): Son
       // Longer and lower notes say more about the key (a bass note more than a passing one)
       const len = Math.min(1, durationToBars(n.duration) || 0.25);
       weight[((m % 12) + 12) % 12] += len * (m < 60 ? 1.5 : 1);
-      any = true;
+      const at = c.startBar + n.startOffset;
+      starts.push([at, m]);
+      first = Math.min(first, at);
     }
   }
-  if (!any) return null;
-  return rankKeys(weight)[0].key;
+  if (!starts.length) return null;
+  let low = Infinity;
+  for (const [at, m] of starts) if (at < first + 0.25 && m < low) low = m;
+  const opening = ((low % 12) + 12) % 12;
+  const ranked = rankKeys(weight).map((k) => ({ ...k, score: k.score + (k.key.root === opening ? OPENING_BASS_WEIGHT : 0) }));
+  // (stable: a tie keeps rankKeys' order)
+  return ranked.reduce((best, k) => (k.score > best.score ? k : best)).key;
 }
 
 /**
