@@ -6,7 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## 2026.10.20-5 — A new home page
 
-- **fledgetone.com has a new home page**: *Make music for you.* It shows the showcase videos, the three games in Try it in a game, Pocket on a phone, and what makes Fledgetone a real music studio rather than an AI song generator: every note is yours.
+- **fledgetone.com has a new home page**, with the slogan *Make music for you*. It shows the showcase videos, the three games in Try it in a game, Pocket on a phone, and what makes Fledgetone a real music studio rather than an AI song generator: every note is yours.
 - The lessons cover showcase videos (File › Showcase video…) and the 2D platformer and rhythm game.
 
 ## 2026.10.20-4 — Fixes

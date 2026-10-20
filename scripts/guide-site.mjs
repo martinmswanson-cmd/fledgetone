@@ -55,7 +55,7 @@ export const foot = `
   <footer class="footer">
     <div class="wrap foot-row">
       <div class="brand"><img src="/img/logo.png" alt="" width="26" height="26" /><span>Fledgetone</span></div>
-      <p>A music studio in your browser.</p>
+      <p>Make music for you.</p>
       <nav aria-label="Footer">
         <a href="/app/">Studio</a>
         <a href="/learn/">Learn</a>

@@ -499,7 +499,7 @@ if (installBtn && installNote) {
   }
 }
 
-// The line under the headline: its last word, every few seconds a playhead sweeps across its clip and cuts to the next
+// The headline's last word: every few seconds a playhead sweeps across its clip and cuts to the next
 // word (game, video, project...), the clip resizing to fit. Paused while the pointer or focus is on
 // the headline, while the tab is hidden or the hero is off screen, and never with reduced motion.
 const cycle = document.querySelector('.cycle');
@@ -530,7 +530,7 @@ if (cycle) {
   window.addEventListener('resize', fit);
   if (!reduce && words.length > 1) {
     let paused = false, inView = true;
-    const h1 = cycle.closest('h1, .hero-sub');
+    const h1 = cycle.closest('h1');
     h1.addEventListener('pointerenter', () => { paused = true; });
     h1.addEventListener('pointerleave', () => { paused = false; });
     // Held still while the link has keyboard focus too, so it can be read and followed
