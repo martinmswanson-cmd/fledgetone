@@ -185,21 +185,27 @@ const adsrPath = (a: number, dcy: number, s: number, rel: number, w: number, h: 
   return `M0 ${y(0)}L${x1} ${y(1)}L${x2} ${y(s)}L${x3} ${y(s)}L${x4} ${y(0)}`;
 };
 
-/** Drag across the 16 bars to draw a shape. */
+/**
+ * Drag across the 16 bars to draw a shape; or focus it and use Left / Right to pick a step and
+ * Up / Down to set it (Shift: finer), Home / End for the ends.
+ */
 const ShapeEditor: React.FC<{ n: number; get: Get; set: Set }> = ({ n, get, set }) => {
   const { steps, smooth } = shapeControls(n);
   const box = useRef<SVGSVGElement>(null);
   const down = useRef(false);
+  const [focus, setFocus] = useState(0);
+  const [focused, setFocused] = useState(false);
   const W = 320;
   const H = 96;
   const values = steps.map((c) => bipolarOf(get(c.p)?.p.value ?? 0.5));
   const sm = get(smooth.p)?.p.value ?? 0;
+  // Steps of 0.05 (easy to hit zero and the ends)
+  const put = (i: number, v: number) => set(steps[i].p, bipolarValue(Math.round(Math.max(-1, Math.min(1, v)) * 20) / 20));
   const paint = (e: React.PointerEvent) => {
     const r = box.current!.getBoundingClientRect();
     const i = Math.max(0, Math.min(15, Math.floor(((e.clientX - r.left) / r.width) * 16)));
-    const v = 1 - 2 * Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
-    // Steps of 0.05 (easy to hit zero and the ends)
-    set(steps[i].p, bipolarValue(Math.round(v * 20) / 20));
+    setFocus(i);
+    put(i, 1 - 2 * Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)));
   };
   const curve = Array.from({ length: 161 }, (_, k) => drawnPoint(values, sm, k / 160));
   return (
@@ -209,10 +215,29 @@ const ShapeEditor: React.FC<{ n: number; get: Get; set: Set }> = ({ n, get, set 
         width={W}
         height={H}
         viewBox={`0 0 ${W} ${H}`}
-        className="rounded bg-black/30 cursor-crosshair touch-none shrink-0"
-        role="img"
-        aria-label={`Shape ${n}: drag to draw its 16 steps`}
+        className="rounded bg-black/30 cursor-crosshair touch-none shrink-0 focus:outline-none focus-visible:ring-1 focus-visible:ring-fuchsia-300"
+        role="slider"
+        tabIndex={0}
+        aria-label={`Shape ${n}, step ${focus + 1} of 16 (Left and Right pick a step, Up and Down set it)`}
+        aria-valuemin={-1}
+        aria-valuemax={1}
+        aria-valuenow={values[focus]}
+        aria-valuetext={`Step ${focus + 1}: ${Math.round(values[focus] * 100)}%`}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={(e) => {
+          const step = e.shiftKey ? 0.05 : 0.1;
+          if (e.key === 'ArrowLeft') setFocus((f) => (f + 15) % 16);
+          else if (e.key === 'ArrowRight') setFocus((f) => (f + 1) % 16);
+          else if (e.key === 'ArrowUp') put(focus, values[focus] + step);
+          else if (e.key === 'ArrowDown') put(focus, values[focus] - step);
+          else if (e.key === 'Home') put(focus, -1);
+          else if (e.key === 'End') put(focus, 1);
+          else return;
+          e.preventDefault();
+        }}
         onPointerDown={(e) => {
+          if (e.button !== 0) return;
           e.currentTarget.setPointerCapture(e.pointerId);
           down.current = true;
           paint(e);
@@ -225,7 +250,7 @@ const ShapeEditor: React.FC<{ n: number; get: Get; set: Set }> = ({ n, get, set 
         {values.map((v, i) => {
           const x = (i * W) / 16;
           const y = H / 2 - v * (H / 2 - 2);
-          return <rect key={i} x={x + 1} width={W / 16 - 2} y={Math.min(y, H / 2)} height={Math.abs(H / 2 - y)} className="fill-fuchsia-500/30" />;
+          return <rect key={i} x={x + 1} width={W / 16 - 2} y={Math.min(y, H / 2)} height={Math.abs(H / 2 - y)} className={focused && i === focus ? 'fill-fuchsia-400/60' : 'fill-fuchsia-500/30'} />;
         })}
         <path d={pathOf(curve, W, H)} fill="none" className="stroke-fuchsia-200" strokeWidth={1.5} />
       </svg>
@@ -511,7 +536,7 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
           <Section title="Drawn shapes (LFO shapes Drawn 1 and 2)">
             {[1, 2].map((n) => (
               <div key={n} className="flex flex-col gap-1">
-                <p className="text-[10px] text-forge-muted">Shape {n}: drag across the bars to draw it; Smooth slides each step into the next</p>
+                <p className="text-[10px] text-forge-muted">Shape {n}: drag across the bars to draw it (or use the arrow keys); Smooth slides each step into the next</p>
                 <ShapeEditor n={n} get={get} set={set} />
               </div>
             ))}

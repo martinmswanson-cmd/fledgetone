@@ -36,6 +36,8 @@ export function isSliderKey(e: { key: string }): boolean {
 export function shouldIgnoreShortcut(e: KeyboardEvent): boolean {
   if (isTextEntry(e.target)) return true;
   if (e.target instanceof HTMLInputElement && e.target.type === 'range' && isSliderKey(e)) return true;
+  // Knobs drawn as sliders (role="slider", as Fledge Synth's) take the same keys
+  if (e.target instanceof Element && e.target.closest('[role="slider"]') && isSliderKey(e)) return true;
   return document.querySelector('[role="dialog"]') !== null;
 }
 

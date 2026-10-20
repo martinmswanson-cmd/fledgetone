@@ -185,7 +185,9 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
         // A wide window (Fledge Synth's) opens wholly on screen
         requestAnimationFrame(() => {
           const box = el.parentElement?.getBoundingClientRect();
-          if (box && box.right > window.innerWidth - 8) setPos((p) => ({ ...p, x: Math.max(8, window.innerWidth - box.width - 8) }));
+          if (!box) return;
+          if (box.right > window.innerWidth - 8) setPos((p) => ({ ...p, x: Math.max(8, window.innerWidth - box.width - 8) }));
+          if (box.bottom > window.innerHeight - 8) setPos((p) => ({ ...p, y: Math.max(8, window.innerHeight - box.height - 8) }));
         });
       },
       (err) => setFailed(`Its window couldn't open: ${err instanceof Error ? err.message : String(err)}`)

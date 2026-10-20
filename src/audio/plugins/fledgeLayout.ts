@@ -139,7 +139,10 @@ export const bipolarOf = (v: number) => v * 2 - 1;
 
 // --- Pictures of the LFO shapes (as the engine draws them: engine/fledge-synth/src/dsp.rs) ---
 
-/** LFO shape `shape` at `phase` (0..1), -1..1. Steps and Drift show a fixed example of their randomness. */
+/**
+ * LFO shape `shape` at `phase` (0..1), -1..1. Steps and Drift show a fixed example of their
+ * randomness: one level (Steps) or one glide (Drift) per cycle, as the engine makes them.
+ */
 export function lfoPoint(shape: number, phase: number, drawn: [number[], number][]): number {
   const p = phase - Math.floor(phase);
   switch (shape) {
@@ -156,14 +159,9 @@ export function lfoPoint(shape: number, phase: number, drawn: [number[], number]
     case 5:
       return Math.tanh(3 * Math.sin(2 * Math.PI * p)) / Math.tanh(3);
     case 6:
-      return [0.6, -0.4, 0.9, -0.8][Math.floor(p * 4)];
-    case 7: {
-      const pts = [0.5, -0.6, 0.3, -0.2, 0.5];
-      const x = p * 4;
-      const i = Math.floor(x);
-      const t = x - i;
-      return pts[i] + (pts[i + 1] - pts[i]) * t * t * (3 - 2 * t);
-    }
+      return 0.6;
+    case 7:
+      return -0.5 + 1.1 * p * p * (3 - 2 * p);
     case 8:
       return (2 * (1 - Math.exp(-8 * p))) / (1 - Math.exp(-8)) - 1;
     default: {
