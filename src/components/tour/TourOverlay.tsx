@@ -155,7 +155,13 @@ const LessonOverlay: React.FC = () => {
       if (!el) return;
       const r = el.getBoundingClientRect();
       const visible = r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight && r.right <= window.innerWidth;
-      if (!visible) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (!visible) {
+        // With room round it for the ring, not flush with the screen's edge
+        const margin = el.style.scrollMargin;
+        el.style.scrollMargin = '24px';
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        el.style.scrollMargin = margin;
+      }
     }, 80);
     return () => clearTimeout(t);
   }, [step]);

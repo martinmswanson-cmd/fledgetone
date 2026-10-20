@@ -4,6 +4,11 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-8 — Clearer headings on phones
+
+- **The big headings on fledgetone.com no longer lose parts of letters on phones**: they're drawn in a solid colour now, which phone browsers can't clip while the moving timeline behind them redraws.
+- In **Your first song**, the steps after you open the piano roll scroll the button they point at fully into view, instead of leaving it half off the top of the screen.
+
 ## 2026.10.20-7 — Pages for games, creators and scoring, and a smoother first visit
 
 - **fledgetone.com has a page for each kind of maker**: **For games** (adaptive music, sound effects, playable test games and the exports for Godot, Unity, the web, FMOD and Wwise), **For creators** (showcase videos, every length, a version to talk over, stream kits and beat store packages) and **For scoring** (scoring the video you've cut in your own editor: hit points, tempo fitting, timecode, dialogue dips and markers to take back). The home page links to all three under **What will you make?**

@@ -128,9 +128,9 @@ h1 {
   line-height: 1.04;
   font-weight: 800;
   letter-spacing: -.025em;
-  background: linear-gradient(180deg, #fff 30%, #a5b4c3);
-  -webkit-background-clip: text; background-clip: text;
-  -webkit-text-fill-color: transparent;
+  /* A solid colour, not a gradient clipped to the text: phone browsers drop slices of clipped text
+     while the animated timeline behind it repaints */
+  color: #eef2f6;
 }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 /* The headline's last word: a clip on a timeline lane, coloured by what it names, with trim handles;
