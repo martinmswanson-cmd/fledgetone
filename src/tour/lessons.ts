@@ -604,7 +604,7 @@ const GAME_REACT: Lesson = {
     },
     {
       title: 'Try it in a game',
-      body: '**Try it in a game** drops your song into a little 3D game: get close to the guard and the music switches to the chase and builds; a parameter called **danger** follows the guard, one called **health** follows your hearts. Esc closes it.',
+      body: '**Try it in a game** drops your song into a little game: in the **3D arena** or the **2D platformer**, get close to the guard (or a blob) and the music switches to the chase and builds; a parameter called **danger** follows it, one called **health** follows your hearts. The **Rhythm game** turns your song’s own notes into a chart to play. Esc closes it.',
       target: () => (ui().dialog === 'tryOut' ? null : gameTarget('states')()),
       task: { hint: 'Game › Try it in a game…', done: () => ui().dialog === 'tryOut' },
     },

@@ -103,6 +103,8 @@ You get take A as written, B with a snare fill into the loop point and C with a 
 
 {{shot:game-try}}
 
+Two more games are at the top of the window. Click **2D platformer** to run and jump to a flag past gaps, spikes and blobs: a blob that spots you switches the music to **Danger** the same way. Click **Rhythm game** and your song's own notes fall down four lanes; hit **D F J K** in time, on **Easy**, **Normal** or **Hard**. It's a quick way to hear whether a beat is fun to play along to.
+
 > The panel at the top left shows the state and intensity, and the list under it says what the music just did and why. If a switch sounds wrong, it tells you which rule played.
 
 ### Export for your engine

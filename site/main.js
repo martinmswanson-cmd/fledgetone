@@ -254,7 +254,7 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
 
 // The scored films: muted until asked (browsers only play sound after a click). A button plays its
 // film with sound from the start (and mutes the other), or turns the sound off again.
-const scored = [...document.querySelectorAll('.scored')];
+const scored = [...document.querySelectorAll('.scored')].filter((fig) => fig.querySelector('video') && fig.querySelector('.sound-btn'));
 scored.forEach((fig) => {
   const v = fig.querySelector('video'), btn = fig.querySelector('.sound-btn'), label = btn?.querySelector('span');
   if (!v || !btn) return;
@@ -499,7 +499,7 @@ if (installBtn && installNote) {
   }
 }
 
-// The headline's last word: every few seconds a playhead sweeps across its clip and cuts to the next
+// The line under the headline: its last word, every few seconds a playhead sweeps across its clip and cuts to the next
 // word (game, video, project...), the clip resizing to fit. Paused while the pointer or focus is on
 // the headline, while the tab is hidden or the hero is off screen, and never with reduced motion.
 const cycle = document.querySelector('.cycle');
@@ -530,7 +530,7 @@ if (cycle) {
   window.addEventListener('resize', fit);
   if (!reduce && words.length > 1) {
     let paused = false, inView = true;
-    const h1 = cycle.closest('h1');
+    const h1 = cycle.closest('h1, .hero-sub');
     h1.addEventListener('pointerenter', () => { paused = true; });
     h1.addEventListener('pointerleave', () => { paused = false; });
     // Held still while the link has keyboard focus too, so it can be read and followed

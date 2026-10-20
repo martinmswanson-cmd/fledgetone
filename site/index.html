@@ -8,8 +8,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Fledgetone: make music in your browser</title>
-  <meta name="description" content="Fledgetone is a music studio that runs in your browser. Write songs, score video and make music for games. Nothing to install and no account." />
+  <title>Fledgetone: make music for you</title>
+  <meta name="description" content="Fledgetone is a real music studio (a DAW) that runs in your browser, not an AI song generator: you write every note. Make songs, score video, make showcase videos and music for games. Free, open source, no account." />
   <link rel="canonical" href="https://fledgetone.com/" />
   <script>
     // Share links made when the studio lived at the site's root (fledgetone.com/#s=...) open in the studio
@@ -20,8 +20,8 @@
 
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Fledgetone" />
-  <meta property="og:title" content="Fledgetone: make music in your browser" />
-  <meta property="og:description" content="Write songs, score video and make music for games. Nothing to install and no account." />
+  <meta property="og:title" content="Fledgetone: make music for you" />
+  <meta property="og:description" content="A real music studio in your browser, not an AI generator: you write every note. Songs, video scores, showcase videos and game music. Free, no account." />
   <meta property="og:url" content="https://fledgetone.com/" />
   <meta property="og:image" content="https://fledgetone.com/img/og.jpg" />
   <meta property="og:image:width" content="1200" />
@@ -47,7 +47,7 @@
     "url": "https://fledgetone.com/",
     "applicationCategory": "MultimediaApplication",
     "operatingSystem": "Any (runs in a web browser)",
-    "description": "A music studio that runs in your browser. Write songs, score video and make music for games."
+    "description": "A music studio (DAW) that runs in your browser. You write every note: no AI generation. Make songs, score video, make showcase videos and music for games."
   }
   </script>
 </head>
@@ -62,6 +62,8 @@
         <span>Fledgetone</span>
       </a>
       <nav class="nav-links" aria-label="Sections">
+        <a href="#real">Why Fledgetone</a>
+        <a href="#showcase">Showcase</a>
         <a href="#video">Video</a>
         <a href="#games">Games</a>
         <a href="#features">Features</a>
@@ -82,19 +84,21 @@
       <div class="wrap hero-copy">
         <p class="eyebrow">
           <span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-          Music for games and video <span class="eyebrow-wip">Work in progress</span>
+          A real music studio, not an AI generator <span class="eyebrow-wip">Work in progress</span>
         </p>
+        <h1>Make music for you.</h1>
         <!-- The last word is a clip on a timeline: a playhead cuts it and the next word comes in (main.js) -->
-        <h1>
-          <span class="sr-only">Make music for your game, video, project or app.</span>
-          <span aria-hidden="true">Make music for your</span>
-          <span class="h1-clip" aria-hidden="true"><a class="cycle" href="#games" aria-hidden="true" tabindex="-1" style="--w: var(--green)" data-words='[["game","#games","green"],["video","#video","purple"],["project","/app/","cyan"],["app","#games","amber"],["short film","#video","red"],["podcast","#cut","green"],["trailer","#cut","purple"],["boss fight","#games","red"]]'><span class="cycle-word">game</span><span class="cycle-head"></span></a></span>
-        </h1>
-        <p class="tagline">Works in your web browser or as an app.</p>
-        <p class="lede">
-          Fledgetone is a music studio that runs in a web page. Write songs, score video, and
-          export music for games. There's no account to make, and your songs stay on your computer.
+        <p class="hero-sub">
+          <span class="sr-only">For your song, video, game, short film, podcast or trailer.</span>
+          <span aria-hidden="true">For your</span>
+          <a class="cycle" href="#showcase" aria-hidden="true" tabindex="-1" style="--w: var(--cyan)" data-words='[["song","#showcase","cyan"],["video","#video","purple"],["game","#games","green"],["socials","#showcase","amber"],["short film","#video","red"],["podcast","#cut","green"],["trailer","#cut","purple"],["boss fight","#games","red"]]'><span class="cycle-word">song</span><span class="cycle-head"></span></a>
         </p>
+        <p class="lede">
+          Fledgetone is a music studio (a DAW) that runs in a web page. You write every note, pick
+          every sound and mix it yourself; nothing is generated from a prompt. It's free, there's no
+          account to make, and your songs stay on your computer.
+        </p>
+        <p class="tagline">Works in your web browser or as an app.</p>
         <div class="hero-cta">
           <a class="btn btn-primary" href="/app/">
             Open the studio
@@ -131,7 +135,7 @@
         <div class="readout" role="listitem"><span class="ro-label">Recorded instruments</span><span class="ro-value">73</span></div>
         <div class="readout" role="listitem"><span class="ro-label">Starter songs</span><span class="ro-value">70+</span></div>
         <div class="readout" role="listitem"><span class="ro-label">Built-in plugins</span><span class="ro-value">645</span></div>
-        <div class="readout" role="listitem"><span class="ro-label">Accounts needed</span><span class="ro-value ro-cyan">0</span></div>
+        <div class="readout" role="listitem"><span class="ro-label">Notes written by AI</span><span class="ro-value ro-cyan">0</span></div>
       </div>
     </section>
 
@@ -151,9 +155,79 @@
     <section class="intro wrap">
       <p>
         Fledgetone is laid out like a video editor, with tracks and clips on a timeline. It's made
-        for <strong>people who write music for games and video</strong>, and for
-        <strong>beginners</strong>. Open one of the starter songs and press Space to hear it.
+        for <strong>beginners</strong>, for <strong>people who post their music</strong>, and for
+        <strong>people who write music for games and video</strong>. Open one of the starter songs
+        and press Space to hear it.
       </p>
+    </section>
+
+    <!-- A real studio: what makes it different from an AI song generator -->
+    <section id="real" class="real wrap" aria-labelledby="real-title">
+      <div class="real-head">
+        <h2 id="real-title" class="section-title"><span class="mono-label">Why Fledgetone</span>A real studio. Not an AI generator.</h2>
+        <p>
+          Fledgetone doesn't write songs for you from a sentence. It's a digital audio workstation,
+          the same kind of tool producers and composers use: tracks, clips, a piano roll, a mixer
+          and effects. The music that comes out is the music you made.
+        </p>
+      </div>
+      <ul class="real-list">
+        <li style="--c: var(--cyan)">
+          <h3>Every note is yours</h3>
+          <p>Draw notes in the piano roll, play them on a MIDI keyboard, or record your voice and instruments with a microphone.</p>
+        </li>
+        <li style="--c: var(--purple)">
+          <h3>Change anything</h3>
+          <p>Every note, sound, effect and fader can be edited and undone, and you save the whole project, not just an audio file.</p>
+        </li>
+        <li style="--c: var(--amber)">
+          <h3>Helpers, not autopilot</h3>
+          <p>Chord progressions, a drummer and fills follow plain music rules. They're a starting point you choose, change or delete.</p>
+        </li>
+        <li style="--c: var(--green)">
+          <h3>Learn as you go</h3>
+          <p>Starter songs to pull apart, step-by-step lessons and a full guide teach you how music is put together.</p>
+        </li>
+        <li style="--c: var(--red)">
+          <h3>Nothing leaves your computer</h3>
+          <p>No prompts, no uploads and no account. Your songs are saved in your browser and to files you keep.</p>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Showcase videos: the notes flying past the playhead, made for posting -->
+    <section id="showcase" class="showcase" style="--c: var(--cyan)" aria-labelledby="showcase-title">
+      <div class="scope scope-wave" data-scope="wave" aria-hidden="true"><canvas></canvas></div>
+      <div class="wrap split">
+        <figure class="split-media scored reveal">
+          <div class="shot-frame phone-frame">
+            <video class="clip" src="/video/showcase.mp4" poster="/video/showcase-poster.webp" width="720" height="1280"
+                   muted loop playsinline preload="none" data-autoplay
+                   aria-label="A vertical showcase video of the City Pop starter made by Fledgetone's video export: the title at the top, a row of track names, and the song's notes in each track's colour sliding past a red playhead, with the waveform and the time underneath."></video>
+          </div>
+          <figcaption>
+            <button class="btn btn-primary sound-btn" type="button" aria-pressed="false">
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3z"/><path class="wave" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M16 8.5a5 5 0 0 1 0 7M19 5.5a9 9 0 0 1 0 13"/></svg>
+              <span>Play with sound</span>
+            </button>
+          </figcaption>
+        </figure>
+        <div class="split-copy reveal">
+          <p class="show-eyebrow">Showcase videos</p>
+          <h2 id="showcase-title">Show people how you made it.</h2>
+          <p class="show-lede">
+            Export your song as a video ready to post: your notes slide past the playhead track by
+            track, in each track's colour, with your title, the waveform and the time. Pick tall for
+            phones or wide for everything else.
+          </p>
+          <ul class="ticks">
+            <li>Smooth 60 fps, sharp enough to stay clean after a site compresses it again</li>
+            <li>Your own title and the line under it; hide what you don't want</li>
+            <li>A small Fledgetone mark, nothing more</li>
+            <li>Or put your music on your own video, or share the song as a link</li>
+          </ul>
+        </div>
+      </div>
     </section>
 
     <!-- Scoring to video -->
@@ -281,9 +355,9 @@
           <p class="show-eyebrow">Game music</p>
           <h2 id="games-title">Music that changes as you play.</h2>
           <p class="show-lede">
-            Each section of a song can be a game state. <em>Try it in a game</em> puts your song in
-            a small 3D level, so you can hear it switch states, build up and play stingers while
-            you play.
+            Each section of a song can be a game state. <em>Try it in a game</em> drops your song
+            into a game right in the studio, so you can hear it switch states, build up and play
+            stingers while you play. Pick a 3D arena, a 2D platformer or a rhythm game.
           </p>
         </div>
 
@@ -300,6 +374,29 @@
             <span class="steps-head" aria-hidden="true"></span>
           </div>
         </figure>
+
+        <div class="scored-grid game-grid reveal">
+          <figure class="scored">
+            <div class="shot-frame">
+              <img src="/img/platformer.webp" width="1200" height="825" loading="lazy"
+                   alt="The 2D platformer in Try it in a game: a small robot runs over grassy platforms past coins and purple blobs. The corner shows hearts, coins, the music state playing and an intensity bar; a note says a blob spotted you and the music changed." />
+            </div>
+            <figcaption>
+              <h4>2D platformer</h4>
+              <p>Run and jump to the flag. A blob that spots you switches the music to its chase state and builds the intensity; land on it, then reach the flag for the win stinger.</p>
+            </figcaption>
+          </figure>
+          <figure class="scored">
+            <div class="shot-frame">
+              <img src="/img/rhythm.webp" width="1200" height="825" loading="lazy"
+                   alt="The rhythm game in Try it in a game: coloured notes fall down four lanes marked D, F, J and K, a countdown in the middle, a score in the corner and Hard chosen as the difficulty." />
+            </div>
+            <figcaption>
+              <h4>Rhythm game</h4>
+              <p>Your song's own notes fall down four lanes: kicks on one side, snares on the other, the melody moving the way the tune does. Easy, Normal or Hard, with a grade at the end.</p>
+            </figcaption>
+          </figure>
+        </div>
 
         <ul class="points reveal">
           <li><strong>States and intensity</strong>Sections loop on their own. An Intensity slider adds and removes layers.</li>
@@ -354,6 +451,27 @@
         </div></figure>
       </article>
 
+      <article class="track track-split" style="--c: var(--green)">
+        <div class="track-copy">
+          <p class="track-id">Pocket</p>
+          <h3>On your phone too</h3>
+          <p>
+            Open fledgetone.com on a phone and you get Pocket: the whole song as a grid of sections
+            and tracks, with pads, steps and a piano roll made for one thumb. The same song opens in
+            the full studio on a computer, as it is.
+          </p>
+          <ul class="ticks">
+            <li>Tap a cell to play its instrument</li>
+            <li>Record drums and notes as the loop plays</li>
+            <li>An early version: the studio does more</li>
+          </ul>
+        </div>
+        <figure class="shot phone-shot"><div class="shot-frame phone-frame">
+          <img src="/img/pocket.webp" width="780" height="1688" loading="lazy"
+               alt="Pocket on a phone: the City Pop starter as a grid of sections A, B and C by tracks, a Loop A button, and drum pads for crash, ride, cowbell, toms, kick, snare, clap and hat." />
+        </div></figure>
+      </article>
+
       <div class="cards">
         <article class="card" style="--c: var(--purple)">
           <h3>Sound effects</h3>
@@ -361,7 +479,7 @@
         </article>
         <article class="card" style="--c: var(--amber)">
           <h3>247 instruments</h3>
-          <p>Synths, EDM basses, recorded drum kits and percussion, and recorded pianos, guitars, strings, brass, winds and instruments from around the world.</p>
+          <p>Synths, EDM basses, recorded drum kits and percussion, and recorded pianos, guitars, strings, horns, a twenty-singer choir and instruments from around the world.</p>
         </article>
         <article class="card" style="--c: var(--cyan)">
           <h3>Export</h3>
@@ -373,11 +491,23 @@
         </article>
         <article class="card" style="--c: var(--red)">
           <h3>Your own sounds</h3>
-          <p>Record from a mic, import audio files, chop samples and build your own instruments.</p>
+          <p>Record from a mic, import audio files, chop samples and build your own instruments. Save any sound you set up under My sounds, and star your favourites.</p>
         </article>
         <article class="card" style="--c: var(--purple)">
           <h3>Private</h3>
           <p>No account and no server. Songs save in your browser and to files on your computer.</p>
+        </article>
+        <article class="card" style="--c: var(--amber)">
+          <h3>Clip launcher</h3>
+          <p>Play loops and whole scenes live from a grid, jam an arrangement together, then write what you played onto the timeline.</p>
+        </article>
+        <article class="card" style="--c: var(--cyan)">
+          <h3>Expression</h3>
+          <p>Swells, vibrato, pitch bends and the sustain pedal, drawn in or played in, so strings breathe and horns grow.</p>
+        </article>
+        <article class="card" style="--c: var(--green)">
+          <h3>Patterns from maths</h3>
+          <p>A pendulum wave, a Fibonacci groove, a walk round the circle of fifths and a riser that never stops rising, all in your song's key.</p>
         </article>
       </div>
     </section>
@@ -507,8 +637,8 @@
     <!-- Final call -->
     <section class="final wrap">
       <img src="/img/logo.png" alt="" width="96" height="96" />
-      <h2>Try Fledgetone</h2>
-      <p>It runs in your browser, or install it as an app.</p>
+      <h2>Make music for you.</h2>
+      <p>A real music studio, free, in your browser or as an app.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="/app/">Open the studio</a>
         <a class="btn btn-ghost" href="#install">Download the app</a>
@@ -522,7 +652,7 @@
         <img src="/img/logo.png" alt="" width="26" height="26" />
         <span>Fledgetone</span>
       </div>
-      <p>A music studio in your browser.</p>
+      <p>Make music for you. A real music studio in your browser.</p>
       <nav aria-label="Footer">
         <a href="/app/">Studio</a>
         <a href="/learn/">Learn</a>

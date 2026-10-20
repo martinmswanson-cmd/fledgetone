@@ -97,11 +97,13 @@ export const SHOTS = [
   },
   {
     file: 'export-video',
-    alt: 'The Export dialog set to Video (MP4): the visualizer style menu and a loudness target for YouTube.',
-    caption: 'Video (MP4): the song with a visualizer, ready for YouTube.',
+    alt: 'The Export dialog set to Video (MP4): Portrait 9:16, Smooth 60 fps, the Showcase picture, the title and marks, and a loudness target for streaming.',
+    caption: 'A showcase video: the notes playing, tall for phones, at 60 fps.',
     setup: async (s) => {
       await song(s);
-      const d = await exportDialog(s, ['Whole song', 'Video (MP4)'], 'Streaming (-14 LUFS)');
+      const d = await exportDialog(s, ['Whole song', 'Video (MP4)', 'Portrait 9:16', 'Smooth 60 fps'], 'Streaming (-14 LUFS)');
+      await d.locator('select').filter({ has: s.page.locator('option', { hasText: 'Showcase: the notes playing' }) }).first().selectOption('showcase');
+      await s.wait(200);
       await top(s);
       return s.union([d], 0);
     },

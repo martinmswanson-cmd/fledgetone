@@ -162,6 +162,8 @@ h1 {
 .cycle-head.sweep { animation: cycle-sweep .6s linear; }
 @keyframes cycle-sweep { 0% { left: -3px; opacity: 1; } 95% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
 .h1-clip { display: block; margin-top: .12em; }
+/* Under the slogan: "For your [song]", its last word the cycling clip */
+.hero-sub { margin: 18px 0 0; font-size: clamp(24px, 3.4vw, 40px); line-height: 1.2; font-weight: 700; letter-spacing: -.02em; color: #c4c4cc; }
 .tagline { margin: 16px 0 0; text-wrap: balance; font: 500 clamp(13px, 1.6vw, 15px)/1.4 var(--mono); letter-spacing: .03em; color: var(--muted); }
 .lede { margin: 24px auto 0; max-width: 680px; font-size: clamp(17px, 2vw, 20px); color: #c4c4cc; font-weight: 300; }
 .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 34px; }
@@ -636,3 +638,45 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .learn-all { margin: 24px 0 0; }
 @media (max-width: 900px) { .l-home { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 600px) { .l-home { grid-template-columns: 1fr; } }
+
+/* A real studio, not an AI generator */
+.real { padding-top: 96px; }
+.real-head { max-width: 760px; margin: 0 auto; text-align: center; }
+.real-head > p { margin: 0; color: #c4c4cc; font-size: clamp(17px, 2vw, 19px); }
+.real-list { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; }
+.real-list li { background: var(--panel); border: 1px solid var(--border); border-top: 3px solid var(--c); border-radius: var(--radius); padding: 20px 20px 18px; }
+.real-list h3 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
+.real-list p { margin: 0; font-size: 15px; line-height: 1.6; color: var(--muted); }
+
+/* Picture beside the words: the tall showcase video, and Pocket on a phone */
+.split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 64px; align-items: center; }
+.split-copy .show-eyebrow { margin-bottom: 14px; }
+.split-copy h2 { text-align: left; }
+.split-copy .show-lede { margin: 20px 0 28px; }
+.split-copy .ticks { font-size: 16px; gap: 10px; }
+.split-copy .ticks li::before { background: var(--c); }
+.split-media { max-width: 380px; width: 100%; justify-self: center; }
+.split-media figcaption { align-items: center; }
+.phone-frame { border-radius: 28px; aspect-ratio: 9 / 16; }
+.phone-frame video, .phone-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.game-grid { margin-top: 24px; }
+.game-grid img { display: block; width: 100%; height: auto; }
+.track-split { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 56px; align-items: center; }
+.track-split .track-copy { display: block; }
+.track-split .track-copy > ul { margin-bottom: 0; }
+.track-split .phone-shot { margin: 0; }
+.track-split .phone-frame { aspect-ratio: 390 / 844; }
+@media (max-width: 1100px) {
+  .real-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 860px) {
+  .split { grid-template-columns: 1fr; gap: 36px; }
+  .split-media { max-width: 320px; }
+  .track-split { grid-template-columns: 1fr; gap: 28px; }
+  .track-split .phone-shot { max-width: 280px; }
+}
+@media (max-width: 640px) {
+  .real { padding-top: 72px; }
+  .real-list { grid-template-columns: 1fr; }
+  .game-grid { grid-template-columns: 1fr; }
+}

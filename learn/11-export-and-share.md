@@ -1,10 +1,10 @@
 ---
 title: Export, share and finish
-summary: Save your song, keep it safe, export it as WAV, MP3 or a seamless loop, share a link or a video, cut a 30-second version and install the app.
+summary: Save your song, keep it safe, export it as WAV, MP3 or a seamless loop, share a link or a showcase video, cut a 30-second version and install the app.
 level: Beginner
 time: 15 minutes
 ---
-A song isn't finished until it's out of the studio. In this lesson you'll save a song as a file, see how the app keeps your work between visits, export it for streaming and for a game, share a link that opens it, make a video, and cut a 30-second version for a social clip. Open [the studio](https://fledgetone.com/app/) in another tab and follow along with your own song, or with a starter.
+A song isn't finished until it's out of the studio. In this lesson you'll save a song as a file, see how the app keeps your work between visits, export it for streaming and for a game, share a link that opens it, make a showcase video of the notes playing, and cut a 30-second version for a social clip. Open [the studio](https://fledgetone.com/app/) in another tab and follow along with your own song, or with a starter.
 
 ### Name your song
 
@@ -94,18 +94,21 @@ Whoever opens the link gets the song in Fledgetone, ready to play and change. Th
 
 > Sounds you recorded or loaded (audio clips, Sampler and Slicer sounds) can't fit in a link, and the dialog says which tracks would be silent. Send the project file for those songs.
 
-### Make a video
+### Make a showcase video
 
-For YouTube or social media, export the song as a video with a moving visualizer.
+For TikTok, Reels, Shorts or YouTube, export the song as a video that shows how it was made: every note slides past a red playhead in its track's colour, lighting up as it plays.
 
-1. In **Export**, set **Export** to **Video (MP4)**.
-2. Pick a **Visualizer style** (**LED bars**, **Neon city**, **Radar HUD** and more).
-3. Leave **Match a loudness target** on **Streaming (-14 LUFS)**: YouTube plays at that level.
-4. Click **Export**.
+1. Open **File › Showcase video…**. Export opens set to **Video (MP4)**, with **Picture** on **Showcase: the notes playing**.
+2. Pick the **Shape**: **Portrait 9:16** for phones, or **Widescreen 16:9** for YouTube and websites.
+3. Leave **Frame rate** on **Smooth 60 fps**, so the notes glide.
+4. Under **Title and marks**, type your **Title** and the line **Under it** (or untick them), and choose whether to show the section names, the time and the waveform. A small *made with fledgetone.com* mark stays at the bottom.
+5. Leave **Match a loudness target** on **Streaming (-14 LUFS)**, then click **Export**.
 
 {{shot:export-video}}
 
-The video is 1280×720 at 30 frames a second: the project's name, a spectrum that moves with the music, the song's waveform with a playhead, the section you're in and the time. It needs Chrome or Edge. To put your music on a video of your own instead, see [Score a video](/learn/score-a-video/).
+> Mute a track before you export and it's left out of the picture too. With many tracks, set **Tracks** to **A lane per track** so each part keeps its own band.
+
+Prefer moving bars? Set **Picture** to **Spectrum** and pick a style (**LED bars**, **Neon city**, **Radar HUD** and more). Videos need Chrome or Edge. To put your music on a video of your own instead, see [Score a video](/learn/score-a-video/).
 
 ### Cut a 30-second version
 
