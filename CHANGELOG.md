@@ -8,6 +8,7 @@ second update on the same day gets `-2`, and so on).
 
 - **Video (MP4) export looks sharper**: more data for each frame, and a fine grain in the dark background so it no longer breaks into blocks and stripes, even after TikTok or YouTube compress it again.
 - **Smooth 60 fps videos**: pick **Frame rate** in the export, **Smooth 60 fps** (the default) or **30 fps**. The notes in a Showcase video glide past the playhead.
+- **Title and marks** in the video export: type your own title and the line under it, and show or hide the title, that line, the section names, the time and the waveform. What you hide gives its room to the picture.
 
 ## 2026.10.20 — New horns, an "ooh" choir and four new starters
 

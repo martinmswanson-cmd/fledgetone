@@ -37,7 +37,7 @@ import { createZip } from '../../audio/zip';
 import { AUDIO_FORMATS, encodeAudio, FORMAT_EXTENSION } from '../../audio/encoders';
 import type { AudioFormat } from '../../audio/encoders';
 import { isSkin, SPECTRUM_SKINS, type SkinId } from '../../audio/spectrumSkins';
-import { canExportVideo, renderVideo, VIDEO_SIZES, type VideoFps, type VideoShape } from '../../audio/videoExport';
+import { canExportVideo, DEFAULT_VIDEO_MARKS, renderVideo, VIDEO_SIZES, type VideoFps, type VideoMarks, type VideoShape } from '../../audio/videoExport';
 import type { ShowcaseHits, ShowcaseLayout } from '../../audio/showcaseDraw';
 import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } from '../../store/songVersions';
 import { showcaseData } from '../../store/showcase';
@@ -70,6 +70,8 @@ interface ExportSettings {
   shape: VideoShape;
   /** Video: frames a second (60: smooth scrolling notes) */
   fps: VideoFps;
+  /** Video: which of the title, subtitle, section, time and waveform it shows */
+  marks: VideoMarks;
   /** Showcase: the tracks on one roll or a lane each (Auto: lanes for a big arrangement), and what a hit note does */
   showcaseLayout: ShowcaseLayout;
   showcaseHits: ShowcaseHits;
@@ -78,11 +80,18 @@ interface ExportSettings {
   noDrums: boolean;
 }
 
-const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', fps: 60, showcaseLayout: 'auto', showcaseHits: 'sparkles', underscore: false, noDrums: false };
+const DEFAULT_SETTINGS: ExportSettings = { range: 'song', what: 'mixdown', ending: 'ringOut', sampleRate: 44100, bitDepth: 24, bypassMaster: true, normalize: false, target: DEFAULT_TARGET, format: 'wav', loopFile: true, picture: 'showcase', shape: 'wide', fps: 60, marks: DEFAULT_VIDEO_MARKS, showcaseLayout: 'auto', showcaseHits: 'sparkles', underscore: false, noDrums: false };
 const SETTINGS_KEY = 'bos-beat-box.export-settings';
 
 function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+/** Saved video marks, each falling back to shown */
+function readMarks(raw: unknown): VideoMarks {
+  const r = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const on = (k: keyof VideoMarks) => (typeof r[k] === 'boolean' ? (r[k] as boolean) : DEFAULT_VIDEO_MARKS[k]);
+  return { title: on('title'), subtitle: on('subtitle'), sections: on('sections'), time: on('time'), waveform: on('waveform') };
 }
 
 /** The options of the last export in this browser (a per-browser convenience, not part of the project). */
@@ -106,6 +115,7 @@ function loadSettings(): ExportSettings {
       picture: r.picture === 'showcase' || isSkin(r.picture) ? r.picture : d.picture,
       shape: oneOf(r.shape, ['wide', 'tall'] as const, d.shape),
       fps: oneOf(r.fps, [30, 60] as const, d.fps),
+      marks: readMarks(r.marks),
       showcaseLayout: oneOf(r.showcaseLayout, ['auto', 'together', 'lanes'] as const, d.showcaseLayout),
       showcaseHits: oneOf(r.showcaseHits, ['sparkles', 'rings', 'glow'] as const, d.showcaseHits),
       underscore: typeof r.underscore === 'boolean' ? r.underscore : d.underscore,
@@ -271,6 +281,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const videoStart = useVideoStore((st) => st.start);
   const [useFootage, setUseFootage] = useState(true);
   const [keepVideoSound, setKeepVideoSound] = useState(false);
+  // The video's title and the line under it, for this export (blank: the project's name, the tempo)
+  const [videoTitle, setVideoTitle] = useState('');
+  const [videoSubtitle, setVideoSubtitle] = useState('');
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const abortRef = useRef<AbortController | null>(null);
   // A render still going when the dialog goes away is stopped
@@ -439,8 +452,9 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           showcaseLook: { layout: settings.showcaseLayout, hits: settings.showcaseHits },
           channels,
           sampleRate: audio.sampleRate,
-          title: projectName,
-          subtitle: `${Math.round(opts.bpm * 100) / 100} BPM · made with Fledgetone`,
+          title: videoTitle.trim() || projectName,
+          subtitle: videoSubtitle.trim() || `${Math.round(opts.bpm * 100) / 100} BPM`,
+          marks: settings.marks,
           sections,
           signal: controller.signal,
           onProgress: (p) => setStatus({ kind: 'rendering', fileName, progress: 0.3 + 0.7 * p, detail: 'Drawing the video' }),
@@ -686,6 +700,52 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                   ))}
                 </select>
               </label>
+            )}
+            {!(refVideo && useFootage) && (
+              <div className="grid gap-1.5" role="group" aria-label="Title and marks">
+                <span className="text-forge-text">Title and marks</span>
+                {(
+                  [
+                    ['title', 'Title', videoTitle, setVideoTitle, projectName],
+                    ['subtitle', 'Under it', videoSubtitle, setVideoSubtitle, `${Math.round(bpm * 100) / 100} BPM`],
+                  ] as const
+                ).map(([key, label, text, setText, placeholder]) => (
+                  <label key={key} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.marks[key]}
+                      onChange={(e) => update({ marks: { ...settings.marks, [key]: e.target.checked } })}
+                      className="accent-cyan-400"
+                      aria-label={`Show the ${label === 'Title' ? 'title' : 'line under the title'}`}
+                    />
+                    <span className="w-14 shrink-0">{label}</span>
+                    <input
+                      type="text"
+                      value={text}
+                      placeholder={placeholder}
+                      disabled={!settings.marks[key]}
+                      onChange={(e) => setText(e.target.value)}
+                      maxLength={80}
+                      className="h-7 min-w-0 flex-1 bg-forge-bg border border-forge-border rounded px-1.5 disabled:opacity-50"
+                    />
+                  </label>
+                ))}
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {(
+                    [
+                      ['sections', 'Section names', 'The section the playhead is in, from your markers'],
+                      ['time', 'Time', 'The time played and the length'],
+                      ['waveform', 'Waveform', "The whole song's waveform with a playhead"],
+                    ] as const
+                  ).map(([key, label, title]) => (
+                    <label key={key} className="flex items-center gap-1.5 cursor-pointer" title={title}>
+                      <input type="checkbox" checked={settings.marks[key]} onChange={(e) => update({ marks: { ...settings.marks, [key]: e.target.checked } })} className="accent-cyan-400" />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <span className="text-forge-muted">What you leave out gives its room to the picture. A small fledgetone.com mark stays at the bottom.</span>
+              </div>
             )}
             {!(refVideo && useFootage) && settings.picture === 'showcase' && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-forge-text">

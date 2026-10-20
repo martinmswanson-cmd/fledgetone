@@ -34,6 +34,24 @@ const DESIGN: Record<VideoShape, { w: number; h: number }> = { wide: { w: 1280, 
 /** Bits a second per frame rate, at 1080p (a site re-encodes it, so it starts from plenty) */
 const BITRATE: Record<VideoFps, number> = { 30: 16e6, 60: 24e6 };
 
+/**
+ * What's drawn around the picture (each can be left out; the picture grows into the room). The
+ * small "made with fledgetone.com" mark at the bottom is always there.
+ */
+export interface VideoMarks {
+  /** The logo and the title */
+  title: boolean;
+  /** The line under the title */
+  subtitle: boolean;
+  /** The section the playhead is in, from the markers */
+  sections: boolean;
+  /** The time, played and in all */
+  time: boolean;
+  /** The whole song's waveform with a playhead */
+  waveform: boolean;
+}
+export const DEFAULT_VIDEO_MARKS: VideoMarks = { title: true, subtitle: true, sections: true, time: true, waveform: true };
+
 export interface VideoSection {
   /** Seconds from the start of the video. */
   at: number;
@@ -65,6 +83,8 @@ export interface VideoOptions {
   showcaseLook?: ShowcaseLook;
   /** Frames a second (30 if not given) */
   fps?: VideoFps;
+  /** What's drawn around the picture (all of it if not given) */
+  marks?: VideoMarks;
 }
 
 /** True where this browser can make a video at all (WebCodecs in a secure page). */
@@ -300,12 +320,18 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   const g = canvas.getContext('2d')!;
   // Drawn in design units, scaled to the video's pixels
   g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
-  // Where things go: the title at the top, the picture in the middle, the waveform and time at the bottom
+  // Where things go: the title at the top, the picture in the middle, the waveform and time at the
+  // bottom, and the mark under them. What's left out gives its room to the picture (a portrait
+  // video keeps its top clear anyway: TikTok and Reels put their tabs there)
+  const marks = opts.marks ?? DEFAULT_VIDEO_MARKS;
+  const heading = marks.title || marks.subtitle;
+  const footer = marks.sections || marks.time;
   const titleY = tall ? 150 : 64;
   const footY = H - 60;
-  const waveY = footY - 70;
-  const pictureY = titleY + (tall ? 120 : 106);
-  const picture = { x: stripX, y: pictureY, w: stripW, h: waveY - 50 - pictureY };
+  const waveY = footer ? footY - 70 : footY - 40;
+  const pictureY = heading ? titleY + (tall ? 120 : 106) : tall ? titleY : 48;
+  const pictureEnd = marks.waveform ? waveY - 50 : footer ? footY - 36 : footY - 12;
+  const picture = { x: stripX, y: pictureY, w: stripW, h: pictureEnd - pictureY };
   const logo = await loadImage(fledgetoneLogo);
   const background = grainedBackground(size.w, size.h);
   const total = Math.ceil(seconds * fps);
@@ -352,15 +378,21 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     g.drawImage(background, 0, 0);
     g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
 
-    // Title block
-    if (logo) g.drawImage(logo, stripX, titleY, 72, 72);
-    g.fillStyle = '#e4e4e7';
-    g.font = `600 ${tall ? 38 : 44}px system-ui, -apple-system, Segoe UI, sans-serif`;
+    // Title block (a subtitle on its own takes the title's place)
     g.textBaseline = 'alphabetic';
-    g.fillText(opts.title, stripX + 96, titleY + 44, stripW - 96);
-    g.fillStyle = '#9ca3af';
-    g.font = '400 22px system-ui, -apple-system, Segoe UI, sans-serif';
-    g.fillText(opts.subtitle, stripX + 96, titleY + 76, stripW - 96);
+    if (heading) {
+      if (logo) g.drawImage(logo, stripX, titleY, 72, 72);
+      if (marks.title) {
+        g.fillStyle = '#e4e4e7';
+        g.font = `600 ${tall ? 38 : 44}px system-ui, -apple-system, Segoe UI, sans-serif`;
+        g.fillText(opts.title, stripX + 96, titleY + 44, stripW - 96);
+      }
+      if (marks.subtitle) {
+        g.fillStyle = '#9ca3af';
+        g.font = '400 22px system-ui, -apple-system, Segoe UI, sans-serif';
+        g.fillText(opts.subtitle, stripX + 96, titleY + (marks.title ? 76 : 44), stripW - 96);
+      }
+    }
 
     if (opts.showcase) {
       // The notes on a piano roll that scrolls past the playhead (showcaseDraw.ts)
@@ -371,26 +403,30 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     }
 
     // Waveform of the whole song, with the playhead
-    const waveH = 56;
-    const played = (t / seconds) * stripW;
-    for (let c = 0; c < wave.length; c++) {
-      const x = stripX + c * 2;
-      const h = Math.max(1, wave[c] * waveH);
-      g.fillStyle = x < stripX + played ? '#06b6d4' : '#3a3a44';
-      g.fillRect(x, waveY - h / 2, 1.5, h);
+    if (marks.waveform) {
+      const waveH = 56;
+      const played = (t / seconds) * stripW;
+      for (let c = 0; c < wave.length; c++) {
+        const x = stripX + c * 2;
+        const h = Math.max(1, wave[c] * waveH);
+        g.fillStyle = x < stripX + played ? '#06b6d4' : '#3a3a44';
+        g.fillRect(x, waveY - h / 2, 1.5, h);
+      }
+      g.fillStyle = '#f59e0b';
+      g.fillRect(stripX + played - 1, waveY - waveH / 2 - 8, 2, waveH + 16);
     }
-    g.fillStyle = '#f59e0b';
-    g.fillRect(stripX + played - 1, waveY - waveH / 2 - 8, 2, waveH + 16);
 
     // Section and time
-    const section = [...opts.sections].reverse().find((s) => s.at <= t + 1e-6);
+    const section = marks.sections ? [...opts.sections].reverse().find((s) => s.at <= t + 1e-6) : undefined;
     g.font = '600 20px system-ui, -apple-system, Segoe UI, sans-serif';
     g.fillStyle = '#f59e0b';
     if (section) g.fillText(section.name.toUpperCase(), stripX, footY, stripW / 2);
-    g.fillStyle = '#9ca3af';
-    g.font = '400 20px ui-monospace, SFMono-Regular, Menlo, monospace';
-    const time = `${clock(t)} / ${clock(seconds)}`;
-    g.fillText(time, stripX + stripW - g.measureText(time).width, footY);
+    if (marks.time) {
+      g.fillStyle = '#9ca3af';
+      g.font = '400 20px ui-monospace, SFMono-Regular, Menlo, monospace';
+      const time = `${clock(t)} / ${clock(seconds)}`;
+      g.fillText(time, stripX + stripW - g.measureText(time).width, footY);
+    }
     // Where it was made (portrait videos are shared on their own, away from any description)
     g.fillStyle = '#6b7280';
     g.font = '500 16px ui-monospace, SFMono-Regular, Menlo, monospace';
