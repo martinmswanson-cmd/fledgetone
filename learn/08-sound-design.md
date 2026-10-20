@@ -69,7 +69,7 @@ The **Designed Kit** is a drum kit synthesized in the browser: you design each r
 
 1. Switch the **Drums** track to **Designed Kit**. The **Drum Designer** appears with a button for each row.
 2. Click **Kick** (it plays). Set **Preset** to **Punchy short kick**, then **Pitch** to **48 Hz** and **Decay** to **400 ms**: a little deeper and longer.
-3. Click **Snare**. Set **Preset** to **Crisp trap snare**.
+3. Click **Snare**. Set **Preset** to **Crisp snare**.
 4. Click **ADD LAYER**. A clap is stacked on the snare at **-8 dB**. Set its **Delay** to **8.0 ms**, so the clap lands just behind the snare's crack and widens it.
 
 {{shot:sound-drum-designer}}

@@ -4,15 +4,15 @@ summary: Write a bass line on the chords' roots, then an 808 that slides, sits i
 level: Intermediate
 time: 20 minutes
 ---
-The bass ties the drums to the harmony: it plays the chords' lowest notes, in the drums' rhythm. In this lesson you'll set up four chords and a trap beat, write a bass line that follows the chords' roots, then swap it for an **808**: a long, booming sub bass that slides between notes. You'll tune it to the key and make it dip under every kick, so the kick and the bass stop fighting. Open [the studio](https://fledgetone.com/app/) in another tab and follow along.
+The bass ties the drums to the harmony: it plays the chords' lowest notes, in the drums' rhythm. In this lesson you'll set up four chords and a rap beat, write a bass line that follows the chords' roots, then swap it for an **808**: a long, booming sub bass that slides between notes. You'll tune it to the key and make it dip under every kick, so the kick and the bass stop fighting. Open [the studio](https://fledgetone.com/app/) in another tab and follow along.
 
 This lesson builds on [Make your first beat](/learn/first-beat/) and [Chords and a melody](/learn/chords-and-melody/). If you've done them, you know the piano roll; if not, you'll still be fine.
 
 ### Set up chords and a beat
 
 1. **File › New… › Blank timeline**.
-2. Click the tempo, **122**, in the header, type *140* and press **Enter**. 808s live in trap and drill, which sit around 140 BPM.
-3. Right-click the **Drums** lane at bar 1 and choose **Drummer…**. Set **Style** to **Trap**, **Length** to **4 bars** and **A fill every** to **no fills**, then click **Make clip at bar 1**.
+2. Click the tempo, **122**, in the header, type *140* and press **Enter**. 808s live in modern rap beats, which sit around 140 BPM.
+3. Right-click the **Drums** lane at bar 1 and choose **Drummer…**. Set **Style** to **Rap beat**, **Length** to **4 bars** and **A fill every** to **no fills**, then click **Make clip at bar 1**.
 4. Right-click the **Space Clav** lane at bar 1 and choose **Chord progression…**. Set **Key** to **A** **minor**, **Progression** to **i – VI – III – VII (epic)**, **Each chord lasts** to **1 bar** and **Times through** to **1× (4 bars)**, then click **Make clip at bar 1**.
 
 {{shot:bass-and-808s-chords}}
@@ -80,9 +80,9 @@ G1 is still ringing when G2 starts, so instead of hitting again the 808 swoops u
 Select the **808 Bass** track (click its header) and look at the Track Inspector. Under the instrument is the **808 designer** (every control is in [the guide](/guide/instruments/#808-designer)).
 
 1. Click its **OFF** switch to turn it **ON**.
-2. Open **Load preset…** and choose **Drill slide**: a long tail, slower and wider slides, a little drive.
-3. Try **Glide**: how long a slide takes. Drill slide sets 160 ms; drag it towards 300 ms and the swoop gets lazier.
-4. Try **Decay**: how long a held note rings (Drill slide sets 3.20 s). Short decays suit busy patterns, long ones sparse ones.
+2. Open **Load preset…** and choose **Long slide**: a long tail, slower and wider slides, a little drive.
+3. Try **Glide**: how long a slide takes. Long slide sets 160 ms; drag it towards 300 ms and the swoop gets lazier.
+4. Try **Decay**: how long a held note rings (Long slide sets 3.20 s). Short decays suit busy patterns, long ones sparse ones.
 5. Tick **Tune to key**, then set the key beside it to **A** and the scale to **Minor**.
 
 {{shot:bass-and-808s-designer}}

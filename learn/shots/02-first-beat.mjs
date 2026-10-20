@@ -109,7 +109,7 @@ export const SHOTS = [
   },
   {
     file: 'first-beat-roll',
-    alt: 'A trap pattern in the piano roll, a beat-long closed hat selected on beat 4 and the ROLL panel open with the rate set to 1/32.',
+    alt: 'A rap beat pattern in the piano roll, a beat-long closed hat selected on beat 4 and the ROLL panel open with the rate set to 1/32.',
     caption: 'ROLL… turns the selected hat into a roll: 1/32 here, rising.',
     setup: async (s) => {
       await s.blank();

@@ -4,7 +4,7 @@ summary: Click a drum pattern into the piano roll's drum rows, loop it, give it 
 level: Beginner
 time: 15 minutes
 ---
-Every song needs a pulse. In this lesson you'll start from an empty timeline and click in a one-bar drum pattern, step by step, like a drum machine. Then you'll loop it, give it swing, try a house beat and a trap beat with a hi-hat roll, add a fill, and see the shortcut that writes a whole drum part in one go. Open [the studio](https://fledgetone.com/app/) in another tab and follow along.
+Every song needs a pulse. In this lesson you'll start from an empty timeline and click in a one-bar drum pattern, step by step, like a drum machine. Then you'll loop it, give it swing, try a house beat and a rap beat with a hi-hat roll, add a fill, and see the shortcut that writes a whole drum part in one go. Open [the studio](https://fledgetone.com/app/) in another tab and follow along.
 
 ### Start with a blank timeline
 
@@ -70,9 +70,9 @@ Open Hat    ..x.|..x.|..x.|..x.
 
 The kick on every beat is the **four on the floor**. The open hat lands on each "and", between the kicks, and the closed hats fill the 16ths around it. Now the header's SWING does something: drag it up to 35% and the 16th hats start to roll.
 
-### Try a trap beat with a hi-hat roll
+### Try a rap beat with a hi-hat roll
 
-Trap runs fast, around 140 BPM, but the snare only lands once a bar, on beat 3, so it feels half as fast. Clear the bar again, set the tempo to *140*, and click in:
+A modern rap beat runs fast, around 140 BPM, but the snare only lands once a bar, on beat 3, so it feels half as fast. Clear the bar again, set the tempo to *140*, and click in:
 
 ```grid
 Kick        x...|...x|..x.|....
@@ -89,7 +89,7 @@ The empty last beat of the hats is for a **roll**: fast hits that rush into the 
 
 {{shot:first-beat-roll}}
 
-The long hat becomes eight quick hits getting louder. Try **1/16 triplet** for a rolling triplet, or **PITCH: Rising +5 st** for the climbing hats of drill. Swing leaves a roll even, so it never stumbles.
+The long hat becomes eight quick hits getting louder. Try **1/16 triplet** for a rolling triplet, or **PITCH: Rising +5 st** for hats that climb as they roll. Swing leaves a roll even, so it never stumbles.
 
 > Rolls work on any note: draw a long snare and roll it for a snare build.
 
@@ -123,7 +123,7 @@ The last beat of that bar becomes a snare roll. The other fills are **tom run** 
 You've built a beat by hand, which is the best way to learn what each drum does. When you want a part fast, the **Drummer** writes one from a style's rules.
 
 1. Right-click an empty spot on the **Drums** lane, at bar 5 say, and choose **Drummer…**.
-2. Pick a **Style**: **Backbeat**, **Four on the floor**, **Trap**, **Boom bap** and 17 more. Each one shows the tempo it usually sits at.
+2. Pick a **Style**: **Backbeat**, **Four on the floor**, **Rap beat**, **Boom bap** and 17 more. Each one shows the tempo it usually sits at.
 3. Choose a **Length** (1 to 16 bars), **A fill every** 2, 4 or 8 bars (or no fills), and drag **Energy** from sparse to busy.
 4. Click **Make clip at bar 5** (the button names the bar you right-clicked).
 

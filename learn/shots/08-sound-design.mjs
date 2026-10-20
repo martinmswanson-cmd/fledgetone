@@ -146,7 +146,7 @@ async function pad(s) {
 
 const DD = 'section[aria-label="Drum Designer"]';
 
-/** The Designed Kit's snare: Crisp trap snare with a clap layered 8 ms behind it; the kick a Punchy short kick, a little deeper. */
+/** The Designed Kit's snare: Crisp snare with a clap layered 8 ms behind it; the kick a Punchy short kick, a little deeper. */
 async function drums(s) {
   await instrument(s, 'Drums', 'designed kit');
   const dd = s.q(DD);
@@ -155,7 +155,7 @@ async function drums(s) {
   await slide(knob(s, DD, 'Layer 1', 'Pitch'), 48, [25, 120]);
   await slide(knob(s, DD, 'Layer 1', 'Decay'), 0.4, [0.05, 3]);
   await dd.locator('[aria-label="Drum row"] button', { hasText: /^Snare$/ }).click();
-  await dd.getByLabel('Preset').selectOption({ label: 'Crisp trap snare' });
+  await dd.getByLabel('Preset').selectOption({ label: 'Crisp snare' });
   await dd.getByText('ADD LAYER').click();
   await s.wait(300);
   await slide(knob(s, DD, 'Layer 2', 'Delay'), 8);
@@ -210,8 +210,8 @@ export const SHOTS = [
   },
   {
     file: 'sound-drum-designer',
-    alt: 'The Drum Designer with the Snare row picked: Layer 1 the Crisp trap snare (Tone 230 Hz, Noise 100%, Snap 70%), Layer 2 a clap at -8 dB with Delay 8.0 ms. The preset box now reads Your own sound.',
-    caption: 'A designed snare: Crisp trap snare with a clap layered 8 ms behind.',
+    alt: 'The Drum Designer with the Snare row picked: Layer 1 the Crisp snare (Tone 230 Hz, Noise 100%, Snap 70%), Layer 2 a clap at -8 dB with Delay 8.0 ms. The preset box now reads Your own sound.',
+    caption: 'A designed snare: Crisp snare with a clap layered 8 ms behind.',
     setup: async (s) => {
       await s.starter('Space Station');
       await drums(s);

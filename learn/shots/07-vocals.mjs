@@ -65,9 +65,9 @@ async function fakeMic(s, passes = 1) {
 /** Hide the "Playback is lagging" notice: the headless browser can't keep up while it records. */
 const quiet = (s) => s.page.addStyleTag({ content: '[role=alert]:has(button[title^="Hide until playback"]){display:none!important}' });
 
-/** The Trap starter with an Audio track added (+ Add Track, "audio", Enter): it opens in the Inspector. */
-async function trapWithAudio(s) {
-  await s.starter('Trap');
+/** The Rap Beat starter with an Audio track added (+ Add Track, "audio", Enter): it opens in the Inspector. */
+async function rapWithAudio(s) {
+  await s.starter('Rap Beat');
   await quiet(s);
   await s.text('Add Track').first().click();
   await s.wait(400);
@@ -125,7 +125,7 @@ export const SHOTS = [
     alt: 'The Recording settings popover open under the toolbar: 1-bar count-in, Quantize, Metronome while playing, Loop passes are takes ticked, Punch in / out and Click level.',
     caption: 'The recording settings, behind the arrow next to Record. Tick Loop passes are takes to sing a line several times.',
     setup: async (s) => {
-      await trapWithAudio(s);
+      await rapWithAudio(s);
       await s.title('Recording settings').click();
       await s.wait(300);
       await s.page.locator('label', { hasText: 'Loop passes are takes' }).click();
@@ -140,7 +140,7 @@ export const SHOTS = [
     alt: 'The toolbar while recording: the Mic button has turned into a red Stop button with a green level meter, and the playhead readout is counting through bar 6.',
     caption: 'Recording: Mic turns into Stop, with a level meter beside it.',
     setup: async (s) => {
-      await trapWithAudio(s);
+      await rapWithAudio(s);
       await loop5to9(s);
       await fakeMic(s, 1);
       await s.title('Go to In point').click();
@@ -154,7 +154,7 @@ export const SHOTS = [
     alt: 'The Takes window for Mic take 1: three passes as waveform rows; Pass 2 is lit for the first three bars and Pass 3 for the last, and a Flatten button at the bottom.',
     caption: 'Three passes round the loop, comped: Pass 2 for three bars, Pass 3 for the last one.',
     setup: async (s) => {
-      await trapWithAudio(s);
+      await rapWithAudio(s);
       await loop5to9(s);
       await s.title('Recording settings').click();
       await s.wait(300);
@@ -188,7 +188,7 @@ export const SHOTS = [
     alt: 'The Inspector of the Audio track: the Vocal chain panel with Clean lead lit and the Ad-lib track button, and under it Duck others under this switched on with Dip at -3 dB.',
     caption: 'A vocal chain in one click, and the beat ducking 3 dB under the vocal.',
     setup: async (s) => {
-      await trapWithAudio(s);
+      await rapWithAudio(s);
       await s.page.getByRole('button', { name: 'Clean lead' }).click();
       await s.wait(400);
       await s.page.getByRole('switch', { name: 'Duck others under this off' }).click();
@@ -209,7 +209,7 @@ export const SHOTS = [
     alt: 'The Tune vocal dialog: key C minor, Natural selected, Strength 80%, Speed 40 ms, and a graph of the sung pitch, wavering around the notes, with the tuned pitch in colour.',
     caption: 'Tune vocal: Natural pulls the voice most of the way onto C minor and keeps its slides and vibrato.',
     setup: async (s) => {
-      await trapWithAudio(s);
+      await rapWithAudio(s);
       await loop5to9(s);
       await record(s, 1);
       await s.text('Mic take 1').first().click({ button: 'right' });
@@ -223,7 +223,7 @@ export const SHOTS = [
     alt: 'The Hard tune dialog: Strength 100%, Speed at instant (0 ms), and the tuned pitch drawn as flat steps on the notes of C minor.',
     caption: 'Hard tune: all the way, instantly. The pitch steps from note to note.',
     setup: async (s) => {
-      await trapWithAudio(s);
+      await rapWithAudio(s);
       await loop5to9(s);
       await record(s, 1);
       await s.text('Mic take 1').first().click({ button: 'right' });
@@ -237,7 +237,7 @@ export const SHOTS = [
     alt: 'The timeline with three vocal tracks under the beat: Audio with the lead take, Ad-libs with a short take in bar 7, and Audio double with the double of the lead.',
     caption: 'The finished stack: the lead, an ad-lib track and a double of the lead.',
     setup: async (s) => {
-      await trapWithAudio(s);
+      await rapWithAudio(s);
       await loop5to9(s);
       await s.page.getByRole('button', { name: 'Clean lead' }).click();
       await record(s, 1);
@@ -268,9 +268,9 @@ export const SHOTS = [
 export const EXAMPLES = [
   {
     name: 'vocal-ready',
-    label: 'The Trap beat with a lead vocal track (Clean lead, ducking the beat 3 dB) and an Ad-lib track, ready for you to record.',
+    label: 'The Rap Beat starter with a lead vocal track (Clean lead, ducking the beat 3 dB) and an Ad-lib track, ready for you to record.',
     setup: async (s) => {
-      await trapWithAudio(s);
+      await rapWithAudio(s);
       await loop5to9(s);
       await s.page.getByRole('button', { name: 'Clean lead' }).click();
       await s.wait(300);

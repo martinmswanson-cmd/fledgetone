@@ -59,7 +59,7 @@ async function aMinor(s) {
   await s.wait(200);
 }
 
-/** A blank timeline at 140 BPM with a 4-bar trap beat (the Drummer) and Am – F – C – G on the Space Clav. */
+/** A blank timeline at 140 BPM with a 4-bar rap beat (the Drummer) and Am – F – C – G on the Space Clav. */
 async function song(s) {
   await s.blank();
   await s.page.locator('[title^="Click to type a tempo"]').click();
@@ -71,8 +71,8 @@ async function song(s) {
   {
     const d = s.page.locator('[role=dialog]').last();
     const ss = d.locator('select');
-    const trap = await ss.nth(0).evaluate((sel) => [...sel.options].find((o) => o.text.startsWith('Trap')).text);
-    await ss.nth(0).selectOption({ label: trap });
+    const rap = await ss.nth(0).evaluate((sel) => [...sel.options].find((o) => o.text.startsWith('Rap beat')).text);
+    await ss.nth(0).selectOption({ label: rap });
     await ss.nth(1).selectOption({ label: '4 bars' });
     await ss.nth(2).selectOption({ label: 'no fills' });
     await d.getByRole('button', { name: /^Make clip/ }).click();
@@ -135,7 +135,7 @@ async function eight08(s, { withRoots = false } = {}) {
   await notes(s, EIGHT08);
 }
 
-/** The 808's Track Inspector open, with its designer on, the Drill slide preset and Tune to key in A minor. */
+/** The 808's Track Inspector open, with its designer on, the Long slide preset and Tune to key in A minor. */
 async function designed(s) {
   const toggle = s.page.locator('xpath=//*[normalize-space(text())="808 designer"]/ancestor::div[.//button][1]//button').first();
   if (!(await toggle.count())) {
@@ -144,7 +144,7 @@ async function designed(s) {
   }
   await toggle.click();
   await s.wait(400);
-  await s.page.locator('select[aria-label="808 preset"]').selectOption('Drill slide');
+  await s.page.locator('select[aria-label="808 preset"]').selectOption('Long slide');
   await s.wait(300);
   const tune = s.page.locator('label', { hasText: 'Tune to key' });
   await tune.scrollIntoViewIfNeeded();
@@ -193,8 +193,8 @@ export const SHOTS = [
   },
   {
     file: 'bass-and-808s-designer',
-    alt: 'The 808 designer in the Track Inspector, switched on with the Drill slide settings: drive, tone, punch, glide 160 ms, decay, and Tune to key set to A minor.',
-    caption: 'The 808 designer after loading Drill slide, tuned to A minor.',
+    alt: 'The 808 designer in the Track Inspector, switched on with the Long slide settings: drive, tone, punch, glide 160 ms, decay, and Tune to key set to A minor.',
+    caption: 'The 808 designer after loading Long slide, tuned to A minor.',
     setup: async (s) => {
       await eight08(s);
       await designed(s);
@@ -242,7 +242,7 @@ export const SHOTS = [
 export const EXAMPLES = [
   {
     name: 'bass-and-808s',
-    label: 'The finished low end: a trap beat, Am – F – C – G, the root line muted on the Slap Bass and the 808 sliding, tuned and ducked.',
+    label: 'The finished low end: a rap beat, Am – F – C – G, the root line muted on the Slap Bass and the 808 sliding, tuned and ducked.',
     setup: async (s) => {
       await eight08(s, { withRoots: true });
       await designed(s);
