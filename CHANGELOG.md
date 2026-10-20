@@ -6,7 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## 2026.10.20-7 — Pages for games, creators and film
 
-- **fledgetone.com has a page for each kind of maker**: **For games** (adaptive music, sound effects, playable test games and the exports for Godot, Unity, the web, FMOD and Wwise), **For creators** (showcase videos, every length, a version to talk over, stream kits and beat store packages) and **For film** (hit points, tempo fitting, timecode, dialogue dips and markers for your editor). The home page links to all three under **What will you make?**
+- **fledgetone.com has a page for each kind of maker**: **For games** (adaptive music, sound effects, playable test games and the exports for Godot, Unity, the web, FMOD and Wwise), **For creators** (showcase videos, every length, a version to talk over, stream kits and beat store packages) and **For scoring** (scoring the video you've cut in your own editor: hit points, tempo fitting, timecode, dialogue dips and markers to take back). The home page links to all three under **What will you make?**
 
 ## 2026.10.20-6 — New tutorials
 

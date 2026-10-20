@@ -42,7 +42,7 @@ export const head = ({ title, description, path, current = 'guide' }) => `<!doct
       <nav class="nav-links" aria-label="Site">
         <a href="/games/">For games</a>
         <a href="/creators/">For creators</a>
-        <a href="/film/">For film</a>
+        <a href="/scoring/">For scoring</a>
         <a href="/learn/"${current === 'learn' ? ' aria-current="page"' : ''}>Learn</a>
         <a href="/guide/"${current === 'guide' ? ' aria-current="page"' : ''}>Guide</a>
       </nav>
@@ -60,7 +60,7 @@ export const foot = `
         <a href="/app/">Studio</a>
         <a href="/games/">For games</a>
         <a href="/creators/">For creators</a>
-        <a href="/film/">For film</a>
+        <a href="/scoring/">For scoring</a>
         <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
         <a href="/licenses/">Licences</a>

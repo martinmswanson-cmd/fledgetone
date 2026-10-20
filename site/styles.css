@@ -727,3 +727,5 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .page-hero .shot-hero, .page-hero .hero-film.scored { margin: 56px auto 0; }
 .final .fineprint { font-size: 14px; max-width: 640px; margin: 18px auto 0; }
 .final .fineprint a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+/* What a page's tool isn't, said once near the top */
+.isnt { margin: 14px auto 0; max-width: 640px; padding: 10px 14px; border: 1px dashed var(--border-2); border-radius: 10px; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
