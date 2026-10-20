@@ -31,3 +31,6 @@ __pycache__/
 scripts/plugins/faust/gen/
 dist-full
 dist-site
+
+# Rust build output
+engine/*/target/

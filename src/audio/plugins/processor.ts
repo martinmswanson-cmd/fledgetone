@@ -184,6 +184,9 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     } else if (ev.type === 'wam-midi') {
       const b = ev.data.bytes;
       this.e.bb_midi(this.h, b[0], b[1] || 0, b[2] || 0);
+    } else if (ev.type === 'wam-transport') {
+      // The song's tempo, for plugins with tempo-synced parts (Fledge Synth's LFOs)
+      if (this.e.bb_tempo && ev.data.tempo > 0) this.e.bb_tempo(this.h, ev.data.tempo);
     }
   }
 

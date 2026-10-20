@@ -3,6 +3,29 @@ import type { PluginFamily } from './pluginTypes';
 
 export const PLUGIN_FAMILIES: PluginFamily[] = [
  {
+  "family": "fledge",
+  "label": "Fledge Synth",
+  "licence": "GPL-3.0-or-later (Fledgetone's own)",
+  "gpl": false,
+  "file": "fledge.wasm",
+  "bytes": 128358,
+  "hash": "87772d49e3e8",
+  "plugins": [
+   {
+    "name": "Fledge Synth",
+    "category": "Synth",
+    "about": "Fledgetone's own synthesizer for modern electronic music: two wavetable oscillators with up to 16 unison voices, FM, a clean sub, filters including comb and formant, antialiased drive, wobble LFOs in time with the song and an OTT. Its presets are made for dubstep, bass music and leads.",
+    "instrument": true,
+    "tags": [
+     "wavetable",
+     "bass",
+     "dubstep",
+     "lead"
+    ]
+   }
+  ]
+ },
+ {
   "family": "airwindows",
   "label": "Airwindows",
   "licence": "MIT",

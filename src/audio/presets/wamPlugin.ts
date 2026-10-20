@@ -17,6 +17,7 @@ import {
   registerLiveWam,
   retireLiveWam,
   sendMidi,
+  sendTempo,
   setWamParam,
   startingState,
   whenRetired,
@@ -71,8 +72,16 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
     const m = midiOf(note);
     return Number.isFinite(m) ? Math.max(0, Math.min(127, m)) : 60;
   };
+  /** The tempo last sent: a note goes with the tempo where it starts, when that has changed. */
+  let tempo = 0;
   const on = (n: number, velocity: number, time: number) => {
     if (!inst) return;
+    // (In the render's own context: an export's tempo, not the live one)
+    const bpm = out.context.transport.bpm.getValueAtTime(time);
+    if (Number.isFinite(bpm) && Math.abs(bpm - tempo) > 0.01) {
+      tempo = bpm;
+      sendTempo(inst, bpm, time);
+    }
     sendMidi(inst, [0x90, n, Math.max(1, Math.min(127, Math.round(velocity * 127)))], time);
     touched.add(n);
   };
@@ -123,6 +132,8 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       sendMidi(inst, [0xb0, 123, 0], now);
       sendMidi(inst, [0xe0, 0, 64], now);
       touched.clear();
+      // (A tempo waiting with the cleared events never arrived)
+      tempo = 0;
     },
     cc: (cc: number, value: number, time: number) => {
       if (!inst) return;

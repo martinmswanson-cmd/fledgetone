@@ -60,3 +60,44 @@ for (const family of [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES]) {
     assert.deepEqual(problems, []);
   });
 }
+
+// Fledgetone's own synth: every preset plays a chord at each of a few tempos without going over
+// its safety ceiling (it never clips louder than -1 dB), and it's quiet once the notes end
+test('fledge: every preset plays, stays under its ceiling and stops', async () => {
+  const { instance: { exports: e } } = await WebAssembly.instantiate(readFileSync(new URL('../public/fledgetone-plugins/fledge.wasm', import.meta.url)));
+  const text = (p) => {
+    const m = new Uint8Array(e.memory.buffer);
+    let end = p;
+    while (m[end]) end++;
+    return Buffer.from(m.subarray(p, end)).toString('utf8');
+  };
+  const problems = [];
+  const h = e.bb_create(0, 48000);
+  const count = e.bb_programs(h);
+  assert.ok(count >= 10, 'presets');
+  const render = (blocks) => {
+    let peak = 0;
+    for (let b = 0; b < blocks; b++) {
+      e.bb_process(h, 128);
+      for (const w of [2, 3]) for (const v of new Float32Array(e.memory.buffer, e.bb_buffer(h, w), 128)) peak = Number.isFinite(v) ? Math.max(peak, Math.abs(v)) : Infinity;
+    }
+    return peak;
+  };
+  for (let p = 0; p < count; p++) {
+    const name = text(e.bb_program_name(h, p));
+    for (const bpm of [70, 140, 174]) {
+      e.bb_set_program(h, p);
+      e.bb_tempo(h, bpm);
+      for (const n of [36, 48, 55, 60]) e.bb_midi(h, 0x90, n, 120);
+      const peak = render(375); // a second
+      for (const n of [36, 48, 55, 60]) e.bb_midi(h, 0x80, n, 0);
+      if (!Number.isFinite(peak) || peak > 0.9) problems.push(`${name} at ${bpm}: peak ${peak}`);
+      if (peak < 1e-3) problems.push(`${name} at ${bpm}: silent`);
+      render(375 * 6);
+      const tail = render(40);
+      if (tail > 1e-3) problems.push(`${name} at ${bpm}: still sounding ${tail} after release`);
+    }
+  }
+  e.bb_destroy(h);
+  assert.deepEqual(problems, []);
+});

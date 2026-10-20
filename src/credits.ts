@@ -157,6 +157,7 @@ export interface PluginCredit {
 
 const MIT = '[MIT](https://opensource.org/license/mit)';
 export const PLUGIN_CREDITS: PluginCredit[] = [
+  { family: 'fledge', made: "Fledge Synth, Fledgetone's own synthesizer (its Rust source is in engine/fledge-synth)", licence: '[GPL-3.0-or-later](https://www.gnu.org/licenses/gpl-3.0.html)' },
   {
     family: 'airwindows',
     made: 'The [Airwindows](https://www.airwindows.com) effects by Chris Johnson, through the [Airwin Consolidated](https://github.com/baconpaul/airwin2rack) library by Paul Walker',

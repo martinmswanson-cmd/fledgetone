@@ -1,0 +1,22 @@
+[package]
+name = "fledge-synth"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Fledgetone's own synthesizer: wavetables, unison, filters, drive, OTT. Built to WebAssembly for the browser, and as a native library for the desktop app."
+
+[lib]
+# cdylib: the WebAssembly module the browser loads (the bb_* interface, see src/abi.rs);
+# rlib: the same engine as a Rust library (tests, the render harness, a native app)
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

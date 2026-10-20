@@ -292,6 +292,11 @@ export function sendMidi(inst: WamInstance, bytes: [number, number, number], tim
   inst.audioNode.scheduleEvents?.({ type: 'wam-midi', time, data: { bytes } });
 }
 
+/** The song's tempo from `time` (audio seconds), for plugins with tempo-synced parts. */
+export function sendTempo(inst: WamInstance, bpm: number, time: number): void {
+  inst.audioNode.scheduleEvents?.({ type: 'wam-transport', time, data: { tempo: bpm, playing: true } });
+}
+
 /**
  * Set a plugin parameter to `value` (0 to 1 of its range) at `time` (audio seconds), as an
  * automation lane does.
