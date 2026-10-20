@@ -2,6 +2,14 @@
 // the app's own rules (public/_headers) land in dist-site/app/ with the app: this puts /app in front
 // of each of their addresses and adds the home page's rules (its videos and pictures).
 const SITE_RULES = `
+# Every page: not framed by other sites, files taken for what they say they are, the address
+# shared only as far as the site, and the microphone (recording) and MIDI for this site alone
+/*
+  Content-Security-Policy: frame-ancestors 'self'
+  X-Frame-Options: SAMEORIGIN
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: microphone=(self), midi=(self), camera=(), geolocation=()
 # The worker that retires the studio's old one (site/sw.js): always checked afresh
 /sw.js
   Cache-Control: no-cache

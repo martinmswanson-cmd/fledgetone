@@ -2,7 +2,7 @@
   "name": "fledgetone",
   "private": true,
   "license": "GPL-3.0-or-later",
-  "version": "2026.10.20-3",
+  "version": "2026.10.20-4",
   "type": "module",
   "scripts": {
     "dev": "npm run build:runtime && vite",
@@ -13,9 +13,9 @@
     "codemap": "node scripts/codemap.mjs",
     "guide-tables": "node scripts/guide-tables.mjs",
     "preview": "vite preview",
-    "build:single": "npm run build && node scripts/build-single.mjs",
+    "build:single": "VITE_SINGLE=1 npm run build && node scripts/build-single.mjs",
     "build:site": "VITE_GPL_PLUGINS=1 npm run build -- --base=/app/ --outDir=dist-site/app && node scripts/build-site.mjs",
-    "build:full": "VITE_GPL_PLUGINS=1 npm run build && VITE_GPL_PLUGINS=1 node scripts/build-single.mjs"
+    "build:full": "VITE_SINGLE=1 VITE_GPL_PLUGINS=1 npm run build && VITE_GPL_PLUGINS=1 node scripts/build-single.mjs"
   },
   "dependencies": {
     "@webaudiomodules/api": "^2.0.0-alpha.6",

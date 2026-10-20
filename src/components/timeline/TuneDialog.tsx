@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import * as Tone from 'tone';
+import { liveContext } from '../../audio/liveContext';
 import { Loader2, Play, Square, Undo2, AudioLines } from 'lucide-react';
 import { Modal } from './Modal';
 import { useTimelineStore, songTempo } from '../../store/timelineStore';
@@ -84,7 +84,7 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
     if (!result || !source) return;
     stop();
     await initAudio();
-    const ctx = Tone.getContext().rawContext as AudioContext;
+    const ctx = liveContext.rawContext as AudioContext;
     const chans = tuned ? result.channels : Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c).slice(Math.floor(from * RATE), Math.ceil(to * RATE)));
     const buf = ctx.createBuffer(chans.length, chans[0].length, RATE);
     chans.forEach((ch, c) => buf.copyToChannel(ch as Float32Array<ArrayBuffer>, c));

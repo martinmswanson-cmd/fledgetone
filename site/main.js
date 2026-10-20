@@ -169,7 +169,7 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
   const ruler = el('nav', 'side-ruler', `
     <div class="sr-read"><span class="sr-label">BAR</span><span class="sr-bar">001.1</span><span class="sr-tc">00:00:00:00</span><span class="sr-sec">Intro</span></div>
     <div class="sr-track"><div class="sr-ticks"></div><div class="sr-marks"></div><div class="sr-head"></div></div>`);
-  ruler.setAttribute('aria-label', 'Sections');
+  ruler.setAttribute('aria-label', 'Jump to a section');
   const header = document.querySelector('header.nav');
   const mount = () => (wide.matches ? document.body : header).append(ruler);
   mount(); wide.addEventListener('change', () => { mount(); requestAnimationFrame(place); });
@@ -533,6 +533,9 @@ if (cycle) {
     const h1 = cycle.closest('h1');
     h1.addEventListener('pointerenter', () => { paused = true; });
     h1.addEventListener('pointerleave', () => { paused = false; });
+    // Held still while the link has keyboard focus too, so it can be read and followed
+    cycle.addEventListener('focus', () => { paused = true; });
+    cycle.addEventListener('blur', () => { paused = false; });
     const io = seen((e) => { inView = e.isIntersecting; }, 0);
     io?.observe(h1);
     const step = () => {

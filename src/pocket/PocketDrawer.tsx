@@ -143,7 +143,7 @@ const Handle: React.FC<{ appRef: React.RefObject<HTMLDivElement | null> }> = ({ 
 const Slider: React.FC<{ label: string; value: number; min: number; max: number; step: number; show: string; onChange: (v: number) => void; color: string }> = ({ label, value, min, max, step, show, onChange, color }) => (
   <label className="grid grid-cols-[64px_minmax(0,1fr)_64px] items-center gap-2.5 text-[13px] text-forge-muted min-h-11">
     <span>{label}</span>
-    <input type="range" aria-label={label} min={min} max={max} step={step} value={value} onPointerDown={() => useTimelineStore.getState().checkpoint()} onChange={(e) => onChange(Number(e.target.value))} className="w-full h-8" style={{ accentColor: color }} />
+    <input type="range" aria-label={label} min={min} max={max} step={step} value={value} onPointerDown={() => useTimelineStore.getState().beginEdit()} onChange={(e) => onChange(Number(e.target.value))} className="w-full h-8" style={{ accentColor: color }} />
     <span className="font-mono text-xs text-forge-text text-right">{show}</span>
   </label>
 );
@@ -277,7 +277,7 @@ const MixAll: React.FC = () => {
           <button type="button" className="text-xs font-semibold max-w-full truncate min-h-6" onClick={() => usePocket.getState().set({ trackId: t.id, mixAll: false })}>
             {t.name}
           </button>
-          <input type="range" className="pk-vfader" aria-label={`${t.name} level`} min={-60} max={6} step={0.5} value={t.volume} onPointerDown={() => s().checkpoint()} onChange={(e) => s().setTrackVolume(t.id, Number(e.target.value))} />
+          <input type="range" className="pk-vfader" aria-label={`${t.name} level`} min={-60} max={6} step={0.5} value={t.volume} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setTrackVolume(t.id, Number(e.target.value))} />
           <span className="font-mono text-[10.5px] text-forge-muted">{db(t.volume)}</span>
           <div className="flex gap-1 w-full">
             <button type="button" aria-pressed={t.isMuted} aria-label={`Mute ${t.name}`} className={`${ms} ${t.isMuted ? 'bg-amber-500 text-black border-transparent' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().toggleMute(t.id)}>
@@ -291,7 +291,7 @@ const MixAll: React.FC = () => {
       ))}
       <div className="pk-strip !basis-[96px]" style={{ ['--c' as string]: '#e4e4e7' }}>
         <span className="text-xs font-semibold min-h-6">Master</span>
-        <input type="range" className="pk-vfader" aria-label="Master level" min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} value={master.level} onPointerDown={() => s().checkpoint()} onChange={(e) => s().setMasterLevel(Number(e.target.value), false)} />
+        <input type="range" className="pk-vfader" aria-label="Master level" min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} value={master.level} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setMasterLevel(Number(e.target.value), false)} />
         <span className="font-mono text-[10.5px] text-forge-muted">{db(master.level)}</span>
         <button type="button" aria-pressed={clipper.on} className={`w-full h-8 rounded-lg border text-xs font-semibold ${clipper.on ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().setMasterClipper({ on: !clipper.on }, true)}>
           Loud

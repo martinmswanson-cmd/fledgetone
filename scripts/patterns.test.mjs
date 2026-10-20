@@ -121,3 +121,16 @@ test('riffs: the same seed gives the same riff, in the key, within the range', (
   assert.equal(midi(bass.find((x) => x.startOffset === 1).note) % 12, 5);
   for (const x of bass) assert.ok(midi(x.note) >= 28 && midi(x.note) <= 60);
 });
+
+test('linked clips read from a file share one copy of their content, so an undo brings a deleted one back still linked', () => {
+  // As parsed: equal notes, but each its own objects
+  const read = [clip('a', 1, [note('C4')], { pattern: 'p' }), clip('b', 2, [note('C4')], { pattern: 'p' }), clip('c', 3, [note('D4')], { pattern: 'q' }), clip('d', 4, [note('E4')], { pattern: 'q' })];
+  const shared = p.shareLinkedContent(read);
+  assert.equal(shared[0].notes, shared[1].notes);
+  // Members whose content differs are left as they are
+  assert.notEqual(shared[2].notes, shared[3].notes);
+  // Delete b, then undo: b comes back with the same content as a, so it stays in the pattern
+  const without = shared.filter((c) => c.id !== 'b');
+  const back = p.syncPatterns(without, shared);
+  assert.ok(back === null || back.find((c) => c.id === 'b').pattern === 'p');
+});

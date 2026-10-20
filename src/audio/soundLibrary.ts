@@ -233,6 +233,13 @@ export function forgetDecodedSounds(keep: Set<string>): number {
     decodedBuffers.delete(key);
     decoded.delete(key);
   }
+  // (warped copies too: their keys start with the sound's id the same way)
+  for (const [key, buffer] of warpedBuffers) {
+    if (keep.has(key.split('|')[0])) continue;
+    bytes += buffer.length * buffer.numberOfChannels * 4;
+    warpedBuffers.delete(key);
+    warping.delete(key);
+  }
   return bytes;
 }
 

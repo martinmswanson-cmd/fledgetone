@@ -164,7 +164,7 @@ const BANDS = 64;
 const FFT_SIZE = 2048;
 
 /** A spectrum analyser over the mono mix: BANDS log-spaced bands from 30 Hz to 16 kHz, in 0..1, smoothed like a meter. */
-function createSpectrum(mono: Float32Array, sampleRate: number) {
+function createSpectrum(mono: Float32Array, sampleRate: number, fps: number) {
   const re = new Float32Array(FFT_SIZE);
   const im = new Float32Array(FFT_SIZE);
   const window = Float32Array.from({ length: FFT_SIZE }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FFT_SIZE - 1)));
@@ -172,6 +172,8 @@ function createSpectrum(mono: Float32Array, sampleRate: number) {
   const levels = new Float32Array(BANDS);
   // A full-scale sine comes out of the windowed FFT at this magnitude: dividing by it gives dBFS
   const fullScale = window.reduce((sum, w) => sum + w, 0) / 2;
+  // How much of the old level stays each frame as a bar falls: the same speed at any frame rate
+  const hold = Math.pow(0.82, 30 / fps);
   return (seconds: number): Float32Array => {
     const end = Math.round(seconds * sampleRate);
     for (let i = 0; i < FFT_SIZE; i++) {
@@ -189,7 +191,7 @@ function createSpectrum(mono: Float32Array, sampleRate: number) {
       const db = 10 * Math.log10(power / (fullScale * fullScale) + 1e-12) + 3 * Math.log2((b + 1) / 8);
       const target = Math.max(0, Math.min(1, (db + 70) / 62));
       // Rise fast, fall slowly
-      levels[b] = target > levels[b] ? target : levels[b] * 0.82 + target * 0.18;
+      levels[b] = target > levels[b] ? target : levels[b] * hold + target * (1 - hold);
     }
     return levels;
   };
@@ -290,162 +292,167 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   });
   audioEncoder.configure({ codec: audio.codec, sampleRate, numberOfChannels: 2, bitrate: 192000 });
 
-  // The sound, in 0.1 s pieces
-  const left = channels[0];
-  const right = channels[1] ?? channels[0];
-  const piece = Math.round(sampleRate / 10);
-  for (let at = 0; at < frames; at += piece) {
-    const n = Math.min(piece, frames - at);
-    const data = new Float32Array(n * 2);
-    data.set(left.subarray(at, at + n));
-    data.set(right.subarray(at, at + n), n);
-    const chunk = new AudioData({ format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((at / sampleRate) * 1e6), data });
-    audioEncoder.encode(chunk);
-    chunk.close();
-  }
-
-  // The picture
-  const mono = new Float32Array(frames);
-  for (let i = 0; i < frames; i++) mono[i] = (left[i] + right[i]) / 2;
-  const spectrum = createSpectrum(mono, sampleRate);
-  const tall = shape === 'tall';
-  const W = DESIGN[shape].w;
-  const H = DESIGN[shape].h;
-  const stripX = tall ? 48 : 80;
-  const stripW = W - 2 * stripX;
-  const wave = overview(mono, stripW / 2);
-  const canvas = document.createElement('canvas');
-  canvas.width = size.w;
-  canvas.height = size.h;
-  const g = canvas.getContext('2d')!;
-  // Drawn in design units, scaled to the video's pixels
-  g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
-  // Where things go: the title at the top, the picture in the middle, the waveform and time at the
-  // bottom, and the mark under them. What's left out gives its room to the picture (a portrait
-  // video keeps its top clear anyway: TikTok and Reels put their tabs there)
-  const marks = opts.marks ?? DEFAULT_VIDEO_MARKS;
-  const heading = marks.title || marks.subtitle;
-  const footer = marks.sections || marks.time;
-  const titleY = tall ? 150 : 64;
-  const footY = H - 60;
-  const waveY = footer ? footY - 70 : footY - 40;
-  const pictureY = heading ? titleY + (tall ? 120 : 106) : tall ? titleY : 48;
-  const pictureEnd = marks.waveform ? waveY - 50 : footer ? footY - 36 : footY - 12;
-  const picture = { x: stripX, y: pictureY, w: stripW, h: pictureEnd - pictureY };
-  const logo = await loadImage(fledgetoneLogo);
-  const background = grainedBackground(size.w, size.h);
-  const total = Math.ceil(seconds * fps);
-  const footage = opts.footage ? await openVideo(opts.footage.url) : null;
-  const skinMemory: SkinMemory = {};
-
-  const encodeFrame = async (f: number, t: number) => {
-    const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / fps) });
-    videoEncoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
-    frame.close();
-    // Don't run ahead of the encoder (memory), and let the page update its progress bar
-    while (videoEncoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 1));
-    if (f % 15 === 0) {
-      opts.onProgress?.(f / total);
-      await new Promise((r) => setTimeout(r, 0));
+  // Whatever happens (a failure, a cancel), the encoders and the footage are let go of
+  try {
+    // The sound, in 0.1 s pieces
+    const left = channels[0];
+    const right = channels[1] ?? channels[0];
+    const piece = Math.round(sampleRate / 10);
+    for (let at = 0; at < frames; at += piece) {
+      const n = Math.min(piece, frames - at);
+      const data = new Float32Array(n * 2);
+      data.set(left.subarray(at, at + n));
+      data.set(right.subarray(at, at + n), n);
+      const chunk = new AudioData({ format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((at / sampleRate) * 1e6), data });
+      audioEncoder.encode(chunk);
+      chunk.close();
     }
-  };
 
-  for (let f = 0; f < total; f++) {
-    if (signal?.aborted) {
-      videoEncoder.close();
-      audioEncoder.close();
-      signal.throwIfAborted();
-    }
-    if (failure) throw failure;
-    const t = f / fps;
-    if (footage && opts.footage) {
-      g.fillStyle = '#000';
-      g.fillRect(0, 0, W, H);
-      const vt = opts.footage.offset + t;
-      if (vt >= 0 && vt < footage.duration) {
-        await seekVideo(footage, vt);
-        // Letterboxed to fit
-        const scale = Math.min(W / footage.videoWidth, H / footage.videoHeight);
-        const w = footage.videoWidth * scale;
-        const h = footage.videoHeight * scale;
-        g.drawImage(footage, (W - w) / 2, (H - h) / 2, w, h);
-      }
-      await encodeFrame(f, t);
-      continue;
-    }
-    // (in pixels: the grain is one per pixel)
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.drawImage(background, 0, 0);
+    // The picture
+    const mono = new Float32Array(frames);
+    for (let i = 0; i < frames; i++) mono[i] = (left[i] + right[i]) / 2;
+    const spectrum = createSpectrum(mono, sampleRate, fps);
+    const tall = shape === 'tall';
+    const W = DESIGN[shape].w;
+    const H = DESIGN[shape].h;
+    const stripX = tall ? 48 : 80;
+    const stripW = W - 2 * stripX;
+    const wave = overview(mono, stripW / 2);
+    const canvas = document.createElement('canvas');
+    canvas.width = size.w;
+    canvas.height = size.h;
+    const g = canvas.getContext('2d')!;
+    // Drawn in design units, scaled to the video's pixels
     g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
+    // Where things go: the title at the top, the picture in the middle, the waveform and time at the
+    // bottom, and the mark under them. What's left out gives its room to the picture (a portrait
+    // video keeps its top clear anyway: TikTok and Reels put their tabs there)
+    const marks = opts.marks ?? DEFAULT_VIDEO_MARKS;
+    const heading = marks.title || marks.subtitle;
+    const footer = marks.sections || marks.time;
+    const titleY = tall ? 150 : 64;
+    const footY = H - 60;
+    const waveY = footer ? footY - 70 : footY - 40;
+    const pictureY = heading ? titleY + (tall ? 120 : 106) : tall ? titleY : 48;
+    const pictureEnd = marks.waveform ? waveY - 50 : footer ? footY - 36 : footY - 12;
+    const picture = { x: stripX, y: pictureY, w: stripW, h: pictureEnd - pictureY };
+    const logo = await loadImage(fledgetoneLogo);
+    const background = grainedBackground(size.w, size.h);
+    const total = Math.ceil(seconds * fps);
+    const footage = opts.footage ? await openVideo(opts.footage.url) : null;
+    const skinMemory: SkinMemory = {};
 
-    // Title block (a subtitle on its own takes the title's place)
-    g.textBaseline = 'alphabetic';
-    if (heading) {
-      if (logo) g.drawImage(logo, stripX, titleY, 72, 72);
-      if (marks.title) {
-        g.fillStyle = '#e4e4e7';
-        g.font = `600 ${tall ? 38 : 44}px system-ui, -apple-system, Segoe UI, sans-serif`;
-        g.fillText(opts.title, stripX + 96, titleY + 44, stripW - 96);
+    const encodeFrame = async (f: number, t: number) => {
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(t * 1e6), duration: Math.round(1e6 / fps) });
+      videoEncoder.encode(frame, { keyFrame: f % (fps * 2) === 0 });
+      frame.close();
+      // Don't run ahead of the encoder (memory), and let the page update its progress bar
+      while (videoEncoder.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 1));
+      if (f % 15 === 0) {
+        opts.onProgress?.(f / total);
+        await new Promise((r) => setTimeout(r, 0));
       }
-      if (marks.subtitle) {
-        g.fillStyle = '#9ca3af';
-        g.font = '400 22px system-ui, -apple-system, Segoe UI, sans-serif';
-        g.fillText(opts.subtitle, stripX + 96, titleY + (marks.title ? 76 : 44), stripW - 96);
-      }
-    }
+    };
 
-    if (opts.showcase) {
-      // The notes on a piano roll that scrolls past the playhead (showcaseDraw.ts)
-      drawShowcase(g, opts.showcase, picture, t, { secondsShown: tall ? 4.5 : 8, headAt: tall ? 0.3 : 0.28, look: opts.showcaseLook });
-    } else {
-      // Spectrum: LED bars or one of the characters (spectrumSkins.ts), as in the Mixer
-      drawSpectrum(g, opts.skin ?? 'bars', picture, spectrum(t), t, skinMemory);
-    }
-
-    // Waveform of the whole song, with the playhead
-    if (marks.waveform) {
-      const waveH = 56;
-      const played = (t / seconds) * stripW;
-      for (let c = 0; c < wave.length; c++) {
-        const x = stripX + c * 2;
-        const h = Math.max(1, wave[c] * waveH);
-        g.fillStyle = x < stripX + played ? '#06b6d4' : '#3a3a44';
-        g.fillRect(x, waveY - h / 2, 1.5, h);
+    for (let f = 0; f < total; f++) {
+      if (signal?.aborted) {
+        videoEncoder.close();
+        audioEncoder.close();
+        signal.throwIfAborted();
       }
+      if (failure) throw failure;
+      const t = f / fps;
+      if (footage && opts.footage) {
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, W, H);
+        const vt = opts.footage.offset + t;
+        if (vt >= 0 && vt < footage.duration) {
+          await seekVideo(footage, vt);
+          // Letterboxed to fit
+          const scale = Math.min(W / footage.videoWidth, H / footage.videoHeight);
+          const w = footage.videoWidth * scale;
+          const h = footage.videoHeight * scale;
+          g.drawImage(footage, (W - w) / 2, (H - h) / 2, w, h);
+        }
+        await encodeFrame(f, t);
+        continue;
+      }
+      // (in pixels: the grain is one per pixel)
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.drawImage(background, 0, 0);
+      g.setTransform(size.w / W, 0, 0, size.h / H, 0, 0);
+
+      // Title block (a subtitle on its own takes the title's place)
+      g.textBaseline = 'alphabetic';
+      if (heading) {
+        if (logo) g.drawImage(logo, stripX, titleY, 72, 72);
+        if (marks.title) {
+          g.fillStyle = '#e4e4e7';
+          g.font = `600 ${tall ? 38 : 44}px system-ui, -apple-system, Segoe UI, sans-serif`;
+          g.fillText(opts.title, stripX + 96, titleY + 44, stripW - 96);
+        }
+        if (marks.subtitle) {
+          g.fillStyle = '#9ca3af';
+          g.font = '400 22px system-ui, -apple-system, Segoe UI, sans-serif';
+          g.fillText(opts.subtitle, stripX + 96, titleY + (marks.title ? 76 : 44), stripW - 96);
+        }
+      }
+
+      if (opts.showcase) {
+        // The notes on a piano roll that scrolls past the playhead (showcaseDraw.ts)
+        drawShowcase(g, opts.showcase, picture, t, { secondsShown: tall ? 4.5 : 8, headAt: tall ? 0.3 : 0.28, look: opts.showcaseLook });
+      } else {
+        // Spectrum: LED bars or one of the characters (spectrumSkins.ts), as in the Mixer
+        drawSpectrum(g, opts.skin ?? 'bars', picture, spectrum(t), t, skinMemory);
+      }
+
+      // Waveform of the whole song, with the playhead
+      if (marks.waveform) {
+        const waveH = 56;
+        const played = (t / seconds) * stripW;
+        for (let c = 0; c < wave.length; c++) {
+          const x = stripX + c * 2;
+          const h = Math.max(1, wave[c] * waveH);
+          g.fillStyle = x < stripX + played ? '#06b6d4' : '#3a3a44';
+          g.fillRect(x, waveY - h / 2, 1.5, h);
+        }
+        g.fillStyle = '#f59e0b';
+        g.fillRect(stripX + played - 1, waveY - waveH / 2 - 8, 2, waveH + 16);
+      }
+
+      // Section and time
+      const section = marks.sections ? [...opts.sections].reverse().find((s) => s.at <= t + 1e-6) : undefined;
+      g.font = '600 20px system-ui, -apple-system, Segoe UI, sans-serif';
       g.fillStyle = '#f59e0b';
-      g.fillRect(stripX + played - 1, waveY - waveH / 2 - 8, 2, waveH + 16);
-    }
+      if (section) g.fillText(section.name.toUpperCase(), stripX, footY, stripW / 2);
+      if (marks.time) {
+        g.fillStyle = '#9ca3af';
+        g.font = '400 20px ui-monospace, SFMono-Regular, Menlo, monospace';
+        const time = `${clock(t)} / ${clock(seconds)}`;
+        g.fillText(time, stripX + stripW - g.measureText(time).width, footY);
+      }
+      // Where it was made (portrait videos are shared on their own, away from any description)
+      g.fillStyle = '#6b7280';
+      g.font = '500 16px ui-monospace, SFMono-Regular, Menlo, monospace';
+      const mark = 'made with fledgetone.com';
+      g.fillText(mark, (W - g.measureText(mark).width) / 2, footY + 34);
 
-    // Section and time
-    const section = marks.sections ? [...opts.sections].reverse().find((s) => s.at <= t + 1e-6) : undefined;
-    g.font = '600 20px system-ui, -apple-system, Segoe UI, sans-serif';
-    g.fillStyle = '#f59e0b';
-    if (section) g.fillText(section.name.toUpperCase(), stripX, footY, stripW / 2);
-    if (marks.time) {
-      g.fillStyle = '#9ca3af';
-      g.font = '400 20px ui-monospace, SFMono-Regular, Menlo, monospace';
-      const time = `${clock(t)} / ${clock(seconds)}`;
-      g.fillText(time, stripX + stripW - g.measureText(time).width, footY);
+      await encodeFrame(f, t);
     }
-    // Where it was made (portrait videos are shared on their own, away from any description)
-    g.fillStyle = '#6b7280';
-    g.font = '500 16px ui-monospace, SFMono-Regular, Menlo, monospace';
-    const mark = 'made with fledgetone.com';
-    g.fillText(mark, (W - g.measureText(mark).width) / 2, footY + 34);
-
-    await encodeFrame(f, t);
+    if (footage) {
+      footage.removeAttribute('src');
+      footage.load();
+    }
+    await videoEncoder.flush();
+    await audioEncoder.flush();
+    await Promise.all([videoWrites, audioWrites]);
+    if (failure) throw failure;
+    videoEncoder.close();
+    audioEncoder.close();
+    await output.finalize();
+    opts.onProgress?.(1);
+    return new Blob([target.buffer!], { type: 'video/mp4' });
+  } finally {
+    for (const encoder of [videoEncoder, audioEncoder]) if (encoder.state !== 'closed') encoder.close();
   }
-  if (footage) {
-    footage.removeAttribute('src');
-    footage.load();
-  }
-  await videoEncoder.flush();
-  await audioEncoder.flush();
-  await Promise.all([videoWrites, audioWrites]);
-  if (failure) throw failure;
-  videoEncoder.close();
-  audioEncoder.close();
-  await output.finalize();
-  opts.onProgress?.(1);
-  return new Blob([target.buffer!], { type: 'video/mp4' });
 }

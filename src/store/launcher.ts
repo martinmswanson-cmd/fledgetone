@@ -260,14 +260,15 @@ export function scenesFromSections(): number {
   const s = tl();
   const sections = songSections(s.clips, s.markers, songMeterOf(s)).slice(0, MAX_SCENES);
   if (!sections.length) return 0;
-  const before = s.past.length;
+  // One undo step for them all: the song before them, whatever the history held
+  s.checkpoint();
+  const past = tl().past;
   let made = 0;
   sections.forEach((sec, i) => {
     if (sceneFromRange(sec.from, sec.to, i, sec.name)) made++;
   });
-  // One undo step for them all
-  const st = tl();
-  if (st.past.length > before + 1) useTimelineStore.setState({ past: st.past.slice(0, before + 1) });
+  // (none made: no step at all)
+  useTimelineStore.setState(made ? { past, future: [] } : { past: past.slice(0, -1) });
   return made;
 }
 

@@ -181,8 +181,12 @@ function parseTempoPoints(raw: unknown): TempoPoint[] {
   if (!Array.isArray(raw)) return [];
   const points = raw
     .filter((v): v is Record<string, unknown> => isObj(v) && isNum(v.bar) && isNum(v.bpm))
-    .map((v, i) => ({ id: isStr(v.id) && v.id ? v.id : `tempo-${i}`, bar: Math.min(TOTAL_BARS, v.bar as number), bpm: clampBpm(v.bpm as number), ramp: v.ramp === true }));
-  return sortedPoints(points);
+    .map((v, i) => ({ id: isStr(v.id) && v.id ? v.id : `tempo-${i}`, bar: Math.min(TOTAL_BARS, v.bar as number), bpm: clampBpm(v.bpm as number), ramp: v.ramp === true }))
+    // (bar 1's tempo is the song's own; two changes on one bar: the later one in the file)
+    .filter((p) => p.bar > 1 + 1e-9);
+  const byBar = new Map<number, TempoPoint>();
+  for (const p of points) byBar.set(Math.round(p.bar * 1e6), p);
+  return sortedPoints([...byBar.values()]);
 }
 
 function parseMeterValue(v: unknown): Meter | null {
@@ -581,6 +585,8 @@ function unpackStored(raw: unknown): unknown {
 
 /** True when the startup autosave couldn't be read (it was kept aside, not overwritten). */
 export let autosaveUnreadable = false;
+/** An unreadable autosave that couldn't be copied aside: it's the only copy, so nothing autosaves over it. */
+let unreadableOnlyCopy = false;
 /** True while the session the banner offers couldn't be copied aside (no room): autosave mustn't overwrite its only stored copy. */
 let previousOnlyInAutosave = false;
 
@@ -615,6 +621,7 @@ let offeringPrevious = false;
 export function writeAutosave(p: ProjectSnapshot): AutosaveResult {
   // The session the banner offers is stored only in the autosave: keep it until Restore or Dismiss
   if (offeringPrevious && previousOnlyInAutosave) return { ok: false, reason: 'full' };
+  if (unreadableOnlyCopy) return { ok: false, reason: 'full' };
   const json = JSON.stringify(packForStorage({ ...serializeProject(p), savedAt: Date.now() }));
   const failure = storeAutosave(json);
   if (failure !== 'too-big') return failure ? { ok: false, reason: failure } : { ok: true };
@@ -713,7 +720,8 @@ function setAsidePreviousSession(): SavedSession | null {
         try {
           localStorage.setItem(UNREADABLE_KEY, json);
         } catch {
-          // No room for a copy
+          // No room for a copy: then the autosave itself is kept, and this session isn't autosaved
+          unreadableOnlyCopy = true;
         }
         throw new Error('unreadable autosave');
       }

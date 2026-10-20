@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as Tone from 'tone';
+import { liveContext } from '../../audio/liveContext';
 import { Loader2, Play, Square, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { ANY_STATE, PHRASE_BARS, QUANTIZES, transitionKey, TRANSITIONS } from '../../store/transitions';
@@ -202,7 +202,7 @@ export const AuditionPads: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       try {
         await initAudio();
         const { manifest, files } = await buildGameKitParts(gameKitSong(), (f, d) => !cancelled && setProgress(`Rendering ${d}… ${Math.round(f * 100)}%`));
-        const ctx = Tone.getContext().rawContext as AudioContext;
+        const ctx = liveContext.rawContext as AudioContext;
         const buffers = new Map<string, AudioBuffer>();
         for (const f of files) buffers.set(f.name, await ctx.decodeAudioData(await f.data.arrayBuffer()));
         if (cancelled) return;

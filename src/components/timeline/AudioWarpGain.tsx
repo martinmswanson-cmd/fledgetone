@@ -63,9 +63,11 @@ export const AudioWarpGain: React.FC<{ clip: Clip; bpm: number; seconds: number;
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   // ---------- Warp ----------

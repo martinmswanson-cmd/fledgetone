@@ -5,7 +5,7 @@
  * plays. Also applies the loop region, tempo and swing to the live Transport (syncTransport).
  */
 import * as Tone from 'tone';
-import { liveTransport } from './liveContext';
+import { liveContext, liveTransport } from './liveContext';
 import { applyTempoAt, barToTicks, getLiveTempo, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
 import type { Tempo } from './transport';
 import { DRUM_NOTES, safely } from './instruments';
@@ -343,7 +343,7 @@ let liveSwing = 0;
 
 /** Bring the live Transport's events in line with the timeline clips. */
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
-  liveSchedule ??= createClipSchedule(Tone.getTransport(), scheduledInstrument, pumpOnKick, () => liveSwing, pumpOnTrack, trackActivity);
+  liveSchedule ??= createClipSchedule(liveTransport, scheduledInstrument, pumpOnKick, () => liveSwing, pumpOnTrack, trackActivity);
   liveSchedule.update(tracks, clips);
   // Audio clips play their sound files on the live mix's own Transport (the global one is the
   // export's while a WAV render sets up)
@@ -368,7 +368,7 @@ export function syncTransport(loop: LoopRegion, tempo: Tempo, swing: number): vo
   for (const id of tempoEvents) liveTransport.clear(id);
   tempoEvents = scheduleTempo(liveTransport, tempo, loop.enabled ? loop.inBar : null);
   setLiveTempo(tempo);
-  const now = Tone.now();
+  const now = liveContext.now();
   applyTempoAt(liveTransport, tempo, ticksToBar(liveTransport.getTicksAtTime(now)), now);
   liveSwing = swing;
 }

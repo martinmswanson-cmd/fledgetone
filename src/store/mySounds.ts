@@ -116,7 +116,7 @@ function writeJson(key: string, value: unknown): boolean {
 
 function readFavourites(): InstrumentKey[] {
   const raw = readJson(FAVOURITE_INSTRUMENTS_KEY);
-  return Array.isArray(raw) ? raw.filter((k): k is InstrumentKey => typeof k === 'string' && k in INSTRUMENTS) : [];
+  return Array.isArray(raw) ? raw.filter((k): k is InstrumentKey => typeof k === 'string' && Object.hasOwn(INSTRUMENTS, k)) : [];
 }
 
 function readSounds(): MySound[] {
@@ -143,7 +143,7 @@ export function parseMySoundsFile(raw: unknown): Omit<MySoundsFile, 'format' | '
   const v = raw as Partial<MySoundsFile> | null;
   if (typeof v !== 'object' || v === null || v.format !== MY_SOUNDS_FORMAT) throw new Error('it is not a My sounds file');
   return {
-    favourites: Array.isArray(v.favourites) ? v.favourites.filter((k): k is InstrumentKey => typeof k === 'string' && k in INSTRUMENTS) : [],
+    favourites: Array.isArray(v.favourites) ? v.favourites.filter((k): k is InstrumentKey => typeof k === 'string' && Object.hasOwn(INSTRUMENTS, k)) : [],
     sounds: Array.isArray(v.sounds) ? v.sounds.map(parseSound).filter((x): x is MySound => !!x) : [],
     recordings: parseEmbeddedSounds(v.recordings),
   };

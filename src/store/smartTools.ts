@@ -339,9 +339,17 @@ export function harmonize(melody: readonly MelodyNote[], key: SongKey, lengthBar
 
 /** A clip's notes as a melody (its highest note at each moment counts as the tune). */
 export function melodyOf(notes: readonly NoteEvent[], lengthBars: number): MelodyNote[] {
-  return notes
+  const all = notes
     .filter((n) => n.startOffset >= -EPS && n.startOffset < lengthBars - EPS && Number.isFinite(midiOf(n.note)))
     .map((n) => ({ at: n.startOffset, bars: durationToBars(n.duration), midi: midiOf(n.note) }));
+  // Notes starting together (a chord under the tune): only the highest
+  const top = new Map<number, MelodyNote>();
+  for (const n of all) {
+    const key = Math.round(n.at / EPS);
+    const was = top.get(key);
+    if (!was || n.midi > was.midi) top.set(key, n);
+  }
+  return [...top.values()].sort((a, b) => a.at - b.at);
 }
 
 // ---------- A bass line under chords ----------

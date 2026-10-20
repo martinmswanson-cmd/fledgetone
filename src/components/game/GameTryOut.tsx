@@ -10,13 +10,13 @@
  * effects maker.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import * as Tone from 'tone';
+import { afterMaster, liveContext } from '../../audio/liveContext';
 import { Gamepad2, Heart, Loader2, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { buildGameKitParts, type AudioManifest } from '../../audio/gameKit';
 import { gameKitSong } from '../timeline/gameKitSong';
 import { AdaptiveMusic } from '../../gameKit/adaptive-music.js';
-import { initAudio, liveMix } from '../../audio/engine';
+import { initAudio } from '../../audio/engine';
 import { showToast } from '../timeline/toastStore';
 import { generateSfx, renderSfxStereo, varySfx, type SfxCategory } from '../../audio/sfx/sfxSynth';
 import { ensureSfxRecordings } from '../../audio/sfx/sfxRecordings';
@@ -132,7 +132,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
     (async () => {
       try {
         await initAudio();
-        const ctx = Tone.getContext().rawContext as AudioContext;
+        const ctx = liveContext.rawContext as AudioContext;
         liveCtx.current = ctx;
         // The preview's own sounds first (quick), so the game has sound while the music renders
         for (const [moment, o] of Object.entries(OWN_SOUNDS) as Array<[SfxMoment, (typeof OWN_SOUNDS)[SfxMoment]]>) {
@@ -163,7 +163,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
           cache = { key, manifest, buffers };
         }
         if (cancelled) return;
-        const m = new AdaptiveMusic(ctx, liveMix.auditionInput.input as unknown as AudioNode);
+        const m = new AdaptiveMusic(ctx, afterMaster());
         m.loadFrom(manifest, buffers);
         music.current = m;
         const guess = guessTryOutMap(manifest);
@@ -177,14 +177,17 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
         scene.current?.wake();
         say(`Music ready: ${guess.calm || '(no state)'}. ${kind === 'platformer' ? 'The blobs woke up!' : 'The guard woke up!'}`);
       } catch (err) {
-        if (!cancelled) showToast(`Couldn't make the game preview: ${err instanceof Error ? err.message : String(err)}.`);
+        // (a render given up because the dialog closed or the game changed isn't a failure)
+        if (cancelled) return;
+        showToast(`Couldn't make the game preview: ${err instanceof Error ? err.message : String(err)}.`);
         onClose();
       }
     })();
     return () => {
       cancelled = true;
-      music.current?.stop();
-      music.current?.stopSfx();
+      music.current?.dispose();
+      music.current = null;
+      musicReady.current = false;
     };
   }, [onClose, say, kind]);
 
@@ -205,7 +208,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
     src.playbackRate.value = 2 ** (pitch / 12);
     const g = ctx.createGain();
     g.gain.value = OWN_SOUNDS[moment].volume;
-    src.connect(g).connect(m ? m.sfxOut : (liveMix.auditionInput.input as unknown as AudioNode));
+    src.connect(g).connect(m ? m.sfxOut : (afterMaster()));
     src.start();
   }, []);
 
@@ -308,20 +311,29 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
       },
     };
     const made = kind === 'platformer' ? import('./platformerScene').then(({ PlatformerScene }) => (host.current ? new PlatformerScene(host.current, events) : null)) : import('./tryOutScene').then(({ TryOutScene }) => (host.current ? new TryOutScene(host.current, events) : null));
-    void made.then((created) => {
-      if (!created) return;
-      if (disposed) {
-        created.dispose();
-        return;
-      }
-      sc = created;
-      scene.current = sc;
-      if (musicReady.current) sc.wake();
-      sc.start();
-    });
+    void made
+      .catch((err: unknown) => {
+        // (a part of the app that didn't load, or no WebGL for the 3D arena)
+        if (disposed) return null;
+        showToast(`Couldn't start the game: ${err instanceof Error ? err.message : String(err)}.`);
+        onClose();
+        return null;
+      })
+      .then((created) => {
+        if (!created) return;
+        if (disposed) {
+          created.dispose();
+          return;
+        }
+        sc = created;
+        scene.current = sc;
+        if (musicReady.current) sc.wake();
+        sc.start();
+      });
     // The game takes the keys while it's open (so Space jumps instead of playing the song)
     const keyed = (down: boolean) => (e: KeyboardEvent) => {
-      if (!KEYS.has(e.code) || (e.target as HTMLElement)?.closest?.('select, input')) return;
+      // (Ctrl or Cmd with a key is the browser's or the app's shortcut: Ctrl+S, Ctrl+R...)
+      if (!KEYS.has(e.code) || e.ctrlKey || e.metaKey || e.altKey || (e.target as HTMLElement)?.closest?.('select, input')) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       if (down && e.code === 'KeyR' && !e.repeat) {
@@ -350,7 +362,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
       sc?.dispose();
       scene.current = null;
     };
-  }, [sfx, stinger, toState, say, start, setParams, kind]);
+  }, [sfx, stinger, toState, say, start, setParams, kind, onClose]);
 
   // Esc closes it
   useEffect(() => {
@@ -441,7 +453,11 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
                   <span className="text-[10px] uppercase font-mono">{m.label}</span>
                   <select
                     value={map[m.key]}
-                    onChange={(e) => setMap({ ...map, [m.key]: e.target.value })}
+                    onChange={(e) => {
+                      setMap({ ...map, [m.key]: e.target.value });
+                      // Back to the game, so its keys work again
+                      e.target.blur();
+                    }}
                     className="h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
                   >
                     <option value="">{m.what === 'sfx' ? "(preview's own)" : '(nothing)'}</option>

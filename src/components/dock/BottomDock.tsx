@@ -89,11 +89,13 @@ export const BottomDock: React.FC = () => {
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       document.body.classList.remove('cursor-ns-resize');
     };
     document.body.classList.add('cursor-ns-resize');
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   return (

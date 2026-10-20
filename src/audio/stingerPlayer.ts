@@ -1,6 +1,5 @@
-import * as Tone from 'tone';
 import { liveMix, initAudio } from './engine';
-import { liveTransport } from './liveContext';
+import { liveContext, liveTransport } from './liveContext';
 import { createInstrument, type TrackInstrument } from './instruments';
 import { INSTRUMENTS, type InstrumentKey } from './instrumentCatalog';
 import { hasRecordings, loadSamplesForNotes } from './samplers/samplerManager';
@@ -36,7 +35,7 @@ export async function playNotesAt(key: InstrumentKey, notes: readonly NoteEvent[
   if (hasRecordings(key)) await loadSamplesForNotes(key, notes);
   const inst = player(key);
   await inst.ready;
-  const now = Tone.getContext().currentTime;
+  const now = liveContext.currentTime;
   const secondsPerBar = 240 / liveTransport.bpm.value;
   for (const n of notes) {
     const at = start + n.startOffset * secondsPerBar;
@@ -59,7 +58,7 @@ export async function fireStinger(stinger: Stinger, timing: StingerTiming, atTim
   if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range));
   const inst = player(stinger.instrumentKey);
   await inst.ready;
-  const now = Tone.getContext().currentTime + 0.05;
+  const now = liveContext.currentTime + 0.05;
   const playing = liveTransport.state === 'started';
   // (`atTime`: a context time worked out by the caller, e.g. a transition's line)
   const start = atTime !== undefined ? Math.max(now, atTime) : playing && timing !== 'now' ? Math.max(now, liveTransport.nextSubdivision(timing === 'bar' ? '1m' : '4n')) : now;

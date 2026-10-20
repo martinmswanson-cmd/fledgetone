@@ -65,6 +65,8 @@ public class AdaptiveMusic : MonoBehaviour
     readonly Dictionary<string, float> parameters = new Dictionary<string, float>();
     // A state played piece by piece (shuffled, or with silences): its scheduler and where pieces start
     Coroutine pieces;
+    // A state played in pieces that's crossfading out keeps its pieces coming until the fade ends (by play id)
+    readonly Dictionary<int, double> fadeUntil = new Dictionary<int, double>();
     int playId;
     readonly List<double[]> pieceTimes = new List<double[]>();
 
@@ -245,12 +247,15 @@ public class AdaptiveMusic : MonoBehaviour
     }
 
     // Start a state at `at`, `from` (0 to 1) of the way into its loop
-    List<Voice> StartState(State s, double at, double from = 0)
+    List<Voice> StartState(State s, double at, double from = 0, double oldFadesUntil = 0)
     {
         var list = new List<Voice>();
         var parts = Parts(s, out double seconds, out double tempo);
+        // Crossfading: the state playing pieces carries on (fading) until then, and stops itself
+        if (oldFadesUntil > 0 && pieces != null) fadeUntil[playId] = oldFadesUntil;
+        else if (pieces != null) StopCoroutine(pieces);
+        pieces = null;
         playId++;
-        if (pieces != null) { StopCoroutine(pieces); pieces = null; }
         pieceTimes.Clear();
         tempoNow = tempo;
         Current = s.name;
@@ -300,9 +305,15 @@ public class AdaptiveMusic : MonoBehaviour
         foreach (var i in Order(bounds.Count, first, s.shuffleBars > 0)) if (i != first) queue.Add(i);
         double next = at - skip;
         int last = first;
-        while (id == playId)
+        // Until when this state plays: for good, or (crossfading out) to the end of the fade
+        Func<double> Until = () =>
         {
-            while (next < AudioSettings.dspTime + 1.5 && id == playId)
+            double t;
+            return id == playId ? double.MaxValue : (fadeUntil.TryGetValue(id, out t) ? t : 0);
+        };
+        while (AudioSettings.dspTime < Until())
+        {
+            while (next < Math.Min(AudioSettings.dspTime + 1.5, Until()))
             {
                 if (queue.Count == 0)
                 {
@@ -314,7 +325,7 @@ public class AdaptiveMusic : MonoBehaviour
                 queue.RemoveAt(0);
                 double a = bounds[k][0], b = bounds[k][1];
                 double start = Math.Max(next + skip, AudioSettings.dspTime + 0.02);
-                double dur = b - a - skip;
+                double dur = Math.Min(b - a - skip, Until() - start);
                 if (dur > 0.01)
                 {
                     foreach (var part in parts)
@@ -336,6 +347,7 @@ public class AdaptiveMusic : MonoBehaviour
             list.RemoveAll(v => v.source == null);
             yield return new WaitForSecondsRealtime(0.3f);
         }
+        fadeUntil.Remove(id);
     }
 
     void StopVoices(List<Voice> list, double at)
@@ -381,7 +393,7 @@ public class AdaptiveMusic : MonoBehaviour
         if (r.kind == "crossfade")
         {
             double fade = (r.beats > 0 ? r.beats : 4) * SecondsPerBeat;
-            voices = StartState(s, at);
+            voices = StartState(s, at, 0, at + fade);
             foreach (var v in voices) v.fade = 0f;
             StartCoroutine(Crossfade(old, voices, at, fade));
             return;
@@ -489,7 +501,7 @@ public class AdaptiveMusic : MonoBehaviour
         }
         from = (((now - startDsp) % len) + len) % len / len;
         var old = voices;
-        voices = StartState(s, now, from);
+        voices = StartState(s, now, from, now + Math.Max(0.05, seconds));
         foreach (var v in voices) v.fade = 0f;
         StartCoroutine(Crossfade(old, voices, now, Math.Max(0.05, seconds)));
     }
@@ -553,11 +565,15 @@ public class AdaptiveMusic : MonoBehaviour
 
     void PlayOnce(string file, double at)
     {
+        var clip = Clip(file);
+        // (a file missing from the kit: nothing to play, rather than an error mid-game)
+        if (clip == null) return;
         var src = musicObject.AddComponent<AudioSource>();
-        src.clip = Clip(file);
-        src.volume = volume;
+        src.clip = clip;
+        // Stingers and bridges follow the effect's level (lowHealth and the rest) as the music does
+        src.volume = volume * effectLevel;
         src.PlayScheduled(Math.Max(at, AudioSettings.dspTime));
-        Destroy(src, (float)(at - AudioSettings.dspTime) + src.clip.length + 0.5f);
+        Destroy(src, (float)(at - AudioSettings.dspTime) + clip.length + 0.5f);
     }
 
     readonly Dictionary<string, int> lastSfx = new Dictionary<string, int>();

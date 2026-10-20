@@ -633,7 +633,7 @@ export function loadCustomSample(dataUrl: string): Promise<Tone.ToneAudioBuffer>
   if (!p) {
     p = fetch(dataUrl)
       .then((r) => r.arrayBuffer())
-      .then((data) => Tone.getContext().decodeAudioData(data))
+      .then((data) => liveContext.decodeAudioData(data))
       .then((audio) => new Tone.ToneAudioBuffer(audio));
     p.catch(() => customSamples.delete(dataUrl));
     customSamples.set(dataUrl, p);

@@ -35,6 +35,9 @@ var _pending := ""
 var costume := ""
 var _tempo := 1.0
 var _play_id := 0
+## A state played in pieces that's fading out keeps its pieces coming until then (by play id, engine seconds)
+var _fade_until := {}
+var _fade_length := {}
 var _music_bus := ""
 var _lowpass: AudioEffectLowPassFilter
 var _reverb: AudioEffectReverb
@@ -275,12 +278,31 @@ func _new_player(file: String, group, fade: float, at: float) -> AudioStreamPlay
 	p.bus = _music_bus
 	p.stream = streams[file]
 	add_child(p)
-	var target := linear_to_db(maxf(level(group), 0.0001))
-	p.volume_db = -80.0 if fade > 0.0 else target
+	var target := maxf(level(group), 0.0001)
+	p.volume_db = -80.0 if fade > 0.0 else linear_to_db(target)
 	p.play(at)
 	if fade > 0.0:
-		create_tween().tween_property(p, "volume_db", target, fade)
+		_fade(p, target, fade)
 	return p
+
+func _clock() -> float:
+	return Time.get_ticks_msec() / 1000.0
+
+## Fade a player to a level (linear gain, so a crossfade's two states never dip to near silence
+## halfway, as a straight line in dB from -80 does), then free it if asked.
+func _fade(p: AudioStreamPlayer, to_level: float, seconds: float, free_after := false) -> void:
+	var set_level := func(x: float) -> void:
+		if is_instance_valid(p):
+			p.volume_db = linear_to_db(maxf(x, 0.0001))
+	var t := create_tween()
+	t.tween_method(set_level, db_to_linear(p.volume_db), to_level, maxf(0.01, seconds))
+	if free_after:
+		t.tween_callback(p.queue_free)
+
+## Fading out (a crossfade, a costume change): the state that was playing has `fade` seconds left.
+func _fading_out(fade: float) -> void:
+	_fade_until[_play_id] = _clock() + fade
+	_fade_length[_play_id] = fade
 
 ## Start a state, fading in over `fade` seconds, `from` (0 to 1) of the way into its loop.
 func _start_state(s: Dictionary, fade := 0.0, from := 0.0) -> void:
@@ -324,13 +346,13 @@ func _run_pieces(s: Dictionary, from: float, id: int, voices: Array) -> void:
 		if i != first:
 			queue.append(i)
 	var last := first
-	while id == _play_id:
+	while id == _play_id or _clock() < float(_fade_until.get(id, -1.0)):
 		if queue.is_empty():
 			var gap = s.get("gap")
 			if gap != null:
 				var wait := float(gap.min) + randf() * maxf(0.0, float(gap.max) - float(gap.min))
 				await get_tree().create_timer(wait, true, false, true).timeout
-				if id != _play_id:
+				if id != _play_id and _clock() >= float(_fade_until.get(id, -1.0)):
 					return
 			queue = _order(count, last, shuffle)
 			continue
@@ -346,6 +368,12 @@ func _run_pieces(s: Dictionary, from: float, id: int, voices: Array) -> void:
 			var p := _new_player(part[0], part[1], 0.0, (a + skip) * per_bar)
 			players.append(p)
 			voices.append({ "player": p, "group": part[1] })
+			# A piece starting while the state fades out fades with it
+			if id != _play_id:
+				var left := float(_fade_until.get(id, 0.0)) - _clock()
+				var whole := maxf(float(_fade_length.get(id, 1.0)), 0.01)
+				p.volume_db = linear_to_db(maxf(level(part[1]) * clampf(left / whole, 0.0, 1.0), 0.0001))
+				_fade(p, 0.0, left, true)
 		await get_tree().create_timer((b - a - skip) * per_bar, true, false, true).timeout
 		skip = 0.0
 		for p in players:
@@ -362,9 +390,7 @@ func _stop_voices(voices: Array, fade := 0.0) -> void:
 			continue
 		var p: AudioStreamPlayer = v.player
 		if fade > 0.0:
-			var t := create_tween()
-			t.tween_property(p, "volume_db", -80.0, fade)
-			t.tween_callback(p.queue_free)
+			_fade(p, 0.0, fade, true)
 		else:
 			p.queue_free()
 
@@ -419,6 +445,7 @@ func set_state(name: String, unit := "") -> void:
 	if r.kind == "crossfade":
 		var fade := float(r.get("beats", 4)) * _seconds_per_beat()
 		_stop_voices(old, fade)
+		_fading_out(fade)
 		_start_state(s, fade)
 		return
 	_stop_voices(old)
@@ -459,6 +486,7 @@ func set_costume(name: String, seconds := 1.0) -> void:
 	var from := fmod(p.get_playback_position(), old_len) / old_len if old_len > 0.0 else 0.0
 	var old := _voices
 	_stop_voices(old, seconds)
+	_fading_out(seconds)
 	_start_state(s, seconds, from)
 
 ## Shape the music for what's going on: "underwater", "muffled", "lowHealth", "dream" or "none",

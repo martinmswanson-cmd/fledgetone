@@ -863,11 +863,12 @@ export function tuneSfx(s: SfxSound, root: number, steps: readonly number[]): Sf
 }
 
 /** When a layer ends, seconds from the start (modern: a recording when it runs out, a body once it's rung out). */
-function layerEnd(l: SfxLayer, modern = false): number {
+function layerEnd(l: SfxLayer, modern = false, pitch = 0): number {
   let length = l.attack + l.hold + l.decay;
   if (modern && l.wave === 'rec' && l.rec) {
     const r = recordingFor(l.rec, l.seed);
-    length = r ? Math.min(length, r.samples.length / r.sampleRate / recRate(l)) : 0.005;
+    // (the sound's Pitch plays the recording slower or faster too: pitched down, it lasts longer)
+    length = r ? Math.min(length, r.samples.length / r.sampleRate / (recRate(l) * 2 ** (pitch / 12))) : 0.005;
   }
   if (modern && l.body) length += bodyRing(l.body, l.ring ?? 1);
   return l.delay + length;
@@ -879,7 +880,7 @@ const recRate = (l: SfxLayer) => clamp(l.freq / 440, 0.25, 4);
 /** How long the dry sound lasts, seconds (a loop: its length). */
 export function dryLength(s: SfxSound): number {
   if (s.loop) return s.loopLength;
-  return Math.max(0.005, ...s.layers.filter((l) => l.on).map((l) => layerEnd(l, !!s.modern)));
+  return Math.max(0.005, ...s.layers.filter((l) => l.on).map((l) => layerEnd(l, !!s.modern, s.pitch)));
 }
 
 /** How much the echo and reverb add after the dry sound, seconds. */
@@ -1264,7 +1265,7 @@ function modernDry(s: SfxSound, length: number, sampleRate: number, loop: boolea
     const p0 = clamp(l.pan ?? 0, -1, 1);
     const p1 = clamp(l.panTo ?? p0, -1, 1);
     const start = Math.round(layer.delay * sampleRate);
-    const span = Math.max(1, Math.round((layerEnd(layer, true) - layer.delay) * sampleRate));
+    const span = Math.max(1, Math.round((layerEnd(layer, true, s.pitch) - layer.delay) * sampleRate));
     for (let i = start; i < length; i++) {
       const va = a[i];
       const vb = b[i];

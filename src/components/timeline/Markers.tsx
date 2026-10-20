@@ -83,6 +83,7 @@ export const MarkerFlags = React.memo(function MarkerFlags({ originRef }: { orig
       document.body.style.cursor = '';
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       window.removeEventListener('pointercancel', onCancel);
       if (!click || moved) return;
       const s = useTimelineStore.getState();
@@ -94,6 +95,7 @@ export const MarkerFlags = React.memo(function MarkerFlags({ originRef }: { orig
     const onCancel = end(false);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
     window.addEventListener('pointercancel', onCancel);
   };
 

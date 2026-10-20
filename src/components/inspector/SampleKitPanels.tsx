@@ -140,7 +140,7 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
         <div className="flex items-center gap-1.5">
           <input
             value={pad.name}
-            onFocus={() => s.checkpoint()}
+            onFocus={() => s.beginEdit()}
             onChange={(e) => setPad(selected, { name: e.target.value.slice(0, 40) })}
             className="flex-1 min-w-0 h-6 bg-forge-panel border border-forge-border rounded px-1.5 text-xs text-forge-text"
             aria-label="Pad name"

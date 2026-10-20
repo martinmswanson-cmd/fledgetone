@@ -74,7 +74,7 @@ export function normalizeBass808(v: unknown): Bass808Settings | undefined {
   if (!isObj(v)) return undefined;
   const d = defaultBass808();
   const k = isObj(v.tuneToKey) ? v.tuneToKey : null;
-  const scale = k && typeof k.scale === 'string' && k.scale in SCALES ? (k.scale as ScaleId) : null;
+  const scale = k && typeof k.scale === 'string' && Object.hasOwn(SCALES, k.scale) ? (k.scale as ScaleId) : null;
   return {
     drive: num(v.drive, d.drive, 0, 1),
     character: DRIVE_CHARACTERS.includes(v.character as DriveCharacter) ? (v.character as DriveCharacter) : d.character,

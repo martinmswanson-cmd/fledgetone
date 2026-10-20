@@ -45,3 +45,10 @@ export function restoreLookAhead(): void {
 
 /** Scheduling further ahead than at start-up right now. */
 export const lookAheadWidened = (): boolean => liveContext.lookAhead > baseLookAhead() + 1e-6;
+
+/**
+ * Where a sound that's already mixed and mastered plays live (a song rendered as it exports, for
+ * the game previews): into the output after the master section, so it isn't compressed and limited
+ * a second time.
+ */
+export const afterMaster = (): AudioNode => (liveDestination.output as unknown as { input: AudioNode }).input;

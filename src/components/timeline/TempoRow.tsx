@@ -71,10 +71,12 @@ export const TempoRow = React.memo(function TempoRow({ originRef }: { originRef:
       document.body.style.cursor = '';
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       if (!moved) setEditing({ kind, id, x: startX, y: startY + 12 });
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   // One flag group per position: a tempo flag, then a time signature flag

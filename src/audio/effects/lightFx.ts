@@ -54,28 +54,60 @@ export interface LightEq3 extends LightInsert {
 }
 
 /**
- * Tone.EQ3's three-band split (12 dB/oct crossovers at `lowFrequency` and `highFrequency`, Q 1)
- * with a gain per band, built from fixed-coefficient biquads.
+ * A three-band EQ with a gain per band, split at `lowFrequency` and `highFrequency` by
+ * Linkwitz-Riley crossovers (24 dB/oct, two Butterworth filters each), as the multiband compressor
+ * splits: the low band also goes through an all-pass at the high split, so all three bands stay in
+ * phase and, at 0 dB, add back up to the sound that went in. (Tone.EQ3's 12 dB/oct split, which
+ * this used to copy, cancels itself at both crossovers once any band moves: a hole at 400 Hz and
+ * 2.5 kHz on the whole track.) Fixed-coefficient biquads.
  */
 export function createLightEq3(lowFrequency = 400, highFrequency = 2500): LightEq3 {
   const input = new Tone.Gain(1);
   const output = new Tone.Gain(1);
-  const filter = (type: BiquadFilterType, frequency: number) => new Tone.BiquadFilter({ type, frequency, Q: 1 });
-  const low = filter('lowpass', lowFrequency);
-  const lowMid = filter('highpass', lowFrequency);
-  const mid = filter('lowpass', highFrequency);
-  const high = filter('highpass', highFrequency);
+  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const BUTTERWORTH_DB = 20 * Math.log10(Math.SQRT1_2);
+  const biquad = (type: BiquadFilterType, frequency: number) => {
+    const f = raw.createBiquadFilter();
+    blockRate(f);
+    f.type = type;
+    f.frequency.value = frequency;
+    f.Q.value = type === 'allpass' ? Math.SQRT1_2 : BUTTERWORTH_DB;
+    return f;
+  };
   const lowGain = new Tone.Gain(1);
   const midGain = new Tone.Gain(1);
   const highGain = new Tone.Gain(1);
-  const raw = input.context.rawContext as unknown as BaseAudioContext;
+  const filters = [
+    biquad('lowpass', lowFrequency),
+    biquad('lowpass', lowFrequency),
+    biquad('allpass', highFrequency),
+    biquad('highpass', lowFrequency),
+    biquad('highpass', lowFrequency),
+    biquad('lowpass', highFrequency),
+    biquad('lowpass', highFrequency),
+    biquad('highpass', highFrequency),
+    biquad('highpass', highFrequency),
+  ];
+  const [lp1, lp2, ap, hp1, hp2, midLp1, midLp2, highHp1, highHp2] = filters;
+  const src = input.input as unknown as AudioNode;
+  const gainIn = (g: Tone.Gain) => g.input as unknown as AudioNode;
+  src.connect(lp1);
+  lp1.connect(lp2);
+  lp2.connect(ap);
+  ap.connect(gainIn(lowGain));
+  src.connect(hp1);
+  hp1.connect(hp2);
+  hp2.connect(midLp1);
+  midLp1.connect(midLp2);
+  midLp2.connect(gainIn(midGain));
+  hp2.connect(highHp1);
+  highHp1.connect(highHp2);
+  highHp2.connect(gainIn(highGain));
+  lowGain.connect(output);
+  midGain.connect(output);
+  highGain.connect(output);
   const writer = (gain: Tone.Gain) =>
     createParamWriter(gain.gain.input as AudioParam, { raw, now: () => input.context.now(), initial: 1 });
-
-  input.fan(low, lowMid, high);
-  low.chain(lowGain, output);
-  lowMid.chain(mid, midGain, output);
-  high.chain(highGain, output);
 
   return {
     input,
@@ -83,7 +115,10 @@ export function createLightEq3(lowFrequency = 400, highFrequency = 2500): LightE
     low: writer(lowGain),
     mid: writer(midGain),
     high: writer(highGain),
-    dispose: () => [input, output, low, lowMid, mid, high, lowGain, midGain, highGain].forEach((n) => n.dispose()),
+    dispose: () => {
+      filters.forEach((f) => f.disconnect());
+      [input, output, lowGain, midGain, highGain].forEach((n) => n.dispose());
+    },
   };
 }
 
@@ -91,6 +126,9 @@ export interface LightDistortion extends LightInsert {
   /** Set the amount (0-1), gliding over `ramp` seconds (0 = at once). */
   setAmount: (amount: number, ramp?: number) => void;
 }
+
+/** How far past full scale the distortion's curve reaches (see createLightDistortion) */
+const CURVE_SPAN = 64;
 
 /** The drive an amount gives: 0 dB at 0 (clean), about 10 dB at 0.3, 32 dB at 1. */
 const driveOf = (amount: number) => Math.pow(10, amount * 1.6);
@@ -130,8 +168,11 @@ export function createLightDistortion(amount: number): LightDistortion {
   const drive = raw.createGain();
   const shaper = raw.createWaveShaper();
   shaper.oversample = '4x';
-  const curve = new Float32Array(4097);
-  for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh((i / (curve.length - 1)) * 2 - 1);
+  // A WaveShaper's curve spans -1 to 1 and holds its end value beyond, so the curve covers
+  // tanh over ±CURVE_SPAN and the drive comes in divided by it: the clip stays smooth however hard
+  // it's driven (the loudest drive, 32 dB, on a full-scale peak is still inside the curve)
+  const curve = new Float32Array(16385);
+  for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(((i / (curve.length - 1)) * 2 - 1) * CURVE_SPAN);
   shaper.curve = curve;
   const tone = raw.createBiquadFilter();
   tone.type = 'lowpass';
@@ -143,7 +184,7 @@ export function createLightDistortion(amount: number): LightDistortion {
     return { drive: d, tone: 8000 - 4500 * v, makeup: driveMakeup(d) };
   };
   const first = settings(amount);
-  drive.gain.value = first.drive;
+  drive.gain.value = first.drive / CURVE_SPAN;
   tone.frequency.value = first.tone;
   makeup.gain.value = first.makeup;
   let applied = amount;
@@ -152,7 +193,7 @@ export function createLightDistortion(amount: number): LightDistortion {
     applied = value;
     const next = settings(value);
     const now = writeTime(raw);
-    for (const [param, target] of [[drive.gain, next.drive], [tone.frequency, next.tone], [makeup.gain, next.makeup]] as const) smoothSet(param, target, now, ramp / 3);
+    for (const [param, target] of [[drive.gain, next.drive / CURVE_SPAN], [tone.frequency, next.tone], [makeup.gain, next.makeup]] as const) smoothSet(param, target, now, ramp / 3);
   };
   input.connect(tight);
   tight.connect(drive);

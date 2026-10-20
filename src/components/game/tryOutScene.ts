@@ -335,6 +335,8 @@ export class TryOutScene {
       }
     });
     this.renderer.dispose();
+    // (dispose() keeps the WebGL context: browsers allow only a few, so opening the game again and again ran out)
+    this.renderer.forceContextLoss();
     this.renderer.domElement.remove();
   }
 

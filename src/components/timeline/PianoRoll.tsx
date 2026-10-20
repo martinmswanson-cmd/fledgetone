@@ -240,11 +240,13 @@ function trackPointer(cursor: string, onMove: (ev: PointerEvent) => void, onEnd?
     document.body.style.cursor = '';
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
     onEnd?.();
   };
   document.body.style.cursor = cursor;
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 }
 
 /**
@@ -672,14 +674,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         else store.closeEditor();
         return;
       }
-      if (selected.size === 0) return;
-
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Taken even with no notes selected: let through, the timeline would delete the clip itself
         handled();
+        if (!selected.size) return;
         store.deleteNotes(clip.id, selected);
         setSelected(new Set());
         return;
       }
+      if (selected.size === 0) return;
 
       const arrows: Record<string, [number, number]> = {
         ArrowLeft: [-gridUnits, 0],
@@ -738,7 +741,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           <input
             value={clip.name}
             // One undo step for the whole rename
-            onFocus={() => useTimelineStore.getState().checkpoint()}
+            onFocus={() => useTimelineStore.getState().beginEdit()}
             onChange={(e) => useTimelineStore.getState().renameClip(clip.id, e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className="h-7 w-40 bg-transparent border border-transparent hover:border-forge-border focus:border-cyan-500 rounded-md px-2 text-sm font-semibold text-forge-text focus:outline-none"
@@ -929,6 +932,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             className="sticky top-0 z-20 flex bg-forge-panel border-b border-forge-border cursor-pointer"
             style={{ height: RULER_H, width: KEY_W + gridW }}
             onPointerDown={(e) => {
+              if (e.button !== 0) return;
               const r = gridRef.current!.getBoundingClientRect();
               const units = Math.max(0, (e.clientX - r.left) / unitW);
               useTimelineStore.getState().seek(clip.startBar + units / UNITS_PER_BAR);
@@ -987,7 +991,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             {/* Grid */}
             <div
               ref={gridRef}
-              className="relative cursor-crosshair"
+              className="relative cursor-crosshair touch-none"
               style={{ width: gridW, height: gridH }}
               onPointerDown={onGridPointerDown}
               onPointerMove={trackHover}

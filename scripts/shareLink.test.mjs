@@ -114,3 +114,20 @@ test('a link keeps mod wheel lanes as dynamics, and leaves a recorded room out',
   assert.equal(back.masterFx.room, undefined);
   assert.equal(back.masterFx.reverbDecay, 3);
 });
+
+test("a game song's transition rules and state options, keyed by marker ids, survive the link", async () => {
+  const game = {
+    ...SONG,
+    markers: [
+      { id: 'marker-calm-long-random-id', name: 'Calm', anchor: 'bar', bar: 1, kind: 'section' },
+      { id: 'marker-fight-long-random-id', name: 'Fight', anchor: 'bar', bar: 3, kind: 'section' },
+    ],
+    transitions: { 'marker-calm-long-random-id>marker-fight-long-random-id': { kind: 'stinger', stingerId: 'stinger-long-random-id' } },
+    stateOptions: { 'marker-fight-long-random-id': { shuffleBars: 2 } },
+  };
+  const back = await projectFromHash((await songLink(game, '')).replace(/^[^#]*/, ''));
+  const [calm, fight] = back.markers.map((m) => m.id);
+  assert.deepEqual(Object.keys(back.transitions), [`${calm}>${fight}`]);
+  assert.equal(back.transitions[`${calm}>${fight}`].stingerId, back.stingers[0].id);
+  assert.deepEqual(back.stateOptions, { [fight]: { shuffleBars: 2 } });
+});

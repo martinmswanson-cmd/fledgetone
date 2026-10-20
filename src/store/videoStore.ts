@@ -252,7 +252,11 @@ export const useVideoStore = create<VideoState>((set, get) => ({
       const video: ReferenceVideo = { name: file.name, url, file, duration: el.duration, width: el.videoWidth, height: el.videoHeight };
       el.removeAttribute('src');
       el.load();
-      if (my !== generation) return;
+      if (my !== generation) {
+        // A newer video replaced it while it opened
+        URL.revokeObjectURL(url);
+        return;
+      }
       const key = opts.key ?? keyOf(file);
       set({ video, start: startAt, thumbs: [], loading: false, previewOpen: true, key });
       // Kept in this browser, so the project brings it back after a reload

@@ -361,6 +361,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     s.pause();
     saveSettings(settings);
     const controller = new AbortController();
+    // A Cancel pressed while the file was being encoded or zipped: nothing is downloaded
+    const deliver = (blob: Blob, name: string) => {
+      controller.signal.throwIfAborted();
+      downloadBlob(blob, name);
+    };
     abortRef.current = controller;
     setStatus({ kind: 'rendering', fileName, progress: 0, detail: '' });
     const opts: RenderOptions = {
@@ -414,7 +419,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           controller.signal.throwIfAborted();
         }
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
-        downloadBlob(await createZip(files), fileName);
+        deliver(await createZip(files), fileName);
         showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}` : ''}`);
       } else if (videoOut) {
         // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs). A ring-out is
@@ -460,7 +465,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           onProgress: (p) => setStatus({ kind: 'rendering', fileName, progress: 0.3 + 0.7 * p, detail: 'Drawing the video' }),
         });
         controller.signal.throwIfAborted();
-        downloadBlob(blob, fileName);
+        deliver(blob, fileName);
         showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}`);
       } else if (stemsOnly) {
         const rendered = await renderStems(
@@ -473,7 +478,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
         const zip = await createZip(rendered.map((r, i) => ({ name: names[i], data: r.wav })));
         controller.signal.throwIfAborted();
-        downloadBlob(zip, fileName);
+        deliver(zip, fileName);
       } else {
         // Each version (the full mix, and the underscore or no-drums ones asked for) rendered the same way
         const made: Array<{ name: string; data: Blob; label: string; reading: Awaited<ReturnType<typeof measureLoudness>>; note: string }> = [];
@@ -504,11 +509,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         }
         if (made.length === 1) {
           const [m] = made;
-          downloadBlob(m.data, fileName);
+          deliver(m.data, fileName);
           showToast(`Exported ${fileName}: ${formatLufs(m.reading.integrated)}, peak ${formatDbtp(m.reading.truePeakMax)}${m.note}`);
         } else {
           setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
-          downloadBlob(await createZip(made.map((m) => ({ name: m.name, data: m.data }))), fileName);
+          deliver(await createZip(made.map((m) => ({ name: m.name, data: m.data }))), fileName);
           showToast(`Exported ${fileName}: ${made.map((m) => `${m.label.toLowerCase()} ${formatLufs(m.reading.integrated)}`).join(', ')}`);
         }
       }

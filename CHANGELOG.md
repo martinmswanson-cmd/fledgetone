@@ -4,6 +4,20 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-4 — Fixes
+
+- **EQ is cleaner**: the three-band EQ on tracks now splits the sound so that nudging one band leaves the others alone, and a flat EQ changes nothing.
+- **Distortion keeps its level**: turning distortion up no longer makes the sound much louder or quieter.
+- **Game music**: in the game player (web, Godot and Unity), a state that fades out now fades smoothly to the end and its pieces stop with it, a short sound that has no recording no longer stops the music, and a stinger plays at the music's level.
+- **The game previews**: stopping a song in the preview stops it for good, the platformer's jumps are the same on fast and slow screens, the rhythm game opens again straight away on an unchanged song, and the games no longer take keys meant for shortcuts.
+- **Share links** keep your markers, and **linked clips** stay linked after opening a song.
+- **Undo**: renaming a clip, or changing a sample's settings, is one undo step rather than one per letter. Ripple edits move the markers and tempo changes with the music.
+- **Exports**: an export that you cancel no longer downloads anyway, and a song's ring-out keeps its last echoes.
+- **Sound effects maker**: Stop stops every sound that's playing, not just the last.
+- **Dragging** a note, clip or knob no longer gets stuck when the browser takes the pointer away (a phone call, a gesture).
+- **Updates**: if a part of the studio goes missing after an update, your song is saved before the page reloads.
+- Smaller fixes across the studio and Pocket.
+
 ## 2026.10.20-3 — Two new games to try your song in
 
 - **Try it in a game** has three games now: pick one at the top.

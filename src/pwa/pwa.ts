@@ -158,7 +158,14 @@ function watchForUpdates(reg: ServiceWorkerRegistration): void {
     });
   });
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) window.location.reload();
+    if (reloading) {
+      window.location.reload();
+      return;
+    }
+    // Another tab moved to a new version: its worker has dropped this version's files, so parts of
+    // this page not loaded yet can't load any more. Offer Reload here too (it saves the work first)
+    waiting = null;
+    usePwa.setState({ updateReady: true });
   });
   // Look again every 30 minutes and when the app comes back into view, only while online and
   // quiet (a check skipped while busy happens at the next one)
@@ -173,8 +180,27 @@ function watchForUpdates(reg: ServiceWorkerRegistration): void {
 }
 
 /** Start it all (once, from main.tsx). */
+/**
+ * A part of the app that wouldn't load (this version's files are gone from the server or the
+ * cache: a newer version took over, in this tab or another): save the work, then reload into the
+ * version there is now, rather than leave a half-working page.
+ */
+function reloadOnMissingParts(): void {
+  window.addEventListener('vite:preloadError', (event) => {
+    event.preventDefault();
+    if (reloading) return;
+    if (!flushAutosave()) {
+      usePwa.setState({ updateReady: true });
+      return;
+    }
+    reloading = true;
+    window.location.reload();
+  });
+}
+
 export function startPwa(): void {
   if (typeof window === 'undefined') return;
+  reloadOnMissingParts();
   usePwa.setState({ installed: runningInstalled() });
   whatsNewAfterUpdate();
   window.addEventListener('beforeinstallprompt', (e) => {

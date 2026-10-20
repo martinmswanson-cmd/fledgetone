@@ -41,7 +41,7 @@ export function stingerNotes(kind: StingerKind, key: SongKey, variation = 0): { 
 
   switch (kind) {
     case 'victory': {
-      // A pickup on the fifth (triplets, or straight 16ths), a step up, then the tonic chord held
+      // A pickup on the fifth (triplets, or straight 16ths), a step down and back, then the tonic chord held
       const pick = v === 2 ? [0, 1 / 16, 2 / 16] : [0, 1 / 12, 2 / 12];
       pick.forEach((at) => add(deg(4), at, v === 2 ? '16n' : '8t', 0.7));
       add(deg(3), 0.25, '8n', 0.75);

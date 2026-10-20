@@ -146,6 +146,9 @@ function serviceWorker(): Plugin {
 
 export default defineConfig({
   plugins: [react(), thirdPartyLicenses(), versionFile(), serviceWorker()],
+  // The one-file build (npm run build:single / build:full) folds everything into one HTML file, so
+  // its script must be one file too: no lazily loaded chunks (scripts/build-single.mjs inlines it)
+  ...(process.env.VITE_SINGLE === '1' ? { build: { rollupOptions: { output: { inlineDynamicImports: true } } } } : {}),
   define: {
     __APP_VERSION__: JSON.stringify(pkgVersion),
     __APP_COMMIT__: JSON.stringify(commit),

@@ -150,6 +150,7 @@ export class PlatformerScene {
     this.y = this.checkpoint.y = 12 * TILE - this.h;
     this.vx = this.vy = 0;
     this.facing = 1;
+    this.jumpAsked = -1;
     this.hearts = 3;
     this.hurtUntil = 0;
     this.coinTaken = this.level.coins.map(() => false);
@@ -184,9 +185,12 @@ export class PlatformerScene {
   start() {
     this.last = performance.now();
     const tick = (now: number) => {
-      const dt = Math.min(0.04, (now - this.last) / 1000);
+      const dt = Math.min(0.1, (now - this.last) / 1000);
       this.last = now;
-      this.update(dt);
+      // In steps of at most 8 ms, so even a slow frame never moves the hero a tile in one go (it
+      // would fall through a platform)
+      const steps = Math.ceil(dt / 0.008);
+      for (let i = 0; i < steps; i++) this.update(dt / steps);
       this.draw();
       this.raf = requestAnimationFrame(tick);
     };

@@ -25,6 +25,11 @@
 /fledgetone-plugins/*
   Cache-Control: public, max-age=31536000, immutable
   Access-Control-Allow-Origin: *
+# The sound effects maker's recordings (new takes get new names, but a take can be re-made under
+# its own: a week). Readable from other sites, as the app's fallback address needs.
+/fledgetone-sfx/*
+  Cache-Control: public, max-age=604800
+  Access-Control-Allow-Origin: *
 
 # Icons: a day
 /icon-*

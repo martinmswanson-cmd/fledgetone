@@ -72,7 +72,7 @@ import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
 import { duckPoints } from './duck';
 import { createStinger, fitNotesToRange } from './stingers';
-import { setLivePlayhead } from './playheadClock';
+import { livePlayhead, setLivePlayhead } from './playheadClock';
 import { createGameSfx, type GameSfx } from './gameSfx';
 import { cleanTarget, freeParamName, MAX_GAME_PARAMS, MAX_PARAM_TARGETS, paramFromPreset, TARGET_SPECS, type GameParam, type ParamPreset, type ParamTarget, type ParamTargetKind } from './gameParams';
 import { costumeFromPreset, freeCostumeName, MAX_COSTUMES, MAX_COSTUME_TEMPO, MIN_COSTUME_TEMPO, type Costume, type CostumePreset, type CostumeTrack, type StateOptions } from './costumes';
@@ -134,7 +134,7 @@ import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRan
 import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
-import { canLink, syncPatterns, unlinked } from './patterns';
+import { canLink, shareLinkedContent, syncPatterns, unlinked } from './patterns';
 
 // Defined with the data types (project parsing and the automation maths need it too); much of
 // the app reads it from here
@@ -728,6 +728,11 @@ interface TimelineState {
   future: HistoryEntry[];
   /** Snapshot clips, tracks, mixer and markers before an edit. Gestures (drags, slider moves) call this once at their start. */
   checkpoint: () => void;
+  /**
+   * A field focused or a slider taken hold of: the song as it is now becomes an undo step with the
+   * first change that follows (none if nothing changes, so the redo history is kept).
+   */
+  beginEdit: () => void;
   undo: () => void;
   redo: () => void;
 
@@ -1034,13 +1039,37 @@ function tidyMeters(points: MeterPoint[], base: Meter): MeterPoint[] {
  * that watches the store (the live engine, the views) sees them change together, and one Undo
  * takes the whole edit back. Every way in is covered: the store's own `set` and setState from outside.
  */
+/**
+ * The song as it was when a field or a slider was taken hold of (beginEdit()): the undo step it becomes once
+ * something actually changes. Pushed at once, a click into a field that then changed nothing left
+ * an empty undo step and threw away the redo history.
+ */
+let pendingCheckpoint: HistoryEntry | null = null;
+
+/** Whether a store change touches what an undo step holds. */
+function changesHistory(s: TimelineState, next: Partial<TimelineState>): boolean {
+  const after = historyEntry({ ...s, ...next } as TimelineState);
+  const before = historyEntry(s);
+  return (Object.keys(before) as Array<keyof HistoryEntry>).some((k) => (k === 'masterFx' ? JSON.stringify(before[k]) !== JSON.stringify(after[k]) : before[k] !== after[k]));
+}
+
+/** A whole new song's clips (loadProject): not an edit of the clips before, so nothing to sync with them (their ids may even repeat). */
+const unsynced = new WeakSet<Clip[]>();
 type SetState = (partial: TimelineState | Partial<TimelineState> | ((s: TimelineState) => TimelineState | Partial<TimelineState>), replace?: boolean) => void;
 function withLinkedClips(config: (set: SetState, get: () => TimelineState, api: { setState: SetState }) => TimelineState) {
   return (rawSet: SetState, get: () => TimelineState, api: { setState: SetState }) => {
     const set: SetState = (partial, replace) =>
       rawSet((s) => {
-        const next = typeof partial === 'function' ? partial(s) : partial;
-        if (!next.clips || next.clips === s.clips) return next;
+        let next = typeof partial === 'function' ? partial(s) : partial;
+        // A beginEdit() becomes an undo step with the first change that follows it
+        if (pendingCheckpoint) {
+          if ('past' in next) pendingCheckpoint = null;
+          else if (changesHistory(s, next)) {
+            next = { ...next, past: [...s.past.slice(-(HISTORY_LIMIT - 1)), pendingCheckpoint], future: [] };
+            pendingCheckpoint = null;
+          }
+        }
+        if (!next.clips || next.clips === s.clips || unsynced.has(next.clips)) return next;
         const synced = syncPatterns(s.clips, next.clips);
         return synced ? { ...next, clips: synced } : next;
       }, replace);
@@ -1222,7 +1251,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     const tracksChanged = tracks.some((t, i) => t !== s.tracks[i]);
     const loopRegion = moveLoop(s.loopRegion);
     const loopChanged = loopRegion.inBar !== s.loopRegion.inBar || loopRegion.outBar !== s.loopRegion.outBar;
-    const markers = moveMarkers(s.markers, songTempo({ bpm: s.bpm, tempoPoints }));
+    // (and a marker locked to time stays at its moment in the new tempo map, as the hit points
+    // lined up with a video must)
+    const rippledTempo = songTempo({ bpm: s.bpm, tempoPoints });
+    const markers = retimeMarkers(moveMarkers(s.markers, rippledTempo), rippledTempo);
     const markersChanged = markers !== s.markers;
     const playhead = clampBar(movePoint(s.playheadPosition));
     const ripple: RippleMove = {
@@ -1567,7 +1599,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     // ---------- Markers ----------
     addMarker: (bar) => {
       const s = get();
-      const marker = createMarker(bar ?? s.playheadPosition, songTempo(s), nextMarkerName(s.markers));
+      // (the playhead as heard now: while playing, the store's position trails it by up to a tenth of a second)
+      const marker = createMarker(bar ?? livePlayhead(), songTempo(s), nextMarkerName(s.markers));
       // Pressing M twice (or holding it) shouldn't stack markers on one spot
       const there = s.markers.find((m) => Math.abs(m.bar - marker.bar) < EPS);
       if (there) return `"${there.name}" is already at ${formatBarsBeats(there.bar)}.`;
@@ -1582,7 +1615,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const n = /^Hit (\d+)$/.exec(m.name);
         if (n) highest = Math.max(highest, Number(n[1]));
       }
-      const marker = anchorMarker(createMarker(s.playheadPosition, songTempo(s), `Hit ${highest + 1}`), 'time');
+      const marker = anchorMarker(createMarker(livePlayhead(), songTempo(s), `Hit ${highest + 1}`), 'time');
       const there = s.markers.find((m) => Math.abs(m.bar - marker.bar) < EPS);
       if (there) return `"${there.name}" is already at ${formatBarsBeats(there.bar)}.`;
       set((st) => ({ markers: retimeMarkers([...st.markers, marker], songTempo(st)), ...pushPast(st) }));
@@ -2914,7 +2947,13 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     selectAll: () => get().setSelection(new Set(get().clips.map((c) => c.id))),
 
     // ---------- History ----------
-    checkpoint: () => set((s) => pushPast(s)),
+    checkpoint: () => {
+      pendingCheckpoint = null;
+      set((s) => pushPast(s));
+    },
+    beginEdit: () => {
+      pendingCheckpoint = historyEntry(get());
+    },
 
     // The live engine follows tracks and clips on its own (connectTimelineToAudio); the master
     // returns are pushed here, as their setters do
@@ -3008,6 +3047,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // Start downloading the recorded instruments, what the song plays on each first
       loadSongSamples(safeTracks, p.clips);
       const masterFx = p.masterFx ?? DEFAULT_MASTER_FX;
+      const loadedClips = shareLinkedContent(p.clips);
+      unsynced.add(loadedClips);
 
       set({
         projectName: p.name,
@@ -3019,7 +3060,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         swing: p.swing,
         loopRegion: p.loopRegion,
         tracks: safeTracks,
-        clips: p.clips,
+        clips: loadedClips,
         selectedTrackId: safeTracks[0]?.id ?? null,
         playheadPosition: p.loopRegion.inBar,
         past: [],

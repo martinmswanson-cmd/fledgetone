@@ -99,10 +99,12 @@ export const TimeRuler: React.FC<TimeRulerProps> = ({ originRef, onScrubStart, o
       document.body.style.cursor = '';
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
     document.body.style.cursor = 'ew-resize';
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   const loopLeft = (inBar - 1) * zoom;

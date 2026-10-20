@@ -1255,7 +1255,7 @@ Versions of FMOD and Wwise differ, so each script step reports whether it worked
 For a web game where download size matters, **Export web runtime kit (no audio files)** (in the Game tab) makes a .zip with just:
 
 - the song's project file (`<song>.json`, usually tens of kilobytes, with any sounds your clips play inside it),
-- `bos-player.js` (about 550 KB, about 135 KB as a web server sends it), which **synthesizes the music in the player's browser** when the game loads, with the same engine as Fledgetone: every state (as stems, if the song has stem groups), the stingers and the transitions,
+- `bos-player.js` (about 1.1 MB, about 290 KB as a web server sends it), which **synthesizes the music in the player's browser** when the game loads, with the same engine as Fledgetone: every state (as stems, if the song has stem groups), the stingers and the transitions,
 - a test page (`index.html`) and a README.
 
 In the game: `const music = await loadSong('./song.json', { onProgress })`, then `music.play(...)`, `music.setState(...)`, `music.setIntensity(...)` and `music.stinger(...)`, exactly as with the game kit's web player. Synthesizing takes a few seconds per minute of music (longer on slow devices; a 16-bar song with three stem groups took about 12 seconds in testing), so start it while the game loads and show a progress bar. Recorded instruments download their samples from the same public libraries the app uses, so they need a connection; the synths need nothing.

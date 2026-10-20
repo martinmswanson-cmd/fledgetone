@@ -4,7 +4,7 @@
  * hears now).
  */
 import * as Tone from 'tone';
-import { liveTransport } from './liveContext';
+import { liveContext, liveTransport } from './liveContext';
 import { formatFrameRulerTime, formatFrameTimecode, framesToSeconds, parseFrameTimecode, secondsToFrames } from './timecode';
 import { barToSeconds as mapBarToSeconds, FOUR_FOUR, fromMeasureBeat, secondsToBar as mapSecondsToBar, tempoChangeBars, tempoFrom, toMeasureBeat } from './tempoMap';
 import type { MeterMap, Tempo } from './tempoMap';
@@ -153,7 +153,7 @@ let pendingStart: number | null = null;
  * Until a start or a move is heard, that's where it's going.
  */
 export function getAudiblePositionBar(): number {
-  const now = Tone.immediate();
+  const now = liveContext.immediate();
   if (heading && now < heading.at) return heading.bar;
   heading = null;
   // What leaves the speakers now was rendered the output latency ago (larger with Stable playback)
@@ -165,7 +165,7 @@ export function getAudiblePositionBar(): number {
  * context (Tone's wrapper doesn't pass these on; see latency.ts, which can't be imported here).
  */
 function outputLatency(): number {
-  const raw = Tone.getContext().rawContext as unknown as { _nativeAudioContext?: AudioContext };
+  const raw = liveContext.rawContext as unknown as { _nativeAudioContext?: AudioContext };
   const native = (raw._nativeAudioContext ?? raw) as Partial<AudioContext>;
   return (native.baseLatency || 0) + (native.outputLatency || 0);
 }
@@ -176,7 +176,7 @@ export function getScheduledPositionBar(): number {
 }
 
 /** Start playing from `bar`, at audio time `at` (just ahead of now, or after a count-in). */
-export function startTransportAt(bar: number, at = Tone.now() + 0.03): void {
+export function startTransportAt(bar: number, at = liveContext.now() + 0.03): void {
   applyTempoAt(liveTransport, liveTempo, bar, at);
   liveTransport.start(at, `${barToTicks(bar)}i`);
   heading = { bar, at };
@@ -185,7 +185,7 @@ export function startTransportAt(bar: number, at = Tone.now() + 0.03): void {
 
 /** When the Transport is due to start, if it hasn't yet (a count-in is running); else null. */
 export function transportStartsAt(): number | null {
-  return pendingStart !== null && Tone.immediate() < pendingStart ? pendingStart : null;
+  return pendingStart !== null && liveContext.immediate() < pendingStart ? pendingStart : null;
 }
 
 /** Cancel a start that's still to come (see pendingStart). True if there was one. */
@@ -194,7 +194,7 @@ function cancelPendingStart(): boolean {
   pendingStart = null;
   if (at === null) return false;
   // Stopping before the scheduled start removes it: the Transport never gets going
-  liveTransport.stop(Tone.immediate());
+  liveTransport.stop(liveContext.immediate());
   return true;
 }
 
@@ -217,8 +217,8 @@ export function seekTransport(bar: number): void {
   // During a count-in the start that's coming moves to the new bar (Tone keeps its time)
   if (pending !== null) heading = { bar, at: pending };
   // Playing, Tone moves there at its look-ahead, on the next tick
-  else if (playing) heading = { bar, at: Tone.now() + liveTransport.toSeconds('1i') };
-  applyTempoAt(liveTransport, liveTempo, bar, heading && (pending !== null || playing) ? heading.at : Tone.now());
+  else if (playing) heading = { bar, at: liveContext.now() + liveTransport.toSeconds('1i') };
+  applyTempoAt(liveTransport, liveTempo, bar, heading && (pending !== null || playing) ? heading.at : liveContext.now());
 }
 
 /** Format as Premiere-style Bar.Beat.Tick ("001.01.00"); ticks shown as hundredths of a beat. */

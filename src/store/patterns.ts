@@ -17,6 +17,28 @@ export const canLink = (c: Clip): boolean => !c.audio && !c.takes?.length;
 const sameContent = (a: Clip, b: Clip) => SHARED.every((k) => a[k] === b[k]);
 
 /**
+ * Linked clips as read from a file (or a link, or a starter): each member parsed its own copy of
+ * the notes, lanes and groove, so they share nothing by reference and an undo that brings one back
+ * would see different content and unlink it. Members whose content is the same get one copy of it.
+ */
+export function shareLinkedContent(clips: Clip[]): Clip[] {
+  const first = new Map<string, Clip>();
+  let changed = false;
+  const out = clips.map((c) => {
+    if (!c.pattern) return c;
+    const lead = first.get(c.pattern);
+    if (!lead) {
+      first.set(c.pattern, c);
+      return c;
+    }
+    if (sameContent(lead, c) || !SHARED.every((k) => JSON.stringify(lead[k]) === JSON.stringify(c[k]))) return c;
+    changed = true;
+    return { ...c, ...Object.fromEntries(SHARED.filter((k) => k in lead).map((k) => [k, lead[k]])) } as Clip;
+  });
+  return changed ? out : clips;
+}
+
+/**
  * After a change from `prev` to `next`: the linked clips whose content one of their group changed,
  * given that content. Null when nothing needs to follow.
  *

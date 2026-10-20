@@ -142,9 +142,11 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   };
 
   const addAt = (e: React.MouseEvent) => {

@@ -20,7 +20,10 @@ export interface LessonProgress {
 function read<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
-    return raw === null ? fallback : (JSON.parse(raw) as T);
+    if (raw === null) return fallback;
+    const value: unknown = JSON.parse(raw);
+    // A stored null, or something of the wrong kind, reads as nothing stored
+    return value === null || typeof value !== typeof fallback || Array.isArray(value) !== Array.isArray(fallback) ? fallback : (value as T);
   } catch {
     return fallback;
   }

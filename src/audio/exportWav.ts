@@ -231,7 +231,8 @@ export function stemTracks(opts: Pick<RenderOptions, 'tracks' | 'clips' | 'start
 
 /**
  * The most seconds a ring-out export runs past the end of its range, for release, reverb and echo
- * tails: as long as the reverb's impulse response, a track's own Delay or Reverb insert, or `least`
+ * tails: as long as the reverb's impulse response, a track's own Delay or Reverb insert, the master
+ * delay's repeats (when a track sends to it), or `least`
  * (RING_OUT_LISTEN), whichever is longest. An export's file ends sooner once its tails have died
  * away (see ringOutTail.ts).
  */
@@ -244,7 +245,13 @@ export function ringOutSeconds(masterFx: MasterFx, tracks: Track[] = [], bpm = 1
   const hall = masterFx.room
     ? Math.min(ROOM_MAX_SECONDS, useSoundLibrary.getState().metas[masterFx.room]?.seconds ?? masterFx.reverbDecay)
     : roomSeconds(masterFx.roomStyle ?? 'hall', designedDecay(masterFx.reverbDecay));
-  return Math.max(least, hall + 0.5, inserts > 0 ? inserts + 0.5 : 0);
+  // The master delay's repeats, when a track feeds it, until they've fallen 60 dB (up to MAX_ECHO_TAIL)
+  let echoes = 0;
+  if (masterFx.delayFeedback > 0 && audibleTracks(tracks).some((t) => t.delaySend > 0)) {
+    const repeats = Math.log(0.001) / Math.log(Math.min(0.8, masterFx.delayFeedback));
+    echoes = Math.min(MAX_ECHO_TAIL, repeats * delaySeconds(masterFx.delayTime, bpm));
+  }
+  return Math.max(least, hall + 0.5, inserts > 0 ? inserts + 0.5 : 0, echoes);
 }
 
 /** The frames of a render's range (before any ring-out). */
@@ -255,14 +262,8 @@ const rangeFrames = (opts: RenderOptions) => Math.round(secondsBetween(opts.star
  * if any track feeds the delay and its repeats take longer to fall 60 dB.
  */
 function loopTailSeconds(opts: RenderOptions): number {
-  const { masterFx, bpm } = opts;
-  let tail = ringOutSeconds(masterFx, opts.tracks, bpm);
-  const echoes = audibleTracks(opts.tracks).some((t) => t.delaySend > 0) && masterFx.delayFeedback > 0;
-  if (echoes) {
-    const repeats = Math.log(0.001) / Math.log(Math.min(0.8, masterFx.delayFeedback));
-    tail = Math.max(tail, Math.min(MAX_ECHO_TAIL, repeats * delaySeconds(masterFx.delayTime, bpm)));
-  }
-  return tail;
+  // (the echoes are in it: see ringOutSeconds)
+  return ringOutSeconds(opts.masterFx, opts.tracks, opts.bpm);
 }
 
 /** The tempo a render plays at. */

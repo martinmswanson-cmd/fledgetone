@@ -343,7 +343,10 @@ export class AdaptiveMusic {
   schedule(playing) {
     const offline = 'startRendering' in this.ctx;
     const horizon = offline ? this.ctx.length / this.ctx.sampleRate : this.ctx.currentTime + 1.5;
-    while (playing.next < horizon && !playing.stopped) {
+    // A state fading out keeps its pieces coming until the fade ends (a shuffled or gapped state
+    // would otherwise go quiet a second or two into a longer fade)
+    const until = playing.stopAt ?? Infinity;
+    while (playing.next < Math.min(horizon, until) && !playing.stopped) {
       if (!playing.queue.length) {
         // End of a pass: a silence (if the state has one), then another pass
         const g = playing.state.gap;
@@ -370,6 +373,7 @@ export class AdaptiveMusic {
           env.gain.linearRampToValueAtTime(0, at + dur);
           source.connect(env).connect(playing.groups.get(group));
           source.start(at, a + skip, dur);
+          if (until < at + dur) source.stop(until);
           playing.sources.add(source);
           source.onended = () => playing.sources.delete(source);
         }
@@ -379,19 +383,29 @@ export class AdaptiveMusic {
       playing.lastPiece = i;
       playing.next += b - a;
     }
-    if (!offline && !playing.stopped) {
+    if (!offline && !playing.stopped && playing.next < until) {
       clearTimeout(playing.timer);
       playing.timer = setTimeout(() => this.schedule(playing), 400);
     }
   }
 
   stopState(playing, at, fade = 0) {
-    playing.stopped = true;
-    clearTimeout(playing.timer);
     if (fade > 0) {
-      playing.bus.gain.cancelScheduledValues(at);
-      playing.bus.gain.setValueAtTime(playing.bus.gain.value || 1, at);
-      playing.bus.gain.linearRampToValueAtTime(0, at + fade);
+      // From wherever its level is then, mid fade-in included (cancelling would drop the fade-in
+      // and jump its level)
+      const gain = playing.bus.gain;
+      if (gain.cancelAndHoldAtTime) gain.cancelAndHoldAtTime(at);
+      else {
+        gain.cancelScheduledValues(at);
+        gain.setValueAtTime(gain.value, at);
+      }
+      gain.linearRampToValueAtTime(0, at + fade);
+      // Its pieces carry on to the end of the fade, then stop
+      playing.stopAt = at + fade;
+      this.schedule(playing);
+    } else {
+      playing.stopped = true;
+      clearTimeout(playing.timer);
     }
     for (const s of playing.sources) {
       try {
@@ -617,5 +631,14 @@ export class AdaptiveMusic {
   stop() {
     if (this.current?.sources) this.stopState(this.current, this.ctx.currentTime);
     this.current = null;
+  }
+
+  /** Stop everything and take the player's sound out of the mix for good (it can't be used after). */
+  dispose() {
+    this.stop();
+    this.stopSfx();
+    clearTimeout(this.timer);
+    this.out.disconnect();
+    this.sfxOut.disconnect();
   }
 }

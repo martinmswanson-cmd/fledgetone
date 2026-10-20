@@ -95,7 +95,7 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
           <input
             value={clip.name}
             // One undo step for the whole rename
-            onFocus={() => useTimelineStore.getState().checkpoint()}
+            onFocus={() => useTimelineStore.getState().beginEdit()}
             onChange={(e) => useTimelineStore.getState().renameClip(clip.id, e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
             className="h-7 w-40 bg-transparent border border-transparent hover:border-forge-border focus:border-cyan-500 rounded-md px-2 text-sm font-semibold text-forge-text focus:outline-none"

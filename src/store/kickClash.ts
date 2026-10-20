@@ -11,7 +11,7 @@ import { midiOf } from './noteTools';
 
 /** The kick on the drum kits' note map (as the Pump follows it). */
 const KICK_NOTE = 'C1';
-/** Hits closer than this (bars: a 96th of a bar, about 5 ms at 140 BPM) count as together. */
+/** Hits closer than this (bars: a 96th of a bar, about 18 ms at 140 BPM) count as together. */
 const TOGETHER = 1 / 96;
 /** Notes at or below A2 (110 Hz) sit in the kick's range and mask it. */
 const LOW_MIDI = 45;

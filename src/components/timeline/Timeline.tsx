@@ -197,9 +197,11 @@ export const Timeline: React.FC = () => {
       setMarquee(null);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   // Tell the store which stretch of the lanes is on screen (the ruler draws only that; zoom anchors in it)
@@ -358,9 +360,9 @@ export const Timeline: React.FC = () => {
       } else if (key === 'c') {
         s.setTool('razor');
       } else if (key === 'i') {
-        s.setLoopIn(s.playheadPosition);
+        s.setLoopIn(livePlayhead());
       } else if (key === 'o') {
-        s.setLoopOut(s.playheadPosition);
+        s.setLoopOut(livePlayhead());
       } else if (key === 'l' && e.shiftKey) {
         // Video-editor style shuttle: Shift+L a bar forward (L is the loop), J back, K play / pause
         e.preventDefault();

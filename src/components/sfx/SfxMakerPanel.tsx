@@ -6,7 +6,7 @@
  */
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import * as Tone from 'tone';
+import { liveContext } from '../../audio/liveContext';
 import { Copy, Dices, Download, Gamepad2, Layers, Play, Plus, RefreshCw, Shuffle, Square, Star, Trash2, Upload, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { isAudioKind } from '../../audio/instrumentCatalog';
@@ -176,6 +176,8 @@ const noteName = (freq: number) => {
 // ---- Playing ----
 
 let playing: AudioBufferSourceNode | null = null;
+/** Every sound playing or waiting to (Hear variations queues several), so Stop stops them all */
+const sounding = new Set<AudioBufferSourceNode>();
 const playListeners = new Set<() => void>();
 const usePlaying = () => {
   const [, bump] = useState(0);
@@ -187,11 +189,14 @@ const usePlaying = () => {
   return playing;
 };
 function stop() {
-  try {
-    playing?.stop();
-  } catch {
-    // already ended
+  for (const src of sounding) {
+    try {
+      src.stop();
+    } catch {
+      // already ended
+    }
   }
+  sounding.clear();
   playing = null;
   playListeners.forEach((l) => l());
 }
@@ -199,7 +204,7 @@ function stop() {
 /** Play rendered samples (mono, or stereo channels) now (a loop goes round until stopped), stopping whatever was playing. */
 async function audition(samples: Float32Array | Float32Array[], sampleRate: number, loop = false, when = 0) {
   await initAudio();
-  const ctx = Tone.getContext().rawContext as AudioContext;
+  const ctx = liveContext.rawContext as AudioContext;
   const channels = Array.isArray(samples) ? samples : [samples];
   const buffer = ctx.createBuffer(channels.length, channels[0].length, sampleRate);
   channels.forEach((x, c) => buffer.copyToChannel(x as Float32Array<ArrayBuffer>, c));
@@ -210,7 +215,9 @@ async function audition(samples: Float32Array | Float32Array[], sampleRate: numb
   if (!when) stop();
   src.start(ctx.currentTime + when);
   playing = src;
+  sounding.add(src);
   src.onended = () => {
+    sounding.delete(src);
     if (playing === src) {
       playing = null;
       playListeners.forEach((l) => l());

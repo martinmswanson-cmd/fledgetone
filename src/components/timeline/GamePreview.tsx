@@ -18,7 +18,8 @@ import { ruleFor, transitionCue } from '../../store/transitions';
 import { bridgeFor } from '../../audio/gameKit';
 import { AuditionButton, TransitionMatrix } from './GameMatrix';
 import { gameKitSong } from './gameKitSong';
-import * as Tone from 'tone';
+import { liveContext } from '../../audio/liveContext';
+import { livePlayhead } from '../../store/playheadClock';
 import { createZip } from '../../audio/zip';
 import { buildGameKit, KIT_LAYOUTS, type KitLayout } from '../../audio/gameKit';
 import { buildRuntimeKit } from '../../audio/runtimeKit';
@@ -242,7 +243,7 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
     if (!stinger) return;
     try {
       const at = await fireStinger(stinger, timing);
-      const wait = Math.max(0, (at - Tone.getContext().currentTime) * 1000);
+      const wait = Math.max(0, (at - liveContext.currentTime) * 1000);
       window.setTimeout(() => setLit(id), wait);
       window.setTimeout(() => setLit((cur) => (cur === id ? null : cur)), wait + 400);
     } catch {
@@ -330,7 +331,7 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
               <button
                 type="button"
                 onClick={() => {
-                  const message = st().placeStinger(x.id, st().playheadPosition);
+                  const message = st().placeStinger(x.id, livePlayhead());
                   showToast(message ?? `"${x.name}" is on a new track at the playhead.`);
                 }}
                 className="h-8 w-7 flex items-center justify-center rounded border border-forge-border text-forge-muted hover:text-forge-text"
@@ -415,7 +416,7 @@ export const GamePanel: React.FC = () => {
       jump();
       // play(), not togglePlay(): a second press while sounds load mustn't call the first off
       if (!s.isPlaying) void s.play();
-      if (cue && cue.leadIn === 0) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + 0.1);
+      if (cue && cue.leadIn === 0) void playNotesAt(cue.instrumentKey, cue.notes, liveContext.currentTime + 0.1);
       if (bridge && s.isPlaying) void fireStinger(bridge, 'now');
       return;
     }
@@ -432,22 +433,28 @@ export const GamePanel: React.FC = () => {
     } else if (playingNow && when === 'end') next = playingNow.to;
     if (cue && next - at < cue.leadIn) next += Math.ceil((cue.leadIn - (next - at)) / unit - 1e-6) * unit;
     const ms = secondsBetween(at, next, songTempo(s)) * 1000;
-    if (cue) void playNotesAt(cue.instrumentKey, cue.notes, Tone.getContext().currentTime + ms / 1000);
+    if (cue) void playNotesAt(cue.instrumentKey, cue.notes, liveContext.currentTime + ms / 1000);
     setPending(sec.id);
     if (bridge || written) {
       // The song stops on the line while the stinger (or bridge) plays, then comes in on the new state
       // (On the line worked out above, which a phrase, the loop's end or a lead-in may have moved)
-      if (bridge) void fireStinger(bridge, 'now', Tone.getContext().currentTime + ms / 1000);
+      if (bridge) void fireStinger(bridge, 'now', liveContext.currentTime + ms / 1000);
       if (written) for (const c of written.clips) {
         const key = s.tracks.find((t) => t.id === c.trackId)?.instrumentKey;
-        if (key) void playNotesAt(key, c.notes, Tone.getContext().currentTime + ms / 1000);
+        if (key) void playNotesAt(key, c.notes, liveContext.currentTime + ms / 1000);
       }
       timer.current = window.setTimeout(() => {
         const st = useTimelineStore.getState();
-        if (st.isPlaying) st.pause();
+        // Stopped by then: the bridge plays out, and the song stays stopped
+        if (!st.isPlaying) return;
+        st.pause();
+        const pausedAt = useTimelineStore.getState().playheadPosition;
         timer.current = window.setTimeout(() => {
+          // Stopped (or played, or moved) during the bridge: leave it as the user left it
+          const now = useTimelineStore.getState();
+          if (now.isPlaying || now.playheadPosition !== pausedAt) return;
           jump();
-          void useTimelineStore.getState().play();
+          void now.play();
         }, (Math.max(written ? 0 : 1, bridgeBars) * 240 * 1000) / tempoAt(next, songTempo(s)) - 40);
       }, Math.max(0, ms - 15));
       return;

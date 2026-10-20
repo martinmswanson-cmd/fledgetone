@@ -92,6 +92,7 @@ export const TakesDialog: React.FC<{ clipId: string; onClose: () => void }> = ({
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       setDrag(null);
       let { from: a, to: b } = current;
       // A click: the beat (or with Shift the 16th) it's in
@@ -104,6 +105,7 @@ export const TakesDialog: React.FC<{ clipId: string; onClose: () => void }> = ({
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
   return (

@@ -41,9 +41,11 @@ export function useScrub(originRef: React.RefObject<HTMLElement | null>) {
         document.body.style.cursor = '';
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
       };
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
     },
     [originRef]
   );

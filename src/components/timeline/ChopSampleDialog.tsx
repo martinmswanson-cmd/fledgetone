@@ -34,10 +34,12 @@ function followPointer(onMove: (ev: PointerEvent) => void): void {
     document.body.style.cursor = '';
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
   };
   document.body.style.cursor = 'ew-resize';
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 }
 
 export const ChopSampleDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ clipId, onClose }) => {

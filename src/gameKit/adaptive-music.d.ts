@@ -36,4 +36,6 @@ export class AdaptiveMusic {
   setSfxVolume(volume: number, seconds?: number): void;
   setVolume(volume: number, seconds?: number): void;
   stop(): void;
+  /** Stop everything and take the player's sound out of the mix for good (it can't be used after). */
+  dispose(): void;
 }

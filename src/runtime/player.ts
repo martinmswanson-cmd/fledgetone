@@ -63,7 +63,12 @@ function songOf(p: ProjectSnapshot): GameKitSong {
  * an AdaptiveMusic player ready to play it.
  */
 export async function loadSong(source: string | object, opts: LoadOptions = {}): Promise<AdaptiveMusic> {
-  const raw = typeof source === 'string' ? await (await fetch(source)).json() : source;
+  let raw: unknown = source;
+  if (typeof source === 'string') {
+    const res = await fetch(source);
+    if (!res.ok) throw new Error(`Couldn't load ${source}: ${res.status} ${res.statusText}`);
+    raw = await res.json();
+  }
   const project = parseProject(raw);
   if (project.sounds?.length) await importEmbeddedSounds(project.sounds);
   // With stem groups the player mixes the stems, so each state's whole mix isn't made

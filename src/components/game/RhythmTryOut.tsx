@@ -5,11 +5,11 @@
  * this computer (Bluetooth headphones, for one, play late). Both are remembered in this browser.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import * as Tone from 'tone';
+import { afterMaster, liveContext } from '../../audio/liveContext';
 import { Gamepad2, Loader2, RotateCcw, X } from 'lucide-react';
 import { masterFxOf, useTimelineStore } from '../../store/timelineStore';
 import { audibleTracks, renderArrangement } from '../../audio/exportWav';
-import { initAudio, liveMix } from '../../audio/engine';
+import { initAudio } from '../../audio/engine';
 import { barToSeconds } from '../../audio/tempoMap';
 import { showcaseData } from '../../store/showcase';
 import { buildChart, type RhythmDifficulty } from '../../store/rhythmChart';
@@ -82,7 +82,8 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
         }
         if (!cancelled) setBuffer(cache.buffer);
       } catch (err) {
-        if (!cancelled) showToast(`Couldn't make the rhythm game: ${err instanceof Error ? err.message : String(err)}.`);
+        if (cancelled) return;
+        showToast(`Couldn't make the rhythm game: ${err instanceof Error ? err.message : String(err)}.`);
         onClose();
       }
     })();
@@ -94,12 +95,12 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
   // The game: made again when the chart or the offset changes
   useEffect(() => {
     if (!buffer || !host.current || !chart.length) return;
-    const ctx = Tone.getContext().rawContext as AudioContext;
+    const ctx = liveContext.rawContext as AudioContext;
     const g = new RhythmGame(host.current, {
       ctx,
       buffer,
       chart,
-      out: liveMix.auditionInput.input as unknown as AudioNode,
+      out: afterMaster(),
       offsetMs: offset,
       fallSeconds: FALL[difficulty],
       events: { judge: () => {}, finish: (r) => setResult(r) },
@@ -121,7 +122,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
         onClose();
         return;
       }
-      if (!RHYTHM_KEYS.has(e.code) && e.code !== 'KeyR') return;
+      if ((!RHYTHM_KEYS.has(e.code) && e.code !== 'KeyR') || e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       if (down && e.code === 'KeyR' && !e.repeat) {

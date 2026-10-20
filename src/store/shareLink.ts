@@ -34,9 +34,30 @@ const fromBase64Url = (text: string): Uint8Array<ArrayBuffer> => {
   return bytes;
 };
 
+/** The most a link may unpack to: far more than any song, but a made-up link can't fill the memory */
+const MAX_UNPACKED = 32 * 1024 * 1024;
+
 async function pipe(bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | DecompressionStream): Promise<Uint8Array<ArrayBuffer>> {
-  const out = new Blob([bytes]).stream().pipeThrough(stream);
-  return new Uint8Array(await new Response(out).arrayBuffer());
+  const reader = new Blob([bytes]).stream().pipeThrough(stream).getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > MAX_UNPACKED) {
+      await reader.cancel();
+      throw new Error('the link holds more than a song would');
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
 }
 
 /**
@@ -50,15 +71,16 @@ function shortIds(project: ProjectSnapshot): ProjectSnapshot {
   const renamed: ProjectSnapshot = {
     ...project,
     clips: project.clips.map((c) => ({ ...c, id: `c${next()}` })),
-    markers: project.markers?.map((m) => ({ ...m, id: `m${next()}` })),
     stingers: project.stingers?.map((s) => ({ ...s, notes: s.notes.map((note) => ({ ...note, id: '' })) })),
   };
   // Track ids are pointed at from all over (clips, bus outputs, sends, a Pump's source, "send:" lanes,
-  // MIDI mappings, the game's rules and costumes...), a stinger's from transitions: rename these
+  // MIDI mappings, the game's rules and costumes...), a stinger's from transitions, a marker's (a
+  // game state's) from the transition rules ("from>to") and the state options: rename these
   // everywhere at once
   const ids = new Map<string, string>();
   for (const [list, letter] of [
     [project.tracks, 't'],
+    [project.markers, 'm'],
     [project.stingers, 's'],
     [project.sfx, 'x'],
     [project.costumes, 'o'],

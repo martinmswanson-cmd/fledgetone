@@ -28,10 +28,12 @@ function followPointer(cursor: string, onMove: (ev: PointerEvent) => void): void
     document.body.style.cursor = '';
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
   };
   document.body.style.cursor = cursor;
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
 }
 
 const pill = (on: boolean) =>
