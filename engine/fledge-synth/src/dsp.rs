@@ -261,24 +261,20 @@ fn log_cosh(x: f32) -> f32 {
 impl Shaper {
     #[inline]
     pub fn tick(&mut self, kind: u32, x: f32) -> f32 {
-        // Only the part the shape adds (shape(x) - x) is antialiased: the straight part passes
-        // as it is, rather than through a two-sample average that dulls the treble
+        // First-order ADAA: the shape's average across the step from the last sample. (Antialiasing
+        // only the part the shape adds would leave the straight part half a sample early, and with
+        // the drive's gain in front that mismatch is loud)
         if kind != self.kind {
             // Another shape: its own integral at the last sample (else a one-sample spike)
             self.kind = kind;
-            self.f1 = shape_integral(kind, self.x1) - self.x1 * self.x1 / 2.0;
+            self.f1 = shape_integral(kind, self.x1);
         }
-        let f = shape_integral(kind, x) - x * x / 2.0;
+        let f = shape_integral(kind, x);
         let dx = x - self.x1;
-        let r = if dx.abs() < 1e-4 {
-            let m = 0.5 * (x + self.x1);
-            shape(kind, m) - m
-        } else {
-            (f - self.f1) / dx
-        };
+        let y = if dx.abs() < 1e-4 { shape(kind, 0.5 * (x + self.x1)) } else { (f - self.f1) / dx };
         self.x1 = x;
         self.f1 = f;
-        x + r
+        y
     }
     pub fn reset(&mut self) {
         *self = Shaper::default();
@@ -289,7 +285,9 @@ impl Shaper {
 /// the drive rises (more grit, not more level).
 pub fn shaper_makeup(kind: u32, gain: f32) -> f32 {
     let probe = 0.3;
-    let y = shape(kind, probe * gain).abs().max(1e-6);
+    // (Fold doesn't keep rising: measured through it, the makeup would swing with the drive.
+    // Its peak level is what matters)
+    let y = if kind == 4 { (probe * gain).min(1.0) } else { shape(kind, probe * gain).abs().max(1e-6) };
     // An RMS-ish match is closer than a peak match for driven sounds: blend toward the gain
     (y / probe).max(0.25)
 }
@@ -520,13 +518,14 @@ fn knee_integral(x: f32) -> f32 {
 impl SafetyClip {
     #[inline]
     pub fn tick(&mut self, x: f32) -> f32 {
-        // Only what the knee takes off (knee(x) - x) is antialiased: below the knee the sound
-        // passes exactly, at every frequency
-        let f = knee_integral(x) - x * x / 2.0;
+        // Below the knee the sound passes exactly; past it, first-order ADAA (the knee's average
+        // across the step, which never passes the ceiling)
+        let f = knee_integral(x);
         let dx = x - self.x1;
-        let y = x + if dx.abs() < 1e-4 {
-            let m = 0.5 * (x + self.x1);
-            knee(m) - m
+        let y = if x.abs() <= KNEE && self.x1.abs() <= KNEE {
+            x
+        } else if dx.abs() < 1e-4 {
+            knee(0.5 * (x + self.x1))
         } else {
             (f - self.f1) / dx
         };
@@ -662,6 +661,50 @@ mod tests {
             worst = worst.max(s.tick(kind, x).abs());
         }
         assert!(worst < 0.1, "spiked to {worst}");
+    }
+
+    /// A band-limited saw (a few harmonics), the steepest thing the oscillators send.
+    fn saw(i: usize, hz: f32, sr: f32) -> f32 {
+        (1..40).map(|k| (2.0 * PI * hz * k as f32 * i as f32 / sr).sin() / k as f32).sum::<f32>() * 0.55
+    }
+
+    #[test]
+    fn heavy_drive_on_a_saw_stays_level() {
+        let sr = 48000.0;
+        for kind in 1..=5u32 {
+            for db in [24.0f32, 36.0, 48.0] {
+                let gain = 10f32.powf(db / 20.0);
+                let makeup = shaper_makeup(kind, gain);
+                let mut s = Shaper::default();
+                let peak = (0..9600).map(|i| (s.tick(kind, 0.5 * saw(i, 110.0, sr) * gain) / makeup).abs()).fold(0.0, f32::max);
+                // (A clipping shape tops out at 1 before the makeup, the lopsided one at 1.34)
+                assert!(peak * makeup < 1.4, "kind {kind} at {db} dB: peak {}", peak * makeup);
+            }
+        }
+    }
+
+    #[test]
+    fn fold_drive_keeps_its_level_as_the_drive_rises() {
+        let sr = 48000.0;
+        let level = |db: f32| {
+            let gain = 10f32.powf(db / 20.0);
+            let mut s = Shaper::default();
+            let sum: f32 = (0..9600).map(|i| (s.tick(4, 0.3 * (2.0 * PI * 130.0 * i as f32 / sr).sin() * gain) / shaper_makeup(4, gain)).powi(2)).sum();
+            10.0 * (sum / 9600.0).log10()
+        };
+        let levels: Vec<f32> = [12.0, 16.0, 18.0, 20.0, 22.0, 24.0, 30.0, 36.0].iter().map(|&d| level(d)).collect();
+        let (lo, hi) = levels.iter().fold((f32::MAX, f32::MIN), |(a, b), &l| (a.min(l), b.max(l)));
+        assert!(hi - lo < 6.0, "levels {levels:?}");
+    }
+
+    #[test]
+    fn loud_steep_sound_rounds_off_below_the_ceiling() {
+        let sr = 48000.0;
+        for amp in [1.0f32, 1.5] {
+            let mut c = SafetyClip::default();
+            let pinned = (0..48000).filter(|&i| c.tick(amp * saw(i, 110.0, sr)).abs() >= CEIL - 1e-4).count();
+            assert!(pinned == 0, "amp {amp}: {pinned} samples on the ceiling");
+        }
     }
 
 }
