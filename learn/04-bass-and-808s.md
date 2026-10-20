@@ -89,7 +89,7 @@ Select the **808 Bass** track (click its header) and look at the Track Inspector
 
 Tune to key snaps every note the 808 plays to the nearest note of the key, so a stray click can't clash with the chords. Your notes in the clip don't change, only what you hear. It starts on the key it hears in your other parts, which here may read **C Major**: the same notes as A minor, so either works.
 
-The other knobs: **Drive** and **Character** add grit, **Tone** darkens it, **Top layer** adds harmonics so the 808 is heard on phone and laptop speakers, and **Punch** is the knock at the start of each note. The presets are good starting points: **Punchy**, **Distorted** and **Blown-out (rage)** for harder styles, **Clean deep** for a pure sub.
+The other knobs: **Drive** and **Character** add grit, **Tone** darkens it, **Top layer** adds harmonics so the 808 is heard on phone and laptop speakers, and **Punch** is the knock at the start of each note. The presets are good starting points: **Punchy**, **Distorted** and **Blown-out** for harder styles, **Clean deep** for a pure sub.
 
 ### Let the kick through
 

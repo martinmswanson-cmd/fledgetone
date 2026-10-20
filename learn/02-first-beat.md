@@ -97,7 +97,7 @@ The long hat becomes eight quick hits getting louder. Try **1/16 triplet** for a
 
 Pick the beat you like best (undo back to it if you need to). Now make it last.
 
-1. Press **Esc** to close the piano roll.
+1. Press **Esc** to close the piano roll (press it twice if notes are selected).
 2. Drag the **OUT** bracket back to bar 5, so the loop covers four bars.
 3. Right-click your clip and choose **Fill to loop Out**. The menu says **bar 5**: that's where the copies stop.
 

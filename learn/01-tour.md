@@ -8,7 +8,7 @@ Fledgetone is a whole music studio in a browser tab. In ten minutes you'll open 
 
 ### Open a song
 
-The quickest way to learn a studio is to open something that already sounds good. Fledgetone comes with 75 **starters**: short songs in every style, ready to play and change.
+The quickest way to learn a studio is to open something that already sounds good. Fledgetone comes with 79 **starters**: short songs in every style, ready to play and change.
 
 1. Open the **File** menu at the top left and choose **New…**.
 2. Type *boss* in the search box and click **Boss Fight**.
@@ -46,7 +46,7 @@ Under the timeline is the **bottom panel**, with tabs for the **Mixer**, the **L
 
 ### The menus and search
 
-Every tool lives in one of the menus along the top, laid out like a desktop studio: **File** to open, save and export, **Song** for arranging, **Track** for the selected track, **Tools**, **Video**, **Game**, **View**, **Learn** and **Help**.
+Every tool lives in one of the menus along the top, laid out like a desktop studio: **File** to open, save and export, **Edit** for undo, copy and paste, **Song** for arranging, **Track** for the selected track, **Plugins**, **Tools**, **Video**, **Game**, **View**, **Learn** and **Help**.
 
 You don't have to know where anything is, though. Press **Ctrl+K** (Cmd+K) and type what you're after: *reverb*, *export*, *violin*, *metronome*. Search finds tools, settings, instruments, starters and the guide.
 

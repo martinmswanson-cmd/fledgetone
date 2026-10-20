@@ -2,7 +2,8 @@ import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
 import { PALETTE_SHORTCUT } from '../store/uiStore';
-import { isDrumKind } from '../audio/instrumentCatalog';
+import { isAudioKind, isDrumKind } from '../audio/instrumentCatalog';
+import { isMixTrack } from '../store/buses';
 import { useMySounds } from '../store/mySounds';
 
 /**
@@ -46,6 +47,7 @@ const selected = () => {
   const s = tl();
   return s.tracks.find((t) => t.id === s.selectedTrackId) ?? s.tracks[0];
 };
+const clipIds = () => new Set(tl().clips.map((c) => c.id));
 const noteCount = () => tl().clips.reduce((n, c) => n + c.notes.length, 0);
 const pointCount = () => tl().tracks.reduce((n, t) => n + (t.automation ?? []).reduce((m, l) => m + l.points.length, 0), 0);
 /** A fingerprint of every note's pitch, so a key change shows as a change */
@@ -71,11 +73,19 @@ const pressedIn = (group: string) => document.querySelector(`${EXPORT_DIALOG} [r
 const showcaseOpen = () =>
   ui().dialog === 'export' && [...document.querySelectorAll<HTMLSelectElement>(`${EXPORT_DIALOG} select`)].some((sel) => sel.value === 'showcase');
 /** The selected track's instrument button in the Inspector, and the list it opens */
+/** The instrument of a track, by id */
+const instrumentOf = (id?: string) => tl().tracks.find((t) => t.id === id)?.instrumentKey;
 const INSTRUMENT_BUTTON = 'button[aria-label^="Instrument: "]';
 const instrumentListOpen = () => !!document.querySelector('[role="listbox"][aria-label="Instruments"]');
 const instrumentTarget = () => (instrumentListOpen() ? '[role="listbox"][aria-label="Instruments"]' : INSTRUMENT_BUTTON);
 const showTrackInspector = () => {
   ensureTrack();
+  // A track with an instrument to pick (not a bus, a return or an audio track)
+  const cur = selected();
+  if (cur && (isMixTrack(cur) || isAudioKind(cur.instrumentKey))) {
+    const t = tl().tracks.find((x) => !isMixTrack(x) && !isAudioKind(x.instrumentKey));
+    if (t) tl().selectTrack(t.id);
+  }
   tl().toggleInspector(true);
   ui().setInspectorTab('track');
 };
@@ -175,7 +185,7 @@ const BEGINNER: Lesson = {
       title: 'Open a starter',
       body: 'Open the **File** menu, click **New…**, then open a group of starters and pick one. *Lo-Fi* (in **Chill & World**) is a gentle first one. (This replaces the current timeline.)',
       target: dialogOr('new', 'New arrangement', NEW_BUTTON),
-      task: { hint: 'New, then a starter', begin: () => tl().projectName, done: (name) => tl().projectName !== name && tl().clips.length > 0 },
+      task: { hint: 'New, then a starter', begin: clipIds, done: (b) => tl().clips.length > 0 && !tl().clips.some((c) => (b as Set<string>).has(c.id)) },
     },
     {
       title: 'Play it',
@@ -200,7 +210,7 @@ const BEGINNER: Lesson = {
       body: 'Click the instrument name at the top of the panel on the right and pick another, or type to search: *piano*, *choir*, *guitar*, *808*. Click ▶ beside one to hear it first. The part plays the same notes on the new sound.',
       target: instrumentTarget,
       before: showTrackInspector,
-      task: { hint: 'Pick a new instrument', begin: () => `${selected()?.id}:${selected()?.instrumentKey}`, done: (b) => `${selected()?.id}:${selected()?.instrumentKey}` !== b },
+      task: { hint: 'Pick a new instrument', begin: () => ({ id: selected()?.id, key: selected()?.instrumentKey }), done: (b) => instrumentOf((b as { id?: string }).id) !== (b as { key?: string }).key },
     },
     {
       title: 'Change the tempo',
@@ -240,7 +250,7 @@ const BEGINNER: Lesson = {
     },
     {
       title: 'Export your song',
-      body: 'Click **Export**. Under **Format**, choose **MP3** for sharing or **WAV** for the best quality, then click **Export** at the bottom of the dialog to save the file.',
+      body: 'Click **Export**. Under **Export**, pick **Mixdown**; then under **Format**, choose **MP3** for sharing or **WAV** for the best quality, then click **Export** at the bottom of the dialog to save the file.',
       target: dialogOr('export', 'Export audio', EXPORT_BUTTON),
       task: { hint: 'Open Export', done: () => ui().dialog === 'export' },
     },
@@ -270,9 +280,9 @@ const SHOWCASE: Lesson = {
     },
     {
       title: 'Open the showcase export',
-      body: 'Open the **File** menu and click **Showcase video…**. Export opens set to a video of the notes playing.',
+      body: 'Open the **File** menu and click **Showcase video (YouTube, TikTok)…**. Export opens set to a video of the notes playing.',
       target: () => (ui().dialog === 'export' ? EXPORT_DIALOG : '#menu-file'),
-      task: { hint: 'File › Showcase video…', done: showcaseOpen },
+      task: { hint: 'File › Showcase video (YouTube, TikTok)…', done: showcaseOpen },
     },
     {
       title: 'Make it tall',
@@ -325,7 +335,7 @@ const SOUNDS: Lesson = {
       title: 'Search',
       body: 'Type what you’re after: a name (*sax*), a mood (*dark*, *angelic*) or a style (*8-bit*, *orchestral*). Click ▶ beside one to hear it, then click it to use it.',
       target: instrumentTarget,
-      task: { hint: 'Pick an instrument', begin: () => `${selected()?.id}:${selected()?.instrumentKey}`, done: (b) => `${selected()?.id}:${selected()?.instrumentKey}` !== b },
+      task: { hint: 'Pick an instrument', begin: () => ({ id: selected()?.id, key: selected()?.instrumentKey }), done: (b) => instrumentOf((b as { id?: string }).id) !== (b as { key?: string }).key },
     },
     {
       title: 'Star a favourite',
@@ -401,7 +411,7 @@ const INTERMEDIATE: Lesson = {
     },
     {
       title: 'Add some space',
-      body: 'Raise the **Studio Reverb Send**. All tracks share one reverb, so a little on each glues the song together.',
+      body: 'Raise the **Studio Reverb Send** (under the sends, not the Reverb effect above it). All tracks share one reverb, so a little on each glues the song together.',
       target: '[data-search="sends"]',
       task: { hint: 'Raise the reverb send', begin: () => selected()?.reverbSend ?? 0, done: (v) => (selected()?.reverbSend ?? 0) > (v as number) + 0.04 },
     },
@@ -527,7 +537,7 @@ const EXPERT: Lesson = {
     },
     {
       title: 'Export for a game',
-      body: 'In **Export**, the **Intro + loop** range renders an intro and a seamless loop with loop points a game engine reads, and **Layers** exports each track for adaptive music.',
+      body: 'In **Export**, the **Intro + loop** range renders an intro and a seamless loop with loop points a game engine reads, and **Layers** exports each track for adaptive music. (Move the loop’s In past bar 1 first: everything before it is the intro. With **Intro + loop** chosen, **Stems** becomes **Layers**.)',
       target: dialogOr('export', 'Export audio', EXPORT_BUTTON),
       task: { hint: 'Open Export', done: () => ui().dialog === 'export' },
     },
@@ -549,7 +559,6 @@ const EXPERT: Lesson = {
 
 
 /** Clips on the timeline, by id (a variation, a chord clip and an accompaniment each add one). */
-const clipIds = () => new Set(tl().clips.map((c) => c.id));
 const newClip = (before: unknown) => tl().clips.some((c) => !(before as Set<string>).has(c.id));
 /** A game starter is open: sections to switch between and stingers to fire. */
 const gameSongOpen = () => tl().markers.filter((m) => m.anchor !== 'time').length >= 2 && tl().stingers.length > 0;
@@ -634,11 +643,11 @@ const GAME_MUSIC: Lesson = {
       title: 'Switch states',
       body: 'Click a state’s pad. The music switches on the next bar (or as its transition says), the way the game will when the player walks into danger.',
       target: gameTarget('states'),
-      task: { hint: 'Click a state', begin: () => tl().loopRegion.inBar, done: (bar) => tl().loopRegion.inBar !== bar },
+      task: { hint: 'Click a state', begin: () => JSON.stringify(tl().loopRegion), done: (l) => JSON.stringify(tl().loopRegion) !== l },
     },
     {
       title: 'The transition matrix',
-      body: 'Open **Transitions**: a row for the state you come from, a column for the one you go to. Each cell is a rule: a cut, a fill, a riser, a hit, a crossfade, a stinger or a bridge.',
+      body: 'Open **Transitions**: a row for the state you come from, a column for the one you go to. Each cell is a rule: a cut, a fill, a riser, an impact (hit), a crossfade, a stinger or a bridge.',
       target: gameTarget('transitions'),
       task: { hint: 'Open Transitions', done: () => !!document.querySelector('[data-game="transitions"] details[open]') },
     },
@@ -657,7 +666,7 @@ const GAME_MUSIC: Lesson = {
     {
       title: 'Hear it like the game',
       body: '**Audition like the game** renders the states exactly as the game kit exports them and plays them with the kit’s own player: pads for the states and stingers, and every rule as you set it, bridges and crossfades included.',
-      target: () => (auditionOpen() ? '[role="dialog"][aria-label="Audition like the game"]' : gameTarget('stingers')()),
+      target: () => (auditionOpen() ? '[role="dialog"][aria-label="Audition like the game"]' : gameTarget('export')()),
       task: { hint: 'Click Audition like the game', done: auditionOpen },
     },
     {
@@ -668,7 +677,7 @@ const GAME_MUSIC: Lesson = {
     },
     {
       title: 'Ready for the game',
-      body: '**Game kit** (in this tab) exports it all for Godot, Unity or the web: every state as a seamless loop, the bridges and stingers, and a player that follows your rules. The next tutorial makes the music react to what the player does.',
+      body: '**Export game kit** (in this tab) exports it all for Godot, Unity or the web: every state as a seamless loop, the bridges and stingers, and a player that follows your rules. The next tutorial makes the music react to what the player does.',
     },
   ],
 };
@@ -723,7 +732,7 @@ const GAME_REACT: Lesson = {
     {
       title: 'Hear it all',
       body: 'Open **Audition like the game**. Under the state pads: **Costume** and **Effect** pads (underwater, muffled, low health, dream) and a slider for each parameter. Start a state and move them.',
-      target: () => (auditionOpen() ? '[role="dialog"][aria-label="Audition like the game"]' : gameTarget('stingers')()),
+      target: () => (auditionOpen() ? '[role="dialog"][aria-label="Audition like the game"]' : gameTarget('export')()),
       task: { hint: 'Open the audition', done: auditionOpen },
     },
     {
@@ -735,8 +744,8 @@ const GAME_REACT: Lesson = {
     {
       title: 'Try it in a game',
       body: '**Try it in a game** drops your song into a little game: in the **3D arena** or the **2D platformer**, get close to the guard (or a blob) and the music switches to the chase and builds; a parameter called **danger** follows it, one called **health** follows your hearts. The **Rhythm game** turns your song’s own notes into a chart to play. Esc closes it.',
-      target: () => (ui().dialog === 'tryOut' ? null : gameTarget('states')()),
-      task: { hint: 'Game › Try it in a game…', done: () => ui().dialog === 'tryOut' },
+      target: () => (ui().dialog === 'tryOut' ? null : gameTarget('export')()),
+      task: { hint: 'Click Try it in a game (or Game › Try it in a game…)', done: () => ui().dialog === 'tryOut' },
     },
     {
       title: 'Ship it',
@@ -789,7 +798,7 @@ const EXPRESSIVE: Lesson = {
     },
     {
       title: 'Let it breathe',
-      body: 'Close the piano roll and open the **Song** menu: **Breathe** eases the tempo back into the end of every phrase and picks it up again after, and slows into the last phrase, as a pianist playing rubato does. Set the loop around a part first to breathe only there.',
+      body: 'Close the piano roll and open the **Song** menu: **Breathe** eases the tempo back into the end of every phrase and picks it up again after, and slows into the last phrase, as a pianist playing rubato does. With the loop on it breathes only the loop; press **L** to turn the loop off for the whole song.',
       target: '#menu-song',
       task: { hint: 'Song › Breathe', begin: () => tl().tempoPoints.length, done: (n) => tl().tempoPoints.length > (n as number) },
     },

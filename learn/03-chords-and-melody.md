@@ -54,7 +54,7 @@ The rows for notes outside A minor (the black keys) go dark, and every A is lit.
 
 Next to SCALE is **CHORD**. Set it to **Triad in key** and a single click adds a whole chord built from the note you click: click a D and you get D minor (D, F, A). That's how to write your own chords by hand. Set it back to **Single notes** when you're done, and see the [piano roll guide](/guide/writing-notes-the-piano-roll/) for every option.
 
-> With no notes selected, **Delete** removes the whole clip, not a note. If that happens, **Ctrl+Z** (Cmd+Z on a Mac) brings it back.
+> With no notes selected, **Delete** does nothing in the piano roll. To delete the whole clip, close the piano roll (**Esc**), click the clip and press **Delete**; **Ctrl+Z** (Cmd+Z on a Mac) brings it back.
 
 ### Add an accompaniment
 

@@ -11,10 +11,10 @@ A loop that sounds great for eight bars gets dull by the thirtieth. A song keeps
 Use a loop of your own if you have one (from [Make your first beat](/learn/first-beat/) or [Chords and a melody](/learn/chords-and-melody/)). To follow along exactly, build this one in a couple of minutes:
 
 1. **File › New…** and click **Blank timeline**.
-2. Right-click the **Space Clav** lane at bar 1, choose **Chord progression…**, set the key to **A minor** and the progression to **i – VI – III – VII (epic)** (Am – F – C – G), leave **2× (8 bars)** and **Held chords**, and click **Make clip at bar 1**.
+2. Right-click the **Space Clav** lane at bar 1, choose **Chord progression…**, set the key to **A minor** and the progression to **i – VI – III – VII (epic)** (Am – F – C – G), set **Times through** to **2× (8 bars)** and **Played as** to **Held chords**, and click **Make clip at bar 1**.
 3. Do the same on the **Brass Stabs** lane, but set **Played as** to **Arpeggio (16ths)**.
-4. Right-click the **Drums** lane at bar 1, choose **Drummer…**, leave **Backbeat (rock, pop)**, set **Length** to **8 bars** and click **Make clip at bar 1**.
-5. Right-click the **Am F C G** clip on Space Clav and choose **Bass line from these chords**. It goes on a new **Bass line** track. The blank timeline's own **Slap Bass** track is now spare: click its name and choose **Track › Delete**.
+4. Right-click the **Drums** lane at bar 1, choose **Drummer…**, set **Style** to **Backbeat (rock, pop)**, set **Length** to **8 bars** and click **Make clip at bar 1**.
+5. Right-click the **Am F C G** clip on Space Clav and choose **Bass line from these chords**. It goes on a new **Bass line** track. The blank timeline's own **Slap Bass** track is now spare: click its name and choose **Track › Delete “Slap Bass”**.
 
 {{shot:arrange-loop}}
 
@@ -117,7 +117,7 @@ Listen for the shape: thin, groove, rise, hit, breathe, lift, fade. If a section
 
 ### The quick way: Arrange a beat
 
-When you just want a song from a loop, **Song › Arrange a beat…** does the copying and thinning for you. On its **Song form** tab, set where the loop starts and that it's **8 bars**, choose a length for each section, and click **Lay out the song**. It writes Intro, Hook, Verse, Hook, Verse, Bridge, Hook and Outro, with markers for each. The **Drops & switches** tab has the drop-outs, stops, risers and **Speed up into the drop** with every option. It's all one **Ctrl+Z**, so try it on a fresh copy of your loop and compare it with your own arrangement. See [Arranging a beat](/guide/the-timeline/#arranging-a-beat).
+When you just want a song from a loop, **Song › Arrange a beat: drops, beat switch, song form, tag…** does the copying and thinning for you. Click its **Song form** tab, set where the loop starts and that it's **8 bars**, choose a length for each section, and click **Lay out the song**. It writes Intro, Hook, Verse, Hook, Verse, Bridge, Hook and Outro, with markers for each. The **Drops & switches** tab has the drop-outs, stops, risers and **Speed up into the drop** with every option. It's all one **Ctrl+Z**, so try it on a fresh copy of your loop and compare it with your own arrangement. See [Arranging a beat](/guide/the-timeline/#arranging-a-beat).
 
 {{shot:arrange-song-form}}
 
