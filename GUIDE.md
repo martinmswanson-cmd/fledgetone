@@ -665,20 +665,37 @@ Tools for making a beat from a sample: a loop or a recording of your own (or one
 
 ### Fledge Synth
 
-**Fledge Synth** is Fledgetone's own synthesizer, made for modern electronic music: dubstep and riddim basses, wobbles, reese and neuro basses, supersaw leads, future bass chords and dark pads. Add it with **Add Track → Fledge Synth** (it's also under **Plugins › Browse plugins… › Instruments**). Its window opens with the sound laid out in sections:
+**Fledge Synth** is Fledgetone's own synthesizer, made for modern electronic music: dubstep, riddim and tearout basses, wobbles, growls and "yoi" talking basses, supersaw leads, future bass chords, keys, pads and risers. Add it with **Add Track → Fledge Synth** (it's also under **Plugins › Browse plugins… › Instruments**).
 
-- **Preset** at the top: Init saw, Wobble bass, Growl bass, Riddim, Reese, Neuro bass, Talking bass, Sub bass, Supersaw lead, Future bass chords, Hoover, Pluck, Dark pad and Sine lead. They're all about as loud as each other, so you can flick through them without a jump in level.
+**Presets and macros** (always at the top):
+
+- **Preset**: 35 sounds in groups (Bass, Lead, Keys, Chords, Pad, FX), with **‹ ›** to step through them. They're all about as loud as each other, so flicking through causes no jump in level.
+- **Macro 1 to 4**: four knobs that each move several settings at once. Under each is what it moves in this preset (on Wobble, Macro 1 speeds up the wobble). Automate a macro to change a sound across a song with one lane.
 - **Knobs**: drag up or down (hold Shift for fine steps), or click one and use the arrow keys. Double-click a knob to put it back. Each shows its value under its name.
-- **Oscillator A and B**: each plays a **Table** of shapes (Basic shapes goes sine → triangle → saw → square as **Position** turns; Vowels, Growl FM, Metal FM and Fold are the talking and growling ones). **Unison** stacks up to 16 copies, spread by **Detune**; **Blend** moves weight from the centre copy to the detuned ones, and **Width** spreads them across the stereo field. **Octave**, **Semi** and **Fine** tune it; **On** turns an oscillator off.
-- **Filter**: low pass (12, 24 and a ladder), band pass, high pass, notch, **Comb** (metallic, pitched to the note) and **Formant** (vowel sounds as **Cutoff** moves). **Key track** makes the filter follow the note; **Envelope** opens it with the filter envelope.
-- **Sub, noise and FM**: a clean sine an octave or two below (kept in the centre), noise, and **FM B→A**, where oscillator B bends A for growls and bells.
-- **Envelopes**: **Volume** and **Filter** attack, decay, sustain and release, and a **Pitch drop** for punchy starts.
-- **Drive**: six kinds of distortion (soft, warm, hard clip, fold, asymmetric), with **Mix**. It's cleaned so high notes don't turn harsh.
-- **LFO 1 (wobble)** and **LFO 2**: **Sync to song** locks them to the tempo (1/4, 1/8, triplets, dotted, up to 4 bars), so a wobble stays in time when you change the tempo. Each moves up to two **Targets** (cutoff, table position, pitch, volume, drive, FM and more) by its **Amount**, which can go either way. **Restart on note** starts the wobble from the top with each note.
-- **Playing**: **Voices** is Poly (chords), Mono or Legato (notes slide into each other, with **Glide**). **Bend** sets the pitch bend range, **Velocity** how much louder harder notes play, and the **mod wheel** can move any target.
-- **Output**: **OTT** (the squashed, up-front sound of modern bass music), **Width**, and **Level**. Below 120 Hz the sound is kept in mono, so the bass stays solid, and a safety limiter keeps every note under −1 dB.
 
-Every knob can be automated (a lane per setting, like any plugin), learned to a MIDI controller, frozen, bounced and exported, and the settings are saved with the song. It's light on the computer: an 8-note supersaw chord takes a few percent of one core.
+**Sound** tab:
+
+- **Oscillator A and B**: each plays a **Table** of 32 shapes that **Position** moves through. The 16 tables run from Basic shapes (sine → triangle → saw → square) and Pulse width to the talking and growling ones (Vowels, Growl FM, FM 1:2, Screech), Sync sweep, Organ, Octave stack, Digital, Resonant and Random harmonics. The picture shows the wave as you change it.
+  - **Warp** bends the wave: **Sync** (the classic sync sweep), **Bend**, **Squeeze**, **Mirror**, **Quantize** (lo-fi steps), **Fold**, and **Ring** (times the other oscillator), by its **Amount**.
+  - **Unison** stacks up to 16 copies, spread by **Detune**; **Blend** moves weight from the centre copy to the detuned ones, and **Width** spreads them across the stereo field. **Stack** tunes the copies in turn up an octave, a fifth or the notes of a chord (with Unison 2 or more).
+  - **Octave**, **Semi**, **Fine** and **Pan**; **Phase** and **Random** set where each note starts in the wave (0 Random gives every note the same punch); **On** turns an oscillator off.
+  - The menu at the top right sends it to **Filter 1**, **Filter 2**, **Both filters**, or **Straight out** past them.
+- **Filter 1** and **Filter 2**: low pass (12, 24 and a ladder), band pass, high pass, notch, **Comb** (metallic, pitched to the note) and **Formant** (vowel sounds as **Cutoff** moves). The two run side by side, or **Filter 1 into 2** one after the other. **Key track** makes a filter follow the note; **Envelope** opens it with the filter envelope.
+- **Sub, noise and FM**: a clean sine an octave or two below (kept in the centre), noise (with its own route), and **FM B→A**, where oscillator B bends A for growls and bells.
+- **Drive**: six kinds of distortion (soft, warm, hard clip, fold, asymmetric), with **Mix**, cleaned so high notes don't turn harsh.
+- **Envelopes**: **Volume** and **Filter** attack, decay, sustain and release (each drawn as you set it), and a **Pitch drop** for punchy starts.
+- **Playing**: **Voices** is Poly (chords), Mono or Legato (notes slide into each other, with **Glide**). **Bend** sets the pitch bend range, **Velocity** how much louder harder notes play.
+
+**Modulation** tab:
+
+- **LFO 1 to 4**: Sine, Triangle, Saw, Square, **Wobble**, Steps, Drift, **Pump** (the sidechain duck: set a target of Volume at +100%), and **Drawn 1** and **2**. **Sync to song** locks the rate to the tempo (1/4, 1/8, triplets, dotted, up to 4 bars), so a wobble stays in time when you change the tempo. **Mode** is Free (one LFO for every note), Restart (from the top with each note) or One shot (once per note, like an envelope); **Phase** sets where it starts and **Fade in** brings it in slowly. Each moves up to two **Targets** by its **Amount**, which can go either way.
+- **Mod envelope**: a third envelope for anything (the Yoi preset sweeps its vowel with it).
+- **Matrix**: eight slots, each a **Source** (the LFOs, the three envelopes, velocity, the note, mod wheel, aftertouch, pitch bend, a random value per note, the macros) moving a **Target** (pitch, either filter's cutoff and resonance, table positions, warps, levels, detune, FM, drive, noise, pan, the LFOs' rates, the effects' mix, width) by an **Amount**. The presets keep their macros in slots 5 to 8.
+- **Drawn shapes**: drag across the 16 bars to draw a rhythm or a curve; **Smooth** slides each step into the next. Choose Drawn 1 or 2 as an LFO's shape to use it (gates, stutters, custom wobbles).
+
+**Effects** tab (part of the preset, each with **On**): **EQ** (low, mid and high, each with its frequency), **Chorus**, **Phaser** or **Flanger**, **Delay** (in time with the song or in ms, **Ping-pong**, **Tone**) and **Reverb** (size, decay, tone, pre-delay). **Output** has **OTT** (the squashed, up-front sound of modern bass music), **Width** and **Level**. Below 120 Hz the sound is kept in mono, so the bass stays solid, and a safety limiter keeps every note under −1 dB.
+
+Every knob can be automated (a lane per setting, like any plugin), learned to a MIDI controller, frozen, bounced and exported, and the settings are saved with the song. It's light on the computer: an 8-note chord on the heaviest presets takes about a tenth of one core.
 
 ### Plugins
 

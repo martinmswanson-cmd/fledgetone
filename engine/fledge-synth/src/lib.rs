@@ -4,6 +4,7 @@
 
 pub mod abi;
 pub mod dsp;
+pub mod fx;
 pub mod params;
 pub mod presets;
 pub mod synth;

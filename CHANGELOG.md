@@ -7,11 +7,12 @@ second update on the same day gets `-2`, and so on).
 ## 2026.10.20-11 — Fledge Synth
 
 - **Fledge Synth**, Fledgetone's own synthesizer, made for dubstep, bass music and modern electronic songs. Add it with **Add Track → Fledge Synth**.
-  - Two wavetable oscillators with up to 16 unison voices each, a clean sub, noise and FM.
-  - Filters including comb and formant (talking basses), envelopes, drive, and an OTT for the modern squashed sound.
-  - **Wobble LFOs that stay in time with the song**, at any tempo.
-  - 14 presets, from wobble, growl, riddim, reese and neuro basses to supersaw leads, future bass chords and pads, all at about the same loudness.
-  - Its own window with knobs in sections, instead of a list of sliders. Every knob can be automated.
+  - Two wavetable oscillators (16 tables) with up to 16 unison voices each, warps (sync, bend, squeeze, mirror, quantize, fold, ring), chord and octave stacks, a clean sub, noise and FM.
+  - Two filters, side by side or one into the other, including comb and formant (talking basses); each oscillator goes to either, both, or straight out.
+  - Four LFOs, including wobble and pump shapes and two you draw yourself, all **in time with the song**. Three envelopes, four macros and an eight-slot mod matrix.
+  - Built-in effects: EQ, chorus, phaser or flanger, delay and reverb, plus drive and an OTT.
+  - 35 presets in groups: wobble, growl, riddim, tearout, yoi and neuro basses, leads, keys, chords, pads and risers, all at about the same loudness.
+  - Its own window, in three tabs, with knobs, a picture of each wave, each LFO and each envelope. Every knob can be automated.
   - Ear-safe: the bass is kept in mono and nothing it plays goes over −1 dB.
 - Plugins that use the song's tempo now get it, including tempo changes.
 

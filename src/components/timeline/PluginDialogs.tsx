@@ -182,6 +182,11 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
         }
         gui = made;
         el.appendChild(made);
+        // A wide window (Fledge Synth's) opens wholly on screen
+        requestAnimationFrame(() => {
+          const box = el.parentElement?.getBoundingClientRect();
+          if (box && box.right > window.innerWidth - 8) setPos((p) => ({ ...p, x: Math.max(8, window.innerWidth - box.width - 8) }));
+        });
       },
       (err) => setFailed(`Its window couldn't open: ${err instanceof Error ? err.message : String(err)}`)
     );

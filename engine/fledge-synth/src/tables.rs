@@ -64,16 +64,7 @@ pub fn level_for(inc: f32) -> usize {
     }
 }
 
-static TABLES: [OnceLock<Table>; 8] = [
-    OnceLock::new(),
-    OnceLock::new(),
-    OnceLock::new(),
-    OnceLock::new(),
-    OnceLock::new(),
-    OnceLock::new(),
-    OnceLock::new(),
-    OnceLock::new(),
-];
+static TABLES: [OnceLock<Table>; 16] = [const { OnceLock::new() }; 16];
 
 /// Table `i` (made the first time it's asked for).
 pub fn table(i: usize) -> &'static Table {
@@ -213,11 +204,84 @@ fn frame_spectrum(which: usize, t: f64) -> Spectrum {
         // Metal FM: a sine modulated at three times its pitch: bright, clangy, still in tune
         6 => analyse(|p| (2.0 * PI * p + 5.0 * t * (6.0 * PI * p).sin() + 0.4 * t * (2.0 * PI * p).sin()).sin()),
         // Fold: a sine driven into a wave folder harder and harder
-        _ => analyse(|p| {
+        7 => analyse(|p| {
             let g = 1.0 + 7.0 * t;
             (g * (2.0 * PI * p).sin() * PI / 2.0).sin()
         }),
+        // Sync sweep: a saw restarted by a master cycle, its own pitch climbing (the hard-sync lead)
+        8 => {
+            let r = 1.0 + 7.0 * t;
+            analyse(|p| 2.0 * (p * r).fract() - 1.0)
+        }
+        // Organ: drawbars pulled out one by one, from a flute to the full organ
+        9 => {
+            const BARS: [(usize, f64); 8] = [(1, 1.0), (2, 0.8), (3, 0.6), (4, 0.6), (6, 0.45), (8, 0.4), (10, 0.3), (12, 0.25)];
+            let pulled = 1.5 + t * 6.5;
+            sines(|h| {
+                BARS.iter().enumerate().filter(|(_, b)| b.0 == h).map(|(k, b)| b.1 * (pulled - k as f64).clamp(0.0, 1.0)).sum()
+            })
+        }
+        // Octave stack: sines an octave apart joining in from the bottom up
+        10 => {
+            let n = 1.0 + t * 6.0;
+            sines(|h| {
+                if !h.is_power_of_two() {
+                    return 0.0;
+                }
+                let k = h.trailing_zeros() as f64;
+                (n - k).clamp(0.0, 1.0) / (1.0 + k).sqrt()
+            })
+        }
+        // Digital: a saw in coarser and coarser steps (a cheap sampler's sound)
+        11 => {
+            let steps = (64.0 * (4.0f64 / 64.0).powf(t)).round().max(2.0);
+            analyse(|p| 2.0 * ((p * steps).floor() / (steps - 1.0)) - 1.0)
+        }
+        // Resonant: a decaying cosine burst each cycle, its ring rising (the old phase-distortion
+        // synths' resonant saw)
+        12 => {
+            let ring = 1.0 + t * 15.0;
+            analyse(|p| (1.0 - p) * (2.0 * PI * p * ring).cos())
+        }
+        // Screech: a saw with one narrow, loud peak sweeping up through the harmonics
+        13 => {
+            let peak = 3.0 * (60.0f64 / 3.0).powf(t);
+            let s = saw();
+            s.iter().enumerate().map(|(h, &(c, sn))| {
+                let g = 0.15 + 3.0 / (1.0 + ((h as f64 - peak) / (1.0 + peak * 0.06)).powi(2));
+                (c * g, sn * g)
+            }).collect()
+        }
+        // FM 1:2: a sine modulated an octave up: hollow and reedy to snarling
+        14 => analyse(|p| (2.0 * PI * p + 6.0 * t * (4.0 * PI * p).sin()).sin()),
+        // Random harmonics: four seeded random spectra, morphing one into the next
+        _ => {
+            let x = t * 3.0;
+            let i = (x.floor() as usize).min(2);
+            mix(&random_spectrum(i as u64), &random_spectrum(i as u64 + 1), x - i as f64)
+        }
     }
+}
+
+/// A random but fixed spectrum (the same every time for `seed`), falling off like a saw.
+fn random_spectrum(seed: u64) -> Spectrum {
+    let mut x = 0x2545_F491_4F6C_DD1Du64 ^ (seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+    let mut next = move || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        (x >> 11) as f64 / (1u64 << 53) as f64
+    };
+    (0..=TOP)
+        .map(|h| {
+            if h == 0 || h > 200 {
+                return (0.0, 0.0);
+            }
+            let a = next() / (h as f64).powf(0.8);
+            let ph = next() * 2.0 * PI;
+            (a * ph.cos(), a * ph.sin())
+        })
+        .collect()
 }
 
 /// The spectrum of one cycle given as a function of phase (0..1), finely sampled.

@@ -64,6 +64,9 @@ function familyModule(family: PluginFamily): Promise<WebAssembly.Module> {
 /** Download (or read the kept copy of) a family's WebAssembly ahead of use. */
 export const preloadFamily = (family: PluginFamily): Promise<unknown> => familyModule(family);
 
+/** A family's compiled WebAssembly (for a panel that draws with the plugin's own code). */
+export const builtinModule = (family: PluginFamily): Promise<WebAssembly.Module> => familyModule(family);
+
 // --- The processor, added once per audio context ---
 
 const added = new WeakMap<BaseAudioContext, Promise<void>>();

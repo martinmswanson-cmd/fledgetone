@@ -168,3 +168,22 @@ pub extern "C" fn bb_set_program(h: i32, i: i32) {
 pub extern "C" fn bb_get_program(h: i32) -> i32 {
     get(h).map_or(-1, |x| x.program)
 }
+
+static mut WAVE: [f32; 256] = [0.0; 256];
+
+/// One cycle of `table` at `pos` (0..1) under `warp` at `amount`, as 256 samples (for the
+/// editor's picture of the oscillator; not part of the plugin interface).
+#[no_mangle]
+pub extern "C" fn fledge_wave(table: i32, pos: f32, warp: i32, amount: f32) -> *const f32 {
+    let t = crate::tables::table((table.max(0) as usize).min(crate::params::TABLES.len() - 1));
+    let (w, a) = (warp.max(0) as u32, amount.clamp(0.0, 1.0));
+    #[allow(static_mut_refs)]
+    let out = unsafe { &mut WAVE };
+    for (i, x) in out.iter_mut().enumerate() {
+        let ph = crate::synth::warp_phase(w, a, i as f32 / 256.0);
+        // (The ring warp is drawn against a sine an octave up)
+        let other = (4.0 * std::f32::consts::PI * i as f32 / 256.0).sin();
+        *x = crate::synth::warp_amp(w, a, t.read(4, pos, ph), other);
+    }
+    out.as_ptr()
+}

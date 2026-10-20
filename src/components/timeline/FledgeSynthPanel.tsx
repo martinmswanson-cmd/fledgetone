@@ -1,34 +1,62 @@
-import React, { useRef, useSyncExternalStore } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { BuiltinControls, BuiltinParam } from '../../audio/plugins/builtinHost';
-import { choiceIndex, choiceValue, FLEDGE, FLEDGE_SECTIONS, lfoControls, oscControls, type FledgeControl } from '../../audio/plugins/fledgeLayout';
+import {
+  bipolarOf,
+  bipolarValue,
+  choiceIndex,
+  choiceValue,
+  drawnPoint,
+  FLEDGE_DESTS,
+  FLEDGE_SECTIONS,
+  lfoControls,
+  lfoPoint,
+  oscControls,
+  shapeControls,
+  slotControls,
+  type FledgeControl,
+} from '../../audio/plugins/fledgeLayout';
+import { fledgeWave, type FledgeWave } from '../../audio/plugins/fledgeWave';
 
 /**
- * Fledge Synth's own window (the synth in engine/fledge-synth): its controls in sections, as a
- * synth's panel lays them out, instead of the list of sliders other built-in plugins get. Knobs
- * drag up and down (Shift for fine steps), take the arrow keys, and double-click back to where
- * they started.
+ * Fledge Synth's own window (the synth in engine/fledge-synth): its controls in sections across
+ * three tabs (Sound, Modulation, Effects), as a synth's panel lays them out, with the macros and
+ * presets always in view, a picture of each oscillator's wave, each LFO's shape, the envelopes,
+ * and an editor for the two drawn shapes. Knobs drag up and down (Shift for fine steps), take the
+ * arrow keys, and double-click back to where they started. Controls find their parameter by its
+ * name (see fledgeLayout.ts).
  */
 
-type Params = BuiltinParam[];
+type Ctl<K extends FledgeControl['kind']> = Extract<FledgeControl, { kind: K }>;
+type Get = (name: string) => { i: number; p: BuiltinParam } | undefined;
+type Set = (name: string, v: number) => void;
 
-const Knob: React.FC<{ c: Extract<FledgeControl, { kind: 'knob' }>; p: BuiltinParam | undefined; set: (v: number) => void }> = ({ c, p, set }) => {
+const TAB_KEY = 'bosBeatbox.fledgeTab';
+const TABS = ['Sound', 'Modulation', 'Effects'] as const;
+type Tab = (typeof TABS)[number];
+
+const Knob: React.FC<{ c: Ctl<'knob'>; get: Get; set: Set; size?: number }> = ({ c, get, set, size = 36 }) => {
   const drag = useRef<{ y: number; v: number } | null>(null);
-  if (!p) return null;
+  const hit = get(c.p);
+  if (!hit) return null;
+  const { p } = hit;
   const v = p.value;
+  const r = size * 0.36;
+  const mid = size / 2;
   // A 270° arc: from the bottom left round to the bottom right (from the top for bipolar ones)
   const angle = (x: number) => (-135 + 270 * x) * (Math.PI / 180);
-  const point = (x: number) => [18 + 13 * Math.sin(angle(x)), 18 - 13 * Math.cos(angle(x))];
+  const point = (x: number) => [mid + r * Math.sin(angle(x)), mid - r * Math.cos(angle(x))];
   const arc = (from: number, to: number) => {
     const [x0, y0] = point(from);
     const [x1, y1] = point(to);
-    return `M ${x0} ${y0} A 13 13 0 ${Math.abs(to - from) * 270 > 180 ? 1 : 0} 1 ${x1} ${y1}`;
+    return `M ${x0} ${y0} A ${r} ${r} 0 ${Math.abs(to - from) * 270 > 180 ? 1 : 0} 1 ${x1} ${y1}`;
   };
   const start = c.bipolar ? 0.5 : 0;
   const [from, to] = v >= start ? [start, v] : [v, start];
   const [hx, hy] = point(v);
-  const nudge = (d: number) => set(Math.max(0, Math.min(1, v + d)));
+  const put = (x: number) => set(c.p, Math.max(0, Math.min(1, x)));
   return (
-    <div className="flex flex-col items-center w-[52px] select-none" title={`${p.name}: ${p.text}. Drag up or down (Shift: fine); double-click to put it back`}>
+    <div className="flex flex-col items-center w-[50px] select-none" title={`${p.name}: ${p.text}. Drag up or down (Shift: fine); double-click to put it back`}>
       <div
         role="slider"
         tabIndex={0}
@@ -45,29 +73,28 @@ const Knob: React.FC<{ c: Extract<FledgeControl, { kind: 'knob' }>; p: BuiltinPa
         }}
         onPointerMove={(e) => {
           if (!drag.current) return;
-          const per = e.shiftKey ? 1000 : 180;
-          set(Math.max(0, Math.min(1, drag.current.v + (drag.current.y - e.clientY) / per)));
+          put(drag.current.v + (drag.current.y - e.clientY) / (e.shiftKey ? 1000 : 180));
         }}
         onPointerUp={() => (drag.current = null)}
         onPointerCancel={() => (drag.current = null)}
-        onDoubleClick={() => set(p.defaultValue)}
+        onDoubleClick={() => set(c.p, p.defaultValue)}
         onKeyDown={(e) => {
           const step = e.shiftKey ? 0.002 : 0.01;
-          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') nudge(step);
-          else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') nudge(-step);
-          else if (e.key === 'PageUp') nudge(0.1);
-          else if (e.key === 'PageDown') nudge(-0.1);
-          else if (e.key === 'Home') set(0);
-          else if (e.key === 'End') set(1);
+          if (e.key === 'ArrowUp' || e.key === 'ArrowRight') put(v + step);
+          else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') put(v - step);
+          else if (e.key === 'PageUp') put(v + 0.1);
+          else if (e.key === 'PageDown') put(v - 0.1);
+          else if (e.key === 'Home') put(0);
+          else if (e.key === 'End') put(1);
           else return;
           e.preventDefault();
         }}
       >
-        <svg width={36} height={36} viewBox="0 0 36 36" aria-hidden>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
           <path d={arc(0, 1)} fill="none" stroke="currentColor" strokeWidth={3} className="text-forge-border" strokeLinecap="round" />
           {to - from > 0.002 && <path d={arc(from, to)} fill="none" stroke="currentColor" strokeWidth={3} className="text-fuchsia-400" strokeLinecap="round" />}
-          <circle cx={18} cy={18} r={8} className="fill-forge-bg" />
-          <line x1={18} y1={18} x2={hx} y2={hy} stroke="currentColor" strokeWidth={2} className="text-forge-text" strokeLinecap="round" />
+          <circle cx={mid} cy={mid} r={r * 0.6} className="fill-forge-bg" />
+          <line x1={mid} y1={mid} x2={hx} y2={hy} stroke="currentColor" strokeWidth={2} className="text-forge-text" strokeLinecap="round" />
         </svg>
       </div>
       <span className="text-[10px] leading-tight text-forge-text truncate max-w-full">{c.label}</span>
@@ -76,38 +103,43 @@ const Knob: React.FC<{ c: Extract<FledgeControl, { kind: 'knob' }>; p: BuiltinPa
   );
 };
 
-const Choice: React.FC<{ c: Extract<FledgeControl, { kind: 'choice' }>; p: BuiltinParam | undefined; set: (v: number) => void; wide?: boolean }> = ({ c, p, set, wide }) => {
-  if (!p) return null;
-  const n = c.options.length;
+const Choice: React.FC<{ c: Ctl<'choice'>; get: Get; set: Set; w?: string; bare?: boolean }> = ({ c, get, set, w = 'w-[112px]', bare }) => {
+  const hit = get(c.p);
+  if (!hit) return null;
+  const select = (
+    <select
+      value={choiceIndex(hit.p.value, c.options.length, c.cap)}
+      onChange={(e) => set(c.p, choiceValue(Number(e.target.value), c.cap))}
+      aria-label={hit.p.name}
+      className="h-6 w-full bg-forge-bg border border-forge-border rounded px-1 text-[11px] text-forge-text"
+    >
+      {c.options.map((o, k) => (
+        <option key={k} value={k}>
+          {o}
+        </option>
+      ))}
+    </select>
+  );
+  if (bare) return <div className={w}>{select}</div>;
   return (
-    <label className={`flex flex-col gap-0.5 ${wide ? 'flex-1 min-w-0' : ''}`}>
+    <label className={`flex flex-col gap-0.5 ${w}`}>
       <span className="text-[10px] text-forge-muted">{c.label}</span>
-      <select
-        value={choiceIndex(p.value, n)}
-        onChange={(e) => set(choiceValue(Number(e.target.value), n))}
-        aria-label={p.name}
-        className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-[11px] text-forge-text"
-      >
-        {c.options.map((o, k) => (
-          <option key={k} value={k}>
-            {o}
-          </option>
-        ))}
-      </select>
+      {select}
     </label>
   );
 };
 
-const Toggle: React.FC<{ c: Extract<FledgeControl, { kind: 'toggle' }>; p: BuiltinParam | undefined; set: (v: number) => void }> = ({ c, p, set }) => {
-  if (!p) return null;
-  const on = p.value >= 0.5;
+const Toggle: React.FC<{ c: Ctl<'toggle'>; get: Get; set: Set }> = ({ c, get, set }) => {
+  const hit = get(c.p);
+  if (!hit) return null;
+  const on = hit.p.value >= 0.5;
   return (
     <button
       type="button"
       aria-pressed={on}
-      aria-label={p.name}
-      onClick={() => set(on ? 0 : 1)}
-      className={`h-6 px-2 rounded border text-[10px] font-mono ${on ? 'border-fuchsia-400/70 bg-fuchsia-500/15 text-fuchsia-100' : 'border-forge-border text-forge-muted hover:text-forge-text'}`}
+      aria-label={hit.p.name}
+      onClick={() => set(c.p, on ? 0 : 1)}
+      className={`h-6 px-2 rounded border text-[10px] font-mono whitespace-nowrap ${on ? 'border-fuchsia-400/70 bg-fuchsia-500/15 text-fuchsia-100' : 'border-forge-border text-forge-muted hover:text-forge-text'}`}
     >
       {c.label}
     </button>
@@ -124,117 +156,406 @@ const Section: React.FC<{ title: string; dim?: boolean; right?: React.ReactNode;
   </section>
 );
 
+/** A small picture: a path over a faint centre line. */
+const Picture: React.FC<{ d: string; w?: number; h?: number; label: string }> = ({ d, w = 140, h = 44, label }) => (
+  <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="rounded bg-black/30 shrink-0" role="img" aria-label={label}>
+    <line x1={0} y1={h / 2} x2={w} y2={h / 2} className="stroke-forge-border" strokeWidth={1} />
+    <path d={d} fill="none" className="stroke-fuchsia-300" strokeWidth={1.5} strokeLinejoin="round" />
+  </svg>
+);
+
+const pathOf = (ys: ArrayLike<number>, w: number, h: number) => {
+  let d = '';
+  for (let i = 0; i < ys.length; i++) {
+    const x = (i / (ys.length - 1)) * w;
+    const y = h / 2 - Math.max(-1, Math.min(1, ys[i])) * (h / 2 - 3);
+    d += `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+  return d;
+};
+
+/** An ADSR's shape from its 0..1 knob values (attack, decay and release as widths on the knobs' curves). */
+const adsrPath = (a: number, dcy: number, s: number, rel: number, w: number, h: number) => {
+  const unit = w / 3.4;
+  const x1 = a * unit;
+  const x2 = x1 + dcy * unit;
+  const x3 = x2 + 0.5 * unit;
+  const x4 = Math.min(w, x3 + rel * unit);
+  const y = (v: number) => h - 3 - v * (h - 6);
+  return `M0 ${y(0)}L${x1} ${y(1)}L${x2} ${y(s)}L${x3} ${y(s)}L${x4} ${y(0)}`;
+};
+
+/** Drag across the 16 bars to draw a shape. */
+const ShapeEditor: React.FC<{ n: number; get: Get; set: Set }> = ({ n, get, set }) => {
+  const { steps, smooth } = shapeControls(n);
+  const box = useRef<SVGSVGElement>(null);
+  const down = useRef(false);
+  const W = 320;
+  const H = 96;
+  const values = steps.map((c) => bipolarOf(get(c.p)?.p.value ?? 0.5));
+  const sm = get(smooth.p)?.p.value ?? 0;
+  const paint = (e: React.PointerEvent) => {
+    const r = box.current!.getBoundingClientRect();
+    const i = Math.max(0, Math.min(15, Math.floor(((e.clientX - r.left) / r.width) * 16)));
+    const v = 1 - 2 * Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+    // Steps of 0.05 (easy to hit zero and the ends)
+    set(steps[i].p, bipolarValue(Math.round(v * 20) / 20));
+  };
+  const curve = Array.from({ length: 161 }, (_, k) => drawnPoint(values, sm, k / 160));
+  return (
+    <div className="flex items-end gap-3">
+      <svg
+        ref={box}
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        className="rounded bg-black/30 cursor-crosshair touch-none shrink-0"
+        role="img"
+        aria-label={`Shape ${n}: drag to draw its 16 steps`}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          down.current = true;
+          paint(e);
+        }}
+        onPointerMove={(e) => down.current && paint(e)}
+        onPointerUp={() => (down.current = false)}
+        onPointerCancel={() => (down.current = false)}
+      >
+        <line x1={0} y1={H / 2} x2={W} y2={H / 2} className="stroke-forge-border" />
+        {values.map((v, i) => {
+          const x = (i * W) / 16;
+          const y = H / 2 - v * (H / 2 - 2);
+          return <rect key={i} x={x + 1} width={W / 16 - 2} y={Math.min(y, H / 2)} height={Math.abs(H / 2 - y)} className="fill-fuchsia-500/30" />;
+        })}
+        <path d={pathOf(curve, W, H)} fill="none" className="stroke-fuchsia-200" strokeWidth={1.5} />
+      </svg>
+      <Knob c={smooth as Ctl<'knob'>} get={get} set={set} />
+    </div>
+  );
+};
+
+/** The preset list, grouped by the category before the "/" in each name. */
+function grouped(names: string[]): Array<[string, Array<{ name: string; i: number }>]> {
+  const groups = new Map<string, Array<{ name: string; i: number }>>();
+  names.forEach((full, i) => {
+    const cut = full.indexOf('/');
+    const group = cut > 0 ? full.slice(0, cut) : '';
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group)!.push({ name: cut > 0 ? full.slice(cut + 1) : full, i });
+  });
+  return [...groups];
+}
+
 export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
-  const params: Params = useSyncExternalStore(controls.subscribe, controls.params);
-  const set = (i: number) => (v: number) => controls.set(i, v);
-  const ctl = (c: FledgeControl, wide?: boolean) =>
-    c.kind === 'knob' ? (
-      <Knob key={c.i} c={c} p={params[c.i]} set={set(c.i)} />
-    ) : c.kind === 'choice' ? (
-      <Choice key={c.i} c={c} p={params[c.i]} set={set(c.i)} wide={wide} />
-    ) : (
-      <Toggle key={c.i} c={c} p={params[c.i]} set={set(c.i)} />
-    );
-  const row = (list: FledgeControl[]) => <div className="flex flex-wrap gap-x-1 gap-y-2">{list.map((c) => ctl(c))}</div>;
-  const isOn = (i: number) => (params[i]?.value ?? 1) >= 0.5;
+  const params = useSyncExternalStore(controls.subscribe, controls.params);
+  const [tab, setTab] = useState<Tab>(() => {
+    try {
+      const t = localStorage.getItem(TAB_KEY) as Tab | null;
+      return t && TABS.includes(t) ? t : 'Sound';
+    } catch {
+      return 'Sound';
+    }
+  });
+  const [wave, setWave] = useState<FledgeWave | null>(null);
+  useEffect(() => {
+    let live = true;
+    void fledgeWave(controls.ref.family).then((w) => live && setWave(() => w));
+    return () => {
+      live = false;
+    };
+  }, [controls.ref.family]);
+
+  // Parameters by name (the names don't change; the values do)
+  const names = params.map((p) => p.name).join('\n');
+  const index = useMemo(() => new Map(names.split('\n').map((n, i) => [n, i])), [names]);
+  const get: Get = (name) => {
+    const i = index.get(name);
+    return i === undefined || !params[i] ? undefined : { i, p: params[i] };
+  };
+  const set: Set = (name, v) => {
+    const i = index.get(name);
+    if (i !== undefined) controls.set(i, v);
+  };
+  const val = (name: string) => get(name)?.p.value ?? 0;
+  const isOn = (name: string) => val(name) >= 0.5;
+  const pick = (c: FledgeControl) => (c.kind === 'choice' ? choiceIndex(val(c.p), c.options.length, c.cap) : 0);
+
+  const ctl = (c: FledgeControl, key?: React.Key) =>
+    c.kind === 'knob' ? <Knob key={key ?? c.p} c={c} get={get} set={set} /> : c.kind === 'choice' ? <Choice key={key ?? c.p} c={c} get={get} set={set} /> : <Toggle key={key ?? c.p} c={c} get={get} set={set} />;
+  const row = (list: FledgeControl[]) => <div className="flex flex-wrap gap-x-0.5 gap-y-2">{list.map((c) => ctl(c))}</div>;
   const S = FLEDGE_SECTIONS;
 
-  const osc = (name: string, at: number) => {
-    const o = oscControls(at);
-    return (
-      <Section title={`Oscillator ${name}`} dim={!isOn(at)} right={ctl(o.on)}>
-        <div className="flex">{ctl(o.table, true)}</div>
-        {row(o.knobs)}
-      </Section>
-    );
+  if (params.length < 200 || !index.has('Level')) return <p className="p-4 text-xs text-forge-muted">Loading the synth…</p>;
+
+  const drawn: [number[], number][] = [1, 2].map((n) => {
+    const s = shapeControls(n);
+    return [s.steps.map((c) => bipolarOf(val(c.p))), val(s.smooth.p)];
+  });
+
+  // What each macro moves (the matrix slots that read it)
+  const macroRoutes = (k: number) => {
+    const out: string[] = [];
+    for (let n = 1; n <= 8; n++) {
+      const s = slotControls(n);
+      if (pick(s.source) === 13 + k && pick(s.target) > 0) out.push(FLEDGE_DESTS[pick(s.target)]);
+    }
+    return out.length ? out.join(', ') : 'nothing yet';
   };
-  const lfo = (name: string, at: number) => {
-    const l = lfoControls(at);
-    const synced = isOn(at + 1);
+
+  const osc = (o: 'A' | 'B') => {
+    const c = oscControls(o);
+    const ys = wave ? wave(pick(c.table), val(c.tone[0].p), pick(c.warp), val(c.warpKnobs[0].p)) : null;
     return (
-      <Section title={name} right={[ctl(l.sync), ctl(l.restart)]}>
-        <div className="flex gap-2">
-          {ctl(l.shape, true)}
-          {synced ? ctl(l.division, true) : null}
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          {!synced && ctl(l.hz)}
-          {l.targets.map((t) => (
-            <div key={t.target.i} className="flex items-end gap-1">
-              <div className="w-[92px]">{ctl(t.target, true)}</div>
-              {ctl(t.amount)}
+      <Section title={`Oscillator ${o}`} dim={!isOn(c.on.p)} right={[<Choice key="r" c={c.route as Ctl<'choice'>} get={get} set={set} w="w-[104px]" bare />, ctl(c.on, 'on')]}>
+        <div className="flex items-start gap-2">
+          <div className="flex flex-col gap-1.5">
+            <Choice c={c.table as Ctl<'choice'>} get={get} set={set} w="w-[176px]" />
+            <div className="flex gap-1.5">
+              <Choice c={c.warp as Ctl<'choice'>} get={get} set={set} w="w-[74px]" />
+              <Choice c={c.stack as Ctl<'choice'>} get={get} set={set} w="w-[96px]" />
             </div>
-          ))}
+          </div>
+          <Picture d={ys ? pathOf(ys, 140, 52) : ''} h={52} label={`Oscillator ${o}'s wave`} />
+        </div>
+        {row(c.tone)}
+        <div className="flex flex-wrap gap-x-0.5">
+          {c.unison.map((k) => ctl(k))}
+          {c.warpKnobs.map((k) => ctl(k))}
         </div>
       </Section>
     );
   };
 
-  if (params.length < FLEDGE.COUNT) return <p className="p-4 text-xs text-forge-muted">Loading the synth…</p>;
+  const lfo = (n: number) => {
+    const l = lfoControls(n);
+    const synced = isOn(l.sync.p);
+    const shape = pick(l.shape);
+    const ys = Array.from({ length: 141 }, (_, k) => lfoPoint(shape, k / 140 + val(l.knobs[0].p), drawn));
+    return (
+      <Section key={n} title={n === 1 ? 'LFO 1' : `LFO ${n}`} right={ctl(l.sync, 'sync')}>
+        <div className="flex items-start gap-2">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex gap-1.5">
+              <Choice c={l.shape as Ctl<'choice'>} get={get} set={set} w="w-[84px]" />
+              {synced ? <Choice c={l.division as Ctl<'choice'>} get={get} set={set} w="w-[64px]" /> : null}
+            </div>
+            <Choice c={l.mode as Ctl<'choice'>} get={get} set={set} w="w-[84px]" />
+          </div>
+          <Picture d={pathOf(ys, 120, 44)} w={120} label={`LFO ${n}'s shape`} />
+        </div>
+        <div className="flex flex-wrap items-end gap-x-0.5 gap-y-2">
+          {!synced && ctl(l.hz)}
+          {l.knobs.map((k) => ctl(k))}
+        </div>
+        {l.targets.map((t) => (
+          <div key={t.target.p} className="flex items-end gap-1">
+            <Choice c={t.target as Ctl<'choice'>} get={get} set={set} w="w-[120px]" />
+            {ctl(t.amount)}
+          </div>
+        ))}
+      </Section>
+    );
+  };
+
+  const env = (title: string, list: FledgeControl[]) => {
+    const [a, dcy, s, r] = list.map((c) => val(c.p));
+    return (
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] text-forge-muted w-[64px]">{title}</p>
+          <Picture d={adsrPath(a, dcy, s, r, 120, 30)} w={120} h={30} label={`${title} envelope`} />
+        </div>
+        {row(list)}
+      </div>
+    );
+  };
+
+  const fx = (title: string, on: FledgeControl, body: React.ReactNode) => (
+    <Section title={title} dim={!isOn(on.p)} right={ctl(on, 'on')}>
+      {body}
+    </Section>
+  );
+
+  const program = controls.program();
+  const step = (d: number) => {
+    const n = controls.programs.length;
+    if (n) void controls.setProgram((((program < 0 ? (d > 0 ? -1 : 0) : program) + d) % n + n) % n);
+  };
+
   return (
-    <div className="w-[760px] max-w-[94vw] p-3 flex flex-col gap-2 text-xs text-forge-text">
+    <div className="w-[820px] max-w-[94vw] p-3 flex flex-col gap-2 text-xs text-forge-text">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 flex-1 min-w-[220px]">
-          <span className="text-forge-muted">Preset</span>
+        <div className="flex items-center gap-1 flex-1 min-w-[260px]">
+          <span className="text-forge-muted mr-1">Preset</span>
+          <button type="button" onClick={() => step(-1)} className="h-7 w-7 flex items-center justify-center rounded border border-forge-border text-forge-muted hover:text-forge-text" aria-label="Previous preset">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
           <select
-            value={controls.program()}
+            value={program}
             onChange={(e) => void controls.setProgram(Number(e.target.value))}
             aria-label="Preset"
             className="flex-1 h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
           >
-            {controls.program() < 0 && <option value={-1}>(your own sound)</option>}
-            {controls.programs.map((name, i) => (
-              <option key={i} value={i}>
-                {name}
-              </option>
-            ))}
+            {program < 0 && <option value={-1}>(your own sound)</option>}
+            {grouped(controls.programs).map(([group, list]) =>
+              group ? (
+                <optgroup key={group} label={group}>
+                  {list.map(({ name, i }) => (
+                    <option key={i} value={i}>
+                      {name}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : (
+                list.map(({ name, i }) => (
+                  <option key={i} value={i}>
+                    {name}
+                  </option>
+                ))
+              )
+            )}
           </select>
-        </label>
-        <p className="text-[10px] text-forge-muted">Drag a knob up or down; double-click it to put it back.</p>
+          <button type="button" onClick={() => step(1)} className="h-7 w-7 flex items-center justify-center rounded border border-forge-border text-forge-muted hover:text-forge-text" aria-label="Next preset">
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex items-end gap-1 rounded-md border border-forge-border bg-forge-bg/40 px-2 py-1">
+          {S.macros.map((m, k) => (
+            <div key={m.p} className="flex flex-col items-center" title={`${m.label} moves: ${macroRoutes(k + 1)}`}>
+              <Knob c={m as Ctl<'knob'>} get={get} set={set} size={32} />
+              <span className="text-[9px] text-fuchsia-200/80 max-w-[50px] truncate">{macroRoutes(k + 1)}</span>
+            </div>
+          ))}
+        </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {osc('A', FLEDGE.A)}
-        {osc('B', FLEDGE.B)}
-        <Section title="Filter" right={null}>
-          <div className="flex">{ctl(S.filter.type, true)}</div>
-          {row(S.filter.knobs)}
-        </Section>
-        <Section title="Sub, noise and FM">{row(S.sources)}</Section>
-        <Section title="Envelopes">
-          <div className="flex flex-wrap gap-3">
-            <div>
-              <p className="text-[10px] text-forge-muted mb-1">Volume</p>
-              {row(S.ampEnv)}
-            </div>
-            <div>
-              <p className="text-[10px] text-forge-muted mb-1">Filter</p>
-              {row(S.filterEnv)}
-            </div>
-            <div>
-              <p className="text-[10px] text-forge-muted mb-1">Pitch drop</p>
-              {row(S.pitchEnv)}
-            </div>
-          </div>
-        </Section>
-        <Section title="Drive">
-          <div className="flex">{ctl(S.drive.type, true)}</div>
-          {row(S.drive.knobs)}
-        </Section>
-        {lfo('LFO 1 (wobble)', FLEDGE.LFO_1)}
-        {lfo('LFO 2', FLEDGE.LFO_2)}
-        <Section title="Playing">
-          <div className="flex items-end gap-2">
-            <div className="w-[92px]">{ctl(S.play.mode, true)}</div>
-            {S.play.knobs.map((c) => ctl(c))}
-          </div>
-          <div className="flex items-end gap-1">
-            <div className="w-[92px]">{ctl(S.modWheel.target, true)}</div>
-            {ctl(S.modWheel.amount)}
-            <span className="text-[10px] text-forge-muted pb-1">mod wheel</span>
-          </div>
-        </Section>
-        <Section title="Output">{row(S.output)}</Section>
+
+      <div role="tablist" aria-label="Fledge Synth sections" className="flex gap-1 border-b border-forge-border">
+        {TABS.map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => {
+              setTab(t);
+              try {
+                localStorage.setItem(TAB_KEY, t);
+              } catch {
+                // Storage blocked: remembered for this visit only
+              }
+            }}
+            className={`h-7 px-3 -mb-px rounded-t border text-[11px] ${tab === t ? 'border-forge-border border-b-forge-panel bg-forge-panel text-fuchsia-100' : 'border-transparent text-forge-muted hover:text-forge-text'}`}
+          >
+            {t}
+          </button>
+        ))}
+        <p className="ml-auto self-center text-[10px] text-forge-muted">Drag a knob up or down; double-click it to put it back.</p>
       </div>
+
+      {tab === 'Sound' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {osc('A')}
+          {osc('B')}
+          <Section title="Filter 1">
+            <div className="flex">{ctl(S.filter1.type)}</div>
+            {row(S.filter1.knobs)}
+          </Section>
+          <Section title="Filter 2" right={ctl(S.filter2.serial, 'serial')}>
+            <div className="flex">{ctl(S.filter2.type)}</div>
+            {row(S.filter2.knobs)}
+          </Section>
+          <Section title="Sub, noise and FM">{row(S.sources)}</Section>
+          <Section title="Drive">
+            <div className="flex">{ctl(S.drive.type)}</div>
+            {row(S.drive.knobs)}
+          </Section>
+          <Section title="Envelopes" className="md:col-span-2">
+            <div className="flex flex-wrap gap-4">
+              {env('Volume', S.ampEnv)}
+              {env('Filter', S.filterEnv)}
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] text-forge-muted">Pitch drop</p>
+                {row(S.pitchEnv)}
+              </div>
+            </div>
+          </Section>
+          <Section title="Playing" className="md:col-span-2">
+            <div className="flex items-end gap-2">
+              {ctl(S.play.mode)}
+              {S.play.knobs.map((c) => ctl(c))}
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {tab === 'Modulation' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {[1, 2, 3, 4].map(lfo)}
+          <Section title="Mod envelope">{env('Mod env', S.modEnv)}</Section>
+          <Section title="Matrix" className="md:row-span-2">
+            <p className="text-[10px] text-forge-muted -mt-1">Any source moves any target, by its amount (either way). The macros use slots 5 to 8 in the presets.</p>
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => {
+              const s = slotControls(n);
+              const used = pick(s.source) > 0 && pick(s.target) > 0;
+              return (
+                <div key={n} className={`flex items-end gap-1 ${used ? '' : 'opacity-70'}`}>
+                  <span className="text-[10px] text-forge-muted w-3 pb-1">{n}</span>
+                  <Choice c={s.source as Ctl<'choice'>} get={get} set={set} w="w-[100px]" />
+                  <span className="text-forge-muted pb-1">→</span>
+                  <Choice c={s.target as Ctl<'choice'>} get={get} set={set} w="w-[110px]" />
+                  {ctl(s.amount)}
+                </div>
+              );
+            })}
+          </Section>
+          <Section title="Drawn shapes (LFO shapes Drawn 1 and 2)">
+            {[1, 2].map((n) => (
+              <div key={n} className="flex flex-col gap-1">
+                <p className="text-[10px] text-forge-muted">Shape {n}: drag across the bars to draw it; Smooth slides each step into the next</p>
+                <ShapeEditor n={n} get={get} set={set} />
+              </div>
+            ))}
+          </Section>
+        </div>
+      )}
+
+      {tab === 'Effects' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {fx('EQ', S.eq.on, row(S.eq.knobs))}
+          {fx(
+            'Chorus',
+            S.chorus.on,
+            row(S.chorus.knobs)
+          )}
+          {fx(
+            'Phaser',
+            S.phaser.on,
+            <>
+              <div className="flex">{ctl(S.phaser.mode)}</div>
+              {row(S.phaser.knobs)}
+            </>
+          )}
+          {fx(
+            'Delay',
+            S.delay.on,
+            <>
+              <div className="flex items-end gap-1.5">
+                {ctl(S.delay.sync)}
+                {ctl(S.delay.pingpong)}
+              </div>
+              <div className="flex flex-wrap items-end gap-x-0.5 gap-y-2">
+                {isOn(S.delay.sync.p) ? <Choice c={S.delay.division as Ctl<'choice'>} get={get} set={set} w="w-[72px]" /> : ctl(S.delay.ms)}
+                {S.delay.knobs.map((c) => ctl(c))}
+              </div>
+            </>
+          )}
+          {fx('Reverb', S.reverb.on, row(S.reverb.knobs))}
+          <Section title="Output">
+            <p className="text-[10px] text-forge-muted -mt-1">Below 120 Hz the sound stays mono, and nothing passes −1 dB.</p>
+            {row(S.output)}
+          </Section>
+        </div>
+      )}
     </div>
   );
 };

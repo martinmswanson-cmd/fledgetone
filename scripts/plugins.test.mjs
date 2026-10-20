@@ -93,7 +93,8 @@ test('fledge: every preset plays, stays under its ceiling and stops', async () =
       for (const n of [36, 48, 55, 60]) e.bb_midi(h, 0x80, n, 0);
       if (!Number.isFinite(peak) || peak > 0.9) problems.push(`${name} at ${bpm}: peak ${peak}`);
       if (peak < 1e-3) problems.push(`${name} at ${bpm}: silent`);
-      render(375 * 6);
+      // (Long enough for the longest release plus reverb tail)
+      render(375 * 14);
       const tail = render(40);
       if (tail > 1e-3) problems.push(`${name} at ${bpm}: still sounding ${tail} after release`);
     }
@@ -102,8 +103,9 @@ test('fledge: every preset plays, stays under its ceiling and stops', async () =
   assert.deepEqual(problems, []);
 });
 
-// The editor's layout (fledgeLayout.ts) matches the engine: every choice's list, as the engine
-// names each option, and every control on a real parameter
+// The editor's layout (fledgeLayout.ts) matches the engine: every control names a real
+// parameter, every choice's list is the engine's (as it names each option, at its place out of
+// the list's room), and every parameter has a control
 test('fledge: the editor layout matches the engine', async () => {
   const L = await import('../src/audio/plugins/fledgeLayout.ts');
   const { instance: { exports: e } } = await WebAssembly.instantiate(readFileSync(new URL('../public/fledgetone-plugins/fledge.wasm', import.meta.url)));
@@ -114,33 +116,26 @@ test('fledge: the editor layout matches the engine', async () => {
     return Buffer.from(m.subarray(p, end)).toString('utf8');
   };
   const h = e.bb_create(0, 48000);
-  assert.equal(e.bb_params(h), L.FLEDGE.COUNT);
-  const controls = [];
-  const walk = (x) => {
-    if (x && typeof x === 'object' && 'kind' in x && 'i' in x) controls.push(x);
-    else if (x && typeof x === 'object') Object.values(x).forEach(walk);
-  };
-  walk(L.FLEDGE_SECTIONS);
-  for (const at of [L.FLEDGE.A, L.FLEDGE.B]) walk(L.oscControls(at));
-  for (const at of [L.FLEDGE.LFO_1, L.FLEDGE.LFO_2]) walk(L.lfoControls(at));
+  const names = new Map();
+  for (let i = 0; i < e.bb_params(h); i++) names.set(text(e.bb_param_name(h, i)), i);
   const seen = new Set();
-  for (const c of controls) {
-    assert.ok(c.i >= 0 && c.i < L.FLEDGE.COUNT, `${c.label}: index ${c.i}`);
-    assert.ok(!seen.has(c.i), `${text(e.bb_param_name(h, c.i))} is on the panel twice`);
-    seen.add(c.i);
+  for (const c of L.allFledgeControls()) {
+    const i = names.get(c.p);
+    assert.ok(i !== undefined, `${c.p} isn't a parameter`);
+    assert.ok(!seen.has(i), `${c.p} is on the panel twice`);
+    seen.add(i);
     if (c.kind === 'choice')
       c.options.forEach((o, k) => {
-        e.bb_set(h, c.i, L.choiceValue(k, c.options.length));
-        assert.equal(text(e.bb_param_display(h, c.i)), o, text(e.bb_param_name(h, c.i)));
+        e.bb_set(h, i, L.choiceValue(k, c.cap));
+        assert.equal(text(e.bb_param_display(h, i)), o, c.p);
+        assert.equal(L.choiceIndex(e.bb_get(h, i), c.options.length, c.cap), k, c.p);
       });
     if (c.kind === 'toggle') {
-      e.bb_set(h, c.i, 1);
-      assert.equal(text(e.bb_param_display(h, c.i)), 'on', text(e.bb_param_name(h, c.i)));
+      e.bb_set(h, i, 1);
+      assert.equal(text(e.bb_param_display(h, i)), 'on', c.p);
     }
   }
-  // Every parameter but the spares has a control
-  const missing = [];
-  for (let i = 0; i < L.FLEDGE.COUNT; i++) if (!seen.has(i) && !text(e.bb_param_name(h, i)).startsWith('(spare')) missing.push(text(e.bb_param_name(h, i)));
+  const missing = [...names.keys()].filter((n) => !seen.has(names.get(n)));
   assert.deepEqual(missing, []);
   e.bb_destroy(h);
 });
