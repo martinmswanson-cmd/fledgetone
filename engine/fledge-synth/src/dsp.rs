@@ -139,12 +139,14 @@ pub struct Comb {
     buf: Vec<f32>,
     w: usize,
     damp: f32,
+    /// The loop's low pass coefficient: a 7 kHz corner at any sample rate (0.6 at 48 kHz)
+    k: f32,
 }
 
 impl Comb {
     pub fn new(sr: f32) -> Self {
         // Room for a period of 20 Hz
-        Comb { buf: vec![0.0; (sr / 20.0) as usize + 4], w: 0, damp: 0.0 }
+        Comb { buf: vec![0.0; (sr / 20.0) as usize + 4], w: 0, damp: 0.0, k: 1.0 - (-2.0 * PI * 7000.0 / sr).exp() }
     }
     #[inline]
     pub fn tick(&mut self, x: f32, period: f32, fb: f32, negative: bool) -> f32 {
@@ -153,7 +155,8 @@ impl Comb {
         // rings at the pitch it's tuned to (not flat, more so for high notes)
         let raw = if negative { period * 0.5 } else { period };
         let w = 2.0 * PI / period.max(2.0);
-        let lag = (0.4 * w.sin()).atan2(1.0 - 0.4 * w.cos()) / w;
+        let a = 1.0 - self.k;
+        let lag = (a * w.sin()).atan2(1.0 - a * w.cos()) / w;
         let d = (raw - lag).clamp(2.0, (n - 3) as f32);
         let rp = self.w as f32 + n as f32 - d;
         let i = rp as usize;
@@ -162,7 +165,7 @@ impl Comb {
         let b = self.buf[(i + 1) % n];
         let delayed = a + (b - a) * t;
         // A gentle low pass in the loop (each trip round loses a little top, as real ones do)
-        self.damp += (delayed - self.damp) * 0.6;
+        self.damp += (delayed - self.damp) * self.k;
         let back = if negative { -self.damp } else { self.damp };
         let y = x + fb * back;
         self.buf[self.w] = flush(fast_tanh(y * 0.8) * 1.25);
@@ -592,4 +595,23 @@ mod tests {
             assert!(best.abs() <= 8, "{hz} Hz (negative {neg}): resonates {best} cents off");
         }
     }
+
+    #[test]
+    fn the_comb_sounds_the_same_at_any_sample_rate() {
+        let gain = |sr: f32| {
+            let mut c = Comb::new(sr);
+            let f = 261.6 * 20.0;
+            let mut peak: f32 = 0.0;
+            for i in 0..(sr as usize) {
+                let y = c.tick((2.0 * PI * f * i as f32 / sr).sin() * 0.01, sr / 261.6, 0.97, false);
+                if i > sr as usize / 2 {
+                    peak = peak.max(y.abs());
+                }
+            }
+            20.0 * (peak / 0.01).log10()
+        };
+        let (a, b) = (gain(48000.0), gain(96000.0));
+        assert!((a - b).abs() < 1.5, "48 kHz {a} dB, 96 kHz {b} dB");
+    }
+
 }

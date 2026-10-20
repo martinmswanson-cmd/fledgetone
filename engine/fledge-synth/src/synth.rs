@@ -972,6 +972,9 @@ impl Synth {
         let bend = self.bend * cfg.bend_range;
         let pdecay = (-1.0 / (cfg.pdecay * sr)).exp();
         let tab = [table(cfg.osc[0].table), table(cfg.osc[1].table)];
+        // White noise spreads over the whole band: scaled so the part we hear is as loud at any
+        // sample rate (as now at 48 kHz)
+        let noise_k = 0.5 * (sr / 48000.0).sqrt();
         // Envelope settings reach notes already playing (automation, a preset chosen mid-note)
         for v in self.voices.iter_mut().filter(|v| v.active) {
             v.amp.set(cfg.amp[0], cfg.amp[1], cfg.amp[2], cfg.amp[3], sr);
@@ -1129,7 +1132,7 @@ impl Synth {
                     }
                     v.last_a = first_a;
                     if noise > 0.0 {
-                        let nz = self.rng.bipolar() * noise * 0.5;
+                        let nz = self.rng.bipolar() * noise * noise_k;
                         send(&mut bus, cfg.noise_route, nz, nz);
                     }
                     // Filters and drive, each side
@@ -1742,6 +1745,25 @@ mod tests {
         assert_eq!(semis(3, 4), vec![0, 7, 12]);
         assert_eq!(semis(3, 5), vec![0, 4, 7]);
         assert_eq!(semis(5, 2), vec![0, 12, 24]);
+    }
+
+
+    #[test]
+    fn noise_is_as_loud_at_any_sample_rate() {
+        let level = |sr: f32| {
+            let mut s = Synth::new(sr);
+            set(&mut s, "A on", 0.0);
+            set(&mut s, "B on", 0.0);
+            set(&mut s, "Noise level", 0.0);
+            set(&mut s, "Filter type", 1.0);
+            set(&mut s, "Cutoff", 3000.0);
+            set(&mut s, "Key tracking", 0.0);
+            s.midi(0x90, 60, 100);
+            render(&mut s, (sr as usize) / BLOCK);
+            20.0 * render(&mut s, (sr as usize) / BLOCK).1.log10()
+        };
+        let (a, b) = (level(48000.0), level(96000.0));
+        assert!((a - b).abs() < 0.7, "48 kHz {a} dB, 96 kHz {b} dB");
     }
 
 }
