@@ -806,6 +806,12 @@ impl Synth {
         v.fade = 1.0;
         v.time = 0.0;
         v.rand = rand;
+        if fresh || !was_active {
+            // A new note's envelopes start from nothing (not the level of the note the voice had)
+            v.amp.value = 0.0;
+            v.fenv.value = 0.0;
+            v.menv.value = 0.0;
+        }
         v.amp.set(cfg.amp[0], cfg.amp[1], cfg.amp[2], cfg.amp[3], sr);
         v.fenv.set(cfg.fadsr[0], cfg.fadsr[1], cfg.fadsr[2], cfg.fadsr[3], sr);
         v.menv.set(cfg.madsr[0], cfg.madsr[1], cfg.madsr[2], cfg.madsr[3], sr);
@@ -1016,6 +1022,8 @@ impl Synth {
                 let fa = 440.0 * 2f32.powf((pitch + cfg.osc[0].tune + m[d::APITCH] * 12.0 - 69.0) / 12.0);
                 let fb = 440.0 * 2f32.powf((pitch + cfg.osc[1].tune + m[d::BPITCH] * 12.0 - 69.0) / 12.0);
                 let inc = [fa / sr, fb / sr];
+                // The sub follows the note itself (not oscillator A's tuning, which may be off)
+                let sub_inc = 440.0 * 2f32.powf((pitch - 69.0) / 12.0) / sr * cfg.sub_div;
                 let sp = [
                     if m[d::ADET] != 0.0 { Spread::new(&cfg.osc[0], (cfg.osc[0].detune + m[d::ADET]).clamp(0.0, 1.0)) } else { spread[0] },
                     if m[d::BDET] != 0.0 { Spread::new(&cfg.osc[1], (cfg.osc[1].detune + m[d::BDET]).clamp(0.0, 1.0)) } else { spread[1] },
@@ -1142,7 +1150,7 @@ impl Synth {
                     let mut sub = 0.0;
                     if sub_gain > 0.0 {
                         sub = (2.0 * std::f32::consts::PI * v.sub_phase).sin() * sub_gain * 0.5;
-                        v.sub_phase += inc[0] * cfg.sub_div;
+                        v.sub_phase += sub_inc;
                         if v.sub_phase >= 1.0 {
                             v.sub_phase -= 1.0;
                         }
@@ -1642,6 +1650,65 @@ mod tests {
             }
             assert!(seen.iter().any(|&x| x != 0.0) && seen.windows(2).any(|w| w[0] != w[1]), "mode {mode}: {seen:?}");
         }
+    }
+
+
+    #[test]
+    fn a_stolen_voice_starts_its_envelopes_from_nothing() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "Amp attack", 2.0);
+        for n in 40..48 {
+            s.midi(0x90, n, 100);
+        }
+        render(&mut s, 1500);
+        s.midi(0x90, 72, 100);
+        render(&mut s, 4);
+        let v = s.voices.iter().find(|v| v.active && v.note == 72).unwrap();
+        assert!(v.amp.value < 0.05 && v.amp.stage == Stage::Attack, "started at {}", v.amp.value);
+    }
+
+    #[test]
+    fn the_attack_takes_the_time_it_says() {
+        for secs in [0.1f32, 1.0] {
+            let mut e = Env::default();
+            e.set(secs, 1.0, 1.0, 1.0, 48000.0);
+            e.gate(true);
+            let mut n = 0;
+            while e.stage == Stage::Attack {
+                e.tick();
+                n += 1;
+            }
+            let took = n as f32 / 48000.0;
+            assert!((took - secs).abs() < secs * 0.05, "{secs} s took {took}");
+        }
+    }
+
+    #[test]
+    fn the_sub_ignores_oscillator_a_tuning() {
+        let pitch_of = |oct: f32| {
+            let mut s = Synth::new(48000.0);
+            set(&mut s, "Sub level", 0.0);
+            set(&mut s, "A octave", oct);
+            set(&mut s, "A on", 0.0);
+            set(&mut s, "B on", 0.0);
+            s.midi(0x90, 57, 100);
+            render(&mut s, 50);
+            // Count upward zero crossings over a second: the sub is alone
+            let mut last = 0.0f32;
+            let mut ups = 0;
+            for _ in 0..375 {
+                s.process(BLOCK);
+                for &x in &s.out[0] {
+                    if last <= 0.0 && x > 0.0 {
+                        ups += 1;
+                    }
+                    last = x;
+                }
+            }
+            ups
+        };
+        assert!((pitch_of(0.0) as i32 - 110).abs() <= 2);
+        assert!((pitch_of(2.0) as i32 - 110).abs() <= 2);
     }
 
 }

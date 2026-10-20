@@ -179,6 +179,8 @@ pub struct Effects {
     was_on: [bool; 4],
     /// The phaser unit was a flanger last block
     was_flanger: bool,
+    /// The EQ ran last block
+    was_eq: bool,
 }
 
 impl Effects {
@@ -205,6 +207,7 @@ impl Effects {
             reverb_mod: 0.0,
             was_on: [false; 4],
             was_flanger: false,
+            was_eq: false,
         }
     }
 
@@ -239,6 +242,12 @@ impl Effects {
         self.was_flanger = c.flanger;
         self.was_on = on;
 
+        if c.eq && !self.was_eq {
+            // Back on: no thump from where its filters were left
+            self.eq = [[Biquad::default(); 3]; 2];
+            self.eq_key = [f32::NAN; 6];
+        }
+        self.was_eq = c.eq;
         if c.eq {
             let key = [c.eq_low.0, c.eq_low.1, c.eq_mid.0, c.eq_mid.1, c.eq_high.0, c.eq_high.1];
             if key != self.eq_key {
@@ -569,6 +578,32 @@ mod tests {
         let mut l = [0.0f32; 128];
         let mut r = [0.0f32; 128];
         fx.process(&mut l, &mut r, 128, &fl, &mods, 16);
+        assert!(l.iter().all(|x| x.abs() < 1e-6));
+    }
+
+
+    #[test]
+    fn eq_switched_back_on_starts_clean() {
+        let mut fx = Effects::new(48000.0);
+        let mods = [FxMods::default(); 8];
+        let on = FxCfg { eq: true, eq_low: (120.0, 12.0), eq_mid: (1000.0, 12.0), eq_high: (6000.0, 12.0), ..Default::default() };
+        let off = FxCfg::default();
+        for b in 0..50 {
+            let mut l = [0.0f32; 128];
+            for (i, x) in l.iter_mut().enumerate() {
+                *x = (2.0 * PI * 60.0 * (b * 128 + i) as f32 / 48000.0).sin() * 0.8;
+            }
+            let mut r = l;
+            fx.process(&mut l, &mut r, 128, &on, &mods, 16);
+        }
+        for _ in 0..50 {
+            let mut l = [0.0f32; 128];
+            let mut r = [0.0f32; 128];
+            fx.process(&mut l, &mut r, 128, &off, &mods, 16);
+        }
+        let mut l = [0.0f32; 128];
+        let mut r = [0.0f32; 128];
+        fx.process(&mut l, &mut r, 128, &on, &mods, 16);
         assert!(l.iter().all(|x| x.abs() < 1e-6));
     }
 
