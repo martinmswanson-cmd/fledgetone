@@ -78,7 +78,7 @@ Each change plays the drum so you hear it as you go. Once you change anything th
 
 ### Game sounds: a coin and a jump
 
-The **sound effects maker** makes the sounds games are full of, from layers of simple sources. Open **File › New…** and choose **Platformer** for a game song to try them in, then open the **Sound FX** tab of the bottom panel.
+The **sound effects maker** makes the sounds games are full of, from layers of simple sources. Save first (**File › Save**), then open **File › New…** and choose **Platformer** for a game song to try them in, then open the **Sound FX** tab of the bottom panel.
 
 1. Click **Retro**, then **Coin**. Each click makes a new coin and plays it.
 2. Make it exactly this one: **Source** **square**, **Pitch** **990 Hz**, **Slide** **0 st**, **Jump** **+5 st**, **Jump at** **15%**, **Attack** **0 ms**, **Hold** **80 ms**, **Punch** **50%**, **Decay** **300 ms**, **Width** **50%**.

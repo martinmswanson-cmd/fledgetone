@@ -67,9 +67,10 @@ Each kind of destination wants its own settings. Use these as a starting point:
 
 Game and app music usually repeats. A **seamless loop** is exactly one loop long, with the tail of the pass before already ringing at its start, so it repeats with no gap or click.
 
-1. Drag the loop's **IN** and **OUT** brackets on the ruler around the part that should repeat. (A starter's loop already covers the whole song.)
+1. Drag the loop's **IN** and **OUT** brackets on the ruler around the part that should repeat. (A starter's loop is usually one section: Synthwave's is bars 9 to 17, the Lead.)
 2. In **Export**, set **Range** to **Loop region** and **Ending** to **Seamless loop**.
-3. Set **Format** to **OGG**, and the loudness target to **Games (-16 LUFS)**.
+3. Set **Format** to **OGG**, tick **Match a loudness target** and set **For** to **Games (-16 LUFS)**.
+4. Click **Export**.
 
 {{shot:export-loop}}
 
@@ -79,7 +80,7 @@ A WAV seamless loop also carries loop points, which Godot, GameMaker and sampler
 
 **Stems** are one file per track, all the same length and starting together, so they line up in another program for mixing or remixing.
 
-1. In **Export**, set **Export** to **Stems**.
+1. In **Export**, set **Range** to **Whole song**, **Export** to **Stems** and **Ending** to **Exact length**.
 2. Leave **Bypass master compressor & limiter** ticked: the stems then add up exactly to your mix before the master.
 3. Click **Export**. You get one .zip with a WAV per track that plays.
 
@@ -98,11 +99,11 @@ Whoever opens the link gets the song in Fledgetone, ready to play and change. Th
 
 For TikTok, Reels, Shorts or YouTube, export the song as a video that shows how it was made: every note slides past a red playhead in its track's colour, lighting up as it plays.
 
-1. Open **File › Showcase video…**. Export opens set to **Video (MP4)**, with **Picture** on **Showcase: the notes playing**.
+1. Open **File › Showcase video (YouTube, TikTok)…**. Export opens set to **Video (MP4)**, with **Picture** on **Showcase: the notes playing**.
 2. Pick the **Shape**: **Portrait 9:16** for phones, or **Widescreen 16:9** for YouTube and websites.
 3. Leave **Frame rate** on **Smooth 60 fps**, so the notes glide.
 4. Under **Title and marks**, type your **Title** and the line **Under it** (or untick them), and choose whether to show the section names, the time and the waveform.
-5. Leave **Match a loudness target** on **Streaming (-14 LUFS)**, then click **Export**.
+5. Tick **Match a loudness target**, set **For** to **Streaming (-14 LUFS)**, then click **Export**.
 
 {{shot:export-video}}
 

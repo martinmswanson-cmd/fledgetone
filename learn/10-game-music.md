@@ -109,7 +109,7 @@ Two more games are at the top of the window. Click **2D platformer** to run and 
 
 ### Export for your engine
 
-1. In the right column, choose what the kit is **For**: **Godot 4 project**, **Unity project**, or **Any engine (web, Godot and Unity players)**.
+1. In the right column, choose what the kit is **For**: **Godot 4 project (unzip into it)**, **Unity project (unzip into it)**, or **Any engine (web, Godot and Unity players)**.
 2. Click **Export game kit (.zip)**.
 
 For Godot, unzip it into the folder with `project.godot`, open `bos_music/<song>_example.tscn` and press **F6**: number keys switch states, **Up** and **Down** change intensity, **Space** plays a stinger. For Unity, unzip it into the folder with `Assets`, add an empty GameObject, choose **Add Component › Adaptive Music Example** and press **Play**. Either way you get every state as a seamless loop, the stems by group, the stingers and transition sounds, an `audio_manifest.json` with the curves and rules, a player script, and a README using your own state names.

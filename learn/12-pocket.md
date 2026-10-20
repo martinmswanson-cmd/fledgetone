@@ -29,7 +29,7 @@ Open fledgetone.com on your phone. A notice says Pocket is an early version; tap
 
 ### Tap in a beat
 
-1. Tap the **Drums** cell in row **A**. The drawer becomes the drums: big pads, laid out like an MPC with the kick, snare, clap and hat along the bottom.
+1. Tap the **Drums** cell in row **A**. The drawer becomes the drums: big pads, laid out like a classic pad sampler, with the kick, snare, clap and hat along the bottom.
 2. Tap **Draw** in the drawer. Now it shows one drum at a time, and its 16 steps for one bar, four to a row (a row per beat).
 3. With **Kick** picked along the top, tap steps 1, 5, 9 and 13 (the first of each row).
 4. Pick **Clap** and tap steps 5 and 13.
@@ -74,7 +74,7 @@ Play it. The clav plays four chords, one a bar, on the off-beats: **A minor, F m
 
 The bass now follows the chords' roots. Tap a note name to hear it on its own. Tap a note to select it: the bar above makes it shorter or longer, moves it a note up or down, copies it or deletes it. Drag a note to move it, or its right end to stretch it.
 
-> Want a tune too? Tap **Brass Stabs**, pick **1/8**, and tap a few notes anywhere in the roll. They're all in A minor, so nothing clashes.
+> Want a tune too? Tap **Brass Stabs**, tap the note-length button until it reads **1/8**, and tap a few notes anywhere in the roll. They're all in A minor, so nothing clashes.
 
 Tap **Play** in the drawer to leave the piano roll: the drawer goes back to its size, and the grid shows again.
 

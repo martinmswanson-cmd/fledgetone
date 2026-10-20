@@ -33,7 +33,7 @@ The tab shows the film's length (0:15.04 for the test film) and where it starts 
 
 1. Click **Find cuts** in the **Video** tab (or the scissors on the film strip's header).
 2. After a second or two, three violet flags with a small lock appear on the ruler: **Cut 1**, **Cut 2** and **Cut 3**, each on the first frame of a new shot.
-3. Press **Home**, then **.** (full stop) to jump to the next marker. Cuts and section markers both count, so keep pressing it and watch the preview window change shot at each cut.
+3. Click bar **1** on the ruler, then press **.** (full stop) to jump to the next marker. Cuts and section markers both count, so keep pressing it and watch the preview window change shot at each cut.
 
 {{shot:score-cuts}}
 
@@ -66,7 +66,7 @@ The cuts are about 4.1 seconds apart, and at 117.55 BPM a bar lasts 2.04 seconds
 
 1. Right-click the ruler at the start of bar 7, where **Cut 3** now sits.
 2. Choose **Build-up & drop here**.
-3. Press **Home**, then **Space**, and watch the film.
+3. Click bar **1** on the ruler, then press **Space**, and watch the film.
 
 You get a riser and a snare roll from bar 3 that grow towards bar 7, and an impact right on the cut, plus **Build** and **Drop** markers. They're ordinary clips: drag, shorten or delete them like any other. The [Build-up & drop](/guide/the-timeline/#build-up-drop) guide section lists everything it writes.
 
@@ -96,7 +96,7 @@ Every track gets volume automation that dips a moment before each line and comes
 The song is longer than the film, so first make the loop cover just the film.
 
 1. Click the small chevron right of the Loop button to open **Loop range**.
-2. Type *15:01* in **Out** (15 seconds and 1 frame, the test film's length) and press **Enter**.
+2. Type *1* in **In** and press **Enter**, then type *15:01* in **Out** (15 seconds and 1 frame, the test film's length) and press **Enter**.
 3. Press **Ctrl+E** (Cmd+E) to open **Export**. Choose **Loop region**, then **Video (MP4)**.
 4. Check **Put the music on trailer.webm** is ticked (it shows your film's name). Tick **Keep the video's own sound too** if the film has dialogue or effects to keep.
 5. Choose **Exact length** and click **Export**.

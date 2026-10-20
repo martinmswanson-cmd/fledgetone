@@ -15,7 +15,7 @@ You'll need a microphone (the one in your laptop or headset is fine to start) an
 3. Click the small chevron (˅) right of the **Loop** button and set **In** to *5* and **Out** to *9*, pressing **Enter** after each. Now playback goes round the first four bars of the beat.
 4. Put your headphones on and press **Space** to check the level. If you'd like a click as well, switch on the **metronome** (the triangle in the toolbar). It's never in your exports.
 
-> The **1-bar count-in** in the recording settings only plays when you record notes on an armed track, not for the microphone. Give yourself a lead-in instead: click bar **4** on the ruler before you record, so you hear a bar of the beat before the loop starts. The lead-in isn't kept.
+> The **1-bar count-in** in the recording settings only plays when you record notes on an armed track, not for the microphone. Give yourself a lead-in instead: click bar **4** on the ruler before you record, so you hear a bar of the beat before the loop starts. The lead-in is trimmed off once a take goes round the loop; a single take you stop before bar 9 starts at bar 4, so trim its start (drag the clip's left edge).
 
 ### Record a take
 

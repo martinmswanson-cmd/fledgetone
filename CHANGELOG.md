@@ -9,6 +9,9 @@ second update on the same day gets `-2`, and so on).
 - **Two new tutorials** in the **Learn** menu. **Make a showcase video** walks you through a video of your song's notes to post: tall for phones, smooth 60 fps, your own title. **Find and keep your sounds** covers searching the instruments, starring favourites, saving a sound to My sounds and keeping them in a file.
 - **Your first song** now has a step where you swap a part's instrument, and the quick tour is friendlier for first-timers.
 - The lessons on fledgetone.com use the plainer names (**Rap Beat**, the **Rap beat** drummer, **Long slide**, **Crisp snare**), with fresh pictures.
+- **The guide and every tutorial were checked against the studio** and corrected where they had drifted: menu names, starter counts, the EQ, the horns, export and video options, Pocket, shortcuts and a few tutorial steps that couldn't finish.
+- The three-band EQ's labels and curve now show its real bands (below 400 Hz, 400 Hz to 2.5 kHz, above 2.5 kHz).
+- The **Cowbell Drive**, **Dark Bounce**, **Blown-Out Hype** and **Rap Beat** starters open with their own names.
 
 ## 2026.10.20-5 — A new home page
 
