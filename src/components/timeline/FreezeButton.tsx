@@ -27,7 +27,7 @@ export const FreezeButton: React.FC<{ track: Track }> = ({ track }) => {
 
   const freeze = () =>
     freezeTrack(track.id).then(
-      () => showToast(`Froze ${track.name}: it plays as audio now`),
+      (done) => showToast(done ? `Froze ${track.name}: it plays as audio now` : `${track.name} wasn't frozen (another song was opened, or the track changed)`),
       (err) => showToast(`Couldn't freeze ${track.name}: ${err instanceof Error ? err.message : String(err)}`)
     );
 

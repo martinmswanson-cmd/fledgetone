@@ -193,7 +193,7 @@ const MENUS: MenuDef[] = [
           if (!t) return NEED_TRACK;
           if (frozen) return unfreezeTrack(t.id);
           if (!canFreeze(t.id)) return 'This track has nothing to freeze.';
-          return freezeTrack(t.id);
+          return freezeTrack(t.id).then((done) => (done ? undefined : `${t.name} wasn't frozen (another song was opened, or the track changed)`));
         } },
         { label: t ? `Bounce “${t.name}” in place` : 'Bounce in place', disabled: !t, run: () => {
           if (!t) return NEED_TRACK;

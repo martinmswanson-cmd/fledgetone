@@ -151,13 +151,15 @@ async function renderTrackSound(trackId: string, label: string): Promise<Rendere
  * Render a track to a sound and mark it frozen (one undo step). Playback stops first: a render
  * swaps the global audio context while it sets up. Rejects with a message to show.
  */
-export async function freezeTrack(trackId: string): Promise<void> {
+export async function freezeTrack(trackId: string): Promise<boolean> {
   const r = await renderTrackSound(trackId, 'frozen');
-  if (!r) return;
+  // (Nothing done: another song was opened, or the track went away or is already freezing)
+  if (!r) return false;
   useTimelineStore.getState().checkpoint();
   useTimelineStore.setState((s) => ({
     tracks: s.tracks.map((t) => (t.id === trackId ? { ...t, frozen: { soundId: r.soundId, startBar: r.startBar, seconds: r.seconds, gainDb: r.gainDb, fingerprint: r.fingerprint } } : t)),
   }));
+  return true;
 }
 
 /**

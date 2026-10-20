@@ -100,7 +100,8 @@ export async function saveProjectFile(): Promise<void> {
       showToast(`Saved to ${handle.name}`);
       return;
     } catch (err) {
-      if (err instanceof SongReplacedError) {
+      // (Another song open now: its file and its saving are its own)
+      if (err instanceof SongReplacedError || songGeneration() !== song) {
         showToast(`Not saved: another song was opened while saving (${handle.name} is unchanged)`);
         return;
       }
@@ -108,13 +109,13 @@ export async function saveProjectFile(): Promise<void> {
       useProjectFile.setState({ handle: null });
     }
   }
-  await saveProjectAs();
+  await saveProjectAs(song);
 }
 
 /** Save As: choose the folder and name (the picker opens where the last project was saved), then Save keeps writing there. */
-export async function saveProjectAs(): Promise<void> {
+export async function saveProjectAs(song = songGeneration()): Promise<void> {
   try {
-    await saveAs(songGeneration());
+    await saveAs(song);
   } catch (err) {
     if (err instanceof SongReplacedError) showToast('Not saved: another song was opened while saving');
     else showToast(`Couldn't save (${err instanceof Error ? err.message : String(err)})`);

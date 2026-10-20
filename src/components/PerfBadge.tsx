@@ -53,7 +53,7 @@ const FreezeHeaviest: React.FC = () => {
           onClick={() => {
             showToast(`Freezing ${t.name}…`);
             void freezeTrack(t.id).then(
-              () => showToast(`${t.name} is frozen: it plays as audio now (unfreeze it to edit its notes)`),
+              (done) => showToast(done ? `${t.name} is frozen: it plays as audio now (unfreeze it to edit its notes)` : `${t.name} wasn't frozen (another song was opened, or the track changed)`),
               (err) => showToast(`Couldn't freeze ${t.name}: ${err instanceof Error ? err.message : String(err)}`)
             );
           }}
