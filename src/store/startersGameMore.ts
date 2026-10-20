@@ -263,10 +263,10 @@ function bigBandCity(): ProjectSnapshot {
   const kit = drumBus(-20);
   const drums = grouped(track('Drums', 'acousticKit', { volume: -10, output: kit.id, reverbSend: 0.15, fx: { peq: EQ.kit(), human: human(0.25) } }), 'Percussion');
   const alto = track('Alto sax', 'realAltoSax', { volume: -9, pan: 0.15, reverbSend: 0.25, fx: { human: human(0.35, 0.15) } });
-  const tenor = grouped(track('Tenor sax', 'tenorSax', { volume: -12, pan: -0.1, reverbSend: 0.25, fx: { human: human(0.35, 0.15) } }), 'Tension');
+  const tenor = grouped(track('Alto sax', 'tenorSax', { volume: -12, pan: -0.1, reverbSend: 0.25, fx: { human: human(0.35, 0.15) } }), 'Tension');
   const trumpets = grouped(track('Trumpets', 'realTrumpet', { volume: -10, pan: 0.3, reverbSend: 0.3, fx: { peq: EQ.brass(), human: human(0.3, 0.1) } }), 'Climax');
   const bones = grouped(track('Trombones', 'realTrombone', { volume: -11, pan: -0.3, reverbSend: 0.3, fx: { peq: EQ.brass(), human: human(0.3, 0.1) } }), 'Climax');
-  const muted = grouped(track('Muted trumpet', 'mutedTrumpet', { volume: -16.5, pan: 0.4, reverbSend: 0.25 }), 'Ambient');
+  const muted = grouped(track('Trumpet', 'mutedTrumpet', { volume: -16.5, pan: 0.4, reverbSend: 0.25 }), 'Ambient');
 
   // C: ii7 - V7 - Imaj7 - VI7 | ii7 - V7 - I6 - I6 (a swinging ii-V-I), then the festival a whole step up
   const comp = [['F3', 'A3', 'C4', 'E4'], ['F3', 'B3', 'D4', 'G4'], ['E3', 'G3', 'B3', 'D4'], ['G3', 'C#4', 'E4', 'G4'], ['F3', 'A3', 'C4', 'E4'], ['F3', 'B3', 'D4', 'G4'], ['E3', 'G3', 'A3', 'C4'], ['E3', 'G3', 'A3', 'D4']];

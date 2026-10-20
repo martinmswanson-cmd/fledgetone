@@ -215,8 +215,8 @@ function sunsetDrive(): ProjectSnapshot {
 // ---------- Midnight caper: swinging jazz for a heist ----------
 
 function midnightCaper(): ProjectSnapshot {
-  const trumpet = track('Muted trumpet', 'mutedTrumpet', { volume: -8, pan: 0.15, reverbSend: 0.25, fx: { peq: EQ.brass(), human: human(0.3) } });
-  const sax = grouped(track('Tenor sax', 'tenorSax', { volume: -11, pan: -0.25, reverbSend: 0.25, fx: { human: human(0.3) } }), 'Tension');
+  const trumpet = track('Trumpet', 'mutedTrumpet', { volume: -8, pan: 0.15, reverbSend: 0.25, fx: { peq: EQ.brass(), human: human(0.3) } });
+  const sax = grouped(track('Alto sax', 'tenorSax', { volume: -11, pan: -0.25, reverbSend: 0.25, fx: { human: human(0.3) } }), 'Tension');
   const organ = grouped(track('Organ', 'drawbarOrgan', { volume: -16, pan: -0.1, reverbSend: 0.2 }), 'Ambient');
   const horns = grouped(track('Brass hits', 'brassSection', { volume: -12, pan: 0.3, reverbSend: 0.3, fx: { peq: EQ.brass() } }), 'Climax');
   const bass = track('Upright bass', 'realUprightBass', { volume: -8, fx: { peq: peq(lowCut(35)), human: human(0.25) } });

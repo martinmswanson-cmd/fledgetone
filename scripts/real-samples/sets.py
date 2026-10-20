@@ -9,7 +9,6 @@ import re
 REPOS = {
     'vsco': 'sgossner/VSCO-2-CE',
     'guitars': 'sfzinstruments/karoryfer.black-and-green-guitars',
-    'weresax': 'sfzinstruments/karoryfer.weresax',
     'bearsax': 'sfzinstruments/karoryfer.bear-sax',
     'meatbass': 'sfzinstruments/karoryfer.meatbass',
     'growlybass': 'sfzinstruments/karoryfer.growlybass',
@@ -235,13 +234,9 @@ SETS = [
     S('clarinet', 'vsco', [(rf'Woodwinds/Clarinet/susLong/DCClar_susLong_{NOTE}_(?P<layer>v[123])_rr1_sum\.wav', 1)], ['v1', 'v2', 'v3'], 'sustain'),
     S('bassoon', 'vsco', [(rf'Woodwinds/Bassoon/vib/PSBassoon_{NOTE}_(?P<layer>v[12])_(?P<take>1)\.wav', 1)], ['v1', 'v2'], 'sustain'),
     # ---- brass (VSCO 2 CE) ----
-    S('horn', 'vsco', [(rf'Brass/F Horn/sus/MOHorn_sus_{NOTE}_(?P<layer>v[123])_1\.wav', 1)], ['v1', 'v2', 'v3'], 'sustain'),
     S('horn-staccato', 'vsco', [(rf'Brass/F Horn/stac/MOHorn_stac_{NOTE}_(?P<layer>v[123])_(?P<take>rr[12])\.wav', 1)], ['v1', 'v2', 'v3'], 'short'),
-    S('trumpet', 'vsco', [(rf'Brass/Trumpet/susvib/Sum_SHTrumpet_susvib_{NOTE}_(?P<layer>v[12])_rr1\.wav', 1)], ['v1', 'v2'], 'sustain'),
     S('trumpet-staccato', 'vsco', [(rf'Brass/Trumpet/stac/Sum_SHTrumpet_stac_{NOTE}_(?P<layer>v[123])_(?P<take>rr[12])\.wav', 1)], ['v1', 'v2', 'v3'], 'short'),
-    S('trombone', 'vsco', [(rf'Brass/Tenor Trombone/sus/tenortbn_sus_{NOTE}_(?P<layer>v[123])_1\.wav', 1)], ['v1', 'v2', 'v3'], 'sustain'),
     S('trombone-staccato', 'vsco', [(rf'Brass/Tenor Trombone/stac/tenortbn_stac_{NOTE}_(?P<layer>v[1234])_(?P<take>rr[12])\.wav', 1)], ['v1', 'v2', 'v3', 'v4'], 'short'),
-    S('tuba', 'vsco', [(rf'Brass/Tuba/sus/Tuba3_sus_{NOTE}_(?P<layer>v[123])_rr1_Mid\.wav', 1)], ['v1', 'v2', 'v3'], 'sustain'),
     # ---- mallets and keys (VSCO 2 CE) ----
     S('marimba', 'vsco', [(rf'Percussion/Marimba/Marimba_hit_Outrigger_{NOTE}_(?P<layer>loud)_01\.wav', 1)], ['loud'], 'ringing', cap=4.0),
     S('xylophone', 'vsco', [(rf'Percussion/Xylo/Xylo_Medium_{NOTE}_(?P<layer>ff)_01_far\.wav', 1)], ['ff'], 'mallet', cap=2.5),
@@ -263,7 +258,6 @@ SETS = [
     S('guitar-green', 'guitars', [(rf'Samples/green/ord/twang_{NOTE}_(?P<layer>p|mf|f)_(?P<take>rr[123])\.wav', -1)], ['p', 'mf', 'f'], 'plucked',
       takes={'p': ['rr1', 'rr2'], 'mf': ['rr1', 'rr3'], 'f': ['rr1', 'rr3']}, every=3, cap=6.0, tail='faded'),
     S('guitar-flatwound', 'emily', [(rf'notes/{NOTE}_(?P<layer>p|mp|mf|f)_(?P<take>rr[12])\.wav', 0)], ['p', 'mp', 'mf', 'f'], 'plucked'),
-    S('alto-sax', 'weresax', [(rf'Samples/alto/{NOTE}_(?P<layer>[pf])_(?P<take>rr[12])_cnd\.wav', 1)], ['p', 'f'], 'sustain', every=2),
     S('baritone-sax', 'bearsax', [(rf'Samples/{NOTE}_looped_(?P<layer>[pf])\.wav', 1)], ['p', 'f'], 'sustain', every=3),
     S('double-bass', 'meatbass', [(rf'Samples/arco/{NOTE}_(?P<layer>vl[123])_(?P<take>down|up)\.wav', 0)], ['vl1', 'vl2', 'vl3'], 'sustain'),
     S('upright-bass', 'meatbass', [(rf'Samples/pizz/{NOTE}_(?P<layer>vl[1234])_(?P<take>rr[12])\.wav', 0)], ['vl1', 'vl2', 'vl3', 'vl4'], 'plucked'),
@@ -358,6 +352,13 @@ SETS = [
     S('bass-flute', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/bassflute/BassFlute.zip', xloop=True),
     S('bass-clarinet', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/bassclarinet/BassClarinet.zip', xloop=True),
     S('bass-trombone', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Brass/basstrombone/BassTrombone.zip', xloop=True),
+    # Iowa's alto sax and trumpet with vibrato, French horn, tenor trombone and tuba: every semitone
+    # at three loudnesses
+    S('alto-sax-vib', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Woodwinds/altosaxophone/AltoSax.Vib.zip', xloop=True),
+    S('trumpet-vib', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Brass/Bbtrumpet/Trumpet.vib.zip', xloop=True),
+    S('french-horn', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Brass/frenchhorn/Horn.zip', xloop=True),
+    S('tenor-trombone', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Brass/tenortrombone/TenorTrombone.zip', xloop=True),
+    S('tuba-iowa', 'iowa', [], ['pp', 'mf', 'ff'], 'sustain', cap=4.5, iowa='Brass/tuba/tuba.zip', xloop=True),
     # ---- world and special instruments (VCSL, CC0) ----
     # A folk (lever) harp at two loudnesses; a glass harp (wine glasses rubbed: slow and fast
     # strokes as soft and loud, four glasses stretched over the range); a mbira (the Nyamaropa

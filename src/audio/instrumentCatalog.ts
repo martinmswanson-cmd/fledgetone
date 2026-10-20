@@ -388,8 +388,8 @@ const realRange = (folder: string, extend = 2): [number, number] => {
   return [notes[0], Math.min(108, notes[notes.length - 1] + extend)];
 };
 /**
- * The horn sets have nothing between C4 and D5 (the library skipped them), too far to stretch
- * either side's recordings across, so the real horns play up to D#4.
+ * The short horn set has nothing between C4 and D5 (the library skipped them), too far to stretch
+ * either side's recordings across, so the short horn plays up to D#4.
  */
 const HORN_RANGE: [number, number] = [33, 63];
 /**
@@ -612,32 +612,32 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
     samples: real('bassoon', 0.3), gain: 0, taper: [55, 1.5], dynamics: true,
   },
   realHorn: {
-    key: 'realHorn', name: 'French Horn (Real)', blurb: 'A recorded French horn, low and middle register: soft, medium and loud, heroic and warm', color: '#facc15', category: 'Orchestra', kind: 'sampled', range: HORN_RANGE,
-    samples: real('horn', 0.4), gain: 16, taper: [45, 3], dynamics: true,
+    key: 'realHorn', name: 'French Horn (Real)', blurb: 'A recorded French horn, every note at three loudnesses: heroic and warm', color: '#facc15', category: 'Orchestra', kind: 'sampled', range: realRange('french-horn'),
+    samples: real('french-horn', 0.4), gain: -3.6, room: -10, dynamics: true,
   },
   realHornShort: {
     key: 'realHornShort', name: 'French Horn Short (Real)', blurb: 'Recorded horn, short punchy notes: fanfares, hits', color: '#eab308', category: 'Orchestra', kind: 'sampled', range: HORN_RANGE,
     samples: real('horn-staccato', 0.25), gain: 19.7, taper: [45, 4.5],
   },
   realTrumpet: {
-    key: 'realTrumpet', name: 'Trumpet (Real)', blurb: 'A recorded trumpet with vibrato: soft and loud', color: '#fde047', category: 'Orchestra', kind: 'sampled', range: realRange('trumpet'),
-    samples: real('trumpet', 0.35), gain: 3.5, taper: [68, 4.5], dynamics: true,
+    key: 'realTrumpet', name: 'Trumpet (Real)', blurb: 'A recorded trumpet with vibrato, every note at three loudnesses: jazz, ballads, fanfares', color: '#fde047', category: 'Orchestra', kind: 'sampled', range: realRange('trumpet-vib'),
+    samples: real('trumpet-vib', 0.3), gain: -2.7, room: -10, dynamics: true,
   },
   realTrumpetShort: {
     key: 'realTrumpetShort', name: 'Trumpet Short (Real)', blurb: 'Recorded trumpet, short stabs: fanfares, ska, funk', color: '#fcd34d', category: 'Orchestra', kind: 'sampled', range: realRange('trumpet-staccato'),
     samples: real('trumpet-staccato', 0.2), gain: 14.5, taper: [68, 7.5],
   },
   realTrombone: {
-    key: 'realTrombone', name: 'Trombone (Real)', blurb: 'A recorded tenor trombone: soft, medium and loud', color: '#d97706', category: 'Orchestra', kind: 'sampled', range: realRange('trombone'),
-    samples: real('trombone', 0.4), gain: 13.4, taper: [49, 7.5], dynamics: true,
+    key: 'realTrombone', name: 'Trombone (Real)', blurb: 'A recorded tenor trombone, every note at three loudnesses', color: '#d97706', category: 'Orchestra', kind: 'sampled', range: realRange('tenor-trombone'),
+    samples: real('tenor-trombone', 0.4), gain: 4.9, room: -10, dynamics: true,
   },
   realTromboneShort: {
     key: 'realTromboneShort', name: 'Trombone Short (Real)', blurb: 'Recorded trombone, short notes at four loudnesses: stabs, hits', color: '#b45309', category: 'Orchestra', kind: 'sampled', range: realRange('trombone-staccato'),
     samples: real('trombone-staccato', 0.25), gain: 13.5, taper: [49, 2.5],
   },
   realTuba: {
-    key: 'realTuba', name: 'Tuba (Real)', blurb: 'A recorded tuba: soft, medium and loud, a deep brass floor', color: '#92400e', category: 'Orchestra', kind: 'sampled', range: realRange('tuba'),
-    samples: real('tuba', 0.4), gain: 12, taper: [44, 5], dynamics: true,
+    key: 'realTuba', name: 'Tuba (Real)', blurb: 'A recorded tuba, every note at three loudnesses: a deep brass floor', color: '#92400e', category: 'Orchestra', kind: 'sampled', range: realRange('tuba-iowa'),
+    samples: real('tuba-iowa', 0.4), gain: -3.5, room: -10, dynamics: true,
   },
   realGrandPiano: {
     key: 'realGrandPiano', name: 'Concert Grand (Real)', blurb: 'A recorded concert grand at four loudnesses: soft and warm to bright and hard', color: '#f8fafc', category: 'Keys & Synths', kind: 'sampled', range: realRange('grand-piano'),
@@ -732,8 +732,8 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
     samples: real('glockenspiel', 1.5), gain: 1.5,
   },
   realAltoSax: {
-    key: 'realAltoSax', name: 'Alto Sax (Real)', blurb: 'A recorded alto saxophone, soft and loud: jazz, pop, soul', color: '#f59e0b', category: 'Winds & Brass', kind: 'sampled', range: realRange('alto-sax'),
-    samples: real('alto-sax', 0.25), gain: -1.5, taper: [61, 4], dynamics: true,
+    key: 'realAltoSax', name: 'Alto Sax (Real)', blurb: 'A recorded alto saxophone with vibrato, every note at three loudnesses: jazz, pop, soul', color: '#f59e0b', category: 'Winds & Brass', kind: 'sampled', range: realRange('alto-sax-vib'),
+    samples: real('alto-sax-vib', 0.25), gain: 3, room: -10, dynamics: true,
   },
   realBariSax: {
     key: 'realBariSax', name: 'Baritone Sax (Real)', blurb: 'A recorded 1920s baritone saxophone: big, buzzing low end', color: '#b45309', category: 'Winds & Brass', kind: 'sampled', range: realRange('baritone-sax'),
@@ -753,7 +753,7 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   },
   realBrass: {
     key: 'realBrass', name: 'Brass Section (Real)', blurb: 'Recorded trombone, French horn and trumpet as one section, low to high: chords, swells, fanfares', color: '#f59e0b', category: 'Orchestra', kind: 'sampled', range: [34, 86],
-    samples: ensemble([{ folder: 'trombone', from: 34, gain: -2.6 }, { folder: 'horn', from: 50, gain: 0 }, { folder: 'trumpet', from: 60, gain: -13.2 }], 0.4), gain: 16, taper: [74, 3], dynamics: true,
+    samples: ensemble([{ folder: 'bass-trombone', from: 34, gain: 8.6 }, { folder: 'tenor-trombone', from: 40, gain: 8.5 }, { folder: 'french-horn', from: 50, gain: 0 }, { folder: 'trumpet-vib', from: 60, gain: 0.2 }], 0.4), gain: -2.2, room: -10, dynamics: true,
   },
   realTimpani: {
     key: 'realTimpani', name: 'Timpani (Real)', blurb: 'Five recorded kettle drums, three loudnesses: rolls, hits, drama', color: '#78350f', category: 'Orchestra', kind: 'sampled', range: [39, 58],

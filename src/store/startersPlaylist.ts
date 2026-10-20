@@ -1036,7 +1036,7 @@ function neoSoul(): ProjectSnapshot {
     automation: [{ param: 'filterCutoff', points: [{ bar: 1, value: 0.35 }, { bar: 5, value: 0.9 }, { bar: 17, value: 0.9 }] }],
   });
   const piano = track('Piano', 'piano', { volume: -8, reverbSend: 0.25, fx: { human: human(0.4) } });
-  const sax = track('Tenor sax', 'tenorSax', { volume: -3, reverbSend: 0.25, delaySend: 0.12, fx: { human: human(0.35, 0.2) } });
+  const sax = track('Alto sax', 'tenorSax', { volume: -3, reverbSend: 0.25, delaySend: 0.12, fx: { human: human(0.35, 0.2) } });
   const flute = track('Flute', 'flute', { volume: -4, reverbSend: 0.3, fx: { human: human(0.35, 0.2) } });
   const bass = track('Bass', 'fretlessBass', { volume: -3, fx: { peq: peq(lowCut(35)), human: human(0.4) } });
   const eight = track('808', 'bass808', { volume: -10, fx: { peq: EQ.eight() } });
@@ -1068,7 +1068,7 @@ function neoSoul(): ProjectSnapshot {
         clip(rhodes, 'Intro', 1, 4, comp(hook)),
         clip(rhodes, 'Hook', 5, 4, comp(hook)),
         clip(rhodes, 'Pre-hook', 9, 4, comp(pre)),
-        // The tenor sax an octave down, in its warm middle; the piano doubles it an octave above
+        // The sax an octave down, in its warm middle; the piano doubles it an octave above
         clip(sax, 'Melody', 5, 4, up(tune, -12)),
         clip(piano, 'Doubles', 9, 4, tune.map(([s, n, v, d]): Step => [s, n, v * 0.85, d])),
         clip(flute, 'Counterline', 9, 4, phrase([[8, 'D5', 4], [12, 'C5', 4], [24, 'A#4', 4], [28, 'A4', 4], [40, 'F5', 4], [44, 'E5', 4], [56, 'C#5', 8]], 0.6, 0.5)),

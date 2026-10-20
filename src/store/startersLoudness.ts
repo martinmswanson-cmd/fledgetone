@@ -67,18 +67,18 @@ export function starterLoudness(id: string, group: string): number {
  * recordings, the limiter run after the render).
  */
 export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: number }>> = {
-  overworld: { trim: 0, lufs: -15 }, // -14.9
+  overworld: { trim: -0.8, lufs: -15 }, // -14.9
   dungeon: { trim: 3, lufs: -15.1 }, // -14.6
   village: { trim: 6.5, lufs: -14.9 }, // -15.2
   spacestation: { trim: 4, lufs: -14.8 }, // -14.8
   racing: { trim: 3.5, lufs: -14.8 }, // -15.1
   platformer: { trim: 4.5, lufs: -14.8 }, // -15
-  boss: { trim: -0.5, lufs: -15.1 }, // -15.3
+  boss: { trim: 0, lufs: -15.1 }, // -15.3
   stealth: { trim: 4.5, lufs: -15 }, // -14.9
   title: { trim: 4, lufs: -19.1 }, // -20.1
   puzzle: { trim: 4, lufs: -14.7 }, // -14.4
   shop: { trim: 4.5, lufs: -15 }, // -15.2
-  openField: { trim: 2.5, lufs: -14.9 }, // -15.8
+  openField: { trim: 2, lufs: -14.9 }, // -15.8
   cosmicWaltz: { trim: 0, lufs: -14.8 }, // -14.8
   bigBandCity: { trim: 4.5, lufs: -15 }, // -14.7
   quietWorld: { trim: 3, lufs: -19 }, // -19.1
@@ -88,7 +88,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   fogTown: { trim: 6, lufs: -14.7 }, // -15.8
   countdownTown: { trim: -2, lufs: -15.1 }, // -14.1
   saveRoom: { trim: 4, lufs: -19.2 }, // -19
-  cathedralBoss: { trim: 2, lufs: -15.2 }, // -16.1
+  cathedralBoss: { trim: 2.5, lufs: -15.2 }, // -16.1
   arenaMetal: { trim: 5.5, lufs: -14.6 }, // -15.4
   starlitCity: { trim: 6, lufs: -14.7 }, // -16
   farewellPiano: { trim: 3.5, lufs: -15 }, // -16.4
@@ -119,7 +119,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   metal: { trim: -2, lufs: -13.2 }, // -12.8
   pop: { trim: 2.5, lufs: -13.1 }, // -13.4
   funk: { trim: 0.5, lufs: -13.2 }, // -13.4
-  jazz: { trim: -0.5, lufs: -12.8 }, // -12.3
+  jazz: { trim: -1, lufs: -12.8 }, // -12.3
   hiphop: { trim: 3.5, lufs: -12.8 }, // -13.1
   trap: { trim: 12, lufs: -13.8 }, // -14.1
   lofi: { trim: 5, lufs: -14.7 }, // -14.7
@@ -131,7 +131,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   artcore: { trim: 2, lufs: -13.2 }, // -12.8
   hardcore: { trim: 2, lufs: -13.2 }, // -13
   breakcore: { trim: 3.5, lufs: -13.2 }, // -13
-  rpg: { trim: -1, lufs: -14.9 }, // -14.4
+  rpg: { trim: -1.5, lufs: -14.9 }, // -14.4
   metaldub: { trim: -0.5, lufs: -13.8 }, // -14.3
   melodicdub: { trim: 2.5, lufs: -13.7 }, // -13.9
   riddim: { trim: 12, lufs: -13.9 }, // -15
@@ -142,7 +142,7 @@ export const STARTER_LEVELS: Readonly<Record<string, { trim: number; lufs: numbe
   neosoul: { trim: 3.5, lufs: -13.9 }, // -14.1
   bedroom: { trim: 2.5, lufs: -13.9 }, // -14.5
   bossa: { trim: 5, lufs: -13.9 }, // -14.1
-  citypop: { trim: 1, lufs: -14.1 }, // -14.3
+  citypop: { trim: -0.3, lufs: -14.1 }, // -14.3
   theatrical: { trim: 0.5, lufs: -13.7 }, // -13.7
   raprock: { trim: -0.5, lufs: -13.1 }, // -13.2
   mathrock: { trim: 1, lufs: -13 }, // -13.6

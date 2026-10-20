@@ -789,6 +789,8 @@ def write_index(root, done):
             if m and m.group(1) in sets:
                 sets[m.group(1)]['shared'] = json.loads(re.sub(r"'", '"', m.group(2)))
     sets.update(done)
+    # (a set whose folder was deleted is no longer hosted)
+    sets = {k: v for k, v in sets.items() if os.path.isdir(os.path.join(root, 'public', 'fledgetone-samples', k))}
     # Size and a fingerprint of the files as they are now (the app keeps downloaded recordings, and
     # a changed fingerprint makes it download a re-made set again)
     for k, v in sets.items():

@@ -39,8 +39,8 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
   {
     prefixes: [
       'cello-sustain', 'cello-spiccato', 'violins-sustain', 'violins-spiccato', 'violas-sustain', 'violas-spiccato', 'strings-pizzicato',
-      'strings-tremolo', 'solo-violin', 'harp', 'flute', 'flute-staccato', 'oboe', 'clarinet', 'bassoon', 'horn', 'horn-staccato', 'trumpet',
-      'trumpet-staccato', 'trombone', 'trombone-staccato', 'tuba', 'marimba', 'xylophone', 'glockenspiel', 'pipe-organ', 'chapel-organ',
+      'strings-tremolo', 'solo-violin', 'harp', 'flute', 'flute-staccato', 'oboe', 'clarinet', 'bassoon', 'horn-staccato',
+      'trumpet-staccato', 'trombone-staccato', 'marimba', 'xylophone', 'glockenspiel', 'pipe-organ', 'chapel-organ',
       'muted-trumpet', 'piccolo', 'muted-horn',
     ].map((set) => `${HOSTED}${set}/`),
     samples:
@@ -54,9 +54,9 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
-    prefixes: ['violin', 'viola', 'cello', 'contrabass', 'nylon-guitar', 'soprano-sax', 'alto-flute', 'bass-flute', 'bass-clarinet', 'bass-trombone'].map((set) => `${HOSTED}${set}/`),
+    prefixes: ['violin', 'viola', 'cello', 'contrabass', 'nylon-guitar', 'soprano-sax', 'alto-flute', 'bass-flute', 'bass-clarinet', 'bass-trombone', 'alto-sax-vib', 'trumpet-vib', 'french-horn', 'tenor-trombone', 'tuba-iowa'].map((set) => `${HOSTED}${set}/`),
     samples:
-      'Solo violin, viola, cello and double bass, bowed, a nylon-string classical guitar (played by Brian Penkrot), soprano saxophone, alto and bass flutes, bass clarinet and bass trombone, from the [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by Lawrence Fritts and the University of Iowa Electronic Music Studios (split into single notes and converted to MP3, hosted with the app)',
+      'Solo violin, viola, cello and double bass, bowed, a nylon-string classical guitar (played by Brian Penkrot), soprano and alto saxophones, alto and bass flutes, bass clarinet, trumpet, French horn, tenor and bass trombones and tuba, from the [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) by Lawrence Fritts and the University of Iowa Electronic Music Studios (split into single notes and converted to MP3, hosted with the app)',
     licence: 'Free to download and use for any project, without restrictions (the studios\' statement)',
   },
   {
@@ -114,11 +114,6 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     prefixes: [`${HOSTED}grand-piano/`],
     samples: '[Splendid Grand Piano](https://github.com/sfzinstruments/SplendidGrandPiano), samples by AKAI, mapped by kinwie (converted to MP3, hosted with the app)',
     licence: 'Public domain',
-  },
-  {
-    prefixes: [`${HOSTED}alto-sax/`],
-    samples: 'Alto saxophone from [Weresax](https://github.com/sfzinstruments/karoryfer.weresax) by Karoryfer Lecolds (converted to MP3, hosted with the app)',
-    licence: CC0,
   },
   {
     prefixes: [`${HOSTED}baritone-sax/`],

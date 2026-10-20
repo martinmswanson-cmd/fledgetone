@@ -13,9 +13,9 @@ All public domain (CC0, The Unlicense) or free to redistribute (with credit: CC 
 `src/credits.ts` credits each one.
 
 - [VSCO 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) by Versilian Studios: the
-  string sections, solo violin, harp, flute, piccolo, oboe, clarinet, bassoon, horn (open and
-  muted), trumpet, trombone,
-  tuba, muted trumpet (harmon mute), marimba, xylophone, glockenspiel, pipe organ and upright piano
+  string sections, solo violin, harp, flute, piccolo, oboe, clarinet, bassoon, the short horn,
+  trumpet and trombone notes, the muted horn and the
+  muted trumpet (harmon mute), marimba, xylophone, glockenspiel, pipe organ and upright piano
   (the piano by Simon Dalzell of Ivy Audio, redistributable as part of VSCO).
 - [VCSL](https://github.com/sgossner/VCSL) (Versilian Community Sample Library) by Versilian
   Studios: timpani, tubular bells, vibraphone, harpsichord, kalimba, tenor saxophone, harmonica,
@@ -23,8 +23,8 @@ All public domain (CC0, The Unlicense) or free to redistribute (with credit: CC 
   a grand piano (a Steinway model B), an old upright (a Knight), a folk harp, wine glasses (a glass
   harp), a mbira, a balafon, a bowed psaltery, hand chimes, a gong and a didgeridoo.
 - Karoryfer Lecolds: electric guitars ([Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars),
-  [Emily Guitar](https://github.com/sfzinstruments/karoryfer.emilyguitar)), saxophones
-  ([Weresax](https://github.com/sfzinstruments/karoryfer.weresax), [Bear Sax](https://github.com/sfzinstruments/karoryfer.bear-sax)),
+  [Emily Guitar](https://github.com/sfzinstruments/karoryfer.emilyguitar)), the baritone saxophone
+  ([Bear Sax](https://github.com/sfzinstruments/karoryfer.bear-sax)),
   double bass ([Meatbass](https://github.com/sfzinstruments/karoryfer.meatbass)) and electric bass
   ([Growlybass](https://github.com/sfzinstruments/karoryfer.growlybass)), the studio drum kit
   ([Big Rusty Drums](https://github.com/sfzinstruments/karoryfer.big-rusty-drums)), the brush kit
@@ -50,8 +50,9 @@ All public domain (CC0, The Unlicense) or free to redistribute (with credit: CC 
   without vibrato, in an anechoic room; the centre microphone's 16-bit 44.1 kHz mono files), and
   the nylon-string classical guitar (a Raimundo 118, played by Brian Penkrot in 2011 in the
   anechoic chamber, every semitone of every string at pp, mf and ff; the 16-bit 44.1 kHz mono
-  files, `Piano_Other/guitar/Guitar.mono.1644.1.zip`), and the soprano saxophone (with vibrato),
-  alto and bass flutes, bass clarinet and bass trombone (the earlier recordings, every semitone at
+  files, `Piano_Other/guitar/Guitar.mono.1644.1.zip`), and the soprano and alto saxophones and
+  trumpet (with vibrato), French horn, tenor and bass trombones, tuba, alto and bass flutes and
+  bass clarinet (the earlier recordings, every semitone at
   pp, mf and ff, one zip each, whose scales name no string). Their terms, from the
   [MIS page](https://theremin.music.uiowa.edu/MIS.html): "Since 1997, these recordings have been
   freely available on this website and may be downloaded and used for any projects, without
