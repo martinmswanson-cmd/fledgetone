@@ -254,11 +254,14 @@ export async function captureWamStates(): Promise<void> {
   const began = session;
   await Promise.all(
     [...live].map(async ([id, inst]) => {
+      // (An instance of a song already replaced, waiting to be let go: not this song's)
+      if (stale.has(inst)) return;
       try {
         // (A plugin that never answers, crashed say, is skipped after a second, keeping what
         // was saved: saving, exporting and freezing never wait on it for ever)
         const state = await Promise.race([inst.audioNode.getState?.(), new Promise<undefined>((r) => setTimeout(() => r(undefined), 1000))]);
-        if (state === undefined) return;
+        // (A song opened while it answered: the answer belongs to the one before)
+        if (state === undefined || began !== session || stale.has(inst)) return;
         const json = JSON.stringify(state);
         if (json.length > 2_000_000 || states.get(id) === json) return;
         states.set(id, json);
@@ -280,6 +283,7 @@ export async function captureWamStates(): Promise<void> {
 export function captureWamStatesNow(): void {
   const changed = new Map<string, unknown>();
   for (const [id, inst] of live) {
+    if (stale.has(inst)) continue;
     const state = inst.audioNode.getStateNow?.();
     if (state === undefined) continue;
     const json = JSON.stringify(state);

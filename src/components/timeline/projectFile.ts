@@ -45,12 +45,26 @@ const PICKER_ID = 'beatbox-projects';
 export const useProjectFile = create<{ handle: FileHandle | null }>(() => ({ handle: null }));
 
 // Another song (New, a link, Restore) isn't the file's song: the next Save asks where again
-onProjectReplaced(() => useProjectFile.setState({ handle: null }));
+let replacements = 0;
+onProjectReplaced(() => {
+  replacements++;
+  useProjectFile.setState({ handle: null });
+});
+
+/** Thrown when another song was opened while this one was being saved (nothing is written). */
+class SongReplacedError extends Error {
+  constructor() {
+    super('another song was opened while saving');
+  }
+}
 
 /** The project file's contents: the arrangement and the sounds it plays (and the reference video, when small enough). */
 async function projectBlob(): Promise<Blob> {
+  const before = replacements;
   // The plugins' latest settings first (they reach the tracks every few seconds otherwise)
   await captureWamStates();
+  // A song opened meanwhile (New, Open, a dropped file) must never be written into this one's file
+  if (replacements !== before) throw new SongReplacedError();
   const project = currentProject();
   const sounds = await embedSounds(referencedSoundIds(project));
   const video = await projectVideoForFile();
@@ -82,6 +96,10 @@ export async function saveProjectFile(): Promise<void> {
       showToast(`Saved to ${handle.name}`);
       return;
     } catch (err) {
+      if (err instanceof SongReplacedError) {
+        showToast(`Not saved: another song was opened while saving (${handle.name} is unchanged)`);
+        return;
+      }
       showToast(`Couldn't save to ${handle.name} (${err instanceof Error ? err.message : String(err)}): choose where to save it`);
       useProjectFile.setState({ handle: null });
     }
@@ -91,6 +109,15 @@ export async function saveProjectFile(): Promise<void> {
 
 /** Save As: choose the folder and name (the picker opens where the last project was saved), then Save keeps writing there. */
 export async function saveProjectAs(): Promise<void> {
+  try {
+    await saveAs();
+  } catch (err) {
+    if (!(err instanceof SongReplacedError)) throw err;
+    showToast('Not saved: another song was opened while saving');
+  }
+}
+
+async function saveAs(): Promise<void> {
   const pick = pickers().showSaveFilePicker;
   if (!pick) {
     downloadBlob(await projectBlob(), fileName());
