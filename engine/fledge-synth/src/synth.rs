@@ -429,9 +429,11 @@ struct Voice {
     note: u8,
     vel: f32,
     age: u64,
-    /// The pitch now and where it glides to, in semitones (MIDI note numbers)
+    /// The pitch now and where it glides to, in semitones (MIDI note numbers), and how far off it
+    /// still is
     pitch: f32,
     target: f32,
+    glide: f32,
     amp: Env,
     fenv: Env,
     menv: Env,
@@ -466,6 +468,7 @@ impl Voice {
             age: 0,
             pitch: 60.0,
             target: 60.0,
+            glide: 0.0,
             amp: Env::default(),
             fenv: Env::default(),
             menv: Env::default(),
@@ -511,6 +514,7 @@ pub struct Synth {
     /// The LFO rate targets as last worked out (they take effect a block later)
     lfo_rate_mod: [f32; 4],
     ott: Ott,
+    ott_on: bool,
     fx: Effects,
     side_hp: [Svf; 2],
     side_coef: SvfCoef,
@@ -541,6 +545,7 @@ impl Synth {
             lfo_read: [0.0; 4],
             lfo_rate_mod: [0.0; 4],
             ott: Ott::new(sr),
+            ott_on: false,
             fx: Effects::new(sr),
             side_hp: [Svf::default(); 2],
             side_coef: SvfCoef::new(120.0, sr, std::f32::consts::SQRT_2),
@@ -724,6 +729,8 @@ impl Synth {
 
     fn all_off(&mut self, hard: bool) {
         self.stack.clear();
+        // (A stop mid-pedal mustn't leave the pedal down for the next playback)
+        self.pedal = false;
         for v in self.voices.iter_mut() {
             v.sustained = false;
             v.pending = None;
@@ -746,6 +753,7 @@ impl Synth {
             // Mono and legato: one voice; legato keeps the envelopes going between joined notes
             let v = &mut self.voices[0];
             let joined = v.active && v.amp.stage != Stage::Release && v.amp.stage != Stage::Idle;
+            v.glide = v.pitch - note as f32;
             v.target = note as f32;
             v.note = note;
             // A key is down now: lifting the pedal mustn't end it
@@ -753,6 +761,7 @@ impl Synth {
             if !(joined && cfg.mode == 2) {
                 if !v.active {
                     v.pitch = note as f32;
+                    v.glide = 0.0;
                 }
                 self.start(0, note, vel, &cfg, false);
             }
@@ -760,9 +769,12 @@ impl Synth {
         }
         // Poly: a free voice, else the quietest released one, else the oldest (faded out first)
         let free = self.voices.iter().position(|v| !v.active && v.pending.is_none());
+        // (A voice already taken for a note waiting to start isn't taken again: each note of a
+        // chord played over full voices gets its own)
+        let open = |i: &usize| self.voices[*i].pending.is_none();
         let i = free.unwrap_or_else(|| {
-            let released = (0..VOICES).filter(|&i| self.voices[i].amp.stage == Stage::Release).min_by(|&a, &b| self.voices[a].amp.value.partial_cmp(&self.voices[b].amp.value).unwrap());
-            released.unwrap_or_else(|| (0..VOICES).min_by_key(|&i| self.voices[i].age).unwrap())
+            let released = (0..VOICES).filter(open).filter(|&i| self.voices[i].amp.stage == Stage::Release).min_by(|&a, &b| self.voices[a].amp.value.partial_cmp(&self.voices[b].amp.value).unwrap());
+            released.or_else(|| (0..VOICES).filter(open).min_by_key(|&i| self.voices[i].age)).unwrap_or_else(|| (0..VOICES).min_by_key(|&i| self.voices[i].age).unwrap())
         });
         if self.voices[i].active {
             // Taken while sounding: fade it out over 3 ms, then start the new note
@@ -771,6 +783,7 @@ impl Synth {
         }
         self.voices[i].pitch = note as f32;
         self.voices[i].target = note as f32;
+        self.voices[i].glide = 0.0;
         self.start(i, note, vel, &cfg, true);
     }
 
@@ -836,6 +849,7 @@ impl Synth {
         if mode > 0 && self.voices[0].note == note {
             if let Some(&back) = self.stack.last() {
                 let v = &mut self.voices[0];
+                v.glide = v.pitch - back as f32;
                 v.target = back as f32;
                 v.note = back;
                 glided = true;
@@ -939,6 +953,12 @@ impl Synth {
         let bend = self.bend * cfg.bend_range;
         let pdecay = (-1.0 / (cfg.pdecay * sr)).exp();
         let tab = [table(cfg.osc[0].table), table(cfg.osc[1].table)];
+        // Envelope settings reach notes already playing (automation, a preset chosen mid-note)
+        for v in self.voices.iter_mut().filter(|v| v.active) {
+            v.amp.set(cfg.amp[0], cfg.amp[1], cfg.amp[2], cfg.amp[3], sr);
+            v.fenv.set(cfg.fadsr[0], cfg.fadsr[1], cfg.fadsr[2], cfg.fadsr[3], sr);
+            v.menv.set(cfg.madsr[0], cfg.madsr[1], cfg.madsr[2], cfg.madsr[3], sr);
+        }
 
         for vi in 0..VOICES {
             if !self.voices[vi].active {
@@ -1013,7 +1033,8 @@ impl Synth {
                     let octaves = f.keytrack * (vpitch - 60.0) / 12.0 + f.env * fenv_now * 6.0 + cut_m * 5.0;
                     let cutoff = (f.cutoff * 2f32.powf(octaves)).clamp(16.0, sr * 0.45);
                     let reso = (f.reso + res_m * 0.5).clamp(0.0, 1.0);
-                    let vowel = vowel_of(f.cutoff * 2f32.powf(cut_m * 5.0));
+                    // (The formant filter's vowel moves with the envelope too, not with the key)
+                    let vowel = vowel_of(f.cutoff * 2f32.powf(f.env * fenv_now * 6.0 + cut_m * 5.0));
                     FiltCoef::new(f.kind, cutoff, reso, vowel, sr)
                 };
                 let c1 = coef(&cfg.filt[0], m[d::CUT1], m[d::RES1]);
@@ -1033,7 +1054,10 @@ impl Synth {
 
                 for n in start..end {
                     // Glide and the pitch envelope move per sample
-                    v.pitch += (v.target - v.pitch) * glide;
+                    // (Kept as a shrinking offset: small numbers keep their precision, so a long
+                    // glide arrives in tune rather than stalling a few cents short)
+                    v.glide *= 1.0 - glide;
+                    v.pitch = v.target + v.glide;
                     v.penv *= pdecay;
                     let env = v.amp.tick();
                     v.fenv.tick();
@@ -1130,6 +1154,7 @@ impl Synth {
                         self.voices[vi].active = false;
                         self.voices[vi].pitch = note as f32;
                         self.voices[vi].target = note as f32;
+                        self.voices[vi].glide = 0.0;
                         self.start(vi, note, vel, &cfg, true);
                     }
                 }
@@ -1142,6 +1167,10 @@ impl Synth {
         }
 
         // ---- the output stage ----
+        if cfg.ott > 0.0 && !self.ott_on {
+            self.ott.reset();
+        }
+        self.ott_on = cfg.ott > 0.0;
         if cfg.ott > 0.0 {
             let att = 1.0 - (-1.0 / ((0.002 + 0.03 * cfg.ott_time) * sr)).exp();
             let rel = 1.0 - (-1.0 / ((0.03 + 0.4 * cfg.ott_time) * sr)).exp();
@@ -1485,6 +1514,96 @@ mod tests {
             last = Some(v);
         }
         assert!(worst < 0.2, "jumped by {worst}");
+    }
+
+
+    #[test]
+    fn a_chord_over_full_voices_keeps_every_note() {
+        let mut s = Synth::new(48000.0);
+        for n in 40..48 {
+            s.midi(0x90, n, 100);
+        }
+        render(&mut s, 10);
+        for n in [72, 76, 79] {
+            s.midi(0x90, n, 100);
+        }
+        render(&mut s, 20);
+        for n in [72u8, 76, 79] {
+            assert!(s.voices.iter().any(|v| v.active && v.note == n), "{n} isn't playing");
+        }
+    }
+
+    #[test]
+    fn a_long_glide_arrives_in_tune() {
+        for sr in [48000.0, 96000.0] {
+            let mut s = Synth::new(sr);
+            set(&mut s, "Voices", 1.0);
+            set(&mut s, "Glide", 2.0);
+            s.midi(0x90, 60, 100);
+            render(&mut s, 2);
+            s.midi(0x90, 84, 100);
+            for _ in 0..(sr as usize * 20 / BLOCK) {
+                s.process(BLOCK);
+            }
+            assert!((s.voices[0].pitch - 84.0).abs() < 0.005, "{sr}: ended at {}", s.voices[0].pitch);
+        }
+    }
+
+    #[test]
+    fn all_notes_off_lifts_the_pedal() {
+        let mut s = Synth::new(48000.0);
+        s.midi(0xB0, 64, 127);
+        s.midi(0xB0, 123, 0);
+        s.midi(0x90, 60, 100);
+        render(&mut s, 5);
+        s.midi(0x80, 60, 0);
+        render(&mut s, 400);
+        assert_eq!(active(&s), 0);
+    }
+
+    #[test]
+    fn the_formant_filter_follows_the_filter_envelope() {
+        let out = |env: f32| {
+            let mut s = Synth::new(48000.0);
+            set(&mut s, "Filter type", 9.0);
+            set(&mut s, "Cutoff", 300.0);
+            set(&mut s, "Filter envelope", env);
+            set(&mut s, "Filter sustain", 1.0);
+            s.midi(0x90, 48, 100);
+            render(&mut s, 50);
+            s.out[0]
+        };
+        let (a, b) = (out(0.0), out(1.0));
+        assert!(a.iter().zip(b.iter()).any(|(x, y)| (x - y).abs() > 1e-3));
+    }
+
+    #[test]
+    fn a_shorter_release_reaches_a_held_note() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "Amp release", 5.0);
+        s.midi(0x90, 60, 100);
+        render(&mut s, 20);
+        set(&mut s, "Amp release", 0.01);
+        render(&mut s, 1);
+        s.midi(0x80, 60, 0);
+        render(&mut s, 375);
+        let (peak, _) = render(&mut s, 5);
+        assert!(peak < 1e-3, "still {peak} a second later");
+    }
+
+    #[test]
+    fn the_ott_starts_clean_when_turned_back_on() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "OTT", 0.5);
+        set(&mut s, "Level", -6.0);
+        s.midi(0x90, 36, 127);
+        render(&mut s, 100);
+        set(&mut s, "OTT", 0.0);
+        s.midi(0x80, 36, 0);
+        render(&mut s, 400);
+        set(&mut s, "OTT", 0.5);
+        let (peak, _) = render(&mut s, 10);
+        assert!(peak < 1e-3, "popped to {peak}");
     }
 
 }

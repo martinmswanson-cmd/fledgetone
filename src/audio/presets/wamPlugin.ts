@@ -137,6 +137,7 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       const now = out.context.currentTime;
       inst.audioNode.clearEvents?.();
       for (const n of touched) sendMidi(inst, [0x80, n, 0], now);
+      sendMidi(inst, [0xb0, 64, 0], now);
       sendMidi(inst, [0xb0, 123, 0], now);
       sendMidi(inst, [0xe0, 0, 64], now);
       touched.clear();

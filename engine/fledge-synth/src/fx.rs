@@ -40,7 +40,8 @@ impl Biquad {
                 // Shelves with a slope of 1
                 let alpha = sw / 2.0 * 2f32.sqrt();
                 let sa = 2.0 * a.sqrt() * alpha;
-                let s = if kind == 0 { -1.0 } else { 1.0 };
+                // (+1 makes the low shelf of these formulas, -1 the high)
+                let s = if kind == 0 { 1.0 } else { -1.0 };
                 b0 = a * ((a + 1.0) - s * (a - 1.0) * cw + sa);
                 b1 = 2.0 * s * a * ((a - 1.0) - s * (a + 1.0) * cw);
                 b2 = a * ((a + 1.0) - s * (a - 1.0) * cw - sa);
@@ -220,9 +221,15 @@ impl Effects {
             self.lines.iter_mut().for_each(Line::clear);
             self.damp = [0.0; REVERB_LINES];
         }
+        if c.chorus && !self.was_on[0] {
+            self.chorus.iter_mut().for_each(Line::clear);
+        }
         if (c.phaser && !self.was_on[1]) || !c.phaser {
             self.phaser_ap = [[0.0; 6]; 2];
             self.phaser_last = [0.0; 2];
+            if !self.was_on[1] {
+                self.flanger.iter_mut().for_each(Line::clear);
+            }
         }
         self.was_on = on;
 
@@ -488,4 +495,55 @@ mod tests {
         let drop = 10.0 * (at(0.2) / at(1.2)).log10();
         assert!(drop > 35.0 && drop < 90.0, "dropped {drop} dB in a second");
     }
+
+    fn gain_at(c: &FxCfg, hz: f32) -> f32 {
+        let mut fx = Effects::new(48000.0);
+        let mods = [FxMods::default(); 8];
+        let mut peak: f32 = 0.0;
+        for b in 0..400 {
+            let mut l = [0.0f32; 128];
+            for (i, x) in l.iter_mut().enumerate() {
+                *x = (2.0 * PI * hz * (b * 128 + i) as f32 / 48000.0).sin() * 0.1;
+            }
+            let mut r = l;
+            fx.process(&mut l, &mut r, 128, c, &mods, 16);
+            if b > 300 {
+                peak = l.iter().fold(peak, |m, x| m.max(x.abs()));
+            }
+        }
+        20.0 * (peak / 0.1).log10()
+    }
+
+    #[test]
+    fn eq_shelves_boost_their_own_ends() {
+        let low = FxCfg { eq: true, eq_low: (120.0, 12.0), eq_mid: (1000.0, 0.0), eq_high: (6000.0, 0.0), ..Default::default() };
+        assert!(gain_at(&low, 40.0) > 10.0 && gain_at(&low, 2000.0) < 1.0);
+        let high = FxCfg { eq: true, eq_low: (120.0, 0.0), eq_mid: (1000.0, 0.0), eq_high: (6000.0, 12.0), ..Default::default() };
+        assert!(gain_at(&high, 15000.0) > 10.0 && gain_at(&high, 200.0) < 1.0);
+    }
+
+    #[test]
+    fn chorus_and_flanger_switched_back_on_play_no_old_sound() {
+        for flanger in [false, true] {
+            let mut fx = Effects::new(48000.0);
+            let mods = [FxMods::default(); 8];
+            let on = FxCfg { chorus: !flanger, chorus_rate: 0.5, chorus_depth: 1.0, chorus_mix: 1.0, phaser: flanger, flanger, phaser_rate: 0.5, phaser_depth: 1.0, phaser_fb: 1.0, phaser_mix: 1.0, ..Default::default() };
+            let off = FxCfg::default();
+            for _ in 0..50 {
+                let mut l = [0.5f32; 128];
+                let mut r = [0.5f32; 128];
+                fx.process(&mut l, &mut r, 128, &on, &mods, 16);
+            }
+            for _ in 0..50 {
+                let mut l = [0.0f32; 128];
+                let mut r = [0.0f32; 128];
+                fx.process(&mut l, &mut r, 128, &off, &mods, 16);
+            }
+            let mut l = [0.0f32; 128];
+            let mut r = [0.0f32; 128];
+            fx.process(&mut l, &mut r, 128, &on, &mods, 16);
+            assert!(l.iter().all(|x| x.abs() < 1e-6), "flanger {flanger}: old sound came back");
+        }
+    }
+
 }

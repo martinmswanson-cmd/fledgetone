@@ -397,6 +397,13 @@ pub struct Ott {
 }
 
 impl Ott {
+    /// Forget everything (turned back on, it starts clean rather than with old sound).
+    pub fn reset(&mut self) {
+        self.split = [[Svf::default(); 4]; 2];
+        self.split2 = [[Svf::default(); 4]; 2];
+        self.env = [0.0; 3];
+    }
+
     pub fn new(sr: f32) -> Self {
         Ott {
             split: [[Svf::default(); 4]; 2],
@@ -494,7 +501,8 @@ impl SafetyClip {
         let y = if dx.abs() < 1e-4 { knee(0.5 * (x + self.x1)) } else { (f - self.f1) / dx };
         self.x1 = x;
         self.f1 = f;
-        y
+        // (Huge inputs lose precision in the step above: the ceiling holds whatever comes in)
+        y.clamp(-CEIL, CEIL)
     }
 }
 
@@ -546,10 +554,12 @@ mod tests {
 
     #[test]
     fn safety_clip_never_passes_the_ceiling() {
-        let mut c = SafetyClip::default();
-        for i in 0..10000 {
-            let x = (i as f32 * 0.01).sin() * 8.0;
-            assert!(c.tick(x).abs() <= 0.9);
+        for amp in [8.0, 100.0, 1000.0, 1e5] {
+            let mut c = SafetyClip::default();
+            for i in 0..10000 {
+                let x = (i as f32 * 0.01).sin() * amp;
+                assert!(c.tick(x).abs() <= 0.9, "amplitude {amp}");
+            }
         }
     }
 }
