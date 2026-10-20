@@ -12,6 +12,7 @@ second update on the same day gets `-2`, and so on).
 - **The guide and every tutorial were checked against the studio** and corrected where they had drifted: menu names, starter counts, the EQ, the horns, export and video options, Pocket, shortcuts and a few tutorial steps that couldn't finish.
 - The three-band EQ's labels and curve now show its real bands (below 400 Hz, 400 Hz to 2.5 kHz, above 2.5 kHz).
 - The **Cowbell Drive**, **Dark Bounce**, **Blown-Out Hype** and **Rap Beat** starters open with their own names.
+- The two films on the home page are scored with sound effects from the studio's own maker: birdsong, wingbeats, wind, a river and crickets in **First Flight**; thrusters, whooshes, thunder, rock hits and the beacon igniting in **Courier**. Their downloadable projects carry the effects too.
 
 ## 2026.10.20-5 — A new home page
 
