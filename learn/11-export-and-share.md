@@ -101,7 +101,7 @@ For TikTok, Reels, Shorts or YouTube, export the song as a video that shows how 
 1. Open **File › Showcase video…**. Export opens set to **Video (MP4)**, with **Picture** on **Showcase: the notes playing**.
 2. Pick the **Shape**: **Portrait 9:16** for phones, or **Widescreen 16:9** for YouTube and websites.
 3. Leave **Frame rate** on **Smooth 60 fps**, so the notes glide.
-4. Under **Title and marks**, type your **Title** and the line **Under it** (or untick them), and choose whether to show the section names, the time and the waveform. A small *made with fledgetone.com* mark stays at the bottom.
+4. Under **Title and marks**, type your **Title** and the line **Under it** (or untick them), and choose whether to show the section names, the time and the waveform.
 5. Leave **Match a loudness target** on **Streaming (-14 LUFS)**, then click **Export**.
 
 {{shot:export-video}}
