@@ -469,7 +469,7 @@ pub const PRESETS: &[Preset] = &[
             ("Filter type", LP12), ("Cutoff", 8000.0), ("Resonance", 0.0),
             ("Amp attack", 0.005), ("Amp release", 0.06),
             ("Drive type", WARM), ("Drive", 3.0),
-            ("Chorus on", 1.0), ("Chorus rate", 5.5), ("Chorus depth", 0.25), ("Chorus mix", 0.5),
+            ("Chorus on", 1.0), ("Chorus rate", 5.0), ("Chorus depth", 0.25), ("Chorus mix", 0.5),
             ("Mod 1 source", SRC_MW), ("Mod 1 target", A_POS), ("Mod 1 amount", 0.9),
             ("Mod 5 source", M1), ("Mod 5 target", A_POS), ("Mod 5 amount", 0.9),
             ("Mod 6 source", M2), ("Mod 6 target", CHORUS_MIX), ("Mod 6 amount", 0.5),
@@ -496,7 +496,7 @@ pub const PRESETS: &[Preset] = &[
             ("A position", SAW), ("A unison", 7.0), ("A detune", 0.3), ("A width", 0.7),
             ("B position", SQUARE), ("B unison", 5.0), ("B detune", 0.25), ("B level", -6.0),
             ("Filter type", LP24), ("Cutoff", 2500.0), ("Resonance", 0.15), ("Filter envelope", 0.25), ("Filter decay", 0.5),
-            ("LFO 1 shape", S_PUMP), ("LFO 1 rate (sync)", D_QUARTER), ("LFO 1 mode", FREE), ("LFO 1 target 1", VOLUME), ("LFO 1 amount 1", 0.85),
+            ("LFO 1 shape", S_PUMP), ("LFO 1 rate (sync)", D_QUARTER), ("LFO 1 target 1", VOLUME), ("LFO 1 amount 1", 0.85),
             ("Amp release", 0.3),
             ("Reverb on", 1.0), ("Reverb mix", 0.15),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
@@ -510,7 +510,7 @@ pub const PRESETS: &[Preset] = &[
             ("A position", SAW), ("A unison", 5.0), ("A detune", 0.25), ("A width", 0.7),
             ("B table", T_HARM), ("B position", 0.5), ("B level", -6.0),
             ("Filter type", LP12), ("Cutoff", 4000.0), ("Resonance", 0.1),
-            ("LFO 1 shape", S_DRAWN2), ("LFO 1 rate (sync)", D_BAR), ("LFO 1 mode", FREE), ("LFO 1 target 1", VOLUME), ("LFO 1 amount 1", 0.9),
+            ("LFO 1 shape", S_DRAWN2), ("LFO 1 rate (sync)", D_BAR), ("LFO 1 target 1", VOLUME), ("LFO 1 amount 1", 0.9),
             ("Amp release", 0.2),
             ("Delay on", 1.0), ("Delay time (sync)", D_EIGHTH_DOT), ("Delay feedback", 0.3), ("Delay mix", 0.2),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
@@ -663,6 +663,21 @@ mod tests {
             }
         }
         ((10.0 * (sum / n as f64).log10()) as f32, peak)
+    }
+
+    /// Every setting a preset writes is inside its parameter's range (out of range would be
+    /// clamped, silently changing the sound)
+    #[test]
+    fn preset_values_are_in_range() {
+        for p in PRESETS {
+            for &(name, v) in p.sets {
+                let i = index_of(name).unwrap();
+                let k = param(i).kind;
+                let back = k.value(k.normal(v));
+                let ok = if v == f32::NEG_INFINITY { back == v } else { (back - v).abs() <= 1e-3 * v.abs().max(1.0) };
+                assert!(ok, "{}: {name} = {v} comes back as {back}", p.name);
+            }
+        }
     }
 
     #[test]

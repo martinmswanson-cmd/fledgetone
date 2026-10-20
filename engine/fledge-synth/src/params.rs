@@ -434,7 +434,8 @@ impl Kind {
                 if v == f32::NEG_INFINITY || v < min {
                     0.0
                 } else {
-                    (v - min) / (max - min)
+                    // (Just above 0 at the minimum: 0 itself is "off")
+                    ((v - min) / (max - min)).max(1e-6)
                 }
             }
             Kind::Bipolar => (v + 1.0) * 0.5,

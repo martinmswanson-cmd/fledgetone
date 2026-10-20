@@ -506,6 +506,8 @@ pub struct Synth {
     stack: Vec<u8>,
     lfo_phase: [f32; 4],
     lfo_held: [(f32, f32); 4],
+    /// Where each free LFO was last read (with its phase offset)
+    lfo_read: [f32; 4],
     /// The LFO rate targets as last worked out (they take effect a block later)
     lfo_rate_mod: [f32; 4],
     ott: Ott,
@@ -536,6 +538,7 @@ impl Synth {
             stack: Vec::with_capacity(32),
             lfo_phase: [0.0; 4],
             lfo_held: [(0.0, 0.0); 4],
+            lfo_read: [0.0; 4],
             lfo_rate_mod: [0.0; 4],
             ott: Ott::new(sr),
             fx: Effects::new(sr),
@@ -745,6 +748,8 @@ impl Synth {
             let joined = v.active && v.amp.stage != Stage::Release && v.amp.stage != Stage::Idle;
             v.target = note as f32;
             v.note = note;
+            // A key is down now: lifting the pedal mustn't end it
+            v.sustained = false;
             if !(joined && cfg.mode == 2) {
                 if !v.active {
                     v.pitch = note as f32;
@@ -825,20 +830,22 @@ impl Synth {
     fn note_off(&mut self, note: u8) {
         self.stack.retain(|&n| n != note);
         let mode = self.v(p::MODE) as usize;
-        if mode > 0 {
-            let v = &mut self.voices[0];
-            if v.note != note {
-                return;
-            }
+        // Mono and legato: back to the last key still held, gliding there without a new attack
+        // (only the mono voice; voices left from playing in poly still end as usual)
+        let mut glided = false;
+        if mode > 0 && self.voices[0].note == note {
             if let Some(&back) = self.stack.last() {
-                // Back to the last key still held, gliding there without a new attack
+                let v = &mut self.voices[0];
                 v.target = back as f32;
                 v.note = back;
-                return;
+                glided = true;
             }
         }
         let pedal = self.pedal;
-        for v in self.voices.iter_mut().filter(|v| v.active && v.note == note && v.amp.stage != Stage::Release) {
+        for (i, v) in self.voices.iter_mut().enumerate() {
+            if !v.active || v.note != note || v.amp.stage == Stage::Release || (i == 0 && glided) {
+                continue;
+            }
             if pedal {
                 v.sustained = true;
             } else {
@@ -847,7 +854,10 @@ impl Synth {
         }
         for v in self.voices.iter_mut() {
             if v.pending.map(|(n, _)| n) == Some(note) {
+                // The note waiting for this voice is over before it began: the voice it was taken
+                // from is already fading, so let it finish going (not stay part-faded)
                 v.pending = None;
+                v.release();
             }
         }
     }
@@ -874,13 +884,15 @@ impl Synth {
             }
             for (b, slot) in shared[k].iter_mut().enumerate().take(nblk) {
                 let ph = (self.lfo_phase[k] + cfg.lfo[k].phase).fract();
-                *slot = lfo_value(&cfg, k, ph, self.lfo_held[k]);
-                let n = frames.saturating_sub(b * CONTROL).min(CONTROL);
-                self.lfo_phase[k] += rate[k] * n as f32 / sr;
-                if self.lfo_phase[k] >= 1.0 {
-                    self.lfo_phase[k] -= self.lfo_phase[k].floor();
+                // Steps and Drift move to their next level where the cycle (as read, with its
+                // phase offset) starts again, so they never jump mid-cycle
+                if ph < self.lfo_read[k] {
                     self.lfo_held[k] = (self.lfo_held[k].1, self.rng.bipolar());
                 }
+                self.lfo_read[k] = ph;
+                *slot = lfo_value(&cfg, k, ph, self.lfo_held[k]);
+                let n = frames.saturating_sub(b * CONTROL).min(CONTROL);
+                self.lfo_phase[k] = (self.lfo_phase[k] + rate[k] * n as f32 / sr).fract();
             }
         }
         // The whole synth's modulation, each stretch of CONTROL samples
@@ -899,6 +911,24 @@ impl Synth {
                 s[src::MACRO + k] = cfg.macros[k];
             }
             route(&cfg, &s, m);
+            // A free LFO with a fade in is a note's source (each note fades it in its own time),
+            // but the whole-synth targets (LFO rates, effect mixes, width) have no note: they
+            // take it unfaded
+            let mut faded = [0.0f32; NSRC];
+            let mut any = false;
+            for k in 0..4 {
+                if cfg.lfo[k].mode == 0 && !cfg.lfo[k].global {
+                    faded[src::LFO + k] = shared[k][b];
+                    any = true;
+                }
+            }
+            if any {
+                let mut extra = [0.0f32; NDEST];
+                route(&cfg, &faded, &mut extra);
+                for (t, x) in m.iter_mut().zip(extra.iter()).skip(p::GLOBAL_DESTS) {
+                    *t += x;
+                }
+            }
         }
         for k in 0..4 {
             self.lfo_rate_mod[k] = gm[nblk - 1][d::LFO_RATE + k];
@@ -1095,7 +1125,8 @@ impl Synth {
                 }
                 // A voice taken for a new note: once faded out, the new note starts here
                 if let Some((note, vel)) = self.voices[vi].pending {
-                    if self.voices[vi].fade <= 0.0 {
+                    // (Or its old note ended on its own before the fade did)
+                    if self.voices[vi].fade <= 0.0 || self.voices[vi].amp.stage == Stage::Idle {
                         self.voices[vi].active = false;
                         self.voices[vi].pitch = note as f32;
                         self.voices[vi].target = note as f32;
@@ -1368,4 +1399,92 @@ mod tests {
         let (peak, _) = render(&mut s, 600);
         assert!(peak <= 0.9, "peak {peak}");
     }
+
+    fn active(s: &Synth) -> usize {
+        s.voices.iter().filter(|v| v.active).count()
+    }
+
+    #[test]
+    fn switching_to_mono_with_notes_held_still_ends_them() {
+        let mut s = Synth::new(48000.0);
+        s.midi(0x90, 60, 100);
+        s.midi(0x90, 64, 100);
+        render(&mut s, 5);
+        set(&mut s, "Voices", 1.0);
+        s.midi(0x80, 64, 0);
+        s.midi(0x80, 60, 0);
+        render(&mut s, 400);
+        assert_eq!(active(&s), 0);
+    }
+
+    #[test]
+    fn a_note_stealing_a_finished_voice_still_plays() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "Amp release", 0.005);
+        for n in 40..48 {
+            s.midi(0x90, n, 100);
+        }
+        render(&mut s, 10);
+        for n in 40..48 {
+            s.midi(0x80, n, 0);
+        }
+        render(&mut s, 4);
+        s.midi(0x90, 72, 100);
+        render(&mut s, 20);
+        let (_, rms) = render(&mut s, 20);
+        assert!(rms > 1e-3, "the new note is silent ({rms})");
+    }
+
+    #[test]
+    fn a_stolen_voice_never_stays_part_faded() {
+        let mut s = Synth::new(48000.0);
+        for n in 40..48 {
+            s.midi(0x90, n, 100);
+        }
+        render(&mut s, 10);
+        s.midi(0x90, 72, 100);
+        s.process(64);
+        s.midi(0x80, 72, 0);
+        render(&mut s, 200);
+        assert!(s.voices.iter().all(|v| !v.active || v.fade >= 1.0 || v.amp.stage == Stage::Release));
+    }
+
+    #[test]
+    fn legato_pedal_up_keeps_the_held_key() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "Voices", 2.0);
+        s.midi(0x90, 60, 100);
+        s.midi(0xB0, 64, 127);
+        s.midi(0x80, 60, 0);
+        s.midi(0x90, 62, 100);
+        render(&mut s, 5);
+        s.midi(0xB0, 64, 0);
+        render(&mut s, 200);
+        let (_, rms) = render(&mut s, 10);
+        assert!(rms > 1e-3, "the held key went silent");
+    }
+
+    #[test]
+    fn a_free_drift_lfo_with_a_phase_offset_never_jumps() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "LFO 1 shape", 7.0);
+        set(&mut s, "LFO 1 mode", 0.0);
+        set(&mut s, "LFO 1 sync", 0.0);
+        set(&mut s, "LFO 1 rate (Hz)", 5.0);
+        set(&mut s, "LFO 1 phase", 0.5);
+        let cfg = s.cfg();
+        let mut last: Option<f32> = None;
+        let mut worst: f32 = 0.0;
+        for _ in 0..2000 {
+            s.process(BLOCK);
+            let ph = (s.lfo_phase[0] + 0.5).fract();
+            let v = lfo_value(&cfg, 0, ph, s.lfo_held[0]);
+            if let Some(l) = last {
+                worst = worst.max((v - l).abs());
+            }
+            last = Some(v);
+        }
+        assert!(worst < 0.2, "jumped by {worst}");
+    }
+
 }

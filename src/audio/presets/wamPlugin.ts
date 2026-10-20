@@ -99,6 +99,14 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
           }
           inst = loaded;
           loaded.audioNode.connect(nativeInputOf(out));
+          // The tempo from the start (not only with the first note): free tempo-synced LFOs run
+          // before any note
+          const now = out.context.currentTime;
+          const bpm = out.context.transport.bpm.getValueAtTime(now);
+          if (Number.isFinite(bpm) && bpm > 0) {
+            tempo = bpm;
+            sendTempo(loaded, bpm, now);
+          }
           if (isLive(ctx)) registerLiveWam(plugin.id, loaded);
         },
         (err) => report(plugin, err)

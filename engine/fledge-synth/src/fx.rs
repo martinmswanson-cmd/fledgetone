@@ -196,7 +196,8 @@ impl Effects {
             delay_lp: [0.0; 2],
             pre: Line::new(ms(160.0)),
             diffuse: DIFFUSE_MS.map(|m| Line::new(ms(m * 2.2))),
-            lines: REVERB_MS.map(|m| Line::new(ms(m * 2.2))),
+            // (Room for the largest size plus the lines' slow wobble)
+            lines: REVERB_MS.map(|m| Line::new(ms(m * 2.2) + (0.0013 * sr) as usize)),
             damp: [0.0; REVERB_LINES],
             reverb_mod: 0.0,
             was_on: [false; 4],
