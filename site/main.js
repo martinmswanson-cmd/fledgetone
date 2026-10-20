@@ -182,10 +182,9 @@ const el = (tag, cls, html = '') => { const e = document.createElement(tag); if 
     if (b % 8 === 0 && b < BARS) t.dataset.n = String(b + 1);
     ticks.append(t);
   }
-  const SECTIONS = [['.hero', 'Intro', '--cyan'], ['#video', 'Video', '--purple'], ['#games', 'Games', '--green'],
-    ['#features', 'Features', '--amber'], ['#credits', 'Credits', '--muted'], ['.final', 'Outro', '--cyan']];
-  const flags = SECTIONS.map(([sel, name, c]) => {
-    const target = document.querySelector(sel);
+  // The page's sections, each named by data-ruler (and coloured by data-ruler-color)
+  const SECTIONS = [...document.querySelectorAll('[data-ruler]')].map((e) => [e, e.dataset.ruler, e.dataset.rulerColor || '--cyan']);
+  const flags = SECTIONS.map(([target, name, c]) => {
     const f = el('a', 'sr-flag', name);
     f.href = target.id ? `#${target.id}` : '#main';
     f.style.setProperty('--c', `var(${c})`);

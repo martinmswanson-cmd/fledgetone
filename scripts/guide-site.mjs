@@ -40,9 +40,9 @@ export const head = ({ title, description, path, current = 'guide' }) => `<!doct
     <div class="wrap nav-row">
       <a class="brand" href="/" aria-label="Fledgetone home"><img src="/img/logo.png" alt="" width="34" height="34" /><span>Fledgetone</span></a>
       <nav class="nav-links" aria-label="Site">
-        <a href="/#video">Video</a>
-        <a href="/#games">Games</a>
-        <a href="/#features">Features</a>
+        <a href="/games/">For games</a>
+        <a href="/creators/">For creators</a>
+        <a href="/film/">For film</a>
         <a href="/learn/"${current === 'learn' ? ' aria-current="page"' : ''}>Learn</a>
         <a href="/guide/"${current === 'guide' ? ' aria-current="page"' : ''}>Guide</a>
       </nav>
@@ -58,6 +58,9 @@ export const foot = `
       <p>Make music for you.</p>
       <nav aria-label="Footer">
         <a href="/app/">Studio</a>
+        <a href="/games/">For games</a>
+        <a href="/creators/">For creators</a>
+        <a href="/film/">For film</a>
         <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
         <a href="/licenses/">Licences</a>

@@ -659,10 +659,10 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .phone-frame video, .phone-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .game-grid { margin-top: 24px; }
 .game-grid img { display: block; width: 100%; height: auto; }
-.track-split { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 56px; align-items: center; }
+.track-split { display: grid; grid-template-columns: minmax(0, 1fr) var(--shot-w, 300px); gap: 56px; align-items: center; }
 .track-split .track-copy { display: block; }
 .track-split .track-copy > ul { margin-bottom: 0; }
-.track-split .phone-shot { margin: 0; }
+.track-split .phone-shot, .track-split > .shot { margin: 0; }
 .track-split .phone-frame { aspect-ratio: 390 / 844; }
 @media (max-width: 1100px) {
   .real-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -678,3 +678,52 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
   .real-list { grid-template-columns: 1fr; }
   .game-grid { grid-template-columns: 1fr; }
 }
+
+/* The audience pages (/games/, /creators/, /film/) */
+.page-hero h1 { font-size: clamp(36px, 5.6vw, 64px); }
+.page-hero .lede { max-width: 720px; }
+.page-hero .eyebrow .who { color: var(--c, var(--cyan)); }
+.page-hero .shot-hero .shot-frame, .page-hero .player .shot-frame { box-shadow: 0 40px 120px -30px rgba(0, 0, 0, .9), 0 0 0 1px color-mix(in srgb, var(--c, var(--cyan)) 25%, transparent); }
+.page-section { padding-top: 96px; }
+.page-section > .section-title { text-align: center; }
+.page-section > .section-lede { max-width: 760px; margin: 0 auto 40px; text-align: center; color: #c4c4cc; font-size: clamp(17px, 2vw, 19px); }
+.shot img { display: block; width: 100%; height: auto; }
+.shot-tall { max-width: 460px; justify-self: center; }
+.code {
+  margin: 0 0 18px; padding: 16px 18px; overflow-x: auto;
+  background: #0b0b0d; border: 1px solid var(--border); border-left: 3px solid var(--c, var(--cyan)); border-radius: 10px;
+  font: 500 13.5px/1.7 var(--mono); color: #d4d4d8; white-space: pre;
+}
+.code .c { color: var(--muted); }
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.chips li { padding: 7px 12px; border: 1px solid var(--border-2); border-radius: 999px; background: var(--panel); font-size: 14px; color: var(--text); }
+.chips li span { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.note-line { margin: 18px 0 0; font-size: 14px; color: var(--muted); }
+.note-line a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+.next-step { margin-top: 18px; }
+/* Home page: one card for each audience page */
+.aud { padding-top: 96px; }
+.aud > .section-title { text-align: center; }
+.aud-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 8px; }
+.aud-card {
+  position: relative; display: flex; flex-direction: column; gap: 10px; padding: 24px; border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--border); color: var(--text); text-decoration: none;
+  transition: border-color .2s ease, transform .2s ease;
+}
+.aud-card::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--c); border-radius: var(--radius) var(--radius) 0 0; }
+.aud-card:hover { border-color: var(--c); transform: translateY(-2px); text-decoration: none; }
+.aud-card .aud-who { font: 700 12px/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--c); }
+.aud-card h3 { margin: 0; font-size: 21px; line-height: 1.3; font-weight: 700; }
+.aud-card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.6; flex: 1; }
+.aud-card .aud-go { color: var(--c); font-weight: 600; font-size: 15px; }
+@media (max-width: 860px) { .aud-cards { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .aud-card { transition: none; } }
+/* A film with sound as an audience page's hero */
+.hero-film.scored { padding: 0; border: 0; background: none; margin-top: 56px; }
+.hero-film figcaption { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px 18px; padding: 0; }
+.hero-film .ai-note a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.hero-tall .shot-frame { max-width: 340px; margin: 0 auto; }
+.engine-code { margin-top: 32px; max-width: 780px; min-width: 0; }
+.page-hero .shot-hero, .page-hero .hero-film.scored { margin: 56px auto 0; }
+.final .fineprint { font-size: 14px; max-width: 640px; margin: 18px auto 0; }
+.final .fineprint a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }

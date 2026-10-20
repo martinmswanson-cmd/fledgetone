@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-7 — Pages for games, creators and film
+
+- **fledgetone.com has a page for each kind of maker**: **For games** (adaptive music, sound effects, playable test games and the exports for Godot, Unity, the web, FMOD and Wwise), **For creators** (showcase videos, every length, a version to talk over, stream kits and beat store packages) and **For film** (hit points, tempo fitting, timecode, dialogue dips and markers for your editor). The home page links to all three under **What will you make?**
+
 ## 2026.10.20-6 — New tutorials
 
 - **Two new tutorials** in the **Learn** menu. **Make a showcase video** walks you through a video of your song's notes to post: tall for phones, smooth 60 fps, your own title. **Find and keep your sounds** covers searching the instruments, starring favourites, saving a sound to My sounds and keeping them in a file.

@@ -61,12 +61,10 @@
         <img src="/img/logo.png" alt="" width="34" height="34" />
         <span>Fledgetone</span>
       </a>
-      <nav class="nav-links" aria-label="Sections">
-        <a href="#real">Why Fledgetone</a>
-        <a href="#showcase">Showcase</a>
-        <a href="#video">Video</a>
-        <a href="#games">Games</a>
-        <a href="#features">Features</a>
+      <nav class="nav-links" aria-label="Pages">
+        <a href="/games/">For games</a>
+        <a href="/creators/">For creators</a>
+        <a href="/film/">For film</a>
         <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
       </nav>
@@ -78,7 +76,7 @@
 
   <main id="main">
     <!-- Hero -->
-    <section class="hero">
+    <section class="hero" data-ruler="Intro" data-ruler-color="--cyan">
       <!-- A piano roll the playhead plays through (main.js); click it to write a note -->
       <canvas class="hero-roll" aria-hidden="true"></canvas>
       <div class="wrap hero-copy">
@@ -161,7 +159,7 @@
     </section>
 
     <!-- A real studio: what makes it different from an AI song generator -->
-    <section id="real" class="real wrap" aria-labelledby="real-title">
+    <section id="real" class="real wrap" aria-labelledby="real-title" data-ruler="Why" data-ruler-color="--red">
       <div class="real-head">
         <h2 id="real-title" class="section-title"><span class="mono-label">Why Fledgetone</span>A real studio. Not an AI generator.</h2>
         <p>
@@ -194,8 +192,33 @@
       </ul>
     </section>
 
+    <!-- Who it's for: a page for each -->
+    <section id="for" class="aud wrap" aria-labelledby="for-title">
+      <h2 id="for-title" class="section-title"><span class="mono-label">Made for you</span>What will you make?</h2>
+      <div class="aud-cards">
+        <a class="aud-card" href="/games/" style="--c: var(--green)">
+          <span class="aud-who">For game developers</span>
+          <h3>Music that plays along with your game</h3>
+          <p>States, transitions, intensity layers, stingers and sound effects, tested in a playable game and exported to Godot, Unity, the web, FMOD or Wwise.</p>
+          <span class="aud-go">See it for games &rarr;</span>
+        </a>
+        <a class="aud-card" href="/creators/" style="--c: var(--purple)">
+          <span class="aud-who">For content creators</span>
+          <h3>Your own music, ready to post</h3>
+          <p>Showcase videos of your notes, 15, 30 and 60-second versions, a version to talk over, and kits for your stream and your beat store.</p>
+          <span class="aud-go">See it for creators &rarr;</span>
+        </a>
+        <a class="aud-card" href="/film/" style="--c: var(--amber)">
+          <span class="aud-who">For film and video</span>
+          <h3>Score to picture, frame by frame</h3>
+          <p>Find the cuts, fit the tempo to them, work in timecode, dip under dialogue and hand the markers back to your editor.</p>
+          <span class="aud-go">See it for film &rarr;</span>
+        </a>
+      </div>
+    </section>
+
     <!-- Showcase videos: the notes flying past the playhead, made for posting -->
-    <section id="showcase" class="showcase" style="--c: var(--cyan)" aria-labelledby="showcase-title">
+    <section id="showcase" class="showcase" style="--c: var(--cyan)" aria-labelledby="showcase-title" data-ruler="Showcase" data-ruler-color="--cyan">
       <div class="scope scope-wave" data-scope="wave" aria-hidden="true"><canvas></canvas></div>
       <div class="wrap split">
         <figure class="split-media scored reveal">
@@ -229,7 +252,7 @@
     </section>
 
     <!-- Scoring to video -->
-    <section id="video" class="showcase" style="--c: var(--purple)" aria-labelledby="video-title">
+    <section id="video" class="showcase" style="--c: var(--purple)" aria-labelledby="video-title" data-ruler="Video" data-ruler-color="--purple">
       <div class="scope scope-wave" data-scope="wave" aria-hidden="true"><canvas></canvas></div>
       <div class="wrap">
         <div class="show-head reveal">
@@ -346,7 +369,7 @@
     </section>
 
     <!-- Game music -->
-    <section id="games" class="showcase" style="--c: var(--green)" aria-labelledby="games-title">
+    <section id="games" class="showcase" style="--c: var(--green)" aria-labelledby="games-title" data-ruler="Games" data-ruler-color="--green">
       <div class="scope scope-wave" data-scope="wave" aria-hidden="true"><canvas></canvas></div>
       <div class="wrap">
         <div class="show-head reveal">
@@ -406,7 +429,7 @@
     </section>
 
     <!-- Writing and mixing -->
-    <section id="features" class="features wrap" aria-labelledby="features-title">
+    <section id="features" class="features wrap" aria-labelledby="features-title" data-ruler="Features" data-ruler-color="--amber">
       <h2 id="features-title" class="section-title"><span class="mono-label">Features</span>Writing and mixing</h2>
 
       <article class="track" style="--c: var(--amber)">
@@ -584,7 +607,7 @@
     </section>
 
     <!-- Credits -->
-    <section id="credits" class="credits wrap" aria-labelledby="credits-title">
+    <section id="credits" class="credits wrap" aria-labelledby="credits-title" data-ruler="Credits" data-ruler-color="--muted">
       <h2 id="credits-title" class="section-title"><span class="mono-label">Credits</span>Sounds and effects</h2>
       <p>The recorded instruments and built-in effects come from these free libraries.</p>
       <div class="credit-cols">
@@ -633,7 +656,7 @@
     <div class="scope scope-bars scope-mirror" data-scope="bars" aria-hidden="true"><canvas></canvas></div>
 
     <!-- Final call -->
-    <section class="final wrap">
+    <section class="final wrap" data-ruler="Outro" data-ruler-color="--cyan">
       <img src="/img/logo.png" alt="" width="96" height="96" />
       <h2>Make music for you.</h2>
       <p>A real music studio, free, in your browser or as an app.</p>
@@ -653,6 +676,9 @@
       <p>Make music for you. A real music studio in your browser.</p>
       <nav aria-label="Footer">
         <a href="/app/">Studio</a>
+        <a href="/games/">For games</a>
+        <a href="/creators/">For creators</a>
+        <a href="/film/">For film</a>
         <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
         <a href="/licenses/">Licences</a>
