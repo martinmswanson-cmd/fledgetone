@@ -6,6 +6,7 @@ import { downloadBlob } from '../../audio/exportWav';
 import { showToast } from './toastStore';
 import { projectVideoForFile } from '../../store/videoStore';
 import { create } from 'zustand';
+import { captureWamStates } from '../../audio/wamHost';
 
 /**
  * Project files on disk. Where the browser lets a page write files (Chrome and Edge on a
@@ -48,6 +49,8 @@ onProjectReplaced(() => useProjectFile.setState({ handle: null }));
 
 /** The project file's contents: the arrangement and the sounds it plays (and the reference video, when small enough). */
 async function projectBlob(): Promise<Blob> {
+  // The plugins' latest settings first (they reach the tracks every few seconds otherwise)
+  await captureWamStates();
   const project = currentProject();
   const sounds = await embedSounds(referencedSoundIds(project));
   const video = await projectVideoForFile();

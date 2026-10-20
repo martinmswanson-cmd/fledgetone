@@ -182,13 +182,6 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
         }
         gui = made;
         el.appendChild(made);
-        // A wide window (Fledge Synth's) opens wholly on screen
-        requestAnimationFrame(() => {
-          const box = el.parentElement?.getBoundingClientRect();
-          if (!box) return;
-          if (box.right > window.innerWidth - 8) setPos((p) => ({ ...p, x: Math.max(8, window.innerWidth - box.width - 8) }));
-          if (box.bottom > window.innerHeight - 8) setPos((p) => ({ ...p, y: Math.max(8, window.innerHeight - box.height - 8) }));
-        });
       },
       (err) => setFailed(`Its window couldn't open: ${err instanceof Error ? err.message : String(err)}`)
     );
@@ -210,10 +203,32 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
   useEffect(() => {
     if (!plugin) onClose();
   }, [plugin, onClose]);
+  // A big window (Fledge Synth's) stays wholly on screen as its contents appear and grow, until
+  // it's moved by hand. (Its panel draws a moment after it's added, so this watches its size)
+  const moved = useRef(false);
+  useEffect(() => {
+    const el = holder.current?.parentElement;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const fit = () => {
+      if (moved.current) return;
+      const box = el.getBoundingClientRect();
+      if (box.right > window.innerWidth - 8) setPos((p) => ({ ...p, x: Math.max(8, window.innerWidth - box.width - 8) }));
+      if (box.bottom > window.innerHeight - 8) setPos((p) => ({ ...p, y: Math.max(8, window.innerHeight - box.height - 8) }));
+    };
+    const watch = new ResizeObserver(fit);
+    watch.observe(el);
+    window.addEventListener('resize', fit);
+    return () => {
+      watch.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [plugin?.id]);
+
   if (!plugin) return null;
 
   const drag = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    moved.current = true;
     const start = { x: e.clientX - pos.x, y: e.clientY - pos.y };
     const move = (ev: PointerEvent) => setPos({ x: Math.max(0, ev.clientX - start.x), y: Math.max(0, ev.clientY - start.y) });
     const up = () => {
@@ -233,6 +248,7 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
     <div
       role="region"
       aria-label={`${plugin.name} plugin`}
+      data-plugin-window
       className="fixed z-50 rounded-lg border border-fuchsia-400/50 bg-forge-panel shadow-2xl max-w-[95vw]"
       style={{ left: pos.x, top: pos.y }}
       onKeyDown={(e) => e.key === 'Escape' && onClose()}

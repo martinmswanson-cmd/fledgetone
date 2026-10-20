@@ -45,6 +45,7 @@ import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
 import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
 import type { Track } from '../../store/timelineTypes';
 import { Modal } from './Modal';
+import { captureWamStates } from '../../audio/wamHost';
 
 /** 'game': an intro (bar 1 to the loop's In) and the loop region as a seamless loop, for games. */
 type Range = 'song' | 'loop' | 'game';
@@ -359,6 +360,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
 
   // Counted as a render the whole way (encoding too), so the update notice waits for it (renderBusy.ts)
   const startExport = () => countedRender(async () => {
+    // The plugins' latest settings first (they reach the tracks every few seconds otherwise)
+    await captureWamStates();
     const s = useTimelineStore.getState();
     // The render swaps the global audio context while it sets up, so halt live playback first
     s.pause();

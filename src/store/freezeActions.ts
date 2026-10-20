@@ -12,6 +12,7 @@ import { encodeChannels, renderForFreeze, SAMPLE_RATES } from '../audio/exportWa
 import type { SampleRate } from '../audio/exportWav';
 import { importSoundFile } from '../audio/soundLibrary';
 import { BUS_GAIN, liveMix } from '../audio/engine';
+import { captureWamStates } from '../audio/wamHost';
 
 /** Tracks being frozen right now, with how far along (0 to 1). */
 export const useFreezing = create<Record<string, number>>(() => ({}));
@@ -61,6 +62,8 @@ export interface TrackRender {
  * is silent.
  */
 export async function renderTrackChannels(trackId: string, onProgress?: (fraction: number) => void, hold?: () => Promise<void> | void): Promise<TrackRender | null> {
+  // The plugins' latest settings first (they reach the tracks every few seconds otherwise)
+  await captureWamStates();
   const store = useTimelineStore.getState();
   const track = store.tracks.find((t) => t.id === trackId);
   if (!track || isAudioKind(track.instrumentKey)) return null;
