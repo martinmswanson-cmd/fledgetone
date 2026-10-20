@@ -9,6 +9,7 @@ import { currentProject, useTimelineStore } from '../../store/timelineStore';
 import { safeFileName, serializeProject } from '../../store/project';
 import { referencedSoundIds } from '../../store/audioClips';
 import { LONG_LINK, songLink, tracksNeedingFiles } from '../../store/shareLink';
+import { captureWamStates } from '../../audio/wamHost';
 import { embedSounds } from '../../audio/soundLibrary';
 import { audibleTracks, channelsOf, downloadBlob, renderArrangement } from '../../audio/exportWav';
 import { encodeAudio } from '../../audio/encoders';
@@ -55,7 +56,8 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
 
   useEffect(() => {
     let live = true;
-    songLink(currentProject(), `${location.origin}${location.pathname}${location.search}`).then(
+    // (The plugins' latest settings first: they reach the tracks every few seconds otherwise)
+    captureWamStates().then(() => songLink(currentProject(), `${location.origin}${location.pathname}${location.search}`)).then(
       (url) => live && setLink(url),
       (err) => live && setLinkError(err instanceof Error ? err.message : String(err))
     );
@@ -89,6 +91,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
     try {
       const s = useTimelineStore.getState();
       s.pause();
+      await captureWamStates();
       const p = currentProject();
       const ids = new Set(audibleTracks(p.tracks).map((t) => t.id));
       const end = Math.max(2, ...p.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
@@ -107,6 +110,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const shareFile = async () => {
     setBusy('file');
     try {
+      await captureWamStates();
       const p = currentProject();
       const sounds = await embedSounds(referencedSoundIds(p));
       const json = JSON.stringify(serializeProject({ ...p, sounds }), null, 2);

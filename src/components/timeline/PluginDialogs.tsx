@@ -244,12 +244,12 @@ export const PluginWindow: React.FC<{ trackId: string; pluginId: string; onClose
 
   return (
     // A window you work beside, not a dialog: shortcuts and the keyboard piano keep working
-    // (they stand aside while a dialog is open)
+    // (they stand aside while a dialog is open). It sits above the timeline, under dialogs
     <div
       role="region"
       aria-label={`${plugin.name} plugin`}
       data-plugin-window
-      className="fixed z-50 rounded-lg border border-fuchsia-400/50 bg-forge-panel shadow-2xl max-w-[95vw]"
+      className="fixed z-40 rounded-lg border border-fuchsia-400/50 bg-forge-panel shadow-2xl max-w-[95vw]"
       style={{ left: pos.x, top: pos.y }}
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
     >

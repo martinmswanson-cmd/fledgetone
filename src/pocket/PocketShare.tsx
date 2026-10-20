@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { Download, FolderOpen, Link2, Loader2, Monitor, Save } from 'lucide-react';
 import { currentProject } from '../store/timelineStore';
 import { songLink } from '../store/shareLink';
+import { captureWamStates } from '../audio/wamHost';
 import { downloadBlob } from '../audio/exportWav';
 import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
 import { showToast } from '../components/timeline/toastStore';
@@ -51,6 +52,7 @@ export const PocketShare: React.FC = () => {
   };
 
   const shareLink = async () => {
+    await captureWamStates();
     const url = await songLink(currentProject(), `${location.origin}${location.pathname}`);
     if (await shareSheet({ url, title: currentProject().name })) return;
     try {

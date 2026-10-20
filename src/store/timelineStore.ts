@@ -3467,13 +3467,18 @@ export function connectAutosave(): () => void {
   });
 
   autosaveFlush = flush;
-  // Don't lose an edit made in the last half-second before the tab closes
-  window.addEventListener('pagehide', flush);
+  // Don't lose an edit made in the last half-second before the tab closes (the plugins' settings
+  // too, read without waiting: they reach the tracks every few seconds otherwise)
+  const onHide = () => {
+    captureWamStatesNow();
+    flush();
+  };
+  window.addEventListener('pagehide', onHide);
   window.addEventListener('storage', onStorage);
   return () => {
     flush();
     guard(false);
-    window.removeEventListener('pagehide', flush);
+    window.removeEventListener('pagehide', onHide);
     window.removeEventListener('storage', onStorage);
     if (autosaveNow === saveNow) autosaveNow = null;
     if (autosaveFlush === flush) autosaveFlush = null;
