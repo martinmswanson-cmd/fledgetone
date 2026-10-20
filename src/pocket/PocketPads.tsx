@@ -149,7 +149,15 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
   const pad = DRUM_PADS[drum];
   const inSec = isPlaying && bar >= sec.from - EPS && bar < sec.to - EPS;
   const now = inSec ? Math.floor((bar - sec.from) * STEPS_PER_WHOLE) : -1;
-  const shown = inSec ? Math.floor(now / perBar) : Math.min(page, pages - 1);
+  // While it plays the steps follow the song a bar at a time, except for a while after a tap: the
+  // bar being worked on stays put (a tapped step doesn't flip out of sight)
+  const [holdUntil, setHoldUntil] = useState(0);
+  const following = inSec && Date.now() > holdUntil;
+  const shown = following ? Math.floor(now / perBar) : Math.min(page, pages - 1);
+  const hold = (bar: number) => {
+    setPage(bar);
+    setHoldUntil(Date.now() + 4000);
+  };
   const isOn = (step: number) => notes.some((n) => n.note === pad.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === step);
   const beatEvery = Math.max(1, Math.round(perBar / meter.num));
   const usedRows = new Set(notes.map((n) => n.note));
@@ -224,7 +232,7 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
         )}
         {pages > 1 &&
           Array.from({ length: pages }, (_, i) => (
-            <button key={i} type="button" className={`${tool} font-mono ${i === shown ? '!border-cyan-400 text-cyan-200 !bg-cyan-500/10' : ''}`} onClick={() => setPage(i)}>
+            <button key={i} type="button" className={`${tool} font-mono ${i === shown ? '!border-cyan-400 text-cyan-200 !bg-cyan-500/10' : ''}`} onClick={() => hold(i)}>
               Bar {i + 1}
             </button>
           ))}
@@ -242,6 +250,7 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
               className={`pk-step${on ? ' on' : ''}${k % beatEvery === 0 ? ' beat' : ''}${step === now ? ' now' : ''}`}
               onClick={() => {
                 buzz();
+                hold(shown);
                 editCell(track.id, sec, (have) =>
                   on
                     ? have.filter((n) => !(n.note === pad.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === step))

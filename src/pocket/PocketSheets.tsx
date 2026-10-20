@@ -385,8 +385,8 @@ export const StartScreen: React.FC<{ canGoBack: boolean }> = ({ canGoBack }) => 
           );
         })}
         <button type="button" className="h-24 rounded-[20px] p-3.5 text-left flex flex-col justify-between border border-dashed border-forge-borderLight bg-forge-panel" onClick={() => start('blank')}>
-          <span className="font-mono text-[11px] text-forge-muted tracking-wide">START FROM</span>
-          <b className="text-lg">Empty</b>
+          <span className="font-mono text-[11px] text-forge-muted tracking-wide">4 EMPTY TRACKS</span>
+          <b className="text-lg">Blank song</b>
         </button>
         {!more && (
           <button type="button" className="h-24 rounded-[20px] p-3.5 text-left flex flex-col justify-between border border-forge-border bg-forge-panel" onClick={() => setMore(true)}>

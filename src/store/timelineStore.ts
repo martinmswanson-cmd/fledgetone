@@ -504,6 +504,8 @@ interface TimelineState {
   /** Move a track a row up or down (see folders.ts moveTrack; one undo step). */
   moveTrackRow: (trackId: string, direction: -1 | 1) => void;
   setTrackColor: (trackId: string, color: string) => void;
+  /** Rename a track (one undo step; an empty name keeps the old one) */
+  renameTrack: (trackId: string, name: string) => void;
   /** Mute (or, if all are muted, unmute) a folder's tracks; the same for solo. One undo step. */
   toggleFolderMute: (folderId: string) => void;
   toggleFolderSolo: (folderId: string) => void;
@@ -989,8 +991,8 @@ let lastJump: { bar: number; at: number } | null = null;
 
 /**
  * The previous session, set aside once at startup before autosave can overwrite it (this module
- * loads before anything can edit). The app always opens on an empty timeline; this is only
- * offered as "Restore last session". Null if there was nothing worth restoring (no clips).
+ * loads before anything can edit). At startup it opens again by itself (reopenLastSong.ts); else
+ * it's offered by the Restore banner. Null if there was nothing worth restoring (no clips).
  */
 /** Called whenever another song replaces the open one (New, Open, a link, Restore). */
 const replacedListeners = new Set<() => void>();
@@ -2004,6 +2006,12 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       }),
 
     setTrackColor: (trackId, color) => updateTrack(trackId, () => ({ color }), true),
+
+    renameTrack: (trackId, name) => {
+      const trimmed = name.trim().slice(0, 40);
+      if (!trimmed || get().tracks.find((t) => t.id === trackId)?.name === trimmed) return;
+      updateTrack(trackId, () => ({ name: trimmed }), true);
+    },
 
     toggleFolderMute: (folderId) =>
       set((s) => {

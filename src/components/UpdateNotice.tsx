@@ -34,7 +34,7 @@ export const UpdateNotice: React.FC = () => {
         <button
           type="button"
           onClick={() => setProblem(reloadToUpdate() ?? null)}
-          title="Reload into the new version. Your work is autosaved first: click Restore after it."
+          title="Reload into the new version. Your work is saved first and opens again after it."
           className="rounded border border-cyan-400/60 bg-cyan-500/15 px-2 py-0.5 font-mono font-bold text-cyan-100 hover:bg-cyan-500/25"
         >
           Reload

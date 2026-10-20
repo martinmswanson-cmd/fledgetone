@@ -72,7 +72,12 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
     return [...new Set([...keyRows, ...saved.map((n) => n.midi)])].sort((a, b) => b - a);
   }, [track.instrumentKey, songKey, saved]);
   const rowOf = (midi: number) => rows.indexOf(midi);
-  const home = rows.find((m) => (((m - songKey.root) % 12) + 12) % 12 === 0 && m <= (INSTRUMENTS[track.instrumentKey]?.range[0] ?? 36) + 30) ?? rows[Math.floor(rows.length / 2)];
+  // Where it opens: among the part's notes (the row nearest their middle), else the key's home note
+  const middle = saved.length ? (Math.min(...saved.map((n) => n.midi)) + Math.max(...saved.map((n) => n.midi))) / 2 : null;
+  const home =
+    middle !== null
+      ? rows.reduce((best, m) => (Math.abs(m - middle) < Math.abs(best - middle) ? m : best), rows[0])
+      : rows.find((m) => (((m - songKey.root) % 12) + 12) % 12 === 0 && m <= (INSTRUMENTS[track.instrumentKey]?.range[0] ?? 36) + 30) ?? rows[Math.floor(rows.length / 2)];
 
   const commit = (next: RollNote[]) => {
     editCell(track.id, sec, () => fromRoll(next));

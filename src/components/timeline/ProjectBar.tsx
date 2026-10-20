@@ -78,7 +78,7 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       )}
       <ChoiceButton
         title="Blank timeline"
-        detail="Four empty tracks. Right-click a lane to insert a pattern, or paste copied clips."
+        detail="Four empty tracks. Double-click a lane to make a clip (right-click it for ready-made patterns), or paste copied clips."
         onClick={() => choose('blank')}
         autoFocus
       />
@@ -156,9 +156,9 @@ function savedWhen({ savedAt, keptAt }: { savedAt: number | null; keptAt: number
 }
 
 /**
- * The app always opens on an empty timeline. If the last session had work in it, offer to
- * bring it back. The session was set aside at startup, so the offer survives reloads until
- * Restore or Dismiss (or until a newer session with clips takes its place).
+ * The song New, Open or a shared link replaced, offered back (the last song itself opens again at
+ * startup: reopenLastSong.ts). It's set aside in storage, so the offer survives reloads until
+ * Restore or Dismiss (or until a newer replaced song takes its place).
  */
 export const RestoreSessionBanner: React.FC = () => {
   const lastSession = useLastSession((s) => s.session);

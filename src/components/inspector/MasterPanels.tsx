@@ -273,7 +273,7 @@ export const PlaybackPanel: React.FC = () => {
       <AutoFreezeSetting />
       {chosen !== PLAYBACK_MODE && (
         <div className="flex items-center justify-between gap-2 text-[10px] text-amber-200">
-          <span>Takes effect after a reload. Your work is kept: click Restore after it.</span>
+          <span>Takes effect after a reload. Your song opens again after it.</span>
           <button type="button" onClick={() => window.location.reload()} className="shrink-0 px-2 py-0.5 rounded border border-amber-400/60 font-mono hover:bg-amber-500/15">
             Reload
           </button>

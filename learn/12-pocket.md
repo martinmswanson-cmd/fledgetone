@@ -20,7 +20,7 @@ Open fledgetone.com on your phone. A notice says Pocket is an early version; tap
 ### Start a song
 
 1. Pocket opens on **What are we making?** (if it opened your last song, tap the round button at the top left).
-2. Tap **Empty**. You get four tracks with nothing written yet: **Drums**, **Slap Bass**, **Space Clav** and **Brass Stabs**, at 122 BPM, and one section, **A**, four bars long.
+2. Tap **Blank song**. You get four tracks with nothing written yet: **Drums**, **Slap Bass**, **Space Clav** and **Brass Stabs**, at 122 BPM, and one section, **A**, four bars long.
 3. Tap the song's name at the top (*Untitled*), call it *Pocket House*, and set the **Key** to **A minor**. Close the sheet with the **X**.
 
 {{shot:pocket-new}}

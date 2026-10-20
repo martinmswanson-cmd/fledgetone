@@ -16,6 +16,9 @@ import { Keyboard, Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { initAudio } from '../../audio/engine';
 import { noteNameOn, onLiveNote } from '../../audio/liveInput';
 import { usePianoPanel } from '../../store/pianoPanel';
+import { useMidiStore } from '../../store/midiStore';
+import { showToast } from './toastStore';
+import { TOTAL_BARS } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { previewTrackNotes } from '../../audio/liveTracks';
 import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
@@ -447,8 +450,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   entryRef.current = { at: entryAt, step: Math.max(lengthUnits, gridUnits), length: lengthUnits, totalUnits };
   /** The steps entered, newest last, for Backspace to take out again */
   const entered = useRef<Array<{ at: number; ids: string[] }>>([]);
-  /** Scroll the grid (not the page) so `selector`'s element shows, clear of the keys and the ruler */
-  const keepInView = (selector: string) =>
+  /** Scroll the grid (not the page) so `selector`'s element shows, clear of the keys and the ruler (`across`: sideways only) */
+  const keepInView = (selector: string, across = false) =>
     requestAnimationFrame(() => {
       const box = scrollRef.current;
       const el = box?.querySelector<HTMLElement>(selector);
@@ -460,15 +463,19 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       const top = Math.max(c.top, 0) + RULER_H + pad;
       // (and above the expression lane pinned to its bottom)
       const bottom = Math.min(c.bottom, window.innerHeight) - pad - (isDrums ? 0 : EXPRESSION_LANE_H);
-      if (r.top < top) box.scrollTop -= top - r.top;
-      else if (r.bottom > bottom) box.scrollTop += r.bottom - bottom;
+      if (!across && r.top < top) box.scrollTop -= top - r.top;
+      else if (!across && r.bottom > bottom) box.scrollTop += r.bottom - bottom;
       if (r.left < c.left + KEY_W + pad) box.scrollLeft -= c.left + KEY_W + pad - r.left;
       else if (r.right > c.right - pad) box.scrollLeft += r.right - (c.right - pad);
     });
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   useEffect(() => {
     if (!noteEntry) return;
     // What's played sounds on this clip's track (unless another one is armed)
     useTimelineStore.getState().selectTrack(clip.trackId);
+    // A drum kit's rows sit around C1 (kick C1, snare D1, hats F#1 and A#1): the keys start there
+    if (isDrumKind(instrument)) useMidiStore.getState().setOctave(1);
     const held = new Set<number>();
     let chord: { at: number; ids: string[] } | null = null;
     return onLiveNote((n) => {
@@ -477,17 +484,30 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       if (!live) return;
       if (n.on) {
         if (held.has(n.midi)) return;
+        const track = store.tracks.find((t) => t.id === clip.trackId);
+        const name = noteNameOn(n.midi, track);
+        // A key with no row here (a drum kit's) writes nothing
+        if (namedRows && !rowsRef.current.some((r) => r.note === name)) return;
+        const at = chord?.at ?? entryRef.current.at;
+        const length = entryRef.current.length;
+        // Room to grow: up to the next clip on the track, or the song's end
+        const room = Math.min(
+          TOTAL_BARS + 1 - live.startBar,
+          ...store.clips.filter((c) => c.trackId === clip.trackId && c.id !== clip.id && c.startBar >= live.startBar + live.lengthBars - 1e-9).map((c) => c.startBar - live.startBar)
+        );
+        if ((at + length) / UNITS_PER_BAR > room + 1e-9) {
+          showToast(room >= TOTAL_BARS + 1 - live.startBar ? 'That would go past the end of the song.' : 'No room: the next clip on this track starts there.');
+          return;
+        }
         held.add(n.midi);
         if (!chord) {
           chord = { at: entryRef.current.at, ids: [] };
           entered.current.push(chord);
         }
-        const length = entryRef.current.length;
-        // Past the clip's end: it grows to the bar the note ends in
+        // Past the clip's end: it grows to the bar the note ends in (no further than the room)
         const endBars = (chord.at + length) / UNITS_PER_BAR;
-        if (endBars > live.lengthBars + 1e-9) store.trimClipEnd(clip.id, Math.ceil(endBars - 1e-9));
-        const track = store.tracks.find((t) => t.id === clip.trackId);
-        const note = { note: noteNameOn(n.midi, track), startOffset: chord.at / UNITS_PER_BAR, duration: barsToDuration(length / UNITS_PER_BAR), velocity: n.velocity };
+        if (endBars > live.lengthBars + 1e-9) store.trimClipEnd(clip.id, Math.min(room, Math.ceil(endBars - 1e-9)));
+        const note = { note: name, startOffset: chord.at / UNITS_PER_BAR, duration: barsToDuration(length / UNITS_PER_BAR), velocity: n.velocity };
         const ids = store.addNotes(clip.id, [note]);
         chord.ids.push(...ids);
         // (a frame later, once its row is drawn)
@@ -498,11 +518,21 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         chord = null;
       }
     });
-  }, [noteEntry, clip.id, clip.trackId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rows through rowsRef
+  }, [noteEntry, clip.id, clip.trackId, instrument, namedRows]);
   useEffect(() => {
-    if (noteEntry) keepInView('[data-entry-cursor]');
+    // (the cursor runs the grid's whole height: only sideways)
+    if (noteEntry) keepInView('[data-entry-cursor]', true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- when the cursor moves
   }, [noteEntry, entryAt]);
+  // Closing the piano roll ends note entry, and puts away the piano it opened
+  useEffect(
+    () => () => {
+      const panel = usePianoPanel.getState();
+      if (panel.noteEntry) panel.setOpen(false);
+    },
+    []
+  );
   const noteEntryRef = useRef(noteEntry);
   noteEntryRef.current = noteEntry;
   /** In STEPS: the cell under the pointer (its row and first unit), outlined so it's clear what a click toggles */
@@ -754,9 +784,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         }
         if (e.key === 'Backspace') {
           handled();
-          const last = entered.current.pop();
+          // The last step that still has notes (Undo may have taken some away already)
+          const there = new Set(currentNotes().map((n) => n.id));
+          let last = entered.current.pop();
+          while (last && !last.ids.some((id) => there.has(id))) last = entered.current.pop();
           if (!last) return;
-          store.deleteNotes(clip.id, new Set(last.ids));
+          store.deleteNotes(clip.id, new Set(last.ids.filter((id) => there.has(id))));
           setEntryAt(last.at);
           return;
         }

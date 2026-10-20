@@ -36,3 +36,8 @@ export const usePianoPanel = create<PianoPanelState>((set, get) => ({
     set({ noteEntry });
   },
 }));
+
+// The computer keyboard piano switched off elsewhere (the MIDI popover): the panel goes with it
+useMidiStore.subscribe((s, before) => {
+  if (before.keyboardPiano && !s.keyboardPiano && usePianoPanel.getState().open) usePianoPanel.setState({ open: false, noteEntry: false });
+});

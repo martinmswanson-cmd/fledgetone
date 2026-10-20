@@ -4,22 +4,9 @@
  * and a light buzz answers a pad where the phone can.
  */
 import { useEffect } from 'react';
-import { clearPreviousSession, hasWork } from '../store/project';
-import { currentProject, retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
+import { useTimelineStore } from '../store/timelineStore';
 
-/**
- * At startup: when the song open is empty and the last session (found at startup, not one set
- * aside by New or a link) has work in it, open it again. Returns whether it did.
- */
-export function reopenLastSong(): boolean {
-  const session = useLastSession.getState().session;
-  if (!session || session.replaced || hasWork(currentProject())) return false;
-  clearPreviousSession(false);
-  retryAutosave();
-  useLastSession.setState({ session: null });
-  useTimelineStore.getState().loadProject(session.project);
-  return true;
-}
+export { reopenLastSong } from '../store/reopenLastSong';
 
 type WakeLock = { release: () => Promise<void> };
 

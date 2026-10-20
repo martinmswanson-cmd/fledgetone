@@ -6,7 +6,7 @@
 import { showToast } from './toastStore';
 import { useMidiStore } from '../../store/midiStore';
 import { connectMidi } from '../../audio/liveInput';
-import React from 'react';
+import React, { useState } from 'react';
 import { useUiStore } from '../../store/uiStore';
 import { useMidiLearn } from '../../store/midiLearn';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -264,6 +264,7 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
   const { toggleMute, toggleSolo, toggleArm, selectTrack, toggleInspector } = useTimelineStore.getState();
   const selectedTrackId = useTimelineStore((s) => s.selectedTrackId);
   const isSelected = selectedTrackId === track.id;
+  const [renaming, setRenaming] = useState(false);
   // Muted, or silenced by a solo or a muted bus (see buses.ts)
   const silenced = useTimelineStore((s) => !audibleIds(s.tracks).has(track.id));
   const bus = isBus(track);
@@ -336,14 +337,42 @@ export const TrackHeader: React.FC<{ track: Track; onOpenMenu: (menu: ContextMen
             />
           )}
 
-          <span
-            className={`flex-1 truncate text-xs font-semibold ${silenced ? 'text-forge-muted' : 'text-forge-text'} ${
-              isSelected ? 'text-cyan-200 font-bold' : ''
-            }`}
-            title={`${track.name} (Click to open Inspector)`}
-          >
-            {track.name}
-          </span>
+          {renaming ? (
+            <input
+              autoFocus
+              defaultValue={track.name}
+              aria-label="Track name"
+              maxLength={40}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={(e) => {
+                useTimelineStore.getState().renameTrack(track.id, e.currentTarget.value);
+                setRenaming(false);
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') e.currentTarget.blur();
+                if (e.key === 'Escape') {
+                  e.currentTarget.value = track.name;
+                  e.currentTarget.blur();
+                }
+              }}
+              className="flex-1 min-w-0 h-5 bg-forge-bg border border-cyan-500 rounded px-1 text-xs font-semibold text-forge-text focus:outline-none"
+            />
+          ) : (
+            <span
+              className={`flex-1 truncate text-xs font-semibold ${silenced ? 'text-forge-muted' : 'text-forge-text'} ${
+                isSelected ? 'text-cyan-200 font-bold' : ''
+              }`}
+              title={`${track.name} (click to open the Inspector, double-click to rename)`}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setRenaming(true);
+              }}
+            >
+              {track.name}
+            </span>
+          )}
           {bus && (
             <span className="shrink-0 px-1 rounded bg-slate-400/20 text-[8px] font-mono uppercase text-slate-200" title={`A bus: ${inputs} track${inputs === 1 ? '' : 's'} play${inputs === 1 ? 's' : ''} into it. Right-click a track to route it here.`}>
               bus · {inputs}

@@ -97,8 +97,8 @@ export async function installApp(): Promise<string | undefined> {
 }
 
 /**
- * Move to the waiting version: write the autosave first (after the reload, Restore brings the work
- * back), then reload once the new worker has taken over. Returns why it didn't, or undefined.
+ * Move to the waiting version: write the autosave first (after the reload, the song opens again by
+ * itself), then reload once the new worker has taken over. Returns why it didn't, or undefined.
  */
 export function reloadToUpdate(): string | undefined {
   if (!flushAutosave()) return "Your work couldn't be autosaved (the browser's storage is full): save it with File › Save first, then Reload.";

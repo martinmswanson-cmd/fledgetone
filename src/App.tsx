@@ -16,6 +16,7 @@ import { MobileNotice } from './components/MobileNotice';
 import { SharedLinkOpener } from './components/SharedLinkOpener';
 import { UpdateNotice } from './components/UpdateNotice';
 import { PianoPanel } from './components/PianoPanel';
+import { reopenLastSong } from './store/reopenLastSong';
 import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import { LearnDialog } from './components/tour/LearnDialog';
@@ -98,6 +99,9 @@ const TryOut: React.FC = () => {
 };
 
 export const App: React.FC = () => {
+  // The last song opens again by itself, as in Pocket (not when a shared song link is opening
+  // another one: that sets the last song aside, for the Restore banner). Once, before the first render
+  React.useState(() => !/^#(s|song)=/.test(location.hash) && reopenLastSong());
   return (
     <div className="min-h-screen bg-forge-bg text-forge-text flex flex-col font-sans selection:bg-cyan-500/30">
       {/* Top DAW Header */}

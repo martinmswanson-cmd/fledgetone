@@ -4,6 +4,24 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-9 — Your song opens again
+
+- **Your last song opens again by itself** when you come back or reload the page, as it already did on phones. Before, the studio opened an empty song and offered your last one in a small banner, which was easy to miss, and a newer song could replace it. The banner now only offers back a song that **New**, **Open** or a shared link replaced.
+- **Rename a track** by double-clicking its name.
+- **Typing notes** is steadier:
+  - On a drum track the keys start on the kit (A is the kick, S the snare, T the hats), and a key that isn't a drum writes nothing.
+  - The piano roll keeps the notes you type in view.
+  - Typing past the clip's end stops at the next clip on the track instead of running over it.
+  - Backspace keeps its place after Undo.
+  - Closing the piano roll puts the piano away.
+  - Clicking a key of the on-screen piano can no longer leave a note held.
+- **Pocket**:
+  - The drum steps stay on the bar you're tapping while the song plays, instead of turning the page under your finger.
+  - The note grid opens where the part's notes are.
+  - **Rec** says **Stop rec** while recording.
+  - "Empty" is now **Blank song** (four empty tracks).
+- The New dialog's hint for a blank timeline matches the empty song's: double-click a lane to make a clip.
+
 ## 2026.10.20-8 — Type your notes in
 
 - **Type notes in instead of placing them one by one**: open a clip in the piano roll and click **Type notes**. Each key you play on your computer keyboard (or a MIDI keyboard) goes in at a cursor that then moves on, so you can write a melody without playing in time; keys held together make a chord, → leaves a gap and Backspace takes the last step out.

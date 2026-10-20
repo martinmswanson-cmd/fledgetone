@@ -37,6 +37,8 @@ export const PianoPanel: React.FC = () => {
   /** Where it was dragged to (its top-left corner), or null for the bottom-right corner */
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  /** The note each pointer (mouse, finger) is holding down */
+  const pressed = useRef(new Map<number, number>());
   /** Drag it by its top row to anywhere on screen */
   const drag = (e: React.PointerEvent) => {
     const el = panelRef.current;
@@ -59,6 +61,7 @@ export const PianoPanel: React.FC = () => {
 
   useEffect(() => {
     if (!open) return;
+    setLit(new Set());
     return onLiveNote((n) =>
       setLit((now) => {
         const next = new Set(now);
@@ -74,13 +77,21 @@ export const PianoPanel: React.FC = () => {
   const setOctave = (o: number) => useMidiStore.getState().setOctave(Math.max(PIANO_OCTAVE_MIN, Math.min(PIANO_OCTAVE_MAX, o)));
   const press = (midi: number) => (e: React.PointerEvent) => {
     e.preventDefault();
+    // Before the audio runs, a click starts it (the key sounds from the next click on)
+    if (!audioRunning) {
+      void useAudioStore.getState().initializeAudio();
+      return;
+    }
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    const play = () => pressScreenKey(midi, true);
-    if (audioRunning) play();
-    else void useAudioStore.getState().initializeAudio().then(play);
+    pressed.current.set(e.pointerId, midi);
+    pressScreenKey(midi, true);
   };
-  const release = (midi: number) => () => {
-    if (lit.has(midi)) pressScreenKey(midi, false);
+  /** The key this pointer pressed lets go (the note it played, even if the octave changed since) */
+  const release = (e: React.PointerEvent) => {
+    const midi = pressed.current.get(e.pointerId);
+    if (midi === undefined) return;
+    pressed.current.delete(e.pointerId);
+    pressScreenKey(midi, false);
   };
 
   return (
@@ -126,8 +137,8 @@ export const PianoPanel: React.FC = () => {
               tabIndex={-1}
               aria-label={`${midiNoteName(midi)} (${labelOf(k.code)})`}
               onPointerDown={press(midi)}
-              onPointerUp={release(midi)}
-              onPointerCancel={release(midi)}
+              onPointerUp={release}
+              onPointerCancel={release}
               className={`absolute top-0 bottom-0 rounded-b-md border border-black/40 flex flex-col items-center justify-end pb-1.5 font-mono ${lit.has(midi) ? 'bg-cyan-300 text-black' : 'bg-zinc-100 text-zinc-500 hover:bg-white'}`}
               style={{ left: i * WHITE_W, width: WHITE_W - 2 }}
             >
@@ -147,8 +158,8 @@ export const PianoPanel: React.FC = () => {
               tabIndex={-1}
               aria-label={`${midiNoteName(midi)} (${labelOf(k.code)})`}
               onPointerDown={press(midi)}
-              onPointerUp={release(midi)}
-              onPointerCancel={release(midi)}
+              onPointerUp={release}
+              onPointerCancel={release}
               className={`absolute top-0 z-10 rounded-b-md flex items-end justify-center pb-1 font-mono text-[11px] font-bold ${lit.has(midi) ? 'bg-cyan-400 text-black' : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800'}`}
               style={{ left, width: 26, height: 68 }}
             >

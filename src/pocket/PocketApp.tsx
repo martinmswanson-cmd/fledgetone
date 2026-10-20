@@ -120,7 +120,7 @@ const Transport: React.FC = () => {
         }}
       >
         <span className="w-3.5 h-3.5 rounded-full bg-red-500 shrink-0" />
-        <span className="pk-rec-label truncate">Rec {track ? (vocal ? 'vocal' : track.name.toLowerCase()) : ''}</span>
+        <span className="pk-rec-label truncate">{rec ? 'Stop rec' : `Rec ${track ? (vocal ? 'vocal' : track.name.toLowerCase()) : ''}`}</span>
       </button>
       <button type="button" aria-label={isPlaying ? 'Stop' : loop.enabled ? 'Play the loop' : 'Play the song'} className={`${btn} !h-[52px] gap-2 !bg-cyan-500 !border-cyan-300 text-black font-semibold shadow-[0_0_20px_rgba(6,182,212,.3)]`} onClick={play}>
         {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
