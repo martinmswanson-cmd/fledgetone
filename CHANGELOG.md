@@ -13,6 +13,7 @@ second update on the same day gets `-2`, and so on).
 - **Beat store packages and sound effects get the song's key right more often**: the key guess now listens to the bass note a song opens on, so a song in A minor is no longer called C major (and the same for the many starters it used to mislabel).
 - Clearer wording in a few places: the export dialog is **Export audio / video**, menu items that do the same thing share one name, and a few tutorial steps name the right tutorial.
 - **Track › New folder with this track** no longer shows a stray code in a message, and **File › Showcase video** opens the export dialog at its top instead of scrolled to the bottom.
+- **Tutorials**: in **Your first song**, the export step now waits until you've actually exported the file, so its instructions stay on screen while you follow them. A tutorial card that grows no longer runs off the bottom of the screen, and the "saved in this browser only" note now sits in the bottom corner instead of over the **LEARN** button (and waits until a tutorial is over).
 
 ## 2026.10.20-6 — New tutorials
 

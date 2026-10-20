@@ -269,6 +269,8 @@ const LessonOverlay: React.FC = () => {
   // Dimmed only while there's nothing to do and nothing open: a task's menus and dialogs stay bright
   const dim = !task && !popupOpen;
 
+  // On screen even when this step's card is taller than the one it was placed for
+  const shown = pos && size ? clampToScreen(pos, size) : pos;
   return (
     <>
       {/* The spotlight: a ring round the part the step is about, which follows it exactly (no easing to lag behind) */}
@@ -297,7 +299,7 @@ const LessonOverlay: React.FC = () => {
         aria-live="polite"
         data-tour-card
         className="fixed z-[76] rounded-xl border border-cyan-500/60 bg-forge-panel shadow-2xl text-xs text-forge-muted"
-        style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, width: collapsed ? 'auto' : w, maxWidth: w, visibility: pos ? 'visible' : 'hidden' }}
+        style={{ left: shown?.left ?? 0, top: shown?.top ?? 0, width: collapsed ? 'auto' : w, maxWidth: w, visibility: pos ? 'visible' : 'hidden' }}
       >
         <div
           onPointerDown={drag}

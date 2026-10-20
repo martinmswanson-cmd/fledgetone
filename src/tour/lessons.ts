@@ -5,6 +5,7 @@ import { PALETTE_SHORTCUT } from '../store/uiStore';
 import { isAudioKind, isDrumKind } from '../audio/instrumentCatalog';
 import { isMixTrack } from '../store/buses';
 import { useMySounds } from '../store/mySounds';
+import { useRenderBusy } from '../audio/renderBusy';
 
 /**
  * The first-visit tour and the guided tutorials. A step points at a part of the screen (a CSS
@@ -123,7 +124,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'The timeline',
-      body: 'Each row is a **track** (one instrument) and the blocks on it are **clips** of notes. Drag clips to move them, double-click one to write its notes, and right-click the ruler for markers, build-ups and key changes.',
+      body: 'Each row is a **track** (one instrument) and the blocks of notes on it are **clips** (double-click an empty lane to make one). Drag clips to move them, double-click one to write its notes, and right-click the ruler for markers, build-ups and key changes.',
       target: '[data-timeline-scroll]',
     },
     {
@@ -163,6 +164,22 @@ const TOUR: Lesson = {
     },
   ],
 };
+
+interface ExportWatch {
+  rendered: boolean;
+}
+/** Notes when a render starts (one can finish between two checks of the step), for "export the file" steps. */
+function watchExport(): ExportWatch {
+  const w: ExportWatch = { rendered: false };
+  const stop = useRenderBusy.subscribe((s) => {
+    // (one from the Export dialog: tracks frozen in the background render too)
+    if (s.running > 0 && ui().dialog === 'export') {
+      w.rendered = true;
+      stop();
+    }
+  });
+  return w;
+}
 
 const BEGINNER: Lesson = {
   id: 'beginner',
@@ -252,7 +269,7 @@ const BEGINNER: Lesson = {
       title: 'Export your song',
       body: 'Click **Export**. Under **Export**, pick **Mixdown**; then under **Format**, choose **MP3** for sharing or **WAV** for the best quality, then click **Export** at the bottom of the dialog to save the file.',
       target: dialogOr('export', 'Export audio / video', EXPORT_BUTTON),
-      task: { hint: 'Open Export', done: () => ui().dialog === 'export' },
+      task: { hint: 'Export the file', begin: watchExport, done: (w) => (w as ExportWatch).rendered && useRenderBusy.getState().running === 0 && ui().dialog !== 'export' },
     },
     {
       title: "You've made it!",

@@ -8,6 +8,7 @@ import { Download, Gamepad2, History, Music2, Save, Share2 } from 'lucide-react'
 import { AlertTriangle, HardDrive } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
+import { useTourStore } from '../../tour/tourStore';
 import { autosaveUnreadable, clearPreviousSession } from '../../store/project';
 import { saveProjectFile, useProjectFile } from './projectFile';
 import { ExportDialog } from './ExportDialog';
@@ -257,7 +258,8 @@ const seenStorageNotice = () => {
 
 /**
  * Once, after the first autosave (when playback stops): the work is kept in this browser only, and
- * Save keeps a file. A small card under the status, not a dialog; Save or Got it closes it for good.
+ * Save keeps a file. A small card in the corner (clear of the header's buttons), not a dialog; Save
+ * or Got it closes it for good.
  */
 const StorageNotice: React.FC = () => {
   const ok = useTimelineStore((s) => s.autosaveStatus?.ok === true);
@@ -265,7 +267,9 @@ const StorageNotice: React.FC = () => {
   const [seen, setSeen] = React.useState(seenStorageNotice);
   // (not over the transport while someone is listening: it waits for the stop)
   const playing = useTimelineStore((s) => s.isPlaying);
-  if (seen || !ok || savedTo || playing) return null;
+  // (nor under a tutorial's card: it shows after the tutorial)
+  const touring = useTourStore((s) => s.active !== null);
+  if (seen || !ok || savedTo || playing || touring) return null;
   const done = () => {
     try {
       localStorage.setItem(STORAGE_NOTICE_KEY, '1');
@@ -275,7 +279,7 @@ const StorageNotice: React.FC = () => {
     setSeen(true);
   };
   return (
-    <div role="note" className="absolute top-full left-0 mt-1 z-40 w-[min(92vw,360px)] rounded-lg border border-cyan-500/50 bg-forge-panel shadow-xl p-3 text-xs flex flex-col gap-2">
+    <div role="note" className="fixed bottom-4 left-4 z-40 w-[min(92vw,360px)] rounded-lg border border-cyan-500/50 bg-forge-panel shadow-xl p-3 text-xs flex flex-col gap-2">
       <p className="text-forge-text">
         <b>Your work is saved in this browser only.</b> Clearing your browsing data deletes it, and a private window, another browser or another computer won't have it.{' '}
         <b>Save</b> keeps a project file you own (with its sounds).
