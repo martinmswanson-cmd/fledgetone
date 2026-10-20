@@ -37,10 +37,12 @@ Hover across the bar while a menu is open to move between menus; the arrow keys 
 
 ### Tour and tutorials
 
-The first time you open Fledgetone it offers a one-minute **tour** and seven hands-on **tutorials**. Find them again any time in the **Learn** menu at the top (every tutorial is listed there, ticked once finished), with the **LEARN** button in the header, or by searching for *tutorial*. They're listed in this order:
+The first time you open Fledgetone it offers a one-minute **tour** and nine hands-on **tutorials**. Find them again any time in the **Learn** menu at the top (every tutorial is listed there, ticked once finished), with the **LEARN** button in the header, or by searching for *tutorial*. They're listed in this order:
 
 - **Quick tour**: points at each part of the screen and says what it's for. Just read and click **Next**.
-- **Beginner: Your first song**: open a starter, play it, mute a track, change the tempo, write a note, undo, and export.
+- **Beginner: Your first song**: open a starter, play it, mute a track, swap an instrument, change the tempo, write a note, undo, and export.
+- **Beginner: Make a showcase video**: File › Showcase video…, tall for phones, 60 fps, your title and marks, and which tracks show.
+- **Beginner: Find and keep your sounds**: search the instruments, star a favourite, save a sound to My sounds, and keep them in a file.
 - **Intermediate: Shape and mix a song**: add an instrument, use the Filter, Pump and reverb, draw automation, use the Mixer, add markers, a build-up and drop, and the loop.
 - **Intermediate: Write with the helpers**: a chord progression in a key, an accompaniment for it, the Drummer, melody variations, and a clip's own swing (FEEL).
 - **Intermediate: Make it expressive**: a Swell from the piano roll's TOOLS, the mod wheel as dynamics, a Vibrato lane, Breathe (a tempo that eases into phrase ends) and Play backwards.

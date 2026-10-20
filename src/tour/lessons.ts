@@ -3,6 +3,7 @@ import { useTimelineStore } from '../store/timelineStore';
 import { useUiStore } from '../store/uiStore';
 import { PALETTE_SHORTCUT } from '../store/uiStore';
 import { isDrumKind } from '../audio/instrumentCatalog';
+import { useMySounds } from '../store/mySounds';
 
 /**
  * The first-visit tour and the guided tutorials. A step points at a part of the screen (a CSS
@@ -63,6 +64,21 @@ const EXPORT_BUTTON = 'button[title^="Render the song"]';
 const RULER = '[data-tour="ruler"]';
 const FIRST_HEADER = '[data-tour="track-header"]';
 const dialogOr = (dialog: string, label: string, fallback: string) => () => (ui().dialog === dialog ? `[role="dialog"][aria-label="${label}"]` : fallback);
+const EXPORT_DIALOG = '[role="dialog"][aria-label="Export audio"]';
+/** The pressed button of one of the Export dialog's button rows (Shape, Frame rate), or '' */
+const pressedIn = (group: string) => document.querySelector(`${EXPORT_DIALOG} [role="group"][aria-label="${group}"] button[aria-pressed="true"]`)?.textContent ?? '';
+/** The Export dialog is open on a Showcase video */
+const showcaseOpen = () =>
+  ui().dialog === 'export' && [...document.querySelectorAll<HTMLSelectElement>(`${EXPORT_DIALOG} select`)].some((sel) => sel.value === 'showcase');
+/** The selected track's instrument button in the Inspector, and the list it opens */
+const INSTRUMENT_BUTTON = 'button[aria-label^="Instrument: "]';
+const instrumentListOpen = () => !!document.querySelector('[role="listbox"][aria-label="Instruments"]');
+const instrumentTarget = () => (instrumentListOpen() ? '[role="listbox"][aria-label="Instruments"]' : INSTRUMENT_BUTTON);
+const showTrackInspector = () => {
+  ensureTrack();
+  tl().toggleInspector(true);
+  ui().setInspectorTab('track');
+};
 
 const TOUR: Lesson = {
   id: 'tour',
@@ -73,7 +89,7 @@ const TOUR: Lesson = {
   steps: [
     {
       title: "Welcome to Fledgetone",
-      body: 'A music maker that runs in your browser: build a song from tracks and clips, mix it, and export it for your game or video. Here is where everything lives.',
+      body: 'A music studio that runs in your browser. You write every note, pick every sound and mix it yourself, then export it, post it as a video or put it in a game. Here is where everything lives.',
     },
     {
       title: 'Start the audio',
@@ -82,7 +98,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'The menus',
-      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Plugins**, **Tools**, **Video**, **Game**, **View**, **Learn** and **Help**. **New** offers a blank timeline, the demo songs (a groove and five classical pieces) or one of 76 starters, game music among them.',
+      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Plugins**, **Tools**, **Video**, **Game**, **View**, **Learn** and **Help**. **New** offers a blank timeline, the demo songs (a groove and five classical pieces) or one of more than 70 starters, game music among them.',
       target: '[role="menubar"]',
     },
     {
@@ -132,7 +148,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'Learn more',
-      body: 'The **Learn** menu at the top (or the **LEARN** button here) has this tour and seven hands-on tutorials, from a first song to game music that reacts. **GUIDE** (or **?**) explains everything in detail.',
+      body: 'The **Learn** menu at the top (or the **LEARN** button here) has this tour and nine hands-on tutorials, from a first song and a showcase video to game music that reacts. **GUIDE** (or **?**) explains everything in detail.',
       target: 'button[title^="Tour and tutorials"]',
     },
   ],
@@ -142,12 +158,12 @@ const BEGINNER: Lesson = {
   id: 'beginner',
   level: 'Beginner',
   title: 'Your first song',
-  summary: 'Open a starter, play it, change it, write a few notes and export it.',
-  minutes: 5,
+  summary: 'Open a starter, play it, swap a sound, write a few notes and export it.',
+  minutes: 6,
   steps: [
     {
       title: 'Your first song',
-      body: "In this tutorial you'll open a ready-made song, play it, change it and write some notes of your own. Each step tells you what to do and moves on by itself once you've done it.",
+      body: "No music experience needed. You'll open a ready-made song, play it, change it and write a few notes of your own. Each step says what to do and moves on by itself once you've done it.",
     },
     {
       title: 'Turn on the sound',
@@ -178,6 +194,13 @@ const BEGINNER: Lesson = {
       body: 'Click **M** again to unmute it. **S** (solo) does the opposite: only soloed tracks play.',
       target: FIRST_HEADER,
       task: { hint: 'Unmute the track', done: () => !tl().tracks.some((t) => t.isMuted) },
+    },
+    {
+      title: 'Swap a sound',
+      body: 'Click the instrument name at the top of the panel on the right and pick another, or type to search: *piano*, *choir*, *guitar*, *808*. Click ▶ beside one to hear it first. The part plays the same notes on the new sound.',
+      target: instrumentTarget,
+      before: showTrackInspector,
+      task: { hint: 'Pick a new instrument', begin: () => `${selected()?.id}:${selected()?.instrumentKey}`, done: (b) => `${selected()?.id}:${selected()?.instrumentKey}` !== b },
     },
     {
       title: 'Change the tempo',
@@ -223,7 +246,114 @@ const BEGINNER: Lesson = {
     },
     {
       title: "You've made it!",
-      body: 'You can open, play, change, write and export a song. Your work saves itself in this browser; use **Save** to keep a file. When you are ready, the **Intermediate** tutorial covers effects, automation and arranging.',
+      body: 'You can open, play, change, write and export a song. Your work saves itself in this browser; use **Save** to keep a file. Next, try **Make a showcase video** to post your song, or **Shape and mix a song** for effects and arranging.',
+    },
+  ],
+};
+
+const SHOWCASE: Lesson = {
+  id: 'showcase',
+  level: 'Beginner',
+  title: 'Make a showcase video',
+  summary: 'Turn your song into a video to post: its notes slide past the playhead, tall for phones, at 60 fps.',
+  minutes: 3,
+  steps: [
+    {
+      title: 'Make a showcase video',
+      body: 'A showcase video shows how your song is made: every note slides past a red playhead in its track’s colour and lights up as it plays, with your title, the waveform and the time. Made for posting on your socials.',
+    },
+    {
+      title: 'Have a song open',
+      body: 'Use a song of your own, or open the **File** menu, click **New…** and pick a starter. Busy, colourful songs look best.',
+      target: dialogOr('new', 'New arrangement', NEW_BUTTON),
+      task: { hint: 'A song with clips', done: () => tl().clips.length > 0 },
+    },
+    {
+      title: 'Open the showcase export',
+      body: 'Open the **File** menu and click **Showcase video…**. Export opens set to a video of the notes playing.',
+      target: () => (ui().dialog === 'export' ? EXPORT_DIALOG : '#menu-file'),
+      task: { hint: 'File › Showcase video…', done: showcaseOpen },
+    },
+    {
+      title: 'Make it tall',
+      body: 'Under the export choices, click **Portrait 9:16** for a phone-shaped video. **Widescreen 16:9** is for YouTube and websites.',
+      target: `${EXPORT_DIALOG} [role="group"][aria-label="Shape"]`,
+      task: { hint: 'Click Portrait 9:16', done: () => pressedIn('Shape').startsWith('Portrait') },
+    },
+    {
+      title: 'Smooth 60 fps',
+      body: 'Leave **Smooth 60 fps** on so the notes glide. **30 fps** makes a smaller file, faster.',
+      target: `${EXPORT_DIALOG} [role="group"][aria-label="Frame rate"]`,
+    },
+    {
+      title: 'Your title',
+      body: 'Type the title people will see, and the line under it (left blank, it shows the tempo). Untick what you don’t want: the section names, the time or the waveform. What you hide gives its room to the notes.',
+      target: `${EXPORT_DIALOG} [role="group"][aria-label="Title and marks"]`,
+    },
+    {
+      title: 'Show only what you want',
+      body: 'Muted tracks are left out of the picture, so mute a part to hide it. With many tracks, set **Tracks** to **A lane per track** so each part keeps its own band.',
+      target: EXPORT_DIALOG,
+    },
+    {
+      title: 'Export it',
+      body: 'Click **Export** at the bottom. It’s made faster than real time, and the MP4 lands in your downloads, ready to post. Videos need Chrome or Edge.',
+      target: EXPORT_DIALOG,
+    },
+  ],
+};
+
+const SOUNDS: Lesson = {
+  id: 'sounds',
+  level: 'Beginner',
+  title: 'Find and keep your sounds',
+  summary: 'Search the instruments, star your favourites, save a sound you made under My sounds and keep them in a file.',
+  minutes: 4,
+  steps: [
+    {
+      title: 'Find and keep your sounds',
+      body: 'There are more than 200 instruments, from recorded pianos, horns and a choir to synths and 808s. Here’s how to find the right one fast, and keep the sounds you love.',
+    },
+    {
+      title: 'Open the instrument list',
+      body: 'Each track plays one instrument. Click the instrument name at the top of the panel on the right to open the list.',
+      target: INSTRUMENT_BUTTON,
+      before: showTrackInspector,
+      task: { hint: 'Click the instrument name', done: instrumentListOpen },
+    },
+    {
+      title: 'Search',
+      body: 'Type what you’re after: a name (*sax*), a mood (*dark*, *angelic*) or a style (*8-bit*, *orchestral*). Click ▶ beside one to hear it, then click it to use it.',
+      target: instrumentTarget,
+      task: { hint: 'Pick an instrument', begin: () => `${selected()?.id}:${selected()?.instrumentKey}`, done: (b) => `${selected()?.id}:${selected()?.instrumentKey}` !== b },
+    },
+    {
+      title: 'Star a favourite',
+      body: 'Open the list again and point at an instrument you like: click its ☆ star. Starred instruments are listed first, in every song, in the studio and in Pocket.',
+      target: instrumentTarget,
+      task: { hint: 'Star an instrument', begin: () => useMySounds.getState().favourites.length, done: (n) => useMySounds.getState().favourites.length > (n as number) },
+    },
+    {
+      title: 'Make it yours',
+      body: 'Change the sound: an effect in the FX Rack, the EQ, a synth’s knobs or its reverb. Every setting on this track is part of the sound.',
+      target: '#btn-inspector-toggle',
+    },
+    {
+      title: 'Save it to My sounds',
+      body: 'Click the bookmark beside the instrument name and give the sound a name. It saves the instrument with all its settings and effects.',
+      target: '[aria-label="Save this sound to My sounds"]',
+      before: showTrackInspector,
+      task: { hint: 'Click the bookmark', begin: () => useMySounds.getState().sounds.length, done: (n) => useMySounds.getState().sounds.length !== (n as number) },
+    },
+    {
+      title: 'Use it anywhere',
+      body: 'Your saved sounds sit at the top of every instrument list, under **My sounds**, in any song. Pick one and a track takes the whole sound at once.',
+      target: INSTRUMENT_BUTTON,
+    },
+    {
+      title: 'Keep them safe',
+      body: 'My sounds and your stars live in this browser. **File › Save my sounds to a file…** keeps them in one file, and **Open a my sounds file…** brings them into another browser or computer.',
+      target: '#menu-file',
     },
   ],
 };
@@ -676,6 +806,6 @@ const EXPRESSIVE: Lesson = {
   ],
 };
 
-export const LESSONS: Lesson[] = [TOUR, BEGINNER, INTERMEDIATE, HELPERS, EXPRESSIVE, GAME_MUSIC, EXPERT, GAME_REACT];
+export const LESSONS: Lesson[] = [TOUR, BEGINNER, SHOWCASE, SOUNDS, INTERMEDIATE, HELPERS, EXPRESSIVE, GAME_MUSIC, EXPERT, GAME_REACT];
 
 export const lessonById = (id: string): Lesson | undefined => LESSONS.find((l) => l.id === id);

@@ -4,6 +4,12 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-6 — New tutorials
+
+- **Two new tutorials** in the **Learn** menu. **Make a showcase video** walks you through a video of your song's notes to post: tall for phones, smooth 60 fps, your own title. **Find and keep your sounds** covers searching the instruments, starring favourites, saving a sound to My sounds and keeping them in a file.
+- **Your first song** now has a step where you swap a part's instrument, and the quick tour is friendlier for first-timers.
+- The lessons on fledgetone.com use the plainer names (**Rap Beat**, the **Rap beat** drummer, **Long slide**, **Crisp snare**), with fresh pictures.
+
 ## 2026.10.20-5 — A new home page
 
 - **fledgetone.com has a new home page**, with the slogan *Make music for you*. It shows the showcase videos, the three games in Try it in a game, Pocket on a phone, and what makes Fledgetone a real music studio rather than an AI song generator: every note is yours.
