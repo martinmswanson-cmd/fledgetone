@@ -101,3 +101,46 @@ test('fledge: every preset plays, stays under its ceiling and stops', async () =
   e.bb_destroy(h);
   assert.deepEqual(problems, []);
 });
+
+// The editor's layout (fledgeLayout.ts) matches the engine: every choice's list, as the engine
+// names each option, and every control on a real parameter
+test('fledge: the editor layout matches the engine', async () => {
+  const L = await import('../src/audio/plugins/fledgeLayout.ts');
+  const { instance: { exports: e } } = await WebAssembly.instantiate(readFileSync(new URL('../public/fledgetone-plugins/fledge.wasm', import.meta.url)));
+  const text = (p) => {
+    const m = new Uint8Array(e.memory.buffer);
+    let end = p;
+    while (m[end]) end++;
+    return Buffer.from(m.subarray(p, end)).toString('utf8');
+  };
+  const h = e.bb_create(0, 48000);
+  assert.equal(e.bb_params(h), L.FLEDGE.COUNT);
+  const controls = [];
+  const walk = (x) => {
+    if (x && typeof x === 'object' && 'kind' in x && 'i' in x) controls.push(x);
+    else if (x && typeof x === 'object') Object.values(x).forEach(walk);
+  };
+  walk(L.FLEDGE_SECTIONS);
+  for (const at of [L.FLEDGE.A, L.FLEDGE.B]) walk(L.oscControls(at));
+  for (const at of [L.FLEDGE.LFO_1, L.FLEDGE.LFO_2]) walk(L.lfoControls(at));
+  const seen = new Set();
+  for (const c of controls) {
+    assert.ok(c.i >= 0 && c.i < L.FLEDGE.COUNT, `${c.label}: index ${c.i}`);
+    assert.ok(!seen.has(c.i), `${text(e.bb_param_name(h, c.i))} is on the panel twice`);
+    seen.add(c.i);
+    if (c.kind === 'choice')
+      c.options.forEach((o, k) => {
+        e.bb_set(h, c.i, L.choiceValue(k, c.options.length));
+        assert.equal(text(e.bb_param_display(h, c.i)), o, text(e.bb_param_name(h, c.i)));
+      });
+    if (c.kind === 'toggle') {
+      e.bb_set(h, c.i, 1);
+      assert.equal(text(e.bb_param_display(h, c.i)), 'on', text(e.bb_param_name(h, c.i)));
+    }
+  }
+  // Every parameter but the spares has a control
+  const missing = [];
+  for (let i = 0; i < L.FLEDGE.COUNT; i++) if (!seen.has(i) && !text(e.bb_param_name(h, i)).startsWith('(spare')) missing.push(text(e.bb_param_name(h, i)));
+  assert.deepEqual(missing, []);
+  e.bb_destroy(h);
+});

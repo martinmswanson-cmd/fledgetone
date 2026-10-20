@@ -50,7 +50,7 @@ macro_rules! osc_params {
             Param { name: concat!($p, " position"), kind: Kind::Percent, default: 0.0 },
             Param { name: concat!($p, " octave"), kind: Kind::Int { min: -3, max: 3, unit: "" }, default: 0.0 },
             Param { name: concat!($p, " semitone"), kind: Kind::Int { min: -12, max: 12, unit: " st" }, default: 0.0 },
-            Param { name: concat!($p, " fine"), kind: Kind::Lin { min: -100.0, max: 100.0, unit: " cents" }, default: 0.0 },
+            Param { name: concat!($p, " fine"), kind: Kind::Lin { min: -100.0, max: 100.0, unit: " ct" }, default: 0.0 },
             Param { name: concat!($p, " level"), kind: Kind::Db { min: -48.0, max: 0.0 }, default: 0.0 },
             Param { name: concat!($p, " unison"), kind: Kind::Int { min: 1, max: 16, unit: " voices" }, default: 1.0 },
             Param { name: concat!($p, " detune"), kind: Kind::Percent, default: 0.25 },

@@ -663,9 +663,26 @@ Tools for making a beat from a sample: a loop or a recording of your own (or one
 - **Each chop** is a pad: select it for its **Start**, **End** and **Fade** (where in the sample it plays), and the usual **Level**, **Pan**, **Pitch**, **Decay**, filters, **Drive**, **Choke** group and **reverse** (the chop played backwards).
 - **Filter out the bass** (in the chop dialog, and on the Audio, Drum Rack and Slicer panels) turns the track's **Filter** insert into a steep low cut at 180 Hz: the sample's bass and kick go (about 22 dB less under 100 Hz) and its chords stay, so your own 808 has the low end to itself. Untick it to turn the filter off.
 
+### Fledge Synth
+
+**Fledge Synth** is Fledgetone's own synthesizer, made for modern electronic music: dubstep and riddim basses, wobbles, reese and neuro basses, supersaw leads, future bass chords and dark pads. Add it with **Add Track → Fledge Synth** (it's also under **Plugins › Browse plugins… › Instruments**). Its window opens with the sound laid out in sections:
+
+- **Preset** at the top: Init saw, Wobble bass, Growl bass, Riddim, Reese, Neuro bass, Talking bass, Sub bass, Supersaw lead, Future bass chords, Hoover, Pluck, Dark pad and Sine lead. They're all about as loud as each other, so you can flick through them without a jump in level.
+- **Knobs**: drag up or down (hold Shift for fine steps), or click one and use the arrow keys. Double-click a knob to put it back. Each shows its value under its name.
+- **Oscillator A and B**: each plays a **Table** of shapes (Basic shapes goes sine → triangle → saw → square as **Position** turns; Vowels, Growl FM, Metal FM and Fold are the talking and growling ones). **Unison** stacks up to 16 copies, spread by **Detune**; **Blend** moves weight from the centre copy to the detuned ones, and **Width** spreads them across the stereo field. **Octave**, **Semi** and **Fine** tune it; **On** turns an oscillator off.
+- **Filter**: low pass (12, 24 and a ladder), band pass, high pass, notch, **Comb** (metallic, pitched to the note) and **Formant** (vowel sounds as **Cutoff** moves). **Key track** makes the filter follow the note; **Envelope** opens it with the filter envelope.
+- **Sub, noise and FM**: a clean sine an octave or two below (kept in the centre), noise, and **FM B→A**, where oscillator B bends A for growls and bells.
+- **Envelopes**: **Volume** and **Filter** attack, decay, sustain and release, and a **Pitch drop** for punchy starts.
+- **Drive**: six kinds of distortion (soft, warm, hard clip, fold, asymmetric), with **Mix**. It's cleaned so high notes don't turn harsh.
+- **LFO 1 (wobble)** and **LFO 2**: **Sync to song** locks them to the tempo (1/4, 1/8, triplets, dotted, up to 4 bars), so a wobble stays in time when you change the tempo. Each moves up to two **Targets** (cutoff, table position, pitch, volume, drive, FM and more) by its **Amount**, which can go either way. **Restart on note** starts the wobble from the top with each note.
+- **Playing**: **Voices** is Poly (chords), Mono or Legato (notes slide into each other, with **Glide**). **Bend** sets the pitch bend range, **Velocity** how much louder harder notes play, and the **mod wheel** can move any target.
+- **Output**: **OTT** (the squashed, up-front sound of modern bass music), **Width**, and **Level**. Below 120 Hz the sound is kept in mono, so the bass stays solid, and a safety limiter keeps every note under −1 dB.
+
+Every knob can be automated (a lane per setting, like any plugin), learned to a MIDI controller, frozen, bounced and exported, and the settings are saved with the song. It's light on the computer: an 8-note supersaw chord takes a few percent of one core.
+
 ### Plugins
 
-The **Plugins** menu holds hundreds of built-in effects and instruments: open-source plugins from Airwindows, MDA, Mutable Instruments, Faust and Open303, plus the Surge XT synth, the Dragonfly and Plateau reverbs and the setBfree tonewheel organ, compiled to run in the browser (see Credits for who made them). They need no address and nothing to allow.
+The **Plugins** menu holds hundreds of built-in effects and instruments: Fledge Synth (above), open-source plugins from Airwindows, MDA, Mutable Instruments, Faust and Open303, plus the Surge XT synth, the Dragonfly and Plateau reverbs and the setBfree tonewheel organ, compiled to run in the browser (see Credits for who made them). They need no address and nothing to allow.
 
 - **Plugins › Browse plugins…** opens the plugin browser: search by name or by what it does ("tape", "warm", "bell", "granular"), or pick a group down the side: **Instruments**, **Recommended** and **Basic** (the Airwindows picks), then each kind of effect (Reverb, Saturation, Dynamics, Filter, Lo-Fi and more). **Effects go on** chooses the track. **Add** puts an effect on that track; an instrument's **New track** makes a track that plays it. The menu also has shortcuts straight to the reverbs, delays, saturation, tape, dynamics, filters and others.
 - **Effects** go after the track's instrument and before its own inserts, in the order you add them, like the web plugins below. Right-click a track's name for **Add plugin effect…**, and to open or remove each one.

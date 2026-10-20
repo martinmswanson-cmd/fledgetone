@@ -4,6 +4,17 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.20-11 — Fledge Synth
+
+- **Fledge Synth**, Fledgetone's own synthesizer, made for dubstep, bass music and modern electronic songs. Add it with **Add Track → Fledge Synth**.
+  - Two wavetable oscillators with up to 16 unison voices each, a clean sub, noise and FM.
+  - Filters including comb and formant (talking basses), envelopes, drive, and an OTT for the modern squashed sound.
+  - **Wobble LFOs that stay in time with the song**, at any tempo.
+  - 14 presets, from wobble, growl, riddim, reese and neuro basses to supersaw leads, future bass chords and pads, all at about the same loudness.
+  - Its own window with knobs in sections, instead of a list of sliders. Every knob can be automated.
+  - Ear-safe: the bass is kept in mono and nothing it plays goes over −1 dB.
+- Plugins that use the song's tempo now get it, including tempo changes.
+
 ## 2026.10.20-10 — Paste where you mean
 
 - **Paste lands on the track you picked**: click an empty spot on a track's lane (which selects that track) and Ctrl+V puts clips copied from one track there, at the playhead.

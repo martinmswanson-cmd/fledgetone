@@ -6,6 +6,7 @@ import { InstrumentList } from '../InstrumentMenu';
 import { useFloatingMenu } from '../useFloatingMenu';
 import { pickAudioFolder } from './audioFiles';
 import { importSamplePack } from './samplePackImport';
+import { addBuiltinPlugin, allBuiltinPlugins } from '../../store/builtinPlugins';
 
 /**
  * "Add Track" button and its instrument picker: a search field over every instrument by category.
@@ -60,6 +61,20 @@ export const AddTrackMenu: React.FC = () => {
             <Radio className="w-3.5 h-3.5 text-sky-300" />
             <span className="flex-1">Return (effect return)</span>
             <span className="text-[10px] text-forge-muted">tracks send to it</span>
+          </button>
+          <button
+            type="button"
+            className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-fuchsia-200 hover:bg-fuchsia-500/15 border-b border-forge-border"
+            onClick={() => {
+              const fledge = allBuiltinPlugins().find((e) => e.family.family === 'fledge');
+              if (fledge) addBuiltinPlugin(fledge, null);
+              close();
+            }}
+            title="Fledgetone's own synth: wavetables, unison, filters, wobble LFOs in time with the song, drive and OTT. Presets for dubstep, bass music, leads and pads."
+          >
+            <Plug className="w-3.5 h-3.5 text-fuchsia-300" />
+            <span className="flex-1">Fledge Synth</span>
+            <span className="text-[10px] text-forge-muted">bass, wobble, leads</span>
           </button>
           <button
             type="button"

@@ -2,6 +2,7 @@ import React, { useSyncExternalStore } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RotateCcw } from 'lucide-react';
 import { setBuiltinGui, type BuiltinControls } from '../../audio/plugins/builtinHost';
+import { FledgeSynthPanel } from './FledgeSynthPanel';
 
 /**
  * The window of a built-in plugin (see builtinHost.ts): what it does, and a slider for each of
@@ -104,7 +105,8 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
 setBuiltinGui((controls) => {
   const element = document.createElement('div');
   const root = createRoot(element);
-  root.render(<Panel controls={controls} />);
+  // Fledgetone's own synth has a panel of its own
+  root.render(controls.ref.family.family === 'fledge' ? <FledgeSynthPanel controls={controls} /> : <Panel controls={controls} />);
   // (Closed from the dialog's own cleanup while React is rendering: unmount once that's done)
   return { element, destroy: () => setTimeout(() => root.unmount()) };
 });
