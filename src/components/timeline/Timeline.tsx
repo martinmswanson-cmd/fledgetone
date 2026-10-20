@@ -42,6 +42,7 @@ import { showToast } from './toastStore';
 import { TrackInspector } from '../inspector/TrackInspector';
 import { AddTrackMenu } from './AddTrackMenu';
 import { useUiStore } from '../../store/uiStore';
+import { useTourStore } from '../../tour/tourStore';
 import { useVideoStore } from '../../store/videoStore';
 import { laneTops } from './rows';
 import { useSkipOffscreen } from '../offscreen';
@@ -128,6 +129,31 @@ const TrackRow: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <div ref={row} className="flex">
       {children}
+    </div>
+  );
+};
+
+/**
+ * A song with nothing in it yet (a first visit, or New › blank): where to begin, over the empty
+ * lanes. It goes with the first clip, and stays out of the way while a tutorial runs.
+ */
+const EmptySongPrompt: React.FC = () => {
+  const empty = useTimelineStore((s) => s.clips.length === 0);
+  const touring = useTourStore((s) => s.active !== null);
+  if (!empty || touring) return null;
+  return (
+    <div className="absolute inset-0 z-[20] flex items-center justify-center pointer-events-none" style={{ paddingLeft: HEADER_WIDTH }}>
+      <div data-testid="empty-song" className="pointer-events-auto max-w-sm rounded-lg border border-forge-border bg-forge-panel/95 px-4 py-3 text-center shadow-lg shadow-black/40">
+        <p className="text-sm font-semibold text-forge-text">This song is empty</p>
+        <p className="mt-1 text-[12px] text-forge-muted">Open a starter to hear something straight away, or double-click a lane to write your own notes.</p>
+        <button
+          type="button"
+          onClick={() => useUiStore.getState().setDialog('new')}
+          className="mt-3 h-8 px-3 rounded-md border border-cyan-500/60 bg-cyan-500/15 text-[12px] font-semibold text-cyan-100 hover:bg-cyan-500/25"
+        >
+          Open a starter
+        </button>
+      </div>
     </div>
   );
 };
@@ -488,6 +514,8 @@ export const Timeline: React.FC = () => {
             )}
           </div>
         </div>
+
+        <EmptySongPrompt />
 
         {/* DaVinci Fairlight Track Inspector & FX Rack */}
         <TrackInspector />

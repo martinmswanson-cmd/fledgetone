@@ -2,11 +2,14 @@
  * The list of the tour and tutorials (lessons.ts): shown as a welcome on someone's first visit,
  * and from LEARN in the header or the Learn menu.
  */
-import React from 'react';
-import { CheckCircle2, Compass, GraduationCap, Play, RotateCcw } from 'lucide-react';
+import React, { useState } from 'react';
+import { CheckCircle2, ChevronDown, Compass, GraduationCap, Play, RotateCcw } from 'lucide-react';
 import { Modal } from '../timeline/Modal';
 import { LESSONS, type Level } from '../../tour/lessons';
 import { useTourStore } from '../../tour/tourStore';
+
+/** What the welcome offers at first: the rest are a click away, so a first visit isn't a wall of choices */
+const WELCOME_LESSONS = ['tour', 'beginner'];
 
 const LEVEL_STYLE: Record<Level, string> = {
   Tour: 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40',
@@ -21,6 +24,8 @@ const LEVEL_STYLE: Record<Level, string> = {
  */
 export const LearnDialog: React.FC<{ onClose: () => void; welcome?: boolean }> = ({ onClose, welcome }) => {
   const progress = useTourStore((s) => s.progress);
+  const [all, setAll] = useState(!welcome);
+  const shown = all ? LESSONS : LESSONS.filter((l) => WELCOME_LESSONS.includes(l.id));
   const start = (id: string, step = 0) => {
     onClose();
     // After the dialog has gone, so the first step can point at what's under it
@@ -30,11 +35,11 @@ export const LearnDialog: React.FC<{ onClose: () => void; welcome?: boolean }> =
     <Modal title={welcome ? "Welcome to Fledgetone" : 'Tour and tutorials'} onClose={onClose} wide>
       <p className="text-[13px] text-forge-text">
         {welcome
-          ? 'Make music for games and videos, right in your browser. New here? Take the one-minute tour, or learn by doing in a tutorial at your level.'
+          ? 'Make music for games and videos, right in your browser. New here? Take the one-minute tour, or make your first song in a few minutes.'
           : 'Learn by doing: each tutorial points at what to use, waits for you to try it, and moves on by itself.'}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {LESSONS.map((l) => {
+        {shown.map((l) => {
           const p = progress[l.id];
           const resumable = !p?.done && p?.step !== undefined && p.step > 0;
           return (
@@ -75,6 +80,11 @@ export const LearnDialog: React.FC<{ onClose: () => void; welcome?: boolean }> =
           );
         })}
       </div>
+      {!all && (
+        <button type="button" onClick={() => setAll(true)} className="self-start flex items-center gap-1 text-[12px] text-cyan-200 hover:text-cyan-100">
+          <ChevronDown className="w-3.5 h-3.5" /> All {LESSONS.length} tutorials
+        </button>
+      )}
       <div className="flex items-center gap-2 pt-1">
         <span className="text-[11px]">Find these again any time in the <strong className="text-forge-text">Learn</strong> menu at the top, or the <strong className="text-forge-text">LEARN</strong> button.</span>
         {welcome && (

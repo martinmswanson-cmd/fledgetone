@@ -4,9 +4,12 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## 2026.10.20-7 — Pages for games, creators and film
+## 2026.10.20-7 — Pages for games, creators and scoring, and a smoother first visit
 
 - **fledgetone.com has a page for each kind of maker**: **For games** (adaptive music, sound effects, playable test games and the exports for Godot, Unity, the web, FMOD and Wwise), **For creators** (showcase videos, every length, a version to talk over, stream kits and beat store packages) and **For scoring** (scoring the video you've cut in your own editor: hit points, tempo fitting, timecode, dialogue dips and markers to take back). The home page links to all three under **What will you make?**
+- **A smoother first visit**: the welcome offers the quick tour and **Your first song**, with the other tutorials a click away. An empty song now says so, with an **Open a starter** button. The New dialog only warns about replacing your work when there is some.
+- First-time visitors no longer see a "new version is ready" notice the moment the studio opens.
+- The header no longer jumps down when your work is first saved, and the "saved in this browser only" note waits until the music stops instead of covering the transport.
 
 ## 2026.10.20-6 — New tutorials
 

@@ -157,9 +157,16 @@ function watchForUpdates(reg: ServiceWorkerRegistration): void {
       if (w.state === 'installed') void ready(w);
     });
   });
+  // A page opened before any worker was installed: the first worker takes it over (claim), which
+  // isn't a new version
+  let controlled = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (reloading) {
       window.location.reload();
+      return;
+    }
+    if (!controlled) {
+      controlled = true;
       return;
     }
     // Another tab moved to a new version: its worker has dropped this version's files, so parts of

@@ -49,6 +49,8 @@ const DEMO_SONGS = STARTERS.filter((s) => s.group === DEMO_GROUP);
 
 const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [filter, setFilter] = useState('');
+  // (an empty song has nothing to lose: no warning, just where to begin)
+  const hasWork = useTimelineStore((s) => s.clips.length > 0);
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   // (its id too, so a style's usual name, like trap or drill, still finds its starter)
   const found = STARTERS.filter((s) => words.every((w) => `${s.id} ${s.name} ${s.group} ${s.detail}`.toLowerCase().includes(w)));
@@ -65,10 +67,14 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   };
   return (
     <Modal title="New arrangement" onClose={onClose} wide>
-      <p>
-        This replaces the current timeline and clears undo history. Save it first if you want to keep it. Copied clips
-        stay on the clipboard, so you can paste them into the new arrangement.
-      </p>
+      {hasWork ? (
+        <p>
+          This replaces the current timeline and clears undo history. Save it first if you want to keep it. Copied clips
+          stay on the clipboard, so you can paste them into the new arrangement.
+        </p>
+      ) : (
+        <p>Pick a starter or a demo song to hear something straight away, or begin from a blank timeline.</p>
+      )}
       <ChoiceButton
         title="Blank timeline"
         detail="Four empty tracks. Right-click a lane to insert a pattern, or paste copied clips."
@@ -215,15 +221,16 @@ export const RestoreSessionBanner: React.FC = () => {
  */
 const AutosaveStatusChip: React.FC = () => {
   const status = useTimelineStore((s) => s.autosaveStatus);
-  if (!status) return null;
-  if (status.ok) {
+  // Before the first autosave, its room is kept, so the header doesn't jump (or wrap) when it appears
+  if (!status || status.ok) {
     return (
       <span
-        className="flex items-center gap-1 px-1 text-[11px] font-mono text-forge-muted"
+        aria-hidden={!status}
+        className={`flex items-center gap-1 px-1 text-[11px] font-mono text-forge-muted whitespace-nowrap ${status ? '' : 'invisible'}`}
         title="Your work is saved in this browser half a second after every change, in this browser only: clearing its data loses it. Use Save to keep a file."
       >
         <HardDrive className="w-3 h-3" />
-        Saved in this browser · {clockTime(status.at)}
+        Saved<span className="hidden 2xl:inline"> in this browser</span> · {status ? clockTime(status.at) : '00:00 PM'}
       </span>
     );
   }
@@ -249,14 +256,16 @@ const seenStorageNotice = () => {
 };
 
 /**
- * Once, after the first autosave: the work is kept in this browser only, and Save keeps a file. A
- * small card under the status, not a dialog; Save or Got it closes it for good.
+ * Once, after the first autosave (when playback stops): the work is kept in this browser only, and
+ * Save keeps a file. A small card under the status, not a dialog; Save or Got it closes it for good.
  */
 const StorageNotice: React.FC = () => {
   const ok = useTimelineStore((s) => s.autosaveStatus?.ok === true);
   const savedTo = useProjectFile((s) => s.handle?.name ?? null);
   const [seen, setSeen] = React.useState(seenStorageNotice);
-  if (seen || !ok || savedTo) return null;
+  // (not over the transport while someone is listening: it waits for the stop)
+  const playing = useTimelineStore((s) => s.isPlaying);
+  if (seen || !ok || savedTo || playing) return null;
   const done = () => {
     try {
       localStorage.setItem(STORAGE_NOTICE_KEY, '1');
