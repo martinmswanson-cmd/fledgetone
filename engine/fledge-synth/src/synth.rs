@@ -186,7 +186,13 @@ impl Spread {
             // Outer voices spread furthest (|t|^1.5, near the measured supersaw spacing)
             let off = t.signum() * t.abs().powf(1.5) * cents;
             // A stack puts voices in turn up an octave, a fifth, a chord's notes (the centre stays)
-            let up = if Some(i) == mid { 0.0 } else { stack[i % stack.len()] };
+            // (The centre voice is the root: the others take the stack's notes in turn, from the
+            // first one above the root, so an odd count loses none)
+            let up = match mid {
+                Some(m) if m == i => 0.0,
+                Some(m) => stack[((if i < m { i } else { i - 1 }) + 1) % stack.len()],
+                None => stack[i % stack.len()],
+            };
             s.ratio[i] = 2f32.powf(off / 1200.0 + up / 12.0);
             s.top = s.top.max(s.ratio[i]);
             w[i] = match mid {
@@ -1719,6 +1725,23 @@ mod tests {
     fn a_free_steps_lfo_is_random_from_its_first_cycle() {
         let s = Synth::new(48000.0);
         assert!(s.lfo_held.iter().all(|h| h.0 != 0.0 && h.1 != 0.0));
+    }
+
+
+    #[test]
+    fn stacks_keep_every_note_with_an_odd_unison() {
+        let semis = |unison: usize, stack: usize| {
+            let o = OscCfg { unison, stack, detune: 0.0, blend: 0.5, width: 0.5, ..Default::default() };
+            let sp = Spread::new(&o, 0.0);
+            let mut v: Vec<i32> = (0..sp.n).map(|i| (12.0 * sp.ratio[i].log2()).round() as i32).collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        assert_eq!(semis(3, 1), vec![0, 12]);
+        assert_eq!(semis(3, 4), vec![0, 7, 12]);
+        assert_eq!(semis(3, 5), vec![0, 4, 7]);
+        assert_eq!(semis(5, 2), vec![0, 12, 24]);
     }
 
 }

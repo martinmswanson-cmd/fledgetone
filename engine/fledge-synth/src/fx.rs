@@ -170,6 +170,9 @@ pub struct Effects {
     flanger: [Line; 2],
     delay: [Line; 2],
     delay_now: f32,
+    /// The reverb's size and pre-delay (samples) as they glide to their settings
+    size_now: f32,
+    pre_now: f32,
     delay_lp: [f32; 2],
     pre: Line,
     diffuse: [Line; 4],
@@ -198,6 +201,8 @@ impl Effects {
             flanger: [Line::new(ms(15.0)), Line::new(ms(15.0))],
             delay: [Line::new(ms(4000.0)), Line::new(ms(4000.0))],
             delay_now: 0.0,
+            size_now: -1.0,
+            pre_now: 0.0,
             delay_lp: [0.0; 2],
             pre: Line::new(ms(160.0)),
             diffuse: DIFFUSE_MS.map(|m| Line::new(ms(m * 2.2))),
@@ -226,6 +231,8 @@ impl Effects {
             self.diffuse.iter_mut().for_each(Line::clear);
             self.lines.iter_mut().for_each(Line::clear);
             self.damp = [0.0; REVERB_LINES];
+            self.size_now = c.reverb_size;
+            self.pre_now = (c.reverb_pre * 0.001 * sr).max(1.0);
         }
         if c.chorus && !self.was_on[0] {
             self.chorus.iter_mut().for_each(Line::clear);
@@ -361,17 +368,25 @@ impl Effects {
         }
 
         if c.reverb {
-            let scale = 0.45 + 1.75 * c.reverb_size;
-            let lens: [f32; REVERB_LINES] = REVERB_MS.map(|m| m * scale * 0.001 * sr);
-            let gains: [f32; REVERB_LINES] = lens.map(|len| 10f32.powf(-3.0 * len / (c.reverb_decay.max(0.1) * sr)));
-            let diff: [f32; 4] = DIFFUSE_MS.map(|m| m * (0.6 + 0.8 * c.reverb_size) * 0.001 * sr);
+            if self.size_now < 0.0 {
+                self.size_now = c.reverb_size;
+            }
+            // Size and pre-delay glide to a new setting over about 80 ms: a jump would move every
+            // line's read point at once and click
+            let glide = 1.0 - (-1.0 / (0.08 * sr)).exp();
+            let pre_target = (c.reverb_pre * 0.001 * sr).max(1.0);
+            let gains: [f32; REVERB_LINES] = REVERB_MS.map(|m| 10f32.powf(-3.0 * m * (0.45 + 1.75 * self.size_now) * 0.001 / c.reverb_decay.max(0.1)));
             let damp = one_pole(c.reverb_tone, sr);
-            let pre = (c.reverb_pre * 0.001 * sr).max(1.0);
             let modinc = 0.37 / sr;
             for n in 0..frames {
+                self.size_now += (c.reverb_size - self.size_now) * glide;
+                self.pre_now += (pre_target - self.pre_now) * glide;
+                let scale = 0.45 + 1.75 * self.size_now;
+                let lens: [f32; REVERB_LINES] = REVERB_MS.map(|m| m * scale * 0.001 * sr);
+                let diff: [f32; 4] = DIFFUSE_MS.map(|m| m * (0.6 + 0.8 * self.size_now) * 0.001 * sr);
                 let mix = (c.reverb_mix + mods[n / step].reverb).clamp(0.0, 1.0);
                 self.pre.push(0.5 * (l[n] + r[n]));
-                let mut x = self.pre.read(pre);
+                let mut x = self.pre.read(self.pre_now);
                 // Four all-passes smear the input into a dense wash before the tank
                 for (k, line) in self.diffuse.iter_mut().enumerate() {
                     let g = 0.62;
@@ -605,6 +620,43 @@ mod tests {
         let mut r = [0.0f32; 128];
         fx.process(&mut l, &mut r, 128, &on, &mods, 16);
         assert!(l.iter().all(|x| x.abs() < 1e-6));
+    }
+
+
+    #[test]
+    fn moving_the_reverb_size_does_not_click() {
+        let mut fx = Effects::new(48000.0);
+        let mods = [FxMods::default(); 8];
+        let mut c = FxCfg { reverb: true, reverb_size: 0.6, reverb_decay: 2.0, reverb_tone: 20000.0, reverb_pre: 10.0, reverb_mix: 1.0, ..Default::default() };
+        let mut t = 0usize;
+        let mut last = 0.0f32;
+        let mut run = |fx: &mut Effects, c: &FxCfg, blocks: usize| {
+            let mut worst: f32 = 0.0;
+            for _ in 0..blocks {
+                let mut l = [0.0f32; 128];
+                for x in l.iter_mut() {
+                    *x = (2.0 * PI * 220.0 * t as f32 / 48000.0).sin() * 0.3;
+                    t += 1;
+                }
+                let mut r = l;
+                fx.process(&mut l, &mut r, 128, c, &mods, 16);
+                for &y in &l {
+                    worst = worst.max((y - last).abs());
+                    last = y;
+                }
+            }
+            worst
+        };
+        let steady = run(&mut fx, &c, 400);
+        // One step (a knob turned), then a sweep over two seconds (automation)
+        c.reverb_size = 0.61;
+        let step = run(&mut fx, &c, 100);
+        let mut sweep: f32 = 0.0;
+        for k in 0..750 {
+            c.reverb_size = 0.61 + 0.3 * k as f32 / 750.0;
+            sweep = sweep.max(run(&mut fx, &c, 1));
+        }
+        assert!(step < steady * 1.5 && sweep < steady * 2.0, "steady {steady}, step {step}, sweep {sweep}");
     }
 
 }

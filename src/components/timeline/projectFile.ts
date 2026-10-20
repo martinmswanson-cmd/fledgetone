@@ -1,4 +1,4 @@
-import { currentProject, onProjectReplaced, useTimelineStore } from '../../store/timelineStore';
+import { currentProject, onProjectReplaced, songGeneration, useTimelineStore } from '../../store/timelineStore';
 import { parseProject, safeFileName, serializeProject } from '../../store/project';
 import { referencedSoundIds } from '../../store/audioClips';
 import { embedSounds } from '../../audio/soundLibrary';
@@ -45,11 +45,7 @@ const PICKER_ID = 'beatbox-projects';
 export const useProjectFile = create<{ handle: FileHandle | null }>(() => ({ handle: null }));
 
 // Another song (New, a link, Restore) isn't the file's song: the next Save asks where again
-let replacements = 0;
-onProjectReplaced(() => {
-  replacements++;
-  useProjectFile.setState({ handle: null });
-});
+onProjectReplaced(() => useProjectFile.setState({ handle: null }));
 
 /** Thrown when another song was opened while this one was being saved (nothing is written). */
 class SongReplacedError extends Error {
@@ -57,28 +53,35 @@ class SongReplacedError extends Error {
     super('another song was opened while saving');
   }
 }
+/** Stop if another song was opened since `song` (a songGeneration()). */
+const sameSong = (song: number) => {
+  if (songGeneration() !== song) throw new SongReplacedError();
+};
 
-/** The project file's contents: the arrangement and the sounds it plays (and the reference video, when small enough). */
-async function projectBlob(): Promise<Blob> {
-  const before = replacements;
+/**
+ * The project file's contents: the arrangement and the sounds it plays (and the reference video,
+ * when small enough), of the song open when the save began (`song`).
+ */
+async function projectBlob(song: number): Promise<Blob> {
   // The plugins' latest settings first (they reach the tracks every few seconds otherwise)
   await captureWamStates();
   // A song opened meanwhile (New, Open, a dropped file) must never be written into this one's file
-  if (replacements !== before) throw new SongReplacedError();
+  sameSong(song);
   const project = currentProject();
+  // (Both read the song now, before anything else can be opened)
+  const video = projectVideoForFile();
   const sounds = await embedSounds(referencedSoundIds(project));
-  const video = await projectVideoForFile();
-  return new Blob([JSON.stringify(serializeProject({ ...project, sounds, video }), null, 2)], { type: 'application/json' });
+  return new Blob([JSON.stringify(serializeProject({ ...project, sounds, video: await video }), null, 2)], { type: 'application/json' });
 }
 
 const fileName = () => `${safeFileName(currentProject().name)}.fledgetone.json`;
 
 /** Write the project into `handle` (asking for permission again if the browser dropped it). */
-async function writeTo(handle: FileHandle): Promise<void> {
+async function writeTo(handle: FileHandle, song: number): Promise<void> {
   if (handle.queryPermission && (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
     if ((await handle.requestPermission?.({ mode: 'readwrite' })) !== 'granted') throw new Error('the browser was not allowed to write to the file');
   }
-  const blob = await projectBlob();
+  const blob = await projectBlob(song);
   const out = await handle.createWritable();
   await out.write(blob);
   await out.close();
@@ -89,10 +92,11 @@ async function writeTo(handle: FileHandle): Promise<void> {
  * place), else a download.
  */
 export async function saveProjectFile(): Promise<void> {
+  const song = songGeneration();
   const { handle } = useProjectFile.getState();
   if (handle) {
     try {
-      await writeTo(handle);
+      await writeTo(handle, song);
       showToast(`Saved to ${handle.name}`);
       return;
     } catch (err) {
@@ -110,17 +114,18 @@ export async function saveProjectFile(): Promise<void> {
 /** Save As: choose the folder and name (the picker opens where the last project was saved), then Save keeps writing there. */
 export async function saveProjectAs(): Promise<void> {
   try {
-    await saveAs();
+    await saveAs(songGeneration());
   } catch (err) {
-    if (!(err instanceof SongReplacedError)) throw err;
-    showToast('Not saved: another song was opened while saving');
+    if (err instanceof SongReplacedError) showToast('Not saved: another song was opened while saving');
+    else showToast(`Couldn't save (${err instanceof Error ? err.message : String(err)})`);
   }
 }
 
-async function saveAs(): Promise<void> {
+async function saveAs(song: number): Promise<void> {
   const pick = pickers().showSaveFilePicker;
   if (!pick) {
-    downloadBlob(await projectBlob(), fileName());
+    const name = fileName();
+    downloadBlob(await projectBlob(song), name);
     showToast('Downloaded the project file (this browser saves to its downloads folder: Chrome or Edge on a computer can choose where)');
     return;
   }
@@ -132,7 +137,13 @@ async function saveAs(): Promise<void> {
     if (err instanceof DOMException && err.name === 'AbortError') return; // cancelled
     throw err;
   }
-  await writeTo(handle);
+  await writeTo(handle, song);
+  // (Another song opened while it wrote: the file holds the song that was saved, and the open
+  // one isn't tied to it)
+  if (songGeneration() !== song) {
+    showToast(`Saved to ${handle.name}; the song now open isn't saved there`);
+    return;
+  }
   useProjectFile.setState({ handle });
   showToast(`Saved to ${handle.name}. Save (${navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+'}S) now keeps it up to date`);
 }

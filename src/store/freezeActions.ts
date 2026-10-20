@@ -3,7 +3,7 @@
  * (see freeze.ts for how the live engine plays it), with progress.
  */
 import { create } from 'zustand';
-import { masterFxOf, useTimelineStore } from './timelineStore';
+import { masterFxOf, songGeneration, useTimelineStore } from './timelineStore';
 import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';
 import type { Track } from './timelineTypes';
 import { barToSeconds, secondsToBar } from '../audio/tempoMap';
@@ -119,6 +119,7 @@ async function renderTrackSound(trackId: string, label: string): Promise<Rendere
   if (isAudioKind(track.instrumentKey)) throw new Error('an Audio track already plays recordings');
   if (!store.clips.some((c) => c.trackId === trackId)) throw new Error(`"${track.name}" has no clips to render`);
   if (useFreezing.getState()[trackId] !== undefined) return null;
+  const song = songGeneration();
   store.pause();
   useFreezing.setState({ [trackId]: 0 });
   try {
@@ -135,6 +136,7 @@ async function renderTrackSound(trackId: string, label: string): Promise<Rendere
     const wav = encodeChannels(stored, r.sampleRate, 16, []);
     const meta = await importSoundFile(wav, `${track.name} (${label})`, MAX_FROZEN_BYTES);
     if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return null; // deleted while it rendered
+    if (songGeneration() !== song) return null; // another song opened while it rendered
     return { soundId: meta.id, startBar: r.startBar, seconds: r.channels[0].length / r.sampleRate, gainDb: normalizeDb + PLAYBACK_DB, fingerprint: r.fingerprint };
   } finally {
     useFreezing.setState((s) => {

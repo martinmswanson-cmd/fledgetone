@@ -1000,6 +1000,12 @@ export function onProjectReplaced(listener: () => void): () => void {
   replacedListeners.add(listener);
   return () => replacedListeners.delete(listener);
 }
+let songCount = 0;
+/**
+ * Goes up each time another song replaces the open one: work that spans awaits (a save, a render)
+ * notes it first and stops if it changed, rather than landing on the wrong song.
+ */
+export const songGeneration = (): number => songCount;
 
 /** The session the Restore banner offers: the last one at startup, or the song that New, Open or a link replaced. */
 export const useLastSession = create<{ session: SavedSession | null }>(() => ({ session: preservePreviousSession() }));
@@ -3036,6 +3042,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       captureWamStatesNow();
       const replaced = currentProject();
       if (hasWork(replaced)) useLastSession.setState({ session: setAsideSession(replaced) });
+      songCount++;
       replacedListeners.forEach((l) => l());
       // A take in progress belongs to the arrangement being replaced
       discardTake();

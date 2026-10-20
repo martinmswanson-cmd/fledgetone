@@ -149,7 +149,12 @@ impl Comb {
     #[inline]
     pub fn tick(&mut self, x: f32, period: f32, fb: f32, negative: bool) -> f32 {
         let n = self.buf.len();
-        let d = if negative { period * 0.5 } else { period }.clamp(2.0, (n - 3) as f32);
+        // The damping low pass in the loop delays it a little too: take that off, so the comb
+        // rings at the pitch it's tuned to (not flat, more so for high notes)
+        let raw = if negative { period * 0.5 } else { period };
+        let w = 2.0 * PI / period.max(2.0);
+        let lag = (0.4 * w.sin()).atan2(1.0 - 0.4 * w.cos()) / w;
+        let d = (raw - lag).clamp(2.0, (n - 3) as f32);
         let rp = self.w as f32 + n as f32 - d;
         let i = rp as usize;
         let t = rp - i as f32;
@@ -562,6 +567,29 @@ mod tests {
                 let x = (i as f32 * 0.01).sin() * amp;
                 assert!(c.tick(x).abs() <= 0.9, "amplitude {amp}");
             }
+        }
+    }
+
+    #[test]
+    fn comb_rings_at_its_pitch() {
+        for (hz, neg) in [(440.0f32, false), (2000.0, false), (1000.0, true)] {
+            let sr = 48000.0;
+            // (Comb − too: half a period, fed back upside down, peaks at the pitch and its odd harmonics)
+            let peak_at = hz;
+            // Where the comb answers loudest, within a semitone: its resonance
+            let gain = |f: f32| {
+                let mut c = Comb::new(sr);
+                let mut peak: f32 = 0.0;
+                for i in 0..24000 {
+                    let y = c.tick((2.0 * PI * f * i as f32 / sr).sin() * 0.01, sr / hz, 0.9, neg);
+                    if i > 12000 {
+                        peak = peak.max(y.abs());
+                    }
+                }
+                peak
+            };
+            let best: i32 = (-100..=100).step_by(2).max_by(|&a, &b| gain(peak_at * 2f32.powf(a as f32 / 1200.0)).partial_cmp(&gain(peak_at * 2f32.powf(b as f32 / 1200.0))).unwrap()).unwrap();
+            assert!(best.abs() <= 8, "{hz} Hz (negative {neg}): resonates {best} cents off");
         }
     }
 }
