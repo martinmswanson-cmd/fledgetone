@@ -140,7 +140,7 @@ export function clipRuns(clips: readonly Clip[]): Map<string, ClipRun> {
     else byTrack.set(c.trackId, [c]);
   }
   for (const list of byTrack.values()) {
-    list.sort((a, b) => a.startBar - b.startBar);
+    list.sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
     const runs = new Map<string, Array<{ ids: string[]; spans: Span[] }>>();
     for (const c of list) {
       const key = contentKey(c);

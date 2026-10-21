@@ -192,3 +192,14 @@ test('a song from a link shared again keeps every clip (kept ids and short ids n
   assert.equal(back.clips.length, 3);
   assert.deepEqual(back.clips.map((c) => c.startBar), [1, 5, 9]);
 });
+
+test("passes don't depend on the order clips are kept in (two starting on one bar)", () => {
+  const notes = [n('a', 'F#1', 0, { cond: { n: 1, of: 2 } })];
+  const make = () => [clip('long', 1, 2, notes, { pattern: 'p' }), clip('short', 1, 1, notes, { pattern: 'p' }), clip('x', 2, 1, notes, { pattern: 'p' }), clip('y', 3, 1, notes, { pattern: 'p' })];
+  const passes = (list) => {
+    const runs = c.clipRuns(list);
+    return ['x', 'y'].map((id) => c.passOf(runs.get(id), 0, null));
+  };
+  const [long, short, x, y] = make();
+  assert.deepEqual(passes([long, short, x, y]), passes([short, long, x, y]));
+});
