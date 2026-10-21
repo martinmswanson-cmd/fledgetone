@@ -1,12 +1,13 @@
 /**
  * Fledge Synth's macros and wobble in plain words: the presets in the engine's order, a short
  * name for what each preset's macros move ("Speed up", "Growl", "Grit"), what a macro moves
- * read from the matrix (slots 5 to 8 in the presets), and which LFO is the wobble (the first one
- * in time with the song that moves something), with the tempo divisions offered for it. The studio
+ * read from the matrix (any of its 16 slots; slots 5 to 8 in the presets), and which LFO is the
+ * wobble (the first one in time with the song that moves something; a once-per-note sweep is a
+ * "Sweep rate"), with the tempo divisions offered for it. The studio
  * panel (FledgeSynthPanel.tsx) and Pocket's Sound tool (PocketSynth.tsx) both use these;
  * scripts/fledgeMacros.test.mjs checks them against the engine.
  */
-import { choiceIndex, FLEDGE_DESTS, FLEDGE_SYNC, lfoControls, slotControls, type FledgeControl } from './fledgeLayout';
+import { choiceIndex, FLEDGE_DESTS, FLEDGE_SYNC, lfoControls, MACRO_SOURCE, SLOT_NUMBERS, slotControls, type FledgeControl } from './fledgeLayout';
 
 /** Fledge Synth's address on a track (builtinHost.ts). */
 export const FLEDGE_URL = 'builtin:fledge/Fledge Synth';
@@ -21,6 +22,9 @@ export const FLEDGE_PRESETS = [
   'Chords/Future bass', 'Chords/Gated', 'Chords/Minor stack',
   'Pad/Dark', 'Pad/Warm strings', 'Pad/Shimmer', 'Pad/Glass',
   'FX/Riser', 'FX/Downlifter', 'FX/Laser',
+  // (Added later, so at the end: a saved song's preset number keeps its preset)
+  'Bass/Talking Growl', 'Bass/Riddim Cell', 'Bass/Colour Chord Stab', 'Bass/Neuro Reese', 'Bass/Dive Screech', 'Bass/Clean Sub',
+  'Lead/Hardcore Supersaw', 'Pad/Wide Wash', 'Keys/Bright Pluck',
 ];
 
 /** The preset a new Fledge Synth track starts on in Pocket. */
@@ -63,6 +67,15 @@ export const FLEDGE_MACRO_NAMES: Record<string, string[]> = {
   'FX/Riser': ['Space'],
   'FX/Downlifter': [],
   'FX/Laser': [],
+  'Bass/Talking Growl': ['Talk speed', 'Vowel', 'Grit'],
+  'Bass/Riddim Cell': ['Squelch', 'Grit', 'Crunch'],
+  'Bass/Colour Chord Stab': ['Bright', 'Ring', 'Grit'],
+  'Bass/Neuro Reese': ['Comb', 'Grit', 'Phase'],
+  'Bass/Dive Screech': ['Scream', 'Morph', 'Grit'],
+  'Bass/Clean Sub': ['Warmth', 'Tone', 'Soften'],
+  'Lead/Hardcore Supersaw': ['Darken', 'Drive', 'Space'],
+  'Pad/Wide Wash': ['Bright', 'Space'],
+  'Keys/Bright Pluck': ['Bright', 'Echo'],
 };
 
 /** A parameter's stored 0..1 by its name. */
@@ -74,10 +87,10 @@ const pick = (val: ValueOf, c: FledgeControl): number => (c.kind === 'choice' ? 
 /** What macro `k` (1 to 4) moves: the targets of the matrix slots that read it. */
 export function macroTargets(val: ValueOf, k: number): string[] {
   const out: string[] = [];
-  for (let n = 1; n <= 8; n++) {
+  for (const n of SLOT_NUMBERS) {
     const s = slotControls(n);
     const target = pick(val, s.target);
-    if (pick(val, s.source) === 13 + k && target > 0) out.push(FLEDGE_DESTS[target]);
+    if (pick(val, s.source) === MACRO_SOURCE + k && target > 0) out.push(FLEDGE_DESTS[target]);
   }
   return out;
 }
@@ -103,7 +116,7 @@ export interface Wobble {
   lfo: number;
   /** Its division now (its place in FLEDGE_SYNC) */
   division: number;
-  /** "Wobble rate", or "Pulse rate" for one that only moves the volume (a gate, a pump) */
+  /** "Wobble rate", "Pulse rate" for one that only moves the volume (a gate, a pump), or "Sweep rate" for one that runs once per note */
   label: string;
 }
 
@@ -117,13 +130,15 @@ export function wobbleOf(val: ValueOf): Wobble | null {
       .map((t) => FLEDGE_DESTS[pick(val, t.target)])
       .filter((d) => d !== 'None');
     // (Or the matrix reads it)
-    for (let s = 1; s <= 8; s++) {
+    for (const s of SLOT_NUMBERS) {
       const slot = slotControls(s);
       const target = pick(val, slot.target);
       if (pick(val, slot.source) === n && target > 0) targets.push(FLEDGE_DESTS[target]);
     }
     if (!targets.length) continue;
-    return { lfo: n, division: pick(val, l.division), label: targets.every((t) => t === 'Volume') ? 'Pulse rate' : 'Wobble rate' };
+    // (Envelope and Sustain env run once per note: a sweep, not a wobble)
+    const once = pick(val, l.mode) >= 2;
+    return { lfo: n, division: pick(val, l.division), label: once ? 'Sweep rate' : targets.every((t) => t === 'Volume') ? 'Pulse rate' : 'Wobble rate' };
   }
   return null;
 }

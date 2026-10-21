@@ -3,6 +3,7 @@
 //! native library (a desktop app, tests, the render harness).
 
 pub mod abi;
+pub mod analysis;
 pub mod dsp;
 pub mod fx;
 pub mod params;

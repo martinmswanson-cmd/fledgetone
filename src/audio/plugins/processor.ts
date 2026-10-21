@@ -8,7 +8,8 @@
  * exact frame), `set` (a parameter now, from its panel), `clear` (drop pending events),
  * `describe` (send every parameter's name, value and text), `program` (choose a preset, which
  * sets the parameters), `load` (a preset file's bytes), `sync` (answered with `synced` once everything before it has arrived),
- * `destroy`.
+ * `legacy` (an older saved sound with only its first `count` values went in: the plugin sets the
+ * rest as it sounded then; answered with `params`), `destroy`.
  * Messages out: `ready` with the parameters (and their defaults) and presets once made, `params` answering `describe`, `display`
  * after a `set` (the parameter's text), `error` if the plugin couldn't be made.
  *
@@ -104,6 +105,9 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       if (this.programs && Number.isInteger(o.program) && o.program >= 0 && o.program < this.programs) this.e.bb_set_program(this.h, o.program);
       const values = o.values || [];
       for (let i = 0; i < this.n && i < values.length; i++) if (Number.isFinite(values[i])) this.e.bb_set(this.h, i, values[i]);
+      // Saved before the plugin had all its parameters: the ones it didn't have yet are set as
+      // the sound was then (Fledge Synth's bb_legacy), so it sounds as it did
+      if (values.length > 0 && values.length < this.n && this.e.bb_legacy) this.e.bb_legacy(this.h, values.length);
       this.alive = true;
       this.views();
       const programs = [];
@@ -173,6 +177,10 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       this.port.postMessage({ type: 'synced', id: d.id });
     } else if (d.type === 'clear') {
       this.events.length = 0;
+    } else if (d.type === 'legacy') {
+      // (As at the start: an older saved sound with only its first "count" values just went in)
+      if (this.e.bb_legacy && d.count > 0 && d.count < this.n) this.e.bb_legacy(this.h, d.count);
+      this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program() });
     } else if (d.type === 'describe') {
       // (Automation already due first: a sleeping track's queue still says what it plays now)
       this.dueAutomation();
@@ -202,8 +210,11 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       const b = ev.data.bytes;
       this.e.bb_midi(this.h, b[0], b[1] || 0, b[2] || 0);
     } else if (ev.type === 'wam-transport') {
-      // The song's tempo, for plugins with tempo-synced parts (Fledge Synth's LFOs)
+      // The song's tempo, for plugins with tempo-synced parts (Fledge Synth's LFOs), and where in
+      // the song it is (beats), for plugins that follow it (Fledge Synth's free LFOs and random
+      // values: the same notes from the same place sound the same, live or exported)
       if (this.e.bb_tempo && ev.data.tempo > 0) this.e.bb_tempo(this.h, ev.data.tempo);
+      if (this.e.bb_position && Number.isFinite(ev.data.beat) && ev.data.beat >= 0) this.e.bb_position(this.h, ev.data.beat);
     }
   }
 

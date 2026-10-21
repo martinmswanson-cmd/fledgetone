@@ -1,6 +1,9 @@
 //! The interface Fledgetone's plugin host calls (scripts/plugins/bbplug.h): plain C functions
-//! over handles, parameters as 0..1, buffers in this module's memory. Plus `bb_tempo`, which
-//! hosts that know the song's tempo call (for tempo-synced LFOs; the others leave it at 120).
+//! over handles, parameters as 0..1, buffers in this module's memory. Plus three that hosts
+//! may call: `bb_tempo` (the song's tempo, for tempo-synced LFOs; else 120), `bb_position`
+//! (where in the song it is, in beats: free LFOs, chaos and random values follow the song, so
+//! live playback and an export match) and `bb_legacy` (an older saved sound with fewer values
+//! was just loaded: the parameters it didn't have are set as it sounded then).
 
 use crate::params::{param, COUNT};
 use crate::presets::PRESETS;
@@ -41,7 +44,7 @@ pub extern "C" fn bb_count() -> i32 {
 #[allow(static_mut_refs)]
 pub extern "C" fn bb_info(_index: i32) -> *const c_char {
     let json = format!(
-        "{{\"name\":\"Fledge Synth\",\"category\":\"Synth\",\"about\":\"Fledgetone's own synthesizer for modern electronic music: two wavetable oscillators with up to 16 unison voices, FM, a clean sub, filters including comb and formant, antialiased drive, wobble LFOs in time with the song and an OTT. Its presets are made for dubstep, bass music and leads.\",\"instrument\":true,\"params\":{},\"tags\":[\"wavetable\",\"bass\",\"dubstep\",\"lead\"]}}",
+        "{{\"name\":\"Fledge Synth\",\"category\":\"Synth\",\"about\":\"Fledgetone's own synthesizer for modern electronic music: two wavetable oscillators with up to 16 unison voices, FM, a clean mono sub, filters including comb and formant, antialiased drive before and after the filters and on the mids and highs, LFOs in time with the song or restarting with each note, per-note random and chaos sources, a 16-slot mod matrix and an OTT. Its presets are made for dubstep, bass music and leads, with basses that change with every note.\",\"instrument\":true,\"params\":{},\"tags\":[\"wavetable\",\"bass\",\"dubstep\",\"lead\"]}}",
         COUNT
     );
     unsafe {
@@ -140,6 +143,20 @@ pub extern "C" fn bb_midi(h: i32, status: i32, d1: i32, d2: i32) {
 pub extern "C" fn bb_tempo(h: i32, bpm: f32) {
     if let Some(x) = get(h) {
         x.synth.set_tempo(bpm);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn bb_position(h: i32, beats: f64) {
+    if let Some(x) = get(h) {
+        x.synth.set_position(beats);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn bb_legacy(h: i32, count: i32) {
+    if let Some(x) = get(h) {
+        x.synth.legacy(count.max(0) as usize);
     }
 }
 
