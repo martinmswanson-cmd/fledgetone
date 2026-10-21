@@ -5,6 +5,8 @@
  * level correction and high-note taper. Also the drum note map (DRUM_NOTES) and the expressive
  * drum detune.
  */
+import { createDropInstrument } from './dropLive';
+import { liveContext } from './liveContext';
 import * as Tone from 'tone';
 import { createChipBass, createChipDrums, createChipLead } from './presets/chiptune';
 import './toneFixes';
@@ -640,6 +642,8 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
     return { play: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => bus.bus.dispose(), clipBus: bus };
   }
   if (kind === 'slicer') return createSlicer(output, options.slicer);
+  // Plays nothing itself: its notes hold the master's Drop effects (live only; an export runs them after its render)
+  if (kind === 'drop') return createDropInstrument(Tone.getContext() !== liveContext);
   if (kind === 'drums' && INSTRUMENTS[key].samples) return recordedKit(key, output, !!options.expressive, options.seed);
 
   if (kind === 'sampled' || kind === 'custom') {

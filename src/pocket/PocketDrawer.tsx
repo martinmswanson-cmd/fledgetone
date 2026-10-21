@@ -19,6 +19,7 @@ import { editorOf, usePocket, type DrawerSize, type PocketTool } from './pocketS
 import { ChordPads, DrumPads, DrumSteps, NotePads } from './PocketPads';
 import { PocketRoll } from './PocketRoll';
 import { PocketVocals } from './PocketVocals';
+import { DropPads } from './PocketDrop';
 
 export const DRAWER_SIZES: Record<DrawerSize, number> = { low: 0.3, mid: 0.4, high: 0.74 };
 
@@ -28,7 +29,7 @@ const landscape = () => typeof document !== 'undefined' && !!document.querySelec
 /** The tools a track's drawer has. */
 export const toolsOf = (track: Track): PocketTool[] => {
   const how = editorOf(track.instrumentKey);
-  return how === 'vocals' ? ['sing', 'mix'] : how === null ? ['mix'] : ['play', 'draw', 'sound', 'mix'];
+  return how === 'vocals' ? ['sing', 'mix'] : how === 'drop' ? ['play', 'mix'] : how === null ? ['mix'] : ['play', 'draw', 'sound', 'mix'];
 };
 
 /** Select a track for the drawer, keeping the tool open when it has it too (drawing stays drawing), else its first. */
@@ -314,6 +315,7 @@ const Body: React.FC<{ track: Track; sec: PocketSection; tool: PocketTool }> = (
         {INSTRUMENTS[track.instrumentKey]?.name ?? 'This track'} is edited in the studio on a computer. Its level, mute and solo are under Mix.
       </p>
     );
+  if (how === 'drop') return <DropPads track={track} sec={sec} />;
   if (tool === 'sound') return <SoundList track={track} />;
   if (how === 'beat') return tool === 'draw' ? <DrumSteps key={`${track.id}:${sec.from}`} track={track} sec={sec} /> : <DrumPads track={track} sec={sec} />;
   if (tool === 'draw') return <PocketRoll key={`${track.id}:${sec.from}:${sec.to}`} track={track} sec={sec} songKey={songKey} />;

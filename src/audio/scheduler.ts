@@ -4,6 +4,7 @@
  * change), live and in exports; each note group goes to its track's instrument, looked up when it
  * plays. Also applies the loop region, tempo and swing to the live Transport (syncTransport).
  */
+import { isDropTrack } from '../store/dropMoves';
 import * as Tone from 'tone';
 import { liveContext, liveTransport } from './liveContext';
 import { applyTempoAt, barToTicks, getLiveTempo, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
@@ -180,6 +181,8 @@ export function createClipSchedule(
   onActivity?: (trackId: string, time: number, seconds: number) => void
 ): ClipSchedule {
   let byTick = new Map<number, NoteGroup[]>();
+  /** Drop tracks: their notes play on the beat as written (no swing or shift), as an export reads them (dropMoves.ts) */
+  let straight = new Set<string>();
   let entries = new Map<string, ClipEntry>();
   let feel = new Map<string, HumanFeel>();
   const events = new Map<number, number>();
@@ -257,7 +260,7 @@ export function createClipSchedule(
       const songLate = swingDelay(swing(), transport.bpm.value, transport.PPQ);
       const bpm = transport.bpm.value;
       const swingOf = (g: NoteGroup) => (!g.swung ? 0 : g.rowSwing ? swingDelay(g.rowSwing.swing, bpm, transport.PPQ, g.rowSwing.grid) : g.groove ? swingDelay(g.groove.swing, bpm, transport.PPQ, g.groove.grid) : songLate);
-      const lateOf = (g: NoteGroup) => swingOf(g) + (g.shift ? (g.shift * 15) / bpm : 0);
+      const lateOf = (g: NoteGroup) => (straight.has(g.trackId) ? 0 : swingOf(g) + (g.shift ? (g.shift * 15) / bpm : 0));
       // Bends first, so notes starting on the same tick start bent; a clip's end before the
       // next clip's start, so the next clip's bend wins
       for (const ends of [true, false]) {
@@ -298,8 +301,9 @@ export function createClipSchedule(
     update: (tracks, clips) => {
       const trackIds = new Set(tracks.map((t) => t.id));
       feel = new Map();
+      straight = new Set(tracks.filter(isDropTrack).map((t) => t.id));
       for (const t of tracks) {
-        if (!t.fx.human.on) continue;
+        if (!t.fx.human.on || straight.has(t.id)) continue;
         const kind = INSTRUMENTS[t.instrumentKey]?.kind;
         feel.set(t.id, { human: t.fx.human, pitched: PITCHED_KINDS.has(kind), together: kind !== 'sampled' && kind !== 'custom' && (kind !== 'synth' || TOGETHER_KEYS.has(t.instrumentKey)) });
       }

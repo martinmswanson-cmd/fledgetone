@@ -1,6 +1,6 @@
 import type { AutomationPoint, InstrumentKey, NoteEvent, Track } from './timelineTypes';
 import { barsToDuration, durationToBars } from './timelineTypes';
-import { INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, isMixKind } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isAudioKind, isDrumKind, isDropKind, isFxKind, isMixKind } from '../audio/instrumentCatalog';
 import { laneValueAt, normalizePoints } from '../audio/automation';
 
 /**
@@ -38,7 +38,7 @@ export function trackRole(track: Pick<Track, 'instrumentKey'>): TrackRole {
   const key = track.instrumentKey as InstrumentKey;
   if (isMixKind(key)) return 'mix';
   if (isDrumKind(key)) return 'drums';
-  if (isFxKind(key)) return 'fx';
+  if (isFxKind(key) || isDropKind(key)) return 'fx';
   if (isAudioKind(key)) return 'audio';
   return INSTRUMENTS[key]?.category === 'Bass' ? 'bass' : 'melody';
 }

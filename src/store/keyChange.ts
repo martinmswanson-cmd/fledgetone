@@ -1,5 +1,5 @@
 import type { Clip, Track } from './timelineTypes';
-import { INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, isSlicerKind } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isAudioKind, isDrumKind, isDropKind, isFxKind, isSlicerKind } from '../audio/instrumentCatalog';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
 
@@ -12,7 +12,7 @@ import { midiOf, nameOf } from './noteTools';
 /** True for an instrument whose notes are pitches a key change should move. */
 export function isPitched(key: InstrumentKey): boolean {
   const def = INSTRUMENTS[key];
-  return !(isDrumKind(key) || isFxKind(key) || isSlicerKind(key) || isAudioKind(key) || def.category === 'Drums & Percussion' || def.category === 'Sound Effects');
+  return !(isDrumKind(key) || isFxKind(key) || isDropKind(key) || isSlicerKind(key) || isAudioKind(key) || def.category === 'Drums & Percussion' || def.category === 'Sound Effects');
 }
 
 /** Tolerance for "at or after the bar" (a note written on the bar itself counts). */

@@ -7,7 +7,7 @@
  * track. Above it: Loop / Song (what Play plays), Mix all and + Track.
  */
 import React, { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { Drum, Ellipsis, Mic, Music, Plus, SlidersHorizontal, Waves } from 'lucide-react';
+import { Drum, Ellipsis, Mic, Music, Plus, SlidersHorizontal, Zap, Waves } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
 import type { Clip, NoteEvent, Track } from '../store/timelineTypes';
@@ -43,7 +43,7 @@ let pendingJump: { bar: number; when: number } | null = null;
 
 export const trackIcon = (t: Track): React.ComponentType<{ className?: string }> => {
   const how = editorOf(t.instrumentKey);
-  return how === 'beat' ? Drum : how === 'notes' ? Music : how === 'vocals' ? Mic : SlidersHorizontal;
+  return how === 'beat' ? Drum : how === 'notes' ? Music : how === 'vocals' ? Mic : how === 'drop' ? Zap : SlidersHorizontal;
 };
 
 /** What a cell draws: its notes (relative to the section) and its recordings (start and length, in bars). */

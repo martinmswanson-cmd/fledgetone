@@ -13,7 +13,7 @@ import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timeline
 import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
 import { crossfades, secondsPerBar, stretchRatio } from '../../store/audioClips';
 import { DRUM_NOTES } from '../../audio/scheduler';
-import { canMoveClipBetween, FX_ROWS, INSTRUMENTS, isDrumKind, isRackKind, isFxKind } from '../../audio/instrumentCatalog';
+import { canMoveClipBetween, DROP_ROWS, FX_ROWS, INSTRUMENTS, isDrumKind, isDropKind, isRackKind, isFxKind } from '../../audio/instrumentCatalog';
 import { dbToGain } from '../../audio/clipEnvelope';
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
@@ -73,6 +73,9 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
   } else if (isFxKind(instrument)) {
     rows = FX_ROWS.length;
     rowOf = (note) => Math.max(0, FX_ROWS.findIndex((r) => r.note === note));
+  } else if (isDropKind(instrument)) {
+    rows = DROP_ROWS.length;
+    rowOf = (note) => Math.max(0, DROP_ROWS.findIndex((r) => r.note === note));
   } else {
     // (A note name that can't be read sits mid-range rather than breaking the drawing)
     const midiAt = (note: string) => (Number.isFinite(midiOf(note)) ? midiOf(note) : 60);

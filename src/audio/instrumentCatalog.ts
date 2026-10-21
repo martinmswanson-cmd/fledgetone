@@ -48,6 +48,7 @@ export const INSTRUMENT_KEYS = [
   'wobbleBass', 'growlBass', 'reeseBass',
   'supersaw', 'pluck',
   'fx',
+  'dropPad',
   // a synth you design
   'synthDesigner',
   // drums you design
@@ -89,7 +90,7 @@ export const INSTRUMENT_KEYS = [
 
 export type InstrumentKey = (typeof INSTRUMENT_KEYS)[number];
 
-export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio' | 'bus' | 'plugin' | 'return' | 'rack' | 'multi';
+export type InstrumentKind = 'synth' | 'drums' | 'fx' | 'sampled' | 'custom' | 'slicer' | 'audio' | 'bus' | 'plugin' | 'return' | 'rack' | 'multi' | 'drop';
 
 export const CATEGORIES = [
   'Drums & Percussion',
@@ -271,6 +272,19 @@ export const FX_ROWS: ReadonlyArray<{ note: string; label: string }> = [
   { note: FX_NOTES.impact, label: 'Impact' },
   { note: FX_NOTES.subDrop, label: 'Sub Drop' },
   { note: FX_NOTES.downlifter, label: 'Downlifter' },
+];
+
+/**
+ * The Drop pad's effects (effects/dropFx.ts), one row each: a note on a row holds that effect over
+ * the whole mix for as long as it lasts. In DROP_EFFECTS order, from C4 up.
+ */
+export const DROP_ROWS: ReadonlyArray<{ note: string; label: string; fx: number }> = [
+  { note: 'C4', label: 'Stutter', fx: 0 },
+  { note: 'C#4', label: 'Filter', fx: 1 },
+  { note: 'D4', label: 'Tape stop', fx: 2 },
+  { note: 'D#4', label: 'Crush', fx: 3 },
+  { note: 'E4', label: 'Gate', fx: 4 },
+  { note: 'F4', label: 'Echo', fx: 5 },
 ];
 
 // ---------- sample-map helpers ----------
@@ -891,6 +905,8 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
 
   // FX
   fx: { key: 'fx', name: 'FX', blurb: 'Risers, sweeps, impacts, drops', color: '#67e8f9', category: 'FX', kind: 'fx', range: [48, 57], gain: -5 },
+  // (Plays no sound of its own: its notes hold the master's Drop pad effects, see DROP_ROWS)
+  dropPad: { key: 'dropPad', name: 'Drop Pad', blurb: 'Hold to stutter, filter, tape-stop, crush, gate or echo the whole mix', color: '#f43f5e', category: 'FX', kind: 'drop', range: [60, 65] },
 
   // Your Sounds
   sampler: { key: 'sampler', name: 'Sampler', blurb: 'Play your own sound file', color: '#14b8a6', category: 'Your Sounds', kind: 'custom', range: [36, 96] },
@@ -930,6 +946,11 @@ export function isDrumKind(key: InstrumentKey): boolean {
   return INSTRUMENTS[key].kind === 'drums';
 }
 
+/** The Drop pad: fixed named rows (DROP_ROWS), its notes holding the master's effects. */
+export function isDropKind(key: InstrumentKey): boolean {
+  return INSTRUMENTS[key].kind === 'drop';
+}
+
 /** The FX instrument: fixed named rows (FX_ROWS) instead of a keyboard. */
 /** The Drum Rack: fixed pad rows (one per pad) instead of a keyboard. */
 export function isRackKind(key: InstrumentKey): boolean {
@@ -966,8 +987,8 @@ export function compatibleInstruments(source: InstrumentKey, target: InstrumentK
   return source === target || (isDrumKind(source) && isDrumKind(target));
 }
 
-/** What a clip's notes mean: drum hits, FX rows, pitches, or none (an audio clip). */
-const noteFamily = (key: InstrumentKey) => (isDrumKind(key) ? 'drums' : isFxKind(key) ? 'fx' : isAudioKind(key) ? 'audio' : isMixKind(key) ? 'bus' : 'pitched');
+/** What a clip's notes mean: drum hits, FX rows, Drop pad moves, pitches, or none (an audio clip). */
+const noteFamily = (key: InstrumentKey) => (isDrumKind(key) ? 'drums' : isFxKind(key) ? 'fx' : isDropKind(key) ? 'drop' : isAudioKind(key) ? 'audio' : isMixKind(key) ? 'bus' : 'pitched');
 
 /**
  * Can a clip on a `source` track move (or be pasted) onto a `target` track? Drum parts only make

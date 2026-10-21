@@ -1,6 +1,6 @@
 /**
  * The master section after the master compressor, run in plain JavaScript over an export's
- * finished render: the OTT, the stereo width, the Level, the clipper, then the look-ahead limiter, in the order
+ * finished render: the OTT, the stereo width, the Drop pad's effects, the Level, the clipper, then the look-ahead limiter, in the order
  * the live graph has them (engine.ts, masterChain.ts). The master compressor (the glue, a native
  * DynamicsCompressorNode) stays in the render; the render stops after it.
  *
@@ -14,6 +14,7 @@
 import { createOttKernel } from './ott';
 import { LIMITER_CEILING_DBTP, limitChannels, limiterAimDbtp } from './limiter';
 import { clipChannels, type ClipperReading } from './clipper';
+import { createDropKernel } from './dropFx';
 import type { MasterSettings } from '../../store/timelineTypes';
 
 /** Below this the Stereo width's "mono bass" keeps the sound in the middle. */
@@ -96,6 +97,31 @@ export function widthChannels(left: Float32Array, right: Float32Array, sampleRat
   }
 }
 
+/** A Drop pad move in a render: effect `fx` held from sample `from` to `to`, with a 16th `sixteenth` samples long. */
+export interface DropFrames {
+  fx: number;
+  from: number;
+  to: number;
+  sixteenth: number;
+}
+
+/** The Drop pad's effects over the sound, in place, as the live worklet plays them (dropFx.ts). */
+export function dropChannels(left: Float32Array, right: Float32Array, sampleRate: number, moves: readonly DropFrames[]): void {
+  if (!moves.length) return;
+  const kernel = createDropKernel(sampleRate);
+  for (const m of moves) {
+    kernel.on(m.fx, m.from, m.sixteenth);
+    kernel.off(m.fx, m.to);
+  }
+  const BLOCK = 8192;
+  for (let at = 0; at < left.length; at += BLOCK) {
+    const n = Math.min(BLOCK, left.length - at);
+    const l = left.subarray(at, at + n);
+    const r = right.subarray(at, at + n);
+    kernel.process(l, r, l, r, n, at);
+  }
+}
+
 /**
  * What the master section did to a render, for the Mix check: how hot the sound reached it, how
  * hard the clipper and the limiter worked.
@@ -115,15 +141,24 @@ export interface MasterStats {
 
 /**
  * The master section after the compressor, over a render's two channels in place: the OTT and
- * the width (where on), the Level, the clipper (where on), the limiter, then the master volume
+ * the width (where on), the Drop pad's moves (`drops`), the Level, the clipper (where on), the limiter, then the master volume
  * (`volumeDb`, which comes after the limiter, as the live destination's volume does). The limiter
  * holds the true peak under `ceilingDbtp` (the export's: see exportCeilingDbtp in limiter.ts).
  * Returns what the section did (see MasterStats).
  */
-export function masterAfter(left: Float32Array, right: Float32Array, sampleRate: number, master: MasterSettings, volumeDb = 0, ceilingDbtp = LIMITER_CEILING_DBTP): MasterStats {
+export function masterAfter(
+  left: Float32Array,
+  right: Float32Array,
+  sampleRate: number,
+  master: MasterSettings,
+  volumeDb = 0,
+  ceilingDbtp = LIMITER_CEILING_DBTP,
+  drops: readonly DropFrames[] = []
+): MasterStats {
   const inPeak = peakOf(left, right);
   if (master.ott.on) ottChannels(left, right, sampleRate, master.ott);
   if (master.width.on) widthChannels(left, right, sampleRate, master.width);
+  dropChannels(left, right, sampleRate, drops);
   scaleChannels(left, right, Math.fround(dbToGain(master.level)));
   const clipper = master.clipper?.on ? clipChannels(left, right, sampleRate, master.clipper) : undefined;
   const busy = limiterLoad(left, right, sampleRate, dbToGain(limiterAimDbtp(ceilingDbtp)));

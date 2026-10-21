@@ -108,6 +108,7 @@ For how the parts fit together see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
 | Timeline UI | `src/components/timeline/` |
 | Inspector (track and master panels) | `src/components/inspector/` |
 | Drop a project file to open it / phone notice | `src/components/ProjectDrop.tsx`, `MobileNotice.tsx` |
+| Drop pad: the effects (one kernel, live worklet and export), the moves from the Drop track's notes, live control, Pocket's pads | `src/audio/effects/dropFx.ts`, `src/store/dropMoves.ts`, `src/audio/dropLive.ts`, `src/pocket/PocketDrop.tsx`; in the master chain (`masterChain.ts`, setDrop) and the export's master pass (`masterAfter.ts`, `exportWav.ts` dropFramesOf) |
 | Fledge Synth engine (Rust, GPL): parameters, voices, modulation, effects, presets, the bb_* interface | `engine/fledge-synth/src/` (`params.rs`, `synth.rs`, `dsp.rs`, `fx.rs`, `tables.rs`, `presets.rs`, `abi.rs`); built to `public/fledgetone-plugins/fledge.wasm` by `engine/fledge-synth/build.sh` |
 | Fledge Synth window | `src/components/timeline/FledgeSynthPanel.tsx`, `src/audio/plugins/fledgeLayout.ts` (controls by parameter name), `fledgeWave.ts` (wave pictures from a main-thread copy of the engine) |
 | Built-in plugin host (Fledge Synth and every other built-in plugin) | `src/audio/plugins/builtinHost.ts` (main thread), `processor.ts` (the worklet), `src/audio/wamHost.ts` (live instances, settings reads, retiring) |
@@ -200,6 +201,17 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Drop pad** (on the work branch, not released): hold a pad to stutter, filter, tape-stop, crush,
+  gate or echo the whole mix. It's a track (the Drop Pad instrument, kind `drop`) whose notes are
+  the moves, one row per effect (DROP_ROWS), so copying a section copies its moves, the studio
+  edits them in the piano roll, and mute turns them off. The effects run on the master after the
+  OTT and width, before the Level and limiter: live in a worklet that's in the chain only while
+  the song has a Drop track; in exports the same kernel runs over the render in masterAfter, at
+  the samples dropFramesOf works out (checked: a Gate move's closed halves line up within 4 ms,
+  in one piece and in parts). Drop notes play straight (no swing, groove shift or Human), a key
+  change leaves them alone, and a held note lets go at the loop's end (live) or the range's end
+  (export). In Pocket, presses and let-gos land on 16ths; with Rec on, each hold is written into
+  the section over what that effect had there.
 - **Pocket stage 1, the app shell** (on the work branch, not released): Pocket as a phone app with
   Capacitor ([docs/APP.md](docs/APP.md)). `ios/` and `android/` are the native projects;
   `src/native/nativeApp.ts` is the bridge (haptics, screen kept on, share sheet for exports and

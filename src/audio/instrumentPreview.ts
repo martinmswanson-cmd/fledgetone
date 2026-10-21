@@ -5,7 +5,7 @@
  * a short beat; sound effects a few of their sounds.
  */
 import type { InstrumentKey } from './instrumentCatalog';
-import { FX_NOTES, INSTRUMENTS, isDrumKind, isFxKind } from './instrumentCatalog';
+import { FX_NOTES, INSTRUMENTS, isDrumKind, isDropKind, isFxKind } from './instrumentCatalog';
 import { auditionInstrument, DRUM_NOTES, safely } from './instruments';
 import { auditionInput, initAudio } from './engine';
 
@@ -22,6 +22,8 @@ interface PreviewNote {
 /** What `key` plays as its preview (pure: the notes and when). */
 export function previewNotes(key: InstrumentKey): PreviewNote[] {
   const def = INSTRUMENTS[key];
+  // The Drop pad has no sound of its own to hear (it changes the whole song as it plays)
+  if (isDropKind(key)) return [];
   if (isDrumKind(key)) {
     const { kick, snare, closedHat } = DRUM_NOTES;
     return [

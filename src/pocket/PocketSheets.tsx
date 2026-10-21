@@ -4,6 +4,7 @@
  * song from a section (repeat it, make it its own, move it, a build-up, take it out), a chord
  * progression for the piano roll, and the starters screen ("What are we making?").
  */
+import { isDropTrack } from '../store/dropMoves';
 import React, { useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
@@ -137,6 +138,16 @@ const AddSheet: React.FC = () => {
           close();
           const t = useTimelineStore.getState().tracks.find((x) => x.id === id);
           if (t) selectTrack(t);
+        }}
+      />
+      <SheetItem
+        title="Drop pad"
+        detail="Hold to stutter, filter, tape-stop, crush, gate or echo the whole mix. With Rec on, your moves stay in the song."
+        color={INSTRUMENTS.dropPad.color}
+        onClick={() => {
+          // One is enough: it acts on the whole mix
+          const have = useTimelineStore.getState().tracks.find(isDropTrack);
+          added(have ? have.id : useTimelineStore.getState().addTrack('dropPad'));
         }}
       />
       {[...(mine.length ? [{ category: 'My sounds', keys: [] }] : []), ...groups].map(({ category, keys }) => (

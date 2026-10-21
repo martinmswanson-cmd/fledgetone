@@ -14,7 +14,7 @@ import { SCALES, type Scale } from '../../store/noteTools';
 import { detectKey, keyOf, NOTE_NAMES, type SongKey } from '../../store/songKey';
 import { chordChanges } from '../../store/smartTools';
 import { ARP_STYLES, arpeggiateChords, degreeChordName, degreeLabels, riff, RIFF_STYLES, stampDegree, type ArpStyle, type RiffStyle } from '../../store/chordTools';
-import { INSTRUMENTS, isDrumKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
+import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind, isMixKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
 import { patternLabelOf, patternSize } from '../../store/patterns';
 import { showToast } from './toastStore';
 
@@ -40,7 +40,7 @@ function chordsUnder(clip: Clip): Array<{ at: number; end: number; pcs: number[]
   let bestChords = 0;
   for (const t of s.tracks) {
     const k = t.instrumentKey;
-    if (t.id === clip.trackId || isDrumKind(k) || isFxKind(k) || isRackKind(k) || isSlicerKind(k) || isMixKind(k)) continue;
+    if (t.id === clip.trackId || isDrumKind(k) || isFxKind(k) || isDropKind(k) || isRackKind(k) || isSlicerKind(k) || isMixKind(k)) continue;
     const notes = s.clips
       .filter((c) => c.trackId === t.id && !c.audio && c.startBar < to && c.startBar + c.lengthBars > from)
       .flatMap((c) => c.notes.map((n) => ({ ...n, startOffset: c.startBar + n.startOffset - from })));

@@ -34,6 +34,7 @@
  * (liveTracks.ts), the clip schedule (scheduler.ts), the Transport's loop, tempo and swing, the
  * master inserts and returns, ducking and intensity.
  */
+import { isDropTrack } from './dropMoves';
 import { defaultClipper, type ClipperSettings } from '../audio/effects/clipper';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { makeSpace } from './makeSpace';
@@ -3542,6 +3543,8 @@ export function connectTimelineToAudio(): () => void {
   liveMix.busFx.apply(masterFxOf(s), s.bpm);
   setLiveStripTempo(s.bpm);
   liveMix.inserts.apply(s.master);
+  // The Drop pad's effects are in the master chain while the song has a Drop track
+  liveMix.inserts.setDrop(s.tracks.some(isDropTrack));
 
   // Ducking under dialogue / SFX proxies: the curve, kept as the same array while it doesn't change
   let duckKey = '';
@@ -3557,6 +3560,7 @@ export function connectTimelineToAudio(): () => void {
   refreshDuck(s);
   const unsubscribe = useTimelineStore.subscribe((state, prev) => {
     if (state.tracks !== prev.tracks || state.clips !== prev.clips || state.bpm !== prev.bpm) refreshDuck(state);
+    if (state.tracks !== prev.tracks) liveMix.inserts.setDrop(state.tracks.some(isDropTrack));
     // Intensity crossfades the stem groups (see intensity.ts)
     if (state.intensity !== prev.intensity || state.intensityCurves !== prev.intensityCurves) applyLiveIntensity(view.tracks, state.intensityCurves, state.intensity);
     // Stopped, automated settings sit at their lanes' values under the playhead (first, so lanes

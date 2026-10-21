@@ -57,11 +57,12 @@ export const usePocket = create<PocketState>((set) => ({
   set: (patch) => set(patch),
 }));
 
-/** Which drawer a track's cells open in: drums, notes, vocals (recordings), or null (edited on a computer: samplers, plugins). */
-export function editorOf(key: InstrumentKey): 'beat' | 'notes' | 'vocals' | null {
+/** Which drawer a track's cells open in: drums, notes, vocals (recordings), the Drop pad, or null (edited on a computer: samplers, plugins). */
+export function editorOf(key: InstrumentKey): 'beat' | 'notes' | 'vocals' | 'drop' | null {
   if (isAudioKind(key)) return 'vocals';
   const kind = INSTRUMENTS[key]?.kind;
   if (kind === 'drums') return 'beat';
+  if (kind === 'drop') return 'drop';
   if (kind === undefined || ['custom', 'rack', 'multi', 'slicer', 'audio', 'plugin', 'return', 'bus', 'fx'].includes(kind)) return null;
   return 'notes';
 }

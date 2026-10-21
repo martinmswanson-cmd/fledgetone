@@ -15,7 +15,8 @@ import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { captureWamStates } from './wamHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel, LIMITER_CEILING_DBTP } from './effects/limiter';
-import { masterAfter, type MasterStats } from './effects/masterAfter';
+import { masterAfter, type DropFrames, type MasterStats } from './effects/masterAfter';
+import { dropMoves } from '../store/dropMoves';
 import { lushReverbOf } from './effects/lushAfter';
 import { leadIntoLoop } from './introSeam';
 import { measureCompressorLatency } from './compressorLatency';
@@ -909,7 +910,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
     mix.disposeLimiter();
     settleSums(native);
   });
-  finishMaster(rendered, mix.limitsAfter, opts, masterDb);
+  finishMaster(rendered, mix.limitsAfter, opts, masterDb, plan);
   onProgress?.(1);
   return { channels: finishRender(rendered, plan, opts), sampleRate, reverbImpulse };
 }
@@ -930,14 +931,42 @@ function addLushReverb(sum: AudioBuffer, decay: number): void {
 }
 
 /**
+ * The Drop pad's moves in a render (see dropMoves.ts), as samples where the sound reaches them:
+ * after the compressor, before the limiter, which delays it by its look-ahead. As live, a move
+ * plays only if it starts in the range (a note starts only on its own tick), and lets go at the
+ * range's end, where the Transport stops (or, in a seamless loop, wraps: each pass plays it again).
+ */
+function dropFramesOf(opts: RenderOptions, plan: RenderPlan): DropFrames[] {
+  const moves = dropMoves(opts.tracks, opts.clips);
+  if (!moves.length) return [];
+  const sr = plan.sampleRate;
+  const tempo = renderTempo(opts);
+  // The Transport starts on the tick nearest the range start (see exportCues), and so do the passes
+  const origin = ticksToBar(barToTicks(opts.startBar));
+  const end = ticksToBar(barToTicks(opts.endBar));
+  const loopSeconds = secondsBetween(origin, end, tempo);
+  const loopFrames = plan.passes > 1 ? Math.round((plan.passes - 1) * loopSeconds * sr) : 0;
+  const base = plan.keepFrom - loopFrames - createLimiterKernel(sr).latency;
+  const frames: DropFrames[] = [];
+  for (let pass = 0; pass < plan.passes; pass++) {
+    for (const m of moves) {
+      if (m.from < origin - 1e-9 || m.from >= end - 1e-9) continue;
+      const at = (bar: number) => base + Math.round((pass * loopSeconds + secondsBetween(origin, bar, tempo)) * sr);
+      frames.push({ fx: m.fx, from: at(m.from), to: at(Math.min(m.to, end)), sixteenth: secondsBetween(m.from, m.from + 1 / 16, tempo) * sr });
+    }
+  }
+  return frames;
+}
+
+/**
  * The master section after the compressor (the OTT, width, Level and limiter) run over a finished
  * render (an export's chain ends at its compressor: see createMixChain and masterAfter.ts), then
  * the master volume, which comes after it.
  */
-function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: Pick<RenderOptions, 'master' | 'peakCeilingDbtp' | 'onMasterStats'>, masterDb: number): void {
+function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: RenderOptions, masterDb: number, plan: RenderPlan): void {
   if (!limitsAfter) return;
   const [l, r] = channelsOf(rendered);
-  const stats = masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(opts.master), masterDb, opts.peakCeilingDbtp);
+  const stats = masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(opts.master), masterDb, opts.peakCeilingDbtp, dropFramesOf(opts, plan));
   opts.onMasterStats?.(stats);
 }
 
@@ -1155,7 +1184,7 @@ async function renderGraphHeld(
     signal
   );
   const reverbImpulse = graph.reverbImpulse();
-  finishMaster(rendered, graph.limitsAfter, opts, masterDb);
+  finishMaster(rendered, graph.limitsAfter, opts, masterDb, plan);
   try {
     release();
   } catch (err) {

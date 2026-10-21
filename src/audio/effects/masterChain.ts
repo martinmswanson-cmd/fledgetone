@@ -1,7 +1,8 @@
 /**
  * The master section's inserts, between the master compressor and the Level and limiter (see
  * engine.ts):
- *   compressor -> [OTT] -> [Stereo width] -> Level -> [Clipper] -> limiter
+ *   compressor -> [OTT] -> [Stereo width] -> [Drop] -> Level -> [Clipper] -> limiter
+ * The Drop pad's effects (dropFx.ts) are there only while the song has a Drop track (setDrop).
  * Each insert exists only while it's switched on, like a track's inserts: off, it is taken out of
  * the chain and disposed, so it costs nothing. The OTT is an AudioWorklet (ott.ts); the width is a
  * handful of plain nodes doing mid/side; the Level is one gain, always there. A switch crossfades
@@ -19,10 +20,14 @@ import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
 import { MONO_BASS_HZ, MONO_BASS_Q } from './masterAfter';
 import { CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE, clipperParams, type ClipperReading, type ClipperSettings } from './clipper';
 import { paramSetter as smoothParamSetter } from './smoothParam';
+import { DROP_PROCESSOR, DROP_WORKLET_SOURCE } from './dropFx';
+import { setLiveDropPort } from '../dropLive';
 
 export interface MasterInserts {
   /** Apply settings, ramping continuous ones over `ramp` seconds (0: at once). */
   apply: (settings: MasterSettings, ramp?: number) => void;
+  /** Put the Drop pad's effects in the chain (the song has a Drop track) or take them out. Live only. */
+  setDrop: (on: boolean) => void;
   /** Resolves once the inserts the settings ask for are in the chain (the OTT loads its worklet first). */
   ready: () => Promise<void>;
   dispose: () => void;
@@ -253,6 +258,27 @@ async function createClipper(context: Tone.BaseContext, settings: ClipperSetting
   };
 }
 
+/** The Drop pad's worklet (dropFx.ts), once its module is in the context; its port is the live one (dropLive.ts). */
+async function createDrop(context: Tone.BaseContext): Promise<Unit> {
+  await loadWorklet(context, DROP_PROCESSOR, DROP_WORKLET_SOURCE);
+  const node = createWorkletNode(context, DROP_PROCESSOR, {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+    channelCount: 2,
+    channelCountMode: 'explicit',
+    channelInterpretation: 'speakers',
+  });
+  return {
+    input: node,
+    output: node,
+    dispose: () => {
+      node.port.postMessage('dispose');
+      node.disconnect();
+    },
+  };
+}
+
 interface WidthUnit extends Unit {
   set: (width: MasterSettings['width'], ramp: number) => void;
 }
@@ -377,7 +403,41 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
   let disposed = false;
   let unavailable = false;
 
-  const rewire = (retired: Array<{ dispose: () => void }>) => chain.set([...(ott ? [ott] : []), ...(width ? [width] : [])], retired);
+  let drop: Unit | null = null;
+  let dropWanted = false;
+  let dropLoading: Promise<void> | null = null;
+  let dropUnavailable = false;
+
+  const rewire = (retired: Array<{ dispose: () => void }>) => chain.set([...(ott ? [ott] : []), ...(width ? [width] : []), ...(drop ? [drop] : [])], retired);
+
+  const setDrop = (on: boolean) => {
+    dropWanted = on;
+    if (!live || disposed) return;
+    if (on && !drop && !dropLoading && !dropUnavailable) {
+      dropLoading = createDrop(context).then(
+        (unit) => {
+          dropLoading = null;
+          if (disposed || !dropWanted) {
+            unit.dispose();
+            return;
+          }
+          drop = unit;
+          setLiveDropPort((unit.input as AudioWorkletNode).port);
+          rewire([]);
+        },
+        (err) => {
+          dropLoading = null;
+          dropUnavailable = true;
+          console.warn('The Drop pad could not start:', err);
+        }
+      );
+    } else if (!on && drop) {
+      const old = drop;
+      drop = null;
+      setLiveDropPort(null);
+      rewire([old]);
+    }
+  };
 
   const apply = (next: MasterSettings, ramp = 0.03) => {
     if (disposed) return;
@@ -452,9 +512,13 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
 
   return {
     apply,
-    ready: () => Promise.all([loading, clipLoading]).then(() => undefined),
+    setDrop,
+    ready: () => Promise.all([loading, clipLoading, dropLoading]).then(() => undefined),
     dispose: () => {
       disposed = true;
+      if (drop) setLiveDropPort(null);
+      drop?.dispose();
+      drop = null;
       chain.dispose();
       clipChain?.dispose();
       clipper?.dispose();

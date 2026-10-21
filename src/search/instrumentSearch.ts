@@ -42,6 +42,7 @@ const KIND_WORDS: Record<InstrumentDef['kind'], string> = {
   return: 'return aux send effect',
   rack: 'drum rack pads kit sampler drums one shots choke 808 own samples',
   multi: 'multi sampler multisample zones velocity layers own samples keymap',
+  drop: 'drop pad stutter filter sweep tape stop crush gate echo throw performance dj effects build',
 };
 
 const fieldsCache = new Map<InstrumentKey, SearchFields>();

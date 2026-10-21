@@ -21,7 +21,7 @@ import { showToast } from './toastStore';
 import { TOTAL_BARS } from '../../store/timelineTypes';
 import { DRUM_NOTES } from '../../audio/scheduler';
 import { previewTrackNotes } from '../../audio/liveTracks';
-import { FX_ROWS, INSTRUMENTS, isDrumKind, isFxKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
+import { DROP_ROWS, FX_ROWS, INSTRUMENTS, isDrumKind, isDropKind, isFxKind, isRackKind, isSlicerKind } from '../../audio/instrumentCatalog';
 import { padNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
 import type { DrumRack } from '../../store/timelineTypes';
@@ -67,6 +67,8 @@ const DRUM_ROWS: Row[] = [
 ];
 
 const FX_ROW_LIST: Row[] = FX_ROWS.map((r, i) => ({ ...r, black: i % 2 === 1, midi: -1 }));
+/** The Drop pad's effects, Stutter at the top */
+const DROP_ROW_LIST: Row[] = DROP_ROWS.map((r, i) => ({ note: r.note, label: r.label, black: i % 2 === 1, midi: -1 }));
 
 
 const toMidi = (note: string) => Tone.Frequency(note).toMidi();
@@ -125,6 +127,7 @@ function rowsFor(instrument: InstrumentKey, notes: NoteEvent[], slicer?: SlicerS
   if (isDrumKind(instrument)) return drumRowsOf(instrument);
   if (isRackKind(instrument)) return rackRows(rack);
   if (isFxKind(instrument)) return FX_ROW_LIST;
+  if (isDropKind(instrument)) return DROP_ROW_LIST;
   if (isSlicerKind(instrument)) return slicerRows(slicer, notes);
   // Instrument's playable range, widened to fit any notes already in the clip
   const [lo, hi] = widenTo(notes, ...INSTRUMENTS[instrument].range);
@@ -333,7 +336,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const [stepMode, setStepModeState] = useState(rememberedStepMode);
   // Sheet music instead of the grid (pitched and drum clips)
   const [notationOn, setNotationState] = useState(rememberedNotation);
-  const canNotate = !isFxKind(instrument) && !isSlicerKind(instrument);
+  const canNotate = !isFxKind(instrument) && !isDropKind(instrument) && !isSlicerKind(instrument);
   const notation = notationOn && canNotate;
   const setNotation = (next: boolean) => setNotationState((rememberedNotation = next));
   const fullTrack = useTimelineStore((s) => s.tracks.find((t) => t.id === clip.trackId));
@@ -406,7 +409,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const allTracks = useTimelineStore((st) => st.tracks);
   const ghostNotes = useMemo(() => {
     if (!ghosts || namedRows) return [];
-    const pitched = new Set(allTracks.filter((t) => !isDrumKind(t.instrumentKey) && !isFxKind(t.instrumentKey) && !isSlicerKind(t.instrumentKey) && !isRackKind(t.instrumentKey)).map((t) => t.id));
+    const pitched = new Set(allTracks.filter((t) => !isDrumKind(t.instrumentKey) && !isFxKind(t.instrumentKey) && !isDropKind(t.instrumentKey) && !isSlicerKind(t.instrumentKey) && !isRackKind(t.instrumentKey)).map((t) => t.id));
     const from = clip.startBar;
     const to = clip.startBar + clip.lengthBars;
     const out: { key: string; note: string; start: number; length: number; color: string }[] = [];
