@@ -194,6 +194,16 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
    */
   let own: number[] = [];
   /**
+   * Parameters an automation lane holds, with its latest value: the lane wins over a knob, a
+   * MIDI-learned control or a preset (they still change `own`), as it does in an export
+   */
+  const laneHeld = new Map<number, number>();
+  /** Send a value to the processor (its 'display' answer then says what it shows). */
+  const post = (index: number, value: number) => {
+    inFlight.set(index, (inFlight.get(index) ?? 0) + 1);
+    node.port.postMessage({ type: 'set', index, value });
+  };
+  /**
    * Sets sent per parameter and not yet answered: a late answer to an older one mustn't put the
    * value back (a knob stepped quickly would lose steps)
    */
@@ -248,6 +258,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
           // (A preset file's values are its own defaults: Reset puts the patch back)
           params = keepSent(d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: files ? p.value : (params[i]?.defaultValue ?? p.value) })));
           own = params.map((p) => p.value);
+          // (A lane holding a parameter goes on playing its value over the preset's)
+          for (const [i, v] of laneHeld) post(i, v);
           changed();
           // Loads answer in the order they were sent: this reply ends the oldest
           loaded.shift()?.();
@@ -296,6 +308,9 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     getParameterValues: async () => Object.fromEntries(own.map((v, i) => [String(i), { id: String(i), value: v, normalized: true }])),
     scheduleEvents: (...events: unknown[]) => {
       if (destroyed) return;
+      for (const e of events as Array<{ type?: string; data?: { id?: string; value?: number } }>) {
+        if (e?.type === 'wam-automation' && Number.isFinite(e.data?.value)) laneHeld.set(Number(e.data!.id), e.data!.value!);
+      }
       if (!pending.length) queueMicrotask(flush);
       pending.push(...events);
     },
@@ -308,6 +323,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     setParamNow: (id: string, value: number) => set(Number(id), value),
     resetParam: (id: string) => {
       const i = Number(id);
+      laneHeld.delete(i);
       if (params[i]) set(i, own[i]);
     },
     setState: async (s: unknown) => {
@@ -340,8 +356,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     const v = Math.max(0, Math.min(1, value));
     params = params.map((x, i) => (i === index ? { ...x, value: v } : x));
     own = own.map((x, i) => (i === index ? v : x));
-    inFlight.set(index, (inFlight.get(index) ?? 0) + 1);
-    node.port.postMessage({ type: 'set', index, value: v });
+    // (Under a lane, the plugin plays the lane's value: the knob's is kept for when it goes)
+    post(index, laneHeld.get(index) ?? v);
     changed();
   };
   /** Choose preset `index`: a built-in one at once, a file once it's downloaded (resolves then). */

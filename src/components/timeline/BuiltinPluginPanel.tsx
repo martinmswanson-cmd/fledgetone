@@ -92,7 +92,7 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
       {params.length > 0 && (
         <button
           type="button"
-          onClick={() => params.forEach((p, i) => p.value !== p.defaultValue && controls.set(i, p.defaultValue))}
+          onClick={() => params.forEach((p, i) => controls.set(i, p.defaultValue))}
           className="self-start h-6 px-2 flex items-center gap-1 rounded border border-forge-border text-[10px] text-forge-muted hover:text-forge-text"
         >
           <RotateCcw className="w-3 h-3" /> Reset all
