@@ -533,7 +533,7 @@ The 808 is mono (the same in both speakers), and its whole sound starts a few mi
 
 ### Heavy bass tools
 
-- **Glide** (Slap Bass, Sub-Bass, Analog Lead, Wobble, Growl and Reese Bass): switch it on in the Track Inspector and notes that overlap, or touch (one starting where the last ends, as the **Legato** tool draws them), slide into each other over **Time** (5 ms to 1 s) without a new attack; notes apart start fresh. On the Slap Bass it also stops the pluck on joined notes. Off, each instrument keeps its own slide (the Lead's short glide, the EDM basses' slides). The Synth Designer has its own **Mono** and **Glide**.
+- **Glide** (Slap Bass, Sub-Bass, Analog Lead, Wobble, Growl and Reese Bass): switch it on in the Track Inspector and notes that overlap (as the **Legato** tool draws them: each runs a little into the next) slide into each other over **Time** (5 ms to 1 s) without a new attack; notes that only touch or have a gap start fresh, so a bassline of repeated notes keeps its rhythm. On the Slap Bass it also stops the pluck on joined notes. Off, each instrument keeps its own slide (the Lead's short glide, the EDM basses' slides). The Synth Designer has its own **Mono** and **Glide**.
 - **Sub enhancer** (bass instruments, the Synth Designer, the Sampler, Multi Sampler and plugins): a clean sine under every note, centred, for a thin bass. **Where**: **An octave below** (a new, deeper floor; below about 28 Hz it plays on the note instead, since lower is felt, not heard) or **On the note** (reinforces a weak fundamental). **Level**, and **Decay** (Hold for the whole note, or a time to die away, for plucky basses). It follows the notes, so it's always in tune and in time, live and exported. In a chord it plays under the lowest note.
 - **Bass Drive** (an insert, after Distortion): the heavy bass trick of distorting only the mids and highs. Below the **Crossover** (60 to 300 Hz, 120 to start) the sound stays clean and is made mono; above it, **Drive** with a **Character** (Warm tube, Hard clip, Fold, Bitcrush), a **Tone** low-pass on the distortion and a **Mix** with the clean highs. The two parts add back up exactly (at 0% mix the track sounds as it did). On a reese it leaves the sub where it was and brings the mids up about 6 dB: much louder on a phone, a little louder overall.
 
@@ -696,7 +696,7 @@ Tools for making a beat from a sample: a loop or a recording of your own (or one
 - **Sub, noise and FM**: a clean sine an octave or two below (kept in the centre), noise (with its own route), and **FM B→A**, where oscillator B bends A for growls and bells.
 - **Drive**: six kinds of distortion (soft, warm, hard clip, fold, asymmetric), with **Mix**, cleaned so high notes don't turn harsh.
 - **Envelopes**: **Volume** and **Filter** attack, decay, sustain and release (each drawn as you set it), and a **Pitch drop** for punchy starts.
-- **Playing**: **Voices** is Poly (chords), Mono or Legato (notes that overlap or touch slide into each other, with **Glide**, and the same pitch holds on). **Bend** sets the pitch bend range, **Velocity** how much louder harder notes play.
+- **Playing**: **Voices** is Poly (chords), Mono or Legato (notes that overlap slide into each other, with **Glide**, and the same pitch holds on). **Bend** sets the pitch bend range, **Velocity** how much louder harder notes play.
 
 **Modulation** tab:
 

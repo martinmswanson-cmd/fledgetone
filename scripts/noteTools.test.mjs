@@ -85,8 +85,9 @@ test('arpeggiate breaks a chord up over its length', () => {
 test('legato, transpose, fit to scale, humanize', () => {
   const notes = [N('a', 'C4', 0, '16n'), N('b', 'D4', 0.25, '16n'), N('c', 'E4', 0.75, '16n')];
   const l = T.legato(notes, 1);
-  near(durationToBars(l[0].duration), 0.25);
-  near(durationToBars(l[1].duration), 0.5);
+  // Each runs a 64th into the next (so a mono synth glides); the last to the clip's end
+  near(durationToBars(l[0].duration), 0.25 + 1 / 64);
+  near(durationToBars(l[1].duration), 0.5 + 1 / 64);
   near(durationToBars(l[2].duration), 0.25);
   assert.deepEqual(T.transpose(notes, 12, 0, 127).map((n) => n.note), ['C5', 'D5', 'E5']);
   // Out of range: stays

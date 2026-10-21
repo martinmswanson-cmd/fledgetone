@@ -14,7 +14,7 @@
  *
  * Kept as a string (like the OTT's) so the one-file build needs no extra file.
  */
-import { insertTimedEvent, LEGATO_JOIN } from '../legato';
+import { insertTimedEvent } from '../legato';
 
 export const BUILTIN_PROCESSOR = 'bb-builtin-plugin';
 
@@ -76,7 +76,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.events = [];
     // Fledge Synth hears a note drawn to start where the last one ends while that one is still
     // held, so its Legato mode joins them (see insertTimedEvent in legato.ts)
-    this.join = o.family === 'fledge' ? ${LEGATO_JOIN} : 0;
+    // (Plain time order: touching notes stay separate; overlapping ones join by themselves)
+    this.join = 0;
     this.alive = false;
     // Follow the input (effects, see followInput below): its gain, where it's heading, and the
     // windows that tell a fading tail from a sound the plugin keeps making by itself

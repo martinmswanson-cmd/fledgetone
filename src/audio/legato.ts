@@ -5,15 +5,16 @@
  */
 
 /**
- * Seconds a note may start after the previous note's end and still join it. Notes drawn end to
- * end (the piano roll's Legato tool writes them so) land within a hair of each other once their
- * bar positions become seconds, either side of the exact end.
+ * Seconds a note must overlap the previous one to join it. Notes drawn end to end stay separate
+ * notes, each with its own attack, as in other studios: a bassline of repeated 8ths keeps its
+ * rhythm. To glide or tie, a note overlaps the next (the piano roll's Legato tool writes them so).
+ * The margin keeps notes that only touch apart once their bar positions become seconds.
  */
 export const LEGATO_JOIN = 0.001;
 
-/** Whether a note starting at `start` joins the note sounding until `end`: it starts before that note ends, or within LEGATO_JOIN of it. */
+/** Whether a note starting at `start` joins the note sounding until `end`: it starts more than LEGATO_JOIN before that note ends. */
 export function joinsNote(start: number, end: number): boolean {
-  return start < end + LEGATO_JOIN;
+  return start < end - LEGATO_JOIN;
 }
 
 /** A timed plugin event, as the built-in plugin host queues them (WAM events). */

@@ -193,16 +193,20 @@ export function arpeggiate(notes: NoteEvent[], rateBars: number, pattern: ArpPat
 /** A note length's smallest step, in bars (a tick: what a duration is written in). */
 const TICK = 1 / 768;
 
+/** How far (bars) the Legato tool runs each note into the next one: enough to overlap, so a mono synth glides. */
+const LEGATO_OVERLAP = 1 / 64;
+
 /**
- * Each note lasts until the next note (of any pitch) starts; the last ones until the clip ends.
- * A length that isn't a whole number of ticks is rounded up, never down: the note then reaches the
- * next one, so a mono synth glides to it (or ties the same pitch) instead of striking it again.
+ * Each note lasts until the next note (of any pitch) starts, and a little into it, so a mono synth
+ * glides to it (or ties the same pitch) instead of striking it again; the last ones until the clip
+ * ends. Lengths are whole ticks, rounded up.
  */
 export function legato(notes: NoteEvent[], clipBars: number): NoteEvent[] {
   const starts = [...new Set(notes.map((n) => n.startOffset))].sort((a, b) => a - b);
   return notes.map((n) => {
-    const next = starts.find((s) => s > n.startOffset + EPS) ?? clipBars;
-    const ticks = Math.ceil((next - n.startOffset) / TICK - 1e-6);
+    const next = starts.find((s) => s > n.startOffset + EPS);
+    const end = next === undefined ? clipBars : Math.min(clipBars, next + LEGATO_OVERLAP);
+    const ticks = Math.ceil((end - n.startOffset) / TICK - 1e-6);
     return { ...n, duration: barsToDuration(Math.max(1 / 96, ticks * TICK)) };
   });
 }
