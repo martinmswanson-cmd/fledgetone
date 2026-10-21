@@ -1,6 +1,7 @@
 import type { AutomationParam, Clip, FrozenTrack, Track } from './timelineTypes';
 import { defaultTrackFx } from './timelineTypes';
 import { isDrumKind } from '../audio/instrumentCatalog';
+import { clipHasConditions, isConditional } from './noteChance';
 import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 
 /**
@@ -41,7 +42,14 @@ const clipContent = (c: Clip) => ({
   wobble: c.wobble,
   audio: c.audio,
   // (A note's own expression and the clip's groove only when present, so freezes made before they counted stay current)
-  notes: c.notes.map((n) => (n.expr ? [n.note, n.startOffset, n.duration, n.velocity, n.expr] : [n.note, n.startOffset, n.duration, n.velocity])),
+  notes: c.notes.map((n) => {
+    const base = n.expr ? [n.note, n.startOffset, n.duration, n.velocity, n.expr] : [n.note, n.startOffset, n.duration, n.velocity];
+    // (How often it plays, only when set)
+    return isConditional(n) ? [...base, { chance: n.chance, cond: n.cond }] : base;
+  }),
+  // A note that plays only sometimes is drawn from the clip's id, and its pass from the run of
+  // copies it's in (their patterns): both are part of the sound then
+  ...(clipHasConditions(c) ? { id: c.id, pattern: c.pattern ?? null } : {}),
   ...(c.groove ? { groove: c.groove } : {}),
   // (Only when present, so freezes made before these existed stay current)
   ...(c.expression ? { expression: c.expression } : {}),
@@ -75,8 +83,10 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
   const kicks = followsKick
     ? all.clips
         .filter((c) => kickers.has(c.trackId))
-        .flatMap((c) => c.notes.filter((n) => n.note === 'C1').map((n) => +(c.startBar + n.startOffset).toFixed(6)))
-        .sort((a, b) => a - b)
+        // (A kick that plays only sometimes, with what decides it: its clip and how often)
+        .flatMap((c) => c.notes.filter((n) => n.note === 'C1').map((n) => [+(c.startBar + n.startOffset).toFixed(6), ...(isConditional(n) ? [c.id, c.pattern ?? null, n.chance ?? null, n.cond ?? null] : [])] as const))
+        .sort((a, b) => a[0] - b[0] || String(a[1]).localeCompare(String(b[1])))
+        .map((k) => (k.length === 1 ? k[0] : k))
     : [];
   // A Pump that follows a track ducks on that track's notes, muted or not
   const source = track.fx.pump.on && track.fx.pump.trigger === 'track' ? track.fx.pump.source : undefined;
@@ -108,6 +118,8 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       eq: track.eq,
       automation: (track.automation ?? []).filter((l) => !isLiveParam(l.param)),
       clips: own.map(clipContent),
+      // (Which copies run together decides a conditional note's pass: the track's other clips' patterns)
+      ...(own.some(clipHasConditions) ? { runs: own.map((c) => [c.startBar, c.lengthBars, c.pattern ?? null]) } : {}),
       bpm: all.bpm,
       ...(all.tempoPoints?.length ? { tempoPoints: all.tempoPoints.map((p) => [p.bar, p.bpm, p.ramp]) } : {}),
       swing: all.swing,

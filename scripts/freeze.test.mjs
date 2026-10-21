@@ -111,3 +111,21 @@ test('a current freeze plays as an Audio track with one clip of its sound; out o
   assert.equal(liveView({ ...state, tracks: [armed, drums] }, never).tracks[0].instrumentKey, 'supersaw');
   assert.equal(liveView(state, (id) => id === 'abc').tracks[0].instrumentKey, 'supersaw');
 });
+
+test('how often a note plays is part of a freeze: setting it, its clip and a kick that sits out', () => {
+  const hats = track('hats', 'drumMachine');
+  const base = clip('h1', 'hats', 1, [['F#1', 0], ['F#1', 0.25]]);
+  const all = (c) => ({ tracks: [hats], clips: [c], bpm: 120, swing: 0 });
+  const plain = fp(hats, all(base));
+  const half = { ...base, notes: base.notes.map((n, i) => (i ? { ...n, chance: 0.5 } : n)) };
+  assert.notEqual(fp(hats, all(half)), plain);
+  // The draw comes from the clip's id: another id is another sound
+  assert.notEqual(fp(hats, all({ ...half, id: 'h2' })), fp(hats, all(half)));
+  // A clip with none keeps the fingerprint it had (freezes made before stay current)
+  assert.equal(fp(hats, all({ ...base, id: 'other' })), fp(hats, all(base)));
+  // A Pump on the kick hears whether a kick may sit out
+  const pad = track('pad', 'supersaw', { fx: { ...defaultTrackFx(), pump: { ...defaultTrackFx().pump, on: true, trigger: 'kick' } } });
+  const kick = clip('k1', 'drums', 1, [['C1', 0], ['C1', 0.5]]);
+  const withKick = (k) => ({ tracks: [pad, drums], clips: [k], bpm: 120, swing: 0 });
+  assert.notEqual(fp(pad, withKick({ ...kick, notes: kick.notes.map((n, i) => (i ? { ...n, cond: { n: 1, of: 2 } } : n)) })), fp(pad, withKick(kick)));
+});

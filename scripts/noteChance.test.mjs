@@ -152,6 +152,8 @@ test('chance and condition survive a file, the autosave and a link; old files an
   const link = await songLink(song, 'https://example.com/app');
   const shared = await projectFromHash(link.slice(link.indexOf('#')));
   assert.deepEqual(whens(shared), whens(song));
+  // The draw comes from the clip's id: a link keeps it, so the same notes play for whoever opens it
+  assert.equal(shared.clips[0].id, song.clips[0].id);
 });
 
 test('the dice keep the kick and snare, re-roll the rest within the style, and repeat for a seed', () => {

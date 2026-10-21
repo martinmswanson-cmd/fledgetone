@@ -1,4 +1,5 @@
 import { parseProject, PROJECT_FORMAT, serializeProject } from './project';
+import { clipHasConditions } from './noteChance';
 import type { ProjectSnapshot } from './project';
 import { defaultTrackFx } from './timelineTypes';
 
@@ -70,7 +71,9 @@ function shortIds(project: ProjectSnapshot): ProjectSnapshot {
   const next = () => (n++).toString(36);
   const renamed: ProjectSnapshot = {
     ...project,
-    clips: project.clips.map((c) => ({ ...c, id: `c${next()}` })),
+    // (A clip with notes that play only sometimes keeps its id: their draw comes from it, so the
+    // link plays the same notes as the song it was made from)
+    clips: project.clips.map((c) => (clipHasConditions(c) ? c : { ...c, id: `c${next()}` })),
     stingers: project.stingers?.map((s) => ({ ...s, notes: s.notes.map((note) => ({ ...note, id: '' })) })),
   };
   // Track ids are pointed at from all over (clips, bus outputs, sends, a Pump's source, "send:" lanes,
