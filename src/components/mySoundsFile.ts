@@ -11,7 +11,8 @@ import { useTimelineStore } from '../store/timelineStore';
 import { uid } from '../store/timelineTypes';
 import { captureWamStates } from '../audio/wamHost';
 import { embedSounds, importEmbeddedSounds } from '../audio/soundLibrary';
-import { downloadBlob } from '../audio/exportWav';
+import { saveBlobFile } from '../audio/exportWav';
+import { isNativeApp } from '../native/nativeApp';
 import { showToast } from './timeline/toastStore';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -24,8 +25,17 @@ export async function exportMySounds(): Promise<void> {
     return;
   }
   const file: MySoundsFile = { format: MY_SOUNDS_FORMAT, version: 1, favourites, sounds, recordings: await embedSounds(mySoundIds()) };
-  downloadBlob(new Blob([JSON.stringify(file)], { type: 'application/json' }), 'my-sounds.fledgetone-sounds.json');
-  showToast(`Saved ${plural(sounds.length, 'sound')} and ${plural(favourites.length, 'favourite')} to my-sounds.fledgetone-sounds.json (in your downloads).`);
+  const name = 'my-sounds.fledgetone-sounds.json';
+  let saved: boolean;
+  try {
+    saved = await saveBlobFile(new Blob([JSON.stringify(file)], { type: 'application/json' }), name);
+  } catch (err) {
+    showToast(`Couldn't save ${name}: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+  // (The app hands it to the share sheet, which may be closed without saving)
+  if (!saved) showToast('Not saved: the share sheet was closed');
+  else showToast(`Saved ${plural(sounds.length, 'sound')} and ${plural(favourites.length, 'favourite')} to ${name}${isNativeApp() ? '' : ' (in your downloads)'}.`);
 }
 
 /** Add a My sounds file's sounds and stars to this browser's. Returns what happened, for a message. */
@@ -46,7 +56,8 @@ export async function importMySoundsFile(file: File): Promise<string> {
 export function pickMySoundsFile(): void {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.json,application/json';
+  // (The app: any file, as for project files: Android often doesn't know a .json's type)
+  if (!isNativeApp()) input.accept = '.json,application/json';
   input.onchange = async () => {
     const file = input.files?.[0];
     if (file) showToast(await importMySoundsFile(file));
@@ -64,8 +75,9 @@ export async function shareTrackSound(trackId: string): Promise<void> {
   if (!track) return;
   const sound: MySound = { id: uid('sound'), name: track.name.trim().slice(0, 60) || 'Sound', settings: soundOf(track) };
   const name = soundFileName(sound.name);
-  downloadBlob(new Blob([JSON.stringify(soundFile(sound, await embedSounds(soundRecordingIds(sound))))], { type: 'application/json' }), name);
-  showToast(`Saved "${sound.name}" as ${name} (in your downloads): send it to anyone, and Open a sound file puts it on their track.`);
+  const saved = await saveBlobFile(new Blob([JSON.stringify(soundFile(sound, await embedSounds(soundRecordingIds(sound))))], { type: 'application/json' }), name);
+  if (!saved) return showToast(`"${sound.name}" wasn't shared.`);
+  showToast(isNativeApp() ? `Shared "${sound.name}" as ${name}: Open a sound file puts it on anyone's track.` : `Saved "${sound.name}" as ${name} (in your downloads): send it to anyone, and Open a sound file puts it on their track.`);
 }
 
 /**

@@ -6,7 +6,7 @@
  * versions, and the starters screen ("What are we making?").
  */
 import { isDropTrack } from '../store/dropMoves';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
 import { clearPreviousSession } from '../store/project';
@@ -33,6 +33,8 @@ import { PocketShare } from './PocketShare';
 import { chooseInterface } from './pocketMode';
 import { cellDrumStyles, cellKey, pocketNoteId } from './pocketStore';
 import { VersionsList } from '../components/VersionsList';
+import { checkPersistence, usePwa } from '../pwa/pwa';
+import { isNativeApp } from '../native/nativeApp';
 
 const close = () => usePocket.getState().set({ sheet: null });
 
@@ -117,9 +119,43 @@ const SongSheet: React.FC = () => {
         <button type="button" className={`${pill} w-full`} onClick={() => chooseInterface('studio')}>
           <Monitor className="w-4 h-4" /> Use the full studio here
         </button>
-        <p className="text-[11px] text-forge-muted">The song saves itself in this browser as you work. Save the file to keep a copy anywhere.</p>
+        <SongStorage />
       </div>
     </Sheet>
+  );
+};
+
+/**
+ * Where the song is kept as you work, and whether it's kept for good there: the phone or browser
+ * may clear a site's storage when space runs low unless it has agreed to keep it (pwa.ts asks).
+ */
+const SongStorage: React.FC = () => {
+  const kept = usePwa((p) => p.persisted);
+  const [asked, setAsked] = useState(false);
+  useEffect(() => void checkPersistence(), []);
+  const where = isNativeApp() ? 'on this phone' : 'in this browser';
+  return (
+    <div className="text-[11px] text-forge-muted space-y-1">
+      <p>The song saves itself {where} as you work. Save the file to keep a copy anywhere.</p>
+      {kept === true && <p className="text-emerald-300">Your songs and sounds are kept {where}, even when space runs low.</p>}
+      {kept === false && (
+        <p className="text-amber-200">
+          {isNativeApp() ? 'The phone' : 'The browser'} may clear them if space runs low: save the file to be safe.{' '}
+          {!asked && (
+            <button
+              type="button"
+              className="underline text-amber-100"
+              onClick={() => {
+                setAsked(true);
+                void checkPersistence(true);
+              }}
+            >
+              Ask to keep it
+            </button>
+          )}
+        </p>
+      )}
+    </div>
   );
 };
 

@@ -5,6 +5,7 @@
  */
 import React, { useEffect } from 'react';
 import { Check, X } from 'lucide-react';
+import { onBack } from '../native/backButton';
 import { NOTE_CHANCES, chanceIdOf } from '../store/noteChance';
 import type { NoteEvent } from '../store/timelineTypes';
 
@@ -24,12 +25,19 @@ export const Card: React.FC<{ title?: React.ReactNode; right?: React.ReactNode; 
   </section>
 );
 
-/** A sheet over the bottom of the screen, closed by its X, the backdrop or Back. */
+/** A sheet over the bottom of the screen, closed by its X, the backdrop, Esc or the phone's Back. */
 export const Sheet: React.FC<{ title: string; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => {
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
+    const off = onBack(() => {
+      onClose();
+      return true;
+    });
+    return () => {
+      window.removeEventListener('keydown', key);
+      off();
+    };
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-modal="true" aria-label={title}>

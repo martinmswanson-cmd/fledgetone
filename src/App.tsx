@@ -33,6 +33,7 @@ import termsMarkdown from '../TERMS.md?raw';
 import { GuidePanel } from './components/guide/GuidePanel';
 import { APP_BUILT, APP_VERSION, versionLabel } from './version';
 import { splitSections } from './components/guide/markdown';
+import { escapeOpenDialog, onBack } from './native/backButton';
 
 /** A computer-sized screen (the phone notice covers small touch screens instead). */
 const roomy = () => typeof window !== 'undefined' && window.innerWidth >= 900;
@@ -115,6 +116,8 @@ export const App: React.FC = () => {
   // The last song opens again by itself, as in Pocket (not when a shared song link is opening
   // another one: that sets the last song aside, for the Restore banner). Once, before the first render
   React.useState(() => !/^#(s|song)=/.test(location.hash) && reopenLastSong());
+  // The phone app's Back closes the dialog that's open (else the app goes to the background)
+  React.useEffect(() => onBack(escapeOpenDialog), []);
   return (
     <div className="min-h-screen bg-forge-bg text-forge-text flex flex-col font-sans selection:bg-cyan-500/30">
       {/* Top DAW Header */}

@@ -17,6 +17,7 @@
     "build:site": "VITE_GPL_PLUGINS=1 npm run build -- --base=/app/ --outDir=dist-site/app && node scripts/build-site.mjs",
     "build:app": "npm run build -- --outDir=dist-app && node scripts/build-app.mjs",
     "app:sync": "npm run build:app && npx cap sync",
+    "app:release": "node scripts/build-release.mjs",
     "build:full": "VITE_SINGLE=1 VITE_GPL_PLUGINS=1 npm run build && VITE_GPL_PLUGINS=1 node scripts/build-single.mjs"
   },
   "dependencies": {

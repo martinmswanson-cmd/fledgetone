@@ -1,5 +1,21 @@
 apply plugin: 'com.android.application'
 
+// The version, from package.json (2026.10.21-3: versionName "2026.10.21-3", versionCode 2026102103),
+// as scripts/androidVersion.mjs works it out; npm run app:release passes it in itself
+def appVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json')).version.toString()
+def versionParts = (appVersion =~ /^(\d{4})\.(\d{1,2})\.(\d{1,2})(?:-(\d{1,2}))?$/)
+def fledgetoneVersionName = project.findProperty('fledgetoneVersionName') ?: appVersion
+def fledgetoneVersionCode = project.findProperty('fledgetoneVersionCode')?.toInteger() ?:
+    (versionParts.matches() ? ((versionParts[0][1].toInteger() * 10000 + versionParts[0][2].toInteger() * 100 + versionParts[0][3].toInteger()) * 100 + (versionParts[0][4] ?: '0').toInteger()) : 1)
+
+// The signing key for Google Play: never in the repository. From environment variables, else
+// android/keystore.properties (not committed); see docs/APP.md, "Publishing on Google Play"
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+def signingValue = { String name, String env -> System.getenv(env) ?: keystoreProperties.getProperty(name) }
+def releaseStore = signingValue('storeFile', 'FLEDGETONE_KEYSTORE')
+
 android {
     namespace = "com.fledgetone.pocket"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +23,8 @@ android {
         applicationId "com.fledgetone.pocket"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode fledgetoneVersionCode
+        versionName fledgetoneVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +32,20 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (releaseStore) {
+                storeFile rootProject.file(releaseStore)
+                storePassword signingValue('storePassword', 'FLEDGETONE_KEYSTORE_PASSWORD')
+                keyAlias signingValue('keyAlias', 'FLEDGETONE_KEY_ALIAS')
+                keyPassword signingValue('keyPassword', 'FLEDGETONE_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            // (Unsigned without a key: Google Play refuses that, so npm run app:release insists on one)
+            if (releaseStore) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

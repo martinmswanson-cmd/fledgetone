@@ -35,3 +35,8 @@ dist-site
 
 # Rust build output
 engine/*/target/
+
+# The Android signing key and its passwords (docs/APP.md, "Publishing on Google Play")
+android/keystore.properties
+*.jks
+*.keystore

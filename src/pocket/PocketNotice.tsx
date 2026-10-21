@@ -1,10 +1,12 @@
 /**
  * Pocket's opening notice: the phone version is in its early stages and the studio on a computer
  * is the full experience. It shows each time Pocket opens until "Don't show this again" is ticked.
+ * Continue, or the phone's Back, closes it.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Monitor } from 'lucide-react';
 import { pill } from './pocketUi';
+import { onBack } from '../native/backButton';
 
 const HIDDEN_KEY = 'fledgetone.pocketNoticeHidden';
 
@@ -19,6 +21,13 @@ const hidden = (): boolean => {
 export const PocketNotice: React.FC = () => {
   const [open, setOpen] = useState(() => !hidden());
   const [hide, setHide] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    return onBack(() => {
+      setOpen(false);
+      return true;
+    });
+  }, [open]);
   if (!open) return null;
   const close = () => {
     if (hide) {

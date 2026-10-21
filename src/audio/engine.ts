@@ -169,11 +169,37 @@ const holdUntilAsked = () => {
 };
 liveContext.on('statechange', holdUntilAsked);
 holdUntilAsked();
-if (typeof window !== 'undefined') {
-  window.addEventListener('pagehide', () => {
-    soundAllowed = false;
-    holdUntilAsked();
-  });
+/**
+ * Silence the context until the next Play (or other click) asks for sound again: the page closed
+ * or put away, or the phone app sent to the background (appLifecycle.ts).
+ */
+export function holdAudio(): void {
+  soundAllowed = false;
+  holdUntilAsked();
+}
+if (typeof window !== 'undefined') window.addEventListener('pagehide', holdAudio);
+
+/**
+ * The context as the browser has it: 'running', 'suspended', 'closed', or (Safari, after a call
+ * or another app took the sound) 'interrupted'.
+ */
+export function rawAudioState(): string {
+  return (liveContext.rawContext as unknown as { state: string }).state;
+}
+
+/**
+ * Back from the background: a context the phone suspended or interrupted is started again, if
+ * sound was already allowed (else the next Play does it). Nothing is played by it.
+ */
+export async function wakeAudio(): Promise<void> {
+  if (!soundAllowed) return;
+  const raw = liveContext.rawContext as unknown as { state: string; resume?: () => Promise<void> };
+  if (raw.state === 'running' || raw.state === 'closed') return;
+  try {
+    await raw.resume?.();
+  } catch {
+    // Not allowed without a tap here: the next Play resumes it
+  }
 }
 
 let audioStateChangeListeners: Array<(state: AudioState) => void> = [];
@@ -200,9 +226,11 @@ export async function initAudio(): Promise<AudioState> {
   soundAllowed = true;
   if (liveContext.state !== 'running') {
     await Tone.start();
-    // In case Tone's underlying raw context needs resuming
-    if (liveContext.rawContext && liveContext.rawContext.state === 'suspended') {
-      await liveContext.rawContext.resume();
+    // In case Tone's underlying raw context needs resuming (suspended, or interrupted by a call
+    // or another app on a phone)
+    const raw = liveContext.rawContext as unknown as { state: string; resume: () => Promise<void> } | undefined;
+    if (raw && raw.state !== 'running' && raw.state !== 'closed') {
+      await raw.resume();
     }
   }
 
