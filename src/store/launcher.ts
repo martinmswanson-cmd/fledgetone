@@ -144,6 +144,7 @@ export function slotFromClips(clips: readonly Clip[], name?: string): SlotClip |
     ...(clips[0].wobble ? { wobble: clips[0].wobble } : {}),
     ...(clips[0].groove ? { groove: clips[0].groove } : {}),
     ...(one?.expression ? { expression: one.expression } : {}),
+    ...(one?.stepLanes ? { stepLanes: one.stepLanes } : {}),
   };
 }
 

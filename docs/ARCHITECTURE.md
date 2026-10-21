@@ -150,6 +150,12 @@ clock, ahead of time, so the main thread being busy doesn't make notes late:
 - **Automation**: `createAutomationSchedule` (`automationSchedule.ts`) writes each lane as
   parameter automation a short stretch ahead of the clock, through each parameter's
   `ParamWriter` (`effects/paramWriter.ts`), so a lane and a hand on the control never fight.
+  Clips' controller lanes and step lanes (`store/ccLanes.ts`, `store/stepLanes.ts`) are turned
+  into automation lanes of their tracks before the engine sees them (`withControllerLanes`, then
+  `withStepLanes`, live in `connectTimelineToAudio` and in `renderTracks`), a step lane in place of
+  the track's own lane within its clip. A plugin parameter's lane reaches the plugin as timed
+  events read on a 16-sample grid a little ahead of the clock (`controlEvents.ts`, from the strip's
+  control tick), so it lands in the same place live and in an export.
 - **The playhead** is drawn by a `requestAnimationFrame` loop in the store that reads where the
   listener is now (`getAudiblePositionBar`, which allows for output latency) and sets
   `playheadPosition`.

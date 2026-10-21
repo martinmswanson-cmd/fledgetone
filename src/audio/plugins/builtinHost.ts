@@ -1,4 +1,5 @@
 import type { WamInstance } from '../wamHost';
+import { isNamedParam, NAMED_PARAM, rememberParamNames } from './paramNames';
 import { recordingBytes } from '../recordingStore';
 import { GPL_FAMILY_NAMES } from './pluginCatalog';
 import type { BuiltinPluginInfo, PluginFamily } from './pluginTypes';
@@ -246,6 +247,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
         clearTimeout(timer);
         params = d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: d.defaults[i] ?? p.value }));
         own = params.map((p) => p.value);
+        rememberParamNames(url, params.map((p) => p.name));
         programs = files ? files.names : (d.programs ?? []);
         program = files ? (startPreset ? files.names.indexOf(startPreset) : -1) : (d.program ?? -1);
         resolve();
@@ -327,8 +329,15 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     getParameterInfo: async () =>
       Object.fromEntries(params.map((p, i) => [String(i), { id: String(i), label: p.name, type: 'float', minValue: 0, maxValue: 1, defaultValue: p.defaultValue }])),
     getParameterValues: async () => Object.fromEntries(own.map((v, i) => [String(i), { id: String(i), value: v, normalized: true }])),
-    scheduleEvents: (...events: unknown[]) => {
+    scheduleEvents: (...raw: unknown[]) => {
       if (destroyed) return;
+      // A parameter named rather than numbered ("#Macro 1", from a step lane): its number here
+      const events = raw.flatMap((e) => {
+        const ev = e as { type?: string; data?: { id?: string; value?: number } };
+        if (ev?.type !== 'wam-automation' || !isNamedParam(String(ev.data?.id ?? ''))) return [e];
+        const i = indexOfId(String(ev.data!.id));
+        return i < 0 ? [] : [{ ...ev, data: { ...ev.data, id: String(i) } }];
+      });
       for (const e of events as Array<{ type?: string; data?: { id?: string; value?: number } }>) {
         if (e?.type === 'wam-automation' && Number.isFinite(e.data?.value)) {
           laneHeld.set(Number(e.data!.id), e.data!.value!);
@@ -346,7 +355,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     getStateNow: (): BuiltinState => stateNow(),
     setParamNow: (id: string, value: number) => set(Number(id), value),
     resetParam: (id: string) => {
-      const i = Number(id);
+      const i = indexOfId(id);
       laneHeld.delete(i);
       params = marked(params);
       if (!params[i] || destroyed) return;
@@ -381,6 +390,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       listeners.clear();
     },
   });
+  /** A parameter's number from its id: the number itself, or `#name` (see paramNames.ts). -1: none. */
+  const indexOfId = (id: string) => (isNamedParam(id) ? params.findIndex((p) => p.name === id.slice(NAMED_PARAM.length)) : Number(id));
   const set = (index: number, value: number) => {
     const p = params[index];
     // (Held by an automation lane: the lane has it until it goes)

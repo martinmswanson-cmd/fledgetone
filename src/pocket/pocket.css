@@ -125,6 +125,14 @@
 .pk-rnote.cond { background: color-mix(in srgb, var(--c) 50%, var(--bg)); border: 1px dashed var(--c); box-shadow: none; }
 .pk-rnote.cond span { color: var(--text); }
 .pk-rph { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--cyan-hi); pointer-events: none; z-index: 1; display: none; }
+/* The step lane under the roll (PocketSteps.tsx): pinned to the bottom as the ruler is to the top */
+.pk-slabel { position: sticky; left: 0; bottom: 0; z-index: 4; background: var(--panel); border-right: 1px solid var(--border); border-top: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; padding-left: 6px; text-align: left; overflow: hidden; }
+.pk-slabel small { font: 600 9px 'JetBrains Mono', monospace; color: var(--muted); }
+.pk-slabel span { font: 600 11px 'JetBrains Mono', monospace; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-ssurf { position: sticky; bottom: 0; z-index: 3; background: var(--panel); border-top: 1px solid var(--border); touch-action: none;
+  background-image: repeating-linear-gradient(90deg, var(--border-2) 0 1px, transparent 1px calc(var(--rw, 40px) * 4)), repeating-linear-gradient(90deg, var(--border) 0 1px, transparent 1px var(--rw, 40px)); }
+.pk-sbar { position: absolute; bottom: 5px; border-radius: 4px 4px 2px 2px; background: var(--c); opacity: .85; pointer-events: none; }
+.pk-shold { position: absolute; height: 0; border-top: 2px dashed color-mix(in srgb, var(--c) 55%, transparent); pointer-events: none; }
 
 /* Mix all: a strip per track */
 .pk-strips { flex: 1; min-height: 0; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }

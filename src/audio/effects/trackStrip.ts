@@ -4,6 +4,7 @@
  * delay and to return tracks. An insert exists only while it's switched on, so idle effects cost
  * nothing. Also the Pump's beat clock (createPumpClock).
  */
+import { controlRun, planControlEvents, type ControlRun } from '../controlEvents';
 import * as Tone from 'tone';
 import type { AutomationParam, GateRate, PumpTrigger, Track } from '../../store/timelineTypes';
 import { GATE_TICKS } from '../../store/timelineTypes';
@@ -472,7 +473,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
    * every tick of the clock (20 a second live, every render block in an export) the value due next
    * is handed on. `value` is the last one handed on (null: none yet). See controlTick.
    */
-  const controls = new Map<AutomationParam, { writer: ParamWriter; value: number | null; apply: (v: number, at: number, ramp: number) => boolean }>();
+  const controls = new Map<AutomationParam, { writer: ParamWriter; value: number | null; apply: (v: number, at: number, ramp: number) => boolean; run?: ControlRun }>();
   /** The track's effect settings as last applied, before lanes override any (see effective). */
   let baseFx: Track['fx'] | null = null;
   /** The track as last applied. */
@@ -767,10 +768,20 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   /** How far ahead of the clock a control's value is taken, and how long it glides there. */
   const offline = typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext;
   const CONTROL_STEP = offline ? 128 / raw.sampleRate : 0.05;
+  /**
+   * A plugin parameter's lane goes to the plugin as timed events read on a fine grid this far
+   * ahead (controlEvents.ts), so its changes land where they're drawn, live as in an export. Live,
+   * past the next tick or two (they come 20 a second, not always on time); an edit is heard after it.
+   */
+  const PLUGIN_LEAD = offline ? 2 * CONTROL_STEP : 0.12;
   const controlTick = () => {
     const t = input.context.currentTime;
     const dirty = new Set<keyof Track['fx']>();
     for (const [param, c] of controls) {
+      if (c.run) {
+        planControlEvents(c.run, c.writer.valueAt, t, t + PLUGIN_LEAD, raw.sampleRate, (at, v) => c.apply(v, at, 0));
+        continue;
+      }
       const v = c.writer.valueAt(t + CONTROL_STEP);
       if (c.value !== null && Math.abs(v - c.value) <= 1e-6 * Math.max(1, Math.abs(v))) continue;
       const p = parseParam(param);
@@ -801,7 +812,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       if (controls.has(param)) continue;
       const initial = p.kind === 'fx' ? specOf(param).trackValue(track) : specOf(param, track).trackValue(track);
       const apply = p.kind === 'plugin' ? (v: number, at: number) => pluginSink?.(p.pluginId, p.paramId, v, at) ?? false : () => true;
-      controls.set(param, { writer: createParamWriter(noParam, { raw, now, initial }), value: null, apply });
+      controls.set(param, { writer: createParamWriter(noParam, { raw, now, initial }), value: null, apply, ...(p.kind === 'plugin' ? { run: controlRun() } : {}) });
       changed = true;
     }
     for (const param of [...controls.keys()]) {

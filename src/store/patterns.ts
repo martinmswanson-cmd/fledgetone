@@ -4,12 +4,12 @@ import type { Clip } from './timelineTypes';
  * Linked clips ("patterns"): clips that share `pattern` play the same notes. Edit one and the
  * others follow, wherever they sit on the timeline, as a pattern does in a pattern-based DAW. Each
  * keeps its own place, length and track. What's shared: the notes, the controller lanes, the
- * groove and the wobble rate. Plain logic, so Node can unit-test it; the store runs syncPatterns
+ * groove, the wobble rate and the step lanes. Plain logic, so Node can unit-test it; the store runs syncPatterns
  * after every change (see timelineStore.ts).
  */
 
 /** What linked clips share. */
-const SHARED = ['notes', 'expression', 'groove', 'wobble'] as const;
+const SHARED = ['notes', 'expression', 'groove', 'wobble', 'stepLanes'] as const;
 
 /** A clip that can be linked: a note clip (an audio clip or a take folder plays its own material). */
 export const canLink = (c: Clip): boolean => !c.audio && !c.takes?.length;

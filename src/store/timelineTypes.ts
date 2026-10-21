@@ -670,7 +670,7 @@ export interface Track {
 }
 
 /** What a clip launcher slot holds: a clip, without a place in the song. */
-export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'groove' | 'audio' | 'expression'>>;
+export type SlotClip = Pick<Clip, 'name' | 'lengthBars' | 'notes'> & Partial<Pick<Clip, 'wobble' | 'groove' | 'audio' | 'expression' | 'stepLanes'>>;
 
 /** A track's clip in the clip launcher, in scene (row) `scene` (0 is the first). */
 export interface LauncherSlot {
@@ -1061,6 +1061,35 @@ export interface Clip {
   comp?: CompSegment[];
   /** Linked clips: every clip with the same pattern plays the same notes, lanes and groove (see patterns.ts) */
   pattern?: string;
+  /** Step lanes: a value per grid step for one of the track's settings (see stepLanes.ts) */
+  stepLanes?: StepLane[];
+}
+
+/**
+ * What a step lane moves: a track setting automation can drive (`filterCutoff`, `fx:distortion.amount`...;
+ * not a send), or `inst:<name>`, the track's instrument plugin's parameter of that name ("Macro 1").
+ */
+export type StepTarget = BuiltinParam | `fx:${string}` | `inst:${string}`;
+
+/** One set step of a step lane: from `at` bars into the clip (the step's start), the lane holds `value` (0 to 1). */
+export interface StepValue {
+  at: number;
+  value: number;
+}
+
+/**
+ * A row of steps under a clip's notes (see stepLanes.ts): each set step holds a value (0 to 1, in
+ * lane height as an automation lane's) for `target`; a step not set holds the one before.
+ */
+export interface StepLane {
+  id: string;
+  target: StepTarget;
+  /** A step's length in 96ths of a bar: 6 (1/16), 3 (1/32), 4 (1/16T), 8 (1/8T), 12 (1/8) */
+  grid: number;
+  /** The set steps, in order (absent ones hold the value before) */
+  steps: StepValue[];
+  /** Per note: the value changes at each note that starts in a set step (not at the step's start) */
+  perNote?: boolean;
 }
 
 /**

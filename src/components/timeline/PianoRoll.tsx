@@ -10,6 +10,10 @@ import { scoop, springBounce, stutterBuild, tritoneSlide } from '../../store/mat
 import { shapeDynamics } from '../../store/phraseDynamics';
 import { retrograde } from '../../store/noteTools';
 import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
+import { StepLanes } from './StepLanes';
+import { stepLanesHeight } from './stepTargets';
+import { bendSupport, diveNotes, withSlide, slideOf, MAX_SLIDE } from '../../store/slides';
+import { noteValueAt } from '../../store/noteExpression';
 import { NotationView } from './NotationView';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
@@ -231,6 +235,8 @@ const TOOLS = [
   { id: 'springBounce', label: 'Spring bounce (pitch boings and settles)', drums: false },
   { id: 'tritoneSlide', label: 'Tritone slide (up half an octave)', drums: false },
   { id: 'scoop', label: 'Scoop (swoop up into each note)', drums: false },
+  { id: 'dive', label: 'Dive (start an octave up, fall to the note over a 16th)', drums: false },
+  { id: 'unbend', label: 'Remove slides and dives', drums: false },
   { id: 'shapeDynamics', label: 'Shape dynamics (phrases rise and fall)', drums: false },
   ...SWELL_SHAPES.map((s) => ({ id: s.id, label: s.label, drums: false })),
 ] as const;
@@ -348,6 +354,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const notation = notationOn && canNotate;
   const setNotation = (next: boolean) => setNotationState((rememberedNotation = next));
   const fullTrack = useTimelineStore((s) => s.tracks.find((t) => t.id === clip.trackId));
+  // Step lanes under the notes: shown once the clip has one, or asked for (STEP LANES)
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const stepsH = stepLanesHeight(clip, stepsOpen);
+  /** Whether this track's instrument plays slides and dives (see slides.ts) */
+  const bends = fullTrack ? bendSupport(fullTrack, INSTRUMENTS[instrument]?.kind) : 'no';
+  const bendNotice = () => {
+    if (bends === 'no') showToast(`${INSTRUMENTS[instrument]?.name ?? 'This instrument'} doesn't bend: slides and dives play at the note's own pitch. Fledge Synth, the basses, Analog Lead and the recorded instruments play them.`);
+    else if (bends === 'maybe') showToast('A plugin gets slides and dives as MIDI pitch bend over ±2 semitones, which it may or may not follow.');
+  };
   const setStepMode = (next: boolean) => setStepModeState((rememberedStepMode = next));
   const stepping = stepMode && (isDrumKind(instrument) || isRackKind(instrument));
   const setScale = (next: Scale | null) => setScaleState((rememberedScale = next));
@@ -473,7 +488,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       // (the part of the grid on screen: the roll can reach past the window's bottom)
       const top = Math.max(c.top, 0) + RULER_H + pad;
       // (and above the expression lane pinned to its bottom)
-      const bottom = Math.min(c.bottom, window.innerHeight) - pad - (isDrums ? 0 : EXPRESSION_LANE_H);
+      const bottom = Math.min(c.bottom, window.innerHeight) - pad - (isDrums ? 0 : EXPRESSION_LANE_H) - stepsHeightRef.current;
       if (!across && r.top < top) box.scrollTop -= top - r.top;
       else if (!across && r.bottom > bottom) box.scrollTop += r.bottom - bottom;
       if (r.left < c.left + KEY_W + pad) box.scrollLeft -= c.left + KEY_W + pad - r.left;
@@ -481,6 +496,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     });
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  const stepsHeightRef = useRef(stepsH);
+  stepsHeightRef.current = stepsH;
   useEffect(() => {
     if (!noteEntry) return;
     // What's played sounds on this clip's track (unless another one is armed)
@@ -639,6 +656,39 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     });
   };
 
+  /**
+   * Drag a note's slide: up or down a row per semitone from where it was (it glides there by the
+   * note's end), from the note's start or, with Shift, from where the pointer is along it. One undo step.
+   */
+  const startSlide = (e: React.PointerEvent, id: string) => {
+    const store = useTimelineStore.getState();
+    const original = currentNotes().find((n) => n.id === id);
+    if (!original) return;
+    setSelected(new Set([id]));
+    bendNotice();
+    const origin = local(e.clientX, e.clientY);
+    const was = slideOf(original);
+    const baseSemis = was?.kind === 'slide' ? was.semis : 0;
+    const baseFrom = was?.kind === 'slide' ? was.from : 0;
+    const start = unitsOf(original.startOffset);
+    const len = Math.max(1, noteUnits(original));
+    let recorded = false;
+    let last = `${baseSemis}|${baseFrom}`;
+    trackPointer('ns-resize', (ev) => {
+      const p = local(ev.clientX, ev.clientY);
+      const semis = Math.max(-MAX_SLIDE, Math.min(MAX_SLIDE, baseSemis + Math.round((origin.y - p.y) / rowH)));
+      const from = ev.shiftKey ? Math.max(0, Math.min(0.95, Math.round(((p.units - start) / len) * 16) / 16)) : baseFrom;
+      const key = `${semis}|${from}`;
+      if (key === last) return;
+      last = key;
+      if (!recorded) {
+        store.checkpoint();
+        recorded = true;
+      }
+      store.setClipNotes(clip.id, currentNotes().map((n) => (n.id === id ? withSlide(n, semis, from) : n)));
+    });
+  };
+
   /** The nearest in-scale note to `midi` that has a row. */
   const snapRow = (midi: number) => {
     if (!scale) return midi;
@@ -697,6 +747,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         case 'springBounce': return springBounce(target, barSeconds);
         case 'tritoneSlide': return tritoneSlide(target, barSeconds);
         case 'scoop': return scoop(target, barSeconds);
+        case 'dive': return diveNotes(target);
+        case 'unbend': return target.map((n) => withSlide(n, 0));
         case 'shapeDynamics': return shapeDynamics(target);
         default: return target;
       }
@@ -732,6 +784,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       const note = { note: row.note, startOffset: cell / UNITS_PER_BAR, duration: barsToDuration(gridUnits / UNITS_PER_BAR), velocity: e.shiftKey ? 1 : velocity };
       store.addNotes(clip.id, [note]);
       void preview(clip.trackId, [{ ...note, duration: '16n' }]);
+      return;
+    }
+
+    // Alt-drag a pitched note: a slide to the pitch dragged to, by the note's end (Shift too: from where the pointer is)
+    if (noteEl && e.altKey && !namedRows) {
+      startSlide(e, noteEl.dataset.noteId!);
       return;
     }
 
@@ -1077,6 +1135,31 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
             ))}
           </select>
         </label>
+        {!namedRows && (
+          <button
+            type="button"
+            data-search="dive pitch drop slide"
+            disabled={!selected.size}
+            onClick={() => {
+              bendNotice();
+              applyTool('dive');
+            }}
+            title={`Dive: the selected notes start an octave up and fall to their pitch over a 16th${bends === 'no' ? ` (this instrument doesn't bend: they'd play at their own pitch)` : ''}. Alt-drag a note to slide it to another pitch by its end`}
+            className="h-7 px-2 flex items-center gap-1.5 rounded-md border border-forge-border text-[11px] text-forge-text hover:border-forge-borderLight disabled:opacity-40"
+          >
+            Dive
+          </button>
+        )}
+        <button
+          type="button"
+          data-search="step lanes macro steps timbre per step sequence"
+          onClick={() => setStepsOpen((o) => !o || !!clip.stepLanes?.length)}
+          aria-pressed={stepsH > 0}
+          title="Step lanes: a row of steps under the notes, each holding a value for one of the track's settings (a Fledge Synth macro, the Filter cutoff...), so the sound changes on every 16th"
+          className={`h-7 px-2 flex items-center gap-1.5 rounded-md border text-[11px] ${stepsH > 0 ? 'border-cyan-400/70 bg-cyan-500/15 text-cyan-100' : 'border-forge-border text-forge-text hover:border-forge-borderLight'}`}
+        >
+          Step lanes
+        </button>
         <RollPainter drums={namedRows} range={INSTRUMENTS[instrument].range} selected={selected.size} onApply={applyTool} />
         {!namedRows && (
           <label data-search="ghosts" className="flex items-center gap-1.5 cursor-pointer" title="Show the other tracks' notes at these bars, faintly, behind this clip's">
@@ -1093,7 +1176,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </button>
         </div>
         <span className="hidden xl:inline text-[11px]">
-          {stepping ? 'Click a step to turn a hit on or off • Shift-click: an accent • Alt-drag: move notes as usual' : 'Click to add (drag right to stretch it) • drag a note to move • drag right edge to resize • right-click to delete • arrows nudge'}
+          {stepping ? 'Click a step to turn a hit on or off • Shift-click: an accent • Alt-drag: move notes as usual' : 'Click to add (drag right to stretch it) • drag a note to move • drag right edge to resize • Alt-drag a note up or down: slide • right-click to delete • arrows nudge'}
         </span>
         <button
           type="button"
@@ -1128,8 +1211,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       )}
       {notation && fullTrack && <NotationView clip={clip} track={fullTrack} scale={scale} />}
       {/* Body */}
-      <div ref={scrollRef} className={`relative overflow-auto max-h-[340px] select-none ${notation ? 'hidden' : ''}`}>
-        <div className="relative" style={{ width: KEY_W + gridW, height: RULER_H + gridH + (isDrums ? 0 : EXPRESSION_LANE_H) }}>
+      <div ref={scrollRef} className={`relative overflow-auto select-none ${notation ? 'hidden' : ''}`} style={{ maxHeight: 340 + stepsH }}>
+        <div className="relative" style={{ width: KEY_W + gridW, height: RULER_H + gridH + (isDrums ? 0 : EXPRESSION_LANE_H) + stepsH }}>
           {/* Ruler */}
           <div
             className="sticky top-0 z-20 flex bg-forge-panel border-b border-forge-border cursor-pointer"
@@ -1276,6 +1359,24 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 );
               })}
 
+              {/* Each note's own bend (a slide, a dive) as a line from its pitch to where it bends */}
+              {!namedRows && (
+                <svg className="absolute inset-0 pointer-events-none z-[11]" width={gridW} height={gridH} aria-hidden>
+                  {visibleNotes.map((n) => {
+                    if (!n.expr?.bend?.some((p) => p.value !== 0)) return null;
+                    const idx = rowIndexOf(rows, n.note);
+                    if (idx < 0) return null;
+                    const start = unitsOf(n.startOffset);
+                    const len = Math.min(totalUnits - start, noteUnits(n));
+                    const bars = durationToBars(n.duration);
+                    const pts = Array.from({ length: 33 }, (_, k) => {
+                      const at = (bars * Math.min(len, noteUnits(n)) * k) / (32 * noteUnits(n));
+                      return `${((start + (len * k) / 32) * unitW).toFixed(1)},${((idx - noteValueAt(n.expr!.bend, at, 'bend')) * rowH + rowH / 2).toFixed(1)}`;
+                    });
+                    return <polyline key={n.id} points={pts.join(' ')} fill="none" stroke={bends === 'no' ? 'rgba(255,255,255,0.35)' : 'rgb(250,204,21)'} strokeWidth={2} strokeDasharray={bends === 'no' ? '3 3' : undefined} strokeLinecap="round" />;
+                  })}
+                </svg>
+              )}
               <GridPlayhead startBar={clip.startBar} stepW={stepW} gridW={gridW} />
               {noteEntry && (
                 <div
@@ -1286,8 +1387,11 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               )}
             </div>
           </div>
-          {/* Pitch bend, mod wheel and sustain pedal (not for drums and FX) */}
-          {!isDrums && <ExpressionLane clip={clip} keyWidth={KEY_W} barW={UNITS_PER_BAR * unitW} snap={(at) => snapUnits(at * UNITS_PER_BAR) / UNITS_PER_BAR} note={selected.size === 1 ? clip.notes.find((n) => selected.has(n.id)) : undefined} focus={laneFocus} />}
+          {/* Step lanes, then pitch bend, mod wheel and sustain pedal (not for drums and FX), pinned under the notes */}
+          <div className="sticky bottom-0 z-20">
+            <StepLanes clip={clip} track={fullTrack} keyWidth={KEY_W} barW={UNITS_PER_BAR * unitW} color={color} open={stepsOpen} onClose={() => setStepsOpen(false)} />
+            {!isDrums && <ExpressionLane clip={clip} keyWidth={KEY_W} barW={UNITS_PER_BAR * unitW} snap={(at) => snapUnits(at * UNITS_PER_BAR) / UNITS_PER_BAR} note={selected.size === 1 ? clip.notes.find((n) => selected.has(n.id)) : undefined} focus={laneFocus} />}
+          </div>
         </div>
       </div>
     </div>

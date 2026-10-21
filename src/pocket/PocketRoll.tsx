@@ -24,6 +24,9 @@ import { pocketNoteId, usePocket } from './pocketStore';
 import { audition } from './pocketSound';
 import { buzz } from './pocketSession';
 import { penBars, rememberPen } from '../store/penLength';
+import { PocketSteps, POCKET_LANE_H } from './PocketSteps';
+import { bendSupport, slideOf, withDive, withSlide } from '../store/slides';
+import { showToast } from '../components/timeline/toastStore';
 
 const RW = 40, RH = 34, KEYW = 46, RULERH = 24;
 const EPS = 1e-6;
@@ -338,6 +341,9 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
             <button type="button" aria-label="Copy it after itself" className={ib} onClick={() => change((n, all) => { const c = { ...n, id: pocketNoteId(), from: undefined, step: Math.min(steps - n.len, n.step + n.len) }; all.push(c); setSel(c.id); })}>
               <Copy className="w-[17px] h-[17px]" />
             </button>
+            <button type="button" aria-label={slideOf(fromRoll([selected])[0])?.kind === 'dive' ? 'Dive: on (tap to take it off)' : 'Dive: start an octave up and fall to the note'} aria-pressed={slideOf(fromRoll([selected])[0])?.kind === 'dive'} className={`${chip} !px-2.5${slideOf(fromRoll([selected])[0])?.kind === 'dive' ? ' !border-cyan-400 text-cyan-200' : ''}`} onClick={() => change((n) => { const note = fromRoll([n])[0]; n.from = slideOf(note)?.kind === 'dive' ? withSlide(note, 0) : withDive(note); if (bendSupport(track, INSTRUMENTS[track.instrumentKey]?.kind) === 'no') showToast(`${INSTRUMENTS[track.instrumentKey]?.name ?? 'This instrument'} doesn't bend: the dive plays at the note's own pitch`); })}>
+              Dive
+            </button>
             <button type="button" aria-label={`How often it plays: ${selected.from && isConditional(selected.from) ? chanceMark(selected.from) : 'always'}`} className={`${ib}${selected.from && isConditional(selected.from) ? ' !border-cyan-400 text-cyan-200' : ''}`} onClick={() => setChoosing(true)}>
               <Percent className="w-[17px] h-[17px]" />
             </button>
@@ -370,7 +376,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
         )}
       </div>
       <div ref={roll} className="pk-roll" style={{ ['--c' as string]: track.color }}>
-        <div className="pk-rinner" style={{ gridTemplateColumns: `${KEYW}px ${steps * RW}px`, gridTemplateRows: `${RULERH}px ${rows.length * RH}px` }}>
+        <div className="pk-rinner" style={{ gridTemplateColumns: `${KEYW}px ${steps * RW}px`, gridTemplateRows: `${RULERH}px ${rows.length * RH}px ${POCKET_LANE_H}px` }}>
           <div className="pk-rcorner" />
           <div className="pk-rruler">
             {Array.from({ length: Math.ceil(steps / 4) }, (_, b) => (
@@ -400,6 +406,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
             })}
             <i className="pk-rph" />
           </div>
+          <PocketSteps track={track} sec={sec} rw={RW} keyW={KEYW} erase={pen === 'erase'} />
         </div>
       </div>
       {choosing && selected && (
