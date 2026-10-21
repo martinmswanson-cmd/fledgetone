@@ -4,6 +4,20 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.21-2 — Drop pad, bounce to pad and versions
+
+- **Drop pad**: a new track that changes the whole mix while you hold it: **Stutter**, **Filter**, **Tape stop**, **Crush**, **Gate** and **Echo**, always in time. Play it on the phone's big pads (pressing one starts the song) or from a keyboard; with **Rec** on, your moves are written into the song and play every time, in exports too. Add it with **+ Track › Drop pad**.
+- **Bounce to a pad**: turn a section (the whole mix or one track) or a vocal take into a sound on a Drum Rack pad, at the same level, ready to play like a drum. A take can also be chopped onto pads at its hits. In Pocket, **Your pads** is a Drum Rack you can play, step and record there.
+- **Fledge Synth on the phone**: pick a preset and shape it with big sliders named for what they do (the wobble bass has **Speed up**, **Squelch** and **Grit**), with the wobble rate in time with the song. Every bass preset now has three of them, and the studio's macro knobs show the names too. Synth knob moves can now be undone.
+- **Share one sound**: save a track's sound as a small file and open someone else's onto your track.
+- **Versions**: **File › Versions…** (and the song's settings in Pocket) lists earlier versions of your songs, kept as you work, and takes you back to any of them.
+- **Notes that play only sometimes**: set a note or step to play 75%, 50% or 25% of the time, or only on certain repeats (1st of 2, 4th of 4…). Hold a step in Pocket, or use **Plays** in the piano roll. Exports play the same notes you hear.
+- **Roll the beat again**: dice in Pocket's steps (and **Roll beat** in the studio) make new hats and percussion in the beat's style, keeping the kick and snare.
+- **Recording**: a sustain pedal already held when you press Record now holds the notes in the take, as you heard them. Lining up recordings by playing a few clicks, and a note when Bluetooth headphones will make takes late.
+- **Exported game kits**: the players inside can still ship in any game, closed-source and paid ones too, but changes to the players themselves must now be shared under the GPL. Questions or concerns: martin@twobirdsworkshop.com.
+- **On the website**: a new **Tools** page to download the game music players, Fledge Synth, the Drop pad effects and the song player for your own programs, and real gameplay clips of the 2D platformer and the rhythm game on the games page.
+- Rack pads at their neutral settings no longer colour the sound slightly.
+
 ## 2026.10.21 — Fledge Synth
 
 - **Fledge Synth**, Fledgetone's own synthesizer, made for dubstep, bass music and modern electronic songs. Add it with **Add Track → Fledge Synth**.

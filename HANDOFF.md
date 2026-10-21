@@ -201,7 +201,17 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
-- **Pocket features and Android groundwork** (on the work branch, not released; from the mobile
+- **Tools page and exported-files licence** (2026.10.21-2): fledgetone.com/tools/ offers the game
+  music players, Fledge Synth (wasm + a standalone Web Audio wrapper + its Rust source), the Drop
+  pad effects and the song player as zips, GPL-3.0-or-later, built fresh by `scripts/tools-site.mjs`
+  on every site build from the hand-written parts in `tools/` (it refuses to finish if the synth
+  can't play a note cleanly). Every page's footer links it. Exported kits' extra permission
+  (`src/audio/exportLicence.ts`, TERMS.md section 3) now lets the players ship in any game but keeps
+  changes to the players themselves under the GPL; questions go to martin@twobirdsworkshop.com.
+  The games page shows real clips of the 2D platformer and rhythm game (`site/video/`), recorded
+  by scripted runs (the scripts were throwaway; the method: drive the game modules through
+  page.evaluate, step their frames, capture each one).
+- **Pocket features and Android groundwork** (2026.10.21-2; the Android app itself isn't published; from the mobile
   research, scratchpad report "Mobile music apps people love"):
   - *Drop pad plays the song*: a pad pressed while stopped starts it (`playPocket` in
     `pocketSession.ts`, shared with the transport's Play).
@@ -232,7 +242,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
     Google Play"). Nothing of this has run on a real phone yet.
   - Open decision: Fledge Synth is marked GPL but ships in the app, whose notes say GPL plugins stay
     out of it (it's the owner's own code, so a licence choice, not a blocker).
-- **Drop pad** (on the work branch, not released): hold a pad to stutter, filter, tape-stop, crush,
+- **Drop pad** (2026.10.21-2): hold a pad to stutter, filter, tape-stop, crush,
   gate or echo the whole mix. It's a track (the Drop Pad instrument, kind `drop`) whose notes are
   the moves, one row per effect (DROP_ROWS), so copying a section copies its moves, the studio
   edits them in the piano roll, and mute turns them off. The effects run on the master after the
