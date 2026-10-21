@@ -16,7 +16,8 @@ import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import type { AudioClipSchedule } from './audioClipSchedule';
-import type { Clip, ClipGroove, LoopRegion, Track, TrackFx } from '../store/timelineTypes';
+import type { Clip, ClipGroove, LoopRegion, NoteEvent, Track, TrackFx } from '../store/timelineTypes';
+import { clipHasConditions, clipRuns, isConditional, notePlays, passOf, type ClipRun } from '../store/noteChance';
 import { INSTRUMENTS } from './instrumentCatalog';
 import { detuned, noteDrift, noteSeed } from './human';
 import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
@@ -44,6 +45,12 @@ interface NoteGroup {
   rowSwing?: { swing: number; grid: 8 | 16 };
   /** Its row plays early (negative) or late by this share of a 16th */
   shift?: number;
+  /**
+   * Notes that play only some of the time (see noteChance.ts): each note's chance and condition,
+   * in step with `notes` (absent when every note always plays), and its clip, for the pass
+   */
+  conds?: Array<Pick<NoteEvent, 'chance' | 'cond'> | null>;
+  clipId?: string;
 }
 
 /** A track's Human settings while they're on, and whether its notes can be detuned. */
@@ -113,15 +120,18 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
     let playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
     if (feel && (feel.vel !== undefined || feel.offbeat !== undefined)) playable = { ...playable, velocity: feelVelocity(feel, note.velocity, tick, liveTransport.PPQ) };
     const seed = noteSeed(clip.id, note.note, tick);
+    const cond = isConditional(note) ? { chance: note.chance, cond: note.cond } : null;
     const group = groups.get(key);
     if (group) {
       group[1].notes.push(playable);
       group[1].seeds.push(seed);
+      if (cond || group[1].conds) (group[1].conds ??= group[1].notes.slice(0, -1).map(() => null)).push(cond);
     } else {
       const own = feel ? rowSwing.get(note.note) : undefined;
-      groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}), ...(own ? { rowSwing: own } : {}), ...(feel?.shift ? { shift: feel.shift } : {}) }]);
+      groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}), ...(own ? { rowSwing: own } : {}), ...(feel?.shift ? { shift: feel.shift } : {}), ...(cond ? { conds: [cond], clipId: clip.id } : {}) }]);
     }
   });
+  if (clipHasConditions(clip)) for (const [, g] of groups.values()) g.clipId = clip.id;
   // Pitch bend and vibrato, as events of their own (played before the notes of the same tick)
   const pitch: ClipEntry['groups'] = pitchEvents(clip).map((ev) => [barToTicks(clip.startBar + ev.at), { trackId: clip.trackId, notes: [], seeds: [], swung: false, pitch: ev }]);
   // Controller lanes, every 64th where they move (from the clip's start)
@@ -178,14 +188,57 @@ export function createClipSchedule(
    * note; 0 for the rest): the live mix wakes a sleeping track's channel for it (see sleep in
    * liveTracks.ts)
    */
-  onActivity?: (trackId: string, time: number, seconds: number) => void
+  onActivity?: (trackId: string, time: number, seconds: number) => void,
+  /**
+   * The live loop (null while it's off), for the notes that play on some passes only: each time
+   * round the loop counts as a further pass (see noteChance.ts). Exports leave it out: they count
+   * a clip's copies only, so a seamless loop file plays the same every time round.
+   */
+  loopOf?: () => LoopRegion | null
 ): ClipSchedule {
   let byTick = new Map<number, NoteGroup[]>();
   /** Drop tracks: their notes play on the beat as written (no swing or shift), as an export reads them (dropMoves.ts) */
   let straight = new Set<string>();
   let entries = new Map<string, ClipEntry>();
   let feel = new Map<string, HumanFeel>();
+  let runs = new Map<string, ClipRun>();
   const events = new Map<number, number>();
+  // Times round the loop since playback started (or the loop moved)
+  let wraps = 0;
+  let wrapsFor = '';
+  /** The live loop, the count starting again when it moves. */
+  const currentLoop = () => {
+    const loop = loopOf?.() ?? null;
+    const at = `${loop?.inBar}|${loop?.outBar}`;
+    if (at !== wrapsFor) {
+      wrapsFor = at;
+      wraps = 0;
+    }
+    return loop;
+  };
+  const onLoop = () => {
+    currentLoop();
+    wraps++;
+  };
+  const onStart = () => void (wraps = 0);
+  if (loopOf) {
+    transport.on('loop', onLoop);
+    transport.on('start', onStart);
+    transport.on('stop', onStart);
+  }
+  /** The group with only the notes that play this time round (null: none of them). */
+  const gate = (group: NoteGroup, tick: number): NoteGroup | null => {
+    const conds = group.conds;
+    if (!conds) return group;
+    const loop = currentLoop();
+    // (A loop that has come round but this tick is outside it: the loop was switched off)
+    const inLoop = !!loop && tick >= barToTicks(loop.inBar) && tick < barToTicks(loop.outBar);
+    const pass = passOf(group.clipId ? runs.get(group.clipId) : undefined, inLoop ? wraps : 0, loop);
+    const keep = conds.map((c, i) => !c || notePlays(c, group.seeds[i], pass));
+    if (keep.every(Boolean)) return group;
+    if (!keep.some(Boolean)) return null;
+    return { ...group, notes: group.notes.filter((_, i) => keep[i]), seeds: group.seeds.filter((_, i) => keep[i]) };
+  };
 
   /**
    * Play one group, each note drifting on its own when the track's Human insert is on (a chord's
@@ -255,8 +308,10 @@ export function createClipSchedule(
     return (tickTime: number) => {
       if (Math.abs(tickTime - lastTime) < 1e-4) return;
       lastTime = tickTime;
-      const groups = byTick.get(tick);
-      if (!groups) return;
+      const all = byTick.get(tick);
+      if (!all) return;
+      // Notes that sit this pass out don't play, wake their track or pump anything
+      const groups = all.some((g) => g.conds) ? all.map((g) => gate(g, tick)).filter((g): g is NoteGroup => !!g) : all;
       const songLate = swingDelay(swing(), transport.bpm.value, transport.PPQ);
       const bpm = transport.bpm.value;
       const swingOf = (g: NoteGroup) => (!g.swung ? 0 : g.rowSwing ? swingDelay(g.rowSwing.swing, bpm, transport.PPQ, g.rowSwing.grid) : g.groove ? swingDelay(g.groove.swing, bpm, transport.PPQ, g.groove.grid) : songLate);
@@ -322,6 +377,7 @@ export function createClipSchedule(
       }
       entries = nextEntries;
       byTick = nextByTick;
+      runs = clipRuns(clips);
 
       for (const [tick, id] of events) {
         if (byTick.has(tick)) continue;
@@ -333,6 +389,11 @@ export function createClipSchedule(
       }
     },
     dispose: () => {
+      if (loopOf) {
+        transport.off('loop', onLoop);
+        transport.off('start', onStart);
+        transport.off('stop', onStart);
+      }
       events.forEach((id) => transport.clear(id));
       events.clear();
       byTick.clear();
@@ -344,10 +405,11 @@ export function createClipSchedule(
 let liveSchedule: ClipSchedule | null = null;
 let liveAudioClips: AudioClipSchedule | null = null;
 let liveSwing = 0;
+let liveLoop: LoopRegion | null = null;
 
 /** Bring the live Transport's events in line with the timeline clips. */
 export function rescheduleClips(tracks: Track[], clips: Clip[]): void {
-  liveSchedule ??= createClipSchedule(liveTransport, scheduledInstrument, pumpOnKick, () => liveSwing, pumpOnTrack, trackActivity);
+  liveSchedule ??= createClipSchedule(liveTransport, scheduledInstrument, pumpOnKick, () => liveSwing, pumpOnTrack, trackActivity, () => liveLoop);
   liveSchedule.update(tracks, clips);
   // Audio clips play their sound files on the live mix's own Transport (the global one is the
   // export's while a WAV render sets up)
@@ -369,6 +431,7 @@ export function syncTransport(loop: LoopRegion, tempo: Tempo, swing: number): vo
   liveTransport.loopStart = `${barToTicks(loop.inBar)}i`;
   liveTransport.loopEnd = `${barToTicks(loop.outBar)}i`;
   liveTransport.loop = loop.enabled;
+  liveLoop = loop.enabled ? { ...loop } : null;
   for (const id of tempoEvents) liveTransport.clear(id);
   tempoEvents = scheduleTempo(liveTransport, tempo, loop.enabled ? loop.inBar : null);
   setLiveTempo(tempo);

@@ -189,13 +189,14 @@ class Reader {
 type Data = ReturnType<typeof serializeProject>;
 type Note = Data['clips'][number]['notes'][number];
 /** A clip or stinger as a link carries it: its notes in the bytes, their expression (by place) here */
-type WithoutNotes<T> = Omit<T, 'notes'> & { notes?: undefined; x?: Array<[number, unknown]> };
+type WithoutNotes<T> = Omit<T, 'notes'> & { notes?: undefined; x?: Array<[number, unknown]>; y?: Array<[number, unknown]> };
 
 /**
  * The song as a link carries it: settings at their defaults left out, notes as bytes. Each clip's
  * (then each stinger's) notes in time order, four numbers each: how far after the one before (in
  * ticks), which pitch and which length (from the song's lists of them), and the velocity in
- * hundredths. A note's own expression stays in the JSON, by the note's place in that order.
+ * hundredths. A note's own expression stays in the JSON, by the note's place in that order, and
+ * so does its chance and condition (`y`: { chance?, cond? }; see noteChance.ts).
  */
 function pack(data: Data): Uint8Array<ArrayBuffer> {
   const pitches: string[] = [];
@@ -210,6 +211,7 @@ function pack(data: Data): Uint8Array<ArrayBuffer> {
     bytes.uint(notes.length);
     let last = 0;
     const expr: Array<[number, unknown]> = [];
+    const when: Array<[number, unknown]> = [];
     notes.forEach(({ n, ticks }, i) => {
       bytes.int(ticks - last);
       last = ticks;
@@ -217,8 +219,9 @@ function pack(data: Data): Uint8Array<ArrayBuffer> {
       bytes.uint(indexIn(lengths, n.duration));
       bytes.uint(n.velocity * 100);
       if (n.expr) expr.push([i, n.expr]);
+      if (n.chance !== undefined || n.cond) when.push([i, { ...(n.chance !== undefined ? { chance: n.chance } : {}), ...(n.cond ? { cond: n.cond } : {}) }]);
     });
-    return { ...owner, notes: undefined, ...(expr.length ? { x: expr } : {}) };
+    return { ...owner, notes: undefined, ...(expr.length ? { x: expr } : {}), ...(when.length ? { y: when } : {}) };
   };
   const clips = data.clips.map(lessNotes);
   const stingers = data.stingers?.map(lessNotes);
@@ -252,7 +255,8 @@ function unpack(bytes: Uint8Array): unknown {
       return { id: `n${(id++).toString(36)}`, note, startOffset: ticks / LINK_TICKS, duration, velocity: read.uint() / 100 };
     });
     for (const [i, expr] of Array.isArray(owner.x) ? owner.x : []) if (notes[i]) notes[i].expr = expr as Note['expr'];
-    return { ...owner, x: undefined, notes };
+    for (const [i, when] of Array.isArray(owner.y) ? owner.y : []) if (notes[i] && when && typeof when === 'object') Object.assign(notes[i], { chance: (when as Note).chance, cond: (when as Note).cond });
+    return { ...owner, x: undefined, y: undefined, notes };
   };
   const list = (v: unknown) => (Array.isArray(v) ? (v as Array<WithoutNotes<{ notes: Note[] }>>) : []);
   const clips = list(raw.clips).map(withNotes);

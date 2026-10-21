@@ -99,6 +99,8 @@
 .pk-step.on { background: var(--c); border-color: transparent; box-shadow: 0 0 12px color-mix(in srgb, var(--c) 55%, transparent); }
 .pk-step.now { outline: 2px solid var(--cyan-hi); outline-offset: 1px; }
 .pk-step small { position: absolute; left: 6px; top: 4px; font: 500 10px 'JetBrains Mono', monospace; color: var(--muted); }
+.pk-step.on.cond { background: color-mix(in srgb, var(--c) 45%, var(--bg)); border: 1px dashed var(--c); box-shadow: none; }
+.pk-step em { position: absolute; right: 5px; bottom: 3px; font: 600 10px 'JetBrains Mono', monospace; font-style: normal; color: var(--text); }
 
 /* The piano roll */
 .pk-roll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; position: relative; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); scrollbar-width: none; }
@@ -120,6 +122,8 @@
 .pk-rnote::after { content: ''; position: absolute; right: 3px; top: 25%; bottom: 25%; width: 3px; border-radius: 2px; background: rgba(0,0,0,.3); }
 .pk-rnote span { font: 600 10px 'JetBrains Mono', monospace; color: rgba(0,0,0,.65); padding-left: 6px; }
 .pk-rnote.sel { outline: 2px solid var(--text); outline-offset: 1px; }
+.pk-rnote.cond { background: color-mix(in srgb, var(--c) 50%, var(--bg)); border: 1px dashed var(--c); box-shadow: none; }
+.pk-rnote.cond span { color: var(--text); }
 .pk-rph { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--cyan-hi); pointer-events: none; z-index: 1; display: none; }
 
 /* Mix all: a strip per track */

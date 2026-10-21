@@ -2,7 +2,8 @@
  * Pocket's own view state, apart from the song (useTimelineStore): which track and section are
  * selected (the drawer edits that cell), which of its tools the drawer shows and how tall it is,
  * the mixer, Rec, the open sheet and the key the note editors use. Plus the helpers its screens
- * share: which editor a track opens in, and the playhead while playing.
+ * share: which editor a track opens in, the playhead while playing, and the drummer style each cell
+ * was last written in (the dice roll in it).
  */
 import { create } from 'zustand';
 import { useEffect, useState } from 'react';
@@ -10,6 +11,7 @@ import { INSTRUMENTS, isAudioKind } from '../audio/instrumentCatalog';
 import { getAudiblePositionBar } from '../audio/transport';
 import { useTimelineStore } from '../store/timelineStore';
 import type { InstrumentKey } from '../store/timelineTypes';
+import type { DrumStyle } from '../store/smartTools';
 import type { SongKey } from '../store/songKey';
 
 /** The drawer's tools: play the instrument, draw its notes, change its sound, its mix; or sing (vocal tracks). */
@@ -78,6 +80,10 @@ export const isRackKey = (key: InstrumentKey): boolean => INSTRUMENTS[key]?.kind
 
 let idCount = 0;
 /** A new note id. */
+/** The drummer style each cell was last written in (`track@section start`), for the dice to roll in. */
+export const cellDrumStyles = new Map<string, DrumStyle>();
+export const cellKey = (trackId: string, from: number): string => `${trackId}@${from}`;
+
 export const pocketNoteId = (): string => `pk${Date.now().toString(36)}${(idCount++).toString(36)}`;
 
 /** Where the song is (bars, 1-based): moving while it plays, the playhead while stopped. */

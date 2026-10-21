@@ -94,7 +94,8 @@ function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteR
     width: Math.max(2, Math.min(durationToBars(n.duration), clip.lengthBars - n.startOffset) * zoom - 1),
     top: areaTop + rowOf(n.note) * rowHeight,
     height: Math.max(2, rowHeight - 1),
-    opacity: 0.45 + n.velocity * 0.55,
+    // (Fainter when it plays only some of the time: see noteChance.ts)
+    opacity: (0.45 + n.velocity * 0.55) * (n.chance !== undefined || n.cond ? 0.55 : 1),
   }));
 }
 

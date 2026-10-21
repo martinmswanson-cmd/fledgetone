@@ -4,11 +4,14 @@
  * pads opening the Pads tool to fill them); note pads are the song's key over six
  * rows, low notes at the bottom; chord pads are the key's chords. With Rec on while the song plays
  * the section, what's played is written into the cell on the nearest 16th. The drum steps show one
- * drum at a time, a bar of 16ths as a block (a row per beat), so every step is a thumb wide.
+ * drum at a time, a bar of 16ths as a block (a row per beat), so every step is a thumb wide; holding
+ * a lit step sets how often it plays (see noteChance.ts), and the dice roll the drum or the beat
+ * again in its style (smartTools.ts rollDrums).
  * Blocks keep their size: a taller drawer shows more of them, and the rest scroll (useAnchoredScroll
  * keeps the rows that matter in place as the drawer changes size).
  */
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Dices } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
 import { INSTRUMENTS } from '../audio/instrumentCatalog';
@@ -19,7 +22,10 @@ import { audition, padsOf } from './pocketSound';
 import { editCell, sectionNotes } from './pocketCell';
 import { cellClip } from './pocketSections';
 import type { PocketSection } from './pocketSections';
-import { isRackKey, pocketNoteId, usePocket, usePlayPosition } from './pocketStore';
+import { cellDrumStyles, cellKey, isRackKey, pocketNoteId, usePocket, usePlayPosition } from './pocketStore';
+import { ChanceSheet } from './pocketUi';
+import { chanceMark, isConditional, withChance } from '../store/noteChance';
+import { rollDrums } from '../store/smartTools';
 import { buzz } from './pocketSession';
 
 const EPS = 1e-6;
@@ -174,7 +180,19 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
     setPage(bar);
     setHoldUntil(Date.now() + 4000);
   };
-  const isOn = (step: number) => notes.some((n) => n.note === pad.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === step);
+  const noteAt = (step: number) => notes.find((n) => n.note === pad.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === step);
+  // Holding a lit step opens the chooser of how often it plays
+  const [choosing, setChoosing] = useState<number | null>(null);
+  const held = useRef(false);
+  const holdTimer = useRef(0);
+  const letGo = () => window.clearTimeout(holdTimer.current);
+  const chosen = choosing === null ? undefined : noteAt(choosing);
+  /** Roll the drum shown (`row`) or the whole beat again, in the style the cell was written in (else the one it sounds like). */
+  const roll = (row?: string) => {
+    buzz();
+    const style = cellDrumStyles.get(cellKey(track.id, sec.from));
+    editCell(track.id, sec, (have) => rollDrums(have, { lengthBars: sec.to - sec.from, seed: (Math.random() * 2 ** 32) >>> 0, newId: pocketNoteId, meter, ...(style ? { style } : {}), ...(row ? { row } : {}) }));
+  };
   const beatEvery = Math.max(1, Math.round(perBar / meter.num));
   const usedRows = new Set(notes.map((n) => n.note));
   // The cell's own swing (its clip's groove), stepped through a few amounts
@@ -227,6 +245,17 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
         >
           Swing {swingName}
         </button>
+        {/* (Nor the dice: they roll a kit's drums) */}
+        {!rack && (
+          <>
+            <button type="button" className={`${tool} flex items-center gap-1.5`} aria-label={`Roll the ${pad.label.toLowerCase()} again`} onClick={() => roll(pad.note)}>
+              <Dices className="w-4 h-4" /> {pad.label}
+            </button>
+            <button type="button" className={`${tool} flex items-center gap-1.5`} aria-label="Roll the beat again: new hats and percussion, the same kick and snare" onClick={() => roll()}>
+              <Dices className="w-4 h-4" /> Beat
+            </button>
+          </>
+        )}
         <button type="button" className={tool} onClick={() => editCell(track.id, sec, () => [])}>
           Clear
         </button>
@@ -261,15 +290,36 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
       <div ref={ref} className="pk-pads steps" style={{ ['--c' as string]: pad.color, gridTemplateColumns: `repeat(${Math.min(4, perBar)}, 1fr)` }}>
         {Array.from({ length: Math.min(perBar, total - shown * perBar) }, (_, k) => {
           const step = shown * perBar + k;
-          const on = isOn(step);
+          const hit = noteAt(step);
+          const on = !!hit;
+          const mark = hit && isConditional(hit) ? chanceMark(hit) : '';
           return (
             <button
               key={step}
               type="button"
-              aria-label={`${pad.label}, step ${step + 1}`}
+              aria-label={`${pad.label}, step ${step + 1}${mark ? `, plays ${mark}` : ''}${on ? '. Hold to set how often it plays' : ''}`}
               aria-pressed={on}
-              className={`pk-step${on ? ' on' : ''}${k % beatEvery === 0 ? ' beat' : ''}${step === now ? ' now' : ''}`}
+              className={`pk-step${on ? ' on' : ''}${mark ? ' cond' : ''}${k % beatEvery === 0 ? ' beat' : ''}${step === now ? ' now' : ''}`}
+              onPointerDown={() => {
+                held.current = false;
+                letGo();
+                if (!on) return;
+                holdTimer.current = window.setTimeout(() => {
+                  held.current = true;
+                  buzz();
+                  hold(shown);
+                  setChoosing(step);
+                }, 450);
+              }}
+              onPointerUp={letGo}
+              onPointerLeave={letGo}
+              onPointerCancel={letGo}
+              onContextMenu={(e) => e.preventDefault()}
               onClick={() => {
+                if (held.current) {
+                  held.current = false;
+                  return;
+                }
                 buzz();
                 hold(shown);
                 editCell(track.id, sec, (have) =>
@@ -281,10 +331,19 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
               }}
             >
               <small>{k % beatEvery === 0 ? k / beatEvery + 1 : ''}</small>
+              {mark && <em>{mark}</em>}
             </button>
           );
         })}
       </div>
+      {chosen && choosing !== null && (
+        <ChanceSheet
+          title={`${pad.label}, step ${choosing + 1}: how often it plays`}
+          note={chosen}
+          onClose={() => setChoosing(null)}
+          onPick={(id) => editCell(track.id, sec, (have) => have.map((n) => (n.note === pad.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === choosing ? withChance(n, id) : n)))}
+        />
+      )}
     </>
   );
 };
