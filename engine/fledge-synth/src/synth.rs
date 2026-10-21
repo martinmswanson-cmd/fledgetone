@@ -853,6 +853,10 @@ impl Synth {
         // (A retrigger of a sounding voice, mono say, carries on from its level and fade)
         if fresh || !was_active {
             v.fade = 1.0;
+        }
+        // (The velocity's gain eases only from a level that is heard: from a silent tail it
+        // snaps, as a new note's does)
+        if fresh || !was_active || v.amp.value * v.fade < 0.01 {
             v.gain_now = -1.0;
         }
         v.time = 0.0;
@@ -1824,6 +1828,23 @@ mod tests {
         }
         let step = d2(&b);
         assert!(step < 0.02, "step {step}");
+    }
+
+    #[test]
+    fn a_mono_note_after_a_silent_tail_starts_at_its_own_velocity() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "Voices", 1.0);
+        set(&mut s, "Velocity", 1.0);
+        set(&mut s, "Amp release", 0.5);
+        s.midi(0x90, 57, 127);
+        render(&mut s, 50);
+        s.midi(0x80, 57, 0);
+        render(&mut s, 375);
+        s.midi(0x90, 57, 10);
+        s.process(48);
+        let v = &s.voices[0];
+        let want = 1.0 - (1.0 - 10.0 / 127.0);
+        assert!((v.gain_now - want).abs() < 0.05, "gain {} want {want}", v.gain_now);
     }
 
     #[test]
