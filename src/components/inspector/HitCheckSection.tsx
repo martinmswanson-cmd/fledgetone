@@ -49,7 +49,7 @@ export const HitCheckSection: React.FC = () => {
   const judged = useMemo(() => (hit ? judgeHits(hit.report, styleId) : []), [hit, styleId]);
   const groups = useMemo(() => [...new Set(judged.map((j) => j.group))], [judged]);
   const off = judged.filter((j) => j.status === 'low' || j.status === 'high').length;
-  const measuring = !!busy && /stretch|Measuring/.test(busy.what);
+  const measuring = !!busy && /stretch|Measuring|alone/.test(busy.what);
 
   return (
     <div data-search="does it hit drop loud punch gaps wobble sub pump style targets" className="flex flex-col gap-2 pt-2 mt-1 border-t border-forge-border">

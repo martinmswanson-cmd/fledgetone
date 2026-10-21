@@ -92,7 +92,8 @@ export const StepLanes: React.FC<Props> = ({ clip, track, keyWidth, barW, color,
                   {options
                     .filter((o) => o.group === g)
                     .map((o) => (
-                      <option key={o.target} value={o.target}>
+                      // (One lane per setting in a clip: a second would only hide the first)
+                      <option key={o.target} value={o.target} disabled={(clip.stepLanes ?? []).some((l) => l.id !== focus.id && l.target === o.target)}>
                         {o.label}
                       </option>
                     ))}
