@@ -317,7 +317,8 @@ impl Effects {
                         line.push(flush(fast_tanh(x + back * fb)));
                         0.5 * (x + back)
                     } else {
-                        let f = 160.0 * 2f32.powf(s * c.phaser_depth * 5.5);
+                        // (Kept under Nyquist: past it the all-pass turns unstable at low sample rates)
+                        let f = (160.0 * 2f32.powf(s * c.phaser_depth * 5.5)).min(sr * 0.45);
                         let t = (PI * f / sr).tan();
                         let a = (t - 1.0) / (t + 1.0);
                         let mut y = x + self.phaser_last[ch] * fb;
@@ -474,8 +475,9 @@ mod tests {
 
     #[test]
     fn everything_at_full_stays_bounded_and_dies_away() {
-        for flanger in [false, true] {
-            let mut fx = Effects::new(48000.0);
+        // (Low sample rates too: the phaser's sweep reaches past their Nyquist)
+        for (flanger, sr) in [(false, 48000.0), (true, 48000.0), (false, 8000.0), (false, 11025.0), (true, 8000.0)] {
+            let mut fx = Effects::new(sr);
             let mut c = cfg();
             c.flanger = flanger;
             c.reverb_decay = 4.0;

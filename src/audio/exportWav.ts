@@ -12,6 +12,7 @@ import { insertTailSeconds } from './effects/spaceFx';
 import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } from './tempoMap';
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
+import { captureWamStates } from './wamHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel, LIMITER_CEILING_DBTP } from './effects/limiter';
 import { masterAfter, type MasterStats } from './effects/masterAfter';
@@ -696,8 +697,12 @@ interface Rendered {
  * it's rendered in one piece instead.
  */
 async function renderTracks(opts: RenderOptions, sounding: Track[], onProgress?: (fraction: number) => void): Promise<Rendered> {
-  // Counted, so the update notice waits for it (renderBusy.ts)
-  return countedRender(() => renderTracksNow(opts, sounding, onProgress));
+  // Counted, so the update notice waits for it (renderBusy.ts). The plugins' latest settings
+  // first: they reach the tracks every few seconds otherwise, and the render builds from them
+  return countedRender(async () => {
+    await captureWamStates();
+    return renderTracksNow(opts, sounding, onProgress);
+  });
 }
 
 async function renderTracksNow(opts: RenderOptions, sounding: Track[], onProgress?: (fraction: number) => void): Promise<Rendered> {

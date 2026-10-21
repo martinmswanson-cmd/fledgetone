@@ -518,21 +518,25 @@ fn knee_integral(x: f32) -> f32 {
 impl SafetyClip {
     #[inline]
     pub fn tick(&mut self, x: f32) -> f32 {
-        // Below the knee the sound passes exactly; past it, first-order ADAA (the knee's average
-        // across the step, which never passes the ceiling)
-        let f = knee_integral(x);
+        // (A broken input never sticks: the state starts over and the sample is silent)
+        if !x.is_finite() {
+            *self = SafetyClip::default();
+            return 0.0;
+        }
+        // Only what the knee takes off (knee(x) - x) is antialiased, so the sound below the knee
+        // passes exactly and nothing shifts in time as a wave crosses it; the knee then holds the
+        // small overshoot that leaves under the ceiling
+        let f = knee_integral(x) - x * x / 2.0;
         let dx = x - self.x1;
-        let y = if x.abs() <= KNEE && self.x1.abs() <= KNEE {
-            x
-        } else if dx.abs() < 1e-4 {
-            knee(0.5 * (x + self.x1))
+        let r = if dx.abs() < 1e-4 {
+            let m = 0.5 * (x + self.x1);
+            knee(m) - m
         } else {
             (f - self.f1) / dx
         };
         self.x1 = x;
         self.f1 = f;
-        // (Huge inputs lose precision in the step above: the ceiling holds whatever comes in)
-        y.clamp(-CEIL, CEIL)
+        knee(x + r)
     }
 }
 
@@ -698,9 +702,36 @@ mod tests {
     }
 
     #[test]
+    fn sound_just_past_the_knee_stays_clean() {
+        // What's left after taking out the sine: the knee's own rounding is tiny there
+        let sr = 48000.0;
+        for hz in [1000.0f32, 3000.0, 6000.0] {
+            let mut c = SafetyClip::default();
+            let (mut err, mut sig) = (0.0f32, 0.0f32);
+            for i in 0..9600 {
+                let x = 0.61 * (2.0 * PI * hz * i as f32 / sr).sin();
+                let y = c.tick(x);
+                if i > 100 {
+                    err += (y - knee(x)).powi(2);
+                    sig += x * x;
+                }
+            }
+            let db = 10.0 * (err / sig).log10();
+            assert!(db < -40.0, "{hz} Hz: {db} dB off the knee");
+        }
+    }
+
+    #[test]
+    fn a_broken_sample_does_not_stick() {
+        let mut c = SafetyClip::default();
+        assert_eq!(c.tick(f32::NAN), 0.0);
+        assert!(c.tick(0.3).is_finite() && c.tick(0.95).abs() < CEIL);
+    }
+
+    #[test]
     fn loud_steep_sound_rounds_off_below_the_ceiling() {
         let sr = 48000.0;
-        for amp in [1.0f32, 1.5] {
+        for amp in [1.0f32, 1.5, 3.0] {
             let mut c = SafetyClip::default();
             let pinned = (0..48000).filter(|&i| c.tick(amp * saw(i, 110.0, sr)).abs() >= CEIL - 1e-4).count();
             assert!(pinned == 0, "amp {amp}: {pinned} samples on the ceiling");

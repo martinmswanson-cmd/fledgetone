@@ -83,7 +83,7 @@ export const ProjectDrop: React.FC = () => {
   return (
     <>
       {over && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-6 pointer-events-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6 pointer-events-auto">
           <div className="flex items-center gap-3 rounded-xl border-2 border-dashed border-cyan-400 bg-forge-panel/90 px-6 py-4 text-sm font-semibold text-cyan-200 shadow-2xl">
             <FolderOpen className="w-5 h-5" />
             {video ? 'Drop to load the video to score to' : 'Drop to open the project file'}

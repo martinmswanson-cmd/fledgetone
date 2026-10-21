@@ -599,10 +599,11 @@ export type AutosaveFailure = 'too-big' | 'full' | 'blocked';
 export type AutosaveResult = { ok: true } | { ok: false; reason: AutosaveFailure };
 
 /**
- * Whether a session has work in it worth offering to restore: clips, or markers (hit points
- * placed on a video before any music is written).
+ * Whether a session has work in it worth offering to restore: clips, markers (hit points
+ * placed on a video before any music is written), or a sound built in a plugin before any notes.
  */
-export const hasWork = (p: Pick<ProjectSnapshot, 'clips' | 'markers'>): boolean => p.clips.length > 0 || (p.markers?.length ?? 0) > 0;
+export const hasWork = (p: Pick<ProjectSnapshot, 'clips' | 'markers'> & { tracks?: ReadonlyArray<Pick<Track, 'plugin' | 'pluginFx'>> }): boolean =>
+  p.clips.length > 0 || (p.markers?.length ?? 0) > 0 || (p.tracks ?? []).some((t) => !!t.plugin || (t.pluginFx?.length ?? 0) > 0);
 
 /** True once this page has written an autosave (so the stored one is no longer the previous session). */
 let wroteAutosave = false;
