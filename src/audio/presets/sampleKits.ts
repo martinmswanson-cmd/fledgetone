@@ -46,7 +46,12 @@ interface Hit {
   stopAt: number;
 }
 
-/** A pad's own effects, in order: drive, high-pass, low-pass, pan, level. Made on its first hit. */
+/**
+ * A pad's own effects, in order: drive, high-pass, low-pass, pan, level. Made on its first hit.
+ * The drive and the filters are in the chain only while they do something (`route`): a pad at its
+ * neutral settings plays its sound as it is (a bounce from the song sounds as the song did, not
+ * with a filter's phase shift and top-end lift on it).
+ */
 interface PadChain {
   input: GainNode;
   shaper: WaveShaperNode;
@@ -55,6 +60,23 @@ interface PadChain {
   pan: StereoPannerNode;
   level: GainNode;
   drive: number;
+  /** Which of drive, high-pass and low-pass are patched in, as a key ("d-l") */
+  route: string;
+}
+
+/** The stages a pad's settings need: drive, high-pass, low-pass. */
+const stagesOf = (pad: RackPad) => ({ drive: pad.drive > 0.001, highpass: pad.highpass > 20.5, lowpass: pad.lowpass < 19999 });
+const routeKey = (st: ReturnType<typeof stagesOf>) => `${st.drive ? 'd' : ''}-${st.highpass ? 'h' : ''}-${st.lowpass ? 'l' : ''}`;
+
+/** Connect a chain's input to its pan through the stages `pad` needs (and only those). */
+function routeChain(chain: PadChain, pad: RackPad): void {
+  const st = stagesOf(pad);
+  const key = routeKey(st);
+  if (chain.route === key) return;
+  for (const node of [chain.input, chain.shaper, chain.highpass, chain.lowpass]) node.disconnect();
+  const stages: AudioNode[] = [chain.input, ...(st.drive ? [chain.shaper] : []), ...(st.highpass ? [chain.highpass] : []), ...(st.lowpass ? [chain.lowpass] : []), chain.pan];
+  for (let k = 0; k + 1 < stages.length; k++) stages[k].connect(stages[k + 1]);
+  chain.route = key;
 }
 
 export function createRackInstrument(output: Tone.InputNode, initial: DrumRack | undefined): TrackInstrument & { setRack: (rack: DrumRack | undefined) => void } {
@@ -79,20 +101,11 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     chain.lowpass.frequency.setTargetAtTime(pad.lowpass, now, 0.01);
     chain.highpass.frequency.setTargetAtTime(pad.highpass, now, 0.01);
     if (chain.drive !== pad.drive) {
-      const was = chain.drive > 0.001;
-      const now = pad.drive > 0.001;
       chain.drive = pad.drive;
-      if (now) chain.shaper.curve = driveCurve(pad.drive);
-      if (was !== now) {
-        // Patched in or out
-        chain.input.disconnect();
-        chain.shaper.disconnect();
-        if (now) {
-          chain.input.connect(chain.shaper);
-          chain.shaper.connect(chain.highpass);
-        } else chain.input.connect(chain.highpass);
-      }
+      if (pad.drive > 0.001) chain.shaper.curve = driveCurve(pad.drive);
     }
+    // Stages patched in or out as they start or stop doing something
+    routeChain(chain, pad);
   };
   const chainFor = (i: number, pad: RackPad): PadChain => {
     let chain = chains.get(i);
@@ -109,13 +122,6 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     lowpass.Q.value = 0.7;
     const pan = raw.createStereoPanner();
     const level = raw.createGain();
-    // The drive's shaper is in the chain only while it drives (a shaper with no curve was silent live)
-    if (pad.drive > 0.001) {
-      input.connect(shaper);
-      shaper.connect(highpass);
-    } else input.connect(highpass);
-    highpass.connect(lowpass);
-    lowpass.connect(pan);
     pan.connect(level);
     level.connect(into);
     // Its first settings at once (a hit follows straight away)
@@ -124,7 +130,9 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     lowpass.frequency.value = pad.lowpass;
     highpass.frequency.value = pad.highpass;
     if (pad.drive > 0.001) shaper.curve = driveCurve(pad.drive);
-    chain = { input, shaper, highpass, lowpass, pan, level, drive: pad.drive };
+    chain = { input, shaper, highpass, lowpass, pan, level, drive: pad.drive, route: '' };
+    // The drive's shaper is in the chain only while it drives (a shaper with no curve was silent live)
+    routeChain(chain, pad);
     chains.set(i, chain);
     return chain;
   };

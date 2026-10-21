@@ -1,6 +1,7 @@
 /**
  * The drawer's pads and steps, for the selected cell. Drum pads are laid out like an MPC (kick,
- * snare, clap and hat along the bottom, under the thumb); note pads are the song's key over six
+ * snare, clap and hat along the bottom, under the thumb; a Drum Rack's pad 1 to 4 there, its empty
+ * pads opening the Pads tool to fill them); note pads are the song's key over six
  * rows, low notes at the bottom; chord pads are the key's chords. With Rec on while the song plays
  * the section, what's played is written into the cell on the nearest 16th. The drum steps show one
  * drum at a time, a bar of 16ths as a block (a row per beat), so every step is a thumb wide.
@@ -14,11 +15,11 @@ import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
 import type { NoteEvent, Track } from '../store/timelineTypes';
 import { STEPS_PER_WHOLE, noteToMidi, scaleRows, stepsPerBar } from './pocketGrid';
-import { DRUM_PADS, audition } from './pocketSound';
+import { audition, padsOf } from './pocketSound';
 import { editCell, sectionNotes } from './pocketCell';
 import { cellClip } from './pocketSections';
 import type { PocketSection } from './pocketSections';
-import { pocketNoteId, usePocket, usePlayPosition } from './pocketStore';
+import { isRackKey, pocketNoteId, usePocket, usePlayPosition } from './pocketStore';
 import { buzz } from './pocketSession';
 
 const EPS = 1e-6;
@@ -109,9 +110,21 @@ export const DrumPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
   useAnchoredScroll(ref, `${track.id}:pads`, 'bottom');
   return (
     <div ref={ref} className="pk-pads" aria-label={`${track.name}'s pads`}>
-      {padOrder(DRUM_PADS).map((p, k) =>
+      {padOrder(padsOf(track)).map((p, k) =>
         !p ? (
           <span key={`gap${k}`} />
+        ) : p.empty ? (
+          // An empty Drum Rack pad: tapped, the Pads tool opens on it to fill it
+          <button
+            key={p.note}
+            type="button"
+            className="pk-pad empty"
+            style={{ ['--c' as string]: p.color }}
+            aria-label={`Pad ${(p.index ?? 0) + 1}, empty: fill it`}
+            onClick={() => usePocket.getState().set({ tool: 'sound', rackPad: p.index ?? 0 })}
+          >
+            + Pad {(p.index ?? 0) + 1}
+          </button>
         ) : (
         <button
           key={p.note}
@@ -137,7 +150,8 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
   const meter = useTimelineStore((s) => s.meter);
   const clips = useTimelineStore((s) => s.clips);
   const isPlaying = useTimelineStore((s) => s.isPlaying);
-  const [drum, setDrum] = useState(0);
+  // (A Drum Rack opens on its first pad with a sound)
+  const [drum, setDrum] = useState(() => Math.max(0, padsOf(track).findIndex((p) => !p.empty)));
   const [page, setPage] = useState(0);
   const bar = usePlayPosition();
   const ref = useRef<HTMLDivElement>(null);
@@ -146,7 +160,9 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
   const total = Math.round((sec.to - sec.from) * STEPS_PER_WHOLE);
   const pages = Math.max(1, Math.ceil(total / perBar - EPS));
   const notes = sectionNotes(clips, track.id, sec);
-  const pad = DRUM_PADS[drum];
+  const rack = isRackKey(track.instrumentKey);
+  const pads = padsOf(track);
+  const pad = pads[Math.min(drum, pads.length - 1)];
   const inSec = isPlaying && bar >= sec.from - EPS && bar < sec.to - EPS;
   const now = inSec ? Math.floor((bar - sec.from) * STEPS_PER_WHOLE) : -1;
   // While it plays the steps follow the song a bar at a time, except for a while after a tap: the
@@ -169,30 +185,35 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
   return (
     <>
       <div className="flex gap-1.5 overflow-x-auto shrink-0 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
-        {DRUM_PADS.map((p, i) => (
+        {pads.map((p, i) => (
           <button
             key={p.note}
             type="button"
-            aria-pressed={i === drum}
-            className="shrink-0 h-9 px-3 rounded-[10px] border text-[12.5px] font-medium"
-            style={i === drum ? { borderColor: p.color, background: `${p.color}44` } : { borderColor: '#2a2a30', background: '#222228' }}
+            aria-pressed={p === pad}
+            className={`shrink-0 h-9 px-3 rounded-[10px] border text-[12.5px] font-medium${p.empty ? ' text-forge-muted' : ''}`}
+            style={p === pad ? { borderColor: p.color, background: `${p.color}44` } : { borderColor: '#2a2a30', background: '#222228' }}
             onClick={() => {
               setDrum(i);
               void audition(track.id, p.note);
             }}
           >
             {usedRows.has(p.note) ? '● ' : ''}
-            {p.label}
+            {p.empty ? `Pad ${(p.index ?? 0) + 1}` : p.label}
           </button>
         ))}
       </div>
       <div className="flex gap-1.5 shrink-0 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-        <button type="button" className={tool} onClick={() => usePocket.getState().set({ sheet: 'drummer' })}>
-          Drummer
-        </button>
-        <button type="button" className={tool} onClick={() => usePocket.getState().set({ sheet: 'fill' })}>
-          Fill
-        </button>
+        {/* (The drummer and fills write a kit's drums: a Drum Rack's pads are your own sounds) */}
+        {!rack && (
+          <>
+            <button type="button" className={tool} onClick={() => usePocket.getState().set({ sheet: 'drummer' })}>
+              Drummer
+            </button>
+            <button type="button" className={tool} onClick={() => usePocket.getState().set({ sheet: 'fill' })}>
+              Fill
+            </button>
+          </>
+        )}
         <button
           type="button"
           className={tool}

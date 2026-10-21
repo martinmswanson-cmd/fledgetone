@@ -3,7 +3,7 @@
  * Multi Sampler (sounds laid across the keys and velocities).
  */
 import React, { useState } from 'react';
-import { Drum, FolderOpen, Piano, Shuffle, Trash2, Upload } from 'lucide-react';
+import { Disc3, Drum, FolderOpen, Piano, Shuffle, Trash2, Upload } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { DrumRack, MultiSample, RackPad, Track } from '../../store/timelineTypes';
 import { RACK_PADS } from '../../store/timelineTypes';
@@ -11,6 +11,8 @@ import { defaultMulti, defaultRack, mapZones, midiName, padNote, RACK_CHOKE_GROU
 import { decodeSound, useSoundLibrary } from '../../audio/soundLibrary';
 import { DEFAULT_CHOP_FADE, MIN_CHOP } from '../../store/sampleFlip';
 import { newFlipIdea } from '../../store/flipActions';
+import { bounceName } from '../../store/bounceToPad';
+import { bounceRangeToPad, placedMessage, usePadBounce } from '../../store/bounceToPadActions';
 import { BassCutToggle } from '../timeline/SampleInfo';
 import { showToast } from '../timeline/toastStore';
 import { detectPitch, hzToMidi } from '../../audio/vocalTune';
@@ -42,13 +44,17 @@ const Slider: React.FC<{ label: string; value: number; min: number; max: number;
 /**
  * The Drum Rack: 16 pads (C2 up), each your own sound (or a chop of one: its start, end and fade) with its own level, pan, pitch, decay,
  * filters, drive and choke group. Click a pad to hear and edit it; drop sound files on a pad, or
- * load several at once to fill the pads in order.
+ * load several at once to fill the pads in order; or fill it from the loop range (In to Out),
+ * bounced: the song as it sounds there, as one sound.
  */
 export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
   const rack = track.rack ?? defaultRack();
   const [selected, setSelected] = useState(0);
   const [busy, setBusy] = useState(false);
   const pad = rack.pads[selected];
+  const bounce = usePadBounce((b) => b.fraction);
+  const loopIn = useTimelineStore((st) => st.loopRegion.inBar);
+  const loopOut = useTimelineStore((st) => st.loopRegion.outBar);
   const s = useTimelineStore.getState();
   const setRack = (next: DrumRack, record = true) => s.setTrackRack(track.id, next, record);
   const setPad = (i: number, patch: Partial<RackPad>, record = false) => setRack({ pads: rack.pads.map((p, j) => (j === i ? { ...p, ...patch } : p)) }, record);
@@ -78,6 +84,14 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
     } finally {
       setBusy(false);
     }
+  };
+  /** The loop range bounced (everything playing) onto the selected pad. */
+  const fromLoop = () => {
+    const name = bounceName(loopIn, loopOut);
+    void bounceRangeToPad({ from: loopIn, to: loopOut, name, target: { trackId: track.id, pad: selected } }).then(
+      (placed) => placed && showToast(placedMessage(`"${name}"`, placed)),
+      (err) => showToast(`Couldn't bounce bars ${loopIn}–${loopOut}: ${err instanceof Error ? err.message : String(err)}`)
+    );
   };
   const audition = async (i: number) => {
     await initAudio();
@@ -147,6 +161,16 @@ export const RackPanel: React.FC<{ track: Track }> = ({ track }) => {
           />
           <button type="button" className={small} onClick={() => void pickAudioFiles(false).then((f) => (f.length ? fill(f, selected) : undefined))} title="Load a sound onto this pad">
             Load…
+          </button>
+          <button
+            type="button"
+            className={small}
+            disabled={bounce !== null || !(loopOut > loopIn)}
+            onClick={fromLoop}
+            title={`Fill this pad from the loop range: bars ${loopIn} to ${loopOut} as they sound now (every track playing), bounced to one sound. Undo takes it off.`}
+          >
+            <Disc3 className="w-3 h-3 inline mr-1" />
+            {bounce !== null ? `${Math.round(bounce * 100)}%` : 'From loop'}
           </button>
           {pad.soundId && (
             <button type="button" className={small} onClick={() => setPad(selected, { soundId: undefined }, true)} title="Empty this pad" aria-label="Empty this pad">
