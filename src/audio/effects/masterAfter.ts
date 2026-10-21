@@ -111,7 +111,7 @@ export function dropChannels(left: Float32Array, right: Float32Array, sampleRate
   const kernel = createDropKernel(sampleRate);
   for (const m of moves) {
     kernel.on(m.fx, m.from, m.sixteenth);
-    kernel.off(m.fx, m.to);
+    kernel.off(m.fx, m.to, m.from);
   }
   const BLOCK = 8192;
   for (let at = 0; at < left.length; at += BLOCK) {

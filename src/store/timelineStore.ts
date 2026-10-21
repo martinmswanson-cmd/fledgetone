@@ -2083,6 +2083,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       const current = get().tracks.find((t) => t.id === id);
       // (Not a bus, a return or an Audio track: those play other tracks' sound, or sound files)
       if (!current || isMixTrack(current) || isAudioKind(current.instrumentKey)) return;
+      // (Nor to or from the Drop pad once it has clips, as setTrackInstrument)
+      if (isDropKind(sound.settings.instrumentKey) !== isDropKind(current.instrumentKey) && get().clips.some((c) => c.trackId === id)) return;
       set((s) => ({
         tracks: s.tracks.map((t) => (t.id === id ? { ...withSound(t, sound.settings), name: sound.name } : t)),
         ...pushPast(s),

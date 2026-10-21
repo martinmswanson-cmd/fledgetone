@@ -53,8 +53,11 @@ export const dropOn = (fx: number, at: number) => {
   const six = liveTransport.state === 'started' ? secondsBetween(bar, bar + 1 / 16, getLiveTempo()) : sixteenth();
   post({ on: fx, at: at + dropDelaySeconds(), sixteenth: six });
 };
-/** Let go of effect `fx` at audio time `at`. */
-export const dropOff = (fx: number, at: number) => post({ off: fx, at: at + dropDelaySeconds() });
+/** Let go of effect `fx` at audio time `at`, of the press or note that started at audio time `from`. */
+export const dropOff = (fx: number, at: number, from: number) => {
+  const delay = dropDelaySeconds();
+  post({ off: fx, at: at + delay, from: from + delay });
+};
 /** Let go of everything at `at`, and forget what was due after it. */
 export const dropCancel = (at: number) => post({ cancel: true, at: at + dropDelaySeconds() });
 
@@ -88,7 +91,7 @@ export function createDropInstrument(offline: boolean): TrackInstrument {
       const fx = dropFxOf(n.note);
       if (fx === undefined) continue;
       dropOn(fx, time);
-      dropOff(fx, releaseAt(time, durationToBars(n.duration)));
+      dropOff(fx, releaseAt(time, durationToBars(n.duration)), time);
     }
   };
   return {
@@ -98,7 +101,7 @@ export function createDropInstrument(offline: boolean): TrackInstrument {
       const fx = dropFxOf(n.note);
       if (fx !== undefined) dropOn(fx, time);
       return (at: number) => {
-        if (fx !== undefined) dropOff(fx, at);
+        if (fx !== undefined) dropOff(fx, at, time);
       };
     },
   };

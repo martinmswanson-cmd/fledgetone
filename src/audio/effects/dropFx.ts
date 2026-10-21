@@ -23,8 +23,8 @@ export type DropEffect = (typeof DROP_EFFECTS)[number];
 export interface DropKernel {
   /** Start effect `fx` (its index in DROP_EFFECTS) at sample `frame`, with a 16th `sixteenth` samples long. */
   on: (fx: number, frame: number, sixteenth: number) => void;
-  /** Let go of effect `fx` at sample `frame`. */
-  off: (fx: number, frame: number) => void;
+  /** Let go of effect `fx` at sample `frame`, of the note that started at sample `from` (if known). */
+  off: (fx: number, frame: number, from?: number) => void;
   /** Forget everything due from `frame` on, and let go of every effect there (a stop or a seek). */
   cancel: (frame: number) => void;
   /**
@@ -65,33 +65,26 @@ export function createDropKernel(sampleRate: number): DropKernel {
   /** Per effect: its wet share, gliding to 1 while held and back to 0 after */
   const wet = [0, 0, 0, 0, 0, 0];
   const sixteenthOf = [0, 0, 0, 0, 0, 0];
-  /** Per effect: where its latest "on" was scheduled (an "off" never comes before its own "on") */
+  /** Per effect: where its latest "on" was scheduled (an "off" given without its own "on" comes after this) */
   const lastOn = [-Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity];
-  /**
-   * Stutter and Tape stop start over when pressed again while they still sound: the jump from the
-   * old sound to the new one glides away over FADE (its size at the restart, shrinking to 0)
-   */
-  const restarting = [false, false, false];
-  const lastL = [0, 0, 0];
-  const lastR = [0, 0, 0];
-  const jumpL = [0, 0, 0];
-  const jumpR = [0, 0, 0];
-  const jumpLeft = [0, 0, 0];
   const startedAt = [0, 0, 0, 0, 0, 0];
 
+  /*
+   * Stutter and Tape stop each have two voices. Pressed again while it still sounds, the effect
+   * starts over on the other voice, and the old one crossfades out over FADE as the new one comes
+   * in: never louder than either, and no click.
+   */
   // Stutter: the 16th from the press, repeated
-  const stL = new Float32Array(STUTTER_MAX);
-  const stR = new Float32Array(STUTTER_MAX);
-  let stLen = 1;
-  let stPos = 0;
-  let stFilled = false;
+  const stutterVoice = () => ({ L: new Float32Array(STUTTER_MAX), R: new Float32Array(STUTTER_MAX), len: 1, pos: 0, filled: false });
+  const st = [stutterVoice(), stutterVoice()];
+  let stNow = 0;
+  /** Samples left of the old voice's crossfade out (0: none) */
+  let stFade = 0;
   // Tape stop: what came in since the press, read slower and slower
-  const tpL = new Float32Array(TAPE_MAX);
-  const tpR = new Float32Array(TAPE_MAX);
-  let tpWrite = 0;
-  let tpRead = 0;
-  let tpT = 0;
-  let tpLen = 1;
+  const tapeVoice = () => ({ L: new Float32Array(TAPE_MAX), R: new Float32Array(TAPE_MAX), write: 0, read: 0, t: 0, len: 1 });
+  const tp = [tapeVoice(), tapeVoice()];
+  let tpNow = 0;
+  let tpFade = 0;
   // Filter: a low-pass biquad, its cutoff on a log scale
   const lnTop = Math.log(FILTER_TOP);
   const lnLow = Math.log(FILTER_LOW);
@@ -144,19 +137,29 @@ export function createDropKernel(sampleRate: number): DropKernel {
     held[fx]++;
     sixteenthOf[fx] = six;
     startedAt[fx] = frame;
-    if ((fx === 0 || fx === 2) && wet[fx] > 0) restarting[fx] = true;
     // A fresh start counts from its first sample, so live and the export (in other block sizes) match
     if (fx === 1 && wet[1] === 0) fCount = 0;
     if (fx === 3 && wet[3] === 0) crCount = 0;
     if (fx === 0) {
-      stLen = Math.max(16, Math.min(STUTTER_MAX, Math.round(six)));
-      stPos = 0;
-      stFilled = false;
+      // Still sounding: the new start on the other voice, the old one fading out
+      if (wet[0] > 0) {
+        stNow ^= 1;
+        stFade = FADE;
+      } else stFade = 0;
+      const v = st[stNow];
+      v.len = Math.max(16, Math.min(STUTTER_MAX, Math.round(six)));
+      v.pos = 0;
+      v.filled = false;
     } else if (fx === 2) {
-      tpWrite = 0;
-      tpRead = 0;
-      tpT = 0;
-      tpLen = Math.max(16, Math.min(TAPE_MAX / 2, Math.round(4 * six)));
+      if (wet[2] > 0) {
+        tpNow ^= 1;
+        tpFade = FADE;
+      } else tpFade = 0;
+      const v = tp[tpNow];
+      v.write = 0;
+      v.read = 0;
+      v.t = 0;
+      v.len = Math.max(16, Math.min(TAPE_MAX / 2, Math.round(4 * six)));
     } else if (fx === 4) {
       if (wet[4] === 0) gateGain = 1;
     } else if (fx === 5) {
@@ -183,58 +186,75 @@ export function createDropKernel(sampleRate: number): DropKernel {
     events.splice(i, 0, ev);
   };
 
-  /** An effect's output sample, with any restart's jump gliding away (see restarting). */
-  const glide = (fx: number, l: number, r: number): [number, number] => {
-    if (restarting[fx]) {
-      restarting[fx] = false;
-      jumpL[fx] = lastL[fx] - l;
-      jumpR[fx] = lastR[fx] - r;
-      jumpLeft[fx] = FADE;
+  /** A stutter voice's next sample for input l/r (the input itself while it takes its 16th in), into `out`. */
+  const stutterAt = (v: ReturnType<typeof stutterVoice>, l: number, r: number, out: number[]) => {
+    const seam = Math.max(1, Math.min(FADE, v.len >> 2));
+    if (!v.filled) {
+      v.L[v.pos] = l;
+      v.R[v.pos] = r;
+      // Its last few ms fade out as every repeat's do, so the first repeat follows without a jump
+      const g = Math.min(1, (v.len - v.pos) / seam);
+      out[0] = l * g;
+      out[1] = r * g;
+      if (++v.pos >= v.len) {
+        v.pos = 0;
+        v.filled = true;
+      }
+      return;
     }
-    if (jumpLeft[fx] > 0) {
-      const k = jumpLeft[fx]-- / FADE;
-      l += jumpL[fx] * k;
-      r += jumpR[fx] * k;
-    }
-    lastL[fx] = l;
-    lastR[fx] = r;
-    return [l, r];
+    const k = v.pos;
+    const g = Math.min(1, (k + 1) / seam, (v.len - k) / seam);
+    out[0] = v.L[k] * g;
+    out[1] = v.R[k] * g;
+    if (++v.pos >= v.len) v.pos = 0;
   };
+  /** A tape voice's next sample for input l/r, into `out`. */
+  const tapeAt = (v: ReturnType<typeof tapeVoice>, l: number, r: number, out: number[]) => {
+    if (v.write < TAPE_MAX) {
+      v.L[v.write] = l;
+      v.R[v.write] = r;
+      v.write++;
+    }
+    out[0] = 0;
+    out[1] = 0;
+    const rate = Math.max(0, 1 - v.t / v.len);
+    if (rate > 0) {
+      const j = Math.floor(v.read);
+      const frac = v.read - j;
+      const j2 = Math.min(j + 1, v.write - 1);
+      // Fades out as it slows, so it ends in silence rather than a held level
+      const g = Math.min(1, rate * 6);
+      out[0] = (v.L[j] + (v.L[j2] - v.L[j]) * frac) * g;
+      out[1] = (v.R[j] + (v.R[j2] - v.R[j]) * frac) * g;
+      v.read += rate;
+      if (v.read > v.write - 1) v.read = v.write - 1;
+    }
+    v.t++;
+  };
+  const fresh = [0, 0];
+  const old = [0, 0];
 
   /** Each effect over [from, to) of the working arrays, in place. */
   const run = (L: Float32Array, R: Float32Array, from: number, to: number) => {
     // Stutter
     if (held[0] > 0 || wet[0] > 0) {
       const want = held[0] > 0 ? 1 : 0;
-      const seam = Math.max(1, Math.min(FADE, stLen >> 2));
       for (let i = from; i < to; i++) {
         let w = wet[0];
         if (w !== want) wet[0] = w = want > w ? Math.min(1, w + 1 / FADE) : Math.max(0, w - 1 / FADE);
-        let l = L[i];
-        let r = R[i];
-        if (!stFilled) {
-          stL[stPos] = l;
-          stR[stPos] = r;
-          // Its last few ms fade out as every repeat's do, so the first repeat follows without a jump
-          const g = Math.min(1, (stLen - stPos) / seam);
-          l = l * (1 - w) + l * g * w;
-          r = r * (1 - w) + r * g * w;
-          if (++stPos >= stLen) {
-            stPos = 0;
-            stFilled = true;
-          }
-        } else {
-          const k = stPos;
-          const g = Math.min(1, (k + 1) / seam, (stLen - k) / seam);
-          const sl = stL[k] * g;
-          const sr2 = stR[k] * g;
-          if (++stPos >= stLen) stPos = 0;
-          l = l * (1 - w) + sl * w;
-          r = r * (1 - w) + sr2 * w;
+        const l = L[i];
+        const r = R[i];
+        stutterAt(st[stNow], l, r, fresh);
+        let el = fresh[0];
+        let er = fresh[1];
+        if (stFade > 0) {
+          stutterAt(st[stNow ^ 1], l, r, old);
+          const k = stFade-- / FADE;
+          el = el * (1 - k) + old[0] * k;
+          er = er * (1 - k) + old[1] * k;
         }
-        [l, r] = glide(0, l, r);
-        L[i] = l;
-        R[i] = r;
+        L[i] = l * (1 - w) + el * w;
+        R[i] = r * (1 - w) + er * w;
       }
     }
     // Tape stop
@@ -245,29 +265,17 @@ export function createDropKernel(sampleRate: number): DropKernel {
         if (w !== want) wet[2] = w = want > w ? Math.min(1, w + 1 / (2 * FADE)) : Math.max(0, w - 1 / (2 * FADE));
         const l = L[i];
         const r = R[i];
-        let ol = 0;
-        let or = 0;
-        if (tpWrite < TAPE_MAX) {
-          tpL[tpWrite] = l;
-          tpR[tpWrite] = r;
-          tpWrite++;
+        tapeAt(tp[tpNow], l, r, fresh);
+        let el = fresh[0];
+        let er = fresh[1];
+        if (tpFade > 0) {
+          tapeAt(tp[tpNow ^ 1], l, r, old);
+          const k = tpFade-- / FADE;
+          el = el * (1 - k) + old[0] * k;
+          er = er * (1 - k) + old[1] * k;
         }
-        const rate = Math.max(0, 1 - tpT / tpLen);
-        if (rate > 0) {
-          const j = Math.floor(tpRead);
-          const frac = tpRead - j;
-          const j2 = Math.min(j + 1, tpWrite - 1);
-          // Fades out as it slows, so it ends in silence rather than a held level
-          const g = Math.min(1, rate * 6);
-          ol = (tpL[j] + (tpL[j2] - tpL[j]) * frac) * g;
-          or = (tpR[j] + (tpR[j2] - tpR[j]) * frac) * g;
-          tpRead += rate;
-          if (tpRead > tpWrite - 1) tpRead = tpWrite - 1;
-        }
-        tpT++;
-        const [gl, gr] = glide(2, l * (1 - w) + ol * w, r * (1 - w) + or * w);
-        L[i] = gl;
-        R[i] = gr;
+        L[i] = l * (1 - w) + el * w;
+        R[i] = r * (1 - w) + er * w;
       }
     }
     // Filter
@@ -397,8 +405,9 @@ export function createDropKernel(sampleRate: number): DropKernel {
       lastOn[fx] = frame;
       schedule({ frame, type: 1, fx, sixteenth });
     },
-    // At least a sample after its own "on" (one at the same frame would be put before it, and the effect left on)
-    off: (fx: number, frame: number) => schedule({ frame: Math.max(frame, lastOn[fx] + 1), type: 0, fx, sixteenth: 0 }),
+    // At least a sample after its own "on" (`from`; else the effect's latest), else an "off" at the
+    // same frame would be put before it and the effect left on
+    off: (fx: number, frame: number, from?: number) => schedule({ frame: Math.max(frame, (from ?? lastOn[fx]) + 1), type: 0, fx, sixteenth: 0 }),
     cancel: (frame: number) => {
       for (let i = events.length - 1; i >= 0; i--) if (events[i].frame >= frame) events.splice(i, 1);
       schedule({ frame, type: 2, fx: 0, sixteenth: 0 });
@@ -413,7 +422,7 @@ export const DROP_PROCESSOR = 'bbx-drop';
 
 /**
  * The AudioWorklet module: the kernel above, told when to start and stop each effect by messages
- * carrying audio-clock times (`{ on, at, sixteenth }`, `{ off, at }`, `{ cancel, at }`), which it
+ * carrying audio-clock times (`{ on, at, sixteenth }`, `{ off, at, from }`, `{ cancel, at }`), which it
  * turns into samples. A 'dispose' message stops it for good.
  */
 export const DROP_WORKLET_SOURCE = `
@@ -429,7 +438,7 @@ class DropProcessor extends AudioWorkletProcessor {
       if (m === 'dispose') { this.alive = false; return; }
       const at = Math.max(currentFrame, Math.round((m.at || 0) * sampleRate));
       if (m.on !== undefined) this.kernel.on(m.on, at, m.sixteenth * sampleRate);
-      else if (m.off !== undefined) this.kernel.off(m.off, at);
+      else if (m.off !== undefined) this.kernel.off(m.off, at, m.from === undefined ? undefined : Math.max(currentFrame, Math.round(m.from * sampleRate)));
       else if (m.cancel) this.kernel.cancel(at);
     };
   }

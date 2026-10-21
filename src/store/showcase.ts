@@ -5,6 +5,7 @@
  * heard: muted tracks (and tracks muted through their bus or by a solo elsewhere) are left out, and
  * a note hidden by a trimmed clip edge isn't shown. Plain data, so Node can unit-test it.
  */
+import { isDropTrack } from './dropMoves';
 import type { Clip, Track } from './timelineTypes';
 import { durationToBars } from './timelineTypes';
 import { midiOf } from './noteTools';
@@ -46,7 +47,8 @@ const hitsTrack = (t: Track) => isDrumKind(t.instrumentKey) || isRackKind(t.inst
 export function showcaseData(tracks: readonly Track[], clips: readonly Clip[], startBar: number, endBar: number, toSeconds: (bar: number) => number): ShowcaseData {
   const heard = audibleIds(tracks);
   const origin = toSeconds(startBar);
-  const shown = tracks.filter((t) => heard.has(t.id) && !isMixKind(t.instrumentKey));
+  // (Not the Drop pad: its notes are moves on the whole mix, not notes anyone hears)
+  const shown = tracks.filter((t) => heard.has(t.id) && !isMixKind(t.instrumentKey) && !isDropTrack(t));
   const index = new Map<string, number>();
   const used: ShowcaseData['tracks'] = [];
   const notes: ShowcaseNote[] = [];

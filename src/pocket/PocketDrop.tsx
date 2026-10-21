@@ -52,17 +52,22 @@ function stepAt(time: number, sec: Pick<PocketSection, 'from' | 'to'>): number |
 /** Seconds a 16th lasts now. */
 const sixteenth = () => 15 / liveTransport.bpm.value;
 
-/** Write a move into a track's cell: effect `note` from step `from` for `steps` 16ths, over what that effect had there. */
+/**
+ * Write a move into a track's cell: effect `note` from step `from` for `steps` 16ths, over what that
+ * effect had there (a move it covers part of keeps the parts before and after).
+ */
 function writeMove(trackId: string, sec: Pick<PocketSection, 'from' | 'to'>, note: string, from: number, steps: number): void {
   const to = from + steps;
+  const move = (at: number, len: number, id = pocketNoteId()): NoteEvent => ({ id, note, startOffset: at / STEPS_PER_WHOLE, duration: `0:0:${len}`, velocity: 1 });
   editCell(trackId, sec, (have) => [
-    ...have.filter((n) => {
-      if (n.note !== note) return true;
+    ...have.flatMap((n) => {
+      if (n.note !== note) return [n];
       const s = Math.round(n.startOffset * STEPS_PER_WHOLE);
       const e = s + Math.max(1, Math.round(durationToBars(n.duration) * STEPS_PER_WHOLE));
-      return e <= from || s >= to;
+      if (e <= from || s >= to) return [n];
+      return [...(s < from ? [move(s, from - s, n.id)] : []), ...(e > to ? [move(to, e - to)] : [])];
     }),
-    { id: pocketNoteId(), note, startOffset: from / STEPS_PER_WHOLE, duration: `0:0:${steps}`, velocity: 1 } satisfies NoteEvent,
+    move(from, steps),
   ]);
 }
 
@@ -71,7 +76,7 @@ interface Hold {
   /** Audio time the effect started */
   at: number;
   /** Where it's being written (Rec on, the song playing the section), as things were at the press; else null */
-  rec: { trackId: string; sec: Pick<PocketSection, 'from' | 'to'>; step: number; total: number; wrapped: boolean } | null;
+  rec: { trackId: string; sec: Pick<PocketSection, 'from' | 'to'>; step: number; total: number } | null;
 }
 
 /** Keys that play a pad from the keyboard, as pointers of their own. */
@@ -101,7 +106,7 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
     dropOn(fx, at);
     const recording = usePocket.getState().rec && useTimelineStore.getState().isPlaying;
     const step = recording ? stepAt(at, sec) : null;
-    holds.current.set(pointer, { fx, at, rec: step === null ? null : { trackId: track.id, sec: { from: sec.from, to: sec.to }, step, total, wrapped: false } });
+    holds.current.set(pointer, { fx, at, rec: step === null ? null : { trackId: track.id, sec: { from: sec.from, to: sec.to }, step, total } });
     relight();
   };
   const release = (pointer: number) => {
@@ -112,31 +117,24 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
     const playing = liveTransport.state === 'started';
     // At least a 16th, ending on one
     const off = playing ? Math.max(nextSixteenthAt(audioNow()), h.at + sixteenth() - 1e-4) : audioNow();
-    dropOff(h.fx, off);
-    if (!h.rec) return;
-    const end = h.rec.wrapped ? null : stepAt(off, h.rec.sec);
-    // Let go after the section wrapped round or moved on: the move lasts to the section's end, as it played
-    keep(h, end !== null && end > h.rec.step ? end - h.rec.step : h.rec.total - h.rec.step);
+    dropOff(h.fx, off, h.at);
+    // As long as it was held (a hold past the section's end or a wrap of the loop lasts to the section's end)
+    keep(h, Math.round((off - h.at) / sixteenth()));
   };
 
   useEffect(() => {
     const all = holds.current;
-    // The loop wrapping round while a pad is held: the move it's writing runs to the section's end
-    const wrapped = () => {
-      for (const h of all.values()) if (h.rec) h.rec.wrapped = true;
-    };
-    // Play, Stop, Pause or a jump: every effect is let go there (dropLive.ts), so the holds end there too
+    // Play, Stop, Pause or a jump: every effect is let go there (dropLive.ts), so the holds end there
+    // too (one that hadn't started yet never sounded, and isn't kept)
     const ended = (time: number) => {
-      for (const h of all.values()) keep(h, Math.round((time - h.at) / sixteenth()));
+      for (const h of all.values()) if (time > h.at + 1e-4) keep(h, Math.round((time - h.at) / sixteenth()));
       all.clear();
       relight();
     };
-    liveTransport.on('loop', wrapped);
     liveTransport.on('start', ended);
     liveTransport.on('stop', ended);
     liveTransport.on('pause', ended);
     return () => {
-      liveTransport.off('loop', wrapped);
       liveTransport.off('start', ended);
       liveTransport.off('stop', ended);
       liveTransport.off('pause', ended);
@@ -144,7 +142,7 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
       const now = audioNow();
       for (const h of all.values()) {
         const off = liveTransport.state === 'started' ? Math.max(nextSixteenthAt(now), h.at + sixteenth() - 1e-4) : now;
-        dropOff(h.fx, off);
+        dropOff(h.fx, off, h.at);
         keep(h, Math.round((off - h.at) / sixteenth()));
       }
       all.clear();

@@ -224,3 +224,50 @@ test('the same moves sound the same in any block size (live 128, export 8192)', 
   for (let i = 0; i < a.length; i++) most = Math.max(most, Math.abs(a[i] - b[i]));
   assert.ok(most < 1e-6, `differs by ${most}`);
 });
+
+test('starting over never makes it louder than the sound going in, and leaves nothing behind', () => {
+  // A square wave: the hardest case for a jump
+  const n = SR * 2;
+  const sq = new Float32Array(n).map((_, i) => (Math.floor((i * 55 * 2) / SR) % 2 ? 0.5 : -0.5));
+  let worst = 0;
+  for (const name of ['stutter', 'tape']) {
+    for (let off = 0; off < Math.round(3 * SIX); off += 397) {
+      const { L } = run(sq, (k) => {
+        k.on(FX[name], 1000, SIX);
+        k.on(FX[name], 1000 + Math.round(SIX) + off, SIX);
+      });
+      worst = Math.max(worst, peak(L));
+    }
+  }
+  assert.ok(worst <= 0.5 + 1e-6, `peak ${worst}`);
+  // Pressed again just as it lets go, then a short note: no click, and a later press sounds as on its own
+  const x = sine(55, 2, 0.5);
+  const press = 40000;
+  const later = run(x, (k) => {
+    k.on(FX.stutter, 1000, SIX);
+    k.off(FX.stutter, 1000 + Math.round(3 * SIX));
+    k.on(FX.stutter, 1100 + Math.round(3 * SIX), SIX);
+    k.off(FX.stutter, 1101 + Math.round(3 * SIX));
+    k.on(FX.stutter, press, SIX);
+  }).L;
+  const alone = run(x, (k) => k.on(FX.stutter, press, SIX)).L;
+  assert.ok(biggestStep(later) < 0.05, `a jump of ${biggestStep(later)}`);
+  let most = 0;
+  for (let i = press; i < x.length; i++) most = Math.max(most, Math.abs(later[i] - alone[i]));
+  assert.ok(most < 1e-6, `the later press differs by ${most}`);
+});
+
+test("letting go of a press isn't held up by a later note of the same effect already on its way", () => {
+  const x = sine(300, 1);
+  for (const name of ['stutter', 'gate', 'filter']) {
+    const { L } = run(x, (k) => {
+      k.on(FX[name], 1000, SIX); // a pad
+      k.on(FX[name], 20000, SIX); // a written note, sent ahead
+      k.off(FX[name], 30000, 20000);
+      k.off(FX[name], 12000, 1000); // the pad let go
+    });
+    let most = 0;
+    for (let i = 16000; i < 20000; i++) most = Math.max(most, Math.abs(L[i] - x[i]));
+    assert.ok(most < 1e-6, `${name}: ${most}`);
+  }
+});

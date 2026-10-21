@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { INSTRUMENTS, isDrumKind, isFxKind } from '../../audio/instrumentCatalog';
+import { INSTRUMENTS, isDrumKind, isDropKind, isFxKind } from '../../audio/instrumentCatalog';
 import { curveLevel, defaultCurve, groupsInUse, STEM_GROUP_PRESETS, type IntensityCurve } from '../../store/intensity';
 
 /**
@@ -96,6 +96,8 @@ export const IntensityPanel: React.FC = () => {
   const autoAssign = () => {
     // By what each track plays: drums are Percussion, effects Tension, leads Climax, the rest Ambient
     tracks.forEach((t) => {
+      // (The Drop pad has no sound of its own to put in a stem)
+      if (isDropKind(t.instrumentKey)) return;
       const def = INSTRUMENTS[t.instrumentKey];
       const group = isDrumKind(t.instrumentKey) || def.category === 'Drums & Percussion'
         ? 'Percussion'

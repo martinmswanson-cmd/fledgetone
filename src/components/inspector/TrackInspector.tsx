@@ -36,7 +36,7 @@ import { RingPanel } from './RingPanel';
 import { AudioTrackPanel } from './AudioTrackPanel';
 import { MasterPanels } from './MasterPanels';
 import { RecordedRoom, RoomStylePicker } from './RecordedRoom';
-import { INSTRUMENTS, isAudioKind, isSlicerKind, seatOf } from '../../audio/instrumentCatalog';
+import { INSTRUMENTS, isAudioKind, isDropKind, isSlicerKind, seatOf } from '../../audio/instrumentCatalog';
 
 /** Instruments Expressive playing changes: the recorded ones (but sound effects) and the drum kits. */
 const canPlayExpressively = (key: keyof typeof INSTRUMENTS) => {
@@ -58,6 +58,12 @@ import { REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX } from '../../store/timelineTypes
 
 /** One click to a kind of space: the master reverb's length. */
 const notAudio = (def: InstrumentDef) => !isAudioKind(def.key);
+/**
+ * A track with clips keeps to its side of the Drop Pad (its notes are moves on the whole mix, an
+ * instrument's are notes): the picker offers only the instruments it can switch to (see setTrackInstrument)
+ */
+const onlyDrop = (def: InstrumentDef) => isDropKind(def.key);
+const notDrop = (def: InstrumentDef) => notAudio(def) && !isDropKind(def.key);
 
 /** Keep a track's whole sound under a name, to pick from the instrument lists (My sounds) in any song. */
 async function saveTrackSound(trackId: string): Promise<void> {
@@ -120,6 +126,11 @@ export const TrackInspector: React.FC = () => {
   const instrumentStatus = useAudioStore((s) => s.instrumentStatus);
   const activeTab = useUiStore((s) => s.inspectorTab);
   const setActiveTab = useUiStore.getState().setInspectorTab;
+
+  const hasClips = useTimelineStore((s) => {
+    const id = (s.tracks.find((t) => t.id === s.selectedTrackId) ?? s.tracks[0])?.id;
+    return s.clips.some((c) => c.trackId === id);
+  });
 
   if (!isInspectorOpen) return null;
 
@@ -285,7 +296,7 @@ export const TrackInspector: React.FC = () => {
                     value={currentTrack.instrumentKey}
                     onChange={(key) => setTrackInstrument(currentTrack.id, key)}
                     onPickSound={(sound) => useTimelineStore.getState().setTrackSound(currentTrack.id, sound)}
-                    include={notAudio}
+                    include={!hasClips ? notAudio : isDropKind(currentTrack.instrumentKey) ? onlyDrop : notDrop}
                     label="Instrument"
                     withBlurb
                     className="flex-1 min-w-0 bg-forge-panel border border-forge-border rounded px-2.5 py-1.5 text-xs font-semibold text-white cursor-pointer hover:border-cyan-400/60 focus:border-cyan-400 focus:outline-none"

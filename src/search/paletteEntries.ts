@@ -1,7 +1,7 @@
 import guideMarkdown from '../../GUIDE.md?raw';
 import { openArrange } from '../components/timeline/arrangeDialogStore';
 import { suggestBlock } from '../store/speedUpActions';
-import { INSTRUMENTS, INSTRUMENT_KEYS, isAudioKind, isMixKind } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, INSTRUMENT_KEYS, isAudioKind, isDropKind, isMixKind } from '../audio/instrumentCatalog';
 import type { InstrumentKey } from '../audio/instrumentCatalog';
 import { useAudioStore } from '../store/audioStore';
 import { useTimelineStore } from '../store/timelineStore';
@@ -270,6 +270,8 @@ function instrumentEntry(key: InstrumentKey): PaletteEntry {
       if (alt && !isAudioKind(key) && !isMixKind(key)) {
         if (!selected) return 'Select a track first (click its name), or press Enter to add a new track.';
         if (isAudioKind(selected.instrumentKey)) return 'An Audio track plays sound files, so it keeps its instrument.';
+        if (isDropKind(key) !== isDropKind(selected.instrumentKey) && s.clips.some((c) => c.trackId === selected.id))
+          return "A track with clips can't switch to or from the Drop Pad (its notes would change meaning): press Enter to add a new track.";
         s.setTrackInstrument(selected.id, key);
         return;
       }
