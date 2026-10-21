@@ -271,3 +271,29 @@ test("letting go of a press isn't held up by a later note of the same effect alr
     assert.ok(most < 1e-6, `${name}: ${most}`);
   }
 });
+
+test('pressed again and again within a few ms, Stutter and Tape stop still glide (never jump or get louder)', () => {
+  const x = sine(1000, 1, 0.5);
+  const own = biggestStep(x);
+  for (const name of ['stutter', 'tape']) {
+    for (const gap of [1, 10, 50, 120]) {
+      const second = 1000 + Math.round(3 * SIX);
+      const { L } = run(x, (k) => {
+        k.on(FX[name], 1000, SIX);
+        k.on(FX[name], second, SIX);
+        k.on(FX[name], second + gap, SIX);
+        k.on(FX[name], second + gap + 7, SIX);
+      });
+      assert.ok(biggestStep(L) < own * 1.5, `${name}, gap ${gap}: a jump of ${biggestStep(L)} (the sine's own ${own})`);
+      assert.ok(peak(L) <= 0.5 + 1e-6, `${name}, gap ${gap}: peak ${peak(L)}`);
+    }
+  }
+});
+
+test('the Filter sweep never makes anything louder', () => {
+  for (const hz of [200, 400, 1000, 3000, 8000]) {
+    const x = sine(hz, 3, 0.5);
+    const { L } = run(x, (k) => k.on(FX.filter, 1000, SIX));
+    assert.ok(peak(L) <= 0.5 * 1.01, `${hz} Hz: peak ${peak(L)}`);
+  }
+});

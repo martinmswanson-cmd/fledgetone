@@ -50,7 +50,8 @@ export function createDropKernel(sampleRate: number): DropKernel {
   /** The filter sweeps down to this over a bar, and back up over two 16ths after letting go */
   const FILTER_TOP = Math.min(18000, sr * 0.45);
   const FILTER_LOW = 300;
-  const FILTER_Q = 1.3;
+  /** Butterworth: no resonant peak, so the sweep never makes anything louder */
+  const FILTER_Q = Math.SQRT1_2;
   /** Crush: the sample rate it holds down to, and the step its levels snap to */
   const CRUSH_RATE = 5500;
   const CRUSH_STEP = 1 / 32;
@@ -70,21 +71,28 @@ export function createDropKernel(sampleRate: number): DropKernel {
   const startedAt = [0, 0, 0, 0, 0, 0];
 
   /*
-   * Stutter and Tape stop each have two voices. Pressed again while it still sounds, the effect
-   * starts over on the other voice, and the old one crossfades out over FADE as the new one comes
-   * in: never louder than either, and no click.
+   * Stutter and Tape stop each have three voices, each with its own level. Pressed again while it
+   * still sounds, the effect starts over on the quietest voice, which rises over FADE while the
+   * others fall by as much: their levels never add up to more than 1, so it's never louder than
+   * what goes in, and nothing jumps (even pressed again during that crossfade).
    */
+  const VOICES = 3;
   // Stutter: the 16th from the press, repeated
-  const stutterVoice = () => ({ L: new Float32Array(STUTTER_MAX), R: new Float32Array(STUTTER_MAX), len: 1, pos: 0, filled: false });
-  const st = [stutterVoice(), stutterVoice()];
+  const stutterVoice = () => ({ L: new Float32Array(STUTTER_MAX), R: new Float32Array(STUTTER_MAX), len: 1, pos: 0, filled: false, gain: 0 });
+  const st = Array.from({ length: VOICES }, stutterVoice);
   let stNow = 0;
-  /** Samples left of the old voice's crossfade out (0: none) */
-  let stFade = 0;
   // Tape stop: what came in since the press, read slower and slower
-  const tapeVoice = () => ({ L: new Float32Array(TAPE_MAX), R: new Float32Array(TAPE_MAX), write: 0, read: 0, t: 0, len: 1 });
-  const tp = [tapeVoice(), tapeVoice()];
+  const tapeVoice = () => ({ L: new Float32Array(TAPE_MAX), R: new Float32Array(TAPE_MAX), write: 0, read: 0, t: 0, len: 1, gain: 0 });
+  const tp = Array.from({ length: VOICES }, tapeVoice);
   let tpNow = 0;
-  let tpFade = 0;
+  /** Which voice a start goes to: the quietest (fading in from silence), or at once at full level when nothing sounds. */
+  const nextVoice = (voices: Array<{ gain: number }>, sounding: boolean): number => {
+    let best = 0;
+    for (let i = 1; i < voices.length; i++) if (voices[i].gain < voices[best].gain) best = i;
+    if (!sounding) for (let i = 0; i < voices.length; i++) voices[i].gain = i === best ? 1 : 0;
+    else voices[best].gain = 0;
+    return best;
+  };
   // Filter: a low-pass biquad, its cutoff on a log scale
   const lnTop = Math.log(FILTER_TOP);
   const lnLow = Math.log(FILTER_LOW);
@@ -141,20 +149,13 @@ export function createDropKernel(sampleRate: number): DropKernel {
     if (fx === 1 && wet[1] === 0) fCount = 0;
     if (fx === 3 && wet[3] === 0) crCount = 0;
     if (fx === 0) {
-      // Still sounding: the new start on the other voice, the old one fading out
-      if (wet[0] > 0) {
-        stNow ^= 1;
-        stFade = FADE;
-      } else stFade = 0;
+      stNow = nextVoice(st, wet[0] > 0);
       const v = st[stNow];
       v.len = Math.max(16, Math.min(STUTTER_MAX, Math.round(six)));
       v.pos = 0;
       v.filled = false;
     } else if (fx === 2) {
-      if (wet[2] > 0) {
-        tpNow ^= 1;
-        tpFade = FADE;
-      } else tpFade = 0;
+      tpNow = nextVoice(tp, wet[2] > 0);
       const v = tp[tpNow];
       v.write = 0;
       v.read = 0;
@@ -231,8 +232,26 @@ export function createDropKernel(sampleRate: number): DropKernel {
     }
     v.t++;
   };
-  const fresh = [0, 0];
-  const old = [0, 0];
+  const one = [0, 0];
+  const mixed = [0, 0];
+  /**
+   * Every sounding voice's next sample at its level, into `mixed`, the levels moving on: voice `now`
+   * rising to 1 and the rest falling to 0, each by 1/FADE a sample (so they never add up to more than 1).
+   */
+  const voicesAt = <V extends { gain: number }>(voices: V[], now: number, l: number, r: number, at: (v: V, l: number, r: number, out: number[]) => void) => {
+    mixed[0] = 0;
+    mixed[1] = 0;
+    for (let k = 0; k < voices.length; k++) {
+      const v = voices[k];
+      if (k === now) {
+        if (v.gain < 1) v.gain = Math.min(1, v.gain + 1 / FADE);
+      } else if (v.gain > 0) v.gain = Math.max(0, v.gain - 1 / FADE);
+      else continue;
+      at(v, l, r, one);
+      mixed[0] += one[0] * v.gain;
+      mixed[1] += one[1] * v.gain;
+    }
+  };
 
   /** Each effect over [from, to) of the working arrays, in place. */
   const run = (L: Float32Array, R: Float32Array, from: number, to: number) => {
@@ -244,15 +263,9 @@ export function createDropKernel(sampleRate: number): DropKernel {
         if (w !== want) wet[0] = w = want > w ? Math.min(1, w + 1 / FADE) : Math.max(0, w - 1 / FADE);
         const l = L[i];
         const r = R[i];
-        stutterAt(st[stNow], l, r, fresh);
-        let el = fresh[0];
-        let er = fresh[1];
-        if (stFade > 0) {
-          stutterAt(st[stNow ^ 1], l, r, old);
-          const k = stFade-- / FADE;
-          el = el * (1 - k) + old[0] * k;
-          er = er * (1 - k) + old[1] * k;
-        }
+        voicesAt(st, stNow, l, r, stutterAt);
+        const el = mixed[0];
+        const er = mixed[1];
         L[i] = l * (1 - w) + el * w;
         R[i] = r * (1 - w) + er * w;
       }
@@ -265,15 +278,9 @@ export function createDropKernel(sampleRate: number): DropKernel {
         if (w !== want) wet[2] = w = want > w ? Math.min(1, w + 1 / (2 * FADE)) : Math.max(0, w - 1 / (2 * FADE));
         const l = L[i];
         const r = R[i];
-        tapeAt(tp[tpNow], l, r, fresh);
-        let el = fresh[0];
-        let er = fresh[1];
-        if (tpFade > 0) {
-          tapeAt(tp[tpNow ^ 1], l, r, old);
-          const k = tpFade-- / FADE;
-          el = el * (1 - k) + old[0] * k;
-          er = er * (1 - k) + old[1] * k;
-        }
+        voicesAt(tp, tpNow, l, r, tapeAt);
+        const el = mixed[0];
+        const er = mixed[1];
         L[i] = l * (1 - w) + el * w;
         R[i] = r * (1 - w) + er * w;
       }
