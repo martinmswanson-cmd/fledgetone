@@ -461,6 +461,8 @@ struct Voice {
     sustained: bool,
     /// A note waiting for this voice to fade out (it was taken for a new one)
     pending: Option<(u8, f32)>,
+    /// The waiting note's key already came up (a short note): it plays, then ends at once
+    pending_up: bool,
     fade: f32,
 }
 
@@ -490,6 +492,7 @@ impl Voice {
             last_a: 0.0,
             sustained: false,
             pending: None,
+            pending_up: false,
             fade: 1.0,
         }
     }
@@ -745,6 +748,7 @@ impl Synth {
         for v in self.voices.iter_mut() {
             v.sustained = false;
             v.pending = None;
+            v.pending_up = false;
             if hard {
                 v.active = false;
                 v.amp = Env::default();
@@ -825,6 +829,7 @@ impl Synth {
         v.age = self.age;
         v.sustained = false;
         v.pending = None;
+        v.pending_up = false;
         v.fade = 1.0;
         v.time = 0.0;
         v.rand = rand;
@@ -900,10 +905,9 @@ impl Synth {
         }
         for v in self.voices.iter_mut() {
             if v.pending.map(|(n, _)| n) == Some(note) {
-                // The note waiting for this voice is over before it began: the voice it was taken
-                // from is already fading, so let it finish going (not stay part-faded)
-                v.pending = None;
-                v.release();
+                // The note waiting for this voice ended before it began (a very short note): it
+                // still sounds, and ends (or is held by the pedal) as soon as it starts
+                v.pending_up = true;
             }
         }
     }
@@ -1192,7 +1196,15 @@ impl Synth {
                         self.voices[vi].pitch = note as f32;
                         self.voices[vi].target = note as f32;
                         self.voices[vi].glide = 0.0;
+                        let up = self.voices[vi].pending_up;
                         self.start(vi, note, vel, &cfg, true);
+                        if up {
+                            if self.pedal {
+                                self.voices[vi].sustained = true;
+                            } else {
+                                self.voices[vi].release();
+                            }
+                        }
                     }
                 }
                 if self.voices[vi].amp.stage == Stage::Idle {
@@ -1651,6 +1663,35 @@ mod tests {
             run(&mut s, 4, &mut b);
             let after = d2(&b[at - 2..]);
             assert!(after < 0.02, "{v1} -> {v2} (pedal {pedal}): step {after}");
+        }
+    }
+
+    #[test]
+    fn a_very_short_restrike_still_sounds() {
+        // A key down for under the 3 ms fade (a 1-tick MIDI note): with the pedal down the note
+        // rings on; without it, it plays and ends as a short note
+        for pedal in [true, false] {
+            let mut s = Synth::new(48000.0);
+            set(&mut s, "Amp release", 2.0);
+            if pedal {
+                s.midi(0xB0, 64, 127);
+            }
+            s.midi(0x90, 45, 100);
+            render(&mut s, 40);
+            s.midi(0x80, 45, 0);
+            render(&mut s, 40);
+            let before = render(&mut s, 2).1;
+            s.midi(0x90, 45, 100);
+            s.process(64);
+            s.midi(0x80, 45, 0);
+            render(&mut s, 2);
+            let after = render(&mut s, 4).1;
+            if pedal {
+                assert!(after > before * 0.8, "{before} before, {after} after");
+            } else {
+                // (The short note plays and lets go: nothing is left hanging part-faded)
+                assert!(s.voices.iter().all(|v| v.pending.is_none() && (!v.active || v.amp.stage == Stage::Release)));
+            }
         }
     }
 

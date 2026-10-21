@@ -213,9 +213,11 @@ export function retireLiveWam(pluginId: string, inst: WamInstance): void {
   unregisterLiveWam(pluginId, inst);
   inst.audioNode.disconnect();
   const n = ++reads;
+  const began = session;
   const read = Promise.race([
     Promise.resolve(inst.audioNode.getState?.()).then((state) => {
-      if (state === undefined || stale.has(inst)) return;
+      // (Another song opened while it answered: these settings are the old song's)
+      if (state === undefined || began !== session || stale.has(inst)) return;
       const json = JSON.stringify(state);
       if (json.length > 2_000_000 || !newestRead(pluginId, n) || states.get(pluginId) === json) return;
       states.set(pluginId, json);
@@ -279,6 +281,9 @@ function keepAnswer(id: string, inst: WamInstance, state: unknown, began: number
 }
 
 export async function captureWamStates(): Promise<void> {
+  // A plugin just bypassed or removed has its last settings read as it goes: those first (at
+  // most a second), so a save made at once has them
+  await Promise.all([...retiring.values()]);
   const changed = new Map<string, unknown>();
   const began = session;
   await Promise.all(
