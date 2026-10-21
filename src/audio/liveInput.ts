@@ -133,6 +133,9 @@ export function playMidi(message: MidiMessage, heard: number): void {
       // Struck again while still sounding (or sustained): the earlier one ends first
       endNote(message.note, now);
       const name = noteNameOn(message.note, track);
+      // On the Drop pad several keys hold the same effect: one already held by another key keeps
+      // it, and this one does nothing (no second, stacked move in a take or the piano roll)
+      if (track && isDropKind(track.instrumentKey) && [...held.keys()].some((k) => k !== message.note && noteNameOn(k, track) === name)) return;
       const mpe = useMidiStore.getState().mpe && message.channel !== undefined && message.channel > 0;
       if (instrument) {
         const note = { note: name, duration: '4n', velocity: message.velocity };
