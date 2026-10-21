@@ -1,8 +1,9 @@
 /**
- * The right-click menu of a track header: colour, move, folders, buses, freeze / bounce, delete.
+ * The right-click menu of a track header: colour, move, folders, buses, freeze / bounce (in place,
+ * or the loop range to a Drum Rack pad), delete.
  */
 import React, { useRef, useState } from 'react';
-import { Plug, Radio, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints, AudioLines } from 'lucide-react';
+import { Plug, Radio, ArrowDown, ArrowUp, FolderMinus, FolderPlus, FolderInput, Palette, Route, Snowflake, Trash2, Waypoints, AudioLines, Disc3 } from 'lucide-react';
 import { busTargets, isBus, isMixTrack, sendTargets } from '../../store/buses';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
@@ -13,6 +14,8 @@ import type { MenuItemProps } from './ClipContextMenu';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
 import { bounceTrack, canFreeze, freezeTrack, notFrozenMessage, unfreezeTrack, useFreezing } from '../../store/freezeActions';
 import { showToast } from './toastStore';
+import { bounceName } from '../../store/bounceToPad';
+import { bounceRangeToPad, placedMessage, usePadBounce } from '../../store/bounceToPadActions';
 
 /**
  * The tracks a "new bus" takes: the ones with clips selected, if this track is one of them, else
@@ -39,6 +42,7 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
   const [naming, setNaming] = useState(false);
   // (A track freezing or bouncing already: its freeze and bounce wait)
   const freezing = useFreezing((f) => f[menu.trackId] !== undefined);
+  const padBouncing = usePadBounce((b) => b.fraction !== null);
   const track = tracks.find((t) => t.id === menu.trackId);
   if (!track) return null;
   const s = useTimelineStore.getState();
@@ -153,6 +157,22 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
         )
       ),
       disabled: isMixTrack(track) || !canFreeze(track.id) || freezing,
+    },
+    {
+      key: 'bounce-pad',
+      label: 'Bounce In → Out to a pad',
+      icon: <Disc3 className="w-3.5 h-3.5" />,
+      onClick: run(() => {
+        // This track alone, as it sounds in the mix, onto the first empty Drum Rack pad (or a new Bounces track)
+        const { inBar, outBar } = useTimelineStore.getState().loopRegion;
+        const name = bounceName(inBar, outBar, undefined, track.name);
+        showToast(`Bouncing ${name}…`);
+        bounceRangeToPad({ from: inBar, to: outBar, trackId: track.id, name }).then(
+          (placed) => placed && showToast(placedMessage(`"${name}"`, placed)),
+          (err) => showToast(`Couldn't bounce ${track.name}: ${err instanceof Error ? err.message : String(err)}`)
+        );
+      }),
+      disabled: isMixTrack(track) || padBouncing,
     },
     { key: 'delete', label: 'Delete track', icon: <Trash2 className="w-3.5 h-3.5" />, onClick: run(() => s.deleteTrack(track.id)) },
   ];

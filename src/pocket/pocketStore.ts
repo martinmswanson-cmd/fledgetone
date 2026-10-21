@@ -38,6 +38,8 @@ interface PocketState {
   key: SongKey | null;
   /** Whether the starters screen is open (on top of the song) */
   starting: boolean;
+  /** The pad a Drum Rack track's Pads tool shows */
+  rackPad: number;
   set: (patch: Partial<Omit<PocketState, 'set'>>) => void;
 }
 
@@ -54,17 +56,24 @@ export const usePocket = create<PocketState>((set) => ({
   sheetSection: 0,
   key: null,
   starting: false,
+  rackPad: 0,
   set: (patch) => set(patch),
 }));
 
-/** Which drawer a track's cells open in: drums, notes, vocals (recordings), or null (edited on a computer: samplers, plugins). */
+/**
+ * Which drawer a track's cells open in: drums (a kit, or a Drum Rack's pads), notes, vocals
+ * (recordings), or null (edited on a computer: samplers, plugins).
+ */
 export function editorOf(key: InstrumentKey): 'beat' | 'notes' | 'vocals' | null {
   if (isAudioKind(key)) return 'vocals';
   const kind = INSTRUMENTS[key]?.kind;
-  if (kind === 'drums') return 'beat';
-  if (kind === undefined || ['custom', 'rack', 'multi', 'slicer', 'audio', 'plugin', 'return', 'bus', 'fx'].includes(kind)) return null;
+  if (kind === 'drums' || kind === 'rack') return 'beat';
+  if (kind === undefined || ['custom', 'multi', 'slicer', 'audio', 'plugin', 'return', 'bus', 'fx'].includes(kind)) return null;
   return 'notes';
 }
+
+/** Whether a track plays a Drum Rack (its pads are its own sounds, see PocketRack.tsx). */
+export const isRackKey = (key: InstrumentKey): boolean => INSTRUMENTS[key]?.kind === 'rack';
 
 let idCount = 0;
 /** A new note id. */

@@ -13,6 +13,8 @@ import { canChooseSaveLocation, pickProjectFile, saveProjectAs, saveProjectFile 
 import { exportMySounds, pickMySoundsFile } from '../mySoundsFile';
 import { showToast } from '../timeline/toastStore';
 import { reverseBlock } from '../../store/reverseActions';
+import { bounceName, isRackTrack } from '../../store/bounceToPad';
+import { bounceRangeToPad, placedMessage } from '../../store/bounceToPadActions';
 import { openArrange } from '../timeline/arrangeDialogStore';
 import { formatBarCount } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
@@ -200,6 +202,19 @@ const MENUS: MenuDef[] = [
           if (!canFreeze(t.id)) return 'This track has nothing to bounce.';
           return bounceTrack(t.id).then((id) => (id ? `Bounced ${t.name} to audio: the original is muted, under it` : undefined));
         } },
+        {
+          label: `Bounce bars ${formatBarCount(tl().loopRegion.inBar)}–${formatBarCount(tl().loopRegion.outBar)} (In → Out) to a Drum Rack pad`,
+          title: 'Everything playing there, as one sound, on the first empty pad of the selected Drum Rack (or of any, or a new Bounces track)',
+          run: () => {
+            const { inBar, outBar } = tl().loopRegion;
+            const name = bounceName(inBar, outBar);
+            showToast(`Bouncing ${name}…`);
+            return bounceRangeToPad({ from: inBar, to: outBar, name, target: t && isRackTrack(t) ? { trackId: t.id } : undefined }).then(
+              (placed) => (placed ? placedMessage(`"${name}"`, placed) : undefined),
+              (err) => `Couldn't bounce it: ${err instanceof Error ? err.message : String(err)}`
+            );
+          },
+        },
         { label: 'Move up', run: () => (t ? tl().moveTrackRow(t.id, -1) : NEED_TRACK), disabled: !t, divider: true },
         { label: 'Move down', run: () => (t ? tl().moveTrackRow(t.id, 1) : NEED_TRACK), disabled: !t },
         t?.folder

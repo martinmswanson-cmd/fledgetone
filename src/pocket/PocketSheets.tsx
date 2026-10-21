@@ -1,8 +1,9 @@
 /**
  * What opens over Pocket's one screen, for the things done now and then: the song (its name,
- * tempo, key, metronome, a new song, the file), sharing it, adding an instrument, arranging the
- * song from a section (repeat it, make it its own, move it, a build-up, take it out), a chord
- * progression for the piano roll, and the starters screen ("What are we making?").
+ * tempo, key, metronome, a new song, the file), sharing it, adding an instrument (or your own
+ * pads), arranging the song from a section (repeat it, make it its own, move it, a build-up,
+ * bounce it to a pad, take it out), a chord progression for the piano roll, and the starters
+ * screen ("What are we making?").
  */
 import React, { useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
@@ -26,6 +27,7 @@ import { FavouriteStar, pocketInstruments, pocketSounds, selectTrack } from './P
 import { useMySounds } from '../store/mySounds';
 import { goToSection } from './PocketGrid';
 import { addVocalTrack } from './PocketVocals';
+import { bounceSection } from './pocketBounce';
 import { PocketShare } from './PocketShare';
 import { chooseInterface } from './pocketMode';
 import { pocketNoteId } from './pocketStore';
@@ -139,6 +141,16 @@ const AddSheet: React.FC = () => {
           if (t) selectTrack(t);
         }}
       />
+      <SheetItem
+        title="Your pads"
+        detail="16 pads for your own sounds: bounce a section of the song or a vocal take onto them, then play them like drums."
+        color={INSTRUMENTS.drumRack.color}
+        onClick={() => {
+          const id = useTimelineStore.getState().addTrack('drumRack', 'Your pads');
+          usePocket.getState().set({ rackPad: 0 });
+          added(id);
+        }}
+      />
       {[...(mine.length ? [{ category: 'My sounds', keys: [] }] : []), ...groups].map(({ category, keys }) => (
         <div key={category}>
           <button type="button" className="w-full flex items-center gap-2 px-2 h-11 text-sm font-semibold" onClick={() => setOpen(open === category ? null : category)}>
@@ -202,6 +214,15 @@ const SectionSheet: React.FC = () => {
           onClick={() => run(() => useTimelineStore.getState().addBuildAndDrop(sec.from), () => i, 'A build-up into it')}
         />
       )}
+      <SheetItem
+        title="Bounce it to a pad"
+        detail="Everything playing in it made into one sound, on the first empty pad of your pads (or a new Bounces track): play it like a drum."
+        onClick={() => {
+          close();
+          showToast(`Bouncing ${sec.letter}…`);
+          void bounceSection(sec);
+        }}
+      />
       <SheetItem title="Take it out" detail="Its bars go, and the rest of the song moves up. Undo brings it back." onClick={() => run(() => removeSection(i), () => Math.max(0, i - 1))} />
     </Sheet>
   );

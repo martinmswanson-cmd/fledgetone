@@ -1,7 +1,8 @@
 /**
  * Pocket's drawer: the bottom of the screen, in the selected track's colour, as that track's
  * instrument for the selected section. Play (pads, the key's notes or chords), Draw (the drum
- * steps or the piano roll), Sound (another instrument of its kind) and Mix (its level, reverb,
+ * steps or the piano roll), Sound (another instrument of its kind; a Drum Rack's Pads, what's on
+ * them) and Mix (its level, reverb,
  * mute, solo); a vocal track sings instead. Mix all makes it a mixer for every track. Its handle
  * makes it bigger or smaller (tap to step, or drag); the piano roll opens it full and puts it back.
  */
@@ -15,8 +16,9 @@ import { showToast } from '../components/timeline/toastStore';
 import { useMySounds, type MySound } from '../store/mySounds';
 import { gridTracks, type PocketSection } from './pocketSections';
 import { useSelection, useSongKey } from './pocketCell';
-import { editorOf, usePocket, type DrawerSize, type PocketTool } from './pocketStore';
+import { editorOf, isRackKey, usePocket, type DrawerSize, type PocketTool } from './pocketStore';
 import { ChordPads, DrumPads, DrumSteps, NotePads } from './PocketPads';
+import { PocketRack } from './PocketRack';
 import { PocketRoll } from './PocketRoll';
 import { PocketVocals } from './PocketVocals';
 
@@ -50,12 +52,14 @@ export function setTool(tool: PocketTool, track: Track | null, land: boolean): v
 
 /**
  * Instruments Pocket can play and edit, by category (the retro ones left out unless already in
- * use), the starred ones first under Favourites, as in the studio's lists (mySounds.ts).
+ * use), the starred ones first under Favourites, as in the studio's lists (mySounds.ts). Not the
+ * Drum Rack: its pads are your own sounds, not a kit to swap for another (the Add sheet has it as
+ * "Your pads").
  */
 export function pocketInstruments(current?: InstrumentKey): Array<{ category: string; keys: InstrumentKey[] }> {
   const all = Object.values(INSTRUMENTS).filter((d) => {
     const how = editorOf(d.key);
-    return (how === 'beat' || how === 'notes') && (!d.retro || d.key === current);
+    return (how === 'beat' || how === 'notes') && !isRackKey(d.key) && (!d.retro || d.key === current);
   });
   const favourites = useMySounds.getState().favourites.filter((k) => all.some((d) => d.key === k));
   return [
@@ -68,7 +72,7 @@ export function pocketInstruments(current?: InstrumentKey): Array<{ category: st
 export function pocketSounds(sounds: MySound[]): MySound[] {
   return sounds.filter((s) => {
     const how = editorOf(s.settings.instrumentKey);
-    return how === 'beat' || how === 'notes';
+    return (how === 'beat' || how === 'notes') && !isRackKey(s.settings.instrumentKey);
   });
 }
 
@@ -314,7 +318,7 @@ const Body: React.FC<{ track: Track; sec: PocketSection; tool: PocketTool }> = (
         {INSTRUMENTS[track.instrumentKey]?.name ?? 'This track'} is edited in the studio on a computer. Its level, mute and solo are under Mix.
       </p>
     );
-  if (tool === 'sound') return <SoundList track={track} />;
+  if (tool === 'sound') return isRackKey(track.instrumentKey) ? <PocketRack track={track} sec={sec} /> : <SoundList track={track} />;
   if (how === 'beat') return tool === 'draw' ? <DrumSteps key={`${track.id}:${sec.from}`} track={track} sec={sec} /> : <DrumPads track={track} sec={sec} />;
   if (tool === 'draw') return <PocketRoll key={`${track.id}:${sec.from}:${sec.to}`} track={track} sec={sec} songKey={songKey} />;
   const seg = 'h-8 px-3 rounded-lg text-[12.5px] font-medium';
@@ -350,7 +354,8 @@ export const PocketDrawer: React.FC<{ land: boolean; appRef: React.RefObject<HTM
   const tool = usePocket((p) => p.tool);
   const mixAll = usePocket((p) => p.mixAll);
   const NAMES: Record<PocketTool, string> = { play: 'Play', draw: 'Draw', sound: 'Sound', mix: 'Mix', sing: 'Sing' };
-  const tools: Array<[PocketTool, string]> = track ? toolsOf(track).map((k) => [k, NAMES[k]]) : [['mix', 'Mix']];
+  // (A Drum Rack's Sound is its pads: what's on them)
+  const tools: Array<[PocketTool, string]> = track ? toolsOf(track).map((k) => [k, k === 'sound' && isRackKey(track.instrumentKey) ? 'Pads' : NAMES[k]]) : [['mix', 'Mix']];
   const shownTool = tools.some(([k]) => k === tool) ? tool : tools[0][0];
   const color = mixAll || !track ? '#9ca3af' : track.color;
   return (

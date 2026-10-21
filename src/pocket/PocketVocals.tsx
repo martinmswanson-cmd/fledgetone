@@ -3,11 +3,12 @@
  * while the song plays (from the loop's start when the loop is on, stopping by itself at its end;
  * else from the playhead until tapped again), and the take lands on a vocal track where it was
  * sung. Each vocal track wears one of the vocal chains (clean lead, aggressive, ad-lib...); each
- * take can be doubled, hard-tuned (the studio's Tune dialog) or deleted. In the drawer it's the
+ * take can be doubled, hard-tuned (the studio's Tune dialog), put on a pad (whole, or chopped at
+ * its hits onto a new Drum Rack's pads) or deleted. In the drawer it's the
  * selected vocal track's (`trackId`), and the transport's Rec starts and stops it (singRequest).
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Copy, Loader2, Mic, Plus, Square, Trash2, AudioLines } from 'lucide-react';
+import { Copy, Grid2x2, Loader2, Mic, Plus, Square, Trash2, AudioLines } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { isAudioKind } from '../audio/instrumentCatalog';
 import { startMic, type MicSession } from '../audio/micRecorder';
@@ -20,6 +21,7 @@ import { showToast } from '../components/timeline/toastStore';
 import { TuneDialog } from '../components/timeline/TuneDialog';
 import { Card, pill, pillOn } from './pocketUi';
 import { usePocket } from './pocketStore';
+import { chopClipToPads, clipToPad, placedMessage } from '../store/bounceToPadActions';
 
 let takeCount = 0;
 
@@ -46,6 +48,8 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
   const [session, setSession] = useState<MicSession | null>(null);
   const [busy, setBusy] = useState(false);
   const [tuning, setTuning] = useState<string | null>(null);
+  /** The take whose "to a pad" choices are open */
+  const [padding, setPadding] = useState<string | null>(null);
   const meter = useRef<HTMLSpanElement>(null);
   const playStart = useRef<{ at: number; bar: number } | null>(null);
   const stopping = useRef(false);
@@ -191,7 +195,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
         <Card title="Takes">
           <div className="space-y-2">
             {takes.map((c) => (
-              <div key={c.id} className="flex items-center gap-2">
+              <div key={c.id} className="flex flex-wrap items-center gap-2">
                 <span className="flex-1 min-w-0 text-sm truncate">
                   {c.name} <span className="text-[11px] text-forge-muted">bar {Math.round(c.startBar * 10) / 10}</span>
                 </span>
@@ -200,6 +204,9 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
                 </button>
                 <button type="button" aria-label={`Tune ${c.name}`} className={`${pill} !h-10 !px-3`} onClick={() => setTuning(c.id)}>
                   <AudioLines className="w-4 h-4" />
+                </button>
+                <button type="button" aria-label={`${c.name} to a pad`} aria-expanded={padding === c.id} className={`${pill} !h-10 !px-3 ${padding === c.id ? pillOn : ''}`} onClick={() => setPadding(padding === c.id ? null : c.id)}>
+                  <Grid2x2 className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
@@ -213,10 +220,41 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
+                {padding === c.id && (
+                  <div className="basis-full flex gap-2">
+                    <button
+                      type="button"
+                      className={`${pill} flex-1 !h-10 !px-2 text-xs`}
+                      onClick={() => {
+                        setPadding(null);
+                        const placed = clipToPad(c.id, undefined, 'Your pads');
+                        showToast(placed ? placedMessage(`"${c.name}"`, placed) : `${c.name}'s sound isn't loaded yet`);
+                      }}
+                    >
+                      Whole take on a pad
+                    </button>
+                    <button
+                      type="button"
+                      className={`${pill} flex-1 !h-10 !px-2 text-xs`}
+                      onClick={() => {
+                        setPadding(null);
+                        void chopClipToPads(c.id).then(
+                          (r) => showToast(r ? `${r.chops} chops of "${c.name}" on the pads of a new track, ${c.name} chops: play them from its pads` : `Couldn't find hits in ${c.name}`),
+                          (err) => showToast(`Couldn't chop ${c.name}: ${err instanceof Error ? err.message : String(err)}`)
+                        );
+                      }}
+                    >
+                      Chop onto pads
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-forge-muted mt-2">Double: a second and third performance either side, for a thicker vocal. Tune: pitch correction to the song's key, from gentle to robotic.</p>
+          <p className="text-[11px] text-forge-muted mt-2">
+            Double: a second and third performance either side, for a thicker vocal. Tune: pitch correction to the song's key, from gentle to robotic. Pad: the take on a pad of your
+            pads (as recorded, without the vocal sound), or chopped at its words and hits onto a new set of pads.
+          </p>
         </Card>
       )}
       {tuning && <TuneDialog clipId={tuning} onClose={() => setTuning(null)} />}

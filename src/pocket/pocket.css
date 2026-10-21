@@ -85,6 +85,7 @@
 .pk-pad { border-radius: 14px; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); background: linear-gradient(160deg, color-mix(in srgb, var(--c) 34%, var(--panel)), color-mix(in srgb, var(--c) 12%, var(--panel))); font-weight: 600; font-size: 12.5px; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; padding: 6px 9px; text-align: left; touch-action: manipulation; transition: transform .06s, filter .06s; }
 .pk-pad:active, .pk-pad.hit { transform: scale(.95); filter: brightness(1.5); }
 .pk-pad.root { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--c) 80%, transparent); }
+.pk-pad.empty { border-style: dashed; background: transparent; color: var(--muted); font-weight: 500; }
 .pk-pad span { font: 500 10.5px 'JetBrains Mono', monospace; color: var(--muted); }
 .pk-step { position: relative; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); }
 .pk-step.beat { border-color: var(--border-2); }
