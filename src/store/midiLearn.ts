@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useTimelineStore } from './timelineStore';
 import type { AutomationParam } from './timelineTypes';
 import { laneOf, normalizePoints, parseParam, specOf } from '../audio/automation';
-import { liveWam } from '../audio/wamHost';
+import { liveWam, paramMoved } from '../audio/wamHost';
 
 /**
  * MIDI learn and automation writing. A knob or fader of a MIDI controller (its CC number) can be
@@ -73,6 +73,7 @@ export function setParamValue(trackId: string, param: AutomationParam, n: number
       // (A built-in plugin takes it as a turn of its knob: shown, saved and kept when it's rebuilt)
       if (inst?.audioNode.setParamNow) inst.audioNode.setParamNow(p.paramId, value);
       else inst?.audioNode.scheduleEvents?.({ type: 'wam-automation', time: 0, data: { id: p.paramId, value, normalized: true } });
+      paramMoved(p.pluginId);
       return;
     }
   }
@@ -129,7 +130,9 @@ export function handleMidiCc(cc: number, value: number): boolean {
   }
   const targets = s.tracks.flatMap((t) => (t.midiMap ?? []).filter((m) => m.cc === cc).map((m) => ({ track: t, param: m.param })));
   if (!targets.length) return false;
-  startGesture();
+  // (One undo step per gesture, when it changes the song: a plugin's own settings aren't undone,
+  // so turning one makes no step of its own)
+  if (targets.some(({ param }) => parseParam(param).kind !== 'plugin' || (learn.write && s.isPlaying))) startGesture();
   for (const { track, param } of targets) {
     if (learn.write && s.isPlaying) writeAutomation(track.id, param, value);
     else setParamValue(track.id, param, value);

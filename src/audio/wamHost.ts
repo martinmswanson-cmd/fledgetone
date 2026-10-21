@@ -23,6 +23,8 @@ export interface WamInstance {
     getStateNow?: () => unknown;
     /** Move parameter `id` (0 to 1) and keep it, as a turn of its knob (the built-in plugins) */
     setParamNow?: (id: string, value: number) => void;
+    /** Put parameter `id` back to the plugin's own setting (after automation moved it) */
+    resetParam?: (id: string) => void;
     setState?: (state: unknown) => Promise<void>;
     destroy?: () => void;
   };
@@ -258,6 +260,16 @@ export function onWamStates(listener: StateListener): () => void {
 }
 
 /** Read every live plugin's settings; the ones that changed go to the listeners (to be saved). */
+const movedListeners = new Set<(pluginId: string) => void>();
+/** Say a plugin's parameter was moved from outside its window (MIDI learn), for the lanes' readouts. */
+export function paramMoved(pluginId: string): void {
+  movedListeners.forEach((l) => l(pluginId));
+}
+export function onParamMoved(listener: (pluginId: string) => void): () => void {
+  movedListeners.add(listener);
+  return () => movedListeners.delete(listener);
+}
+
 /** Each settings read is numbered when asked; per plugin, the newest read kept so far. */
 let reads = 0;
 const keptRead = new Map<string, number>();
@@ -389,6 +401,11 @@ export function sendTempo(inst: WamInstance, bpm: number, time: number): void {
  * automation lane does.
  */
 export function setWamParam(inst: WamInstance, id: string, value: number, time: number): void {
+  // (NaN: the lane is gone, back to the plugin's own setting, where the plugin keeps one)
+  if (Number.isNaN(value)) {
+    inst.audioNode.resetParam?.(id);
+    return;
+  }
   inst.audioNode.scheduleEvents?.({ type: 'wam-automation', time, data: { id, value: Math.max(0, Math.min(1, value)), normalized: true } });
 }
 

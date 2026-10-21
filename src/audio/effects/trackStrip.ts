@@ -807,6 +807,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
     for (const param of [...controls.keys()]) {
       if (owned.has(param)) continue;
       controls.delete(param);
+      // (A plugin parameter's lane gone: the plugin goes back to its own setting, not the
+      // lane's last value)
+      const p = parseParam(param);
+      if (p.kind === 'plugin') pluginSink?.(p.pluginId, p.paramId, NaN, 0);
       changed = true;
     }
     if (changed) version++;

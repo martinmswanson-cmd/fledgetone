@@ -298,6 +298,10 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     getState: async (): Promise<BuiltinState> => stateNow(),
     getStateNow: (): BuiltinState => stateNow(),
     setParamNow: (id: string, value: number) => set(Number(id), value),
+    resetParam: (id: string) => {
+      const i = Number(id);
+      if (params[i]) set(i, params[i].value);
+    },
     setState: async (s: unknown) => {
       const saved = s as Partial<BuiltinState> | undefined;
       const p = files ? (saved?.preset ? files.names.indexOf(saved.preset) : -1) : saved?.program;

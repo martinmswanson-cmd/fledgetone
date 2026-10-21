@@ -6,7 +6,7 @@ import type { PumpClock, TrackStrip } from './effects/trackStrip';
 import { createAutomationSchedule } from './automationSchedule';
 import type { AutomationSchedule } from './automationSchedule';
 import { createInstrument, safely, trackInstrumentOptions } from './instruments';
-import { pluginEpoch, readWamParams } from './wamHost';
+import { onParamMoved, onWamStates, pluginEpoch, readWamParams } from './wamHost';
 import { pluginParamInfo } from './automation';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, getLiveTempo } from './transport';
@@ -103,6 +103,11 @@ function watchDownload(lt: LiveTrack): void {
 }
 
 const paramListeners = new Set<() => void>();
+/** Read these plugins' parameters again, then tell the listeners (the lanes' readouts). */
+const rereadParams = (ids: string[]) => void Promise.all(ids.map((id) => readWamParams(id, pluginParamInfo))).then(() => paramListeners.forEach((l) => l()));
+// A plugin's settings changed (its window, or MIDI learn): the readouts follow
+onWamStates((changed) => rereadParams([...changed.keys()]));
+onParamMoved((id) => rereadParams([id]));
 /** Told when plugins' parameters have been read (see pluginParamInfo). */
 export function onPluginParams(listener: () => void): () => void {
   paramListeners.add(listener);
