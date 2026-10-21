@@ -9,7 +9,8 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
 import { uid, type StepLane, type StepTarget, type Track } from '../store/timelineTypes';
-import { DEFAULT_STEP_GRID, instTarget, paintSteps, stepBars, stepValues } from '../store/stepLanes';
+import { DEFAULT_STEP_GRID, instTarget, MAX_STEP_LANES, paintSteps, stepBars, stepValues } from '../store/stepLanes';
+import { showToast } from '../components/timeline/toastStore';
 import { isFledgeUrl } from '../audio/plugins/fledgeMacros';
 import { fledgeMacros, heldBefore, useInstrumentParams } from '../components/timeline/stepTargets';
 import { cellClip } from './pocketSections';
@@ -59,8 +60,11 @@ export const PocketSteps: React.FC<{ track: Track; sec: PocketSection; rw: numbe
     const s = useTimelineStore.getState();
     const c = s.clips.find((x) => x.id === id);
     if (!c) return;
+    const have = c.stepLanes?.find((l) => l.target === target);
+    // (A clip holds at most MAX_STEP_LANES lanes: with them all used, there's no room for this one)
+    if (!have && (c.stepLanes?.length ?? 0) >= MAX_STEP_LANES) return showToast(`This clip already has ${MAX_STEP_LANES} step lanes (the most there can be): clear one in the studio first.`);
     s.checkpoint();
-    let current: StepLane = c.stepLanes?.find((l) => l.target === target) ?? { id: uid('steps'), target, grid: DEFAULT_STEP_GRID, steps: [] };
+    let current: StepLane = have ?? { id: uid('steps'), target, grid: DEFAULT_STEP_GRID, steps: [] };
     const step = stepBars(current) * STEPS_PER_WHOLE * rw;
     const count = stepValues(current, c.lengthBars).length;
     const at = (ev: { clientX: number; clientY: number }) => {

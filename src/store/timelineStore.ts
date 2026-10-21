@@ -1971,12 +1971,13 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const clip = s.clips.find((c) => c.id === clipId);
         if (!clip || clip.audio) return s;
         const next: Clip = { ...clip };
-        if (lanes.length) next.stepLanes = lanes.slice(0, MAX_STEP_LANES);
+        const kept = lanes.slice(0, MAX_STEP_LANES);
+        if (kept.length) next.stepLanes = kept;
         else delete next.stepLanes;
         // A lane of an effect's setting only sounds while the effect is on: a lane with steps turns it on
         const track = s.tracks.find((t) => t.id === clip.trackId);
         let fx = track?.fx;
-        for (const lane of lanes) {
+        for (const lane of kept) {
           if (!track || !fx || !lane.steps.length || lane.target.startsWith('inst:')) continue;
           const insert = specOf(lane.target as AutomationParam).insert;
           if (insert && !(fx[insert] as { on?: boolean } | undefined)?.on) fx = normalizeTrackFx({ ...fx, [insert]: { ...fx[insert], on: true } });
