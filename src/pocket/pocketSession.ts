@@ -5,6 +5,7 @@
  */
 import { useEffect } from 'react';
 import { useTimelineStore } from '../store/timelineStore';
+import { isNativeApp, nativeKeepAwake, nativeTap } from '../native/nativeApp';
 
 export { reopenLastSong } from '../store/reopenLastSong';
 
@@ -14,6 +15,11 @@ type WakeLock = { release: () => Promise<void> };
 export function useWakeWhilePlaying(): void {
   const isPlaying = useTimelineStore((s) => s.isPlaying);
   useEffect(() => {
+    // (The app keeps the screen on itself)
+    if (isNativeApp()) {
+      nativeKeepAwake(isPlaying);
+      return () => nativeKeepAwake(false);
+    }
     const wake = (navigator as Navigator & { wakeLock?: { request: (type: 'screen') => Promise<WakeLock> } }).wakeLock;
     if (!isPlaying || !wake) return;
     let lock: WakeLock | null = null;
@@ -39,8 +45,9 @@ export function useWakeWhilePlaying(): void {
   }, [isPlaying]);
 }
 
-/** A short buzz, on phones that have one (Android; iPhones ignore it). */
+/** A short buzz, on phones that have one (Android; iPhones ignore it in a browser; the app taps). */
 export function buzz(ms = 8): void {
+  if (isNativeApp()) return nativeTap();
   try {
     navigator.vibrate?.(ms);
   } catch {

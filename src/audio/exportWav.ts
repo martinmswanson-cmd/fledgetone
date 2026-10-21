@@ -51,6 +51,7 @@ import type { WavCue } from './wavCues';
 import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
 import { normalizeMasterSettings } from '../store/timelineTypes';
 import { countedRender } from './renderBusy';
+import { isNativeApp, nativeShareFile } from '../native/nativeApp';
 
 /** Sample rates the export offers (88.2 and 96 kHz for WAV only: MP3 stops at 48 kHz). */
 export const SAMPLE_RATES = [44100, 48000, 88200, 96000] as const;
@@ -1384,6 +1385,13 @@ export const wholeFileLoop = (opts: Pick<RenderOptions, 'ending'>, frames: numbe
 
 /** Trigger a browser download for a Blob. */
 export function downloadBlob(blob: Blob, filename: string): void {
+  // (The phone app can't download: the file goes to the share sheet, to save to Files or send)
+  if (isNativeApp()) {
+    void nativeShareFile(blob, filename).catch((err) =>
+      import('../components/timeline/toastStore').then(({ showToast }) => showToast(`Couldn't save ${filename}: ${err instanceof Error ? err.message : String(err)}`))
+    );
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

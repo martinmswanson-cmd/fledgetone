@@ -15,9 +15,21 @@
     "preview": "vite preview",
     "build:single": "VITE_SINGLE=1 npm run build && node scripts/build-single.mjs",
     "build:site": "VITE_GPL_PLUGINS=1 npm run build -- --base=/app/ --outDir=dist-site/app && node scripts/build-site.mjs",
+    "build:app": "npm run build -- --outDir=dist-app && node scripts/build-app.mjs",
+    "app:sync": "npm run build:app && npx cap sync",
     "build:full": "VITE_SINGLE=1 VITE_GPL_PLUGINS=1 npm run build && VITE_GPL_PLUGINS=1 node scripts/build-single.mjs"
   },
   "dependencies": {
+    "@capacitor-community/keep-awake": "8.0.1",
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/share": "8.0.3",
+    "@capacitor/splash-screen": "8.0.2",
+    "@capacitor/status-bar": "8.0.4",
     "@webaudiomodules/api": "^2.0.0-alpha.6",
     "@webaudiomodules/sdk": "^0.0.12",
     "lucide-react": "^1.52.0",
@@ -31,6 +43,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.3",
     "@types/node": "^24.19.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",

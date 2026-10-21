@@ -1,0 +1,20 @@
+{
+  "appId": "com.fledgetone.pocket",
+  "appName": "Fledgetone",
+  "webDir": "dist-app",
+  "backgroundColor": "#0b0f14",
+  "ios": {
+    "contentInset": "never",
+    "limitsNavigationsToAppBoundDomains": false
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": false,
+      "backgroundColor": "#0b0f14",
+      "showSpinner": false
+    }
+  }
+}

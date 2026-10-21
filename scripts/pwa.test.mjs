@@ -115,7 +115,7 @@ test('the worker handles the app and fonts, and leaves recordings, plugins and v
   assert.equal(route('https://fonts.gstatic.com/s/outfit/v15/x.woff2'), 'font');
   assert.equal(route('https://fledgetone.com/fledgetone-samples/cello/C3_0_0.mp3?v=abc'), null);
   assert.equal(route('https://fledgetone.com/fledgetone-plugins/mda.wasm?v=abc'), null);
-  assert.equal(route('https://twobirdsworkshop.com/fledgetone-samples/cello/C3_0_0.mp3'), null);
+  assert.equal(route('https://fledgetone.com/app/fledgetone-samples/cello/C3_0_0.mp3'), null);
   assert.equal(route('https://fledgetone.com/version.json'), null);
   assert.equal(route('https://fledgetone.com/other.html', 'navigate'), null);
 });

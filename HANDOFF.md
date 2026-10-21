@@ -38,6 +38,7 @@ npm run build:single   # the one-file build (dist-single/index.html)
 npm run build:site     # fledgetone.com: home page (site/) at /, the app at /app/, GUIDE.md as pages at /guide/ (Netlify runs this)
 npm run guide-tables   # rewrite GUIDE.md's instrument list and credits from the catalog
 npm run codemap        # rewrite docs/CODEMAP.md from the files' summary comments
+npm run app:sync       # the phone app: build dist-app/ and copy it into ios/ and android/ (docs/APP.md)
 ```
 
 Run them all before every commit (CONTRIBUTING.md, The checks), and the sound checks
@@ -199,6 +200,19 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Pocket stage 1, the app shell** (on the work branch, not released): Pocket as a phone app with
+  Capacitor ([docs/APP.md](docs/APP.md)). `ios/` and `android/` are the native projects;
+  `src/native/nativeApp.ts` is the bridge (haptics, screen kept on, share sheet for exports and
+  project files, links to fledgetone.com), and each function does nothing on the web. The iPhone
+  project sets the audio session (`.playback`, background audio) and the microphone and Files
+  settings. An Android test build was made and checked (`./gradlew assembleDebug`); the iPhone
+  build needs a Mac with Xcode. The recordings aren't in the app and load from
+  fledgetone.com/app/. Found on the way: the recordings' and plugins' fallback address pointed at
+  twobirdsworkshop.com, whose copy of the recordings is gone (it answered with a web page), so
+  the one-file build had no recorded instruments. Both now point at fledgetone.com/app/, and a
+  web page in place of a file counts as missing (`fetchBytes`, `waitFor.ts`). Still to do for
+  stage 1: run it on a real iPhone (the checklist is at the end of docs/APP.md). Still to decide:
+  the app's name and ID, and whether some recordings go in the app.
 - **Fledge Synth** (2026.10.21): Fledgetone's own GPL synthesizer, in Rust compiled to WebAssembly
   and loaded like any built-in plugin (`builtin:fledge/Fledge Synth`). 215 parameters by name
   (`params.rs`, `index_of`), 8 voices with up to 16 unison each, two wavetable oscillators, two

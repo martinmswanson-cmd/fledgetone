@@ -10,6 +10,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import { startPwa } from './pwa/pwa'
 import { wantsPocket } from './pocket/pocketMode'
+import { startNativeApp } from './native/nativeApp'
 
 const Root = wantsPocket() ? lazy(() => import('./pocket/PocketApp')) : lazy(() => import('./App.tsx'))
 
@@ -22,3 +23,4 @@ createRoot(document.getElementById('root')!).render(
 )
 
 startPwa()
+startNativeApp()

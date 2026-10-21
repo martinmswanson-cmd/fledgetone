@@ -179,7 +179,8 @@ velocities, a few notes across its range): each should be at least as loud as th
 
 fledgetone.com serves the folder next to the app (Netlify publishes `public/` with the build, and
 `public/_headers` lets other sites load the files too). The app loads the recordings from there,
-or from the fallback address `https://twobirdsworkshop.com/fledgetone-samples/`, which that site
-still serves, when the page is opened from a file (the one-file build) or hosted elsewhere. Each
+or from the fallback address `https://fledgetone.com/app/fledgetone-samples/` when the page doesn't
+have them next to it (the one-file build opened from a file, a copy hosted elsewhere, the phone
+app). Each
 set is asked for with its fingerprint (`?v=<hash>`, the `hash` in `hostedSets.ts`), so after
 rebuilding a set the browsers that kept the old files fetch the new ones.

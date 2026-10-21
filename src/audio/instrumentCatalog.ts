@@ -277,11 +277,10 @@ export const FX_ROWS: ReadonlyArray<{ note: string; label: string }> = [
 
 /**
  * The recordings' fallback address, for a page that doesn't have them next to it (the one-file
- * build opened from a file, a copy hosted elsewhere): twobirdsworkshop.com still serves
- * public/fledgetone-samples there. The app itself is published at fledgetone.com, with the
- * recordings next to it.
+ * build opened from a file, a copy hosted elsewhere, the phone app): the published app on
+ * fledgetone.com, which serves them to other sites too (public/_headers).
  */
-const SITE_SAMPLES = 'https://twobirdsworkshop.com/fledgetone-samples/';
+const SITE_SAMPLES = 'https://fledgetone.com/app/fledgetone-samples/';
 
 /**
  * Recordings hosted with the app (public/fledgetone-samples/<folder>, converted by

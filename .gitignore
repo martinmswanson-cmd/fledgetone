@@ -12,6 +12,7 @@ dist
 dist-ssr
 dist-single
 dist-runtime
+dist-app
 *.local
 
 # Editor directories and files

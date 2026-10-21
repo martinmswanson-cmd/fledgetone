@@ -15,9 +15,12 @@ import { versionLabel } from '../version';
 import { chooseInterface } from './pocketMode';
 import { renderSongMp3 } from './pocketExport';
 import { Card, pill } from './pocketUi';
+import { APP_LINK_BASE, isNativeApp, nativeShareLink } from '../native/nativeApp';
 
 /** Hand a file or a link to the phone's share sheet; false where there's none (or it was refused). */
 async function shareSheet(data: ShareData): Promise<boolean> {
+  // (The app: its own share sheet; a file goes through downloadBlob, which hands it there)
+  if (isNativeApp()) return data.url ? nativeShareLink(data.url, data.title ?? '') : false;
   if (typeof navigator.share !== 'function' || (navigator.canShare && !navigator.canShare(data))) return false;
   try {
     await navigator.share(data);
@@ -53,7 +56,8 @@ export const PocketShare: React.FC = () => {
 
   const shareLink = async () => {
     await captureWamStates();
-    const url = await songLink(currentProject(), `${location.origin}${location.pathname}`);
+    // (From the app, the link opens fledgetone.com: the app's own address is on this phone only)
+    const url = await songLink(currentProject(), isNativeApp() ? APP_LINK_BASE : `${location.origin}${location.pathname}`);
     if (await shareSheet({ url, title: currentProject().name })) return;
     try {
       await navigator.clipboard.writeText(url);

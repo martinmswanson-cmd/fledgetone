@@ -304,6 +304,10 @@ one piece moves to native code later, without touching the rest.
 Each stage ships on its own (to testers first: TestFlight on iPhone); the old screens go when
 their replacement is in.
 
+**Where it is:** stage 1's shell is built ([APP.md](APP.md)): the native projects, the audio
+session, haptics, the screen kept on, the share sheet for exports and project files, and an
+Android test build. Left: building it on a Mac and running it on a real iPhone.
+
 ## How we'll know it's easy
 
 - Sound in one tap from opening it; a first loop in under 30 seconds; a 3-section song with a

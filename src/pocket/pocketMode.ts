@@ -4,6 +4,7 @@
  * remembers it (so a computer can try Pocket too). The same song plays in both: they share the
  * store, the engine and the autosave.
  */
+import { isNativeApp } from '../native/nativeApp';
 
 const CHOICE_KEY = 'fledgetone.interface';
 
@@ -52,5 +53,6 @@ export function wantsPocket(): boolean {
     }
     return choice === 'pocket';
   }
-  return (stored() ?? (onPhone() ? 'pocket' : 'studio')) === 'pocket';
+  // (The phone app opens Pocket, on a tablet too, unless the studio was chosen)
+  return (stored() ?? (onPhone() || isNativeApp() ? 'pocket' : 'studio')) === 'pocket';
 }

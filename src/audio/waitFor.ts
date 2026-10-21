@@ -39,7 +39,8 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string,
 /**
  * Download `url`'s bytes, giving up (the request is cancelled) when nothing has arrived for
  * `stallMs`: no answer, or a body that stops coming. A slow download that keeps coming is never
- * cut off. Rejects on an HTTP error, and with `signal`'s reason when it aborts.
+ * cut off. Rejects on an HTTP error or a web page in place of the file, and with `signal`'s
+ * reason when it aborts.
  */
 export async function fetchBytes(url: string, stallMs: number, signal?: AbortSignal): Promise<ArrayBuffer> {
   const controller = new AbortController();
@@ -59,6 +60,9 @@ export async function fetchBytes(url: string, stallMs: number, signal?: AbortSig
     wake();
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) throw new Error(`${url}: ${res.status}`);
+    // A page in place of the file: a server that answers a missing file with the app itself (the
+    // phone app's own server, a preview) has none, so the next address is tried
+    if (res.headers.get('content-type')?.startsWith('text/html')) throw new Error(`${url}: not here`);
     if (!res.body) return await res.arrayBuffer();
     const reader = res.body.getReader();
     const parts: Uint8Array[] = [];

@@ -10,6 +10,7 @@ import { safeFileName, serializeProject } from '../../store/project';
 import { referencedSoundIds } from '../../store/audioClips';
 import { LONG_LINK, songLink, tracksNeedingFiles } from '../../store/shareLink';
 import { captureWamStates } from '../../audio/wamHost';
+import { APP_LINK_BASE, isNativeApp } from '../../native/nativeApp';
 import { embedSounds } from '../../audio/soundLibrary';
 import { audibleTracks, channelsOf, downloadBlob, renderArrangement } from '../../audio/exportWav';
 import { encodeAudio } from '../../audio/encoders';
@@ -57,7 +58,7 @@ export const ShareDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   useEffect(() => {
     let live = true;
     // (The plugins' latest settings first: they reach the tracks every few seconds otherwise)
-    captureWamStates().then(() => songLink(currentProject(), `${location.origin}${location.pathname}${location.search}`)).then(
+    captureWamStates().then(() => songLink(currentProject(), isNativeApp() ? APP_LINK_BASE : `${location.origin}${location.pathname}${location.search}`)).then(
       (url) => live && setLink(url),
       (err) => live && setLinkError(err instanceof Error ? err.message : String(err))
     );

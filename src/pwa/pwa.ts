@@ -14,6 +14,7 @@
  * build:single, for running from a file; not published) has no worker: it says so with
  * <meta name="fledgetone-build" content="single">.
  */
+import { isNativeApp } from '../native/nativeApp';
 import { create } from 'zustand';
 import { flushAutosave, useTimelineStore } from '../store/timelineStore';
 import { useRenderBusy } from '../audio/renderBusy';
@@ -207,6 +208,11 @@ function reloadOnMissingParts(): void {
 
 export function startPwa(): void {
   if (typeof window === 'undefined') return;
+  // (The phone app is installed already, keeps its storage, and updates through the stores)
+  if (isNativeApp()) {
+    usePwa.setState({ installed: true });
+    return;
+  }
   reloadOnMissingParts();
   usePwa.setState({ installed: runningInstalled() });
   whatsNewAfterUpdate();
