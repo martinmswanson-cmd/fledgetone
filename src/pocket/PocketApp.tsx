@@ -12,7 +12,7 @@ import { connectAutosave, connectTimelineToAudio, currentProject, useTimelineSto
 import { recoverFailedDownloads } from '../audio/liveTracks';
 import { installLiveInput } from '../audio/liveInput';
 import { hasWork } from '../store/project';
-import { reopenLastSong, useWakeWhilePlaying, buzz } from './pocketSession';
+import { reopenLastSong, useWakeWhilePlaying, buzz, playPocket } from './pocketSession';
 import { PocketNotice } from './PocketNotice';
 import { SharedLinkOpener } from '../components/SharedLinkOpener';
 import { UpdateNotice } from '../components/UpdateNotice';
@@ -84,14 +84,7 @@ const Transport: React.FC = () => {
   const btn = 'h-12 rounded-[14px] border border-forge-border bg-forge-panelLight flex items-center justify-center active:scale-95 transition-transform disabled:opacity-35';
   const play = () => {
     buzz();
-    const st = s();
-    if (st.isPlaying) return st.pause();
-    if (st.loopRegion.enabled) {
-      // The loop is the selected section
-      if (sec && (Math.abs(st.loopRegion.inBar - sec.from) > EPS || Math.abs(st.loopRegion.outBar - sec.to) > EPS)) st.setLoopRange(sec.from, sec.to);
-      if (sec && (st.playheadPosition < sec.from - EPS || st.playheadPosition >= sec.to - EPS)) st.seek(sec.from);
-    } else if (st.playheadPosition >= songEndBar() - EPS) st.seek(1);
-    void st.play();
+    void playPocket(sec);
   };
   return (
     <div className="pk-tport">
@@ -132,11 +125,6 @@ const Transport: React.FC = () => {
     </div>
   );
 };
-
-/** Where the song ends (bars), for playing it from the top when it's already there. */
-function songEndBar(): number {
-  return useTimelineStore.getState().clips.reduce((e, c) => Math.max(e, c.startBar + c.lengthBars), 1);
-}
 
 export const PocketApp: React.FC = () => {
   const land = useLandscape();

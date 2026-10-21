@@ -1,7 +1,7 @@
 /**
  * The Drop pad in Pocket's drawer: six big pads that do something to the whole mix for as long as
  * a finger holds them (stutter, a filter sweep, tape stop, crush, gate, an echo throw: see
- * effects/dropFx.ts). Several can be held at once. While the song plays, a press starts on the next
+ * effects/dropFx.ts). Several can be held at once; a pad pressed while the song is stopped plays it. While the song plays, a press starts on the next
  * 16th and a let-go ends on one, so every move is in time. With Rec on while the section plays,
  * each move is written into the Drop track's cell, from where it started to where it was let go,
  * replacing what that effect had there; the song then plays it every time, in the studio and in
@@ -13,13 +13,13 @@ import { useTimelineStore } from '../store/timelineStore';
 import { DROP_ROWS } from '../audio/instrumentCatalog';
 import { audioNow, dropOff, dropOn, nextSixteenthAt } from '../audio/dropLive';
 import { liveTransport } from '../audio/liveContext';
-import { ticksToBar } from '../audio/transport';
+import { ticksToBar, transportStartsAt } from '../audio/transport';
 import { durationToBars, type NoteEvent, type Track } from '../store/timelineTypes';
 import { STEPS_PER_WHOLE } from './pocketGrid';
 import { editCell, sectionNotes } from './pocketCell';
 import type { PocketSection } from './pocketSections';
 import { pocketNoteId, usePocket, usePlayPosition } from './pocketStore';
-import { buzz } from './pocketSession';
+import { buzz, playPocket } from './pocketSession';
 
 const EPS = 1e-6;
 
@@ -98,11 +98,32 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
     writeMove(h.rec.trackId, h.rec.sec, DROP_ROWS[h.fx].note, h.rec.step, Math.max(1, Math.min(steps, h.rec.total - h.rec.step)));
   };
 
+  /** Presses waiting for the song to start (a pad pressed while stopped plays it), and whether they've let go since */
+  const waiting = useRef(new Map<number, { released: boolean }>());
+
   const press = (pointer: number, fx: number) => {
     // A second finger on a pad already held does nothing (the first one's hold goes on)
-    if ([...holds.current.values()].some((h) => h.fx === fx)) return;
+    if ([...holds.current.values()].some((h) => h.fx === fx) || waiting.current.has(pointer)) return;
     buzz(10);
-    const at = nextSixteenthAt(audioNow());
+    if (!useTimelineStore.getState().isPlaying) {
+      // Stopped: the pad plays the song (as Play would), and starts with it
+      const w = { released: false };
+      waiting.current.set(pointer, w);
+      void playPocket(sec).then(() => {
+        if (waiting.current.get(pointer) !== w) return;
+        waiting.current.delete(pointer);
+        begin(pointer, fx);
+        // (A tap let go before the song started still plays its 16th)
+        if (w.released) release(pointer);
+      });
+      return;
+    }
+    begin(pointer, fx);
+  };
+  const begin = (pointer: number, fx: number) => {
+    if ([...holds.current.values()].some((h) => h.fx === fx)) return;
+    // On the next 16th, or where the song starts if that's still to come
+    const at = Math.max(nextSixteenthAt(audioNow()), transportStartsAt() ?? 0);
     dropOn(fx, at);
     const recording = usePocket.getState().rec && useTimelineStore.getState().isPlaying;
     const step = recording ? stepAt(at, sec) : null;
@@ -110,6 +131,8 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
     relight();
   };
   const release = (pointer: number) => {
+    const w = waiting.current.get(pointer);
+    if (w) w.released = true;
     const h = holds.current.get(pointer);
     if (!h) return;
     holds.current.delete(pointer);
@@ -134,7 +157,9 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
     liveTransport.on('start', ended);
     liveTransport.on('stop', ended);
     liveTransport.on('pause', ended);
+    const pending = waiting.current;
     return () => {
+      pending.clear();
       liveTransport.off('start', ended);
       liveTransport.off('stop', ended);
       liveTransport.off('pause', ended);
@@ -188,7 +213,7 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
       <Moves moves={moves} total={total} sec={sec} />
       <div className="flex items-center gap-2 shrink-0 min-h-9">
         <p className="flex-1 text-[11.5px] text-forge-muted leading-snug">
-          {!isPlaying ? 'Play the song, then hold a pad.' : rec ? `Rec is on: your moves are written into ${sec.letter}.` : 'Turn Rec on to keep your moves in the song.'}
+          {!isPlaying ? 'Hold a pad: the song plays, and the pad changes it.' : rec ? `Rec is on: your moves are written into ${sec.letter}.` : 'Turn Rec on to keep your moves in the song.'}
         </p>
         {moves.length > 0 && (
           <button
