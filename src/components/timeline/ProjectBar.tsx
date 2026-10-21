@@ -177,9 +177,11 @@ export const RestoreSessionBanner: React.FC = () => {
     );
   if (!lastSession) return null;
   const { project } = lastSession;
-  // What's in it: its clips, or the markers of a session that has only those
+  // What's in it: its clips, or the markers of a session that has only those, or its plugin
+  // tracks (a sound built before any notes)
   const markers = project.markers?.length ?? 0;
-  const [n, what] = project.clips.length > 0 || markers === 0 ? [project.clips.length, 'clip'] : [markers, 'marker'];
+  const pluginTracks = project.tracks.filter((t) => t.plugin || t.pluginFx?.length).length;
+  const [n, what] = project.clips.length > 0 ? [project.clips.length, 'clip'] : markers > 0 ? [markers, 'marker'] : [pluginTracks, 'plugin track'];
   const when = savedWhen(lastSession);
   const close = (dismissed: boolean) => {
     clearPreviousSession(dismissed);

@@ -252,6 +252,19 @@ export function onWamStates(listener: StateListener): () => void {
 }
 
 /** Read every live plugin's settings; the ones that changed go to the listeners (to be saved). */
+/**
+ * Keep a plugin's answer (into `changed`): unless it's empty, or the song changed since the read
+ * began.
+ */
+function keepAnswer(id: string, inst: WamInstance, state: unknown, began: number, changed: Map<string, unknown>): void {
+  // (A song opened while it answered: the answer belongs to the one before)
+  if (state === undefined || began !== session || stale.has(inst)) return;
+  const json = JSON.stringify(state);
+  if (json.length > 2_000_000 || states.get(id) === json) return;
+  states.set(id, json);
+  changed.set(id, JSON.parse(json));
+}
+
 export async function captureWamStates(): Promise<void> {
   const changed = new Map<string, unknown>();
   const began = session;
@@ -269,16 +282,19 @@ export async function captureWamStates(): Promise<void> {
         const state = await Promise.race([asked, new Promise<typeof SLOW>((r) => setTimeout(() => r(SLOW), 1000))]);
         if (state === SLOW) {
           unanswered.add(inst);
-          const answered = () => unanswered.delete(inst);
-          void Promise.resolve(asked).then(answered, answered);
+          // (A late answer still counts: a plugin that's always slow gets its settings saved)
+          void Promise.resolve(asked).then(
+            (late) => {
+              unanswered.delete(inst);
+              const one = new Map<string, unknown>();
+              keepAnswer(id, inst, late, began, one);
+              if (one.size) stateListeners.forEach((l) => l(one));
+            },
+            () => unanswered.delete(inst)
+          );
           return;
         }
-        // (A song opened while it answered: the answer belongs to the one before)
-        if (state === undefined || began !== session || stale.has(inst)) return;
-        const json = JSON.stringify(state);
-        if (json.length > 2_000_000 || states.get(id) === json) return;
-        states.set(id, json);
-        changed.set(id, JSON.parse(json));
+        keepAnswer(id, inst, state, began, changed);
       } catch {
         // A plugin that can't say: keep what was saved
       }
