@@ -31,6 +31,9 @@ type Ctl<K extends FledgeControl['kind']> = Extract<FledgeControl, { kind: K }>;
 type Get = (name: string) => { i: number; p: BuiltinParam } | undefined;
 type Set = (name: string, v: number) => void;
 
+/** What a control held by an automation lane says (it follows the lane until the lane goes). */
+const HELD_TITLE = 'automated by a lane: delete the lane to set it here';
+
 const TAB_KEY = 'bosBeatbox.fledgeTab';
 const TABS = ['Sound', 'Modulation', 'Effects'] as const;
 type Tab = (typeof TABS)[number];
@@ -56,16 +59,20 @@ const Knob: React.FC<{ c: Ctl<'knob'>; get: Get; set: Set; size?: number }> = ({
   const [hx, hy] = point(v);
   const put = (x: number) => set(c.p, Math.max(0, Math.min(1, x)));
   return (
-    <div className="flex flex-col items-center w-[50px] select-none" title={`${p.name}: ${p.text}. Drag up or down (Shift: fine); double-click to put it back`}>
+    <div
+      className={`flex flex-col items-center w-[50px] select-none ${p.held ? 'opacity-70' : ''}`}
+      title={p.held ? `${p.name}: ${p.text}, ${HELD_TITLE}` : `${p.name}: ${p.text}. Drag up or down (Shift: fine); double-click to put it back`}
+    >
       <div
         role="slider"
         tabIndex={0}
         aria-label={p.name}
+        aria-readonly={p.held || undefined}
         aria-valuemin={0}
         aria-valuemax={1}
         aria-valuenow={Number(v.toFixed(3))}
         aria-valuetext={p.text}
-        className="cursor-ns-resize rounded-full focus:outline-none focus-visible:ring-1 focus-visible:ring-fuchsia-300 touch-none"
+        className={`${p.held ? 'cursor-not-allowed outline outline-1 outline-dashed outline-amber-300/60' : 'cursor-ns-resize'} rounded-full focus:outline-none focus-visible:ring-1 focus-visible:ring-fuchsia-300 touch-none`}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -114,6 +121,8 @@ const Choice: React.FC<{ c: Ctl<'choice'>; get: Get; set: Set; w?: string; bare?
       value={choiceIndex(hit.p.value, c.options.length, c.cap)}
       onChange={(e) => set(c.p, choiceValue(Number(e.target.value), c.cap))}
       aria-label={hit.p.name}
+      disabled={hit.p.held}
+      title={hit.p.held ? `${hit.p.name}: ${HELD_TITLE}` : undefined}
       className="h-6 w-full bg-forge-bg border border-forge-border rounded px-1 text-[11px] text-forge-text"
     >
       {c.options.map((o, k) => (
@@ -141,6 +150,8 @@ const Toggle: React.FC<{ c: Ctl<'toggle'>; get: Get; set: Set }> = ({ c, get, se
       type="button"
       aria-pressed={on}
       aria-label={hit.p.name}
+      disabled={hit.p.held}
+      title={hit.p.held ? `${hit.p.name}: ${HELD_TITLE}` : undefined}
       onClick={() => set(c.p, on ? 0 : 1)}
       className={`h-6 px-2 rounded border text-[10px] font-mono whitespace-nowrap ${on ? 'border-fuchsia-400/70 bg-fuchsia-500/15 text-fuchsia-100' : 'border-forge-border text-forge-muted hover:text-forge-text'}`}
     >

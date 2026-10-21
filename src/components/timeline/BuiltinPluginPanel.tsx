@@ -73,7 +73,7 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
       )}
       {params.length === 0 && <p className="text-forge-muted">No settings: it does its one thing.</p>}
       {params.map((p, i) => (
-        <label key={i} className="grid grid-cols-[96px_1fr_72px] items-center gap-2" title="Double-click to put it back">
+        <label key={i} className={`grid grid-cols-[96px_1fr_72px] items-center gap-2 ${p.held ? 'opacity-70' : ''}`} title={p.held ? 'Automated by a lane: delete the lane to set it here' : 'Double-click to put it back'}>
           <span className="truncate">{p.name}</span>
           <input
             type="range"
@@ -82,6 +82,7 @@ const Panel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
             step={0.001}
             value={p.value}
             aria-label={p.name}
+            disabled={p.held}
             onChange={(e) => controls.set(i, Number(e.target.value))}
             onDoubleClick={() => controls.set(i, p.defaultValue)}
             className="accent-fuchsia-400 w-full"

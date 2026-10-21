@@ -122,6 +122,8 @@ export interface BuiltinParam {
   /** As the plugin shows it ("-3.0 dB") */
   text: string;
   defaultValue: number;
+  /** Held by an automation lane: it shows the lane, and its control waits until the lane goes */
+  held?: boolean;
 }
 
 /** What the built-in panel (BuiltinPluginPanel.tsx) works with. */
@@ -198,6 +200,20 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
    * an export (their knobs show the lane and don't move; a preset still sets what they go back to)
    */
   const laneHeld = new Map<number, number>();
+  /** Mark the parameters a lane holds (the panels show them as automated). */
+  const marked = (list: BuiltinParam[]) => list.map((p, i) => (!!p.held === laneHeld.has(i) ? p : { ...p, held: laneHeld.has(i) }));
+  /** Lanes moved held parameters: the panel follows (a few times a second, text included). */
+  let following = 0;
+  const follow = () => {
+    if (following || destroyed) return;
+    following = window.setTimeout(() => {
+      following = 0;
+      if (destroyed) return;
+      params = marked(params.map((p, i) => (laneHeld.has(i) ? { ...p, value: laneHeld.get(i)! } : p)));
+      changed();
+      if (listeners.size) void refresh();
+    }, 120);
+  };
   /** Send a value to the processor (its 'display' answer then says what it shows). */
   const post = (index: number, value: number) => {
     inFlight.set(index, (inFlight.get(index) ?? 0) + 1);
@@ -260,6 +276,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
           // (A held parameter's own setting is the preset's, from the reply itself: a re-post
           // still unanswered mustn't keep an older preset's)
           own = params.map((p, i) => (laneHeld.has(i) ? (d.params[i]?.value ?? p.value) : p.value));
+          params = marked(params);
           // (A lane holding a parameter goes on playing its value over the preset's)
           for (const [i, v] of laneHeld) post(i, v);
           changed();
@@ -311,7 +328,10 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     scheduleEvents: (...events: unknown[]) => {
       if (destroyed) return;
       for (const e of events as Array<{ type?: string; data?: { id?: string; value?: number } }>) {
-        if (e?.type === 'wam-automation' && Number.isFinite(e.data?.value)) laneHeld.set(Number(e.data!.id), e.data!.value!);
+        if (e?.type === 'wam-automation' && Number.isFinite(e.data?.value)) {
+          laneHeld.set(Number(e.data!.id), e.data!.value!);
+          follow();
+        }
       }
       if (!pending.length) queueMicrotask(flush);
       pending.push(...events);
@@ -326,6 +346,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     resetParam: (id: string) => {
       const i = Number(id);
       laneHeld.delete(i);
+      params = marked(params);
       if (params[i]) set(i, own[i]);
     },
     setState: async (s: unknown) => {
@@ -386,7 +407,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     new Promise<void>((resolve) => {
       const id = nextReply++;
       replies.set(id, (fresh) => {
-        params = keepSent(fresh.map((p, i) => ({ ...p, defaultValue: params[i]?.defaultValue ?? p.value })));
+        params = marked(keepSent(fresh.map((p, i) => ({ ...p, defaultValue: params[i]?.defaultValue ?? p.value }))));
         changed();
         resolve();
       });
