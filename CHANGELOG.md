@@ -6,6 +6,8 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Does it hit?**: under the Mix check, hold the loop (or the song) against finished songs of a style (bass music / dubstep, drumstep, J-core / hardcore, darksynth / pumping, future bass / artcore). Each measurement shows as a meter with the style's range and what to change in plain words: gaps between the hits, a bass that only wobbles at one steady rate, a sub that's too big or not in the middle, the pump, the balance, the loudness, and how far the kick and snare stand out. In Pocket, **Check the drop** (under Mix) gives the short version for the selected section.
+
 - **Starters**: only the eight Chill & World starters remain for now (Lo-Fi, Ambient, Celtic, Fantasy Tavern, Latin, Plaza, Mbira Morning and Eastern), and **New** offers them or a blank song. The other starters, the Classics and the demo song are gone; a new, smaller set is on the way. Songs you made from them, and links to them, still open as they were.
 - **Glides that work**: the piano roll's **Legato** tool now runs each note a little into the next, so the Sub-Bass, Analog Lead, Wobble, Growl and Reese basses and Fledge Synth's Legato sounds glide between them (and the same pitch holds on as one note). Notes that only touch still start again, so a bassline of repeated notes keeps its rhythm.
 - **Wider, longer pads and leads**: the Wavetable Synth, the Analog Lead and the retro synth pads, synth strings and synth leads now play in stereo, and fade out more slowly (pads about 1.5 s, leads about 0.4 s). The **Supersaw** is about 10 dB louder, as loud as the other pads now, and its chords ring on into each other.

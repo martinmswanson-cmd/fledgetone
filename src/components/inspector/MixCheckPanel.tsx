@@ -1,6 +1,7 @@
 /**
  * The Mix check panel (Master tab): renders the song and each track, then lists what could be
  * better in plain words, with buttons that select the track to look at (mixStudio.ts, mixCheck.ts).
+ * Under it, "Does it hit?" holds the loop or the song against a style (HitCheckSection.tsx).
  */
 import React from 'react';
 import { AlertTriangle, CheckCircle2, Info, Loader2, Stethoscope } from 'lucide-react';
@@ -8,6 +9,7 @@ import { cancelMixRender, runMixCheck, useMixStudio, ANALYSE_SECONDS } from '../
 import { LOUDNESS_TARGETS } from '../../audio/loudnessTarget';
 import { useTimelineStore } from '../../store/timelineStore';
 import { formatDbtp, formatLufs } from '../../audio/loudness';
+import { HitCheckSection } from './HitCheckSection';
 
 export const MixCheckPanel: React.FC = () => {
   const findings = useMixStudio((s) => s.findings);
@@ -106,6 +108,7 @@ export const MixCheckPanel: React.FC = () => {
           )}
         </div>
       )}
+      <HitCheckSection />
     </div>
   );
 };

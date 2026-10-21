@@ -2,8 +2,8 @@
  * Pocket's drawer: the bottom of the screen, in the selected track's colour, as that track's
  * instrument for the selected section. Play (pads, the key's notes or chords), Draw (the drum
  * steps or the piano roll), Sound (another instrument of its kind; a Drum Rack's Pads, what's on
- * them) and Mix (its level, reverb,
- * mute, solo); a vocal track sings instead. Mix all makes it a mixer for every track. Its handle
+ * them) and Mix (its level, reverb, mute, solo, and Check the drop: PocketDropCheck.tsx); a vocal
+ * track sings instead. Mix all makes it a mixer for every track, with Check the drop under it. Its handle
  * makes it bigger or smaller (tap to step, or drag); the piano roll opens it full and puts it back.
  */
 import React, { useMemo, useRef, useState } from 'react';
@@ -26,6 +26,7 @@ import { PocketSynth } from './PocketSynth';
 import { isFledgeUrl } from '../audio/plugins/fledgeMacros';
 import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
 import { pill } from './pocketUi';
+import { PocketDropCheck } from './PocketDropCheck';
 
 export const DRAWER_SIZES: Record<DrawerSize, number> = { low: 0.3, mid: 0.4, high: 0.74 };
 
@@ -193,6 +194,7 @@ const TrackMix: React.FC<{ track: Track }> = ({ track }) => {
         </button>
       </div>
       <p className="text-[11px] text-forge-muted mt-2">Its effects, sends and automation stay as they are, and open on a computer.</p>
+      <PocketDropCheck />
     </div>
   );
 };
@@ -307,44 +309,47 @@ const MixAll: React.FC = () => {
   const db = (v: number) => (v <= -59.9 ? '−∞' : v.toFixed(1));
   const ms = 'flex-1 h-8 rounded-lg border text-[13px] font-mono font-semibold';
   return (
-    <div className="pk-strips">
-      {gridTracks(tracks).map((t) => (
-        <div key={t.id} className={`pk-strip ${t.isMuted ? 'opacity-50' : ''}`} style={{ ['--c' as string]: t.color }}>
-          <button type="button" className="text-xs font-semibold max-w-full truncate min-h-6" onClick={() => usePocket.getState().set({ trackId: t.id, mixAll: false })}>
-            {t.name}
-          </button>
-          <input type="range" className="pk-vfader" aria-label={`${t.name} level`} min={-60} max={6} step={0.5} value={t.volume} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setTrackVolume(t.id, Number(e.target.value))} />
-          <span className="font-mono text-[10.5px] text-forge-muted">{db(t.volume)}</span>
-          <div className="flex gap-1 w-full">
-            <button type="button" aria-pressed={t.isMuted} aria-label={`Mute ${t.name}`} className={`${ms} ${t.isMuted ? 'bg-amber-500 text-black border-transparent' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().toggleMute(t.id)}>
-              M
+    <>
+      <div className="pk-strips" style={{ minHeight: 150 }}>
+        {gridTracks(tracks).map((t) => (
+          <div key={t.id} className={`pk-strip ${t.isMuted ? 'opacity-50' : ''}`} style={{ ['--c' as string]: t.color }}>
+            <button type="button" className="text-xs font-semibold max-w-full truncate min-h-6" onClick={() => usePocket.getState().set({ trackId: t.id, mixAll: false })}>
+              {t.name}
             </button>
-            <button type="button" aria-pressed={t.isSoloed} aria-label={`Solo ${t.name}`} className={`${ms} ${t.isSoloed ? 'bg-cyan-500 text-black border-transparent' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().toggleSolo(t.id)}>
-              S
-            </button>
+            <input type="range" className="pk-vfader" aria-label={`${t.name} level`} min={-60} max={6} step={0.5} value={t.volume} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setTrackVolume(t.id, Number(e.target.value))} />
+            <span className="font-mono text-[10.5px] text-forge-muted">{db(t.volume)}</span>
+            <div className="flex gap-1 w-full">
+              <button type="button" aria-pressed={t.isMuted} aria-label={`Mute ${t.name}`} className={`${ms} ${t.isMuted ? 'bg-amber-500 text-black border-transparent' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().toggleMute(t.id)}>
+                M
+              </button>
+              <button type="button" aria-pressed={t.isSoloed} aria-label={`Solo ${t.name}`} className={`${ms} ${t.isSoloed ? 'bg-cyan-500 text-black border-transparent' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().toggleSolo(t.id)}>
+                S
+              </button>
+            </div>
           </div>
+        ))}
+        <div className="pk-strip !basis-[96px]" style={{ ['--c' as string]: '#e4e4e7' }}>
+          <span className="text-xs font-semibold min-h-6">Master</span>
+          <input type="range" className="pk-vfader" aria-label="Master level" min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} value={master.level} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setMasterLevel(Number(e.target.value), false)} />
+          <span className="font-mono text-[10.5px] text-forge-muted">{db(master.level)}</span>
+          <button type="button" aria-pressed={clipper.on} className={`w-full h-8 rounded-lg border text-xs font-semibold ${clipper.on ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().setMasterClipper({ on: !clipper.on }, true)}>
+            Loud
+          </button>
+          <button
+            type="button"
+            aria-label="Duck to kick: the bass, chords, pads and leads dip on every kick"
+            className="w-full h-8 rounded-lg border text-xs font-semibold border-forge-border bg-forge-panelLight"
+            onClick={() => {
+              const made = s().duckToKick();
+              showToast(made < 0 ? 'No kick to duck to: add drums first.' : made ? `Ducked ${made} track${made === 1 ? '' : 's'} to the kick (Undo takes it back)` : 'Everything already ducks to the kick.');
+            }}
+          >
+            Pump
+          </button>
         </div>
-      ))}
-      <div className="pk-strip !basis-[96px]" style={{ ['--c' as string]: '#e4e4e7' }}>
-        <span className="text-xs font-semibold min-h-6">Master</span>
-        <input type="range" className="pk-vfader" aria-label="Master level" min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} value={master.level} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setMasterLevel(Number(e.target.value), false)} />
-        <span className="font-mono text-[10.5px] text-forge-muted">{db(master.level)}</span>
-        <button type="button" aria-pressed={clipper.on} className={`w-full h-8 rounded-lg border text-xs font-semibold ${clipper.on ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().setMasterClipper({ on: !clipper.on }, true)}>
-          Loud
-        </button>
-        <button
-          type="button"
-          aria-label="Duck to kick: the bass, chords, pads and leads dip on every kick"
-          className="w-full h-8 rounded-lg border text-xs font-semibold border-forge-border bg-forge-panelLight"
-          onClick={() => {
-            const made = s().duckToKick();
-            showToast(made < 0 ? 'No kick to duck to: add drums first.' : made ? `Ducked ${made} track${made === 1 ? '' : 's'} to the kick (Undo takes it back)` : 'Everything already ducks to the kick.');
-          }}
-        >
-          Pump
-        </button>
       </div>
-    </div>
+      <PocketDropCheck fill />
+    </>
   );
 };
 
