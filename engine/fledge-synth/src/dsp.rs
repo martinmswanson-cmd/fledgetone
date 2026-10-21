@@ -463,8 +463,9 @@ impl Ott {
             let mut g = 0.0;
             if db > -24.0 {
                 g -= (db + 24.0) * (1.0 - 1.0 / (1.0 + 3.0 * depth));
-            } else if db < -40.0 && db > -70.0 {
-                g += ((-40.0 - db) * 0.6 * depth).min(12.0 * depth);
+            } else if db < -40.0 {
+                // (Tapering to nothing from -64 to -70 dB: a tail fading through doesn't step)
+                g += ((-40.0 - db) * 0.6).min(12.0).min((db + 70.0) * 2.0).max(0.0) * depth;
             }
             // The low band is only turned down, never up: the sub stays steady
             if k == 0 && g > 0.0 {
@@ -527,6 +528,11 @@ pub struct DcBlock {
 impl DcBlock {
     #[inline]
     pub fn tick(&mut self, x: f32, r: f32) -> f32 {
+        // (A broken sample is silent, and never sticks)
+        if !x.is_finite() {
+            *self = DcBlock::default();
+            return 0.0;
+        }
         let y = flush(x - self.x1 + r * self.y1);
         self.x1 = x;
         self.y1 = y;
@@ -732,6 +738,31 @@ mod tests {
         }
         // Loud steady sound sits just under the ceiling (-1 dBFS)
         assert!(c.tick(5.0) > 0.88 && c.tick(5.0) <= CEIL);
+    }
+
+    #[test]
+    fn ott_lift_fades_out_without_a_step() {
+        // A tone fading out slowly: the OTT's gain never jumps from one moment to the next
+        let sr: f32 = 48000.0;
+        let mut o = Ott::new(sr);
+        let (att, rel) = (1.0 - (-1.0 / (0.005 * sr)).exp(), 1.0 - (-1.0 / (0.1 * sr)).exp());
+        let mut last = f32::NAN;
+        let mut worst: f32 = 0.0;
+        for w in 0..300 {
+            let amp = 10f32.powf((-50.0 - w as f32 * 0.1) / 20.0);
+            let mut sum = 0.0f32;
+            for i in 0..480 {
+                let x = amp * (2.0 * PI * 1000.0 * (w * 480 + i) as f32 / sr).sin();
+                let (l, _) = o.tick(x, x, 1.0, att, rel);
+                sum += l * l;
+            }
+            let db = 10.0 * (sum / 480.0).log10() - 20.0 * amp.log10();
+            if w > 20 && last.is_finite() {
+                worst = worst.max((db - last).abs());
+            }
+            last = db;
+        }
+        assert!(worst < 2.0, "gain stepped by {worst} dB");
     }
 
     #[test]

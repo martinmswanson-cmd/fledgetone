@@ -778,7 +778,16 @@ impl Synth {
             }
             return;
         }
-        // Poly: a free voice, else the quietest released one, else the oldest (faded out first)
+        // Poly: the same note struck again while it rings on (pedal held, or letting go) plays
+        // again on its own voice, from where it is: copies in step would stack up far louder
+        if let Some(i) = (0..VOICES).find(|&i| {
+            let v = &self.voices[i];
+            v.active && v.note == note && v.pending.is_none() && (v.sustained || v.amp.stage == Stage::Release)
+        }) {
+            self.start(i, note, vel, &cfg, false);
+            return;
+        }
+        // Else a free voice, else the quietest released one, else the oldest (faded out first)
         let free = self.voices.iter().position(|v| !v.active && v.pending.is_none());
         // (A voice already taken for a note waiting to start isn't taken again: each note of a
         // chord played over full voices gets its own)
@@ -1591,6 +1600,23 @@ mod tests {
         s.midi(0x80, 60, 0);
         render(&mut s, 400);
         assert_eq!(active(&s), 0);
+    }
+
+    #[test]
+    fn a_note_repeated_under_the_pedal_stays_at_one_notes_level() {
+        let level = |times: usize| {
+            let mut s = Synth::new(48000.0);
+            s.midi(0xB0, 64, 127);
+            for _ in 0..times {
+                s.midi(0x90, 48, 100);
+                render(&mut s, 20);
+                s.midi(0x80, 48, 0);
+            }
+            (render(&mut s, 40).1, active(&s))
+        };
+        let (one, _) = level(1);
+        let (eight, voices) = level(8);
+        assert!(20.0 * (eight / one).log10() < 2.0 && voices == 1, "{one} vs {eight}, {voices} voices");
     }
 
     #[test]
