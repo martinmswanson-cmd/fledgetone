@@ -7,7 +7,7 @@ Fledgetone is a music maker that runs in your browser. You build a song on the *
 The studio is made for a computer: a PC or Mac with a mouse, a keyboard and a wide screen. On a phone, Fledgetone opens **Pocket**, a simpler version made for a phone, instead (see [Fledgetone Pocket: on a phone](#fledgetone-pocket-on-a-phone)).
 
 1. Click **START AUDIO** in the top-right corner. Browsers only allow sound after you click something, so the button glows red until audio is running. Pressing Play also starts it.
-2. To hear an example, open the **File** menu at the top, choose **New…** and pick one of the **Demo songs** (Sunset Stroll, a neo-soul groove, and the five Classics: complete public-domain pieces), or one of the 79 starters (game music like Boss Fight, Stealth and Cozy Village, and genres like Cowbell Drive, Bossa Jazz-Pop and Dubstep).
+2. To hear an example, open the **File** menu at the top, choose **New…** and pick one of the eight starters (chill and world music like Lo-Fi, Celtic, Plaza and Eastern).
 3. Press **Space** (or the green Play button) to play, and Space again to pause.
 4. Double-click a clip to open its notes in the **piano roll** under the timeline.
 
@@ -46,7 +46,7 @@ The first time you open Fledgetone it offers a one-minute **tour** and nine hand
 - **Intermediate: Shape and mix a song**: add an instrument, use the Filter, Pump and reverb, draw automation, use the Mixer, add markers, a build-up and drop, and the loop.
 - **Intermediate: Write with the helpers**: a chord progression in a key, an accompaniment for it, the Drummer, melody variations, and a clip's own swing (FEEL).
 - **Intermediate: Make it expressive**: a Swell from the piano roll's TOOLS, the mod wheel as dynamics, a Vibrato lane, Breathe (a tempo that eases into phrase ends) and Play backwards.
-- **Intermediate: Game music that reacts**: open a game starter, switch states in the Game tab, the transition matrix, a written bridge, switching on the phrase, and Audition like the game.
+- **Intermediate: Game music that reacts**: a song with sections as states, switch states in the Game tab, the transition matrix, a written bridge, switching on the phrase, and Audition like the game.
 - **Expert: Pro techniques**: search, the Synth Designer, sidechaining from any track, the Gate, key changes, freezing, the Game tab and game-ready exports, and the fastest shortcuts.
 - **Expert: Make it react**: parameters the game sets, costumes, shuffled pieces and silences, effects and parameter sliders in Audition, Try it in a game, and what the game kit carries.
 
@@ -54,7 +54,7 @@ A tutorial puts a glowing ring round the part of the screen to use, and its card
 
 ### Search
 
-Press `Ctrl+K` (`Cmd+K` on a Mac), or click **SEARCH** in the header, and type what you're after: a tool (*export*, *mixer*, *mic*), a setting (*swing*, *reverb*, *stable playback*, *count-in*), an instrument (*violin*, *8-bit*, *angelic*), a genre starter (*horror*) or anything in this guide (*frame rate*). Results are labelled **Tool**, **Setting**, **Instrument**, **Starter** (the demo songs' Classics among them) or **Guide**; the best match is first. A word with one letter wrong still finds it when nothing matches as typed (*viloin*). A result too long for its row shows its whole name and description when you point at it or reach it with the arrow keys.
+Press `Ctrl+K` (`Cmd+K` on a Mac), or click **SEARCH** in the header, and type what you're after: a tool (*export*, *mixer*, *mic*), a setting (*swing*, *reverb*, *stable playback*, *count-in*), an instrument (*violin*, *8-bit*, *angelic*), a starter (*celtic*) or anything in this guide (*frame rate*). Results are labelled **Tool**, **Setting**, **Instrument**, **Starter** or **Guide**; the best match is first. A word with one letter wrong still finds it when nothing matches as typed (*viloin*). A result too long for its row shows its whole name and description when you point at it or reach it with the arrow keys.
 
 Up and Down choose, `Enter` goes: a tool opens (Export, the Mixer...), a setting is scrolled into view and ringed in blue (opening the Inspector or the recording options first if it's in there), a guide result opens the guide at that section, and a starter shows it in the New dialog. On an instrument, `Enter` adds a track with it and `Shift+Enter` puts it on the selected track. Piano roll tools (scale, chords, arpeggiate...) need a clip open in the piano roll; search says so if none is. `Esc` closes search.
 
@@ -567,7 +567,7 @@ The sound of 8-bit game consoles, for retro games:
 - **Chip Bass**: the stepped triangle wave those consoles played bass on. Like the real thing it has no fade: notes are on or off.
 - **Chip Drums**: a noise kit on the same eleven rows as the other kits (its clap, toms and cymbals are the shared synthesized hits): a pitch-swept kick, a noise snare, short noise hats, and a metallic open hat and cowbell from the noise channel's "short mode".
 
-For the authentic mono sound, switch the master's **Stereo Width** on and drag **Width** to 0 (**Mono**). The **Chiptune** starter (New) has all three playing together.
+For the authentic mono sound, switch the master's **Stereo Width** on and drag **Width** to 0 (**Mono**).
 
 ### The Sampler: your own sound
 
@@ -966,10 +966,9 @@ The project's name, **Save**, **Export**, **Share** and **Game** sit at the righ
 - **Project name**: click it to rename. It's used for the file names when you save and export.
 - **New** (in the **File** menu) replaces what's on screen and clears undo (the song it replaces is offered back by the Restore banner). It offers:
   - **Blank timeline**: four empty tracks.
-  - **Demo songs**, to press Play and listen: **Sunset Stroll**, a 12-bar neo-soul groove at 88 BPM, and the five **Classics**, complete public-domain pieces (see The Classics below).
-  - **Starters**: 79 songs to start from, folded into groups. Click a group to open it, or type in **Find a starter** (a name, a mood, a tempo: *boss*, *cozy*, *140*, *minor*; it finds the demo songs too). The groups are **Game Worlds** (Overworld Adventure, Dungeon Crawl, Cozy Village, Space Station, Racing, Platformer, Open Field, Cosmic Waltz, Big Band City, Quiet World, Wild Field, Underwater Waltz, Desert Bazaar, Fog Town), **Game Moments** (Boss Fight, Stealth, Title Screen, Puzzle, Shop, RPG Battle, Countdown Town, Save Room, Cathedral Boss, Arena Metal), **Anime & Cartoon** (Starlit City, Farewell Piano, Sunset Drive, Midnight Caper, Velvet Infiltration, Wanderer's Road, Meadow Waltz, Champion's Showdown, Ruin Requiem, Neon Ritual: story sounds, each game-ready with two states), **Electronic** (Dubstep, House, Trance, Drum & Bass, Synthwave, Chiptune), **Artcore & Rhythm Games** (Final Boss Artcore, Melodic Hardcore, Breakcore), **Bass Music** (Metal Dubstep, Melodic Dubstep, Riddim, Kawaii Future Bass), **Orchestral & Choir** (Classical, Angelic, Cinematic, Epic Orchestral, Cathedral, Horror), **Hip-Hop & Rap** (Cowbell Drive, Dark Bounce, Blown-Out Hype, Neo-Soul), **Pop & Jazz** (Bedroom Pop, Bossa Jazz-Pop, City Pop, After Hours, Theatrical Pop), **Band** (Rock, Metal, Pop, Funk, Jazz, Hip-Hop, Rap Beat, Rap-Rock, Math Rock) and **Chill & World** (Lo-Fi, Ambient, Celtic, Fantasy Tavern, Latin, Plaza, Mbira Morning, Eastern).
-  - Each starter is 16 bars or so with its sections marked (intro, build, drop, and so on) and the loop around the whole song, so Play goes from the start to the end, then round again (drag the loop's In and Out on the ruler to repeat just one part). Its held strings, pads and voices swell with each phrase, solo violin and cello lines play legato (sliding between notes), long held melodies get vibrato where the style suits, and the slow orchestral pieces (Classical, Angelic, Cinematic) breathe at their phrase ends. Its tracks are mixed and the master's OTT and Stereo Width set for the style, and its level is set for its kind of music on the master's **Level**: about -14 LUFS for most, a dB louder for band and rhythm-game music, a dB quieter for orchestral, game, cartoon and chill pieces, and about -19 for the gentle ones (Ambient, Title Screen, Save Room, Quiet World), so switching between starters doesn't jump in loudness. Many keep the low end gentle: kicks below full force, soft impacts and no sub drops, and builds that get quieter before the drop instead of louder drops. Change anything; it's an ordinary project.
-  - **Game starters are ready to wire into a game.** Each section is a game state that loops on its own (Explore and Danger, Sneak and Spotted, Phase 1, Phase 2 and Defeated...); the tracks are in stem groups (Ambient, Percussion, Tension, Climax), so the **Intensity** slider builds the music up and down; the **transitions** between states are set (a fill into a fight, a crossfade back out, a riser into the final lap, a victory stinger when the boss falls); and **stingers** in the song's key are made (item, level up, victory, game over...). Picking one opens the **Game** tab with a note, so you can try it at once: click the states, move Intensity, play the stingers. Then export it as a game kit, for FMOD or Wwise, or as stems.
+  - **Starters**: eight songs to start from, all chill and world music: **Lo-Fi** (82 BPM, electric piano, a dusty breakbeat, upright bass, flute and rain), **Ambient** (70 BPM, warm and glass pads, kalimba, crystal sparkles), **Celtic** (112 BPM, a fiddle reel over guitar and bodhrán, tin whistle, pipes), **Fantasy Tavern** (110 BPM, a jig on dulcimer, lute, hand drum, accordion and recorder), **Latin** (130 BPM, bossa nova: nylon guitar, upright bass, bongos, agogô, flute), **Plaza** (104 BPM, son clave on Latin percussion, a nylon guitar montuno, upright bass, trumpet), **Mbira Morning** (96 BPM, interlocking mbira over a didgeridoo drone, folk harp, balafon, hand chimes) and **Eastern** (84 BPM, koto, shakuhachi, taiko and shamisen over a drone).
+  - Each starter is 16 bars with its sections marked and the loop around the whole song, so Play goes from the start to the end, then round again (drag the loop's In and Out on the ruler to repeat just one part). Its held strings, pads and voices swell with each phrase. Its tracks are mixed and the master set for the style, and its level is set on the master's **Level**: about -15 LUFS, and about -19 for the gentle Ambient, so switching between starters doesn't jump in loudness. Change anything; it's an ordinary project.
+  - **Game music from a starter**: each section between markers is a state in the **Game** tab, so any starter (or your own song with markers) can be wired into a game: set the transitions between states, put tracks in stem groups for **Intensity**, add stingers, then export a game kit. See Game music.
 - **Open** (`Ctrl+O`): load a `.fledgetone.json` project file. Like New, it replaces what's on screen straight away and clears undo (the Restore banner offers the replaced song back). If the file can't be read, a red message explains why and nothing is replaced. You can also drop a `.fledgetone.json` file anywhere on the page: a drop onto an empty timeline opens it at once, and when there's work on the timeline a dialog asks before replacing it.
 - **Share**: three ways to send the song to someone:
   - **A link to this song**: the whole song travels inside the link (nothing is uploaded anywhere), and opening it opens the song in Fledgetone, ready to play and change. **Copy link**, or **Share…** for your device's share menu. Sound files (audio clips, and Sampler, Slicer, Drum Rack and Multi Sampler sounds) can't go in a link, so the dialog says which tracks would be silent; frozen tracks just play live. Links are packed tight (less than half the length they used to be), but a very long one can be cut off by some chat apps: the dialog warns when it's long. Links made before still open.
@@ -986,19 +985,6 @@ The project's name, **Save**, **Export**, **Share** and **Game** sit at the righ
 A project file holds the tracks, clips, mixer and effect settings, tempo and its changes, time signatures, swing, loop, markers, the whole Master tab (Glue, OTT, Stereo Width, Level, Clipper, master reverb and delay), the game setup (states, transitions, Intensity, stingers, game sounds), frame rate, and every sound it uses (audio clips, Slicer and Sampler sounds). It doesn't hold the master volume, zoom, snap or ruler setting. Your saved sounds and stars aren't in project files: keep them with **File › Save my sounds to a file…** (see Favourites and My sounds).
 
 Whether it comes from **New**, **Open** or **Restore**, a project opens showing the start of the timeline, with the playhead at its loop's In point; if that's off the first screen, the view scrolls to it instead. It never keeps the previous project's scroll position.
-
-### The Classics
-
-The five **Classics** are in **New**, under **Demo songs** (with Sunset Stroll): complete public-domain pieces to open and listen to, or to study and change like any project. Each plays at its own level on the master's **Level**: about -16 LUFS, and about -19 for the two quiet piano pieces (the Moonlight Sonata movement and Clair de lune).
-
-- **Canon in D (Pachelbel)**: the three violins' strict canon, two bars apart, over the eight-note ground bass, on the solo **Violin**, a second Violin and the **Viola (Real)**, the ground on the **Cello** with the **Contrabass (Real)** an octave below; the **Cellos** section joins the ground as it grows, and the **Violins** and **Violas** sections double the singing variations at the end. The strings play legato (sliding between notes), one dynamics curve on the mod wheel for the whole ensemble, light for the plucked-sounding eighths, broadening into the last two bars.
-- **Moonlight Sonata, 1st mvt (Beethoven)**: the whole movement on the **Concert Grand (Real)**, pianissimo throughout as written, the melody singing over the triplets, the sustain pedal changed with every new bass note and harmony (a Sustain pedal lane in its clip), and the tempo breathing (a little forward through the arpeggios, slowing at the end).
-- **Cello Suite No. 1: Prelude (Bach)**: complete, on the solo **Cello (Real)**, with its dynamics on the mod wheel and rubato in the tempo map: the held D of bar 22, the long climb to the end, the last chord broken from the low G.
-- **In the Hall of the Mountain King (Grieg)**: complete, orchestrated from Grieg's own piano version: the horns' held note, the theme in the bassoon and plucked strings, climbing through the woodwinds and strings to the brass, timpani and bass drum, and a tempo map that gathers speed from 116 to 240 BPM.
-- **Clair de lune (Debussy)**: complete, in 9/8, on the concert grand with the pedal, the "tempo rubato" and "en animant" passages pressing on, the arpeggios to the one forte, dying away at the end.
-
-They're long (about 2 to 5 minutes): the loop is the whole piece, so press Play and listen, or drag the loop's In and Out to practise one passage. Their notes come from public-domain editions (see The Classics' scores, in Credits).
-
 
 ### Autosave
 
@@ -1175,7 +1161,7 @@ Videos need Chrome or Edge (or another browser with WebCodecs) on a site served 
 
 ## Game music
 
-Fledgetone makes music for games that reacts to play: a song's sections become **states** the game switches between, its tracks **layers** it fades in and out, with **stingers** for moments, and exports that carry it all into a game engine. Every game starter (File › New…) comes set up this way.
+Fledgetone makes music for games that reacts to play: a song's sections become **states** the game switches between, its tracks **layers** it fades in and out, with **stingers** for moments, and exports that carry it all into a game engine. Any song with markers works: open a starter (File › New…) or your own song, and its sections are the states.
 
 ### Game preview: hear it the way the game will play it
 
@@ -1404,7 +1390,7 @@ On a Mac, use `Cmd` instead of `Ctrl`.
 
 ## Fledgetone Pocket: on a phone
 
-On a phone, Fledgetone opens **Pocket**: the same studio underneath (the same instruments, effects and songs) on one screen made for a thumb. A song started in Pocket opens in the studio on a computer, and back. The song you were working on opens again by itself when you come back; with none, Pocket starts with **What are we making?**: tap a kind of music, then a starter, and it plays straight away (or start a **Blank song**, or open a project file). The disc button at the top left comes back here for a new song, with a way back to the one you were on. Pocket is in its early stages, and the studio on a computer is the full experience: a notice says so each time Pocket opens, until you tick **Don't show this again**.
+On a phone, Fledgetone opens **Pocket**: the same studio underneath (the same instruments, effects and songs) on one screen made for a thumb. A song started in Pocket opens in the studio on a computer, and back. The song you were working on opens again by itself when you come back; with none, Pocket starts with **What are we making?**: tap a starter and it plays straight away (or start a **Blank song**, or open a project file). The disc button at the top left comes back here for a new song, with a way back to the one you were on. Pocket is in its early stages, and the studio on a computer is the full experience: a notice says so each time Pocket opens, until you tick **Don't show this again**.
 
 The screen, top to bottom:
 
@@ -1588,20 +1574,6 @@ The recordings the sound effects maker layers under its modern sounds are all pu
 <!-- plugin-credits:end -->
 
 Their licence notices come with the app, in `third-party-licenses.txt` and in `fledgetone-plugins/LICENSES.txt` next to the plugin files.
-
-### The Classics' scores
-
-The **Classics** (the demo songs) play five pieces whose composers died long ago and which were published long before 1930, so the music itself is in the public domain. Their notes were taken from, or checked against, these public-domain (or CC0) editions and typesettings; the editions' own additions (fingerings, dynamics, ornaments, keyboard parts) aren't used.
-
-<!-- score-credits:start (generated by npm run guide-tables) -->
-| Piece | Notes from | Licence |
-|---|---|---|
-| Canon in D, Johann Pachelbel (complete) | Written out from Max Seiffert's edition (Kistner & Siegel, 1929, [IMSLP #44549](https://imslp.org/wiki/Special:ImagefromIndex/44549)), the violins' line checked note by note against Alan Ernest Bonds's edition ([IMSLP #1022928](https://imslp.org/wiki/Special:ImagefromIndex/1022928), CC0); the editors' dynamics, ornaments and keyboard part are not used | Public domain (the edition it was checked against: [CC0](https://creativecommons.org/publicdomain/zero/1.0/) (public domain)) |
-| Piano Sonata No. 14 in C sharp minor, Op. 27 No. 2, first movement, Ludwig van Beethoven (complete) | Transcribed from the Breitkopf & Härtel complete edition (Beethovens Werke, Serie 16, [IMSLP #994719](https://imslp.org/wiki/Special:ImagefromIndex/994719)), checked against the Mutopia Project's guitar-duo arrangement typeset by Jeffrey Olson after Francisco Tárrega ([Mutopia 2101](https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=2101)) | Public domain |
-| Cello Suite No. 1 in G, BWV 1007, Prelude, Johann Sebastian Bach (complete) | [Mutopia Project 517](https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=517), typeset by Andreas Scherer from the Schirmer edition (1916) | Public domain |
-| In the Hall of the Mountain King, Op. 46 No. 4, Edvard Grieg (complete, orchestrated in the app from his piano version) | [Mutopia Project 1888](https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=1888), typeset by Coyau from The University Society edition (1918) | Public domain |
-| Clair de lune, Suite bergamasque, Claude Debussy (complete) | [Mutopia Project 1778](https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=1778), typeset by Keith OHara from the E. Fromont edition (1905) | Public domain |
-<!-- score-credits:end -->
 
 ### Software
 

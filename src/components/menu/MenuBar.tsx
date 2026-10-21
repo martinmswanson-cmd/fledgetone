@@ -99,7 +99,7 @@ const MENUS: MenuDef[] = [
     id: 'file',
     label: 'File',
     items: () => [
-      { label: 'New…', run: () => ui().setDialog('new'), title: 'Start again from a blank timeline, a demo song or a starter' },
+      { label: 'New…', run: () => ui().setDialog('new'), title: 'Start again from a blank timeline or a starter' },
       { label: 'Open…', shortcut: `${MOD_KEY}O`, run: pickProjectFile },
       { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
       { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },

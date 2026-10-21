@@ -3,9 +3,9 @@
 // hard cuts): every caption that shows it says so.
 const AI = 'The film in the picture is AI-generated.';
 
-/** Epic Orchestral at 24 fps with the film loaded (and its cuts found). */
+/** Latin at 24 fps with the film loaded (and its cuts found). */
 async function scored(s, { cuts = true } = {}) {
-  await s.starter('Epic Orchestral');
+  await s.starter('Latin');
   await s.q('select[title="Timecode frame rate (saved with the project)"]').selectOption({ label: '24 fps' });
   await s.loadVideo();
   if (cuts) await s.findCuts();
@@ -66,7 +66,7 @@ export const SHOTS = [
     alt: 'The BAR.BEAT.TICK and TIMECODE readouts in the transport bar, with the frame rate set to 24 FPS.',
     caption: 'Set the frame rate next to TIMECODE to the film\'s: 24 fps here.',
     setup: async (s) => {
-      await s.starter('Epic Orchestral');
+      await s.starter('Latin');
       await s.q('select[title="Timecode frame rate (saved with the project)"]').selectOption({ label: '24 fps' });
       await s.page.mouse.move(700, 4);
       return s.union([s.title('Click to type a bar position'), s.title('Click to type a timecode'), s.q('select[title="Timecode frame rate (saved with the project)"]')], 12);
@@ -146,8 +146,8 @@ export const SHOTS = [
 
 export const EXAMPLES = [
   {
-    name: 'scored-film',
-    label: 'Epic Orchestral at 117.55 BPM and 24 fps, with the film\'s three cuts as hit points and a build-up into the last one. The film itself isn\'t in the link: load any video to see how it works.',
+    name: 'latin-scored-film',
+    label: 'Latin at 117.55 BPM and 24 fps, with the film\'s three cuts as hit points and a build-up into the last one. The film itself isn\'t in the link: load any video to see how it works.',
     setup: async (s) => {
       await scored(s);
       await applyFit(s);

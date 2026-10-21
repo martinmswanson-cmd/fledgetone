@@ -16,7 +16,7 @@
 // - FX: inserts, each switched on alone on a reference instrument (FX_KEY, default reeseBass;
 //   the Pump on a kick-led pair). Default: every insert; "none" for none.
 // - STARTERS: starter songs, their first STARTER_BARS bars (default 8). Default:
-//   trap,drill,phonk,dubstep,classical; "none" for none.
+//   lofi,latin,celtic,plaza,eastern; "none" for none.
 // THREADS sets how many parts a mix may render in at once (1: in one piece; default: the
 // browser's choice). Each line also carries a hash of the render, so two runs of this script (say
 // with THREADS=1 and without, or in two fresh pages) can be compared too.
@@ -154,7 +154,7 @@ const RENDER = async ({ c, runs, threads }) => {
   const cases = [
     ...[...new Set(keys)].map((key) => ({ kind: 'instrument', key, label: key })),
     ...list(process.env.FX, INSERTS).map((fx) => ({ kind: 'insert', key: fxKey, fx, label: `${fxKey}+${fx}` })),
-    ...list(process.env.STARTERS, ['trap', 'drill', 'phonk', 'dubstep', 'classical']).map((id) => ({ kind: 'starter', id, bars: Number(process.env.STARTER_BARS || 8), label: `starter:${id}` })),
+    ...list(process.env.STARTERS, ['lofi', 'latin', 'celtic', 'plaza', 'eastern']).map((id) => ({ kind: 'starter', id, bars: Number(process.env.STARTER_BARS || 8), label: `starter:${id}` })),
   ];
   const threads = process.env.THREADS ? Number(process.env.THREADS) : undefined;
   let differs = 0;

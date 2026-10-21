@@ -100,7 +100,7 @@ async function inspectorBox(locator) {
 
 /** The pluck: Init saw, a second saw an octave up, a low filter its envelope snaps open, no sustain. */
 async function pluck(s) {
-  await instrument(s, 'Arp', 'synth designer');
+  await instrument(s, 'Flute', 'synth designer');
   await s.q(SD).getByLabel('Preset').selectOption('Init saw');
   await s.q(SD).locator('label', { hasText: 'Osc 2' }).locator('input').check();
   await s.q(SD).getByLabel('Osc 2 wave').selectOption('sawtooth');
@@ -119,7 +119,7 @@ async function pluck(s) {
 
 /** The pad: two saws in a 5-voice unison through the warm Ladder filter, slow to swell and to fade. */
 async function pad(s) {
-  await instrument(s, 'Pad', 'synth designer');
+  await instrument(s, 'Keys', 'synth designer');
   await s.q(SD).getByLabel('Preset').selectOption('Init saw');
   await s.q(SD).locator('label', { hasText: 'Osc 2' }).locator('input').check();
   await s.q(SD).getByLabel('Osc 2 wave').selectOption('sawtooth');
@@ -191,7 +191,7 @@ export const SHOTS = [
     alt: 'The Synth Designer in the Inspector: Osc 1 a saw, Osc 2 a saw an octave up at 40%, and the Low-pass filter at 500 Hz with Reso 4.0 and Env amt +4.0 oct.',
     caption: 'The pluck: two saws an octave apart, through a low filter that its envelope snaps open.',
     setup: async (s) => {
-      await s.starter('Space Station');
+      await s.starter('Lo-Fi');
       await pluck(s);
       await scrollTo(s.q(SD));
       return inspectorBox(s.q(SD));
@@ -202,7 +202,7 @@ export const SHOTS = [
     alt: 'The Synth Designer further down: the Ladder filter at 1.2 kHz with Drift 30%, the filter envelope (1.50 s, 1.80 s, 60%, 2.00 s), the amp envelope (1.20 s, 1.80 s, 90%, 2.00 s) and the LFO on the filter at 1/1, depth 20%.',
     caption: 'The pad: slow envelopes, a warm Ladder filter and a slow LFO moving it once a bar.',
     setup: async (s) => {
-      await s.starter('Space Station');
+      await s.starter('Lo-Fi');
       await pad(s);
       await scrollTo(s.q(SD).getByLabel('Filter type'), 20);
       return inspectorBox(s.q(SD));
@@ -213,7 +213,7 @@ export const SHOTS = [
     alt: 'The Drum Designer with the Snare row picked: Layer 1 the Crisp snare (Tone 230 Hz, Noise 100%, Snap 70%), Layer 2 a clap at -8 dB with Delay 8.0 ms. The preset box now reads Your own sound.',
     caption: 'A designed snare: Crisp snare with a clap layered 8 ms behind.',
     setup: async (s) => {
-      await s.starter('Space Station');
+      await s.starter('Lo-Fi');
       await drums(s);
       await scrollTo(s.q(DD));
       return inspectorBox(s.q(DD));
@@ -224,7 +224,7 @@ export const SHOTS = [
     alt: 'The Sound FX tab making Coin 1: one square layer at 990 Hz, Jump +5 st at 15%, Hold 80 ms, Punch 50%, Decay 300 ms, Width 50%.',
     caption: 'A coin from the sound effects maker: a square wave that jumps up a fourth.',
     setup: async (s) => {
-      await s.starter('Platformer');
+      await s.starter('Lo-Fi');
       await coin(s);
       await scrollTo(s.page.getByLabel('Sound name'));
       return s.union([s.page.getByLabel('Sound name'), s.q(LAYERS)], 10);
@@ -235,7 +235,7 @@ export const SHOTS = [
     alt: 'The Slicer panel with my-vocal.wav loaded: its waveform cut into 9 slices, from C3, with CUT set to Auto and SENS at 50.',
     caption: 'A sung phrase in the Slicer, cut at each word: 9 slices, one per key from C3.',
     setup: async (s) => {
-      await s.starter('Space Station');
+      await s.starter('Lo-Fi');
       await addTrack(s, 'slicer');
       const chooser = s.page.waitForEvent('filechooser');
       await s.page.getByRole('button', { name: /Load a sound/ }).first().click();
@@ -251,7 +251,7 @@ export const SHOTS = [
     alt: 'The Drum Rack panel: the bottom row of pads holds my-kick, my-snare, my-hat and my-clap; my-hat is selected, with its Level, Pan, Pitch, Decay, filters, Drive and Choke.',
     caption: 'Your own hits on the Drum Rack: Load sounds… fills the pads in order from pad 1.',
     setup: async (s) => {
-      await s.starter('Space Station');
+      await s.starter('Lo-Fi');
       await addTrack(s, 'drum rack');
       const chooser = s.page.waitForEvent('filechooser');
       await s.page.getByRole('button', { name: /Load sounds/ }).first().click();
@@ -269,7 +269,7 @@ export const SHOTS = [
     alt: 'The plugin browser: a search box, the groups down the side (Instruments, Recommended, Basic and each kind of effect), and a list of plugins with Add buttons.',
     caption: 'Plugins › Browse plugins…: hundreds of built-in effects and instruments.',
     setup: async (s) => {
-      await s.starter('Space Station');
+      await s.starter('Lo-Fi');
       await s.menu('Plugins', 'Browse plugins');
       await s.wait(2500);
       return s.dialog();
@@ -279,10 +279,10 @@ export const SHOTS = [
 
 export const EXAMPLES = [
   {
-    name: 'space-station-designed',
-    label: 'The Space Station starter with this lesson\'s sounds: the pluck on the arp, the pad, and the designed kick and snare.',
+    name: 'lofi-designed',
+    label: 'The Lo-Fi starter with this lesson\'s sounds: the pluck on the flute line, the pad on the keys, and the designed kick and snare.',
     setup: async (s) => {
-      await s.starter('Space Station');
+      await s.starter('Lo-Fi');
       await pluck(s);
       await pad(s);
       await drums(s);

@@ -117,27 +117,19 @@ Each recipe lists the files to touch. The checks below catch most mistakes; run 
 
 ### A starter song
 
-1. Write a function that returns the project, in `src/store/starters.ts`, `startersPlaylist.ts`
-   or (for game music) `startersGame.ts` / `startersGameMore.ts` / `startersStory.ts`, using the helpers in `starterKit.ts` and the `KIT`
-   export at the end of `startersPlaylist.ts`: `track`, `clip`, `melody`, `beat`, `progression`,
-   `stabs`... Steps are 16th notes: step 4 is beat 2 of the first bar.
+1. Write a function that returns the project, in `src/store/starters.ts` or a file of its own
+   beside it (as `startersWorld.ts`), using the helpers in `starterKit.ts`: `track`, `clip`,
+   `progression`, `master`, `project`... Steps are 16th notes: step 4 is beat 2 of the first bar.
 2. Add its entry to `STARTERS` in `starters.ts` (id, group, name, a one-line description with its
-   tempo and key) and its builder to `BUILDERS` (or `GAME_BUILDERS`).
-3. Mark its sections (they become the game states), put the loop on the main section, and mix
-   it: no track should poke out of the balance.
-4. Game starters also get stem groups (`grouped(track, 'Percussion')`), transitions and
-   stingers through `gameReady()`.
-5. Listen to it all the way through. Then measure its loudness with
+   tempo and key), its group to `STARTER_GROUPS` if it's a new one, and its builder to `BUILDERS`.
+3. Mark its sections (they become the game states), and mix it: no track should poke out of the
+   balance. Tracks can go in stem groups (`stemGroup: 'Percussion'`) for the Game tab's Intensity.
+4. Listen to it all the way through. Then measure its loudness with
    `IDS=<id> node scripts/audio-check/starters-loudness.cjs` and add its line to `STARTER_LEVELS`
    in `startersLoudness.ts`: the trim it suggests, then the loudness it measures with that trim
    (within 1.5 LU of its group's target; a test checks every starter has a line). If it needs
    more than about 4 dB of limiting to get there, look for a part whose peaks stand far over the
-   rest. Update the starter list and count in `GUIDE.md`, and the count in the tour
-   (`src/tour/lessons.ts`).
-
-The **Classics** (complete public-domain pieces) are built the same way in `startersClassics.ts`,
-with their notes in `classicsScores.ts` and their sources in `SCORE_CREDITS` (`src/credits.ts`),
-but New lists them under **Demo songs**, not with the starters.
+   rest. Update the starter list in `GUIDE.md`.
 
 ### A kind of sound effect
 
@@ -281,8 +273,7 @@ The user guide is `GUIDE.md` (also shown inside the app); every user-visible cha
 Interface text is plain and short: say what a thing does for the musician, not how it's built.
 Don't name artists, songs, games, brands or people anywhere in the software (starters, presets,
 descriptions, comments, the guide): describe a style by its genre, tempo and sound. The exceptions
-are the public-domain classical works and their composers in the Classics, the credits of the sound
-and score sources, and the owner's name and contact in `TERMS.md`.
+are the credits of the sound sources and the owner's name and contact in `TERMS.md`.
 
 ## Things that bite
 

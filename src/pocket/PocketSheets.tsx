@@ -395,17 +395,10 @@ export const PocketSheets: React.FC = () => {
   return null;
 };
 
-/** The groups shown first on the starters screen (the rest under More). */
-const FIRST_GROUPS = ['Hip-Hop & Rap', 'Electronic', 'Pop & Jazz', 'Chill & World', 'Bass Music', 'Band'];
-const GROUP_COLOURS = ['#a855f7', '#06b6d4', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#22d3ee', '#f97316', '#84cc16', '#eab308', '#38bdf8'];
-
-/** "What are we making?": a starter by kind of music, or an empty song; and the last song, to carry on. */
+/** "What are we making?": a starter, or an empty song; and the last song, to carry on. */
 export const StartScreen: React.FC<{ canGoBack: boolean }> = ({ canGoBack }) => {
   const name = useTimelineStore((s) => s.projectName);
   const session = useLastSession((s) => s.session);
-  const [group, setGroup] = useState<string | null>(null);
-  const [more, setMore] = useState(false);
-  const groups = more ? [...STARTER_GROUPS] : FIRST_GROUPS.filter((g) => (STARTER_GROUPS as readonly string[]).includes(g));
   const start = (template: Parameters<ReturnType<typeof useTimelineStore.getState>['newProject']>[0]) => {
     const s = useTimelineStore.getState();
     s.stop();
@@ -454,42 +447,18 @@ export const StartScreen: React.FC<{ canGoBack: boolean }> = ({ canGoBack }) => 
           </span>
         </button>
       )}
-      <div className="grid grid-cols-2 gap-2.5">
-        {groups.map((g, k) => {
-          const c = GROUP_COLOURS[STARTER_GROUPS.indexOf(g as (typeof STARTER_GROUPS)[number]) % GROUP_COLOURS.length] ?? GROUP_COLOURS[k];
-          return (
-            <button
-              key={g}
-              type="button"
-              aria-expanded={group === g}
-              className="h-24 rounded-[20px] p-3.5 text-left flex flex-col justify-between border"
-              style={{ borderColor: `${c}88`, background: `linear-gradient(150deg, ${c}55, #1a1a1e 75%)` }}
-              onClick={() => setGroup(group === g ? null : g)}
-            >
-              <span className="font-mono text-[11px] text-forge-muted tracking-wide">{STARTERS.filter((x) => x.group === g).length} STARTERS</span>
-              <b className="text-lg leading-tight">{g}</b>
-            </button>
-          );
-        })}
-        <button type="button" className="h-24 rounded-[20px] p-3.5 text-left flex flex-col justify-between border border-dashed border-forge-borderLight bg-forge-panel" onClick={() => start('blank')}>
-          <span className="font-mono text-[11px] text-forge-muted tracking-wide">4 EMPTY TRACKS</span>
-          <b className="text-lg">Blank song</b>
-        </button>
-        {!more && (
-          <button type="button" className="h-24 rounded-[20px] p-3.5 text-left flex flex-col justify-between border border-forge-border bg-forge-panel" onClick={() => setMore(true)}>
-            <span className="font-mono text-[11px] text-forge-muted tracking-wide">GAMES, ORCHESTRA…</span>
-            <b className="text-lg">More</b>
-          </button>
-        )}
-      </div>
-      {group && (
-        <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })} className="mt-4 rounded-2xl border border-forge-border bg-forge-panel p-2">
+      <button type="button" className="w-full h-16 rounded-[20px] px-3.5 text-left flex items-center justify-between border border-dashed border-forge-borderLight bg-forge-panel" onClick={() => start('blank')}>
+        <b className="text-lg">Blank song</b>
+        <span className="font-mono text-[11px] text-forge-muted tracking-wide">4 EMPTY TRACKS</span>
+      </button>
+      {STARTER_GROUPS.map((group) => (
+        <div key={group} className="mt-4 rounded-2xl border border-forge-border bg-forge-panel p-2">
           <h2 className="px-2 pt-1 pb-2 text-sm font-semibold">{group}</h2>
           {STARTERS.filter((x) => x.group === group).map((st) => (
             <SheetItem key={st.id} title={st.name} detail={st.detail} onClick={() => start(st.id)} />
           ))}
         </div>
-      )}
+      ))}
       <div className="grid grid-cols-2 gap-2 mt-4">
         <button type="button" className={pill} onClick={() => pickProjectFile()}>
           <FolderOpen className="w-4 h-4" /> Open a file

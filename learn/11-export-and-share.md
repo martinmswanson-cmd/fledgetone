@@ -8,8 +8,8 @@ A song isn't finished until it's out of the studio. In this lesson you'll save a
 
 ### Name your song
 
-1. If you don't have a song open, choose **File › New…**, type *synthwave* and click **Synthwave**.
-2. Click the project name at the right of the menu bar (**Synthwave starter**), type *Night drive* and press **Enter**.
+1. If you don't have a song open, choose **File › New…** and click **Lo-Fi**.
+2. Click the project name at the right of the menu bar (**Lo-Fi starter**), type *Night drive* and press **Enter**.
 
 The name is used for every file you save and export: *Night drive.wav*, *Night drive.mp4*.
 
@@ -67,7 +67,7 @@ Each kind of destination wants its own settings. Use these as a starting point:
 
 Game and app music usually repeats. A **seamless loop** is exactly one loop long, with the tail of the pass before already ringing at its start, so it repeats with no gap or click.
 
-1. Drag the loop's **IN** and **OUT** brackets on the ruler around the part that should repeat. (A starter's loop is usually one section: Synthwave's is bars 9 to 17, the Lead.)
+1. Drag the loop's **IN** and **OUT** brackets on the ruler around the part that should repeat. (A starter's loop covers the whole song: Lo-Fi's is bars 1 to 17. For a game, a loop round one section, such as the Melody from bar 9, often repeats better.)
 2. In **Export**, set **Range** to **Loop region** and **Ending** to **Seamless loop**.
 3. Set **Format** to **OGG**, tick **Match a loudness target** and set **For** to **Games (-16 LUFS)**.
 4. Click **Export**.
@@ -117,8 +117,8 @@ Ads and social clips often need music that lasts an exact time. **Cut to length*
 
 1. Choose **File › Save As…** and save a copy (*Night drive 30s*), so you keep the full song too.
 2. Choose **File › Cut song to length…**.
-3. Click **30 s**. The dialog shows the sections it keeps, in order: here **Groove** and **Lead**, 12 bars.
-4. Leave **Nudge the tempo** ticked: the tempo moves from 100 to 96 BPM so it lasts exactly 0:30.00.
+3. Click **30 s**. The dialog shows the sections it keeps, in order.
+4. Leave **Nudge the tempo** ticked: the tempo moves a little so it lasts exactly 0:30.00.
 5. Click **Cut to 0:30.00**.
 
 {{shot:export-cut}}
@@ -140,4 +140,4 @@ The installed app shares everything with the web page: your autosave, sounds and
 
 You've saved a song, exported it for streaming and for a game, shared a link and a video, and cut a 30-second version. Next, take the studio with you: [Make music on your phone](/learn/pocket/).
 
-{{example:night-drive-30s}}
+{{example:lofi-30s}}

@@ -1,4 +1,4 @@
-// The guide's instrument list and the Credits tables (recordings, plugins, the Classics' scores),
+// The guide's instrument list and the Credits tables (recordings and plugins),
 // generated from the instrument catalog and src/credits.ts so they can't go stale. `npm run guide-tables` rewrites them in GUIDE.md;
 // scripts/guideTables.test.mjs fails if they're out of date.
 import { register } from 'node:module';
@@ -17,7 +17,7 @@ register(
 }`)
 );
 const { INSTRUMENTS, CATEGORIES } = await import('../src/audio/instrumentCatalog.ts');
-const { SAMPLE_CREDITS, PLUGIN_CREDITS, SCORE_CREDITS, creditFor } = await import('../src/credits.ts');
+const { SAMPLE_CREDITS, PLUGIN_CREDITS, creditFor } = await import('../src/credits.ts');
 const { PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalog.ts');
 
 export const GUIDE = fileURLToPath(new URL('../GUIDE.md', import.meta.url));
@@ -68,11 +68,6 @@ export function pluginCreditsTable() {
   ].join('\n');
 }
 
-/** The Classics starters' scores: each piece and where its notes come from. */
-export function scoreCreditsTable() {
-  return ['| Piece | Notes from | Licence |', '|---|---|---|', ...SCORE_CREDITS.map((c) => `| ${c.piece} | ${c.source} | ${c.licence} |`)].join('\n');
-}
-
 /** Plugin families without a credit. */
 const { GPL_PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalogGpl.ts');
 export const uncreditedPlugins = () => [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES].filter((f) => !PLUGIN_CREDITS.some((c) => c.family === f.family)).map((f) => f.family);
@@ -87,7 +82,7 @@ const between = (text, name, body) => {
 };
 
 export function generatedGuide(text = readFileSync(GUIDE, 'utf8')) {
-  return between(between(between(between(text, 'instruments', instrumentTable()), 'credits', creditsTable()), 'plugin-credits', pluginCreditsTable()), 'score-credits', scoreCreditsTable());
+  return between(between(between(text, 'instruments', instrumentTable()), 'credits', creditsTable()), 'plugin-credits', pluginCreditsTable());
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

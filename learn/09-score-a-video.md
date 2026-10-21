@@ -10,7 +10,7 @@ Use any short film you have: a phone clip, a game capture, a trailer. The pictur
 
 ### Start a song and set the frame rate
 
-1. Open **File › New…**, type *epic* and click **Epic Orchestral**. It plays at 130 BPM in three sections: **Tension**, **Rise** and **Battle**.
+1. Open **File › New…** and click **Latin**. It plays at 130 BPM in three sections: **Intro**, **Groove** and **Melody**. (Any song works the same way; this one is short and has a clear change at bar 5.)
 2. Click the frame rate next to **TIMECODE** (it starts at **30 FPS**) and choose your film's rate. For the test film that's **24 fps**.
 
 {{shot:score-timecode}}
@@ -58,7 +58,7 @@ Here's the worked example for the test film:
 | Cut 2 | 00:00:08:04 | bar 5 |
 | Cut 3 | 00:00:12:06 | bar 7 |
 
-The cuts are about 4.1 seconds apart, and at 117.55 BPM a bar lasts 2.04 seconds, so each cut comes two bars after the last. Better still, the starter's **Rise** section starts on bar 5, so the music now changes at the very moment the film does. Your numbers may differ by a hundredth or two.
+The cuts are about 4.1 seconds apart, and at 117.55 BPM a bar lasts 2.04 seconds, so each cut comes two bars after the last. Better still, the starter's **Groove** section starts on bar 5, so the music now changes at the very moment the film does. Your numbers may differ by a hundredth or two.
 
 > The finder sets one steady tempo. If your song has tempo changes (more flags on the ruler's top row), click each one and choose **Remove** before you fit, or the cuts after a change won't land.
 
@@ -111,7 +111,7 @@ Clients often want the music on its own in set lengths: a 30-second spot, a 6-se
 
 1. Save first with **File › Save**, because this rebuilds the song.
 2. Right-click the ruler and choose **Cut song to length…**, then pick **30 s**.
-3. The dialog lists the sections it keeps. With the build-up in, it leaves one out and nudges the tempo to 112 BPM so the result lasts exactly 0:30.00. Click **Cut to 0:30.00**.
+3. The dialog lists the sections it keeps, repeating or leaving out whole sections and nudging the tempo a little so the result lasts exactly 0:30.00. Click **Cut to 0:30.00**.
 
 It drops or repeats whole sections between your markers, so this version won't match the film any more. That's expected: it's for the music on its own. **Ctrl+Z** brings the full song back, but not the tempo: open your saved file again to get the scored version back exactly.
 
@@ -119,4 +119,4 @@ It drops or repeats whole sections between your markers, so this version won't m
 
 You've fitted a tempo to a film's cuts, landed a build-up on the last one, and exported the music on the picture with markers for the editor. Next, make music that changes while someone plays: [Game music that reacts](/learn/game-music/).
 
-{{example:scored-film}}
+{{example:latin-scored-film}}

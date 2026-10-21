@@ -16,7 +16,7 @@ import { pickProjectFile } from '../components/timeline/projectFile';
 
 /**
  * Everything the search palette (Ctrl+K) can find: the app's tools and settings, every
- * instrument, the genre starters and the guide's sections. Running an entry does the thing (opens
+ * instrument, the starters and the guide's sections. Running an entry does the thing (opens
  * the Mixer, starts playback) or takes you to the control (scrolls to it, focuses it and rings it).
  * An entry that can't be reached right now says why instead.
  */
@@ -75,7 +75,7 @@ const AUDIO_FIRST = 'Start the audio first (the START AUDIO button at the top ri
 type Item = Omit<PaletteEntry, 'id' | 'group'> & { id?: string };
 
 const TOOLS: Item[] = [
-  { title: 'New arrangement', keywords: 'new project blank start over template starter demo', detail: 'Start again from a blank timeline, a demo song (Sunset Stroll or one of the Classics) or a genre starter.', run: () => ui().setDialog('new') },
+  { title: 'New arrangement', keywords: 'new project blank start over template starter empty', detail: 'Start again from a blank timeline or a starter.', run: () => ui().setDialog('new') },
   { title: 'Open project', keywords: 'open load file json import project', detail: 'Open a .fledgetone.json project file.', run: () => pickProjectFile() },
   { title: 'Load a sample pack', keywords: 'sample pack folder kit import drums one shots loops samples kits load sounds 808', detail: "Pick a sample pack's folder: its drums become Drum Rack kits, an instrument's notes a Multi Sampler, its loops an Audio track.", run: async () => { const [{ pickAudioFolder }, { importSamplePack }] = await Promise.all([import('../components/timeline/audioFiles'), import('../components/timeline/samplePackImport')]); await importSamplePack(await pickAudioFolder()); } },
   { title: 'Save project', keywords: 'save download keep backup file json', detail: 'Save this arrangement as a project file, with its sounds (the first time, choose where).', run: async () => void (await press('#btn-save-project')) },

@@ -8,10 +8,10 @@ Fledgetone is a whole music studio in a browser tab. In ten minutes you'll open 
 
 ### Open a song
 
-The quickest way to learn a studio is to open something that already sounds good. Fledgetone comes with 79 **starters**: short songs in every style, ready to play and change.
+The quickest way to learn a studio is to open something that already sounds good. Fledgetone comes with **starters**: short songs, ready to play and change.
 
 1. Open the **File** menu at the top left and choose **New…**.
-2. Type *boss* in the search box and click **Boss Fight**.
+2. Click **Plaza**, a Latin groove on percussion, nylon guitar, upright bass and trumpet.
 3. Press **Space** to play. Press it again to pause.
 
 {{shot:tour-file-menu}}
@@ -60,4 +60,4 @@ Fledgetone saves the song in your browser as you work. Close the tab and come ba
 
 You've played a song, muted and soloed tracks, edited notes and found the mixer. Next, make something of your own: [Make your first beat](/learn/first-beat/).
 
-{{example:boss-fight}}
+{{example:plaza}}

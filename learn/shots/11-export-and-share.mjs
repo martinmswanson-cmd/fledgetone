@@ -1,8 +1,8 @@
 // Screenshots and examples for learn/11-export-and-share.md (taken by scripts/guide-shots/capture.mjs --learn).
 
-/** The Synthwave starter, named as in the lesson. */
+/** The Lo-Fi starter, named as in the lesson. */
 async function song(s) {
-  await s.starter('Synthwave');
+  await s.starter('Lo-Fi');
   const name = s.page.getByLabel('Project name');
   await name.fill('Night drive');
   await name.press('Enter');
@@ -47,7 +47,7 @@ export const SHOTS = [
   },
   {
     file: 'export-restore',
-    alt: 'The top of the studio after a reload: under the header, a banner says "Your last session, Night drive (6 clips, saved today), can be restored", with Restore and Dismiss.',
+    alt: 'The top of the studio after a reload: under the header, a banner says "Your last session, Night drive (5 clips, saved today), can be restored", with Restore and Dismiss.',
     caption: 'Come back later and the banner offers your last session.',
     setup: async (s) => {
       await song(s);
@@ -124,8 +124,8 @@ export const SHOTS = [
 
 export const EXAMPLES = [
   {
-    name: 'night-drive-30s',
-    label: 'The Synthwave starter as "Night drive", cut to exactly 30 seconds.',
+    name: 'lofi-30s',
+    label: 'The Lo-Fi starter as "Night drive", cut to exactly 30 seconds.',
     setup: async (s) => {
       await song(s);
       await s.menu('File', 'Cut song to length');

@@ -25,7 +25,7 @@ Open fledgetone.com on your phone. A notice says Pocket is an early version; tap
 
 {{shot:pocket-new}}
 
-> Would rather start from something finished? Tap a kind of music and pick any starter: it plays straight away. The song you had is kept: **Carry on with** brings it back from the same screen.
+> Would rather start from something finished? Tap any starter under **Blank song**: it plays straight away. The song you had is kept: **Carry on with** brings it back from the same screen.
 
 ### Tap in a beat
 

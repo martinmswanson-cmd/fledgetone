@@ -16,13 +16,13 @@ async function closeSheet(s) {
   await wait(s, 300);
 }
 
-/** What are we making? › Empty, then the song's name and key (A minor). */
+/** What are we making? › Blank song, then the song's name and key (A minor). */
 async function emptySong(s) {
   if (!(await s.page.getByText('What are we making?').count())) {
     await s.page.getByRole('button', { name: /^Your songs/ }).click();
     await wait(s);
   }
-  await s.page.locator('button', { hasText: /^START FROMEmpty$/ }).click();
+  await s.page.locator('button', { hasText: /^Blank song/ }).click();
   await wait(s, 1500);
   await s.page.getByRole('button', { name: 'The song: name, tempo, key' }).click();
   await wait(s);
@@ -136,7 +136,7 @@ export const SHOTS = [
   {
     file: 'pocket-new',
     phone: true,
-    alt: 'Pocket on a phone: What are we making?, with kinds of music to start from (Hip-Hop & Phonk, Electronic, Pop & Jazz and more) and Empty.',
+    alt: 'Pocket on a phone: What are we making?, with Blank song and the starters listed under it.',
     caption: 'What are we making?: a starter, or an empty song.',
     setup: async (s) => s.phoneScreen(),
   },

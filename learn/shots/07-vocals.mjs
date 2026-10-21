@@ -5,11 +5,11 @@
 // plays a short sung "ah" phrase made here, a little off the notes, as a real take would be. The
 // studio records it through its own Mic button exactly as it would a voice.
 
-/** A short sung-like phrase ("ah", 140 BPM, 4 bars per pass), a little off the notes, as a 16-bit WAV. */
-export function voiceWav({ bpm = 140, beats = 16, rate = 44100, passes = 1 } = {}) {
+/** A short sung-like phrase ("ah", 82 BPM, 4 bars per pass), a little off the notes, as a 16-bit WAV. */
+export function voiceWav({ bpm = 82, beats = 16, rate = 44100, passes = 1 } = {}) {
   const beat = 60 / bpm;
-  // [start beat, length in beats, MIDI note, cents off]: around C minor
-  const phrase = [[0, 1.5, 63, -38], [2, 0.75, 60, 32], [3, 1, 62, -45], [4, 2.5, 63, 28], [7, 0.75, 67, -30], [8, 1.5, 65, 40], [10, 1, 63, -35], [11.5, 0.5, 62, 25], [12, 3, 60, -28]];
+  // [start beat, length in beats, MIDI note, cents off]: around D Dorian (the notes of G major)
+  const phrase = [[0, 1.5, 69, -38], [2, 0.75, 64, 32], [3, 1, 67, -45], [4, 2.5, 69, 28], [7, 0.75, 74, -30], [8, 1.5, 71, 40], [10, 1, 69, -35], [11.5, 0.5, 67, 25], [12, 3, 62, -28]];
   const notes = [];
   for (let p = 0; p < passes; p++) {
     // Each pass sung a little differently: later or earlier, shorter or longer, off the other way
@@ -65,9 +65,9 @@ async function fakeMic(s, passes = 1) {
 /** Hide the "Playback is lagging" notice: the headless browser can't keep up while it records. */
 const quiet = (s) => s.page.addStyleTag({ content: '[role=alert]:has(button[title^="Hide until playback"]){display:none!important}' });
 
-/** The Rap Beat starter with an Audio track added (+ Add Track, "audio", Enter): it opens in the Inspector. */
+/** The Lo-Fi starter with an Audio track added (+ Add Track, "audio", Enter): it opens in the Inspector. */
 async function rapWithAudio(s) {
-  await s.starter('Rap Beat');
+  await s.starter('Lo-Fi');
   await quiet(s);
   await s.text('Add Track').first().click();
   await s.wait(400);
@@ -206,8 +206,8 @@ export const SHOTS = [
   },
   {
     file: 'vocals-tune',
-    alt: 'The Tune vocal dialog: key C minor, Natural selected, Strength 80%, Speed 40 ms, and a graph of the sung pitch, wavering around the notes, with the tuned pitch in colour.',
-    caption: 'Tune vocal: Natural pulls the voice most of the way onto C minor and keeps its slides and vibrato.',
+    alt: 'The Tune vocal dialog: key G major, Natural selected, Strength 80%, Speed 40 ms, and a graph of the sung pitch, wavering around the notes, with the tuned pitch in colour.',
+    caption: 'Tune vocal: Natural pulls the voice most of the way onto the notes of the key and keeps its slides and vibrato.',
     setup: async (s) => {
       await rapWithAudio(s);
       await loop5to9(s);
@@ -220,7 +220,7 @@ export const SHOTS = [
   },
   {
     file: 'vocals-hard-tune',
-    alt: 'The Hard tune dialog: Strength 100%, Speed at instant (0 ms), and the tuned pitch drawn as flat steps on the notes of C minor.',
+    alt: 'The Hard tune dialog: Strength 100%, Speed at instant (0 ms), and the tuned pitch drawn as flat steps on the notes of G major.',
     caption: 'Hard tune: all the way, instantly. The pitch steps from note to note.',
     setup: async (s) => {
       await rapWithAudio(s);
@@ -267,8 +267,8 @@ export const SHOTS = [
 
 export const EXAMPLES = [
   {
-    name: 'vocal-ready',
-    label: 'The Rap Beat starter with a lead vocal track (Clean lead, ducking the beat 3 dB) and an Ad-lib track, ready for you to record.',
+    name: 'lofi-vocal-ready',
+    label: 'The Lo-Fi starter with a lead vocal track (Clean lead, ducking the beat 3 dB) and an Ad-lib track, ready for you to record.',
     setup: async (s) => {
       await rapWithAudio(s);
       await loop5to9(s);

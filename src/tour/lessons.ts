@@ -109,7 +109,7 @@ const TOUR: Lesson = {
     },
     {
       title: 'The menus',
-      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Plugins**, **Tools**, **Video**, **Game**, **View**, **Learn** and **Help**. **New** offers a blank timeline, the demo songs (a groove and five classical pieces) or one of more than 70 starters, game music among them.',
+      body: 'Every tool lives in the menu bar: **File** (New, Open, Save, Export), **Edit**, **Song** (markers, tempo, build-ups, key changes), **Track**, **Plugins**, **Tools**, **Video**, **Game**, **View**, **Learn** and **Help**. **New** offers a blank timeline or one of the starters.',
       target: '[role="menubar"]',
     },
     {
@@ -200,7 +200,7 @@ const BEGINNER: Lesson = {
     },
     {
       title: 'Open a starter',
-      body: 'Open the **File** menu, click **New…**, then open a group of starters and pick one. *Lo-Fi* (in **Chill & World**) is a gentle first one. (This replaces the current timeline.)',
+      body: 'Open the **File** menu, click **New…**, then pick a starter. *Lo-Fi* is a gentle first one. (This replaces the current timeline.)',
       target: dialogOr('new', 'New arrangement', NEW_BUTTON),
       task: { hint: 'New, then a starter', begin: clipIds, done: (b) => tl().clips.length > 0 && !tl().clips.some((c) => (b as Set<string>).has(c.id)) },
     },
@@ -577,8 +577,8 @@ const EXPERT: Lesson = {
 
 /** Clips on the timeline, by id (a variation, a chord clip and an accompaniment each add one). */
 const newClip = (before: unknown) => tl().clips.some((c) => !(before as Set<string>).has(c.id));
-/** A game starter is open: sections to switch between and stingers to fire. */
-const gameSongOpen = () => tl().markers.filter((m) => m.anchor !== 'time').length >= 2 && tl().stingers.length > 0;
+/** A song with sections is open: at least two markers, so two states to switch between. */
+const gameSongOpen = () => tl().markers.filter((m) => m.anchor !== 'time').length >= 2;
 const inGameTab = () => ui().dockOpen && ui().dockTab === 'game';
 const GAME_TAB = () => (inGameTab() ? '[aria-label="Game preview"]' : '#btn-game');
 const gameTarget = (part: string) => () => (inGameTab() ? `[data-game="${part}"]` : '#btn-game');
@@ -645,10 +645,10 @@ const GAME_MUSIC: Lesson = {
       body: 'Game music is made of **states** (explore, danger, boss...) that loop until the game switches, and **transitions** that hand one over to the next on the beat. Here you’ll set them up and hear them the way the game will.',
     },
     {
-      title: 'Open a game starter',
-      body: 'Open **File › New…**, then the **Game Worlds** group, and pick one: *Overworld Adventure*, *Open Field* or *Cozy Village*. Each section is a state, the tracks are in layers, and the transitions and stingers are made. (This replaces the current timeline.)',
-      target: dialogOr('new', 'New arrangement', NEW_BUTTON),
-      task: { hint: 'New, Game Worlds, a starter', done: gameSongOpen },
+      title: 'A song with sections',
+      body: 'Each section of a song (from one marker to the next) is a state. Use a song of your own with two or more markers (press **M** where a section starts), or open **File › New…** and pick a starter: *Celtic* has four sections (Intro, Reel, Whistle, Pipes). (A starter replaces the current timeline.)',
+      target: () => (gameSongOpen() ? null : dialogOr('new', 'New arrangement', NEW_BUTTON)()),
+      task: { hint: 'Two or more sections', done: gameSongOpen },
     },
     {
       title: 'The Game tab',
@@ -711,10 +711,10 @@ const GAME_REACT: Lesson = {
       body: 'A game’s music follows more than its states: how close the enemy is, how much health is left, where the player is. Here you’ll set that up without the game needing to know how the music is mixed.',
     },
     {
-      title: 'A game starter',
-      body: 'This uses a song with game states. If you don’t have one open, open **File › New…**, **Game Worlds**, and pick one.',
+      title: 'A song with sections',
+      body: 'This uses a song with two or more sections, each a state. If yours has none, add markers (**M**) where sections start, or open **File › New…** and pick a starter: *Celtic* has four.',
       target: () => (gameSongOpen() ? null : dialogOr('new', 'New arrangement', NEW_BUTTON)()),
-      task: { hint: 'Open a game starter', done: gameSongOpen },
+      task: { hint: 'Two or more sections', done: gameSongOpen },
     },
     {
       title: 'The Game tab',

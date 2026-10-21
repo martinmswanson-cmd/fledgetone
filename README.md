@@ -75,7 +75,7 @@ tonejs-instruments (Karoryfer and VSCO 2 recordings), the FluidR3 and Musyng Kit
 soundfonts, Versilian Studios' VSCO 2 Community Edition and VCSL, the University of Iowa Musical
 Instrument Samples, Karoryfer's libraries (guitars, saxophones, basses, a drum kit) and a few
 more. Their licences differ (CC BY 3.0, CC BY-SA 3.0 and CC0, among others); the built-in plugins
-are open source (MIT, BSD), and the Classics play public-domain scores. The full list with links
+are open source (MIT, BSD). The full list with links
 and licences is in the Credits section of [GUIDE.md](GUIDE.md#credits) and in the app under
 Guide > Credits, generated from `src/credits.ts`.
 

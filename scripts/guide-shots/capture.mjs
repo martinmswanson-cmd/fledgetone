@@ -91,15 +91,13 @@ function helpers(page) {
     /** The whole phone screen, for a Pocket shot */
     phoneScreen: async () => ({ x: 0, y: 0, width: PHONE.viewport.width, height: PHONE.viewport.height }),
     async starter(name) {
-      // A game-ready starter opens the Game tab with a note: the shot keeps the dock as it was
+      // The shot keeps the dock as it was
       const tabBefore = await page.locator('[role=tab][aria-selected=true]').first().textContent().catch(() => null);
       await page.getByRole('menuitem', { name: 'File', exact: true }).click();
       await page.getByRole('menuitem', { name: /^New/ }).click();
-      await page.getByPlaceholder(/starter/i).fill(name);
-      await page.locator('[role=dialog] button', { hasText: name }).first().click();
+      // The starter's button, by its title
+      await page.locator('[role=dialog] button').filter({ has: page.getByText(name, { exact: true }) }).first().click();
       await page.waitForTimeout(2500);
-      const note = page.getByText(/This starter is game-ready/);
-      if (await note.count()) await note.first().click();
       const tabAfter = await page.locator('[role=tab][aria-selected=true]').first().textContent().catch(() => null);
       if (tabAfter !== tabBefore) {
         if (tabBefore) await page.locator('[role=tab]', { hasText: tabBefore.trim() }).first().click();

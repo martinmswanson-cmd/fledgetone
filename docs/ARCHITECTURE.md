@@ -318,10 +318,8 @@ Web Audio keeps processing every connected node, even silent ones, and Tone's `S
   the store if undo should cover it.
 - **Add a menu item, button or palette entry**: menus are `MenuBar.tsx`; the search palette's
   entries are `paletteEntries.ts`; dialogs open through `uiStore.ts`.
-- **Add a genre starter**: `starters.ts` or `startersPlaylist.ts` (game music: `startersGame.ts`,
-  `startersGameMore.ts`, `startersStory.ts`), built with the helpers in `starterKit.ts`, with its
-  level in `startersLoudness.ts`. The Classics are built the same way (`startersClassics.ts`, their
-  notes in `classicsScores.ts`), but New lists them under Demo songs.
+- **Add a starter**: `starters.ts` (or a file beside it, as `startersWorld.ts`), built with the
+  helpers in `starterKit.ts`, with its level in `startersLoudness.ts`.
 - **A tool that changes the tempo**: write tempo points (`tempoPoints` in the store, `tempoMap.ts`)
   in one undo step, as Breathe (`breathe.ts`) and Speed up into the drop (`speedUp.ts` for the
   maths, `speedUpActions.ts` to apply it: it also cuts audio clips that follow the tempo on the

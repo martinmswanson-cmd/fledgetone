@@ -4,18 +4,19 @@ summary: Turn a song into music a game can steer: states to switch between, tran
 level: Advanced
 time: 35 minutes
 ---
-Game music can't just play from start to finish, because nobody knows how long a player will stay in one place. It has to loop, change when something happens, and get busier as things heat up. In this lesson you'll take a game starter, add a third state, choose how the music moves between states, set up intensity layers and stingers, hear it the way a game will play it, and export it for your engine.
+Game music can't just play from start to finish, because nobody knows how long a player will stay in one place. It has to loop, change when something happens, and get busier as things heat up. In this lesson you'll take a starter, turn its sections into states and add a third, choose how the music moves between states, set up intensity layers and stingers, hear it the way a game will play it, and export it for your engine.
 
-### Open a game starter
+### Open a song
 
-1. Open **File › New…**, type *overworld* and click **Overworld Adventure**. It's 116 BPM in C major, with two sections marked on the ruler: **Explore** (bar 1) and **Danger** (bar 9).
-2. Open **Game › Game panel (states, intensity, stingers)**. The **Game** tab opens in the bottom panel, in three columns: states and transitions, intensity, and stingers with the exports.
+1. Open **File › New…** and click **Plaza**. It's 104 BPM in A minor, with two sections marked on the ruler: **Verse** (bar 1) and **Montuno** (bar 9).
+2. Name the sections for the game: double-click the **Verse** flag on the ruler, type *Explore* and press **Enter**; do the same for **Montuno**, naming it *Danger*.
+3. Open **Game › Game panel (states, intensity, stingers)**. The **Game** tab opens in the bottom panel, in three columns: states and transitions, intensity, and stingers with the exports.
 
-Every game starter comes set up like this, so they're good to learn from. See [Game music](/guide/game-music/) in the guide for every control.
+Any song with markers works the same way. See [Game music](/guide/game-music/) in the guide for every control.
 
 ### Markers are states
 
-Each stretch between two markers is a **state**: one loop the game can ask for. Explore runs 8 bars, but its second half (with drums and the horn) feels like a journey, so make it a state of its own.
+Each stretch between two markers is a **state**: one loop the game can ask for. Explore runs 8 bars, but its second half (with the guiro joining) feels like a journey, so make it a state of its own.
 
 1. Click the **BAR.BEAT.TICK** readout, type *5* and press **Enter**. The playhead jumps to bar 5.
 2. Press **M** to drop a marker there.
@@ -38,20 +39,21 @@ The menu at the top of the column (**on the next bar**) sets when a switch with 
 ### Choose how states hand over
 
 1. Click **Transitions** under the states. A matrix opens: rows are the state you come **from**, columns the state you go **to**.
-2. Click the cell in the **Travel** row and **Danger** column.
-3. Set it to **Bridge**, **on the next phrase**, **of 4 bars**, and **2 bars: a turn, then the pull**.
+2. Click the cell in the **Explore** row and **Danger** column and set it to **Fill**.
+3. Click the cell in the **Danger** row and **Explore** column, set it to **Crossfade**, **over 8 beats**.
+4. Click the cell in the **Travel** row and **Danger** column. Set it to **Bridge**, **on the next phrase**, **of 4 bars**, and **2 bars: a turn, then the pull**.
 
 {{shot:game-transitions}}
 
-Here's what the starter's rules and your new one do:
+Here's what your three rules do:
 
 | From → to | Rule | What you hear |
 |---|---|---|
 | Explore → Danger | Fill | a snare fill over the last beat, then Danger |
 | Danger → Explore | XF 8 | Danger fades out as Explore fades in, over 8 beats |
-| Travel → Danger | Bridge, 2 bars, next phrase | waits for the end of a 4-bar phrase, then plays Dm for a bar and E7 for a bar, landing on Danger's opening A minor |
+| Travel → Danger | Bridge, 2 bars, next phrase | waits for the end of a 4-bar phrase, then plays two bars that lead into Danger's opening chord |
 
-The bridge is written from your song: E7 is the chord that pulls hardest into A minor, and Dm (chord iv) turns into it first. It plays on the song's own chords, bass and drums. Any cell that shows a dash has no rule and cuts on the next bar; a rule in the **Any** row applies from every state that doesn't have its own.
+The bridge is written from your song: its last bar is the dominant seventh of the chord Danger opens on, the chord that pulls hardest into it, and the bar before turns into that. It plays on the song's own chords, bass and drums. Any cell that shows a dash has no rule and cuts on the next bar; a rule in the **Any** row applies from every state that doesn't have its own.
 
 > The timeline can't play two parts of the song at once, so a crossfade cuts there. Use **Audition like the game** (below) to hear every rule exactly.
 
@@ -59,19 +61,19 @@ The bridge is written from your song: E7 is the chord that pulls hardest into A 
 
 Intensity is one number, 0 to 100%, that a game turns up as things get exciting. Each track belongs to a **stem group**, and each group has a curve for how loud it plays at each intensity.
 
-1. In the middle column, set **Cello** to **Ambient** with the list beside it.
+1. In the middle column, set **Nylon guitar** to **Ambient** with the list beside it. (The percussion is already in **Percussion** and the trumpet in **Climax**.)
 2. Click **Explore** to play, and drag **Intensity** down to **40%**.
 3. Drag it slowly up to 100% and back while the music plays.
 
 {{shot:game-intensity}}
 
-At 40%, **Ambient** (harp, strings and now cello) plays at full level, **Percussion** at 80%, and **Tension** and **Climax** are silent. Higher up, the pizzicato comes in, then the horn near the top, while Ambient eases back to 60%. Drag a point on a curve to move it, click empty space to add one, double-click a point to remove it. The flute has no group, so it always plays at full level.
+At 40%, **Ambient** (the guitar) plays at full level, **Percussion** at 80%, and **Climax** is silent. Higher up, the percussion reaches full level, then the trumpet comes in near the top, while Ambient eases back to 60%. Drag a point on a curve to move it, click empty space to add one, double-click a point to remove it. The bass has no group, so it always plays at full level.
 
 ### Add stingers
 
 Stingers are short cues the game plays over the music: a coin, a checkpoint, a win.
 
-1. Open **+ Add a stinger…** at the top of the right column and choose **Checkpoint**.
+1. Open **+ Add a stinger…** at the top of the right column and choose **Checkpoint**. Add **Item found** and **Victory** the same way: the little game below uses them.
 2. While the music plays, click **Checkpoint**. It plays on the next bar, in the song's key.
 3. Click the dice beside it for another version, and pick another sound from its instrument list.
 
@@ -99,7 +101,7 @@ You get take A as written, B with a snare fill into the loop point and C with a 
 1. Close the audition and click **Try it in a game**. A little 3D level opens with your song.
 2. Walk with the arrow keys or **WASD**, and grab coins. Coins fire your **Item found** stinger.
 3. Walk towards the cube guard. When it spots you the music switches to **Danger** through your Fill, and intensity rises as it gets closer. Jump on it with **Space** to beat it.
-4. Click **Music wiring** and set **Win (stinger)** to **Victory**, then press **R** to restart and beat the guard again.
+4. Click **Music wiring**: it shows what each moment plays, guessed from the names. **Win (stinger)** is on your **Victory**; pick another to change it, then press **R** to restart and beat the guard again.
 
 {{shot:game-try}}
 
@@ -120,4 +122,4 @@ Working in audio middleware instead? **Game › Export FMOD / Wwise package…**
 
 You've made a song a game can steer: three states, transitions with a written bridge, intensity layers, stingers and loop takes, tested in a real level and exported. Next, finish and share your music: [Export, share and finish](/learn/export-and-share/).
 
-{{example:overworld-states}}
+{{example:plaza-states}}

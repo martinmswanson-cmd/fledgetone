@@ -10,8 +10,8 @@ Presets get you started; your own sounds make a track yours. In this lesson you'
 
 You'll design sounds in place, on parts that are already playing, so you hear each change in the music.
 
-1. **File › New…**, type *space* and click **Space Station**. It's 105 BPM in E minor, with an **Arp**, a **Pad** and **Drums**.
-2. Press **Space**. The loop plays the opening bars: the arp's 16th notes over the pad.
+1. **File › New…** and click **Lo-Fi**. It's 82 BPM in D minor, with **Keys** playing the chords, a **Flute** melody and **Drums**.
+2. Press **Space**. The keys play alone, the beat comes in at bar 5 and the flute at bar 9.
 
 To change a track's instrument, click the sliders icon on its header to open the **Track Inspector**, click the instrument under **SOUND GENERATOR**, type a name and press **Enter**. The clips stay as they are.
 
@@ -21,7 +21,7 @@ To change a track's instrument, click the sliders icon on its header to open the
 
 A synth sound is built in three stages. **Oscillators** make a raw tone, a **filter** takes away brightness, and **envelopes** shape how each note changes over time: how fast it starts (**Attack**), how quickly it falls (**Decay**), the level it holds at (**Sustain**) and how long it rings after you let go (**Release**). A pluck is bright for an instant, then dark and gone.
 
-1. Switch the **Arp** track to **Synth Designer**. Its panel appears under the instrument.
+1. Switch the **Flute** track to **Synth Designer**. Its panel appears under the instrument.
 2. **Load preset… › Init saw**: one plain saw wave, the blank page.
 3. Set the rest from this table, top to bottom.
 
@@ -44,7 +44,7 @@ Play it. The second saw an octave up, 7 cents off, makes it shimmer. The filter 
 
 A pad is the opposite: it swells in, holds and fades out slowly, and it's wide.
 
-1. Switch the **Pad** track to **Synth Designer** and choose **Load preset… › Init saw**.
+1. Switch the **Keys** track to **Synth Designer** and choose **Load preset… › Init saw**.
 2. Tick **Osc 2** and set its wave to **Saw** (leave Fine at +7 ct and Level at 60%).
 3. Set the rest:
 
@@ -78,14 +78,14 @@ Each change plays the drum so you hear it as you go. Once you change anything th
 
 ### Game sounds: a coin and a jump
 
-The **sound effects maker** makes the sounds games are full of, from layers of simple sources. Save first (**File › Save**), then open **File › New…** and choose **Platformer** for a game song to try them in, then open the **Sound FX** tab of the bottom panel.
+The **sound effects maker** makes the sounds games are full of, from layers of simple sources. It works beside any song, so stay on this one: open the **Sound FX** tab of the bottom panel.
 
 1. Click **Retro**, then **Coin**. Each click makes a new coin and plays it.
 2. Make it exactly this one: **Source** **square**, **Pitch** **990 Hz**, **Slide** **0 st**, **Jump** **+5 st**, **Jump at** **15%**, **Attack** **0 ms**, **Hold** **80 ms**, **Punch** **50%**, **Decay** **300 ms**, **Width** **50%**.
 
 {{shot:sound-coin}}
 
-That's the classic pickup: a bright square note that leaps up a fourth almost at once and rings out. Letting go of any slider plays it. **Tune to key** is on because the song has notes: it shows **B5**, a note of A minor, so the coin sits in the music.
+That's the classic pickup: a bright square note that leaps up a fourth almost at once and rings out. Letting go of any slider plays it. **Tune to key** is on because the song has notes: it shows the nearest note of the song's key, so the coin sits in the music.
 
 Now the jump: click **Jump** and set **Source** **square**, **Pitch** about **330 Hz**, **Slide** **+12 st**, **Curve** **60%**, **Jump** **off**, **Attack** **0 ms**, **Hold** **40 ms**, **Punch** **0%**, **Decay** **200 ms**, **Width** **50%**. The **Slide** sweeps it up an octave, quickly at first (that's the **Curve**), like a body leaving the ground.
 
@@ -118,6 +118,6 @@ Any recording can become an instrument: a note you sang, a hit you recorded, a l
 
 You've built a pluck and a pad, designed drums, made game sounds and played your own recordings. Next, put sounds to pictures: [Score a video](/learn/score-a-video/).
 
-The example is Space Station with this lesson's sounds: the pluck on the arp, the pad, and the designed kick and snare.
+The example is Lo-Fi with this lesson's sounds: the pluck on the flute line, the pad on the keys, and the designed kick and snare.
 
-{{example:space-station-designed}}
+{{example:lofi-designed}}

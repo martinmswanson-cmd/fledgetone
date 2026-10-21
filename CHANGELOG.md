@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Starters**: only the eight Chill & World starters remain for now (Lo-Fi, Ambient, Celtic, Fantasy Tavern, Latin, Plaza, Mbira Morning and Eastern), and **New** offers them or a blank song. The other starters, the Classics and the demo song are gone; a new, smaller set is on the way. Songs you made from them, and links to them, still open as they were.
+
 ## 2026.10.21-2 — Drop pad, bounce to pad and versions
 
 - **Drop pad**: a new track that changes the whole mix while you hold it: **Stutter**, **Filter**, **Tape stop**, **Crush**, **Gate** and **Echo**, always in time. Play it on the phone's big pads (pressing one starts the song) or from a keyboard; with **Rec** on, your moves are written into the song and play every time, in exports too. Add it with **+ Track › Drop pad**.

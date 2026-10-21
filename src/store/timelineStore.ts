@@ -68,7 +68,7 @@ import { clipSecondsAt, sourceAt } from './warp';
 import { controllerMemo, withControllerLanes } from './ccLanes';
 import { specOf, insertLaneBars, laneValueAt, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
-import { createDemoProject, createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
+import { createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
 import { keyChange } from './keyChange';
 import { songSections } from './cutToLength';
 import { dipLane, type DipShape } from './dialogue';
@@ -775,9 +775,8 @@ interface TimelineState {
   /** Which song is open (the same through renames: its kept versions are found by it, versions.ts) */
   songId: string;
   setProjectName: (name: string) => void;
-  /** Replace the arrangement with a blank timeline or the demo song. Clears undo history. */
-  /** Replace the arrangement with a blank one, the demo song or a genre starter (see starters.ts). */
-  newProject: (template: 'blank' | 'demo' | StarterId) => void;
+  /** Replace the arrangement with a blank one or a starter (see starters.ts). Clears undo history. */
+  newProject: (template: 'blank' | StarterId) => void;
   /** Replace the arrangement with a loaded project. Clears undo history. */
   loadProject: (project: ProjectSnapshot) => void;
   /** Drop one of the instrument's stock patterns onto a track (undoable). */
@@ -3079,21 +3078,19 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // A new song plays expressively (older projects opened later keep their sound)
       const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, expressive: true })) });
       get().loadProject(expressive(
-        template === 'demo'
-          ? { ...createDemoProject(), fps, dropFrame }
-          : isStarterId(template)
-            ? { ...createStarter(template), fps, dropFrame }
-            : {
-              name: 'Untitled',
-              bpm: 122,
-              swing: 0.2,
-              loopRegion: { inBar: 1, outBar: 5, enabled: true },
-              tracks: INITIAL_TRACKS.map((t) => ({ ...t, fx: defaultTrackFx() })),
-              clips: [],
-              masterFx: DEFAULT_MASTER_FX,
-              fps,
-              dropFrame,
-            }
+        isStarterId(template)
+          ? { ...createStarter(template), fps, dropFrame }
+          : {
+            name: 'Untitled',
+            bpm: 122,
+            swing: 0.2,
+            loopRegion: { inBar: 1, outBar: 5, enabled: true },
+            tracks: INITIAL_TRACKS.map((t) => ({ ...t, fx: defaultTrackFx() })),
+            clips: [],
+            masterFx: DEFAULT_MASTER_FX,
+            fps,
+            dropFrame,
+          }
       ));
     },
 

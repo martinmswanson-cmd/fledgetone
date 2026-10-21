@@ -4,13 +4,13 @@ summary: Record your voice over a beat, sing a line several times and keep the b
 level: Intermediate
 time: 30 minutes
 ---
-In this lesson you'll record a vocal over a finished rap beat and take it all the way to a mix-ready stack: a lead built from your best takes, gently or hard tuned, a double to thicken it, an ad-lib track off to the side, and a beat that dips a little whenever you sing. Rap, a sung hook or a spoken line all work the same way. Open [the studio](https://fledgetone.com/app/) in another tab and follow along.
+In this lesson you'll record a vocal over a finished lo-fi beat and take it all the way to a mix-ready stack: a lead built from your best takes, gently or hard tuned, a double to thicken it, an ad-lib track off to the side, and a beat that dips a little whenever you sing. Rap, a sung hook or a spoken line all work the same way. Open [the studio](https://fledgetone.com/app/) in another tab and follow along.
 
 You'll need a microphone (the one in your laptop or headset is fine to start) and **headphones**. The studio doesn't play your voice back while you record, so there's no feedback, but the beat has to reach your ears without reaching the mic.
 
 ### Set up the beat and a vocal track
 
-1. **File › New…**, type *rap* and click **Rap Beat**. It's 140 BPM, in C minor, and the beat proper starts at bar 5.
+1. **File › New…** and click **Lo-Fi**. It's 82 BPM, on D minor chords, and the beat proper starts at bar 5.
 2. Click **+ Add Track** under the tracks, type *audio* and press **Enter**. An **Audio** track appears and the **Track Inspector** opens on the right. Audio tracks hold recordings as clips, not notes.
 3. Click the small chevron (˅) right of the **Loop** button and set **In** to *5* and **Out** to *9*, pressing **Enter** after each. Now playback goes round the first four bars of the beat.
 4. Put your headphones on and press **Space** to check the level. If you'd like a click as well, switch on the **metronome** (the triangle in the toolbar). It's never in your exports.
@@ -68,7 +68,7 @@ Each click replaces only the track's inserts, as one Undo step, and you can chan
 
 Right-click the take and choose **Tune vocal…**. It pulls your pitch onto the notes of a key and keeps your timing.
 
-1. Check **KEY**: it starts on the key the song's notes are in, **C minor** here.
+1. Check **KEY**: it starts on the key the song's notes are in: **G major** here, the same notes as D Dorian, which the chords move in.
 2. Click **Natural**: **Strength 80%**, **Speed 40 ms**. Most of the way onto the notes, slowly enough that your slides and vibrato stay.
 3. Click **Hear tuned**, then **Hear original**, to compare.
 4. Click **Apply**.
@@ -81,7 +81,7 @@ The graph shows the pitch you sang in grey and where it goes in colour, against 
 
 Apply makes a tuned copy of the recording, so what you hear is exactly what exports play. Your original is kept: open the same dialog and click **Untune** to go back.
 
-> Hard tune sounding wobbly or jumping to wrong notes? Check the key. A song in C minor tuned to C major pulls every E flat up to E. And tuning works best on one voice at a time: a breath or a backing vocal in the same clip confuses it.
+> Hard tune sounding wobbly or jumping to wrong notes? Check the key. A song in D minor tuned to D major pulls every F up to F sharp. And tuning works best on one voice at a time: a breath or a backing vocal in the same clip confuses it.
 
 ### Double it and add ad-libs
 
@@ -107,6 +107,6 @@ Every other track now dips 3 dB a moment before each of the lead's clips and com
 
 You recorded, comped, chained, tuned, doubled and ducked a vocal. Next, make the instruments themselves: [Design your own sounds](/learn/sound-design/).
 
-The example below is this lesson's Rap Beat starter set up for you: the lead vocal track with **Clean lead** and the 3 dB duck, an **Ad-libs** track and the loop round bars 5 to 9. Recordings can't travel in a song link, so it's ready for your own voice.
+The example below is this lesson's Lo-Fi starter set up for you: the lead vocal track with **Clean lead** and the 3 dB duck, an **Ad-libs** track and the loop round bars 5 to 9. Recordings can't travel in a song link, so it's ready for your own voice.
 
-{{example:vocal-ready}}
+{{example:lofi-vocal-ready}}

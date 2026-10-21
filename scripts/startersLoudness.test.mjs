@@ -26,7 +26,7 @@ const source = readFileSync(new URL('../src/store/starters.ts', import.meta.url)
 const STARTERS = [...source.matchAll(/\{ id: '(\w+)', group: '([^']+)'/g)].map(([, id, group]) => ({ id, group }));
 
 test('the starter list was read', () => {
-  assert.ok(STARTERS.length >= 70, `found ${STARTERS.length}`);
+  assert.equal(STARTERS.length, 8, `found ${STARTERS.length}`);
 });
 
 test('every starter has a measured trim, and every trim a starter', () => {

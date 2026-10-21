@@ -1,20 +1,19 @@
 // Screenshots and examples for learn/06-mix-and-master.md (taken by scripts/guide-shots/capture.mjs --learn).
-// Every setup builds the lesson's mix of the Synthwave starter through the UI, as far as its step.
+// Every setup builds the lesson's mix of the Lo-Fi starter through the UI, as far as its step.
 
 /** The lesson's mix, step by step (the worked examples in the lesson). */
-const LEVELS = { Drums: -4, Bass: -6, Lead: -8, Arp: -12, Strings: -14, 'Poly pad': -16 };
-const PANS = { Strings: -0.3, Arp: 0.3 };
-const SENDS = { Drums: [0.1, 0], Bass: [0, 0], 'Poly pad': [0.4, 0], Strings: [0.3, 0], Arp: [0, 0.25], Lead: [0.3, 0.2] };
+const LEVELS = { Drums: -4, Bass: -6, Flute: -10, Keys: -12, Rain: -24 };
+const PANS = { Keys: -0.3, Flute: 0.2 };
+const SENDS = { Drums: [0.1, 0], Bass: [0, 0], Keys: [0.3, 0], Flute: [0.35, 0.2], Rain: [0.3, 0] };
 /** Pro EQ moves: [band (1-6), FREQ slider position, gain, Q slider position] */
 const hz = (f) => Math.round((1000 * Math.log(f / 20)) / Math.log(1000));
 const EQ = {
-  'Poly pad': [[1, hz(150)], [3, hz(300), -3, Math.log(1.4)]],
-  Strings: [[1, hz(120)]],
-  Arp: [[1, hz(250)]],
-  Lead: [[1, hz(200)], [4, hz(2500), 2]],
+  Keys: [[1, hz(150)], [3, hz(300), -3, Math.log(1.4)]],
+  Flute: [[1, hz(250)], [4, hz(2500), 2]],
+  Rain: [[1, hz(300)]],
 };
-/** What the Mix check asks for: the lead gives way to the bass at 300 Hz */
-const FIX = [[3, hz(300), -3]];
+/** A fix the Mix check may ask for: the keys give way to the bass at 300 Hz (on a free band) */
+const FIX = [[2, hz(300), -3]];
 const STAGES = ['levels', 'pan', 'eq', 'comp', 'sends', 'bus', 'master', 'fix', 'club'];
 
 /** A slider (or checkbox) by its exact label. */
@@ -85,10 +84,10 @@ async function eq(s, track, moves, reset = false) {
   }
 }
 
-/** The Synthwave starter, mixed up to `upto`. Its recordings may download (the meters and loudness need the real sound). */
+/** The Lo-Fi starter, mixed up to `upto`. Its recordings may download (the meters and loudness need the real sound). */
 async function build(s, upto = 'master') {
   await s.page.unroute(/github\.io|githubusercontent/);
-  await s.starter('Synthwave');
+  await s.starter('Lo-Fi');
   await s.wait(4000);
   const done = (st) => STAGES.indexOf(st) <= STAGES.indexOf(upto);
   await s.view('Mixer');
@@ -107,27 +106,28 @@ async function build(s, upto = 'master') {
       await setRange(s, range(s.page, `${t} reverb send`), rev);
       await setRange(s, range(s.page, `${t} delay send`), dly);
     }
-    await inspect(s, 'Lead');
+    await inspect(s, 'Flute');
     await s.tab('Master');
     await s.page.getByRole('button', { name: '1/8D', exact: true }).click();
     await s.wait(200);
   }
   if (done('bus')) await s.menu('Track', 'Bus preset: Drum bus');
   if (done('master')) {
-    await inspect(s, 'Lead');
+    await inspect(s, 'Flute');
     await s.tab('Master');
-    await s.page.locator('select').filter({ has: s.page.locator('option', { hasText: 'Punchy' }) }).first().selectOption({ label: 'Punchy' });
+    await s.page.locator('select').filter({ has: s.page.locator('option', { hasText: 'Gentle' }) }).first().selectOption({ label: 'Gentle' });
+    await insert(s, 'OTT');
     await setRange(s, range(s.page.locator('[data-search="OTT"]'), 'Depth'), 0.2);
     await setRange(s, range(s.page.locator('[data-search="Stereo Width"]'), 'Width'), 1.2);
-    await setRange(s, range(s.page, 'Level'), -0.5);
+    await setRange(s, range(s.page, 'Level'), 4);
   }
   if (done('fix')) {
-    await eq(s, 'Lead', FIX);
-    await inspect(s, 'Lead');
+    await eq(s, 'Keys', FIX);
+    await inspect(s, 'Keys');
     await s.tab('Master');
   }
   if (done('club')) {
-    await setRange(s, range(s.page, 'Level'), 3);
+    await setRange(s, range(s.page, 'Level'), 7);
     const clip = await insert(s, 'Clipper');
     await setRange(s, range(clip, 'Drive'), 4);
   }
@@ -146,8 +146,8 @@ async function play(s, ms) {
 export const SHOTS = [
   {
     file: 'mix-levels',
-    alt: 'The Mixer with the Synthwave starter: Drums at -4 dB, Bass -6, Poly pad -16, Strings -14 panned L30, Arp -12 panned R30, Lead -8, and the master on the right.',
-    caption: 'The levels from the worked example: drums loudest, the pad furthest back.',
+    alt: 'The Mixer with the Lo-Fi starter: Drums at -4 dB, Bass -6, Flute -10 panned R20, Keys -12 panned L30, Rain -24, and the master on the right.',
+    caption: 'The levels from the worked example: drums loudest, the rain furthest back.',
     setup: async (s) => {
       await build(s, 'pan');
       // A taller bottom panel, so the strips show whole
@@ -164,11 +164,11 @@ export const SHOTS = [
   },
   {
     file: 'mix-eq',
-    alt: 'The Pro EQ of the Poly pad, open big in the EQ & Dynamics tab: a low cut at 150 Hz and a 3 dB dip at 300 Hz.',
-    caption: 'The pad\'s Pro EQ: a low cut at 150 Hz and 3 dB less mud at 300 Hz.',
+    alt: 'The Pro EQ of the Keys, open big in the EQ & Dynamics tab: a low cut at 150 Hz and a 3 dB dip at 300 Hz.',
+    caption: 'The keys\' Pro EQ: a low cut at 150 Hz and 3 dB less mud at 300 Hz.',
     setup: async (s) => {
       await build(s, 'eq');
-      await inspect(s, 'Poly pad');
+      await inspect(s, 'Keys');
       await s.page.locator('[data-search="Pro EQ"] circle').nth(2).click({ force: true });
       await s.view('EQ & Dynamics');
       await play(s, 5000);
@@ -199,7 +199,7 @@ export const SHOTS = [
   },
   {
     file: 'mix-master',
-    alt: 'The Master tab while the song plays: the Loudness readings, Glue set to Punchy, OTT on at 20% and Stereo Width at 120%.',
+    alt: 'The Master tab while the song plays: the Loudness readings, Glue set to Gentle, OTT on at 20% and Stereo Width at 120%.',
     caption: 'The Master tab while the song plays: loudness at the top, then Glue, OTT and Stereo Width.',
     setup: async (s) => {
       await build(s, 'master');
@@ -215,8 +215,8 @@ export const SHOTS = [
   },
   {
     file: 'mix-check',
-    alt: 'The Mix check after a check of the mix: it flags Bass and Lead covering each other between 250 and 400 Hz, with buttons to select each track.',
-    caption: 'Check the mix: here it finds the bass and the lead covering each other around 300 Hz.',
+    alt: 'The Mix check after a check of the mix, listing what it found, with buttons to select each track.',
+    caption: 'Check the mix: it lists what to look at, track by track.',
     setup: async (s) => {
       await build(s, 'master');
       const run = s.page.getByTestId('mix-check-run');
@@ -230,8 +230,8 @@ export const SHOTS = [
   },
   {
     file: 'mix-clipper',
-    alt: 'The master Level at +3 dB and the Clipper switched on with Drive +4 dB, its meter showing how much it takes off the peaks.',
-    caption: 'For a loud club master: Level +3 dB and the Clipper at +4 dB, shaving the drum peaks.',
+    alt: 'The master Level turned up and the Clipper switched on with Drive +4 dB, its meter showing how much it takes off the peaks.',
+    caption: 'For a loud club master: the Level up and the Clipper at +4 dB, shaving the drum peaks.',
     setup: async (s) => {
       await build(s, 'club');
       await play(s, 9000);
@@ -244,8 +244,8 @@ export const SHOTS = [
 
 export const EXAMPLES = [
   {
-    name: 'synthwave-mix',
-    label: 'The Synthwave starter with this lesson\'s mix: levels, pans, EQ, compression, sends, a drum bus and the master.',
+    name: 'lofi-mix',
+    label: 'The Lo-Fi starter with this lesson\'s mix: levels, pans, EQ, compression, sends, a drum bus and the master.',
     setup: async (s) => { await build(s, 'fix'); },
   },
 ];

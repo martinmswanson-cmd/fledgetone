@@ -2,7 +2,7 @@
 //
 //   npx vite --port 5200                 (in another terminal; restart it after editing src/)
 //   node scripts/audio-check/starters-loudness.cjs > levels.jsonl
-//   IDS=epic,riddim node scripts/audio-check/starters-loudness.cjs
+//   IDS=lofi,plaza node scripts/audio-check/starters-loudness.cjs
 //
 // Each starter (all of them, or IDS) is built with createStarter and rendered in full through the
 // app's own export path (renderArrangement), in a fresh page each, with the master limiter passed

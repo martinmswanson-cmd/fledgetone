@@ -1,13 +1,11 @@
 import { DRUM_NOTES } from '../audio/scheduler';
 import { compatibleInstruments, FX_NOTES } from '../audio/instrumentCatalog';
-import type { ProjectSnapshot } from './project';
 import type { Clip, InstrumentKey, NoteEvent, Track, WobbleRate } from './timelineTypes';
-import { DEFAULT_MASTER_FX, defaultTrackFx, uid } from './timelineTypes';
+import { defaultTrackFx, uid } from './timelineTypes';
 
 /**
- * Default tracks, plus the "Sunset Stroll" demo: a mellow neo-soul groove in C major
- * (Fmaj9 - Em7 - Dm9 - G13) at 88 BPM. Its parts double as the stock patterns offered
- * by "Insert pattern" on an empty lane. Steps are 16th notes: offset = step / 16 bars.
+ * Default tracks, and the stock patterns offered by "Insert pattern" on an empty lane (among them
+ * a mellow neo-soul groove in C major, Fmaj9 - Em7 - Dm9 - G13). Steps are 16th notes: offset = step / 16 bars.
  */
 
 export const INITIAL_TRACKS: Track[] = [
@@ -264,29 +262,3 @@ export function createPatternClip(track: Track, patternId: string, startBar: num
 }
 
 // ---------- Demo song ----------
-
-/** "Sunset Stroll": intro (keys + hats), groove (drums + bass enter), hook (horns join). */
-export function createDemoProject(): ProjectSnapshot {
-  const tracks = INITIAL_TRACKS.map((t) => ({ ...t }));
-  const byKey = (k: InstrumentKey) => tracks.find((t) => t.instrumentKey === k)!;
-  const place: Array<[InstrumentKey, string, number]> = [
-    ['keys', 'keys-chords', 1],
-    ['keys', 'keys-chords', 5],
-    ['keys', 'keys-chords', 9],
-    ['drums', 'hats-intro', 1],
-    ['drums', 'lazy-beat', 5],
-    ['drums', 'lazy-beat', 9],
-    ['bass', 'bass-walk', 5],
-    ['bass', 'bass-walk', 9],
-    ['brass', 'horn-hook', 9],
-  ];
-  return {
-    name: 'Sunset Stroll',
-    bpm: 88,
-    swing: 0.15,
-    loopRegion: { inBar: 1, outBar: 13, enabled: true },
-    masterFx: DEFAULT_MASTER_FX,
-    tracks,
-    clips: place.map(([k, id, bar]) => createPatternClip(byKey(k), id, bar)!),
-  };
-}

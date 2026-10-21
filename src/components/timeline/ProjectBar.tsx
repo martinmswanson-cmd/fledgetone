@@ -1,6 +1,6 @@
 /**
  * The project bar in the header: the song's name, Save, Export and Share, the autosave status, the
- * New dialog (genre starters; opened from the File menu), and the banner offering to restore the
+ * New dialog (a blank timeline or a starter; opened from the File menu), and the banner offering to restore the
  * last session.
  */
 import React, { useState } from 'react';
@@ -16,7 +16,6 @@ import { BeatStoreDialog } from './BeatStoreDialog';
 import { ChannelKitDialog } from './ChannelKitDialog';
 import { ShareDialog } from './ShareDialog';
 import { Modal } from './Modal';
-import { showToast } from './toastStore';
 import { STARTER_GROUPS, STARTERS } from '../../store/starters';
 import type { StarterId } from '../../store/starters';
 
@@ -44,27 +43,12 @@ export const ChoiceButton: React.FC<{ title: string; detail: string; onClick: ()
   </button>
 );
 
-/** The Classics are listed with the demo song (complete pieces to listen to), not among the starter groups. */
-const DEMO_GROUP = 'Classics';
-const DEMO_SONGS = STARTERS.filter((s) => s.group === DEMO_GROUP);
-
 const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [filter, setFilter] = useState('');
   // (an empty song has nothing to lose: no warning, just where to begin)
   const hasWork = useTimelineStore((s) => songHasWork(s));
-  const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
-  // (its id too, so a style's usual name, like trap or drill, still finds its starter)
-  const found = STARTERS.filter((s) => words.every((w) => `${s.id} ${s.name} ${s.group} ${s.detail}`.toLowerCase().includes(w)));
-  const choose = (template: 'blank' | 'demo' | StarterId) => {
+  const choose = (template: 'blank' | StarterId) => {
     useTimelineStore.getState().newProject(template);
     onClose();
-    // A game-ready starter (its sections are game states, with transitions and stingers): open the
-    // Game tab, where they're played and exported, so the game side isn't missed
-    const s = useTimelineStore.getState();
-    if (template !== 'blank' && template !== 'demo' && (s.stingers.length > 0 || Object.keys(s.transitions).length > 0)) {
-      useUiStore.getState().openDock('game');
-      showToast("This starter is game-ready: its sections are game states. Switch between them, try the stingers and export a game kit in the Game tab below.");
-    }
   };
   return (
     <Modal title="New arrangement" onClose={onClose} wide>
@@ -74,7 +58,7 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           stay on the clipboard, so you can paste them into the new arrangement.
         </p>
       ) : (
-        <p>Pick a starter or a demo song to hear something straight away, or begin from a blank timeline.</p>
+        <p>Pick a starter to hear something straight away, or begin from a blank timeline.</p>
       )}
       <ChoiceButton
         title="Blank timeline"
@@ -82,49 +66,16 @@ const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         onClick={() => choose('blank')}
         autoFocus
       />
-      {/* Demo songs: the demo groove, then the Classics (complete public-domain pieces) to listen to */}
-      <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Demo songs: press Play and listen</h4>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5" aria-label="Demo songs">
-        <ChoiceButton title="Sunset Stroll" detail="The demo song: a 12-bar neo-soul groove at 88 BPM (intro, groove, horn hook)." onClick={() => choose('demo')} />
-        {DEMO_SONGS.map((s) => (
-          <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
-        ))}
-      </div>
-      <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Starters: sections marked, the master set up; game ones come with states, layers and stingers</h4>
-      <input
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        placeholder={`Find a starter (${STARTERS.length - DEMO_SONGS.length}) or demo song: boss, cozy, 140, minor…`}
-        aria-label="Find a starter"
-        className="h-8 w-full bg-forge-bg border border-forge-border rounded-md px-2.5 text-xs text-forge-text focus:outline-none focus:border-cyan-500"
-      />
-      {words.length > 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5" aria-label="Starters found">
-          {found.map((s) => (
-            <ChoiceButton key={s.id} title={s.name} detail={`${s.group}. ${s.detail}`} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
-          ))}
-          {!found.length && <p className="text-xs text-forge-muted p-2">No starter matches.</p>}
-        </div>
-      ) : (
-        STARTER_GROUPS.filter((g) => g !== DEMO_GROUP).map((group) => {
-          const list = STARTERS.filter((s) => s.group === group);
-          return (
-            <details key={group} aria-label={group} className="group rounded-lg border border-forge-border bg-forge-bg/40 open:bg-transparent">
-              <summary className="cursor-pointer select-none list-none flex items-center gap-2 px-3 py-2 text-xs hover:bg-white/5 rounded-lg">
-                <span className="text-forge-muted transition-transform group-open:rotate-90">▸</span>
-                <span className="font-semibold text-forge-text">{group}</span>
-                <span className="text-[10px] font-mono text-forge-muted">{list.length}</span>
-                <span className="ml-auto truncate text-[10px] text-forge-muted hidden sm:block group-open:hidden">{list.map((s) => s.name).join(' · ')}</span>
-              </summary>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2 pt-0">
-                {list.map((s) => (
-                  <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
-                ))}
-              </div>
-            </details>
-          );
-        })
-      )}
+      {STARTER_GROUPS.map((group) => (
+        <React.Fragment key={group}>
+          <h4 className="pt-1 text-[9px] uppercase tracking-widest text-forge-muted font-mono">Starters: {group} (sections marked, the master set up)</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5" aria-label={group}>
+            {STARTERS.filter((s) => s.group === group).map((s) => (
+              <ChoiceButton key={s.id} title={s.name} detail={s.detail} onClick={() => choose(s.id)} searchId={`starter-${s.id}`} />
+            ))}
+          </div>
+        </React.Fragment>
+      ))}
     </Modal>
   );
 };
