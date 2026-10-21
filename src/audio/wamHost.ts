@@ -85,6 +85,9 @@ export function resetWamSession(): void {
 
 /** Instances that belong to a project already replaced (their settings are never kept). */
 const stale = new WeakSet<WamInstance>();
+/** Instances whose last settings read hasn't answered yet (see captureWamStates). */
+const unanswered = new WeakSet<WamInstance>();
+const SLOW = Symbol('slow');
 /** Bumped when a project is replaced: a read begun before then doesn't count. */
 let session = 0;
 
@@ -259,7 +262,17 @@ export async function captureWamStates(): Promise<void> {
       try {
         // (A plugin that never answers, crashed say, is skipped after a second, keeping what
         // was saved: saving, exporting and freezing never wait on it for ever)
-        const state = await Promise.race([inst.audioNode.getState?.(), new Promise<undefined>((r) => setTimeout(() => r(undefined), 1000))]);
+        // (One that already kept a read waiting is skipped until it answers that one: a run of
+        // renders, stem by stem, doesn't wait a second each)
+        if (unanswered.has(inst)) return;
+        const asked = inst.audioNode.getState?.();
+        const state = await Promise.race([asked, new Promise<typeof SLOW>((r) => setTimeout(() => r(SLOW), 1000))]);
+        if (state === SLOW) {
+          unanswered.add(inst);
+          const answered = () => unanswered.delete(inst);
+          void Promise.resolve(asked).then(answered, answered);
+          return;
+        }
         // (A song opened while it answered: the answer belongs to the one before)
         if (state === undefined || began !== session || stale.has(inst)) return;
         const json = JSON.stringify(state);

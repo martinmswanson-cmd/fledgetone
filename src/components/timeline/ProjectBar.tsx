@@ -9,7 +9,7 @@ import { AlertTriangle, HardDrive } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { useTourStore } from '../../tour/tourStore';
-import { autosaveUnreadable, clearPreviousSession } from '../../store/project';
+import { autosaveUnreadable, clearPreviousSession, hasWork as songHasWork } from '../../store/project';
 import { saveProjectFile, useProjectFile } from './projectFile';
 import { ExportDialog } from './ExportDialog';
 import { BeatStoreDialog } from './BeatStoreDialog';
@@ -51,7 +51,7 @@ const DEMO_SONGS = STARTERS.filter((s) => s.group === DEMO_GROUP);
 const NewProjectDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [filter, setFilter] = useState('');
   // (an empty song has nothing to lose: no warning, just where to begin)
-  const hasWork = useTimelineStore((s) => s.clips.length > 0);
+  const hasWork = useTimelineStore((s) => songHasWork(s));
   const words = filter.toLowerCase().split(/\s+/).filter(Boolean);
   // (its id too, so a style's usual name, like trap or drill, still finds its starter)
   const found = STARTERS.filter((s) => words.every((w) => `${s.id} ${s.name} ${s.group} ${s.detail}`.toLowerCase().includes(w)));

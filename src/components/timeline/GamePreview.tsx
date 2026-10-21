@@ -9,6 +9,7 @@ import { measureAt, secondsBetween, tempoAt } from '../../audio/tempoMap';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dices, Download, Gamepad2, ListPlus, Package, Trash2 } from 'lucide-react';
 import { currentProject, masterFxOf, songMeterOf, songTempo, useTimelineStore } from '../../store/timelineStore';
+import { captureWamStates } from '../../audio/wamHost';
 import { getAudiblePositionBar } from '../../audio/transport';
 import { STINGER_KINDS, stingerKind, stingerNotes } from '../../store/stingers';
 import { detectKey, keyOf } from '../../store/songKey';
@@ -206,6 +207,8 @@ const RuntimeKitButton: React.FC = () => {
       onClick={async () => {
         setBusy(true);
         try {
+          // (The plugins' latest settings first: they reach the tracks every few seconds otherwise)
+          await captureWamStates();
           const p = currentProject();
           downloadBlob(await buildRuntimeKit(p), `${p.name || 'Untitled'} web runtime kit.zip`);
         } catch (err) {

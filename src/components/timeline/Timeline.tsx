@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { VideoLane } from '../video/VideoLane';
 import { livePlayhead, onPlayhead } from '../../store/playheadClock';
 import { connectAutosave, connectTimelineToAudio, MAX_ZOOM, MIN_ZOOM, TOTAL_BARS, useTimelineStore } from '../../store/timelineStore';
+import { hasWork } from '../../store/project';
 import { RestoreSessionBanner } from './ProjectBar';
 import { TimelineScrollbar } from './TimelineScrollbar';
 import { TimelineResizer } from './TimelineResizer';
@@ -138,7 +139,7 @@ const TrackRow: React.FC<{ children: React.ReactNode }> = ({ children }) => {
  * lanes. It goes with the first clip, and stays out of the way while a tutorial runs.
  */
 const EmptySongPrompt: React.FC = () => {
-  const empty = useTimelineStore((s) => s.clips.length === 0);
+  const empty = useTimelineStore((s) => !hasWork(s));
   const touring = useTourStore((s) => s.active !== null);
   if (!empty || touring) return null;
   return (
