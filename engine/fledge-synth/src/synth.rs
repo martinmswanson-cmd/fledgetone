@@ -927,8 +927,12 @@ impl Synth {
         self.down[k] = self.down[k].saturating_sub(1);
         // (Another strike of this key still down: only one of its notes ends)
         let others_down = self.down[k] > 0;
-        self.stack.retain(|&n| n != note);
         let mode = self.v(p::MODE) as usize;
+        // (Mono and legato: the key is still down, so its note plays on, and stays in the stack)
+        if mode > 0 && others_down {
+            return;
+        }
+        self.stack.retain(|&n| n != note);
         // Mono and legato: back to the last key still held, gliding there without a new attack
         // (only the mono voice; voices left from playing in poly still end as usual)
         let mut glided = false;
@@ -945,6 +949,13 @@ impl Synth {
         // (Poly: one note-off ends one note, the oldest of that pitch still held, so a second,
         // overlapping note of the same pitch plays on to its own end)
         if mode == 0 && others_down {
+            // (No more of its notes sounding than strikes still down, one lost to a steal or a
+            // restrike merged into one voice: they all play on)
+            let sounding = self.voices.iter().filter(|v| v.active && v.note == note && v.amp.stage != Stage::Release && !v.sustained && v.pending.is_none() && v.short_left == 0).count()
+                + self.voices.iter().filter(|v| v.pending.map(|(n, _)| n) == Some(note) && !v.pending_up).count();
+            if sounding <= self.down[k] as usize {
+                return;
+            }
             let held = (0..VOICES)
                 .filter(|&i| {
                     let v = &self.voices[i];
@@ -2039,6 +2050,44 @@ mod tests {
             }
         }
         assert!(worst < 0.05, "jumped by {worst}");
+    }
+
+    #[test]
+    fn a_key_struck_twice_plays_until_its_last_note_off() {
+        // Poly, the two strikes merged into one voice by a restrike; then mono
+        for mono in [false, true] {
+            let mut s = Synth::new(48000.0);
+            set(&mut s, "Amp release", 0.3);
+            if mono {
+                set(&mut s, "Voices", 1.0);
+            }
+            s.midi(0x90, 60, 100);
+            render(&mut s, 10);
+            s.midi(0x80, 60, 0);
+            render(&mut s, 2);
+            s.midi(0x90, 60, 100);
+            s.midi(0x90, 60, 100);
+            render(&mut s, 20);
+            s.midi(0x80, 60, 0);
+            render(&mut s, 200);
+            assert!(s.voices.iter().any(|v| v.active && v.note == 60 && v.amp.stage != Stage::Release), "mono {mono}");
+            s.midi(0x80, 60, 0);
+            render(&mut s, 400);
+            assert_eq!(active(&s), 0, "mono {mono}");
+        }
+    }
+
+    #[test]
+    fn a_mono_key_struck_twice_keeps_its_place() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "Voices", 1.0);
+        s.midi(0x90, 60, 100);
+        s.midi(0x90, 62, 100);
+        s.midi(0x90, 60, 100);
+        render(&mut s, 10);
+        s.midi(0x80, 60, 0);
+        render(&mut s, 50);
+        assert_eq!(s.voices[0].note, 60);
     }
 
     #[test]
