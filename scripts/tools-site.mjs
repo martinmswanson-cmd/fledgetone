@@ -121,6 +121,8 @@ any later version: GPL-3.0-or-later. The full text is in \`LICENSE\`. In plain w
   people you share it with its source code (or a way to get it).
 - **Keep the notices.** Keep this licence and the copyright notice with the files.
 - **No warranty.** They come as they are, with no promise that they work for your purpose.
+- **Your music is yours.** The licence covers this code, not what you make with it: the music,
+  sounds and songs you make with these tools are yours, to use and share on any terms you like.
 
 This is a summary to help you; the licence text in \`LICENSE\` is what counts.`;
 
@@ -305,6 +307,7 @@ const PLAIN_LICENCE = `<ul class="ticks tool-terms" style="--c: var(--cyan)">
           <li><strong>A program that includes them is GPL too.</strong> If you share a program that includes them, or code made from them, you must release that whole program under the GPL as well, with its source code.</li>
           <li><strong>Keep the notices.</strong> The licence and the copyright notice stay with the files.</li>
           <li><strong>No warranty.</strong> They come as they are.</li>
+          <li><strong>Your music is yours.</strong> The licence covers the tools' code, not what you make with them: the music, sounds and songs you make are yours, on any terms you like.</li>
         </ul>`;
 
 /** The Tools page, from the tools and their zips ({ file, size } by tool id). */
