@@ -8,7 +8,7 @@ import { liveTransport } from './liveContext';
 import { heardTime, outputLatencySeconds } from './latency';
 import { decodeMidi, midiNoteLabel, midiNoteName, MPE_BEND_RANGE_CENTS, PIANO_OCTAVE_KEYS, PITCH_BEND_RANGE_CENTS, pianoKeyNote } from './midi';
 import type { MidiMessage } from './midi';
-import { recordMidi } from './recorder';
+import { recordMidi, setPedalSource } from './recorder';
 import { setMetronomeOn, setMetronomeVolume } from './metronome';
 import { useMidiStore, ALL_INPUTS, midiConnectedBefore } from '../store/midiStore';
 import type { MidiInputInfo } from '../store/midiStore';
@@ -71,6 +71,7 @@ const mpeNotes = new Map<number, { note: number; voice: VoiceControl | null }>()
 /** Let go while the sustain pedal was down: ended when it comes up. */
 const sustained = new Map<number, NoteOff>();
 let pedal = false;
+setPedalSource(() => pedal);
 
 /** The track live notes play on: the armed one, else the selected one. */
 function targetTrack(): Track | undefined {

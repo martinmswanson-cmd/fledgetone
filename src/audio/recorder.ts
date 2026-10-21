@@ -31,6 +31,12 @@ export function transportBarAt(audioTime: number): number {
   return ticksToBar(transport().getTicksAtTime(audioTime));
 }
 
+/** Whether the sustain pedal is down now (liveInput.ts says, as it hears the pedal). */
+let pedalDown = () => false;
+export function setPedalSource(source: () => boolean): void {
+  pedalDown = source;
+}
+
 /**
  * Start a take on `trackId` from `startBar`, where the Transport starts (or is) at `startAudio`.
  * `loop` says what the loop region is whenever the Transport comes round it, so the take's clip
@@ -39,6 +45,8 @@ export function transportBarAt(audioTime: number): number {
 export function beginTake(trackId: string, startBar: number, startAudio: number, loop: () => { inBar: number; outBar: number }): void {
   discardTake();
   const take = createTake(startBar);
+  // A pedal already down holds what's let go from the start, as it does what's heard
+  if (pedalDown()) take.sustain(true, startAudio);
   // (Tone says so ahead of the wrap, at the audio time it happens: notes until then are this pass's)
   const onLoop = (time: number) => {
     const { inBar, outBar } = loop();
