@@ -933,16 +933,19 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           />
           <span className="w-8 tabular-nums text-forge-text">{Math.round((selectedVelocity ?? velocity) * 100)}</span>
         </label>
-        <label data-search="chance probability condition every other step" className="flex items-center gap-1.5" title="How often the selected notes play: a chance each time round, or only on some passes of a repeated clip (1st of 2 plays the first time, not the second). Select notes first">
-          PLAYS
-          <select className={select} value={selectedChance} disabled={!selected.size} onChange={(e) => onChance(e.target.value)}>
-            {selectedChance === '' && <option value="">{selected.size ? 'Mixed' : 'Select notes'}</option>}
-            {selectedChance === 'custom' && <option value="custom">Custom</option>}
-            {NOTE_CHANCES.map((c) => (
-              <option key={c.id} value={c.id}>{c.label}</option>
-            ))}
-          </select>
-        </label>
+        {/* (Not on the Drop pad: its moves play every time, as the export writes them) */}
+        {!isDropKind(instrument) && (
+          <label data-search="chance probability condition every other step" className="flex items-center gap-1.5" title="How often the selected notes play: a chance each time round, or only on some passes of a repeated clip (1st of 2 plays the first time, not the second). Select notes first">
+            PLAYS
+            <select className={select} value={selectedChance} disabled={!selected.size} onChange={(e) => onChance(e.target.value)}>
+              {selectedChance === '' && <option value="">{selected.size ? 'Mixed' : 'Select notes'}</option>}
+              {selectedChance === 'custom' && <option value="custom">Custom</option>}
+              {NOTE_CHANCES.map((c) => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+          </label>
+        )}
         {INSTRUMENTS[instrument].wobble && (
           <label data-search="wobble" className="flex items-center gap-1.5" title="How fast this clip's notes wobble: one filter sweep per note value (T = triplet), starting again with every note">
             WOBBLE
