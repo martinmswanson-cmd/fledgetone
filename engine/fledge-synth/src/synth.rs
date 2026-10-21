@@ -523,6 +523,7 @@ pub struct Synth {
     ott_on: bool,
     fx: Effects,
     side_hp: [Svf; 2],
+    dc: [DcBlock; 2],
     side_coef: SvfCoef,
     clip: [SafetyClip; 2],
     gain: f32,
@@ -557,6 +558,7 @@ impl Synth {
             ott_on: false,
             fx: Effects::new(sr),
             side_hp: [Svf::default(); 2],
+            dc: [DcBlock::default(); 2],
             side_coef: SvfCoef::new(120.0, sr, std::f32::consts::SQRT_2),
             clip: [SafetyClip::default(); 2],
             gain: 0.0,
@@ -1193,6 +1195,12 @@ impl Synth {
         // ---- the output stage ----
         if cfg.ott > 0.0 && !self.ott_on {
             self.ott.reset();
+        }
+        // The voices' DC out first (a lopsided drive or warp leaves an offset that thumps)
+        let dc_r = 1.0 - 2.0 * std::f32::consts::PI * 5.0 / sr;
+        for n in 0..frames {
+            self.out[0][n] = self.dc[0].tick(self.out[0][n], dc_r);
+            self.out[1][n] = self.dc[1].tick(self.out[1][n], dc_r);
         }
         self.ott_on = cfg.ott > 0.0;
         if cfg.ott > 0.0 {

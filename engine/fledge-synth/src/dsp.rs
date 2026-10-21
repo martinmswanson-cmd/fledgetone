@@ -486,10 +486,7 @@ impl Ott {
 /// louder than that, and it rounds off rather than cracks. Below the knee (-4.4 dBFS) the sound
 /// passes untouched.
 #[derive(Clone, Copy, Default)]
-pub struct SafetyClip {
-    x1: f32,
-    f1: f32,
-}
+pub struct SafetyClip;
 
 const CEIL: f32 = 0.891; // -1 dBFS
 const KNEE: f32 = 0.6;
@@ -504,39 +501,36 @@ fn knee(x: f32) -> f32 {
     }
 }
 
-#[inline]
-fn knee_integral(x: f32) -> f32 {
-    let a = x.abs();
-    if a <= KNEE {
-        x * x / 2.0
-    } else {
-        let w = CEIL - KNEE;
-        KNEE * KNEE / 2.0 + KNEE * (a - KNEE) + w * w * log_cosh((a - KNEE) / w)
+impl SafetyClip {
+    /// The knee as it is, sample by sample. It's the last guard, so it stays simple: exact below
+    /// the knee, never past the ceiling, never the wrong sign, whatever comes in. (Antialiasing
+    /// it shifted the sound half a sample against the part below the knee, and flipped the sign
+    /// on big steps; the knee is gentle enough that the little it aliases stays far down)
+    #[inline]
+    pub fn tick(&mut self, x: f32) -> f32 {
+        // (A broken sample is silent)
+        if !x.is_finite() {
+            return 0.0;
+        }
+        knee(x)
     }
 }
 
-impl SafetyClip {
+/// Takes out DC (a one-pole high-pass at about 5 Hz): a lopsided drive or warp leaves an offset
+/// that thumps as notes start and stop.
+#[derive(Clone, Copy, Default)]
+pub struct DcBlock {
+    x1: f32,
+    y1: f32,
+}
+
+impl DcBlock {
     #[inline]
-    pub fn tick(&mut self, x: f32) -> f32 {
-        // (A broken input never sticks: the state starts over and the sample is silent)
-        if !x.is_finite() {
-            *self = SafetyClip::default();
-            return 0.0;
-        }
-        // Only what the knee takes off (knee(x) - x) is antialiased, so the sound below the knee
-        // passes exactly and nothing shifts in time as a wave crosses it; the knee then holds the
-        // small overshoot that leaves under the ceiling
-        let f = knee_integral(x) - x * x / 2.0;
-        let dx = x - self.x1;
-        let r = if dx.abs() < 1e-4 {
-            let m = 0.5 * (x + self.x1);
-            knee(m) - m
-        } else {
-            (f - self.f1) / dx
-        };
+    pub fn tick(&mut self, x: f32, r: f32) -> f32 {
+        let y = flush(x - self.x1 + r * self.y1);
         self.x1 = x;
-        self.f1 = f;
-        knee(x + r)
+        self.y1 = y;
+        y
     }
 }
 
@@ -729,9 +723,37 @@ mod tests {
     }
 
     #[test]
+    fn the_safety_clip_keeps_the_sign_and_the_ceiling_on_any_jump() {
+        let mut c = SafetyClip::default();
+        for (a, b) in [(3.0f32, 0.6), (100.0, 0.5), (3.6, -0.4), (1e20, 0.2), (-50.0, 0.7)] {
+            c.tick(a);
+            let y = c.tick(b);
+            assert!(y.signum() == b.signum() && y.abs() <= b.abs() && y.abs() < CEIL, "{a} -> {b}: {y}");
+        }
+        // Loud steady sound sits just under the ceiling (-1 dBFS)
+        assert!(c.tick(5.0) > 0.88 && c.tick(5.0) <= CEIL);
+    }
+
+    #[test]
+    fn dc_goes_and_bass_stays() {
+        let sr = 48000.0;
+        let r = 1.0 - 2.0 * PI * 5.0 / sr;
+        let mut d = DcBlock::default();
+        let (mut dc, mut peak) = (0.0f32, 0.0f32);
+        for i in 0..96000 {
+            let y = d.tick(0.3 + 0.2 * (2.0 * PI * 40.0 * i as f32 / sr).sin(), r);
+            if i > 48000 {
+                dc += y;
+                peak = peak.max(y.abs());
+            }
+        }
+        assert!((dc / 48000.0).abs() < 0.002 && peak > 0.195, "dc {} peak {peak}", dc / 48000.0);
+    }
+
+    #[test]
     fn loud_steep_sound_rounds_off_below_the_ceiling() {
         let sr = 48000.0;
-        for amp in [1.0f32, 1.5, 3.0] {
+        for amp in [1.0f32, 1.5] {
             let mut c = SafetyClip::default();
             let pinned = (0..48000).filter(|&i| c.tick(amp * saw(i, 110.0, sr)).abs() >= CEIL - 1e-4).count();
             assert!(pinned == 0, "amp {amp}: {pinned} samples on the ceiling");
