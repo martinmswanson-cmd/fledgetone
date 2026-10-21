@@ -528,6 +528,8 @@ pub struct Synth {
     pedal: bool,
     /// Keys held, oldest first (mono and legato go back to the last one still held)
     stack: Vec<u8>,
+    /// How many times each key is down (a note struck twice, before its first note-off, twice)
+    down: [u8; 128],
     lfo_phase: [f32; 4],
     lfo_held: [(f32, f32); 4],
     /// Where each free LFO was last read (with its phase offset)
@@ -565,6 +567,7 @@ impl Synth {
             aftertouch: 0.0,
             pedal: false,
             stack: Vec::with_capacity(32),
+            down: [0; 128],
             lfo_phase: [0.0; 4],
             lfo_held,
             lfo_read: [0.0; 4],
@@ -762,6 +765,7 @@ impl Synth {
 
     fn all_off(&mut self, hard: bool) {
         self.stack.clear();
+        self.down = [0; 128];
         // (A stop mid-pedal mustn't leave the pedal down for the next playback)
         self.pedal = false;
         for v in self.voices.iter_mut() {
@@ -779,6 +783,7 @@ impl Synth {
     }
 
     fn note_on(&mut self, note: u8, vel: f32) {
+        self.down[note as usize & 127] = self.down[note as usize & 127].saturating_add(1);
         self.stack.retain(|&n| n != note);
         if self.stack.len() < 32 {
             self.stack.push(note);
@@ -918,6 +923,10 @@ impl Synth {
     }
 
     fn note_off(&mut self, note: u8) {
+        let k = note as usize & 127;
+        self.down[k] = self.down[k].saturating_sub(1);
+        // (Another strike of this key still down: only one of its notes ends)
+        let others_down = self.down[k] > 0;
         self.stack.retain(|&n| n != note);
         let mode = self.v(p::MODE) as usize;
         // Mono and legato: back to the last key still held, gliding there without a new attack
@@ -935,11 +944,11 @@ impl Synth {
         let pedal = self.pedal;
         // (Poly: one note-off ends one note, the oldest of that pitch still held, so a second,
         // overlapping note of the same pitch plays on to its own end)
-        if mode == 0 {
+        if mode == 0 && others_down {
             let held = (0..VOICES)
                 .filter(|&i| {
                     let v = &self.voices[i];
-                    v.active && v.note == note && v.amp.stage != Stage::Release && !v.sustained && v.pending.is_none()
+                    v.active && v.note == note && v.amp.stage != Stage::Release && !v.sustained && v.pending.is_none() && v.short_left == 0
                 })
                 .min_by_key(|&i| self.voices[i].age);
             if let Some(i) = held {
@@ -1168,9 +1177,13 @@ impl Synth {
                         v.gain_now = vel_gain;
                     }
                     v.gain_now += (vel_gain - v.gain_now) * fade_step * 3.0;
-                    if v.gain_now > vel_gain {
+                    // (Only while a retrigger eases: a Velocity change on a held note eases as ever)
+                    if v.carry > 0.0 && v.gain_now > vel_gain {
                         // (Easing down while the new attack climbs: no louder than was heard)
                         v.gain_now = v.gain_now.min((v.carry / env.max(1e-9)).max(vel_gain));
+                    }
+                    if v.gain_now <= vel_gain {
+                        v.carry = 0.0;
                     }
                     if pend.is_none() && v.fade < 1.0 && v.amp.stage != Stage::Release {
                         v.fade = (v.fade + fade_step).min(1.0);
@@ -1962,6 +1975,70 @@ mod tests {
         e.extend(r18_grab(&mut s, 48000 * 6 / BLOCK));
         let at = (24000..e.len()).find(|&i| e[i].abs() > 0.01).unwrap() as f32 / 48000.0;
         assert!((at - 4.0).abs() < 0.01, "echo at {at} s, want 4 s");
+    }
+
+    #[test]
+    fn a_mono_glide_back_leaves_nothing_stuck_after_switching_to_poly() {
+        let mut s = Synth::new(48000.0);
+        s.midi(0x90, 62, 100);
+        s.midi(0x90, 60, 100);
+        render(&mut s, 10);
+        s.midi(0x80, 62, 0);
+        set(&mut s, "Voices", 1.0);
+        s.midi(0x90, 63, 100);
+        render(&mut s, 10);
+        s.midi(0x80, 63, 0);
+        render(&mut s, 10);
+        set(&mut s, "Voices", 0.0);
+        s.midi(0x80, 60, 0);
+        render(&mut s, 400);
+        assert_eq!(active(&s), 0);
+    }
+
+    #[test]
+    fn a_short_note_never_takes_a_restrikes_note_off() {
+        let mut s = Synth::new(48000.0);
+        for n in 60..67u8 {
+            s.midi(0x90, n, 100);
+        }
+        s.midi(0x90, 47, 100);
+        render(&mut s, 10);
+        s.midi(0x90, 47, 100);
+        s.midi(0x90, 47, 100);
+        s.midi(0x80, 47, 0);
+        s.midi(0x80, 47, 0);
+        s.process(32);
+        s.midi(0x90, 47, 100);
+        s.process(32);
+        s.midi(0x80, 47, 0);
+        s.midi(0x80, 47, 0);
+        for n in 60..67u8 {
+            s.midi(0x80, n, 0);
+        }
+        render(&mut s, 800);
+        assert_eq!(active(&s), 0);
+    }
+
+    #[test]
+    fn turning_up_velocity_on_a_held_soft_note_eases() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "B on", 0.0);
+        set(&mut s, "Filter type", 10.0);
+        set(&mut s, "Level", 0.0);
+        set(&mut s, "Velocity", 0.0);
+        s.midi(0x90, 45, 10);
+        render(&mut s, 100);
+        let mut last = s.out[0][BLOCK - 1];
+        set(&mut s, "Velocity", 1.0);
+        let mut worst: f32 = 0.0;
+        for _ in 0..8 {
+            s.process(BLOCK);
+            for &x in &s.out[0] {
+                worst = worst.max((x - last).abs());
+                last = x;
+            }
+        }
+        assert!(worst < 0.05, "jumped by {worst}");
     }
 
     #[test]
