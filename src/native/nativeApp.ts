@@ -27,7 +27,8 @@ export const isAndroidApp = (): boolean => isNativeApp() && Capacitor.getPlatfor
 /** The app's own plugin (Android only). */
 interface FledgetonePlugin {
   openSettings(): Promise<void>;
-  takeOpenedFile(): Promise<{ name?: string; text?: string }>;
+  /** The file's copy in the app's cache (`path`), and its name */
+  takeOpenedFile(): Promise<{ name?: string; path?: string }>;
   addListener(event: 'fileOpened', listener: () => void): Promise<PluginListenerHandle>;
 }
 const fledgetone = registerPlugin<FledgetonePlugin>('Fledgetone');
@@ -52,8 +53,15 @@ export function onOpenedFiles(open: (file: File) => void, failed: (reason: strin
   if (!isAndroidApp()) return;
   const take = () =>
     fledgetone.takeOpenedFile().then(
-      ({ name, text }) => {
-        if (text !== undefined) open(new File([text], name || 'project.json', { type: 'application/json' }));
+      async ({ name, path }) => {
+        if (path === undefined) return;
+        try {
+          const res = await fetch(Capacitor.convertFileSrc(`file://${path}`));
+          if (!res.ok) throw new Error(`the copy couldn't be read (${res.status})`);
+          open(new File([await res.blob()], name || 'project.json', { type: 'application/json' }));
+        } catch (err) {
+          failed(err instanceof Error ? err.message : String(err));
+        }
       },
       (err) => failed(err instanceof Error ? err.message : String(err))
     );

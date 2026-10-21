@@ -34,7 +34,7 @@ export async function exportMySounds(): Promise<void> {
     return;
   }
   // (The app hands it to the share sheet, which may be closed without saving)
-  if (!saved) showToast('Not saved: the share sheet was closed');
+  if (!saved) showToast("The share sheet closed: if you didn't pick an app, it wasn't saved");
   else showToast(`Saved ${plural(sounds.length, 'sound')} and ${plural(favourites.length, 'favourite')} to ${name}${isNativeApp() ? '' : ' (in your downloads)'}.`);
 }
 
@@ -76,7 +76,7 @@ export async function shareTrackSound(trackId: string): Promise<void> {
   const sound: MySound = { id: uid('sound'), name: track.name.trim().slice(0, 60) || 'Sound', settings: soundOf(track) };
   const name = soundFileName(sound.name);
   const saved = await saveBlobFile(new Blob([JSON.stringify(soundFile(sound, await embedSounds(soundRecordingIds(sound))))], { type: 'application/json' }), name);
-  if (!saved) return showToast(`"${sound.name}" wasn't shared.`);
+  if (!saved) return showToast("The share sheet closed: if you didn't pick an app, it wasn't shared");
   showToast(isNativeApp() ? `Shared "${sound.name}" as ${name}: Open a sound file puts it on anyone's track.` : `Saved "${sound.name}" as ${name} (in your downloads): send it to anyone, and Open a sound file puts it on their track.`);
 }
 

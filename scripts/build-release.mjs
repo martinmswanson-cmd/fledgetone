@@ -56,12 +56,15 @@ const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
 const { versionName, versionCode } = androidVersion(version);
 console.log(`Fledgetone ${versionName} for Android (versionCode ${versionCode})`);
 
-if (!process.argv.includes('--skip-sync')) execFileSync('npm', ['run', 'app:sync'], { cwd: ROOT, stdio: 'inherit' });
+// (On Windows npm and gradlew are .cmd/.bat files, which only run through a shell)
+const shell = process.platform === 'win32';
+if (!process.argv.includes('--skip-sync')) execFileSync('npm', ['run', 'app:sync'], { cwd: ROOT, stdio: 'inherit', shell });
 
 const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
 execFileSync(gradlew, ['bundleRelease', `-PfledgetoneVersionCode=${versionCode}`, `-PfledgetoneVersionName=${versionName}`], {
   cwd: ANDROID,
   stdio: 'inherit',
+  shell,
   // (The passwords reach Gradle through its environment, never its command line)
   env: {
     ...process.env,

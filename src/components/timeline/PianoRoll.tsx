@@ -16,7 +16,7 @@ import * as Tone from 'tone';
 import { Dices, Keyboard, Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { NOTE_CHANCES, chanceIdOf, chanceMark, isConditional, withChance } from '../../store/noteChance';
 import { rollClipDrums } from '../../store/smartActions';
-import { initAudio } from '../../audio/engine';
+import { initAudio, rawAudioState } from '../../audio/engine';
 import { noteNameOn, onLiveNote } from '../../audio/liveInput';
 import { usePianoPanel } from '../../store/pianoPanel';
 import { useMidiStore } from '../../store/midiStore';
@@ -232,13 +232,9 @@ const TOOLS = [
 ] as const;
 type ToolId = (typeof TOOLS)[number]['id'];
 
-let audioReady = false;
-/** Play notes through the clip's track (its instrument and effects), starting audio if needed. */
+/** Play notes through the clip's track (its instrument and effects), starting audio if it isn't running. */
 async function preview(trackId: string, notes: Pick<NoteEvent, 'note' | 'duration' | 'velocity'>[]) {
-  if (!audioReady) {
-    await initAudio();
-    audioReady = true;
-  }
+  if (rawAudioState() !== 'running') await initAudio();
   // At the clip's wobble rate, as it will play
   const { clips, editingClipId } = useTimelineStore.getState();
   const wobble = clips.find((c) => c.id === editingClipId)?.wobble;

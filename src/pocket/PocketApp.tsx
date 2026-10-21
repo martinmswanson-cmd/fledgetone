@@ -6,7 +6,7 @@
  * It connects the song to the engine and the autosave as the studio's timeline does, so a song
  * started here opens on a computer and back.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Disc3, Pause, Play, Redo2, Share2, Undo2 } from 'lucide-react';
 import { connectAutosave, connectTimelineToAudio, currentProject, onProjectReplaced, useTimelineStore } from '../store/timelineStore';
 import { recoverFailedDownloads } from '../audio/liveTracks';
@@ -172,7 +172,8 @@ export const PocketApp: React.FC = () => {
     return true;
   });
   useWakeWhilePlaying();
-  useEffect(() => onBack(pocketBack), []);
+  // (Before the children's: what's open over the screen, like the opening notice, goes back first)
+  useLayoutEffect(() => onBack(pocketBack), []);
   // Another song opened (a file, from here or from another app; a link): it shows, from its start
   useEffect(
     () =>

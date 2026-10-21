@@ -44,7 +44,7 @@ export const PocketShare: React.FC = () => {
       }
       // (The app: its share sheet, which says whether it was closed without sharing)
       if (isNativeApp()) {
-        showToast((await saveBlobFile(out.blob, out.name)) ? `Sent ${out.name} to the app you picked` : 'Not shared: the share sheet was closed');
+        showToast((await saveBlobFile(out.blob, out.name)) ? `Sent ${out.name} to the app you picked` : "The share sheet closed: if you didn't pick an app, it wasn't shared");
         return;
       }
       const file = new File([out.blob], out.name, { type: 'audio/mpeg' });

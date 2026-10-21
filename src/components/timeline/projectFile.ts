@@ -129,7 +129,7 @@ async function saveAs(song: number): Promise<void> {
     const name = fileName();
     const saved = await saveBlobFile(await projectBlob(song), name);
     // (The app hands it to the share sheet: saved to Files or Drive, or sent, unless it was closed)
-    if (isNativeApp()) showToast(saved ? `Sent ${name} to the app you picked` : 'Not saved: the share sheet was closed');
+    if (isNativeApp()) showToast(saved ? `Sent ${name} to the app you picked` : "The share sheet closed: if you didn't pick an app, it wasn't saved");
     else showToast('Downloaded the project file (this browser saves to its downloads folder: Chrome or Edge on a computer can choose where)');
     return;
   }

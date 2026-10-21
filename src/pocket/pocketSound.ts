@@ -4,7 +4,7 @@
  * first tap).
  */
 import { DRUM_NOTES } from '../audio/instruments';
-import { initAudio } from '../audio/engine';
+import { initAudio, rawAudioState } from '../audio/engine';
 import { previewTrackNotes } from '../audio/liveTracks';
 import { defaultRack, padNote } from '../store/sampleKits';
 import type { Track } from '../store/timelineTypes';
@@ -44,13 +44,9 @@ export function padsOf(track: Pick<Track, 'instrumentKey' | 'rack'>): PocketPad[
   return (track.rack ?? defaultRack()).pads.map((p, i) => ({ note: padNote(i), label: p.soundId ? p.name : 'Empty', color: RACK_COLORS[i % RACK_COLORS.length], index: i, ...(p.soundId ? {} : { empty: true }) }));
 }
 
-let audioStarted = false;
-/** Play notes through a track as it sounds in the song (starting the audio on the first tap). */
+/** Play notes through a track as it sounds in the song (starting the audio if it isn't running: the first tap, or back from the background). */
 export async function audition(trackId: string, note: string, velocity = 0.85): Promise<void> {
-  if (!audioStarted) {
-    await initAudio();
-    audioStarted = true;
-  }
+  if (rawAudioState() !== 'running') await initAudio();
   previewTrackNotes(trackId, [{ note, duration: '16n', velocity }]);
 }
 
