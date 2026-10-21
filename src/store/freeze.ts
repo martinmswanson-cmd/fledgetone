@@ -1,7 +1,7 @@
 import type { AutomationParam, Clip, FrozenTrack, Track } from './timelineTypes';
 import { defaultTrackFx } from './timelineTypes';
 import { isDrumKind } from '../audio/instrumentCatalog';
-import { clipHasConditions, isConditional } from './noteChance';
+import { clipHasConditions, contentKey, isConditional } from './noteChance';
 import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 
 /**
@@ -73,6 +73,12 @@ function fxPrint(fx: Track['fx']): Partial<Track['fx']> {
   return { ...rest, ...(peq?.on ? { peq } : {}), ...(mbc?.on ? { mbc } : {}), ...(bassDrive?.on ? { bassDrive } : {}) };
 }
 
+/** A track's clips as runs of copies (where each is, what it plays), when any has notes that play only sometimes; else nothing. */
+function runsOf(clips: Clip[]): { runs?: Array<[number, number, string]> } {
+  if (!clips.some(clipHasConditions)) return {};
+  return { runs: [...clips].sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id)).map((c) => [c.startBar, c.lengthBars, contentKey(c)]) };
+}
+
 function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] }): string {
   const own = all.clips.filter((c) => c.trackId === track.id).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
   const followsKick = track.fx.pump.on && track.fx.pump.trigger === 'kick';
@@ -80,9 +86,9 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
   // does), so those are part of the sound too: muting or soloing them changes it
   const anySolo = all.tracks.some((t) => t.isSoloed);
   const kickers = new Set(all.tracks.filter((t) => isDrumKind(t.instrumentKey) && !t.isMuted && (!anySolo || t.isSoloed)).map((t) => t.id));
+  const kickClips = followsKick ? all.clips.filter((c) => kickers.has(c.trackId)) : [];
   const kicks = followsKick
-    ? all.clips
-        .filter((c) => kickers.has(c.trackId))
+    ? kickClips
         // (A kick that plays only sometimes, with what decides it: its clip and how often)
         .flatMap((c) => c.notes.filter((n) => n.note === 'C1').map((n) => [+(c.startBar + n.startOffset).toFixed(6), ...(isConditional(n) ? [c.id, c.pattern ?? null, n.chance ?? null, n.cond ?? null] : [])] as const))
         .sort((a, b) => a[0] - b[0] || String(a[1]).localeCompare(String(b[1])))
@@ -90,12 +96,15 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
     : [];
   // A Pump that follows a track ducks on that track's notes, muted or not
   const source = track.fx.pump.on && track.fx.pump.trigger === 'track' ? track.fx.pump.source : undefined;
-  const sourceNotes = source
-    ? all.clips
-        .filter((c) => c.trackId === source)
-        .flatMap((c) => c.notes.filter((n) => n.startOffset < c.lengthBars).map((n) => +(c.startBar + n.startOffset).toFixed(6)))
-        .sort((a, b) => a - b)
-    : [];
+  const sourceClips = source ? all.clips.filter((c) => c.trackId === source) : [];
+  const sourceNotes = sourceClips
+    // (A note that plays only sometimes, with what decides it, as for the kicks)
+    .flatMap((c) => c.notes.filter((n) => n.startOffset < c.lengthBars).map((n) => [+(c.startBar + n.startOffset).toFixed(6), ...(isConditional(n) ? [c.id, c.pattern ?? null, n.chance ?? null, n.cond ?? null] : [])] as const))
+    .sort((a, b) => a[0] - b[0] || String(a[1]).localeCompare(String(b[1])))
+    .map((k) => (k.length === 1 ? k[0] : k));
+  // Where those may sit out, the runs of copies they're in decide when
+  const heard = [...kickClips, ...sourceClips];
+  const heardRuns = heard.some(clipHasConditions) ? [...new Set(heard.map((c) => c.trackId))].sort().map((id) => runsOf(all.clips.filter((c) => c.trackId === id)).runs ?? []) : null;
   return hash(
     JSON.stringify({
       key: track.instrumentKey,
@@ -118,13 +127,14 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       eq: track.eq,
       automation: (track.automation ?? []).filter((l) => !isLiveParam(l.param)),
       clips: own.map(clipContent),
-      // (Which copies run together decides a conditional note's pass: the track's other clips' patterns)
-      ...(own.some(clipHasConditions) ? { runs: own.map((c) => [c.startBar, c.lengthBars, c.pattern ?? null]) } : {}),
+      // (Which copies run together decides a conditional note's pass: what the track's clips play, and where)
+      ...runsOf(own),
       bpm: all.bpm,
       ...(all.tempoPoints?.length ? { tempoPoints: all.tempoPoints.map((p) => [p.bar, p.bpm, p.ramp]) } : {}),
       swing: all.swing,
       kicks,
       sourceNotes,
+      ...(heardRuns ? { heardRuns } : {}),
     })
   );
 }

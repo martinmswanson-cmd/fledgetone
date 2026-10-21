@@ -53,6 +53,8 @@ export const PocketRack: React.FC<{ track: Track; sec: PocketSection }> = ({ tra
   const setPad = (patch: Partial<typeof pad>, record = false) => s().setTrackRack(track.id, { pads: rack.pads.map((p, j) => (j === selected ? { ...p, ...patch } : p)) }, record);
   const target = { trackId: track.id, pad: selected };
   const others = gridTracks(tracks).filter((t) => t.id !== track.id && clips.some((c) => c.trackId === t.id && c.startBar < sec.to && c.startBar + c.lengthBars > sec.from));
+  // (The track picked, while it still plays in this section: another section may not have it)
+  const chosen = others.some((t) => t.id === only) ? only : '';
   const takes = clips.filter((c) => c.audio && tracks.some((t) => t.id === c.trackId && isAudioKind(t.instrumentKey))).sort((a, b) => a.startBar - b.startBar);
   return (
     <div className="pk-scroll">
@@ -110,7 +112,7 @@ export const PocketRack: React.FC<{ track: Track; sec: PocketSection }> = ({ tra
         </button>
         {others.length > 0 && (
           <div className="flex gap-2 mt-2">
-            <select aria-label="Track to bounce" className="flex-1 min-w-0 h-11 rounded-xl border border-forge-border bg-forge-panel px-2 text-sm" value={only} onChange={(e) => setOnly(e.target.value)}>
+            <select aria-label="Track to bounce" className="flex-1 min-w-0 h-11 rounded-xl border border-forge-border bg-forge-panel px-2 text-sm" value={chosen} onChange={(e) => setOnly(e.target.value)}>
               <option value="">Just one track…</option>
               {others.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -118,7 +120,7 @@ export const PocketRack: React.FC<{ track: Track; sec: PocketSection }> = ({ tra
                 </option>
               ))}
             </select>
-            <button type="button" disabled={bouncing || !only} className={pill} onClick={() => void bounceSection(sec, only, target)}>
+            <button type="button" disabled={bouncing || !chosen} className={pill} onClick={() => void bounceSection(sec, chosen, target)}>
               Bounce
             </button>
           </div>

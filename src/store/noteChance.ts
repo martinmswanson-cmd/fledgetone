@@ -105,7 +105,7 @@ export interface ClipRun {
 
 /** What a clip plays, as a key: its pattern when linked, else its notes. */
 const contentKeys = new WeakMap<NoteEvent[], string>();
-function contentKey(c: Clip): string {
+export function contentKey(c: Clip): string {
   if (c.pattern) return `p:${c.pattern}`;
   let k = contentKeys.get(c.notes);
   if (k === undefined) {

@@ -129,3 +129,17 @@ test('how often a note plays is part of a freeze: setting it, its clip and a kic
   const withKick = (k) => ({ tracks: [pad, drums], clips: [k], bpm: 120, swing: 0 });
   assert.notEqual(fp(pad, withKick({ ...kick, notes: kick.notes.map((n, i) => (i ? { ...n, cond: { n: 1, of: 2 } } : n)) })), fp(pad, withKick(kick)));
 });
+
+test('a Pump that follows a track hears that track sit out, and the runs of copies it plays in', () => {
+  const bass = track('bass', 'supersaw', { fx: { ...defaultTrackFx(), pump: { ...defaultTrackFx().pump, on: true, trigger: 'track', source: 'chords' } } });
+  const chords = track('chords', 'supersaw');
+  const a = clip('a', 'chords', 1, [['C4', 0], ['E4', 0.5]]);
+  const all = (cs) => ({ tracks: [bass, chords], clips: cs, bpm: 120, swing: 0 });
+  const plain = fp(bass, all([a]));
+  const sometimes = { ...a, notes: a.notes.map((n, i) => (i ? { ...n, chance: 0.25 } : n)) };
+  assert.notEqual(fp(bass, all([sometimes])), plain);
+  // A copy next to it, then that copy changed: the pass of the note that plays sometimes moves
+  const copy = { ...sometimes, id: 'b', startBar: 3 };
+  const changed = { ...copy, notes: [...copy.notes, { id: 'x', note: 'G4', startOffset: 1, duration: '8n', velocity: 0.8 }] };
+  assert.notEqual(fp(bass, all([sometimes, changed])), fp(bass, all([sometimes, copy])));
+});

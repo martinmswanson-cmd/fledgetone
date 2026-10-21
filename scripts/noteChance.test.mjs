@@ -183,3 +183,12 @@ test('the dice keep the kick and snare, re-roll the rest within the style, and r
   // Everything stays inside the section
   for (const x of rollDrums(beat, { lengthBars: 1, seed: 11, newId })) assert.ok(x.startOffset >= 0 && x.startOffset < 1);
 });
+
+test('a song from a link shared again keeps every clip (kept ids and short ids never meet)', async () => {
+  const song = SONG();
+  const many = { ...song, clips: [0, 1, 2].map((i) => ({ ...song.clips[0], id: `c${i}`, startBar: 1 + i * 4, notes: song.clips[0].notes.map((x) => ({ ...x, chance: i === 1 ? x.chance : undefined, cond: i === 1 ? x.cond : undefined })) })) };
+  const link = await songLink(many, 'https://example.com/app');
+  const back = await projectFromHash(link.slice(link.indexOf('#')));
+  assert.equal(back.clips.length, 3);
+  assert.deepEqual(back.clips.map((c) => c.startBar), [1, 5, 9]);
+});

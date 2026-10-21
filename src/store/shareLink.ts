@@ -69,11 +69,18 @@ async function pipe(bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | 
 function shortIds(project: ProjectSnapshot): ProjectSnapshot {
   let n = 0;
   const next = () => (n++).toString(36);
+  // (A clip with notes that play only sometimes keeps its id: their draw comes from it, so the
+  // link plays the same notes as the song it was made from. The others' short ids go round them:
+  // a song opened from a link has short ids already)
+  const kept = new Set(project.clips.filter(clipHasConditions).map((c) => c.id));
+  const nextClip = (): string => {
+    let id = `c${next()}`;
+    while (kept.has(id)) id = `c${next()}`;
+    return id;
+  };
   const renamed: ProjectSnapshot = {
     ...project,
-    // (A clip with notes that play only sometimes keeps its id: their draw comes from it, so the
-    // link plays the same notes as the song it was made from)
-    clips: project.clips.map((c) => (clipHasConditions(c) ? c : { ...c, id: `c${next()}` })),
+    clips: project.clips.map((c) => (kept.has(c.id) ? c : { ...c, id: nextClip() })),
     stingers: project.stingers?.map((s) => ({ ...s, notes: s.notes.map((note) => ({ ...note, id: '' })) })),
   };
   // Track ids are pointed at from all over (clips, bus outputs, sends, a Pump's source, "send:" lanes,
