@@ -201,6 +201,37 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Pocket features and Android groundwork** (on the work branch, not released; from the mobile
+  research, scratchpad report "Mobile music apps people love"):
+  - *Drop pad plays the song*: a pad pressed while stopped starts it (`playPocket` in
+    `pocketSession.ts`, shared with the transport's Play).
+  - *Bounce to pad*: a bar range (whole mix or one track) rendered onto a Drum Rack pad, level
+    matched (`bounceToPad.ts` pure, `bounceToPadActions.ts`); vocal takes onto a pad or chopped
+    onto pads. Pocket edits Drum Rack tracks ("Your pads", `PocketRack.tsx`, `padsOf` in
+    `pocketSound.ts`); the studio has Drum Rack › From loop and track-menu bounces. Rack pads'
+    neutral filters are now left out of the chain (sampleKits.ts), so a bounce plays back exact.
+  - *Fledge Synth on the phone*: named macros per preset (`fledgeMacros.ts`; every bass has three,
+    presets.rs and fledge.wasm rebuilt), a tempo-synced wobble-rate picker, Pocket's Sound tool
+    (`PocketSynth.tsx`), plugin moves undoable (`pluginEdits.ts`, `checkpointPlugin`), one sound
+    as a file (`.fledgetone-sound.json`, a one-entry My sounds file).
+  - *Versions*: IndexedDB snapshots per song (`songId` in the project), every 2 min while editing
+    and before New/Open/link/restore, thinned by `versionPolicy.ts`; File › Versions… and Pocket's
+    Song sheet / starters screen. Free unused keeps sounds a version uses.
+  - *Chance and passes*: `chance` and `cond {n, of}` on notes (`noteChance.ts`), applied in the
+    shared scheduler from each note's Human seed and the clip's pass (its place in a run of
+    matching copies; live loop wraps count on, exports count copies only). Pocket: hold a step;
+    studio: PLAYS in the piano roll (not on the Drop pad: its moves are rendered from notes in
+    export without the scheduler). Dice: `rollDrums`/`guessDrumStyle` in smartTools.ts (kits only).
+  - *Android*: `appLifecycle.ts` (autosave at once and keep a mic take on background; Android
+    pauses the song; resume wakes audio quietly), `backButton.ts` (sheets, dialogs, then
+    minimize), storage persistence asked in the app, any file in the open picker, a small native
+    plugin (`FledgetonePlugin.java`) for files opened or shared from other apps and the app's
+    settings page, a mic explanation sheet, recording line-up by clicks (`lineUp.ts`,
+    `lineUpRun.ts`, per setup) and a Bluetooth delay notice, share-sheet cancel reported
+    (`saveBlobFile`), and `npm run app:release` for a signed bundle (docs/APP.md "Publishing on
+    Google Play"). Nothing of this has run on a real phone yet.
+  - Open decision: Fledge Synth is marked GPL but ships in the app, whose notes say GPL plugins stay
+    out of it (it's the owner's own code, so a licence choice, not a blocker).
 - **Drop pad** (on the work branch, not released): hold a pad to stutter, filter, tape-stop, crush,
   gate or echo the whole mix. It's a track (the Drop Pad instrument, kind `drop`) whose notes are
   the moves, one row per effect (DROP_ROWS), so copying a section copies its moves, the studio
