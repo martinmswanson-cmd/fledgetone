@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## 2026.10.20-11 — Fledge Synth
+## 2026.10.21 — Fledge Synth
 
 - **Fledge Synth**, Fledgetone's own synthesizer, made for dubstep, bass music and modern electronic songs. Add it with **Add Track → Fledge Synth**.
   - Two wavetable oscillators (16 tables) with up to 16 unison voices each, warps (sync, bend, squeeze, mirror, quantize, fold, ring), chord and octave stacks, a clean sub, noise and FM.
@@ -15,6 +15,11 @@ second update on the same day gets `-2`, and so on).
   - Its own window, in three tabs, with knobs, a picture of each wave, each LFO and each envelope. Every knob can be automated.
   - Ear-safe: the bass is kept in mono and nothing it plays goes over −1 dB.
 - Plugins that use the song's tempo now get it, including tempo changes.
+- **Plugins keep up with you**: saving, sharing, exporting, freezing and closing the tab all include a plugin's very latest settings, and a plugin that answers slowly is no longer left out.
+- **Automation lanes and plugin knobs**: while a lane moves a plugin's knob, the knob follows it and is marked as automated; delete the lane and it goes back to where you set it. Knobs turned from a MIDI controller now move in the window and are saved.
+- A plugin window no longer covers dialogs, and the plugin browser no longer lists keywords as groups of their own.
+- **Freeze** from a track's right-click menu now says whether it worked, and asking twice says it's already freezing.
+- A song that holds only a synth track is kept like any other: it comes back after a reload and can be restored.
 
 ## 2026.10.20-10 — Paste where you mean
 
