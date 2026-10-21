@@ -75,3 +75,12 @@ test('costumes and state options from a file keep only what makes sense', () => 
   const opts = C.parseStateOptions({ m1: { shuffleBars: 4, gap: { min: 20, max: 5 } }, m2: { shuffleBars: 3 }, gone: { shuffleBars: 4 } }, new Set(['m1', 'm2']));
   assert.deepEqual(opts, { m1: { shuffleBars: 4, gap: { min: 20, max: 20 } } });
 });
+
+test('a costume never swaps a track to or from the Drop pad (its notes are moves on the whole mix)', () => {
+  const ts = [track('lead', 'flute'), track('drop', 'dropPad')];
+  const cs = [{ ...clips[0] }, { id: 'c3', trackId: 'drop', name: 'Moves', startBar: 1, lengthBars: 1, notes: [{ id: 'n3', note: 'C4', startOffset: 0, duration: '4n', velocity: 1 }], isSelected: false }];
+  const out = C.applyCostume(ts, cs, { id: 'x', name: 'X', tracks: { lead: { instrument: 'dropPad' }, drop: { instrument: 'warmPad' } } });
+  assert.equal(out.tracks.find((t) => t.id === 'lead').instrumentKey, 'flute');
+  assert.equal(out.tracks.find((t) => t.id === 'drop').instrumentKey, 'dropPad');
+  assert.deepEqual(out.clips, cs);
+});

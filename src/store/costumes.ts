@@ -137,6 +137,8 @@ export function applyCostume(tracks: readonly Track[], clips: readonly Clip[], c
     // A drum part's notes are drum names: it can only go to another kit, and a melody can't go to a kit
     const fromDrums = INSTRUMENTS[t.instrumentKey]?.kind === 'drums';
     if (fromDrums !== (INSTRUMENTS[to].kind === 'drums')) return t;
+    // Nor to or from the Drop pad: its notes are moves on the whole mix, an instrument's are notes
+    if ((INSTRUMENTS[t.instrumentKey]?.kind === 'drop') !== (INSTRUMENTS[to].kind === 'drop')) return t;
     swapped.set(t.id, to);
     return { ...t, instrumentKey: to };
   });

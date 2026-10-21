@@ -20,7 +20,8 @@ function useInstrumentGroups() {
   return useMemo(() => {
     const groups = new Map<string, Array<{ key: InstrumentKey; name: string; drums: boolean }>>();
     for (const def of Object.values(INSTRUMENTS)) {
-      if (['bus', 'return', 'audio', 'plugin', 'sampler', 'drumRack', 'multiSampler', 'slicer', 'fx'].includes(def.key) || def.category === 'Your Sounds') continue;
+      // (Nor the Drop pad: its notes are moves on the whole mix, an instrument's are notes)
+      if (['bus', 'return', 'audio', 'plugin', 'sampler', 'drumRack', 'multiSampler', 'slicer', 'fx'].includes(def.key) || def.kind === 'drop' || def.category === 'Your Sounds') continue;
       const list = groups.get(def.category) ?? [];
       list.push({ key: def.key as InstrumentKey, name: def.name, drums: def.kind === 'drums' });
       groups.set(def.category, list);
@@ -110,7 +111,8 @@ export const CostumesPanel: React.FC = () => {
                       <option value="">as it is ({INSTRUMENTS[t.instrumentKey]?.name ?? t.instrumentKey})</option>
                       <option value="mute">silent</option>
                       {groups.map(([category, list]) => {
-                        const fits = list.filter((x) => x.drums === drums);
+                        // (The Drop pad changes to nothing else: as it is, or silent)
+                        const fits = INSTRUMENTS[t.instrumentKey]?.kind === 'drop' ? [] : list.filter((x) => x.drums === drums);
                         return fits.length ? (
                           <optgroup key={category} label={category}>
                             {fits.map((x) => (
