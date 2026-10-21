@@ -729,3 +729,24 @@ video.clip { display: block; width: 100%; height: auto; background: var(--panel)
 .final .fineprint a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
 /* What a page's tool isn't, said once near the top */
 .isnt { margin: 14px auto 0; max-width: 640px; padding: 10px 14px; border: 1px dashed var(--border-2); border-radius: 10px; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
+/* The Tools page (/tools/, written by scripts/tools-site.mjs): a card per download */
+.tool-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tool-card {
+  position: relative; display: flex; flex-direction: column; gap: 10px; padding: 24px; border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--border);
+}
+.tool-card::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: var(--c); border-radius: var(--radius) var(--radius) 0 0; }
+.tool-card .tool-who { margin: 0; font: 700 12px/1.4 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--c); }
+.tool-card h3 { margin: 0; font-size: 22px; line-height: 1.3; font-weight: 700; }
+.tool-card > p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
+.tool-card .tool-in { margin-top: 4px; font: 500 12px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.tool-card .ticks { font-size: 14.5px; flex: 1; align-content: start; }
+.tool-card .tool-note { font-size: 14px; padding: 8px 12px; border: 1px dashed var(--border-2); border-radius: 10px; }
+.tool-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.tool-actions .btn svg, .tool-get .btn svg { flex: none; }
+.tool-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0; font: 500 12.5px/1.5 var(--mono); color: var(--muted); }
+.tool-licence { max-width: 760px; margin: 0 auto; padding-bottom: 96px; color: #c4c4cc; }
+.tool-licence a { color: var(--text); text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+.tool-licence .ticks { font-size: 16px; gap: 10px; margin: 0 0 8px; }
+.tool-licence .ticks strong { color: var(--text); }
+@media (max-width: 860px) { .tool-cards { grid-template-columns: 1fr; } }

@@ -142,3 +142,11 @@ kbd {
 .lic-name { flex: 1 1 auto; font-weight: 500; overflow-wrap: anywhere; }
 .lic-tag { margin-left: auto; flex: 0 1 auto; max-width: 45%; text-align: right; font: 500 12px/1.4 var(--mono); color: var(--muted); }
 .lic-list pre { margin: 0 0 16px; padding: 16px; max-height: 420px; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; font: 12.5px/1.55 var(--mono); color: #c4c4cc; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A tool's README (/tools/<tool>/, scripts/tools-site.mjs) */
+.tool-readme .g-article { max-width: 820px; }
+.tool-readme .g-article h3 { margin-top: 40px; }
+.tool-readme .g-article h4 { margin: 28px 0 8px; font-size: 18px; font-weight: 700; }
+.tool-readme .g-article h3 a, .tool-readme .g-article h4 a { color: var(--text); text-decoration: none; }
+.tool-readme .g-article pre.code code { background: none; padding: 0; color: inherit; font-size: inherit; overflow-wrap: normal; }
+.tool-get { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 24px; }
+.tool-get .btn { text-decoration: none; white-space: normal; line-height: 1.3; }

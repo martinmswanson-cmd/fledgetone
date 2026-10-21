@@ -18,6 +18,17 @@ const SITE_RULES = `
   Cache-Control: public, max-age=86400
 /img/*
   Cache-Control: public, max-age=86400
+# The tools' downloads (scripts/tools-site.mjs): zips, saved rather than opened, and checked
+# afresh each time (each site build makes them again under the same names); their READMEs as
+# plain text in the browser
+/tools/*.zip
+  Content-Type: application/zip
+  Content-Disposition: attachment
+  Cache-Control: no-cache
+/tools/*/README.md
+  Content-Type: text/plain; charset=utf-8
+/tools/LICENSE.txt
+  Content-Type: text/plain; charset=utf-8
 `;
 
 /** The site's _headers, from the app's (whose addresses start at the app's own folder). */

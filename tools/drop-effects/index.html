@@ -1,0 +1,88 @@
+<!doctype html>
+<!-- Drop pad effects example. Part of Fledgetone (https://fledgetone.com), © Martin Swanson, GPL-3.0-or-later.
+     Serve this folder (for example "npx serve") and open it: AudioWorklets don't run from a file. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Drop pad effects example</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 40rem; background: #121214; color: #e4e4e7; }
+    button { font: inherit; padding: .6rem 1rem; margin: .25rem; touch-action: none; }
+    #pads button { min-width: 7rem; }
+    #pads button.on { background: #f43f5e; color: #fff; }
+  </style>
+</head>
+<body>
+  <h1>Drop pad effects</h1>
+  <p>Click Start for a simple beat, then hold a pad (or keys 1 to 6) to put its effect on the beat. The sound is kept quiet; turn your speakers down first anyway.</p>
+  <p><button id="start">Start</button> <button id="stop">Stop</button></p>
+  <div id="pads"></div>
+  <script type="module">
+    import { createDropEffects, DROP_EFFECT_NAMES } from './drop-effects.js';
+
+    const BPM = 120;
+    let context, drop, timer;
+    const $ = (id) => document.getElementById(id);
+
+    /** A beat made of oscillators: a kick on every beat, a hat on the off-beats and a chord. */
+    function beat(out) {
+      const beatSeconds = 60 / BPM;
+      let next = context.currentTime + 0.1;
+      const schedule = () => {
+        while (next < context.currentTime + 0.3) {
+          const kick = new OscillatorNode(context, { frequency: 120 });
+          const kg = new GainNode(context, { gain: 0 });
+          kick.frequency.exponentialRampToValueAtTime(45, next + 0.15);
+          kg.gain.setValueAtTime(0.9, next);
+          kg.gain.exponentialRampToValueAtTime(0.001, next + 0.3);
+          kick.connect(kg).connect(out);
+          kick.start(next);
+          kick.stop(next + 0.3);
+          for (const f of [220, 277.2, 329.6]) {
+            const o = new OscillatorNode(context, { type: 'sawtooth', frequency: f });
+            const g = new GainNode(context, { gain: 0 });
+            const lp = new BiquadFilterNode(context, { frequency: 1800 });
+            g.gain.setValueAtTime(0.08, next + beatSeconds / 2);
+            g.gain.exponentialRampToValueAtTime(0.001, next + beatSeconds * 0.95);
+            o.connect(lp).connect(g).connect(out);
+            o.start(next + beatSeconds / 2);
+            o.stop(next + beatSeconds);
+          }
+          next += beatSeconds;
+        }
+      };
+      schedule();
+      return setInterval(schedule, 50);
+    }
+
+    $('start').onclick = async () => {
+      if (!context) {
+        context = new AudioContext();
+        drop = await createDropEffects(context, { tempo: BPM });
+        // Quiet on purpose
+        const volume = new GainNode(context, { gain: 0.25 });
+        drop.connect(volume).connect(context.destination);
+        for (const [i, name] of DROP_EFFECT_NAMES.entries()) {
+          const b = document.createElement('button');
+          b.textContent = `${i + 1} ${name}`;
+          const down = () => { if (!b.classList.contains('on')) { b.classList.add('on'); drop.on(name); } };
+          const up = () => { if (b.classList.contains('on')) { b.classList.remove('on'); drop.off(name); } };
+          b.onpointerdown = down;
+          b.onpointerup = b.onpointerleave = b.onpointercancel = up;
+          addEventListener('keydown', (e) => { if (e.key === String(i + 1) && !e.repeat) down(); });
+          addEventListener('keyup', (e) => { if (e.key === String(i + 1)) up(); });
+          $('pads').append(b);
+        }
+      }
+      await context.resume();
+      clearInterval(timer);
+      timer = beat(drop.input);
+    };
+    $('stop').onclick = () => {
+      clearInterval(timer);
+      drop?.cancel();
+    };
+  </script>
+</body>
+</html>

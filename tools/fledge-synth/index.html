@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- Fledge Synth example. Part of Fledgetone (https://fledgetone.com), © Martin Swanson, GPL-3.0-or-later.
+     Serve this folder (for example "npx serve") and open it: AudioWorklets don't run from a file. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fledge Synth example</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 40rem; background: #121214; color: #e4e4e7; }
+    button, select { font: inherit; padding: .4rem .8rem; margin: .2rem 0; }
+    label { display: block; margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Fledge Synth</h1>
+  <p>Click Play to hear a few notes. The sound is kept quiet; turn your speakers down first anyway.</p>
+  <label>Preset <select id="preset" disabled></select></label>
+  <label>Cutoff <input id="cutoff" type="range" min="0" max="1" step="0.01" value="0.87" disabled /></label>
+  <p><button id="play">Play</button></p>
+  <p id="status"></p>
+  <script type="module">
+    import { FledgeSynth } from './fledge-synth.js';
+
+    let context, synth;
+    const $ = (id) => document.getElementById(id);
+
+    async function start() {
+      context = new AudioContext();
+      synth = await FledgeSynth.create(context, { preset: 'Keys/Pluck', tempo: 120 });
+      // Quiet on purpose: about -14 dB below the synth's own level
+      const volume = new GainNode(context, { gain: 0.2 });
+      synth.connect(volume).connect(context.destination);
+      for (const [i, name] of synth.listPresets().entries()) $('preset').append(new Option(name, i, false, name === 'Keys/Pluck'));
+      $('preset').disabled = $('cutoff').disabled = false;
+      $('preset').onchange = async () => {
+        await synth.setPreset(Number($('preset').value));
+        $('cutoff').value = synth.getParam('Cutoff');
+      };
+      $('cutoff').oninput = () => synth.setParam('Cutoff', Number($('cutoff').value));
+      $('cutoff').value = synth.getParam('Cutoff');
+    }
+
+    $('play').onclick = async () => {
+      if (!synth) await start();
+      await context.resume();
+      // A short tune: notes and their start times in beats at 120 BPM (half a second a beat)
+      const tune = [['C4', 0], ['E4', 0.5], ['G4', 1], ['C5', 1.5], ['B4', 2], ['G4', 2.5], ['E4', 3], ['C4', 3.5]];
+      const t0 = context.currentTime + 0.1;
+      for (const [note, beat] of tune) {
+        synth.noteOn(note, 100, t0 + beat * 0.5);
+        synth.noteOff(note, t0 + beat * 0.5 + 0.4);
+      }
+      $('status').textContent = `Playing ${synth.listPresets()[synth.preset] ?? ''}`;
+    };
+  </script>
+</body>
+</html>

@@ -2,7 +2,8 @@
 // app into dist-site/app/ (served at /app/), then this copies site/ into dist-site/ and writes the
 // guide's pages from GUIDE.md (/guide/, see scripts/guide-site.mjs). The home page is plain HTML and
 // CSS with no build step of its own. The Learn section's lessons (learn/, scripts/learn-site.mjs) go
-// to /learn/.
+// to /learn/. The Tools page (/tools/, scripts/tools-site.mjs) builds its downloads from the source each
+// time, so they're always current.
 //
 // The website build has the GPL plugins (VITE_GPL_PLUGINS=1 in package.json's build:site), since
 // the app's source is published with them. The app's cache rules move to the top of the site
@@ -14,6 +15,7 @@ import { writeGuide } from './guide-site.mjs';
 import { siteHeaders } from './site-headers.mjs';
 import { writeLicenses } from './licenses-page.mjs';
 import { learnCards, lessons, writeLearn } from './learn-site.mjs';
+import { writeTools } from './tools-site.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'dist-site');
@@ -33,6 +35,7 @@ if (existsSync(appHeaders)) {
 const guide = writeGuide(OUT);
 const licences = writeLicenses(OUT);
 const learn = await writeLearn(OUT);
+const tools = await writeTools(OUT);
 // The home page's Learn section lists the lessons
 const home = join(OUT, 'index.html');
 writeFileSync(home, readFileSync(home, 'utf8').replace('<!-- learn-cards -->', learnCards(await lessons())));
@@ -53,4 +56,4 @@ writeFileSync(
     .map((p) => `  <url><loc>https://fledgetone.com${p}</loc></url>`)
     .join('\n')}\n</urlset>\n`
 );
-console.log(`dist-site/: the home page at /, the studio at /app/, the lessons at /learn/ (${learn}), the guide at /guide/ (${guide} pages), the licences at /licenses/ (${licences})`);
+console.log(`dist-site/: the home page at /, the studio at /app/, the lessons at /learn/ (${learn}), the guide at /guide/ (${guide} pages), the licences at /licenses/ (${licences}), the tools at /tools/ (${tools})`);

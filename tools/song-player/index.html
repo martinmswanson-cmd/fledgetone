@@ -1,0 +1,80 @@
+<!doctype html>
+<!-- Song player example. Part of Fledgetone (https://fledgetone.com), © Martin Swanson, GPL-3.0-or-later.
+     Serve this folder (for example "npx serve") and open it. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Song player example</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 40rem; background: #121214; color: #e4e4e7; }
+    button, input { font: inherit; margin: .2rem; }
+    button { padding: .4rem .8rem; }
+  </style>
+</head>
+<body>
+  <h1>Song player</h1>
+  <p>Choose a song saved from Fledgetone (its .json file, from Save in the studio). It's made into music here in your browser, then plays. The sound is kept quiet; turn your speakers down first anyway.</p>
+  <p><input id="file" type="file" accept=".json,application/json" /></p>
+  <p><progress id="bar" max="1" value="0"></progress> <span id="status"></span></p>
+  <div id="pads"></div>
+  <script type="module">
+    import { loadSong } from './bos-player.js';
+
+    const $ = (id) => document.getElementById(id);
+    let music;
+
+    $('file').onchange = async () => {
+      const file = $('file').files[0];
+      if (!file) return;
+      music?.dispose();
+      $('pads').textContent = '';
+      $('status').textContent = 'Making the music...';
+      try {
+        const context = new AudioContext();
+        // Quiet on purpose
+        const volume = new GainNode(context, { gain: 0.4 });
+        volume.connect(context.destination);
+        music = await loadSong(JSON.parse(await file.text()), {
+          context,
+          destination: volume,
+          onProgress: (f, detail) => { $('bar').value = f; $('status').textContent = detail; },
+        });
+        $('status').textContent = `${music.data.name}: click a state to play it`;
+        const states = music.data.states.map((s) => s.name);
+        // Browsers start sound only after a click, so the music starts from a button
+        let playing = false;
+        const go = async (name) => {
+          await context.resume();
+          if (!playing) music.play(name);
+          else music.setState(name);
+          playing = true;
+        };
+        for (const name of states) {
+          const b = document.createElement('button');
+          b.textContent = name;
+          b.onclick = () => go(name);
+          $('pads').append(b);
+        }
+        for (const s of music.data.stingers) {
+          const b = document.createElement('button');
+          b.textContent = `Stinger: ${s.name}`;
+          b.onclick = () => music.stinger(s.name);
+          $('pads').append(b);
+        }
+        if (music.data.intensity?.groups?.length) {
+          const r = Object.assign(document.createElement('input'), { type: 'range', min: 0, max: 1, step: 0.01, value: music.intensity });
+          r.oninput = () => music.setIntensity(Number(r.value));
+          $('pads').append(' Intensity ', r);
+        }
+        const stop = document.createElement('button');
+        stop.textContent = 'Stop';
+        stop.onclick = () => { music.stop(); playing = false; };
+        $('pads').append(stop);
+      } catch (err) {
+        $('status').textContent = `Couldn't play it: ${err.message}`;
+      }
+    };
+  </script>
+</body>
+</html>

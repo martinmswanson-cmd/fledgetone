@@ -63,6 +63,7 @@ export const foot = `
         <a href="/scoring/">For scoring</a>
         <a href="/learn/">Learn</a>
         <a href="/guide/">Guide</a>
+        <a href="/tools/">Tools</a>
         <a href="/licenses/">Licences</a>
         <a href="https://github.com/martinmswanson-cmd/fledgetone">Source code</a>
         <a href="https://github.com/martinmswanson-cmd/fledgetone/blob/master/CODE_OF_CONDUCT.md">Code of conduct</a>
