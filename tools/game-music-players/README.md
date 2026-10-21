@@ -126,5 +126,6 @@ audio clock, so they land on the beat.
 
 When these players come inside a game kit you export from the studio, they come with an extra
 permission (the kit's `LICENSE-exported-files.txt`, and section 3 of Fledgetone's terms): there
-you may use them in any game, closed-source and paid games too, with no need to share your code.
-The files in this download are offered under the GPL, as above.
+they can ship inside any game, closed-source and paid games too, with no need to share your own
+code; but if you change the players themselves and distribute them, the changed files stay under
+the GPL, with their source. The files in this download are offered under the GPL, as above.

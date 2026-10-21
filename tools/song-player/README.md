@@ -77,8 +77,9 @@ The recordings have their own licences: see the credits at https://fledgetone.co
 
 When `bos-player.js` comes inside a web runtime kit you export from the studio, it comes with an
 extra permission (the kit's `LICENSE-exported-files.txt`, and section 3 of Fledgetone's terms):
-there you may use it in any game, closed-source and paid games too, with no need to share your
-code. The files in this download are offered under the GPL, as above.
+there it can ship inside any game, closed-source and paid games too, with no need to share your
+own code; but if you change the player itself and distribute it, the changed file stays under the
+GPL, with its source. The files in this download are offered under the GPL, as above.
 
 ## Open-source libraries inside
 

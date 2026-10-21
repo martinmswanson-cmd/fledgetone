@@ -124,7 +124,8 @@ any later version: GPL-3.0-or-later. The full text is in \`LICENSE\`. In plain w
 - **Your music is yours.** The licence covers this code, not what you make with it: the music,
   sounds and songs you make with these tools are yours, to use and share on any terms you like.
 
-This is a summary to help you; the licence text in \`LICENSE\` is what counts.`;
+This is a summary to help you; the licence text in \`LICENSE\` is what counts. Questions or
+concerns: email martin@twobirdsworkshop.com.`;
 
 /** The NOTICE that goes in every zip. */
 export const notice = (title, credits = 'Everything in this zip is Fledgetone\'s own code.') => `${title}
@@ -308,7 +309,8 @@ const PLAIN_LICENCE = `<ul class="ticks tool-terms" style="--c: var(--cyan)">
           <li><strong>Keep the notices.</strong> The licence and the copyright notice stay with the files.</li>
           <li><strong>No warranty.</strong> They come as they are.</li>
           <li><strong>Your music is yours.</strong> The licence covers the tools' code, not what you make with them: the music, sounds and songs you make are yours, on any terms you like.</li>
-        </ul>`;
+        </ul>
+        <p>Questions or concerns? Email <a href="mailto:martin@twobirdsworkshop.com">martin@twobirdsworkshop.com</a>.</p>`;
 
 /** The Tools page, from the tools and their zips ({ file, size } by tool id). */
 export function toolsPage(tools, zips) {
@@ -410,7 +412,7 @@ export function toolsPage(tools, zips) {
       <div class="tool-licence">
         <p>Every tool here is free software under the <a href="/tools/LICENSE.txt">GNU General Public License, version 3</a> or (at your choice) any later version: GPL-3.0-or-later. In plain words:</p>
         ${PLAIN_LICENCE}
-        <p class="note-line">This is a summary; the licence text is what counts. The game music players and the song player also come inside the game kits and runtime kits you export from the studio, and there they carry an extra permission to use them in any game, closed-source too (see the kit's LICENSE-exported-files.txt). The source code of all of Fledgetone is on <a href="${SOURCE_URL}">GitHub</a>, and the open-source software it uses is on the <a href="/licenses/">licences page</a>.</p>
+        <p class="note-line">This is a summary; the licence text is what counts. The game music players and the song player also come inside the game kits and runtime kits you export from the studio, and there they carry an extra permission: they can ship inside any game, closed-source too, but changes to the players themselves stay under the GPL (see the kit's LICENSE-exported-files.txt). The source code of all of Fledgetone is on <a href="${SOURCE_URL}">GitHub</a>, and the open-source software it uses is on the <a href="/licenses/">licences page</a>.</p>
       </div>
     </section>
   </main>
