@@ -5,7 +5,7 @@
  * sound as a file to send (Share this sound, Open a sound file). Every move is an undo step, as
  * a turn of the studio panel's knobs is (pluginEdits.ts). Other instruments are a tap away.
  */
-import React, { useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { ChevronLeft, ChevronRight, FolderOpen, Share2 } from 'lucide-react';
 import type { BuiltinControls, BuiltinParam } from '../audio/plugins/builtinHost';
 import { choiceValue, FLEDGE_SYNC, lfoControls } from '../audio/plugins/fledgeLayout';
@@ -16,6 +16,7 @@ import { editPluginParam, editPluginProgram } from '../store/pluginEdits';
 import type { Track } from '../store/timelineTypes';
 import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
 import { pill, pillOn } from './pocketUi';
+import { onBack } from '../native/backButton';
 
 /** "Bass/Wobble" → groups of [category, [{ name, i }]] in the engine's order. */
 function grouped(programs: string[]): Array<[string, Array<{ name: string; i: number }>]> {
@@ -127,6 +128,14 @@ export const PocketSynth: React.FC<{ track: Track; others: React.ReactNode }> = 
   useSyncExternalStore(subscribeWam, wamVersion);
   const [list, setList] = useState(false);
   const [starting, setStarting] = useState(false);
+  // (The phone's Back goes back to the synth from the list)
+  useEffect(() => {
+    if (!list) return;
+    return onBack(() => {
+      setList(false);
+      return true;
+    });
+  }, [list]);
   const pluginId = track.plugin?.id ?? '';
   const controls = liveWam(pluginId)?.controls;
   if (list)

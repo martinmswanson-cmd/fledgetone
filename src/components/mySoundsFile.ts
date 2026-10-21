@@ -75,7 +75,12 @@ export async function shareTrackSound(trackId: string): Promise<void> {
   if (!track) return;
   const sound: MySound = { id: uid('sound'), name: track.name.trim().slice(0, 60) || 'Sound', settings: soundOf(track) };
   const name = soundFileName(sound.name);
-  const saved = await saveBlobFile(new Blob([JSON.stringify(soundFile(sound, await embedSounds(soundRecordingIds(sound))))], { type: 'application/json' }), name);
+  let saved: boolean;
+  try {
+    saved = await saveBlobFile(new Blob([JSON.stringify(soundFile(sound, await embedSounds(soundRecordingIds(sound))))], { type: 'application/json' }), name);
+  } catch (err) {
+    return showToast(`Couldn't share "${sound.name}": ${err instanceof Error ? err.message : String(err)}`);
+  }
   if (!saved) return showToast("The share sheet closed: if you didn't pick an app, it wasn't shared");
   showToast(isNativeApp() ? `Shared "${sound.name}" as ${name}: Open a sound file puts it on anyone's track.` : `Saved "${sound.name}" as ${name} (in your downloads): send it to anyone, and Open a sound file puts it on their track.`);
 }
@@ -107,7 +112,8 @@ export async function openSoundFile(file: File, trackId?: string): Promise<strin
 export function pickSoundFile(trackId?: string): void {
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.json,application/json';
+  // (In the phone app every file: Android often doesn't know a sound file's type; it's checked when read)
+  if (!isNativeApp()) input.accept = '.json,application/json';
   input.onchange = async () => {
     const file = input.files?.[0];
     if (file) showToast(await openSoundFile(file, trackId));
