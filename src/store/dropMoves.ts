@@ -1,6 +1,7 @@
 import type { Clip, Track } from './timelineTypes';
 import { durationToBars } from './timelineTypes';
 import { audibleIds } from './buses';
+import { sustainNotes } from './expression';
 import { DROP_ROWS, INSTRUMENTS } from '../audio/instrumentCatalog';
 
 /**
@@ -9,7 +10,8 @@ import { DROP_ROWS, INSTRUMENTS } from '../audio/instrumentCatalog';
  * see DROP_ROWS and effects/dropFx.ts). Live, the scheduler plays those notes as it plays any
  * track's; an export reads them here and runs the effects over its render (masterAfter.ts), so
  * the two match. As live, a muted Drop track holds nothing, nor one left out by solo; notes hidden
- * by a clip's trim don't play, and a note that runs past its clip's end still lasts its length.
+ * by a clip's trim don't play, the sustain pedal holds notes on, and a note that runs past its
+ * clip's end still lasts its length.
  * No audio here, so Node can unit-test it.
  */
 export interface DropMove {
@@ -34,9 +36,15 @@ export function dropMoves(tracks: readonly Track[], clips: readonly Clip[]): Dro
   const moves: DropMove[] = [];
   for (const c of clips) {
     if (!ids.has(c.trackId) || c.audio) continue;
-    for (const n of c.notes) {
+    // As the scheduler plays them: notes hidden by a trim left out, and held on by the sustain pedal
+    const notes = sustainNotes(
+      c.notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < c.lengthBars - 1e-6),
+      c.expression?.sustain,
+      c.lengthBars
+    );
+    for (const n of notes) {
       const fx = FX_OF.get(n.note);
-      if (fx === undefined || n.startOffset < -1e-6 || n.startOffset >= c.lengthBars - 1e-6) continue;
+      if (fx === undefined) continue;
       const from = c.startBar + n.startOffset;
       moves.push({ fx, from, to: from + durationToBars(n.duration) });
     }

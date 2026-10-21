@@ -24,7 +24,7 @@ import { isMixTrack } from './buses';
 import { renderTrackChannels, PLAYBACK_DB, useFreezing } from './freezeActions';
 import type { FrozenTrack, Track } from './timelineTypes';
 import { barToSeconds } from '../audio/tempoMap';
-import { INSTRUMENTS, isAudioKind, isDrumKind } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isAudioKind, isDropKind, isDrumKind } from '../audio/instrumentCatalog';
 import { dropMemorySound, provideMemorySound, useSoundLibrary } from '../audio/soundLibrary';
 import { useUiStore } from './uiStore';
 
@@ -103,8 +103,8 @@ function dropAll() {
   useAutoFreeze.setState({ frozen: {}, pending: {} });
 }
 
-/** Tracks auto-freeze can freeze: instrument tracks with clips (not audio, buses or returns). */
-const freezable = (t: Track, clipTracks: Set<string>) => !isAudioKind(t.instrumentKey) && !isMixTrack(t) && clipTracks.has(t.id);
+/** Tracks auto-freeze can freeze: instrument tracks with clips (not audio, buses, returns or the Drop pad, which makes no sound of its own). */
+const freezable = (t: Track, clipTracks: Set<string>) => !isAudioKind(t.instrumentKey) && !isDropKind(t.instrumentKey) && !isMixTrack(t) && clipTracks.has(t.id);
 
 /** Roughly how much a track costs to play live, to freeze the busiest first. */
 function weight(t: Track, notes: number): number {

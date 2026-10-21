@@ -65,6 +65,18 @@ export function createDropKernel(sampleRate: number): DropKernel {
   /** Per effect: its wet share, gliding to 1 while held and back to 0 after */
   const wet = [0, 0, 0, 0, 0, 0];
   const sixteenthOf = [0, 0, 0, 0, 0, 0];
+  /** Per effect: where its latest "on" was scheduled (an "off" never comes before its own "on") */
+  const lastOn = [-Infinity, -Infinity, -Infinity, -Infinity, -Infinity, -Infinity];
+  /**
+   * Stutter and Tape stop start over when pressed again while they still sound: the jump from the
+   * old sound to the new one glides away over FADE (its size at the restart, shrinking to 0)
+   */
+  const restarting = [false, false, false];
+  const lastL = [0, 0, 0];
+  const lastR = [0, 0, 0];
+  const jumpL = [0, 0, 0];
+  const jumpR = [0, 0, 0];
+  const jumpLeft = [0, 0, 0];
   const startedAt = [0, 0, 0, 0, 0, 0];
 
   // Stutter: the 16th from the press, repeated
@@ -132,6 +144,10 @@ export function createDropKernel(sampleRate: number): DropKernel {
     held[fx]++;
     sixteenthOf[fx] = six;
     startedAt[fx] = frame;
+    if ((fx === 0 || fx === 2) && wet[fx] > 0) restarting[fx] = true;
+    // A fresh start counts from its first sample, so live and the export (in other block sizes) match
+    if (fx === 1 && wet[1] === 0) fCount = 0;
+    if (fx === 3 && wet[3] === 0) crCount = 0;
     if (fx === 0) {
       stLen = Math.max(16, Math.min(STUTTER_MAX, Math.round(six)));
       stPos = 0;
@@ -167,6 +183,24 @@ export function createDropKernel(sampleRate: number): DropKernel {
     events.splice(i, 0, ev);
   };
 
+  /** An effect's output sample, with any restart's jump gliding away (see restarting). */
+  const glide = (fx: number, l: number, r: number): [number, number] => {
+    if (restarting[fx]) {
+      restarting[fx] = false;
+      jumpL[fx] = lastL[fx] - l;
+      jumpR[fx] = lastR[fx] - r;
+      jumpLeft[fx] = FADE;
+    }
+    if (jumpLeft[fx] > 0) {
+      const k = jumpLeft[fx]-- / FADE;
+      l += jumpL[fx] * k;
+      r += jumpR[fx] * k;
+    }
+    lastL[fx] = l;
+    lastR[fx] = r;
+    return [l, r];
+  };
+
   /** Each effect over [from, to) of the working arrays, in place. */
   const run = (L: Float32Array, R: Float32Array, from: number, to: number) => {
     // Stutter
@@ -198,6 +232,7 @@ export function createDropKernel(sampleRate: number): DropKernel {
           l = l * (1 - w) + sl * w;
           r = r * (1 - w) + sr2 * w;
         }
+        [l, r] = glide(0, l, r);
         L[i] = l;
         R[i] = r;
       }
@@ -230,8 +265,9 @@ export function createDropKernel(sampleRate: number): DropKernel {
           if (tpRead > tpWrite - 1) tpRead = tpWrite - 1;
         }
         tpT++;
-        L[i] = l * (1 - w) + ol * w;
-        R[i] = r * (1 - w) + or * w;
+        const [gl, gr] = glide(2, l * (1 - w) + ol * w, r * (1 - w) + or * w);
+        L[i] = gl;
+        R[i] = gr;
       }
     }
     // Filter
@@ -310,6 +346,9 @@ export function createDropKernel(sampleRate: number): DropKernel {
         const yr = ecR[rd];
         ecLpL += (yl - ecLpL) * ecLpK;
         ecLpR += (yr - ecLpR) * ecLpK;
+        // (Tiny values flushed to 0: denormals held over silence are slow to work with)
+        if (ecLpL < 1e-20 && ecLpL > -1e-20) ecLpL = 0;
+        if (ecLpR < 1e-20 && ecLpR > -1e-20) ecLpR = 0;
         const l = L[i];
         const r = R[i];
         ecL[ecWrite] = l * ecSend + ecLpL * ECHO_FEEDBACK;
@@ -354,8 +393,12 @@ export function createDropKernel(sampleRate: number): DropKernel {
   };
 
   return {
-    on: (fx: number, frame: number, sixteenth: number) => schedule({ frame, type: 1, fx, sixteenth }),
-    off: (fx: number, frame: number) => schedule({ frame, type: 0, fx, sixteenth: 0 }),
+    on: (fx: number, frame: number, sixteenth: number) => {
+      lastOn[fx] = frame;
+      schedule({ frame, type: 1, fx, sixteenth });
+    },
+    // At least a sample after its own "on" (one at the same frame would be put before it, and the effect left on)
+    off: (fx: number, frame: number) => schedule({ frame: Math.max(frame, lastOn[fx] + 1), type: 0, fx, sixteenth: 0 }),
     cancel: (frame: number) => {
       for (let i = events.length - 1; i >= 0; i--) if (events[i].frame >= frame) events.splice(i, 1);
       schedule({ frame, type: 2, fx: 0, sixteenth: 0 });

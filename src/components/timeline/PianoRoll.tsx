@@ -315,7 +315,7 @@ interface EditorProps {
 
 const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, trackName, slicer, rack }) => {
   // Drum kits and the FX instrument both have fixed, named rows instead of a keyboard
-  const isDrums = isDrumKind(instrument) || isFxKind(instrument) || isRackKind(instrument);
+  const isDrums = isDrumKind(instrument) || isFxKind(instrument) || isDropKind(instrument) || isRackKind(instrument);
   // So does the Slicer (one row per slice), unless it's in Pitch mode
   const sliceRows = isSlicerKind(instrument) && !slicer?.pitch;
   const namedRows = isDrums || sliceRows;

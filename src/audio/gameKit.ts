@@ -12,7 +12,7 @@ import { manifestParam, type GameParam } from '../store/gameParams';
 import { songSections } from '../store/cutToLength';
 import { detectKey } from '../store/songKey';
 import { ANY_STATE, bridgeNotes, bridgeTarget, transitionCue } from '../store/transitions';
-import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
+import { INSTRUMENTS, isDropKind, isDrumKind } from './instrumentCatalog';
 import { midiOf, nameOf } from '../store/noteTools';
 import { stingerKind } from '../store/stingers';
 import type { Clip, Marker, MasterFx, MasterSettings, Stinger, Track, TransitionKind, TransitionRule } from '../store/timelineTypes';
@@ -624,7 +624,7 @@ export function bridgeFor(song: GameKitSong, sec: { from: number }, bars: 1 | 2,
   const measure = meter.num / meter.den;
   const beat = 1 / meter.den;
   const audible = audibleTracks(song.tracks).filter((t) => INSTRUMENTS[t.instrumentKey] && t.instrumentKey !== 'bus' && t.instrumentKey !== 'return');
-  const pitched = audible.filter((t) => !isDrumKind(t.instrumentKey) && INSTRUMENTS[t.instrumentKey].kind !== 'audio' && t.instrumentKey !== 'fx');
+  const pitched = audible.filter((t) => !isDrumKind(t.instrumentKey) && INSTRUMENTS[t.instrumentKey].kind !== 'audio' && t.instrumentKey !== 'fx' && !isDropKind(t.instrumentKey));
   if (!pitched.length) return null;
   // What each pitched part plays over the state's first measure
   const opening = new Map<string, Array<{ midi: number; at: number }>>();

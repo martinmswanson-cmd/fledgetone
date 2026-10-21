@@ -93,7 +93,7 @@ import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
 import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
-import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
+import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
 import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
@@ -2059,6 +2059,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // A bus or a Plugin track is made as one (Add Track), not by switching an instrument: a bus
       // can't hold the clips a track has, and a Plugin track needs its plugin
       if (isMixTrack({ instrumentKey }) || instrumentKey === 'plugin') return;
+      // Nor between the Drop pad and an instrument once it has clips: its notes are moves on the
+      // whole mix, and an instrument's notes would become moves (or the moves notes)
+      if (isDropKind(instrumentKey) !== isDropKind(current.instrumentKey) && get().clips.some((c) => c.trackId === id)) return;
       const meta = INSTRUMENTS[instrumentKey];
       updateTrack(
         id,

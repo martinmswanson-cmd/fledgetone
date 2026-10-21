@@ -12,7 +12,9 @@
 import * as Tone from 'tone';
 import { DROP_ROWS } from './instrumentCatalog';
 import { liveContext, liveTransport } from './liveContext';
-import { barToTicks, ticksToBar } from './transport';
+import { barToTicks, getLiveTempo, ticksToBar } from './transport';
+import { secondsBetween } from './tempoMap';
+import { dropDelaySeconds } from './latency';
 import { durationToBars } from '../store/timelineTypes';
 import type { NoteOff, PlayableNote, TrackInstrument } from './instruments';
 
@@ -37,26 +39,41 @@ const post = (message: object) => {
 /** Seconds a 16th lasts at the live tempo now. */
 const sixteenth = () => 15 / liveTransport.bpm.value;
 
-/** Start effect `fx` at audio time `at`. */
-export const dropOn = (fx: number, at: number) => post({ on: fx, at, sixteenth: sixteenth() });
+/** The song position (bars) the Transport plays at audio time `time`. */
+const barAt = (time: number) => ticksToBar(liveTransport.getTicksAtTime(time));
+
+/**
+ * The times below are when the Transport plays the music; the music reaches the Drop effects later,
+ * held back by the tracks' delay compensation and the master compressor (dropDelaySeconds), so
+ * each message is moved that much later, as an export lines them up.
+ */
+/** Start effect `fx` at audio time `at` (a 16th lasting as long as it does there along the song's tempo). */
+export const dropOn = (fx: number, at: number) => {
+  const bar = barAt(at);
+  const six = liveTransport.state === 'started' ? secondsBetween(bar, bar + 1 / 16, getLiveTempo()) : sixteenth();
+  post({ on: fx, at: at + dropDelaySeconds(), sixteenth: six });
+};
 /** Let go of effect `fx` at audio time `at`. */
-export const dropOff = (fx: number, at: number) => post({ off: fx, at });
+export const dropOff = (fx: number, at: number) => post({ off: fx, at: at + dropDelaySeconds() });
 /** Let go of everything at `at`, and forget what was due after it. */
-export const dropCancel = (at: number) => post({ cancel: true, at });
+export const dropCancel = (at: number) => post({ cancel: true, at: at + dropDelaySeconds() });
 
 const FX_OF = new Map(DROP_ROWS.map((r) => [r.note, r.fx]));
 /** The effect a note holds (undefined: not one of the Drop pad's rows). */
 export const dropFxOf = (note: string) => FX_OF.get(note);
 
-/** When a note starting at `time` and lasting `bars` lets go: its end, or the loop's end if that comes first. */
+/**
+ * When a note starting at `time` and lasting `bars` lets go: its end, or the loop's end if that
+ * comes first, along the song's tempo (changes included), as an export reads it.
+ */
 function releaseAt(time: number, bars: number): number {
-  let length = bars;
+  const bar = barAt(time);
+  let end = bar + bars;
   if (liveTransport.loop) {
-    const bar = ticksToBar(liveTransport.getTicksAtTime(time));
     const loopEnd = ticksToBar(Math.round(liveTransport.toTicks(liveTransport.loopEnd)));
-    if (bar < loopEnd - 1e-6) length = Math.min(length, loopEnd - bar);
+    if (bar < loopEnd - 1e-6) end = Math.min(end, loopEnd);
   }
-  return time + length * 16 * sixteenth();
+  return time + secondsBetween(bar, end, getLiveTempo());
 }
 
 /**

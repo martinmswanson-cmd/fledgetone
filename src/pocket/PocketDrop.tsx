@@ -7,7 +7,7 @@
  * replacing what that effect had there; the song then plays it every time, in the studio and in
  * exports too. Under the pads, the section's moves, with the playhead.
  */
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { DROP_ROWS } from '../audio/instrumentCatalog';
@@ -33,10 +33,18 @@ const PADS: Array<{ color: string; about: string }> = [
   { color: '#2dd4bf', about: 'throws an echo' },
 ];
 
-/** The section's 16th at audio time `time` (null: the song isn't in the section then). */
-function stepAt(time: number, sec: PocketSection): number | null {
+/**
+ * The section's 16th at audio time `time` (null: the song isn't in the section then). Near a loop's
+ * end the Transport may not have wrapped yet for a time just past it: that's the loop's start.
+ */
+function stepAt(time: number, sec: Pick<PocketSection, 'from' | 'to'>): number | null {
   if (liveTransport.state !== 'started') return null;
-  const bar = ticksToBar(liveTransport.getTicksAtTime(time));
+  let bar = ticksToBar(liveTransport.getTicksAtTime(time));
+  if (liveTransport.loop) {
+    const loopStart = ticksToBar(Math.round(liveTransport.toTicks(liveTransport.loopStart)));
+    const loopEnd = ticksToBar(Math.round(liveTransport.toTicks(liveTransport.loopEnd)));
+    if (bar >= loopEnd - EPS && loopEnd > loopStart) bar = loopStart + (bar - loopEnd);
+  }
   if (bar < sec.from - EPS || bar >= sec.to - EPS) return null;
   return Math.round((bar - sec.from) * STEPS_PER_WHOLE);
 }
@@ -44,10 +52,10 @@ function stepAt(time: number, sec: PocketSection): number | null {
 /** Seconds a 16th lasts now. */
 const sixteenth = () => 15 / liveTransport.bpm.value;
 
-/** Write a move into the cell: effect `row` from `from` for `steps` 16ths, over what that effect had there. */
-function writeMove(track: Track, sec: PocketSection, note: string, from: number, steps: number): void {
+/** Write a move into a track's cell: effect `note` from step `from` for `steps` 16ths, over what that effect had there. */
+function writeMove(trackId: string, sec: Pick<PocketSection, 'from' | 'to'>, note: string, from: number, steps: number): void {
   const to = from + steps;
-  editCell(track.id, sec, (have) => [
+  editCell(trackId, sec, (have) => [
     ...have.filter((n) => {
       if (n.note !== note) return true;
       const s = Math.round(n.startOffset * STEPS_PER_WHOLE);
@@ -62,9 +70,12 @@ interface Hold {
   fx: number;
   /** Audio time the effect started */
   at: number;
-  /** Where it's being written (Rec on, in the section), else null */
-  step: number | null;
+  /** Where it's being written (Rec on, the song playing the section), as things were at the press; else null */
+  rec: { trackId: string; sec: Pick<PocketSection, 'from' | 'to'>; step: number; total: number; wrapped: boolean } | null;
 }
+
+/** Keys that play a pad from the keyboard, as pointers of their own. */
+const KEY_POINTER = -1000;
 
 export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track, sec }) => {
   const isPlaying = useTimelineStore((s) => s.isPlaying);
@@ -76,12 +87,21 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
   const total = Math.max(1, Math.round((sec.to - sec.from) * STEPS_PER_WHOLE));
   const moves = sectionNotes(clips, track.id, sec);
 
+  /** Write a recorded hold, `steps` long (16ths), kept inside its section. */
+  const keep = (h: Hold, steps: number) => {
+    if (!h.rec) return;
+    writeMove(h.rec.trackId, h.rec.sec, DROP_ROWS[h.fx].note, h.rec.step, Math.max(1, Math.min(steps, h.rec.total - h.rec.step)));
+  };
+
   const press = (pointer: number, fx: number) => {
+    // A second finger on a pad already held does nothing (the first one's hold goes on)
+    if ([...holds.current.values()].some((h) => h.fx === fx)) return;
     buzz(10);
     const at = nextSixteenthAt(audioNow());
     dropOn(fx, at);
     const recording = usePocket.getState().rec && useTimelineStore.getState().isPlaying;
-    holds.current.set(pointer, { fx, at, step: recording ? stepAt(at, sec) : null });
+    const step = recording ? stepAt(at, sec) : null;
+    holds.current.set(pointer, { fx, at, rec: step === null ? null : { trackId: track.id, sec: { from: sec.from, to: sec.to }, step, total, wrapped: false } });
     relight();
   };
   const release = (pointer: number) => {
@@ -93,16 +113,49 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
     // At least a 16th, ending on one
     const off = playing ? Math.max(nextSixteenthAt(audioNow()), h.at + sixteenth() - 1e-4) : audioNow();
     dropOff(h.fx, off);
-    if (h.step === null) return;
-    const end = stepAt(off, sec);
+    if (!h.rec) return;
+    const end = h.rec.wrapped ? null : stepAt(off, h.rec.sec);
     // Let go after the section wrapped round or moved on: the move lasts to the section's end, as it played
-    const steps = end !== null && end > h.step ? end - h.step : total - h.step;
-    writeMove(track, sec, DROP_ROWS[h.fx].note, h.step, Math.max(1, Math.min(steps, total - h.step)));
+    keep(h, end !== null && end > h.rec.step ? end - h.rec.step : h.rec.total - h.rec.step);
   };
+
+  useEffect(() => {
+    const all = holds.current;
+    // The loop wrapping round while a pad is held: the move it's writing runs to the section's end
+    const wrapped = () => {
+      for (const h of all.values()) if (h.rec) h.rec.wrapped = true;
+    };
+    // Play, Stop, Pause or a jump: every effect is let go there (dropLive.ts), so the holds end there too
+    const ended = (time: number) => {
+      for (const h of all.values()) keep(h, Math.round((time - h.at) / sixteenth()));
+      all.clear();
+      relight();
+    };
+    liveTransport.on('loop', wrapped);
+    liveTransport.on('start', ended);
+    liveTransport.on('stop', ended);
+    liveTransport.on('pause', ended);
+    return () => {
+      liveTransport.off('loop', wrapped);
+      liveTransport.off('start', ended);
+      liveTransport.off('stop', ended);
+      liveTransport.off('pause', ended);
+      // Leaving the pads (another track, the mixer) with one held lets go of it
+      const now = audioNow();
+      for (const h of all.values()) {
+        const off = liveTransport.state === 'started' ? Math.max(nextSixteenthAt(now), h.at + sixteenth() - 1e-4) : now;
+        dropOff(h.fx, off);
+        keep(h, Math.round((off - h.at) / sixteenth()));
+      }
+      all.clear();
+    };
+    // (Once: the handlers read the holds, which carry what they need)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex flex-col gap-2 flex-1 min-h-0">
-      <div className="pk-drop" aria-label="Drop pads: hold one to change the whole mix">
+      <div className="pk-drop" role="group" aria-label="Drop pads: hold one to change the whole mix">
         {DROP_ROWS.map((row, fx) => (
           <button
             key={row.note}
@@ -118,6 +171,16 @@ export const DropPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
             onPointerCancel={(e) => release(e.pointerId)}
             onLostPointerCapture={(e) => release(e.pointerId)}
             onContextMenu={(e) => e.preventDefault()}
+            onKeyDown={(e) => {
+              if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+                e.preventDefault();
+                press(KEY_POINTER - fx, fx);
+              }
+            }}
+            onKeyUp={(e) => {
+              if (e.key === ' ' || e.key === 'Enter') release(KEY_POINTER - fx);
+            }}
+            onBlur={() => release(KEY_POINTER - fx)}
           >
             <span>{PADS[fx].about}</span>
             {row.label}

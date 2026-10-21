@@ -58,6 +58,18 @@ function masterSeconds(): number {
  */
 export const mixDelaySeconds = (): number => mixDelay + masterSeconds();
 
+/**
+ * How much later than it was scheduled a note reaches the master's Drop effects (seconds): the
+ * tracks' delay compensation and the master compressor's look-ahead (the Drop effects come after
+ * the compressor, before the limiter), as an export lines them up (dropFramesOf in exportWav.ts).
+ */
+export function dropDelaySeconds(): number {
+  const rate = liveContext().sampleRate;
+  const compressor = compressorLatencyNow(rate);
+  if (compressor === undefined) void measureCompressorLatency(rate);
+  return mixDelay + (compressor ?? 0) / rate;
+}
+
 /** Seconds from a sample leaving the graph to the listener hearing it, as the browser reports it. */
 export function outputLatencySeconds(): number {
   const native = nativeContext();

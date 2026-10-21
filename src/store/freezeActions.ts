@@ -7,7 +7,7 @@ import { masterFxOf, songGeneration, useTimelineStore } from './timelineStore';
 import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';
 import type { Track } from './timelineTypes';
 import { barToSeconds, secondsToBar } from '../audio/tempoMap';
-import { isAudioKind } from '../audio/instrumentCatalog';
+import { isAudioKind, isDropKind } from '../audio/instrumentCatalog';
 import { encodeChannels, renderForFreeze, SAMPLE_RATES } from '../audio/exportWav';
 import type { SampleRate } from '../audio/exportWav';
 import { importSoundFile } from '../audio/soundLibrary';
@@ -33,7 +33,8 @@ const SILENCE = 10 ** (-90 / 20);
 export const canFreeze = (trackId: string): boolean => {
   const s = useTimelineStore.getState();
   const track = s.tracks.find((t) => t.id === trackId);
-  return !!track && !isAudioKind(track.instrumentKey) && s.clips.some((c) => c.trackId === trackId);
+  // (Not the Drop pad: it makes no sound of its own to freeze)
+  return !!track && !isAudioKind(track.instrumentKey) && !isDropKind(track.instrumentKey) && s.clips.some((c) => c.trackId === trackId);
 };
 
 interface RenderedTrack {

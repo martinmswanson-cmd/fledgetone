@@ -175,3 +175,52 @@ test('the worklet source parses and names its processor', () => {
   // Parses as a script (registerProcessor and AudioWorkletProcessor stubbed)
   new Function('AudioWorkletProcessor', 'registerProcessor', 'sampleRate', 'currentFrame', DROP_WORKLET_SOURCE)(class {}, () => {}, SR, 0);
 });
+
+test('pressed again while it still sounds, Stutter and Tape stop start over without a click', () => {
+  const x = sine(110, 2, 0.5);
+  const own = biggestStep(x);
+  for (const name of ['stutter', 'tape']) {
+    const at = 1000 + Math.round(4 * SIX);
+    const cases = {
+      'back to back': (k) => (k.on(FX[name], 1000, SIX), k.off(FX[name], at), k.on(FX[name], at, SIX)),
+      'again while held': (k) => (k.on(FX[name], 1000, SIX), k.on(FX[name], 1000 + Math.round(3 * SIX) + 333, SIX)),
+      'again while letting go': (k) => (k.on(FX[name], 1000, SIX), k.off(FX[name], at), k.on(FX[name], at + 100, SIX)),
+    };
+    for (const [what, setup] of Object.entries(cases)) {
+      const { L } = run(x, setup);
+      assert.ok(biggestStep(L) < Math.max(0.05, own * 12), `${name}, ${what}: a jump of ${biggestStep(L)}`);
+    }
+  }
+});
+
+test('a move whose start and end land on the same sample still lets go', () => {
+  const { k } = run(sine(200, 1), (k) => {
+    k.on(FX.gate, 2000, SIX);
+    k.off(FX.gate, 2000);
+  });
+  assert.equal(k.busy(), false);
+});
+
+test('the same moves sound the same in any block size (live 128, export 8192)', () => {
+  const x = sine(3000, 16, 0.4);
+  const moves = [[3, 243995, 276253], [3, 579663, 669277], [1, 369536, 409928], [1, 478903, 563939], [0, 100000, 130000]];
+  const render = (block) => {
+    const k = createDropKernel(SR);
+    for (const [fx, from, to] of moves) {
+      k.on(fx, from, 200);
+      k.off(fx, to);
+    }
+    const L = new Float32Array(x.length);
+    const R = new Float32Array(x.length);
+    for (let at = 0; at < x.length; at += block) {
+      const n = Math.min(block, x.length - at);
+      k.process(x.subarray(at, at + n), x.subarray(at, at + n), L.subarray(at, at + n), R.subarray(at, at + n), n, at);
+    }
+    return L;
+  };
+  const a = render(128);
+  const b = render(8192);
+  let most = 0;
+  for (let i = 0; i < a.length; i++) most = Math.max(most, Math.abs(a[i] - b[i]));
+  assert.ok(most < 1e-6, `differs by ${most}`);
+});

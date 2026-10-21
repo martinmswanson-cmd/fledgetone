@@ -16,7 +16,7 @@ import { captureWamStates } from './wamHost';
 import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
 import { createLimiterKernel, LIMITER_CEILING_DBTP } from './effects/limiter';
 import { masterAfter, type DropFrames, type MasterStats } from './effects/masterAfter';
-import { dropMoves } from '../store/dropMoves';
+import { dropMoves, isDropTrack } from '../store/dropMoves';
 import { lushReverbOf } from './effects/lushAfter';
 import { leadIntoLoop } from './introSeam';
 import { measureCompressorLatency } from './compressorLatency';
@@ -226,10 +226,10 @@ export function audibleTracks(tracks: Track[]): Track[] {
   return tracks.filter((t) => heard.has(t.id));
 }
 
-/** The tracks that get a stem: audible ones with a clip in [startBar, endBar). */
+/** The tracks that get a stem: audible ones with a clip in [startBar, endBar) (not the Drop pad, which makes no sound of its own). */
 export function stemTracks(opts: Pick<RenderOptions, 'tracks' | 'clips' | 'startBar' | 'endBar'>): Track[] {
   const used = new Set(opts.clips.filter((c) => c.startBar < opts.endBar && c.startBar + c.lengthBars > opts.startBar).map((c) => c.trackId));
-  return audibleTracks(opts.tracks).filter((t) => used.has(t.id));
+  return audibleTracks(opts.tracks).filter((t) => used.has(t.id) && !isDropTrack(t));
 }
 
 /**
