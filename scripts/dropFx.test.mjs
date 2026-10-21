@@ -297,3 +297,32 @@ test('the Filter sweep never makes anything louder', () => {
     assert.ok(peak(L) <= 0.5 * 1.01, `${hz} Hz: peak ${peak(L)}`);
   }
 });
+
+test('no edge (a square wave, noise) comes out of the Filter louder, at any sample rate', () => {
+  for (const sr of [22050, 44100, 48000, 96000]) {
+    const n = sr * 2;
+    const sq = new Float32Array(n).map((_, i) => (Math.floor((i * 110 * 2) / sr) % 2 ? 0.5 : -0.5));
+    let seed = 1;
+    const noise = new Float32Array(n).map(() => ((seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5));
+    for (const x of [sq, noise]) {
+      const k = createDropKernel(sr);
+      k.on(1, 0, (sr * 15) / 120);
+      const out = new Float32Array(n);
+      for (let at = 0; at < n; at += 128) {
+        const m = Math.min(128, n - at);
+        k.process(x.subarray(at, at + m), x.subarray(at, at + m), out.subarray(at, at + m), new Float32Array(m), m, at);
+      }
+      assert.ok(peak(out) <= peak(x) * 1.001, `${sr} Hz: ${peak(out) / peak(x)}`);
+    }
+  }
+});
+
+test('four presses within a few ms still glide', () => {
+  const x = sine(60, 1, 0.8);
+  const own = biggestStep(x);
+  const cases = { stutter: [5605, 5649, 5749, 5795], tape: [4222, 4414, 4514, 4567] };
+  for (const [name, at] of Object.entries(cases)) {
+    const { L } = run(x, (k) => at.forEach((f) => k.on(FX[name], f, SIX)));
+    assert.ok(biggestStep(L) < own * 3, `${name}: a jump of ${biggestStep(L)} (the sine's own ${own})`);
+  }
+});

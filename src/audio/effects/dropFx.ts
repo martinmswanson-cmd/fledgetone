@@ -47,11 +47,14 @@ export function createDropKernel(sampleRate: number): DropKernel {
   const STUTTER_MAX = Math.round(2 * sr);
   const TAPE_MAX = Math.round(4 * sr);
   const ECHO_MAX = Math.round(3 * sr);
-  /** The filter sweeps down to this over a bar, and back up over two 16ths after letting go */
-  const FILTER_TOP = Math.min(18000, sr * 0.45);
+  /**
+   * The filter sweeps down to this over a bar, and back up over two 16ths after letting go. It
+   * starts from a quarter of the sample rate (11 kHz at 44.1 kHz), and with a Q of 0.5 it never
+   * overshoots: higher, or with more Q, sharp edges (drum hits) came out up to half as loud again.
+   */
+  const FILTER_TOP = Math.min(18000, sr * 0.25);
   const FILTER_LOW = 300;
-  /** Butterworth: no resonant peak, so the sweep never makes anything louder */
-  const FILTER_Q = Math.SQRT1_2;
+  const FILTER_Q = 0.5;
   /** Crush: the sample rate it holds down to, and the step its levels snap to */
   const CRUSH_RATE = 5500;
   const CRUSH_STEP = 1 / 32;
@@ -149,13 +152,20 @@ export function createDropKernel(sampleRate: number): DropKernel {
     if (fx === 1 && wet[1] === 0) fCount = 0;
     if (fx === 3 && wet[3] === 0) crCount = 0;
     if (fx === 0) {
-      stNow = nextVoice(st, wet[0] > 0);
+      // A voice still taking in its first 16th plays what comes in: it can start that 16th again
+      // where it is without a jump (presses only a moment apart then never need a fourth voice)
+      const cur = st[stNow];
+      const inPlace = wet[0] > 0 && !cur.filled && cur.pos < cur.len - FADE;
+      if (!inPlace) stNow = nextVoice(st, wet[0] > 0);
       const v = st[stNow];
       v.len = Math.max(16, Math.min(STUTTER_MAX, Math.round(six)));
       v.pos = 0;
       v.filled = false;
     } else if (fx === 2) {
-      tpNow = nextVoice(tp, wet[2] > 0);
+      // The same for a tape that has only just begun to slow (it still plays almost as it came in)
+      const cur = tp[tpNow];
+      const inPlace = wet[2] > 0 && cur.t < FADE;
+      if (!inPlace) tpNow = nextVoice(tp, wet[2] > 0);
       const v = tp[tpNow];
       v.write = 0;
       v.read = 0;
