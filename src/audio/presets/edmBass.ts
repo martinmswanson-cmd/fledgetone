@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { DEFAULT_WOBBLE, WOBBLE_BEATS } from '../../store/timelineTypes';
 import { monotonicTime } from './monotonic';
+import { joinsNote } from '../legato';
 import {
   atAudioTime,
   attackDecay,
@@ -133,12 +134,14 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
       const stopAt = end + releaseTail(patch.release);
 
       const v = current;
-      if (v && v.end > start) {
-        // Legato: slide the playing voice to the new pitch. The envelope carries on (towards this
-        // note's level) instead of starting again, and the release moves to this note's end.
+      if (v && joinsNote(start, v.end)) {
+        // Legato (the note starts before the last one ends, or right where it ends): slide the
+        // playing voice to the new pitch, or stay on it (a tie). The envelope carries on (towards
+        // this note's level) instead of starting again, and the release moves to this note's end.
         v.source.glide(note.freq, start, glide?.seconds ?? patch.glide);
         const amp = v.voice.amp.gain;
-        amp.cancelScheduledValues(start);
+        // (From the last note's end when that came first: its release is called off too)
+        amp.cancelScheduledValues(Math.min(start, v.end));
         amp.setTargetAtTime(peak * patch.sustain, start, 0.01);
         amp.setTargetAtTime(0, end, releaseTc);
         if (patch.retone) {

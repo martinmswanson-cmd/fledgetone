@@ -20,12 +20,14 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
  * Each row's loudness at full velocity and a level of 0 dB, as the RMS of its loudest 50 ms in
  * dBFS: what the synthesized and recorded kits play their rows at (measured through the app's own
  * render, which takes about 4 dB off at the track strip), so a designed kit swaps in for them at
- * about the same balance, and every preset of a row comes out equally loud.
+ * about the same balance, and every preset of a row comes out equally loud. The snare and clap
+ * sit a little under the kick as heard (K-weighted, about 2.5 dB): their RMS is lower than
+ * the kick's because the ear hears their mids more than the kick's lows.
  */
 export const ROW_LOUDNESS: Record<DesignRow, number> = {
   kick: -4.6,
-  snare: -12.1,
-  clap: -17.6,
+  snare: -9.1,
+  clap: -9.6,
   closedHat: -22.1,
   openHat: -19.1,
   tomLow: -10.1,

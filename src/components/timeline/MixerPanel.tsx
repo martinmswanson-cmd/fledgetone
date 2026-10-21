@@ -254,6 +254,20 @@ export const MixerPanel: React.FC = () => {
         </button>
         <span className="text-[11px]">Makes the parts sound like one song instead of instruments side by side. Switch it off any time to compare.</span>
       </div>
+      <div className="flex items-center gap-2" data-search="duck kick">
+        <button
+          type="button"
+          onClick={() => {
+            const made = useTimelineStore.getState().duckToKick();
+            showToast(made < 0 ? 'No kick to duck to: add a drum track first.' : made ? `Ducked ${made} track${made === 1 ? '' : 's'} to the kick: the bass dips deepest, the chords, pads and leads a little less. Undo to take it back.` : 'Everything already ducks to the kick.');
+          }}
+          className="px-2 py-1 rounded border border-cyan-500/50 text-cyan-200 hover:bg-cyan-500/15 text-[11px]"
+          title="Puts a Pump on the bass, chords, pads and leads, triggered by the kick: they dip on every kick and swell back in time with the tempo"
+        >
+          Duck to kick
+        </button>
+        <span className="text-[11px]">The bass, chords, pads and leads dip on every kick and swell back: the dance-music pump (one undo step).</span>
+      </div>
       <p className="text-[11px]">Double-click a fader or knob to reset it. Each drag is one undo step. Click a track's name to open it in the Inspector (inserts, EQ, automation).</p>
     </div>
   );

@@ -20,7 +20,7 @@ import { create808, createDrumMachine, createLead, createSubBass, createWavetabl
 import { createGrowlBass, createReeseBass, createWobbleBass } from './presets/edmBass';
 import { createPluck, createSupersaw, HELD_NOTE } from './presets/edmSynths';
 import { createFx } from './presets/fx';
-import { createKitExtras } from './presets/kitExtras';
+import { CLAP_DB, createKitExtras } from './presets/kitExtras';
 import type { KitExtras } from './presets/kitExtras';
 import { createSampledKit } from './presets/sampledKit';
 import { createSlicer } from './presets/slicer';
@@ -319,7 +319,8 @@ function designedKit(output: Tone.InputNode, design: DrumDesign | undefined, exp
 /** A recorded kit: its recordings, the hats shortened or let ring, the extras for rows it lacks. */
 function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = false, seed = 0): TrackInstrument {
   const kit = createSampledKit(key, output);
-  const extras = createKitExtras(output, seed);
+  // (The kit's own raise in the catalog raises its extras too: the clap takes that much less)
+  const extras = createKitExtras(output, seed, CLAP_DB - (INSTRUMENTS[key].gain ?? 0));
   const player: DrumPlayer = (row, time, v, r = 1) => {
     const opts = row === 'closedHat' ? { seconds: 0.14, rate: r } : row === 'openHat' ? { rate: 0.94 * r } : { rate: r };
     const note = row === 'openHat' && !kit.has(DRUM_NOTES.openHat) ? DRUM_NOTES.closedHat : DRUM_NOTES[row];

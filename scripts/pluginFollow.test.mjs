@@ -1,8 +1,21 @@
 // Built-in effects fade out once they go on sounding by themselves after their input stops
 // (processor.ts followInput), while a reverb's or delay's own tail is left alone.
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
 
 const { BUILTIN_PROCESSOR_SOURCE } = await import('../src/audio/plugins/processor.ts');
 const { PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalog.ts');

@@ -14,11 +14,14 @@
  *
  * Kept as a string (like the OTT's) so the one-file build needs no extra file.
  */
+import { insertTimedEvent, LEGATO_JOIN } from '../legato';
+
 export const BUILTIN_PROCESSOR = 'bb-builtin-plugin';
 
 export const BUILTIN_PROCESSOR_SOURCE = `
 const BLOCK = 128;
 const families = new Map();
+const insertTimedEvent = ${insertTimedEvent.toString()};
 
 function familyOf(name, module) {
   let fam = families.get(name);
@@ -71,6 +74,9 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     super();
     const o = options.processorOptions;
     this.events = [];
+    // Fledge Synth hears a note drawn to start where the last one ends while that one is still
+    // held, so its Legato mode joins them (see insertTimedEvent in legato.ts)
+    this.join = o.family === 'fledge' ? ${LEGATO_JOIN} : 0;
     this.alive = false;
     // Follow the input (effects, see followInput below): its gain, where it's heading, and the
     // windows that tell a fading tail from a sound the plugin keeps making by itself
@@ -144,12 +150,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       return;
     }
     if (d.type === 'events') {
-      for (const ev of d.events) {
-        // Kept in time order (they nearly always arrive in order)
-        let i = this.events.length;
-        while (i > 0 && this.events[i - 1].time > ev.time) i--;
-        this.events.splice(i, 0, ev);
-      }
+      // Kept in time order (they nearly always arrive in order)
+      for (const ev of d.events) insertTimedEvent(this.events, ev, this.join);
     } else if (d.type === 'set') {
       if (d.index >= 0 && d.index < this.n) {
         // (Its lane is gone: what it still had queued goes too, even while the track sleeps)

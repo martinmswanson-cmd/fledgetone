@@ -1,4 +1,5 @@
 import * as Tone from 'tone';
+import { createWidener } from '../presets/widen';
 import { createLightChorus } from '../effects/lightFx';
 import { fixedDelay } from '../effects/delayLink';
 import { roomChannels } from '../effects/roomIR';
@@ -953,6 +954,16 @@ function stageChain(db: number | undefined, next: ShapingChain): ShapingChain {
   return { ...next, input, nodes: [...next.nodes, { dispose: () => [input, stage, wet, into].forEach((n) => n.disconnect()) }] };
 }
 
+/** A pad or lead recorded in mono, widened to stereo (InstrumentDef.widen, see presets/widen.ts). */
+function widenChain(amount: number | undefined, next: ShapingChain): ShapingChain {
+  if (!amount) return next;
+  const raw = Tone.getContext().rawContext as unknown as BaseAudioContext;
+  const into = raw.createGain();
+  Tone.connect(into, next.input);
+  const widener = createWidener(raw, amount, into);
+  return { ...next, input: widener.input, nodes: [...next.nodes, { dispose: () => { widener.disconnect(); into.disconnect(); } }] };
+}
+
 /**
  * A studio room around a guitar recorded straight from its pickup or in a dead room
  * (InstrumentDef.studio): the direct sound, and beside it the room's short early reflections and
@@ -1878,7 +1889,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
   const studio = def.studio !== undefined ? studioChain(def.studio, output) : null;
   const shaped = shapingChain(def.shaping, studio?.input ?? output);
   if (studio) shaped.nodes.push(...studio.nodes);
-  const chain = bodyChain(def.vibrato?.body, stageChain(def.room, toneChain(def.tone, shaped)));
+  const chain = bodyChain(def.vibrato?.body, stageChain(def.room, toneChain(def.tone, widenChain(def.widen, shaped))));
   const out = new Tone.Gain(1).connect(chain.input);
   // Two channels from here on, whether a note's recording has one or two (see alwaysStereo)
   alwaysStereo(out);

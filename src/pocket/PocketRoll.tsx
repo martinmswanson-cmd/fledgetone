@@ -23,6 +23,7 @@ import type { PocketSection } from './pocketSections';
 import { pocketNoteId, usePocket } from './pocketStore';
 import { audition } from './pocketSound';
 import { buzz } from './pocketSession';
+import { penBars, rememberPen } from '../store/penLength';
 
 const RW = 40, RH = 34, KEYW = 46, RULERH = 24;
 const EPS = 1e-6;
@@ -54,7 +55,8 @@ const fromRoll = (notes: readonly RollNote[]): NoteEvent[] =>
   }));
 
 let pen: 'note' | 'chord' | 'erase' = 'note';
-let penLen = 2;
+/** A new note's length in 16ths: the last drawn for this kind of part, shared with the studio's roll (penLength.ts). */
+const penSteps = (track: Track) => Math.max(1, Math.round(penBars(track.instrumentKey) * STEPS_PER_WHOLE));
 
 export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: SongKey }> = ({ track, sec, songKey }) => {
   const clips = useTimelineStore((s) => s.clips);
@@ -223,7 +225,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
       }
       const row = rowOf(rows[c.row]);
       const chordRows = pen === 'chord' ? [row, row - 2, row - 4].filter((r) => r >= 0) : [row];
-      const len = Math.min(penLen, steps - c.step);
+      const len = Math.min(penSteps(track), steps - c.step);
       for (const r of chordRows) {
         const id = pocketNoteId();
         work.push({ id, midi: rows[r], step: c.step, len, velocity: 0.8 });
@@ -271,6 +273,11 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
         return;
       }
       if (a.type === 'move' || a.type === 'stretch') setSel(a.ids[0]);
+      // A note drawn longer, or stretched: the next one is drawn that long
+      if ((a.type === 'draw' || a.type === 'stretch') && a.moved) {
+        const n = a.work.find((x) => x.id === a.ids[0]);
+        if (n) rememberPen(track.instrumentKey, n.len / STEPS_PER_WHOLE);
+      }
       if (JSON.stringify(a.work.map(({ from: _f, ...r }) => r)) === JSON.stringify(a.before.map(({ from: _f, ...r }) => r))) setDraft(null);
       else commit(a.work);
     };
@@ -350,8 +357,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
                 </button>
               ))}
             </div>
-            <button type="button" aria-label="Length of new notes" className={chip} disabled={pen === 'erase'} onClick={() => { const i = PEN_LENS.findIndex(([l]) => l === penLen); penLen = PEN_LENS[(i + 1) % PEN_LENS.length][0]; setPenTick((x) => x + 1); }}>
-              {lenName(penLen)}
+            <button type="button" aria-label="Length of new notes" className={chip} disabled={pen === 'erase'} onClick={() => { const len = penSteps(track); const next = PEN_LENS.find(([l]) => l > len)?.[0] ?? PEN_LENS[0][0]; rememberPen(track.instrumentKey, next / STEPS_PER_WHOLE); setPenTick((x) => x + 1); }}>
+              {lenName(penSteps(track))}
             </button>
             <button type="button" aria-label="Back to the key's home note" className={`${chip} !px-2.5`} onClick={() => { const el = roll.current, h = el?.querySelector<HTMLElement>('[data-home]'); if (el && h) el.scrollTo({ top: h.offsetTop - el.clientHeight / 2, behavior: 'smooth' }); }}>
               <Home className="w-4 h-4" />

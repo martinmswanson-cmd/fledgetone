@@ -12,8 +12,20 @@ export type TomPitch = 'low' | 'mid' | 'high';
 
 const TOM_HZ: Record<TomPitch, number> = { low: 90, mid: 125, high: 170 };
 
-/** `seed`: the track's (see trackSeed), which with the row and the time picks each hit's noise. */
-export function createKitExtras(output: Tone.InputNode, seed = 0) {
+/**
+ * How much the clap is raised, in dB: it was some 15 to 20 dB under the kits' kicks as heard, where
+ * a clap on the backbeat of dance music sits a few dB under the kick. A recorded kit whose level is
+ * raised in the catalog (InstrumentDef.gain) raises its extras with it, so it takes that much less
+ * (see createKitExtras).
+ */
+export const CLAP_DB = 14;
+
+/**
+ * `seed`: the track's (see trackSeed), which with the row and the time picks each hit's noise.
+ * `clapDb`: how much the clap is raised (CLAP_DB, less a recorded kit's own raise).
+ */
+export function createKitExtras(output: Tone.InputNode, seed = 0, clapDb = CLAP_DB) {
+  const clapGain = 10 ** (Math.max(0, clapDb) / 20);
   const { bus, raw, input } = createBus(output);
   // Noise-fed voices linger before disconnecting (see createVoiceSet)
   const voices = createVoiceSet(raw, 0.5);
@@ -37,9 +49,9 @@ export function createKitExtras(output: Tone.InputNode, seed = 0) {
     // (`ratio`: a hair of detune, so repeated hits aren't identical; see playDrums)
     clap: (time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);
-      // Three quick slaps, then the room
-      for (const [i, offset] of [0, 0.011, 0.023].entries()) noiseHit(`clap${i}`, t + offset, 'bandpass', 1300 * ratio, 1.2, (0.55 - i * 0.08) * velocity, 0.006, 0.05);
-      noiseHit('clapRoom', t + 0.03, 'bandpass', 1100 * ratio, 0.9, 0.38 * velocity, 0.07, 0.45);
+      // Three quick slaps, then the room; clapGain puts it a few dB under the kit's kick, as heard
+      for (const [i, offset] of [0, 0.011, 0.023].entries()) noiseHit(`clap${i}`, t + offset, 'bandpass', 1300 * ratio, 1.2, clapGain * (0.55 - i * 0.08) * velocity, 0.006, 0.05);
+      noiseHit('clapRoom', t + 0.03, 'bandpass', 1100 * ratio, 0.9, clapGain * 0.38 * velocity, 0.07, 0.45);
     },
     tom: (pitch: TomPitch, time: number, velocity: number, ratio = 1) => {
       const t = notLate(bus.context, time);

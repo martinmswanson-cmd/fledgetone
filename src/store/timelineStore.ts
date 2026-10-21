@@ -40,6 +40,8 @@ import { defaultClipper, type ClipperSettings } from '../audio/effects/clipper';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { makeSpace } from './makeSpace';
 import { applyGlue, removeGlue } from './glueMix';
+import { duckToKick, hasKick } from './duckToKick';
+import { startSends } from './partKind';
 import { busPresetById, busPresetFx, busPresetMembers, type BusPresetId } from './busPresets';
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
 import { createStarter, isStarterId } from './starters';
@@ -546,6 +548,8 @@ interface TimelineState {
   setTrackPan: (trackId: string, pan: number) => void;
   /** Make space (makeSpace.ts): EQ moves so the parts stop covering each other, one undo step. Returns how many tracks changed. */
   makeSpace: () => number;
+  /** Duck everything to the kick (duckToKick.ts): a kick Pump on the bass, chords, pads and leads, one undo step. Returns how many tracks changed (-1: no kick in the song). */
+  duckToKick: () => number;
   /** Glue (glueMix.ts) on or off: the parts tied into one mix, or what it changed put back. Returns how many settings it changed (on) or 0. */
   setGlueMix: (on: boolean) => number;
   /** How far back on the stage the track sits (Track.distance), 0 to 1 */
@@ -914,6 +918,8 @@ export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Cli
 function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: string): Track {
   const meta = INSTRUMENTS[instrumentKey];
   const count = existing.filter((t) => t.instrumentKey === instrumentKey).length;
+  // The sends its kind of part starts with (partKind.ts): pads and leads in the room, a lead's echo
+  const start = startSends(instrumentKey, instrumentKey === 'return' ? returnFx() : withHumanFeel(instrumentKey, defaultTrackFx()));
   return {
     id: uid('track'),
     name: name || (count > 0 ? `${meta.name} ${count + 1}` : meta.name),
@@ -927,10 +933,10 @@ function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: strin
     pan: seatOf(instrumentKey)?.pan ?? 0,
     ...(seatOf(instrumentKey) ? { distance: seatOf(instrumentKey)!.distance } : {}),
     eq: { low: 0, mid: 0, high: 0 },
-    fx: instrumentKey === 'return' ? returnFx() : withHumanFeel(instrumentKey, defaultTrackFx()),
+    fx: start.fx,
     // An orchestral instrument plays in the hall (a recording of one has as much of the room as of
-    // the instrument); anything else starts nearly dry
-    reverbSend: seatOf(instrumentKey) ? SEATED_SEND : 0.1,
+    // the instrument); anything else as its kind of part starts
+    reverbSend: seatOf(instrumentKey) ? SEATED_SEND : start.reverbSend,
     delaySend: 0,
     expressive: true,
   };
@@ -2167,6 +2173,13 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       if (!changes.length) return 0;
       set((st) => ({ tracks, ...pushPast(st) }));
       return changes.length;
+    },
+    duckToKick: () => {
+      const s = get();
+      if (!hasKick(s.tracks, s.clips)) return -1;
+      const { tracks, changed } = duckToKick(s.tracks, s.clips, s.bpm);
+      if (changed) set((st) => ({ tracks, ...pushPast(st) }));
+      return changed;
     },
     setGlueMix: (on) => {
       const s = get();

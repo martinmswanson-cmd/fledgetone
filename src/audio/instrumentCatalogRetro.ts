@@ -175,3 +175,26 @@ export const RETRO_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = 
   fretNoise: { key: 'fretNoise', name: 'Fret Noise', blurb: 'Guitar string squeaks', color: '#d6d3d1', category: 'Sound Effects', retro: true, kind: 'sampled', range: [48, 72], samples: struck('guitar_fret_noise', 48, 72, 0.3), gain: 22 },
   breathNoise: { key: 'breathNoise', name: 'Breath', blurb: 'A breath in (pitch it for sighs and wind)', color: '#e5e7eb', category: 'Sound Effects', retro: true, kind: 'sampled', range: [48, 72], samples: struck('breath_noise', 48, 72, 0.3), gain: 24 },
 };
+
+/**
+ * The synth pads and leads, recorded in mono: widened to stereo, as a synth's unison or chorus
+ * would play them, and given the release their kind of part is played with now (a pad fading into
+ * the next chord, some 1.5 s to fall 40 dB; a lead a short tail, about 0.4 s, that joins its
+ * phrases). The sampler's release is a time constant's worth (see samplerVoice), so these read long.
+ */
+const PAD_WIDTH = 0.45;
+const LEAD_WIDTH = 0.3;
+const PAD_RELEASE = 4;
+const LEAD_RELEASE = 0.6;
+const widened: Array<[keys: InstrumentKey[], width: number, release: number]> = [
+  [['haloPad', 'warmPad', 'newAgePad', 'choirPad', 'glassPad', 'sweepPad', 'polysynthPad', 'metallicPad', 'soundtrackPad', 'brightnessPad', 'synthStrings', 'synthStrings2'], PAD_WIDTH, PAD_RELEASE],
+  [['squareLead', 'sawLead', 'calliope', 'chiffLead', 'charang', 'voiceLead', 'fifthsLead'], LEAD_WIDTH, LEAD_RELEASE],
+];
+for (const [keys, width, release] of widened) {
+  for (const key of keys) {
+    const def = RETRO_INSTRUMENTS[key];
+    if (!def?.samples) continue;
+    def.widen = width;
+    def.samples = { ...def.samples, release: Math.max(def.samples.release ?? 0, release) };
+  }
+}

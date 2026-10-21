@@ -229,6 +229,11 @@ export interface InstrumentDef {
    */
   room?: number;
   /**
+   * Widened to stereo (see presets/widen.ts): the side's level against the sound, 0.3 gentle to
+   * 0.5 wide. For the pads and leads recorded in mono.
+   */
+  widen?: number;
+  /**
    * Recorded straight from the pickup or in a dead room (the guitars): it plays in a studio room's
    * short reflections and tail, `studio` dB under the direct sound, after its amp (see studioChain
    * in samplerManager.ts), as a microphone in front of the speaker or the guitar hears the room.
@@ -506,7 +511,7 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   keys: { key: 'keys', name: 'Space Clav', blurb: 'FM electric keys', color: '#a855f7', category: 'Keys & Synths', kind: 'synth', range: [36, 88], taper: [63, 4.5] },
   wavetable: { key: 'wavetable', name: 'Wavetable Synth', blurb: 'Evolving sweeping pad', color: '#38bdf8', category: 'Keys & Synths', kind: 'synth', range: [36, 96], taper: [67, 1] },
   lead: { key: 'lead', name: 'Analog Lead', blurb: 'Gliding saw lead', color: '#facc15', category: 'Keys & Synths', kind: 'synth', range: [48, 96], taper: [73, 1.5] },
-  supersaw: { key: 'supersaw', name: 'Supersaw', blurb: 'Wide trance / house chords', color: '#fb7185', category: 'Keys & Synths', kind: 'synth', range: [36, 96], gain: -5, taper: [67, 2] },
+  supersaw: { key: 'supersaw', name: 'Supersaw', blurb: 'Wide trance / house chords', color: '#fb7185', category: 'Keys & Synths', kind: 'synth', range: [36, 96], taper: [67, 2] },
   synthDesigner: { key: 'synthDesigner', name: 'Synth Designer', blurb: 'Build your own sound: oscillators, filter, LFO', color: '#22d3ee', category: 'Keys & Synths', kind: 'synth', range: [24, 108], taper: [67, 1] },
   pluck: { key: 'pluck', name: 'Pluck', blurb: 'Short bright EDM pluck', color: '#2dd4bf', category: 'Keys & Synths', kind: 'synth', range: [48, 96], gain: -6, taper: [73, 2] },
 

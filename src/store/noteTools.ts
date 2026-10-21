@@ -190,12 +190,20 @@ export function arpeggiate(notes: NoteEvent[], rateBars: number, pattern: ArpPat
   });
 }
 
-/** Each note lasts until the next note (of any pitch) starts; the last ones until the clip ends. */
+/** A note length's smallest step, in bars (a tick: what a duration is written in). */
+const TICK = 1 / 768;
+
+/**
+ * Each note lasts until the next note (of any pitch) starts; the last ones until the clip ends.
+ * A length that isn't a whole number of ticks is rounded up, never down: the note then reaches the
+ * next one, so a mono synth glides to it (or ties the same pitch) instead of striking it again.
+ */
 export function legato(notes: NoteEvent[], clipBars: number): NoteEvent[] {
   const starts = [...new Set(notes.map((n) => n.startOffset))].sort((a, b) => a - b);
   return notes.map((n) => {
     const next = starts.find((s) => s > n.startOffset + EPS) ?? clipBars;
-    return { ...n, duration: barsToDuration(Math.max(1 / 96, next - n.startOffset)) };
+    const ticks = Math.ceil((next - n.startOffset) / TICK - 1e-6);
+    return { ...n, duration: barsToDuration(Math.max(1 / 96, ticks * TICK)) };
   });
 }
 

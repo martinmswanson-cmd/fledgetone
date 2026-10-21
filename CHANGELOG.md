@@ -7,6 +7,12 @@ second update on the same day gets `-2`, and so on).
 ## Unreleased
 
 - **Starters**: only the eight Chill & World starters remain for now (Lo-Fi, Ambient, Celtic, Fantasy Tavern, Latin, Plaza, Mbira Morning and Eastern), and **New** offers them or a blank song. The other starters, the Classics and the demo song are gone; a new, smaller set is on the way. Songs you made from them, and links to them, still open as they were.
+- **Notes drawn end to end now join**: on the Sub-Bass, Analog Lead, Wobble, Growl and Reese basses and Fledge Synth's Legato sounds, a note starting where the last one ends glides into it instead of starting again, and the same pitch holds on as one note. The piano roll's **Legato** tool gives you exactly that. Leave a gap to hit a note again.
+- **Wider, longer pads and leads**: the Wavetable Synth, the Analog Lead and the retro synth pads, synth strings and synth leads now play in stereo, and fade out more slowly (pads about 1.5 s, leads about 0.4 s). The **Supersaw** is about 10 dB louder, as loud as the other pads now, and its chords ring on into each other.
+- **Snares and claps sit closer to the kick**: the Drum Designer's snares and claps, and the clap on every kit that has no clap recording, are louder (the claps by up to 14 dB), a couple of dB under the kick.
+- **New notes remember their length**: the piano roll and Pocket's piano roll start a new note at the length you last drew or stretched for that kind of part; pads and chords start at a quarter note. In the studio, drag right as you draw a note to stretch it.
+- **New tracks start mixed for their part**: pads and chords a little in the reverb, leads in the reverb with a soft dotted-eighth echo, drums and basses dry.
+- **Duck to kick**: one click in the Mixer (or **Pump** in Pocket's mixer) makes the bass, chords, pads and leads dip on every kick and swell back in time, the pump of dance music. **Glue** ducks a little deeper too.
 
 ## 2026.10.21-2 — Drop pad, bounce to pad and versions
 

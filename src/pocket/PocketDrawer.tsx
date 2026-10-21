@@ -332,6 +332,17 @@ const MixAll: React.FC = () => {
         <button type="button" aria-pressed={clipper.on} className={`w-full h-8 rounded-lg border text-xs font-semibold ${clipper.on ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().setMasterClipper({ on: !clipper.on }, true)}>
           Loud
         </button>
+        <button
+          type="button"
+          aria-label="Duck to kick: the bass, chords, pads and leads dip on every kick"
+          className="w-full h-8 rounded-lg border text-xs font-semibold border-forge-border bg-forge-panelLight"
+          onClick={() => {
+            const made = s().duckToKick();
+            showToast(made < 0 ? 'No kick to duck to: add drums first.' : made ? `Ducked ${made} track${made === 1 ? '' : 's'} to the kick (Undo takes it back)` : 'Everything already ducks to the kick.');
+          }}
+        >
+          Pump
+        </button>
       </div>
     </div>
   );

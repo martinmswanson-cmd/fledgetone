@@ -42,6 +42,7 @@ import { AudioClipEditor } from './AudioClipEditor';
 import { RollPainter } from './RollPainter';
 import { DrumGroovePanel } from './DrumGroovePanel';
 import { ChordRiffBar } from './ChordRiffBar';
+import { penBars, rememberPen } from '../../store/penLength';
 
 const KEY_W = 72;
 const RULER_H = 20;
@@ -178,6 +179,9 @@ const LENGTH_OPTIONS = [
   { label: '4 bars', units: 384 },
 ];
 
+/** A note length not in LENGTH_OPTIONS (one drawn or stretched to it), by 16ths, or 96ths of a bar. */
+const lengthLabel = (units: number) => (units % UNITS_PER_16TH === 0 ? `${units / UNITS_PER_16TH}/16` : `${units}/96`);
+
 /**
  * Bars as units: a whole number for anything on the 96th grid (every note the piano roll places),
  * so moving it adds whole units with no rounding error; anything else (notes moved by a trim to
@@ -258,7 +262,7 @@ function trackPointer(cursor: string, onMove: (ev: PointerEvent) => void, onEnd?
 
 /**
  * Note editor for one clip, docked under the timeline. Click empty grid to add a note (then
- * drag to place it), drag notes to move them, drag a note's right edge to change its length,
+ * drag right to stretch it), drag notes to move them, drag a note's right edge to change its length,
  * right-click (or Delete) to delete. Arrow keys nudge / transpose the selection.
  */
 /** The clip feels the piano roll offers (a clip's groove is one of these unless a file set another). */
@@ -322,8 +326,13 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   const [stepW, setStepW] = useState(24);
   const unitW = stepW / UNITS_PER_16TH;
   const [gridUnits, setGridUnits] = useState(UNITS_PER_16TH);
-  // FX notes last as long as they're drawn: a bar is a useful riser to start from
-  const [lengthUnits, setLengthUnits] = useState(isFxKind(instrument) ? UNITS_PER_BAR : isDrums ? 6 : 12);
+  // New notes start at the length last drawn for this kind of part (penLength.ts): FX notes a bar
+  // (a useful riser to start from), drums a 16th, pads and chords a quarter, other notes an eighth
+  const [lengthUnits, setLengthUnits] = useState(() => Math.max(1, Math.round(penBars(instrument) * UNITS_PER_BAR)));
+  const choosePen = (units: number) => {
+    setLengthUnits(units);
+    rememberPen(instrument, units / UNITS_PER_BAR);
+  };
   const [velocity, setVelocity] = useState(0.8);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** The expression lane a tool just drew in, to show it */
@@ -554,8 +563,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     setHoverCell((h) => (h && h.row === p.row && h.unit === unit ? h : unit < totalUnits ? { row: p.row, unit } : null));
   };
 
-  /** Drag the given notes; mode move = time + pitch, resize = length. */
-  const startDrag = (e: React.PointerEvent, ids: Set<string>, mode: 'move' | 'resize', alreadyRecorded: boolean, primaryId: string) => {
+  /**
+   * Drag the given notes; mode move = time + pitch, resize = length, draw = a note just drawn,
+   * stretched to the grid line past the pointer (as Pocket's roll does). A length a resize or a
+   * draw leaves is the next new note's (penLength.ts).
+   */
+  const startDrag = (e: React.PointerEvent, ids: Set<string>, mode: 'move' | 'resize' | 'draw', alreadyRecorded: boolean, primaryId: string) => {
     const store = useTimelineStore.getState();
     const origin = local(e.clientX, e.clientY);
     const originals = new Map(currentNotes().filter((n) => ids.has(n.id)).map((n) => [n.id, n]));
@@ -567,9 +580,22 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     let recorded = alreadyRecorded;
     let lastRowShift = 0;
 
+    let stretched: number | null = null;
     trackPointer(mode === 'move' ? 'grabbing' : 'ew-resize', (ev) => {
       const p = local(ev.clientX, ev.clientY);
       const pulled = (p.x - origin.x) / unitW;
+      if (mode === 'draw') {
+        // Nothing changes until the pointer has gone half a grid step; then the note ends at the
+        // grid line past it (never shorter than a grid step)
+        if (!primary || Math.abs(pulled) < gridUnits / 2) return;
+        const start = unitsOf(primary.startOffset);
+        const end = Math.ceil((p.units + clipUnits) / gridUnits - 1e-9) * gridUnits - clipUnits;
+        const len = Math.max(gridUnits, Math.min(totalUnits - start, end - start));
+        if (len === stretched) return;
+        stretched = len;
+        store.setClipNotes(clip.id, currentNotes().map((n) => (originals.has(n.id) ? { ...n, duration: barsToDuration(len / UNITS_PER_BAR) } : n)));
+        return;
+      }
       // Nothing moves until the pointer has gone half a grid step. Then the grabbed note's start
       // (its end, for a resize) snaps to the grid, like a clip on the timeline, and the other
       // notes move by as much. Notes already on the grid move by whole grid steps.
@@ -595,6 +621,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         if (mode === 'resize') {
           const start = unitsOf(o.startOffset);
           const len = Math.max(gridUnits, Math.min(totalUnits - start, noteUnits(o) + dUnits));
+          if (n.id === primaryId) stretched = len;
           return { ...n, duration: barsToDuration(len / UNITS_PER_BAR) };
         }
         const rowIdx = Math.max(0, Math.min(rows.length - 1, rowIndexOf(rows, o.note) + dRows));
@@ -607,6 +634,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         const moved = next.find((n) => n.id === primaryId);
         if (moved) void preview(clip.trackId, [{ ...moved, duration: '16n' }]);
       }
+    }, () => {
+      if (stretched !== null && (mode === 'draw' || (primary && stretched !== noteUnits(primary)))) choosePen(stretched);
     });
   };
 
@@ -749,7 +778,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     // A drawn note isn't left selected: TOOLS and VEL go on working on the whole clip
     setSelected(new Set());
     void preview(clip.trackId, added.map((n) => ({ ...n, duration: '8n' })));
-    startDrag(e, new Set(ids), 'move', true, ids[0]);
+    startDrag(e, new Set(ids), 'draw', true, ids[0]);
   };
 
   const deleteNote = (id: string) => {
@@ -909,8 +938,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         </label>
         <label className="flex items-center gap-1.5">
           NEW NOTE
-          <select className={select} value={lengthUnits} onChange={(e) => setLengthUnits(Number(e.target.value))}>
-            {LENGTH_OPTIONS.map((o) => (
+          <select className={select} value={lengthUnits} onChange={(e) => choosePen(Number(e.target.value))}>
+            {(LENGTH_OPTIONS.some((o) => o.units === lengthUnits) ? LENGTH_OPTIONS : [...LENGTH_OPTIONS, { label: lengthLabel(lengthUnits), units: lengthUnits }].sort((a, b) => a.units - b.units)).map((o) => (
               <option key={o.units} value={o.units}>{o.label}</option>
             ))}
           </select>
@@ -1064,7 +1093,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </button>
         </div>
         <span className="hidden xl:inline text-[11px]">
-          {stepping ? 'Click a step to turn a hit on or off • Shift-click: an accent • Alt-drag: move notes as usual' : 'Click to add • drag to move • drag right edge to resize • right-click to delete • arrows nudge'}
+          {stepping ? 'Click a step to turn a hit on or off • Shift-click: an accent • Alt-drag: move notes as usual' : 'Click to add (drag right to stretch it) • drag a note to move • drag right edge to resize • right-click to delete • arrows nudge'}
         </span>
         <button
           type="button"

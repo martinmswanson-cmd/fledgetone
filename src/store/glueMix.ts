@@ -115,10 +115,10 @@ export function applyGlue(tracks: Track[], clips: readonly Clip[], newBus: (name
   };
   group(drums, 'Drum bus', busPresetFx('drums'));
   const musicFx = busPresetFx('music');
-  group(music, 'Music bus', hasKick ? { ...musicFx, pump: { on: true, depth: 0.3, release: 220, trigger: 'kick' } } : musicFx);
+  group(music, 'Music bus', hasKick ? { ...musicFx, pump: { on: true, depth: 0.4, release: 220, trigger: 'kick' } } : musicFx);
 
   // The bass ducks under the kick
-  if (hasKick) for (const t of parts) if (role.get(t.id) === 'bass' && !t.fx.pump.on) set(t.id, 'pump', { on: true, depth: 0.5, release: 150, trigger: 'kick' });
+  if (hasKick) for (const t of parts) if (role.get(t.id) === 'bass' && !t.fx.pump.on) set(t.id, 'pump', { on: true, depth: 0.65, release: 150, trigger: 'kick' });
 
   // One shared room: every part a little in it (never less than it had)
   for (const t of parts) {

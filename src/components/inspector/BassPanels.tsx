@@ -187,7 +187,7 @@ export const GlidePanel: React.FC<{ track: Track }> = ({ track }) => {
   return (
     <InsertPanel title="Glide" icon={<Spline className="w-3.5 h-3.5" style={{ color: accent }} />} on={on} onToggle={() => st().setTrackBass(track.id, { glide: on ? undefined : 0.08 }, false)} accent={accent}>
       <p className={`text-[10px] text-forge-muted leading-snug ${on ? '' : 'opacity-70'}`}>
-        {on ? 'Notes that overlap slide into each other; notes apart start fresh.' : "Off: the instrument's own slide."}
+        {on ? 'Notes that overlap or touch slide into each other; leave a gap to hit a note again.' : "Off: the instrument's own slide."}
       </p>
       <LogSlider label="Time" value={Math.max(0.005, track.glide ?? 0.08)} lo={0.005} hi={GLIDE_MAX} format={secs} onChange={(glide) => st().setTrackBass(track.id, { glide }, false)} reset={0.08} accent={accent} disabled={!on} />
     </InsertPanel>

@@ -52,10 +52,17 @@ const SUPERSAW_PHASES = [0, 0.78, 0.57, 0.12, 0.67, 0.46, 0.24];
  * was voiced, only wide.
  */
 const SUPERSAW_LEVEL = Math.sqrt(2.5 / 4);
+/**
+ * A Supersaw note's peak at velocity 1 (before SUPERSAW_LEVEL). It played some 10 dB under the
+ * other pads and chords as heard; at this (with no correction in the catalog) a chord of it is as
+ * loud as theirs.
+ */
+const SUPERSAW_PEAK = 0.185;
 
 /**
- * Supersaw: seven detuned saws per note, spread left and right, with a soft attack and a medium
- * release, through a fixed low-pass (and a high-pass that leaves the low end to the bass).
+ * Supersaw: seven detuned saws per note, spread left and right, with a soft attack and a release
+ * that carries one chord into the next (1.5 s to fade 40 dB), through a fixed low-pass (and a
+ * high-pass that leaves the low end to the bass).
  */
 export function createSupersaw(output: Tone.InputNode) {
   const { bus, raw, input } = createBus(output);
@@ -65,7 +72,7 @@ export function createSupersaw(output: Tone.InputNode) {
   const lowpass = createFilter(raw, 'lowpass', 7000, 0);
   highpass.connect(lowpass);
   lowpass.connect(input);
-  const release = 0.45;
+  const release = 1.5;
 
   const playNote = (n: PlayableNote, start: number) => {
     const length = bus.toSeconds(n.duration);
@@ -81,7 +88,7 @@ export function createSupersaw(output: Tone.InputNode) {
       return osc;
     });
     const amp = raw.createGain();
-    attackDecay(amp.gain, start, 0.11 * SUPERSAW_LEVEL * n.velocity, 0.035, 0.4, 0.8);
+    attackDecay(amp.gain, start, SUPERSAW_PEAK * SUPERSAW_LEVEL * n.velocity, 0.035, 0.4, 0.8);
     amp.gain.setTargetAtTime(0, end, releaseConstant(release));
     merger.connect(amp);
     amp.connect(highpass);

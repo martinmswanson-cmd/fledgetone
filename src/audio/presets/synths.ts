@@ -5,6 +5,8 @@
  */
 import * as Tone from 'tone';
 import { monotonicTime } from './monotonic';
+import { joinsNote } from '../legato';
+import { createWideOutput } from './widen';
 import { createVoicePool } from './poly';
 import { noiseKey } from '../seededNoise';
 import { seedToneNoise } from '../toneFixes';
@@ -28,6 +30,10 @@ function heldNote(synth: HeldSynth, safeTime: (time?: Tone.Unit.Time) => number)
   };
 }
 
+/** How wide the pads and leads that would play in mono are widened (see widen.ts). */
+const PAD_WIDTH = 0.45;
+const LEAD_WIDTH = 0.3;
+
 /**
  * Phase 3 synthesized instruments. Like the other presets, each factory builds its nodes in
  * the current Tone context (live or the export render) and connects them to `output`.
@@ -35,9 +41,11 @@ function heldNote(synth: HeldSynth, safeTime: (time?: Tone.Unit.Time) => number)
 
 /**
  * Wavetable-style pad: a custom harmonic waveform swept by a slow auto-filter, so the tone
- * keeps moving like a scanned wavetable.
+ * keeps moving like a scanned wavetable, widened to stereo, with a long release that fades one
+ * chord into the next (about 1.5 s to fall 40 dB).
  */
 export function createWavetable(output: Tone.InputNode) {
+  const wide = createWideOutput(output, PAD_WIDTH);
   const sweep = new Tone.AutoFilter({ frequency: 0.18, baseFrequency: 280, octaves: 4.5, depth: 0.85, wet: 1 }).start();
   sweep.filter.Q.value = 3;
   const synth = createVoicePool(
@@ -46,12 +54,12 @@ export function createWavetable(output: Tone.InputNode) {
         context,
         volume: -9,
         oscillator: { type: 'custom', partials: [1, 0.62, 0.45, 0.3, 0.42, 0.2, 0.28, 0.12, 0.18, 0.08] },
-        envelope: { attack: 0.05, decay: 0.4, sustain: 0.7, release: 1.2 },
+        envelope: { attack: 0.05, decay: 0.4, sustain: 0.7, release: 4 },
       }),
     12,
     sweep
   );
-  sweep.connect(output);
+  sweep.connect(wide.input);
   return {
     trigger: (notes: string[], duration: Tone.Unit.Time, time: number, velocity: number) => synth.trigger(notes, duration, time, velocity),
     attack: synth.attack,
@@ -60,23 +68,63 @@ export function createWavetable(output: Tone.InputNode) {
     dispose: () => {
       synth.dispose();
       sweep.dispose();
+      wide.dispose();
     },
   };
 }
 
 /**
  * Legato glide on a Tone monophonic synth (Track.glide): before each note, its portamento is set to
- * the glide when the note starts before the last one ended, and to `own` (the synth's usual
- * portamento) otherwise. With no glide set it keeps `own` throughout, as before.
+ * the glide when the note joins the last one (starts before it ended, or right where it ended:
+ * see joinsNote), and to `own` (the synth's usual portamento) otherwise. With no glide set it keeps
+ * `own` throughout, as before. Returns the end of the note it joins, or null when it doesn't.
  */
 export function legatoGlide(synth: { portamento: Tone.Unit.Time }, glide: GlideRef | undefined, own = 0) {
   let soundingUntil = -Infinity;
-  return (start: number, end: number) => {
-    const legato = start < soundingUntil - 0.001;
+  return (start: number, end: number): number | null => {
+    const joined = joinsNote(start, soundingUntil) ? soundingUntil : null;
     soundingUntil = end;
     const seconds = glide?.seconds;
-    synth.portamento = seconds === undefined ? own : legato ? seconds : own;
+    synth.portamento = seconds === undefined ? own : joined !== null ? seconds : own;
+    return joined;
   };
+}
+
+/** How quickly a joined note's envelopes settle on its own sustain level, seconds (a time constant). */
+const JOIN_SETTLE = 0.02;
+/**
+ * A joined note holds the envelopes this long before the last note's end: just ahead of the
+ * release scheduled there, so the hold takes the release away rather than landing on it.
+ */
+const JOIN_HOLD = 0.0005;
+
+/** An envelope's level signal (Tone keeps it to itself). */
+const envelopeSignal = (env: Tone.Envelope) => (env as unknown as { _sig: Tone.Signal<'normalRange'> })._sig;
+
+/**
+ * Play a note on a Tone mono synth. One that joins the last note (`joinedEnd`: that note's end, see
+ * legatoGlide) carries on from it with no new attack: the envelopes hold where they are and settle
+ * on this note's sustain, the pitch moves (gliding by the synth's portamento; the same pitch is a
+ * tie), and the release moves to this note's end. Otherwise (null) it's struck as usual.
+ */
+export function playMono(synth: Tone.MonoSynth, note: string, duration: Tone.Unit.Time, start: number, velocity: number, joinedEnd: number | null) {
+  if (joinedEnd === null) {
+    synth.triggerAttackRelease(note, duration, start, velocity);
+    return;
+  }
+  const hold = Math.min(start, joinedEnd) - JOIN_HOLD;
+  for (const [env, level] of [
+    [synth.envelope, velocity * synth.envelope.sustain],
+    [synth.filterEnvelope, synth.filterEnvelope.sustain],
+  ] as const) {
+    const sig = envelopeSignal(env);
+    sig.cancelAndHoldAtTime(hold);
+    sig.setTargetAtTime(level, start, JOIN_SETTLE);
+  }
+  // (Started again while it plays: the stop the last note's release set is called off)
+  synth.oscillator.start(start);
+  synth.setNote(note, start);
+  synth.triggerRelease(start + synth.toSeconds(duration));
 }
 
 /** Clean, deep sine sub-bass (monophonic). */
@@ -93,8 +141,7 @@ export function createSubBass(output: Tone.InputNode, glide?: GlideRef) {
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
       const start = safeTime(time);
-      glideFor(start, start + synth.toSeconds(duration));
-      synth.triggerAttackRelease(note, duration, start, velocity);
+      playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
     },
     ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
@@ -183,27 +230,33 @@ export function create808(output: Tone.InputNode, modern = false) {
   };
 }
 
-/** Analog-style lead: detuned saws, filter envelope and a short glide between notes. */
+/**
+ * Analog-style lead: detuned saws, filter envelope and a short glide between notes, gently widened
+ * to stereo, with a release that rings on for about 0.4 s (40 dB down) between phrases.
+ */
 export function createLead(output: Tone.InputNode, glide?: GlideRef) {
+  const wide = createWideOutput(output, LEAD_WIDTH);
   const synth = new Tone.MonoSynth({
     volume: -8,
     portamento: 0.035,
     oscillator: { type: 'fatsawtooth', count: 3, spread: 18 } as Partial<Tone.OmniOscillatorOptions>,
     filter: { type: 'lowpass', rolloff: -24, Q: 3 },
     filterEnvelope: { baseFrequency: 400, octaves: 3.5, attack: 0.01, decay: 0.25, sustain: 0.45, release: 0.3 },
-    envelope: { attack: 0.01, decay: 0.2, sustain: 0.75, release: 0.25 },
-  }).connect(output);
+    envelope: { attack: 0.01, decay: 0.2, sustain: 0.75, release: 0.6 },
+  }).connect(wide.input);
   const safeTime = monotonicTime(synth.context);
   const glideFor = legatoGlide(synth, glide, 0.035);
   return {
     trigger: (note: string, duration: Tone.Unit.Time, time: number, velocity: number) => {
       const start = safeTime(time);
-      glideFor(start, start + synth.toSeconds(duration));
-      synth.triggerAttackRelease(note, duration, start, velocity);
+      playMono(synth, note, duration, start, velocity, glideFor(start, start + synth.toSeconds(duration)));
     },
     ...heldNote(synth, safeTime),
     releaseAll: () => synth.triggerRelease(),
-    dispose: () => synth.dispose(),
+    dispose: () => {
+      synth.dispose();
+      wide.dispose();
+    },
   };
 }
 

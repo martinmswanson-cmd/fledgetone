@@ -140,6 +140,7 @@ const TOOLS: Item[] = [
     if (st.tracks.find((t) => t.id === id)?.instrumentKey === 'bus') return 'A bus takes no plugin effects: add them to the tracks that play into it.';
     useUiStore.getState().setPluginDialog({ trackId: id });
   } },
+  { title: 'Duck to kick', keywords: 'duck kick sidechain side chain pump pumping breathe ducking edm house dance bass chords pads leads', detail: 'A button in the Mixer that makes the bass, chords, pads and leads dip on every kick and swell back, the dance-music pump. One undo step.', run: () => ui().setDialog('mixer') },
   { title: 'Glue', keywords: 'glue together cohesive one song gel tie mix bus room sound like a record separate instruments', detail: 'A switch in the Mixer that makes the parts sound like one song: room for each part, drum and music buses, the bass ducking under the kick, one shared room.', run: () => ui().setDialog('mixer') },
   { title: 'Spectrum', keywords: 'spectrum analyser analyzer visualizer visualiser frequency readout led neon cyberpunk city terrain radar hud data rain hologram pigeons', detail: 'The live spectrum, next to the master in the Mixer, as LED bars, a neon city, terrain, radar, data rain or holograms.', run: () => ui().setDialog('mixer') },
   { title: 'Bottom panel', keywords: 'dock bottom panel tabs mixer instruments game video sfx', detail: 'Show or hide the panel under the timeline.', run: () => ui().setDockOpen(!ui().dockOpen) },
