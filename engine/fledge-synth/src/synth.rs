@@ -798,6 +798,10 @@ impl Synth {
             v.note = note;
             // A key is down now: lifting the pedal mustn't end it
             v.sustained = false;
+            // (Nor anything poly left waiting on this voice: a taken note, a short note's timer)
+            v.pending = None;
+            v.pending_up = false;
+            v.short_left = 0;
             if !(joined && cfg.mode == 2) {
                 if !v.active {
                     v.pitch = note as f32;
@@ -832,7 +836,7 @@ impl Synth {
         let i = free.unwrap_or_else(|| {
             // (Notes the pedal holds after their key came up count as let go: a key still down
             // is the last to be taken)
-            let released = (0..VOICES).filter(open).filter(|&i| self.voices[i].amp.stage == Stage::Release || self.voices[i].sustained).min_by(|&a, &b| self.voices[a].amp.value.partial_cmp(&self.voices[b].amp.value).unwrap());
+            let released = (0..VOICES).filter(open).filter(|&i| self.voices[i].amp.stage == Stage::Release || self.voices[i].sustained || self.voices[i].short_left > 0).min_by(|&a, &b| self.voices[a].amp.value.partial_cmp(&self.voices[b].amp.value).unwrap());
             released.or_else(|| (0..VOICES).filter(open).min_by_key(|&i| self.voices[i].age)).unwrap_or_else(|| (0..VOICES).min_by_key(|&i| self.voices[i].age).unwrap())
         });
         if self.voices[i].active {
@@ -2088,6 +2092,62 @@ mod tests {
         s.midi(0x80, 60, 0);
         render(&mut s, 50);
         assert_eq!(s.voices[0].note, 60);
+    }
+
+    #[test]
+    fn switching_to_legato_drops_what_poly_left_waiting() {
+        // A note waiting on voice 0 (it was taken), then Legato and a new key: the new key plays
+        let mut s = Synth::new(48000.0);
+        for n in 60..68u8 {
+            s.midi(0x90, n, 100);
+        }
+        render(&mut s, 20);
+        s.midi(0x90, 70, 100);
+        set(&mut s, "Voices", 2.0);
+        s.midi(0x90, 72, 100);
+        render(&mut s, 20);
+        assert_eq!(s.voices[0].note, 72);
+        // A very short note's timer on voice 0, then Legato and a held key: it stays held
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "Amp release", 0.2);
+        s.midi(0x90, 60, 100);
+        render(&mut s, 20);
+        s.midi(0x80, 60, 0);
+        s.process(BLOCK);
+        s.midi(0x90, 60, 100);
+        s.midi(0x80, 60, 0);
+        render(&mut s, 2);
+        set(&mut s, "Voices", 2.0);
+        s.midi(0x90, 64, 100);
+        render(&mut s, 40);
+        assert!(s.voices[0].amp.stage != Stage::Release, "the held key was let go");
+    }
+
+    #[test]
+    fn a_held_key_outlasts_a_short_note_when_voices_run_out() {
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "Amp release", 0.3);
+        for n in 60..67u8 {
+            s.midi(0x90, n, 100);
+            s.process(BLOCK);
+        }
+        s.midi(0x90, 70, 100);
+        render(&mut s, 4);
+        s.midi(0x80, 70, 0);
+        s.process(BLOCK);
+        s.midi(0x90, 70, 100);
+        s.midi(0x80, 70, 0);
+        for _ in 0..10 {
+            if s.voices.iter().any(|v| v.short_left > 0) {
+                break;
+            }
+            s.process(16);
+        }
+        s.midi(0x90, 72, 100);
+        render(&mut s, 20);
+        for n in 60..67u8 {
+            assert!(s.voices.iter().any(|v| v.active && v.note == n && v.amp.stage != Stage::Release), "key {n} went silent");
+        }
     }
 
     #[test]
