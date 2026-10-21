@@ -779,12 +779,14 @@ impl Synth {
             return;
         }
         // Poly: the same note struck again while it rings on (pedal held, or letting go) plays
-        // again on its own voice, from where it is: copies in step would stack up far louder
+        // again on its own voice: copies in step would stack up far louder. It goes the way a
+        // taken voice does (a 3 ms fade, then a fresh start), so a new velocity or random value
+        // never jumps in on a ringing note
         if let Some(i) = (0..VOICES).find(|&i| {
             let v = &self.voices[i];
             v.active && v.note == note && v.pending.is_none() && (v.sustained || v.amp.stage == Stage::Release)
         }) {
-            self.start(i, note, vel, &cfg, false);
+            self.voices[i].pending = Some((note, vel));
             return;
         }
         // Else a free voice, else the quietest released one, else the oldest (faded out first)
@@ -1617,6 +1619,39 @@ mod tests {
         let (one, _) = level(1);
         let (eight, voices) = level(8);
         assert!(20.0 * (eight / one).log10() < 2.0 && voices == 1, "{one} vs {eight}, {voices} voices");
+    }
+
+    #[test]
+    fn a_restrike_at_another_velocity_does_not_click() {
+        // A bare sine (no filter), so any step in its level shows
+        let d2 = |x: &[f32]| (2..x.len()).map(|n| (x[n] - 2.0 * x[n - 1] + x[n - 2]).abs()).fold(0.0f32, f32::max);
+        for (v1, v2, pedal) in [(127u8, 10u8, true), (10, 127, true), (127, 10, false)] {
+            let mut s = Synth::new(48000.0);
+            set(&mut s, "B on", 0.0);
+            set(&mut s, "Filter type", 10.0);
+            set(&mut s, "Velocity", 1.0);
+            set(&mut s, "Level", 0.0);
+            set(&mut s, "Amp release", 2.0);
+            if pedal {
+                s.midi(0xB0, 64, 127);
+            }
+            let mut b = vec![];
+            let mut run = |s: &mut Synth, blocks: usize, b: &mut Vec<f32>| {
+                for _ in 0..blocks {
+                    s.process(BLOCK);
+                    b.extend_from_slice(&s.out[0]);
+                }
+            };
+            s.midi(0x90, 45, v1);
+            run(&mut s, 100, &mut b);
+            s.midi(0x80, 45, 0);
+            run(&mut s, 20, &mut b);
+            let at = b.len();
+            s.midi(0x90, 45, v2);
+            run(&mut s, 4, &mut b);
+            let after = d2(&b[at - 2..]);
+            assert!(after < 0.02, "{v1} -> {v2} (pedal {pedal}): step {after}");
+        }
     }
 
     #[test]

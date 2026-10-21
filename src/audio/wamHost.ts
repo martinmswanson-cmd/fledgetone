@@ -78,6 +78,7 @@ export function resetWamSession(): void {
   for (const inst of live.values()) stale.add(inst);
   session++;
   states.clear();
+  keptRead.clear();
   blocked.clear();
   epoch++;
   notify();
@@ -211,11 +212,12 @@ const retiring = new Map<string, Promise<void>>();
 export function retireLiveWam(pluginId: string, inst: WamInstance): void {
   unregisterLiveWam(pluginId, inst);
   inst.audioNode.disconnect();
+  const n = ++reads;
   const read = Promise.race([
     Promise.resolve(inst.audioNode.getState?.()).then((state) => {
       if (state === undefined || stale.has(inst)) return;
       const json = JSON.stringify(state);
-      if (json.length > 2_000_000 || states.get(pluginId) === json) return;
+      if (json.length > 2_000_000 || !newestRead(pluginId, n) || states.get(pluginId) === json) return;
       states.set(pluginId, json);
       const changed = new Map<string, unknown>([[pluginId, JSON.parse(json)]]);
       stateListeners.forEach((l) => l(changed));
@@ -252,15 +254,26 @@ export function onWamStates(listener: StateListener): () => void {
 }
 
 /** Read every live plugin's settings; the ones that changed go to the listeners (to be saved). */
+/** Each settings read is numbered when asked; per plugin, the newest read kept so far. */
+let reads = 0;
+const keptRead = new Map<string, number>();
+/** Whether read `n` of plugin `id` is newer than any kept (and if so, it's the newest now). */
+function newestRead(id: string, n: number): boolean {
+  if (n <= (keptRead.get(id) ?? 0)) return false;
+  keptRead.set(id, n);
+  return true;
+}
+
 /**
- * Keep a plugin's answer (into `changed`): unless it's empty, or the song changed since the read
- * began.
+ * Keep a plugin's answer to read `n` (into `changed`): unless it's empty, the song changed since
+ * the read began, or a read asked later has already answered (a slow answer never undoes a newer
+ * one, as the read taken when the plugin is let go).
  */
-function keepAnswer(id: string, inst: WamInstance, state: unknown, began: number, changed: Map<string, unknown>): void {
+function keepAnswer(id: string, inst: WamInstance, state: unknown, began: number, n: number, changed: Map<string, unknown>): void {
   // (A song opened while it answered: the answer belongs to the one before)
   if (state === undefined || began !== session || stale.has(inst)) return;
   const json = JSON.stringify(state);
-  if (json.length > 2_000_000 || states.get(id) === json) return;
+  if (json.length > 2_000_000 || !newestRead(id, n) || states.get(id) === json) return;
   states.set(id, json);
   changed.set(id, JSON.parse(json));
 }
@@ -278,6 +291,7 @@ export async function captureWamStates(): Promise<void> {
         // (One that already kept a read waiting is skipped until it answers that one: a run of
         // renders, stem by stem, doesn't wait a second each)
         if (unanswered.has(inst)) return;
+        const n = ++reads;
         const asked = inst.audioNode.getState?.();
         const state = await Promise.race([asked, new Promise<typeof SLOW>((r) => setTimeout(() => r(SLOW), 1000))]);
         if (state === SLOW) {
@@ -287,14 +301,14 @@ export async function captureWamStates(): Promise<void> {
             (late) => {
               unanswered.delete(inst);
               const one = new Map<string, unknown>();
-              keepAnswer(id, inst, late, began, one);
+              keepAnswer(id, inst, late, began, n, one);
               if (one.size) stateListeners.forEach((l) => l(one));
             },
             () => unanswered.delete(inst)
           );
           return;
         }
-        keepAnswer(id, inst, state, began, changed);
+        keepAnswer(id, inst, state, began, n, changed);
       } catch {
         // A plugin that can't say: keep what was saved
       }
@@ -316,7 +330,7 @@ export function captureWamStatesNow(): void {
     const state = inst.audioNode.getStateNow?.();
     if (state === undefined) continue;
     const json = JSON.stringify(state);
-    if (json.length > 2_000_000 || states.get(id) === json) continue;
+    if (json.length > 2_000_000 || !newestRead(id, ++reads) || states.get(id) === json) continue;
     states.set(id, json);
     changed.set(id, JSON.parse(json));
   }
