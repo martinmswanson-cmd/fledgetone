@@ -480,7 +480,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     // A drum kit's rows sit around C1 (kick C1, snare D1, hats F#1 and A#1): the keys start there
     if (isDrumKind(instrument)) useMidiStore.getState().setOctave(1);
     const held = new Set<number>();
-    let chord: { at: number; ids: string[] } | null = null;
+    let chord: { at: number; ids: string[]; names: Set<string> } | null = null;
     return onLiveNote((n) => {
       const store = useTimelineStore.getState();
       const live = store.clips.find((c) => c.id === clip.id);
@@ -491,6 +491,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         const name = noteNameOn(n.midi, track);
         // A key with no row here (a drum kit's) writes nothing
         if (namedRows && !rowsRef.current.some((r) => r.note === name)) return;
+        // On the Drop pad several keys play the same move: once in a chord is enough
+        if (isDropKind(instrument) && chord?.names.has(name)) return;
         const at = chord?.at ?? entryRef.current.at;
         const length = entryRef.current.length;
         // Room to grow: up to the next clip on the track, or the song's end
@@ -504,7 +506,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         }
         held.add(n.midi);
         if (!chord) {
-          chord = { at: entryRef.current.at, ids: [] };
+          chord = { at: entryRef.current.at, ids: [], names: new Set() };
           entered.current.push(chord);
           // One undo step for the whole chord (and the clip growing for it)
           store.checkpoint();
@@ -517,6 +519,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         store.setClipNotes(clip.id, [...(useTimelineStore.getState().clips.find((c) => c.id === clip.id)?.notes ?? []), { ...note, id }]);
         const ids = [id];
         chord.ids.push(...ids);
+        chord.names.add(name);
         // (a frame later, once its row is drawn)
         if (ids[0]) requestAnimationFrame(() => keepInView(`[data-note-id="${ids[0]}"]`));
       } else {

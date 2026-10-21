@@ -143,7 +143,11 @@ export function playMidi(message: MidiMessage, heard: number): void {
       // On the Drop pad several keys hold the same effect: one already held by another key keeps
       // it, and this one does nothing (no second, stacked move in a take or the piano roll)
       const drop = track && isDropKind(track.instrumentKey) ? `${track.id}|${name}` : null;
-      if (drop && [...holding.entries()].some(([k, v]) => k !== message.note && v === drop)) return;
+      if (drop && [...holding.entries()].some(([k, v]) => k !== message.note && v === drop)) {
+        // (The piano roll still hears the key: it's note entry's to write, on its own clip)
+        emitNote({ on: true, midi: message.note, velocity: message.velocity });
+        return;
+      }
       if (drop) holding.set(message.note, drop);
       const mpe = useMidiStore.getState().mpe && message.channel !== undefined && message.channel > 0;
       if (instrument) {
@@ -184,8 +188,10 @@ export function playMidi(message: MidiMessage, heard: number): void {
       if (message.channel !== undefined && mpeNotes.get(message.channel)?.note === message.note) mpeNotes.delete(message.channel);
       const off = held.get(message.note);
       if (!off) {
-        // (Nothing sounding to hold on: a muted track's key lets go of its effect too)
-        holding.delete(message.note);
+        // (Nothing sounding to hold on: a muted track's key lets go of its effect too, once the
+        // pedal does if it's down, as the take holds the note till then)
+        if (pedal && holding.has(message.note)) sustained.set(message.note, () => {});
+        else holding.delete(message.note);
         break;
       }
       held.delete(message.note);
