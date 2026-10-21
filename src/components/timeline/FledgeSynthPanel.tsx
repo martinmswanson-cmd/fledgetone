@@ -212,9 +212,11 @@ const ShapeEditor: React.FC<{ n: number; get: Get; set: Set }> = ({ n, get, set 
   const W = 320;
   const H = 96;
   const values = steps.map((c) => bipolarOf(get(c.p)?.p.value ?? 0.5));
+  // (Steps an automation lane holds follow the lane, and can't be drawn until it goes)
+  const held = steps.map((c) => !!get(c.p)?.p.held);
   const sm = get(smooth.p)?.p.value ?? 0;
   // Steps of 0.05 (easy to hit zero and the ends)
-  const put = (i: number, v: number) => set(steps[i].p, bipolarValue(Math.round(Math.max(-1, Math.min(1, v)) * 20) / 20));
+  const put = (i: number, v: number) => !held[i] && set(steps[i].p, bipolarValue(Math.round(Math.max(-1, Math.min(1, v)) * 20) / 20));
   const paint = (e: React.PointerEvent) => {
     const r = box.current!.getBoundingClientRect();
     const i = Math.max(0, Math.min(15, Math.floor(((e.clientX - r.left) / r.width) * 16)));
@@ -236,7 +238,8 @@ const ShapeEditor: React.FC<{ n: number; get: Get; set: Set }> = ({ n, get, set 
         aria-valuemin={-1}
         aria-valuemax={1}
         aria-valuenow={values[focus]}
-        aria-valuetext={`Step ${focus + 1}: ${Math.round(values[focus] * 100)}%`}
+        aria-valuetext={`Step ${focus + 1}: ${Math.round(values[focus] * 100)}%${held[focus] ? `, ${HELD_TITLE}` : ''}`}
+        aria-readonly={held[focus] || undefined}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
@@ -260,11 +263,13 @@ const ShapeEditor: React.FC<{ n: number; get: Get; set: Set }> = ({ n, get, set 
         onPointerUp={() => (down.current = false)}
         onPointerCancel={() => (down.current = false)}
       >
+        {held.some(Boolean) && <title>{`Steps ${held.flatMap((h, i) => (h ? [i + 1] : [])).join(', ')}: ${HELD_TITLE}`}</title>}
         <line x1={0} y1={H / 2} x2={W} y2={H / 2} className="stroke-forge-border" />
         {values.map((v, i) => {
           const x = (i * W) / 16;
           const y = H / 2 - v * (H / 2 - 2);
-          return <rect key={i} x={x + 1} width={W / 16 - 2} y={Math.min(y, H / 2)} height={Math.abs(H / 2 - y)} className={focused && i === focus ? 'fill-fuchsia-400/60' : 'fill-fuchsia-500/30'} />;
+          const fill = held[i] ? 'fill-amber-300/25 stroke-amber-300/60' : focused && i === focus ? 'fill-fuchsia-400/60' : 'fill-fuchsia-500/30';
+          return <rect key={i} x={x + 1} width={W / 16 - 2} y={Math.min(y, H / 2)} height={Math.abs(H / 2 - y)} className={fill} strokeDasharray={held[i] ? '2 2' : undefined} />;
         })}
         <path d={pathOf(curve, W, H)} fill="none" className="stroke-fuchsia-200" strokeWidth={1.5} />
       </svg>

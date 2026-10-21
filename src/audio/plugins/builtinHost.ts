@@ -215,10 +215,12 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     }, 120);
   };
   /** Send a value to the processor (its 'display' answer then says what it shows). */
-  const post = (index: number, value: number) => {
+  const post = (index: number, value: number, drop = false) => {
     inFlight.set(index, (inFlight.get(index) ?? 0) + 1);
-    node.port.postMessage({ type: 'set', index, value });
+    node.port.postMessage({ type: 'set', index, value, ...(drop ? { drop: true } : {}) });
   };
+  /** Held parameters show their lane's value (the processor may not have played it yet). */
+  const laneShown = (list: BuiltinParam[]) => list.map((p, i) => (laneHeld.has(i) ? { ...p, value: laneHeld.get(i)! } : p));
   /**
    * Sets sent per parameter and not yet answered: a late answer to an older one mustn't put the
    * value back (a knob stepped quickly would lose steps)
@@ -276,7 +278,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
           // (A held parameter's own setting is the preset's, from the reply itself: a re-post
           // still unanswered mustn't keep an older preset's)
           own = params.map((p, i) => (laneHeld.has(i) ? (d.params[i]?.value ?? p.value) : p.value));
-          params = marked(params);
+          params = marked(laneShown(params));
           // (A lane holding a parameter goes on playing its value over the preset's)
           for (const [i, v] of laneHeld) post(i, v);
           changed();
@@ -347,7 +349,13 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       const i = Number(id);
       laneHeld.delete(i);
       params = marked(params);
-      if (params[i]) set(i, own[i]);
+      if (!params[i] || destroyed) return;
+      // (Its lane's events not sent yet, or queued in the processor, go too)
+      pending = pending.filter((e) => !((e as { type?: string }).type === 'wam-automation' && Number((e as { data?: { id?: string } }).data?.id) === i));
+      params = params.map((x, k) => (k === i ? { ...x, value: own[i] } : x));
+      flush();
+      post(i, own[i], true);
+      changed();
     },
     setState: async (s: unknown) => {
       const saved = s as Partial<BuiltinState> | undefined;
@@ -407,7 +415,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     new Promise<void>((resolve) => {
       const id = nextReply++;
       replies.set(id, (fresh) => {
-        params = marked(keepSent(fresh.map((p, i) => ({ ...p, defaultValue: params[i]?.defaultValue ?? p.value }))));
+        params = marked(laneShown(keepSent(fresh.map((p, i) => ({ ...p, defaultValue: params[i]?.defaultValue ?? p.value })))));
         changed();
         resolve();
       });

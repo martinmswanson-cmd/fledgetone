@@ -152,6 +152,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       }
     } else if (d.type === 'set') {
       if (d.index >= 0 && d.index < this.n) {
+        // (Its lane is gone: what it still had queued goes too, even while the track sleeps)
+        if (d.drop) this.events = this.events.filter((ev) => !(ev.type === 'wam-automation' && Number(ev.data.id) === d.index));
         this.e.bb_set(this.h, d.index, d.value);
         this.port.postMessage({ type: 'display', index: d.index, value: this.e.bb_get(this.h, d.index), text: readString(this.e, this.e.bb_param_display(this.h, d.index)) });
       }
@@ -169,12 +171,24 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     } else if (d.type === 'clear') {
       this.events.length = 0;
     } else if (d.type === 'describe') {
+      // (Automation already due first: a sleeping track's queue still says what it plays now)
+      this.dueAutomation();
       this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program() });
     } else if (d.type === 'destroy') {
       this.alive = false;
       this.events.length = 0;
       this.e.bb_destroy(this.h);
     }
+  }
+
+  /** Apply the automation events whose time has come (notes wait for process()). */
+  dueAutomation() {
+    const now = currentFrame;
+    this.events = this.events.filter((ev) => {
+      if (ev.type !== 'wam-automation' || Math.round(ev.time * sampleRate) > now) return true;
+      this.apply(ev);
+      return false;
+    });
   }
 
   apply(ev) {
