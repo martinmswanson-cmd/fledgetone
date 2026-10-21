@@ -155,6 +155,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", MONO), ("Glide", 0.03), ("Amp release", 0.08),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.5),
             ("Mod 6 source", M2), ("Mod 6 target", FMT), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
             ("OTT", 0.35), ("Level", -1.0),
         ],
     },
@@ -170,6 +171,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", MONO), ("Amp release", 0.06),
             ("Mod 5 source", M1), ("Mod 5 target", RESO), ("Mod 5 amount", 0.6),
             ("Mod 6 source", M2), ("Mod 6 target", DRIVE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", FMT), ("Mod 7 amount", 0.4),
             ("OTT", 0.4), ("Level", -1.0),
         ],
     },
@@ -185,6 +187,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", LEGATO), ("Glide", 0.06), ("Amp release", 0.15),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.5),
             ("Mod 6 source", M2), ("Mod 6 target", A_DETUNE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
             ("OTT", 0.25), ("Level", -2.5),
         ],
     },
@@ -201,6 +204,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", MONO), ("Amp release", 0.08),
             ("Mod 5 source", M1), ("Mod 5 target", RESO), ("Mod 5 amount", 0.5),
             ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.6),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.4),
             ("OTT", 0.45), ("Level", -2.0),
         ],
     },
@@ -216,6 +220,8 @@ pub const PRESETS: &[Preset] = &[
             ("Drive type", SOFT), ("Drive", 10.0),
             ("Voices", MONO), ("Glide", 0.04), ("Amp release", 0.08),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", RESO), ("Mod 6 amount", 0.4),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
             ("OTT", 0.3), ("Level", -2.0),
         ],
     },
@@ -234,6 +240,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", MONO), ("Glide", 0.05), ("Amp release", 0.08),
             ("Mod 5 source", M1), ("Mod 5 target", RESO), ("Mod 5 amount", 0.5),
             ("Mod 6 source", M2), ("Mod 6 target", DRIVE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", FMT), ("Mod 7 amount", 0.4),
             ("OTT", 0.4), ("Level", -2.0),
         ],
     },
@@ -250,6 +257,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", MONO), ("Amp release", 0.06),
             ("Mod 5 source", M1), ("Mod 5 target", A_WARP), ("Mod 5 amount", 0.5),
             ("Mod 6 source", M2), ("Mod 6 target", DRIVE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", FMT), ("Mod 7 amount", 0.4),
             ("OTT", 0.5), ("Level", -2.5),
         ],
     },
@@ -265,6 +273,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", MONO), ("Glide", 0.03), ("Amp release", 0.06),
             ("Mod 5 source", M1), ("Mod 5 target", LFO1_RATE), ("Mod 5 amount", 0.333),
             ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
             ("OTT", 0.4), ("Level", -1.5),
         ],
     },
@@ -280,6 +289,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", MONO), ("Glide", 0.04), ("Amp release", 0.08),
             ("Mod 5 source", M1), ("Mod 5 target", A_WARP), ("Mod 5 amount", 0.6),
             ("Mod 6 source", M2), ("Mod 6 target", CUTOFF), ("Mod 6 amount", 0.4),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
             ("OTT", 0.3), ("Level", -2.0),
         ],
     },
@@ -296,6 +306,7 @@ pub const PRESETS: &[Preset] = &[
             ("Voices", MONO), ("Glide", 0.03), ("Amp release", 0.08),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.5),
             ("Mod 6 source", M2), ("Mod 6 target", F2_CUT), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
             ("OTT", 0.35), ("Level", -2.0),
         ],
     },
@@ -308,6 +319,8 @@ pub const PRESETS: &[Preset] = &[
             ("Amp attack", 0.002), ("Amp release", 0.1),
             ("Voices", MONO), ("Glide", 0.03),
             ("Mod 5 source", M1), ("Mod 5 target", DRIVE), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", CUTOFF), ("Mod 6 amount", 0.4),
+            ("Mod 7 source", M3), ("Mod 7 target", A_POS), ("Mod 7 amount", 0.3),
             ("Level", -7.0),
         ],
     },
@@ -321,6 +334,8 @@ pub const PRESETS: &[Preset] = &[
             ("Amp attack", 0.0012), ("Amp decay", 1.6), ("Amp sustain", 0.3), ("Amp release", 0.2),
             ("Voices", LEGATO), ("Glide", 0.08),
             ("Mod 5 source", M1), ("Mod 5 target", DRIVE), ("Mod 5 amount", 0.5),
+            ("Mod 6 source", M2), ("Mod 6 target", CUTOFF), ("Mod 6 amount", 0.4),
+            ("Mod 7 source", M3), ("Mod 7 target", A_POS), ("Mod 7 amount", 0.3),
             ("Level", -3.0),
         ],
     },
@@ -703,6 +718,33 @@ mod tests {
             let (hi, _) = loudness(p, 60);
             let avg = (lo + hi) / 2.0;
             assert!((avg + 18.0).abs() <= 3.0, "{} averages {avg:.1} dB", p.name);
+        }
+    }
+
+    /// Every bass has three macros (the phone shows them as its big sliders), and with all of
+    /// them turned up it stays under the ceiling
+    #[test]
+    fn bass_presets_have_three_safe_macros() {
+        for p in PRESETS.iter().filter(|p| p.name.starts_with("Bass/")) {
+            let macros = (1..=3).filter(|m| p.sets.iter().any(|&(n, v)| n.starts_with("Mod ") && n.ends_with(" source") && v == 13.0 + *m as f32)).count();
+            assert_eq!(macros, 3, "{} has {macros} macros", p.name);
+            let mut s = Synth::new(48000.0);
+            s.set_tempo(140.0);
+            s.params = p.values();
+            for m in 1..=4 {
+                s.params[index_of(&format!("Macro {m}")).unwrap()] = 1.0;
+            }
+            s.midi(0x90, 36, 127);
+            let mut peak: f32 = 0.0;
+            for _ in 0..(48000 / BLOCK) {
+                s.process(BLOCK);
+                for c in 0..2 {
+                    for &x in &s.out[c] {
+                        peak = if x.is_finite() { peak.max(x.abs()) } else { f32::INFINITY };
+                    }
+                }
+            }
+            assert!(peak <= 0.9, "{} with its macros up peaks at {peak}", p.name);
         }
     }
 

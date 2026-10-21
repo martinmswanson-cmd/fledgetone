@@ -1,6 +1,6 @@
 import { initializeWamHost } from '@webaudiomodules/sdk';
 import type { WamPlugin } from '../store/timelineTypes';
-import { createBuiltinInstance, isBuiltinUrl } from './plugins/builtinHost';
+import { createBuiltinInstance, isBuiltinUrl, type BuiltinControls } from './plugins/builtinHost';
 
 /**
  * Hosting Web Audio Modules (WAM 2.0): third-party instruments and effects, each an ES module at
@@ -29,6 +29,8 @@ export interface WamInstance {
     destroy?: () => void;
   };
   descriptor?: { name?: string; vendor?: string; isInstrument?: boolean; hasMidiInput?: boolean; hasAudioInput?: boolean };
+  /** A built-in plugin's controls, as its panel has them (Pocket's Sound tool works them too) */
+  controls?: BuiltinControls;
   createGui?: () => Promise<Element>;
   destroyGui?: (gui: Element) => void;
 }
@@ -196,6 +198,12 @@ const states = new Map<string, string>();
 
 export const liveWam = (pluginId: string): WamInstance | undefined => live.get(pluginId);
 
+/** The live plugin a built-in panel's controls belong to (its id), if it's live. */
+export function pluginIdOfControls(controls: BuiltinControls): string | undefined {
+  for (const [id, inst] of live) if (inst.controls === controls) return id;
+  return undefined;
+}
+
 export function registerLiveWam(pluginId: string, inst: WamInstance): void {
   live.set(pluginId, inst);
   notify();
@@ -354,6 +362,32 @@ export function captureWamStatesNow(): void {
     changed.set(id, JSON.parse(json));
   }
   if (changed.size) stateListeners.forEach((l) => l(changed));
+}
+
+/** Read one built-in plugin's settings at once (after a turn of its knobs), as captureWamStatesNow does. */
+export function captureWamStateNow(pluginId: string): void {
+  const inst = live.get(pluginId);
+  const state = inst && !stale.has(inst) ? inst.audioNode.getStateNow?.() : undefined;
+  if (state === undefined) return;
+  const json = JSON.stringify(state);
+  if (json.length > 2_000_000 || !newestRead(pluginId, ++reads) || states.get(pluginId) === json) return;
+  states.set(pluginId, json);
+  const changed = new Map<string, unknown>([[pluginId, JSON.parse(json)]]);
+  stateListeners.forEach((l) => l(changed));
+}
+
+/**
+ * Put a plugin back to `state` (an undo of a turn of its knobs): kept as its latest settings, and
+ * set on it now if it's live (else it starts from them when it's built).
+ */
+export function restoreWamState(pluginId: string, state: unknown): void {
+  if (state === undefined) return;
+  const json = JSON.stringify(state);
+  // (A read already on its way is older than this)
+  newestRead(pluginId, ++reads);
+  states.set(pluginId, json);
+  const inst = live.get(pluginId);
+  if (inst && !stale.has(inst)) void inst.audioNode.setState?.(JSON.parse(json));
 }
 
 // Settings are read every few seconds while any plugin is live, so autosave and exports have them

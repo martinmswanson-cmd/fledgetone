@@ -8,8 +8,8 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0-or-later (Fledgetone's own)",
   "gpl": false,
   "file": "fledge.wasm",
-  "bytes": 190751,
-  "hash": "8748654d085d",
+  "bytes": 191287,
+  "hash": "0c0e247bce83",
   "plugins": [
    {
     "name": "Fledge Synth",

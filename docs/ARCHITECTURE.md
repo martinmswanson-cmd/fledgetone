@@ -130,7 +130,10 @@ clips (often with a helper from `src/store`) and `set()`s them. Then, all from t
 tracks, clips, markers, tempo and meter maps, and master settings). `undo()` puts the previous
 one back with `set()`, and the same subscriptions bring the screen and the sound along. The view
 (zoom, scroll, the playhead, what's open) and the loop aren't in it, except that undoing an
-insert or delete of bars puts the loop and playhead back where they were.
+insert or delete of bars puts the loop and playhead back where they were. Plugins play on as they
+are through an undo (their settings are read back onto the tracks), except for a step that turned a
+built-in plugin's knobs (`checkpointPlugin`, via `store/pluginEdits.ts`: Fledge Synth's panel and
+Pocket's Sound tool), whose undo and redo put that plugin's settings back.
 
 ### Play is pressed
 

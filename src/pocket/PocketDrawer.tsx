@@ -6,7 +6,7 @@
  * makes it bigger or smaller (tap to step, or drag); the piano roll opens it full and puts it back.
  */
 import React, { useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Star, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, FolderOpen, Share2, Star, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { CATEGORIES, INSTRUMENTS, listedCategory } from '../audio/instrumentCatalog';
 import { defaultClipper } from '../audio/effects/clipper';
@@ -15,10 +15,14 @@ import { showToast } from '../components/timeline/toastStore';
 import { useMySounds, type MySound } from '../store/mySounds';
 import { gridTracks, type PocketSection } from './pocketSections';
 import { useSelection, useSongKey } from './pocketCell';
-import { editorOf, usePocket, type DrawerSize, type PocketTool } from './pocketStore';
+import { editorOf, playFledge, soundInstrumentName, usePocket, type DrawerSize, type PocketTool } from './pocketStore';
 import { ChordPads, DrumPads, DrumSteps, NotePads } from './PocketPads';
 import { PocketRoll } from './PocketRoll';
 import { PocketVocals } from './PocketVocals';
+import { PocketSynth } from './PocketSynth';
+import { isFledgeUrl } from '../audio/plugins/fledgeMacros';
+import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
+import { pill } from './pocketUi';
 
 export const DRAWER_SIZES: Record<DrawerSize, number> = { low: 0.3, mid: 0.4, high: 0.74 };
 
@@ -27,7 +31,7 @@ const landscape = () => typeof document !== 'undefined' && !!document.querySelec
 
 /** The tools a track's drawer has. */
 export const toolsOf = (track: Track): PocketTool[] => {
-  const how = editorOf(track.instrumentKey);
+  const how = editorOf(track.instrumentKey, track.plugin);
   return how === 'vocals' ? ['sing', 'mix'] : how === null ? ['mix'] : ['play', 'draw', 'sound', 'mix'];
 };
 
@@ -42,7 +46,7 @@ export function selectTrack(track: Track): void {
 /** Change the drawer's tool. The piano roll wants room: it opens the drawer full, and leaving it puts the size back. */
 export function setTool(tool: PocketTool, track: Track | null, land: boolean): void {
   const p = usePocket.getState();
-  const roll = tool === 'draw' && !!track && editorOf(track.instrumentKey) === 'notes';
+  const roll = tool === 'draw' && !!track && editorOf(track.instrumentKey, track.plugin) === 'notes';
   if (!land && roll && p.drawer !== 'high') p.set({ tool, sizeBeforeRoll: p.drawer, drawer: 'high' });
   else if (!land && !roll && p.sizeBeforeRoll) p.set({ tool, drawer: p.sizeBeforeRoll, sizeBeforeRoll: null });
   else p.set({ tool });
@@ -67,7 +71,7 @@ export function pocketInstruments(current?: InstrumentKey): Array<{ category: st
 /** The sounds saved in the studio (My sounds) that Pocket can play: those of an instrument it edits. */
 export function pocketSounds(sounds: MySound[]): MySound[] {
   return sounds.filter((s) => {
-    const how = editorOf(s.settings.instrumentKey);
+    const how = editorOf(s.settings.instrumentKey, s.settings.plugin);
     return how === 'beat' || how === 'notes';
   });
 }
@@ -188,10 +192,10 @@ const TrackMix: React.FC<{ track: Track }> = ({ track }) => {
   );
 };
 
-const SoundList: React.FC<{ track: Track }> = ({ track }) => {
+const SoundList: React.FC<{ track: Track; files?: boolean }> = ({ track, files = true }) => {
   const favourites = useMySounds((s) => s.favourites);
   const saved = useMySounds((s) => s.sounds);
-  const kind = editorOf(track.instrumentKey);
+  const kind = editorOf(track.instrumentKey, track.plugin);
   const groups = useMemo(
     () =>
       pocketInstruments(track.instrumentKey)
@@ -201,10 +205,37 @@ const SoundList: React.FC<{ track: Track }> = ({ track }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [track.instrumentKey, kind, favourites]
   );
-  const mine = pocketSounds(saved).filter((s) => editorOf(s.settings.instrumentKey) === kind);
+  const mine = pocketSounds(saved).filter((s) => editorOf(s.settings.instrumentKey, s.settings.plugin) === kind);
   const [open, setOpen] = useState<string | null>(listedCategory(INSTRUMENTS[track.instrumentKey]) ?? groups[0]?.category ?? null);
+  const fledge = isFledgeUrl(track.plugin?.url);
   return (
     <div className="pk-scroll">
+      {files && (
+        <div className="grid grid-cols-2 gap-2 mb-1">
+          <button type="button" className={pill} onClick={() => void shareTrackSound(track.id)}>
+            <Share2 className="w-4 h-4" /> Share this sound
+          </button>
+          <button type="button" className={pill} onClick={() => pickSoundFile(track.id)}>
+            <FolderOpen className="w-4 h-4" /> Open a sound file
+          </button>
+        </div>
+      )}
+      {kind === 'notes' && (
+        <button
+          type="button"
+          className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 ${fledge ? 'bg-white/5 ring-1 ring-inset' : 'active:bg-white/5'}`}
+          style={fledge ? { ['--tw-ring-color' as string]: track.color } : undefined}
+          onClick={() => {
+            if (!fledge) playFledge(track.id);
+          }}
+        >
+          <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ background: INSTRUMENTS.plugin.color }} />
+          <span className="min-w-0">
+            <span className="block text-sm">Fledge Synth{fledge ? ' (now)' : ''}</span>
+            <span className="block text-xs text-forge-muted line-clamp-1">The app's own synth: wobble bass, growls, leads, with sliders to shape it</span>
+          </span>
+        </button>
+      )}
       {mine.length > 0 && (
         <div>
           <button type="button" className="w-full flex items-center gap-2 h-11 text-sm font-semibold" onClick={() => setOpen(open === 'My sounds' ? null : 'My sounds')}>
@@ -223,7 +254,7 @@ const SoundList: React.FC<{ track: Track }> = ({ track }) => {
                 <span className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ background: INSTRUMENTS[s.settings.instrumentKey].color }} />
                 <span className="min-w-0">
                   <span className="block text-sm">{s.name}</span>
-                  <span className="block text-xs text-forge-muted line-clamp-1">{INSTRUMENTS[s.settings.instrumentKey].name}, with your settings</span>
+                  <span className="block text-xs text-forge-muted line-clamp-1">{soundInstrumentName(s)}, with your settings</span>
                 </span>
               </button>
             ))}
@@ -305,7 +336,7 @@ const Body: React.FC<{ track: Track; sec: PocketSection; tool: PocketTool }> = (
   const songKey = useSongKey();
   const [keysMode, setKeysMode] = useState<'notes' | 'chords'>('notes');
   const [shift, setShift] = useState(0);
-  const how = editorOf(track.instrumentKey);
+  const how = editorOf(track.instrumentKey, track.plugin);
   if (tool === 'mix') return <TrackMix track={track} />;
   if (how === 'vocals') return <div className="pk-scroll"><PocketVocals trackId={track.id} /></div>;
   if (how === null)
@@ -314,7 +345,7 @@ const Body: React.FC<{ track: Track; sec: PocketSection; tool: PocketTool }> = (
         {INSTRUMENTS[track.instrumentKey]?.name ?? 'This track'} is edited in the studio on a computer. Its level, mute and solo are under Mix.
       </p>
     );
-  if (tool === 'sound') return <SoundList track={track} />;
+  if (tool === 'sound') return isFledgeUrl(track.plugin?.url) ? <PocketSynth track={track} others={<SoundList track={track} files={false} />} /> : <SoundList track={track} />;
   if (how === 'beat') return tool === 'draw' ? <DrumSteps key={`${track.id}:${sec.from}`} track={track} sec={sec} /> : <DrumPads track={track} sec={sec} />;
   if (tool === 'draw') return <PocketRoll key={`${track.id}:${sec.from}:${sec.to}`} track={track} sec={sec} songKey={songKey} />;
   const seg = 'h-8 px-3 rounded-lg text-[12.5px] font-medium';

@@ -150,6 +150,24 @@ export function parseMySoundsFile(raw: unknown): Omit<MySoundsFile, 'format' | '
 }
 
 /**
+ * One sound as a file of its own, to send to someone or keep (a My sounds file holding just it,
+ * with no stars): it opens wherever a My sounds file does.
+ */
+export function soundFile(sound: MySound, recordings: EmbeddedSound[]): MySoundsFile {
+  return { format: MY_SOUNDS_FORMAT, version: 1, favourites: [], sounds: [sound], recordings };
+}
+
+/** A sound file's name: the sound's, with only the characters every system takes ("Wobble bass.fledgetone-sound.json"). */
+export function soundFileName(name: string): string {
+  const plain = [...name].map((c) => (c < ' ' || '\\/:*?"<>|'.includes(c) ? ' ' : c)).join('');
+  const safe = plain.replace(/\s+/g, ' ').trim().replace(/^\.+/, '').slice(0, 60).trim();
+  return `${safe || 'sound'}.fledgetone-sound.json`;
+}
+
+/** The recordings a sound plays (a Sampler's, a Drum Rack's...), by their library ids. */
+export const soundRecordingIds = (sound: MySound): string[] => referencedSoundIds({ clips: [], tracks: [sound.settings] });
+
+/**
  * `sounds` added to `mine`: one of the same name (any case) is replaced, as saving it again
  * would; the rest are added after. Returns the list and how many were added and replaced.
  */

@@ -17,6 +17,8 @@ import {
   Sliders,
   Trash2,
   Bookmark,
+  Share2,
+  FolderOpen,
 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
@@ -47,6 +49,7 @@ import type { InstrumentDef } from '../../audio/instrumentCatalog';
 import { InstrumentPicker } from '../InstrumentMenu';
 import { useMySounds } from '../../store/mySounds';
 import { captureWamStates } from '../../audio/wamHost';
+import { pickSoundFile, shareTrackSound } from '../mySoundsFile';
 import { showToast } from '../timeline/toastStore';
 import { retryInstrumentDownload } from '../../audio/liveTracks';
 import { UndoableRange } from '../UndoableRange';
@@ -299,6 +302,26 @@ export const TrackInspector: React.FC = () => {
                     className="shrink-0 px-2 rounded border border-forge-border bg-forge-panel text-forge-muted hover:text-amber-200 hover:border-amber-400/60"
                   >
                     <Bookmark className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    data-search="share sound file send preset export"
+                    onClick={() => void shareTrackSound(currentTrack.id)}
+                    title="Share this sound: save it as a small file (the instrument with all its settings and plugin knobs) to send to anyone"
+                    aria-label="Share this sound as a file"
+                    className="shrink-0 px-2 rounded border border-forge-border bg-forge-panel text-forge-muted hover:text-cyan-200 hover:border-cyan-400/60"
+                  >
+                    <Share2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    data-search="open sound file import preset"
+                    onClick={() => pickSoundFile(currentTrack.id)}
+                    title="Open a sound file: put a shared sound on this track (it goes into My sounds too)"
+                    aria-label="Open a sound file onto this track"
+                    className="shrink-0 px-2 rounded border border-forge-border bg-forge-panel text-forge-muted hover:text-cyan-200 hover:border-cyan-400/60"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
