@@ -57,6 +57,12 @@ export function noteNameOn(midi: number, track: Track | undefined): string {
 /** Notes sounding now, by MIDI note number, with the function that ends each. */
 const held = new Map<number, NoteOff>();
 /**
+ * The Drop pad's effects held from the keyboard, by MIDI note number: "<track id>|<row>" for as
+ * long as the key (or the pedal, once it's let go) holds it. Several keys play the same effect,
+ * and one already holding it keeps it alone.
+ */
+const holding = new Map<number, string>();
+/**
  * MPE: the note each channel is playing, and its own controls (when the instrument has voices of
  * its own, see TrackInstrument.noteVoice). Channel 1 (0 here) is the keyboard's master channel:
  * its bend moves every note.
@@ -85,6 +91,7 @@ function startNote(instrument: TrackInstrument, note: { note: string; duration: 
 }
 
 function endNote(midi: number, at: number): void {
+  holding.delete(midi);
   const off = held.get(midi);
   if (off) {
     held.delete(midi);
@@ -135,7 +142,9 @@ export function playMidi(message: MidiMessage, heard: number): void {
       const name = noteNameOn(message.note, track);
       // On the Drop pad several keys hold the same effect: one already held by another key keeps
       // it, and this one does nothing (no second, stacked move in a take or the piano roll)
-      if (track && isDropKind(track.instrumentKey) && [...held.keys()].some((k) => k !== message.note && noteNameOn(k, track) === name)) return;
+      const drop = track && isDropKind(track.instrumentKey) ? `${track.id}|${name}` : null;
+      if (drop && [...holding.entries()].some(([k, v]) => k !== message.note && v === drop)) return;
+      if (drop) holding.set(message.note, drop);
       const mpe = useMidiStore.getState().mpe && message.channel !== undefined && message.channel > 0;
       if (instrument) {
         const note = { note: name, duration: '4n', velocity: message.velocity };
@@ -174,16 +183,26 @@ export function playMidi(message: MidiMessage, heard: number): void {
       noteRepeatOff(message.note);
       if (message.channel !== undefined && mpeNotes.get(message.channel)?.note === message.note) mpeNotes.delete(message.channel);
       const off = held.get(message.note);
-      if (!off) break;
+      if (!off) {
+        // (Nothing sounding to hold on: a muted track's key lets go of its effect too)
+        holding.delete(message.note);
+        break;
+      }
       held.delete(message.note);
       if (pedal) sustained.set(message.note, off);
-      else safely(() => off(now));
+      else {
+        holding.delete(message.note);
+        safely(() => off(now));
+      }
       break;
     }
     case 'sustain':
       pedal = message.down;
       if (!pedal) {
-        for (const off of sustained.values()) safely(() => off(now));
+        for (const [key, off] of sustained) {
+          holding.delete(key);
+          safely(() => off(now));
+        }
         sustained.clear();
       }
       break;
@@ -235,6 +254,7 @@ export function releaseLiveNotes(): void {
   for (const off of sustained.values()) safely(() => off(now));
   held.clear();
   sustained.clear();
+  holding.clear();
   mpeNotes.clear();
   pedal = false;
 }
