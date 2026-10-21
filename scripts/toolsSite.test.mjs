@@ -134,5 +134,8 @@ test('tools: every page of the site links to the Tools page in its footer, and i
   assert.match(foot, /<a href="\/tools\/">Tools<\/a>/);
   const { siteHeaders } = await import('./site-headers.mjs');
   const out = siteHeaders('');
-  assert.match(out, /\/tools\/\*\.zip\n {2}Content-Type: application\/zip\n {2}Content-Disposition: attachment/);
+  // (Each zip by name: the host matches a * only at the end of an address)
+  for (const name of ['game-music-players', 'fledge-synth', 'drop-effects', 'song-player'])
+    assert.match(out, new RegExp(`/tools/fledgetone-${name}\\.zip\\n {2}Content-Type: application/zip\\n {2}Content-Disposition: attachment`));
+  assert.doesNotMatch(out, /\/tools\/\*/);
 });

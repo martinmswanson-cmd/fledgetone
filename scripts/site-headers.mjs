@@ -20,12 +20,30 @@ const SITE_RULES = `
   Cache-Control: public, max-age=86400
 # The tools' downloads (scripts/tools-site.mjs): zips, saved rather than opened, and checked
 # afresh each time (each site build makes them again under the same names); their READMEs as
-# plain text in the browser
-/tools/*.zip
+# plain text in the browser (each by name: the host matches a * only at the end of an address)
+/tools/fledgetone-game-music-players.zip
   Content-Type: application/zip
   Content-Disposition: attachment
   Cache-Control: no-cache
-/tools/*/README.md
+/tools/fledgetone-fledge-synth.zip
+  Content-Type: application/zip
+  Content-Disposition: attachment
+  Cache-Control: no-cache
+/tools/fledgetone-drop-effects.zip
+  Content-Type: application/zip
+  Content-Disposition: attachment
+  Cache-Control: no-cache
+/tools/fledgetone-song-player.zip
+  Content-Type: application/zip
+  Content-Disposition: attachment
+  Cache-Control: no-cache
+/tools/game-music-players/README.md
+  Content-Type: text/plain; charset=utf-8
+/tools/fledge-synth/README.md
+  Content-Type: text/plain; charset=utf-8
+/tools/drop-effects/README.md
+  Content-Type: text/plain; charset=utf-8
+/tools/song-player/README.md
   Content-Type: text/plain; charset=utf-8
 /tools/LICENSE.txt
   Content-Type: text/plain; charset=utf-8
