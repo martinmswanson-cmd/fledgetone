@@ -1,7 +1,8 @@
 /**
  * App entry point. Picks how the live audio context buffers (playbackMode.ts) before anything
  * builds on it, then mounts the React app (the full studio, or Pocket, the phone version: see
- * pocketMode.ts; each loads only its own interface) and starts the installed-app support (pwa.ts).
+ * pocketMode.ts; each loads only its own interface) and starts the installed-app support (pwa.ts)
+ * and, in the phone app, its native pieces (nativeApp.ts, appLifecycle.ts).
  */
 // First: picks the live audio context's buffering before anything builds on it
 import './audio/playbackMode'
@@ -11,6 +12,7 @@ import './index.css'
 import { startPwa } from './pwa/pwa'
 import { wantsPocket } from './pocket/pocketMode'
 import { startNativeApp } from './native/nativeApp'
+import { startAppLifecycle } from './native/appLifecycle'
 
 const Root = wantsPocket() ? lazy(() => import('./pocket/PocketApp')) : lazy(() => import('./App.tsx'))
 
@@ -24,3 +26,4 @@ createRoot(document.getElementById('root')!).render(
 
 startPwa()
 startNativeApp()
+startAppLifecycle()

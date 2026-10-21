@@ -2,7 +2,8 @@ import { currentProject, onProjectReplaced, songGeneration, useTimelineStore } f
 import { parseProject, safeFileName, serializeProject } from '../../store/project';
 import { referencedSoundIds } from '../../store/audioClips';
 import { embedSounds } from '../../audio/soundLibrary';
-import { downloadBlob } from '../../audio/exportWav';
+import { saveBlobFile } from '../../audio/exportWav';
+import { isNativeApp } from '../../native/nativeApp';
 import { showToast } from './toastStore';
 import { projectVideoForFile } from '../../store/videoStore';
 import { create } from 'zustand';
@@ -126,8 +127,10 @@ async function saveAs(song: number): Promise<void> {
   const pick = pickers().showSaveFilePicker;
   if (!pick) {
     const name = fileName();
-    downloadBlob(await projectBlob(song), name);
-    showToast('Downloaded the project file (this browser saves to its downloads folder: Chrome or Edge on a computer can choose where)');
+    const saved = await saveBlobFile(await projectBlob(song), name);
+    // (The app hands it to the share sheet: saved to Files or Drive, or sent, unless it was closed)
+    if (isNativeApp()) showToast(saved ? `Sent ${name} to the app you picked` : 'Not saved: the share sheet was closed');
+    else showToast('Downloaded the project file (this browser saves to its downloads folder: Chrome or Edge on a computer can choose where)');
     return;
   }
   let handle: FileHandle;
@@ -181,7 +184,9 @@ export function pickProjectFile(): void {
   }
   const input = document.createElement('input');
   input.type = 'file';
-  input.accept = '.json,application/json';
+  // (The app: any file. Android's picker greys out a project file whose type it doesn't know,
+  // which is often; the file is checked when it opens)
+  if (!isNativeApp()) input.accept = '.json,application/json';
   input.onchange = async () => {
     const file = input.files?.[0];
     if (!file) return;

@@ -5,12 +5,14 @@
  * sung. Each vocal track wears one of the vocal chains (clean lead, aggressive, ad-lib...); each
  * take can be doubled, hard-tuned (the studio's Tune dialog) or deleted. In the drawer it's the
  * selected vocal track's (`trackId`), and the transport's Rec starts and stops it (singRequest).
+ * The microphone is asked for properly (useMicAsk.tsx), recording can be lined up on the phone,
+ * and a take going when the app goes to the background is stopped and kept (holdTake).
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Copy, Loader2, Mic, Plus, Square, Trash2, AudioLines } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { isAudioKind } from '../audio/instrumentCatalog';
-import { startMic, type MicSession } from '../audio/micRecorder';
+import { holdTake, startMic, type MicSession } from '../audio/micRecorder';
 import { transportStartsAt, getAudiblePositionBar } from '../audio/transport';
 import { encodeChannels } from '../audio/exportWav';
 import { importSoundFile, SoundError } from '../audio/soundLibrary';
@@ -20,6 +22,8 @@ import { showToast } from '../components/timeline/toastStore';
 import { TuneDialog } from '../components/timeline/TuneDialog';
 import { Card, pill, pillOn } from './pocketUi';
 import { usePocket } from './pocketStore';
+import { LineUpCard, SlowOutputNotice } from './PocketMic';
+import { useMicAsk } from './useMicAsk';
 
 let takeCount = 0;
 
@@ -49,6 +53,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
   const meter = useRef<HTMLSpanElement>(null);
   const playStart = useRef<{ at: number; bar: number } | null>(null);
   const stopping = useRef(false);
+  const mic = useMicAsk();
 
   const stop = async (sess: MicSession) => {
     if (stopping.current) return;
@@ -80,7 +85,9 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
     }
   };
 
-  // While recording: the level meter, and (with the loop on) stopping at the loop's end
+  // While recording: the level meter, and (with the loop on) stopping at the loop's end. The app
+  // going to the background stops and keeps the take (appLifecycle.ts)
+  useEffect(() => (session ? holdTake(() => stop(session)) : undefined), [session]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!session) return;
     let raf = 0;
@@ -98,23 +105,25 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  const start = async () => {
-    try {
+  // (Asking for the microphone first, as useMicAsk does: why, and what to do when it's refused)
+  const start = () =>
+    mic.ask(async () => {
       const sess = await startMic();
       const st = useTimelineStore.getState();
       if (st.isPlaying) st.pause();
       // From the loop's start when it's on (once through), else from the playhead
       const from = st.loopRegion.enabled ? st.loopRegion.inBar : st.playheadPosition;
       st.seek(from);
-      await useTimelineStore.getState().play();
+      try {
+        await useTimelineStore.getState().play();
+      } catch (err) {
+        sess.cancel();
+        throw err;
+      }
       const at = transportStartsAt();
       playStart.current = at === null ? null : { at, bar: from };
       setSession(sess);
-    } catch (err) {
-      const msg = err instanceof DOMException && err.name === 'NotAllowedError' ? 'the microphone was not allowed' : err instanceof Error ? err.message : String(err);
-      showToast(`Couldn't start recording: ${msg}`);
-    }
-  };
+    });
 
   // The transport's Rec on a vocal track: start, or stop the take going
   useEffect(() => {
@@ -145,6 +154,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
             <span ref={meter} className="block h-full origin-left bg-emerald-400" style={{ transform: 'scaleX(0)' }} />
           </div>
         )}
+        {session && <SlowOutputNotice inputLabel={session.inputLabel} />}
         <p className="text-[11px] text-forge-muted mt-2">
           {loop.enabled ? `Records the loop once (bars ${loop.inBar} to ${loop.outBar}), then stops.` : 'Records from the playhead until you tap Stop.'} Wear headphones, or the
           microphone records the song too.
@@ -219,7 +229,9 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
           <p className="text-[11px] text-forge-muted mt-2">Double: a second and third performance either side, for a thicker vocal. Tune: pitch correction to the song's key, from gentle to robotic.</p>
         </Card>
       )}
+      <LineUpCard ask={mic.ask} disabled={!!session || busy} />
       {tuning && <TuneDialog clipId={tuning} onClose={() => setTuning(null)} />}
+      {mic.sheet}
     </>
   );
 };

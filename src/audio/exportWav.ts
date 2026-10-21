@@ -1412,6 +1412,16 @@ export function encodeWav(audio: AudioBuffer, bitDepth: BitDepth = 16, cues: rea
 /** Loop points for a seamless loop render: the whole file loops (a 'smpl' chunk engines and samplers read). */
 export const wholeFileLoop = (opts: Pick<RenderOptions, 'ending'>, frames: number) => (opts.ending === 'seamless' ? { start: 0, end: frames } : undefined);
 
+/**
+ * Save a file and say whether it was: a download in a browser (true), the share sheet in the app
+ * (true once an app was picked, false if it was closed without one). Throws if it couldn't be offered.
+ */
+export async function saveBlobFile(blob: Blob, filename: string): Promise<boolean> {
+  if (isNativeApp()) return nativeShareFile(blob, filename);
+  downloadBlob(blob, filename);
+  return true;
+}
+
 /** Trigger a browser download for a Blob. */
 export function downloadBlob(blob: Blob, filename: string): void {
   // (The phone app can't download: the file goes to the share sheet, to save to Files or send)

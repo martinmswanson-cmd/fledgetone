@@ -1,6 +1,7 @@
 /**
  * The microphone record button: records the audio input onto an Audio track from the playhead,
- * with punch in / out and loop takes.
+ * with punch in / out and loop takes. Bluetooth headphones (a slow output) are warned about as a
+ * take starts; a take going when the phone app goes to the background is stopped and kept.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Mic, Square } from 'lucide-react';
@@ -8,7 +9,10 @@ import { songTempo, useTimelineStore } from '../../store/timelineStore';
 import { recordedPieces } from '../../store/takes';
 import { secondsBetween, secondsToBar, barToSeconds } from '../../audio/tempoMap';
 import { isAudioKind } from '../../audio/instrumentCatalog';
-import { startMic } from '../../audio/micRecorder';
+import { holdTake, startMic } from '../../audio/micRecorder';
+import { likelyBluetooth } from '../../audio/lineUp';
+import { outputLatencySeconds } from '../../audio/latency';
+import { isNativeApp } from '../../native/nativeApp';
 import { transportStartsAt } from '../../audio/transport';
 import type { MicSession } from '../../audio/micRecorder';
 import { encodeChannels } from '../../audio/exportWav';
@@ -45,6 +49,7 @@ export const MicButton: React.FC = () => {
     try {
       const s = await startMic();
       setSession(s);
+      if (likelyBluetooth(outputLatencySeconds(), s.inputLabel)) showToast('Bluetooth adds delay; use wired headphones to record.');
       const st = useTimelineStore.getState();
       if (!st.isPlaying) {
         const bar = st.playheadPosition;
@@ -55,7 +60,8 @@ export const MicButton: React.FC = () => {
         playStart.current = at === null ? null : { at, bar };
       } else playStart.current = null;
     } catch (err) {
-      const msg = err instanceof DOMException && err.name === 'NotAllowedError' ? 'the browser was not allowed to use the microphone' : err instanceof Error ? err.message : String(err);
+      const app = "Fledgetone isn't allowed to use the microphone (allow it in the phone's Settings, Apps, Fledgetone, Permissions)";
+      const msg = err instanceof DOMException && err.name === 'NotAllowedError' ? (isNativeApp() ? app : 'the browser was not allowed to use the microphone') : err instanceof Error ? err.message : String(err);
       showToast(`Couldn't start recording: ${msg}`);
     }
   };
@@ -113,6 +119,9 @@ export const MicButton: React.FC = () => {
       setBusy(false);
     }
   };
+
+  // The phone app going to the background stops and keeps the take (stop reads the session it was rendered with)
+  useEffect(() => (session ? holdTake(() => stop()) : undefined), [session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const recording = !!session;
   return (

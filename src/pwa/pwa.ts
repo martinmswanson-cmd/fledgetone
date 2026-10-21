@@ -208,9 +208,11 @@ function reloadOnMissingParts(): void {
 
 export function startPwa(): void {
   if (typeof window === 'undefined') return;
-  // (The phone app is installed already, keeps its storage, and updates through the stores)
+  // (The phone app is installed already and updates through the stores. Its web view's storage
+  // is the app's own; asking to keep it costs nothing, and the answer shows in Pocket's Song sheet)
   if (isNativeApp()) {
     usePwa.setState({ installed: true });
+    void checkPersistence(true);
     return;
   }
   reloadOnMissingParts();

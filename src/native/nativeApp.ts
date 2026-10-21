@@ -8,14 +8,58 @@
  * - Files: exports and project files go to the phone's share sheet (a web view can't download),
  *   from where they're saved to Files, iCloud Drive or sent on.
  * - Links: a shared song links to fledgetone.com, not to the app's own local address.
+ * - Android: the app's page in the phone's settings (a microphone refused for good is allowed
+ *   there), and a project file opened in the app from another one ("Open with", "Share"), both
+ *   through the app's own small plugin (android/.../FledgetonePlugin.java).
  *
  * The audio session (sound with the silent switch on, and on in the background) and the
- * microphone are set in the native projects themselves (ios/, android/).
+ * microphone are set in the native projects themselves (ios/, android/). What happens when the
+ * app goes to the background or Back is pressed is in appLifecycle.ts.
  */
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 /** Running as the phone app (not in a browser). */
 export const isNativeApp = (): boolean => Capacitor.isNativePlatform();
+
+/** Running as the Android app. */
+export const isAndroidApp = (): boolean => isNativeApp() && Capacitor.getPlatform() === 'android';
+
+/** The app's own plugin (Android only). */
+interface FledgetonePlugin {
+  openSettings(): Promise<void>;
+  takeOpenedFile(): Promise<{ name?: string; text?: string }>;
+  addListener(event: 'fileOpened', listener: () => void): Promise<PluginListenerHandle>;
+}
+const fledgetone = registerPlugin<FledgetonePlugin>('Fledgetone');
+
+/** Open the app's page in the phone's settings (Permissions there). False where there's none. */
+export async function nativeOpenSettings(): Promise<boolean> {
+  if (!isAndroidApp()) return false;
+  try {
+    await fledgetone.openSettings();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Hand each project file opened in the app from another app to `open`: the one it was started
+ * with, and any that arrive while it runs. (Android; nothing elsewhere.) `failed` hears why one
+ * couldn't be read.
+ */
+export function onOpenedFiles(open: (file: File) => void, failed: (reason: string) => void): void {
+  if (!isAndroidApp()) return;
+  const take = () =>
+    fledgetone.takeOpenedFile().then(
+      ({ name, text }) => {
+        if (text !== undefined) open(new File([text], name || 'project.json', { type: 'application/json' }));
+      },
+      (err) => failed(err instanceof Error ? err.message : String(err))
+    );
+  void fledgetone.addListener('fileOpened', () => void take()).catch(() => {});
+  void take();
+}
 
 /** Where shared links point from the app: the studio on fledgetone.com opens them. */
 export const APP_LINK_BASE = 'https://fledgetone.com/app/';

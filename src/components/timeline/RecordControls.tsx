@@ -1,7 +1,7 @@
 /**
  * Recording and MIDI controls in the toolbar: the Record button and its settings (count-in,
- * quantize, punch, takes), the metronome, and the MIDI popover (devices, activity, the computer
- * keyboard piano).
+ * quantize, punch, takes, lining up microphone recording), the metronome, and the MIDI popover
+ * (devices, activity, the computer keyboard piano).
  */
 import { NoteRepeatPicker } from './NoteRepeatPicker';
 import { isMixKind } from '../../audio/instrumentCatalog';
@@ -21,6 +21,7 @@ import { showToast } from './toastStore';
 import { HEADER_WIDTH, TRACK_HEIGHT } from './layout';
 import { laneTops } from './rows';
 import { useVideoStore } from '../../store/videoStore';
+import { forgetLineUp, linedUpDelay, lineUpMessage, lineUpRecording } from '../../audio/lineUpRun';
 
 const toolButton = (active: boolean, activeClass: string) =>
   `h-8 min-w-8 px-2 flex items-center justify-center gap-1.5 rounded-md border text-xs font-mono transition-colors ${
@@ -124,6 +125,7 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
         />
         <span className="w-9 text-right font-mono tabular-nums">{Math.round(options.metronomeVolume * 100)}%</span>
       </label>
+      <LineUpRow />
       <p className="text-[11px] leading-snug">
         Arm a track (R on its header), switch Record on and press Play: what you play on the MIDI or computer keyboard goes into a new
         clip on that track, from Play to Stop, in whole bars. The count-in clicks a bar first. With the loop on, every pass adds to the
@@ -134,6 +136,58 @@ const RecordOptionsPopover: React.FC<{ anchorRef: React.RefObject<HTMLElement | 
         {latency !== null && ` Notes are placed where you heard them (output latency ${Math.round(latency * 1000)} ms allowed for).`}
       </p>
     </Popover>
+  );
+};
+
+/**
+ * Line up microphone recording (once per setup): soft clicks through the speakers, recorded by
+ * the microphone, measure how late takes arrive here (lineUpRun.ts); takes are then moved back
+ * by that, not by the browser's estimate.
+ */
+const LineUpRow: React.FC = () => {
+  const [busy, setBusy] = useState(false);
+  const [delay, setDelay] = useState(linedUpDelay);
+  const run = async () => {
+    const st = useTimelineStore.getState();
+    if (st.isPlaying) st.pause();
+    setBusy(true);
+    try {
+      showToast(lineUpMessage(await lineUpRecording()));
+      setDelay(linedUpDelay());
+    } catch (err) {
+      const msg = err instanceof DOMException && err.name === 'NotAllowedError' ? 'the browser was not allowed to use the microphone' : err instanceof Error ? err.message : String(err);
+      showToast(`Couldn't line up recording: ${msg}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const button = 'h-7 px-2 rounded-md border border-forge-border text-[11px] text-forge-text hover:border-red-400/70 disabled:opacity-50';
+  return (
+    <div data-search="line-up" className="flex flex-col gap-1.5 border-t border-forge-border pt-2">
+      <div className="flex items-center gap-1.5">
+        <span className="flex-1 text-forge-text">Line up mic recording</span>
+        <button type="button" disabled={busy} onClick={() => void run()} className={button} title="Plays a few soft clicks through the speakers and records them, to measure how late microphone takes arrive">
+          {busy ? 'Listening…' : delay !== null ? 'Again' : 'Line up'}
+        </button>
+        {delay !== null && !busy && (
+          <button
+            type="button"
+            onClick={() => {
+              forgetLineUp();
+              setDelay(null);
+            }}
+            className={button}
+            title="Forget the measurement: takes use the browser's estimate again"
+          >
+            Forget
+          </button>
+        )}
+      </div>
+      <p className="text-[11px] leading-snug">
+        {delay !== null ? `Lined up: mic takes are moved back ${Math.round(delay * 1000)} ms.` : "Not lined up: mic takes use the browser's estimate of the delay."} Use the speakers
+        (not headphones) and keep quiet for 3 seconds.
+      </p>
+    </div>
   );
 };
 

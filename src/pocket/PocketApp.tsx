@@ -8,7 +8,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Disc3, Pause, Play, Redo2, Share2, Undo2 } from 'lucide-react';
-import { connectAutosave, connectTimelineToAudio, currentProject, useTimelineStore } from '../store/timelineStore';
+import { connectAutosave, connectTimelineToAudio, currentProject, onProjectReplaced, useTimelineStore } from '../store/timelineStore';
 import { recoverFailedDownloads } from '../audio/liveTracks';
 import { installLiveInput } from '../audio/liveInput';
 import { hasWork } from '../store/project';
@@ -24,9 +24,35 @@ import { PocketGrid } from './PocketGrid';
 import { DRAWER_SIZES, PocketDrawer, setTool } from './PocketDrawer';
 import { PocketSheets, StartScreen } from './PocketSheets';
 import { startErrorLog } from '../support/problemReport';
+import { escapeOpenDialog, onBack } from '../native/backButton';
 import './pocket.css';
 
 const EPS = 1e-6;
+
+/**
+ * The phone's Back in Pocket, under any sheet (each closes itself first): a dialog (Tune), the
+ * starters screen when there's a song to go back to, the mixer for every track, the full piano
+ * roll. False when Pocket is on its main screen (the app then goes to the background).
+ */
+function pocketBack(): boolean {
+  if (escapeOpenDialog()) return true;
+  const p = usePocket.getState();
+  if (p.starting) {
+    if (!hasWork(currentProject())) return false;
+    p.set({ starting: false });
+    return true;
+  }
+  if (p.mixAll) {
+    p.set({ mixAll: false });
+    return true;
+  }
+  const track = useTimelineStore.getState().tracks.find((t) => t.id === p.trackId) ?? null;
+  if (p.tool === 'draw' && p.sizeBeforeRoll && track) {
+    setTool('play', track, document.querySelector('.pk-app.land') !== null);
+    return true;
+  }
+  return false;
+}
 
 /** A phone on its side (a laptop's wide window isn't one). */
 function useLandscape(): boolean {
@@ -146,6 +172,16 @@ export const PocketApp: React.FC = () => {
     return true;
   });
   useWakeWhilePlaying();
+  useEffect(() => onBack(pocketBack), []);
+  // Another song opened (a file, from here or from another app; a link): it shows, from its start
+  useEffect(
+    () =>
+      onProjectReplaced(() => {
+        const p = usePocket.getState();
+        if (p.starting || p.sheet) p.set({ starting: false, sheet: null, section: 0, trackId: null });
+      }),
+    []
+  );
   useEffect(() => {
     document.title = 'Fledgetone Pocket';
   }, []);

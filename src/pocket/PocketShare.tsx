@@ -8,7 +8,7 @@ import { Download, FolderOpen, Link2, Loader2, Monitor, Save } from 'lucide-reac
 import { currentProject } from '../store/timelineStore';
 import { songLink } from '../store/shareLink';
 import { captureWamStates } from '../audio/wamHost';
-import { downloadBlob } from '../audio/exportWav';
+import { downloadBlob, saveBlobFile } from '../audio/exportWav';
 import { pickProjectFile, saveProjectFile } from '../components/timeline/projectFile';
 import { showToast } from '../components/timeline/toastStore';
 import { versionLabel } from '../version';
@@ -40,6 +40,11 @@ export const PocketShare: React.FC = () => {
       const out = await renderSongMp3((f, detail) => setBusy(f < 1 ? `${detail} (${Math.round(f * 100)}%)` : detail));
       if (!out) {
         showToast('The song is empty: write something first');
+        return;
+      }
+      // (The app: its share sheet, which says whether it was closed without sharing)
+      if (isNativeApp()) {
+        showToast((await saveBlobFile(out.blob, out.name)) ? `Sent ${out.name} to the app you picked` : 'Not shared: the share sheet was closed');
         return;
       }
       const file = new File([out.blob], out.name, { type: 'audio/mpeg' });
@@ -90,7 +95,7 @@ export const PocketShare: React.FC = () => {
             <FolderOpen className="w-4 h-4" /> Open
           </button>
         </div>
-        <p className="text-[11px] text-forge-muted mt-2">The song also saves itself in this browser as you work.</p>
+        <p className="text-[11px] text-forge-muted mt-2">The song also saves itself {isNativeApp() ? 'on this phone' : 'in this browser'} as you work.</p>
       </Card>
       <Card title="On a computer">
         <p className="text-sm text-forge-muted mb-3">

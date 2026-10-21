@@ -3362,6 +3362,7 @@ let autosaveFlush: (() => void) | null = null;
  * False when the autosave fails (the browser's storage is full): the work is then only on screen.
  */
 export function flushAutosave(): boolean {
+  captureWamStatesNow();
   autosaveFlush?.();
   return useTimelineStore.getState().autosaveStatus?.ok !== false;
 }
@@ -3474,17 +3475,23 @@ export function connectAutosave(): () => void {
 
   autosaveFlush = flush;
   // Don't lose an edit made in the last half-second before the tab closes (the plugins' settings
-  // too, read without waiting: they reach the tracks every few seconds otherwise)
+  // too, read without waiting: they reach the tracks every few seconds otherwise). Hidden counts
+  // too: a phone that puts the browser or the app away often closes it later without a pagehide.
   const onHide = () => {
     captureWamStatesNow();
     flush();
   };
+  const onHidden = () => {
+    if (document.visibilityState === 'hidden') onHide();
+  };
   window.addEventListener('pagehide', onHide);
+  document.addEventListener('visibilitychange', onHidden);
   window.addEventListener('storage', onStorage);
   return () => {
     flush();
     guard(false);
     window.removeEventListener('pagehide', onHide);
+    document.removeEventListener('visibilitychange', onHidden);
     window.removeEventListener('storage', onStorage);
     if (autosaveNow === saveNow) autosaveNow = null;
     if (autosaveFlush === flush) autosaveFlush = null;
