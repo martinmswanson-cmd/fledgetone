@@ -719,6 +719,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
           bass.trigger({ ...n, duration: HELD_NOTE }, time);
           return (at) => bass.release(n.note, at);
         },
+        bend: bass.bend,
         releaseAll: bass.releaseAll,
         ready: Promise.resolve(),
         dispose: bass.dispose,

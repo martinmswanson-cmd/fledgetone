@@ -73,6 +73,9 @@ const PITCHED_KINDS = new Set(['synth', 'sampled', 'custom']);
  */
 const TOGETHER_KEYS = new Set(['bass', 'subBass', 'bass808', 'lead', 'wobbleBass', 'growlBass', 'reeseBass']);
 
+/** How often a note's own bend and pressure are sent while they move (seconds). */
+const NOTE_STEP_SECONDS = 0.004;
+
 /** A clip's note groups by absolute tick, worked out once per version of the clip. */
 interface ClipEntry {
   clip: Clip;
@@ -251,7 +254,8 @@ export function createClipSchedule(
   const playExpressive = (instrument: TrackInstrument, note: PlayableNote, time: number) => {
     const spb = 240 / transport.bpm.value;
     const length = durationToBars(note.duration);
-    const steps = noteSteps(note.expr!, length);
+    // Every 4 ms where it moves (no coarser than a 64th), so a slide or a dive glides rather than steps
+    const steps = noteSteps(note.expr!, length, Math.min(1 / 64, NOTE_STEP_SECONDS / spb));
     const voice = instrument.noteVoice?.(note, time);
     if (voice) {
       for (const st of steps) {
@@ -261,6 +265,8 @@ export function createClipSchedule(
       voice.off(time + length * spb);
       return;
     }
+    // (Bent from its start, a dive: the bend goes first, so the note starts on it)
+    if (instrument.bend && note.expr?.bend?.length && steps[0]?.cents) instrument.bend(steps[0].cents, time);
     instrument.play([note], time);
     if (!instrument.bend || !note.expr?.bend?.length) return;
     for (const st of steps) instrument.bend(st.cents, time + st.at * spb);

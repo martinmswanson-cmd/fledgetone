@@ -1,6 +1,7 @@
 import { ROOM_STYLE_IDS } from '../audio/effects/roomIR';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { normalizeExpression } from './expression';
+import { normalizeStepLanes } from './stepLanes';
 import { normalizeNoteExpression } from './noteExpression';
 import { normalizeChance, normalizeCond } from './noteChance';
 import { compSegments, normalizeTakes } from './takes';
@@ -255,6 +256,7 @@ function parseSlots(raw: unknown, trackId: string): LauncherSlot[] {
           ...(c.groove ? { groove: c.groove } : {}),
           ...(c.audio ? { audio: c.audio } : {}),
           ...(c.expression ? { expression: c.expression } : {}),
+          ...(c.stepLanes ? { stepLanes: c.stepLanes } : {}),
         },
       });
     } catch {
@@ -401,6 +403,7 @@ function parseClip(v: unknown): Clip {
   }
   const audio = normalizeClipAudio(v.audio);
   const expression = normalizeExpression(v.expression);
+  const stepLanes = normalizeStepLanes(v.stepLanes);
   const takes = normalizeTakes(v.takes, (n) => {
     try {
       return parseNote(n);
@@ -440,6 +443,8 @@ function parseClip(v: unknown): Clip {
     ...(takes ? { takes, comp: compSegments({ takes, comp, lengthBars }) } : {}),
     // Optional: linked to the other clips of its pattern (a note clip only)
     ...(isStr(v.pattern) && v.pattern && !audio && !takes ? { pattern: v.pattern.slice(0, 40) } : {}),
+    // Optional: step lanes (a note clip only)
+    ...(stepLanes && !audio ? { stepLanes } : {}),
   };
 }
 

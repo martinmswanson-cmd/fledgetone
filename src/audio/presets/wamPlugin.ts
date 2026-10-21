@@ -24,6 +24,8 @@ import {
   type WamInstance,
 } from '../wamHost';
 import type { NoteOff, PlayableNote, TrackInstrument } from '../instruments';
+import { isBuiltinUrl } from '../plugins/builtinHost';
+import { NAMED_PARAM, paramNamesOf } from '../plugins/paramNames';
 
 /**
  * A Plugin track's instrument (a WAM loaded from its URL) and the WAM effects on a track. Both
@@ -34,6 +36,9 @@ import type { NoteOff, PlayableNote, TrackInstrument } from '../instruments';
 
 /** Pitch bend range the host assumes a plugin uses (the MIDI default), in cents. */
 const BEND_RANGE_CENTS = 200;
+/** A plugin's own bend range setting, and the range a wide bend sets it to (its top: 24 semitones). */
+const BEND_RANGE_PARAM = 'Bend range';
+const WIDE_BEND_CENTS = 2400;
 
 const isLive = (ctx: BaseAudioContext) => typeof OfflineAudioContext === 'undefined' || !(ctx instanceof OfflineAudioContext);
 
@@ -63,6 +68,8 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
   const ctx = nativeContextOf(out.context);
   let inst: WamInstance | null = null;
   let disposed = false;
+  /** The bend range the plugin plays bends on now (see bend) */
+  let bendRange = BEND_RANGE_CENTS;
   /**
    * Every note started since the last let-go: a scheduled note's note-off may still be pending (and
    * is cleared by releaseAll), so each of these gets a note-off then.
@@ -129,7 +136,13 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
     },
     bend: (cents: number, time: number) => {
       if (!inst) return;
-      const v = Math.max(0, Math.min(16383, Math.round(8192 + (cents / BEND_RANGE_CENTS) * 8192)));
+      // A bend wider than the plugin's range (a note's slide or dive) widens it, where the plugin
+      // has a Bend range setting (Fledge Synth's): from then on every bend is sent on that range
+      if (Math.abs(cents) > bendRange + 0.5 && bendRange < WIDE_BEND_CENTS && plugin && isBuiltinUrl(plugin.url) && paramNamesOf(plugin.url)?.includes(BEND_RANGE_PARAM)) {
+        bendRange = WIDE_BEND_CENTS;
+        setWamParam(inst, `${NAMED_PARAM}${BEND_RANGE_PARAM}`, 1, time);
+      }
+      const v = Math.max(0, Math.min(16383, Math.round(8192 + (cents / bendRange) * 8192)));
       sendMidi(inst, [0xe0, v & 0x7f, v >> 7], time);
     },
     releaseAll: () => {

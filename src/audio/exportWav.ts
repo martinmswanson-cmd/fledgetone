@@ -38,6 +38,7 @@ import { createAutomationSchedule } from './automationSchedule';
 import { decodeSound, stretchSound, useSoundLibrary, wantCopies, warpSound } from './soundLibrary';
 import { isWarped } from '../store/warp';
 import { withControllerLanes } from '../store/ccLanes';
+import { withStepLanes } from '../store/stepLanes';
 import { secondsPerBar, stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
 import { holdRecordingsAt, loadCustomSample, songSampleLoads } from './samplers/samplerManager';
@@ -1040,8 +1041,8 @@ async function renderGraphHeld(
   const withReturns = [...sounding, ...returns];
   const busIds = new Set(withReturns.flatMap((t) => busChain(t, opts.tracks).map((b) => b.id)));
   const { clips, bpm, swing, startBar, endBar, masterFx, signal } = opts;
-  // Clips' controller lanes play as their tracks' automation (see ccLanes.ts)
-  const tracks = withControllerLanes(busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]), clips);
+  // Clips' controller lanes and step lanes play as their tracks' automation (see ccLanes.ts, stepLanes.ts)
+  const tracks = withStepLanes(withControllerLanes(busFirst([...withReturns.filter((t) => !busIds.has(t.id)), ...opts.tracks.filter((t) => busIds.has(t.id))]), clips), clips, renderTempo(opts));
   const ending = opts.ending ?? 'ringOut';
   const bypassMaster = opts.bypassMaster || !!premaster;
   // Every track is held back to the slowest path through the mix (see delayCompensation.ts),

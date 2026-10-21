@@ -53,6 +53,7 @@ const clipContent = (c: Clip) => ({
   ...(c.groove ? { groove: c.groove } : {}),
   // (Only when present, so freezes made before these existed stay current)
   ...(c.expression ? { expression: c.expression } : {}),
+  ...(c.stepLanes ? { stepLanes: c.stepLanes } : {}),
   ...(c.takes?.length ? { comp: c.comp, takes: c.takes.map((t) => t.audio ?? null) } : {}),
 });
 

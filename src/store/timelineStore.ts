@@ -68,6 +68,8 @@ import { quantizeTakeClip, readRecordOptions, writeRecordOptions } from './recor
 import type { RecordOptions, TakeClip } from './recording';
 import { clipSecondsAt, sourceAt } from './warp';
 import { controllerMemo, withControllerLanes } from './ccLanes';
+import { MAX_STEP_LANES, moveStepLanes, splitStepLanes, stepMemo, withStepLanes } from './stepLanes';
+import { onParamNames } from '../audio/plugins/paramNames';
 import { specOf, insertLaneBars, laneValueAt, normalizePoints, removeLaneBars } from '../audio/automation';
 import { liveMix } from '../audio/engine';
 import { createPatternClip, INITIAL_TRACKS, toNotes } from './demoSong';
@@ -90,7 +92,7 @@ import { breathe } from './breathe';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { keepVersion, keepVersionWhileEditing } from './versions';
 import { autosaveRemovedBy, hasWork, newSongId, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
-import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
+import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin, StepLane } from './timelineTypes';
 import { captureWamStatesNow, liveStates, onWamStates, resetWamSession, restoreWamState } from '../audio/wamHost';
 import { withSound, type MySound } from './mySounds';
 import type { DragPayload } from './dragSounds';
@@ -503,6 +505,11 @@ interface TimelineState {
    * `record`: its own undo step (a drag checkpoint()s once and passes false).
    */
   setClipExpression: (clipId: string, lane: ExprLane, points: ExprPoint[], record?: boolean) => void;
+  /**
+   * A clip's step lanes (see stepLanes.ts; empty: none). `record`: its own undo step (a paint
+   * drag checkpoint()s once and passes false). Lanes of an effect's setting switch it on.
+   */
+  setClipStepLanes: (clipId: string, lanes: StepLane[], record?: boolean) => void;
   /** A note's own bend or pressure curve (points `at` bars from the note's start; empty: none). */
   setNoteExpression: (clipId: string, noteId: string, lane: NoteLane, points: ExprPoint[], record?: boolean) => void;
   /** A take folder: take `take` plays from `from` to `to` (bars into the clip) (one undo step). */
@@ -895,6 +902,9 @@ export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Cli
   const rightExpr = shiftExpression(clip.expression, -rel, clip.lengthBars - rel);
   if (leftExpr) left.expression = leftExpr;
   else delete left.expression;
+  // So do step lanes
+  const [leftSteps, rightSteps] = splitStepLanes(clip.stepLanes, rel);
+  if (leftSteps) left.stepLanes = leftSteps;
   const right: Clip = {
     ...clip,
     id: uid('clip'),
@@ -908,6 +918,7 @@ export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Cli
   };
   if (rightExpr) right.expression = rightExpr;
   else delete right.expression;
+  if (rightSteps) right.stepLanes = rightSteps;
   // A take folder's takes split with it
   const takes = splitTakes(clip, rel, clip.audio ? audioShift(clip.audio, rel, local) : 0, () => uid('note'));
   if (takes) return [{ ...left, ...takes[0] }, { ...right, ...takes[1] }];
@@ -1955,6 +1966,28 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         return { clips: s.clips.map((c) => (c === clip ? next : c)), ...(record ? pushPast(s) : {}) };
       }),
 
+    setClipStepLanes: (clipId, lanes, record = true) =>
+      set((s) => {
+        const clip = s.clips.find((c) => c.id === clipId);
+        if (!clip || clip.audio) return s;
+        const next: Clip = { ...clip };
+        if (lanes.length) next.stepLanes = lanes.slice(0, MAX_STEP_LANES);
+        else delete next.stepLanes;
+        // A lane of an effect's setting only sounds while the effect is on: a lane with steps turns it on
+        const track = s.tracks.find((t) => t.id === clip.trackId);
+        let fx = track?.fx;
+        for (const lane of lanes) {
+          if (!track || !fx || !lane.steps.length || lane.target.startsWith('inst:')) continue;
+          const insert = specOf(lane.target as AutomationParam).insert;
+          if (insert && !(fx[insert] as { on?: boolean } | undefined)?.on) fx = normalizeTrackFx({ ...fx, [insert]: { ...fx[insert], on: true } });
+        }
+        return {
+          clips: s.clips.map((c) => (c === clip ? next : c)),
+          ...(track && fx !== track.fx ? { tracks: s.tracks.map((t) => (t === track ? { ...t, fx: fx! } : t)) } : {}),
+          ...(record ? pushPast(s) : {}),
+        };
+      }),
+
     setNoteExpression: (clipId, noteId, lane, points, record = true) =>
       set((s) => {
         const clip = s.clips.find((c) => c.id === clipId);
@@ -2436,6 +2469,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           lengthBars: end - start,
           notes: c.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta })),
           ...(c.expression ? { expression: moveExpression(c.expression, -delta) } : {}),
+          ...(c.stepLanes ? { stepLanes: moveStepLanes(c.stepLanes, -delta) } : {}),
           ...(c.audio ? { audio: trimAudioStart(c.audio, audioShift(c.audio, delta, bpm)) } : {}),
           ...trimTakes(c, delta, c.audio ? delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm) : 0),
         };
@@ -3599,13 +3633,16 @@ export function connectTimelineToAudio(): () => void {
   for (const t of s.tracks) if (t.frozen) ensureSound(t.frozen.soundId);
   // Clips' controller lanes play as their tracks' automation (see ccLanes.ts)
   const ccMemo = controllerMemo();
-  let playing = withControllerLanes(view.tracks, view.clips, ccMemo);
+  // ...and so do their step lanes (stepLanes.ts), over those
+  const steps = stepMemo();
+  const lanesOf = (v: typeof view, state: TimelineState) => withStepLanes(withControllerLanes(v.tracks, v.clips, ccMemo), v.clips, songTempo(state), steps);
+  let playing = lanesOf(view, s);
   syncLiveTracks(playing);
   applyLiveIntensity(view.tracks, s.intensityCurves, s.intensity, 0);
   rescheduleClips(view.tracks, view.clips);
   const refresh = (state: TimelineState, retimed = false) => {
     const next = liveView(launched(state), soundMissing, view, autoFrozenFor);
-    const nextPlaying = withControllerLanes(next.tracks, next.clips, ccMemo);
+    const nextPlaying = lanesOf(next, state);
     if (nextPlaying !== playing) syncLiveTracks(nextPlaying);
     playing = nextPlaying;
     applyLiveIntensity(next.tracks, state.intensityCurves, state.intensity);
@@ -3617,6 +3654,8 @@ export function connectTimelineToAudio(): () => void {
   };
   // A frozen sound found missing (or back again) changes what plays
   // Auto-freeze swapping a render in or out changes what plays
+  // A plugin saying its parameters' names for the first time: step lanes that name them find the track's own settings
+  const unwatchNames = onParamNames(() => refresh(useTimelineStore.getState()));
   const unwatchAutoFreeze = useAutoFreeze.subscribe((a, prevA) => {
     if (a.frozen !== prevA.frozen) refresh(useTimelineStore.getState());
   });
@@ -3679,6 +3718,7 @@ export function connectTimelineToAudio(): () => void {
   });
   return () => {
     unsubscribe();
+    unwatchNames();
     unwatchSounds();
     unwatchAutoFreeze();
     unwatchLauncher();

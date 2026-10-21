@@ -1,7 +1,7 @@
 import * as Tone from 'tone';
 import type { PlayableNote } from '../instruments';
 import { DEFAULT_WOBBLE, WOBBLE_BEATS } from '../../store/timelineTypes';
-import { monotonicTime } from './monotonic';
+import { monotonicTime, notLate } from './monotonic';
 import { joinsNote } from '../legato';
 import {
   atAudioTime,
@@ -100,7 +100,10 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
   const safeTime = monotonicTime(bus.context);
   const releaseTc = releaseConstant(patch.release);
   /** The voice the last note started or joined, which a note starting before `end` slides on from. */
-  let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; end: number; note: string } | null = null;
+  let current: { voice: NativeVoice; source: BassSource; gate: GainNode; tone: ToneSection; end: number; note: string; freq: number } | null = null;
+  /** The pitch bend (cents) the voice plays at: a note's own slide or dive, a bend lane */
+  let bendCents = 0;
+  const bent = (freq: number) => (bendCents ? freq * 2 ** (bendCents / 1200) : freq);
 
   /**
    * Filters for one note, then a gain that switches between legato notes' filters. After them, not
@@ -138,7 +141,7 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
         // Legato (the note starts before the last one ends, or right where it ends): slide the
         // playing voice to the new pitch, or stay on it (a tie). The envelope carries on (towards
         // this note's level) instead of starting again, and the release moves to this note's end.
-        v.source.glide(note.freq, start, glide?.seconds ?? patch.glide);
+        v.source.glide(bent(note.freq), start, glide?.seconds ?? patch.glide);
         const amp = v.voice.amp.gain;
         // (From the last note's end when that came first: its release is called off too)
         amp.cancelScheduledValues(Math.min(start, v.end));
@@ -173,10 +176,11 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
         voices.extend(v.voice, stopAt);
         v.end = end;
         v.note = n.note;
+        v.freq = note.freq;
         return;
       }
 
-      const source = patch.source(raw, note);
+      const source = patch.source(raw, bendCents ? { ...note, freq: bent(note.freq) } : note);
       const first = section(note, stopAt);
       const amp = raw.createGain();
       attackDecay(amp.gain, start, peak, patch.attack, patch.decay, patch.sustain);
@@ -187,7 +191,14 @@ function createMonoBass(output: Tone.InputNode, patch: BassPatch, glide?: GlideR
       amp.connect(input);
       const voice: NativeVoice = { start, stopAt, sources: source.sources, nodes: [...source.nodes, first.gate, ...first.tone.nodes, amp], amp };
       voices.add(voice);
-      current = { voice, source, gate: first.gate, tone: first.tone, end, note: n.note };
+      current = { voice, source, gate: first.gate, tone: first.tone, end, note: n.note, freq: note.freq };
+    },
+    /** Bend the sounding voice (and the notes after it) `cents` from their pitch, from `time`, gliding a few ms. */
+    bend: (cents: number, time: number) => {
+      if (!Number.isFinite(cents) || Math.abs(cents - bendCents) < 0.01) return;
+      bendCents = cents;
+      const v = current;
+      if (v && time < v.voice.stopAt) v.source.glide(bent(v.freq), notLate(bus.context, time), 0.004);
     },
     /**
      * End the note `note` at `time` (a key let go on a MIDI keyboard) if it's the one sounding:
