@@ -2,7 +2,7 @@ import { liveMix } from './engine';
 import { getLiveInstrument } from './liveTracks';
 import { DRUM_NOTES, safely } from './instruments';
 import type { NoteOff, TrackInstrument, VoiceControl } from './instruments';
-import { isDrumKind, isMixKind, isRackKind, isSlicerKind } from './instrumentCatalog';
+import { DROP_ROWS, isDropKind, isDrumKind, isMixKind, isRackKind, isSlicerKind } from './instrumentCatalog';
 import { noteRepeatOff, noteRepeatOn, noteRepeatPressure, stopNoteRepeats } from './noteRepeat';
 import { liveTransport } from './liveContext';
 import { heardTime, outputLatencySeconds } from './latency';
@@ -44,6 +44,8 @@ const DRUM_ROWS = new Set<string>(Object.values(DRUM_NOTES));
 export function noteNameOn(midi: number, track: Track | undefined): string {
   // A Drum Rack's pads are C2 up: any octave of the keyboard plays them, 16 keys to the pads
   if (track && isRackKind(track.instrumentKey)) return midiNoteName(RACK_BASE_NOTE + (((midi - RACK_BASE_NOTE) % RACK_PADS) + RACK_PADS) % RACK_PADS);
+  // The Drop pad's six effects from C4 up: every key plays one of them (C4 to F4, then again)
+  if (track && isDropKind(track.instrumentKey)) return DROP_ROWS[(((midi - 60) % DROP_ROWS.length) + DROP_ROWS.length) % DROP_ROWS.length].note;
   const name = midiNoteName(midi);
   if (!track || !isDrumKind(track.instrumentKey) || DRUM_ROWS.has(name)) return name;
   const below = midiNoteName(midi - 12);

@@ -56,7 +56,8 @@ const DRUM_ROWS: string[] = [
 
 /** Lay out the visible notes of a clip as mini piano-roll rectangles. */
 function layoutNotes(clip: Clip, instrument: InstrumentKey, zoom: number): NoteRect[] {
-  const visible = clip.notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < clip.lengthBars - 1e-6);
+  // (On the Drop pad, only notes on its rows: anything else holds no effect, so it isn't drawn as a move)
+  const visible = clip.notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < clip.lengthBars - 1e-6 && (!isDropKind(instrument) || DROP_ROWS.some((r) => r.note === n.note)));
   if (visible.length === 0) return [];
 
   const areaTop = LABEL_HEIGHT + 2;
