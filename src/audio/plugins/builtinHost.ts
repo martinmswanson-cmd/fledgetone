@@ -194,8 +194,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
    */
   let own: number[] = [];
   /**
-   * Parameters an automation lane holds, with its latest value: the lane wins over a knob, a
-   * MIDI-learned control or a preset (they still change `own`), as it does in an export
+   * Parameters an automation lane holds, with its latest value: the lane has them, as it does in
+   * an export (their knobs show the lane and don't move; a preset still sets what they go back to)
    */
   const laneHeld = new Map<number, number>();
   /** Send a value to the processor (its 'display' answer then says what it shows). */
@@ -257,7 +257,9 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
           // A preset was chosen: every parameter may have moved
           // (A preset file's values are its own defaults: Reset puts the patch back)
           params = keepSent(d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: files ? p.value : (params[i]?.defaultValue ?? p.value) })));
-          own = params.map((p) => p.value);
+          // (A held parameter's own setting is the preset's, from the reply itself: a re-post
+          // still unanswered mustn't keep an older preset's)
+          own = params.map((p, i) => (laneHeld.has(i) ? (d.params[i]?.value ?? p.value) : p.value));
           // (A lane holding a parameter goes on playing its value over the preset's)
           for (const [i, v] of laneHeld) post(i, v);
           changed();
@@ -352,12 +354,12 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   });
   const set = (index: number, value: number) => {
     const p = params[index];
-    if (!p || destroyed) return;
+    // (Held by an automation lane: the lane has it until it goes)
+    if (!p || destroyed || laneHeld.has(index)) return;
     const v = Math.max(0, Math.min(1, value));
     params = params.map((x, i) => (i === index ? { ...x, value: v } : x));
     own = own.map((x, i) => (i === index ? v : x));
-    // (Under a lane, the plugin plays the lane's value: the knob's is kept for when it goes)
-    post(index, laneHeld.get(index) ?? v);
+    post(index, v);
     changed();
   };
   /** Choose preset `index`: a built-in one at once, a file once it's downloaded (resolves then). */
