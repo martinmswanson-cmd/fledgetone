@@ -89,7 +89,7 @@ import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSt
 import { keepVersion, keepVersionWhileEditing } from './versions';
 import { autosaveRemovedBy, hasWork, newSongId, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
-import { captureWamStatesNow, liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
+import { captureWamStatesNow, liveStates, onWamStates, resetWamSession, restoreWamState } from '../audio/wamHost';
 import { withSound, type MySound } from './mySounds';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
@@ -185,6 +185,11 @@ interface RippleMove {
 interface HistoryEntry {
   /** An insert / delete bars step: how it moved the loop and the playhead. */
   ripple?: RippleMove;
+  /**
+   * A turn of these plugins' knobs (checkpointPlugin): undoing or redoing it puts their settings
+   * back as the step has them (other steps leave the plugins' settings as they are now)
+   */
+  plugins?: string[];
   clips: Clip[];
   tracks: Track[];
   masterFx: MasterFx;
@@ -252,6 +257,21 @@ export function songMeterOf(s: { meter: Meter; meterPoints: MeterPoint[] }): Met
 }
 
 const withRipple = (entry: HistoryEntry, ripple: RippleMove | undefined): HistoryEntry => (ripple ? { ...entry, ripple } : entry);
+/** An entry carrying what the step it's taken for moved: its ripple and its plugins. */
+const sameStep = (entry: HistoryEntry, step: HistoryEntry): HistoryEntry => {
+  const out = withRipple(entry, step.ripple);
+  return step.plugins ? { ...out, plugins: step.plugins } : out;
+};
+
+/** A plugin-knob step undone or redone: those plugins take the settings the restored tracks have. */
+function restoreStepPlugins(step: HistoryEntry, tracks: Track[]): void {
+  for (const id of step.plugins ?? []) {
+    for (const t of tracks) {
+      const p = t.plugin?.id === id ? t.plugin : t.pluginFx?.find((x) => x.id === id);
+      if (p) restoreWamState(id, p.state);
+    }
+  }
+}
 
 /** History patch that records the current state as the one to return to on undo (and, for a ripple edit, what it moved). */
 const pushPast = (s: TimelineState, ripple?: RippleMove) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), withRipple(historyEntry(s), ripple)], future: [] });
@@ -465,7 +485,9 @@ interface TimelineState {
   /** A new return, and `trackId` (if given) sending to it at half level (one undo step). Returns its id. */
   addReturn: (trackId?: string, name?: string) => string;
   /** A new Plugin track playing the WAM at `url` (one undo step). Returns its id. */
-  addPluginTrack: (url: string, name: string) => string;
+  addPluginTrack: (url: string, name: string, state?: unknown) => string;
+  /** Make a track play the plugin instrument at `url`, keeping its notes and effects (one undo step). */
+  setTrackPlugin: (trackId: string, url: string, name: string, state?: unknown) => void;
   /** Add a WAM effect to a track, after its other plugin effects (one undo step). Returns the plugin's id. */
   addTrackPluginFx: (trackId: string, url: string, name: string) => string | null;
   /** Take a plugin effect off a track (one undo step). */
@@ -738,6 +760,11 @@ interface TimelineState {
    * first change that follows (none if nothing changes, so the redo history is kept).
    */
   beginEdit: () => void;
+  /**
+   * A built-in plugin's knobs are about to turn (pluginEdits.ts): its settings now become an undo
+   * step, which puts them back on the plugin when undone.
+   */
+  checkpointPlugin: (pluginId: string) => void;
   undo: () => void;
   redo: () => void;
 
@@ -1718,9 +1745,9 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       return newTrack.id;
     },
 
-    addPluginTrack: (url, name) => {
+    addPluginTrack: (url, name, state) => {
       const made = makeTrack('plugin', get().tracks, name);
-      const track: Track = { ...made, plugin: { id: uid('plugin'), url, name } };
+      const track: Track = { ...made, plugin: { id: uid('plugin'), url, name, ...(state !== undefined ? { state } : {}) } };
       set((s) => ({ tracks: [...s.tracks, track], selectedTrackId: track.id, isInspectorOpen: true, ...pushPast(s) }));
       return track.id;
     },
@@ -2082,6 +2109,16 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // A bus that becomes an instrument: the tracks that played into it go back to the master
       if (isMixTrack(current)) set((s) => ({ tracks: tidySends(tidyRoutes(s.tracks)) }));
       if (hasRecordings(instrumentKey)) void loadQuick(instrumentKey).catch(() => {});
+    },
+
+    setTrackPlugin: (id, url, name, state) => {
+      const current = get().tracks.find((t) => t.id === id);
+      if (!current || isMixTrack(current) || isAudioKind(current.instrumentKey)) return;
+      updateTrack(
+        id,
+        () => ({ instrumentKey: 'plugin', name, color: INSTRUMENTS.plugin.color, plugin: { id: uid('plugin'), url, name, ...(state !== undefined ? { state } : {}) } }),
+        true
+      );
     },
 
     setTrackSound: (id, sound) => {
@@ -2979,42 +3016,55 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     beginEdit: () => {
       pendingCheckpoint = historyEntry(get());
     },
+    checkpointPlugin: (pluginId) => {
+      pendingCheckpoint = null;
+      // (Its settings as they are this moment, knobs just turned in its window included)
+      captureWamStatesNow();
+      set((s) => ({ past: [...s.past.slice(-(HISTORY_LIMIT - 1)), { ...historyEntry(s), plugins: [pluginId] }], future: [] }));
+    },
 
     // The live engine follows tracks and clips on its own (connectTimelineToAudio); the master
     // returns are pushed here, as their setters do
     undo: () => {
+      if (get().past.length === 0) return;
+      // (The plugins' settings now go with the redo step; a field taken hold of is let go)
+      pendingCheckpoint = null;
+      captureWamStatesNow();
       const s = get();
-      if (s.past.length === 0) return;
       const entry = s.past[s.past.length - 1];
       // An insert / delete bars takes the loop and the playhead back with it (and its redo moves them again)
       const spot = entry.ripple && rippleSpot(s, entry.ripple, true);
       set({
         ...restoreEntry(s, entry),
         past: s.past.slice(0, -1),
-        future: [withRipple(historyEntry(s), entry.ripple), ...s.future].slice(0, HISTORY_LIMIT),
+        future: [sameStep(historyEntry(s), entry), ...s.future].slice(0, HISTORY_LIMIT),
         automationSelection: null,
         ...(spot ? { loopRegion: spot.loopRegion } : {}),
       });
       applyMasterFx();
       applyMaster();
+      restoreStepPlugins(entry, entry.tracks);
       keepLivePluginStates();
       if (spot && spot.playhead !== s.playheadPosition) get().seek(spot.playhead);
     },
 
     redo: () => {
+      if (get().future.length === 0) return;
+      pendingCheckpoint = null;
+      captureWamStatesNow();
       const s = get();
-      if (s.future.length === 0) return;
       const entry = s.future[0];
       const spot = entry.ripple && rippleSpot(s, entry.ripple, false);
       set({
         ...restoreEntry(s, entry),
         future: s.future.slice(1),
-        past: [...s.past.slice(-(HISTORY_LIMIT - 1)), withRipple(historyEntry(s), entry.ripple)],
+        past: [...s.past.slice(-(HISTORY_LIMIT - 1)), sameStep(historyEntry(s), entry)],
         automationSelection: null,
         ...(spot ? { loopRegion: spot.loopRegion } : {}),
       });
       applyMasterFx();
       applyMaster();
+      restoreStepPlugins(entry, entry.tracks);
       keepLivePluginStates();
       if (spot && spot.playhead !== s.playheadPosition) get().seek(spot.playhead);
     },

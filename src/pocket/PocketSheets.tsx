@@ -21,7 +21,7 @@ import { pickProjectFile, saveProjectFile } from '../components/timeline/project
 import { exportMySounds, pickMySoundsFile } from '../components/mySoundsFile';
 import { showToast } from '../components/timeline/toastStore';
 import { Sheet, SheetItem, pill, pillOn } from './pocketUi';
-import { usePocket } from './pocketStore';
+import { playFledge, soundInstrumentName, usePocket } from './pocketStore';
 import { editCell, useSelection, useSongKey } from './pocketCell';
 import { cellClip, copySection, moveSection, pocketSections, removeSection, sectionIsLinked, unlinkSection } from './pocketSections';
 import { FavouriteStar, pocketInstruments, pocketSounds, selectTrack } from './PocketDrawer';
@@ -147,6 +147,12 @@ const AddSheet: React.FC = () => {
         }}
       />
       <SheetItem
+        title="Fledge Synth"
+        detail="The app's own synth: wobble bass, growls and leads, with big sliders to shape the sound and the wobble in time with the song."
+        color={INSTRUMENTS.plugin.color}
+        onClick={() => added(playFledge(null))}
+      />
+      <SheetItem
         title="Drop pad"
         detail="Hold to stutter, filter, tape-stop, crush, gate or echo the whole mix. With Rec on, your moves stay in the song."
         color={INSTRUMENTS.dropPad.color}
@@ -179,7 +185,7 @@ const AddSheet: React.FC = () => {
               <SheetItem
                 key={s.id}
                 title={s.name}
-                detail={`${INSTRUMENTS[s.settings.instrumentKey].name}, with the settings you saved`}
+                detail={`${soundInstrumentName(s)}, with the settings you saved`}
                 color={INSTRUMENTS[s.settings.instrumentKey].color}
                 onClick={() => added(useTimelineStore.getState().addSoundTrack(s))}
               />

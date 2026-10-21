@@ -42,7 +42,7 @@ export function goToSection(i: number, sections: readonly PocketSection[]): void
 let pendingJump: { bar: number; when: number } | null = null;
 
 export const trackIcon = (t: Track): React.ComponentType<{ className?: string }> => {
-  const how = editorOf(t.instrumentKey);
+  const how = editorOf(t.instrumentKey, t.plugin);
   return how === 'beat' ? Drum : how === 'notes' ? Music : how === 'vocals' ? Mic : how === 'drop' ? Zap : SlidersHorizontal;
 };
 
@@ -367,7 +367,7 @@ export const PocketGrid: React.FC<{ land: boolean }> = ({ land }) => {
                 content={content}
                 len={sec.to - sec.from}
                 color={t.color}
-                drums={editorOf(t.instrumentKey) === 'beat'}
+                drums={editorOf(t.instrumentKey, t.plugin) === 'beat'}
                 className={`pk-cell${full ? ' full' : ''}${t.id === selTrack?.id ? ' colsel' : ''}${i === index ? ' rowsel' : ''}${cur ? ' cur' : ''}`}
                 label={`${t.name} in ${sec.letter} (${sec.name})${full ? '' : ', empty'}`}
                 onTap={() => selectCell(i, t)}

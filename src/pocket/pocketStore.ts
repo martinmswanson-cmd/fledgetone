@@ -8,10 +8,12 @@
 import { create } from 'zustand';
 import { useEffect, useState } from 'react';
 import { INSTRUMENTS, isAudioKind } from '../audio/instrumentCatalog';
+import { FLEDGE_PRESETS, FLEDGE_START_PRESET, FLEDGE_URL, isFledgeUrl } from '../audio/plugins/fledgeMacros';
 import { getAudiblePositionBar } from '../audio/transport';
 import { useTimelineStore } from '../store/timelineStore';
 import type { InstrumentKey } from '../store/timelineTypes';
 import type { DrumStyle } from '../store/smartTools';
+import type { MySound } from '../store/mySounds';
 import type { SongKey } from '../store/songKey';
 
 /** The drawer's tools: play the instrument, draw its notes, change its sound, its mix; or sing (vocal tracks). */
@@ -64,19 +66,38 @@ export const usePocket = create<PocketState>((set) => ({
 
 /**
  * Which drawer a track's cells open in: drums (a kit, or a Drum Rack's pads), notes, vocals
- * (recordings), the Drop pad, or null (edited on a computer: samplers, plugins).
+ * (recordings), the Drop pad, or null (edited on a computer: samplers, plugins). Fledge Synth, the
+ * app's own synth, is a plugin played with notes, with its own Sound tool (PocketSynth.tsx):
+ * `plugin` is the track's.
  */
-export function editorOf(key: InstrumentKey): 'beat' | 'notes' | 'vocals' | 'drop' | null {
+export function editorOf(key: InstrumentKey, plugin?: { url: string }): 'beat' | 'notes' | 'vocals' | 'drop' | null {
   if (isAudioKind(key)) return 'vocals';
   const kind = INSTRUMENTS[key]?.kind;
   if (kind === 'drums' || kind === 'rack') return 'beat';
   if (kind === 'drop') return 'drop';
+  if (kind === 'plugin' && isFledgeUrl(plugin?.url)) return 'notes';
   if (kind === undefined || ['custom', 'multi', 'slicer', 'audio', 'plugin', 'return', 'bus', 'fx'].includes(kind)) return null;
   return 'notes';
 }
 
 /** Whether a track plays a Drum Rack (its pads are its own sounds, see PocketRack.tsx). */
 export const isRackKey = (key: InstrumentKey): boolean => INSTRUMENTS[key]?.kind === 'rack';
+
+/** How a new Fledge Synth starts in Pocket: on its first bass preset. */
+export const FLEDGE_START_STATE = { builtin: 1, program: FLEDGE_PRESETS.indexOf(FLEDGE_START_PRESET) };
+
+/** Make a track play Fledge Synth (keeping its notes), or add one as a new track. Returns the track's id. */
+export function playFledge(trackId: string | null): string {
+  const s = useTimelineStore.getState();
+  if (trackId) {
+    s.setTrackPlugin(trackId, FLEDGE_URL, 'Fledge Synth', FLEDGE_START_STATE);
+    return trackId;
+  }
+  return s.addPluginTrack(FLEDGE_URL, 'Fledge Synth', FLEDGE_START_STATE);
+}
+
+/** What a saved sound plays, by name ("Fledge Synth" for a plugin's sound, not "Plugin"). */
+export const soundInstrumentName = (s: MySound): string => (s.settings.instrumentKey === 'plugin' && s.settings.plugin ? s.settings.plugin.name : INSTRUMENTS[s.settings.instrumentKey].name);
 
 let idCount = 0;
 /** A new note id. */

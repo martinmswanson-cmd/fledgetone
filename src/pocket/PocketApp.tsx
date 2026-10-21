@@ -80,7 +80,7 @@ const Transport: React.FC = () => {
   const rec = usePocket((p) => p.rec);
   const { track, sec } = useSelection();
   const s = useTimelineStore.getState;
-  const vocal = track && editorOf(track.instrumentKey) === 'vocals';
+  const vocal = track && editorOf(track.instrumentKey, track.plugin) === 'vocals';
   const btn = 'h-12 rounded-[14px] border border-forge-border bg-forge-panelLight flex items-center justify-center active:scale-95 transition-transform disabled:opacity-35';
   const play = () => {
     buzz();
@@ -95,7 +95,7 @@ const Transport: React.FC = () => {
         type="button"
         aria-pressed={rec}
         className={`${btn} px-3 gap-1.5 text-[12.5px] font-medium max-w-[38vw] ${rec ? '!border-red-400 !bg-red-500/20 text-red-100' : ''}`}
-        disabled={!track || editorOf(track.instrumentKey) === null}
+        disabled={!track || editorOf(track.instrumentKey, track.plugin) === null}
         onClick={() => {
           buzz();
           if (!track) return;

@@ -438,6 +438,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   const guis = new Map<Element, () => void>();
   return {
     audioNode,
+    controls,
     descriptor: { name: ref.info.name, vendor: ref.family.label, isInstrument: !!ref.info.instrument, hasAudioInput: !ref.info.instrument },
     createGui: async () => {
       if (!guiFactory) throw new Error('no panel for built-in plugins');

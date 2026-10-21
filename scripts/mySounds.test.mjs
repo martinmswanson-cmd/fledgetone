@@ -18,7 +18,7 @@ register(
 // A stand-in for the browser's storage
 const stored = new Map();
 globalThis.localStorage = { getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, String(v)), removeItem: (k) => stored.delete(k) };
-const { soundOf, withSound, parseSound, useMySounds, parseMySoundsFile, mergeSounds, MY_SOUNDS_FORMAT } = await import('../src/store/mySounds.ts');
+const { soundOf, withSound, parseSound, useMySounds, parseMySoundsFile, mergeSounds, MY_SOUNDS_FORMAT, soundFile, soundFileName, soundRecordingIds } = await import('../src/store/mySounds.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 const { presetPatch, SYNTH_PRESETS } = await import('../src/store/synthPatch.ts');
 
@@ -105,4 +105,36 @@ test('opening a file adds its sounds, replaces those of the same name, and keeps
   assert.equal(sounds[0].id, 'm1');
   assert.equal(sounds[0].settings.ring, 9);
   assert.notEqual(sounds[1].id, 'f2');
+});
+
+test('one sound as a file of its own: a Fledge Synth sound with its knobs comes back whole, and opens as a My sounds file', () => {
+  const state = { builtin: 1, program: 1, values: Array.from({ length: 300 }, (_, i) => (i % 7) / 7) };
+  const synth = track('Wobble bass', 'plugin', { plugin: { id: 'p1', url: 'builtin:fledge/Fledge Synth', name: 'Fledge Synth', state }, volume: -9 });
+  const sound = { id: 's1', name: 'Wobble bass', settings: soundOf(synth) };
+  const file = soundFile(sound, []);
+  const text = JSON.stringify(file);
+  // Small: a few kilobytes, no account or project needed
+  assert.ok(text.length < 20_000, `${text.length} characters`);
+  const back = parseMySoundsFile(JSON.parse(text));
+  assert.deepEqual(back.favourites, []);
+  assert.equal(back.sounds.length, 1);
+  assert.equal(back.sounds[0].name, 'Wobble bass');
+  assert.deepEqual(back.sounds[0].settings.plugin.state, state);
+  assert.equal(back.sounds[0].settings.plugin.url, 'builtin:fledge/Fledge Synth');
+  // Put on another track, it's a new plugin with the same knobs; the track's level stays its own
+  const other = withSound(track('other', 'piano', { volume: -3 }), back.sounds[0].settings);
+  assert.equal(other.instrumentKey, 'plugin');
+  assert.notEqual(other.plugin.id, 'p1');
+  assert.deepEqual(other.plugin.state, state);
+  assert.equal(other.volume, -3);
+  // A synth plays no recordings: none go in the file
+  assert.deepEqual(soundRecordingIds(sound), []);
+});
+
+test("a sound file is named after the sound, with only the characters every system takes", () => {
+  assert.equal(soundFileName('Wobble bass'), 'Wobble bass.fledgetone-sound.json');
+  assert.equal(soundFileName('a/b:c*?"<>|d'), 'a b c d.fledgetone-sound.json');
+  assert.equal(soundFileName('..hidden'), 'hidden.fledgetone-sound.json');
+  assert.equal(soundFileName('   '), 'sound.fledgetone-sound.json');
+  assert.equal(soundFileName('x'.repeat(100)), `${'x'.repeat(60)}.fledgetone-sound.json`);
 });

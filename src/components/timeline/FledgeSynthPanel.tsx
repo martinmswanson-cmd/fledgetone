@@ -7,7 +7,6 @@ import {
   choiceIndex,
   choiceValue,
   drawnPoint,
-  FLEDGE_DESTS,
   FLEDGE_SECTIONS,
   lfoControls,
   lfoPoint,
@@ -17,6 +16,8 @@ import {
   type FledgeControl,
 } from '../../audio/plugins/fledgeLayout';
 import { fledgeWave, type FledgeWave } from '../../audio/plugins/fledgeWave';
+import { macroLabel, macroTargets, wobbleOf } from '../../audio/plugins/fledgeMacros';
+import { editPluginParam, editPluginProgram } from '../../store/pluginEdits';
 
 /**
  * Fledge Synth's own window (the synth in engine/fledge-synth): its controls in sections across
@@ -316,9 +317,11 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
     const i = index.get(name);
     return i === undefined || !params[i] ? undefined : { i, p: params[i] };
   };
+  // (A turn of a knob is an undo step, as Pocket's sliders are: see pluginEdits.ts)
   const set: Set = (name, v) => {
     const i = index.get(name);
-    if (i !== undefined) controls.set(i, v);
+    // (A drawn shape's steps, drawn in one drag, are one step)
+    if (i !== undefined) editPluginParam(controls, i, v, undefined, name.replace(/ step \d+$/, ''));
   };
   const val = (name: string) => get(name)?.p.value ?? 0;
   const isOn = (name: string) => val(name) >= 0.5;
@@ -336,15 +339,11 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
     return [s.steps.map((c) => bipolarOf(val(c.p))), val(s.smooth.p)];
   });
 
-  // What each macro moves (the matrix slots that read it)
-  const macroRoutes = (k: number) => {
-    const out: string[] = [];
-    for (let n = 1; n <= 8; n++) {
-      const s = slotControls(n);
-      if (pick(s.source) === 13 + k && pick(s.target) > 0) out.push(FLEDGE_DESTS[pick(s.target)]);
-    }
-    return out.length ? out.join(', ') : 'nothing yet';
-  };
+  // What each macro moves (the matrix slots that read it), and its name (the preset's for it)
+  const macroRoutes = (k: number) => macroTargets(val, k).join(', ') || 'nothing yet';
+  const presetName = controls.programs[controls.program()];
+  // The wobble's rate in time with the song, beside the macros (as Pocket has it)
+  const wobble = wobbleOf(val);
 
   const osc = (o: 'A' | 'B') => {
     const c = oscControls(o);
@@ -423,7 +422,7 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
   const program = controls.program();
   const step = (d: number) => {
     const n = controls.programs.length;
-    if (n) void controls.setProgram((((program < 0 ? (d > 0 ? -1 : 0) : program) + d) % n + n) % n);
+    if (n) void editPluginProgram(controls, (((program < 0 ? (d > 0 ? -1 : 0) : program) + d) % n + n) % n);
   };
 
   return (
@@ -436,7 +435,7 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
           </button>
           <select
             value={program}
-            onChange={(e) => void controls.setProgram(Number(e.target.value))}
+            onChange={(e) => void editPluginProgram(controls, Number(e.target.value))}
             aria-label="Preset"
             className="flex-1 h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
           >
@@ -466,10 +465,15 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
         <div className="flex items-end gap-1 rounded-md border border-forge-border bg-forge-bg/40 px-2 py-1">
           {S.macros.map((m, k) => (
             <div key={m.p} className="flex flex-col items-center" title={`${m.label} moves: ${macroRoutes(k + 1)}`}>
-              <Knob c={m as Ctl<'knob'>} get={get} set={set} size={32} />
+              <Knob c={{ ...(m as Ctl<'knob'>), label: macroLabel(presetName, k + 1, macroTargets(val, k + 1)) }} get={get} set={set} size={32} />
               <span className="text-[9px] text-fuchsia-200/80 max-w-[50px] truncate">{macroRoutes(k + 1)}</span>
             </div>
           ))}
+          {wobble && (
+            <div className="self-center" title={`LFO ${wobble.lfo}'s rate, in time with the song (its other settings are under Modulation)`}>
+              <Choice c={{ ...(lfoControls(wobble.lfo).division as Ctl<'choice'>), label: wobble.label }} get={get} set={set} w="w-[72px]" />
+            </div>
+          )}
         </div>
       </div>
 
