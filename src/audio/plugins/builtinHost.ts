@@ -188,6 +188,12 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
 
   let params: BuiltinParam[] = [];
   /**
+   * The plugin's own settings: what its knobs, presets and saved state set. What it plays can
+   * differ while an automation lane moves it (the panel shows that); these are what's saved, and
+   * what a parameter goes back to when its lane goes
+   */
+  let own: number[] = [];
+  /**
    * Sets sent per parameter and not yet answered: a late answer to an older one mustn't put the
    * value back (a knob stepped quickly would lose steps)
    */
@@ -211,6 +217,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       if (d.type === 'ready') {
         clearTimeout(timer);
         params = d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: d.defaults[i] ?? p.value }));
+        own = params.map((p) => p.value);
         programs = files ? files.names : (d.programs ?? []);
         program = files ? (startPreset ? files.names.indexOf(startPreset) : -1) : (d.program ?? -1);
         resolve();
@@ -240,6 +247,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
           // A preset was chosen: every parameter may have moved
           // (A preset file's values are its own defaults: Reset puts the patch back)
           params = keepSent(d.params.map((p: Omit<BuiltinParam, 'defaultValue'>, i: number) => ({ ...p, defaultValue: files ? p.value : (params[i]?.defaultValue ?? p.value) })));
+          own = params.map((p) => p.value);
           changed();
           // Loads answer in the order they were sent: this reply ends the oldest
           loaded.shift()?.();
@@ -280,12 +288,12 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   const stateNow = (): BuiltinState => ({
     builtin: 1,
     ...(program >= 0 ? (files ? { preset: files.names[program] } : { program }) : {}),
-    values: params.map((p) => p.value),
+    values: own.slice(),
   });
   const audioNode = Object.assign(node, {
     getParameterInfo: async () =>
       Object.fromEntries(params.map((p, i) => [String(i), { id: String(i), label: p.name, type: 'float', minValue: 0, maxValue: 1, defaultValue: p.defaultValue }])),
-    getParameterValues: async () => Object.fromEntries(params.map((p, i) => [String(i), { id: String(i), value: p.value, normalized: true }])),
+    getParameterValues: async () => Object.fromEntries(own.map((v, i) => [String(i), { id: String(i), value: v, normalized: true }])),
     scheduleEvents: (...events: unknown[]) => {
       if (destroyed) return;
       if (!pending.length) queueMicrotask(flush);
@@ -300,7 +308,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     setParamNow: (id: string, value: number) => set(Number(id), value),
     resetParam: (id: string) => {
       const i = Number(id);
-      if (params[i]) set(i, params[i].value);
+      if (params[i]) set(i, own[i]);
     },
     setState: async (s: unknown) => {
       const saved = s as Partial<BuiltinState> | undefined;
@@ -331,6 +339,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     if (!p || destroyed) return;
     const v = Math.max(0, Math.min(1, value));
     params = params.map((x, i) => (i === index ? { ...x, value: v } : x));
+    own = own.map((x, i) => (i === index ? v : x));
     inFlight.set(index, (inFlight.get(index) ?? 0) + 1);
     node.port.postMessage({ type: 'set', index, value: v });
     changed();
