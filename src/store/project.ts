@@ -2,6 +2,7 @@ import { ROOM_STYLE_IDS } from '../audio/effects/roomIR';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { normalizeExpression } from './expression';
 import { normalizeNoteExpression } from './noteExpression';
+import { normalizeChance, normalizeCond } from './noteChance';
 import { compSegments, normalizeTakes } from './takes';
 import { REVERB_SEND_MAX, RING_MAX, TOTAL_BARS, isAutomationParam } from './timelineTypes';
 import { clampBpm, parseMeter, sortedPoints, type Meter, type MeterPoint, type TempoPoint } from '../audio/tempoMap';
@@ -377,6 +378,12 @@ function parseNote(v: unknown): NoteEvent {
       const expr = normalizeNoteExpression(v.expr);
       return expr ? { expr } : {};
     })(),
+    // Optional: notes that play only some of the time (see noteChance.ts)
+    ...(() => {
+      const chance = normalizeChance(v.chance);
+      const cond = normalizeCond(v.cond);
+      return { ...(chance !== undefined ? { chance } : {}), ...(cond ? { cond } : {}) };
+    })(),
   };
 }
 
@@ -546,9 +553,10 @@ function parseMasterFx(v: unknown): MasterFx {
 
 /**
  * Projects in browser storage write each note as a short list ([note, startOffset, duration,
- * velocity, expr?]) instead of an object with its id: about a third of the size, exactly the same
- * notes. (Browser storage holds about 5 MB, and a big song is mostly notes.) Notes get new ids
- * when read back.
+ * velocity, expr?, when?]) instead of an object with its id: about a third of the size, exactly
+ * the same notes. (Browser storage holds about 5 MB, and a big song is mostly notes.) Notes get
+ * new ids when read back. `when` is a note's chance and condition ({ chance?, cond? }), with expr
+ * 0 before it when the note has none.
  */
 function packForStorage<T extends { clips: Array<{ notes: NoteEvent[] }> }>(data: T): unknown {
   return {
@@ -556,7 +564,16 @@ function packForStorage<T extends { clips: Array<{ notes: NoteEvent[] }> }>(data
     clips: data.clips.map((c) => {
       if (!c.notes.length) return c;
       const { notes, ...rest } = c;
-      return { ...rest, N: notes.map((n) => (n.expr ? [n.note, n.startOffset, n.duration, n.velocity, n.expr] : [n.note, n.startOffset, n.duration, n.velocity])) };
+      return {
+        ...rest,
+        N: notes.map((n) => {
+          const packed: unknown[] = [n.note, n.startOffset, n.duration, n.velocity];
+          const when = n.chance !== undefined || n.cond ? { ...(n.chance !== undefined ? { chance: n.chance } : {}), ...(n.cond ? { cond: n.cond } : {}) } : null;
+          if (n.expr || when) packed.push(n.expr ?? 0);
+          if (when) packed.push(when);
+          return packed;
+        }),
+      };
     }),
   };
 }
@@ -577,6 +594,7 @@ function unpackStored(raw: unknown): unknown {
         duration: n[2],
         velocity: n[3],
         ...(n[4] ? { expr: n[4] } : {}),
+        ...(isObj(n[5]) ? { chance: n[5].chance, cond: n[5].cond } : {}),
       }));
       return { ...rest, notes };
     }),

@@ -28,7 +28,7 @@ import { goToSection } from './PocketGrid';
 import { addVocalTrack } from './PocketVocals';
 import { PocketShare } from './PocketShare';
 import { chooseInterface } from './pocketMode';
-import { pocketNoteId } from './pocketStore';
+import { cellDrumStyles, cellKey, pocketNoteId } from './pocketStore';
 
 const close = () => usePocket.getState().set({ sheet: null });
 
@@ -253,6 +253,7 @@ const DrummerSheet: React.FC = () => {
     const bars = Math.max(1, Math.round((len * meter.den) / meter.num));
     const notes = drummer(style, bars, 0.5, bars >= 4 ? 4 : 0, nextDrumSeed(), pocketNoteId, meter).filter((n) => n.startOffset < len - 1e-6);
     editCell(track.id, sec, () => notes);
+    cellDrumStyles.set(cellKey(track.id, sec.from), style);
     const id = cellClip(track.id, sec, false);
     const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
     if (id) useTimelineStore.getState().setClipGroove(id, groove ?? null, false);

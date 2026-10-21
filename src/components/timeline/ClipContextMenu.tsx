@@ -3,7 +3,7 @@
  * clip, insert pattern, paste, load audio, smart tools), and the menu items other menus share.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Drum, Music4, Grid3x3, AudioLines, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma, ChevronsRight, Link2, Unlink } from 'lucide-react';
+import { Dices, Drum, Music4, Grid3x3, AudioLines, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma, ChevronsRight, Link2, Unlink } from 'lucide-react';
 import { reverseBlock } from '../../store/reverseActions';
 import { doubleClip } from '../../store/vocalActions';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -12,7 +12,7 @@ import { patternsFor } from '../../store/demoSong';
 import { formatBarCount } from '../../store/timelineTypes';
 import { canMoveClipBetween, isAudioKind, isDrumKind } from '../../audio/instrumentCatalog';
 import { isMixTrack } from '../../store/buses';
-import { bassForChords, chordsForMelody, fillClipBar, useSmartDialog } from '../../store/smartActions';
+import { bassForChords, chordsForMelody, fillClipBar, rollClipDrums, useSmartDialog } from '../../store/smartActions';
 import { FILLS } from '../../store/smartTools';
 import { menuClass, useKeepOnScreen, useMenuDismiss } from './menuHooks';
 import { dropAudioFiles, pickAudioFiles } from './audioFiles';
@@ -180,16 +180,27 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
   const smartClipItems: Item[] = !noteClip
     ? []
     : drumLane
-      ? FILLS.map((f, i) => ({
-          key: `fill-${f.id}`,
-          label: `Fill: ${f.name.toLowerCase()}`,
-          shortcut: i === 0 ? 'this bar' : '',
-          icon: <Drum className="w-3.5 h-3.5" />,
-          onClick: run(() => {
-            fillClipBar(menu.clipId!, menu.bar, f.id);
-          }),
-          divider: i === 0,
-        }))
+      ? [
+          {
+            key: 'roll-beat',
+            label: 'Roll the beat again',
+            shortcut: 'new hats, same kick',
+            icon: <Dices className="w-3.5 h-3.5" />,
+            onClick: run(() => {
+              rollClipDrums(menu.clipId!);
+            }),
+            divider: true,
+          },
+          ...FILLS.map((f, i) => ({
+            key: `fill-${f.id}`,
+            label: `Fill: ${f.name.toLowerCase()}`,
+            shortcut: i === 0 ? 'this bar' : '',
+            icon: <Drum className="w-3.5 h-3.5" />,
+            onClick: run(() => {
+              fillClipBar(menu.clipId!, menu.bar, f.id);
+            }),
+          })),
+        ]
       : pitchedLane
         ? [
             {

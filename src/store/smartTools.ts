@@ -915,3 +915,140 @@ export function drummer(style: DrumStyle, bars: number, intensity: number, fillE
   }
   return out.sort((a, b) => a.startOffset - b.startOffset);
 }
+
+// ---------- The dice: a beat rolled again in its style ----------
+
+/** The drums a roll of the whole beat leaves as they are: the kick and snare skeleton, the crashes and tom fills. */
+const KEPT_ROWS = new Set([KICK, SNARE, CLAP, CRASH, TOM_HI, TOM_MID, TOM_LO]);
+
+/**
+ * The drummer style a beat sounds most like: each style's beat at middle intensity, scored by the
+ * hits (drum and 16th) it shares with `notes` against the ones either has alone. Styles in another
+ * time signature than `meter` aren't considered. With nothing written, the first style.
+ */
+export function guessDrumStyle(notes: readonly NoteEvent[], lengthBars: number, meter: { num: number; den: number } = { num: 4, den: 4 }): DrumStyle {
+  const measure = meter.num / meter.den;
+  const bars = Math.max(1, Math.round(lengthBars / measure));
+  const hits = (ns: readonly NoteEvent[]) => new Set(ns.filter((n) => n.note !== CRASH && n.startOffset < lengthBars - EPS).map((n) => `${n.note}@${Math.round(n.startOffset * 16)}`));
+  const have = hits(notes);
+  let best: DrumStyle = DRUM_STYLES[0].id;
+  let bestScore = -1;
+  if (!have.size) return best;
+  for (const s of DRUM_STYLES) {
+    if (s.meter && (s.meter.num !== meter.num || s.meter.den !== meter.den)) continue;
+    let id = 0;
+    const theirs = hits(drummer(s.id, bars, 0.5, 0, 1, () => `g${id++}`, meter));
+    let shared = 0;
+    for (const h of have) if (theirs.has(h)) shared++;
+    const score = shared / (have.size + theirs.size - shared || 1);
+    if (score > bestScore + 1e-9) {
+      best = s.id;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+export interface RollOptions {
+  /** The part's length in bars (notes stay inside it) */
+  lengthBars: number;
+  seed: number;
+  newId: () => string;
+  meter?: { num: number; den: number };
+  /** The style to roll in (absent: the one the beat sounds most like, guessDrumStyle) */
+  style?: DrumStyle;
+  /** Roll this drum only (its note), leaving the rest; absent: the whole beat but its skeleton */
+  row?: string;
+}
+
+/**
+ * A beat rolled again: a new take on the drums in the same style, for a repeated section that
+ * shouldn't sound the same. The whole beat keeps its kick, snare and clap (and crashes and tom
+ * fills) and gets new hats, rides and percussion; one row (`row`) gets a new part of its own, a
+ * kick keeping its downbeats. The new parts come from the style's drummer at an intensity the
+ * roll picks, then vary: a hat dropped, a soft extra one, a 32nd roll in the busier styles, an
+ * open hat; extras and ghost notes often play only half the time (see noteChance.ts), so even
+ * the copies of a section vary. Seeded: the same beat and seed roll the same way. With nothing
+ * written yet, a whole beat in the style.
+ */
+export function rollDrums(notes: readonly NoteEvent[], opts: RollOptions): NoteEvent[] {
+  const meter = opts.meter ?? { num: 4, den: 4 };
+  const measure = meter.num / meter.den;
+  const steps = Math.max(1, Math.round(measure * 16));
+  const len = opts.lengthBars;
+  const bars = Math.max(1, Math.ceil(len / measure - EPS));
+  const inside = (n: NoteEvent) => n.startOffset >= -EPS && n.startOffset < len - EPS;
+  const style = opts.style ?? guessDrumStyle(notes, len, meter);
+  const rnd = seeded(opts.seed);
+  if (!notes.length) return drummer(style, bars, 0.5, bars >= 4 ? 4 : 0, opts.seed, opts.newId, meter).filter(inside);
+  const intensity = 0.3 + rnd() * 0.65;
+  const fresh = drummer(style, bars, intensity, 0, Math.imul(opts.seed, 2654435761) >>> 0, opts.newId, meter).filter(inside);
+  const rolls = (drum: string) => (opts.row ? drum === opts.row : !KEPT_ROWS.has(drum));
+  const kept = notes.filter((n) => !rolls(n.note));
+  const out: NoteEvent[] = fresh.filter((n) => rolls(n.note) && !(opts.row === KICK && Math.round((n.startOffset % measure) * 16) === 0));
+  const quiet = QUIET_STYLES.has(style);
+  const taken = new Set([...kept, ...out].map((n) => `${n.note}@${Math.round(n.startOffset * 32)}`));
+  const add = (drum: string, at: number, vel: number, bars16 = 1 / 16, chance?: number) => {
+    const key = `${drum}@${Math.round(at * 32)}`;
+    if (at >= len - EPS || taken.has(key)) return;
+    taken.add(key);
+    out.push({ ...note(opts.newId, midiOf(drum), at, bars16, vel), ...(chance !== undefined ? { chance } : {}) });
+  };
+  const stepAt = (n: NoteEvent) => Math.round((n.startOffset % measure) * 16);
+  const onBeat = (s: number) => s % 4 === 0;
+
+  if (opts.row === KICK) {
+    // The downbeats stay as written; the rest of the kick is the style's at the roll's intensity, now and then pushed
+    for (const n of notes) if (n.note === KICK && stepAt(n) === 0) out.push(n);
+    const pushes = [3, 7, 10, 11, 14].filter((s) => s < steps);
+    for (let b = 0; b < bars; b++) if (pushes.length && rnd() < 0.4) add(KICK, b * measure + pushes[Math.floor(rnd() * pushes.length)] / 16, 0.7);
+  } else if (opts.row === SNARE || opts.row === CLAP) {
+    // The backbeat from the style, and ghost notes that come and go
+    for (let b = 0; b < bars; b++) {
+      const ghosts = rnd() < 0.6 ? 1 + Math.floor(rnd() * 2) : 0;
+      for (let g = 0; g < ghosts; g++) add(opts.row, b * measure + (1 + 2 * Math.floor(rnd() * (steps / 2))) / 16, 0.28 + rnd() * 0.08, 1 / 16, rnd() < 0.5 ? 0.5 : undefined);
+    }
+  } else {
+    // Hats and percussion: the style's, then varied
+    const rows = new Map<string, number>();
+    for (const n of out) rows.set(n.note, (rows.get(n.note) ?? 0) + 1);
+    const main = opts.row ?? [...rows.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? nameOf(midiOf(HAT));
+    // (A drum the style doesn't play: a few hits of its own, mostly off the beat)
+    if (!out.some((n) => n.note === main)) {
+      for (let b = 0; b < bars; b++) {
+        const hits = 2 + Math.floor(rnd() * 3);
+        for (let h = 0; h < hits; h++) add(main, b * measure + Math.floor(rnd() * steps) / 16, 0.5 + rnd() * 0.2);
+      }
+    }
+    // Drop the odd off-beat hit
+    for (let i = out.length - 1; i >= 0; i--) {
+      if (onBeat(stepAt(out[i])) || rnd() >= 0.12) continue;
+      taken.delete(`${out[i].note}@${Math.round(out[i].startOffset * 32)}`);
+      out.splice(i, 1);
+    }
+    const hat = main === nameOf(midiOf(HAT));
+    const busy = intensity > 0.6 || style === 'trap';
+    for (let b = 0; b < bars; b++) {
+      const at = (s: number) => b * measure + s / 16;
+      // A soft extra or two, often only half the time
+      if (rnd() < 0.6) {
+        const extras = 1 + Math.floor(rnd() * 2);
+        for (let k = 0; k < extras; k++) add(main, at(1 + 2 * Math.floor(rnd() * (steps / 2))), 0.3 + rnd() * 0.15, 1 / 16, rnd() < 0.6 ? 0.5 : undefined);
+      }
+      // A 32nd roll in the busier beats
+      if (busy && !quiet && hat && rnd() < 0.35) add(HAT, at(Math.floor(rnd() * steps)) + 1 / 32, 0.35 + rnd() * 0.1, 1 / 32, rnd() < 0.5 ? 0.75 : undefined);
+      // An open hat on an off-beat 8th
+      if (!opts.row && !quiet && hat && rnd() < 0.25) {
+        const s = 2 + 4 * Math.floor(rnd() * Math.max(1, Math.floor(steps / 4)));
+        if (s < steps) {
+          const i = out.findIndex((n) => n.note === main && Math.abs(n.startOffset - at(s)) < EPS);
+          if (i >= 0) out.splice(i, 1);
+          add(OPEN, at(s), 0.6, 1 / 8);
+        }
+      }
+    }
+  }
+  // Every rolled hit a little louder or softer than the last roll's
+  const varied = out.map((n) => ({ ...n, velocity: Math.round(Math.max(0.15, Math.min(1, n.velocity + (rnd() - 0.5) * 0.1)) * 100) / 100 }));
+  return [...kept, ...varied].sort((a, b) => a.startOffset - b.startOffset || a.note.localeCompare(b.note));
+}

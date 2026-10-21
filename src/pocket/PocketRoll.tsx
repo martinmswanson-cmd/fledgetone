@@ -5,10 +5,13 @@
  * drag right to make it longer), moves a note (drag it) or stretches it (drag its right end); two
  * fingers scroll, as do the note names and the ruler; dragging to an edge scrolls that way. Pens:
  * Note, Chord (a chord in the key in one tap) and Erase. Tapping a note selects it, and the bar
- * above edits it in steps. A gesture works on a draft and saves once, as one undo step, when it ends.
+ * above edits it in steps (and sets how often it plays: noteChance.ts). A gesture works on a draft
+ * and saves once, as one undo step, when it ends.
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Check, Copy, Home, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Check, Copy, Home, Percent, Trash2 } from 'lucide-react';
+import { chanceMark, isConditional, withChance } from '../store/noteChance';
+import { ChanceSheet } from './pocketUi';
 import { useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
 import { barsToDuration, durationToBars, type NoteEvent, type Track } from '../store/timelineTypes';
@@ -59,6 +62,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
   const [draft, setDraft] = useState<RollNote[] | null>(null);
   const notes = draft ?? saved;
   const [sel, setSel] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState(false);
   const [, setPenTick] = useState(0);
   const roll = useRef<HTMLDivElement>(null);
   const surf = useRef<HTMLDivElement>(null);
@@ -327,6 +331,9 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
             <button type="button" aria-label="Copy it after itself" className={ib} onClick={() => change((n, all) => { const c = { ...n, id: pocketNoteId(), from: undefined, step: Math.min(steps - n.len, n.step + n.len) }; all.push(c); setSel(c.id); })}>
               <Copy className="w-[17px] h-[17px]" />
             </button>
+            <button type="button" aria-label={`How often it plays: ${selected.from && isConditional(selected.from) ? chanceMark(selected.from) : 'always'}`} className={`${ib}${selected.from && isConditional(selected.from) ? ' !border-cyan-400 text-cyan-200' : ''}`} onClick={() => setChoosing(true)}>
+              <Percent className="w-[17px] h-[17px]" />
+            </button>
             <button type="button" aria-label="Delete the note" className={ib} onClick={() => { change((n, all) => all.splice(all.indexOf(n), 1)); setSel(null); }}>
               <Trash2 className="w-[17px] h-[17px]" />
             </button>
@@ -377,9 +384,10 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
             {notes.map((n) => {
               const r = rowOf(n.midi);
               if (r < 0) return null;
+              const mark = n.from && isConditional(n.from) ? chanceMark(n.from) : '';
               return (
-                <div key={n.id} className={`pk-rnote${n.id === sel ? ' sel' : ''}`} style={{ left: n.step * RW + 1, top: r * RH + 3, width: n.len * RW - 2, height: RH - 6 }}>
-                  {n.len * RW > 44 ? <span>{midiToNote(n.midi)}</span> : null}
+                <div key={n.id} className={`pk-rnote${n.id === sel ? ' sel' : ''}${mark ? ' cond' : ''}`} style={{ left: n.step * RW + 1, top: r * RH + 3, width: n.len * RW - 2, height: RH - 6 }}>
+                  {n.len * RW > 44 ? <span>{midiToNote(n.midi)}{mark && n.len * RW > 84 ? ` ${mark}` : ''}</span> : null}
                 </div>
               );
             })}
@@ -387,6 +395,14 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
           </div>
         </div>
       </div>
+      {choosing && selected && (
+        <ChanceSheet
+          title={`${midiToNote(selected.midi)}: how often it plays`}
+          note={selected.from ?? {}}
+          onClose={() => setChoosing(false)}
+          onPick={(id) => change((n) => (n.from = withChance(n.from ?? fromRoll([n])[0], id)))}
+        />
+      )}
     </>
   );
 };

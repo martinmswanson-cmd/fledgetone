@@ -5,7 +5,7 @@ import type { Clip, InstrumentKey, NoteEvent } from './timelineTypes';
 import { TOTAL_BARS, uid } from './timelineTypes';
 import { detectKey, keyOf } from './songKey';
 import type { SongKey } from './songKey';
-import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf } from './smartTools';
+import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, DRUM_STYLES, drummer, fillBar, harmonize, melodyOf, rollDrums } from './smartTools';
 import { measureAt, meterAt } from '../audio/tempoMap';
 import type { Meter } from '../audio/tempoMap';
 import type { AccompStyle, BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
@@ -119,6 +119,21 @@ export function fillClipBar(clipId: string, songBar: number, kind: FillKind): bo
   if (barStart >= clip.lengthBars - 1e-6) return false;
   s.checkpoint();
   s.setClipNotes(clipId, fillBar(clip.notes, barStart, kind, clip.lengthBars, newId, true, Math.min(m.length, clip.lengthBars - barStart)));
+  return true;
+}
+
+/**
+ * Roll a drum clip's beat again (smartTools.ts rollDrums): new hats and percussion in the style it
+ * sounds like, the kick and snare kept; `row` rolls that drum alone. One undo step.
+ */
+export function rollClipDrums(clipId: string, row?: string): boolean {
+  const s = tl();
+  const clip = s.clips.find((c) => c.id === clipId);
+  const track = clip && s.tracks.find((t) => t.id === clip.trackId);
+  if (!clip || clip.audio || !track || !isDrumKind(track.instrumentKey)) return false;
+  const meter = meterAt(clip.startBar, { base: s.meter, points: s.meterPoints });
+  s.checkpoint();
+  s.setClipNotes(clipId, rollDrums(clip.notes, { lengthBars: clip.lengthBars, seed: (Math.random() * 2 ** 32) >>> 0, newId, meter, ...(row ? { row } : {}) }));
   return true;
 }
 

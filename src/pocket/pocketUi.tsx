@@ -1,9 +1,12 @@
 /**
  * Pocket's small shared pieces: a bottom sheet (a list that slides up over the screen), a card
- * section, and the button style, sized for thumbs (at least 44 px).
+ * section, the button style, sized for thumbs (at least 44 px), and the chooser of how often a
+ * note plays.
  */
 import React, { useEffect } from 'react';
-import { X } from 'lucide-react';
+import { Check, X } from 'lucide-react';
+import { NOTE_CHANCES, chanceIdOf } from '../store/noteChance';
+import type { NoteEvent } from '../store/timelineTypes';
 
 export const pill = 'h-11 px-4 rounded-xl border border-forge-border bg-forge-panel text-sm font-medium active:scale-95 transition-transform disabled:opacity-40 flex items-center justify-center gap-2';
 export const pillOn = '!border-cyan-400 !bg-cyan-500/15 text-cyan-200';
@@ -57,4 +60,25 @@ export const SheetItem: React.FC<{ title: string; detail?: string; onClick: () =
   );
   // (A star or a bin beside the row, not inside its button)
   return trailing ? <div className="flex items-center">{item}{trailing}</div> : item;
+};
+
+/** How often a note plays (see noteChance.ts): Always, 75%, 50%, 25%, 1st of 2... */
+export const ChanceSheet: React.FC<{ title: string; note: Pick<NoteEvent, 'chance' | 'cond'>; onPick: (id: string) => void; onClose: () => void }> = ({ title, note, onPick, onClose }) => {
+  const now = chanceIdOf(note);
+  return (
+    <Sheet title={title} onClose={onClose}>
+      <p className="text-xs text-forge-muted px-2 mb-2">A note that doesn't play every time keeps a repeated part from going stale. "1st of 2" plays the first time round, not the second, and so on; a percentage is how likely it is to play each time.</p>
+      {NOTE_CHANCES.map((c) => (
+        <SheetItem
+          key={c.id}
+          title={c.label}
+          onClick={() => {
+            onPick(c.id);
+            onClose();
+          }}
+          trailing={c.id === now ? <Check className="w-4 h-4 mr-3 text-cyan-300 shrink-0" aria-label="Chosen" /> : undefined}
+        />
+      ))}
+    </Sheet>
+  );
 };

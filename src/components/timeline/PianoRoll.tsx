@@ -1,7 +1,8 @@
 /**
  * The piano roll: the note editor for one note clip, docked under the timeline. Adding, moving,
  * resizing and deleting notes, velocity, scales and chord stamps, the composing tools
- * (noteTools.ts), drum and Slicer rows, the expression lane and the notation view switch.
+ * (noteTools.ts), drum and Slicer rows, the expression lane and the notation view switch, and how
+ * often the selected notes play (chance and step conditions: noteChance.ts).
  * Positions are worked out in 96ths of a bar so notes never drift.
  */
 import { SWELL_SHAPES, swellLane, type SwellShape } from '../../store/swell';
@@ -12,7 +13,9 @@ import { ExpressionLane, EXPRESSION_LANE_H } from './ExpressionLane';
 import { NotationView } from './NotationView';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
-import { Keyboard, Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Dices, Keyboard, Piano, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { NOTE_CHANCES, chanceIdOf, chanceMark, isConditional, withChance } from '../../store/noteChance';
+import { rollClipDrums } from '../../store/smartActions';
 import { initAudio } from '../../audio/engine';
 import { noteNameOn, onLiveNote } from '../../audio/liveInput';
 import { usePianoPanel } from '../../store/pianoPanel';
@@ -854,6 +857,18 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     );
   };
 
+  // How often the selected notes play: their shared choice, '' when they differ
+  const selectedChance = (() => {
+    const ids = [...new Set(visibleNotes.filter((n) => selected.has(n.id)).map(chanceIdOf))];
+    return ids.length === 1 ? ids[0] : '';
+  })();
+  const onChance = (id: string) => {
+    if (!selected.size || !NOTE_CHANCES.some((c) => c.id === id)) return;
+    const s = useTimelineStore.getState();
+    s.checkpoint();
+    s.setClipNotes(clip.id, currentNotes().map((n) => (selected.has(n.id) ? withChance(n, id) : n)));
+  };
+
   const select = 'h-7 bg-forge-bg border border-forge-border rounded-md px-1.5 text-forge-text focus:outline-none focus:border-cyan-500';
 
   return (
@@ -912,6 +927,16 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           />
           <span className="w-8 tabular-nums text-forge-text">{Math.round((selectedVelocity ?? velocity) * 100)}</span>
         </label>
+        <label data-search="chance probability condition every other step" className="flex items-center gap-1.5" title="How often the selected notes play: a chance each time round, or only on some passes of a repeated clip (1st of 2 plays the first time, not the second). Select notes first">
+          PLAYS
+          <select className={select} value={selectedChance} disabled={!selected.size} onChange={(e) => onChance(e.target.value)}>
+            {selectedChance === '' && <option value="">{selected.size ? 'Mixed' : 'Select notes'}</option>}
+            {selectedChance === 'custom' && <option value="custom">Custom</option>}
+            {NOTE_CHANCES.map((c) => (
+              <option key={c.id} value={c.id}>{c.label}</option>
+            ))}
+          </select>
+        </label>
         {INSTRUMENTS[instrument].wobble && (
           <label data-search="wobble" className="flex items-center gap-1.5" title="How fast this clip's notes wobble: one filter sweep per note value (T = triplet), starting again with every note">
             WOBBLE
@@ -942,6 +967,17 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </label>
         )}
         {!clip.audio && isDrumKind(instrument) && <DrumGroovePanel clip={clip} rows={drumRowsOf(instrument)} />}
+        {!clip.audio && isDrumKind(instrument) && (
+          <button
+            type="button"
+            data-search="dice roll beat again variation"
+            onClick={() => rollClipDrums(clip.id)}
+            title="Roll the beat again in its style: new hats and percussion (some of them playing only half the time), the same kick and snare. Undo brings the old one back"
+            className="h-7 px-2 flex items-center gap-1.5 rounded-md border border-forge-border text-[11px] text-forge-text hover:border-forge-borderLight"
+          >
+            <Dices className="w-3.5 h-3.5" /> Roll beat
+          </button>
+        )}
         {!namedRows && (
           <label data-search="scale" className="flex items-center gap-1.5" title="Shade the notes outside a key; clicks land on the key's notes">
             SCALE
@@ -1179,25 +1215,28 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 const len = Math.min(totalUnits - start, noteUnits(n));
                 const width = Math.max(4, len * unitW - 2);
                 const isSel = selected.has(n.id);
+                // A note that plays only some of the time: hollower, dashed, with its mark
+                const mark = isConditional(n) ? chanceMark(n) : '';
                 return (
                   <div
                     key={n.id}
                     data-note-id={n.id}
-                    className={`absolute rounded-[3px] border cursor-grab ${isSel ? 'border-white ring-1 ring-white/80 z-10' : 'border-black/50'}`}
+                    className={`absolute rounded-[3px] border cursor-grab ${isSel ? 'border-white ring-1 ring-white/80 z-10' : mark ? 'border-white/70 border-dashed' : 'border-black/50'}`}
                     style={{
                       left: start * unitW + 1,
                       width,
                       top: idx * rowH + 1,
                       height: rowH - 2,
                       backgroundColor: color,
-                      opacity: 0.4 + n.velocity * 0.6,
+                      opacity: (0.4 + n.velocity * 0.6) * (mark ? 0.6 : 1),
                     }}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       deleteNote(n.id);
                     }}
-                    title={`${namedRows ? rows[idx].label : n.note} • velocity ${Math.round(n.velocity * 100)}`}
+                    title={`${namedRows ? rows[idx].label : n.note} • velocity ${Math.round(n.velocity * 100)}${mark ? ` • plays ${mark}` : ''}`}
                   >
+                    {mark && width > 30 && rowH >= 10 && <span className="absolute left-1 top-1/2 -translate-y-1/2 text-[9px] leading-none font-mono text-white pointer-events-none">{mark}</span>}
                     <div className="absolute right-0 top-0 bottom-0 cursor-ew-resize" style={{ width: edgeOf(width) }} />
                   </div>
                 );

@@ -1016,6 +1016,16 @@ export interface NoteEvent {
   velocity: number;
   /** The note's own expression over its length (see noteExpression.ts), as an MPE keyboard plays it */
   expr?: NoteExpression;
+  /** How likely it is to play each time round, 0 to 1 (absent: always; see noteChance.ts) */
+  chance?: number;
+  /** It plays only on pass `n` of every `of` (1st of 2, 4th of 4...; see noteChance.ts) */
+  cond?: NoteCond;
+}
+
+/** A step condition: play on pass `n` (1-based) of every `of` passes of the clip. */
+export interface NoteCond {
+  n: number;
+  of: number;
 }
 
 /**
