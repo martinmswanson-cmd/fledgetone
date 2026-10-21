@@ -94,10 +94,17 @@ export interface ProjectData {
   meter?: Meter;
   /** Time signature changes (optional) */
   meterPoints?: MeterPoint[];
+  /**
+   * Which song this is, the same through renames and saves (optional; a song from an older file
+   * gets one when it opens). Its kept versions in this browser are found by it (versions.ts).
+   */
+  songId?: string;
 }
 
 export interface ProjectSnapshot {
   name: string;
+  /** Which song this is (older projects don't say: they get one when they open) */
+  songId?: string;
   bpm: number;
   swing: number;
   loopRegion: LoopRegion;
@@ -151,6 +158,7 @@ export function serializeProject(p: ProjectSnapshot): ProjectData {
     version: PROJECT_VERSION,
     modWheel: 'dynamics',
     name: p.name,
+    ...(p.songId ? { songId: p.songId } : {}),
     bpm: p.bpm,
     swing: p.swing,
     loopRegion: p.loopRegion,
@@ -485,6 +493,7 @@ export function parseProject(raw: unknown): ProjectSnapshot {
   const markers = parseMarkers(raw.markers, tempo);
   return {
     name: isStr(raw.name) && raw.name.trim() ? raw.name : 'Untitled',
+    ...(isStr(raw.songId) && /^[\w-]{1,64}$/.test(raw.songId) ? { songId: raw.songId } : {}),
     bpm,
     swing: isNum(raw.swing) ? Math.max(0, Math.min(0.5, raw.swing)) : 0.2,
     // In order and on the timeline (an Out before the In would hold playback at the In)
@@ -581,6 +590,25 @@ function unpackStored(raw: unknown): unknown {
       return { ...rest, notes };
     }),
   };
+}
+
+/** A new song's id (see ProjectData.songId). */
+export function newSongId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  return c?.randomUUID ? c.randomUUID() : `song-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * A project as browser storage keeps it, as text: notes packed, and without embedded sounds (the
+ * sounds stay in the browser's sound library). For kept versions (versions.ts).
+ */
+export function packedProject(p: ProjectSnapshot): string {
+  return JSON.stringify(packForStorage(serializeProject({ ...p, sounds: undefined })));
+}
+
+/** A project packedProject wrote, read back (validated like any file). Throws if it can't be read. */
+export function unpackProject(json: string): ProjectSnapshot {
+  return parseProject(unpackStored(JSON.parse(json)));
 }
 
 /** True when the startup autosave couldn't be read (it was kept aside, not overwritten). */

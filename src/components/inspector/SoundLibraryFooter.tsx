@@ -16,8 +16,8 @@ const megabytes = (bytes: number) => `${(bytes / 1048576).toFixed(1)} MB`;
 
 /**
  * How much the browser's sound library holds, and "Free unused": delete the sounds that neither
- * this project nor the restorable last session refers to (sounds saved in project files come
- * back when those are opened).
+ * this project, the restorable last session nor a kept version refers to (freeUnusedSounds
+ * leaves those itself; sounds saved in project files come back when those are opened).
  */
 export const SoundLibraryFooter: React.FC = () => {
   const [size, setSize] = useState<{ count: number; bytes: number } | null>(null);
@@ -51,7 +51,7 @@ export const SoundLibraryFooter: React.FC = () => {
     keptSoundIds().forEach((id) => keep.add(id));
     // ...and the recordings your saved sounds play (My sounds, in the instrument lists)
     mySoundIds().forEach((id) => keep.add(id));
-    if (!window.confirm("Delete the sounds in this browser that neither this project nor your last session uses?\n\nProjects saved as files keep their sounds inside the file, so they come back when opened.")) return;
+    if (!window.confirm("Delete the sounds in this browser that neither this project, your last session nor a kept version (File › Versions) uses?\n\nProjects saved as files keep their sounds inside the file, so they come back when opened.")) return;
     try {
       const gone = await freeUnusedSounds(keep);
       showToast(gone.count ? `Freed ${gone.count} sound${gone.count === 1 ? '' : 's'} (${megabytes(gone.bytes)}).` : 'Every sound in this browser is in use.');

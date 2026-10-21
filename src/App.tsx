@@ -1,7 +1,7 @@
 /**
  * The app's layout: the header, the arrangement timeline and the dock under it, the footer, and
  * the dialogs and overlays that can open over any of them (search, report a problem, cut to
- * length, the FMOD / Wwise package, the tour, the phone notice, project drops and shared links).
+ * length, the FMOD / Wwise package, Versions, the tour, the phone notice, project drops and shared links).
  */
 import React from 'react';
 import { startPerfMonitor } from './audio/perfMonitor';
@@ -21,6 +21,8 @@ import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import { LearnDialog } from './components/tour/LearnDialog';
 import { CutToLengthDialog } from './components/timeline/CutToLengthDialog';
+import { VersionsList } from './components/VersionsList';
+import { Modal } from './components/timeline/Modal';
 import { TourOverlay } from './components/tour/TourOverlay';
 import { useTourStore } from './tour/tourStore';
 import { useUiStore } from './store/uiStore';
@@ -66,6 +68,17 @@ const ReportProblem: React.FC = () => {
 const CutToLength: React.FC = () => {
   const open = useUiStore((s) => s.dialog === 'cut');
   return open ? <CutToLengthDialog onClose={() => useUiStore.getState().setDialog(null)} /> : null;
+};
+
+/** File › Versions: the song as it was earlier, when it's open. */
+const Versions: React.FC = () => {
+  const open = useUiStore((s) => s.dialog === 'versions');
+  const close = React.useCallback(() => useUiStore.getState().setDialog(null), []);
+  return open ? (
+    <Modal title="Versions" onClose={close}>
+      <VersionsList onRestored={close} />
+    </Modal>
+  ) : null;
 };
 
 /** The FMOD / Wwise package dialog, when it's open. */
@@ -116,6 +129,7 @@ export const App: React.FC = () => {
       <ReportProblem />
       <CutToLength />
       <Engines />
+      <Versions />
       <TryOut />
       <WhatsNew />
       <Terms />

@@ -26,7 +26,8 @@
  * their results with set().
  *
  * 5. currentProject (the song as a ProjectSnapshot, for saving and exports), retryAutosave and
- * connectAutosave (writes the song to the browser a moment after each change, see project.ts).
+ * connectAutosave (writes the song to the browser a moment after each change, see project.ts,
+ * and keeps a version every couple of minutes, see versions.ts).
  *
  * 6. connectTimelineToAudio: subscribes to the store and keeps the live engine in step. On every
  * change it works out what the engine should play (frozen tracks as audio, clip launcher slots,
@@ -84,7 +85,8 @@ import { defaultCurve, groupsInUse, type IntensityCurve } from './intensity';
 import { detectKey, keyOf } from './songKey';
 import { breathe } from './breathe';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
-import { autosaveRemovedBy, hasWork, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
+import { keepVersion, keepVersionWhileEditing } from './versions';
+import { autosaveRemovedBy, hasWork, newSongId, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin } from './timelineTypes';
 import { captureWamStatesNow, liveStates, onWamStates, resetWamSession } from '../audio/wamHost';
 import { withSound, type MySound } from './mySounds';
@@ -742,6 +744,8 @@ interface TimelineState {
   /** The last autosave attempt (null until the first one this session). */
   autosaveStatus: AutosaveStatus | null;
   projectName: string;
+  /** Which song is open (the same through renames: its kept versions are found by it, versions.ts) */
+  songId: string;
   setProjectName: (name: string) => void;
   /** Replace the arrangement with a blank timeline or the demo song. Clears undo history. */
   /** Replace the arrangement with a blank one, the demo song or a genre starter (see starters.ts). */
@@ -1358,6 +1362,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     viewWidth: 1200,
     viewJumps: 0,
     projectName: 'Untitled',
+    songId: newSongId(),
     selectedTrackId: INITIAL_TRACKS[0]?.id ?? null,
     isInspectorOpen: false,
     masterReverbDecay: 2.4,
@@ -3041,7 +3046,11 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // (with the plugins' latest settings: they otherwise reach the tracks every few seconds)
       captureWamStatesNow();
       const replaced = currentProject();
-      if (hasWork(replaced)) useLastSession.setState({ session: setAsideSession(replaced) });
+      if (hasWork(replaced)) {
+        useLastSession.setState({ session: setAsideSession(replaced) });
+        // ...and kept as a version, to go back to later
+        keepVersion(replaced, 'replaced');
+      }
       songCount++;
       replacedListeners.forEach((l) => l());
       // A take in progress belongs to the arrangement being replaced
@@ -3069,6 +3078,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
 
       set({
         projectName: p.name,
+        songId: p.songId || newSongId(),
         bpm: p.bpm,
         tempoPoints: p.tempoPoints ?? [],
         meter: p.meter ?? FOUR_FOUR,
@@ -3321,6 +3331,7 @@ export function currentProject(): ProjectSnapshot {
   const s = useTimelineStore.getState();
   return {
     name: s.projectName,
+    songId: s.songId,
     bpm: s.bpm,
     tempoPoints: s.tempoPoints,
     meter: s.meter,
@@ -3419,7 +3430,10 @@ export function connectAutosave(): () => void {
     if (!pending) return;
     pending = false;
     clearTimeout(timer);
-    const result: AutosaveResult = writeAutosave(currentProject());
+    const project = currentProject();
+    const result: AutosaveResult = writeAutosave(project);
+    // Every couple of minutes, a version to go back to (in the background; it never holds up autosave)
+    keepVersionWhileEditing(project);
     useTimelineStore.setState({
       autosaveStatus: result.ok ? { ok: true, at: Date.now() } : { ok: false, at: Date.now(), reason: result.reason },
     });

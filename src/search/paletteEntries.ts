@@ -108,6 +108,7 @@ const TOOLS: Item[] = [
     if (!clip) return 'Record or drop a vocal onto the timeline first: then right-click it, Tune vocal…';
     ui().setTuneClip(clip.id);
   } },
+  { title: 'Versions', keywords: 'versions history go back earlier restore undo lost work recover autosave backup previous ago', detail: 'Go back to how a song was earlier: this browser keeps versions as you work (File › Versions…).', run: () => ui().setDialog('versions') },
   { title: 'FMOD / Wwise package', keywords: 'fmod wwise middleware audio engine export package studio waapi event switch container rtpc unreal', detail: 'The game music laid out for FMOD Studio or Wwise, with scripts that build it there.', run: () => ui().setDialog('engines') },
   { title: 'Transition matrix', keywords: 'transition transitions matrix fill riser impact crossfade stinger bridge state switch from to', detail: 'How each game state hands over to each other one (Game preview).', run: () => ui().setDialog('game') },
   { title: 'Audition like the game', keywords: 'audition pads trigger test game engine states preview crossfade', detail: 'Play the states with the game kit\'s own player (Game preview).', run: () => ui().setDialog('game') },

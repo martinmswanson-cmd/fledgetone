@@ -2,7 +2,8 @@
  * What opens over Pocket's one screen, for the things done now and then: the song (its name,
  * tempo, key, metronome, a new song, the file), sharing it, adding an instrument, arranging the
  * song from a section (repeat it, make it its own, move it, a build-up, take it out), a chord
- * progression for the piano roll, and the starters screen ("What are we making?").
+ * progression for the piano roll, the song's earlier versions, and the starters screen ("What
+ * are we making?").
  */
 import React, { useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
@@ -29,6 +30,7 @@ import { addVocalTrack } from './PocketVocals';
 import { PocketShare } from './PocketShare';
 import { chooseInterface } from './pocketMode';
 import { pocketNoteId } from './pocketStore';
+import { VersionsList } from '../components/VersionsList';
 
 const close = () => usePocket.getState().set({ sheet: null });
 
@@ -89,6 +91,9 @@ const SongSheet: React.FC = () => {
             <FolderOpen className="w-4 h-4" /> Open file
           </button>
         </div>
+        <button type="button" className={`${pill} w-full`} onClick={() => usePocket.getState().set({ sheet: 'versions' })}>
+          <History className="w-4 h-4" /> Versions: go back to earlier
+        </button>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" className={pill} onClick={() => void exportMySounds()}>
             <Save className="w-4 h-4" /> Save my sounds
@@ -289,6 +294,13 @@ const FillSheet: React.FC = () => {
   );
 };
 
+/** The song as it was earlier (versions.ts): one tap to go back. */
+const VersionsSheet: React.FC = () => (
+  <Sheet title="Versions" onClose={close}>
+    <VersionsList touch onRestored={() => usePocket.getState().set({ sheet: null, starting: false, section: 0, trackId: null })} />
+  </Sheet>
+);
+
 const ShareSheet: React.FC = () => (
   <Sheet title="Share" onClose={close}>
     <PocketShare />
@@ -305,6 +317,7 @@ export const PocketSheets: React.FC = () => {
   if (sheet === 'chords') return <ChordsSheet />;
   if (sheet === 'drummer') return <DrummerSheet />;
   if (sheet === 'fill') return <FillSheet />;
+  if (sheet === 'versions') return <VersionsSheet />;
   return null;
 };
 
@@ -403,9 +416,14 @@ export const StartScreen: React.FC<{ canGoBack: boolean }> = ({ canGoBack }) => 
           ))}
         </div>
       )}
-      <button type="button" className={`${pill} w-full mt-4`} onClick={() => pickProjectFile()}>
-        <FolderOpen className="w-4 h-4" /> Open a project file
-      </button>
+      <div className="grid grid-cols-2 gap-2 mt-4">
+        <button type="button" className={pill} onClick={() => pickProjectFile()}>
+          <FolderOpen className="w-4 h-4" /> Open a file
+        </button>
+        <button type="button" className={pill} onClick={() => usePocket.getState().set({ sheet: 'versions' })}>
+          <History className="w-4 h-4" /> Versions
+        </button>
+      </div>
       <p className="text-[11px] text-forge-muted mt-4 flex items-center gap-1.5">
         <Mic className="w-3.5 h-3.5" /> Wear headphones when you sing, so the song stays out of your take.
       </p>

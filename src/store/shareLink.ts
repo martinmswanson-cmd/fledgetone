@@ -272,7 +272,8 @@ export async function songLink(project: ProjectSnapshot, base: string): Promise<
   // and a recorded room for the reverb stays out too (the receiver hears the generated hall)
   const masterFx = project.masterFx?.room ? { ...project.masterFx, room: undefined } : project.masterFx;
   const compact = shortIds({ ...project, masterFx, tracks: project.tracks.map((t) => (t.frozen ? { ...t, frozen: undefined } : t)) });
-  const data = serializeProject({ ...compact, sounds: undefined });
+  // (The receiver's copy is a song of their own: it gets its own id when it opens)
+  const data = serializeProject({ ...compact, sounds: undefined, songId: undefined });
   return `${base}${SHARE_PREFIX}${toBase64Url(await pipe(pack(data), new CompressionStream('deflate-raw')))}`;
 }
 
