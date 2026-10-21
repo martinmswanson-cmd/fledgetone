@@ -170,6 +170,12 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
       touched.clear();
       // (A tempo waiting with the cleared events never arrived)
       tempo = 0;
+      // Nor maybe the wide Bend range: back to the plugin's own, so the next wide bend widens it again
+      // (and its knob is free to turn)
+      if (bendRange !== BEND_RANGE_CENTS) {
+        bendRange = BEND_RANGE_CENTS;
+        inst.audioNode.resetParam?.(`${NAMED_PARAM}${BEND_RANGE_PARAM}`);
+      }
     },
     cc: (cc: number, value: number, time: number) => {
       if (!inst) return;

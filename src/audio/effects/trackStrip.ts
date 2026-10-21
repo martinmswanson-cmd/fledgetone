@@ -83,6 +83,8 @@ import {
 export interface TrackStrip {
   /** Instruments connect here. */
   input: Tone.InputNode;
+  /** The instrument's queued events were cleared (playback stopped or jumped): its plugin lanes send their values again. */
+  resendPluginControls: () => void;
   apply: (track: Track, opts?: { ramp?: number; muteOverride?: boolean }) => void;
   /** What the Pump follows, or null while it's off. */
   pumpTrigger: () => PumpTrigger | null;
@@ -830,6 +832,10 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
 
   return {
     input,
+    resendPluginControls: () => {
+      // (Their events planned ahead were dropped with the plugin's queue: plan them again from now)
+      for (const c of controls.values()) if (c.run) c.run = controlRun();
+    },
     setPluginParams: (set) => {
       if (set === pluginSink) return;
       pluginSink = set;

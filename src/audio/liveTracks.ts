@@ -464,6 +464,7 @@ export function getLiveClipBus(trackId: string): NativeBus | undefined {
 export function releaseAllLiveVoices(): void {
   for (const lt of live.values()) {
     safely(() => lt.instrument.releaseAll());
+    lt.strip.resendPluginControls();
     // A bend left by a clip's expression ends with playback
     if (lt.instrument.bend) safely(() => lt.instrument.bend!(0, liveMix.bus.context.currentTime));
   }
