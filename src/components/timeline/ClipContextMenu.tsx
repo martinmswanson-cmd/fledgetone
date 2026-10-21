@@ -10,7 +10,7 @@ import { useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { patternsFor } from '../../store/demoSong';
 import { formatBarCount } from '../../store/timelineTypes';
-import { canMoveClipBetween, isAudioKind, isDrumKind } from '../../audio/instrumentCatalog';
+import { canMoveClipBetween, isAudioKind, isDropKind, isDrumKind } from '../../audio/instrumentCatalog';
 import { isMixTrack } from '../../store/buses';
 import { bassForChords, chordsForMelody, fillClipBar, useSmartDialog } from '../../store/smartActions';
 import { FILLS } from '../../store/smartTools';
@@ -173,7 +173,8 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
   type Item = MenuItemProps & { key: string };
 
   const drumLane = !!track && isDrumKind(track.instrumentKey);
-  const pitchedLane = !!track && !audioLane && !drumLane && !isMixTrack(track);
+  // (Not the Drop pad: its notes are moves on the whole mix, so no chords, melodies or patterns on it)
+  const pitchedLane = !!track && !audioLane && !drumLane && !isMixTrack(track) && !isDropKind(track.instrumentKey);
   const noteClip = !!menuClip && !audioClip;
   const openSmart = (mode: 'chords' | 'drummer' | 'math') => run(() => useSmartDialog.setState({ open: { mode, trackId: menu.trackId, bar: Math.max(1, Math.floor(menu.bar + 1e-6)) } }));
   // Writing helpers: fills on a drum clip, chords and a bass line from a note clip

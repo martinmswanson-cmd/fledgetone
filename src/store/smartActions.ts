@@ -9,13 +9,15 @@ import { accompany, ACCOMP_STYLES, bassFromChords, chordName, chordNotesFor, DRU
 import { measureAt, meterAt } from '../audio/tempoMap';
 import type { Meter } from '../audio/tempoMap';
 import type { AccompStyle, BassStyle, ChordStyle, DrumStyle, FillKind } from './smartTools';
-import { INSTRUMENTS, isDrumKind } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isDropKind, isDrumKind } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
 import { melodyVariation, MELODY_VARIATIONS, surprisePair, type MelodyVariation, type VariationPlace } from './melodyVariations';
 
 /** The store side of the writing helpers (smartTools.ts): each makes or changes one clip, as one undo step. */
 
 const tl = () => useTimelineStore.getState();
+/** Whether a track plays the Drop pad: its notes are moves on the whole mix, so no generated notes go on it. */
+const onDropPad = (trackId: string) => isDropKind(tl().tracks.find((t) => t.id === trackId)?.instrumentKey ?? 'keys');
 const newId = () => uid('note');
 
 /** Which smart dialog is open, for which track and bar. */
@@ -66,6 +68,7 @@ function trackWithClip(afterId: string, instrument: InstrumentKey, name: string,
 
 /** A chord progression clip on a track. */
 export function makeChordClip(trackId: string, atBar: number, chords: number[][], chordBars: number, style: ChordStyle): string | null {
+  if (onDropPad(trackId)) return null;
   const notes = chordNotesFor(chords, chordBars, style, newId);
   // Named after one pass of the progression
   const names = chords.map(chordName);
@@ -200,7 +203,7 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
   const s = tl();
   const clip = s.clips.find((c) => c.id === clipId);
   const track = clip && s.tracks.find((t) => t.id === clip.trackId);
-  if (!clip || !track || clip.audio || !clip.notes.length || isDrumKind(track.instrumentKey)) return null;
+  if (!clip || !track || clip.audio || !clip.notes.length || isDrumKind(track.instrumentKey) || isDropKind(track.instrumentKey)) return null;
   const key = inKey ?? songKey();
   const meter = meterAt(clip.startBar, { base: s.meter, points: s.meterPoints });
   const visible = clip.notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < clip.lengthBars - 1e-6);
@@ -228,6 +231,7 @@ export function varyMelody(clipId: string, kind: MelodyVariation, place: Variati
 
 /** A Math patterns clip (mathPatterns.ts) on a pitched track, in `key`, `bars` long. */
 export function makeMathClip(trackId: string, atBar: number, pattern: MathPatternId, key: SongKey, bars: number): string | null {
+  if (onDropPad(trackId)) return null;
   const notes = mathPattern(pattern, { root: key.root, steps: key.steps }, bars, newId);
   return placeClip(trackId, atBar, bars, notes, MATH_PATTERNS.find((m) => m.id === pattern)?.name ?? 'Math pattern');
 }

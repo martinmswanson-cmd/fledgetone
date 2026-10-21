@@ -10,6 +10,7 @@
  * Each also says which tracks belong on it, by what they do (trackRole), for grouping them in one go.
  * Pure: no store or audio, so Node tests it.
  */
+import { isDropTrack } from './dropMoves';
 import { defaultPeqBands, defaultTrackFx, type Track, type TrackFx, type Clip } from './timelineTypes';
 import { trackRole, type TrackRole } from '../audio/mixCheck';
 
@@ -106,5 +107,6 @@ export function busPresetFx(id: BusPresetId, base: TrackFx = defaultTrackFx()): 
  */
 export function busPresetMembers(id: BusPresetId, tracks: readonly Track[], clips: readonly Clip[], isMix: (t: Track) => boolean): Track[] {
   const role = busPresetById(id).role;
-  return tracks.filter((t) => !isMix(t) && !t.output && trackRole(t, clips) === role);
+  // (Not the Drop pad: it makes no sound, and on a bus its moves would hang on the bus's mute and solo)
+  return tracks.filter((t) => !isMix(t) && !t.output && !isDropTrack(t) && trackRole(t, clips) === role);
 }
