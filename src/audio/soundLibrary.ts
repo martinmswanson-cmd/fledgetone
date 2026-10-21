@@ -690,13 +690,23 @@ export async function librarySize(): Promise<{ count: number; bytes: number }> {
   return { count: sounds.length, bytes: sounds.reduce((sum, s) => sum + s.size, 0) };
 }
 
+/** Other keepers of sounds (the kept versions of songs, versions.ts): what each needs is never freed. */
+const protectors: Array<() => Promise<Iterable<string>>> = [];
+
+/** Never free the sounds `source` names (asked each time; if it throws, nothing is freed). */
+export function protectSounds(source: () => Promise<Iterable<string>>): void {
+  protectors.push(source);
+}
+
 /**
- * Delete every stored sound except the ones in `keep`. Returns what went. A deleted sound that
- * something still refers to reads "missing" from then on.
+ * Delete every stored sound except the ones in `keep` (and the ones protectSounds keeps). Returns
+ * what went. A deleted sound that something still refers to reads "missing" from then on.
  */
 export async function freeUnusedSounds(keep: ReadonlySet<string>): Promise<{ count: number; bytes: number }> {
+  const kept = new Set(keep);
+  for (const source of protectors) for (const id of await source()) kept.add(id);
   const sounds = await storedSounds();
-  const gone = sounds.filter((s) => !keep.has(s.id));
+  const gone = sounds.filter((s) => !kept.has(s.id));
   await deleteStoredSounds(gone.map((s) => s.id));
   for (const { id } of gone) {
     for (const key of [...decoded.keys()]) {

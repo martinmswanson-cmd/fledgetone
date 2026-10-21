@@ -101,6 +101,7 @@ const MENUS: MenuDef[] = [
       { label: 'Open…', shortcut: `${MOD_KEY}O`, run: pickProjectFile },
       { label: 'Save', shortcut: `${MOD_KEY}S`, run: () => void saveProjectFile(), title: 'Save to the project’s file (the first time, choose where)' },
       { label: 'Save As…', shortcut: `${MOD_KEY}⇧S`, run: () => void saveProjectAs(), title: canChooseSaveLocation() ? 'Choose the folder and name to save to' : 'This browser saves to its downloads folder (Chrome or Edge on a computer can choose where)' },
+      { label: 'Versions…', run: () => ui().setDialog('versions'), title: 'Go back to how a song was earlier: this browser keeps versions as you work' },
       { label: 'Save my sounds to a file…', run: () => void exportMySounds(), title: 'Your saved sounds (My sounds) and starred instruments in one file, to keep safe or open in another browser', divider: true },
       { label: 'Open a My sounds file…', run: pickMySoundsFile, title: 'Add the sounds and stars from a My sounds file to the ones in this browser' },
       { label: 'Export audio / video…', shortcut: `${MOD_KEY}E`, run: () => ui().setDialog('export'), divider: true },

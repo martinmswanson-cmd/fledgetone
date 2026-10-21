@@ -20,7 +20,7 @@ At the very top is the **menu bar**: every tool in the app, where a desktop DAW 
 
 ### The menu bar
 
-- **File**: New…, Open… (`Ctrl+O`), Save (`Ctrl+S`), Save As… (`Ctrl+Shift+S`), Save my sounds to a file…, Open a my sounds file…, Export audio / video… (`Ctrl+E`), Showcase video (YouTube, TikTok)…, Channel kit (streams, videos)…, Beat store package…, Share…, Cut song to length…, Export markers for video editors…, Game kit (Godot, Unity, web)…, FMOD / Wwise package…
+- **File**: New…, Open… (`Ctrl+O`), Save (`Ctrl+S`), Save As… (`Ctrl+Shift+S`), Versions… (see Versions: go back to earlier), Save my sounds to a file…, Open a my sounds file…, Export audio / video… (`Ctrl+E`), Showcase video (YouTube, TikTok)…, Channel kit (streams, videos)…, Beat store package…, Share…, Cut song to length…, Export markers for video editors…, Game kit (Godot, Unity, web)…, FMOD / Wwise package…
 - **Edit**: Undo, Redo, Cut, Copy, Paste at the playhead, Duplicate, Delete, Select all, Select nothing, and the Selection and Razor tools.
 - **Song**: Add marker at the playhead, Add hit point, the Markers list, Fit tempo / tempo finder, Tap tempo, Breathe (see Tempo changes), Insert 1 or 4 bars at the playhead, Delete bars In → Out, Build-up & drop at the playhead, Arrange a beat… and Dark melody… (see Arranging a beat), the three key changes from the playhead, Play bars In → Out backwards (see Play backwards), Cut song to length…
 - **Track** (the selected track): Add track…, Delete, Freeze, Bounce in place, Move up / down, New folder with this track (or Take out of its folder), the four **Bus preset** items (see Buses), Mute, Solo, Arm for recording, Inspector & FX rack, EQ, Pro EQ (big), Multiband compressor, Human feel, Duck others under this track, Automation.
@@ -725,7 +725,7 @@ Plugins are programs from their sites, so only load ones you trust. A project yo
 
 ### Where your sounds live
 
-Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.fledgetone.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen or restorable session uses. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
+Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.fledgetone.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen, restorable session or kept version (**File › Versions…**) uses. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
 
 ## Mixing and effects
 
@@ -997,6 +997,15 @@ The app also saves your work in this browser half a second after every change. T
 - If autosave fails, the project bar says why in red: the project is too big for browser storage (about 5 MB per site, usually because of big Sampler sounds), storage is full (Dismiss the old session to make room), or the browser blocks storage for this site. While it's failing, closing or reloading the tab asks first, so you can **Save**.
 - If your last session can't be read (it may be damaged, or from a newer version of Fledgetone), a banner says so and it's kept apart in this browser, so nothing overwrites it. If there's no room to keep it apart, the app stops autosaving rather than write over it, and the project bar says so: use **Save**.
 - Autosave is per browser and per site, and private windows don't keep it. Use **Save** for anything you care about.
+
+### Versions: go back to earlier
+
+**File › Versions…** lists earlier versions of your songs that this browser keeps, the song open first, each with when it was kept ("10 min ago", "yesterday 14:02"), how many tracks and bars it has, and why it was kept when it wasn't just while you worked. Click one to go back to it: after you confirm, it opens as the song, and the song you had open is kept as a version first, so going back can itself be undone from the same list. Under the list: *Your songs are files. If this app disappeared tomorrow, they would still open at fledgetone.com.*
+
+- While you work, a version is kept every couple of minutes (with autosave), and one just before **New**, **Open**, a shared link or going back to a version replaces the song. A song that hasn't changed isn't kept twice.
+- Old versions thin out: every one from the last hour, then one per 10 minutes for the last day, then one a day for 30 days. Each song's newest version stays however old it is (a song you replaced may be nowhere else), and at most 300 versions are kept in all.
+- Versions keep the song, not its sound files: those stay in the browser's sound library, and **Free unused** leaves every sound a kept version uses.
+- Versions are kept per browser, like autosave. Where the browser blocks storage (some private windows), the list says so, and autosave and **Save** work as before.
 
 ## Playing a MIDI keyboard
 
@@ -1386,7 +1395,8 @@ On a phone, Fledgetone opens **Pocket**: the same studio underneath (the same in
 
 The screen, top to bottom:
 
-- **The song**, its name, tempo and where it's playing. Tap it for the song's settings: its name, tempo (**−**, **+**, or **Tap** it), the key the notes follow, the **metronome**, saving and opening the project file, saving and opening your **My sounds**, a new song, and **Use the full studio here**. **Share** (top right): an MP3 of the whole song (matched to the streaming loudness, -14 LUFS) to the phone's share sheet, a link to the song, and the project file.
+- **The song**, its name, tempo and where it's playing. Tap it for the song's settings: its name, tempo (**−**, **+**, or **Tap** it), the key the notes follow, the **metronome**, saving and opening the project file, **Versions**, saving and opening your **My sounds**, a new song, and **Use the full studio here**. **Share** (top right): an MP3 of the whole song (matched to the streaming loudness, -14 LUFS) to the phone's share sheet, a link to the song, and the project file.
+- **Versions**: in the song's settings, **Versions: go back to earlier** lists the earlier versions this phone keeps (the same list as the studio's **File › Versions…**, see *Versions: go back to earlier*): tap one to go back to it. **What are we making?** has a **Versions** button too.
 - **The song as a grid.** Each row is a **section** of the song, in order, and each column a track; each cell shows what that track plays in that section. Sections are the song's markers (the ones the studio shows on its timeline), or every 4 or 8 bars in a song without any, and each has a letter: sections that play the same thing share one (A A B A). Scroll the grid both ways; the letters and track names stay put.
   - **Tap a cell** to work on that track in that section: the bottom of the screen becomes its instrument. **Tap a letter** to pick that section: with **Loop** on, Play loops it (while the song plays it moves there on the next bar line); with **Song** on, it is just selected.
   - The selected section's **⋯** (or holding any letter) arranges the song from there: **Play it twice** (a linked copy right after it: change either and both change, until you **Make it its own**), **Move earlier** or **later**, **Build-up into it** (a riser, a snare roll and a hit on its first beat), and **Take it out** (its bars go and the rest of the song moves up). **+** under the letters adds a section: a linked copy of the selected one, after it.
