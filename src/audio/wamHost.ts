@@ -425,9 +425,13 @@ export function sendMidi(inst: WamInstance, bytes: [number, number, number], tim
   inst.audioNode.scheduleEvents?.({ type: 'wam-midi', time, data: { bytes } });
 }
 
-/** The song's tempo from `time` (audio seconds), for plugins with tempo-synced parts. */
-export function sendTempo(inst: WamInstance, bpm: number, time: number): void {
-  inst.audioNode.scheduleEvents?.({ type: 'wam-transport', time, data: { tempo: bpm, playing: true } });
+/**
+ * The song's tempo from `time` (audio seconds), for plugins with tempo-synced parts; with `beat`,
+ * where in the song that is (quarter notes from its start), for plugins that follow the song
+ * (Fledge Synth: its free LFOs and random values, so live playback and an export match).
+ */
+export function sendTempo(inst: WamInstance, bpm: number, time: number, beat?: number): void {
+  inst.audioNode.scheduleEvents?.({ type: 'wam-transport', time, data: { tempo: bpm, playing: true, ...(beat !== undefined && Number.isFinite(beat) ? { beat } : {}) } });
 }
 
 /**

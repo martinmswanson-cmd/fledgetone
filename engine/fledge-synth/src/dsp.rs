@@ -222,6 +222,15 @@ fn shape(kind: u32, x: f32) -> f32 {
         3 => x.clamp(-1.0, 1.0),
         4 => x.sin(),
         5 => (x + 0.35).tanh() - 0.336_376,
+        // Tube: the top half rounds off as Soft does, the bottom half later and softer (lopsided:
+        // even harmonics, as a valve stage)
+        6 => {
+            if x >= 0.0 {
+                x.tanh()
+            } else {
+                (0.6 * x).tanh() / 0.6
+            }
+        }
         _ => x,
     }
 }
@@ -247,6 +256,13 @@ fn shape_integral(kind: u32, x: f32) -> f32 {
         }
         4 => -x.cos(),
         5 => log_cosh(x + 0.35) - 0.336_376 * x,
+        6 => {
+            if x >= 0.0 {
+                log_cosh(x)
+            } else {
+                log_cosh(0.6 * x) / 0.36
+            }
+        }
         _ => x * x / 2.0,
     }
 }
@@ -576,7 +592,7 @@ mod tests {
 
     #[test]
     fn shaper_integral_matches_shape() {
-        for kind in 1..=5 {
+        for kind in 1..=6 {
             for i in -30..30 {
                 let x = i as f32 * 0.1;
                 let h = 1e-2;

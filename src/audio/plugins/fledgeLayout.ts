@@ -16,27 +16,44 @@ export const FLEDGE_TABLES = [
   'Sync sweep', 'Organ', 'Octave stack', 'Digital', 'Resonant', 'Screech', 'FM 1:2', 'Random harmonics',
 ];
 export const FLEDGE_FILTERS = ['Low pass 12', 'Low pass 24', 'Ladder', 'Band pass', 'High pass 12', 'High pass 24', 'Notch', 'Comb +', 'Comb −', 'Formant', 'Off'];
-export const FLEDGE_SHAPERS = ['Off', 'Soft', 'Warm', 'Hard clip', 'Fold', 'Asymmetric'];
+export const FLEDGE_SHAPERS = ['Off', 'Soft', 'Warm', 'Hard clip', 'Fold', 'Asymmetric', 'Tube', 'Bitcrush', 'Downsample'];
 export const FLEDGE_WARPS = ['Off', 'Sync', 'Bend +', 'Bend −', 'Squeeze', 'Mirror', 'Quantize', 'Fold', 'Ring'];
 export const FLEDGE_STACKS = ['Off', 'Octave', '2 octaves', 'Fifth', 'Fifth + octave', 'Major', 'Minor', 'Sus 4'];
 export const FLEDGE_ROUTES = ['Filter 1', 'Filter 2', 'Both filters', 'Straight out'];
 export const FLEDGE_LFO_SHAPES = ['Sine', 'Triangle', 'Saw up', 'Saw down', 'Square', 'Wobble', 'Steps', 'Drift', 'Pump', 'Drawn 1', 'Drawn 2'];
-export const FLEDGE_LFO_MODES = ['Free', 'Restart', 'One shot'];
-export const FLEDGE_SYNC = ['4 bars', '2 bars', '1 bar', '1/2.', '1/2', '1/4.', '1/2T', '1/4', '1/8.', '1/4T', '1/8', '1/16.', '1/8T', '1/16', '1/16T', '1/32'];
+export const FLEDGE_LFO_MODES = ['Free', 'Retrig', 'Envelope', 'Sustain env'];
+export const FLEDGE_LFO_RETRIGS = ['As the voices', 'Always', 'Legato continues', 'Never'];
+/** The tempo divisions, in the engine's order (the later ones came later: saved songs keep their place) */
+export const FLEDGE_SYNC = ['4 bars', '2 bars', '1 bar', '1/2.', '1/2', '1/4.', '1/2T', '1/4', '1/8.', '1/4T', '1/8', '1/16.', '1/8T', '1/16', '1/16T', '1/32', '2 bars.', '1 bar.', '1/1T', '1/32.', '1/32T', '1/64'];
+/** Each division's length in beats (as the engine's SYNC_BEATS) */
+export const FLEDGE_SYNC_BEATS = [16, 8, 4, 3, 2, 1.5, 4 / 3, 1, 0.75, 2 / 3, 0.5, 0.375, 1 / 3, 0.25, 1 / 6, 0.125, 12, 6, 8 / 3, 0.1875, 1 / 12, 0.0625];
 export const FLEDGE_DESTS = [
   'None', 'F1 cutoff', 'F1 resonance', 'A position', 'B position', 'Pitch', 'Volume', 'Drive', 'FM', 'Pan', 'B pitch', 'Sub',
   'A pitch', 'A level', 'B level', 'A detune', 'B detune', 'A warp', 'B warp', 'F2 cutoff', 'F2 resonance', 'Noise', 'Filter drive', 'Drive mix',
   'LFO 1 rate', 'LFO 2 rate', 'LFO 3 rate', 'LFO 4 rate', 'Chorus mix', 'Phaser mix', 'Delay mix', 'Reverb mix', 'Width',
+  'Pre drive', 'Crush', 'Band drive',
 ];
 export const FLEDGE_SOURCES = [
   'None', 'LFO 1', 'LFO 2', 'LFO 3', 'LFO 4', 'Volume env', 'Filter env', 'Mod env', 'Velocity', 'Note', 'Mod wheel', 'Aftertouch', 'Pitch bend', 'Random', 'Macro 1', 'Macro 2', 'Macro 3', 'Macro 4',
+  'Note random', 'Note random ±', 'Chaos', 'Release velocity', 'Note pressure',
 ];
+/** Where the macros are in FLEDGE_SOURCES (Macro 1 is MACRO_SOURCE + 1) */
+export const MACRO_SOURCE = 13;
+export const FLEDGE_CURVES = ['Linear', 'Exponential', 'Logarithmic', 'S-curve'];
+export const FLEDGE_SUB_PATHS = ['With the voices', 'Clean, after effects'];
+export const FLEDGE_GLIDE_MODES = ['Always', 'Legato only'];
+export const FLEDGE_GLIDE_RATES = ['Constant time', 'Constant rate'];
+export const FLEDGE_GLIDE_CURVES = ['Exponential', 'Linear'];
+export const FLEDGE_PENV_CURVES = ['Exponential', 'Linear'];
+export const FLEDGE_RANDOM_CYCLES = ['Never', '1 bar', '2 bars', '4 bars'];
+/** How many matrix slots there are */
+export const FLEDGE_SLOTS = 16;
 export const FLEDGE_MODES = ['Poly', 'Mono', 'Legato'];
 export const FLEDGE_SUB_OCTAVES = ['−1 octave', '−2 octaves'];
 export const FLEDGE_PHASER_MODES = ['Phaser', 'Flanger'];
 
 /** How many places each list keeps (as params.rs) */
-const CAP = { table: 64, filter: 32, shaper: 16, warp: 32, stack: 16, route: 8, lfo: 32, lfoMode: 8, sync: 32, dest: 64, source: 32, mode: 8, sub: 4, phaser: 8 };
+const CAP = { table: 64, filter: 32, shaper: 16, warp: 32, stack: 16, route: 8, lfo: 32, lfoMode: 8, sync: 32, dest: 64, source: 32, mode: 8, sub: 4, phaser: 8, retrig: 8, curve: 8, subPath: 4, glide: 8, cycle: 8 };
 
 const knob = (p: string, label: string, bipolar = false): FledgeControl => ({ p, label, kind: 'knob', bipolar });
 const choice = (p: string, label: string, options: string[], cap: number): FledgeControl => ({ p, label, kind: 'choice', options, cap });
@@ -63,7 +80,10 @@ export const lfoControls = (n: number) => {
     division: choice(`${p} rate (sync)`, 'Rate', FLEDGE_SYNC, CAP.sync),
     hz: knob(`${p} rate (Hz)`, 'Rate'),
     mode: choice(`${p} mode`, 'Mode', FLEDGE_LFO_MODES, CAP.lfoMode),
-    knobs: [knob(`${p} phase`, 'Phase'), knob(`${p} fade in`, 'Fade in')],
+    retrig: choice(`${p} retrigger`, 'Retrigger', FLEDGE_LFO_RETRIGS, CAP.retrig),
+    knobs: [knob(`${p} phase`, 'Phase'), knob(`${p} delay`, 'Delay'), knob(`${p} fade in`, 'Rise'), knob(`${p} smooth`, 'Smooth'), knob(`${p} key tracking`, 'Key track')],
+    /** Where a Sustain env LFO holds while the key is down */
+    sustain: knob(`${p} sustain point`, 'Hold at'),
     targets: [1, 2].map((t) => ({ target: choice(`${p} target ${t}`, `Target ${t}`, FLEDGE_DESTS, CAP.dest), amount: knob(`${p} amount ${t}`, 'Amount', true) })),
   };
 };
@@ -74,17 +94,22 @@ export const shapeControls = (n: number) => ({
   smooth: knob(`Shape ${n} smooth`, 'Smooth'),
 });
 
-/** A matrix slot (1 to 8). */
+/** A matrix slot (1 to 16): its source moves its target by its amount (bent by its curve, and scaled by its "via" source). */
 export const slotControls = (n: number) => ({
   source: choice(`Mod ${n} source`, 'Source', FLEDGE_SOURCES, CAP.source),
   target: choice(`Mod ${n} target`, 'Target', FLEDGE_DESTS, CAP.dest),
   amount: knob(`Mod ${n} amount`, 'Amount', true),
+  curve: choice(`Mod ${n} curve`, 'Curve', FLEDGE_CURVES, CAP.curve),
+  via: choice(`Mod ${n} via`, 'Via', FLEDGE_SOURCES, CAP.source),
 });
+/** The matrix slots, 1 to 16 */
+export const SLOT_NUMBERS = Array.from({ length: FLEDGE_SLOTS }, (_, i) => i + 1);
 
 const adsr = (p: string) => [knob(`${p} attack`, 'Attack'), knob(`${p} decay`, 'Decay'), knob(`${p} sustain`, 'Sustain'), knob(`${p} release`, 'Release')];
 
 export const FLEDGE_SECTIONS = {
   sources: [knob('FM B → A', 'FM B→A'), knob('Sub level', 'Sub'), choice('Sub octave', 'Sub octave', FLEDGE_SUB_OCTAVES, CAP.sub), knob('Noise level', 'Noise'), choice('Noise route', 'Noise to', FLEDGE_ROUTES, CAP.route)],
+  subPath: choice('Sub path', 'Sub goes', FLEDGE_SUB_PATHS, CAP.subPath),
   filter1: { type: choice('Filter type', 'Type', FLEDGE_FILTERS, CAP.filter), knobs: [knob('Cutoff', 'Cutoff'), knob('Resonance', 'Resonance'), knob('Filter drive', 'Drive'), knob('Key tracking', 'Key track'), knob('Filter envelope', 'Envelope', true)] },
   filter2: {
     type: choice('Filter 2 type', 'Type', FLEDGE_FILTERS, CAP.filter),
@@ -94,10 +119,22 @@ export const FLEDGE_SECTIONS = {
   ampEnv: adsr('Amp'),
   filterEnv: adsr('Filter'),
   modEnv: adsr('Mod env'),
-  pitchEnv: [knob('Pitch envelope', 'Amount', true), knob('Pitch decay', 'Decay')],
-  drive: { type: choice('Drive type', 'Type', FLEDGE_SHAPERS, CAP.shaper), knobs: [knob('Drive', 'Drive'), knob('Drive mix', 'Mix')] },
+  pitchEnv: [knob('Pitch envelope', 'Amount', true), knob('Pitch decay', 'Time')],
+  pitchCurve: choice('Pitch envelope curve', 'Curve', FLEDGE_PENV_CURVES, CAP.glide),
+  /** The drive after the filters (the first there was) */
+  drive: { type: choice('Drive type', 'Type', FLEDGE_SHAPERS, CAP.shaper), knobs: [knob('Drive', 'Drive'), knob('Drive mix', 'Mix'), knob('Drive crush', 'Crush'), knob('Drive tone', 'Cab tone')] },
+  /** Before the filters */
+  preDrive: { type: choice('Pre drive type', 'Type', FLEDGE_SHAPERS, CAP.shaper), knobs: [knob('Pre drive', 'Drive'), knob('Pre drive mix', 'Mix'), knob('Pre drive crush', 'Crush')] },
+  /** After the voices, mids and highs only */
+  bandDrive: {
+    type: choice('Band drive type', 'Type', FLEDGE_SHAPERS, CAP.shaper),
+    knobs: [knob('Band drive', 'Drive'), knob('Band drive mix', 'Mix'), knob('Band drive crush', 'Crush'), knob('Band drive tone', 'Cab tone')],
+    split: [knob('Band low split', 'Low split'), knob('Band high split', 'High split'), knob('Band high amount', 'Highs')],
+  },
+  chaos: { rate: choice('Chaos rate (sync)', 'Chaos rate', FLEDGE_SYNC, CAP.sync), smooth: knob('Chaos smooth', 'Smooth'), cycle: choice('Random repeat', 'Repeats every', FLEDGE_RANDOM_CYCLES, CAP.cycle) },
   macros: [1, 2, 3, 4].map((n) => knob(`Macro ${n}`, `Macro ${n}`)),
   play: { mode: choice('Voices', 'Voices', FLEDGE_MODES, CAP.mode), knobs: [knob('Glide', 'Glide'), knob('Bend range', 'Bend'), knob('Velocity', 'Velocity')] },
+  glide: [choice('Glide mode', 'Glide', FLEDGE_GLIDE_MODES, CAP.glide), choice('Glide rate', 'Glide time', FLEDGE_GLIDE_RATES, CAP.glide), choice('Glide curve', 'Glide curve', FLEDGE_GLIDE_CURVES, CAP.glide)],
   eq: { on: toggle('EQ on', 'On'), knobs: [knob('EQ low', 'Low', true), knob('EQ low freq', 'Low freq'), knob('EQ mid', 'Mid', true), knob('EQ mid freq', 'Mid freq'), knob('EQ high', 'High', true), knob('EQ high freq', 'High freq')] },
   chorus: { on: toggle('Chorus on', 'On'), knobs: [knob('Chorus rate', 'Rate'), knob('Chorus depth', 'Depth'), knob('Chorus mix', 'Mix')] },
   phaser: { on: toggle('Phaser on', 'On'), mode: choice('Phaser mode', 'Mode', FLEDGE_PHASER_MODES, CAP.phaser), knobs: [knob('Phaser rate', 'Rate'), knob('Phaser depth', 'Depth'), knob('Phaser feedback', 'Feedback'), knob('Phaser mix', 'Mix')] },
@@ -125,7 +162,7 @@ export function allFledgeControls(): FledgeControl[] {
   walk([oscControls('A'), oscControls('B')]);
   walk([1, 2, 3, 4].map(lfoControls));
   walk([1, 2].map(shapeControls));
-  walk([1, 2, 3, 4, 5, 6, 7, 8].map(slotControls));
+  walk(SLOT_NUMBERS.map(slotControls));
   return out;
 }
 

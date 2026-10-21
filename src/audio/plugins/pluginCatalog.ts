@@ -8,13 +8,13 @@ export const PLUGIN_FAMILIES: PluginFamily[] = [
   "licence": "GPL-3.0-or-later (Fledgetone's own)",
   "gpl": false,
   "file": "fledge.wasm",
-  "bytes": 191287,
-  "hash": "0c0e247bce83",
+  "bytes": 215936,
+  "hash": "1f2d596866bd",
   "plugins": [
    {
     "name": "Fledge Synth",
     "category": "Synth",
-    "about": "Fledgetone's own synthesizer for modern electronic music: two wavetable oscillators with up to 16 unison voices, FM, a clean sub, filters including comb and formant, antialiased drive, wobble LFOs in time with the song and an OTT. Its presets are made for dubstep, bass music and leads.",
+    "about": "Fledgetone's own synthesizer for modern electronic music: two wavetable oscillators with up to 16 unison voices, FM, a clean mono sub, filters including comb and formant, antialiased drive before and after the filters and on the mids and highs, LFOs in time with the song or restarting with each note, per-note random and chaos sources, a 16-slot mod matrix and an OTT. Its presets are made for dubstep, bass music and leads, with basses that change with every note.",
     "instrument": true,
     "tags": [
      "wavetable",

@@ -3,10 +3,13 @@
 //! levelled to the same loudness (tests::presets_are_level_matched checks it). Names are
 //! "Category/Name"; the matrix's slots 5 to 8 hold each preset's macros.
 
-use crate::params::{defaults, index_of, param, COUNT};
+use crate::params::{defaults, index_of, legacy, param, COUNT, COUNT_V1};
 
 pub struct Preset {
     pub name: &'static str,
+    /// Made before the per-note movement work: it keeps the settings it had then for the
+    /// parameters added since (params::legacy), so it sounds as it always did
+    pub classic: bool,
     pub sets: &'static [(&'static str, f32)],
 }
 
@@ -14,6 +17,9 @@ impl Preset {
     /// The preset as stored 0..1 values: the defaults, with its settings over them.
     pub fn values(&self) -> [f32; COUNT] {
         let mut v = defaults();
+        if self.classic {
+            legacy(&mut v, COUNT_V1);
+        }
         for &(name, value) in self.sets {
             let i = index_of(name).unwrap_or_else(|| panic!("preset {}: no parameter {}", self.name, name));
             v[i] = param(i).kind.normal(value);
@@ -118,15 +124,41 @@ const M2: f32 = 15.0;
 const M3: f32 = 16.0;
 const MONO: f32 = 1.0;
 const LEGATO: f32 = 2.0;
+// Added with the per-note movement work
+const TUBE: f32 = 6.0;
+const BITS: f32 = 7.0;
+const RETRIG: f32 = 1.0;
+const ENVELOPE: f32 = 2.0;
+const SUSTAIN_ENV: f32 = 3.0;
+const SRC_LFO1: f32 = 1.0;
+const SRC_FENV: f32 = 6.0;
+const SRC_NOTE: f32 = 9.0;
+const SRC_NRAND: f32 = 18.0;
+const SRC_NRAND_BI: f32 = 19.0;
+const SRC_CHAOS: f32 = 20.0;
+const F2_RES: f32 = 20.0;
+const B_DETUNE: f32 = 16.0;
+const PHASER_MIX: f32 = 29.0;
+const PRE_DRIVE: f32 = 33.0;
+const CRUSH: f32 = 34.0;
+const BAND_DRIVE: f32 = 35.0;
+const C_EXP: f32 = 1.0;
+const C_LOG: f32 = 2.0;
+const C_S: f32 = 3.0;
+const CLEAN_SUB: f32 = 1.0;
+const LEGATO_ONLY: f32 = 1.0;
+const LINEAR: f32 = 1.0;
 
 pub const PRESETS: &[Preset] = &[
     Preset {
         name: "Init saw",
+        classic: true,
         sets: &[("A table", T_BASIC), ("A position", SAW)],
     },
     // ---------- Bass ----------
     Preset {
         name: "Bass/Wobble",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 3.0), ("A detune", 0.2), ("A width", 0.3),
             ("B position", SQUARE), ("B octave", -1.0), ("B level", -6.0),
@@ -143,6 +175,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Growl",
+        classic: true,
         sets: &[
             ("A table", T_FM), ("A position", 0.45),
             ("B position", 0.0), ("B level", OFF),
@@ -161,6 +194,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Riddim",
+        classic: true,
         sets: &[
             ("A position", SQUARE),
             ("B position", SQUARE), ("B octave", 1.0), ("B level", -8.0),
@@ -177,6 +211,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Detune",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 2.0), ("A detune", 0.25), ("A width", 0.2),
             ("B table", T_PULSE), ("B position", 0.5), ("B level", -4.0),
@@ -193,6 +228,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Neuro",
+        classic: true,
         sets: &[
             ("A table", T_METAL), ("A position", 0.6), ("A unison", 2.0), ("A detune", 0.1),
             ("B table", T_FOLD), ("B position", 0.4), ("B level", -6.0),
@@ -210,6 +246,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Talking",
+        classic: true,
         sets: &[
             ("A table", T_VOWEL), ("A position", 0.2),
             ("B position", SAW), ("B level", -10.0),
@@ -227,6 +264,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Yoi",
+        classic: true,
         sets: &[
             ("A table", T_VOWEL), ("A position", 0.0), ("A unison", 2.0), ("A detune", 0.12),
             ("B table", T_FM12), ("B position", 0.5), ("B level", -8.0),
@@ -246,6 +284,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Tearout",
+        classic: true,
         sets: &[
             ("A table", T_FM12), ("A position", 0.7), ("A warp", W_SYNC), ("A warp amount", 0.2),
             ("B table", T_SCREECH), ("B position", 0.4), ("B level", -6.0), ("B octave", 1.0),
@@ -263,6 +302,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Screech",
+        classic: true,
         sets: &[
             ("A table", T_SCREECH), ("A position", 0.3), ("A unison", 3.0), ("A detune", 0.15),
             ("B on", 0.0),
@@ -279,6 +319,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Sync",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A warp", W_SYNC), ("A warp amount", 0.1),
             ("B position", 0.0), ("B octave", -1.0), ("B level", -6.0),
@@ -295,6 +336,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Split",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 2.0), ("A detune", 0.1),
             ("B table", T_PULSE), ("B position", 0.3), ("B warp", W_SQUEEZE), ("B warp amount", 0.4), ("B route", R_F2),
@@ -312,6 +354,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/Sub",
+        classic: true,
         sets: &[
             ("A position", 0.0), ("B on", 0.0),
             ("Filter type", LP12), ("Cutoff", 400.0), ("Resonance", 0.0),
@@ -326,6 +369,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Bass/808 slide",
+        classic: true,
         sets: &[
             ("A position", 0.0), ("B on", 0.0),
             ("Filter type", LP12), ("Cutoff", 600.0), ("Resonance", 0.0), ("Key tracking", 0.0),
@@ -342,6 +386,7 @@ pub const PRESETS: &[Preset] = &[
     // ---------- Lead ----------
     Preset {
         name: "Lead/Supersaw",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 9.0), ("A detune", 0.35), ("A blend", 0.8), ("A width", 0.8),
             ("B position", SAW), ("B octave", 1.0), ("B unison", 5.0), ("B detune", 0.3), ("B level", -8.0),
@@ -357,6 +402,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Lead/Rave",
+        classic: true,
         sets: &[
             ("A table", T_PULSE), ("A position", 0.3), ("A unison", 5.0), ("A detune", 0.55), ("A width", 0.7),
             ("B position", SAW), ("B octave", -1.0), ("B unison", 3.0), ("B detune", 0.3), ("B level", -3.0),
@@ -370,6 +416,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Lead/Sine",
+        classic: true,
         sets: &[
             ("A position", 0.0), ("B on", 0.0),
             ("Filter type", LP12), ("Cutoff", 6000.0),
@@ -386,6 +433,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Lead/Sync",
+        classic: true,
         sets: &[
             ("A table", T_SYNC), ("A position", 0.1), ("A unison", 3.0), ("A detune", 0.12),
             ("B position", SAW), ("B level", -10.0),
@@ -402,6 +450,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Lead/Fifths",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 4.0), ("A detune", 0.2), ("A stack", ST_FIFTH), ("A width", 0.6),
             ("B on", 0.0),
@@ -417,6 +466,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Lead/Folded",
+        classic: true,
         sets: &[
             ("A position", 0.0), ("A warp", W_FOLD), ("A warp amount", 0.3),
             ("B position", SAW), ("B warp", W_MIRROR), ("B warp amount", 0.5), ("B unison", 3.0), ("B detune", 0.15), ("B stack", ST_FIFTH_OCT), ("B level", -6.0), ("B route", R_BOTH),
@@ -435,6 +485,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Lead/Chip",
+        classic: true,
         sets: &[
             ("A table", T_PULSE), ("A position", 0.5), ("A warp", W_QUANT), ("A warp amount", 0.75),
             ("B on", 0.0),
@@ -449,6 +500,7 @@ pub const PRESETS: &[Preset] = &[
     // ---------- Keys and plucks ----------
     Preset {
         name: "Keys/Pluck",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 3.0), ("A detune", 0.15),
             ("B position", SQUARE), ("B octave", 1.0), ("B level", -10.0),
@@ -463,6 +515,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Keys/Bell",
+        classic: true,
         sets: &[
             ("A table", T_METAL), ("A position", 0.35),
             ("B position", 0.0), ("B octave", 2.0), ("B level", -12.0),
@@ -478,6 +531,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Keys/Organ",
+        classic: true,
         sets: &[
             ("A table", T_ORGAN), ("A position", 0.55),
             ("B on", 0.0),
@@ -493,6 +547,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Keys/Stab",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 7.0), ("A detune", 0.3), ("A width", 0.7),
             ("B table", T_PULSE), ("B position", 0.4), ("B unison", 3.0), ("B level", -6.0),
@@ -507,6 +562,7 @@ pub const PRESETS: &[Preset] = &[
     // ---------- Chords ----------
     Preset {
         name: "Chords/Future bass",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 7.0), ("A detune", 0.3), ("A width", 0.7),
             ("B position", SQUARE), ("B unison", 5.0), ("B detune", 0.25), ("B level", -6.0),
@@ -521,6 +577,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Chords/Gated",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 5.0), ("A detune", 0.25), ("A width", 0.7),
             ("B table", T_HARM), ("B position", 0.5), ("B level", -6.0),
@@ -535,6 +592,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Chords/Minor stack",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 6.0), ("A detune", 0.12), ("A stack", ST_MINOR), ("A width", 0.6),
             ("B on", 0.0),
@@ -550,6 +608,7 @@ pub const PRESETS: &[Preset] = &[
     // ---------- Pads ----------
     Preset {
         name: "Pad/Dark",
+        classic: true,
         sets: &[
             ("A table", T_VOWEL), ("A position", 0.3), ("A unison", 5.0), ("A detune", 0.25), ("A width", 0.7),
             ("B table", T_DARK), ("B position", 0.2), ("B unison", 5.0), ("B detune", 0.2), ("B level", -4.0),
@@ -564,6 +623,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Pad/Warm strings",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 7.0), ("A detune", 0.22), ("A width", 0.8),
             ("B table", T_DARK), ("B position", 0.5), ("B octave", -1.0), ("B unison", 3.0), ("B level", -6.0),
@@ -580,6 +640,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Pad/Shimmer",
+        classic: true,
         sets: &[
             ("A table", T_OCTAVES), ("A position", 0.6), ("A unison", 4.0), ("A detune", 0.15), ("A stack", ST_OCT), ("A width", 0.9),
             ("B table", T_BASIC), ("B position", 0.15), ("B octave", 1.0), ("B unison", 3.0), ("B level", -8.0),
@@ -595,6 +656,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "Pad/Glass",
+        classic: true,
         sets: &[
             ("A table", T_RESO), ("A position", 0.4), ("A unison", 3.0), ("A detune", 0.1), ("A width", 0.6),
             ("B table", T_DIGITAL), ("B position", 0.2), ("B level", -12.0), ("B octave", 1.0),
@@ -611,6 +673,7 @@ pub const PRESETS: &[Preset] = &[
     // ---------- FX ----------
     Preset {
         name: "FX/Riser",
+        classic: true,
         sets: &[
             ("A position", SAW), ("A unison", 7.0), ("A detune", 0.4), ("A width", 0.8),
             ("B on", 0.0),
@@ -628,6 +691,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "FX/Downlifter",
+        classic: true,
         sets: &[
             ("A table", T_FM), ("A position", 0.5),
             ("B on", 0.0),
@@ -641,6 +705,7 @@ pub const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "FX/Laser",
+        classic: true,
         sets: &[
             ("A table", T_BASIC), ("A position", 0.3), ("A warp", W_BEND), ("A warp amount", 0.4),
             ("B on", 0.0),
@@ -651,7 +716,280 @@ pub const PRESETS: &[Preset] = &[
             ("Level", -1.0),
         ],
     },
+    // ---------- Made for per-note movement: no two notes alike, the sub clean under it all ----------
+    Preset {
+        name: "Bass/Talking Growl",
+        classic: false,
+        sets: &[
+            ("A table", T_VOWEL), ("A position", 0.3), ("A unison", 2.0), ("A detune", 0.08),
+            ("B table", T_FM), ("B position", 0.4), ("B level", -7.0),
+            ("FM B → A", 0.25),
+            ("Sub level", -6.0), ("Sub path", CLEAN_SUB),
+            ("Filter type", FORMANT), ("Cutoff", 350.0), ("Resonance", 0.55),
+            // Each note says its own word: an envelope LFO sweeps the vowel and the table once,
+            // from a place and by an amount the note picks at random
+            ("LFO 1 shape", S_DRAWN1), ("LFO 1 mode", ENVELOPE), ("LFO 1 rate (sync)", D_EIGHTH), ("LFO 1 smooth", 0.3),
+            ("LFO 1 target 2", A_POS), ("LFO 1 amount 2", 0.5),
+            // (Its vowel sweep goes through the matrix: each note sweeps it its own way and depth)
+            ("Mod 9 source", SRC_LFO1), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.6), ("Mod 9 via", SRC_NRAND_BI),
+            ("Shape 1 step 1", -1.0), ("Shape 1 step 2", -0.6), ("Shape 1 step 3", 0.2), ("Shape 1 step 4", 0.8), ("Shape 1 step 5", 1.0), ("Shape 1 step 6", 0.7),
+            ("Shape 1 step 7", 0.2), ("Shape 1 step 8", -0.2), ("Shape 1 step 9", -0.5), ("Shape 1 step 10", -0.3), ("Shape 1 step 11", 0.3), ("Shape 1 step 12", 0.6),
+            ("Shape 1 step 13", 0.4), ("Shape 1 step 14", 0.0), ("Shape 1 step 15", -0.4), ("Shape 1 step 16", -0.6), ("Shape 1 smooth", 0.8),
+            ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", CUTOFF), ("Mod 1 amount", 0.35),
+            ("Mod 2 source", SRC_NRAND), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.8),
+            ("Mod 3 source", SRC_NRAND), ("Mod 3 target", FMT), ("Mod 3 amount", 0.35), ("Mod 3 curve", C_EXP),
+            ("Mod 4 source", SRC_VEL), ("Mod 4 target", DRIVE), ("Mod 4 amount", 0.25),
+            ("Drive type", TUBE), ("Drive", 12.0),
+            ("Band drive type", SOFT), ("Band drive", 8.0), ("Band drive mix", 0.6),
+            ("Voices", MONO), ("Glide", 0.03), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.08),
+            ("Mod 5 source", M1), ("Mod 5 target", LFO1_RATE), ("Mod 5 amount", 0.333),
+            ("Mod 6 source", M2), ("Mod 6 target", CUTOFF), ("Mod 6 amount", 0.4),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
+            ("OTT", 0.35), ("Level", -4.0),
+        ],
+    },
+    Preset {
+        name: "Bass/Riddim Cell",
+        classic: false,
+        sets: &[
+            ("A table", T_PULSE), ("A position", 0.5), ("A unison", 2.0), ("A detune", 0.05),
+            ("B table", T_PULSE), ("B position", 0.7), ("B octave", 1.0), ("B level", -9.0),
+            ("Sub level", -5.0), ("Sub path", CLEAN_SUB),
+            ("Filter type", COMB_N), ("Cutoff", 261.6), ("Key tracking", 1.0), ("Resonance", 0.55),
+            // A gate on every 16th, restarting with the note; the drive steps to a new level on
+            // each 16th (chaos), and each note picks its own grit and comb
+            ("LFO 1 shape", S_SQUARE), ("LFO 1 mode", RETRIG), ("LFO 1 rate (sync)", D_SIXTEENTH), ("LFO 1 phase", 0.0), ("LFO 1 smooth", 0.08),
+            ("LFO 1 target 1", VOLUME), ("LFO 1 amount 1", -0.55),
+            ("Chaos rate (sync)", D_SIXTEENTH),
+            ("Mod 1 source", SRC_CHAOS), ("Mod 1 target", DRIVE), ("Mod 1 amount", 0.5),
+            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", RESO), ("Mod 2 amount", 0.4),
+            ("Mod 3 source", SRC_NRAND), ("Mod 3 target", A_POS), ("Mod 3 amount", 0.7),
+            ("Mod 4 source", SRC_CHAOS), ("Mod 4 target", CRUSH), ("Mod 4 amount", 0.5), ("Mod 4 curve", C_S),
+            ("Mod 9 source", SRC_CHAOS), ("Mod 9 target", B_POS), ("Mod 9 amount", -0.6),
+            ("Drive type", FOLD), ("Drive", 8.0),
+            ("Band drive type", BITS), ("Band drive", 6.0), ("Band drive mix", 0.35), ("Band drive crush", 0.35),
+            ("Voices", MONO), ("Amp release", 0.05),
+            ("Mod 5 source", M1), ("Mod 5 target", RESO), ("Mod 5 amount", 0.5),
+            ("Mod 6 source", M2), ("Mod 6 target", DRIVE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", BAND_DRIVE), ("Mod 7 amount", 0.5),
+            ("OTT", 0.4), ("Level", -3.5),
+        ],
+    },
+    Preset {
+        name: "Bass/Colour Chord Stab",
+        classic: false,
+        sets: &[
+            // One key plays a bright minor chord: the stack puts the unison voices on its notes
+            ("A position", SAW), ("A unison", 7.0), ("A detune", 0.2), ("A blend", 0.75), ("A width", 0.6), ("A stack", ST_MINOR),
+            ("B table", T_HARM), ("B position", 0.6), ("B unison", 3.0), ("B detune", 0.2), ("B level", -8.0), ("B stack", ST_OCT),
+            ("Sub level", -7.0), ("Sub path", CLEAN_SUB),
+            ("Filter type", LP24), ("Cutoff", 900.0), ("Resonance", 0.25), ("Filter envelope", 0.45),
+            ("Filter attack", 0.0004), ("Filter decay", 0.18), ("Filter sustain", 0.15),
+            ("Filter 2 type", COMB_P), ("Filter 2 cutoff", 261.6), ("Filter 2 key tracking", 1.0), ("Filter 2 resonance", 0.4), ("Filter 1 into 2", 1.0),
+            ("Amp attack", 0.0012), ("Amp decay", 0.22), ("Amp sustain", 0.35), ("Amp release", 0.12),
+            // Each stab its own colour: the comb's tuning and the brightness move per note
+            ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", F2_CUT), ("Mod 1 amount", 0.08),
+            ("Mod 2 source", SRC_NRAND), ("Mod 2 target", F2_RES), ("Mod 2 amount", 0.4),
+            ("Mod 3 source", SRC_VEL), ("Mod 3 target", CUTOFF), ("Mod 3 amount", 0.25), ("Mod 3 via", SRC_FENV),
+            ("Mod 4 source", SRC_NRAND), ("Mod 4 target", B_POS), ("Mod 4 amount", 0.8),
+            ("Mod 9 source", SRC_NRAND_BI), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.45),
+            ("Drive type", SOFT), ("Drive", 6.0), ("Drive tone", 0.2),
+            ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", F2_RES), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
+            ("OTT", 0.35), ("Width", 0.7), ("Level", 1.5),
+        ],
+    },
+    Preset {
+        name: "Bass/Neuro Reese",
+        classic: false,
+        sets: &[
+            // The reese: two saws a little apart, through the drive, then a comb that moves per
+            // note, then the phaser
+            ("A position", SAW), ("A unison", 2.0), ("A detune", 0.22), ("A width", 0.3),
+            ("B position", SAW), ("B fine", 18.0), ("B unison", 2.0), ("B detune", 0.3), ("B level", -2.0),
+            ("Sub level", -6.0), ("Sub path", CLEAN_SUB),
+            ("Pre drive type", TUBE), ("Pre drive", 18.0),
+            ("Filter type", LP24), ("Cutoff", 1600.0), ("Resonance", 0.25),
+            ("Filter 2 type", COMB_P), ("Filter 2 cutoff", 400.0), ("Filter 2 key tracking", 0.7), ("Filter 2 resonance", 0.55), ("Filter 1 into 2", 1.0),
+            // The comb sweeps once per note (an envelope LFO), from a place each note picks
+            ("LFO 1 shape", S_TRI), ("LFO 1 mode", ENVELOPE), ("LFO 1 rate (sync)", D_EIGHTH), ("LFO 1 smooth", 0.2),
+            ("LFO 1 target 1", F2_CUT), ("LFO 1 amount 1", 0.35), ("LFO 1 target 2", CUTOFF), ("LFO 1 amount 2", 0.25),
+            ("LFO 2 shape", S_DRIFT), ("LFO 2 mode", RETRIG), ("LFO 2 rate (sync)", D_EIGHTH_T), ("LFO 2 target 1", B_DETUNE), ("LFO 2 amount 1", 0.4),
+            ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", F2_CUT), ("Mod 1 amount", 0.08),
+            ("Mod 2 source", SRC_NRAND), ("Mod 2 target", PRE_DRIVE), ("Mod 2 amount", 0.4),
+            ("Mod 3 source", SRC_CHAOS), ("Mod 3 target", PHASER_MIX), ("Mod 3 amount", 0.4),
+            ("Mod 4 source", SRC_NOTE), ("Mod 4 target", CUTOFF), ("Mod 4 amount", 0.3),
+            ("Mod 9 source", SRC_NRAND_BI), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.3),
+            ("Mod 10 source", SRC_NRAND), ("Mod 10 target", A_DETUNE), ("Mod 10 amount", 0.4),
+            ("Chaos rate (sync)", D_EIGHTH), ("Chaos smooth", 0.5),
+            ("Drive type", WARM), ("Drive", 8.0),
+            ("Phaser on", 1.0), ("Phaser rate", 0.3), ("Phaser depth", 0.7), ("Phaser feedback", 0.5), ("Phaser mix", 0.25),
+            ("Voices", LEGATO), ("Glide", 0.05), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.1),
+            ("Mod 5 source", M1), ("Mod 5 target", F2_CUT), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", PRE_DRIVE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", PHASER_MIX), ("Mod 7 amount", 0.5),
+            ("OTT", 0.4), ("Level", -3.5),
+        ],
+    },
+    Preset {
+        name: "Bass/Dive Screech",
+        classic: false,
+        sets: &[
+            ("A table", T_SCREECH), ("A position", 0.35), ("A unison", 3.0), ("A detune", 0.12),
+            ("B table", T_FM12), ("B position", 0.3), ("B octave", 1.0), ("B level", -10.0),
+            ("FM B → A", 0.35),
+            ("Sub level", -6.0), ("Sub path", CLEAN_SUB),
+            ("Filter type", BP), ("Cutoff", 1200.0), ("Resonance", 0.35), ("Key tracking", 0.6),
+            // Each note dives an octave into place (straight, over 90 ms)
+            ("Pitch envelope", 12.0), ("Pitch decay", 0.09), ("Pitch envelope curve", LINEAR),
+            // The FM screams on the attack and settles; how far is the note's own
+            ("Mod env attack", 0.0004), ("Mod env decay", 0.2), ("Mod env sustain", 0.35),
+            ("Mod 1 source", SRC_MENV), ("Mod 1 target", FMT), ("Mod 1 amount", 0.5), ("Mod 1 via", SRC_NRAND),
+            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.6),
+            ("Mod 3 source", SRC_MENV), ("Mod 3 target", CUTOFF), ("Mod 3 amount", 0.35), ("Mod 3 curve", C_LOG),
+            ("Mod 9 source", SRC_NRAND_BI), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.2),
+            ("LFO 1 shape", S_SINE), ("LFO 1 mode", RETRIG), ("LFO 1 sync", 0.0), ("LFO 1 rate (Hz)", 7.0), ("LFO 1 delay", 0.12), ("LFO 1 fade in", 0.1),
+            ("LFO 1 target 1", PITCH), ("LFO 1 amount 1", 0.03),
+            ("Drive type", HARD), ("Drive", 10.0), ("Drive tone", 0.3),
+            ("Voices", MONO), ("Glide", 0.04), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.07),
+            ("Mod 5 source", M1), ("Mod 5 target", FMT), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
+            ("OTT", 0.4), ("Level", -2.5),
+        ],
+    },
+    Preset {
+        name: "Bass/Clean Sub",
+        classic: false,
+        sets: &[
+            // A pure sine in the middle, to lay under a growl (its own sub is off)
+            ("A position", 0.0), ("A width", 0.0), ("B on", 0.0),
+            ("Filter type", LP12), ("Cutoff", 3000.0), ("Resonance", 0.0), ("Key tracking", 0.5),
+            ("Amp attack", 0.002), ("Amp release", 0.06),
+            ("Voices", LEGATO), ("Glide", 0.04), ("Glide mode", LEGATO_ONLY),
+            ("Width", 0.0),
+            ("Mod 5 source", M1), ("Mod 5 target", DRIVE), ("Mod 5 amount", 0.3),
+            ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.15),
+            ("Mod 7 source", M3), ("Mod 7 target", CUTOFF), ("Mod 7 amount", -0.8),
+            ("Drive type", TUBE), ("Drive", 0.0), ("Drive mix", 0.6),
+            ("Level", -9.0),
+        ],
+    },
+    Preset {
+        name: "Lead/Hardcore Supersaw",
+        classic: false,
+        sets: &[
+            ("A position", SAW), ("A unison", 11.0), ("A detune", 0.42), ("A blend", 0.85), ("A width", 0.9),
+            ("B position", SAW), ("B octave", 1.0), ("B unison", 7.0), ("B detune", 0.35), ("B level", -6.0), ("B width", 0.9),
+            ("Filter type", LP12), ("Cutoff", 7000.0), ("Resonance", 0.1), ("Filter envelope", 0.2), ("Filter decay", 0.25), ("Filter sustain", 0.4),
+            ("Pitch envelope", 2.0), ("Pitch decay", 0.03),
+            ("Amp attack", 0.0012), ("Amp decay", 0.5), ("Amp sustain", 0.85), ("Amp release", 0.25),
+            ("Mod 1 source", SRC_VEL), ("Mod 1 target", CUTOFF), ("Mod 1 amount", 0.15),
+            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", A_DETUNE), ("Mod 2 amount", 0.08),
+            ("Band drive type", SOFT), ("Band drive", 9.0), ("Band drive mix", 0.5), ("Band low split", 200.0),
+            ("Delay on", 1.0), ("Delay time (sync)", D_EIGHTH_DOT), ("Delay feedback", 0.3), ("Delay mix", 0.15),
+            ("Reverb on", 1.0), ("Reverb mix", 0.18), ("Reverb decay", 1.8),
+            ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", -0.5),
+            ("Mod 6 source", M2), ("Mod 6 target", BAND_DRIVE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", REVERB_MIX), ("Mod 7 amount", 0.5),
+            ("OTT", 0.4), ("Width", 0.75), ("Level", -3.0),
+        ],
+    },
+    Preset {
+        name: "Pad/Wide Wash",
+        classic: false,
+        sets: &[
+            ("A position", SAW), ("A unison", 8.0), ("A detune", 0.3), ("A width", 1.0),
+            ("B table", T_HARM), ("B position", 0.4), ("B unison", 6.0), ("B detune", 0.25), ("B width", 1.0), ("B octave", 1.0), ("B level", -9.0),
+            ("Filter type", LP12), ("Cutoff", 1500.0), ("Resonance", 0.15), ("Key tracking", 0.3),
+            ("Amp attack", 0.6), ("Amp decay", 1.0), ("Amp sustain", 0.9), ("Amp release", 1.8),
+            // Slow and never quite the same twice: free drifts (with the song), a random tilt per chord note
+            ("LFO 1 shape", S_DRIFT), ("LFO 1 mode", FREE), ("LFO 1 rate (sync)", D_BAR), ("LFO 1 smooth", 0.5),
+            ("LFO 1 target 1", CUTOFF), ("LFO 1 amount 1", 0.15), ("LFO 1 target 2", B_POS), ("LFO 1 amount 2", 0.3),
+            // Each chord opens up over a bar and stays open while it's held, then closes as it ends
+            ("LFO 2 shape", S_TRI), ("LFO 2 mode", SUSTAIN_ENV), ("LFO 2 rate (sync)", 1.0), ("LFO 2 sustain point", 0.5),
+            ("LFO 2 target 1", CUTOFF), ("LFO 2 amount 1", 0.2),
+            ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", 9.0), ("Mod 1 amount", 0.4),
+            ("Mod 2 source", SRC_NRAND), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.1),
+            ("Chorus on", 1.0), ("Chorus rate", 0.3), ("Chorus depth", 0.6), ("Chorus mix", 0.45),
+            ("Reverb on", 1.0), ("Reverb size", 0.85), ("Reverb decay", 5.0), ("Reverb mix", 0.4),
+            ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", REVERB_MIX), ("Mod 6 amount", 0.5),
+            ("Width", 1.0), ("Level", -2.0),
+        ],
+    },
+    Preset {
+        name: "Keys/Bright Pluck",
+        classic: false,
+        sets: &[
+            ("A position", SAW), ("A unison", 3.0), ("A detune", 0.15), ("A width", 0.6),
+            ("B position", SQUARE), ("B octave", 1.0), ("B level", -10.0),
+            ("Filter type", LP24), ("Cutoff", 600.0), ("Resonance", 0.2), ("Filter envelope", 0.6), ("Key tracking", 0.6),
+            ("Filter decay", 0.22), ("Filter sustain", 0.0),
+            ("Amp attack", 0.0012), ("Amp decay", 0.45), ("Amp sustain", 0.0), ("Amp release", 0.3),
+            ("Mod 1 source", SRC_VEL), ("Mod 1 target", CUTOFF), ("Mod 1 amount", 0.2), ("Mod 1 curve", C_EXP),
+            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", 9.0), ("Mod 2 amount", 0.3),
+            ("Delay on", 1.0), ("Delay time (sync)", D_EIGHTH_DOT), ("Delay feedback", 0.3), ("Delay mix", 0.2),
+            ("Reverb on", 1.0), ("Reverb mix", 0.15),
+            ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", DELAY_MIX), ("Mod 6 amount", 0.5),
+            ("OTT", 0.25), ("Width", 0.6), ("Level", 2.0),
+        ],
+    },
 ];
+
+/// The bass riff the presets are measured on (see analysis.rs): two bars of 16ths, each a little
+/// shorter than its step, as (16th, note, velocity).
+pub const RIFF: &[(u32, u8, u8)] = &[
+    (0, 41, 110), (1, 41, 90), (2, 53, 100), (3, 41, 90), (4, 44, 105), (5, 41, 90), (6, 48, 100), (7, 41, 90),
+    (8, 41, 110), (9, 53, 90), (10, 51, 100), (11, 41, 90), (12, 46, 105), (13, 41, 90), (14, 39, 100), (15, 41, 90),
+    (16, 41, 110), (17, 41, 90), (18, 53, 100), (19, 41, 90), (20, 44, 105), (21, 41, 90), (22, 48, 100), (23, 51, 90),
+    (24, 41, 110), (25, 53, 90), (26, 51, 100), (27, 41, 90), (28, 46, 105), (29, 48, 90), (30, 39, 100), (31, 36, 90),
+];
+
+/// Render preset `p` playing RIFF at `bpm` (at 48 kHz, the song position given with each note as
+/// the host gives it), plus a short tail: left and right.
+pub fn riff_render(p: &Preset, bpm: f32) -> (Vec<f32>, Vec<f32>) {
+    use crate::synth::{Synth, BLOCK};
+    let sr = 48000.0;
+    let mut s = Synth::new(sr);
+    s.set_tempo(bpm);
+    s.params = p.values();
+    // (Settled first, as a synth is long before its first note)
+    for _ in 0..40 {
+        s.process(BLOCK);
+    }
+    let six = 60.0 / bpm / 4.0;
+    let mut ev: Vec<(usize, bool, u8, u8, u32)> = vec![];
+    for &(step, note, vel) in RIFF {
+        ev.push(((step as f32 * six * sr) as usize, true, note, vel, step));
+        ev.push((((step as f32 + 0.85) * six * sr) as usize, false, note, 0, step));
+    }
+    ev.sort_by_key(|e| (e.0, e.1));
+    let total = ((32.0 * six) * sr) as usize + 2048;
+    let (mut l, mut r) = (Vec::with_capacity(total), Vec::with_capacity(total));
+    let (mut t, mut k) = (0usize, 0usize);
+    while t < total {
+        while k < ev.len() && ev[k].0 <= t {
+            let (_, on, note, vel, step) = ev[k];
+            if on {
+                s.set_position(step as f64 / 4.0);
+                s.midi(0x90, note, vel);
+            } else {
+                s.midi(0x80, note, 0);
+            }
+            k += 1;
+        }
+        let next = if k < ev.len() { ev[k].0.min(total) } else { total };
+        let n = (next - t).clamp(1, BLOCK);
+        s.process(n);
+        l.extend_from_slice(&s.out[0][..n]);
+        r.extend_from_slice(&s.out[1][..n]);
+        t += n;
+    }
+    (l, r)
+}
 
 #[cfg(test)]
 mod tests {
@@ -745,6 +1083,34 @@ mod tests {
                 }
             }
             assert!(peak <= 0.9, "{} with its macros up peaks at {peak}", p.name);
+        }
+    }
+
+    /// The basses made for per-note movement move as the reference tracks' basses do on a riff
+    /// of 16ths (analysis.rs): the timbre jumps from 16th to 16th (a median of at least 0.23 octave,
+    /// half the 16ths over 0.25), no one rate holds most of the movement (not a constant wobble),
+    /// and a riff that repeats each bar sounds alike a bar apart. (Not the clean sub: it's a sine)
+    #[test]
+    fn the_movement_basses_move_per_note() {
+        for p in PRESETS.iter().filter(|p| !p.classic && p.name.starts_with("Bass/") && p.name != "Bass/Clean Sub") {
+            let (l, r) = riff_render(p, 140.0);
+            let mono: Vec<f32> = l.iter().zip(r.iter()).map(|(a, b)| 0.5 * (a + b)).collect();
+            let m = crate::analysis::movement(&mono, 48000.0, 140.0);
+            assert!(m.jump >= 0.23 && m.over_quarter >= 0.5, "{}: {m:?}", p.name);
+            assert!(m.top_rate <= 0.3, "{}: {m:?}", p.name);
+            assert!(m.ac_bar >= 0.4, "{}: {m:?}", p.name);
+            // And again: the same, sample for sample
+            assert_eq!(riff_render(p, 140.0).0, l, "{}", p.name);
+        }
+    }
+
+    /// The new presets keep their sub clean (after the effects), and the clean sub is a sine
+    #[test]
+    fn new_presets_keep_the_sub_clean() {
+        for p in PRESETS.iter().filter(|p| !p.classic) {
+            let v = p.values();
+            let i = index_of("Sub path").unwrap();
+            assert_eq!(param(i).kind.value(v[i]), 1.0, "{}", p.name);
         }
     }
 

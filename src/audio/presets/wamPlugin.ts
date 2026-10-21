@@ -81,13 +81,27 @@ export function createPluginInstrument(output: Tone.InputNode, plugin: WamPlugin
   };
   /** The tempo last sent: a note goes with the tempo where it starts, when that has changed. */
   let tempo = 0;
+  /** Where in the song `time` is (beats), while the song plays; else undefined (playing by hand). */
+  const beatAt = (time: number): number | undefined => {
+    const transport = out.context.transport;
+    try {
+      if (transport.state !== 'started') return undefined;
+      const ticks = transport.getTicksAtTime(time);
+      return Number.isFinite(ticks) && ticks >= 0 ? ticks / transport.PPQ : undefined;
+    } catch {
+      return undefined;
+    }
+  };
   const on = (n: number, velocity: number, time: number) => {
     if (!inst) return;
     // (In the render's own context: an export's tempo, not the live one)
     const bpm = out.context.transport.bpm.getValueAtTime(time);
-    if (Number.isFinite(bpm) && Math.abs(bpm - tempo) > 0.01) {
+    // Each note goes with where in the song it is: plugins that follow the song (Fledge Synth's
+    // free LFOs, its random values) play it the same way live and in an export
+    const beat = beatAt(time);
+    if (Number.isFinite(bpm) && (Math.abs(bpm - tempo) > 0.01 || beat !== undefined)) {
       tempo = bpm;
-      sendTempo(inst, bpm, time);
+      sendTempo(inst, bpm, time, beat);
     }
     sendMidi(inst, [0x90, n, Math.max(1, Math.min(127, Math.round(velocity * 127)))], time);
     touched.add(n);

@@ -8,10 +8,12 @@ import {
   choiceValue,
   drawnPoint,
   FLEDGE_SECTIONS,
+  FLEDGE_SYNC_BEATS,
   lfoControls,
   lfoPoint,
   oscControls,
   shapeControls,
+  SLOT_NUMBERS,
   slotControls,
   type FledgeControl,
 } from '../../audio/plugins/fledgeLayout';
@@ -23,7 +25,10 @@ import { editPluginParam, editPluginProgram } from '../../store/pluginEdits';
  * Fledge Synth's own window (the synth in engine/fledge-synth): its controls in sections across
  * three tabs (Sound, Modulation, Effects), as a synth's panel lays them out, with the macros and
  * presets always in view, a picture of each oscillator's wave, each LFO's shape, the envelopes,
- * and an editor for the two drawn shapes. Knobs drag up and down (Shift for fine steps), take the
+ * and an editor for the two drawn shapes. The drive has its three places (before the filters,
+ * after them, and on the mids and highs after the voices); the LFOs their trigger modes, delay,
+ * rise, smooth and key tracking; the 16-slot matrix a curve and a "via" per slot (slots 9 to 16
+ * open on request, or when one is used). Knobs drag up and down (Shift for fine steps), take the
  * arrow keys, and double-click back to where they started. Controls find their parameter by its
  * name (see fledgeLayout.ts).
  */
@@ -114,7 +119,10 @@ const Knob: React.FC<{ c: Ctl<'knob'>; get: Get; set: Set; size?: number }> = ({
   );
 };
 
-const Choice: React.FC<{ c: Ctl<'choice'>; get: Get; set: Set; w?: string; bare?: boolean }> = ({ c, get, set, w = 'w-[112px]', bare }) => {
+/** The tempo divisions shortest-last by length (the list itself keeps the engine's order) */
+const SYNC_ORDER = FLEDGE_SYNC_BEATS.map((b, i) => [b, i]).sort((a, b) => b[0] - a[0]).map(([, i]) => i);
+
+const Choice: React.FC<{ c: Ctl<'choice'>; get: Get; set: Set; w?: string; bare?: boolean; order?: number[] }> = ({ c, get, set, w = 'w-[112px]', bare, order }) => {
   const hit = get(c.p);
   if (!hit) return null;
   const select = (
@@ -126,9 +134,9 @@ const Choice: React.FC<{ c: Ctl<'choice'>; get: Get; set: Set; w?: string; bare?
       title={hit.p.held ? `${hit.p.name}: ${HELD_TITLE}` : undefined}
       className="h-6 w-full bg-forge-bg border border-forge-border rounded px-1 text-[11px] text-forge-text"
     >
-      {c.options.map((o, k) => (
+      {(order ?? c.options.map((_, k) => k)).map((k) => (
         <option key={k} value={k}>
-          {o}
+          {c.options[k]}
         </option>
       ))}
     </select>
@@ -302,6 +310,8 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
     }
   });
   const [wave, setWave] = useState<FledgeWave | null>(null);
+  // Matrix slots 9 to 16, shown on request (or while one is used)
+  const [moreSlots, setMoreSlots] = useState(false);
   useEffect(() => {
     let live = true;
     void fledgeWave(controls.ref.family).then((w) => live && setWave(() => w));
@@ -344,6 +354,8 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
   const presetName = controls.programs[controls.program()];
   // The wobble's rate in time with the song, beside the macros (as Pocket has it)
   const wobble = wobbleOf(val);
+  // Slots 9 to 16 show when asked for, or while any of them is used
+  const showMore = moreSlots || SLOT_NUMBERS.some((n) => n > 8 && pick(slotControls(n).source) > 0 && pick(slotControls(n).target) > 0);
 
   const osc = (o: 'A' | 'B') => {
     const c = oscControls(o);
@@ -373,22 +385,30 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
     const l = lfoControls(n);
     const synced = isOn(l.sync.p);
     const shape = pick(l.shape);
+    const mode = pick(l.mode);
     const ys = Array.from({ length: 141 }, (_, k) => lfoPoint(shape, k / 140 + val(l.knobs[0].p), drawn));
+    // (Free LFOs follow the song, shared by every note: no retrigger, no key tracking)
+    const [phase, delay, rise, smooth, keytrack] = l.knobs;
     return (
       <Section key={n} title={n === 1 ? 'LFO 1' : `LFO ${n}`} right={ctl(l.sync, 'sync')}>
         <div className="flex items-start gap-2">
           <div className="flex flex-col gap-1.5">
             <div className="flex gap-1.5">
               <Choice c={l.shape as Ctl<'choice'>} get={get} set={set} w="w-[84px]" />
-              {synced ? <Choice c={l.division as Ctl<'choice'>} get={get} set={set} w="w-[64px]" /> : null}
+              {synced ? <Choice c={l.division as Ctl<'choice'>} get={get} set={set} w="w-[64px]" order={SYNC_ORDER} /> : null}
             </div>
-            <Choice c={l.mode as Ctl<'choice'>} get={get} set={set} w="w-[84px]" />
+            <div className="flex gap-1.5">
+              <Choice c={l.mode as Ctl<'choice'>} get={get} set={set} w="w-[84px]" />
+              {mode > 0 ? <Choice c={l.retrig as Ctl<'choice'>} get={get} set={set} w="w-[104px]" /> : null}
+            </div>
           </div>
           <Picture d={pathOf(ys, 120, 44)} w={120} label={`LFO ${n}'s shape`} />
         </div>
         <div className="flex flex-wrap items-end gap-x-0.5 gap-y-2">
           {!synced && ctl(l.hz)}
-          {l.knobs.map((k) => ctl(k))}
+          {[phase, delay, rise, smooth].map((k) => ctl(k))}
+          {mode > 0 && ctl(keytrack)}
+          {mode === 3 && ctl(l.sustain)}
         </div>
         {l.targets.map((t) => (
           <div key={t.target.p} className="flex items-end gap-1">
@@ -471,7 +491,7 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
           ))}
           {wobble && (
             <div className="self-center" title={`LFO ${wobble.lfo}'s rate, in time with the song (its other settings are under Modulation)`}>
-              <Choice c={{ ...(lfoControls(wobble.lfo).division as Ctl<'choice'>), label: wobble.label }} get={get} set={set} w="w-[72px]" />
+              <Choice c={{ ...(lfoControls(wobble.lfo).division as Ctl<'choice'>), label: wobble.label }} get={get} set={set} w="w-[72px]" order={SYNC_ORDER} />
             </div>
           )}
         </div>
@@ -512,25 +532,57 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
             <div className="flex">{ctl(S.filter2.type)}</div>
             {row(S.filter2.knobs)}
           </Section>
-          <Section title="Sub, noise and FM">{row(S.sources)}</Section>
-          <Section title="Drive">
-            <div className="flex">{ctl(S.drive.type)}</div>
-            {row(S.drive.knobs)}
+          <Section title="Sub, noise and FM" right={<Choice c={S.subPath as Ctl<'choice'>} get={get} set={set} w="w-[140px]" bare />}>
+            {row(S.sources)}
+            <p className="text-[10px] text-forge-muted -mt-1">
+              {pick(S.subPath) === 1 ? 'The sub is mixed in clean and mono after the drive, OTT and effects.' : 'The sub goes through the drive, OTT and effects with the rest (as older sounds had it).'}
+            </p>
+          </Section>
+          <Section title="Drive" className="md:col-span-2">
+            <p className="text-[10px] text-forge-muted -mt-1">Up to three places, each levelled so turning it up adds grit, not volume. Bitcrush and Downsample use Crush for bits and rate.</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {(
+                [
+                  ['Before the filters', S.preDrive, []],
+                  ['After the filters', S.drive, []],
+                  ['Mids and highs (lows stay clean)', S.bandDrive, S.bandDrive.split],
+                ] as Array<[string, { type: FledgeControl; knobs: FledgeControl[] }, FledgeControl[]]>
+              ).map(([title, d, extra]) => {
+                const kind = pick(d.type);
+                const crushing = kind === 7 || kind === 8;
+                return (
+                  <div key={title} className={`flex flex-col gap-1.5 ${kind === 0 ? 'opacity-60' : ''}`}>
+                    <p className="text-[10px] text-fuchsia-200/80">{title}</p>
+                    <div className="flex">{ctl(d.type)}</div>
+                    <div className="flex flex-wrap gap-x-0.5 gap-y-2">
+                      {d.knobs.filter((k) => crushing || !k.p.endsWith(' crush')).map((k) => ctl(k))}
+                      {extra.map((k) => ctl(k))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </Section>
           <Section title="Envelopes" className="md:col-span-2">
             <div className="flex flex-wrap gap-4">
               {env('Volume', S.ampEnv)}
               {env('Filter', S.filterEnv)}
               <div className="flex flex-col gap-1">
-                <p className="text-[10px] text-forge-muted">Pitch drop</p>
-                {row(S.pitchEnv)}
+                <p className="text-[10px] text-forge-muted">Pitch drop (a dive into each note)</p>
+                <div className="flex items-end gap-1">
+                  {row(S.pitchEnv)}
+                  <Choice c={S.pitchCurve as Ctl<'choice'>} get={get} set={set} w="w-[96px]" />
+                </div>
               </div>
             </div>
           </Section>
           <Section title="Playing" className="md:col-span-2">
-            <div className="flex items-end gap-2">
+            <div className="flex flex-wrap items-end gap-2">
               {ctl(S.play.mode)}
               {S.play.knobs.map((c) => ctl(c))}
+              {S.glide.map((c) => (
+                <Choice key={c.p} c={c as Ctl<'choice'>} get={get} set={set} w="w-[108px]" />
+              ))}
             </div>
           </Section>
         </div>
@@ -540,18 +592,54 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {[1, 2, 3, 4].map(lfo)}
           <Section title="Mod envelope">{env('Mod env', S.modEnv)}</Section>
-          <Section title="Matrix" className="md:row-span-2">
-            <p className="text-[10px] text-forge-muted -mt-1">Any source moves any target, by its amount (either way). The macros use slots 5 to 8 in the presets.</p>
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => {
+          <Section title="Chaos and random">
+            <p className="text-[10px] text-forge-muted -mt-1">
+              Chaos steps to a new random level at its rate; Note random picks one per note. Both follow the song, so they play the same each time, and repeat as set.
+            </p>
+            <div className="flex flex-wrap items-end gap-1.5">
+              <Choice c={S.chaos.rate as Ctl<'choice'>} get={get} set={set} w="w-[72px]" order={SYNC_ORDER} />
+              {ctl(S.chaos.smooth)}
+              <Choice c={S.chaos.cycle as Ctl<'choice'>} get={get} set={set} w="w-[96px]" />
+            </div>
+          </Section>
+          <Section
+            title="Matrix"
+            className="md:col-span-2"
+            right={
+              <button
+                type="button"
+                onClick={() => setMoreSlots((m) => !m)}
+                aria-expanded={showMore}
+                className="h-6 px-2 rounded border border-forge-border text-[10px] text-forge-muted hover:text-forge-text"
+              >
+                {showMore ? 'Slots 1 to 8' : 'Slots 9 to 16'}
+              </button>
+            }
+          >
+            <p className="text-[10px] text-forge-muted -mt-1">
+              Any source moves any target, by its amount (either way), bent by its curve; a Via source scales the amount (velocity, a macro, note random…). The macros use slots 5 to 8 in the presets.
+            </p>
+            <div className="flex items-end gap-1 text-[10px] text-forge-muted" aria-hidden>
+              <span className="w-4" />
+              <span className="w-[110px]">Source</span>
+              <span className="w-[14px]" />
+              <span className="w-[110px]">Target</span>
+              <span className="w-[50px] text-center">Amount</span>
+              <span className="w-[96px]">Curve</span>
+              <span className="w-[110px]">Via</span>
+            </div>
+            {SLOT_NUMBERS.filter((n) => n <= 8 || showMore).map((n) => {
               const s = slotControls(n);
               const used = pick(s.source) > 0 && pick(s.target) > 0;
               return (
-                <div key={n} className={`flex items-end gap-1 ${used ? '' : 'opacity-70'}`}>
-                  <span className="text-[10px] text-forge-muted w-3 pb-1">{n}</span>
-                  <Choice c={s.source as Ctl<'choice'>} get={get} set={set} w="w-[100px]" />
-                  <span className="text-forge-muted pb-1">→</span>
-                  <Choice c={s.target as Ctl<'choice'>} get={get} set={set} w="w-[110px]" />
-                  {ctl(s.amount)}
+                <div key={n} className={`flex flex-wrap items-center gap-1 ${used ? '' : 'opacity-70'}`}>
+                  <span className="text-[10px] text-forge-muted w-4 text-right">{n}</span>
+                  <Choice c={s.source as Ctl<'choice'>} get={get} set={set} w="w-[110px]" bare />
+                  <span className="text-forge-muted w-[14px] text-center">→</span>
+                  <Choice c={s.target as Ctl<'choice'>} get={get} set={set} w="w-[110px]" bare />
+                  <Knob c={{ ...(s.amount as Ctl<'knob'>), label: '' }} get={get} set={set} size={28} />
+                  <Choice c={s.curve as Ctl<'choice'>} get={get} set={set} w="w-[96px]" bare />
+                  <Choice c={s.via as Ctl<'choice'>} get={get} set={set} w="w-[110px]" bare />
                 </div>
               );
             })}

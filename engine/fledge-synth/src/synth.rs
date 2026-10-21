@@ -1,9 +1,18 @@
 //! The synth: up to eight voices of two wavetable oscillators (each with up to 16 unison voices,
-//! a warp and a stack), a sub and noise, routed into two filters (side by side or one into the
-//! other) or straight out, then drive. Four LFOs, three envelopes, four macros and an
-//! eight-slot matrix move it all. After the voices: the OTT, the effects (EQ, chorus, phaser,
-//! delay, reverb), the mono low end, the level and the safety clipper. Everything the host sees
-//! goes through `Synth`.
+//! a warp and a stack), a sub and noise, routed (through an optional pre-filter drive) into two
+//! filters (side by side or one into the other) or straight out, then drive and a cabinet-style
+//! tone. Four LFOs (free with the song, restarting, one-shot envelopes or sustaining), three
+//! envelopes, per-note random values, a stepped chaos source, four macros and a 16-slot matrix
+//! (each slot with a curve and an optional "via" source scaling it) move it all. After the
+//! voices: the multiband drive (lows kept clean), the OTT, the effects (EQ, chorus, phaser,
+//! delay, reverb), the clean mono sub (mixed in here, after all that, unless an older sound
+//! keeps it with the voices), the mono low end, the level and the safety clipper. Everything the
+//! host sees goes through `Synth`.
+//!
+//! Random values are seeded, so a render repeats exactly; once the host says where in the song
+//! it is (`set_position`), they're seeded from the song position and the note, and the free
+//! LFOs and the chaos source follow the song position, so the live playback and an export of
+//! the same notes match whatever was played before.
 
 use crate::dsp::*;
 use crate::fx::{Effects, FxCfg, FxMods};
@@ -33,6 +42,11 @@ mod src {
     pub const BEND: usize = 12;
     pub const RAND: usize = 13;
     pub const MACRO: usize = 14;
+    pub const NRAND: usize = 18;
+    pub const NRAND_BI: usize = 19;
+    pub const CHAOS: usize = 20;
+    pub const RELVEL: usize = 21;
+    pub const PRESS: usize = 22;
 }
 
 /// Targets, by their place in params::DESTS
@@ -66,6 +80,9 @@ mod d {
     pub const DELAY: usize = 30;
     pub const REVERB: usize = 31;
     pub const WIDTH: usize = 32;
+    pub const PRE_DRIVE: usize = 33;
+    pub const CRUSH: usize = 34;
+    pub const BAND_DRIVE: usize = 35;
 }
 
 /// The settings for one block, read from the parameters (in the engine's units).
@@ -95,14 +112,45 @@ struct LfoCfg {
     shape: u32,
     /// Cycles per second
     hz: f32,
-    /// 0 free (shared by every note), 1 restarts with each note, 2 runs once per note
+    /// 0 free (shared by every note), 1 restarts with each note, 2 runs once per note, 3 runs
+    /// to its sustain point while the key is down
     mode: usize,
     phase: f32,
     fade: f32,
     dest: [usize; 2],
     amt: [f32; 2],
-    /// One value for every note (free, no fade in): worked out once for the whole synth
+    /// One value for every note (free, no fade in or delay): worked out once for the whole synth
     global: bool,
+    /// In time with the song, and its length in beats
+    synced: bool,
+    beats: f32,
+    retrig: usize,
+    delay: f32,
+    smooth: f32,
+    keytrack: f32,
+    sustain: f32,
+}
+
+/// A matrix slot: source, target, amount, curve, via; and whether it's worked out per note
+/// (its source or via differs from note to note)
+#[derive(Clone, Copy, Default)]
+struct Slot {
+    from: usize,
+    to: usize,
+    amt: f32,
+    curve: usize,
+    via: usize,
+    note: bool,
+}
+
+/// One drive stage's settings
+#[derive(Clone, Copy, Default)]
+struct DriveCfg {
+    kind: u32,
+    db: f32,
+    mix: f32,
+    crush: f32,
+    tone: f32,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -135,10 +183,25 @@ struct Cfg {
     shaper: u32,
     drive: f32,
     drive_mix: f32,
+    drive_crush: f32,
+    drive_tone: f32,
+    pre: DriveCfg,
+    band: DriveCfg,
+    band_split: (f32, f32),
+    band_high: f32,
+    sub_after: bool,
+    glide_legato: bool,
+    glide_rate: bool,
+    glide_linear: bool,
+    penv_linear: bool,
+    chaos_beats: f32,
+    chaos_smooth: f32,
+    /// Beats after which the random values come round again (0: never)
+    random_cycle: f64,
     lfo: [LfoCfg; 4],
     drawn: [[f32; 16]; 2],
     smooth: [f32; 2],
-    slots: [(usize, usize, f32); p::SLOTS],
+    slots: [Slot; p::SLOTS_ALL],
     macros: [f32; 4],
     mode: usize,
     glide: f32,
@@ -410,10 +473,37 @@ fn drawn(steps: &[f32; 16], smooth: f32, phase: f32) -> f32 {
     a + (b - a) * u * u * (3.0 - 2.0 * u)
 }
 
-/// Add every route (each LFO's two targets, the matrix) from `s` into `m`. Called once with the
-/// whole synth's sources, and once per note with that note's, so each counts once.
-fn route(cfg: &Cfg, s: &[f32; NSRC], m: &mut [f32; NDEST]) {
+/// Whether source `s` differs from note to note (else it's the whole synth's: free LFOs without a
+/// delay or fade in, the mod wheel, aftertouch, bend, the macros, chaos).
+fn note_source(lfo: &[LfoCfg; 4], s: usize) -> bool {
+    match s {
+        1..=4 => !lfo[s - src::LFO].global,
+        src::AMP | src::FENV | src::MENV | src::VEL | src::NOTE | src::RAND | src::NRAND | src::NRAND_BI | src::RELVEL | src::PRESS => true,
+        _ => false,
+    }
+}
+
+/// A matrix slot's curve on its source (either way from 0, so a bipolar source keeps its middle).
+#[inline]
+fn curve(kind: usize, x: f32) -> f32 {
+    let a = x.abs().min(1.0);
+    let y = match kind {
+        1 => a * a,
+        2 => 1.0 - (1.0 - a) * (1.0 - a),
+        3 => a * a * (3.0 - 2.0 * a),
+        _ => return x,
+    };
+    y.copysign(x)
+}
+
+/// Add every route (each LFO's two targets, the matrix) from `s` into `m`: the whole synth's
+/// (`notes` false: `s` holds its sources) or a note's (`notes` true: `s` holds the whole synth's
+/// sources and the note's), each route in the one that fits it, so each counts once.
+fn route(cfg: &Cfg, s: &[f32; NSRC], m: &mut [f32; NDEST], notes: bool) {
     for k in 0..4 {
+        if cfg.lfo[k].global == notes {
+            continue;
+        }
         let v = s[src::LFO + k];
         if v != 0.0 {
             for t in 0..2 {
@@ -421,12 +511,188 @@ fn route(cfg: &Cfg, s: &[f32; NSRC], m: &mut [f32; NDEST]) {
             }
         }
     }
-    for &(from, to, amt) in &cfg.slots {
-        if from > 0 && to > 0 {
-            m[to] += amt * s[from];
+    for sl in &cfg.slots {
+        if sl.from > 0 && sl.to > 0 && sl.note == notes {
+            let mut x = curve(sl.curve, s[sl.from]);
+            if sl.via > 0 {
+                x *= s[sl.via];
+            }
+            m[sl.to] += sl.amt * x;
         }
     }
     m[0] = 0.0;
+}
+
+/// A well-mixed hash of `x` as 0..1 (the seeded random values: the same input, the same value).
+#[inline]
+pub(crate) fn hash01(x: u64) -> f32 {
+    let mut z = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    (z >> 40) as f32 / (1u64 << 24) as f32
+}
+#[inline]
+fn hash_bi(x: u64) -> f32 {
+    hash01(x) * 2.0 - 1.0
+}
+/// A song position (beats) as a whole number of ticks (960 a beat), for seeding.
+#[inline]
+fn ticks(beats: f64) -> u64 {
+    (beats.max(0.0) * 960.0).round() as u64
+}
+
+/// One drive stage: the shape (antialiased), or a crush (bits or rate), with its makeup gain so
+/// that the level stays put as the drive rises, mixed with the clean sound.
+#[derive(Clone, Copy, Default)]
+struct Drive {
+    shaper: Shaper,
+    held: f32,
+    count: f32,
+    /// The level in and out (mean squares), for the stages that keep their level by ear
+    ein: f32,
+    eout: f32,
+}
+
+/// A stage's numbers for a stretch of samples
+#[derive(Clone, Copy, Default)]
+struct DriveNow {
+    kind: u32,
+    gain: f32,
+    makeup: f32,
+    mix: f32,
+    /// Bitcrush: levels each side of 0; downsample: samples held
+    step: f32,
+    /// Above 0: the stage never comes out louder than it went in (its level followed at this
+    /// pace), whatever the shape does to a quiet part (the pre-filter and band drives)
+    follow: f32,
+}
+
+impl DriveNow {
+    fn new(kind: u32, db: f32, mix: f32, crush: f32) -> Self {
+        let gain = 10f32.powf(db.clamp(0.0, 48.0) / 20.0);
+        let crushing = kind == p::CRUSH_BITS || kind == p::CRUSH_RATE;
+        let makeup = shaper_makeup(if crushing { 3 } else { kind }, gain);
+        let c = crush.clamp(0.0, 1.0);
+        let step = if kind == p::CRUSH_BITS { 2f32.powf(15.0 - 13.0 * c) } else { 1.0 + 47.0 * c * c };
+        DriveNow { kind, gain, makeup, mix: mix.clamp(0.0, 1.0), step, follow: 0.0 }
+    }
+    /// The same, never louder than what goes in
+    fn level_kept(mut self, sr: f32) -> Self {
+        self.follow = 1.0 - (-1.0 / (0.03 * sr)).exp();
+        self
+    }
+    #[inline]
+    fn on(&self) -> bool {
+        self.kind > 0 && self.mix > 0.0
+    }
+}
+
+impl Drive {
+    #[inline]
+    fn tick(&mut self, d: &DriveNow, x: f32) -> f32 {
+        let w = match d.kind {
+            p::CRUSH_BITS => {
+                let y = (x * d.gain).clamp(-1.0, 1.0);
+                (y * d.step).round() / d.step / d.makeup
+            }
+            p::CRUSH_RATE => {
+                self.count += 1.0;
+                if self.count >= d.step {
+                    self.count -= d.step;
+                    self.held = (x * d.gain).clamp(-1.0, 1.0);
+                }
+                self.held / d.makeup
+            }
+            _ => self.shaper.tick(d.kind, x * d.gain) / d.makeup,
+        };
+        let y = x + (w - x) * d.mix;
+        if d.follow > 0.0 {
+            self.ein += (x * x - self.ein) * d.follow;
+            self.eout += (y * y - self.eout) * d.follow;
+            // (After a while of silence it starts afresh: what played before leaves nothing)
+            if self.ein < 1e-14 && self.eout < 1e-14 {
+                self.ein = 0.0;
+                self.eout = 0.0;
+            }
+            if self.eout > self.ein {
+                return y * ((self.ein + 1e-12) / self.eout).sqrt();
+            }
+        }
+        y
+    }
+    fn reset(&mut self) {
+        *self = Drive::default();
+    }
+}
+
+/// A cabinet-style tone after a drive: the lows and the fizz taken off, a little mid push. `tone`
+/// 0 leaves it out, 1 is the darkest.
+#[derive(Clone, Copy, Default)]
+struct Cab {
+    hp: Svf,
+    lp: Svf,
+    lp2: Svf,
+}
+
+#[derive(Clone, Copy, Default)]
+struct CabNow {
+    hp: SvfCoef,
+    lp: SvfCoef,
+    mix: f32,
+    push: f32,
+}
+
+impl CabNow {
+    fn new(tone: f32, sr: f32) -> Self {
+        let t = tone.clamp(0.0, 1.0);
+        CabNow {
+            hp: SvfCoef::new(70.0 + 60.0 * t, sr, std::f32::consts::SQRT_2),
+            lp: SvfCoef::new((7500.0 * 0.32f32.powf(t)).min(sr * 0.45), sr, 1.1),
+            mix: (2.0 * t).min(1.0),
+            push: 0.35 * t,
+        }
+    }
+}
+
+impl Cab {
+    #[inline]
+    fn tick(&mut self, c: &CabNow, x: f32) -> f32 {
+        let h = self.hp.tick(&c.hp, x).hp;
+        let o = self.lp.tick(&c.lp, h);
+        let y = self.lp2.tick(&c.lp, o.lp).lp + o.bp * c.push;
+        x + (y - x) * c.mix
+    }
+}
+
+/// The multiband drive, one side: lows (clean), mids and highs (driven), split by
+/// Linkwitz-Riley crossovers (the lows through the upper split's all-pass too), so undriven the
+/// three add back up flat.
+#[derive(Clone, Copy, Default)]
+struct Band {
+    /// The low split: its first stage, then the low pass and high pass of what it gives
+    lo: [Svf; 3],
+    /// The high split, on what's above the low one
+    hi: [Svf; 3],
+    /// The lows' all-pass at the high split
+    ap: Svf,
+    drive: [Drive; 2],
+    cab: Cab,
+}
+
+impl Band {
+    /// Lows, mids, highs of `x`
+    #[inline]
+    fn split(&mut self, lo: &SvfCoef, hi: &SvfCoef, x: f32) -> (f32, f32, f32) {
+        let a = self.lo[0].tick(lo, x);
+        let low = self.lo[1].tick(lo, a.lp).lp;
+        let up = self.lo[2].tick(lo, a.hp).hp;
+        let b = self.hi[0].tick(hi, up);
+        let mid = self.hi[1].tick(hi, b.lp).lp;
+        let high = self.hi[2].tick(hi, b.hp).hp;
+        let p = self.ap.tick(hi, low);
+        (p.lp + p.hp - std::f32::consts::SQRT_2 * p.bp, mid, high)
+    }
 }
 
 #[derive(Clone)]
@@ -448,13 +714,28 @@ struct Voice {
     sub_phase: f32,
     /// Filter 1 and 2, left and right
     filt: [[FiltState; 2]; 2],
-    shaper: [Shaper; 2],
     lfo_phase: [f32; 4],
     lfo_held: [(f32, f32); 4],
     /// Seconds since the note started (for the LFOs' fade in)
     time: f32,
     /// This note's random source value (-1..1)
     rand: f32,
+    /// The note-random sources (0..1 and -1..1), new at each note-on
+    nrand: f32,
+    nrand_bi: f32,
+    /// How fast its key came up (0 until then), and its key's pressure
+    rel_vel: f32,
+    pressure: f32,
+    /// Each note LFO's smoothed value (NaN: not yet started)
+    lfo_sm: [f32; 4],
+    /// The glide as this note started it: per-sample pull (exponential) or step (linear), when
+    /// the glide isn't the classic one worked out from the knob each block
+    glide_k: f32,
+    glide_step: f32,
+    /// The pre-filter drive into filter 1 (left, right) and filter 2 (left, right)
+    pre: [Drive; 4],
+    post: [Drive; 2],
+    cab: [Cab; 2],
     /// Oscillator A's last sample, before its warp (oscillator B's ring warp reads it)
     last_a: f32,
     /// Held down by the sustain pedal after its key came up
@@ -493,11 +774,20 @@ impl Voice {
             phase: [[0.0; UNISON]; 2],
             sub_phase: 0.0,
             filt: [fs(), fs()],
-            shaper: [Shaper::default(); 2],
             lfo_phase: [0.0; 4],
             lfo_held: [(0.0, 0.0); 4],
             time: 0.0,
             rand: 0.0,
+            nrand: 0.0,
+            nrand_bi: 0.0,
+            rel_vel: 0.0,
+            pressure: 0.0,
+            lfo_sm: [f32::NAN; 4],
+            glide_k: 1.0,
+            glide_step: 0.0,
+            pre: [Drive::default(); 4],
+            post: [Drive::default(); 2],
+            cab: [Cab::default(); 2],
             last_a: 0.0,
             sustained: false,
             pending: None,
@@ -544,6 +834,19 @@ pub struct Synth {
     side_coef: SvfCoef,
     clip: [SafetyClip; 2],
     gain: f32,
+    /// Where in the song it is (beats, and seconds), counted on from the host's last word
+    song_beats: f64,
+    song_secs: f64,
+    /// The host has said where in the song it is: random values and free LFOs follow the song
+    anchored: bool,
+    /// The free LFOs' smoothed values (NaN: not started)
+    lfo_sm: [f32; 4],
+    /// Where in the song each key was last struck (a note that waits for its voice still gets
+    /// the random values of when it was played)
+    struck: [f64; 128],
+    band: [Band; 2],
+    /// The clean sub, mixed in after the effects
+    sub_bus: [f32; BLOCK],
     pub out: [[f32; BLOCK]; 2],
     pub input: [[f32; BLOCK]; 2],
 }
@@ -580,6 +883,13 @@ impl Synth {
             side_coef: SvfCoef::new(120.0, sr, std::f32::consts::SQRT_2),
             clip: [SafetyClip::default(); 2],
             gain: 0.0,
+            song_beats: 0.0,
+            song_secs: 0.0,
+            anchored: false,
+            lfo_sm: [f32::NAN; 4],
+            struck: [0.0; 128],
+            band: [Band::default(); 2],
+            sub_bus: [0.0; BLOCK],
             out: [[0.0; BLOCK]; 2],
             input: [[0.0; BLOCK]; 2],
         }
@@ -589,6 +899,25 @@ impl Synth {
         if bpm.is_finite() && bpm > 1.0 {
             self.tempo = bpm;
         }
+    }
+
+    /// Where in the song it is now, in beats (quarter notes from the song's start). From then on
+    /// the free LFOs and the chaos source follow the song, and random values are seeded from the
+    /// song position and the note: playing the same notes from the same place gives the same
+    /// sound, live or in an export.
+    pub fn set_position(&mut self, beats: f64) {
+        if !beats.is_finite() || beats < 0.0 {
+            return;
+        }
+        self.song_beats = beats;
+        self.song_secs = beats * 60.0 / self.tempo as f64;
+        self.anchored = true;
+    }
+
+    /// An older saved sound with only its first `count` values has just been loaded: the
+    /// parameters it didn't have are set as it sounded then.
+    pub fn legacy(&mut self, count: usize) {
+        p::legacy(&mut self.params, count);
     }
 
     fn v(&self, i: usize) -> f32 {
@@ -620,6 +949,8 @@ impl Synth {
             let hz = if sync { self.tempo / 60.0 / p::SYNC_BEATS[self.v(base + p::lfo::DIV) as usize] } else { self.v(base + p::lfo::HZ) };
             let mode = self.v(base + p::lfo::MODE) as usize;
             let fade = self.v(base + p::lfo::FADE);
+            let more = p::LFO_MORE_1 + k * p::LFO_MORE_LEN;
+            let delay = self.v(more + p::lfo::DELAY);
             LfoCfg {
                 shape: self.v(base + p::lfo::SHAPE) as u32,
                 hz,
@@ -628,7 +959,14 @@ impl Synth {
                 fade,
                 dest: [self.v(base + p::lfo::DEST1) as usize, self.v(base + p::lfo::DEST2) as usize],
                 amt: [self.v(base + p::lfo::AMT1), self.v(base + p::lfo::AMT2)],
-                global: mode == 0 && fade <= 0.0011,
+                global: mode == 0 && fade <= 0.0011 && delay <= 0.0,
+                synced: sync,
+                beats: p::SYNC_BEATS[self.v(base + p::lfo::DIV) as usize],
+                retrig: self.v(more + p::lfo::RETRIG) as usize,
+                delay,
+                smooth: self.v(more + p::lfo::SMOOTH),
+                keytrack: self.v(more + p::lfo::KEYTRACK),
+                sustain: self.v(more + p::lfo::SUSTAIN),
             }
         };
         let filt = |kind: usize, cutoff: usize, reso: usize, key: usize, env: usize| FiltCfg {
@@ -648,11 +986,28 @@ impl Synth {
         };
         let (d1, s1) = shape(0);
         let (d2, s2) = shape(1);
-        let mut slots = [(0, 0, 0.0); p::SLOTS];
+        let lfos = [lfo(0), lfo(1), lfo(2), lfo(3)];
+        let mut slots = [Slot::default(); p::SLOTS_ALL];
         for (i, slot) in slots.iter_mut().enumerate() {
-            let base = p::MATRIX_1 + i * 3;
-            *slot = (self.v(base) as usize, self.v(base + 1) as usize, self.v(base + 2));
+            let base = p::slot_base(i);
+            let more = p::slot_more(i);
+            let (from, via) = (self.v(base) as usize, self.v(more + 1) as usize);
+            *slot = Slot {
+                from,
+                to: self.v(base + 1) as usize,
+                amt: self.v(base + 2),
+                curve: self.v(more) as usize,
+                via,
+                note: note_source(&lfos, from) || (via > 0 && note_source(&lfos, via)),
+            };
         }
+        let stage = |kind: usize, db: usize, mix: usize, crush: usize, tone: Option<usize>| DriveCfg {
+            kind: self.v(kind) as u32,
+            db: self.v(db),
+            mix: self.v(mix),
+            crush: self.v(crush),
+            tone: tone.map_or(0.0, |t| self.v(t)),
+        };
         let o = [osc(p::A), osc(p::B)];
         let noise_route = self.v(p::NOISE_ROUTE) as usize;
         let serial = self.v(p::F2_SERIAL) > 0.5;
@@ -716,7 +1071,21 @@ impl Synth {
             shaper: self.v(p::SHAPER) as u32,
             drive: self.v(p::DRIVE),
             drive_mix: self.v(p::DRIVE_MIX),
-            lfo: [lfo(0), lfo(1), lfo(2), lfo(3)],
+            drive_crush: self.v(p::DRIVE_CRUSH),
+            drive_tone: self.v(p::DRIVE_TONE),
+            pre: stage(p::PRE_SHAPER, p::PRE_DRIVE, p::PRE_MIX, p::PRE_CRUSH, None),
+            band: stage(p::BAND_SHAPER, p::BAND_DRIVE, p::BAND_MIX, p::BAND_CRUSH, Some(p::BAND_TONE)),
+            band_split: (self.v(p::BAND_LOW), self.v(p::BAND_HIGH)),
+            band_high: self.v(p::BAND_HIGH_AMT),
+            sub_after: self.v(p::SUB_PATH) > 0.5,
+            glide_legato: self.v(p::GLIDE_MODE) > 0.5,
+            glide_rate: self.v(p::GLIDE_RATE) > 0.5,
+            glide_linear: self.v(p::GLIDE_CURVE) > 0.5,
+            penv_linear: self.v(p::PENV_CURVE) > 0.5,
+            chaos_beats: p::SYNC_BEATS[self.v(p::CHAOS_DIV) as usize],
+            chaos_smooth: self.v(p::CHAOS_SMOOTH),
+            random_cycle: p::RANDOM_CYCLE_BEATS[self.v(p::RANDOM_CYCLE) as usize],
+            lfo: lfos,
             drawn: [d1, d2],
             smooth: [s1, s2],
             slots,
@@ -738,13 +1107,19 @@ impl Synth {
     pub fn midi(&mut self, status: u8, d1: u8, d2: u8) {
         match status & 0xF0 {
             0x90 if d2 > 0 => self.note_on(d1, d2 as f32 / 127.0),
-            0x80 | 0x90 => self.note_off(d1),
+            0x80 => self.note_off(d1, d2 as f32 / 127.0),
+            0x90 => self.note_off(d1, 0.0),
             0xE0 => {
                 let v = ((d2 as i32) << 7 | d1 as i32) - 8192;
                 self.bend = v as f32 / 8192.0;
             }
             0xD0 => self.aftertouch = d1 as f32 / 127.0,
-            0xA0 => self.aftertouch = d2 as f32 / 127.0,
+            0xA0 => {
+                self.aftertouch = d2 as f32 / 127.0;
+                for v in self.voices.iter_mut().filter(|v| v.active && v.note == d1) {
+                    v.pressure = d2 as f32 / 127.0;
+                }
+            }
             0xB0 => match d1 {
                 1 => self.modwheel = d2 as f32 / 127.0,
                 64 => {
@@ -789,13 +1164,33 @@ impl Synth {
             self.stack.push(note);
         }
         let cfg = self.cfg();
+        self.struck[note as usize & 127] = self.song_beats;
+        if self.anchored {
+            // Random values from where in the song this note is, and which note (not from what
+            // played before): the same notes from the same place sound the same, live or exported
+            // (Within the random cycle, when there is one: a riff that repeats sounds the same)
+            let at = if cfg.random_cycle > 0.0 { self.song_beats.rem_euclid(cfg.random_cycle) } else { self.song_beats };
+            self.rng = Rng::new((hash01(ticks(at) << 8 ^ note as u64 ^ 0x5eed_0000_0000) * 4_294_967_000.0) as u32);
+        }
         if cfg.mode > 0 {
             // Mono and legato: one voice; legato keeps the envelopes going between joined notes
+            let sr = self.sr;
+            let (nr, nb) = self.note_random(note, &cfg);
             let v = &mut self.voices[0];
             let joined = v.active && v.amp.stage != Stage::Release && v.amp.stage != Stage::Idle;
             v.glide = v.pitch - note as f32;
+            // (Glide only between joined notes: a note after a gap starts on its pitch)
+            if cfg.glide_legato && !joined {
+                v.pitch = note as f32;
+                v.glide = 0.0;
+            }
+            set_glide(v, &cfg, sr);
             v.target = note as f32;
             v.note = note;
+            // A new note: new random values, even when it joins the last (legato)
+            v.nrand = nr;
+            v.nrand_bi = nb;
+            v.rel_vel = 0.0;
             // A key is down now: lifting the pedal mustn't end it
             v.sustained = false;
             // (Nor anything poly left waiting on this voice: a taken note, a short note's timer)
@@ -807,7 +1202,15 @@ impl Synth {
                     v.pitch = note as f32;
                     v.glide = 0.0;
                 }
-                self.start(0, note, vel, &cfg, false);
+                self.start(0, note, vel, &cfg, false, joined);
+            } else {
+                // A joined legato note: LFOs set to restart on every note do
+                let v = &mut self.voices[0];
+                for k in 0..4 {
+                    if cfg.lfo[k].mode > 0 && cfg.lfo[k].retrig == 1 {
+                        v.lfo_phase[k] = cfg.lfo[k].phase;
+                    }
+                }
             }
             return;
         }
@@ -849,10 +1252,21 @@ impl Synth {
         self.voices[i].pitch = note as f32;
         self.voices[i].target = note as f32;
         self.voices[i].glide = 0.0;
-        self.start(i, note, vel, &cfg, true);
+        self.start(i, note, vel, &cfg, true, false);
     }
 
-    fn start(&mut self, i: usize, note: u8, vel: f32, cfg: &Cfg, fresh: bool) {
+    /// The note-random values (0..1 and -1..1) for `note` played now: seeded from the song
+    /// position and the note, so they repeat in every render of the same notes.
+    fn note_random(&self, note: u8, cfg: &Cfg) -> (f32, f32) {
+        let at = self.struck[note as usize & 127];
+        let at = if cfg.random_cycle > 0.0 { at.rem_euclid(cfg.random_cycle) } else { at };
+        let key = ticks(at) << 8 ^ note as u64;
+        (hash01(key ^ 0x0a11_0000_0000_0000), hash_bi(key ^ 0x0b22_0000_0000_0000))
+    }
+
+    /// Start note `note` on voice `i`. `fresh`: a voice of its own (poly); `joined`: a mono note
+    /// played while the last one was still held.
+    fn start(&mut self, i: usize, note: u8, vel: f32, cfg: &Cfg, fresh: bool, joined: bool) {
         self.age += 1;
         let sr = self.sr;
         let seed = self.rng.next();
@@ -860,8 +1274,13 @@ impl Synth {
         // Fresh random levels for the LFOs that start with the note (Steps and Drift are random
         // from the note's first cycle, and in One shot, which never wraps to draw new ones)
         let held: [(f32, f32); 4] = std::array::from_fn(|_| (self.rng.bipolar(), self.rng.bipolar()));
+        let (nr, nb) = self.note_random(note, cfg);
         let v = &mut self.voices[i];
         let was_active = v.active;
+        v.nrand = nr;
+        v.nrand_bi = nb;
+        v.rel_vel = 0.0;
+        v.pressure = 0.0;
         v.active = true;
         v.note = note;
         v.vel = vel;
@@ -896,9 +1315,21 @@ impl Synth {
         v.menv.gate(true);
         v.penv = 1.0;
         for k in 0..4 {
-            if cfg.lfo[k].mode > 0 {
-                v.lfo_phase[k] = cfg.lfo[k].phase;
+            let l = &cfg.lfo[k];
+            // (Mono and legato: as its retrigger says. A voice starting from silence always starts it)
+            let restart = fresh
+                || !was_active
+                || match l.retrig {
+                    2 => !joined,
+                    3 => false,
+                    _ => true,
+                };
+            if l.mode > 0 && restart {
+                v.lfo_phase[k] = l.phase;
                 v.lfo_held[k] = held[k];
+            }
+            if fresh || !was_active {
+                v.lfo_sm[k] = f32::NAN;
             }
         }
         if fresh || !was_active {
@@ -921,13 +1352,19 @@ impl Synth {
                 }
             }
             for c in 0..2 {
-                v.shaper[c].reset();
+                v.post[c].reset();
+                v.pre[c].reset();
+                v.pre[c + 2].reset();
+                v.cab[c] = Cab::default();
             }
         }
     }
 
-    fn note_off(&mut self, note: u8) {
+    fn note_off(&mut self, note: u8, rel_vel: f32) {
         let k = note as usize & 127;
+        for v in self.voices.iter_mut().filter(|v| v.active && v.note == note) {
+            v.rel_vel = rel_vel;
+        }
         self.down[k] = self.down[k].saturating_sub(1);
         // (Another strike of this key still down: only one of its notes ends)
         let others_down = self.down[k] > 0;
@@ -942,8 +1379,11 @@ impl Synth {
         let mut glided = false;
         if mode > 0 && self.voices[0].note == note {
             if let Some(&back) = self.stack.last() {
+                let cfg = self.cfg();
+                let sr = self.sr;
                 let v = &mut self.voices[0];
                 v.glide = v.pitch - back as f32;
+                set_glide(v, &cfg, sr);
                 v.target = back as f32;
                 v.note = back;
                 glided = true;
@@ -1009,29 +1449,62 @@ impl Synth {
         }
         let rate: [f32; 4] = std::array::from_fn(|k| cfg.lfo[k].hz * 2f32.powf(3.0 * self.lfo_rate_mod[k].clamp(-1.0, 1.0)));
 
+        // Where in the song each stretch of CONTROL samples starts (beats, seconds)
+        let beat_step = self.tempo as f64 / 60.0 / sr as f64;
+        let (song_beats, song_secs) = (self.song_beats, self.song_secs);
+        let beats_at = |b: usize| song_beats + (b * CONTROL) as f64 * beat_step;
+        let secs_at = |b: usize| song_secs + (b * CONTROL) as f64 / sr as f64;
+
         // The free LFOs run here, shared by every note
         let mut shared = [[0.0f32; NBLK]; 4];
         for k in 0..4 {
-            if cfg.lfo[k].mode != 0 {
+            let l = &cfg.lfo[k];
+            if l.mode != 0 {
                 continue;
             }
+            // (Once the host says where the song is, a free LFO's phase is read from the song
+            // position: the same place in the song, the same point of its cycle. Not while
+            // something moves its rate: then it runs on from where it is)
+            let follow = self.anchored && self.lfo_rate_mod[k] == 0.0;
             for (b, slot) in shared[k].iter_mut().enumerate().take(nblk) {
-                let ph = (self.lfo_phase[k] + cfg.lfo[k].phase).fract();
-                // Steps and Drift move to their next level where the cycle (as read, with its
-                // phase offset) starts again, so they never jump mid-cycle
-                if ph < self.lfo_read[k] {
-                    self.lfo_held[k] = (self.lfo_held[k].1, self.rng.bipolar());
-                }
-                self.lfo_read[k] = ph;
-                *slot = lfo_value(&cfg, k, ph, self.lfo_held[k]);
                 let n = frames.saturating_sub(b * CONTROL).min(CONTROL);
-                self.lfo_phase[k] = (self.lfo_phase[k] + rate[k] * n as f32 / sr).fract();
+                if follow {
+                    let cycles = if l.synced { beats_at(b) / l.beats as f64 } else { secs_at(b) * l.hz as f64 };
+                    let x = cycles + l.phase as f64;
+                    let ph = x.fract() as f32;
+                    let cycle = x.floor() as i64 as u64;
+                    let salt = (k as u64) << 60 ^ 0x1f0_0000_0000;
+                    self.lfo_held[k] = (hash_bi(salt ^ cycle.wrapping_sub(1)), hash_bi(salt ^ cycle));
+                    self.lfo_read[k] = ph;
+                    *slot = lfo_value(&cfg, k, ph, self.lfo_held[k]);
+                    self.lfo_phase[k] = (cycles + (n as f64 * if l.synced { beat_step / l.beats as f64 } else { l.hz as f64 / sr as f64 })).fract() as f32;
+                } else {
+                    let ph = (self.lfo_phase[k] + l.phase).fract();
+                    // Steps and Drift move to their next level where the cycle (as read, with its
+                    // phase offset) starts again, so they never jump mid-cycle
+                    if ph < self.lfo_read[k] {
+                        self.lfo_held[k] = (self.lfo_held[k].1, self.rng.bipolar());
+                    }
+                    self.lfo_read[k] = ph;
+                    *slot = lfo_value(&cfg, k, ph, self.lfo_held[k]);
+                    self.lfo_phase[k] = (self.lfo_phase[k] + rate[k] * n as f32 / sr).fract();
+                }
+                if l.smooth > 0.0 {
+                    *slot = smooth_lfo(&mut self.lfo_sm[k], *slot, l.smooth, rate[k], n, sr);
+                }
             }
         }
-        // The whole synth's modulation, each stretch of CONTROL samples
+        // Chaos: a new random level each step of its division, read from the song position
+        let mut chaos = [0.0f32; NBLK];
+        for (b, c) in chaos.iter_mut().enumerate().take(nblk) {
+            *c = chaos_at(&cfg, beats_at(b));
+        }
+        // The whole synth's modulation, each stretch of CONTROL samples (and its sources, which
+        // the notes' routes read too)
         let mut gm = [[0.0f32; NDEST]; NBLK];
+        let mut gs = [[0.0f32; NSRC]; NBLK];
         for (b, m) in gm.iter_mut().enumerate().take(nblk) {
-            let mut s = [0.0f32; NSRC];
+            let s = &mut gs[b];
             for k in 0..4 {
                 if cfg.lfo[k].global {
                     s[src::LFO + k] = shared[k][b];
@@ -1043,11 +1516,12 @@ impl Synth {
             for k in 0..4 {
                 s[src::MACRO + k] = cfg.macros[k];
             }
-            route(&cfg, &s, m);
+            s[src::CHAOS] = chaos[b];
+            route(&cfg, s, m, false);
             // A free LFO with a fade in is a note's source (each note fades it in its own time),
             // but the whole-synth targets (LFO rates, effect mixes, width) have no note: they
             // take it unfaded
-            let mut faded = [0.0f32; NSRC];
+            let mut faded = *s;
             let mut any = false;
             for k in 0..4 {
                 if cfg.lfo[k].mode == 0 && !cfg.lfo[k].global {
@@ -1057,9 +1531,11 @@ impl Synth {
             }
             if any {
                 let mut extra = [0.0f32; NDEST];
-                route(&cfg, &faded, &mut extra);
-                for (t, x) in m.iter_mut().zip(extra.iter()).skip(p::GLOBAL_DESTS) {
-                    *t += x;
+                route(&cfg, &faded, &mut extra, true);
+                for (t, (i, x)) in m.iter_mut().zip(extra.iter().enumerate()) {
+                    if p::is_global_dest(i) {
+                        *t += x;
+                    }
                 }
             }
         }
@@ -1068,9 +1544,18 @@ impl Synth {
         }
 
         let glide = if cfg.mode > 0 && cfg.glide > 0.0015 { 1.0 - (-1.0 / (cfg.glide * sr / 3.0)).exp() } else { 1.0 };
+        // (The classic glide: a constant time, exponential, from the knob as it is now. The others
+        // were set by their note)
+        let glide_classic = glide >= 1.0 || !(cfg.glide_rate || cfg.glide_linear);
         let fade_step = 1.0 / (0.003 * sr);
         let bend = self.bend * cfg.bend_range;
         let pdecay = (-1.0 / (cfg.pdecay * sr)).exp();
+        let pstep = 1.0 / (cfg.pdecay * sr);
+        let aftertouch = self.aftertouch;
+        let cab_post = if cfg.drive_tone > 0.0 { Some(CabNow::new(cfg.drive_tone, sr)) } else { None };
+        if cfg.sub_after {
+            self.sub_bus[..frames].fill(0.0);
+        }
         let tab = [table(cfg.osc[0].table), table(cfg.osc[1].table)];
         // White noise spreads over the whole band: scaled so the part we hear is as loud at any
         // sample rate (as now at 48 kHz)
@@ -1092,29 +1577,51 @@ impl Synth {
                 let blk = start / CONTROL;
                 let n_here = (end - start) as f32;
                 // ---- control: this note's modulation for these samples ----
-                let mut s = [0.0f32; NSRC];
+                // (The whole synth's sources, and this note's)
+                let mut s = gs[blk];
                 {
                     let v = &mut self.voices[vi];
+                    let held_key = v.amp.stage != Stage::Release;
                     for k in 0..4 {
                         let l = &cfg.lfo[k];
                         if l.global {
                             continue;
                         }
+                        // (A delay holds it at its start, silent, until its time is up)
+                        let waiting = l.delay > 0.0 && v.time < l.delay;
                         let val = if l.mode == 0 {
                             shared[k][blk]
                         } else {
-                            let ph = if l.mode == 2 { v.lfo_phase[k].min(0.9999) } else { v.lfo_phase[k] };
+                            let ph = if l.mode >= 2 { v.lfo_phase[k].min(0.9999) } else { v.lfo_phase[k] };
                             let val = lfo_value(&cfg, k, ph, v.lfo_held[k]);
-                            v.lfo_phase[k] += rate[k] * n_here / sr;
-                            if l.mode == 1 && v.lfo_phase[k] >= 1.0 {
-                                v.lfo_phase[k] -= v.lfo_phase[k].floor();
-                                v.lfo_held[k] = (v.lfo_held[k].1, self.rng.bipolar());
-                            } else if l.mode == 2 {
-                                v.lfo_phase[k] = v.lfo_phase[k].min(1.0);
+                            let r = if l.keytrack > 0.0 { rate[k] * 2f32.powf(l.keytrack * (v.note as f32 - 60.0) / 12.0) } else { rate[k] };
+                            if !waiting {
+                                let was = v.lfo_phase[k];
+                                v.lfo_phase[k] += r * n_here / sr;
+                                if l.mode == 1 && v.lfo_phase[k] >= 1.0 {
+                                    v.lfo_phase[k] -= v.lfo_phase[k].floor();
+                                    v.lfo_held[k] = (v.lfo_held[k].1, self.rng.bipolar());
+                                } else if l.mode == 2 {
+                                    v.lfo_phase[k] = v.lfo_phase[k].min(1.0);
+                                } else if l.mode == 3 {
+                                    // Sustain env: holds at its sustain point while the key is down
+                                    if held_key && was <= l.sustain && v.lfo_phase[k] > l.sustain {
+                                        v.lfo_phase[k] = l.sustain;
+                                    }
+                                    v.lfo_phase[k] = v.lfo_phase[k].min(1.0);
+                                }
                             }
                             val
                         };
-                        let fade = if l.fade > 0.0011 { (v.time / l.fade).min(1.0) } else { 1.0 };
+                        let val = if l.smooth > 0.0 && l.mode > 0 { smooth_lfo(&mut v.lfo_sm[k], val, l.smooth, rate[k], n_here as usize, sr) } else { val };
+                        let fade = if l.delay > 0.0 {
+                            // (Fading in from the end of its delay: at least over 5 ms, never a step)
+                            ((v.time - l.delay) / l.fade.max(0.005)).clamp(0.0, 1.0)
+                        } else if l.fade > 0.0011 {
+                            (v.time / l.fade).min(1.0)
+                        } else {
+                            1.0
+                        };
                         s[src::LFO + k] = val * fade;
                     }
                     s[src::AMP] = v.amp.value;
@@ -1123,10 +1630,14 @@ impl Synth {
                     s[src::VEL] = v.vel;
                     s[src::NOTE] = ((v.pitch - 60.0) / 36.0).clamp(-1.0, 1.0);
                     s[src::RAND] = v.rand;
+                    s[src::NRAND] = v.nrand;
+                    s[src::NRAND_BI] = v.nrand_bi;
+                    s[src::RELVEL] = v.rel_vel;
+                    s[src::PRESS] = v.pressure.max(aftertouch);
                     v.time += n_here / sr;
                 }
                 let mut m = gm[blk];
-                route(&cfg, &s, &mut m);
+                route(&cfg, &s, &mut m, true);
                 let pend = self.voices[vi].pending;
 
                 let v = &mut self.voices[vi];
@@ -1164,11 +1675,14 @@ impl Synth {
                 let c1 = coef(&cfg.filt[0], m[d::CUT1], m[d::RES1]);
                 let c2 = if cfg.f2_used { coef(&cfg.filt[1], m[d::CUT2], m[d::RES2]) } else { FiltCoef::default() };
                 let fdrive = (cfg.fdrive + m[d::FDRIVE]).clamp(0.0, 1.0);
-                let pre = 1.0 + 4.0 * fdrive;
+                let fpre = 1.0 + 4.0 * fdrive;
                 let drive_db = (cfg.drive + m[d::DRIVE] * 24.0).clamp(0.0, 48.0);
-                let dgain = 10f32.powf(drive_db / 20.0);
-                let makeup = shaper_makeup(cfg.shaper, dgain);
-                let drive_mix = (cfg.drive_mix + m[d::DMIX]).clamp(0.0, 1.0);
+                let post = DriveNow::new(cfg.shaper, drive_db, cfg.drive_mix + m[d::DMIX], cfg.drive_crush + m[d::CRUSH]);
+                let pre = if cfg.pre.kind > 0 {
+                    DriveNow::new(cfg.pre.kind, cfg.pre.db + m[d::PRE_DRIVE] * 24.0, cfg.pre.mix, cfg.pre.crush + m[d::CRUSH]).level_kept(sr)
+                } else {
+                    DriveNow::default()
+                };
                 let vel_gain = 1.0 - cfg.vel * (1.0 - v.vel);
                 let vol = vol_mod(m[d::VOL]);
                 let sub_gain = cfg.sub * vol_mod(m[d::SUB]);
@@ -1180,9 +1694,19 @@ impl Synth {
                     // Glide and the pitch envelope move per sample
                     // (Kept as a shrinking offset: small numbers keep their precision, so a long
                     // glide arrives in tune rather than stalling a few cents short)
-                    v.glide *= 1.0 - glide;
+                    if glide_classic {
+                        v.glide *= 1.0 - glide;
+                    } else if cfg.glide_linear {
+                        v.glide = if v.glide.abs() <= v.glide_step { 0.0 } else { v.glide - v.glide_step.copysign(v.glide) };
+                    } else {
+                        v.glide *= 1.0 - v.glide_k;
+                    }
                     v.pitch = v.target + v.glide;
-                    v.penv *= pdecay;
+                    if cfg.penv_linear {
+                        v.penv = (v.penv - pstep).max(0.0);
+                    } else {
+                        v.penv *= pdecay;
+                    }
                     let env = v.amp.tick();
                     v.fenv.tick();
                     v.menv.tick();
@@ -1257,20 +1781,32 @@ impl Synth {
                     for c in 0..2 {
                         let mut x1 = bus[0][c] * 0.8;
                         if fdrive > 0.0 {
-                            x1 = fast_tanh(x1 * pre) / pre.sqrt();
+                            x1 = fast_tanh(x1 * fpre) / fpre.sqrt();
+                        }
+                        let mut x2 = bus[1][c] * 0.8;
+                        // The drive before the filters (what goes to each)
+                        if pre.on() {
+                            x1 = v.pre[c].tick(&pre, x1);
+                            if cfg.f2_used {
+                                // (Its own state: filter 2's input is another sound)
+                                x2 = v.pre[c + 2].tick(&pre, x2);
+                            }
                         }
                         let y1 = v.filt[0][c].tick(&c1, x1);
                         let filtered = if cfg.serial {
-                            v.filt[1][c].tick(&c2, y1 + bus[1][c] * 0.8)
+                            v.filt[1][c].tick(&c2, y1 + x2)
                         } else if cfg.f2_used {
-                            y1 + v.filt[1][c].tick(&c2, bus[1][c] * 0.8)
+                            y1 + v.filt[1][c].tick(&c2, x2)
                         } else {
                             y1
                         };
                         let y = filtered + bus[2][c] * 0.8;
-                        outc[c] = if cfg.shaper > 0 && drive_mix > 0.0 {
-                            let w = v.shaper[c].tick(cfg.shaper, y * dgain) / makeup;
-                            y + (w - y) * drive_mix
+                        outc[c] = if post.on() {
+                            let w = v.post[c].tick(&post, y);
+                            match &cab_post {
+                                Some(cab) => v.cab[c].tick(cab, w),
+                                None => w,
+                            }
                         } else {
                             y
                         };
@@ -1285,8 +1821,14 @@ impl Synth {
                         }
                     }
                     let a = env * v.gain_now * vol * v.fade;
-                    self.out[0][n] += (outc[0] * pl + sub) * a;
-                    self.out[1][n] += (outc[1] * pr + sub) * a;
+                    if cfg.sub_after {
+                        self.out[0][n] += outc[0] * pl * a;
+                        self.out[1][n] += outc[1] * pr * a;
+                        self.sub_bus[n] += sub * a;
+                    } else {
+                        self.out[0][n] += (outc[0] * pl + sub) * a;
+                        self.out[1][n] += (outc[1] * pr + sub) * a;
+                    }
                 }
                 // A very short note's time is up: it lets go, or the pedal holds it
                 if self.voices[vi].short_left > 0 {
@@ -1312,7 +1854,7 @@ impl Synth {
                         self.voices[vi].target = note as f32;
                         self.voices[vi].glide = 0.0;
                         let up = self.voices[vi].pending_up;
-                        self.start(vi, note, vel, &cfg, true);
+                        self.start(vi, note, vel, &cfg, true, false);
                         if up {
                             // (As long as the fade it waited through: long enough to be heard)
                             self.voices[vi].short_left = ((0.003 * sr) as u32).max(CONTROL as u32);
@@ -1336,6 +1878,30 @@ impl Synth {
         for n in 0..frames {
             self.out[0][n] = self.dc[0].tick(self.out[0][n], dc_r);
             self.out[1][n] = self.dc[1].tick(self.out[1][n], dc_r);
+        }
+        // The multiband drive: lows clean, mids and highs driven
+        if cfg.band.kind > 0 && cfg.band.mix > 0.0 {
+            let lo = SvfCoef::new(cfg.band_split.0, sr, std::f32::consts::SQRT_2);
+            let hi = SvfCoef::new(cfg.band_split.1.min(sr * 0.45), sr, std::f32::consts::SQRT_2);
+            let cab = if cfg.band.tone > 0.0 { Some(CabNow::new(cfg.band.tone, sr)) } else { None };
+            for b in 0..nblk {
+                let dn = DriveNow::new(cfg.band.kind, cfg.band.db + gm[b][d::BAND_DRIVE] * 24.0, cfg.band.mix, cfg.band.crush).level_kept(sr);
+                for n in b * CONTROL..((b + 1) * CONTROL).min(frames) {
+                    for c in 0..2 {
+                        let st = &mut self.band[c];
+                        let (low, mid, high) = st.split(&lo, &hi, self.out[c][n]);
+                        let dm = st.drive[0].tick(&dn, mid);
+                        let dh = high + (st.drive[1].tick(&dn, high) - high) * cfg.band_high;
+                        let up = match &cab {
+                            Some(cb) => st.cab.tick(cb, dm + dh),
+                            None => dm + dh,
+                        };
+                        self.out[c][n] = low + up;
+                    }
+                }
+            }
+        } else {
+            self.band = [Band::default(); 2];
         }
         self.ott_on = cfg.ott > 0.0;
         if cfg.ott > 0.0 {
@@ -1361,7 +1927,8 @@ impl Synth {
             let (mut l, mut r) = (self.out[0][n], self.out[1][n]);
             // The low end in mono: the side signal loses everything under 120 Hz; then the width
             let width = (cfg.width + gm[n / CONTROL][d::WIDTH]).clamp(0.0, 1.0);
-            let mid = (l + r) * 0.5;
+            // (The clean sub joins here, in the middle, after the drive, the OTT and the effects)
+            let mid = if cfg.sub_after { (l + r) * 0.5 + self.sub_bus[n] } else { (l + r) * 0.5 };
             let mut side = (l - r) * 0.5;
             let s1 = self.side_hp[0].tick(&self.side_coef, side).hp;
             side = self.side_hp[1].tick(&self.side_coef, s1).hp * width * 2.0;
@@ -1371,6 +1938,8 @@ impl Synth {
             self.out[0][n] = self.clip[0].tick(l);
             self.out[1][n] = self.clip[1].tick(r);
         }
+        self.song_beats += frames as f64 * beat_step;
+        self.song_secs += frames as f64 / sr as f64;
     }
 }
 
@@ -1399,6 +1968,46 @@ fn send(bus: &mut [[f32; 2]; 3], route: usize, l: f32, r: f32) {
             bus[0][1] += r;
         }
     }
+}
+
+/// The chaos source at song position `beats`: a random level per step of its division (steps
+/// counted from the start of the random cycle, when there is one: they come round again), sliding
+/// into the next over the last `chaos_smooth` of each step.
+fn chaos_at(cfg: &Cfg, beats: f64) -> f32 {
+    let steps_per_cycle = if cfg.random_cycle > 0.0 { (cfg.random_cycle / cfg.chaos_beats as f64).round().max(1.0) as u64 } else { u64::MAX };
+    let x = beats / cfg.chaos_beats as f64;
+    let step = (x.floor() as i64 as u64) % steps_per_cycle;
+    let level = |s: u64| hash_bi(s ^ 0xc4a0_5000_0000_0000);
+    let a = level(step);
+    if cfg.chaos_smooth > 0.001 {
+        let t = x.fract() as f32;
+        let u = ((t - (1.0 - cfg.chaos_smooth)) / cfg.chaos_smooth).clamp(0.0, 1.0);
+        a + (level((step + 1) % steps_per_cycle) - a) * u * u * (3.0 - 2.0 * u)
+    } else {
+        a
+    }
+}
+
+/// An LFO's value smoothed: a lag of up to half its cycle (at Smooth 100 %), from `state` (NaN:
+/// it starts at the value).
+#[inline]
+fn smooth_lfo(state: &mut f32, x: f32, smooth: f32, hz: f32, n: usize, sr: f32) -> f32 {
+    if state.is_nan() {
+        *state = x;
+        return x;
+    }
+    let tau = (smooth * smooth * 0.5 / hz.max(0.01)).max(1e-4);
+    let k = 1.0 - (-(n as f32) / (tau * sr)).exp();
+    *state += (x - *state) * k;
+    *state
+}
+
+/// Set how voice `v`'s glide (its `glide` offset) gets home, for the glides worked out per note:
+/// a constant rate (the knob's time per octave) or a straight line.
+fn set_glide(v: &mut Voice, cfg: &Cfg, sr: f32) {
+    let secs = (if cfg.glide_rate { cfg.glide * v.glide.abs() / 12.0 } else { cfg.glide }).max(1e-4);
+    v.glide_k = 1.0 - (-1.0 / (secs * sr / 3.0)).exp();
+    v.glide_step = v.glide.abs() / (secs * sr);
 }
 
 /// A volume modulation: 0 and above leave it, -1 silences it (a tremolo or a wobble's gate).
@@ -2359,3 +2968,7 @@ mod tests {
     }
 
 }
+
+#[cfg(test)]
+#[path = "synth_movement_tests.rs"]
+mod movement_tests;

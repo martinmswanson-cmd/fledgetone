@@ -374,6 +374,9 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       values?.forEach((v, i) => {
         if (Number.isFinite(v) && params[i]) set(i, v);
       });
+      // Saved before the plugin had all its parameters (an older version of it): the ones it
+      // didn't have are set as the sound was then, so it sounds as it did
+      if (values?.length && values.length < params.length) await legacy(values.length);
     },
     destroy: () => {
       if (destroyed) return;
@@ -421,6 +424,22 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   };
   /** Resolves a file preset's load once the plugin has sent its new parameters */
   const loaded: Array<() => void> = [];
+  /**
+   * An older saved sound with only its first `count` values has gone in: the plugin sets the
+   * parameters it didn't have as the sound was then; they become its own settings.
+   */
+  const legacy = (count: number) =>
+    new Promise<void>((resolve) => {
+      if (destroyed) return resolve();
+      const id = nextReply++;
+      replies.set(id, (fresh) => {
+        own = own.map((x, i) => (i >= count && fresh[i] && !laneHeld.has(i) ? fresh[i].value : x));
+        params = marked(laneShown(keepSent(fresh.map((p, i) => ({ ...p, defaultValue: params[i]?.defaultValue ?? p.value })))));
+        changed();
+        resolve();
+      });
+      node.port.postMessage({ type: 'legacy', id, count });
+    });
   /** Ask the plugin for every parameter's value and text (after automation moved them). */
   const refresh = () =>
     new Promise<void>((resolve) => {

@@ -10,6 +10,8 @@ pub enum Kind {
     Lin { min: f32, max: f32, unit: &'static str },
     /// From `min` to `max` along an exponential curve (frequencies, times), shown with `unit`
     Log { min: f32, max: f32, unit: &'static str },
+    /// As Log, but 0 is off (the value 0)
+    LogOff { min: f32, max: f32, unit: &'static str },
     /// Whole numbers from `min` to `max`
     Int { min: i32, max: i32, unit: &'static str },
     /// One of `names`. Stored as its place out of `cap` (more than the list has), so a list can
@@ -38,7 +40,10 @@ pub const TABLES: &[&str] = &[
 ];
 pub const FILTERS: &[&str] = &["Low pass 12", "Low pass 24", "Ladder", "Band pass", "High pass 12", "High pass 24", "Notch", "Comb +", "Comb −", "Formant", "Off"];
 pub const FILTER_OFF: usize = 10;
-pub const SHAPERS: &[&str] = &["Off", "Soft", "Warm", "Hard clip", "Fold", "Asymmetric"];
+pub const SHAPERS: &[&str] = &["Off", "Soft", "Warm", "Hard clip", "Fold", "Asymmetric", "Tube", "Bitcrush", "Downsample"];
+/// The shapers that crush (bits, rate) rather than bend: not antialiased shapes, see synth.rs
+pub const CRUSH_BITS: u32 = 7;
+pub const CRUSH_RATE: u32 = 8;
 pub const WARPS: &[&str] = &["Off", "Sync", "Bend +", "Bend −", "Squeeze", "Mirror", "Quantize", "Fold", "Ring"];
 pub const STACKS: &[&str] = &["Off", "Octave", "2 octaves", "Fifth", "Fifth + octave", "Major", "Minor", "Sus 4"];
 /// Semitones added to unison voices in turn, per stack
@@ -46,10 +51,24 @@ pub const STACK_STEPS: &[&[f32]] = &[&[0.0], &[0.0, 12.0], &[0.0, 12.0, 24.0], &
 pub const ROUTES: &[&str] = &["Filter 1", "Filter 2", "Both filters", "Straight out"];
 pub const LFO_SHAPES: &[&str] = &["Sine", "Triangle", "Saw up", "Saw down", "Square", "Wobble", "Steps", "Drift", "Pump", "Drawn 1", "Drawn 2"];
 pub const LFO_DRAWN: u32 = 9;
-pub const LFO_MODES: &[&str] = &["Free", "Restart", "One shot"];
+/// Free: one LFO for every note, its phase following the song; Retrig: from the top with each
+/// note; Envelope: one cycle per note, then it holds its end; Sustain env: runs to its sustain
+/// point and holds there while the key is down, then finishes the cycle once it's let go
+pub const LFO_MODES: &[&str] = &["Free", "Retrig", "Envelope", "Sustain env"];
+/// When a mono or legato note restarts a note's LFO: as the voices do (a joined legato note
+/// carries on, any other note restarts it), on every note, only on a note that isn't joined, or
+/// only when the voice starts from silence
+pub const LFO_RETRIGS: &[&str] = &["As the voices", "Always", "Legato continues", "Never"];
 /// Tempo divisions, in beats (quarter notes) per cycle
-pub const SYNC_NAMES: &[&str] = &["4 bars", "2 bars", "1 bar", "1/2.", "1/2", "1/4.", "1/2T", "1/4", "1/8.", "1/4T", "1/8", "1/16.", "1/8T", "1/16", "1/16T", "1/32"];
-pub const SYNC_BEATS: &[f32] = &[16.0, 8.0, 4.0, 3.0, 2.0, 1.5, 4.0 / 3.0, 1.0, 0.75, 2.0 / 3.0, 0.5, 0.375, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125];
+/// (The ones after "1/32" came later, so they're at the end: saved songs keep their choice)
+pub const SYNC_NAMES: &[&str] = &[
+    "4 bars", "2 bars", "1 bar", "1/2.", "1/2", "1/4.", "1/2T", "1/4", "1/8.", "1/4T", "1/8", "1/16.", "1/8T", "1/16", "1/16T", "1/32",
+    "2 bars.", "1 bar.", "1/1T", "1/32.", "1/32T", "1/64",
+];
+pub const SYNC_BEATS: &[f32] = &[
+    16.0, 8.0, 4.0, 3.0, 2.0, 1.5, 4.0 / 3.0, 1.0, 0.75, 2.0 / 3.0, 0.5, 0.375, 1.0 / 3.0, 0.25, 1.0 / 6.0, 0.125,
+    12.0, 6.0, 8.0 / 3.0, 0.1875, 1.0 / 12.0, 0.0625,
+];
 /// What modulation can move (LFO targets, the matrix). The ones from "LFO 1 rate" on are the
 /// whole synth's, not a note's: only the shared sources move them (free LFOs, macros, the mod
 /// wheel, aftertouch and pitch bend).
@@ -57,12 +76,29 @@ pub const DESTS: &[&str] = &[
     "None", "F1 cutoff", "F1 resonance", "A position", "B position", "Pitch", "Volume", "Drive", "FM", "Pan", "B pitch", "Sub",
     "A pitch", "A level", "B level", "A detune", "B detune", "A warp", "B warp", "F2 cutoff", "F2 resonance", "Noise", "Filter drive", "Drive mix",
     "LFO 1 rate", "LFO 2 rate", "LFO 3 rate", "LFO 4 rate", "Chorus mix", "Phaser mix", "Delay mix", "Reverb mix", "Width",
+    "Pre drive", "Crush", "Band drive",
 ];
-/// Where the whole-synth targets start in DESTS
+/// Where the whole-synth targets start in DESTS (up to "Width"; the later "Band drive" is one too)
 pub const GLOBAL_DESTS: usize = 24;
+/// Whether target `d` is the whole synth's (no note's): LFO rates, effect mixes, width, band drive
+pub const fn is_global_dest(d: usize) -> bool {
+    (d >= GLOBAL_DESTS && d <= 32) || d == 35
+}
 pub const SOURCES: &[&str] = &[
     "None", "LFO 1", "LFO 2", "LFO 3", "LFO 4", "Volume env", "Filter env", "Mod env", "Velocity", "Note", "Mod wheel", "Aftertouch", "Pitch bend", "Random", "Macro 1", "Macro 2", "Macro 3", "Macro 4",
+    "Note random", "Note random ±", "Chaos", "Release velocity", "Note pressure",
 ];
+/// How a matrix slot bends its source: straight, slow then fast, fast then slow, or an S
+pub const CURVES: &[&str] = &["Linear", "Exponential", "Logarithmic", "S-curve"];
+pub const SUB_PATHS: &[&str] = &["With the voices", "Clean, after effects"];
+pub const GLIDE_MODES: &[&str] = &["Always", "Legato only"];
+pub const GLIDE_RATES: &[&str] = &["Constant time", "Constant rate"];
+pub const GLIDE_CURVES: &[&str] = &["Exponential", "Linear"];
+pub const PENV_CURVES: &[&str] = &["Exponential", "Linear"];
+/// How often the note-random values and chaos come round again (a riff that repeats each bar
+/// gets the same values at the same places), or never
+pub const RANDOM_CYCLES: &[&str] = &["Never", "1 bar", "2 bars", "4 bars"];
+pub const RANDOM_CYCLE_BEATS: &[f64] = &[0.0, 4.0, 8.0, 16.0];
 pub const MODES: &[&str] = &["Poly", "Mono", "Legato"];
 pub const SUB_OCTAVES: &[&str] = &["−1 octave", "−2 octaves"];
 pub const PHASER_MODES: &[&str] = &["Phaser", "Flanger"];
@@ -85,6 +121,14 @@ const SOURCE_K: Kind = choice(SOURCES, 32);
 const MODE_K: Kind = choice(MODES, 8);
 const SUB_K: Kind = choice(SUB_OCTAVES, 4);
 const PHASER_K: Kind = choice(PHASER_MODES, 8);
+const RETRIG_K: Kind = choice(LFO_RETRIGS, 8);
+const CURVE_K: Kind = choice(CURVES, 8);
+const SUB_PATH_K: Kind = choice(SUB_PATHS, 4);
+const GLIDE_MODE_K: Kind = choice(GLIDE_MODES, 8);
+const GLIDE_RATE_K: Kind = choice(GLIDE_RATES, 8);
+const GLIDE_CURVE_K: Kind = choice(GLIDE_CURVES, 8);
+const PENV_CURVE_K: Kind = choice(PENV_CURVES, 8);
+const RANDOM_CYCLE_K: Kind = choice(RANDOM_CYCLES, 8);
 const SECONDS: Kind = Kind::Log { min: 0.005, max: 10.0, unit: " s" };
 
 const fn pr(name: &'static str, kind: Kind, default: f32) -> Param {
@@ -276,12 +320,74 @@ const OUTPUT: [Param; 4] = [
     pr("Level", Kind::Db { min: -36.0, max: 6.0 }, -14.0),
 ];
 
+// ---------- added for per-note movement (after Level: saved songs keep their places) ----------
+
+macro_rules! lfo_more {
+    ($p:literal) => {
+        [
+            pr(concat!($p, " retrigger"), RETRIG_K, 0.0),
+            pr(concat!($p, " delay"), Kind::LogOff { min: 0.005, max: 4.0, unit: " s" }, 0.0),
+            pr(concat!($p, " smooth"), Kind::Percent, 0.0),
+            pr(concat!($p, " key tracking"), Kind::Percent, 0.0),
+            pr(concat!($p, " sustain point"), Kind::Percent, 0.5),
+        ]
+    };
+}
+const LFO1_MORE: [Param; 5] = lfo_more!("LFO 1");
+const LFO2_MORE: [Param; 5] = lfo_more!("LFO 2");
+const LFO3_MORE: [Param; 5] = lfo_more!("LFO 3");
+const LFO4_MORE: [Param; 5] = lfo_more!("LFO 4");
+const CHAOS: [Param; 3] = [pr("Chaos rate (sync)", SYNC_K, 13.0), pr("Chaos smooth", Kind::Percent, 0.0), pr("Random repeat", RANDOM_CYCLE_K, 1.0)];
+const MATRIX2: [[Param; 3]; 8] = [mod_slot!("Mod 9"), mod_slot!("Mod 10"), mod_slot!("Mod 11"), mod_slot!("Mod 12"), mod_slot!("Mod 13"), mod_slot!("Mod 14"), mod_slot!("Mod 15"), mod_slot!("Mod 16")];
+macro_rules! slot_more {
+    ($p:literal) => {
+        [pr(concat!($p, " curve"), CURVE_K, 0.0), pr(concat!($p, " via"), SOURCE_K, 0.0)]
+    };
+}
+const SLOT_MORE: [[Param; 2]; 16] = [
+    slot_more!("Mod 1"), slot_more!("Mod 2"), slot_more!("Mod 3"), slot_more!("Mod 4"), slot_more!("Mod 5"), slot_more!("Mod 6"), slot_more!("Mod 7"), slot_more!("Mod 8"),
+    slot_more!("Mod 9"), slot_more!("Mod 10"), slot_more!("Mod 11"), slot_more!("Mod 12"), slot_more!("Mod 13"), slot_more!("Mod 14"), slot_more!("Mod 15"), slot_more!("Mod 16"),
+];
+const DRIVE_MORE: [Param; 14] = [
+    pr("Pre drive type", SHAPER_K, 0.0),
+    pr("Pre drive", Kind::Lin { min: 0.0, max: 36.0, unit: " dB" }, 0.0),
+    pr("Pre drive mix", Kind::Percent, 1.0),
+    pr("Pre drive crush", Kind::Percent, 0.5),
+    pr("Drive crush", Kind::Percent, 0.5),
+    pr("Drive tone", Kind::Percent, 0.0),
+    pr("Band drive type", SHAPER_K, 0.0),
+    pr("Band drive", Kind::Lin { min: 0.0, max: 36.0, unit: " dB" }, 0.0),
+    pr("Band drive mix", Kind::Percent, 1.0),
+    pr("Band drive crush", Kind::Percent, 0.5),
+    pr("Band drive tone", Kind::Percent, 0.0),
+    pr("Band low split", Kind::Log { min: 60.0, max: 500.0, unit: " Hz" }, 150.0),
+    pr("Band high split", Kind::Log { min: 1000.0, max: 8000.0, unit: " Hz" }, 2500.0),
+    pr("Band high amount", Kind::Percent, 1.0),
+];
+const PLAY_MORE: [Param; 5] = [
+    pr("Sub path", SUB_PATH_K, 1.0),
+    pr("Glide mode", GLIDE_MODE_K, 0.0),
+    pr("Glide rate", GLIDE_RATE_K, 0.0),
+    pr("Glide curve", GLIDE_CURVE_K, 0.0),
+    pr("Pitch envelope curve", PENV_CURVE_K, 0.0),
+];
+
+/// What a parameter added later is set to when an older saved sound (one with fewer values)
+/// loads, where that differs from its default: the old sound, exactly. (The sub went through the
+/// effects with the rest of the voice before "Sub path" came.)
+const LEGACY: &[(&str, f32)] = &[("Sub path", 0.0)];
+
 /// Every group, in order: its place in the list is where it starts
 const GROUPS: &[&[Param]] = &[
     &OSC_A, &OSC_B, &SOURCES_P, &FILTER1, &FILTER2, &AMP_ENV, &FILTER_ENV, &MOD_ENV, &PITCH_ENV, &DRIVE_P,
     &LFO1, &LFO2, &LFO3, &LFO4, &SHAPE1, &SHAPE2,
     &MATRIX[0], &MATRIX[1], &MATRIX[2], &MATRIX[3], &MATRIX[4], &MATRIX[5], &MATRIX[6], &MATRIX[7],
     &MACROS, &PLAY, &EQ, &CHORUS, &PHASER, &DELAY, &REVERB, &OUTPUT,
+    &LFO1_MORE, &LFO2_MORE, &LFO3_MORE, &LFO4_MORE, &CHAOS,
+    &MATRIX2[0], &MATRIX2[1], &MATRIX2[2], &MATRIX2[3], &MATRIX2[4], &MATRIX2[5], &MATRIX2[6], &MATRIX2[7],
+    &SLOT_MORE[0], &SLOT_MORE[1], &SLOT_MORE[2], &SLOT_MORE[3], &SLOT_MORE[4], &SLOT_MORE[5], &SLOT_MORE[6], &SLOT_MORE[7],
+    &SLOT_MORE[8], &SLOT_MORE[9], &SLOT_MORE[10], &SLOT_MORE[11], &SLOT_MORE[12], &SLOT_MORE[13], &SLOT_MORE[14], &SLOT_MORE[15],
+    &DRIVE_MORE, &PLAY_MORE,
 ];
 
 /// Where each group starts in the full list (tests::indices_name_their_parameters checks them)
@@ -340,7 +446,63 @@ pub const OTT: usize = REVERB_ON + 6;
 pub const OTT_TIME: usize = OTT + 1;
 pub const WIDTH: usize = OTT + 2;
 pub const LEVEL: usize = OTT + 3;
-pub const COUNT: usize = LEVEL + 1;
+/// How many parameters there were before the per-note movement work (saved sounds with this many
+/// values are the old kind: see `legacy`)
+pub const COUNT_V1: usize = LEVEL + 1;
+pub const LFO_MORE_LEN: usize = 5;
+pub const LFO_MORE_1: usize = COUNT_V1;
+pub const CHAOS_DIV: usize = LFO_MORE_1 + LFO_MORE_LEN * LFOS;
+pub const CHAOS_SMOOTH: usize = CHAOS_DIV + 1;
+pub const RANDOM_CYCLE: usize = CHAOS_DIV + 2;
+/// Matrix slots 9 to 16 (source, target, amount, as slots 1 to 8)
+pub const MATRIX_9: usize = CHAOS_DIV + 3;
+pub const SLOTS_ALL: usize = 16;
+/// Every slot's curve and via, slot 1 first
+pub const SLOT_MORE_1: usize = MATRIX_9 + 3 * 8;
+pub const PRE_SHAPER: usize = SLOT_MORE_1 + 2 * SLOTS_ALL;
+pub const PRE_DRIVE: usize = PRE_SHAPER + 1;
+pub const PRE_MIX: usize = PRE_SHAPER + 2;
+pub const PRE_CRUSH: usize = PRE_SHAPER + 3;
+pub const DRIVE_CRUSH: usize = PRE_SHAPER + 4;
+pub const DRIVE_TONE: usize = PRE_SHAPER + 5;
+pub const BAND_SHAPER: usize = PRE_SHAPER + 6;
+pub const BAND_DRIVE: usize = BAND_SHAPER + 1;
+pub const BAND_MIX: usize = BAND_SHAPER + 2;
+pub const BAND_CRUSH: usize = BAND_SHAPER + 3;
+pub const BAND_TONE: usize = BAND_SHAPER + 4;
+pub const BAND_LOW: usize = BAND_SHAPER + 5;
+pub const BAND_HIGH: usize = BAND_SHAPER + 6;
+pub const BAND_HIGH_AMT: usize = BAND_SHAPER + 7;
+pub const SUB_PATH: usize = BAND_SHAPER + 8;
+pub const GLIDE_MODE: usize = SUB_PATH + 1;
+pub const GLIDE_RATE: usize = SUB_PATH + 2;
+pub const GLIDE_CURVE: usize = SUB_PATH + 3;
+pub const PENV_CURVE: usize = SUB_PATH + 4;
+pub const COUNT: usize = PENV_CURVE + 1;
+
+/// Matrix slot `n`'s (0 to 15) source, target and amount; and its curve and via
+pub const fn slot_base(n: usize) -> usize {
+    if n < SLOTS {
+        MATRIX_1 + 3 * n
+    } else {
+        MATRIX_9 + 3 * (n - SLOTS)
+    }
+}
+pub const fn slot_more(n: usize) -> usize {
+    SLOT_MORE_1 + 2 * n
+}
+
+/// An older saved sound, with only its first `count` values: the parameters it didn't have are
+/// set as it sounded then (`LEGACY`), the rest stay as they are.
+pub fn legacy(values: &mut [f32], count: usize) {
+    for &(name, v) in LEGACY {
+        if let Some(i) = index_of(name) {
+            if i >= count && i < values.len() {
+                values[i] = param(i).kind.normal(v);
+            }
+        }
+    }
+}
 
 /// Offsets within an oscillator's group
 pub mod osc {
@@ -377,19 +539,35 @@ pub mod lfo {
     pub const AMT1: usize = 8;
     pub const DEST2: usize = 9;
     pub const AMT2: usize = 10;
+    /// (In the later group, from LFO_MORE_1 + k * LFO_MORE_LEN)
+    pub const RETRIG: usize = 0;
+    pub const DELAY: usize = 1;
+    pub const SMOOTH: usize = 2;
+    pub const KEYTRACK: usize = 3;
+    pub const SUSTAIN: usize = 4;
 }
 
 /// The parameter at index `i`.
 pub fn param(i: usize) -> &'static Param {
-    let mut at = i;
-    for g in GROUPS {
-        if at < g.len() {
-            return &g[at];
-        }
-        at -= g.len();
-    }
-    &OUTPUT[OUTPUT.len() - 1]
+    ALL[i.min(COUNT - 1)]
 }
+
+/// Every parameter in order (made once, when compiled)
+static ALL: [&Param; COUNT] = {
+    let mut out: [&Param; COUNT] = [&OUTPUT[0]; COUNT];
+    let mut g = 0;
+    let mut i = 0;
+    while g < GROUPS.len() {
+        let mut k = 0;
+        while k < GROUPS[g].len() {
+            out[i] = &GROUPS[g][k];
+            i += 1;
+            k += 1;
+        }
+        g += 1;
+    }
+    out
+};
 
 /// The index of the parameter called `name` (presets are written with names).
 pub fn index_of(name: &str) -> Option<usize> {
@@ -403,6 +581,13 @@ impl Kind {
         match *self {
             Kind::Lin { min, max, .. } => min + (max - min) * n,
             Kind::Log { min, max, .. } => min * (max / min).powf(n),
+            Kind::LogOff { min, max, .. } => {
+                if n <= 0.0 {
+                    0.0
+                } else {
+                    min * (max / min).powf(n)
+                }
+            }
             Kind::Int { min, max, .. } => (min as f32 + ((max - min) as f32 * n).round()).round(),
             Kind::Choice { names, cap } => (n * (cap - 1) as f32).round().min((names.len() - 1) as f32),
             Kind::Db { min, max } => {
@@ -429,6 +614,14 @@ impl Kind {
         let n = match *self {
             Kind::Lin { min, max, .. } => (v - min) / (max - min),
             Kind::Log { min, max, .. } => (v.max(min) / min).ln() / (max / min).ln(),
+            Kind::LogOff { min, max, .. } => {
+                if v <= 0.0 {
+                    0.0
+                } else {
+                    // (Just above 0 at the minimum: 0 itself is "off")
+                    ((v.max(min) / min).ln() / (max / min).ln()).max(1e-6)
+                }
+            }
             Kind::Int { min, max, .. } => (v - min as f32) / (max - min) as f32,
             Kind::Choice { cap, .. } => v / (cap - 1) as f32,
             Kind::Db { min, max } => {
@@ -450,7 +643,8 @@ impl Kind {
         let v = self.value(n);
         match *self {
             Kind::Lin { unit, .. } => format!("{}{}", trim(v), unit),
-            Kind::Log { unit, .. } => {
+            Kind::LogOff { .. } if v <= 0.0 => "off".to_string(),
+            Kind::Log { unit, .. } | Kind::LogOff { unit, .. } => {
                 if unit == " Hz" && v >= 1000.0 {
                     format!("{} kHz", trim(v / 1000.0))
                 } else if unit == " s" && v < 1.0 {
@@ -521,7 +715,12 @@ mod tests {
             (LFO_1, "LFO 1 shape"), (LFO_1 + LFO_LEN * 3 + lfo::AMT2, "LFO 4 amount 2"), (SHAPE_1, "Shape 1 step 1"), (SHAPE_1 + SHAPE_LEN * 2 - 1, "Shape 2 smooth"),
             (MATRIX_1, "Mod 1 source"), (MATRIX_1 + 3 * SLOTS - 1, "Mod 8 amount"), (MACRO_1, "Macro 1"), (MODE, "Voices"), (VELOCITY, "Velocity"),
             (EQ_ON, "EQ on"), (CHORUS_ON, "Chorus on"), (PHASER_ON, "Phaser on"), (DELAY_ON, "Delay on"), (REVERB_ON, "Reverb on"), (OTT, "OTT"), (LEVEL, "Level"),
+            (LFO_MORE_1, "LFO 1 retrigger"), (LFO_MORE_1 + LFO_MORE_LEN * 3 + lfo::SUSTAIN, "LFO 4 sustain point"), (CHAOS_DIV, "Chaos rate (sync)"), (CHAOS_SMOOTH, "Chaos smooth"), (RANDOM_CYCLE, "Random repeat"),
+            (slot_base(8), "Mod 9 source"), (slot_base(15) + 2, "Mod 16 amount"), (slot_base(7) + 2, "Mod 8 amount"), (slot_more(0), "Mod 1 curve"), (slot_more(15) + 1, "Mod 16 via"),
+            (PRE_SHAPER, "Pre drive type"), (DRIVE_TONE, "Drive tone"), (BAND_SHAPER, "Band drive type"), (BAND_HIGH_AMT, "Band high amount"),
+            (SUB_PATH, "Sub path"), (GLIDE_MODE, "Glide mode"), (PENV_CURVE, "Pitch envelope curve"),
         ];
+        assert_eq!(COUNT_V1, 215, "the first version's parameters");
         for (i, name) in check {
             assert_eq!(param(i).name, name, "index {i}");
         }
