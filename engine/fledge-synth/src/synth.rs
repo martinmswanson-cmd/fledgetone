@@ -463,6 +463,9 @@ struct Voice {
     pending: Option<(u8, f32)>,
     /// The waiting note's key already came up (a short note): it plays, then ends at once
     pending_up: bool,
+    /// Samples left of a very short note started after its key came up: it plays this long,
+    /// then lets go (or the pedal holds it)
+    short_left: u32,
     fade: f32,
 }
 
@@ -493,6 +496,7 @@ impl Voice {
             sustained: false,
             pending: None,
             pending_up: false,
+            short_left: 0,
             fade: 1.0,
         }
     }
@@ -749,6 +753,7 @@ impl Synth {
             v.sustained = false;
             v.pending = None;
             v.pending_up = false;
+            v.short_left = 0;
             if hard {
                 v.active = false;
                 v.amp = Env::default();
@@ -786,9 +791,15 @@ impl Synth {
         // again on its own voice: copies in step would stack up far louder. It goes the way a
         // taken voice does (a 3 ms fade, then a fresh start), so a new velocity or random value
         // never jumps in on a ringing note
+        // (Struck again while it waits for its voice: it still waits there, the key down again)
+        if let Some(i) = (0..VOICES).find(|&i| self.voices[i].pending.map(|(n, _)| n) == Some(note)) {
+            self.voices[i].pending = Some((note, vel));
+            self.voices[i].pending_up = false;
+            return;
+        }
         if let Some(i) = (0..VOICES).find(|&i| {
             let v = &self.voices[i];
-            v.active && v.note == note && v.pending.is_none() && (v.sustained || v.amp.stage == Stage::Release)
+            v.active && v.note == note && v.pending.is_none() && (v.sustained || v.amp.stage == Stage::Release || v.short_left > 0)
         }) {
             self.voices[i].pending = Some((note, vel));
             return;
@@ -830,6 +841,7 @@ impl Synth {
         v.sustained = false;
         v.pending = None;
         v.pending_up = false;
+        v.short_left = 0;
         v.fade = 1.0;
         v.time = 0.0;
         v.rand = rand;
@@ -1188,6 +1200,21 @@ impl Synth {
                     self.out[0][n] += (outc[0] * pl + sub) * a;
                     self.out[1][n] += (outc[1] * pr + sub) * a;
                 }
+                // A very short note's time is up: it lets go, or the pedal holds it
+                if self.voices[vi].short_left > 0 {
+                    let seg = (end - start) as u32;
+                    let v = &mut self.voices[vi];
+                    if v.short_left <= seg {
+                        v.short_left = 0;
+                        if self.pedal {
+                            v.sustained = true;
+                        } else {
+                            v.release();
+                        }
+                    } else {
+                        v.short_left -= seg;
+                    }
+                }
                 // A voice taken for a new note: once faded out, the new note starts here
                 if let Some((note, vel)) = self.voices[vi].pending {
                     // (Or its old note ended on its own before the fade did)
@@ -1199,11 +1226,8 @@ impl Synth {
                         let up = self.voices[vi].pending_up;
                         self.start(vi, note, vel, &cfg, true);
                         if up {
-                            if self.pedal {
-                                self.voices[vi].sustained = true;
-                            } else {
-                                self.voices[vi].release();
-                            }
+                            // (As long as the fade it waited through: long enough to be heard)
+                            self.voices[vi].short_left = ((0.003 * sr) as u32).max(CONTROL as u32);
                         }
                     }
                 }
@@ -1648,7 +1672,7 @@ mod tests {
                 s.midi(0xB0, 64, 127);
             }
             let mut b = vec![];
-            let mut run = |s: &mut Synth, blocks: usize, b: &mut Vec<f32>| {
+            let run = |s: &mut Synth, blocks: usize, b: &mut Vec<f32>| {
                 for _ in 0..blocks {
                     s.process(BLOCK);
                     b.extend_from_slice(&s.out[0]);
@@ -1693,6 +1717,38 @@ mod tests {
                 assert!(s.voices.iter().all(|v| v.pending.is_none() && (!v.active || v.amp.stage == Stage::Release)));
             }
         }
+        // A short note that sounds at all: its envelope gets somewhere before it lets go
+        let mut s = Synth::new(48000.0);
+        s.midi(0x90, 45, 100);
+        render(&mut s, 40);
+        s.midi(0x80, 45, 0);
+        render(&mut s, 4);
+        s.midi(0x90, 45, 100);
+        s.process(64);
+        s.midi(0x80, 45, 0);
+        let mut top: f32 = 0.0;
+        for _ in 0..8 {
+            s.process(BLOCK);
+            top = s.voices.iter().filter(|v| v.note == 45 && v.time < 0.05).fold(top, |m, v| m.max(v.amp.value));
+        }
+        assert!(top > 0.2, "short note reached {top}");
+    }
+
+    #[test]
+    fn fast_repeats_under_the_pedal_stay_on_one_voice() {
+        let mut s = Synth::new(48000.0);
+        s.midi(0xB0, 64, 127);
+        s.midi(0x90, 45, 100);
+        render(&mut s, 20);
+        s.midi(0x80, 45, 0);
+        for _ in 0..8 {
+            s.midi(0x90, 45, 100);
+            s.process(48);
+            s.midi(0x80, 45, 0);
+        }
+        render(&mut s, 10);
+        let copies = s.voices.iter().filter(|v| v.active && v.note == 45 && v.amp.stage != Stage::Release).count();
+        assert!(copies <= 1, "{copies} copies");
     }
 
     #[test]
