@@ -199,7 +199,7 @@ impl Effects {
             phaser_last: [0.0; 2],
             phaser_phase: 0.0,
             flanger: [Line::new(ms(15.0)), Line::new(ms(15.0))],
-            delay: [Line::new(ms(4000.0)), Line::new(ms(4000.0))],
+            delay: [Line::new(ms(8100.0)), Line::new(ms(8100.0))],
             delay_now: 0.0,
             size_now: -1.0,
             pre_now: 0.0,

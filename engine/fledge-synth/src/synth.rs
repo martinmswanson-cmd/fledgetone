@@ -470,6 +470,9 @@ struct Voice {
     /// The velocity's gain as it eases to a new note's (a retrigger never steps it); below 0
     /// until the voice's first sample
     gain_now: f32,
+    /// The level heard when a retrigger started (envelope, fade and gain): while the gain eases
+    /// down, the new note never plays louder than this or than its own level
+    carry: f32,
 }
 
 impl Voice {
@@ -502,6 +505,7 @@ impl Voice {
             short_left: 0,
             fade: 1.0,
             gain_now: -1.0,
+            carry: 0.0,
         }
     }
     fn release(&mut self) {
@@ -668,7 +672,14 @@ impl Synth {
             phaser_fb: self.v(p::PHASER_ON + 4),
             phaser_mix: self.v(p::PHASER_ON + 5),
             delay: self.v(p::DELAY_ON) > 0.5,
-            delay_time: delay_time.min(3.9),
+            // (Past the 8 s line, halved until it fits: still on the beat)
+            delay_time: {
+                let mut t = delay_time;
+                while t > 8.0 {
+                    t *= 0.5;
+                }
+                t
+            },
             delay_fb: self.v(p::DELAY_ON + 4),
             delay_pingpong: self.v(p::DELAY_ON + 5) > 0.5,
             delay_tone: self.v(p::DELAY_ON + 6),
@@ -854,9 +865,10 @@ impl Synth {
         if fresh || !was_active {
             v.fade = 1.0;
         }
-        // (The velocity's gain eases only from a level that is heard: from a silent tail it
-        // snaps, as a new note's does)
-        if fresh || !was_active || v.amp.value * v.fade < 0.01 {
+        // (The velocity's gain eases from the level that is heard; from a silent tail it snaps,
+        // as a new note's does)
+        v.carry = if fresh || !was_active { 0.0 } else { v.amp.value * v.fade * v.gain_now.max(0.0) };
+        if fresh || !was_active || v.carry < 1e-4 {
             v.gain_now = -1.0;
         }
         v.time = 0.0;
@@ -921,6 +933,25 @@ impl Synth {
             }
         }
         let pedal = self.pedal;
+        // (Poly: one note-off ends one note, the oldest of that pitch still held, so a second,
+        // overlapping note of the same pitch plays on to its own end)
+        if mode == 0 {
+            let held = (0..VOICES)
+                .filter(|&i| {
+                    let v = &self.voices[i];
+                    v.active && v.note == note && v.amp.stage != Stage::Release && !v.sustained && v.pending.is_none()
+                })
+                .min_by_key(|&i| self.voices[i].age);
+            if let Some(i) = held {
+                let v = &mut self.voices[i];
+                if pedal {
+                    v.sustained = true;
+                } else {
+                    v.release();
+                }
+                return;
+            }
+        }
         for (i, v) in self.voices.iter_mut().enumerate() {
             if !v.active || v.note != note || v.amp.stage == Stage::Release || (i == 0 && glided) {
                 continue;
@@ -1137,6 +1168,10 @@ impl Synth {
                         v.gain_now = vel_gain;
                     }
                     v.gain_now += (vel_gain - v.gain_now) * fade_step * 3.0;
+                    if v.gain_now > vel_gain {
+                        // (Easing down while the new attack climbs: no louder than was heard)
+                        v.gain_now = v.gain_now.min((v.carry / env.max(1e-9)).max(vel_gain));
+                    }
                     if pend.is_none() && v.fade < 1.0 && v.amp.stage != Stage::Release {
                         v.fade = (v.fade + fade_step).min(1.0);
                     }
@@ -1845,6 +1880,88 @@ mod tests {
         let v = &s.voices[0];
         let want = 1.0 - (1.0 - 10.0 / 127.0);
         assert!((v.gain_now - want).abs() < 0.05, "gain {} want {want}", v.gain_now);
+    }
+
+    fn r18_set(s: &mut Synth, name: &str, value: f32) {
+        let i = p::index_of(name).unwrap_or_else(|| panic!("no {name}"));
+        s.params[i] = param(i).kind.normal(value);
+    }
+    fn r18_d2(x: &[f32]) -> f32 { (2..x.len()).map(|n| (x[n] - 2.0 * x[n - 1] + x[n - 2]).abs()).fold(0.0f32, f32::max) }
+    fn r18_mono(sus: f32) -> Synth {
+        let mut s = Synth::new(48000.0);
+        r18_set(&mut s, "B on", 0.0); r18_set(&mut s, "Filter type", 10.0); r18_set(&mut s, "Velocity", 1.0);
+        r18_set(&mut s, "Level", 0.0); r18_set(&mut s, "Voices", 1.0);
+        r18_set(&mut s, "Amp decay", 0.1); r18_set(&mut s, "Amp sustain", sus);
+        s
+    }
+    fn r18_grab(s: &mut Synth, blocks: usize) -> Vec<f32> { let mut b = vec![]; for _ in 0..blocks { s.process(BLOCK); b.extend_from_slice(&s.out[0]); } b }
+
+    /// A held pluck whose sustain sits just under 1 %: a louder mono retrigger snaps its gain
+    /// (one-sample step) where at 1.01 % it eases. Slow attack so the attack itself adds no step.
+    #[test]
+    fn a_quiet_held_note_retriggers_without_a_step() {
+        let step = |sus: f32| {
+            let mut s = r18_mono(sus);
+            s.midi(0x90, 45, 10);
+            r18_grab(&mut s, 300);
+            r18_set(&mut s, "Amp attack", 0.3);
+            let pre = r18_grab(&mut s, 2);
+            s.midi(0x90, 45, 127);
+            let post = r18_grab(&mut s, 4);
+            r18_d2(&[&pre[pre.len() - 4..], &post[..]].concat())
+        };
+        let (below, above) = (step(0.0099), step(0.0101));
+        eprintln!("d2 at retrigger: sustain 0.99 % {below:.6}, 1.01 % {above:.6}");
+        assert!(below < 3.0 * above, "snaps: {below} vs eased {above}");
+    }
+
+    /// A held quiet note (sustain 5 %) retriggered softer (vel 127 -> 10): the first ms plays the new
+    /// attack at the OLD velocity, far louder than either note.
+    #[test]
+    fn a_softer_retrigger_never_blips_louder() {
+        let mut s = r18_mono(0.05);
+        s.midi(0x90, 45, 127);
+        r18_grab(&mut s, 400);
+        let old = r18_grab(&mut s, 4).iter().fold(0.0f32, |m, x| m.max(x.abs()));
+        s.midi(0x90, 45, 10);
+        let blip = r18_grab(&mut s, 2).iter().fold(0.0f32, |m, x| m.max(x.abs()));
+        let mut f = r18_mono(0.05);
+        r18_grab(&mut f, 400);
+        f.midi(0x90, 45, 10);
+        let fresh = r18_grab(&mut f, 2).iter().fold(0.0f32, |m, x| m.max(x.abs()));
+        eprintln!("old note peak {old:.4}, new note alone {fresh:.4}, retrigger's first 5 ms {blip:.4}");
+        assert!(blip < 1.12 * old.max(fresh), "blip {blip} over old {old} / new {fresh}");
+    }
+
+    /// Two overlapping notes of one pitch (a sequencer's overlap): the first one's end silences the
+    /// second, though its key is still down.
+    #[test]
+    fn overlapping_notes_of_one_pitch_each_end_on_their_own() {
+        let mut s = Synth::new(48000.0);
+        s.midi(0x90, 60, 100);
+        r18_grab(&mut s, 100);
+        s.midi(0x90, 60, 100);
+        r18_grab(&mut s, 10);
+        s.midi(0x80, 60, 0);
+        r18_grab(&mut s, 150);
+        let rms = { let b = r18_grab(&mut s, 10); (b.iter().map(|x| x * x).sum::<f32>() / b.len() as f32).sqrt() };
+        assert!(rms > 1e-3, "second note silent while held: rms {rms}");
+    }
+
+    /// Delay synced to 2 bars at 120 bpm should echo at 4.0 s; it echoes at 3.9 s (4 bars: never).
+    #[test]
+    fn a_long_synced_delay_stays_in_time() {
+        let mut s = Synth::new(48000.0);
+        s.set_tempo(120.0);
+        r18_set(&mut s, "Level", 0.0); r18_set(&mut s, "Amp release", 0.005);
+        r18_set(&mut s, "Delay on", 1.0); r18_set(&mut s, "Delay sync", 1.0); r18_set(&mut s, "Delay time (sync)", 1.0);
+        r18_set(&mut s, "Delay mix", 1.0); r18_set(&mut s, "Delay feedback", 0.0); r18_set(&mut s, "Delay ping-pong", 0.0);
+        s.midi(0x90, 60, 127);
+        let mut e = r18_grab(&mut s, 2);
+        s.midi(0x80, 60, 0);
+        e.extend(r18_grab(&mut s, 48000 * 6 / BLOCK));
+        let at = (24000..e.len()).find(|&i| e[i].abs() > 0.01).unwrap() as f32 / 48000.0;
+        assert!((at - 4.0).abs() < 0.01, "echo at {at} s, want 4 s");
     }
 
     #[test]
