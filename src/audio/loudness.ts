@@ -86,10 +86,30 @@ export function truePeakOf(channels: readonly Float32Array[]): number {
   return peak;
 }
 
+/**
+ * The K-weighting filters at `sampleRate` (the same two biquads the analyser below applies, kept
+ * apart because that one must stay self-contained): a high shelf, then a high-pass, each as
+ * [b0, b1, b2, a1, a2]. For measures that want the ear's weighting without the gating, such as
+ * how far a kick pokes out of the mix (hitCheck.ts).
+ */
+export function kWeightingFilters(sampleRate: number): [number[], number[]] {
+  let k = Math.tan((Math.PI * 1681.974450955533) / sampleRate);
+  let q = 0.7071752369554196;
+  const vh = Math.pow(10, 3.999843853973347 / 20);
+  const vb = Math.pow(vh, 0.4996667741545416);
+  let a0 = 1 + k / q + k * k;
+  const shelf = [(vh + (vb * k) / q + k * k) / a0, (2 * (k * k - vh)) / a0, (vh - (vb * k) / q + k * k) / a0, (2 * (k * k - 1)) / a0, (1 - k / q + k * k) / a0];
+  k = Math.tan((Math.PI * 38.13547087602444) / sampleRate);
+  q = 0.5003270373238773;
+  a0 = 1 + k / q + k * k;
+  return [shelf, [1, -2, 1, (2 * (k * k - 1)) / a0, (1 - k / q + k * k) / a0]];
+}
+
 // Its constants come in as arguments (TAPS and PHASES by default): the function is also inlined
 // into the meter worklet and the export Worker as source text, where the minifier's names for
 // module constants don't exist, so the inlined copies pass their own.
-export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS, PHASE_TAPS: readonly Float64Array[] = PHASES): LoudnessAnalyser {
+// `peaks` false leaves the true peak out (it reads -inf), for a caller that finds it faster with truePeakOf.
+export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS, PHASE_TAPS: readonly Float64Array[] = PHASES, peaks = true): LoudnessAnalyser {
   const ABSOLUTE_GATE_LUFS = -70;
   const RELATIVE_GATE_LU = 10;
   const MOMENTARY_BLOCKS = 4;
@@ -191,6 +211,7 @@ export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS
         m[7] = m[6];
         m[6] = w;
         power += w * w;
+        if (!peaks) continue;
         // True peak: the sample itself and the three points interpolated after it
         const h = history[ch];
         h[historyAt] = x;

@@ -2,20 +2,27 @@
  * Rendering the song to study its mix: the Mix check (a render of the mix through the master
  * section, and one of each track's stem, measured by mixAnalysis.ts and judged by mixCheck.ts),
  * and the mix's loudness and spectrum that the reference track is matched and compared against
- * (referenceTrack.ts). Kept in a small store of its own; nothing here is saved with the song.
+ * (referenceTrack.ts), and the "Does it hit?" check of a stretch of it (a loop, a section)
+ * against a style's targets (hitCheck.ts, hitTargets.ts). Kept in a small store of its own;
+ * nothing here is saved with the song.
  */
 import { create } from 'zustand';
-import { useTimelineStore, masterFxOf } from '../store/timelineStore';
+import { useTimelineStore, masterFxOf, songTempo } from '../store/timelineStore';
 import { audibleTracks, channelsOf, renderArrangement, renderStems, stemTracks, type RenderOptions } from './exportWav';
 import { measureLoudness } from './loudness';
 import { bandEnvelope, bandSpectrum, type BandSpectrum } from './mixAnalysis';
 import { checkMix, trackRole, type Finding, type TrackMeasure } from './mixCheck';
 import { targetById } from './loudnessTarget';
 import { getMasterVolume } from './engine';
-import { busChain } from '../store/buses';
+import { busChain, isMixTrack } from '../store/buses';
 import { INSTRUMENTS } from './instrumentCatalog';
 import type { MasterStats } from './effects/masterAfter';
 import type { Track } from '../store/timelineTypes';
+import { tempoAt } from './tempoMap';
+import { drumOnsets } from './hitOnsets';
+import { measureHits } from './hitCheckRun';
+import type { HitReport } from './hitCheck';
+import type { HitStyleId } from './hitTargets';
 
 /** The longest stretch of a song analysed, seconds (from bar 1): enough to know a mix by. */
 export const ANALYSE_SECONDS = 120;
@@ -42,9 +49,13 @@ interface MixStudioState {
   error: string | null;
   /** The last Mix check's measurements of each track (kept for a second look, and for tuning the rules). */
   measures: TrackMeasure[] | null;
+  /** The style the "Does it hit?" check judges against. */
+  hitStyle: HitStyleId;
+  /** The last "Does it hit?" check: what was measured, of which bars. */
+  hit: { report: HitReport; bars: [number, number] } | null;
 }
 
-export const useMixStudio = create<MixStudioState>(() => ({ analysis: null, findings: null, targetId: 'streaming', busy: null, error: null, measures: null }));
+export const useMixStudio = create<MixStudioState>(() => ({ analysis: null, findings: null, targetId: 'streaming', busy: null, error: null, measures: null, hitStyle: 'dubstep', hit: null }));
 
 let running: AbortController | null = null;
 
@@ -160,5 +171,37 @@ export function runMixCheck(targetId = useMixStudio.getState().targetId): Promis
     );
     useMixStudio.setState({ findings, targetId, measures });
     return findings;
+  });
+}
+
+/** The most of a song the "Does it hit?" check renders, bars. */
+export const HIT_MOST_BARS = 64;
+
+/**
+ * "Does it hit?": render bars [from, to) of the song as the export would (through the master
+ * section), find its kicks and snares from the drum notes, and measure it in a Worker. The
+ * result is kept in the store (hit) with the bars; `hitStyle` is only what it's judged against.
+ */
+export function runHitCheck(from: number, to: number): Promise<HitReport | null> {
+  const end = Math.min(to, from + HIT_MOST_BARS);
+  return run('Rendering the stretch to check', async (signal, progress) => {
+    const s = useTimelineStore.getState();
+    const opts = { ...songOptions(signal), startBar: from, endBar: end };
+    const audio = await renderArrangement(opts, (f) => progress(f * 0.5));
+    // The bass parts alone, for how the bass moves (the drums and chords would blur it in the mix)
+    const bassIds = new Set(audibleTracks(s.tracks).filter((t) => !isMixTrack(t) && trackRole(t, s.clips) === 'bass').map((t) => t.id));
+    let bassChannels: Float32Array[] | undefined;
+    if (bassIds.size) {
+      progress(0.5, 'Rendering the bass alone');
+      const tracks = s.tracks.map((t) => (isMixTrack(t) || bassIds.has(t.id) ? t : { ...t, isMuted: true, isSoloed: false }));
+      const bass = await renderArrangement({ ...opts, tracks }, (f) => progress(0.5 + f * 0.25, 'Rendering the bass alone'));
+      bassChannels = channelsOf(bass);
+    }
+    progress(0.75, 'Measuring');
+    const tempo = songTempo(s);
+    const { kicks, snares } = drumOnsets(audibleTracks(s.tracks), s.clips, tempo, from, end);
+    const report = await measureHits({ channels: channelsOf(audio), sampleRate: audio.sampleRate, bpm: tempoAt(from, tempo), gridStart: 0, kicks, snares, bassChannels }, signal, (f) => progress(0.75 + f * 0.25, 'Measuring'));
+    useMixStudio.setState({ hit: { report, bars: [from, end] } });
+    return report;
   });
 }
