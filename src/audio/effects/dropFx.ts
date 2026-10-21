@@ -167,8 +167,17 @@ export function createDropKernel(sampleRate: number): DropKernel {
       const inPlace = wet[2] > 0 && cur.t < FADE;
       if (!inPlace) tpNow = nextVoice(tp, wet[2] > 0);
       const v = tp[tpNow];
-      v.write = 0;
-      v.read = 0;
+      if (inPlace) {
+        // Keep playing from where the read head is (moved to the start of the tape), so nothing skips
+        const j = Math.floor(v.read);
+        v.L.copyWithin(0, j, v.write);
+        v.R.copyWithin(0, j, v.write);
+        v.write -= j;
+        v.read -= j;
+      } else {
+        v.write = 0;
+        v.read = 0;
+      }
       v.t = 0;
       v.len = Math.max(16, Math.min(TAPE_MAX / 2, Math.round(4 * six)));
     } else if (fx === 4) {
@@ -364,6 +373,12 @@ export function createDropKernel(sampleRate: number): DropKernel {
     if (held[5] > 0 || ecRinging) {
       const want = held[5] > 0 ? 1 : 0;
       for (let i = from; i < to; i++) {
+        // Rung out (quiet for longer than an echo, nothing feeding it), checked every sample so live
+        // and an export (in other block sizes) agree on when
+        if (want === 0 && ecSend === 0 && ecPeak < 3e-5) {
+          ecRinging = false;
+          break;
+        }
         if (ecSend !== want) ecSend = want > ecSend ? Math.min(1, ecSend + 1 / FADE) : Math.max(0, ecSend - 1 / FADE);
         let rd = ecWrite - ecDelay;
         if (rd < 0) rd += ECHO_MAX;
@@ -385,7 +400,6 @@ export function createDropKernel(sampleRate: number): DropKernel {
         ecPeak = a > ecPeak ? a : ecPeak * ecDecay;
       }
       // Rung out: quiet for longer than an echo and nothing feeding it
-      if (held[5] === 0 && ecSend === 0 && ecPeak < 3e-5) ecRinging = false;
     }
   };
 

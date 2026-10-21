@@ -326,3 +326,46 @@ test('four presses within a few ms still glide', () => {
     assert.ok(biggestStep(L) < own * 3, `${name}: a jump of ${biggestStep(L)} (the sine's own ${own})`);
   }
 });
+
+test('Tape stop pressed twice within a few ms at a high sample rate skips nothing', () => {
+  const sr = 192000;
+  const six = (60 / 300 / 4) * sr;
+  const n = sr;
+  const x = new Float32Array(n).map((_, i) => 0.8 * Math.sin((2 * Math.PI * 500 * i) / sr));
+  const fade = Math.round(0.004 * sr);
+  const k = createDropKernel(sr);
+  k.on(2, 1000, six);
+  k.on(2, 1000 + fade - 2, six);
+  const out = new Float32Array(n);
+  for (let at = 0; at < n; at += 128) {
+    const m = Math.min(128, n - at);
+    k.process(x.subarray(at, at + m), x.subarray(at, at + m), out.subarray(at, at + m), new Float32Array(m), m, at);
+  }
+  assert.ok(biggestStep(out) <= biggestStep(x) * 1.05, `a jump of ${biggestStep(out)} (the sine's own ${biggestStep(x)})`);
+});
+
+test('an echo rings out at the same moment live and in an export, so a new one after it matches', () => {
+  const sr = 44100;
+  const x = new Float32Array(sr * 12);
+  x.set(sine(400, 0.3).subarray(0, Math.round(0.3 * sr)), 1000);
+  const render = (block, again) => {
+    const k = createDropKernel(sr);
+    k.on(5, 1000, 5512);
+    k.off(5, 20000, 1000);
+    k.on(5, again, 4134);
+    k.off(5, again + 3000, again);
+    const out = new Float32Array(x.length);
+    for (let at = 0; at < x.length; at += block) {
+      const m = Math.min(block, x.length - at);
+      k.process(x.subarray(at, at + m), x.subarray(at, at + m), out.subarray(at, at + m), new Float32Array(m), m, at);
+    }
+    return out;
+  };
+  for (let again = Math.round(6.5 * sr); again < 8 * sr; again += 4410) {
+    const a = render(128, again);
+    const b = render(8192, again);
+    let most = 0;
+    for (let i = 0; i < a.length; i++) most = Math.max(most, Math.abs(a[i] - b[i]));
+    assert.ok(most < 1e-6, `pressed again at ${again}: differs by ${most}`);
+  }
+});
