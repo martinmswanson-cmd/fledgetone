@@ -467,6 +467,9 @@ struct Voice {
     /// then lets go (or the pedal holds it)
     short_left: u32,
     fade: f32,
+    /// The velocity's gain as it eases to a new note's (a retrigger never steps it); below 0
+    /// until the voice's first sample
+    gain_now: f32,
 }
 
 impl Voice {
@@ -498,6 +501,7 @@ impl Voice {
             pending_up: false,
             short_left: 0,
             fade: 1.0,
+            gain_now: -1.0,
         }
     }
     fn release(&mut self) {
@@ -810,12 +814,16 @@ impl Synth {
         // chord played over full voices gets its own)
         let open = |i: &usize| self.voices[*i].pending.is_none();
         let i = free.unwrap_or_else(|| {
-            let released = (0..VOICES).filter(open).filter(|&i| self.voices[i].amp.stage == Stage::Release).min_by(|&a, &b| self.voices[a].amp.value.partial_cmp(&self.voices[b].amp.value).unwrap());
+            // (Notes the pedal holds after their key came up count as let go: a key still down
+            // is the last to be taken)
+            let released = (0..VOICES).filter(open).filter(|&i| self.voices[i].amp.stage == Stage::Release || self.voices[i].sustained).min_by(|&a, &b| self.voices[a].amp.value.partial_cmp(&self.voices[b].amp.value).unwrap());
             released.or_else(|| (0..VOICES).filter(open).min_by_key(|&i| self.voices[i].age)).unwrap_or_else(|| (0..VOICES).min_by_key(|&i| self.voices[i].age).unwrap())
         });
         if self.voices[i].active {
-            // Taken while sounding: fade it out over 3 ms, then start the new note
+            // Taken while sounding: fade it out over 3 ms, then start the new note (its key is
+            // down, whatever the note it replaces was doing)
             self.voices[i].pending = Some((note, vel));
+            self.voices[i].pending_up = false;
             return;
         }
         self.voices[i].pitch = note as f32;
@@ -842,7 +850,11 @@ impl Synth {
         v.pending = None;
         v.pending_up = false;
         v.short_left = 0;
-        v.fade = 1.0;
+        // (A retrigger of a sounding voice, mono say, carries on from its level and fade)
+        if fresh || !was_active {
+            v.fade = 1.0;
+            v.gain_now = -1.0;
+        }
         v.time = 0.0;
         v.rand = rand;
         if fresh || !was_active {
@@ -1115,6 +1127,15 @@ impl Synth {
                     let env = v.amp.tick();
                     v.fenv.tick();
                     v.menv.tick();
+                    // The velocity's gain eases over about a millisecond; a part-faded voice no
+                    // longer waiting for a note comes back up the same way
+                    if v.gain_now < 0.0 {
+                        v.gain_now = vel_gain;
+                    }
+                    v.gain_now += (vel_gain - v.gain_now) * fade_step * 3.0;
+                    if pend.is_none() && v.fade < 1.0 && v.amp.stage != Stage::Release {
+                        v.fade = (v.fade + fade_step).min(1.0);
+                    }
                     if pend.is_some() {
                         v.fade -= fade_step;
                         if v.fade <= 0.0 {
@@ -1196,7 +1217,7 @@ impl Synth {
                             v.sub_phase -= 1.0;
                         }
                     }
-                    let a = env * vel_gain * vol * v.fade;
+                    let a = env * v.gain_now * vol * v.fade;
                     self.out[0][n] += (outc[0] * pl + sub) * a;
                     self.out[1][n] += (outc[1] * pr + sub) * a;
                 }
@@ -1749,6 +1770,60 @@ mod tests {
         render(&mut s, 10);
         let copies = s.voices.iter().filter(|v| v.active && v.note == 45 && v.amp.stage != Stage::Release).count();
         assert!(copies <= 1, "{copies} copies");
+    }
+
+    #[test]
+    fn a_held_key_is_not_taken_while_pedal_held_notes_ring() {
+        let mut s = Synth::new(48000.0);
+        s.midi(0xB0, 64, 127);
+        s.midi(0x90, 36, 100);
+        for n in [60u8, 62, 64, 65, 67, 69, 71, 72] {
+            s.midi(0x90, n, 100);
+            render(&mut s, 4);
+            s.midi(0x80, n, 0);
+        }
+        render(&mut s, 4);
+        assert!(s.voices.iter().any(|v| v.active && v.note == 36 && !v.sustained && v.pending.is_none()));
+    }
+
+    #[test]
+    fn a_note_taking_a_short_notes_place_is_held() {
+        let mut s = Synth::new(48000.0);
+        for n in 60..68u8 {
+            s.midi(0x90, n, 100);
+        }
+        render(&mut s, 10);
+        for n in 60..68u8 {
+            s.midi(0x80, n, 0);
+        }
+        for n in 40..48u8 {
+            s.midi(0x90, n, 100);
+        }
+        s.midi(0x80, 40, 0);
+        s.midi(0x90, 52, 100);
+        render(&mut s, 20);
+        assert!(s.voices.iter().any(|v| v.active && v.note == 52 && v.amp.stage != Stage::Release));
+    }
+
+    #[test]
+    fn a_mono_retrigger_at_another_velocity_does_not_click() {
+        let d2 = |x: &[f32]| (2..x.len()).map(|n| (x[n] - 2.0 * x[n - 1] + x[n - 2]).abs()).fold(0.0f32, f32::max);
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "B on", 0.0);
+        set(&mut s, "Filter type", 10.0);
+        set(&mut s, "Velocity", 1.0);
+        set(&mut s, "Level", 0.0);
+        set(&mut s, "Voices", 1.0);
+        s.midi(0x90, 45, 127);
+        render(&mut s, 100);
+        let mut b = vec![];
+        s.midi(0x90, 45, 10);
+        for _ in 0..4 {
+            s.process(BLOCK);
+            b.extend_from_slice(&s.out[0]);
+        }
+        let step = d2(&b);
+        assert!(step < 0.02, "step {step}");
     }
 
     #[test]
