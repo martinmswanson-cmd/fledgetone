@@ -113,12 +113,32 @@
           </div>
         </figure>
         <div class="scored-grid game-grid reveal">
-          <figure class="scored">
-            <div class="shot-frame"><img src="/img/platformer.webp" width="1200" height="825" loading="lazy" alt="The 2D platformer: a small robot runs over grassy platforms past coins and purple blobs; a note says a blob spotted it and the music changed." /></div>
+          <figure class="scored player">
+            <div class="shot-frame">
+              <video class="clip" src="/video/platformer.mp4" poster="/video/platformer-poster.webp" width="1152" height="668"
+                     muted playsinline preload="none" data-autoplay data-steps
+                     aria-label="The 2D platformer with the Platformer starter. A small robot jumps onto a grassy platform for a coin while the music plays Level. A purple blob spots it and the music cuts to Underground as the intensity rises. The robot squashes blobs, jumps gaps and spikes and collects coins; when the blobs give up the music goes back to Level, and when the next one spots it, back to Underground. It climbs the steps to the flag: level clear, and the music plays the win stinger."></video>
+            </div>
+            <div class="steps" role="list" aria-label="What happens in the clip">
+              <button class="step" role="listitem" data-start="0">Exploring &middot; Level<i></i></button>
+              <button class="step" role="listitem" data-start="1.6">Spotted &middot; Underground<i></i></button>
+              <button class="step" role="listitem" data-start="14.6">Flag &middot; win stinger<i></i></button>
+              <span class="steps-head" aria-hidden="true"></span>
+            </div>
             <figcaption><h4>2D platformer</h4><p>A blob that spots you switches the music to its chase state and builds the intensity; reach the flag for the win stinger.</p></figcaption>
           </figure>
-          <figure class="scored">
-            <div class="shot-frame"><img src="/img/rhythm.webp" width="1200" height="825" loading="lazy" alt="The rhythm game: coloured notes from the song fall down four lanes marked D, F, J and K." /></div>
+          <figure class="scored player">
+            <div class="shot-frame">
+              <video class="clip" src="/video/rhythm.mp4" poster="/video/rhythm-poster.webp" width="1152" height="668"
+                     muted playsinline preload="none" data-autoplay data-steps
+                     aria-label="The rhythm game on Normal with the Synthwave starter. After a count-in, notes from the song fall down four lanes marked D, F, J and K and are hit as they reach the line: Perfect and the odd Great, the combo and the score climbing. At the end of the song, an S grade and a full combo of 128 notes."></video>
+            </div>
+            <div class="steps" role="list" aria-label="What happens in the clip">
+              <button class="step" role="listitem" data-start="0">Count-in<i></i></button>
+              <button class="step" role="listitem" data-start="1.2">Hits in time &middot; combo<i></i></button>
+              <button class="step" role="listitem" data-start="12">Full combo &middot; S<i></i></button>
+              <span class="steps-head" aria-hidden="true"></span>
+            </div>
             <figcaption><h4>Rhythm game</h4><p>Your song's own notes become the chart: kicks on one side, snares on the other, the tune across the middle. Easy, Normal or Hard.</p></figcaption>
           </figure>
         </div>
