@@ -15,6 +15,8 @@ import { showToast } from './toastStore';
 
 const ALL = 'All';
 const FAVOURITES = '★ Favourites';
+/** The tags that are groups of their own (the rest are search words) */
+const COLLECTIONS = ['Recommended', 'Basic'];
 const RECENT = 'Recently used';
 const INSTRUMENTS = 'Instruments';
 
@@ -39,9 +41,10 @@ export const PluginBrowser: React.FC<{ trackId: string | null; category?: string
     const add = (g: string) => count.set(g, (count.get(g) ?? 0) + 1);
     for (const e of entries) {
       add(e.info.instrument ? INSTRUMENTS : e.info.category);
-      for (const t of e.info.tags ?? []) if (t !== 'Latest') add(t);
+      // (Only the collections make groups: other tags are words to search by)
+      for (const t of e.info.tags ?? []) if (COLLECTIONS.includes(t)) add(t);
     }
-    const collections = ['Recommended', 'Basic'].filter((c) => count.has(c));
+    const collections = COLLECTIONS.filter((c) => count.has(c));
     const categories = [...count.keys()].filter((g) => !collections.includes(g) && g !== INSTRUMENTS).sort((a, b) => a.localeCompare(b));
     return [ALL, FAVOURITES, RECENT, ...(count.has(INSTRUMENTS) ? [INSTRUMENTS] : []), ...collections, ...categories].map((g) => ({
       name: g,
@@ -58,7 +61,7 @@ export const PluginBrowser: React.FC<{ trackId: string | null; category?: string
       (group === INSTRUMENTS && !!e.info.instrument) ||
       (!e.info.instrument && e.info.category === group) ||
       !!e.info.tags?.includes(group);
-    const list = entries.filter((e) => (words.length ? true : inGroup(e)) && words.every((w) => `${e.info.name} ${e.info.category} ${e.info.about} ${e.family.label}`.toLowerCase().includes(w)));
+    const list = entries.filter((e) => (words.length ? true : inGroup(e)) && words.every((w) => `${e.info.name} ${e.info.category} ${e.info.about} ${e.family.label} ${(e.info.tags ?? []).join(' ')}`.toLowerCase().includes(w)));
     if (group === RECENT && !words.length) list.sort((a, b) => recent.indexOf(a.key) - recent.indexOf(b.key));
     // A search shows plugins named for it first, then those of that kind, then the rest
     const rank = (e: Entry) => {

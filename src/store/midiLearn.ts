@@ -70,7 +70,9 @@ export function setParamValue(trackId: string, param: AutomationParam, n: number
     case 'plugin': {
       // A plugin keeps its own settings (saved with the project as its state)
       const inst = liveWam(p.pluginId);
-      inst?.audioNode.scheduleEvents?.({ type: 'wam-automation', time: 0, data: { id: p.paramId, value, normalized: true } });
+      // (A built-in plugin takes it as a turn of its knob: shown, saved and kept when it's rebuilt)
+      if (inst?.audioNode.setParamNow) inst.audioNode.setParamNow(p.paramId, value);
+      else inst?.audioNode.scheduleEvents?.({ type: 'wam-automation', time: 0, data: { id: p.paramId, value, normalized: true } });
       return;
     }
   }

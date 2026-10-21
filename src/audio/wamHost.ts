@@ -21,6 +21,8 @@ export interface WamInstance {
     getState?: () => Promise<unknown>;
     /** The settings at once (the built-in plugins can say without asking the audio thread) */
     getStateNow?: () => unknown;
+    /** Move parameter `id` (0 to 1) and keep it, as a turn of its knob (the built-in plugins) */
+    setParamNow?: (id: string, value: number) => void;
     setState?: (state: unknown) => Promise<void>;
     destroy?: () => void;
   };
