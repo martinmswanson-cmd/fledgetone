@@ -1195,7 +1195,7 @@ impl Synth {
                     // (Only while a retrigger eases: a Velocity change on a held note eases as ever)
                     if v.carry > 0.0 && v.gain_now > vel_gain {
                         // (Easing down while the new attack climbs: no louder than was heard)
-                        v.gain_now = v.gain_now.min((v.carry / env.max(1e-9)).max(vel_gain));
+                        v.gain_now = v.gain_now.min((v.carry / (env * v.fade).max(1e-9)).max(vel_gain));
                     }
                     if v.gain_now <= vel_gain {
                         v.carry = 0.0;
@@ -2148,6 +2148,33 @@ mod tests {
         for n in 60..67u8 {
             assert!(s.voices.iter().any(|v| v.active && v.note == n && v.amp.stage != Stage::Release), "key {n} went silent");
         }
+    }
+
+    #[test]
+    fn a_softer_mono_retrigger_of_a_part_faded_voice_does_not_click() {
+        // Voice 0 taken for another note (fading), then Mono and a softer strike of its note
+        let mut s = Synth::new(48000.0);
+        set(&mut s, "B on", 0.0);
+        set(&mut s, "Filter type", 10.0);
+        set(&mut s, "Velocity", 1.0);
+        set(&mut s, "Level", 0.0);
+        s.midi(0x90, 45, 127);
+        for n in 1..8u8 {
+            s.process(1);
+            s.midi(0x90, 57 + n, 1);
+        }
+        render(&mut s, 100);
+        s.midi(0x90, 80, 1);
+        s.process(48);
+        let mut b = s.out[0][..48].to_vec();
+        set(&mut s, "Voices", 1.0);
+        s.midi(0x90, 45, 10);
+        for _ in 0..4 {
+            s.process(BLOCK);
+            b.extend_from_slice(&s.out[0]);
+        }
+        let d2 = (2..b.len()).map(|n| (b[n] - 2.0 * b[n - 1] + b[n - 2]).abs()).fold(0.0f32, f32::max);
+        assert!(d2 < 0.01, "step {d2}");
     }
 
     #[test]
