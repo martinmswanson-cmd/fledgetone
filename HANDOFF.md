@@ -1,6 +1,6 @@
 # Fledgetone: handoff
 
-Read this first when picking the project up in a new session. (Updated for version 2026.10.16: 224 instruments, 75 starters and six demo songs, about 640 built-in plugins, the producer tools, the installable app.) It covers what the app is, how
+Read this first when picking the project up in a new session. (Updated for version 2026.10.21: Fledge Synth, Fledgetone's own synthesizer, on top of 224 instruments, 75 starters and six demo songs, about 640 built-in plugins, the producer tools, the installable app.) It covers what the app is, how
 the code is laid out, how to check changes (including sound), what's finished, and what's next.
 
 ## The app and who it's for
@@ -107,6 +107,9 @@ For how the parts fit together see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md);
 | Timeline UI | `src/components/timeline/` |
 | Inspector (track and master panels) | `src/components/inspector/` |
 | Drop a project file to open it / phone notice | `src/components/ProjectDrop.tsx`, `MobileNotice.tsx` |
+| Fledge Synth engine (Rust, GPL): parameters, voices, modulation, effects, presets, the bb_* interface | `engine/fledge-synth/src/` (`params.rs`, `synth.rs`, `dsp.rs`, `fx.rs`, `tables.rs`, `presets.rs`, `abi.rs`); built to `public/fledgetone-plugins/fledge.wasm` by `engine/fledge-synth/build.sh` |
+| Fledge Synth window | `src/components/timeline/FledgeSynthPanel.tsx`, `src/audio/plugins/fledgeLayout.ts` (controls by parameter name), `fledgeWave.ts` (wave pictures from a main-thread copy of the engine) |
+| Built-in plugin host (Fledge Synth and every other built-in plugin) | `src/audio/plugins/builtinHost.ts` (main thread), `processor.ts` (the worklet), `src/audio/wamHost.ts` (live instances, settings reads, retiring) |
 
 `docs/ARCHITECTURE.md` (Audio engine details) has the engine notes: how the track strip
 re-patches without gaps, why automation goes through a ParamWriter, how exports repeat exactly,
@@ -149,6 +152,16 @@ asked, and built-in effects that fade by themselves). The ones met most often he
 - **Vite hot reload and test pages.** After editing `src/`, restart the dev server before running
   the audio checks. Otherwise the test page can import a stale copy of a module and measure the old
   code.
+- **Built-in plugins keep two sets of values** (`builtinHost.ts`): `own`, the settings the knobs,
+  presets and saved state set (saved, and what a parameter goes back to), and `params`, what it
+  plays and shows. While an automation lane holds a parameter (`laneHeld`), the lane is in charge:
+  the knob follows the lane, is marked `held` (dimmed, outlined, "automated by a lane"), and
+  ignores the knob, MIDI learn and Reset all until the lane is deleted (`resetParam`, which also
+  drops the lane's queued events in the worklet). Knobs turned from a MIDI controller go through
+  `setParamNow`, like a turn of the knob.
+- **Plugin settings reach the tracks every 3 s.** Anything that saves, shares, renders or freezes
+  awaits `captureWamStates()` first (renders do it in `renderTracks`); closing the tab uses
+  `captureWamStatesNow()`. Reads are numbered so a slow, late answer never replaces a newer one.
 - Wobble rates are `'1/4'`, `'1/8'`, `'1/16'` (not Tone's `'8n'`).
 - Sample libraries load from GitHub (`nbrosowsky/tonejs-instruments`, files spell sharps with `s`,
   e.g. `As3.mp3`) and the FluidR3 General MIDI set. Check a file exists before listing it.
@@ -185,6 +198,18 @@ shaping for the Erhu, Electric and Acoustic Guitar, Violin and Cello and a quiet
 Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time notice for phone users.
 
 ## Recently finished
+
+- **Fledge Synth** (2026.10.21): Fledgetone's own GPL synthesizer, in Rust compiled to WebAssembly
+  and loaded like any built-in plugin (`builtin:fledge/Fledge Synth`). 215 parameters by name
+  (`params.rs`, `index_of`), 8 voices with up to 16 unison each, two wavetable oscillators, two
+  filters, four LFOs (two drawn), three envelopes, macros, an 8-slot matrix, EQ, chorus,
+  phaser/flanger, an 8 s delay, reverb, drive and an OTT, and 35 level-matched presets. After 23
+  rounds of bug hunting the engine has 80 tests (`cargo test --release`), including the voice
+  handling (repeated, very short and pedal-held notes, the same key struck twice, mono and legato
+  retriggers, stealing). To change it: edit `engine/fledge-synth/src/`, run `cargo test --release`,
+  then `./build.sh` and `node scripts/plugins/catalog.mjs > /dev/null` (don't pipe it to `head`:
+  that stops it before it writes), then `node --test scripts/plugins.test.mjs` (checks the window's
+  layout against the engine and that every preset plays).
 
 - **Tempo map and time signatures** (`src/audio/tempoMap.ts`, pure, tested in
   `scripts/tempoMap.test.mjs`): positions stay in bars of 4 quarter notes; a `Tempo` is a number
