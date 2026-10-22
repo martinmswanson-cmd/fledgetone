@@ -1,6 +1,7 @@
 import { initializeWamHost } from '@webaudiomodules/sdk';
 import type { WamPlugin } from '../store/timelineTypes';
 import { createBuiltinInstance, isBuiltinUrl, type BuiltinControls } from './plugins/builtinHost';
+import { createStartStates } from './pluginStartState';
 
 /**
  * Hosting Web Audio Modules (WAM 2.0): third-party instruments and effects, each an ES module at
@@ -84,6 +85,7 @@ export function resetWamSession(): void {
   for (const inst of live.values()) stale.add(inst);
   session++;
   states.clear();
+  starts.clear();
   keptRead.clear();
   blocked.clear();
   epoch++;
@@ -195,6 +197,8 @@ export async function describeWam(ctx: BaseAudioContext, url: string): Promise<{
 const live = new Map<string, WamInstance>();
 /** Latest settings read from each live plugin, by plugin id */
 const states = new Map<string, string>();
+/** The settings each plugin is known to have had (read live, or built from): see startingState */
+const starts = createStartStates();
 
 export const liveWam = (pluginId: string): WamInstance | undefined => live.get(pluginId);
 
@@ -233,6 +237,7 @@ export function retireLiveWam(pluginId: string, inst: WamInstance): void {
       const json = JSON.stringify(state);
       if (json.length > 2_000_000 || !newestRead(pluginId, n) || states.get(pluginId) === json) return;
       states.set(pluginId, json);
+  starts.seen(pluginId, json);
       const changed = new Map<string, unknown>([[pluginId, JSON.parse(json)]]);
       stateListeners.forEach((l) => l(changed));
     }),
@@ -253,10 +258,21 @@ export function liveStates(): Map<string, unknown> {
   return new Map([...states].map(([id, json]) => [id, JSON.parse(json)]));
 }
 
-/** The settings a plugin should start with: as last read live, else as saved. */
+/**
+ * The settings a plugin should start with: as last read live, else as saved. Settings put on its
+ * track from outside since the live read (never read live nor built from: see pluginStartState.ts)
+ * are newer, and win: the live read is dropped.
+ */
 export function startingState(plugin: WamPlugin): unknown {
   const s = states.get(plugin.id);
-  return s !== undefined ? JSON.parse(s) : plugin.state;
+  const saved = plugin.state === undefined ? undefined : JSON.stringify(plugin.state);
+  const from = starts.choose(plugin.id, saved, s);
+  if (saved !== undefined) starts.seen(plugin.id, saved);
+  if (from === 'saved') {
+    states.delete(plugin.id);
+    return plugin.state;
+  }
+  return JSON.parse(s!);
 }
 
 type StateListener = (changed: Map<string, unknown>) => void;
@@ -299,6 +315,7 @@ function keepAnswer(id: string, inst: WamInstance, state: unknown, began: number
   const json = JSON.stringify(state);
   if (json.length > 2_000_000 || !newestRead(id, n) || states.get(id) === json) return;
   states.set(id, json);
+  starts.seen(id, json);
   changed.set(id, JSON.parse(json));
 }
 
@@ -359,6 +376,7 @@ export function captureWamStatesNow(): void {
     const json = JSON.stringify(state);
     if (json.length > 2_000_000 || !newestRead(id, ++reads) || states.get(id) === json) continue;
     states.set(id, json);
+  starts.seen(id, json);
     changed.set(id, JSON.parse(json));
   }
   if (changed.size) stateListeners.forEach((l) => l(changed));
@@ -372,6 +390,7 @@ export function captureWamStateNow(pluginId: string): void {
   const json = JSON.stringify(state);
   if (json.length > 2_000_000 || !newestRead(pluginId, ++reads) || states.get(pluginId) === json) return;
   states.set(pluginId, json);
+  starts.seen(pluginId, json);
   const changed = new Map<string, unknown>([[pluginId, JSON.parse(json)]]);
   stateListeners.forEach((l) => l(changed));
 }
@@ -386,6 +405,7 @@ export function restoreWamState(pluginId: string, state: unknown): void {
   // (A read already on its way is older than this)
   newestRead(pluginId, ++reads);
   states.set(pluginId, json);
+  starts.seen(pluginId, json);
   const inst = live.get(pluginId);
   if (inst && !stale.has(inst)) void inst.audioNode.setState?.(JSON.parse(json));
 }

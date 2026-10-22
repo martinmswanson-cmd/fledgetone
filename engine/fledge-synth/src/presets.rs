@@ -47,6 +47,7 @@ const T_DIGITAL: f32 = 11.0;
 const T_RESO: f32 = 12.0;
 const T_SCREECH: f32 = 13.0;
 const T_FM12: f32 = 14.0;
+const T_RANDH: f32 = 15.0;
 const LP12: f32 = 0.0;
 const LP24: f32 = 1.0;
 const LADDER: f32 = 2.0;
@@ -149,6 +150,8 @@ const C_S: f32 = 3.0;
 const CLEAN_SUB: f32 = 1.0;
 const LEGATO_ONLY: f32 = 1.0;
 const LINEAR: f32 = 1.0;
+// Added with the loud, crunchy presets
+const D_32ND: f32 = 15.0;
 
 pub const PRESETS: &[Preset] = &[
     Preset {
@@ -958,6 +961,149 @@ pub const PRESETS: &[Preset] = &[
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", DELAY_MIX), ("Mod 6 amount", 0.5),
             ("OTT", 0.25), ("Width", 0.6), ("Level", 2.0),
+        ],
+    },
+    // ---------- Loud and crunchy: the modern drop's sounds (clipped on purpose, every 16th its own) ----------
+    Preset {
+        name: "Bass/Crunch Formant",
+        classic: false,
+        sets: &[
+            // A vowel table hard-clipped before a formant filter: a talking growl with a crunchy edge
+            ("A table", T_VOWEL), ("A position", 0.4), ("A unison", 2.0), ("A detune", 0.06),
+            ("B table", T_FM), ("B position", 0.5), ("B level", -6.0),
+            ("FM B → A", 0.3),
+            ("Sub level", -6.0), ("Sub path", CLEAN_SUB),
+            ("Pre drive type", HARD), ("Pre drive", 14.0),
+            ("Filter type", FORMANT), ("Cutoff", 520.0), ("Resonance", 0.6),
+            // Each note its own vowel and table place; the FM steps to a new depth every 16th
+            ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", CUTOFF), ("Mod 1 amount", 0.38),
+            ("Mod 2 source", SRC_NRAND), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.55),
+            ("Chaos rate (sync)", D_SIXTEENTH), ("Chaos smooth", 0.1),
+            ("Mod 3 source", SRC_CHAOS), ("Mod 3 target", FMT), ("Mod 3 amount", 0.3),
+            // ...and says its word once (an envelope LFO through the formant), its own way and depth
+            ("LFO 1 shape", S_DRAWN1), ("LFO 1 mode", ENVELOPE), ("LFO 1 rate (sync)", D_SIXTEENTH), ("LFO 1 smooth", 0.25),
+            ("Mod 9 source", SRC_LFO1), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.3), ("Mod 9 via", SRC_NRAND_BI),
+            ("Shape 1 step 1", -0.8), ("Shape 1 step 2", 0.1), ("Shape 1 step 3", 0.9), ("Shape 1 step 4", 1.0), ("Shape 1 step 5", 0.5),
+            ("Shape 1 step 6", -0.2), ("Shape 1 step 7", -0.6), ("Shape 1 step 8", -0.2), ("Shape 1 step 9", 0.4), ("Shape 1 step 10", 0.7),
+            ("Shape 1 step 11", 0.3), ("Shape 1 step 12", -0.3), ("Shape 1 step 13", -0.7), ("Shape 1 step 14", -0.4), ("Shape 1 step 15", 0.0),
+            ("Shape 1 step 16", -0.5), ("Shape 1 smooth", 0.6),
+            // Over two bars the table sweeps a little further and back (free, with the song)
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", A_POS), ("LFO 3 amount 1", 0.4),
+            ("Drive type", HARD), ("Drive", 9.0), ("Drive tone", 0.3),
+            ("Band drive type", BITS), ("Band drive", 6.0), ("Band drive mix", 0.3), ("Band drive crush", 0.3),
+            ("Voices", MONO), ("Glide", 0.035), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.06),
+            ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", PRE_DRIVE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", CRUSH), ("Mod 7 amount", 0.5),
+            ("EQ on", 1.0), ("EQ high", 5.0), ("EQ high freq", 4500.0),
+            ("OTT", 0.4), ("Level", -3.0),
+        ],
+    },
+    Preset {
+        name: "Bass/Resample Chop",
+        classic: false,
+        sets: &[
+            // As if resampled and chopped: every 16th jumps to another slice of a digital table,
+            // crushed and downsampled, the note held through it
+            ("A table", T_HARM), ("A position", 0.3), ("A unison", 2.0), ("A detune", 0.05),
+            ("B table", T_RANDH), ("B position", 0.5), ("B level", -5.0),
+            ("Sub level", -6.0), ("Sub path", CLEAN_SUB),
+            ("Filter type", LP24), ("Cutoff", 2600.0), ("Resonance", 0.3), ("Key tracking", 0.4),
+            ("Chaos rate (sync)", D_SIXTEENTH), ("Chaos smooth", 0.0),
+            ("Mod 1 source", SRC_CHAOS), ("Mod 1 target", A_POS), ("Mod 1 amount", 0.38),
+            ("Mod 2 source", SRC_CHAOS), ("Mod 2 target", CUTOFF), ("Mod 2 amount", 0.35), ("Mod 2 curve", C_S),
+            ("Mod 3 source", SRC_NRAND), ("Mod 3 target", B_POS), ("Mod 3 amount", 0.6),
+            ("Mod 4 source", SRC_NRAND_BI), ("Mod 4 target", CRUSH), ("Mod 4 amount", 0.3),
+            // A chop inside each 16th now and then: a 32nd gate, its depth the note's own
+            ("LFO 1 shape", S_SQUARE), ("LFO 1 mode", RETRIG), ("LFO 1 rate (sync)", D_32ND), ("LFO 1 smooth", 0.1),
+            ("Mod 9 source", SRC_LFO1), ("Mod 9 target", VOLUME), ("Mod 9 amount", -0.25), ("Mod 9 via", SRC_NRAND),
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", CUTOFF), ("LFO 3 amount 1", 0.22),
+            ("Pre drive type", BITS), ("Pre drive", 6.0), ("Pre drive mix", 0.5), ("Pre drive crush", 0.4),
+            ("Drive type", HARD), ("Drive", 10.0), ("Drive tone", 0.25),
+            ("Voices", MONO), ("Glide", 0.02), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.05),
+            ("Mod 5 source", M1), ("Mod 5 target", A_POS), ("Mod 5 amount", 0.5),
+            ("Mod 6 source", M2), ("Mod 6 target", CRUSH), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
+            ("EQ on", 1.0), ("EQ high", 4.0), ("EQ high freq", 5000.0),
+            ("OTT", 0.4), ("Level", -2.5),
+        ],
+    },
+    Preset {
+        name: "Bass/Clipped Square",
+        classic: false,
+        sets: &[
+            // A square an octave under a saw, hard-clipped: a bright, buzzing bass that jumps and
+            // glides across two octaves, each note a different width and brightness
+            ("A table", T_PULSE), ("A position", 0.5), ("A unison", 2.0), ("A detune", 0.04),
+            ("B position", SAW), ("B octave", 1.0), ("B level", -9.0),
+            ("Sub level", -5.0), ("Sub path", CLEAN_SUB),
+            ("Filter type", LP24), ("Cutoff", 1500.0), ("Resonance", 0.3), ("Key tracking", 0.5), ("Filter envelope", 0.35),
+            ("Filter attack", 0.0004), ("Filter decay", 0.12), ("Filter sustain", 0.3),
+            ("Mod 1 source", SRC_NRAND), ("Mod 1 target", A_POS), ("Mod 1 amount", 0.4),
+            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", CUTOFF), ("Mod 2 amount", 0.4),
+            ("Chaos rate (sync)", D_SIXTEENTH), ("Chaos smooth", 0.15),
+            ("Mod 3 source", SRC_CHAOS), ("Mod 3 target", DRIVE), ("Mod 3 amount", 0.35),
+            ("Mod 4 source", SRC_VEL), ("Mod 4 target", CUTOFF), ("Mod 4 amount", 0.2), ("Mod 4 via", SRC_FENV),
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", CUTOFF), ("LFO 3 amount 1", 0.35), ("LFO 3 target 2", A_POS), ("LFO 3 amount 2", 0.3),
+            ("Drive type", HARD), ("Drive", 16.0), ("Drive tone", 0.3),
+            ("Band drive type", SOFT), ("Band drive", 6.0), ("Band drive mix", 0.4),
+            ("Voices", LEGATO), ("Glide", 0.045), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.06),
+            ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.4),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
+            ("EQ on", 1.0), ("EQ high", 4.0), ("EQ high freq", 4500.0),
+            ("OTT", 0.35), ("Level", -4.8),
+        ],
+    },
+    Preset {
+        name: "Bass/Hard Clip Stab",
+        classic: false,
+        sets: &[
+            // One key plays a fifth-and-octave stack of saws, clipped flat: a short, crunchy stab
+            ("A position", SAW), ("A unison", 5.0), ("A detune", 0.18), ("A blend", 0.7), ("A width", 0.5), ("A stack", ST_FIFTH_OCT),
+            ("B table", T_PULSE), ("B position", 0.4), ("B level", -8.0),
+            ("Sub level", -7.0), ("Sub path", CLEAN_SUB),
+            ("Filter type", LP24), ("Cutoff", 2400.0), ("Resonance", 0.2), ("Filter envelope", 0.5),
+            ("Filter attack", 0.0004), ("Filter decay", 0.15), ("Filter sustain", 0.25),
+            ("Amp attack", 0.0012), ("Amp decay", 0.2), ("Amp sustain", 0.45), ("Amp release", 0.08),
+            ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", CUTOFF), ("Mod 1 amount", 0.4),
+            ("Mod 2 source", SRC_NRAND), ("Mod 2 target", B_POS), ("Mod 2 amount", 0.7),
+            ("Mod 3 source", SRC_VEL), ("Mod 3 target", CUTOFF), ("Mod 3 amount", 0.25), ("Mod 3 via", SRC_FENV),
+            ("Chaos rate (sync)", D_SIXTEENTH), ("Chaos smooth", 0.0),
+            ("Mod 4 source", SRC_CHAOS), ("Mod 4 target", A_POS), ("Mod 4 amount", 0.3),
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", CUTOFF), ("LFO 3 amount 1", 0.35), ("LFO 3 target 2", B_POS), ("LFO 3 amount 2", 0.4),
+            ("Drive type", HARD), ("Drive", 18.0), ("Drive tone", 0.35),
+            ("Voices", MONO), ("Amp release", 0.06),
+            ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", A_DETUNE), ("Mod 6 amount", 0.5),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.4),
+            ("EQ on", 1.0), ("EQ high", 4.0), ("EQ high freq", 4500.0),
+            ("OTT", 0.35), ("Width", 0.6), ("Level", 1.3),
+        ],
+    },
+    Preset {
+        name: "Lead/Chip Crunch",
+        classic: false,
+        sets: &[
+            // A narrow pulse, bit-crushed, with a short glide: a chip lead made loud and modern
+            // (driven, squeezed, a slap of delay, a little width)
+            ("A table", T_PULSE), ("A position", 0.25), ("A warp", W_QUANT), ("A warp amount", 0.45),
+            ("B table", T_PULSE), ("B position", 0.5), ("B octave", 1.0), ("B level", -12.0), ("B fine", 7.0),
+            ("Sub level", OFF), ("Sub path", CLEAN_SUB),
+            ("Filter type", LP12), ("Cutoff", 9000.0), ("Resonance", 0.1),
+            ("Amp attack", 0.0012), ("Amp release", 0.06),
+            // A delayed vibrato, and the pulse width a little different on each note
+            ("LFO 1 shape", S_SINE), ("LFO 1 mode", RETRIG), ("LFO 1 sync", 0.0), ("LFO 1 rate (Hz)", 6.5), ("LFO 1 delay", 0.15), ("LFO 1 fade in", 0.1),
+            ("LFO 1 target 1", PITCH), ("LFO 1 amount 1", 0.03),
+            ("Mod 1 source", SRC_NRAND), ("Mod 1 target", A_POS), ("Mod 1 amount", 0.2),
+            ("Pre drive type", BITS), ("Pre drive", 3.0), ("Pre drive mix", 0.6), ("Pre drive crush", 0.35),
+            ("Drive type", HARD), ("Drive", 6.0),
+            ("Delay on", 1.0), ("Delay time (sync)", D_SIXTEENTH), ("Delay feedback", 0.2), ("Delay mix", 0.12),
+            ("Voices", LEGATO), ("Glide", 0.03), ("Glide mode", LEGATO_ONLY),
+            ("Mod 5 source", M1), ("Mod 5 target", CRUSH), ("Mod 5 amount", 0.5),
+            ("Mod 6 source", M2), ("Mod 6 target", A_WARP), ("Mod 6 amount", 0.5),
+            ("EQ on", 1.0), ("EQ low", -4.0), ("EQ low freq", 300.0),
+            ("OTT", 0.4), ("Width", 0.45), ("Level", -0.5),
         ],
     },
 ];

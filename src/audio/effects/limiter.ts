@@ -34,8 +34,17 @@ export const LIMITER_AIM_DBTP = LIMITER_CEILING_DBTP - 0.05;
  * -1.5 dBTP; scripts/limiter.test.mjs measures it where ffmpeg is installed).
  */
 export const LOSSY_CEILING_DBTP = -2;
-/** The true-peak ceiling (dBTP) for an export in `format` ('wav', 'mp3', 'ogg', 'mp4'): -1, or LOSSY_CEILING_DBTP for the compressed ones. */
-export const exportCeilingDbtp = (format: string): number => (format === 'wav' ? LIMITER_CEILING_DBTP : LOSSY_CEILING_DBTP);
+/**
+ * How much lower the compressed exports' ceiling goes at full Crunch (the Loud master clipping on
+ * purpose, loudMaster.ts), dB: flat-topped, clipped waves overshoot more once encoded (a crunchy
+ * drop at -2 dBTP decoded at -0.7 to -0.8 dBTP), so the decoded file stays under -1 dBTP.
+ */
+export const CRUNCH_LOSSY_EXTRA_DB = 1;
+/**
+ * The true-peak ceiling (dBTP) for an export in `format` ('wav', 'mp3', 'ogg', 'mp4'): -1, or
+ * LOSSY_CEILING_DBTP for the compressed ones, lower still with the Loud master's Crunch (0 to 1).
+ */
+export const exportCeilingDbtp = (format: string, crunch = 0): number => (format === 'wav' ? LIMITER_CEILING_DBTP : LOSSY_CEILING_DBTP - Math.max(0, Math.min(1, crunch)) * CRUNCH_LOSSY_EXTRA_DB);
 /** Where the limiter aims for `ceilingDbtp`: a hair under it, as LIMITER_AIM_DBTP is under -1. */
 export const limiterAimDbtp = (ceilingDbtp: number): number => ceilingDbtp + (LIMITER_AIM_DBTP - LIMITER_CEILING_DBTP);
 /** How quickly the gain recovers after a peak (seconds) */

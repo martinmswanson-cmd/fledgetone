@@ -72,6 +72,35 @@ test('the drummer: the same choices give the same part; fills land at the ends o
   for (const style of S.DRUM_STYLES) assert.ok(S.drummer(style.id, 4, 0.8, 0, 1, newId).length > 8, style.id);
 });
 
+test('the syncopated drop: kicks 1 to 3 16ths apart, about six a bar, snare on two and four, 16th hats with accents and rolls', () => {
+  const part = S.drummer('syncDrop', 8, 0.85, 0, 5, newId);
+  const kicks = part.filter((x) => x.note === 'C1').map((x) => x.startOffset * 16);
+  const perBar = kicks.length / 8;
+  assert.ok(perBar >= 5.5 && perBar <= 8, `${perBar} kicks a bar`);
+  const gaps = kicks.slice(1).map((k, i) => Math.round(k - kicks[i]));
+  const short = gaps.filter((g) => g >= 1 && g <= 3).length / gaps.length;
+  assert.ok(short >= 0.85, `${(short * 100).toFixed(0)}% of kick gaps are 1-3 16ths`);
+  // Not four on the floor: kicks off the beat
+  assert.ok(kicks.filter((k) => k % 4 !== 0).length > kicks.length / 2);
+  for (let b = 0; b < 8; b++) {
+    const sn = part.filter((x) => x.note === 'D1' && x.startOffset >= b && x.startOffset < b + 1 && x.velocity > 0.8).map((x) => Math.round((x.startOffset - b) * 16));
+    assert.deepEqual(sn, [4, 12], `bar ${b}`);
+    // Every 16th has a hat
+    const hats = new Set(part.filter((x) => x.note === 'F#1' && x.startOffset >= b && x.startOffset < b + 1).map((x) => x.startOffset * 16));
+    for (let st = 0; st < 16; st++) assert.ok(hats.has(b * 16 + st), `bar ${b} step ${st}`);
+  }
+  // Rolls: hats off the 16th grid (32nds or triplets), on the grid's own ticks
+  const off = part.filter((x) => x.note === 'F#1' && Math.abs(x.startOffset * 16 - Math.round(x.startOffset * 16)) > 1e-6);
+  assert.ok(off.length >= 4, `${off.length} roll hits`);
+  off.forEach((x) => assert.ok(Math.abs(x.startOffset * 768 - Math.round(x.startOffset * 768)) < 1e-6));
+  // The hats lean on the beat and the 16th after it
+  const vel = [0, 1, 2, 3].map((p) => {
+    const v = part.filter((x) => x.note === 'F#1' && Number.isInteger(Math.round(x.startOffset * 16 * 1e6) / 1e6) && Math.round(x.startOffset * 16) % 4 === p).map((x) => x.velocity);
+    return v.reduce((a, b) => a + b, 0) / v.length;
+  });
+  assert.ok(vel[0] > vel[2] && vel[1] > vel[2] && vel[1] > vel[3], vel.join(' '));
+});
+
 test('a fill replaces the end of the bar, keeping kicks on the beat', () => {
   const beat = S.drummer('house', 2, 0.2, 0, 3, newId);
   const filled = S.fillBar(beat, 0, 'snare', 2, newId);

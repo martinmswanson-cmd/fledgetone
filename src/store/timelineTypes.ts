@@ -550,6 +550,11 @@ export interface LoudSettings {
   push: number;
   /** A low shelf at 90 Hz, dB (LOUD_TILT_MIN to LOUD_TILT_MAX): more or less sub; 0 leaves it */
   subTilt: number;
+  /**
+   * Crunch, 0 to 1: how much clipping the match may use to reach the target (see loudMaxDistortionDb
+   * in effects/loudMaster.ts), and how hard the clipper's knee is. Absent: 0, as before it existed.
+   */
+  crunch?: number;
 }
 
 export const LOUD_PUSH_MIN = -12;
@@ -572,6 +577,8 @@ export function normalizeLoud(raw: unknown): LoudSettings {
     target: LOUD_TARGET_IDS.includes(r.target as LoudTargetId) ? (r.target as LoudTargetId) : d.target,
     push: num(r.push, d.push, LOUD_PUSH_MIN, LOUD_PUSH_MAX),
     subTilt: num(r.subTilt, d.subTilt, LOUD_TILT_MIN, LOUD_TILT_MAX),
+    // Absent in projects from before it existed (and kept absent at 0, so they save as they were)
+    ...(num(r.crunch, 0, 0, 1) > 0 ? { crunch: num(r.crunch, 0, 0, 1) } : {}),
   };
 }
 
@@ -633,7 +640,7 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
 /** True when two Loud settings sound the same (absent counts as off). */
 function sameLoud(a: LoudSettings | undefined, b: LoudSettings | undefined): boolean {
   if (!a?.on || !b?.on) return !a?.on && !b?.on;
-  return a.target === b.target && a.push === b.push && a.subTilt === b.subTilt;
+  return a.target === b.target && a.push === b.push && a.subTilt === b.subTilt && (a.crunch ?? 0) === (b.crunch ?? 0);
 }
 
 /** True when two clippers are set the same (absent counts as an unchanged default, off). */

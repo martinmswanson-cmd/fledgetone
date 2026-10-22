@@ -4,6 +4,14 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Crunch on the Loud master**: a **Crunch** slider in the Master tab (and a **Crunch** button next to **Loud** in Pocket's mixer) lets the master clip on purpose. Up to 0% it stops before the clipping is heard, as before; turned up, the clipper's knee goes hard and the push can go much further, so a dense drop gets as loud as current bass music and you hear the clipping as crunch on the kick, bass and snare. The -1 dBTP limiter stays last, what you hear stays level-matched, and MP3 and Ogg exports keep their peaks a little lower with it so the decoded file still stays under -1 dBTP. Songs without it sound as they did.
+- **Five loud, crunchy Fledge Synth presets** for modern drops, each note its own sound: **Crunch Formant** (a hard-clipped talking growl), **Resample Chop** (a new slice of the sound on every 16th, crushed), **Clipped Square** (a bright square bass that jumps and glides across two octaves), **Hard Clip Stab** (a short fifth-and-octave stab clipped flat) and **Chip Crunch** (a crushed square lead with a short glide). Older presets sound exactly as before.
+- **New Drum Designer presets**: **Crunch kick** (a hard-driven body whose pitch drop you can hear, a loud click, a short tail so the next kick a 16th later is clear), **Zap kick** (a longer, rubbery drop), **Crunch snare** (tight and driven) and **Sharp tight hat**.
+- **Syncopated drop** in the Drummer (studio and Pocket): about six kicks a bar packed one to three 16ths apart (never four on the floor), the snare on two and four, 16th hats leaning on each beat with 32nd or triplet rolls now and then, for modern bass music around 100 BPM.
+- A plugin whose settings were changed on its track from outside (a whole new song put in by a script, say) now starts from those settings, not from the last ones read from it while it played.
+
 ## 2026.10.22 — Drums that hit, ducking and a loud master
 
 - **Drums that hit**: the Drum Designer has a **layered kick** (a click, a driven body falling from its punch pitch, and a clean sub tail; **Hardcore tail** keeps the distorted body going through the beat as the bass) and a **layered snare** (a transient, a tuned body, the wires, a clap and a room, or a gated 80s room an 8th long at the song's tempo). Their pitch can follow the song's key, or sit on a note you pick. New presets: **Punch kick**, **Hardcore kick**, **Deep tail kick**, **Club kick**, **Big snare**, **Gated snare**, **Tight snare** and **Crack clap**.

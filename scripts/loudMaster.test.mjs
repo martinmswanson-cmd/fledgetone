@@ -118,6 +118,55 @@ test('a mix that would distort before Club stops short (cleanly) and says so', (
   assert.ok(lufsOf(l, r) > -9, 'still louder than Loud');
 });
 
+test('Crunch lets the same mix reach Club by clipping on purpose, under the same -1 dBTP ceiling; none is as before', async () => {
+  const [l0, r0] = drop(8, 0.6);
+  const clean = masterAfter(l0, r0, SR, loudMaster('club'), 0, -1, [], -6);
+  const [l, r] = drop(8, 0.6);
+  const crunchy = masterAfter(l, r, SR, loudMaster('club', { crunch: 1 }), 0, -1, [], -6);
+  // Where the clean master stopped short, full Crunch gets there (or much nearer), with more distortion
+  assert.ok(clean.loud.shortDb > 0.3, JSON.stringify(clean.loud));
+  assert.ok(crunchy.loud.lufs > clean.loud.lufs + 0.3, `${crunchy.loud.lufs.toFixed(2)} vs ${clean.loud.lufs.toFixed(2)}`);
+  assert.ok(crunchy.loud.distortionDb > L.MAX_DISTORTION_DB && crunchy.loud.distortionDb <= L.CRUNCH_MAX_DISTORTION_DB, JSON.stringify(crunchy.loud));
+  assert.ok(dbtp(l, r) <= -1 + 1e-6, `true peak ${dbtp(l, r).toFixed(2)} dBTP`);
+  // Halfway: the cap halfway; the clipper's knee harder as Crunch goes up (flat at full)
+  const half = loudMaster('club', { crunch: 0.5 });
+  assert.equal(L.loudMaxDistortionDb(half), (L.MAX_DISTORTION_DB + L.CRUNCH_MAX_DISTORTION_DB) / 2);
+  assert.equal(L.loudMaxDistortionDb(loudMaster('club')), L.MAX_DISTORTION_DB);
+  assert.equal(L.effectiveClipper(loudMaster('club')), L.LOUD_CLIPPER);
+  assert.ok(L.effectiveClipper(half).softness < L.LOUD_CLIPPER.softness && L.effectiveClipper(half).softness > 0);
+  assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 })).softness, 0);
+  // ...and clips a little lower, so the limiter after it has less to do (it doesn't pump)
+  assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 })).ceiling, L.LOUD_CLIPPER.ceiling - L.CRUNCH_CLIP_LOWER_DB);
+  // (Just over a lower export ceiling, an MP3's: the limiter after it only catches what's between samples)
+  assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 }), -3).ceiling, -3 + (L.LOUD_CLIPPER.ceiling + 1) - L.CRUNCH_CLIP_LOWER_DB);
+  assert.equal(L.effectiveClipper(loudMaster('club'), -3), L.LOUD_CLIPPER);
+  // MP3 and Ogg exports keep their peaks lower with Crunch (clipped waves overshoot more once encoded); WAV stays at -1 dBTP
+  const { exportCeilingDbtp, LOSSY_CEILING_DBTP, CRUNCH_LOSSY_EXTRA_DB } = await import('../src/audio/effects/limiter.ts');
+  assert.equal(exportCeilingDbtp('mp3'), LOSSY_CEILING_DBTP);
+  assert.equal(exportCeilingDbtp('mp3', 0), LOSSY_CEILING_DBTP);
+  assert.equal(exportCeilingDbtp('mp3', 1), LOSSY_CEILING_DBTP - CRUNCH_LOSSY_EXTRA_DB);
+  assert.equal(exportCeilingDbtp('wav', 1), -1);
+  // (The Clipper insert, when on, plays as set: Crunch only bends the Loud master's own)
+  const insert = { on: true, drive: 3, softness: 0.3, ceiling: -1 };
+  assert.equal(L.effectiveClipper({ clipper: insert, loud: { ...T.defaultLoud(), on: true, crunch: 1 } }), insert);
+  // A Loud master that's off has no Crunch
+  assert.equal(L.loudCrunch({ loud: { ...T.defaultLoud(), crunch: 1 } }), 0);
+});
+
+test('Crunch is optional in a project: absent reads as none and stays absent; out of range is clamped; it counts as a change', () => {
+  const plain = T.normalizeLoud({ on: true, target: 'club', push: 3, subTilt: 0 });
+  assert.equal('crunch' in plain, false);
+  assert.equal('crunch' in T.normalizeLoud({ on: true, target: 'club', push: 3, subTilt: 0, crunch: 0 }), false);
+  assert.equal(T.normalizeLoud({ on: true, crunch: 7 }).crunch, 1);
+  assert.equal('crunch' in T.normalizeLoud({ on: true, crunch: -2 }), false);
+  assert.equal(T.normalizeLoud({ on: true, crunch: 'x' }).crunch, undefined);
+  const m = T.normalizeMasterSettings({ ...T.defaultMasterSettings(), loud: plain });
+  const crunched = T.normalizeMasterSettings({ ...T.defaultMasterSettings(), loud: { ...plain, crunch: 0.4 } });
+  assert.equal(crunched.loud.crunch, 0.4);
+  assert.equal(T.sameMasterSettings(m, crunched), false);
+  assert.equal(T.sameMasterSettings(m, T.normalizeMasterSettings(JSON.parse(JSON.stringify(m)))), true);
+});
+
 test('the MP3 ceiling holds the true peak under it with a Loud master too', async () => {
   const { exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
   const ceiling = exportCeilingDbtp('mp3');

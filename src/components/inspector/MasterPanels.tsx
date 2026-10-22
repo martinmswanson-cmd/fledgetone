@@ -2,7 +2,7 @@
  * The Master tab of the Inspector: the loudness meter, the glue, the OTT and stereo width inserts,
  * the Level and the clipper before the limiter, the reference track and the mix check, the playback buffering choice and the browser's audio delay, and the instruments kept for offline use (with whether the browser keeps this storage).
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Download, Ear, Flame, Gauge, MoveHorizontal, RotateCcw, Scissors, Snowflake, Timer, Volume2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { defaultLoud, defaultMasterSettings, GLUE_STYLE_IDS, LEVEL_MAX, LEVEL_MIN, LOUD_TARGET_IDS, LOUD_TILT_MAX, LOUD_TILT_MIN, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX, type LoudTargetId } from '../../store/timelineTypes';
@@ -191,6 +191,21 @@ export const LoudPanel: React.FC = () => {
   const target = LOUD_TARGETS[loud.target];
   const listening = useListening();
   const match = async () => setFound(await matchLoudMaster());
+  // A change of Crunch is matched again once it settles (it changes how far the push can go), so what plays is what exports
+  const crunch = loud.crunch ?? 0;
+  const [crunchMoved, setCrunchMoved] = useState(false);
+  const matchNow = useRef(match);
+  useEffect(() => {
+    matchNow.current = match;
+  });
+  useEffect(() => {
+    if (!crunchMoved || !loud.on) return;
+    const t = window.setTimeout(() => {
+      setCrunchMoved(false);
+      void matchNow.current();
+    }, 700);
+    return () => window.clearTimeout(t);
+  }, [crunch, crunchMoved, loud.on]);
   return (
     <InsertPanel
       title="Loud master"
@@ -234,6 +249,24 @@ export const LoudPanel: React.FC = () => {
       </label>
       <p className={`text-[10px] text-forge-muted ${loud.on ? '' : 'opacity-45'}`}>{target.about}</p>
       <FxSlider label="Sub tilt" value={loud.subTilt} min={LOUD_TILT_MIN} max={LOUD_TILT_MAX} step={0.5} format={db} onChange={(v) => set({ subTilt: v })} reset={0} accent={accent} disabled={!loud.on} />
+      <FxSlider
+        label="Crunch"
+        value={crunch}
+        min={0}
+        max={1}
+        step={0.05}
+        format={pct}
+        onChange={(v) => {
+          set({ crunch: v });
+          setCrunchMoved(true);
+        }}
+        reset={0}
+        accent={accent}
+        disabled={!loud.on}
+      />
+      <p className={`text-[10px] text-forge-muted ${loud.on ? '' : 'opacity-45'}`} data-search="crunch let it clip loud distortion">
+        Crunch lets it clip on purpose: the clipper's knee goes hard and the push may go much further, so a dense drop gets loud and you hear the clipping as crunch on the kick, bass and snare. 0% stops before it audibly distorts. The -1 dBTP limiter stays last either way, and what you hear stays level-matched.
+      </p>
       <div className={`flex items-center gap-2 ${loud.on ? '' : 'opacity-45 pointer-events-none'}`}>
         <button
           type="button"
@@ -246,7 +279,7 @@ export const LoudPanel: React.FC = () => {
         </button>
         <span className="text-[10px] font-mono text-forge-muted" data-testid="loud-push">
           Push {db(loud.push)}
-          {found && Number.isFinite(found.lufs) && ` · reached ${found.lufs.toFixed(1)} LUFS${found.shortDb > 0 ? ` (${found.shortDb.toFixed(1)} dB short: it would take more than it can do cleanly)` : ''}`}
+          {found && Number.isFinite(found.lufs) && ` · reached ${found.lufs.toFixed(1)} LUFS${found.shortDb > 0 ? ` (${found.shortDb.toFixed(1)} dB short: it would take more than it can do cleanly${crunch < 1 ? '; more Crunch lets it go further' : ''})` : ''}`}
         </span>
       </div>
     </InsertPanel>
