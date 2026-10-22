@@ -239,25 +239,32 @@ export const two = (a: [DrumVoice, Partial<DrumLayer>], b: [DrumVoice, Partial<D
  * The layered kicks' settings. Punch: short and clicky, its tail off the beat before the bass comes
  * in (30-150 Hz down 20 dB in about 140 ms). Hardcore: the driven body holds through the beat (-20
  * dB at about 290 ms) and is the bass. Deep tail: a long clean sub for a kick that is the low end.
- * Club: a round four-on-the-floor kick.
+ * Club: a round four-on-the-floor kick. Crunch: a modern bass-music kick for dense drops, a hard
+ * driven body whose pitch falls slowly enough to hear (from about 280 Hz over 70 ms), a loud
+ * click, a short tail so the next kick a 16th later is clear. Zap: the drop slower and longer
+ * still, folded, a rubbery zap.
  */
-const KICKS: Record<'punch' | 'hardcore' | 'deepTail' | 'club', Partial<DrumLayer>> = {
+const KICKS: Record<'punch' | 'hardcore' | 'deepTail' | 'club' | 'crunch' | 'zap', Partial<DrumLayer>> = {
   punch: { pitch: 52, startPitch: 200, sweepTime: 0.045, decay: 0.07, body: 0.8, shape: 0.15, click: 0.55, color: 3200, noiseDecay: 0.005, sub: 0.9, tail: 0.18, drive: 0.35, driveMode: 0, tone: 5000, keyTrack: 1 },
   hardcore: { pitch: 55, startPitch: 220, sweepTime: 0.04, decay: 0.1, body: 1, shape: 0.6, click: 0.6, color: 3000, noiseDecay: 0.006, sub: 0.35, tail: 0.29, hardcore: 1, drive: 0.85, driveMode: 1, tone: 4200, keyTrack: 1 },
   deepTail: { pitch: 46, startPitch: 150, sweepTime: 0.06, decay: 0.1, body: 0.6, shape: 0, click: 0.6, color: 2500, noiseDecay: 0.006, sub: 1, tail: 0.45, drive: 0.15, tone: 4000, keyTrack: 1 },
   club: { pitch: 50, startPitch: 140, sweepTime: 0.05, decay: 0.1, body: 0.8, shape: 0, click: 0.7, color: 2200, noiseDecay: 0.008, sub: 0.85, tail: 0.16, drive: 0.2, tone: 3500 },
+  crunch: { pitch: 52, startPitch: 280, sweepTime: 0.07, decay: 0.11, body: 1, shape: 0.4, click: 1, color: 4500, noiseDecay: 0.011, sub: 0.85, tail: 0.15, drive: 0.8, driveMode: 1, tone: 7000, keyTrack: 1 },
+  zap: { pitch: 50, startPitch: 300, sweepTime: 0.11, decay: 0.16, body: 1, shape: 0.25, click: 0.6, color: 3000, noiseDecay: 0.006, sub: 0.5, tail: 0.18, drive: 0.65, driveMode: 2, tone: 6000, keyTrack: 1 },
 };
 
 /**
  * The layered snares' settings. Big: a layered snare with a clap and a room tail (bass music,
  * drumstep). Gated: the 80s room cut off after an 8th. Tight: dry and short. Crack (a clap): mostly
- * transient and clap, a little room.
+ * transient and clap, a little room. Crunch: tight and driven hard, a loud transient and bright
+ * wires, a short room (it sits a little under the kick in a dense drop).
  */
-const SNARES: Record<'big' | 'gated' | 'tight' | 'crack', Partial<DrumLayer>> = {
+const SNARES: Record<'big' | 'gated' | 'tight' | 'crack' | 'crunch', Partial<DrumLayer>> = {
   big: { pitch: 160, sweep: 5, body: 0.75, decay: 0.09, click: 0.7, noise: 0.85, color: 3900, tone: 9000, noiseDecay: 0.16, clap: 0.45, room: 0.6, tail: 0.5, drive: 0.25 },
   gated: { pitch: 140, sweep: 4, body: 0.8, decay: 0.1, click: 0.5, noise: 0.75, color: 3600, tone: 8000, noiseDecay: 0.1, room: 0.9, gate: 1, gateHold: 0.12, tail: 0.4, drive: 0.35 },
   tight: { pitch: 170, sweep: 6, body: 0.7, decay: 0.06, click: 0.4, noise: 0.85, color: 4000, tone: 8500, noiseDecay: 0.08, room: 0.12, tail: 0.2, drive: 0.35 },
   crack: { pitch: 180, sweep: 3, body: 0.3, decay: 0.04, click: 0.9, noise: 0.6, color: 3800, tone: 8500, noiseDecay: 0.07, clap: 1, room: 0.25, tail: 0.3, drive: 0.2 },
+  crunch: { pitch: 185, sweep: 7, body: 0.8, decay: 0.07, click: 0.85, noise: 0.9, color: 4600, tone: 11000, noiseDecay: 0.09, clap: 0.35, room: 0.15, tail: 0.18, drive: 0.85 },
 };
 
 /** Which kind of drum a preset is, for the menus (the row's kind is offered first). */
@@ -284,6 +291,8 @@ export const DRUM_PRESETS: readonly DrumPreset[] = [
   { id: 'hardcoreKick', name: 'Hardcore kick', group: 'Kicks', sound: one('layerKick', KICKS.hardcore) },
   { id: 'deepTailKick', name: 'Deep tail kick', group: 'Kicks', sound: one('layerKick', KICKS.deepTail) },
   { id: 'clubKick', name: 'Club kick', group: 'Kicks', sound: one('layerKick', KICKS.club) },
+  { id: 'crunchKick', name: 'Crunch kick', group: 'Kicks', sound: one('layerKick', KICKS.crunch) },
+  { id: 'zapKick', name: 'Zap kick', group: 'Kicks', sound: one('layerKick', KICKS.zap) },
   // Snares
   { id: 'drillSnare', name: 'Punchy snare', group: 'Snares', sound: one('snare', { pitch: 210, sweep: 9, body: 0.75, decay: 0.09, noise: 0.85, color: 5200, noiseDecay: 0.16, click: 0.8, drive: 0.3 }) },
   { id: 'trapSnare', name: 'Crisp snare', group: 'Snares', sound: one('snare', { pitch: 230, sweep: 5, body: 0.5, decay: 0.07, noise: 1, color: 7000, noiseDecay: 0.22, click: 0.7, drive: 0.15 }) },
@@ -294,6 +303,7 @@ export const DRUM_PRESETS: readonly DrumPreset[] = [
   { id: 'bigSnare', name: 'Big snare', group: 'Snares', sound: one('layerSnare', SNARES.big, 2.5) },
   { id: 'gatedSnare', name: 'Gated snare', group: 'Snares', sound: one('layerSnare', SNARES.gated, 2.5) },
   { id: 'tightLayerSnare', name: 'Tight snare', group: 'Snares', sound: one('layerSnare', SNARES.tight, 1.5) },
+  { id: 'crunchSnare', name: 'Crunch snare', group: 'Snares', sound: one('layerSnare', SNARES.crunch, 1) },
   // Claps
   { id: 'crispClap', name: 'Crisp clap', group: 'Claps', sound: one('clap', { bursts: 4, spread: 9, color: 1600, noiseDecay: 0.22, click: 0.5, drive: 0.1 }) },
   { id: 'wideClap', name: 'Big room clap', group: 'Claps', sound: one('clap', { bursts: 5, spread: 14, color: 1100, noiseDecay: 0.6, click: 0.3 }) },
@@ -303,6 +313,7 @@ export const DRUM_PRESETS: readonly DrumPreset[] = [
   // Hats
   { id: 'tightHat', name: 'Tight closed hat', group: 'Hats', sound: one('hat', { pitch: 360, color: 10000, decay: 0.035, noise: 0.35, click: 0.4 }) },
   { id: 'trapHat', name: 'Bright hat', group: 'Hats', sound: one('hat', { pitch: 420, color: 12000, decay: 0.05, noise: 0.5, click: 0.5 }) },
+  { id: 'sharpHat', name: 'Sharp tight hat', group: 'Hats', sound: one('hat', { pitch: 460, color: 11000, decay: 0.028, noise: 0.6, click: 0.6, drive: 0.3 }) },
   { id: 'darkHat', name: 'Dark closed hat', group: 'Hats', sound: one('hat', { pitch: 280, color: 6500, decay: 0.06, noise: 0.25, click: 0.25 }) },
   { id: 'openHat', name: 'Open hat', group: 'Hats', sound: one('hat', { pitch: 360, color: 9500, decay: 0.42, noise: 0.4, click: 0.3 }) },
   { id: 'longOpenHat', name: 'Long sizzling open hat', group: 'Hats', sound: one('hat', { pitch: 400, color: 11000, decay: 0.9, noise: 0.6, click: 0.2 }) },

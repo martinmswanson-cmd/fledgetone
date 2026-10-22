@@ -616,7 +616,7 @@ const RIDE = 'D#2';
 const COWBELL = 'G#2';
 
 export type DrumStyle =
-  | 'house' | 'rock' | 'hiphop' | 'trap' | 'dnb' | 'funk' | 'dembow' | 'halftime'
+  | 'house' | 'rock' | 'hiphop' | 'trap' | 'dnb' | 'funk' | 'dembow' | 'halftime' | 'syncDrop'
   | 'waltz' | 'jig' | 'march' | 'shuffle' | 'swing' | 'bossa' | 'calypso' | 'maqsum' | 'battle' | 'tribal' | 'blast' | 'heartbeat' | 'brushes';
 /**
  * The drummer's styles. A style with a `meter` is written in it (a waltz in 3/4, a jig in 6/8);
@@ -631,6 +631,7 @@ export const DRUM_STYLES: ReadonlyArray<{ id: DrumStyle; name: string; bpm: stri
   { id: 'funk', name: 'Funk (ghost notes)', bpm: '95–115' },
   { id: 'dembow', name: 'Dembow (reggaeton)', bpm: '88–100' },
   { id: 'halftime', name: 'Half time (ballad, cinematic)', bpm: '60–90' },
+  { id: 'syncDrop', name: 'Syncopated drop (dense kicks, 16th hats: modern bass music)', bpm: '95–110' },
   { id: 'waltz', name: 'Waltz in 3/4 (underwater, town, love theme)', bpm: '80–180', meter: { num: 3, den: 4 } },
   { id: 'jig', name: 'Jig in 6/8 (folk, island, tavern, pirate)', bpm: '100–127', meter: { num: 6, den: 8 } },
   { id: 'march', name: 'March (snare cadence: heroic, title, military)', bpm: '100–130' },
@@ -707,6 +708,30 @@ function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => n
       add([3, 6, 11, 14], SNARE, 0.85);
       add(mid ? eighths : [0, 4, 8, 12], HAT, 0.45);
       break;
+    case 'syncDrop': {
+      // A modern drop: the snare on two and four, and between them kicks packed 1 to 3 16ths
+      // apart (about six a bar, never four on the floor), a new pattern each bar; 16th hats
+      // leaning on each beat and the 16th after it, with a 32nd or triplet roll now and then
+      const shapes = [
+        [0, 2, 3, 6, 9, 11, 14],
+        [0, 1, 3, 6, 8, 10, 13],
+        [0, 2, 5, 7, 8, 10, 13, 15],
+        [0, 3, 5, 6, 9, 10, 14],
+      ];
+      let kicks = shapes[(bar + Math.floor(rnd() * 2) * 2) % shapes.length];
+      // Sparser at low energy: every other one off the beat goes
+      if (!mid) kicks = kicks.filter((k, i) => k % 4 === 0 || i % 2 === 0);
+      add(kicks, KICK, 0.92);
+      add([4, 12], SNARE, 0.95);
+      if (busy && bar % 2 === 1) add([15], SNARE, 0.4);
+      for (const s16 of sixteenths) hits.push([s16, HAT, [0.62, 0.58, 0.4, 0.46][s16 % 4]]);
+      if (mid && bar % 2 === 1) {
+        // A roll at the end of the bar: 32nds, or 16th triplets
+        if (rnd() < 0.5) [14.5, 15.5].forEach((s32) => hits.push([s32, HAT, 0.42]));
+        else [12 + 2 / 3, 12 + 4 / 3, 14 + 2 / 3, 14 + 4 / 3].forEach((t) => hits.push([t, HAT, 0.4]));
+      }
+      break;
+    }
     case 'halftime':
       add([0], KICK, 0.92);
       if (mid) add([10], KICK, 0.75);

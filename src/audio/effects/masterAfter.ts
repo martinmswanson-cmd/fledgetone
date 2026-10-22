@@ -16,7 +16,7 @@ import { LIMITER_CEILING_DBTP, limitChannels, limiterAimDbtp } from './limiter';
 import { clipChannels, type ClipperReading } from './clipper';
 import { createDropKernel } from './dropFx';
 import type { MasterSettings } from '../../store/timelineTypes';
-import { effectiveClipper, effectiveWidth, LOUD_SHELF_HZ, matchPush, pushDb, subTiltDb, webAudioLowshelf, type LoudMatch } from './loudMaster';
+import { effectiveClipper, effectiveWidth, LOUD_SHELF_HZ, loudMaxDistortionDb, matchPush, pushDb, subTiltDb, webAudioLowshelf, type LoudMatch } from './loudMaster';
 
 /** Below this the Stereo width's "mono bass" keeps the sound in the middle. */
 export const MONO_BASS_HZ = 120;
@@ -180,11 +180,11 @@ export function masterAfter(
     if (right !== left) biquad(right, c);
   }
   dropChannels(left, right, sampleRate, drops);
-  const clip = effectiveClipper(master);
+  const clip = effectiveClipper(master, ceilingDbtp);
   let push = pushDb(master);
   let loud: LoudMatch | undefined;
   if (master.loud?.on && matchLufs !== undefined && Number.isFinite(matchLufs)) {
-    loud = matchPush(left, right, sampleRate, master.level, matchLufs, clip, ceilingDbtp, master.loud.push || undefined, onProgress && ((f) => onProgress(0.9 * f)));
+    loud = matchPush(left, right, sampleRate, master.level, matchLufs, clip, ceilingDbtp, master.loud.push || undefined, onProgress && ((f) => onProgress(0.9 * f)), loudMaxDistortionDb(master));
     push = loud.push;
   }
   scaleChannels(left, right, Math.fround(dbToGain(master.level + push)));

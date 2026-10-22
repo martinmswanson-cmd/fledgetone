@@ -13,7 +13,7 @@ import { audibleTracks, channelsOf, cutRingOut, renderArrangement, type RenderOp
 import { measureLoudness } from '../audio/loudness';
 import { DEFAULT_TARGET, reachTarget, targetById } from '../audio/loudnessTarget';
 import { exportCeilingDbtp } from '../audio/effects/limiter';
-import { LOUD_TARGETS, pushToKeep, type LoudMatch } from '../audio/effects/loudMaster';
+import { LOUD_TARGETS, loudCrunch, pushToKeep, type LoudMatch } from '../audio/effects/loudMaster';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { encodeAudio } from '../audio/encoders';
 import { useTimelineStore } from '../store/timelineStore';
@@ -34,7 +34,7 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     const audible = new Set(audibleTracks(s.tracks).map((t) => t.id));
     const songEnd = Math.max(1, ...s.clips.filter((c) => audible.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
     if (songEnd <= 1) return null;
-    const ceilingDbtp = exportCeilingDbtp('mp3');
+    const ceilingDbtp = exportCeilingDbtp('mp3', loudCrunch(useTimelineStore.getState().master));
     const masterFx = {
       reverbDecay: s.masterReverbDecay,
       delayTime: s.masterDelayTime,

@@ -13,13 +13,17 @@
  * The clipper's job in bass music is mostly the sub and the kick (a limiter alone can't get a
  * sub-heavy drop past about -10 LUFS: it follows every cycle of the bass); MAX_DISTORTION_DB lets it
  * shave them hard enough for Club loudness on a dense drop, not so hard that the mids crackle.
+ * Crunch (LoudSettings.crunch) is the choice to go further on purpose: it lets a match use up to
+ * CRUNCH_MAX_DISTORTION_DB of distortion and hardens the clipper's knee towards a flat top, so a
+ * dense drop reaches Club loudness and the clipping is heard as crunch. The -1 dBTP limiter stays
+ * last either way, and what you hear stays level-matched (monitor.ts).
  *
  * Plain maths, no Web Audio, so Node tests it; masterAfter.ts runs it in exports and masterChain.ts
  * builds the same path with nodes live.
  */
 import type { ClipperSettings } from './clipper';
 import { clipChannels } from './clipper';
-import { createLimiterKernel, limitChannels } from './limiter';
+import { createLimiterKernel, LIMITER_CEILING_DBTP, limitChannels } from './limiter';
 import { createLoudnessAnalyser } from '../loudness';
 import type { HitStyleId } from '../hitTargets';
 import { LOUD_PUSH_MAX, LOUD_PUSH_MIN, type LoudTargetId, type MasterSettings } from '../../store/timelineTypes';
@@ -54,6 +58,26 @@ const MATCH_PASSES = 8;
  * -20 dB about -6.7 LUFS (the growl starting to fizz); past -18 dB the mids crackle.
  */
 export const MAX_DISTORTION_DB = -21;
+/**
+ * The most distortion a match allows at full Crunch, dB under the sound: about where a dense drop
+ * reaches -6 LUFS with the clipper's flat tops heard as crunch on the kick, the bass and the snare
+ * (the reference drops the Loud master was measured against sit near -9 dB of it at -7 LUFS).
+ */
+export const CRUNCH_MAX_DISTORTION_DB = -9;
+
+/** How much lower the Loud master's clipper clips at full Crunch, dB (under the ceiling it clips at for the limiter's: see effectiveClipper). */
+export const CRUNCH_CLIP_LOWER_DB = 0.5;
+/** How far over the limiter's ceiling (dBTP) a crunching clipper clips, at most (LOUD_CLIPPER's ceiling at -1 dBTP). */
+const CRUNCH_CLIP_OVER_DB = LOUD_CLIPPER.ceiling - LIMITER_CEILING_DBTP;
+
+/** The Crunch Pocket's Crunch button sets (the studio's slider goes anywhere from 0 to 1). */
+export const POCKET_CRUNCH = 0.7;
+
+/** The Crunch of a Loud master, 0 to 1 (0: none, or not a Loud master). */
+export const loudCrunch = (m: Pick<MasterSettings, 'loud'>): number => (m.loud?.on ? Math.max(0, Math.min(1, m.loud.crunch ?? 0)) : 0);
+
+/** The most distortion a match of this master allows (see MAX_DISTORTION_DB and Crunch). */
+export const loudMaxDistortionDb = (m: Pick<MasterSettings, 'loud'>): number => MAX_DISTORTION_DB + loudCrunch(m) * (CRUNCH_MAX_DISTORTION_DB - MAX_DISTORTION_DB);
 
 /** Whether the lows are kept in the middle: the Mono below 120 Hz switch, or a Loud master. */
 export const monoLowOn = (m: Pick<MasterSettings, 'monoLow' | 'loud'>): boolean => m.monoLow === true || m.loud?.on === true;
@@ -64,10 +88,21 @@ export function effectiveWidth(m: Pick<MasterSettings, 'width' | 'monoLow' | 'lo
   return monoLowOn(m) ? { on: true, amount: 1, monoBass: true } : null;
 }
 
-/** The clipper as it plays: a Loud master's (the Clipper insert's settings when that's on), else the insert's. */
-export function effectiveClipper(m: Pick<MasterSettings, 'clipper' | 'loud'>): ClipperSettings | undefined {
+/**
+ * The clipper as it plays: a Loud master's (the Clipper insert's settings when that's on), else the
+ * insert's. With Crunch the Loud master's knee hardens towards a flat top and it clips just over
+ * the limiter's ceiling (`ceilingDbtp`: live and WAV -1, MP3 lower, see exportCeilingDbtp), so the
+ * clipper does the work and the limiter after it only catches what's between samples: it doesn't
+ * pump on every hit.
+ */
+export function effectiveClipper(m: Pick<MasterSettings, 'clipper' | 'loud'>, ceilingDbtp = LIMITER_CEILING_DBTP): ClipperSettings | undefined {
   if (m.clipper?.on) return m.clipper;
-  return m.loud?.on ? LOUD_CLIPPER : undefined;
+  if (!m.loud?.on) return undefined;
+  const crunch = loudCrunch(m);
+  // (No Crunch: the Loud master's own, exactly)
+  if (!(crunch > 0)) return LOUD_CLIPPER;
+  const round = (v: number) => Math.round(v * 1000) / 1000;
+  return { ...LOUD_CLIPPER, softness: round(LOUD_CLIPPER.softness * (1 - crunch)), ceiling: round(Math.min(LOUD_CLIPPER.ceiling, ceilingDbtp + CRUNCH_CLIP_OVER_DB) - crunch * CRUNCH_CLIP_LOWER_DB) };
 }
 
 /** The sub tilt in dB (0: none, or not a Loud master). */
@@ -335,10 +370,11 @@ function matchSample(left: Float32Array, right: Float32Array, sampleRate: number
  * loudness and distortion are a little off the song's, by about the same at nearby pushes, so a
  * check that misses learns the difference and the sample is searched again (usually one check
  * does: a third of the work of searching the whole song). The answer is always measured on the
- * whole song. `onProgress` hears about how far it has got (0 to 0.95: the passes it will take
+ * whole song. `maxDist` is the most distortion it may use (loudMaxDistortionDb: more with Crunch).
+ * `onProgress` hears about how far it has got (0 to 0.95: the passes it will take
  * aren't known ahead).
  */
-export function matchPush(left: Float32Array, right: Float32Array, sampleRate: number, levelDb: number, targetLufs: number, clipper: ClipperSettings | undefined, ceilingDbtp: number, start?: number, onProgress?: (fraction: number) => void): LoudMatch {
+export function matchPush(left: Float32Array, right: Float32Array, sampleRate: number, levelDb: number, targetLufs: number, clipper: ClipperSettings | undefined, ceilingDbtp: number, start?: number, onProgress?: (fraction: number) => void, maxDist = MAX_DISTORTION_DB): LoudMatch {
   const dry = integratedLufs(left, right, sampleRate);
   if (!Number.isFinite(dry)) return { push: 0, lufs: dry, targetLufs, shortDb: 0, capped: false, distortionDb: -Infinity, passes: 0 };
   const delay = createLimiterKernel(sampleRate).latency;
@@ -363,7 +399,7 @@ export function matchPush(left: Float32Array, right: Float32Array, sampleRate: n
   const sample = matchSample(left, right, sampleRate, delay);
   // On the whole song first: most matches take a pass or two (from the push found last time, then
   // one step). A long song that needs more goes on with its sample
-  const first = searchPush(whole, targetLufs, MAX_DISTORTION_DB, push, sample ? 2 : MATCH_PASSES);
+  const first = searchPush(whole, targetLufs, maxDist, push, sample ? 2 : MATCH_PASSES);
   passes += first.passes;
   cleanHi = first.cleanHi;
   if (first.done || !sample || !first.last) found = first.best;
@@ -386,7 +422,7 @@ export function matchPush(left: Float32Array, right: Float32Array, sampleRate: n
     for (let round = 0; round < MATCH_SAMPLE_CHECKS; round++) {
       const off = at.lufs - check.lufs;
       const distOff = (Number.isFinite(at.dist) && Number.isFinite(check.dist) ? at.dist - check.dist : 0) - MATCH_SAMPLE_DIST_MARGIN;
-      const s = searchPush(part, targetLufs + off, MAX_DISTORTION_DB + distOff, push, MATCH_PASSES, bounds);
+      const s = searchPush(part, targetLufs + off, maxDist + distOff, push, MATCH_PASSES, bounds);
       const next = s.best ?? part(s.lo);
       // The same push again (stopped by distortion short of the target, or at the least push): the best so far is the answer
       if (Math.abs(next.push - push) < 0.02) {
@@ -396,7 +432,7 @@ export function matchPush(left: Float32Array, right: Float32Array, sampleRate: n
       }
       const got = whole(next.push);
       passes++;
-      const clean = got.dist <= MAX_DISTORTION_DB;
+      const clean = got.dist <= maxDist;
       if (clean && better(got, best)) {
         best = got;
         cleanHi = s.cleanHi;
@@ -414,7 +450,7 @@ export function matchPush(left: Float32Array, right: Float32Array, sampleRate: n
     }
     if (!found) {
       // (Not settled on the sample: the whole song, as a short one is searched)
-      const s = searchPush(whole, targetLufs, MAX_DISTORTION_DB, push);
+      const s = searchPush(whole, targetLufs, maxDist, push);
       passes += s.passes;
       if (s.best && better(s.best, best)) {
         best = s.best;

@@ -27,7 +27,7 @@ import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
 import { pill } from './pocketUi';
 import { PocketDropCheck } from './PocketDropCheck';
 import { matchLoudMaster, useMixStudio } from '../audio/mixStudio';
-import { LOUD_TARGETS, styleLoudTarget } from '../audio/effects/loudMaster';
+import { LOUD_TARGETS, POCKET_CRUNCH, styleLoudTarget } from '../audio/effects/loudMaster';
 import { listeningState } from '../audio/monitor';
 import { duckStyleFor } from '../store/duckToKick';
 
@@ -309,6 +309,7 @@ const MixAll: React.FC = () => {
   const master = useTimelineStore((s) => s.master);
   const s = useTimelineStore.getState;
   const loudOn = master.loud?.on === true;
+  const crunchOn = loudOn && (master.loud?.crunch ?? 0) > 0;
   const db = (v: number) => (v <= -59.9 ? '−∞' : v.toFixed(1));
   const ms = 'flex-1 h-8 rounded-lg border text-[13px] font-mono font-semibold';
   return (
@@ -355,6 +356,20 @@ const MixAll: React.FC = () => {
             }}
           >
             Loud
+          </button>
+          <button
+            type="button"
+            aria-pressed={crunchOn}
+            disabled={!loudOn}
+            aria-label={`Crunch: ${crunchOn ? 'on' : 'off'}. Lets the Loud master clip on purpose, heard as crunch`}
+            className={`w-full h-8 rounded-lg border text-xs font-semibold disabled:opacity-40 ${crunchOn ? 'border-rose-400 bg-rose-500/20 text-rose-100' : 'border-forge-border bg-forge-panelLight'}`}
+            onClick={() => {
+              s().setMasterLoud({ crunch: crunchOn ? 0 : POCKET_CRUNCH }, true);
+              showToast(crunchOn ? 'Crunch off: matching again, stopping before it audibly clips…' : 'Crunch on: matching again, letting it clip (the -1 dBTP limiter stays, and you hear it level-matched)…');
+              void matchLoudMaster().then((m) => m && Number.isFinite(m.lufs) && showToast(`Loud master: ${m.lufs.toFixed(1)} LUFS${m.shortDb > 0 ? ` (${m.shortDb.toFixed(1)} dB short)` : ''}`));
+            }}
+          >
+            Crunch
           </button>
           <button
             type="button"

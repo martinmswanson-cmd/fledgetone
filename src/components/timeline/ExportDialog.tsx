@@ -31,7 +31,7 @@ import {
 import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb } from '../../audio/loudness';
 import { exportCeilingDbtp } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
-import { LOUD_TARGETS, pushToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
+import { LOUD_TARGETS, loudCrunch, pushToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
 import type { MasterStats } from '../../audio/effects/masterAfter';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
@@ -322,7 +322,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const exportRate = format === 'wav' ? settings.sampleRate : lossyRate(settings.sampleRate);
   const ext = FORMAT_EXTENSION[format];
   // MP3, Ogg and a video's sound keep their peaks a little lower: encoding overshoots them
-  const ceilingDbtp = exportCeilingDbtp(videoOut ? 'mp4' : format);
+  const ceilingDbtp = exportCeilingDbtp(videoOut ? 'mp4' : format, loudCrunch(master));
   const room = useTimelineStore((s) => s.masterReverbRoom);
   const roomStyle = useTimelineStore((s) => s.masterRoomStyle);
   const masterFx = { reverbDecay, delayTime, delayFeedback, ...(room ? { room } : {}), ...(roomStyle !== 'hall' ? { roomStyle } : {}) };
