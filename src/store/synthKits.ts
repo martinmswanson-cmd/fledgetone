@@ -84,9 +84,11 @@ export const isKitSeed = (design: DrumDesign): boolean => {
  * The design a track turning into a Designed Kit starts from: a synthesized kit's sounds when it's
  * on one (Edit in Drum Designer), unless it keeps a design of its own from being a Designed Kit
  * before (a kit's sounds it never changed don't count: those give way to this kit's); else its own
- * design, or a new kit. Nothing: it keeps the one it has.
+ * design, or a new kit. Nothing: it keeps the one it has. fromKit (the Edit in Drum Designer
+ * button) always starts from the kit's sounds.
  */
-export function designedKitStart(track: { instrumentKey: string; drumDesign?: DrumDesign }): { drumDesign?: DrumDesign } {
+export function designedKitStart(track: { instrumentKey: string; drumDesign?: DrumDesign }, fromKit = false): { drumDesign?: DrumDesign } {
+  if (fromKit && isSynthKit(track.instrumentKey)) return { drumDesign: synthKitDesign(track.instrumentKey) };
   const own = track.drumDesign && !isKitSeed(track.drumDesign) ? track.drumDesign : undefined;
   if (own) return {};
   if (isSynthKit(track.instrumentKey)) return { drumDesign: synthKitDesign(track.instrumentKey) };

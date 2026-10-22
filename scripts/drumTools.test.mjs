@@ -460,6 +460,8 @@ test("a Designed Kit keeps its own design through a switch to a synthesized kit 
   own.kick = D.withLayerValue(own.kick, 0, 'decay', 0.31);
   // Designed Kit -> Techno Kit (the design stays on the track) -> Designed Kit: its own design
   assert.deepEqual(K.designedKitStart({ instrumentKey: 'technoKit', drumDesign: own }), {});
+  // The Edit in Drum Designer button always starts from the kit's own sounds
+  assert.deepEqual(K.designedKitStart({ instrumentKey: 'technoKit', drumDesign: own }, true).drumDesign, K.SYNTH_KIT_DESIGNS.technoKit);
   // A synthesized kit with nothing of its own: its sounds
   assert.deepEqual(K.designedKitStart({ instrumentKey: 'technoKit' }).drumDesign, K.SYNTH_KIT_DESIGNS.technoKit);
   // Started from one kit and not changed, then on another kit: the other kit's sounds

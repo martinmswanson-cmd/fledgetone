@@ -546,7 +546,7 @@ interface TimelineState {
   /** Mute (or, if all are muted, unmute) a folder's tracks; the same for solo. One undo step. */
   toggleFolderMute: (folderId: string) => void;
   toggleFolderSolo: (folderId: string) => void;
-  setTrackInstrument: (trackId: string, instrumentKey: InstrumentKey) => void;
+  setTrackInstrument: (trackId: string, instrumentKey: InstrumentKey, opts?: { fromKit?: boolean }) => void;
   /** Put a saved sound (mySounds.ts) on a track: its instrument and every setting of it (one undo step). */
   setTrackSound: (trackId: string, sound: MySound) => void;
   /** A new track playing a saved sound. Returns its id. */
@@ -2133,7 +2133,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       });
     },
 
-    setTrackInstrument: (id, instrumentKey) => {
+    setTrackInstrument: (id, instrumentKey, opts) => {
       const current = get().tracks.find((t) => t.id === id);
       if (!current || current.instrumentKey === instrumentKey) return;
       // A bus or a Plugin track is made as one (Add Track), not by switching an instrument: a bus
@@ -2152,7 +2152,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           // A Plugin track's plugin goes with its instrument (its effects stay)
           plugin: undefined,
           // A Designed Kit starts from the synthesized kit it was (Edit in Drum Designer), else from its own design or a new one
-          ...(instrumentKey === 'designedKit' ? designedKitStart(current) : {}),
+          ...(instrumentKey === 'designedKit' ? designedKitStart(current, opts?.fromKit) : {}),
         }),
         true
       );
