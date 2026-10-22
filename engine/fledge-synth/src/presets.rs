@@ -1106,6 +1106,31 @@ pub const PRESETS: &[Preset] = &[
             ("OTT", 0.4), ("Width", 0.45), ("Level", -0.5),
         ],
     },
+    Preset {
+        name: "Bass/Driven Legato",
+        classic: false,
+        sets: &[
+            // One gritty voice that holds through a riff: detuned saws over a square, clipped
+            // twice, in the middle, playing legato and gliding into each joined note. No per-note
+            // randomness, no filter envelope and velocity left out, so a run of notes is one
+            // continuous sound: the movement is the pitch, plus a slow two-bar sweep of brightness
+            ("A position", SAW), ("A unison", 5.0), ("A detune", 0.25), ("A blend", 0.8), ("A width", 0.5),
+            ("B table", T_PULSE), ("B position", 0.5), ("B level", -3.0),
+            ("Sub level", -9.0), ("Sub path", CLEAN_SUB),
+            ("Noise level", -24.0),
+            ("Filter type", LP24), ("Cutoff", 4000.0), ("Resonance", 0.15), ("Key tracking", 0.2), ("Filter envelope", 0.0),
+            ("Amp attack", 0.002), ("Amp sustain", 1.0), ("Amp release", 0.05), ("Velocity", 0.0),
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", CUTOFF), ("LFO 3 amount 1", 0.2), ("LFO 3 target 2", A_POS), ("LFO 3 amount 2", 0.15),
+            ("Pre drive type", HARD), ("Pre drive", 10.0),
+            ("Drive type", HARD), ("Drive", 24.0), ("Drive tone", 0.4),
+            ("Band drive type", SOFT), ("Band drive", 6.0), ("Band drive mix", 0.4),
+            ("Voices", LEGATO), ("Glide", 0.05), ("Glide mode", LEGATO_ONLY),
+            ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
+            ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.3),
+            ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.4),
+            ("OTT", 0.3), ("Width", 0.8), ("Level", -4.0),
+        ],
+    },
 ];
 
 /// The bass riff the presets are measured on (see analysis.rs): two bars of 16ths, each a little
@@ -1167,6 +1192,55 @@ pub fn loop_render(values: &[f32; COUNT], bpm: f32, times: usize, one_bar: bool)
         l.extend_from_slice(&s.out[0][..n]);
         r.extend_from_slice(&s.out[1][..n]);
         t += n;
+    }
+    (l, r)
+}
+
+/// Render `values` playing RIFF twice, legato: each note held 10 ms into the next (as the app's
+/// Legato tool writes them), so a synth in Legato mode joins and glides them; left and right, at
+/// 48 kHz, plus a short tail.
+pub fn legato_render(values: &[f32; COUNT], bpm: f32) -> (Vec<f32>, Vec<f32>) {
+    use crate::synth::{Synth, BLOCK};
+    let sr = 48000.0;
+    let mut s = Synth::new(sr);
+    s.set_tempo(bpm);
+    s.params = *values;
+    for _ in 0..40 {
+        s.process(BLOCK);
+    }
+    let six = 60.0 / bpm / 4.0;
+    let n = RIFF.len() as u32;
+    let mut ev: Vec<(usize, bool, u8, u8, u32)> = vec![];
+    for t in 0..2u32 {
+        for (k, &(step, note, vel)) in RIFF.iter().enumerate() {
+            let step = t * n + step;
+            let last = t == 1 && k + 1 == RIFF.len();
+            let end = if last { (step as f32 + 1.0) * six } else { (step as f32 + 1.0) * six + 0.01 };
+            ev.push(((step as f32 * six * sr) as usize, true, note, vel, step));
+            ev.push(((end * sr) as usize, false, note, 0, step));
+        }
+    }
+    ev.sort_by_key(|e| (e.0, !e.1));
+    let total = ((2 * n) as f32 * six * sr) as usize + 2048;
+    let (mut l, mut r) = (Vec::with_capacity(total), Vec::with_capacity(total));
+    let (mut t, mut k) = (0usize, 0usize);
+    while t < total {
+        while k < ev.len() && ev[k].0 <= t {
+            let (_, on, note, vel, step) = ev[k];
+            if on {
+                s.set_position(step as f64 / 4.0);
+                s.midi(0x90, note, vel);
+            } else {
+                s.midi(0x80, note, 0);
+            }
+            k += 1;
+        }
+        let next = if k < ev.len() { ev[k].0.min(total) } else { total };
+        let m = (next - t).clamp(1, BLOCK);
+        s.process(m);
+        l.extend_from_slice(&s.out[0][..m]);
+        r.extend_from_slice(&s.out[1][..m]);
+        t += m;
     }
     (l, r)
 }
@@ -1296,13 +1370,40 @@ mod tests {
         }
     }
 
+    /// The basses that stay one sound from note to note (the clean sub, the legato bass): not
+    /// held to the per-note movement tests
+    const STEADY: [&str; 2] = ["Bass/Clean Sub", "Bass/Driven Legato"];
+
+    /// The legato bass holds through a riff of joined 16ths as one sound: no dip in level where a
+    /// note changes (no retriggered envelope, no gap: never 4 dB under its median), the timbre moving only a little from 16th
+    /// to 16th though the riff leaps octaves, and the same each time it's played
+    #[test]
+    fn the_legato_bass_holds_through_a_riff() {
+        let p = PRESETS.iter().find(|p| p.name == "Bass/Driven Legato").unwrap();
+        let (l, r) = legato_render(&p.values(), 140.0);
+        let mono: Vec<f32> = l.iter().zip(r.iter()).map(|(a, b)| 0.5 * (a + b)).collect();
+        // 10 ms RMS from 50 ms in to the end of the last note
+        let six = 60.0 / 140.0 / 4.0;
+        let end = (64.0 * six * 48000.0) as usize;
+        // (40 ms windows every 10 ms: longer than a cycle of the sub)
+        let rms = |x: &[f32], a: usize, b: usize| -> Vec<f32> { (a..b - 1920).step_by(480).map(|i| 10.0 * (x[i..i + 1920].iter().map(|v| v * v).sum::<f32>() / 1920.0 + 1e-12).log10()).collect() };
+        let db = rms(&mono, 2400, end);
+        let mut sorted = db.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = sorted[sorted.len() / 2];
+        assert!(sorted[0] >= median - 4.0, "a dip of {:.1} dB under the median", median - sorted[0]);
+        let m = crate::analysis::movement(&mono, 48000.0, 140.0);
+        assert!(m.jump <= 0.35, "{m:?}");
+        assert_eq!(legato_render(&p.values(), 140.0).0, l);
+    }
+
     /// The basses made for per-note movement move as the reference tracks' basses do on a riff
     /// of 16ths (analysis.rs): the timbre jumps from 16th to 16th (a median of at least 0.23 octave,
     /// half the 16ths over 0.25), no one rate holds most of the movement (not a constant wobble),
     /// and a riff that repeats each bar sounds alike a bar apart. (Not the clean sub: it's a sine)
     #[test]
     fn the_movement_basses_move_per_note() {
-        for p in PRESETS.iter().filter(|p| !p.classic && p.name.starts_with("Bass/") && p.name != "Bass/Clean Sub") {
+        for p in PRESETS.iter().filter(|p| !p.classic && p.name.starts_with("Bass/") && !STEADY.contains(&p.name)) {
             let (l, r) = riff_render(p, 140.0);
             let mono: Vec<f32> = l.iter().zip(r.iter()).map(|(a, b)| 0.5 * (a + b)).collect();
             let m = crate::analysis::movement(&mono, 48000.0, 140.0);
@@ -1321,7 +1422,7 @@ mod tests {
     #[test]
     fn the_movement_basses_come_back_each_bar() {
         let rc = index_of("Random repeat").unwrap();
-        for p in PRESETS.iter().filter(|p| !p.classic && p.name.starts_with("Bass/") && p.name != "Bass/Clean Sub") {
+        for p in PRESETS.iter().filter(|p| !p.classic && p.name.starts_with("Bass/") && !STEADY.contains(&p.name)) {
             let ac = |v: &[f32; COUNT]| {
                 let (l, r) = loop_render(v, 145.0, 6, true);
                 let mono: Vec<f32> = l.iter().zip(r.iter()).map(|(a, b)| 0.5 * (a + b)).collect();

@@ -26,6 +26,7 @@ export const FLEDGE_PRESETS = [
   'Bass/Talking Growl', 'Bass/Riddim Cell', 'Bass/Colour Chord Stab', 'Bass/Neuro Reese', 'Bass/Dive Screech', 'Bass/Clean Sub',
   'Lead/Hardcore Supersaw', 'Pad/Wide Wash', 'Keys/Bright Pluck',
   'Bass/Crunch Formant', 'Bass/Resample Chop', 'Bass/Clipped Square', 'Bass/Hard Clip Stab', 'Lead/Chip Crunch',
+  'Bass/Driven Legato',
 ];
 
 /** The preset a new Fledge Synth track starts on in Pocket. */
@@ -82,6 +83,7 @@ export const FLEDGE_MACRO_NAMES: Record<string, string[]> = {
   'Bass/Clipped Square': ['Bright', 'Width', 'Grit'],
   'Bass/Hard Clip Stab': ['Bright', 'Spread', 'Grit'],
   'Lead/Chip Crunch': ['Crush', 'Warp'],
+  'Bass/Driven Legato': ['Bright', 'Shape', 'Grit'],
 };
 
 /** A parameter's stored 0..1 by its name. */
