@@ -57,3 +57,12 @@ louder and clips the bass under each hit, so it dips again), sub tilt −3, Duck
 the Driven Legato bass at +3.2 dB with a 70 Hz high-pass (the Clean Sub takes the lows), Loud master
 on Club (it stops at about −7 LUFS at its distortion cap). A crunchier variant, louder (−5.8 LUFS)
 but with the bass dipping again: `"vol":{"drums":-1},"crunch":0.85`.
+
+## Melodic takes (not signed off yet)
+
+Script: `scripts/demos/melodic-takes.js`, `arg.take` `'a'` (artcore, 175 BPM, Eb major: off-barline
+extended harmony with a secondary dominant and a borrowed iv, a four-pitch syncopated hook, grand
+piano broken chords and 16th runs, a tamed Driven Legato bass, music pump −1 dB, Loud master at −10
+LUFS, no Crunch) or `'b'` (future bass, 130 BPM, A major: lydian II and borrowed iv, a lead holding
+one colour tone over several chords, chopped chords over a wash, Duck to kick "Future bass"). Kept
+here so they can be rebuilt while the owner decides.
