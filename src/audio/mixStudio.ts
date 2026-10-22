@@ -143,7 +143,7 @@ export function matchLoudMaster(): Promise<LoudMatch | null> {
     const loud = s.master.loud;
     if (!loud?.on) return null;
     let stats: MasterStats | undefined;
-    await renderArrangement({ ...songOptions(signal), loudTargetLufs: LOUD_TARGETS[loud.target].lufs, onMasterStats: (m) => (stats = m) }, progress);
+    await renderArrangement({ ...songOptions(signal), loudTargetLufs: LOUD_TARGETS[loud.target].lufs, onMasterStats: (m) => (stats = m) }, (f) => progress(f));
     const found = stats?.loud;
     if (found && Number.isFinite(found.lufs)) useTimelineStore.getState().setMasterLoud({ push: found.push });
     return found ?? null;

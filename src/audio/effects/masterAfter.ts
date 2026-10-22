@@ -156,6 +156,7 @@ export interface MasterStats {
  * `ceilingDbtp` (the export's: see exportCeilingDbtp in limiter.ts). With `matchLufs` and a Loud
  * master, the push is found afresh to bring the sound to that loudness (see matchPush), and what
  * it found comes back in the stats. Returns what the section did (see MasterStats).
+ * `onProgress` hears how far a match has got (0 to 1; nothing without one).
  */
 export function masterAfter(
   left: Float32Array,
@@ -165,7 +166,8 @@ export function masterAfter(
   volumeDb = 0,
   ceilingDbtp = LIMITER_CEILING_DBTP,
   drops: readonly DropFrames[] = [],
-  matchLufs?: number
+  matchLufs?: number,
+  onProgress?: (fraction: number) => void
 ): MasterStats {
   const inPeak = peakOf(left, right);
   if (master.ott.on) ottChannels(left, right, sampleRate, master.ott);
@@ -182,7 +184,7 @@ export function masterAfter(
   let push = pushDb(master);
   let loud: LoudMatch | undefined;
   if (master.loud?.on && matchLufs !== undefined && Number.isFinite(matchLufs)) {
-    loud = matchPush(left, right, sampleRate, master.level, matchLufs, clip, ceilingDbtp, master.loud.push || undefined);
+    loud = matchPush(left, right, sampleRate, master.level, matchLufs, clip, ceilingDbtp, master.loud.push || undefined, onProgress && ((f) => onProgress(0.9 * f)));
     push = loud.push;
   }
   scaleChannels(left, right, Math.fround(dbToGain(master.level + push)));
@@ -190,6 +192,7 @@ export function masterAfter(
   const busy = limiterLoad(left, right, sampleRate, dbToGain(limiterAimDbtp(ceilingDbtp)));
   limitChannels(left, right, sampleRate, ceilingDbtp);
   scaleChannels(left, right, dbToGain(volumeDb));
+  if (loud) onProgress?.(1);
   const db = (v: number) => (v > 0 ? 20 * Math.log10(v) : -Infinity);
   return { inPeakDb: db(inPeak), limiterInPeakDb: db(busy.peak), limiterPeakDb: busy.peakDb, limiterBusyShare: busy.share, ...(clipper ? { clipper } : {}), ...(loud ? { loud } : {}) };
 }
@@ -231,4 +234,22 @@ function scaleChannels(left: Float32Array, right: Float32Array, gain: number): v
   if (gain === 1) return;
   for (let i = 0; i < left.length; i++) left[i] *= gain;
   if (right !== left) for (let i = 0; i < right.length; i++) right[i] *= gain;
+}
+
+/** What masterAfter works on and with, as a message (to the Worker that runs it: masterAfterRun.ts). */
+export interface MasterJob {
+  left: Float32Array;
+  /** Absent: one channel (masterAfter's left and right are then the same array). */
+  right?: Float32Array;
+  sampleRate: number;
+  master: MasterSettings;
+  volumeDb: number;
+  ceilingDbtp: number;
+  drops: DropFrames[];
+  matchLufs?: number;
+}
+
+/** masterAfter over a job's channels, in place. */
+export function runMasterJob(job: MasterJob, onProgress?: (fraction: number) => void): MasterStats {
+  return masterAfter(job.left, job.right ?? job.left, job.sampleRate, job.master, job.volumeDb, job.ceilingDbtp, job.drops, job.matchLufs, onProgress);
 }

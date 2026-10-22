@@ -455,8 +455,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs). A ring-out is
         // cut where its tails die away once it has its final level (see keepRingOut)
         const videoOpts = { ...opts, sampleRate: 48000 as const, keepRingOut: settings.normalize, ...loudOpts };
-        let audio = await renderArrangement(videoOpts, (progress) =>
-          setStatus({ kind: 'rendering', fileName, progress: progress * 0.3, detail: 'Rendering the sound' })
+        let audio = await renderArrangement(videoOpts, (progress, stage) =>
+          setStatus({ kind: 'rendering', fileName, progress: progress * 0.3, detail: stage === 'matching' ? 'Matching the loudness' : 'Rendering the sound' })
         );
         controller.signal.throwIfAborted();
         let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
@@ -520,7 +520,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           const detail = (what: string) => (many ? `${label}${what ? `: ${what}` : ''}` : what);
           // A ring-out is cut where its tails die away once it has its final level (see keepRingOut)
           const mixOpts = { ...opts, tracks: versionTracks(opts.tracks, opts.clips, version) ?? opts.tracks, keepRingOut: settings.normalize, ...loudOpts };
-          let audio = await renderArrangement(mixOpts, (progress) => setStatus({ kind: 'rendering', fileName, progress: at(progress * 0.95), detail: detail('') }));
+          let audio = await renderArrangement(mixOpts, (progress, stage) => setStatus({ kind: 'rendering', fileName, progress: at(progress * 0.95), detail: detail(stage === 'matching' ? 'Matching the loudness' : '') }));
           controller.signal.throwIfAborted();
           setStatus({ kind: 'rendering', fileName, progress: at(0.95), detail: detail('Measuring loudness') });
           let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);

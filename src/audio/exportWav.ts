@@ -15,7 +15,8 @@ import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { captureWamStates } from './wamHost';
 import { BUS_GAIN, createMixChain } from './engine';
 import { createLimiterKernel, LIMITER_CEILING_DBTP } from './effects/limiter';
-import { masterAfter, type DropFrames, type MasterStats } from './effects/masterAfter';
+import { type DropFrames, type MasterStats } from './effects/masterAfter';
+import { masterAfterOffThread } from './effects/masterAfterRun';
 import { dropMoves, isDropTrack } from '../store/dropMoves';
 import { lushReverbOf } from './effects/lushAfter';
 import { leadIntoLoop } from './introSeam';
@@ -150,7 +151,17 @@ export interface RenderOptions {
   threads?: number;
   /** Told what the master section did after the render (how hard its clipper and limiter worked), for the Mix check. */
   onMasterStats?: (stats: MasterStats) => void;
+  /** (Set by the render itself: how far a Loud master's match has got, 0 to 1.) */
+  onMatchProgress?: (fraction: number) => void;
 }
+
+/**
+ * A render's progress: 0 to 1, with the stage once it's a Loud master's match (the render done,
+ * the push into its clipper and limiter being found: see loudMaster.ts).
+ */
+export type RenderProgress = (fraction: number, stage?: 'matching') => void;
+/** The share of the progress bar the render fills when a Loud master's match follows it. */
+const RENDER_SHARE_BEFORE_MATCH = 0.6;
 
 /** Seconds of audio rendered between scheduling passes. */
 const RENDER_STEP = 1;
@@ -416,7 +427,7 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined): Pro
  *
  * Every audible track goes into one stereo mix, scaled down if needed so it doesn't clip.
  */
-export async function renderArrangement(opts: RenderOptions, onProgress?: (fraction: number) => void): Promise<AudioBuffer> {
+export async function renderArrangement(opts: RenderOptions, onProgress?: RenderProgress): Promise<AudioBuffer> {
   // Solo is resolved here as mute rather than with Channel.solo. Silent tracks aren't built at
   // all (so their notes cost nothing) and their samples aren't needed.
   const sounding = audibleTracks(opts.tracks);
@@ -709,7 +720,7 @@ interface Rendered {
  * added up and the master section runs once over the sum. If anything goes wrong with the parts,
  * it's rendered in one piece instead.
  */
-async function renderTracks(opts: RenderOptions, sounding: Track[], onProgress?: (fraction: number) => void): Promise<Rendered> {
+async function renderTracks(opts: RenderOptions, sounding: Track[], onProgress?: RenderProgress): Promise<Rendered> {
   // Counted, so the update notice waits for it (renderBusy.ts). The plugins' latest settings
   // first: they reach the tracks every few seconds otherwise, and the render builds from them
   return countedRender(async () => {
@@ -718,7 +729,18 @@ async function renderTracks(opts: RenderOptions, sounding: Track[], onProgress?:
   });
 }
 
-async function renderTracksNow(opts: RenderOptions, sounding: Track[], onProgress?: (fraction: number) => void): Promise<Rendered> {
+async function renderTracksNow(opts: RenderOptions, sounding: Track[], onProgress?: RenderProgress): Promise<Rendered> {
+  // A Loud master's match after the render takes a share of the bar of its own (it runs in a
+  // Worker: see finishMaster), so the bar keeps moving while it works
+  if (onProgress && opts.loudTargetLufs !== undefined && opts.master?.loud?.on && !opts.bypassMaster) {
+    const report = onProgress;
+    let shown = 0;
+    const show = (f: number, stage?: 'matching') => {
+      if (f > shown) report((shown = f), stage);
+    };
+    onProgress = (f) => show(RENDER_SHARE_BEFORE_MATCH * f);
+    opts = { ...opts, onMatchProgress: (f) => show(RENDER_SHARE_BEFORE_MATCH + (1 - RENDER_SHARE_BEFORE_MATCH) * f, 'matching') };
+  }
   // With the lush reverb fed, even a render in one piece goes the parts' way, as one part: its
   // reverb then runs after the render (lushAfter.ts), never as a worklet in an offline context
   const parts = (await partsFor(opts, sounding)) ?? (lushFed(opts) ? [sounding] : null);
@@ -921,7 +943,7 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
     mix.disposeLimiter();
     settleSums(native);
   });
-  finishMaster(rendered, mix.limitsAfter, opts, masterDb, plan);
+  await finishMaster(rendered, mix.limitsAfter, opts, masterDb, plan);
   onProgress?.(1);
   return { channels: finishRender(rendered, plan, opts), sampleRate, reverbImpulse };
 }
@@ -972,12 +994,17 @@ function dropFramesOf(opts: RenderOptions, plan: RenderPlan): DropFrames[] {
 /**
  * The master section after the compressor (the OTT, width, Level and limiter) run over a finished
  * render (an export's chain ends at its compressor: see createMixChain and masterAfter.ts), then
- * the master volume, which comes after it.
+ * the master volume, which comes after it. In a Worker (masterAfterRun.ts): a Loud master's match
+ * runs the clipper and limiter over the song several times, which froze the page for many seconds.
  */
-function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: RenderOptions, masterDb: number, plan: RenderPlan): void {
+async function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: RenderOptions, masterDb: number, plan: RenderPlan): Promise<void> {
   if (!limitsAfter) return;
   const [l, r] = channelsOf(rendered);
-  const stats = masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(opts.master), masterDb, opts.peakCeilingDbtp, dropFramesOf(opts, plan), opts.loudTargetLufs);
+  const stats = await masterAfterOffThread(
+    { left: l, ...(r && r !== l ? { right: r } : {}), sampleRate: rendered.sampleRate, master: normalizeMasterSettings(opts.master), volumeDb: masterDb, ceilingDbtp: opts.peakCeilingDbtp ?? LIMITER_CEILING_DBTP, drops: dropFramesOf(opts, plan), matchLufs: opts.loudTargetLufs },
+    opts.signal,
+    opts.onMatchProgress
+  );
   opts.onMasterStats?.(stats);
 }
 
@@ -1195,7 +1222,7 @@ async function renderGraphHeld(
     signal
   );
   const reverbImpulse = graph.reverbImpulse();
-  finishMaster(rendered, graph.limitsAfter, opts, masterDb, plan);
+  await finishMaster(rendered, graph.limitsAfter, opts, masterDb, plan);
   try {
     release();
   } catch (err) {
