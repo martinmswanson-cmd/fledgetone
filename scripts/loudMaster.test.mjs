@@ -29,17 +29,17 @@ const SR = 44100;
  * (a saw stack, or `dense`: saturated almost square, as a loud bass-music growl is), noise and hats.
  * About 12 dB of peaks over the body as it is; `gain` scales it all.
  */
-function drop(seconds = 8, gain = 0.6, dense = false) {
-  const n = Math.round(seconds * SR);
+function drop(seconds = 8, gain = 0.6, dense = false, sr = SR, seed = 7) {
+  const n = Math.round(seconds * sr);
   const l = new Float32Array(n);
   const r = new Float32Array(n);
-  let s = 7;
+  let s = seed;
   const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32) * 2 - 1;
   const beat = 60 / 145;
   let lp1 = 0;
   let lp2 = 0;
   for (let i = 0; i < n; i++) {
-    const t = i / SR;
+    const t = i / sr;
     const b = t % beat;
     const bar = t % (4 * beat);
     const kick = Math.exp(-b * 30) * Math.sin(2 * Math.PI * (50 + 120 * Math.exp(-b * 40)) * b) * 0.5;
@@ -73,6 +73,39 @@ test('an export with a Loud master lands within 0.5 LU of Streaming, Loud and Cl
     assert.ok(dbtp(l, r) <= -1 + 1e-6, `${id}: true peak ${dbtp(l, r).toFixed(2)} dBTP`);
     assert.equal(stats.loud.shortDb, 0);
     assert.ok(stats.loud.distortionDb <= L.MAX_DISTORTION_DB);
+  }
+});
+
+test('a long song is matched on a sample and checked on the whole: what it reports is what the whole song measures', () => {
+  // A song with sections (quiet intro, drops, a breakdown), past MATCH_SAMPLE_FROM, at a low rate to be quick
+  const sr = 22050;
+  const parts = [
+    [8, 0.05, false],
+    [40, 0.5, false],
+    [10, 0.1, false],
+    [35, 0.7, true],
+    [5, 0.02, false],
+  ].map(([seconds, gain, dense], k) => drop(seconds, gain, dense, sr, k + 3));
+  const n = parts.reduce((sum, [a]) => sum + a.length, 0);
+  assert.ok(n >= L.MATCH_SAMPLE_FROM * sr);
+  const left = new Float32Array(n);
+  const right = new Float32Array(n);
+  let at = 0;
+  for (const [a, b] of parts) {
+    left.set(a, at);
+    right.set(b, at);
+    at += a.length;
+  }
+  // Club: it distorts first (the search's long case, where the sample takes over); Loud: on target
+  for (const target of [-6, -9]) {
+    const m = L.matchPush(left, right, sr, 0, target, L.LOUD_CLIPPER, -1);
+    const [l, r] = L.clipAndLimit(left, right, sr, m.push, L.LOUD_CLIPPER, -1);
+    const got = L.integratedLufs(l, r, sr);
+    assert.ok(Math.abs(got - m.lufs) < 0.03, `${target}: reports ${m.lufs.toFixed(2)}, measures ${got.toFixed(2)}`);
+    assert.ok(m.distortionDb <= L.MAX_DISTORTION_DB, `${target}: ${m.distortionDb.toFixed(2)} dB`);
+    assert.ok(20 * Math.log10(truePeakOf([l, r])) <= -1 + 1e-6);
+    if (target === -9) assert.ok(Math.abs(got + 9) < L.MATCH_TOLERANCE + 0.02 && m.shortDb === 0, JSON.stringify(m));
+    else assert.ok(m.capped && m.shortDb > 0 && got > -8, JSON.stringify(m));
   }
 });
 
