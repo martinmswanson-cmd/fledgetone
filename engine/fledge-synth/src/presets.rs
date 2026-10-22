@@ -90,6 +90,7 @@ const S_DRAWN2: f32 = 10.0;
 const FREE: f32 = 0.0;
 // Tempo divisions (their place in SYNC_NAMES)
 const D_BAR: f32 = 2.0;
+const D_2BARS: f32 = 1.0;
 const D_QUARTER: f32 = 7.0;
 const D_EIGHTH_DOT: f32 = 8.0;
 const D_EIGHTH: f32 = 10.0;
@@ -728,16 +729,18 @@ pub const PRESETS: &[Preset] = &[
             ("Filter type", FORMANT), ("Cutoff", 350.0), ("Resonance", 0.55),
             // Each note says its own word: an envelope LFO sweeps the vowel and the table once,
             // from a place and by an amount the note picks at random
-            ("LFO 1 shape", S_DRAWN1), ("LFO 1 mode", ENVELOPE), ("LFO 1 rate (sync)", D_EIGHTH), ("LFO 1 smooth", 0.3),
+            ("LFO 1 shape", S_DRAWN1), ("LFO 1 mode", ENVELOPE), ("LFO 1 rate (sync)", D_SIXTEENTH), ("LFO 1 smooth", 0.3),
             ("LFO 1 target 2", A_POS), ("LFO 1 amount 2", 0.5),
             // (Its vowel sweep goes through the matrix: each note sweeps it its own way and depth)
-            ("Mod 9 source", SRC_LFO1), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.6), ("Mod 9 via", SRC_NRAND_BI),
+            ("Mod 9 source", SRC_LFO1), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.35), ("Mod 9 via", SRC_NRAND_BI),
             ("Shape 1 step 1", -1.0), ("Shape 1 step 2", -0.6), ("Shape 1 step 3", 0.2), ("Shape 1 step 4", 0.8), ("Shape 1 step 5", 1.0), ("Shape 1 step 6", 0.7),
             ("Shape 1 step 7", 0.2), ("Shape 1 step 8", -0.2), ("Shape 1 step 9", -0.5), ("Shape 1 step 10", -0.3), ("Shape 1 step 11", 0.3), ("Shape 1 step 12", 0.6),
             ("Shape 1 step 13", 0.4), ("Shape 1 step 14", 0.0), ("Shape 1 step 15", -0.4), ("Shape 1 step 16", -0.6), ("Shape 1 smooth", 0.8),
-            ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", CUTOFF), ("Mod 1 amount", 0.35),
-            ("Mod 2 source", SRC_NRAND), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.8),
+            ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", CUTOFF), ("Mod 1 amount", 0.3),
+            ("Mod 2 source", SRC_NRAND), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.6),
             ("Mod 3 source", SRC_NRAND), ("Mod 3 target", FMT), ("Mod 3 amount", 0.35), ("Mod 3 curve", C_EXP),
+            // Over two bars the table sweeps a little further and back (free, with the song)
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", A_POS), ("LFO 3 amount 1", 0.6),
             ("Mod 4 source", SRC_VEL), ("Mod 4 target", DRIVE), ("Mod 4 amount", 0.25),
             ("Drive type", TUBE), ("Drive", 12.0),
             ("Band drive type", SOFT), ("Band drive", 8.0), ("Band drive mix", 0.6),
@@ -745,6 +748,7 @@ pub const PRESETS: &[Preset] = &[
             ("Mod 5 source", M1), ("Mod 5 target", LFO1_RATE), ("Mod 5 amount", 0.333),
             ("Mod 6 source", M2), ("Mod 6 target", CUTOFF), ("Mod 6 amount", 0.4),
             ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
+            ("EQ on", 1.0), ("EQ high", 5.0), ("EQ high freq", 4500.0),
             ("OTT", 0.35), ("Level", -4.0),
         ],
     },
@@ -763,7 +767,11 @@ pub const PRESETS: &[Preset] = &[
             ("Chaos rate (sync)", D_SIXTEENTH),
             ("Mod 1 source", SRC_CHAOS), ("Mod 1 target", DRIVE), ("Mod 1 amount", 0.5),
             ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", RESO), ("Mod 2 amount", 0.4),
-            ("Mod 3 source", SRC_NRAND), ("Mod 3 target", A_POS), ("Mod 3 amount", 0.7),
+            ("Mod 3 source", SRC_NRAND), ("Mod 3 target", A_POS), ("Mod 3 amount", 0.45),
+            // Over two bars the pulse width sweeps a little further and back, and the drive with
+            // it (free, with the song)
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", A_POS), ("LFO 3 amount 1", 0.45),
+            ("LFO 3 target 2", DRIVE), ("LFO 3 amount 2", 0.15),
             ("Mod 4 source", SRC_CHAOS), ("Mod 4 target", CRUSH), ("Mod 4 amount", 0.5), ("Mod 4 curve", C_S),
             ("Mod 9 source", SRC_CHAOS), ("Mod 9 target", B_POS), ("Mod 9 amount", -0.6),
             ("Drive type", FOLD), ("Drive", 8.0),
@@ -783,8 +791,10 @@ pub const PRESETS: &[Preset] = &[
             ("A position", SAW), ("A unison", 7.0), ("A detune", 0.2), ("A blend", 0.75), ("A width", 0.6), ("A stack", ST_MINOR),
             ("B table", T_HARM), ("B position", 0.6), ("B unison", 3.0), ("B detune", 0.2), ("B level", -8.0), ("B stack", ST_OCT),
             ("Sub level", -7.0), ("Sub path", CLEAN_SUB),
-            ("Filter type", LP24), ("Cutoff", 900.0), ("Resonance", 0.25), ("Filter envelope", 0.45),
-            ("Filter attack", 0.0004), ("Filter decay", 0.18), ("Filter sustain", 0.15),
+            ("Filter type", LP24), ("Cutoff", 3000.0), ("Resonance", 0.25), ("Filter envelope", 0.45),
+            ("Filter attack", 0.0004), ("Filter decay", 0.18), ("Filter sustain", 0.35),
+            // Over two bars the stabs open and close a little (free, with the song)
+            ("LFO 3 shape", S_SINE), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", CUTOFF), ("LFO 3 amount 1", 0.18),
             ("Filter 2 type", COMB_P), ("Filter 2 cutoff", 261.6), ("Filter 2 key tracking", 1.0), ("Filter 2 resonance", 0.4), ("Filter 1 into 2", 1.0),
             ("Amp attack", 0.0012), ("Amp decay", 0.22), ("Amp sustain", 0.35), ("Amp release", 0.12),
             // Each stab its own colour: the comb's tuning and the brightness move per note
@@ -797,6 +807,7 @@ pub const PRESETS: &[Preset] = &[
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", F2_RES), ("Mod 6 amount", 0.5),
             ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
+            ("EQ on", 1.0), ("EQ high", 6.0), ("EQ high freq", 4000.0),
             ("OTT", 0.35), ("Width", 0.7), ("Level", 1.5),
         ],
     },
@@ -810,7 +821,7 @@ pub const PRESETS: &[Preset] = &[
             ("B position", SAW), ("B fine", 18.0), ("B unison", 2.0), ("B detune", 0.3), ("B level", -2.0),
             ("Sub level", -6.0), ("Sub path", CLEAN_SUB),
             ("Pre drive type", TUBE), ("Pre drive", 18.0),
-            ("Filter type", LP24), ("Cutoff", 1600.0), ("Resonance", 0.25),
+            ("Filter type", LP24), ("Cutoff", 6500.0), ("Resonance", 0.25),
             ("Filter 2 type", COMB_P), ("Filter 2 cutoff", 400.0), ("Filter 2 key tracking", 0.7), ("Filter 2 resonance", 0.55), ("Filter 1 into 2", 1.0),
             // The comb sweeps once per note (an envelope LFO), from a place each note picks
             ("LFO 1 shape", S_TRI), ("LFO 1 mode", ENVELOPE), ("LFO 1 rate (sync)", D_EIGHTH), ("LFO 1 smooth", 0.2),
@@ -820,10 +831,15 @@ pub const PRESETS: &[Preset] = &[
             ("Mod 2 source", SRC_NRAND), ("Mod 2 target", PRE_DRIVE), ("Mod 2 amount", 0.4),
             ("Mod 3 source", SRC_CHAOS), ("Mod 3 target", PHASER_MIX), ("Mod 3 amount", 0.4),
             ("Mod 4 source", SRC_NOTE), ("Mod 4 target", CUTOFF), ("Mod 4 amount", 0.3),
-            ("Mod 9 source", SRC_NRAND_BI), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.3),
+            ("Mod 9 source", SRC_NRAND_BI), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.25),
             ("Mod 10 source", SRC_NRAND), ("Mod 10 target", A_DETUNE), ("Mod 10 amount", 0.4),
             ("Chaos rate (sync)", D_EIGHTH), ("Chaos smooth", 0.5),
-            ("Drive type", WARM), ("Drive", 8.0),
+            // Over two bars the whole riff opens and closes a little (free, with the song): a riff
+            // that repeats each bar comes back alike, not the same
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", CUTOFF), ("LFO 3 amount 1", 0.2),
+            ("Drive type", WARM), ("Drive", 12.0),
+            // A shelf over 4 kHz: the growl's top cuts through the mix
+            ("EQ on", 1.0), ("EQ high", 7.0), ("EQ high freq", 4000.0),
             ("Phaser on", 1.0), ("Phaser rate", 0.3), ("Phaser depth", 0.7), ("Phaser feedback", 0.5), ("Phaser mix", 0.25),
             ("Voices", LEGATO), ("Glide", 0.05), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.1),
             ("Mod 5 source", M1), ("Mod 5 target", F2_CUT), ("Mod 5 amount", 0.4),
@@ -845,13 +861,16 @@ pub const PRESETS: &[Preset] = &[
             ("Pitch envelope", 12.0), ("Pitch decay", 0.09), ("Pitch envelope curve", LINEAR),
             // The FM screams on the attack and settles; how far is the note's own
             ("Mod env attack", 0.0004), ("Mod env decay", 0.2), ("Mod env sustain", 0.35),
-            ("Mod 1 source", SRC_MENV), ("Mod 1 target", FMT), ("Mod 1 amount", 0.5), ("Mod 1 via", SRC_NRAND),
-            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.6),
+            ("Mod 1 source", SRC_MENV), ("Mod 1 target", FMT), ("Mod 1 amount", 0.4), ("Mod 1 via", SRC_NRAND),
+            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.3),
             ("Mod 3 source", SRC_MENV), ("Mod 3 target", CUTOFF), ("Mod 3 amount", 0.35), ("Mod 3 curve", C_LOG),
-            ("Mod 9 source", SRC_NRAND_BI), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.2),
+            ("Mod 9 source", SRC_NRAND_BI), ("Mod 9 target", CUTOFF), ("Mod 9 amount", 0.15),
             ("LFO 1 shape", S_SINE), ("LFO 1 mode", RETRIG), ("LFO 1 sync", 0.0), ("LFO 1 rate (Hz)", 7.0), ("LFO 1 delay", 0.12), ("LFO 1 fade in", 0.1),
             ("LFO 1 target 1", PITCH), ("LFO 1 amount 1", 0.03),
+            // Over two bars the band opens and closes a little (free, with the song)
+            ("LFO 3 shape", S_TRI), ("LFO 3 mode", FREE), ("LFO 3 rate (sync)", D_2BARS), ("LFO 3 target 1", CUTOFF), ("LFO 3 amount 1", 0.15),
             ("Drive type", HARD), ("Drive", 10.0), ("Drive tone", 0.3),
+            ("EQ on", 1.0), ("EQ high", 3.0), ("EQ high freq", 5000.0),
             ("Voices", MONO), ("Glide", 0.04), ("Glide mode", LEGATO_ONLY), ("Amp release", 0.07),
             ("Mod 5 source", M1), ("Mod 5 target", FMT), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.5),
@@ -902,8 +921,12 @@ pub const PRESETS: &[Preset] = &[
         sets: &[
             ("A position", SAW), ("A unison", 8.0), ("A detune", 0.3), ("A width", 1.0),
             ("B table", T_HARM), ("B position", 0.4), ("B unison", 6.0), ("B detune", 0.25), ("B width", 1.0), ("B octave", 1.0), ("B level", -9.0),
-            ("Filter type", LP12), ("Cutoff", 1500.0), ("Resonance", 0.15), ("Key tracking", 0.3),
+            ("Filter type", LP12), ("Cutoff", 2800.0), ("Resonance", 0.15), ("Key tracking", 0.3),
             ("Amp attack", 0.6), ("Amp decay", 1.0), ("Amp sustain", 0.9), ("Amp release", 1.8),
+            // Air on top, a little less of the crowded low mids, and the chords' low notes kept in
+            // the middle (the side loses what's under 250 Hz)
+            ("EQ on", 1.0), ("EQ high", 2.5), ("EQ high freq", 7000.0), ("EQ mid", -3.0), ("EQ mid freq", 400.0),
+            ("Mono below", 250.0),
             // Slow and never quite the same twice: free drifts (with the song), a random tilt per chord note
             ("LFO 1 shape", S_DRIFT), ("LFO 1 mode", FREE), ("LFO 1 rate (sync)", D_BAR), ("LFO 1 smooth", 0.5),
             ("LFO 1 target 1", CUTOFF), ("LFO 1 amount 1", 0.15), ("LFO 1 target 2", B_POS), ("LFO 1 amount 2", 0.3),
@@ -916,7 +939,7 @@ pub const PRESETS: &[Preset] = &[
             ("Reverb on", 1.0), ("Reverb size", 0.85), ("Reverb decay", 5.0), ("Reverb mix", 0.4),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", REVERB_MIX), ("Mod 6 amount", 0.5),
-            ("Width", 1.0), ("Level", -2.0),
+            ("Width", 1.0), ("Level", -1.0),
         ],
     },
     Preset {
@@ -951,23 +974,34 @@ pub const RIFF: &[(u32, u8, u8)] = &[
 /// Render preset `p` playing RIFF at `bpm` (at 48 kHz, the song position given with each note as
 /// the host gives it), plus a short tail: left and right.
 pub fn riff_render(p: &Preset, bpm: f32) -> (Vec<f32>, Vec<f32>) {
+    loop_render(&p.values(), bpm, 1, false)
+}
+
+/// Render `values` playing RIFF `times` times over (or, `one_bar`, only its first bar: a riff
+/// that repeats each bar), the song position given with each note as the host gives it, plus a
+/// short tail: left and right, at 48 kHz.
+pub fn loop_render(values: &[f32; COUNT], bpm: f32, times: usize, one_bar: bool) -> (Vec<f32>, Vec<f32>) {
     use crate::synth::{Synth, BLOCK};
     let sr = 48000.0;
     let mut s = Synth::new(sr);
     s.set_tempo(bpm);
-    s.params = p.values();
+    s.params = *values;
     // (Settled first, as a synth is long before its first note)
     for _ in 0..40 {
         s.process(BLOCK);
     }
     let six = 60.0 / bpm / 4.0;
+    let unit = if one_bar { 16 } else { RIFF.len() as u32 };
     let mut ev: Vec<(usize, bool, u8, u8, u32)> = vec![];
-    for &(step, note, vel) in RIFF {
-        ev.push(((step as f32 * six * sr) as usize, true, note, vel, step));
-        ev.push((((step as f32 + 0.85) * six * sr) as usize, false, note, 0, step));
+    for t in 0..times as u32 {
+        for &(step, note, vel) in RIFF.iter().take(unit as usize) {
+            let step = t * unit + step;
+            ev.push(((step as f32 * six * sr) as usize, true, note, vel, step));
+            ev.push((((step as f32 + 0.85) * six * sr) as usize, false, note, 0, step));
+        }
     }
     ev.sort_by_key(|e| (e.0, e.1));
-    let total = ((32.0 * six) * sr) as usize + 2048;
+    let total = (((times as u32 * unit) as f32 * six) * sr) as usize + 2048;
     let (mut l, mut r) = (Vec::with_capacity(total), Vec::with_capacity(total));
     let (mut t, mut k) = (0usize, 0usize);
     while t < total {
@@ -987,6 +1021,36 @@ pub fn riff_render(p: &Preset, bpm: f32) -> (Vec<f32>, Vec<f32>) {
         l.extend_from_slice(&s.out[0][..n]);
         r.extend_from_slice(&s.out[1][..n]);
         t += n;
+    }
+    (l, r)
+}
+
+/// Render `values` holding a four-note chord (C3 E3 G3 B3, as pads are played) for 3 s from the
+/// song's start, then letting go for 1 s: left and right, at 48 kHz.
+pub fn chord_render(values: &[f32; COUNT]) -> (Vec<f32>, Vec<f32>) {
+    use crate::synth::{Synth, BLOCK};
+    let sr = 48000.0;
+    let mut s = Synth::new(sr);
+    s.set_tempo(140.0);
+    s.params = *values;
+    for _ in 0..40 {
+        s.process(BLOCK);
+    }
+    s.set_position(0.0);
+    const CHORD: [u8; 4] = [48, 52, 55, 59];
+    for n in CHORD {
+        s.midi(0x90, n, 100);
+    }
+    let (mut l, mut r) = (vec![], vec![]);
+    for i in 0..(sr as usize * 4 / BLOCK) {
+        if i == sr as usize * 3 / BLOCK {
+            for n in CHORD {
+                s.midi(0x80, n, 0);
+            }
+        }
+        s.process(BLOCK);
+        l.extend_from_slice(&s.out[0][..BLOCK]);
+        r.extend_from_slice(&s.out[1][..BLOCK]);
     }
     (l, r)
 }
@@ -1098,9 +1162,73 @@ mod tests {
             let m = crate::analysis::movement(&mono, 48000.0, 140.0);
             assert!(m.jump >= 0.23 && m.over_quarter >= 0.5, "{}: {m:?}", p.name);
             assert!(m.top_rate <= 0.3, "{}: {m:?}", p.name);
-            assert!(m.ac_bar >= 0.4, "{}: {m:?}", p.name);
+            assert!(m.ac_bar >= 0.4 && m.ac_bar <= 0.85, "{}: {m:?}", p.name);
             // And again: the same, sample for sample
             assert_eq!(riff_render(p, 140.0).0, l, "{}", p.name);
+        }
+    }
+
+    /// A riff that repeats each bar: the movement basses play each note the same way each bar
+    /// ("Random repeat" 1 bar, "Mono restart" on), with a slow two-bar sweep over it, so a bar
+    /// apart they're alike (as the references' basses, 0.5 to 0.8), not the same and not unlike;
+    /// with "Random repeat" at "Never" each note is new each time
+    #[test]
+    fn the_movement_basses_come_back_each_bar() {
+        let rc = index_of("Random repeat").unwrap();
+        for p in PRESETS.iter().filter(|p| !p.classic && p.name.starts_with("Bass/") && p.name != "Bass/Clean Sub") {
+            let ac = |v: &[f32; COUNT]| {
+                let (l, r) = loop_render(v, 145.0, 6, true);
+                let mono: Vec<f32> = l.iter().zip(r.iter()).map(|(a, b)| 0.5 * (a + b)).collect();
+                crate::analysis::movement(&mono, 48000.0, 145.0).ac_bar
+            };
+            let mut v = p.values();
+            let looped = ac(&v);
+            assert!((0.5..=0.85).contains(&looped), "{}: {looped:.2}", p.name);
+            v[rc] = 0.0;
+            let never = ac(&v);
+            assert!(never < looped - 0.1, "{}: never {never:.2}, each bar {looped:.2}", p.name);
+        }
+    }
+
+    /// The new growls, screech and stabs carry a bright top over 4 kHz (as modern bass sounds do),
+    /// with no harsh narrow peak; the wide pad keeps its low notes in the middle
+    #[test]
+    fn the_new_basses_are_bright_without_a_harsh_peak() {
+        for (name, presence, air) in [
+            ("Bass/Talking Growl", -17.0, -30.0),
+            ("Bass/Riddim Cell", -17.0, -24.0),
+            ("Bass/Neuro Reese", -17.0, -27.0),
+            ("Bass/Dive Screech", -17.0, -24.0),
+            ("Bass/Colour Chord Stab", -22.0, -27.0),
+        ] {
+            let p = PRESETS.iter().find(|p| p.name == name).unwrap();
+            let (l, r) = riff_render(p, 140.0);
+            let b = crate::analysis::balance(&l, &r, 48000.0);
+            assert!(b.presence >= presence && b.air >= air, "{name}: {b:?}");
+            // (Not shrill either: the top under the mids)
+            assert!(b.presence <= -12.0 && b.air <= -17.0, "{name}: {b:?}");
+            assert!(b.peak <= 8.0, "{name}: {b:?}");
+        }
+        let wash = PRESETS.iter().find(|p| p.name == "Pad/Wide Wash").unwrap();
+        let (l, r) = chord_render(&wash.values());
+        let b = crate::analysis::balance(&l, &r, 48000.0);
+        assert!(b.presence >= -22.0 && b.air >= -32.0 && b.peak <= 8.0, "{b:?}");
+        assert!(b.side_low <= -18.0, "{b:?}");
+    }
+
+    /// New presets restart their mono notes and keep more of the low end in the middle; the older
+    /// ones keep running on, with the side cut under 120 Hz, as they always sounded
+    #[test]
+    fn new_presets_restart_and_keep_the_lows_mono() {
+        let (rs, mb) = (index_of("Mono restart").unwrap(), index_of("Mono below").unwrap());
+        for p in PRESETS {
+            let v = p.values();
+            let (restart, below) = (param(rs).kind.value(v[rs]), param(mb).kind.value(v[mb]));
+            if p.classic {
+                assert!(restart == 0.0 && (below - 120.0).abs() < 0.01, "{}", p.name);
+            } else {
+                assert!(restart == 1.0 && below >= 179.0, "{}", p.name);
+            }
         }
     }
 

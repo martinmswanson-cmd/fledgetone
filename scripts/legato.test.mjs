@@ -42,6 +42,24 @@ test('the plugin host keeps notes in time order: an overlapping note-on comes be
   assert.deepEqual(order(over), ['on60', 'on62', 'off60']);
 });
 
+test('notes that only touch stay apart whichever way the rounding fell: the note-off first', () => {
+  // The last note's end a hair after the next one's start (bar positions become seconds), queued
+  // either way round
+  const late = [];
+  for (const e of [on(60, 0), off(60, 1 + 1e-12), on(62, 1)]) L.insertTimedEvent(late, e, 0);
+  assert.deepEqual(order(late), ['on60', 'off60', 'on62']);
+  const early = [];
+  for (const e of [on(60, 0), on(62, 1), off(60, 1 + 1e-12)]) L.insertTimedEvent(early, e, 0);
+  assert.deepEqual(order(early), ['on60', 'off60', 'on62']);
+  const before = [];
+  for (const e of [on(60, 0), on(62, 1 - 1e-12), off(60, 1)]) L.insertTimedEvent(before, e, 0);
+  assert.deepEqual(order(before), ['on60', 'off60', 'on62']);
+  // (The same pitch again, end to end: the old one ends, the new one sounds)
+  const again = [];
+  for (const e of [on(60, 0), off(60, 1 + 1e-12), on(60, 1)]) L.insertTimedEvent(again, e, 0);
+  assert.deepEqual(order(again), ['on60', 'off60', 'on60']);
+});
+
 test("the Legato tool's notes run into the next note, so a mono synth glides", () => {
   const N = (id, note, start) => ({ id, note, startOffset: start, duration: '16n', velocity: 0.8 });
   const l = T.legato([N('a', 'C4', 0), N('b', 'D4', 0.1003), N('c', 'E4', 0.5)], 1);

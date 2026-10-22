@@ -199,3 +199,105 @@ pub fn movement(mono: &[f32], sr: f32, bpm: f32) -> Movement {
     let mut c2 = cen.clone();
     Movement { jump: median(&mut d2), over_quarter: share(0.25), over_half: share(0.5), top_rate: conc, ac_eighth: ac(2.0 * six), ac_bar: ac(4.0 * beat), centroid: median(&mut c2) }
 }
+
+/// A sound's band balance, as the hit check measures a mix's (dB of the total), and the parts a
+/// bright preset is judged by: see `balance`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Balance {
+    /// Sub (under 60 Hz), low (60-250), low mids (250-1k), mids (1-4k), presence (4-8k), air (8k+)
+    pub bands: [f64; 6],
+    /// Presence and air against everything over 100 Hz (the part a growl's top is heard against,
+    /// its sub left out)
+    pub presence: f64,
+    pub air: f64,
+    /// The side against the middle under 150 Hz (dB)
+    pub side_low: f64,
+    /// The tallest 1/24-octave peak over 1-12 kHz above the octave around it (dB): a harsh
+    /// resonance shows as a tall one
+    pub peak: f64,
+}
+
+/// In-place radix-2 FFT (`re.len()` a power of two).
+fn fft(re: &mut [f64], im: &mut [f64]) {
+    let n = re.len();
+    let mut j = 0;
+    for i in 1..n {
+        let mut bit = n >> 1;
+        while j & bit != 0 {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j |= bit;
+        if i < j {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+    }
+    let mut len = 2;
+    while len <= n {
+        let ang = -2.0 * PI / len as f64;
+        for s in (0..n).step_by(len) {
+            for k in 0..len / 2 {
+                let (wr, wi) = ((ang * k as f64).cos(), (ang * k as f64).sin());
+                let (a, b) = (s + k, s + k + len / 2);
+                let (xr, xi) = (re[b] * wr - im[b] * wi, re[b] * wi + im[b] * wr);
+                re[b] = re[a] - xr;
+                im[b] = im[a] - xi;
+                re[a] += xr;
+                im[a] += xi;
+            }
+        }
+        len <<= 1;
+    }
+}
+
+/// The long-term power spectrum of `x` (Welch: 4096-point Hann frames, half overlapping).
+fn spectrum(x: &[f32]) -> Vec<f64> {
+    const N: usize = 4096;
+    let win: Vec<f64> = (0..N).map(|i| 0.5 - 0.5 * (2.0 * PI * i as f64 / N as f64).cos()).collect();
+    let mut acc = vec![0.0; N / 2];
+    let mut start = 0;
+    while start + N <= x.len() {
+        let mut re: Vec<f64> = (0..N).map(|i| x[start + i] as f64 * win[i]).collect();
+        let mut im = vec![0.0; N];
+        fft(&mut re, &mut im);
+        for k in 0..N / 2 {
+            acc[k] += re[k] * re[k] + im[k] * im[k];
+        }
+        start += N / 2;
+    }
+    acc
+}
+
+/// Measure the band balance of a stereo sound (`l`, `r` at `sr`).
+pub fn balance(l: &[f32], r: &[f32], sr: f32) -> Balance {
+    let mid: Vec<f32> = l.iter().zip(r).map(|(a, b)| 0.5 * (a + b)).collect();
+    let side: Vec<f32> = l.iter().zip(r).map(|(a, b)| 0.5 * (a - b)).collect();
+    let (sm, ss) = (spectrum(&mid), spectrum(&side));
+    let bin = sr as f64 / 4096.0;
+    let sum = |s: &[f64], lo: f64, hi: f64| s.iter().enumerate().filter(|(k, _)| (lo..hi).contains(&(*k as f64 * bin))).map(|(_, v)| v).sum::<f64>();
+    // (Middle and side together: left plus right power)
+    let both: Vec<f64> = sm.iter().zip(&ss).map(|(a, b)| a + b).collect();
+    let db = |x: f64| 10.0 * x.max(1e-30).log10();
+    let total = sum(&both, 20.0, 20000.0);
+    let over100 = sum(&both, 100.0, 20000.0);
+    let edges = [20.0, 60.0, 250.0, 1000.0, 4000.0, 8000.0, 20000.0];
+    let bands = std::array::from_fn(|i| db(sum(&both, edges[i], edges[i + 1]) / total));
+    // Power per Hz in 1/24 octave, against the octave around it
+    let (a, w) = (2f64.powf(1.0 / 48.0), 2f64.sqrt());
+    let mut peak = f64::NEG_INFINITY;
+    let mut f = 1000.0;
+    while f < 12000.0 {
+        let narrow = sum(&both, f / a, f * a) / (f * (a - 1.0 / a));
+        let wide = sum(&both, f / w, f * w) / (f * (w - 1.0 / w));
+        peak = peak.max(db(narrow / wide));
+        f *= a;
+    }
+    Balance {
+        bands,
+        presence: db(sum(&both, 4000.0, 8000.0) / over100),
+        air: db(sum(&both, 8000.0, 20000.0) / over100),
+        side_low: db(sum(&ss, 20.0, 150.0) / sum(&sm, 20.0, 150.0)),
+        peak,
+    }
+}

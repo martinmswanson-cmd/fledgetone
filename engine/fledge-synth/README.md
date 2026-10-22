@@ -16,8 +16,12 @@ as a Rust library for a future desktop app.
   dotted and triplet values
 - Per-note sources: note random (0..1 and −1..1), chaos (stepped random at a synced rate),
   velocity, note, release velocity, note pressure. Random values are seeded from the song
-  position and the note (and can repeat each bar), so the live playback, an export and every
-  re-export match
+  position (within "Random repeat", 1 bar at first) and the note's place in a chord struck at
+  once, not its pitch, so the live playback, an export and every re-export match, and a riff
+  that comes round (on the same notes or the next chord's) plays each step the same way
+- Mono restart: a mono or legato note that doesn't join the last starts afresh (oscillator
+  phases, filters, LFOs), the last one fading out on a spare voice over 3 ms, so a repeating riff
+  repeats exactly (older saved sounds run on, as they did)
 - A 16-slot matrix, each slot with a curve (linear, exponential, logarithmic, S) and an optional
   "via" source scaling its amount
 - Drive in three places: before the filters, after them (with a cabinet-style tone) and on the
@@ -25,7 +29,8 @@ as a Rust library for a future desktop app.
   tube (antialiased), bitcrush and downsample, each levelled so it adds grit, not volume
 - The sub is mixed in clean and mono after the drive, the OTT and the effects (older saved sounds
   keep it with the voices, as they had it)
-- Multiband upward/downward compression (OTT), effects, width, mono bass below 120 Hz and a
+- Multiband upward/downward compression (OTT), effects, width, mono below a set frequency (180 Hz
+  in new sounds, 120 Hz in older ones: after the unison, chorus and width) and a
   safety clipper that never lets a note pass −1 dB
 - Built-in presets for bass music, leads, chords and pads
 
@@ -33,7 +38,9 @@ Saved sounds keep their sound: parameters are only ever added at the end, and a 
 with fewer of them loads with the new ones set as it sounded then (`bb_legacy`).
 `tests/legacy_sound.rs` renders every older preset and an older saved sound and compares them
 with numbers taken from the engine before the change. `cargo run --release --example movement`
-measures how the presets' timbre moves on a riff of 16ths (src/analysis.rs).
+measures how the presets' timbre moves on a riff of 16ths (src/analysis.rs), and how alike a riff
+that repeats each bar is a bar apart; `cargo run --release --example bands` measures each preset's
+band balance (presence and air, the low end's width, the sharpest narrow peak).
 
 ## Build
 

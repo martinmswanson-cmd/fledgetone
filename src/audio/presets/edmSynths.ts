@@ -14,6 +14,7 @@ import {
   releaseConstant,
   releaseTail,
 } from './native';
+import { createMonoLows } from './widen';
 
 /**
  * The EDM poly synths: Supersaw and Pluck. Every note is its own handful of plain Web Audio
@@ -62,7 +63,7 @@ const SUPERSAW_PEAK = 0.185;
 /**
  * Supersaw: seven detuned saws per note, spread left and right, with a soft attack and a release
  * that carries one chord into the next (1.5 s to fade 40 dB), through a fixed low-pass (and a
- * high-pass that leaves the low end to the bass).
+ * high-pass that leaves the low end to the bass), its lows kept in the middle (widen.ts).
  */
 export function createSupersaw(output: Tone.InputNode) {
   const { bus, raw, input } = createBus(output);
@@ -70,8 +71,10 @@ export function createSupersaw(output: Tone.InputNode) {
   // Shared and fixed: a filter whose settings don't change costs nothing while no note plays
   const highpass = createFilter(raw, 'highpass', 140, 0);
   const lowpass = createFilter(raw, 'lowpass', 7000, 0);
+  // (Its saws spread left and right: a chord's low notes are kept in the middle)
+  const monoLows = createMonoLows(raw, input);
   highpass.connect(lowpass);
-  lowpass.connect(input);
+  lowpass.connect(monoLows.input);
   const release = 1.5;
 
   const playNote = (n: PlayableNote, start: number) => {
@@ -114,6 +117,7 @@ export function createSupersaw(output: Tone.InputNode) {
       voices.stopAll();
       highpass.disconnect();
       lowpass.disconnect();
+      monoLows.disconnect();
       bus.dispose();
     },
   };

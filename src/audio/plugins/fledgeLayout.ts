@@ -134,6 +134,8 @@ export const FLEDGE_SECTIONS = {
   chaos: { rate: choice('Chaos rate (sync)', 'Chaos rate', FLEDGE_SYNC, CAP.sync), smooth: knob('Chaos smooth', 'Smooth'), cycle: choice('Random repeat', 'Repeats every', FLEDGE_RANDOM_CYCLES, CAP.cycle) },
   macros: [1, 2, 3, 4].map((n) => knob(`Macro ${n}`, `Macro ${n}`)),
   play: { mode: choice('Voices', 'Voices', FLEDGE_MODES, CAP.mode), knobs: [knob('Glide', 'Glide'), knob('Bend range', 'Bend'), knob('Velocity', 'Velocity')] },
+  /** Mono and legato: a note that doesn't join the last starts afresh (so a repeating riff repeats) */
+  monoRestart: toggle('Mono restart', 'Restart each note'),
   glide: [choice('Glide mode', 'Glide', FLEDGE_GLIDE_MODES, CAP.glide), choice('Glide rate', 'Glide time', FLEDGE_GLIDE_RATES, CAP.glide), choice('Glide curve', 'Glide curve', FLEDGE_GLIDE_CURVES, CAP.glide)],
   eq: { on: toggle('EQ on', 'On'), knobs: [knob('EQ low', 'Low', true), knob('EQ low freq', 'Low freq'), knob('EQ mid', 'Mid', true), knob('EQ mid freq', 'Mid freq'), knob('EQ high', 'High', true), knob('EQ high freq', 'High freq')] },
   chorus: { on: toggle('Chorus on', 'On'), knobs: [knob('Chorus rate', 'Rate'), knob('Chorus depth', 'Depth'), knob('Chorus mix', 'Mix')] },
@@ -147,7 +149,7 @@ export const FLEDGE_SECTIONS = {
     knobs: [knob('Delay feedback', 'Feedback'), knob('Delay tone', 'Tone'), knob('Delay mix', 'Mix')],
   },
   reverb: { on: toggle('Reverb on', 'On'), knobs: [knob('Reverb size', 'Size'), knob('Reverb decay', 'Decay'), knob('Reverb tone', 'Tone'), knob('Reverb pre-delay', 'Pre-delay'), knob('Reverb mix', 'Mix')] },
-  output: [knob('OTT', 'OTT'), knob('OTT time', 'OTT time'), knob('Width', 'Width'), knob('Level', 'Level')],
+  output: [knob('OTT', 'OTT'), knob('OTT time', 'OTT time'), knob('Width', 'Width'), knob('Mono below', 'Mono below'), knob('Level', 'Level')],
 };
 
 /** Every control on the panel (the test checks each against the engine). */
