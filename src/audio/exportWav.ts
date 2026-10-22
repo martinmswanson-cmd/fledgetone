@@ -1222,13 +1222,16 @@ async function renderGraphHeld(
     signal
   );
   const reverbImpulse = graph.reverbImpulse();
-  await finishMaster(rendered, graph.limitsAfter, opts, masterDb, plan);
+  const limitsAfter = graph.limitsAfter;
+  // Let the graph go before the master section: it's done with, and a cancel during the Loud
+  // match (which can take a while) mustn't keep it alive
   try {
     release();
   } catch (err) {
     // (The render is done: a node that won't be let go doesn't spoil it)
     console.warn('Letting go of a finished render failed:', err);
   }
+  await finishMaster(rendered, limitsAfter, opts, masterDb, plan);
   onProgress?.(1);
   return { rendered, plan, reverbImpulse };
 
