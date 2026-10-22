@@ -105,6 +105,17 @@ test("the mono bass high-pass is Web Audio's, whose Q for a high-pass is in dB",
   assert.ok(Math.abs(mag - 10 ** (Math.fround(MONO_BASS_Q) / 20)) < 1e-6, `|H| ${mag}`);
 });
 
+test('the mono bass high-pass never lifts the side signal (Butterworth: no bump over its cutoff)', () => {
+  const c = webAudioHighpass(MONO_BASS_HZ, MONO_BASS_Q, SR);
+  for (let hz = 20; hz < 20000; hz *= 1.05) {
+    const w = (2 * Math.PI * hz) / SR;
+    const num = [c[0] + c[1] * Math.cos(w) + c[2] * Math.cos(2 * w), -c[1] * Math.sin(w) - c[2] * Math.sin(2 * w)];
+    const den = [1 + c[3] * Math.cos(w) + c[4] * Math.cos(2 * w), -c[3] * Math.sin(w) - c[4] * Math.sin(2 * w)];
+    const db = 20 * Math.log10(Math.hypot(...num) / Math.hypot(...den));
+    assert.ok(db <= 1e-3, `${hz.toFixed(0)} Hz: ${db.toFixed(2)} dB`);
+  }
+});
+
 test('the Level turns the mix up into the limiter, which still holds the peaks', () => {
   const d = defaultMasterSettings();
   const [l, r] = mix(2);

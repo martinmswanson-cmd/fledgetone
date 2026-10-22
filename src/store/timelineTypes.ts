@@ -12,6 +12,7 @@ import { frameSeconds, isDropFrame } from '../audio/timecode';
 import type { Bass808Settings } from './bass808';
 import { normalizeBassDrive, type BassDriveFx, type SubLayer } from './bassTools';
 import { normalizeClipper, type ClipperSettings } from '../audio/effects/clipper';
+import { normalizeDuckPoints, PUMP_SHAPES, type DuckPoint, type PumpShape } from '../audio/effects/duckShape';
 
 export type { InstrumentKey };
 
@@ -35,9 +36,19 @@ export type FilterType = (typeof FILTER_TYPES)[number];
 export const FILTER_SLOPES = [12, 24] as const;
 export type FilterSlope = (typeof FILTER_SLOPES)[number];
 
-/** What makes the Pump duck: every kick drum note (C1 on a sounding drum kit), every beat, every 8th, or every note of one track (`source`). */
-export const PUMP_TRIGGERS = ['kick', 'beat', 'eighth', 'track'] as const;
+/**
+ * What makes the Pump duck: every kick drum note (C1 on a sounding drum kit), every snare (D1)
+ * or clap (D#1), both kick and snare, every beat, every 8th, or every note of one track (`source`).
+ */
+export const PUMP_TRIGGERS = ['kick', 'beat', 'eighth', 'track', 'snare', 'kickSnare'] as const;
 export type PumpTrigger = (typeof PUMP_TRIGGERS)[number];
+/** The drum hits a Pump can follow, as the scheduler reports them. */
+export type DrumHit = 'kick' | 'snare';
+/** Whether a Pump following `trigger` ducks on a `hit`. */
+export const pumpHears = (trigger: PumpTrigger | null | undefined, hit: DrumHit): boolean => trigger === hit || trigger === 'kickSnare';
+/** Whether a Pump following `trigger` ducks on drum hits at all (kick, snare or both). */
+export const pumpFollowsDrums = (trigger: PumpTrigger | null | undefined): boolean => trigger === 'kick' || trigger === 'snare' || trigger === 'kickSnare';
+export type { PumpShape, DuckPoint };
 
 /**
  * Per-track insert effects, in signal order: Distortion -> (EQ) -> Compressor -> Chorus -> Filter
@@ -81,11 +92,15 @@ export interface TrackFx {
     on: boolean;
     /** How far the volume ducks at each trigger, 0 to 1 */
     depth: number;
-    /** How long it takes to swell back to full volume, 50 ms to 600 ms */
+    /** How long it takes to swell back to full volume, 50 ms to 600 ms (with a shape: the whole duck's length) */
     release: number;
     trigger: PumpTrigger;
     /** The track whose notes it ducks to (trigger 'track') */
     source?: string;
+    /** How it dips and comes back (effects/duckShape.ts). Absent: 'smooth', the Pump's original shape. */
+    shape?: PumpShape;
+    /** The drawn shape's points (shape 'drawn'), [x 0..1 over the duck, y 0..1 of the depth]. */
+    points?: DuckPoint[];
   };
   /** Lo-fi: bit crushing, a darker top and tape wow. */
   lofi: {
@@ -340,6 +355,8 @@ export function normalizeTrackFx(raw: unknown): TrackFx {
       release: num(pum.release, d.pump.release, PUMP_RELEASE_MIN, PUMP_RELEASE_MAX),
       trigger: oneOf(pum.trigger, PUMP_TRIGGERS, d.pump.trigger),
       ...(typeof pum.source === 'string' ? { source: pum.source } : {}),
+      ...(PUMP_SHAPES.includes(pum.shape as PumpShape) && pum.shape !== 'smooth' ? { shape: pum.shape as PumpShape } : {}),
+      ...(normalizeDuckPoints(pum.points) ? { points: normalizeDuckPoints(pum.points) } : {}),
     },
     lofi: {
       on: lof.on === true,
@@ -512,6 +529,50 @@ export interface MasterSettings {
   clipper?: ClipperSettings;
   /** Glue (store/glueMix.ts): present while it's on, with what it changed so switching it off can put it back. */
   glueMix?: GlueRecord;
+  /**
+   * Everything below MONO_BASS_HZ (120 Hz) in the middle, whether the Stereo width is on or not.
+   * Absent: off (projects from before it existed); new songs start with it on.
+   */
+  monoLow?: boolean;
+  /** The Loud master (effects/loudMaster.ts): mono lows, a sub tilt, the clipper and the limiter pushed to a loudness target. Absent: off. */
+  loud?: LoudSettings;
+}
+
+/** Where a Loud master is aimed (see LOUD_TARGETS in effects/loudMaster.ts). */
+export const LOUD_TARGET_IDS = ['streaming', 'loud', 'club'] as const;
+export type LoudTargetId = (typeof LOUD_TARGET_IDS)[number];
+
+export interface LoudSettings {
+  on: boolean;
+  /** The loudness it's pushed to: Streaming (-14 LUFS), Loud (-9) or Club (-6) */
+  target: LoudTargetId;
+  /** dB of gain into the clipper and limiter, LOUD_PUSH_MIN to LOUD_PUSH_MAX: found by matching the song to the target (exports find it afresh) */
+  push: number;
+  /** A low shelf at 90 Hz, dB (LOUD_TILT_MIN to LOUD_TILT_MAX): more or less sub; 0 leaves it */
+  subTilt: number;
+}
+
+export const LOUD_PUSH_MIN = -12;
+export const LOUD_PUSH_MAX = 14;
+export const LOUD_TILT_MIN = -4;
+export const LOUD_TILT_MAX = 4;
+
+/** A Loud master as it's first switched on. */
+export function defaultLoud(): LoudSettings {
+  return { on: false, target: 'loud', push: 0, subTilt: 0 };
+}
+
+/** Fill in any missing / out-of-range Loud settings (hand-edited files). */
+export function normalizeLoud(raw: unknown): LoudSettings {
+  const d = defaultLoud();
+  const r = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  const num = (v: unknown, fallback: number, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback);
+  return {
+    on: r.on === true,
+    target: LOUD_TARGET_IDS.includes(r.target as LoudTargetId) ? (r.target as LoudTargetId) : d.target,
+    push: num(r.push, d.push, LOUD_PUSH_MIN, LOUD_PUSH_MAX),
+    subTilt: num(r.subTilt, d.subTilt, LOUD_TILT_MIN, LOUD_TILT_MAX),
+  };
 }
 
 export const OTT_GAIN_MIN = -12;
@@ -563,7 +624,16 @@ export function normalizeMasterSettings(raw: unknown): MasterSettings {
     level: num(r.level, d.level, LEVEL_MIN, LEVEL_MAX),
     ...(r.clipper !== undefined ? { clipper: normalizeClipper(r.clipper) } : {}),
     ...(r.glueMix !== undefined && normalizeGlueRecord(r.glueMix) ? { glueMix: normalizeGlueRecord(r.glueMix) } : {}),
+    // Absent in projects from before it existed: off, as they sounded
+    ...(r.monoLow === true ? { monoLow: true } : {}),
+    ...(r.loud !== undefined ? { loud: normalizeLoud(r.loud) } : {}),
   };
+}
+
+/** True when two Loud settings sound the same (absent counts as off). */
+function sameLoud(a: LoudSettings | undefined, b: LoudSettings | undefined): boolean {
+  if (!a?.on || !b?.on) return !a?.on && !b?.on;
+  return a.target === b.target && a.push === b.push && a.subTilt === b.subTilt;
 }
 
 /** True when two clippers are set the same (absent counts as an unchanged default, off). */
@@ -585,7 +655,9 @@ export function sameMasterSettings(a: MasterSettings, b: MasterSettings): boolea
     a.width.amount === b.width.amount &&
     a.width.monoBass === b.width.monoBass &&
     a.level === b.level &&
-    sameClipper(a.clipper, b.clipper)
+    sameClipper(a.clipper, b.clipper) &&
+    !!a.monoLow === !!b.monoLow &&
+    sameLoud(a.loud, b.loud)
   );
 }
 

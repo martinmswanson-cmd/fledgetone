@@ -6,7 +6,8 @@
  */
 import { controlRun, planControlEvents, type ControlRun } from '../controlEvents';
 import * as Tone from 'tone';
-import type { AutomationParam, GateRate, PumpTrigger, Track } from '../../store/timelineTypes';
+import { pumpHears, type AutomationParam, type GateRate, type PumpTrigger, type Track } from '../../store/timelineTypes';
+import { shapePoints } from './duckShape';
 import { GATE_TICKS } from '../../store/timelineTypes';
 import { activeLanes, parseParam, specOf } from '../automation';
 import { roomSendLevel } from './distance';
@@ -88,8 +89,8 @@ export interface TrackStrip {
   apply: (track: Track, opts?: { ramp?: number; muteOverride?: boolean }) => void;
   /** What the Pump follows, or null while it's off. */
   pumpTrigger: () => PumpTrigger | null;
-  /** A `source` trigger at `time`: the Pump ducks if it follows that source (for 'track', the notes of `fromTrack`). */
-  pump: (time: number, source: PumpTrigger, fromTrack?: string) => void;
+  /** A `source` trigger at `time`: the Pump ducks if it follows that source (a kick or snare for 'kickSnare'; for 'track', the notes of `fromTrack`). */
+  pump: (time: number, source: 'kick' | 'snare' | 'beat' | 'eighth' | 'track', fromTrack?: string) => void;
   /** The track a 'track'-triggered Pump follows, or null. */
   pumpSource: () => string | null;
   /** The Gate's speed, or null while it's off. */
@@ -762,6 +763,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
           break;
         case 'pump':
           pump?.setShape(fx.pump.depth, fx.pump.release / 1000);
+          pump?.setCurve(shapePoints(fx.pump.shape, fx.pump.points));
           break;
       }
     });
@@ -1127,6 +1129,7 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       if (fx.pump?.on) {
         pump ??= createLightPump();
         pump.setShape(fx.pump.depth, fx.pump.release / 1000);
+        pump.setCurve(shapePoints(fx.pump.shape, fx.pump.points));
         pumpTrigger = fx.pump.trigger;
         pumpSource = fx.pump.trigger === 'track' ? fx.pump.source ?? null : null;
       } else {
@@ -1211,7 +1214,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
       return p;
     },
     pump: (time, source, fromTrack) => {
-      if (pump && source === pumpTrigger && (source !== 'track' || fromTrack === pumpSource)) pump.trigger(time);
+      if (!pump) return;
+      const hears = source === 'kick' || source === 'snare' ? pumpHears(pumpTrigger, source) : source === pumpTrigger && (source !== 'track' || fromTrack === pumpSource);
+      if (hears) pump.trigger(time);
     },
     automationTargets: (param) => {
       if (!owned.has(param)) return null;

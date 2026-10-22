@@ -3,9 +3,13 @@
  * the Level and the clipper before the limiter, the reference track and the mix check, the playback buffering choice and the browser's audio delay, and the instruments kept for offline use (with whether the browser keeps this storage).
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Activity, Download, Gauge, MoveHorizontal, RotateCcw, Scissors, Snowflake, Timer, Volume2 } from 'lucide-react';
+import { Activity, Download, Ear, Flame, Gauge, MoveHorizontal, RotateCcw, Scissors, Snowflake, Timer, Volume2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { defaultMasterSettings, GLUE_STYLE_IDS, LEVEL_MAX, LEVEL_MIN, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX } from '../../store/timelineTypes';
+import { defaultLoud, defaultMasterSettings, GLUE_STYLE_IDS, LEVEL_MAX, LEVEL_MIN, LOUD_TARGET_IDS, LOUD_TILT_MAX, LOUD_TILT_MIN, OTT_GAIN_MAX, OTT_GAIN_MIN, WIDTH_MAX, type LoudTargetId } from '../../store/timelineTypes';
+import { LOUD_TARGETS, type LoudMatch } from '../../audio/effects/loudMaster';
+import { matchLoudMaster, useMixStudio } from '../../audio/mixStudio';
+import { MONITOR_TARGET_LUFS, setListeningMatched } from '../../audio/monitor';
+import { useListening } from '../useListening';
 import type { GlueStyle } from '../../store/timelineTypes';
 import { GLUE_STYLES, onClipperReading } from '../../audio/effects/masterChain';
 import { CLIPPER_CEILING_MIN, CLIPPER_DRIVE_MAX, defaultClipper } from '../../audio/effects/clipper';
@@ -159,6 +163,88 @@ export const WidthPanel: React.FC = () => {
   );
 };
 
+/** Mono below 120 Hz, whether the Width is on or not (a wide pad's low notes, a stereo bass). */
+export const MonoLowPanel: React.FC = () => {
+  const monoLow = useTimelineStore((s) => s.master.monoLow === true);
+  const loud = useTimelineStore((s) => s.master.loud?.on === true);
+  return (
+    <label data-search="mono bass low end middle" className="flex items-start gap-2 rounded-md border border-forge-border bg-forge-panel/60 p-2 text-[10px] font-mono text-forge-muted cursor-pointer">
+      <input type="checkbox" checked={monoLow || loud} disabled={loud} onChange={(e) => useTimelineStore.getState().setMasterMonoLow(e.target.checked)} className="mt-0.5 accent-sky-400" />
+      <span>
+        <span className="text-forge-text font-semibold">Mono below 120 Hz</span>: everything under 120 Hz in the middle, with the Width on or off, so the sub stays solid on a club system and doesn't vanish on a phone.
+        {loud && ' (Always on with the Loud master.)'}
+      </span>
+    </label>
+  );
+};
+
+/**
+ * The Loud master: mono lows, a sub tilt, the clipper and the limiter pushed to a loudness target
+ * (Streaming, Loud or Club). Match finds the push for this song; exports find it afresh.
+ */
+export const LoudPanel: React.FC = () => {
+  const loud = useTimelineStore((s) => s.master.loud) ?? defaultLoud();
+  const set = useTimelineStore.getState().setMasterLoud;
+  const busy = useMixStudio((s) => s.busy);
+  const [found, setFound] = useState<LoudMatch | null>(null);
+  const accent = '#f43f5e';
+  const target = LOUD_TARGETS[loud.target];
+  const match = async () => setFound(await matchLoudMaster());
+  return (
+    <InsertPanel
+      title="Loud master"
+      icon={<Flame className="w-3.5 h-3.5" style={{ color: accent }} />}
+      on={loud.on}
+      onToggle={() => {
+        set({ on: !loud.on });
+        // Switched on: matched to its target at once, so what plays is what exports
+        if (!loud.on) void match();
+      }}
+      accent={accent}
+    >
+      <p className="text-[10px] text-forge-muted">
+        Makes the song as loud as its style: the lows in the middle, then a soft clipper shaves the drum peaks and the limiter holds the rest under -1 dBTP, pushed until the song reaches the target. You hear it level-matched (see Playback), so it won't blast you; the export is the loud one.
+      </p>
+      <label className={`flex items-center gap-2 text-[10px] font-mono ${loud.on ? '' : 'opacity-45'}`}>
+        <span className="w-16 shrink-0 text-forge-muted uppercase">Target</span>
+        <select
+          value={loud.target}
+          disabled={!loud.on}
+          onChange={(e) => {
+            set({ target: e.target.value as LoudTargetId }, true);
+            void match();
+          }}
+          className="flex-1 min-w-0 h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text"
+          aria-label="Loudness target"
+        >
+          {LOUD_TARGET_IDS.map((id) => (
+            <option key={id} value={id}>
+              {LOUD_TARGETS[id].name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className={`text-[10px] text-forge-muted ${loud.on ? '' : 'opacity-45'}`}>{target.about}</p>
+      <FxSlider label="Sub tilt" value={loud.subTilt} min={LOUD_TILT_MIN} max={LOUD_TILT_MAX} step={0.5} format={db} onChange={(v) => set({ subTilt: v })} reset={0} accent={accent} disabled={!loud.on} />
+      <div className={`flex items-center gap-2 ${loud.on ? '' : 'opacity-45 pointer-events-none'}`}>
+        <button
+          type="button"
+          onClick={() => void match()}
+          disabled={!loud.on || !!busy}
+          className="px-2 py-0.5 rounded border text-[10px] font-mono font-bold border-rose-400/60 text-rose-100 hover:bg-rose-500/15 disabled:opacity-50"
+          title="Play the song through the master (faster than real time), find how hard to push it to reach the target, and keep that, so what you hear is what exports"
+        >
+          {busy?.what === 'Matching the loudness' ? `Matching… ${Math.round(busy.progress * 100)}%` : 'Match'}
+        </button>
+        <span className="text-[10px] font-mono text-forge-muted" data-testid="loud-push">
+          Push {db(loud.push)}
+          {found && Number.isFinite(found.lufs) && ` · reached ${found.lufs.toFixed(1)} LUFS${found.shortDb > 0 ? ` (${found.shortDb.toFixed(1)} dB short: it would take more than it can do cleanly)` : ''}`}
+        </span>
+      </div>
+    </InsertPanel>
+  );
+};
+
 /** The master Level: the whole mix up or down, after the OTT and width, just before the limiter. */
 export const LevelPanel: React.FC = () => {
   const level = useTimelineStore((s) => s.master.level);
@@ -269,6 +355,7 @@ export const PlaybackPanel: React.FC = () => {
         ))}
       </div>
       <p className="text-[10px] text-forge-muted">{MODES.find((m) => m.mode === chosen)!.detail}</p>
+      <ListeningSetting />
       <AudioDelay />
       <AutoFreezeSetting />
       {chosen !== PLAYBACK_MODE && (
@@ -279,6 +366,25 @@ export const PlaybackPanel: React.FC = () => {
           </button>
         </div>
       )}
+    </div>
+  );
+};
+
+/** Level-matched listening on or off (monitor.ts), with what it's doing now. Kept in this browser. */
+const ListeningSetting: React.FC = () => {
+  const { reading, matched } = useListening();
+  return (
+    <div className="flex flex-col gap-1 pt-1 border-t border-forge-border/60" data-search="listening level matched loudness volume ear safe">
+      <label className="flex items-center gap-2 text-[11px] text-white cursor-pointer" title="You hear every song at about the same loudness (about -15 LUFS), however loud the master makes it; the exported file isn't changed. The level comes up slowly, never with a jump, and a safety limiter keeps your ears safe.">
+        <input type="checkbox" checked={matched} onChange={(e) => setListeningMatched(e.target.checked)} className="accent-emerald-400" />
+        <Ear className="w-3 h-3 text-emerald-300" />
+        Listening level-matched
+      </label>
+      <p className="text-[10px] text-forge-muted">
+        {matched
+          ? `What you hear is kept at about ${MONITOR_TARGET_LUFS} LUFS${reading ? `: ${reading.gainDb > 0 ? '+' : ''}${reading.gainDb.toFixed(1)} dB now` : ''}. Exports are never changed by it, or by the volume slider.`
+          : 'Off: you hear the master as loud as it is (the safety limiter stays on). Exports are never changed by the volume slider.'}
+      </p>
     </div>
   );
 };
@@ -428,7 +534,9 @@ export const MasterPanels: React.FC = () => (
     <GluePanel />
     <OttPanel />
     <WidthPanel />
+    <MonoLowPanel />
     <LevelPanel />
+    <LoudPanel />
     <ClipperPanel />
     <ReferencePanel />
     <MixCheckPanel />

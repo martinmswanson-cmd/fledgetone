@@ -1,20 +1,31 @@
 /**
- * Pocket's one export: the whole song as an MP3 at the streaming loudness (the studio's Export
- * dialog with its defaults: the song from bar 1, ringing out, matched to the default loudness
- * target, peaks held under the lossy ceiling). Uses the same render as the studio, so the file
- * sounds the same whichever made it.
+ * Pocket's one export: the whole song as an MP3 at a loudness target (the studio's Export dialog
+ * with its defaults: the song from bar 1, ringing out, matched to the target, peaks held under
+ * the lossy ceiling). The target is the Loud master's when it's on (Pocket's Loud button aims it
+ * at the drop check's style), else Streaming; the Share screen can pick another. With the Loud
+ * master on the push into its clipper and limiter is found afresh (and kept for live playback);
+ * otherwise the file is turned up or down and limited as the studio does. Uses the same render as
+ * the studio, so the file sounds the same whichever made it.
  */
 import { countedRender } from '../audio/renderBusy';
 import { audibleTracks, channelsOf, cutRingOut, renderArrangement, type RenderOptions } from '../audio/exportWav';
 import { measureLoudness } from '../audio/loudness';
 import { DEFAULT_TARGET, reachTarget, targetById } from '../audio/loudnessTarget';
 import { exportCeilingDbtp } from '../audio/effects/limiter';
+import type { LoudMatch } from '../audio/effects/loudMaster';
+import type { MasterStats } from '../audio/effects/masterAfter';
 import { encodeAudio } from '../audio/encoders';
 import { useTimelineStore } from '../store/timelineStore';
 import { safeFileName } from '../store/project';
 
 /** Render the song to an MP3 (`onProgress` 0 to 1 while rendering). Null when the song has nothing in it. */
-export function renderSongMp3(onProgress: (fraction: number, detail: string) => void): Promise<{ blob: Blob; name: string } | null> {
+/** The target Pocket's MP3 aims at unless another is picked: the Loud master's, else Streaming. */
+export function pocketTarget(): string {
+  const loud = useTimelineStore.getState().master.loud;
+  return loud?.on ? loud.target : DEFAULT_TARGET;
+}
+
+export function renderSongMp3(onProgress: (fraction: number, detail: string) => void, targetId: string = pocketTarget()): Promise<{ blob: Blob; name: string; lufs: number } | null> {
   return countedRender(async () => {
     const s = useTimelineStore.getState();
     // The render swaps the global audio context while it sets up, so live playback halts first
@@ -47,13 +58,18 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
       peakCeilingDbtp: ceilingDbtp,
       keepRingOut: true,
     };
+    const target = targetById(targetId);
+    const loud = !!s.master.loud?.on;
+    let found: LoudMatch | undefined;
+    if (loud) Object.assign(opts, { loudTargetLufs: target.lufs, onMasterStats: (m: MasterStats) => (found = m.loud) });
     let audio = await renderArrangement(opts, (f) => onProgress(f, 'Playing the song through'));
     onProgress(1, 'Matching the loudness');
-    const reading = await measureLoudness(channelsOf(audio), audio.sampleRate);
-    await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(DEFAULT_TARGET), undefined, ceilingDbtp);
+    let reading = await measureLoudness(channelsOf(audio), audio.sampleRate);
+    if (!loud) reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, target, undefined, ceilingDbtp)).reading;
+    else if (found && Number.isFinite(found.lufs)) useTimelineStore.getState().setMasterLoud({ push: found.push });
     audio = cutRingOut(audio, opts);
     onProgress(1, 'Making the MP3');
     const blob = await encodeAudio(channelsOf(audio), audio.sampleRate, 'mp3', { bitDepth: 16 });
-    return { blob, name: `${safeFileName(s.projectName)}.mp3` };
+    return { blob, name: `${safeFileName(s.projectName)}.mp3`, lufs: loud && found ? found.lufs : reading.integrated };
   });
 }

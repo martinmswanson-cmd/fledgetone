@@ -4,8 +4,8 @@
  *   - makes space (makeSpace.ts): each part loses the rumble under it, and parts in the lead's
  *     range give way to it;
  *   - puts the drums on a drum bus and the music parts on a music bus (busPresets.ts), each glued
- *     by gentle compression, the music bus breathing with the kick;
- *   - ducks the bass under the kick;
+ *     by gentle compression, the music bus breathing with the kick (unless the parts pump already);
+ *   - ducks the bass under the kick and the snare (a hole for the drums);
  *   - sends every part a little more to the shared reverb, so they sit in one room;
  *   - spreads the parts left in the middle a little apart (never the lead, the bass or the drums).
  * Every change is recorded (GlueRecord: the value before and the value glue set), so switching it
@@ -25,6 +25,8 @@ import type { Clip, GlueChange, GlueField, GlueRecord, Track } from './timelineT
 const ROOM = { drums: 0.1, bass: 0.04, vocal: 0.15, music: 0.2 } as const;
 /** Where the parts left in the middle go, in turn: a little either side, then a little further. */
 const SPREAD = [-0.25, 0.25, -0.15, 0.15, -0.35, 0.35, -0.1, 0.1];
+/** The bass's duck under the drums: a 12 dB hole on each kick and snare. */
+export const GLUE_BASS_DUCK = { on: true, depth: 0.75, release: 140, trigger: 'kickSnare', shape: 'hole' } as const;
 
 const read = (t: Track, field: GlueField): unknown => (field === 'peq' ? t.fx.peq : field === 'pump' ? t.fx.pump : t[field]);
 /** A field set (or, for undefined, taken away: a track with no output plays to the master). */
@@ -115,10 +117,12 @@ export function applyGlue(tracks: Track[], clips: readonly Clip[], newBus: (name
   };
   group(drums, 'Drum bus', busPresetFx('drums'));
   const musicFx = busPresetFx('music');
-  group(music, 'Music bus', hasKick ? { ...musicFx, pump: { on: true, depth: 0.4, release: 220, trigger: 'kick' } } : musicFx);
+  // (The bus breathes with the kick unless its parts pump already: Duck to kick set them for the style)
+  const pumping = music.some((t) => t.fx.pump.on);
+  group(music, 'Music bus', hasKick && !pumping ? { ...musicFx, pump: { on: true, depth: 0.4, release: 220, trigger: 'kick' } } : musicFx);
 
-  // The bass ducks under the kick
-  if (hasKick) for (const t of parts) if (role.get(t.id) === 'bass' && !t.fx.pump.on) set(t.id, 'pump', { on: true, depth: 0.65, release: 150, trigger: 'kick' });
+  // The bass makes a hole for the kick and the snare (about 12 dB, held while the drum hits)
+  if (hasKick) for (const t of parts) if (role.get(t.id) === 'bass' && !t.fx.pump.on) set(t.id, 'pump', { ...t.fx.pump, ...GLUE_BASS_DUCK });
 
   // One shared room: every part a little in it (never less than it had)
   for (const t of parts) {

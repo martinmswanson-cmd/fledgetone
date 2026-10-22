@@ -3,6 +3,7 @@ import { createParamWriter, type AutomationTarget, type ParamWriter } from './pa
 import { paramSetter as smoothParamSetter, smoothSet, SMOOTH_TC } from './smoothParam';
 import { PEQ_MAX_BANDS, type PeqBand } from '../../store/timelineTypes';
 import { BIQUAD_TYPE, biquadQ, hasGain } from '../peq';
+import { planShapedDuck, verticesGain, type DuckPoint, type ShapedDuck } from './duckShape';
 
 /**
  * Lean stand-ins for Tone.EQ3, Tone.Distortion and Tone.Chorus that sound the same but cost far
@@ -535,6 +536,8 @@ export interface LightPump extends LightInsert {
   trigger: (time: number) => void;
   /** How far it ducks (0-1) and how long the swell back takes (seconds), from the next trigger on. */
   setShape: (depth: number, release: number) => void;
+  /** The duck's curve from the next trigger on (duckShape.ts): null is Smooth, the original swell. */
+  setCurve: (points: readonly DuckPoint[] | null) => void;
 }
 
 /** How fast the Pump ducks: quick enough to clear room for a kick, slow enough not to click. */
@@ -542,19 +545,28 @@ const PUMP_ATTACK = 0.004;
 /** Straight-line pieces the swell back is drawn with (one automation event each). */
 const PUMP_SEGMENTS = 12;
 
-/** One duck as scheduled: from the gain it had at `at`, down to `floor`, back up to 1 over `release`. */
-interface Duck {
+/** One Smooth duck as scheduled: from the gain it had at `at`, down to `floor`, back up to 1 over `release`. */
+interface SmoothDuck {
+  kind: 'smooth';
   at: number;
   from: number;
   floor: number;
   release: number;
 }
 
+/** One shaped duck as scheduled: its gain's vertices (see planShapedDuck). */
+interface CurveDuck extends ShapedDuck {
+  kind: 'curve';
+}
+
+type Duck = SmoothDuck | CurveDuck;
+
 /** The swell's shape, 0 to 1 over 0 to 1: a raised cosine, so it leaves the floor and lands on full volume gently. */
 const swell = (x: number) => (1 - Math.cos(Math.PI * x)) / 2;
 
 /** The gain a duck gives at `time`, on exactly the straight lines it was scheduled as. */
 function duckGain(d: Duck, time: number): number {
+  if (d.kind === 'curve') return time <= d.at ? d.vertices[0][1] : verticesGain(d.vertices, time);
   const t = time - d.at;
   if (t <= 0) return d.from;
   if (t < PUMP_ATTACK) return d.from + ((d.floor - d.from) * t) / PUMP_ATTACK;
@@ -566,10 +578,17 @@ function duckGain(d: Duck, time: number): number {
   return d.floor + (1 - d.floor) * (a + (b - a) * (x - k));
 }
 
+/** The times a duck's straight lines meet, from `from` on. */
+function duckTimes(d: Duck, from: number): number[] {
+  const times = d.kind === 'curve' ? d.vertices.map(([t]) => t) : [d.at, d.at + PUMP_ATTACK, ...Array.from({ length: PUMP_SEGMENTS }, (_, k) => d.at + PUMP_ATTACK + (d.release * (k + 1)) / PUMP_SEGMENTS)];
+  return times.filter((t) => t > from);
+}
+
 /**
- * Sidechain-style pumping as one gain whose value is automated per trigger: down to 1 - depth
- * in 4 ms, then a smooth swell back to full volume over the release. Nothing runs between
- * triggers. Automation is sample-accurate, live and in the export.
+ * Sidechain-style pumping as one gain whose value is automated per trigger: Smooth goes down to
+ * 1 - depth in 4 ms, then swells back to full volume over the release; a shape (duckShape.ts)
+ * follows its points over the release. Nothing runs between triggers. Automation is
+ * sample-accurate, and the same node does it live and in the export, so they sound the same.
  *
  * A trigger during a swell ducks from wherever the swell has got to: the automation after that
  * moment is cancelled and the line up to it redrawn, so the gain never jumps. The value at a
@@ -583,6 +602,7 @@ export function createLightPump(): LightPump {
   const raw = node.context.rawContext as unknown as BaseAudioContext;
   let floor = 0.3;
   let release = 0.3;
+  let curve: readonly DuckPoint[] | null = null;
   /** Recent ducks, in time order: the last one tells the gain at the next trigger. */
   let ducks: Duck[] = [];
 
@@ -599,11 +619,17 @@ export function createLightPump(): LightPump {
     // Carry on the line the gain was on up to this moment (or hold full volume)
     if (from < 1) gain.linearRampToValueAtTime(from, at);
     else gain.setValueAtTime(1, at);
+    if (curve) {
+      const plan = planShapedDuck(at, curve, 1 - floor, release, prev ? (t) => duckGain(prev, t) : undefined, prev ? duckTimes(prev, at) : []);
+      for (const [t, g] of plan.vertices) if (t > at) gain.linearRampToValueAtTime(g, t);
+      ducks.push({ kind: 'curve', ...plan });
+      return;
+    }
     gain.linearRampToValueAtTime(floor, at + PUMP_ATTACK);
     for (let k = 1; k <= PUMP_SEGMENTS; k++) {
       gain.linearRampToValueAtTime(floor + (1 - floor) * swell(k / PUMP_SEGMENTS), at + PUMP_ATTACK + (release * k) / PUMP_SEGMENTS);
     }
-    ducks.push({ at, from, floor, release });
+    ducks.push({ kind: 'smooth', at, from, floor, release });
   };
 
   return {
@@ -613,6 +639,9 @@ export function createLightPump(): LightPump {
     setShape: (depth, seconds) => {
       floor = 1 - Math.max(0, Math.min(1, depth));
       release = Math.max(0.01, seconds);
+    },
+    setCurve: (points) => {
+      curve = points;
     },
     dispose: () => node.dispose(),
   };

@@ -11,6 +11,8 @@ import { UndoableRange } from '../UndoableRange';
 import { busTargets, isBus, isReturn, sendTargets } from '../../store/buses';
 import { SpectrumView } from './SpectrumView';
 import { onFrame } from '../frameTicker';
+import { useMixStudio } from '../../audio/mixStudio';
+import { DUCK_STYLE_SETTINGS, DUCK_STYLES, duckStyleFor, type DuckStyle } from '../../store/duckToKick';
 
 /**
  * Every track side by side as a mixing-desk strip: a level meter, a fader, pan, the reverb and
@@ -200,7 +202,7 @@ export const MixerPanel: React.FC = () => {
         ))}
         <div className="flex flex-col items-center gap-2 w-24 shrink-0 rounded-lg border border-cyan-500/50 bg-cyan-950/20 p-2" aria-label="Master channel">
           <div className="w-full h-1 rounded bg-cyan-400" />
-          <span className="text-[11px] font-bold text-cyan-200">MASTER</span>
+          <span className="text-[11px] font-bold text-cyan-200" title="The listening volume: how loud you hear it. It never changes an export.">LISTEN</span>
           <div className="flex-1" />
           <UndoableRange
             min={-40}
@@ -212,7 +214,7 @@ export const MixerPanel: React.FC = () => {
             undoable={false}
             className="h-36 w-4 cursor-pointer accent-cyan-400"
             style={vertical}
-            aria-label="Master volume"
+            aria-label="Listening volume"
           />
           <span className="text-[10px] font-mono tabular-nums text-forge-text">{db(masterVolume)} dB</span>
         </div>
@@ -254,21 +256,44 @@ export const MixerPanel: React.FC = () => {
         </button>
         <span className="text-[11px]">Makes the parts sound like one song instead of instruments side by side. Switch it off any time to compare.</span>
       </div>
-      <div className="flex items-center gap-2" data-search="duck kick">
-        <button
-          type="button"
-          onClick={() => {
-            const made = useTimelineStore.getState().duckToKick();
-            showToast(made < 0 ? 'No kick to duck to: add a drum track first.' : made ? `Ducked ${made} track${made === 1 ? '' : 's'} to the kick: the bass dips deepest, the chords, pads and leads a little less. Undo to take it back.` : 'Everything already ducks to the kick.');
-          }}
-          className="px-2 py-1 rounded border border-cyan-500/50 text-cyan-200 hover:bg-cyan-500/15 text-[11px]"
-          title="Puts a Pump on the bass, chords, pads and leads, triggered by the kick: they dip on every kick and swell back in time with the tempo"
-        >
-          Duck to kick
-        </button>
-        <span className="text-[11px]">The bass, chords, pads and leads dip on every kick and swell back: the dance-music pump (one undo step).</span>
-      </div>
+      <DuckToKickRow />
       <p className="text-[11px]">Double-click a fader or knob to reset it. Each drag is one undo step. Click a track's name to open it in the Inspector (inserts, EQ, automation).</p>
+    </div>
+  );
+};
+
+/** Duck to kick, in a chosen style (it starts on the one the "Does it hit?" check is set to). */
+const DuckToKickRow: React.FC = () => {
+  const hitStyle = useMixStudio((s) => s.hitStyle);
+  const [style, setStyle] = React.useState<DuckStyle | null>(null);
+  const chosen = style ?? duckStyleFor(hitStyle);
+  return (
+    <div className="flex items-center gap-2 flex-wrap" data-search="duck kick">
+      <button
+        type="button"
+        onClick={() => {
+          const made = useTimelineStore.getState().duckToKick(chosen);
+          showToast(made < 0 ? 'No kick to duck to: add a drum track first.' : made ? `Ducked ${made} track${made === 1 ? '' : 's'}: the bass makes a hole for each kick and snare, the chords, pads and leads pump on the kick. Undo to take it back.` : 'Everything already ducks this way.');
+        }}
+        className="px-2 py-1 rounded border border-cyan-500/50 text-cyan-200 hover:bg-cyan-500/15 text-[11px]"
+        title="Puts a Pump on the bass, chords, pads and leads: the bass dips out of the way of every kick and snare, the rest pump on the kick and swell back in time with the tempo"
+      >
+        Duck to kick
+      </button>
+      <select
+        value={chosen}
+        onChange={(e) => setStyle(e.target.value as DuckStyle)}
+        aria-label="Duck to kick style"
+        className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-[11px]"
+        title={DUCK_STYLE_SETTINGS[chosen].about}
+      >
+        {DUCK_STYLES.map((id) => (
+          <option key={id} value={id}>
+            {DUCK_STYLE_SETTINGS[id].label}
+          </option>
+        ))}
+      </select>
+      <span className="text-[11px]">{DUCK_STYLE_SETTINGS[chosen].about} One undo step.</span>
     </div>
   );
 };

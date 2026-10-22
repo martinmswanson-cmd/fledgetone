@@ -94,7 +94,7 @@ export const HIT_METRICS: readonly HitMetric[] = [
       darksynth: [-5, -2.5],
       futurebass: [-12, -8],
     },
-    low: 'Quieter than this style: turn on Loud (the master clipper) or raise the master level.',
+    low: 'Quieter than this style: turn on the Loud master (Loud in the Pocket mixer) aimed at Club or Loud.',
     high: 'Louder than this style needs: ease the master level so the hits keep their punch.',
   },
   {
@@ -113,7 +113,7 @@ export const HIT_METRICS: readonly HitMetric[] = [
       futurebass: [10, 14],
     },
     low: 'Squashed: the peaks are flattened. Ease the clipper or the master level so the hits have room.',
-    high: 'The hits stick out over a thin body: fill between them (held chords, a pad, a longer bass) and turn on Loud to catch the peaks.',
+    high: 'The hits stick out over a thin body: fill between them (held chords, a pad, a longer bass) and turn on the Loud master to catch the peaks.',
   },
   {
     id: 'sub',

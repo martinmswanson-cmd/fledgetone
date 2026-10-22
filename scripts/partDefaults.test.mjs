@@ -64,24 +64,30 @@ test('a new note is drawn at the length last drawn for that kind of part', () =>
   P.forgetPens();
 });
 
-test('Duck to kick pumps the bass deepest and the other music parts less, with releases in time', () => {
+test('Duck to kick: a hole for the drums in the bass, the other music parts pumping on the kick, releases in time', () => {
   const tracks = [track('kit', 'drums'), track('bass', 'subBass'), track('pad', 'supersaw'), track('lead', 'lead'), track('voice', 'audio', { name: 'Vocals' }), track('riser', 'fx')];
   const { tracks: out, changed } = D.duckToKick(tracks, [], 128);
   assert.equal(changed, 3);
   const by = Object.fromEntries(out.map((t) => [t.id, t.fx.pump]));
-  assert.deepEqual(by.bass, { ...by.bass, on: true, trigger: 'kick', depth: D.DUCK_DEPTH.bass, release: D.releaseMs(D.DUCK_RELEASE_BEATS.bass, 128) });
-  assert.ok(by.bass.depth >= 0.7 && by.bass.depth <= 0.9);
+  assert.deepEqual(by.bass, { ...by.bass, ...D.duckPump('bass', 'bass', 128) });
+  assert.equal(by.bass.trigger, 'kickSnare');
+  assert.equal(by.bass.shape, 'hole');
+  assert.ok(by.bass.depth >= 0.8 && by.bass.depth <= 0.9);
   for (const id of ['pad', 'lead']) {
     assert.equal(by[id].on, true);
-    assert.ok(by[id].depth >= 0.5 && by[id].depth <= 0.7);
+    assert.equal(by[id].trigger, 'kick');
+    assert.ok(by[id].depth > 0.3 && by[id].depth < 0.6);
   }
   for (const id of ['kit', 'voice', 'riser']) assert.equal(by[id].on, false, id);
   // Half a beat at 128 BPM is 234 ms; faster songs come back sooner, within the Pump's range
   assert.equal(D.releaseMs(0.5, 128), 234);
   assert.ok(D.releaseMs(0.5, 174) < D.releaseMs(0.5, 128));
   assert.equal(D.releaseMs(0.3, 20), 600);
-  // Again: nothing more to change
+  // Again: nothing more to change; another style changes the depths
   assert.equal(D.duckToKick(out, [], 128).changed, 0);
+  const future = D.duckToKick(out, [], 128, 'future');
+  assert.equal(future.changed, 3);
+  assert.ok(future.tracks.find((t) => t.id === 'pad').fx.pump.depth < by.pad.depth);
   // No kick, nothing changes
   const noKick = D.duckToKick(tracks.slice(1), [], 128);
   assert.equal(noKick.changed, 0);

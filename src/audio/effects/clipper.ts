@@ -117,13 +117,20 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
   }
   // Through both filters the sound is (LENGTH - 1) oversampled points late: a whole number of samples
   const latency = (LENGTH - 1) / FACTOR;
+  // Each sample's four oversampled points are worked out before it's taken back down, so the
+  // newest is the last phase's, (FACTOR - 1) points after the first; the residual is read that
+  // much further back, so it lines up with the driven sound exactly (read at the newest point, it
+  // was three quarters of a sample early: at 5 kHz it no longer cancelled the peaks it clipped,
+  // which came out far over the ceiling)
+  const ALIGN = FACTOR - 1;
+  const RES = LENGTH + ALIGN;
 
   // Per channel: the last phaseTaps driven input samples (a ring written twice over, so the
   // newest always lie in one run), the residual at the oversampled rate (likewise), and the
   // driven input delayed by `latency`
   const makeChannel = () => ({
     hist: new Float64Array(2 * phaseTaps),
-    res: new Float64Array(2 * LENGTH),
+    res: new Float64Array(2 * RES),
     delay: new Float64Array(latency + 1),
   });
   const chans = [makeChannel(), makeChannel()];
@@ -164,7 +171,7 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
       let clippedHere = false;
       // Four oversampled points per sample, each through the curve: the residual is what it took off
       for (let p = 0; p < FACTOR; p++) {
-        resAt = resAt + 1 === LENGTH ? 0 : resAt + 1;
+        resAt = resAt + 1 === RES ? 0 : resAt + 1;
         let rl = 0;
         let rr = 0;
         if (n - lastLoud < phaseTaps) {
@@ -192,8 +199,8 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
             clippedHere = true;
           }
         }
-        L.res[resAt] = L.res[resAt + LENGTH] = rl;
-        R.res[resAt] = R.res[resAt + LENGTH] = rr;
+        L.res[resAt] = L.res[resAt + RES] = rl;
+        R.res[resAt] = R.res[resAt + RES] = rr;
         if (rl !== 0 || rr !== 0) lastResidual = osIndex;
         osIndex++;
       }
@@ -202,8 +209,8 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
       // The residual filtered back down (only near where there is one), at this sample's phase
       let dl = 0;
       let dr = 0;
-      if (osIndex - 1 - lastResidual < LENGTH) {
-        const newest = resAt + LENGTH;
+      if (osIndex - 1 - lastResidual < RES) {
+        const newest = resAt + RES - ALIGN;
         for (let j = 0; j < LENGTH; j++) {
           const c = h[j];
           dl += c * L.res[newest - j];

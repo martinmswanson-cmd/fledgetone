@@ -13,7 +13,7 @@ import { secondsBetween, tempoAt, type Tempo, type TempoMap, type TempoPoint } f
 import * as Tone from 'tone';
 import { syncBuiltinPlugins } from './plugins/builtinHost';
 import { captureWamStates } from './wamHost';
-import { BUS_GAIN, createMixChain, getMasterVolume } from './engine';
+import { BUS_GAIN, createMixChain } from './engine';
 import { createLimiterKernel, LIMITER_CEILING_DBTP } from './effects/limiter';
 import { masterAfter, type DropFrames, type MasterStats } from './effects/masterAfter';
 import { dropMoves, isDropTrack } from '../store/dropMoves';
@@ -50,8 +50,8 @@ import { withTimeout } from './waitFor';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import { duckPoints } from '../store/duck';
 import type { WavCue } from './wavCues';
-import type { Clip, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
-import { normalizeMasterSettings } from '../store/timelineTypes';
+import type { Clip, DrumHit, Marker, MasterFx, MasterSettings, Track } from '../store/timelineTypes';
+import { normalizeMasterSettings, pumpFollowsDrums } from '../store/timelineTypes';
 import { countedRender } from './renderBusy';
 import { isNativeApp, nativeShareFile } from '../native/nativeApp';
 
@@ -115,8 +115,11 @@ export interface RenderOptions {
   hold?: () => Promise<void> | void;
   /** Markers: the ones in the range go into the file as cue points (see exportCues). */
   markers?: Marker[];
-  /** Leave the master volume out (a freeze: live playback applies it to the frozen sound anyway). */
-  ignoreMasterVolume?: boolean;
+  /**
+   * A Loud master's loudness target (LUFS): the push into its clipper and limiter is found afresh
+   * to get there (loudMaster.ts), and onMasterStats hears what it found. Ignored without a Loud master.
+   */
+  loudTargetLufs?: number;
   /** Intensity: each track plays at its stem group's level (see intensity.ts); absent: all at full level. */
   intensity?: { value: number; curves: Record<string, IntensityCurve> };
   /** An exact-length render ends without its 5 ms fade (an intro that leads straight into a loop). */
@@ -654,7 +657,7 @@ function endRingOut<T extends Float32Array>(channels: T[], sampleRate: number, o
  * other track's kicks still driving its Pump. `opts.tracks` is the whole arrangement.
  */
 export async function renderForFreeze(opts: RenderOptions, track: Track, onProgress?: (fraction: number) => void): Promise<{ channels: Float32Array[]; sampleRate: number }> {
-  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, ignoreMasterVolume: true, ringOutMin: opts.ringOutMin ?? FREEZE_RING_OUT }, [track], onProgress);
+  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, ringOutMin: opts.ringOutMin ?? FREEZE_RING_OUT }, [track], onProgress);
   return { channels, sampleRate };
 }
 
@@ -818,8 +821,8 @@ async function renderInParts(opts: RenderOptions, parts: Track[][], onProgress?:
   // they'd feed it, and it plays once over their sum, in plain JavaScript (see renderGraph's
   // reverbSends and lushAfter.ts)
   const lush = !opts.masterFx.room && opts.masterFx.roomStyle === 'lush';
-  // Read live state before any context is swapped
-  const masterDb = opts.ignoreMasterVolume ? 0 : getMasterVolume();
+  // The listening volume never reaches a file: renders are at 0 dB master volume (see monitor.ts)
+  const masterDb = 0;
   // The bar moves as the work does: each part counts by its rough cost
   const costs = parts.map((p) => p.reduce((sum, t) => sum + trackCost(t, opts.clips, opts.startBar, opts.endBar), 0));
   const total = costs.reduce((a, b) => a + b, 0) || 1;
@@ -967,7 +970,7 @@ function dropFramesOf(opts: RenderOptions, plan: RenderPlan): DropFrames[] {
 function finishMaster(rendered: AudioBuffer, limitsAfter: boolean, opts: RenderOptions, masterDb: number, plan: RenderPlan): void {
   if (!limitsAfter) return;
   const [l, r] = channelsOf(rendered);
-  const stats = masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(opts.master), masterDb, opts.peakCeilingDbtp, dropFramesOf(opts, plan));
+  const stats = masterAfter(l, r ?? l, rendered.sampleRate, normalizeMasterSettings(opts.master), masterDb, opts.peakCeilingDbtp, dropFramesOf(opts, plan), opts.loudTargetLufs);
   opts.onMasterStats?.(stats);
 }
 
@@ -1055,8 +1058,8 @@ async function renderGraphHeld(
   if (plan.keepLength < 1) throw new Error('the range is empty');
   const duration = length / sampleRate;
   signal?.throwIfAborted();
-  // Read live state before the global context is swapped
-  const masterDb = opts.ignoreMasterVolume || premaster ? 0 : getMasterVolume();
+  // The listening volume never reaches a file: renders are at 0 dB master volume (see monitor.ts)
+  const masterDb = 0;
 
   // Download the recordings the song plays first (shared with live playback, so usually instant):
   // each recorded instrument's for the notes it plays here (see songSamples.ts)
@@ -1267,14 +1270,14 @@ async function renderGraphHeld(
     // render leaves out (a stem): those tracks' notes are scheduled, but play no instrument
     const kickTracks = audibleTracks(opts.tracks).filter((t) => isDrumKind(t.instrumentKey));
     const kickIds = new Set(kickTracks.map((t) => t.id));
-    const pumpOnKick = (trackId: string, time: number) => {
-      if (kickIds.has(trackId)) strips.forEach((s) => s.pump(time, 'kick'));
+    const pumpOnKick = (trackId: string, time: number, hit: DrumHit) => {
+      if (kickIds.has(trackId)) strips.forEach((s) => s.pump(time, hit));
     };
     // Pumps that follow a track hear its notes even when this render leaves it out (a stem)
     const sourceIds = new Set(strips.map((s) => s.pumpSource()).filter((id): id is string => !!id));
     const pumpOnTrack = sourceIds.size ? (trackId: string, time: number) => sourceIds.has(trackId) && strips.forEach((s) => s.pump(time, 'track', trackId)) : undefined;
     const schedule = createClipSchedule(transport, (trackId) => instruments.get(trackId), pumpOnKick, () => swing, pumpOnTrack);
-    const followsKick = strips.some((s) => s.pumpTrigger() === 'kick');
+    const followsKick = strips.some((s) => pumpFollowsDrums(s.pumpTrigger()));
     const extra = [...(followsKick ? kickTracks : []), ...opts.tracks.filter((t) => sourceIds.has(t.id))].filter((t, i, all) => !instruments.has(t.id) && all.indexOf(t) === i);
     schedule.update([...tracks, ...extra], clips);
     const pumpClock = createPumpClock(transport, () => strips, barToTicks(startBar), barToTicks(endBar));

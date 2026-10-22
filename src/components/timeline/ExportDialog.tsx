@@ -31,6 +31,8 @@ import {
 import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb } from '../../audio/loudness';
 import { exportCeilingDbtp } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
+import type { LoudMatch } from '../../audio/effects/loudMaster';
+import type { MasterStats } from '../../audio/effects/masterAfter';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
 import { createZip } from '../../audio/zip';
@@ -277,7 +279,12 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
   const delayFeedback = useTimelineStore((s) => s.masterDelayFeedback);
   const markers = useTimelineStore((s) => s.markers);
   const master = useTimelineStore((s) => s.master);
-  const [settings, setSettings] = useState(loadSettings);
+  // A Loud master's export aims at its own target (Match a loudness target on), unless changed here
+  const [settings, setSettings] = useState(() => {
+    const saved = loadSettings();
+    const loud = useTimelineStore.getState().master.loud;
+    return loud?.on ? { ...saved, normalize: true, target: loud.target } : saved;
+  });
   const refVideo = useVideoStore((st) => st.video);
   const videoStart = useVideoStore((st) => st.start);
   const [useFootage, setUseFootage] = useState(true);
@@ -388,6 +395,18 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       peakCeilingDbtp: ceilingDbtp,
     };
     const encodeOpts = { bitDepth: settings.bitDepth, cues: exportCues(opts) };
+    // A Loud master reaches the target itself: the push into its clipper and limiter is found
+    // afresh as the render's master section runs (loudMaster.ts), and kept for live playback
+    const loudMatch = !!s.master.loud?.on && settings.normalize;
+    let loudFound: LoudMatch | undefined;
+    const loudOpts = loudMatch ? { loudTargetLufs: targetById(settings.target).lufs, onMasterStats: (m: MasterStats) => (loudFound = m.loud ?? loudFound) } : {};
+    const keepPush = () => {
+      if (loudFound && Number.isFinite(loudFound.lufs) && Math.abs(loudFound.push - (useTimelineStore.getState().master.loud?.push ?? 0)) > 0.05) useTimelineStore.getState().setMasterLoud({ push: loudFound.push });
+    };
+    const loudNote = () =>
+      loudFound
+        ? ` (pushed ${loudFound.push.toFixed(1)} dB into the clipper and limiter${loudFound.shortDb > 0 ? `; ${loudFound.shortDb.toFixed(1)} dB short of the target: more would squash the drums` : ''})`
+        : '';
     try {
       if (game) {
         const { parts, sampleRate } = await renderIntroLoop(opts, stemsOnly, (progress, detail) => setStatus({ kind: 'rendering', fileName, progress, detail }));
@@ -430,7 +449,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
       } else if (videoOut) {
         // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs). A ring-out is
         // cut where its tails die away once it has its final level (see keepRingOut)
-        const videoOpts = { ...opts, sampleRate: 48000 as const, keepRingOut: settings.normalize };
+        const videoOpts = { ...opts, sampleRate: 48000 as const, keepRingOut: settings.normalize, ...loudOpts };
         let audio = await renderArrangement(videoOpts, (progress) =>
           setStatus({ kind: 'rendering', fileName, progress: progress * 0.3, detail: 'Rendering the sound' })
         );
@@ -438,7 +457,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
         if (settings.normalize) {
           setStatus({ kind: 'rendering', fileName, progress: 0.3, detail: 'Matching the loudness' });
-          reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp)).reading;
+          if (!loudMatch) reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp)).reading;
           audio = cutRingOut(audio, videoOpts);
         }
         const startSeconds = barToSeconds(opts.startBar, tempo);
@@ -472,7 +491,8 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         });
         controller.signal.throwIfAborted();
         deliver(blob, fileName);
-        showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}`);
+        if (loudMatch) keepPush();
+        showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${loudMatch ? loudNote() : ''}`);
       } else if (stemsOnly) {
         const rendered = await renderStems(
           opts,
@@ -494,19 +514,24 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
           const at = (f: number) => (vi + f) / versions.length;
           const detail = (what: string) => (many ? `${label}${what ? `: ${what}` : ''}` : what);
           // A ring-out is cut where its tails die away once it has its final level (see keepRingOut)
-          const mixOpts = { ...opts, tracks: versionTracks(opts.tracks, opts.clips, version) ?? opts.tracks, keepRingOut: settings.normalize };
+          const mixOpts = { ...opts, tracks: versionTracks(opts.tracks, opts.clips, version) ?? opts.tracks, keepRingOut: settings.normalize, ...loudOpts };
           let audio = await renderArrangement(mixOpts, (progress) => setStatus({ kind: 'rendering', fileName, progress: at(progress * 0.95), detail: detail('') }));
           controller.signal.throwIfAborted();
           setStatus({ kind: 'rendering', fileName, progress: at(0.95), detail: detail('Measuring loudness') });
           let reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
           let note = '';
-          if (settings.normalize) {
+          if (settings.normalize && loudMatch) {
+            audio = cutRingOut(audio, mixOpts);
+            reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
+            note = loudNote();
+            if (version === 'full') keepPush();
+          } else if (settings.normalize) {
             setStatus({ kind: 'rendering', fileName, progress: at(0.97), detail: detail('Matching the loudness') });
             const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp);
             reading = reached.reading;
             audio = cutRingOut(audio, mixOpts);
             if (reached.shortDb > 0.3 && reached.capped)
-              note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the master OTT and raise its Out gain`;
+              note = `. That's ${reached.shortDb.toFixed(1)} dB under the target: getting there would take more than ${MAX_LIMITING_DB} dB of limiting, which squashes the music. To get louder, turn on the Loud master (Master tab)`;
             else if (reached.limitedDb > 0.3) note = ` (the limiter took ${reached.limitedDb.toFixed(1)} dB off the peaks to get there)`;
           }
           if (format !== 'wav') setStatus({ kind: 'rendering', fileName, progress: at(0.99), detail: detail(`Encoding ${format.toUpperCase()}`) });
@@ -848,7 +873,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
                 Match a loudness target
                 <span className="block text-forge-muted">
                   {settings.normalize
-                    ? `${targetById(settings.target).about} ${game ? 'The intro and loop are turned up or down together (no limiting, which would change the loop\u2019s seam).' : 'If the mix is too quiet to get there by turning it up, a look-ahead limiter holds the peaks down (up to ' + MAX_LIMITING_DB + ' dB).'} Peaks never pass ${ceilingDbtp} dBTP.`
+                    ? `${targetById(settings.target).about} ${game ? 'The intro and loop are turned up or down together (no limiting, which would change the loop\u2019s seam).' : master.loud?.on ? 'The Loud master gets there: it pushes the song into its clipper and limiter, measuring until it\u2019s on target.' : 'If the mix is too quiet to get there by turning it up, a look-ahead limiter holds the peaks down (up to ' + MAX_LIMITING_DB + ' dB). For Loud and Club, turn on the Loud master in the Master tab.'} Peaks never pass ${ceilingDbtp} dBTP.`
                     : 'The file keeps the level of the mix.'}
                 </span>
               </span>

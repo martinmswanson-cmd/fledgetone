@@ -18,6 +18,7 @@ import type { GlueStyle, MasterSettings } from '../../store/timelineTypes';
 import { createWorkletNode, loadWorklet } from '../worklets';
 import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
 import { MONO_BASS_HZ, MONO_BASS_Q } from './masterAfter';
+import { effectiveClipper, effectiveWidth, LOUD_SHELF_HZ, pushDb, subTiltDb } from './loudMaster';
 import { CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE, clipperParams, type ClipperReading, type ClipperSettings } from './clipper';
 import { paramSetter as smoothParamSetter } from './smoothParam';
 import { DROP_PROCESSOR, DROP_WORKLET_SOURCE } from './dropFx';
@@ -357,6 +358,23 @@ function createWidth(context: Tone.BaseContext, width: MasterSettings['width']):
   return { input, output, set, dispose: () => nodes.forEach((n) => n.disconnect()) };
 }
 
+interface ShelfUnit extends Unit {
+  set: (db: number, ramp: number) => void;
+}
+
+/** A Loud master's sub tilt: a low shelf at LOUD_SHELF_HZ (a BiquadFilterNode, as masterAfter.ts computes it). */
+function createShelf(context: Tone.BaseContext, db: number): ShelfUnit {
+  const raw = context.rawContext as unknown as BaseAudioContext;
+  const f = raw.createBiquadFilter();
+  f.type = 'lowshelf';
+  f.frequency.value = LOUD_SHELF_HZ;
+  f.gain.value = db;
+  f.channelCount = 2;
+  f.channelCountMode = 'explicit';
+  const ramped = paramSetter(raw);
+  return { input: f, output: f, set: (v, ramp) => ramped(f.gain, v, ramp), dispose: () => f.disconnect() };
+}
+
 /**
  * The master compressor's styles: how hard it squeezes the whole mix, and how fast. Standard is
  * the one every project had before; Punchy's slow attack lets each drum hit through before
@@ -408,7 +426,8 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
   let dropLoading: Promise<void> | null = null;
   let dropUnavailable = false;
 
-  const rewire = (retired: Array<{ dispose: () => void }>) => chain.set([...(ott ? [ott] : []), ...(width ? [width] : []), ...(drop ? [drop] : [])], retired);
+  let shelf: ShelfUnit | null = null;
+  const rewire = (retired: Array<{ dispose: () => void }>) => chain.set([...(ott ? [ott] : []), ...(width ? [width] : []), ...(shelf ? [shelf] : []), ...(drop ? [drop] : [])], retired);
 
   const setDrop = (on: boolean) => {
     dropWanted = on;
@@ -444,7 +463,7 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     if (next.glue !== wanted.glue) glue(next.glue);
     wanted = next;
     if (!live) return;
-    ramped(level.gain, Tone.dbToGain(next.level), ramp);
+    ramped(level.gain, Tone.dbToGain(next.level + pushDb(next)), ramp);
     const retired: Array<{ dispose: () => void }> = [];
     if (next.ott.on) {
       if (ott) ott.set(next.ott, ramp);
@@ -471,27 +490,37 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
       retired.push(ott);
       ott = null;
     }
-    if (next.width.on) {
-      if (width) width.set(next.width, ramp);
-      else width = createWidth(context, next.width);
+    const w = effectiveWidth(next);
+    if (w) {
+      if (width) width.set(w, ramp);
+      else width = createWidth(context, w);
     } else if (width) {
       retired.push(width);
       width = null;
     }
+    const tilt = subTiltDb(next);
+    if (tilt) {
+      if (shelf) shelf.set(tilt, ramp);
+      else shelf = createShelf(context, tilt);
+    } else if (shelf) {
+      retired.push(shelf);
+      shelf = null;
+    }
     rewire(retired);
     if (!clipChain) return;
-    const wantClip = next.clipper?.on === true;
-    if (wantClip) {
-      if (clipper) clipper.set(next.clipper!, ramp);
+    const clipWanted = effectiveClipper(next);
+    if (clipWanted) {
+      if (clipper) clipper.set(clipWanted, ramp);
       else if (!clipLoading && !clipUnavailable) {
-        clipLoading = createClipper(context, next.clipper!).then(
+        clipLoading = createClipper(context, clipWanted).then(
           (unit) => {
             clipLoading = null;
-            if (disposed || !wanted.clipper?.on) {
+            const now = effectiveClipper(wanted);
+            if (disposed || !now) {
               unit.dispose();
               return;
             }
-            unit.set(wanted.clipper, 0);
+            unit.set(now, 0);
             clipper = unit;
             clipChain.set([unit], []);
           },
@@ -525,8 +554,10 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
       clipper = null;
       ott?.dispose();
       width?.dispose();
+      shelf?.dispose();
       ott = null;
       width = null;
+      shelf = null;
     },
   };
 }

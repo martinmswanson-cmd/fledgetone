@@ -12,6 +12,7 @@ import { createBusEffects } from './effects/busEffects';
 import { createMasterInserts } from './effects/masterChain';
 import { LIMITER_PROCESSOR, LIMITER_WORKLET_SOURCE } from './effects/limiter';
 import { createWorkletNode, loadWorklet } from './worklets';
+import { installMonitor, listeningVolume, setListeningVolume } from './monitor';
 import { DEFAULT_MASTER_FX, defaultMasterSettings } from '../store/timelineTypes';
 import type { MasterFx, MasterSettings } from '../store/timelineTypes';
 
@@ -247,18 +248,20 @@ export function getAudioContextState(): AudioState {
 }
 
 /**
- * Set global master volume in decibels (-60dB to +6dB)
+ * The listening volume in decibels (-60 dB to +6 dB): how loud you hear the song, after the level
+ * matching (monitor.ts). It never reaches an export.
  */
 export function setMasterVolume(db: number): void {
-  liveDestination.volume.rampTo(db, 0.05);
+  setListeningVolume(db);
 }
 
-/**
- * Get current master volume in decibels
- */
+/** The listening volume in decibels. */
 export function getMasterVolume(): number {
-  return liveDestination.volume.value;
+  return listeningVolume();
 }
+
+// The listening path (level matching, the volume, a safety limiter) between the meters and the speakers
+void installMonitor(liveContext, liveDestination.output as Tone.ToneAudioNode, liveContext.rawContext.destination as unknown as AudioNode, (db) => liveDestination.volume.rampTo(db, 0.05));
 
 /**
  * Set global BPM

@@ -13,10 +13,10 @@ import { measureLoudness } from './loudness';
 import { bandEnvelope, bandSpectrum, type BandSpectrum } from './mixAnalysis';
 import { checkMix, trackRole, type Finding, type TrackMeasure } from './mixCheck';
 import { targetById } from './loudnessTarget';
-import { getMasterVolume } from './engine';
 import { busChain, isMixTrack } from '../store/buses';
 import { INSTRUMENTS } from './instrumentCatalog';
 import type { MasterStats } from './effects/masterAfter';
+import { LOUD_TARGETS, type LoudMatch } from './effects/loudMaster';
 import type { Track } from '../store/timelineTypes';
 import { tempoAt } from './tempoMap';
 import { drumOnsets } from './hitOnsets';
@@ -33,8 +33,6 @@ export interface MixAnalysis {
   truePeakDb: number;
   spectrum: BandSpectrum;
   stats?: MasterStats;
-  /** The master volume it was rendered at (the live mix plays at it too), dB. */
-  masterDb: number;
   /** Bars analysed, [from, to). */
   bars: [number, number];
 }
@@ -117,11 +115,10 @@ async function run<T>(what: string, job: (signal: AbortSignal, progress: (f: num
 /** Render the mix through the master section and measure it (its loudness, spectrum and what the master did). */
 async function analyseMixRender(opts: RenderOptions, progress: (f: number) => void): Promise<MixAnalysis> {
   let stats: MasterStats | undefined;
-  const masterDb = getMasterVolume();
   const audio = await renderArrangement({ ...opts, onMasterStats: (s) => (stats = s) }, progress);
   const channels = channelsOf(audio);
   const reading = await measureLoudness(channels, audio.sampleRate, opts.signal);
-  return { lufs: reading.integrated, truePeakDb: reading.truePeakMax, spectrum: bandSpectrum(channels, audio.sampleRate), ...(stats ? { stats } : {}), masterDb, bars: [opts.startBar, opts.endBar] };
+  return { lufs: reading.integrated, truePeakDb: reading.truePeakMax, spectrum: bandSpectrum(channels, audio.sampleRate), ...(stats ? { stats } : {}), bars: [opts.startBar, opts.endBar] };
 }
 
 /** Render and measure the mix alone (for the reference's level match and spectrum). */
@@ -130,6 +127,26 @@ export function analyseMix(): Promise<MixAnalysis | null> {
     const analysis = await analyseMixRender(songOptions(signal), progress);
     useMixStudio.setState({ analysis });
     return analysis;
+  });
+}
+
+/**
+ * Match a Loud master to its target: render the song through the master section, find the push
+ * into the clipper and limiter that gets it there (loudMaster.ts), and keep it, so live playback
+ * plays what the export will. The push follows from the song (it's measured, not chosen), so it
+ * isn't an undo step of its own: undoing the switch or the target that asked for it takes it
+ * back with them. Returns what the match found.
+ */
+export function matchLoudMaster(): Promise<LoudMatch | null> {
+  return run('Matching the loudness', async (signal, progress) => {
+    const s = useTimelineStore.getState();
+    const loud = s.master.loud;
+    if (!loud?.on) return null;
+    let stats: MasterStats | undefined;
+    await renderArrangement({ ...songOptions(signal), loudTargetLufs: LOUD_TARGETS[loud.target].lufs, onMasterStats: (m) => (stats = m) }, progress);
+    const found = stats?.loud;
+    if (found && Number.isFinite(found.lufs)) useTimelineStore.getState().setMasterLoud({ push: found.push });
+    return found ?? null;
   });
 }
 
@@ -144,7 +161,7 @@ export function runMixCheck(targetId = useMixStudio.getState().targetId): Promis
     // The stems' tracks, in the order renderStems encodes them
     const pending = stemTracks(opts);
     await renderStems(
-      { ...opts, bypassMaster: true, ignoreMasterVolume: true },
+      { ...opts, bypassMaster: true },
       16,
       (f, stem) => progress(0.3 + f * 0.7, `Rendering ${stem.track.name} (${stem.index + 1} of ${stem.count})`),
       async (channels, sampleRate) => {

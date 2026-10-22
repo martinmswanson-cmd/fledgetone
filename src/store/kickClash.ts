@@ -5,7 +5,7 @@
  * bass under every kick, the standard sidechain trick. Pure, so Node tests it.
  */
 import type { Clip, Track, TrackFx } from './timelineTypes';
-import { durationToBars } from './timelineTypes';
+import { durationToBars, pumpHears } from './timelineTypes';
 import { isDrumKind } from '../audio/instrumentCatalog';
 import { midiOf } from './noteTools';
 
@@ -55,7 +55,7 @@ export function findKickClash(tracks: readonly Track[], clips: readonly Clip[], 
     else if (notes.some((n) => n.at < k.at && n.end > k.at)) under++;
   }
   const pump = bass?.fx.pump;
-  return { kicks: kicks.length, together, under, ducked: !!pump?.on && pump.trigger === 'kick' };
+  return { kicks: kicks.length, together, under, ducked: !!pump?.on && pumpHears(pump.trigger, 'kick') };
 }
 
 /** The Pump settings that duck a bass under the kick: deep and quick, back before the next 16th. */

@@ -40,7 +40,7 @@ import { defaultClipper, type ClipperSettings } from '../audio/effects/clipper';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { makeSpace } from './makeSpace';
 import { applyGlue, removeGlue } from './glueMix';
-import { duckToKick, hasKick } from './duckToKick';
+import { duckToKick, hasKick, type DuckStyle } from './duckToKick';
 import { startSends } from './partKind';
 import { busPresetById, busPresetFx, busPresetMembers, type BusPresetId } from './busPresets';
 import { autoFrozenFor, useAutoFreeze } from './autoFreeze';
@@ -121,8 +121,8 @@ import {
   stretchRatio,
 } from './audioClips';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
-import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate, ClipGroove } from './timelineTypes';
-import { DEFAULT_WOBBLE, TOTAL_BARS, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
+import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, LoudSettings, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate, ClipGroove } from './timelineTypes';
+import { DEFAULT_WOBBLE, TOTAL_BARS, defaultLoud, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
   adjacentMarker,
   anchorMarker,
@@ -558,8 +558,8 @@ interface TimelineState {
   setTrackPan: (trackId: string, pan: number) => void;
   /** Make space (makeSpace.ts): EQ moves so the parts stop covering each other, one undo step. Returns how many tracks changed. */
   makeSpace: () => number;
-  /** Duck everything to the kick (duckToKick.ts): a kick Pump on the bass, chords, pads and leads, one undo step. Returns how many tracks changed (-1: no kick in the song). */
-  duckToKick: () => number;
+  /** Duck everything to the kick (duckToKick.ts) in `style`: a hole for the drums in the bass, a kick Pump on the chords, pads and leads, one undo step. Returns how many tracks changed (-1: no kick in the song). */
+  duckToKick: (style?: DuckStyle) => number;
   /** Glue (glueMix.ts) on or off: the parts tied into one mix, or what it changed put back. Returns how many settings it changed (on) or 0. */
   setGlueMix: (on: boolean) => number;
   /** How far back on the stage the track sits (Track.distance), 0 to 1 */
@@ -642,6 +642,10 @@ interface TimelineState {
   setMasterLevel: (db: number, record?: boolean) => void;
   /** Change the master clipper (after the Level, before the limiter), recorded like setMasterOtt. */
   setMasterClipper: (patch: Partial<ClipperSettings>, record?: boolean) => void;
+  /** Mono below 120 Hz on or off, whatever the Width (recorded for undo). */
+  setMasterMonoLow: (on: boolean) => void;
+  /** Change the Loud master (effects/loudMaster.ts), recorded like setMasterOtt. */
+  setMasterLoud: (patch: Partial<LoudSettings>, record?: boolean) => void;
 
   // Clips
   selectClip: (clipId: string, additive: boolean) => void;
@@ -2215,10 +2219,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       set((st) => ({ tracks, ...pushPast(st) }));
       return changes.length;
     },
-    duckToKick: () => {
+    duckToKick: (style) => {
       const s = get();
       if (!hasKick(s.tracks, s.clips)) return -1;
-      const { tracks, changed } = duckToKick(s.tracks, s.clips, s.bpm);
+      const { tracks, changed } = duckToKick(s.tracks, s.clips, s.bpm, style);
       if (changed) set((st) => ({ tracks, ...pushPast(st) }));
       return changed;
     },
@@ -2430,6 +2434,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
     setMasterGlue: (glue) => setMaster((m) => ({ ...m, glue }), true),
     setMasterLevel: (db, record = false) => setMaster((m) => ({ ...m, level: db }), record),
     setMasterClipper: (patch, record = false) => setMaster((m) => ({ ...m, clipper: { ...(m.clipper ?? defaultClipper()), ...patch } }), record),
+    setMasterMonoLow: (on) => setMaster((m) => ({ ...m, monoLow: on }), true),
+    setMasterLoud: (patch, record = false) => setMaster((m) => ({ ...m, loud: { ...(m.loud ?? defaultLoud()), ...patch } }), record),
 
     // ---------- Clips ----------
     selectClip: (clipId, additive) =>
@@ -3131,7 +3137,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       // A new arrangement keeps the frame rate you're working in
       const { fps, dropFrame } = get();
       // A new song plays expressively (older projects opened later keep their sound)
-      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, expressive: true })) });
+      // ...and keeps its lows in the middle (Mono below 120 Hz), as a club or a phone needs
+      const expressive = (p: ProjectSnapshot): ProjectSnapshot => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, expressive: true })), master: { ...(p.master ?? defaultMasterSettings()), monoLow: true } });
       get().loadProject(expressive(
         isStarterId(template)
           ? { ...createStarter(template), fps, dropFrame }

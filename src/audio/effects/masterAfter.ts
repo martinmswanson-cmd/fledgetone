@@ -16,11 +16,17 @@ import { LIMITER_CEILING_DBTP, limitChannels, limiterAimDbtp } from './limiter';
 import { clipChannels, type ClipperReading } from './clipper';
 import { createDropKernel } from './dropFx';
 import type { MasterSettings } from '../../store/timelineTypes';
+import { effectiveClipper, effectiveWidth, LOUD_SHELF_HZ, matchPush, pushDb, subTiltDb, webAudioLowshelf, type LoudMatch } from './loudMaster';
 
 /** Below this the Stereo width's "mono bass" keeps the sound in the middle. */
 export const MONO_BASS_HZ = 120;
-/** The mono bass's high-pass Q, as its BiquadFilterNodes are set (Web Audio reads it in dB for this type). */
-export const MONO_BASS_Q = Math.SQRT1_2;
+/**
+ * The mono bass's high-pass Q, as its BiquadFilterNodes are set. Web Audio reads a high-pass's Q in
+ * dB, so this is a Q of 1/sqrt(2) (Butterworth: no bump), -3.01 dB. (It was 0.707 taken as dB, a
+ * linear Q of 1.085, whose two stages lifted the side signal by 2.6 dB around 150-200 Hz: mono
+ * bass made the low end just over it wider.)
+ */
+export const MONO_BASS_Q = 20 * Math.log10(Math.SQRT1_2);
 
 const dbToGain = (db: number) => 10 ** (db / 20);
 
@@ -137,14 +143,19 @@ export interface MasterStats {
   limiterBusyShare: number;
   /** The clipper's work (absent: it was off). */
   clipper?: ClipperReading;
+  /** A Loud master's match to its target (absent: none was asked for). */
+  loud?: LoudMatch;
 }
 
 /**
  * The master section after the compressor, over a render's two channels in place: the OTT and
- * the width (where on), the Drop pad's moves (`drops`), the Level, the clipper (where on), the limiter, then the master volume
- * (`volumeDb`, which comes after the limiter, as the live destination's volume does). The limiter
- * holds the true peak under `ceilingDbtp` (the export's: see exportCeilingDbtp in limiter.ts).
- * Returns what the section did (see MasterStats).
+ * the width (where on; the lows kept in the middle with Mono below 120 Hz or a Loud master), a
+ * Loud master's sub tilt, the Drop pad's moves (`drops`), the Level (plus a Loud master's push),
+ * the clipper (where on, or a Loud master's), the limiter, then `volumeDb` (0 for every export
+ * now: the listening volume stays out of files). The limiter holds the true peak under
+ * `ceilingDbtp` (the export's: see exportCeilingDbtp in limiter.ts). With `matchLufs` and a Loud
+ * master, the push is found afresh to bring the sound to that loudness (see matchPush), and what
+ * it found comes back in the stats. Returns what the section did (see MasterStats).
  */
 export function masterAfter(
   left: Float32Array,
@@ -153,19 +164,34 @@ export function masterAfter(
   master: MasterSettings,
   volumeDb = 0,
   ceilingDbtp = LIMITER_CEILING_DBTP,
-  drops: readonly DropFrames[] = []
+  drops: readonly DropFrames[] = [],
+  matchLufs?: number
 ): MasterStats {
   const inPeak = peakOf(left, right);
   if (master.ott.on) ottChannels(left, right, sampleRate, master.ott);
-  if (master.width.on) widthChannels(left, right, sampleRate, master.width);
+  const width = effectiveWidth(master);
+  if (width) widthChannels(left, right, sampleRate, width);
+  const tilt = subTiltDb(master);
+  if (tilt) {
+    const c = webAudioLowshelf(LOUD_SHELF_HZ, tilt, sampleRate);
+    biquad(left, c);
+    if (right !== left) biquad(right, c);
+  }
   dropChannels(left, right, sampleRate, drops);
-  scaleChannels(left, right, Math.fround(dbToGain(master.level)));
-  const clipper = master.clipper?.on ? clipChannels(left, right, sampleRate, master.clipper) : undefined;
+  const clip = effectiveClipper(master);
+  let push = pushDb(master);
+  let loud: LoudMatch | undefined;
+  if (master.loud?.on && matchLufs !== undefined && Number.isFinite(matchLufs)) {
+    loud = matchPush(left, right, sampleRate, master.level, matchLufs, clip, ceilingDbtp, master.loud.push || undefined);
+    push = loud.push;
+  }
+  scaleChannels(left, right, Math.fround(dbToGain(master.level + push)));
+  const clipper = clip ? clipChannels(left, right, sampleRate, clip) : undefined;
   const busy = limiterLoad(left, right, sampleRate, dbToGain(limiterAimDbtp(ceilingDbtp)));
   limitChannels(left, right, sampleRate, ceilingDbtp);
   scaleChannels(left, right, dbToGain(volumeDb));
   const db = (v: number) => (v > 0 ? 20 * Math.log10(v) : -Infinity);
-  return { inPeakDb: db(inPeak), limiterInPeakDb: db(busy.peak), limiterPeakDb: busy.peakDb, limiterBusyShare: busy.share, ...(clipper ? { clipper } : {}) };
+  return { inPeakDb: db(inPeak), limiterInPeakDb: db(busy.peak), limiterPeakDb: busy.peakDb, limiterBusyShare: busy.share, ...(clipper ? { clipper } : {}), ...(loud ? { loud } : {}) };
 }
 
 function peakOf(left: Float32Array, right: Float32Array): number {

@@ -10,7 +10,6 @@ import React, { useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, FolderOpen, Share2, Star, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { CATEGORIES, INSTRUMENTS, listedCategory } from '../audio/instrumentCatalog';
-import { defaultClipper } from '../audio/effects/clipper';
 import { LEVEL_MAX, LEVEL_MIN, REVERB_SEND_KNOB_MAX, REVERB_SEND_MAX, type InstrumentKey, type Track } from '../store/timelineTypes';
 import { showToast } from '../components/timeline/toastStore';
 import { useMySounds, type MySound } from '../store/mySounds';
@@ -27,6 +26,9 @@ import { isFledgeUrl } from '../audio/plugins/fledgeMacros';
 import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
 import { pill } from './pocketUi';
 import { PocketDropCheck } from './PocketDropCheck';
+import { matchLoudMaster, useMixStudio } from '../audio/mixStudio';
+import { LOUD_TARGETS, styleLoudTarget } from '../audio/effects/loudMaster';
+import { duckStyleFor } from '../store/duckToKick';
 
 export const DRAWER_SIZES: Record<DrawerSize, number> = { low: 0.3, mid: 0.4, high: 0.74 };
 
@@ -305,7 +307,7 @@ const MixAll: React.FC = () => {
   const tracks = useTimelineStore((s) => s.tracks);
   const master = useTimelineStore((s) => s.master);
   const s = useTimelineStore.getState;
-  const clipper = master.clipper ?? defaultClipper();
+  const loudOn = master.loud?.on === true;
   const db = (v: number) => (v <= -59.9 ? '−∞' : v.toFixed(1));
   const ms = 'flex-1 h-8 rounded-lg border text-[13px] font-mono font-semibold';
   return (
@@ -332,7 +334,23 @@ const MixAll: React.FC = () => {
           <span className="text-xs font-semibold min-h-6">Master</span>
           <input type="range" className="pk-vfader" aria-label="Master level" min={LEVEL_MIN} max={LEVEL_MAX} step={0.5} value={master.level} onPointerDown={() => s().beginEdit()} onChange={(e) => s().setMasterLevel(Number(e.target.value), false)} />
           <span className="font-mono text-[10.5px] text-forge-muted">{db(master.level)}</span>
-          <button type="button" aria-pressed={clipper.on} className={`w-full h-8 rounded-lg border text-xs font-semibold ${clipper.on ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100' : 'border-forge-border bg-forge-panelLight'}`} onClick={() => s().setMasterClipper({ on: !clipper.on }, true)}>
+          <button
+            type="button"
+            aria-pressed={loudOn}
+            aria-label={`Loud master: ${loudOn ? 'on' : 'off'}`}
+            className={`w-full h-8 rounded-lg border text-xs font-semibold ${loudOn ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100' : 'border-forge-border bg-forge-panelLight'}`}
+            onClick={() => {
+              if (loudOn) {
+                s().setMasterLoud({ on: false }, true);
+                return;
+              }
+              // On, aimed at the drop check's style (Club for bass music, Loud for future bass), and matched to it
+              const target = styleLoudTarget(useMixStudio.getState().hitStyle);
+              s().setMasterLoud({ on: true, target }, true);
+              showToast(`Loud master on: matching the song to ${LOUD_TARGETS[target].name}… You hear it level-matched; the MP3 is the loud one.`);
+              void matchLoudMaster().then((m) => m && Number.isFinite(m.lufs) && showToast(`Loud master: ${m.lufs.toFixed(1)} LUFS${m.shortDb > 0 ? ` (${m.shortDb.toFixed(1)} dB short: more would squash the drums)` : ''}`));
+            }}
+          >
             Loud
           </button>
           <button
@@ -340,7 +358,7 @@ const MixAll: React.FC = () => {
             aria-label="Duck to kick: the bass, chords, pads and leads dip on every kick"
             className="w-full h-8 rounded-lg border text-xs font-semibold border-forge-border bg-forge-panelLight"
             onClick={() => {
-              const made = s().duckToKick();
+              const made = s().duckToKick(duckStyleFor(useMixStudio.getState().hitStyle));
               showToast(made < 0 ? 'No kick to duck to: add drums first.' : made ? `Ducked ${made} track${made === 1 ? '' : 's'} to the kick (Undo takes it back)` : 'Everything already ducks to the kick.');
             }}
           >

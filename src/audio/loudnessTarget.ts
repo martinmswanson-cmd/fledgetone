@@ -17,7 +17,8 @@ export interface LoudnessTarget {
 
 export const LOUDNESS_TARGETS: readonly LoudnessTarget[] = [
   { id: 'streaming', name: 'Streaming (-14 LUFS)', lufs: -14, about: 'Spotify, YouTube, Apple Music and SoundCloud play at about this loudness, so the file won’t be turned down or sound quiet next to other tracks.' },
-  { id: 'loud', name: 'Loud: club and EDM (-9 LUFS)', lufs: -9, about: 'As loud as club and festival music is mastered. Streaming services turn it down to -14, so it only pays off for DJs and downloads.' },
+  { id: 'loud', name: 'Loud: EDM and future bass (-9 LUFS)', lufs: -9, about: 'As loud as most electronic music is mastered. Streaming services turn it down to -14, so it pays off for DJs and downloads.' },
+  { id: 'club', name: 'Club: bass music and hardcore (-6 LUFS)', lufs: -6, about: 'As loud as dubstep, drumstep and hardcore are mastered, for DJs and club systems. Best with the Loud master on, which gets there with a clipper as well as the limiter.' },
   { id: 'game', name: 'Games (-16 LUFS)', lufs: -16, about: 'A common level for game music, leaving room for sound effects and voices on top.' },
   { id: 'podcast', name: 'Podcast and video voice-over (-16 LUFS)', lufs: -16, about: 'Under a voice, or in a podcast, which most apps play at this loudness.' },
   { id: 'broadcast', name: 'TV and broadcast (-23 LUFS)', lufs: -23, about: 'The European broadcast standard (EBU R128); US broadcast is -24.' },
