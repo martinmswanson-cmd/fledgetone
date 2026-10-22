@@ -93,3 +93,38 @@ test('Duck to kick: a hole for the drums in the bass, the other music parts pump
   assert.equal(noKick.changed, 0);
   assert.equal(D.hasKick(tracks.slice(1), []), false);
 });
+
+test('Duck to kick on dense drums (the Syncopated drop): shallow, short holes that leave the bass whole; the sub takes the hole; sparse drums keep the deep one', async () => {
+  const S = await import('../src/store/smartTools.ts');
+  const { FLEDGE_URL, FLEDGE_PRESETS } = await import('../src/audio/plugins/fledgeMacros.ts');
+  let k = 0;
+  const part = S.drummer('syncDrop', 8, 0.85, 0, 5, () => 'n' + k++);
+  const sub = track('low', 'plugin', { name: 'Low', plugin: { id: 'p1', url: FLEDGE_URL, name: 'Fledge Synth', state: { builtin: 1, program: FLEDGE_PRESETS.indexOf('Bass/Clean Sub') } } });
+  const tracks = [track('kit', 'designedKit'), track('growl', 'wobbleBass'), sub, track('pad', 'supersaw')];
+  const clips = [{ id: 'c', trackId: 'kit', name: 'Drums', startBar: 1, lengthBars: 8, isSelected: false, notes: part }];
+  const gap = D.drumHitGapMs(tracks, clips, 100);
+  assert.ok(gap > 100 && gap <= D.DENSE_GAP_BEATS * 600, `median gap ${gap} ms`);
+  assert.equal(D.isSubPart(sub), true);
+  assert.equal(D.isSubPart(tracks[1]), false);
+  const { tracks: out } = D.duckToKick(tracks, clips, 100, 'bass');
+  const by = Object.fromEntries(out.map((t) => [t.id, t.fx.pump]));
+  const db = (d) => 20 * Math.log10(1 - d);
+  // The sub: about 5 dB, over within 60 % of a 16th (150 ms at 100 BPM); the bass over it a third of that; the pad barely pumps
+  assert.ok(db(by.low.depth) >= -5.01 && db(by.low.depth) <= -4.5, `sub ${db(by.low.depth)}`);
+  assert.ok(by.low.release <= 0.6 * 150 + 1 && by.low.release >= 60, `sub hole ${by.low.release} ms`);
+  assert.ok(db(by.growl.depth) >= -1.8 && db(by.growl.depth) <= -1.5, `bass ${db(by.growl.depth)}`);
+  assert.ok(db(by.pad.depth) >= -2.6, `pad ${db(by.pad.depth)}`);
+  assert.ok(by.pad.release <= 151);
+  // The hole (down 12 % into it, back by 82 %) is down for under half of the drop, never more than 5 dB
+  const hits = new Set(part.filter((n) => n.note === 'C1' || n.note === 'D1' || n.note === 'D#1').map((n) => Math.round(n.startOffset * 96))).size;
+  const downMs = hits * 0.7 * by.low.release;
+  assert.ok(downMs / (8 * 2400) < 0.5, `down ${(100 * downMs / (8 * 2400)).toFixed(0)} % of the time`);
+  // Without a sub part of its own the bass takes the sub's hole
+  const alone = D.duckToKick([tracks[0], tracks[1]], clips, 100, 'bass').tracks[1].fx.pump;
+  assert.equal(alone.depth, by.low.depth);
+  // Sparse drums (four on the floor at 128, snare on two and four): the style's deep hole, as before
+  const four = [0, 1, 2, 3, 4, 5, 6, 7].flatMap((b) => [0, 4, 8, 12].map((st) => ({ id: `k${b}${st}`, note: 'C1', startOffset: b + st / 16, duration: '16n', velocity: 1 })).concat([4, 12].map((st) => ({ id: `s${b}${st}`, note: 'D1', startOffset: b + st / 16, duration: '16n', velocity: 1 }))));
+  const sparse = D.duckToKick(tracks, [{ ...clips[0], notes: four }], 128, 'bass').tracks;
+  assert.ok(D.drumHitGapMs(tracks, [{ ...clips[0], notes: four }], 128) >= (D.SPARSE_GAP_BEATS * 60000) / 128 - 1);
+  assert.deepEqual(sparse.find((t) => t.id === 'low').fx.pump, { ...sparse.find((t) => t.id === 'low').fx.pump, ...D.duckPump('bass', 'bass', 128) });
+});
