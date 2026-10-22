@@ -1,5 +1,5 @@
 // Two melodic pieces in the vocabulary of the owner's melodic references, built
-// through the app's store and rendered by its export path (the app's MP3 encoder), the pattern of unfinish/steady/bass.js.
+// through the app's store and rendered by its export path (the app's MP3 encoder), the pattern of colour-bass-drop.js.
 // arg.take: 'a' artcore, 175 BPM, Eb major (piano runs, held wash, supersaw hook) |
 //           'b' future bass, 130 BPM, A major (chord chops, held vocal-like lead, legato bass)
 // arg.vol {track: dB}, arg.levels (each track's own loudness), arg.crunch, arg.loud, arg.lufs, arg.musicPump (dB, music parts),
