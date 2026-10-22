@@ -160,8 +160,8 @@ test("an export's limiting after the render matches the worklet's: delayed by it
 test('MP3, Ogg and video exports aim lower than WAV (encoding overshoots), on a target and after the render alike', async () => {
   assert.equal(exportCeilingDbtp('wav'), LIMITER_CEILING_DBTP);
   for (const f of ['mp3', 'ogg', 'mp4']) assert.equal(exportCeilingDbtp(f), LOSSY_CEILING_DBTP);
-  // Measured: decoded MP3 / Ogg files peaked up to 0.2 dB over what they were given
-  assert.ok(LOSSY_CEILING_DBTP <= LIMITER_CEILING_DBTP - 0.3);
+  // Measured: decoded MP3 files of a dense Club-loud master peaked about 0.5 dB over what they were given (see loudMaster.test.mjs)
+  assert.ok(LOSSY_CEILING_DBTP <= LIMITER_CEILING_DBTP - 0.8);
   const lossy = 10 ** (LOSSY_CEILING_DBTP / 20);
   for (const make of BRIGHT) {
     const l = Float32Array.from({ length: SR * 4 }, (_, i) => 0.3 * make(i));

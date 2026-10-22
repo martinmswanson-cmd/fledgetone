@@ -85,10 +85,12 @@ test('a mix that would distort before Club stops short (cleanly) and says so', (
   assert.ok(lufsOf(l, r) > -9, 'still louder than Loud');
 });
 
-test('the MP3 ceiling holds the true peak at -1.5 dBTP with a Loud master too', () => {
+test('the MP3 ceiling holds the true peak under it with a Loud master too', async () => {
+  const { exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
+  const ceiling = exportCeilingDbtp('mp3');
   const [l, r] = drop(8, 0.6, true);
-  masterAfter(l, r, SR, loudMaster('club'), 0, -1.5, [], -6);
-  assert.ok(dbtp(l, r) <= -1.5 + 1e-6, `${dbtp(l, r).toFixed(2)}`);
+  masterAfter(l, r, SR, loudMaster('club'), 0, ceiling, [], -6);
+  assert.ok(dbtp(l, r) <= ceiling + 1e-6, `${dbtp(l, r).toFixed(2)}`);
   assert.ok(Math.abs(lufsOf(l, r) + 6) <= 0.5);
 });
 
@@ -191,4 +193,115 @@ test('old masters (no Loud, no mono lows) sound as before; new songs get mono lo
   assert.deepEqual(L.effectiveClipper({ loud: { on: true } }), L.LOUD_CLIPPER);
   assert.equal(L.styleLoudTarget('futurebass'), 'loud');
   assert.equal(L.styleLoudTarget('dubstep'), 'club');
+});
+
+test('an export keeps its push for live playback only from the whole song, full mix, at the Loud master target', () => {
+  const found = { push: 4.2, lufs: -9.1, targetLufs: -9, shortDb: 0, capped: false, distortionDb: -40, passes: 3 };
+  const base = { wholeSong: true, fullMix: true, exportTargetLufs: -9, loudTargetLufs: -9, found, currentPush: 1 };
+  assert.equal(L.pushToKeep(base), 4.2);
+  assert.equal(L.pushToKeep({ ...base, wholeSong: false }), null, 'a loop region is other music');
+  assert.equal(L.pushToKeep({ ...base, fullMix: false }), null, 'an underscore or no-drums version');
+  assert.equal(L.pushToKeep({ ...base, exportTargetLufs: -14 }), null, 'another loudness target');
+  assert.equal(L.pushToKeep({ ...base, found: undefined }), null);
+  assert.equal(L.pushToKeep({ ...base, found: { ...found, lufs: -Infinity } }), null, 'silence found nothing');
+  assert.equal(L.pushToKeep({ ...base, currentPush: 4.22 }), null, 'no change worth storing');
+});
+
+// ffmpeg, where it's installed, as the outside reference: its MP3 decoder and its ebur128 true peak
+const { execFileSync } = await import('node:child_process');
+const fs = await import('node:fs');
+const os = await import('node:os');
+const pathMod = await import('node:path');
+const hasFfmpeg = (() => {
+  try {
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+/** A 32-bit float stereo WAV of `l` / `r`. */
+function floatWav(l, r) {
+  const n = l.length;
+  const b = Buffer.alloc(44 + n * 8);
+  b.write('RIFF', 0);
+  b.writeUInt32LE(36 + n * 8, 4);
+  b.write('WAVEfmt ', 8);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(3, 20);
+  b.writeUInt16LE(2, 22);
+  b.writeUInt32LE(SR, 24);
+  b.writeUInt32LE(SR * 8, 28);
+  b.writeUInt16LE(8, 32);
+  b.writeUInt16LE(32, 34);
+  b.write('data', 36);
+  b.writeUInt32LE(n * 8, 40);
+  for (let i = 0; i < n; i++) {
+    b.writeFloatLE(l[i], 44 + i * 8);
+    b.writeFloatLE(r[i], 48 + i * 8);
+  }
+  return b;
+}
+
+/** ffmpeg's ebur128 true peak of a file, dBTP (the most of either channel over the whole file). */
+function ffmpegTruePeak(file, dir) {
+  let most = 0;
+  for (const ch of [0, 1]) {
+    const out = pathMod.join(dir, `tp${ch}.txt`);
+    execFileSync('ffmpeg', ['-v', 'error', '-nostats', '-i', file, '-af', `ebur128=peak=true:metadata=1,ametadata=print:key=lavfi.r128.true_peaks_ch${ch}:file=${out}`, '-f', 'null', '-']);
+    for (const line of fs.readFileSync(out, 'utf8').split('\n')) if (line.includes('true_peaks')) most = Math.max(most, Number(line.split('=')[1]));
+  }
+  return 20 * Math.log10(most);
+}
+
+/** Samples of a stereo 32-bit float WAV as ffmpeg writes it (WAVE_FORMAT_EXTENSIBLE or plain). */
+function readFloatWav(file) {
+  const b = fs.readFileSync(file);
+  let p = 12;
+  let data;
+  while (p < b.length) {
+    const id = b.toString('ascii', p, p + 4);
+    const size = b.readUInt32LE(p + 4);
+    if (id === 'data') data = b.subarray(p + 8, p + 8 + size);
+    p += 8 + size + (size & 1);
+  }
+  const n = data.length / 8;
+  const l = new Float32Array(n);
+  const r = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    l[i] = data.readFloatLE(i * 8);
+    r[i] = data.readFloatLE(i * 8 + 4);
+  }
+  return [l, r];
+}
+
+test("a Club-loud MP3 export plays back under -1 dBTP: the app's own encoder, decoded by ffmpeg; the meter reads as ffmpeg does", { skip: !hasFfmpeg && 'ffmpeg is not installed' }, async () => {
+  const { exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
+  const { createMp3Encoder } = await import('wasm-media-encoders');
+  const dir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'loud-mp3-'));
+  try {
+    const [l, r] = drop(8, 0.6, true);
+    masterAfter(l, r, SR, loudMaster('club'), 0, exportCeilingDbtp('mp3'), [], -6);
+    fs.writeFileSync(pathMod.join(dir, 'master.wav'), floatWav(l, r));
+    // The meter here and ffmpeg's agree on the master (BS.1770's 4x example filter read 0.3 dB low)
+    const ours = dbtp(l, r);
+    const theirs = ffmpegTruePeak(pathMod.join(dir, 'master.wav'), dir);
+    assert.ok(Math.abs(ours - theirs) <= 0.2, `meter ${ours.toFixed(2)}, ffmpeg ${theirs.toFixed(2)} dBTP`);
+    // As encodeAudio makes it: LAME at 320 kb/s
+    const encoder = await createMp3Encoder();
+    encoder.configure({ sampleRate: SR, channels: 2, bitrate: 320 });
+    const parts = [];
+    for (let at = 0; at < l.length; at += 1 << 16) parts.push(Buffer.from(encoder.encode([l.subarray(at, at + (1 << 16)), r.subarray(at, at + (1 << 16))])));
+    parts.push(Buffer.from(encoder.finalize()));
+    fs.writeFileSync(pathMod.join(dir, 'export.mp3'), Buffer.concat(parts));
+    execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', pathMod.join(dir, 'export.mp3'), '-c:a', 'pcm_f32le', pathMod.join(dir, 'decoded.wav')]);
+    const decoded = ffmpegTruePeak(pathMod.join(dir, 'decoded.wav'), dir);
+    assert.ok(decoded <= -1, `decoded MP3 peaks at ${decoded.toFixed(2)} dBTP`);
+    const [dl, dr] = readFloatWav(pathMod.join(dir, 'decoded.wav'));
+    assert.ok(dbtp(dl, dr) <= -1, `decoded MP3 by the meter here: ${dbtp(dl, dr).toFixed(2)} dBTP`);
+    assert.ok(Math.abs(lufsOf(l, r) + 6) <= 0.5, `still Club-loud: ${lufsOf(l, r).toFixed(2)} LUFS`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

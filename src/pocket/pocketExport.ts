@@ -3,7 +3,8 @@
  * with its defaults: the song from bar 1, ringing out, matched to the target, peaks held under
  * the lossy ceiling). The target is the Loud master's when it's on (Pocket's Loud button aims it
  * at the drop check's style), else Streaming; the Share screen can pick another. With the Loud
- * master on the push into its clipper and limiter is found afresh (and kept for live playback);
+ * master on the push into its clipper and limiter is found afresh (and kept for live playback when
+ * the file aims at the Loud master's own target);
  * otherwise the file is turned up or down and limited as the studio does. Uses the same render as
  * the studio, so the file sounds the same whichever made it.
  */
@@ -12,7 +13,7 @@ import { audibleTracks, channelsOf, cutRingOut, renderArrangement, type RenderOp
 import { measureLoudness } from '../audio/loudness';
 import { DEFAULT_TARGET, reachTarget, targetById } from '../audio/loudnessTarget';
 import { exportCeilingDbtp } from '../audio/effects/limiter';
-import type { LoudMatch } from '../audio/effects/loudMaster';
+import { LOUD_TARGETS, pushToKeep, type LoudMatch } from '../audio/effects/loudMaster';
 import type { MasterStats } from '../audio/effects/masterAfter';
 import { encodeAudio } from '../audio/encoders';
 import { useTimelineStore } from '../store/timelineStore';
@@ -66,7 +67,12 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     onProgress(1, 'Matching the loudness');
     let reading = await measureLoudness(channelsOf(audio), audio.sampleRate);
     if (!loud) reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, target, undefined, ceilingDbtp)).reading;
-    else if (found && Number.isFinite(found.lufs)) useTimelineStore.getState().setMasterLoud({ push: found.push });
+    else {
+      // Kept for live playback only when aimed at the Loud master's own target (the whole song, full mix)
+      const live = useTimelineStore.getState().master.loud;
+      const push = live ? pushToKeep({ wholeSong: true, fullMix: true, exportTargetLufs: target.lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found, currentPush: live.push ?? 0 }) : null;
+      if (push !== null) useTimelineStore.getState().setMasterLoud({ push });
+    }
     audio = cutRingOut(audio, opts);
     onProgress(1, 'Making the MP3');
     const blob = await encodeAudio(channelsOf(audio), audio.sampleRate, 'mp3', { bitDepth: 16 });

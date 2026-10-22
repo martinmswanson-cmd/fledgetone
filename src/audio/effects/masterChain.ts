@@ -18,7 +18,8 @@ import type { GlueStyle, MasterSettings } from '../../store/timelineTypes';
 import { createWorkletNode, loadWorklet } from '../worklets';
 import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
 import { MONO_BASS_HZ, MONO_BASS_Q } from './masterAfter';
-import { effectiveClipper, effectiveWidth, LOUD_SHELF_HZ, pushDb, subTiltDb } from './loudMaster';
+import { effectiveClipper, effectiveWidth, livePushDb, LOUD_SHELF_HZ, pushDb, subTiltDb } from './loudMaster';
+import { monitorStatus, onMonitorReading } from '../monitor';
 import { CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE, clipperParams, type ClipperReading, type ClipperSettings } from './clipper';
 import { paramSetter as smoothParamSetter } from './smoothParam';
 import { DROP_PROCESSOR, DROP_WORKLET_SOURCE } from './dropFx';
@@ -463,7 +464,7 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     if (next.glue !== wanted.glue) glue(next.glue);
     wanted = next;
     if (!live) return;
-    ramped(level.gain, Tone.dbToGain(next.level + pushDb(next)), ramp);
+    ramped(level.gain, Tone.dbToGain(next.level + (live ? livePushDb(next, monitorStatus() === 'on') : pushDb(next))), ramp);
     const retired: Array<{ dispose: () => void }> = [];
     if (next.ott.on) {
       if (ott) ott.set(next.ott, ramp);
@@ -538,6 +539,16 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     }
   };
   apply(settings, 0);
+  // The Loud master's push comes in once the listening path (its level matching and safety
+  // limiter) is in, over a few seconds so the level matching keeps up; never if it can't start
+  let heardStatus = monitorStatus();
+  const stopHearing = live
+    ? onMonitorReading(({ status }) => {
+        if (status === heardStatus || disposed) return;
+        heardStatus = status;
+        ramped(level.gain, Tone.dbToGain(wanted.level + livePushDb(wanted, status === 'on')), 3);
+      })
+    : () => {};
 
   return {
     apply,
@@ -545,6 +556,7 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     ready: () => Promise.all([loading, clipLoading, dropLoading]).then(() => undefined),
     dispose: () => {
       disposed = true;
+      stopHearing();
       if (drop) setLiveDropPort(null);
       drop?.dispose();
       drop = null;

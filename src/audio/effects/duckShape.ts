@@ -5,7 +5,8 @@
  * song made before there were shapes sounds the same; the others are point lists, and Drawn is
  * the person's own. A point is [x, y]: x is 0 (the trigger) to 1 (the end of the duck), y is how
  * far down, 0 (full volume) to 1 (the Pump's Depth). Between points the gain moves in straight
- * lines.
+ * lines, never quicker than MIN_EDGE_SECONDS from one point to the next (so a short length or
+ * two drawn points on top of each other can't step the gain: a click).
  *
  * planShapedDuck works out the automation one trigger schedules: where a duck is still coming
  * back when the next one starts, the gain follows whichever of the two is lower at each moment,
@@ -39,6 +40,14 @@ export const SHAPE_POINTS: Record<Exclude<PumpShape, 'smooth' | 'drawn'>, readon
 
 /** The most points a drawn shape keeps. */
 export const MAX_DUCK_POINTS = 12;
+/** The closest two drawn points' x may be (a share of the length). */
+export const MIN_POINT_GAP_X = 0.005;
+/**
+ * The shortest time (seconds) between a shape's points as scheduled, whatever the length: no
+ * edge is quicker, so no shape steps the gain at once (a click). Hard cut's 2% edge is 1 ms at a
+ * 50 ms length; this makes it 3 ms.
+ */
+export const MIN_EDGE_SECONDS = 0.003;
 
 /**
  * A drawn shape made safe to play: points in order of x (each x from 0 to 1, y from 0 to 1, at
@@ -53,6 +62,8 @@ export function normalizeDuckPoints(raw: unknown): DuckPoint[] | undefined {
     .map(([x, y]) => [clamp(x), clamp(y)] as DuckPoint)
     .filter(([x]) => x > 0 && x < 1)
     .sort((a, b) => a[0] - b[0])
+    // Two points at (about) the same x would step the gain at once: the first is kept
+    .filter((p, i, all) => i === 0 || p[0] - all[i - 1][0] >= MIN_POINT_GAP_X)
     .slice(0, MAX_DUCK_POINTS - 2);
   if (!pts.length) return undefined;
   return [[0, 0], ...pts, [1, 0]];
@@ -118,23 +129,33 @@ export function planShapedDuck(
 ): ShapedDuck {
   const d = Math.max(0, Math.min(1, depth));
   const len = Math.max(0.005, length);
+  // The points in time, none closer than MIN_EDGE_SECONDS to the one before (pushed later if so)
+  const timed: Array<[number, number]> = [];
+  for (const [x, y] of points) {
+    const t = at + x * len;
+    const prev = timed[timed.length - 1];
+    timed.push([prev ? Math.max(t, prev[0] + MIN_EDGE_SECONDS) : t, y]);
+  }
+  const ownEnd = Math.max(at + len, timed[timed.length - 1][0]);
+  // As 1 - y, so verticesGain reads the curve between them (0 down after the last)
+  const lift = timed.map(([t, y]) => [t, 1 - y] as const);
   // (Rounding left a hair under full volume where a shape ends: that's full volume)
   const own = (t: number) => {
-    const g = 1 - d * curveAt(points, (t - at) / len);
+    const g = t > ownEnd ? 1 : 1 - d * (1 - verticesGain(lift, t));
     return g > 1 - 1e-9 ? 1 : g;
   };
-  const times = new Set<number>([at, ...points.map(([x]) => at + x * len)]);
+  const times = new Set<number>([at, ...timed.map(([t]) => t)]);
   const later = beforeTimes.filter((t) => t > at);
-  const end = Math.max(at + len, ...later);
+  const end = Math.max(ownEnd, ...later);
   if (later.length) {
     for (const t of later) times.add(t);
     // Where the two cross, finer steps follow the lower of them closely
-    for (let t = at + MERGE_STEP; t < at + len; t += MERGE_STEP) times.add(t);
+    for (let t = at + MERGE_STEP; t < ownEnd; t += MERGE_STEP) times.add(t);
   }
   const sorted = [...times].filter((t) => t >= at && t <= end).sort((a, b) => a - b);
   const vertices: Array<[number, number]> = [];
   for (const t of sorted) {
-    const g = Math.min(before(t), t <= at + len ? own(t) : 1);
+    const g = Math.min(before(t), own(t));
     const last = vertices[vertices.length - 1];
     if (last && Math.abs(last[0] - t) < 1e-9) last[1] = Math.min(last[1], g);
     else vertices.push([t, g]);

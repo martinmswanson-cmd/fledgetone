@@ -31,7 +31,7 @@ import {
 import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb } from '../../audio/loudness';
 import { exportCeilingDbtp } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
-import type { LoudMatch } from '../../audio/effects/loudMaster';
+import { LOUD_TARGETS, pushToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
 import type { MasterStats } from '../../audio/effects/masterAfter';
 import { showToast } from './toastStore';
 import type { BitDepth, ExportEnding, RenderOptions, SampleRate } from '../../audio/exportWav';
@@ -400,8 +400,13 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const loudMatch = !!s.master.loud?.on && settings.normalize;
     let loudFound: LoudMatch | undefined;
     const loudOpts = loudMatch ? { loudTargetLufs: targetById(settings.target).lufs, onMasterStats: (m: MasterStats) => (loudFound = m.loud ?? loudFound) } : {};
-    const keepPush = () => {
-      if (loudFound && Number.isFinite(loudFound.lufs) && Math.abs(loudFound.push - (useTimelineStore.getState().master.loud?.push ?? 0)) > 0.05) useTimelineStore.getState().setMasterLoud({ push: loudFound.push });
+    // Stored for live playback only from the whole song's full mix at the Loud master's own target
+    const keepPush = (fullMix: boolean) => {
+      const live = useTimelineStore.getState().master.loud;
+      const push = live
+        ? pushToKeep({ wholeSong: range === 'song', fullMix, exportTargetLufs: targetById(settings.target).lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found: loudFound, currentPush: live.push ?? 0 })
+        : null;
+      if (push !== null) useTimelineStore.getState().setMasterLoud({ push });
     };
     const loudNote = () =>
       loudFound
@@ -491,7 +496,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         });
         controller.signal.throwIfAborted();
         deliver(blob, fileName);
-        if (loudMatch) keepPush();
+        if (loudMatch) keepPush(true);
         showToast(`Exported ${fileName}: ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${loudMatch ? loudNote() : ''}`);
       } else if (stemsOnly) {
         const rendered = await renderStems(
@@ -524,7 +529,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             audio = cutRingOut(audio, mixOpts);
             reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
             note = loudNote();
-            if (version === 'full') keepPush();
+            keepPush(version === 'full');
           } else if (settings.normalize) {
             setStatus({ kind: 'rendering', fileName, progress: at(0.97), detail: detail('Matching the loudness') });
             const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp);

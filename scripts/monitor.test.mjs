@@ -152,3 +152,28 @@ test('exports leave the listening volume out: the render never reads it', () => 
     assert.ok(!/getMasterVolume|listeningVolume/.test(readFileSync(new URL(f, import.meta.url), 'utf8')), f);
   }
 });
+
+test('level-matched is only reported once the listening path is in; a failed install says so and keeps the Loud push out of live playback', async () => {
+  assert.equal(M.isMatched(true, 'on'), true);
+  assert.equal(M.isMatched(true, 'pending'), false);
+  assert.equal(M.isMatched(true, 'off'), false);
+  assert.equal(M.isMatched(false, 'on'), false);
+  const seen = [];
+  const stop = M.onMonitorReading((st) => seen.push(st));
+  assert.equal(seen[0].status, 'pending');
+  assert.equal(seen[0].matched, false);
+  // A context without AudioWorklet (a plain-http address): the install fails and the listeners hear it
+  const volumes = [];
+  await M.installMonitor({ rawContext: {}, sampleRate: SR }, {}, {}, (db) => volumes.push(db));
+  stop();
+  const last = seen[seen.length - 1];
+  assert.equal(last.status, 'off');
+  assert.equal(last.matched, false);
+  assert.equal(M.monitorStatus(), 'off');
+  const { livePushDb, pushDb } = await import('../src/audio/effects/loudMaster.ts');
+  const m = { loud: { on: true, target: 'club', push: 7, subTilt: 0 } };
+  assert.equal(livePushDb(m, true), 7);
+  assert.equal(livePushDb(m, false), 0, 'never louder without the safety limiter');
+  assert.equal(livePushDb({ loud: { ...m.loud, push: -2 } }, false), -2);
+  assert.equal(pushDb(m), 7, 'the export keeps the push');
+});

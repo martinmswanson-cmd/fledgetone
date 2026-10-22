@@ -270,19 +270,52 @@ export function listeningMatched(): boolean {
   }
 }
 
-const listeners = new Set<(reading: MonitorReading | null, matched: boolean) => void>();
+/**
+ * Whether the listening path is in: 'pending' while its worklet loads, 'on' once it's in place,
+ * 'off' where it couldn't start (no AudioWorklet, as on a plain-http address): then nothing is
+ * level-matched and there's no safety limiter, so the Loud master's push isn't heard live either.
+ */
+export type MonitorStatus = 'pending' | 'on' | 'off';
+
+/** The listening path's state for the UI. */
+export interface ListeningState {
+  reading: MonitorReading | null;
+  /** The switch as set (kept in this browser). */
+  wanted: boolean;
+  status: MonitorStatus;
+  /** Really level-matched: switched on and the listening path is in. */
+  matched: boolean;
+}
+
+/** Level-matched only when switched on and the listening path is in (see MonitorStatus). */
+export const isMatched = (wanted: boolean, status: MonitorStatus): boolean => wanted && status === 'on';
+
+const listeners = new Set<(state: ListeningState) => void>();
 let lastReading: MonitorReading | null = null;
 let node: AudioWorkletNode | null = null;
+let status: MonitorStatus = 'pending';
 let volumeDb = 0;
 /** Where the volume goes until the listening path is in (or for good, where worklets can't run). */
 let fallbackVolume: ((db: number) => void) | null = null;
 
-/** Hear the listening path's readings (a few a second) and the switch; returns a function that stops listening. */
-export function onMonitorReading(listener: (reading: MonitorReading | null, matched: boolean) => void): () => void {
+const stateNow = (wanted = listeningMatched()): ListeningState => ({ reading: lastReading, wanted, status, matched: isMatched(wanted, status) });
+const notify = (wanted?: boolean) => {
+  const st = stateNow(wanted);
+  listeners.forEach((l) => l(st));
+};
+
+/** Hear the listening path's readings (a few a second), the switch and the install; returns a function that stops listening. */
+export function onMonitorReading(listener: (state: ListeningState) => void): () => void {
   listeners.add(listener);
-  listener(lastReading, listeningMatched());
+  listener(stateNow());
   return () => listeners.delete(listener);
 }
+
+/** The listening path's state now (see ListeningState). */
+export const listeningState = (): ListeningState => stateNow();
+
+/** The listening path's install state (see MonitorStatus). */
+export const monitorStatus = (): MonitorStatus => status;
 
 /** Level matching on or off (kept in this browser). */
 export function setListeningMatched(on: boolean): void {
@@ -292,7 +325,7 @@ export function setListeningMatched(on: boolean): void {
     // Private mode: for this visit only
   }
   node?.parameters.get('match')?.setValueAtTime(on ? 1 : 0, 0);
-  listeners.forEach((l) => l(lastReading, on));
+  notify(on);
 }
 
 /** The listening volume (dB): after the level matching, before the safety limiter. */
@@ -330,8 +363,7 @@ export function installMonitor(context: Tone.BaseContext, output: Tone.ToneAudio
       });
       monitor.port.onmessage = (e: MessageEvent<MonitorReading>) => {
         lastReading = e.data;
-        const matched = listeningMatched();
-        listeners.forEach((l) => l(lastReading, matched));
+        notify();
       };
       Tone.connect(monitor, speakers);
       Tone.connect(output, monitor);
@@ -339,6 +371,12 @@ export function installMonitor(context: Tone.BaseContext, output: Tone.ToneAudio
       // The volume is the listening path's from now on
       fallback(0);
       node = monitor;
+      status = 'on';
+      notify();
     })
-    .catch((err) => console.warn('The listening path could not start; the volume plays as before:', err));
+    .catch((err) => {
+      status = 'off';
+      notify();
+      console.warn('The listening path could not start; the volume plays as before:', err);
+    });
 }

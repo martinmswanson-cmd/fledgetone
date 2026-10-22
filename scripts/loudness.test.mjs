@@ -1,9 +1,22 @@
 // Unit tests for the loudness meter maths (src/audio/loudness.ts): K-weighting, gating, true peak
 // and the normalize gain, against the test signals of ITU-R BS.1770 / EBU Tech 3341. Run with `npm test`.
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { createLoudnessAnalyser, normalizeGainDb, LOUDNESS_WORKLET_SOURCE, LOUDNESS_WORKER_SOURCE, formatLufs, formatDbtp } = await import('../src/audio/loudness.ts');
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
+
+const { createLoudnessAnalyser, normalizeGainDb, truePeakOf, LOUDNESS_WORKLET_SOURCE, LOUDNESS_WORKER_SOURCE, formatLufs, formatDbtp } = await import('../src/audio/loudness.ts');
 
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
 
@@ -76,13 +89,34 @@ test('gating: a quiet stretch 17 dB under the loud one is left out of the integr
 test('true peak finds peaks between samples: a sine at a quarter of the sample rate, 45 degrees off', () => {
   const sr = 48000;
   // Every sample sits at +-0.707 of the amplitude; the wave itself reaches the full amplitude
-  const signal = sine(sr, sr / 4, -6, 2, Math.PI / 4);
+  // (Faded in and out over 50 ms: a sine that starts at once rings over its amplitude there)
+  const fade = 2400;
+  const signal = sine(sr, sr / 4, -6, 2, Math.PI / 4).map((v, i, all) => v * Math.min(1, Math.min(i, all.length - i) / fade));
   let samplePeak = 0;
   for (const v of signal) samplePeak = Math.max(samplePeak, Math.abs(v));
   near(20 * Math.log10(samplePeak), -9, 0.05, 'sample peak');
   const r = measure(sr, signal);
-  near(r.truePeakMax, -6, 0.3, 'true peak');
-  near(r.truePeak, -6, 0.3, 'recent true peak');
+  // +3.01 dB over the samples (BS.1770's own 4x example filter read 0.22 dB over the wave)
+  near(r.truePeakMax - 20 * Math.log10(samplePeak), 3.01, 0.03, 'true peak over the sample peak');
+  near(r.truePeakMax, -6, 0.03, 'true peak');
+  near(r.truePeak, -6, 0.03, 'recent true peak');
+  near(20 * Math.log10(truePeakOf([signal])), -6, 0.03, 'truePeakOf');
+});
+
+test('true peak of sines up to 20 kHz: within 0.08 dB of the wave, never over (at 44.1 and 48 kHz)', () => {
+  for (const sr of [44100, 48000]) {
+    for (let hz = 500; hz <= 20000; hz += 500) {
+      for (const phase of [0, 0.4, Math.PI / 4, 1.2]) {
+        // Faded in and out, so the start and end don't ring
+        const n = 2400;
+        const edge = (i) => Math.min(i, n - i);
+        const x = sine(sr, hz, -6, n / sr, phase).map((v, i) => (edge(i) < 800 ? v * Math.sin((Math.PI * edge(i)) / 1600) ** 2 : v));
+        const tp = 20 * Math.log10(truePeakOf([x]));
+        assert.ok(tp <= -6 + 0.01 && tp >= -6 - 0.08, `${hz} Hz at ${sr}, phase ${phase}: ${tp.toFixed(3)} dBTP`);
+        near(measure(sr, x).truePeakMax, tp, 1e-6, `the analyser agrees at ${hz} Hz`);
+      }
+    }
+  }
 });
 
 test('reset forgets everything, and readings before the first full block are partial, not wrong', () => {

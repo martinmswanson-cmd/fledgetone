@@ -130,6 +130,11 @@ export interface RenderOptions {
    * file it saves, not in the render before it was turned up.
    */
   keepRingOut?: boolean;
+  /**
+   * Of the tracks that sound, play only these (ids), as a stem does: the others' drum hits still
+   * drive the Pumps that follow them (the hit check's bass alone, with its duck holes).
+   */
+  soundOnly?: readonly string[];
   /** The least a ring-out render runs past its range (default RING_OUT_LISTEN): a freeze, which cuts its own silent tail, renders less. */
   ringOutMin?: number;
   /**
@@ -414,7 +419,9 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal | undefined): Pro
 export async function renderArrangement(opts: RenderOptions, onProgress?: (fraction: number) => void): Promise<AudioBuffer> {
   // Solo is resolved here as mute rather than with Channel.solo. Silent tracks aren't built at
   // all (so their notes cost nothing) and their samples aren't needed.
-  const rendered = await renderTracks(opts, audibleTracks(opts.tracks), onProgress);
+  const sounding = audibleTracks(opts.tracks);
+  const only = opts.soundOnly && new Set(opts.soundOnly);
+  const rendered = await renderTracks(opts, only ? sounding.filter((t) => only.has(t.id)) : sounding, onProgress);
   const { sampleRate } = rendered;
   scale(rendered.channels, peakGain(peakOf(rendered.channels), opts));
   const channels = opts.keepRingOut ? rendered.channels : endRingOut(rendered.channels, sampleRate, opts, ringOutLength(rendered.channels, sampleRate, rangeFrames(opts)));

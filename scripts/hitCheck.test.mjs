@@ -295,3 +295,45 @@ test('without drum notes the drum targets are left out, not failed', () => {
   const j = new Map(T.judgeHits(r, 'dubstep').map((v) => [v.id, v]));
   for (const id of ['kick', 'snare', 'subDuck']) assert.equal(j.get(id).status, 'na');
 });
+
+test('four on the floor: snares on kicks are left out of the sub-under-the-snare measure, which is then not measured, with no advice', () => {
+  // 120 BPM, 8 s: a kick every beat with a pumped 45 Hz sub (ducked after each kick), snares on 2 and 4 (on kicks)
+  const n = 8 * SR;
+  const x = new Float32Array(n);
+  const beat = 0.5;
+  for (let i = 0; i < n; i++) {
+    const t = i / SR;
+    const since = t % beat;
+    const duck = since < 0.15 ? 0.1 + 0.9 * (since / 0.15) : 1;
+    x[i] = 0.3 * duck * Math.sin(2 * Math.PI * 45 * t) + (since < 0.03 ? 0.4 * Math.sin(2 * Math.PI * 1500 * t) * (1 - since / 0.03) : 0);
+  }
+  const kicks = Array.from({ length: 16 }, (_, i) => i * beat);
+  const snares = kicks.filter((_, i) => i % 2 === 1).map((t) => t + 0.005);
+  assert.deepEqual(H.loneSnares(kicks, snares), []);
+  assert.deepEqual(H.loneSnares(kicks, [0.25, 0.51, 1.75]), [0.25, 1.75]);
+  const r = H.hitCheck({ channels: [x, x], sampleRate: SR, bpm: 120, gridStart: 0, kicks, snares });
+  assert.equal(r.drums.loneSnares, 0);
+  assert.ok(Number.isNaN(r.drums.subDuck), `subDuck ${r.drums.subDuck}`);
+  const j = new Map(T.judgeHits(r, 'dubstep').map((v) => [v.id, v]));
+  assert.equal(j.get('subDuck').status, 'na');
+  assert.equal(j.get('subDuck').advice, '');
+  assert.match(j.get('subDuck').unmeasured, /snares land on kicks/);
+  // Lone snares (off the kicks: half a beat later) are measured as before
+  const off = kicks.filter((_, i) => i % 2 === 1).map((t) => t + 0.25);
+  const r2 = H.hitCheck({ channels: [x, x], sampleRate: SR, bpm: 120, gridStart: 0, kicks, snares: off });
+  assert.equal(r2.drums.loneSnares, 8);
+  assert.ok(Number.isFinite(r2.drums.subDuck));
+  assert.equal(new Map(T.judgeHits(r2, 'dubstep').map((v) => [v.id, v])).get('subDuck').unmeasured, undefined);
+});
+
+test("the bass alone is rendered with the drums silent, not muted: their hits still duck the bass's Pump, as in the mix", () => {
+  const studio = fs.readFileSync(new URL('../src/audio/mixStudio.ts', import.meta.url), 'utf8');
+  const run = studio.slice(studio.indexOf('export function runHitCheck'));
+  const bassPart = run.slice(run.indexOf('Rendering the bass alone'), run.indexOf("progress(0.75, 'Measuring')"));
+  assert.match(bassPart, /soundOnly:/, 'the bass render plays only the bass');
+  assert.doesNotMatch(bassPart, /isMuted: true/, 'muting the drums would stop their hits reaching the Pump');
+  // The render plays only those tracks, while the Pumps hear every drum kit that sounds (opts.tracks)
+  const exp = fs.readFileSync(new URL('../src/audio/exportWav.ts', import.meta.url), 'utf8');
+  assert.match(exp, /opts\.soundOnly/);
+  assert.match(exp, /const kickTracks = audibleTracks\(opts\.tracks\)/);
+});
