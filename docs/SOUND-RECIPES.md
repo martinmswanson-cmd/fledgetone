@@ -66,3 +66,10 @@ piano broken chords and 16th runs, a tamed Driven Legato bass, music pump −1 d
 LUFS, no Crunch) or `'b'` (future bass, 130 BPM, A major: lydian II and borrowed iv, a lead holding
 one colour tone over several chords, chopped chords over a wash, Duck to kick "Future bass"). Kept
 here so they can be rebuilt while the owner decides.
+
+Second versions (`scripts/demos/melodic-takes-2.js`, same args): the owner said the first ~10 s of
+each worked, then "the melody and synth go everywhere, I can't catch an actual melody". Fix: the
+drop grows out of the opening; one lead sings one 4-bar tune in A A' A B form, identical each time
+except the phrase endings; chords once a bar on the barline; piano, wash and chord stacks capped
+under the tune's register; runs and answers only in the gaps between phrases; bass holds roots; the
+lead is the loudest melodic part.
