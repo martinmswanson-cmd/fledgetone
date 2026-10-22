@@ -135,22 +135,54 @@ test('Crunch lets the same mix reach Club by clipping on purpose, under the same
   assert.equal(L.effectiveClipper(loudMaster('club')), L.LOUD_CLIPPER);
   assert.ok(L.effectiveClipper(half).softness < L.LOUD_CLIPPER.softness && L.effectiveClipper(half).softness > 0);
   assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 })).softness, 0);
-  // ...and clips a little lower, so the limiter after it has less to do (it doesn't pump)
-  assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 })).ceiling, L.LOUD_CLIPPER.ceiling - L.CRUNCH_CLIP_LOWER_DB);
-  // (Just over a lower export ceiling, an MP3's: the limiter after it only catches what's between samples)
-  assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 }), -3).ceiling, -3 + (L.LOUD_CLIPPER.ceiling + 1) - L.CRUNCH_CLIP_LOWER_DB);
+  // ...is the band kind (its peaks between samples stay near where it clips), and clips a little
+  // under the limiter's ceiling, lower with more Crunch, so the limiter after it has next to nothing to do (it doesn't pump)
+  assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 })).band, true);
+  assert.equal(L.effectiveClipper(half).band, true);
+  assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 })).ceiling, -1 - L.CRUNCH_CLIP_UNDER_DB - L.CRUNCH_CLIP_LOWER_DB);
+  // (Under a lower export ceiling, an MP3's, by as much)
+  assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 }), -3).ceiling, -3 - L.CRUNCH_CLIP_UNDER_DB - L.CRUNCH_CLIP_LOWER_DB);
   assert.equal(L.effectiveClipper(loudMaster('club'), -3), L.LOUD_CLIPPER);
+  assert.equal(L.LOUD_CLIPPER.band, undefined);
   // MP3 and Ogg exports keep their peaks lower with Crunch (clipped waves overshoot more once encoded); WAV stays at -1 dBTP
   const { exportCeilingDbtp, LOSSY_CEILING_DBTP, CRUNCH_LOSSY_EXTRA_DB } = await import('../src/audio/effects/limiter.ts');
   assert.equal(exportCeilingDbtp('mp3'), LOSSY_CEILING_DBTP);
   assert.equal(exportCeilingDbtp('mp3', 0), LOSSY_CEILING_DBTP);
   assert.equal(exportCeilingDbtp('mp3', 1), LOSSY_CEILING_DBTP - CRUNCH_LOSSY_EXTRA_DB);
+  // (all of it at any Crunch: the band clipper's output sits at its ceiling, and encoding overshoots it as much)
+  assert.equal(exportCeilingDbtp('mp3', 0.15), LOSSY_CEILING_DBTP - CRUNCH_LOSSY_EXTRA_DB);
   assert.equal(exportCeilingDbtp('wav', 1), -1);
   // (The Clipper insert, when on, plays as set: Crunch only bends the Loud master's own)
   const insert = { on: true, drive: 3, softness: 0.3, ceiling: -1 };
   assert.equal(L.effectiveClipper({ clipper: insert, loud: { ...T.defaultLoud(), on: true, crunch: 1 } }), insert);
   // A Loud master that's off has no Crunch
   assert.equal(L.loudCrunch({ loud: { ...T.defaultLoud(), crunch: 1 } }), 0);
+});
+
+test('with Crunch the limiter barely works on a dense, bright drop, so the mix does not pump with the drums', () => {
+  // (The plain clipper Crunch had before: its output overshot the limiter by several dB on the
+  // hats and the snare, and the limiter pulled the whole mix down after every hit)
+  const crunchy = loudMaster('club', { crunch: 0.85 });
+  const before = { ...crunchy, clipper: { on: true, drive: 0, softness: 0.075, ceiling: -0.925 } };
+  const run = (m) => {
+    const [l, r] = drop(6, 0.6, true);
+    for (let i = 0; i < l.length; i++) {
+      // brighter hats, as a crunchy drop has
+      const h = 0.25 * Math.sin(i * 2.7) * Math.exp(-((i / SR) % 0.103) * 80);
+      l[i] += h;
+      r[i] -= h;
+    }
+    const stats = masterAfter(l, r, SR, m, 0, -1, [], -6);
+    return { stats, lufs: lufsOf(l, r), tp: dbtp(l, r) };
+  };
+  const now = run(crunchy);
+  const old = run(before);
+  assert.ok(now.tp <= -1 + 1e-6, `true peak ${now.tp.toFixed(2)}`);
+  assert.ok(now.stats.limiterPeakDb < old.stats.limiterPeakDb - 2, `limiter peak ${now.stats.limiterPeakDb.toFixed(2)} vs ${old.stats.limiterPeakDb.toFixed(2)} dB`);
+  assert.ok(now.stats.limiterBusyShare < 0.1 && now.stats.limiterBusyShare < old.stats.limiterBusyShare / 3, `busy ${now.stats.limiterBusyShare} vs ${old.stats.limiterBusyShare}`);
+  // ...and gets as loud with less push (the limiter isn't throwing the loudness away)
+  assert.ok(now.lufs >= old.lufs - 0.2, `${now.lufs.toFixed(2)} vs ${old.lufs.toFixed(2)} LUFS`);
+  assert.ok(now.stats.loud.push < old.stats.loud.push, `push ${now.stats.loud.push} vs ${old.stats.loud.push}`);
 });
 
 test('Crunch is optional in a project: absent reads as none and stays absent; out of range is clamped; it counts as a change', () => {

@@ -17,7 +17,9 @@
  * The kernel is plain JavaScript (no imports, no closures over module state) so the worklet
  * module can embed it with Function.prototype.toString, the export can run the very same code over
  * a render (masterAfter.ts), and the unit test can run it directly: live and export are the same
- * maths. It delays the sound by CLIPPER_LATENCY samples; the export takes that delay back off.
+ * maths. It delays the sound by its kernel's `latency` samples; the export takes that delay back
+ * off. With the Loud master's Crunch it's the band kind (createClipperKernel's `band`): the whole
+ * sound through the oversampling, so its peaks between samples stay near the ceiling too.
  */
 
 /** Settings of the master clipper (MasterSettings.clipper). */
@@ -29,6 +31,13 @@ export interface ClipperSettings {
   softness: number;
   /** Where it clips, dBFS, CLIPPER_CEILING_MIN to 0 */
   ceiling: number;
+  /**
+   * The band kind (see createClipperKernel): the whole sound through the oversampled path, then
+   * clipped flat again where that still pokes over, so its peaks between samples stay near the
+   * ceiling however hard it's driven and the limiter after it has next to nothing left to do. What
+   * the Loud master's Crunch uses; never stored (the Clipper insert is always the plain kind).
+   */
+  band?: boolean;
 }
 
 export const CLIPPER_DRIVE_MAX = 18;
@@ -76,13 +85,53 @@ export interface ClipperKernel {
   read: () => ClipperReading;
 }
 
-export function createClipperKernel(_sampleRate: number): ClipperKernel {
+/**
+ * The clipper's kernel; `band`: the band kind (ClipperSettings.band). Why the plain kind isn't
+ * enough for Crunch: it adds only what the curve took off (filtered back down) to the driven sound,
+ * so whatever the driven sound has above the filter's pass band (from about 16 kHz: hats, crunch
+ * fizz) goes past the clip untouched, and a high sound clipped flat comes back down as its
+ * fundamental, up to 4/pi (2 dB) over the ceiling. On a busy, crunchy drop pushed 10 to 13 dB
+ * into it, its output went 6 to 9 dB over the ceiling between samples, the true-peak limiter
+ * after it pulled the whole mix down 2 dB most of the time and 5 to 8 dB after every kick and snare,
+ * and the bass pumped with the drums. The band kind runs the whole driven sound up and back down
+ * (a longer filter, flat to 18 kHz at 44.1 kHz: the sound itself goes through it now), so nothing
+ * passes unclipped, then two plain hard clips at the same ceiling take off what ringing is left
+ * (each pass rings less): on that drop its true peak came out 1 to 2 dB over where it clips
+ * instead of 6 to 9, so clipping a little under the limiter's ceiling (loudMaster.ts) leaves the
+ * limiter idle. It costs the dry path's filter on every sample (81 taps) on top of the plain
+ * kind's work, about three times the plain kind on a loud drop. `whole` (internal): the band
+ * kind's first stage.
+ */
+export function createClipperKernel(_sampleRate: number, band = false, whole = false): ClipperKernel {
+  if (band) {
+    // The band clipper: this kernel's band kind, then two plain hard clips of what it left over
+    // its ceiling (see ClipperSettings.band). (The kernel is the same at any sample rate)
+    const first = createClipperKernel(0, false, true);
+    const second = createClipperKernel(0);
+    const third = createClipperKernel(0);
+    return {
+      process: (inL, inR, outL, outR, frames, drive, ceiling, softness) => {
+        first.process(inL, inR, outL, outR, frames, drive, ceiling, softness);
+        second.process(outL, outR, outL, outR, frames, 1, ceiling, 0);
+        third.process(outL, outR, outL, outR, frames, 1, ceiling, 0);
+      },
+      latency: first.latency + second.latency + third.latency,
+      read: () => {
+        second.read();
+        third.read();
+        return first.read();
+      },
+    };
+  }
+  // (`whole`: the band kind's first stage, the driven sound through the up and down filters
+  // instead of as it came, and a longer filter)
   const FACTOR = 4;
-  const LENGTH = 97;
+  const LENGTH = whole ? 161 : 97;
   // The low-pass at the oversampled rate: a Kaiser-windowed sinc (beta 8, about 80 dB down),
   // centred a little under the original Nyquist, so what clipping makes above it is gone before
-  // the sound is taken back down (and folds, if at all, above about 19 kHz)
-  const cutoff = 0.46 / FACTOR;
+  // the sound is taken back down (and folds, if at all, above about 19 kHz). The band kind's is
+  // longer and a little higher (flat to 18 kHz: the whole sound goes through it twice)
+  const cutoff = (whole ? 0.47 : 0.46) / FACTOR;
   const bessel0 = (x: number) => {
     let sum = 1;
     let term = 1;
@@ -127,6 +176,20 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
   // was three quarters of a sample early: at 5 kHz it no longer cancelled the peaks it clipped,
   // which came out far over the ceiling)
   const ALIGN = FACTOR - 1;
+  // The band kind's dry path: the driven sound up and back down without the clip, one filter at
+  // the original rate (taps FACTOR (h * h)[FACTOR m], the up filter's gain and every FACTOR-th
+  // point of the two filters one after the other), as long as the delay twice over
+  const dryTaps = whole ? 2 * latency + 1 : 0;
+  const dryFilter = new Float64Array(dryTaps);
+  for (let m = 0; m < dryTaps; m++) {
+    let c = 0;
+    const at = FACTOR * m;
+    for (let j = Math.max(0, at - LENGTH + 1); j <= Math.min(LENGTH - 1, at); j++) c += h[j] * h[at - j];
+    dryFilter[m] = FACTOR * c;
+  }
+  // (Its input, a ring written twice over)
+  const dryL = new Float64Array(2 * Math.max(1, dryTaps));
+  const dryR = new Float64Array(2 * Math.max(1, dryTaps));
   const RES = LENGTH + ALIGN;
 
   // Which samples' points can reach the knee, without working them out. Phase p is the point
@@ -218,6 +281,7 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
   // reaches (os points, counted from the first held one: NONE, none)
   const NEWEST = 13;
   const OLDEST = 14;
+  const DRY_AT = 15;
   const NONE = -1e6;
   // When a sample last came near the knee (samples)
   state[LAST_LOUD] = -1e9;
@@ -277,6 +341,11 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
     // (Places in the rings as whole numbers, so they index as such)
     let histAt = state[HIST_AT] | 0;
     let delayAt = state[DELAY_AT] | 0;
+    let dryAt = state[DRY_AT] | 0;
+    const GT = dryTaps;
+    const gf = dryFilter;
+    const dxL = dryL;
+    const dxR = dryR;
     const n0 = state[N];
     let lastLoud = state[LAST_LOUD];
     let peakReduction = state[PEAK_REDUCTION];
@@ -432,6 +501,22 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
       dLine[delayAt] = l;
       dRine[delayAt] = r;
       delayAt = read;
+      if (GT > 0) {
+        // (The band kind: the driven sound through both filters instead, as late)
+        dryAt = dryAt + 1 === GT ? 0 : dryAt + 1;
+        dxL[dryAt] = dxL[dryAt + GT] = l;
+        dxR[dryAt] = dxR[dryAt + GT] = r;
+        const e = dryAt + GT;
+        let sl = 0;
+        let sr = 0;
+        for (let m = 0; m < GT; m++) {
+          const g = gf[m];
+          sl += g * dxL[e - m];
+          sr += g * dxR[e - m];
+        }
+        dr2[2 * i] = sl;
+        dr2[2 * i + 1] = sr;
+      }
     }
     // The residual filtered back down at each sample's phase: over the stretch of the filter's
     // reach that has any (newest first, as over every tap: the zeros either side add nothing).
@@ -498,6 +583,7 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
     rs.copyWithin(0, 2 * 4 * frames, 2 * (4 * frames + held));
     state[HIST_AT] = histAt;
     state[DELAY_AT] = delayAt;
+    state[DRY_AT] = dryAt;
     state[N] = n0 + frames;
     state[LAST_LOUD] = lastLoud;
     state[PEAK_REDUCTION] = peakReduction;
@@ -541,7 +627,7 @@ export function createClipperKernel(_sampleRate: number): ClipperKernel {
  * section does (masterAfter.ts); returns what it did.
  */
 export function clipChannels(left: Float32Array, right: Float32Array, sampleRate: number, settings: ClipperSettings): ClipperReading {
-  const kernel = createClipperKernel(sampleRate);
+  const kernel = createClipperKernel(sampleRate, settings.band === true);
   const { drive, ceiling, softness } = clipperParams(settings);
   const n = left.length;
   const lat = kernel.latency;
@@ -586,7 +672,7 @@ const READINGS_PER_SECOND = 15;
 
 /**
  * The AudioWorklet module: the kernel above with k-rate `drive`, `ceiling` (linear) and
- * `softness` params. It posts a ClipperReading a few times a second; a 'dispose' message stops it.
+ * `softness` params, the band kind with processorOptions `{ band: true }`. It posts a ClipperReading a few times a second; a 'dispose' message stops it.
  */
 export const CLIPPER_WORKLET_SOURCE = `
 const createClipperKernel = ${createClipperKernel.toString()};
@@ -598,9 +684,10 @@ class ClipperProcessor extends AudioWorkletProcessor {
       { name: 'softness', defaultValue: 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' },
     ];
   }
-  constructor() {
+  constructor(options) {
     super();
-    this.kernel = createClipperKernel(sampleRate);
+    // (processorOptions.band: the band kind, see ClipperSettings.band)
+    this.kernel = createClipperKernel(sampleRate, !!(options && options.processorOptions && options.processorOptions.band));
     this.alive = true;
     this.silence = new Float32Array(128);
     this.frames = 0;

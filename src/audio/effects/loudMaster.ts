@@ -67,8 +67,14 @@ export const CRUNCH_MAX_DISTORTION_DB = -9;
 
 /** How much lower the Loud master's clipper clips at full Crunch, dB (under the ceiling it clips at for the limiter's: see effectiveClipper). */
 export const CRUNCH_CLIP_LOWER_DB = 0.5;
-/** How far over the limiter's ceiling (dBTP) a crunching clipper clips, at most (LOUD_CLIPPER's ceiling at -1 dBTP). */
-const CRUNCH_CLIP_OVER_DB = LOUD_CLIPPER.ceiling - LIMITER_CEILING_DBTP;
+/**
+ * How far under the limiter's ceiling (dBTP) a crunching clipper clips, dB, before Crunch lowers
+ * it further. With Crunch the clipper is the band kind (clipper.ts), whose true peaks land 1 to 2
+ * dB over where it clips on a dense drop: clipping this far under the ceiling leaves the limiter
+ * idle nearly all the time (on the drop it was measured on, working in 3% of 10 ms blocks instead
+ * of 92%), so it no longer pulls the whole mix down after every kick and snare.
+ */
+export const CRUNCH_CLIP_UNDER_DB = 0.5;
 
 /** The Crunch Pocket's Crunch button sets (the studio's slider goes anywhere from 0 to 1). */
 export const POCKET_CRUNCH = 0.7;
@@ -90,10 +96,13 @@ export function effectiveWidth(m: Pick<MasterSettings, 'width' | 'monoLow' | 'lo
 
 /**
  * The clipper as it plays: a Loud master's (the Clipper insert's settings when that's on), else the
- * insert's. With Crunch the Loud master's knee hardens towards a flat top and it clips just over
- * the limiter's ceiling (`ceilingDbtp`: live and WAV -1, MP3 lower, see exportCeilingDbtp), so the
- * clipper does the work and the limiter after it only catches what's between samples: it doesn't
- * pump on every hit.
+ * insert's. With Crunch the Loud master's knee hardens towards a flat top, it's the band kind (the
+ * whole sound oversampled and clipped twice, so its peaks between samples stay near where it
+ * clips: ClipperSettings.band) and it clips a little under the limiter's ceiling (`ceilingDbtp`:
+ * live and WAV -1, MP3 lower, see exportCeilingDbtp), so the clipper does all the work and the
+ * limiter after it next to none: the mix doesn't pump with the drums. (Before, the plain clipper's
+ * output overshot the limiter by up to 6 dB on a dense drop, and the limiter pulled the whole mix
+ * down 2 to 5 dB after every kick and snare.)
  */
 export function effectiveClipper(m: Pick<MasterSettings, 'clipper' | 'loud'>, ceilingDbtp = LIMITER_CEILING_DBTP): ClipperSettings | undefined {
   if (m.clipper?.on) return m.clipper;
@@ -102,7 +111,7 @@ export function effectiveClipper(m: Pick<MasterSettings, 'clipper' | 'loud'>, ce
   // (No Crunch: the Loud master's own, exactly)
   if (!(crunch > 0)) return LOUD_CLIPPER;
   const round = (v: number) => Math.round(v * 1000) / 1000;
-  return { ...LOUD_CLIPPER, softness: round(LOUD_CLIPPER.softness * (1 - crunch)), ceiling: round(Math.min(LOUD_CLIPPER.ceiling, ceilingDbtp + CRUNCH_CLIP_OVER_DB) - crunch * CRUNCH_CLIP_LOWER_DB) };
+  return { ...LOUD_CLIPPER, softness: round(LOUD_CLIPPER.softness * (1 - crunch)), ceiling: round(ceilingDbtp - CRUNCH_CLIP_UNDER_DB - crunch * CRUNCH_CLIP_LOWER_DB), band: true };
 }
 
 /** The sub tilt in dB (0: none, or not a Loud master). */
