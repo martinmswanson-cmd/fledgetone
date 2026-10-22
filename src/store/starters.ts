@@ -160,8 +160,8 @@ function celtic(): ProjectSnapshot {
   const fiddle = track('Fiddle', 'fiddle', { volume: -2, pan: -0.2, reverbSend: 0.3, fx: { human: human(0.35, 0.3) } });
   const whistle = track('Whistle', 'recorder', { volume: -3, pan: 0.25, reverbSend: 0.3, fx: { human: human(0.35, 0.3) } });
   const guitar = track('Guitar', 'steelGuitar', { volume: -8, reverbSend: 0.2, fx: { human: human(0.3) } });
-  // The bodhrán on the acoustic kit's toms
-  const bodhran = track('Bodhrán', 'acousticKit', { volume: -4, reverbSend: 0.2, fx: { human: human(0.4) } });
+  // The bodhrán on the studio kit's toms
+  const bodhran = track('Bodhrán', 'studioKit', { volume: -4, reverbSend: 0.2, fx: { human: human(0.4) } });
   const pipes = track('Pipes', 'bagpipe', { volume: -8, reverbSend: 0.4, pan: 0.1, fx: { peq: peq(lowCut(200)) } });
   // A reel in D: D - G - D - A, a bar each, strummed down (0.8) and up (0.55)
   const shapes = [['D3', 'A3', 'D4', 'F#4'], ['G2', 'D3', 'G3', 'B3', 'D4'], ['D3', 'A3', 'D4', 'F#4'], ['A2', 'E3', 'A3', 'C#4', 'E4']];
@@ -196,8 +196,8 @@ function celtic(): ProjectSnapshot {
 function latin(): ProjectSnapshot {
   const guitar = track('Guitar', 'nylonGuitar', { volume: -3, reverbSend: 0.2, fx: { human: human(0.35) } });
   const bass = track('Bass', 'uprightBass', { volume: 0, fx: { peq: peq(lowCut(35)), human: human(0.35, 0.15) } });
-  const perc = track('Percussion', 'bongos', { volume: -1, fx: { human: human(0.4) } });
-  const kit = track('Kit', 'acousticKit', { volume: -2, fx: { human: human(0.35) } });
+  const perc = track('Percussion', 'latinPercussion', { volume: -4, fx: { human: human(0.4) } });
+  const kit = track('Kit', 'studioKit', { volume: -2, fx: { human: human(0.35) } });
   const agogo = track('Agogô', 'agogo', { volume: -16, pan: 0.35, reverbSend: 0.2, fx: { human: human(0.4) } });
   const flute = track('Flute', 'flute', { volume: -4, reverbSend: 0.35, delaySend: 0.15, fx: { peq: peq(lowCut(200)), human: human(0.35, 0.3) } });
   // Dm9 - G13 - Cmaj9 - A7, a bar each
@@ -239,7 +239,7 @@ function tavern(): ProjectSnapshot {
   const dulcimer = track('Dulcimer', 'dulcimer', { volume: -2, reverbSend: 0.25, pan: -0.2, fx: { human: human(0.35) } });
   const lute = track('Lute', 'nylonGuitar', { volume: -3, reverbSend: 0.2, pan: 0.2, fx: { human: human(0.35) } });
   const recorder = track('Recorder', 'recorder', { volume: -3, reverbSend: 0.3, fx: { human: human(0.35, 0.3) } });
-  const drum = track('Hand drum', 'bongos', { volume: 4, reverbSend: 0.15, fx: { human: human(0.45) } });
+  const drum = track('Hand drum', 'latinPercussion', { volume: 1, reverbSend: 0.15, fx: { human: human(0.45) } });
   const accordion = track('Accordion', 'accordion', { volume: -8, reverbSend: 0.25, fx: { human: human(0.3) } });
   // D minor jig feel (triplet 8ths): Dm - C - Bb - A, a bar each
   const t = 16 / 6;
@@ -387,7 +387,6 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   // part by part rather than here (A-weighted, each starter's part through both): against the old
   // sound they ranged from -0.5 to +3.5 dB, so each starter's electric piano fader is set for it
   rhodes: { to: 'realElectricPiano', db: 0 },
-  acousticKit: { to: 'studioKit', db: 0, anyNote: true },
   banjo: { to: 'realBanjo', db: 0 },
   harmonica: { to: 'realHarmonica', db: 0 },
   ocarina: { to: 'realOcarina', db: 0 },

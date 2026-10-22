@@ -2,7 +2,9 @@
  * The Drum Designer's synth: renders a designed drum (src/store/drumDesign.ts) into samples, one
  * hit at full velocity. Each layer is one voice: a kick's swept sine with a click, a snare's tone
  * and wires, a clap's slaps and tail, a hat's six detuned square waves and noise, a rim, a tom, a
- * shaker, a bell. Plain maths into a Float32Array, no Web Audio, so a hit renders the same in the
+ * shaker, a bell, and the layered kick (a click, a driven body falling from its punch pitch, a
+ * clean sub tail, and a hardcore mode whose driven tail holds through the beat) and layered snare
+ * (a transient, a tuned body, wires, a clap and a room that rings or is gated). Plain maths into a Float32Array, no Web Audio, so a hit renders the same in the
  * app, in an export and in Node's tests; the noise comes from a seed (seededNoise.ts), so each
  * hit's variation repeats exactly.
  *
@@ -105,8 +107,33 @@ const holdEnv = (x: number) => (x >= 1 ? 0 : (1 - x) * (1 - x));
 /** A fast fall that still reaches 0 at x = 1 (noise, metal, clicks). */
 const fastEnv = (x: number) => (x >= 1 ? 0 : Math.exp(-5 * x) * (1 - x));
 
+/**
+ * A level that has fallen 20 dB by `t20` seconds: 10^-((t / t20)^p). Past 1, `p` holds the level
+ * early and lets go late (a kick's body); 1 is a plain exponential fall. The layered voices'
+ * lengths are all "how long until 20 dB down", so the knobs read as the measured targets do.
+ */
+const fall = (t: number, t20: number, p: number) => 10 ** -((t / Math.max(1e-4, t20)) ** p);
+/** How long `fall` takes to reach -60 dB */
+const fallSeconds = (t20: number, p: number) => t20 * 3 ** (1 / p);
+/** A layered kick's body falls this way (hardcore: holds through the beat at its tail's length) */
+const KICK_BODY_P = 1.5;
+const HARDCORE_P = 1.4;
+/** A layered kick's sub falls this way */
+const KICK_SUB_P = 1.6;
+
+/** How long a layered kick's body sounds for: its decay, or (hardcore) its tail */
+const kickBodyT20 = (l: DrumLayer) => (l.hardcore >= 0.5 ? Math.max(l.tail, l.decay) : l.decay);
+
 /** How long a layer sounds, seconds after its own start. */
 function layerSeconds(l: DrumLayer): number {
+  if (l.voice === 'layerKick') {
+    const body = fallSeconds(kickBodyT20(l), l.hardcore >= 0.5 ? HARDCORE_P : KICK_BODY_P);
+    return Math.min(MAX_HIT_SECONDS, Math.max(l.noiseDecay * 3, l.body > 0 ? body : 0, l.sub > 0 ? fallSeconds(l.tail, KICK_SUB_P) : 0, 0.01) + 0.005);
+  }
+  if (l.voice === 'layerSnare') {
+    const room = l.room > 0 ? (l.gate >= 0.5 ? l.gateHold + 0.01 : fallSeconds(l.tail, 1)) : 0;
+    return Math.min(MAX_HIT_SECONDS, Math.max(0.05, l.body > 0 ? fallSeconds(l.decay, 1) : 0, l.noise > 0 ? fallSeconds(l.noiseDecay, 1) : 0, room, l.clap > 0 ? 0.25 : 0) + 0.005);
+  }
   const noiseTail = l.noise > 0 || l.voice === 'clap' || l.voice === 'shaker' ? l.noiseDecay : 0;
   const bursts = l.voice === 'clap' || l.voice === 'shaker' ? ((l.bursts - 1) * l.spread) / 1000 : 0;
   return Math.min(MAX_HIT_SECONDS, l.attack + Math.max(l.decay, noiseTail + bursts, 0.01) + 0.005);
@@ -124,6 +151,24 @@ function drive(x: Float32Array, amount: number): void {
   const norm = Math.tanh(g);
   for (let i = 0; i < x.length; i++) x[i] = Math.tanh(x[i] * g) / norm;
 }
+
+/** A layered kick's body drive: soft (tanh), hard (clipped) or folded, `amount` 0 to 1, peak kept at 1. */
+export function shapeBody(x: number, amount: number, mode: number): number {
+  if (!(amount > 0)) return x;
+  const g = 1 + amount * 24;
+  if (mode >= 1.5) {
+    // Folded: past the top it turns back down (a sine fold), so loud parts get brighter rather than flatter
+    return Math.sin(0.5 * Math.PI * Math.max(-1, Math.min(1, x)) * (1 + amount * 5));
+  }
+  if (mode >= 0.5) return Math.max(-1, Math.min(1, x * g));
+  return Math.tanh(x * g) / Math.tanh(g);
+}
+
+/** The band-limited saw's value at `phase` (0 to 1) for a step of `dt` a sample. */
+const saw = (phase: number, dt: number) => 2 * phase - 1 - blep(phase, dt);
+
+/** The three slaps of a layered snare's clap, seconds after the hit */
+const CLAP_SLAPS = [0, 0.009, 0.019];
 
 /** One layer, at a peak of about 1, `length` samples long. */
 function renderLayer(l: DrumLayer, length: number, sampleRate: number, seed: number): Float32Array {
@@ -258,6 +303,100 @@ function renderLayer(l: DrumLayer, length: number, sampleRate: number, seed: num
           env = Math.max(env, level * rise * rise * fastEnv(Math.max(0, s - l.attack) / noiseDecay));
         }
         out[i] = band.band * 2.2 * env * l.noise;
+      }
+      break;
+    }
+    case 'layerKick': {
+      // Three parts: a click (band-passed noise, 1-5 kHz, a few ms), a body (a sine or saw falling
+      // from its punch pitch onto the tail pitch, the only part driven, then a cabinet's low-pass) and
+      // a clean sine sub on the same pitch for the tail. Hardcore holds the driven body through the beat.
+      const f0 = l.pitch;
+      const f1 = Math.max(f0, l.startPitch);
+      // The drop: an exponential glide, 95% of the way down by sweepTime
+      const tau = Math.max(0.002, l.sweepTime / 3);
+      const hard = l.hardcore >= 0.5;
+      const bodyT20 = kickBodyT20(l);
+      const bodyP = hard ? HARDCORE_P : KICK_BODY_P;
+      const clickBand = new Svf(l.color, 1.1, sampleRate);
+      const cabinet = new Svf(l.tone, 0.85, sampleRate);
+      const lowCut = new Svf(28, 0.7, sampleRate);
+      const clickTau = Math.max(0.0008, l.noiseDecay / 3);
+      const clickEnd = l.noiseDecay * 3;
+      for (let i = 0; i < n; i++) {
+        const t = i / sampleRate;
+        const f = f0 + (f1 - f0) * Math.exp(-t / tau);
+        const dt = Math.min(0.5, f / sampleRate);
+        phase = (phase + dt) % 1;
+        // (A 1 ms rise: the click is the front, not a jump in the body)
+        const rise = Math.min(1, t / 0.001);
+        const sine = Math.sin(TAU * phase);
+        let v = 0;
+        if (l.body > 0) {
+          const wave = sine * (1 - l.shape) + saw(phase, dt) * l.shape * 0.85;
+          // Hardcore: the wave is driven at a steady level and the level shaped after, so the tail
+          // stays distorted as it falls; otherwise the drive eases off as the body falls
+          let b = hard ? shapeBody(wave * 0.9, l.drive, l.driveMode) * fall(t, bodyT20, bodyP) * rise : shapeBody(wave * fall(t, bodyT20, bodyP) * rise, l.drive, l.driveMode);
+          cabinet.run(b);
+          lowCut.run(cabinet.low);
+          b = lowCut.high;
+          v += b * l.body;
+        }
+        if (l.sub > 0) v += sine * fall(t, l.tail, KICK_SUB_P) * rise * l.sub;
+        if (l.click > 0 && t < clickEnd) {
+          clickBand.run(white());
+          v += clickBand.band * 3 * Math.exp(-t / clickTau) * l.click;
+        }
+        out[i] = v;
+      }
+      // (Its drive is the body's own, above)
+      return out;
+    }
+    case 'layerSnare': {
+      // A transient (a crack of noise and a blip, falling 12 dB in about 8 ms), a tuned body (two drum
+      // modes with a little sweep), the wires (noise high-passed under its colour, low-passed at its
+      // tone), an optional clap and a room (band-passed noise that rings on, or is gated)
+      const crack = new Svf(Math.max(2500, l.color * 0.9), 0.8, sampleRate);
+      const wiresHi = new Svf(l.color * 0.55, 0.7, sampleRate);
+      const wiresLo = new Svf(l.tone, 0.7, sampleRate);
+      const clapBand = new Svf(1400, 1.4, sampleRate);
+      const roomHi = new Svf(1000, 0.7, sampleRate);
+      const roomLo = new Svf(9000, 0.7, sampleRate);
+      const gated = l.gate >= 0.5;
+      for (let i = 0; i < n; i++) {
+        const t = i / sampleRate;
+        const bend = 2 ** ((l.sweep / 12) * Math.exp(-t / Math.max(0.001, l.sweepTime)));
+        phase = (phase + (l.pitch * bend) / sampleRate) % 1;
+        phase2 = (phase2 + (l.pitch * 1.6 * bend) / sampleRate) % 1;
+        const rise = Math.min(1, t / 0.0005);
+        let v = 0;
+        if (l.body > 0) v += (Math.sin(TAU * phase) + 0.35 * Math.sin(TAU * phase2)) * fall(t, l.decay, 1) * rise * l.body;
+        const w = white();
+        if (l.click > 0) {
+          crack.run(w);
+          v += (crack.band * 1.4 + 0.5 * Math.sin(TAU * phase * 2)) * Math.exp(-t / 0.006) * rise * l.click;
+        }
+        if (l.noise > 0) {
+          wiresHi.run(w);
+          wiresLo.run(wiresHi.high);
+          v += wiresLo.low * 1.3 * fall(t, l.noiseDecay, 1) * rise * l.noise;
+        }
+        const w2 = white();
+        if (l.clap > 0 && t < 0.25) {
+          clapBand.run(w2);
+          let env = 0;
+          for (const at of CLAP_SLAPS) if (t >= at) env = Math.max(env, Math.exp(-(t - at) / 0.0035));
+          env = Math.max(env, t >= CLAP_SLAPS[2] ? 0.5 * fall(t - CLAP_SLAPS[2], 0.07, 1) : 0);
+          v += clapBand.band * 2 * env * l.clap;
+        }
+        if (l.room > 0) {
+          roomHi.run(white());
+          roomLo.run(roomHi.high);
+          // Swells in over 6 ms behind the hit, then rings on (or holds and is cut off: gated)
+          const swell = Math.min(1, t / 0.006);
+          const env = gated ? (t < l.gateHold ? 10 ** (-0.15 * (t / l.gateHold)) : Math.max(0, 1 - (t - l.gateHold) / 0.006) * 10 ** -0.15) : fall(t, l.tail, 1);
+          v += roomLo.low * 0.9 * swell * env * l.room;
+        }
+        out[i] = v;
       }
       break;
     }

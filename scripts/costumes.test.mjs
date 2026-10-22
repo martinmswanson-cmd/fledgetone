@@ -21,7 +21,7 @@ const { isInstrumentKey, INSTRUMENTS } = await import('../src/audio/instrumentCa
 const noteTools = await import('../src/store/noteTools.ts');
 
 const track = (id, instrumentKey) => ({ id, name: id, instrumentKey, isMuted: false, isSoloed: false, volume: 0, pan: 0 });
-const tracks = [track('drums', 'acousticKit'), track('bass', 'bassGuitar'), track('lead', 'flute'), track('pad', 'warmPad'), track('horn', 'realHorn'), track('bus', 'bus')];
+const tracks = [track('drums', 'studioKit'), track('bass', 'bassGuitar'), track('lead', 'flute'), track('pad', 'warmPad'), track('horn', 'realHorn'), track('bus', 'bus')];
 const clips = [
   { id: 'c1', trackId: 'lead', name: 'Tune', startBar: 1, lengthBars: 1, notes: [{ id: 'n1', note: 'C7', startOffset: 0, duration: '4n', velocity: 0.7 }], isSelected: false },
   { id: 'c2', trackId: 'drums', name: 'Beat', startBar: 1, lengthBars: 1, notes: [{ id: 'n2', note: 'C1', startOffset: 0, duration: '16n', velocity: 0.9 }], isSelected: false },
@@ -58,7 +58,7 @@ test('applying a costume swaps instruments, mutes, and fits notes to the new ran
   assert.equal(tracks.find((t) => t.id === 'lead').instrumentKey, 'flute');
   // A drum part can't go to a melodic instrument (its notes are drum names)
   const odd = { id: 'x', name: 'x', tempo: 1, tracks: { drums: { instrument: 'piano' } } };
-  assert.equal(C.applyCostume(tracks, clips, odd).tracks.find((t) => t.id === 'drums').instrumentKey, 'acousticKit');
+  assert.equal(C.applyCostume(tracks, clips, odd).tracks.find((t) => t.id === 'drums').instrumentKey, 'studioKit');
 });
 
 test('costumes and state options from a file keep only what makes sense', () => {

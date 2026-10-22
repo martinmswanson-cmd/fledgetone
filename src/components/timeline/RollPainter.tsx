@@ -1,12 +1,12 @@
 /**
  * The piano roll's ROLL painter: turns the selected notes (a hat note, or a long note drawn over a
- * span) into a roll at 1/16, 1/16 triplet, 1/32, 1/32 triplet or 1/64, or a stutter of so many
- * hits, with its velocity rising, falling or swelling and its pitch rising or falling as it goes
+ * span) into a roll at 1/16, 1/16 triplet, 1/32, 1/32 triplet or 1/64, a stutter of so many
+ * hits, or an accelerating roll (8ths to 64ths, the snare build into a drop), with its velocity rising, falling or swelling and its pitch rising or falling as it goes
  * (the drill hat roll). The notes themselves come from roll() in noteTools.ts; this is the panel.
  */
 import React, { useRef, useState } from 'react';
 import { Popover } from '../Popover';
-import { roll, ROLL_RATES } from '../../store/noteTools';
+import { accelRoll, roll, ROLL_RATES } from '../../store/noteTools';
 import type { RollRateId, RollVelocity } from '../../store/noteTools';
 import type { NoteEvent } from '../../store/timelineTypes';
 
@@ -22,7 +22,7 @@ const PITCHES = [0, 2, 3, 5, 7, 12, -5, -12];
 const STUTTERS = [2, 3, 4, 5, 6, 8, 12, 16];
 
 /** The last roll's settings, kept while the page is open */
-let remembered: { rate: RollRateId | 'stutter'; count: number; velocity: RollVelocity; pitch: number } = { rate: '1/32', count: 4, velocity: 'up', pitch: 0 };
+let remembered: { rate: RollRateId | 'stutter' | 'accel'; count: number; velocity: RollVelocity; pitch: number } = { rate: '1/32', count: 4, velocity: 'up', pitch: 0 };
 
 interface Props {
   /** Drum rows (pitch as each hit's bend) rather than notes (pitch as semitones) */
@@ -46,9 +46,8 @@ export const RollPainter: React.FC<Props> = ({ drums, range, selected, onApply }
   };
   const apply = () => {
     const rate = ROLL_RATES.find((r) => r.id === s.rate)?.bars ?? 1 / 32;
-    onApply((target, newId) =>
-      roll(target, rate, newId, { velocity: s.velocity, from: 0.35, pitch: s.pitch, pitchBy: drums ? 'bend' : 'notes', lo: range[0], hi: range[1], ...(s.rate === 'stutter' ? { count: s.count } : {}) })
-    );
+    const shape = { velocity: s.velocity, from: 0.35, pitch: s.pitch, pitchBy: drums ? ('bend' as const) : ('notes' as const), lo: range[0], hi: range[1] };
+    onApply((target, newId) => (s.rate === 'accel' ? accelRoll(target, newId, shape) : roll(target, rate, newId, { ...shape, ...(s.rate === 'stutter' ? { count: s.count } : {}) })));
     setOpen(false);
   };
   return (
@@ -56,7 +55,7 @@ export const RollPainter: React.FC<Props> = ({ drums, range, selected, onApply }
       <button
         ref={anchor}
         type="button"
-        data-search="roll hat roll ratchet stutter triplet drill trap"
+        data-search="roll hat roll ratchet stutter triplet drill trap accelerating snare build"
         onClick={() => setOpen((o) => !o)}
         className={`h-6 px-1.5 rounded border text-[10px] font-mono ${open ? 'border-cyan-500 text-white' : 'border-forge-border text-forge-muted hover:text-forge-text'}`}
         title="Hat roll painter: turn the selected notes (or a long note over a span) into a roll, with its velocity and pitch moving"
@@ -69,11 +68,12 @@ export const RollPainter: React.FC<Props> = ({ drums, range, selected, onApply }
             <p className="text-forge-text">{selected ? `${selected} selected note${selected === 1 ? '' : 's'}` : 'Every note in the clip'}: each becomes a roll over its own length.</p>
             <label className="flex items-center justify-between gap-2">
               RATE
-              <select className={select} value={s.rate} data-autofocus onChange={(e) => update({ rate: e.target.value as RollRateId | 'stutter' })}>
+              <select className={select} value={s.rate} data-autofocus onChange={(e) => update({ rate: e.target.value as RollRateId | 'stutter' | 'accel' })}>
                 {ROLL_RATES.map((r) => (
                   <option key={r.id} value={r.id}>{r.label}</option>
                 ))}
                 <option value="stutter">Stutter (so many hits)</option>
+                <option value="accel">Accelerating (1/8 to 1/64)</option>
               </select>
             </label>
             {s.rate === 'stutter' && (

@@ -5,7 +5,8 @@
  * rows, low notes at the bottom; chord pads are the key's chords. With Rec on while the song plays
  * the section, what's played is written into the cell on the nearest 16th. The drum steps show one
  * drum at a time, a bar of 16ths as a block (a row per beat), so every step is a thumb wide; holding
- * a lit step sets how often it plays (see noteChance.ts), and the dice roll the drum or the beat
+ * a lit step turns it into a roll that speeds up (noteTools.ts accelRoll) or sets how often it
+ * plays (see noteChance.ts), and the dice roll the drum or the beat
  * again in its style (smartTools.ts rollDrums).
  * Blocks keep their size: a taller drawer shows more of them, and the rest scroll (useAnchoredScroll
  * keeps the rows that matter in place as the drawer changes size).
@@ -23,12 +24,21 @@ import { editCell, sectionNotes } from './pocketCell';
 import { cellClip } from './pocketSections';
 import type { PocketSection } from './pocketSections';
 import { cellDrumStyles, cellKey, isRackKey, pocketNoteId, usePocket, usePlayPosition } from './pocketStore';
-import { ChanceSheet } from './pocketUi';
+import { ChanceSheet, SheetItem } from './pocketUi';
+import { accelRoll } from '../store/noteTools';
+import { barsToDuration } from '../store/timelineTypes';
 import { chanceMark, isConditional, withChance } from '../store/noteChance';
 import { rollDrums } from '../store/smartTools';
 import { buzz } from './pocketSession';
 
 const EPS = 1e-6;
+
+/** How long a held step's roll can be (bars): it speeds up into the next beat, two beats or bar */
+const ROLL_LENGTHS = [
+  { bars: 1 / 4, label: 'over a beat' },
+  { bars: 1 / 2, label: 'over two beats' },
+  { bars: 1, label: 'over a bar' },
+];
 
 /**
  * Keep a scrolling block of pads where the person left it as the drawer grows or shrinks: anchored
@@ -297,7 +307,7 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
             <button
               key={step}
               type="button"
-              aria-label={`${pad.label}, step ${step + 1}${mark ? `, plays ${mark}` : ''}${on ? '. Hold to set how often it plays' : ''}`}
+              aria-label={`${pad.label}, step ${step + 1}${mark ? `, plays ${mark}` : ''}${on ? '. Hold to roll it or set how often it plays' : ''}`}
               aria-pressed={on}
               className={`pk-step${on ? ' on' : ''}${mark ? ' cond' : ''}${k % beatEvery === 0 ? ' beat' : ''}${step === now ? ' now' : ''}`}
               onPointerDown={() => {
@@ -338,11 +348,31 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
       </div>
       {chosen && choosing !== null && (
         <ChanceSheet
-          title={`${pad.label}, step ${choosing + 1}: how often it plays`}
+          title={`${pad.label}, step ${choosing + 1}: roll it, or how often it plays`}
           note={chosen}
           onClose={() => setChoosing(null)}
           onPick={(id) => editCell(track.id, sec, (have) => have.map((n) => (n.note === pad.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === choosing ? withChance(n, id) : n)))}
-        />
+        >
+          {ROLL_LENGTHS.filter((r) => choosing / STEPS_PER_WHOLE + r.bars <= sec.to - sec.from + EPS).map((r) => (
+            <SheetItem
+              key={r.bars}
+              title={`Roll ${r.label}`}
+              detail="Faster and louder as it goes: 8ths, 16ths, 32nds, 64ths"
+              onClick={() => {
+                buzz();
+                const from = choosing / STEPS_PER_WHOLE;
+                editCell(track.id, sec, (have) => {
+                  const hit = have.find((n) => n.note === pad.note && Math.round(n.startOffset * STEPS_PER_WHOLE) === choosing);
+                  if (!hit) return have;
+                  // The roll takes the place of this drum's hits over its length
+                  const rest = have.filter((n) => n.note !== pad.note || n.startOffset < from - EPS || n.startOffset >= from + r.bars - EPS);
+                  return [...rest, ...accelRoll([{ ...hit, duration: barsToDuration(r.bars), velocity: Math.max(hit.velocity, 0.9) }], pocketNoteId)];
+                });
+                setChoosing(null);
+              }}
+            />
+          ))}
+        </ChanceSheet>
       )}
     </>
   );

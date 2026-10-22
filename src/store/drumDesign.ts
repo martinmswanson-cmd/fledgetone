@@ -24,7 +24,7 @@ export type DesignRow = (typeof DESIGN_ROWS)[number]['row'];
 export const DESIGN_ROW_IDS: readonly DesignRow[] = DESIGN_ROWS.map((r) => r.row);
 
 /** What a layer is: each voice has its own way of making the sound, and its own knobs (VOICE_CONTROLS). */
-export const DRUM_VOICES = ['kick', 'snare', 'clap', 'hat', 'rim', 'tom', 'shaker', 'bell'] as const;
+export const DRUM_VOICES = ['kick', 'snare', 'clap', 'hat', 'rim', 'tom', 'shaker', 'bell', 'layerKick', 'layerSnare'] as const;
 export type DrumVoice = (typeof DRUM_VOICES)[number];
 export const DRUM_VOICE_LABELS: Record<DrumVoice, string> = {
   kick: 'Kick',
@@ -35,6 +35,8 @@ export const DRUM_VOICE_LABELS: Record<DrumVoice, string> = {
   tom: 'Tom',
   shaker: 'Shaker',
   bell: 'Bell / cowbell',
+  layerKick: 'Layered kick',
+  layerSnare: 'Layered snare',
 };
 
 /**
@@ -71,8 +73,33 @@ export interface DrumLayer {
   spread: number;
   /** A swell into the hit, seconds (0 to 0.1): a shaker's */
   attack: number;
-  /** Distortion, 0 (clean) to 1 (crushed) */
+  /** Distortion, 0 (clean) to 1 (crushed); a layered kick drives its body only */
   drive: number;
+  // The layered kick's and snare's own settings (the other voices don't read them)
+  /** Where a layered kick's body starts its pitch drop, Hz (40 to 400): the punch */
+  startPitch: number;
+  /** A layered kick's body wave, 0 (sine) to 1 (saw) */
+  shape: number;
+  /** How long a layered kick's sub (or a layered snare's room) takes to fall 20 dB, seconds (0.03 to 3) */
+  tail: number;
+  /** A layered kick's clean sub, 0 to 1 */
+  sub: number;
+  /** A layered snare's room, 0 to 1 */
+  room: number;
+  /** How a layered kick's body is driven: 0 soft, 1 hard, 2 folded */
+  driveMode: number;
+  /** A layered kick's cabinet (a low-pass after its drive) or a layered snare's noise tone, Hz (300 to 16000) */
+  tone: number;
+  /** 1: the pitch follows the song's key root (see drumFollow.ts), 0: the pitch as set */
+  keyTrack: number;
+  /** 1: a layered kick's driven body holds through the beat at its tail's length and plays the bass */
+  hardcore: number;
+  /** 1: a layered snare's room is gated, cut off after `gateHold` */
+  gate: number;
+  /** How long a gated room holds, seconds (an 8th at the song's tempo, see drumFollow.ts) */
+  gateHold: number;
+  /** A layered snare's clap layer, 0 to 1 */
+  clap: number;
 }
 
 /** A designed drum: one or two layers, and its level against the row's (dB, -18 to 6). */
@@ -103,7 +130,21 @@ export const LAYER_RANGES: Record<Exclude<keyof DrumLayer, 'voice'>, [number, nu
   spread: [2, 40],
   attack: [0, 0.1],
   drive: [0, 1],
+  startPitch: [40, 400],
+  shape: [0, 1],
+  tail: [0.03, 3],
+  sub: [0, 1],
+  room: [0, 1],
+  driveMode: [0, 2],
+  tone: [300, 16000],
+  keyTrack: [0, 1],
+  hardcore: [0, 1],
+  gate: [0, 1],
+  gateHold: [0.03, 0.5],
+  clap: [0, 1],
 };
+/** The fields that are whole numbers (a count, a choice, an on/off) */
+const WHOLE: ReadonlySet<string> = new Set(['bursts', 'driveMode', 'keyTrack', 'hardcore', 'gate']);
 export const SOUND_LEVEL: [number, number] = [-18, 6];
 /** At most two layers a sound */
 export const MAX_DRUM_LAYERS = 2;
@@ -116,6 +157,10 @@ export interface DrumControl {
   step: number;
   /** Shown as: Hz, ms, s, st (semitones), dB, % (0 to 1), or a plain count */
   unit: 'Hz' | 'ms' | 's' | 'st' | 'dB' | '%' | '';
+  /** Shown as a switch (0 off, 1 on) or a list of named choices (0, 1, 2...) rather than a knob */
+  kind?: 'toggle' | 'choice';
+  /** A choice's names */
+  choices?: readonly string[];
   /** The knob moves on a log scale (pitches, times) */
   log?: boolean;
   /** Narrower than LAYER_RANGES for this voice */
@@ -123,6 +168,11 @@ export interface DrumControl {
 }
 
 const C = (key: DrumControl['key'], label: string, unit: DrumControl['unit'], step: number, log = false, range?: [number, number]): DrumControl => ({ key, label, unit, step, ...(log ? { log } : {}), ...(range ? { range } : {}) });
+const TOGGLE = (key: DrumControl['key'], label: string): DrumControl => ({ key, label, unit: '', step: 1, kind: 'toggle' });
+/** How a layered kick's body is driven */
+export const DRIVE_MODES = ['Soft', 'Hard', 'Fold'] as const;
+/** Where a pitch that follows the key goes: the octave of the root nearest this range, Hz */
+export const KEY_PITCH_RANGE: Partial<Record<DrumVoice, [number, number]>> = { layerKick: [45, 66], layerSnare: [120, 170] };
 
 /** The knobs each voice shows, in order (level and delay are shown for every layer). */
 export const VOICE_CONTROLS: Record<DrumVoice, DrumControl[]> = {
@@ -134,11 +184,28 @@ export const VOICE_CONTROLS: Record<DrumVoice, DrumControl[]> = {
   tom: [C('pitch', 'Pitch', 'Hz', 1, true, [50, 400]), C('sweep', 'Sweep', 'st', 1, false, [0, 24]), C('sweepTime', 'Sweep time', 's', 0.001, true), C('decay', 'Decay', 's', 0.01, true, [0.08, 2]), C('click', 'Punch', '%', 0.01), C('noise', 'Noise', '%', 0.01), C('drive', 'Distortion', '%', 0.01)],
   shaker: [C('color', 'Color', 'Hz', 10, true, [2000, 14000]), C('attack', 'Attack', 's', 0.001, false, [0, 0.06]), C('noiseDecay', 'Decay', 's', 0.005, true, [0.02, 0.5]), C('bursts', 'Shakes', '', 1, false, [1, 3]), C('spread', 'Shake gap', 'ms', 0.5, false, [8, 40]), C('drive', 'Distortion', '%', 0.01)],
   bell: [C('pitch', 'Pitch', 'Hz', 1, true, [300, 2000]), C('decay', 'Decay', 's', 0.005, true, [0.03, 1.5]), C('color', 'Tone', 'Hz', 10, true, [500, 6000]), C('click', 'Click', '%', 0.01), C('drive', 'Distortion', '%', 0.01)],
+  // (The tail pitch and the key switch are shown as the note picker; the hold of a gated room follows the tempo)
+  layerKick: [
+    C('click', 'Click', '%', 0.01), C('color', 'Click tone', 'Hz', 10, true, [1000, 5000]), C('noiseDecay', 'Click length', 's', 0.0005, true, [0.003, 0.015]),
+    C('body', 'Body', '%', 0.01), C('shape', 'Body wave', '%', 0.01), C('startPitch', 'Punch pitch', 'Hz', 1, true, [80, 300]), C('sweepTime', 'Pitch drop', 's', 0.001, true, [0.02, 0.15]), C('decay', 'Body decay', 's', 0.005, true, [0.03, 0.6]),
+    C('sub', 'Sub', '%', 0.01), C('tail', 'Tail', 's', 0.005, true, [0.05, 2]),
+    C('drive', 'Body drive', '%', 0.01), { key: 'driveMode', label: 'Drive type', unit: '', step: 1, kind: 'choice', choices: DRIVE_MODES }, C('tone', 'Cabinet', 'Hz', 10, true, [500, 12000]),
+    TOGGLE('hardcore', 'Hardcore tail'),
+  ],
+  layerSnare: [
+    C('click', 'Transient', '%', 0.01), C('body', 'Body', '%', 0.01), C('decay', 'Body decay', 's', 0.005, true, [0.03, 0.4]), C('sweep', 'Sweep', 'st', 1, false, [0, 24]),
+    C('noise', 'Noise', '%', 0.01), C('color', 'Noise color', 'Hz', 10, true, [2000, 9000]), C('tone', 'Noise tone', 'Hz', 10, true, [2000, 16000]), C('noiseDecay', 'Noise decay', 's', 0.005, true, [0.04, 0.6]),
+    C('clap', 'Clap', '%', 0.01), C('room', 'Room', '%', 0.01), C('tail', 'Room length', 's', 0.005, true, [0.1, 1.5]), TOGGLE('gate', 'Gated room'),
+    C('drive', 'Distortion', '%', 0.01),
+  ],
 };
 
 /** A layer of `voice` with middling settings for it. */
 export function defaultLayer(voice: DrumVoice): DrumLayer {
-  const base: DrumLayer = { voice, level: 0, delay: 0, pitch: 200, sweep: 0, sweepTime: 0.04, decay: 0.2, body: 1, click: 0.3, noise: 0, color: 4000, noiseDecay: 0.15, bursts: 1, spread: 10, attack: 0, drive: 0 };
+  const base: DrumLayer = {
+    voice, level: 0, delay: 0, pitch: 200, sweep: 0, sweepTime: 0.04, decay: 0.2, body: 1, click: 0.3, noise: 0, color: 4000, noiseDecay: 0.15, bursts: 1, spread: 10, attack: 0, drive: 0,
+    startPitch: 160, shape: 0, tail: 0.3, sub: 0, room: 0, driveMode: 0, tone: 8000, keyTrack: 0, hardcore: 0, gate: 0, gateHold: 0.1, clap: 0,
+  };
   switch (voice) {
     case 'kick':
       return { ...base, pitch: 48, sweep: 36, sweepTime: 0.03, decay: 0.5, click: 0.5, color: 3000, noiseDecay: 0.02 };
@@ -156,13 +223,42 @@ export function defaultLayer(voice: DrumVoice): DrumLayer {
       return { ...base, body: 0, click: 0, noise: 1, color: 7000, noiseDecay: 0.09, attack: 0.02, bursts: 1, spread: 18 };
     case 'bell':
       return { ...base, pitch: 540, decay: 0.25, click: 0.2, color: 1600 };
+    case 'layerKick':
+      return { ...base, pitch: 50, startPitch: 170, sweepTime: 0.05, decay: 0.09, body: 0.8, click: 0.5, color: 3000, noiseDecay: 0.006, sub: 0.9, tail: 0.14, shape: 0.2, drive: 0.3, tone: 6000 };
+    case 'layerSnare':
+      return { ...base, pitch: 150, sweep: 5, sweepTime: 0.015, decay: 0.08, body: 0.7, click: 0.6, noise: 0.8, color: 4500, tone: 12000, noiseDecay: 0.12, room: 0.3, tail: 0.45 };
   }
 }
 
 /** A sound of one layer of `voice`, with `edit` on top. */
-const one = (voice: DrumVoice, edit: Partial<DrumLayer> = {}, level = 0): DrumSound => ({ layers: [{ ...defaultLayer(voice), ...edit }], level });
+export const one = (voice: DrumVoice, edit: Partial<DrumLayer> = {}, level = 0): DrumSound => ({ layers: [{ ...defaultLayer(voice), ...edit }], level });
 /** A sound of two layers. */
-const two = (a: [DrumVoice, Partial<DrumLayer>], b: [DrumVoice, Partial<DrumLayer>], level = 0): DrumSound => ({ layers: [{ ...defaultLayer(a[0]), ...a[1] }, { ...defaultLayer(b[0]), ...b[1] }], level });
+export const two = (a: [DrumVoice, Partial<DrumLayer>], b: [DrumVoice, Partial<DrumLayer>], level = 0): DrumSound => ({ layers: [{ ...defaultLayer(a[0]), ...a[1] }, { ...defaultLayer(b[0]), ...b[1] }], level });
+
+/**
+ * The layered kicks' settings. Punch: short and clicky, its tail off the beat before the bass comes
+ * in (30-150 Hz down 20 dB in about 140 ms). Hardcore: the driven body holds through the beat (-20
+ * dB at about 290 ms) and is the bass. Deep tail: a long clean sub for a kick that is the low end.
+ * Club: a round four-on-the-floor kick.
+ */
+const KICKS: Record<'punch' | 'hardcore' | 'deepTail' | 'club', Partial<DrumLayer>> = {
+  punch: { pitch: 52, startPitch: 200, sweepTime: 0.045, decay: 0.07, body: 0.8, shape: 0.15, click: 0.55, color: 3200, noiseDecay: 0.005, sub: 0.9, tail: 0.18, drive: 0.35, driveMode: 0, tone: 5000, keyTrack: 1 },
+  hardcore: { pitch: 55, startPitch: 220, sweepTime: 0.04, decay: 0.1, body: 1, shape: 0.6, click: 0.6, color: 3000, noiseDecay: 0.006, sub: 0.35, tail: 0.29, hardcore: 1, drive: 0.85, driveMode: 1, tone: 4200, keyTrack: 1 },
+  deepTail: { pitch: 46, startPitch: 150, sweepTime: 0.06, decay: 0.1, body: 0.6, shape: 0, click: 0.6, color: 2500, noiseDecay: 0.006, sub: 1, tail: 0.45, drive: 0.15, tone: 4000, keyTrack: 1 },
+  club: { pitch: 50, startPitch: 140, sweepTime: 0.05, decay: 0.1, body: 0.8, shape: 0, click: 0.7, color: 2200, noiseDecay: 0.008, sub: 0.85, tail: 0.16, drive: 0.2, tone: 3500 },
+};
+
+/**
+ * The layered snares' settings. Big: a layered snare with a clap and a room tail (bass music,
+ * drumstep). Gated: the 80s room cut off after an 8th. Tight: dry and short. Crack (a clap): mostly
+ * transient and clap, a little room.
+ */
+const SNARES: Record<'big' | 'gated' | 'tight' | 'crack', Partial<DrumLayer>> = {
+  big: { pitch: 160, sweep: 5, body: 0.75, decay: 0.09, click: 0.7, noise: 0.85, color: 3900, tone: 9000, noiseDecay: 0.16, clap: 0.45, room: 0.6, tail: 0.5, drive: 0.25 },
+  gated: { pitch: 140, sweep: 4, body: 0.8, decay: 0.1, click: 0.5, noise: 0.75, color: 3600, tone: 8000, noiseDecay: 0.1, room: 0.9, gate: 1, gateHold: 0.12, tail: 0.4, drive: 0.35 },
+  tight: { pitch: 170, sweep: 6, body: 0.7, decay: 0.06, click: 0.4, noise: 0.85, color: 4000, tone: 8500, noiseDecay: 0.08, room: 0.12, tail: 0.2, drive: 0.35 },
+  crack: { pitch: 180, sweep: 3, body: 0.3, decay: 0.04, click: 0.9, noise: 0.6, color: 3800, tone: 8500, noiseDecay: 0.07, clap: 1, room: 0.25, tail: 0.3, drive: 0.2 },
+};
 
 /** Which kind of drum a preset is, for the menus (the row's kind is offered first). */
 export type PresetGroup = 'Kicks' | 'Snares' | 'Claps' | 'Hats' | 'Cymbals' | 'Percussion';
@@ -183,16 +279,26 @@ export const DRUM_PRESETS: readonly DrumPreset[] = [
   { id: 'drillKick', name: 'Tight kick', group: 'Kicks', sound: one('kick', { pitch: 52, sweep: 30, sweepTime: 0.018, decay: 0.32, click: 0.9, noise: 0.1, drive: 0.3 }) },
   { id: 'clickySubKick', name: 'Clicky sub kick', group: 'Kicks', sound: two(['kick', { pitch: 40, sweep: 24, sweepTime: 0.05, decay: 0.9, click: 0.2, drive: 0.1 }], ['rim', { pitch: 2200, decay: 0.012, click: 1, noise: 0.4, level: -10 }]) },
   { id: 'dustyKick', name: 'Dusty lo-fi kick', group: 'Kicks', sound: one('kick', { pitch: 58, sweep: 24, sweepTime: 0.03, decay: 0.3, click: 0.3, noise: 0.25, color: 1200, noiseDecay: 0.05, drive: 0.5 }, -1) },
+  // Layered kicks: click, body and sub, the tail on the song's key
+  { id: 'punchKick', name: 'Punch kick', group: 'Kicks', sound: one('layerKick', KICKS.punch) },
+  { id: 'hardcoreKick', name: 'Hardcore kick', group: 'Kicks', sound: one('layerKick', KICKS.hardcore) },
+  { id: 'deepTailKick', name: 'Deep tail kick', group: 'Kicks', sound: one('layerKick', KICKS.deepTail) },
+  { id: 'clubKick', name: 'Club kick', group: 'Kicks', sound: one('layerKick', KICKS.club) },
   // Snares
   { id: 'drillSnare', name: 'Punchy snare', group: 'Snares', sound: one('snare', { pitch: 210, sweep: 9, body: 0.75, decay: 0.09, noise: 0.85, color: 5200, noiseDecay: 0.16, click: 0.8, drive: 0.3 }) },
   { id: 'trapSnare', name: 'Crisp snare', group: 'Snares', sound: one('snare', { pitch: 230, sweep: 5, body: 0.5, decay: 0.07, noise: 1, color: 7000, noiseDecay: 0.22, click: 0.7, drive: 0.15 }) },
   { id: 'fatSnare', name: 'Fat layered snare', group: 'Snares', sound: two(['snare', { pitch: 180, sweep: 10, body: 0.9, decay: 0.14, noise: 0.7, color: 3800, noiseDecay: 0.2, click: 0.6, drive: 0.35 }], ['clap', { bursts: 3, spread: 8, color: 1500, noiseDecay: 0.25, level: -5, delay: 2 }]) },
   { id: 'tightSnare', name: 'Tight dry snare', group: 'Snares', sound: one('snare', { pitch: 250, sweep: 4, body: 0.7, decay: 0.07, noise: 0.8, color: 6000, noiseDecay: 0.12, click: 0.7 }) },
   { id: 'dustySnare', name: 'Dusty lo-fi snare', group: 'Snares', sound: one('snare', { pitch: 170, sweep: 6, body: 0.7, decay: 0.1, noise: 0.7, color: 2600, noiseDecay: 0.17, click: 0.4, drive: 0.55 }, -1) },
+  // Layered snares: transient, tuned body, wires, clap and room
+  { id: 'bigSnare', name: 'Big snare', group: 'Snares', sound: one('layerSnare', SNARES.big, 2.5) },
+  { id: 'gatedSnare', name: 'Gated snare', group: 'Snares', sound: one('layerSnare', SNARES.gated, 2.5) },
+  { id: 'tightLayerSnare', name: 'Tight snare', group: 'Snares', sound: one('layerSnare', SNARES.tight, 1.5) },
   // Claps
   { id: 'crispClap', name: 'Crisp clap', group: 'Claps', sound: one('clap', { bursts: 4, spread: 9, color: 1600, noiseDecay: 0.22, click: 0.5, drive: 0.1 }) },
   { id: 'wideClap', name: 'Big room clap', group: 'Claps', sound: one('clap', { bursts: 5, spread: 14, color: 1100, noiseDecay: 0.6, click: 0.3 }) },
   { id: 'snappyClap', name: 'Snappy short clap', group: 'Claps', sound: one('clap', { bursts: 3, spread: 6, color: 2000, noiseDecay: 0.1, click: 0.8, drive: 0.2 }) },
+  { id: 'crackClap', name: 'Crack clap', group: 'Claps', sound: one('layerSnare', SNARES.crack) },
   { id: 'clapSnare', name: 'Clap and snare stack', group: 'Claps', sound: two(['clap', { bursts: 4, spread: 10, color: 1400, noiseDecay: 0.3 }], ['snare', { pitch: 200, body: 0.8, decay: 0.08, noise: 0.4, noiseDecay: 0.1, level: -6 }]) },
   // Hats
   { id: 'tightHat', name: 'Tight closed hat', group: 'Hats', sound: one('hat', { pitch: 360, color: 10000, decay: 0.035, noise: 0.35, click: 0.4 }) },
@@ -232,6 +338,28 @@ export const DEFAULT_ROW_PRESET: Record<DesignRow, string> = {
   ride: 'ride',
 };
 
+/**
+ * What a new Designed Kit starts with (DEFAULT_ROW_PRESET plays the rows it doesn't set, as in
+ * kits from before): a short, clicky kick that leaves the low end to the bass (the old default,
+ * the long hard kick, made most of a mix's sub) and a big layered snare a little over it as heard.
+ */
+export const NEW_KIT_PRESETS: Partial<Record<DesignRow, string>> = { kick: 'punchKick', snare: 'bigSnare' };
+
+/** A new Designed Kit's design (NEW_KIT_PRESETS). */
+export function newKitDesign(): DrumDesign {
+  const out: DrumDesign = {};
+  for (const [row, id] of Object.entries(NEW_KIT_PRESETS) as Array<[DesignRow, string]>) out[row] = presetSound(id);
+  return out;
+}
+
+/** The sound RESET ROW puts `row` back to: the new kit's, or the row's default. */
+export function resetRowSound(design: DrumDesign | undefined, row: DesignRow): DrumDesign | undefined {
+  const id = NEW_KIT_PRESETS[row];
+  if (id) return withRowSound(design, row, presetSound(id)!);
+  const { [row]: _gone, ...rest } = design ?? {};
+  return Object.keys(rest).length ? rest : undefined;
+}
+
 /** The preset groups each row offers first. */
 export const ROW_GROUP: Record<DesignRow, PresetGroup> = {
   kick: 'Kicks',
@@ -270,7 +398,7 @@ export function normalizeDrumLayer(v: unknown): DrumLayer | undefined {
   const d = defaultLayer(voice);
   const out = { voice } as DrumLayer;
   for (const key of Object.keys(LAYER_RANGES) as Array<keyof typeof LAYER_RANGES>) out[key] = clampNum(v[key], d[key], LAYER_RANGES[key]);
-  out.bursts = Math.round(out.bursts);
+  for (const key of WHOLE) out[key as 'bursts'] = Math.round(out[key as 'bursts']);
   return out;
 }
 
@@ -301,7 +429,7 @@ export function withRowSound(design: DrumDesign | undefined, row: DesignRow, sou
 /** `sound` with one layer's field changed (the sound no longer is its preset). */
 export function withLayerValue(sound: DrumSound, layer: number, key: keyof typeof LAYER_RANGES, value: number): DrumSound {
   const [lo, hi] = LAYER_RANGES[key];
-  const v = Math.max(lo, Math.min(hi, key === 'bursts' ? Math.round(value) : value));
+  const v = Math.max(lo, Math.min(hi, WHOLE.has(key) ? Math.round(value) : value));
   const { preset: _p, ...rest } = sound;
   return { ...rest, layers: sound.layers.map((l, i) => (i === layer ? { ...l, [key]: v } : l)) };
 }

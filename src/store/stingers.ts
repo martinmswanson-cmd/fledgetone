@@ -1,4 +1,5 @@
 import type { InstrumentKey } from '../audio/instrumentCatalog';
+import { currentInstrumentKey } from '../audio/instrumentCatalog';
 import type { NoteEvent, Stinger, StingerKind } from './timelineTypes';
 import { uid } from './timelineTypes';
 import { NOTE_NAMES, type SongKey } from './songKey';
@@ -127,7 +128,8 @@ export function parseStingers(raw: unknown, isInstrument: (key: unknown) => key 
   const out: Stinger[] = [];
   for (const r of raw) {
     if (typeof r !== 'object' || r === null) continue;
-    const s = r as Record<string, unknown>;
+    const s = { ...(r as Record<string, unknown>) };
+    s.instrumentKey = currentInstrumentKey(s.instrumentKey);
     if (typeof s.id !== 'string' || typeof s.name !== 'string' || !KINDS.has(s.kind as StingerKind) || !isInstrument(s.instrumentKey)) continue;
     if (!Array.isArray(s.notes) || typeof s.lengthBars !== 'number' || !(s.lengthBars > 0 && s.lengthBars <= 8)) continue;
     const notes = s.notes.filter(

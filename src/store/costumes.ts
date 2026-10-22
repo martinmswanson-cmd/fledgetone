@@ -1,6 +1,6 @@
 import type { Clip, InstrumentKey, Track } from './timelineTypes';
 import { uid } from './timelineTypes';
-import { INSTRUMENTS } from '../audio/instrumentCatalog';
+import { currentInstrumentKey, INSTRUMENTS } from '../audio/instrumentCatalog';
 import { midiOf, nameOf } from './noteTools';
 
 /**
@@ -163,7 +163,10 @@ export function parseCostumes(raw: unknown, trackIds: ReadonlySet<string>, isIns
         if (!trackIds.has(id) || !s || typeof s !== 'object') continue;
         const sw = s as Record<string, unknown>;
         if (sw.mute === true) tracks[id] = { mute: true };
-        else if (isInstrument(sw.instrument)) tracks[id] = { instrument: sw.instrument };
+        else {
+          const instrument = currentInstrumentKey(sw.instrument);
+          if (isInstrument(instrument)) tracks[id] = { instrument };
+        }
       }
     }
     const tempo = typeof o.tempo === 'number' && Number.isFinite(o.tempo) ? Math.max(MIN_COSTUME_TEMPO, Math.min(MAX_COSTUME_TEMPO, o.tempo)) : 1;

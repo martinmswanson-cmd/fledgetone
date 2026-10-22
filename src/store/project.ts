@@ -15,7 +15,7 @@ import { normalizeClipGroove } from './drumGroove';
 import { normalizeMulti, normalizeRack } from './sampleKits';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, isFrameRate, isWobbleRate, normalizeMasterSettings, normalizeTrackFx } from './timelineTypes';
 import type { FrameRate } from './timelineTypes';
-import { isInstrumentKey } from '../audio/instrumentCatalog';
+import { currentInstrumentKey, isInstrumentKey } from '../audio/instrumentCatalog';
 import { parseAutomation } from '../audio/automation';
 import { parseMarkers } from './markers';
 import { parseStingers } from './stingers';
@@ -266,7 +266,9 @@ function parseSlots(raw: unknown, trackId: string): LauncherSlot[] {
   return out.sort((a, b) => a.scene - b.scene);
 }
 
-export function parseTrack(v: unknown): Track {
+export function parseTrack(raw: unknown): Track {
+  // A retired instrument opens on its replacement (RETIRED_INSTRUMENTS in the catalog)
+  const v = isObj(raw) ? { ...raw, instrumentKey: currentInstrumentKey(raw.instrumentKey) } : raw;
   if (!isObj(v) || !isStr(v.id) || !isStr(v.name) || !isInstrumentKey(v.instrumentKey)) {
     throw new Error('a track is missing its id, name or instrument');
   }
