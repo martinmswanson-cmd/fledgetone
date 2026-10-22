@@ -73,3 +73,11 @@ drop grows out of the opening; one lead sings one 4-bar tune in A A' A B form, i
 except the phrase endings; chords once a bar on the barline; piano, wash and chord stacks capped
 under the tune's register; runs and answers only in the gaps between phrases; bass holds roots; the
 lead is the loudest melodic part.
+
+Third versions (`scripts/demos/melodic-takes-3.js`): the owner liked A2 and wanted the tune higher
+and the piano faster; B felt repetitive, its claps off and its drop too slow. A3: the third pass an
+octave up, the B phrase lifted to an Eb6 climax; piano 16th arpeggios under the tune, 16th→32nd runs
+up two octaves only while the tune holds. B3: 150 BPM, half-time intro → full-time drop; the clap
+was a 5-burst preset landing 40–60 ms late (a flam), now a snappy 3-burst clap quietly under a tight
+snare on 2 and 4; the tune unchanged but the arrangement varies per pass (sparse, full with answers,
+a break, the last A an octave up with a new chord), a fill and crash every 4 bars.
