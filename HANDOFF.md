@@ -237,7 +237,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
   by scripted runs (the scripts were throwaway; the method: drive the game modules through
   page.evaluate, step their frames, capture each one).
 - **Pocket features and Android groundwork** (2026.10.21-2; the Android app itself isn't published; from the mobile
-  research, scratchpad report "Mobile music apps people love"):
+  research):
   - *Drop pad plays the song*: a pad pressed while stopped starts it (`playPocket` in
     `pocketSession.ts`, shared with the transport's Play).
   - *Bounce to pad*: a bar range (whole mix or one track) rendered onto a Drum Rack pad, level
