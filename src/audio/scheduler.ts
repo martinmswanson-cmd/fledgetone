@@ -9,16 +9,16 @@ import * as Tone from 'tone';
 import { liveContext, liveTransport } from './liveContext';
 import { applyTempoAt, barToTicks, getLiveTempo, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
 import type { Tempo } from './transport';
-import { DRUM_NOTES, safely } from './instruments';
+import { safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import { getLiveClipBus, onClipBusRebuilt, pumpOnKick, pumpOnTrack, releaseAllLiveVoices, scheduledInstrument, trackActivity } from './liveTracks';
 import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import type { AudioClipSchedule } from './audioClipSchedule';
-import type { Clip, ClipGroove, DrumHit, LoopRegion, NoteEvent, Track, TrackFx } from '../store/timelineTypes';
+import type { Clip, ClipGroove, DrumHit, InstrumentKey, LoopRegion, NoteEvent, Track, TrackFx } from '../store/timelineTypes';
 import { clipHasConditions, clipRuns, isConditional, notePlays, passOf, type ClipRun } from '../store/noteChance';
-import { INSTRUMENTS } from './instrumentCatalog';
+import { INSTRUMENTS, isDrumKind, pumpHitOf } from './instrumentCatalog';
 import { detuned, noteDrift, noteSeed } from './human';
 import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
 import { isExpressive, noteSteps } from '../store/noteExpression';
@@ -169,6 +169,7 @@ const sameNotes = (prev: Clip, next: Clip) =>
  * Play the timeline's clips on `transport`, which picks up loop passes. Each note group goes to
  * its track's instrument, looked up when it plays (`instrumentFor` returns undefined for a track
  * that shouldn't sound). `onKick` hears of every kick drum note (C1), and every snare (D1) or clap (D#1) as a 'snare', at the time it plays,
+ * on a drum kit whose rows really are those drums (pumpHitOf: not a percussion kit's conga),
  * whether or not that track sounds, for the Pump inserts to follow. `swing` is read as each
  * tick plays and delays the notes swungNotes picks out; the Transport's own swing stays off.
  *
@@ -204,6 +205,8 @@ export function createClipSchedule(
   let straight = new Set<string>();
   let entries = new Map<string, ClipEntry>();
   let feel = new Map<string, HumanFeel>();
+  /** The drum kit each drum track plays (for the hits the Pumps hear). */
+  let kitOf = new Map<string, InstrumentKey>();
   let runs = new Map<string, ClipRun>();
   const events = new Map<number, number>();
   // Times round the loop since playback started (or the loop moved)
@@ -353,8 +356,10 @@ export function createClipSchedule(
       if (onNotes) for (const group of groups) if (!group.pitch && !group.cc) onNotes(group.trackId, tickTime + lateOf(group));
       if (!onKick) return;
       for (const group of groups) {
-        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, tickTime + lateOf(group), 'kick');
-        if (group.notes.some((n) => n.note === DRUM_NOTES.snare || n.note === DRUM_NOTES.clap)) onKick(group.trackId, tickTime + lateOf(group), 'snare');
+        const key = kitOf.get(group.trackId);
+        if (!key) continue;
+        if (group.notes.some((n) => pumpHitOf(key, n.note) === 'kick')) onKick(group.trackId, tickTime + lateOf(group), 'kick');
+        if (group.notes.some((n) => pumpHitOf(key, n.note) === 'snare')) onKick(group.trackId, tickTime + lateOf(group), 'snare');
       }
     };
   };
@@ -362,6 +367,7 @@ export function createClipSchedule(
   return {
     update: (tracks, clips) => {
       const trackIds = new Set(tracks.map((t) => t.id));
+      kitOf = new Map(tracks.filter((t) => isDrumKind(t.instrumentKey)).map((t) => [t.id, t.instrumentKey]));
       feel = new Map();
       straight = new Set(tracks.filter(isDropTrack).map((t) => t.id));
       for (const t of tracks) {

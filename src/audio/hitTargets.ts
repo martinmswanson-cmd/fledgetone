@@ -62,6 +62,8 @@ interface HitMetric {
   high: string;
   /** Whether it matters for this report (a sub too small to hear needn't be in the middle). Out of range is then fine. */
   matters?: (r: HitReport) => boolean;
+  /** Why a report has no value for it, in a few words (when it can say more than "no drum notes"). */
+  unmeasured?: (r: HitReport) => string | undefined;
 }
 
 const all = (lo: number, hi: number): Record<HitStyleId, [number, number]> => ({
@@ -415,6 +417,8 @@ export const HIT_METRICS: readonly HitMetric[] = [
     group: 'Drums',
     unit: 'dB',
     get: (r) => r.drums?.subDuck,
+    // Four on the floor: every snare is on a kick, whose own sub would be measured instead
+    unmeasured: (r) => (r.drums && r.drums.snares > 0 && r.drums.loneSnares < 4 ? 'not measured: the snares land on kicks' : undefined),
     scale: [-30, 10],
     // dubstep -6.4 -11.5 -23.0 | hardcore -15.4 -23.0 -3.3 | darksynth -5.0 -3.3 | future 0.3 1.3
     target: {
@@ -444,6 +448,8 @@ export interface HitJudgement {
   status: HitStatus;
   /** What to change (empty when it's in range). */
   advice: string;
+  /** Why it wasn't measured, in a few words (status 'na'), when the metric says. */
+  unmeasured?: string;
 }
 
 export function formatHit(v: number, unit: HitMetric['unit']): string {
@@ -483,6 +489,7 @@ export function judgeHits(report: HitReport, styleId: string): HitJudgement[] {
       scale: m.scale,
       status,
       advice: status === 'low' ? m.low : status === 'high' ? m.high : '',
+      ...(status === 'na' ? { unmeasured: m.unmeasured?.(report) } : {}),
     };
   });
 }

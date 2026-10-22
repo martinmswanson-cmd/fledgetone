@@ -17,7 +17,7 @@ import { busChain, isMixTrack } from '../store/buses';
 import { INSTRUMENTS } from './instrumentCatalog';
 import type { MasterStats } from './effects/masterAfter';
 import { LOUD_TARGETS, type LoudMatch } from './effects/loudMaster';
-import type { Track } from '../store/timelineTypes';
+import type { Clip, Track } from '../store/timelineTypes';
 import { tempoAt } from './tempoMap';
 import { drumOnsets } from './hitOnsets';
 import { measureHits } from './hitCheckRun';
@@ -191,6 +191,9 @@ export function runMixCheck(targetId = useMixStudio.getState().targetId): Promis
   });
 }
 
+/** The bass parts among the tracks that sound (not buses), which the hit check renders alone. */
+export const bassAloneIds = (audible: Track[], clips: Clip[]): string[] => audible.filter((t) => !isMixTrack(t) && trackRole(t, clips) === 'bass').map((t) => t.id);
+
 /** The most of a song the "Does it hit?" check renders, bars. */
 export const HIT_MOST_BARS = 64;
 
@@ -205,13 +208,14 @@ export function runHitCheck(from: number, to: number): Promise<HitReport | null>
     const s = useTimelineStore.getState();
     const opts = { ...songOptions(signal), startBar: from, endBar: end };
     const audio = await renderArrangement(opts, (f) => progress(f * 0.5));
-    // The bass parts alone, for how the bass moves (the drums and chords would blur it in the mix)
-    const bassIds = new Set(audibleTracks(s.tracks).filter((t) => !isMixTrack(t) && trackRole(t, s.clips) === 'bass').map((t) => t.id));
+    // The bass parts alone, for how the bass moves (the drums and chords would blur it in the mix).
+    // The other tracks are left silent, not muted: the drums' hits still duck the bass's Pump, so
+    // its duck holes are in it as in the mix
+    const bassIds = bassAloneIds(audibleTracks(s.tracks), s.clips);
     let bassChannels: Float32Array[] | undefined;
-    if (bassIds.size) {
+    if (bassIds.length) {
       progress(0.5, 'Rendering the bass alone');
-      const tracks = s.tracks.map((t) => (isMixTrack(t) || bassIds.has(t.id) ? t : { ...t, isMuted: true, isSoloed: false }));
-      const bass = await renderArrangement({ ...opts, tracks }, (f) => progress(0.5 + f * 0.25, 'Rendering the bass alone'));
+      const bass = await renderArrangement({ ...opts, soundOnly: [...bassIds, ...s.tracks.filter(isMixTrack).map((t) => t.id)] }, (f) => progress(0.5 + f * 0.25, 'Rendering the bass alone'));
       bassChannels = channelsOf(bass);
     }
     progress(0.75, 'Measuring');

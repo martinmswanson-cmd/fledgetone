@@ -14,6 +14,7 @@ import { installLiveInput } from '../audio/liveInput';
 import { hasWork } from '../store/project';
 import { reopenLastSong, useWakeWhilePlaying, buzz, playPocket } from './pocketSession';
 import { PocketNotice } from './PocketNotice';
+import { useListening } from '../components/useListening';
 import { SharedLinkOpener } from '../components/SharedLinkOpener';
 import { UpdateNotice } from '../components/UpdateNotice';
 import { Toast } from '../components/timeline/Toast';
@@ -76,6 +77,8 @@ const TopBar: React.FC = () => {
   const at = sections.find((x) => bar >= x.from - EPS && bar < x.to - EPS);
   const beat = Math.floor(((bar % 1) + 1) % 1 * 4) + 1;
   const open = (sheet: 'song' | 'share') => usePocket.getState().set({ sheet });
+  // Where the listening path couldn't start (no level matching, no safety limiter): a plain warning
+  const unsafe = useListening().status === 'off';
   return (
     <header className="pk-top shrink-0 flex items-center gap-2.5 px-[var(--gx)] pt-[max(8px,env(safe-area-inset-top))] pb-2 border-b border-forge-border">
       <button type="button" aria-label="Your songs: a new one, or a starter" className="w-11 h-11 rounded-[14px] border border-forge-border bg-forge-panel grid place-items-center shrink-0" onClick={() => usePocket.getState().set({ starting: true })}>
@@ -88,6 +91,11 @@ const TopBar: React.FC = () => {
           <span className="text-cyan-300 tabular-nums">
             {at?.letter ?? '–'} · {Math.max(1, Math.floor(bar - (at?.from ?? 1)) + 1)}.{beat}
           </span>
+          {unsafe && (
+            <span className="text-amber-300 truncate" data-testid="listening-warning" title="This browser couldn't start level matching and the safety limiter (it needs https or the app): keep the volume down. The Loud master's push isn't heard here.">
+              Not level-matched
+            </span>
+          )}
         </div>
       </button>
       <button type="button" aria-label="Share" className="w-11 h-11 rounded-[14px] border border-forge-border bg-forge-panel grid place-items-center shrink-0" onClick={() => open('share')}>

@@ -116,7 +116,7 @@ export const HitCheckSection: React.FC = () => {
                         {j.label}
                       </span>
                       <span className={`font-mono ${j.status === 'ok' ? 'text-emerald-300' : j.status === 'na' ? 'text-forge-muted' : 'text-amber-200'}`}>
-                        {j.status === 'na' ? (j.group === 'Drums' ? 'no drum notes' : 'not measured') : j.shown}
+                        {j.status === 'na' ? (j.unmeasured ?? (j.group === 'Drums' ? 'no drum notes' : 'not measured')) : j.shown}
                       </span>
                     </div>
                     {j.status !== 'na' && <Meter j={j} />}

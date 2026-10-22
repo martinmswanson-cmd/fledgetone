@@ -146,8 +146,14 @@ export interface HitReport {
     /** The deepest median dip of the mids (250 Hz-1 kHz or 1-4 kHz) 20-200 ms after a kick, dB (negative), and when. */
     sidechain: number;
     sidechainAtMs: number;
-    /** The deepest median dip of the sub (30-60 Hz) 0-150 ms after a snare, dB. */
+    /**
+     * The deepest median dip of the sub (30-60 Hz) 0-150 ms after a snare, dB: of the snares on
+     * their own (not within SNARE_ON_KICK of a kick, where the kick's own sub and its duck would
+     * be measured instead). NaN with fewer than 4 lone snares (four on the floor: not measured).
+     */
     subDuck: number;
+    /** How many snares that measure had (the snares not on a kick). */
+    loneSnares: number;
     /** Median envelopes after the hits at fixed offsets (ms), dB against just before the hit (for comparing analyses). */
     curves: Record<string, number[]>;
   };
@@ -824,6 +830,18 @@ function triggered(band: Float64Array, sr: number, hits: readonly number[], offs
   return offsets.map((_, j) => median(curves.map((c) => c[j])));
 }
 
+/** A snare this close to a kick (seconds) lands on it: the sub after it is the kick's. */
+export const SNARE_ON_KICK = 0.02;
+
+/** The snares not within SNARE_ON_KICK of a kick (both lists in time order or not). */
+export function loneSnares(kicks: readonly number[], snares: readonly number[]): number[] {
+  const k = Float64Array.from(kicks).sort();
+  return snares.filter((t) => {
+    const i = searchSorted(k, t);
+    return !((i < k.length && Math.abs(k[i] - t) <= SNARE_ON_KICK) || (i > 0 && Math.abs(k[i - 1] - t) <= SNARE_ON_KICK));
+  });
+}
+
 function measureDrums(mono: Float32Array, sr: number, kicks: number[], snares: number[]): HitReport['drums'] {
   // K-weighted peaks: the most of a 10 ms mean square within 60 ms of each hit
   const kw = Float64Array.from(mono);
@@ -867,11 +885,12 @@ function measureDrums(mono: Float32Array, sr: number, kicks: number[], snares: n
     }
   }
   let subDuck = NaN;
-  if (snares.length >= 4) {
+  const lone = loneSnares(kicks, snares);
+  if (lone.length >= 4) {
     const band = bandpass(mono, sr, 30, 60);
-    const c = triggered(band, sr, snares, offs);
+    const c = triggered(band, sr, lone, offs);
     if (c) curves['snare sub 30-60'] = c;
-    const f = triggered(band, sr, snares, fine);
+    const f = triggered(band, sr, lone, fine);
     if (f) for (let i = 0; i < fine.length; i++) if (fine[i] <= 0.15 && (Number.isNaN(subDuck) || f[i] < subDuck)) subDuck = f[i];
   }
   return {
@@ -884,6 +903,7 @@ function measureDrums(mono: Float32Array, sr: number, kicks: number[], snares: n
     sidechain,
     sidechainAtMs,
     subDuck,
+    loneSnares: lone.length,
     curves,
   };
 }

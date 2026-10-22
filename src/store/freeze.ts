@@ -1,6 +1,6 @@
 import type { AutomationParam, Clip, FrozenTrack, Track } from './timelineTypes';
 import { defaultTrackFx, pumpFollowsDrums, pumpHears } from './timelineTypes';
-import { isDrumKind } from '../audio/instrumentCatalog';
+import { isDrumKind, pumpHitOf } from '../audio/instrumentCatalog';
 import { clipHasConditions, contentKey, isConditional } from './noteChance';
 import { isSynthKit, SYNTH_KIT_DESIGNS } from './synthKits';
 import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../audio/tempoMap';
@@ -90,10 +90,12 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
   const anySolo = all.tracks.some((t) => t.isSoloed);
   const kickers = new Set(all.tracks.filter((t) => isDrumKind(t.instrumentKey) && !t.isMuted && (!anySolo || t.isSoloed)).map((t) => t.id));
   const kickClips = followsKick ? all.clips.filter((c) => kickers.has(c.trackId)) : [];
+  // (Only the rows that really are a kick, snare or clap: pumpHitOf)
+  const kitOf = new Map(all.tracks.map((t) => [t.id, t.instrumentKey]));
   const kicks = followsKick
     ? kickClips
         // (A kick that plays only sometimes, with what decides it: its clip and how often)
-        .flatMap((c) => c.notes.filter((n) => (pumpHears(track.fx.pump.trigger, 'kick') && n.note === 'C1') || (pumpHears(track.fx.pump.trigger, 'snare') && (n.note === 'D1' || n.note === 'D#1'))).map((n) => [+(c.startBar + n.startOffset).toFixed(6), ...(isConditional(n) ? [c.id, c.pattern ?? null, n.chance ?? null, n.cond ?? null] : [])] as const))
+        .flatMap((c) => c.notes.filter((n) => { const hit = pumpHitOf(kitOf.get(c.trackId), n.note); return !!hit && pumpHears(track.fx.pump.trigger, hit); }).map((n) => [+(c.startBar + n.startOffset).toFixed(6), ...(isConditional(n) ? [c.id, c.pattern ?? null, n.chance ?? null, n.cond ?? null] : [])] as const))
         .sort((a, b) => a[0] - b[0] || String(a[1]).localeCompare(String(b[1])))
         .map((k) => (k.length === 1 ? k[0] : k))
     : [];

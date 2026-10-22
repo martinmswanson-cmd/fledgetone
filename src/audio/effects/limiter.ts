@@ -2,16 +2,19 @@
  * The master limiter: a look-ahead, true-peak brickwall. The sound is delayed a little (its
  * `latency`, about 5 ms); meanwhile each incoming sample's peak, including the peaks between
  * samples that a DAC or an MP3 encoder will reconstruct, sets the gain it needs to stay under the
- * ceiling. The peaks between samples are found with the same 4x interpolation filter a true-peak
- * meter uses (ITU-R BS.1770, as loudness.ts measures exports): a simpler estimate (cubic
- * interpolation) missed up to half a dB on bright, dense mixes, so they passed the ceiling. The
+ * ceiling. The peaks between samples are found with the same interpolation filter the true-peak
+ * meter uses (8x, truePeakFilter.ts, as loudness.ts measures exports): a simpler estimate (cubic
+ * interpolation, then BS.1770's own 4x example filter) missed up to half a dB on bright, dense
+ * mixes, so they passed the ceiling. The
  * gain is the lowest needed over the look-ahead window, eased back up afterwards (the release) and
  * smoothed with a moving average as long as the window, so it has always come down by the time the
  * peak plays, without a click. Both channels share one gain, so the stereo image doesn't shift.
  *
- * The kernel is plain JavaScript (no imports, no closures over module state) so the worklet module
+ * The kernel (limiterKernel) is plain JavaScript (no imports, no closures over module state) so the worklet module
  * can embed it with Function.prototype.toString, and the unit test can run it directly.
  */
+
+import { TRUE_PEAK_PHASES } from '../truePeakFilter';
 
 /** The ceiling it holds the true peak under, in dBTP: room for MP3 / AAC encoding to overshoot a little. */
 export const LIMITER_CEILING_DBTP = -1;
@@ -21,11 +24,14 @@ export const LIMITER_CEILING_DBTP = -1;
  */
 export const LIMITER_AIM_DBTP = LIMITER_CEILING_DBTP - 0.05;
 /**
- * The ceiling for MP3 and Ogg exports, in dBTP. Encoding overshoots the peaks it was given: up to
- * 0.2 dB on loud, limited mixes (measured on decoded files), which took -1 dBTP files to -0.85. Half
- * a dB lower keeps the decoded file under -1 dBTP with room to spare.
+ * The ceiling for MP3 and Ogg exports, in dBTP. Encoding overshoots the peaks it was given: on a
+ * dense Club-loud drop (clipped and limited), the app's MP3 (LAME at 320 kb/s) decoded 0.45-0.55 dB
+ * over the file it was given (ffmpeg's decoder and true peak, and the meter here, agreeing), so a
+ * -1.5 dBTP export decoded at -1.0 to -1.1 and the old meter's blind spots took it to -0.5. A
+ * dB under the -1 dBTP target keeps the decoded file under it with room to spare (decoded at
+ * -1.5 dBTP; scripts/limiter.test.mjs measures it where ffmpeg is installed).
  */
-export const LOSSY_CEILING_DBTP = -1.5;
+export const LOSSY_CEILING_DBTP = -2;
 /** The true-peak ceiling (dBTP) for an export in `format` ('wav', 'mp3', 'ogg', 'mp4'): -1, or LOSSY_CEILING_DBTP for the compressed ones. */
 export const exportCeilingDbtp = (format: string): number => (format === 'wav' ? LIMITER_CEILING_DBTP : LOSSY_CEILING_DBTP);
 /** Where the limiter aims for `ceilingDbtp`: a hair under it, as LIMITER_AIM_DBTP is under -1. */
@@ -42,16 +48,11 @@ export interface LimiterKernel {
   gain: () => number;
 }
 
-export function createLimiterKernel(sampleRate: number): LimiterKernel {
-  // The 4x interpolation filter of BS.1770-4 Annex 2 (as loudness.ts): four phases of 12 taps over
-  // the latest samples, whose points fall between the samples 6 and 5 back
-  const phases = [
-    [0.001708984375, 0.010986328125, -0.0196533203125, 0.033203125, -0.0594482421875, 0.1373291015625, 0.97216796875, -0.102294921875, 0.047607421875, -0.026611328125, 0.014892578125, -0.00830078125],
-    [-0.0291748046875, 0.029296875, -0.0517578125, 0.0891113281250, -0.166503906250, 0.465087890625, 0.77978515625, -0.2003173828125, 0.1015625, -0.0582275390625, 0.0330810546875, -0.0189208984375],
-    [-0.0189208984375, 0.0330810546875, -0.0582275390625, 0.1015625, -0.2003173828125, 0.77978515625, 0.465087890625, -0.166503906250, 0.0891113281250, -0.0517578125, 0.029296875, -0.0291748046875],
-    [-0.00830078125, 0.014892578125, -0.026611328125, 0.047607421875, -0.102294921875, 0.97216796875, 0.1373291015625, -0.0594482421875, 0.033203125, -0.0196533203125, 0.010986328125, 0.001708984375],
-  ];
-  const taps = 12;
+/** The kernel with the interpolation filter's phases handed in (the worklet passes its own copy of them). */
+export function limiterKernel(sampleRate: number, phases: readonly (readonly number[])[]): LimiterKernel {
+  // The interpolation filter (truePeakFilter.ts, as loudness.ts): its phases over the latest
+  // samples, whose points fall between the samples taps / 2 and taps / 2 - 1 back
+  const taps = phases[0].length;
   // A point between samples is at most this many times the loudest sample under the filter, so
   // where every sample under it is quieter than ceiling / most, nothing there needs turning down
   let most = 0;
@@ -60,11 +61,11 @@ export function createLimiterKernel(sampleRate: number): LimiterKernel {
     for (const t of p) sum += Math.abs(t);
     if (sum > most) most = sum;
   }
-  // The gain is smoothed over `box` samples; a sample's peaks are all known six samples after it
-  // arrives (the filter's points on its far side need the samples after it), so the sound is
-  // delayed box + 6 samples and the lowest gain is taken over at least that many, which keeps
-  // every gain in the box under the need
-  const see = 6;
+  // The gain is smoothed over `box` samples; a sample's peaks are all known taps / 2 samples after
+  // it arrives (the filter's points on its far side need the samples after it), so the sound is
+  // delayed box + taps / 2 samples and the lowest gain is taken over at least that many, which
+  // keeps every gain in the box under the need
+  const see = taps / 2;
   const box = Math.max(1, Math.round(sampleRate * 0.005));
   const delay = box + see;
   const size = delay + 1;
@@ -96,11 +97,12 @@ export function createLimiterKernel(sampleRate: number): LimiterKernel {
   let last = 1;
 
   const coef = Float64Array.from(phases.flat());
-  // The highest |value| the filter finds between the samples 6 and 5 back in `hist` (and those two)
+  const count = phases.length;
+  // The highest |value| the filter finds between the samples `see` and `see` - 1 back in `hist` (and those two)
   const peakOf = (hist: Float64Array) => {
     const newest = at + taps;
-    let p = Math.max(Math.abs(hist[newest - 5]), Math.abs(hist[newest - 6]));
-    for (let ph = 0; ph < 4; ph++) {
+    let p = Math.max(Math.abs(hist[newest - see + 1]), Math.abs(hist[newest - see]));
+    for (let ph = 0; ph < count; ph++) {
       const base = ph * taps;
       let acc = 0;
       for (let k = 0; k < taps; k++) acc += coef[base + k] * hist[newest - k];
@@ -171,6 +173,9 @@ export function createLimiterKernel(sampleRate: number): LimiterKernel {
   return { process, latency: delay, gain: () => last };
 }
 
+/** The limiter kernel at `sampleRate`, with the true-peak filter of truePeakFilter.ts. */
+export const createLimiterKernel = (sampleRate: number): LimiterKernel => limiterKernel(sampleRate, TRUE_PEAK_PHASES);
+
 /**
  * The limiter run over whole rendered channels (stereo, changed in place), as the worklet would
  * have played them: delayed by its latency, the last `latency` samples of sound left in the
@@ -199,7 +204,9 @@ export const LIMITER_PROCESSOR = 'bbx-limiter';
  * (seconds) params. A 'dispose' message stops it for good.
  */
 export const LIMITER_WORKLET_SOURCE = `
-const createLimiterKernel = ${createLimiterKernel.toString()};
+const limiterKernel = ${limiterKernel.toString()};
+const PHASES = ${JSON.stringify(TRUE_PEAK_PHASES)};
+const createLimiterKernel = (sr) => limiterKernel(sr, PHASES);
 class LimiterProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [

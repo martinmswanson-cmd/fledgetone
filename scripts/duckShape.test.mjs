@@ -130,3 +130,65 @@ test('Duck to kick by style: a hole on kick and snare in the bass, the chords 5-
   assert.equal(D.duckStyleFor('dubstep'), 'bass');
   assert.equal(D.duckStyleFor('darksynth'), 'pumping');
 });
+
+test('no shape steps the gain at once: points at least 3 ms apart at any length, drawn points on one x merged', () => {
+  /** The quickest change between a plan's vertices, as the shortest time any real move takes. */
+  const quickest = (plan) => {
+    let min = Infinity;
+    for (let i = 1; i < plan.vertices.length; i++) {
+      const [t0, g0] = plan.vertices[i - 1];
+      const [t1, g1] = plan.vertices[i];
+      if (Math.abs(g1 - g0) > 1e-6) min = Math.min(min, t1 - t0);
+    }
+    return min;
+  };
+  for (const length of [0.05, 0.1, 0.3]) {
+    for (const shape of ['hard', 'tick', 'swell', 'hole']) {
+      const plan = S.planShapedDuck(2, S.SHAPE_POINTS[shape], 1, length);
+      assert.ok(quickest(plan) >= 0.002 - 1e-9, `${shape} at ${length * 1000} ms: ${(quickest(plan) * 1000).toFixed(2)} ms`);
+    }
+  }
+  // Hard cut's edge at a 50 ms length: down over 3 ms, not 1
+  const hard = S.planShapedDuck(0, S.SHAPE_POINTS.hard, 1, 0.05);
+  assert.ok(gainAt(hard, 0.0015) > 0.45, 'half way down at 1.5 ms');
+  assert.ok(gainAt(hard, 0.003) < 1e-9, 'all the way down by 3 ms');
+  // At a long length it's as before (its own 2% is more than 3 ms)
+  const long = S.planShapedDuck(0, S.SHAPE_POINTS.hard, 1, 0.3);
+  assert.ok(Math.abs(gainAt(long, 0.003) - 0.5) < 1e-9);
+  // Drawn: two points on one x (a vertical step) keep the first
+  assert.deepEqual(S.normalizeDuckPoints([[0.3, 1], [0.3, 0], [0.302, 0.5], [0.6, 1]]), [[0, 0], [0.3, 1], [0.6, 1], [1, 0]]);
+  const step = S.planShapedDuck(0, [[0, 0], [0.5, 1], [0.5, 0], [1, 0]], 1, 0.05);
+  assert.ok(quickest(step) >= 0.003 - 1e-9, 'a vertical step as it would play is 3 ms long');
+});
+
+test("only a drum kit's real kick, snare and clap rows send drum hits: not a percussion kit's conga or claves (live, export, freeze, hit check)", async () => {
+  const { pumpHitOf } = await import('../src/audio/instrumentCatalog.ts');
+  const { freezeFingerprint } = await import('../src/store/freeze.ts');
+  const { drumOnsets } = await import('../src/audio/hitOnsets.ts');
+  assert.equal(pumpHitOf('drumMachine', 'C1'), 'kick');
+  assert.equal(pumpHitOf('drumMachine', 'D1'), 'snare');
+  assert.equal(pumpHitOf('drumMachine', 'D#1'), 'snare', 'the clap counts as a snare');
+  assert.equal(pumpHitOf('drumMachine', 'F#1'), null);
+  for (const note of ['C1', 'D1', 'D#1']) {
+    assert.equal(pumpHitOf('latinPercussion', note), null, `Latin Percussion ${note}`);
+    assert.equal(pumpHitOf('percussionExtras', note), null, `Percussion Extras ${note}`);
+  }
+  // A kit with a rimshot on the clap's row: a stroke on the snare, so it counts as one; a woodblock doesn't
+  assert.equal(pumpHitOf('sessionKit', 'C1'), 'kick');
+  assert.equal(pumpHitOf('sessionKit', 'D1'), 'snare');
+  assert.equal(pumpHitOf('sessionKit', 'D#1'), 'snare');
+  assert.equal(pumpHitOf('brushKit', 'G#2'), null);
+  assert.equal(pumpHitOf('supersaw', 'C1'), null, 'a synth playing C1 is no kick');
+  assert.equal(pumpHitOf(undefined, 'C1'), null);
+
+  const fx = T.defaultTrackFx();
+  const track = (id, key, extra = {}) => ({ id, name: id, color: '#888', instrumentKey: key, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx, reverbSend: 0, delaySend: 0, ...extra });
+  const clip = (id, trackId, notes) => ({ id, trackId, name: id, startBar: 1, lengthBars: 1, isSelected: false, notes: notes.map(([note, at], i) => ({ id: id + i, note, startOffset: at, duration: '16n', velocity: 0.8 })) });
+  const bass = track('bass', 'supersaw', { fx: { ...fx, pump: { ...fx.pump, on: true, trigger: 'kickSnare' } } });
+  const perc = track('perc', 'latinPercussion');
+  const all = (notes) => ({ tracks: [bass, perc], clips: [clip('p', 'perc', notes)], bpm: 120, swing: 0 });
+  assert.equal(freezeFingerprint(bass, all([['C1', 0], ['D1', 0.25]])), freezeFingerprint(bass, all([['C1', 0.5], ['D#1', 0.75]])), "a conga moved doesn't change what the Pump hears");
+  const tracks = [perc];
+  const { kicks, snares } = drumOnsets(tracks, [clip('p', 'perc', [['C1', 0], ['D1', 0.25]])], 120, 1, 2);
+  assert.deepEqual([kicks, snares], [[], []]);
+});

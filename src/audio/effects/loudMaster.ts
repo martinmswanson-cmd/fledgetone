@@ -75,6 +75,11 @@ export const subTiltDb = (m: Pick<MasterSettings, 'loud'>): number => (m.loud?.o
 
 /** The push live playback plays (0 unless a Loud master). */
 export const pushDb = (m: Pick<MasterSettings, 'loud'>): number => (m.loud?.on ? m.loud.push : 0);
+/**
+ * The push live playback uses: the Loud master's, but never above 0 dB while the listening path's
+ * safety limiter and level matching aren't in (monitor.ts), so nothing plays louder without them.
+ */
+export const livePushDb = (m: Pick<MasterSettings, 'loud'>, listeningSafe: boolean): number => (listeningSafe ? pushDb(m) : Math.min(0, pushDb(m)));
 
 /**
  * A BiquadFilterNode's low-shelf coefficients [b0, b1, b2, a1, a2] (normalized), as the Web Audio
@@ -160,6 +165,29 @@ export interface LoudMatch {
   /** The distortion at the push found (see distortionDb). */
   distortionDb: number;
   passes: number;
+}
+
+/**
+ * The push an export should store for live playback, or null to leave the Loud master's push as it
+ * is. Only an export of the whole song (not a loop, game loop or underscore / no-drums version) at
+ * the Loud master's own target says what the live push should be: anything else found a push for
+ * other music or another loudness.
+ */
+export function pushToKeep(o: {
+  /** The whole song, bar 1 to the end. */
+  wholeSong: boolean;
+  /** The full mix (not a version with tracks left out). */
+  fullMix: boolean;
+  /** The export's target and the Loud master's, LUFS. */
+  exportTargetLufs: number;
+  loudTargetLufs: number;
+  found: LoudMatch | undefined;
+  currentPush: number;
+}): number | null {
+  const { found } = o;
+  if (!o.wholeSong || !o.fullMix || !found || !Number.isFinite(found.lufs) || !Number.isFinite(found.push)) return null;
+  if (Math.abs(o.exportTargetLufs - o.loudTargetLufs) > 1e-6) return null;
+  return Math.abs(found.push - o.currentPush) > 0.05 ? found.push : null;
 }
 
 /**

@@ -960,6 +960,27 @@ export function isDrumKind(key: InstrumentKey): boolean {
   return INSTRUMENTS[key].kind === 'drums';
 }
 
+/** The drum rows a Pump hears: the kick on C1, the snare on D1 and the clap on D#1 (as DRUM_NOTES). */
+const PUMP_ROWS: Readonly<Record<string, 'kick' | 'snare'>> = { C1: 'kick', D1: 'snare', 'D#1': 'snare' };
+
+/** Row names that are still a stroke on the snare drum (a recorded kit's rimshot on the clap's row). */
+const SNARE_STROKES = new Set(['Rimshot']);
+
+/**
+ * The drum hit a note on a `key` track is for the Pumps that follow drums: 'kick', 'snare' (a
+ * snare, a clap or a rimshot), or null. Only a drum kit whose row really is that drum: a kit that
+ * names the row something else (rowLabels: Latin Percussion's tumba, conga and claves, Percussion
+ * Extras' woodblocks) sends nothing. Live playback, the export, the freeze fingerprint and the
+ * hit check all ask this.
+ */
+export function pumpHitOf(key: InstrumentKey | undefined, note: string): 'kick' | 'snare' | null {
+  const def = key ? INSTRUMENTS[key] : undefined;
+  if (!def || def.kind !== 'drums') return null;
+  const hit = PUMP_ROWS[note];
+  const label = def.rowLabels?.[note];
+  return hit && (!label || (hit === 'snare' && SNARE_STROKES.has(label))) ? hit : null;
+}
+
 /** The Drop pad: fixed named rows (DROP_ROWS), its notes holding the master's effects. */
 export function isDropKind(key: InstrumentKey): boolean {
   return INSTRUMENTS[key].kind === 'drop';

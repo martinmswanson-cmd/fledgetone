@@ -28,6 +28,7 @@ import { pill } from './pocketUi';
 import { PocketDropCheck } from './PocketDropCheck';
 import { matchLoudMaster, useMixStudio } from '../audio/mixStudio';
 import { LOUD_TARGETS, styleLoudTarget } from '../audio/effects/loudMaster';
+import { listeningState } from '../audio/monitor';
 import { duckStyleFor } from '../store/duckToKick';
 
 export const DRAWER_SIZES: Record<DrawerSize, number> = { low: 0.3, mid: 0.4, high: 0.74 };
@@ -347,7 +348,9 @@ const MixAll: React.FC = () => {
               // On, aimed at the drop check's style (Club for bass music, Loud for future bass), and matched to it
               const target = styleLoudTarget(useMixStudio.getState().hitStyle);
               s().setMasterLoud({ on: true, target }, true);
-              showToast(`Loud master on: matching the song to ${LOUD_TARGETS[target].name}… You hear it level-matched; the MP3 is the loud one.`);
+              const { matched, status } = listeningState();
+              const heard = status === 'off' ? " This browser can't level-match or limit what you hear, so the push isn't heard here; the MP3 is the loud one." : matched ? ' You hear it level-matched; the MP3 is the loud one.' : ' Level matching is off: you hear it as loud as it is; the MP3 is the loud one.';
+              showToast(`Loud master on: matching the song to ${LOUD_TARGETS[target].name}…${heard}`);
               void matchLoudMaster().then((m) => m && Number.isFinite(m.lufs) && showToast(`Loud master: ${m.lufs.toFixed(1)} LUFS${m.shortDb > 0 ? ` (${m.shortDb.toFixed(1)} dB short: more would squash the drums)` : ''}`));
             }}
           >

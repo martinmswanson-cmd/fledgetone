@@ -1,13 +1,16 @@
 /**
  * Loudness metering to ITU-R BS.1770-4 (what streaming services and broadcasters measure):
  * momentary (400 ms), short-term (3 s) and integrated loudness in LUFS, K-weighted and gated,
- * and the true peak in dBTP, found on a 4x oversampled signal so peaks between samples count.
+ * and the true peak in dBTP, found on an 8x oversampled signal so peaks between samples count
+ * (truePeakFilter.ts).
  *
  * createLoudnessAnalyser holds the maths. It is written SELF-CONTAINED (nothing from this
  * module's scope) because its source text is pasted into an AudioWorklet (the live meter, see
  * loudnessMeter.ts) and a Worker (measuring an export after it is rendered), and Node unit-tests
  * the same code.
  */
+
+import { TRUE_PEAK_PHASES, TRUE_PEAK_TAPS } from './truePeakFilter';
 
 export interface LoudnessReading {
   /** Loudness over the last 400 ms, in LUFS (-Infinity for silence). */
@@ -33,26 +36,21 @@ export interface LoudnessAnalyser {
 
 /**
  * A loudness analyser at one sample rate. The K-weighting filters are computed for the rate
- * (BS.1770-4 gives them at 48 kHz); the true-peak interpolator is the standard's own 4x filter.
+ * (BS.1770-4 gives them at 48 kHz); the true-peak interpolator is truePeakFilter.ts's 8x filter.
  * Every 100 ms the mean square of the weighted signal is banked; momentary and short-term read
  * the last 4 and 30 of those, and every 400 ms gating block (75% overlap) above -70 LUFS is kept
  * for the integrated measure, which applies the relative gate (10 LU under their mean) on read.
  */
-// The 4x interpolation filter of BS.1770-4 Annex 2: four phases of 12 taps over the latest samples
-const PHASES = [
-  [0.0017089843750, 0.0109863281250, -0.0196533203125, 0.0332031250000, -0.0594482421875, 0.1373291015625, 0.9721679687500, -0.1022949218750, 0.0476074218750, -0.0266113281250, 0.0148925781250, -0.0083007812500],
-  [-0.0291748046875, 0.0292968750000, -0.0517578125000, 0.0891113281250, -0.1665039062500, 0.4650878906250, 0.7797851562500, -0.2003173828125, 0.1015625000000, -0.0582275390625, 0.0330810546875, -0.0189208984375],
-  [-0.0189208984375, 0.0330810546875, -0.0582275390625, 0.1015625000000, -0.2003173828125, 0.7797851562500, 0.4650878906250, -0.1665039062500, 0.0891113281250, -0.0517578125000, 0.0292968750000, -0.0291748046875],
-  [-0.0083007812500, 0.0148925781250, -0.0266113281250, 0.0476074218750, -0.1022949218750, 0.9721679687500, 0.1373291015625, -0.0594482421875, 0.0332031250000, -0.0196533203125, 0.0109863281250, 0.0017089843750],
-].map((taps) => Float64Array.from(taps));
-const TAPS = 12;
+// The interpolation filter (truePeakFilter.ts): 8x, seven phases of 32 taps over the latest samples
+const PHASES = TRUE_PEAK_PHASES.map((taps) => Float64Array.from(taps));
+const TAPS = TRUE_PEAK_TAPS;
 
 /** The most any interpolated point can be over the loudest sample under the filter */
 const GAIN = Math.max(...PHASES.map((taps) => taps.reduce((sum, t) => sum + Math.abs(t), 0)));
 
 /**
  * The true peak of audio (linear: 1 is full scale): the highest of its samples and the points the
- * 4x interpolation filter finds between them, where a converter's output can go over full scale
+ * interpolation filter finds between them, where a converter's output can go over full scale
  * even though no sample does.
  */
 export function truePeakOf(channels: readonly Float32Array[]): number {
@@ -71,7 +69,7 @@ export function truePeakOf(channels: readonly Float32Array[]): number {
       if (a > peak) peak = a;
       if (a * GAIN > peak) lastLoud = i;
       if (i - lastLoud >= TAPS) continue;
-      for (let p = 0; p < 4; p++) {
+      for (let p = 0; p < PHASES.length; p++) {
         const taps = PHASES[p];
         let acc = 0;
         for (let k = 0; k < TAPS; k++) {
@@ -140,9 +138,20 @@ export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS
   /** Filter memory per channel: shelf [x1, x2, y1, y2], then high-pass [x1, x2, y1, y2]. */
   const memory = [new Float64Array(8), new Float64Array(8)];
 
-  /** The last 12 samples of each channel, twice over so a window is always contiguous. */
+  /** The last TAPS_N samples of each channel, twice over so a window is always contiguous. */
   const history = [new Float64Array(TAPS_N * 2), new Float64Array(TAPS_N * 2)];
   let historyAt = 0;
+  /** The most a point between samples can be over the loudest sample under the filter. */
+  let most = 1;
+  for (const taps of PHASE_TAPS) {
+    let sum = 0;
+    for (let k = 0; k < TAPS_N; k++) sum += Math.abs(taps[k]);
+    if (sum > most) most = sum;
+  }
+  /** Per channel, the last sample (counted from the start) that could make a point over the block's peak. */
+  const loudAt = [-Infinity, -Infinity];
+  /** Every window up to this sample is worked out (a block just began). */
+  let fullUntil = 0;
 
   /** Power (sum of the channels' mean squares) of each banked 100 ms block, newest last. */
   let blocks: number[] = [];
@@ -168,6 +177,8 @@ export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS
     total = 0;
     memory.forEach((m) => m.fill(0));
     history.forEach((h) => h.fill(0));
+    loudAt.fill(-Infinity);
+    fullUntil = 0;
   };
 
   /** Bank the block being filled. */
@@ -212,14 +223,20 @@ export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS
         m[6] = w;
         power += w * w;
         if (!peaks) continue;
-        // True peak: the sample itself and the three points interpolated after it
+        // True peak: the sample itself and the points interpolated between two samples TAPS_N / 2 back
         const h = history[ch];
         h[historyAt] = x;
         h[historyAt + TAPS_N] = x;
         const base = historyAt + TAPS_N;
         const a = Math.abs(x);
         if (a > peak) peak = a;
-        for (let p = 0; p < 4; p++) {
+        // A point is at most `most` times the loudest sample under the filter: where none of them
+        // could beat this block's peak so far (most of a song), the points can't either. Just after
+        // a block starts (its peak back at 0) every window is worked out
+        const at = total + i;
+        if (a * most > blockPeak) loudAt[ch] = at;
+        if (at - loudAt[ch] >= TAPS_N && at >= fullUntil) continue;
+        for (let p = 0; p < PHASE_TAPS.length; p++) {
           const taps = PHASE_TAPS[p];
           let acc = 0;
           for (let k = 0; k < TAPS_N; k++) acc += taps[k] * h[base - k];
@@ -232,7 +249,10 @@ export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS
       count++;
       if (peak > blockPeak) blockPeak = peak;
       if (peak > peakMax) peakMax = peak;
-      if (count === HOP) bank();
+      if (count === HOP) {
+        bank();
+        fullUntil = total + i + 1 + TAPS_N;
+      }
     }
     total += frames;
   };
