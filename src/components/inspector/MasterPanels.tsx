@@ -209,6 +209,8 @@ export const LoudPanel: React.FC = () => {
           ? "This browser can't level-match what you hear or run the safety limiter, so the push isn't heard here (it would only get louder); the export is the loud one."
           : listening.matched
             ? "You hear it level-matched (see Playback), so it won't blast you; the export is the loud one."
+            : listening.status === 'pending'
+            ? "Level matching is starting; the push isn't heard until it's on. The export is the loud one."
             : 'Level matching is off (see Playback): you hear it as loud as it is, under the safety limiter; the export is the loud one.'}
       </p>
       <label className={`flex items-center gap-2 text-[10px] font-mono ${loud.on ? '' : 'opacity-45'}`}>

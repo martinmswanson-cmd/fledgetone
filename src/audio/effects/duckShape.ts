@@ -63,7 +63,7 @@ export function normalizeDuckPoints(raw: unknown): DuckPoint[] | undefined {
     .filter(([x]) => x > 0 && x < 1)
     .sort((a, b) => a[0] - b[0])
     // Two points at (about) the same x would step the gain at once: the first is kept
-    .filter((p, i, all) => i === 0 || p[0] - all[i - 1][0] >= MIN_POINT_GAP_X)
+    .filter((p, i, all) => i === 0 || p[0] - all[i - 1][0] >= MIN_POINT_GAP_X - 1e-9)
     .slice(0, MAX_DUCK_POINTS - 2);
   if (!pts.length) return undefined;
   return [[0, 0], ...pts, [1, 0]];

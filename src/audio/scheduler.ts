@@ -18,12 +18,13 @@ import { createAudioClipSchedule } from './audioClipSchedule';
 import type { AudioClipSchedule } from './audioClipSchedule';
 import type { Clip, ClipGroove, DrumHit, InstrumentKey, LoopRegion, NoteEvent, Track, TrackFx } from '../store/timelineTypes';
 import { clipHasConditions, clipRuns, isConditional, notePlays, passOf, type ClipRun } from '../store/noteChance';
-import { INSTRUMENTS, isDrumKind, pumpHitOf } from './instrumentCatalog';
+import { INSTRUMENTS, pumpHitOf } from './instrumentCatalog';
 import { detuned, noteDrift, noteSeed } from './human';
 import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, type PitchEvent } from '../store/expression';
 import { isExpressive, noteSteps } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
 import { feelVelocity } from '../store/drumGroove';
+import { pumpKitsOf } from '../store/freeze';
 
 export { DRUM_NOTES } from './instruments';
 
@@ -367,7 +368,8 @@ export function createClipSchedule(
   return {
     update: (tracks, clips) => {
       const trackIds = new Set(tracks.map((t) => t.id));
-      kitOf = new Map(tracks.filter((t) => isDrumKind(t.instrumentKey)).map((t) => [t.id, t.instrumentKey]));
+      // A frozen drum track (live view: an audio track) still sends its kicks, by the kit it was
+      kitOf = pumpKitsOf(tracks);
       feel = new Map();
       straight = new Set(tracks.filter(isDropTrack).map((t) => t.id));
       for (const t of tracks) {

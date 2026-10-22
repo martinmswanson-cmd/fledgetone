@@ -400,11 +400,11 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const loudMatch = !!s.master.loud?.on && settings.normalize;
     let loudFound: LoudMatch | undefined;
     const loudOpts = loudMatch ? { loudTargetLufs: targetById(settings.target).lufs, onMasterStats: (m: MasterStats) => (loudFound = m.loud ?? loudFound) } : {};
-    // Stored for live playback only from the whole song's full mix at the Loud master's own target
+    // Stored for live playback only from the whole song's full mix (no solo on) at the Loud master's own target
     const keepPush = (fullMix: boolean) => {
       const live = useTimelineStore.getState().master.loud;
       const push = live
-        ? pushToKeep({ wholeSong: range === 'song', fullMix, exportTargetLufs: targetById(settings.target).lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found: loudFound, currentPush: live.push ?? 0 })
+        ? pushToKeep({ wholeSong: range === 'song', fullMix: fullMix && !useTimelineStore.getState().tracks.some((t) => t.isSoloed), exportTargetLufs: targetById(settings.target).lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found: loudFound, currentPush: live.push ?? 0 })
         : null;
       if (push !== null) useTimelineStore.getState().setMasterLoud({ push });
     };

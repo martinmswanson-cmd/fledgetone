@@ -23,6 +23,11 @@ import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../a
 /** A track as the live engine gets it: a frozen one says what it was, so its kicks still drive Pumps. */
 export type LiveTrackView = Track & { frozenFrom?: Track['instrumentKey'] };
 
+/** The drum kit each track plays, for the Pumps' kick and snare triggers: a frozen drum track (an audio track in the live view) by the kit it was. */
+export function pumpKitsOf(tracks: readonly LiveTrackView[]): Map<string, Track['instrumentKey']> {
+  return new Map(tracks.map((t) => [t.id, t.frozenFrom ?? t.instrumentKey] as const).filter(([, key]) => isDrumKind(key)));
+}
+
 /** Settings that stay live on a frozen track (not rendered into it). */
 export const LIVE_PARAMS: ReadonlySet<AutomationParam> = new Set(['volume', 'pan', 'reverbSend', 'delaySend']);
 /** A lane that stays live on a frozen track: those settings, and its sends to returns. */

@@ -192,3 +192,22 @@ test("only a drum kit's real kick, snare and clap rows send drum hits: not a per
   const { kicks, snares } = drumOnsets(tracks, [clip('p', 'perc', [['C1', 0], ['D1', 0.25]])], 120, 1, 2);
   assert.deepEqual([kicks, snares], [[], []]);
 });
+
+test('a frozen drum track still sends its kicks and snares to the Pumps (live view keeps the kit it was)', async () => {
+  const F = await import('../src/store/freeze.ts');
+  const kits = F.pumpKitsOf([
+    { id: 'drums', instrumentKey: 'audio', frozenFrom: 'drumMachine' },
+    { id: 'live', instrumentKey: 'studioKit' },
+    { id: 'bass', instrumentKey: 'subBass' },
+    { id: 'vox', instrumentKey: 'audio' },
+  ]);
+  assert.deepEqual([...kits], [['drums', 'drumMachine'], ['live', 'studioKit']]);
+});
+
+test("a drawn point dragged right up against its neighbour isn't dropped", () => {
+  for (let i = 0; i < 2000; i++) {
+    const a = 0.02 + i * 0.00047;
+    const pts = S.normalizeDuckPoints([[0, 0], [a, 0.5], [a + 0.005, 0.8], [1, 0]]);
+    assert.equal(pts.length, 4, `point at ${a} kept`);
+  }
+});
