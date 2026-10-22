@@ -43,6 +43,21 @@ test('a new sound restarts its mono notes and keeps the lows in the middle up to
   e.bb_destroy(s.h);
 });
 
+test('a new sound takes its note random values by step; older saved sounds and presets by pitch, as they did', () => {
+  const s = make();
+  assert.equal(s.shown('Random by step'), 'on');
+  // Saved before it came (with or without Mono restart and Mono below): by pitch, as it sounded
+  e.bb_legacy(s.h, s.index.get('Random by step'));
+  assert.equal(s.shown('Random by step'), 'off');
+  e.bb_set_program(s.h, s.programs.indexOf('Bass/Neuro Reese'));
+  assert.equal(s.shown('Random by step'), 'on');
+  e.bb_legacy(s.h, s.index.get('Mono restart'));
+  assert.equal(s.shown('Random by step'), 'off');
+  e.bb_set_program(s.h, s.programs.indexOf('Bass/Growl'));
+  assert.equal(s.shown('Random by step'), 'off');
+  e.bb_destroy(s.h);
+});
+
 test('a mono riff that repeats each bar sounds the same each time round, as the host plays it', () => {
   // 120 BPM: a 16th is 6000 samples, so each bar starts on the same sample of a 128-sample block
   const riff = [41, 41, 53, 41, 44, 41, 48, 41, 41, 53, 51, 41, 46, 41, 39, 41];

@@ -100,7 +100,7 @@ import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
 import { followTracks } from './drumFollow';
 import { newKitDesign } from './drumDesign';
-import { isSynthKit, synthKitDesign } from './synthKits';
+import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
@@ -2152,7 +2152,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           // A Plugin track's plugin goes with its instrument (its effects stay)
           plugin: undefined,
           // A Designed Kit starts from the synthesized kit it was (Edit in Drum Designer), else from its own design or a new one
-          ...(instrumentKey === 'designedKit' && (isSynthKit(current.instrumentKey) || !current.drumDesign) ? { drumDesign: isSynthKit(current.instrumentKey) ? synthKitDesign(current.instrumentKey) : newKitDesign() } : {}),
+          ...(instrumentKey === 'designedKit' ? designedKitStart(current) : {}),
         }),
         true
       );
@@ -3442,8 +3442,8 @@ useTimelineStore.subscribe((state, prev) => {
   if (state.playheadPosition !== prev.playheadPosition) setLivePlayhead(state.playheadPosition);
   // Drum Designer sounds that follow the song's key or tempo (drumFollow.ts) are kept on it: a
   // derived change, not an edit of its own (undo takes the notes back, and this follows again)
-  if (state.clips !== prev.clips || state.tracks !== prev.tracks || state.bpm !== prev.bpm) {
-    const followed = followTracks(state.tracks, state.clips, state.bpm);
+  if (state.clips !== prev.clips || state.tracks !== prev.tracks || state.bpm !== prev.bpm || state.tempoPoints !== prev.tempoPoints) {
+    const followed = followTracks(state.tracks, state.clips, state.bpm, state.tempoPoints);
     if (followed) useTimelineStore.setState({ tracks: followed });
   }
 });

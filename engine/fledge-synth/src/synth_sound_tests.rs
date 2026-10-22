@@ -191,3 +191,129 @@ fn note_random_follows_the_step_not_the_pitch() {
     // The chord a bar later, on other notes: each place in it as before
     assert_eq!(at(&mut s, 12.0, &[53, 57, 60]), chord);
 }
+/// A sound made before "Random by step" with each note's random values moving its filter and
+/// pitch: chords and a riff, two bars, poly then mono. A hash of every sample, both channels.
+fn legacy_note_random_scene(make: &dyn Fn() -> Synth) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for mode in [0.0f32, 1.0] {
+        let mut s = make();
+        let set = |s: &mut Synth, name: &str, value: f32| {
+            let i = p::index_of(name).unwrap();
+            s.params[i] = param(i).kind.normal(value);
+        };
+        s.set_tempo(120.0);
+        set(&mut s, "Voices", mode);
+        set(&mut s, "Cutoff", 900.0);
+        set(&mut s, "Random repeat", 1.0);
+        set(&mut s, "Mod 1 source", 18.0);
+        set(&mut s, "Mod 1 target", 1.0);
+        set(&mut s, "Mod 1 amount", 0.8);
+        set(&mut s, "Mod 2 source", 19.0);
+        set(&mut s, "Mod 2 target", 5.0);
+        set(&mut s, "Mod 2 amount", 0.2);
+        let chords: [&[u8]; 4] = [&[48, 52, 55], &[41], &[53, 57, 60], &[46, 41]];
+        for step in 0..16 {
+            let notes = chords[step % 4];
+            s.set_position(step as f64 / 2.0);
+            for &n in notes {
+                s.midi(0x90, n, 100);
+            }
+            // An 8th at 120 BPM is 12000 samples: held for 9000
+            let mut done = 0;
+            while done < 12000 {
+                if done == 9000 {
+                    for &n in notes {
+                        s.midi(0x80, n, 0);
+                    }
+                }
+                let len = (if done < 9000 { 9000 - done } else { 12000 - done }).min(BLOCK);
+                s.process(len);
+                for c in 0..2 {
+                    for &x in &s.out[c][..len] {
+                        h = (h ^ x.to_bits() as u64).wrapping_mul(0x100_0000_01b3);
+                    }
+                }
+                done += len;
+            }
+        }
+    }
+    h
+}
+
+/// A sound saved before "Random by step" (fewer values) still gets each note's random values from
+/// its step and its pitch: sample for sample as that version of the synth played it (the hash
+/// was taken from the synth as it was then, with the same scene)
+#[test]
+fn older_sounds_keep_their_note_random_values_exactly() {
+    let old = || {
+        let mut s = Synth::new(SR);
+        s.legacy(p::MONO_RESTART);
+        s
+    };
+    assert_eq!(old().v(p::RANDOM_BY_STEP), 0.0);
+    assert_eq!(legacy_note_random_scene(&old), 0x474b_db08_df5f_69a5);
+    // (Sounds saved with "Mono restart" and "Mono below" but before this one, too)
+    let mut s = Synth::new(SR);
+    s.legacy(p::RANDOM_BY_STEP);
+    assert_eq!(s.v(p::RANDOM_BY_STEP), 0.0);
+    // The key as it was: the step and the pitch
+    s.set_tempo(120.0);
+    let cfg = s.cfg();
+    s.set_position(2.5);
+    s.midi(0x90, 52, 100);
+    s.midi(0x90, 48, 100);
+    let key = |n: u64| ticks(2.5) << 8 ^ n;
+    for n in [52u8, 48] {
+        assert_eq!(s.note_random(n, &cfg), (hash01(key(n as u64) ^ 0x0a11_0000_0000_0000), hash_bi(key(n as u64) ^ 0x0b22_0000_0000_0000)));
+    }
+    // A new sound moves by step (and so sounds otherwise in this scene)
+    assert_eq!(Synth::new(SR).v(p::RANDOM_BY_STEP), 1.0);
+    assert_ne!(legacy_note_random_scene(&|| Synth::new(SR)), 0x474b_db08_df5f_69a5);
+}
+
+/// A chord's notes take their places from the lowest up, whatever order they came in: the same
+/// chord played in any order sounds the same, sample for sample
+#[test]
+fn a_chords_note_random_values_dont_follow_the_order_its_notes_came_in() {
+    let render = |order: &[u8]| {
+        let mut s = Synth::new(SR);
+        s.set_tempo(120.0);
+        set(&mut s, "Mod 1 source", 18.0);
+        set(&mut s, "Mod 1 target", 1.0);
+        set(&mut s, "Mod 1 amount", 0.8);
+        set(&mut s, "Mod 2 source", 19.0);
+        set(&mut s, "Mod 2 target", 5.0);
+        set(&mut s, "Mod 2 amount", 0.2);
+        set(&mut s, "Cutoff", 900.0);
+        let mut out = vec![];
+        for bar in 0..2 {
+            s.set_position(bar as f64 * 2.0);
+            for &n in order {
+                s.midi(0x90, n, 100);
+            }
+            let cfg = s.cfg();
+            let places: Vec<_> = [48u8, 52, 55].iter().map(|&n| s.note_random(n, &cfg)).collect();
+            for _ in 0..200 {
+                s.process(BLOCK);
+                out.extend_from_slice(&s.out[0][..BLOCK]);
+                out.extend_from_slice(&s.out[1][..BLOCK]);
+            }
+            for &n in order {
+                s.midi(0x80, n, 0);
+            }
+            out.extend(places.iter().flat_map(|&(a, b)| [a, b]));
+        }
+        out
+    };
+    // (The voices add up in another order, so to rounding; the random values exactly)
+    let up = render(&[48, 52, 55]);
+    let (n, k) = (up.len(), up.len() - 6);
+    for order in [[55u8, 48, 52], [52, 55, 48]] {
+        let other = render(&order);
+        assert_eq!(other.len(), n);
+        assert_eq!(other[k..], up[k..], "{order:?}");
+        let worst = (0..k).map(|i| (other[i] - up[i]).abs()).fold(0.0f32, f32::max);
+        let peak = up[..k].iter().fold(0.0f32, |m, x| m.max(x.abs()));
+        assert!(worst < peak * 1e-4, "{order:?}: {worst} of {peak}");
+    }
+}

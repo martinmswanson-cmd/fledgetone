@@ -131,7 +131,7 @@ export const FLEDGE_SECTIONS = {
     knobs: [knob('Band drive', 'Drive'), knob('Band drive mix', 'Mix'), knob('Band drive crush', 'Crush'), knob('Band drive tone', 'Cab tone')],
     split: [knob('Band low split', 'Low split'), knob('Band high split', 'High split'), knob('Band high amount', 'Highs')],
   },
-  chaos: { rate: choice('Chaos rate (sync)', 'Chaos rate', FLEDGE_SYNC, CAP.sync), smooth: knob('Chaos smooth', 'Smooth'), cycle: choice('Random repeat', 'Repeats every', FLEDGE_RANDOM_CYCLES, CAP.cycle) },
+  chaos: { rate: choice('Chaos rate (sync)', 'Chaos rate', FLEDGE_SYNC, CAP.sync), smooth: knob('Chaos smooth', 'Smooth'), cycle: choice('Random repeat', 'Repeats every', FLEDGE_RANDOM_CYCLES, CAP.cycle), byStep: toggle('Random by step', 'By step, not pitch') },
   macros: [1, 2, 3, 4].map((n) => knob(`Macro ${n}`, `Macro ${n}`)),
   play: { mode: choice('Voices', 'Voices', FLEDGE_MODES, CAP.mode), knobs: [knob('Glide', 'Glide'), knob('Bend range', 'Bend'), knob('Velocity', 'Velocity')] },
   /** Mono and legato: a note that doesn't join the last starts afresh (so a repeating riff repeats) */

@@ -201,6 +201,9 @@ struct Cfg {
     mono_restart: bool,
     /// The side loses everything under this (Hz)
     mono_below: f32,
+    /// A note's random values from its step and its place in a chord (lowest first), not its
+    /// pitch (older sounds: from its pitch)
+    random_by_step: bool,
     chaos_beats: f32,
     chaos_smooth: f32,
     /// Beats after which the random values come round again (0: never)
@@ -730,6 +733,8 @@ struct Voice {
     /// The note-random sources (0..1 and -1..1), new at each note-on
     nrand: f32,
     nrand_bi: f32,
+    /// Where in the song the note that set them was struck
+    nrand_at: f64,
     /// How fast its key came up (0 until then), and its key's pressure
     rel_vel: f32,
     pressure: f32,
@@ -789,6 +794,7 @@ impl Voice {
             rand: 0.0,
             nrand: 0.0,
             nrand_bi: 0.0,
+            nrand_at: f64::NAN,
             rel_vel: 0.0,
             pressure: 0.0,
             lfo_sm: [f32::NAN; 4],
@@ -856,10 +862,11 @@ pub struct Synth {
     /// Where in the song each key was last struck (a note that waits for its voice still gets
     /// the random values of when it was played)
     struck: [f64; 128],
-    /// Each key's place among the notes struck at the same moment (a chord's notes 0, 1, 2...),
-    /// and the last moment notes were struck, with how many then
+    /// Each key's place among the notes struck at the same moment (a chord's notes 0, 1, 2...
+    /// from the lowest, whatever order they came in), and the last moment notes were struck,
+    /// with the keys struck then
     struck_k: [u8; 128],
-    strike: (f64, u8),
+    strike: (f64, u128),
     band: [Band; 2],
     /// The clean sub, mixed in after the effects
     sub_bus: [f32; BLOCK],
@@ -1103,6 +1110,7 @@ impl Synth {
             penv_linear: self.v(p::PENV_CURVE) > 0.5,
             mono_restart: self.v(p::MONO_RESTART) > 0.5,
             mono_below: self.v(p::MONO_BELOW),
+            random_by_step: self.v(p::RANDOM_BY_STEP) > 0.5,
             chaos_beats: p::SYNC_BEATS[self.v(p::CHAOS_DIV) as usize],
             chaos_smooth: self.v(p::CHAOS_SMOOTH),
             random_cycle: p::RANDOM_CYCLE_BEATS[self.v(p::RANDOM_CYCLE) as usize],
@@ -1186,9 +1194,7 @@ impl Synth {
         }
         let cfg = self.cfg();
         self.struck[note as usize & 127] = self.song_beats;
-        // (A chord's notes, struck at the same moment, count 0, 1, 2...)
-        self.strike = if self.strike.0 == self.song_beats { (self.song_beats, self.strike.1.saturating_add(1)) } else { (self.song_beats, 0) };
-        self.struck_k[note as usize & 127] = self.strike.1;
+        self.chord_place(note, &cfg);
         if self.anchored {
             // Random values from where in the song this note is, and which note (not from what
             // played before): the same notes from the same place sound the same, live or exported
@@ -1214,6 +1220,7 @@ impl Synth {
             // A new note: new random values, even when it joins the last (legato)
             v.nrand = nr;
             v.nrand_bi = nb;
+            v.nrand_at = self.struck[note as usize & 127];
             v.rel_vel = 0.0;
             // A key is down now: lifting the pedal mustn't end it
             v.sustained = false;
@@ -1313,14 +1320,47 @@ impl Synth {
         self.voices[0].active = false;
     }
 
+    /// `note` has just been struck: its place among the notes struck at this moment (a chord's,
+    /// 0, 1, 2... from the lowest), and so the places of the others, which move up when a lower
+    /// note comes after them. Their voices started at this moment (no sound yet between them)
+    /// take their new places' random values, so a chord sounds the same whatever order its
+    /// notes came in.
+    fn chord_place(&mut self, note: u8, cfg: &Cfg) {
+        let bit = 1u128 << (note & 127);
+        self.strike = if self.strike.0 == self.song_beats { (self.song_beats, self.strike.1 | bit) } else { (self.song_beats, bit) };
+        let keys = self.strike.1;
+        let mut k = 0u8;
+        for n in 0..128usize {
+            if keys >> n & 1 == 1 {
+                self.struck_k[n] = k;
+                k = k.saturating_add(1);
+            }
+        }
+        if !cfg.random_by_step {
+            return;
+        }
+        let now = self.song_beats;
+        for i in 0..VOICES {
+            let v = &self.voices[i];
+            if v.active && v.pending.is_none() && v.nrand_at == now && keys >> (v.note & 127) & 1 == 1 {
+                let (nr, nb) = self.note_random(v.note, cfg);
+                let v = &mut self.voices[i];
+                v.nrand = nr;
+                v.nrand_bi = nb;
+            }
+        }
+    }
+
     /// The note-random values (0..1 and -1..1) for `note` played now: seeded from the song
-    /// position (within the random cycle) and the note's place in a chord struck at once, not
-    /// its pitch, so they repeat in every render of the same notes, and a riff that comes round
-    /// on other notes (the next chord's root) has each step sound as it did.
+    /// position (within the random cycle) and the note's place in a chord struck at once
+    /// (lowest first), not its pitch, so they repeat in every render of the same notes, and a
+    /// riff that comes round on other notes (the next chord's root) has each step sound as it
+    /// did. (Older sounds, before "Random by step": from the position and the pitch, as then.)
     fn note_random(&self, note: u8, cfg: &Cfg) -> (f32, f32) {
         let at = self.struck[note as usize & 127];
         let at = if cfg.random_cycle > 0.0 { at.rem_euclid(cfg.random_cycle) } else { at };
-        let key = ticks(at) << 8 ^ self.struck_k[note as usize & 127] as u64;
+        let which = if cfg.random_by_step { self.struck_k[note as usize & 127] } else { note };
+        let key = ticks(at) << 8 ^ which as u64;
         (hash01(key ^ 0x0a11_0000_0000_0000), hash_bi(key ^ 0x0b22_0000_0000_0000))
     }
 
@@ -1339,6 +1379,7 @@ impl Synth {
         let was_active = v.active;
         v.nrand = nr;
         v.nrand_bi = nb;
+        v.nrand_at = self.struck[note as usize & 127];
         v.rel_vel = 0.0;
         v.pressure = 0.0;
         v.active = true;

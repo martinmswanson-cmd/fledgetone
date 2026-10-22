@@ -364,7 +364,7 @@ const DRIVE_MORE: [Param; 14] = [
     pr("Band high split", Kind::Log { min: 1000.0, max: 8000.0, unit: " Hz" }, 2500.0),
     pr("Band high amount", Kind::Percent, 1.0),
 ];
-const PLAY_MORE: [Param; 7] = [
+const PLAY_MORE: [Param; 8] = [
     pr("Sub path", SUB_PATH_K, 1.0),
     pr("Glide mode", GLIDE_MODE_K, 0.0),
     pr("Glide rate", GLIDE_RATE_K, 0.0),
@@ -377,13 +377,17 @@ const PLAY_MORE: [Param; 7] = [
     // Everything under this is kept in the middle (the side loses it), after the unison spread,
     // the chorus and the width
     pr("Mono below", Kind::Log { min: 60.0, max: 400.0, unit: " Hz" }, 180.0),
+    // A note's own random values follow its step in the bar and its place in a chord (lowest
+    // first), not its pitch, so a riff that comes round on other notes moves as it did
+    pr("Random by step", Kind::Toggle, 1.0),
 ];
 
 /// What a parameter added later is set to when an older saved sound (one with fewer values)
 /// loads, where that differs from its default: the old sound, exactly. (The sub went through the
 /// effects with the rest of the voice before "Sub path" came; a mono note ran on from the last one's
-/// phases before "Mono restart"; the side lost only what was under 120 Hz before "Mono below".)
-const LEGACY: &[(&str, f32)] = &[("Sub path", 0.0), ("Mono restart", 0.0), ("Mono below", 120.0)];
+/// phases before "Mono restart"; the side lost only what was under 120 Hz before "Mono below"; a
+/// note's random values came from its step and its pitch before "Random by step".)
+const LEGACY: &[(&str, f32)] = &[("Sub path", 0.0), ("Mono restart", 0.0), ("Mono below", 120.0), ("Random by step", 0.0)];
 
 /// Every group, in order: its place in the list is where it starts
 const GROUPS: &[&[Param]] = &[
@@ -488,7 +492,8 @@ pub const GLIDE_CURVE: usize = SUB_PATH + 3;
 pub const PENV_CURVE: usize = SUB_PATH + 4;
 pub const MONO_RESTART: usize = SUB_PATH + 5;
 pub const MONO_BELOW: usize = SUB_PATH + 6;
-pub const COUNT: usize = MONO_BELOW + 1;
+pub const RANDOM_BY_STEP: usize = SUB_PATH + 7;
+pub const COUNT: usize = RANDOM_BY_STEP + 1;
 
 /// Matrix slot `n`'s (0 to 15) source, target and amount; and its curve and via
 pub const fn slot_base(n: usize) -> usize {
@@ -729,7 +734,7 @@ mod tests {
             (slot_base(8), "Mod 9 source"), (slot_base(15) + 2, "Mod 16 amount"), (slot_base(7) + 2, "Mod 8 amount"), (slot_more(0), "Mod 1 curve"), (slot_more(15) + 1, "Mod 16 via"),
             (PRE_SHAPER, "Pre drive type"), (DRIVE_TONE, "Drive tone"), (BAND_SHAPER, "Band drive type"), (BAND_HIGH_AMT, "Band high amount"),
             (SUB_PATH, "Sub path"), (GLIDE_MODE, "Glide mode"), (PENV_CURVE, "Pitch envelope curve"),
-            (MONO_RESTART, "Mono restart"), (MONO_BELOW, "Mono below"),
+            (MONO_RESTART, "Mono restart"), (MONO_BELOW, "Mono below"), (RANDOM_BY_STEP, "Random by step"),
         ];
         assert_eq!(COUNT_V1, 215, "the first version's parameters");
         for (i, name) in check {
