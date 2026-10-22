@@ -27,6 +27,7 @@ export const FLEDGE_PRESETS = [
   'Lead/Hardcore Supersaw', 'Pad/Wide Wash', 'Keys/Bright Pluck',
   'Bass/Crunch Formant', 'Bass/Resample Chop', 'Bass/Clipped Square', 'Bass/Hard Clip Stab', 'Lead/Chip Crunch',
   'Bass/Driven Legato',
+  'Lead/Soaring Saw', 'Chords/Silk Stack', 'Pad/Silk Wash', 'Bass/Round Root', 'Keys/Vowel Chop', 'Keys/Glass Pluck', 'FX/Reverse Swell',
 ];
 
 /** The preset a new Fledge Synth track starts on in Pocket. */
@@ -84,6 +85,13 @@ export const FLEDGE_MACRO_NAMES: Record<string, string[]> = {
   'Bass/Hard Clip Stab': ['Bright', 'Spread', 'Grit'],
   'Lead/Chip Crunch': ['Crush', 'Warp'],
   'Bass/Driven Legato': ['Bright', 'Shape', 'Grit'],
+  'Lead/Soaring Saw': ['Darken', 'Spread', 'Space'],
+  'Chords/Silk Stack': ['Bright', 'Drive', 'Space'],
+  'Pad/Silk Wash': ['Bright', 'Space'],
+  'Bass/Round Root': ['Bright', 'Shape', 'Grit'],
+  'Keys/Vowel Chop': ['Vowel', 'Space'],
+  'Keys/Glass Pluck': ['Morph', 'Space'],
+  'FX/Reverse Swell': ['Bright', 'Space'],
 };
 
 /** A parameter's stored 0..1 by its name. */
