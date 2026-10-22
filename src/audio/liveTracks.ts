@@ -12,7 +12,7 @@ import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { barToTicks, getLiveTempo } from './transport';
 import type { PlayableNote, TrackInstrument } from './instruments';
 import type { NativeBus } from './presets/native';
-import type { AutomationPoint, Track, WamPlugin } from '../store/timelineTypes';
+import type { AutomationPoint, DrumHit, Track, WamPlugin } from '../store/timelineTypes';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import type { LiveTrackView } from '../store/freeze';
 import { loadSamples } from './samplers/samplerManager';
@@ -313,15 +313,15 @@ export function retimeAutomation(): void {
 }
 
 /**
- * A kick drum note at `time` on `trackId` (from the scheduler): every Pump that follows the kick
- * ducks, if that track is a drum kit that sounds (not muted, not silenced by another's solo).
+ * A kick drum note (or a snare / clap, `hit` 'snare') at `time` on `trackId` (from the scheduler):
+ * every Pump that follows it ducks, if that track is a drum kit that sounds (not muted, not silenced by another's solo).
  */
-export function pumpOnKick(trackId: string, time: number): void {
+export function pumpOnKick(trackId: string, time: number, hit: DrumHit = 'kick'): void {
   const lt = live.get(trackId);
   // A frozen drum track plays as audio, but its kicks still count
   const kind = (lt?.applied as LiveTrackView | null)?.frozenFrom ?? lt?.instrumentKey;
   if (!lt?.audible || !kind || !isDrumKind(kind)) return;
-  for (const { strip } of live.values()) strip.pump(time, 'kick');
+  for (const { strip } of live.values()) strip.pump(time, hit);
 }
 
 /** A track's instrument, or undefined while the track is muted / not the soloed one. */

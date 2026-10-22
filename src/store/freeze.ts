@@ -1,5 +1,5 @@
 import type { AutomationParam, Clip, FrozenTrack, Track } from './timelineTypes';
-import { defaultTrackFx } from './timelineTypes';
+import { defaultTrackFx, pumpFollowsDrums, pumpHears } from './timelineTypes';
 import { isDrumKind } from '../audio/instrumentCatalog';
 import { clipHasConditions, contentKey, isConditional } from './noteChance';
 import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../audio/tempoMap';
@@ -82,7 +82,7 @@ function runsOf(clips: Clip[]): { runs?: Array<[number, number, string]> } {
 
 function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] }): string {
   const own = all.clips.filter((c) => c.trackId === track.id).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
-  const followsKick = track.fx.pump.on && track.fx.pump.trigger === 'kick';
+  const followsKick = track.fx.pump.on && pumpFollowsDrums(track.fx.pump.trigger);
   // A kick-triggered Pump ducks on the kicks of the drum tracks that sound (as live playback
   // does), so those are part of the sound too: muting or soloing them changes it
   const anySolo = all.tracks.some((t) => t.isSoloed);
@@ -91,7 +91,7 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
   const kicks = followsKick
     ? kickClips
         // (A kick that plays only sometimes, with what decides it: its clip and how often)
-        .flatMap((c) => c.notes.filter((n) => n.note === 'C1').map((n) => [+(c.startBar + n.startOffset).toFixed(6), ...(isConditional(n) ? [c.id, c.pattern ?? null, n.chance ?? null, n.cond ?? null] : [])] as const))
+        .flatMap((c) => c.notes.filter((n) => (pumpHears(track.fx.pump.trigger, 'kick') && n.note === 'C1') || (pumpHears(track.fx.pump.trigger, 'snare') && (n.note === 'D1' || n.note === 'D#1'))).map((n) => [+(c.startBar + n.startOffset).toFixed(6), ...(isConditional(n) ? [c.id, c.pattern ?? null, n.chance ?? null, n.cond ?? null] : [])] as const))
         .sort((a, b) => a[0] - b[0] || String(a[1]).localeCompare(String(b[1])))
         .map((k) => (k.length === 1 ? k[0] : k))
     : [];

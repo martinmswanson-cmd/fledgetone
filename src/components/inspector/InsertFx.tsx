@@ -6,6 +6,8 @@
 import React from 'react';
 import { Disc3, Repeat, Sparkle, Filter, Flame, Gauge, Hand, HeartPulse, MessageSquareText, Scissors, Waves } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
+import { DuckShapeEditor } from './DuckShapeEditor';
+import { depthDb } from '../../audio/effects/duckShape';
 import type { EchoTime, FilterSlope, FilterType, GateRate, PumpTrigger, Track, TrackFx } from '../../store/timelineTypes';
 import {
   defaultTrackFx,
@@ -79,14 +81,16 @@ interface ChoiceProps<T extends string | number> {
   onChange: (v: T) => void;
   accent: string;
   disabled: boolean;
+  /** Buttons per row (default: all in one) */
+  columns?: number;
 }
 
 /** A row of buttons picking one of a few settings (a filter type, a trigger). */
-function FxChoice<T extends string | number>({ label, value, options, onChange, accent, disabled }: ChoiceProps<T>) {
+function FxChoice<T extends string | number>({ label, value, options, onChange, accent, disabled, columns }: ChoiceProps<T>) {
   return (
     <div className={`flex items-center gap-2 text-[10px] font-mono ${disabled ? 'opacity-45' : ''}`} role="group" aria-label={label}>
       <span className="w-16 shrink-0 text-forge-muted uppercase">{label}</span>
-      <div className="flex-1 min-w-0 grid gap-1" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+      <div className="flex-1 min-w-0 grid gap-1" style={{ gridTemplateColumns: `repeat(${columns ?? options.length}, minmax(0, 1fr))` }}>
         {options.map((o) => {
           const active = o.value === value;
           return (
@@ -288,6 +292,8 @@ const FILTER_SLOPE_OPTIONS: ReadonlyArray<{ value: FilterSlope; label: string; t
 ];
 const PUMP_TRIGGER_OPTIONS: ReadonlyArray<{ value: PumpTrigger; label: string; title: string }> = [
   { value: 'kick', label: 'Kick', title: 'Duck on every kick (C1) of a drum kit that is playing (not muted or silenced by solo)' },
+  { value: 'snare', label: 'Snare', title: 'Duck on every snare (D1) or clap (D#1) of a drum kit that is playing' },
+  { value: 'kickSnare', label: 'Kick+snare', title: 'Duck on every kick and every snare or clap: a hole in the bass for each drum hit' },
   { value: 'beat', label: 'Beat', title: 'Duck on every quarter note' },
   { value: 'eighth', label: '1/8', title: 'Duck on every 8th note' },
   { value: 'track', label: 'Track', title: "Duck on every note of a track you choose (a sidechain from any part: a bass, a lead, a vocal chop)" },
@@ -462,6 +468,7 @@ export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
           label="Trigger"
           value={fx.pump.trigger}
           options={PUMP_TRIGGER_OPTIONS}
+          columns={3}
           // Following a track: start with the first other track, unless one was picked before
           onChange={(trigger) => setPump(trigger === 'track' && !fx.pump.source ? { trigger, source: otherTracks[0]?.id } : { trigger }, true)}
           accent={pumpAccent}
@@ -484,9 +491,10 @@ export const FilterAndPumpPanels: React.FC<{ track: Track }> = ({ track }) => {
             </select>
           </label>
         )}
-        <FxSlider label="Depth" value={fx.pump.depth} min={0} max={1} step={0.01} format={pct} onChange={(depth) => setPump({ depth })} reset={d.pump.depth} accent={pumpAccent} disabled={!fx.pump.on} />
+        <DuckShapeEditor track={{ ...track, fx }} accent={pumpAccent} disabled={!fx.pump.on} />
+        <FxSlider label="Depth" value={fx.pump.depth} min={0} max={1} step={0.01} format={(v) => (v >= 1 ? 'Silent' : `${depthDb(v).toFixed(1)} dB`)} onChange={(depth) => setPump({ depth })} reset={d.pump.depth} accent={pumpAccent} disabled={!fx.pump.on} />
         <FxSlider
-          label="Release"
+          label={fx.pump.shape && fx.pump.shape !== 'smooth' ? 'Length' : 'Release'}
           value={fx.pump.release}
           min={PUMP_RELEASE_MIN}
           max={PUMP_RELEASE_MAX}

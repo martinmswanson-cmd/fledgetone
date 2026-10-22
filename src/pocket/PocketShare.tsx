@@ -5,7 +5,8 @@
  */
 import React, { useState } from 'react';
 import { Download, FolderOpen, Link2, Loader2, Monitor, Save } from 'lucide-react';
-import { currentProject } from '../store/timelineStore';
+import { currentProject, useTimelineStore } from '../store/timelineStore';
+import { DEFAULT_TARGET, LOUDNESS_TARGETS } from '../audio/loudnessTarget';
 import { songLink } from '../store/shareLink';
 import { captureWamStates } from '../audio/wamHost';
 import { downloadBlob, saveBlobFile } from '../audio/exportWav';
@@ -33,11 +34,14 @@ async function shareSheet(data: ShareData): Promise<boolean> {
 
 export const PocketShare: React.FC = () => {
   const [busy, setBusy] = useState<string | null>(null);
+  const loud = useTimelineStore((s) => s.master.loud);
+  const [picked, setPicked] = useState<string | null>(null);
+  const target = picked ?? (loud?.on ? loud.target : DEFAULT_TARGET);
 
   const exportMp3 = async () => {
     setBusy('Starting');
     try {
-      const out = await renderSongMp3((f, detail) => setBusy(f < 1 ? `${detail} (${Math.round(f * 100)}%)` : detail));
+      const out = await renderSongMp3((f, detail) => setBusy(f < 1 ? `${detail} (${Math.round(f * 100)}%)` : detail), target);
       if (!out) {
         showToast('The song is empty: write something first');
         return;
@@ -50,7 +54,7 @@ export const PocketShare: React.FC = () => {
       const file = new File([out.blob], out.name, { type: 'audio/mpeg' });
       if (!(await shareSheet({ files: [file], title: out.name }))) {
         downloadBlob(out.blob, out.name);
-        showToast(`Saved ${out.name}`);
+        showToast(`Saved ${out.name} (${out.lufs.toFixed(1)} LUFS)`);
       }
     } catch (err) {
       showToast(`Couldn't make the MP3: ${err instanceof Error ? err.message : String(err)}`);
@@ -76,6 +80,17 @@ export const PocketShare: React.FC = () => {
     <>
       <Card title="Share the song">
         <div className="space-y-2">
+          <label className="flex items-center gap-2 text-[12px] text-forge-muted">
+            Loudness
+            <select value={target} onChange={(e) => setPicked(e.target.value)} className="flex-1 h-8 bg-forge-bg border border-forge-border rounded-lg px-1 text-forge-text" aria-label="MP3 loudness">
+              {LOUDNESS_TARGETS.filter((t) => ['streaming', 'loud', 'club'].includes(t.id)).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!loud?.on && target !== 'streaming' && <p className="text-[11px] text-amber-200">For Loud and Club, switch on Loud in the mixer: it gets there cleanly with a clipper as well as the limiter.</p>}
           <button type="button" className={`${pill} w-full !border-cyan-400 text-cyan-200`} onClick={() => void exportMp3()} disabled={busy !== null}>
             {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             {busy ?? 'Export an MP3'}

@@ -12,6 +12,7 @@ import { GuidePanel } from './guide/GuidePanel';
 import { FitTempoPopover, TempoField } from './TempoControls';
 import { shouldIgnoreShortcut } from './keyboard';
 import { LoudnessBadge } from './LoudnessBadge';
+import { ListeningBadge } from './ListeningBadge';
 import { PerfBadge } from './PerfBadge';
 import { PALETTE_SHORTCUT, useUiStore } from '../store/uiStore';
 import { MenuBar } from './menu/MenuBar';
@@ -140,12 +141,12 @@ export const Header: React.FC = () => {
           <IntensitySlider />
         </div>
 
-        {/* Master Volume Slider */}
-        <div className="flex items-center bg-forge-bg border border-forge-border rounded-lg px-3 py-1.5 gap-3">
+        {/* Listening volume: how loud you hear it (never the export) */}
+        <div className="flex items-center bg-forge-bg border border-forge-border rounded-lg px-3 py-1.5 gap-3" title="Listening volume: how loud you hear the song. It never changes an export.">
           <Volume2 className="w-4 h-4 text-forge-muted" />
           <div className="flex flex-col">
             <div className="flex justify-between items-center w-28 text-[10px] font-mono text-forge-muted">
-              <span>MASTER</span>
+              <span>LISTEN</span>
               <span className="text-forge-text font-bold">
                 {masterVolume > 0 ? `+${masterVolume.toFixed(1)}` : masterVolume.toFixed(1)} dB
               </span>
@@ -157,12 +158,13 @@ export const Header: React.FC = () => {
               step="0.5"
               value={masterVolume}
               onChange={(e) => setMasterVolume(Number(e.target.value))}
-              aria-label="Master volume"
+              aria-label="Listening volume"
               className="w-28 accent-amber-400 cursor-pointer h-1.5 bg-forge-border rounded-lg appearance-none mt-1"
             />
           </div>
         </div>
 
+        {isRunning && <ListeningBadge />}
         {isRunning && <LoudnessBadge />}
         {isRunning && <PerfBadge />}
 

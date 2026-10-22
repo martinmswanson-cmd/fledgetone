@@ -140,6 +140,9 @@ const TOOLS: Item[] = [
     if (st.tracks.find((t) => t.id === id)?.instrumentKey === 'bus') return 'A bus takes no plugin effects: add them to the tracks that play into it.';
     useUiStore.getState().setPluginDialog({ trackId: id });
   } },
+  { title: 'Loud master', keywords: 'loud master loudness club streaming lufs clipper limiter target mastering hit louder -6 -9 -14', detail: 'In the Master tab: makes the song as loud as its style (Streaming, Loud or Club), with a soft clipper and the limiter.', run: masterPanel('Loud master') },
+  { title: 'Listening level-matched', keywords: 'listening level matched loudness volume ear safe quiet loud monitor headphones', detail: 'In the Master tab, under Playback: you hear every song at about the same loudness; exports are not changed.', run: masterPanel('listening level matched loudness volume ear safe') },
+  { title: 'Mono below 120 Hz', keywords: 'mono bass sub low end middle wide stereo club phone', detail: 'In the Master tab: everything under 120 Hz in the middle, with the Width on or off.', run: masterPanel('mono bass low end middle') },
   { title: 'Duck to kick', keywords: 'duck kick sidechain side chain pump pumping breathe ducking edm house dance bass chords pads leads', detail: 'A button in the Mixer that makes the bass, chords, pads and leads dip on every kick and swell back, the dance-music pump. One undo step.', run: () => ui().setDialog('mixer') },
   { title: 'Glue', keywords: 'glue together cohesive one song gel tie mix bus room sound like a record separate instruments', detail: 'A switch in the Mixer that makes the parts sound like one song: room for each part, drum and music buses, the bass ducking under the kick, one shared room.', run: () => ui().setDialog('mixer') },
   { title: 'Spectrum', keywords: 'spectrum analyser analyzer visualizer visualiser frequency readout led neon cyberpunk city terrain radar hud data rain hologram pigeons', detail: 'The live spectrum, next to the master in the Mixer, as LED bars, a neon city, terrain, radar, data rain or holograms.', run: () => ui().setDialog('mixer') },
@@ -199,7 +202,7 @@ const SETTINGS: Item[] = [
   } },
   { title: 'Fit tempo to a time', keywords: 'fit duration seconds length video tempo', detail: 'Set the tempo so the loop, the song or some bars last a given time.', run: async () => void (await press('button[title^="Fit to time"]')) },
   { title: 'Swing', keywords: 'swing shuffle groove triplet feel', run: show('[aria-label="Swing"]') },
-  { title: 'Master volume', keywords: 'master volume output level loud quiet', run: show('[aria-label="Master volume"]') },
+  { title: 'Listening volume', keywords: 'master volume listening output level loud quiet speakers headphones', detail: 'How loud you hear the song. It never changes an export.', run: show('[aria-label="Listening volume"]') },
   { title: 'Loudness meter', keywords: 'loudness lufs true peak meter level streaming', run: masterPanel('loudness') },
   { title: 'Snap', keywords: 'snap grid quantize magnet align', run: show('#snap-grid') },
   { title: 'Timecode frame rate', keywords: 'fps frame rate timecode video frames 24 25 30 60', run: show('[aria-label="Timecode frame rate"]') },

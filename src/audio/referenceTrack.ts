@@ -18,7 +18,6 @@ import { decodeSound, importSoundFile } from './soundLibrary';
 import { measureLoudness } from './loudness';
 import { bandSpectrum, type BandSpectrum } from './mixAnalysis';
 import { keepSound, keptSound } from './keptSounds';
-import { getMasterVolume } from './engine';
 import { useMixStudio } from './mixStudio';
 import { nativeContextOf, nativeInputOf } from './nativeNodes';
 
@@ -45,14 +44,14 @@ export const useReference = create<ReferenceState>(() => ({ sound: null, lufs: -
 let buffer: AudioBuffer | null = null;
 
 /**
- * The gain (dB) that brings the reference to the mix's loudness, as heard now (the master volume
- * since the analysis counted), or null until the mix has been analysed.
+ * The gain (dB) that brings the reference to the mix's loudness, or null until the mix has been
+ * analysed. (Both play through the listening volume and level matching, monitor.ts, alike.)
  */
 export function referenceMatchDb(): number | null {
   const analysis = useMixStudio.getState().analysis;
   const { lufs, sound } = useReference.getState();
   if (!analysis || !sound || !Number.isFinite(lufs) || !Number.isFinite(analysis.lufs)) return null;
-  return analysis.lufs - lufs + (getMasterVolume() - analysis.masterDb);
+  return analysis.lufs - lufs;
 }
 
 async function measure(id: string, name: string): Promise<void> {

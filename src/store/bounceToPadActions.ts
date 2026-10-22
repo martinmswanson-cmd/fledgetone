@@ -107,7 +107,6 @@ export async function bounceRangeToPad(req: BounceRequest): Promise<PadPlaced | 
       ending: 'exact',
       sampleRate,
       bypassMaster: true,
-      ignoreMasterVolume: true,
       intensity: { value: s.intensity, curves: s.intensityCurves },
       // No ceiling: the level is set below, and the pad's gain puts it back
       peakCeilingDbtp: 60,

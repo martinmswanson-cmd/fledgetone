@@ -67,6 +67,17 @@ test('a hard clip holds a loud sine near the ceiling, and reports what it took o
   assert.ok(reading.share > 0.5);
 });
 
+test('a loud high sine is held near the ceiling too: the residual lines up with the sound at every frequency', () => {
+  // (It once read three quarters of a sample early: a clipped 5 kHz came out 13 dB over the ceiling)
+  for (const [hz, most] of [[200, 0.05], [1000, 0.5], [5000, 1.6]]) {
+    const x = sine(hz, 0.9);
+    const l = x.slice();
+    clipChannels(l, l, SR, { on: true, drive: 18, softness: 0.5, ceiling: -0.5 });
+    const over = 20 * Math.log10(peak(l.subarray(2000, l.length - 2000))) + 0.5;
+    assert.ok(over < most, `${hz} Hz: ${over.toFixed(2)} dB over the ceiling`);
+  }
+});
+
 test('soft clipping bends earlier than hard', () => {
   const x = sine(110, 0.6);
   const hard = x.slice();

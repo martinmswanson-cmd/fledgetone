@@ -16,7 +16,7 @@ import { releaseAuditionSamplers } from './samplers/samplerManager';
 import { liveMix } from './engine';
 import { createAudioClipSchedule } from './audioClipSchedule';
 import type { AudioClipSchedule } from './audioClipSchedule';
-import type { Clip, ClipGroove, LoopRegion, NoteEvent, Track, TrackFx } from '../store/timelineTypes';
+import type { Clip, ClipGroove, DrumHit, LoopRegion, NoteEvent, Track, TrackFx } from '../store/timelineTypes';
 import { clipHasConditions, clipRuns, isConditional, notePlays, passOf, type ClipRun } from '../store/noteChance';
 import { INSTRUMENTS } from './instrumentCatalog';
 import { detuned, noteDrift, noteSeed } from './human';
@@ -168,7 +168,7 @@ const sameNotes = (prev: Clip, next: Clip) =>
 /**
  * Play the timeline's clips on `transport`, which picks up loop passes. Each note group goes to
  * its track's instrument, looked up when it plays (`instrumentFor` returns undefined for a track
- * that shouldn't sound). `onKick` hears of every kick drum note (C1) at the time it plays,
+ * that shouldn't sound). `onKick` hears of every kick drum note (C1), and every snare (D1) or clap (D#1) as a 'snare', at the time it plays,
  * whether or not that track sounds, for the Pump inserts to follow. `swing` is read as each
  * tick plays and delays the notes swungNotes picks out; the Transport's own swing stays off.
  *
@@ -182,7 +182,7 @@ const sameNotes = (prev: Clip, next: Clip) =>
 export function createClipSchedule(
   transport: ReturnType<typeof Tone.getTransport>,
   instrumentFor: (trackId: string) => TrackInstrument | undefined,
-  onKick?: (trackId: string, time: number) => void,
+  onKick?: (trackId: string, time: number, hit: DrumHit) => void,
   swing: () => number = () => 0,
   /** Every note group of every track as it plays (Pumps that follow a track) */
   onNotes?: (trackId: string, time: number) => void,
@@ -353,7 +353,8 @@ export function createClipSchedule(
       if (onNotes) for (const group of groups) if (!group.pitch && !group.cc) onNotes(group.trackId, tickTime + lateOf(group));
       if (!onKick) return;
       for (const group of groups) {
-        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, tickTime + lateOf(group));
+        if (group.notes.some((n) => n.note === DRUM_NOTES.kick)) onKick(group.trackId, tickTime + lateOf(group), 'kick');
+        if (group.notes.some((n) => n.note === DRUM_NOTES.snare || n.note === DRUM_NOTES.clap)) onKick(group.trackId, tickTime + lateOf(group), 'snare');
       }
     };
   };
