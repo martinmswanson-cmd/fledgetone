@@ -379,7 +379,7 @@ export const TrackInspector: React.FC = () => {
                 type="button"
                 className="self-start h-7 px-2 rounded border border-forge-border text-[10px] font-mono text-forge-muted hover:text-forge-text"
                 title="Turn this track into a Designed Kit that starts from this kit's sounds, to change them in the Drum Designer"
-                onClick={() => useTimelineStore.getState().setTrackInstrument(currentTrack.id, 'designedKit')}
+                onClick={() => useTimelineStore.getState().setTrackInstrument(currentTrack.id, 'designedKit', { fromKit: true })}
               >
                 EDIT IN DRUM DESIGNER
               </button>

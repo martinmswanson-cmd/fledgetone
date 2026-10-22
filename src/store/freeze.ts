@@ -2,6 +2,7 @@ import type { AutomationParam, Clip, FrozenTrack, Track } from './timelineTypes'
 import { defaultTrackFx, pumpFollowsDrums, pumpHears } from './timelineTypes';
 import { isDrumKind } from '../audio/instrumentCatalog';
 import { clipHasConditions, contentKey, isConditional } from './noteChance';
+import { isSynthKit, SYNTH_KIT_DESIGNS } from './synthKits';
 import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 
 /**
@@ -13,7 +14,8 @@ import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../a
  * distance and the sends, and their automation, stay live, so a frozen track can still be mixed.
  *
  * Anything else that went into the render (notes, instrument, inserts, EQ and their automation,
- * tempo, swing, and the kicks a kick-triggered Pump follows) is summed up in a fingerprint. Once
+ * tempo, swing, and the kicks a kick-triggered Pump follows; a synthesized kit's sounds, as its
+ * key alone once named a recording) is summed up in a fingerprint. Once
  * it no longer matches, the freeze is out of date: the track plays live again until it's frozen
  * anew. Nothing ever plays stale audio.
  */
@@ -109,6 +111,10 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
   return hash(
     JSON.stringify({
       key: track.instrumentKey,
+      // (The Techno, Retro Drum Machine, Rhythm Box and Break kits kept their keys when their
+      // recordings were replaced by synthesized sounds: their sounds go in, so a track frozen on a
+      // recording plays live again, and so does one frozen before a kit's sounds change)
+      ...(isSynthKit(track.instrumentKey) ? { kit: SYNTH_KIT_DESIGNS[track.instrumentKey] } : {}),
       sample: track.sample,
       slicer: track.slicer,
       synth: track.synth,

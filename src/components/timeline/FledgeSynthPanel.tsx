@@ -595,12 +595,13 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
           <Section title="Mod envelope">{env('Mod env', S.modEnv)}</Section>
           <Section title="Chaos and random">
             <p className="text-[10px] text-forge-muted -mt-1">
-              Chaos steps to a new random level at its rate; Note random picks one per note. Both follow the song, so they play the same each time, and repeat as set.
+              Chaos steps to a new random level at its rate; Note random picks one per note. Both follow the song, so they play the same each time, and repeat as set. By step: a note's value follows its step and its place in a chord (lowest first), so a riff on other notes moves the same; off, it follows the pitch (older sounds).
             </p>
             <div className="flex flex-wrap items-end gap-1.5">
               <Choice c={S.chaos.rate as Ctl<'choice'>} get={get} set={set} w="w-[72px]" order={SYNC_ORDER} />
               {ctl(S.chaos.smooth)}
               <Choice c={S.chaos.cycle as Ctl<'choice'>} get={get} set={set} w="w-[96px]" />
+              {ctl(S.chaos.byStep)}
             </div>
           </Section>
           <Section

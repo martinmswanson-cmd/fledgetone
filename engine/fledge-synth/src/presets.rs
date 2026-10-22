@@ -1220,14 +1220,14 @@ mod tests {
     /// ones keep running on, with the side cut under 120 Hz, as they always sounded
     #[test]
     fn new_presets_restart_and_keep_the_lows_mono() {
-        let (rs, mb) = (index_of("Mono restart").unwrap(), index_of("Mono below").unwrap());
+        let (rs, mb, st) = (index_of("Mono restart").unwrap(), index_of("Mono below").unwrap(), index_of("Random by step").unwrap());
         for p in PRESETS {
             let v = p.values();
-            let (restart, below) = (param(rs).kind.value(v[rs]), param(mb).kind.value(v[mb]));
+            let (restart, below, step) = (param(rs).kind.value(v[rs]), param(mb).kind.value(v[mb]), param(st).kind.value(v[st]));
             if p.classic {
-                assert!(restart == 0.0 && (below - 120.0).abs() < 0.01, "{}", p.name);
+                assert!(restart == 0.0 && (below - 120.0).abs() < 0.01 && step == 0.0, "{}", p.name);
             } else {
-                assert!(restart == 1.0 && below >= 179.0, "{}", p.name);
+                assert!(restart == 1.0 && below >= 179.0 && step == 1.0, "{}", p.name);
             }
         }
     }

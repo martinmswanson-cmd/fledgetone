@@ -143,3 +143,24 @@ test('a Pump that follows a track hears that track sit out, and the runs of copi
   const changed = { ...copy, notes: [...copy.notes, { id: 'x', note: 'G4', startOffset: 1, duration: '8n', velocity: 0.8 }] };
   assert.notEqual(fp(bass, all([sometimes, changed])), fp(bass, all([sometimes, copy])));
 });
+
+test("the synthesized kits' freezes made on their old recordings go out of date; every other freeze keeps its fingerprint", async () => {
+  const { SYNTH_KIT_DESIGNS } = await import('../src/store/synthKits.ts');
+  const one = (key) => {
+    const t = track('t', key);
+    return fp(t, { tracks: [t], clips: [clip('k', 't', 1, [['C1', 0], ['D1', 1]])], bpm: 140, swing: 0 });
+  };
+  // As fingerprinted before the kits were synthesized (their key and nothing about their sound)
+  const before = { supersaw: '1c58bae4', drumMachine: '4b8d5e4b', designedKit: '443218db', technoKit: '0b6a50db', breakbeatKit: '63f7edc5', retroDrumMachine: '19564dd9', rhythmBox: '325d754b' };
+  for (const key of ['supersaw', 'drumMachine', 'designedKit']) assert.equal(one(key), before[key], key);
+  for (const key of Object.keys(SYNTH_KIT_DESIGNS)) assert.notEqual(one(key), before[key], key);
+  // And a change to a kit's sounds makes its freezes out of date again
+  const old = SYNTH_KIT_DESIGNS.technoKit;
+  const now = one('technoKit');
+  SYNTH_KIT_DESIGNS.technoKit = { ...old, kick: { ...old.kick, level: (old.kick.level ?? 0) - 1 } };
+  try {
+    assert.notEqual(one('technoKit'), now);
+  } finally {
+    SYNTH_KIT_DESIGNS.technoKit = old;
+  }
+});

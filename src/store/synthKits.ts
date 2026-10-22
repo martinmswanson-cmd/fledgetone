@@ -6,7 +6,7 @@
  * app's own synth, so it's free to use. "Edit in Drum Designer" turns a track on one of them into
  * a Designed Kit starting from its sounds. Plain data, no Web Audio, so Node can test it.
  */
-import { one, two } from './drumDesign';
+import { newKitDesign, one, two } from './drumDesign';
 import type { DrumDesign } from './drumDesign';
 
 export const SYNTH_KITS = ['technoKit', 'retroDrumMachine', 'rhythmBox', 'breakbeatKit'] as const;
@@ -73,3 +73,24 @@ export const SYNTH_KIT_DESIGNS: Record<SynthKitKey, DrumDesign> = {
 
 /** A copy of `key`'s sounds, to start a Designed Kit from. */
 export const synthKitDesign = (key: SynthKitKey): DrumDesign => structuredClone(SYNTH_KIT_DESIGNS[key]);
+
+/** Whether `design` is one of the kits' sounds as they are (a Designed Kit started from one, not changed since). */
+export const isKitSeed = (design: DrumDesign): boolean => {
+  const text = JSON.stringify(design);
+  return SYNTH_KITS.some((k) => JSON.stringify(SYNTH_KIT_DESIGNS[k]) === text);
+};
+
+/**
+ * The design a track turning into a Designed Kit starts from: a synthesized kit's sounds when it's
+ * on one (Edit in Drum Designer), unless it keeps a design of its own from being a Designed Kit
+ * before (a kit's sounds it never changed don't count: those give way to this kit's); else its own
+ * design, or a new kit. Nothing: it keeps the one it has. fromKit (the Edit in Drum Designer
+ * button) always starts from the kit's sounds.
+ */
+export function designedKitStart(track: { instrumentKey: string; drumDesign?: DrumDesign }, fromKit = false): { drumDesign?: DrumDesign } {
+  if (fromKit && isSynthKit(track.instrumentKey)) return { drumDesign: synthKitDesign(track.instrumentKey) };
+  const own = track.drumDesign && !isKitSeed(track.drumDesign) ? track.drumDesign : undefined;
+  if (own) return {};
+  if (isSynthKit(track.instrumentKey)) return { drumDesign: synthKitDesign(track.instrumentKey) };
+  return track.drumDesign ? {} : { drumDesign: newKitDesign() };
+}

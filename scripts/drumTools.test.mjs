@@ -454,3 +454,58 @@ test('note repeat velocity follows pad pressure, or keeps the strike', () => {
   assert.ok(R.repeatVelocity(0.7, 0.3) < R.repeatVelocity(0.7, 0.6));
   assert.ok(R.isNoteRepeat('1/32T') && R.isNoteRepeat('off') && !R.isNoteRepeat('1/5'));
 });
+
+test("a Designed Kit keeps its own design through a switch to a synthesized kit and back; Edit in Drum Designer starts from the kit's sounds", () => {
+  const own = D.newKitDesign();
+  own.kick = D.withLayerValue(own.kick, 0, 'decay', 0.31);
+  // Designed Kit -> Techno Kit (the design stays on the track) -> Designed Kit: its own design
+  assert.deepEqual(K.designedKitStart({ instrumentKey: 'technoKit', drumDesign: own }), {});
+  // The Edit in Drum Designer button always starts from the kit's own sounds
+  assert.deepEqual(K.designedKitStart({ instrumentKey: 'technoKit', drumDesign: own }, true).drumDesign, K.SYNTH_KIT_DESIGNS.technoKit);
+  // A synthesized kit with nothing of its own: its sounds
+  assert.deepEqual(K.designedKitStart({ instrumentKey: 'technoKit' }).drumDesign, K.SYNTH_KIT_DESIGNS.technoKit);
+  // Started from one kit and not changed, then on another kit: the other kit's sounds
+  assert.deepEqual(K.designedKitStart({ instrumentKey: 'rhythmBox', drumDesign: K.synthKitDesign('technoKit') }).drumDesign, K.SYNTH_KIT_DESIGNS.rhythmBox);
+  // Another instrument: its own design kept, else a new kit
+  assert.deepEqual(K.designedKitStart({ instrumentKey: 'drumMachine', drumDesign: own }), {});
+  assert.deepEqual(K.designedKitStart({ instrumentKey: 'drumMachine' }).drumDesign, D.newKitDesign());
+});
+
+test('only a Designed Kit follows the song: a design kept on a track switched to another instrument stays as it was', () => {
+  const design = D.newKitDesign();
+  const notes = ['A1', 'C2', 'E2', 'A1'].map((note, i) => ({ id: `n${i}`, note, startOffset: i / 4, duration: '8n', velocity: 0.8 }));
+  const clips = [{ id: 'c', trackId: 'b', name: 'Bass', startBar: 1, lengthBars: 1, notes, isSelected: false }];
+  const tracks = [
+    { id: 'k', name: 'Kit', instrumentKey: 'technoKit', drumDesign: design },
+    { id: 'b', name: 'Bass', instrumentKey: 'subBass' },
+  ];
+  assert.equal(F.followTracks(tracks, clips, 150), null);
+  const designed = [{ ...tracks[0], instrumentKey: 'designedKit' }, tracks[1]];
+  near(F.followTracks(designed, clips, 150)[0].drumDesign.kick.layers[0].pitch, 55, 0.01);
+});
+
+test("with tempo changes a gated room holds an 8th at the tempo most of its own snares play at", () => {
+  const design = { snare: D.presetSound('gatedSnare') };
+  const hits = (from, to) => Array.from({ length: (to - from) * 2 }, (_, i) => ({ id: `s${from}-${i}`, note: 'D1', startOffset: i / 2, duration: '16n', velocity: 0.8 }));
+  // 8 bars at 120, then 2 bars at 174 (from bar 9): most snares are at 120
+  const clips = [
+    { id: 'a', trackId: 'k', name: 'A', startBar: 1, lengthBars: 8, notes: hits(1, 9), isSelected: false },
+    { id: 'b', trackId: 'k', name: 'B', startBar: 9, lengthBars: 2, notes: hits(9, 11), isSelected: false },
+    // (Another track's notes at the other tempo don't count)
+    { id: 'x', trackId: 'o', name: 'X', startBar: 9, lengthBars: 2, notes: hits(9, 11).concat(hits(9, 11)).concat(hits(9, 11)).concat(hits(9, 11)), isSelected: false },
+  ];
+  const points = [{ id: 't', bar: 9, bpm: 174, ramp: false }];
+  const tracks = [{ id: 'k', name: 'Kit', instrumentKey: 'designedKit', drumDesign: design }];
+  near(F.rowTempo('k', 'snare', clips, 120, points), 120, 1e-9);
+  const at = (bpm, pts, cl = clips) => (F.followTracks(tracks, cl, bpm, pts) ?? tracks)[0].drumDesign.snare.layers[0].gateHold;
+  near(at(120, points), F.gateHoldFor(120), 1e-9);
+  // Most of them at 174 (the song starts at 90 and jumps at bar 3): an 8th at 174
+  const late = [{ id: 't', bar: 3, bpm: 174, ramp: false }];
+  near(F.rowTempo('k', 'snare', clips, 90, late), 174, 1e-9);
+  near(at(90, late), F.gateHoldFor(174), 1e-9);
+  // No tempo changes: the song's tempo, as before
+  near(at(140, undefined), F.gateHoldFor(140), 1e-9);
+  // No snares on the track: the tempo at its other notes, else at bar 1
+  near(F.rowTempo('k', 'snare', [{ ...clips[1], notes: clips[1].notes.map((n) => ({ ...n, note: 'C1' })) }], 120, points), 174, 1e-9);
+  near(F.rowTempo('k', 'snare', [], 120, points), 120, 1e-9);
+});

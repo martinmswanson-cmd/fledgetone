@@ -100,7 +100,7 @@ import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
 import { followTracks } from './drumFollow';
 import { newKitDesign } from './drumDesign';
-import { isSynthKit, synthKitDesign } from './synthKits';
+import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
@@ -546,7 +546,7 @@ interface TimelineState {
   /** Mute (or, if all are muted, unmute) a folder's tracks; the same for solo. One undo step. */
   toggleFolderMute: (folderId: string) => void;
   toggleFolderSolo: (folderId: string) => void;
-  setTrackInstrument: (trackId: string, instrumentKey: InstrumentKey) => void;
+  setTrackInstrument: (trackId: string, instrumentKey: InstrumentKey, opts?: { fromKit?: boolean }) => void;
   /** Put a saved sound (mySounds.ts) on a track: its instrument and every setting of it (one undo step). */
   setTrackSound: (trackId: string, sound: MySound) => void;
   /** A new track playing a saved sound. Returns its id. */
@@ -2133,7 +2133,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       });
     },
 
-    setTrackInstrument: (id, instrumentKey) => {
+    setTrackInstrument: (id, instrumentKey, opts) => {
       const current = get().tracks.find((t) => t.id === id);
       if (!current || current.instrumentKey === instrumentKey) return;
       // A bus or a Plugin track is made as one (Add Track), not by switching an instrument: a bus
@@ -2152,7 +2152,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           // A Plugin track's plugin goes with its instrument (its effects stay)
           plugin: undefined,
           // A Designed Kit starts from the synthesized kit it was (Edit in Drum Designer), else from its own design or a new one
-          ...(instrumentKey === 'designedKit' && (isSynthKit(current.instrumentKey) || !current.drumDesign) ? { drumDesign: isSynthKit(current.instrumentKey) ? synthKitDesign(current.instrumentKey) : newKitDesign() } : {}),
+          ...(instrumentKey === 'designedKit' ? designedKitStart(current, opts?.fromKit) : {}),
         }),
         true
       );
@@ -3442,8 +3442,8 @@ useTimelineStore.subscribe((state, prev) => {
   if (state.playheadPosition !== prev.playheadPosition) setLivePlayhead(state.playheadPosition);
   // Drum Designer sounds that follow the song's key or tempo (drumFollow.ts) are kept on it: a
   // derived change, not an edit of its own (undo takes the notes back, and this follows again)
-  if (state.clips !== prev.clips || state.tracks !== prev.tracks || state.bpm !== prev.bpm) {
-    const followed = followTracks(state.tracks, state.clips, state.bpm);
+  if (state.clips !== prev.clips || state.tracks !== prev.tracks || state.bpm !== prev.bpm || state.tempoPoints !== prev.tempoPoints) {
+    const followed = followTracks(state.tracks, state.clips, state.bpm, state.tempoPoints);
     if (followed) useTimelineStore.setState({ tracks: followed });
   }
 });
