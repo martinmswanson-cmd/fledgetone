@@ -214,6 +214,8 @@ async function createOtt(context: Tone.BaseContext, ott: MasterSettings['ott']):
 
 interface ClipperUnit extends Unit {
   set: (clipper: ClipperSettings, ramp: number) => void;
+  /** The band kind (ClipperSettings.band): a change of kind is a new unit, faded over to. */
+  band: boolean;
 }
 
 /** Listeners to the live clipper's readings (the Master tab's meter). */
@@ -237,6 +239,7 @@ async function createClipper(context: Tone.BaseContext, settings: ClipperSetting
     channelCountMode: 'explicit',
     channelInterpretation: 'speakers',
     parameterData: p,
+    processorOptions: { band: settings.band === true },
   });
   node.port.onmessage = (e: MessageEvent<ClipperReading>) => clipperListeners.forEach((l) => l(e.data));
   const raw = context.rawContext as unknown as BaseAudioContext;
@@ -252,6 +255,7 @@ async function createClipper(context: Tone.BaseContext, settings: ClipperSetting
     input: node,
     output: node,
     set,
+    band: settings.band === true,
     dispose: () => {
       node.port.onmessage = null;
       node.port.postMessage('dispose');
@@ -509,21 +513,30 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     }
     rewire(retired);
     if (!clipChain) return;
+    syncClipper(next, ramp);
+  };
+  /** The clipper as `next` wants it: set, started, swapped for the other kind (faded over), or taken out. */
+  const syncClipper = (next: MasterSettings, ramp: number) => {
+    if (!clipChain) return;
     const clipWanted = effectiveClipper(next);
     if (clipWanted) {
+      const band = clipWanted.band === true;
       if (clipper) clipper.set(clipWanted, ramp);
-      else if (!clipLoading && !clipUnavailable) {
+      if ((!clipper || clipper.band !== band) && !clipLoading && !clipUnavailable) {
         clipLoading = createClipper(context, clipWanted).then(
           (unit) => {
             clipLoading = null;
             const now = effectiveClipper(wanted);
-            if (disposed || !now) {
+            if (disposed || !now || (now.band === true) !== unit.band) {
               unit.dispose();
+              // (Changed again while it started: the one wanted now)
+              if (!disposed) syncClipper(wanted, 0);
               return;
             }
             unit.set(now, 0);
+            const old = clipper;
             clipper = unit;
-            clipChain.set([unit], []);
+            clipChain.set([unit], old ? [old] : []);
           },
           (err) => {
             clipLoading = null;

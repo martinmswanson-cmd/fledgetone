@@ -152,6 +152,67 @@ test('the worklet runs: registers, clips a block, and posts readings', () => {
   assert.ok(posted.length >= 1 && posted[0].peakDb > 6);
 });
 
+test('the band kind (Crunch) passes sound under the knee flat to 18 kHz, lined up with the input', () => {
+  const settings = { on: true, drive: 0, softness: 0.5, ceiling: -1, band: true };
+  for (const hz of [40, 1000, 8000, 16000, 18000]) {
+    const x = sine(hz, 0.3);
+    const l = x.slice();
+    const reading = clipChannels(l, l.slice(), SR, settings);
+    assert.equal(reading.share, 0);
+    const mid = (a) => a.subarray(4000, SR - 4000);
+    const gain = 20 * Math.log10(peak(mid(l)) / peak(mid(x)));
+    assert.ok(Math.abs(gain) < (hz > 16000 ? 0.1 : 0.01), `${hz} Hz: ${gain.toFixed(3)} dB`);
+    if (hz === 1000) for (let i = 4000; i < SR - 4000; i++) assert.ok(Math.abs(l[i] - x[i]) < 1e-4, `sample ${i}`);
+  }
+});
+
+test('the band kind holds a hard-driven bright sound near the ceiling between samples, where the plain one overshoots', async () => {
+  const { truePeakOf } = await import('../src/audio/loudness.ts');
+  let seed = 5;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296) * 2 - 1;
+  // A crunchy drop's top: a saw, hats (noise bursts) and a high whine, driven 12 dB into a hard knee
+  const x = Float32Array.from({ length: SR }, (_, i) => {
+    const t = i / SR;
+    return 0.4 * (((t * 98) % 1) * 2 - 1) + 0.3 * rnd() * Math.exp(-(t % 0.15) * 40) + 0.2 * Math.sin(2 * Math.PI * 9000 * t);
+  });
+  const over = (band) => {
+    const l = x.slice();
+    const r = x.slice();
+    clipChannels(l, r, SR, { on: true, drive: 12, softness: 0, ceiling: -3, band });
+    return 20 * Math.log10(truePeakOf([l.subarray(2000, SR - 2000)])) + 3;
+  };
+  const plain = over(false);
+  const band = over(true);
+  assert.ok(band < 1.5, `band: ${band.toFixed(2)} dB over the ceiling`);
+  assert.ok(band < plain - 1.5, `band ${band.toFixed(2)} vs plain ${plain.toFixed(2)} dB over the ceiling`);
+});
+
+test('the band kind in blocks of 128 (the worklet, asked for with processorOptions) gives what the export gives', () => {
+  const x = Float32Array.from({ length: 12000 }, (_, i) => 1.2 * Math.sin(i * 0.05) + 0.5 * Math.sin(i * 1.3));
+  const settings = { on: true, drive: 3, softness: 0.2, ceiling: -2, band: true };
+  const whole = x.slice();
+  clipChannels(whole, whole.slice(), SR, settings);
+  let Processor = null;
+  const run = new Function('sampleRate', 'registerProcessor', 'class AudioWorkletProcessor { constructor() { this.port = {}; } }\n' + CLIPPER_WORKLET_SOURCE.replace('registerProcessor(', 'return registerProcessor('));
+  run(SR, (name, cls) => (Processor = cls));
+  const proc = new Processor({ processorOptions: { band: true } });
+  proc.port.postMessage = () => {};
+  const lat = createClipperKernel(SR, true).latency;
+  assert.ok(lat > createClipperKernel(SR).latency);
+  const p = clipperParams(settings);
+  const params = { drive: [p.drive], ceiling: [p.ceiling], softness: [p.softness] };
+  const padded = new Float32Array(x.length + lat + 128);
+  padded.set(x);
+  const live = new Float32Array(padded.length);
+  for (let at = 0; at + 128 <= padded.length; at += 128) {
+    const inp = padded.slice(at, at + 128);
+    const o = [new Float32Array(128), new Float32Array(128)];
+    proc.process([[inp, inp]], [o], params);
+    live.set(o[0], at);
+  }
+  for (let i = 0; i < x.length; i++) assert.equal(live[i + lat], whole[i]);
+});
+
 test('settings are repaired, and an absent clipper means off', () => {
   assert.deepEqual(normalizeClipper({ on: true, drive: 99, softness: -1, ceiling: 5 }), { on: true, drive: 18, softness: 0, ceiling: 0 });
   assert.deepEqual(normalizeClipper(null), defaultClipper());
