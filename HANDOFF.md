@@ -200,6 +200,10 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Sound recipes** (unreleased): `docs/SOUND-RECIPES.md` records how the signed-off demo sounds were
+  made (lessons, settings, the exact render command) with their scripts in `scripts/demos/`; the
+  colour-bass drop re-renders bit-identical. Re-render a recipe after engine, preset or master
+  changes to check the app can still make that sound.
 - **Modern electronic sound, phases 1 and 2** (2026.10.22): aimed at modern bass music, EDM and
   artcore, measured against eight reference tracks the owner chose (targets in `src/audio/hitTargets.ts`).
   Phase 1: the "Does it hit?" check (`hitCheck.ts`, studio and Pocket), Fledge Synth per-note movement
