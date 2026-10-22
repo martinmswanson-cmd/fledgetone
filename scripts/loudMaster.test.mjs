@@ -338,3 +338,38 @@ test("a Club-loud MP3 export plays back under -1 dBTP: the app's own encoder, de
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the export's master section in its Worker comes out exactly as run on the page, its match's progress moving on", async () => {
+  const { runMasterJob } = await import('../src/audio/effects/masterAfter.ts');
+  // The Worker's own script, with `self` standing in for its scope
+  const posted = [];
+  globalThis.self = { postMessage: (m) => posted.push(m) };
+  await import('../src/audio/effects/masterAfterWorker.ts');
+  const onmessage = globalThis.self.onmessage;
+  delete globalThis.self;
+  for (const [seconds, dense, target] of [[12, true, -6], [10, false, -9]]) {
+    const [l, r] = drop(seconds, 0.6, dense);
+    const master = loudMaster(target === -6 ? 'club' : 'loud');
+    const drops = [{ fx: 0, from: SR, to: 2 * SR, sixteenth: Math.round(SR / 9.7) }];
+    // On the page
+    const a = [l.slice(), r.slice()];
+    const progress = [];
+    const here = masterAfter(a[0], a[1], SR, master, 0, -1, drops, target, (f) => progress.push(f));
+    // As a message to the Worker (copied as postMessage copies it), and back
+    posted.length = 0;
+    onmessage({ data: structuredClone({ left: l.slice(), right: r.slice(), sampleRate: SR, master, volumeDb: 0, ceilingDbtp: -1, drops, matchLufs: target }) });
+    const reply = posted.at(-1);
+    assert.equal(reply.error, undefined);
+    assert.deepEqual(reply.stats, here);
+    for (const [k, ch] of [reply.left, reply.right].entries()) for (let i = 0; i < ch.length; i++) if (!Object.is(ch[i], a[k][i])) assert.fail(`channel ${k}, sample ${i} differs`);
+    assert.deepEqual(posted.slice(0, -1).map((m) => m.progress), progress);
+    // Progress only goes on, and ends at 1
+    assert.ok(progress.length >= 2 && progress.every((f, i) => f >= (progress[i - 1] ?? 0) && f <= 1), JSON.stringify(progress));
+    assert.equal(progress.at(-1), 1);
+    // One channel: the job without its right is masterAfter over the one array twice
+    const m1 = l.slice();
+    const m2 = l.slice();
+    assert.deepEqual(runMasterJob({ left: m1, sampleRate: SR, master, volumeDb: 0, ceilingDbtp: -1, drops: [], matchLufs: target }), masterAfter(m2, m2, SR, master, 0, -1, [], target));
+    assert.deepEqual(m1, m2);
+  }
+});

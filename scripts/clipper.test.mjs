@@ -175,3 +175,222 @@ test('the export master section clips before the limiter and says how hard each 
   assert.equal(off.clipper, undefined);
   assert.ok(off.limiterPeakDb > 6);
 });
+
+// The clipper as it was first written: every oversampled point and every tap worked out, every
+// sample. The kernel skips what can't matter (points a bound keeps under the knee, the zeros of
+// the residual) and must come out the same, sample for sample.
+function referenceKernel(_sampleRate        )                {
+    const FACTOR = 4;
+    const LENGTH = 97;
+    // The low-pass at the oversampled rate: a Kaiser-windowed sinc (beta 8, about 80 dB down),
+    // centred a little under the original Nyquist, so what clipping makes above it is gone before
+    // the sound is taken back down (and folds, if at all, above about 19 kHz)
+    const cutoff = 0.46 / FACTOR;
+    const bessel0 = (x        ) => {
+      let sum = 1;
+      let term = 1;
+      for (let k = 1; k < 40; k++) {
+        term *= (x / (2 * k)) * (x / (2 * k));
+        sum += term;
+      }
+      return sum;
+    };
+    const beta = 8;
+    const h = new Float64Array(LENGTH);
+    const mid = (LENGTH - 1) / 2;
+    let dc = 0;
+    for (let j = 0; j < LENGTH; j++) {
+      const t = j - mid;
+      const sinc = t === 0 ? 2 * cutoff : Math.sin(2 * Math.PI * cutoff * t) / (Math.PI * t);
+      const w = bessel0(beta * Math.sqrt(1 - (t / mid) * (t / mid))) / bessel0(beta);
+      h[j] = sinc * w;
+      dc += h[j];
+    }
+    for (let j = 0; j < LENGTH; j++) h[j] /= dc;
+    // Upsampling by zero-stuffing then filtering is four filters (phases) over the input: phase p
+    // takes taps p, p + 4, p + 8... times 4 (the zeros' lost energy)
+    const phaseTaps = Math.ceil(LENGTH / FACTOR);
+    const phases = new Float64Array(FACTOR * phaseTaps);
+    let reach = 0;
+    for (let p = 0; p < FACTOR; p++) {
+      let sum = 0;
+      for (let k = 0; k < phaseTaps; k++) {
+        const j = p + FACTOR * k;
+        const v = j < LENGTH ? FACTOR * h[j] : 0;
+        phases[p * phaseTaps + k] = v;
+        sum += Math.abs(v);
+      }
+      if (sum > reach) reach = sum;
+    }
+    // Through both filters the sound is (LENGTH - 1) oversampled points late: a whole number of samples
+    const latency = (LENGTH - 1) / FACTOR;
+    // Each sample's four oversampled points are worked out before it's taken back down, so the
+    // newest is the last phase's, (FACTOR - 1) points after the first; the residual is read that
+    // much further back, so it lines up with the driven sound exactly (read at the newest point, it
+    // was three quarters of a sample early: at 5 kHz it no longer cancelled the peaks it clipped,
+    // which came out far over the ceiling)
+    const ALIGN = FACTOR - 1;
+    const RES = LENGTH + ALIGN;
+  
+    // Per channel: the last phaseTaps driven input samples (a ring written twice over, so the
+    // newest always lie in one run), the residual at the oversampled rate (likewise), and the
+    // driven input delayed by `latency`
+    const makeChannel = () => ({
+      hist: new Float64Array(2 * phaseTaps),
+      res: new Float64Array(2 * RES),
+      delay: new Float64Array(latency + 1),
+    });
+    const chans = [makeChannel(), makeChannel()];
+    let histAt = 0;
+    let resAt = 0;
+    let delayAt = 0;
+    let n = 0;
+    // When a sample last came near the knee, and when the residual was last non-zero (os points)
+    let lastLoud = -1e9;
+    let lastResidual = -1e9;
+    let osIndex = 0;
+    let peakReduction = 1;
+    let touched = 0;
+    let counted = 0;
+  
+    /** The clip curve at |v| (v >= 0): straight to the knee, then a tanh bend that never passes the ceiling. */
+    const bend = (v        , knee        , ceiling        ) => {
+      if (v <= knee) return v;
+      const room = ceiling - knee;
+      if (room <= 0) return ceiling;
+      return knee + room * Math.tanh((v - knee) / room);
+    };
+  
+    const process = (inL              , inR              , outL              , outR              , frames        , drive        , ceiling        , softness        ) => {
+      const knee = ceiling * Math.pow(10, (-6 * Math.max(0, Math.min(1, softness))) / 20);
+      // Below this, no oversampled point can reach the knee
+      const quiet = knee / reach;
+      const L = chans[0];
+      const R = chans[1];
+      for (let i = 0; i < frames; i++) {
+        // (NaN or infinity counts as silence)
+        const l = inL[i] - inL[i] === 0 ? inL[i] * drive : 0;
+        const r = inR[i] - inR[i] === 0 ? inR[i] * drive : 0;
+        histAt = histAt + 1 === phaseTaps ? 0 : histAt + 1;
+        L.hist[histAt] = L.hist[histAt + phaseTaps] = l;
+        R.hist[histAt] = R.hist[histAt + phaseTaps] = r;
+        if (l > quiet || l < -quiet || r > quiet || r < -quiet) lastLoud = n;
+        let clippedHere = false;
+        // Four oversampled points per sample, each through the curve: the residual is what it took off
+        for (let p = 0; p < FACTOR; p++) {
+          resAt = resAt + 1 === RES ? 0 : resAt + 1;
+          let rl = 0;
+          let rr = 0;
+          if (n - lastLoud < phaseTaps) {
+            const newest = histAt + phaseTaps;
+            const base = p * phaseTaps;
+            let ul = 0;
+            let ur = 0;
+            for (let k = 0; k < phaseTaps; k++) {
+              const c = phases[base + k];
+              ul += c * L.hist[newest - k];
+              ur += c * R.hist[newest - k];
+            }
+            const al = ul < 0 ? -ul : ul;
+            const ar = ur < 0 ? -ur : ur;
+            if (al > knee) {
+              const b = bend(al, knee, ceiling);
+              rl = (ul < 0 ? -b : b) - ul;
+              if (b / al < peakReduction) peakReduction = b / al;
+              clippedHere = true;
+            }
+            if (ar > knee) {
+              const b = bend(ar, knee, ceiling);
+              rr = (ur < 0 ? -b : b) - ur;
+              if (b / ar < peakReduction) peakReduction = b / ar;
+              clippedHere = true;
+            }
+          }
+          L.res[resAt] = L.res[resAt + RES] = rl;
+          R.res[resAt] = R.res[resAt + RES] = rr;
+          if (rl !== 0 || rr !== 0) lastResidual = osIndex;
+          osIndex++;
+        }
+        if (clippedHere) touched++;
+        counted++;
+        // The residual filtered back down (only near where there is one), at this sample's phase
+        let dl = 0;
+        let dr = 0;
+        if (osIndex - 1 - lastResidual < RES) {
+          const newest = resAt + RES - ALIGN;
+          for (let j = 0; j < LENGTH; j++) {
+            const c = h[j];
+            dl += c * L.res[newest - j];
+            dr += c * R.res[newest - j];
+          }
+        }
+        // The driven sound from `latency` samples ago, plus what the curve did to it
+        const read = delayAt + 1 === latency + 1 ? 0 : delayAt + 1;
+        outL[i] = L.delay[read] + dl;
+        outR[i] = R.delay[read] + dr;
+        L.delay[delayAt] = l;
+        R.delay[delayAt] = r;
+        delayAt = read;
+        n++;
+      }
+    };
+  
+    const read = ()                 => {
+      const reading = { peakDb: peakReduction < 1 ? -20 * Math.log10(peakReduction) : 0, share: counted ? touched / counted : 0 };
+      peakReduction = 1;
+      touched = 0;
+      counted = 0;
+      return reading;
+    };
+  
+    return { process, latency, read };
+}
+test('the kernel comes out exactly as working out every point and every tap does, in any block size', () => {
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296) * 2 - 1;
+  const n = SR * 2;
+  const signals = [];
+  // A drop-like mix (a sub, a kick, a bright saw, hats) at three levels into the knee
+  for (const g of [0.5, 1.6, 4]) {
+    const l = new Float32Array(n);
+    const r = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const t = i / SR;
+      const kick = (t % 0.4) < 0.1 ? Math.sin(2 * Math.PI * 55 * t) * (1 - (t % 0.4) / 0.1) : 0;
+      const saw = ((t * 220) % 1) * 2 - 1;
+      l[i] = g * (0.4 * Math.sin(2 * Math.PI * 45 * t) + 0.5 * kick + 0.2 * saw + 0.05 * rnd());
+      r[i] = g * (0.4 * Math.sin(2 * Math.PI * 45 * t) + 0.5 * kick - 0.2 * saw + (i % 900 === 0 ? 0.8 : 0.05 * rnd()));
+    }
+    signals.push([l, r]);
+  }
+  // Noise far over the ceiling, and silence with a lone click, a NaN and an infinity
+  signals.push([Float32Array.from({ length: n }, () => 3 * rnd()), Float32Array.from({ length: n }, () => rnd())]);
+  const quiet = new Float32Array(n);
+  const click = new Float32Array(n);
+  click[5000] = 2;
+  click[7000] = NaN;
+  quiet[9000] = Infinity;
+  signals.push([quiet, click]);
+  const settings = [{ on: true, drive: 0, softness: 0.5, ceiling: -0.5 }, { on: true, drive: 6, softness: 0, ceiling: -3 }, { on: true, drive: 12, softness: 1, ceiling: -12 }];
+  for (const [si, [l, r]] of signals.entries()) {
+    for (const s of settings) {
+      const p = clipperParams(s);
+      for (const block of [128, 4096, 1000]) {
+        const a = createClipperKernel(SR);
+        const b = referenceKernel(SR);
+        const oa = [new Float32Array(block), new Float32Array(block)];
+        const ob = [new Float32Array(block), new Float32Array(block)];
+        for (let at = 0; at + block <= n; at += block) {
+          const il = l.subarray(at, at + block);
+          const ir = r.subarray(at, at + block);
+          a.process(il, ir, oa[0], oa[1], block, p.drive, p.ceiling, p.softness);
+          b.process(il, ir, ob[0], ob[1], block, p.drive, p.ceiling, p.softness);
+          for (let i = 0; i < block; i++) {
+            if (!Object.is(oa[0][i], ob[0][i]) || !Object.is(oa[1][i], ob[1][i])) assert.fail(`signal ${si}, ${JSON.stringify(s)}, blocks of ${block}: sample ${at + i} differs`);
+          }
+        }
+        assert.deepEqual(a.read(), b.read());
+      }
+    }
+  }
+});

@@ -63,7 +63,7 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     const loud = !!s.master.loud?.on;
     let found: LoudMatch | undefined;
     if (loud) Object.assign(opts, { loudTargetLufs: target.lufs, onMasterStats: (m: MasterStats) => (found = m.loud) });
-    let audio = await renderArrangement(opts, (f) => onProgress(f, 'Playing the song through'));
+    let audio = await renderArrangement(opts, (f, stage) => onProgress(f, stage === 'matching' ? 'Matching the loudness' : 'Playing the song through'));
     onProgress(1, 'Matching the loudness');
     let reading = await measureLoudness(channelsOf(audio), audio.sampleRate);
     if (!loud) reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, target, undefined, ceilingDbtp)).reading;

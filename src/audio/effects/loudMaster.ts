@@ -277,6 +277,8 @@ export const MATCH_SAMPLE_FROM = 90;
 const MATCH_SAMPLE_PIECE = 6;
 const MATCH_SAMPLE_EVERY = 24;
 const MATCH_SAMPLE_LEAD = 0.5;
+/** About how many passes over the whole song a match takes (for its progress: see matchPush). */
+const MATCH_WORK_GUESS = 6;
 /** The most times a sampled match checks the whole song before it searches the whole song instead. */
 const MATCH_SAMPLE_CHECKS = 3;
 /** How far under MAX_DISTORTION_DB the sample is kept (dB), so the song's check passes on a sample that reads a hair clean. */
@@ -333,15 +335,25 @@ function matchSample(left: Float32Array, right: Float32Array, sampleRate: number
  * loudness and distortion are a little off the song's, by about the same at nearby pushes, so a
  * check that misses learns the difference and the sample is searched again (usually one check
  * does: a third of the work of searching the whole song). The answer is always measured on the
- * whole song.
+ * whole song. `onProgress` hears about how far it has got (0 to 0.95: the passes it will take
+ * aren't known ahead).
  */
-export function matchPush(left: Float32Array, right: Float32Array, sampleRate: number, levelDb: number, targetLufs: number, clipper: ClipperSettings | undefined, ceilingDbtp: number, start?: number): LoudMatch {
+export function matchPush(left: Float32Array, right: Float32Array, sampleRate: number, levelDb: number, targetLufs: number, clipper: ClipperSettings | undefined, ceilingDbtp: number, start?: number, onProgress?: (fraction: number) => void): LoudMatch {
   const dry = integratedLufs(left, right, sampleRate);
   if (!Number.isFinite(dry)) return { push: 0, lufs: dry, targetLufs, shortDb: 0, capped: false, distortionDb: -Infinity, passes: 0 };
   const delay = createLimiterKernel(sampleRate).latency;
+  // The work done, in passes over the whole song (a sample's pass is a quarter of one), for the
+  // progress bar: a match takes about MATCH_WORK_GUESS of them
+  let work = 0;
+  const did = (passes: number) => {
+    work += passes;
+    onProgress?.(Math.min(0.95, work / MATCH_WORK_GUESS));
+  };
   const whole = (push: number): Tried => {
     const [l, r] = clipAndLimit(left, right, sampleRate, levelDb + push, clipper, ceilingDbtp);
-    return { push, lufs: integratedLufs(l, r, sampleRate), dist: distortionDb(left, right, l, r, sampleRate, delay) };
+    const tried = { push, lufs: integratedLufs(l, r, sampleRate), dist: distortionDb(left, right, l, r, sampleRate, delay) };
+    did(1);
+    return tried;
   };
   const better = (a: Tried, b: Tried | null) => !b || Math.abs(targetLufs - a.lufs) < Math.abs(targetLufs - b.lufs) || (a.lufs < targetLufs && b.lufs < targetLufs && a.lufs > b.lufs);
   let push = Math.max(LOUD_PUSH_MIN, Math.min(LOUD_PUSH_MAX, start ?? targetLufs - dry - levelDb));
@@ -360,7 +372,9 @@ export function matchPush(left: Float32Array, right: Float32Array, sampleRate: n
     push = check.push;
     const tryPart = (p: number): Tried => {
       passes++;
-      return { push: p, ...sample.measure(levelDb + p, clipper, ceilingDbtp) };
+      const tried = { push: p, ...sample.measure(levelDb + p, clipper, ceilingDbtp) };
+      did(MATCH_SAMPLE_PIECE / MATCH_SAMPLE_EVERY);
+      return tried;
     };
     const known = tryPart(push);
     const part = (p: number): Tried => (p === known.push ? known : tryPart(p));
