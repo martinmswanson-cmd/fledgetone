@@ -200,7 +200,24 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
-- **Starters cut to eight** (unreleased): only the Chill & World starters remain (Lo-Fi, Ambient,
+- **Modern electronic sound, phases 1 and 2** (2026.10.22): aimed at modern bass music, EDM and
+  artcore, measured against eight reference tracks the owner chose (targets in `src/audio/hitTargets.ts`).
+  Phase 1: the "Does it hit?" check (`hitCheck.ts`, studio and Pocket), Fledge Synth per-note movement
+  (LFO modes, note random seeded by song position and step, 16-slot matrix, drive stages, clean sub
+  after FX, nine new presets), step lanes (`Clip.stepLanes`, sent as automation) and slides/dives
+  (`expr.bend`). Phase 2: layered kick and snare voices in `drumSynth.ts` with key and tempo
+  following (`drumFollow.ts`, a store subscription that writes the followed values, not an undo
+  step); synthesized kits (`synthKits.ts`) replacing the unlicensed recorded ones, old keys mapped
+  by `RETIRED_INSTRUMENTS`; duck shapes and kick/snare triggers (`duckShape.ts`, `pumpHitOf`,
+  `pumpKitsOf` for frozen drums); Duck to kick styles; the Loud master (`loudMaster.ts`: mono lows,
+  clipper, -1 dBTP limiter, a push matched per export in a Worker, `masterAfterWorker.ts`, kept
+  for live only from whole-song full-mix exports at its own target); level-matched listening
+  (`monitor.ts`, live only; exports always at 0 dB master volume); an 8x true-peak filter with an
+  exact skip bound (`truePeakFilter.ts`); lossy exports at -2 dBTP; Fledge "Restart each note",
+  "Random by step" (legacy off) and "Mono below". Next (phase 3): resampling, track roles, genre tools, then one
+  new starter per style checked against the references. Known: a Loud export holds one extra copy
+  of the song (~85 MB for 4 min); one unexplained ~0.5 s main-thread pause in a long export.
+- **Starters cut to eight** (2026.10.22): only the Chill & World starters remain (Lo-Fi, Ambient,
   Celtic, Fantasy Tavern, Latin, Plaza, Mbira Morning, Eastern); every other starter, the game-ready
   ones, the Classics and the Sunset Stroll demo song were deleted with their files
   (`startersPlaylist`, `startersGame`, `startersGameMore`, `startersStory`, `startersShowcase`,
