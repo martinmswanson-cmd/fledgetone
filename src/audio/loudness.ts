@@ -10,7 +10,7 @@
  * the same code.
  */
 
-import { TRUE_PEAK_PHASES, TRUE_PEAK_TAPS } from './truePeakFilter';
+import { createPeakFinder, TRUE_PEAK_PLAN, type PeakFinder, type TruePeakPlan } from './truePeakFilter';
 
 export interface LoudnessReading {
   /** Loudness over the last 400 ms, in LUFS (-Infinity for silence). */
@@ -41,13 +41,6 @@ export interface LoudnessAnalyser {
  * the last 4 and 30 of those, and every 400 ms gating block (75% overlap) above -70 LUFS is kept
  * for the integrated measure, which applies the relative gate (10 LU under their mean) on read.
  */
-// The interpolation filter (truePeakFilter.ts): 8x, seven phases of 32 taps over the latest samples
-const PHASES = TRUE_PEAK_PHASES.map((taps) => Float64Array.from(taps));
-const TAPS = TRUE_PEAK_TAPS;
-
-/** The most any interpolated point can be over the loudest sample under the filter */
-const GAIN = Math.max(...PHASES.map((taps) => taps.reduce((sum, t) => sum + Math.abs(t), 0)));
-
 /**
  * The true peak of audio (linear: 1 is full scale): the highest of its samples and the points the
  * interpolation filter finds between them, where a converter's output can go over full scale
@@ -56,29 +49,19 @@ const GAIN = Math.max(...PHASES.map((taps) => taps.reduce((sum, t) => sum + Math
 export function truePeakOf(channels: readonly Float32Array[]): number {
   let peak = 0;
   for (const ch of channels) {
-    // A point between samples is at most GAIN times the loudest sample under the filter, so only
-    // where a sample in the window could beat the peak found so far is it worth working out (the
-    // same answer, a few times faster: most of a song is well under its peak)
-    let lastLoud = -TAPS;
-    // Silence before the audio (as a streaming meter starts): the first few samples have points
-    // between them too, and a clip shorter than the filter still has its peaks found. (Not after
-    // it: the export's limiter and meters read a file's end as they read it, without a tail.)
-    const end = ch.length;
-    for (let i = 0; i < end; i++) {
-      const a = i < ch.length ? Math.abs(ch[i]) : 0;
+    // The finder works a window's points out only where one could beat the peak found so far
+    // (the same answer, a few times faster: most of a song is well under its peak). Silence
+    // before the audio (as a streaming meter starts): the first few samples have points between
+    // them too, and a clip shorter than the filter still has its peaks found. (Not after it: the
+    // export's limiter and meters read a file's end as they read it, without a tail.)
+    const finder = createPeakFinder(TRUE_PEAK_PLAN);
+    for (let i = 0; i < ch.length; i++) {
+      const x = ch[i];
+      const a = x < 0 ? -x : x;
       if (a > peak) peak = a;
-      if (a * GAIN > peak) lastLoud = i;
-      if (i - lastLoud >= TAPS) continue;
-      for (let p = 0; p < PHASES.length; p++) {
-        const taps = PHASES[p];
-        let acc = 0;
-        for (let k = 0; k < TAPS; k++) {
-          const j = i - k;
-          if (j >= 0 && j < ch.length) acc += taps[k] * ch[j];
-        }
-        const v = acc < 0 ? -acc : acc;
-        if (v > peak) peak = v;
-      }
+      finder.push(x);
+      const v = finder.peak(peak);
+      if (v > peak) peak = v;
     }
   }
   return peak;
@@ -103,11 +86,11 @@ export function kWeightingFilters(sampleRate: number): [number[], number[]] {
   return [shelf, [1, -2, 1, (2 * (k * k - 1)) / a0, (1 - k / q + k * k) / a0]];
 }
 
-// Its constants come in as arguments (TAPS and PHASES by default): the function is also inlined
-// into the meter worklet and the export Worker as source text, where the minifier's names for
-// module constants don't exist, so the inlined copies pass their own.
+// The true-peak filter's plan and peak finder come in as arguments (truePeakFilter.ts's by
+// default): the function is also inlined into the meter worklet and the export Worker as source
+// text, where the minifier's names for module constants don't exist, so the inlined copies pass their own.
 // `peaks` false leaves the true peak out (it reads -inf), for a caller that finds it faster with truePeakOf.
-export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS, PHASE_TAPS: readonly Float64Array[] = PHASES, peaks = true): LoudnessAnalyser {
+export function createLoudnessAnalyser(sampleRate: number, plan: TruePeakPlan = TRUE_PEAK_PLAN, createFinder: (plan: TruePeakPlan) => PeakFinder = createPeakFinder, peaks = true): LoudnessAnalyser {
   const ABSOLUTE_GATE_LUFS = -70;
   const RELATIVE_GATE_LU = 10;
   const MOMENTARY_BLOCKS = 4;
@@ -138,20 +121,8 @@ export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS
   /** Filter memory per channel: shelf [x1, x2, y1, y2], then high-pass [x1, x2, y1, y2]. */
   const memory = [new Float64Array(8), new Float64Array(8)];
 
-  /** The last TAPS_N samples of each channel, twice over so a window is always contiguous. */
-  const history = [new Float64Array(TAPS_N * 2), new Float64Array(TAPS_N * 2)];
-  let historyAt = 0;
-  /** The most a point between samples can be over the loudest sample under the filter. */
-  let most = 1;
-  for (const taps of PHASE_TAPS) {
-    let sum = 0;
-    for (let k = 0; k < TAPS_N; k++) sum += Math.abs(taps[k]);
-    if (sum > most) most = sum;
-  }
-  /** Per channel, the last sample (counted from the start) that could make a point over the block's peak. */
-  const loudAt = [-Infinity, -Infinity];
-  /** Every window up to this sample is worked out (a block just began). */
-  let fullUntil = 0;
+  /** The true-peak filter over each channel (it works a window out only where it could beat the block's peak so far). */
+  const finders = [createFinder(plan), createFinder(plan)];
 
   /** Power (sum of the channels' mean squares) of each banked 100 ms block, newest last. */
   let blocks: number[] = [];
@@ -176,9 +147,7 @@ export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS
     peakMax = 0;
     total = 0;
     memory.forEach((m) => m.fill(0));
-    history.forEach((h) => h.fill(0));
-    loudAt.fill(-Infinity);
-    fullUntil = 0;
+    finders.forEach((f) => f.reset());
   };
 
   /** Bank the block being filled. */
@@ -223,36 +192,19 @@ export function createLoudnessAnalyser(sampleRate: number, TAPS_N: number = TAPS
         m[6] = w;
         power += w * w;
         if (!peaks) continue;
-        // True peak: the sample itself and the points interpolated between two samples TAPS_N / 2 back
-        const h = history[ch];
-        h[historyAt] = x;
-        h[historyAt + TAPS_N] = x;
-        const base = historyAt + TAPS_N;
-        const a = Math.abs(x);
+        // True peak: the sample itself and the points interpolated between two samples taps / 2 back
+        const a = x < 0 ? -x : x;
         if (a > peak) peak = a;
-        // A point is at most `most` times the loudest sample under the filter: where none of them
-        // could beat this block's peak so far (most of a song), the points can't either. Just after
-        // a block starts (its peak back at 0) every window is worked out
-        const at = total + i;
-        if (a * most > blockPeak) loudAt[ch] = at;
-        if (at - loudAt[ch] >= TAPS_N && at >= fullUntil) continue;
-        for (let p = 0; p < PHASE_TAPS.length; p++) {
-          const taps = PHASE_TAPS[p];
-          let acc = 0;
-          for (let k = 0; k < TAPS_N; k++) acc += taps[k] * h[base - k];
-          const v = Math.abs(acc);
-          if (v > peak) peak = v;
-        }
+        const finder = finders[ch];
+        finder.push(x);
+        const v = finder.peak(peak > blockPeak ? peak : blockPeak);
+        if (v > peak) peak = v;
       }
-      historyAt = historyAt + 1 === TAPS_N ? 0 : historyAt + 1;
       sum += power;
       count++;
       if (peak > blockPeak) blockPeak = peak;
       if (peak > peakMax) peakMax = peak;
-      if (count === HOP) {
-        bank();
-        fullUntil = total + i + 1 + TAPS_N;
-      }
+      if (count === HOP) bank();
     }
     total += frames;
   };
@@ -309,10 +261,10 @@ export const METER_RATE_HZ = 10;
  * second. It takes 'reset' and 'dispose' messages (after 'dispose' the processor is let go).
  */
 export const LOUDNESS_WORKLET_SOURCE = `
-const TAPS = ${TAPS};
-const PHASES = ${JSON.stringify(PHASES.map((p) => Array.from(p)))}.map((taps) => Float64Array.from(taps));
+const PLAN = ${JSON.stringify(TRUE_PEAK_PLAN)};
+const createPeakFinder = ${createPeakFinder.toString()};
 const analyserSource = ${createLoudnessAnalyser.toString()};
-const createLoudnessAnalyser = (sr) => analyserSource(sr, TAPS, PHASES);
+const createLoudnessAnalyser = (sr) => analyserSource(sr, PLAN, createPeakFinder);
 class LoudnessProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -344,10 +296,10 @@ registerProcessor('${LOUDNESS_PROCESSOR}', LoudnessProcessor);
 
 /** A Worker that measures whole channels off the main thread: { channels, sampleRate } in, a LoudnessReading out. */
 export const LOUDNESS_WORKER_SOURCE = `
-const TAPS = ${TAPS};
-const PHASES = ${JSON.stringify(PHASES.map((p) => Array.from(p)))}.map((taps) => Float64Array.from(taps));
+const PLAN = ${JSON.stringify(TRUE_PEAK_PLAN)};
+const createPeakFinder = ${createPeakFinder.toString()};
 const analyserSource = ${createLoudnessAnalyser.toString()};
-const createLoudnessAnalyser = (sr) => analyserSource(sr, TAPS, PHASES);
+const createLoudnessAnalyser = (sr) => analyserSource(sr, PLAN, createPeakFinder);
 self.onmessage = (e) => {
   const { channels, sampleRate } = e.data;
   const analyser = createLoudnessAnalyser(sampleRate);

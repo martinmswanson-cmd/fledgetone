@@ -5,7 +5,9 @@
  * ceiling. The peaks between samples are found with the same interpolation filter the true-peak
  * meter uses (8x, truePeakFilter.ts, as loudness.ts measures exports): a simpler estimate (cubic
  * interpolation, then BS.1770's own 4x example filter) missed up to half a dB on bright, dense
- * mixes, so they passed the ceiling. The
+ * mixes, so they passed the ceiling. The filter's points are worked out only where one could
+ * pass the ceiling (truePeakFilter's peak finder bounds them from the signal's bend first, exactly,
+ * so the gain is the same as working out every point, at about the cost the 4x filter had). The
  * gain is the lowest needed over the look-ahead window, eased back up afterwards (the release) and
  * smoothed with a moving average as long as the window, so it has always come down by the time the
  * peak plays, without a click. Both channels share one gain, so the stereo image doesn't shift.
@@ -14,7 +16,7 @@
  * can embed it with Function.prototype.toString, and the unit test can run it directly.
  */
 
-import { TRUE_PEAK_PHASES } from '../truePeakFilter';
+import { createPeakFinder, TRUE_PEAK_PLAN, type PeakFinder, type TruePeakPlan } from '../truePeakFilter';
 
 /** The ceiling it holds the true peak under, in dBTP: room for MP3 / AAC encoding to overshoot a little. */
 export const LIMITER_CEILING_DBTP = -1;
@@ -48,19 +50,17 @@ export interface LimiterKernel {
   gain: () => number;
 }
 
-/** The kernel with the interpolation filter's phases handed in (the worklet passes its own copy of them). */
-export function limiterKernel(sampleRate: number, phases: readonly (readonly number[])[]): LimiterKernel {
-  // The interpolation filter (truePeakFilter.ts, as loudness.ts): its phases over the latest
-  // samples, whose points fall between the samples taps / 2 and taps / 2 - 1 back
-  const taps = phases[0].length;
-  // A point between samples is at most this many times the loudest sample under the filter, so
-  // where every sample under it is quieter than ceiling / most, nothing there needs turning down
-  let most = 0;
-  for (const p of phases) {
-    let sum = 0;
-    for (const t of p) sum += Math.abs(t);
-    if (sum > most) most = sum;
-  }
+/**
+ * The kernel with the interpolation filter's plan and peak finder handed in (truePeakFilter.ts;
+ * the worklet passes its own copies of them).
+ */
+export function limiterKernel(sampleRate: number, plan: TruePeakPlan, createFinder: (plan: TruePeakPlan) => PeakFinder): LimiterKernel {
+  // The interpolation filter (truePeakFilter.ts, as loudness.ts): its points fall between the
+  // samples taps / 2 and taps / 2 - 1 back. The finders work a sample's points out only where one
+  // could pass the ceiling (exactly then: below it, nothing needs turning down anyway)
+  const taps = plan.taps;
+  const findL = createFinder(plan);
+  const findR = createFinder(plan);
   // The gain is smoothed over `box` samples; a sample's peaks are all known taps / 2 samples after
   // it arrives (the filter's points on its far side need the samples after it), so the sound is
   // delayed box + taps / 2 samples and the lowest gain is taken over at least that many, which
@@ -74,13 +74,6 @@ export function limiterKernel(sampleRate: number, phases: readonly (readonly num
   const hold = delay + Math.round(sampleRate * 0.025);
   const delayL = new Float32Array(size);
   const delayR = new Float32Array(size);
-  // The last `taps` samples, per channel: a ring written twice over (at `at` and `at + taps`), so
-  // the newest `taps` always lie in one run, hist[at + 1 .. at + taps], oldest first
-  const histL = new Float64Array(2 * taps);
-  const histR = new Float64Array(2 * taps);
-  let at = 0;
-  // When a sample last came near the ceiling (only then is the filter worth running)
-  let lastLoud = -taps;
   // Sliding minimum of the needed gains over the window: a monotonic queue of (index, gain)
   const qIndex = new Float64Array(hold + 1);
   const qGain = new Float32Array(hold + 1);
@@ -96,57 +89,50 @@ export function limiterKernel(sampleRate: number, phases: readonly (readonly num
   let released = 1;
   let last = 1;
 
-  const coef = Float64Array.from(phases.flat());
-  const count = phases.length;
-  // The highest |value| the filter finds between the samples `see` and `see` - 1 back in `hist` (and those two)
-  const peakOf = (hist: Float64Array) => {
-    const newest = at + taps;
-    let p = Math.max(Math.abs(hist[newest - see + 1]), Math.abs(hist[newest - see]));
-    for (let ph = 0; ph < count; ph++) {
-      const base = ph * taps;
-      let acc = 0;
-      for (let k = 0; k < taps; k++) acc += coef[base + k] * hist[newest - k];
-      const m = acc < 0 ? -acc : acc;
-      if (m > p) p = m;
-    }
-    return p;
-  };
-
   const process = (inL: Float32Array, inR: Float32Array, outL: Float32Array, outR: Float32Array, frames: number, ceiling: number, release: number) => {
     // Release: the gain recovers by this fraction of the way back each sample
     const rel = 1 - Math.exp(-1 / Math.max(1, release * sampleRate));
-    const quiet = ceiling / most;
+    // The running numbers in locals for the loop (a number in a closure's variable is boxed
+    // afresh at every write)
+    let eased = released;
+    let sum = avgSum;
+    let gain = last;
+    const q = hold + 1;
     for (let i = 0; i < frames; i++) {
       // (NaN or infinity counts as silence: one bad sample shouldn't reach the speakers, or hold
       // the gain down)
       const l = inL[i] - inL[i] === 0 ? inL[i] : 0;
       const r = inR[i] - inR[i] === 0 ? inR[i] : 0;
-      at = at + 1 === taps ? 0 : at + 1;
-      histL[at] = histL[at + taps] = l;
-      histR[at] = histR[at + taps] = r;
-      if (l > quiet || l < -quiet || r > quiet || r < -quiet) lastLoud = n;
-      const peak = n - lastLoud < taps ? Math.max(peakOf(histL), peakOf(histR)) : 0;
+      findL.push(l);
+      findR.push(r);
+      const pl = findL.peak(ceiling);
+      const pr = findR.peak(ceiling);
+      const peak = pl > pr ? pl : pr;
       const need = peak > ceiling ? ceiling / peak : 1;
-      // Into the sliding minimum
-      const q = hold + 1;
-      while (qLen > 0 && qGain[(qHead + qLen - 1) % q] >= need) qLen--;
-      qIndex[(qHead + qLen) % q] = n;
-      qGain[(qHead + qLen) % q] = need;
+      // Into the sliding minimum (a ring of q: qHead + qLen < 2q)
+      let tail = qHead + qLen - 1;
+      while (qLen > 0 && qGain[tail >= q ? tail - q : tail] >= need) {
+        qLen--;
+        tail--;
+      }
+      const into = qHead + qLen >= q ? qHead + qLen - q : qHead + qLen;
+      qIndex[into] = n;
+      qGain[into] = need;
       qLen++;
       while (qIndex[qHead] <= n - hold) {
-        qHead = (qHead + 1) % q;
+        qHead = qHead + 1 === q ? 0 : qHead + 1;
         qLen--;
       }
       const lowest = qGain[qHead];
       // Down at once, up at the release rate
-      released = lowest < released ? lowest : released + (lowest - released) * rel;
+      eased = lowest < eased ? lowest : eased + (lowest - eased) * rel;
       // Smoothed over the window, so a drop is a ramp that has finished as the peak plays
-      avgSum += released - avg[avgAt];
-      avg[avgAt] = released;
-      avgAt = (avgAt + 1) % box;
-      const gain = Math.min(1, avgSum / box);
+      sum += eased - avg[avgAt];
+      avg[avgAt] = eased;
+      avgAt = avgAt + 1 === box ? 0 : avgAt + 1;
+      gain = Math.min(1, sum / box);
       // Out comes the sample from `delay` samples ago
-      const read = (write + 1) % size;
+      const read = write + 1 === size ? 0 : write + 1;
       let ol = delayL[read] * gain;
       let or = delayR[read] * gain;
       delayL[write] = l;
@@ -160,8 +146,10 @@ export function limiterKernel(sampleRate: number, phases: readonly (readonly num
       else if (or < -ceiling) or = -ceiling;
       outL[i] = ol;
       outR[i] = or;
-      last = gain;
     }
+    released = eased;
+    avgSum = sum;
+    last = gain;
     // Keep the running sum from drifting
     if (n % 65536 < frames) {
       let s = 0;
@@ -174,7 +162,7 @@ export function limiterKernel(sampleRate: number, phases: readonly (readonly num
 }
 
 /** The limiter kernel at `sampleRate`, with the true-peak filter of truePeakFilter.ts. */
-export const createLimiterKernel = (sampleRate: number): LimiterKernel => limiterKernel(sampleRate, TRUE_PEAK_PHASES);
+export const createLimiterKernel = (sampleRate: number): LimiterKernel => limiterKernel(sampleRate, TRUE_PEAK_PLAN, createPeakFinder);
 
 /**
  * The limiter run over whole rendered channels (stereo, changed in place), as the worklet would
@@ -205,8 +193,9 @@ export const LIMITER_PROCESSOR = 'bbx-limiter';
  */
 export const LIMITER_WORKLET_SOURCE = `
 const limiterKernel = ${limiterKernel.toString()};
-const PHASES = ${JSON.stringify(TRUE_PEAK_PHASES)};
-const createLimiterKernel = (sr) => limiterKernel(sr, PHASES);
+const createPeakFinder = ${createPeakFinder.toString()};
+const PLAN = ${JSON.stringify(TRUE_PEAK_PLAN)};
+const createLimiterKernel = (sr) => limiterKernel(sr, PLAN, createPeakFinder);
 class LimiterProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [

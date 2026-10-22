@@ -214,3 +214,66 @@ test('the meter worklet and the export Worker run their own copy of the analyser
   for (let at = 0; at < x.length; at += 128) p.process([[x.subarray(at, at + 128), x.subarray(at, at + 128)]]);
   assert.ok(Math.abs(posted.integrated - want) < 0.01);
 });
+
+test('the peak finder skips work only where no point could pass: the same peaks as running the whole filter, on random and adversarial signals', async () => {
+  const { TRUE_PEAK_PHASES, TRUE_PEAK_PLAN, createPeakFinder } = await import('../src/audio/truePeakFilter.ts');
+  const taps = TRUE_PEAK_PHASES[0].length;
+  const half = taps / 2;
+  // Every point between the samples half - 1 and half back, worked out in full
+  const exactAt = (x, i) => {
+    let m = Math.max(Math.abs(x[i - half + 1] ?? 0), Math.abs(x[i - half] ?? 0));
+    for (const h of TRUE_PEAK_PHASES) {
+      let acc = 0;
+      for (let k = 0; k < taps; k++) acc += h[k] * (x[i - k] ?? 0);
+      m = Math.max(m, Math.abs(acc));
+    }
+    return m;
+  };
+  let s = 99;
+  const rnd = () => (s = (s * 1103515245 + 12345) >>> 0) / 2 ** 32;
+  const kinds = [
+    (n) => Float32Array.from({ length: n }, () => rnd() * 2 - 1),
+    (n) => Float32Array.from({ length: n }, () => (rnd() < 0.5 ? -1 : 1)),
+    // Alternating full-scale samples (the most a point can pass the samples by), with holes
+    (n) => Float32Array.from({ length: n }, (_, i) => (i % 2 ? 1 : -1) * (rnd() < 0.9 ? 1 : 0)),
+    (n) => {
+      const f = rnd() * 0.5;
+      const ph = rnd() * 6.3;
+      return Float32Array.from({ length: n }, (_, i) => Math.sin(2 * Math.PI * f * i + ph));
+    },
+    (n) => Float32Array.from({ length: n }, () => (rnd() < 0.05 ? (rnd() < 0.5 ? -1 : 1) : 0)),
+    (n) => {
+      let y = 0;
+      return Float32Array.from({ length: n }, () => (y = Math.max(-1, Math.min(1, y + (rnd() - 0.5) * 0.3))));
+    },
+    // Square-ish near Nyquist, the levels jumping about
+    (n) => {
+      const f = 0.45 + rnd() * 0.05;
+      return Float32Array.from({ length: n }, (_, i) => Math.sign(Math.sin(2 * Math.PI * f * i)) * (0.5 + 0.5 * rnd()));
+    },
+  ];
+  let checks = 0;
+  for (let trial = 0; trial < 700; trial++) {
+    const x = kinds[trial % kinds.length](160);
+    const finder = createPeakFinder(TRUE_PEAK_PLAN);
+    for (let i = 0; i < x.length; i++) {
+      finder.push(x[i]);
+      const exact = exactAt(x, i);
+      // Thresholds just under, at and over the true answer, and anywhere
+      for (const over of [exact * 0.9, exact * 0.9999, exact * (1 - 1e-9), exact, exact * 1.001, rnd() * 1.5]) {
+        const got = finder.peak(over);
+        checks++;
+        if (exact > over) assert.ok(Math.abs(got - exact) <= 1e-12 * Math.max(1, exact), `trial ${trial} sample ${i}: ${got} for ${exact} over ${over}`);
+        else assert.ok(got <= over * (1 + 1e-12) && got >= Math.max(Math.abs(x[i - half + 1] ?? 0), Math.abs(x[i - half] ?? 0)) - 1e-12, `trial ${trial} sample ${i}: ${got} for ${exact} under ${over}`);
+      }
+    }
+  }
+  assert.ok(checks > 600000);
+  // And the meter reads what the whole filter reads, on a bright, loud signal near its peak all the time
+  const sr = 44100;
+  const x = Float32Array.from({ length: sr }, (_, i) => 0.9 * Math.sin(i * 1.9) * (0.7 + 0.3 * rnd()));
+  let want = 0;
+  for (let i = 0; i < x.length; i++) want = Math.max(want, Math.abs(x[i]), exactAt(x, i));
+  near(20 * Math.log10(truePeakOf([x])), 20 * Math.log10(want), 1e-9, 'truePeakOf');
+  near(measure(sr, x).truePeakMax, 20 * Math.log10(want), 1e-9, 'the analyser');
+});

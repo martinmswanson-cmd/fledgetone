@@ -5,7 +5,7 @@
  * "Push" is the gain into the clipper and limiter that brings the song to its loudness target
  * (Streaming -14, Loud -9, Club -6 LUFS). An export finds it afresh by measuring and adjusting
  * (matchPush: a few passes of the clipper and limiter over the finished render, each measured to
- * BS.1770); live playback plays the push the last match found, so it sounds as the export does.
+ * BS.1770; a long song that needs more than two goes on with a quarter of it, checked on the whole); live playback plays the push the last match found, so it sounds as the export does.
  * The clipper shaves the drum peaks, the limiter holds what's left under the ceiling: the two
  * share the work. How hard they may work is capped by what they do to the waveform: past
  * MAX_DISTORTION_DB of distortion (what's left of the sound once its gain, block by block, is taken
@@ -164,6 +164,7 @@ export interface LoudMatch {
   capped: boolean;
   /** The distortion at the push found (see distortionDb). */
   distortionDb: number;
+  /** How many times the clipper and limiter ran (over the song, or a long song's sample). */
   passes: number;
 }
 
@@ -190,63 +191,230 @@ export function pushToKeep(o: {
   return Math.abs(found.push - o.currentPush) > 0.05 ? found.push : null;
 }
 
+/** What one try of a push measured: its loudness (LUFS) and distortion (dB, see distortionDb). */
+interface Tried {
+  push: number;
+  lufs: number;
+  dist: number;
+}
+
+/** Where a search of the push ended (see searchPush). */
+interface Searched {
+  best: Tried | null;
+  lo: number;
+  hi: number;
+  cleanHi: boolean;
+  passes: number;
+  /** The last try, and whether the search finished (rather than ran out of passes). */
+  last: Tried | null;
+  done: boolean;
+}
+
 /**
- * The push (dB, on top of `levelDb`) that brings `left` / `right` (the master section's sound up to
- * the Level) to `targetLufs` through the clipper and the limiter. Each pass runs them and measures;
- * the next guess divides what's missing by how much of the last change came through (clipping
- * and limiting take some of it). `start` is where to begin (the push found last time).
+ * The search itself: from `start`, each try measured by `measure`; the next guess divides what's
+ * missing by how much of the last change came through (clipping and limiting take some of it).
+ * Past `maxDist` of distortion a push is too far, and the search halves back towards the last
+ * clean one.
  */
-export function matchPush(left: Float32Array, right: Float32Array, sampleRate: number, levelDb: number, targetLufs: number, clipper: ClipperSettings | undefined, ceilingDbtp: number, start?: number): LoudMatch {
-  const dry = integratedLufs(left, right, sampleRate);
-  if (!Number.isFinite(dry)) return { push: 0, lufs: dry, targetLufs, shortDb: 0, capped: false, distortionDb: -Infinity, passes: 0 };
-  const delay = createLimiterKernel(sampleRate).latency;
+function searchPush(measure: (push: number) => Tried, targetLufs: number, maxDist: number, start: number, most = MATCH_PASSES, known?: { lo: number; hi: number; cleanHi: boolean }): Searched {
   // The push is searched between `lo` and `hi`: under `hi` it's clean, at `hi` (once found) it isn't
-  let lo = LOUD_PUSH_MIN;
-  let hi = LOUD_PUSH_MAX;
-  let cleanHi = true;
-  const clamp = (v: number) => Math.max(lo, Math.min(hi, v));
-  let push = clamp(start ?? targetLufs - dry - levelDb);
+  // (`known`: what an earlier search found)
+  let lo = known ? known.lo : LOUD_PUSH_MIN;
+  let hi = known ? known.hi : LOUD_PUSH_MAX;
+  let cleanHi = known ? known.cleanHi : true;
+  let push = Math.max(lo, Math.min(hi, start));
   let prev: { push: number; lufs: number } | null = null;
   let passes = 0;
-  let best: { push: number; lufs: number; dist: number } | null = null;
+  let best: Tried | null = null;
+  let last: Tried | null = null;
+  let done = false;
   const score = (b: { lufs: number }) => Math.abs(targetLufs - b.lufs);
-  while (passes < MATCH_PASSES) {
-    const [l, r] = clipAndLimit(left, right, sampleRate, levelDb + push, clipper, ceilingDbtp);
-    const lufs = integratedLufs(l, r, sampleRate);
-    const dist = distortionDb(left, right, l, r, sampleRate, delay);
+  while (!done && passes < most) {
+    const tried = measure(push);
+    last = tried;
+    const { lufs, dist } = tried;
     passes++;
-    const clean = dist <= MAX_DISTORTION_DB;
+    const clean = dist <= maxDist;
     if (!clean) {
       // Too far: the push stays under this from now on (halfway back towards the last clean one)
       hi = push;
       cleanHi = false;
       const below = best ? best.push : Math.max(lo, push - 6);
-      if (hi - below < 0.2) break;
+      if (hi - below < 0.2) {
+        done = true;
+        break;
+      }
       prev = null;
       push = (below + hi) / 2;
       continue;
     }
-    if (!best || score({ lufs }) < score(best) || (lufs < targetLufs && best.lufs < targetLufs && lufs > best.lufs)) best = { push, lufs, dist };
+    if (!best || score({ lufs }) < score(best) || (lufs < targetLufs && best.lufs < targetLufs && lufs > best.lufs)) best = tried;
     if (lufs < targetLufs) lo = push;
     else hi = Math.min(hi, push);
     const missing = targetLufs - lufs;
-    if (Math.abs(missing) < MATCH_TOLERANCE) break;
-    if (missing > 0 && push >= hi - 1e-9) break;
-    if (missing < 0 && push <= lo + 1e-9) break;
+    if (Math.abs(missing) < MATCH_TOLERANCE || (missing > 0 && push >= hi - 1e-9) || (missing < 0 && push <= lo + 1e-9)) {
+      done = true;
+      break;
+    }
     const through = prev && push !== prev.push ? (lufs - prev.lufs) / (push - prev.push) : 0.85;
     prev = { push, lufs };
     let next = push + missing / Math.max(0.2, Math.min(1, through));
     // Within what's known (and short of a push that distorted)
     next = Math.max(lo, Math.min(cleanHi ? hi : hi - 0.05, next));
-    if (Math.abs(next - push) < 0.02) break;
+    if (Math.abs(next - push) < 0.02) {
+      done = true;
+      break;
+    }
     push = next;
   }
-  if (!best) {
-    // Nothing clean at all (it distorts at any push it tried): the least push tried
-    const [l, r] = clipAndLimit(left, right, sampleRate, levelDb + lo, clipper, ceilingDbtp);
-    best = { push: lo, lufs: integratedLufs(l, r, sampleRate), dist: distortionDb(left, right, l, r, sampleRate, delay) };
+  // (Out of passes: done all the same)
+  return { best, lo, hi, cleanHi, passes, last, done: done || passes >= MATCH_PASSES };
+}
+
+/** A song longer than this (seconds) is matched on a sample of it first (see matchPush). */
+export const MATCH_SAMPLE_FROM = 90;
+/** The sample: a piece this long (seconds) out of every MATCH_SAMPLE_EVERY, each with a lead-in the clipper and limiter settle in. */
+const MATCH_SAMPLE_PIECE = 6;
+const MATCH_SAMPLE_EVERY = 24;
+const MATCH_SAMPLE_LEAD = 0.5;
+/** The most times a sampled match checks the whole song before it searches the whole song instead. */
+const MATCH_SAMPLE_CHECKS = 3;
+/** How far under MAX_DISTORTION_DB the sample is kept (dB), so the song's check passes on a sample that reads a hair clean. */
+const MATCH_SAMPLE_DIST_MARGIN = 0.1;
+
+/**
+ * A quarter of a long song, as evenly spread pieces, and how to try a push on it: the pieces (each
+ * with its lead-in, and the limiter's latency after it) go through the clipper and limiter in one
+ * run, and what each piece's own span became is measured, as the whole song is.
+ */
+function matchSample(left: Float32Array, right: Float32Array, sampleRate: number, delay: number): { dry: number; measure: (gainDb: number, clipper: ClipperSettings | undefined, ceilingDbtp: number) => { lufs: number; dist: number } } | null {
+  if (left.length < MATCH_SAMPLE_FROM * sampleRate) return null;
+  const piece = Math.round(MATCH_SAMPLE_PIECE * sampleRate);
+  const every = Math.round(MATCH_SAMPLE_EVERY * sampleRate);
+  const lead = Math.round(MATCH_SAMPLE_LEAD * sampleRate);
+  const starts: number[] = [];
+  for (let at = Math.floor((every - piece) / 2); at + piece <= left.length; at += every) starts.push(at);
+  const span = lead + piece + delay;
+  const inL = new Float32Array(starts.length * span);
+  const inR = new Float32Array(starts.length * span);
+  const dryL = new Float32Array(starts.length * piece);
+  const dryR = new Float32Array(starts.length * piece);
+  starts.forEach((at, k) => {
+    // (The first piece's lead-in may start before the song: silence there)
+    const from = at - lead;
+    for (let i = 0; i < span; i++) {
+      const j = from + i;
+      if (j >= 0 && j < left.length) {
+        inL[k * span + i] = left[j];
+        inR[k * span + i] = right[j];
+      }
+    }
+    dryL.set(left.subarray(at, at + piece), k * piece);
+    dryR.set(right.subarray(at, at + piece), k * piece);
+  });
+  const outL = new Float32Array(dryL.length);
+  const outR = new Float32Array(dryR.length);
+  const measure = (gainDb: number, clipper: ClipperSettings | undefined, ceilingDbtp: number) => {
+    const [l, r] = clipAndLimit(inL, inR, sampleRate, gainDb, clipper, ceilingDbtp);
+    for (let k = 0; k < starts.length; k++) {
+      outL.set(l.subarray(k * span + lead + delay, k * span + lead + delay + piece), k * piece);
+      outR.set(r.subarray(k * span + lead + delay, k * span + lead + delay + piece), k * piece);
+    }
+    return { lufs: integratedLufs(outL, outR, sampleRate), dist: distortionDb(dryL, dryR, outL, outR, sampleRate, 0) };
+  };
+  return { dry: integratedLufs(dryL, dryR, sampleRate), measure };
+}
+
+/**
+ * The push (dB, on top of `levelDb`) that brings `left` / `right` (the master section's sound up to
+ * the Level) to `targetLufs` through the clipper and the limiter. Each pass runs them and measures
+ * (searchPush). `start` is where to begin (the push found last time). A long song is searched on a
+ * quarter of it (matchSample) and the push found checked on the whole song: the sample's
+ * loudness and distortion are a little off the song's, by about the same at nearby pushes, so a
+ * check that misses learns the difference and the sample is searched again (usually one check
+ * does: a third of the work of searching the whole song). The answer is always measured on the
+ * whole song.
+ */
+export function matchPush(left: Float32Array, right: Float32Array, sampleRate: number, levelDb: number, targetLufs: number, clipper: ClipperSettings | undefined, ceilingDbtp: number, start?: number): LoudMatch {
+  const dry = integratedLufs(left, right, sampleRate);
+  if (!Number.isFinite(dry)) return { push: 0, lufs: dry, targetLufs, shortDb: 0, capped: false, distortionDb: -Infinity, passes: 0 };
+  const delay = createLimiterKernel(sampleRate).latency;
+  const whole = (push: number): Tried => {
+    const [l, r] = clipAndLimit(left, right, sampleRate, levelDb + push, clipper, ceilingDbtp);
+    return { push, lufs: integratedLufs(l, r, sampleRate), dist: distortionDb(left, right, l, r, sampleRate, delay) };
+  };
+  const better = (a: Tried, b: Tried | null) => !b || Math.abs(targetLufs - a.lufs) < Math.abs(targetLufs - b.lufs) || (a.lufs < targetLufs && b.lufs < targetLufs && a.lufs > b.lufs);
+  let push = Math.max(LOUD_PUSH_MIN, Math.min(LOUD_PUSH_MAX, start ?? targetLufs - dry - levelDb));
+  let passes = 0;
+  let found: Tried | null = null;
+  let cleanHi = true;
+  const sample = matchSample(left, right, sampleRate, delay);
+  // On the whole song first: most matches take a pass or two (from the push found last time, then
+  // one step). A long song that needs more goes on with its sample
+  const first = searchPush(whole, targetLufs, MAX_DISTORTION_DB, push, sample ? 2 : MATCH_PASSES);
+  passes += first.passes;
+  cleanHi = first.cleanHi;
+  if (first.done || !sample || !first.last) found = first.best;
+  else {
+    let check = first.last;
+    push = check.push;
+    const tryPart = (p: number): Tried => {
+      passes++;
+      return { push: p, ...sample.measure(levelDb + p, clipper, ceilingDbtp) };
+    };
+    const known = tryPart(push);
+    const part = (p: number): Tried => (p === known.push ? known : tryPart(p));
+    // Where the whole song's search got to (the sample reads about as the song does: a start)
+    let bounds = { lo: first.lo, hi: first.hi, cleanHi: first.cleanHi };
+    // What the sample reads over the song, loudness (LU) and distortion (dB), at the last check
+    let at: Tried = known;
+    let best = first.best;
+    for (let round = 0; round < MATCH_SAMPLE_CHECKS; round++) {
+      const off = at.lufs - check.lufs;
+      const distOff = (Number.isFinite(at.dist) && Number.isFinite(check.dist) ? at.dist - check.dist : 0) - MATCH_SAMPLE_DIST_MARGIN;
+      const s = searchPush(part, targetLufs + off, MAX_DISTORTION_DB + distOff, push, MATCH_PASSES, bounds);
+      const next = s.best ?? part(s.lo);
+      // The same push again (stopped by distortion short of the target, or at the least push): the best so far is the answer
+      if (Math.abs(next.push - push) < 0.02) {
+        found = best;
+        if (best === check) cleanHi = s.cleanHi;
+        break;
+      }
+      const got = whole(next.push);
+      passes++;
+      const clean = got.dist <= MAX_DISTORTION_DB;
+      if (clean && better(got, best)) {
+        best = got;
+        cleanHi = s.cleanHi;
+      }
+      const missing = targetLufs - got.lufs;
+      // On target, or short of it at the most push or where the sample started to distort
+      if (clean && (Math.abs(missing) < MATCH_TOLERANCE || (missing > 0 && (next.push >= LOUD_PUSH_MAX - 1e-9 || !s.cleanHi)))) {
+        found = got;
+        break;
+      }
+      check = got;
+      at = next;
+      push = next.push;
+      bounds = { lo: Math.min(s.lo, push), hi: Math.max(s.hi, push), cleanHi: s.cleanHi };
+    }
+    if (!found) {
+      // (Not settled on the sample: the whole song, as a short one is searched)
+      const s = searchPush(whole, targetLufs, MAX_DISTORTION_DB, push);
+      passes += s.passes;
+      if (s.best && better(s.best, best)) {
+        best = s.best;
+        cleanHi = s.cleanHi;
+      }
+      found = best;
+    }
   }
-  const shortDb = Math.max(0, targetLufs - best.lufs);
+  // Nothing clean at all (it distorts at any push it tried): the least push tried
+  if (!found) {
+    found = whole(first.lo);
+    passes++;
+  }
+  const shortDb = Math.max(0, targetLufs - found.lufs);
   const short = shortDb >= MATCH_TOLERANCE;
-  return { push: Math.round(best.push * 100) / 100, lufs: best.lufs, targetLufs, shortDb: short ? shortDb : 0, capped: short && (best.push >= LOUD_PUSH_MAX - 1e-9 || !cleanHi), distortionDb: best.dist, passes };
+  return { push: Math.round(found.push * 100) / 100, lufs: found.lufs, targetLufs, shortDb: short ? shortDb : 0, capped: short && (found.push >= LOUD_PUSH_MAX - 1e-9 || !cleanHi), distortionDb: found.dist, passes };
 }
