@@ -86,3 +86,60 @@ export function createWideOutput(output: Tone.InputNode, amount: number): { inpu
     },
   };
 }
+
+/** Below this a stereo instrument's own spread (the Supersaw's saws) is folded to the middle. */
+export const MONO_LOWS_HZ = 180;
+
+/**
+ * Keep the lows of a stereo sound in the middle: the side (left minus right) loses what's under
+ * `hz` through a 24 dB/octave high-pass, the middle is left as it is. A chord whose low notes
+ * fall under 250 Hz stays wide above them, not in the low end (where a wide pad would smear the
+ * kick and the bass, and cancel out on a mono speaker).
+ */
+export function createMonoLows(raw: BaseAudioContext, output: AudioNode, hz = MONO_LOWS_HZ): { input: AudioNode; disconnect: () => void } {
+  const input = raw.createGain();
+  input.channelCount = 2;
+  input.channelCountMode = 'explicit';
+  const split = raw.createChannelSplitter(2);
+  const half = (g: number) => {
+    const n = raw.createGain();
+    n.gain.value = g;
+    n.channelCount = 1;
+    n.channelCountMode = 'explicit';
+    return n;
+  };
+  // Middle (L + R) / 2 and side (L − R) / 2
+  const midL = half(0.5), midR = half(0.5), sideL = half(0.5), sideR = half(-0.5);
+  const mid = half(1), side = half(1), sideNeg = half(-1);
+  const hp = [0, 1].map(() => {
+    const f = raw.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = hz;
+    // (Web Audio reads a high-pass's Q in dB: −3 dB is a quality of 1/√2, Butterworth, no bump)
+    f.Q.value = -3.0103;
+    f.channelCount = 1;
+    f.channelCountMode = 'explicit';
+    return f;
+  });
+  const merger = raw.createChannelMerger(2);
+  input.connect(split);
+  split.connect(midL, 0);
+  split.connect(sideL, 0);
+  split.connect(midR, 1);
+  split.connect(sideR, 1);
+  midL.connect(mid);
+  midR.connect(mid);
+  sideL.connect(side);
+  sideR.connect(side);
+  side.connect(hp[0]);
+  hp[0].connect(hp[1]);
+  hp[1].connect(sideNeg);
+  // Left = middle + side, right = middle − side
+  mid.connect(merger, 0, 0);
+  mid.connect(merger, 0, 1);
+  hp[1].connect(merger, 0, 0);
+  sideNeg.connect(merger, 0, 1);
+  merger.connect(output);
+  const nodes: AudioNode[] = [input, split, midL, midR, sideL, sideR, mid, side, sideNeg, ...hp, merger];
+  return { input, disconnect: () => nodes.forEach((n) => n.disconnect()) };
+}

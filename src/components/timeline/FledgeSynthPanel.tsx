@@ -583,6 +583,7 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
               {S.glide.map((c) => (
                 <Choice key={c.p} c={c as Ctl<'choice'>} get={get} set={set} w="w-[108px]" />
               ))}
+              {ctl(S.monoRestart)}
             </div>
           </Section>
         </div>
@@ -687,7 +688,7 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
           )}
           {fx('Reverb', S.reverb.on, row(S.reverb.knobs))}
           <Section title="Output">
-            <p className="text-[10px] text-forge-muted -mt-1">Below 120 Hz the sound stays mono, and nothing passes −1 dB.</p>
+            <p className="text-[10px] text-forge-muted -mt-1">Below Mono below the sound stays in the middle (whatever the unison, chorus and width do), and nothing passes −1 dB.</p>
             {row(S.output)}
           </Section>
         </div>

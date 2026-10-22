@@ -10,9 +10,12 @@
 //! host sees goes through `Synth`.
 //!
 //! Random values are seeded, so a render repeats exactly; once the host says where in the song
-//! it is (`set_position`), they're seeded from the song position and the note, and the free
-//! LFOs and the chaos source follow the song position, so the live playback and an export of
-//! the same notes match whatever was played before.
+//! it is (`set_position`), they're seeded from the song position and the note (a note's own
+//! random values from its step within "Random repeat" and its place in a chord, not its pitch),
+//! and the free LFOs and the chaos source follow the song position, so the live playback and an
+//! export of the same notes match whatever was played before. With "Mono restart" a mono note
+//! that doesn't join the last starts afresh (the last fading out on a spare voice), so a riff
+//! that repeats repeats exactly; "Mono below" sets where the low end is kept in the middle.
 
 use crate::dsp::*;
 use crate::fx::{Effects, FxCfg, FxMods};
@@ -194,6 +197,10 @@ struct Cfg {
     glide_rate: bool,
     glide_linear: bool,
     penv_linear: bool,
+    /// Mono and legato: a note that doesn't join the last starts afresh (see "Mono restart")
+    mono_restart: bool,
+    /// The side loses everything under this (Hz)
+    mono_below: f32,
     chaos_beats: f32,
     chaos_smooth: f32,
     /// Beats after which the random values come round again (0: never)
@@ -748,6 +755,8 @@ struct Voice {
     /// then lets go (or the pedal holds it)
     short_left: u32,
     fade: f32,
+    /// Fading out over 3 ms, then done: a mono note's last one, as a new note starts afresh
+    dying: bool,
     /// The velocity's gain as it eases to a new note's (a retrigger never steps it); below 0
     /// until the voice's first sample
     gain_now: f32,
@@ -794,6 +803,7 @@ impl Voice {
             pending_up: false,
             short_left: 0,
             fade: 1.0,
+            dying: false,
             gain_now: -1.0,
             carry: 0.0,
         }
@@ -832,6 +842,8 @@ pub struct Synth {
     side_hp: [Svf; 2],
     dc: [DcBlock; 2],
     side_coef: SvfCoef,
+    /// The frequency side_coef was made for
+    side_f: f32,
     clip: [SafetyClip; 2],
     gain: f32,
     /// Where in the song it is (beats, and seconds), counted on from the host's last word
@@ -844,6 +856,10 @@ pub struct Synth {
     /// Where in the song each key was last struck (a note that waits for its voice still gets
     /// the random values of when it was played)
     struck: [f64; 128],
+    /// Each key's place among the notes struck at the same moment (a chord's notes 0, 1, 2...),
+    /// and the last moment notes were struck, with how many then
+    struck_k: [u8; 128],
+    strike: (f64, u8),
     band: [Band; 2],
     /// The clean sub, mixed in after the effects
     sub_bus: [f32; BLOCK],
@@ -881,6 +897,7 @@ impl Synth {
             side_hp: [Svf::default(); 2],
             dc: [DcBlock::default(); 2],
             side_coef: SvfCoef::new(120.0, sr, std::f32::consts::SQRT_2),
+            side_f: 120.0,
             clip: [SafetyClip::default(); 2],
             gain: 0.0,
             song_beats: 0.0,
@@ -888,6 +905,8 @@ impl Synth {
             anchored: false,
             lfo_sm: [f32::NAN; 4],
             struck: [0.0; 128],
+            struck_k: [0; 128],
+            strike: (f64::NAN, 0),
             band: [Band::default(); 2],
             sub_bus: [0.0; BLOCK],
             out: [[0.0; BLOCK]; 2],
@@ -1082,6 +1101,8 @@ impl Synth {
             glide_rate: self.v(p::GLIDE_RATE) > 0.5,
             glide_linear: self.v(p::GLIDE_CURVE) > 0.5,
             penv_linear: self.v(p::PENV_CURVE) > 0.5,
+            mono_restart: self.v(p::MONO_RESTART) > 0.5,
+            mono_below: self.v(p::MONO_BELOW),
             chaos_beats: p::SYNC_BEATS[self.v(p::CHAOS_DIV) as usize],
             chaos_smooth: self.v(p::CHAOS_SMOOTH),
             random_cycle: p::RANDOM_CYCLE_BEATS[self.v(p::RANDOM_CYCLE) as usize],
@@ -1165,6 +1186,9 @@ impl Synth {
         }
         let cfg = self.cfg();
         self.struck[note as usize & 127] = self.song_beats;
+        // (A chord's notes, struck at the same moment, count 0, 1, 2...)
+        self.strike = if self.strike.0 == self.song_beats { (self.song_beats, self.strike.1.saturating_add(1)) } else { (self.song_beats, 0) };
+        self.struck_k[note as usize & 127] = self.strike.1;
         if self.anchored {
             // Random values from where in the song this note is, and which note (not from what
             // played before): the same notes from the same place sound the same, live or exported
@@ -1202,7 +1226,22 @@ impl Synth {
                     v.pitch = note as f32;
                     v.glide = 0.0;
                 }
-                self.start(0, note, vel, &cfg, false, joined);
+                if cfg.mono_restart && !joined && v.active {
+                    // (An LFO set never to restart runs on through it, as ever)
+                    let kept = (v.lfo_phase, v.lfo_held, v.lfo_sm);
+                    self.retire_mono();
+                    self.start(0, note, vel, &cfg, false, joined);
+                    let v = &mut self.voices[0];
+                    for k in 0..4 {
+                        if cfg.lfo[k].mode > 0 && cfg.lfo[k].retrig == 3 {
+                            v.lfo_phase[k] = kept.0[k];
+                            v.lfo_held[k] = kept.1[k];
+                            v.lfo_sm[k] = kept.2[k];
+                        }
+                    }
+                } else {
+                    self.start(0, note, vel, &cfg, false, joined);
+                }
             } else {
                 // A joined legato note: LFOs set to restart on every note do
                 let v = &mut self.voices[0];
@@ -1255,12 +1294,33 @@ impl Synth {
         self.start(i, note, vel, &cfg, true, false);
     }
 
+    /// Mono restart: the mono voice's last note (still letting go) moves to a spare voice and fades
+    /// out there over 3 ms, and the mono voice is left free for the new note to start afresh on
+    /// (its pitch and glide kept, so a glide still glides).
+    fn retire_mono(&mut self) {
+        let spare = (1..VOICES).find(|&i| !self.voices[i].active && self.voices[i].pending.is_none()).or_else(|| {
+            // (Else the quietest one letting go, or no fade at all: never a voice still held)
+            (1..VOICES).filter(|&i| self.voices[i].pending.is_none() && (self.voices[i].amp.stage == Stage::Release || self.voices[i].dying)).min_by(|&a, &b| self.voices[a].amp.value.partial_cmp(&self.voices[b].amp.value).unwrap())
+        });
+        if let Some(j) = spare {
+            let mut old = self.voices[0].clone();
+            old.release();
+            old.sustained = false;
+            old.short_left = 0;
+            old.dying = true;
+            self.voices[j] = old;
+        }
+        self.voices[0].active = false;
+    }
+
     /// The note-random values (0..1 and -1..1) for `note` played now: seeded from the song
-    /// position and the note, so they repeat in every render of the same notes.
+    /// position (within the random cycle) and the note's place in a chord struck at once, not
+    /// its pitch, so they repeat in every render of the same notes, and a riff that comes round
+    /// on other notes (the next chord's root) has each step sound as it did.
     fn note_random(&self, note: u8, cfg: &Cfg) -> (f32, f32) {
         let at = self.struck[note as usize & 127];
         let at = if cfg.random_cycle > 0.0 { at.rem_euclid(cfg.random_cycle) } else { at };
-        let key = ticks(at) << 8 ^ note as u64;
+        let key = ticks(at) << 8 ^ self.struck_k[note as usize & 127] as u64;
         (hash01(key ^ 0x0a11_0000_0000_0000), hash_bi(key ^ 0x0b22_0000_0000_0000))
     }
 
@@ -1289,6 +1349,7 @@ impl Synth {
         v.pending = None;
         v.pending_up = false;
         v.short_left = 0;
+        v.dying = false;
         // (A retrigger of a sounding voice, mono say, carries on from its level and fade)
         if fresh || !was_active {
             v.fade = 1.0;
@@ -1727,7 +1788,7 @@ impl Synth {
                     if pend.is_none() && v.fade < 1.0 && v.amp.stage != Stage::Release {
                         v.fade = (v.fade + fade_step).min(1.0);
                     }
-                    if pend.is_some() {
+                    if pend.is_some() || v.dying {
                         v.fade -= fade_step;
                         if v.fade <= 0.0 {
                             break;
@@ -1845,6 +1906,12 @@ impl Synth {
                         v.short_left -= seg;
                     }
                 }
+                // A mono note's last one, faded out: done
+                if self.voices[vi].dying && self.voices[vi].pending.is_none() && self.voices[vi].fade <= 0.0 {
+                    self.voices[vi].active = false;
+                    self.voices[vi].dying = false;
+                    break;
+                }
                 // A voice taken for a new note: once faded out, the new note starts here
                 if let Some((note, vel)) = self.voices[vi].pending {
                     // (Or its old note ended on its own before the fade did)
@@ -1923,9 +1990,14 @@ impl Synth {
         }
         let target = cfg.level;
         let gstep = 1.0 - (-1.0 / (0.01 * sr)).exp();
+        if cfg.mono_below != self.side_f {
+            self.side_f = cfg.mono_below;
+            self.side_coef = SvfCoef::new(cfg.mono_below.min(sr * 0.45), sr, std::f32::consts::SQRT_2);
+        }
         for n in 0..frames {
             let (mut l, mut r) = (self.out[0][n], self.out[1][n]);
-            // The low end in mono: the side signal loses everything under 120 Hz; then the width
+            // The low end in mono: the side signal loses everything under "Mono below" (120 Hz in
+            // older sounds); then the width
             let width = (cfg.width + gm[n / CONTROL][d::WIDTH]).clamp(0.0, 1.0);
             // (The clean sub joins here, in the middle, after the drive, the OTT and the effects)
             let mid = if cfg.sub_after { (l + r) * 0.5 + self.sub_bus[n] } else { (l + r) * 0.5 };
@@ -2972,3 +3044,7 @@ mod tests {
 #[cfg(test)]
 #[path = "synth_movement_tests.rs"]
 mod movement_tests;
+
+#[cfg(test)]
+#[path = "synth_sound_tests.rs"]
+mod sound_tests;
