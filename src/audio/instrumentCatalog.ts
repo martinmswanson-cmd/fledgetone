@@ -53,6 +53,8 @@ export const INSTRUMENT_KEYS = [
   'synthDesigner',
   // drums you design
   'designedKit',
+  // synthesized kits (Drum Designer sounds, see store/synthKits.ts)
+  'technoKit', 'retroDrumMachine', 'rhythmBox', 'breakbeatKit',
   // the rest of the General MIDI set: more keys, leads, pads, guitars, basses, winds, percussion, sound effects
   'brightPiano', 'electricGrand', 'honkyTonk', 'fmPiano', 'clavinet', 'percussiveOrgan', 'reedOrgan', 'squareLead',
   'sawLead', 'calliope', 'chiffLead', 'charang', 'voiceLead', 'fifthsLead', 'bassLead', 'synthBrass',
@@ -65,8 +67,6 @@ export const INSTRUMENT_KEYS = [
   'strings',
   // chiptune
   'chipLead', 'chipBass', 'chipDrums',
-  // recorded drum kits
-  'acousticKit', 'breakbeatKit', 'linnDrum', 'cr78', 'technoKit', 'bongos',
   // choir, pads and atmospheres
   'choir', 'voiceOohs', 'synthChoir', 'haloPad', 'warmPad', 'newAgePad', 'choirPad', 'glassPad', 'sweepPad', 'atmosphere', 'crystal', 'sciFi', 'goblins',
   // orchestra
@@ -470,15 +470,6 @@ function realKit(folder: string, rows: Record<string, number>): SampleSource {
   return { baseUrl: `fledgetone-samples/${folder}/`, fallbackUrl: `${SITE_SAMPLES}${folder}/`, samples, release: 0.2, layers: LAYER_TOPS[set.layers], version: set.hash };
 }
 
-/** A Tone.js drum-samples kit: its kick, snare, hat and three toms on the drum rows (see DRUM_NOTES). */
-function kit(folder: string): SampleSource {
-  return {
-    baseUrl: `https://tonejs.github.io/audio/drum-samples/${folder}/`,
-    samples: { C1: 'kick.mp3', D1: 'snare.mp3', 'F#1': 'hihat.mp3', D2: 'tom1.mp3', B1: 'tom2.mp3', F1: 'tom3.mp3' },
-    release: 0.2,
-  };
-}
-
 // ---------- the catalog ----------
 
 const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
@@ -486,6 +477,11 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   drums: { key: 'drums', name: 'Drums', blurb: 'Analog groove kit', color: '#f59e0b', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
   drumMachine: { key: 'drumMachine', name: 'Drum Machine', blurb: '808-style boom kit', color: '#ef4444', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
   designedKit: { key: 'designedKit', name: 'Designed Kit', blurb: 'Drums you design: hard kicks, snares, claps, hats and percs (Drum Designer)', color: '#dc2626', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
+  // Synthesized kits: fixed Drum Designer sounds (store/synthKits.ts), each can be opened in the Drum Designer
+  technoKit: { key: 'technoKit', name: 'Techno Kit', blurb: 'Hard electronic kit, synthesized: a driven kick, bright snare and clap, tight hats', color: '#be185d', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
+  retroDrumMachine: { key: 'retroDrumMachine', name: 'Retro Drum Machine', blurb: 'An 80s-style drum machine, synthesized: round kick, roomy snare, crisp hats (synthwave, pop)', color: '#e11d48', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
+  rhythmBox: { key: 'rhythmBox', name: 'Rhythm Box', blurb: 'A vintage rhythm box, synthesized: soft thump, ticking hats, bongo-like toms', color: '#9a3412', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
+  breakbeatKit: { key: 'breakbeatKit', name: 'Break Kit', blurb: 'Crunchy break-style hits, synthesized: dirty kick, cracking snare, gritty hats', color: '#c2410c', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], mono: true },
 
   // Bass
   bass: { key: 'bass', name: 'Slap Bass', blurb: 'Squelchy funk synth bass', color: '#06b6d4', category: 'Bass', kind: 'synth', range: [24, 55], taper: [41, 1.5] },
@@ -894,12 +890,6 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
     samples: realKit('percussion-extras', { C1: 36, D1: 38, 'D#1': 39, F1: 41, 'F#1': 42, B1: 45, 'A#1': 46, D2: 48, 'C#2': 49, 'D#2': 51, 'G#2': 56 }), gain: 1,
     rowLabels: { C1: 'Timbale Low', D1: 'Woodblock Low', 'D#1': 'Woodblock High', F1: 'Guiro Slow', 'F#1': 'Cabasa', B1: 'Guiro Fast', 'A#1': 'Sleigh Bells', D2: 'Vibraslap', 'C#2': 'Bell Tree', 'D#2': 'Whistle', 'G#2': 'Agogo Low' },
   },
-  acousticKit: { key: 'acousticKit', name: 'Acoustic Kit', blurb: 'Real drum kit (recorded): rock, pop, jazz', color: '#d97706', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('acoustic-kit'), gain: -1 },
-  breakbeatKit: { key: 'breakbeatKit', name: 'Breakbeat Kit', blurb: 'Crunchy sampled break hits', color: '#c2410c', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('breakbeat9'), gain: 2 },
-  linnDrum: { key: 'linnDrum', name: '80s Drum Machine', blurb: 'A sampled 80s drum machine: synthwave, pop', color: '#e11d48', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('LINN'), gain: -3 },
-  cr78: { key: 'cr78', name: 'Rhythm Box', blurb: 'A sampled vintage rhythm box', color: '#9a3412', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('CR78'), gain: -2 },
-  technoKit: { key: 'technoKit', name: 'Techno Kit', blurb: 'Hard electronic kit', color: '#be185d', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('Techno') },
-  bongos: { key: 'bongos', name: 'Bongos & Percussion', blurb: 'Hand drums for Latin grooves', color: '#a16207', category: 'Drums & Percussion', kind: 'drums', range: [36, 48], samples: kit('Bongos'), gain: -1 },
 
 
 
@@ -945,6 +935,25 @@ for (const [key, tuning] of Object.entries(SAMPLE_TUNING)) {
 
 export function isInstrumentKey(key: unknown): key is InstrumentKey {
   return typeof key === 'string' && key in INSTRUMENTS;
+}
+
+/**
+ * Instruments that were taken out, and what plays their parts now. The kits made from the Tone.js
+ * drum-samples recordings (no licence stated) became synthesized kits of the same kind (the Techno
+ * and Break kits kept their keys), the recorded acoustic kit the Studio Kit's recordings and the
+ * bongos the Latin Percussion's (both CC0). A project, a share link, a saved sound or a favourite
+ * naming one opens on its replacement (see currentInstrumentKey), on the same drum rows.
+ */
+export const RETIRED_INSTRUMENTS: Readonly<Record<string, InstrumentKey>> = {
+  linnDrum: 'retroDrumMachine',
+  cr78: 'rhythmBox',
+  acousticKit: 'studioKit',
+  bongos: 'latinPercussion',
+};
+
+/** `key` as it's played now: a retired instrument's replacement (RETIRED_INSTRUMENTS), anything else as it is. */
+export function currentInstrumentKey(key: unknown): unknown {
+  return typeof key === 'string' && Object.hasOwn(RETIRED_INSTRUMENTS, key) ? RETIRED_INSTRUMENTS[key] : key;
 }
 
 export function isDrumKind(key: InstrumentKey): boolean {
@@ -1146,19 +1155,17 @@ const FEEL: Partial<Record<InstrumentCategory, [timing: number, dynamics: number
   'Mallets & Bells': [0.1, 0.2],
   'Drums & Percussion': [0.06, 0.2],
 };
-/** Recorded drum machines: a machine plays them, exactly. */
-const MACHINES = new Set<InstrumentKey>(['linnDrum', 'cr78', 'technoKit']);
 
 /**
  * The feel a new track on `key` starts with (the Human insert's timing and dynamics), or undefined
  * to start exact: a recorded instrument plays like its player (an orchestra's a little loose in
  * time and touch, a band's a little less, keyboards and mallets tighter, a drum kit tight in time
- * with only its hits' strength varying); synths, drum machines (synthesized or recorded), buses
+ * with only its hits' strength varying); synths, drum machines (all synthesized now), buses
  * and your own sounds play exactly, as a machine does.
  */
 export function playerFeel(key: InstrumentKey): { timing: number; dynamics: number } | undefined {
   const def = INSTRUMENTS[key];
-  if (!def || MACHINES.has(key)) return undefined;
+  if (!def) return undefined;
   if (!(def.kind === 'sampled' || (def.kind === 'drums' && def.samples))) return undefined;
   const f = FEEL[def.category];
   return f ? { timing: f[0], dynamics: f[1] } : undefined;

@@ -25,11 +25,6 @@ const HOSTED = 'fledgetone-samples/';
 
 export const SAMPLE_CREDITS: SampleCredit[] = [
   { prefixes: ['https://tonejs.github.io/audio/salamander/'], samples: `Salamander Grand Piano by Alexander Holm, from ${TONE_AUDIO}`, licence: CC_BY },
-  {
-    prefixes: ['https://tonejs.github.io/audio/drum-samples/'],
-    samples: `Drum machine and kit samples from Chris Wilson's Web Audio samples, from ${TONE_AUDIO}`,
-    licence: 'Not stated by the collection (see its [drum-samples folder](https://github.com/Tonejs/audio/tree/master/drum-samples))',
-  },
   { prefixes: [`${NB}bass-electric/`, `${NB}guitar-electric/`, `${NB}saxophone/`], samples: 'Karoryfer Samples, via [tonejs-instruments](https://github.com/nbrosowsky/tonejs-instruments)', licence: CC_BY },
   {
     prefixes: [`${NB}violin/`, `${NB}harp/`, `${NB}trumpet/`, `${NB}french-horn/`, `${NB}flute/`],

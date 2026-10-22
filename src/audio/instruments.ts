@@ -36,6 +36,7 @@ import type { SynthPatch } from '../store/synthPatch';
 import { createDesignedSynth } from './presets/designer';
 import { createDesignedKit } from './presets/designedKit';
 import type { DrumDesign } from '../store/drumDesign';
+import { SYNTH_KIT_DESIGNS } from '../store/synthKits';
 import { trackSeed } from './seededNoise';
 import type { Bass808Settings } from '../store/bass808';
 import type { SubLayer } from '../store/bassTools';
@@ -670,6 +671,14 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
       return synthKit(createDrumMachine(output, options.seed), output, !!options.expressive, options.seed);
     case 'designedKit':
       return designedKit(output, options.drumDesign, !!options.expressive, options.seed);
+    case 'technoKit':
+    case 'retroDrumMachine':
+    case 'rhythmBox':
+    case 'breakbeatKit': {
+      // A synthesized kit: the Designed Kit playing its fixed sounds (store/synthKits.ts)
+      const kit = designedKit(output, SYNTH_KIT_DESIGNS[key], !!options.expressive, options.seed);
+      return { ...kit, setDrumDesign: undefined };
+    }
     case 'bass': {
       const bass = createBassVoice(output, options.glideRef);
       return mono({ ...bass, releaseAll: () => bass.synth.triggerRelease() });

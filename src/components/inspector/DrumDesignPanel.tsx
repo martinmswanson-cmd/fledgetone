@@ -10,9 +10,11 @@ import {
   DRUM_PRESETS,
   DRUM_VOICE_LABELS,
   DRUM_VOICES,
+  KEY_PITCH_RANGE,
   LAYER_RANGES,
   MAX_DRUM_LAYERS,
   presetSound,
+  resetRowSound,
   ROW_GROUP,
   soundForRow,
   SOUND_LEVEL,
@@ -22,11 +24,14 @@ import {
 } from '../../store/drumDesign';
 import type { DesignRow, DrumControl, DrumSound, DrumVoice, PresetGroup } from '../../store/drumDesign';
 import { FxSlider } from './InsertFx';
+import { NOTE_NAMES } from '../../store/songKey';
+import { keyPitchHz, songRoot } from '../../store/drumFollow';
 
 /**
  * The Drum Designer: the Designed Kit's controls in the Track Inspector. Pick a drum row, load a
  * preset or shape its one or two layers (each a kick, snare, clap, hat, rim, tom, shaker or bell
- * voice with its own knobs). Each change plays the row so you hear it; knob drags are one undo
+ * voice, or a layered kick or snare, with its own knobs; a layered drum's note can follow the
+ * song's key). Each change plays the row so you hear it; knob drags are one undo
  * step each (the sliders checkpoint), picks from a list are one step too.
  */
 
@@ -54,6 +59,16 @@ function shown(c: Pick<DrumControl, 'unit'>, v: number): string {
     default:
       return `${Math.round(v)}`;
   }
+}
+
+/** A note's frequency (MIDI number), Hz */
+const hzOf = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
+const nameOfMidi = (midi: number) => `${NOTE_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
+/** The notes a pitch knob reaches, low to high */
+function notesIn([lo, hi]: [number, number]): number[] {
+  const out: number[] = [];
+  for (let m = 12; m < 120; m++) if (hzOf(m) >= lo - 0.01 && hzOf(m) <= hi + 0.01) out.push(m);
+  return out;
 }
 
 /** When the last audition played (performance.now()): while a knob moves, a hit every 180 ms at most. */
@@ -88,6 +103,27 @@ export const DrumDesignPanel: React.FC<{ track: Track }> = ({ track }) => {
 
   const knob = (i: number, c: DrumControl) => {
     const l = sound.layers[i];
+    if (c.kind === 'toggle') {
+      const on = l[c.key] >= 0.5;
+      return (
+        <label key={c.key} className="flex items-center gap-2 text-[10px] font-mono text-forge-muted">
+          <input type="checkbox" checked={on} onChange={(e) => put(withLayerValue(sound, i, c.key, e.target.checked ? 1 : 0), true)} />
+          {c.label}
+        </label>
+      );
+    }
+    if (c.kind === 'choice') {
+      return (
+        <label key={c.key} className="flex items-center gap-2 text-[10px] font-mono text-forge-muted">
+          <span className="w-16 uppercase">{c.label}</span>
+          <select className={select} aria-label={c.label} value={Math.round(l[c.key])} onChange={(e) => put(withLayerValue(sound, i, c.key, Number(e.target.value)), true)}>
+            {(c.choices ?? []).map((name, k) => (
+              <option key={name} value={k}>{name}</option>
+            ))}
+          </select>
+        </label>
+      );
+    }
     const [lo, hi] = c.range ?? LAYER_RANGES[c.key];
     const d = defaultLayer(l.voice)[c.key];
     const v = Math.max(lo, Math.min(hi, l[c.key]));
@@ -97,6 +133,38 @@ export const DrumDesignPanel: React.FC<{ track: Track }> = ({ track }) => {
       );
     }
     return <FxSlider key={c.key} label={c.label} value={v} min={lo} max={hi} step={c.step} format={(x) => shown(c, x)} onChange={(x) => setLayer(i, c.key, x)} reset={Math.max(lo, Math.min(hi, d))} accent={ACCENT} disabled={false} />;
+  };
+
+  /** A layered kick's tail note or a layered snare's body note: the song's key root, or a note picked */
+  const notePicker = (i: number) => {
+    const l = sound.layers[i];
+    const range = KEY_PITCH_RANGE[l.voice]!;
+    const notes = notesIn(l.voice === 'layerKick' ? [30, 90] : [100, 250]);
+    const picked = notes.find((m) => Math.abs(hzOf(m) - l.pitch) < 0.05);
+    const st = useTimelineStore.getState();
+    const root = songRoot(st.clips, st.tracks);
+    const label = l.voice === 'layerKick' ? 'Tail note' : 'Body note';
+    return (
+      <label className="flex items-center gap-2 text-[10px] font-mono text-forge-muted" title="Tune the drum to the song: its key's root (in the octave nearest its usual range), or a note you pick">
+        <span className="w-16 uppercase">{label}</span>
+        <select
+          className={`${select} flex-1 min-w-0`}
+          aria-label={label}
+          value={l.keyTrack >= 0.5 ? 'key' : picked !== undefined ? String(picked) : ''}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === 'key') put(withLayerValue(sound, i, 'keyTrack', 1), true);
+            else if (v) put(withLayerValue(withLayerValue(sound, i, 'keyTrack', 0), i, 'pitch', +hzOf(Number(v)).toFixed(2)), true);
+          }}
+        >
+          <option value="key">{root !== null ? `Song key (${NOTE_NAMES[root]}, ${Math.round(keyPitchHz(root, range))} Hz)` : 'Song key (no notes yet)'}</option>
+          {l.keyTrack < 0.5 && picked === undefined && <option value="">{`${Math.round(l.pitch)} Hz`}</option>}
+          {notes.map((m) => (
+            <option key={m} value={m}>{`${nameOfMidi(m)} (${hzOf(m).toFixed(1)} Hz)`}</option>
+          ))}
+        </select>
+      </label>
+    );
   };
 
   const layerBlock = (i: number) => {
@@ -124,6 +192,7 @@ export const DrumDesignPanel: React.FC<{ track: Track }> = ({ track }) => {
             </button>
           )}
         </div>
+        {KEY_PITCH_RANGE[l.voice] && notePicker(i)}
         {VOICE_CONTROLS[l.voice].map((c) => knob(i, c))}
         {sound.layers.length > 1 && knob(i, { key: 'level', label: 'Level', unit: 'dB', step: 0.5 })}
         {i > 0 && knob(i, { key: 'delay', label: 'Delay', unit: 'ms', step: 0.5 })}
@@ -200,8 +269,7 @@ export const DrumDesignPanel: React.FC<{ track: Track }> = ({ track }) => {
           className="self-start text-[10px] font-mono text-forge-muted hover:text-forge-text"
           title="Put this row back to its default sound"
           onClick={() => {
-            const { [row]: _gone, ...rest } = track.drumDesign ?? {};
-            useTimelineStore.getState().setTrackDrumDesign(track.id, Object.keys(rest).length ? rest : undefined, true);
+            useTimelineStore.getState().setTrackDrumDesign(track.id, resetRowSound(track.drumDesign, row), true);
             void audition();
           }}
         >

@@ -328,6 +328,53 @@ export function roll(notes: NoteEvent[], rateBars: number, newId: () => string, 
   });
 }
 
+/** An accelerating roll's rates, slowest first: 8ths, 16ths, 32nds, 64ths (bars between hits). */
+export const ACCEL_RATES = [1 / 8, 1 / 16, 1 / 32, 1 / 64] as const;
+
+/**
+ * An accelerating roll: each note becomes hits that get closer together over its length, 8ths,
+ * then 16ths, 32nds and 64ths (the snare build into a drop), each rate a quarter of the note (the
+ * slow rates left out of a note too short to give each a hit), the edges on the grid. The
+ * velocity follows `shape.velocity` by time (rising from `from` by default) and the pitch moves as
+ * in roll().
+ */
+export function accelRoll(notes: NoteEvent[], newId: () => string, shape: Partial<RollShape> = {}): NoteEvent[] {
+  const s = { ...ROLL_DEFAULT, ...shape };
+  const EPS = 1e-9;
+  return notes.flatMap((n) => {
+    const len = lengthOf(n);
+    let rates: readonly number[] = ACCEL_RATES;
+    while (rates.length > 1 && len / rates.length < rates[0] - EPS) rates = rates.slice(1);
+    // Each rate's span, its end on its own grid (so the next rate starts on a hit of this one)
+    const starts: number[] = [];
+    let at = 0;
+    rates.forEach((rate, k) => {
+      const end = k === rates.length - 1 ? len : Math.max(at + rate, Math.round(((len * (k + 1)) / rates.length - at) / rate) * rate + at);
+      for (let t = at; t < Math.min(end, len) - EPS; t += rate) starts.push(t);
+      at = Math.min(end, len);
+    });
+    const midi = s.pitchBy === 'notes' ? midiOf(n.note) : NaN;
+    return starts.map((t, i) => {
+      // (By time: 0 at the first hit, 1 at the last)
+      const last = starts[starts.length - 1];
+      const x = last > 0 ? t / last : 1;
+      const next = i + 1 < starts.length ? starts[i + 1] : len;
+      const hit: NoteEvent = {
+        ...n,
+        id: i === 0 ? n.id : newId(),
+        startOffset: n.startOffset + t,
+        duration: barsToDuration(Math.max(1 / 768, next - t)),
+        velocity: Math.max(0.05, Math.min(1, n.velocity * rollLevel(s.velocity, s.from, x))),
+      };
+      const semis = s.pitch * x;
+      if (!semis) return hit;
+      if (s.pitchBy === 'bend') return { ...hit, expr: { ...hit.expr, bend: [{ at: 0, value: Math.round(semis * 100) / 100 }] } };
+      const m = Math.round(midi + semis);
+      return Number.isFinite(m) && m >= (s.lo ?? 0) && m <= (s.hi ?? 127) ? { ...hit, note: nameOf(m) } : hit;
+    });
+  });
+}
+
 /** Notes mirrored in time within `bars` (retrograde): the last note first, each keeping its length. */
 export function retrograde(notes: readonly NoteEvent[], bars: number): NoteEvent[] {
   if (!notes.length) return [];

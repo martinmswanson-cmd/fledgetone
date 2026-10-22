@@ -24,6 +24,10 @@ const G = await import('../src/store/drumGroove.ts');
 const R = await import('../src/store/noteRepeat.ts');
 const { serializeProject, parseProject } = await import('../src/store/project.ts');
 const { defaultTrackFx, durationToBars } = await import('../src/store/timelineTypes.ts');
+const M = await import('../src/audio/drumMeasure.ts');
+const F = await import('../src/store/drumFollow.ts');
+const K = await import('../src/store/synthKits.ts');
+const { INSTRUMENTS, INSTRUMENT_KEYS, RETIRED_INSTRUMENTS, currentInstrumentKey } = await import('../src/audio/instrumentCatalog.ts');
 
 const ROW_OF_GROUP = { Kicks: 'kick', Snares: 'snare', Claps: 'clap', Hats: 'closedHat', Cymbals: 'crash', Percussion: 'cowbell' };
 const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, `${a} is not within ${tol} of ${b}`);
@@ -119,6 +123,192 @@ test('a drum design survives saving and opening; a damaged one is repaired', () 
   assert.equal(parseProject(JSON.parse(JSON.stringify(serializeProject({ ...p, tracks: [{ ...track, drumDesign: undefined }] })))).tracks[0].drumDesign, undefined);
 });
 
+// ---------- the layered kick and snare ----------
+
+const SR = 48000;
+const render = (id, row = 'kick', seed = 1) => S.renderDrumSound(D.presetSound(id), row, SR, seed);
+const LAYERED_KICKS = ['punchKick', 'hardcoreKick', 'deepTailKick', 'clubKick'];
+const LAYERED_SNARES = [['bigSnare', 'snare'], ['gatedSnare', 'snare'], ['tightLayerSnare', 'snare'], ['crackClap', 'clap']];
+/** The level of `y` (band-passed) in a 10 ms window at `t` seconds against its loudest, dB */
+const bandAt = (env, t) => env[Math.round(t * 100)] - Math.max(...env);
+
+test('layered kicks: click, a body falling from its punch pitch onto the tail, the low end gone in time, all under the ceiling', () => {
+  for (const id of LAYERED_KICKS) {
+    const x = render(id);
+    const l = D.presetSound(id).layers[0];
+    assert.ok(S.peakOf(x) <= S.DRUM_CEILING + 1e-6, id);
+    const m = M.measureKick(x, SR, l.pitch);
+    // A click 1.5 to 15 dB under the low end in the first 12 ms
+    assert.ok(m.clickDb >= -17 && m.clickDb <= -1.5, `${id} click ${m.clickDb}`);
+    // The pitch envelope: well above the tail at the front, on it by the body's end
+    assert.ok(m.startHz > 1.8 * l.pitch, `${id} starts at ${m.startHz}`);
+    if (id !== 'hardcoreKick') near(m.endHz, l.pitch, 4);
+    // Driven body harmonics stay under +7 dB over the fundamental
+    assert.ok(m.harmonicsDb <= 7, `${id} harmonics ${m.harmonicsDb}`);
+  }
+  // The short ones: 30-150 Hz down 20 dB in 100-180 ms (room for a bass)
+  for (const id of ['punchKick', 'clubKick']) {
+    const m = M.measureKick(render(id), SR, D.presetSound(id).layers[0].pitch);
+    assert.ok(m.lowFall20Ms >= 100 && m.lowFall20Ms <= 180, `${id} low end falls 20 dB in ${m.lowFall20Ms} ms`);
+  }
+});
+
+test('the new default kick leaves the sub to the bass; a hardcore kick holds its driven tail through the beat', () => {
+  const punch = M.measureKick(render('punchKick'), SR, 52);
+  const old = M.measureKick(render('hardTrapKick'), SR, 46);
+  assert.ok(punch.subShare < old.subShare * 0.5, `sub ${punch.subShare} vs ${old.subShare}`);
+  assert.ok(punch.lowFall20Ms < old.lowFall20Ms * 0.4);
+  // Hardcore at 163 BPM (a beat is 368 ms): -2 to -12 dB through it, about -20 dB by 290 ms
+  const hard = render('hardcoreKick');
+  const env = M.frameDb(M.band(hard, SR, 30, 600), SR, 10);
+  for (const t of [0.06, 0.12, 0.2]) {
+    const db = bandAt(env, t);
+    assert.ok(db <= -0.5 && db >= -13, `hardcore at ${t}s: ${db} dB`);
+  }
+  const at290 = bandAt(env, 0.29);
+  assert.ok(at290 <= -14 && at290 >= -27, `hardcore at 290 ms: ${at290} dB`);
+  // ...and more of its harmonics than the punch kick's: it's distorted
+  assert.ok(M.measureKick(hard, SR, 55).harmonicsDb > punch.harmonicsDb + 15);
+  // Its drive is the body's only: the sub alone renders clean (no harmonics)
+  const subOnly = D.withLayerValue(D.withLayerValue(D.presetSound('punchKick'), 0, 'body', 0), 0, 'click', 0);
+  assert.ok(M.measureKick(S.renderDrumSound(subOnly, 'kick', SR, 1), SR, 52).harmonicsDb < -35);
+});
+
+test('layered snares: a fast transient, a tuned body, wires at 3.5-6 kHz, a room that rings; under the ceiling', () => {
+  for (const [id, row] of LAYERED_SNARES) {
+    const sound = D.presetSound(id);
+    const l = sound.layers[0];
+    const x = S.renderDrumSound(sound, row, SR, 1);
+    assert.ok(S.peakOf(x) <= S.DRUM_CEILING + 1e-6, id);
+    // The transient alone falls 12 dB in 7-25 ms
+    const alone = S.renderDrumSound({ ...sound, layers: [{ ...l, body: 0, noise: 0, clap: 0, room: 0 }] }, row, SR, 1);
+    const t12 = M.measureSnare(alone, SR).transientFall12Ms;
+    assert.ok(t12 >= 7 && t12 <= 25, `${id} transient ${t12} ms`);
+    // The wires alone: their centroid at 3.5-6 kHz
+    const wires = S.renderDrumSound({ ...sound, layers: [{ ...l, body: 0, click: 0, clap: 0, room: 0 }] }, row, SR, 1);
+    const c = M.measureSnare(wires, SR).noiseCentroidHz;
+    assert.ok(c >= 3500 && c <= 6000, `${id} wires centroid ${c}`);
+  }
+  // The body is tuned (120-170 Hz for the big one)
+  const big = M.measureSnare(render('bigSnare', 'snare'), SR);
+  assert.ok(big.bodyHz >= 120 && big.bodyHz <= 175, `body ${big.bodyHz}`);
+  // The room keeps 1-10 kHz from falling 20 dB for 300-700 ms
+  assert.ok(big.roomFall20Ms >= 300 && big.roomFall20Ms <= 700, `room ${big.roomFall20Ms}`);
+  // By default (a new kit) the snare hits 0 to +2 dB over the kick, as heard
+  const kit = D.newKitDesign();
+  const dk = M.kPeakDb(S.renderDrumSound(kit.snare, 'snare', SR, 1), SR) - M.kPeakDb(S.renderDrumSound(kit.kick, 'kick', SR, 1), SR);
+  assert.ok(dk >= 0 && dk <= 2, `snare over kick ${dk} dB`);
+});
+
+test('a gated room holds for an 8th at the song tempo, then stops', () => {
+  for (const bpm of [100, 163]) {
+    const hold = F.gateHoldFor(bpm);
+    near(hold, 30 / bpm, 1e-4);
+    const sound = D.presetSound('gatedSnare');
+    // (The room alone: the wires have their own decay)
+    const gated = { ...sound, layers: [{ ...sound.layers[0], gateHold: hold, body: 0, click: 0, noise: 0, clap: 0 }] };
+    const x = S.renderDrumSound(gated, 'snare', SR, 2);
+    const env = M.frameDb(M.band(x, SR, 1000, 10000), SR, 5);
+    const top = Math.max(...env);
+    const at = (t) => env[Math.round(t * 200)] - top;
+    // Still ringing just before the gate shuts, gone just after it
+    assert.ok(at(hold - 0.01) > -20, `${bpm}: before the gate ${at(hold - 0.01)}`);
+    assert.ok(x.length / SR < hold + 0.04 || at(hold + 0.02) < -40, `${bpm}: after the gate ${at(hold + 0.02)}`);
+  }
+});
+
+test('tune to key: a following pitch sits on the key root nearest its range, and the store keeps it there', () => {
+  // A: 55 Hz for a kick's tail; F#: 46.25; F has none in 45-66 Hz, so the nearer octave (43.65)
+  near(F.keyPitchHz(9, [45, 66]), 55, 0.01);
+  near(F.keyPitchHz(6, [45, 66]), 46.25, 0.01);
+  near(F.keyPitchHz(5, [45, 66]), 43.65, 0.01);
+  near(F.keyPitchHz(0, [120, 170]), 130.81, 0.01);
+  const design = D.newKitDesign();
+  assert.equal(design.kick.layers[0].keyTrack, 1);
+  const inA = F.followDesign(design, 9, 140);
+  near(inA.kick.layers[0].pitch, 55, 0.01);
+  assert.equal(inA.kick.preset, 'punchKick');
+  // Nothing to change: the same object; no key: the pitch stays
+  assert.equal(F.followDesign(inA, 9, 140), inA);
+  assert.equal(F.followDesign(design, null, 140).kick.layers[0].pitch, design.kick.layers[0].pitch);
+  // A manual note doesn't follow
+  const manual = { ...design, kick: D.withLayerValue(D.withLayerValue(design.kick, 0, 'keyTrack', 0), 0, 'pitch', 49) };
+  assert.equal(F.followDesign(manual, 9, 140).kick.layers[0].pitch, 49);
+  // From the song: an A minor bass line puts the kick on A
+  const tracks = [
+    { id: 'k', name: 'Kit', instrumentKey: 'designedKit', drumDesign: design },
+    { id: 'b', name: 'Bass', instrumentKey: 'subBass' },
+  ];
+  const notes = ['A1', 'C2', 'E2', 'A1', 'G1', 'A1', 'E2', 'A1'].map((note, i) => ({ id: `n${i}`, note, startOffset: i / 8, duration: '8n', velocity: 0.8 }));
+  const clips = [{ id: 'c', trackId: 'b', name: 'Bass', startBar: 1, lengthBars: 1, notes, isSelected: false }];
+  const followed = F.followTracks(tracks, clips, 150);
+  near(followed[0].drumDesign.kick.layers[0].pitch, 55, 0.01);
+  assert.equal(F.followTracks(followed, clips, 150), null);
+  // And the hit plays it: late in the tail it rings at 55 Hz
+  const x = S.renderDrumSound(followed[0].drumDesign.kick, 'kick', SR, 1);
+  near(M.measureKick(x, SR, 55).endHz, 55, 3);
+});
+
+test('layered drums render the same every time; the seed picks their noise', () => {
+  for (const [id, row] of [['punchKick', 'kick'], ['hardcoreKick', 'kick'], ['bigSnare', 'snare'], ['gatedSnare', 'snare']]) {
+    assert.deepEqual(render(id, row, 5), render(id, row, 5), id);
+    assert.notDeepEqual(render(id, row, 5), render(id, row, 6), id);
+  }
+});
+
+// ---------- the synthesized kits and the retired ones ----------
+
+test('the synthesized kits play every row, each at its row loudness, under the ceiling', () => {
+  for (const key of K.SYNTH_KITS) {
+    assert.equal(INSTRUMENTS[key].kind, 'drums', key);
+    assert.equal(INSTRUMENTS[key].samples, undefined, `${key} has no recordings`);
+    for (const row of D.DESIGN_ROW_IDS) {
+      const sound = K.SYNTH_KIT_DESIGNS[key][row];
+      assert.ok(sound, `${key} ${row}`);
+      const x = S.renderDrumSound(sound, row, 44100, 3);
+      assert.ok(x.every(Number.isFinite) && S.peakOf(x) <= S.DRUM_CEILING + 1e-6, `${key} ${row}`);
+      const loud = 20 * Math.log10(S.loudestRms(x, 44100));
+      assert.ok(loud <= S.ROW_LOUDNESS[row] + sound.level + 0.01 && loud > S.ROW_LOUDNESS[row] + sound.level - 9, `${key} ${row}: ${loud}`);
+    }
+  }
+  // A copy to start a Designed Kit from
+  const copy = K.synthKitDesign('technoKit');
+  copy.kick.level = -5;
+  assert.notEqual(K.SYNTH_KIT_DESIGNS.technoKit.kick.level, -5);
+});
+
+test('the kits with no licence are gone; projects on them open on their replacements, on the same rows', () => {
+  for (const key of ['linnDrum', 'cr78', 'acousticKit', 'bongos']) {
+    assert.equal(INSTRUMENTS[key], undefined, key);
+    assert.ok(!INSTRUMENT_KEYS.includes(key), key);
+    assert.ok(INSTRUMENTS[RETIRED_INSTRUMENTS[key]], key);
+  }
+  for (const def of Object.values(INSTRUMENTS)) {
+    const urls = [def.samples?.baseUrl, def.samples?.fallbackUrl].filter(Boolean);
+    for (const u of urls) assert.ok(!u.includes('drum-samples'), `${def.key} loads ${u}`);
+  }
+  assert.equal(currentInstrumentKey('linnDrum'), 'retroDrumMachine');
+  assert.equal(currentInstrumentKey('piano'), 'piano');
+  const t = (id, instrumentKey) => ({ id, name: id, color: '#fff', instrumentKey, isMuted: false, isSoloed: false, isArmed: false, volume: -2, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0, delaySend: 0 });
+  const old = {
+    name: 'Old kits', bpm: 120, swing: 0, loopRegion: { inBar: 1, outBar: 5, enabled: false },
+    tracks: [t('a', 'linnDrum'), t('b', 'cr78'), t('c', 'acousticKit'), t('d', 'bongos'), t('e', 'technoKit'), t('f', 'breakbeatKit')],
+    clips: [{ id: 'c1', trackId: 'a', name: 'Beat', startBar: 1, lengthBars: 1, isSelected: false, notes: [{ id: 'n', note: 'C1', startOffset: 0, duration: '16n', velocity: 0.9 }, { id: 'm', note: 'D1', startOffset: 0.25, duration: '16n', velocity: 0.9 }] }],
+    stingers: [{ id: 's', name: 'Hit', kind: 'victory', instrumentKey: 'cr78', variation: 0, notes: [], lengthBars: 1 }],
+    costumes: [{ id: 'x', name: 'Retro', tempo: 1, tracks: { e: { instrument: 'linnDrum' } } }],
+  };
+  // (A file as this version writes it, with the old kits' names in it)
+  const file = JSON.parse(JSON.stringify(serializeProject({ name: 'x', bpm: 120, swing: 0, loopRegion: old.loopRegion, tracks: old.tracks.map((x) => ({ ...x, instrumentKey: 'drums' })), clips: old.clips })));
+  file.tracks.forEach((x, i) => (x.instrumentKey = old.tracks[i].instrumentKey));
+  const back = parseProject({ ...file, stingers: old.stingers, costumes: old.costumes });
+  assert.deepEqual(back.tracks.map((x) => x.instrumentKey), ['retroDrumMachine', 'rhythmBox', 'studioKit', 'latinPercussion', 'technoKit', 'breakbeatKit']);
+  // The notes stay on their rows (C1 kick, D1 snare), the faders where they were
+  assert.deepEqual(back.clips[0].notes.map((n) => n.note), ['C1', 'D1']);
+  assert.equal(back.tracks[0].volume, -2);
+  assert.equal(back.stingers[0].instrumentKey, 'rhythmBox');
+  assert.equal(back.costumes[0].tracks.e.instrument, 'retroDrumMachine');
+});
+
 // ---------- the hat roll painter ----------
 
 const N = (id, note, start, duration = '4n', velocity = 0.8) => ({ id, note, startOffset: start, duration, velocity });
@@ -166,6 +356,25 @@ test('roll pitch: drum hits rise by their own bend, notes by semitones', () => {
   assert.deepEqual(drums.slice(1).map((n) => n.expr.bend[0].value), [2, 4, 6]);
   const notes = T.roll([N('n', 'C4', 0, '4n')], 1 / 16, ids(), { pitch: 7, pitchBy: 'notes', lo: 0, hi: 127 });
   assert.deepEqual(notes.map((n) => n.note), ['C4', 'D4', 'F4', 'G4']);
+});
+
+test('an accelerating roll goes 8ths, 16ths, 32nds, 64ths over the note, on the grid, louder as it goes', () => {
+  const out = T.accelRoll([N('s', 'D1', 1, '1m', 1)], ids());
+  const gaps = out.slice(1).map((n, i) => Math.round(ticks(n.startOffset - out[i].startOffset)));
+  // A bar: a quarter at each rate (96, 48, 24, 12 ticks apart)
+  assert.deepEqual([...new Set(gaps)], [96, 48, 24, 12]);
+  assert.equal(out.length, 2 + 4 + 8 + 16);
+  out.forEach((n) => near(ticks(n.startOffset), Math.round(ticks(n.startOffset)), 1e-6));
+  near(out[0].startOffset, 1, 1e-9);
+  near(out.at(-1).startOffset + durationToBars(out.at(-1).duration), 2, 1e-9);
+  for (let i = 1; i < out.length; i++) assert.ok(out[i].velocity > out[i - 1].velocity);
+  near(out[0].velocity, 0.35, 1e-9);
+  near(out.at(-1).velocity, 1, 1e-9);
+  assert.equal(out[0].id, 's');
+  assert.equal(new Set(out.map((n) => n.id)).size, out.length);
+  // A beat is too short for 8ths: 16ths, 32nds, 64ths
+  const beat = T.accelRoll([N('s', 'D1', 0, '4n', 1)], ids());
+  assert.deepEqual([...new Set(beat.slice(1).map((n, i) => Math.round(ticks(n.startOffset - beat[i].startOffset))))], [48, 24, 12]);
 });
 
 test('a stutter is so many hits across each note, whatever its length', () => {

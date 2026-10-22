@@ -19,8 +19,8 @@ const { transitionCue, parseTransitions, ruleFor, bridgeNotes, bridgeTarget } = 
 const { midiOf } = await import('../src/store/noteTools.ts');
 
 test('a fill plays on the song\'s own kit over the beat before the switch', () => {
-  const cue = transitionCue('fill', [{ instrumentKey: 'piano' }, { instrumentKey: 'acousticKit' }]);
-  assert.equal(cue.instrumentKey, 'acousticKit');
+  const cue = transitionCue('fill', [{ instrumentKey: 'piano' }, { instrumentKey: 'studioKit' }]);
+  assert.equal(cue.instrumentKey, 'studioKit');
   assert.equal(cue.leadIn, 0.25);
   assert.deepEqual(cue.notes.map((n) => n.startOffset), [-0.25, -0.1875, -0.125, -0.0625]);
   assert.equal(transitionCue('fill', [{ instrumentKey: 'piano' }]).instrumentKey, 'drums');

@@ -77,7 +77,7 @@ test('detuned moves a note by cents as a frequency', () => {
 const { playerFeel } = await import('../src/audio/instrumentCatalog.ts');
 
 test('new tracks on recorded instruments start with a player\u2019s feel; synths and drum machines play exactly', () => {
-  for (const key of ['realViolins', 'realFlute', 'studioKit', 'acousticKit', 'realElectricBass']) assert.ok(playerFeel(key), key);
+  for (const key of ['realViolins', 'realFlute', 'studioKit', 'sessionKit', 'realElectricBass']) assert.ok(playerFeel(key), key);
   assert.ok(playerFeel('studioKit').timing < playerFeel('realViolins').timing, 'a drummer is tighter in time than a section');
-  for (const key of ['drums', 'drumMachine', 'chipDrums', 'linnDrum', 'cr78', 'technoKit', 'supersaw', 'synthDesigner', 'audio']) assert.equal(playerFeel(key), undefined, key);
+  for (const key of ['drums', 'drumMachine', 'chipDrums', 'retroDrumMachine', 'rhythmBox', 'technoKit', 'breakbeatKit', 'supersaw', 'synthDesigner', 'audio']) assert.equal(playerFeel(key), undefined, key);
 });

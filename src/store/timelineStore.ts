@@ -98,6 +98,9 @@ import { withSound, type MySound } from './mySounds';
 import type { DragPayload } from './dragSounds';
 import type { SynthPatch } from './synthPatch';
 import type { DrumDesign } from './drumDesign';
+import { followTracks } from './drumFollow';
+import { newKitDesign } from './drumDesign';
+import { isSynthKit, synthKitDesign } from './synthKits';
 import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
@@ -950,6 +953,8 @@ function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: strin
     reverbSend: seatOf(instrumentKey) ? SEATED_SEND : start.reverbSend,
     delaySend: 0,
     expressive: true,
+    // A new Designed Kit starts on the modern kick and snare (NEW_KIT_PRESETS)
+    ...(instrumentKey === 'designedKit' ? { drumDesign: newKitDesign() } : {}),
   };
 }
 /** A new orchestral track's reverb send (its distance adds to it: see distance.ts) */
@@ -2142,6 +2147,8 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           color: meta.color,
           // A Plugin track's plugin goes with its instrument (its effects stay)
           plugin: undefined,
+          // A Designed Kit starts from the synthesized kit it was (Edit in Drum Designer), else from its own design or a new one
+          ...(instrumentKey === 'designedKit' && (isSynthKit(current.instrumentKey) || !current.drumDesign) ? { drumDesign: isSynthKit(current.instrumentKey) ? synthKitDesign(current.instrumentKey) : newKitDesign() } : {}),
         }),
         true
       );
@@ -3426,6 +3433,12 @@ useTimelineStore.subscribe((state, prev) => {
   if (state.meter !== prev.meter || state.meterPoints !== prev.meterPoints) setSongMeter(songMeterOf(state));
   // Every seek, stop and move reaches the live playhead (playing, the frame loop moves it too)
   if (state.playheadPosition !== prev.playheadPosition) setLivePlayhead(state.playheadPosition);
+  // Drum Designer sounds that follow the song's key or tempo (drumFollow.ts) are kept on it: a
+  // derived change, not an edit of its own (undo takes the notes back, and this follows again)
+  if (state.clips !== prev.clips || state.tracks !== prev.tracks || state.bpm !== prev.bpm) {
+    const followed = followTracks(state.tracks, state.clips, state.bpm);
+    if (followed) useTimelineStore.setState({ tracks: followed });
+  }
 });
 
 export function currentProject(): ProjectSnapshot {

@@ -71,10 +71,11 @@ export const SheetItem: React.FC<{ title: string; detail?: string; onClick: () =
 };
 
 /** How often a note plays (see noteChance.ts): Always, 75%, 50%, 25%, 1st of 2... */
-export const ChanceSheet: React.FC<{ title: string; note: Pick<NoteEvent, 'chance' | 'cond'>; onPick: (id: string) => void; onClose: () => void }> = ({ title, note, onPick, onClose }) => {
+export const ChanceSheet: React.FC<{ title: string; note: Pick<NoteEvent, 'chance' | 'cond'>; onPick: (id: string) => void; onClose: () => void; children?: React.ReactNode }> = ({ title, note, onPick, onClose, children }) => {
   const now = chanceIdOf(note);
   return (
     <Sheet title={title} onClose={onClose}>
+      {children}
       <p className="text-xs text-forge-muted px-2 mb-2">A note that doesn't play every time keeps a repeated part from going stale. "1st of 2" plays the first time round, not the second, and so on; a percentage is how likely it is to play each time.</p>
       {NOTE_CHANCES.map((c) => (
         <SheetItem

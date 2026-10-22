@@ -30,6 +30,7 @@ import { SlicerPanel } from './SlicerPanel';
 import { MultiPanel, RackPanel } from './SampleKitPanels';
 import { PeqPanel } from './PeqEditor';
 import { MbcPanel } from './MbcPanel';
+import { isSynthKit } from '../../store/synthKits';
 import { DrumDesignPanel } from './DrumDesignPanel';
 import { BusFxPanels, BusPresetPanel } from './BusFxPanels';
 import { SynthPanel } from './SynthPanel';
@@ -373,6 +374,16 @@ export const TrackInspector: React.FC = () => {
             <SubLayerPanel track={currentTrack} />
             {INSTRUMENTS[currentTrack.instrumentKey].category === 'Bass' && <KickClashPanel track={currentTrack} />}
             {currentTrack.instrumentKey === 'designedKit' && <DrumDesignPanel track={currentTrack} />}
+            {isSynthKit(currentTrack.instrumentKey) && (
+              <button
+                type="button"
+                className="self-start h-7 px-2 rounded border border-forge-border text-[10px] font-mono text-forge-muted hover:text-forge-text"
+                title="Turn this track into a Designed Kit that starts from this kit's sounds, to change them in the Drum Designer"
+                onClick={() => useTimelineStore.getState().setTrackInstrument(currentTrack.id, 'designedKit')}
+              >
+                EDIT IN DRUM DESIGNER
+              </button>
+            )}
             {isAudioKind(currentTrack.instrumentKey) && <AudioTrackPanel track={currentTrack} />}
 
             {/* Human works on the notes before the instrument plays them */}
