@@ -1,7 +1,7 @@
 import { initializeWamHost } from '@webaudiomodules/sdk';
 import type { WamPlugin } from '../store/timelineTypes';
 import { createBuiltinInstance, isBuiltinUrl, type BuiltinControls } from './plugins/builtinHost';
-import { createStartStates } from './pluginStartState';
+import { createStartStates, whenSavedWins } from './pluginStartState';
 
 /**
  * Hosting Web Audio Modules (WAM 2.0): third-party instruments and effects, each an ES module at
@@ -237,7 +237,7 @@ export function retireLiveWam(pluginId: string, inst: WamInstance): void {
       const json = JSON.stringify(state);
       if (json.length > 2_000_000 || !newestRead(pluginId, n) || states.get(pluginId) === json) return;
       states.set(pluginId, json);
-  starts.seen(pluginId, json);
+      starts.seen(pluginId, json);
       const changed = new Map<string, unknown>([[pluginId, JSON.parse(json)]]);
       stateListeners.forEach((l) => l(changed));
     }),
@@ -269,7 +269,10 @@ export function startingState(plugin: WamPlugin): unknown {
   const from = starts.choose(plugin.id, saved, s);
   if (saved !== undefined) starts.seen(plugin.id, saved);
   if (from === 'saved') {
-    states.delete(plugin.id);
+    // (A plugin still live gets the track's settings too, so it doesn't write its old ones back: see whenSavedWins)
+    const inst = live.get(plugin.id);
+    if (whenSavedWins(!!inst && !stale.has(inst)) === 'push' && plugin.state !== undefined) restoreWamState(plugin.id, plugin.state);
+    else states.delete(plugin.id);
     return plugin.state;
   }
   return JSON.parse(s!);
@@ -376,7 +379,7 @@ export function captureWamStatesNow(): void {
     const json = JSON.stringify(state);
     if (json.length > 2_000_000 || !newestRead(id, ++reads) || states.get(id) === json) continue;
     states.set(id, json);
-  starts.seen(id, json);
+    starts.seen(id, json);
     changed.set(id, JSON.parse(json));
   }
   if (changed.size) stateListeners.forEach((l) => l(changed));

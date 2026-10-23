@@ -49,7 +49,7 @@ Hat   xxxx|xxxx|xxxx|xxxx
 
 The pads play the kit too. Tap **Rec drums** under the grid, and pads you tap while the section plays are written in on the nearest 16th. Tap a wrong step again to take it out.
 
-> Not sure what to tap? **Drummer** writes the whole section's beat in one of 21 styles (try *Four on the floor*), and picking it again gives another take. It's a set of rules, not a recording: change any step after. **Undo** brings your own beat back.
+> Not sure what to tap? **Drummer** writes the whole section's beat in one of 22 styles (try *Four on the floor*), and picking it again gives another take. It's a set of rules, not a recording: change any step after. **Undo** brings your own beat back.
 
 Then tap **Fill** and choose **Snare roll (last beat)**: the end of the section now rolls into what comes next.
 

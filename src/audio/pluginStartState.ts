@@ -55,3 +55,12 @@ export function createStartStates(): StartStates {
     clear: () => known.clear(),
   };
 }
+
+/**
+ * When the track's settings win (choose gave 'saved'), what becomes of the plugin's live settings:
+ * with an instance of it still playing live, the track's are put on it ('push'), else an offline
+ * render (an export, a freeze, a loudness match, stems) would play the track's settings while the
+ * live instance kept the old ones, and the next live read (every 3 s) would write those back over
+ * the track; with none live, the stale read is simply forgotten ('forget').
+ */
+export const whenSavedWins = (liveUp: boolean): 'push' | 'forget' => (liveUp ? 'push' : 'forget');

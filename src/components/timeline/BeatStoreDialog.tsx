@@ -15,7 +15,8 @@ import { encodeAudio } from '../../audio/encoders';
 import { createZip, type ZipEntry } from '../../audio/zip';
 import { formatDbtp, formatLufs, measureLoudness } from '../../audio/loudness';
 import { LOUDNESS_TARGETS, reachTarget, targetById } from '../../audio/loudnessTarget';
-import { LIMITER_CEILING_DBTP, LOSSY_CEILING_DBTP, limitChannels } from '../../audio/effects/limiter';
+import { exportCeilingDbtp, limitChannels } from '../../audio/effects/limiter';
+import { loudCrunch } from '../../audio/effects/loudMaster';
 import { beatFileBase, coverExtension, layTag, tagTimes } from '../../audio/beatPack';
 import { producerTagChannels, producerTagSound, setProducerTag } from '../../audio/producerTag';
 import { AUDIO_FILE_ACCEPT } from '../../audio/soundLibrary';
@@ -99,6 +100,10 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
     const controller = new AbortController();
     abort.current = controller;
     const step = (what: string, progress: number) => setStatus({ kind: 'busy', what, progress });
+    // The tagged preview is an MP3: its ceiling is lower (lower still with Crunch). With no WAV in the
+    // pack the beat renders straight at it; with one, at the WAV's -1 and the preview is held under its own after
+    const mp3Ceiling = exportCeilingDbtp('mp3', loudCrunch(s.master));
+    const ceiling = opts.wav ? exportCeilingDbtp('wav') : mp3Ceiling;
     try {
       const render: RenderOptions = {
         tracks: s.tracks,
@@ -114,7 +119,7 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
         sampleRate: 44100,
         markers: s.markers,
         intensity: { value: s.intensity, curves: s.intensityCurves },
-        peakCeilingDbtp: LIMITER_CEILING_DBTP,
+        peakCeilingDbtp: ceiling,
         keepRingOut: !!opts.target,
         signal: controller.signal,
       };
@@ -127,7 +132,7 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
         reading = await measureLoudness(channelsOf(audio), audio.sampleRate, controller.signal);
         if (opts.target) {
           step('Matching the loudness', (1 - stemsShare) * 0.85);
-          reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(opts.target), controller.signal, LIMITER_CEILING_DBTP)).reading;
+          reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(opts.target), controller.signal, ceiling)).reading;
           audio = cutRingOut(audio, render);
         }
         if (opts.wav) files.push({ name: `${base}.wav`, data: encodeWav(audio, 24, exportCues(render)) });
@@ -137,7 +142,7 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
           const tagSound = await producerTagChannels(audio.sampleRate);
           if (tagSound) layTag(preview, audio.sampleRate, tagSound, tagTimes(audio.duration, tagSound[0].length / audio.sampleRate, { atStart: opts.tagAtStart, every: opts.tagEvery }), opts.tagDb);
           // MP3 encoding pushes peaks up a little: held under the lower lossy ceiling (the tag's peaks too)
-          limitChannels(preview[0], preview[1] ?? preview[0], audio.sampleRate, LOSSY_CEILING_DBTP);
+          limitChannels(preview[0], preview[1] ?? preview[0], audio.sampleRate, mp3Ceiling);
           files.push({ name: `${base} (tagged preview).mp3`, data: await encodeAudio(preview, audio.sampleRate, 'mp3', { bitDepth: 16 }) });
         }
       }

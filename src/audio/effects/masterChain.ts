@@ -20,7 +20,7 @@ import { OTT_PROCESSOR, OTT_WORKLET_SOURCE } from './ott';
 import { MONO_BASS_HZ, MONO_BASS_Q } from './masterAfter';
 import { effectiveClipper, effectiveWidth, livePushDb, LOUD_SHELF_HZ, pushDb, subTiltDb } from './loudMaster';
 import { monitorStatus, onMonitorReading } from '../monitor';
-import { CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE, clipperParams, type ClipperReading, type ClipperSettings } from './clipper';
+import { CLIPPER_PROCESSOR, CLIPPER_WORKLET_SOURCE, clipperParams, LIVE_CLIPPER_LATENCY, type ClipperReading, type ClipperSettings } from './clipper';
 import { paramSetter as smoothParamSetter } from './smoothParam';
 import { DROP_PROCESSOR, DROP_WORKLET_SOURCE } from './dropFx';
 import { setLiveDropPort } from '../dropLive';
@@ -32,6 +32,8 @@ export interface MasterInserts {
   setDrop: (on: boolean) => void;
   /** Resolves once the inserts the settings ask for are in the chain (the OTT loads its worklet first). */
   ready: () => Promise<void>;
+  /** Samples the clipper in the live chain delays the sound by (0: none in it). */
+  clipperLatency: () => number;
   dispose: () => void;
 }
 
@@ -239,7 +241,8 @@ async function createClipper(context: Tone.BaseContext, settings: ClipperSetting
     channelCountMode: 'explicit',
     channelInterpretation: 'speakers',
     parameterData: p,
-    processorOptions: { band: settings.band === true },
+    // Either kind plays at the band kind's delay, so a swap crossfades sounds that line up (padClipperKernel)
+    processorOptions: { band: settings.band === true, padTo: LIVE_CLIPPER_LATENCY },
   });
   node.port.onmessage = (e: MessageEvent<ClipperReading>) => clipperListeners.forEach((l) => l(e.data));
   const raw = context.rawContext as unknown as BaseAudioContext;
@@ -567,6 +570,7 @@ export function createMasterInserts(compressor: Tone.ToneAudioNode, level: GainN
     apply,
     setDrop,
     ready: () => Promise.all([loading, clipLoading, dropLoading]).then(() => undefined),
+    clipperLatency: () => (clipper ? LIVE_CLIPPER_LATENCY : 0),
     dispose: () => {
       disposed = true;
       stopHearing();

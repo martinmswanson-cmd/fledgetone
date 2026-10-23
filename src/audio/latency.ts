@@ -31,23 +31,26 @@ export function setMixDelay(seconds: number): void {
 }
 
 /** The master section's delay at a sample rate, once worked out (see masterSeconds). */
-let master: { rate: number; lookahead: boolean; seconds: number } | null = null;
+let master: { rate: number; lookahead: boolean; clipper: number; seconds: number } | null = null;
 
 /**
- * How long the master section holds the sound back (seconds): its compressor's look-ahead and the
- * limiter's (the look-ahead one's, or the stand-in compressor's until that has loaded), as an
- * export allows for them (masterChainLatency in exportWav.ts). 0 until the compressor's is measured.
+ * How long the master section holds the sound back (seconds): its compressor's look-ahead, the
+ * clipper's delay while one is in (live only: an export clips the finished render lined up, see
+ * clipChannels) and the limiter's (the look-ahead one's, or the stand-in compressor's until that
+ * has loaded), as an export allows for them (masterChainLatency in exportWav.ts). 0 until the
+ * compressor's is measured.
  */
 function masterSeconds(): number {
   const rate = liveContext().sampleRate;
   const lookahead = liveMix.lookahead();
-  if (master?.rate === rate && master.lookahead === lookahead) return master.seconds;
+  const clipper = liveMix.inserts.clipperLatency();
+  if (master?.rate === rate && master.lookahead === lookahead && master.clipper === clipper) return master.seconds;
   const compressor = compressorLatencyNow(rate);
   if (compressor === undefined) {
     void measureCompressorLatency(rate);
     return 0;
   }
-  master = { rate, lookahead, seconds: (compressor + (lookahead ? createLimiterKernel(rate).latency : compressor)) / rate };
+  master = { rate, lookahead, clipper, seconds: (compressor + clipper + (lookahead ? createLimiterKernel(rate).latency : compressor)) / rate };
   return master.seconds;
 }
 

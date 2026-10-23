@@ -622,6 +622,41 @@ export function createClipperKernel(_sampleRate: number, band = false, whole = f
 }
 
 /**
+ * `kernel` held back a little more, so it delays the sound by `padTo` samples in all (no less than
+ * its own latency): the live clipper plays every kind at the band kind's delay (LIVE_CLIPPER_LATENCY),
+ * so swapping the plain kind for the band kind (Crunch switched on or off while the song plays)
+ * crossfades two sounds lined up sample for sample, and the live mix's delay doesn't move. Plain
+ * JavaScript, embedded in the worklet like the kernel.
+ */
+export function padClipperKernel(kernel: ClipperKernel, padTo: number): ClipperKernel {
+  const extra = Math.max(0, Math.round(padTo) - kernel.latency);
+  if (!extra) return kernel;
+  // A ring of `extra` samples per channel: each output sample is the kernel's from `extra` samples back
+  const ringL = new Float32Array(extra);
+  const ringR = new Float32Array(extra);
+  let at = 0;
+  return {
+    process: (inL, inR, outL, outR, frames, drive, ceiling, softness) => {
+      kernel.process(inL, inR, outL, outR, frames, drive, ceiling, softness);
+      for (let i = 0; i < frames; i++) {
+        const l = outL[i];
+        const r = outR[i];
+        outL[i] = ringL[at];
+        if (outR !== outL) outR[i] = ringR[at];
+        ringL[at] = l;
+        ringR[at] = r;
+        at = at + 1 === extra ? 0 : at + 1;
+      }
+    },
+    latency: kernel.latency + extra,
+    read: kernel.read,
+  };
+}
+
+/** The live clipper's delay in samples, whichever kind: the band kind's (see padClipperKernel). */
+export const LIVE_CLIPPER_LATENCY = createClipperKernel(0, true).latency;
+
+/**
  * The clipper over whole channels in place, lined up with the input (its delay taken back off:
  * the last `latency` samples come from running it on over silence). What an export's master
  * section does (masterAfter.ts); returns what it did.
@@ -672,10 +707,11 @@ const READINGS_PER_SECOND = 15;
 
 /**
  * The AudioWorklet module: the kernel above with k-rate `drive`, `ceiling` (linear) and
- * `softness` params, the band kind with processorOptions `{ band: true }`. It posts a ClipperReading a few times a second; a 'dispose' message stops it.
+ * `softness` params, the band kind with processorOptions `{ band: true }`, delayed to `padTo` samples in all. It posts a ClipperReading a few times a second; a 'dispose' message stops it.
  */
 export const CLIPPER_WORKLET_SOURCE = `
 const createClipperKernel = ${createClipperKernel.toString()};
+const padClipperKernel = ${padClipperKernel.toString()};
 class ClipperProcessor extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return [
@@ -686,8 +722,9 @@ class ClipperProcessor extends AudioWorkletProcessor {
   }
   constructor(options) {
     super();
-    // (processorOptions.band: the band kind, see ClipperSettings.band)
-    this.kernel = createClipperKernel(sampleRate, !!(options && options.processorOptions && options.processorOptions.band));
+    // (processorOptions.band: the band kind, see ClipperSettings.band; padTo: the delay in samples it plays at, see padClipperKernel)
+    const o = (options && options.processorOptions) || {};
+    this.kernel = padClipperKernel(createClipperKernel(sampleRate, !!o.band), o.padTo || 0);
     this.alive = true;
     this.silence = new Float32Array(128);
     this.frames = 0;

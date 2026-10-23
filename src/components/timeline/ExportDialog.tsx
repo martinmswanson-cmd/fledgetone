@@ -404,7 +404,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     const keepPush = (fullMix: boolean) => {
       const live = useTimelineStore.getState().master.loud;
       const push = live
-        ? pushToKeep({ wholeSong: range === 'song', fullMix: fullMix && !useTimelineStore.getState().tracks.some((t) => t.isSoloed), exportTargetLufs: targetById(settings.target).lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found: loudFound, currentPush: live.push ?? 0 })
+        ? pushToKeep({ wholeSong: range === 'song', fullMix: fullMix && !useTimelineStore.getState().tracks.some((t) => t.isSoloed), exportTargetLufs: targetById(settings.target).lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found: loudFound, currentPush: live.push ?? 0, ceilingDbtp })
         : null;
       if (push !== null) useTimelineStore.getState().setMasterLoud({ push });
     };
