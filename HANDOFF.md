@@ -200,7 +200,14 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
-- **Sound recipes** (unreleased): `docs/SOUND-RECIPES.md` records how the signed-off demo sounds were
+- **Crunch, new presets and steadier drops** (2026.10.23): Crunch on the Loud master (a full-band
+  oversampled clipper, `clipper.ts` band kind, 88-sample live latency padded on both kinds and counted
+  in `masterSeconds`); 13 Fledge presets appended (program numbers of older ones unchanged); Drum
+  Designer presets for crunchy, house and future-bass kits; the Syncopated drop drummer style; Duck to
+  kick gentler on busy drums (`duckToKick.ts`); `pluginStartState.ts` so outside changes to a plugin's
+  settings win over a stale live read. The Loud push is kept for live playback only from whole-song,
+  full-mix WAV exports at the Loud master's own target.
+- **Sound recipes** (2026.10.23): `docs/SOUND-RECIPES.md` records how the signed-off demo sounds were
   made (lessons, settings, the exact render command) with their scripts in `scripts/demos/`; the
   colour-bass drop re-renders bit-identical. Re-render a recipe after engine, preset or master
   changes to check the app can still make that sound.
