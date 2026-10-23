@@ -204,6 +204,39 @@ chopping the tune, Drop pad stutters, crush and gate) 1:17; bridge (the answer a
 ramp 150 to 175 onto F#7sus4 1:49; the final drop a whole step up in B, the third pass an octave up 1:55;
 outro (the e-piano as at the start) 2:28. Whole song -9.0 LUFS, drops -7.5..-8.4, decoded true peak -2.0 dBTP.
 
+## Off the Rails: take B as a whole song (not signed off yet)
+
+Script: `scripts/demos/future-bass-song.js` (2:41, A major at 150 BPM, then B major at 175: the B3 tune, its 3+3+2
+rhythm and future-bass core, with risks taken on purpose). It builds a real project through the store (markers,
+one clip per section, the Drop pad, swells reversed with the app's own Reverse), exports it as the Export dialog
+does (Loud master, Crunch 40%, Loud -9 LUFS target, the app's MP3 encoder) and saves the `.fledgetone.json`:
+
+```
+OUT=out APP_URL=http://localhost:5511/ node scripts/audio-check/run.cjs scripts/demos/future-bass-song.js '{"file":"off-the-rails","save":true}'
+```
+
+The saved file, copied into the repo's `songs/` folder and run with `'{"open":"/songs/off-the-rails.fledgetone.json"}'`,
+opens through the app's own open path in a fresh browser and exports to the identical MP3.
+
+The kick ("it's missing a sort of kick"): B3's Club kick was a round thump, no click and no knock (alone: click
+and 200 Hz-1 kHz both ~15 dB under its low end; in the mix no bump at 250 Hz-4 kHz after the hit, where every
+reference has +1.5..+7 dB), with a short sub (down 20 dB in 124 ms) and the low end 9-12 dB down 100 ms after
+each kick: a pop and a hole, gone on small speakers. Its drops also came in only 0.2-2 LU over the builds. Fixes:
+**Hard drop kick** (click and driven knock 2-5 dB around the low end, a tuned sub carrying it ~250 ms; its tail
+set by hand to A1, B1 after the key change), the Clean Sub ducking deeper and longer under the kick only (-10 dB,
+170 ms) so the kick's tail hands over to the sub, **Drop impact** on every drop's downbeat, the build's last two
+bars swept down on the Drop pad's Filter and one beat of silence with a reversed swell. Measured: knock +3.3..+3.7
+dB, 1-4 kHz +1.5..+1.9, low end 100 ms after a kick -3.3 (was -9..-12), drop entrances +6..+9 LU.
+
+The map: intro (e-piano 3+3+2, the tune soft over half-time drums) 0:00; build 0:13; drop 1 (full time, A A' A
+B ending deceptively) 0:19; breakdown (the tune alone on the e-piano over new chords: F#m9 G#m7 Dmaj9 E7sus4 |
+Bm11 Bbmaj7#11 C#m7 E7sus4) 0:45; half-time verse 0:58; build and a fake-out (the drop lands for two beats,
+Tape stop, then the tune's first figure chopped in 32nds through the Gate) 1:10; drop 2, the colour-bass switch
+(Crunch kit, syncopated, one legato Driven Legato bass over a Clean Sub, held power-chord stabs, a chip lead
+chopping the tune, Drop pad stutters, crush and gate) 1:17; bridge (the answer alone on a sine) 1:42; a tempo
+ramp 150 to 175 onto F#7sus4 1:49; the final drop a whole step up in B, the third pass an octave up 1:55;
+outro (the e-piano as at the start) 2:28. Whole song -9.0 LUFS, drops -7.5..-8.4, decoded true peak -2.0 dBTP.
+
 ## Night Rails: Off the Rails as melodic house (not signed off yet)
 
 Script: `scripts/demos/house-song.js` (3:00, 140 BPM four on the floor, D major with phrygian borrowings, the last
