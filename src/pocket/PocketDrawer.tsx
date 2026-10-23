@@ -23,6 +23,7 @@ import { PocketVocals } from './PocketVocals';
 import { DropPads } from './PocketDrop';
 import { PocketSynth } from './PocketSynth';
 import { isFledgeUrl } from '../audio/plugins/fledgeMacros';
+import { FledgeTourButton } from '../components/FledgeTourButton';
 import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
 import { pill } from './pocketUi';
 import { PocketDropCheck } from './PocketDropCheck';
@@ -231,9 +232,10 @@ const SoundList: React.FC<{ track: Track; files?: boolean }> = ({ track, files =
         </div>
       )}
       {kind === 'notes' && (
+        <div className="flex items-center">
         <button
           type="button"
-          className={`w-full text-left px-3 py-2.5 rounded-xl flex items-start gap-3 ${fledge ? 'bg-white/5 ring-1 ring-inset' : 'active:bg-white/5'}`}
+          className={`flex-1 min-w-0 text-left px-3 py-2.5 rounded-xl flex items-start gap-3 ${fledge ? 'bg-white/5 ring-1 ring-inset' : 'active:bg-white/5'}`}
           style={fledge ? { ['--tw-ring-color' as string]: track.color } : undefined}
           onClick={() => {
             if (!fledge) playFledge(track.id);
@@ -245,6 +247,8 @@ const SoundList: React.FC<{ track: Track; files?: boolean }> = ({ track, files =
             <span className="block text-xs text-forge-muted line-clamp-1">The app's own synth: wobble bass, growls, leads, with sliders to shape it</span>
           </span>
         </button>
+        {!fledge && <FledgeTourButton size="large" className="ml-1" />}
+        </div>
       )}
       {mine.length > 0 && (
         <div>

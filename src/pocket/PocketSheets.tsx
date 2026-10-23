@@ -21,6 +21,7 @@ import { pickProjectFile, saveProjectFile } from '../components/timeline/project
 import { exportMySounds, pickMySoundsFile } from '../components/mySoundsFile';
 import { showToast } from '../components/timeline/toastStore';
 import { Sheet, SheetItem, pill, pillOn } from './pocketUi';
+import { FledgeTourButton } from '../components/FledgeTourButton';
 import { playFledge, soundInstrumentName, usePocket } from './pocketStore';
 import { editCell, useSelection, useSongKey } from './pocketCell';
 import { cellClip, copySection, moveSection, pocketSections, removeSection, sectionIsLinked, unlinkSection } from './pocketSections';
@@ -187,6 +188,7 @@ const AddSheet: React.FC = () => {
         detail="The app's own synth: wobble bass, growls and leads, with big sliders to shape the sound and the wobble in time with the song."
         color={INSTRUMENTS.plugin.color}
         onClick={() => added(playFledge(null))}
+        trailing={<FledgeTourButton size="large" className="mr-1" />}
       />
       <SheetItem
         title="Drop pad"

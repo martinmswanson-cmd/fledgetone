@@ -3,6 +3,7 @@ import { FolderOpen, Plug, Plus, Radio, Waypoints } from 'lucide-react';
 import { useUiStore } from '../../store/uiStore';
 import { useTimelineStore } from '../../store/timelineStore';
 import { InstrumentList } from '../InstrumentMenu';
+import { FledgeTourButton } from '../FledgeTourButton';
 import { useFloatingMenu } from '../useFloatingMenu';
 import { pickAudioFolder } from './audioFiles';
 import { importSamplePack } from './samplePackImport';
@@ -62,9 +63,10 @@ export const AddTrackMenu: React.FC = () => {
             <span className="flex-1">Return (effect return)</span>
             <span className="text-[10px] text-forge-muted">tracks send to it</span>
           </button>
+          <div className="flex items-center border-b border-forge-border hover:bg-fuchsia-500/15 pr-2">
           <button
             type="button"
-            className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-fuchsia-200 hover:bg-fuchsia-500/15 border-b border-forge-border"
+            className="flex-1 min-w-0 px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-fuchsia-200"
             onClick={() => {
               const fledge = allBuiltinPlugins().find((e) => e.family.family === 'fledge');
               if (fledge) addBuiltinPlugin(fledge, null);
@@ -76,6 +78,8 @@ export const AddTrackMenu: React.FC = () => {
             <span className="flex-1">Fledge Synth</span>
             <span className="text-[10px] text-forge-muted">bass, wobble, leads</span>
           </button>
+          <FledgeTourButton />
+          </div>
           <button
             type="button"
             className="w-full px-3 py-2 flex items-center gap-2 text-left text-xs font-mono text-fuchsia-200 hover:bg-fuchsia-500/15 border-b border-forge-border"

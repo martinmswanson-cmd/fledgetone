@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Play, Square } from 'lucide-react';
 import type { BuiltinControls, BuiltinParam } from '../../audio/plugins/builtinHost';
 import {
   bipolarOf,
@@ -20,11 +20,15 @@ import {
 import { fledgeWave, type FledgeWave } from '../../audio/plugins/fledgeWave';
 import { macroLabel, macroTargets, wobbleOf } from '../../audio/plugins/fledgeMacros';
 import { editPluginParam, editPluginProgram } from '../../store/pluginEdits';
+import { pluginIdOfControls } from '../../audio/wamHost';
+import { useTimelineStore } from '../../store/timelineStore';
+import { choosePresetHeard, fledgePreviewState, hearOnChange, setHearOnChange, subscribeFledgePreview, toggleHearPreset } from '../../audio/fledgePreview';
+import { showToast } from './toastStore';
 
 /**
  * Fledge Synth's own window (the synth in engine/fledge-synth): its controls in sections across
  * three tabs (Sound, Modulation, Effects), as a synth's panel lays them out, with the macros and
- * presets always in view, a picture of each oscillator's wave, each LFO's shape, the envelopes,
+ * presets always in view (with ▶ Hear: a phrase of the sound on its track, see fledgePreview.ts), a picture of each oscillator's wave, each LFO's shape, the envelopes,
  * and an editor for the two drawn shapes. The drive has its three places (before the filters,
  * after them, and on the mids and highs after the voices); the LFOs their trigger modes, delay,
  * rise, smooth and key tracking; the 16-slot matrix a curve and a "via" per slot (slots 9 to 16
@@ -301,6 +305,11 @@ function grouped(names: string[]): Array<[string, Array<{ name: string; i: numbe
 
 export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ controls }) => {
   const params = useSyncExternalStore(controls.subscribe, controls.params);
+  // The track this synth plays on (for ▶ Hear), and what's being heard
+  const pluginId = pluginIdOfControls(controls);
+  const trackId = useTimelineStore((s) => s.tracks.find((t) => t.plugin?.id === pluginId)?.id);
+  const preview = useSyncExternalStore(subscribeFledgePreview, fledgePreviewState);
+  const [autoHear, setAutoHear] = useState(hearOnChange);
   const [tab, setTab] = useState<Tab>(() => {
     try {
       const t = localStorage.getItem(TAB_KEY) as Tab | null;
@@ -440,10 +449,16 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
   );
 
   const program = controls.program();
+  /** Choose preset `i` (the one playing stops; "Hear on change" plays the new one) */
+  const choose = (i: number) => {
+    const done = editPluginProgram(controls, i);
+    if (trackId) choosePresetHeard(trackId, controls.programs[i], done);
+  };
   const step = (d: number) => {
     const n = controls.programs.length;
-    if (n) void editPluginProgram(controls, (((program < 0 ? (d > 0 ? -1 : 0) : program) + d) % n + n) % n);
+    if (n) choose((((program < 0 ? (d > 0 ? -1 : 0) : program) + d) % n + n) % n);
   };
+  const hearing = !!trackId && preview?.kind === 'track' && preview.trackId === trackId;
 
   return (
     <div className="w-[820px] max-w-[94vw] p-3 flex flex-col gap-2 text-xs text-forge-text">
@@ -455,7 +470,7 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
           </button>
           <select
             value={program}
-            onChange={(e) => void editPluginProgram(controls, Number(e.target.value))}
+            onChange={(e) => choose(Number(e.target.value))}
             aria-label="Preset"
             className="flex-1 h-7 bg-forge-bg border border-forge-border rounded px-1 text-forge-text"
           >
@@ -481,6 +496,33 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
           <button type="button" onClick={() => step(1)} className="h-7 w-7 flex items-center justify-center rounded border border-forge-border text-forge-muted hover:text-forge-text" aria-label="Next preset">
             <ChevronRight className="w-4 h-4" />
           </button>
+          <button
+            type="button"
+            disabled={!trackId}
+            onClick={() =>
+              trackId &&
+              void toggleHearPreset(trackId, controls.programs[program]).then((ok) => {
+                if (!ok) showToast('This track can’t sound now: unmute it (or wait for the synth to load).');
+              })
+            }
+            aria-pressed={hearing}
+            title={hearing ? 'Stop' : 'Hear this sound: a short phrase on this track, as it sounds now'}
+            className={`h-7 px-2 flex items-center gap-1 rounded border disabled:opacity-40 ${hearing ? 'border-fuchsia-400 text-fuchsia-100 bg-fuchsia-500/20' : 'border-forge-border text-forge-muted hover:text-forge-text'}`}
+          >
+            {hearing ? <Square className="w-3 h-3 fill-current" /> : <Play className="w-3 h-3" />}
+            Hear
+          </button>
+          <label className="flex items-center gap-1 text-[10px] text-forge-muted whitespace-nowrap" title="Play the phrase each time you choose a preset (remembered in this browser)">
+            <input
+              type="checkbox"
+              checked={autoHear}
+              onChange={(e) => {
+                setAutoHear(e.target.checked);
+                setHearOnChange(e.target.checked);
+              }}
+            />
+            Hear on change
+          </label>
         </div>
         <div className="flex items-end gap-1 rounded-md border border-forge-border bg-forge-bg/40 px-2 py-1">
           {S.macros.map((m, k) => (

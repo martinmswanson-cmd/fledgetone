@@ -6,6 +6,7 @@ import { isBus } from '../../store/buses';
 import { pluginFamilies, preloadFamily } from '../../audio/plugins/builtinHost';
 import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, RECENT_KEY, writeList, type BuiltinEntry as Entry } from '../../store/builtinPlugins';
 import { showToast } from './toastStore';
+import { FledgeTourButton } from '../FledgeTourButton';
 
 /**
  * The built-in plugins (see audio/plugins/builtinHost.ts): search them, browse by category or
@@ -166,6 +167,7 @@ export const PluginBrowser: React.FC<{ trackId: string | null; category?: string
                   </div>
                   <p className="text-forge-muted leading-snug">{e.info.about}</p>
                 </div>
+                {e.family.family === 'fledge' && e.info.instrument && <FledgeTourButton size="large" className="!w-7 !h-7" />}
                 <button
                   type="button"
                   onClick={() => add(e)}

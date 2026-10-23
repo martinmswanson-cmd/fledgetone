@@ -1,40 +1,44 @@
 /**
- * Pocket's Sound tool for a Fledge Synth track (the app's own synth): its presets by category,
+ * Pocket's Sound tool for a Fledge Synth track (the app's own synth): its presets by category
+ * (with Hear it: a phrase of the sound on the track, see fledgePreview.ts),
  * the preset's macros as big sliders under their plain names (Growl, Grit, Squelch...), the
  * wobble's rate in time with the song (1/1 to 1/32, triplets too) when the sound has one, and the
  * sound as a file to send (Share this sound, Open a sound file). Every move is an undo step, as
  * a turn of the studio panel's knobs is (pluginEdits.ts). Other instruments are a tap away.
  */
 import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { ChevronLeft, ChevronRight, FolderOpen, Share2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FolderOpen, Play, Share2, Square } from 'lucide-react';
 import type { BuiltinControls, BuiltinParam } from '../audio/plugins/builtinHost';
 import { choiceValue, FLEDGE_SYNC, lfoControls } from '../audio/plugins/fledgeLayout';
 import { macroLabel, macroTargets, WOBBLE_DIVISIONS, wobbleOf } from '../audio/plugins/fledgeMacros';
 import { liveWam, subscribeWam, wamVersion } from '../audio/wamHost';
 import { initAudio } from '../audio/engine';
 import { editPluginParam, editPluginProgram } from '../store/pluginEdits';
+import { choosePresetHeard, fledgePreviewState, hearOnChange, setHearOnChange, subscribeFledgePreview, toggleHearPreset } from '../audio/fledgePreview';
 import type { Track } from '../store/timelineTypes';
 import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
 import { pill, pillOn } from './pocketUi';
 import { onBack } from '../native/backButton';
 
-/** "Bass/Wobble" → groups of [category, [{ name, i }]] in the engine's order. */
+/** "Bass/Wobble" → groups of [category, [{ name, i }]], each category once (where it first comes in the engine's order). */
 function grouped(programs: string[]): Array<[string, Array<{ name: string; i: number }>]> {
-  const out: Array<[string, Array<{ name: string; i: number }>]> = [];
+  const groups = new Map<string, Array<{ name: string; i: number }>>();
   programs.forEach((p, i) => {
     const cut = p.indexOf('/');
     const [group, name] = cut < 0 ? ['', p] : [p.slice(0, cut), p.slice(cut + 1)];
-    const last = out[out.length - 1];
-    if (last && last[0] === group) last[1].push({ name, i });
-    else out.push([group, [{ name, i }]]);
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group)!.push({ name, i });
   });
-  return out;
+  return [...groups];
 }
 
 const NO_PARAMS: BuiltinParam[] = [];
 
-const Controls: React.FC<{ controls: BuiltinControls; pluginId: string; color: string }> = ({ controls, pluginId, color }) => {
+const Controls: React.FC<{ controls: BuiltinControls; pluginId: string; trackId: string; color: string }> = ({ controls, pluginId, trackId, color }) => {
   const params = useSyncExternalStore(controls.subscribe, controls.params, () => NO_PARAMS);
+  const preview = useSyncExternalStore(subscribeFledgePreview, fledgePreviewState);
+  const [autoHear, setAutoHear] = useState(hearOnChange);
+  const [mute, setMute] = useState(false);
   const names = params.map((p) => p.name).join('\n');
   const index = useMemo(() => new Map(names.split('\n').map((n, i) => [n, i])), [names]);
   const val = (name: string) => params[index.get(name) ?? -1]?.value ?? 0;
@@ -44,10 +48,13 @@ const Controls: React.FC<{ controls: BuiltinControls; pluginId: string; color: s
   };
   const program = controls.program();
   const preset = controls.programs[program];
+  /** Choose preset `i` (the one playing stops; "Hear on change" plays the new one) */
+  const choose = (i: number) => choosePresetHeard(trackId, controls.programs[i], editPluginProgram(controls, i, pluginId));
   const step = (d: number) => {
     const n = controls.programs.length;
-    if (n) void editPluginProgram(controls, ((program < 0 ? (d > 0 ? -1 : 0) : program) + d + n) % n, pluginId);
+    if (n) choose(((program < 0 ? (d > 0 ? -1 : 0) : program) + d + n) % n);
   };
+  const hearing = preview?.kind === 'track' && preview.trackId === trackId;
   if (!index.has('Macro 1')) return <p className="text-sm text-forge-muted">Starting the synth…</p>;
 
   const macros = [1, 2, 3, 4].map((k) => ({ k, targets: macroTargets(val, k) })).filter((m) => m.targets.length);
@@ -60,7 +67,7 @@ const Controls: React.FC<{ controls: BuiltinControls; pluginId: string; color: s
         <button type="button" aria-label="Previous preset" className={`${pill} !px-3`} onClick={() => step(-1)}>
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <select aria-label="Preset" className="flex-1 min-w-0 h-11 rounded-xl border border-forge-border bg-forge-panel px-2 text-sm font-semibold" value={program} onChange={(e) => void editPluginProgram(controls, Number(e.target.value), pluginId)}>
+        <select aria-label="Preset" className="flex-1 min-w-0 h-11 rounded-xl border border-forge-border bg-forge-panel px-2 text-sm font-semibold" value={program} onChange={(e) => choose(Number(e.target.value))}>
           {program < 0 && <option value={-1}>(your own sound)</option>}
           {grouped(controls.programs).map(([group, list]) =>
             group ? (
@@ -84,6 +91,29 @@ const Controls: React.FC<{ controls: BuiltinControls; pluginId: string; color: s
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-pressed={hearing}
+          className={`${pill} flex-1 ${hearing ? pillOn : ''}`}
+          onClick={() => void toggleHearPreset(trackId, preset).then((ok) => setMute(!ok))}
+        >
+          {hearing ? <Square className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4" />} {hearing ? 'Stop' : 'Hear it'}
+        </button>
+        <label className="flex items-center gap-2 text-xs text-forge-muted">
+          <input
+            type="checkbox"
+            className="w-5 h-5"
+            checked={autoHear}
+            onChange={(e) => {
+              setAutoHear(e.target.checked);
+              setHearOnChange(e.target.checked);
+            }}
+          />
+          Hear on change
+        </label>
+      </div>
+      {mute && <p className="text-xs text-forge-muted">This track can't sound now: unmute it first.</p>}
       {macros.length === 0 && <p className="text-xs text-forge-muted">This sound has no macros: pick a Bass or Lead preset for sliders that shape it.</p>}
       {macros.map(({ k, targets }) => {
         const label = macroLabel(preset, k, targets);
@@ -150,7 +180,7 @@ export const PocketSynth: React.FC<{ track: Track; others: React.ReactNode }> = 
   return (
     <div className="pk-scroll flex flex-col gap-3">
       {controls ? (
-        <Controls controls={controls} pluginId={pluginId} color={track.color} />
+        <Controls controls={controls} pluginId={pluginId} trackId={track.id} color={track.color} />
       ) : track.frozen ? (
         <p className="text-sm text-forge-muted">This track is frozen (it plays its recording): unfreeze it on a computer to change its sound.</p>
       ) : (

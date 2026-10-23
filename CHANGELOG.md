@@ -6,6 +6,9 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Hear Fledge Synth before you add it**: a **▶** beside **Fledge Synth** in **Add Track**, the plugin browser and Pocket's instrument lists plays a bass, a lead and chords from its presets (about seven seconds) without adding a track, at about the level of the instrument menu's previews. Press it again to stop.
+- **▶ Hear a Fledge Synth preset**: beside the preset picker (studio and Pocket), a button plays a short phrase that suits the sound (a bass riff with a glide, a lead tune, an arpeggio, held chords or one long note) on the track as it sounds now. Choosing another preset stops it; tick **Hear on change** to hear each preset as you step through them.
+- Pocket's Fledge Synth preset list keeps each group together (all the basses under Bass, and so on).
 - **See where a note will go**: in the piano roll, an outline under the pointer shows where a click will put the note (or chord) and how long it will be; with **Type notes** on, the next note's slot is shaded from the cursor, and pointing at a key on the on-screen piano outlines that note's row.
 
 ## 2026.10.23 — Crunch, new presets and steadier drops
