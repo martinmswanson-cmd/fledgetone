@@ -177,3 +177,66 @@ against equal temperament, the partials against the harmonics, and the envelope'
 - **Background.** A shaker in 16ths through the drops (8ths in the verse), off-beat open hats in drop 2,
   a hat roll every 4 bars in drop 1, impacts, more risers, a reverse swell into bar 89 and into the
   post-drop, a downlifter into the outro, and the recorded strings.
+
+```
+OUT=out APP_URL=http://localhost:5511/ node scripts/audio-check/run.cjs scripts/demos/future-bass-song.js '{"file":"off-the-rails","save":true}'
+```
+
+The saved file, copied into the repo's `songs/` folder and run with `'{"open":"/songs/off-the-rails.fledgetone.json"}'`,
+opens through the app's own open path in a fresh browser and exports to the identical MP3.
+
+The kick ("it's missing a sort of kick"): B3's Club kick was a round thump, no click and no knock (alone: click
+and 200 Hz-1 kHz both ~15 dB under its low end; in the mix no bump at 250 Hz-4 kHz after the hit, where every
+reference has +1.5..+7 dB), with a short sub (down 20 dB in 124 ms) and the low end 9-12 dB down 100 ms after
+each kick: a pop and a hole, gone on small speakers. Its drops also came in only 0.2-2 LU over the builds. Fixes:
+**Hard drop kick** (click and driven knock 2-5 dB around the low end, a tuned sub carrying it ~250 ms; its tail
+set by hand to A1, B1 after the key change), the Clean Sub ducking deeper and longer under the kick only (-10 dB,
+170 ms) so the kick's tail hands over to the sub, **Drop impact** on every drop's downbeat, the build's last two
+bars swept down on the Drop pad's Filter and one beat of silence with a reversed swell. Measured: knock +3.3..+3.7
+dB, 1-4 kHz +1.5..+1.9, low end 100 ms after a kick -3.3 (was -9..-12), drop entrances +6..+9 LU.
+
+The map: intro (e-piano 3+3+2, the tune soft over half-time drums) 0:00; build 0:13; drop 1 (full time, A A' A
+B ending deceptively) 0:19; breakdown (the tune alone on the e-piano over new chords: F#m9 G#m7 Dmaj9 E7sus4 |
+Bm11 Bbmaj7#11 C#m7 E7sus4) 0:45; half-time verse 0:58; build and a fake-out (the drop lands for two beats,
+Tape stop, then the tune's first figure chopped in 32nds through the Gate) 1:10; drop 2, the colour-bass switch
+(Crunch kit, syncopated, one legato Driven Legato bass over a Clean Sub, held power-chord stabs, a chip lead
+chopping the tune, Drop pad stutters, crush and gate) 1:17; bridge (the answer alone on a sine) 1:42; a tempo
+ramp 150 to 175 onto F#7sus4 1:49; the final drop a whole step up in B, the third pass an octave up 1:55;
+outro (the e-piano as at the start) 2:28. Whole song -9.0 LUFS, drops -7.5..-8.4, decoded true peak -2.0 dBTP.
+
+## Night Rails: Off the Rails as melodic house (not signed off yet)
+
+Script: `scripts/demos/house-song.js` (3:00, 140 BPM four on the floor, D major with phrygian borrowings, the last
+drop a whole step up in E). The owner liked Off the Rails and asked for a more melodic, slightly faster version
+in modern house, after their favourite house track. That reference measured: 135.000 BPM; kick on every beat,
+short open hats on every off-beat, claps on 2 and 4, straight 8ths; a sustained bass that owns 35-110 Hz
+between the kicks (dipping 10-12 dB on the beat, holding through the off-beat half); music pump only about 2 dB;
+D with Bb, C and Eb around a major tonic; held strings and choir in a dark breakdown; -8.1 LUFS, crest ~10,
+presence and air around -15/-16 dB, wide mids. 140 BPM is a little faster than the reference and still house
+(Off the Rails' own 150-175 is past house tempo).
+
+```
+OUT=out APP_URL=http://localhost:5511/ node scripts/audio-check/run.cjs scripts/demos/house-song.js '{"file":"night-rails","save":true}'
+```
+
+The saved file, copied into `songs/` and run with `'{"open":"/songs/night-rails.fledgetone.json"}'`, opens
+through the app's open path in a fresh browser and exports to the identical MP3.
+
+The hook is Off the Rails' 3+3+2 idea made singable, two 4-bar halves (16ths: 6, 6, 4 a bar):
+A over D | Bbmaj7 | Cadd9 | Asus4: F#5 A5 D6 | D6 Bb5 F5 | E5 G5 A5 | E5 (held) A4;
+B over D | Ebmaj7 | Gm9 | A7: F#5 A5 D6 | Eb6 D6 Bb5 | Bb5 A5 G5 | A5 G5 E5.
+What carries it: the plucky saw (verse, builds), the soaring saw (drops, an octave up in the last), the
+violins (breakdown). The engine from Off the Rails: Hard drop kick (its tail tuned to A1 and shortened to 0.22 s
+so the bass owns the low end between kicks, as in the reference) on every beat; the Driven Legato bass rolling
+on the off-beats over a Clean Sub that holds the root and dips 10 dB under each kick. House sounds made from
+Fledge presets (listed in the sound list): a chord stab (Silk Stack with a 0.22 s decay and no sustain, its
+Filter insert swept open in the intro and closed in the outro), a plucky saw lead (Soaring Saw, sustain 0.15).
+
+The map: intro (the groove from bar 1, the bass and stabs opening up) 0:00; verse (the hook on the pluck)
+0:14; groove (drums, bass and short violins bouncing) 0:27; build 0:41; drop 1 (the hook on the soaring
+lead, strings, stabs) 0:48; the chop break (off the rails: the vowel chop stutters the hook's figure, the bass
+turns into Off the Rails' octave-leaping riff, Drop pad gate, crush and stutters) 1:15; breakdown (drums out:
+strings, choir and the violins singing the hook over D Ebmaj9 C Asus4 | Bm7 Eb Gm9 A7, a timpani roll)
+1:29; build 2 with a fake drop (two beats, then Tape stop, the hook's opening stuttered up into the new key)
+1:50; final drop in E with brass and choir, the hook an octave up 2:03; outro 2:45. Whole song -9.0 LUFS,
+drops -8.2 and -7.4, decoded true peak -1.8 dBTP.
