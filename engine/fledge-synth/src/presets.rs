@@ -1136,16 +1136,16 @@ pub const PRESETS: &[Preset] = &[
         name: "Lead/Soaring Saw",
         classic: false,
         sets: &[
-            // A wide supersaw that sings a tune: darker on top than Supersaw, widely detuned, with a
-            // slow vibrato that only comes in on a held note, a dotted-eighth echo and a long room
-            ("A position", SAW), ("A unison", 9.0), ("A detune", 0.55), ("A blend", 0.8), ("A width", 0.85),
-            ("B position", SAW), ("B octave", 1.0), ("B unison", 5.0), ("B detune", 0.3), ("B level", -10.0), ("B width", 0.8),
-            ("Filter type", LP12), ("Cutoff", 4800.0), ("Resonance", 0.1), ("Key tracking", 0.4),
+            // A wide supersaw that sings a tune: darker on top than Supersaw, detuned less than Supersaw (its voices within about 12 cents, so it sits in tune with a piano), with a
+            // gentle vibrato (about 6 cents) that only comes in on a held note, a quiet quarter-note echo and a long room
+            ("A position", SAW), ("A unison", 9.0), ("A detune", 0.42), ("A blend", 0.8), ("A width", 0.85),
+            ("B position", SAW), ("B octave", 1.0), ("B unison", 5.0), ("B detune", 0.22), ("B level", -13.0), ("B width", 0.8),
+            ("Filter type", LP12), ("Cutoff", 4000.0), ("Resonance", 0.1), ("Key tracking", 0.4),
             ("Filter envelope", 0.12), ("Filter decay", 0.3), ("Filter sustain", 0.5),
             ("Amp attack", 0.004), ("Amp decay", 0.4), ("Amp sustain", 0.85), ("Amp release", 0.3),
-            ("LFO 1 shape", S_SINE), ("LFO 1 sync", 0.0), ("LFO 1 rate (Hz)", 5.2), ("LFO 1 mode", RETRIG), ("LFO 1 fade in", 0.45),
-            ("LFO 1 target 1", PITCH), ("LFO 1 amount 1", 0.012),
-            ("Delay on", 1.0), ("Delay time (sync)", D_EIGHTH_DOT), ("Delay feedback", 0.3), ("Delay mix", 0.15),
+            ("LFO 1 shape", S_SINE), ("LFO 1 sync", 0.0), ("LFO 1 rate (Hz)", 5.2), ("LFO 1 mode", RETRIG), ("LFO 1 fade in", 0.6),
+            ("LFO 1 target 1", PITCH), ("LFO 1 amount 1", 0.005),
+            ("Delay on", 1.0), ("Delay time (sync)", D_QUARTER), ("Delay feedback", 0.2), ("Delay mix", 0.08),
             ("Reverb on", 1.0), ("Reverb decay", 2.4), ("Reverb mix", 0.35),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", -0.4),
             ("Mod 6 source", M2), ("Mod 6 target", A_DETUNE), ("Mod 6 amount", 0.4),
@@ -1158,22 +1158,21 @@ pub const PRESETS: &[Preset] = &[
         classic: false,
         sets: &[
             // Held supersaw chords to sit under a lead: dark (the top under 3 kHz), softly driven
-            // above 200 Hz, a little less of the crowded low mids, chorused and wide
+            // above 200 Hz, a little less of the crowded low mids, wide from its unison alone (no
+            // chorus: its pitch wobble put the chords out of tune with the piano)
             ("A position", SAW), ("A unison", 11.0), ("A detune", 0.42), ("A blend", 0.85), ("A width", 0.9),
             ("B position", SAW), ("B octave", 1.0), ("B unison", 7.0), ("B detune", 0.35), ("B level", -8.0), ("B width", 0.9),
             ("Filter type", LP12), ("Cutoff", 2900.0), ("Resonance", 0.1), ("Key tracking", 0.3),
             ("Filter envelope", 0.15), ("Filter decay", 0.3), ("Filter sustain", 0.4),
             ("Amp attack", 0.006), ("Amp decay", 0.6), ("Amp sustain", 0.85), ("Amp release", 0.35),
-            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", A_DETUNE), ("Mod 2 amount", 0.08),
             ("Band drive type", SOFT), ("Band drive", 6.0), ("Band drive mix", 0.5), ("Band low split", 200.0),
             ("EQ on", 1.0), ("EQ mid", -2.0), ("EQ mid freq", 400.0),
             ("Mono below", 200.0),
-            ("Chorus on", 1.0), ("Chorus rate", 0.6), ("Chorus depth", 0.7), ("Chorus mix", 0.35),
             ("Reverb on", 1.0), ("Reverb decay", 2.2), ("Reverb mix", 0.4),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", BAND_DRIVE), ("Mod 6 amount", 0.5),
             ("Mod 7 source", M3), ("Mod 7 target", REVERB_MIX), ("Mod 7 amount", 0.4),
-            ("OTT", 0.35), ("Width", 0.85), ("Level", 3.0),
+            ("OTT", 0.35), ("Width", 0.85), ("Level", 0.5),
         ],
     },
     Preset {
@@ -1194,7 +1193,7 @@ pub const PRESETS: &[Preset] = &[
             ("LFO 2 target 1", CUTOFF), ("LFO 2 amount 1", 0.15),
             ("Mod 1 source", SRC_NRAND_BI), ("Mod 1 target", 9.0), ("Mod 1 amount", 0.4),
             ("Mod 2 source", SRC_NRAND), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.1),
-            ("Chorus on", 1.0), ("Chorus rate", 0.3), ("Chorus depth", 0.6), ("Chorus mix", 0.45),
+            ("Chorus on", 1.0), ("Chorus rate", 0.3), ("Chorus depth", 0.4), ("Chorus mix", 0.3),
             ("Reverb on", 1.0), ("Reverb size", 0.9), ("Reverb decay", 5.5), ("Reverb mix", 0.6),
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", REVERB_MIX), ("Mod 6 amount", 0.4),
@@ -1227,18 +1226,15 @@ pub const PRESETS: &[Preset] = &[
         name: "Keys/Vowel Chop",
         classic: false,
         sets: &[
-            // Like a chopped vocal: a vowel-shaped wave, short, scooping up into the note, its
-            // vowel moving a little through each note and differing from note to note (alike again
-            // each bar), an echo and some room
+            // Like a chopped vocal: a vowel-shaped wave, short, its vowel opening a little through
+            // each note, the same on every note (no random, no pitch scoop: they sounded out of tune),
+            // dark enough not to whistle, dry but for some room
             ("A table", T_VOWEL), ("A position", 0.35), ("A unison", 3.0), ("A detune", 0.12), ("A width", 0.6),
             ("B position", SAW), ("B level", -14.0),
-            ("Filter type", LP24), ("Cutoff", 3500.0), ("Resonance", 0.15), ("Key tracking", 0.5),
+            ("Filter type", LP24), ("Cutoff", 2400.0), ("Resonance", 0.15), ("Key tracking", 0.5),
             ("Amp attack", 0.003), ("Amp decay", 0.22), ("Amp sustain", 0.4), ("Amp release", 0.1),
-            ("Pitch envelope", -0.7), ("Pitch decay", 0.04),
             ("Mod env decay", 0.2),
             ("Mod 1 source", SRC_MENV), ("Mod 1 target", A_POS), ("Mod 1 amount", 0.25),
-            ("Mod 2 source", SRC_NRAND_BI), ("Mod 2 target", A_POS), ("Mod 2 amount", 0.12),
-            ("Delay on", 1.0), ("Delay time (sync)", D_EIGHTH_DOT), ("Delay feedback", 0.25), ("Delay mix", 0.15),
             ("Reverb on", 1.0), ("Reverb mix", 0.25),
             ("Mod 5 source", M1), ("Mod 5 target", A_POS), ("Mod 5 amount", 0.5),
             ("Mod 6 source", M2), ("Mod 6 target", REVERB_MIX), ("Mod 6 amount", 0.5),
@@ -1249,20 +1245,19 @@ pub const PRESETS: &[Preset] = &[
         name: "Keys/Glass Pluck",
         classic: false,
         sets: &[
-            // A bright glassy pluck to double fast runs an octave up: a metallic wave that mellows
-            // as it rings, no low end, air on top, a long room
-            ("A table", T_METAL), ("A position", 0.25),
-            ("B position", 0.0), ("B octave", 2.0), ("B level", -14.0),
-            ("Filter type", LP12), ("Cutoff", 10000.0), ("Resonance", 0.0), ("Key tracking", 0.3),
-            ("Amp decay", 0.9), ("Amp sustain", 0.0), ("Amp release", 0.6),
-            ("Mod env decay", 0.5),
-            ("Mod 1 source", SRC_MENV), ("Mod 1 target", A_POS), ("Mod 1 amount", 0.4),
-            ("EQ on", 1.0), ("EQ low", -6.0), ("EQ low freq", 300.0), ("EQ high", 3.0), ("EQ high freq", 8000.0),
-            ("Delay on", 1.0), ("Delay time (sync)", D_EIGHTH_DOT), ("Delay feedback", 0.25), ("Delay mix", 0.12),
-            ("Reverb on", 1.0), ("Reverb size", 0.7), ("Reverb decay", 3.0), ("Reverb mix", 0.35),
+            // A clear, bell-like pluck to double a tune high up: a harmonic wave (every partial in
+            // tune) that mellows as it rings, no low end, a soft top, a long room
+            ("A table", T_HARM), ("A position", 0.3),
+            ("B position", 0.0), ("B octave", 1.0), ("B level", -18.0),
+            ("Filter type", LP12), ("Cutoff", 4500.0), ("Resonance", 0.0), ("Key tracking", 0.3),
+            ("Amp decay", 0.8), ("Amp sustain", 0.0), ("Amp release", 0.5),
+            ("Mod env decay", 0.4),
+            ("Mod 1 source", SRC_MENV), ("Mod 1 target", A_POS), ("Mod 1 amount", 0.3),
+            ("EQ on", 1.0), ("EQ low", -6.0), ("EQ low freq", 300.0),
+            ("Reverb on", 1.0), ("Reverb size", 0.7), ("Reverb decay", 3.0), ("Reverb mix", 0.3),
             ("Mod 5 source", M1), ("Mod 5 target", A_POS), ("Mod 5 amount", 0.5),
             ("Mod 6 source", M2), ("Mod 6 target", REVERB_MIX), ("Mod 6 amount", 0.5),
-            ("Width", 0.7), ("Level", 1.0),
+            ("Width", 0.6), ("Level", 6.0),
         ],
     },
     Preset {
