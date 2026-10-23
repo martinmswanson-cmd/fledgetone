@@ -269,9 +269,10 @@ export function startingState(plugin: WamPlugin): unknown {
   const from = starts.choose(plugin.id, saved, s);
   if (saved !== undefined) starts.seen(plugin.id, saved);
   if (from === 'saved') {
-    // (A plugin still live gets the track's settings too, so it doesn't write its old ones back: see whenSavedWins)
+    // (A plugin still live gets the track's settings too, so it doesn't write its old ones back: see whenSavedWins;
+    // not before its first live read has come back, which would drop that read and knob turns made meanwhile)
     const inst = live.get(plugin.id);
-    if (whenSavedWins(!!inst && !stale.has(inst)) === 'push' && plugin.state !== undefined) restoreWamState(plugin.id, plugin.state);
+    if (whenSavedWins(!!inst && !stale.has(inst) && s !== undefined) === 'push' && plugin.state !== undefined) restoreWamState(plugin.id, plugin.state);
     else states.delete(plugin.id);
     return plugin.state;
   }
