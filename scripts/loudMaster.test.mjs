@@ -309,9 +309,9 @@ test('old masters (no Loud, no mono lows) sound as before; new songs get mono lo
   assert.equal(L.styleLoudTarget('dubstep'), 'club');
 });
 
-test('an export keeps its push for live playback only from the whole song, full mix, at the Loud master target', () => {
+test('an export keeps its push for live playback only from the whole song, full mix, at the Loud master target, at the live ceiling', async () => {
   const found = { push: 4.2, lufs: -9.1, targetLufs: -9, shortDb: 0, capped: false, distortionDb: -40, passes: 3 };
-  const base = { wholeSong: true, fullMix: true, exportTargetLufs: -9, loudTargetLufs: -9, found, currentPush: 1 };
+  const base = { wholeSong: true, fullMix: true, exportTargetLufs: -9, loudTargetLufs: -9, found, currentPush: 1, ceilingDbtp: -1 };
   assert.equal(L.pushToKeep(base), 4.2);
   assert.equal(L.pushToKeep({ ...base, wholeSong: false }), null, 'a loop region is other music');
   assert.equal(L.pushToKeep({ ...base, fullMix: false }), null, 'an underscore or no-drums version');
@@ -319,6 +319,20 @@ test('an export keeps its push for live playback only from the whole song, full 
   assert.equal(L.pushToKeep({ ...base, found: undefined }), null);
   assert.equal(L.pushToKeep({ ...base, found: { ...found, lufs: -Infinity } }), null, 'silence found nothing');
   assert.equal(L.pushToKeep({ ...base, currentPush: 4.22 }), null, 'no change worth storing');
+  // An MP3 (or Ogg, MP4) is limited lower, lower still with Crunch: its push would play live hotter than the export
+  const { exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
+  assert.equal(L.pushToKeep({ ...base, ceilingDbtp: exportCeilingDbtp('wav', 0.7) }), 4.2);
+  for (const crunch of [0, 0.7]) assert.equal(L.pushToKeep({ ...base, ceilingDbtp: exportCeilingDbtp('mp3', crunch) }), null, `MP3, Crunch ${crunch}`);
+});
+
+test('a Loud match keeps its push only if the Loud master is still the one it rendered (no undo or Crunch press during it)', () => {
+  const loud = { on: true, target: 'club', push: 2, crunch: 0 };
+  assert.equal(L.sameLoudMatch(loud, { ...loud, push: 3 }), true, 'the push itself may differ');
+  assert.equal(L.sameLoudMatch(loud, { ...loud, crunch: L.POCKET_CRUNCH }), false, 'Crunch pressed');
+  assert.equal(L.sameLoudMatch(loud, { ...loud, target: 'loud' }), false, 'another target');
+  assert.equal(L.sameLoudMatch(loud, { ...loud, on: false }), false, 'switched off (undone)');
+  assert.equal(L.sameLoudMatch(loud, undefined), false);
+  assert.equal(L.sameLoudMatch({ ...loud, crunch: undefined }, loud), true, 'no Crunch is Crunch 0');
 });
 
 // ffmpeg, where it's installed, as the outside reference: its MP3 decoder and its ebur128 true peak

@@ -721,14 +721,17 @@ function styleBar(style: DrumStyle, intensity: number, bar: number, rnd: () => n
       let kicks = shapes[(bar + Math.floor(rnd() * 2) * 2) % shapes.length];
       // Sparser at low energy: every other one off the beat goes
       if (!mid) kicks = kicks.filter((k, i) => k % 4 === 0 || i % 2 === 0);
-      add(kicks, KICK, 0.92);
-      add([4, 12], SNARE, 0.95);
-      if (busy && bar % 2 === 1) add([15], SNARE, 0.4);
+      // (A measure longer than 4/4, as 5/4, plays the start of the shape again after the 16th 16th)
+      add(steps > 16 ? kicks.concat(kicks.filter((k) => k + 16 < steps).map((k) => k + 16)) : kicks, KICK, 0.92);
+      // Two and four; in a 12-16th measure (3/4, 6/8) two and three, so the bar still has two snares
+      add(steps === 12 ? [4, 8] : every(8, 4), SNARE, 0.95);
+      if (busy && bar % 2 === 1) add([steps - 1], SNARE, 0.4);
       for (const s16 of sixteenths) hits.push([s16, HAT, [0.62, 0.58, 0.4, 0.46][s16 % 4]]);
       if (mid && bar % 2 === 1) {
-        // A roll at the end of the bar: 32nds, or 16th triplets
-        if (rnd() < 0.5) [14.5, 15.5].forEach((s32) => hits.push([s32, HAT, 0.42]));
-        else [12 + 2 / 3, 12 + 4 / 3, 14 + 2 / 3, 14 + 4 / 3].forEach((t) => hits.push([t, HAT, 0.4]));
+        // A roll at the end of the measure (whatever its length, never past it): 32nds, or 16th triplets
+        const roll = (at: number[], vel: number) => at.forEach((t) => t >= 0 && t < steps && hits.push([t, HAT, vel]));
+        if (rnd() < 0.5) roll([steps - 1.5, steps - 0.5], 0.42);
+        else roll([steps - 4 + 2 / 3, steps - 4 + 4 / 3, steps - 2 + 2 / 3, steps - 2 + 4 / 3], 0.4);
       }
       break;
     }

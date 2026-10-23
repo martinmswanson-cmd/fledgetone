@@ -215,8 +215,9 @@ export interface LoudMatch {
 /**
  * The push an export should store for live playback, or null to leave the Loud master's push as it
  * is. Only an export of the whole song (not a loop, game loop or underscore / no-drums version) at
- * the Loud master's own target says what the live push should be: anything else found a push for
- * other music or another loudness.
+ * the Loud master's own target, limited at the live ceiling (-1 dBTP, a WAV's), says what the live push
+ * should be: anything else found a push for other music, another loudness, or a lower ceiling (an
+ * MP3's, lower still with Crunch, would play live about a dB hotter than the export).
  */
 export function pushToKeep(o: {
   /** The whole song, bar 1 to the end. */
@@ -228,11 +229,24 @@ export function pushToKeep(o: {
   loudTargetLufs: number;
   found: LoudMatch | undefined;
   currentPush: number;
+  /** The export's true-peak ceiling, dBTP (exportCeilingDbtp). */
+  ceilingDbtp: number;
 }): number | null {
   const { found } = o;
   if (!o.wholeSong || !o.fullMix || !found || !Number.isFinite(found.lufs) || !Number.isFinite(found.push)) return null;
   if (Math.abs(o.exportTargetLufs - o.loudTargetLufs) > 1e-6) return null;
+  if (Math.abs(o.ceilingDbtp - LIMITER_CEILING_DBTP) > 1e-6) return null;
   return Math.abs(found.push - o.currentPush) > 0.05 ? found.push : null;
+}
+
+/**
+ * Whether a Loud master is still the one a match rendered: switched on, at the same target, with the
+ * same Crunch. An undo, a redo or the Crunch button pressed while a match ran changes what the push
+ * it found is for, so it isn't kept.
+ */
+export function sameLoudMatch(rendered: MasterSettings['loud'] | undefined, now: MasterSettings['loud'] | undefined): boolean {
+  if (!rendered?.on || !now?.on) return false;
+  return rendered.target === now.target && loudCrunch({ loud: rendered }) === loudCrunch({ loud: now });
 }
 
 /** What one try of a push measured: its loudness (LUFS) and distortion (dB, see distortionDb). */

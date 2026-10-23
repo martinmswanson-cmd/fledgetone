@@ -610,7 +610,7 @@ const HELPERS: Lesson = {
     },
     {
       title: 'A drummer',
-      body: 'Add a drum kit track (**Add Track**, type *kit*), then right-click its lane and choose **Drummer…**: 21 styles from four-on-the-floor to a waltz, a march, a bossa nova or a blast beat, with fills every few bars. For a waltz, leave the time-signature box ticked to set 3/4 there.',
+      body: 'Add a drum kit track (**Add Track**, type *kit*), then right-click its lane and choose **Drummer…**: 22 styles from four-on-the-floor to a waltz, a march, a bossa nova or a blast beat, with fills every few bars. For a waltz, leave the time-signature box ticked to set 3/4 there.',
       target: '[data-timeline-scroll]',
       task: { hint: 'A kit track, then Drummer…', begin: clipIds, done: (b) => tl().clips.some((c) => !(b as Set<string>).has(c.id) && tl().tracks.find((t) => t.id === c.trackId && isDrumKind(t.instrumentKey))) },
     },

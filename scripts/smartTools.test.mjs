@@ -101,6 +101,31 @@ test('the syncopated drop: kicks 1 to 3 16ths apart, about six a bar, snare on t
   assert.ok(vel[0] > vel[2] && vel[1] > vel[2] && vel[1] > vel[3], vel.join(' '));
 });
 
+test('the syncopated drop in 3/4, 6/8, 7/8 and 5/4: every hit and roll inside its measure, two snares a measure, the ghost snare plays; 4/4 as before', () => {
+  for (const [num, den] of [[3, 4], [6, 8], [7, 8], [5, 4]]) {
+    const measure = num / den;
+    const steps = Math.round(measure * 16);
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const part = S.drummer('syncDrop', 4, 0.85, 0, seed, newId, { num, den });
+      const end = 4 * measure;
+      for (const x of part) assert.ok(x.startOffset >= 0 && x.startOffset < end - 1e-9, `${num}/${den} seed ${seed}: ${x.note} at ${x.startOffset} past the clip (${end})`);
+      for (let b = 0; b < 4; b++) {
+        const inBar = part.filter((x) => x.startOffset >= b * measure - 1e-9 && x.startOffset < (b + 1) * measure - 1e-9);
+        // Nothing from this measure spills into the next: the hats at the end of each measure are this measure's own
+        const hats = inBar.filter((x) => x.note === 'F#1').map((x) => (x.startOffset - b * measure) * 16);
+        assert.ok(hats.every((h) => h < steps), `${num}/${den} bar ${b}`);
+        const backbeat = inBar.filter((x) => x.note === 'D1' && x.velocity > 0.8);
+        assert.equal(backbeat.length, 2, `${num}/${den} bar ${b}: ${backbeat.length} snares`);
+        if (b % 2 === 1 && seed === 1) assert.ok(inBar.some((x) => x.note === 'D1' && x.velocity < 0.6 && Math.round((x.startOffset - b * measure) * 16) === steps - 1), `${num}/${den}: the ghost snare`);
+      }
+    }
+  }
+  // 4/4 unchanged: the rolls at 14.5 and 15.5, or the triplets from 12
+  const four = S.drummer('syncDrop', 8, 0.85, 0, 5, newId);
+  const offGrid = four.filter((x) => x.note === 'F#1' && Math.abs(x.startOffset * 16 - Math.round(x.startOffset * 16)) > 1e-6).map((x) => ((x.startOffset * 16) % 16).toFixed(3));
+  for (const at of offGrid) assert.ok(['14.500', '15.500', '12.667', '13.333', '14.667', '15.333'].includes(at), at);
+});
+
 test('a fill replaces the end of the bar, keeping kicks on the beat', () => {
   const beat = S.drummer('house', 2, 0.2, 0, 3, newId);
   const filled = S.fillBar(beat, 0, 'snare', 2, newId);

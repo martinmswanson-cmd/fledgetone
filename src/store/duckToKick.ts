@@ -70,7 +70,7 @@ export function drumHitGapMs(tracks: readonly Track[], clips: readonly Clip[], b
   const at: number[] = [];
   for (const c of clips) {
     if (!kits.has(c.trackId) || c.audio) continue;
-    for (const n of c.notes) if (n.startOffset < c.lengthBars && pumpHitOf(kits.get(c.trackId), n.note)) at.push(c.startBar + n.startOffset);
+    for (const n of c.notes) if (n.startOffset >= 0 && n.startOffset < c.lengthBars && pumpHitOf(kits.get(c.trackId), n.note)) at.push(c.startBar + n.startOffset);
   }
   at.sort((a, b) => a - b);
   const barMs = (4 * 60000) / Math.max(1, bpm);
@@ -122,8 +122,11 @@ export function duckToKick(tracks: Track[], clips: readonly Clip[], bpm: number,
   if (!hasKick(tracks, clips)) return { tracks, changed: 0 };
   const gap = drumHitGapMs(tracks, clips, bpm);
   const parts = tracks.filter((t) => !isMixTrack(t) && !isEffect(t));
-  // (A sub is a bass part whatever its notes or name say)
-  const roleOf = (t: Track) => (isSubPart(t) ? 'bass' : trackRole(t, clips));
+  // (A sub is a bass part whatever its notes say; a drum kit or a voice named "sub" stays what it is)
+  const roleOf = (t: Track) => {
+    const role = trackRole(t, clips);
+    return role === 'drums' || role === 'vocal' || !isSubPart(t) ? role : 'bass';
+  };
   const basses = parts.filter((t) => roleOf(t) === 'bass');
   const hasSub = basses.some(isSubPart) && basses.some((t) => !isSubPart(t));
   let changed = 0;

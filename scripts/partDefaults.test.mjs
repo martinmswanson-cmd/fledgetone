@@ -128,3 +128,19 @@ test('Duck to kick on dense drums (the Syncopated drop): shallow, short holes th
   assert.ok(D.drumHitGapMs(tracks, [{ ...clips[0], notes: four }], 128) >= (D.SPARSE_GAP_BEATS * 60000) / 128 - 1);
   assert.deepEqual(sparse.find((t) => t.id === 'low').fx.pump, { ...sparse.find((t) => t.id === 'low').fx.pump, ...D.duckPump('bass', 'bass', 128) });
 });
+
+test('Duck to kick: a drum kit named "Sub kick" stays drums (no hole in its own hits); hits hidden before a trimmed clip start are not counted', () => {
+  const tracks = [track('kit', 'drums', { name: 'Sub kick' }), track('kit2', 'designedKit', { name: '808 sub' }), track('bass', 'wobbleBass', { name: 'Growl' }), track('low', 'subBass', { name: 'Sub' })];
+  const { tracks: out } = D.duckToKick(tracks, [], 128);
+  const by = Object.fromEntries(out.map((t) => [t.id, t.fx.pump]));
+  assert.equal(by.kit.on, false, 'the kit named "Sub kick" does not duck its own hits');
+  assert.equal(by.kit2.on, false);
+  assert.equal(by.low.shape, 'hole');
+  assert.ok(by.bass.depth < by.low.depth, 'the bass over the sub ducks less');
+  // A clip whose start was trimmed: notes before its start (negative offsets) are not heard
+  const hit = (o) => ({ id: 'h' + o, note: 'C1', startOffset: o, duration: '16n', velocity: 1 });
+  const clip = (notes) => [{ id: 'c', trackId: 'kit', name: 'Drums', startBar: 1, lengthBars: 1, isSelected: false, notes }];
+  const heard = [0, 0.25, 0.5, 0.75].map(hit);
+  const hidden = [-0.875, -0.75, -0.625, -0.5, -0.375, -0.25, -0.125].map(hit);
+  assert.equal(D.drumHitGapMs(tracks, clip([...hidden, ...heard]), 120), D.drumHitGapMs(tracks, clip(heard), 120));
+});

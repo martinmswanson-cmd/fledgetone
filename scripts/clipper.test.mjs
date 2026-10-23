@@ -17,7 +17,7 @@ register(
 }`)
 );
 
-const { createClipperKernel, clipChannels, clipperParams, normalizeClipper, defaultClipper, CLIPPER_WORKLET_SOURCE } = await import('../src/audio/effects/clipper.ts');
+const { createClipperKernel, clipChannels, clipperParams, normalizeClipper, defaultClipper, CLIPPER_WORKLET_SOURCE, LIVE_CLIPPER_LATENCY } = await import('../src/audio/effects/clipper.ts');
 const { masterAfter } = await import('../src/audio/effects/masterAfter.ts');
 const { defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } = await import('../src/store/timelineTypes.ts');
 
@@ -211,6 +211,39 @@ test('the band kind in blocks of 128 (the worklet, asked for with processorOptio
     live.set(o[0], at);
   }
   for (let i = 0; i < x.length; i++) assert.equal(live[i + lat], whole[i]);
+});
+
+test('live, either kind plays at the band kind\'s delay: the plain kind (padTo) is the export\'s clip that many samples late, so a Crunch swap crossfades sounds lined up', () => {
+  assert.equal(LIVE_CLIPPER_LATENCY, createClipperKernel(SR, true).latency);
+  assert.ok(LIVE_CLIPPER_LATENCY > createClipperKernel(SR).latency);
+  const x = Float32Array.from({ length: 6000 }, (_, i) => 1.2 * Math.sin(i * 0.05) + 0.5 * Math.sin(i * 1.3));
+  for (const band of [false, true]) {
+    const settings = { on: true, drive: 3, softness: 0.2, ceiling: -2, band };
+    const whole = x.slice();
+    clipChannels(whole, whole.slice(), SR, settings);
+    let Processor = null;
+    const run = new Function('sampleRate', 'registerProcessor', 'class AudioWorkletProcessor { constructor() { this.port = {}; } }\n' + CLIPPER_WORKLET_SOURCE.replace('registerProcessor(', 'return registerProcessor('));
+    run(SR, (name, cls) => (Processor = cls));
+    const proc = new Processor({ processorOptions: { band, padTo: LIVE_CLIPPER_LATENCY } });
+    proc.port.postMessage = () => {};
+    const p = clipperParams(settings);
+    const params = { drive: [p.drive], ceiling: [p.ceiling], softness: [p.softness] };
+    const padded = new Float32Array(x.length + LIVE_CLIPPER_LATENCY + 128);
+    padded.set(x);
+    const live = new Float32Array(padded.length);
+    const liveR = new Float32Array(padded.length);
+    for (let at = 0; at + 128 <= padded.length; at += 128) {
+      const inp = padded.slice(at, at + 128);
+      const o = [new Float32Array(128), new Float32Array(128)];
+      proc.process([[inp, inp]], [o], params);
+      live.set(o[0], at);
+      liveR.set(o[1], at);
+    }
+    for (let i = 0; i < x.length; i++) {
+      assert.equal(live[i + LIVE_CLIPPER_LATENCY], whole[i], `${band ? 'band' : 'plain'} sample ${i}`);
+      assert.equal(liveR[i + LIVE_CLIPPER_LATENCY], whole[i]);
+    }
+  }
 });
 
 test('settings are repaired, and an absent clipper means off', () => {

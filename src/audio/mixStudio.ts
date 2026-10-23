@@ -16,7 +16,7 @@ import { targetById } from './loudnessTarget';
 import { busChain, isMixTrack } from '../store/buses';
 import { INSTRUMENTS } from './instrumentCatalog';
 import type { MasterStats } from './effects/masterAfter';
-import { LOUD_TARGETS, type LoudMatch } from './effects/loudMaster';
+import { LOUD_TARGETS, sameLoudMatch, type LoudMatch } from './effects/loudMaster';
 import type { Clip, Track } from '../store/timelineTypes';
 import { tempoAt } from './tempoMap';
 import { drumOnsets } from './hitOnsets';
@@ -145,7 +145,8 @@ export function matchLoudMaster(): Promise<LoudMatch | null> {
     let stats: MasterStats | undefined;
     await renderArrangement({ ...songOptions(signal), loudTargetLufs: LOUD_TARGETS[loud.target].lufs, onMasterStats: (m) => (stats = m) }, (f) => progress(f));
     const found = stats?.loud;
-    if (found && Number.isFinite(found.lufs)) useTimelineStore.getState().setMasterLoud({ push: found.push });
+    // (Kept only if the Loud master is still the one rendered: an undo or the Crunch button during the match changes it)
+    if (found && Number.isFinite(found.lufs) && sameLoudMatch(loud, useTimelineStore.getState().master.loud)) useTimelineStore.getState().setMasterLoud({ push: found.push });
     return found ?? null;
   });
 }

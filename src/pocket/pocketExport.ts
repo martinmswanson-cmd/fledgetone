@@ -69,8 +69,9 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     if (!loud) reading = (await reachTarget(channelsOf(audio), audio.sampleRate, reading, target, undefined, ceilingDbtp)).reading;
     else {
       // Kept for live playback only when aimed at the Loud master's own target (the whole song, full mix with no solo on)
+      // at the live ceiling: so never from this MP3 (the Loud master's own match keeps Pocket's push)
       const live = useTimelineStore.getState().master.loud;
-      const push = live ? pushToKeep({ wholeSong: true, fullMix: !s.tracks.some((t) => t.isSoloed), exportTargetLufs: target.lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found, currentPush: live.push ?? 0 }) : null;
+      const push = live ? pushToKeep({ wholeSong: true, fullMix: !s.tracks.some((t) => t.isSoloed), exportTargetLufs: target.lufs, loudTargetLufs: LOUD_TARGETS[live.target].lufs, found, currentPush: live.push ?? 0, ceilingDbtp }) : null;
       if (push !== null) useTimelineStore.getState().setMasterLoud({ push });
     }
     audio = cutRingOut(audio, opts);

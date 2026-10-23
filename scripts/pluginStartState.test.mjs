@@ -59,3 +59,9 @@ test('only the last few settings are remembered (a rebuild starts from one of th
   s.seen('p', J(1, 0));
   assert.equal(s.choose('p', J(1, 0), J(2)), 'live');
 });
+
+test("when the track's settings win for a plugin still playing live, they go onto it too (its old ones aren't read back over the track)", async () => {
+  const { whenSavedWins } = await import('../src/audio/pluginStartState.ts');
+  assert.equal(whenSavedWins(true), 'push');
+  assert.equal(whenSavedWins(false), 'forget');
+});
