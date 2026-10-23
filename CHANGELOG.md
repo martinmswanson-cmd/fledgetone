@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **See where a note will go**: in the piano roll, an outline under the pointer shows where a click will put the note (or chord) and how long it will be; with **Type notes** on, the next note's slot is shaded from the cursor, and pointing at a key on the on-screen piano outlines that note's row.
+
 ## 2026.10.23 — Crunch, new presets and steadier drops
 
 - **Short open hat**, a new Drum Designer preset: an open hat that's gone 20 dB within an 8th at house tempo, for the off-beat hat of house and other four-on-the-floor music.

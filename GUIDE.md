@@ -330,7 +330,7 @@ Click the flag button right of the Loop button (it shows how many markers there 
 
 Double-click a clip with the Selection tool (or right-click it and choose **Edit notes**, which works with either tool) to open it in the piano roll under the timeline. Drum kits show a row per drum (Kick, Snare, Clap, the hats, toms, crash, ride and cowbell); other instruments show a keyboard covering the instrument's range.
 
-- **Add a note**: click empty grid. Keep the button down and drag right to stretch it, to the grid line past the pointer.
+- **Add a note**: click empty grid. Keep the button down and drag right to stretch it, to the grid line past the pointer. Before you click, a dashed outline shows where the note (or the chord, with **Chord** set) will go and how long it will be.
 - **Move**: drag a note sideways (time) or up and down (pitch). Selected notes move together.
 - **Length**: drag a note's right edge.
 - **Delete**: right-click a note, or select notes and press `Delete`.
@@ -1062,6 +1062,7 @@ In the MIDI popover, tick **Computer keyboard piano**. `A` `S` `D` `F` `G` `H` `
 
 Placing notes one by one with the mouse is slow. Instead, open a clip in the piano roll and click **Type notes** at the top of it (or tick **Note entry** on the on-screen piano). A cyan cursor appears in the grid, after the clip's last note:
 
+- **Where it will go is shown before you play**: a faint band runs the length of the next note from the cursor, and pointing at a key on the on-screen piano outlines that note's row in it.
 - **Each key you play goes in at the cursor**, and the cursor moves on by the **New note** length (or the **Grid**, if that's longer). You don't have to play in time: one key after another writes a melody.
 - **Keys held down together make a chord**: they all land at the same step, and the cursor moves on once you let go of them all.
 - **→** leaves a gap (a rest) and **←** steps back, while no notes are selected.

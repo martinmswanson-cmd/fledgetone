@@ -10,6 +10,9 @@ interface PianoPanelState {
   open: boolean;
   /** Keys played go into the open piano roll, one step after another */
   noteEntry: boolean;
+  /** The key the pointer is over on the on-screen piano (the piano roll outlines where it would go) */
+  hoverMidi: number | null;
+  setHoverMidi: (midi: number | null) => void;
   /** The keyboard piano was already on when the panel opened (closing leaves it on) */
   pianoWasOn: boolean;
   setOpen: (open: boolean) => void;
@@ -19,6 +22,8 @@ interface PianoPanelState {
 export const usePianoPanel = create<PianoPanelState>((set, get) => ({
   open: false,
   noteEntry: false,
+  hoverMidi: null,
+  setHoverMidi: (hoverMidi) => get().hoverMidi !== hoverMidi && set({ hoverMidi }),
   pianoWasOn: false,
   setOpen: (open) => {
     if (open === get().open) return;
@@ -28,7 +33,7 @@ export const usePianoPanel = create<PianoPanelState>((set, get) => ({
       midi.setKeyboardPiano(true);
     } else {
       if (!get().pianoWasOn) midi.setKeyboardPiano(false);
-      set({ open, noteEntry: false });
+      set({ open, noteEntry: false, hoverMidi: null });
     }
   },
   setNoteEntry: (noteEntry) => {

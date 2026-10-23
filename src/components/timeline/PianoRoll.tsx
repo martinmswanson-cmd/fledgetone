@@ -470,6 +470,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   // Note entry (with the on-screen piano, pianoPanel.ts): each key played goes in at a cursor, which
   // then moves on by the New note length (or the grid, if that's longer); keys held together are a chord
   const noteEntry = usePianoPanel((s) => s.noteEntry && s.open);
+  // The on-screen piano key under the pointer: where it would go is outlined at the cursor
+  const pianoHover = usePianoPanel((s) => (s.noteEntry && s.open ? s.hoverMidi : null));
   /** The cursor, in units from the clip's start: it starts after the clip's last note */
   const [entryAt, setEntryAt] = useState(() => Math.min(totalUnits, clip.notes.reduce((end, n) => Math.max(end, unitsOf(n.startOffset) + noteUnits(n)), 0)));
   const entryRef = useRef({ at: entryAt, step: Math.max(lengthUnits, gridUnits), length: lengthUnits, totalUnits });
@@ -570,14 +572,23 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   );
   const noteEntryRef = useRef(noteEntry);
   noteEntryRef.current = noteEntry;
-  /** In STEPS: the cell under the pointer (its row and first unit), outlined so it's clear what a click toggles */
-  const [hoverCell, setHoverCell] = useState<{ row: number; unit: number } | null>(null);
+  /**
+   * The cell under the pointer, outlined so it's clear what a click does: in STEPS the step it
+   * toggles; otherwise where a click would draw its note (or chord), at the pen's length
+   */
+  const [hoverCell, setHoverCell] = useState<{ row: number; unit: number; len: number; rows: number[] } | null>(null);
   const trackHover = (e: React.PointerEvent) => {
-    if (!stepping || e.buttons) return setHoverCell(null);
+    if (e.buttons) return setHoverCell(null);
+    // (Over a note a click picks it up rather than drawing)
+    if (!stepping && (e.target as HTMLElement).closest('[data-note-id]')) return setHoverCell(null);
     const p = local(e.clientX, e.clientY);
-    if (!rows[p.row]) return setHoverCell(null);
+    const row = rows[p.row];
+    if (!row) return setHoverCell(null);
     const unit = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
-    setHoverCell((h) => (h && h.row === p.row && h.unit === unit ? h : unit < totalUnits ? { row: p.row, unit } : null));
+    if (unit >= totalUnits) return setHoverCell(null);
+    const len = stepping ? Math.min(gridUnits, totalUnits - unit) : Math.min(lengthUnits, totalUnits - unit);
+    const at = stepping ? [p.row] : drawPitches(row.note).map((n) => rowIndexOf(rows, n)).filter((i) => i >= 0);
+    setHoverCell((h) => (h && h.row === p.row && h.unit === unit && h.len === len && h.rows.join() === at.join() ? h : { row: p.row, unit, len, rows: at }));
   };
 
   /**
@@ -696,6 +707,14 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       for (const m of [midi + d, midi - d]) if (inScale(m, scale) && rowIndexOf(rows, nameOf(m)) >= 0) return m;
     }
     return midi;
+  };
+  /** The pitches a click on this row draws: in a scale, the nearest note of it; a chord stamps every note of the chord */
+  const drawPitches = (rowNote: string): string[] => {
+    if (namedRows) return [rowNote];
+    const clicked = midiOf(rowNote);
+    const root = scale ? snapRow(clicked) : clicked;
+    const pitches = chordNotes(root, chord, scale).map(nameOf).filter((n) => rowIndexOf(rows, n) >= 0);
+    return pitches.length ? pitches : [rowNote];
   };
 
   /**
@@ -822,15 +841,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     const start = Math.max(0, Math.floor((p.units + clipUnits) / gridUnits) * gridUnits - clipUnits);
     const len = Math.min(lengthUnits, totalUnits - start);
     const at = { startOffset: start / UNITS_PER_BAR, duration: barsToDuration(len / UNITS_PER_BAR), velocity };
-    // In a scale, a click lands on the nearest note of it; a chord stamps every note of the chord
-    let pitches = [row.note];
-    if (!namedRows) {
-      const clicked = midiOf(row.note);
-      const root = scale ? snapRow(clicked) : clicked;
-      const midis = chordNotes(root, chord, scale);
-      pitches = midis.map(nameOf).filter((n) => rowIndexOf(rows, n) >= 0);
-      if (!pitches.length) pitches = [row.note];
-    }
+    const pitches = drawPitches(row.note);
+    setHoverCell(null);
     const added = pitches.map((note) => ({ note, ...at }));
     const ids = useTimelineStore.getState().addNotes(clip.id, added);
     // A drawn note isn't left selected: TOOLS and VEL go on working on the whole clip
@@ -1283,12 +1295,15 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               onPointerMove={trackHover}
               onPointerLeave={() => setHoverCell(null)}
             >
-              {stepping && hoverCell && (
-                <div
-                  className="absolute pointer-events-none rounded-[3px] border border-cyan-300/80 bg-cyan-300/15 z-[5]"
-                  style={{ left: hoverCell.unit * unitW, width: Math.min(gridUnits, totalUnits - hoverCell.unit) * unitW, top: hoverCell.row * rowH, height: rowH }}
-                />
-              )}
+              {hoverCell &&
+                hoverCell.rows.map((r) => (
+                  <div
+                    key={r}
+                    data-draw-ghost
+                    className={`absolute pointer-events-none rounded-[3px] border z-[5] ${stepping ? 'border-cyan-300/80 bg-cyan-300/15' : 'border-dashed border-cyan-300/70 bg-cyan-300/10'}`}
+                    style={{ left: hoverCell.unit * unitW, width: hoverCell.len * unitW, top: r * rowH, height: rowH }}
+                  />
+                ))}
               {rows.map((r, i) => {
                 // With a scale: notes outside it darker, its root lit
                 const m = scale && !namedRows ? midiOf(r.note) : NaN;
@@ -1378,6 +1393,24 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
                 </svg>
               )}
               <GridPlayhead startBar={clip.startBar} stepW={stepW} gridW={gridW} />
+              {noteEntry && (
+                <>
+                  {/* Where the next note goes: a faint slot the note's length from the cursor, the hovered key's row outlined */}
+                  <div className="absolute top-0 bottom-0 pointer-events-none bg-cyan-300/[0.06] z-[4]" style={{ left: entryAt * unitW, width: Math.max(0, Math.min(lengthUnits, totalUnits - entryAt)) * unitW }} />
+                  {(() => {
+                    if (pianoHover === null) return null;
+                    const track = useTimelineStore.getState().tracks.find((t) => t.id === clip.trackId);
+                    const idx = rowIndexOf(rows, noteNameOn(pianoHover, track));
+                    return idx < 0 ? null : (
+                      <div
+                        data-entry-ghost
+                        className="absolute pointer-events-none rounded-[3px] border border-dashed border-cyan-300/80 bg-cyan-300/15 z-[5]"
+                        style={{ left: entryAt * unitW, width: Math.max(1, Math.min(lengthUnits, totalUnits - entryAt)) * unitW, top: idx * rowH, height: rowH }}
+                      />
+                    );
+                  })()}
+                </>
+              )}
               {noteEntry && (
                 <div
                   data-entry-cursor

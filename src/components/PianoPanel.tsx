@@ -137,6 +137,8 @@ export const PianoPanel: React.FC = () => {
               tabIndex={-1}
               aria-label={`${midiNoteName(midi)} (${labelOf(k.code)})`}
               onPointerDown={press(midi)}
+              onPointerEnter={() => usePianoPanel.getState().setHoverMidi(midi)}
+              onPointerLeave={() => usePianoPanel.getState().setHoverMidi(null)}
               onPointerUp={release}
               onPointerCancel={release}
               className={`absolute top-0 bottom-0 rounded-b-md border border-black/40 flex flex-col items-center justify-end pb-1.5 font-mono ${lit.has(midi) ? 'bg-cyan-300 text-black' : 'bg-zinc-100 text-zinc-500 hover:bg-white'}`}
@@ -158,6 +160,8 @@ export const PianoPanel: React.FC = () => {
               tabIndex={-1}
               aria-label={`${midiNoteName(midi)} (${labelOf(k.code)})`}
               onPointerDown={press(midi)}
+              onPointerEnter={() => usePianoPanel.getState().setHoverMidi(midi)}
+              onPointerLeave={() => usePianoPanel.getState().setHoverMidi(null)}
               onPointerUp={release}
               onPointerCancel={release}
               className={`absolute top-0 z-10 rounded-b-md flex items-end justify-center pb-1 font-mono text-[11px] font-bold ${lit.has(midi) ? 'bg-cyan-400 text-black' : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800'}`}
