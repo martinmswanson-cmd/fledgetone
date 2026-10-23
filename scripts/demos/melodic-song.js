@@ -7,7 +7,7 @@
 //   file          the output name (default "lanterns"): <file>-mp3.wav (an MP3) and <file>.fledgetone.json.wav
 //   vol           {track id: dB} over the track levels below; lufs (default -10): the export's loudness target
 //   levels        [from bar, to bar] (the app's bar numbers): each track's own loudness there instead of the song
-//   dump          the notes only (for the click check)
+//   dump          the notes only (for the click check); stems: true or [track ids]: each track alone, a WAV each
 //   checkUrl      a saved project file to fetch: open it through the app's open path (openProjectFromFile) and render
 //                 it again; its fingerprint must match the first render's
 const ex = await import('/src/audio/exportWav.ts');
@@ -106,7 +106,7 @@ for (const [b0, kind] of FORM) PH[kind].forEach((c, i) => { PLAN[b0 + i] = c; KI
 PLAN[112] = 'Eb'; PLAN[113] = 'Eb';
 const chordAt = (t) => CH[PLAN[Math.max(0, Math.min(PLAN.length - 1, Math.floor(t / 16)))]];
 const toneRange = (c, lo, hi) => range(hi - lo + 1).map((i) => lo + i).filter((p) => c.tones.includes(((p % 12) + 12) % 12));
-const P = { piano: [], keys: [], wash: [], stack: [], lead: [], lead2: [], chop: [], glass: [], bass: [], sub: [], riser: [], swell: [], down: [], drums: [] };
+const P = { piano: [], keys: [], wash: [], stack: [], lead: [], lead2: [], chop: [], glass: [], strings: [], vln: [], spic: [], hits: [], bass: [], sub: [], riser: [], swell: [], down: [], drums: [] };
 
 const held = (part, b0, b1, vel, cap = 99) => bars(b0, b1).forEach((b) => chordAt(b * 16).voicing.forEach((p) => { let q = p; while (q > cap) q -= 12; part.push(N(q, b * 16, 16.1, typeof vel === 'function' ? vel(b) : vel)); }));
 const tune = (b0, kind, vel, shift = 0, part = P.lead) => tuneOf(kind).forEach(([st, p, l]) => part.push(N(p + shift, b0 * 16 + st, l + 0.1, st % 8 === 0 ? vel : vel - 0.06)));
@@ -164,13 +164,18 @@ const chopCut = (b0, kind, vel) => {
     if (n) P.chop.push(N(n[1] + (k === 5 || k === 6 ? 12 : 0), b0 * 16 + at, 1.5, st % 4 ? vel - 0.1 : vel));
   });
 };
-// The second drop's counter-hook: off-beat answers on the chord's top tones, an octave away from the tune (above it, or
-// below it when the tune is up an octave), a two-bar call that comes back every two bars
-const counter = (b0, b1, below, vel) => bars(b0, b1).forEach((b) => {
-  const c = chordAt(b * 16), tones = below(b) ? toneRange(c, 68, 81) : toneRange(c, 82, 94);
-  const top = tones.length - 1;
-  const cells = b % 2 ? [[2, top, 2], [5, top - 1, 1.5], [10, top - 2, 2], [13, top - 1, 2]] : [[2, top - 1, 1.5], [7, top, 2], [10, top - 1, 1.5], [14, top - 3, 2]];
-  cells.forEach(([st, k, l], i) => P.chop.push(N(tones[Math.max(0, k)], b * 16 + st, l, i === 1 ? vel : vel - 0.08)));
+// --- Strings (recorded) ------------------------------------------------------------------------
+// The section holds the chord's top voice (falling by step from chord to chord: Bb Ab G G ...) over its root an octave up
+// from the bass, joined bar to bar; `voices` 3 adds the voicing's lowest note between them
+const strings = (b0, b1, vel, voices = 2) => bars(b0, b1).forEach((b) => {
+  const c = chordAt(b * 16), top = Math.max(...c.voicing.filter((p) => p <= 70));
+  const ps = [c.bass + 12, top, ...(voices > 2 ? [Math.min(...c.voicing)] : [])];
+  ps.forEach((p) => P.strings.push(N(p, b * 16, 16.15, typeof vel === 'function' ? vel(b) : vel)));
+});
+// Short violins: an 8th ostinato on the chord's tones (G4 to E5, under the tune), accented 3+3+2
+const spiccato = (b0, b1, vel) => bars(b0, b1).forEach((b) => {
+  const c = chordAt(b * 16), tones = toneRange(c, 62, 76);
+  [0, 2, 1, 3, 2, 0, 3, 1].forEach((k, i) => P.spic.push(N(tones[k % tones.length], b * 16 + 2 * i, 1.6, [0, 3, 6].includes(i) ? vel : vel - 0.15)));
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -199,32 +204,44 @@ flow(16, 24, 0.5);
 held(P.wash, 16, 24, 0.55);
 held(P.stack, 16, 24, (b) => 0.45 + 0.02 * (b - 16), 70);
 tune(16, 'B', 0.8); tune(20, 'A2', 0.82);
+strings(16, 24, (b) => 0.4 + 0.03 * (b - 16));
 P.riser.push(N('C4', 22 * 16, 28, 0.6));
 P.swell.push(N('C4', 23 * 16, 16, 0.75));
 // Drop 1 (24-39, take A3's drop): A, A', A an octave up (the original octave doubled softly under it), the lifted B
 flow(24, 40, 0.56);
-held(P.wash, 24, 40, 0.55);
-held(P.stack, 24, 40, 0.7, 70);
+// (no wash in the drops: the strings hold the harmony, and a lighter bed lets the drums through)
+held(P.stack, 24, 40, 0.66, 70);
 tune(24, 'A', 0.88); tune(28, 'A2', 0.88); tune(32, 'A', 0.88, 12); tune(36, 'B', 0.9);
 tune(32, 'A', 0.6, 0, P.lead2); tune(36, 'B', 0.55, -12, P.lead2);
 bassBars(24, 40, 'oct');
+strings(24, 40, 0.6);
+P.hits.push(N('C1', 24 * 16, 4, 0.9));
+// (a reverse swell into the post-drop)
+P.swell.push(N('C4', 39 * 16, 16, 0.5));
 // Post-drop (40-47): the lead rests and the vowel chops cut the tune up (A A'), over the wash and the piano's broken 8ths
 // (the stack out); the drums thin out over the last four bars and a downlifter falls into the break
 broken8(40, 48, 0.5, 70);
 held(P.wash, 40, 48, 0.6);
 chopCut(40, 'A', 0.85); chopCut(44, 'A2', 0.85);
 bassBars(40, 48, 'hold', 0.82, 0.8);
+spiccato(40, 46, 0.5);
+strings(40, 48, 0.5);
 P.down.push(N('C5', 47 * 16 + 8, 24, 0.6));
 // Break (48-55): piano alone with the wash: the chord struck once and a slow arpeggio, the tune (A A') in the right hand
 ballad(48, 56, 0.42);
 tune(48, 'A', 0.74, 0, P.keys); tune(52, 'A2', 0.74, 0, P.keys);
 held(P.wash, 48, 56, 0.42);
+// (the violins join the piano's tune softly, the section holds the harmony)
+tune(48, 'A', 0.45, 0, P.vln); tune(52, 'A2', 0.5, 0, P.vln);
+strings(48, 56, 0.42);
 // Swell (56-59): the B on the piano, the glass pluck an octave over it, the stack swelling bar by bar, the bass back
 broken8(56, 60, 0.45, 67);
-tune(56, 'B', 0.78, 0, P.keys); tune(56, 'B', 0.42, 12, P.glass);
+tune(56, 'B', 0.78, 0, P.keys); tune(56, 'B', 0.4, 0, P.glass);
 held(P.wash, 56, 60, 0.55);
 held(P.stack, 56, 60, (b) => 0.4 + 0.1 * (b - 56), 70);
 bassBars(56, 60, 'hold', 0.6, 0.55);
+strings(56, 60, (b) => 0.45 + 0.08 * (b - 56), 3);
+tune(56, 'B', 0.55, 0, P.vln);
 P.swell.push(N('C4', 59 * 16, 16, 0.6));
 // Build (60-71): the lift again, longer: the lead sings A then A' (doubled an octave up), the piano's 16ths, hats then
 // snares, still no kick or bass; at bar 68 the pivot (Fm9 Bb13sus4 B13sus4 B7(b9)): a four-on-the-floor kick and a soft
@@ -235,25 +252,33 @@ held(P.stack, 64, 72, 0.6, 70);
 tune(60, 'A', 0.8); tune(64, 'A2', 0.84); tune(64, 'A2', 0.5, 12, P.lead2);
 tune(68, 'P', 0.88); tune(68, 'P', 0.55, -12, P.lead2);
 bassBars(68, 72, 'hold', 0.75, 0.6);
+strings(60, 72, (b) => 0.45 + 0.025 * (b - 60));
+P.riser.push(N('C4', 62 * 16, 32, 0.4));
 P.riser.push(N('C4', 68 * 16, 60, 0.65));
 P.swell.push(N('C4', 71 * 16, 16, 0.8));
 // Drop 2 (72-103, a semitone up): longer, wider, higher. It starts with the A an octave up (the D#6 resolving to E6), then
-// A', A, B; the second half again A up, A', B and B's last time; the original octave doubled; the vowel chops' new
-// counter-hook throughout; the glass pluck doubling the piano's runs, and from bar 88 a high 8th sparkle; from bar 88
-// a busier kick, the bass in 8ths and double-time fills
+// A', A, B; the second half again A up, A', B and B's last time; the original octave doubled; the violins under the lead
+// where it is up an octave, a spiccato violin ostinato in 8ths, the string section; from bar 88 a busier kick, the bass
+// in 8ths and double-time fills. (Version 1 had vowel-chop answers, a glass pluck doubling the piano's runs and a high
+// 8th sparkle here: the owner heard them as squeaky, out of tune and "weird stuff in the background")
 flow(72, 104, 0.58);
-held(P.wash, 72, 104, 0.55);
-held(P.stack, 72, 104, 0.75, 70);
-const D2 = [[72, 'A', 12, 0], [76, 'A2', 0, null], [80, 'A', 0, 12], [84, 'B', 0, -12], [88, 'A', 12, 0], [92, 'A2', 0, 12], [96, 'B', 0, -12], [100, 'Bend', 0, -12]];
+held(P.stack, 72, 104, 0.7, 70);
+const D2 = [[72, 'A', 12, 0], [76, 'A2', 0, null], [80, 'A', 0, null], [84, 'B', 0, -12], [88, 'A', 12, 0], [92, 'A2', 0, null], [96, 'B', 0, -12], [100, 'Bend', 0, -12]];
 D2.forEach(([b0, kind, shift, dbl]) => { tune(b0, kind, 0.9, shift); if (dbl !== null) tune(b0, kind, dbl > 0 ? 0.45 : dbl < 0 ? 0.55 : 0.6, dbl, P.lead2); });
-const leadUp = (b) => D2.some(([b0, , shift]) => shift === 12 && b >= b0 && b < b0 + 4);
-counter(72, 104, leadUp, 0.5);
+// (the violins sing the tune in its own octave, where the lead is up an octave or has no double)
+D2.filter(([, , shift, dbl]) => shift === 12 || dbl === null).forEach(([b0, kind]) => tune(b0, kind, 0.55, 0, P.vln));
+spiccato(72, 104, 0.6);
+strings(72, 104, 0.68);
 bassBars(72, 88, 'oct'); bassBars(88, 100, 'pulse'); bassBars(100, 104, 'oct');
-bars(88, 104).forEach((b) => { const c = chordAt(b * 16), tones = toneRange(c, 82, 96); range(8).forEach((k) => P.glass.push(N(tones[[0, 2, 4, 2, 1, 3, 5, 3][k] % tones.length], b * 16 + 2 * k, 1.5, k % 2 ? 0.3 : 0.38))); });
+P.hits.push(N('C1', 72 * 16, 4, 1)); P.hits.push(N('C1', 88 * 16, 4, 0.75));
+P.riser.push(N('C4', 84 * 16, 60, 0.45)); P.swell.push(N('C4', 87 * 16, 16, 0.6));
+P.down.push(N('C5', 103 * 16 + 8, 24, 0.55));
 // Outro (104-111): back to the intro's piano, the tune once more on it (A, A'), the wash, the drums thinning out
 broken8(104, 112, 0.48, 67);
 tune(104, 'A', 0.64, 0, P.keys); tune(108, 'A2', 0.6, 0, P.keys);
 held(P.wash, 104, 112, 0.45);
+strings(104, 112, (b) => 0.5 - 0.03 * (b - 104));
+tune(104, 'A', 0.42, 0, P.vln);
 bassBars(104, 106, 'hold', 0.75, 0.7);
 // End (bar 112): Ebmaj9 (Emaj9), the piano rolling up to Eb6, held
 {
@@ -262,10 +287,9 @@ bassBars(104, 106, 'hold', 0.75, 0.7);
   [c.bass, c.bass + 12].forEach((p) => P.piano.push(N(p, at, 24, 0.66)));
   toneRange(c, 60, 87).forEach((p, i) => P.piano.push(N(p, at + i / 2, 24 - i / 2, 0.52)));
   P.keys.push(N(75, at, 24, 0.6));
+  [c.bass + 12, 67, 70].forEach((p) => P.strings.push(N(p, at, 24, 0.42)));
   P.bass.push(N(c.bass, at, 20, 0.7)); P.sub.push(N(c.bass - 12, at, 20, 0.7));
 }
-// The glass pluck doubles the second drop's piano runs an octave up
-P.piano.filter((n) => n.at >= KEY_UP * 16 && n.at < 104 * 16 && durationToSteps(n) <= 1.25 && m(n.note) >= 70).forEach((n) => P.glass.push(N(m(n.note) + (m(n.note) + 12 <= 100 ? 12 : 0), n.at, durationToSteps(n), n.velocity * 0.75)));
 function durationToSteps(n) { return T.durationToBars(n.duration) * 16; }
 
 // --- Drums (the Designed Kit: C1 kick, D1 snare, D#1 clap, F#1 closed hat, A#1 open hat, C#2 crash, D#2 ride, F1 B1 D2 toms)
@@ -283,6 +307,7 @@ for (let bar = 8; bar < 16; bar++) {
   range(8).forEach((k) => D('F#1', t + 2 * k, 1, k % 2 ? 0.5 : 0.36));
   [3, 11].forEach((st) => D('F#1', t + st, 1, 0.22));
   if (bar % 4 === 3 && bar !== 15) D('A#1', t + 14, 2, 0.4);
+  range(8).forEach((k) => D('G#2', t + 2 * k + 1, 1, 0.28));
 }
 D('C#2', 8 * 16, 16, 0.55); D('C#2', 12 * 16, 16, 0.4);
 [[8, 'B1'], [10, 'B1'], [12, 'D2'], [13, 'D2'], [14, 'F1'], [15, 'F1']].forEach(([st, r], k) => D(r, 15 * 16 + st, 1, 0.55 + 0.05 * k));
@@ -317,13 +342,16 @@ const FILLS = {
   // a stutter: kick and snare in 32nds, then hats in 32nds
   glitch: [[12, 'C1'], [12.5, 'D1'], [13, 'C1'], [13.5, 'D1'], [14, 'F#1'], [14.25, 'F#1'], [14.5, 'F#1'], [14.75, 'F#1'], [15, 'D1'], [15.5, 'D1']],
 };
+// The shaker (on the Perc row) in 16ths, leaning on each beat's second 16th
+const shaker = (bar, vel) => range(16).forEach((st) => D('G#2', bar * 16 + st, 1, st % 4 === 1 ? vel : st % 2 ? vel - 0.15 : vel - 0.1));
 const fill = (bar, kind) => FILLS[kind].forEach(([s, r], k, a) => D(r, bar * 16 + s, s % 1 ? 0.5 : 1, 0.5 + (0.35 * k) / a.length));
 for (let bar = 24; bar < 40; bar++) {
   const i = bar - 24;
   dropBar(bar, { ride: i >= 8 });
   if (i % 8 === 7) fill(bar, 'toms');
-  else if (i % 4 === 3) D('A#1', bar * 16 + 14, 2, 0.45);
+  else if (i % 4 === 3) { fill(bar, 'hats32'); D('A#1', bar * 16 + 14, 2, 0.45); }
   if (i % 4 === 0) D('C#2', bar * 16, 16, i === 0 ? 0.7 : i % 8 === 0 ? 0.6 : 0.45);
+  shaker(bar, 0.4);
 }
 // Post-drop: the beat with 16th hats, then from bar 44 only the kick's 1 and 3-and, then a snare roll and nothing on beat 4
 for (let bar = 40; bar < 48; bar++) {
@@ -336,6 +364,7 @@ for (let bar = 40; bar < 48; bar++) {
   } else { D('C1', t, 2, 0.85); range(12).forEach((k) => D('D1', t + k, 1, 0.4 + 0.03 * k)); }
 }
 D('C#2', 40 * 16, 16, 0.5); fill(43, 'hats32');
+for (let bar = 40; bar < 47; bar++) shaker(bar, 0.35);
 D('C#2', 48 * 16, 16, 0.32);
 // Build: hats 8ths, then 16ths and soft snares, then from the pivot a four-on-the-floor kick; a snare build into the stop
 for (let bar = 60; bar < 72; bar++) {
@@ -354,6 +383,8 @@ for (let bar = 72; bar < 104; bar++) {
   const i = bar - 72;
   dropBar(bar, { ride: i >= 8, hats16: true, busy: i >= 16 && i < 28 });
   if (FILL2[bar]) fill(bar, FILL2[bar]);
+  shaker(bar, 0.45);
+  if (i < 16 && !FILL2[bar]) [2, 6, 10].forEach((st) => D('A#1', bar * 16 + st, 1, 0.25));
   if (i % 4 === 0) D('C#2', bar * 16, 16, i % 16 === 0 ? 0.72 : 0.5);
 }
 // Outro: half time thinning to hats, then the piano alone
@@ -387,12 +418,19 @@ const eq = (lo, m1f, m1, m2f, m2, hif, hi, cut = 0, low = 0) => ({ peq: { on: tr
   { on: low > 0, type: 'lowcut', freq: low || 40, gain: 0, q: Math.SQRT1_2 }, { on: true, type: 'lowshelf', freq: 120, gain: lo, q: 0.7 },
   { on: true, type: 'bell', freq: m1f, gain: m1, q: 1 }, { on: true, type: 'bell', freq: m2f, gain: m2, q: 1 },
   { on: true, type: 'highshelf', freq: hif, gain: hi, q: 0.7 }, { on: cut > 0, type: 'highcut', freq: cut || 18000, gain: 0, q: Math.SQRT1_2 }] } });
-const wide = (mix = 0.5) => ({ chorus: { on: true, rate: 0.6, depth: 0.7, mix } });
-const V = { drums: -11.5, piano: 2, keys: 3, wash: -12, stack: -5, lead: -3, lead2: -13, chop: -4, glass: -19, bass: -6.5, sub: -20, riser: -16, swell: -15, down: -17, ...(arg.vol ?? {}) };
+// (a shallow chorus: version 1's depth 0.7 wobbled the pitch enough to sound out of tune against the piano)
+const wide = (mix = 0.5) => ({ chorus: { on: true, rate: 0.6, depth: 0.3, mix } });
+const V = { drums: -9, hits: -10, piano: 2, keys: 3, wash: -13, stack: -6.5, lead: -2, lead2: -14, strings: -15, vln: -4, spic: -9, chop: -4, glass: -16, bass: -6.5, sub: -20, riser: -16, swell: -15, down: -17, ...(arg.vol ?? {}) };
 const kitRows = { kick: 'punchyKick', snare: 'tightSnare', clap: 'crispClap', closedHat: 'tightHat', openHat: 'openHat', crash: 'crash', ride: 'ride', tomLow: 'lowTom', tomMid: 'midTom' };
 const kit = Object.fromEntries(Object.entries(kitRows).filter(([, v]) => presetSound(v)).map(([k, v]) => [k, presetSound(v)]));
 kit.closedHat.level = -4; kit.ride.level = -9;
-const COLORS = { drums: '#e05d5d', piano: '#f2c14e', keys: '#f7dc8c', wash: '#7fb7e6', stack: '#5a8fd6', lead: '#e58fd0', lead2: '#c97bb8', chop: '#9fd67f', glass: '#b9f0f0', bass: '#a17be0', sub: '#7a5cc0', riser: '#9aa5b1', swell: '#b0bac4', down: '#8a949e' };
+// (the snare and clap up: the snare stood only 1.6 dB over the mix, under the denser second version's bed)
+kit.snare.level = 3; kit.clap.level = 2;
+// (the shaker on the Perc row)
+kit.cowbell = { ...presetSound('shaker'), level: -6 };
+// The hits: the drop impact (a deep boom with a noise tail) on the kick row
+const hitKit = { kick: presetSound('dropImpact') };
+const COLORS = { drums: '#e05d5d', hits: '#b84a4a', strings: '#f43f5e', vln: '#ef7a7a', spic: '#dc2626', piano: '#f2c14e', keys: '#f7dc8c', wash: '#7fb7e6', stack: '#5a8fd6', lead: '#e58fd0', lead2: '#c97bb8', chop: '#9fd67f', glass: '#b9f0f0', bass: '#a17be0', sub: '#7a5cc0', riser: '#9aa5b1', swell: '#b0bac4', down: '#8a949e' };
 const tracks = [], clips = [];
 const add = (id, name, key, extra = {}, fxPatch = {}) => {
   const notes = P[id];
@@ -410,13 +448,17 @@ const add = (id, name, key, extra = {}, fxPatch = {}) => {
   });
 };
 add('drums', 'Drums', 'designedKit', { drumDesign: kit }, eq(0, 400, 0, 2500, 0, 6000, -2));
+add('hits', 'Impacts', 'designedKit', { drumDesign: hitKit, reverbSend: 0.15 });
 add('piano', 'Piano', 'realGrandPiano', { reverbSend: 0.3 }, eq(-2, 300, -1, 3000, 1, 9000, 1));
 add('keys', 'Piano tune', 'realGrandPiano', { reverbSend: 0.3 });
 add('wash', 'Wash', 'plugin', { ...fledge('wash', 'Pad/Silk Wash'), reverbSend: 0.35 }, eq(0, 300, 0, 2000, 0, 8000, 0, 0, 150));
 add('stack', 'Saw stack', 'plugin', { ...fledge('stack', 'Chords/Silk Stack'), reverbSend: 0.3 }, { ...wide(0.45), ...eq(0, 400, -2, 2500, 0, 5000, -5, 0, 200) });
-add('lead', 'Lead', 'plugin', { ...fledge('lead', 'Lead/Soaring Saw'), reverbSend: 0.3 }, { ...wide(0.45), ...eq(0, 500, -2, 3000, 0, 5500, -4, 0, 250) });
+add('lead', 'Lead', 'plugin', { ...fledge('lead', 'Lead/Soaring Saw'), reverbSend: 0.3 }, { ...wide(0.45), ...eq(0, 500, -2, 3200, -2, 5500, -4, 0, 250) });
 add('lead2', 'Lead octave', 'plugin', { ...fledge('lead2', 'Lead/Soaring Saw'), reverbSend: 0.35 }, wide(0.5));
 add('chop', 'Vowel chops', 'plugin', { ...fledge('chop', 'Keys/Vowel Chop'), reverbSend: 0.3 }, eq(0, 400, 0, 2500, 0, 8000, 0, 0, 300));
+add('strings', 'Strings', 'realStrings', { reverbSend: 0.3 });
+add('vln', 'Violins', 'realViolins', { reverbSend: 0.3 });
+add('spic', 'Violins short', 'realViolinsShort', { reverbSend: 0.25 });
 add('glass', 'Glass', 'plugin', { ...fledge('glass', 'Keys/Glass Pluck'), reverbSend: 0.35 });
 add('bass', 'Bass', 'plugin', { ...fledge('bass', 'Bass/Round Root'), reverbSend: 0 }, eq(0, 180, 2, 600, -3, 3000, -4, 6000));
 add('sub', 'Sub', 'plugin', { ...fledge('sub', 'Bass/Clean Sub'), reverbSend: 0 });
@@ -452,6 +494,15 @@ if (arg.levels) {
     lv[t.id] = [+integratedLufs(L, R, SR).toFixed(1), health([L, R]).peakDb];
   }
   out.levels = lv;
+  return { out, wavs };
+}
+if (arg.stems) {
+  // Each track alone over the whole song (as the export plays it, the master section bypassed), mono 16-bit, for checks
+  for (const t of project.tracks.filter((x) => arg.stems === true || arg.stems.includes(x.id))) {
+    const b = await ex.renderArrangement({ ...songOpts(project), loudTargetLufs: undefined, bypassMaster: true, soundOnly: [t.id] });
+    const L = b.getChannelData(0), R = b.getChannelData(1);
+    wavs[`${FILE}-stem-${t.id}`] = await toUrl(new Blob([ex.encodeChannels([L, R], b.sampleRate, 16)]));
+  }
   return { out, wavs };
 }
 // The project file, as Save writes it
