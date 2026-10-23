@@ -15,7 +15,7 @@ import { safely, type NoteOff } from './instruments';
 import { FLEDGE_PRESETS, FLEDGE_URL } from './plugins/fledgeMacros';
 import { matchGain, PHRASE_BPM, PHRASE_TAIL, phraseLength, presetPhrase, TOUR_PRESETS, TOUR_STEP, type PhraseNote } from './plugins/fledgePhrases';
 import { barsToDuration, defaultMasterSettings, DEFAULT_MASTER_FX, uid, type Clip, type Track } from '../store/timelineTypes';
-import { makeTrack } from '../store/timelineStore';
+import { makeTrack, useTimelineStore } from '../store/timelineStore';
 
 /** What's playing: a track's preset phrase, the rendered tour, or nothing. */
 export type FledgePreviewState = { kind: 'track'; trackId: string } | { kind: 'tour'; loading: boolean } | null;
@@ -43,6 +43,11 @@ export function stopFledgePreview(): void {
   stop?.();
   if (state) setState(null);
 }
+
+// The song starting stops a preview (it isn't heard over the song)
+useTimelineStore.subscribe((s, before) => {
+  if (s.isPlaying && !before.isPlaying) stopFledgePreview();
+});
 
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const noteName = (midi: number) => `${NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
