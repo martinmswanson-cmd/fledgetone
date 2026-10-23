@@ -242,15 +242,22 @@ export const two = (a: [DrumVoice, Partial<DrumLayer>], b: [DrumVoice, Partial<D
  * Club: a round four-on-the-floor kick. Crunch: a modern bass-music kick for dense drops, a hard
  * driven body whose pitch falls slowly enough to hear (from about 280 Hz over 70 ms), a loud
  * click, a short tail so the next kick a 16th later is clear. Zap: the drop slower and longer
- * still, folded, a rubbery zap.
+ * still, folded, a rubbery zap. Drop: a future-bass drop kick that is heard on small speakers as
+ * well as felt: a loud click and a driven body knocking at 200 Hz-1 kHz (about 4 dB under the
+ * low end, where the club kick is 15 dB under), falling onto a tuned sub that carries the low end
+ * for about a quarter of a second (30-150 Hz down 20 dB in about 250 ms) before the bass takes over.
+ * Impact: the drop's first downbeat, a slow, deep boom (from about 300 Hz down onto the key over
+ * 150 ms, ringing on for about two seconds) with a burst of dark noise over it.
  */
-const KICKS: Record<'punch' | 'hardcore' | 'deepTail' | 'club' | 'crunch' | 'zap', Partial<DrumLayer>> = {
+const KICKS: Record<'punch' | 'hardcore' | 'deepTail' | 'club' | 'crunch' | 'zap' | 'drop' | 'impact', Partial<DrumLayer>> = {
   punch: { pitch: 52, startPitch: 200, sweepTime: 0.045, decay: 0.07, body: 0.8, shape: 0.15, click: 0.55, color: 3200, noiseDecay: 0.005, sub: 0.9, tail: 0.18, drive: 0.35, driveMode: 0, tone: 5000, keyTrack: 1 },
   hardcore: { pitch: 55, startPitch: 220, sweepTime: 0.04, decay: 0.1, body: 1, shape: 0.6, click: 0.6, color: 3000, noiseDecay: 0.006, sub: 0.35, tail: 0.29, hardcore: 1, drive: 0.85, driveMode: 1, tone: 4200, keyTrack: 1 },
   deepTail: { pitch: 46, startPitch: 150, sweepTime: 0.06, decay: 0.1, body: 0.6, shape: 0, click: 0.6, color: 2500, noiseDecay: 0.006, sub: 1, tail: 0.45, drive: 0.15, tone: 4000, keyTrack: 1 },
   club: { pitch: 50, startPitch: 140, sweepTime: 0.05, decay: 0.1, body: 0.8, shape: 0, click: 0.7, color: 2200, noiseDecay: 0.008, sub: 0.85, tail: 0.16, drive: 0.2, tone: 3500 },
   crunch: { pitch: 52, startPitch: 280, sweepTime: 0.07, decay: 0.11, body: 1, shape: 0.4, click: 1, color: 4500, noiseDecay: 0.011, sub: 0.85, tail: 0.15, drive: 0.8, driveMode: 1, tone: 7000, keyTrack: 1 },
   zap: { pitch: 50, startPitch: 300, sweepTime: 0.11, decay: 0.16, body: 1, shape: 0.25, click: 0.6, color: 3000, noiseDecay: 0.006, sub: 0.5, tail: 0.18, drive: 0.65, driveMode: 2, tone: 6000, keyTrack: 1 },
+  drop: { pitch: 55, startPitch: 260, sweepTime: 0.065, decay: 0.15, body: 1, shape: 0.4, click: 0.9, color: 3600, noiseDecay: 0.011, sub: 0.9, tail: 0.36, drive: 0.75, driveMode: 0, tone: 7000, keyTrack: 1 },
+  impact: { pitch: 45, startPitch: 300, sweepTime: 0.15, decay: 0.4, body: 1, shape: 0.2, click: 0.8, color: 2500, noiseDecay: 0.012, sub: 1, tail: 1.6, drive: 0.6, driveMode: 0, tone: 3000, keyTrack: 1 },
 };
 
 /**
@@ -293,6 +300,8 @@ export const DRUM_PRESETS: readonly DrumPreset[] = [
   { id: 'clubKick', name: 'Club kick', group: 'Kicks', sound: one('layerKick', KICKS.club) },
   { id: 'crunchKick', name: 'Crunch kick', group: 'Kicks', sound: one('layerKick', KICKS.crunch) },
   { id: 'zapKick', name: 'Zap kick', group: 'Kicks', sound: one('layerKick', KICKS.zap) },
+  { id: 'dropKick', name: 'Hard drop kick', group: 'Kicks', sound: one('layerKick', KICKS.drop) },
+  { id: 'dropImpact', name: 'Drop impact', group: 'Kicks', sound: two(['layerKick', KICKS.impact], ['snare', { pitch: 110, sweep: 12, sweepTime: 0.03, body: 0.4, decay: 0.25, noise: 1, color: 1800, noiseDecay: 1.2, click: 0.5, drive: 0.5, level: -5 }]) },
   // Snares
   { id: 'drillSnare', name: 'Punchy snare', group: 'Snares', sound: one('snare', { pitch: 210, sweep: 9, body: 0.75, decay: 0.09, noise: 0.85, color: 5200, noiseDecay: 0.16, click: 0.8, drive: 0.3 }) },
   { id: 'trapSnare', name: 'Crisp snare', group: 'Snares', sound: one('snare', { pitch: 230, sweep: 5, body: 0.5, decay: 0.07, noise: 1, color: 7000, noiseDecay: 0.22, click: 0.7, drive: 0.15 }) },

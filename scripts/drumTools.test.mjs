@@ -153,6 +153,56 @@ test('layered kicks: click, a body falling from its punch pitch onto the tail, t
   }
 });
 
+test('the hard drop kick knocks and clicks where the club kick only thumps, and its tuned sub carries the low end longer', () => {
+  /** Energy of `x` in lo-hi Hz from a to b seconds, dB */
+  const energy = (x, lo, hi, a, b) => {
+    const y = M.band(x, SR, lo, hi);
+    let s = 0;
+    for (let i = Math.round(a * SR); i < Math.min(y.length, Math.round(b * SR)); i++) s += y[i] * y[i];
+    return 10 * Math.log10(s + 1e-12);
+  };
+  const knock = (x) => energy(x, 200, 1000, 0, 0.06) - energy(x, 30, 150, 0, 0.06);
+  const drop = render('dropKick');
+  const club = render('clubKick');
+  const l = D.presetSound('dropKick').layers[0];
+  assert.ok(S.peakOf(drop) <= S.DRUM_CEILING + 1e-6);
+  const m = M.measureKick(drop, SR, l.pitch);
+  const c = M.measureKick(club, SR, 50);
+  // A click at the front a little over the low end (the club kick's is 15 dB under it)
+  assert.ok(m.clickDb >= -3 && m.clickDb <= 6, `click ${m.clickDb}`);
+  assert.ok(m.clickDb > c.clickDb + 10);
+  // The driven body knocks at 200 Hz-1 kHz, 2-7 dB under the low end, 8 dB and more over the club kick
+  assert.ok(knock(drop) >= -7 && knock(drop) <= -2, `knock ${knock(drop)}`);
+  assert.ok(knock(drop) > knock(club) + 8);
+  // Falls from its punch pitch onto a tuned sub (on the song's key) that holds the low end about a quarter of a second
+  assert.ok(m.startHz > 2.5 * l.pitch, `starts at ${m.startHz}`);
+  assert.ok(m.endHz > l.pitch - 4 && m.endHz < l.pitch + 8, `ends at ${m.endHz}`);
+  assert.equal(l.keyTrack, 1);
+  assert.ok(m.lowFall20Ms >= 200 && m.lowFall20Ms <= 300, `low end falls 20 dB in ${m.lowFall20Ms} ms`);
+  assert.ok(m.lowFall20Ms > c.lowFall20Ms * 1.6);
+  // Its drive stays under the hardcore kick's: a punchy kick, not a distorted one
+  assert.ok(m.harmonicsDb < M.measureKick(render('hardcoreKick'), SR, 55).harmonicsDb - 8);
+});
+
+test('the drop impact is a deep boom that rings on for a second or two, with a noise burst over it', () => {
+  const sound = D.presetSound('dropImpact');
+  const x = S.renderDrumSound(sound, 'kick', SR, 1);
+  assert.equal(sound.layers.length, 2);
+  assert.ok(S.peakOf(x) <= S.DRUM_CEILING + 1e-6);
+  const boom = M.measureKick(S.renderDrumSound({ ...sound, layers: [sound.layers[0]] }, 'kick', SR, 1), SR, sound.layers[0].pitch);
+  // The boom falls from about 300 Hz onto the key over its pitch drop
+  assert.ok(boom.startHz > 4 * sound.layers[0].pitch, `starts at ${boom.startHz}`);
+  // ...and its low end is still within 20 dB of its peak after 0.8 s, gone by the longest hit
+  const env = M.frameDb(M.band(x, SR, 30, 150), SR, 10);
+  assert.ok(bandAt(env, 0.8) > -20, `at 0.8 s ${bandAt(env, 0.8)}`);
+  assert.ok(x.length / SR >= 1.5 && x.length / SR <= S.MAX_HIT_SECONDS + 0.01);
+  // The noise layer: a wash of 2-8 kHz over the boom's ring (0.1-0.6 s) that the boom alone hasn't
+  const e = (y, lo, hi) => { const b = M.band(y, SR, lo, hi); let s = 0; for (let i = Math.round(0.1 * SR); i < 0.6 * SR; i++) s += b[i] * b[i]; return 10 * Math.log10(s + 1e-12); };
+  const noise = (y) => e(y, 2000, 8000) - e(y, 30, 150);
+  const alone = S.renderDrumSound({ ...sound, layers: [sound.layers[0]] }, 'kick', SR, 1);
+  assert.ok(noise(x) > noise(alone) + 10, `noise ${noise(x)} vs ${noise(alone)}`);
+});
+
 test('the new default kick leaves the sub to the bass; a hardcore kick holds its driven tail through the beat', () => {
   const punch = M.measureKick(render('punchKick'), SR, 52);
   const old = M.measureKick(render('hardTrapKick'), SR, 46);
