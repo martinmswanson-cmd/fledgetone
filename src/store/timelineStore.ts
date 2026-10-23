@@ -933,7 +933,7 @@ export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Cli
 }
 
 /** A track for `instrumentKey` with the usual starting settings, named after it (numbered after those already there). */
-function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: string): Track {
+export function makeTrack(instrumentKey: InstrumentKey, existing: Track[], name?: string): Track {
   const meta = INSTRUMENTS[instrumentKey];
   const count = existing.filter((t) => t.instrumentKey === instrumentKey).length;
   // The sends its kind of part starts with (partKind.ts): pads and leads in the room, a lead's echo
