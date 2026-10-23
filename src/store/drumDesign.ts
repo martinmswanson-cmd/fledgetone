@@ -325,6 +325,8 @@ export const DRUM_PRESETS: readonly DrumPreset[] = [
   { id: 'sharpHat', name: 'Sharp tight hat', group: 'Hats', sound: one('hat', { pitch: 460, color: 11000, decay: 0.028, noise: 0.6, click: 0.6, drive: 0.3 }) },
   { id: 'darkHat', name: 'Dark closed hat', group: 'Hats', sound: one('hat', { pitch: 280, color: 6500, decay: 0.06, noise: 0.25, click: 0.25 }) },
   { id: 'openHat', name: 'Open hat', group: 'Hats', sound: one('hat', { pitch: 360, color: 9500, decay: 0.42, noise: 0.4, click: 0.3 }) },
+  // (A house off-beat hat: open, bright and gone before the next beat at 120-145 BPM)
+  { id: 'offbeatHat', name: 'Short open hat', group: 'Hats', sound: one('hat', { pitch: 380, color: 11000, decay: 0.25, noise: 0.5, click: 0.35 }) },
   { id: 'longOpenHat', name: 'Long sizzling open hat', group: 'Hats', sound: one('hat', { pitch: 400, color: 11000, decay: 0.9, noise: 0.6, click: 0.2 }) },
   // Cymbals
   { id: 'crash', name: 'Washy crash', group: 'Cymbals', sound: one('hat', { pitch: 300, color: 7000, decay: 2.4, noise: 0.7, click: 0.3 }) },

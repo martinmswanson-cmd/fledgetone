@@ -184,6 +184,15 @@ test('the hard drop kick knocks and clicks where the club kick only thumps, and 
   assert.ok(m.harmonicsDb < M.measureKick(render('hardcoreKick'), SR, 55).harmonicsDb - 8);
 });
 
+test('the short open hat sounds open but is gone 20 dB within an 8th at house tempo, between the closed and the open hat', () => {
+  const fall = (id) => M.fallMs(M.frameDb(M.band(S.renderDrumSound(D.presetSound(id), 'openHat', SR, 1), SR, 3000, 16000), SR, 1), 20);
+  const short = fall('offbeatHat');
+  // An 8th at 140 BPM is 214 ms: the off-beat hat is over before the next beat's kick
+  assert.ok(short > 60 && short < 200, `short open hat falls 20 dB in ${short} ms`);
+  assert.ok(short > fall('trapHat') * 1.5, 'longer than a closed hat');
+  assert.ok(short < fall('openHat') * 0.75, 'shorter than the open hat');
+});
+
 test('the drop impact is a deep boom that rings on for a second or two, with a noise burst over it', () => {
   const sound = D.presetSound('dropImpact');
   const x = S.renderDrumSound(sound, 'kick', SR, 1);
