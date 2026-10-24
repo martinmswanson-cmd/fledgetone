@@ -136,6 +136,11 @@ export const FLEDGE_SECTIONS = {
   play: { mode: choice('Voices', 'Voices', FLEDGE_MODES, CAP.mode), knobs: [knob('Glide', 'Glide'), knob('Bend range', 'Bend'), knob('Velocity', 'Velocity')] },
   /** Mono and legato: a note that doesn't join the last starts afresh (so a repeating riff repeats) */
   monoRestart: toggle('Mono restart', 'Restart each note'),
+  /** The same sound up the whole keyboard: no step where the wavetable changes octave, a note's
+   * random start from its step (not its pitch); and how much the unison's detune narrows above
+   * middle C (so it doesn't beat faster and faster up high) */
+  evenKeys: toggle('Even keyboard', 'Even keyboard'),
+  detuneKey: knob('Detune key tracking', 'Detune key'),
   glide: [choice('Glide mode', 'Glide', FLEDGE_GLIDE_MODES, CAP.glide), choice('Glide rate', 'Glide time', FLEDGE_GLIDE_RATES, CAP.glide), choice('Glide curve', 'Glide curve', FLEDGE_GLIDE_CURVES, CAP.glide)],
   eq: { on: toggle('EQ on', 'On'), knobs: [knob('EQ low', 'Low', true), knob('EQ low freq', 'Low freq'), knob('EQ mid', 'Mid', true), knob('EQ mid freq', 'Mid freq'), knob('EQ high', 'High', true), knob('EQ high freq', 'High freq')] },
   chorus: { on: toggle('Chorus on', 'On'), knobs: [knob('Chorus rate', 'Rate'), knob('Chorus depth', 'Depth'), knob('Chorus mix', 'Mix')] },

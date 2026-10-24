@@ -49,6 +49,17 @@ impl Table {
         let sb = b[0] + (b[1] - b[0]) * t;
         sa + (sb - sa) * ft
     }
+
+    /// As `read`, fading `w` (0..1) of the way from `level` to the next level up.
+    #[inline]
+    pub fn read_blend(&self, level: usize, w: f32, pos: f32, phase: f32) -> f32 {
+        let a = self.read(level, pos, phase);
+        if w <= 0.0 {
+            a
+        } else {
+            a + (self.read((level + 1).min(LEVELS - 1), pos, phase) - a) * w
+        }
+    }
 }
 
 /// The level whose harmonics all stay below half the sample rate for a note advancing `inc`
@@ -61,6 +72,33 @@ pub fn level_for(inc: f32) -> usize {
         0
     } else {
         (need.log2().ceil() as usize).min(LEVELS - 1)
+    }
+}
+
+/// As `level_for`, but with no step from one level to the next: the level whose harmonics reach
+/// the highest without passing half the sample rate, and how far (0..1) to fade from it into the
+/// next one up. Just past a change of octave the richer level still plays, its few harmonics over
+/// half the sample rate folding back above `audible` Hz (where nobody hears them), and fades into
+/// the next level by the time they'd fold lower; so the brightness moves smoothly with the pitch
+/// (and with a glide) instead of losing its top octave of harmonics at once.
+#[inline]
+pub fn level_blend(inc: f32, sr: f32, audible: f32) -> (usize, f32) {
+    let need = TOP as f32 * inc.abs() * 2.0;
+    if need <= 1.0 {
+        return (0, 0.0);
+    }
+    let x = need.log2();
+    let k = x.floor();
+    if k as usize >= LEVELS - 1 {
+        return (LEVELS - 1, 0.0);
+    }
+    // How far over half the sample rate the richer level's top may reach (an octave at most)
+    let zone = ((sr - audible) / (0.5 * sr)).max(1.0).log2().clamp(0.05, 1.0);
+    let f = x - k;
+    if f >= zone {
+        (k as usize + 1, 0.0)
+    } else {
+        (k as usize, f / zone)
     }
 }
 
@@ -378,6 +416,32 @@ mod tests {
         let mag = |h: usize| (re[h] * re[h] + im[h] * im[h]).sqrt();
         assert!(mag(1) > 1.0);
         assert!(mag(lv.size / 2 - 2) < 1e-6 * mag(1));
+    }
+
+    #[test]
+    fn blended_levels_move_smoothly_and_fold_only_above_hearing() {
+        let sr = 48000.0;
+        let mut last: Option<f32> = None;
+        // A fine sweep from 20 Hz to 10 kHz: the effective top harmonic (levels weighted by the
+        // fade) never jumps, and whatever folds back lands above 20 kHz
+        let mut f = 20.0f32;
+        while f < 10000.0 {
+            let inc = f / sr;
+            let (k, w) = level_blend(inc, sr, 20000.0);
+            let top = |k: usize| (TOP >> k.min(LEVELS - 1)) as f32 * f;
+            let eff = top(k) * (1.0 - w) + top(k + 1) * w;
+            if let Some(p) = last {
+                assert!((eff / p).ln().abs() < 0.02, "{f} Hz: top {eff} after {p}");
+            }
+            last = Some(eff);
+            // (The richer level, while it fades: its top folds back to sr - top)
+            if w > 0.0 {
+                assert!(sr - top(k) >= 19999.0, "{f} Hz folds to {}", sr - top(k));
+            } else {
+                assert!(top(k) <= sr * 0.5 * 1.0001 || k == LEVELS - 1, "{f} Hz: level {k}");
+            }
+            f *= 1.001;
+        }
     }
 
     #[test]

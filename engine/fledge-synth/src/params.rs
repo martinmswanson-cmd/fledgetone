@@ -381,13 +381,27 @@ const PLAY_MORE: [Param; 8] = [
     // first), not its pitch, so a riff that comes round on other notes moves as it did
     pr("Random by step", Kind::Toggle, 1.0),
 ];
+// ---------- added for the keyboard range (after "Random by step") ----------
+const RANGE_P: [Param; 2] = [
+    // A note sounds alike wherever it is on the keyboard: the wavetable's octave levels fade into
+    // each other (no step in brightness where one takes over), and a note's random start (its
+    // unison phases, a Steps or Drift LFO's first levels, the Random source) follows its step and
+    // its place in a chord, not its pitch
+    pr("Even keyboard", Kind::Toggle, 1.0),
+    // How much the unison's detune narrows for notes above middle C, so its beating doesn't race
+    // on high notes: 0 the same cents everywhere (it beats eight times as fast three octaves up),
+    // 100 % as slow as at middle C
+    pr("Detune key tracking", Kind::Percent, 0.5),
+];
 
 /// What a parameter added later is set to when an older saved sound (one with fewer values)
 /// loads, where that differs from its default: the old sound, exactly. (The sub went through the
 /// effects with the rest of the voice before "Sub path" came; a mono note ran on from the last one's
 /// phases before "Mono restart"; the side lost only what was under 120 Hz before "Mono below"; a
 /// note's random values came from its step and its pitch before "Random by step".)
-const LEGACY: &[(&str, f32)] = &[("Sub path", 0.0), ("Mono restart", 0.0), ("Mono below", 120.0), ("Random by step", 0.0)];
+/// (Before the keyboard-range work, a wavetable stepped from one octave level to the next, a
+/// note's random start followed its pitch and the detune was the same in cents on every note.)
+const LEGACY: &[(&str, f32)] = &[("Sub path", 0.0), ("Mono restart", 0.0), ("Mono below", 120.0), ("Random by step", 0.0), ("Even keyboard", 0.0), ("Detune key tracking", 0.0)];
 
 /// Every group, in order: its place in the list is where it starts
 const GROUPS: &[&[Param]] = &[
@@ -399,7 +413,7 @@ const GROUPS: &[&[Param]] = &[
     &MATRIX2[0], &MATRIX2[1], &MATRIX2[2], &MATRIX2[3], &MATRIX2[4], &MATRIX2[5], &MATRIX2[6], &MATRIX2[7],
     &SLOT_MORE[0], &SLOT_MORE[1], &SLOT_MORE[2], &SLOT_MORE[3], &SLOT_MORE[4], &SLOT_MORE[5], &SLOT_MORE[6], &SLOT_MORE[7],
     &SLOT_MORE[8], &SLOT_MORE[9], &SLOT_MORE[10], &SLOT_MORE[11], &SLOT_MORE[12], &SLOT_MORE[13], &SLOT_MORE[14], &SLOT_MORE[15],
-    &DRIVE_MORE, &PLAY_MORE,
+    &DRIVE_MORE, &PLAY_MORE, &RANGE_P,
 ];
 
 /// Where each group starts in the full list (tests::indices_name_their_parameters checks them)
@@ -493,7 +507,12 @@ pub const PENV_CURVE: usize = SUB_PATH + 4;
 pub const MONO_RESTART: usize = SUB_PATH + 5;
 pub const MONO_BELOW: usize = SUB_PATH + 6;
 pub const RANDOM_BY_STEP: usize = SUB_PATH + 7;
-pub const COUNT: usize = RANDOM_BY_STEP + 1;
+/// How many parameters there were before the keyboard-range work (saved sounds with this many
+/// values step between table levels, seed by pitch, detune in cents: see `legacy`)
+pub const COUNT_V2: usize = RANDOM_BY_STEP + 1;
+pub const EVEN_KEYS: usize = COUNT_V2;
+pub const DETUNE_KEY: usize = COUNT_V2 + 1;
+pub const COUNT: usize = DETUNE_KEY + 1;
 
 /// Matrix slot `n`'s (0 to 15) source, target and amount; and its curve and via
 pub const fn slot_base(n: usize) -> usize {
@@ -735,6 +754,7 @@ mod tests {
             (PRE_SHAPER, "Pre drive type"), (DRIVE_TONE, "Drive tone"), (BAND_SHAPER, "Band drive type"), (BAND_HIGH_AMT, "Band high amount"),
             (SUB_PATH, "Sub path"), (GLIDE_MODE, "Glide mode"), (PENV_CURVE, "Pitch envelope curve"),
             (MONO_RESTART, "Mono restart"), (MONO_BELOW, "Mono below"), (RANDOM_BY_STEP, "Random by step"),
+            (EVEN_KEYS, "Even keyboard"), (DETUNE_KEY, "Detune key tracking"),
         ];
         assert_eq!(COUNT_V1, 215, "the first version's parameters");
         for (i, name) in check {

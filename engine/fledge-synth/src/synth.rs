@@ -20,7 +20,7 @@
 use crate::dsp::*;
 use crate::fx::{Effects, FxCfg, FxMods};
 use crate::params::{self as p, db_gain, param, COUNT};
-use crate::tables::{level_for, table};
+use crate::tables::{level_blend, level_for, table};
 
 pub const BLOCK: usize = 128;
 /// Modulation (LFOs, envelopes into cutoff, pitch) is worked out every this many samples
@@ -204,6 +204,11 @@ struct Cfg {
     /// A note's random values from its step and its place in a chord (lowest first), not its
     /// pitch (older sounds: from its pitch)
     random_by_step: bool,
+    /// No step between the table's octave levels, and a note's random start from its step, not
+    /// its pitch (older sounds: off)
+    even_keys: bool,
+    /// How much the unison's detune narrows above middle C (0..1)
+    detune_key: f32,
     chaos_beats: f32,
     chaos_smooth: f32,
     /// Beats after which the random values come round again (0: never)
@@ -236,7 +241,8 @@ struct Spread {
 }
 
 impl Spread {
-    fn new(o: &OscCfg, detune: f32) -> Self {
+    /// `key`: the detune's scale for this note (1, or less above middle C: "Detune key tracking")
+    fn new(o: &OscCfg, detune: f32, key: f32) -> Self {
         let n = o.unison.clamp(1, UNISON);
         let mut s = Spread { n, ratio: [1.0; UNISON], gl: [0.0; UNISON], gr: [0.0; UNISON], top: 1.0 };
         let (pl, pr) = ((1.0 - o.pan).sqrt(), (1.0 + o.pan).sqrt());
@@ -246,7 +252,7 @@ impl Spread {
             return s;
         }
         // The detune grows slowly then fast (as the classic supersaw's knob does): up to 100 cents
-        let cents = 100.0 * detune * detune;
+        let cents = 100.0 * detune * detune * key;
         // Centre and detuned levels from the blend, at constant loudness
         let centre = 1.0 + (0.4 - 1.0) * o.blend;
         let detuned = 0.6 * (1.0 - (1.0 - o.blend) * (1.0 - o.blend));
@@ -1049,6 +1055,7 @@ impl Synth {
             chorus_rate: self.v(p::CHORUS_ON + 1),
             chorus_depth: self.v(p::CHORUS_ON + 2),
             chorus_mix: self.v(p::CHORUS_ON + 3),
+            chorus_spread: self.v(p::EVEN_KEYS) > 0.5,
             phaser: self.v(p::PHASER_ON) > 0.5,
             flanger: self.v(p::PHASER_ON + 1) > 0.5,
             phaser_rate: self.v(p::PHASER_ON + 2),
@@ -1111,6 +1118,8 @@ impl Synth {
             mono_restart: self.v(p::MONO_RESTART) > 0.5,
             mono_below: self.v(p::MONO_BELOW),
             random_by_step: self.v(p::RANDOM_BY_STEP) > 0.5,
+            even_keys: self.v(p::EVEN_KEYS) > 0.5,
+            detune_key: self.v(p::DETUNE_KEY),
             chaos_beats: p::SYNC_BEATS[self.v(p::CHAOS_DIV) as usize],
             chaos_smooth: self.v(p::CHAOS_SMOOTH),
             random_cycle: p::RANDOM_CYCLE_BEATS[self.v(p::RANDOM_CYCLE) as usize],
@@ -1200,7 +1209,10 @@ impl Synth {
             // played before): the same notes from the same place sound the same, live or exported
             // (Within the random cycle, when there is one: a riff that repeats sounds the same)
             let at = if cfg.random_cycle > 0.0 { self.song_beats.rem_euclid(cfg.random_cycle) } else { self.song_beats };
-            self.rng = Rng::new((hash01(ticks(at) << 8 ^ note as u64 ^ 0x5eed_0000_0000) * 4_294_967_000.0) as u32);
+            // ("Even keyboard": its place in a chord struck at once, not its pitch, so a riff on
+            // other notes starts each step as it did, and neighbouring notes alike)
+            let which = if cfg.even_keys { self.struck_k[note as usize & 127] } else { note };
+            self.rng = Rng::new((hash01(ticks(at) << 8 ^ which as u64 ^ 0x5eed_0000_0000) * 4_294_967_000.0) as u32);
         }
         if cfg.mode > 0 {
             // Mono and legato: one voice; legato keeps the envelopes going between joined notes
@@ -1545,7 +1557,7 @@ impl Synth {
         let cfg = self.cfg();
         let sr = self.sr;
         let nblk = frames.div_ceil(CONTROL).max(1);
-        let spread = [Spread::new(&cfg.osc[0], cfg.osc[0].detune), Spread::new(&cfg.osc[1], cfg.osc[1].detune)];
+        let spread = [Spread::new(&cfg.osc[0], cfg.osc[0].detune, 1.0), Spread::new(&cfg.osc[1], cfg.osc[1].detune, 1.0)];
         for c in 0..2 {
             self.out[c][..frames].fill(0.0);
         }
@@ -1749,15 +1761,24 @@ impl Synth {
                 let inc = [fa / sr, fb / sr];
                 // The sub follows the note itself (not oscillator A's tuning, which may be off)
                 let sub_inc = 440.0 * 2f32.powf((pitch - 69.0) / 12.0) / sr * cfg.sub_div;
+                // The detune narrows above middle C as far as "Detune key tracking" says (the
+                // beating then speeds up less than the pitch does)
+                let key = if cfg.detune_key > 0.0 && v.pitch > 60.0 { 2f32.powf(-cfg.detune_key * (v.pitch - 60.0) / 12.0) } else { 1.0 };
                 let sp = [
-                    if m[d::ADET] != 0.0 { Spread::new(&cfg.osc[0], (cfg.osc[0].detune + m[d::ADET]).clamp(0.0, 1.0)) } else { spread[0] },
-                    if m[d::BDET] != 0.0 { Spread::new(&cfg.osc[1], (cfg.osc[1].detune + m[d::BDET]).clamp(0.0, 1.0)) } else { spread[1] },
+                    if m[d::ADET] != 0.0 || key < 1.0 { Spread::new(&cfg.osc[0], (cfg.osc[0].detune + m[d::ADET]).clamp(0.0, 1.0), key) } else { spread[0] },
+                    if m[d::BDET] != 0.0 || key < 1.0 { Spread::new(&cfg.osc[1], (cfg.osc[1].detune + m[d::BDET]).clamp(0.0, 1.0), key) } else { spread[1] },
                 ];
                 let warp = [(cfg.osc[0].warp_amt + m[d::AWARP]).clamp(0.0, 1.0), (cfg.osc[1].warp_amt + m[d::BWARP]).clamp(0.0, 1.0)];
-                let lvl = [
-                    level_for(inc[0] * sp[0].top * warp_stretch(cfg.osc[0].warp, warp[0])),
-                    level_for(inc[1] * sp[1].top * warp_stretch(cfg.osc[1].warp, warp[1])),
-                ];
+                // The table level for each oscillator (and, "Even keyboard", how far into the next
+                // one up it has faded)
+                let level = |o: usize| {
+                    let i = inc[o] * sp[o].top * warp_stretch(cfg.osc[o].warp, warp[o]);
+                    if cfg.even_keys { level_blend(i, sr, 20000.0) } else { (level_for(i), 0.0) }
+                };
+                let (lvl, lw) = {
+                    let (a, b) = (level(0), level(1));
+                    ([a.0, b.0], [a.1, b.1])
+                };
                 let pos = [(cfg.osc[0].pos + m[d::APOS] * 0.5).clamp(0.0, 1.0), (cfg.osc[1].pos + m[d::BPOS] * 0.5).clamp(0.0, 1.0)];
                 let gains = [cfg.osc[0].level * (1.0 + m[d::ALEVEL]).clamp(0.0, 2.0), cfg.osc[1].level * (1.0 + m[d::BLEVEL]).clamp(0.0, 2.0)];
                 // FM: B into A's phase, deepest for low notes, held back on high ones (they'd fold)
@@ -1854,7 +1875,7 @@ impl Synth {
                             if o == 0 && fm > 0.0 {
                                 read = (read + fm * modb).rem_euclid(1.0);
                             }
-                            let raw = tab[o].read(lvl[o], pos[o], read);
+                            let raw = tab[o].read_blend(lvl[o], lw[o], pos[o], read);
                             let smp = warp_amp(oc.warp, warp[o], raw, other);
                             if u == 0 {
                                 if o == 1 {
@@ -3049,7 +3070,7 @@ mod tests {
     fn stacks_keep_every_note_with_an_odd_unison() {
         let semis = |unison: usize, stack: usize| {
             let o = OscCfg { unison, stack, detune: 0.0, blend: 0.5, width: 0.5, ..Default::default() };
-            let sp = Spread::new(&o, 0.0);
+            let sp = Spread::new(&o, 0.0, 1.0);
             let mut v: Vec<i32> = (0..sp.n).map(|i| (12.0 * sp.ratio[i].log2()).round() as i32).collect();
             v.sort();
             v.dedup();
@@ -3089,3 +3110,7 @@ mod movement_tests;
 #[cfg(test)]
 #[path = "synth_sound_tests.rs"]
 mod sound_tests;
+
+#[cfg(test)]
+#[path = "synth_range_tests.rs"]
+mod range_tests;

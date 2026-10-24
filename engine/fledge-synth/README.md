@@ -32,7 +32,12 @@ as a Rust library for a future desktop app.
 - Multiband upward/downward compression (OTT), effects, width, mono below a set frequency (180 Hz
   in new sounds, 120 Hz in older ones: after the unison, chorus and width) and a
   safety clipper that never lets a note pass −1 dB
-- Built-in presets for bass music, leads, chords and pads
+- Even keyboard: the table's octave levels fade into each other (no step in brightness where
+  one takes over), a note's random start follows its step, not its pitch, and the chorus leaves
+  the lows alone; the unison's detune narrows above middle C ("Detune key tracking"). Older
+  saved sounds keep the stepped tables, pitch seeds and cents they had
+- Built-in presets for bass music, leads, chords and pads, their filters following the note so
+  each keeps its tone from its lowest notes to its highest
 
 Saved sounds keep their sound: parameters are only ever added at the end, and a sound saved
 with fewer of them loads with the new ones set as it sounded then (`bb_legacy`).
@@ -40,7 +45,11 @@ with fewer of them loads with the new ones set as it sounded then (`bb_legacy`).
 with numbers taken from the engine before the change. `cargo run --release --example movement`
 measures how the presets' timbre moves on a riff of 16ths (src/analysis.rs), and how alike a riff
 that repeats each bar is a bar apart; `cargo run --release --example bands` measures each preset's
-band balance (presence and air, the low end's width, the sharpest narrow peak).
+band balance (presence and air, the low end's width, the sharpest narrow peak); `cargo run
+--release --example range` plays every preset chromatically over its range and measures each
+note's tone in harmonics, loudness, sub and width, and the largest jump between neighbours.
+`tests/legacy_sound.rs` also holds every preset and a fresh synth as saved before the
+keyboard-range work (`tests/data/range_sound.bin`).
 
 ## Build
 

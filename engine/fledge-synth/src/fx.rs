@@ -123,6 +123,9 @@ pub struct FxCfg {
     pub chorus_rate: f32,
     pub chorus_depth: f32,
     pub chorus_mix: f32,
+    /// The chorus's three voices each at their own delay ("Even keyboard"), so its comb doesn't
+    /// hollow out the notes whose harmonics fall in its notches (older sounds: all at one)
+    pub chorus_spread: bool,
     pub phaser: bool,
     pub flanger: bool,
     pub phaser_rate: f32,
@@ -164,6 +167,8 @@ pub struct Effects {
     eq_key: [f32; 6],
     chorus: [Line; 2],
     chorus_phase: f32,
+    /// The lows the chorus leaves alone ("Even keyboard"), each side
+    chorus_low: [f32; 2],
     phaser_ap: [[f32; 6]; 2],
     phaser_last: [f32; 2],
     phaser_phase: f32,
@@ -195,6 +200,7 @@ impl Effects {
             eq_key: [f32::NAN; 6],
             chorus: [Line::new(ms(40.0)), Line::new(ms(40.0))],
             chorus_phase: 0.0,
+            chorus_low: [0.0; 2],
             phaser_ap: [[0.0; 6]; 2],
             phaser_last: [0.0; 2],
             phaser_phase: 0.0,
@@ -236,6 +242,7 @@ impl Effects {
         }
         if c.chorus && !self.was_on[0] {
             self.chorus.iter_mut().for_each(Line::clear);
+            self.chorus_low = [0.0; 2];
         }
         // The phaser or the flanger, coming in (switched on, or the mode changed), starts clean
         let was_running = |flanger: bool| self.was_on[1] && self.was_flanger == flanger;
@@ -280,21 +287,33 @@ impl Effects {
             let inc = c.chorus_rate / sr;
             let base = 0.012 * sr;
             let depth = (0.001 + 0.007 * c.chorus_depth) * sr;
+            // ("Even keyboard": under about 150 Hz the sound passes by, untouched: the voices'
+            // different delays would thin a low note's fundamental, and the low end stays solid)
+            let low_k = 1.0 - (-2.0 * PI * 150.0 / sr).exp();
             for n in 0..frames {
                 let mix = (c.chorus_mix + mods[n / step].chorus).clamp(0.0, 1.0);
-                let (x0, x1) = (l[n], r[n]);
+                let (mut x0, mut x1) = (l[n], r[n]);
+                let mut low = [0.0f32; 2];
+                if c.chorus_spread {
+                    for (ch, x) in [&mut x0, &mut x1].into_iter().enumerate() {
+                        self.chorus_low[ch] += (*x - self.chorus_low[ch]) * low_k;
+                        low[ch] = self.chorus_low[ch];
+                        *x -= low[ch];
+                    }
+                }
                 self.chorus[0].push(x0);
                 self.chorus[1].push(x1);
                 let mut w = [0.0f32; 2];
                 for ch in 0..2 {
                     for k in 0..3 {
                         let ph = self.chorus_phase + k as f32 / 3.0 + ch as f32 * 0.25;
-                        let d = base + depth * (0.5 + 0.5 * (2.0 * PI * ph).sin());
+                        let at = if c.chorus_spread { base * [0.62, 1.0, 1.38][k] } else { base };
+                        let d = at + depth * (0.5 + 0.5 * (2.0 * PI * ph).sin());
                         w[ch] += self.chorus[ch].read(d) / 3.0;
                     }
                 }
-                l[n] = x0 + (w[0] - x0) * mix;
-                r[n] = x1 + (w[1] - x1) * mix;
+                l[n] = low[0] + x0 + (w[0] - x0) * mix;
+                r[n] = low[1] + x1 + (w[1] - x1) * mix;
                 self.chorus_phase = (self.chorus_phase + inc).fract();
             }
         }
@@ -452,6 +471,7 @@ mod tests {
             chorus_rate: 0.6,
             chorus_depth: 1.0,
             chorus_mix: 0.5,
+            chorus_spread: true,
             phaser: true,
             flanger: false,
             phaser_rate: 0.5,
