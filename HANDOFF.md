@@ -200,6 +200,12 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Fledge Synth even across the keyboard** (2026.10.24-2): new params "Even keyboard" (mipmap
+  crossfade `tables::level_blend`, random start by step not pitch, chorus spread and lows left dry) and
+  "Detune key tracking", both off for states saved before (LEGACY; `tests/data/range_sound.bin` proves
+  old sounds unchanged); presets' filter key tracking 0.85 (bass/lead/keys) / 0.75 (chords/pads) via the
+  `EVEN` overlay in presets.rs. Measuring tool: engine/fledge-synth/examples/range.rs. Left uneven: fixed
+  formant basses, big-reverb pads (the reverb's fixed delay lines), driven basses' fixed-frequency drive.
 - **Fledge Synth previews and note outlines** (2026.10.24): `fledgePreview.ts` + `fledgePhrases.ts`
   (a phrase per preset category played on the track's live synth; an offline-rendered tour before
   adding; one preview at a time, stopped when the song plays); the piano roll outlines where a click

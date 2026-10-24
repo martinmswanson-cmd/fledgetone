@@ -4,7 +4,7 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
-## Unreleased
+## 2026.10.24-2 — Fledge Synth even across the keyboard
 
 - **Fledge Synth sounds like one instrument from the bottom of the keyboard to the top.** Its presets' filters now follow the note (basses, leads and keys closely, chords and pads a little less), so low notes are no longer dull and muffled and high notes no longer thin and fizzy next to them; each preset sounds as before on the notes it was made for.
 - No more jump in brightness every octave: where the wavetable hands over to its next, plainer level (as it must, so high notes don't alias), the two now fade into each other over a few semitones, and a glide through it is smooth.
