@@ -301,3 +301,113 @@ pub fn balance(l: &[f32], r: &[f32], sr: f32) -> Balance {
         peak,
     }
 }
+
+/// One note's tone, measured as the keyboard-range checks measure it (the `range` example, the
+/// preset tests): its harmonics against the fundamental, its brightness counted in harmonics (so
+/// a sound that keeps its tone up the keyboard keeps the same numbers), its loudness and width.
+#[derive(Clone, Debug, Default)]
+pub struct NoteShape {
+    /// The fundamental (Hz)
+    pub f0: f64,
+    /// Harmonics 1 to 30, each band's power (dB) against the fundamental's (−120 where above 20 kHz)
+    pub harm: [f64; 30],
+    /// The centroid of the first 30 harmonics (those under 18 kHz), in harmonics
+    pub centroid: f64,
+    /// How the harmonics fall: dB per octave of harmonics (power per octave band: h 1, 2-3, 4-7)
+    pub slope: f64,
+    /// Loudness (K-weighted, both sides; about LUFS for a steady note)
+    pub lufs: f64,
+    /// Level (unweighted RMS of both sides, dB)
+    pub rms: f64,
+    /// The centroid of the first 8 harmonics, in harmonics (all under 18 kHz up to C7, so a fair
+    /// comparison over a whole range: the 30-harmonic one runs out of harmonics on high notes)
+    pub centroid8: f64,
+    /// Share of the power below the fundamental (the sub), dB
+    pub sub: f64,
+    /// Side against middle, dB
+    pub width: f64,
+}
+
+/// Measure a held note at `f0` (stereo, `sr`), from one or more takes of it (their power
+/// averaged: a note whose unison starts at random phases each time is measured for what it
+/// always is, not one take's luck); the whole of each take is the stretch measured.
+pub fn note_shape(takes: &[(&[f32], &[f32])], sr: f32, f0: f64) -> NoteShape {
+    let sr = sr as f64;
+    let n = takes.iter().map(|(l, r)| l.len().min(r.len())).min().unwrap_or(0);
+    let mut size = 1;
+    while size < n {
+        size <<= 1;
+    }
+    let win: Vec<f64> = (0..n).map(|i| 0.5 - 0.5 * (2.0 * PI * i as f64 / n as f64).cos()).collect();
+    let power = |x: &dyn Fn(usize) -> f64| {
+        let mut re: Vec<f64> = (0..size).map(|i| if i < n { x(i) * win[i] } else { 0.0 }).collect();
+        let mut im = vec![0.0; size];
+        fft(&mut re, &mut im);
+        (0..size / 2).map(|k| re[k] * re[k] + im[k] * im[k]).collect::<Vec<f64>>()
+    };
+    let (mut mid, mut side) = (vec![0.0; size / 2], vec![0.0; size / 2]);
+    for (l, r) in takes {
+        for (a, b) in mid.iter_mut().zip(power(&|i| 0.5 * (l[i] + r[i]) as f64)) {
+            *a += b;
+        }
+        for (a, b) in side.iter_mut().zip(power(&|i| 0.5 * (l[i] - r[i]) as f64)) {
+            *a += b;
+        }
+    }
+    let bin = sr / size as f64;
+    let sum = |s: &[f64], lo: f64, hi: f64| {
+        let (a, b) = (((lo / bin).ceil().max(0.0)) as usize, ((hi / bin).floor() as usize).min(s.len() - 1));
+        if a > b { 0.0 } else { s[a..=b].iter().sum::<f64>() }
+    };
+    let both: Vec<f64> = mid.iter().zip(&side).map(|(a, b)| a + b).collect();
+    let db = |x: f64| 10.0 * x.max(1e-30).log10();
+    let band = |h: usize| sum(&both, (h as f64 - 0.4) * f0, (h as f64 + 0.4) * f0);
+    let fund = band(1).max(1e-30);
+    let mut harm = [-120.0; 30];
+    let (mut c_num, mut c_den) = (0.0, 0.0);
+    for h in 1..=30 {
+        if h as f64 * f0 > 20000.0 {
+            break;
+        }
+        let e = band(h);
+        harm[h - 1] = db(e / fund).max(-120.0);
+        if h as f64 * f0 <= 18000.0 {
+            c_num += h as f64 * e;
+            c_den += e;
+        }
+    }
+    // Octave bands of harmonics (1, 2-3, 4-7: under 18 kHz up to C7), a straight line through them
+    let pts: Vec<(f64, f64)> = (0..3)
+        .map(|k| (k as f64, db(((1usize << k)..(2usize << k)).map(band).sum::<f64>() / fund)))
+        .collect();
+    let slope = if pts.len() >= 2 {
+        let (mx, my) = (pts.iter().map(|p| p.0).sum::<f64>() / pts.len() as f64, pts.iter().map(|p| p.1).sum::<f64>() / pts.len() as f64);
+        pts.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum::<f64>() / pts.iter().map(|p| (p.0 - mx).powi(2)).sum::<f64>()
+    } else {
+        0.0
+    };
+    // K-weighting (ITU-R BS.1770, at 48 kHz): a high shelf, then a high pass
+    let k = |x: &[f32]| {
+        let mut v: Vec<f64> = x[..n].iter().map(|&s| s as f64).collect();
+        Biquad { b: [1.535_124_859_586_97, -2.691_696_189_406_38, 1.198_392_810_852_85], a: [-1.690_659_293_182_41, 0.732_480_774_215_85] }.run(&mut v);
+        Biquad { b: [1.0, -2.0, 1.0], a: [-1.990_047_454_833_98, 0.990_072_250_366_21] }.run(&mut v);
+        // (The filters' first 20 ms left out)
+        let skip = (0.02 * sr) as usize;
+        v[skip.min(n)..].iter().map(|x| x * x).sum::<f64>() / (n - skip.min(n)).max(1) as f64
+    };
+    let total = sum(&both, 0.0, 20000.0).max(1e-30);
+    NoteShape {
+        f0,
+        harm,
+        centroid: if c_den > 0.0 { c_num / c_den } else { 0.0 },
+        slope,
+        lufs: -0.691 + db(takes.iter().map(|(l, r)| k(l) + k(r)).sum::<f64>() / takes.len().max(1) as f64),
+        rms: db(takes.iter().map(|(l, r)| l[..n].iter().chain(&r[..n]).map(|&x| (x as f64) * (x as f64)).sum::<f64>() / (2 * n).max(1) as f64).sum::<f64>() / takes.len().max(1) as f64),
+        centroid8: {
+            let e: Vec<f64> = (1..=8).map(|h| 10f64.powf(harm[h - 1] / 10.0)).collect();
+            e.iter().enumerate().map(|(i, x)| (i + 1) as f64 * x).sum::<f64>() / e.iter().sum::<f64>().max(1e-30)
+        },
+        sub: db(sum(&both, 0.0, 0.75 * f0) / total),
+        width: db(side.iter().sum::<f64>() / mid.iter().sum::<f64>().max(1e-30)),
+    }
+}

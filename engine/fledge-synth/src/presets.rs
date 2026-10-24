@@ -3,7 +3,7 @@
 //! levelled to the same loudness (tests::presets_are_level_matched checks it). Names are
 //! "Category/Name"; the matrix's slots 5 to 8 hold each preset's macros.
 
-use crate::params::{defaults, index_of, legacy, param, COUNT, COUNT_V1};
+use crate::params::{defaults, index_of, legacy, param, COUNT, COUNT_V1, COUNT_V2};
 
 pub struct Preset {
     pub name: &'static str,
@@ -14,18 +14,93 @@ pub struct Preset {
 }
 
 impl Preset {
-    /// The preset as stored 0..1 values: the defaults, with its settings over them.
+    /// The preset as stored 0..1 values: the defaults, with its settings over them, and its
+    /// keyboard-range settings (EVEN, EVEN_ALL) over those.
     pub fn values(&self) -> [f32; COUNT] {
-        let mut v = defaults();
-        if self.classic {
-            legacy(&mut v, COUNT_V1);
-        }
-        for &(name, value) in self.sets {
-            let i = index_of(name).unwrap_or_else(|| panic!("preset {}: no parameter {}", self.name, name));
-            v[i] = param(i).kind.normal(value);
+        let mut v = self.values_before_range();
+        for &(name, value) in EVEN_ALL.iter().chain(even(self.name)) {
+            set(&mut v, self.name, name, value);
         }
         v
     }
+
+    /// The preset as it was before the keyboard-range work (as a song saved then has it): the
+    /// parameters added since set as they sounded then.
+    pub fn values_before_range(&self) -> [f32; COUNT] {
+        let mut v = defaults();
+        legacy(&mut v, if self.classic { COUNT_V1 } else { COUNT_V2 });
+        for &(name, value) in self.sets {
+            set(&mut v, self.name, name, value);
+        }
+        v
+    }
+}
+
+fn set(v: &mut [f32; COUNT], preset: &str, name: &str, value: f32) {
+    let i = index_of(name).unwrap_or_else(|| panic!("preset {preset}: no parameter {name}"));
+    v[i] = param(i).kind.normal(value);
+}
+
+/// Every preset's keyboard-range settings: no step between the table's octave levels, a note's
+/// random start from its step (not its pitch), and the unison's detune narrowing above middle C
+/// (half way: three octaves up it beats under three times as fast, not eight)
+pub const EVEN_ALL: &[(&str, f32)] = &[("Even keyboard", 1.0), ("Detune key tracking", 0.5)];
+
+/// The filters' key tracking, so a preset's tone follows the note (its harmonics through the
+/// filter the same from its lowest notes to its highest) instead of turning dull at the bottom
+/// and thin at the top: basses, leads and keys 0.85, chords and pads 0.75. Each cutoff moves
+/// so the preset sounds as it did on its home notes (basses F2, leads E4, keys C4, chords and
+/// pads F3, where it was made and is measured). Not the formant filters (a voice's vowels stay
+/// put, whatever the note: that is the sound), the combs already tracking the note, the sines and
+/// the FX (their sweeps are their own)
+pub const EVEN: &[(&str, &[(&str, f32)])] = &[
+    ("Bass/Wobble", &[("Key tracking", 0.85), ("Cutoff", 329.2)]),
+    ("Bass/Detune", &[("Key tracking", 0.85), ("Cutoff", 1321.0)]),
+    ("Bass/Screech", &[("Key tracking", 0.85), ("Cutoff", 2056.0)]),
+    ("Bass/Sync", &[("Key tracking", 0.85), ("Cutoff", 3671.0)]),
+    ("Bass/Split", &[("Key tracking", 0.85), ("Cutoff", 367.1), ("Filter 2 key tracking", 0.85), ("Filter 2 cutoff", 1321.0)]),
+    ("Lead/Supersaw", &[("Key tracking", 0.85), ("Cutoff", 8301.0)]),
+    ("Lead/Rave", &[("Key tracking", 0.85), ("Cutoff", 4612.0)]),
+    ("Lead/Sync", &[("Key tracking", 0.85), ("Cutoff", 6456.0)]),
+    ("Lead/Fifths", &[("Key tracking", 0.85), ("Cutoff", 3228.0)]),
+    ("Lead/Folded", &[("Key tracking", 0.85), ("Cutoff", 4150.0), ("Filter 2 key tracking", 0.85), ("Filter 2 cutoff", 1383.0)]),
+    ("Keys/Pluck", &[("Key tracking", 0.85)]),
+    ("Keys/Bell", &[("Key tracking", 0.85)]),
+    ("Keys/Organ", &[("Key tracking", 0.85)]),
+    ("Keys/Stab", &[("Key tracking", 0.85)]),
+    ("Chords/Future bass", &[("Key tracking", 0.75), ("Cutoff", 2766.0)]),
+    ("Chords/Gated", &[("Key tracking", 0.75), ("Cutoff", 4425.0)]),
+    ("Chords/Minor stack", &[("Key tracking", 0.75), ("Cutoff", 1991.0)]),
+    ("Pad/Dark", &[("Key tracking", 0.75), ("Cutoff", 1328.0)]),
+    ("Pad/Warm strings", &[("Key tracking", 0.75), ("Cutoff", 2338.0)]),
+    ("Pad/Shimmer", &[("Key tracking", 0.75), ("Cutoff", 243.8)]),
+    ("Pad/Glass", &[("Key tracking", 0.75), ("Cutoff", 5532.0)]),
+    ("Bass/Colour Chord Stab", &[("Key tracking", 0.85), ("Cutoff", 4405.0)]),
+    ("Bass/Neuro Reese", &[("Key tracking", 0.35), ("Cutoff", 5513.0), ("Filter 2 key tracking", 1.0), ("Filter 2 cutoff", 556.0)]),
+    // (With each step's random start the same whatever its note, these two came round a little
+    // too alike: Dive Screech's notes each pick their band a little further, Crunch Formant's
+    // two-bar sweep is gentler)
+    ("Bass/Dive Screech", &[("Key tracking", 0.85), ("Cutoff", 1579.0), ("Mod 9 amount", 0.25)]),
+    ("Bass/Crunch Formant", &[("LFO 3 amount 1", 0.3)]),
+    ("Lead/Hardcore Supersaw", &[("Key tracking", 0.85), ("Cutoff", 6456.0)]),
+    ("Pad/Wide Wash", &[("Key tracking", 0.75), ("Cutoff", 3359.0)]),
+    ("Keys/Bright Pluck", &[("Key tracking", 0.85)]),
+    ("Bass/Resample Chop", &[("Key tracking", 0.85), ("Cutoff", 4260.0)]),
+    ("Bass/Clipped Square", &[("Key tracking", 0.85), ("Cutoff", 2202.0)]),
+    ("Bass/Hard Clip Stab", &[("Key tracking", 0.85), ("Cutoff", 3524.0)]),
+    ("Lead/Chip Crunch", &[("Key tracking", 0.85), ("Cutoff", 8301.0)]),
+    ("Bass/Driven Legato", &[("Key tracking", 0.85), ("Cutoff", 8163.0)]),
+    ("Lead/Soaring Saw", &[("Key tracking", 0.85), ("Cutoff", 3605.0)]),
+    ("Chords/Silk Stack", &[("Key tracking", 0.75), ("Cutoff", 3479.0)]),
+    ("Pad/Silk Wash", &[("Key tracking", 0.75), ("Cutoff", 5998.0)]),
+    ("Bass/Round Root", &[("Key tracking", 0.85), ("Cutoff", 3674.0)]),
+    ("Keys/Vowel Chop", &[("Key tracking", 0.85)]),
+    ("Keys/Glass Pluck", &[("Key tracking", 0.85)]),
+];
+
+/// A preset's own keyboard-range settings (EVEN), if any
+fn even(name: &str) -> &'static [(&'static str, f32)] {
+    EVEN.iter().find(|e| e.0 == name).map_or(&[], |e| e.1)
 }
 
 const OFF: f32 = f32::NEG_INFINITY;
@@ -1392,6 +1467,48 @@ pub fn legato_render(values: &[f32; COUNT], bpm: f32) -> (Vec<f32>, Vec<f32>) {
     (l, r)
 }
 
+/// Render `values` playing one note (struck `at` beats into the song, held `hold` seconds at
+/// velocity `vel`, then 0.3 s to let go): left and right, at 48 kHz. A fresh synth each time, so
+/// every note of a range starts alike.
+pub fn note_render(values: &[f32; COUNT], note: u8, vel: u8, hold: f32, at: f64) -> (Vec<f32>, Vec<f32>) {
+    use crate::synth::{Synth, BLOCK};
+    let sr = 48000.0;
+    let mut s = Synth::new(sr);
+    s.set_tempo(140.0);
+    s.params = *values;
+    for _ in 0..40 {
+        s.process(BLOCK);
+    }
+    s.set_position(at);
+    s.midi(0x90, note, vel);
+    let off = (hold * sr) as usize;
+    let total = off + (0.3 * sr) as usize;
+    let (mut l, mut r) = (Vec::with_capacity(total), Vec::with_capacity(total));
+    let mut t = 0;
+    while t < total {
+        if t == off {
+            s.midi(0x80, note, 0);
+        }
+        let n = if t < off { (off - t).min(BLOCK) } else { (total - t).min(BLOCK) };
+        s.process(n);
+        l.extend_from_slice(&s.out[0][..n]);
+        r.extend_from_slice(&s.out[1][..n]);
+        t += n;
+    }
+    (l, r)
+}
+
+/// The notes a preset is played on, lowest and highest (MIDI): its category's musical range
+pub fn keyboard_range(name: &str) -> (u8, u8) {
+    match name.split('/').next().unwrap_or("") {
+        "Bass" => (24, 72),
+        "Lead" => (48, 96),
+        "Keys" => (36, 96),
+        "Chords" | "Pad" | "FX" => (36, 84),
+        _ => (24, 96),
+    }
+}
+
 /// Render `values` holding a four-note chord (C3 E3 G3 B3, as pads are played) for 3 s from the
 /// song's start, then letting go for 1 s: left and right, at 48 kHz.
 pub fn chord_render(values: &[f32; COUNT]) -> (Vec<f32>, Vec<f32>) {
@@ -1449,12 +1566,12 @@ mod tests {
         ((10.0 * (sum / n as f64).log10()) as f32, peak)
     }
 
-    /// Every setting a preset writes is inside its parameter's range (out of range would be
-    /// clamped, silently changing the sound)
+    /// Every setting a preset writes (its keyboard-range ones too) is inside its parameter's
+    /// range (out of range would be clamped, silently changing the sound)
     #[test]
     fn preset_values_are_in_range() {
         for p in PRESETS {
-            for &(name, v) in p.sets {
+            for &(name, v) in p.sets.iter().chain(EVEN_ALL).chain(even(p.name)) {
                 let i = index_of(name).unwrap();
                 let k = param(i).kind;
                 let back = k.value(k.normal(v));
@@ -1633,6 +1750,70 @@ mod tests {
             let v = p.values();
             let i = index_of("Sub path").unwrap();
             assert_eq!(param(i).kind.value(v[i]), 1.0, "{}", p.name);
+        }
+    }
+
+    /// Every keyboard-range entry names a preset
+    #[test]
+    fn even_entries_name_presets() {
+        for (name, _) in EVEN {
+            assert!(PRESETS.iter().any(|p| p.name == *name), "no preset {name}");
+        }
+    }
+
+    /// Every preset plays "Even keyboard" with the detune narrowing half way above middle C; as a
+    /// song saved before has it, neither
+    #[test]
+    fn presets_play_evenly_up_the_keyboard() {
+        let (ek, dk) = (crate::params::EVEN_KEYS, crate::params::DETUNE_KEY);
+        for p in PRESETS {
+            let (now, was) = (p.values(), p.values_before_range());
+            assert_eq!(param(ek).kind.value(now[ek]), 1.0, "{}", p.name);
+            assert!((param(dk).kind.value(now[dk]) - 0.5).abs() < 1e-6, "{}", p.name);
+            assert_eq!(param(ek).kind.value(was[ek]), 0.0, "{}", p.name);
+            assert_eq!(param(dk).kind.value(was[dk]), 0.0, "{}", p.name);
+        }
+    }
+
+    /// Each preset's filters follow the note (so its tone does): basses, leads and keys at 0.85
+    /// or more (with any Note → cutoff in the matrix), chords and pads at 0.75, the combs at 1 (on
+    /// the note's own pitch); each still sounds as it did on its home notes (the cutoff there the
+    /// same). Not the formant filters (the vowels stay put), the sines, the FX
+    #[test]
+    fn preset_filters_follow_the_note() {
+        use crate::params as q;
+        const SINES: [&str; 4] = ["Bass/Sub", "Bass/808 slide", "Bass/Clean Sub", "Lead/Sine"];
+        let at = |v: &[f32; COUNT], i: usize| param(i).kind.value(v[i]);
+        for p in PRESETS.iter().filter(|p| !SINES.contains(&p.name)) {
+            let (target, home) = match p.name.split('/').next().unwrap() {
+                "Bass" => (0.85, 41.0),
+                "Lead" => (0.85, 64.0),
+                "Keys" => (0.85, 60.0),
+                "Chords" | "Pad" => (0.75, 53.0),
+                _ => continue,
+            };
+            let (now, was) = (p.values(), p.values_before_range());
+            let routed = |o: usize| at(&now, o + q::osc::ON) > 0.5 && [1.0, 2.0].contains(&at(&now, o + q::osc::ROUTE));
+            let f2_used = at(&now, q::F2_SERIAL) > 0.5 || routed(q::A) || routed(q::B);
+            for (f, (ty, cut, kt, dest)) in [(q::FILTER_TYPE, q::CUTOFF, q::KEYTRACK, 1.0), (q::F2_TYPE, q::F2_CUTOFF, q::F2_KEYTRACK, 19.0)].into_iter().enumerate() {
+                if f == 1 && !f2_used {
+                    continue;
+                }
+                // (Note → this cutoff in the matrix tracks too: the note's ±3 octaves are ±1, an amount of 1 is 5 octaves)
+                let matrix: f32 = (0..q::SLOTS_ALL).filter(|&n| at(&now, q::slot_base(n)) == 9.0 && at(&now, q::slot_base(n) + 1) == dest).map(|n| at(&now, q::slot_base(n) + 2) * 5.0 / 3.0).sum();
+                let kind = at(&now, ty) as usize;
+                let track = at(&now, kt) + matrix;
+                match kind {
+                    0..=6 => {
+                        assert!(track >= target - 1e-3, "{}: filter {} tracks {track}", p.name, f + 1);
+                        let home_cut = |v: &[f32; COUNT]| at(v, cut) * 2f32.powf(at(v, kt) * (home - 60.0) / 12.0);
+                        let (a, b) = (home_cut(&now), home_cut(&was));
+                        assert!((a / b - 1.0).abs() < 0.005, "{}: filter {} at its home note {a} Hz, was {b}", p.name, f + 1);
+                    }
+                    7 | 8 => assert!((track - 1.0).abs() < 1e-3, "{}: comb {} tracks {track}", p.name, f + 1),
+                    _ => {}
+                }
+            }
         }
     }
 

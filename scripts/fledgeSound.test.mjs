@@ -1,8 +1,8 @@
 // Fledge Synth's built module (public/fledgetone-plugins/fledge.wasm) as the app plays it: a
 // mono riff that repeats each bar, given the song position with each note as the host gives it,
 // comes back the same each time round ("Mono restart"); new sounds keep the low end in the middle
-// up to 180 Hz ("Mono below"); older saved sounds and the older presets keep how they sounded
-// (running on, 120 Hz). Run with `npm test`.
+// up to 180 Hz ("Mono below") and play evenly up the keyboard ("Even keyboard"); older saved
+// sounds and the older presets keep how they sounded (running on, 120 Hz). Run with `npm test`.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -55,6 +55,23 @@ test('a new sound takes its note random values by step; older saved sounds and p
   assert.equal(s.shown('Random by step'), 'off');
   e.bb_set_program(s.h, s.programs.indexOf('Bass/Growl'));
   assert.equal(s.shown('Random by step'), 'off');
+  e.bb_destroy(s.h);
+});
+
+test('a new sound and every preset play evenly up the keyboard; a sound saved before keeps its stepped tables', () => {
+  const s = make();
+  assert.equal(s.shown('Even keyboard'), 'on');
+  assert.equal(s.shown('Detune key tracking'), '50%');
+  // Saved before these came (fewer values): the tables step, the detune in cents, as it sounded
+  e.bb_legacy(s.h, s.index.get('Even keyboard'));
+  assert.equal(s.shown('Even keyboard'), 'off');
+  assert.equal(s.shown('Detune key tracking'), '0%');
+  // The presets (older and newer) are updated: even, and their filters follow the note
+  for (const [preset, track] of [['Bass/Growl', null], ['Bass/Driven Legato', '85%'], ['Lead/Soaring Saw', '85%'], ['Pad/Silk Wash', '75%']]) {
+    e.bb_set_program(s.h, s.programs.indexOf(preset));
+    assert.equal(s.shown('Even keyboard'), 'on', preset);
+    if (track) assert.equal(s.shown('Key tracking'), track, preset);
+  }
   e.bb_destroy(s.h);
 });
 

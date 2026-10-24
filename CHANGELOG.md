@@ -4,6 +4,14 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Fledge Synth sounds like one instrument from the bottom of the keyboard to the top.** Its presets' filters now follow the note (basses, leads and keys closely, chords and pads a little less), so low notes are no longer dull and muffled and high notes no longer thin and fizzy next to them; each preset sounds as before on the notes it was made for.
+- No more jump in brightness every octave: where the wavetable hands over to its next, plainer level (as it must, so high notes don't alias), the two now fade into each other over a few semitones, and a glide through it is smooth.
+- Neighbouring notes start alike: a note's random start (its unison voices, a Steps or Drift LFO) follows its step in the bar, not its pitch.
+- The unison's detune narrows a little above middle C (**Detune key**), so a supersaw's high notes don't beat faster and faster; the chorus leaves the lows alone and spreads its voices, so particular notes no longer come out hollow or quieter (the organ most of all).
+- Songs saved before keep exactly the sound they had (the new **Even keyboard** switch is off for them); new sounds and every preset have it on.
+
 ## 2026.10.24 — Hear the Fledge Synth, see where notes go
 
 - **Hear Fledge Synth before you add it**: a **▶** beside **Fledge Synth** in **Add Track**, the plugin browser and Pocket's instrument lists plays a bass, a lead and chords from its presets (about seven seconds) without adding a track, at about the level of the instrument menu's previews. Press it again to stop.

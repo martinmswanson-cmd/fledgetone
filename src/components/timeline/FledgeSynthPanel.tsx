@@ -626,7 +626,12 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
                 <Choice key={c.p} c={c as Ctl<'choice'>} get={get} set={set} w="w-[108px]" />
               ))}
               {ctl(S.monoRestart)}
+              {ctl(S.evenKeys)}
+              {ctl(S.detuneKey)}
             </div>
+            <p className="text-[10px] text-forge-muted mt-1">
+              Even keyboard: a note sounds alike low and high (no jump in brightness where the wavetable changes octave; its random start follows its step, not its pitch). Detune key: how much the unison narrows above middle C, so high notes don't beat faster and faster. Older sounds have both off, as they were.
+            </p>
           </Section>
         </div>
       )}
