@@ -200,6 +200,10 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Fledge Synth previews and note outlines** (2026.10.24): `fledgePreview.ts` + `fledgePhrases.ts`
+  (a phrase per preset category played on the track's live synth; an offline-rendered tour before
+  adding; one preview at a time, stopped when the song plays); the piano roll outlines where a click
+  or the next typed note will go (`hoverCell`, `pianoPanel.hoverMidi`).
 - **Crunch, new presets and steadier drops** (2026.10.23): Crunch on the Loud master (a full-band
   oversampled clipper, `clipper.ts` band kind, 88-sample live latency padded on both kinds and counted
   in `masterSeconds`); 13 Fledge presets appended (program numbers of older ones unchanged); Drum
