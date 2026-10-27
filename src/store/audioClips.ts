@@ -1,6 +1,6 @@
 import type { Clip, ClipAudio, EmbeddedSound, GainPoint, SliceCount, SlicerSettings, Track } from './timelineTypes';
 import { clipSecondsAt, normalizeWarp, sourceAt } from './warp';
-import { tempoAt, type Tempo } from '../audio/tempoMap';
+import { barToSeconds, secondsToBar, tempoAt, type Tempo } from '../audio/tempoMap';
 import { AUDIO_FADE_MAX, AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, ENVELOPE_DB_MAX, ENVELOPE_DB_MIN, MAX_SLICES, SLICE_COUNTS, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from './timelineTypes';
 
 /**
@@ -26,6 +26,16 @@ export const stretchRatio = (audio: Pick<ClipAudio, 'stretchBpm'>, bpm: number):
 /** Seconds of the sound a clip plays (its length in seconds times its stretch, or along its warp markers). */
 export const audioSourceSeconds = (clip: Pick<Clip, 'lengthBars' | 'audio'>, bpm: number): number =>
   clip.audio ? sourceAt(clip.audio, audioClipSeconds(clip, bpm), bpm) - clip.audio.offset : audioClipSeconds(clip, bpm);
+
+/**
+ * The bar where the moment `src` seconds into an audio clip's sound plays: along its stretch and
+ * warp at the tempo where it starts, and then in seconds from its start, as the clips play.
+ */
+export function barOfSource(clip: Pick<Clip, 'startBar' | 'audio'>, src: number, tempo: Tempo): number {
+  if (!clip.audio) return clip.startBar;
+  const seconds = clipSecondsAt(clip.audio, src, tempoAt(clip.startBar, tempo));
+  return secondsToBar(barToSeconds(clip.startBar, tempo) + seconds, tempo);
+}
 
 /** How far into its sound (seconds) a clip's audio moves when the clip is cut, or its left edge moved, `bars` in (at `bpm`). */
 export const audioShift = (audio: ClipAudio, bars: number, bpm: number): number => sourceAt(audio, bars * secondsPerBar(bpm), bpm) - audio.offset;

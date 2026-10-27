@@ -3,7 +3,8 @@
  * the keys, so the take becomes an instrument that plays its own syllables as a chopped hook.
  *
  * - Syllables: the take's level every 10 ms; a syllable is a stretch above the take's floor (20 dB
- *   under its loudest 10 ms, or 12 dB over its quietest, whichever is higher), cut again where the
+ *   under its loudest 10 ms, or 12 dB over its quietest, whichever is higher, but at least 6 dB
+ *   under the loudest, so a held note or a take with no quiet in it still has one), cut again where the
  *   level jumps (a new consonant: 6 dB over the 50 ms before) or where the voice moves to a new
  *   note and stays there (over 1.5 semitones for 80 ms: a sung tune on one vowel). Bits under
  *   80 ms are dropped, anything past MAX_CHOP_SECONDS cut short.
@@ -78,7 +79,7 @@ export function findSyllables(x: Float32Array, rate: number, frames: readonly Pi
     bottom = Math.min(bottom, v);
   }
   if (top < -70) return [];
-  const floor = Math.max(top - 20, bottom + 12);
+  const floor = Math.min(top - 6, Math.max(top - 20, bottom + 12));
   const cuts: Array<[number, number]> = [];
   let f = 0;
   while (f < db.length) {

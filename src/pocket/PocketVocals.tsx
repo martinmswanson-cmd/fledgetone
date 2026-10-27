@@ -23,6 +23,7 @@ import { showToast } from '../components/timeline/toastStore';
 import { TuneDialog } from '../components/timeline/TuneDialog';
 import { Card, pill, pillOn } from './pocketUi';
 import { usePocket } from './pocketStore';
+import { useSongKey } from './pocketCell';
 import { chopClipToPads, clipToPad, placedMessage } from '../store/bounceToPadActions';
 import { chopVoiceToKeys } from '../store/voiceChopActions';
 import { LineUpCard, SlowOutputNotice } from './PocketMic';
@@ -45,6 +46,8 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
   const tracks = useTimelineStore((s) => s.tracks);
   const clips = useTimelineStore((s) => s.clips);
   const loop = useTimelineStore((s) => s.loopRegion);
+  // (Chop onto keys tunes into the key Pocket's pads and keys play in)
+  const songKey = useSongKey();
   const vocalTracks = tracks.filter((t) => isAudioKind(t.instrumentKey));
   const [trackId, setTrackId] = useState<string | null>(null);
   const track = vocalTracks.find((t) => t.id === (fixed ?? trackId)) ?? (fixed ? null : vocalTracks[0]) ?? null;
@@ -263,7 +266,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
                       onClick={() => {
                         setPadding(null);
                         showToast(`Chopping ${c.name} into syllables…`);
-                        void chopVoiceToKeys(c.id).then(
+                        void chopVoiceToKeys(c.id, { scale: songKey, comp: true }).then(
                           (r) => showToast('error' in r ? r.error : r.message),
                           (err) => showToast(`Couldn't chop ${c.name}: ${err instanceof Error ? err.message : String(err)}`)
                         );
