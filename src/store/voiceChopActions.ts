@@ -10,11 +10,13 @@ import { barsToDuration, uid, type Clip, type MultiZone } from './timelineTypes'
 import { midiName } from './sampleKits';
 import { detectKey } from './songKey';
 import { padFromClip } from './bounceToPad';
-import { tempoAt } from '../audio/tempoMap';
+import { barToSeconds, secondsToBar, tempoAt } from '../audio/tempoMap';
+import { barOfSource, secondsPerBar, stretchRatio } from './audioClips';
+import { expandAudioComp } from './takes';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/wavFile';
-import { detectPitch } from '../audio/vocalTune';
-import { chopGain, findSyllables, layoutChops, tuneChop } from '../audio/voiceChops';
+import { detectPitch, type PitchFrame } from '../audio/vocalTune';
+import { chopGain, findSyllables, layoutChops, MAX_CHOPS, tuneChop, type ChopScale, type Syllable } from '../audio/voiceChops';
 
 const RATE = 44100;
 /** The chop instrument's envelope: a quick start, and a short release so each chop stops cleanly. */
@@ -23,37 +25,65 @@ export const CHOP_RELEASE = 0.12;
 
 export type VoiceChopResult = { trackId: string; chops: number; message: string } | { error: string };
 
+/** A syllable of one of the pieces chopped: a clip, or a comp's piece of a take folder. */
+interface Heard extends Syllable {
+  mono: Float32Array;
+  frames: PitchFrame[];
+  /** Where it plays on the timeline, in bars */
+  at: number;
+  atEnd: number;
+}
+
 /**
  * Chop the clip's take into a playable instrument (see the file's notes). Resolves with the new
- * track and a message for the person, or an error to show.
+ * track and a message for the person, or an error to show. `scale`: the key to tune into (null
+ * for none; unset, the song's, when its notes say one). `comp`: a take folder is chopped as its
+ * comp plays (Pocket, which has no Takes to flatten it with), else it's refused.
  */
-export async function chopVoiceToKeys(clipId: string): Promise<VoiceChopResult> {
+export async function chopVoiceToKeys(clipId: string, opts: { scale?: ChopScale | null; comp?: boolean } = {}): Promise<VoiceChopResult> {
   const s = useTimelineStore.getState();
   const clip = s.clips.find((c) => c.id === clipId);
   if (!clip?.audio) return { error: 'Pick a recorded or imported vocal (an audio clip) to chop.' };
-  if ((clip.takes?.length ?? 0) > 1) return { error: 'This clip is a take folder: flatten it first (Takes…), then chop it.' };
-  const buffer = await decodeSound(clip.audio.soundId, RATE);
-  const bpm = tempoAt(clip.startBar, songTempo(s));
-  const part = padFromClip(clip, buffer.duration, bpm);
-  if (!part) return { error: 'That clip plays none of its sound.' };
-  const from = Math.round((part.start ?? 0) * RATE);
-  const to = Math.round((part.end ?? buffer.duration) * RATE);
-  // The take folded to one channel
-  const mono = new Float32Array(Math.max(0, to - from));
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    const data = buffer.getChannelData(c);
-    for (let i = 0; i < mono.length; i++) mono[i] += data[from + i] / buffer.numberOfChannels;
+  const folder = (clip.takes?.length ?? 0) > 1;
+  if (folder && !opts.comp) return { error: 'This clip is a take folder: flatten it first (Takes…), then chop it.' };
+  const tempo = songTempo(s);
+  const spb = (c: Clip) => secondsPerBar(tempoAt(c.startBar, tempo)) * stretchRatio(c.audio!, tempoAt(c.startBar, tempo));
+  const pieces = folder ? expandAudioComp(clip, spb(clip)) : [clip];
+  const heard: Heard[] = [];
+  let played = 0;
+  for (const piece of pieces) {
+    const buffer = await decodeSound(piece.audio!.soundId, RATE);
+    const part = padFromClip(piece, buffer.duration, tempoAt(piece.startBar, tempo));
+    if (!part) continue;
+    played++;
+    const start = part.start ?? 0;
+    const from = Math.round(start * RATE);
+    const to = Math.min(buffer.length, Math.round((part.end ?? buffer.duration) * RATE));
+    // The take folded to one channel
+    const mono = new Float32Array(Math.max(0, to - from));
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = 0; i < mono.length; i++) mono[i] += data[from + i] / buffer.numberOfChannels;
+    }
+    const frames = detectPitch(mono, RATE);
+    // Placed through the clip's own timing (its stretch and warp, the tempo map)
+    for (const syl of findSyllables(mono, RATE, frames)) {
+      const at = barOfSource(piece, start + syl.start, tempo);
+      heard.push({ ...syl, mono, frames, at, atEnd: secondsToBar(barToSeconds(at, tempo) + syl.end - syl.start, tempo) });
+    }
   }
-  const frames = detectPitch(mono, RATE);
-  const syllables = findSyllables(mono, RATE, frames);
+  if (!played) return { error: 'That clip plays none of its sound.' };
+  // (A comp's pieces: the loudest of all of them, in the order they play)
+  const loudest = new Set([...heard].sort((p, q) => q.level - p.level).slice(0, MAX_CHOPS));
+  const syllables = heard.filter((h) => loudest.has(h)).sort((p, q) => p.at - q.at);
   if (!syllables.length) return { error: 'No syllables were heard in it: is it a vocal, and loud enough?' };
   // Tuned into the song's key, when its notes say one
-  const key = detectKey(s.clips, s.tracks);
-  const keys = layoutChops(syllables, key);
+  const keys = layoutChops(syllables, opts.scale !== undefined ? opts.scale : detectKey(s.clips, s.tracks));
   const base = (useSoundLibrary.getState().metas[clip.audio.soundId]?.name ?? clip.name).replace(/\.[a-z0-9]+$/i, '');
   const zones: MultiZone[] = [];
   for (const [i, k] of keys.entries()) {
-    const y = tuneChop(mono, RATE, frames, syllables[k.index], k.root);
+    const syl = syllables[k.index];
+    const y = tuneChop(syl.mono, RATE, syl.frames, syl, k.root);
     const g = chopGain(y, RATE);
     for (let j = 0; j < y.length; j++) y[j] *= g;
     const name = `${base} chop ${i + 1} ${midiName(k.root)}`;
@@ -69,28 +99,28 @@ export async function chopVoiceToKeys(clipId: string): Promise<VoiceChopResult> 
   const trackId = now.addTrack('multiSampler', `${clip.name} chops`.slice(0, 40));
   const after = useTimelineStore.getState();
   after.setTrackMulti(trackId, { zones, attack: CHOP_ATTACK, release: CHOP_RELEASE }, false);
-  // A clip playing each syllable where it was sung, on its key
-  const barsPerSecond = bpm / 240;
-  const first = Math.min(...keys.map((k) => syllables[k.index].start));
+  // A clip playing each syllable where it was sung, on its key (moved with the take, if it was moved meanwhile)
+  const moved = still.startBar - clip.startBar;
+  const placed = keys.map((k) => syllables[k.index]);
+  const first = Math.min(...placed.map((h) => h.at));
   const notes = keys
     .map((k) => ({ k, syl: syllables[k.index] }))
-    .sort((a, b) => a.syl.start - b.syl.start)
+    .sort((a, b) => a.syl.at - b.syl.at)
     .map(({ k, syl }) => ({
       id: uid('note'),
       note: midiName(k.root),
-      startOffset: (syl.start - first) * barsPerSecond,
-      duration: barsToDuration(Math.max(1 / 64, (syl.end - syl.start) * barsPerSecond)),
+      startOffset: syl.at - first,
+      duration: barsToDuration(Math.max(1 / 64, syl.atEnd - syl.at)),
       velocity: 0.85,
     }));
-  const lastEnd = Math.max(...keys.map((k) => syllables[k.index].end));
-  const audioStart = Math.max(0, still.audio?.offset ?? 0);
-  const startBar = still.startBar + Math.max(0, (part.start ?? 0) - audioStart + first) * barsPerSecond;
+  const lastEnd = Math.max(...placed.map((h) => h.atEnd));
+  const startBar = Math.max(1, first + moved);
   const made: Clip = {
     id: uid('clip'),
     trackId,
     name: `${clip.name} chops`,
     startBar,
-    lengthBars: Math.max(1 / 16, Math.ceil((lastEnd - first) * barsPerSecond * 16) / 16),
+    lengthBars: Math.max(1 / 16, Math.ceil((lastEnd - first) * 16) / 16),
     notes,
     isSelected: true,
   };

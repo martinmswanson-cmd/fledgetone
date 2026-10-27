@@ -17,6 +17,7 @@ register(
 );
 const { findSyllables, layoutChops, tuneChop, chopGain, frameLevels, MAX_CHOPS, REACH, MAX_MOVE } = await import('../src/audio/voiceChops.ts');
 const { detectPitch, hzToMidi, midiToHz } = await import('../src/audio/vocalTune.ts');
+const { barOfSource } = await import('../src/store/audioClips.ts');
 const { testVoice } = await import('./audio-check/testVoice.mjs');
 
 const SR = 44100;
@@ -84,6 +85,23 @@ test('silence and a near-silent take give no syllables', () => {
   assert.deepEqual(findSyllables(tones([60]).map((v) => v * 1e-5), SR), []);
 });
 
+test('a held note with no quiet in it (trimmed tight) is still a syllable', () => {
+  for (const attack of [0.005, 0.02]) {
+    const n = SR;
+    const hz = midiToHz(57);
+    const x = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const env = Math.min(1, i / (attack * SR), (n - i) / (attack * SR));
+      let v = 0;
+      for (let h = 1; h <= 6; h++) v += Math.sin((2 * Math.PI * hz * h * i) / SR) / h;
+      x[i] = 0.25 * env * v;
+    }
+    const syl = findSyllables(x, SR);
+    assert.ok(syl.length >= 1, `attack ${attack}: ${syl.length} syllables`);
+    assert.equal(Math.round(syl[0].midi), 57);
+  }
+});
+
 test('noise (a breath) is a syllable with no note', () => {
   let seed = 1;
   const x = new Float32Array(Math.round(0.6 * SR));
@@ -137,6 +155,32 @@ test('in the song key: each syllable on the nearest note of it, a clash moved to
   assert.equal(at(2), 59);
   assert.equal(at(3), 67);
   for (const k of keys) assert.ok(C_MAJOR.steps.includes(k.root % 12));
+});
+
+test('in a key picked for them (no notes in the song to say one), the chops go on its notes', () => {
+  const s = (midi, level = -20) => ({ start: 0, end: 0.3, midi, level });
+  // Sung on F, F#, G#, A#: in E minor, the F goes to E or F# and the G# and A# onto G, A or B
+  const sung = [s(65.1), s(66), s(68.2), s(70.1)];
+  const E_MINOR = { root: 4, steps: [0, 2, 3, 5, 7, 8, 10] };
+  const keys = layoutChops(sung, E_MINOR);
+  assert.equal(keys.length, 4);
+  for (const k of keys) assert.ok(E_MINOR.steps.includes((k.root - 4 + 12) % 12), `${k.root} isn't in E minor`);
+  // With no key, each stays on its own semitone
+  assert.deepEqual(layoutChops(sung, null).map((k) => k.root), [65, 66, 68, 70]);
+});
+
+test('chops are placed where the take plays them: its stretch, warp and the tempo map', () => {
+  const audio = { soundId: 's', offset: 1, gain: 0, fadeIn: 0, fadeOut: 0 };
+  // As recorded, at 120: 2 s into the clip is a bar
+  assert.ok(Math.abs(barOfSource({ startBar: 5, audio }, 3, 120) - 6) < 1e-9);
+  // Following the tempo, recorded at 60 and played at 120 (twice as fast): half a bar
+  assert.ok(Math.abs(barOfSource({ startBar: 5, audio: { ...audio, stretchBpm: 60 } }, 3, 120) - 5.5) < 1e-9);
+  // Warp markers: the sound's 2 s on beat 4 of it and 4 s on beat 6, so 3 s is beat 5 (a bar and a quarter)
+  const warped = { ...audio, offset: 0, stretchBpm: 60, warp: [{ src: 0, beat: 0 }, { src: 2, beat: 4 }, { src: 4, beat: 6 }] };
+  assert.ok(Math.abs(barOfSource({ startBar: 5, audio: warped }, 3, 120) - 6.25) < 1e-9);
+  // A tempo change half way through: 2 s at 120 (a bar), then 1 s at 60 (a quarter of a bar)
+  const tempo = { bpm: 120, points: [{ id: 't', bar: 6, bpm: 60, ramp: false }] };
+  assert.ok(Math.abs(barOfSource({ startBar: 5, audio: { ...audio, offset: 0 } }, 3, tempo) - 6.25) < 1e-9);
 });
 
 test('a chop is tuned onto its key, keeping its length', () => {
