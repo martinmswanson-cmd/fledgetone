@@ -243,6 +243,12 @@ test('a mangled clip and reversed slices are optional fields, read back and tidi
   assert.equal(normalizeClipAudio({ soundId: 's2', mangled: { from: '', offset: 0, bars: 1 } }).mangled, undefined);
   assert.equal(normalizeClipAudio({ soundId: 's2', mangled: { from: 's1', offset: 0, bars: -1 } }).mangled, undefined);
   assert.ok(referencedSoundIds({ clips: [{ audio }], tracks: [] }).includes('s1'));
+  // The whole audio before the mangle is kept (its sounds too), without a mangle of its own
+  const was = { soundId: 's1', offset: 1.5, gain: -3, fadeIn: 0, fadeOut: 0, shiftedFrom: 's0', shift: 2, envelope: [{ src: 1.5, db: -20 }] };
+  const kept = normalizeClipAudio({ soundId: 's2', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0, mangled: { from: 's1', offset: 1.5, bars: 2, steps: [], was: { ...was, mangled: { from: 'z', offset: 0, bars: 1, was } } } });
+  assert.deepEqual(kept.mangled.was, was);
+  assert.ok(referencedSoundIds({ clips: [{ audio: kept }], tracks: [] }).includes('s0'));
+  assert.equal(normalizeClipAudio({ soundId: 's2', mangled: { from: 's1', offset: 0, bars: 1, was: { soundId: '' } } }).mangled.was, undefined);
   const sl = normalizeSlicer({ soundId: 'x', start: 0, end: 4, slices: [0, 1, 2, 3], reversed: [3, 3, 9, -1, 1.5, 0] });
   assert.deepEqual(sl.reversed, [0, 3]);
   assert.equal('reversed' in normalizeSlicer({ soundId: 'x', start: 0, end: 4, slices: [0, 1] }), false);
@@ -297,7 +303,34 @@ test('gate closes on its rests, crush steps the level; every mangle is level-mat
   }
 });
 
+test('a mangle takes the clip gain envelope with it: a part pulled down stays down, a boost stays under full scale', () => {
+  const x = [tone(220, 1)];
+  // Down 30 dB from 0.5 s in the sound (the clip starting 0.25 s in)
+  const env = [{ src: 0, db: 0 }, { src: 0.75, db: 0 }, { src: 0.7501, db: -30 }];
+  const { channels, gainDb } = M.bakeEnvelope(x, env, SR / 4, SR);
+  assert.equal(gainDb, 0);
+  assert.ok(Math.abs(channels[0][100] - x[0][100]) < 1e-6);
+  assert.ok(peak(channels[0].subarray(SR / 2 + 10)) < peak(x[0]) * 0.04);
+  const out = M.mangle(channels, { kind: 'crush', bits: 8, downsample: 1 }, SR);
+  assert.ok(peak(out[0].subarray(SR / 2 + 10)) < peak(x[0]) * 0.05, 'the quiet part comes back quiet');
+  // At the bottom of the range: silent. No envelope: as it was
+  assert.ok(peak(M.bakeEnvelope(x, [{ src: 0, db: -60 }], 0, SR).channels[0]) === 0);
+  assert.equal(M.bakeEnvelope(x, undefined, 0, SR).channels, x);
+  // +12 dB on a tone at 0.8: kept at full scale, the rest given back as clip gain
+  const loud = M.bakeEnvelope([Float32Array.from(x[0], (v) => v * 0.8 / peak(x[0]))], [{ src: 0, db: 12 }], 0, SR);
+  assert.ok(Math.abs(peak(loud.channels[0]) - 1) < 1e-6);
+  assert.ok(Math.abs(loud.gainDb - 20 * Math.log10(0.8 * 10 ** (12 / 20))) < 1e-3);
+});
+
 // --- Slicer patterns and what a resample takes ---
+
+test('a quiet print plays as quietly as it was: what the clip gain cannot reach goes on the fader', () => {
+  assert.deepEqual(R.printLevel(-6), { gain: -6, volume: 0 });
+  assert.deepEqual(R.printLevel(-40), { gain: -24, volume: -16 });
+  assert.deepEqual(R.printLevel(-100), { gain: -24, volume: -60 });
+  // Too loud for both: quieter, never louder
+  assert.deepEqual(R.printLevel(40), { gain: 24, volume: 6 });
+});
 
 test('a stutter pattern is the same for the same seed, on the grid, ends in a roll; shuffle starts on slice 1', () => {
   const p = R.slicePattern('stutter', 16, 1, 2, 42);

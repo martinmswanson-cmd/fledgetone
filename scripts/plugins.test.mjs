@@ -128,8 +128,15 @@ test('fledge: the editor layout matches the engine', async () => {
       c.options.forEach((o, k) => {
         e.bb_set(h, i, L.choiceValue(k, c.cap));
         assert.equal(text(e.bb_param_display(h, i)), o, c.p);
-        assert.equal(L.choiceIndex(e.bb_get(h, i), c.options.length, c.cap), k, c.p);
+        assert.equal(L.choiceIndex(e.bb_get(h, i), c.options.length, c.cap, c.exact), k, c.p);
       });
+    // Places in between and past the list: the panel shows what the engine plays
+    if (c.kind === 'choice')
+      // (Not on a half: f32 and JS may round a tie apart)
+      for (let k = 0; k < c.cap; k += k % 1 ? 0.6 : 0.2) {
+        e.bb_set(h, i, k / (c.cap - 1));
+        assert.equal(c.options[L.choiceIndex(e.bb_get(h, i), c.options.length, c.cap, c.exact)], text(e.bb_param_display(h, i)), `${c.p} at ${k}`);
+      }
     if (c.kind === 'toggle') {
       e.bb_set(h, i, 1);
       assert.equal(text(e.bb_param_display(h, i)), 'on', c.p);
@@ -137,5 +144,35 @@ test('fledge: the editor layout matches the engine', async () => {
   }
   const missing = [...names.keys()].filter((n) => !seen.has(names.get(n)));
   assert.deepEqual(missing, []);
+  e.bb_destroy(h);
+});
+
+// Songs saved before the user table: a table value past the built-in ones (a lane drawn to the
+// top, a MIDI knob) played "Random harmonics", and still does; only the user table's own value
+// (as the panel and Resample set it) chooses it
+test('fledge: old table values still play Random harmonics', async () => {
+  const { USER_TABLE_INDEX, TABLE_CAP } = await import('../src/audio/plugins/userTable.ts');
+  const { instance: { exports: e } } = await WebAssembly.instantiate(readFileSync(new URL('../public/fledgetone-plugins/fledge.wasm', import.meta.url)));
+  const text = (p) => {
+    const m = new Uint8Array(e.memory.buffer);
+    let end = p;
+    while (m[end]) end++;
+    return Buffer.from(m.subarray(p, end)).toString('utf8');
+  };
+  const h = e.bb_create(0, 48000);
+  for (const name of ['A table', 'B table']) {
+    let i = -1;
+    for (let k = 0; k < e.bb_params(h); k++) if (text(e.bb_param_name(h, k)) === name) i = k;
+    for (const v of [15 / 63, 0.25, 0.5, 1]) {
+      e.bb_set(h, i, v);
+      assert.equal(text(e.bb_param_display(h, i)), 'Random harmonics', `${name} at ${v}`);
+    }
+    e.bb_set(h, i, USER_TABLE_INDEX / (TABLE_CAP - 1));
+    assert.equal(text(e.bb_param_display(h, i)), 'User table', name);
+    // (As a saved song keeps it: the value read back, set again)
+    e.bb_set(h, i, e.bb_get(h, i));
+    assert.equal(text(e.bb_param_display(h, i)), 'User table', name);
+    assert.equal(e.fledge_normal(i, USER_TABLE_INDEX), Math.fround(USER_TABLE_INDEX / (TABLE_CAP - 1)));
+  }
   e.bb_destroy(h);
 });

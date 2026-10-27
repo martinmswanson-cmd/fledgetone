@@ -110,10 +110,14 @@ export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' 
     // A take folder keeps every take's sound, not only the one its comp starts with
     for (const audio of [c.audio, ...(c.takes ?? []).map((t) => t.audio)]) {
       if (!audio) continue;
-      ids.add(audio.soundId);
-      if (audio.tunedFrom) ids.add(audio.tunedFrom);
-      if (audio.reversedFrom) ids.add(audio.reversedFrom);
-      if (audio.shiftedFrom) ids.add(audio.shiftedFrom);
+      // (A mangled clip keeps the audio it had before, to go back to)
+      for (const a of [audio, audio.mangled?.was]) {
+        if (!a) continue;
+        ids.add(a.soundId);
+        if (a.tunedFrom) ids.add(a.tunedFrom);
+        if (a.reversedFrom) ids.add(a.reversedFrom);
+        if (a.shiftedFrom) ids.add(a.shiftedFrom);
+      }
       if (audio.mangled) ids.add(audio.mangled.from);
     }
   }
@@ -153,7 +157,10 @@ export function normalizeClipAudio(raw: unknown): ClipAudio | undefined {
       const m = raw.mangled;
       if (!isObj(m) || typeof m.from !== 'string' || !m.from || !isNum(m.offset) || !isNum(m.bars) || !(m.bars > 0)) return {};
       const steps = Array.isArray(m.steps) ? m.steps.filter((x): x is string => typeof x === 'string').map((x) => x.slice(0, 40)).slice(-16) : [];
-      return { mangled: { from: m.from, offset: Math.max(0, m.offset), bars: Math.min(10000, m.bars), steps } };
+      // (The audio it had before, without a mangle of its own)
+      const was = normalizeClipAudio(m.was);
+      if (was) delete was.mangled;
+      return { mangled: { from: m.from, offset: Math.max(0, m.offset), bars: Math.min(10000, m.bars), steps, ...(was ? { was } : {}) } };
     })(),
     ...(() => {
       const warp = normalizeWarp(raw.warp, isNum(raw.stretchBpm) ? clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) : 60);

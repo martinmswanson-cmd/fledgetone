@@ -5,7 +5,7 @@
  * shuffle). No audio or store in it, so Node can unit-test it; the actions are in
  * resampleActions.ts.
  */
-import type { Clip, NoteEvent } from './timelineTypes';
+import { AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, type Clip, type NoteEvent } from './timelineTypes';
 import { sliceKey } from '../audio/slicing';
 import { seededRandom } from '../audio/mangle';
 
@@ -39,6 +39,17 @@ export function resampleSpan(source: ResampleSource, clips: readonly Clip[]): { 
   if (!(source.to - source.from > 1 / 64)) return null;
   const inRange = clips.filter((c) => c.startBar < source.to - EPS && c.startBar + c.lengthBars > source.from + EPS && (!source.trackIds || source.trackIds.includes(c.trackId)));
   return inRange.length ? { from: source.from, to: source.to, clips: inRange } : null;
+}
+
+/**
+ * How a print stored at its own level plays back `playDb` from there, as loud as it was in the song:
+ * the clip's gain, and what that can't reach (it stops at ±24 dB) on the new track's fader, so a
+ * quiet part never comes back louder (a part too loud for both comes back quieter).
+ */
+export function printLevel(playDb: number): { gain: number; volume: number } {
+  const gain = Math.max(AUDIO_GAIN_MIN, Math.min(AUDIO_GAIN_MAX, Math.round(playDb * 100) / 100));
+  const rest = playDb - gain;
+  return { gain, volume: Math.abs(rest) > 0.01 ? Math.max(-60, Math.min(6, Math.round(rest * 10) / 10)) : 0 };
 }
 
 /** The name a resample's sound goes by. */

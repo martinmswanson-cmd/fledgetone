@@ -8,7 +8,7 @@
 
 export type FledgeControl =
   | { p: string; label: string; kind: 'knob'; bipolar?: boolean }
-  | { p: string; label: string; kind: 'choice'; options: string[]; cap: number }
+  | { p: string; label: string; kind: 'choice'; options: string[]; cap: number; exact?: number }
   | { p: string; label: string; kind: 'toggle' };
 
 export const FLEDGE_TABLES = [
@@ -58,13 +58,14 @@ export const FLEDGE_PHASER_MODES = ['Phaser', 'Flanger'];
 const CAP = { table: 64, filter: 32, shaper: 16, warp: 32, stack: 16, route: 8, lfo: 32, lfoMode: 8, sync: 32, dest: 64, source: 32, mode: 8, sub: 4, phaser: 8, retrig: 8, curve: 8, subPath: 4, glide: 8, cycle: 8 };
 
 const knob = (p: string, label: string, bipolar = false): FledgeControl => ({ p, label, kind: 'knob', bipolar });
-const choice = (p: string, label: string, options: string[], cap: number): FledgeControl => ({ p, label, kind: 'choice', options, cap });
+const choice = (p: string, label: string, options: string[], cap: number, exact?: number): FledgeControl => ({ p, label, kind: 'choice', options, cap, ...(exact !== undefined ? { exact } : {}) });
 const toggle = (p: string, label: string): FledgeControl => ({ p, label, kind: 'toggle' });
 
 /** An oscillator's controls ("A" or "B"). */
 export const oscControls = (o: 'A' | 'B') => ({
   on: toggle(`${o} on`, 'On'),
-  table: choice(`${o} table`, 'Table', FLEDGE_TABLES, CAP.table),
+  // (The user table only at its own place, as params.rs TABLE_K: past the built-in tables is the last of them)
+  table: choice(`${o} table`, 'Table', FLEDGE_TABLES, CAP.table, FLEDGE_TABLES.length - 1),
   tone: [knob(`${o} position`, 'Position'), knob(`${o} octave`, 'Octave', true), knob(`${o} semitone`, 'Semi', true), knob(`${o} fine`, 'Fine', true), knob(`${o} level`, 'Level'), knob(`${o} pan`, 'Pan', true)],
   unison: [knob(`${o} unison`, 'Unison'), knob(`${o} detune`, 'Detune'), knob(`${o} blend`, 'Blend'), knob(`${o} width`, 'Width')],
   stack: choice(`${o} stack`, 'Stack', FLEDGE_STACKS, CAP.stack),
@@ -177,8 +178,17 @@ export function allFledgeControls(): FledgeControl[] {
 
 /** The stored 0..1 of a choice's option `k` (its place out of `cap`, as the engine reads it). */
 export const choiceValue = (k: number, cap: number) => (cap > 1 ? k / (cap - 1) : 0);
-/** The option a stored 0..1 picks (the last one past the list's end). */
-export const choiceIndex = (v: number, count: number, cap: number) => Math.max(0, Math.min(count - 1, Math.round(v * (cap - 1))));
+/**
+ * The option a stored 0..1 picks (the last one past the list's end). Options from `exact` on are
+ * picked only at their own place; anywhere else past the list before them is the option before
+ * `exact` (as params.rs Kind::Choice).
+ */
+export const choiceIndex = (v: number, count: number, cap: number, exact = count) => {
+  const at = v * (cap - 1);
+  const k = Math.round(at);
+  if (k >= exact && !(k < count && Math.abs(at - k) < 1e-3)) return Math.max(0, Math.min(exact, count) - 1);
+  return Math.max(0, Math.min(count - 1, k));
+};
 /** A bipolar knob's stored 0..1 for -1..1, and back. */
 export const bipolarValue = (x: number) => (Math.max(-1, Math.min(1, x)) + 1) / 2;
 export const bipolarOf = (v: number) => v * 2 - 1;

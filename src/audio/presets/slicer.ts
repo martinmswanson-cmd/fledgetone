@@ -75,8 +75,10 @@ export function createSlicer(output: Tone.InputNode, initial: SlicerSettings | u
       // On whole frames: a source started or read between two frames is interpolated, which blurs its top end
       const at = Math.round(start * raw.sampleRate) / raw.sampleRate;
       const offset = Math.round((back ? buffer.duration - to : from) * buffer.sampleRate) / buffer.sampleRate;
-      amp.gain.setValueAtTime(offset > 0 ? 0 : level, at);
-      if (offset > 0) amp.gain.linearRampToValueAtTime(level, at + fade);
+      // (A backwards slice always fades in: it starts where a cut is, the sound's end at the latest)
+      const attack = !back && offset <= 0;
+      amp.gain.setValueAtTime(attack ? level : 0, at);
+      if (!attack) amp.gain.linearRampToValueAtTime(level, at + fade);
       amp.gain.setValueAtTime(level, at + seconds - fade);
       amp.gain.linearRampToValueAtTime(0, at + seconds);
       source.connect(amp);

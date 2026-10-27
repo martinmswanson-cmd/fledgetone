@@ -10,6 +10,8 @@
 import { lowpass, pitchShiftChannels } from './pitchShift';
 import { stretchChannels } from './timeStretch';
 import { detectPeriod, monoOf } from './plugins/userTable';
+import { envelopeDbAt } from '../store/audioClips';
+import { ENVELOPE_DB_MIN, type GainPoint } from '../store/timelineTypes';
 
 export type Channels = Float32Array[];
 
@@ -204,6 +206,28 @@ export function formant(input: Channels, semitones: number, sampleRate: number):
     for (let i = 0; i < length; i++) if (norm[i] > 1e-3) out[i] /= norm[i];
     return out;
   });
+}
+
+/**
+ * The clip's gain envelope (points at `src` seconds of the sound) put into `input`, which starts
+ * `from` samples into the sound at `sampleRate`, so the mangled copy is as loud as the clip played
+ * (the envelope goes with the old sound). Kept under full scale: what a boost would take over it is
+ * given back as clip gain, `gainDb`.
+ */
+export function bakeEnvelope(input: Channels, envelope: readonly GainPoint[] | undefined, from: number, sampleRate: number): { channels: Channels; gainDb: number } {
+  if (!envelope?.length) return { channels: input, gainDb: 0 };
+  const length = input[0]?.length ?? 0;
+  const env = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const db = envelopeDbAt(envelope, (from + i) / sampleRate);
+    env[i] = db <= ENVELOPE_DB_MIN ? 0 : 10 ** (db / 20);
+  }
+  const channels = input.map((ch) => ch.map((v, i) => v * env[i]));
+  let peak = 0;
+  for (const ch of channels) for (let i = 0; i < ch.length; i++) peak = Math.max(peak, Math.abs(ch[i]));
+  if (!(peak > 1)) return { channels, gainDb: 0 };
+  for (const ch of channels) for (let i = 0; i < ch.length; i++) ch[i] /= peak;
+  return { channels, gainDb: 20 * Math.log10(peak) };
 }
 
 /** Do `op` to `input`, levelled to it (see levelLike). */

@@ -135,7 +135,7 @@ const Choice: React.FC<{ c: Ctl<'choice'>; get: Get; set: Set; w?: string; bare?
   if (!hit) return null;
   const select = (
     <select
-      value={choiceIndex(hit.p.value, c.options.length, c.cap)}
+      value={choiceIndex(hit.p.value, c.options.length, c.cap, c.exact)}
       onChange={(e) => set(c.p, choiceValue(Number(e.target.value), c.cap))}
       aria-label={hit.p.name}
       disabled={hit.p.held}
@@ -379,7 +379,7 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
   };
   const val = (name: string) => get(name)?.p.value ?? 0;
   const isOn = (name: string) => val(name) >= 0.5;
-  const pick = (c: FledgeControl) => (c.kind === 'choice' ? choiceIndex(val(c.p), c.options.length, c.cap) : 0);
+  const pick = (c: FledgeControl) => (c.kind === 'choice' ? choiceIndex(val(c.p), c.options.length, c.cap, c.exact) : 0);
 
   const ctl = (c: FledgeControl, key?: React.Key) =>
     c.kind === 'knob' ? <Knob key={key ?? c.p} c={c} get={get} set={set} /> : c.kind === 'choice' ? <Choice key={key ?? c.p} c={c} get={get} set={set} /> : <Toggle key={key ?? c.p} c={c} get={get} set={set} />;
