@@ -20,7 +20,8 @@
 use crate::dsp::*;
 use crate::fx::{Effects, FxCfg, FxMods};
 use crate::params::{self as p, db_gain, param, COUNT};
-use crate::tables::{level_blend, level_for, table};
+use crate::tables::{level_blend, level_for, table, Table};
+use std::sync::Arc;
 
 pub const BLOCK: usize = 128;
 /// Modulation (LFOs, envelopes into cutoff, pitch) is worked out every this many samples
@@ -878,6 +879,8 @@ pub struct Synth {
     sub_bus: [f32; BLOCK],
     pub out: [[f32; BLOCK]; 2],
     pub input: [[f32; BLOCK]; 2],
+    /// The table made from a sound, for oscillators set to "User table"
+    user: Option<Arc<Table>>,
 }
 
 impl Synth {
@@ -924,7 +927,18 @@ impl Synth {
             sub_bus: [0.0; BLOCK],
             out: [[0.0; BLOCK]; 2],
             input: [[0.0; BLOCK]; 2],
+            user: None,
         }
+    }
+
+    /// Play `table` as the "User table" (None: none, so it plays "Basic shapes").
+    pub fn set_user_table(&mut self, table: Option<Table>) {
+        self.user = table.map(Arc::new);
+    }
+
+    /// Whether a user table is loaded.
+    pub fn has_user_table(&self) -> bool {
+        self.user.is_some()
     }
 
     pub fn set_tempo(&mut self, bpm: f32) {
@@ -1670,7 +1684,16 @@ impl Synth {
         if cfg.sub_after {
             self.sub_bus[..frames].fill(0.0);
         }
-        let tab = [table(cfg.osc[0].table), table(cfg.osc[1].table)];
+        // (The user table, when there is one: a sound made into a table, see tables::user_table)
+        let user = self.user.clone();
+        let tab: [&Table; 2] = [0, 1].map(|o| {
+            let i = cfg.osc[o].table;
+            if i == p::USER_TABLE {
+                user.as_deref().unwrap_or_else(|| table(0))
+            } else {
+                table(i)
+            }
+        });
         // White noise spreads over the whole band: scaled so the part we hear is as loud at any
         // sample rate (as now at 48 kHz)
         let noise_k = 0.5 * (sr / 48000.0).sqrt();
@@ -2256,6 +2279,83 @@ mod tests {
                 let (peak, rms) = render(&mut s, 40);
                 assert!(peak <= 0.9 && rms > 1e-3, "table {t} at {pos}: peak {peak} rms {rms}");
             }
+        }
+    }
+
+    /// Every sample of a render of `blocks` blocks (left then right per block).
+    fn samples(s: &mut Synth, blocks: usize) -> Vec<f32> {
+        let mut out = vec![];
+        for _ in 0..blocks {
+            s.process(BLOCK);
+            out.extend_from_slice(&s.out[0]);
+            out.extend_from_slice(&s.out[1]);
+        }
+        out
+    }
+
+    /// A user table of `frames` cycles, from a sine to a bright buzz.
+    fn user_cycles(frames: usize) -> Vec<f32> {
+        let n = crate::tables::USER_CYCLE;
+        let mut v = vec![];
+        for f in 0..frames {
+            let k = 1.0 + 6.0 * f as f32 / frames.max(2) as f32;
+            v.extend((0..n).map(|i| {
+                let ph = 2.0 * std::f32::consts::PI * i as f32 / n as f32;
+                (ph + k * ph.sin()).sin() * 0.6
+            }));
+        }
+        v
+    }
+
+    #[test]
+    fn the_user_table_plays_once_given_and_basic_shapes_until_then() {
+        let play = |user: Option<usize>, table: f32| {
+            let mut s = Synth::new(48000.0);
+            if let Some(f) = user {
+                s.set_user_table(crate::tables::user_table(&user_cycles(f), f));
+                assert!(s.has_user_table());
+            }
+            set(&mut s, "A table", table);
+            set(&mut s, "A position", 0.6);
+            set(&mut s, "B on", 0.0);
+            for n in [21, 45, 69, 108] {
+                s.midi(0x90, n, 100);
+            }
+            samples(&mut s, 60)
+        };
+        let basic = play(None, 0.0);
+        // No user table: "User table" is Basic shapes, sample for sample
+        assert!(play(None, p::USER_TABLE as f32) == basic);
+        // A user table: its own sound, safe across the keyboard
+        let user = play(Some(8), p::USER_TABLE as f32);
+        assert!(user != basic);
+        let peak = user.iter().fold(0f32, |m, x| m.max(x.abs()));
+        let rms = (user.iter().map(|x| (*x as f64).powi(2)).sum::<f64>() / user.len() as f64).sqrt();
+        assert!(peak <= 0.9 && rms > 1e-3, "peak {peak} rms {rms}");
+        // A table loaded but not chosen changes nothing
+        assert!(play(Some(8), 0.0) == basic);
+        // Taken away again: Basic shapes
+        let mut s = Synth::new(48000.0);
+        s.set_user_table(crate::tables::user_table(&user_cycles(4), 4));
+        s.set_user_table(None);
+        assert!(!s.has_user_table());
+    }
+
+    #[test]
+    fn every_preset_sounds_the_same_with_a_user_table_loaded() {
+        // (None of them chooses it: a table loaded on the side leaves them bit for bit)
+        for pr in crate::presets::PRESETS.iter().step_by(5) {
+            let run = |with: bool| {
+                let mut s = Synth::new(48000.0);
+                s.params = pr.values();
+                if with {
+                    s.set_user_table(crate::tables::user_table(&user_cycles(16), 16));
+                }
+                s.midi(0x90, 40, 110);
+                s.midi(0x90, 64, 90);
+                samples(&mut s, 40)
+            };
+            assert!(run(false) == run(true), "{}", pr.name);
         }
     }
 

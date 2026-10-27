@@ -9,7 +9,8 @@
  * `describe` (send every parameter's name, value and text), `program` (choose a preset, which
  * sets the parameters), `load` (a preset file's bytes), `sync` (answered with `synced` once everything before it has arrived),
  * `legacy` (an older saved sound with only its first `count` values went in: the plugin sets the
- * rest as it sounded then; answered with `params`), `destroy`.
+ * rest as it sounded then; answered with `params`), `table` (Fledge Synth's user table: `frames`
+ * cycles of 2048 samples, or none; see userTable.ts), `destroy`.
  * Messages out: `ready` with the parameters (and their defaults) and presets once made, `params` answering `describe`, `display`
  * after a `set` (the parameter's text), `error` if the plugin couldn't be made.
  *
@@ -108,6 +109,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       // Saved before the plugin had all its parameters: the ones it didn't have yet are set as
       // the sound was then (Fledge Synth's bb_legacy), so it sounds as it did
       if (values.length > 0 && values.length < this.n && this.e.bb_legacy) this.e.bb_legacy(this.h, values.length);
+      // Fledge Synth's user table, made from a sound
+      if (o.table) this.loadTable(o.table, o.tableFrames);
       this.alive = true;
       this.views();
       const programs = [];
@@ -137,6 +140,20 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.n = e.bb_params(this.h);
     this.views();
     return ok;
+  }
+
+  /** Fledge Synth's user table (fledge_table_buffer / fledge_table_set): "frames" cycles, or none (null) */
+  loadTable(data, frames) {
+    const e = this.e;
+    if (!e.fledge_table_set) return;
+    const n = data && frames > 0 ? frames : 0;
+    if (n) {
+      const ptr = e.fledge_table_buffer(this.h, n);
+      if (!ptr) return;
+      new Float32Array(e.memory.buffer, ptr, data.length).set(data);
+    }
+    e.fledge_table_set(this.h, n);
+    if (this.mem !== e.memory.buffer) this.views();
   }
 
   program() {
@@ -181,6 +198,8 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       // (As at the start: an older saved sound with only its first "count" values just went in)
       if (this.e.bb_legacy && d.count > 0 && d.count < this.n) this.e.bb_legacy(this.h, d.count);
       this.port.postMessage({ type: 'params', id: d.id, params: this.describe(), program: this.program() });
+    } else if (d.type === 'table') {
+      this.loadTable(d.data, d.frames);
     } else if (d.type === 'describe') {
       // (Automation already due first: a sleeping track's queue still says what it plays now)
       this.dueAutomation();

@@ -5,6 +5,7 @@ import { GPL_FAMILY_NAMES } from './pluginCatalog';
 import type { BuiltinPluginInfo, PluginFamily } from './pluginTypes';
 import { BUILTIN_PROCESSOR, BUILTIN_PROCESSOR_SOURCE } from './processor';
 import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
+import { normalizeUserTable, unpackUserTable, USER_CYCLE, type UserTable } from './userTable';
 
 /**
  * Built-in plugins: open-source effects and instruments compiled to WebAssembly (see
@@ -111,6 +112,8 @@ interface BuiltinState {
   /** The preset file chosen (plugins whose presets are files, like Surge's patches), before `values` */
   preset?: string;
   values: number[];
+  /** Fledge Synth's user table, a sound made into a wavetable (see userTable.ts) */
+  table?: UserTable;
 }
 const valuesOf = (state: unknown): number[] | undefined => {
   const v = (state as Partial<BuiltinState> | null | undefined)?.values;
@@ -139,6 +142,10 @@ export interface BuiltinControls {
   set: (index: number, value: number) => void;
   /** Called when a parameter's value or text changes (returns a function that stops it) */
   subscribe: (listener: () => void) => () => void;
+  /** Fledge Synth's user table, if it has one (plugins that can't take one: always null) */
+  userTable: () => UserTable | null;
+  /** Give it a user table, or take it away (null): resolves once it plays (false if it couldn't be read) */
+  setUserTable: (table: UserTable | null) => Promise<boolean>;
 }
 
 type GuiFactory = (controls: BuiltinControls) => { element: Element; destroy: () => void };
@@ -168,7 +175,13 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   const files = ref.info.presetFiles;
   const savedPreset = (state as Partial<BuiltinState> | undefined)?.preset;
   const startPreset = files && savedPreset && files.names.includes(savedPreset) ? savedPreset : null;
-  const [module, , presetData] = await Promise.all([familyModule(ref.family), addProcessor(ctx), startPreset ? presetBytes(ref, startPreset) : null]);
+  const savedTable = normalizeUserTable((state as Partial<BuiltinState> | undefined)?.table);
+  const [module, , presetData, tableData] = await Promise.all([
+    familyModule(ref.family),
+    addProcessor(ctx),
+    startPreset ? presetBytes(ref, startPreset) : null,
+    savedTable ? unpackUserTable(savedTable) : null,
+  ]);
   const node = new AudioWorkletNode(ctx, BUILTIN_PROCESSOR, {
     numberOfInputs: ref.info.instrument ? 0 : 1,
     numberOfOutputs: 1,
@@ -183,6 +196,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       values: valuesOf(state),
       program: (state as Partial<BuiltinState> | undefined)?.program,
       preset: presetData,
+      ...(tableData && savedTable ? { table: tableData, tableFrames: savedTable.frames } : {}),
       // Effects fade out once they go on sounding by themselves after their track has gone quiet
       // (see followInput in processor.ts); the reverbs made to hold a sound forever are left be
       followInput: !ref.info.instrument && !HOLDS_FOREVER.has(ref.info.name),
@@ -230,6 +244,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
   const keepSent = (fresh: BuiltinParam[]) => fresh.map((p, i) => (inFlight.get(i) ? { ...p, value: params[i]?.value ?? p.value } : p));
   let programs: string[] = [];
   let program = -1;
+  /** The user table it plays (kept with its settings) */
+  let userTable: UserTable | null = tableData && savedTable ? savedTable : null;
   const listeners = new Set<() => void>();
   const changed = () => listeners.forEach((l) => l());
   const replies = new Map<number, (p: BuiltinParam[]) => void>();
@@ -324,6 +340,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     builtin: 1,
     ...(program >= 0 ? (files ? { preset: files.names[program] } : { program }) : {}),
     values: own.slice(),
+    ...(userTable ? { table: userTable } : {}),
   });
   const audioNode = Object.assign(node, {
     getParameterInfo: async () =>
@@ -370,6 +387,9 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       const saved = s as Partial<BuiltinState> | undefined;
       const p = files ? (saved?.preset ? files.names.indexOf(saved.preset) : -1) : saved?.program;
       if (typeof p === 'number' && p >= 0 && p < programs.length && p !== program) await setProgram(p);
+      // (The user table as the settings have it: an undo can take one away or bring one back)
+      const table = normalizeUserTable(saved?.table) ?? null;
+      if (table?.data !== userTable?.data || table?.frames !== userTable?.frames) await setUserTable(table);
       const values = valuesOf(s);
       values?.forEach((v, i) => {
         if (Number.isFinite(v) && params[i]) set(i, v);
@@ -422,6 +442,17 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       node.port.postMessage({ type: 'load', data }, [data]);
     });
   };
+  /** Play `table` as the user table (null: none). False if it couldn't be read (nothing changes then). */
+  const setUserTable = async (table: UserTable | null): Promise<boolean> => {
+    if (destroyed) return false;
+    const data = table ? await unpackUserTable(table) : null;
+    if (table && !data) return false;
+    if (destroyed) return false;
+    userTable = table;
+    node.port.postMessage({ type: 'table', data, frames: table && data ? Math.min(table.frames, data.length / USER_CYCLE) : 0 });
+    changed();
+    return true;
+  };
   /** Resolves a file preset's load once the plugin has sent its new parameters */
   const loaded: Array<() => void> = [];
   /**
@@ -459,6 +490,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     program: () => program,
     setProgram,
     set,
+    userTable: () => userTable,
+    setUserTable,
     subscribe: (l) => {
       listeners.add(l);
       void refresh();

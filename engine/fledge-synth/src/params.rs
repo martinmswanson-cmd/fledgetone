@@ -37,7 +37,10 @@ pub struct Param {
 pub const TABLES: &[&str] = &[
     "Basic shapes", "Pulse width", "Dark saw", "Vowels", "Harmonic sweep", "Growl FM", "Metal FM", "Fold",
     "Sync sweep", "Organ", "Octave stack", "Digital", "Resonant", "Screech", "FM 1:2", "Random harmonics",
+    "User table",
 ];
+/// The table made from a sound (Synth::set_user_table); until one is given it plays "Basic shapes"
+pub const USER_TABLE: usize = 16;
 pub const FILTERS: &[&str] = &["Low pass 12", "Low pass 24", "Ladder", "Band pass", "High pass 12", "High pass 24", "Notch", "Comb +", "Comb −", "Formant", "Off"];
 pub const FILTER_OFF: usize = 10;
 pub const SHAPERS: &[&str] = &["Off", "Soft", "Warm", "Hard clip", "Fold", "Asymmetric", "Tube", "Bitcrush", "Downsample"];
