@@ -4,8 +4,9 @@ Fledgetone's own synthesizer, written in Rust. The same engine builds to WebAsse
 browser (the studio loads `public/fledgetone-plugins/fledge.wasm` through its plugin host) and
 as a Rust library for a future desktop app.
 
-- Two wavetable oscillators (tables generated from formulas, band-limited per octave), each with
-  up to 16 unison voices, detune, blend and stereo width; FM from B to A, a sine sub and noise
+- Two wavetable oscillators (tables generated from formulas, band-limited per octave, or a user
+  table made from a sound: `fledge_table_buffer` / `fledge_table_set`, see
+  src/audio/plugins/userTable.ts), each with up to 16 unison voices, detune, blend and stereo width; FM from B to A, a sine sub and noise
 - Filters: 12 and 24 dB low-pass, ladder, band-pass, high-pass, notch, comb (+/−) and formant
 - Amp, filter, mod and pitch envelopes (the pitch one exponential or straight, for dives into
   each note); glide always or between joined notes only, at a constant time or rate, curved or
