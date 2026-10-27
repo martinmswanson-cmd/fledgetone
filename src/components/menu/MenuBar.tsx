@@ -13,6 +13,7 @@ import { canChooseSaveLocation, pickProjectFile, saveProjectAs, saveProjectFile 
 import { exportMySounds, pickMySoundsFile, pickSoundFile, shareTrackSound } from '../mySoundsFile';
 import { showToast } from '../timeline/toastStore';
 import { reverseBlock } from '../../store/reverseActions';
+import { openResample } from '../timeline/resampleDialogStore';
 import { bounceName, isRackTrack } from '../../store/bounceToPad';
 import { bounceRangeToPad, placedMessage } from '../../store/bounceToPadActions';
 import { openArrange } from '../timeline/arrangeDialogStore';
@@ -292,6 +293,7 @@ const MENUS: MenuDef[] = [
         { label: 'Mixer', run: inDock('mixer') },
         { label: 'Sound effects maker', run: inDock('sfx') },
         { label: 'Generate variations of the selected clip…', run: () => (clip ? ui().setVariationsClip(clip.id) : 'Select a short clip first.'), disabled: !clip, divider: true },
+        { label: 'Resample: print to audio, a Slicer or a wavetable…', run: () => openResample('audio'), title: 'The selected clips, or the loop range (I to O), rendered with their effects to a new sound' },
         { label: 'Tune vocal (selected audio clip)…', run: () => (clip?.audio ? ui().setTuneClip(clip.id) : 'Select an audio clip (a recorded vocal) first.'), disabled: !clip?.audio },
         { label: 'Synth Designer', run: () => {
           const s = tl();

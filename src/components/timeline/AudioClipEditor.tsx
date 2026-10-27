@@ -1,7 +1,8 @@
 /**
  * The editor docked under the timeline for an audio clip (where the piano roll goes for note
  * clips): its stretch of the sound with warp markers and gain envelope, gain and fades, Follow
- * tempo (time-stretch), the sample's tempo and key, Tune, Chop sample.
+ * tempo (time-stretch), the sample's tempo and key, Tune, Chop sample, Reverse, Normalize and
+ * Mangle (tape speed, pitch, stretch, stutter, shuffle, gate, crush, formant: mangleActions.ts).
  */
 import React, { useEffect, useState } from 'react';
 import { AudioWaveform, FlipHorizontal2, Gauge, Magnet, Maximize2, Slice, Spline, AudioLines, X } from 'lucide-react';
@@ -22,6 +23,20 @@ import { ClipWaveform } from './Waveform';
 import { AudioWarpGain, type AudioTool } from './AudioWarpGain';
 import { normalizeClip, quantizeClipAudio, reverseClip } from '../../audio/audioEdits';
 import { showToast } from './toastStore';
+import { mangleClip, unmangleClip, type MangleRequest } from '../../store/mangleActions';
+import { openResample } from './resampleDialogStore';
+
+/** The Mangle menu: each makes a new sound from what the clip plays (one undo step). */
+const MANGLES: Array<{ group: string; items: Array<[string, MangleRequest]> }> = [
+  { group: 'Tape speed (pitch and length)', items: [['Half speed (an octave down)', { kind: 'tape', semitones: -12 }], ['Tape down 5', { kind: 'tape', semitones: -5 }], ['Tape up 7', { kind: 'tape', semitones: 7 }], ['Double speed (an octave up)', { kind: 'tape', semitones: 12 }]] },
+  { group: 'Pitch (same length)', items: [['Pitch −12', { kind: 'pitch', semitones: -12 }], ['Pitch −5', { kind: 'pitch', semitones: -5 }], ['Pitch +5', { kind: 'pitch', semitones: 5 }], ['Pitch +7', { kind: 'pitch', semitones: 7 }], ['Pitch +12', { kind: 'pitch', semitones: 12 }]] },
+  { group: 'Stretch (same pitch)', items: [['Stretch ×2 (half as fast)', { kind: 'stretch', factor: 2 }], ['Squeeze ×0.5 (twice as fast)', { kind: 'stretch', factor: 0.5 }]] },
+  { group: 'Stutter (repeat the start of each beat)', items: [['Stutter 1/8', { kind: 'stutter', grid: 8 }], ['Stutter 1/16', { kind: 'stutter', grid: 16 }], ['Stutter 1/32', { kind: 'stutter', grid: 32 }]] },
+  { group: 'Chop and shuffle', items: [['Shuffle 1/8s', { kind: 'shuffle', grid: 8, seed: 1 }], ['Shuffle 1/16s', { kind: 'shuffle', grid: 16, seed: 1 }]] },
+  { group: 'Gate', items: [['Gate: trance', { kind: 'gate', pattern: 'Trance' }], ['Gate: offbeat', { kind: 'gate', pattern: 'Offbeat' }], ['Gate: chop', { kind: 'gate', pattern: 'Chop' }], ['Gate: half bar', { kind: 'gate', pattern: 'Half' }]] },
+  { group: 'Crush', items: [['Crush: 8 bits', { kind: 'crush', bits: 8, downsample: 1 }], ['Crush: 6 bits, ÷4 rate', { kind: 'crush', bits: 6, downsample: 4 }], ['Crush: 4 bits, ÷8 rate', { kind: 'crush', bits: 4, downsample: 8 }]] },
+  { group: 'Formant (voice size, same pitch)', items: [['Formant −5 (bigger)', { kind: 'formant', semitones: -5 }], ['Formant +5 (smaller)', { kind: 'formant', semitones: 5 }]] },
+];
 
 const WAVE_H = 120;
 const WAVE_COLUMNS = 1200;
@@ -199,6 +214,43 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
             title="Set the clip gain so its loudest moment peaks just under full scale"
           >
             <Maximize2 className="w-3.5 h-3.5" /> Normalize
+          </button>
+          <span className="mx-1 h-5 w-px bg-forge-border" />
+          <select
+            value=""
+            disabled={busy}
+            aria-label="Mangle"
+            title="Make a new sound from what the clip plays: tape speed, pitch, stretch, stutter, shuffle, gate, crush or formant (Undo goes back)"
+            onChange={(e) => {
+              const [g, i] = e.target.value.split(':').map(Number);
+              const item = MANGLES[g]?.items[i];
+              if (!item) return;
+              const req = item[1].kind === 'shuffle' ? { ...item[1], seed: 1 + (audio.mangled?.steps.length ?? 0) } : item[1];
+              void edit(() => mangleClip(clip.id, req));
+            }}
+            className={`${select} hover:border-cyan-500 disabled:opacity-50`}
+          >
+            <option value="">{busy ? 'Working…' : 'Mangle…'}</option>
+            {MANGLES.map((m, g) => (
+              <optgroup key={m.group} label={m.group}>
+                {m.items.map(([label], i) => (
+                  <option key={label} value={`${g}:${i}`}>
+                    {label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          {audio.mangled && (
+            <button type="button" disabled={busy} onClick={() => unmangleClip(clip.id) && showToast('Back to the sound it was made from')} className={`${select} hover:border-red-400`} title={`Mangled: ${audio.mangled.steps.join(', ')}. Click to play the original again`}>
+              Back to the original
+            </button>
+          )}
+          <button type="button" onClick={() => {
+            useTimelineStore.getState().selectClip(clip.id, false);
+            openResample('slicer', 'clips');
+          }} className={`${select} hover:border-cyan-500`} title="Print this clip (with its track's effects) and chop it in a new Slicer, or make a wavetable from it">
+            Resample…
           </button>
         </div>
       </div>

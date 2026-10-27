@@ -21,6 +21,7 @@ import { SearchPalette } from './components/SearchPalette';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import { LearnDialog } from './components/tour/LearnDialog';
 import { CutToLengthDialog } from './components/timeline/CutToLengthDialog';
+import { ResampleDialog } from './components/timeline/ResampleDialog';
 import { VersionsList } from './components/VersionsList';
 import { Modal } from './components/timeline/Modal';
 import { TourOverlay } from './components/tour/TourOverlay';
@@ -128,6 +129,7 @@ export const App: React.FC = () => {
       <SharedLinkOpener />
       <UpdateNotice />
       <PianoPanel />
+      <ResampleDialog />
       <SearchPalette />
       <ReportProblem />
       <CutToLength />

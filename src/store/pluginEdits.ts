@@ -8,6 +8,7 @@
 import type { BuiltinControls } from '../audio/plugins/builtinHost';
 import { captureWamStateNow, pluginIdOfControls } from '../audio/wamHost';
 import { useTimelineStore } from './timelineStore';
+import { TABLE_CAP, USER_TABLE_INDEX, type UserTable } from '../audio/plugins/userTable';
 
 /** Moves this close together are one undo step. */
 const GESTURE_MS = 800;
@@ -58,4 +59,23 @@ export async function editPluginProgram(controls: BuiltinControls, program: numb
   }
   await controls.setProgram(program);
   if (pluginId) readSoon(pluginId);
+}
+
+/**
+ * Give Fledge Synth a user table (or take it away: null) as an undo step of its own; with
+ * `oscillator` ("A" or "B"), that oscillator plays it too. False if the table couldn't be read.
+ */
+export async function editPluginTable(controls: BuiltinControls, table: UserTable | null, oscillator?: 'A' | 'B', pluginId = pluginIdOfControls(controls)): Promise<boolean> {
+  if (pluginId) {
+    last = null;
+    begin(pluginId, 'table');
+    last = null;
+  }
+  const ok = await controls.setUserTable(table);
+  if (ok && oscillator) {
+    const i = controls.params().findIndex((p) => p.name === `${oscillator} table`);
+    if (i >= 0) controls.set(i, USER_TABLE_INDEX / (TABLE_CAP - 1));
+  }
+  if (pluginId) readSoon(pluginId);
+  return ok;
 }
