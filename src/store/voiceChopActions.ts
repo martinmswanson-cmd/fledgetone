@@ -8,6 +8,7 @@
 import { songTempo, useTimelineStore } from './timelineStore';
 import { barsToDuration, uid, type Clip, type MultiZone } from './timelineTypes';
 import { midiName } from './sampleKits';
+import { detectKey } from './songKey';
 import { padFromClip } from './bounceToPad';
 import { tempoAt } from '../audio/tempoMap';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
@@ -46,7 +47,9 @@ export async function chopVoiceToKeys(clipId: string): Promise<VoiceChopResult> 
   const frames = detectPitch(mono, RATE);
   const syllables = findSyllables(mono, RATE, frames);
   if (!syllables.length) return { error: 'No syllables were heard in it: is it a vocal, and loud enough?' };
-  const keys = layoutChops(syllables);
+  // Tuned into the song's key, when its notes say one
+  const key = detectKey(s.clips, s.tracks);
+  const keys = layoutChops(syllables, key);
   const base = (useSoundLibrary.getState().metas[clip.audio.soundId]?.name ?? clip.name).replace(/\.[a-z0-9]+$/i, '');
   const zones: MultiZone[] = [];
   for (const [i, k] of keys.entries()) {

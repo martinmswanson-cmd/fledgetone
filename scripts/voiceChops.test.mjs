@@ -126,6 +126,19 @@ test('the keys: one syllable a key, a clash moved to a free key near it, unpitch
   assert.equal(full.find((k) => k.root === 60).index, 5);
 });
 
+test('in the song key: each syllable on the nearest note of it, a clash moved to a free note of it', () => {
+  const s = (midi, level = -20) => ({ start: 0, end: 0.3, midi, level });
+  const C_MAJOR = { root: 0, steps: [0, 2, 4, 5, 7, 9, 11] };
+  const keys = layoutChops([s(61.3), s(60.1), s(59.8), s(66.2)], C_MAJOR);
+  const at = (i) => keys.find((k) => k.index === i)?.root;
+  assert.equal(at(0), 62);
+  assert.equal(at(1), 60);
+  // 60 is taken, 61 isn't in the key: 59
+  assert.equal(at(2), 59);
+  assert.equal(at(3), 67);
+  for (const k of keys) assert.ok(C_MAJOR.steps.includes(k.root % 12));
+});
+
 test('a chop is tuned onto its key, keeping its length', () => {
   const voice = testVoice({ style: 'sung', sampleRate: SR });
   const x = voice.samples;

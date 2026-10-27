@@ -9,8 +9,9 @@
  *   80 ms are dropped, anything past MAX_CHOP_SECONDS cut short.
  * - Note: the syllable's pitch (YIN, vocalTune.ts) where it's loudest; its note is the nearest
  *   semitone. A syllable with too little pitch in it (a breath, an S) has none and plays as it is.
- * - Keys: each pitched syllable on its own note; two on one note, the later moves to the nearest
- *   free key within MAX_MOVE semitones (tuned there), else the quieter of them is left out. The
+ * - Keys: each pitched syllable on its own note (the nearest of the song's key, when it has one);
+ *   two on one note, the later moves to the nearest free one within MAX_MOVE semitones (of the
+ *   key, when there is one) and is tuned there, else the quieter of them is left out. The
  *   unpitched ones go on the free keys under the lowest. Each plays the keys from halfway to its
  *   neighbours, at most REACH semitones from its own.
  * - Tuning: each syllable moved onto its key (TD-PSOLA), keeping `keep` of its wobble around its
@@ -18,7 +19,7 @@
  *
  * Plain arrays, so Node can unit-test it; voiceChopActions.ts does the rest.
  */
-import { detectPitch, hzToMidi, psola, type PitchFrame } from './vocalTune';
+import { detectPitch, hzToMidi, nearestNote, psola, type PitchFrame } from './vocalTune';
 
 export const MAX_CHOPS = 16;
 export const MAX_CHOP_SECONDS = 1.2;
@@ -162,25 +163,29 @@ export interface ChopKey {
   hi: number;
 }
 
-/** Each syllable's key and the keys it plays on (see the file's notes). Sorted by key. */
-export function layoutChops(syllables: readonly Syllable[]): ChopKey[] {
+/** A key to tune into: its root (0 = C) and its notes, as semitones up from the root. */
+export interface ChopScale {
+  root: number;
+  steps: readonly number[];
+}
+
+/**
+ * Each syllable's key and the keys it plays on (see the file's notes). With the song's `scale`,
+ * each goes on the nearest note of it, and a clash moves to a free note of it. Sorted by key.
+ */
+export function layoutChops(syllables: readonly Syllable[], scale?: ChopScale | null): ChopKey[] {
+  const inScale = (m: number) => !scale || scale.steps.includes((((m - scale.root) % 12) + 12) % 12);
   const taken = new Map<number, number>();
   const pitched = syllables.map((s, i) => ({ s, i })).filter((p) => p.s.midi !== null);
   for (const { s, i } of pitched) {
-    const want = Math.round(s.midi!);
-    let placed = false;
-    for (let d = 0; d <= MAX_MOVE && !placed; d++) {
-      // The nearer side first
-      const sides = d === 0 ? [0] : s.midi! - want >= 0 ? [d, -d] : [-d, d];
-      for (const side of sides) {
-        if (!taken.has(want + side)) {
-          taken.set(want + side, i);
-          placed = true;
-          break;
-        }
-      }
-    }
-    if (!placed) {
+    const midi = s.midi!;
+    const want = scale ? nearestNote(midi, scale.root, scale.steps) : Math.round(midi);
+    // Its note, else the nearest free one within MAX_MOVE (of the scale, when there is one)
+    const candidates = [want];
+    for (let d = 1; d <= MAX_MOVE; d++) candidates.push(...(midi - want >= 0 ? [want + d, want - d] : [want - d, want + d]));
+    const free = candidates.find((m) => !taken.has(m) && inScale(m));
+    if (free !== undefined) taken.set(free, i);
+    else {
       // The quieter of it and whoever has its note is left out
       const other = taken.get(want)!;
       if (syllables[other].level < s.level) taken.set(want, i);

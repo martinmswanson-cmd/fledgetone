@@ -837,15 +837,15 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   // its key (moved there with its vowel kept), a different syllable every other key so a tune
   // played up and down them comes out as a chopped vocal hook. One-shots: a short release.
   realChopsAiry: {
-    key: 'realChopsAiry', name: 'Airy Vocal Chops (Real)', blurb: 'Breathy women\'s voices cut into tuned syllables ("ah", "mm", "la", sighs): future bass and pop hooks', color: '#f9a8d4', category: 'Choir & Voices', kind: 'sampled', range: realRange('chops-airy', 1),
+    key: 'realChopsAiry', name: 'Airy Vocal Chops (Real)', blurb: 'Breathy "ah", "mm" and "la" syllables, tuned: pop and future bass hooks', color: '#f9a8d4', category: 'Choir & Voices', kind: 'sampled', range: realRange('chops-airy', 1),
     samples: real('chops-airy', 0.15), gain: 0,
   },
   realChopsSoul: {
-    key: 'realChopsSoul', name: 'Soul Vocal Chops (Real)', blurb: 'A man singing short "ah"s, tuned on every key: deep house and soulful hooks', color: '#f472b6', category: 'Choir & Voices', kind: 'sampled', range: realRange('chops-soul', 1),
+    key: 'realChopsSoul', name: 'Soul Vocal Chops (Real)', blurb: 'A man singing short "ah"s, tuned: deep house and soulful hooks', color: '#f472b6', category: 'Choir & Voices', kind: 'sampled', range: realRange('chops-soul', 1),
     samples: real('chops-soul', 0.15), gain: 0,
   },
   realChopsShout: {
-    key: 'realChopsShout', name: 'Shout Vocal Chops (Real)', blurb: 'Called-out words ("hey", "go", "yeah") tuned onto the keys: drops, EDM and hype hooks', color: '#ec4899', category: 'Choir & Voices', kind: 'sampled', range: realRange('chops-shout', 1),
+    key: 'realChopsShout', name: 'Shout Vocal Chops (Real)', blurb: 'Called-out "hey", "go" and "yeah", tuned: drops and hype hooks', color: '#ec4899', category: 'Choir & Voices', kind: 'sampled', range: realRange('chops-shout', 1),
     samples: real('chops-shout', 0.15), gain: 0,
   },
   realCelesta: {
