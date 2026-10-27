@@ -166,17 +166,35 @@ test('glue in a style: one drum track gets a drum bus too, and the record keeps 
   assert.equal(GM.applyGlue(tracks, [], (name) => bus(name)).record.style, undefined);
 });
 
-test('group and glue: the chosen drums onto a drum bus, the rest onto a music bus', () => {
+test('group and glue: drums onto a drum bus, the bass onto a bass bus keeping its low end, the rest onto a music bus', () => {
   const tracks = [track('d', 'drums'), track('b', 'bass808'), track('k', 'keys'), track('x', 'keys')];
   const { tracks: out, buses } = GM.groupAndGlue(tracks, [], ['d', 'b', 'k'], (name) => bus(name), 'clean');
-  assert.equal(buses.length, 2);
-  const [db, mb] = buses.map((id) => out.find((t) => t.id === id));
+  assert.equal(buses.length, 3);
+  const [db, bb, mb] = buses.map((id) => out.find((t) => t.id === id));
   assert.equal(db.name, 'Drum bus');
+  assert.equal(bb.name, 'Bass bus');
   assert.equal(out.find((t) => t.id === 'd').output, db.id);
-  assert.equal(out.find((t) => t.id === 'b').output, mb.id);
+  assert.equal(out.find((t) => t.id === 'b').output, bb.id);
   assert.equal(out.find((t) => t.id === 'k').output, mb.id);
   assert.equal(out.find((t) => t.id === 'x').output, undefined);
+  assert.ok(!(bb.fx.peq?.on && bb.fx.peq.bands[0].on), 'no low cut on the bass bus');
   assert.equal(mb.fx.compressor.threshold, GM.GLUE_BUS_STYLES.clean.music.compressor.threshold);
   // Already on a bus: nothing to do
   assert.equal(GM.groupAndGlue(out, [], ['d'], (name) => bus(name)).buses.length, 0);
+});
+
+test('glue buses never split a folder', () => {
+  const f = { id: 'f1', name: 'Kit' };
+  const tracks = [{ ...track('kk', 'drums'), folder: f }, { ...track('sn', 'drums'), folder: f }, track('k', 'keys')];
+  const one = GM.groupAndGlue(tracks, [], ['kk'], (name) => bus(name)).tracks;
+  assert.deepEqual(one.map((t) => t.folder?.id ?? null), ['f1', 'f1', 'f1', null], 'a bus for tracks in one folder goes in that folder');
+  const two = GM.groupAndGlue(tracks, [], ['kk', 'k'], (name) => bus(name)).tracks;
+  const ids = two.map((t) => t.folder?.id ?? null);
+  assert.equal(ids.lastIndexOf('f1') - ids.indexOf('f1') + 1, ids.filter((x) => x === 'f1').length, 'the folder stays in one piece');
+});
+
+test('glue leaves a lone music part on the master', () => {
+  const { tracks: out } = GM.applyGlue([track('d', 'drums'), track('k', 'keys')], [], (name) => bus(name));
+  assert.equal(out.find((t) => t.id === 'k').output, undefined);
+  assert.ok(!out.some((t) => t.name === 'Music bus'));
 });

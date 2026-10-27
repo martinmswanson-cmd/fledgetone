@@ -247,6 +247,8 @@ export const MixerPanel: React.FC = () => {
           onClick={() => {
             const s = useTimelineStore.getState();
             if (glued) {
+              // (Switched on again, it glues in the style it had)
+              setGlueStyle(gluedStyle);
               s.setGlueMix(false);
               showToast('Glue off: what it changed is back as it was (anything you changed since stays).');
             } else {

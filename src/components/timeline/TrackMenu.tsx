@@ -102,7 +102,7 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
             icon: <Waypoints className="w-3.5 h-3.5" />,
             onClick: run(() => {
               const made = s.groupAndGlue(selectedTrackIds(track.id));
-              showToast(made.length ? `Glued on ${made.length === 1 ? 'a bus' : 'a drum bus and a music bus'}: gentle compression and saturation, the same loudness. Undo to take it back.` : 'Nothing to glue: these tracks are already on a bus.');
+              showToast(made.length ? `Glued on ${made.length === 1 ? 'a bus' : `${made.length} buses`}: gentle compression and saturation, the same loudness. Undo to take it back.` : 'Nothing to glue: tracks already on a bus, buses, effects and audio tracks stay as they are.');
             }),
           },
         ]),

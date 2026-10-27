@@ -17,7 +17,7 @@ second update on the same day gets `-2`, and so on).
 - **Take a groove from audio**: pick an audio clip in the song and its groove is measured and put on the clip you're editing; it's saved with the song and offered for its other clips.
 - The **Drummer** can make its beat with one of the feels, and Pocket has a **Feel** button for the whole track (on the pads and in the piano roll).
 - **Glue in a style**: Clean, Bass music or Pumping, each level-matched so switching it on doesn't make the song louder. A song with a single drum track now gets its drum bus too.
-- **Group and glue**: a track's right-click menu puts the chosen tracks on a drum bus and a music bus with gentle compression and saturation, in one step.
+- **Group and glue**: a track's right-click menu puts the chosen tracks on a drum bus, a bass bus (its low end kept) and a music bus with gentle compression and saturation, in one step.
 
 ## 2026.10.24-2 — Fledge Synth even across the keyboard
 

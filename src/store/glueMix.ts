@@ -55,7 +55,7 @@ export const GLUE_BUS_STYLES: Record<GlueBusStyle, { label: string; about: strin
 export const GLUE_BUS_STYLE_IDS = Object.keys(GLUE_BUS_STYLES) as GlueBusStyle[];
 
 /** A glue bus's effects: the bus preset's, with the style's compression and saturation. */
-export function glueBusFx(kind: 'drums' | 'music', style: GlueBusStyle = 'bass'): Track['fx'] {
+export function glueBusFx(kind: 'drums' | 'bass' | 'music', style: GlueBusStyle = 'bass'): Track['fx'] {
   const st = GLUE_BUS_STYLES[style];
   return { ...busPresetFx(kind), ...(kind === 'drums' ? st.drums : st.music) };
 }
@@ -66,6 +66,20 @@ const ROOM = { drums: 0.1, bass: 0.04, vocal: 0.15, music: 0.2 } as const;
 const SPREAD = [-0.25, 0.25, -0.15, 0.15, -0.35, 0.35, -0.1, 0.1];
 /** The bass's duck under the drums: a 12 dB hole on each kick and snare. */
 export const GLUE_BASS_DUCK = { on: true, depth: 0.75, release: 140, trigger: 'kickSnare', shape: 'hole' } as const;
+
+/**
+ * A new bus put in the track list after its members: in their folder if they share one, else
+ * after the last member's folder (not inside it, which would split the folder in two).
+ */
+function placeBus(tracks: Track[], bus: Track, members: readonly Track[]): Track[] {
+  const lastIndex = Math.max(...members.map((t) => tracks.findIndex((x) => x.id === t.id)));
+  const last = tracks[lastIndex];
+  const sameFolder = last.folder && members.every((t) => t.folder?.id === last.folder!.id) ? last.folder : undefined;
+  const placed = sameFolder ? { ...bus, folder: sameFolder } : bus;
+  let at = lastIndex + 1;
+  if (last.folder && !sameFolder) while (at < tracks.length && tracks[at].folder?.id === last.folder.id) at++;
+  return [...tracks.slice(0, at), placed, ...tracks.slice(at)];
+}
 
 const read = (t: Track, field: GlueField): unknown => (field === 'peq' ? t.fx.peq : field === 'pump' ? t.fx.pump : t[field]);
 /** A field set (or, for undefined, taken away: a track with no output plays to the master). */
@@ -145,12 +159,12 @@ export function applyGlue(tracks: Track[], clips: readonly Clip[], newBus: (name
   const leads = leadsOf(music, clips);
 
   // Buses: the drums together, the music parts together (only tracks still playing to the master)
-  const group = (members: Track[], name: string, fx: Track['fx']) => {
+  // (One drum track gets its bus; the music parts need two to be worth one)
+  const group = (members: Track[], name: string, fx: Track['fx'], least = 1) => {
     const free = members.filter((t) => !t.output);
-    if (!free.length) return;
+    if (free.length < least) return;
     const bus = { ...newBus(name, free), fx };
-    const at = Math.max(...free.map((t) => out.findIndex((x) => x.id === t.id))) + 1;
-    out = [...out.slice(0, at), bus, ...out.slice(at)];
+    out = placeBus(out, bus, free);
     buses.push(bus.id);
     for (const t of free) set(t.id, 'output', bus.id);
   };
@@ -158,7 +172,7 @@ export function applyGlue(tracks: Track[], clips: readonly Clip[], newBus: (name
   const musicFx = glueBusFx('music', style);
   // (The bus breathes with the kick unless its parts pump already: Duck to kick set them for the style)
   const pumping = music.some((t) => t.fx.pump.on);
-  group(music, 'Music bus', hasKick && !pumping ? { ...musicFx, pump: { on: true, depth: GLUE_BUS_STYLES[style].pump, release: 220, trigger: 'kick' } } : musicFx);
+  group(music, 'Music bus', hasKick && !pumping ? { ...musicFx, pump: { on: true, depth: GLUE_BUS_STYLES[style].pump, release: 220, trigger: 'kick' } } : musicFx, 2);
 
   // The bass makes a hole for the kick and the snare (about 12 dB, held while the drum hits)
   if (hasKick) for (const t of parts) if (role.get(t.id) === 'bass' && !t.fx.pump.on) set(t.id, 'pump', { ...t.fx.pump, ...GLUE_BASS_DUCK });
@@ -192,22 +206,24 @@ export function removeGlue(tracks: Track[], record: GlueRecord): Track[] {
 }
 
 /**
- * Group and glue: the chosen tracks onto glue buses in one go, the drums onto a drum bus and the
- * rest (bass, chords, leads, vocals) onto a music bus, each with the style's compression and
+ * Group and glue: the chosen tracks onto glue buses in one go, the drums onto a drum bus, the
+ * bass onto a bass bus (its low end kept) and the rest (chords, leads, vocals) onto a music bus
+ * (which leaves the low end to the bass), each with the style's compression and
  * saturation (level-matched, as Glue's). A group of one track still gets its bus. Tracks already
  * on a bus, buses and effects stay as they are. Returns the tracks and the buses made.
  */
 export function groupAndGlue(tracks: Track[], clips: readonly Clip[], ids: readonly string[], newBus: (name: string, members: Track[]) => Track, style: GlueBusStyle = 'bass'): { tracks: Track[]; buses: string[] } {
   const chosen = tracks.filter((t) => ids.includes(t.id) && !isMixTrack(t) && !isEffect(t) && !t.output);
-  const drums = chosen.filter((t) => trackRole(t, clips) === 'drums');
-  const music = chosen.filter((t) => !drums.includes(t));
+  const role = new Map(chosen.map((t) => [t.id, trackRole(t, clips)]));
+  const drums = chosen.filter((t) => role.get(t.id) === 'drums');
+  const bass = chosen.filter((t) => role.get(t.id) === 'bass');
+  const music = chosen.filter((t) => !drums.includes(t) && !bass.includes(t));
   let out = tracks;
   const buses: string[] = [];
-  for (const [members, kind, name] of [[drums, 'drums', 'Drum bus'], [music, 'music', 'Music bus']] as const) {
+  for (const [members, kind, name] of [[drums, 'drums', 'Drum bus'], [bass, 'bass', 'Bass bus'], [music, 'music', 'Music bus']] as const) {
     if (!members.length) continue;
     const bus = { ...newBus(name, members), fx: glueBusFx(kind, style) };
-    const at = Math.max(...members.map((t) => out.findIndex((x) => x.id === t.id))) + 1;
-    out = [...out.slice(0, at), bus, ...out.slice(at)].map((t) => (members.some((m) => m.id === t.id) ? { ...t, output: bus.id } : t));
+    out = placeBus(out, bus, members).map((t) => (members.some((m) => m.id === t.id) ? { ...t, output: bus.id } : t));
     buses.push(bus.id);
   }
   return { tracks: out, buses };
