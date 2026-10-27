@@ -1161,7 +1161,9 @@ async function renderGraphHeld(
   // first clock step at or after the note's time, and Tone starts oscillators no earlier than
   // the clock, so notes came out up to 128 samples late, by a different amount each loop pass.
   // (Set after building the graph, so its starting settings still apply from time 0.)
-  context.lookAhead = 2 * quantum;
+  // Further ahead where a groove feel plays notes early: Tone starts them no earlier than the
+  // clock, so a push longer than the look-ahead came out shorter than live
+  context.lookAhead = 2 * quantum + (graph.early > 0 ? graph.early : 0);
   const advanceClock = (to: number) => {
     const end = Math.min(to, duration);
     while (clock._currentTime <= end) {
@@ -1339,6 +1341,8 @@ async function renderGraphHeld(
       /** The look-ahead limiter is in place (not the stand-in), where the master section is */
       lookahead: section ? section.lookahead() : expectsLookahead(),
       limitsAfter: !!section?.limitsAfter,
+      /** Seconds before its tick the earliest note a groove feel moves early plays (at the slowest tempo), 0 for none */
+      early: (schedule.earliest() * 15) / Math.min(opts.bpm, ...(opts.tempoPoints ?? []).map((p) => p.bpm)),
       reverbImpulse: () => busFx.impulse(),
       dispose: () => {
         schedule.dispose();

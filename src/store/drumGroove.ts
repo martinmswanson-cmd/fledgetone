@@ -151,3 +151,18 @@ export function withFeel(groove: ClipGroove | undefined, feel: ClipFeel | null):
   const { feel: _f, ...rest } = groove;
   return rest.swing === 0 && !rest.rows && !rest.template && groove.feel ? null : rest;
 }
+
+/**
+ * Pocket's Swing button on a clip's groove: `swing` in place of a measured feel (as picking a swing
+ * in the piano roll's FEEL does), or (0) back to the song's swing.
+ */
+export function withSwing(groove: ClipGroove | null | undefined, swing: number): ClipGroove | null {
+  if (!(swing > 0)) return null;
+  const { feel: _f, ...rest } = groove ?? { grid: 16 as const, swing: 0 };
+  return { ...rest, swing };
+}
+
+/** A Drummer style's groove (`style`, or none) for a clip that had `old`: a measured feel on it stays. */
+export function drummerGroove(old: ClipGroove | null | undefined, style: ClipGroove | undefined): ClipGroove | null {
+  return old?.feel ? withFeel(style, old.feel) : (style ?? null);
+}

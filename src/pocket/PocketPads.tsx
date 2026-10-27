@@ -29,6 +29,7 @@ import { accelRoll } from '../store/noteTools';
 import { barsToDuration } from '../store/timelineTypes';
 import { chanceMark, isConditional, withChance } from '../store/noteChance';
 import { rollDrums } from '../store/smartTools';
+import { withSwing } from '../store/drumGroove';
 import { buzz } from './pocketSession';
 
 const EPS = 1e-6;
@@ -208,7 +209,8 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
   // The cell's own swing (its clip's groove), stepped through a few amounts
   const groove = clips.find((c) => c.trackId === track.id && !c.audio && Math.abs(c.startBar - sec.from) < EPS && Math.abs(c.lengthBars - (sec.to - sec.from)) < EPS)?.groove ?? null;
   const swing = SWINGS.reduce((best, v) => (Math.abs(v - (groove?.swing ?? 0)) < Math.abs(best - (groove?.swing ?? 0)) ? v : best), 0);
-  const swingName = swing ? `${Math.round(swing * 100)}%` : 'off';
+  // (A measured feel plays in place of swing: a tap swaps it for a swing)
+  const swingName = groove?.feel ? 'feel' : swing ? `${Math.round(swing * 100)}%` : 'off';
   const tool = 'shrink-0 h-8 px-3 rounded-lg border border-forge-border bg-forge-panel text-xs font-medium';
   return (
     <>
@@ -250,7 +252,7 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
             const id = cellClip(track.id, sec, true);
             if (!id) return;
             const next = SWINGS[(SWINGS.indexOf(swing) + 1) % SWINGS.length];
-            useTimelineStore.getState().setClipGroove(id, next > 0 ? { ...(groove ?? { grid: 16 }), swing: next } : null);
+            useTimelineStore.getState().setClipGroove(id, withSwing(groove, next));
           }}
         >
           Swing {swingName}
