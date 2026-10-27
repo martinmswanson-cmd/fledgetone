@@ -85,6 +85,17 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     licence: CC0,
   },
   {
+    prefixes: [`${HOSTED}chops-soul/`],
+    samples: 'Soul vocal chops from the short sung "a" of the [legato vocal tutorial](https://github.com/sfzinstruments/legato_vocal_tutorial) by Karoryfer Samples (tuned onto the keys with the WORLD vocoder, converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
+    prefixes: [`${HOSTED}chops-airy/`, `${HOSTED}chops-shout/`],
+    samples:
+      'Airy and shout vocal chops cut from voice recordings on OpenGameArt: the [Voice Clip Packs for Visual Novels and RPGs](https://opengameart.org/content/voice-clip-packs-for-visual-novels-and-rpgs) by cicifyre, [Dialog vocal samples](https://opengameart.org/content/dialog-vocal-samples) by mirceakitsune, [OoOoOoOoOoOoOo](https://opengameart.org/content/oooooooooooooo), [Ghostly Humming](https://opengameart.org/content/ghostly-humming), [Cheers](https://opengameart.org/content/cheers-0) and [oh alright!](https://opengameart.org/content/oh-alright) by nocturnalvanguard, [Au yeah!](https://opengameart.org/content/au-yeah) by ignasd, [Greeting sounds](https://opengameart.org/content/greeting-sounds-by-emopreben) by emopreben and the [Voiceover Pack](https://opengameart.org/content/voiceover-pack-40-lines) by Kenney (cut into syllables and tuned onto the keys with the WORLD vocoder by scripts/vocal-chops/build.py, converted to MP3, hosted with the app)',
+    licence: CC0,
+  },
+  {
     prefixes: [`${HOSTED}studio-kit/`],
     samples: 'Studio drum kit from [Big Rusty Drums](https://github.com/sfzinstruments/karoryfer.big-rusty-drums) by Karoryfer Samples, close and overhead microphones mixed (converted to MP3, hosted with the app)',
     licence: CC0,
