@@ -29,7 +29,7 @@ import { FavouriteStar, pocketInstruments, pocketSounds, selectTrack } from './P
 import { useMySounds } from '../store/mySounds';
 import { goToSection } from './PocketGrid';
 import { addVocalTrack } from './PocketVocals';
-import { bounceSection } from './pocketBounce';
+import { bounceSection, resampleSection } from './pocketBounce';
 import { PocketShare } from './PocketShare';
 import { chooseInterface } from './pocketMode';
 import { cellDrumStyles, cellKey, pocketNoteId } from './pocketStore';
@@ -252,6 +252,8 @@ const SectionSheet: React.FC = () => {
   const sec = sections[i];
   if (!sec) return null;
   const linked = sectionIsLinked(sec, clips);
+  // The track chosen in the drawer: Resample takes only it, when one is
+  const selected = useTimelineStore.getState().tracks.find((t) => t.id === usePocket.getState().trackId && !usePocket.getState().mixAll);
   const run = (fn: () => string | null | void, after?: (fresh: ReturnType<typeof pocketSections>) => number, done?: string) => {
     const problem = fn();
     close();
@@ -280,6 +282,15 @@ const SectionSheet: React.FC = () => {
           close();
           showToast(`Bouncing ${sec.letter}…`);
           void bounceSection(sec);
+        }}
+      />
+      <SheetItem
+        title="Resample it into a Slicer"
+        detail={`${selected ? `${selected.name} in it` : 'Everything playing in it'} printed and chopped into 16 slices on a new Slicer, with a stutter pattern and a reversed tail: play the slices from its keys.`}
+        onClick={() => {
+          close();
+          showToast(`Resampling ${sec.letter}…`);
+          void resampleSection(sec, selected?.id);
         }}
       />
       <SheetItem title="Take it out" detail="Its bars go, and the rest of the song moves up. Undo brings it back." onClick={() => run(() => removeSection(i), () => Math.max(0, i - 1))} />
