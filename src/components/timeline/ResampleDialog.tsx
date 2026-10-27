@@ -6,7 +6,7 @@
  * as its user table (a bass, lead or pad). Opened from a clip's right-click menu and Tools ›
  * Resample. The work is in resampleActions.ts.
  */
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { AudioWaveform } from 'lucide-react';
 import { Modal } from './Modal';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -40,7 +40,8 @@ export const ResampleDialog: React.FC = () => {
 };
 
 const ResampleForm: React.FC<{ startFrom: From; startTarget: ResampleTarget }> = ({ startFrom, startTarget }) => {
-  const selected = useTimelineStore((s) => s.clips.filter((c) => c.isSelected));
+  const clips = useTimelineStore((s) => s.clips);
+  const selected = useMemo(() => clips.filter((c) => c.isSelected), [clips]);
   const loop = useTimelineStore((s) => s.loopRegion);
   const track = useTimelineStore((s) => s.tracks.find((t) => t.id === s.selectedTrackId));
   const busy = useResampling((r) => r.fraction);

@@ -187,9 +187,9 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     // A wavetable
     const made = await userTableFrom(channels, sampleRate, name.replace(/ \(resampled\)$/, ''), req.frames ?? 16, req.cycle ?? 'pitch');
     if (!made) return { message: 'Couldn’t make a table from that: it needs a held, steady sound at least a few cycles long.' };
-    const id = await addWavetableTrack(made.table, req.role ?? 'lead', `${short} table`);
+    const id = await addWavetableTrack(made.table, req.role ?? 'lead', `${short} ${req.role ?? 'lead'}`);
     mute();
-    return { message: `A Fledge Synth track, ${short} table, plays it as a ${req.role ?? 'lead'} (${made.table.frames} cycles, cut at ${Math.round(made.hz)} Hz${made.found ? '' : ', no pitch found'}).`, trackId: id ?? undefined };
+    return { message: `A Fledge Synth track, ${short} ${req.role ?? 'lead'}, plays it as a ${req.role ?? 'lead'} (${made.table.frames} cycles, cut at ${Math.round(made.hz)} Hz${made.found ? '' : ', no pitch found'}).`, trackId: id ?? undefined };
   } finally {
     useResampling.setState({ fraction: null });
   }
