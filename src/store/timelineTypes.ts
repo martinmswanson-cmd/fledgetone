@@ -973,6 +973,12 @@ export interface ClipAudio {
   shiftedFrom?: string;
   /** ...and by how many semitones */
   shift?: number;
+  /**
+   * Mangled (see mangleActions.ts: tape speed, stutter, crush...): the clip plays a new sound made
+   * from the stretch it played; `from` is the sound it was made from, `offset` and `bars` where the
+   * clip was in it and how long, to go back to, and `steps` what was done, in order
+   */
+  mangled?: { from: string; offset: number; bars: number; steps: string[] };
 }
 
 /** One pad of a Drum Rack: a sound, and the effects it plays through (its own, not shared with the other pads). */
@@ -1084,6 +1090,8 @@ export interface SlicerSettings {
   pitch: boolean;
   /** The slice the keyboard plays in Pitch mode (an index into `slices`) */
   focus: number;
+  /** Slices that play backwards (indexes into `slices`; absent: none) */
+  reversed?: number[];
 }
 
 export interface NoteEvent {

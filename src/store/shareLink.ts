@@ -2,6 +2,8 @@ import { parseProject, PROJECT_FORMAT, serializeProject } from './project';
 import { clipHasConditions } from './noteChance';
 import type { ProjectSnapshot } from './project';
 import { defaultTrackFx } from './timelineTypes';
+import type { Track, WamPlugin } from './timelineTypes';
+import { linkUserTable, normalizeUserTable } from '../audio/plugins/userTable';
 
 /**
  * A song inside a link: the project (without its sound files), packed tight, deflated and written
@@ -279,13 +281,34 @@ function unpack(bytes: Uint8Array): unknown {
   return { ...raw, format: PROJECT_FORMAT, p: undefined, l: undefined, tracks, clips, stingers };
 }
 
+/** A plugin's settings with its user table (if any) as a link carries it. */
+async function lightPlugin(p: WamPlugin): Promise<WamPlugin> {
+  const table = normalizeUserTable((p.state as { table?: unknown } | undefined)?.table);
+  if (!table) return p;
+  const light = await linkUserTable(table);
+  const state = { ...(p.state as Record<string, unknown>) };
+  delete state.table;
+  return { ...p, state: light ? { ...state, table: light } : state };
+}
+
+async function lightTables(t: Track): Promise<Track> {
+  if (!t.plugin && !t.pluginFx?.length) return t;
+  return {
+    ...t,
+    ...(t.plugin ? { plugin: await lightPlugin(t.plugin) } : {}),
+    ...(t.pluginFx ? { pluginFx: await Promise.all(t.pluginFx.map(lightPlugin)) } : {}),
+  };
+}
+
 /** The link to `project` at `base` (this page's address without its #). */
 export async function songLink(project: ProjectSnapshot, base: string): Promise<string> {
   // Sound files stay out: they'd make the link megabytes long (Save carries them)
   // Frozen tracks' sounds can't come either: the receiver's copy plays them live
   // and a recorded room for the reverb stays out too (the receiver hears the generated hall)
   const masterFx = project.masterFx?.room ? { ...project.masterFx, room: undefined } : project.masterFx;
-  const compact = shortIds({ ...project, masterFx, tracks: project.tracks.map((t) => (t.frozen ? { ...t, frozen: undefined } : t)) });
+  // Fledge Synth's user tables go in as their lighter copy (about 2 KB each, see linkUserTable)
+  const tracks = await Promise.all(project.tracks.map(async (t) => lightTables(t.frozen ? { ...t, frozen: undefined } : t)));
+  const compact = shortIds({ ...project, masterFx, tracks });
   // (The receiver's copy is a song of their own: it gets its own id when it opens)
   const data = serializeProject({ ...compact, sounds: undefined, songId: undefined });
   return `${base}${SHARE_PREFIX}${toBase64Url(await pipe(pack(data), new CompressionStream('deflate-raw')))}`;

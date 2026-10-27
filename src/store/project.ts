@@ -25,6 +25,7 @@ import { parseGameParams, type GameParam } from './gameParams';
 import { parseTransitions } from './transitions';
 import { parseCurves, type IntensityCurve } from './intensity';
 import { normalizeClipAudio, normalizeSlicer, parseEmbeddedSounds } from './audioClips';
+import { normalizeUserTable } from '../audio/plugins/userTable';
 
 /**
  * Project file format (.fledgetone.json) and browser autosave.
@@ -363,6 +364,19 @@ export function parseTrack(raw: unknown): Track {
   };
 }
 
+/**
+ * A plugin's settings as the plugin gave them, with Fledge Synth's user table (optional, see
+ * userTable.ts) kept only when it's well formed: a damaged one is left out, and the synth plays
+ * Basic shapes in its place.
+ */
+function pluginState(state: unknown): unknown {
+  if (!isObj(state) || !('table' in state)) return state;
+  const table = normalizeUserTable(state.table);
+  const rest = { ...state };
+  delete rest.table;
+  return table ? { ...rest, table } : rest;
+}
+
 /** A plugin on a track, or null if it's unreadable. */
 function parsePlugin(v: unknown): WamPlugin | null {
   if (!isObj(v) || !isStr(v.id) || !isStr(v.url) || !/^(https?:\/\/|builtin:)/.test(v.url)) return null;
@@ -370,7 +384,7 @@ function parsePlugin(v: unknown): WamPlugin | null {
     id: v.id,
     url: v.url,
     name: isStr(v.name) && v.name ? v.name.slice(0, 40) : 'Plugin',
-    ...(v.state !== undefined && v.state !== null ? { state: v.state } : {}),
+    ...(v.state !== undefined && v.state !== null ? { state: pluginState(v.state) } : {}),
     ...(v.bypass === true ? { bypass: true } : {}),
   };
 }
