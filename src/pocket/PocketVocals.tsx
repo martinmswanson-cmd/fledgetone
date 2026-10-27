@@ -24,6 +24,7 @@ import { TuneDialog } from '../components/timeline/TuneDialog';
 import { Card, pill, pillOn } from './pocketUi';
 import { usePocket } from './pocketStore';
 import { chopClipToPads, clipToPad, placedMessage } from '../store/bounceToPadActions';
+import { chopVoiceToKeys } from '../store/voiceChopActions';
 import { LineUpCard, SlowOutputNotice } from './PocketMic';
 import { useMicAsk } from './useMicAsk';
 
@@ -231,7 +232,7 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
                   <Trash2 className="w-4 h-4" />
                 </button>
                 {padding === c.id && (
-                  <div className="basis-full flex gap-2">
+                  <div className="basis-full flex flex-wrap gap-2">
                     <button
                       type="button"
                       className={`${pill} flex-1 !h-10 !px-2 text-xs`}
@@ -256,6 +257,20 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
                     >
                       Chop onto pads
                     </button>
+                    <button
+                      type="button"
+                      className={`${pill} flex-1 !h-10 !px-2 text-xs`}
+                      onClick={() => {
+                        setPadding(null);
+                        showToast(`Chopping ${c.name} into syllables…`);
+                        void chopVoiceToKeys(c.id).then(
+                          (r) => showToast('error' in r ? r.error : r.message),
+                          (err) => showToast(`Couldn't chop ${c.name}: ${err instanceof Error ? err.message : String(err)}`)
+                        );
+                      }}
+                    >
+                      Chop onto keys
+                    </button>
                   </div>
                 )}
               </div>
@@ -263,7 +278,8 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
           </div>
           <p className="text-[11px] text-forge-muted mt-2">
             Double: a second and third performance either side, for a thicker vocal. Tune: pitch correction to the song's key, from gentle to robotic. Pad: the take on a pad of your
-            pads (as recorded, without the vocal sound), or chopped at its words and hits onto a new set of pads.
+            pads (as recorded, without the vocal sound), chopped at its words and hits onto a new set of pads, or chopped into syllables tuned onto the keys of a new
+            instrument (Chop onto keys) to play your own voice as a hook.
           </p>
         </Card>
       )}

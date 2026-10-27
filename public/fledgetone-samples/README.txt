@@ -30,3 +30,19 @@ From the Versilian Community Sample Library (VCSL) by Versilian Studios
 
 celesta: A Sampled Celesta by Neil Bickford (audio CC0 1.0, public domain)
   https://gitlab.com/echoparallax/a-sampled-celesta
+
+Vocal chops (scripts/vocal-chops/build.py: cut into syllables, tuned onto the keys), all CC0 1.0
+(public domain), each licence checked on the recording's own page:
+  chops-soul: the short sung "a" of the legato vocal tutorial by Karoryfer Samples
+    https://github.com/sfzinstruments/legato_vocal_tutorial (its LICENSE file: CC0 1.0)
+  chops-airy, chops-shout: voice recordings from OpenGameArt (each page's licence: CC0)
+    cicifyre, Voice Clip Packs for Visual Novels and RPGs (Bright Female, Mature Female)
+      https://opengameart.org/content/voice-clip-packs-for-visual-novels-and-rpgs
+    mirceakitsune, Dialog vocal samples  https://opengameart.org/content/dialog-vocal-samples
+    nocturnalvanguard (AuraVoice), OoOoOoOoOoOoOo  https://opengameart.org/content/oooooooooooooo
+    nocturnalvanguard (AuraVoice), Ghostly Humming  https://opengameart.org/content/ghostly-humming
+    nocturnalvanguard (AuraVoice), Cheers  https://opengameart.org/content/cheers-0
+    nocturnalvanguard (AuraVoice), oh alright!  https://opengameart.org/content/oh-alright
+    ignasd, Au yeah!  https://opengameart.org/content/au-yeah
+    emopreben, Greeting sounds  https://opengameart.org/content/greeting-sounds-by-emopreben
+    Kenney, Voiceover Pack (40+ lines)  https://opengameart.org/content/voiceover-pack-40-lines

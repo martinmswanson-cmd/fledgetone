@@ -60,6 +60,10 @@ All public domain (CC0, The Unlicense) or free to redistribute (with credit: CC 
 - [VocalSet](https://zenodo.org/records/1193957) by Julia Wilkins, Prem Seetharaman, Alison Wahl
   and Bryan Pardo (CC BY 4.0; credited): the two choirs, made by `vocalset.py` from its 20 singers'
   held "a" and "u" vowels (soft, straight and loud), each moved onto the choir's notes.
+- The vocal chops (`chops-airy`, `chops-soul`, `chops-shout`) are made by
+  `scripts/vocal-chops/build.py` instead (it lists each recording, its maker and page): CC0
+  voices cut into syllables, tuned onto the keys with the WORLD vocoder; it updates
+  `hostedSets.ts` through `convert.py`'s `write_index`.
 - The electric guitars' release sounds (the strings damped as a note is let go) are the
   [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars)
   library's own (`Samples/black/rel`, `Samples/green/rel`; CC0, as the rest of it).
