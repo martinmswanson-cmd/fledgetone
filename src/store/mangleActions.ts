@@ -6,12 +6,12 @@
  * it plays the same live and in an export.
  */
 import { songTempo, useTimelineStore } from './timelineStore';
-import type { Clip } from './timelineTypes';
+import { AUDIO_GAIN_MAX, type Clip, type ClipAudio } from './timelineTypes';
 import { audioSourceSeconds, stretchRatio } from './audioClips';
 import { tempoAt } from '../audio/tempoMap';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/wavFile';
-import { GATE_PATTERNS, lengthFactor, mangle, mangleLabel, type MangleOp } from '../audio/mangle';
+import { bakeEnvelope, GATE_PATTERNS, lengthFactor, mangle, mangleLabel, type MangleOp } from '../audio/mangle';
 
 /** The rate mangled copies are made at. */
 const RATE = 44100;
@@ -58,7 +58,13 @@ export async function mangleClip(clipId: string, req: MangleRequest): Promise<st
   const from = Math.max(0, Math.floor(audio.offset * RATE));
   const to = Math.min(buffer.length, Math.ceil((audio.offset + played) * RATE));
   if (to - from < 64) return 'That clip is too short to mangle.';
-  const input = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c).slice(from, to));
+  // (What the clip played, its gain envelope in it: a section pulled down stays down)
+  const { channels: input, gainDb } = bakeEnvelope(
+    Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c).slice(from, to)),
+    audio.envelope,
+    from,
+    RATE
+  );
   const op = mangleOp(req, bpm, stretchRatio(audio, bpm), RATE);
   const out = mangle(input, op, RATE);
   const label = mangleLabel(op);
@@ -68,22 +74,22 @@ export async function mangleClip(clipId: string, req: MangleRequest): Promise<st
   const still = now.clips.find((c) => c.id === clipId);
   if (!still?.audio || still.audio.soundId !== audio.soundId) return 'The clip changed while it was being mangled: try again.';
   now.checkpoint();
-  const kept = still.audio.mangled ?? { from: audio.soundId, offset: audio.offset, bars: still.lengthBars, steps: [] };
+  const kept = still.audio.mangled ?? { from: audio.soundId, offset: audio.offset, bars: still.lengthBars, steps: [], was: still.audio };
   const lengthBars = still.lengthBars * lengthFactor(op);
   useTimelineStore.setState((st) => ({
     clips: st.clips.map((c): Clip => {
       if (c.id !== clipId || !c.audio) return c;
-      const next = { ...c.audio, soundId: sound.id, offset: 0, warp: undefined, envelope: undefined, reversedFrom: undefined, mangled: { ...kept, steps: [...kept.steps, label].slice(-16) } };
-      delete next.warp;
-      delete next.envelope;
-      delete next.reversedFrom;
+      const next: ClipAudio = { ...c.audio, soundId: sound.id, offset: 0, mangled: { ...kept, steps: [...kept.steps, label].slice(-16) } };
+      if (gainDb) next.gain = Math.min(AUDIO_GAIN_MAX, next.gain + gainDb);
+      // (These belonged to the old sound: the warp markers and envelope, and where it was reversed, tuned or moved from)
+      for (const k of ['warp', 'envelope', 'reversedFrom', 'tunedFrom', 'shiftedFrom', 'shift'] as const) delete next[k];
       return { ...c, lengthBars, audio: next };
     }),
   }));
   return `"${clip.name}" ${label}. Undo goes back a step; Back to the original undoes them all.`;
 }
 
-/** Play the sound the clip was mangled from again, where it was and as long (one undo step). */
+/** Play the sound the clip was mangled from again, where it was, as long and as it was set (one undo step). */
 export function unmangleClip(clipId: string): boolean {
   const s = useTimelineStore.getState();
   const clip = s.clips.find((c) => c.id === clipId);
@@ -93,7 +99,8 @@ export function unmangleClip(clipId: string): boolean {
   useTimelineStore.setState((st) => ({
     clips: st.clips.map((c): Clip => {
       if (c.id !== clipId || !c.audio) return c;
-      const next = { ...c.audio, soundId: m.from, offset: m.offset };
+      // (The whole audio it had; a mangle from before that was kept, the sound and where in it)
+      const next = m.was ? { ...m.was } : { ...c.audio, soundId: m.from, offset: m.offset };
       delete next.mangled;
       return { ...c, lengthBars: m.bars, audio: next };
     }),

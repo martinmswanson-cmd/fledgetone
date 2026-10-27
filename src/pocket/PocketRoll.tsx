@@ -14,9 +14,9 @@ import { chanceMark, isConditional, withChance } from '../store/noteChance';
 import { ChanceSheet } from './pocketUi';
 import { useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
-import { barsToDuration, durationToBars, type NoteEvent, type Track } from '../store/timelineTypes';
+import { barsToDuration, durationToBars, SLICE_KEY_BASE, type NoteEvent, type Track } from '../store/timelineTypes';
 import type { SongKey } from '../store/songKey';
-import { INSTRUMENTS } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isSlicerKind } from '../audio/instrumentCatalog';
 import { STEPS_PER_WHOLE, midiToNote, noteToMidi, scaleRows } from './pocketGrid';
 import { editCell, sectionNotes } from './pocketCell';
 import type { PocketSection } from './pocketSections';
@@ -73,20 +73,26 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
   const surf = useRef<HTMLDivElement>(null);
   const steps = Math.round((sec.to - sec.from) * STEPS_PER_WHOLE);
 
+  // A Slicer (not in Pitch mode) has a row per slice, from C3 up, as in the studio's piano roll
+  const slices = isSlicerKind(track.instrumentKey) && !track.slicer?.pitch ? Math.max(1, track.slicer?.slices.length ?? 8) : 0;
+  const nameOf = (midi: number) => (slices ? `S${midi - SLICE_KEY_BASE + 1}` : midiToNote(midi));
+  const isRoot = (midi: number) => !slices && (((midi - songKey.root) % 12) + 12) % 12 === 0;
   // Rows: the key's notes over the instrument's range (five octaves at most), and any other note the cell has
   const rows = useMemo(() => {
     const range = INSTRUMENTS[track.instrumentKey]?.range ?? [36, 84];
     const mid = Math.round((range[0] + range[1]) / 2);
-    const keyRows = scaleRows(songKey, range, mid - 12, 5).map((n) => noteToMidi(n)!);
+    const keyRows = slices ? Array.from({ length: slices }, (_, i) => SLICE_KEY_BASE + i) : scaleRows(songKey, range, mid - 12, 5).map((n) => noteToMidi(n)!);
     return [...new Set([...keyRows, ...saved.map((n) => n.midi)])].sort((a, b) => b - a);
-  }, [track.instrumentKey, songKey, saved]);
+  }, [track.instrumentKey, songKey, saved, slices]);
   const rowOf = (midi: number) => rows.indexOf(midi);
   // Where it opens: among the part's notes (the row nearest their middle), else the key's home note
   const middle = saved.length ? (Math.min(...saved.map((n) => n.midi)) + Math.max(...saved.map((n) => n.midi))) / 2 : null;
   const home =
     middle !== null
       ? rows.reduce((best, m) => (Math.abs(m - middle) < Math.abs(best - middle) ? m : best), rows[0])
-      : rows.find((m) => (((m - songKey.root) % 12) + 12) % 12 === 0 && m <= (INSTRUMENTS[track.instrumentKey]?.range[0] ?? 36) + 30) ?? rows[Math.floor(rows.length / 2)];
+      : slices
+        ? SLICE_KEY_BASE
+        : (rows.find((m) => isRoot(m) && m <= (INSTRUMENTS[track.instrumentKey]?.range[0] ?? 36) + 30) ?? rows[Math.floor(rows.length / 2)]);
 
   const commit = (next: RollNote[]) => {
     editCell(track.id, sec, () => fromRoll(next));
@@ -324,7 +330,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
         {selected ? (
           <>
             <span className="font-mono text-sm font-semibold px-1 whitespace-nowrap">
-              {midiToNote(selected.midi)} <span className="text-[11px] text-forge-muted font-medium">{lenName(selected.len)}</span>
+              {nameOf(selected.midi)} <span className="text-[11px] text-forge-muted font-medium">{lenName(selected.len)}</span>
             </span>
             <button type="button" aria-label="Shorter" className={ib} disabled={selected.len <= 1} onClick={() => change((n) => (n.len = Math.max(1, n.len - 1)))}>
               <ChevronLeft className="w-[18px] h-[18px]" />
@@ -390,20 +396,20 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
           </div>
           <div className="pk-rkeys">
             {rows.map((m) => (
-              <button key={m} type="button" className={`pk-rkey${(((m - songKey.root) % 12) + 12) % 12 === 0 ? ' root' : ''}`} style={{ height: RH }} data-home={m === home ? '' : undefined} aria-label={`Play ${midiToNote(m)}`} onClick={() => void audition(track.id, midiToNote(m), 0.75)}>
-                {midiToNote(m)}
+              <button key={m} type="button" className={`pk-rkey${isRoot(m) ? ' root' : ''}`} style={{ height: RH }} data-home={m === home ? '' : undefined} aria-label={`Play ${slices ? `slice ${m - SLICE_KEY_BASE + 1}` : midiToNote(m)}`} onClick={() => void audition(track.id, midiToNote(m), 0.75)}>
+                {nameOf(m)}
               </button>
             ))}
           </div>
           <div ref={surf} className="pk-rsurf" style={{ ['--rw' as string]: `${RW}px`, ['--rh' as string]: `${RH}px` }} aria-label={`${track.name}'s notes in ${sec.letter}: draw with one finger, scroll with two`}>
-            {rows.map((m, r) => ((((m - songKey.root) % 12) + 12) % 12 === 0 ? <i key={m} className="pk-rootband" style={{ top: r * RH, height: RH }} /> : null))}
+            {rows.map((m, r) => (isRoot(m) ? <i key={m} className="pk-rootband" style={{ top: r * RH, height: RH }} /> : null))}
             {notes.map((n) => {
               const r = rowOf(n.midi);
               if (r < 0) return null;
               const mark = n.from && isConditional(n.from) ? chanceMark(n.from) : '';
               return (
                 <div key={n.id} className={`pk-rnote${n.id === sel ? ' sel' : ''}${mark ? ' cond' : ''}`} style={{ left: n.step * RW + 1, top: r * RH + 3, width: n.len * RW - 2, height: RH - 6 }}>
-                  {n.len * RW > 44 ? <span>{midiToNote(n.midi)}{mark && n.len * RW > 84 ? ` ${mark}` : ''}</span> : null}
+                  {n.len * RW > 44 ? <span>{nameOf(n.midi)}{mark && n.len * RW > 84 ? ` ${mark}` : ''}</span> : null}
                 </div>
               );
             })}
@@ -414,7 +420,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
       </div>
       {choosing && selected && (
         <ChanceSheet
-          title={`${midiToNote(selected.midi)}: how often it plays`}
+          title={`${nameOf(selected.midi)}: how often it plays`}
           note={selected.from ?? {}}
           onClose={() => setChoosing(false)}
           onPick={(id) => change((n) => (n.from = withChance(n.from ?? fromRoll([n])[0], id)))}

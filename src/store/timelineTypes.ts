@@ -982,9 +982,11 @@ export interface ClipAudio {
   /**
    * Mangled (see mangleActions.ts: tape speed, stutter, crush...): the clip plays a new sound made
    * from the stretch it played; `from` is the sound it was made from, `offset` and `bars` where the
-   * clip was in it and how long, to go back to, and `steps` what was done, in order
+   * clip was in it and how long, to go back to, `steps` what was done, in order, and `was` the
+   * clip's whole audio before the first mangle (its gain envelope, warp, reverse, tuning...), put
+   * back as it was (absent in mangles made before it was kept: those go back to `from` and `offset`)
    */
-  mangled?: { from: string; offset: number; bars: number; steps: string[] };
+  mangled?: { from: string; offset: number; bars: number; steps: string[]; was?: ClipAudio };
 }
 
 /** One pad of a Drum Rack: a sound, and the effects it plays through (its own, not shared with the other pads). */

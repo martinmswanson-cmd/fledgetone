@@ -15,8 +15,11 @@ pub enum Kind {
     /// Whole numbers from `min` to `max`
     Int { min: i32, max: i32, unit: &'static str },
     /// One of `names`. Stored as its place out of `cap` (more than the list has), so a list can
-    /// grow without moving what saved songs chose.
-    Choice { names: &'static [&'static str], cap: usize },
+    /// grow without moving what saved songs chose. Options from `exact` on are chosen only by their
+    /// own place: any other place past the list before them stays on the option before `exact`, as
+    /// it did when the list ended there (a lane drawn to the top of the tables keeps playing
+    /// "Random harmonics", not the user table).
+    Choice { names: &'static [&'static str], cap: usize, exact: usize },
     /// A level in dB from `min` to `max`; 0 is silent (−∞)
     Db { min: f32, max: f32 },
     /// −1 to +1 around the middle (modulation amounts), shown as a percentage
@@ -108,9 +111,10 @@ pub const PHASER_MODES: &[&str] = &["Phaser", "Flanger"];
 
 /// How many places each list keeps (its room to grow)
 const fn choice(names: &'static [&'static str], cap: usize) -> Kind {
-    Kind::Choice { names, cap }
+    Kind::Choice { names, cap, exact: names.len() }
 }
-const TABLE_K: Kind = choice(TABLES, 64);
+/// (The user table, added after the others, only at its own place: see Kind::Choice)
+const TABLE_K: Kind = Kind::Choice { names: TABLES, cap: 64, exact: USER_TABLE };
 const FILTER_K: Kind = choice(FILTERS, 32);
 const SHAPER_K: Kind = choice(SHAPERS, 16);
 const WARP_K: Kind = choice(WARPS, 32);
@@ -626,7 +630,15 @@ impl Kind {
                 }
             }
             Kind::Int { min, max, .. } => (min as f32 + ((max - min) as f32 * n).round()).round(),
-            Kind::Choice { names, cap } => (n * (cap - 1) as f32).round().min((names.len() - 1) as f32),
+            Kind::Choice { names, cap, exact } => {
+                let at = n * (cap - 1) as f32;
+                let k = at.round();
+                if k >= exact as f32 && !(k < names.len() as f32 && (at - k).abs() < 1e-3) {
+                    (exact.min(names.len()) - 1) as f32
+                } else {
+                    k.min((names.len() - 1) as f32)
+                }
+            }
             Kind::Db { min, max } => {
                 if n <= 0.0 {
                     f32::NEG_INFINITY
@@ -770,9 +782,22 @@ mod tests {
     }
 
     #[test]
+    fn only_the_user_tables_own_place_chooses_it() {
+        // (Saved songs and lanes past the built-in tables played the last of them: they still do)
+        let k = param(index_of("A table").unwrap()).kind;
+        for n in [15.0 / 63.0, 0.25, 0.3, 0.5, 17.0 / 63.0, 1.0] {
+            assert_eq!(k.value(n) as usize, USER_TABLE - 1, "{n}");
+            assert_eq!(k.display(n), "Random harmonics");
+        }
+        assert_eq!(k.value(k.normal(USER_TABLE as f32)) as usize, USER_TABLE);
+        assert_eq!(k.value(16.0 / 63.0) as usize, USER_TABLE);
+        assert_eq!(k.value((16.0f64 / 63.0) as f32) as usize, USER_TABLE);
+    }
+
+    #[test]
     fn choices_round_trip_and_fit_their_room() {
         for i in 0..COUNT {
-            if let Kind::Choice { names, cap } = param(i).kind {
+            if let Kind::Choice { names, cap, .. } = param(i).kind {
                 assert!(names.len() <= cap, "{}", param(i).name);
                 for k in 0..names.len() {
                     let n = param(i).kind.normal(k as f32);

@@ -98,7 +98,7 @@ export const FLEDGE_MACRO_NAMES: Record<string, string[]> = {
 export type ValueOf = (param: string) => number;
 
 /** The option a choice is on now (0 for a knob or a toggle). */
-const pick = (val: ValueOf, c: FledgeControl): number => (c.kind === 'choice' ? choiceIndex(val(c.p), c.options.length, c.cap) : 0);
+const pick = (val: ValueOf, c: FledgeControl): number => (c.kind === 'choice' ? choiceIndex(val(c.p), c.options.length, c.cap, c.exact) : 0);
 
 /** What macro `k` (1 to 4) moves: the targets of the matrix slots that read it. */
 export function macroTargets(val: ValueOf, k: number): string[] {

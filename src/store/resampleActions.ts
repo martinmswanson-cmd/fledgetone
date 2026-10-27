@@ -17,7 +17,7 @@ import { barToSeconds, secondsToBar, tempoAt } from '../audio/tempoMap';
 import { resliced, slicerFor } from '../audio/slicerTools';
 import { sliceNotes } from '../audio/slicing';
 import { PLAYBACK_DB } from './freezeActions';
-import { ROLE_PRESETS, resampleName, resampleSpan, slicePattern, type ResampleSource, type ResampleTarget, type SliceChoice, type SlicePattern, type WavetableRole } from './resample';
+import { printLevel, ROLE_PRESETS, resampleName, resampleSpan, slicePattern, type ResampleSource, type ResampleTarget, type SliceChoice, type SlicePattern, type WavetableRole } from './resample';
 import { packUserTable, tableFromSound, USER_TABLE_INDEX, type CycleChoice, type UserTable } from '../audio/plugins/userTable';
 import { FLEDGE_PRESETS, FLEDGE_URL } from '../audio/plugins/fledgeMacros';
 import { findBuiltin } from '../audio/plugins/builtinHost';
@@ -121,8 +121,10 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     const stored = channels.map((ch) => ch.map((v) => v * scale));
     const names = new Map(s.tracks.map((t) => [t.id, t.name]));
     const name = resampleName(req.source, s.clips, names);
-    const meta = await importSoundFile(encodeChannels(stored, sampleRate, 16, []), `${name}.wav`, MAX_BYTES);
-    if (songGeneration() !== song) return { message: 'Another song was opened while it rendered: nothing was added.' };
+    // (Checked after each wait: a song opened meanwhile gets nothing)
+    const elsewhere = () => songGeneration() !== song;
+    const ELSEWHERE: ResampleResult = { message: 'Another song was opened while it rendered: nothing was added.' };
+    if (elsewhere()) return ELSEWHERE;
     // The level it plays back at: as loud as it was in the song
     const playDb = normalizeDb + PLAYBACK_DB;
     const seconds = stored[0].length / sampleRate;
@@ -135,10 +137,26 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     };
     const short = name.replace(/ \(resampled\)$/, '').slice(0, 32);
 
+    // A wavetable (its table is in the synth's settings: no sound file needed)
+    if (req.target === 'wavetable') {
+      const made = await userTableFrom(channels, sampleRate, name.replace(/ \(resampled\)$/, ''), req.frames ?? 16, req.cycle ?? 'pitch');
+      if (elsewhere()) return ELSEWHERE;
+      if (!made) return { message: 'Couldn’t make a table from that: it needs a held, steady sound at least a few cycles long.' };
+      const id = await addWavetableTrack(made.table, req.role ?? 'lead', `${short} ${req.role ?? 'lead'}`, () => !elsewhere());
+      if (elsewhere()) return ELSEWHERE;
+      mute();
+      return { message: `A Fledge Synth track, ${short} ${req.role ?? 'lead'}, plays it as a ${req.role ?? 'lead'} (${made.table.frames} cycles, cut at ${Math.round(made.hz)} Hz${made.found ? '' : ', no pitch found'}).`, trackId: id ?? undefined };
+    }
+
+    const meta = await importSoundFile(encodeChannels(stored, sampleRate, 16, []), `${name}.wav`, MAX_BYTES);
+    if (elsewhere()) return ELSEWHERE;
+
     if (req.target === 'audio') {
       const st = useTimelineStore.getState();
       const id = st.addTrack('audio', `${short} print`);
-      printed(id);
+      // (What the clip gain can't take down, the track's fader does: never louder than it was)
+      const { gain, volume } = printLevel(playDb);
+      printed(id, { volume });
       const clip: Clip = {
         id: uid('clip'),
         trackId: id,
@@ -147,49 +165,41 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
         lengthBars,
         notes: [],
         isSelected: true,
-        audio: { soundId: meta.id, offset: 0, gain: Math.max(-24, Math.min(24, Math.round(playDb * 100) / 100)), fadeIn: 0, fadeOut: 0 },
+        audio: { soundId: meta.id, offset: 0, gain, fadeIn: 0, fadeOut: 0 },
       };
       useTimelineStore.setState((x) => ({ clips: [...x.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
       mute();
       return { message: `Printed to audio on a new track, ${short} print: chop, reverse or mangle it in its editor (double-click the clip).`, trackId: id };
     }
 
-    if (req.target === 'slicer') {
-      // (The hits are found in the sound as the live context decodes it)
-      await decodeSound(meta.id, rate);
-      const base = slicerFor(meta);
-      const choice = req.slices ?? 'transients';
-      let slicer: SlicerSettings = choice === 'transients' ? base : resliced({ ...base, mode: 'equal', count: choice });
-      if (req.reverseLast && slicer.slices.length > 1) slicer = { ...slicer, reversed: [slicer.slices.length - 1] };
-      const bpm = tempoAt(from, tempo);
-      const pattern = req.pattern ?? 'order';
-      const bars = Math.max(1 / 16, to - from);
-      const notes =
-        pattern === 'order' ? sliceNotes(slicer.slices, slicer.start, slicer.end, bpm) : slicePattern(pattern, slicer.slices.length, bars, bars, hashOf(meta.id));
-      const st = useTimelineStore.getState();
-      const id = st.addTrack('slicer', `${short} chops`);
-      useTimelineStore.getState().setTrackSlicer(id, slicer, false);
-      printed(id, { volume: Math.max(-60, Math.min(6, Math.round(playDb * 10) / 10)) });
-      const clip: Clip = {
-        id: uid('clip'),
-        trackId: id,
-        name: pattern === 'order' ? `${short} chops` : `${short} ${pattern}`,
-        startBar: from,
-        lengthBars: bars,
-        notes: notes.map((n) => ({ ...n, id: uid('note') })),
-        isSelected: true,
-      };
-      useTimelineStore.setState((x) => ({ clips: [...x.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
-      mute();
-      return { message: `${slicer.slices.length} slices on a new Slicer track (C3 up)${pattern === 'order' ? ', played in order' : `, in a ${pattern} pattern`}. Draw notes on its rows to rearrange them.`, trackId: id };
-    }
-
-    // A wavetable
-    const made = await userTableFrom(channels, sampleRate, name.replace(/ \(resampled\)$/, ''), req.frames ?? 16, req.cycle ?? 'pitch');
-    if (!made) return { message: 'Couldn’t make a table from that: it needs a held, steady sound at least a few cycles long.' };
-    const id = await addWavetableTrack(made.table, req.role ?? 'lead', `${short} ${req.role ?? 'lead'}`);
+    // A Slicer (its hits found in the sound as the live context decodes it)
+    await decodeSound(meta.id, rate);
+    if (elsewhere()) return ELSEWHERE;
+    const base = slicerFor(meta);
+    const choice = req.slices ?? 'transients';
+    let slicer: SlicerSettings = choice === 'transients' ? base : resliced({ ...base, mode: 'equal', count: choice });
+    if (req.reverseLast && slicer.slices.length > 1) slicer = { ...slicer, reversed: [slicer.slices.length - 1] };
+    const bpm = tempoAt(from, tempo);
+    const pattern = req.pattern ?? 'order';
+    const bars = Math.max(1 / 16, to - from);
+    const notes =
+      pattern === 'order' ? sliceNotes(slicer.slices, slicer.start, slicer.end, bpm) : slicePattern(pattern, slicer.slices.length, bars, bars, hashOf(meta.id));
+    const st = useTimelineStore.getState();
+    const id = st.addTrack('slicer', `${short} chops`);
+    useTimelineStore.getState().setTrackSlicer(id, slicer, false);
+    printed(id, { volume: Math.max(-60, Math.min(6, Math.round(playDb * 10) / 10)) });
+    const clip: Clip = {
+      id: uid('clip'),
+      trackId: id,
+      name: pattern === 'order' ? `${short} chops` : `${short} ${pattern}`,
+      startBar: from,
+      lengthBars: bars,
+      notes: notes.map((n) => ({ ...n, id: uid('note') })),
+      isSelected: true,
+    };
+    useTimelineStore.setState((x) => ({ clips: [...x.clips.map((c) => (c.isSelected ? { ...c, isSelected: false } : c)), clip] }));
     mute();
-    return { message: `A Fledge Synth track, ${short} ${req.role ?? 'lead'}, plays it as a ${req.role ?? 'lead'} (${made.table.frames} cycles, cut at ${Math.round(made.hz)} Hz${made.found ? '' : ', no pitch found'}).`, trackId: id ?? undefined };
+    return { message: `${slicer.slices.length} slices on a new Slicer track (C3 up)${pattern === 'order' ? ', played in order' : `, in a ${pattern} pattern`}. Draw notes on its rows to rearrange them.`, trackId: id };
   } finally {
     useResampling.setState({ fraction: null });
   }
@@ -232,12 +242,16 @@ export function wavetableSets(role: WavetableRole): Record<string, number> {
   };
 }
 
-/** A new Fledge Synth track playing `table` as a bass, lead or pad (one undo step). Its id, or null. */
-export async function addWavetableTrack(table: UserTable, role: WavetableRole, name: string): Promise<string | null> {
+/**
+ * A new Fledge Synth track playing `table` as a bass, lead or pad (one undo step). Its id, or null
+ * (also when `still()` says, after working out its settings, that it's no longer wanted).
+ */
+export async function addWavetableTrack(table: UserTable, role: WavetableRole, name: string, still: () => boolean = () => true): Promise<string | null> {
   const ref = findBuiltin(FLEDGE_URL);
   if (!ref) return null;
   const program = Math.max(0, FLEDGE_PRESETS.indexOf(ROLE_PRESETS[role]));
   const values = await fledgeValues(ref.family, program, wavetableSets(role));
+  if (!still()) return null;
   const state = { builtin: 1, program, ...(values ? { values } : {}), table };
   return useTimelineStore.getState().addPluginTrack(FLEDGE_URL, name.slice(0, 40), state);
 }
