@@ -93,6 +93,18 @@ export const TrackMenu: React.FC<{ menu: TrackMenuState; onClose: () => void }> 
             icon: <Waypoints className="w-3.5 h-3.5" />,
             onClick: run(() => s.groupIntoBus(selectedTrackIds(track.id))),
           },
+          {
+            key: 'group-glue',
+            label: (() => {
+              const selected = selectedTrackIds(track.id);
+              return selected.length > 1 ? `Group and glue ${selected.length} tracks` : 'Glue on a bus';
+            })(),
+            icon: <Waypoints className="w-3.5 h-3.5" />,
+            onClick: run(() => {
+              const made = s.groupAndGlue(selectedTrackIds(track.id));
+              showToast(made.length ? `Glued on ${made.length === 1 ? 'a bus' : 'a drum bus and a music bus'}: gentle compression and saturation, the same loudness. Undo to take it back.` : 'Nothing to glue: these tracks are already on a bus.');
+            }),
+          },
         ]),
     // Sends to effect returns (a track can feed several, and still play to its output)
     ...(isMixTrack(track)

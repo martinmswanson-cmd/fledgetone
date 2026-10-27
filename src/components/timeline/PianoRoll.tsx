@@ -44,6 +44,7 @@ import { shouldIgnoreShortcut } from '../keyboard';
 import { UndoableRange } from '../UndoableRange';
 import { AudioClipEditor } from './AudioClipEditor';
 import { RollPainter } from './RollPainter';
+import { GrooveFeelPicker } from './GrooveFeelPicker';
 import { DrumGroovePanel } from './DrumGroovePanel';
 import { ChordRiffBar } from './ChordRiffBar';
 import { penBars, rememberPen } from '../../store/penLength';
@@ -284,7 +285,7 @@ const FEELS: ReadonlyArray<{ id: string; name: string; groove: ClipGroove | null
 const grooveValue = (g: ClipGroove | undefined) => {
   if (!g) return 'song';
   // A per-row groove (GROOVE…) is its own thing, not one of these
-  if (g.rows || (g.template && g.template !== 'straight')) return 'rows';
+  if (g.rows || g.feel || (g.template && g.template !== 'straight')) return 'rows';
   if (g.swing === 0) return 'straight';
   return FEELS.reduce((best, f) => (f.groove && f.groove.grid === g.grid && Math.abs(f.groove.swing - g.swing) < Math.abs((best.groove?.swing ?? 9) - g.swing) ? f : best), FEELS[1]).id;
 };
@@ -1066,10 +1067,11 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
               {FEELS.map((f) => (
                 <option key={f.id} value={f.id}>{f.name}</option>
               ))}
-              {grooveValue(clip.groove) === 'rows' && <option value="rows">Per-row groove (GROOVE…)</option>}
+              {grooveValue(clip.groove) === 'rows' && <option value="rows">{clip.groove?.feel ? 'The groove feel\u2019s' : 'Per-row groove (GROOVE…)'}</option>}
             </select>
           </label>
         )}
+        {!clip.audio && <GrooveFeelPicker clip={clip} className={select} />}
         {!clip.audio && isDrumKind(instrument) && <DrumGroovePanel clip={clip} rows={drumRowsOf(instrument)} />}
         {!clip.audio && isDrumKind(instrument) && (
           <button

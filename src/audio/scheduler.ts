@@ -24,6 +24,8 @@ import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, ty
 import { isExpressive, noteSteps } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
 import { feelVelocity } from '../store/drumGroove';
+import { drumRoleOf, feelNote, feelOf, melodicRoleOf, type GrooveRole } from '../store/grooveFeels';
+import { trackRole } from './mixCheck';
 import { pumpKitsOf } from '../store/freeze';
 
 export { DRUM_NOTES } from './instruments';
@@ -80,6 +82,8 @@ const NOTE_STEP_SECONDS = 0.004;
 /** A clip's note groups by absolute tick, worked out once per version of the clip. */
 interface ClipEntry {
   clip: Clip;
+  /** The part its feel plays it as (see grooveFeels.ts): 'drums' reads each note's row */
+  role?: GrooveRole | 'drums';
   groups: Array<[tick: number, group: NoteGroup]>;
 }
 
@@ -89,7 +93,7 @@ export interface ClipSchedule {
   dispose: () => void;
 }
 
-function groupClipNotes(clip: Clip): ClipEntry['groups'] {
+function groupClipNotes(clip: Clip, role?: GrooveRole | 'drums'): ClipEntry['groups'] {
   // Notes hidden by a trim don't play; the sustain pedal holds the ones let go while it's down
   const notes = sustainNotes(
     clip.notes.filter((note) => note.startOffset >= -1e-6 && note.startOffset < clip.lengthBars - 1e-6),
@@ -113,16 +117,28 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
       mine.forEach((i, k) => (swung[i] = flags[k]));
     }
   }
+  // A measured feel: each note's part moves it and accents it at its step of the bar
+  const measured = feelOf(clip.groove?.feel);
+  const amount = measured ? clip.groove!.feel!.amount : 0;
+  const partOf = (note: string): GrooveRole => {
+    const r = clip.groove?.feel?.role ?? role ?? 'lead';
+    return r === 'drums' ? drumRoleOf(note) : r;
+  };
+  const sixteenth = liveTransport.PPQ / 4;
   // Group notes by tick (and length) so chords trigger as one instrument call; a row with a feel
-  // of its own plays apart from the rest (its swing and shift move it alone)
+  // of its own plays apart from the rest (its swing and shift move it alone), as do notes the
+  // measured feel moves apart
   const groups = new Map<string, [number, NoteGroup]>();
   notes.forEach((note, i) => {
     const tick = ticks[i];
     const feel = rows?.[note.note];
-    const key = `${tick}|${note.duration}${feel ? `|${note.note}` : ''}`;
+    const fx = amount > 0 ? feelNote(measured, amount, partOf(note.note), (tick - barToTicks(Math.floor(ticksToBar(tick) + 1e-9))) / sixteenth) : null;
+    const shift = (feel?.shift ?? 0) + (fx?.shift ?? 0);
+    const key = `${tick}|${note.duration}${feel ? `|${note.note}` : ''}${fx?.shift ? `|${fx.shift}` : ''}`;
     // The clip's wobble rate travels with each note to the instrument (the ones that wobble use it)
     let playable: PlayableNote = clip.wobble ? { ...note, wobble: clip.wobble } : note;
     if (feel && (feel.vel !== undefined || feel.offbeat !== undefined)) playable = { ...playable, velocity: feelVelocity(feel, note.velocity, tick, liveTransport.PPQ) };
+    if (fx && fx.vel !== 1) playable = { ...playable, velocity: Math.max(0.05, Math.min(1, playable.velocity * fx.vel)) };
     const seed = noteSeed(clip.id, note.note, tick);
     const cond = isConditional(note) ? { chance: note.chance, cond: note.cond } : null;
     const group = groups.get(key);
@@ -132,7 +148,7 @@ function groupClipNotes(clip: Clip): ClipEntry['groups'] {
       if (cond || group[1].conds) (group[1].conds ??= group[1].notes.slice(0, -1).map(() => null)).push(cond);
     } else {
       const own = feel ? rowSwing.get(note.note) : undefined;
-      groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}), ...(own ? { rowSwing: own } : {}), ...(feel?.shift ? { shift: feel.shift } : {}), ...(cond ? { conds: [cond], clipId: clip.id } : {}) }]);
+      groups.set(key, [tick, { trackId: clip.trackId, notes: [playable], seeds: [seed], swung: swung[i], ...(groove ? { groove } : {}), ...(own ? { rowSwing: own } : {}), ...(shift ? { shift } : {}), ...(cond ? { conds: [cond], clipId: clip.id } : {}) }]);
     }
   });
   if (clipHasConditions(clip)) for (const [, g] of groups.values()) g.clipId = clip.id;
@@ -165,6 +181,14 @@ const sameNotes = (prev: Clip, next: Clip) =>
   prev.wobble === next.wobble &&
   prev.groove === next.groove &&
   prev.expression === next.expression;
+
+/** The part a clip's measured feel plays it as: each drum row its own, else the bass, chords or lead. */
+function feelRole(clip: Clip, track: Track | undefined, clips: readonly Clip[], memo: Map<string, string>): GrooveRole | 'drums' | undefined {
+  if (!clip.groove?.feel || !track) return undefined;
+  let r = memo.get(track.id);
+  if (r === undefined) memo.set(track.id, (r = trackRole(track, clips)));
+  return r === 'drums' ? 'drums' : melodicRoleOf(r, clip.notes);
+}
 
 /**
  * Play the timeline's clips on `transport`, which picks up loop passes. Each note group goes to
@@ -379,10 +403,13 @@ export function createClipSchedule(
       }
       const nextEntries = new Map<string, ClipEntry>();
       const nextByTick = new Map<number, NoteGroup[]>();
+      const trackById = new Map(tracks.map((t) => [t.id, t]));
+      const roleMemo = new Map<string, string>();
       for (const clip of clips) {
         if (!trackIds.has(clip.trackId)) continue;
         const prev = entries.get(clip.id);
-        const entry = prev && sameNotes(prev.clip, clip) ? prev : { clip, groups: groupClipNotes(clip) };
+        const role = feelRole(clip, trackById.get(clip.trackId), clips, roleMemo);
+        const entry = prev && prev.role === role && sameNotes(prev.clip, clip) ? prev : { clip, role, groups: groupClipNotes(clip, role) };
         nextEntries.set(clip.id, entry);
         for (const [tick, group] of entry.groups) {
           const list = nextByTick.get(tick);

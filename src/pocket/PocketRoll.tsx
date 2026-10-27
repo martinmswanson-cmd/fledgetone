@@ -372,6 +372,9 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
             <button type="button" className={chip} onClick={() => usePocket.getState().set({ sheet: 'chords' })}>
               Chords
             </button>
+            <button type="button" className={chip} onClick={() => usePocket.getState().set({ sheet: 'feel' })}>
+              Feel
+            </button>
           </>
         )}
       </div>

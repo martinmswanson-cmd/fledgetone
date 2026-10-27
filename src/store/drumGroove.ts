@@ -2,11 +2,14 @@
  * Swing per drum row: a clip's groove (ClipGroove) can give each row (each note name: the hats,
  * the ride) its own swing, a push or drag in time and a velocity, so the hats swing while the kick
  * and snare stay straight; and the groove templates (straight, light swing, heavy swing, lazy,
- * pushed) that set those per row in one pick. The clip schedule (scheduler.ts) plays them; this is
+ * pushed) that set those per row in one pick, and putting a measured feel (grooveFeels.ts) on a
+ * clip's groove (withFeel). The clip schedule (scheduler.ts) plays them; this is
  * the plain logic, so Node can test it.
  */
 import type { ClipGroove, RowFeel } from './timelineTypes';
+import type { ClipFeel } from './grooveFeels';
 import { MAX_CLIP_SWING } from './timelineTypes';
+import { normalizeClipFeel } from './grooveFeels';
 
 /** The drum rows' notes the templates set (as DRUM_NOTES in instruments.ts). */
 const SNARE = 'D1';
@@ -119,6 +122,8 @@ export function normalizeClipGroove(v: unknown): ClipGroove | undefined {
     if (Object.keys(r).length) out.rows = r;
   }
   if (typeof v.template === 'string' && GROOVE_TEMPLATES.some((t) => t.id === v.template)) out.template = v.template;
+  const feel = v.feel !== undefined ? normalizeClipFeel(v.feel) : undefined;
+  if (feel) out.feel = feel;
   return out;
 }
 
@@ -130,4 +135,19 @@ export function withRowFeel(groove: ClipGroove, note: string, feel: RowFeel): Cl
   if (clean) next[note] = clean;
   else delete next[note];
   return Object.keys(next).length ? { ...rest, rows: next } : rest;
+}
+
+/**
+ * `groove` with a measured feel put on (or, with null, taken off). The feel takes the place of the
+ * clip's swing (it carries its own); a drum row's own settings stay. Taken off with nothing else
+ * left, the clip goes back to the song's swing (null).
+ */
+export function withFeel(groove: ClipGroove | undefined, feel: ClipFeel | null): ClipGroove | null {
+  if (feel) {
+    const { template: _t, ...rest } = groove ?? { swing: 0, grid: 16 as const };
+    return { ...rest, swing: 0, feel };
+  }
+  if (!groove) return null;
+  const { feel: _f, ...rest } = groove;
+  return rest.swing === 0 && !rest.rows && !rest.template && groove.feel ? null : rest;
 }
