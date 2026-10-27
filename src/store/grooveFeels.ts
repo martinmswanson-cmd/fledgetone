@@ -13,6 +13,8 @@
  * the way the beat does. Pure, so Node tests it.
  */
 
+import { isPlainMeter, measureAt, type MeterMap } from '../audio/tempoMap';
+
 export type GrooveRole = 'kick' | 'snare' | 'hats' | 'perc' | 'bass' | 'chords' | 'lead';
 export const GROOVE_ROLES: readonly GrooveRole[] = ['kick', 'snare', 'hats', 'perc', 'bass', 'chords', 'lead'];
 export const GROOVE_ROLE_NAMES: Record<GrooveRole, string> = { kick: 'Kick', snare: 'Snare / clap', hats: 'Hats', perc: 'Percussion', bass: 'Bass', chords: 'Chords / keys', lead: 'Lead' };
@@ -185,6 +187,47 @@ export function drumRoleOf(note: string): GrooveRole {
   if (note === 'D1' || note === 'D#1' || note === 'E1') return 'snare';
   if (note === 'F#1' || note === 'G#1' || note === 'A#1' || note === 'D#2' || note === 'C#2' || note === 'F2' || note === 'A2' || note === 'B2') return 'hats';
   return 'perc';
+}
+
+/**
+ * The part a Drum Rack pad plays, by its name (its pads are your own sounds, not the kits' note
+ * map): a kick, a snare, clap or rim, a hat or cymbal; anything else percussion.
+ */
+export function padRoleOf(name: string | undefined): GrooveRole {
+  const n = (name ?? '').toLowerCase();
+  if (/kick|\bkik\b|\bbd\b|bass ?drum/.test(n)) return 'kick';
+  if (/snare|clap|\brim|\bsd\b|snap/.test(n)) return 'snare';
+  if (/hat|\bhh\b|\b[oc]h\b|cymbal|ride|crash|splash/.test(n)) return 'hats';
+  return 'perc';
+}
+
+/**
+ * Where a note at `bar` sits in its measure, in 16ths, for a feel's 16 steps (mapAt wraps a longer
+ * measure). Counted from the measure's start in the song's meter, so in 3/4 every downbeat reads
+ * step 0; in plain 4/4, from the bar line as always.
+ */
+export function feelPos(bar: number, meter: MeterMap): number {
+  if (isPlainMeter(meter)) return (bar - Math.floor(bar + 1e-9)) * 16;
+  return (bar - measureAt(bar, meter).start) * 16;
+}
+
+/** `map` with its steps moved `k` 16ths later round the bar (a map measured from a clip that starts `k` 16ths into the bar). */
+export function rotateMap(map: GrooveMap, k: number): GrooveMap {
+  const r = ((Math.round(k) % 16) + 16) % 16;
+  if (!r) return map;
+  const turn = (a: number[]) => a.map((_, s) => a[(s - r + 16) % 16]);
+  return { t: turn(map.t), v: turn(map.v) };
+}
+
+/**
+ * The maps of a groove measured from a clip that starts at `startBar` (its start taken as step 0)
+ * turned to the song's bars: a loop that starts on beat 3 has its first hit on step 8.
+ */
+export function rolesAtClipStart(roles: Partial<Record<GrooveRole, GrooveMap>>, startBar: number, meter: MeterMap): Partial<Record<GrooveRole, GrooveMap>> {
+  const k = Math.round(feelPos(startBar, meter));
+  const out: Partial<Record<GrooveRole, GrooveMap>> = {};
+  for (const r of GROOVE_ROLES) if (roles[r]) out[r] = rotateMap(roles[r]!, k);
+  return out;
 }
 
 /**

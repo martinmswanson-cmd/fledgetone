@@ -17,7 +17,7 @@ register(
 
 const G = await import('../src/store/grooveFeels.ts');
 const X = await import('../src/audio/grooveExtract.ts');
-const { withFeel, normalizeClipGroove } = await import('../src/store/drumGroove.ts');
+const { withFeel, withSwing, drummerGroove, normalizeClipGroove } = await import('../src/store/drumGroove.ts');
 const GM = await import('../src/store/glueMix.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 
@@ -95,6 +95,73 @@ test('a feel takes the place of the swing; taken off, the clip goes back to the 
   assert.equal(withFeel(withFeel(undefined, { id: 'bassTight', amount: 1 }), null), null);
   const rows = { 'F#1': { swing: 0.3 } };
   assert.deepEqual(withFeel({ swing: 0, grid: 16, rows, feel: { id: 'bassTight', amount: 1 } }, null), { swing: 0, grid: 16, rows });
+});
+
+test("a feel's steps count from each measure's start: in 3/4 every downbeat reads step 0, plain 4/4 as before", () => {
+  const four = { base: { num: 4, den: 4 }, points: [] };
+  const waltz = { base: { num: 3, den: 4 }, points: [] };
+  for (const bar of [1, 1.25, 2.5, 3.0625, 7.75]) assert.equal(G.feelPos(bar, four), (bar - Math.floor(bar)) * 16);
+  // Measures of 3/4 start every 0.75 of a 4/4 bar
+  for (let m = 0; m < 8; m++) {
+    const bar = 1 + m * 0.75;
+    assert.ok(Math.abs(G.feelPos(bar, waltz)) < 1e-9, `measure ${m + 1}`);
+    assert.ok(Math.abs(G.feelPos(bar + 0.25, waltz) - 4) < 1e-9, `beat 2 of measure ${m + 1}`);
+  }
+  // A change to 3/4 at bar 3: its measures count from there
+  const change = { base: { num: 4, den: 4 }, points: [{ bar: 3, num: 3, den: 4 }] };
+  assert.ok(Math.abs(G.feelPos(3.75, change)) < 1e-9);
+  assert.ok(Math.abs(G.feelPos(2.5, change) - 8) < 1e-9);
+  const f = G.grooveFeelById('rhythmGame');
+  assert.equal(G.feelNote(f, 1, 'kick', G.feelPos(1.75, waltz)).vel, G.feelNote(f, 1, 'kick', 0).vel);
+});
+
+test("a Drum Rack pad's part comes from its name, anything unclear percussion", () => {
+  assert.equal(G.padRoleOf('Kick 1'), 'kick');
+  assert.equal(G.padRoleOf('808 bass drum'), 'kick');
+  assert.equal(G.padRoleOf('Snare (tight)'), 'snare');
+  assert.equal(G.padRoleOf('Clap'), 'snare');
+  assert.equal(G.padRoleOf('Rimshot'), 'snare');
+  assert.equal(G.padRoleOf('Closed hat'), 'hats');
+  assert.equal(G.padRoleOf('OH 2'), 'hats');
+  assert.equal(G.padRoleOf('Ride'), 'hats');
+  assert.equal(G.padRoleOf('Chop 3'), 'perc');
+  assert.equal(G.padRoleOf('Pad 1'), 'perc');
+  assert.equal(G.padRoleOf(undefined), 'perc');
+});
+
+test("Pocket's Swing and Drummer: a swing takes a feel's place, the Drummer keeps it", () => {
+  const feel = { id: 'houseShuffle', amount: 1 };
+  const on = withFeel(undefined, feel);
+  assert.deepEqual(withSwing(on, 0.15), { swing: 0.15, grid: 16 });
+  assert.deepEqual(withSwing({ swing: 0.15, grid: 8 }, 0.3), { swing: 0.3, grid: 8 });
+  assert.deepEqual(withSwing(null, 0.3), { swing: 0.3, grid: 16 });
+  assert.equal(withSwing(on, 0), null);
+  // As the Swing button did before, without a feel
+  assert.deepEqual(withSwing({ swing: 0.5, grid: 8, rows: { 'F#1': { shift: 0.1 } } }, 0.15), { swing: 0.15, grid: 8, rows: { 'F#1': { shift: 0.1 } } });
+  assert.deepEqual(drummerGroove(on, { swing: 0.5, grid: 8 }), { swing: 0, grid: 8, feel });
+  assert.deepEqual(drummerGroove(on, undefined), { swing: 0, grid: 16, feel });
+  assert.deepEqual(drummerGroove({ swing: 0.3, grid: 16 }, { swing: 0.5, grid: 8 }), { swing: 0.5, grid: 8 });
+  assert.equal(drummerGroove(undefined, undefined), null);
+});
+
+test('a groove taken from a clip that starts mid-bar is turned to the song bars', () => {
+  const t = Array.from({ length: 16 }, (_, s) => (s === 1 ? 0.2 : 0));
+  const v = Array.from({ length: 16 }, (_, s) => (s === 0 ? 1.15 : 1));
+  const four = { base: { num: 4, den: 4 }, points: [] };
+  assert.deepEqual(G.rolesAtClipStart({ hats: { t, v } }, 5, four), { hats: { t, v } });
+  // On beat 3: the clip's step 0 is the bar's step 8
+  const turned = G.rolesAtClipStart({ hats: { t, v } }, 5.5, four).hats;
+  assert.equal(turned.v[8], 1.15);
+  assert.equal(turned.t[9], 0.2);
+  assert.equal(turned.t[1], 0);
+  assert.deepEqual(G.rotateMap({ t, v }, 16), { t, v });
+  assert.deepEqual(G.rotateMap(G.rotateMap({ t, v }, 3), -3), { t, v });
+});
+
+test('measuring on this thread always settles: a failure rejects instead of waiting for ever', async () => {
+  await assert.rejects(X.extractLater(null, 44100, { bpm: 120, barStart: 0 }, undefined, 0));
+  const m = await X.extractLater(new Float32Array(44100 * 5), 44100, { bpm: 120, barStart: 0 }, undefined, 0);
+  assert.deepEqual(m.roles, {});
 });
 
 // Synthetic drums: a pitch-swept kick on the beats, a clap on 2 and 4 (late by `snareLate`), noise hats on every 16th, the off ones `swing` late

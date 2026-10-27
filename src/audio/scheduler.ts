@@ -7,7 +7,7 @@
 import { isDropTrack } from '../store/dropMoves';
 import * as Tone from 'tone';
 import { liveContext, liveTransport } from './liveContext';
-import { applyTempoAt, barToTicks, getLiveTempo, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
+import { applyTempoAt, barToTicks, getLiveTempo, getSongMeter, scheduleTempo, setLiveTempo, swingDelay, swungNotes, ticksToBar } from './transport';
 import type { Tempo } from './transport';
 import { safely } from './instruments';
 import type { PlayableNote, TrackInstrument } from './instruments';
@@ -24,7 +24,9 @@ import { exprValueAt, laneCc, lanesOf, pitchCents, pitchEvents, sustainNotes, ty
 import { isExpressive, noteSteps } from '../store/noteExpression';
 import { durationToBars } from '../store/timelineTypes';
 import { feelVelocity } from '../store/drumGroove';
-import { drumRoleOf, feelNote, feelOf, melodicRoleOf, type GrooveRole } from '../store/grooveFeels';
+import { drumRoleOf, feelNote, feelOf, feelPos, melodicRoleOf, padRoleOf, type GrooveRole } from '../store/grooveFeels';
+import { isPlainMeter, type MeterMap } from './tempoMap';
+import { padOfNote } from '../store/sampleKits';
 import { trackRole } from './mixCheck';
 import { pumpKitsOf } from '../store/freeze';
 
@@ -82,18 +84,25 @@ const NOTE_STEP_SECONDS = 0.004;
 /** A clip's note groups by absolute tick, worked out once per version of the clip. */
 interface ClipEntry {
   clip: Clip;
-  /** The part its feel plays it as (see grooveFeels.ts): 'drums' reads each note's row */
-  role?: GrooveRole | 'drums';
+  /** The part its feel plays it as (see grooveFeels.ts): 'drums' reads each note's row, 'rack:...' each pad's part */
+  role?: FeelPart;
+  /** The song's meter its feel was placed in (a feel's steps count from each measure's start) */
+  meter?: MeterMap;
   groups: Array<[tick: number, group: NoteGroup]>;
 }
+
+/** The part a clip's feel plays it as: one part, each drum row its own, or a Drum Rack's pads' parts (comma-separated, pad by pad). */
+type FeelPart = GrooveRole | 'drums' | `rack:${string}`;
 
 export interface ClipSchedule {
   /** Bring the Transport in line with the timeline. Cheap when little has changed. */
   update: (tracks: Track[], clips: Clip[]) => void;
+  /** How far before its tick the earliest note of a clip with a feel plays, in 16ths (0: none early) */
+  earliest: () => number;
   dispose: () => void;
 }
 
-function groupClipNotes(clip: Clip, role?: GrooveRole | 'drums'): ClipEntry['groups'] {
+function groupClipNotes(clip: Clip, role?: FeelPart, meter?: MeterMap): ClipEntry['groups'] {
   // Notes hidden by a trim don't play; the sustain pedal holds the ones let go while it's down
   const notes = sustainNotes(
     clip.notes.filter((note) => note.startOffset >= -1e-6 && note.startOffset < clip.lengthBars - 1e-6),
@@ -122,9 +131,12 @@ function groupClipNotes(clip: Clip, role?: GrooveRole | 'drums'): ClipEntry['gro
   const amount = measured ? clip.groove!.feel!.amount : 0;
   const partOf = (note: string): GrooveRole => {
     const r = clip.groove?.feel?.role ?? role ?? 'lead';
-    return r === 'drums' ? drumRoleOf(note) : r;
+    if (r.startsWith('rack:')) return (r.slice(5).split(',')[padOfNote(note)] as GrooveRole | undefined) || 'perc';
+    return r === 'drums' ? drumRoleOf(note) : (r as GrooveRole);
   };
   const sixteenth = liveTransport.PPQ / 4;
+  // (In plain 4/4 from the bar line, in ticks; in another meter from the measure's start)
+  const posOf = (tick: number) => (!meter || isPlainMeter(meter) ? (tick - barToTicks(Math.floor(ticksToBar(tick) + 1e-9))) / sixteenth : feelPos(ticksToBar(tick), meter));
   // Group notes by tick (and length) so chords trigger as one instrument call; a row with a feel
   // of its own plays apart from the rest (its swing and shift move it alone), as do notes the
   // measured feel moves apart
@@ -132,7 +144,7 @@ function groupClipNotes(clip: Clip, role?: GrooveRole | 'drums'): ClipEntry['gro
   notes.forEach((note, i) => {
     const tick = ticks[i];
     const feel = rows?.[note.note];
-    const fx = amount > 0 ? feelNote(measured, amount, partOf(note.note), (tick - barToTicks(Math.floor(ticksToBar(tick) + 1e-9))) / sixteenth) : null;
+    const fx = amount > 0 ? feelNote(measured, amount, partOf(note.note), posOf(tick)) : null;
     const shift = (feel?.shift ?? 0) + (fx?.shift ?? 0);
     const key = `${tick}|${note.duration}${feel ? `|${note.note}` : ''}${fx?.shift ? `|${fx.shift}` : ''}`;
     // The clip's wobble rate travels with each note to the instrument (the ones that wobble use it)
@@ -182,12 +194,15 @@ const sameNotes = (prev: Clip, next: Clip) =>
   prev.groove === next.groove &&
   prev.expression === next.expression;
 
-/** The part a clip's measured feel plays it as: each drum row its own, else the bass, chords or lead. */
-function feelRole(clip: Clip, track: Track | undefined, clips: readonly Clip[], memo: Map<string, string>): GrooveRole | 'drums' | undefined {
+/** The part a clip's measured feel plays it as: each drum row its own (a Drum Rack's pads by their names), else the bass, chords or lead. */
+function feelRole(clip: Clip, track: Track | undefined, clips: readonly Clip[], memo: Map<string, string>): FeelPart | undefined {
   if (!clip.groove?.feel || !track) return undefined;
   let r = memo.get(track.id);
-  if (r === undefined) memo.set(track.id, (r = trackRole(track, clips)));
-  return r === 'drums' ? 'drums' : melodicRoleOf(r, clip.notes);
+  if (r === undefined) {
+    r = INSTRUMENTS[track.instrumentKey]?.kind === 'rack' ? `rack:${(track.rack?.pads ?? []).map((p) => (p.soundId ? padRoleOf(p.name) : 'perc')).join(',')}` : trackRole(track, clips);
+    memo.set(track.id, r);
+  }
+  return r === 'drums' || r.startsWith('rack:') ? (r as FeelPart) : melodicRoleOf(r, clip.notes);
 }
 
 /**
@@ -409,7 +424,8 @@ export function createClipSchedule(
         if (!trackIds.has(clip.trackId)) continue;
         const prev = entries.get(clip.id);
         const role = feelRole(clip, trackById.get(clip.trackId), clips, roleMemo);
-        const entry = prev && prev.role === role && sameNotes(prev.clip, clip) ? prev : { clip, role, groups: groupClipNotes(clip, role) };
+        const meter = role ? getSongMeter() : undefined;
+        const entry = prev && prev.role === role && prev.meter === meter && sameNotes(prev.clip, clip) ? prev : { clip, role, meter, groups: groupClipNotes(clip, role, meter) };
         nextEntries.set(clip.id, entry);
         for (const [tick, group] of entry.groups) {
           const list = nextByTick.get(tick);
@@ -429,6 +445,11 @@ export function createClipSchedule(
       for (const tick of byTick.keys()) {
         if (!events.has(tick)) events.set(tick, transport.schedule(fire(tick), `${tick}i`));
       }
+    },
+    earliest: () => {
+      let most = 0;
+      for (const e of entries.values()) if (e.role && !straight.has(e.clip.trackId)) for (const [, g] of e.groups) if (g.shift && -g.shift > most) most = -g.shift;
+      return most;
     },
     dispose: () => {
       if (loopOf) {

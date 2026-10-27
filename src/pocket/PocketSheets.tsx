@@ -7,6 +7,7 @@
  */
 import { isDropTrack } from '../store/dropMoves';
 import { GROOVE_FEELS } from '../store/grooveFeels';
+import { drummerGroove } from '../store/drumGroove';
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
@@ -344,11 +345,14 @@ const DrummerSheet: React.FC = () => {
     const len = sec.to - sec.from;
     const bars = Math.max(1, Math.round((len * meter.den) / meter.num));
     const notes = drummer(style, bars, 0.5, bars >= 4 ? 4 : 0, nextDrumSeed(), pocketNoteId, meter).filter((n) => n.startOffset < len - 1e-6);
+    // (A measured feel on the cell stays: the style's swing goes under it)
+    const before = cellClip(track.id, sec, false);
+    const old = useTimelineStore.getState().clips.find((c) => c.id === before)?.groove;
     editCell(track.id, sec, () => notes);
     cellDrumStyles.set(cellKey(track.id, sec.from), style);
     const id = cellClip(track.id, sec, false);
     const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
-    if (id) useTimelineStore.getState().setClipGroove(id, groove ?? null, false);
+    if (id) useTimelineStore.getState().setClipGroove(id, drummerGroove(old, groove), false);
     close();
   };
   return (

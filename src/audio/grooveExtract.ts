@@ -468,3 +468,19 @@ export function extractGroove(x: Float32Array, sr: number, guess: Grid, opts: { 
   opts.progress?.(1);
   return { grid: zeroed, bars, anchor, phase: opts.findPhase ? barPhase(onsets, fitted) : 0, onsets, stats, roles: out };
 }
+
+/**
+ * extractGroove on this thread after a pause (`ms`) for the page to paint (where a Worker can't
+ * run it): the measure, or a rejection with what went wrong, so a caller waiting on it always hears back.
+ */
+export function extractLater(x: Float32Array, sr: number, guess: Grid, progress?: (f: number) => void, ms = 30): Promise<GrooveMeasure> {
+  return new Promise((resolve, reject) =>
+    setTimeout(() => {
+      try {
+        resolve(extractGroove(x, sr, guess, { progress }));
+      } catch (err) {
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    }, ms)
+  );
+}

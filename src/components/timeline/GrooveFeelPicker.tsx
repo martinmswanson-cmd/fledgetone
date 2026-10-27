@@ -106,12 +106,12 @@ export const GrooveFeelPicker: React.FC<{ clip: Clip; className: string }> = ({ 
                 <span className="text-cyan-300">Listening… {pct(busy)}</span>
               ) : audioClips.length ? (
                 audioClips.slice(0, 12).map((a) => (
-                  <button key={a.id} type="button" onClick={() => void fromAudio(a.id)} className="h-6 px-1.5 rounded border border-forge-border text-left text-forge-text hover:border-cyan-500 truncate" title="Measure where this audio's hits land against the bar (its start is a bar line) and play this clip with that groove">
+                  <button key={a.id} type="button" onClick={() => void fromAudio(a.id)} className="h-6 px-1.5 rounded border border-forge-border text-left text-forge-text hover:border-cyan-500 truncate" title="Measure where this audio's hits land against the song's bars and play this clip with that groove">
                     {a.name} (bar {Math.round(a.startBar * 100) / 100})
                   </button>
                 ))
               ) : (
-                <span className="text-forge-muted">Put a loop or a song on an Audio track, starting on a bar line, to take its groove.</span>
+                <span className="text-forge-muted">Put a loop or a song on an Audio track to take its groove.</span>
               )}
             </div>
           </div>
