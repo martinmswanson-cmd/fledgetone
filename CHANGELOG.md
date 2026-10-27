@@ -4,6 +4,13 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Resample**: right-click a clip (or **Tools › Resample…**) to print it, the loop range of the whole mix, or one track's part of it, to a new sound with all its effects (before the master section, unless you tick **Through the master section too**). Then put it on a new audio track, on a new **Slicer** already chopped (at its hits, or into 8 or 16 equal slices, playing in order, as a **stutter** with repeats and 1/32 rolls, or **shuffled**, with its last slice backwards if you like), or make it a **wavetable** for Fledge Synth, played as a bass, lead or pad. One Undo takes it all back. In Pocket, a section's **⋯** has **Resample it into a Slicer** (the whole section, or the track you have open).
+- **Mangle** an audio clip (its editor's **Mangle…** menu): half or double speed like tape, pitch up or down keeping the length, stretch ×2 keeping the pitch, **stutter** (the start of every beat repeated at 1/8, 1/16 or 1/32), **shuffle** its 8ths or 16ths into a new order, a **gate** pattern, **crush** (fewer bits, lower rate) and **formant** (the voice bigger or smaller, the pitch the same). Each makes a new sound, about as loud as before and never peaking louder; Undo goes back a step and **Back to the original** undoes them all.
+- **Slices played backwards** in the Slicer: click a slice and press **Backwards**. **WRITE Stutter / Shuffle** puts a new 2-bar pattern for the slices at the playhead.
+- **Your own wavetables in Fledge Synth**: choose **User table** in an oscillator's table menu, select an audio clip of a held sound (a pad, a vowel, a chord) and press **From the selected clip**. The synth cuts single cycles at the sound's pitch, spread from its start to its end, so **Position** travels through the sound; the picture shows it. The table is saved with the song, your sounds, freezes and exports; a share link carries a lighter copy (8 cycles, a little duller). Presets and songs saved before sound exactly as they did.
+
 ## 2026.10.24-2 — Fledge Synth even across the keyboard
 
 - **Fledge Synth sounds like one instrument from the bottom of the keyboard to the top.** Its presets' filters now follow the note (basses, leads and keys closely, chords and pads a little less), so low notes are no longer dull and muffled and high notes no longer thin and fizzy next to them; each preset sounds as before on the notes it was made for.
