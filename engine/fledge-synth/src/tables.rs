@@ -115,6 +115,11 @@ type Spectrum = Vec<(f64, f64)>;
 
 fn build(which: usize) -> Table {
     let spectra: Vec<Spectrum> = (0..FRAMES).map(|f| frame_spectrum(which, f as f64 / (FRAMES - 1) as f64)).collect();
+    from_spectra(&spectra)
+}
+
+/// A table from FRAMES spectra: each frame band-limited into every level, then levelled.
+fn from_spectra(spectra: &[Spectrum]) -> Table {
     let mut levels = Vec::with_capacity(LEVELS);
     for k in 0..LEVELS {
         let cap = TOP >> k;
@@ -147,6 +152,45 @@ fn build(which: usize) -> Table {
         }
     }
     Table { levels }
+}
+
+/// Samples in each cycle of a user table, as the host hands them in
+pub const USER_CYCLE: usize = 2048;
+/// The most cycles a user table may have (they're spread over the FRAMES positions)
+pub const USER_FRAMES_MAX: usize = 64;
+
+/// A user table (made from a sound, see src/audio/plugins/userTable.ts): `frames` single cycles
+/// of USER_CYCLE samples each, one after another, the first at Position 0 and the last at 100%.
+/// Each is analysed into its harmonics (up to 1024; no DC), the FRAMES positions are filled by
+/// blending the nearest two, and the table is band-limited into the levels and levelled frame by
+/// frame like the built-in ones. None if there are no frames, too many, or too few samples.
+pub fn user_table(cycles: &[f32], frames: usize) -> Option<Table> {
+    if frames == 0 || frames > USER_FRAMES_MAX || cycles.len() < frames * USER_CYCLE {
+        return None;
+    }
+    let given: Vec<Spectrum> = (0..frames).map(|f| cycle_spectrum(&cycles[f * USER_CYCLE..(f + 1) * USER_CYCLE])).collect();
+    let spectra: Vec<Spectrum> = (0..FRAMES)
+        .map(|k| {
+            if frames == 1 {
+                return given[0].clone();
+            }
+            let x = k as f64 / (FRAMES - 1) as f64 * (frames - 1) as f64;
+            let i = (x.floor() as usize).min(frames - 2);
+            mix(&given[i], &given[i + 1], x - i as f64)
+        })
+        .collect();
+    Some(from_spectra(&spectra))
+}
+
+/// The harmonics of one cycle of USER_CYCLE samples (anything not a number counts as silence).
+fn cycle_spectrum(cycle: &[f32]) -> Spectrum {
+    let n = USER_CYCLE;
+    let mut re: Vec<f64> = cycle[..n].iter().map(|&x| if x.is_finite() { x.clamp(-4.0, 4.0) as f64 } else { 0.0 }).collect();
+    let mut im = vec![0.0; n];
+    fft(&mut re, &mut im, false);
+    let nf = n as f64;
+    // (Harmonic n/2 sits on the Nyquist bin, with no phase of its own: left out)
+    (0..=TOP).map(|h| if h == 0 || h >= n / 2 { (0.0, 0.0) } else { (2.0 * re[h] / nf, -2.0 * im[h] / nf) }).collect()
 }
 
 /// Lerp between two spectra (missing harmonics are zero).
@@ -441,6 +485,86 @@ mod tests {
                 assert!(top(k) <= sr * 0.5 * 1.0001 || k == LEVELS - 1, "{f} Hz: level {k}");
             }
             f *= 1.001;
+        }
+    }
+
+    /// One cycle of `f` (phase 0..1) as USER_CYCLE samples.
+    fn cycle(f: impl Fn(f64) -> f64) -> Vec<f32> {
+        (0..USER_CYCLE).map(|i| f(i as f64 / USER_CYCLE as f64) as f32).collect()
+    }
+
+    #[test]
+    fn a_user_table_of_one_sine_is_a_sine_at_every_position() {
+        let t = user_table(&cycle(|p| 0.3 * (2.0 * PI * p).sin()), 1).unwrap();
+        for pos in [0.0, 0.5, 1.0] {
+            let peak = (0..1000).map(|i| t.read(0, pos, i as f32 / 1000.0).abs()).fold(0f32, f32::max);
+            assert!((t.read(0, pos, 0.25) - peak).abs() < 0.01);
+            // Levelled as the built-in tables are: a sine's RMS at 0.5
+            assert!((peak - 0.5 * std::f32::consts::SQRT_2).abs() < 0.01, "peak {peak}");
+        }
+    }
+
+    #[test]
+    fn a_user_table_blends_its_frames_across_the_positions() {
+        // Two frames: a sine, then a square; the middle is half of each
+        let mut data = cycle(|p| (2.0 * PI * p).sin());
+        data.extend(cycle(|p| if p < 0.5 { 0.8 } else { -0.8 }));
+        let t = user_table(&data, 2).unwrap();
+        let odd = |pos: f32| {
+            let lv = &t.levels[0];
+            let s = lv.size + 1;
+            let f = (pos * (FRAMES - 1) as f32).round() as usize;
+            let mut re: Vec<f64> = lv.data[f * s..f * s + lv.size].iter().map(|&x| x as f64).collect();
+            let mut im = vec![0.0; lv.size];
+            fft(&mut re, &mut im, false);
+            let mag = |h: usize| (re[h] * re[h] + im[h] * im[h]).sqrt();
+            mag(3) / mag(1)
+        };
+        assert!(odd(0.0) < 1e-3, "frame 0 is a sine");
+        assert!((odd(1.0) - 1.0 / 3.0).abs() < 0.02, "the last frame is a square: {}", odd(1.0));
+        assert!(odd(0.5) > 0.05 && odd(0.5) < 0.3, "the middle is between: {}", odd(0.5));
+    }
+
+    #[test]
+    fn a_user_table_is_band_limited_per_level_and_has_no_dc() {
+        // A saw with an offset: level 6 keeps 16 harmonics, none above; no DC anywhere
+        let t = user_table(&cycle(|p| 0.2 + 2.0 * p - 1.0), 1).unwrap();
+        for (k, lv) in t.levels.iter().enumerate() {
+            let s = lv.size + 1;
+            let mean = lv.data[..lv.size].iter().map(|&x| x as f64).sum::<f64>() / lv.size as f64;
+            assert!(mean.abs() < 1e-4, "level {k} DC {mean}");
+            assert!(lv.data[lv.size] == lv.data[0] && s == lv.size + 1);
+        }
+        let lv = &t.levels[6];
+        let mut re: Vec<f64> = lv.data[..lv.size].iter().map(|&x| x as f64).collect();
+        let mut im = vec![0.0; lv.size];
+        fft(&mut re, &mut im, false);
+        let mag = |h: usize| (re[h] * re[h] + im[h] * im[h]).sqrt();
+        assert!(mag(16) > 1e-3 * mag(1) && mag(17) < 1e-6 * mag(1) && mag(40) < 1e-6 * mag(1));
+    }
+
+    #[test]
+    fn bad_user_tables_are_refused_and_silence_stays_silent() {
+        assert!(user_table(&[], 1).is_none());
+        assert!(user_table(&vec![0.0; USER_CYCLE], 0).is_none());
+        assert!(user_table(&vec![0.0; USER_CYCLE], 2).is_none());
+        assert!(user_table(&vec![0.0; USER_CYCLE * (USER_FRAMES_MAX + 1)], USER_FRAMES_MAX + 1).is_none());
+        let mut junk = vec![f32::NAN; USER_CYCLE];
+        junk[3] = f32::INFINITY;
+        let t = user_table(&junk, 1).unwrap();
+        assert!(t.levels.iter().all(|lv| lv.data.iter().all(|x| *x == 0.0)));
+    }
+
+    #[test]
+    fn building_the_built_in_tables_is_unchanged() {
+        // (from_spectra was split out of build: a table built the old way, by hand, is the same)
+        for which in [0usize, 5, 15] {
+            let spectra: Vec<Spectrum> = (0..FRAMES).map(|f| frame_spectrum(which, f as f64 / (FRAMES - 1) as f64)).collect();
+            let a = from_spectra(&spectra);
+            let b = table(which);
+            for (x, y) in a.levels.iter().zip(&b.levels) {
+                assert!(x.data == y.data);
+            }
         }
     }
 

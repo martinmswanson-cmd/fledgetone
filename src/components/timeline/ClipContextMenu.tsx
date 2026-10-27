@@ -5,6 +5,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Dices, Drum, Music4, Grid3x3, AudioLines, Layers, ArrowRightToLine, AudioWaveform, ClipboardPaste, Copy, CopyPlus, FileAudio, FlipHorizontal2, Piano, Plus, Repeat2, Scissors, Shuffle, Slice, Trash2, Sigma, ChevronsRight, Link2, Unlink } from 'lucide-react';
 import { reverseBlock } from '../../store/reverseActions';
+import { openResample } from './resampleDialogStore';
 import { doubleClip } from '../../store/vocalActions';
 import { chopVoiceToKeys } from '../../store/voiceChopActions';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -369,6 +370,18 @@ export const ClipContextMenu: React.FC<ClipContextMenuProps> = ({ menu, onClose,
             },
           ];
         })(),
+        {
+          key: 'resample',
+          label: 'Resample…',
+          shortcut: 'audio, Slicer, wavetable',
+          icon: <AudioWaveform className="w-3.5 h-3.5" />,
+          onClick: run(() => {
+            // (The clip under the pointer, with the others selected if it's one of them)
+            if (menu.clipId && !s.clips.find((c) => c.id === menu.clipId)?.isSelected) s.selectClip(menu.clipId, false);
+            openResample('audio', 'clips');
+          }),
+          divider: true,
+        },
         ...(s.clips.find((c) => c.id === menu.clipId)?.notes.length && !s.clips.find((c) => c.id === menu.clipId)?.audio
           ? [
               {

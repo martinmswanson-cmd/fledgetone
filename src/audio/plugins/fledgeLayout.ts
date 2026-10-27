@@ -14,6 +14,8 @@ export type FledgeControl =
 export const FLEDGE_TABLES = [
   'Basic shapes', 'Pulse width', 'Dark saw', 'Vowels', 'Harmonic sweep', 'Growl FM', 'Metal FM', 'Fold',
   'Sync sweep', 'Organ', 'Octave stack', 'Digital', 'Resonant', 'Screech', 'FM 1:2', 'Random harmonics',
+  // A sound made into a table (userTable.ts); Basic shapes until there is one
+  'User table',
 ];
 export const FLEDGE_FILTERS = ['Low pass 12', 'Low pass 24', 'Ladder', 'Band pass', 'High pass 12', 'High pass 24', 'Notch', 'Comb +', 'Comb −', 'Formant', 'Off'];
 export const FLEDGE_SHAPERS = ['Off', 'Soft', 'Warm', 'Hard clip', 'Fold', 'Asymmetric', 'Tube', 'Bitcrush', 'Downsample'];

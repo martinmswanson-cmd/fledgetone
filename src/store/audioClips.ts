@@ -104,6 +104,7 @@ export function referencedSoundIds(p: { clips: ReadonlyArray<Pick<Clip, 'audio' 
       if (audio.tunedFrom) ids.add(audio.tunedFrom);
       if (audio.reversedFrom) ids.add(audio.reversedFrom);
       if (audio.shiftedFrom) ids.add(audio.shiftedFrom);
+      if (audio.mangled) ids.add(audio.mangled.from);
     }
   }
   for (const t of p.tracks) {
@@ -138,6 +139,12 @@ export function normalizeClipAudio(raw: unknown): ClipAudio | undefined {
     ...(typeof raw.tunedFrom === 'string' && raw.tunedFrom ? { tunedFrom: raw.tunedFrom } : {}),
     ...(typeof raw.reversedFrom === 'string' && raw.reversedFrom ? { reversedFrom: raw.reversedFrom } : {}),
     ...(typeof raw.shiftedFrom === 'string' && raw.shiftedFrom && isNum(raw.shift) ? { shiftedFrom: raw.shiftedFrom, shift: clamp(raw.shift, -12, 12) } : {}),
+    ...(() => {
+      const m = raw.mangled;
+      if (!isObj(m) || typeof m.from !== 'string' || !m.from || !isNum(m.offset) || !isNum(m.bars) || !(m.bars > 0)) return {};
+      const steps = Array.isArray(m.steps) ? m.steps.filter((x): x is string => typeof x === 'string').map((x) => x.slice(0, 40)).slice(-16) : [];
+      return { mangled: { from: m.from, offset: Math.max(0, m.offset), bars: Math.min(10000, m.bars), steps } };
+    })(),
     ...(() => {
       const warp = normalizeWarp(raw.warp, isNum(raw.stretchBpm) ? clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) : 60);
       return warp.length ? { warp } : {};
@@ -218,7 +225,17 @@ export function normalizeSlicer(raw: unknown): SlicerSettings | undefined {
     sensitivity: isNum(raw.sensitivity) ? clamp(raw.sensitivity, 0, 1) : 0.5,
     pitch: raw.pitch === true,
     focus: isNum(raw.focus) ? clamp(Math.round(raw.focus), 0, slices.length - 1) : 0,
+    ...(() => {
+      const reversed = normalizeReversed(raw.reversed, slices.length);
+      return reversed.length ? { reversed } : {};
+    })(),
   };
+}
+
+/** Which slices play backwards, tidied: whole indexes of slices there are, ascending, once each. */
+export function normalizeReversed(raw: unknown, count: number): number[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((v): v is number => isNum(v) && Number.isInteger(v) && v >= 0 && v < count))].sort((a, b) => a - b);
 }
 
 /** How long an audio clip crossfades with its neighbours on the track, in seconds. */

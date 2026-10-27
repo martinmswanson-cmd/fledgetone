@@ -1,7 +1,8 @@
 /**
  * Pocket's "bounce a section to a pad": the section (everything playing, or one track) rendered
  * onto a Drum Rack pad (see bounceToPadActions.ts), with what it says as it goes, and the drawer
- * then showing that pad. Used by the section sheet and the Pads tool.
+ * then showing that pad; and "resample a section into a Slicer". Used by the section sheet and the
+ * Pads tool.
  */
 import { useTimelineStore } from '../store/timelineStore';
 import { bounceName } from '../store/bounceToPad';
@@ -9,6 +10,7 @@ import { bounceRangeToPad, placedMessage, type PadPlaced } from '../store/bounce
 import { showToast } from '../components/timeline/toastStore';
 import type { PocketSection } from './pocketSections';
 import { usePocket } from './pocketStore';
+import { resample } from '../store/resampleActions';
 
 /**
  * Bounce a section (the whole mix, or only `trackId`) onto a pad: `target`'s, else the first
@@ -27,6 +29,29 @@ export async function bounceSection(sec: PocketSection, trackId?: string, target
     return placed;
   } catch (err) {
     showToast(`Couldn't bounce ${sec.letter}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Pocket's "resample into a Slicer": the section (everything playing, or only `trackId`) printed
+ * and chopped into 16 slices on a new Slicer track, with a stutter pattern and its last slice
+ * backwards, then shown in the drawer (see resampleActions.ts). Says how it went.
+ */
+export async function resampleSection(sec: PocketSection, trackId?: string): Promise<string | null> {
+  try {
+    const r = await resample({
+      source: { kind: 'range', from: sec.from, to: sec.to, ...(trackId ? { trackIds: [trackId] } : {}) },
+      target: 'slicer',
+      slices: 16,
+      pattern: 'stutter',
+      reverseLast: true,
+    });
+    showToast(r.message);
+    if (r.trackId) usePocket.getState().set({ trackId: r.trackId, mixAll: false });
+    return r.trackId ?? null;
+  } catch (err) {
+    showToast(`Couldn't resample ${sec.letter}: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }

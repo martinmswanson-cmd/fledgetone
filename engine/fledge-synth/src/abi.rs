@@ -13,6 +13,8 @@ use std::ffi::{c_char, CString};
 struct Instance {
     synth: Synth,
     program: i32,
+    /// A user table on its way in (fledge_table_buffer, then fledge_table_set)
+    staging: Vec<f32>,
     /// Texts handed out (kept until the next call asks for another)
     text: CString,
 }
@@ -55,7 +57,7 @@ pub extern "C" fn bb_info(_index: i32) -> *const c_char {
 
 #[no_mangle]
 pub extern "C" fn bb_create(_index: i32, sample_rate: f32) -> i32 {
-    let inst = Box::new(Instance { synth: Synth::new(sample_rate.max(8000.0)), program: -1, text: CString::default() });
+    let inst = Box::new(Instance { synth: Synth::new(sample_rate.max(8000.0)), program: -1, staging: Vec::new(), text: CString::default() });
     let list = instances();
     if let Some(i) = list.iter().position(|x| x.is_none()) {
         list[i] = Some(inst);
@@ -186,13 +188,86 @@ pub extern "C" fn bb_get_program(h: i32) -> i32 {
     get(h).map_or(-1, |x| x.program)
 }
 
+/// Room for a user table of `frames` cycles (USER_CYCLE samples each), to be written by the host
+/// and then taken in by `fledge_table_set` (not part of the plugin interface). Null for too many.
+#[no_mangle]
+pub extern "C" fn fledge_table_buffer(h: i32, frames: i32) -> *mut f32 {
+    match get(h) {
+        Some(x) if frames > 0 && frames as usize <= crate::tables::USER_FRAMES_MAX => {
+            x.staging = vec![0.0; frames as usize * crate::tables::USER_CYCLE];
+            x.staging.as_mut_ptr()
+        }
+        _ => std::ptr::null_mut(),
+    }
+}
+
+/// Make the user table from the `frames` cycles written to fledge_table_buffer (0: no user table,
+/// "User table" plays "Basic shapes"). 1 if a table is in place now.
+#[no_mangle]
+pub extern "C" fn fledge_table_set(h: i32, frames: i32) -> i32 {
+    match get(h) {
+        Some(x) => {
+            let t = if frames > 0 { crate::tables::user_table(&x.staging, frames as usize) } else { None };
+            x.staging = Vec::new();
+            let ok = t.is_some();
+            x.synth.set_user_table(t);
+            ok as i32
+        }
+        None => 0,
+    }
+}
+
+/// A parameter's own value (in its units: Hz, dB, a choice's number) as the 0..1 the plugin
+/// interface sets (not part of it: the host making a sound by name).
+#[no_mangle]
+pub extern "C" fn fledge_normal(i: i32, v: f32) -> f32 {
+    if i < 0 || i as usize >= COUNT {
+        return 0.0;
+    }
+    param(i as usize).kind.normal(v)
+}
+
 static mut WAVE: [f32; 256] = [0.0; 256];
+/// The user table the editor's picture draws (one for the page: the picture of the synth on show)
+static mut PICTURE: Option<crate::tables::Table> = None;
+static mut PICTURE_IN: Vec<f32> = Vec::new();
+
+/// Room for the picture's user table (as fledge_table_buffer, for the main thread's copy).
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub extern "C" fn fledge_picture_buffer(frames: i32) -> *mut f32 {
+    if frames <= 0 || frames as usize > crate::tables::USER_FRAMES_MAX {
+        return std::ptr::null_mut();
+    }
+    unsafe {
+        PICTURE_IN = vec![0.0; frames as usize * crate::tables::USER_CYCLE];
+        PICTURE_IN.as_mut_ptr()
+    }
+}
+
+/// Take in the picture's user table (0 frames: none).
+#[no_mangle]
+#[allow(static_mut_refs)]
+pub extern "C" fn fledge_picture_set(frames: i32) -> i32 {
+    unsafe {
+        PICTURE = if frames > 0 { crate::tables::user_table(&PICTURE_IN, frames as usize) } else { None };
+        PICTURE_IN = Vec::new();
+        PICTURE.is_some() as i32
+    }
+}
 
 /// One cycle of `table` at `pos` (0..1) under `warp` at `amount`, as 256 samples (for the
 /// editor's picture of the oscillator; not part of the plugin interface).
 #[no_mangle]
+#[allow(static_mut_refs)]
 pub extern "C" fn fledge_wave(table: i32, pos: f32, warp: i32, amount: f32) -> *const f32 {
-    let t = crate::tables::table((table.max(0) as usize).min(crate::params::TABLES.len() - 1));
+    let i = table.max(0) as usize;
+    // (The user table: the picture's, as fledge_picture_set took it in; else Basic shapes, as it plays)
+    let t = if i == crate::params::USER_TABLE {
+        unsafe { PICTURE.as_ref() }.unwrap_or_else(|| crate::tables::table(0))
+    } else {
+        crate::tables::table(i.min(crate::params::USER_TABLE - 1))
+    };
     let (w, a) = (warp.max(0) as u32, amount.clamp(0.0, 1.0));
     #[allow(static_mut_refs)]
     let out = unsafe { &mut WAVE };

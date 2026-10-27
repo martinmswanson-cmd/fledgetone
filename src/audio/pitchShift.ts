@@ -39,7 +39,7 @@ export function pitchShiftChannels(input: readonly Float32Array[], semitones: nu
 }
 
 /** A 4th-order (two biquads) Butterworth low-pass at `hz`, run forwards. */
-function lowpass(x: Float32Array, hz: number, sampleRate: number): Float32Array {
+export function lowpass(x: Float32Array, hz: number, sampleRate: number): Float32Array {
   let y = x;
   for (const q of [0.5412, 1.3066]) {
     const w = (2 * Math.PI * Math.min(hz, sampleRate * 0.49)) / sampleRate;

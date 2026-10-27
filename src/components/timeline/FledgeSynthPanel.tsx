@@ -17,11 +17,15 @@ import {
   slotControls,
   type FledgeControl,
 } from '../../audio/plugins/fledgeLayout';
-import { fledgeWave, type FledgeWave } from '../../audio/plugins/fledgeWave';
+import { fledgeWave, setPictureTable, type FledgeWave } from '../../audio/plugins/fledgeWave';
+import { unpackUserTable, userTableKb, USER_TABLE_INDEX, TABLE_FRAME_COUNTS } from '../../audio/plugins/userTable';
+import { userTableFromSound } from '../../store/resampleActions';
+import { tempoAt } from '../../audio/tempoMap';
+import { audioSourceSeconds } from '../../store/audioClips';
 import { macroLabel, macroTargets, wobbleOf } from '../../audio/plugins/fledgeMacros';
-import { editPluginParam, editPluginProgram } from '../../store/pluginEdits';
+import { editPluginParam, editPluginProgram, editPluginTable } from '../../store/pluginEdits';
 import { pluginIdOfControls } from '../../audio/wamHost';
-import { useTimelineStore } from '../../store/timelineStore';
+import { songTempo, useTimelineStore } from '../../store/timelineStore';
 import { choosePresetHeard, fledgePreviewState, hearOnChange, setHearOnChange, subscribeFledgePreview, toggleHearPreset } from '../../audio/fledgePreview';
 import { showToast } from './toastStore';
 
@@ -319,6 +323,37 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
     }
   });
   const [wave, setWave] = useState<FledgeWave | null>(null);
+  // The user table (a sound made into a wavetable), and its picture drawn by the synth's own code
+  const userTable = useSyncExternalStore(controls.subscribe, controls.userTable);
+  const [, setPictured] = useState(0);
+  const [tableFrames, setTableFrames] = useState<number>(16);
+  const [making, setMaking] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      await setPictureTable(controls.ref.family, userTable ? await unpackUserTable(userTable) : null);
+      if (live) setPictured((n) => n + 1);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [userTable, controls.ref.family]);
+  /** Make the user table from the selected audio clip (the stretch of its sound it plays), for oscillator `o`. */
+  const makeTable = async (o: 'A' | 'B') => {
+    const s = useTimelineStore.getState();
+    const clip = s.clips.find((c) => c.isSelected && c.audio);
+    if (!clip?.audio) return showToast('Select an audio clip first: a held sound works best (a pad, a vowel, a chord). Or use Resample on any clip.');
+    setMaking(true);
+    try {
+      const bpm = tempoAt(clip.startBar, songTempo(s));
+      const made = await userTableFromSound(clip.audio.soundId, clip.name, tableFrames, 'pitch', clip.audio.offset, clip.audio.offset + audioSourceSeconds(clip, bpm));
+      if (!made) return showToast('Couldn\u2019t make a table from that clip: it needs a held sound a few cycles long.');
+      await editPluginTable(controls, made.table, o);
+      showToast(`Oscillator ${o} plays "${clip.name}" as a wavetable: ${made.table.frames} cycles at ${Math.round(made.hz)} Hz${made.found ? '' : ' (no pitch found: 2048-sample cycles)'}. Move Position to travel through it.`);
+    } finally {
+      setMaking(false);
+    }
+  };
   // Matrix slots 9 to 16, shown on request (or while one is used)
   const [moreSlots, setMoreSlots] = useState(false);
   useEffect(() => {
@@ -381,6 +416,28 @@ export const FledgeSynthPanel: React.FC<{ controls: BuiltinControls }> = ({ cont
           </div>
           <Picture d={ys ? pathOf(ys, 140, 52) : ''} h={52} label={`Oscillator ${o}'s wave`} />
         </div>
+        {pick(c.table) === USER_TABLE_INDEX && (
+          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-forge-muted" aria-label={`Oscillator ${o}'s user table`}>
+            <span className="truncate max-w-[180px] text-forge-text" title={userTable ? `${userTable.name}: ${userTable.frames} cycles, ${userTableKb(userTable)} kB in the song` : ''}>
+              {userTable ? `${userTable.name} · ${userTable.frames} cycles` : 'No table yet: plays Basic shapes'}
+            </span>
+            <select value={tableFrames} onChange={(e) => setTableFrames(Number(e.target.value))} className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-forge-text" aria-label="Cycles in the table">
+              {TABLE_FRAME_COUNTS.map((n) => (
+                <option key={n} value={n}>
+                  {n} cycles
+                </option>
+              ))}
+            </select>
+            <button type="button" disabled={making} onClick={() => void makeTable(o)} className="h-6 px-2 rounded border border-forge-border hover:text-forge-text hover:border-fuchsia-400 disabled:opacity-50" title="Make the table from the selected audio clip: single cycles at its pitch, spread from its start to its end">
+              {making ? 'Making…' : 'From the selected clip'}
+            </button>
+            {userTable && (
+              <button type="button" onClick={() => void editPluginTable(controls, null)} className="h-6 px-2 rounded border border-forge-border hover:text-forge-text hover:border-red-400" title="Take the table away (Undo brings it back)">
+                Remove
+              </button>
+            )}
+          </div>
+        )}
         {row(c.tone)}
         <div className="flex flex-wrap gap-x-0.5">
           {c.unison.map((k) => ctl(k))}
