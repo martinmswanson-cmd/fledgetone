@@ -1,3 +1,5 @@
+import { GLUE_BUS_STYLES, GLUE_BUS_STYLE_IDS } from '../../store/glueMix';
+import type { GlueBusStyle } from '../../store/timelineTypes';
 import { showToast } from './toastStore';
 import React, { useEffect, useRef } from 'react';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -193,6 +195,9 @@ const Strip: React.FC<{ track: Track; tracks: Track[] }> = ({ track, tracks }) =
 export const MixerPanel: React.FC = () => {
   const tracks = useTimelineStore((st) => st.tracks);
   const glued = useTimelineStore((st) => !!st.master.glueMix);
+  const gluedStyle = useTimelineStore((st) => st.master.glueMix?.style ?? 'bass');
+  const [pickedStyle, setGlueStyle] = React.useState<GlueBusStyle>('bass');
+  const glueStyle = glued ? gluedStyle : pickedStyle;
   const masterVolume = useAudioStore((st) => st.masterVolume);
   return (
     <div className="flex flex-col gap-2 p-3 text-xs text-forge-muted" role="region" aria-label="Mixer">
@@ -245,7 +250,7 @@ export const MixerPanel: React.FC = () => {
               s.setGlueMix(false);
               showToast('Glue off: what it changed is back as it was (anything you changed since stays).');
             } else {
-              const made = s.setGlueMix(true);
+              const made = s.setGlueMix(true, glueStyle);
               showToast(made ? `Glue on: ${made} change${made === 1 ? '' : 's'} so the parts sound like one song. Switch it off any time to compare.` : 'Glue on, but there was nothing to change: the mix is already tied together.');
             }
           }}
@@ -254,7 +259,19 @@ export const MixerPanel: React.FC = () => {
         >
           Glue {glued ? 'on' : 'off'}
         </button>
-        <span className="text-[11px]">Makes the parts sound like one song instead of instruments side by side. Switch it off any time to compare.</span>
+        <select
+          className="h-6 bg-forge-bg border border-forge-border rounded px-1 text-[11px] text-forge-text"
+          value={glueStyle}
+          disabled={glued}
+          onChange={(e) => setGlueStyle(e.target.value as GlueBusStyle)}
+          aria-label="Glue style"
+          title={glued ? 'Switch Glue off to change its style' : GLUE_BUS_STYLES[glueStyle].about}
+        >
+          {GLUE_BUS_STYLE_IDS.map((id) => (
+            <option key={id} value={id}>{GLUE_BUS_STYLES[id].label}</option>
+          ))}
+        </select>
+        <span className="text-[11px]">Makes the parts sound like one song instead of instruments side by side, at the same loudness. Switch it off any time to compare.</span>
       </div>
       <DuckToKickRow />
       <p className="text-[11px]">Double-click a fader or knob to reset it. Each drag is one undo step. Click a track's name to open it in the Inspector (inserts, EQ, automation).</p>

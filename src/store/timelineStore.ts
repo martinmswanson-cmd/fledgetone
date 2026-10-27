@@ -39,7 +39,7 @@ import { isDropTrack } from './dropMoves';
 import { defaultClipper, type ClipperSettings } from '../audio/effects/clipper';
 import type { RoomStyle } from '../audio/effects/roomIR';
 import { makeSpace } from './makeSpace';
-import { applyGlue, removeGlue } from './glueMix';
+import { applyGlue, groupAndGlue, removeGlue } from './glueMix';
 import { duckToKick, hasKick, type DuckStyle } from './duckToKick';
 import { startSends } from './partKind';
 import { busPresetById, busPresetFx, busPresetMembers, type BusPresetId } from './busPresets';
@@ -121,6 +121,9 @@ import {
   stretchRatio,
 } from './audioClips';
 import { DEFAULT_FRAME_RATE, DEFAULT_MASTER_FX, defaultTrackFx, isFrameRate, normalizeTrackFx } from './timelineTypes';
+import type { ClipFeel } from './grooveFeels';
+import type { GlueBusStyle } from './timelineTypes';
+import { withFeel } from './drumGroove';
 import type { AutomationParam, AutomationPoint, CustomSample, Marker, MarkerAnchor, LoudSettings, MasterFx, MasterSettings, Stinger, StingerKind, TrackFx, TransitionRule, WobbleRate, ClipGroove } from './timelineTypes';
 import { DEFAULT_WOBBLE, TOTAL_BARS, defaultLoud, defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } from './timelineTypes';
 import {
@@ -560,8 +563,10 @@ interface TimelineState {
   makeSpace: () => number;
   /** Duck everything to the kick (duckToKick.ts) in `style`: a hole for the drums in the bass, a kick Pump on the chords, pads and leads, one undo step. Returns how many tracks changed (-1: no kick in the song). */
   duckToKick: (style?: DuckStyle) => number;
-  /** Glue (glueMix.ts) on or off: the parts tied into one mix, or what it changed put back. Returns how many settings it changed (on) or 0. */
-  setGlueMix: (on: boolean) => number;
+  /** Glue (glueMix.ts) on or off, in a style (GLUE_BUS_STYLES): the parts tied into one mix, or what it changed put back. Returns how many settings it changed (on) or 0. */
+  setGlueMix: (on: boolean, style?: GlueBusStyle) => number;
+  /** Group and glue (glueMix.ts): the tracks onto a drum bus and a music bus, glued in the style, one undo step. Returns the buses made. */
+  groupAndGlue: (trackIds: readonly string[], style?: GlueBusStyle) => string[];
   /** How far back on the stage the track sits (Track.distance), 0 to 1 */
   setTrackDistance: (trackId: string, distance: number) => void;
   setTrackEq: (trackId: string, eq: Partial<TrackEq>) => void;
@@ -810,6 +815,10 @@ interface TimelineState {
   setClipWobble: (clipId: string, wobble: WobbleRate) => void;
   /** Give a clip its own swing, or (null) let it follow the song's (undoable). */
   setClipGroove: (clipId: string, groove: ClipGroove | null, record?: boolean) => void;
+  /** A measured feel (grooveFeels.ts) on a clip, or taken off (null); `record` false for a slider's drag (it checkpoints itself). */
+  setClipFeel: (clipId: string, feel: ClipFeel | null, record?: boolean) => void;
+  /** A measured feel on every note clip of a track (one undo step), or taken off them all. */
+  setTrackGrooveFeel: (trackId: string, feel: ClipFeel | null) => void;
   /** Add notes to a clip (undoable). Returns the new note ids. */
   addNotes: (clipId: string, notes: Omit<NoteEvent, 'id'>[]) => string[];
   /** Replace a clip's notes without recording history (drag gestures checkpoint() once first). */
@@ -2226,11 +2235,17 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
       if (changed) set((st) => ({ tracks, ...pushPast(st) }));
       return changed;
     },
-    setGlueMix: (on) => {
+    groupAndGlue: (trackIds, style) => {
+      const s = get();
+      const { tracks, buses } = groupAndGlue(s.tracks, s.clips, trackIds, (name, members) => ({ ...makeTrack('bus', s.tracks, name), reverbSend: 0, color: members[0].color }), style);
+      if (buses.length) set({ tracks, selectedTrackId: buses[0], ...pushPast(s) });
+      return buses;
+    },
+    setGlueMix: (on, style) => {
       const s = get();
       if (on === !!s.master.glueMix) return 0;
       if (on) {
-        const { tracks, record } = applyGlue(s.tracks, s.clips, (name, members) => ({ ...makeTrack('bus', s.tracks, name), reverbSend: 0, color: members[0].color }));
+        const { tracks, record } = applyGlue(s.tracks, s.clips, (name, members) => ({ ...makeTrack('bus', s.tracks, name), reverbSend: 0, color: members[0].color }), style);
         set({ tracks, master: { ...s.master, glueMix: record }, ...pushPast(s) });
         return record.changes.length;
       }
@@ -3321,6 +3336,25 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         if (!clip || JSON.stringify(clip.groove ?? null) === JSON.stringify(groove)) return s;
         const { groove: _old, ...rest } = clip;
         return { clips: s.clips.map((c) => (c === clip ? (groove ? { ...rest, groove } : rest) : c)), ...(record ? pushPast(s) : {}) };
+      }),
+
+    setClipFeel: (clipId, feel, record = true) => {
+      const clip = get().clips.find((c) => c.id === clipId);
+      if (clip && !clip.audio) get().setClipGroove(clipId, withFeel(clip.groove, feel), record);
+    },
+
+    setTrackGrooveFeel: (trackId, feel) =>
+      set((s) => {
+        let changed = false;
+        const clips = s.clips.map((c) => {
+          if (c.trackId !== trackId || c.audio || !c.notes.length) return c;
+          const g = withFeel(c.groove, feel);
+          if (JSON.stringify(c.groove ?? null) === JSON.stringify(g)) return c;
+          changed = true;
+          const { groove: _old, ...rest } = c;
+          return g ? { ...rest, groove: g } : rest;
+        });
+        return changed ? { clips, ...pushPast(s) } : s;
       }),
 
     addNotes: (clipId, notes) => {

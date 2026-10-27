@@ -4,6 +4,14 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Groove feels measured from real music**: **GROOVE** in the piano roll gives any clip (drums, bass, chords, leads) a feel taken from real tracks, so the parts no longer sit dead on the grid with tidy velocities: each part a few milliseconds early or late on each 16th, with the accents it was played with, and an **Amount** from 0 to 100%. Eight feels: Bass music tight, Four on the floor tight, Future bass laid back, House shuffle, Hardcore push, Artcore breathe, Artcore bounce and Synthwave drive. Only what was clearly there in the music is in them.
+- **Take a groove from audio**: pick an audio clip in the song and its groove is measured and put on the clip you're editing; it's saved with the song and offered for its other clips.
+- The **Drummer** can make its beat with one of the feels, and Pocket has a **Feel** button for the whole track (on the pads and in the piano roll).
+- **Glue in a style**: Clean, Bass music or Pumping, each level-matched so switching it on doesn't make the song louder. A song with a single drum track now gets its drum bus too.
+- **Group and glue**: a track's right-click menu puts the chosen tracks on a drum bus and a music bus with gentle compression and saturation, in one step.
+
 ## 2026.10.24-2 — Fledge Synth even across the keyboard
 
 - **Fledge Synth sounds like one instrument from the bottom of the keyboard to the top.** Its presets' filters now follow the note (basses, leads and keys closely, chords and pads a little less), so low notes are no longer dull and muffled and high notes no longer thin and fizzy next to them; each preset sounds as before on the notes it was made for.

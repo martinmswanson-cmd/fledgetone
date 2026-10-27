@@ -2,6 +2,7 @@
  * The Chord progression and Drummer dialogs: make a clip from a few choices at the right-clicked
  * bar (smartTools.ts writes the notes).
  */
+import { GROOVE_FEELS } from '../../store/grooveFeels';
 import React, { useMemo, useState } from 'react';
 import { Modal } from './Modal';
 import { useTimelineStore } from '../../store/timelineStore';
@@ -123,7 +124,7 @@ const ChordsForm: React.FC<{ trackId: string; bar: number; onClose: () => void }
   );
 };
 
-let lastDrums = { style: 'rock' as DrumStyle, bars: 8, intensity: 0.5, fillEvery: 4, setMeter: true };
+let lastDrums = { style: 'rock' as DrumStyle, bars: 8, intensity: 0.5, fillEvery: 4, setMeter: true, feel: '' };
 let drumSeed = 1;
 const rememberDrums = (o: typeof lastDrums) => {
   lastDrums = o;
@@ -142,7 +143,7 @@ const DrummerForm: React.FC<{ trackId: string; bar: number; onClose: () => void 
   const meterDiffers = meter.num !== songMeter.num || meter.den !== songMeter.den;
   const make = () => {
     const seed = rememberDrums(opts);
-    const id = makeDrumClip(trackId, bar, opts.style, opts.bars, opts.intensity, opts.fillEvery, seed, opts.setMeter);
+    const id = makeDrumClip(trackId, bar, opts.style, opts.bars, opts.intensity, opts.fillEvery, seed, opts.setMeter, opts.feel);
     if (id) showToast(`Drummer: ${opts.bars} bars of ${style.name.split(' (')[0].toLowerCase()}. Make another for a different take`);
     onClose();
   };
@@ -186,7 +187,16 @@ const DrummerForm: React.FC<{ trackId: string; bar: number; onClose: () => void 
             This style is in {meter.num}/{meter.den}; the song is in {songMeter.num}/{songMeter.den} here. Change the song to {meter.num}/{meter.den} for the clip (and back after it)
           </label>
         )}
-        {style.groove && <p className="text-[11px] text-cyan-300">Swung 8ths: the clip gets a shuffle feel (change it with FEEL in the piano roll).</p>}
+        <label className={field} title="A feel measured from real music: each drum a hair early or late on each 16th, with its accents (change it with GROOVE in the piano roll)">
+          Groove feel
+          <select className={control} value={opts.feel} onChange={(e) => set({ feel: e.target.value })}>
+            <option value="">The style's own</option>
+            {GROOVE_FEELS.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+        </label>
+        {style.groove && !opts.feel && <p className="text-[11px] text-cyan-300">Swung 8ths: the clip gets a shuffle feel (change it with FEEL in the piano roll).</p>}
         <p className="text-[11px] text-forge-muted">
           The song is at {bpm} BPM; this style usually sits at {style.bpm}. Each clip is a new take: the hats breathe and kicks move a little bar to bar.
         </p>

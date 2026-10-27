@@ -6,6 +6,7 @@
  * versions, and the starters screen ("What are we making?").
  */
 import { isDropTrack } from '../store/dropMoves';
+import { GROOVE_FEELS } from '../store/grooveFeels';
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, FolderOpen, History, Mic, Minus, Monitor, Plus, Save } from 'lucide-react';
 import { retryAutosave, useLastSession, useTimelineStore } from '../store/timelineStore';
@@ -349,6 +350,27 @@ const DrummerSheet: React.FC = () => {
   );
 };
 
+/** A measured feel for the whole track (every clip of it), or none: one undo step. */
+const FeelSheet: React.FC = () => {
+  const { track } = useSelection();
+  const current = useTimelineStore((s) => s.clips.find((c) => c.trackId === track?.id && c.groove?.feel)?.groove?.feel?.id ?? '');
+  if (!track) return null;
+  const pick = (id: string, name: string) => {
+    useTimelineStore.getState().setTrackGrooveFeel(track.id, id ? { id, amount: 1 } : null);
+    showToast(id ? `${track.name} plays with the ${name.toLowerCase()} feel. Undo to take it off.` : `${track.name} plays as written.`);
+    close();
+  };
+  return (
+    <Sheet title={`Feel: ${track.name}`} onClose={close}>
+      <p className="text-xs text-forge-muted px-2 mb-2">Feels measured from real music: each part a few milliseconds early or late on each 16th, with its accents. Sets every clip on this track (pick again after adding more).</p>
+      <SheetItem title={`As written${current ? '' : ' ✓'}`} detail="Every note on the grid, as you put it" onClick={() => pick('', '')} />
+      {GROOVE_FEELS.map((f) => (
+        <SheetItem key={f.id} title={`${f.name}${current === f.id ? ' ✓' : ''}`} detail={f.about} onClick={() => pick(f.id, f.name)} />
+      ))}
+    </Sheet>
+  );
+};
+
 const FillSheet: React.FC = () => {
   const { track, sec } = useSelection();
   if (!track || !sec) return null;
@@ -393,6 +415,7 @@ export const PocketSheets: React.FC = () => {
   if (sheet === 'chords') return <ChordsSheet />;
   if (sheet === 'drummer') return <DrummerSheet />;
   if (sheet === 'fill') return <FillSheet />;
+  if (sheet === 'feel') return <FeelSheet />;
   if (sheet === 'versions') return <VersionsSheet />;
   return null;
 };

@@ -19,7 +19,7 @@ import type { SongKey } from '../store/songKey';
 /** The drawer's tools: play the instrument, draw its notes, change its sound, its mix; or sing (vocal tracks). */
 export type PocketTool = 'play' | 'draw' | 'sound' | 'mix' | 'sing';
 export type DrawerSize = 'low' | 'mid' | 'high';
-export type PocketSheet = 'song' | 'share' | 'add' | 'section' | 'chords' | 'drummer' | 'fill' | 'versions' | null;
+export type PocketSheet = 'song' | 'share' | 'add' | 'section' | 'chords' | 'drummer' | 'fill' | 'versions' | 'feel' | null;
 
 interface PocketState {
   /** The selected track (the drawer is its instrument), and the section, by its place in the song */

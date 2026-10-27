@@ -3,6 +3,7 @@
  * master settings and the rest) with their defaults, limits and small helpers (snapping,
  * durations, frame grids). Everything the store, the engine and the project file share.
  */
+import type { ClipFeel } from './grooveFeels';
 import type { DrumDesign } from './drumDesign';
 import { barToSeconds, secondsToBar, type TempoPoint } from '../audio/tempoMap';
 import type { InstrumentKey } from '../audio/engine';
@@ -460,6 +461,8 @@ export const GLUE_STYLE_IDS: readonly GlueStyle[] = ['standard', 'gentle', 'punc
  * compressor and the limiter (each can be bypassed with `on`, which takes it out of the chain
  * entirely), and the Level, a plain gain after them, just before the limiter.
  */
+/** How hard Glue (store/glueMix.ts) glues its buses: see GLUE_BUS_STYLES. */
+export type GlueBusStyle = 'clean' | 'bass' | 'pumping';
 /** Glue (store/glueMix.ts): what it changes on a track. */
 export type GlueField = 'pan' | 'reverbSend' | 'output' | 'peq' | 'pump';
 export const GLUE_FIELDS: readonly GlueField[] = ['pan', 'reverbSend', 'output', 'peq', 'pump'];
@@ -478,6 +481,8 @@ export interface GlueRecord {
   /** The buses it made */
   buses: string[];
   changes: GlueChange[];
+  /** How hard it glued (absent: 'bass', as glue always did) */
+  style?: GlueBusStyle;
 }
 
 /** A saved record read back safely (anything malformed is dropped). */
@@ -491,7 +496,8 @@ export function normalizeGlueRecord(raw: unknown): GlueRecord | undefined {
           typeof c === 'object' && c !== null && typeof (c as GlueChange).trackId === 'string' && GLUE_FIELDS.includes((c as GlueChange).field)
       )
     : [];
-  return { buses, changes };
+  const style = r.style === 'clean' || r.style === 'pumping' ? { style: r.style as GlueBusStyle } : {};
+  return { buses, changes, ...style };
 }
 
 export interface MasterSettings {
@@ -1185,6 +1191,11 @@ export interface ClipGroove {
   rows?: Record<string, RowFeel>;
   /** The groove template it was set from (GROOVE_TEMPLATES), shown until a row is changed */
   template?: string;
+  /**
+   * A feel measured from real music (grooveFeels.ts), or taken from audio in the song: each note
+   * moved and accented by its part's map at its step, times the feel's Amount
+   */
+  feel?: ClipFeel;
 }
 
 /** One row's own feel in a clip's groove. */

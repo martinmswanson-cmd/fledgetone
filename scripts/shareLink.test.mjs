@@ -131,3 +131,12 @@ test("a game song's transition rules and state options, keyed by marker ids, sur
   assert.equal(back.transitions[`${calm}>${fight}`].stingerId, back.stingers[0].id);
   assert.deepEqual(back.stateOptions, { [fight]: { shuffleBars: 2 } });
 });
+
+test("a clip's measured groove feel, and one taken from audio, ride along in the link", async () => {
+  const user = { id: 'user-k1', name: 'From audio 1', about: '', from: '8 bars at 124 BPM', bpm: 124, roles: { hats: { t: [0, 0.2, 0, 0.2, 0, 0.2, 0, 0.2, 0, 0.2, 0, 0.2, 0, 0.2, 0, 0.2], v: Array(16).fill(1) } } };
+  const song = { ...SONG, clips: [{ ...SONG.clips[0], groove: { swing: 0, grid: 16, feel: { id: 'houseShuffle', amount: 0.7, role: 'lead' } } }, { ...SONG.clips[1], groove: { swing: 0, grid: 16, feel: { id: 'user-k1', amount: 1, user } } }] };
+  const link = await songLink(song, 'https://example.com/app');
+  const back = await projectFromHash(link.slice(link.indexOf('#')));
+  assert.deepEqual(back.clips[0].groove.feel, { id: 'houseShuffle', amount: 0.7, role: 'lead' });
+  assert.deepEqual(back.clips[1].groove.feel.user.roles, user.roles);
+});

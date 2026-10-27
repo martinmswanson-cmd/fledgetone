@@ -1,3 +1,5 @@
+import { grooveFeelById } from './grooveFeels';
+import { withFeel } from './drumGroove';
 import { mathPattern, MATH_PATTERNS, type MathPatternId } from './mathPatterns';
 import { create } from 'zustand';
 import { useTimelineStore } from './timelineStore';
@@ -88,7 +90,7 @@ export function drumMeterAt(style: DrumStyle, atBar: number): Meter {
  * time signature the song isn't in there (a waltz in a 4/4 song) also sets the song's time
  * signature for the clip's span (and back after it), in the same undo step.
  */
-export function makeDrumClip(trackId: string, atBar: number, style: DrumStyle, bars: number, intensity: number, fillEvery: number, seed: number, setMeter = false): string | null {
+export function makeDrumClip(trackId: string, atBar: number, style: DrumStyle, bars: number, intensity: number, fillEvery: number, seed: number, setMeter = false, feelId = ''): string | null {
   const s = tl();
   const meter = drumMeterAt(style, atBar);
   const notes = drummer(style, bars, intensity, fillEvery, seed, newId, meter);
@@ -98,6 +100,9 @@ export function makeDrumClip(trackId: string, atBar: number, style: DrumStyle, b
   if (!id) return null;
   const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
   if (groove) useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === id ? { ...c, groove } : c)) }));
+  // A measured feel in place of the style's swing (the same undo step)
+  const feel = feelId && grooveFeelById(feelId) ? withFeel(groove, { id: feelId, amount: 1 }) : null;
+  if (feel) useTimelineStore.setState((st) => ({ clips: st.clips.map((c) => (c.id === id ? { ...c, groove: feel } : c)) }));
   if (setMeter && (songMeter.num !== meter.num || songMeter.den !== meter.den)) {
     // (placeClip made the undo step: the time signature changes join it)
     const past = tl().past;

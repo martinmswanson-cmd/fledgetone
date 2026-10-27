@@ -255,6 +255,9 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
         >
           Swing {swingName}
         </button>
+        <button type="button" className={tool} onClick={() => usePocket.getState().set({ sheet: 'feel' })}>
+          Feel
+        </button>
         {/* (Nor the dice: they roll a kit's drums) */}
         {!rack && (
           <>
