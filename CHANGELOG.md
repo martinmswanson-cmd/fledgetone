@@ -4,6 +4,12 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## Unreleased
+
+- **Vocal chops**: three new instruments of real voices cut into short syllables, each tuned onto its key, a different syllable every other key, so a tune played on them sounds like a chopped vocal hook. **Airy Vocal Chops** (breathy "ah", "mm", "la", sighs and whispers), **Soul Vocal Chops** (a man singing short "ah"s) and **Shout Vocal Chops** ("hey", "go", "yeah"). In Choir & Voices, in the studio and in Pocket. All from public-domain (CC0) recordings, credited in the guide.
+- **Chop my voice**: right-click a vocal (recorded or imported) for Chop my voice, or tap Chop onto keys under a take in Pocket. It cuts the take into its syllables, tunes each onto a note and lays them on the keys of a new instrument, with a clip playing them where you sang them. One Undo takes it away.
+- Pocket plays Multi Sampler tracks from the notes now (their sounds are still set up on a computer).
+
 ## 2026.10.24-2 — Fledge Synth even across the keyboard
 
 - **Fledge Synth sounds like one instrument from the bottom of the keyboard to the top.** Its presets' filters now follow the note (basses, leads and keys closely, chords and pads a little less), so low notes are no longer dull and muffled and high notes no longer thin and fizzy next to them; each preset sounds as before on the notes it was made for.

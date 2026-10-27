@@ -69,7 +69,8 @@ export function setTool(tool: PocketTool, track: Track | null, land: boolean): v
 export function pocketInstruments(current?: InstrumentKey): Array<{ category: string; keys: InstrumentKey[] }> {
   const all = Object.values(INSTRUMENTS).filter((d) => {
     const how = editorOf(d.key);
-    return (how === 'beat' || how === 'notes') && !isRackKey(d.key) && (!d.retro || d.key === current);
+    // (not an empty Multi Sampler: its sounds are set up on a computer, or made by Chop my voice)
+    return (how === 'beat' || how === 'notes') && !isRackKey(d.key) && d.kind !== 'multi' && (!d.retro || d.key === current);
   });
   const favourites = useMySounds.getState().favourites.filter((k) => all.some((d) => d.key === k));
   return [

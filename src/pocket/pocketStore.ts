@@ -66,9 +66,10 @@ export const usePocket = create<PocketState>((set) => ({
 
 /**
  * Which drawer a track's cells open in: drums (a kit, or a Drum Rack's pads), notes, vocals
- * (recordings), the Drop pad, or null (edited on a computer: samplers, plugins). Fledge Synth, the
- * app's own synth, is a plugin played with notes, with its own Sound tool (PocketSynth.tsx):
- * `plugin` is the track's.
+ * (recordings), the Drop pad, or null (edited on a computer: samplers, plugins). A Multi Sampler
+ * (its sounds across the keys, as Chop my voice makes them) plays from the notes; its sounds are set
+ * up on a computer. Fledge Synth, the app's own synth, is a plugin played with notes, with its own
+ * Sound tool (PocketSynth.tsx): `plugin` is the track's.
  */
 export function editorOf(key: InstrumentKey, plugin?: { url: string }): 'beat' | 'notes' | 'vocals' | 'drop' | null {
   if (isAudioKind(key)) return 'vocals';
@@ -76,7 +77,7 @@ export function editorOf(key: InstrumentKey, plugin?: { url: string }): 'beat' |
   if (kind === 'drums' || kind === 'rack') return 'beat';
   if (kind === 'drop') return 'drop';
   if (kind === 'plugin' && isFledgeUrl(plugin?.url)) return 'notes';
-  if (kind === undefined || ['custom', 'multi', 'slicer', 'audio', 'plugin', 'return', 'bus', 'fx'].includes(kind)) return null;
+  if (kind === undefined || ['custom', 'slicer', 'audio', 'plugin', 'return', 'bus', 'fx'].includes(kind)) return null;
   return 'notes';
 }
 
