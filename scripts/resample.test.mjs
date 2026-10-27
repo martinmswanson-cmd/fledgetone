@@ -356,5 +356,7 @@ test('what a resample spans: the clips chosen, or the bars on the tracks asked f
   assert.equal(R.resampleSpan({ kind: 'range', from: 5, to: 9 }, clips).clips.length, 1);
   assert.equal(R.resampleSpan({ kind: 'clips', clipIds: [] }, clips), null);
   assert.equal(R.resampleName({ kind: 'clips', clipIds: ['a'] }, clips, new Map()), 'Chords (resampled)');
-  assert.equal(R.resampleName({ kind: 'range', from: 1, to: 3, trackIds: ['t2'] }, clips, new Map([['t2', 'Bass']])), 'Bass bars 1–3 (resampled)');
+  assert.equal(R.resampleName({ kind: 'range', from: 1, to: 3, trackIds: ['t2'] }, clips, new Map([['t2', 'Bass']])), 'Bass bars 1–2 (resampled)');
+  assert.equal(R.resampleName({ kind: 'range', from: 5, to: 6 }, clips, new Map()), 'Mix bar 5 (resampled)');
+  assert.equal(R.resampleName({ kind: 'range', from: 1, to: 2.5 }, clips, new Map()), 'Mix bars 1–2.5 (resampled)');
 });

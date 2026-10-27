@@ -15,10 +15,10 @@ import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Dices } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
-import { INSTRUMENTS } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isSlicerKind } from '../audio/instrumentCatalog';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
 import type { NoteEvent, Track } from '../store/timelineTypes';
-import { STEPS_PER_WHOLE, noteToMidi, scaleRows, stepsPerBar } from './pocketGrid';
+import { STEPS_PER_WHOLE, midiToNote, noteToMidi, scaleRows, stepsPerBar } from './pocketGrid';
 import { audition, padsOf } from './pocketSound';
 import { editCell, sectionNotes } from './pocketCell';
 import { cellClip } from './pocketSections';
@@ -26,7 +26,7 @@ import type { PocketSection } from './pocketSections';
 import { cellDrumStyles, cellKey, isRackKey, pocketNoteId, usePocket, usePlayPosition } from './pocketStore';
 import { ChanceSheet, SheetItem } from './pocketUi';
 import { accelRoll } from '../store/noteTools';
-import { barsToDuration } from '../store/timelineTypes';
+import { barsToDuration, SLICE_KEY_BASE } from '../store/timelineTypes';
 import { chanceMark, isConditional, withChance } from '../store/noteChance';
 import { rollDrums } from '../store/smartTools';
 import { withSwing } from '../store/drumGroove';
@@ -401,7 +401,9 @@ export const NotePads: React.FC<{ track: Track; sec: PocketSection; songKey: Son
   const ref = useRef<HTMLDivElement>(null);
   // (Where the pads sit is worked out when the track opens, so they don't move while playing)
   const centre = useMemo(() => centreOf(track, sectionNotes(useTimelineStore.getState().clips, track.id, sec)), [track.id, sec.from]); // eslint-disable-line react-hooks/exhaustive-deps
-  const all = keyNotes(songKey, track, centre + 12 * shift, 4).slice(0, 24);
+  // A Slicer (not in Pitch mode): a pad per slice, slice 1 bottom left, as on its roll
+  const slices = isSlicerKind(track.instrumentKey) && !track.slicer?.pitch ? Math.max(1, track.slicer?.slices.length ?? 8) : 0;
+  const all = slices ? Array.from({ length: slices }, (_, i) => midiToNote(SLICE_KEY_BASE + i)) : keyNotes(songKey, track, centre + 12 * shift, 4).slice(0, 24);
   const homeMidi = all.map(noteToMidi).find((m) => m !== null && (m - songKey.root) % 12 === 0 && m >= centre + 12 * shift - 12);
   useAnchoredScroll(ref, `${track.id}:keys:${shift}`, 'bottom');
   return (
@@ -409,7 +411,7 @@ export const NotePads: React.FC<{ track: Track; sec: PocketSection; songKey: Son
       {padOrder(all).map((note, k) => {
         if (!note) return <span key={`gap${k}`} />;
         const m = noteToMidi(note) ?? 60;
-        const root = (((m - songKey.root) % 12) + 12) % 12 === 0;
+        const root = !slices && (((m - songKey.root) % 12) + 12) % 12 === 0;
         return (
           <button
             key={note}
@@ -424,7 +426,7 @@ export const NotePads: React.FC<{ track: Track; sec: PocketSection; songKey: Son
               recordInto(track, sec, [{ note, steps: 2, velocity: 0.8 }]);
             }}
           >
-            {note}
+            {slices ? `S${m - SLICE_KEY_BASE + 1}` : note}
           </button>
         );
       })}

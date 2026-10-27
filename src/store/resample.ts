@@ -60,7 +60,11 @@ export function resampleName(source: ResampleSource, clips: readonly Clip[], tra
     return picked.length === 1 ? `${picked[0].name} (resampled)` : `${picked.length} clips (resampled)`;
   }
   const only = source.trackIds?.length === 1 ? trackNames.get(source.trackIds[0]) : undefined;
-  return `${only ?? 'Mix'} bars ${round(source.from)}–${round(source.to)} (resampled)`;
+  // (Named by the bars it covers, as the song sheets count them: bars 1–4 ends where bar 5 starts)
+  const from = round(source.from);
+  const to = round(source.to);
+  const last = Number.isInteger(to) && Number.isInteger(from) ? to - 1 : to;
+  return `${only ?? 'Mix'} ${last <= from ? `bar ${from}` : `bars ${from}–${last}`} (resampled)`;
 }
 
 type Note = Omit<NoteEvent, 'id'>;
