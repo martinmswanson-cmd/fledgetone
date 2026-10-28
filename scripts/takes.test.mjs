@@ -62,12 +62,27 @@ test('adding and removing takes', () => {
 test('a comped sound plays as pieces of each take, crossfaded where they meet', () => {
   const audio = (id) => ({ soundId: id, offset: 0, gain: 0, fadeIn: 0, fadeOut: 0.02 });
   const c = { id: 'm', trackId: 'k', name: 'Vox', startBar: 3, lengthBars: 4, isSelected: false, notes: [], audio: audio('s1'), takes: [{ id: 'a', name: 'Take 1', audio: audio('s1') }, { id: 'b', name: 'Take 2', audio: audio('s2') }], comp: [{ at: 0, take: 0 }, { at: 2, take: 1 }] };
-  const pieces = t.expandAudioComp(c, 2);
+  const pieces = t.expandAudioComp(c, 120);
   assert.deepEqual(pieces.map((p) => [p.startBar, p.lengthBars, p.audio.soundId, p.audio.offset]), [[3, 2 + t.COMP_CROSSFADE / 2, 's1', 0], [5, 2, 's2', 4]]);
   assert.equal(pieces[0].audio.fadeOut, 0);
   assert.equal(pieces[1].audio.fadeOut, 0.02);
   // Not comped across takes: as it is
-  assert.deepEqual(t.expandAudioComp({ ...c, comp: [{ at: 0, take: 0 }] }, 2), [{ ...c, comp: [{ at: 0, take: 0 }] }]);
+  assert.deepEqual(t.expandAudioComp({ ...c, comp: [{ at: 0, take: 0 }] }, 120), [{ ...c, comp: [{ at: 0, take: 0 }] }]);
+});
+
+test('a comped sound across a tempo change plays each take from where it was recorded then', () => {
+  // 120 BPM, 60 from bar 3: recorded in real time from bar 1, bar 5 is 4 s + 8 s into each take
+  const tempo = { bpm: 120, points: [{ id: 'p', bar: 3, bpm: 60, ramp: false }] };
+  const audio = (id) => ({ soundId: id, offset: 0.5, gain: 0, fadeIn: 0, fadeOut: 0 });
+  const c = { id: 'm', trackId: 'k', name: 'Vox', startBar: 1, lengthBars: 8, isSelected: false, notes: [], audio: audio('s1'), takes: [{ id: 'a', name: 'Take 1', audio: audio('s1') }, { id: 'b', name: 'Take 2', audio: audio('s2') }], comp: [{ at: 0, take: 0 }, { at: 4, take: 1 }] };
+  const pieces = t.expandAudioComp(c, tempo);
+  assert.equal(pieces[1].startBar, 5);
+  assert.ok(Math.abs(pieces[1].audio.offset - 12.5) < 1e-9, `${pieces[1].audio.offset}`);
+  // The first piece runs COMP_CROSSFADE on into the second at the tempo there (60: a bar is 4 s)
+  assert.ok(Math.abs(pieces[0].lengthBars - (4 + t.COMP_CROSSFADE / 4)) < 1e-12);
+  // In one tempo (the change after the folder), exactly as before
+  const later = { bpm: 120, points: [{ id: 'p', bar: 20, bpm: 60, ramp: false }] };
+  assert.deepEqual(t.expandAudioComp(c, later), t.expandAudioComp(c, 120));
 });
 
 test('trim and split carry the takes and the comp', () => {
@@ -125,7 +140,7 @@ test('review fixes: comp keeps the folder\'s gain and stretch; pieces carry the 
   assert.equal(applied.audio.offset, 3);
   assert.equal(applied.audio.gain, -6);
   assert.equal(applied.audio.stretchBpm, 100);
-  const pieces = t.expandAudioComp({ ...c, comp: [{ at: 0, take: 0 }, { at: 1, take: 1 }] }, 2);
+  const pieces = t.expandAudioComp({ ...c, comp: [{ at: 0, take: 0 }, { at: 1, take: 1 }] }, 120);
   assert.ok(pieces.every((p) => p.audio.stretchBpm === 100 && p.audio.gain === -6));
 });
 

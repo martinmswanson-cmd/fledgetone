@@ -11,7 +11,7 @@ import { midiName } from './sampleKits';
 import { detectKey } from './songKey';
 import { padFromClip } from './bounceToPad';
 import { barToSeconds, secondsToBar, tempoAt } from '../audio/tempoMap';
-import { barOfSource, secondsPerBar, stretchRatio } from './audioClips';
+import { barOfSource } from './audioClips';
 import { expandAudioComp } from './takes';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/wavFile';
@@ -47,8 +47,7 @@ export async function chopVoiceToKeys(clipId: string, opts: { scale?: ChopScale 
   const folder = (clip.takes?.length ?? 0) > 1;
   if (folder && !opts.comp) return { error: 'This clip is a take folder: flatten it first (Takes…), then chop it.' };
   const tempo = songTempo(s);
-  const spb = (c: Clip) => secondsPerBar(tempoAt(c.startBar, tempo)) * stretchRatio(c.audio!, tempoAt(c.startBar, tempo));
-  const pieces = folder ? expandAudioComp(clip, spb(clip)) : [clip];
+  const pieces = folder ? expandAudioComp(clip, tempo) : [clip];
   const heard: Heard[] = [];
   let played = 0;
   for (const piece of pieces) {

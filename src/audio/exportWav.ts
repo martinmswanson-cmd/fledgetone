@@ -40,7 +40,7 @@ import { decodeSound, stretchSound, useSoundLibrary, wantCopies, warpSound } fro
 import { isWarped } from '../store/warp';
 import { withControllerLanes } from '../store/ccLanes';
 import { withStepLanes } from '../store/stepLanes';
-import { secondsPerBar, stretchRatio } from '../store/audioClips';
+import { stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
 import { holdRecordingsAt, loadCustomSample, songSampleLoads } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
@@ -1372,7 +1372,7 @@ async function renderGraphHeld(
  * yet converted still carries its sound as a data: URL, decoded in the live context as before.
  */
 async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar: number, sampleRate: number, tempo: Tempo): Promise<void> {
-  const clips = expandAudioComps(all, (c) => secondsPerBar(tempoAt(c.startBar, tempo)) * stretchRatio(c.audio!, tempoAt(c.startBar, tempo)));
+  const clips = expandAudioComps(all, tempo);
   const trackIds = new Set(tracks.map((t) => t.id));
   // Each sound once, with what to call it in an error: the clip or track it's for
   const needed = new Map<string, string>();

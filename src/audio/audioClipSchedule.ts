@@ -13,7 +13,7 @@ import { barToTicks, ticksToBar } from './transport';
 import { decodedSound, ensureSound, requestStretch, requestWarp, stretchedSound, wantCopies, warpedSound, type WantedCopy } from './soundLibrary';
 import { DECLICK_SECONDS, envelopeAt, envelopeFrom, envelopeShape } from './clipEnvelope';
 import type { EnvelopePoint, EnvelopeShape } from './clipEnvelope';
-import { crossfades, envelopeDbAt, secondsPerBar, stretchRatio, type Crossfade } from '../store/audioClips';
+import { crossfades, envelopeDbAt, stretchRatio, type Crossfade } from '../store/audioClips';
 import { beatAt, clipSecondsAt, isWarped, sourceAt, warpKey } from '../store/warp';
 import { ENVELOPE_DB_MIN } from '../store/timelineTypes';
 import { expandAudioComps } from '../store/takes';
@@ -337,7 +337,7 @@ export function createAudioClipSchedule(
   return {
     update: (tracks, all) => {
       // A mic take folder plays its comp's pieces, each a clip of its own here
-      const clips = expandAudioComps(all, (c) => secondsPerBar(localBpm(c)) * stretchRatio(c.audio!, localBpm(c)));
+      const clips = expandAudioComps(all, tempo());
       const trackIds = new Set(tracks.map((t) => t.id));
       const next = new Map<string, Entry>();
       /** Entries made now: new clips, and clips whose placement changed (their old voices are stopped) */

@@ -1,5 +1,6 @@
 import type { Clip, ClipTake, CompSegment, NoteEvent } from './timelineTypes';
-import { normalizeClipAudio, splitAudio, trimAudioStart } from './audioClips';
+import { normalizeClipAudio, playsAlongMap, secondsPerBar as secondsPerBarAt, splitAudio, stretchRatio, trimAudioStart } from './audioClips';
+import { secondsBetween, tempoAt, type Tempo } from '../audio/tempoMap';
 import { moveExpression, normalizeExpression, shiftExpression } from './expression';
 
 /**
@@ -130,17 +131,23 @@ export const COMP_CROSSFADE = 0.01;
 
 /**
  * The pieces a mic take folder plays: one clip per comp stretch, its take's sound from the right
- * place (`secondsPerBar`: at the clip's tempo, stretch included). Each piece runs COMP_CROSSFADE
+ * place (at the clip's tempo, stretch included, or along the song's tempo changes where it plays
+ * its sound in real time across one). Each piece runs COMP_CROSSFADE
  * on into the next, so the automatic crossfade (audioClips.crossfades) blends them at equal power.
  * Any other clip comes back as it is.
  */
-export function expandAudioComp(clip: Clip, secondsPerBar: number): Clip[] {
+export function expandAudioComp(clip: Clip, tempo: Tempo): Clip[] {
   if (!clip.audio || !clip.takes || clip.takes.length < 2) return [clip];
   const segs = compSegments(clip);
   const only = segs.length === 1 ? clip.takes[segs[0].take].audio : undefined;
   if (only && only.soundId === clip.audio.soundId && only.offset === clip.audio.offset) return [clip];
   const ends = segmentEnds(segs, clip.lengthBars);
-  const overlap = COMP_CROSSFADE / secondsPerBar;
+  const bpm = tempoAt(clip.startBar, tempo);
+  const secondsPerBar = secondsPerBarAt(bpm) * stretchRatio(clip.audio, bpm);
+  /** Where in the takes' sound `bars` into the folder is: along the tempo map where it plays along it (see playsAlongMap) */
+  const into = (bars: number) => (playsAlongMap(clip, clip.startBar + bars, tempo) ? secondsBetween(clip.startBar, clip.startBar + bars, tempo) : bars * secondsPerBar);
+  /** COMP_CROSSFADE in bars at `bars` into the folder: at the tempo there, where it plays along the map */
+  const overlapAt = (bars: number) => (playsAlongMap(clip, clip.startBar + bars, tempo) ? COMP_CROSSFADE / secondsPerBarAt(tempoAt(clip.startBar + bars, tempo)) : COMP_CROSSFADE / secondsPerBar);
   return segs.map((s, i) => {
     const take = clip.takes![s.take].audio ?? clip.audio!;
     const first = i === 0;
@@ -149,12 +156,12 @@ export function expandAudioComp(clip: Clip, secondsPerBar: number): Clip[] {
       ...clip,
       id: `${clip.id}#${i}`,
       startBar: clip.startBar + s.at,
-      lengthBars: ends[i] - s.at + (last ? 0 : overlap),
+      lengthBars: ends[i] - s.at + (last ? 0 : overlapAt(ends[i])),
       takes: undefined,
       comp: undefined,
       audio: {
         ...take,
-        offset: take.offset + s.at * secondsPerBar,
+        offset: take.offset + into(s.at),
         fadeIn: first ? clip.audio!.fadeIn : 0,
         fadeOut: last ? clip.audio!.fadeOut : 0,
         gain: clip.audio!.gain,
@@ -164,6 +171,7 @@ export function expandAudioComp(clip: Clip, secondsPerBar: number): Clip[] {
     };
   });
 }
+
 
 /** Takes from a project file (absent when there are none or they're unreadable). */
 export function normalizeTakes(raw: unknown, parseNote: (v: unknown) => NoteEvent | null): ClipTake[] | undefined {
@@ -186,9 +194,9 @@ export function normalizeTakes(raw: unknown, parseNote: (v: unknown) => NoteEven
   return out.length > 1 ? out : undefined;
 }
 
-/** Every clip as it plays: mic take folders as their comp's pieces (`secondsPerBarOf`: how long a bar of a clip's sound lasts, stretch included). */
-export function expandAudioComps(clips: Clip[], secondsPerBarOf: (clip: Clip) => number): Clip[] {
-  return clips.some((c) => c.audio && c.takes) ? clips.flatMap((c) => (c.audio && c.takes ? expandAudioComp(c, secondsPerBarOf(c)) : [c])) : clips;
+/** Every clip as it plays: mic take folders as their comp's pieces (see expandAudioComp), along the song's `tempo`. */
+export function expandAudioComps(clips: Clip[], tempo: Tempo): Clip[] {
+  return clips.some((c) => c.audio && c.takes) ? clips.flatMap((c) => (c.audio && c.takes ? expandAudioComp(c, tempo) : [c])) : clips;
 }
 
 /** The comp seen from `shift` bars further into the clip. */
