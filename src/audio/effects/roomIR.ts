@@ -24,6 +24,11 @@ export interface RoomDesign {
   low: number;
   high: number;
   reflections: Array<[time: number, gain: number, side: number]>;
+  /**
+   * Where the highs reaching the room are soaked up (Hz): the shared reverb's input low-pass
+   * (busEffects.ts). A steel plate takes nearly all the top; a stone church little of it.
+   */
+  damp: number;
   algorithmic?: boolean;
 }
 
@@ -34,6 +39,7 @@ const HALL: RoomDesign = {
   build: 0.06,
   low: 1.25,
   high: 0.5,
+  damp: 7500,
   reflections: [[0.019, 0.5, -0.6], [0.027, 0.45, 0.7], [0.041, 0.35, -0.3], [0.053, 0.3, 0.4], [0.067, 0.25, -0.8], [0.079, 0.2, 0.9]],
 };
 
@@ -46,6 +52,7 @@ export const ROOM_STYLES: Record<RoomStyle, RoomDesign> = {
     build: 0.03,
     low: 1.05,
     high: 0.6,
+    damp: 8000,
     reflections: [[0.008, 0.55, -0.5], [0.013, 0.5, 0.6], [0.019, 0.4, -0.2], [0.026, 0.35, 0.3], [0.034, 0.25, -0.7]],
   },
   church: {
@@ -55,6 +62,7 @@ export const ROOM_STYLES: Record<RoomStyle, RoomDesign> = {
     build: 0.12,
     low: 1.4,
     high: 0.35,
+    damp: 6000,
     reflections: [[0.035, 0.4, -0.7], [0.052, 0.35, 0.8], [0.071, 0.3, -0.4], [0.093, 0.28, 0.5], [0.118, 0.22, -0.9]],
   },
   studio: {
@@ -64,6 +72,7 @@ export const ROOM_STYLES: Record<RoomStyle, RoomDesign> = {
     build: 0.015,
     low: 0.85,
     high: 0.7,
+    damp: 9000,
     reflections: [[0.004, 0.45, -0.4], [0.007, 0.4, 0.5], [0.011, 0.3, -0.2], [0.016, 0.22, 0.3]],
   },
   plate: {
@@ -73,6 +82,7 @@ export const ROOM_STYLES: Record<RoomStyle, RoomDesign> = {
     build: 0.002,
     low: 0.8,
     high: 0.9,
+    damp: 11000,
     reflections: [],
   },
   lush: {
@@ -81,6 +91,8 @@ export const ROOM_STYLES: Record<RoomStyle, RoomDesign> = {
     about: 'A smooth, dense, slowly shimmering tail with no hard echoes. Pads, ballads, ambient; light on the computer even when long.',
     low: 1.25,
     high: 0.55,
+    // (As before every style had: the lush reverb runs at half the sample rate, on what's under it)
+    damp: 5500,
     algorithmic: true,
   },
 };

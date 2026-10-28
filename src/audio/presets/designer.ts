@@ -72,11 +72,14 @@ const SHAPER_LATENCY: Record<OverSampleType, number> = { none: 0, '2x': 128, '4x
  */
 const WARM_OVERSAMPLE: OverSampleType = '2x';
 /**
- * The patch's drive: 2x up to a strong setting, where it differs from 4x by -70 to -95 dB; the
- * hardest settings fold back enough for 4x to be worth its cost.
+ * The patch's drive: 2x only while it's gentle (below DRIVE_4X), where what 2x lets fold back is
+ * as faint as 4x's (about 88 dB under the note on a bright saw); past it, 4x. (At 2x a drive of
+ * 0.5 folded fizz back 58 to 63 dB under a saw from C5 to C7, and 0.8 only 40 to 45 dB under;
+ * at 4x they're 87 to 91 and 74 to 77 dB down.) An export always shapes at 4x: it has the time.
  */
-function driveOversampling(drive: number): OverSampleType {
-  return drive > 0.9 ? '4x' : '2x';
+const DRIVE_4X = 0.2;
+function driveOversampling(drive: number, offline: boolean): OverSampleType {
+  return offline || drive >= DRIVE_4X ? '4x' : '2x';
 }
 
 const SYNC_BEATS: Record<Exclude<LfoSync, 'free'>, number> = { '1/1': 4, '1/2': 2, '1/4': 1, '1/8': 0.5, '1/8T': 1 / 3, '1/16': 0.25, '1/16T': 1 / 6, '1/32': 0.125 };
@@ -113,6 +116,8 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
   const { bus, raw, input } = createBus(output);
   // Noise-fed voices linger before disconnecting (see createVoiceSet)
   const voices = createVoiceSet(raw, 0.3);
+  // (An export renders in an OfflineAudioContext: see driveOversampling)
+  const offline = typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext;
   let patch = initial ?? defaultSynthPatch();
   let last: { voice: DesignerVoice; freq: number } | null = null;
   // Pitch bend (cents): the bend lane, vibrato and each note's own bend (scoops, slides) move every
@@ -137,9 +142,9 @@ export function createDesignedSynth(output: Tone.InputNode, initial: SynthPatch 
     // sounds the same, only that much sooner (no longer late by the shaper's delay). A note too
     // close to now for its envelopes to start earlier keeps 4x.
     const lessOf = (o: OverSampleType) => (SHAPER_LATENCY['4x'] - SHAPER_LATENCY[o]) / raw.sampleRate;
-    const ahead = start - ((ladder ? lessOf(WARM_OVERSAMPLE) : 0) + (p.drive > 0 ? lessOf(driveOversampling(p.drive)) : 0)) >= raw.currentTime;
+    const ahead = start - ((ladder ? lessOf(WARM_OVERSAMPLE) : 0) + (p.drive > 0 ? lessOf(driveOversampling(p.drive, offline)) : 0)) >= raw.currentTime;
     const warmOversample: OverSampleType = ladder && ahead ? WARM_OVERSAMPLE : '4x';
-    const driveOversample: OverSampleType = p.drive > 0 && ahead ? driveOversampling(p.drive) : '4x';
+    const driveOversample: OverSampleType = p.drive > 0 && ahead ? driveOversampling(p.drive, offline) : '4x';
     // The filters come after the warm drive; the amp after both
     const filterEarly = ladder ? lessOf(warmOversample) : 0;
     const early = filterEarly + (p.drive > 0 ? lessOf(driveOversample) : 0);

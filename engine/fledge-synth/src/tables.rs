@@ -16,6 +16,8 @@ pub const FRAMES: usize = 32;
 const TOP: usize = 1024;
 /// Levels: harmonics 1024, 512, ... 1
 pub const LEVELS: usize = 11;
+/// Samples a level keeps per period of its top harmonic (see from_spectra)
+const TABLE_OVERSAMPLE: usize = 32;
 /// Samples in the high-resolution cycle analysed for the time-domain tables
 const ANALYSE: usize = 4096;
 
@@ -123,14 +125,19 @@ fn from_spectra(spectra: &[Spectrum]) -> Table {
     let mut levels = Vec::with_capacity(LEVELS);
     for k in 0..LEVELS {
         let cap = TOP >> k;
-        // Enough samples for linear reads to be clean: 4 per period of the top harmonic, 64 at least
-        let size = (cap * 4).clamp(64, 2048);
+        // Enough samples for linear reads to be clean: 32 per period of the top harmonic (64 at
+        // least, 4096 at most). With only 4, the linear reads' images of the top harmonics folded
+        // back as fizz about 40 dB under the note (a saw from C4 to C6); with 32, 75 dB or more
+        let size = (cap * TABLE_OVERSAMPLE).clamp(64, 4096);
         let mut data = vec![0f32; FRAMES * (size + 1)];
-        for (f, spec) in spectra.iter().enumerate() {
-            let cycle = synthesize(spec, cap.min(size / 2 - 1), size);
-            let out = &mut data[f * (size + 1)..(f + 1) * (size + 1)];
-            out[..size].copy_from_slice(&cycle);
-            out[size] = cycle[0];
+        // Two frames at a time (one inverse FFT makes both: see synthesize_pair)
+        for f in (0..FRAMES).step_by(2) {
+            let (a, b) = synthesize_pair(&spectra[f], &spectra[f + 1], cap.min(size / 2 - 1), size);
+            for (g, cycle) in [(f, a), (f + 1, b)] {
+                let out = &mut data[g * (size + 1)..(g + 1) * (size + 1)];
+                out[..size].copy_from_slice(&cycle);
+                out[size] = cycle[0];
+            }
         }
         levels.push(Level { size, data });
     }
@@ -376,20 +383,22 @@ fn analyse(f: impl Fn(f64) -> f64) -> Spectrum {
     (0..=TOP).map(|h| if h == 0 { (0.0, 0.0) } else { (2.0 * re[h] / n, -2.0 * im[h] / n) }).collect()
 }
 
-/// One cycle of `size` samples holding harmonics 1 to `cap` of `spec`.
-fn synthesize(spec: &Spectrum, cap: usize, size: usize) -> Vec<f32> {
+/// Two cycles of `size` samples, holding harmonics 1 to `cap` of `a` and of `b`. Both are real,
+/// so `b` rides in the imaginary part of one inverse FFT and comes out there (half the work).
+fn synthesize_pair(a: &Spectrum, b: &Spectrum, cap: usize, size: usize) -> (Vec<f32>, Vec<f32>) {
     let mut re = vec![0.0; size];
     let mut im = vec![0.0; size];
-    for h in 1..=cap.min(spec.len() - 1) {
-        let (c, s) = spec[h];
-        // A real cycle from its one-sided spectrum: bins h and size - h, conjugate
-        re[h] = c * 0.5;
-        im[h] = -s * 0.5;
-        re[size - h] = c * 0.5;
-        im[size - h] = s * 0.5;
+    let at = |spec: &Spectrum, h: usize| if h < spec.len() { spec[h] } else { (0.0, 0.0) };
+    for h in 1..=cap.min(a.len().max(b.len()) - 1) {
+        let ((ca, sa), (cb, sb)) = (at(a, h), at(b, h));
+        // A's bins (c - i s) / 2 at h and (c + i s) / 2 at size - h, plus i times B's
+        re[h] = (ca + sb) * 0.5;
+        im[h] = (cb - sa) * 0.5;
+        re[size - h] = (ca - sb) * 0.5;
+        im[size - h] = (cb + sa) * 0.5;
     }
     fft(&mut re, &mut im, true);
-    re.iter().map(|&x| x as f32).collect()
+    (re.iter().map(|&x| x as f32).collect(), im.iter().map(|&x| x as f32).collect())
 }
 
 /// An in-place radix-2 FFT (inverse without scaling: an inverse of a one-sided spectrum gives the
@@ -445,6 +454,46 @@ mod tests {
         let v = t.read(0, 0.0, 0.25);
         let peak = (0..1000).map(|i| t.read(0, 0.0, i as f32 / 1000.0).abs()).fold(0f32, f32::max);
         assert!((v - peak).abs() < 0.01, "quarter-cycle {v} vs peak {peak}");
+    }
+
+    /// A saw read as a note plays it (C5, at 48 kHz): what isn't one of its harmonics (the linear
+    /// reads' images folding back) is over 70 dB under the note. (With 4 samples a period of the
+    /// top harmonic it was 40 dB under)
+    #[test]
+    fn a_saw_read_at_a_high_note_has_next_to_no_fizz() {
+        let (sr, f0) = (48000.0f64, 523.2511f64);
+        let t = table(0);
+        let inc = (f0 / sr) as f32;
+        let level = level_for(inc);
+        let pos = 2.0 / 3.0;
+        let n = 1 << 15;
+        let mut re: Vec<f64> = (0..n)
+            .map(|i| {
+                let ph = ((i as f64 * f0 / sr).fract()) as f32;
+                // A 4-term Blackman-Harris window: its side lobes are far under what's measured
+                let w = 2.0 * PI * i as f64 / n as f64;
+                let win = 0.35875 - 0.48829 * w.cos() + 0.14128 * (2.0 * w).cos() - 0.01168 * (3.0 * w).cos();
+                t.read(level, pos, ph) as f64 * win
+            })
+            .collect();
+        let mut im = vec![0.0; n];
+        fft(&mut re, &mut im, false);
+        let bin = sr / n as f64;
+        let (mut note, mut other) = (0.0, 0.0);
+        for k in 1..n / 2 {
+            let f = k as f64 * bin;
+            let p = re[k] * re[k] + im[k] * im[k];
+            let h = (f / f0).round();
+            if (f - h * f0).abs() <= 6.0 * bin && h >= 1.0 {
+                if h == 1.0 {
+                    note += p;
+                }
+            } else if f < 20000.0 {
+                other += p;
+            }
+        }
+        let db = 10.0 * (other / note).log10();
+        assert!(db < -70.0, "{db:.1} dB of fizz");
     }
 
     #[test]

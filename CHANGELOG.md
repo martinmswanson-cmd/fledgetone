@@ -6,6 +6,10 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Cleaner synths and reverb**, in new songs and the ones you already have:
+  - **Fledge Synth**'s wavetables are kept in far finer detail, so leads, plucks and chords from the middle of the keyboard up no longer carry a faint digital fizz (it's now 70 to 85 dB under the note instead of as little as 40). Its LFOs on a level (a tremolo, a gate, a pump) move it smoothly instead of in tiny steps that buzzed.
+  - **Synth Designer**'s Drive is worked out at four times the sample rate from 20% up, and always in exports, so a driven lead stays clean instead of fizzing (the fizz of a middle drive is now about 88 dB under the note instead of about 60).
+  - **The master reverb** soaks up the top where each room would: the **Plate** keeps its shine (from 11 kHz), the **Concert hall** opens to 7.5 kHz and the **Church** stays dark, instead of every room losing everything over 5.5 kHz. It's as loud as before.
 - **GPL plugins in the web runtime kit**: a song that plays Surge XT, Dragonfly, Plateau or the Tonewheel Organ no longer stops the kit. A small window says what the GPL asks of a game, who made the plugin and how to reach them, and lets you export with it or cancel; the kit then plays it, with its licence and a notice of where its source is. A **GPL** tag marks these plugins in the plugin browser, the Plugins menu and their windows.
 
 ## 2026.10.28-3 — Two tabs, keyboard clips, game states on bar lines and more fixes

@@ -240,9 +240,14 @@ fn legacy_note_random_scene(make: &dyn Fn() -> Synth) -> u64 {
     h
 }
 
+/// The hash of legacy_note_random_scene on a sound saved before "Random by step". (Taken from the
+/// synth as it was then, and taken again when the wavetables got finer, which changed every sample
+/// a little but none of the note random values)
+const LEGACY_NOTE_RANDOM_SCENE: u64 = 0x3354_323b_c6fc_7b11;
+
 /// A sound saved before "Random by step" (fewer values) still gets each note's random values from
-/// its step and its pitch: sample for sample as that version of the synth played it (the hash
-/// was taken from the synth as it was then, with the same scene)
+/// its step and its pitch: sample for sample as that version of the synth played it (see
+/// LEGACY_NOTE_RANDOM_SCENE)
 #[test]
 fn older_sounds_keep_their_note_random_values_exactly() {
     let old = || {
@@ -251,7 +256,7 @@ fn older_sounds_keep_their_note_random_values_exactly() {
         s
     };
     assert_eq!(old().v(p::RANDOM_BY_STEP), 0.0);
-    assert_eq!(legacy_note_random_scene(&old), 0x474b_db08_df5f_69a5);
+    assert_eq!(legacy_note_random_scene(&old), LEGACY_NOTE_RANDOM_SCENE);
     // (Sounds saved with "Mono restart" and "Mono below" but before this one, too)
     let mut s = Synth::new(SR);
     s.legacy(p::RANDOM_BY_STEP);
@@ -268,7 +273,7 @@ fn older_sounds_keep_their_note_random_values_exactly() {
     }
     // A new sound moves by step (and so sounds otherwise in this scene)
     assert_eq!(Synth::new(SR).v(p::RANDOM_BY_STEP), 1.0);
-    assert_ne!(legacy_note_random_scene(&|| Synth::new(SR)), 0x474b_db08_df5f_69a5);
+    assert_ne!(legacy_note_random_scene(&|| Synth::new(SR)), LEGACY_NOTE_RANDOM_SCENE);
 }
 
 /// A chord's notes take their places from the lowest up, whatever order they came in: the same
@@ -316,4 +321,36 @@ fn a_chords_note_random_values_dont_follow_the_order_its_notes_came_in() {
         let peak = up[..k].iter().fold(0.0f32, |m, x| m.max(x.abs()));
         assert!(worst < peak * 1e-4, "{order:?}: {worst} of {peak}");
     }
+}
+
+/// A sine under a sine LFO on its volume: the level ramps a sample at a time, so what's left after
+/// taking out the note itself (a filter that cancels a steady 440 Hz) is the slow swell only, not
+/// a buzz of steps every CONTROL samples
+#[test]
+fn a_volume_lfo_swells_without_steps() {
+    let mut s = Synth::new(SR);
+    set(&mut s, "B on", 0.0);
+    set(&mut s, "Filter type", p::FILTER_OFF as f32);
+    set(&mut s, "LFO 1 mode", 0.0);
+    set(&mut s, "LFO 1 sync", 0.0);
+    set(&mut s, "LFO 1 rate (Hz)", 8.0);
+    set(&mut s, "LFO 1 target 1", 6.0);
+    set(&mut s, "LFO 1 amount 1", 0.9);
+    s.midi(0x90, 69, 100);
+    let mut x = vec![];
+    for i in 0..(SR as usize / BLOCK) {
+        s.process(BLOCK);
+        if i >= 40 {
+            x.extend_from_slice(&s.out[0][..BLOCK]);
+        }
+    }
+    let c = 2.0 * (2.0 * std::f64::consts::PI * 440.0 / SR as f64).cos();
+    let (mut rest, mut all) = (0.0f64, 0.0f64);
+    for n in 2..x.len() {
+        let r = x[n] as f64 - c * x[n - 1] as f64 + x[n - 2] as f64;
+        rest += r * r;
+        all += (x[n] as f64).powi(2);
+    }
+    let db = 10.0 * (rest / all).log10();
+    assert!(db < -60.0, "{db:.1} dB left over");
 }
