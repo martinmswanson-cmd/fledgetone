@@ -13,6 +13,7 @@
  *
  * Plain arrays, so Node can unit-test it.
  */
+import { sincAt } from './resample';
 
 export interface PitchFrame {
   /** Seconds into the sound */
@@ -152,62 +153,176 @@ export function corrections(frames: readonly PitchFrame[], s: TuneSettings): num
   return out;
 }
 
+/** How alike `x` is at `a` and `b` (fractional, read between samples) over `len` samples: normalised correlation. */
+function likeness(x: Float32Array, a: number, b: number, len: number): number {
+  let xy = 0;
+  let xx = 0;
+  let yy = 0;
+  const ia = Math.round(a);
+  const ib = Math.round(b);
+  for (let i = 0; i < len; i++) {
+    const u = ia + i >= 0 && ia + i < x.length ? x[ia + i] : 0;
+    const v = ib + i >= 0 && ib + i < x.length ? x[ib + i] : 0;
+    xy += u * v;
+    xx += u * u;
+    yy += v * v;
+  }
+  return xx > 0 && yy > 0 ? xy / Math.sqrt(xx * yy) : 0;
+}
+
+/**
+ * The phase (radians) of the fundamental of period `period` in `x` around the fractional sample
+ * `at` (two periods, Hann-weighted, read at `at` exactly), and how strong it is there.
+ */
+function fundamentalPhase(x: Float32Array, at: number, period: number): { phase: number; strength: number } | null {
+  const w = (2 * Math.PI) / period;
+  const lo = Math.ceil(at - period);
+  const hi = Math.floor(at + period);
+  if (lo < 0 || hi >= x.length) return null;
+  let re = 0;
+  let im = 0;
+  for (let i = lo; i <= hi; i++) {
+    const t = i - at;
+    const g = x[i] * (0.5 + 0.5 * Math.cos((Math.PI * t) / period));
+    re += g * Math.cos(w * t);
+    im -= g * Math.sin(w * t);
+  }
+  return { phase: Math.atan2(im, re), strength: Math.hypot(re, im) };
+}
+
+/** An analysis mark: a point of the sound (fractional samples) and the period there (UNVOICED marks: none). */
+interface Mark {
+  at: number;
+  period: number;
+  voiced: boolean;
+}
+
+/**
+ * Where the cycles of `x` are: one mark per cycle where voiced, each a period after the last (the
+ * period measured there by how the waveform repeats, to a fraction of a sample, so every slice is
+ * one true cycle on from the one before), every 5 ms elsewhere.
+ */
+export function pitchMarks(x: Float32Array, sampleRate: number, frames: readonly PitchFrame[]): Mark[] {
+  const n = x.length;
+  const frameAt = (t: number) => Math.max(0, Math.min(frames.length - 1, Math.round((t / sampleRate - (frames[0]?.time ?? 0)) / HOP_SECONDS)));
+  const unvoiced = Math.round(0.005 * sampleRate);
+  const marks: Mark[] = [];
+  let t = 0;
+  while (t < n) {
+    const f = frames[frameAt(t)];
+    if (!f || f.hz <= 0) {
+      marks.push({ at: t, period: unvoiced, voiced: false });
+      t += unvoiced;
+      continue;
+    }
+    let period = sampleRate / f.hz;
+    const last = marks[marks.length - 1];
+    if (!last || !last.voiced) {
+      // A voiced stretch starts: on the strongest sample of its first cycle
+      let best = Math.floor(t);
+      let bestV = -Infinity;
+      for (let i = Math.floor(t); i < Math.min(n, t + period); i++) {
+        if (Math.abs(x[i]) > bestV) {
+          bestV = Math.abs(x[i]);
+          best = i;
+        }
+      }
+      marks.push({ at: best, period, voiced: true });
+      t = best + period;
+      continue;
+    }
+    // A cycle on: the lag (near the tracked period) at which the waveform repeats best, between samples
+    const len = 2 * Math.round(period);
+    const reach = Math.max(2, Math.round(period * 0.03));
+    const base = Math.round(period);
+    let bestLag = base;
+    let bestScore = -Infinity;
+    const scores: number[] = [];
+    for (let d = -reach; d <= reach; d++) {
+      const score = likeness(x, last.at, last.at + base + d, len);
+      scores.push(score);
+      if (score > bestScore) {
+        bestScore = score;
+        bestLag = base + d;
+      }
+    }
+    const k = bestLag - base + reach;
+    if (bestScore > 0.5 && k > 0 && k < scores.length - 1) {
+      const [p, q, r] = [scores[k - 1], scores[k], scores[k + 1]];
+      const denom = p - 2 * q + r;
+      period = bestLag + (denom < 0 ? (0.5 * (p - r)) / denom : 0);
+      // Finer: the fundamental's phase a cycle on should be what it was (a waveform's sharp edges
+      // pull the correlation's peak a little; the fundamental's phase doesn't)
+      const here = fundamentalPhase(x, last.at, period);
+      const there = fundamentalPhase(x, last.at + period, period);
+      if (here && there && there.strength > 0.3 * here.strength && here.strength > 0.3 * there.strength) {
+        let d = there.phase - here.phase;
+        d -= 2 * Math.PI * Math.round(d / (2 * Math.PI));
+        const shift = (d / (2 * Math.PI)) * period;
+        if (Math.abs(shift) < 0.25 * reach + 0.5) period -= shift;
+      }
+    }
+    marks.push({ at: last.at + period, period, voiced: true });
+    t = last.at + 2 * period;
+  }
+  // Each measured period has a little error (a few hundredths of a sample) of its own: over a run
+  // of cycles, average it out (over 7), and lay the marks along the averaged periods
+  for (let a = 0; a < marks.length; ) {
+    if (!marks[a].voiced) {
+      a++;
+      continue;
+    }
+    let b = a;
+    while (b < marks.length && marks[b].voiced) b++;
+    const raw = marks.slice(a, b).map((mk) => mk.period);
+    for (let j = a + 1; j < b; j++) {
+      let sum = 0;
+      let count = 0;
+      for (let q = Math.max(a + 1, j - 3); q <= Math.min(b - 1, j + 3); q++) {
+        sum += raw[q - a];
+        count++;
+      }
+      marks[j].period = sum / count;
+      marks[j].at = marks[j - 1].at + marks[j].period;
+    }
+    if (b - a > 1) marks[a].period = marks[a + 1].period;
+    a = b;
+  }
+  return marks;
+}
+
 /**
  * Sing `x` again with the pitch moved by `shift` semitones (one value per frame of `frames`),
- * keeping its timing (TD-PSOLA). Unvoiced stretches are copied as they are.
+ * keeping its timing (TD-PSOLA). Unvoiced stretches are copied as they are. Every slice is read
+ * and laid down to a fraction of a sample, so the slices' joins don't scatter noise over the highs.
  */
 export function psola(x: Float32Array, sampleRate: number, frames: readonly PitchFrame[], shift: readonly number[]): Float32Array {
   const n = x.length;
   const out = new Float32Array(n);
   const weight = new Float32Array(n);
   const frameAt = (t: number) => Math.max(0, Math.min(frames.length - 1, Math.round((t / sampleRate - (frames[0]?.time ?? 0)) / HOP_SECONDS)));
-  const UNVOICED = Math.round(0.005 * sampleRate);
-  // Analysis marks: one per cycle where voiced (on the cycle's peak), every 5 ms elsewhere
-  const marks: Array<{ at: number; period: number; exact: number }> = [];
-  let t = 0;
-  while (t < n) {
-    const f = frames[frameAt(t)];
-    if (!f || f.hz <= 0) {
-      marks.push({ at: t, period: UNVOICED, exact: UNVOICED });
-      t += UNVOICED;
-      continue;
-    }
-    const period = Math.round(sampleRate / f.hz);
-    // Settle on the strongest sample within the next cycle, so marks sit on the same point of each wave
-    let best = t;
-    let bestV = -Infinity;
-    const lo = marks.length && marks[marks.length - 1].period !== UNVOICED ? t - Math.round(period * 0.2) : t;
-    for (let i = Math.max(0, lo); i < Math.min(n, t + (marks.length ? Math.round(period * 0.2) : period)); i++) {
-      if (Math.abs(x[i]) > bestV) {
-        bestV = Math.abs(x[i]);
-        best = i;
-      }
-    }
-    if (marks.length && best <= marks[marks.length - 1].at) best = t;
-    marks.push({ at: best, period, exact: sampleRate / f.hz });
-    t = best + period;
-  }
+  const marks = pitchMarks(x, sampleRate, frames);
   // Synthesis: a mark every (period / ratio), each taking the slice of the nearest analysis mark
   let m = 0;
   let s = 0;
   while (s < n) {
     while (m + 1 < marks.length && Math.abs(marks[m + 1].at - s) <= Math.abs(marks[m].at - s)) m++;
     const mark = marks[m];
-    const frame = frameAt(s);
-    const ratio = mark.period === UNVOICED ? 1 : 2 ** ((shift[frame] ?? 0) / 12);
+    const ratio = mark.voiced ? 2 ** ((shift[frameAt(s)] ?? 0) / 12) : 1;
     const p = mark.period;
-    const at = Math.round(s);
-    // A two-period Hann slice around the analysis mark, laid down at s
-    for (let i = -p; i < p; i++) {
-      const src = mark.at + i;
-      const dst = at + i;
-      if (src < 0 || src >= n || dst < 0 || dst >= n) continue;
+    // A two-period Hann slice around the analysis mark, laid down centred on s
+    const offset = mark.at - s;
+    const whole = Number.isInteger(offset);
+    for (let dst = Math.max(0, Math.ceil(s - p)); dst < Math.min(n, s + p); dst++) {
+      const i = dst - s;
       const w = 0.5 + 0.5 * Math.cos((Math.PI * i) / p);
-      out[dst] += x[src] * w;
+      if (w <= 0) continue;
+      const src = dst + offset;
+      const v = whole ? (src >= 0 && src < n ? x[src] : 0) : sincAt(x, src);
+      out[dst] += v * w;
       weight[dst] += w;
     }
-    // (the exact period, not the slice's whole samples, so the new pitch isn't rounded off)
-    s += Math.max(8, mark.exact / ratio);
+    s += Math.max(8, p / ratio);
   }
   // Even out the overlaps (slices laid closer together add up to more)
   for (let i = 0; i < n; i++) out[i] = weight[i] > 1e-3 ? out[i] / weight[i] : out[i];

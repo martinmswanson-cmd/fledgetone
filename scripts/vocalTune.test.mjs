@@ -1,7 +1,22 @@
 // Unit tests for vocal tuning (src/audio/vocalTune.ts). Run with `npm test`.
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-const { detectPitch, nearestNote, corrections, tuneChannels, hzToMidi, CHROMATIC } = await import('../src/audio/vocalTune.ts');
+
+// The app imports its own modules without the .ts extension (Vite resolves them); do the same here
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
+const { detectPitch, nearestNote, corrections, tuneChannels, psola, pitchMarks, hzToMidi, CHROMATIC } = await import('../src/audio/vocalTune.ts');
+const { inharmonic, saw } = await import('./audio-check/fidelity.mjs');
 
 const SR = 44100;
 /** A voice-like tone: a few harmonics falling off, at `hz` (or a function of time). */
@@ -64,4 +79,33 @@ test('a gliding voice snaps to the notes of the scale with speed 0', () => {
     return [69, 71, 72].some((n) => Math.abs(m - n) < 0.15);
   }).length;
   assert.ok(onNote / tuned.length > 0.8, `${onNote} of ${tuned.length} frames on a note`);
+});
+
+test('the cycles are found to a fraction of a sample, one true period apart', () => {
+  const hz = 220 * 2 ** (2 / 12);
+  const x = saw([hz], 1.5, SR);
+  const marks = pitchMarks(x, SR, detectPitch(x, SR)).filter((m) => m.voiced);
+  assert.ok(marks.length > 200);
+  const period = SR / hz;
+  const errors = marks.slice(20, -20).map((m) => Math.abs(m.period - period));
+  assert.ok(Math.max(...errors) < 0.1, `periods up to ${Math.max(...errors).toFixed(3)} samples off`);
+  assert.ok(errors.reduce((a, b) => a + b, 0) / errors.length < 0.02, 'periods off on average');
+});
+
+test('tuning keeps the sound clean: nothing new between the harmonics, the highs as clean as the lows', () => {
+  // A saw sung 30 cents flat, pulled onto A3, and saws moved 2 semitones up and down
+  const flat = saw([220 * 2 ** (-0.3 / 12)], 3, SR);
+  const { channels } = tuneChannels([flat], SR, { root: 9, steps: [0, 2, 4, 5, 7, 9, 11], strength: 1, speed: 0 });
+  const tuned = inharmonic(channels[0], SR, [220]);
+  assert.ok(tuned.all < -40, `30 cents: ${tuned.all.toFixed(1)} dB between the harmonics`);
+  assert.ok(tuned.noise48 < tuned.harm48 - 30 && tuned.noise816 < tuned.harm816 - 30, `30 cents, highs: 4-8 kHz ${tuned.noise48.toFixed(1)} / ${tuned.harm48.toFixed(1)}, 8-16 kHz ${tuned.noise816.toFixed(1)} / ${tuned.harm816.toFixed(1)}`);
+  for (const st of [2, -2]) {
+    const x = saw([220 * 2 ** (-st / 12)], 3, SR);
+    const frames = detectPitch(x, SR);
+    const out = psola(x, SR, frames, frames.map((f) => (f.hz > 0 ? st : 0)));
+    const m = inharmonic(out, SR, [220]);
+    assert.ok(m.all < -40, `${st} st: ${m.all.toFixed(1)} dB`);
+    assert.ok(m.noise816 < m.harm816 - 30, `${st} st, 8-16 kHz: ${m.noise816.toFixed(1)} / ${m.harm816.toFixed(1)}`);
+    assert.equal(out.length, x.length);
+  }
 });

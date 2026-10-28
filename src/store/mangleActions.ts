@@ -11,7 +11,8 @@ import { audioSourceSeconds, stretchRatio } from './audioClips';
 import { tempoAt } from '../audio/tempoMap';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/wavFile';
-import { bakeEnvelope, GATE_PATTERNS, lengthFactor, mangle, mangleLabel, type MangleOp } from '../audio/mangle';
+import { bakeEnvelope, GATE_PATTERNS, lengthFactor, mangleLabel, type MangleOp } from '../audio/mangle';
+import { runDsp } from '../audio/dspRun';
 
 /** The rate mangled copies are made at. */
 const RATE = 44100;
@@ -66,7 +67,8 @@ export async function mangleClip(clipId: string, req: MangleRequest): Promise<st
     RATE
   );
   const op = mangleOp(req, bpm, stretchRatio(audio, bpm), RATE);
-  const out = mangle(input, op, RATE);
+  // (In a Worker: a stretch, pitch or formant shift of a long take is a few seconds of work)
+  const out = await runDsp({ kind: 'mangle', op }, input, RATE);
   const label = mangleLabel(op);
   const base = (useSoundLibrary.getState().metas[audio.soundId]?.name ?? clip.name).replace(/\.[a-z0-9]+$/i, '').replace(/ \(mangled\)$/, '');
   const sound = await importSoundFile(new Blob([encodeChannels(out, RATE, 24)], { type: 'audio/wav' }), `${base} (mangled).wav`);
@@ -82,7 +84,7 @@ export async function mangleClip(clipId: string, req: MangleRequest): Promise<st
       const next: ClipAudio = { ...c.audio, soundId: sound.id, offset: 0, mangled: { ...kept, steps: [...kept.steps, label].slice(-16) } };
       if (gainDb) next.gain = Math.min(AUDIO_GAIN_MAX, next.gain + gainDb);
       // (These belonged to the old sound: the warp markers and envelope, and where it was reversed, tuned or moved from)
-      for (const k of ['warp', 'envelope', 'reversedFrom', 'tunedFrom', 'shiftedFrom', 'shift'] as const) delete next[k];
+      for (const k of ['warp', 'envelope', 'reversedFrom', 'tunedFrom', 'shiftedFrom', 'shift', 'shiftVersion'] as const) delete next[k];
       return { ...c, lengthBars, audio: next };
     }),
   }));

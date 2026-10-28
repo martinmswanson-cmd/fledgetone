@@ -6,6 +6,7 @@ import { useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
 import { detectKey, NOTE_NAMES } from '../../store/songKey';
 import { hzToMidi, type PitchFrame } from '../../audio/vocalTune';
+import { runDsp } from '../../audio/dspRun';
 import { hardTuneChannels, msToSpeed, speedToMs, TUNE_SCALE_NAMES, TUNE_SCALES, type TuneScale } from '../../audio/hardTune';
 import { useUiStore } from '../../store/uiStore';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../../audio/soundLibrary';
@@ -103,7 +104,7 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
     try {
       // The whole recording, so the clip keeps its place in it
       const all = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c));
-      const tuned = hardTuneChannels(all, RATE, settings).channels;
+      const tuned = await runDsp({ kind: 'tune', settings }, all, RATE);
       const name = `${(meta?.name ?? clip.name).replace(/\.[a-z0-9]+$/i, '')} (tuned).wav`;
       const sound = await importSoundFile(new Blob([encodeChannels(tuned, RATE, 24)], { type: 'audio/wav' }), name);
       useTimelineStore.getState().setClipAudio(clip.id, { soundId: sound.id, tunedFrom: original }, true);

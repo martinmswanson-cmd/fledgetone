@@ -1,41 +1,26 @@
 /**
  * Re-pitching a recording without changing its length, for moving a sample into the song's key:
- * time-stretch it (timeStretch.ts, same pitch) by the pitch ratio, then read the stretched copy
- * back at that ratio, which puts the length back and moves the pitch. Plain arrays, so Node can
- * unit-test it.
+ * time-stretch it (timeStretch.ts, same pitch; the phase vocoder for anything tonal, so a chord
+ * stays a clean chord) by the pitch ratio, then read the stretched copy back at that ratio through
+ * a band-limited resampler (resample.ts), which puts the length back and moves the pitch without
+ * aliasing. Plain arrays, so Node can unit-test it.
  */
-import { stretchChannels } from './timeStretch';
-
-/** Cubic (Catmull-Rom) read of `x` at the fractional index `t`. */
-function cubicAt(x: Float32Array, t: number): number {
-  const i = Math.floor(t);
-  const f = t - i;
-  const at = (k: number) => x[Math.max(0, Math.min(x.length - 1, k))];
-  const p0 = at(i - 1);
-  const p1 = at(i);
-  const p2 = at(i + 1);
-  const p3 = at(i + 2);
-  return p1 + 0.5 * f * (p2 - p0 + f * (2 * p0 - 5 * p1 + 4 * p2 - p3 + f * (3 * (p1 - p2) + p3 - p0)));
-}
+import { stretchChannels, type StretchAnalysis } from './timeStretch';
+import { resample } from './resample';
 
 /**
  * `input` (one array per channel) moved `semitones` up (or down, negative), as long as it was.
  * Fractions of a semitone work too (a sample 20 cents flat moves +0.2).
  */
-export function pitchShiftChannels(input: readonly Float32Array[], semitones: number, sampleRate: number): Float32Array[] {
+export function pitchShiftChannels(input: readonly Float32Array[], semitones: number, sampleRate: number, analysis?: StretchAnalysis): Float32Array[] {
   const length = input[0]?.length ?? 0;
   if (!length || Math.abs(semitones) < 1e-4) return input.map((ch) => ch.slice());
   const ratio = 2 ** (semitones / 12);
   // `ratio` times as long at the same pitch (stretchChannels plays 1/ratio times as fast)...
-  const long = stretchChannels(input, 1 / ratio, sampleRate);
-  // ...then read `ratio` times as fast: the original length, `ratio` times the pitch. Reading
-  // faster folds anything over the new Nyquist back down, so take it off first
-  return long.map((ch) => {
-    const src = ratio > 1 ? lowpass(ch, (0.45 * sampleRate) / ratio, sampleRate) : ch;
-    const out = new Float32Array(length);
-    for (let i = 0; i < length; i++) out[i] = cubicAt(src, i * ratio);
-    return out;
-  });
+  const long = stretchChannels(input, 1 / ratio, sampleRate, analysis);
+  // ...then read `ratio` times as fast: the original length, `ratio` times the pitch (the
+  // resampler takes off what would fold over the new Nyquist)
+  return long.map((ch) => resample(ch, ratio, length));
 }
 
 /** A 4th-order (two biquads) Butterworth low-pass at `hz`, run forwards. */

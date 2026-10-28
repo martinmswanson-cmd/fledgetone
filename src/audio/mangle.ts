@@ -9,6 +9,7 @@
  */
 import { lowpass, pitchShiftChannels } from './pitchShift';
 import { stretchChannels } from './timeStretch';
+import { formantShiftChannels } from './formantShift';
 import { detectPeriod, monoOf } from './plugins/userTable';
 import { envelopeDbAt } from '../store/audioClips';
 import { ENVELOPE_DB_MIN, type GainPoint } from '../store/timelineTypes';
@@ -177,35 +178,10 @@ export function crush(input: Channels, bits: number, downsample: number): Channe
 
 /**
  * Formant shift: the sound's resonances (a voice's size) move `semitones` while its pitch and
- * length stay. Pitch-synchronous: grains two periods long, read 2^(semitones/12) times as fast
- * (which moves the resonances), laid down a period apart as they were (which keeps the pitch).
- * The period is the one found in the sound, or 8 ms where nothing repeats clearly.
+ * length stay (formantShift.ts: the spectral outline moved, the harmonics left where they are).
  */
 export function formant(input: Channels, semitones: number, sampleRate: number): Channels {
-  const length = input[0]?.length ?? 0;
-  if (!length || Math.abs(semitones) < 1e-3) return input.map((ch) => ch.slice());
-  const ratio = 2 ** (semitones / 12);
-  const period = detectPeriod(monoOf(input), sampleRate) ?? 0.008 * sampleRate;
-  const half = Math.max(8, Math.round(period));
-  const grain = 2 * half;
-  const win = Float32Array.from({ length: grain }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / grain));
-  return input.map((ch) => {
-    const src = ratio > 1 ? lowpass(ch, (0.45 * sampleRate) / ratio, sampleRate) : ch;
-    const out = new Float32Array(length);
-    const norm = new Float32Array(length);
-    for (let c = -half; c < length; c += half) {
-      for (let i = 0; i < grain; i++) {
-        const at = c + i;
-        if (at < 0 || at >= length) continue;
-        // The grain, centred on c + half, read faster or slower about its centre
-        const t = c + half + (i - half) * ratio;
-        out[at] += cubicAt(src, t) * win[i];
-        norm[at] += win[i];
-      }
-    }
-    for (let i = 0; i < length; i++) if (norm[i] > 1e-3) out[i] /= norm[i];
-    return out;
-  });
+  return formantShiftChannels(input, semitones, sampleRate, detectPeriod(monoOf(input), sampleRate));
 }
 
 /**

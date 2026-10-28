@@ -986,6 +986,8 @@ export interface ClipAudio {
   shiftedFrom?: string;
   /** ...and by how many semitones */
   shift?: number;
+  /** ...by which re-pitch (shiftVersion.ts; absent: the first), so a better one can make it again */
+  shiftVersion?: number;
   /**
    * Mangled (see mangleActions.ts: tape speed, stutter, crush...): the clip plays a new sound made
    * from the stretch it played; `from` is the sound it was made from, `offset` and `bars` where the

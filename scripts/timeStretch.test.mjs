@@ -1,7 +1,25 @@
-// Unit tests for time-stretching (src/audio/timeStretch.ts). Run with `npm test`.
+// Unit tests for time-stretching (src/audio/timeStretch.ts, the phase vocoder in
+// src/audio/phaseVocoder.ts and the harmonic-percussive split it works on). Run with `npm test`.
+import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-const { stretchChannels } = await import('../src/audio/timeStretch.ts');
+
+// The app imports its own modules without the .ts extension (Vite resolves them); do the same here
+register(
+  'data:text/javascript,' +
+    encodeURIComponent(`export async function resolve(specifier, context, next) {
+  try {
+    return await next(specifier, context);
+  } catch (err) {
+    if (/^\\.\\.?\\//.test(specifier) && !/\\.[cm]?[jt]s$/.test(specifier)) return next(specifier + '.ts', context);
+    throw err;
+  }
+}`)
+);
+const { stretchChannels, wsolaChannels, warpChannels, analyseForStretch, PERCUSSIVE_SHARE } = await import('../src/audio/timeStretch.ts');
+const { vocode, vocoderSize } = await import('../src/audio/phaseVocoder.ts');
+const { inharmonic, saw, AMAJ } = await import('./audio-check/fidelity.mjs');
+const { testVoice } = await import('./audio-check/testVoice.mjs');
 
 const SR = 44100;
 const sine = (hz, seconds, amp = 0.5) => Float32Array.from({ length: Math.round(seconds * SR) }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / SR));
@@ -23,6 +41,45 @@ function pitch(x) {
 }
 const rms = (x, a, b) => Math.sqrt(x.slice(a, b).reduce((s, v) => s + v * v, 0) / (b - a));
 
+/** A drum loop: kicks, snares (noise and a tone) and hats, 120 BPM. Seeded. */
+function drums(seconds) {
+  let seed = 12345;
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) >>> 0;
+    return (seed / 4294967296) * 2 - 1;
+  };
+  const n = Math.round(seconds * SR);
+  const x = new Float32Array(n);
+  const beat = 0.5 * SR;
+  const add = (at, fn, len) => {
+    for (let i = 0; i < len && at + i < n; i++) x[at + i] += fn(i);
+  };
+  for (let b = 0; b * beat < n; b++) {
+    const at = Math.round(b * beat);
+    if (b % 2 === 0) {
+      let ph = 0;
+      add(at, (i) => {
+        const t = i / SR;
+        ph += (2 * Math.PI * (50 + 120 * Math.exp(-t * 30))) / SR;
+        return 0.8 * Math.sin(ph) * Math.exp(-t * 8);
+      }, Math.round(0.4 * SR));
+    } else add(at, (i) => 0.5 * rnd() * Math.exp((-i / SR) * 25) + 0.3 * Math.sin((2 * Math.PI * 190 * i) / SR) * Math.exp((-i / SR) * 20), Math.round(0.3 * SR));
+    for (const h of [0, 0.5]) add(Math.round(at + h * beat), (i) => 0.25 * rnd() * Math.exp((-i / SR) * 60), Math.round(0.08 * SR));
+  }
+  return x;
+}
+
+/** Plucked chords (sharp attacks, decaying), every half second. */
+function plucks(seconds) {
+  const x = new Float32Array(Math.round(seconds * SR));
+  for (let k = 0; k * 0.5 < seconds - 0.5; k++) {
+    const c = saw(k % 2 ? [261.63, 329.63, 392] : AMAJ, 0.5, SR);
+    const at = Math.round(k * 0.5 * SR);
+    for (let i = 0; i < c.length && at + i < x.length; i++) x[at + i] += c[i] * Math.exp((-i / SR) * 6) * (i < 30 ? i / 30 : 1);
+  }
+  return x;
+}
+
 test('stretching changes the length, not the pitch', () => {
   const input = sine(440, 2);
   for (const ratio of [0.8, 1.25, 1.5]) {
@@ -42,9 +99,13 @@ test('channels stay together and ratio 1 is a copy', () => {
   const [a, b] = stretchChannels([l, r], 1.2, SR);
   assert.equal(a.length, b.length);
   assert.ok(Math.abs(pitch(b) - 330) < 2);
+  assert.ok(Math.abs(pitch(a) - 220) < 2);
   const [same] = stretchChannels([l], 1, SR);
   assert.deepEqual(same, l);
   assert.notEqual(same, l);
+  // A stereo image stays put: a sound only on the left stays only on the left
+  const [left, right] = stretchChannels([saw(AMAJ, 1.5, SR), new Float32Array(Math.round(1.5 * SR))], 0.8, SR);
+  assert.ok(rms(right, 0, right.length) < 1e-4 * rms(left, 0, left.length));
 });
 
 test('a beat stays on the beat: a click every 0.5 s lands every 0.4 s at ratio 1.25', () => {
@@ -69,4 +130,87 @@ test('a beat stays on the beat: a click every 0.5 s lands every 0.4 s at ratio 1
     for (let i = expect - 1500; i < expect + 1500; i++) if (Math.abs(slow[i]) > peak) { peak = Math.abs(slow[i]); peakAt = i; }
     assert.ok(Math.abs(peakAt - expect) < 0.003 * SR && peak > 0.9, `slow click ${k} at ${(peakAt / SR).toFixed(3)} s, peak ${peak.toFixed(2)}`);
   }
+});
+
+test('drums are heard as drums and stretched exactly as before (WSOLA); tonal sound goes to the phase vocoder', () => {
+  const loop = drums(3);
+  const heard = analyseForStretch([loop], SR);
+  assert.equal(heard.engine, 'wsola');
+  assert.ok(heard.percussive >= PERCUSSIVE_SHARE, `drums percussive ${heard.percussive}`);
+  for (const ratio of [0.8, 1.25]) assert.deepEqual(stretchChannels([loop], ratio, SR), wsolaChannels([loop], ratio, SR));
+  const { samples: voice } = testVoice({ style: 'sung' });
+  for (const [name, x] of [['chord', saw(AMAJ, 2, SR)], ['plucks', plucks(2)], ['sung voice', voice.subarray(0, 4 * SR)]]) {
+    const a = analyseForStretch([x], SR);
+    assert.equal(a.engine, 'vocoder', name);
+    assert.ok(a.percussive < 0.4, `${name} percussive ${a.percussive}`);
+  }
+  // Held chords get the long window (their close partials come apart); a voice's vibrato a short one
+  assert.equal(analyseForStretch([saw(AMAJ, 2, SR)], SR).size, 4 * vocoderSize(SR));
+  const vibrato = saw([220], 2, SR, 0.3, (t, f0) => f0 * 2 ** ((40 / 1200) * Math.sin(2 * Math.PI * 5.5 * t)));
+  assert.ok(analyseForStretch([vibrato], SR).size <= vocoderSize(SR));
+});
+
+test('a stretched chord stays a clean chord: nothing between its partials', () => {
+  const chord = saw(AMAJ, 3, SR);
+  for (const ratio of [0.8, 1.25, 1.5]) {
+    const [out] = stretchChannels([chord], ratio, SR);
+    const m = inharmonic(out, SR, AMAJ);
+    assert.ok(m.all < -45, `ratio ${ratio}: ${m.all.toFixed(1)} dB between the partials`);
+    assert.ok(m.noise816 < m.harm816 - 30, `ratio ${ratio}: 8-16 kHz noise ${m.noise816.toFixed(1)} dB, partials ${m.harm816.toFixed(1)}`);
+  }
+  // A single tone, too, and its level holds steady (no ripple at the window rate)
+  const [tone] = stretchChannels([saw([220], 3, SR)], 1.25, SR);
+  assert.ok(inharmonic(tone, SR, [220]).all < -60);
+  // (Blocks of whole periods, so a steady tone reads steady)
+  const blocks = [];
+  for (let i = Math.floor(tone.length * 0.25); i < tone.length * 0.75; i += 441) blocks.push(20 * Math.log10(rms(tone, i, i + 5 * 200.45)));
+  assert.ok(Math.max(...blocks) - Math.min(...blocks) < 0.3, `level ripple ${(Math.max(...blocks) - Math.min(...blocks)).toFixed(2)} dB`);
+});
+
+test('the attacks in a tonal sound stay on time, sharp, with no echo before them', () => {
+  const x = plucks(3);
+  for (const ratio of [0.8, 1.25]) {
+    const [out] = stretchChannels([x], ratio, SR);
+    for (let k = 1; k < 5; k++) {
+      const expect = Math.round((k * 0.5 * SR) / ratio);
+      const onset = k * 0.5 * SR;
+      // The attack: its peak, and when it first reaches half of it (the envelope over 1 ms)
+      const attack = (y, from) => {
+        const env = [];
+        for (let i = from - 0.003 * SR; i < from + 0.012 * SR; i += 22) env.push(rms(y, Math.round(i), Math.round(i + 44)));
+        const peak = Math.max(...env);
+        return { peak, at: env.findIndex((v) => v >= peak / 2) * 22 };
+      };
+      const got = attack(out, expect);
+      const src = attack(x, onset);
+      assert.ok(got.peak > 0.6 * src.peak, `ratio ${ratio}, attack ${k}: peak ${got.peak.toFixed(2)} of ${src.peak.toFixed(2)}`);
+      assert.ok(Math.abs(got.at - src.at) < 0.002 * SR, `ratio ${ratio}, attack ${k}: ${(((got.at - src.at) / SR) * 1000).toFixed(1)} ms off`);
+      // Before the attack: only the last chord's tail (no echo of the new one smeared ahead of it)
+      const before = rms(out, expect - Math.round(0.03 * SR), expect - Math.round(0.003 * SR));
+      const srcBefore = rms(x, Math.round(k * 0.5 * SR - 0.03 * SR), Math.round(k * 0.5 * SR - 0.003 * SR));
+      assert.ok(before < 2 * srcBefore + 0.003, `ratio ${ratio}, attack ${k}: ${before.toFixed(4)} before it (source ${srcBefore.toFixed(4)})`);
+    }
+  }
+});
+
+test('warping: pieces end to end, each to its length, and the phase vocoder gives the sound back at speed 1', () => {
+  const chord = saw(AMAJ, 5, SR);
+  const pieces = [
+    { from: 0, to: 88200, outFrom: 0, outTo: 110250 },
+    { from: 88200, to: 176400, outFrom: 110250, outTo: 180810 },
+    { from: 176400, to: chord.length, outFrom: 180810, outTo: 180810 + chord.length - 176400 },
+  ];
+  const [out] = warpChannels([chord], pieces, SR);
+  assert.equal(out.length, 180810 + chord.length - 176400);
+  // Each piece clean, the slow one and the fast one (one pass along them all: no seams)
+  assert.ok(inharmonic(out.subarray(0, 110250), SR, AMAJ).all < -45);
+  assert.ok(inharmonic(out.subarray(110250, 180810), SR, AMAJ).all < -45);
+  assert.ok(inharmonic(out.subarray(70000, 150000), SR, AMAJ).all < -45, 'across the seam');
+  const drumsOut = warpChannels([drums(4)], pieces.slice(0, 2), SR);
+  assert.equal(drumsOut[0].length, 180810);
+  // Speed 1 through the vocoder is (all but) the input itself
+  const [same] = vocode([chord], chord.length, { out: [0, chord.length], in: [0, chord.length] }, SR, { size: 16384 });
+  let err = 0;
+  for (let i = 0; i < chord.length; i++) err = Math.max(err, Math.abs(same[i] - chord[i]));
+  assert.ok(err < 1e-3, `speed 1 differs by ${err}`);
 });

@@ -3,6 +3,7 @@ import { defaultTrackFx, pumpFollowsDrums, pumpHears } from './timelineTypes';
 import { isDrumKind, pumpHitOf } from '../audio/instrumentCatalog';
 import { clipHasConditions, contentKey, isConditional } from './noteChance';
 import { isSynthKit, SYNTH_KIT_DESIGNS } from './synthKits';
+import { STRETCH_VERSION } from '../audio/timeStretch';
 import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, type Meter, type MeterPoint, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 
 /**
@@ -15,7 +16,8 @@ import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, type Meter, type M
  *
  * Anything else that went into the render (notes, instrument, inserts, EQ and their automation,
  * tempo, swing, and the kicks a kick-triggered Pump follows; a synthesized kit's sounds, as its
- * key alone once named a recording) is summed up in a fingerprint. Once
+ * key alone once named a recording; the version of the time-stretch, for audio that follows the
+ * tempo) is summed up in a fingerprint. Once
  * it no longer matches, the freeze is out of date: the track plays live again until it's frozen
  * anew. Nothing ever plays stale audio.
  */
@@ -62,6 +64,8 @@ const clipContent = (c: Clip) => ({
   ...(c.expression ? { expression: c.expression } : {}),
   ...(c.stepLanes ? { stepLanes: c.stepLanes } : {}),
   ...(c.takes?.length ? { comp: c.comp, takes: c.takes.map((t) => t.audio ?? null) } : {}),
+  // A clip that follows the tempo is time-stretched: a new stretch (timeStretch.ts) sounds different
+  ...(c.audio?.stretchBpm || c.takes?.some((t) => t.audio?.stretchBpm) ? { stretch: STRETCH_VERSION } : {}),
 });
 
 /** What a freeze is rendered from besides the track itself: the song's tracks, clips, tempo, swing and meter. */
