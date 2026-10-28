@@ -4,6 +4,7 @@ import { RACK_PADS } from '../../store/timelineTypes';
 import { chopSpan, padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
 import { decodeSound } from '../soundLibrary';
 import { alwaysStereo } from '../nativeNodes';
+import { decodePitchedSound } from '../samplers/samplerManager';
 import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../instruments';
 
 /**
@@ -291,7 +292,8 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
       [...new Set((next?.zones ?? []).map((z) => z.soundId))]
         .filter((id) => !buffers.has(id))
         .map((id) =>
-          decodeSound(id, raw.sampleRate).then((b) => {
+          // (at twice the rate: its zones play at other pitches)
+          decodePitchedSound(id, out.context).then((b) => {
             if (!disposed) buffers.set(id, b);
           })
         )

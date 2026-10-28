@@ -6,6 +6,7 @@ second update on the same day gets `-2`, and so on).
 
 ## Unreleased
 
+- **Clearer recorded instruments**: the **Grand Piano** now plays the Concert Grand's recordings (four loudnesses, every note or two) instead of its old muffled ones, at the level songs had, so songs that use it sound brighter and fuller. Every recording plays at twice the detail, so notes stay exactly as recorded and pitched ones keep their top end; notes and recorded drum hits are no longer detuned for variety (their level still varies), which kept the cymbals and bright instruments from dulling. With Expressive playing, notes played hard (0.9 and up) are no longer filtered at all, so basses and low piano notes keep their definition; soft notes still get darker. A Sampler's sound fades in over 1.5 ms so it doesn't click. Existing songs get all of this.
 - **GPL plugins in the web runtime kit**: a song that plays Surge XT, Dragonfly, Plateau or the Tonewheel Organ no longer stops the kit. A small window says what the GPL asks of a game, who made the plugin and how to reach them, and lets you export with it or cancel; the kit then plays it, with its licence and a notice of where its source is. A **GPL** tag marks these plugins in the plugin browser, the Plugins menu and their windows.
 
 ## 2026.10.28-3 — Two tabs, keyboard clips, game states on bar lines and more fixes

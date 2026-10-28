@@ -37,14 +37,15 @@ export function parseSampleName(name: string): { note: string; layer: number; ta
 }
 
 /**
- * The rate one of an instrument's recordings is decoded at for a context at `rate`: twice that for
- * a set marked doubleRate (true), or for a drum kit's rows listed in it; release sounds never.
+ * How many times the rate it plays at a recording is decoded at. Twice: a note played on its own
+ * recording reads every other sample (exactly what was recorded, no interpolation), and one
+ * stretched to another pitch has about 12 dB less of the buffer source's interpolation error.
  */
-export function decodeRateOf(doubleRate: true | readonly string[] | undefined, name: string, rate: number): number {
-  if (!doubleRate) return rate;
-  const { note, release } = parseSampleName(name);
-  if (release) return rate;
-  return doubleRate === true || doubleRate.includes(note) ? 2 * rate : rate;
+export const OVERSAMPLE = 2;
+
+/** The rate an instrument's recordings are decoded at for a context at `rate` (`lowMemory`: at that rate, to save memory). */
+export function decodeRateOf(rate: number, lowMemory = false): number {
+  return lowMemory ? rate : OVERSAMPLE * rate;
 }
 
 /**

@@ -62,8 +62,8 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
   const tops = INSTRUMENTS[key].samples?.layers ?? [1];
   const turns = new Map<string, number>();
   let loaded = false;
-  // (at the rate of the context it plays in: an export at another rate has recordings of its own)
-  const ready = loadSamplesAt(key, raw.sampleRate).then((set) => {
+  // (at the rate of the context it plays in: an export has recordings of its own where the live ones won't do)
+  const ready = loadSamplesAt(key, raw.sampleRate, typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext).then((set) => {
     const rows: Record<string, AudioBuffer[][]> = {};
     for (const [name, b] of Object.entries(set)) {
       const audio = b.get();
@@ -105,13 +105,13 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     const t = notLate(bus.context, time);
     const src = raw.createBufferSource();
     src.buffer = buffer;
-    // No two hits quite alike, as a drummer never strikes the same spot twice: up to ±15 cents
-    // and ±0.8 dB, the same for the same hit every time it plays (a kit with one recording per
-    // drum otherwise sounds like a machine on repeated notes)
-    const tune = 2 ** ((15 * noteJitter(note, time, 31)) / 1200);
-    src.playbackRate.value = (opts.rate ?? 1) * tune;
+    // As recorded: not detuned (that resampled every hit and dulled the cymbals); the takes in
+    // turn and the level below keep a repeated hit from sounding like a machine
+    src.playbackRate.value = opts.rate ?? 1;
     const amp = raw.createGain();
-    // Softer hits are quieter, as on the kits' own velocity curve (about -24 dB at the bottom)
+    // Softer hits are quieter, as on the kits' own velocity curve (about -24 dB at the bottom),
+    // and no two quite alike, as a drummer never strikes the same spot twice: up to ±0.8 dB, the
+    // same for the same hit every time it plays
     amp.gain.value = picked.gain * velocity * velocity * 10 ** ((0.8 * noteJitter(note, time, 37)) / 20);
     // (Its length as recorded: a silent tail cut when it loaded doesn't move a shortened hit's fade)
     const length = Math.min(opts.seconds ?? Infinity, recordedDuration(buffer) / (opts.rate ?? 1));
