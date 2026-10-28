@@ -21,6 +21,7 @@ register(
 
 const { BUILTIN_PROCESSOR_SOURCE, BLOWN_UP, OUTPUT_CEILING } = await import('../src/audio/plugins/processor.ts');
 const { PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalog.ts');
+const { GPL_PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalogGpl.ts');
 const { PARAM_LIMITS, OUTPUT_TRIMS_DB, ownMemoryFor } = await import('../src/audio/plugins/paramLimits.ts');
 
 const sr = 48000;
@@ -47,7 +48,7 @@ const Proc = processorClass();
 /** The same processor with no output ceiling: what the plugins play as they are */
 const Uncapped = processorClass(src.replace(/const CEILING = [^;]+;/, 'const CEILING = Infinity;'));
 const modules = new Map();
-const family = (name) => PLUGIN_FAMILIES.find((f) => f.family === name);
+const family = (name) => [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES].find((f) => f.family === name);
 const moduleOf = (name) => {
   if (!modules.has(name)) modules.set(name, new WebAssembly.Module(fs.readFileSync(new URL(`../public/fledgetone-plugins/${family(name).file}`, import.meta.url))));
   return modules.get(name);
@@ -65,8 +66,8 @@ const make = (fam, name, { Processor = Proc, offline = false, ...opts } = {}) =>
   return { p, ready };
 };
 /** Play `seconds` of it (a tone in, for an effect), notes held from the start; the output's peak and any non-finite sample */
-const play = (p, seconds, { notes = [], input = false } = {}) => {
-  if (notes.length) p.message({ type: 'events', events: notes.map((n) => ({ type: 'wam-midi', time: scope.currentFrame / sr, data: { bytes: [0x90, n, 110] } })) });
+const play = (p, seconds, { notes = [], input = false, velocity = 110 } = {}) => {
+  if (notes.length) p.message({ type: 'events', events: notes.map((n) => ({ type: 'wam-midi', time: scope.currentFrame / sr, data: { bytes: [0x90, n, velocity] } })) });
   let peak = 0;
   let bad = false;
   for (let b = 0; b < (seconds * sr) / 128; b++) {
@@ -269,4 +270,66 @@ test('the Mutable plugins share their instance in a render (made fresh, none del
     assert.ok(r.peak > 1e-4, `${names[i]} plays`);
   });
   assert.ok(new Set(plugins.map((p) => p.e)).size === 1, 'one instance');
+});
+
+/** The loudest sample of one note (velocity 127) over 1.5 s, held for 1 s */
+const notePeak = (fam, name, note, opts = {}) => {
+  const { p } = make(fam, name, { Processor: Uncapped, ...opts });
+  return play(p, 3, { notes: [note], velocity: 127 }).peak;
+};
+const dbfs = (x) => (20 * Math.log10(x)).toFixed(1);
+
+test('the phaser on a narrow notch near the top of its range no longer rings up or blows up', () => {
+  const { ready } = make('faust', 'Phaser', { limits: null });
+  const at = (name) => ready.params.findIndex((x) => x.name.startsWith(name));
+  // Narrow notch, notches as high and as far apart as they go, feedback near the top, a tone at
+  // -12 dBFS in: +25 to +60 dBFS before (now under +6, its resonance on the tone)
+  for (const feedback of [0.8, 0.95]) {
+    const values = ready.defaults.slice();
+    values[at('Notch width')] = 0;
+    values[at('Min notch1')] = 1;
+    values[at('Max notch1')] = 1;
+    values[at('Notch freq ratio')] = 1;
+    values[at('Feedback gain')] = feedback;
+    values[at('Speed')] = 0.161;
+    const r = play(make('faust', 'Phaser', { values, Processor: Uncapped }).p, 3, { input: true });
+    assert.ok(!r.bad && r.peak < 2, `feedback ${feedback}: ${dbfs(r.peak)} dBFS`);
+    assert.ok(!sent.some((m) => m.type === 'fault'), `feedback ${feedback} blew up`);
+  }
+});
+
+test('Modal Voice bowed hard into strings with full damping plays its notes instead of blowing up', () => {
+  const { ready } = make('mutable', 'Modal Voice', { limits: null });
+  const values = ready.defaults.slice();
+  values[ready.params.findIndex((x) => x.name === 'Bow')] = 1;
+  values[ready.params.findIndex((x) => x.name === 'Damping')] = 1;
+  values[ready.params.findIndex((x) => x.name === 'Resonator')] = 1;
+  for (const note of [36, 60, 84]) {
+    const { p } = make('mutable', 'Modal Voice', { values });
+    const r = play(p, 2, { notes: [note] });
+    assert.ok(!r.bad && r.peak > 1e-3, `${note} plays`);
+    assert.ok(!sent.some((m) => m.type === 'fault'), `${note} blew up`);
+  }
+});
+
+test('the hottest presets and keys found play under -1 dBFS now, the plugins only quieter', () => {
+  const ceiling = 10 ** (-1 / 20);
+  for (const [fam, name, program, note, before] of [
+    ['mutable', 'Ominous Drone', 3, 48, 13.7],
+    ['mda', 'EPiano', 1, 84, 9.1],
+    ['setbfree', 'Tonewheel Organ', 10, 72, 10.4],
+    ['mutable', 'Analog Snare', -1, 96, 5.5],
+    ['mutable', 'Modal Voice', 4, 84, 2.4],
+  ]) {
+    const opts = program >= 0 ? { program } : {};
+    const peak = notePeak(fam, name, note, opts);
+    assert.ok(peak < ceiling, `${name} ${note}: ${dbfs(peak)} dBFS (was +${before})`);
+  }
+  // A trim is the same sound, only quieter
+  const trim = 10 ** (OUTPUT_TRIMS_DB['builtin:mda/EPiano'] / 20);
+  const at = scope.currentFrame;
+  const trimmed = samples(make('mda', 'EPiano', { program: 1, Processor: Uncapped }).p, 0.5, { notes: [84] });
+  scope.currentFrame = at;
+  const plain = samples(make('mda', 'EPiano', { program: 1, outputGain: 1, Processor: Uncapped }).p, 0.5, { notes: [84] });
+  assert.ok(trimmed.every((ch, b) => ch.every((v, i) => Math.abs(v - plain[b][i] * trim) < 1e-6)));
 });

@@ -23,10 +23,26 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
   // Output level -70 to +12 dB (of -70 to +40 dB)
   'builtin:faust/Studio Hall': { Level: [0, 0.7455] },
   'builtin:faust/Plate Reverb': { Level: [0, 0.7455] },
-  // Feedback -0.9 to +0.9 (of -1 to +1)
-  'builtin:faust/Phaser': { 'Feedback gain': [0.05, 0.95] },
+  // Feedback -0.9 to +0.9 (of -1 to +1); notches no higher than 2885 Hz (Max, of 10000) and 2879 Hz
+  // (Min, of 5000) a ratio of at most 1.68 apart (of 4): its four notches' top one stays under
+  // 14 kHz. Past that the top notches went over half the sample rate, and with any feedback the
+  // phaser rang up to +32 dBFS, or blew up (+60), on a plain tone
+  'builtin:faust/Phaser': {
+    'Feedback gain': [0.05, 0.95],
+    'Min notch1 freq': [0, 0.9],
+    'Max notch1 freq': [0, 0.8],
+    'Notch freq ratio: notch freq(n+1)/Notch freq(n)': [0, 0.2],
+  },
   // Output -60 to +12 dB (of -60 to +60 dB: 0.5 is 0 dB, 60 (2v - 1)^2 dB over it)
   'builtin:mda/Loudness': { Output: [0, 0.7236] },
+  // Damping 0 to 0.9 (its default is 0.4): bowed (0.9 and up) into a string or strings with the
+  // damping from 0.92 it blew up on every note, a moment after it began
+  'builtin:mutable/Modal Voice': { Damping: [0, 0.9] },
+  // Volume 0 to 0.5 (of 1; its presets have 0.45 to 0.8): its "Marimba" droned at +13.7 dBFS
+  // (+17.6 with the volume up), against -7 to +4 for the others (and it's turned down: OUTPUT_TRIMS_DB)
+  'builtin:mutable/Ominous Drone': { Volume: [0, 0.5] },
+  // Volume to +4.8 dB (of +12; its presets have 0 to +11): "Click Bass" at +11 played +12.4 dBFS
+  'builtin:setbfree/Tonewheel Organ': { Volume: [0, 0.66] },
 };
 
 /**
@@ -53,11 +69,24 @@ export const ownMemoryFor = (family: string, offline: boolean): { ownMemory: boo
 
 /**
  * Built-in plugins turned down as a whole (dB), by address: ones whose loudest notes stood far
- * over the rest. Faust's piano model plays E6 at +5.7 dBFS, 10 dB over the notes either side
+ * over the rest, or over -1 dBFS (each measured at velocity 127 over the keyboard, every preset).
+ * Faust's piano model plays E6 at +5.7 dBFS, 10 dB over the notes either side
  * (G#6 next at -0.9, most notes -5 to -12), at any velocity (its velocity hardly changes its
  * level, so a trim of the hot notes' velocity can't level them); turned down so its loudest note
  * stays under -1 dBFS.
  */
 export const OUTPUT_TRIMS_DB: Readonly<Record<string, number>> = {
   'builtin:faust/Piano Model': -7,
+  // Single notes up to +12.4 dBFS held ("Click Bass" C5, its volume now limited), the other
+  // presets' up to +5.5 (most +3 or under): none over -1 now
+  'builtin:setbfree/Tonewheel Organ': -8,
+  // Its "Marimba" up to +5.5 dBFS at the volume's limit (its default "Breathy drone" -8.8)
+  'builtin:mutable/Ominous Drone': -7,
+  // Its preset "Bright" plays B5 to A6 at +8 to +9 dBFS, the others up to +2 to +4 (at full
+  // velocity; the hot keys differ preset by preset, so the whole plugin is turned down)
+  'builtin:mda/EPiano': -10.5,
+  // Its higher notes up to +5.5 dBFS (the kick, the hi-hat about -0.2)
+  'builtin:mutable/Analog Snare': -7.5,
+  // Its "Plucked string" and "Marimba" up to +2.4 dBFS
+  'builtin:mutable/Modal Voice': -3.5,
 };
