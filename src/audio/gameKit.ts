@@ -9,7 +9,7 @@ import { ensureSfxRecordings } from './sfx/sfxRecordings';
 import type { GameSfx } from '../store/gameSfx';
 import { applyCostume, type Costume, type StateOptions } from '../store/costumes';
 import { manifestParam, type GameParam } from '../store/gameParams';
-import { songSections } from '../store/cutToLength';
+import { songSections, stateNames } from '../store/cutToLength';
 import { detectKey } from '../store/songKey';
 import { ANY_STATE, bridgeNotes, bridgeTarget, transitionCue } from '../store/transitions';
 import { INSTRUMENTS, isDropKind, isDrumKind } from './instrumentCatalog';
@@ -135,7 +135,9 @@ export async function buildGameKitParts(
   onProgress?: (fraction: number, detail: string) => void,
   sampleRate: SampleRate = 44100,
   /** Leave out each state's whole mix when it has stems (a player that mixes the stems never needs it) */
-  stemsOnly = false
+  stemsOnly = false,
+  /** Aborting stops it (it rejects with the signal's reason): the Game preview closed, say */
+  signal?: AbortSignal
 ): Promise<GameKitParts> {
   const meterMap: MeterMap = { base: song.meter ?? FOUR_FOUR, points: song.meterPoints ?? [] };
   const sections = songSections(song.clips, song.markers, meterMap);
@@ -162,6 +164,7 @@ export async function buildGameKitParts(
   let step = 0;
   let current = '';
   const tick = (detail: string) => {
+    signal?.throwIfAborted();
     current = detail;
     onProgress?.(step++ / steps, detail);
   };
@@ -172,20 +175,17 @@ export async function buildGameKitParts(
   const states: AudioManifest['states'] = [];
   const stateOfMarker = new Map<string, string>();
   const sectionOfMarker = new Map<string, (typeof sections)[number]>();
-  const usedNames = new Set<string>();
-  for (const sec of sections) {
+  const names = stateNames(sections);
+  for (const [i, sec] of sections.entries()) {
     tick(`state ${sec.name}`);
-    // Unique as a file name too: 'Boss/Fight' and 'Boss-Fight' make the same one
-    let name = sec.name;
-    for (let n = 2; usedNames.has(safe(name)); n++) name = `${sec.name} ${n}`;
-    usedNames.add(safe(name));
+    const name = names[i];
     // (Sections start on the 16th grid; a marker a hair off it is still this state's)
     const marker = song.markers.find((m) => m.anchor === 'bar' && Math.abs(m.bar - sec.from) < 1 / 32);
     if (marker) {
       stateOfMarker.set(marker.id, name);
       sectionOfMarker.set(marker.id, sec);
     }
-    const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate };
+    const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate, signal };
     const file = `states/${safe(name)}.wav`;
     const seconds = secondsBetween(sec.from, sec.to, tempo);
     let samples = Math.round(seconds * sampleRate);
@@ -296,7 +296,7 @@ export async function buildGameKitParts(
           continue;
         }
         const file = `transitions/bridge into ${safe(to)}${bars > 1 ? ` (${bars} bars)` : ''}.wav`;
-        const audio = await renderArrangement({ tracks: song.tracks, clips: made.clips, bpm: made.bpm, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: 1, endBar: 1 + made.lengthBars, sampleRate });
+        const audio = await renderArrangement({ tracks: song.tracks, clips: made.clips, bpm: made.bpm, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: 1, endBar: 1 + made.lengthBars, sampleRate, signal });
         const channels = channelsOf(audio);
         files.push({ name: file, data: encodeChannels(channels, audio.sampleRate, 16, [], undefined) });
         bridgeFiles.set(key, { file, bridgeBars: bars, bridgeSeconds: +((made.lengthBars * 240) / made.bpm).toFixed(6) });

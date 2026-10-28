@@ -293,6 +293,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
   audioEncoder.configure({ codec: audio.codec, sampleRate, numberOfChannels: 2, bitrate: 192000 });
 
   // Whatever happens (a failure, a cancel), the encoders and the footage are let go of
+  let footage: HTMLVideoElement | null = null;
   try {
     // The sound, in 0.1 s pieces
     const left = channels[0];
@@ -339,7 +340,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     const logo = await loadImage(fledgetoneLogo);
     const background = grainedBackground(size.w, size.h);
     const total = Math.ceil(seconds * fps);
-    const footage = opts.footage ? await openVideo(opts.footage.url) : null;
+    footage = opts.footage ? await openVideo(opts.footage.url) : null;
     const skinMemory: SkinMemory = {};
 
     const encodeFrame = async (f: number, t: number) => {
@@ -439,10 +440,6 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
 
       await encodeFrame(f, t);
     }
-    if (footage) {
-      footage.removeAttribute('src');
-      footage.load();
-    }
     await videoEncoder.flush();
     await audioEncoder.flush();
     await Promise.all([videoWrites, audioWrites]);
@@ -454,5 +451,9 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     return new Blob([target.buffer!], { type: 'video/mp4' });
   } finally {
     for (const encoder of [videoEncoder, audioEncoder]) if (encoder.state !== 'closed') encoder.close();
+    if (footage) {
+      footage.removeAttribute('src');
+      footage.load();
+    }
   }
 }

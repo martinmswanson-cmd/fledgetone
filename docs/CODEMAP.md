@@ -320,7 +320,7 @@ The in-app user guide, rendered from GUIDE.md.
 | File | What it is |
 |---|---|
 | [`GuidePanel.tsx`](../src/components/guide/GuidePanel.tsx) | The user guide, shown in the app. Its text is GUIDE.md at the repository root, so the same guide reads on GitHub and here. Sections are listed on the left; Esc or the backdrop closes it. Given `markdown` and a `title`, it shows that document instead (What's new: CHANGELOG.md). |
-| [`markdown.tsx`](../src/components/guide/markdown.tsx) | A small Markdown renderer for the in-app guide (GUIDE.md): ## / ### headings, paragraphs, - and 1. lists, \| tables \|, > tips, **bold**, *italic*, `code` and [links](https://...). It builds React elements (no raw HTML), which is all the guide needs without pulling in a Markdown library. |
+| [`markdown.tsx`](../src/components/guide/markdown.tsx) | A small Markdown renderer for the in-app guide (GUIDE.md): ## / ### headings, paragraphs, - and 1. lists, \| tables \|, > tips, **bold**, *italic*, `code` and [links](https://...) (or #heading). It builds React elements (no raw HTML), which is all the guide needs without pulling in a Markdown library. |
 
 ## src/components/inspector/
 

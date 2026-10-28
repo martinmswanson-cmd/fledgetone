@@ -46,3 +46,16 @@ test('every lesson in learn/ builds, in order, with a unique address', async () 
   assert.deepEqual(all.map((l) => l.n), all.map((_, i) => i + 1));
   assert.equal(new Set(all.map((l) => l.slug)).size, all.length);
 });
+
+test("the lessons' links into the guide go to sections and headings it has", async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const { splitSections, slug } = await import('./guide-pages.mjs');
+  const sections = splitSections(readFileSync(new URL('../GUIDE.md', import.meta.url), 'utf8'));
+  const ids = new Map(sections.map((s) => [s.id, new Set(s.body.filter((l) => /^###\s/.test(l)).map((l) => slug(l.replace(/^###\s+/, ''))))]));
+  const dir = new URL('../learn/', import.meta.url);
+  for (const f of readdirSync(dir).filter((n) => n.endsWith('.md')))
+    for (const [, section, heading] of readFileSync(new URL(f, dir), 'utf8').matchAll(/\]\(\/guide\/([a-z0-9-]+)\/(?:#([a-z0-9-]+))?\)/g)) {
+      assert.ok(ids.has(section), `${f}: /guide/${section}/`);
+      if (heading) assert.ok(ids.get(section).has(heading), `${f}: /guide/${section}/#${heading}`);
+    }
+});

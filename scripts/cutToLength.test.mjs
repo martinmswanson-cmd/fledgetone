@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { songSections, planCut, exactTempo, songEnd } = await import('../src/store/cutToLength.ts');
+const { songSections, planCut, exactTempo, songEnd, stateNames } = await import('../src/store/cutToLength.ts');
 
 const note = (startOffset) => ({ id: 'n' + startOffset, note: 'C4', startOffset, duration: '8n', velocity: 0.8 });
 const clip = (startBar, lengthBars, perBar) => ({
@@ -66,4 +66,12 @@ test('exact tempo only within the nudge', () => {
   assert.equal(exactTempo(16, 30, 128), 128);
   assert.equal(exactTempo(16, 31, 128), 123.87);
   assert.equal(exactTempo(16, 40, 128), null);
+});
+
+test('state names: a song without markers has phrase states, and names that make one file name are told apart', () => {
+  const clip = { id: 'c', trackId: 't', name: '', startBar: 1, lengthBars: 16, notes: [], isSelected: false };
+  assert.deepEqual(stateNames(songSections([clip], [])), ['Bars 1-8', 'Bars 9-16']);
+  // A lone marker at bar 1 doesn't make sections of its own
+  assert.deepEqual(stateNames(songSections([clip], [{ id: 'm', name: 'Explore', bar: 1, anchor: 'bar' }])), ['Bars 1-8', 'Bars 9-16']);
+  assert.deepEqual(stateNames([{ name: 'Boss/Fight' }, { name: 'Boss-Fight' }, { name: 'Calm' }]), ['Boss/Fight', 'Boss-Fight 2', 'Calm']);
 });

@@ -29,7 +29,7 @@ import {
   stemTracks,
 } from '../../audio/exportWav';
 import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb } from '../../audio/loudness';
-import { exportCeilingDbtp } from '../../audio/effects/limiter';
+import { exportCeilingDbtp, limitInPlace } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
 import { LOUD_TARGETS, loudCrunch, pushToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
 import type { MasterStats } from '../../audio/effects/masterAfter';
@@ -475,6 +475,10 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         if (footage && keepVideoSound) {
           setStatus({ kind: 'rendering', fileName, progress: 0.3, detail: "Reading the video's sound" });
           await mixVideoSound(refVideo!.file, channels, audio.sampleRate, footage.offset);
+          // The video's sound on top can push the peaks past the ceiling: hold them under it, and
+          // tell the loudness of what's in the file
+          limitInPlace(channels, audio.sampleRate, ceilingDbtp);
+          reading = await measureLoudness(channels, audio.sampleRate, controller.signal);
         }
         // Showcase: the notes of the range, timed by the song's tempo map
         const showcase = !footage && settings.picture === 'showcase' ? showcaseData(tracks, clips, opts.startBar, opts.endBar, (bar) => barToSeconds(bar, tempo)) : undefined;

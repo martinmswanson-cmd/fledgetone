@@ -4,6 +4,8 @@ import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLic
 import { embedSounds } from './soundLibrary';
 import { referencedSoundIds } from '../store/audioClips';
 import { serializeProject, type ProjectSnapshot } from '../store/project';
+import { songSections, stateNames } from '../store/cutToLength';
+import { FOUR_FOUR } from './tempoMap';
 
 /**
  * The web runtime kit: for a web game where download size matters, the song as its project file
@@ -21,7 +23,8 @@ export async function buildRuntimeKit(project: ProjectSnapshot): Promise<Blob> {
   const sounds = await embedSounds(referencedSoundIds(project));
   const songFile = `${safe(project.name)}.json`;
   const song = JSON.stringify(serializeProject({ ...project, sounds }));
-  const states = (project.markers ?? []).filter((m) => m.anchor === 'bar').map((m) => m.name);
+  // The states as the player will name them (a song without markers has 8-bar ones, "Bars 1-8"...)
+  const states = stateNames(songSections(project.clips, project.markers ?? [], { base: project.meter ?? FOUR_FOUR, points: project.meterPoints ?? [] }));
   const first = states[0] ?? 'Start';
   const second = states[1] ?? first;
   const sting = project.stingers?.[0]?.name;

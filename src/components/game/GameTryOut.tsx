@@ -126,6 +126,8 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
   // Render the music the way the game kit does, and the preview's own sounds
   useEffect(() => {
     let cancelled = false;
+    // Closing the preview or picking another game stops the render (it would carry on unseen)
+    const stop = new AbortController();
     const st = useTimelineStore.getState();
     // (A Play still waiting for sounds is called off too: it would start under the preview)
     if (st.isPlaying || st.loadingToPlay) st.pause();
@@ -156,7 +158,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
         if (cache?.key === key && cache.buffers.values().next().value?.sampleRate === ctx.sampleRate) ({ manifest, buffers } = cache);
         else {
           // The player mixes the stems, so a state's whole mix isn't made when it has them
-          const parts = await buildGameKitParts(song, (f, d) => !cancelled && setProgress(`Rendering the music (${d}, ${Math.round(f * 100)}%).`), 44100, true);
+          const parts = await buildGameKitParts(song, (f, d) => !cancelled && setProgress(`Rendering the music (${d}, ${Math.round(f * 100)}%).`), 44100, true, stop.signal);
           manifest = parts.manifest;
           buffers = new Map<string, AudioBuffer>();
           for (const f of parts.files) buffers.set(f.name, await ctx.decodeAudioData(await f.data.arrayBuffer()));
@@ -185,6 +187,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
     })();
     return () => {
       cancelled = true;
+      stop.abort();
       music.current?.dispose();
       music.current = null;
       musicReady.current = false;

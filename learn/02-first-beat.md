@@ -55,7 +55,7 @@ Straight 8th notes sound stiff to some ears. **Swing** pushes every second note 
 1. In the piano roll's header, open **FEEL** (it says **Song's swing**) and choose **Swing 8ths: shuffle**. The hats now lope instead of tick.
 2. Try **Swing 8ths: light** and **Straight** too, and keep the one you like.
 
-FEEL is this clip's own swing. The **SWING** slider in the header (20% in a new project) swings the whole song, but only the off-beat 16ths, so it doesn't change 8th-note hats at all: you'll hear it on the house beat below. **GROOVE…** beside FEEL goes further, with a swing for each drum (see [the piano roll](/guide/writing-notes-the-piano-roll/) and [Tempo, swing and master volume](/guide/mixing-and-effects/#tempo-swing-and-master-volume)).
+FEEL is this clip's own swing. The **SWING** slider in the header (20% in a new project) swings the whole song, but only the off-beat 16ths, so it doesn't change 8th-note hats at all: you'll hear it on the house beat below. **GROOVE…** beside FEEL goes further, with a swing for each drum (see [the piano roll](/guide/writing-notes-the-piano-roll/) and [Tempo, swing and listening volume](/guide/mixing-and-effects/#tempo-swing-and-listening-volume)).
 
 ### Try a house beat
 

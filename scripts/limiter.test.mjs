@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { createLimiterKernel, limitChannels, LIMITER_CEILING_DBTP, LIMITER_WORKLET_SOURCE, LOSSY_CEILING_DBTP, exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
+const { createLimiterKernel, limitChannels, limitInPlace, LIMITER_CEILING_DBTP, LIMITER_WORKLET_SOURCE, LOSSY_CEILING_DBTP, exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
 const { truePeakOf, measureLoudness } = await import('../src/audio/loudness.ts');
 const { reachTarget, targetById, MAX_LIMITING_DB } = await import('../src/audio/loudnessTarget.ts');
 const SR = 48000;
@@ -174,4 +174,21 @@ test('MP3, Ogg and video exports aim lower than WAV (encoding overshoots), on a 
     limitChannels(al, ar, SR, LOSSY_CEILING_DBTP);
     assert.ok(truePeakOf([al, ar]) <= lossy, `after the render: ${(20 * Math.log10(truePeakOf([al, ar]))).toFixed(2)} dBTP`);
   }
+});
+
+test('limitInPlace holds a hot mix under the ceiling without moving it in time', () => {
+  const sr = 48000;
+  const n = sr;
+  const quiet = new Float32Array(n);
+  quiet[1000] = 0.25;
+  const copy = [new Float32Array(quiet), new Float32Array(quiet)];
+  limitInPlace(copy, sr, -1);
+  // Under the ceiling: untouched, the click where it was
+  assert.deepEqual([...copy[0]], [...quiet]);
+  // Over it (a mix with a loud sound added on top): peaks held, still lined up
+  const hot = [0, 1].map(() => Float32Array.from({ length: n }, (_, i) => 1.4 * Math.sin((2 * Math.PI * 220 * i) / sr)));
+  const zeroAt = hot[0].findIndex((x, i) => i > 100 && x < 0 && hot[0][i - 1] >= 0);
+  limitInPlace(hot, sr, -1);
+  assert.ok(20 * Math.log10(truePeakOf(hot)) <= -0.9, `peak ${20 * Math.log10(truePeakOf(hot))}`);
+  assert.equal(hot[0].findIndex((x, i) => i > 100 && x < 0 && hot[0][i - 1] >= 0), zeroAt);
 });

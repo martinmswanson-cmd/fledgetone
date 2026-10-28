@@ -85,9 +85,9 @@ var rain = Music.play_sfx("rain")  # loops until rain.stop() or Music.stop_sfx("
 Music.stop()
 ```
 
-To try it: copy `music_example.gd` and `music_example.tscn` next to `AdaptiveMusic.gd` in
-`res://bos_music/`, open the scene, set the Music node's **Music Dir** to your kit's folder, and
-press F6. Keys 1 to 9 switch states, Up and Down change the intensity, Space plays a stinger and
+To try it: copy `music_example.gd` and `music_example.tscn` into the same folder as
+`AdaptiveMusic.gd`, open the scene, set the Music node's **Music Dir** to your kit's folder (it
+starts as `res://music/`), and press F6. Keys 1 to 9 switch states, Up and Down change the intensity, Space plays a stinger and
 A to Z play sound effects.
 
 The player sends music to the **Bus** you choose (and sound effects to **Sfx Bus**). It also has
