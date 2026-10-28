@@ -25,7 +25,7 @@ import { PocketSynth } from './PocketSynth';
 import { isFledgeUrl } from '../audio/plugins/fledgeMacros';
 import { FledgeTourButton } from '../components/FledgeTourButton';
 import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
-import { pill } from './pocketUi';
+import { pill, TouchRange } from './pocketUi';
 import { PocketDropCheck } from './PocketDropCheck';
 import { matchLoudMaster, useMixStudio } from '../audio/mixStudio';
 import { LOUD_TARGETS, POCKET_CRUNCH, styleLoudTarget } from '../audio/effects/loudMaster';
@@ -158,7 +158,7 @@ const Handle: React.FC<{ appRef: React.RefObject<HTMLDivElement | null> }> = ({ 
 const Slider: React.FC<{ label: string; value: number; min: number; max: number; step: number; show: string; onChange: (v: number) => void; color: string }> = ({ label, value, min, max, step, show, onChange, color }) => (
   <label className="grid grid-cols-[64px_minmax(0,1fr)_64px] items-center gap-2.5 text-[13px] text-forge-muted min-h-11">
     <span>{label}</span>
-    <input type="range" aria-label={label} min={min} max={max} step={step} value={value} onPointerDown={() => useTimelineStore.getState().beginEdit()} onChange={(e) => onChange(Number(e.target.value))} className="w-full h-8" style={{ accentColor: color }} />
+    <TouchRange label={label} min={min} max={max} step={step} value={value} onStart={() => useTimelineStore.getState().beginEdit()} onChange={onChange} className="w-full h-8" style={{ accentColor: color }} />
     <span className="font-mono text-xs text-forge-text text-right">{show}</span>
   </label>
 );
@@ -399,14 +399,16 @@ const Body: React.FC<{ track: Track; sec: PocketSection; tool: PocketTool }> = (
   const [keysMode, setKeysMode] = useState<'notes' | 'chords'>('notes');
   const [shift, setShift] = useState(0);
   const how = editorOf(track.instrumentKey, track.plugin);
-  if (tool === 'mix') return <TrackMix track={track} />;
-  if (how === 'vocals') return <div className="pk-scroll"><PocketVocals trackId={track.id} /></div>;
+  // (A track Pocket can't play or draw: its mix, under why)
   if (how === null)
     return (
-      <p className="text-sm text-forge-muted">
-        {INSTRUMENTS[track.instrumentKey]?.name ?? 'This track'} is edited in the studio on a computer. Its level, mute and solo are under Mix.
-      </p>
+      <>
+        <p className="text-sm text-forge-muted shrink-0">{INSTRUMENTS[track.instrumentKey]?.name ?? 'This track'}'s notes and sound are edited in the studio on a computer. Its level, reverb, mute and solo are here.</p>
+        <TrackMix track={track} />
+      </>
     );
+  if (tool === 'mix') return <TrackMix track={track} />;
+  if (how === 'vocals') return <div className="pk-scroll"><PocketVocals trackId={track.id} /></div>;
   if (how === 'drop') return <DropPads track={track} sec={sec} />;
   if (tool === 'sound') {
     if (isRackKey(track.instrumentKey)) return <PocketRack track={track} sec={sec} />;
@@ -454,7 +456,7 @@ export const PocketDrawer: React.FC<{ land: boolean; appRef: React.RefObject<HTM
   return (
     <section className="pk-drawer" style={{ ['--c' as string]: color }} aria-label={mixAll ? 'The mixer' : `${track?.name ?? 'No track'}: its instrument`}>
       {!land && <Handle appRef={appRef} />}
-      <div className="flex items-center gap-2 px-[var(--gx)] pb-2 shrink-0 min-w-0">
+      <div className="flex items-center gap-2 pl-[var(--gx)] pr-[var(--gxr)] pb-2 shrink-0 min-w-0">
         <span className="flex items-center gap-2 font-semibold text-[15px] flex-1 min-w-0 truncate">
           <i className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
           {mixAll ? 'Mixer' : track?.name ?? 'No tracks'}

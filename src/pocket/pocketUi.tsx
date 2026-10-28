@@ -1,9 +1,9 @@
 /**
  * Pocket's small shared pieces: a bottom sheet (a list that slides up over the screen), a card
- * section, the button style, sized for thumbs (at least 44 px), and the chooser of how often a
- * note plays.
+ * section, the button style, sized for thumbs (at least 44 px), the chooser of how often a
+ * note plays, and a slider a scroll can't move.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Check, X } from 'lucide-react';
 import { onBack } from '../native/backButton';
 import { NOTE_CHANCES, chanceIdOf } from '../store/noteChance';
@@ -89,5 +89,71 @@ export const ChanceSheet: React.FC<{ title: string; note: Pick<NoteEvent, 'chanc
         />
       ))}
     </Sheet>
+  );
+};
+
+/**
+ * A slider in a list that scrolls: a finger moves it only by going sideways (or by a tap), so one
+ * scrolling the list up or down past it leaves it alone (a plain range input jumps to wherever the
+ * finger lands). The keyboard works it as usual. `onStart`: a drag or tap is about to change it.
+ */
+export const TouchRange: React.FC<{ label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; onStart?: () => void; className?: string; style?: React.CSSProperties }> = ({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  onStart,
+  className = '',
+  style,
+}) => {
+  const input = useRef<HTMLInputElement>(null);
+  const drag = useRef<{ id: number; x: number; y: number; on: boolean } | null>(null);
+  const set = (x: number) => {
+    const r = input.current?.getBoundingClientRect();
+    if (!r) return;
+    // (The thumb's centre runs from about 8 px in at either end)
+    const f = Math.max(0, Math.min(1, (x - r.left - 8) / Math.max(1, r.width - 16)));
+    const v = Math.max(min, Math.min(max, min + Math.round((f * (max - min)) / step) * step));
+    if (v !== value) onChange(v);
+  };
+  return (
+    <span
+      className={`block ${className}`}
+      style={{ touchAction: 'pan-y' }}
+      onPointerDown={(e) => {
+        drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, on: e.pointerType !== 'touch' };
+        if (drag.current.on) {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          onStart?.();
+          set(e.clientX);
+        }
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d || d.id !== e.pointerId) return;
+        if (!d.on) {
+          const dx = Math.abs(e.clientX - d.x);
+          if (dx < 8 || dx < Math.abs(e.clientY - d.y)) return;
+          d.on = true;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          onStart?.();
+        }
+        set(e.clientX);
+      }}
+      onPointerUp={(e) => {
+        const d = drag.current;
+        drag.current = null;
+        // A tap puts it there
+        if (d && !d.on && d.id === e.pointerId) {
+          onStart?.();
+          set(e.clientX);
+        }
+      }}
+      onPointerCancel={() => (drag.current = null)}
+    >
+      <input ref={input} type="range" aria-label={label} min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full h-full pointer-events-none block" style={style} />
+    </span>
   );
 };

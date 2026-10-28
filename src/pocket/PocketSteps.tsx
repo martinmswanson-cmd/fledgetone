@@ -14,6 +14,7 @@ import { showToast } from '../components/timeline/toastStore';
 import { isFledgeUrl } from '../audio/plugins/fledgeMacros';
 import { fledgeMacros, heldBefore, useInstrumentParams } from '../components/timeline/stepTargets';
 import { cellClip } from './pocketSections';
+import { inOneStep } from './pocketCell';
 import type { PocketSection } from './pocketSections';
 import { STEPS_PER_WHOLE } from './pocketGrid';
 
@@ -55,15 +56,22 @@ export const PocketSteps: React.FC<{ track: Track; sec: PocketSection; rw: numbe
     if (e.button !== 0) return;
     e.preventDefault();
     surf.current?.setPointerCapture(e.pointerId);
-    const id = cellClip(track.id, sec, true);
-    if (!id) return;
-    const s = useTimelineStore.getState();
-    const c = s.clips.find((x) => x.id === id);
-    if (!c) return;
-    const have = c.stepLanes?.find((l) => l.target === target);
-    // (A clip holds at most MAX_STEP_LANES lanes: with them all used, there's no room for this one)
-    if (!have && (c.stepLanes?.length ?? 0) >= MAX_STEP_LANES) return showToast(`This clip already has ${MAX_STEP_LANES} step lanes (the most there can be): clear one in the studio first.`);
-    s.checkpoint();
+    // (Making the cell's clip and the drag are one undo step)
+    const begun = inOneStep(() => {
+      const id = cellClip(track.id, sec, true);
+      const c = useTimelineStore.getState().clips.find((x) => x.id === id);
+      if (!id || !c) return null;
+      const have = c.stepLanes?.find((l) => l.target === target);
+      // (A clip holds at most MAX_STEP_LANES lanes: with them all used, there's no room for this one)
+      if (!have && (c.stepLanes?.length ?? 0) >= MAX_STEP_LANES) {
+        showToast(`This clip already has ${MAX_STEP_LANES} step lanes (the most there can be): clear one in the studio first.`);
+        return null;
+      }
+      useTimelineStore.getState().checkpoint();
+      return { id, c, have };
+    });
+    if (!begun) return;
+    const { id, c, have } = begun;
     let current: StepLane = have ?? { id: uid('steps'), target, grid: DEFAULT_STEP_GRID, steps: [] };
     const step = stepBars(current) * STEPS_PER_WHOLE * rw;
     const count = stepValues(current, c.lengthBars).length;

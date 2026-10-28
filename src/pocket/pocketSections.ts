@@ -15,6 +15,8 @@ import { songEnd, songSections } from '../store/cutToLength';
 import { createMarker, retimeMarkers } from '../store/markers';
 import { isMixTrack } from '../store/buses';
 import { canLink, unlinked } from '../store/patterns';
+import { showToast } from '../components/timeline/toastStore';
+import { mergePieces, sectionCopy } from './pocketClips';
 
 const EPS = 1e-6;
 const tl = () => useTimelineStore.getState();
@@ -97,7 +99,8 @@ function pinSections(sections: readonly PocketSection[], start = false): void {
  * The clip a cell edits: the track's one clip spanning the section exactly. Clips across its edges
  * are cut there, and several inside it become one (their notes kept where they play), as one undo
  * step; with nothing there and `create`, an empty clip the section's length. Null for an audio
- * track or an empty cell (without `create`).
+ * track or an empty cell (without `create`), and (saying why) for clips that can't be one clip
+ * as they sound (pocketClips.ts).
  */
 export function cellClip(trackId: string, sec: Pick<PocketSection, 'from' | 'to'>, create: boolean): string | null {
   const s = tl();
@@ -109,41 +112,49 @@ export function cellClip(trackId: string, sec: Pick<PocketSection, 'from' | 'to'
   if (!inside.length) {
     if (!create) return null;
     if (s.clips.some((c) => c.trackId === trackId && c.audio && c.startBar < sec.to - EPS && c.startBar + c.lengthBars > sec.from + EPS)) return null;
-    return s.createEmptyClip(trackId, sec.from, len);
+    // (Without taking the studio's clip selection: a cell isn't chosen there)
+    const chosen = new Set(s.clips.filter((c) => c.isSelected).map((c) => c.id));
+    const id = s.createEmptyClip(trackId, sec.from, len);
+    useTimelineStore.setState((st) => ({
+      clips: st.clips.map((c) => {
+        const want = c.id !== id && chosen.has(c.id);
+        return c.isSelected === want ? c : { ...c, isSelected: want };
+      }),
+    }));
+    return id;
   }
-  return oneStep(() => {
-    const tempo = songTempo(tl());
-    const keep: Clip[] = [];
-    const mids: Clip[] = [];
-    for (const c of inside) {
-      let mid: Clip | null = c;
-      if (mid.startBar < sec.from - EPS) {
-        const halves = splitClipAt(mid, sec.from, tempo);
-        if (halves) {
-          keep.push(halves[0]);
-          mid = halves[1];
-        }
+  const tempo = songTempo(s);
+  const keep: Clip[] = [];
+  const mids: Clip[] = [];
+  for (const c of inside) {
+    let mid: Clip | null = c;
+    if (mid.startBar < sec.from - EPS) {
+      const halves = splitClipAt(mid, sec.from, tempo);
+      if (halves) {
+        keep.push(halves[0]);
+        mid = halves[1];
       }
-      if (mid && mid.startBar + mid.lengthBars > sec.to + EPS) {
-        const halves = splitClipAt(mid, sec.to, tempo);
-        if (halves) {
-          mid = halves[0];
-          keep.push(halves[1]);
-        }
-      }
-      if (mid) mids.push(mid);
     }
-    const first = mids[0];
-    const one = mids.length === 1 && Math.abs(first.startBar - sec.from) < EPS;
-    const merged: Clip = {
-      ...(one ? first : unlinked(first)),
-      id: one ? first.id : uid('clip'),
-      startBar: sec.from,
-      lengthBars: len,
-      isSelected: false,
-      // Each piece's notes, where they play in the section
-      notes: mids.flatMap((m) => m.notes.filter((n) => n.startOffset < m.lengthBars - EPS).map((n) => ({ ...n, id: one ? n.id : uid('note'), startOffset: n.startOffset + m.startBar - sec.from }))),
-    };
+    if (mid && mid.startBar + mid.lengthBars > sec.to + EPS) {
+      const halves = splitClipAt(mid, sec.to, tempo);
+      if (halves) {
+        mid = halves[0];
+        keep.push(halves[1]);
+      }
+    }
+    if (mid) mids.push(mid);
+  }
+  const first = mids[0];
+  const one = mids.length === 1 && Math.abs(first.startBar - sec.from) < EPS;
+  // Each piece's notes and lanes, where they play in the section (or why they can't be one clip)
+  const content = one ? { notes: first.notes.filter((n) => n.startOffset < first.lengthBars - EPS) } : mergePieces(mids, sec.from, () => uid('note'));
+  if (typeof content === 'string') {
+    showToast(content);
+    return null;
+  }
+  const { expression: _e, stepLanes: _l, groove: _g, wobble: _w, takes: _t, comp: _c, ...frame } = unlinked(first);
+  return oneStep(() => {
+    const merged: Clip = { ...(one ? first : frame), ...content, id: one ? first.id : uid('clip'), startBar: sec.from, lengthBars: len, isSelected: false };
     const gone = new Set(inside.map((c) => c.id));
     useTimelineStore.setState((st) => ({ clips: [...st.clips.filter((c) => !gone.has(c.id)), ...keep, merged] }));
     return merged.id;
@@ -170,15 +181,7 @@ function copiesOf(from: number, to: number, shift: number): { copies: Clip[]; li
     const link = whole && canLink(c);
     const pattern = link ? (c.pattern ?? uid('pattern')) : undefined;
     if (link && !c.pattern) linked.set(c.id, pattern!);
-    copies.push({
-      ...part,
-      id: uid('clip'),
-      startBar: part.startBar + shift,
-      isSelected: false,
-      notes: part.notes.map((n) => ({ ...n, id: uid('note') })),
-      ...(link ? { pattern } : {}),
-    });
-    if (!link && copies.at(-1)!.pattern) delete copies.at(-1)!.pattern;
+    copies.push(sectionCopy(part, shift, uid('clip'), link ? pattern : undefined, () => uid('note')));
   }
   return { copies, linked };
 }

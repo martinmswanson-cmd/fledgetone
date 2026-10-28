@@ -11,6 +11,7 @@ import type { Clip, NoteEvent, Track } from '../store/timelineTypes';
 import { detectKey, keyOf, type SongKey } from '../store/songKey';
 import { cellClip, clipsIn, gridTracks, pocketSections, type PocketSection } from './pocketSections';
 import { usePocket } from './pocketStore';
+import { foldSteps } from './pocketClips';
 
 const EPS = 1e-6;
 
@@ -58,16 +59,31 @@ export function sectionNotes(clips: readonly Clip[], trackId: string, sec: Pick<
 }
 
 /**
+ * Run `edit` as one undo step at most: the steps its store actions push (making the cell's clip,
+ * then changing it) fold into the first, the song as it was before.
+ */
+export function inOneStep<T>(edit: () => T): T {
+  const before = useTimelineStore.getState().past;
+  const result = edit();
+  const past = foldSteps(before, useTimelineStore.getState().past);
+  if (past) useTimelineStore.setState({ past });
+  return result;
+}
+
+/**
  * Change the cell's notes: `edit` gets them (relative to the section) and returns the new ones.
  * Makes the cell one clip first when it isn't. `undo`: make this its own undo step (false for the
- * moves of a gesture that checkpointed when it began).
+ * moves of a gesture that checkpointed when it began). Either way, making the clip and the change
+ * are one step.
  */
 export function editCell(trackId: string, sec: Pick<PocketSection, 'from' | 'to'>, edit: (notes: NoteEvent[]) => NoteEvent[], undo = true): void {
-  const id = cellClip(trackId, sec, true);
-  if (!id) return;
-  const s = useTimelineStore.getState();
-  const clip = s.clips.find((c) => c.id === id);
-  if (!clip) return;
-  if (undo) s.checkpoint();
-  s.setClipNotes(id, edit(clip.notes));
+  inOneStep(() => {
+    const id = cellClip(trackId, sec, true);
+    if (!id) return;
+    const s = useTimelineStore.getState();
+    const clip = s.clips.find((c) => c.id === id);
+    if (!clip) return;
+    if (undo) s.checkpoint();
+    s.setClipNotes(id, edit(clip.notes));
+  });
 }

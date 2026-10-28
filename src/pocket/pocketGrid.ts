@@ -1,10 +1,11 @@
 /**
  * Pocket's note maths, as plain functions: how many 16th steps a bar has, how many steps a note
  * covers, note names to MIDI numbers and back, and the notes of the song's key over an
- * instrument's range (the rows of the pads and the piano roll).
+ * instrument's range (the rows of the pads and the piano roll); and the piano roll's notes in
+ * 16ths, and back.
  */
 import type { NoteEvent } from '../store/timelineTypes';
-import { durationToBars } from '../store/timelineTypes';
+import { barsToDuration, durationToBars } from '../store/timelineTypes';
 import { NOTE_NAMES, type SongKey } from '../store/songKey';
 
 /**
@@ -50,3 +51,42 @@ export function scaleRows(key: SongKey, range: readonly [number, number], centre
   for (let m = end; m >= start; m--) if (inKey.has(((m % 12) + 12) % 12)) rows.push(midiToNote(m));
   return rows;
 }
+
+/** A note as the piano roll sees it: its row's pitch, its 16th and its length in 16ths. */
+export interface RollNote {
+  id: string;
+  midi: number;
+  step: number;
+  len: number;
+  velocity: number;
+  /** The note as it was (its name is kept when its pitch doesn't change) */
+  from?: NoteEvent;
+}
+
+const rollOf = (n: NoteEvent): Omit<RollNote, 'id' | 'from'> => ({
+  midi: noteToMidi(n.note) ?? 60,
+  step: Math.round(n.startOffset * STEPS_PER_WHOLE),
+  len: Math.max(1, Math.round(durationToBars(n.duration) * STEPS_PER_WHOLE)),
+  velocity: n.velocity,
+});
+
+/** Notes as the roll draws them: on the nearest 16th, at least a 16th long. */
+export const toRoll = (notes: readonly NoteEvent[]): RollNote[] => notes.map((n) => ({ id: n.id, ...rollOf(n), from: n }));
+
+/**
+ * The roll's notes as notes again. One the roll hasn't moved, stretched or re-pitched is kept
+ * exactly as it was (off the grid, a triplet, a 32nd), so drawing a note doesn't snap the rest.
+ */
+export const fromRoll = (notes: readonly RollNote[]): NoteEvent[] =>
+  notes.map((r) => {
+    const was = r.from && rollOf(r.from);
+    if (r.from && was && was.midi === r.midi && was.step === r.step && was.len === r.len && was.velocity === r.velocity) return { ...r.from, id: r.id };
+    return {
+      ...(r.from ?? {}),
+      id: r.id,
+      note: r.from && noteToMidi(r.from.note) === r.midi ? r.from.note : midiToNote(r.midi),
+      startOffset: r.step / STEPS_PER_WHOLE,
+      duration: barsToDuration(r.len / STEPS_PER_WHOLE),
+      velocity: r.velocity,
+    };
+  });

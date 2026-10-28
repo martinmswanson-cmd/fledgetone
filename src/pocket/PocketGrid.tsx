@@ -27,6 +27,8 @@ export function goToSection(i: number, sections: readonly PocketSection[]): void
   if (!sec) return;
   usePocket.getState().set({ section: i });
   const s = useTimelineStore.getState();
+  // (A jump still waiting from before is dropped: this choice replaces it)
+  pendingJump = null;
   if (!s.loopRegion.enabled) return;
   s.setLoopRange(sec.from, sec.to);
   if (!s.isPlaying) {
@@ -197,6 +199,8 @@ export const PocketGrid: React.FC<{ land: boolean }> = ({ land }) => {
     const tick = () => {
       const s = useTimelineStore.getState();
       if (!s.isPlaying) {
+        // (Stopped before the bar line: the jump is forgotten, so the next Play starts where it shows)
+        pendingJump = null;
         el.querySelectorAll('[data-active]').forEach((c) => c.removeAttribute('data-active'));
         lastRow = -2;
         return;
@@ -259,7 +263,7 @@ export const PocketGrid: React.FC<{ land: boolean }> = ({ land }) => {
 
   return (
     <section className="pk-arr" aria-label="The song: its sections and tracks">
-      <div className="flex items-center gap-1.5 px-[var(--gx)] py-1.5 shrink-0">
+      <div className="flex items-center gap-1.5 pl-[var(--gx)] pr-[var(--gxr)] py-1.5 shrink-0">
         <button
           type="button"
           aria-pressed={songMode}

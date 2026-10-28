@@ -15,7 +15,7 @@ register(
   }
 }`)
 );
-const { stepsPerBar, scaleRows, noteToMidi, midiToNote, noteSteps } = await import('../src/pocket/pocketGrid.ts');
+const { stepsPerBar, scaleRows, noteToMidi, midiToNote, noteSteps, toRoll, fromRoll } = await import('../src/pocket/pocketGrid.ts');
 const { keyOf } = await import('../src/store/songKey.ts');
 
 test('a bar has 16 steps in 4/4 and 12 in 6/8 and 3/4', () => {
@@ -45,4 +45,19 @@ test("the note grid has only the key's notes, two octaves, high to low, in range
   // A narrow range cuts the rows short rather than leaving it
   const bass = scaleRows(keyOf(0, 'major'), [28, 50], 40);
   assert.ok(bass.every((r) => noteToMidi(r) >= 28 && noteToMidi(r) <= 50));
+});
+
+test("the piano roll keeps notes it didn't change exactly as they were (off the grid, triplets, 32nds)", () => {
+  const notes = [
+    { id: 'a', note: 'A2', startOffset: 0.02, duration: '8t', velocity: 0.7 },
+    { id: 'b', note: 'C3', startOffset: 1 / 12, duration: '8t', velocity: 0.7 },
+    { id: 'c', note: 'E3', startOffset: 2 / 12, duration: '32n', velocity: 0.7, chance: 0.5 },
+  ];
+  assert.deepEqual(fromRoll(toRoll(notes)), notes);
+  // One moved: only it lands on the grid
+  const roll = toRoll(notes);
+  roll[0] = { ...roll[0], step: 4 };
+  const out = fromRoll(roll);
+  assert.equal(out[0].startOffset, 0.25);
+  assert.deepEqual(out.slice(1), notes.slice(1));
 });
