@@ -200,6 +200,11 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 ## Recently finished
 
+- **Hotfix** (2026.10.28-2): game intro+loop normalize capped by the intro's true peak too (`sharedGainDb`);
+  plugin output clamped to ±4 after the guard; mda Loudness Output limit; Mutable own memory only in live
+  contexts (`ownMemoryFor`), shared instance in renders (each live own-memory instance is never freed,
+  ~124 per session).
+
 - **Groove feels, glue styles, vocal chops, resampling, whole-app fixes** (2026.10.28): feels measured from
   real tracks (`grooveFeels.ts`, `grooveExtract.ts`, applied per part in scheduler.ts, meter-aware via
   `feelPos`); Glue styles + Group and glue (`glueMix.ts`, `placeBus` keeps folders whole); Vocal Chops
