@@ -140,7 +140,7 @@ export const BeatStoreDialog: React.FC<{ onClose: () => void }> = ({ onClose }) 
           if (tagSound) layTag(preview, audio.sampleRate, tagSound, tagTimes(audio.duration, tagSound[0].length / audio.sampleRate, { atStart: opts.tagAtStart, every: opts.tagEvery }), opts.tagDb);
           // The tag's peaks held under the ceiling too
           limitChannels(preview[0], preview[1] ?? preview[0], audio.sampleRate, ceiling);
-          files.push({ name: `${base} (tagged preview).mp3`, data: await encodeAudio(preview, audio.sampleRate, 'mp3', { bitDepth: 16 }) });
+          files.push({ name: `${base} (tagged preview).mp3`, data: await encodeAudio(preview, audio.sampleRate, 'mp3', { bitDepth: 16, signal: controller.signal }) });
         }
       }
       if (opts.stems) {

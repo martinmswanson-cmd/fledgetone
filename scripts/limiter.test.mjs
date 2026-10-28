@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { createLimiterKernel, limitChannels, limitInPlace, LIMITER_CEILING_DBTP, LIMITER_WORKLET_SOURCE, STEM_LOSSY_CEILING_DBTP, exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
+const { createLimiterKernel, limitChannels, limitInPlace, LIMITER_CEILING_DBTP, LIMITER_WORKLET_SOURCE, exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
 const { truePeakOf, measureLoudness } = await import('../src/audio/loudness.ts');
 const { reachTarget, targetById, MAX_LIMITING_DB } = await import('../src/audio/loudnessTarget.ts');
 const SR = 48000;
@@ -157,22 +157,19 @@ test("an export's limiting after the render matches the worklet's: delayed by it
   assert.ok(tp <= LIMITER_CEILING_DBTP - 0.02, `true peak ${tp.toFixed(3)} dBTP`);
 });
 
-test('every mixdown is limited at -1 dBTP; compressed stems, which are encoded as they are, lower (on a target and after the render alike)', async () => {
+test('every export is limited at -1 dBTP, and the limiter holds a lower ceiling asked for (on a target and after the render alike)', async () => {
   for (const f of ['wav', 'mp3', 'ogg', 'mp4']) assert.equal(exportCeilingDbtp(f), LIMITER_CEILING_DBTP);
-  assert.equal(exportCeilingDbtp('wav', true), LIMITER_CEILING_DBTP);
-  for (const f of ['mp3', 'ogg']) assert.equal(exportCeilingDbtp(f, true), STEM_LOSSY_CEILING_DBTP);
-  // Measured: decoded MP3 files of a dense Club-loud master peaked up to about a dB over what they were given
-  assert.ok(STEM_LOSSY_CEILING_DBTP <= LIMITER_CEILING_DBTP - 0.8);
-  const lossy = 10 ** (STEM_LOSSY_CEILING_DBTP / 20);
+  const LOWER = -2;
+  const lossy = 10 ** (LOWER / 20);
   for (const make of BRIGHT) {
     const l = Float32Array.from({ length: SR * 4 }, (_, i) => 0.3 * make(i));
     const r = l.slice();
     const reading = await measureLoudness([l, r], SR);
-    const got = await reachTarget([l, r], SR, reading, targetById('loud'), undefined, STEM_LOSSY_CEILING_DBTP);
+    const got = await reachTarget([l, r], SR, reading, targetById('loud'), undefined, LOWER);
     assert.ok(truePeakOf([l, r]) <= lossy * 1.001, `target: ${got.reading.truePeakMax.toFixed(2)} dBTP`);
     const al = Float32Array.from({ length: SR * 2 }, (_, i) => 3 * make(i));
     const ar = al.slice();
-    limitChannels(al, ar, SR, STEM_LOSSY_CEILING_DBTP);
+    limitChannels(al, ar, SR, LOWER);
     assert.ok(truePeakOf([al, ar]) <= lossy, `after the render: ${(20 * Math.log10(truePeakOf([al, ar]))).toFixed(2)} dBTP`);
   }
 });

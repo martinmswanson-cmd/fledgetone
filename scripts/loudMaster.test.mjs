@@ -144,12 +144,10 @@ test('Crunch lets the same mix reach Club by clipping on purpose, under the same
   assert.equal(L.effectiveClipper(loudMaster('club', { crunch: 1 }), -3).ceiling, -3 - L.CRUNCH_CLIP_UNDER_DB - L.CRUNCH_CLIP_LOWER_DB);
   assert.equal(L.effectiveClipper(loudMaster('club'), -3), L.LOUD_CLIPPER);
   assert.equal(L.LOUD_CLIPPER.band, undefined);
-  // Every format's mixdown is limited at -1 dBTP, Crunch or not (a compressed file is held under it once
-  // decoded: encoders.ts); only compressed stems keep their peaks lower
-  const { exportCeilingDbtp, STEM_LOSSY_CEILING_DBTP } = await import('../src/audio/effects/limiter.ts');
+  // Every format's export is limited at -1 dBTP, Crunch or not (a compressed file is held under it once
+  // decoded: encoders.ts), stems too (turned down together: encodeTogether)
+  const { exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
   for (const f of ['wav', 'mp3', 'ogg', 'mp4']) assert.equal(exportCeilingDbtp(f), -1);
-  assert.equal(exportCeilingDbtp('mp3', true), STEM_LOSSY_CEILING_DBTP);
-  assert.equal(exportCeilingDbtp('wav', true), -1);
   // (The Clipper insert, when on, plays as set: Crunch only bends the Loud master's own)
   const insert = { on: true, drive: 3, softness: 0.3, ceiling: -1 };
   assert.equal(L.effectiveClipper({ clipper: insert, loud: { ...T.defaultLoud(), on: true, crunch: 1 } }), insert);
@@ -318,10 +316,10 @@ test('an export keeps its push for live playback only from the whole song, full 
   assert.equal(L.pushToKeep({ ...base, found: { ...found, lufs: -Infinity } }), null, 'silence found nothing');
   assert.equal(L.pushToKeep({ ...base, currentPush: 4.22 }), null, 'no change worth storing');
   // Every format's mixdown is limited at the live ceiling now, so an MP3's push is kept as a WAV's is;
-  // a lower ceiling (compressed stems') would play live hotter than the export
+  // a lower ceiling (one asked for specially) would play live hotter than the export
   const { exportCeilingDbtp } = await import('../src/audio/effects/limiter.ts');
   for (const f of ['wav', 'mp3', 'ogg', 'mp4']) assert.equal(L.pushToKeep({ ...base, ceilingDbtp: exportCeilingDbtp(f) }), 4.2, f);
-  assert.equal(L.pushToKeep({ ...base, ceilingDbtp: exportCeilingDbtp('mp3', true) }), null, 'a lower ceiling');
+  assert.equal(L.pushToKeep({ ...base, ceilingDbtp: -2 }), null, 'a lower ceiling');
 });
 
 test('a Loud match keeps its push only if the Loud master is still the one it rendered (no undo or Crunch press during it)', () => {
@@ -423,7 +421,7 @@ test("a Club-loud MP3 export plays back under -1 dBTP: the app's own encoder, de
       execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', pathMod.join(dir, 'try.mp3'), '-c:a', 'pcm_f32le', pathMod.join(dir, 'try.wav')]);
       return readFloatWav(pathMod.join(dir, 'try.wav'));
     };
-    const mp3 = await encodeAudio([l, r], SR, 'mp3', { bitDepth: 16, decode, onTrim: (db) => (trim = db) });
+    const mp3 = await encodeAudio([l, r], SR, 'mp3', { bitDepth: 16, decode, onHeld: (h) => (trim = h.trimDb) });
     fs.writeFileSync(pathMod.join(dir, 'export.mp3'), Buffer.from(await mp3.arrayBuffer()));
     // (A dense, clipped drop overshoots by up to about a dB: no more than that comes off)
     assert.ok(trim >= 0 && trim < 1.5, `turned down ${trim.toFixed(2)} dB`);

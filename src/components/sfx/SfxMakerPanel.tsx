@@ -256,7 +256,10 @@ async function filesOf(made: Made, key: SongKey | null, tune: boolean, exp: Expo
     const name = `${folder}${sfxFileName(made.name, count > 1 ? i + 1 : undefined)}.${exp.format}`;
     if (exp.format === 'ogg') {
       const { encodeAudio } = await import('../../audio/encoders');
-      out.push({ name, data: await encodeAudio(channels, exp.rate, 'ogg', { bitDepth: 16 }) });
+      // Held under full scale once decoded, not the music's -1 dBTP: a sound is levelled to its loudness
+      // with its samples under SFX_CEILING (sfxSynth.ts) alike in either format, so the Ogg plays at the
+      // WAV's level, and is turned down only where the decoded file would clip (rarely: a few tenths of a dB)
+      out.push({ name, data: await encodeAudio(channels, exp.rate, 'ogg', { bitDepth: 16, ceilingDbtp: 0 }) });
     } else {
       const wav = sound.modern ? sfxWavChannels(channels, exp.rate, sound.loop, 24) : sfxWav(channels[0], exp.rate, sound.loop);
       out.push({ name, data: new Blob([wav as Uint8Array<ArrayBuffer>], { type: 'audio/wav' }) });

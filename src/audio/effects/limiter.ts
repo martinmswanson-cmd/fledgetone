@@ -26,19 +26,13 @@ export const LIMITER_CEILING_DBTP = -1;
  */
 export const LIMITER_AIM_DBTP = LIMITER_CEILING_DBTP - 0.05;
 /**
- * The ceiling for compressed stems, in dBTP. Encoding overshoots the peaks it was given (a dense,
- * clipped drop's MP3 decoded 0.5 to 1.2 dB over it). A mixdown's MP3 or Ogg is limited at -1 like
- * a WAV and turned down afterwards by what its decoded file overshot (decodedPeak.ts); stems can't
- * each be turned down on their own without changing how they add up, so they keep this room.
- */
-export const STEM_LOSSY_CEILING_DBTP = -2;
-/**
  * The true-peak ceiling (dBTP) a render for an export in `format` ('wav', 'mp3', 'ogg', 'mp4') is
- * limited under: -1 for every format (a compressed file is then held under it once decoded, see
- * decodedPeak.ts), and STEM_LOSSY_CEILING_DBTP for compressed `stems`. (MP3, Ogg and video once
- * aimed 1 dB lower, 2 with Crunch, which cost them that much loudness and more limiting than the WAV.)
+ * limited under: -1 for every format and for stems too. A compressed file is then held under it
+ * once decoded (decodedPeak.ts); stems and layers are turned down together, by one gain, so they
+ * still add up to the mix (encodeTogether in encoders.ts). (MP3, Ogg and video once aimed 1 dB
+ * lower, 2 with Crunch, which cost them that much loudness and more limiting than the WAV.)
  */
-export const exportCeilingDbtp = (format: string, stems = false): number => (stems && format !== 'wav' ? STEM_LOSSY_CEILING_DBTP : LIMITER_CEILING_DBTP);
+export const exportCeilingDbtp = (_format: string): number => LIMITER_CEILING_DBTP;
 /** Where the limiter aims for `ceilingDbtp`: a hair under it, as LIMITER_AIM_DBTP is under -1. */
 export const limiterAimDbtp = (ceilingDbtp: number): number => ceilingDbtp + (LIMITER_AIM_DBTP - LIMITER_CEILING_DBTP);
 /** How quickly the gain recovers after a peak (seconds) */

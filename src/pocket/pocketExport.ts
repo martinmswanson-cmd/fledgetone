@@ -76,7 +76,9 @@ export function renderSongMp3(onProgress: (fraction: number, detail: string) => 
     }
     audio = cutRingOut(audio, opts);
     onProgress(1, 'Making the MP3');
-    const blob = await encodeAudio(channelsOf(audio), audio.sampleRate, 'mp3', { bitDepth: 16 });
-    return { blob, name: `${safeFileName(s.projectName)}.mp3`, lufs: loud && found ? found.lufs : reading.integrated };
+    // (Turned down a little after encoding if its decoded peaks passed the ceiling: the loudness told is the file's)
+    let trimDb = 0;
+    const blob = await encodeAudio(channelsOf(audio), audio.sampleRate, 'mp3', { bitDepth: 16, onHeld: (h) => (trimDb = h.trimDb) });
+    return { blob, name: `${safeFileName(s.projectName)}.mp3`, lufs: (loud && found ? found.lufs : reading.integrated) - trimDb };
   });
 }

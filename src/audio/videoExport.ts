@@ -4,7 +4,7 @@ import { openVideo, seekVideo } from '../store/videoStore';
 import fledgetoneLogo from '../assets/fledgetone.png';
 import { drawShowcase, type ShowcaseLook } from './showcaseDraw';
 import type { ShowcaseData } from '../store/showcase';
-import { holdDecodedPeak, turned } from './decodedPeak';
+import { BLIND_TRIM_DB, holdDecodedPeak, streamingTruePeak, type HeldReport } from './decodedPeak';
 import { LIMITER_CEILING_DBTP } from './effects/limiter';
 
 /**
@@ -90,30 +90,38 @@ export interface VideoOptions {
   marks?: VideoMarks;
   /** The true peak (dBTP) the sound is held under once decoded (see encodeSound; default -1). */
   ceilingDbtp?: number;
-  /** Told how far the sound was turned down after encoding to stay under it (dB; 0: not at all). */
-  onTrim?: (db: number) => void;
+  /** Told what holding the sound under it did: how far it was turned down (dB) and its decoded true peak (dBTP; null: not measured). */
+  onHeld?: (held: HeldReport) => void;
 }
 
 /** A video's sound, encoded: the packets with what each came with (the first carries the decoder's setup). */
 type EncodedSound = Array<{ chunk: EncodedAudioChunk; meta?: EncodedAudioChunkMetadata }>;
 
+/** Pieces handed to an encoder or decoder between breaths (and looks at the Cancel). */
+const PIECES_A_BREATH = 64;
+const breathe = async (signal?: AbortSignal) => {
+  await new Promise((r) => setTimeout(r, 0));
+  signal?.throwIfAborted();
+};
+
 /** The sound (two channels) turned by `gain`, encoded with `codec` in 0.1 s pieces. */
-async function encodeSoundOnce(left: Float32Array, right: Float32Array, sampleRate: number, codec: string, gain: number): Promise<EncodedSound> {
-  const [l, r] = turned([left, right], gain);
+async function encodeSoundOnce(left: Float32Array, right: Float32Array, sampleRate: number, codec: string, gain: number, signal?: AbortSignal): Promise<EncodedSound> {
   const out: EncodedSound = [];
   let failure: unknown = null;
   const encoder = new AudioEncoder({ output: (chunk, meta) => out.push({ chunk, meta }), error: (e) => (failure = e) });
   try {
     encoder.configure({ codec, sampleRate, numberOfChannels: 2, bitrate: 192000 });
     const piece = Math.round(sampleRate / 10);
-    for (let at = 0; at < l.length; at += piece) {
-      const n = Math.min(piece, l.length - at);
+    for (let at = 0, k = 0; at < left.length; at += piece, k++) {
+      const n = Math.min(piece, left.length - at);
       const data = new Float32Array(n * 2);
-      data.set(l.subarray(at, at + n));
-      data.set(r.subarray(at, at + n), n);
+      data.set(left.subarray(at, at + n));
+      data.set(right.subarray(at, at + n), n);
+      if (gain !== 1) for (let i = 0; i < data.length; i++) data[i] *= gain;
       const chunk = new AudioData({ format: 'f32-planar', sampleRate, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round((at / sampleRate) * 1e6), data });
       encoder.encode(chunk);
       chunk.close();
+      if (k % PIECES_A_BREATH === PIECES_A_BREATH - 1) await breathe(signal);
     }
     await encoder.flush();
   } finally {
@@ -123,54 +131,57 @@ async function encodeSoundOnce(left: Float32Array, right: Float32Array, sampleRa
   return out;
 }
 
-/** The encoded sound decoded again (null where this browser can't decode it). */
-async function decodeSound(sound: EncodedSound): Promise<Float32Array[] | null> {
+/**
+ * The encoded sound's true peak once decoded (linear; null where this browser can't decode it),
+ * measured as the decoder hands the pieces over: no copy of the decoded sound is kept.
+ */
+async function decodedPeakOf(sound: EncodedSound, signal?: AbortSignal): Promise<number | null> {
   const config = sound.find((p) => p.meta?.decoderConfig)?.meta?.decoderConfig;
   if (!config || typeof AudioDecoder === 'undefined' || !(await AudioDecoder.isConfigSupported(config).catch(() => null))?.supported) return null;
-  const pieces: Float32Array[][] = [];
+  const peak = streamingTruePeak();
+  let pieces = 0;
   let failed = false;
   const decoder = new AudioDecoder({
     output: (data) => {
-      const chans = Array.from({ length: data.numberOfChannels }, (_, c) => {
+      try {
         const ch = new Float32Array(data.numberOfFrames);
-        data.copyTo(ch, { planeIndex: c, format: 'f32-planar' });
-        return ch;
-      });
-      pieces.push(chans);
-      data.close();
+        for (let c = 0; c < data.numberOfChannels; c++) {
+          data.copyTo(ch, { planeIndex: c, format: 'f32-planar' });
+          peak.push(c, ch);
+        }
+        pieces++;
+      } catch {
+        failed = true;
+      } finally {
+        data.close();
+      }
     },
     error: () => (failed = true),
   });
   try {
     decoder.configure(config);
-    for (const p of sound) decoder.decode(p.chunk);
+    for (const [k, p] of sound.entries()) {
+      decoder.decode(p.chunk);
+      if (k % PIECES_A_BREATH === PIECES_A_BREATH - 1) await breathe(signal);
+    }
     await decoder.flush();
-  } catch {
+  } catch (e) {
+    if (signal?.aborted) throw e;
     failed = true;
   } finally {
     if (decoder.state !== 'closed') decoder.close();
   }
-  if (failed || !pieces.length) return null;
-  const channels = pieces[0].length;
-  return Array.from({ length: channels }, (_, c) => {
-    const out = new Float32Array(pieces.reduce((n, p) => n + p[c].length, 0));
-    let at = 0;
-    for (const p of pieces) {
-      out.set(p[c], at);
-      at += p[c].length;
-    }
-    return out;
-  });
+  return failed || !pieces ? null : peak.peak();
 }
 
 /**
  * The video's sound encoded and held under `ceilingDbtp` once decoded: encoding moves its peaks,
  * so it's decoded and measured, and turned down by any overshoot and encoded again (decodedPeak.ts).
  */
-async function encodeSound(left: Float32Array, right: Float32Array, sampleRate: number, codec: string, ceilingDbtp: number, onTrim?: (db: number) => void): Promise<EncodedSound> {
-  const { encoded, trimDb } = await holdDecodedPeak((gain) => encodeSoundOnce(left, right, sampleRate, codec, gain), decodeSound, ceilingDbtp);
-  onTrim?.(trimDb);
-  return encoded;
+async function encodeSound(left: Float32Array, right: Float32Array, sampleRate: number, codec: string, ceilingDbtp: number, onHeld?: (held: HeldReport) => void, signal?: AbortSignal): Promise<EncodedSound> {
+  const held = await holdDecodedPeak((gain) => encodeSoundOnce(left, right, sampleRate, codec, gain, signal), (sound) => decodedPeakOf(sound, signal), ceilingDbtp, { blindTrimDb: BLIND_TRIM_DB.video, signal });
+  onHeld?.({ trimDb: held.trimDb, peakDbtp: held.peakDbtp });
+  return held.encoded;
 }
 
 /** True where this browser can make a video at all (WebCodecs in a secure page). */
@@ -376,7 +387,7 @@ export async function renderVideo(opts: VideoOptions): Promise<Blob> {
     // The sound, encoded first (and again, turned down, if its decoded peaks passed the ceiling)
     const left = channels[0];
     const right = channels[1] ?? channels[0];
-    for (const { chunk, meta } of await encodeSound(left, right, sampleRate, audio.codec, opts.ceilingDbtp ?? LIMITER_CEILING_DBTP, opts.onTrim)) {
+    for (const { chunk, meta } of await encodeSound(left, right, sampleRate, audio.codec, opts.ceilingDbtp ?? LIMITER_CEILING_DBTP, opts.onHeld, signal)) {
       const packet = EncodedPacket.fromEncodedChunk(chunk);
       audioWrites = audioWrites.then(() => audioTrack.add(packet, meta)).catch((e) => void (failure ??= e));
     }
