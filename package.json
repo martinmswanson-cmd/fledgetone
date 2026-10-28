@@ -12,6 +12,7 @@
     "test": "node --test scripts/*.test.mjs",
     "codemap": "node scripts/codemap.mjs",
     "guide-tables": "node scripts/guide-tables.mjs",
+    "samples-readme": "node scripts/samples-readme.mjs",
     "preview": "vite preview",
     "build:single": "VITE_SINGLE=1 npm run build && node scripts/build-single.mjs",
     "build:site": "VITE_GPL_PLUGINS=1 npm run build -- --base=/app/ --outDir=dist-site/app && node scripts/build-site.mjs",

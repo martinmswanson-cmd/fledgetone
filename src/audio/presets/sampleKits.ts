@@ -269,6 +269,7 @@ interface Voice {
   env: GainNode;
   /** The note's offset from its sound's root, in semitones (the bend adds to it) */
   semis: number;
+  /** When it's been told to stop (Infinity: not yet; it ends by itself at its sound's end, whatever bends do to its speed) */
   stopAt: number;
   released: boolean;
 }
@@ -337,10 +338,9 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     source.connect(env);
     env.connect(into);
     source.start(at);
-    // (playbackRate.value still reads 1 until the scheduled rate is reached: use the rate itself)
-    const stopAt = at + buffer.duration / rate;
-    source.stop(stopAt);
-    const v: Voice = { source, env, semis, stopAt, released: false };
+    // No stop at the sound's end worked out from the rate now: a bend down afterwards slows it,
+    // and the note was cut before its end. Not looping, it ends by itself when the sound does.
+    const v: Voice = { source, env, semis, stopAt: Infinity, released: false };
     voices.add(v);
     source.onended = () => {
       voices.delete(v);
