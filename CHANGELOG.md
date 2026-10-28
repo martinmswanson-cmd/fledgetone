@@ -4,6 +4,10 @@ What's new in each version of Fledgetone, newest first. Your version is shown at
 of the studio: click it to read this list. Each version is named after the day it came out (a
 second update on the same day gets `-2`, and so on).
 
+## 2026.10.28-2 — Safer exports and plugins
+
+- **Fixes**: exporting a game intro + loop with **Normalize** on no longer turns a louder intro up past full scale (it could come out as a loud, clipped blast); the gain now keeps every file's peaks under the ceiling. Any plugin is now held under +12 dBFS whatever its knobs say, so none can run tens of dB too loud without being caught (mda Loudness's Output also stops at +12 dB). Songs with several Mutable Instruments plugins can be exported and frozen as often as you like again: after about 25 exports in one session plugins stopped loading.
+
 ## 2026.10.28 — Groove feels, glue, vocal chops, resampling and a big round of fixes
 
 - **Vocal chops**: three new instruments of real voices cut into short syllables, each tuned onto its key, a different syllable every other key, so a tune played on them sounds like a chopped vocal hook. **Airy Vocal Chops** (breathy "ah", "mm", "la", sighs and whispers), **Soul Vocal Chops** (a man singing short "ah"s) and **Shout Vocal Chops** ("hey", "go", "yeah"). In Choir & Voices, in the studio and in Pocket. All from public-domain (CC0) recordings, credited in the guide.
