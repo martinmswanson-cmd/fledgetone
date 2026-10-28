@@ -46,3 +46,32 @@ export const usePianoPanel = create<PianoPanelState>((set, get) => ({
 useMidiStore.subscribe((s, before) => {
   if (before.keyboardPiano && !s.keyboardPiano && usePianoPanel.getState().open) usePianoPanel.setState({ open: false, noteEntry: false });
 });
+
+/**
+ * What the open piano roll does to notes with its keys (Ctrl+C, X, V, D, Del, Ctrl+A, Esc), so
+ * the Edit menu does the same to notes while a clip is open there instead of to the clip.
+ */
+export interface NoteEditActions {
+  /** How many notes are selected */
+  selected: () => number;
+  copy: () => void;
+  cut: () => void;
+  paste: () => void;
+  duplicate: () => void;
+  remove: () => void;
+  selectAll: () => void;
+  selectNone: () => void;
+}
+
+let noteActions: NoteEditActions | null = null;
+
+/** The open piano roll's note actions (null: no note clip is open). */
+export const noteEditActions = (): NoteEditActions | null => noteActions;
+
+/** Register the open piano roll's note actions. Returns the function that takes them away again. */
+export function setNoteEditActions(actions: NoteEditActions): () => void {
+  noteActions = actions;
+  return () => {
+    if (noteActions === actions) noteActions = null;
+  };
+}

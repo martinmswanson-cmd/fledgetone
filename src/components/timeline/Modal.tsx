@@ -16,6 +16,9 @@ interface ModalProps {
 /** What Tab moves between inside the dialog. */
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+/** The dialog on top: the last one in the page that holds the keys (this one, the guide, Search). */
+const topDialog = () => [...document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')].pop() ?? null;
+
 /** A centred dialog over a dimmed page. Esc, the close button or a click outside it calls `onClose`. */
 export const Modal: React.FC<ModalProps> = ({ title, onClose, children, wide = false }) => {
   const dialog = useRef<HTMLDivElement>(null);
@@ -33,32 +36,43 @@ export const Modal: React.FC<ModalProps> = ({ title, onClose, children, wide = f
     const onKey = (e: KeyboardEvent) => {
       const el = dialog.current;
       if (!el) return;
-      // Another dialog on top of this one (the guide, a popover) has the keys
+      // Another dialog on top of this one (the guide, a popover) has the keys; with focus in none,
+      // the one opened last (two can be open when Search opens one over another)
       const other = document.activeElement?.closest('[role="dialog"]');
-      if (other && other !== el) return;
+      if (other ? other !== el : topDialog() !== el) return;
       if (e.key === 'Escape') {
         close.current();
         return;
       }
       if (e.key !== 'Tab') return;
-      const focusable = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((f) => f.offsetParent !== null);
+      // A tutorial's card is part of the round too: a step inside the dialog may need its Next
+      const card = document.querySelector<HTMLElement>('[data-tour-card]');
+      const focusable = [el, ...(card ? [card] : [])].flatMap((box) => [...box.querySelectorAll<HTMLElement>(FOCUSABLE)]).filter((f) => f.offsetParent !== null);
       if (focusable.length === 0) return;
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      const inside = el.contains(document.activeElement);
+      const inside = el.contains(document.activeElement) || !!card?.contains(document.activeElement);
       if (e.shiftKey && (!inside || document.activeElement === first || document.activeElement === el)) {
         e.preventDefault();
         last.focus();
       } else if (!e.shiftKey && (!inside || document.activeElement === last)) {
         e.preventDefault();
         first.focus();
+      } else if (card) {
+        // Between the dialog and the card, which needn't be next to each other in the page
+        const at = focusable.indexOf(document.activeElement as HTMLElement);
+        if (at < 0) return;
+        e.preventDefault();
+        focusable[at + (e.shiftKey ? -1 : 1)]?.focus();
       }
     };
     window.addEventListener('keydown', onKey);
     const back = opener.current;
     return () => {
       window.removeEventListener('keydown', onKey);
-      if (back?.isConnected) back.focus({ preventScroll: true });
+      // (Its opener gone, as a menu item or the search box is: the dialog still open under it, if any)
+      const to = back?.isConnected ? back : topDialog();
+      to?.focus({ preventScroll: true });
     };
   }, []);
 

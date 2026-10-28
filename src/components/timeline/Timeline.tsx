@@ -59,6 +59,9 @@ import { installLiveInput } from '../../audio/liveInput';
 
 // A plugin that fails to load says why
 onPluginError((message) => showToast(message));
+/** Controls that Space works (ticks or switches), so it doesn't start the music there. */
+const SPACE_TAKERS = 'input[type="checkbox"], input[type="radio"], [role="switch"], [role="checkbox"], [role="radio"]';
+
 const closePluginWindow = () => useUiStore.getState().setPluginWindow(null);
 
 interface Marquee {
@@ -357,6 +360,8 @@ export const Timeline: React.FC = () => {
       const key = e.key.toLowerCase();
 
       if (e.code === 'Space') {
+        // A focused checkbox or switch takes Space itself: it's how the keyboard ticks it
+        if (e.target instanceof Element && e.target.closest(SPACE_TAKERS)) return;
         e.preventDefault();
         // A focused button would also "click" on Space and double-toggle
         if (e.target instanceof HTMLButtonElement) e.target.blur();

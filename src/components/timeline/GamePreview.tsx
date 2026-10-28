@@ -30,6 +30,7 @@ import { formatBarCount } from '../../store/timelineTypes';
 import { showToast } from './toastStore';
 import { IntensityPanel } from './IntensityPanel';
 import { useUiStore } from '../../store/uiStore';
+import { ActionSelect } from '../actionSelect';
 
 /**
  * Loop variations: 2 to 4 takes of the loop region for the game to rotate through, each with its
@@ -275,13 +276,9 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
         <span className="whitespace-nowrap" title={key ? `Written in ${key.name}, the key the song's notes are in` : undefined}>
           Stingers{key ? ` · ${key.name}` : ''}
         </span>
-        <select
+        <ActionSelect
           className="h-6 flex-1 min-w-0 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text normal-case"
-          value=""
-          onChange={(e) => {
-            const kind = e.target.value as (typeof STINGER_KINDS)[number]['kind'];
-            if (kind) void fire(st().addStinger(kind).id);
-          }}
+          onAction={(kind) => void fire(st().addStinger(kind as (typeof STINGER_KINDS)[number]['kind']).id)}
           aria-label="Add a stinger"
         >
           <option value="">+ Add a stinger…</option>
@@ -290,7 +287,7 @@ const StingerList: React.FC<{ timing: Quantize }> = ({ timing }) => {
               {k.label}: {k.blurb.toLowerCase()}
             </option>
           ))}
-        </select>
+        </ActionSelect>
       </div>
       {stingers.length === 0 ? (
         <p className="text-forge-muted">Short cues the game plays over the music when something happens: a win, a level up, an item found. They're written in the song's key{key ? ` (${key.name})` : ''}.</p>

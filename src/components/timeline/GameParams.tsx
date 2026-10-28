@@ -8,6 +8,7 @@ import { Gauge, Plus, Trash2 } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { MAX_GAME_PARAMS, MAX_PARAM_TARGETS, OPEN_FILTER, PARAM_KINDS, PARAM_PRESETS, TARGET_SPECS, type ParamPreset, type ParamTarget, type ParamTargetKind } from '../../store/gameParams';
 import { groupsInUse } from '../../store/intensity';
+import { ActionSelect } from '../actionSelect';
 
 const control = 'h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text';
 const pct = (x: number) => Math.round(x * 100);
@@ -158,10 +159,9 @@ export const GameParamsPanel: React.FC = () => {
             {p.targets.length < MAX_PARAM_TARGETS && (
               <label className="flex items-center gap-1 text-[10px] text-forge-muted">
                 <Plus className="w-3 h-3" />
-                <select
+                <ActionSelect
                   className={control}
-                  value=""
-                  onChange={(e) => e.target.value && st().addParamTarget(p.id, e.target.value as ParamTargetKind)}
+                  onAction={(kind) => st().addParamTarget(p.id, kind as ParamTargetKind)}
                   aria-label={`Add something for ${p.name} to move`}
                 >
                   <option value="">move something else…</option>
@@ -171,7 +171,7 @@ export const GameParamsPanel: React.FC = () => {
                       {k === 'layer' && !groups.length ? ' (put tracks in stem groups first)' : ''}
                     </option>
                   ))}
-                </select>
+                </ActionSelect>
               </label>
             )}
           </div>

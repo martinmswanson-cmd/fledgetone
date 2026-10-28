@@ -331,11 +331,21 @@ const TagTab: React.FC = () => {
   useEffect(() => {
     live.current = session;
   }, [session]);
-  useEffect(() => () => live.current?.cancel(), []);
+  // (And one still opening then: the microphone mustn't stay on with nothing to stop it)
+  const gone = useRef(false);
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+      live.current?.cancel();
+    };
+  }, []);
   const record = async () => {
     try {
       await initAudio();
-      setSession(await startMic());
+      const mic = await startMic();
+      if (gone.current) return mic.cancel();
+      setSession(mic);
     } catch (err) {
       showToast(`Couldn't start recording: ${err instanceof Error ? err.message : String(err)}`);
     }

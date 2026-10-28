@@ -4,7 +4,8 @@ import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, type Bui
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
-import { usePianoPanel } from '../../store/pianoPanel';
+import { noteEditActions, usePianoPanel } from '../../store/pianoPanel';
+import { heldNotes } from '../../store/noteClipboard';
 import { MOD_KEY, PALETTE_SHORTCUT, useUiStore, type DockTab } from '../../store/uiStore';
 import { useVideoStore } from '../../store/videoStore';
 import { useAudioStore } from '../../store/audioStore';
@@ -141,9 +142,32 @@ const MENUS: MenuDef[] = [
     items: () => {
       const s = tl();
       const any = s.clips.some((c) => c.isSelected);
-      return [
+      const undo = [
         { label: 'Undo', shortcut: `${MOD_KEY}Z`, run: s.undo, disabled: !s.past.length },
         { label: 'Redo', shortcut: `${MOD_KEY}Y`, run: s.redo, disabled: !s.future.length },
+      ];
+      const tools = [
+        { label: 'Selection tool', shortcut: 'V', run: () => s.setTool('select'), checked: s.activeTool === 'select', divider: true },
+        { label: 'Razor tool', shortcut: 'C', run: () => s.setTool('razor'), checked: s.activeTool === 'razor' },
+      ];
+      // A clip open in the piano roll: these work on its notes, as the keys do there
+      const notes = s.editingClipId ? noteEditActions() : null;
+      if (notes) {
+        const some = notes.selected() > 0;
+        return [
+          ...undo,
+          { label: 'Cut notes', shortcut: `${MOD_KEY}X`, run: notes.cut, disabled: !some, divider: true },
+          { label: 'Copy notes', shortcut: `${MOD_KEY}C`, run: notes.copy, disabled: !some },
+          { label: 'Paste notes', shortcut: `${MOD_KEY}V`, title: 'At the playhead when it is inside the clip, else where they were copied from', run: notes.paste, disabled: !heldNotes() },
+          { label: 'Duplicate notes', shortcut: `${MOD_KEY}D`, run: notes.duplicate, disabled: !some },
+          { label: 'Delete notes', shortcut: 'Del', run: notes.remove, disabled: !some },
+          { label: 'Select all notes', shortcut: `${MOD_KEY}A`, run: notes.selectAll, divider: true },
+          { label: 'Select no notes', shortcut: 'Esc', run: notes.selectNone, disabled: !some },
+          ...tools,
+        ];
+      }
+      return [
+        ...undo,
         { label: 'Cut', shortcut: `${MOD_KEY}X`, run: s.cutSelectedClips, disabled: !any, divider: true },
         { label: 'Copy', shortcut: `${MOD_KEY}C`, run: s.copySelectedClips, disabled: !any },
         { label: 'Paste at the playhead', shortcut: `${MOD_KEY}V`, title: 'On the selected track, when what you copied came from one track', run: () => say(s.pasteClips(undefined, new Set(s.clipboard.map((c) => c.trackId)).size === 1 && s.selectedTrackId ? s.selectedTrackId : undefined)) },
@@ -151,8 +175,7 @@ const MENUS: MenuDef[] = [
         { label: 'Delete', shortcut: 'Del', run: s.deleteSelectedClips, disabled: !any },
         { label: 'Select all', shortcut: `${MOD_KEY}A`, run: s.selectAll, divider: true },
         { label: 'Select nothing', shortcut: 'Esc', run: s.clearSelection },
-        { label: 'Selection tool', shortcut: 'V', run: () => s.setTool('select'), checked: s.activeTool === 'select', divider: true },
-        { label: 'Razor tool', shortcut: 'C', run: () => s.setTool('razor'), checked: s.activeTool === 'razor' },
+        ...tools,
       ];
     },
   },

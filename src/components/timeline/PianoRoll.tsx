@@ -22,7 +22,7 @@ import { NOTE_CHANCES, chanceIdOf, chanceMark, isConditional, withChance } from 
 import { rollClipDrums } from '../../store/smartActions';
 import { initAudio, rawAudioState } from '../../audio/engine';
 import { noteNameOn, onLiveNote } from '../../audio/liveInput';
-import { usePianoPanel } from '../../store/pianoPanel';
+import { setNoteEditActions, usePianoPanel, type NoteEditActions } from '../../store/pianoPanel';
 import { useMidiStore } from '../../store/midiStore';
 import { showToast } from './toastStore';
 import { TOTAL_BARS } from '../../store/timelineTypes';
@@ -49,6 +49,7 @@ import { DrumGroovePanel } from './DrumGroovePanel';
 import { ChordRiffBar } from './ChordRiffBar';
 import { penBars, rememberPen } from '../../store/penLength';
 import { duplicateAt, heldNotes, holdNotes, noteClip, placeNotes, type NoteClip } from '../../store/noteClipboard';
+import { ActionSelect } from '../actionSelect';
 
 const KEY_W = 72;
 const RULER_H = 20;
@@ -862,6 +863,68 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     });
   };
 
+  // Copy, cut, paste, duplicate, delete and select on notes: the keys below and the Edit menu
+  // (through pianoPanel.ts) both do these, never anything to the timeline's clips
+  /** Put copied notes in the clip from `at` (bars from its start) and select them: one undo step */
+  const putNotes = (copied: NoteClip, at: number) => {
+    let added = placeNotes(copied, at, clip.lengthBars);
+    if (added.length === 0) return showToast("There's no room for the notes there: they would start past the end of the clip.");
+    // A drum kit or a Slicer has a row per sound: a note with no row would be hidden and silent
+    if (namedRows) added = added.filter((n) => rows.some((r) => r.note === n.note));
+    if (added.length === 0) return showToast('None of those notes has a row here, so nothing was pasted.');
+    setSelected(new Set(useTimelineStore.getState().addNotes(clip.id, added)));
+  };
+  const chosenNotes = () => noteClip(currentNotes().filter((n) => selected.has(n.id)));
+  const noteActions: NoteEditActions = {
+    selected: () => selected.size,
+    copy: () => {
+      const chosen = chosenNotes();
+      if (!chosen) return showToast('Select some notes first.');
+      holdNotes(chosen);
+    },
+    cut: () => {
+      const chosen = chosenNotes();
+      if (!chosen) return showToast('Select some notes first.');
+      holdNotes(chosen);
+      useTimelineStore.getState().deleteNotes(clip.id, selected);
+      setSelected(new Set());
+    },
+    paste: () => {
+      const copied = heldNotes();
+      if (!copied) return showToast('Copy some notes first.');
+      // At the playhead when it's inside the clip, else where the notes were copied from
+      const ph = useTimelineStore.getState().playheadPosition - clip.startBar;
+      putNotes(copied, ph >= 0 && ph < clip.lengthBars ? snapUnits(unitsOf(ph)) / UNITS_PER_BAR : copied.from);
+    },
+    duplicate: () => {
+      const chosen = chosenNotes();
+      if (!chosen) return showToast('Select some notes first.');
+      putNotes(chosen, duplicateAt(chosen, gridUnits / UNITS_PER_BAR));
+    },
+    remove: () => {
+      if (!selected.size) return;
+      useTimelineStore.getState().deleteNotes(clip.id, selected);
+      setSelected(new Set());
+    },
+    selectAll: () => setSelected(new Set(visibleNotes.map((n) => n.id))),
+    selectNone: () => setSelected(new Set()),
+  };
+  const noteActionsRef = useRef(noteActions);
+  noteActionsRef.current = noteActions;
+  useEffect(() => {
+    const live = noteActionsRef;
+    return setNoteEditActions({
+      selected: () => live.current.selected(),
+      copy: () => live.current.copy(),
+      cut: () => live.current.cut(),
+      paste: () => live.current.paste(),
+      duplicate: () => live.current.duplicate(),
+      remove: () => live.current.remove(),
+      selectAll: () => live.current.selectAll(),
+      selectNone: () => live.current.selectNone(),
+    });
+  }, []);
+
   // Keys: capture phase so Delete / Ctrl+A act on notes instead of timeline clips
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -875,7 +938,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
 
       if (mod && e.key.toLowerCase() === 'a') {
         handled();
-        setSelected(new Set(visibleNotes.map((n) => n.id)));
+        noteActions.selectAll();
         return;
       }
       // Copy, cut, paste and duplicate work on notes here, never on the timeline's clips
@@ -883,28 +946,10 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       if (clipKey === 'c' || clipKey === 'x' || clipKey === 'v' || clipKey === 'd') {
         handled();
         if (e.repeat && clipKey !== 'v') return;
-        /** Put notes in the clip from `at` (bars from its start) and select them: one undo step */
-        const put = (copied: NoteClip, at: number) => {
-          const added = placeNotes(copied, at, clip.lengthBars);
-          if (added.length === 0) return showToast("There's no room for the notes there: they would start past the end of the clip.");
-          setSelected(new Set(store.addNotes(clip.id, added)));
-        };
-        if (clipKey === 'v') {
-          const copied = heldNotes();
-          if (!copied) return;
-          // At the playhead when it's inside the clip, else where the notes were copied from
-          const ph = store.playheadPosition - clip.startBar;
-          put(copied, ph >= 0 && ph < clip.lengthBars ? snapUnits(unitsOf(ph)) / UNITS_PER_BAR : copied.from);
-          return;
-        }
-        const chosen = noteClip(currentNotes().filter((n) => selected.has(n.id)));
-        if (!chosen) return showToast('Select some notes first.');
-        if (clipKey === 'd') return put(chosen, duplicateAt(chosen, gridUnits / UNITS_PER_BAR));
-        holdNotes(chosen);
-        if (clipKey === 'x') {
-          store.deleteNotes(clip.id, selected);
-          setSelected(new Set());
-        }
+        if (clipKey === 'v') noteActions.paste();
+        else if (clipKey === 'd') noteActions.duplicate();
+        else if (clipKey === 'x') noteActions.cut();
+        else noteActions.copy();
         return;
       }
       if (e.key === 'Escape') {
@@ -936,9 +981,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       if (e.key === 'Delete' || e.key === 'Backspace') {
         // Taken even with no notes selected: let through, the timeline would delete the clip itself
         handled();
-        if (!selected.size) return;
-        store.deleteNotes(clip.id, selected);
-        setSelected(new Set());
+        noteActions.remove();
         return;
       }
       if (selected.size === 0) return;
@@ -1167,19 +1210,12 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         )}
         <label data-search="tools" className="flex items-center gap-1.5" title={selected.size ? 'Change the selected notes' : 'Change all the notes in this clip (select some to change only those)'}>
           TOOLS
-          <select
-            className={select}
-            value=""
-            onChange={(e) => {
-              if (e.target.value) applyTool(e.target.value as ToolId);
-              e.currentTarget.blur();
-            }}
-          >
+          <ActionSelect className={select} onAction={(id) => applyTool(id as ToolId)}>
             <option value="">{selected.size ? `${selected.size} selected…` : 'All notes…'}</option>
             {TOOLS.filter((t) => (namedRows ? t.drums : t.id !== 'fitScale' || scale)).map((t) => (
               <option key={t.id} value={t.id}>{t.label}</option>
             ))}
-          </select>
+          </ActionSelect>
         </label>
         {!namedRows && (
           <button

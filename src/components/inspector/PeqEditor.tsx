@@ -39,6 +39,9 @@ function scales(width: number, height: number) {
   };
 }
 
+/** Device pixels per CSS pixel (2 or more on a high-DPI screen). */
+const pixelRatio = () => Math.min(3, window.devicePixelRatio || 1);
+
 export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean }> = ({ track, height = 150, big = false }) => {
   const peq = track.fx.peq ?? defaultTrackFx().peq;
   const bands = peq.bands;
@@ -81,7 +84,9 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
   useEffect(() => {
     const c = canvas.current;
     if (!c || !isPlaying) {
-      c?.getContext('2d')?.clearRect(0, 0, c.width, c.height);
+      const ctx = c?.getContext('2d');
+      ctx?.setTransform(1, 0, 0, 1, 0, 0);
+      ctx?.clearRect(0, 0, c!.width, c!.height);
       return;
     }
     const data = new Float32Array(4096);
@@ -92,17 +97,19 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
       const bins = liveTrackSpectrum(track.id, data);
       if (!ctx || !bins) return;
       const rate = liveMix.bus.context.sampleRate;
-      ctx.clearRect(0, 0, c.width, c.height);
+      // (Drawn in CSS pixels on a backing store the screen's pixel ratio times bigger: sharp on high-DPI screens)
+      ctx.setTransform(c.width / width, 0, 0, c.height / height, 0, 0);
+      ctx.clearRect(0, 0, width, height);
       ctx.beginPath();
-      ctx.moveTo(0, c.height);
-      for (let x = 0; x <= c.width; x += 2) {
+      ctx.moveTo(0, height);
+      for (let x = 0; x <= width; x += 2) {
         const hz = hzOf(x);
         const bin = Math.min(bins - 1, Math.round((hz / (rate / 2)) * bins));
         // -100 dBFS at the bottom to -20 at the top
         const level = Math.max(0, Math.min(1, (data[bin] + 100) / 80));
-        ctx.lineTo(x, c.height * (1 - level));
+        ctx.lineTo(x, height * (1 - level));
       }
-      ctx.lineTo(c.width, c.height);
+      ctx.lineTo(width, height);
       ctx.closePath();
       ctx.fillStyle = `${track.color}38`;
       ctx.fill();
@@ -193,7 +200,7 @@ export const PeqEditor: React.FC<{ track: Track; height?: number; big?: boolean 
         title="Drag a dot: frequency and gain (Shift: fine). Wheel: width. Double-click: add a band. Right-click a dot: remove it."
         aria-label="Parametric EQ curve"
       >
-        <canvas ref={canvas} width={width} height={height} className="absolute inset-0" />
+        <canvas ref={canvas} width={Math.round(width * pixelRatio())} height={Math.round(height * pixelRatio())} style={{ width, height }} className="absolute inset-0" />
         <svg width={width} height={height} className="absolute inset-0">
           {grid.map((f) => (
             <g key={f}>

@@ -19,6 +19,7 @@ import { detectKey } from '../../store/songKey';
 import { findKickClash, KICK_DUCK } from '../../store/kickClash';
 import { INSTRUMENTS } from '../../audio/instrumentCatalog';
 import { isPitched } from '../../store/keyChange';
+import { ActionSelect } from '../actionSelect';
 
 const select = 'h-6 bg-forge-bg border border-forge-border rounded px-1 text-[10px] text-forge-text focus:outline-none focus:border-red-500';
 const toLog = (v: number, lo: number, hi: number) => Math.log(v / lo) / Math.log(hi / lo);
@@ -83,18 +84,17 @@ export const Bass808Panel: React.FC<{ track: Track }> = ({ track }) => {
         {on ? 'Shape the 808: from a clean sub to clipped and blown out. Overlapping notes slide.' : 'Off: the original 808. Switch on to shape its drive, punch, slides and tail.'}
       </p>
       <div className={`flex items-center gap-2 ${off ? 'opacity-45' : ''}`}>
-        <select
+        <ActionSelect
           className={`${select} flex-1`}
           aria-label="808 preset"
-          value=""
           disabled={off}
-          onChange={(e) => e.target.value && st().setTrackBass(track.id, { bass808: { ...bass808Preset(e.target.value), ...(s.tuneToKey ? { tuneToKey: s.tuneToKey } : {}) } }, true)}
+          onAction={(name) => st().setTrackBass(track.id, { bass808: { ...bass808Preset(name), ...(s.tuneToKey ? { tuneToKey: s.tuneToKey } : {}) } }, true)}
         >
           <option value="">Load preset…</option>
           {BASS808_PRESETS.map((p) => (
             <option key={p.name} value={p.name} title={p.blurb}>{p.name}</option>
           ))}
-        </select>
+        </ActionSelect>
       </div>
       <FxSlider label="Drive" value={s.drive} min={0} max={1} step={0.01} format={pct} onChange={(drive) => set({ drive })} reset={d.drive} accent={accent} disabled={off} />
       <CharacterPick value={s.character} onChange={(character) => set({ character }, true)} disabled={off || s.drive === 0} />

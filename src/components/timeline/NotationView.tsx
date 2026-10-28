@@ -230,8 +230,20 @@ export const NotationView: React.FC<{ clip: Clip; track: Track; scale?: Scale | 
     const title = `${useTimelineStore.getState().projectName || 'Untitled'}: ${clip.name}`;
     w.document.write(`<!doctype html><title>${title.replace(/</g, '&lt;')}</title><body style="margin:24px;font-family:serif"><h2>${title.replace(/</g, '&lt;')}</h2><div>${track.name.replace(/</g, '&lt;')} · ${INSTRUMENTS[track.instrumentKey].name}</div>${svg.outerHTML}</body>`);
     w.document.close();
-    w.focus();
-    w.print();
+    // The music font (VexFlow loads it into this page only): without it the clefs and notes print as letters
+    for (const font of document.fonts) {
+      if (font.family === 'Bravura' || font.family === 'Academico') {
+        try {
+          w.document.fonts.add(font);
+        } catch {
+          // (Printed with the fallback font)
+        }
+      }
+    }
+    void w.document.fonts.ready.then(() => {
+      w.focus();
+      w.print();
+    });
   };
 
   return (
