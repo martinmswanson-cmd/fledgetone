@@ -25,6 +25,7 @@ import { normalizeClip, quantizeClipAudio, reverseClip } from '../../audio/audio
 import { showToast } from './toastStore';
 import { mangleClip, unmangleClip, type MangleRequest } from '../../store/mangleActions';
 import { openResample } from './resampleDialogStore';
+import { ActionSelect } from '../actionSelect';
 
 /** The Mangle menu: each makes a new sound from what the clip plays (one undo step). */
 const MANGLES: Array<{ group: string; items: Array<[string, MangleRequest]> }> = [
@@ -216,13 +217,12 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
             <Maximize2 className="w-3.5 h-3.5" /> Normalize
           </button>
           <span className="mx-1 h-5 w-px bg-forge-border" />
-          <select
-            value=""
+          <ActionSelect
             disabled={busy}
             aria-label="Mangle"
             title="Make a new sound from what the clip plays: tape speed, pitch, stretch, stutter, shuffle, gate, crush or formant (Undo goes back)"
-            onChange={(e) => {
-              const [g, i] = e.target.value.split(':').map(Number);
+            onAction={(value) => {
+              const [g, i] = value.split(':').map(Number);
               const item = MANGLES[g]?.items[i];
               if (!item) return;
               const req = item[1].kind === 'shuffle' ? { ...item[1], seed: 1 + (audio.mangled?.steps.length ?? 0) } : item[1];
@@ -240,7 +240,7 @@ export const AudioClipEditor: React.FC<{ clip: Clip; track: Track }> = ({ clip, 
                 ))}
               </optgroup>
             ))}
-          </select>
+          </ActionSelect>
           {audio.mangled && (
             <button type="button" disabled={busy} onClick={() => unmangleClip(clip.id) && showToast('Back to the sound it was made from')} className={`${select} hover:border-red-400`} title={`Mangled: ${audio.mangled.steps.join(', ')}. Click to play the original again`}>
               Back to the original

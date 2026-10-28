@@ -5,6 +5,7 @@ import type { Track } from '../../store/timelineTypes';
 import type { Envelope, OscSettings, SynthPatch } from '../../store/synthPatch';
 import { defaultSynthPatch, LFO_SYNC, OSC_WAVES, presetPatch, SYNTH_PRESETS, withPatch } from '../../store/synthPatch';
 import { FxSlider } from './InsertFx';
+import { ActionSelect } from '../actionSelect';
 
 /**
  * The Synth Designer's controls in the Track Inspector. Knob drags are one undo step each (the
@@ -75,17 +76,12 @@ export const SynthPanel: React.FC<{ track: Track }> = ({ track }) => {
       <div className="flex items-center gap-2">
         <AudioWaveform className="w-4 h-4 text-cyan-400" />
         <span className="text-xs font-semibold text-forge-text">Synth Designer</span>
-        <select
-          className={`${select} ml-auto`}
-          aria-label="Preset"
-          value=""
-          onChange={(e) => e.target.value && useTimelineStore.getState().setTrackSynth(track.id, presetPatch(e.target.value), true)}
-        >
+        <ActionSelect className={`${select} ml-auto`} aria-label="Preset" onAction={(name) => useTimelineStore.getState().setTrackSynth(track.id, presetPatch(name), true)}>
           <option value="">Load preset…</option>
           {SYNTH_PRESETS.map((p) => (
             <option key={p.name} value={p.name}>{p.name}</option>
           ))}
-        </select>
+        </ActionSelect>
       </div>
 
       <div className="grid grid-cols-1 gap-3">

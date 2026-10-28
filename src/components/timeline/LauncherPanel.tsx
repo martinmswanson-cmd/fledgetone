@@ -228,7 +228,7 @@ export const LauncherPanel: React.FC = () => {
                             <Play className={`w-3 h-3 shrink-0 ${playing ? 'text-emerald-300' : 'text-forge-text'}`} />
                             <span className="truncate text-forge-text">{slot.clip.name}</span>
                           </button>
-                          <button type="button" onClick={() => clearSlot(t.id, scene)} className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/30" aria-label={`Delete ${slot.clip.name} from the launcher`} title="Delete this slot">
+                          <button type="button" onClick={() => clearSlot(t.id, scene)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded hover:bg-black/30" aria-label={`Delete ${slot.clip.name} from the launcher`} title="Delete this slot">
                             <X className="w-3 h-3" />
                           </button>
                         </div>

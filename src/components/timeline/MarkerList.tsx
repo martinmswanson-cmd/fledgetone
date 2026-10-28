@@ -13,6 +13,7 @@ import { useVideoStore } from '../../store/videoStore';
 import { EDITOR_FORMATS, editorMarkerFile, type EditorFormat } from '../../store/editorMarkers';
 import { downloadBlob } from '../../audio/exportWav';
 import { Popover } from '../Popover';
+import { ActionSelect } from '../actionSelect';
 
 /**
  * A marker's name, edited in place. What's typed applies as it's typed (the flag on the ruler
@@ -219,9 +220,8 @@ export const ExportForEditors: React.FC = () => {
   };
   return (
     <div className="flex flex-col gap-1.5 border-t border-forge-border pt-2">
-      <select
-        value=""
-        onChange={(e) => e.target.value && save(e.target.value as EditorFormat)}
+      <ActionSelect
+        onAction={(id) => save(id as EditorFormat)}
         className="h-7 bg-forge-bg border border-forge-border rounded-md px-1.5 text-[11px] text-forge-text"
         aria-label="Export the markers for video editing software"
       >
@@ -231,7 +231,7 @@ export const ExportForEditors: React.FC = () => {
             {f.label}
           </option>
         ))}
-      </select>
+      </ActionSelect>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
         <label className="flex items-center gap-1" title="DaVinci Resolve timelines usually start at 01:00:00:00">
           <input type="checkbox" checked={startHour === 1} onChange={(e) => setStartHour(e.target.checked ? 1 : 0)} />
