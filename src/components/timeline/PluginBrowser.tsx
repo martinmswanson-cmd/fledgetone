@@ -7,6 +7,7 @@ import { pluginFamilies, preloadFamily } from '../../audio/plugins/builtinHost';
 import { addBuiltinPlugin, allBuiltinPlugins, FAVOURITES_KEY, readList, RECENT_KEY, writeList, type BuiltinEntry as Entry } from '../../store/builtinPlugins';
 import { showToast } from './toastStore';
 import { FledgeTourButton } from '../FledgeTourButton';
+import { GplTag } from '../GplTag';
 
 /**
  * The built-in plugins (see audio/plugins/builtinHost.ts): search them, browse by category or
@@ -161,6 +162,7 @@ export const PluginBrowser: React.FC<{ trackId: string | null; category?: string
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2">
                     <span className="font-semibold text-forge-text">{e.info.name}</span>
+                    {e.family.gpl && <GplTag />}
                     <span className="text-[10px] text-forge-muted truncate">
                       {e.info.instrument ? `Instrument · ${e.info.category}` : e.info.category} · {e.family.label}
                     </span>

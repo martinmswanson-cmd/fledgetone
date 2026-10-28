@@ -6,8 +6,8 @@ import { referencedSoundIds } from '../store/audioClips';
 import { serializeProject, type ProjectSnapshot } from '../store/project';
 import { songSections, stateNames } from '../store/cutToLength';
 import { FOUR_FOUR } from './tempoMap';
-import { PLUGIN_FAMILIES } from './plugins/pluginCatalog';
-import { pluginSource } from './plugins/pluginSources';
+import { pluginFamilies, pluginSource } from './plugins/pluginSources';
+import { gplNotice } from './plugins/gplCredits';
 import { recordingBytes } from './recordingStore';
 import { songPlugins } from './runtimePlugins';
 
@@ -23,11 +23,24 @@ const safe = (name: string) => name.replace(/[\\/:*?"<>|#%]+/g, '-').trim() || '
 /** A string as a JS literal that's safe inside an HTML <script> ('</script>' can't end it) */
 const scriptString = (v: string) => JSON.stringify(v).replace(/</g, '\\u003c');
 
-export async function buildRuntimeKit(project: ProjectSnapshot): Promise<Blob> {
-  // The plugins it plays go in beside the player (it has the ones that aren't GPL-licensed)
-  const plugins = songPlugins(project.tracks, PLUGIN_FAMILIES);
-  if (plugins.missing.length) throw new Error(`the web runtime can't play ${plugins.missing.join(', ')} (a GPL plugin): use the game kit, or another plugin on that track`);
-  const pluginFiles = await Promise.all(plugins.families.map(async (f) => ({ name: `fledgetone-plugins/${f.file}`, data: new Blob([await recordingBytes(pluginSource(f), f.file)], { type: 'application/wasm' }) })));
+/**
+ * Build the kit. A song with GPL-licensed plugins needs `withGpl` (the person agreed, after the
+ * notice in the Game tab): their files go in with their licence and a notice of who made them and
+ * where their source is.
+ */
+export async function buildRuntimeKit(project: ProjectSnapshot, opts: { withGpl?: boolean } = {}): Promise<Blob> {
+  // The plugins it plays go in beside the player, with any patch they start on
+  const plugins = songPlugins(project.tracks, pluginFamilies());
+  if (plugins.missing.length) throw new Error(`${plugins.missing.join(', ')} isn't in this version of Fledgetone`);
+  if (plugins.gpl.length && !opts.withGpl) throw new Error(`${plugins.gpl.map((f) => f.label).join(', ')} is GPL-licensed: agree to include it first`);
+  const pluginFiles = await Promise.all(
+    plugins.files.map(async (f) => ({ name: `fledgetone-plugins/${f.path}`, data: new Blob([await recordingBytes(pluginSource(f.family), f.url)], { type: f.path.endsWith('.wasm') ? 'application/wasm' : 'application/octet-stream' }) }))
+  );
+  if (plugins.gpl.length) {
+    const licences = (await import('../../scripts/plugins/LICENSES-GPL.txt?raw')).default;
+    pluginFiles.push({ name: 'GPL-PLUGINS-NOTICE.txt', data: new Blob([gplNotice(plugins.gpl)], { type: 'text/plain' }) });
+    pluginFiles.push({ name: 'GPL-PLUGINS-LICENSE.txt', data: new Blob([licences], { type: 'text/plain' }) });
+  }
   const sounds = await embedSounds(referencedSoundIds(project));
   const songFile = `${safe(project.name)}.json`;
   const song = JSON.stringify(serializeProject({ ...project, sounds }));
@@ -88,9 +101,11 @@ AudioContext, and { destination: someGainNode } to route the music through your 
 
 Recorded instruments download their samples from the same public libraries the app uses, so
 they need a connection; the built-in synths need nothing. Sounds your clips play are inside the
-song file.${pluginFiles.length ? `\n\nThe plugins the song plays are in fledgetone-plugins/: keep that folder next to
-bos-player.js.` : ''} If something the song needs can't be loaded, loadSong rejects with an
-error that says what.
+song file.${plugins.files.length ? `\n\nThe plugins the song plays are in fledgetone-plugins/: keep that folder next to
+bos-player.js.` : ''}${plugins.gpl.length ? ` ${plugins.gpl.map((f) => f.label).join(' and ')} ${plugins.gpl.length > 1 ? 'are' : 'is'} GPL-licensed: if you
+share your game, keep GPL-PLUGINS-NOTICE.txt and GPL-PLUGINS-LICENSE.txt with it (they say who
+made ${plugins.gpl.length > 1 ? 'them' : 'it'} and where the source is).` : ''} If something the song needs can't be loaded, loadSong rejects
+with an error that says what.
 
 index.html is a small test page: serve this folder (for example "npx serve") and open it.
 `;

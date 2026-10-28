@@ -24,3 +24,21 @@ test("a plugin the runtime hasn't is named, not left to play silent", () => {
   assert.deepEqual(families, []);
   assert.deepEqual(missing, ['Surge XT']);
 });
+
+test('a GPL plugin is told apart, and the patch it starts on goes in with it', async () => {
+  const { GPL_PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalogGpl.ts');
+  const all = [...PLUGIN_FAMILIES, ...GPL_PLUGIN_FAMILIES];
+  const tracks = [
+    { plugin: { id: 's', url: 'builtin:surge/Surge XT', name: 'Surge XT', state: { builtin: 1, preset: 'Basses/Bass 1' } } },
+    { plugin: { id: 'f', url: 'builtin:fledge/Fledge Synth', name: 'Fledge Synth' }, pluginFx: [{ id: 'o', url: 'builtin:setbfree/Tonewheel Organ', name: 'Tonewheel Organ' }] },
+  ];
+  const r = songPlugins(tracks, all);
+  assert.deepEqual(r.missing, []);
+  assert.deepEqual(r.gpl.map((f) => f.family).sort(), ['setbfree', 'surge']);
+  assert.deepEqual(r.files.map((f) => [f.path, f.url]).sort(), [
+    ['fledge.wasm', 'fledge.wasm'],
+    ['gpl/setbfree.wasm', 'gpl/setbfree.wasm'],
+    ['gpl/surge-patches/Basses/Bass 1.fxp', 'gpl/surge-patches/Basses/Bass%201.fxp'],
+    ['gpl/surge.wasm', 'gpl/surge.wasm'],
+  ]);
+});

@@ -24,6 +24,10 @@ import { livePlayhead } from '../../store/playheadClock';
 import { createZip } from '../../audio/zip';
 import { buildGameKit, KIT_LAYOUTS, type KitLayout } from '../../audio/gameKit';
 import { buildRuntimeKit } from '../../audio/runtimeKit';
+import { songPlugins } from '../../audio/runtimePlugins';
+import { pluginFamilies } from '../../audio/plugins/pluginSources';
+import type { PluginFamily } from '../../audio/plugins/pluginTypes';
+import { GplNoticeDialog } from './GplNoticeDialog';
 import { downloadBlob, encodeChannels, renderLoopTakes } from '../../audio/exportWav';
 import { loopVariation, VARIATION_BLURBS, VARIATION_NAMES } from '../../store/loopVariations';
 import { formatBarCount } from '../../store/timelineTypes';
@@ -201,28 +205,40 @@ const GameKitButton: React.FC = () => {
 /** The web runtime kit: the song file and bos-player.js instead of audio files (see runtimeKit.ts). */
 const RuntimeKitButton: React.FC = () => {
   const [busy, setBusy] = useState(false);
+  // GPL-licensed plugins the song plays: asked about before they go in
+  const [asking, setAsking] = useState<PluginFamily[] | null>(null);
+  const build = async (withGpl: boolean) => {
+    setAsking(null);
+    setBusy(true);
+    try {
+      // (The plugins' latest settings first: they reach the tracks every few seconds otherwise)
+      await captureWamStates();
+      const p = currentProject();
+      const gpl = songPlugins(p.tracks, pluginFamilies()).gpl;
+      if (gpl.length && !withGpl) {
+        setAsking(gpl);
+        return;
+      }
+      downloadBlob(await buildRuntimeKit(p, { withGpl }), `${p.name || 'Untitled'} web runtime kit.zip`);
+    } catch (err) {
+      showToast(`Couldn't build the web runtime kit: ${err instanceof Error ? err.message : String(err)}.`);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        try {
-          // (The plugins' latest settings first: they reach the tracks every few seconds otherwise)
-          await captureWamStates();
-          const p = currentProject();
-          downloadBlob(await buildRuntimeKit(p), `${p.name || 'Untitled'} web runtime kit.zip`);
-        } catch (err) {
-          showToast(`Couldn't build the web runtime kit: ${err instanceof Error ? err.message : String(err)}.`);
-        } finally {
-          setBusy(false);
-        }
-      }}
-      className="h-7 px-2 flex items-center justify-center gap-1 rounded-md border border-forge-border text-forge-muted hover:text-forge-text disabled:opacity-50 text-[11px]"
-      title="For web games: the song file (kilobytes) and bos-player.js, which synthesizes the music in the browser, instead of audio files"
-    >
-      <Download className="w-3.5 h-3.5" /> {busy ? 'Packing…' : 'Export web runtime kit (no audio files)'}
-    </button>
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void build(false)}
+        className="h-7 px-2 flex items-center justify-center gap-1 rounded-md border border-forge-border text-forge-muted hover:text-forge-text disabled:opacity-50 text-[11px]"
+        title="For web games: the song file (kilobytes) and bos-player.js, which synthesizes the music in the browser, instead of audio files"
+      >
+        <Download className="w-3.5 h-3.5" /> {busy ? 'Packing…' : 'Export web runtime kit (no audio files)'}
+      </button>
+      {asking && <GplNoticeDialog families={asking} onExport={() => void build(true)} onCancel={() => setAsking(null)} />}
+    </>
   );
 };
 
