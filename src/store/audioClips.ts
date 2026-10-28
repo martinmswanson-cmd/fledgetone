@@ -1,6 +1,6 @@
 import type { Clip, ClipAudio, EmbeddedSound, GainPoint, SliceCount, SlicerSettings, Track } from './timelineTypes';
 import { clipSecondsAt, normalizeWarp, sourceAt } from './warp';
-import { barToSeconds, secondsToBar, tempoAt, type Tempo } from '../audio/tempoMap';
+import { barToSeconds, secondsBetween, secondsToBar, steadyBetween, tempoAt, type Tempo } from '../audio/tempoMap';
 import { AUDIO_FADE_MAX, AUDIO_GAIN_MAX, AUDIO_GAIN_MIN, ENVELOPE_DB_MAX, ENVELOPE_DB_MIN, MAX_SLICES, SLICE_COUNTS, STRETCH_BPM_MAX, STRETCH_BPM_MIN } from './timelineTypes';
 
 /**
@@ -267,9 +267,10 @@ export interface Crossfade {
  * Automatic crossfades: where two audio clips on one track overlap, and the earlier one ends
  * inside the later one, the earlier fades out and the later fades in across the overlap (equal
  * power, so the level holds through it). A clip lying wholly inside another is a layer and plays
- * on top, uncrossfaded. Only clips with a crossfade are in the map.
+ * on top, uncrossfaded. Only clips with a crossfade are in the map. The overlap's seconds are
+ * counted at the tempo where it is (along the song's tempo changes, across one).
  */
-export function crossfades(clips: ReadonlyArray<Pick<Clip, 'id' | 'trackId' | 'startBar' | 'lengthBars' | 'audio'>>, bpm: number): Map<string, Crossfade> {
+export function crossfades(clips: ReadonlyArray<Pick<Clip, 'id' | 'trackId' | 'startBar' | 'lengthBars' | 'audio'>>, tempo: Tempo): Map<string, Crossfade> {
   const out = new Map<string, Crossfade>();
   const byTrack = new Map<string, typeof clips[number][]>();
   for (const c of clips) {
@@ -278,7 +279,6 @@ export function crossfades(clips: ReadonlyArray<Pick<Clip, 'id' | 'trackId' | 's
     if (list) list.push(c);
     else byTrack.set(c.trackId, [c]);
   }
-  const spb = secondsPerBar(bpm);
   for (const list of byTrack.values()) {
     if (list.length < 2) continue;
     list.sort((a, b) => a.startBar - b.startBar || a.lengthBars - b.lengthBars);
@@ -291,7 +291,7 @@ export function crossfades(clips: ReadonlyArray<Pick<Clip, 'id' | 'trackId' | 's
         const bEnd = b.startBar + b.lengthBars;
         // b inside a (or starting with it): a layer, not a handover
         if (bEnd <= aEnd + EPS || b.startBar <= a.startBar + EPS) continue;
-        const seconds = (aEnd - b.startBar) * spb;
+        const seconds = steadyBetween(b.startBar, aEnd, tempo) ? (aEnd - b.startBar) * secondsPerBar(tempoAt(b.startBar, tempo)) : secondsBetween(b.startBar, aEnd, tempo);
         const fa = out.get(a.id) ?? { in: 0, out: 0 };
         const fb = out.get(b.id) ?? { in: 0, out: 0 };
         fa.out = Math.max(fa.out, seconds);

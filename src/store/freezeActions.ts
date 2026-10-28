@@ -70,7 +70,7 @@ export async function renderTrackChannels(trackId: string, onProgress?: (fractio
   if (!track || isAudioKind(track.instrumentKey)) return null;
   const own = store.clips.filter((c) => c.trackId === trackId);
   if (!own.length) return null;
-  const snapshot = { tracks: store.tracks, clips: store.clips, bpm: store.bpm, swing: store.swing, tempoPoints: store.tempoPoints };
+  const snapshot = { tracks: store.tracks, clips: store.clips, bpm: store.bpm, swing: store.swing, tempoPoints: store.tempoPoints, meter: store.meter, meterPoints: store.meterPoints };
   const fingerprint = freezeFingerprint(track, snapshot);
   const startBar = Math.min(...own.map((c) => c.startBar));
   const endBar = Math.max(...own.map((c) => c.startBar + c.lengthBars));

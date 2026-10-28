@@ -147,7 +147,7 @@ async function tick() {
   if (!auto.on || auto.rendering) return;
   const s = useTimelineStore.getState();
   const now = performance.now();
-  const all = { tracks: s.tracks, clips: s.clips, bpm: s.bpm, swing: s.swing, tempoPoints: s.tempoPoints };
+  const all = { tracks: s.tracks, clips: s.clips, bpm: s.bpm, swing: s.swing, tempoPoints: s.tempoPoints, meter: s.meter, meterPoints: s.meterPoints };
 
   // Let go of renders of tracks that are gone
   const ids = new Set(s.tracks.map((t) => t.id));
@@ -228,7 +228,7 @@ async function tick() {
     const after = useTimelineStore.getState();
     const track = after.tracks.find((t) => t.id === next.id);
     // Changed while it rendered (or gone): out of date already, so it's tried again once it settles
-    if (!r || !track || useUiStore.getState().pluginWindow?.trackId === next.id || freezeFingerprint(track, { tracks: after.tracks, clips: after.clips, bpm: after.bpm, swing: after.swing, tempoPoints: after.tempoPoints }) !== r.fingerprint) return;
+    if (!r || !track || useUiStore.getState().pluginWindow?.trackId === next.id || freezeFingerprint(track, after) !== r.fingerprint) return;
     // A track whose two sides are the same (most instruments, centred) is kept as one channel
     const [left, right] = r.channels;
     let mono = !right;

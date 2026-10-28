@@ -184,6 +184,13 @@ export function tempoAt(bar: number, tempo: Tempo): number {
 /** Seconds between two positions. */
 export const secondsBetween = (from: number, to: number, tempo: Tempo) => barToSeconds(to, tempo) - barToSeconds(from, tempo);
 
+/** Whether the tempo holds steady from `from` to `to`: no change, nor part of a glide, in between. */
+export function steadyBetween(from: number, to: number, tempo: Tempo): boolean {
+  if (!isMap(tempo)) return true;
+  const seg = segmentAtBar(segments(tempo), Math.max(1, from));
+  return seg.from === seg.to && seg.end >= to - EPS;
+}
+
 /**
  * How the tempo moves from `bar` on, for the Transport: the tempo there, and if it's gliding, the
  * tempo it reaches and how many seconds later (null when it holds steady until the next point).

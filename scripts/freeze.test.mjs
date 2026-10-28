@@ -164,3 +164,18 @@ test("the synthesized kits' freezes made on their old recordings go out of date;
     SYNTH_KIT_DESIGNS.technoKit = old;
   }
 });
+
+test('the meter is part of a freeze only for clips with a measured feel, outside plain 4/4', () => {
+  const felt = { ...clip('f', 'lead', 3, [['C4', 0]]), groove: { swing: 0, grid: 16, feel: { id: 'x', amount: 1 } } };
+  const sixEight = { meter: { num: 6, den: 8 }, meterPoints: [] };
+  const four = { meter: { num: 4, den: 4 }, meterPoints: [] };
+  // No feel: the meter changes nothing
+  const plain = base();
+  assert.equal(fp(synth, { ...plain, ...sixEight }), fp(synth, plain));
+  // A feel in 4/4 (said or not): as before, so freezes made before stay current
+  const withFeel = { ...base(), clips: [felt] };
+  assert.equal(fp(synth, { ...withFeel, ...four }), fp(synth, withFeel));
+  // A feel in another meter: the meter places its notes
+  assert.notEqual(fp(synth, { ...withFeel, ...sixEight }), fp(synth, withFeel));
+  assert.notEqual(fp(synth, { ...withFeel, meter: { num: 4, den: 4 }, meterPoints: [{ id: 'm', bar: 2, num: 3, den: 4 }] }), fp(synth, withFeel));
+});

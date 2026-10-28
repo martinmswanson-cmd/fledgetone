@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { liveContext } from '../../audio/liveContext';
+import { afterMaster, liveContext } from '../../audio/liveContext';
 import { Loader2, Play, Square, Undo2, AudioLines } from 'lucide-react';
 import { Modal } from './Modal';
 import { useTimelineStore, songTempo } from '../../store/timelineStore';
@@ -90,7 +90,7 @@ export const TuneDialog: React.FC<{ clipId: string; onClose: () => void }> = ({ 
     chans.forEach((ch, c) => buf.copyToChannel(ch as Float32Array<ArrayBuffer>, c));
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(ctx.destination);
+    src.connect(afterMaster());
     src.onended = () => setPlaying(false);
     src.start();
     player.current = src;

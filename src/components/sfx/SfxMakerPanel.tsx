@@ -6,7 +6,7 @@
  */
 import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { create } from 'zustand';
-import { liveContext } from '../../audio/liveContext';
+import { afterMaster, liveContext } from '../../audio/liveContext';
 import { Copy, Dices, Download, Gamepad2, Layers, Play, Plus, RefreshCw, Shuffle, Square, Star, Trash2, Upload, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import { isAudioKind } from '../../audio/instrumentCatalog';
@@ -211,7 +211,7 @@ async function audition(samples: Float32Array | Float32Array[], sampleRate: numb
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.loop = loop;
-  src.connect(ctx.destination);
+  src.connect(afterMaster());
   if (!when) stop();
   src.start(ctx.currentTime + when);
   playing = src;

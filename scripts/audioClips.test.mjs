@@ -306,6 +306,19 @@ test('overlapping audio clips crossfade: the earlier fades out, the later fades 
   assert.deepEqual(chain.get('b'), { in: 0.5, out: 0.5 });
 });
 
+test('a crossfade after a tempo change lasts the overlap at the tempo there', async () => {
+  const { crossfades } = await import('../src/store/audioClips.ts');
+  const audio = { soundId: 's', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 };
+  const clip = (id, startBar, lengthBars) => ({ id, trackId: 't', startBar, lengthBars, audio });
+  // 120 BPM, then 60 from bar 5: a bar there is 4 s, not 2
+  const tempo = { bpm: 120, points: [{ id: 'p', bar: 5, bpm: 60, ramp: false }] };
+  const x = crossfades([clip('a', 5, 2), clip('b', 6.5, 2)], tempo);
+  assert.deepEqual(x.get('b'), { in: 2, out: 0 });
+  // Across the change: along the map (half a bar at 120, then half a bar at 60)
+  const y = crossfades([clip('a', 1, 4.5), clip('b', 4.5, 2)], tempo);
+  near(y.get('a').out, 1 + 2);
+});
+
 test('a crossfade is equal power: the two curves keep the level through the overlap', () => {
   const out = envelopeShape(0, 4, 0, 1, { out: true });
   const into = envelopeShape(0, 4, 1, 0, { in: true });

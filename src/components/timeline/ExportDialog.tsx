@@ -532,7 +532,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
             keepPush(version === 'full');
           } else if (settings.normalize) {
             setStatus({ kind: 'rendering', fileName, progress: at(0.97), detail: detail('Matching the loudness') });
-            const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp);
+            const reached = await reachTarget(channelsOf(audio), audio.sampleRate, reading, targetById(settings.target), controller.signal, ceilingDbtp, ending === 'seamless');
             reading = reached.reading;
             audio = cutRingOut(audio, mixOpts);
             if (reached.shortDb > 0.3 && reached.capped)

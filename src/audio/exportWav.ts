@@ -1161,8 +1161,8 @@ async function renderGraphHeld(
   // first clock step at or after the note's time, and Tone starts oscillators no earlier than
   // the clock, so notes came out up to 128 samples late, by a different amount each loop pass.
   // (Set after building the graph, so its starting settings still apply from time 0.)
-  // Further ahead where a groove feel plays notes early: Tone starts them no earlier than the
-  // clock, so a push longer than the look-ahead came out shorter than live
+  // Further ahead where a groove feel or a row shift plays notes early: Tone starts them no
+  // earlier than the clock, so a push longer than the look-ahead came out shorter than live
   context.lookAhead = 2 * quantum + (graph.early > 0 ? graph.early : 0);
   const advanceClock = (to: number) => {
     const end = Math.min(to, duration);
@@ -1334,15 +1334,18 @@ async function renderGraphHeld(
     transport.start(plan.startAt, `${barToTicks(startBar)}i`);
     // Stop at endBar (after the last pass of a seamless loop): the render runs on for the
     // tail, and notes after endBar (the rest of the song, past a loop region's Out) must not
-    // play into it
-    transport.stop(plan.stopAt);
+    // play into it. A seamless loop, or an intro leading into one, runs on as long as notes play
+    // early: a note pushed early off the loop's first tick sounds at the end of the pass before
+    // it, as it does live, so the last pass (or the intro) ends with it too
+    const early = (schedule.earliest() * 15) / Math.min(opts.bpm, ...(opts.tempoPoints ?? []).map((p) => p.bpm));
+    transport.stop(plan.stopAt + (ending === 'seamless' || opts.noEndFade ? early : 0));
 
     return {
       /** The look-ahead limiter is in place (not the stand-in), where the master section is */
       lookahead: section ? section.lookahead() : expectsLookahead(),
       limitsAfter: !!section?.limitsAfter,
-      /** Seconds before its tick the earliest note a groove feel moves early plays (at the slowest tempo), 0 for none */
-      early: (schedule.earliest() * 15) / Math.min(opts.bpm, ...(opts.tempoPoints ?? []).map((p) => p.bpm)),
+      /** Seconds before its tick the earliest note a groove feel or a row shift moves early plays (at the slowest tempo), 0 for none */
+      early,
       reverbImpulse: () => busFx.impulse(),
       dispose: () => {
         schedule.dispose();
