@@ -7,11 +7,11 @@
  */
 import { create } from 'zustand';
 import { useEffect, useState } from 'react';
-import { INSTRUMENTS, isAudioKind } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isAudioKind, isSlicerKind } from '../audio/instrumentCatalog';
 import { FLEDGE_PRESETS, FLEDGE_START_PRESET, FLEDGE_URL, isFledgeUrl } from '../audio/plugins/fledgeMacros';
 import { getAudiblePositionBar } from '../audio/transport';
 import { useTimelineStore } from '../store/timelineStore';
-import type { InstrumentKey } from '../store/timelineTypes';
+import type { InstrumentKey, Track } from '../store/timelineTypes';
 import type { DrumStyle } from '../store/smartTools';
 import type { MySound } from '../store/mySounds';
 import type { SongKey } from '../store/songKey';
@@ -80,6 +80,9 @@ export function editorOf(key: InstrumentKey, plugin?: { url: string }): 'beat' |
   if (kind === undefined || ['custom', 'audio', 'plugin', 'return', 'bus', 'fx'].includes(kind)) return null;
   return 'notes';
 }
+
+/** A Slicer not in Pitch mode: how many slices it plays, one a key from C3 up (0 for any other track). */
+export const sliceCount = (track: Track): number => (isSlicerKind(track.instrumentKey) && !track.slicer?.pitch ? Math.max(1, track.slicer?.slices.length ?? 8) : 0);
 
 /** Whether a track plays a Drum Rack (its pads are its own sounds, see PocketRack.tsx). */
 export const isRackKey = (key: InstrumentKey): boolean => INSTRUMENTS[key]?.kind === 'rack';

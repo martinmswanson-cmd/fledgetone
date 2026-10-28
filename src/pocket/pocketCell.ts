@@ -15,13 +15,20 @@ import { foldSteps } from './pocketClips';
 
 const EPS = 1e-6;
 
+/** The sections last worked out, shared by every screen that shows them: once per change of the song, not once per screen. */
+let shared: { clips: readonly Clip[]; markers: unknown; tracks: readonly Track[]; sections: PocketSection[] } | null = null;
+
 /** The song's sections, worked out again when the song changes. */
 export function useSections(): PocketSection[] {
   const clips = useTimelineStore((s) => s.clips);
   const markers = useTimelineStore((s) => s.markers);
   const tracks = useTimelineStore((s) => s.tracks);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(() => pocketSections(useTimelineStore.getState()), [clips, markers, tracks]);
+  return useMemo(() => sharedSections(clips, markers, tracks), [clips, markers, tracks]);
+}
+
+function sharedSections(clips: readonly Clip[], markers: unknown, tracks: readonly Track[]): PocketSection[] {
+  if (shared?.clips !== clips || shared.markers !== markers || shared.tracks !== tracks) shared = { clips, markers, tracks, sections: pocketSections(useTimelineStore.getState()) };
+  return shared.sections;
 }
 
 /** The selected track (else the first Pocket shows) and section (kept inside the song). */
@@ -74,7 +81,7 @@ export function inOneStep<T>(edit: () => T): T {
  * Change the cell's notes: `edit` gets them (relative to the section) and returns the new ones.
  * Makes the cell one clip first when it isn't. `undo`: make this its own undo step (false for the
  * moves of a gesture that checkpointed when it began). Either way, making the clip and the change
- * are one step.
+ * are one step; notes given back unchanged change nothing.
  */
 export function editCell(trackId: string, sec: Pick<PocketSection, 'from' | 'to'>, edit: (notes: NoteEvent[]) => NoteEvent[], undo = true): void {
   inOneStep(() => {
@@ -83,7 +90,10 @@ export function editCell(trackId: string, sec: Pick<PocketSection, 'from' | 'to'
     const s = useTimelineStore.getState();
     const clip = s.clips.find((c) => c.id === id);
     if (!clip) return;
+    const next = edit(clip.notes);
+    // (Nothing changed, as a pad played on a note already there: no empty undo step)
+    if (next.length === clip.notes.length && next.every((n, i) => n === clip.notes[i])) return;
     if (undo) s.checkpoint();
-    s.setClipNotes(id, edit(clip.notes));
+    s.setClipNotes(id, next);
   });
 }

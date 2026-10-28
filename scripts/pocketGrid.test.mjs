@@ -1,5 +1,6 @@
 // Pocket's note maths (src/pocket/pocketGrid.ts): steps per bar, a note's length in steps, the
-// rows of the key, and notes matched by pitch whatever their spelling. Run with `npm test`.
+// rows of the key, notes matched by pitch whatever their spelling, and a section jump waiting for
+// the bar line. Run with `npm test`.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,7 @@ register(
   }
 }`)
 );
-const { stepsPerBar, scaleRows, noteToMidi, midiToNote, noteSteps, toRoll, fromRoll } = await import('../src/pocket/pocketGrid.ts');
+const { stepsPerBar, scaleRows, noteToMidi, midiToNote, noteSteps, toRoll, fromRoll, sectionJump, jumpStep } = await import('../src/pocket/pocketGrid.ts');
 const { keyOf } = await import('../src/store/songKey.ts');
 
 test('a bar has 16 steps in 4/4 and 12 in 6/8 and 3/4', () => {
@@ -60,4 +61,28 @@ test("the piano roll keeps notes it didn't change exactly as they were (off the 
   const out = fromRoll(roll);
   assert.equal(out[0].startOffset, 0.25);
   assert.deepEqual(out.slice(1), notes.slice(1));
+});
+
+test('a jump back to an earlier section waits for the bar line, then lands', () => {
+  // Playing B (bars 5-9) at 5.8, A (1-5) chosen: the loop runs from A to the bar line, so it doesn't wrap at once
+  const j = sectionJump(5.8, 1, 5);
+  assert.deepEqual(j, { from: 1, to: 5, when: 6, loop: [1, 6] });
+  assert.equal(jumpStep(j, 5.9), 'wait');
+  assert.equal(jumpStep(j, 5.995), 'seek');
+  // The loop wrapped into A on the bar line: it's there, only its loop is set
+  assert.equal(jumpStep(j, 1.02), 'land');
+});
+
+test('a jump forward plays to the bar line, then goes to the section', () => {
+  const j = sectionJump(1.5, 9, 17);
+  assert.deepEqual(j, { from: 9, to: 17, when: 2, loop: [1, 17] });
+  assert.equal(jumpStep(j, 1.7), 'wait');
+  assert.equal(jumpStep(j, 2), 'seek');
+  // The next section, starting on that bar line: it's reached by playing on
+  const next = sectionJump(4.5, 5, 9);
+  assert.equal(jumpStep(next, 5), 'land');
+});
+
+test('no jump to the section already playing', () => {
+  assert.equal(sectionJump(3.2, 1, 5), null);
 });
