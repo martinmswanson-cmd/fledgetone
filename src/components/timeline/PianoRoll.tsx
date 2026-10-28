@@ -48,7 +48,7 @@ import { GrooveFeelPicker } from './GrooveFeelPicker';
 import { DrumGroovePanel } from './DrumGroovePanel';
 import { ChordRiffBar } from './ChordRiffBar';
 import { penBars, rememberPen } from '../../store/penLength';
-import { duplicateAt, heldNotes, holdNotes, noteClip, placeNotes, type NoteClip } from '../../store/noteClipboard';
+import { duplicateAt, heldNotes, holdNotes, liveSelection, noteClip, placeNotes, type NoteClip } from '../../store/noteClipboard';
 import { ActionSelect } from '../actionSelect';
 
 const KEY_W = 72;
@@ -296,6 +296,21 @@ export const PianoRoll: React.FC = () => {
   const clipId = useTimelineStore((s) => s.editingClipId);
   const clip = useTimelineStore((s) => s.clips.find((c) => c.id === s.editingClipId) ?? null);
   const track = useTimelineStore((s) => (clip ? s.tracks.find((t) => t.id === clip.trackId) ?? null : null));
+  // Its clip deleted (or undone away) while open, with the keyboard in the editor that goes with it:
+  // the keyboard carries on from the clip's lane
+  const openId = clip?.id;
+  const openTrack = clip?.trackId;
+  useEffect(() => {
+    if (!openId || !openTrack) return;
+    return () => {
+      if (useTimelineStore.getState().clips.some((c) => c.id === openId)) return;
+      requestAnimationFrame(() => {
+        const at = document.activeElement;
+        if (at && at !== document.body && at.isConnected) return;
+        document.querySelector<HTMLElement>(`[data-lane="${CSS.escape(openTrack)}"]`)?.focus({ preventScroll: true });
+      });
+    };
+  }, [openId, openTrack]);
 
   if (!clipId || !clip || !track) return null;
   // An audio clip has no notes: its editor is for its gain and fades
@@ -429,6 +444,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     () => clip.notes.filter((n) => n.startOffset >= -1e-6 && n.startOffset < clip.lengthBars - 1e-6),
     [clip.notes, clip.lengthBars]
   );
+  // Notes gone from the clip (an undo, a delete elsewhere) leave the selection
+  useEffect(() => setSelected((s) => liveSelection(s, clip.notes)), [clip.notes]);
 
   // Other tracks' notes over the same bars, drawn faintly behind this clip's so parts fit together
   const allClips = useTimelineStore((st) => st.clips);

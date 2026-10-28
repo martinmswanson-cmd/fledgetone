@@ -447,7 +447,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
       if (after) {
         s.selectClip(after.id, false);
         requestAnimationFrame(() => parent?.querySelector<HTMLElement>(`[data-clip-id="${after.id}"]`)?.focus());
-      }
+      } else requestAnimationFrame(() => parent?.focus({ preventScroll: true }));
     } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
       const r = e.currentTarget.getBoundingClientRect();
       s.selectClip(clip.id, false);

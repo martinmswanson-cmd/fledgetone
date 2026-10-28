@@ -57,3 +57,14 @@ export const heldNotes = (): NoteClip | null => held;
 export function holdNotes(clip: NoteClip | null): void {
   if (clip) held = clip;
 }
+
+/**
+ * A note selection with the notes that are gone taken out (undone, deleted): the same set when
+ * nothing went, so a selection that's still whole doesn't change.
+ */
+export function liveSelection(selected: Set<string>, notes: readonly Pick<NoteEvent, 'id'>[]): Set<string> {
+  if (selected.size === 0) return selected;
+  const there = new Set(notes.map((n) => n.id));
+  const kept = [...selected].filter((id) => there.has(id));
+  return kept.length === selected.size ? selected : new Set(kept);
+}
