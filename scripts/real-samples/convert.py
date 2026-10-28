@@ -763,7 +763,7 @@ def convert(st, root, measured):
         y[:, -fade:] *= np.linspace(1, 0, fade) ** 2
         y[:, : int(0.002 * SR)] *= np.linspace(0, 1, int(0.002 * SR))
         name = f'{NAMES[midi % 12]}{midi // 12 - 1}_{layer}_{t}.mp3'
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'f64le', '-ar', str(SR), '-ac', str(y.shape[0]), '-i', '-', '-codec:a', 'libmp3lame', '-q:a', '4',
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'f64le', '-ar', str(SR), '-ac', str(y.shape[0]), '-i', '-', '-codec:a', 'libmp3lame', '-q:a', '0', '-cutoff', '20000',
                         os.path.join(folder, name)], input=y.T.astype('<f8').tobytes(), check=True)
     size = sum(os.path.getsize(os.path.join(folder, n)) for n in os.listdir(folder))
     if scooped:
@@ -771,6 +771,12 @@ def convert(st, root, measured):
     print(f"{st['folder']:20s} {len(notes):3d} notes x {nlayers} layers x {ntakes} takes, "
           f"evened {max(abs(v) for v in trim.values()):.1f} dB at most, gain {20 * np.log10(gain):+.1f} dB, {size / 1e6:.1f} MB")
     return {'notes': notes, 'layers': nlayers, 'takes': ntakes, 'loops': out_loops, **({'shared': shared} if shared else {})}
+
+
+def sound_seconds(p):
+    """A file's seconds of sound, each channel counted (its duration times its channels)."""
+    out = subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration:stream=channels', '-of', 'csv=p=0', p], capture_output=True, text=True).stdout.split()
+    return float(out[-1]) * int(out[0])
 
 
 def write_index(root, done):
@@ -805,6 +811,7 @@ def write_index(root, done):
                 size += len(data)
         v['hash'] = h.hexdigest()[:10]
         v['bytes'] = size
+        v['audio'] = round(sum(sound_seconds(os.path.join(folder, n)) for n in os.listdir(folder) if n.endswith('.mp3')), 1)
     lines = [
         '/**',
         ' * The recordings hosted with the app, set by set (public/fledgetone-samples/<set>/): the MIDI',
@@ -817,6 +824,8 @@ def write_index(root, done):
         '  layers: number;',
         '  takes: number;',
         '  bytes: number;',
+        '  /** Seconds of sound in its files, each channel counted (what it takes decoded: see setSizes.ts) */',
+        '  audio: number;',
         '  /** Changes when the set\'s files do (see recordingStore.ts) */',
         '  hash: string;',
         '  /**',
@@ -840,7 +849,7 @@ def write_index(root, done):
         shared = v.get('shared') or {}
         if shared:
             tail += ', shared: {' + ', '.join(f"'{n}': " + (f"'{to}'" if to else 'null') for n, to in sorted(shared.items())) + '}'
-        lines.append(f"  '{k}': {{ notes: [{', '.join(map(str, v['notes']))}], layers: {v['layers']}, takes: {v['takes']}, bytes: {v['bytes']}, hash: '{v['hash']}'{tail} }},")
+        lines.append(f"  '{k}': {{ notes: [{', '.join(map(str, v['notes']))}], layers: {v['layers']}, takes: {v['takes']}, bytes: {v['bytes']}, audio: {v['audio']}, hash: '{v['hash']}'{tail} }},")
     lines += ['};', '']
     open(path, 'w').write('\n'.join(lines))
 
