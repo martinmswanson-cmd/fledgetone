@@ -25,6 +25,8 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
   'builtin:faust/Plate Reverb': { Level: [0, 0.7455] },
   // Feedback -0.9 to +0.9 (of -1 to +1)
   'builtin:faust/Phaser': { 'Feedback gain': [0.05, 0.95] },
+  // Output -60 to +12 dB (of -60 to +60 dB: 0.5 is 0 dB, 60 (2v - 1)^2 dB over it)
+  'builtin:mda/Loudness': { Output: [0, 0.7236] },
 };
 
 /**
@@ -34,6 +36,20 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
  * played NaN, which silenced the whole mix, or crashed. About 16 MB each.
  */
 export const OWN_MEMORY_FAMILIES: ReadonlySet<string> = new Set(['mutable']);
+
+/**
+ * Whether a plugin of `family` gets an instance of its own, in a live context or a render
+ * (`offline`). Only live: in a render every plugin is made at the start into the family's fresh
+ * (zeroed) instance and none is deleted before the end, so none can find another's leftovers; and
+ * Chromium never frees a render's instances (an OfflineAudioContext an AudioWorklet module went
+ * into stays), about 124 WebAssembly memories in all fit in a page, so one per plugin per render ran
+ * out after some 25 exports of a song with five of them, and every plugin failed to load after.
+ * A shared one started again after a blow-up still gets a fresh instance (`freshOnRestart`).
+ */
+export const ownMemoryFor = (family: string, offline: boolean): { ownMemory: boolean; freshOnRestart: boolean } => {
+  const own = OWN_MEMORY_FAMILIES.has(family);
+  return { ownMemory: own && !offline, freshOnRestart: own && offline };
+};
 
 /**
  * Built-in plugins turned down as a whole (dB), by address: ones whose loudest notes stood far
