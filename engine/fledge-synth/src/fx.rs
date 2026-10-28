@@ -94,6 +94,22 @@ impl Line {
         let b = self.buf[(i + 1) % n];
         a + (b - a) * t
     }
+    /// The same, read through a 4-point Hermite curve: for a line whose length keeps moving (the
+    /// chorus, the flanger), where a straight line between samples dulls the highs by a different
+    /// amount every sample, which came out as a grainy hiss over bright sounds
+    #[inline]
+    pub fn read_cubic(&self, d: f32) -> f32 {
+        let n = self.buf.len();
+        let d = d.clamp(2.0, (n - 3) as f32);
+        let rp = self.w as f32 + n as f32 - d;
+        let i = rp as usize;
+        let t = rp - i as f32;
+        let (xm, x0, x1, x2) = (self.buf[(i + n - 1) % n], self.buf[i % n], self.buf[(i + 1) % n], self.buf[(i + 2) % n]);
+        let c1 = 0.5 * (x1 - xm);
+        let c2 = xm - 2.5 * x0 + 2.0 * x1 - 0.5 * x2;
+        let c3 = 0.5 * (x2 - xm) + 1.5 * (x0 - x1);
+        ((c3 * t + c2) * t + c1) * t + x0
+    }
     pub fn clear(&mut self) {
         self.buf.iter_mut().for_each(|x| *x = 0.0);
     }
@@ -309,7 +325,7 @@ impl Effects {
                         let ph = self.chorus_phase + k as f32 / 3.0 + ch as f32 * 0.25;
                         let at = if c.chorus_spread { base * [0.62, 1.0, 1.38][k] } else { base };
                         let d = at + depth * (0.5 + 0.5 * (2.0 * PI * ph).sin());
-                        w[ch] += self.chorus[ch].read(d) / 3.0;
+                        w[ch] += self.chorus[ch].read_cubic(d) / 3.0;
                     }
                 }
                 l[n] = low[0] + x0 + (w[0] - x0) * mix;
@@ -332,7 +348,7 @@ impl Effects {
                     let wet = if c.flanger {
                         let d = (0.0003 + 0.006 * c.phaser_depth * s) * sr;
                         let line = &mut self.flanger[ch];
-                        let back = line.read(d);
+                        let back = line.read_cubic(d);
                         line.push(flush(fast_tanh(x + back * fb)));
                         0.5 * (x + back)
                     } else {
@@ -460,6 +476,28 @@ fn hadamard(mut x: [f32; 8]) -> [f32; 8] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A bright tone read from a line between samples, as the chorus and the flanger read it: the
+    /// Hermite read is far closer to the tone itself than a straight line between samples
+    #[test]
+    fn a_moving_read_stays_close_to_the_tone() {
+        let (sr, hz) = (48000.0f32, 10000.0f32);
+        let mut line = Line::new(4800);
+        let (mut cubic, mut straight, mut all) = (0.0f64, 0.0f64, 0.0f64);
+        for i in 0..20000 {
+            line.push((2.0 * PI * hz * i as f32 / sr).sin());
+            if i > 1000 {
+                // A delay sweeping across fractions of a sample, as a chorus's does
+                let d = 200.0 + 50.0 * (i as f32 * 0.001).sin();
+                let want = (2.0 * PI * hz * (i as f32 + 1.0 - d) / sr).sin() as f64;
+                cubic += (line.read_cubic(d) as f64 - want).powi(2);
+                straight += (line.read(d) as f64 - want).powi(2);
+                all += want * want;
+            }
+        }
+        let (c, s) = (10.0 * (cubic / all).log10(), 10.0 * (straight / all).log10());
+        assert!(c < -24.0 && c < s - 10.0, "cubic {c:.1} dB, straight {s:.1} dB");
+    }
 
     fn cfg() -> FxCfg {
         FxCfg {

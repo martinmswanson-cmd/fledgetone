@@ -241,9 +241,10 @@ fn legacy_note_random_scene(make: &dyn Fn() -> Synth) -> u64 {
 }
 
 /// The hash of legacy_note_random_scene on a sound saved before "Random by step". (Taken from the
-/// synth as it was then, and taken again when the wavetables got finer, which changed every sample
+/// synth as it was then, and taken again when the wavetables got finer and again when the filters
+/// came to glide a step a sample and the drive to run at twice the rate: each changed every sample
 /// a little but none of the note random values)
-const LEGACY_NOTE_RANDOM_SCENE: u64 = 0x3354_323b_c6fc_7b11;
+const LEGACY_NOTE_RANDOM_SCENE: u64 = 0xf54b_a360_e327_6111;
 
 /// A sound saved before "Random by step" (fewer values) still gets each note's random values from
 /// its step and its pitch: sample for sample as that version of the synth played it (see

@@ -30,7 +30,10 @@ as a Rust library for a future desktop app.
   "via" source scaling its amount
 - Drive in three places: before the filters, after them (with a cabinet-style tone) and on the
   mids and highs after the voices (the lows stay clean); soft, warm, hard clip, fold, asymmetric,
-  tube (antialiased), bitcrush and downsample, each levelled so it adds grit, not volume
+  tube (antialiased), bitcrush and downsample, each levelled so it adds grit, not volume; the
+  shapes run at twice the sample rate (polyphase half-band filters up and down, the
+  antialiasing's droop made up), so they neither fold back nor dull the top, and a part mix
+  doesn't comb
 - The sub is mixed in clean and mono after the drive, the OTT and the effects (older saved sounds
   keep it with the voices, as they had it)
 - Multiband upward/downward compression (OTT), effects, width, mono below a set frequency (180 Hz
@@ -55,8 +58,9 @@ note's tone in harmonics, loudness, sub and width, and the largest jump between 
 `tests/legacy_sound.rs` also holds every preset and a fresh synth as saved before the
 keyboard-range work (`tests/data/range_sound.bin`).
 A change meant to make every sound better, older ones too (the finer wavetables; each voice's
-levels, pan, sub and noise ramping a sample at a time instead of stepping every 16 samples), takes
-both files' numbers again: `cargo test --release --test legacy_sound -- --ignored
+levels, pan, sub, noise and filter coefficients ramping a sample at a time instead of stepping
+every 16 samples; the drives at twice the rate; the chorus and flanger read through a Hermite
+curve), takes both files' numbers again: `cargo test --release --test legacy_sound -- --ignored
 rewrite_after_a_sound_change`.
 
 ## Build

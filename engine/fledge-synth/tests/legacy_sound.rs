@@ -11,8 +11,9 @@
 //! too, written by `write_range_sound` on the engine before it): a sound saved before it, with
 //! the values there were then, sounds as it did.
 //!
-//! A change meant to improve every sound, old ones too (the finer wavetables, the levels ramping
-//! a sample at a time), takes both files' numbers again: `rewrite_after_a_sound_change` below.
+//! A change meant to improve every sound, old ones too (the finer wavetables, the levels and
+//! the filters gliding a sample at a time, the drives at twice the rate), takes both files'
+//! numbers again: `rewrite_after_a_sound_change` below.
 
 use fledge_synth::presets::PRESETS;
 use fledge_synth::synth::{Synth, BLOCK};
@@ -238,8 +239,9 @@ fn range_values(name: &str, old_count: usize) -> Vec<f32> {
 }
 
 /// After a change meant to improve every sound, old ones included (finer wavetables, smoother
-/// levels): both files' numbers taken again from the engine as it is now, for the same cases
-/// loaded the same way, so from then on they hold the sounds to the new numbers.
+/// levels and filters, drives at twice the rate): both files' numbers taken again from the engine
+/// as it is now, for the same cases loaded the same way, so from then on they hold the sounds to
+/// the new numbers.
 /// `cargo test --release --test legacy_sound -- --ignored rewrite_after_a_sound_change`
 #[test]
 #[ignore]

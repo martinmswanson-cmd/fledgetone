@@ -322,6 +322,37 @@ struct FiltCoef {
 }
 
 impl FiltCoef {
+    /// Moves `s` of the way along `d` (another set's difference from this one; the same kind)
+    #[inline]
+    fn axpy(&mut self, d: &FiltCoef, s: f32) {
+        self.a.axpy(&d.a, s);
+        self.b.axpy(&d.b, s);
+        self.g += d.g * s;
+        self.ladder_k += d.ladder_k * s;
+        self.period += d.period * s;
+        self.comb_fb += d.comb_fb * s;
+        self.fk += d.fk * s;
+        for k in 0..3 {
+            self.form[k].axpy(&d.form[k], s);
+        }
+        self.fq += d.fq * s;
+    }
+
+    /// Ramping from `from` (the last stretch's) to this, over `n` samples: where to start and the
+    /// step a sample. None from (a new note) or another kind: no ramp, this from the start.
+    fn ramp_from(&self, from: Option<FiltCoef>, n: f32) -> (FiltCoef, FiltCoef) {
+        match from {
+            Some(f) if f.kind == self.kind => {
+                let mut d = *self;
+                d.axpy(&f, -1.0);
+                let mut step = FiltCoef::default();
+                step.axpy(&d, 1.0 / n);
+                (f, step)
+            }
+            _ => (*self, FiltCoef::default()),
+        }
+    }
+
     /// For filter `kind` at `cutoff` Hz, resonance 0..1; `vowel` 0..4 for the formant filter.
     fn new(kind: usize, cutoff: f32, reso: f32, vowel: f32, sr: f32) -> Self {
         let mut c = FiltCoef { kind, ..Default::default() };
@@ -561,9 +592,20 @@ fn ticks(beats: f64) -> u64 {
 
 /// One drive stage: the shape (antialiased), or a crush (bits or rate), with its makeup gain so
 /// that the level stays put as the drive rises, mixed with the clean sound.
+///
+/// A shape runs at twice the sample rate (see Drive::tick): the harmonics it makes up to 72 kHz
+/// are filtered off before they can fold back, and its antialiasing's averaging (half a sample
+/// late, darker at the top) is made up, so the highs aren't dulled (it took 9 dB off at 19 kHz)
 #[derive(Clone, Copy, Default)]
 struct Drive {
     shaper: Shaper,
+    up: Up2,
+    down: Down2,
+    /// The last sample at twice the rate (the clean sound's average), and the last two mixed ones
+    /// (the making up of the average's droop)
+    last: f32,
+    m1: f32,
+    m2: f32,
     held: f32,
     count: f32,
     /// The level in and out (mean squares), for the stages that keep their level by ear
@@ -605,13 +647,18 @@ impl DriveNow {
     }
 }
 
+/// The making up of the antialiasing's droop at twice the rate: [-a, 1 + 2a, -a] (flat to within
+/// 0.12 dB up to 20 kHz at 48 kHz, where the average alone took 2 dB off)
+const DROOP: f32 = 0.165;
+
 impl Drive {
     #[inline]
     fn tick(&mut self, d: &DriveNow, x: f32) -> f32 {
-        let w = match d.kind {
+        let y = match d.kind {
             p::CRUSH_BITS => {
                 let y = (x * d.gain).clamp(-1.0, 1.0);
-                (y * d.step).round() / d.step / d.makeup
+                let w = (y * d.step).round() / d.step / d.makeup;
+                x + (w - x) * d.mix
             }
             p::CRUSH_RATE => {
                 self.count += 1.0;
@@ -619,11 +666,25 @@ impl Drive {
                     self.count -= d.step;
                     self.held = (x * d.gain).clamp(-1.0, 1.0);
                 }
-                self.held / d.makeup
+                x + (self.held / d.makeup - x) * d.mix
             }
-            _ => self.shaper.tick(d.kind, x * d.gain) / d.makeup,
+            _ => {
+                // Twice the rate: up, shaped, mixed, made flat, down
+                let mut out = [0.0f32; 2];
+                for (k, u) in self.up.tick(x).into_iter().enumerate() {
+                    let w = self.shaper.tick(d.kind, u * d.gain) / d.makeup;
+                    // The clean sound averaged as the antialiasing averages the shaped one (the
+                    // same half-sample step), so a part mix doesn't comb
+                    let dry = 0.5 * (u + self.last);
+                    self.last = u;
+                    let m = dry + (w - dry) * d.mix;
+                    out[k] = (1.0 + 2.0 * DROOP) * self.m1 - DROOP * (m + self.m2);
+                    self.m2 = self.m1;
+                    self.m1 = m;
+                }
+                self.down.tick(out)
+            }
         };
-        let y = x + (w - x) * d.mix;
         if d.follow > 0.0 {
             self.ein += (x * x - self.ein) * d.follow;
             self.eout += (y * y - self.eout) * d.follow;
@@ -779,6 +840,10 @@ struct Voice {
     /// volume, pan left and right, sub, noise), each stretch ramping from them to its own, so a
     /// modulated level moves smoothly rather than in steps (NaN: a new note, which starts on its own)
     ramp: [f32; RAMPS],
+    /// The filters' coefficients at the end of the last stretch (None: a new note), each stretch
+    /// gliding from them to its own a step a sample, so a cutoff under an LFO or an envelope moves
+    /// smoothly rather than in steps every CONTROL samples
+    coef: [Option<FiltCoef>; 2],
 }
 
 /// How many levels a voice ramps across each stretch of CONTROL samples (see Voice::ramp)
@@ -827,6 +892,7 @@ impl Voice {
             gain_now: -1.0,
             carry: 0.0,
             ramp: [f32::NAN; RAMPS],
+            coef: [None; 2],
         }
     }
     fn release(&mut self) {
@@ -1429,6 +1495,7 @@ impl Synth {
         if fresh || !was_active {
             v.fade = 1.0;
             v.ramp = [f32::NAN; RAMPS];
+            v.coef = [None; 2];
         }
         // (The velocity's gain eases from the level that is heard; from a silent tail it snaps,
         // as a new note's does)
@@ -1836,8 +1903,11 @@ impl Synth {
                     let vowel = vowel_of(f.cutoff * 2f32.powf(f.env * fenv_now * 6.0 + cut_m * 5.0));
                     FiltCoef::new(f.kind, cutoff, reso, vowel, sr)
                 };
-                let c1 = coef(&cfg.filt[0], m[d::CUT1], m[d::RES1]);
-                let c2 = if cfg.f2_used { coef(&cfg.filt[1], m[d::CUT2], m[d::RES2]) } else { FiltCoef::default() };
+                let to1 = coef(&cfg.filt[0], m[d::CUT1], m[d::RES1]);
+                let to2 = if cfg.f2_used { coef(&cfg.filt[1], m[d::CUT2], m[d::RES2]) } else { FiltCoef::default() };
+                let (mut c1, step1) = to1.ramp_from(v.coef[0], n_here);
+                let (mut c2, step2) = to2.ramp_from(v.coef[1], n_here);
+                v.coef = [Some(to1), Some(to2)];
                 let fdrive = (cfg.fdrive + m[d::FDRIVE]).clamp(0.0, 1.0);
                 let fpre = 1.0 + 4.0 * fdrive;
                 let drive_db = (cfg.drive + m[d::DRIVE] * 24.0).clamp(0.0, 48.0);
@@ -1873,6 +1943,8 @@ impl Synth {
                         now[k] += step[k];
                     }
                     let [gain_a, gain_b, vol, pl, pr, sub_gain, noise] = now;
+                    c1.axpy(&step1, 1.0);
+                    c2.axpy(&step2, 1.0);
                     let gains = [gain_a, gain_b];
                     // Glide and the pitch envelope move per sample
                     // (Kept as a shrinking offset: small numbers keep their precision, so a long
@@ -2221,6 +2293,75 @@ fn vol_mod(m: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A sine of 7 cycles every 107 samples (about 3.14 kHz at 48 kHz) through a drive stage: the
+    /// power of what isn't one of its harmonics (what folded back) against all of it, dB. Over a
+    /// whole number of periods every harmonic sits on its own bin, and 107 being prime, nothing
+    /// folded back lands on one.
+    fn drive_fizz(kind: u32, db: f32, mix: f32) -> f64 {
+        let mut st = Drive::default();
+        let d = DriveNow::new(kind, db, mix, 0.0);
+        let period = 107usize;
+        let x = |i: usize| 0.5 * (2.0 * std::f32::consts::PI * 7.0 * i as f32 / period as f32).sin();
+        for i in 0..period * 40 {
+            st.tick(&d, x(i));
+        }
+        let n = period * 20;
+        let y: Vec<f64> = (0..n).map(|i| st.tick(&d, x(i)) as f64).collect();
+        let (mut fizz, mut all) = (0.0, 0.0);
+        for j in 1..period / 2 {
+            let k = j * 20;
+            let (mut re, mut im) = (0.0, 0.0);
+            for (i, v) in y.iter().enumerate() {
+                let a = 2.0 * std::f64::consts::PI * (k * i) as f64 / n as f64;
+                re += v * a.cos();
+                im += v * a.sin();
+            }
+            let p = re * re + im * im;
+            all += p;
+            if j % 7 != 0 {
+                fizz += p;
+            }
+        }
+        10.0 * (fizz / all).log10()
+    }
+
+    /// The drives run at twice the rate: a hard soft clip of a high note folds back little (it
+    /// folded back fizz under 30 dB down, run at the sample rate)
+    #[test]
+    fn a_hard_driven_high_note_folds_back_little() {
+        for (kind, most) in [(1, -55.0), (3, -50.0), (4, -60.0), (6, -60.0)] {
+            let f = drive_fizz(kind, 24.0, 1.0);
+            assert!(f < most, "shape {kind}: {f:.1} dB");
+        }
+        // Half mixed in, no worse
+        assert!(drive_fizz(1, 24.0, 0.5) < -55.0);
+    }
+
+    /// A drive barely driven, fully in or half mixed with the clean sound, keeps the highs as loud
+    /// as the mids (its antialiasing's averaging made up; the half mix doesn't comb)
+    #[test]
+    fn a_light_drive_keeps_the_highs() {
+        let level = |hz: f32, mix: f32| {
+            let mut st = Drive::default();
+            let d = DriveNow::new(1, 0.0, mix, 0.0);
+            let mut sum = 0.0f64;
+            for i in 0..48000 {
+                let y = st.tick(&d, 0.05 * (2.0 * std::f32::consts::PI * hz * i as f32 / 48000.0).sin());
+                if i >= 4800 {
+                    sum += (y * y) as f64;
+                }
+            }
+            10.0 * sum.log10()
+        };
+        for mix in [1.0, 0.5] {
+            let mids = level(1000.0, mix);
+            for hz in [10000.0, 15000.0, 19000.0] {
+                let diff = level(hz, mix) - mids;
+                assert!(diff.abs() < 0.4, "mix {mix}: {hz} Hz {diff:+.2} dB");
+            }
+        }
+    }
 
     fn render(s: &mut Synth, blocks: usize) -> (f32, f32) {
         let mut peak: f32 = 0.0;
