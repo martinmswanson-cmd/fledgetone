@@ -70,6 +70,7 @@ const show = (selector: string, missing?: string) => async () => {
 
 const RECORD_OPTIONS = 'button[title^="Recording settings"]';
 const PERF_BUTTON = 'button[title="Performance and memory"], button[title^="Playback is lagging"]';
+const NO_VIDEO = 'Load a video first: the Video button in the Video tab, or drop a video file on the page.';
 const AUDIO_FIRST = 'Start the audio first (the START AUDIO button at the top right).';
 
 type Item = Omit<PaletteEntry, 'id' | 'group'> & { id?: string };
@@ -115,9 +116,9 @@ const TOOLS: Item[] = [
   { title: 'Transition matrix', keywords: 'transition transitions matrix fill riser impact crossfade stinger bridge state switch from to', detail: 'How each game state hands over to each other one (Game preview).', run: () => ui().setDialog('game') },
   { title: 'Audition like the game', keywords: 'audition pads trigger test game engine states preview crossfade', detail: 'Play the states with the game kit\'s own player (Game preview).', run: () => ui().setDialog('game') },
   { title: 'Intensity and stem groups', keywords: 'intensity stem group stems ambient percussion tension climax curve crossfade layers adaptive', detail: 'Crossfade stem groups along their curves (header, Game preview).', run: () => ui().setDialog('game') },
-  { title: 'Find cuts in the video', keywords: 'scene cut cuts detection shots edit video hit points', detail: 'A hit point on every hard cut (the scissors on the video lane).', run: async () => void (await press('[aria-label="Find cuts in the video"]')) },
+  { title: 'Find cuts in the video', keywords: 'scene cut cuts detection shots edit video hit points', detail: 'A hit point on every hard cut (the scissors on the video lane).', run: async () => ((await press('[aria-label="Find cuts in the video"]')) ? undefined : NO_VIDEO) },
   { title: 'Duck others under this track (dialogue / SFX proxy)', keywords: 'duck ducking sidechain proxy dialogue voiceover vo sfx sound effects lower music bed', detail: 'Every other track dips wherever this one sounds.', run: trackPanel('Duck others under this') },
-  { title: 'Dip under dialogue', keywords: 'dialogue dialog voice speech duck ducking dip lower music under talking video', detail: 'Turn the music down wherever people talk in the video.', run: async () => void (await press('[aria-label="Dip the music under the video\'s dialogue"]')) },
+  { title: 'Dip under dialogue', keywords: 'dialogue dialog voice speech duck ducking dip lower music under talking video', detail: 'Turn the music down wherever people talk in the video.', run: async () => ((await press('[aria-label="Dip the music under the video\'s dialogue"]')) ? undefined : NO_VIDEO) },
   { title: 'Export markers for Premiere, Resolve, Final Cut', keywords: 'export markers premiere resolve davinci final cut fcpxml edl xml csv editor', detail: 'In the Video tab (and the Markers list).', run: () => {
     ui().openDock('video');
     if (!timeline().markers.length) return 'Add markers (M) or hit points (Shift+M) first.';

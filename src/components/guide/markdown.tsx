@@ -2,7 +2,7 @@ import React from 'react';
 
 /**
  * A small Markdown renderer for the in-app guide (GUIDE.md): ## / ### headings, paragraphs,
- * - and 1. lists, | tables |, > tips, **bold**, *italic*, `code` and [links](https://...). It builds React elements
+ * - and 1. lists, | tables |, > tips, **bold**, *italic*, `code` and [links](https://...) (or #heading). It builds React elements
  * (no raw HTML), which is all the guide needs without pulling in a Markdown library.
  */
 
@@ -20,6 +20,12 @@ export function slug(text: string): string {
     .replace(/^-|-$/g, '');
 }
 
+/** The section a heading's id is in: a ## heading's own, or the one with that ### heading (null: none). */
+export function sectionOf(sections: GuideSection[], id: string): string | null {
+  if (sections.some((s) => s.id === id)) return id;
+  return sections.find((s) => s.body.some((line) => /^###\s+/.test(line) && slug(line.replace(/^###\s+/, '')) === id))?.id ?? null;
+}
+
 /** Split the guide into its ## sections (anything before the first ## is dropped: the # title). */
 export function splitSections(markdown: string): GuideSection[] {
   const sections: GuideSection[] = [];
@@ -33,16 +39,24 @@ export function splitSections(markdown: string): GuideSection[] {
 
 /**
  * [links](https://...), **bold** and *italic* in text with no code spans. The emphasis markers must
- * hug the words, so "2 * 3" stays plain. Links only go to http(s) addresses, in a new tab.
+ * hug the words, so "2 * 3" stays plain. Links go to http(s) addresses, in a new tab, or to a heading of
+ * the guide's own (#resampling).
  */
 function emphasis(text: string, key: string): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   let last = 0;
   let i = 0;
-  for (const m of text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|\*\*(\S(?:[^*]*\S)?)\*\*|\*(\S(?:[^*]*\S)?)\*/g)) {
+  for (const m of text.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+|#[a-z0-9-]+)\)|\*\*(\S(?:[^*]*\S)?)\*\*|\*(\S(?:[^*]*\S)?)\*/g)) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const k = `${key}-${i++}`;
-    if (m[1] !== undefined) {
+    if (m[1] !== undefined && m[2].startsWith('#')) {
+      // A heading of the guide's own: the guide panel takes you there (see GuidePanel)
+      out.push(
+        <a key={k} href={m[2]} data-guide-anchor={m[2].slice(1)} className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200">
+          {m[1]}
+        </a>
+      );
+    } else if (m[1] !== undefined) {
       out.push(
         <a key={k} href={m[2]} target="_blank" rel="noopener noreferrer" className="text-cyan-300 underline underline-offset-2 hover:text-cyan-200">
           {m[1]}

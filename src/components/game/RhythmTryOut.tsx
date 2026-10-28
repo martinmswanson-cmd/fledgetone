@@ -68,6 +68,8 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
   // Render the song (as an export would, with the master section)
   useEffect(() => {
     let cancelled = false;
+    // Closing the game or picking another stops the render (it would carry on unseen)
+    const stop = new AbortController();
     const st = useTimelineStore.getState();
     if (st.isPlaying || st.loadingToPlay) st.pause();
     (async () => {
@@ -77,7 +79,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
         const opts = { tracks: s.tracks, clips: s.clips, bpm: s.bpm, tempoPoints: s.tempoPoints, swing: 0, startBar: 1, endBar: notes.end, masterFx: masterFxOf(s), master: s.master, ending: 'ringOut' as const, sampleRate: 44100 as const };
         const key = JSON.stringify(opts);
         if (cache?.key !== key) {
-          const b = await renderArrangement(opts, (f) => !cancelled && setProgress(`Rendering the song (${Math.round(f * 100)}%).`));
+          const b = await renderArrangement({ ...opts, signal: stop.signal }, (f) => !cancelled && setProgress(`Rendering the song (${Math.round(f * 100)}%).`));
           cache = { key, buffer: b };
         }
         if (!cancelled) setBuffer(cache.buffer);
@@ -89,6 +91,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
     })();
     return () => {
       cancelled = true;
+      stop.abort();
     };
   }, [notes, onClose]);
 

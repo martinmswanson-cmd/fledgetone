@@ -3,7 +3,7 @@
 // so the site's guide is always the same text as the app's (src/components/guide/, which reads the
 // same file). The Markdown here is the same small set the app's renderer handles: ## and ###
 // headings, paragraphs, - and 1. lists, | tables |, > tips, **bold**, *italic*, `code` and
-// [links](https://...) (or to the site's own pages, /learn/...). Pure, so it's unit tested (scripts/guidePages.test.mjs).
+// [links](https://...) (or to the site's own pages, /learn/..., or to a heading of the guide's, #resampling). Pure, so it's unit tested (scripts/guidePages.test.mjs).
 
 /** URL-safe id for a heading, e.g. "Timecode & frame rates" -> "timecode-frame-rates" (as the app's). */
 export function slug(text) {
@@ -140,9 +140,24 @@ export function summary(lines, max = 155) {
   return `${/\s/.test(text[max - 1]) ? cut.trimEnd() : cut.replace(/\s+\S*$/, '')}…`;
 }
 
+/**
+ * The guide's links to its own headings ([Resampling](#resampling), as the app follows them) made
+ * into links to the page that has them: /guide/<section>/ for a ## heading, with #<heading> for a ###.
+ */
+export function linkAnchors(sections) {
+  const where = new Map();
+  for (const s of sections) where.set(s.id, `/guide/${s.id}/`);
+  for (const s of sections)
+    for (const line of s.body) {
+      const h3 = line.match(/^###\s+(.*)/);
+      if (h3 && !where.has(slug(h3[1]))) where.set(slug(h3[1]), `/guide/${s.id}/#${slug(h3[1])}`);
+    }
+  return sections.map((s) => ({ ...s, body: s.body.map((line) => line.replace(/\]\(#([a-z0-9-]+)\)/g, (m, id) => (where.has(id) ? `](${where.get(id)})` : m))) }));
+}
+
 /** Every page of the guide: [{ path, html }], with paths relative to the site root. figures(id) gives a section's figures. */
 export function guidePages(markdown, page, figures = () => []) {
-  const sections = splitSections(markdown).map((s) => ({ ...s, ...renderSection(s.body, figures(s.id)), summary: summary(s.body) }));
+  const sections = linkAnchors(splitSections(markdown)).map((s) => ({ ...s, ...renderSection(s.body, figures(s.id)), summary: summary(s.body) }));
   const pages = sections.map((s, i) => ({
     path: `guide/${s.id}/index.html`,
     html: page.section({ section: s, sections, prev: sections[i - 1], next: sections[i + 1] }),

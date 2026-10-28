@@ -69,11 +69,27 @@ export function reportText({ what, email, details }: ProblemReport): string {
   return parts.join('\n\n');
 }
 
-/** Mail programs cut long links: keep the message well under that. */
+/**
+ * Mail programs cut long links (Windows at about 2,000 characters): keep the message well under
+ * that as it's written in the link, where a space takes 3 characters and an accented or non-Latin
+ * letter 6 to 12.
+ */
 const MAILTO_MAX = 1800;
 
 export function mailtoLink(report: ProblemReport): string {
   let body = reportText(report);
-  if (body.length > MAILTO_MAX) body = `${body.slice(0, MAILTO_MAX).replace(/[\uD800-\uDBFF]$/, '')}\n[cut short]`;
+  const tail = '\n[cut short]';
+  const room = MAILTO_MAX - encodeURIComponent(tail).length;
+  if (encodeURIComponent(body).length > MAILTO_MAX) {
+    // The longest start of it that fits (never half a character)
+    let lo = 0;
+    let hi = body.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      if (encodeURIComponent(body.slice(0, mid).replace(/[\uD800-\uDBFF]$/, '')).length <= room) lo = mid;
+      else hi = mid - 1;
+    }
+    body = `${body.slice(0, lo).replace(/[\uD800-\uDBFF]$/, '')}${tail}`;
+  }
   return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Fledgetone problem report")}&body=${encodeURIComponent(body)}`;
 }

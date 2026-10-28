@@ -89,3 +89,13 @@ test("links to the site's own pages work, as well as full addresses", async () =
   assert.equal(inline('[Next](/learn/first-beat/)'), '<a href="/learn/first-beat/">Next</a>');
   assert.equal(inline('[Site](https://fledgetone.com)'), '<a href="https://fledgetone.com" rel="noopener">Site</a>');
 });
+
+test("the guide's links to its own headings go to the page that has them, and every one is found", async () => {
+  const { linkAnchors } = await import('./guide-pages.mjs');
+  const [a, b] = linkAnchors(splitSections('# T\n## One\nSee [Two](#two) and [Deep](#deep).\n## Two\n### Deep\nText'));
+  assert.equal(a.body[0], 'See [Two](/guide/two/) and [Deep](/guide/two/#deep).');
+  assert.equal(b.body[0], '### Deep');
+  const md = readFileSync(new URL('../GUIDE.md', import.meta.url), 'utf8');
+  const left = linkAnchors(splitSections(md)).flatMap((s) => s.body).filter((line) => /\]\(#/.test(line));
+  assert.deepEqual(left, []);
+});

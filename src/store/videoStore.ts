@@ -85,6 +85,28 @@ export async function openVideo(url: string): Promise<HTMLVideoElement> {
   el.playsInline = true;
   el.src = url;
   await once(el, 'loadedmetadata');
+  // A video recorded in a browser often doesn't say how long it is (Infinity) until it's been
+  // read to the end: seek far past it, and the browser finds the length
+  if (!Number.isFinite(el.duration)) {
+    await new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        el.removeEventListener('durationchange', check);
+        resolve();
+      };
+      const check = () => Number.isFinite(el.duration) && done();
+      const timer = setTimeout(done, 10000);
+      el.addEventListener('durationchange', check);
+      el.currentTime = 1e101;
+    });
+    if (!Number.isFinite(el.duration) || el.duration <= 0) {
+      el.removeAttribute('src');
+      el.load();
+      throw new Error("this video doesn't say how long it is (try saving it again as an MP4)");
+    }
+    if (el.seeking) await once(el, 'seeked');
+    await seekVideo(el, 0);
+  }
   return el;
 }
 
@@ -122,6 +144,7 @@ export async function findSceneCuts(url: string, onProgress?: (fraction: number)
   };
   try {
     const duration = el.duration;
+    if (!Number.isFinite(duration)) throw new Error("this video doesn't say how long it is");
     const times: number[] = [];
     for (let t = 0; t < duration - 0.02; t += CUT_STEP) times.push(t);
     const frames: Uint8ClampedArray[] = [];
@@ -194,14 +217,18 @@ async function drawThumbs(url: string, duration: number, myGeneration: number, a
   canvas.width = width * 2;
   canvas.height = THUMB_HEIGHT * 2;
   const g = canvas.getContext('2d')!;
-  for (let at = 0; at < duration; at += step) {
-    if (myGeneration !== generation) return;
-    await seekVideo(el, at);
-    g.drawImage(el, 0, 0, canvas.width, canvas.height);
-    add({ at, url: canvas.toDataURL('image/jpeg', 0.6) });
+  try {
+    for (let at = 0; at < duration; at += step) {
+      if (myGeneration !== generation) return;
+      await seekVideo(el, at);
+      g.drawImage(el, 0, 0, canvas.width, canvas.height);
+      add({ at, url: canvas.toDataURL('image/jpeg', 0.6) });
+    }
+  } finally {
+    // (A newer video, or none, stops it: the element lets go of the file either way)
+    el.removeAttribute('src');
+    el.load();
   }
-  el.removeAttribute('src');
-  el.load();
 }
 
 /** Where a video file is kept in this browser: by name, size and date, so the same file isn't kept twice. */

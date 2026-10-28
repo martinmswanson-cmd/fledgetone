@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
-import { crc32, fill, formatSize, HEADER, LICENCE, makeZip, markdownToHtml, notice, readSynth, toolsPage, TOOLS } from './tools-site.mjs';
+import { crc32, fill, formatSize, HEADER, LICENCE, makeZip, markdownToHtml, notice, readSynth, toolsPage, TOOLS, gameMusicPlayers } from './tools-site.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -138,4 +138,15 @@ test('tools: every page of the site links to the Tools page in its footer, and i
   for (const name of ['game-music-players', 'fledge-synth', 'drop-effects', 'song-player'])
     assert.match(out, new RegExp(`/tools/fledgetone-${name}\\.zip\\n {2}Content-Type: application/zip\\n {2}Content-Disposition: attachment`));
   assert.doesNotMatch(out, /\/tools\/\*/);
+});
+
+test('tools: the Godot example scene finds its scripts wherever its folder is copied', async () => {
+  const { files } = await gameMusicPlayers();
+  const scene = files.find((f) => f.name === 'godot/music_example.tscn');
+  const paths = [...String(scene.data).matchAll(/path="([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(paths.length, 2);
+  for (const p of paths) {
+    assert.ok(!p.includes('://'), `${p} is relative to the scene`);
+    assert.ok(files.some((f) => f.name === `godot/${p}`), `godot/${p} is in the zip`);
+  }
 });

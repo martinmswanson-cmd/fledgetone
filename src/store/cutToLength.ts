@@ -75,6 +75,21 @@ export function songSections(clips: readonly Clip[], markers: readonly Marker[],
   }));
 }
 
+/**
+ * The game states' names for `sections`, as the game kit names them: each one unique as a file
+ * name too ('Boss/Fight' and 'Boss-Fight' make the same file, so the second is 'Boss-Fight 2').
+ */
+export function stateNames(sections: ReadonlyArray<{ name: string }>): string[] {
+  const safe = (name: string) => name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'Untitled';
+  const used = new Set<string>();
+  return sections.map((sec) => {
+    let name = sec.name;
+    for (let n = 2; used.has(safe(name)); n++) name = `${sec.name} ${n}`;
+    used.add(safe(name));
+    return name;
+  });
+}
+
 export interface CutPlan {
   /** Section indexes in the order they play (a repeat appears twice) */
   order: number[];

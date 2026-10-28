@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, X } from 'lucide-react';
 import guideMarkdown from '../../../GUIDE.md?raw';
-import { renderBlocks, splitSections } from './markdown';
+import { renderBlocks, sectionOf, splitSections } from './markdown';
 
 /**
  * The user guide, shown in the app. Its text is GUIDE.md at the repository root, so the same
@@ -42,9 +42,26 @@ export const GuidePanel: React.FC<{ onClose: () => void; section?: string; markd
     };
   }, [onClose]);
 
+  // A link to a heading of the guide's own: its section, scrolled to the heading
+  const jump = useRef<string | null>(null);
+  const scrollToJump = () => {
+    if (jump.current) bodyRef.current?.querySelector(`[id="${jump.current}"]`)?.scrollIntoView({ block: 'start' });
+    jump.current = null;
+  };
   useEffect(() => {
     bodyRef.current?.scrollTo({ top: 0 });
+    scrollToJump();
   }, [active]);
+  const onLink = (e: React.MouseEvent) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('a[data-guide-anchor]')?.dataset.guideAnchor;
+    if (!id) return;
+    e.preventDefault();
+    const at = sectionOf(sections, id);
+    if (!at) return;
+    jump.current = id === at ? null : id;
+    if (at === section?.id) scrollToJump();
+    else setActive(at);
+  };
 
   return (
     <div
@@ -87,7 +104,7 @@ export const GuidePanel: React.FC<{ onClose: () => void; section?: string; markd
               </button>
             ))}
           </nav>
-          <div ref={bodyRef} tabIndex={0} aria-label={`${title} text`} className="flex-1 min-h-0 overflow-auto px-5 py-4 text-[13px] text-forge-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50">
+          <div ref={bodyRef} tabIndex={0} onClick={onLink} aria-label={`${title} text`} className="flex-1 min-h-0 overflow-auto px-5 py-4 text-[13px] text-forge-muted focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/50">
             {section && (
               <article>
                 <h3 className="text-base font-semibold text-forge-text mb-2">{section.title}</h3>

@@ -538,11 +538,12 @@ export function readSynth(wasm) {
   return { params, presets, peak, finite };
 }
 
-async function gameMusicPlayers() {
+export async function gameMusicPlayers() {
+  // (The scripts by paths relative to the scene, so it works in whatever folder the three files share)
   const godotScene = `[gd_scene load_steps=3 format=3]
 
-[ext_resource type="Script" path="res://bos_music/music_example.gd" id="1"]
-[ext_resource type="Script" path="res://bos_music/AdaptiveMusic.gd" id="2"]
+[ext_resource type="Script" path="music_example.gd" id="1"]
+[ext_resource type="Script" path="AdaptiveMusic.gd" id="2"]
 
 [node name="MusicExample" type="Node"]
 script = ExtResource("1")

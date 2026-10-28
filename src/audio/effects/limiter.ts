@@ -197,6 +197,22 @@ export function limitChannels(left: Float32Array, right: Float32Array, sampleRat
   }
 }
 
+/**
+ * The limiter over finished channels (changed in place), lined up as they were: limitChannels
+ * delays the sound, so this runs it over a copy with room at the end and takes the delay off.
+ * Under the ceiling nothing changes. For sound mixed after the master, as a video's own sound is.
+ */
+export function limitInPlace(channels: Float32Array[], sampleRate: number, ceilingDbtp = LIMITER_CEILING_DBTP): void {
+  const latency = createLimiterKernel(sampleRate).latency;
+  const padded = channels.map((c) => {
+    const x = new Float32Array(c.length + latency);
+    x.set(c);
+    return x;
+  });
+  limitChannels(padded[0], padded[1] ?? new Float32Array(padded[0]), sampleRate, ceilingDbtp);
+  channels.forEach((c, i) => c.set(padded[i].subarray(latency, latency + c.length)));
+}
+
 /** The worklet processor's name. */
 export const LIMITER_PROCESSOR = 'bbx-limiter';
 
