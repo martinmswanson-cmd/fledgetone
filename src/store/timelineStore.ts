@@ -91,7 +91,7 @@ import { detectKey, keyOf } from './songKey';
 import { breathe } from './breathe';
 import { BUILD_BARS, buildUpSteps, dropHitSteps, HIT_BARS, partClip, snareRollSteps } from './buildDrop';
 import { keepVersion, keepVersionWhileEditing } from './versions';
-import { autosaveRemovedBy, hasWork, newSongId, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
+import { autosaveRemovedBy, autosaveWrittenBy, hasWork, newSongId, songFromAnotherTab, preservePreviousSession, setAsideSession, writeAutosave, type AutosaveFailure, type AutosaveResult, type ProjectSnapshot, type SavedSession } from './project';
 import type { DrumRack, MultiSample, Clip, ClipAudio, ExprPoint, FrameRate, InstrumentKey, LoopRegion, NoteEvent, RulerUnits, SlicerSettings, SnapGrid, SoundMeta, TimelineTool, Track, TrackEq, TrackFolder, WamPlugin, StepLane } from './timelineTypes';
 import { captureWamStatesNow, liveStates, onWamStates, resetWamSession, restoreWamState } from '../audio/wamHost';
 import { withSound, type MySound } from './mySounds';
@@ -104,7 +104,7 @@ import { designedKitStart } from './synthKits';
 import { REVERB_SEND_MAX, durationToBars, formatBarCount, minClipLength, snapBar, uid } from './timelineTypes';
 import { canMoveClipBetween, compatibleInstruments, INSTRUMENTS, isAudioKind, isDropKind, isDrumKind, isFxKind, playerFeel, seatOf } from '../audio/instrumentCatalog';
 import { hasRecordings, loadQuick, loadSongSamples } from '../audio/samplers/samplerManager';
-import { ensureSound, importDataUrl, importEmbeddedSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
+import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soundSeconds, useSoundLibrary } from '../audio/soundLibrary';
 import { liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
 import {
@@ -115,6 +115,7 @@ import {
   referencedSoundIds,
   retimeAudioClips,
   secondsPerBar,
+  partOfMangle,
   splitAudio,
   audioShift,
   trimAudioStart,
@@ -923,6 +924,7 @@ export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Cli
   // So do step lanes
   const [leftSteps, rightSteps] = splitStepLanes(clip.stepLanes, rel);
   if (leftSteps) left.stepLanes = leftSteps;
+  if (clip.audio) left.audio = partOfMangle(clip.audio);
   const right: Clip = {
     ...clip,
     id: uid('clip'),
@@ -1077,6 +1079,13 @@ export const songGeneration = (): number => songCount;
 
 /** The session the Restore banner offers: the last one at startup, or the song that New, Open or a link replaced. */
 export const useLastSession = create<{ session: SavedSession | null }>(() => ({ session: preservePreviousSession() }));
+
+/**
+ * Set once another tab with the app open has autosaved (they share one autosave) and this tab
+ * then wrote over it: 'same' when that tab had this song open, 'other' for another song. Before
+ * each such write, the other tab's song is kept as a version (File › Versions), so neither loses work.
+ */
+export const useOtherTab = create<{ song: 'same' | 'other' | null }>(() => ({ song: null }));
 
 
 const clampBar = (bar: number) => Math.max(1, Math.min(TOTAL_BARS + 1, bar));
@@ -1357,6 +1366,10 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
    * the autosave stops carrying the file. Nothing here is an edit of the user's, so no history.
    */
   const prepareSounds = (p: ProjectSnapshot) => {
+    // Copies held for want of storage (soundLibrary.ts) of songs no longer open go: only this one's,
+    // the replaced one's (the Restore banner brings it back) and the clipboard's stay
+    const last = useLastSession.getState().session?.project;
+    letGoHeldSounds(new Set([...referencedSoundIds(p), ...(last ? referencedSoundIds(last) : []), ...referencedSoundIds({ clips: get().clipboard, tracks: [] })]));
     // Sounds carried in the file go into the library first, then everything is loaded from there
     const ensureAll = () => {
       for (const id of referencedSoundIds(p)) ensureSound(id);
@@ -3563,7 +3576,10 @@ export function connectAutosave(): () => void {
   // Another tab's Dismiss removes the autosave when that tab hasn't autosaved yet, but the session
   // it dismissed may be this tab's open work: write it straight back. A removed set-aside
   // session frees space, so a failing autosave tries again.
+  /** What another tab last autosaved, until this tab's next autosave writes over it */
+  let theirs: string | null = null;
   const onStorage = (e: StorageEvent) => {
+    theirs = autosaveWrittenBy(e) ?? theirs;
     const removed = autosaveRemovedBy(e);
     const status = useTimelineStore.getState().autosaveStatus;
     if (!removed || !status) return; // no edits here yet: nothing of this tab's to keep
@@ -3599,6 +3615,15 @@ export function connectAutosave(): () => void {
     pending = false;
     clearTimeout(timer);
     const project = currentProject();
+    // Another tab's song is in the autosave now: kept as a version before this one replaces it
+    if (theirs !== null) {
+      const other = songFromAnotherTab(theirs);
+      theirs = null;
+      if (other && hasWork(other)) {
+        keepVersion(other, 'otherTab');
+        useOtherTab.setState({ song: other.songId === project.songId ? 'same' : 'other' });
+      }
+    }
     const result: AutosaveResult = writeAutosave(project);
     // Every couple of minutes, a version to go back to (in the background; it never holds up autosave)
     keepVersionWhileEditing(project);

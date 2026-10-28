@@ -251,6 +251,18 @@ export function forgetDecodedSounds(keep: Set<string>): number {
  */
 const unstored = new Map<string, EmbeddedSound>();
 
+/**
+ * Let go of the held copies (see `unstored`) of sounds no longer needed: those not in `keep`
+ * (the song now open, the one the Restore banner offers, the clipboard). In a browser that
+ * stores nothing, each file opened would otherwise stay in memory for as long as the page is open.
+ */
+export function letGoHeldSounds(keep: ReadonlySet<string>): void {
+  for (const id of [...unstored.keys()]) if (!keep.has(id)) unstored.delete(id);
+}
+
+/** How many sounds are held in memory for want of storage (for tests). */
+export const heldSoundCount = (): number => unstored.size;
+
 /** A sound's file: from the library, else from an opened project that carried it (undefined: neither has it). */
 async function soundData(id: string): Promise<Blob | undefined> {
   try {

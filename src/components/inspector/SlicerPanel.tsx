@@ -10,7 +10,7 @@ import type { SliceCount, SlicerSettings, Track } from '../../store/timelineType
 import { SLICE_COUNTS } from '../../store/timelineTypes';
 import { importSoundFile, SoundError, useSoundLibrary } from '../../audio/soundLibrary';
 import { resliced, slicerFor } from '../../audio/slicerTools';
-import { sliceEnd, sliceKey } from '../../audio/slicing';
+import { sliceEnd, sliceKey, withoutSlice, withSliceAt } from '../../audio/slicing';
 import { previewTrackNotes } from '../../audio/liveTracks';
 import { initAudio } from '../../audio/engine';
 import { pickAudioFiles } from '../timeline/audioFiles';
@@ -174,7 +174,7 @@ export const SlicerPanel: React.FC<{ track: Track }> = ({ track }) => {
             onDoubleClick={(e) => {
               const t = tOf(e.clientX - waveRef.current!.getBoundingClientRect().left);
               if (slicer.slices.some((s) => Math.abs(s - t) < MIN_SLICE) || t <= slicer.start + MIN_SLICE || t >= slicer.end - MIN_SLICE) return;
-              set({ ...slicer, slices: [...slicer.slices, t].sort((a, b) => a - b) });
+              set(withSliceAt(slicer, t));
             }}
           >
             <Waveform soundId={slicer.soundId} from={slicer.start} to={slicer.end} width={width} height={WAVE_H} color={track.color} className="block" />
@@ -203,8 +203,7 @@ export const SlicerPanel: React.FC<{ track: Track }> = ({ track }) => {
                   onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    const slices = slicer.slices.filter((_, k) => k !== i);
-                    set({ ...slicer, slices, focus: Math.min(slicer.focus, slices.length - 1) });
+                    set(withoutSlice(slicer, i));
                   }}
                   title={`Slice ${i + 1} (${sliceKey(i)}): drag to move, right-click to remove`}
                 >

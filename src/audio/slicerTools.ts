@@ -1,6 +1,6 @@
 import { liveMix } from './engine';
 import { decodedSound } from './soundLibrary';
-import { ENVELOPE_HOP, envelopeOf, equalSlices, transientSlices } from './slicing';
+import { ENVELOPE_HOP, envelopeOf, equalSlices, reversedAfterRecut, transientSlices } from './slicing';
 import type { SlicerSettings, SoundMeta } from '../store/timelineTypes';
 
 /**
@@ -36,8 +36,8 @@ export function slicerFor(sound: SoundMeta, part?: { start: number; end: number 
   return { ...base, slices: computeSlices(base), pitch: false, focus: 0 };
 }
 
-/** The settings with their slices cut again by their mode (after a change of mode, count or sensitivity). */
+/** The settings with their slices cut again by their mode (after a change of mode, count or sensitivity); backwards slices follow by where they start. */
 export function resliced(s: SlicerSettings): SlicerSettings {
   const slices = computeSlices(s);
-  return { ...s, slices, focus: Math.min(s.focus, slices.length - 1) };
+  return reversedAfterRecut(s, { ...s, slices, focus: Math.min(s.focus, slices.length - 1) });
 }

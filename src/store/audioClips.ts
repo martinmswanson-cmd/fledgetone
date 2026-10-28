@@ -77,9 +77,20 @@ export function loopTempos(seconds: number, near: number): number[] {
   return found.sort((a, b) => Math.abs(a - near) - Math.abs(b - near));
 }
 
+/**
+ * A clip's audio once it plays only part of what it played (a half of a split, a trimmed start):
+ * no longer the whole of a mangle, so it can't go back to that mangle's original (which would
+ * bring back all of it, in the wrong place). Undo still does.
+ */
+export function partOfMangle(audio: ClipAudio): ClipAudio {
+  if (!audio.mangled) return audio;
+  const { mangled: _m, ...rest } = audio;
+  return rest;
+}
+
 /** The audio of a clip's right half when it is cut `seconds` into the clip. */
 export function splitAudio(audio: ClipAudio, seconds: number): ClipAudio {
-  return { ...audio, offset: audio.offset + Math.max(0, seconds) };
+  return { ...partOfMangle(audio), offset: audio.offset + Math.max(0, seconds) };
 }
 
 /**
@@ -87,7 +98,7 @@ export function splitAudio(audio: ClipAudio, seconds: number): ClipAudio {
  * further into the sound. Never before the sound's start.
  */
 export function trimAudioStart(audio: ClipAudio, seconds: number): ClipAudio {
-  return { ...audio, offset: Math.max(0, audio.offset + seconds) };
+  return { ...(seconds ? partOfMangle(audio) : audio), offset: Math.max(0, audio.offset + seconds) };
 }
 
 /** The earliest bar a clip's left edge can be dragged to: no earlier than the sound's own start. */

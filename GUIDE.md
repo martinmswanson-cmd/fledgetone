@@ -680,7 +680,7 @@ The **Slicer** (**Add Track > Your Sounds > Slicer**) cuts a sound into slices a
 - In the piano roll the rows read **Slice 1**, **Slice 2** and so on. A note plays its slice from the start, for the note's length or the slice's length, whichever is shorter.
 - **Pitch** mode: every key plays the slice you last clicked, pitched from its own key, so you can play a chop as a melody.
 - **Chop sample…** (right-click an audio clip, or in the clip editor) has **To a Slicer instead**: a Slicer track from that clip's sound, cut where the dialog's markers are, with a clip that plays the slices in order, ready to rearrange. The audio clip stays.
-- **Backwards**: click a slice, then **Backwards** to play it reversed (its end first); reversed slices are shaded amber. Live and in exports alike.
+- **Backwards**: click a slice, then **Backwards** to play it reversed (its end first); reversed slices are shaded amber. Adding or removing a slice, or cutting them again, keeps the same stretch of the sound backwards. Live and in exports alike.
 - **WRITE Stutter** or **Shuffle** puts a new 2-bar clip at the playhead that plays the slices with repeats and 1/32 rolls, or a random slice on each 16th (a new one each press; Undo takes it away).
 - Slices play at the sound's own level; use the track fader to balance it.
 
@@ -766,7 +766,7 @@ Plugins are programs from their sites, so only load ones you trust. A project yo
 
 ### Where your sounds live
 
-Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.fledgetone.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen, restorable session or kept version (**File › Versions…**) uses. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
+Sound files (audio clips, the Slicer and the Sampler) are kept in this browser, once each, shared between tracks and projects, so a big file doesn't fill up autosave. **Save** puts the sounds inside the `.fledgetone.json` file, so a saved project opens complete on any computer, and opening it puts the sounds back into the browser. The Audio, Slicer and Sampler panels show how much the browser holds, and **Free unused** deletes the sounds no project on screen (or in another tab), restorable session or kept version (**File › Versions…**) uses. If a sound a song uses isn't in the browser any more when you **Save**, the message says how many couldn't go in the file. A clip whose sound was freed shows "Sound not in this browser" until you load the sound again or reopen the project file.
 
 ## Mixing and effects
 
@@ -957,7 +957,7 @@ Resampling is printing a sound to audio and then playing with the audio: choppin
 - **Onto a new audio track**: an audio clip in the same place, as loud as the music was.
 - **Onto a new Slicer, chopped**: cut **At its hits** or into **8** or **16 equal** slices, with a clip that plays them **In order**, as a **Stutter** (beats repeated and rolled at 1/32, a roll to end on) or **Shuffled** (a random slice each 16th); tick **The last slice backwards** for a reversed tail. Rearrange them by drawing notes on the Slicer's rows.
 - **Onto a Fledge Synth wavetable**: a new Fledge Synth track that plays the sound as its **User table** (8, 16 or 32 cycles, cut at its pitch or at 512, 1024 or 2048 samples), as a **Bass**, **Lead** or **Pad**, with LFO 2 sweeping the table's Position over each note. A held, steady sound works best.
-- **Mangle…** (in an audio clip's editor) makes a new sound from what the clip plays: **Tape speed** (half speed, down 5, up 7, double speed: pitch and length change together), **Pitch** (up or down, same length), **Stretch ×2** or **Squeeze ×0.5** (same pitch), **Stutter 1/8, 1/16, 1/32** (the start of every beat repeated through it), **Shuffle 1/8s or 1/16s** (the same cells in a new order; the first stays first), **Gate** (trance, offbeat, chop or half bar patterns on the 16ths), **Crush** (fewer bits and a lower rate), **Formant** (the voice bigger or smaller at the same pitch). Each comes back about as loud as it was and never peaks louder. Each is an Undo step, and **Back to the original** puts the first sound back whatever was done since. A mangled sound is a sound like any other: exports play exactly what you hear.
+- **Mangle…** (in an audio clip's editor) makes a new sound from what the clip plays: **Tape speed** (half speed, down 5, up 7, double speed: pitch and length change together), **Pitch** (up or down, same length), **Stretch ×2** or **Squeeze ×0.5** (same pitch), **Stutter 1/8, 1/16, 1/32** (the start of every beat repeated through it), **Shuffle 1/8s or 1/16s** (the same cells in a new order; the first stays first), **Gate** (trance, offbeat, chop or half bar patterns on the 16ths), **Crush** (fewer bits and a lower rate), **Formant** (the voice bigger or smaller at the same pitch). Each comes back about as loud as it was and never peaks louder. Each is an Undo step, and **Back to the original** puts the first sound back whatever was done since (once a mangled clip is split or its start trimmed, Undo does: a part of it has no whole original to go back to). A mangled sound is a sound like any other: exports play exactly what you hear.
 - **In Pocket**: a section's **⋯** has **Resample it into a Slicer**: the section (or only the track you have open) chopped into 16 slices on a new Slicer track, with a stutter pattern and a reversed tail.
 
 ## Clip launcher
@@ -1060,6 +1060,7 @@ The app also saves your work in this browser half a second after every change. T
 - While you work, a version is kept every couple of minutes (with autosave), and one just before **New**, **Open**, a shared link or going back to a version replaces the song. A song that hasn't changed isn't kept twice.
 - Old versions thin out: every one from the last hour, then one per 10 minutes for the last day, then one a day for 30 days. Each song's newest version stays however old it is (a song you replaced may be nowhere else), and at most 300 versions are kept in all.
 - Versions keep the song, not its sound files: those stay in the browser's sound library, and **Free unused** leaves every sound a kept version uses.
+- With the app open in two tabs (they share one autosave), each tab keeps the other tab's song as a version ("from another tab") before its autosave writes over it, and the project bar says so: nothing either tab did is lost.
 - Versions are kept per browser, like autosave. Where the browser blocks storage (some private windows), the list says so, and autosave and **Save** work as before.
 
 ## Playing a MIDI keyboard

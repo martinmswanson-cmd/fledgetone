@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { Download, Gamepad2, History, Music2, Save, Share2 } from 'lucide-react';
 import { AlertTriangle, HardDrive } from 'lucide-react';
-import { retryAutosave, useLastSession, useTimelineStore } from '../../store/timelineStore';
+import { retryAutosave, useLastSession, useOtherTab, useTimelineStore } from '../../store/timelineStore';
 import { useUiStore } from '../../store/uiStore';
 import { useTourStore } from '../../tour/tourStore';
 import { autosaveUnreadable, clearPreviousSession, hasWork as songHasWork } from '../../store/project';
@@ -202,6 +202,20 @@ const AutosaveStatusChip: React.FC = () => {
   );
 };
 
+/** Fledgetone open in another tab too (they share one autosave): what happens to each tab's changes. */
+const OtherTabNotice: React.FC = () => {
+  const song = useOtherTab((s) => s.song);
+  if (!song) return null;
+  return (
+    <span role="status" className="flex items-center gap-1.5 text-[11px] text-amber-300" title="Both tabs save to the same place in this browser. Before this tab saves over the other tab's work, that work is kept as a version: File › Versions has it.">
+      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+      {song === 'same'
+        ? 'This song is also open in another tab: its changes are kept as a separate version (File › Versions).'
+        : 'Fledgetone is open in another tab with another song: that song is kept as a version (File › Versions).'}
+    </span>
+  );
+};
+
 const STORAGE_NOTICE_KEY = 'bosBeatbox.storageNoticeSeen';
 const seenStorageNotice = () => {
   try {
@@ -287,6 +301,7 @@ export const ProjectBar: React.FC = () => {
   return (
     <div className="relative flex flex-wrap items-center gap-1.5">
       <AutosaveStatusChip />
+      <OtherTabNotice />
       <StorageNotice />
       <label className="flex items-center gap-1.5 mr-1" title="Project name (used for file names)">
         <Music2 className="w-3.5 h-3.5 text-forge-muted" />

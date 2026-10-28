@@ -7,6 +7,7 @@ import { loadTag } from '../../store/arrangeActions';
 import { HardDrive } from 'lucide-react';
 import { currentProject, useLastSession, useTimelineStore } from '../../store/timelineStore';
 import { referencedSoundIds } from '../../store/audioClips';
+import { storedAutosave } from '../../store/project';
 import { freeUnusedSounds, librarySize, useSoundLibrary } from '../../audio/soundLibrary';
 import { keptSoundIds } from '../../audio/keptSounds';
 import { mySoundIds } from '../../store/mySounds';
@@ -35,8 +36,11 @@ export const SoundLibraryFooter: React.FC = () => {
     const keep = new Set(referencedSoundIds(currentProject()));
     const lastSession = useLastSession.getState().session;
     if (lastSession) referencedSoundIds(lastSession.project).forEach((id) => keep.add(id));
+    // ...and the song the autosave holds: with the app open in another tab, that tab's song
+    const autosaved = storedAutosave();
+    if (autosaved) referencedSoundIds(autosaved).forEach((id) => keep.add(id));
     // Frozen tracks' sounds too (they aren't saved in project files, so only this browser has them)
-    for (const p of [currentProject(), lastSession?.project]) p?.tracks.forEach((t) => t.frozen && keep.add(t.frozen.soundId));
+    for (const p of [currentProject(), lastSession?.project, autosaved]) p?.tracks.forEach((t) => t.frozen && keep.add(t.frozen.soundId));
     // ...and whatever Undo, Redo or Paste can bring back
     const st = useTimelineStore.getState();
     for (const e of [...st.past, ...st.future]) {

@@ -19,7 +19,7 @@ register(
 );
 const { DECLICK_SECONDS, dbToGain, envelopeAt, envelopeFrom, envelopeShape } = await import('../src/audio/clipEnvelope.ts');
 const { createPeaks, fillPeaks, waveformPath } = await import('../src/audio/waveform.ts');
-const { ENVELOPE_HOP, envelopeOf, equalSlices, midiOf, sliceEnd, sliceIndexOf, sliceKey, sliceNotes, transientSlices } = await import('../src/audio/slicing.ts');
+const { ENVELOPE_HOP, envelopeOf, equalSlices, midiOf, sliceEnd, sliceIndexOf, sliceKey, sliceNotes, transientSlices, withSliceAt, withoutSlice, reversedAfterRecut } = await import('../src/audio/slicing.ts');
 const {
   audioClipSeconds,
   audioLengthLimit,
@@ -34,6 +34,7 @@ const {
   secondsPerBar,
   splitAudio,
   trimAudioStart,
+  partOfMangle,
 } = await import('../src/store/audioClips.ts');
 
 const near = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) <= eps, `${a} is not within ${eps} of ${b}`);
@@ -368,4 +369,32 @@ test('a clip that follows the tempo keeps its bars and plays its sound faster or
   assert.equal(normalizeClipAudio({ ...plain, stretchBpm: 100 }).stretchBpm, 100);
   assert.equal(normalizeClipAudio({ ...plain, stretchBpm: 9999 }).stretchBpm, 400);
   assert.equal('stretchBpm' in normalizeClipAudio(plain), false);
+});
+
+test("a half of a mangled clip, or one with its start trimmed, can't go back to the whole original", () => {
+  const was = { soundId: 'orig', offset: 0.5, gain: -3, fadeIn: 0, fadeOut: 0 };
+  const audio = { soundId: 'mangled', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0, mangled: { from: 'orig', offset: 0.5, bars: 2, steps: ['half speed'], was } };
+  const { mangled: _m, ...plain } = audio;
+  assert.deepEqual(splitAudio(audio, 2), { ...plain, offset: 2 });
+  assert.deepEqual(trimAudioStart(audio, 1), { ...plain, offset: 1 });
+  assert.deepEqual(partOfMangle(audio), plain);
+  // (Not moved: still the whole mangle)
+  assert.equal(trimAudioStart(audio, 0).mangled, audio.mangled);
+});
+
+test('slices played backwards stay the same stretch of the sound when slices are added, removed or cut again', () => {
+  const s = { slices: [0, 1, 2, 3, 4, 5, 6, 7], reversed: [4], focus: 4 };
+  // A cut inside slice 2: slice 5 (from 4 s) is one place on
+  assert.deepEqual(withSliceAt(s, 1.5).reversed, [5]);
+  // A cut after it: unchanged
+  assert.deepEqual(withSliceAt(s, 6.5).reversed, [4]);
+  // The cut at 2 s goes: the slice from 4 s is one place back
+  assert.deepEqual(withoutSlice(s, 2).reversed, [3]);
+  // Its own cut goes (it joins slice 4): it plays forwards
+  assert.equal(withoutSlice(s, 4).reversed, undefined);
+  // Cut again into 4 (0, 2, 4, 6): the slice starting at 4 s is the third
+  assert.deepEqual(reversedAfterRecut(s, { slices: [0, 2, 4, 6], focus: 2 }).reversed, [2]);
+  // ...and a cut that runs through it: the slice its start falls in
+  assert.deepEqual(reversedAfterRecut({ slices: [0, 1, 2, 3, 4, 5, 6, 7], reversed: [5, 7] }, { slices: [0, 4], focus: 0 }).reversed, [1]);
+  assert.equal(reversedAfterRecut({ slices: [0, 1] }, { slices: [0, 2], focus: 0 }).reversed, undefined);
 });

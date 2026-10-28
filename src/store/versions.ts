@@ -16,7 +16,8 @@ import { protectSounds } from '../audio/soundLibrary';
 import { versionDue, versionsToDrop } from './versionPolicy';
 
 /** Why a version was kept: while editing, before another song replaced it, or before going back to a version. */
-export type VersionReason = 'editing' | 'replaced' | 'restore';
+/** Why it was kept: 'otherTab', another tab's song just before this tab's autosave wrote over it. */
+export type VersionReason = 'editing' | 'replaced' | 'restore' | 'otherTab';
 
 /** A kept version, as the list shows it (the song itself is stored apart, see readVersion). */
 export interface VersionInfo {
