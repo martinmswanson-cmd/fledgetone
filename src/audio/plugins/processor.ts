@@ -20,6 +20,9 @@
  * from a plugin that was there before it: the Mutable Instruments family), and `limits` holds
  * parameters (by name) inside the range they're safe in, whatever is set or saved (see
  * paramLimits.ts), and `outputGain` scales what it plays (a plugin too loud as it was made).
+ * `freshOnRestart`: started again after a blow-up in an instance of its own even when it shares
+ * one (the family's own-memory rule, in a render: see ownMemoryFor in paramLimits.ts).
+ * Whatever it plays is held under OUTPUT_CEILING (+12 dBFS): only samples past it change.
  *
  * Kept as a string (like the OTT's) so the one-file build needs no extra file.
  */
@@ -28,12 +31,22 @@ import { insertTimedEvent } from '../legato';
 /** A plugin playing a sample at or past this (+60 dBFS), or NaN, has blown up (see the guard in the processor). */
 export const BLOWN_UP = 1000;
 
+/**
+ * The most a plugin's sample may reach the track at (+12 dBFS): past it, the sample is held there.
+ * Some plugins go to +60 dBFS at their settings' far ends without blowing up (mda Loudness's +60 dB
+ * output, airwindows Point, the Faust phaser on a narrow notch) and would duck the whole mix under
+ * the master limiter, or turn every stem of an export down with them. Under it, nothing changes.
+ */
+export const OUTPUT_CEILING = 4;
+
 export const BUILTIN_PROCESSOR = 'bb-builtin-plugin';
 
 export const BUILTIN_PROCESSOR_SOURCE = `
 const BLOCK = 128;
 /** Louder than any plugin plays on purpose (+60 dBFS): a sample past it, or NaN, means it blew up */
 const BLOWN = ${BLOWN_UP};
+/** Held under this (+12 dBFS) */
+const CEILING = ${OUTPUT_CEILING};
 const families = new Map();
 const insertTimedEvent = ${insertTimedEvent.toString()};
 
@@ -113,6 +126,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.module = o.module;
     this.index = o.index;
     this.ownMemory = !!o.ownMemory;
+    this.freshOnRestart = !!o.freshOnRestart;
     this.limitNames = o.limits || null;
     this.outputGain = Number.isFinite(o.outputGain) && o.outputGain > 0 ? o.outputGain : 1;
     this.limits = [];
@@ -224,8 +238,13 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     } catch (err) {
       // (Its memory may be what went wrong: a new instance below)
     }
-    // A plugin with an instance of its own gets a fresh one: whatever it read wrongly is gone
-    if (this.ownMemory) this.e = instantiate(this.familyName, this.module).e;
+    // A plugin with an instance of its own gets a fresh one: whatever it read wrongly is gone (as
+    // does one of a family that reads memory it never set, sharing its instance in a render: the
+    // memory its destroyed self leaves would be the trouble)
+    if (this.ownMemory || this.freshOnRestart) {
+      this.e = instantiate(this.familyName, this.module).e;
+      this.ownMemory = true;
+    }
     this.h = this.e.bb_create(this.index, sampleRate);
     if (!this.h) {
       this.alive = false;
@@ -419,6 +438,16 @@ class BuiltinPlugin extends AudioWorkletProcessor {
             if (out[0]) out[0][i] *= g;
             if (out[1]) out[1][i] *= g;
           }
+        // Held under the ceiling: only samples past it change
+        for (let c = 0; c < 2; c++) {
+          const o = out[c];
+          if (!o) continue;
+          for (let i = pos; i < end; i++) {
+            const v = o[i];
+            if (v > CEILING) o[i] = CEILING;
+            else if (v < -CEILING) o[i] = -CEILING;
+          }
+        }
       }
       pos = end;
     }

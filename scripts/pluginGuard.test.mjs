@@ -19,26 +19,33 @@ register(
 }`)
 );
 
-const { BUILTIN_PROCESSOR_SOURCE, BLOWN_UP } = await import('../src/audio/plugins/processor.ts');
+const { BUILTIN_PROCESSOR_SOURCE, BLOWN_UP, OUTPUT_CEILING } = await import('../src/audio/plugins/processor.ts');
 const { PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalog.ts');
-const { PARAM_LIMITS, OWN_MEMORY_FAMILIES, OUTPUT_TRIMS_DB } = await import('../src/audio/plugins/paramLimits.ts');
+const { PARAM_LIMITS, OUTPUT_TRIMS_DB, ownMemoryFor } = await import('../src/audio/plugins/paramLimits.ts');
 
 const sr = 48000;
 const scope = { sampleRate: sr, currentFrame: 0 };
 const sent = [];
-let Proc;
 const src = BUILTIN_PROCESSOR_SOURCE.replace(/\bcurrentFrame\b/g, 'scope.currentFrame');
-new Function('scope', 'sampleRate', 'AudioWorkletProcessor', 'registerProcessor', 'console', src)(
-  scope,
-  sr,
-  class {
-    constructor() {
-      this.port = { postMessage: (m) => sent.push(m) };
-    }
-  },
-  (_, c) => (Proc = c),
-  { log() {} }
-);
+/** The processor class from `source`, in a scope of its own (its families' shared instances fresh) */
+const processorClass = (source = src) => {
+  let C;
+  new Function('scope', 'sampleRate', 'AudioWorkletProcessor', 'registerProcessor', 'console', source)(
+    scope,
+    sr,
+    class {
+      constructor() {
+        this.port = { postMessage: (m) => sent.push(m) };
+      }
+    },
+    (_, c) => (C = c),
+    { log() {} }
+  );
+  return C;
+};
+const Proc = processorClass();
+/** The same processor with no output ceiling: what the plugins play as they are */
+const Uncapped = processorClass(src.replace(/const CEILING = [^;]+;/, 'const CEILING = Infinity;'));
 const modules = new Map();
 const family = (name) => PLUGIN_FAMILIES.find((f) => f.family === name);
 const moduleOf = (name) => {
@@ -46,12 +53,12 @@ const moduleOf = (name) => {
   return modules.get(name);
 };
 /** A plugin as builtinHost makes it (its family's memory rule and its limits), unless `opts` says otherwise */
-const make = (fam, name, opts = {}) => {
+const make = (fam, name, { Processor = Proc, offline = false, ...opts } = {}) => {
   sent.length = 0;
   const index = family(fam).plugins.findIndex((p) => p.name === name);
   assert.ok(index >= 0, name);
-  const p = new Proc({
-    processorOptions: { family: fam, module: moduleOf(fam), index, ownMemory: OWN_MEMORY_FAMILIES.has(fam), limits: PARAM_LIMITS[`builtin:${fam}/${name}`] ?? null, outputGain: 10 ** ((OUTPUT_TRIMS_DB[`builtin:${fam}/${name}`] ?? 0) / 20), ...opts },
+  const p = new Processor({
+    processorOptions: { family: fam, module: moduleOf(fam), index, ...ownMemoryFor(fam, offline), limits: PARAM_LIMITS[`builtin:${fam}/${name}`] ?? null, outputGain: 10 ** ((OUTPUT_TRIMS_DB[`builtin:${fam}/${name}`] ?? 0) / 20), ...opts },
   });
   const ready = sent.find((m) => m.type === 'ready');
   assert.ok(ready, `${name} started`);
@@ -144,7 +151,8 @@ test('with every limited parameter set past its limit, nothing plays louder than
     for (const notes of info.instrument ? [[21], [36], [60], [88], [108]] : [[]]) {
       // Each limited parameter saved at the far end of its range, the rest as they start
       const values = fresh.params.map((x) => (Object.hasOwn(limits, x.name) ? (limits[x.name][1] < 1 ? 1 : 0) : x.value));
-      const { p } = make(fam, name, { values });
+      // (Without the output ceiling: the limits themselves keep it down)
+      const { p } = make(fam, name, { values, Processor: Uncapped });
       const r = play(p, 1.5, { notes, input: !info.instrument });
       assert.ok(!r.bad && r.peak < most, `${name} ${notes.join()}: peak ${(20 * Math.log10(r.peak)).toFixed(1)} dBFS`);
       assert.ok(!sent.some((m) => m.type === 'fault'), `${name} ${notes.join()} blew up`);
@@ -189,4 +197,76 @@ test('the piano model, turned down, plays every key under -1 dBFS at any velocit
   const trimmed = render(88, 100);
   const plain = render(88, 100, 1);
   assert.ok(trimmed.every((v, i) => Math.abs(v - plain[i] * gain) < 1e-6));
+});
+
+/** Every sample of `seconds` of it, left then right per block, with a tone in for an effect and notes held from the start */
+const samples = (p, seconds, { notes = [], input = false } = {}) => {
+  if (notes.length) p.message({ type: 'events', events: notes.map((n) => ({ type: 'wam-midi', time: scope.currentFrame / sr, data: { bytes: [0x90, n, 127] } })) });
+  const all = [];
+  const start = scope.currentFrame;
+  for (let b = 0; b < (seconds * sr) / 128; b++) {
+    const out = [new Float32Array(128), new Float32Array(128)];
+    const f = start + b * 128;
+    const tone = input ? Float32Array.from({ length: 128 }, (_, k) => 0.25 * Math.sin((2 * Math.PI * 110 * (f + k)) / sr)) : null;
+    scope.currentFrame = f;
+    p.process(tone ? [[tone, tone]] : [], [out]);
+    all.push(out[0], out[1]);
+  }
+  scope.currentFrame = start + Math.round((seconds * sr) / 128) * 128;
+  return all;
+};
+
+test('the output ceiling changes only samples past +12 dBFS, and holds those there', () => {
+  // Instruments at full velocity and effects with a tone in, as they start, and at settings that go far past it
+  const cases = [
+    ['mda', 'JX10', { program: 0 }, [36, 60, 84]],
+    ['mda', 'EPiano', { program: 1 }, [84]],
+    ['fledge', 'Fledge Synth', { program: 3 }, [36, 48]],
+    ['faust', 'Marimba Model', {}, [60]],
+    ['mutable', 'Particles', {}, [48, 60]],
+    ['airwindows', 'PurestGain', {}, null],
+    ['faust', 'Stereo Compressor', {}, null],
+    ['mda', 'Loudness', { values: [0.819, 1, 0], limits: null }, null],
+    ['airwindows', 'Point', { values: [1, 1, 0] }, null],
+  ];
+  let held = 0;
+  for (const [fam, name, opts, notes] of cases) {
+    const at = scope.currentFrame;
+    const capped = samples(make(fam, name, opts).p, 1, notes ? { notes } : { input: true });
+    scope.currentFrame = at;
+    const plain = samples(make(fam, name, { ...opts, Processor: Uncapped }).p, 1, notes ? { notes } : { input: true });
+    for (let b = 0; b < plain.length; b++)
+      for (let i = 0; i < 128; i++) {
+        const want = Math.max(-OUTPUT_CEILING, Math.min(OUTPUT_CEILING, plain[b][i]));
+        if (Object.is(capped[b][i], want) || capped[b][i] === want) continue;
+        assert.fail(`${name}: ${capped[b][i]} where ${plain[b][i]} played`);
+      }
+    held += plain.reduce((n, ch) => n + ch.filter((v) => Math.abs(v) > OUTPUT_CEILING).length, 0);
+  }
+  assert.ok(held > 1000, 'the loud cases went past the ceiling');
+});
+
+test("mda Loudness's output stops at +12 dB, and with both its knobs at the top it doesn't blow up", () => {
+  const { ready } = make('mda', 'Loudness', { values: [0.5, 1, 0] });
+  assert.equal(ready.params[1].text.trim(), '12.0 dB');
+  const r = play(make('mda', 'Loudness', { values: [1, 1, 0], Processor: Uncapped }).p, 1, { input: true });
+  assert.ok(!r.bad, 'no NaN');
+  assert.ok(!sent.some((m) => m.type === 'fault'), 'no blow-up');
+});
+
+test('the Mutable plugins share their instance in a render (made fresh, none deleted), each its own live', () => {
+  assert.deepEqual(ownMemoryFor('mutable', false), { ownMemory: true, freshOnRestart: false });
+  assert.deepEqual(ownMemoryFor('mutable', true), { ownMemory: false, freshOnRestart: true });
+  assert.deepEqual(ownMemoryFor('faust', true), { ownMemory: false, freshOnRestart: false });
+  // A render: a context of its own (a fresh family instance), every plugin made at the start
+  const Render = processorClass();
+  const names = ['Particles', 'String and Reverb', 'Modal Voice', 'Grain Stretch', 'Resonator FM', 'Macro Oscillator'];
+  const plugins = names.map((n) => make('mutable', n, { Processor: Render, offline: true }).p);
+  plugins.forEach((p, i) => {
+    const info = family('mutable').plugins.find((x) => x.name === names[i]);
+    const r = play(p, 0.8, info.instrument ? { notes: [48, 60] } : { input: true });
+    assert.equal(r.bad, false, names[i]);
+    assert.ok(r.peak > 1e-4, `${names[i]} plays`);
+  });
+  assert.ok(new Set(plugins.map((p) => p.e)).size === 1, 'one instance');
 });
