@@ -4,12 +4,20 @@
  * blows up or blasts: Faust's piano model goes unstable on its low notes with a stiffer string
  * (from 0.32 at A0; a note at 0.5 played a full-scale blast), the compressor's makeup gain went to
  * +96 dB, the reverbs' output level to +40 dB and the phaser's feedback to the edge of ringing on.
+ * The waveguide flute's vibrato blew up from 0.84. Others stayed stable but jumped loud: the
+ * piano's brightness lifted its top notes by up to 21 dB (+17 dBFS), and the parametric EQ
+ * boosted by up to 40 dB.
  * Only the part past a limit changes: a setting inside it plays as it always has, and one saved
  * past it plays at the limit (the processor clamps what's set, saved or automated; see processor.ts).
  */
 export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, readonly [number, number]>>>> = {
   // Stiffness 0 to 0.30 (its default is 0.28)
-  'builtin:faust/Piano Model': { 'Stiffness factor': [0, 0.3] },
+  // Brightness 0 to 0.05 (its default is 0): at most 3 dB over the default anywhere on the keyboard
+  'builtin:faust/Piano Model': { 'Stiffness factor': [0, 0.3], 'Brightness factor': [0, 0.05] },
+  // Vibrato gain 0 to 0.6 (its default is 0.1; from 0.84 it blew up)
+  'builtin:faust/Waveguide Flute': { 'Vibrato gain': [0, 0.6] },
+  // Each band's boost -40 to +18 dB (of -40 to +40 dB)
+  'builtin:faust/Parametric EQ': { 'Low boost|Cut': [0, 0.725], 'Peak boost|Cut': [0, 0.725], 'High boost|Cut': [0, 0.725] },
   // Makeup gain -96 to +24 dB (of -96 to +96 dB)
   'builtin:faust/Stereo Compressor': { 'Makeup gain': [0, 0.625] },
   // Output level -70 to +12 dB (of -70 to +40 dB)

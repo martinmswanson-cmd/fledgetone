@@ -134,3 +134,29 @@ test('the limited parameters exist, and only values past a limit change', () => 
   assert.ok(r.peak > 1e-3 && r.peak < 4, `peak ${r.peak}`);
   assert.ok(!sent.some((m) => m.type === 'fault'));
 });
+
+test('with every limited parameter set past its limit, nothing plays louder than +12 dBFS', () => {
+  const most = 10 ** (12 / 20);
+  for (const [url, limits] of Object.entries(PARAM_LIMITS)) {
+    const [fam, name] = url.slice('builtin:'.length).split('/');
+    const info = family(fam).plugins.find((p) => p.name === name);
+    const fresh = make(fam, name, { limits: null }).ready;
+    for (const notes of info.instrument ? [[21], [36], [60], [88], [108]] : [[]]) {
+      // Each limited parameter saved at the far end of its range, the rest as they start
+      const values = fresh.params.map((x) => (Object.hasOwn(limits, x.name) ? (limits[x.name][1] < 1 ? 1 : 0) : x.value));
+      const { p } = make(fam, name, { values });
+      const r = play(p, 1.5, { notes, input: !info.instrument });
+      assert.ok(!r.bad && r.peak < most, `${name} ${notes.join()}: peak ${(20 * Math.log10(r.peak)).toFixed(1)} dBFS`);
+      assert.ok(!sent.some((m) => m.type === 'fault'), `${name} ${notes.join()} blew up`);
+    }
+  }
+});
+
+test("the piano model's brightness at its limit is within a few dB of its default, top notes too", () => {
+  for (const note of [60, 88, 108]) {
+    const plain = play(make('faust', 'Piano Model').p, 1, { notes: [note] }).peak;
+    const values = make('faust', 'Piano Model', { limits: null }).ready.params.map((x) => (x.name === 'Brightness factor' ? 1 : x.value));
+    const bright = play(make('faust', 'Piano Model', { values }).p, 1, { notes: [note] }).peak;
+    assert.ok(20 * Math.log10(bright / plain) < 3.5, `${note}: ${(20 * Math.log10(bright / plain)).toFixed(1)} dB over the default`);
+  }
+});
