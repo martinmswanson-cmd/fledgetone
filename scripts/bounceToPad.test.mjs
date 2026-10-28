@@ -112,6 +112,14 @@ test('a bounce\'s name: the section, else the bars; with the track when only one
   assert.ok(b.bounceName(1, 5, 'x'.repeat(50)).length <= 40);
 });
 
+test('a range of bars as menus and dialogs name it, counted as the bounce names count them', async () => {
+  const { formatBarRange } = await import('../src/store/timelineTypes.ts');
+  assert.equal(formatBarRange(1, 17), 'bars 1–16');
+  assert.equal(formatBarRange(3, 4), 'bar 3');
+  assert.equal(formatBarRange(1, 4.5), 'bars 1–4.5');
+  assert.equal(formatBarRange(2.5, 3), 'bars 2.5–3');
+});
+
 test('only Drum Rack tracks take a bounce', () => {
   assert.equal(b.isRackTrack({ instrumentKey: 'drumRack' }), true);
   assert.equal(b.isRackTrack({ instrumentKey: 'drumMachine' }), false);

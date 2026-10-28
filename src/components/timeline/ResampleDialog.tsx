@@ -10,7 +10,7 @@ import React, { useMemo, useState } from 'react';
 import { AudioWaveform } from 'lucide-react';
 import { Modal } from './Modal';
 import { useTimelineStore } from '../../store/timelineStore';
-import { formatBarCount } from '../../store/timelineTypes';
+import { formatBarRange } from '../../store/timelineTypes';
 import { resample, useResampling } from '../../store/resampleActions';
 import type { ResampleSource, ResampleTarget, SliceChoice, SlicePattern, WavetableRole } from '../../store/resample';
 import { FIXED_CYCLES, TABLE_FRAME_COUNTS, type CycleChoice } from '../../audio/plugins/userTable';
@@ -68,7 +68,7 @@ const ResampleForm: React.FC<{ startFrom: From; startTarget: ResampleTarget }> =
           ? { kind: 'range', from: loop.inBar, to: loop.outBar, trackIds: [track.id] }
           : null
         : { kind: 'range', from: loop.inBar, to: loop.outBar };
-  const range = `bars ${formatBarCount(loop.inBar)}–${formatBarCount(loop.outBar)}`;
+  const range = formatBarRange(loop.inBar, loop.outBar);
 
   const go = async () => {
     if (!source) return;

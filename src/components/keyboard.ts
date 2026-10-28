@@ -30,8 +30,9 @@ export function isSliderKey(e: { key: string }): boolean {
 
 /**
  * True when a global shortcut handler should leave this key alone: the user is typing, the key
- * moves the focused slider, or a dialog is open. Every other key on a slider (Space, Ctrl+Z,
- * the deck's pads...) still reaches the shortcuts.
+ * moves the focused slider, or a dialog or menu is open (Esc there closes the menu only, not the
+ * piano roll or the clip selection too). Every other key on a slider (Space, Ctrl+Z, the deck's
+ * pads...) still reaches the shortcuts.
  */
 export function shouldIgnoreShortcut(e: KeyboardEvent): boolean {
   if (isTextEntry(e.target)) return true;
@@ -40,7 +41,7 @@ export function shouldIgnoreShortcut(e: KeyboardEvent): boolean {
   if (e.key === 'Escape' && e.target instanceof Element && e.target.closest('[data-plugin-window]')) return true;
   // Knobs drawn as sliders (role="slider", as Fledge Synth's) take the same keys
   if (e.target instanceof Element && e.target.closest('[role="slider"]') && isSliderKey(e)) return true;
-  return document.querySelector('[role="dialog"]') !== null;
+  return document.querySelector('[role="dialog"], [role="menu"]') !== null;
 }
 
 /**

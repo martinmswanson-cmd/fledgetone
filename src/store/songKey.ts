@@ -84,7 +84,12 @@ export function detectKey(clips: readonly Clip[], tracks: readonly Track[]): Son
   let low = Infinity;
   for (const [at, m] of starts) if (at < first + 0.25 && m < low) low = m;
   const opening = ((low % 12) + 12) % 12;
-  const ranked = rankKeys(weight).map((k) => ({ ...k, score: k.score + (k.key.root === opening ? OPENING_BASS_WEIGHT : 0) }));
+  // A major key whose leading tone (the note under its root) never sounds isn't the key: a song
+  // in D dorian (C major's notes) leaned on G otherwise, and wrote an F# that never plays. A
+  // minor key keeps its chance, since natural minor has no leading tone
+  const ranked = rankKeys(weight)
+    .filter((k) => k.key.mode === 'minor' || weight[(k.key.root + 11) % 12] > 0)
+    .map((k) => ({ ...k, score: k.score + (k.key.root === opening ? OPENING_BASS_WEIGHT : 0) }));
   // (stable: a tie keeps rankKeys' order)
   return ranked.reduce((best, k) => (k.score > best.score ? k : best)).key;
 }

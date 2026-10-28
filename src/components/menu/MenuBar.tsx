@@ -17,7 +17,7 @@ import { openResample } from '../timeline/resampleDialogStore';
 import { bounceName, isRackTrack } from '../../store/bounceToPad';
 import { bounceRangeToPad, placedMessage } from '../../store/bounceToPadActions';
 import { openArrange } from '../timeline/arrangeDialogStore';
-import { formatBarCount } from '../../store/timelineTypes';
+import { formatBarRange } from '../../store/timelineTypes';
 import { press, reveal } from '../../search/reveal';
 import { shouldIgnoreShortcut } from '../keyboard';
 import { APP_VERSION } from '../../version';
@@ -183,7 +183,7 @@ const MENUS: MenuDef[] = [
         { label: `Key change up a whole step from bar ${at}`, run: () => say(s.keyChangeFrom(at, 2)) },
         { label: `Key change down a semitone from bar ${at}`, run: () => say(s.keyChangeFrom(at, -1)) },
         {
-          label: `Play bars ${formatBarCount(s.loopRegion.inBar)}–${formatBarCount(s.loopRegion.outBar)} backwards (In → Out)`,
+          label: `Play ${formatBarRange(s.loopRegion.inBar, s.loopRegion.outBar)} backwards (In → Out)`,
           run: () => {
             showToast('Reversing…');
             void reverseBlock(s.loopRegion.inBar, s.loopRegion.outBar).then(showToast, (err) => showToast(`Couldn't reverse it: ${err instanceof Error ? err.message : String(err)}`));
@@ -215,7 +215,7 @@ const MENUS: MenuDef[] = [
           return bounceTrack(t.id).then((id) => (id ? `Bounced ${t.name} to audio: the original is muted, under it` : undefined));
         } },
         {
-          label: `Bounce bars ${formatBarCount(tl().loopRegion.inBar)}–${formatBarCount(tl().loopRegion.outBar)} (In → Out) to a Drum Rack pad`,
+          label: `Bounce ${formatBarRange(tl().loopRegion.inBar, tl().loopRegion.outBar)} (In → Out) to a Drum Rack pad`,
           title: 'Everything playing there, as one sound, on the first empty pad of the selected Drum Rack (or of any, or a new Bounces track)',
           run: () => {
             const { inBar, outBar } = tl().loopRegion;

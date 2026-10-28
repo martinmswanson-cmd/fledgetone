@@ -1414,6 +1414,16 @@ export function formatBarCount(bars: number): string {
   return String(Number(bars.toFixed(3)));
 }
 
+/**
+ * The bars a stretch from `from` to `to` covers, for display, counted as the song sheet counts
+ * them: 1 to 17 is "bars 1–16" (it ends where bar 17 starts), 3 to 4 is "bar 3". A stretch that
+ * starts or ends inside a bar is named by its edges as they are ("bars 1–4.5").
+ */
+export function formatBarRange(from: number, to: number): string {
+  const last = Number.isInteger(from) && Number.isInteger(to) ? to - 1 : to;
+  return last <= from ? `bar ${formatBarCount(from)}` : `bars ${formatBarCount(from)}–${formatBarCount(last)}`;
+}
+
 /** A tempo for display: up to 2 decimals, trailing zeros dropped ("115.2", "122"). */
 export function formatBpm(bpm: number): string {
   return String(Number(bpm.toFixed(2)));

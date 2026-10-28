@@ -48,6 +48,7 @@ import { GrooveFeelPicker } from './GrooveFeelPicker';
 import { DrumGroovePanel } from './DrumGroovePanel';
 import { ChordRiffBar } from './ChordRiffBar';
 import { penBars, rememberPen } from '../../store/penLength';
+import { duplicateAt, heldNotes, holdNotes, noteClip, placeNotes, type NoteClip } from '../../store/noteClipboard';
 
 const KEY_W = 72;
 const RULER_H = 20;
@@ -877,6 +878,35 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
         setSelected(new Set(visibleNotes.map((n) => n.id)));
         return;
       }
+      // Copy, cut, paste and duplicate work on notes here, never on the timeline's clips
+      const clipKey = mod && !e.altKey ? e.key.toLowerCase() : '';
+      if (clipKey === 'c' || clipKey === 'x' || clipKey === 'v' || clipKey === 'd') {
+        handled();
+        if (e.repeat && clipKey !== 'v') return;
+        /** Put notes in the clip from `at` (bars from its start) and select them: one undo step */
+        const put = (copied: NoteClip, at: number) => {
+          const added = placeNotes(copied, at, clip.lengthBars);
+          if (added.length === 0) return showToast("There's no room for the notes there: they would start past the end of the clip.");
+          setSelected(new Set(store.addNotes(clip.id, added)));
+        };
+        if (clipKey === 'v') {
+          const copied = heldNotes();
+          if (!copied) return;
+          // At the playhead when it's inside the clip, else where the notes were copied from
+          const ph = store.playheadPosition - clip.startBar;
+          put(copied, ph >= 0 && ph < clip.lengthBars ? snapUnits(unitsOf(ph)) / UNITS_PER_BAR : copied.from);
+          return;
+        }
+        const chosen = noteClip(currentNotes().filter((n) => selected.has(n.id)));
+        if (!chosen) return showToast('Select some notes first.');
+        if (clipKey === 'd') return put(chosen, duplicateAt(chosen, gridUnits / UNITS_PER_BAR));
+        holdNotes(chosen);
+        if (clipKey === 'x') {
+          store.deleteNotes(clip.id, selected);
+          setSelected(new Set());
+        }
+        return;
+      }
       if (e.key === 'Escape') {
         handled();
         if (selected.size) setSelected(new Set());
@@ -924,6 +954,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
       handled();
       const [dUnits, dRows] = delta;
       const notes = currentNotes();
+      // (Notes an undo took away can still be in the selection: with none of it left, there's nothing to move, and no undo step)
+      if (!notes.some((n) => selected.has(n.id))) return;
       // The selection moves one grid step as a block: at the clip's edge it stays put rather than bunching up
       const outside = (n: NoteEvent) => {
         const u = unitsOf(n.startOffset) + dUnits;
@@ -943,7 +975,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, visibleNotes, gridUnits, rows, totalUnits, clip.id, namedRows]);
+  }, [selected, visibleNotes, gridUnits, rows, totalUnits, clip.id, clip.startBar, clip.lengthBars, namedRows]);
 
   // Velocity slider edits the selection when there is one, else sets the velocity for new notes
   const selectedVelocity = (() => {
@@ -1190,7 +1222,7 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
           </button>
         </div>
         <span className="hidden xl:inline text-[11px]">
-          {stepping ? 'Click a step to turn a hit on or off • Shift-click: an accent • Alt-drag: move notes as usual' : 'Click to add (drag right to stretch it) • drag a note to move • drag right edge to resize • Alt-drag a note up or down: slide • right-click to delete • arrows nudge'}
+          {stepping ? 'Click a step to turn a hit on or off • Shift-click: an accent • Alt-drag: move notes as usual' : 'Click to add (drag right to stretch it) • drag a note to move • drag right edge to resize • Alt-drag a note up or down: slide • right-click to delete • arrows nudge • Ctrl+C / X / V / D: copy, cut, paste, duplicate notes'}
         </span>
         <button
           type="button"

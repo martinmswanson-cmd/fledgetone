@@ -6,7 +6,7 @@ import React, { useRef } from 'react';
 import { Eraser, Minus, Spline, Trash2, TrendingDown, TrendingUp, X } from 'lucide-react';
 import { useTimelineStore } from '../../store/timelineStore';
 import type { AutomationParam } from '../../store/timelineTypes';
-import { formatBarCount } from '../../store/timelineTypes';
+import { formatBarRange } from '../../store/timelineTypes';
 import { specOf, laneOf, rampPoints } from '../../audio/automation';
 import { MenuItem } from './ClipContextMenu';
 import type { MenuItemProps } from './ClipContextMenu';
@@ -44,7 +44,7 @@ export const AutomationMenu: React.FC<{ menu: AutomationMenuState; onClose: () =
   // Ramps run between the setting's usual extremes (for Volume: silence and the fader's level)
   const [low, high] = spec.rampRange(track).map(spec.toNorm);
   const ramp = (from: number, to: number) => run(() => s.setAutomationPoints(track.id, menu.param, rampPoints(points, inBar, outBar, from, to), true));
-  const span = `bars ${formatBarCount(inBar)}–${formatBarCount(outBar)}`;
+  const span = formatBarRange(inBar, outBar);
   // The line under the pointer, between two points: it can be bent
   const after = menu.bar === undefined ? -1 : points.findIndex((p) => p.bar > menu.bar!);
   const left = after > 0 && points[after - 1].value !== points[after].value ? after - 1 : -1;

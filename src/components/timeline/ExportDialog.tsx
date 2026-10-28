@@ -44,7 +44,7 @@ import type { ShowcaseHits, ShowcaseLayout } from '../../audio/showcaseDraw';
 import { VERSION_LABELS, versionLeavesOut, versionTracks, type SongVersion } from '../../store/songVersions';
 import { showcaseData } from '../../store/showcase';
 import { barToSeconds, formatSmpte, type Tempo } from '../../audio/transport';
-import { formatBarCount, frameRateLabel } from '../../store/timelineTypes';
+import { formatBarCount, formatBarRange, frameRateLabel } from '../../store/timelineTypes';
 import type { Track } from '../../store/timelineTypes';
 import { Modal } from './Modal';
 import { captureWamStates } from '../../audio/wamHost';
@@ -599,11 +599,12 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
     );
   }
 
+  const loopRange = formatBarRange(loop.inBar, loop.outBar);
   const rangeDetail = game
-    ? `For games: an intro (bars 1 to ${formatBarCount(loop.inBar)}, ${lengthLabel(1, loop.inBar, tempo)}) to play once, then the loop region (bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}) as a seamless loop to repeat. The intro leads straight into the loop.`
+    ? `For games: an intro (${formatBarRange(1, loop.inBar)}, ${lengthLabel(1, loop.inBar, tempo)}) to play once, then the loop region (${loopRange}, ${lengthLabel(loop.inBar, loop.outBar, tempo)}) as a seamless loop to repeat. The intro leads straight into the loop.`
     : range === 'song'
       ? `Bar 1 to the end of the last clip: ${formatBarCount(songBars)} bars, ${lengthLabel(1, 1 + songBars, tempo)}.`
-      : `Bars ${formatBarCount(loop.inBar)} to ${formatBarCount(loop.outBar)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
+      : `${loopRange.charAt(0).toUpperCase()}${loopRange.slice(1)}: ${formatBarCount(loopBars)} bars, ${lengthLabel(loop.inBar, loop.outBar, tempo)}. Starts at ${formatSmpte(loop.inBar, tempo, fps, dropFrame)} (${frameRateLabel(fps, dropFrame)}).`;
   const endingDetail =
     ending === 'ringOut'
       ? `Plays the range once, then lets release, reverb and echo tails ring out: the file ends once they've died away (under -70 dBFS), at most ${formatBarCount(tail)} s after the range.`

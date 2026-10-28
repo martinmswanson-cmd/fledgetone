@@ -147,6 +147,9 @@ test('key detection from notes', () => {
   assert.equal(am.name, 'A minor');
   const g = detectKey([clip('t', ['G2', 'B3', 'D4', 'G4', 'C3', 'E4', 'G4', 'D3', 'F#4', 'A4', 'G2', 'B3', 'D4'])], tracks);
   assert.equal(g.name, 'G major');
+  // Leaning on G but never playing an F# (G mixolydian, C major's notes): not G major
+  const noLeadingTone = detectKey([clip('t', ['G2', 'B3', 'D4', 'G4', 'C3', 'E4', 'G4', 'F3', 'A4', 'G2', 'B3', 'D4', 'F4', 'G2'])], tracks);
+  assert.notEqual(noLeadingTone.name, 'G major');
   assert.equal(detectKey([clip('d', ['C1'])], tracks), null);
 });
 
