@@ -61,7 +61,7 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
 
   return (
     <div
-      className={`relative shrink-0 border-b border-forge-border bg-forge-bg transition-[box-shadow,opacity] ${
+      className={`relative shrink-0 border-b border-forge-border bg-forge-bg focus:outline-none transition-[box-shadow,opacity] ${
         // Lanes that take what's being dragged light up. A deck drag also fades the rest; a clip drag
         // doesn't, so the other tracks' clips stay easy to line up against.
         accepts || clipDropTarget || filesOver ? 'shadow-[inset_0_0_0_2px_rgba(103,232,249,0.6)]' : dragging ? 'opacity-40' : ''
@@ -81,6 +81,8 @@ export const TrackLane: React.FC<TrackLaneProps> = ({ track, originRef, onOpenMe
         backgroundSize: plainMeter ? `${zoom * barLabelStep(zoom)}px 100%, ${zoom >= 48 ? zoom / 4 : zoom}px 100%${fineGridPx ? `, ${fineGridPx}px 100%` : ''}` : `${fineGridPx}px 100%`,
       }}
       data-lane={track.id}
+      // (Focused by code only: where the keyboard carries on when its last clip goes)
+      tabIndex={-1}
       onContextMenu={(e) => {
         e.preventDefault();
         onOpenMenu({ x: e.clientX, y: e.clientY, bar: snapped(e.clientX, e.shiftKey), trackId: track.id, clipId: null });

@@ -3506,6 +3506,8 @@ useTimelineStore.subscribe((state, prev) => {
   if (state.meter !== prev.meter || state.meterPoints !== prev.meterPoints) setSongMeter(songMeterOf(state));
   // Every seek, stop and move reaches the live playhead (playing, the frame loop moves it too)
   if (state.playheadPosition !== prev.playheadPosition) setLivePlayhead(state.playheadPosition);
+  // The clip open in the editor gone (deleted, cut, or undone away): the editor closes with it
+  if (state.editingClipId && state.clips !== prev.clips && !state.clips.some((c) => c.id === state.editingClipId)) useTimelineStore.setState({ editingClipId: null });
   // Drum Designer sounds that follow the song's key or tempo (drumFollow.ts) are kept on it: a
   // derived change, not an edit of its own (undo takes the notes back, and this follows again)
   if (state.clips !== prev.clips || state.tracks !== prev.tracks || state.bpm !== prev.bpm || state.tempoPoints !== prev.tempoPoints) {

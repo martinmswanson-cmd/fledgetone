@@ -16,7 +16,7 @@ register(
 }`)
 );
 
-const { duplicateAt, heldNotes, holdNotes, noteClip, placeNotes } = await import('../src/store/noteClipboard.ts');
+const { duplicateAt, heldNotes, holdNotes, liveSelection, noteClip, placeNotes } = await import('../src/store/noteClipboard.ts');
 
 const note = (id, n, startOffset, duration = '8n', extra = {}) => ({ id, note: n, startOffset, duration, velocity: 0.8, ...extra });
 
@@ -57,4 +57,15 @@ test('the clipboard keeps what was copied last, and nothing copied leaves it as 
   holdNotes(first);
   holdNotes(null);
   assert.equal(heldNotes(), first);
+});
+
+test('a selection loses the notes that are gone, and stays the same set when none went', () => {
+  const notes = [note('a', 'C4', 0), note('b', 'E4', 0.25)];
+  const whole = new Set(['a', 'b']);
+  assert.equal(liveSelection(whole, notes), whole);
+  const empty = new Set();
+  assert.equal(liveSelection(empty, notes), empty);
+  // Duplicated, then undone: the copies' ids are selected but gone
+  assert.deepEqual([...liveSelection(new Set(['c', 'd', 'a']), notes)], ['a']);
+  assert.equal(liveSelection(new Set(['c', 'd']), notes).size, 0);
 });
