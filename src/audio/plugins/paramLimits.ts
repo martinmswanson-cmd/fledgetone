@@ -34,3 +34,14 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
  * played NaN, which silenced the whole mix, or crashed. About 16 MB each.
  */
 export const OWN_MEMORY_FAMILIES: ReadonlySet<string> = new Set(['mutable']);
+
+/**
+ * Built-in plugins turned down as a whole (dB), by address: ones whose loudest notes stood far
+ * over the rest. Faust's piano model plays E6 at +5.7 dBFS, 10 dB over the notes either side
+ * (G#6 next at -0.9, most notes -5 to -12), at any velocity (its velocity hardly changes its
+ * level, so a trim of the hot notes' velocity can't level them); turned down so its loudest note
+ * stays under -1 dBFS.
+ */
+export const OUTPUT_TRIMS_DB: Readonly<Record<string, number>> = {
+  'builtin:faust/Piano Model': -7,
+};

@@ -6,7 +6,7 @@ import type { BuiltinPluginInfo, PluginFamily } from './pluginTypes';
 import { BUILTIN_PROCESSOR, BUILTIN_PROCESSOR_SOURCE } from './processor';
 import { GPL_PLUGINS, pluginFamilies, pluginSource } from './pluginSources';
 import { normalizeUserTable, unpackUserTable, USER_CYCLE, type UserTable } from './userTable';
-import { OWN_MEMORY_FAMILIES, PARAM_LIMITS } from './paramLimits';
+import { OUTPUT_TRIMS_DB, OWN_MEMORY_FAMILIES, PARAM_LIMITS } from './paramLimits';
 
 /**
  * Built-in plugins: open-source effects and instruments compiled to WebAssembly (see
@@ -203,6 +203,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       followInput: !ref.info.instrument && !HOLDS_FOREVER.has(ref.info.name),
       // (A family that mustn't share its memory, and parameters kept inside their safe range: paramLimits.ts)
       ownMemory: OWN_MEMORY_FAMILIES.has(ref.family.family),
+      outputGain: 10 ** ((OUTPUT_TRIMS_DB[builtinUrl(ref.family.family, ref.info.name)] ?? 0) / 20),
       limits: PARAM_LIMITS[builtinUrl(ref.family.family, ref.info.name)] ?? null,
     },
   });
