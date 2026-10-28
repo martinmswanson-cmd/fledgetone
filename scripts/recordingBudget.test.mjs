@@ -18,12 +18,12 @@ register(
 
 const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
 const { HOSTED_SETS } = await import('../src/audio/hostedSets.ts');
-const { setBytes, decodedBytes, fileBytesOf } = await import('../src/audio/samplers/setSizes.ts');
+const { setBytes, decodedBytes, fileBytesOf, setDecodedBytes } = await import('../src/audio/samplers/setSizes.ts');
 const { SET_LEVELS, evenLevels, EVEN_MOST_DB } = await import('../src/audio/samplers/setLevels.ts');
 const { indexRecordings, quickSamples, SPARSE_QUICK, STRETCH_SEMITONES, chooseExportDecodes, lowMemoryDevice } = await import('../src/audio/samplers/songSamples.ts');
 
-/** The big sets, as samplerManager.ts's BIG_SET_BYTES has them */
-const BIG = 6e6;
+/** The big sets, as samplerManager.ts's BIG_SET_DECODED has them */
+const BIG = 160e6;
 
 test("a set's size: a hosted set's files, an ensemble's parts, nothing for one not hosted", () => {
   const grand = INSTRUMENTS.piano.samples;
@@ -38,9 +38,9 @@ test("a set's size: a hosted set's files, an ensemble's parts, nothing for one n
 });
 
 test('the big sets are the pianos and a few others, the Grand Piano among them', () => {
-  const big = Object.values(INSTRUMENTS).filter((d) => d.samples && setBytes(d.samples) > BIG).map((d) => d.key);
-  for (const key of ['piano', 'realGrandPiano', 'realDoubleBass', 'realTenorSax']) assert.ok(big.includes(key), key);
-  for (const key of ['realClarinet', 'realHarpsichord', 'studioKit']) assert.ok(!big.includes(key), key);
+  const big = Object.values(INSTRUMENTS).filter((d) => d.samples && setDecodedBytes(d.samples) > BIG).map((d) => d.key);
+  for (const key of ['piano', 'realGrandPiano', 'realDoubleBass', 'realTenorSax', 'realTremolo']) assert.ok(big.includes(key), key);
+  for (const key of ['realClarinet', 'realHarpsichord', 'studioKit', 'realFolkHarp']) assert.ok(!big.includes(key), key);
 });
 
 test("a set's decoded size is estimated on the safe side (the grand piano measured 1.45 GB whole at 48 kHz)", () => {

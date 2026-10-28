@@ -327,7 +327,7 @@ def build(cache, kit):
     size = 0
     for (r, t), y in sorted(out.items()):
         path = os.path.join(folder, f'{NAMES[r % 12]}{r // 12 - 1}_0_{t}.mp3')
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'f64le', '-ar', str(SR), '-ac', '1', '-i', '-', '-codec:a', 'libmp3lame', '-q:a', '4', path],
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'f64le', '-ar', str(SR), '-ac', '1', '-i', '-', '-codec:a', 'libmp3lame', '-q:a', '0', '-cutoff', '20000', path],
                        input=(y * gain).astype(np.float64).tobytes(), check=True)
         size += os.path.getsize(path)
     print(f"chops-{kit}: {len(roots)} notes x {takes} takes, gain {20 * np.log10(gain):+.1f} dB, {size / 1e3:.0f} kB")
