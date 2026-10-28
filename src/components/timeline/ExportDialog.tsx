@@ -28,7 +28,7 @@ import {
   cutRingOut,
   stemTracks,
 } from '../../audio/exportWav';
-import { formatDbtp, formatLufs, measureLoudness, normalizeGainDb } from '../../audio/loudness';
+import { formatDbtp, formatLufs, measureLoudness, sharedGainDb, truePeakOf } from '../../audio/loudness';
 import { exportCeilingDbtp, limitInPlace } from '../../audio/effects/limiter';
 import { DEFAULT_TARGET, LOUDNESS_TARGETS, MAX_LIMITING_DB, reachTarget, targetById } from '../../audio/loudnessTarget';
 import { LOUD_TARGETS, loudCrunch, pushToKeep, type LoudMatch } from '../../audio/effects/loudMaster';
@@ -419,13 +419,17 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         // Loudness is the loop's (what the player hears for longest); normalizing moves intro and loop together
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Measuring loudness' });
         let reading = stemsOnly ? null : await measureLoudness(parts[0].loop, sampleRate, controller.signal);
+        // The intro's own peak: one gain moves both files, so it must keep the louder of them under the ceiling
+        const introPeakDbtp = reading ? 20 * Math.log10(truePeakOf(parts[0].intro)) : -Infinity;
+        let peakDbtp = reading ? Math.max(reading.truePeakMax, introPeakDbtp) : -Infinity;
         let note = '';
         if (reading && settings.normalize) {
           // Gain only: a limiter would change the sound across the loop's seam
-          const { gainDb, limited } = normalizeGainDb(reading, targetById(settings.target).lufs, ceilingDbtp);
+          const { gainDb, limited } = sharedGainDb(reading, [introPeakDbtp], targetById(settings.target).lufs, ceilingDbtp);
           const g = Math.pow(10, gainDb / 20);
           if (gainDb !== 0) for (const ch of [...parts[0].intro, ...parts[0].loop]) for (let i = 0; i < ch.length; i++) ch[i] *= g;
           reading = { ...reading, integrated: reading.integrated + gainDb, truePeakMax: reading.truePeakMax + gainDb };
+          peakDbtp += gainDb;
           note = limited ? ` (held under the target so peaks stay under ${ceilingDbtp} dBTP)` : '';
         }
         const files: Array<{ name: string; data: Blob }> = [];
@@ -450,7 +454,7 @@ export const ExportDialog: React.FC<{ onClose: () => void }> = ({ onClose }) => 
         }
         setStatus({ kind: 'rendering', fileName, progress: 1, detail: 'Packing the .zip' });
         deliver(await createZip(files), fileName);
-        showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated)}, peak ${formatDbtp(reading.truePeakMax)}${note}` : ''}`);
+        showToast(`Exported ${fileName}${reading ? `: the loop is ${formatLufs(reading.integrated)}, peak ${formatDbtp(peakDbtp)}${note}` : ''}`);
       } else if (videoOut) {
         // 48 kHz: what video sound runs at (and Opus, the fallback codec, needs). A ring-out is
         // cut where its tails die away once it has its final level (see keepRingOut)

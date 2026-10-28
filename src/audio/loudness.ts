@@ -373,6 +373,21 @@ export function normalizeGainDb(reading: Pick<LoudnessReading, 'integrated' | 't
   return { gainDb: wanted, limited: false };
 }
 
+/**
+ * One gain for several files measured by one of them (`reading`: a game's loop, which sets the
+ * loudness): held back so the loudest true peak of all of them (`peaksDbtp`, the others' dBTP)
+ * stays under `ceilingDbtp`, as each file plays on its own. `peakDbtp` is that loudest peak.
+ */
+export function sharedGainDb(
+  reading: Pick<LoudnessReading, 'integrated' | 'truePeakMax'>,
+  peaksDbtp: readonly number[],
+  targetLufs = NORMALIZE_TARGET_LUFS,
+  ceilingDbtp = NORMALIZE_CEILING_DBTP
+): { gainDb: number; limited: boolean; peakDbtp: number } {
+  const peakDbtp = Math.max(reading.truePeakMax, ...peaksDbtp.filter((p) => !Number.isNaN(p)));
+  return { ...normalizeGainDb({ integrated: reading.integrated, truePeakMax: peakDbtp }, targetLufs, ceilingDbtp), peakDbtp };
+}
+
 /** "-14.0 LUFS" / "-inf LUFS" */
 export function formatLufs(v: number): string {
   return Number.isFinite(v) ? `${v.toFixed(1)} LUFS` : '-inf LUFS';
