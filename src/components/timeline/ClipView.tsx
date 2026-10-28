@@ -17,6 +17,7 @@ import { canMoveClipBetween, DROP_ROWS, FX_ROWS, INSTRUMENTS, isDrumKind, isDrop
 import { dbToGain } from '../../audio/clipEnvelope';
 import { barFromClientX } from './Playhead';
 import type { ContextMenuState } from './ClipContextMenu';
+import type { Tempo } from '../../audio/tempoMap';
 import { HEADER_WIDTH, RULER_HEIGHT, TRACK_HEIGHT, TRIM_HANDLE_PX } from './layout';
 import { shadeNotes, type NoteRect } from './noteShades';
 import { ClipWaveform, Waveform } from './Waveform';
@@ -26,9 +27,10 @@ import { padOfNote } from '../../store/sampleKits';
 import { RACK_PADS } from '../../store/timelineTypes';
 
 /** Every clip's crossfades, worked out once per change of the clips (the playhead moving doesn't count). */
-let xfadeCache: { clips: Clip[]; bpm: number; map: ReturnType<typeof crossfades> } | null = null;
-function trackCrossfades(clips: Clip[], bpm: number): ReturnType<typeof crossfades> {
-  if (xfadeCache?.clips !== clips || xfadeCache.bpm !== bpm) xfadeCache = { clips, bpm, map: crossfades(clips, bpm) };
+let xfadeCache: { clips: Clip[]; tempo: Tempo; map: ReturnType<typeof crossfades> } | null = null;
+/** (Along the song's tempo map, as they play: see audioClipSchedule.ts) */
+function trackCrossfades(clips: Clip[], tempo: Tempo): ReturnType<typeof crossfades> {
+  if (xfadeCache?.clips !== clips || xfadeCache.tempo !== tempo) xfadeCache = { clips, tempo, map: crossfades(clips, tempo) };
   return xfadeCache.map;
 }
 
@@ -148,7 +150,7 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
   // Its crossfades with overlapping clips on the track, as a string so the view only redraws when they change
   const xfade = useTimelineStore((s) => {
     if (!clip.audio) return '';
-    const x = trackCrossfades(s.clips, s.bpm).get(clip.id);
+    const x = trackCrossfades(s.clips, songTempo(s)).get(clip.id);
     return x ? `${x.in}|${x.out}` : '';
   });
   const [razorX, setRazorX] = useState<number | null>(null);
