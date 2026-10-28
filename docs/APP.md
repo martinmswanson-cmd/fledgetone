@@ -74,7 +74,7 @@ service worker isn't used (the app's files are already on the phone).
 
 ## Recordings and plugins
 
-The recorded instruments (about 300 MB) aren't in the app: each loads from
+The recorded instruments (about 600 MB) aren't in the app: each loads from
 `https://fledgetone.com/app/fledgetone-samples/` the first time it's played, and is kept on the
 phone from then on, as on the web. The free plugins are in the app; the GPL ones aren't (below).
 So the app needs a connection the first time each instrument is played.

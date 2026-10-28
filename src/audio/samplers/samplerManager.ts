@@ -18,7 +18,7 @@ import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTL
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { expressiveCutoff, OPEN_CUTOFF } from './velocityTone';
-import { decodedBytes, setBytes } from './setSizes';
+import { decodedBytes, setDecodedBytes } from './setSizes';
 import { BLEND_ZONE, chooseExportDecodes, decodeRateOf, OVERSAMPLE, indexRecordings, layerOf, lowMemoryDevice, neededSamples, quickLayer, quickSamples, songNotesByInstrument, SPARSE_QUICK, STRETCH_SEMITONES } from './songSamples';
 import type { RecordingIndex, SongNotes } from './songSamples';
 
@@ -555,17 +555,18 @@ let filling = false;
 const LOW_MEMORY = typeof navigator !== 'undefined' && lowMemoryDevice(navigator as Navigator & { deviceMemory?: number });
 
 /**
- * Sets bigger than this (their files, in bytes: setSizes.ts) are big: live playback decodes them
- * at their own rate, not twice it, and loads only the recordings the song and the notes played
- * ask for, never the rest in the background, starting from a few (quickSamples' SPARSE_QUICK).
- * The biggest pianos take over a gigabyte decoded once every recording is in (the grand 1.4 GB
- * at 48 kHz). Under it are all but the pianos, the double bass, the tenor saxophone and the
- * tremolo strings.
+ * Sets bigger than this (decoded at 48 kHz, every recording: setSizes.ts) are big: live playback
+ * decodes them at their own rate, not twice it, and loads only the recordings the song and the
+ * notes played ask for, never the rest in the background, starting from a few (quickSamples'
+ * SPARSE_QUICK). The biggest pianos take over a gigabyte decoded once every recording is in (the
+ * grand 1.45 GB at 48 kHz). Over it are the pianos, the double bass (190 MB), the tenor saxophone
+ * and the tremolo strings (170 MB); the next, the folk harp, takes 150 MB. (Counted by their
+ * files' bytes once; the sets' files grew unevenly when they were encoded at higher quality.)
  */
-const BIG_SET_BYTES = 6e6;
+const BIG_SET_DECODED = 160e6;
 
-/** Whether `source` is a big set (see BIG_SET_BYTES). */
-const isBigSet = (source: SampleSource) => setBytes(source) > BIG_SET_BYTES;
+/** Whether `source` is a big set (see BIG_SET_DECODED). */
+const isBigSet = (source: SampleSource) => setDecodedBytes(source) > BIG_SET_DECODED;
 
 /** Whether live playback decodes `source`'s recordings at twice the rate (see OVERSAMPLE): not on a device with little memory, nor for the big sets. */
 function oversampledLive(source: SampleSource): boolean {

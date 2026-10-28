@@ -1,7 +1,7 @@
 /**
  * The phone app's web files (npm run build:app): the plain build (no GPL plugins: the App Store's
  * terms and the GPL don't fit together, see docs/APP.md) in dist-app/, without what the app
- * fetches from fledgetone.com instead: the recordings (about 300 MB; each loads from the site the
+ * fetches from fledgetone.com instead: the recordings (about 600 MB; each loads from the site the
  * first time it's played, as on the web) and the GPL plugins' folder. `npx cap sync` then copies
  * dist-app/ into the iPhone and Android projects.
  */
