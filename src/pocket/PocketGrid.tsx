@@ -14,7 +14,7 @@ import type { Clip, NoteEvent, Track } from '../store/timelineTypes';
 import { gridTracks, copySection, pocketSections, type PocketSection } from './pocketSections';
 import { sectionNotes, useSelection } from './pocketCell';
 import { editorOf, usePocket } from './pocketStore';
-import { noteToMidi } from './pocketGrid';
+import { jumpStep, noteToMidi, sectionJump, type SectionJump } from './pocketGrid';
 import { buzz } from './pocketSession';
 import { selectTrack } from './PocketDrawer';
 import { showToast } from '../components/timeline/toastStore';
@@ -30,18 +30,19 @@ export function goToSection(i: number, sections: readonly PocketSection[]): void
   // (A jump still waiting from before is dropped: this choice replaces it)
   pendingJump = null;
   if (!s.loopRegion.enabled) return;
-  s.setLoopRange(sec.from, sec.to);
   if (!s.isPlaying) {
+    s.setLoopRange(sec.from, sec.to);
     if (s.playheadPosition < sec.from - EPS || s.playheadPosition >= sec.to - EPS) s.seek(sec.from);
     return;
   }
-  const at = getAudiblePositionBar();
-  if (at >= sec.from - EPS && at < sec.to - EPS) return;
-  pendingJump = { bar: sec.from, when: Math.floor(at + EPS) + 1 };
+  // (Until the bar line the loop runs from the bar playing to the section: a section earlier in
+  // the song isn't jumped to at once by the loop wrapping, see sectionJump)
+  pendingJump = sectionJump(getAudiblePositionBar(), sec.from, sec.to);
+  s.setLoopRange(...(pendingJump?.loop ?? [sec.from, sec.to]));
 }
 
 /** A jump waiting for the next bar line (see goToSection). */
-let pendingJump: { bar: number; when: number } | null = null;
+let pendingJump: SectionJump | null = null;
 
 export const trackIcon = (t: Track): React.ComponentType<{ className?: string }> => {
   const how = editorOf(t.instrumentKey, t.plugin);
@@ -206,10 +207,12 @@ export const PocketGrid: React.FC<{ land: boolean }> = ({ land }) => {
         return;
       }
       const at = getAudiblePositionBar();
-      if (pendingJump && at >= pendingJump.when - 0.01) {
+      const step = pendingJump ? jumpStep(pendingJump, at) : 'wait';
+      if (pendingJump && step !== 'wait') {
         const jump = pendingJump;
         pendingJump = null;
-        s.seek(jump.bar);
+        if (s.loopRegion.enabled) s.setLoopRange(jump.from, jump.to);
+        if (step === 'seek') s.seek(jump.from);
       }
       const p = usePocket.getState();
       const row = s.loopRegion.enabled ? p.section : sections.findIndex((x) => at >= x.from - EPS && at < x.to - EPS);
@@ -271,12 +274,15 @@ export const PocketGrid: React.FC<{ land: boolean }> = ({ land }) => {
           onClick={() => {
             const s = useTimelineStore.getState();
             const sec = sections[index];
+            // (A jump waiting for the bar line was the loop's: it's dropped)
+            pendingJump = null;
             if (!songMode) {
               s.toggleLoop();
               showToast('Play runs the whole song, in this order');
             } else {
-              s.setLoopRange(sec.from, sec.to);
               if (!useTimelineStore.getState().loopRegion.enabled) s.toggleLoop();
+              // (Its loop; playing elsewhere in the song, it moves there on the next bar line)
+              goToSection(index, sections);
               showToast(`Play loops ${sec.letter}`);
             }
           }}

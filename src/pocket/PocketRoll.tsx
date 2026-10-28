@@ -16,11 +16,11 @@ import { useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
 import { SLICE_KEY_BASE, type Track } from '../store/timelineTypes';
 import type { SongKey } from '../store/songKey';
-import { INSTRUMENTS, isSlicerKind } from '../audio/instrumentCatalog';
+import { INSTRUMENTS } from '../audio/instrumentCatalog';
 import { STEPS_PER_WHOLE, fromRoll, midiToNote, noteToMidi, scaleRows, toRoll, type RollNote } from './pocketGrid';
 import { editCell, sectionNotes } from './pocketCell';
 import type { PocketSection } from './pocketSections';
-import { pocketNoteId, usePocket } from './pocketStore';
+import { pocketNoteId, sliceCount, usePocket } from './pocketStore';
 import { audition } from './pocketSound';
 import { buzz } from './pocketSession';
 import { penBars, rememberPen } from '../store/penLength';
@@ -50,7 +50,7 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
   const steps = Math.round((sec.to - sec.from) * STEPS_PER_WHOLE);
 
   // A Slicer (not in Pitch mode) has a row per slice, from C3 up, as in the studio's piano roll
-  const slices = isSlicerKind(track.instrumentKey) && !track.slicer?.pitch ? Math.max(1, track.slicer?.slices.length ?? 8) : 0;
+  const slices = sliceCount(track);
   const nameOf = (midi: number) => (slices ? `S${midi - SLICE_KEY_BASE + 1}` : midiToNote(midi));
   const isRoot = (midi: number) => !slices && (((midi - songKey.root) % 12) + 12) % 12 === 0;
   // Rows: the key's notes over the instrument's range (five octaves at most), and any other note the cell has
@@ -209,7 +209,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
         return;
       }
       const row = rowOf(rows[c.row]);
-      const chordRows = pen === 'chord' ? [row, row - 2, row - 4].filter((r) => r >= 0) : [row];
+      // (A Slicer's rows are slices, not notes of a key: no chords there)
+      const chordRows = pen === 'chord' && !slices ? [row, row - 2, row - 4].filter((r) => r >= 0) : [row];
       const len = Math.min(penSteps(track), steps - c.step);
       for (const r of chordRows) {
         const id = pocketNoteId();
@@ -298,6 +299,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
     commit(work);
   };
   const ib = 'w-[33px] h-9 rounded-[10px] border border-forge-border bg-forge-panelLight grid place-items-center shrink-0 disabled:opacity-35';
+  // (On a Slicer the Chord pen draws single notes: it shows as Note)
+  const penOn = (k: typeof pen) => pen === k || (k === 'note' && pen === 'chord' && slices > 0);
   const chip = 'h-9 px-3 rounded-[10px] border border-forge-border bg-forge-panelLight text-[12.5px] font-medium shrink-0 disabled:opacity-40';
 
   return (
@@ -340,8 +343,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
         ) : (
           <>
             <div className="flex p-[3px] rounded-xl bg-forge-bg border border-forge-border shrink-0">
-              {(['note', 'chord', 'erase'] as const).map((k) => (
-                <button key={k} type="button" aria-pressed={pen === k} className={`h-[30px] px-2.5 rounded-lg text-[12.5px] font-medium ${pen === k ? 'bg-forge-panelLight text-forge-text shadow-[inset_0_0_0_1px_#3a3a44]' : 'text-forge-muted'}`} onClick={() => { pen = k; setPenTick((x) => x + 1); }}>
+              {(slices ? (['note', 'erase'] as const) : (['note', 'chord', 'erase'] as const)).map((k) => (
+                <button key={k} type="button" aria-pressed={penOn(k)} className={`h-[30px] px-2.5 rounded-lg text-[12.5px] font-medium ${penOn(k) ? 'bg-forge-panelLight text-forge-text shadow-[inset_0_0_0_1px_#3a3a44]' : 'text-forge-muted'}`} onClick={() => { pen = k; setPenTick((x) => x + 1); }}>
                   {k === 'note' ? 'Note' : k === 'chord' ? 'Chord' : 'Erase'}
                 </button>
               ))}
@@ -352,9 +355,11 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
             <button type="button" aria-label="Back to the key's home note" className={`${chip} !px-2.5`} onClick={() => { const el = roll.current, h = el?.querySelector<HTMLElement>('[data-home]'); if (el && h) el.scrollTo({ top: h.offsetTop - el.clientHeight / 2, behavior: 'smooth' }); }}>
               <Home className="w-4 h-4" />
             </button>
-            <button type="button" className={chip} onClick={() => usePocket.getState().set({ sheet: 'chords' })}>
-              Chords
-            </button>
+            {!slices && (
+              <button type="button" className={chip} onClick={() => usePocket.getState().set({ sheet: 'chords' })}>
+                Chords
+              </button>
+            )}
             <button type="button" className={chip} onClick={() => usePocket.getState().set({ sheet: 'feel' })}>
               Feel
             </button>

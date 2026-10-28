@@ -42,7 +42,7 @@ export const Sheet: React.FC<{ title: string; onClose: () => void; children: Rea
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-modal="true" aria-label={title}>
       <button type="button" aria-label="Close" className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative max-h-[85dvh] flex flex-col rounded-t-3xl border-t border-forge-border bg-forge-panel pb-[env(safe-area-inset-bottom)]">
+      <div className="relative max-h-[85dvh] flex flex-col rounded-t-3xl border-t border-forge-border bg-forge-panel pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         <div className="flex items-center gap-2 px-4 pt-3 pb-2 border-b border-forge-border">
           <h2 className="flex-1 text-base font-semibold">{title}</h2>
           <button type="button" aria-label="Close" onClick={onClose} className="w-11 h-11 -mr-2 flex items-center justify-center text-forge-muted">
@@ -95,7 +95,7 @@ export const ChanceSheet: React.FC<{ title: string; note: Pick<NoteEvent, 'chanc
 /**
  * A slider in a list that scrolls: a finger moves it only by going sideways (or by a tap), so one
  * scrolling the list up or down past it leaves it alone (a plain range input jumps to wherever the
- * finger lands). The keyboard works it as usual. `onStart`: a drag or tap is about to change it.
+ * finger lands). The keyboard works it as usual. `onStart`: a drag, tap or key is about to change it.
  */
 export const TouchRange: React.FC<{ label: string; value: number; min: number; max: number; step: number; onChange: (v: number) => void; onStart?: () => void; className?: string; style?: React.CSSProperties }> = ({
   label,
@@ -153,7 +153,9 @@ export const TouchRange: React.FC<{ label: string; value: number; min: number; m
       }}
       onPointerCancel={() => (drag.current = null)}
     >
-      <input ref={input} type="range" aria-label={label} min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="w-full h-full pointer-events-none block" style={style} />
+      <input ref={input} type="range" aria-label={label} min={min} max={max} step={step} value={value} onKeyDown={(e) => {
+          if (/^(Arrow|Page|Home$|End$)/.test(e.key)) onStart?.();
+        }} onChange={(e) => onChange(Number(e.target.value))} className="w-full h-full pointer-events-none block" style={style} />
     </span>
   );
 };

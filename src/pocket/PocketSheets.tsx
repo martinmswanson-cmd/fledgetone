@@ -460,7 +460,7 @@ export const StartScreen: React.FC<{ canGoBack: boolean }> = ({ canGoBack }) => 
     });
   };
   return (
-    <div className="fixed inset-0 z-40 bg-forge-bg overflow-y-auto px-[max(16px,env(safe-area-inset-left))] pt-[max(20px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]">
+    <div className="fixed inset-0 z-40 bg-forge-bg overflow-y-auto pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-[max(20px,env(safe-area-inset-top))] pb-[max(20px,env(safe-area-inset-bottom))]">
       {canGoBack && (
         <button type="button" className="h-11 -ml-2 px-2 flex items-center gap-1 text-cyan-300 font-medium" onClick={() => usePocket.getState().set({ starting: false })}>
           <ChevronLeft className="w-5 h-5" /> Back to {name}

@@ -161,6 +161,25 @@ export function cellClip(trackId: string, sec: Pick<PocketSection, 'from' | 'to'
   });
 }
 
+/**
+ * Note clips that run across an edge of `from`–`to` cut there (as the studio's split does), so the
+ * part inside sits wholly in the stretch and its copy can be linked to it. No undo step of its own.
+ */
+function cutAtEdges(from: number, to: number): void {
+  const s = tl();
+  const tempo = songTempo(s);
+  let cut = false;
+  const clips = s.clips.flatMap((c) => {
+    const t = s.tracks.find((x) => x.id === c.trackId);
+    if (!t || isMixTrack(t) || !canLink(c)) return [c];
+    let parts: Clip[] = [c];
+    for (const at of [from, to]) parts = parts.flatMap((p) => (p.startBar < at - EPS && p.startBar + p.lengthBars > at + EPS ? (splitClipAt(p, at, tempo) ?? [p]) : [p]));
+    if (parts.length > 1) cut = true;
+    return parts;
+  });
+  if (cut) useTimelineStore.setState({ clips });
+}
+
 /** The clips of a stretch, cut at its edges, moved by `shift` bars; note clips that sit wholly inside are linked to their copies. */
 function copiesOf(from: number, to: number, shift: number): { copies: Clip[]; linked: Map<string, string> } {
   const s = tl();
@@ -216,6 +235,8 @@ export function copySection(i: number): string | null {
   let error: string | null = null;
   oneStep(() => {
     pinSections(sections);
+    // (Its clips that run on into other sections are cut at its edges first, so the copy is linked)
+    cutAtEdges(sec.from, sec.to);
     const copies = copiesOf(sec.from, sec.to, len);
     error = tl().insertBars(sec.to, len);
     if (error) return;

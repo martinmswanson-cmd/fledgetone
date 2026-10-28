@@ -82,7 +82,7 @@ export const PocketShare: React.FC = () => {
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-[12px] text-forge-muted">
             Loudness
-            <select value={target} onChange={(e) => setPicked(e.target.value)} className="flex-1 h-8 bg-forge-bg border border-forge-border rounded-lg px-1 text-forge-text" aria-label="MP3 loudness">
+            <select value={target} onChange={(e) => setPicked(e.target.value)} className="flex-1 min-w-0 h-8 bg-forge-bg border border-forge-border rounded-lg px-1 text-forge-text" aria-label="MP3 loudness">
               {LOUDNESS_TARGETS.filter((t) => ['streaming', 'loud', 'club'].includes(t.id)).map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}

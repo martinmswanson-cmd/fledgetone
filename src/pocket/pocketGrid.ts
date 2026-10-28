@@ -1,8 +1,8 @@
 /**
  * Pocket's note maths, as plain functions: how many 16th steps a bar has, how many steps a note
  * covers, note names to MIDI numbers and back, and the notes of the song's key over an
- * instrument's range (the rows of the pads and the piano roll); and the piano roll's notes in
- * 16ths, and back.
+ * instrument's range (the rows of the pads and the piano roll); the piano roll's notes in
+ * 16ths, and back; and a jump to another section waiting for the next bar line.
  */
 import type { NoteEvent } from '../store/timelineTypes';
 import { barsToDuration, durationToBars } from '../store/timelineTypes';
@@ -90,3 +90,30 @@ export const fromRoll = (notes: readonly RollNote[]): NoteEvent[] =>
       velocity: r.velocity,
     };
   });
+
+/**
+ * A jump to the section `from`–`to` while the song plays at `at` (bars): it lands on the next bar
+ * line (`when`). Until then the song loops `loop`, the bar playing to the section, so it neither
+ * wraps back early nor plays on past the bar line. Null when the song is already in the section.
+ */
+export interface SectionJump {
+  from: number;
+  to: number;
+  when: number;
+  loop: [number, number];
+}
+
+export function sectionJump(at: number, from: number, to: number): SectionJump | null {
+  if (at >= from - 1e-6 && at < to - 1e-6) return null;
+  const bar = Math.floor(at + 1e-6);
+  return { from, to, when: bar + 1, loop: [Math.min(from, bar), Math.max(to, bar + 1)] };
+}
+
+/**
+ * What a waiting jump does with the song at `at`: wait; land (the song is in the section already,
+ * by the loop wrapping there: only its loop is set); or seek there (the bar line has come).
+ */
+export function jumpStep(jump: SectionJump, at: number): 'wait' | 'land' | 'seek' {
+  if (at >= jump.from - 1e-6 && at < jump.to - 1e-6) return 'land';
+  return at >= jump.when - 0.01 ? 'seek' : 'wait';
+}

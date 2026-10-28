@@ -15,7 +15,7 @@ import { showToast } from '../components/timeline/toastStore';
 import { useMySounds, type MySound } from '../store/mySounds';
 import { gridTracks, type PocketSection } from './pocketSections';
 import { useSelection, useSongKey } from './pocketCell';
-import { editorOf, isRackKey, playFledge, soundInstrumentName, usePocket, type DrawerSize, type PocketTool } from './pocketStore';
+import { editorOf, isRackKey, playFledge, sliceCount, soundInstrumentName, usePocket, type DrawerSize, type PocketTool } from './pocketStore';
 import { ChordPads, DrumPads, DrumSteps, NotePads } from './PocketPads';
 import { PocketRack } from './PocketRack';
 import { PocketRoll } from './PocketRoll';
@@ -408,7 +408,8 @@ const Body: React.FC<{ track: Track; sec: PocketSection; tool: PocketTool }> = (
       </>
     );
   if (tool === 'mix') return <TrackMix track={track} />;
-  if (how === 'vocals') return <div className="pk-scroll"><PocketVocals trackId={track.id} /></div>;
+  // (Keyed by the track: moving to another vocal track stops and keeps a take going on this one)
+  if (how === 'vocals') return <div className="pk-scroll"><PocketVocals key={track.id} trackId={track.id} /></div>;
   if (how === 'drop') return <DropPads track={track} sec={sec} />;
   if (tool === 'sound') {
     if (isRackKey(track.instrumentKey)) return <PocketRack track={track} sec={sec} />;
@@ -416,6 +417,8 @@ const Body: React.FC<{ track: Track; sec: PocketSection; tool: PocketTool }> = (
   }
   if (how === 'beat') return tool === 'draw' ? <DrumSteps key={`${track.id}:${sec.from}`} track={track} sec={sec} /> : <DrumPads track={track} sec={sec} />;
   if (tool === 'draw') return <PocketRoll key={`${track.id}:${sec.from}:${sec.to}`} track={track} sec={sec} songKey={songKey} />;
+  // (A Slicer's pads are its slices: no chords of the key, no octaves)
+  if (sliceCount(track)) return <NotePads key={track.id} track={track} sec={sec} songKey={songKey} shift={0} />;
   const seg = 'h-8 px-3 rounded-lg text-[12.5px] font-medium';
   return (
     <>
