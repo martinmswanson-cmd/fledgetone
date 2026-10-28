@@ -11,6 +11,7 @@ import { Disc3, Pause, Play, Redo2, Share2, Undo2 } from 'lucide-react';
 import { connectAutosave, connectTimelineToAudio, currentProject, onProjectReplaced, useTimelineStore } from '../store/timelineStore';
 import { recoverFailedDownloads } from '../audio/liveTracks';
 import { installLiveInput } from '../audio/liveInput';
+import { initAudio, rawAudioState } from '../audio/engine';
 import { hasWork } from '../store/project';
 import { reopenLastSong, useWakeWhilePlaying, buzz, playPocket } from './pocketSession';
 import { PocketNotice } from './PocketNotice';
@@ -55,6 +56,27 @@ function pocketBack(): boolean {
   return false;
 }
 
+/**
+ * iOS Safari starts the audio only from inside a touch's end or a click (not a touch's start, nor a
+ * frame later): the first one anywhere in Pocket starts it, once, so a starter that begins playing
+ * a frame after its tap, or the first pad, is heard. Elsewhere it's what that tap would do anyway.
+ */
+function useAudioUnlock(): void {
+  useEffect(() => {
+    const off = () => {
+      document.removeEventListener('touchend', unlock, true);
+      document.removeEventListener('click', unlock, true);
+    };
+    function unlock() {
+      if (rawAudioState() === 'running') return off();
+      void initAudio().then((state) => state === 'running' && off(), () => {});
+    }
+    document.addEventListener('touchend', unlock, true);
+    document.addEventListener('click', unlock, true);
+    return off;
+  }, []);
+}
+
 /** A phone on its side (a laptop's wide window isn't one). */
 function useLandscape(): boolean {
   const query = '(orientation: landscape) and (max-height: 520px)';
@@ -80,7 +102,7 @@ const TopBar: React.FC = () => {
   // Where the listening path couldn't start (no level matching, no safety limiter): a plain warning
   const unsafe = useListening().status === 'off';
   return (
-    <header className="pk-top shrink-0 flex items-center gap-2.5 px-[var(--gx)] pt-[max(8px,env(safe-area-inset-top))] pb-2 border-b border-forge-border">
+    <header className="pk-top shrink-0 flex items-center gap-2.5 pl-[var(--gx)] pr-[var(--gxr)] pt-[max(8px,env(safe-area-inset-top))] pb-2 border-b border-forge-border">
       <button type="button" aria-label="Your songs: a new one, or a starter" className="w-11 h-11 rounded-[14px] border border-forge-border bg-forge-panel grid place-items-center shrink-0" onClick={() => usePocket.getState().set({ starting: true })}>
         <Disc3 className="w-5 h-5" />
       </button>
@@ -180,6 +202,7 @@ export const PocketApp: React.FC = () => {
     return true;
   });
   useWakeWhilePlaying();
+  useAudioUnlock();
   // (Before the children's: what's open over the screen, like the opening notice, goes back first)
   useLayoutEffect(() => onBack(pocketBack), []);
   // Another song opened (a file, from here or from another app; a link): it shows, from its start
@@ -187,7 +210,8 @@ export const PocketApp: React.FC = () => {
     () =>
       onProjectReplaced(() => {
         const p = usePocket.getState();
-        if (p.starting || p.sheet) p.set({ starting: false, sheet: null, section: 0, trackId: null });
+        // (The key picked, Rec and the mixer were the old song's)
+        p.set({ key: null, rec: false, mixAll: false, ...(p.starting || p.sheet ? { starting: false, sheet: null, section: 0, trackId: null } : {}) });
       }),
     []
   );

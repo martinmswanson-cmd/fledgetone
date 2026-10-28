@@ -93,6 +93,18 @@ export const PocketVocals: React.FC<{ trackId?: string }> = ({ trackId: fixed })
     }
   };
 
+  // Leaving the vocal track while a take is going (another cell, its Mix, the mixer): the take is
+  // stopped and kept, so the microphone doesn't stay on with nothing to keep what it hears
+  const live = useRef({ session, stop });
+  live.current = { session, stop };
+  useEffect(
+    () => () => {
+      const { session: going, stop: finish } = live.current;
+      if (going) void finish(going);
+    },
+    []
+  );
+
   // While recording: the level meter, and (with the loop on) stopping at the loop's end. The app
   // going to the background stops and keeps the take (appLifecycle.ts)
   useEffect(() => (session ? holdTake(() => stop(session)) : undefined), [session]); // eslint-disable-line react-hooks/exhaustive-deps

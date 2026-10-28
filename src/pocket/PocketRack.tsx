@@ -13,7 +13,7 @@ import { clearPad } from '../store/bounceToPad';
 import { clipToPad, placedMessage, usePadBounce } from '../store/bounceToPadActions';
 import { bounceSection } from './pocketBounce';
 import { showToast } from '../components/timeline/toastStore';
-import { Card, pill } from './pocketUi';
+import { Card, pill, TouchRange } from './pocketUi';
 import { audition } from './pocketSound';
 import { gridTracks, type PocketSection } from './pocketSections';
 import { usePocket } from './pocketStore';
@@ -36,7 +36,7 @@ export const BounceProgress: React.FC = () => {
 const Range: React.FC<{ label: string; value: number; min: number; max: number; step: number; show: string; color: string; onChange: (v: number) => void }> = ({ label, value, min, max, step, show, color, onChange }) => (
   <label className="grid grid-cols-[52px_minmax(0,1fr)_64px] items-center gap-2.5 text-[13px] text-forge-muted min-h-11">
     <span>{label}</span>
-    <input type="range" aria-label={label} min={min} max={max} step={step} value={value} onPointerDown={() => useTimelineStore.getState().beginEdit()} onChange={(e) => onChange(Number(e.target.value))} className="w-full h-8" style={{ accentColor: color }} />
+    <TouchRange label={label} min={min} max={max} step={step} value={value} onStart={() => useTimelineStore.getState().beginEdit()} onChange={onChange} className="w-full h-8" style={{ accentColor: color }} />
     <span className="font-mono text-xs text-forge-text text-right">{show}</span>
   </label>
 );

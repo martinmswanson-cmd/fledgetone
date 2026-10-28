@@ -14,10 +14,10 @@ import { chanceMark, isConditional, withChance } from '../store/noteChance';
 import { ChanceSheet } from './pocketUi';
 import { useTimelineStore } from '../store/timelineStore';
 import { getAudiblePositionBar } from '../audio/transport';
-import { barsToDuration, durationToBars, SLICE_KEY_BASE, type NoteEvent, type Track } from '../store/timelineTypes';
+import { SLICE_KEY_BASE, type Track } from '../store/timelineTypes';
 import type { SongKey } from '../store/songKey';
 import { INSTRUMENTS, isSlicerKind } from '../audio/instrumentCatalog';
-import { STEPS_PER_WHOLE, midiToNote, noteToMidi, scaleRows } from './pocketGrid';
+import { STEPS_PER_WHOLE, fromRoll, midiToNote, noteToMidi, scaleRows, toRoll, type RollNote } from './pocketGrid';
 import { editCell, sectionNotes } from './pocketCell';
 import type { PocketSection } from './pocketSections';
 import { pocketNoteId, usePocket } from './pocketStore';
@@ -32,30 +32,6 @@ const RW = 40, RH = 34, KEYW = 46, RULERH = 24;
 const EPS = 1e-6;
 const PEN_LENS: Array<[number, string]> = [[1, '1/16'], [2, '1/8'], [4, '1/4'], [8, '1/2'], [16, '1 bar']];
 const lenName = (len: number) => PEN_LENS.find(([l]) => l === len)?.[1] ?? `${len}/16`;
-
-/** A note as the roll sees it: its row's pitch, its 16th and its length in 16ths. */
-interface RollNote {
-  id: string;
-  midi: number;
-  step: number;
-  len: number;
-  velocity: number;
-  /** The note as it was (its name is kept when its pitch doesn't change) */
-  from?: NoteEvent;
-}
-
-const toRoll = (notes: readonly NoteEvent[]): RollNote[] =>
-  notes.map((n) => ({ id: n.id, midi: noteToMidi(n.note) ?? 60, step: Math.round(n.startOffset * STEPS_PER_WHOLE), len: Math.max(1, Math.round(durationToBars(n.duration) * STEPS_PER_WHOLE)), velocity: n.velocity, from: n }));
-
-const fromRoll = (notes: readonly RollNote[]): NoteEvent[] =>
-  notes.map((r) => ({
-    ...(r.from ?? {}),
-    id: r.id,
-    note: r.from && noteToMidi(r.from.note) === r.midi ? r.from.note : midiToNote(r.midi),
-    startOffset: r.step / STEPS_PER_WHOLE,
-    duration: barsToDuration(r.len / STEPS_PER_WHOLE),
-    velocity: r.velocity,
-  }));
 
 let pen: 'note' | 'chord' | 'erase' = 'note';
 /** A new note's length in 16ths: the last drawn for this kind of part, shared with the studio's roll (penLength.ts). */
@@ -326,7 +302,8 @@ export const PocketRoll: React.FC<{ track: Track; sec: PocketSection; songKey: S
 
   return (
     <>
-      <div className="flex items-center gap-1.5 h-[38px] shrink-0">
+      {/* (Wider than a narrow phone: it scrolls sideways) */}
+      <div className="flex items-center gap-1.5 h-[38px] shrink-0 overflow-x-auto -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
         {selected ? (
           <>
             <span className="font-mono text-sm font-semibold px-1 whitespace-nowrap">

@@ -17,7 +17,7 @@ import { editPluginParam, editPluginProgram } from '../store/pluginEdits';
 import { choosePresetHeard, fledgePreviewState, hearOnChange, setHearOnChange, subscribeFledgePreview, toggleHearPreset } from '../audio/fledgePreview';
 import type { Track } from '../store/timelineTypes';
 import { pickSoundFile, shareTrackSound } from '../components/mySoundsFile';
-import { pill, pillOn } from './pocketUi';
+import { pill, pillOn, TouchRange } from './pocketUi';
 import { onBack } from '../native/backButton';
 
 /** "Bass/Wobble" → groups of [category, [{ name, i }]], each category once (where it first comes in the engine's order). */
@@ -125,7 +125,7 @@ const Controls: React.FC<{ controls: BuiltinControls; pluginId: string; trackId:
               <span className="text-[11px] text-forge-muted truncate flex-1">{targets.join(', ')}</span>
               <span className="font-mono text-xs tabular-nums">{Math.round(v * 100)}%</span>
             </span>
-            <input type="range" aria-label={label} min={0} max={1} step={0.005} value={v} onChange={(e) => put(`Macro ${k}`, Number(e.target.value))} className="w-full h-11" style={{ accentColor: color }} />
+            <TouchRange label={label} min={0} max={1} step={0.005} value={v} onChange={(x) => put(`Macro ${k}`, x)} className="w-full h-11" style={{ accentColor: color }} />
           </label>
         );
       })}

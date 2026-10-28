@@ -25,7 +25,7 @@ import { showToast } from '../components/timeline/toastStore';
 import { Sheet, SheetItem, pill, pillOn } from './pocketUi';
 import { FledgeTourButton } from '../components/FledgeTourButton';
 import { playFledge, soundInstrumentName, usePocket } from './pocketStore';
-import { editCell, useSelection, useSongKey } from './pocketCell';
+import { editCell, inOneStep, useSelection, useSongKey } from './pocketCell';
 import { cellClip, copySection, moveSection, pocketSections, removeSection, sectionIsLinked, unlinkSection } from './pocketSections';
 import { FavouriteStar, pocketInstruments, pocketSounds, selectTrack } from './PocketDrawer';
 import { useMySounds } from '../store/mySounds';
@@ -346,13 +346,15 @@ const DrummerSheet: React.FC = () => {
     const bars = Math.max(1, Math.round((len * meter.den) / meter.num));
     const notes = drummer(style, bars, 0.5, bars >= 4 ? 4 : 0, nextDrumSeed(), pocketNoteId, meter).filter((n) => n.startOffset < len - 1e-6);
     // (A measured feel on the cell stays: the style's swing goes under it)
-    const before = cellClip(track.id, sec, false);
-    const old = useTimelineStore.getState().clips.find((c) => c.id === before)?.groove;
-    editCell(track.id, sec, () => notes);
-    cellDrumStyles.set(cellKey(track.id, sec.from), style);
-    const id = cellClip(track.id, sec, false);
-    const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
-    if (id) useTimelineStore.getState().setClipGroove(id, drummerGroove(old, groove), false);
+    inOneStep(() => {
+      const before = cellClip(track.id, sec, false);
+      const old = useTimelineStore.getState().clips.find((c) => c.id === before)?.groove;
+      editCell(track.id, sec, () => notes);
+      cellDrumStyles.set(cellKey(track.id, sec.from), style);
+      const id = cellClip(track.id, sec, false);
+      const groove = DRUM_STYLES.find((d) => d.id === style)?.groove;
+      if (id) useTimelineStore.getState().setClipGroove(id, drummerGroove(old, groove), false);
+    });
     close();
   };
   return (
@@ -396,9 +398,11 @@ const FillSheet: React.FC = () => {
           key={f.id}
           title={f.name}
           onClick={() => {
-            const id = cellClip(track.id, sec, true);
-            // (The middle of the section's last bar: the fill goes at that bar's end)
-            if (id) fillClipBar(id, sec.to - 0.5, f.id);
+            inOneStep(() => {
+              const id = cellClip(track.id, sec, true);
+              // (The middle of the section's last bar: the fill goes at that bar's end)
+              if (id) fillClipBar(id, sec.to - 0.5, f.id);
+            });
             close();
           }}
         />
@@ -410,7 +414,7 @@ const FillSheet: React.FC = () => {
 /** The song as it was earlier (versions.ts): one tap to go back. */
 const VersionsSheet: React.FC = () => (
   <Sheet title="Versions" onClose={close}>
-    <VersionsList touch onRestored={() => usePocket.getState().set({ sheet: null, starting: false, section: 0, trackId: null })} />
+    <VersionsList touch onRestored={() => usePocket.getState().set({ sheet: null, starting: false, section: 0, trackId: null, key: null, rec: false, mixAll: false })} />
   </Sheet>
 );
 

@@ -20,7 +20,7 @@ import { NOTE_NAMES, type SongKey } from '../store/songKey';
 import type { NoteEvent, Track } from '../store/timelineTypes';
 import { STEPS_PER_WHOLE, midiToNote, noteToMidi, scaleRows, stepsPerBar } from './pocketGrid';
 import { audition, padsOf } from './pocketSound';
-import { editCell, sectionNotes } from './pocketCell';
+import { editCell, inOneStep, sectionNotes } from './pocketCell';
 import { cellClip } from './pocketSections';
 import type { PocketSection } from './pocketSections';
 import { cellDrumStyles, cellKey, isRackKey, pocketNoteId, usePocket, usePlayPosition } from './pocketStore';
@@ -94,15 +94,45 @@ function stepNow(sec: Pick<PocketSection, 'from' | 'to'>): number | null {
   return Math.round((at - sec.from) * STEPS_PER_WHOLE) % total;
 }
 
-/** Write what was played into the cell (Rec on, the song playing in the section). */
-function recordInto(track: Track, sec: PocketSection, notes: Array<{ note: string; steps: number; velocity?: number }>): void {
-  if (!usePocket.getState().rec) return;
+/**
+ * Write what was played into the cell (Rec on, the song playing in the section). Returns how to
+ * take it back (while nothing else has changed the song since), or null when nothing was written.
+ */
+function recordInto(track: Track, sec: PocketSection, notes: Array<{ note: string; steps: number; velocity?: number }>): (() => void) | null {
+  if (!usePocket.getState().rec) return null;
   const step = stepNow(sec);
-  if (step === null) return;
+  if (step === null) return null;
+  const { clips, past, future } = useTimelineStore.getState();
   editCell(track.id, sec, (have) => {
     const fresh = notes.filter((n) => !have.some((h) => noteToMidi(h.note) === noteToMidi(n.note) && Math.round(h.startOffset * STEPS_PER_WHOLE) === step));
     return [...have, ...fresh.map((n): NoteEvent => ({ id: pocketNoteId(), note: n.note, startOffset: step / STEPS_PER_WHOLE, duration: n.steps === 1 ? '16n' : n.steps === 2 ? '8n' : '4n', velocity: n.velocity ?? 0.85 }))];
   });
+  const written = useTimelineStore.getState().clips;
+  return () => {
+    if (useTimelineStore.getState().clips === written) useTimelineStore.setState({ clips, past, future });
+  };
+}
+
+/**
+ * Pads fire as a finger lands (no wait), and their blocks scroll: a touch the browser takes for a
+ * scroll (pointercancel, soon after it landed) takes back what it wrote, so scrolling the pads
+ * with Rec on doesn't leave notes behind.
+ */
+function useTakeBack() {
+  const held = useRef(new Map<number, { undo: () => void; at: number }>());
+  return {
+    keep: (pointer: number, undo: (() => void) | null) => {
+      if (undo) held.current.set(pointer, { undo, at: performance.now() });
+    },
+    handlers: {
+      onPointerUp: (e: React.PointerEvent) => held.current.delete(e.pointerId),
+      onPointerCancel: (e: React.PointerEvent) => {
+        const h = held.current.get(e.pointerId);
+        held.current.delete(e.pointerId);
+        if (h && performance.now() - h.at < 500) h.undo();
+      },
+    },
+  };
 }
 
 function flash(el: HTMLElement): void {
@@ -124,6 +154,7 @@ const padOrder = <T,>(items: readonly T[], perRow = 4): Array<T | null> => {
 
 export const DrumPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track, sec }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const takeBack = useTakeBack();
   useAnchoredScroll(ref, `${track.id}:pads`, 'bottom');
   return (
     <div ref={ref} className="pk-pads" aria-label={`${track.name}'s pads`}>
@@ -152,8 +183,9 @@ export const DrumPads: React.FC<{ track: Track; sec: PocketSection }> = ({ track
             buzz(10);
             flash(e.currentTarget);
             void audition(track.id, p.note);
-            recordInto(track, sec, [{ note: p.note, steps: 1 }]);
+            takeBack.keep(e.pointerId, recordInto(track, sec, [{ note: p.note, steps: 1 }]));
           }}
+          {...takeBack.handlers}
         >
           {p.label}
         </button>
@@ -248,12 +280,14 @@ export const DrumSteps: React.FC<{ track: Track; sec: PocketSection }> = ({ trac
           type="button"
           className={tool}
           aria-label={`Swing: ${swingName}. Tap for more`}
-          onClick={() => {
-            const id = cellClip(track.id, sec, true);
-            if (!id) return;
-            const next = SWINGS[(SWINGS.indexOf(swing) + 1) % SWINGS.length];
-            useTimelineStore.getState().setClipGroove(id, withSwing(groove, next));
-          }}
+          onClick={() =>
+            inOneStep(() => {
+              const id = cellClip(track.id, sec, true);
+              if (!id) return;
+              const next = SWINGS[(SWINGS.indexOf(swing) + 1) % SWINGS.length];
+              useTimelineStore.getState().setClipGroove(id, withSwing(groove, next));
+            })
+          }
         >
           Swing {swingName}
         </button>
@@ -399,6 +433,7 @@ export function centreOf(track: Track, notes: readonly NoteEvent[]): number {
 
 export const NotePads: React.FC<{ track: Track; sec: PocketSection; songKey: SongKey; shift: number }> = ({ track, sec, songKey, shift }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const takeBack = useTakeBack();
   // (Where the pads sit is worked out when the track opens, so they don't move while playing)
   const centre = useMemo(() => centreOf(track, sectionNotes(useTimelineStore.getState().clips, track.id, sec)), [track.id, sec.from]); // eslint-disable-line react-hooks/exhaustive-deps
   // A Slicer (not in Pitch mode): a pad per slice, slice 1 bottom left, as on its roll
@@ -423,8 +458,9 @@ export const NotePads: React.FC<{ track: Track; sec: PocketSection; songKey: Son
               buzz(10);
               flash(e.currentTarget);
               void audition(track.id, note, 0.8);
-              recordInto(track, sec, [{ note, steps: 2, velocity: 0.8 }]);
+              takeBack.keep(e.pointerId, recordInto(track, sec, [{ note, steps: 2, velocity: 0.8 }]));
             }}
+            {...takeBack.handlers}
           >
             {slices ? `S${m - SLICE_KEY_BASE + 1}` : note}
           </button>
@@ -456,6 +492,7 @@ export function keyChords(key: SongKey, track: Track, centre: number): Array<{ n
 
 export const ChordPads: React.FC<{ track: Track; sec: PocketSection; songKey: SongKey }> = ({ track, sec, songKey }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const takeBack = useTakeBack();
   const centre = useMemo(() => centreOf(track, sectionNotes(useTimelineStore.getState().clips, track.id, sec)), [track.id, sec.from]); // eslint-disable-line react-hooks/exhaustive-deps
   const chords = keyChords(songKey, track, centre);
   useAnchoredScroll(ref, `${track.id}:chords`, 'top');
@@ -471,8 +508,9 @@ export const ChordPads: React.FC<{ track: Track; sec: PocketSection; songKey: So
             buzz(10);
             flash(e.currentTarget);
             ch.notes.forEach((n, k) => window.setTimeout(() => void audition(track.id, n, 0.75), k * 18));
-            recordInto(track, sec, ch.notes.map((note) => ({ note, steps: 4, velocity: 0.75 })));
+            takeBack.keep(e.pointerId, recordInto(track, sec, ch.notes.map((note) => ({ note, steps: 4, velocity: 0.75 }))));
           }}
+          {...takeBack.handlers}
         >
           {ch.name}
           <span>{ch.roman}</span>
