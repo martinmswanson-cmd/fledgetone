@@ -20,7 +20,7 @@
 use crate::dsp::*;
 use crate::fx::{Effects, FxCfg, FxMods};
 use crate::params::{self as p, db_gain, param, COUNT};
-use crate::tables::{level_blend, level_for, table, Table};
+use crate::tables::{level_blend, level_for, table, Level, Table, LEVELS};
 use std::sync::Arc;
 
 pub const BLOCK: usize = 128;
@@ -1576,6 +1576,7 @@ impl Synth {
 
     /// Render `frames` (up to BLOCK) into `out`.
     pub fn process(&mut self, frames: usize) {
+        let made_before = crate::tables::made_count();
         let frames = frames.min(BLOCK);
         let cfg = self.cfg();
         let sr = self.sr;
@@ -1694,13 +1695,16 @@ impl Synth {
             self.sub_bus[..frames].fill(0.0);
         }
         // (The user table, when there is one: a sound made into a table, see tables::user_table)
+        // (An oscillator that's off reads none: its table isn't made for it)
         let user = self.user.clone();
-        let tab: [&Table; 2] = [0, 1].map(|o| {
+        let tab: [Option<&Table>; 2] = [0, 1].map(|o| {
             let i = cfg.osc[o].table;
-            if i == p::USER_TABLE {
-                user.as_deref().unwrap_or_else(|| table(0))
+            if !cfg.osc[o].on {
+                None
+            } else if i == p::USER_TABLE {
+                Some(user.as_deref().unwrap_or_else(|| table(0)))
             } else {
-                table(i)
+                Some(table(i))
             }
         });
         // White noise spreads over the whole band: scaled so the part we hear is as loud at any
@@ -1811,6 +1815,11 @@ impl Synth {
                     let (a, b) = (level(0), level(1));
                     ([a.0, b.0], [a.1, b.1])
                 };
+                // The levels these samples read (made now if a note hasn't read them before: only
+                // what's played is made, see tables::Table), and the next one up while fading into it
+                let lv: [Option<(&Level, Option<&Level>)>; 2] = [0, 1].map(|o| {
+                    tab[o].map(|t| (t.level(lvl[o]), if lw[o] > 0.0 { Some(t.level((lvl[o] + 1).min(LEVELS - 1))) } else { None }))
+                });
                 let pos = [(cfg.osc[0].pos + m[d::APOS] * 0.5).clamp(0.0, 1.0), (cfg.osc[1].pos + m[d::BPOS] * 0.5).clamp(0.0, 1.0)];
                 let gains = [cfg.osc[0].level * (1.0 + m[d::ALEVEL]).clamp(0.0, 2.0), cfg.osc[1].level * (1.0 + m[d::BLEVEL]).clamp(0.0, 2.0)];
                 // FM: B into A's phase, deepest for low notes, held back on high ones (they'd fold)
@@ -1914,9 +1923,9 @@ impl Synth {
                     let mut first_a = 0.0;
                     for o in [1usize, 0] {
                         let oc = &cfg.osc[o];
-                        if !oc.on {
+                        let Some((here, next)) = lv[o] else {
                             continue;
-                        }
+                        };
                         let spr = &sp[o];
                         let other = if o == 0 { modb } else { v.last_a };
                         let ph = &mut v.phase[o];
@@ -1926,7 +1935,7 @@ impl Synth {
                             if o == 0 && fm > 0.0 {
                                 read = (read + fm * modb).rem_euclid(1.0);
                             }
-                            let raw = tab[o].read_blend(lvl[o], lw[o], pos[o], read);
+                            let raw = here.read_blend(next, lw[o], pos[o], read);
                             let smp = warp_amp(oc.warp, warp[o], raw, other);
                             if u == 0 {
                                 if o == 1 {
@@ -2125,6 +2134,14 @@ impl Synth {
         }
         self.song_beats += frames as f64 * beat_step;
         self.song_secs += frames as f64 / sr as f64;
+        // A table just chosen makes its level 0 (which every level is scaled from) a call after
+        // its spectra, and only when this call made nothing else: so its first note makes just
+        // the level it reads, and no one call does all three
+        if crate::tables::made_count() == made_before {
+            if let Some(t) = tab.iter().flatten().find(|t| t.level_if_made(0).is_none()) {
+                t.level(0);
+            }
+        }
     }
 }
 

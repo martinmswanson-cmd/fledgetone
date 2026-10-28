@@ -27,20 +27,28 @@ export const LUSH_PRE_DELAY = 0.01;
 
 /**
  * The gain after a damping at `hz` that keeps the reverb as loud as it was through REVERB_DAMP_HZ
- * (once every style's damping): what a send of pink noise brings through the low cut and the
- * damping, against what it brought through the old one. A brighter damping lets a little more
- * through (half a dB at 11 kHz); this takes it back, so a room gets clearer, not louder.
+ * (once every style's damping): what a send of music brings through the low cut and the damping,
+ * heard as loudness is measured, against what it brought through the old one. Music isn't pink
+ * noise: its highs fall away fast above a couple of kHz, so a brighter damping lets next to
+ * nothing more through, and the old damping's gentle peak (its Q) a little under 5.5 kHz made it
+ * a hair louder there. So the makeup is a small lift (0.1 dB at 11 kHz), not a cut: worked out
+ * with pink noise, it took half a dB off a plate on real songs.
  */
 export function dampingMakeup(hz: number): number {
   const q = 10 ** (REVERB_FILTER_Q / 20);
   const power = (damp: number) => {
     let sum = 0;
-    // Pink noise: the same power in every octave, so equal steps of log frequency, 20 Hz to 20 kHz
+    // Equal steps of log frequency, 20 Hz to 20 kHz: pink noise (the same power in every octave)
+    // falling a further 6 dB an octave above 2 kHz, as a mix's highs do, through the loudness
+    // weighting's lift of the highs (BS.1770's shelf: about +4 dB above 1.7 kHz)
     for (let i = 0; i <= 600; i++) {
       const f = 20 * 1000 ** (i / 600);
       const lo = f / damp;
       const hi = REVERB_LOW_CUT_HZ / f;
-      sum += 1 / ((1 - lo * lo) ** 2 + (lo / q) ** 2) / ((1 - hi * hi) ** 2 + (hi / q) ** 2);
+      const music = 1 / (1 + (f / 2000) ** 2);
+      const shelf = (f / 1700) ** 2;
+      const weight = (1 + 10 ** 0.4 * shelf) / (1 + shelf);
+      sum += (music * weight) / ((1 - lo * lo) ** 2 + (lo / q) ** 2) / ((1 - hi * hi) ** 2 + (hi / q) ** 2);
     }
     return sum;
   };

@@ -8,7 +8,8 @@
 //! level is the inverse FFT of the spectrum cut at its top harmonic.
 
 use std::f64::consts::PI;
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Frames per table (Position steps through them, blending neighbours)
 pub const FRAMES: usize = 32;
@@ -16,7 +17,7 @@ pub const FRAMES: usize = 32;
 const TOP: usize = 1024;
 /// Levels: harmonics 1024, 512, ... 1
 pub const LEVELS: usize = 11;
-/// Samples a level keeps per period of its top harmonic (see from_spectra)
+/// Samples a level keeps per period of its top harmonic (see synthesize_level)
 const TABLE_OVERSAMPLE: usize = 32;
 /// Samples in the high-resolution cycle analysed for the time-domain tables
 const ANALYSE: usize = 4096;
@@ -28,39 +29,128 @@ pub struct Level {
     pub data: Vec<f32>,
 }
 
-pub struct Table {
-    pub levels: Vec<Level>,
-}
-
-impl Table {
-    /// The sample at `phase` (0..1) of the frame at `pos` (0..1), from the level for a note
-    /// advancing `inc` cycles per sample.
+impl Level {
+    /// The sample at `phase` (0..1) of the frame at `pos` (0..1).
     #[inline]
-    pub fn read(&self, level: usize, pos: f32, phase: f32) -> f32 {
-        let lv = &self.levels[level];
+    pub fn read(&self, pos: f32, phase: f32) -> f32 {
         let fp = pos.clamp(0.0, 1.0) * (FRAMES - 1) as f32;
         let f0 = (fp as usize).min(FRAMES - 2);
         let ft = fp - f0 as f32;
-        let x = phase * lv.size as f32;
-        let i = (x as usize).min(lv.size - 1);
+        let x = phase * self.size as f32;
+        let i = (x as usize).min(self.size - 1);
         let t = x - i as f32;
-        let stride = lv.size + 1;
-        let a = &lv.data[f0 * stride + i..];
-        let b = &lv.data[(f0 + 1) * stride + i..];
+        let stride = self.size + 1;
+        let a = &self.data[f0 * stride + i..];
+        let b = &self.data[(f0 + 1) * stride + i..];
         let sa = a[0] + (a[1] - a[0]) * t;
         let sb = b[0] + (b[1] - b[0]) * t;
         sa + (sb - sa) * ft
     }
 
+    /// As `read`, fading `w` (0..1) of the way to `next` (the next level up; only read when `w`
+    /// is over 0, so it can be None then).
+    #[inline]
+    pub fn read_blend(&self, next: Option<&Level>, w: f32, pos: f32, phase: f32) -> f32 {
+        let a = self.read(pos, phase);
+        match next {
+            Some(n) if w > 0.0 => a + (n.read(pos, phase) - a) * w,
+            _ => a,
+        }
+    }
+}
+
+/// A wavetable: its frames' spectra, and each level made from them the first time a note needs
+/// it. A note reads one or two levels; the four richest are the biggest (4096 samples a cycle)
+/// and only the lowest notes read them, so a table first used by a lead or a chord makes a
+/// fraction of the work and memory of all eleven. Level 0 is always made first: every level is
+/// scaled by its frames' loudness there.
+pub struct Table {
+    levels: [OnceLock<Level>; LEVELS],
+    /// Each frame's gain, from level 0 (see `gains`)
+    gains: OnceLock<[f32; FRAMES]>,
+    /// The frames' spectra, until every level is made
+    spectra: Mutex<Option<Arc<Vec<Spectrum>>>>,
+}
+
+impl Table {
+    fn new(spectra: Vec<Spectrum>) -> Table {
+        Table { levels: [const { OnceLock::new() }; LEVELS], gains: OnceLock::new(), spectra: Mutex::new(Some(Arc::new(spectra))) }
+    }
+
+    /// Level `k` (made now if it hasn't been).
+    #[inline]
+    pub fn level(&self, k: usize) -> &Level {
+        let k = k.min(LEVELS - 1);
+        if let Some(lv) = self.levels[k].get() {
+            return lv;
+        }
+        self.make(k)
+    }
+
+    /// Level `k` if it's made already.
+    #[inline]
+    pub fn level_if_made(&self, k: usize) -> Option<&Level> {
+        self.levels[k.min(LEVELS - 1)].get()
+    }
+
+    /// How many levels are made, and the bytes they hold.
+    pub fn made(&self) -> (usize, usize) {
+        let made: Vec<&Level> = self.levels.iter().filter_map(|l| l.get()).collect();
+        (made.len(), made.iter().map(|l| l.data.len() * 4).sum())
+    }
+
+    #[cold]
+    fn make(&self, k: usize) -> &Level {
+        let gains = if k == 0 { None } else { Some(self.gains()) };
+        let lv = self.levels[k].get_or_init(|| {
+            let spectra = self.spectra.lock().unwrap_or_else(|e| e.into_inner()).clone().expect("spectra kept until every level is made");
+            MADE.fetch_add(1, Ordering::Relaxed);
+            let mut lv = synthesize_level(&spectra, k);
+            match gains {
+                Some(g) => scale(&mut lv, &g),
+                None => {
+                    let g = frame_gains(&lv);
+                    scale(&mut lv, &g);
+                    let _ = self.gains.set(g);
+                }
+            }
+            lv
+        });
+        // The spectra keep only the harmonics the levels still to be made hold (none once every
+        // level is made): level 0 is made first, so half of them go at once
+        let mut kept = self.spectra.lock().unwrap_or_else(|e| e.into_inner());
+        match self.levels.iter().position(|l| l.get().is_none()) {
+            None => *kept = None,
+            Some(richest) => {
+                let need = (TOP >> richest) + 1;
+                if let Some(sp) = kept.as_ref().filter(|sp| sp.iter().any(|f| f.len() > need)) {
+                    *kept = Some(Arc::new(sp.iter().map(|f| f[..need.min(f.len())].to_vec()).collect()));
+                }
+            }
+        }
+        lv
+    }
+
+    /// Each frame's gain: level 0's loudness (its unscaled frames), as `frame_gains`.
+    fn gains(&self) -> [f32; FRAMES] {
+        if let Some(g) = self.gains.get() {
+            return *g;
+        }
+        self.level(0);
+        *self.gains.get().expect("level 0 sets the gains")
+    }
+
+    /// The sample at `phase` (0..1) of the frame at `pos` (0..1), from level `level`.
+    #[inline]
+    pub fn read(&self, level: usize, pos: f32, phase: f32) -> f32 {
+        self.level(level).read(pos, phase)
+    }
+
     /// As `read`, fading `w` (0..1) of the way from `level` to the next level up.
     #[inline]
     pub fn read_blend(&self, level: usize, w: f32, pos: f32, phase: f32) -> f32 {
-        let a = self.read(level, pos, phase);
-        if w <= 0.0 {
-            a
-        } else {
-            a + (self.read((level + 1).min(LEVELS - 1), pos, phase) - a) * w
-        }
+        let next = if w > 0.0 { Some(self.level((level + 1).min(LEVELS - 1))) } else { None };
+        self.level(level).read_blend(next, w, pos, phase)
     }
 }
 
@@ -106,6 +196,15 @@ pub fn level_blend(inc: f32, sr: f32, audible: f32) -> (usize, f32) {
 
 static TABLES: [OnceLock<Table>; 16] = [const { OnceLock::new() }; 16];
 
+/// How many times a table's spectra or one of its levels has been made (so the synth can tell
+/// whether a call has made anything: see Synth::process)
+static MADE: AtomicUsize = AtomicUsize::new(0);
+
+/// See MADE.
+pub fn made_count() -> usize {
+    MADE.load(Ordering::Relaxed)
+}
+
 /// Table `i` (made the first time it's asked for).
 pub fn table(i: usize) -> &'static Table {
     let i = i.min(TABLES.len() - 1);
@@ -116,49 +215,58 @@ pub fn table(i: usize) -> &'static Table {
 type Spectrum = Vec<(f64, f64)>;
 
 fn build(which: usize) -> Table {
+    MADE.fetch_add(1, Ordering::Relaxed);
     let spectra: Vec<Spectrum> = (0..FRAMES).map(|f| frame_spectrum(which, f as f64 / (FRAMES - 1) as f64)).collect();
-    from_spectra(&spectra)
+    from_spectra(spectra)
 }
 
-/// A table from FRAMES spectra: each frame band-limited into every level, then levelled.
-fn from_spectra(spectra: &[Spectrum]) -> Table {
-    let mut levels = Vec::with_capacity(LEVELS);
-    for k in 0..LEVELS {
-        let cap = TOP >> k;
-        // Enough samples for linear reads to be clean: 32 per period of the top harmonic (64 at
-        // least, 4096 at most). With only 4, the linear reads' images of the top harmonics folded
-        // back as fizz about 40 dB under the note (a saw from C4 to C6); with 32, 75 dB or more
-        let size = (cap * TABLE_OVERSAMPLE).clamp(64, 4096);
-        let mut data = vec![0f32; FRAMES * (size + 1)];
-        // Two frames at a time (one inverse FFT makes both: see synthesize_pair)
-        for f in (0..FRAMES).step_by(2) {
-            let (a, b) = synthesize_pair(&spectra[f], &spectra[f + 1], cap.min(size / 2 - 1), size);
-            for (g, cycle) in [(f, a), (f + 1, b)] {
-                let out = &mut data[g * (size + 1)..(g + 1) * (size + 1)];
-                out[..size].copy_from_slice(&cycle);
-                out[size] = cycle[0];
-            }
+/// A table from FRAMES spectra: each frame band-limited into every level (when first read), and
+/// levelled.
+fn from_spectra(spectra: Vec<Spectrum>) -> Table {
+    Table::new(spectra)
+}
+
+/// Level `k` of FRAMES spectra, not yet levelled.
+fn synthesize_level(spectra: &[Spectrum], k: usize) -> Level {
+    let cap = TOP >> k;
+    // Enough samples for linear reads to be clean: 32 per period of the top harmonic (64 at
+    // least, 4096 at most). With only 4, the linear reads' images of the top harmonics folded
+    // back as fizz about 40 dB under the note (a saw from C4 to C6); with 32, 75 dB or more
+    let size = (cap * TABLE_OVERSAMPLE).clamp(64, 4096);
+    let mut data = vec![0f32; FRAMES * (size + 1)];
+    // Two frames at a time (one inverse FFT makes both: see synthesize_pair)
+    for f in (0..FRAMES).step_by(2) {
+        let (a, b) = synthesize_pair(&spectra[f], &spectra[f + 1], cap.min(size / 2 - 1), size);
+        for (g, cycle) in [(f, a), (f + 1, b)] {
+            let out = &mut data[g * (size + 1)..(g + 1) * (size + 1)];
+            out[..size].copy_from_slice(&cycle);
+            out[size] = cycle[0];
         }
-        levels.push(Level { size, data });
     }
-    // Every frame of every level is scaled by its level-0 frame's loudness, so a level change
-    // (a note moving octave) doesn't change the level, and frames are a steady loudness apart
-    for f in 0..FRAMES {
-        let l0 = &levels[0];
+    Level { size, data }
+}
+
+/// Every frame of every level is scaled by its level-0 frame's loudness, so a level change (a
+/// note moving octave) doesn't change the level, and frames are a steady loudness apart: the
+/// gain for each frame, from level 0 as synthesized.
+fn frame_gains(l0: &Level) -> [f32; FRAMES] {
+    std::array::from_fn(|f| {
         let stride = l0.size + 1;
         let frame = &l0.data[f * stride..f * stride + l0.size];
         let rms = (frame.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>() / l0.size as f64).sqrt();
         let peak = frame.iter().fold(0f32, |m, x| m.max(x.abs())) as f64;
         // Aim for the RMS of a full-scale sine (0.707) at 0.5, but never past a peak of 1
-        let g = if rms > 1e-9 { (0.5 / rms).min(1.0 / peak.max(1e-9)) } else { 0.0 } as f32;
-        for lv in levels.iter_mut() {
-            let s = lv.size + 1;
-            for x in &mut lv.data[f * s..(f + 1) * s] {
-                *x *= g;
-            }
+        (if rms > 1e-9 { (0.5 / rms).min(1.0 / peak.max(1e-9)) } else { 0.0 }) as f32
+    })
+}
+
+fn scale(lv: &mut Level, gains: &[f32; FRAMES]) {
+    let s = lv.size + 1;
+    for (f, g) in gains.iter().enumerate() {
+        for x in &mut lv.data[f * s..(f + 1) * s] {
+            *x *= *g;
         }
     }
-    Table { levels }
 }
 
 /// Samples in each cycle of a user table, as the host hands them in
@@ -186,7 +294,7 @@ pub fn user_table(cycles: &[f32], frames: usize) -> Option<Table> {
             mix(&given[i], &given[i + 1], x - i as f64)
         })
         .collect();
-    Some(from_spectra(&spectra))
+    Some(from_spectra(spectra))
 }
 
 /// The harmonics of one cycle of USER_CYCLE samples (anything not a number counts as silence).
@@ -500,7 +608,7 @@ mod tests {
     fn levels_hold_their_harmonics_only() {
         // A saw frame at level 6 (16 harmonics) has no energy at harmonic 40
         let t = table(0);
-        let lv = &t.levels[6];
+        let lv = t.level(6);
         let frame = (FRAMES - 1) * 2 / 3; // the saw
         let s = lv.size + 1;
         let mut re: Vec<f64> = lv.data[frame * s..frame * s + lv.size].iter().map(|&x| x as f64).collect();
@@ -560,7 +668,7 @@ mod tests {
         data.extend(cycle(|p| if p < 0.5 { 0.8 } else { -0.8 }));
         let t = user_table(&data, 2).unwrap();
         let odd = |pos: f32| {
-            let lv = &t.levels[0];
+            let lv = t.level(0);
             let s = lv.size + 1;
             let f = (pos * (FRAMES - 1) as f32).round() as usize;
             let mut re: Vec<f64> = lv.data[f * s..f * s + lv.size].iter().map(|&x| x as f64).collect();
@@ -578,13 +686,13 @@ mod tests {
     fn a_user_table_is_band_limited_per_level_and_has_no_dc() {
         // A saw with an offset: level 6 keeps 16 harmonics, none above; no DC anywhere
         let t = user_table(&cycle(|p| 0.2 + 2.0 * p - 1.0), 1).unwrap();
-        for (k, lv) in t.levels.iter().enumerate() {
+        for (k, lv) in (0..LEVELS).map(|k| (k, t.level(k))) {
             let s = lv.size + 1;
             let mean = lv.data[..lv.size].iter().map(|&x| x as f64).sum::<f64>() / lv.size as f64;
             assert!(mean.abs() < 1e-4, "level {k} DC {mean}");
             assert!(lv.data[lv.size] == lv.data[0] && s == lv.size + 1);
         }
-        let lv = &t.levels[6];
+        let lv = t.level(6);
         let mut re: Vec<f64> = lv.data[..lv.size].iter().map(|&x| x as f64).collect();
         let mut im = vec![0.0; lv.size];
         fft(&mut re, &mut im, false);
@@ -601,20 +709,41 @@ mod tests {
         let mut junk = vec![f32::NAN; USER_CYCLE];
         junk[3] = f32::INFINITY;
         let t = user_table(&junk, 1).unwrap();
-        assert!(t.levels.iter().all(|lv| lv.data.iter().all(|x| *x == 0.0)));
+        assert!((0..LEVELS).all(|k| t.level(k).data.iter().all(|x| *x == 0.0)));
     }
 
     #[test]
     fn building_the_built_in_tables_is_unchanged() {
-        // (from_spectra was split out of build: a table built the old way, by hand, is the same)
+        // (A table made a level at a time, in any order, is the one made all at once: each level
+        // is the old from_spectra's, scaled by level 0's gains)
         for which in [0usize, 5, 15] {
             let spectra: Vec<Spectrum> = (0..FRAMES).map(|f| frame_spectrum(which, f as f64 / (FRAMES - 1) as f64)).collect();
-            let a = from_spectra(&spectra);
-            let b = table(which);
-            for (x, y) in a.levels.iter().zip(&b.levels) {
-                assert!(x.data == y.data);
+            let mut levels: Vec<Level> = (0..LEVELS).map(|k| synthesize_level(&spectra, k)).collect();
+            let g = frame_gains(&levels[0]);
+            for lv in levels.iter_mut() {
+                scale(lv, &g);
             }
+            let fresh = build(which);
+            for k in [7usize, 3, 10, 0, 1, 2, 4, 5, 6, 8, 9] {
+                assert!(fresh.level(k).data == levels[k].data, "table {which} level {k}");
+                assert!(table(which).level(k).data == levels[k].data);
+            }
+            assert_eq!(fresh.made().0, LEVELS);
+            assert!(fresh.spectra.lock().unwrap().is_none(), "the spectra go once every level is made");
         }
+    }
+
+    #[test]
+    fn a_table_makes_only_the_levels_read() {
+        // A note around middle C reads level 3 or 4: level 0 (the gains) and those are made, not
+        // the other big ones
+        let t = build(2);
+        assert_eq!(t.made().0, 0);
+        let inc = 262.0 / 48000.0;
+        let k = level_for(inc);
+        t.read_blend(k, 0.0, 0.5, 0.25);
+        assert_eq!(t.made().0, 2);
+        assert!(t.level_if_made(0).is_some() && t.level_if_made(k).is_some() && t.level_if_made(1).is_none());
     }
 
     #[test]
