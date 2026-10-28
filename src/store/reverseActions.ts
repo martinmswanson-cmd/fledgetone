@@ -50,6 +50,8 @@ export async function reverseBlock(from: number, to: number, clipId?: string): P
   s.pause();
   const tempo = songTempo(s);
   const buffer = await renderArrangement({
+    // (it plays in the song: the recordings as live playback has them, as a freeze does)
+    recordings: 'playback',
     tracks: s.tracks,
     clips: source,
     bpm: s.bpm,

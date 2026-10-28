@@ -308,10 +308,20 @@ function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNod
   };
 }
 
+/**
+ * How much quieter (dB) the Designed Kit's expressive hits play, by row: they were detuned once,
+ * and resampling a hit dulled its noise (a snare, the hats and cymbals) by about this much, so an
+ * expressive song keeps the level it had now that they play as designed (measured over 32 hits a
+ * row of the default design, against the detuned ones).
+ */
+export const DESIGNED_EXPRESSIVE_DB: Partial<Record<DrumRow, number>> = { snare: -1.5, closedHat: -2.4, openHat: -2.4, crash: -2.5, ride: -0.9 };
+
 /** The Designed Kit (see designedKit.ts): every row the sound designed for it. */
 function designedKit(output: Tone.InputNode, design: DrumDesign | undefined, expressive = false, seed = 0): TrackInstrument {
   const kit = createDesignedKit(output, design, seed);
-  const play: TrackInstrument['play'] = (notes, time) => playDrums((row, t, v, r = 1) => kit.hit(row, t, v, r), notes, time, expressive, false);
+  // (a hit's level goes with its velocity to the 1.5: see designedKit.ts)
+  const level = (row: DrumRow) => (expressive ? 10 ** ((DESIGNED_EXPRESSIVE_DB[row] ?? 0) / 20 / 1.5) : 1);
+  const play: TrackInstrument['play'] = (notes, time) => playDrums((row, t, v, r = 1) => kit.hit(row, t, v * level(row), r), notes, time, expressive, false);
   return {
     play,
     noteOn: oneShot(play),

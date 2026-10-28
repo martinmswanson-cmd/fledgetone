@@ -2,7 +2,7 @@ import { liveMix, initAudio } from './engine';
 import { liveContext, liveTransport } from './liveContext';
 import { createInstrument, type TrackInstrument } from './instruments';
 import { INSTRUMENTS, type InstrumentKey } from './instrumentCatalog';
-import { hasRecordings, loadSamplesForNotes } from './samplers/samplerManager';
+import { hasRecordings, loadSamplesForNotes, type RenderRecordings } from './samplers/samplerManager';
 import { renderArrangement, encodeWav, type SampleRate } from './exportWav';
 import { fitNotesToRange } from '../store/stingers';
 import type { Clip, MasterFx, MasterSettings, NoteEvent, Stinger, Track } from '../store/timelineTypes';
@@ -77,7 +77,7 @@ interface RenderContext {
 }
 
 /** A stinger rendered on its own through the song's master section, ringing out, as a WAV. */
-export async function renderStinger(stinger: Stinger, song: RenderContext, sampleRate: SampleRate = 44100): Promise<Blob> {
+export async function renderStinger(stinger: Stinger, song: RenderContext, sampleRate: SampleRate = 44100, recordings: RenderRecordings = 'file'): Promise<Blob> {
   if (hasRecordings(stinger.instrumentKey)) await loadSamplesForNotes(stinger.instrumentKey, fitNotesToRange(stinger.notes, INSTRUMENTS[stinger.instrumentKey].range));
   const track: Track = {
     id: 'stinger',
@@ -114,6 +114,7 @@ export async function renderStinger(stinger: Stinger, song: RenderContext, sampl
     endBar: 1 + stinger.lengthBars,
     ending: 'ringOut',
     sampleRate,
+    recordings,
   });
   return encodeWav(audio, 16, []);
 }

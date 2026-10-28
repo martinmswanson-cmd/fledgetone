@@ -15,7 +15,7 @@ import type { NativeBus } from './presets/native';
 import type { AutomationPoint, DrumHit, Track, WamPlugin } from '../store/timelineTypes';
 import { trackIntensityLevel, type IntensityCurve } from '../store/intensity';
 import type { LiveTrackView } from '../store/freeze';
-import { loadSamples } from './samplers/samplerManager';
+import { isSamplerKey, loadQuick, loadSamples } from './samplers/samplerManager';
 import { useAudioStore } from '../store/audioStore';
 import { TOTAL_BARS } from '../store/timelineTypes';
 import { audibleIds, busChain, busOf, liveSends, soloLit } from '../store/buses';
@@ -499,7 +499,8 @@ export function reloadInstrument(key: InstrumentKey): void {
  * rebuilds the tracks that failed. Rejects if it failed again (the status shows the error).
  */
 export async function retryInstrumentDownload(key: InstrumentKey): Promise<void> {
-  await loadSamples(key);
+  // (a sampled instrument's first recordings, as when it first loaded: a big set never loads whole)
+  await (isSamplerKey(key) ? loadQuick(key) : loadSamples(key));
 }
 
 /**

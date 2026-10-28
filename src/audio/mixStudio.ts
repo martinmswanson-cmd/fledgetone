@@ -69,6 +69,8 @@ function songOptions(signal: AbortSignal): RenderOptions {
   const end = Math.max(2, ...s.clips.filter((c) => ids.has(c.trackId)).map((c) => c.startBar + c.lengthBars));
   const most = 1 + Math.max(1, Math.floor((ANALYSE_SECONDS * s.bpm) / 240));
   return {
+    // (measured, not saved: the recordings as live playback has them)
+    recordings: 'playback',
     tracks: s.tracks,
     clips: s.clips,
     bpm: s.bpm,

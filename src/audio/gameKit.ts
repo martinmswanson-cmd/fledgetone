@@ -1,5 +1,6 @@
 import { FOUR_FOUR, gridTimes, meterAt, secondsBetween, tempoAt, type Meter, type MeterMap, type MeterPoint, type TempoMap, type TempoPoint } from './tempoMap';
 import { renderArrangement, renderGroupStems, audibleTracks, encodeChannels, ditherSeedOf, channelsOf, type SampleRate } from './exportWav';
+import type { RenderRecordings } from './samplers/samplerManager';
 import { EXPORTED_FILES_LICENCE, EXPORTED_FILES_LICENCE_NAME } from './exportLicence';
 import { defaultCurve, groupsInUse, type IntensityCurve } from '../store/intensity';
 import { renderStinger } from './stingerPlayer';
@@ -145,7 +146,9 @@ export async function buildGameKitParts(
   /** Leave out each state's whole mix when it has stems (a player that mixes the stems never needs it) */
   stemsOnly = false,
   /** Aborting stops it (it rejects with the signal's reason): the Game preview closed, say */
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** 'playback' for music the app or a game plays as it renders it (the Game preview, the web runtime): see RenderRecordings */
+  recordings: RenderRecordings = 'file'
 ): Promise<GameKitParts> {
   const meterMap: MeterMap = { base: song.meter ?? FOUR_FOUR, points: song.meterPoints ?? [] };
   const sections = songSections(song.clips, song.markers, meterMap);
@@ -193,7 +196,7 @@ export async function buildGameKitParts(
       stateOfMarker.set(marker.id, name);
       sectionOfMarker.set(marker.id, sec);
     }
-    const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate, signal };
+    const range = { tracks: song.tracks, clips: song.clips, bpm: song.bpm, tempoPoints: song.tempoPoints, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: sec.from, endBar: sec.to, sampleRate, signal, recordings };
     const file = `states/${safe(name)}.wav`;
     const seconds = secondsBetween(sec.from, sec.to, tempo);
     let samples = Math.round(seconds * sampleRate);
@@ -274,7 +277,7 @@ export async function buildGameKitParts(
     for (let n = 2; stingerFiles.has(base); n++) base = `${safe(s.name)} ${n}`;
     stingerFiles.add(base);
     const file = `stingers/${base}.wav`;
-    files.push({ name: file, data: await renderStinger(s, song, sampleRate) });
+    files.push({ name: file, data: await renderStinger(s, song, sampleRate, recordings) });
     stingers.push({ name: s.name, kind: s.kind, label: stingerKind(s.kind).label, file, quantize: 'beat', bridgeBars: Math.max(1, Math.ceil(s.lengthBars - 1e-6)), bridgeSeconds: +(Math.max(1, Math.ceil(s.lengthBars - 1e-6)) * secondsPerBar).toFixed(6) });
     stingerName.set(s.id, s.name);
   }
@@ -305,7 +308,7 @@ export async function buildGameKitParts(
           continue;
         }
         const file = `transitions/bridge into ${safe(to)}${bars > 1 ? ` (${bars} bars)` : ''}.wav`;
-        const audio = await renderArrangement({ tracks: song.tracks, clips: made.clips, bpm: made.bpm, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: 1, endBar: 1 + made.lengthBars, sampleRate, signal });
+        const audio = await renderArrangement({ tracks: song.tracks, clips: made.clips, bpm: made.bpm, swing: song.swing, masterFx: song.masterFx, master: song.master, startBar: 1, endBar: 1 + made.lengthBars, sampleRate, signal, recordings });
         const channels = channelsOf(audio);
         files.push({ name: file, data: encodeChannels(channels, audio.sampleRate, 16, [], undefined) });
         bridgeFiles.set(key, { file, bridgeBars: bars, bridgeSeconds: +((made.lengthBars * 240) / made.bpm).toFixed(6) });
@@ -331,7 +334,7 @@ export async function buildGameKitParts(
           lengthBars: Math.max(0.25, cue.leadIn, Math.max(...cue.notes.map((n) => n.startOffset + cue.leadIn)) + 0.25),
         };
         const file = `transitions/${rule.kind}.wav`;
-        files.push({ name: file, data: await renderStinger(sound, song, sampleRate) });
+        files.push({ name: file, data: await renderStinger(sound, song, sampleRate, recordings) });
         cueFiles.set(rule.kind, { file, leadInSeconds: +(cue.leadIn * secondsPerBar).toFixed(6) });
       }
       Object.assign(entry, cueFiles.get(rule.kind));

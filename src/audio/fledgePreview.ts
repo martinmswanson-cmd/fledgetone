@@ -192,6 +192,8 @@ export function renderFledgeTour(): Promise<AudioBuffer> {
       tracks,
       clips,
       bpm: PHRASE_BPM,
+      // (played here, not saved: the recordings as live playback has them)
+      recordings: 'playback',
       swing: 0,
       masterFx: DEFAULT_MASTER_FX,
       master: defaultMasterSettings(),

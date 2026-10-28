@@ -3,7 +3,9 @@
  * recording nearest that pitch (the one the sampler would pick) at every loudness its velocity can
  * reach, every take of those, the next recording on the other side within stretching distance,
  * and the release sounds nearest it. The instrument loads these first and plays as soon as they're
- * in; the rest follow in the background (see samplerManager.ts).
+ * in; the rest follow in the background, or for a big set only as notes ask for them (see
+ * samplerManager.ts). And how an export spends its memory on them, and whether the device has
+ * little of it.
  *
  * Pure: sample names and numbers in, sample names out, so Node can test it.
  */
@@ -41,7 +43,7 @@ export function parseSampleName(name: string): { note: string; layer: number; ta
  * recording reads every other sample (exactly what was recorded, no interpolation), and one
  * stretched to another pitch has about 12 dB less of the buffer source's interpolation error.
  */
-export const OVERSAMPLE = 2;
+export const OVERSAMPLE = 2 as const;
 
 /** The rate an instrument's recordings are decoded at for a context at `rate` (`lowMemory`: at that rate, to save memory). */
 export function decodeRateOf(rate: number, lowMemory = false): number {
@@ -173,9 +175,70 @@ export function neededSamples(index: RecordingIndex, notes: SongNote[], wheel?: 
   return out;
 }
 
-/** The recordings loaded first when nothing is known of the song: one loudness (index.quick), the first take, of every note. */
-export function quickSamples(index: RecordingIndex): Set<string> {
-  return new Set(index.layers[index.quick]?.[0]?.names.values() ?? []);
+/**
+ * The recordings loaded first when nothing is known of the song: one loudness (index.quick), the
+ * first take, of every note; or, with `spacing` (semitones), only enough of them that every note
+ * is within half that of one (a big set, which loads the rest as notes ask: a recording stretched
+ * that far plays until the note's own is in).
+ */
+export function quickSamples(index: RecordingIndex, spacing = 0): Set<string> {
+  const s = index.layers[index.quick]?.[0];
+  if (!s) return new Set();
+  if (spacing <= 1) return new Set(s.names.values());
+  const out = new Set<string>();
+  let last = -Infinity;
+  s.midis.forEach((m, i) => {
+    // (the lowest and the highest always, so the ends of the range aren't stretched further)
+    if (m - last >= spacing || i === s.midis.length - 1) {
+      out.add(s.names.get(m)!);
+      last = m;
+    }
+  });
+  return out;
+}
+
+/** How far apart (semitones) a big set's first recordings are (see quickSamples): every note within 3 of one, as the sampler stretches. */
+export const SPARSE_QUICK = 2 * STRETCH_SEMITONES;
+
+/**
+ * How an export decodes each instrument's recordings, from what they'd take decoded at its rate
+ * (bytes, by instrument): 2, at twice its rate; 1, at its rate; 0, not at all (it plays the
+ * recordings live playback has, resampled as they play where the rates differ). The cheapest
+ * first, each at the most that still fits in `budget` with those before it (never more than
+ * `most` times), so a song with a big piano part doesn't take gigabytes to render.
+ */
+export function chooseExportDecodes<K>(costs: ReadonlyArray<readonly [K, number]>, budget: number, most: 1 | 2 = OVERSAMPLE): Map<K, 0 | 1 | 2> {
+  const out = new Map<K, 0 | 1 | 2>();
+  let spent = 0;
+  for (const [key, bytes] of [...costs].sort((a, b) => a[1] - b[1])) {
+    const times = most === 2 && spent + 2 * bytes <= budget ? 2 : spent + bytes <= budget ? 1 : 0;
+    spent += times * bytes;
+    out.set(key, times);
+  }
+  return out;
+}
+
+/** What a browser says of the device, for lowMemoryDevice. */
+export interface DeviceHints {
+  deviceMemory?: number;
+  maxTouchPoints?: number;
+  userAgent?: string;
+}
+
+/**
+ * Whether the device has little memory: 4 GB or less where the browser says (Chromium's
+ * deviceMemory); where it doesn't (Safari, Firefox), a phone or tablet (touch, iOS) or a browser
+ * that never says, which is taken the careful way, since an iPhone's tab is closed for a gigabyte
+ * or two.
+ */
+export function lowMemoryDevice(hints: DeviceHints): boolean {
+  if (typeof hints.deviceMemory === 'number') return hints.deviceMemory <= 4;
+  const ua = hints.userAgent ?? '';
+  if ((hints.maxTouchPoints ?? 0) > 0 || /iPhone|iPad|iPod|Android/.test(ua)) return true;
+  // Safari and Firefox don't say how much memory there is (Chromium only leaves it out on a page that isn't secure)
+  const firefox = /Firefox\//.test(ua);
+  const safari = /Safari\//.test(ua) && !/Chrome\/|Chromium\//.test(ua);
+  return firefox || safari;
 }
 
 /** What a song plays on one instrument: its notes, and the span of its clips' mod wheel lanes (null: none). */

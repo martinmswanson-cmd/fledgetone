@@ -40,6 +40,8 @@ export async function renderVariations(
     };
     const c: Clip = { ...clip, startBar: 1, isSelected: false, notes: clip.audio ? clip.notes : takeNotes(clip.notes, take, song.bpm) };
     const audio = await renderArrangement({
+      // (a variation the app plays: the recordings as live playback has them)
+      recordings: 'playback',
       tracks: [t],
       clips: [c],
       bpm: song.bpm,
