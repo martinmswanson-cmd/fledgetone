@@ -4,12 +4,12 @@
  * starts, seeks and loop passes into the middle of a clip. The same code serves live playback and
  * every export render.
  */
-import { baseBpm, tempoAt, type Tempo } from './tempoMap';
+import { secondsBetween, steadyBetween, tempoAt, type Tempo } from './tempoMap';
 import * as Tone from 'tone';
 import type { Clip, Track } from '../store/timelineTypes';
 import type { NativeBus } from './presets/native';
 import { nativeContextOf } from './nativeNodes';
-import { barToTicks } from './transport';
+import { barToTicks, ticksToBar } from './transport';
 import { decodedSound, ensureSound, requestStretch, requestWarp, stretchedSound, wantCopies, warpedSound, type WantedCopy } from './soundLibrary';
 import { DECLICK_SECONDS, envelopeAt, envelopeFrom, envelopeShape } from './clipEnvelope';
 import type { EnvelopePoint, EnvelopeShape } from './clipEnvelope';
@@ -106,7 +106,17 @@ export function createAudioClipSchedule(
   const localBpm = (clip: Clip) => tempoAt(clip.startBar, tempo());
   /** Seconds per Transport tick as the Transport counts them now (to read its start offset back as ticks) */
   const secondsPerTick = () => 60 / (transport.bpm.value * transport.PPQ);
-  const clipSeconds = (clip: Clip) => (clip.lengthBars * 240) / localBpm(clip);
+  /**
+   * Whether the clip's seconds up to bar `to` are counted along the song's tempo changes: a clip
+   * that plays its sound in real time does, across a change (as the timeline draws it and a freeze
+   * or bounce is measured). One that follows the tempo, or sits in one tempo, counts them at the
+   * tempo where it starts.
+   */
+  const alongMap = (clip: Clip, to: number) => !clip.audio?.stretchBpm && !steadyBetween(clip.startBar, to, tempo());
+  const clipSeconds = (clip: Clip) => {
+    const end = clip.startBar + clip.lengthBars;
+    return alongMap(clip, end) ? secondsBetween(clip.startBar, end, tempo()) : (clip.lengthBars * 240) / localBpm(clip);
+  };
   /** Whole frames: a source started between two frames is interpolated by the browser, which blurs its top end. */
   const onFrame = (seconds: number) => Math.round(seconds * raw.sampleRate) / raw.sampleRate;
 
@@ -230,7 +240,8 @@ export function createAudioClipSchedule(
   /** Start `clip` at `at` if the Transport position `posTicks` is inside it (strictly past its start). */
   const startInside = (clip: Clip, tick: number, posTicks: number, at: number) => {
     if (tick >= posTicks - TICK_EPS) return;
-    start(clip, ((posTicks - tick) / (transport.PPQ * 4)) * (240 / localBpm(clip)), at);
+    const bar = ticksToBar(posTicks);
+    start(clip, alongMap(clip, bar) ? secondsBetween(clip.startBar, bar, tempo()) : ((posTicks - tick) / (transport.PPQ * 4)) * (240 / localBpm(clip)), at);
   };
 
   /** How long before its time the Transport may dispatch an event: an edit and the event can meet in this window (see update). */
@@ -332,7 +343,7 @@ export function createAudioClipSchedule(
       /** Entries made now: new clips, and clips whose placement changed (their old voices are stopped) */
       const fresh: Entry[] = [];
       const stopped = new Set<string>();
-      xfades = crossfades(clips.filter((c) => c.audio && trackIds.has(c.trackId)), baseBpm(tempo()));
+      xfades = crossfades(clips.filter((c) => c.audio && trackIds.has(c.trackId)), tempo());
       /** The stretched and warped copies these clips play: kept, however many speeds of one sound */
       const copies: WantedCopy[] = [];
       for (const clip of clips) {

@@ -98,3 +98,13 @@ test('meter text', () => {
   assert.equal(tm.parseMeter('5/3'), null);
   assert.equal(tm.formatMeter({ num: 12, den: 8 }), '12/8');
 });
+
+test('steadyBetween: true while one tempo holds, false across a jump or inside a glide', () => {
+  assert.equal(tm.steadyBetween(1, 50, 120), true);
+  assert.equal(tm.steadyBetween(1, 50, { bpm: 120, points: [] }), true);
+  const map = { bpm: 120, points: [{ id: 'a', bar: 5, bpm: 90, ramp: false }, { id: 'b', bar: 9, bpm: 140, ramp: true }] };
+  assert.equal(tm.steadyBetween(1, 5, map), true);
+  assert.equal(tm.steadyBetween(2, 6, map), false);
+  assert.equal(tm.steadyBetween(5, 9, map), false);
+  assert.equal(tm.steadyBetween(9, 40, map), true);
+});

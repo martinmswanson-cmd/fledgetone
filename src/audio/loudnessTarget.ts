@@ -44,7 +44,9 @@ export async function reachTarget(
   reading: LoudnessReading,
   target: LoudnessTarget,
   signal?: AbortSignal,
-  ceilingDbtp = LIMITER_CEILING_DBTP
+  ceilingDbtp = LIMITER_CEILING_DBTP,
+  /** The file is a seamless loop: limited as it plays round, so its seam stays smooth (see limitInto) */
+  loop = false
 ): Promise<{ reading: LoudnessReading; limitedDb: number; shortDb: number; capped: boolean }> {
   const { gainDb, limited } = normalizeGainDb(reading, target.lufs, ceilingDbtp);
   if (!limited) {
@@ -62,7 +64,7 @@ export async function reachTarget(
   let result = reading;
   let before: { push: number; lufs: number } | null = null;
   for (let pass = 0; ; pass++) {
-    limitInto(original, channels, sampleRate, push, ceilingDbtp);
+    limitInto(original, channels, sampleRate, push, ceilingDbtp, loop);
     result = await measureLoudness(channels, sampleRate, signal);
     const missing = target.lufs - result.integrated;
     if (pass === 2 || Math.abs(missing) < 0.3 || (missing > 0 && push >= most)) break;
@@ -74,8 +76,13 @@ export async function reachTarget(
   return { reading: result, limitedDb: Math.max(0, push - gainDb), shortDb, capped: shortDb > 0 && push >= most };
 }
 
-/** `out` = `source` turned up by `gainDb` through the look-ahead limiter, lined up in time. */
-function limitInto(source: Float32Array[], out: Float32Array[], sampleRate: number, gainDb: number, ceilingDbtp: number) {
+/**
+ * `out` = `source` turned up by `gainDb` through the look-ahead limiter, lined up in time. A `loop`
+ * goes through it as it plays, round and round: the limiter hears a second of the loop before its
+ * start and the loop's start again after its end, so the end leads into the start as the start
+ * follows the end. Limited once from silence to silence, the gain jumped at the seam (by 7 dB).
+ */
+function limitInto(source: Float32Array[], out: Float32Array[], sampleRate: number, gainDb: number, ceilingDbtp: number, loop = false) {
   const kernel = createLimiterKernel(sampleRate);
   const g = Math.pow(10, gainDb / 20);
   const ceiling = Math.pow(10, limiterAimDbtp(ceilingDbtp) / 20);
@@ -88,13 +95,16 @@ function limitInto(source: Float32Array[], out: Float32Array[], sampleRate: numb
   const oL = new Float32Array(block);
   const oR = new Float32Array(block);
   const lat = kernel.latency;
-  // The input runs `lat` samples past the end (silence), so the last of the sound comes out too
-  for (let start = 0; start < n + lat; start += block) {
+  const warm = loop ? sampleRate + lat : 0;
+  // The input runs `lat` samples past the end (silence, or a loop's start), so the last of the
+  // sound comes out too
+  for (let start = -warm; start < n + lat; start += block) {
     const frames = Math.min(block, n + lat - start);
     for (let i = 0; i < frames; i++) {
       const at = start + i;
-      inL[i] = at < n ? l[at] * g : 0;
-      inR[i] = at < n ? r[at] * g : 0;
+      const k = loop ? ((at % n) + n) % n : at;
+      inL[i] = k >= 0 && k < n ? l[k] * g : 0;
+      inR[i] = k >= 0 && k < n ? r[k] * g : 0;
     }
     kernel.process(inL, inR, oL, oR, frames, ceiling, 0.08);
     for (let i = 0; i < frames; i++) {

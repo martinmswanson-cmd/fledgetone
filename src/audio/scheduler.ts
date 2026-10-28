@@ -97,7 +97,7 @@ type FeelPart = GrooveRole | 'drums' | `rack:${string}`;
 export interface ClipSchedule {
   /** Bring the Transport in line with the timeline. Cheap when little has changed. */
   update: (tracks: Track[], clips: Clip[]) => void;
-  /** How far before its tick the earliest note of a clip with a feel plays, in 16ths (0: none early) */
+  /** How far before its tick the earliest note pushed early (a feel, or a row's own shift) plays, in 16ths (0: none early) */
   earliest: () => number;
   dispose: () => void;
 }
@@ -448,7 +448,7 @@ export function createClipSchedule(
     },
     earliest: () => {
       let most = 0;
-      for (const e of entries.values()) if (e.role && !straight.has(e.clip.trackId)) for (const [, g] of e.groups) if (g.shift && -g.shift > most) most = -g.shift;
+      for (const e of entries.values()) if (!straight.has(e.clip.trackId)) for (const [, g] of e.groups) if (g.shift && -g.shift > most) most = -g.shift;
       return most;
     },
     dispose: () => {

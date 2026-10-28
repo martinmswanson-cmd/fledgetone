@@ -3,7 +3,7 @@ import { defaultTrackFx, pumpFollowsDrums, pumpHears } from './timelineTypes';
 import { isDrumKind, pumpHitOf } from '../audio/instrumentCatalog';
 import { clipHasConditions, contentKey, isConditional } from './noteChance';
 import { isSynthKit, SYNTH_KIT_DESIGNS } from './synthKits';
-import { barToSeconds, secondsToBar, type TempoMap, type TempoPoint } from '../audio/tempoMap';
+import { barToSeconds, FOUR_FOUR, isPlainMeter, secondsToBar, type Meter, type MeterPoint, type TempoMap, type TempoPoint } from '../audio/tempoMap';
 
 /**
  * Freezing a track: its instrument, inserts and EQ are rendered once to a sound, and live
@@ -64,15 +64,27 @@ const clipContent = (c: Clip) => ({
   ...(c.takes?.length ? { comp: c.comp, takes: c.takes.map((t) => t.audio ?? null) } : {}),
 });
 
+/** What a freeze is rendered from besides the track itself: the song's tracks, clips, tempo, swing and meter. */
+export interface Arrangement {
+  tracks: Track[];
+  clips: Clip[];
+  bpm: number;
+  swing: number;
+  tempoPoints?: TempoPoint[];
+  /** The meter, which places a clip's measured feel (see grooveFeels.ts); absent: 4/4 */
+  meter?: Meter;
+  meterPoints?: readonly MeterPoint[];
+}
+
 /** The last fingerprint of each track object, with the arrangement it was taken from (see freezeFingerprint). */
-const fingerprints = new WeakMap<Track, { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[]; value: string }>();
+const fingerprints = new WeakMap<Track, Arrangement & { value: string }>();
 
 /** What a freeze of `track` depends on, as a short hash. Cached until the track or arrangement changes. */
-export function freezeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] }): string {
+export function freezeFingerprint(track: Track, all: Arrangement): string {
   const hit = fingerprints.get(track);
-  if (hit && hit.clips === all.clips && hit.tracks === all.tracks && hit.bpm === all.bpm && hit.swing === all.swing && hit.tempoPoints === all.tempoPoints) return hit.value;
+  if (hit && hit.clips === all.clips && hit.tracks === all.tracks && hit.bpm === all.bpm && hit.swing === all.swing && hit.tempoPoints === all.tempoPoints && hit.meter === all.meter && hit.meterPoints === all.meterPoints) return hit.value;
   const value = computeFingerprint(track, all);
-  fingerprints.set(track, { tracks: all.tracks, clips: all.clips, bpm: all.bpm, swing: all.swing, tempoPoints: all.tempoPoints, value });
+  fingerprints.set(track, { tracks: all.tracks, clips: all.clips, bpm: all.bpm, swing: all.swing, tempoPoints: all.tempoPoints, meter: all.meter, meterPoints: all.meterPoints, value });
   return value;
 }
 
@@ -87,7 +99,7 @@ function runsOf(clips: Clip[]): { runs?: Array<[number, number, string]> } {
   return { runs: [...clips].sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id)).map((c) => [c.startBar, c.lengthBars, contentKey(c)]) };
 }
 
-function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] }): string {
+function computeFingerprint(track: Track, all: Arrangement): string {
   const own = all.clips.filter((c) => c.trackId === track.id).sort((a, b) => a.startBar - b.startBar || a.id.localeCompare(b.id));
   const followsKick = track.fx.pump.on && pumpFollowsDrums(track.fx.pump.trigger);
   // A kick-triggered Pump ducks on the kicks of the drum tracks that sound (as live playback
@@ -115,6 +127,9 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
   // Where those may sit out, the runs of copies they're in decide when
   const heard = [...kickClips, ...sourceClips];
   const heardRuns = heard.some(clipHasConditions) ? [...new Set(heard.map((c) => c.trackId))].sort().map((id) => runsOf(all.clips.filter((c) => c.trackId === id)).runs ?? []) : null;
+  // A measured feel steps through each measure, so outside plain 4/4 the meter places its notes
+  const meter = { base: all.meter ?? FOUR_FOUR, points: all.meterPoints ?? [] };
+  const feelMeter = own.some((c) => c.groove?.feel) && !isPlainMeter(meter);
   return hash(
     JSON.stringify({
       key: track.instrumentKey,
@@ -149,6 +164,7 @@ function computeFingerprint(track: Track, all: { tracks: Track[]; clips: Clip[];
       kicks,
       sourceNotes,
       ...(heardRuns ? { heardRuns } : {}),
+      ...(feelMeter ? { meter: [meter.base.num, meter.base.den, ...meter.points.map((p) => [p.bar, p.num, p.den])] } : {}),
     })
   );
 }
@@ -180,7 +196,7 @@ export function trackForFreezing(track: Track): Track {
 /** Whether a track's freeze still matches what it was rendered from (and its sound is there). */
 export function freezeIsCurrent(
   track: Track,
-  all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] },
+  all: Arrangement,
   soundMissing: (id: string) => boolean
 ): track is Track & { frozen: FrozenTrack } {
   // An armed track plays live, so a MIDI keyboard played into it is heard
@@ -210,7 +226,7 @@ export interface LiveView {
  * but an Audio track plays no notes). Everything else is passed through as it is.
  */
 export function liveView(
-  all: { tracks: Track[]; clips: Clip[]; bpm: number; swing: number; tempoPoints?: TempoPoint[] },
+  all: Arrangement,
   soundMissing: (id: string) => boolean,
   previous?: LiveView,
   autoFrozen?: (trackId: string) => FrozenTrack | undefined

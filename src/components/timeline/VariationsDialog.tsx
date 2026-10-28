@@ -1,6 +1,6 @@
 import { tempoAt } from '../../audio/tempoMap';
 import React, { useRef, useState } from 'react';
-import { liveContext } from '../../audio/liveContext';
+import { afterMaster, liveContext } from '../../audio/liveContext';
 import { Download, Loader2, ListPlus, Play } from 'lucide-react';
 import { Modal } from './Modal';
 import { masterFxOf, songTempo, useTimelineStore } from '../../store/timelineStore';
@@ -79,7 +79,7 @@ export const VariationsDialog: React.FC<{ clipId: string; onClose: () => void }>
     r.takes[i].forEach((ch, k) => buf.copyToChannel(ch as Float32Array<ArrayBuffer>, k));
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(ctx.destination);
+    src.connect(afterMaster());
     src.start();
     playing.current = src;
   };

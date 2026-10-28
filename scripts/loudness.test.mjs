@@ -277,3 +277,35 @@ test('the peak finder skips work only where no point could pass: the same peaks 
   near(20 * Math.log10(truePeakOf([x])), 20 * Math.log10(want), 1e-9, 'truePeakOf');
   near(measure(sr, x).truePeakMax, 20 * Math.log10(want), 1e-9, 'the analyser');
 });
+
+test('a seamless loop is limited round its seam: its end leads into its start without a jump in gain', async () => {
+  const { reachTarget, targetById } = await import('../src/audio/loudnessTarget.ts');
+  const { measureLoudness } = await import('../src/audio/loudness.ts');
+  // 2 s loop: a kick every half second over a quiet pad, far under the Loud target (so the limiter works)
+  const sr = 44100;
+  const n = 2 * sr;
+  const make = () => Float32Array.from({ length: n }, (_, i) => {
+    const t = (i % (sr / 2)) / sr;
+    return 0.6 * Math.exp(-t * 8) * Math.sin(2 * Math.PI * 60 * t) + 0.05 * Math.sin((2 * Math.PI * 220 * i) / sr);
+  });
+  const orig = make();
+  // The gain (dB) over the 200 samples before `end`: the pad just before a kick
+  const gainBefore = (ch, end) => {
+    let num = 0;
+    let den = 0;
+    for (let i = end - 200; i < end; i++) {
+      num += ch[i] * orig[i];
+      den += orig[i] * orig[i];
+    }
+    return 20 * Math.log10(num / den);
+  };
+  for (const loop of [false, true]) {
+    const ch = [make(), make()];
+    const reading = await measureLoudness(ch, sr);
+    await reachTarget(ch, sr, reading, targetById('loud'), undefined, undefined, loop);
+    // Before the kick that comes round at the seam, as before any other kick
+    const step = Math.abs(gainBefore(ch[0], n) - gainBefore(ch[0], sr / 2));
+    if (loop) assert.ok(step < 0.1, `the gain steps ${step.toFixed(2)} dB at the seam`);
+    else assert.ok(step > 1, 'limited from silence to silence, the end runs hotter (the case this guards against)');
+  }
+});
