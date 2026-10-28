@@ -73,7 +73,8 @@ export function barsForSeconds(startBar: number, seconds: number, tempo: Tempo, 
 
 /**
  * The clips after a tempo change: an audio clip keeps its start bar and its length in seconds, so
- * its length in bars scales with the tempo where it starts, unless it follows the tempo (then it
+ * its length in bars scales with the tempo where it starts (along the tempo map, where it plays
+ * across a change before or after), unless it follows the tempo (then it
  * keeps its bars and is stretched instead). Note clips are untouched; the same array comes back
  * when nothing changes.
  */
@@ -83,6 +84,18 @@ export function retimeAudioClips(clips: Clip[], from: Tempo, to: Tempo): Clip[] 
   const next = clips.map((c) => {
     if (!c.audio || c.audio.stretchBpm) return c;
     const ratio = tempoAt(c.startBar, to) / tempoAt(c.startBar, from);
+    const end = c.startBar + c.lengthBars;
+    // Across a tempo change (before or after), its seconds are counted along the map, as it plays
+    // (see playsAlongMap); in one tempo, scaled by the tempos where it starts
+    if (playsAlongMap(c, end, from) || playsAlongMap(c, c.startBar + c.lengthBars * ratio, to)) {
+      const secondsTo = (bars: number) => (playsAlongMap(c, c.startBar + bars, from) ? secondsBetween(c.startBar, c.startBar + bars, from) : bars * secondsPerBar(tempoAt(c.startBar, from)));
+      const barsAt = (bars: number) => barsForSeconds(c.startBar, secondsTo(bars), to);
+      const lengthBars = barsAt(c.lengthBars);
+      const comp = c.comp?.map((seg) => ({ ...seg, at: barsAt(seg.at) }));
+      if (Math.abs(lengthBars - c.lengthBars) < EPS && !(comp ?? []).some((seg, i) => Math.abs(seg.at - c.comp![i].at) >= EPS)) return c;
+      changed = true;
+      return { ...c, lengthBars, ...(comp ? { comp } : {}) };
+    }
     if (Math.abs(ratio - 1) < EPS) return c;
     changed = true;
     // A take folder's comp keeps its place in the sound, so its bars scale too

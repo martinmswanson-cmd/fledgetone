@@ -239,6 +239,29 @@ test('audio clips keep their length in seconds across a tempo change; note clips
   near(secondsPerBar(60), 4);
 });
 
+test('a tempo change keeps a clip played in real time its seconds along the tempo map', () => {
+  const audio = { soundId: 'a', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 };
+  const clip = { id: 'c', trackId: 't', startBar: 1, lengthBars: 8, audio, comp: [{ at: 0, take: 0 }, { at: 4, take: 1 }] };
+  // 24 s (8 s at 120, then 16 s at 60 from bar 5); the slow-down moved to bar 3: 4 s, then 20 s at 60
+  const from = { bpm: 120, points: [{ id: 'p', bar: 5, bpm: 60, ramp: false }] };
+  const to = { bpm: 120, points: [{ id: 'p', bar: 3, bpm: 60, ramp: false }] };
+  const [moved] = retimeAudioClips([clip], from, to);
+  near(moved.lengthBars, 7);
+  // The comp's change, 8 s in, stays there: 2 bars at 120 and 1 at 60
+  near(moved.comp[1].at, 3);
+  // Back again: as it was
+  const [back] = retimeAudioClips([moved], to, from);
+  near(back.lengthBars, 8);
+  // In one tempo, or with the change outside the clip, the tempos where it starts scale it, exactly as before
+  const later = { bpm: 120, points: [{ id: 'p', bar: 20, bpm: 60, ramp: false }] };
+  const short = { ...clip, lengthBars: 2, comp: undefined };
+  assert.equal(retimeAudioClips([short], later, 90)[0].lengthBars, (2 * 90) / 120);
+  assert.equal(retimeAudioClips([short], 120, 90)[0].lengthBars, (2 * 90) / 120);
+  // A clip that follows the tempo is left alone
+  const stretched = { ...clip, audio: { ...audio, stretchBpm: 100 } };
+  assert.equal(retimeAudioClips([stretched], from, to)[0], stretched);
+});
+
 test('cuts, trims and lengths of a clip played in real time follow the tempo map across a change, as it plays', () => {
   const audio = { soundId: 'a', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 };
   // 120 BPM, 60 from bar 5: bar 9 is 8 s + 16 s in
