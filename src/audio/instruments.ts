@@ -43,6 +43,7 @@ import type { SubLayer } from '../store/bassTools';
 import { createBass808Designer } from './presets/bass808Designer';
 import { createSubLayer } from './subLayer';
 import { isPitched } from '../store/keyChange';
+import type { TrackPlan } from './samplers/songSamples';
 
 /** Drum note map (GM-style). Drum clips store one note name per voice. */
 export const DRUM_NOTES = {
@@ -117,6 +118,12 @@ export interface TrackInstrument {
   releaseAll: () => void;
   /** Resolves when the instrument can sound (reverb generated, samples downloaded). */
   ready: Promise<unknown>;
+  /**
+   * Make ahead what these notes will play (after `ready`): the copies of its recordings or sounds
+   * at the other pitches they play them at (see pitchedCopies.ts). A render waits for it before it
+   * plays, and then plays only those copies; live playback makes them in the background.
+   */
+  prepare?: (plan: TrackPlan) => Promise<unknown>;
   dispose: () => void;
   /** Set one of its plugins' parameters (0 to 1 of its range) at `time`: false while that plugin isn't loaded. */
   setPluginParam?: (pluginId: string, paramId: string, value: number, time: number) => boolean;
@@ -266,7 +273,7 @@ const DRUM_SPREAD: Partial<Record<DrumRow, number>> = { kick: 4, snare: 14, clap
  * A drum hit's own pitch, as a frequency ratio: the bend it starts with (in semitones, see
  * NoteExpression), as the hat roll painter's rising pitch writes it; 1 for none.
  */
-const hitPitch = (n: PlayableNote) => {
+const hitPitch = (n: Pick<PlayableNote, 'expr'>) => {
   const st = n.expr?.bend?.[0]?.value ?? 0;
   return st ? 2 ** (Math.max(-24, Math.min(24, st)) / 12) : 1;
 };
@@ -337,19 +344,37 @@ function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = fa
   const kit = createSampledKit(key, output);
   // (The kit's own raise in the catalog raises its extras too: the clap takes that much less)
   const extras = createKitExtras(output, seed, CLAP_DB - (INSTRUMENTS[key].gain ?? 0));
+  /** What a row's hit at pitch `r` plays: the kit's note, and its rate (an open hat a little lower) */
+  const hitOf = (row: DrumRow, r: number) => ({
+    note: row === 'openHat' && !kit.has(DRUM_NOTES.openHat) ? DRUM_NOTES.closedHat : DRUM_NOTES[row],
+    rate: row === 'openHat' ? 0.94 * r : r,
+  });
   const player: DrumPlayer = (row, time, v, r = 1) => {
-    const opts = row === 'closedHat' ? { seconds: 0.14, rate: r } : row === 'openHat' ? { rate: 0.94 * r } : { rate: r };
-    const note = row === 'openHat' && !kit.has(DRUM_NOTES.openHat) ? DRUM_NOTES.closedHat : DRUM_NOTES[row];
+    const { note, rate } = hitOf(row, r);
+    const opts = row === 'closedHat' ? { seconds: 0.14, rate } : { rate };
     // Still downloading: nothing (rather than the extras standing in for every row)
     if (!kit.loaded()) return;
     if (!kit.hit(note, time, v, opts)) extraHit(extras, row, time, v, r);
   };
   const play: TrackInstrument['play'] = (notes, time) => playDrums(player, notes, time, expressive, false);
+  // Live: the open hat's copy a little lower, as soon as the kit is in (see sampledKit.ts)
+  if (Tone.getContext() === liveContext) void kit.ready.then(() => kit.prepare(hitOf('openHat', 1).note, 0.94)).catch(() => {});
   return {
     play,
     noteOn: oneShot(play),
     releaseAll: kit.releaseAll,
     ready: kit.ready,
+    // Every pitch the hits play at other than the recordings' own (the open hat's, a hit's starting bend)
+    prepare: (plan) => {
+      const want = new Map<string, number>();
+      for (const n of plan.notes) {
+        const row = ROW_OF.get(n.note);
+        if (!row) continue;
+        const { note, rate } = hitOf(row, hitPitch(n));
+        if (rate !== 1) want.set(`${note}|${rate}`, rate);
+      }
+      return Promise.all([...want].map(([k, rate]) => kit.prepare(k.slice(0, k.lastIndexOf('|')), rate)));
+    },
     dispose: () => {
       kit.dispose();
       extras.dispose();
@@ -675,6 +700,7 @@ function buildInstrument(key: InstrumentKey, output: Tone.InputNode, options: In
       ...(kind === 'sampled' && INSTRUMENTS[key].dynamics && voice.dynamics ? { dynamics: voice.dynamics } : {}),
       releaseAll: voice.releaseAll,
       ready: voice.ready,
+      prepare: voice.prepare,
       dispose: voice.dispose,
     };
   }

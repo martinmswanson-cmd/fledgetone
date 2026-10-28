@@ -1,14 +1,15 @@
 import * as Tone from 'tone';
 import { INSTRUMENTS } from '../instrumentCatalog';
 import type { InstrumentKey } from '../instrumentCatalog';
-import { loadSamplesAt, noteJitter, recordedDuration } from '../samplers/samplerManager';
+import { copySetFor, loadSamplesAt, noteJitter, recordedDuration, recordingWish } from '../samplers/samplerManager';
 import { notLate } from './monotonic';
 import { createBus, createVoiceSet } from './native';
 import { alwaysStereo } from '../nativeNodes';
 
 /**
  * A recorded drum kit: the recordings of each drum row (see the catalog's `samples`, keyed by the
- * rows' note names), played as they are, never pitched. A kit recorded at several loudnesses and
+ * rows' note names), played as they are (an open hat a little lower, and a hit whose bend sets its
+ * pitch, from a copy made at that pitch: see pitchedCopies.ts). A kit recorded at several loudnesses and
  * takes ("<note>|<layer>|<take>", see SampleSource.layers) plays the recording for each hit's
  * velocity, its takes in turn, as a drummer never hits the same way twice. Rows the kit has no
  * recording of are left to the synthesized extras (kitExtras.ts).
@@ -62,6 +63,7 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
   const tops = INSTRUMENTS[key].samples?.layers ?? [1];
   const turns = new Map<string, number>();
   let loaded = false;
+  const copies = copySetFor(raw);
   // (at the rate of the context it plays in: an export has recordings of its own where the live ones won't do)
   const ready = loadSamplesAt(key, raw.sampleRate, typeof OfflineAudioContext !== 'undefined' && raw instanceof OfflineAudioContext).then((set) => {
     const rows: Record<string, AudioBuffer[][]> = {};
@@ -104,17 +106,20 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     const { buffer } = picked;
     const t = notLate(bus.context, time);
     const src = raw.createBufferSource();
-    src.buffer = buffer;
     // As recorded: not detuned (that resampled every hit and dulled the cymbals); the takes in
-    // turn and the level below keep a repeated hit from sounding like a machine
-    src.playbackRate.value = opts.rate ?? 1;
+    // turn and the level below keep a repeated hit from sounding like a machine. A hit at another
+    // pitch (an open hat's) plays its copy at that pitch where it's made, at a rate of 1
+    const rate = opts.rate ?? 1;
+    const copy = rate !== 1 ? copies.find(buffer, recordingWish(buffer, rate, raw)) : undefined;
+    src.buffer = copy?.buffer ?? buffer;
+    src.playbackRate.value = copy ? 1 : rate;
     const amp = raw.createGain();
     // Softer hits are quieter, as on the kits' own velocity curve (about -24 dB at the bottom),
     // and no two quite alike, as a drummer never strikes the same spot twice: up to ±0.8 dB, the
     // same for the same hit every time it plays
     amp.gain.value = picked.gain * velocity * velocity * 10 ** ((0.8 * noteJitter(note, time, 37)) / 20);
     // (Its length as recorded: a silent tail cut when it loaded doesn't move a shortened hit's fade)
-    const length = Math.min(opts.seconds ?? Infinity, recordedDuration(buffer) / (opts.rate ?? 1));
+    const length = Math.min(opts.seconds ?? Infinity, copy ? recordedDuration(copy.buffer) : recordedDuration(buffer) / rate);
     if (opts.seconds) amp.gain.setTargetAtTime(0, t + length * 0.6, length * 0.15);
     src.connect(amp);
     amp.connect(input);
@@ -123,14 +128,20 @@ export function createSampledKit(key: InstrumentKey, output: Tone.InputNode) {
     return true;
   };
 
+  /** `note`'s every recording at `rate` (made ready in a render, in the background live: see CopySet.warm). */
+  const prepare = (note: string, rate: number) =>
+    ready.then(() => Promise.all((buffers[note] ?? []).flat().filter(Boolean).map((b) => copies.warm(b, recordingWish(b, rate, raw)))));
+
   return {
     ready,
+    prepare,
     hit,
     has: (note: string) => note in buffers,
     loaded: () => loaded,
     releaseAll: () => voices.releaseAll(raw.currentTime),
     dispose: () => {
       voices.stopAll();
+      copies.dispose();
       bus.dispose();
     },
   };

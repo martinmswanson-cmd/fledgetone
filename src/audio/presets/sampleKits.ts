@@ -4,13 +4,17 @@ import { RACK_PADS } from '../../store/timelineTypes';
 import { chopSpan, padOfNote, zoneFor, noteMidi } from '../../store/sampleKits';
 import { decodeSound } from '../soundLibrary';
 import { alwaysStereo } from '../nativeNodes';
-import { decodePitchedSound } from '../samplers/samplerManager';
+import { copySetFor, decodePitchedSound } from '../samplers/samplerManager';
 import type { NoteOff, PlayableNote, TrackInstrument, VoiceControl } from '../instruments';
+import type { TrackPlan } from '../samplers/songSamples';
 
 /**
  * The Drum Rack and the Multi Sampler: the user's own sounds played from buffers, each hit or note
  * a buffer source and a gain made when it starts and let go when it ends (nothing runs between
- * them). Live and in the WAV export alike; `ready` waits for every sound to be decoded.
+ * them). Live and in the WAV export alike; `ready` waits for every sound to be decoded. A pad
+ * tuned away from its sound's pitch, or a key away from its sound's root, plays a copy made at
+ * that pitch (pitchedCopies.ts), at a rate of exactly 1, rather than the sound stretched by the
+ * browser as it plays (a bend moves the rate from there).
  */
 
 type Raw = BaseAudioContext;
@@ -94,6 +98,14 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
   const loadedAs = new Map<number, string>();
   const hits = new Set<Hit>();
   let disposed = false;
+  const copies = copySetFor(raw);
+  /** A pad's copy at its tuning (made in the background live, as soon as its sound or tuning is known) */
+  const wishOf = (pad: RackPad) => ({ ratio: Math.pow(2, pad.pitch / 12), playRate: raw.sampleRate });
+  const warm = (i: number) => {
+    const pad = rack?.pads[i];
+    const buffer = buffers.get(i);
+    return pad && buffer && pad.pitch ? copies.warm(buffer, wishOf(pad)) : Promise.resolve();
+  };
 
   const applyChain = (chain: PadChain, pad: RackPad) => {
     const now = raw.currentTime;
@@ -155,6 +167,8 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
         decodeSound(pad.soundId, raw.sampleRate).then((b) => {
           if (disposed || loadedAs.get(i) !== key) return;
           buffers.set(i, reverse ? reversed(raw, b) : b);
+          // (live: its copy at its tuning, ahead of its first hit)
+          if (!(raw instanceof OfflineAudioContext)) void warm(i);
         })
       );
     }
@@ -181,15 +195,20 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     if (pad.choke) for (const h of hits) if (rack?.pads[h.pad]?.choke === pad.choke) cut(h, at);
     const chain = chainFor(i, pad);
     const source = raw.createBufferSource();
-    source.buffer = buffer;
-    source.playbackRate.value = Math.pow(2, pad.pitch / 12);
+    const ratio = Math.pow(2, pad.pitch / 12);
+    // Tuned: its copy at that pitch, read at a rate of 1, where it's made
+    const copy = pad.pitch ? copies.find(buffer, wishOf(pad)) : undefined;
+    const playing = copy?.buffer ?? buffer;
+    const k = copy?.ratio ?? 1;
+    source.buffer = playing;
+    source.playbackRate.value = copy ? 1 : ratio;
     const env = raw.createGain();
     const level = Math.max(0, Math.min(1, velocity)) ** 1.2;
     // A chop plays its stretch of the sound (mirrored when reversed: the buffer is the reversed copy),
     // from a whole frame (a source read between two frames is interpolated, which blurs its top)
     const chop = chopSpan(pad, buffer.duration);
-    const offset = Math.round(chop.offset * buffer.sampleRate) / buffer.sampleRate;
-    const length = chop.seconds / source.playbackRate.value;
+    const offset = Math.round((chop.offset / k) * playing.sampleRate) / playing.sampleRate;
+    const length = chop.seconds / ratio;
     if (!(length > 0)) return;
     const fade = Math.min(pad.fade ?? 0, length / 2);
     if (fade > 0) {
@@ -209,7 +228,7 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
     }
     source.connect(env);
     env.connect(chain.input);
-    source.start(at, offset, chop.seconds);
+    source.start(at, offset, chop.seconds / k);
     source.stop(stopAt);
     const h: Hit = { source, env, pad: i, stopAt };
     hits.add(h);
@@ -237,9 +256,16 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
       for (const h of hits) cut(h, raw.currentTime);
     },
     ready,
+    // (every tuned pad's copy: a render's notes don't change what a pad plays)
+    prepare: () => ready.then(() => Promise.all(Array.from({ length: RACK_PADS }, (_, i) => warm(i)))),
     setRack: (next) => {
+      const before = rack;
       rack = next;
       void load(next);
+      // A pad tuned anew: its copy at the new pitch, ahead of its next hit
+      next?.pads.forEach((pad, i) => {
+        if (pad.pitch !== before?.pads[i]?.pitch) void warm(i);
+      });
       next?.pads.forEach((pad, i) => {
         const chain = chains.get(i);
         if (chain) applyChain(chain, pad);
@@ -258,6 +284,7 @@ export function createRackInstrument(output: Tone.InputNode, initial: DrumRack |
         h.env.disconnect();
       }
       hits.clear();
+      copies.dispose();
       for (const c of chains.values()) [c.input, c.shaper, c.highpass, c.lowpass, c.pan, c.level].forEach((n) => n.disconnect());
       chains.clear();
       out.dispose();
@@ -270,6 +297,8 @@ interface Voice {
   env: GainNode;
   /** The note's offset from its sound's root, in semitones (the bend adds to it) */
   semis: number;
+  /** How many times as fast as its sound the buffer it plays is (its copy at `semis`: see pitchedCopies.ts), 1 for the sound itself */
+  k: number;
   /** When it's been told to stop (Infinity: not yet; it ends by itself at its sound's end, whatever bends do to its speed) */
   stopAt: number;
   released: boolean;
@@ -286,6 +315,11 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
   const voices = new Set<Voice>();
   let bendCents = 0;
   let disposed = false;
+  const copies = copySetFor(raw);
+  /** Whether its copies keep its sounds' rate (twice the context's): a render's track whose notes bend (see prepare) */
+  let wide = false;
+  /** A copy of a sound `semis` from its root: at the context's rate for notes that hold their pitch, else at the sound's (see wishOf in samplerManager.ts) */
+  const wishFor = (semis: number) => ({ ratio: Math.pow(2, semis / 12), playRate: raw.sampleRate, ...(wide ? {} : { outRate: raw.sampleRate }) });
 
   const load = (next: MultiSample | undefined): Promise<unknown> =>
     Promise.all(
@@ -301,6 +335,11 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
   const ready = load(multi);
 
   const rateOf = (semis: number) => Math.pow(2, (semis + bendCents / 100) / 12);
+  /** The rate a voice plays its buffer at for `semis` (bend included): over its copy's own ratio, exactly 1 for the copy's pitch */
+  const rateFor = (v: Pick<Voice, 'k'>, semis: number) => {
+    const r = rateOf(semis) / v.k;
+    return Math.abs(r - 1) < 1e-12 ? 1 : r;
+  };
 
   /** Let a voice go: its release from `time`. */
   const release = (v: Voice, time: number) => {
@@ -329,9 +368,15 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     const at = Math.max(time, raw.currentTime);
     const semis = midi - zone.root;
     const source = raw.createBufferSource();
-    source.buffer = buffer;
-    const rate = rateOf(semis);
-    source.playbackRate.setValueAtTime(rate, at);
+    // Away from its root: its copy at that pitch where it's made (a bend moves the rate from there;
+    // under a bend already, a copy at the context's rate would be read between its frames: the sound)
+    const copy = semis && (wide || bendCents === 0) ? copies.find(buffer, wishFor(semis)) : undefined;
+    source.buffer = copy?.buffer ?? buffer;
+    const k = copy?.ratio ?? 1;
+    // (its rate from the first block it sounds in: the rate is read once a block, and set only at
+    // `at` the block it starts in played at 1, up to 128 frames at the wrong speed)
+    source.playbackRate.value = rateFor({ k }, semis);
+    source.playbackRate.setValueAtTime(rateFor({ k }, semis), at);
     const env = raw.createGain();
     const level = Math.max(0, Math.min(1, velocity));
     const attack = Math.max(0.001, multi.attack);
@@ -342,7 +387,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     source.start(at);
     // No stop at the sound's end worked out from the rate now: a bend down afterwards slows it,
     // and the note was cut before its end. Not looping, it ends by itself when the sound does.
-    const v: Voice = { source, env, semis, stopAt: Infinity, released: false };
+    const v: Voice = { source, env, semis, k, stopAt: Infinity, released: false };
     voices.add(v);
     source.onended = () => {
       voices.delete(v);
@@ -375,7 +420,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
       return {
         bend: (c, t) => {
           cents = c;
-          v.source.playbackRate.linearRampToValueAtTime(rateOf(v.semis + cents / 100), Math.max(t, raw.currentTime));
+          v.source.playbackRate.linearRampToValueAtTime(rateFor(v, v.semis + cents / 100), Math.max(t, raw.currentTime));
         },
         pressure: (p, t) => {
           if (v.released) return;
@@ -387,7 +432,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
     bend: (cents: number, time: number) => {
       bendCents = cents;
       const at = Math.max(time, raw.currentTime);
-      for (const v of voices) v.source.playbackRate.setTargetAtTime(rateOf(v.semis), at, 0.005);
+      for (const v of voices) v.source.playbackRate.setTargetAtTime(rateFor(v, v.semis), at, 0.005);
     },
     releaseAll: () => {
       // Every voice still to end goes now, those already given their end too (a note played from
@@ -401,6 +446,22 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
       bendCents = 0;
     },
     ready,
+    prepare: (plan: TrackPlan) =>
+      ready.then(() => {
+        if (plan.bends) wide = true;
+        const jobs: Promise<void>[] = [];
+        for (const n of plan.notes) {
+          const midi = midiOf(n.note);
+          if (!multi || !Number.isFinite(midi)) continue;
+          // (its velocity can drift either way: the zones it can reach)
+          for (const vel of new Set([n.velocity, n.velocity * (1 - n.drift), Math.min(1, n.velocity * (1 + n.drift))])) {
+            const zone = zoneFor(multi.zones, midi, vel);
+            const buffer = zone && buffers.get(zone.soundId);
+            if (zone && buffer && midi !== zone.root) jobs.push(copies.prepare(buffer, wishFor(midi - zone.root)));
+          }
+        }
+        return Promise.all(jobs);
+      }),
     setMulti: (next) => {
       multi = next;
       void load(next);
@@ -418,6 +479,7 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
         v.env.disconnect();
       }
       voices.clear();
+      copies.dispose();
       out.dispose();
     },
   };
