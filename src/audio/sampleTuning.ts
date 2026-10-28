@@ -6,10 +6,11 @@
  * - `cents`: how far to re-pitch a recording when it loads (positive raises it).
  * - `notes`: for soundfont instruments, which recordings to use (the soundfonts have every
  *   semitone; a steadier one a semitone away replaces a wobbly or badly tuned one).
- * Bells, drums and the piano (whose stretched tuning is deliberate) aren't corrected.
+ * Bells, drums and the piano (whose stretched tuning is deliberate) aren't corrected. The
+ * instruments rendered afresh from their SoundFont (scripts/soundfont-renders) were tuned as
+ * they were rendered, so they aren't listed.
  */
 export const SAMPLE_TUNING: Record<string, { notes?: string[]; cents: Record<string, number> }> = {
-  accordion: { cents: { 'A4': 4, 'C3': 5, 'D#3': 4 } },
   atmosphere: { notes: ['C2', 'D#2', 'F#2', 'A2', 'C#3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'C7'], cents: { 'A2': 7, 'C2': 6, 'D#2': 6, 'F#2': 6 } },
   banjo: { notes: ['C3', 'D#3', 'F3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6'], cents: { 'A3': -7, 'A4': -5, 'C3': -5, 'C5': -6, 'D#3': -5, 'F#4': -5, 'F3': -5 } },
   baritoneSax: { notes: ['C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F3', 'A3', 'C4', 'D#4', 'F#4', 'A4'], cents: { 'A3': 6, 'D#3': 4 } },
@@ -27,12 +28,10 @@ export const SAMPLE_TUNING: Record<string, { notes?: string[]; cents: Record<str
   cleanGuitar: { notes: ['F2', 'G2', 'B2', 'C#3', 'E3', 'G#3', 'A#3', 'D4', 'E4', 'G4', 'A#4', 'C#5', 'E5', 'G5', 'A#5', 'C#6', 'D6'], cents: { 'B2': -4, 'C#3': -4, 'F2': -15, 'G#3': -5 } },
   contrabass: { notes: ['E1', 'G1', 'A#1', 'C2', 'E2', 'G2', 'B2', 'C#3', 'D#3', 'G3', 'A3', 'C4'], cents: { 'C4': 4, 'E2': 6, 'G1': 5, 'G2': 6 } },
   distortionGuitar: { notes: ['E2', 'G2', 'A#2', 'D3', 'E3', 'G3', 'A#3', 'C#4', 'F4', 'G#4', 'A#4', 'C#5', 'E5', 'G5', 'B5', 'C6', 'D6'], cents: { 'A#2': -16, 'A#3': -5, 'C#4': -7, 'D3': -6, 'D6': -6, 'E2': -13, 'E3': -6, 'G2': -13, 'G3': -6 } },
-  dulcimer: { notes: ['C3', 'D#3', 'F#3', 'A3', 'C4', 'E4', 'F4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'E6'], cents: { 'A3': -27, 'A4': -8, 'A5': -27, 'C3': -12, 'C4': -27, 'C5': -16, 'C6': -28, 'D#3': -14, 'D#5': -9, 'D#6': -24, 'E4': -8, 'F#3': -27, 'F#5': -29, 'F4': -15 } },
   echoesPad: { notes: ['C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'B3', 'D#4', 'F#4', 'A4', 'B4', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'B6'], cents: { 'A3': -4, 'A5': -6, 'A6': -5, 'B6': -5, 'C6': -5, 'D#5': -5, 'D#6': -6, 'F#3': -4, 'F#5': -5, 'F#6': -7 } },
   electricGuitar: { cents: { 'F#5': -7 } },
   englishHorn: { notes: ['E3', 'G3', 'A#3', 'C#4', 'E4', 'G4', 'A#4', 'C#5', 'E5', 'G5', 'G#5'], cents: { 'A#4': -8, 'E3': -4, 'E4': -6, 'E5': -6, 'G3': -5 } },
   erhu: { cents: { 'A4': -11, 'A6': -4, 'C6': 12, 'E5': -15, 'E6': -17, 'G5': -8 } },
-  fiddle: { notes: ['G3', 'A#3', 'C#4', 'E4', 'G4', 'A#4', 'C#5', 'E5', 'G5', 'A#5', 'C#6', 'E6', 'G#6', 'A6'], cents: {  } },
   fifthsLead: { notes: ['C2', 'D#2', 'F2', 'A2', 'C#3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'B4', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'C7'], cents: { 'A6': -7, 'C#3': -5, 'C4': -9, 'C7': -7, 'D#3': -5, 'F#5': 9, 'F2': -6 } },
   fingerBass: { notes: ['E1', 'G#1', 'A1', 'D2', 'D#2', 'G2', 'A#2', 'C#3', 'F3', 'G3', 'A3', 'C4'], cents: { 'A#2': 1, 'A3': -14, 'C#3': -8, 'C4': -17, 'E1': 6, 'F3': -5, 'G#1': -6, 'G3': -10 } },
   fmPiano: { cents: { 'A#1': -8, 'C#2': -8, 'C#7': -4, 'E1': -6, 'E7': -4, 'G1': -5, 'G7': -6 } },
@@ -62,13 +61,10 @@ export const SAMPLE_TUNING: Record<string, { notes?: string[]; cents: Record<str
   pipeOrgan: { notes: ['C1', 'D#1', 'F#1', 'G#1', 'C#2', 'E2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'E4', 'F#4', 'A4', 'C5', 'E5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'C7'], cents: { 'A2': -9, 'A3': -8, 'A4': -8, 'A5': -7, 'A6': -10, 'C#2': -10, 'C3': -9, 'C4': -9, 'C5': -6, 'C6': -8, 'C7': -9, 'D#3': -7, 'D#6': -7, 'E4': -5, 'E5': -6, 'F#3': -7, 'F#4': -4, 'F#5': -6, 'F#6': -6 } },
   pizzicato: { notes: ['C2', 'C#2', 'D2', 'D#2', 'E2', 'F2', 'F#2', 'G2', 'G#2', 'A2', 'A#2', 'B2', 'C3', 'C#3', 'D3', 'D#3', 'E3', 'F3', 'F#3', 'G3', 'G#3', 'A3', 'A#3', 'B3', 'C4', 'C#4', 'D4', 'D#4', 'E4', 'F4', 'F#4', 'G4', 'G#4', 'A4', 'A#4', 'B4', 'C5', 'C#5', 'D5', 'D#5', 'E5', 'F5', 'F#5', 'G5', 'G#5', 'A5', 'A#5', 'B5', 'C6', 'C#6', 'D6', 'D#6', 'E6', 'F6', 'F#6', 'G6', 'G#6', 'A6', 'A#6', 'B6', 'C7'], cents: { 'A#2': -15, 'A#3': -13, 'A#4': -19, 'A2': -15, 'A3': -13, 'A4': -19, 'A5': -6, 'B2': -15, 'B3': -13, 'B4': -16, 'C#2': -6, 'C#3': -6, 'C#4': -13, 'C#5': -16, 'C2': -6, 'C3': -15, 'C4': -13, 'C5': -16, 'D#2': -6, 'D#3': -6, 'D#4': -13, 'D#5': -19, 'D2': -6, 'D3': -6, 'D4': -13, 'D5': -16, 'E2': -6, 'E3': -6, 'E4': -28, 'E5': -19, 'F#2': -15, 'F#4': -28, 'F#5': -19, 'F2': -6, 'F4': -28, 'F5': -19, 'G#2': -15, 'G#4': -19, 'G2': -15, 'G4': -19, 'G5': -6 } },
   polysynthPad: { cents: { 'A2': -11, 'A3': -10, 'A4': -12, 'A5': -12, 'A6': -13, 'C2': -10, 'C3': -7, 'C4': -10, 'C5': -12, 'C6': -12, 'C7': -13, 'D#2': -9, 'D#3': -8, 'D#4': -10, 'D#5': -12, 'D#6': -12, 'F#2': -10, 'F#3': -8, 'F#4': -11, 'F#5': -12, 'F#6': -12 } },
-  rainPad: { notes: ['C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'G5', 'A5', 'B5', 'D#6', 'F#6', 'A6', 'C7'], cents: {  } },
   reedOrgan: { notes: ['C2', 'D#2', 'F#2', 'A2', 'C3', 'D3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C#6', 'D#6', 'F#6', 'A6', 'C7'], cents: { 'A4': -7, 'A6': -6, 'C4': -4, 'C5': -5, 'C7': -6, 'F#4': -6, 'F#5': -5 } },
   rockOrgan: { notes: ['C2', 'E2', 'F#2', 'A2', 'C3', 'D#3', 'F3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'C7'], cents: { 'E2': -4, 'F#2': -5, 'F3': 7 } },
   sawLead: { cents: { 'A3': -4, 'A4': -6, 'A5': -6, 'A6': -6, 'C4': -5, 'C5': -6, 'C6': -6, 'C7': -7, 'D#4': -6, 'D#5': -6, 'D#6': -6, 'F#4': -6, 'F#5': -6, 'F#6': -6 } },
   sciFi: { notes: ['C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F5', 'G#5', 'C6'], cents: { 'A3': -5, 'A4': -5, 'C4': -5, 'C5': -5, 'C6': -8, 'D#5': -5, 'F#3': -4, 'F#4': -5, 'F5': -7, 'G#5': -6 } },
-  shakuhachi: { notes: ['G3', 'A#3', 'C#4', 'E4', 'G4', 'A#4', 'C#5', 'F5', 'F#5', 'A#5', 'C#6', 'E6'], cents: { 'A#4': -6, 'A#5': -11, 'C#5': -12, 'C#6': -8, 'E4': -6, 'E6': -6, 'F#5': -7, 'F5': -7, 'G4': -7 } },
-  shamisen: { notes: ['D3', 'F#3', 'G3', 'C4', 'D4', 'F#4', 'G#4', 'A#4', 'D#5', 'F5', 'G#5', 'B5', 'C6'], cents: { 'C4': -4, 'D4': -16 } },
   shanai: { notes: ['B3', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'G6'], cents: { 'D#4': 5 } },
   slappedBass: { notes: ['E1', 'G#1', 'A#1', 'C#2', 'E2', 'G2', 'A#2', 'C#3', 'E3', 'G3', 'A#3', 'C4'], cents: {  } },
   slappedBass2: { notes: ['F1', 'G1', 'A#1', 'C#2', 'E2', 'G2', 'A#2', 'D3', 'E3', 'G3', 'A3', 'C4'], cents: { 'A#1': -20, 'A#2': -12, 'C#2': -19, 'E2': -17, 'F1': -10, 'G1': -10, 'G2': -7 } },

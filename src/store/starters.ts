@@ -338,7 +338,8 @@ export function createStarter(id: StarterId): ProjectSnapshot {
  * eighth on average) with the short-stroke recordings, and `high` takes parts too high for the
  * recording (the horn's top, which the section's trumpet plays). `anyNote`: a note out of the
  * recording's range moves by octaves into it (a timpani hit stays a hit). Taiko, music box and the rest
- * have no free recording yet and stay as they are.
+ * have no free recording yet and stay as they are (the ones the starters play rendered afresh from
+ * their SoundFont: see rendered in soundfontSets.ts).
  */
 const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: InstrumentKey; shortDb?: number; high?: InstrumentKey; highDb?: number; preset?: string; anyNote?: boolean }> = {
   cello: { to: 'realCello', db: -4, short: 'realCelloShort', shortDb: -2.5 },
@@ -401,6 +402,10 @@ const RECORDED: Record<string, { to: InstrumentKey; db: number; short?: Instrume
   // (Matched part by part, by loudness, each starter's part through both: the classical guitar's
   // four parts came out 0.5 to 1.2 dB louder)
   nylonGuitar: { to: 'realNylonGuitar', db: -0.8 },
+  // (Matched by loudness, each starter's part through both: the zither (a dan tranh, the koto's
+  // cousin) came out 0.6 dB louder, the acoustic guitar 2.3 dB quieter than the steel-string)
+  koto: { to: 'realZither', db: -0.6 },
+  steelGuitar: { to: 'guitar', db: 2.3 },
 };
 
 /**

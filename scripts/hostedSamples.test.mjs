@@ -24,10 +24,15 @@ const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 const hosted = Object.values(INSTRUMENTS).filter((d) => d.samples?.baseUrl.startsWith('fledgetone-samples/'));
 
-test('the real instruments are hosted with the app, and only they are', () => {
-  // (and the Grand Piano, which plays the Concert Grand's recordings under the name it has always had)
-  const real = Object.values(INSTRUMENTS).filter((d) => d.name.endsWith('(Real)') || d.key === 'piano');
+test('the real instruments are hosted with the app, and only they and the retro instruments rendered afresh are', () => {
+  // (and the Grand Piano, which plays the Concert Grand's recordings under the name it has always
+  // had, and the retro instruments rendered afresh from their SoundFont: scripts/soundfont-renders)
+  const real = Object.values(INSTRUMENTS).filter((d) => d.name.endsWith('(Real)') || d.key === 'piano' || (d.retro && d.samples?.baseUrl.startsWith('fledgetone-samples/retro-')));
   assert.deepEqual(hosted.map((d) => d.key).sort(), real.map((d) => d.key).sort());
+  // The rendered ones are only retro instruments, each in a set of its own
+  const rendered = hosted.filter((d) => d.samples.baseUrl.startsWith('fledgetone-samples/retro-'));
+  assert.ok(rendered.length >= 10 && rendered.every((d) => d.retro && !d.name.endsWith('(Real)')));
+  assert.equal(new Set(rendered.map((d) => d.samples.baseUrl)).size, rendered.length);
 });
 
 test('every hosted recording an instrument plays is in public/', () => {

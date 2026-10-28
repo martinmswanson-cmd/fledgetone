@@ -140,3 +140,16 @@ guitar-black, guitar-black-release, guitar-green, guitar-green-release:
   (https://github.com/sfzinstruments/karoryfer.black-and-green-guitars) by Karoryfer Lecolds,
   recorded by Brian Wood (converted to MP3, hosted with the app)
   Licence: CC0 (https://creativecommons.org/publicdomain/zero/1.0/) (public domain)
+
+retro-accordion, retro-agogo, retro-bagpipe, retro-crystal, retro-dulcimer, retro-fiddle,
+  retro-rain, retro-shakuhachi, retro-shamisen:
+  The retro fiddle, shakuhachi, bagpipes, accordion, rain, dulcimer, shamisen, agogô and crystal,
+  rendered afresh with FluidSynth (https://www.fluidsynth.org) from the Musyng Kite SoundFont
+  (https://archive.org/details/musyng-kite) by Cose V. (SynthFont Viena) (converted to MP3, hosted
+  with the app; the rendered files are shared under the same licence)
+  Licence: CC BY-SA 3.0 (https://creativecommons.org/licenses/by-sa/3.0/)
+
+retro-taiko:
+  The retro taiko drums, rendered afresh with FluidSynth (https://www.fluidsynth.org) from the
+  FluidR3 GM SoundFont by Frank Wen (converted to MP3, hosted with the app)
+  Licence: MIT (https://opensource.org/license/mit) (Frank Wen's licence for the SoundFont)

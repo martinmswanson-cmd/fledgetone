@@ -14,7 +14,7 @@ import { recordingBytes } from '../recordingStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { CustomSample, NoteEvent } from '../../store/timelineTypes';
 import { alwaysStereo, keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
-import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTLINE_STEP, removeDc, sustainLoop } from './recordingMaths';
+import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTLINE_STEP, planRingOn, planSustain, removeDc, ringOn } from './recordingMaths';
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { expressiveCutoff, OPEN_CUTOFF } from './velocityTone';
@@ -491,7 +491,8 @@ async function decodeEntry(source: SampleSource, name: string, rate: number): Pr
   const loaded = await fetchRecording(source, source.samples[name], rate, keep, SILENT * 10 ** (-Math.max(0, db) / 20));
   const tuned = source.tune?.[name] ? retune(loaded, source.tune[name]) : loaded;
   const buffer = db ? louder(tuned, db) : tuned;
-  const held = source.sustain ? extendSustain(buffer, source.sustain) : buffer;
+  const hz = noteHz(name);
+  const held = source.sustain ? extendSustain(buffer, source.sustain, hz) : source.ringOn ? ringOnBuffer(buffer, hz) : buffer;
   const ready = source.onset === undefined ? held : trimOnset(held, source.onset);
   const audio = ready.get();
   if (audio) {
@@ -707,17 +708,47 @@ function trimOnset(buffer: Tone.ToneAudioBuffer, onsetDb: number): Tone.ToneAudi
   return new Tone.ToneAudioBuffer(trimmed);
 }
 
+/** The pitch (Hz) of a recording named by its note ("C#4", "C#4|1|0"), or 0. */
+function noteHz(name: string): number {
+  const m = /^([A-G])(#?)(-?\d+)/.exec(name);
+  if (!m) return 0;
+  const midi = 'C D EF G A B'.indexOf(m[1]) + (m[2] ? 1 : 0) + 12 * (Number(m[3]) + 1);
+  return 440 * 2 ** ((midi - 69) / 12);
+}
+
+/** The channels of `audio`, or one if its two are the same sound up to `end` (a mono recording saved as stereo). */
+function distinctChannels(audio: AudioBuffer, end: number): Float32Array[] {
+  const channels = Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c));
+  if (channels.length === 2) {
+    const [l, r] = channels;
+    let diff = 0, sum = 0;
+    for (let i = 0; i < end; i += 7) { diff += (l[i] - r[i]) ** 2; sum += (l[i] + r[i]) ** 2; }
+    if (diff < sum * 1e-4) return [l];
+  }
+  return channels;
+}
+
+/** The channels mixed into one (what a plan is worked out on, so every channel is cut alike). */
+function mixed(channels: Float32Array[]): Float32Array {
+  if (channels.length === 1) return channels[0];
+  const out = new Float32Array(channels[0].length);
+  for (const data of channels) for (let i = 0; i < out.length; i++) out[i] += data[i] / channels.length;
+  return out;
+}
+
 /**
- * Lengthen a recording that stops dead by looping its steady part, crossfading 120 ms at each
- * join, until it is `hold` seconds long; the last 300 ms fade out. Two identical channels (a mono
- * recording saved as stereo) are folded to one, halving the memory it takes.
+ * Lengthen a recording that stops dead from its steady part, crossfading 120 ms at each join, until
+ * it is `hold` seconds long; the last 300 ms fade out. Two identical channels (a mono recording
+ * saved as stereo) are folded to one, halving the memory it takes.
  *
- * Every repeat after the first is the same sound, its join included, so the second repeat is a
- * seamless loop (kept in loopsOf): a note held longer than `hold` plays on, looping it, until it's
- * released. Without it an ambience or a drone written as one long note (rain under a whole song)
- * went silent after `hold` seconds.
+ * It's lengthened with pieces of the steady part, of different lengths from different places in
+ * it, each joined where it best continues the sound (see planSustain), rather than the whole part
+ * over and over: that brought its slow movement round every 1.7 s, which was easy to hear. The
+ * pieces make one cycle as long as there's room for, a seamless loop (kept in loopsOf): a note held
+ * longer than `hold` plays on, looping it, until it's released. Without it an ambience or a drone
+ * written as one long note (rain under a whole song) went silent after `hold` seconds.
  */
-function extendSustain(buffer: Tone.ToneAudioBuffer, { from, to, hold }: { from: number; to: number; hold: number }): Tone.ToneAudioBuffer {
+function extendSustain(buffer: Tone.ToneAudioBuffer, { from, to, hold }: { from: number; to: number; hold: number }, hz: number): Tone.ToneAudioBuffer {
   const audio = buffer.get();
   if (!audio) return buffer;
   const sr = audio.sampleRate;
@@ -725,20 +756,35 @@ function extendSustain(buffer: Tone.ToneAudioBuffer, { from, to, hold }: { from:
   const start = Math.round(from * sr);
   const xf = Math.round(0.12 * sr);
   if (end - start < xf * 3) return buffer;
-  let channels = Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c));
-  if (channels.length === 2) {
-    const [l, r] = channels;
-    let diff = 0, sum = 0;
-    for (let i = 0; i < end; i += 7) { diff += (l[i] - r[i]) ** 2; sum += (l[i] + r[i]) ** 2; }
-    if (diff < sum * 1e-4) channels = [l];
-  }
+  const channels = distinctChannels(audio, end);
   const length = Math.max(end, Math.round(hold * sr));
   const fade = Math.round(0.3 * sr);
+  // (a join is searched for within a period of the note, or 20 ms)
+  const reach = Math.round(hz > 0 ? Math.min(sr / hz, 0.03 * sr) : 0.02 * sr);
+  const plan = planSustain(mixed(channels), start, end, xf, length, fade, reach);
   const out = Tone.getContext().createBuffer(channels.length, length, sr);
-  channels.forEach((data, c) => lengthenSustain(out.getChannelData(c), data, start, end, xf, fade));
-  // The second repeat, if it ends before the fade out (see above)
-  const repeat = sustainLoop(start, end, xf, length, fade);
-  if (repeat) loopsOf.set(out, [repeat[0] / sr, repeat[1] / sr]);
+  channels.forEach((data, c) => lengthenSustain(out.getChannelData(c), data, end, plan, xf, fade));
+  if (plan.loop) loopsOf.set(out, [plan.loop[0] / sr, plan.loop[1] / sr]);
+  return new Tone.ToneAudioBuffer(out);
+}
+
+/** The longest a cut-off recording is rung on to (seconds), as a held one is lengthened to (SOUNDFONT_SUSTAIN). */
+const RING_MOST = 10;
+
+/**
+ * A recording cut off while it still sounds (a General MIDI soundfont note: they all end at 3.1 s)
+ * given the rest of its decay (planRingOn, ringOn), so a note held or rung on past its end fades
+ * away instead of stopping dead. One that died away by itself is returned as it is.
+ */
+function ringOnBuffer(buffer: Tone.ToneAudioBuffer, hz: number): Tone.ToneAudioBuffer {
+  const audio = buffer.get();
+  if (!audio) return buffer;
+  const sr = audio.sampleRate;
+  const channels = distinctChannels(audio, audio.length);
+  const plan = planRingOn(mixed(channels), sr, hz, Math.round(RING_MOST * sr));
+  if (!plan) return buffer;
+  const out = Tone.getContext().createBuffer(channels.length, plan.length, sr);
+  channels.forEach((data, c) => ringOn(out.getChannelData(c), data, plan, sr, hz));
   return new Tone.ToneAudioBuffer(out);
 }
 
