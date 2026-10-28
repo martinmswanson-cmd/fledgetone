@@ -230,6 +230,13 @@ impl AllPassChain {
         }
         v
     }
+    /// As if `v` had come in for ever
+    fn prime(&mut self, v: f32) {
+        *self = AllPassChain {
+            x: [v; 4],
+            y: [v; 4],
+        };
+    }
 }
 
 /// One sample in, the two of it at twice the rate out (no images above the passband)
@@ -244,6 +251,11 @@ impl Up2 {
     pub fn tick(&mut self, x: f32) -> [f32; 2] {
         [self.a.tick(0, x), self.b.tick(1, x)]
     }
+    /// As if `x` had come in for ever (started mid-sound, it doesn't rise from nothing)
+    pub fn prime(&mut self, x: f32) {
+        self.a.prime(x);
+        self.b.prime(x);
+    }
 }
 
 /// Two samples at twice the rate in, one out (what was above the passband filtered off first)
@@ -257,6 +269,11 @@ impl Down2 {
     #[inline]
     pub fn tick(&mut self, x: [f32; 2]) -> f32 {
         0.5 * (self.a.tick(0, x[1]) + self.b.tick(1, x[0]))
+    }
+    /// As if `x` had come in for ever
+    pub fn prime(&mut self, x: f32) {
+        self.a.prime(x);
+        self.b.prime(x);
     }
 }
 
@@ -359,6 +376,15 @@ impl Shaper {
     }
     pub fn reset(&mut self) {
         *self = Shaper::default();
+    }
+    /// As if `x` had come in last (shaped as `kind`): what it makes of it
+    pub fn prime(&mut self, kind: u32, x: f32) -> f32 {
+        *self = Shaper {
+            x1: x,
+            f1: shape_integral(kind, x),
+            kind,
+        };
+        shape(kind, x)
     }
 }
 
