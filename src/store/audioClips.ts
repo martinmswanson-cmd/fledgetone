@@ -227,7 +227,9 @@ export function normalizeClipAudio(raw: unknown): ClipAudio | undefined {
     ...(isNum(raw.stretchBpm) ? { stretchBpm: clamp(raw.stretchBpm, STRETCH_BPM_MIN, STRETCH_BPM_MAX) } : {}),
     ...(typeof raw.tunedFrom === 'string' && raw.tunedFrom ? { tunedFrom: raw.tunedFrom } : {}),
     ...(typeof raw.reversedFrom === 'string' && raw.reversedFrom ? { reversedFrom: raw.reversedFrom } : {}),
-    ...(typeof raw.shiftedFrom === 'string' && raw.shiftedFrom && isNum(raw.shift) ? { shiftedFrom: raw.shiftedFrom, shift: clamp(raw.shift, -12, 12) } : {}),
+    ...(typeof raw.shiftedFrom === 'string' && raw.shiftedFrom && isNum(raw.shift)
+      ? { shiftedFrom: raw.shiftedFrom, shift: clamp(raw.shift, -12, 12), ...(isNum(raw.shiftVersion) ? { shiftVersion: Math.max(1, Math.round(raw.shiftVersion)) } : {}) }
+      : {}),
     ...(() => {
       const m = raw.mangled;
       if (!isObj(m) || typeof m.from !== 'string' || !m.from || !isNum(m.offset) || !isNum(m.bars) || !(m.bars > 0)) return {};

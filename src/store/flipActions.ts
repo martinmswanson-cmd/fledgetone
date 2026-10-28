@@ -5,7 +5,7 @@
  * sampleAnalysis.ts and pitchShift.ts.
  */
 import { songTempo, useTimelineStore } from './timelineStore';
-import type { Clip, NoteEvent } from './timelineTypes';
+import type { Clip, NoteEvent, SoundMeta } from './timelineTypes';
 import { barsToDuration, uid } from './timelineTypes';
 import { chopEnd, chopsToRack, flipPattern, flipSeed, bassCutFilter } from './sampleFlip';
 import { padNote } from './sampleKits';
@@ -13,7 +13,8 @@ import { detectKey, type SongKey } from './songKey';
 import { tempoAt, secondsToBar, barToSeconds } from '../audio/tempoMap';
 import { decodeSound, importSoundFile, useSoundLibrary } from '../audio/soundLibrary';
 import { encodeChannels } from '../audio/wavFile';
-import { pitchShiftChannels } from '../audio/pitchShift';
+import { runDsp } from '../audio/dspRun';
+import { SHIFT_VERSION } from './shiftVersion';
 import { keyShift } from '../audio/sampleAnalysis';
 
 /** The rate re-pitched copies are made at. */
@@ -140,6 +141,20 @@ export function songKeyNow(): SongKey | null {
 }
 
 /**
+ * A copy of sound `original` moved `shift` semitones, kept in the sound library (named after it, or
+ * `fallbackName`): same length, same timing, new key.
+ */
+export async function shiftedSound(original: string, shift: number, fallbackName: string): Promise<SoundMeta> {
+  const source = await decodeSound(original, SHIFT_RATE);
+  const channels = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c));
+  // (The phase vocoder for anything tonal, in a Worker: see pitchShift.ts)
+  const moved = await runDsp({ kind: 'pitch', semitones: shift }, channels, SHIFT_RATE);
+  const base = (useSoundLibrary.getState().metas[original]?.name ?? fallbackName).replace(/\.[a-z0-9]+$/i, '');
+  const name = `${base} (${shift > 0 ? '+' : ''}${shift} st).wav`;
+  return importSoundFile(new Blob([encodeChannels(moved, SHIFT_RATE, 24)], { type: 'audio/wav' }), name);
+}
+
+/**
  * Move an audio clip's sample by `semitones` (from the sound it had before any move), as a
  * re-pitched copy kept in the sound library: same length, same timing, new key. 0 goes back to the
  * original. One undo step.
@@ -152,16 +167,11 @@ export async function shiftClip(clipId: string, semitones: number): Promise<void
   const original = audio.shiftedFrom ?? audio.soundId;
   const shift = Math.round(semitones * 100) / 100;
   if (Math.abs(shift) < 0.01) {
-    if (audio.shiftedFrom) s.setClipAudio(clipId, { soundId: original, shiftedFrom: undefined, shift: undefined }, true);
+    if (audio.shiftedFrom) s.setClipAudio(clipId, { soundId: original, shiftedFrom: undefined, shift: undefined, shiftVersion: undefined }, true);
     return;
   }
-  const source = await decodeSound(original, SHIFT_RATE);
-  const channels = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c));
-  const moved = pitchShiftChannels(channels, shift, SHIFT_RATE);
-  const base = (useSoundLibrary.getState().metas[original]?.name ?? clip.name).replace(/\.[a-z0-9]+$/i, '');
-  const name = `${base} (${shift > 0 ? '+' : ''}${shift} st).wav`;
-  const sound = await importSoundFile(new Blob([encodeChannels(moved, SHIFT_RATE, 24)], { type: 'audio/wav' }), name);
-  useTimelineStore.getState().setClipAudio(clipId, { soundId: sound.id, shiftedFrom: original, shift }, true);
+  const sound = await shiftedSound(original, shift, clip.name);
+  useTimelineStore.getState().setClipAudio(clipId, { soundId: sound.id, shiftedFrom: original, shift, shiftVersion: SHIFT_VERSION }, true);
 }
 
 /** The semitones that move a sample in `sampleKey` (sitting `cents` off A440) into the song's key, or null with no song key. */

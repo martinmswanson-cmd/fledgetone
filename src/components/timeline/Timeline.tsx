@@ -4,6 +4,7 @@
  * editors docked under it (piano roll, audio clip editor). The heart of the UI.
  */
 import { startAutoFreeze } from '../../store/autoFreeze';
+import { startSoundUpgrade } from '../../store/soundUpgrade';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { VideoLane } from '../video/VideoLane';
 import { livePlayhead, onPlayhead } from '../../store/playheadClock';
@@ -285,6 +286,7 @@ export const Timeline: React.FC = () => {
   // Bind store <-> Tone.Transport for the lifetime of the timeline
   useEffect(() => connectTimelineToAudio(), []);
   useEffect(() => startAutoFreeze(), []);
+  useEffect(() => startSoundUpgrade(), []);
   // A track just added (or selected from elsewhere) is scrolled into view
   const trackCount = useTimelineStore((s) => s.tracks.length);
   const selectedTrack = useTimelineStore((s) => s.selectedTrackId);

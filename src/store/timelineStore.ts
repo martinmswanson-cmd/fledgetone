@@ -2348,7 +2348,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         if (!clip?.audio || !audio) return s;
         if (patch.tunedFrom === undefined && 'tunedFrom' in patch) delete audio.tunedFrom;
         const same =
-          (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut', 'tunedFrom', 'reversedFrom', 'shiftedFrom', 'shift'] as const).every((k) => audio[k] === clip.audio![k]) &&
+          (['soundId', 'offset', 'gain', 'fadeIn', 'fadeOut', 'tunedFrom', 'reversedFrom', 'shiftedFrom', 'shift', 'shiftVersion'] as const).every((k) => audio[k] === clip.audio![k]) &&
           JSON.stringify(audio.warp ?? []) === JSON.stringify(clip.audio.warp ?? []) &&
           JSON.stringify(audio.envelope ?? []) === JSON.stringify(clip.audio.envelope ?? []);
         if (same) return s;

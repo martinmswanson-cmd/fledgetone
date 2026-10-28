@@ -7,7 +7,8 @@
 import { create } from 'zustand';
 import { liveMix } from './engine';
 import { createPeaks, fillPeaks } from './waveform';
-import { stretchChannels } from './timeStretch';
+import { STRETCH_VERSION, type StretchPiece } from './timeStretch';
+import { runDsp } from './dspRun';
 import { beatAt, warpKey, warpPieces } from '../store/warp';
 import type { Peaks } from './waveform';
 import type { ClipAudio, EmbeddedSound, SoundMeta } from '../store/timelineTypes';
@@ -340,10 +341,10 @@ export function decodeSound(id: string, sampleRate: number): Promise<AudioBuffer
 
 // ---------- time-stretched copies ----------
 
-/** Stretched copies of sounds (see timeStretch.ts), by sound, sample rate and speed. */
+/** Stretched copies of sounds (see timeStretch.ts), by sound, sample rate, speed and the stretch's version. */
 const stretchedBuffers = new Map<string, AudioBuffer>();
 const stretching = new Map<string, Promise<AudioBuffer>>();
-const stretchKey = (id: string, sampleRate: number, ratio: number) => `${id}|${sampleRate}|${ratio.toFixed(4)}`;
+const stretchKey = (id: string, sampleRate: number, ratio: number) => `${id}|${sampleRate}|${ratio.toFixed(4)}|v${STRETCH_VERSION}`;
 /** Speeds kept per sound and rate: a tempo being dragged leaves only the last few behind */
 const KEEP_STRETCHES = 3;
 
@@ -358,9 +359,10 @@ export function stretchSound(id: string, sampleRate: number, ratio: number): Pro
   if (!promise) {
     promise = (async () => {
       const source = await decodeSound(id, sampleRate);
-      const channels = stretchChannels(
+      // (In a Worker: a long tonal sound is a few seconds of work)
+      const channels = await runDsp(
+        { kind: 'stretch', ratio },
         Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c)),
-        ratio,
         sampleRate
       );
       const buffer = new AudioBuffer({ length: channels[0].length, numberOfChannels: channels.length, sampleRate });
@@ -413,7 +415,7 @@ export function requestStretch(id: string, sampleRate: number, ratio: number): v
 const warpedBuffers = new Map<string, AudioBuffer>();
 const warping = new Map<string, Promise<AudioBuffer>>();
 const warpBufferKey = (id: string, sampleRate: number, audio: Pick<ClipAudio, 'stretchBpm' | 'warp'>, bpm: number) =>
-  `${id}|${sampleRate}|${bpm.toFixed(4)}|${audio.stretchBpm}|${warpKey(audio)}`;
+  `${id}|${sampleRate}|${bpm.toFixed(4)}|${audio.stretchBpm}|${warpKey(audio)}|v${STRETCH_VERSION}`;
 /** Warps kept per sound and rate (markers being dragged leave only the last few behind) */
 const KEEP_WARPS = 4;
 
@@ -428,28 +430,21 @@ export function warpSound(id: string, sampleRate: number, audio: Pick<ClipAudio,
     promise = (async () => {
       const source = await decodeSound(id, sampleRate);
       const input = Array.from({ length: source.numberOfChannels }, (_, c) => source.getChannelData(c));
-      const parts: Float32Array[][] = [];
+      const pieces: StretchPiece[] = [];
       for (const piece of warpPieces(shape, 0, source.duration)) {
-        const a = Math.round(piece.src0 * sampleRate);
-        const b = Math.round(piece.src1 * sampleRate);
+        const from = Math.round(piece.src0 * sampleRate);
+        const to = Math.round(piece.src1 * sampleRate);
         // Its length at the song's tempo, in samples (rounded so the pieces add up to the beats)
-        const outStart = Math.round(((piece.beat0 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
-        const outEnd = Math.round(((piece.beat1 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
-        if (b <= a || outEnd <= outStart) continue;
-        const stretched = stretchChannels(input.map((ch) => ch.subarray(a, b)), (b - a) / (outEnd - outStart), sampleRate);
-        parts.push(stretched.map((ch) => (ch.length === outEnd - outStart ? ch : fitLength(ch, outEnd - outStart))));
+        const outFrom = Math.round(((piece.beat0 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
+        const outTo = Math.round(((piece.beat1 - beatAt(shape, 0)) * 60 * sampleRate) / bpm);
+        if (to <= from || outTo <= outFrom) continue;
+        pieces.push({ from, to, outFrom, outTo });
       }
-      const length = Math.max(1, parts.reduce((n, p) => n + p[0].length, 0));
+      // Heard whole and stretched along all the pieces at once (timeStretch.ts), in a Worker
+      const channels = pieces.length ? await runDsp({ kind: 'warp', pieces }, input, sampleRate) : input.map(() => new Float32Array(1));
+      const length = Math.max(1, channels[0]?.length ?? 0);
       const buffer = new AudioBuffer({ length, numberOfChannels: source.numberOfChannels, sampleRate });
-      for (let c = 0; c < source.numberOfChannels; c++) {
-        const out = new Float32Array(length);
-        let at = 0;
-        for (const p of parts) {
-          out.set(p[c], at);
-          at += p[c].length;
-        }
-        buffer.copyToChannel(out, c);
-      }
+      channels.forEach((ch, c) => buffer.copyToChannel((ch.length ? ch : new Float32Array(1)) as Float32Array<ArrayBuffer>, c));
       return buffer;
     })();
     promise.then(
@@ -508,14 +503,6 @@ export function wantCopies(owner: string, copies: readonly WantedCopy[], make = 
       }
     }, 300)
   );
-}
-
-/** A channel cut or padded with silence to `length` samples. */
-function fitLength(ch: Float32Array, length: number): Float32Array {
-  if (ch.length >= length) return ch.subarray(0, length);
-  const out = new Float32Array(length);
-  out.set(ch);
-  return out;
 }
 
 const warpListeners = new Set<() => void>();

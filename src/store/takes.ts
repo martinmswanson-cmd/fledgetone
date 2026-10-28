@@ -59,6 +59,7 @@ export function applyComp(clip: Clip, makeId: () => string): Clip {
     if (audio && clip.audio && audio.soundId !== clip.audio.soundId) {
       delete audio.tunedFrom;
       delete audio.shiftedFrom;
+      delete audio.shiftVersion;
       delete audio.shift;
     }
     return { ...clip, comp: segs, ...(audio ? { audio } : {}) };
