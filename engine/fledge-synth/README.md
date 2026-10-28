@@ -60,7 +60,7 @@ keyboard-range work (`tests/data/range_sound.bin`).
 A change meant to make every sound better, older ones too (the finer wavetables; each voice's
 levels, pan, sub, noise and filter coefficients ramping a sample at a time instead of stepping
 every 16 samples; the drives at twice the rate; the chorus and flanger read through a Hermite
-curve), takes both files' numbers again: `cargo test --release --test legacy_sound -- --ignored
+curve; the low mids of the driven basses eased), takes both files' numbers again: `cargo test --release --test legacy_sound -- --ignored
 rewrite_after_a_sound_change`.
 
 ## Build

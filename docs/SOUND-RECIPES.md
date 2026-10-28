@@ -317,3 +317,21 @@ Driven Legato bass's own harmonics (over half the energy there), the kicks' knoc
 and about 1 dB from the Crunch clipper; Off the Rails' drop 1 and final drop stay narrow because their hats are
 quiet against the kick and snare there. The starters play recorded kits (Lo-Fi's Break Kit is low-passed at 5 kHz), so
 their balance and loudness didn't move (Lo-Fi re-measured at -14.7 LUFS with its 3.5 dB trim, as in the table).
+
+**The driven basses' low mids, in the presets** (Fledge Synth, so every song with them): Driven Legato -6 dB at
+210 Hz (Fledge's EQ mid, Q 0.9: its two clip stages piled the second and third harmonics of every low note there),
+Hard Clip Stab and Clipped Square -3 dB at 220 Hz; each preset's Level raised to keep its loudness (held notes
+within 0.3 dB of before at C2, C3 and C4; the 60-100 Hz body within 0.5 dB, 125 Hz -2.6 dB on Driven Legato).
+Measured as above, before (commit `a9c6f51c`) → after, dB against the reference median:
+
+| drop | 125 Hz | 157 Hz | 198 Hz | 250 Hz | 62 / 79 / 99 Hz |
+|---|---|---|---|---|---|
+| Colour-bass drop | +2.3 → +1.8 | +2.9 → +1.0 | +4.3 → +3.2 | +4.8 → +2.8 | -0.2 / -4.5 / -3.8 → +0.2 / -4.2 / -3.6 |
+| Off the Rails, drop 1 | +0.1 → -0.1 | +0.6 → -0.2 | +7.9 → +6.1 | +5.1 → +4.6 | +0.6 / -4.0 / -1.8 → +1.0 / -3.6 / -1.7 |
+| Off the Rails, drop 2 | +2.8 → +2.3 | +3.1 → +1.6 | +6.6 → +4.9 | +4.5 → +3.2 | -0.9 / -2.6 / -0.7 → -0.3 / -2.1 / -0.5 |
+| Off the Rails, final | +1.8 → +1.6 | +1.0 → +0.1 | +6.0 → +5.2 | +5.5 → +4.0 | +1.8 / -1.7 / -2.2 → +2.1 / -1.4 / -2.1 |
+
+The masters land as before (colour-bass drop -6.1 LUFS, push 10.0 → 10.2 dB); its MP3 comes out 0.5 dB lower after
+encoding (true peak -1.6 dBTP), so it decodes at -8.0 LUFS (was -7.2). With the bass eased, what's left at 198 Hz in
+Off the Rails is mostly the drums: rendered alone through the master, the drums carry about 80% of the energy there in
+drop 1 and the final drop and 75% in drop 2, the two Driven Legato basses 15 to 40%, the stabs 15% in drop 2.

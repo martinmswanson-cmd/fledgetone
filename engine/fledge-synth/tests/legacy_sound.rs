@@ -12,8 +12,8 @@
 //! the values there were then, sounds as it did.
 //!
 //! A change meant to improve every sound, old ones too (the finer wavetables, the levels and
-//! the filters gliding a sample at a time, the drives at twice the rate), takes both files'
-//! numbers again: `rewrite_after_a_sound_change` below.
+//! the filters gliding a sample at a time, the drives at twice the rate, the low mids of the
+//! driven basses eased), takes both files' numbers again: `rewrite_after_a_sound_change` below.
 
 use fledge_synth::presets::PRESETS;
 use fledge_synth::synth::{Synth, BLOCK};
