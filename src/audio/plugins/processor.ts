@@ -19,7 +19,7 @@
  * instead of its family's shared one (a family whose code reads memory it never set, left over
  * from a plugin that was there before it: the Mutable Instruments family), and `limits` holds
  * parameters (by name) inside the range they're safe in, whatever is set or saved (see
- * paramLimits.ts).
+ * paramLimits.ts), and `outputGain` scales what it plays (a plugin too loud as it was made).
  *
  * Kept as a string (like the OTT's) so the one-file build needs no extra file.
  */
@@ -114,6 +114,7 @@ class BuiltinPlugin extends AudioWorkletProcessor {
     this.index = o.index;
     this.ownMemory = !!o.ownMemory;
     this.limitNames = o.limits || null;
+    this.outputGain = Number.isFinite(o.outputGain) && o.outputGain > 0 ? o.outputGain : 1;
     this.limits = [];
     // The last preset file and user table it was given, to start it again with after a blow-up
     this.presetData = null;
@@ -412,6 +413,12 @@ class BuiltinPlugin extends AudioWorkletProcessor {
       } else {
         if (out[0]) out[0].set(pl.subarray(0, n), pos);
         if (out[1]) out[1].set(pr.subarray(0, n), pos);
+        const g = this.outputGain;
+        if (g !== 1)
+          for (let i = pos; i < end; i++) {
+            if (out[0]) out[0][i] *= g;
+            if (out[1]) out[1][i] *= g;
+          }
       }
       pos = end;
     }

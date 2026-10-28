@@ -21,7 +21,7 @@ register(
 
 const { BUILTIN_PROCESSOR_SOURCE, BLOWN_UP } = await import('../src/audio/plugins/processor.ts');
 const { PLUGIN_FAMILIES } = await import('../src/audio/plugins/pluginCatalog.ts');
-const { PARAM_LIMITS, OWN_MEMORY_FAMILIES } = await import('../src/audio/plugins/paramLimits.ts');
+const { PARAM_LIMITS, OWN_MEMORY_FAMILIES, OUTPUT_TRIMS_DB } = await import('../src/audio/plugins/paramLimits.ts');
 
 const sr = 48000;
 const scope = { sampleRate: sr, currentFrame: 0 };
@@ -51,7 +51,7 @@ const make = (fam, name, opts = {}) => {
   const index = family(fam).plugins.findIndex((p) => p.name === name);
   assert.ok(index >= 0, name);
   const p = new Proc({
-    processorOptions: { family: fam, module: moduleOf(fam), index, ownMemory: OWN_MEMORY_FAMILIES.has(fam), limits: PARAM_LIMITS[`builtin:${fam}/${name}`] ?? null, ...opts },
+    processorOptions: { family: fam, module: moduleOf(fam), index, ownMemory: OWN_MEMORY_FAMILIES.has(fam), limits: PARAM_LIMITS[`builtin:${fam}/${name}`] ?? null, outputGain: 10 ** ((OUTPUT_TRIMS_DB[`builtin:${fam}/${name}`] ?? 0) / 20), ...opts },
   });
   const ready = sent.find((m) => m.type === 'ready');
   assert.ok(ready, `${name} started`);
@@ -159,4 +159,34 @@ test("the piano model's brightness at its limit is within a few dB of its defaul
     const bright = play(make('faust', 'Piano Model', { values }).p, 1, { notes: [note] }).peak;
     assert.ok(20 * Math.log10(bright / plain) < 3.5, `${note}: ${(20 * Math.log10(bright / plain)).toFixed(1)} dB over the default`);
   }
+});
+
+test('the piano model, turned down, plays every key under -1 dBFS at any velocity, and only quieter', () => {
+  const ceiling = 10 ** (-1 / 20);
+  const gain = 10 ** (OUTPUT_TRIMS_DB['builtin:faust/Piano Model'] / 20);
+  const index = family('faust').plugins.findIndex((p) => p.name === 'Piano Model');
+  /** One note's output, as the host makes the plugin (trimmed) or with no trim */
+  const render = (note, velocity, outputGain) => {
+    const { p } = make('faust', 'Piano Model', outputGain === undefined ? {} : { outputGain });
+    p.message({ type: 'events', events: [{ type: 'wam-midi', time: scope.currentFrame / sr, data: { bytes: [0x90, note, velocity] } }] });
+    const out = [];
+    for (let b = 0; b < 375; b++) {
+      const o = [new Float32Array(128), new Float32Array(128)];
+      p.process([], [o]);
+      for (let k = 0; k < 128; k++) out.push(Math.abs(o[0][k]) > Math.abs(o[1][k]) ? o[0][k] : o[1][k]);
+      scope.currentFrame += 128;
+    }
+    p.message({ type: 'destroy' });
+    return out;
+  };
+  assert.ok(index >= 0);
+  for (const velocity of [64, 100, 127])
+    for (let note = 21; note <= 108; note++) {
+      const peak = Math.max(...render(note, velocity).map(Math.abs));
+      assert.ok(peak < ceiling, `${note} at ${velocity}: ${(20 * Math.log10(peak)).toFixed(1)} dBFS`);
+    }
+  // The same sound, only quieter
+  const trimmed = render(88, 100);
+  const plain = render(88, 100, 1);
+  assert.ok(trimmed.every((v, i) => Math.abs(v - plain[i] * gain) < 1e-6));
 });
