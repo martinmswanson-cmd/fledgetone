@@ -10,6 +10,9 @@
 //! The same for the keyboard-range work (tests/data/range_sound.bin, every preset, the newer ones
 //! too, written by `write_range_sound` on the engine before it): a sound saved before it, with
 //! the values there were then, sounds as it did.
+//!
+//! A change meant to improve every sound, old ones too (the finer wavetables, the levels ramping
+//! a sample at a time), takes both files' numbers again: `rewrite_after_a_sound_change` below.
 
 use fledge_synth::presets::PRESETS;
 use fledge_synth::synth::{Synth, BLOCK};
@@ -179,20 +182,7 @@ fn every_old_preset_and_old_saved_sound_sounds_as_before() {
     let mut worst = (0.0f32, String::new());
     let mut problems = vec![];
     for (name, want) in &before {
-        let values: Vec<f32> = if name == "(defaults)" {
-            // An old saved sound without a preset: the defaults, as an old file has them, loaded
-            // the way the host loads one (only its values, then the old ones' settings)
-            let mut s = Synth::new(SR);
-            let old: Vec<f32> = s.params[..old_count].to_vec();
-            s.params[..old_count].copy_from_slice(&old);
-            s.legacy(old_count);
-            s.params.to_vec()
-        } else {
-            // (A song saved then has the preset as it was before the keyboard-range work changed it)
-            let p = PRESETS.iter().find(|p| p.name == name).unwrap_or_else(|| panic!("{name} is gone"));
-            p.values_before_range().to_vec()
-        };
-        compare(name, &values, want, &mut worst, &mut problems);
+        compare(name, &legacy_values(name, old_count), want, &mut worst, &mut problems);
     }
     eprintln!("largest difference: {:.2e} ({})", worst.0, worst.1);
     assert!(problems.is_empty(), "{problems:#?}");
@@ -209,21 +199,67 @@ fn every_sound_saved_before_the_keyboard_range_work_sounds_as_before() {
     let mut worst = (0.0f32, String::new());
     let mut problems = vec![];
     for (name, want) in &before {
-        let full: Vec<f32> = if name == "(defaults)" {
-            Synth::new(SR).params.to_vec()
-        } else {
-            let p = PRESETS.iter().find(|p| p.name == name).unwrap_or_else(|| panic!("{name} is gone"));
-            p.values_before_range().to_vec()
-        };
-        // Saved with only the values there were then, loaded the way the host loads it
-        let mut s = Synth::new(SR);
-        s.params[..old_count].copy_from_slice(&full[..old_count]);
-        s.legacy(old_count);
-        let values = s.params.to_vec();
-        compare(name, &values, want, &mut worst, &mut problems);
+        compare(name, &range_values(name, old_count), want, &mut worst, &mut problems);
     }
     eprintln!("largest difference: {:.2e} ({})", worst.0, worst.1);
     assert!(problems.is_empty(), "{problems:#?}");
+}
+
+/// A case of legacy_sound.bin as a song saved before the per-note movement work loads it now
+fn legacy_values(name: &str, old_count: usize) -> Vec<f32> {
+    if name == "(defaults)" {
+        // An old saved sound without a preset: the defaults, as an old file has them, loaded
+        // the way the host loads one (only its values, then the old ones' settings)
+        let mut s = Synth::new(SR);
+        let old: Vec<f32> = s.params[..old_count].to_vec();
+        s.params[..old_count].copy_from_slice(&old);
+        s.legacy(old_count);
+        s.params.to_vec()
+    } else {
+        // (A song saved then has the preset as it was before the keyboard-range work changed it)
+        let p = PRESETS.iter().find(|p| p.name == name).unwrap_or_else(|| panic!("{name} is gone"));
+        p.values_before_range().to_vec()
+    }
+}
+
+/// A case of range_sound.bin as a sound saved before the keyboard-range work loads it now
+fn range_values(name: &str, old_count: usize) -> Vec<f32> {
+    let full: Vec<f32> = if name == "(defaults)" {
+        Synth::new(SR).params.to_vec()
+    } else {
+        let p = PRESETS.iter().find(|p| p.name == name).unwrap_or_else(|| panic!("{name} is gone"));
+        p.values_before_range().to_vec()
+    };
+    // Saved with only the values there were then, loaded the way the host loads it
+    let mut s = Synth::new(SR);
+    s.params[..old_count].copy_from_slice(&full[..old_count]);
+    s.legacy(old_count);
+    s.params.to_vec()
+}
+
+/// After a change meant to improve every sound, old ones included (finer wavetables, smoother
+/// levels): both files' numbers taken again from the engine as it is now, for the same cases
+/// loaded the same way, so from then on they hold the sounds to the new numbers.
+/// `cargo test --release --test legacy_sound -- --ignored rewrite_after_a_sound_change`
+#[test]
+#[ignore]
+fn rewrite_after_a_sound_change() {
+    for (path, values) in [(data_path(), legacy_values as fn(&str, usize) -> Vec<f32>), (range_path(), range_values)] {
+        let (old_count, before) = measured_at(&path);
+        let mut bytes: Vec<u8> = vec![];
+        bytes.extend_from_slice(&(old_count as u32).to_le_bytes());
+        bytes.extend_from_slice(&(before.len() as u32).to_le_bytes());
+        for (name, _) in &before {
+            bytes.extend_from_slice(&(name.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(name.as_bytes());
+            let f = fingerprint(&values(name, old_count), 140.0);
+            bytes.extend_from_slice(&(f.len() as u32).to_le_bytes());
+            for x in f {
+                bytes.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+        std::fs::write(&path, bytes).unwrap();
+    }
 }
 
 /// Render `values`, compare with the numbers measured before (within 0.1 % in every frame)

@@ -16,12 +16,36 @@ import { biquad, webAudioHighpass, webAudioLowpass } from './masterAfter';
 
 /** The shared reverb's input filters (busEffects.ts): a low cut, so the bass doesn't boom in the wash... */
 export const REVERB_LOW_CUT_HZ = 180;
-/** ...and a gentle damping of the highs. */
+/** ...and a gentle damping of the highs: the lush reverb's (each room style has its own: RoomDesign.damp). */
 export const REVERB_DAMP_HZ = 5500;
+/** The damping in front of a recorded room (its own walls already soak up its highs). */
+export const RECORDED_ROOM_DAMP_HZ = 10000;
 /** Their Q (Tone.Filter's default, which Web Audio reads in dB for these types). */
 export const REVERB_FILTER_Q = 1;
 /** The lush reverb's pre-delay (seconds). */
 export const LUSH_PRE_DELAY = 0.01;
+
+/**
+ * The gain after a damping at `hz` that keeps the reverb as loud as it was through REVERB_DAMP_HZ
+ * (once every style's damping): what a send of pink noise brings through the low cut and the
+ * damping, against what it brought through the old one. A brighter damping lets a little more
+ * through (half a dB at 11 kHz); this takes it back, so a room gets clearer, not louder.
+ */
+export function dampingMakeup(hz: number): number {
+  const q = 10 ** (REVERB_FILTER_Q / 20);
+  const power = (damp: number) => {
+    let sum = 0;
+    // Pink noise: the same power in every octave, so equal steps of log frequency, 20 Hz to 20 kHz
+    for (let i = 0; i <= 600; i++) {
+      const f = 20 * 1000 ** (i / 600);
+      const lo = f / damp;
+      const hi = REVERB_LOW_CUT_HZ / f;
+      sum += 1 / ((1 - lo * lo) ** 2 + (lo / q) ** 2) / ((1 - hi * hi) ** 2 + (hi / q) ** 2);
+    }
+    return sum;
+  };
+  return Math.sqrt(power(REVERB_DAMP_HZ) / power(hz));
+}
 
 /** The lush reverb's decay for the master reverb's decay setting (seconds). */
 export const lushDecay = (decay: number) => Math.max(0.8, Math.min(12, decay));

@@ -100,3 +100,42 @@ test('silence in, silence out, at any length (no block of its own)', () => {
     assert.ok(outL.every((v) => v === 0) && outR.every((v) => v === 0));
   }
 });
+
+test("each room style damps the highs where its room would, and the makeup keeps the reverb's level", async () => {
+  const { dampingMakeup, RECORDED_ROOM_DAMP_HZ } = await import('../src/audio/effects/lushAfter.ts');
+  // The lush reverb keeps the damping every style had (it runs at half the sample rate)
+  assert.equal(ROOM_STYLES.lush.damp, REVERB_DAMP_HZ);
+  assert.equal(dampingMakeup(REVERB_DAMP_HZ), 1);
+  // A plate keeps its shine, a church is the darkest
+  const damps = Object.values(ROOM_STYLES).map((s) => s.damp);
+  assert.equal(Math.max(...damps), ROOM_STYLES.plate.damp);
+  assert.ok(ROOM_STYLES.plate.damp >= 10000 && ROOM_STYLES.hall.damp >= 7000 && ROOM_STYLES.hall.damp <= 8000);
+  assert.ok(ROOM_STYLES.church.damp < ROOM_STYLES.hall.damp);
+  // Pink noise through the low cut, the damping and its makeup is as loud as through the old 5.5 kHz
+  const pinkish = (n) => {
+    const out = new Float32Array(n);
+    let s = 1;
+    const b = [0, 0, 0];
+    for (let i = 0; i < n; i++) {
+      s = (s * 16807) % 2147483647;
+      const w = s / 1073741823.5 - 1;
+      b[0] = 0.99765 * b[0] + w * 0.099;
+      b[1] = 0.963 * b[1] + w * 0.2965;
+      b[2] = 0.57 * b[2] + w * 1.0527;
+      out[i] = (b[0] + b[1] + b[2] + w * 0.1848) * 0.1;
+    }
+    return out;
+  };
+  const level = (hz) => {
+    const x = pinkish(SR * 4);
+    biquad(x, webAudioHighpass(REVERB_LOW_CUT_HZ, REVERB_FILTER_Q, SR));
+    biquad(x, webAudioLowpass(hz, REVERB_FILTER_Q, SR));
+    const g = dampingMakeup(hz);
+    return 10 * Math.log10(x.reduce((a, v) => a + v * v * g * g, 0));
+  };
+  const before = level(REVERB_DAMP_HZ);
+  for (const hz of [...damps, RECORDED_ROOM_DAMP_HZ]) {
+    assert.ok(dampingMakeup(hz) <= 1, `${hz}: never turned up`);
+    assert.ok(Math.abs(level(hz) - before) < 0.25, `${hz} Hz: ${(level(hz) - before).toFixed(2)} dB`);
+  }
+});

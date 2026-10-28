@@ -775,7 +775,14 @@ struct Voice {
     /// The level heard when a retrigger started (envelope, fade and gain): while the gain eases
     /// down, the new note never plays louder than this or than its own level
     carry: f32,
+    /// The levels reached at the end of the last stretch of CONTROL samples (oscillator A and B,
+    /// volume, pan left and right, sub, noise), each stretch ramping from them to its own, so a
+    /// modulated level moves smoothly rather than in steps (NaN: a new note, which starts on its own)
+    ramp: [f32; RAMPS],
 }
+
+/// How many levels a voice ramps across each stretch of CONTROL samples (see Voice::ramp)
+const RAMPS: usize = 7;
 
 impl Voice {
     fn new(sr: f32) -> Self {
@@ -819,6 +826,7 @@ impl Voice {
             dying: false,
             gain_now: -1.0,
             carry: 0.0,
+            ramp: [f32::NAN; RAMPS],
         }
     }
     fn release(&mut self) {
@@ -1420,6 +1428,7 @@ impl Synth {
         // (A retrigger of a sounding voice, mono say, carries on from its level and fade)
         if fresh || !was_active {
             v.fade = 1.0;
+            v.ramp = [f32::NAN; RAMPS];
         }
         // (The velocity's gain eases from the level that is heard; from a silent tail it snaps,
         // as a new note's does)
@@ -1835,8 +1844,27 @@ impl Synth {
                 let noise = cfg.noise * (1.0 + m[d::NOISE]).clamp(0.0, 2.0);
                 let pan = m[d::PAN].clamp(-1.0, 1.0);
                 let (pl, pr) = ((1.0 - pan).sqrt(), (1.0 + pan).sqrt());
+                // Each level ramps from where the last stretch left it to this one's, a step a
+                // sample (a level that jumped every CONTROL samples buzzed under a fast LFO)
+                let target = [gains[0], gains[1], vol, pl, pr, sub_gain, noise];
+                let mut now = target;
+                let mut step = [0.0f32; RAMPS];
+                for k in 0..RAMPS {
+                    if v.ramp[k].is_finite() {
+                        now[k] = v.ramp[k];
+                        step[k] = (target[k] - now[k]) / n_here;
+                    }
+                }
+                v.ramp = target;
+                let sub_on = sub_gain > 0.0 || now[5] > 0.0;
+                let noise_on = noise > 0.0 || now[6] > 0.0;
 
                 for n in start..end {
+                    for k in 0..RAMPS {
+                        now[k] += step[k];
+                    }
+                    let [gain_a, gain_b, vol, pl, pr, sub_gain, noise] = now;
+                    let gains = [gain_a, gain_b];
                     // Glide and the pitch envelope move per sample
                     // (Kept as a shrinking offset: small numbers keep their precision, so a long
                     // glide arrives in tune rather than stalling a few cents short)
@@ -1918,7 +1946,7 @@ impl Synth {
                         send(&mut bus, oc.route, acc[0] * gains[o], acc[1] * gains[o]);
                     }
                     v.last_a = first_a;
-                    if noise > 0.0 {
+                    if noise_on {
                         let nz = self.rng.bipolar() * noise * noise_k;
                         send(&mut bus, cfg.noise_route, nz, nz);
                     }
@@ -1959,7 +1987,7 @@ impl Synth {
                     }
                     // The sub: a sine under it all, clean (no filter, no drive) and in the middle
                     let mut sub = 0.0;
-                    if sub_gain > 0.0 {
+                    if sub_on {
                         sub = (2.0 * std::f32::consts::PI * v.sub_phase).sin() * sub_gain * 0.5;
                         v.sub_phase += sub_inc;
                         if v.sub_phase >= 1.0 {

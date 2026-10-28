@@ -51,7 +51,7 @@ fn no_step_where_the_table_changes_octave() {
     };
     let (old, even) = (worst(false), worst(true));
     eprintln!("largest air step between 5-cent neighbours: {old:.2} dB stepped, {even:.2} dB even");
-    assert!(old > 3.0, "the old step: {old:.2} dB");
+    assert!(old > 2.0, "the old step: {old:.2} dB");
     assert!(even < 0.6, "the largest step with Even keyboard: {even:.2} dB (old {old:.2})");
 }
 

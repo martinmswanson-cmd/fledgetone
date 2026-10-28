@@ -4,7 +4,8 @@ Fledgetone's own synthesizer, written in Rust. The same engine builds to WebAsse
 browser (the studio loads `public/fledgetone-plugins/fledge.wasm` through its plugin host) and
 as a Rust library for a future desktop app.
 
-- Two wavetable oscillators (tables generated from formulas, band-limited per octave, or a user
+- Two wavetable oscillators (tables generated from formulas, band-limited per octave and kept at
+  32 samples a period of their top harmonic, so the linear reads stay over 70 dB clean, or a user
   table made from a sound: `fledge_table_buffer` / `fledge_table_set`, see
   src/audio/plugins/userTable.ts), each with up to 16 unison voices, detune, blend and stereo width; FM from B to A, a sine sub and noise
 - Filters: 12 and 24 dB low-pass, ladder, band-pass, high-pass, notch, comb (+/−) and formant
@@ -51,6 +52,10 @@ band balance (presence and air, the low end's width, the sharpest narrow peak); 
 note's tone in harmonics, loudness, sub and width, and the largest jump between neighbours.
 `tests/legacy_sound.rs` also holds every preset and a fresh synth as saved before the
 keyboard-range work (`tests/data/range_sound.bin`).
+A change meant to make every sound better, older ones too (the finer wavetables; each voice's
+levels, pan, sub and noise ramping a sample at a time instead of stepping every 16 samples), takes
+both files' numbers again: `cargo test --release --test legacy_sound -- --ignored
+rewrite_after_a_sound_change`.
 
 ## Build
 

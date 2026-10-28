@@ -4,7 +4,7 @@ import { createLightPingPong, type LightPingPong } from './lightFx';
 import { decodeSound } from '../soundLibrary';
 import { ROOM_STYLES, roomChannels, type RoomStyle } from './roomIR';
 import { LUSH_PROCESSOR, LUSH_WORKLET_SOURCE } from './lushReverb';
-import { LUSH_PRE_DELAY, lushDecay, REVERB_DAMP_HZ, REVERB_FILTER_Q, REVERB_LOW_CUT_HZ } from './lushAfter';
+import { dampingMakeup, LUSH_PRE_DELAY, lushDecay, RECORDED_ROOM_DAMP_HZ, REVERB_DAMP_HZ, REVERB_FILTER_Q, REVERB_LOW_CUT_HZ } from './lushAfter';
 import { createWorkletNode, loadWorklet } from '../worklets';
 
 /**
@@ -64,9 +64,11 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     feedback: Math.max(0, Math.min(0.8, fx.delayFeedback)),
   });
 
-  // What goes into the hall is low-cut and damped above 5.5 kHz, as a real room soaks up the top:
+  // What goes into the hall is low-cut and damped in the highs, as a real room soaks up the top:
   // the reverb's own impulse is full-band noise, which kept bright parts' hiss in the tail and
-  // the bass's boom in the wash
+  // the bass's boom in the wash. Each style damps where its room would (RoomDesign.damp: a
+  // plate keeps its shine, a church is dark), and the convolver's feed makes up what a brighter
+  // damping lets through, so the room is as loud as when every style damped at 5.5 kHz
   const lowCut = new Tone.Filter({ type: 'highpass', frequency: REVERB_LOW_CUT_HZ, Q: REVERB_FILTER_Q, rolloff: -12 });
   const damp = new Tone.Filter({ type: 'lowpass', frequency: REVERB_DAMP_HZ, Q: REVERB_FILTER_Q, rolloff: -12 });
   // Each reverb has its own level, for the crossfade between them. The convolvers are fed from
@@ -147,8 +149,20 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     ringing = entry;
   };
 
+  /** The damping in front of the room, and its makeup (see RoomDesign.damp). */
+  const setDamping = (hz: number) => {
+    const at = context.now();
+    if (context.isOffline || context.state !== 'running') {
+      damp.frequency.setValueAtTime(hz, at);
+      convIn.gain.setValueAtTime(dampingMakeup(hz), at);
+    } else {
+      damp.frequency.rampTo(hz, 0.05, at);
+      convIn.gain.rampTo(dampingMakeup(hz), 0.05, at);
+    }
+  };
   // The generated room (roomIR.ts): designed for its style
   const designed = (style: RoomStyle | undefined, decay: number) => {
+    setDamping(ROOM_STYLES[style ?? 'hall']?.damp ?? REVERB_DAMP_HZ);
     const rate = context.sampleRate;
     const [l, r] = roomChannels(style ?? 'hall', designedDecay(decay), rate);
     const buffer = context.createBuffer(2, l.length, rate);
@@ -169,7 +183,10 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     setLush(false);
     try {
       const buffer = roomImpulse(await decodeSound(recorded, context.sampleRate), context);
-      if (token === roomToken) setImpulse(buffer);
+      if (token === roomToken) {
+        setDamping(RECORDED_ROOM_DAMP_HZ);
+        setImpulse(buffer);
+      }
     } catch {
       // Not in this browser any more: the generated room stands in
       if (token === roomToken) designed(current.roomStyle, current.reverbDecay);
@@ -235,6 +252,8 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
     clearTimeout(fadeTimer);
     const fade = context.state === 'running' ? 0.25 : 0;
     if (on) {
+      // (The lush reverb runs at half the sample rate, on what's under its damping)
+      setDamping(REVERB_DAMP_HZ);
       if (!lush) {
         lush = createWorkletNode(context, LUSH_PROCESSOR, {
           numberOfInputs: 1,
