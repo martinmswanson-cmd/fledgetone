@@ -1127,8 +1127,9 @@ pub const PRESETS: &[Preset] = &[
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.4),
             ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.5),
-            ("EQ on", 1.0), ("EQ high", 4.0), ("EQ high freq", 4500.0),
-            ("OTT", 0.35), ("Level", -4.8),
+            // (The low mids eased: the clip's low harmonics stood thick around 200 Hz under a mix)
+            ("EQ on", 1.0), ("EQ high", 4.0), ("EQ high freq", 4500.0), ("EQ mid", -3.0), ("EQ mid freq", 220.0),
+            ("OTT", 0.35), ("Level", -4.3),
         ],
     },
     Preset {
@@ -1153,8 +1154,9 @@ pub const PRESETS: &[Preset] = &[
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", A_DETUNE), ("Mod 6 amount", 0.5),
             ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.4),
-            ("EQ on", 1.0), ("EQ high", 4.0), ("EQ high freq", 4500.0),
-            ("OTT", 0.35), ("Width", 0.6), ("Level", 1.3),
+            // (The low mids eased: the clip's low harmonics stood thick around 200 Hz under a mix)
+            ("EQ on", 1.0), ("EQ high", 4.0), ("EQ high freq", 4500.0), ("EQ mid", -3.0), ("EQ mid freq", 220.0),
+            ("OTT", 0.35), ("Width", 0.6), ("Level", 2.1),
         ],
     },
     Preset {
@@ -1204,7 +1206,10 @@ pub const PRESETS: &[Preset] = &[
             ("Mod 5 source", M1), ("Mod 5 target", CUTOFF), ("Mod 5 amount", 0.4),
             ("Mod 6 source", M2), ("Mod 6 target", A_POS), ("Mod 6 amount", 0.3),
             ("Mod 7 source", M3), ("Mod 7 target", DRIVE), ("Mod 7 amount", 0.4),
-            ("OTT", 0.3), ("Width", 0.8), ("Level", -4.0),
+            // The low mids taken down: the drive's second and third harmonics of every low note
+            // piled up around 200 Hz (a mix with this bass stood 4 to 8 dB hot there)
+            ("EQ on", 1.0), ("EQ mid", -6.0), ("EQ mid freq", 210.0),
+            ("OTT", 0.3), ("Width", 0.8), ("Level", -2.8),
         ],
     },
     // ---------- A melodic song's sounds: a singing lead, the stack and wash under it, a held bass, chops, a glass pluck, a reverse swell ----------
