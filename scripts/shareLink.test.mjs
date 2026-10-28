@@ -150,3 +150,10 @@ test("a clip on a track with Human on keeps its id in the link (each note's drif
   assert.notEqual(back.clips.find((c) => c.name === 'Low').id, 'clip-b');
   assert.deepEqual(canon(back), canon(song));
 });
+
+test('notes that start together keep their order in the clip (Human drifts them together by the first one)', async () => {
+  const chord = [note('h', 'F#1', 0, '16n'), note('k', 'C1', 0, '16n'), note('g', 'G3', 0.25), note('c', 'C4', 0.25), note('e', 'E4', 0.25)];
+  const song = { ...SONG, clips: [{ ...SONG.clips[0], notes: chord }] };
+  const back = await projectFromHash(await songLink(song, ''));
+  assert.deepEqual(back.clips[0].notes.map((n) => n.note), ['F#1', 'C1', 'G3', 'C4', 'E4']);
+});

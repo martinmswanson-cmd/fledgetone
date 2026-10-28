@@ -207,7 +207,8 @@ type WithoutNotes<T> = Omit<T, 'notes'> & { notes?: undefined; x?: Array<[number
 
 /**
  * The song as a link carries it: settings at their defaults left out, notes as bytes. Each clip's
- * (then each stinger's) notes in time order, four numbers each: how far after the one before (in
+ * (then each stinger's) notes in time order (notes at the same time in the clip's own order: the
+ * Human insert drifts them together by the first one, see scheduler.ts), four numbers each: how far after the one before (in
  * ticks), which pitch and which length (from the song's lists of them), and the velocity in
  * hundredths. A note's own expression stays in the JSON, by the note's place in that order, and
  * so does its chance and condition (`y`: { chance?, cond? }; see noteChance.ts).
@@ -221,7 +222,7 @@ function pack(data: Data): Uint8Array<ArrayBuffer> {
   };
   const bytes = new Bytes();
   const lessNotes = <T extends { notes: Note[] }>(owner: T): WithoutNotes<T> => {
-    const notes = owner.notes.map((n) => ({ n, ticks: Math.round(n.startOffset * LINK_TICKS) })).sort((a, b) => a.ticks - b.ticks || a.n.note.localeCompare(b.n.note));
+    const notes = owner.notes.map((n) => ({ n, ticks: Math.round(n.startOffset * LINK_TICKS) })).sort((a, b) => a.ticks - b.ticks);
     bytes.uint(notes.length);
     let last = 0;
     const expr: Array<[number, unknown]> = [];

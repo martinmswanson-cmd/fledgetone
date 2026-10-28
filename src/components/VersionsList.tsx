@@ -18,6 +18,7 @@ const WHY: Record<VersionInfo['why'], string> = {
   editing: '',
   replaced: 'before another song opened',
   restore: 'before going back to a version',
+  otherTab: 'from another tab',
 };
 
 const summary = (v: VersionInfo) =>

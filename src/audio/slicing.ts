@@ -97,6 +97,42 @@ export function sliceEnd(slices: readonly number[], i: number, end: number): num
   return i + 1 < slices.length ? slices[i + 1] : end;
 }
 
+/**
+ * The Slicer's settings with a slice cut at `at` seconds (in the sound): slices played backwards
+ * keep playing backwards (the one cut in two: its first part), as do the ones after, one place on.
+ */
+export function withSliceAt<S extends { slices: number[]; reversed?: number[] }>(s: S, at: number): S {
+  const slices = [...s.slices, at].sort((a, b) => a - b);
+  const added = slices.indexOf(at);
+  return withReversed({ ...s, slices }, s.reversed?.map((i) => (i >= added ? i + 1 : i)));
+}
+
+/** The Slicer's settings without the cut at slice `i` (it joins the slice before): played backwards, it plays forwards again. */
+export function withoutSlice<S extends { slices: number[]; reversed?: number[]; focus: number }>(s: S, i: number): S {
+  const slices = s.slices.filter((_, k) => k !== i);
+  return withReversed({ ...s, slices, focus: Math.min(s.focus, slices.length - 1) }, s.reversed?.filter((k) => k !== i).map((k) => (k > i ? k - 1 : k)));
+}
+
+/**
+ * Slices cut again (a change of mode, count or sensitivity): each one that played backwards is
+ * now the slice its start falls in.
+ */
+export function reversedAfterRecut<S extends { slices: number[]; reversed?: number[] }>(before: Pick<S, 'slices' | 'reversed'>, after: S): S {
+  if (!before.reversed?.length) return after;
+  const indexAt = (t: number) => {
+    let i = 0;
+    while (i + 1 < after.slices.length && after.slices[i + 1] <= t + 1e-9) i++;
+    return i;
+  };
+  const starts = before.reversed.filter((i) => i < before.slices.length).map((i) => before.slices[i]);
+  return withReversed(after, [...new Set(starts.map(indexAt))].sort((a, b) => a - b));
+}
+
+function withReversed<S extends { reversed?: number[] }>(s: S, reversed: number[] | undefined): S {
+  const { reversed: _old, ...rest } = s;
+  return (reversed?.length ? { ...rest, reversed } : rest) as S;
+}
+
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const NOTE_OFFSETS: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 

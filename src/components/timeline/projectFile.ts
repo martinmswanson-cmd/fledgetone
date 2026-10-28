@@ -63,7 +63,7 @@ const sameSong = (song: number) => {
  * The project file's contents: the arrangement and the sounds it plays (and the reference video,
  * when small enough), of the song open when the save began (`song`).
  */
-async function projectBlob(song: number): Promise<Blob> {
+async function projectBlob(song: number): Promise<{ blob: Blob; missing: number }> {
   // The plugins' latest settings first (they reach the tracks every few seconds otherwise)
   await captureWamStates();
   // A song opened meanwhile (New, Open, a dropped file) must never be written into this one's file
@@ -71,21 +71,28 @@ async function projectBlob(song: number): Promise<Blob> {
   const project = currentProject();
   // (Both read the song now, before anything else can be opened)
   const video = projectVideoForFile();
-  const sounds = await embedSounds(referencedSoundIds(project));
-  return new Blob([JSON.stringify(serializeProject({ ...project, sounds, video: await video }), null, 2)], { type: 'application/json' });
+  const ids = referencedSoundIds(project);
+  const sounds = await embedSounds(ids);
+  // (Sounds this browser no longer has, freed or lost: the file opens without them, so Save says so)
+  return { blob: new Blob([JSON.stringify(serializeProject({ ...project, sounds, video: await video }), null, 2)], { type: 'application/json' }), missing: ids.length - sounds.length };
 }
+
+/** What a save message adds when sounds couldn't go in the file ('' when they all did). */
+const missingNote = (missing: number) =>
+  missing ? ` But ${missing === 1 ? '1 sound the song uses isn’t' : `${missing} sounds the song uses aren’t`} in this browser any more, so the file doesn't have ${missing === 1 ? 'it' : 'them'}: those clips will be silent when it's opened.` : '';
 
 const fileName = () => `${safeFileName(currentProject().name)}.fledgetone.json`;
 
-/** Write the project into `handle` (asking for permission again if the browser dropped it). */
-async function writeTo(handle: FileHandle, song: number): Promise<void> {
+/** Write the project into `handle` (asking for permission again if the browser dropped it). Resolves to how many sounds couldn't go in. */
+async function writeTo(handle: FileHandle, song: number): Promise<number> {
   if (handle.queryPermission && (await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') {
     if ((await handle.requestPermission?.({ mode: 'readwrite' })) !== 'granted') throw new Error('the browser was not allowed to write to the file');
   }
-  const blob = await projectBlob(song);
+  const { blob, missing } = await projectBlob(song);
   const out = await handle.createWritable();
   await out.write(blob);
   await out.close();
+  return missing;
 }
 
 /**
@@ -97,8 +104,8 @@ export async function saveProjectFile(): Promise<void> {
   const { handle } = useProjectFile.getState();
   if (handle) {
     try {
-      await writeTo(handle, song);
-      showToast(`Saved to ${handle.name}`);
+      const missing = await writeTo(handle, song);
+      showToast(`Saved to ${handle.name}.${missingNote(missing)}`);
       return;
     } catch (err) {
       // (Another song open now: its file and its saving are its own)
@@ -127,10 +134,11 @@ async function saveAs(song: number): Promise<void> {
   const pick = pickers().showSaveFilePicker;
   if (!pick) {
     const name = fileName();
-    const saved = await saveBlobFile(await projectBlob(song), name);
+    const { blob, missing } = await projectBlob(song);
+    const saved = await saveBlobFile(blob, name);
     // (The app hands it to the share sheet: saved to Files or Drive, or sent, unless it was closed)
-    if (isNativeApp()) showToast(saved ? `Sent ${name} to the app you picked` : "The share sheet closed: if you didn't pick an app, it wasn't saved");
-    else showToast('Downloaded the project file (this browser saves to its downloads folder: Chrome or Edge on a computer can choose where)');
+    if (isNativeApp()) showToast(saved ? `Sent ${name} to the app you picked.${missingNote(missing)}` : "The share sheet closed: if you didn't pick an app, it wasn't saved");
+    else showToast(`Downloaded the project file (this browser saves to its downloads folder: Chrome or Edge on a computer can choose where).${missingNote(missing)}`);
     return;
   }
   let handle: FileHandle;
@@ -141,7 +149,7 @@ async function saveAs(song: number): Promise<void> {
     if (err instanceof DOMException && err.name === 'AbortError') return; // cancelled
     throw err;
   }
-  await writeTo(handle, song);
+  const missing = await writeTo(handle, song);
   // (Another song opened while it wrote: the file holds the song that was saved, and the open
   // one isn't tied to it)
   if (songGeneration() !== song) {
@@ -149,7 +157,7 @@ async function saveAs(song: number): Promise<void> {
     return;
   }
   useProjectFile.setState({ handle });
-  showToast(`Saved to ${handle.name}. Save (${navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+'}S) now keeps it up to date`);
+  showToast(`Saved to ${handle.name}. Save (${navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+'}S) now keeps it up to date.${missingNote(missing)}`);
 }
 
 /** Open a .fledgetone.json file. Returns why it couldn't (or what of it couldn't be read), or null. */

@@ -699,7 +699,7 @@ export function writeAutosave(p: ProjectSnapshot): AutosaveResult {
   // The session the banner offers is stored only in the autosave: keep it until Restore or Dismiss
   if (offeringPrevious && previousOnlyInAutosave) return { ok: false, reason: 'full' };
   if (unreadableOnlyCopy) return { ok: false, reason: 'full' };
-  const json = JSON.stringify(packForStorage({ ...serializeProject(p), savedAt: Date.now() }));
+  const json = JSON.stringify(packForStorage({ ...serializeProject(p), savedAt: Date.now(), tab: TAB_ID }));
   const failure = storeAutosave(json);
   if (failure !== 'too-big') return failure ? { ok: false, reason: failure } : { ok: true };
 
@@ -743,6 +743,19 @@ function storeAutosave(json: string): 'too-big' | 'blocked' | null {
 function readStored(key: string): string | null {
   try {
     return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The song the browser's autosave holds now, or null (none, or unreadable). With the app open in
+ * more than one tab it may be another tab's song: "Free unused" keeps its sounds too.
+ */
+export function storedAutosave(): ProjectSnapshot | null {
+  try {
+    const json = readStored(AUTOSAVE_KEY);
+    return json ? parseProject(unpackStored(JSON.parse(json))) : null;
   } catch {
     return null;
   }
@@ -885,6 +898,32 @@ export function autosaveRemovedBy(e: StorageEvent): 'autosave' | 'previous' | nu
   if (e.newValue !== null) return null;
   if (e.key === AUTOSAVE_KEY) return 'autosave';
   return e.key === PREVIOUS_SESSION_KEY ? 'previous' : null;
+}
+
+/**
+ * This page's id, written into each autosave it makes (`tab`, ignored by project parsing). The app
+ * open in two tabs shares one autosave: a write that isn't this page's is another tab's (a reload
+ * is a new page, but it writes no autosave before its first edit, so its old one is never "another tab's").
+ */
+const TAB_ID = newSongId();
+
+/** The autosave another tab just wrote (a `storage` event's new value), or null when the event is about something else. */
+export function autosaveWrittenBy(e: StorageEvent): string | null {
+  return e.key === AUTOSAVE_KEY && e.newValue !== null ? e.newValue : null;
+}
+
+/**
+ * The song in an autosave another tab wrote (see autosaveWrittenBy), or null: none (this page's
+ * own, or unreadable). Read before this page's next autosave writes over it.
+ */
+export function songFromAnotherTab(json: string): ProjectSnapshot | null {
+  try {
+    const raw: unknown = JSON.parse(json);
+    if (isObj(raw) && raw.tab === TAB_ID) return null;
+    return parseProject(unpackStored(raw));
+  } catch {
+    return null;
+  }
 }
 
 /** File-system-safe base name for downloads. */
