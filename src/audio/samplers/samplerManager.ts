@@ -14,7 +14,7 @@ import { recordingBytes } from '../recordingStore';
 import { useAudioStore } from '../../store/audioStore';
 import type { CustomSample, NoteEvent } from '../../store/timelineTypes';
 import { alwaysStereo, keepActive, nativeContextOf, nativeInputOf } from '../nativeNodes';
-import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTLINE_STEP, planRingOn, planSustain, removeDc, ringOn } from './recordingMaths';
+import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTLINE_STEP, planRingOn, planSustain, removeDc, RING_MOST, ringOn } from './recordingMaths';
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { expressiveCutoff, OPEN_CUTOFF } from './velocityTone';
@@ -768,9 +768,6 @@ function extendSustain(buffer: Tone.ToneAudioBuffer, { from, to, hold }: { from:
   if (plan.loop) loopsOf.set(out, [plan.loop[0] / sr, plan.loop[1] / sr]);
   return new Tone.ToneAudioBuffer(out);
 }
-
-/** The longest a cut-off recording is rung on to (seconds), as a held one is lengthened to (SOUNDFONT_SUSTAIN). */
-const RING_MOST = 10;
 
 /**
  * A recording cut off while it still sounds (a General MIDI soundfont note: they all end at 3.1 s)

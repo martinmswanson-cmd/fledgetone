@@ -11,6 +11,8 @@ export interface SampleCredit {
   samples: string;
   /** The licence (Markdown) */
   licence: string;
+  /** A file next to the hosted recordings (public/fledgetone-samples/) with the licence's full text, where it asks to be kept with them */
+  licenceFile?: string;
 }
 
 const CC_BY = '[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)';
@@ -156,6 +158,7 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     prefixes: [`${HOSTED}retro-taiko/`],
     samples: 'The retro taiko drums, rendered afresh with [FluidSynth](https://www.fluidsynth.org) from the FluidR3 GM SoundFont by Frank Wen (converted to MP3, hosted with the app)',
     licence: FLUID_MIT,
+    licenceFile: 'FluidR3-LICENSE.txt',
   },
   { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/MusyngKite/'], samples: `Musyng Kite SoundFont by Cose V. (SynthFont Viena), rendered by ${GLEITZ}`, licence: CC_BY_SA },
   { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/'], samples: `FluidR3 GM SoundFont by Frank Wen, rendered by ${GLEITZ}`, licence: FLUID_MIT },

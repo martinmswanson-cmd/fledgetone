@@ -44,6 +44,12 @@ export const ROW_LOUDNESS: Record<DesignRow, number> = {
 export const DRUM_CEILING = 0.95;
 /** The longest a hit lasts, seconds. */
 export const MAX_HIT_SECONDS = 3.5;
+/**
+ * Goes up whenever the same design renders differently (2: the hats, cymbals and shakers in
+ * stereo, renderDrumStereo), so a Designed Kit or synthesized kit frozen before plays live again
+ * and freezes afresh (see store/freeze.ts).
+ */
+export const DRUM_RENDER_VERSION = 2;
 
 /**
  * A state-variable filter (the zero-delay "TPT" form): low, band and high at once, stable while

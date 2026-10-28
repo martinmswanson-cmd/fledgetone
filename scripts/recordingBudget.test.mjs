@@ -19,6 +19,7 @@ register(
 const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
 const { HOSTED_SETS } = await import('../src/audio/hostedSets.ts');
 const { setBytes, decodedBytes, fileBytesOf, setDecodedBytes } = await import('../src/audio/samplers/setSizes.ts');
+const { RING_MOST } = await import('../src/audio/samplers/recordingMaths.ts');
 const { SET_LEVELS, evenLevels, EVEN_MOST_DB } = await import('../src/audio/samplers/setLevels.ts');
 const { indexRecordings, quickSamples, SPARSE_QUICK, STRETCH_SEMITONES, chooseExportDecodes, lowMemoryDevice } = await import('../src/audio/samplers/songSamples.ts');
 
@@ -49,6 +50,19 @@ test("a set's decoded size is estimated on the safe side (the grand piano measur
   const whole = decodedBytes(s, notes, 48000);
   assert.ok(whole >= 1.45e9 && whole < 2e9, String(whole));
   assert.ok(Math.abs(decodedBytes(s, notes, 96000) - 2 * whole) < 1);
+});
+
+test("a soundfont's note is reckoned at the length it's rung on or held to as it loads, in stereo (struck ones were 3.1 s, now up to 10)", () => {
+  for (const key of ['timpani', 'celesta', 'violin', 'choir']) {
+    const s = INSTRUMENTS[key].samples;
+    assert.ok(s.ringOn || s.sustain, key);
+    const one = decodedBytes(s, [Object.keys(s.samples)[0]], 48000);
+    assert.ok(one >= Math.max(RING_MOST, s.sustain?.hold ?? 0) * 48000 * 4 * 2, `${key}: ${one}`);
+  }
+  // A recording that isn't lengthened keeps the old estimate
+  const harp = INSTRUMENTS.harp.samples;
+  assert.ok(!harp.ringOn && !harp.sustain);
+  assert.equal(decodedBytes(harp, [Object.keys(harp.samples)[0]], 48000), 60e3 * 48);
 });
 
 test("a big set's first recordings: a few, every note within stretching distance of one", () => {

@@ -13,3 +13,15 @@ test('the samples README is in step with the credits', () => {
 test('a folder with no credit is an error, not left out', () => {
   assert.throws(() => samplesReadme(['flute', 'a-new-set']), /a-new-set/);
 });
+
+test('a licence that asks for its text to go with the files has it next to them, and the README says where', async () => {
+  const { SAMPLE_CREDITS } = await import('../src/credits.ts');
+  const withFile = SAMPLE_CREDITS.filter((c) => c.licenceFile);
+  assert.ok(withFile.length >= 1);
+  for (const { licenceFile } of withFile) {
+    const text = readFileSync(new URL(licenceFile, `file://${README}`), 'utf8');
+    assert.match(text, /Copyright/);
+    assert.match(text, /The above copyright notice and this permission notice shall be included/);
+    assert.ok(readFileSync(README, 'utf8').includes(`Licence text: ${licenceFile}`));
+  }
+});

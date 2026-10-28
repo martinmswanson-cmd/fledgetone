@@ -53,6 +53,7 @@ export function samplesReadme(folders = readdirSync(DIR, { withFileTypes: true }
     if (!sets.length) continue;
     sets.forEach((s) => listed.add(s));
     out.push('', wrap(`${sets.join(', ')}:`, '  '), `  ${wrap(plain(credit.samples), '  ', 98)}`, `  Licence: ${wrap(plain(credit.licence), '    ', 89)}`);
+    if (credit.licenceFile) out.push(`  Licence text: ${credit.licenceFile}, next to this file`);
   }
   const missing = folders.filter((f) => !listed.has(f));
   if (missing.length) throw new Error(`no credit for ${missing.join(', ')} (add it to src/credits.ts)`);
