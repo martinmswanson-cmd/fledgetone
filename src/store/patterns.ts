@@ -16,6 +16,9 @@ export const canLink = (c: Clip): boolean => !c.audio && !c.takes?.length;
 
 const sameContent = (a: Clip, b: Clip) => SHARED.every((k) => a[k] === b[k]);
 
+/** A shared field as text, its notes without their ids (browser storage and links give each copy new ones). */
+const readAlike = (c: Clip, k: (typeof SHARED)[number]) => JSON.stringify(k === 'notes' ? c.notes.map(({ id: _id, ...n }) => n) : c[k]);
+
 /**
  * Linked clips as read from a file (or a link, or a starter): each member parsed its own copy of
  * the notes, lanes and groove, so they share nothing by reference and an undo that brings one back
@@ -31,7 +34,7 @@ export function shareLinkedContent(clips: Clip[]): Clip[] {
       first.set(c.pattern, c);
       return c;
     }
-    if (sameContent(lead, c) || !SHARED.every((k) => JSON.stringify(lead[k]) === JSON.stringify(c[k]))) return c;
+    if (sameContent(lead, c) || !SHARED.every((k) => readAlike(lead, k) === readAlike(c, k))) return c;
     changed = true;
     return { ...c, ...Object.fromEntries(SHARED.filter((k) => k in lead).map((k) => [k, lead[k]])) } as Clip;
   });

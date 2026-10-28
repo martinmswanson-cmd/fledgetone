@@ -152,11 +152,18 @@ async function saveAs(song: number): Promise<void> {
   showToast(`Saved to ${handle.name}. Save (${navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl+'}S) now keeps it up to date`);
 }
 
-/** Open a .fledgetone.json file. Returns why it couldn't, or null. */
+/** Open a .fledgetone.json file. Returns why it couldn't (or what of it couldn't be read), or null. */
 export async function openProjectFromFile(file: File, handle: FileHandle | null = null): Promise<string | null> {
   try {
     const project = parseProject(JSON.parse(await file.text()));
     useTimelineStore.getState().loadProject(project);
+    // Parts of the file this version couldn't read are left out: Save mustn't write over the file
+    // without them, so it asks for a new one
+    if (project.unread) {
+      const { tracks, clips } = project.unread;
+      const what = [tracks ? `${tracks} track${tracks === 1 ? '' : 's'}` : '', clips ? `${clips} clip${clips === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+      return `Opened ${file.name} without ${what} this version of Fledgetone can't read (the file may be from a newer version). Save will ask for a new file, so the original stays as it is.`;
+    }
     // (After loading: loading another song forgets the file it saved to)
     if (handle) useProjectFile.setState({ handle });
     return null;

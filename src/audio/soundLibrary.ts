@@ -244,6 +244,26 @@ export function forgetDecodedSounds(keep: Set<string>): number {
 }
 
 /**
+ * Sound files from an opened project that aren't in the library: while they're being stored, or
+ * for good when the browser won't keep them (its storage full or blocked). Playing and saving use
+ * these meanwhile, so a Save straight after Open, or in a browser that keeps nothing, still has
+ * every sound the file had.
+ */
+const unstored = new Map<string, EmbeddedSound>();
+
+/** A sound's file: from the library, else from an opened project that carried it (undefined: neither has it). */
+async function soundData(id: string): Promise<Blob | undefined> {
+  try {
+    const data = await readStoredData(id);
+    if (data) return data;
+  } catch {
+    // Storage blocked: an opened project may still have it
+  }
+  const carried = unstored.get(id);
+  return carried ? (await fetch(`data:${carried.type || 'application/octet-stream'};base64,${carried.data}`)).blob() : undefined;
+}
+
+/**
  * Sounds that live only in memory, never in the library or a project file: auto-freeze's renders
  * (see autoFreeze.ts). Audio clips play them like any other sound, at the rate they were made at.
  */
@@ -285,7 +305,7 @@ export function decodeSound(id: string, sampleRate: number): Promise<AudioBuffer
   let promise = decoded.get(key);
   if (!promise) {
     promise = (async () => {
-      const data = await readStoredData(id);
+      const data = await soundData(id);
       if (!data) {
         setStatus(id, 'missing');
         throw new SoundError('This sound is not in this browser any more.');
@@ -604,7 +624,10 @@ export async function importSoundFile(file: Blob, name: string, maxBytes = MAX_S
       stored = await readStoredMeta(id);
       meta = stored ?? { id, name, type, size: data.size, seconds: buffer.duration };
       if (!stored) await writeStoredSound(meta, data);
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+        throw new SoundError(`There's no room left in this browser to keep "${name}". "Free unused", under an Audio or Sampler track's settings, makes room.`);
+      }
       throw new SoundError("Your browser is blocking storage for this site, so sounds can't be kept. Check the site's permissions (or leave private browsing).");
     }
   }
@@ -644,6 +667,12 @@ const base64Of = (data: Blob): Promise<string> =>
 export async function embedSounds(ids: readonly string[]): Promise<EmbeddedSound[]> {
   const sounds: EmbeddedSound[] = [];
   for (const id of ids) {
+    // (One an opened project carried that isn't stored yet, or can't be: as the project had it)
+    const carried = unstored.get(id);
+    if (carried) {
+      sounds.push(carried);
+      continue;
+    }
     try {
       const meta = useSoundLibrary.getState().metas[id] ?? (await readStoredMeta(id));
       const data = meta && (await readStoredData(id));
@@ -665,6 +694,7 @@ export function importEmbeddedSounds(sounds: readonly EmbeddedSound[]): Promise<
     const { data: _data, ...meta } = sound;
     setMeta(meta);
     if (soundStatus(sound.id) !== 'ready') setStatus(sound.id, 'loading');
+    unstored.set(sound.id, sound);
   }
   return (async () => {
     for (const sound of sounds) {
@@ -674,8 +704,10 @@ export function importEmbeddedSounds(sounds: readonly EmbeddedSound[]): Promise<
           const blob = await (await fetch(`data:${meta.type || 'application/octet-stream'};base64,${data}`)).blob();
           await writeStoredSound(meta, blob);
         }
+        unstored.delete(meta.id);
       } catch {
-        // Storage blocked, or the data isn't base64: the sound stays missing
+        // Storage full or blocked: it plays and saves from the project's copy (or, if the data
+        // isn't base64, stays missing)
       }
       await prepareSound(meta.id);
     }

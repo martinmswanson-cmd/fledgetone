@@ -254,6 +254,9 @@ test('a project refers to each sound once, whichever tracks and clips use it', (
     tracks: [{ sample: { soundId: 'x' } }, { sample: { dataUrl: 'data:' } }, { slicer: { soundId: 'z' } }, {}],
   });
   assert.deepEqual(ids, ['x', 'y', 'z']);
+  // A clip launcher slot's audio counts too (saved in the file, never freed as unused)
+  const slots = [{ scene: 0, clip: { name: 'Loop', lengthBars: 1, notes: [], audio: { soundId: 'w', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0, reversedFrom: 'v' } } }, { scene: 1, clip: { name: 'Notes', lengthBars: 1, notes: [] } }];
+  assert.deepEqual(referencedSoundIds({ clips: [], tracks: [{ slots }] }), ['w', 'v']);
   assert.equal(clipNameFromFile('take 3.wav'), 'take 3');
   assert.equal(clipNameFromFile('Vocal.Chop.FLAC'), 'Vocal.Chop');
   assert.equal(clipNameFromFile('  '), 'Audio');

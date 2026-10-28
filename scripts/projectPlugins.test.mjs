@@ -72,3 +72,20 @@ test('the master Level survives saving and opening; files without one open at 0 
   wild.master.level = 99;
   assert.equal(parseProject(wild).master.level, LEVEL_MAX);
 });
+
+test("a file with a track or clip this version can't read opens without it, and says how many were left out", () => {
+  const track = (id, instrumentKey) => ({ id, name: id, color: '#fff', instrumentKey, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0, delaySend: 0 });
+  const clip = (id, trackId) => ({ id, trackId, name: id, startBar: 1, lengthBars: 1, notes: [] });
+  const p = { name: 'Newer', bpm: 120, swing: 0, loopRegion: { inBar: 1, outBar: 5, enabled: false }, tracks: [track('a', 'piano'), track('b', 'piano')], clips: [clip('c1', 'a'), clip('c2', 'b')] };
+  const file = JSON.parse(JSON.stringify(serializeProject(p)));
+  // Everything read: nothing said
+  assert.equal('unread' in parseProject(structuredClone(file)), false);
+  file.tracks[1].instrumentKey = 'instrumentFromTheFuture';
+  file.clips.push({ id: 'c3', trackId: 'a' });
+  // (A clip whose track went long ago is left out quietly, as before)
+  file.clips.push(clip('c4', 'gone'));
+  const back = parseProject(file);
+  assert.deepEqual(back.tracks.map((t) => t.id), ['a']);
+  assert.deepEqual(back.clips.map((c) => c.id), ['c1']);
+  assert.deepEqual(back.unread, { tracks: 1, clips: 1 });
+});

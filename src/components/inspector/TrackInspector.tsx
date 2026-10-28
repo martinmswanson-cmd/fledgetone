@@ -48,7 +48,7 @@ const canPlayExpressively = (key: keyof typeof INSTRUMENTS) => {
 };
 import type { InstrumentDef } from '../../audio/instrumentCatalog';
 import { InstrumentPicker } from '../InstrumentMenu';
-import { useMySounds } from '../../store/mySounds';
+import { MAX_SOUNDS, useMySounds } from '../../store/mySounds';
 import { captureWamStates } from '../../audio/wamHost';
 import { pickSoundFile, shareTrackSound } from '../mySoundsFile';
 import { showToast } from '../timeline/toastStore';
@@ -85,7 +85,9 @@ async function saveTrackSound(trackId: string): Promise<void> {
       ? "That sound's plugin settings are too big for the browser to keep."
       : saved === 'not-kept'
         ? "The browser wouldn't keep it (its storage is full or blocked)."
-        : `${saved === 'replaced' ? 'Updated' : 'Saved'} "${name.trim() || track.name}": pick it from My sounds at the top of any instrument list.`
+        : saved === 'full'
+          ? `My sounds is full (${MAX_SOUNDS} sounds): delete one you don't need (in an instrument list), then save this one again.`
+          : `${saved === 'replaced' ? 'Updated' : 'Saved'} "${name.trim() || track.name}": pick it from My sounds at the top of any instrument list.`
   );
 }
 

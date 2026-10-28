@@ -134,3 +134,22 @@ test('linked clips read from a file share one copy of their content, so an undo 
   const back = p.syncPatterns(without, shared);
   assert.ok(back === null || back.find((c) => c.id === 'b').pattern === 'p');
 });
+
+test('linked clips back from browser storage share their notes again, so undoing a delete of one keeps it linked', async () => {
+  const { packedProject, unpackProject } = await import('../src/store/project.ts');
+  const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
+  const notes = [note('C4'), note('E4', 0.5)];
+  const track = { id: 't', name: 'Keys', color: '#fff', instrumentKey: 'piano', isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0, delaySend: 0 };
+  const song = { name: 'L', bpm: 120, swing: 0, loopRegion: { inBar: 1, outBar: 5, enabled: true }, tracks: [track], clips: [clip('a', 1, notes, { pattern: 'p' }), clip('b', 2, notes, { pattern: 'p' })] };
+  // (Storage gives every note a new id, so the copies' notes differ in their ids alone)
+  const back = unpackProject(packedProject(song)).clips;
+  assert.notEqual(back[0].notes[0].id, back[1].notes[0].id);
+  const loaded = p.shareLinkedContent(back);
+  assert.equal(loaded[0].notes, loaded[1].notes);
+  // Delete b, then undo: it comes back still in the pattern
+  const undone = p.syncPatterns([loaded[0]], loaded) ?? loaded;
+  assert.equal(undone[1].pattern, 'p');
+  // Clips whose notes really differ stay apart
+  const other = [clip('a', 1, notes, { pattern: 'p' }), clip('b', 2, [note('D4')], { pattern: 'p' })];
+  assert.equal(p.shareLinkedContent(other), other);
+});

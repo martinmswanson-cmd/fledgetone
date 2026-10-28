@@ -72,9 +72,11 @@ function shortIds(project: ProjectSnapshot): ProjectSnapshot {
   let n = 0;
   const next = () => (n++).toString(36);
   // (A clip with notes that play only sometimes keeps its id: their draw comes from it, so the
-  // link plays the same notes as the song it was made from. The others' short ids go round them:
-  // a song opened from a link has short ids already)
-  const kept = new Set(project.clips.filter(clipHasConditions).map((c) => c.id));
+  // link plays the same notes as the song it was made from. So does a clip on a track with the
+  // Human insert on: each note's drift comes from it too (human.ts). The others' short ids go
+  // round them: a song opened from a link has short ids already)
+  const human = new Set(project.tracks.filter((t) => t.fx?.human?.on).map((t) => t.id));
+  const kept = new Set(project.clips.filter((c) => clipHasConditions(c) || human.has(c.trackId)).map((c) => c.id));
   const nextClip = (): string => {
     let id = `c${next()}`;
     while (kept.has(id)) id = `c${next()}`;
@@ -322,10 +324,11 @@ export async function projectFromHash(hash: string): Promise<ProjectSnapshot | n
   return parseProject(unpackNotes(JSON.parse(new TextDecoder().decode(bytes))));
 }
 
-/** Tracks whose sound comes from a file (audio clips, the Sampler, the Slicer, Drum Rack and Multi Sampler sounds): a link can't carry those. */
+/** Tracks whose sound comes from a file (audio clips, in the timeline or the clip launcher, the Sampler, the Slicer, Drum Rack and Multi Sampler sounds): a link can't carry those. */
 export function tracksNeedingFiles(project: ProjectSnapshot): string[] {
   const names = new Set<string>();
   for (const t of project.tracks) if (t.sample || t.slicer || t.rack?.pads.some((p) => p.soundId) || t.multi?.zones.length) names.add(t.name);
   for (const c of project.clips) if (c.audio) names.add(project.tracks.find((t) => t.id === c.trackId)?.name ?? 'Audio');
+  for (const t of project.tracks) if (t.slots?.some((s) => s.clip.audio)) names.add(t.name);
   return [...names];
 }
