@@ -229,7 +229,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     following = window.setTimeout(() => {
       following = 0;
       if (destroyed) return;
-      params = marked(params.map((p, i) => (laneHeld.has(i) ? { ...p, value: laneHeld.get(i)! } : p)));
+      params = marked(laneShown(params));
       changed();
       if (listeners.size) void refresh();
     }, 120);
@@ -239,8 +239,14 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     inFlight.set(index, (inFlight.get(index) ?? 0) + 1);
     node.port.postMessage({ type: 'set', index, value, ...(drop ? { drop: true } : {}) });
   };
-  /** Held parameters show their lane's value (the processor may not have played it yet). */
-  const laneShown = (list: BuiltinParam[]) => list.map((p, i) => (laneHeld.has(i) ? { ...p, value: laneHeld.get(i)! } : p));
+  /** Parameter `i`'s value `v` inside its safe range, as the processor plays it (paramLimits.ts) */
+  const limits = PARAM_LIMITS[builtinUrl(ref.family.family, ref.info.name)];
+  const within = (i: number, v: number) => {
+    const range = limits && params[i] ? limits[params[i].name] : undefined;
+    return range ? Math.max(range[0], Math.min(range[1], v)) : v;
+  };
+  /** Held parameters show their lane's value (the processor may not have played it yet), as it's played. */
+  const laneShown = (list: BuiltinParam[]) => list.map((p, i) => (laneHeld.has(i) ? { ...p, value: within(i, laneHeld.get(i)!) } : p));
   /**
    * Sets sent per parameter and not yet answered: a late answer to an older one mustn't put the
    * value back (a knob stepped quickly would lose steps)
@@ -427,7 +433,8 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
     const p = params[index];
     // (Held by an automation lane: the lane has it until it goes)
     if (!p || destroyed || laneHeld.has(index)) return;
-    const v = Math.max(0, Math.min(1, value));
+    // (Kept as it's played: past a parameter's safe range its knob, the save and a readout say the limit)
+    const v = within(index, Math.max(0, Math.min(1, value)));
     params = params.map((x, i) => (i === index ? { ...x, value: v } : x));
     own = own.map((x, i) => (i === index ? v : x));
     post(index, v);

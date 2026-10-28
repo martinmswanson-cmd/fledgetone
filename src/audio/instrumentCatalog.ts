@@ -401,6 +401,17 @@ function ensemble(parts: Array<{ folder: string; from: number; gain: number }>, 
   };
 }
 /** The notes a real set can play: from its lowest recording to a little past its highest (no higher than a piano's top C) */
+/**
+ * The choirs' loud ("forte") recordings sung sharp of their soft ones in places, by cents: measured
+ * over each recording's loop (1.1 to 4.1 s) as the mean of its pitch frame by frame and as the
+ * centre of its harmonics' energy, against the soft recording of the note (the same singers, moved
+ * onto the note the same way); corrected where both put it 12 cents or more sharp (by their
+ * average). The forte singers' wide vibrato (about 35 cents either way) keeps the rest within that.
+ */
+const CHOIR_LOUD_TUNE: Record<'choir' | 'choir-ooh', Record<string, number>> = {
+  choir: { 'G#4|1|0': -22, 'B4|1|0': -18, 'D5|1|0': -16 },
+  'choir-ooh': { 'G#2|1|0': -16, 'B2|1|0': -15, 'G#3|1|0': -13 },
+};
 const realRange = (folder: string, extend = 2): [number, number] => {
   const { notes } = HOSTED_SETS[folder];
   return [notes[0], Math.min(108, notes[notes.length - 1] + extend)];
@@ -823,11 +834,11 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   },
   realChoir: {
     key: 'realChoir', name: 'Choir (Real)', blurb: 'Recorded singers, men and women, holding "aah" together: sacred, epic, angelic', color: '#fef3c7', category: 'Choir & Voices', kind: 'sampled', range: realRange('choir'),
-    samples: real('choir', 1.2), gain: 4.3, dynamics: true,
+    samples: { ...real('choir', 1.2), tune: CHOIR_LOUD_TUNE.choir }, gain: 4.3, dynamics: true,
   },
   realChoirOoh: {
     key: 'realChoirOoh', name: 'Choir "Ooh" (Real)', blurb: 'Recorded singers, men and women, on a soft "ooh": pads, lullabies, film scores', color: '#fde68a', category: 'Choir & Voices', kind: 'sampled', range: realRange('choir-ooh'),
-    samples: real('choir-ooh', 1.2), gain: -0.3, dynamics: true,
+    samples: { ...real('choir-ooh', 1.2), tune: CHOIR_LOUD_TUNE['choir-ooh'] }, gain: -0.3, dynamics: true,
   },
   realSoloVoice: {
     key: 'realSoloVoice', name: 'Solo Voice (Real)', blurb: 'A recorded low male voice singing "aah": chant, drones, solemn', color: '#fde68a', category: 'Choir & Voices', kind: 'sampled', range: [36, 61],

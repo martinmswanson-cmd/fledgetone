@@ -163,6 +163,21 @@ asked, and built-in effects that fade by themselves). The ones met most often he
 - **Plugin settings reach the tracks every 3 s.** Anything that saves, shares, renders or freezes
   awaits `captureWamStates()` first (renders do it in `renderTracks`); closing the tab uses
   `captureWamStatesNow()`. Reads are numbered so a slow, late answer never replaces a newer one.
+- **About 124 plugin memories per page.** Every built-in plugin family in a context is a
+  WebAssembly memory, and Chromium reserves address space for each; about 124 fit in one page.
+  Chromium never frees an OfflineAudioContext an AudioWorklet module went into, so each render
+  (export, stem, freeze, resample, preview) with built-in plugins keeps one memory per family it
+  used for the rest of the session. After about 124, no built-in plugin loads (live or export: the
+  export plays that track silent, with a toast) until the page is reloaded. Renders share each
+  family's memory (`ownMemoryFor` in paramLimits.ts gives the Mutable plugins one each only live);
+  keep it that way. Only a fix in Chromium, or rendering every plugin in one long-lived context,
+  would lift it.
+- **A guard restart runs on the audio thread.** When a built-in plugin blows up (processor.ts
+  `blewUp`), it's made again inside `process()`, at most once a second: setBfree about 90 ms,
+  Surge about 44 ms, the Mutable plugins up to 6 ms, Faust up to 4 ms (measured in Node), against
+  2.7 ms per block, so the whole mix can glitch once at the restart. The held notes go with it.
+  Rare now (the limits in paramLimits.ts keep the known blow-ups away); a restart prepared off the
+  audio thread would remove it.
 - Wobble rates are `'1/4'`, `'1/8'`, `'1/16'` (not Tone's `'8n'`).
 - Sample libraries load from GitHub (`nbrosowsky/tonejs-instruments`, files spell sharps with `s`,
   e.g. `As3.mp3`) and the FluidR3 General MIDI set. Check a file exists before listing it.
@@ -609,6 +624,12 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 - A clip moved off the 16th grid and then cut off the grid plays without swing (on purpose: it
   can't be told from a triplet pattern).
 - Supersaw chords lean up to about 0.6 dB per bar (single notes within 0.15 dB): inaudible.
+- Ominous Drone (Mutable) shares Modal Voice's presets: "Bowed string" and "Glass harmonica" play
+  nothing in its mode. It needs presets of its own in `scripts/plugins/mutable/bb_elements.cpp`
+  (and its x10 trim lowered there) on the next emsdk rebuild; till then its Volume is limited and
+  it's turned down (paramLimits.ts).
+- Seeking while playing lets every instrument's sounding notes ring to their written end (Stop and
+  Pause release them).
 
 ## On hold
 

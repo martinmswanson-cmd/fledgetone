@@ -394,8 +394,10 @@ async function decodeEntry(source: SampleSource, name: string, rate: number): Pr
   const ready = source.onset === undefined ? held : trimOnset(held, source.onset);
   const audio = ready.get();
   if (audio) {
-    // Its seamless loop, if it has one (and nothing above moved its timing)
-    if (loop && ready === buffer && !source.tune?.[name]) loopsOf.set(audio, loop);
+    // Its seamless loop, if it has one (and nothing above moved its timing but a retune, which
+    // reads it `rate` times as fast: the loop moves with it)
+    const rate = 2 ** ((source.tune?.[name] ?? 0) / 1200);
+    if (loop && ready === buffer) loopsOf.set(audio, rate === 1 ? loop : [loop[0] / rate, loop[1] / rate]);
     else {
       // A lengthened sustain loops one of its own repeats for a note held longer still (moved
       // with the start, where the onset was trimmed off after: see extendSustain)

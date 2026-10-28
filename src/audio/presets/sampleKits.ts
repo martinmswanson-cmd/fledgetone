@@ -388,7 +388,14 @@ export function createMultiInstrument(output: Tone.InputNode, initial: MultiSamp
       for (const v of voices) v.source.playbackRate.setTargetAtTime(rateOf(v.semis), at, 0.005);
     },
     releaseAll: () => {
-      for (const v of voices) release(v, raw.currentTime);
+      // Every voice still to end goes now, those already given their end too (a note played from
+      // the song has its release set when it starts: Stop mustn't leave it sounding to its end)
+      const now = raw.currentTime;
+      for (const v of voices) {
+        if (v.stopAt <= now) continue;
+        v.released = false;
+        release(v, now);
+      }
       bendCents = 0;
     },
     ready,
