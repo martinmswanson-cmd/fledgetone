@@ -496,7 +496,10 @@ export const MenuBar: React.FC = () => {
       if (!bar.current?.contains(e.target as Node)) close();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key !== 'Escape') return;
+      close();
+      // (Back to the menu's button, so the keyboard carries on from there)
+      buttons.current[where.id]?.focus();
     };
     const onScroll = () => place(where.id);
     window.addEventListener('pointerdown', onPointerDown, true);
