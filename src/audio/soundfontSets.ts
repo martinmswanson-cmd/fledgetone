@@ -55,16 +55,20 @@ export const struck = (instrument: string, lo: number, hi: number, release = 1):
  * (public/fledgetone-samples/<folder>, by scripts/soundfont-renders/render.py): every third note,
  * one loudness (velocity 127), each ringing out by itself or, held, with a loop of several seconds
  * (hostedSets.ts). Next to the page, else from the site, as the recorded instruments are.
+ * `levels` raises or lowers single recordings (dB, by MIDI note) where a render came out at a
+ * different level from the note the old soundfont file played (SampleSource.gains).
  */
-export function rendered(folder: string, release = 1): SampleSource {
+export function rendered(folder: string, release = 1, levels?: Record<number, number>): SampleSource {
   const set = HOSTED_SETS[folder];
   const samples: Record<string, string> = {};
   const loops: Record<string, [number, number]> = {};
+  const gains: Record<string, number> = {};
   for (const m of set.notes) {
     const n = noteName(m);
     samples[`${n}|0|0`] = `${n.replace('#', 's')}_0_0.mp3`;
     const loop = set.loops?.[`${m}_0_0`];
     if (loop) loops[`${n}|0|0`] = loop;
+    if (levels?.[m]) gains[`${n}|0|0`] = levels[m];
   }
   return {
     baseUrl: `fledgetone-samples/${folder}/`,
@@ -74,5 +78,6 @@ export function rendered(folder: string, release = 1): SampleSource {
     layers: [1],
     version: set.hash,
     ...(Object.keys(loops).length ? { loops } : {}),
+    ...(Object.keys(gains).length ? { gains } : {}),
   };
 }

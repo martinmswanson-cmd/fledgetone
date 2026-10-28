@@ -153,3 +153,4 @@ retro-taiko:
   The retro taiko drums, rendered afresh with FluidSynth (https://www.fluidsynth.org) from the
   FluidR3 GM SoundFont by Frank Wen (converted to MP3, hosted with the app)
   Licence: MIT (https://opensource.org/license/mit) (Frank Wen's licence for the SoundFont)
+  Licence text: FluidR3-LICENSE.txt, next to this file

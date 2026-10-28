@@ -7,6 +7,7 @@
  */
 import { HOSTED_SETS } from '../hostedSets';
 import type { SampleSource } from '../instrumentCatalog';
+import { RING_MOST } from './recordingMaths';
 
 /** A hosted file's set (the folder under fledgetone-samples/), from its address. */
 const folderOf = (url: string) => /^fledgetone-samples\/([^/]+)\//.exec(url)?.[1];
@@ -30,6 +31,17 @@ const OTHER_FILE_BYTES = 60e3;
  */
 export const DECODED_PER_FILE_BYTE = 48;
 
+/**
+ * About how many bytes of memory a soundfont's note takes decoded at 48 kHz once it's rung on or
+ * lengthened as it loads (SampleSource.ringOn, sustain): up to RING_MOST seconds (or the held
+ * length), in stereo where the file is (some are), as 32-bit samples. A struck note was 3.1 s
+ * before it was rung on; this is the most it can be now.
+ */
+const lengthenedBytes = (source: Pick<SampleSource, 'ringOn' | 'sustain'>) =>
+  source.ringOn || source.sustain ? Math.max(source.ringOn ? RING_MOST : 0, source.sustain?.hold ?? 0) * 48000 * 4 * 2 : 0;
+
+type Sized = Pick<SampleSource, 'baseUrl' | 'samples' | 'releases' | 'ringOn' | 'sustain'>;
+
 /** About how many bytes one of `source`'s recordings' files has (a note "<note>|<layer>|<take>", or a release sound "rel|<note>|<take>"). */
 export function fileBytesOf(source: Pick<SampleSource, 'baseUrl' | 'samples' | 'releases'>, name: string): number {
   const release = name.startsWith('rel|');
@@ -44,12 +56,13 @@ export function fileBytesOf(source: Pick<SampleSource, 'baseUrl' | 'samples' | '
  * sound (seconds, each channel counted, as 32-bit samples) shared between its files, never less
  * than the sampler keeps (it cuts silent tails, so this is on the safe side).
  */
-export function decodedOf(source: Pick<SampleSource, 'baseUrl' | 'samples' | 'releases'>, name: string): number {
+export function decodedOf(source: Sized, name: string): number {
   const release = name.startsWith('rel|');
   const url = release ? `${source.releases?.baseUrl ?? ''}${source.releases?.samples[name.slice(4)] ?? ''}` : `${source.baseUrl}${source.samples[name] ?? ''}`;
   const folder = folderOf(url);
   const set = folder ? HOSTED_SETS[folder] : undefined;
-  return set ? (set.audio * 48000 * 4) / fileCount(folder!) : OTHER_FILE_BYTES * DECODED_PER_FILE_BYTE;
+  if (set) return (set.audio * 48000 * 4) / fileCount(folder!);
+  return Math.max(OTHER_FILE_BYTES * DECODED_PER_FILE_BYTE, release ? 0 : lengthenedBytes(source));
 }
 
 /**
@@ -69,7 +82,7 @@ export function setBytes(source: Pick<SampleSource, 'baseUrl' | 'samples' | 'rel
 }
 
 /** About how many bytes of memory `names` of `source`'s recordings take decoded at `decodeRate`. */
-export function decodedBytes(source: Pick<SampleSource, 'baseUrl' | 'samples' | 'releases'>, names: Iterable<string>, decodeRate: number): number {
+export function decodedBytes(source: Sized, names: Iterable<string>, decodeRate: number): number {
   let bytes = 0;
   for (const name of names) bytes += decodedOf(source, name);
   return bytes * (decodeRate / 48000);
@@ -80,7 +93,7 @@ export function decodedBytes(source: Pick<SampleSource, 'baseUrl' | 'samples' | 
  * decoded at 48 kHz, every one of them: a hosted set's, or the parts of the sets an ensemble plays,
  * each file once. Not hosted: 0 (the soundfonts and the like are small).
  */
-export function setDecodedBytes(source: Pick<SampleSource, 'baseUrl' | 'samples' | 'releases'>): number {
+export function setDecodedBytes(source: Sized): number {
   let bytes = 0;
   const files = new Set<string>();
   for (const [name, file] of Object.entries(source.samples)) {

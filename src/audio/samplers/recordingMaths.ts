@@ -318,6 +318,8 @@ export function lengthenSustain(out: Float32Array, data: Float32Array, end: numb
 export const RING_CUT_DB = 45;
 /** The slowest a lengthened decay falls (dB a second): a sound that had stopped falling (a pad-like bell) still dies away. */
 export const RING_SLOWEST = -4;
+/** The longest a cut-off recording is rung on to (seconds), as a held one is lengthened to (SOUNDFONT_SUSTAIN). */
+export const RING_MOST = 10;
 
 /** How a cut-off recording rings on (ringOn): from `at`, its stretch [from, at) repeated, `rate` dB a second quieter, to `length` samples. */
 export interface RingPlan {

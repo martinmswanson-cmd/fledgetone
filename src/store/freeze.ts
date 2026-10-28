@@ -1,6 +1,7 @@
 import type { AutomationParam, Clip, FrozenTrack, Track } from './timelineTypes';
 import { defaultTrackFx, pumpFollowsDrums, pumpHears } from './timelineTypes';
-import { isDrumKind, pumpHitOf } from '../audio/instrumentCatalog';
+import { INSTRUMENTS, isDrumKind, pumpHitOf, type InstrumentKey, type SampleSource } from '../audio/instrumentCatalog';
+import { DRUM_RENDER_VERSION } from '../audio/drumSynth';
 import { clipHasConditions, contentKey, isConditional } from './noteChance';
 import { isSynthKit, SYNTH_KIT_DESIGNS } from './synthKits';
 import { STRETCH_VERSION } from '../audio/timeStretch';
@@ -43,6 +44,25 @@ function hash(text: string): string {
     h = Math.imul(h, 0x01000193);
   }
   return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * What a sampled instrument's recordings are and how they load (its SampleSource: the files, their
+ * set's version, which is the hosted set's hash, and the looping, ring-on, tuning and levels
+ * applied as they load), as a short hash, so a track frozen before any of that changed plays live
+ * again and freezes afresh. Only where they're fetched from as a fallback is left out. Worked out
+ * once for each source (the catalog is fixed once loaded).
+ */
+const sourcePrints = new WeakMap<SampleSource, string>();
+function samplesPrint(key: string): string | undefined {
+  const source = INSTRUMENTS[key as InstrumentKey]?.samples;
+  if (!source) return undefined;
+  let print = sourcePrints.get(source);
+  if (!print) {
+    print = hash(JSON.stringify({ ...source, fallbackUrl: undefined, releases: source.releases && { ...source.releases, fallbackUrl: undefined } }));
+    sourcePrints.set(source, print);
+  }
+  return print;
 }
 
 const clipContent = (c: Clip) => ({
@@ -134,6 +154,7 @@ function computeFingerprint(track: Track, all: Arrangement): string {
   // A measured feel steps through each measure, so outside plain 4/4 the meter places its notes
   const meter = { base: all.meter ?? FOUR_FOUR, points: all.meterPoints ?? [] };
   const feelMeter = own.some((c) => c.groove?.feel) && !isPlainMeter(meter);
+  const recordings = samplesPrint(track.instrumentKey);
   return hash(
     JSON.stringify({
       key: track.instrumentKey,
@@ -141,6 +162,9 @@ function computeFingerprint(track: Track, all: Arrangement): string {
       // recordings were replaced by synthesized sounds: their sounds go in, so a track frozen on a
       // recording plays live again, and so does one frozen before a kit's sounds change)
       ...(isSynthKit(track.instrumentKey) ? { kit: SYNTH_KIT_DESIGNS[track.instrumentKey] } : {}),
+      // (How a designed drum renders, and what a sampled instrument's recordings are: see above)
+      ...(isSynthKit(track.instrumentKey) || track.instrumentKey === 'designedKit' ? { drums: DRUM_RENDER_VERSION } : {}),
+      ...(recordings ? { recordings } : {}),
       sample: track.sample,
       slicer: track.slicer,
       synth: track.synth,

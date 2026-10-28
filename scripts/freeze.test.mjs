@@ -152,8 +152,9 @@ test("the synthesized kits' freezes made on their old recordings go out of date;
   };
   // As fingerprinted before the kits were synthesized (their key and nothing about their sound)
   const before = { supersaw: '1c58bae4', drumMachine: '4b8d5e4b', designedKit: '443218db', technoKit: '0b6a50db', breakbeatKit: '63f7edc5', retroDrumMachine: '19564dd9', rhythmBox: '325d754b' };
-  for (const key of ['supersaw', 'drumMachine', 'designedKit']) assert.equal(one(key), before[key], key);
-  for (const key of Object.keys(SYNTH_KIT_DESIGNS)) assert.notEqual(one(key), before[key], key);
+  for (const key of ['supersaw', 'drumMachine']) assert.equal(one(key), before[key], key);
+  // (the Designed Kit's too, since its hats went stereo: the next test)
+  for (const key of [...Object.keys(SYNTH_KIT_DESIGNS), 'designedKit']) assert.notEqual(one(key), before[key], key);
   // And a change to a kit's sounds makes its freezes out of date again
   const old = SYNTH_KIT_DESIGNS.technoKit;
   const now = one('technoKit');
@@ -163,6 +164,39 @@ test("the synthesized kits' freezes made on their old recordings go out of date;
   } finally {
     SYNTH_KIT_DESIGNS.technoKit = old;
   }
+});
+
+test("freezes made before the drums rendered in stereo or before a sampled instrument's recordings changed go out of date, once", async () => {
+  const { INSTRUMENTS } = await import('../src/audio/instrumentCatalog.ts');
+  const { HOSTED_SETS } = await import('../src/audio/hostedSets.ts');
+  const song = (t) => ({ tracks: [t], clips: [clip('k', 't', 1, [['C3', 0], ['D3', 1]])], bpm: 140, swing: 0 });
+  const one = (key) => fp(track('t', key), song(track('t', key)));
+  // As fingerprinted before (the instrument's key, and nothing about how its drums render or its recordings)
+  const before = { supersaw: '0befb7cc', drumMachine: '51177b23', designedKit: '9b8d0f33', technoKit: 'a2f5a32d', cello: 'dc78040f', rainPad: 'd7d07511', timpani: 'ec301c42', piano: 'eee72727' };
+  for (const key of ['supersaw', 'drumMachine']) assert.equal(one(key), before[key], key);
+  for (const key of ['designedKit', 'technoKit', 'cello', 'rainPad', 'timpani', 'piano']) assert.notEqual(one(key), before[key], key);
+  // and only once: the same fingerprint every time it's worked out, for every instrument
+  for (const key of Object.keys(INSTRUMENTS)) assert.equal(one(key), one(key), key);
+  // A hosted set's hash is in it (the recordings, not where else they're fetched from), and so is
+  // how the old soundfont files load (rung on past their cut)
+  const piano = INSTRUMENTS.piano.samples;
+  assert.equal(piano.version, HOSTED_SETS[piano.baseUrl.split('/')[1]].hash);
+  const withSource = (key, change) => {
+    const old = INSTRUMENTS[key].samples;
+    const now = one(key);
+    INSTRUMENTS[key].samples = { ...old, ...change };
+    try {
+      return [now, one(key)];
+    } finally {
+      INSTRUMENTS[key].samples = old;
+    }
+  };
+  let [was, is] = withSource('piano', { version: 'another' });
+  assert.notEqual(was, is, 'a re-encoded set');
+  [was, is] = withSource('piano', { fallbackUrl: 'https://example.com/elsewhere/' });
+  assert.equal(was, is, 'only where else the files are fetched from');
+  [was, is] = withSource('timpani', { ringOn: undefined });
+  assert.notEqual(was, is, 'the old soundfont files rung on');
 });
 
 test('the meter is part of a freeze only for clips with a measured feel, outside plain 4/4', () => {
