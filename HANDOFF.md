@@ -163,15 +163,13 @@ asked, and built-in effects that fade by themselves). The ones met most often he
 - **Plugin settings reach the tracks every 3 s.** Anything that saves, shares, renders or freezes
   awaits `captureWamStates()` first (renders do it in `renderTracks`); closing the tab uses
   `captureWamStatesNow()`. Reads are numbered so a slow, late answer never replaces a newer one.
-- **About 124 plugin memories per page.** Every built-in plugin family in a context is a
-  WebAssembly memory, and Chromium reserves address space for each; about 124 fit in one page.
-  Chromium never frees an OfflineAudioContext an AudioWorklet module went into, so each render
-  (export, stem, freeze, resample, preview) with built-in plugins keeps one memory per family it
-  used for the rest of the session. After about 124, no built-in plugin loads (live or export: the
-  export plays that track silent, with a toast) until the page is reloaded. Renders share each
-  family's memory (`ownMemoryFor` in paramLimits.ts gives the Mutable plugins one each only live);
-  keep it that way. Only a fix in Chromium, or rendering every plugin in one long-lived context,
-  would lift it.
+- **Plugin memory is let go when a plugin goes.** Every built-in plugin family (and each Mutable
+  plugin, which reads memory it never set and so gets an instance of its own, live and in renders:
+  `ownMemoryFor` in paramLimits.ts) is a WebAssembly memory. `release()` in processor.ts drops every
+  reference when a plugin is destroyed (renders destroy theirs at the end), and a shared family's
+  instance goes with its last plugin. Keep it that way: before, renders kept their memories and
+  after about 124 no built-in plugin loaded; sharing one instance across Mutable plugins made
+  exports differ from run to run.
 - **A guard restart runs on the audio thread.** When a built-in plugin blows up (processor.ts
   `blewUp`), it's made again inside `process()`, at most once a second: setBfree about 90 ms,
   Surge about 44 ms, the Mutable plugins up to 6 ms, Faust up to 4 ms (measured in Node), against
@@ -217,8 +215,7 @@ Violin and Erhu; drag a `.fledgetone.json` onto the page to open it; a one-time 
 
 - **Hotfix** (2026.10.28-2): game intro+loop normalize capped by the intro's true peak too (`sharedGainDb`);
   plugin output clamped to ±4 after the guard; mda Loudness Output limit; Mutable own memory only in live
-  contexts (`ownMemoryFor`), shared instance in renders (each live own-memory instance is never freed,
-  ~124 per session).
+  contexts (`ownMemoryFor`); superseded by 2026.10.28-3 (own memory everywhere, freed on destroy).
 
 - **Groove feels, glue styles, vocal chops, resampling, whole-app fixes** (2026.10.28): feels measured from
   real tracks (`grooveFeels.ts`, `grooveExtract.ts`, applied per part in scheduler.ts, meter-aware via
