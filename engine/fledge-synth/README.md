@@ -5,7 +5,9 @@ browser (the studio loads `public/fledgetone-plugins/fledge.wasm` through its pl
 as a Rust library for a future desktop app.
 
 - Two wavetable oscillators (tables generated from formulas, band-limited per octave and kept at
-  32 samples a period of their top harmonic, so the linear reads stay over 70 dB clean, or a user
+  32 samples a period of their top harmonic, so the linear reads stay over 70 dB clean; each
+  octave level is made the first time a note reads it, so a table's first use costs a few ms and
+  only the levels played take memory; or a user
   table made from a sound: `fledge_table_buffer` / `fledge_table_set`, see
   src/audio/plugins/userTable.ts), each with up to 16 unison voices, detune, blend and stereo width; FM from B to A, a sine sub and noise
 - Filters: 12 and 24 dB low-pass, ladder, band-pass, high-pass, notch, comb (+/−) and formant

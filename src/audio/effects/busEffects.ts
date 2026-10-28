@@ -67,8 +67,8 @@ export function createBusEffects(destination: Tone.InputNode, fx: MasterFx, bpm:
   // What goes into the hall is low-cut and damped in the highs, as a real room soaks up the top:
   // the reverb's own impulse is full-band noise, which kept bright parts' hiss in the tail and
   // the bass's boom in the wash. Each style damps where its room would (RoomDesign.damp: a
-  // plate keeps its shine, a church is dark), and the convolver's feed makes up what a brighter
-  // damping lets through, so the room is as loud as when every style damped at 5.5 kHz
+  // plate keeps its shine, a church is dark), and the convolver's feed is evened up for it
+  // (dampingMakeup), so on a song the room is as loud as when every style damped at 5.5 kHz
   const lowCut = new Tone.Filter({ type: 'highpass', frequency: REVERB_LOW_CUT_HZ, Q: REVERB_FILTER_Q, rolloff: -12 });
   const damp = new Tone.Filter({ type: 'lowpass', frequency: REVERB_DAMP_HZ, Q: REVERB_FILTER_Q, rolloff: -12 });
   // Each reverb has its own level, for the crossfade between them. The convolvers are fed from

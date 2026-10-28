@@ -111,31 +111,41 @@ test("each room style damps the highs where its room would, and the makeup keeps
   assert.equal(Math.max(...damps), ROOM_STYLES.plate.damp);
   assert.ok(ROOM_STYLES.plate.damp >= 10000 && ROOM_STYLES.hall.damp >= 7000 && ROOM_STYLES.hall.damp <= 8000);
   assert.ok(ROOM_STYLES.church.damp < ROOM_STYLES.hall.damp);
-  // Pink noise through the low cut, the damping and its makeup is as loud as through the old 5.5 kHz
-  const pinkish = (n) => {
+  // Music through the low cut, the damping and its makeup is as loud as through the old 5.5 kHz,
+  // weighted as loudness is measured: pink noise falling a further 6 dB an octave above 2 kHz, as
+  // a mix's highs do (on five starter songs every room's sends landed within 0.06 dB of before; the
+  // makeup worked out on plain pink noise had cut a plate's half a dB)
+  const { kWeightingFilters } = await import('../src/audio/loudness.ts');
+  const music = (n) => {
     const out = new Float32Array(n);
     let s = 1;
     const b = [0, 0, 0];
+    let lp = 0;
+    const k = 1 - Math.exp((-2 * Math.PI * 2000) / SR);
     for (let i = 0; i < n; i++) {
       s = (s * 16807) % 2147483647;
       const w = s / 1073741823.5 - 1;
       b[0] = 0.99765 * b[0] + w * 0.099;
       b[1] = 0.963 * b[1] + w * 0.2965;
       b[2] = 0.57 * b[2] + w * 1.0527;
-      out[i] = (b[0] + b[1] + b[2] + w * 0.1848) * 0.1;
+      lp += k * ((b[0] + b[1] + b[2] + w * 0.1848) * 0.1 - lp);
+      out[i] = lp;
     }
     return out;
   };
+  const [shelf] = kWeightingFilters(SR);
   const level = (hz) => {
-    const x = pinkish(SR * 4);
+    const x = music(SR * 4);
     biquad(x, webAudioHighpass(REVERB_LOW_CUT_HZ, REVERB_FILTER_Q, SR));
     biquad(x, webAudioLowpass(hz, REVERB_FILTER_Q, SR));
+    biquad(x, Float64Array.from(shelf));
     const g = dampingMakeup(hz);
     return 10 * Math.log10(x.reduce((a, v) => a + v * v * g * g, 0));
   };
   const before = level(REVERB_DAMP_HZ);
   for (const hz of [...damps, RECORDED_ROOM_DAMP_HZ]) {
-    assert.ok(dampingMakeup(hz) <= 1, `${hz}: never turned up`);
-    assert.ok(Math.abs(level(hz) - before) < 0.25, `${hz} Hz: ${(level(hz) - before).toFixed(2)} dB`);
+    // (A lift of a tenth of a dB or so at most: a brighter damping is never a louder room)
+    assert.ok(dampingMakeup(hz) >= 1 && dampingMakeup(hz) < 10 ** (0.2 / 20), `${hz}: makeup ${(20 * Math.log10(dampingMakeup(hz))).toFixed(2)} dB`);
+    assert.ok(Math.abs(level(hz) - before) < 0.1, `${hz} Hz: ${(level(hz) - before).toFixed(2)} dB`);
   }
 });
