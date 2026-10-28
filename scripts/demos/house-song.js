@@ -14,7 +14,7 @@
 // exported again (the MP3 comes out identical).
 // arg.vol {track: dB}, arg.crunch, arg.lufs (the export's target), arg.loud (the Loud master's), arg.range [from, to]
 // (0-based bars: export only those), arg.levels [from, to] (each track's own loudness there instead), arg.subHole /
-// arg.subRelease, arg.duck (Duck to kick style), arg.dump (notes only), arg.name, arg.file
+// arg.subRelease, arg.duck (Duck to kick style), arg.space (false: no Make space), arg.dump (notes only), arg.name, arg.file
 const ex = await import('/src/audio/exportWav.ts');
 const T = await import('/src/store/timelineTypes.ts');
 const K = await import('/src/store/partKind.ts');
@@ -319,11 +319,11 @@ const tuneKick = (kit, hzv, tail) => { if (kit.kick) { kit.kick.layers = kit.kic
 const kitHouse = { kick: arg.kick ?? 'dropKick', snare: 'tightLayerSnare', clap: 'crispClap', closedHat: 'tightHat', openHat: 'offbeatHat', tomLow: 'lowTom', tomMid: 'midTom', tomHigh: 'woodRim', cowbell: 'shaker', crash: 'crash', ride: 'ride' };
 const drumKit = tuneKick(kitOf(kitHouse, { kick: -2, closedHat: -2, openHat: 1, cowbell: -5, tomHigh: -7, clap: 0, ...(arg.rowLevel ?? {}) }), 55, arg.kickTail ?? 0.22);
 // (one drum track through the key change: its kick stays on A1, the fifth of D and the fourth of E)
-add('drums', 'designedKit', { drumDesign: drumKit, volume: V.drums }, eq(0, 400, 0, 5500, 3, 9000, 4));
+add('drums', 'designedKit', { drumDesign: drumKit, volume: V.drums }, eq(0, 220, -2, 5500, 3, 9000, 4));
 add('impact', 'designedKit', { drumDesign: kitOf({ kick: 'dropImpact' }), volume: V.impact, reverbSend: 0.25 });
 add('timp', 'realTimpani', { volume: V.timp, reverbSend: 0.3 });
 add('bass', 'plugin', { ...fledge('bass', 'Bass/Driven Legato', { 1: 0.3, 2: 0.25, 3: 0.25 }, { 'Sub level': 0, Glide: logn(0.03, 0.001, 2) }, 'Driven Legato, shorter glide'), volume: V.bass, reverbSend: 0 },
-  { ...eq(0, 170, 2, 600, -6, 2000, -3, 5000, 45), ...lpf }, sweep([[0, 350], [7, 5000, 0.4], [8, 20000]]));
+  { ...eq(0, 170, 1, 600, -6, 2000, -3, 5000, 45), ...lpf }, sweep([[0, 350], [7, 5000, 0.4], [8, 20000]]));
 add('sub', 'plugin', { ...fledge('sub', 'Bass/Clean Sub'), volume: V.sub, reverbSend: 0 });
 // House chord stab: Silk Stack made short (a pluck that decays in ~0.2 s with no sustain), its filter snapping shut
 add('stabs', 'plugin', { ...fledge('stabs', 'Chords/Silk Stack', { 1: 0.55, 2: 0.3, 3: 0.3 }, { 'Amp decay': sec(0.22), 'Amp sustain': 0, 'Amp release': sec(0.12), 'Filter envelope': bip(0.45), 'Filter decay': sec(0.16), 'Filter sustain': 0.1 }, 'House chord stab'), volume: V.stabs, reverbSend: 0.18 },
@@ -365,8 +365,12 @@ const musicDb = arg.musicPump ?? -1;
 useTimelineStore.setState({ tracks: useTimelineStore.getState().tracks.map((t) => (t.fx.pump?.on && t.fx.pump.trigger === 'kick' ? { ...t, fx: { ...t.fx, pump: { ...t.fx.pump, depth: depthOfDb(musicDb) } } } : t)) });
 const PUMPS = { sub: { on: true, depth: depthOfDb(arg.subHole ?? -10), release: arg.subRelease ?? 170, trigger: 'kick', shape: 'hole' }, ...(arg.pumps ?? {}) };
 useTimelineStore.setState({ tracks: useTimelineStore.getState().tracks.map((t) => (PUMPS[t.id] ? { ...t, fx: { ...t.fx, pump: { ...t.fx.pump, ...PUMPS[t.id] } } } : t)) });
+// Make space (the mixer's button, store/makeSpace.ts), unless arg.space is false: the EQ moves that carve the low mids and lift the lead
+const spaceMade = arg.space === false ? [] : (await import('/src/store/makeSpace.ts')).makeSpace(useTimelineStore.getState().tracks, useTimelineStore.getState().clips).changes;
+if (arg.space !== false) useTimelineStore.getState().makeSpace();
 useTimelineStore.getState().setMasterLoud({ on: true, target: arg.loud ?? 'loud', crunch: CRUNCH, subTilt: arg.subTilt ?? -2 });
 const p = currentProject();
+out.space = spaceMade;
 out.tracks = p.tracks.map((t) => `${t.id} vol ${t.volume} pump ${t.fx.pump?.on ? (+t.fx.pump.depth).toFixed(3) + ' ' + t.fx.pump.trigger : 'off'}`);
 out.clips = p.clips.length;
 out.sounds = SOUNDS;

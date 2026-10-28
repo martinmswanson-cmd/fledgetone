@@ -16,7 +16,7 @@
 // [from, to] (0-based bars: export only those), arg.levels [from, to] (each track's own loudness there instead),
 // arg.subHole / arg.subRelease / arg.subTrigger (the sub's hole for the kick), arg.pumps {track: pump settings},
 // arg.stems [track ids] (also a WAV of those tracks through the master), arg.pcm (also the 16-bit WAV),
-// arg.dump (notes only), arg.name (the project's name), arg.file
+// arg.space (false: no Make space), arg.dump (notes only), arg.name (the project's name), arg.file
 const ex = await import('/src/audio/exportWav.ts');
 const T = await import('/src/store/timelineTypes.ts');
 const K = await import('/src/store/partKind.ts');
@@ -422,9 +422,9 @@ const drumsKit = tuneKick(kitOf(kitB, { closedHat: -5, openHat: -3, ...(arg.rowL
 const finalKit = tuneKick(kitOf(kitB, { closedHat: -5, openHat: -3, ...(arg.rowLevel ?? {}) }), 61.74);
 const crunchKit = kitOf({ kick: arg.kick2 ?? 'crunchKick', snare: 'crunchSnare', clap: 'crackClap', closedHat: 'sharpHat', openHat: 'openHat', crash: 'crash', tomLow: 'lowTom', tomMid: 'midTom', tomHigh: 'highTom' }, { closedHat: 1.5, snare: -6 });
 const impactKit = kitOf({ kick: arg.impact ?? 'dropImpact' });
-add('drums', 'designedKit', { drumDesign: drumsKit, volume: V.drums }, eq(0, 400, 0, 5000, -3, 10000, 3));
-add('drums2', 'designedKit', { drumDesign: crunchKit, volume: V.drums2 }, eq(0, 400, 0, 2500, 0, 4500, 5));
-add('drums3', 'designedKit', { drumDesign: finalKit, volume: V.drums3 }, eq(0, 400, 0, 5000, -3, 10000, 3));
+add('drums', 'designedKit', { drumDesign: drumsKit, volume: V.drums }, eq(0, 220, -2, 5000, -3, 10000, 3));
+add('drums2', 'designedKit', { drumDesign: crunchKit, volume: V.drums2 }, eq(0, 220, -2, 2500, 0, 4500, 5));
+add('drums3', 'designedKit', { drumDesign: finalKit, volume: V.drums3 }, eq(0, 220, -2, 5000, -3, 10000, 3));
 add('impact', 'designedKit', { drumDesign: impactKit, volume: V.impact, reverbSend: 0.25 });
 add('keys', 'realElectricPiano', { volume: V.keys, reverbSend: 0.25 }, eq(-2, 300, -1, 2500, 1, 8000, 0));
 add('wash', 'plugin', { ...fledge('wash', 'Pad/Wide Wash', { 1: 0.5, 2: 0.6 }), volume: V.wash, reverbSend: 0.3 }, { ...wide(0.6), ...eq(0, 300, 0, 2000, 0, 8000, -2, 0, 150) });
@@ -433,10 +433,10 @@ add('lead', 'plugin', { ...fledge('lead', 'Lead/Supersaw', { 1: 0.5, 2: 0.7, 3: 
 add('lead2', 'plugin', { ...fledge('lead2', 'Lead/Sine', { 2: 0.4 }), volume: V.lead2, reverbSend: 0.35 }, wide(0.4));
 add('counter', 'plugin', { ...fledge('counter', 'Keys/Bright Pluck', { 1: 0.4, 2: 0.4 }), volume: V.counter, reverbSend: 0.3 }, eq(0, 400, 0, 2500, 0, 8000, 0, 0, 300));
 add('chop', 'plugin', { ...fledge('chop', 'Lead/Chip Crunch'), volume: V.chop, reverbSend: 0.12 }, { ...wide(0.7), ...eq(0, 400, -5, 2500, 0, 5000, 3, 0, 300) });
-add('bass', 'plugin', { ...fledge('bass', 'Bass/Driven Legato', { 1: 0.35, 2: 0.3, 3: 0.2 }, { 'Sub level': 0 }), volume: V.bass, reverbSend: 0 }, eq(-3, 170, 3, 600, -8, 1800, -6, 3000, 70));
+add('bass', 'plugin', { ...fledge('bass', 'Bass/Driven Legato', { 1: 0.35, 2: 0.3, 3: 0.2 }, { 'Sub level': 0 }), volume: V.bass, reverbSend: 0 }, eq(-3, 170, 1, 600, -8, 1800, -6, 3000, 70));
 // (the colour bass: every riff note held into the next when it follows within a 16th, so the legato bass glides)
 if (P.cbass) P.cbass = P.cbass.map((n, k, all) => { const nx = all[k + 1]; if (!nx || nx.at - (n.at + n.steps) > 1 + 1e-9 || nx.at <= n.at) return n; return { ...n, steps: +(nx.at - n.at + 0.1).toFixed(4) }; });
-add('cbass', 'plugin', { ...fledge('cbass', 'Bass/Driven Legato', {}, { 'Sub level': 0 }), volume: V.cbass, reverbSend: 0 }, eq(-4, 170, 7, 450, -9, 4000, 8, 9000, 70));
+add('cbass', 'plugin', { ...fledge('cbass', 'Bass/Driven Legato', {}, { 'Sub level': 0 }), volume: V.cbass, reverbSend: 0 }, eq(-4, 170, 3, 450, -9, 4000, 8, 9000, 70));
 add('sub', 'plugin', { ...fledge('sub', 'Bass/Clean Sub'), volume: V.sub, reverbSend: 0 });
 add('stabs', 'plugin', { ...fledge('stabs', 'Bass/Hard Clip Stab'), volume: V.stabs, reverbSend: 0.05 }, { chorus: { on: true, rate: 0.8, depth: 0.85, mix: 0.7 }, ...eq(0, 300, -5, 600, -6, 4000, 6, 10000) });
 add('riser', 'plugin', { ...fledge('riser', 'FX/Riser'), volume: V.riser, reverbSend: 0.2 });
@@ -481,8 +481,12 @@ const PUMPS = {
   ...(arg.pumps ?? {}),
 };
 useTimelineStore.setState({ tracks: useTimelineStore.getState().tracks.map((t) => (PUMPS[t.id] ? { ...t, fx: { ...t.fx, pump: { ...t.fx.pump, ...PUMPS[t.id] } } } : t)) });
+// Make space (the mixer's button, store/makeSpace.ts), unless arg.space is false: the EQ moves that carve the low mids and lift the lead
+const spaceMade = arg.space === false ? [] : (await import('/src/store/makeSpace.ts')).makeSpace(useTimelineStore.getState().tracks, useTimelineStore.getState().clips).changes;
+if (arg.space !== false) useTimelineStore.getState().makeSpace();
 useTimelineStore.getState().setMasterLoud({ on: true, target: arg.loud ?? 'loud', crunch: CRUNCH, subTilt: arg.subTilt ?? -2 });
 const p = currentProject();
+out.space = spaceMade;
 out.tracks = p.tracks.map((t) => `${t.id} ${t.name} vol ${t.volume} pump ${t.fx.pump?.on ? (+t.fx.pump.depth).toFixed(3) + ' ' + t.fx.pump.trigger + ' ' + t.fx.pump.release : 'off'}`);
 out.clips = p.clips.length;
 out.sounds = SOUNDS;

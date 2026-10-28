@@ -434,33 +434,106 @@ export function loudestRms(x: Float32Array, sampleRate: number): number {
   return Math.sqrt(Math.max(0, best) / win);
 }
 
+/** A layer's own noise seed within a sound (`variant` 0 is the sound as it always was; the others are other noise for its sides). */
+const layerSeed = (seed: number, i: number, variant = 0) => (seed ^ Math.imul(i + 1, 0x9e3779b1) ^ Math.imul(variant, 0x85ebca6b)) >>> 0;
+
+/** A sound mixed, trimmed and made to its row's loudness, and what that took (for its sides, see renderDrumStereo). */
+function renderMixed(sound: DrumSound, row: DesignRow, sampleRate: number, seed: number): { out: Float32Array; length: number; gain: number } | null {
+  const length = Math.max(1, Math.round(drumSeconds(sound) * sampleRate));
+  const mix = new Float32Array(length);
+  sound.layers.forEach((l, i) => {
+    const start = Math.round((l.delay / 1000) * sampleRate);
+    if (start >= length) return;
+    const y = renderLayer(l, length - start, sampleRate, layerSeed(seed, i));
+    const gain = 10 ** (l.level / 20);
+    for (let j = 0; j < y.length; j++) mix[start + j] += y[j] * gain;
+  });
+  const peak = peakOf(mix);
+  if (!(peak > 0)) return null;
+  // Trim what's under -70 dB of the peak off the end, then fade the last 3 ms
+  let end = length;
+  while (end > 1 && Math.abs(mix[end - 1]) < peak * 3.2e-4) end--;
+  const out = mix.slice(0, Math.min(length, end + Math.round(0.003 * sampleRate)));
+  fadeEnd(out, sampleRate);
+  const rms = loudestRms(out, sampleRate);
+  const gain = Math.min(10 ** ((ROW_LOUDNESS[row] + sound.level) / 20) / Math.max(1e-9, rms), DRUM_CEILING / peakOf(out));
+  for (let i = 0; i < out.length; i++) out[i] *= gain;
+  return { out, length, gain };
+}
+
+/** Fade the last 3 ms of `x` out. */
+function fadeEnd(x: Float32Array, sampleRate: number): void {
+  const fade = Math.min(x.length >> 1, Math.round(0.003 * sampleRate));
+  for (let i = 0; i < fade; i++) x[x.length - 1 - i] *= i / fade;
+}
+
 /**
  * Render `sound` for `row` at `sampleRate`: its layers mixed at their levels and delays, made to
  * the row's loudness (ROW_LOUDNESS) plus its level, the peak kept under DRUM_CEILING, the silence
  * after it trimmed and the end faded. `seed` picks the noise.
  */
 export function renderDrumSound(sound: DrumSound, row: DesignRow, sampleRate: number, seed = 0): Float32Array {
-  const length = Math.max(1, Math.round(drumSeconds(sound) * sampleRate));
-  const mix = new Float32Array(length);
+  return renderMixed(sound, row, sampleRate, seed)?.out ?? new Float32Array(1);
+}
+
+/** The voices whose noise is spread across the stereo field (renderDrumStereo): hats, cymbals and shakers. */
+export const WIDE_VOICES: ReadonlySet<DrumLayer['voice']> = new Set(['hat', 'shaker']);
+/** How wide they spread: the side's level against the noise in the middle (0.55: about 5 dB under it). */
+export const DRUM_NOISE_WIDTH = 0.55;
+/** Under this (Hz) nothing is spread: the side is high-passed here. */
+export const DRUM_SIDE_LOW_CUT = 1200;
+
+/**
+ * The sound in stereo, for a sound with a hat or shaker layer (WIDE_VOICES); null for any other,
+ * which plays in mono as before. A real hat or shaker is heard a little differently by each ear
+ * (each mic of a stereo pair picks up its own mix of the sizzle), so its noise is spread: the
+ * middle is the sound exactly as renderDrumSound makes it, and each side adds or takes away the
+ * same "other" noise, the difference of two more renders of the noisy layers with other seeds, so
+ * it is noise only (the metal, the clicks and every other layer cancel out of it), high-passed at
+ * DRUM_SIDE_LOW_CUT and DRUM_NOISE_WIDTH as loud. Left plus right is the mono sound, so nothing
+ * changes in mono but the level; both sides are turned down together so the hit carries the same
+ * energy as the mono one did in each speaker, which keeps the row's loudness.
+ */
+export function renderDrumStereo(sound: DrumSound, row: DesignRow, sampleRate: number, seed = 0): { left: Float32Array; right: Float32Array } | null {
+  if (!sound.layers.some((l) => WIDE_VOICES.has(l.voice))) return null;
+  const mixed = renderMixed(sound, row, sampleRate, seed);
+  if (!mixed) return null;
+  const { out, length, gain } = mixed;
+  const side = new Float32Array(length);
   sound.layers.forEach((l, i) => {
     const start = Math.round((l.delay / 1000) * sampleRate);
-    if (start >= length) return;
-    const y = renderLayer(l, length - start, sampleRate, (seed ^ Math.imul(i + 1, 0x9e3779b1)) >>> 0);
-    const gain = 10 ** (l.level / 20);
-    for (let j = 0; j < y.length; j++) mix[start + j] += y[j] * gain;
+    if (!WIDE_VOICES.has(l.voice) || start >= length) return;
+    const a = renderLayer(l, length - start, sampleRate, layerSeed(seed, i, 1));
+    const b = renderLayer(l, length - start, sampleRate, layerSeed(seed, i, 2));
+    const g = (10 ** (l.level / 20) * Math.SQRT1_2) * gain * DRUM_NOISE_WIDTH;
+    for (let j = 0; j < a.length; j++) side[start + j] += (a[j] - b[j]) * g;
   });
-  const peak = peakOf(mix);
-  if (!(peak > 0)) return new Float32Array(1);
-  // Trim what's under -70 dB of the peak off the end, then fade the last 3 ms
-  let end = length;
-  while (end > 1 && Math.abs(mix[end - 1]) < peak * 3.2e-4) end--;
-  const out = mix.slice(0, Math.min(length, end + Math.round(0.003 * sampleRate)));
-  const fade = Math.min(out.length >> 1, Math.round(0.003 * sampleRate));
-  for (let i = 0; i < fade; i++) out[out.length - 1 - i] *= i / fade;
-  const rms = loudestRms(out, sampleRate);
-  const gain = Math.min(10 ** ((ROW_LOUDNESS[row] + sound.level) / 20) / Math.max(1e-9, rms), DRUM_CEILING / peakOf(out));
-  for (let i = 0; i < out.length; i++) out[i] *= gain;
-  return out;
+  const s = side.subarray(0, out.length);
+  const hp = new Svf(DRUM_SIDE_LOW_CUT, Math.SQRT1_2, sampleRate);
+  for (let i = 0; i < s.length; i++) {
+    hp.run(s[i]);
+    s[i] = hp.high;
+  }
+  fadeEnd(s, sampleRate);
+  let mid = 0;
+  let wide = 0;
+  for (let i = 0; i < out.length; i++) {
+    mid += out[i] * out[i];
+    wide += s[i] * s[i];
+  }
+  const left = new Float32Array(out.length);
+  const right = new Float32Array(out.length);
+  for (let i = 0; i < out.length; i++) {
+    left[i] = out[i] + s[i];
+    right[i] = out[i] - s[i];
+  }
+  // The same energy in each speaker as the mono hit, and the peak still under the ceiling
+  const k = Math.min(1 / Math.sqrt(1 + wide / Math.max(1e-20, mid)), DRUM_CEILING / Math.max(1e-9, peakOf(left), peakOf(right)));
+  for (let i = 0; i < out.length; i++) {
+    left[i] *= k;
+    right[i] *= k;
+  }
+  return { left, right };
 }
 
 /** The peak of `x`. */

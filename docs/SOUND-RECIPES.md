@@ -29,6 +29,11 @@ Since compressed exports are limited at −1 dBTP like a WAV and MP3s are gaples
 different MP3: the master reaches −6.1 LUFS at −1 dBTP (distortion −18.1 dB instead of −16.3), and the
 MP3 is turned down 1.3 dB after encoding, decoding at −7.4 LUFS and −1.1 dBTP with its first sample at 0.
 
+Since the mix balance pass (see the end of this file) the same command also runs Make space and plays the bass's
+170 Hz bell at +3 dB (was +7) and the drums 2 dB down at 220 Hz; the hats are a little wide in the kit itself. To rebuild
+the earlier mix add `"space":false,"eq":{"bass":[-4,170,7,450,-9,4000,8,9000],"drums":[0,400,0,2500,0,4500,5]}`
+(the hats stay wide: that is the kit's sound now).
+
 What it took, in the order the owner's ears found the problems:
 
 1. **"Sounds like the 2010s."** The first demos were half-time at 145 with one snare a bar, 8th
@@ -276,3 +281,39 @@ strings, choir and the violins singing the hook over D Ebmaj9 C Asus4 | Bm7 Eb G
 1:29; build 2 with a fake drop (two beats, then Tape stop, the hook's opening stuttered up into the new key)
 1:50; final drop in E with brass and choir, the hook an octave up 2:03; outro 2:45. Whole song -9.0 LUFS,
 drops -8.2 and -7.4, decoded true peak -1.8 dBTP.
+
+## Mix balance and width (all three demos)
+
+Measured against eight professional reference drops (their median third-octave balance, each spectrum relative to
+its own total power), our drops stood 3 to 9 dB too hot around 200 Hz and were nearly mono above 8 kHz (side 10 to
+15 dB under the middle, left-right correlation 0.80 to 0.94, where the references sit at -1.3 to -8.7 dB and 0.15 to
+0.76, median -5.2 and 0.53). Above 8 kHz our mixes are mostly drums, and every synthesized kit was folded to mono.
+
+What changed, for every song (the first) and in the three demo scripts (the rest):
+- **The kits' hats, cymbals and shakers in stereo** (drumSynth.ts `renderDrumStereo`): the noise of each `hat` and
+  `shaker` layer gets a side made of two more renders with other seeds (their difference: noise only, the metal and the
+  other layers cancel), high-passed at 1.2 kHz, at 0.55 of the middle; the middle is the mono hit exactly and both sides
+  are turned down so each speaker carries the energy the mono hit did. The track strip folds the Designed Kit and the
+  synthesized kits to mono only under 1 kHz. Alone: side 5 to 10 dB under the middle, the mono sum 0.4 to 1.3 dB quieter.
+- **Make space** (`makeSpace.ts`), run by the scripts unless `"space":false`: -2 dB at 280 Hz on parts under middle D,
+  -3 dB at about 2.5 times the middle note on a bass over a sub, +1.5 dB from 5 kHz on the lead. Bands the scripts set
+  by hand are left alone, so in these demos it mostly adds low cuts and the 280 Hz dip on the pads and stacks.
+- **Less low-mid boost by hand**: the Driven Legato basses' 170 Hz bell +7 → +3 dB (colour-bass drop, Off the Rails'
+  drop 2), +3 → +1 (Off the Rails' bass), +2 → +1 (Night Rails); every drum track -2 dB at 220 Hz (was a flat band).
+
+Measured on the decoded MP3s, before (commit `c0b16d37`) → after, dB against the reference median:
+
+| drop | 157 Hz | 198 Hz | 250 Hz | 4-8 kHz share | over 8 kHz: side / correlation | whole file |
+|---|---|---|---|---|---|---|
+| Colour-bass drop | +5.0 → +3.0 | +5.8 → +4.3 | +6.1 → +4.8 | -14.4 → -13.5 | -12.7 / 0.90 → -8.3 / 0.74 | -7.4 → -7.5 LUFS |
+| Off the Rails, drop 1 | +1.5 → +0.6 | +9.0 → +7.9 | +5.8 → +5.2 | -16.4 → -16.0 | -14.5 / 0.93 → -13.5 / 0.91 | -10.3 → -9.9 |
+| Off the Rails, drop 2 | +4.8 → +3.1 | +8.2 → +6.7 | +5.5 → +4.5 | -14.7 → -13.7 | -14.9 / 0.94 → -9.4 / 0.79 | |
+| Off the Rails, final | +2.0 → +1.0 | +7.1 → +6.0 | +6.3 → +5.5 | -15.7 → -15.4 | -12.8 / 0.90 → -12.3 / 0.89 | |
+| Night Rails, drop 1 | +1.1 → +0.4 | +2.8 → +1.7 | +4.0 → +3.2 | -16.8 → -16.6 | -10.7 / 0.84 → -7.0 / 0.67 | -10.0 → -10.3 |
+| Night Rails, final | +0.5 → -0.2 | +2.6 → +1.5 | +3.6 → +2.8 | -16.1 → -16.0 | -9.6 / 0.80 → -6.5 / 0.63 | |
+
+Every export still lands on its Loud target before encoding (-6.1, -9, -9 LUFS). What is left around 200 Hz is the
+Driven Legato bass's own harmonics (over half the energy there), the kicks' knock and snares' bodies (most of the rest),
+and about 1 dB from the Crunch clipper; Off the Rails' drop 1 and final drop stay narrow because their hats are
+quiet against the kick and snare there. The starters play recorded kits (Lo-Fi's Break Kit is low-passed at 5 kHz), so
+their balance and loudness didn't move (Lo-Fi re-measured at -14.7 LUFS with its 3.5 dB trim, as in the table).

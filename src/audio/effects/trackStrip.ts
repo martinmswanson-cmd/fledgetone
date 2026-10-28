@@ -12,6 +12,7 @@ import { GATE_TICKS } from '../../store/timelineTypes';
 import { activeLanes, parseParam, specOf } from '../automation';
 import { roomSendLevel } from './distance';
 import { INSTRUMENTS } from '../instrumentCatalog';
+import { isSynthKit } from '../../store/synthKits';
 import type { BusEffects } from './busEffects';
 import { createEcho, createReverb, type EchoUnit, type ReverbUnit } from './spaceFx';
 import { createMonoBass, createSaturation, type MonoBassInsert, type SaturationInsert } from './busInserts';
@@ -72,7 +73,10 @@ import {
  * mono source (spread to both sides first) pans exactly as before, and a stereo one keeps its
  * width while the pan turns down the side it moves away from. The synthesized drum kits are
  * folded to mono at the end of the inserts, where that panner used to fold them: their noise is
- * stereo, but they were voiced hearing it folded, and their inserts heard it in stereo.
+ * stereo, but they were voiced hearing it folded, and their inserts heard it in stereo. The
+ * Designed Kit and the kits built on it (whose only stereo is the hats', cymbals' and shakers'
+ * noise, spread on purpose: see drumSynth.ts renderDrumStereo) are folded only under
+ * KIT_WIDTH_FROM_HZ, so that width reaches the mix and the kick, snare and toms stay in the middle.
  *
  * Automation: while a lane with points owns a setting, apply() leaves that setting to the lane
  * (automationSchedule.ts writes it) and puts the track's own value back when the lane goes. Pan,
@@ -208,6 +212,12 @@ const SWITCH_FADE = 0.01;
  * its 6 ms look-ahead and then brings its gain up from nothing over about 0.2 s.
  */
 const COMPRESSOR_WARM_UP = 0.2;
+
+/** The Designed Kit's fold keeps the sides above this (Hz): the hats' and cymbals' spread noise. */
+export const KIT_WIDTH_FROM_HZ = 1000;
+
+/** The kits folded only under KIT_WIDTH_FROM_HZ (see above): the Designed Kit and the synthesized kits made of it. */
+export const keepsKitWidth = (instrumentKey: string): boolean => instrumentKey === 'designedKit' || isSynthKit(instrumentKey);
 
 /** A gain that folds whatever comes in to mono (the average of its sides), for the drum kits. */
 function createMonoFold(): Unit {
@@ -446,8 +456,9 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
   let echoSettings: Track['fx']['echo'] | null = null;
   let gateUnit: LightGate | null = null;
   let gateRate: GateRate | null = null;
-  /** The drum kits' fold to mono, after the other inserts (see above). */
+  /** The drum kits' fold to mono, after the other inserts (see above), and which: all of it, or under KIT_WIDTH_FROM_HZ. */
   let fold: Unit | null = null;
+  let foldKind: 'mono' | 'low' | null = null;
   /** The inserts currently patched in, in signal order. */
   let chain: Insert[] = [];
   /** Live, the links of the chain (and those still fading out), each through its own gain. */
@@ -1145,11 +1156,11 @@ export function createTrackStrip(bus: Tone.InputNode, busFx: BusEffects): TrackS
         giveVolumeBack(track, mute, ramp);
       }
 
-      if (INSTRUMENTS[track.instrumentKey]?.mono) {
-        fold ??= createMonoFold();
-      } else if (fold) {
-        retired.push(fold);
-        fold = null;
+      const kind = INSTRUMENTS[track.instrumentKey]?.mono ? (keepsKitWidth(track.instrumentKey) ? 'low' : 'mono') : null;
+      if (kind !== foldKind) {
+        if (fold) retired.push(fold);
+        fold = kind === 'low' ? createMonoBass({ on: true, freq: KIT_WIDTH_FROM_HZ }) : kind === 'mono' ? createMonoFold() : null;
+        foldKind = kind;
       }
       rewire(retired);
 

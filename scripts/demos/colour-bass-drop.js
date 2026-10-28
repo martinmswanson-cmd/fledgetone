@@ -1,7 +1,7 @@
 // A colour-bass drop (the sound the owner signed off on), built through the app's store and rendered by
 // its export path (Loud master with Crunch, the app's MP3 encoder). 100 BPM, E phrygian.
 // arg.vol: {track: dB}, arg.levels: true -> each track's own loudness, arg.crunch, arg.loud ('club'),
-// arg.ott, arg.glue, arg.duck (style or false), arg.ceiling, arg.variant ('a' | 'b'), arg.stems: ['bass'] -> also a WAV of those tracks,
+// arg.ott, arg.glue, arg.space (false: no Make space), arg.duck (style or false), arg.ceiling, arg.variant ('a' | 'b'), arg.stems: ['bass'] -> also a WAV of those tracks,
 // arg.file: output name
 const ex = await import('/src/audio/exportWav.ts');
 const T = await import('/src/store/timelineTypes.ts');
@@ -228,9 +228,11 @@ const eq = (lo, m1f, m1, m2f, m2, hif, hi, cut = 0) => ({ peq: { on: true, bands
   { on: true, type: 'bell', freq: m1f, gain: m1, q: 1 }, { on: true, type: 'bell', freq: m2f, gain: m2, q: 1 },
   { on: true, type: 'highshelf', freq: hif, gain: hi, q: 0.7 }, { on: cut > 0, type: 'highcut', freq: cut || 18000, gain: 0, q: Math.SQRT1_2 }] } });
 const E_ = arg.eq ?? {};
-const bassEq = eq(...(E_.bass ?? [-4, 170, 7, 450, -9, 4000, 8, 9000]));
+// (The bass's 170 Hz was +7 dB and the drums' 220 Hz flat until the mix was compared with professional ones: it stood 6 dB over
+// them around 200 Hz. arg.eq {bass: [-4, 170, 7, ...], drums: [0, 400, 0, ...]} rebuilds the old mix)
+const bassEq = eq(...(E_.bass ?? [-4, 170, 3, 450, -9, 4000, 8, 9000]));
 for (const [row, dl] of Object.entries(arg.rowLevel ?? { closedHat: 4.5, snare: -6 })) if (kit[row]) kit[row].level = dl;
-add('drums', 'designedKit', drums, { drumDesign: kit, volume: vol.drums }, eq(...(E_.drums ?? [0, 400, 0, 2500, 0, 4500, 5])));
+add('drums', 'designedKit', drums, { drumDesign: kit, volume: vol.drums }, eq(...(E_.drums ?? [0, 220, -2, 2500, 0, 4500, 5])));
 if (NB) {
   // One voice: every riff note in time order, held into the next one when it follows within a 16th (legato: joined, glided)
   const all = [...bassN.A, ...bassN.B, ...bassN.C].sort((a, b) => a.startOffset - b.startOffset);
@@ -289,6 +291,9 @@ if (arg.pumps) useTimelineStore.setState({ tracks: useTimelineStore.getState().t
 if (arg.level) useTimelineStore.getState().setMasterLevel(arg.level, false);
 // arg.masterGlue: the master compressor's style ('off', 'tight'...)
 if (arg.masterGlue) useTimelineStore.setState({ master: { ...useTimelineStore.getState().master, glue: arg.masterGlue } });
+// Make space (the mixer's button, store/makeSpace.ts), unless arg.space is false: the EQ moves that carve the low mids and lift the lead
+const spaceMade = arg.space === false ? [] : (await import('/src/store/makeSpace.ts')).makeSpace(useTimelineStore.getState().tracks, useTimelineStore.getState().clips).changes;
+if (arg.space !== false) useTimelineStore.getState().makeSpace();
 const glued = arg.glue ? useTimelineStore.getState().setGlueMix(true) : 0;
 if (arg.ott) useTimelineStore.getState().setMasterOtt({ on: true, ...(typeof arg.ott === 'object' ? arg.ott : {}) });
 const loud = arg.loud ?? 'club';
@@ -296,7 +301,7 @@ if (arg.loudOff !== true) useTimelineStore.getState().setMasterLoud({ on: true, 
 const st = useTimelineStore.getState();
 const masterFx = { reverbDecay: st.reverbDecay ?? T.DEFAULT_MASTER_FX.reverbDecay, delayTime: st.delayTime ?? T.DEFAULT_MASTER_FX.delayTime, delayFeedback: st.delayFeedback ?? T.DEFAULT_MASTER_FX.delayFeedback };
 const opts = { tracks: st.tracks, clips: st.clips, bpm: st.bpm, swing: 0, masterFx, master: st.master, startBar: 1, endBar: BARS + 1, ending: 'ringOut', sampleRate: sr, peakCeilingDbtp: CEIL, loudTargetLufs: arg.loudOff ? undefined : arg.lufs ?? LOUD_TARGETS[loud].lufs };
-const out = { variant: V, ducked, glued, tracks: st.tracks.map((t) => `${t.id} vol ${t.volume} pump ${t.fx.pump?.on ? t.fx.pump.depth + ' ' + t.fx.pump.trigger : 'off'} glue ${t.fx.compressor?.on ? 'comp' : ''}`) };
+const out = { variant: V, ducked, glued, space: spaceMade, tracks: st.tracks.map((t) => `${t.id} vol ${t.volume} pump ${t.fx.pump?.on ? t.fx.pump.depth + ' ' + t.fx.pump.trigger : 'off'} glue ${t.fx.compressor?.on ? 'comp' : ''}`) };
 const wavs = {};
 if (arg.levels) {
   const lv = {};
