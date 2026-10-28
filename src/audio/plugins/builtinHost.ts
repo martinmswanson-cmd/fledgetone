@@ -202,7 +202,7 @@ export async function createBuiltinInstance(ctx: BaseAudioContext, url: string, 
       // (see followInput in processor.ts); the reverbs made to hold a sound forever are left be
       followInput: !ref.info.instrument && !HOLDS_FOREVER.has(ref.info.name),
       // (A family that mustn't share its memory, and parameters kept inside their safe range: paramLimits.ts)
-      ...ownMemoryFor(ref.family.family, typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext),
+      ...ownMemoryFor(ref.family.family),
       outputGain: 10 ** ((OUTPUT_TRIMS_DB[builtinUrl(ref.family.family, ref.info.name)] ?? 0) / 20),
       limits: PARAM_LIMITS[builtinUrl(ref.family.family, ref.info.name)] ?? null,
     },

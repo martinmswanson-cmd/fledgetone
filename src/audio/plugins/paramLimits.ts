@@ -54,18 +54,12 @@ export const PARAM_LIMITS: Readonly<Record<string, Readonly<Record<string, reado
 export const OWN_MEMORY_FAMILIES: ReadonlySet<string> = new Set(['mutable']);
 
 /**
- * Whether a plugin of `family` gets an instance of its own, in a live context or a render
- * (`offline`). Only live: in a render every plugin is made at the start into the family's fresh
- * (zeroed) instance and none is deleted before the end, so none can find another's leftovers; and
- * Chromium never frees a render's instances (an OfflineAudioContext an AudioWorklet module went
- * into stays), about 124 WebAssembly memories in all fit in a page, so one per plugin per render ran
- * out after some 25 exports of a song with five of them, and every plugin failed to load after.
- * A shared one started again after a blow-up still gets a fresh instance (`freshOnRestart`).
+ * Whether a plugin of `family` gets an instance of its own: the same live and in a render (an
+ * export sounds as the song does, and the same every time; shared in a render, the Mutable models
+ * read what the others had left in memory and three of them exported three ways in four renders).
+ * Each instance is let go when its plugin is (see release in processor.ts).
  */
-export const ownMemoryFor = (family: string, offline: boolean): { ownMemory: boolean; freshOnRestart: boolean } => {
-  const own = OWN_MEMORY_FAMILIES.has(family);
-  return { ownMemory: own && !offline, freshOnRestart: own && offline };
-};
+export const ownMemoryFor = (family: string): { ownMemory: boolean } => ({ ownMemory: OWN_MEMORY_FAMILIES.has(family) });
 
 /**
  * Built-in plugins turned down as a whole (dB), by address: ones whose loudest notes stood far
