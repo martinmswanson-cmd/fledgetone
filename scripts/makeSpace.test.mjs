@@ -1,4 +1,4 @@
-// Make space (src/store/makeSpace.ts): the parts above the bass lose their rumble, parts in the lead's range give way to it, the bass and drums are untouched.
+// Make space (src/store/makeSpace.ts): the parts above the bass lose their rumble and a little of their low mids, parts in the lead's range give way to it, the lead gets a little presence, a bass over a sub gives a little in the low mids; a lone bass and the drums are untouched.
 import { register } from 'node:module';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { makeSpace } = await import('../src/store/makeSpace.ts');
+const { makeSpace, LOW_MID_HZ, LOW_MID_DB, PRESENCE_HZ, PRESENCE_DB, BASS_MUD_DB } = await import('../src/store/makeSpace.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 
 const track = (id, instrumentKey) => ({ id, name: id, color: '#fff', instrumentKey, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0, delaySend: 0 });
@@ -71,4 +71,42 @@ test('a synth patch that sounds an octave under its notes keeps its fundamental'
     const cut = out.find((t) => t.id === id).fx.peq.bands[0];
     assert.ok(!cut.on || cut.freq < 110, `${id}: low cut at ${cut.freq} Hz`);
   }
+});
+
+test('the low mids: parts under middle D give a little at 280 Hz, the lead keeps its body and gets presence', () => {
+  const tracks = [track('bass', 'realElectricBass'), track('lead', 'realFlute'), track('stabs', 'realStrings'), track('high', 'realStrings')];
+  const clips = [
+    clip('bass', ['C2', 'G1', 'C2', 'A#1', 'C2', 'G1']),
+    clip('lead', ['C5', 'D5', 'E5', 'G5', 'E5', 'D5', 'C5', 'A4']),
+    clip('stabs', ['G3', 'C4', 'E4', 'A3', 'C4', 'E4', 'F3', 'A3', 'C4'], true),
+    clip('high', ['E5', 'G5', 'C6', 'F5', 'A5', 'C6'], true),
+  ];
+  const out = makeSpace(tracks, clips).tracks;
+  const stabs = out.find((t) => t.id === 'stabs').fx.peq.bands[2];
+  assert.deepEqual([stabs.type, stabs.freq, stabs.gain], ['bell', LOW_MID_HZ, LOW_MID_DB]);
+  assert.ok(LOW_MID_DB < 0 && LOW_MID_DB >= -3, 'a gentle cut');
+  assert.equal(out.find((t) => t.id === 'high').fx.peq.bands[2].gain, 0, 'a part over the low mids keeps them');
+  const lead = out.find((t) => t.id === 'lead').fx.peq.bands;
+  assert.equal(lead[2].gain, 0, 'the lead keeps its body');
+  assert.deepEqual([lead[4].type, lead[4].freq, lead[4].gain], ['highshelf', PRESENCE_HZ, PRESENCE_DB]);
+  assert.ok(PRESENCE_DB > 0 && PRESENCE_DB <= 2, 'a gentle lift');
+  assert.equal(out.find((t) => t.id === 'bass'), tracks[0], 'a bass alone is untouched');
+});
+
+test('a bass over a sub gives a little where its harmonics thicken the low mids; the sub is untouched', () => {
+  const tracks = [track('sub', 'subBass'), track('bass', 'realElectricBass'), track('lead', 'realFlute')];
+  const clips = [
+    clip('sub', ['E1', 'E1', 'F1', 'E1', 'A#0', 'E1']),
+    clip('bass', ['E2', 'G2', 'E3', 'D2', 'B2', 'E2', 'F2', 'A#2']),
+    clip('lead', ['C5', 'D5', 'E5', 'G5', 'E5', 'D5']),
+  ];
+  const { tracks: out, changes } = makeSpace(tracks, clips);
+  assert.equal(out.find((t) => t.id === 'sub'), tracks[0]);
+  const b = out.find((t) => t.id === 'bass').fx.peq;
+  assert.ok(b.on);
+  assert.equal(b.bands[0].on, false, 'no low cut on a bass');
+  assert.equal(b.bands[2].type, 'bell');
+  assert.equal(b.bands[2].gain, BASS_MUD_DB);
+  assert.ok(b.bands[2].freq >= 160 && b.bands[2].freq <= 320, `at ${b.bands[2].freq} Hz`);
+  assert.ok(changes.some((c) => c.trackId === 'bass' && /over the sub/.test(c.what)));
 });

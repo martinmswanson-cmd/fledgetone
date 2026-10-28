@@ -69,6 +69,47 @@ test('a designed drum renders the same every time; its seed picks its noise', ()
   assert.deepEqual(S.renderDrumSound(kick, 'kick', 48000, 3), S.renderDrumSound(kick, 'kick', 48000, 3));
 });
 
+test('hats, cymbals and shakers play in stereo: the same sound in mono, their noise spread above the low mids', () => {
+  const energy = (x) => x.reduce((a, v) => a + v * v, 0);
+  const ROW = { Hats: 'closedHat', Cymbals: 'crash', Percussion: 'cowbell' };
+  let wide = 0;
+  for (const p of D.DRUM_PRESETS) {
+    const row = ROW_OF_GROUP[p.group];
+    const st = S.renderDrumStereo(p.sound, row, 44100, 7);
+    const spread = p.sound.layers.some((l) => S.WIDE_VOICES.has(l.voice));
+    if (!spread) {
+      assert.equal(st, null, `${p.id} stays mono`);
+      continue;
+    }
+    assert.ok(ROW[p.group], `${p.id}: only hats, cymbals and percussion spread`);
+    wide++;
+    const mono = S.renderDrumSound(p.sound, row, 44100, 7);
+    assert.equal(st.left.length, mono.length);
+    const mid = st.left.map((v, i) => (v + st.right[i]) / 2);
+    const side = st.left.map((v, i) => (v - st.right[i]) / 2);
+    // The middle is the mono sound exactly, a little quieter (at most 1.5 dB)
+    const k = Math.sqrt(energy(mid) / energy(mono));
+    assert.ok(k <= 1 && k > 10 ** (-1.5 / 20), `${p.id}: mono ${(20 * Math.log10(k)).toFixed(2)} dB`);
+    for (let i = 0; i < mono.length; i++) assert.ok(Math.abs(mid[i] - mono[i] * k) < 1e-6, `${p.id}: the middle is the mono sound`);
+    // Each speaker carries what the mono hit did
+    near(10 * Math.log10((energy(st.left) + energy(st.right)) / (2 * energy(mono))), 0, 0.05);
+    // Spread, but gently: the side 3 to 12 dB under the middle
+    const sm = 10 * Math.log10(energy(side) / energy(mid));
+    assert.ok(sm > -12 && sm < -3, `${p.id}: side ${sm.toFixed(1)} dB`);
+    // and none of it in the lows: the side's share under 300 Hz is at least 40 dB under the side
+    const lowOf = (x) => {
+      const out = new Float32Array(x.length);
+      let a = 0, b = 0;
+      const g = 1 - Math.exp((-2 * Math.PI * 300) / 44100);
+      for (let i = 0; i < x.length; i++) { a += g * (x[i] - a); b += g * (a - b); out[i] = b; }
+      return out;
+    };
+    assert.ok(energy(lowOf(side)) < energy(side) * 1e-4, `${p.id}: low side ${(10 * Math.log10(energy(lowOf(side)) / energy(side))).toFixed(1)} dB`);
+    assert.deepEqual(S.renderDrumStereo(p.sound, row, 44100, 7), st, `${p.id}: the same every time`);
+  }
+  assert.ok(wide >= 8, 'every hat, cymbal and shaker preset spreads');
+});
+
 test('the kick sweeps down onto its pitch, and decay sets its length', () => {
   const kick = D.presetSound('hardTrapKick');
   const x = S.renderDrumSound(kick, 'kick', 48000, 1);

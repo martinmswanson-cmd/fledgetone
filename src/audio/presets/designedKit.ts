@@ -2,7 +2,7 @@ import * as Tone from 'tone';
 import { notLate } from './monotonic';
 import { createBus, createVoiceSet } from './native';
 import type { NativeVoice } from './native';
-import { renderDrumSound } from '../drumSynth';
+import { renderDrumSound, renderDrumStereo } from '../drumSynth';
 import { noiseKey } from '../seededNoise';
 import { soundForRow } from '../../store/drumDesign';
 import type { DesignRow, DrumDesign } from '../../store/drumDesign';
@@ -17,22 +17,30 @@ import type { DesignRow, DrumDesign } from '../../store/drumDesign';
  *
  * The closed and open hats are one hi-hat, as on a real kit and the synthesized kits: a hat hit
  * chokes the open hat still ringing.
+ *
+ * The hats, cymbals and shakers play in stereo (renderDrumStereo: their noise a little different
+ * on each side, the mono sound unchanged), everything else in mono. The track strip keeps that
+ * width only above its crossover (see trackStrip.ts), so the kit's lows and mids stay in the middle.
  */
 
 /** How long a choked hat takes to fall silent, seconds */
 const CHOKE = 0.012;
 
+/** A rendered sound: one channel, or the left and right of a stereo one. */
+type Rendered = Float32Array[];
 /** Rendered sounds, by rate, seed, row and settings: shared by every Designed Kit (and an export at the same rate reuses the live ones). */
-const rendered = new Map<string, Float32Array>();
+const rendered = new Map<string, Rendered>();
 /** Rendered sounds kept at most (the oldest go first) */
 const MAX_RENDERED = 96;
 
-function samplesFor(row: DesignRow, design: DrumDesign | undefined, sampleRate: number, seed: number): Float32Array {
+function samplesFor(row: DesignRow, design: DrumDesign | undefined, sampleRate: number, seed: number): Rendered {
   const sound = soundForRow(design, row);
   const key = `${sampleRate}|${seed}|${row}|${JSON.stringify(sound.layers)}|${sound.level}`;
   let x = rendered.get(key);
   if (!x) {
-    x = renderDrumSound(sound, row, sampleRate, noiseKey(seed, `designed-${row}`));
+    const noise = noiseKey(seed, `designed-${row}`);
+    const stereo = renderDrumStereo(sound, row, sampleRate, noise);
+    x = stereo ? [stereo.left, stereo.right] : [renderDrumSound(sound, row, sampleRate, noise)];
     if (rendered.size >= MAX_RENDERED) rendered.delete(rendered.keys().next().value!);
     rendered.set(key, x);
   }
@@ -45,7 +53,7 @@ export function createDesignedKit(output: Tone.InputNode, design: DrumDesign | u
   const voices = createVoiceSet(raw);
   let current = design;
   /** Each row's buffer for the current design (dropped when its sound changes) */
-  const buffers = new Map<DesignRow, { samples: Float32Array; buffer: AudioBuffer }>();
+  const buffers = new Map<DesignRow, { samples: Rendered; buffer: AudioBuffer }>();
   /** The hats still ringing, for the choke */
   let hats: NativeVoice[] = [];
 
@@ -53,8 +61,8 @@ export function createDesignedKit(output: Tone.InputNode, design: DrumDesign | u
     const samples = samplesFor(row, current, raw.sampleRate, seed);
     const had = buffers.get(row);
     if (had?.samples === samples) return had.buffer;
-    const buffer = raw.createBuffer(1, samples.length, raw.sampleRate);
-    buffer.copyToChannel(samples as Float32Array<ArrayBuffer>, 0);
+    const buffer = raw.createBuffer(samples.length, samples[0].length, raw.sampleRate);
+    samples.forEach((x, c) => buffer.copyToChannel(x as Float32Array<ArrayBuffer>, c));
     buffers.set(row, { samples, buffer });
     return buffer;
   };
