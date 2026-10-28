@@ -17,7 +17,7 @@ register(
 }`)
 );
 
-const { createClipperKernel, clipChannels, clipperParams, normalizeClipper, defaultClipper, CLIPPER_WORKLET_SOURCE, LIVE_CLIPPER_LATENCY } = await import('../src/audio/effects/clipper.ts');
+const { createClipperKernel, clipChannels, clipperParams, normalizeClipper, defaultClipper, CLIPPER_WORKLET_SOURCE, LIVE_CLIPPER_LATENCY, splitCrossover, CLIPPER_SPLIT_HZ, CLIPPER_SPLIT_LOW_ROOM_DB, CLIPPER_SPLIT_LAST_ROOM_DB, CLIPPER_SPLIT_SOFTNESS } = await import('../src/audio/effects/clipper.ts');
 const { masterAfter } = await import('../src/audio/effects/masterAfter.ts');
 const { defaultMasterSettings, normalizeMasterSettings, sameMasterSettings } = await import('../src/store/timelineTypes.ts');
 
@@ -213,18 +213,19 @@ test('the band kind in blocks of 128 (the worklet, asked for with processorOptio
   for (let i = 0; i < x.length; i++) assert.equal(live[i + lat], whole[i]);
 });
 
-test('live, either kind plays at the band kind\'s delay: the plain kind (padTo) is the export\'s clip that many samples late, so a Crunch swap crossfades sounds lined up', () => {
-  assert.equal(LIVE_CLIPPER_LATENCY, createClipperKernel(SR, true).latency);
-  assert.ok(LIVE_CLIPPER_LATENCY > createClipperKernel(SR).latency);
+test('live, every kind plays at the longest kind\'s delay (the split band kind): each (padTo) is the export\'s clip that many samples late, so a swap of kind crossfades sounds lined up', () => {
+  assert.equal(LIVE_CLIPPER_LATENCY, createClipperKernel(SR, true, false, true).latency);
+  assert.ok(LIVE_CLIPPER_LATENCY > createClipperKernel(SR, true).latency);
+  assert.ok(createClipperKernel(SR, true).latency > createClipperKernel(SR).latency);
   const x = Float32Array.from({ length: 6000 }, (_, i) => 1.2 * Math.sin(i * 0.05) + 0.5 * Math.sin(i * 1.3));
-  for (const band of [false, true]) {
-    const settings = { on: true, drive: 3, softness: 0.2, ceiling: -2, band };
+  for (const [band, split] of [[false, false], [true, false], [false, true], [true, true]]) {
+    const settings = { on: true, drive: 3, softness: 0.2, ceiling: -2, band, split };
     const whole = x.slice();
     clipChannels(whole, whole.slice(), SR, settings);
     let Processor = null;
     const run = new Function('sampleRate', 'registerProcessor', 'class AudioWorkletProcessor { constructor() { this.port = {}; } }\n' + CLIPPER_WORKLET_SOURCE.replace('registerProcessor(', 'return registerProcessor('));
     run(SR, (name, cls) => (Processor = cls));
-    const proc = new Processor({ processorOptions: { band, padTo: LIVE_CLIPPER_LATENCY } });
+    const proc = new Processor({ processorOptions: { band, split, padTo: LIVE_CLIPPER_LATENCY } });
     proc.port.postMessage = () => {};
     const p = clipperParams(settings);
     const params = { drive: [p.drive], ceiling: [p.ceiling], softness: [p.softness] };
@@ -240,7 +241,7 @@ test('live, either kind plays at the band kind\'s delay: the plain kind (padTo) 
       liveR.set(o[1], at);
     }
     for (let i = 0; i < x.length; i++) {
-      assert.equal(live[i + LIVE_CLIPPER_LATENCY], whole[i], `${band ? 'band' : 'plain'} sample ${i}`);
+      assert.equal(live[i + LIVE_CLIPPER_LATENCY], whole[i], `${band ? 'band' : 'plain'}${split ? ' split' : ''} sample ${i}`);
       assert.equal(liveR[i + LIVE_CLIPPER_LATENCY], whole[i]);
     }
   }
@@ -487,4 +488,59 @@ test('the kernel comes out exactly as working out every point and every tap does
       }
     }
   }
+});
+
+test('the split kind: under the knee the sound only goes through its crossover (an all-pass), lined up', () => {
+  const x = Float32Array.from({ length: SR }, (_, i) => 0.25 * Math.sin((2 * Math.PI * 110 * i) / SR) + 0.1 * Math.sin((2 * Math.PI * 5000 * i) / SR));
+  const l = x.slice();
+  const r = x.slice();
+  const reading = clipChannels(l, r, SR, { on: true, drive: 0, softness: 0.5, ceiling: -1, band: true, split: true });
+  assert.equal(reading.peakDb, 0);
+  const ref = splitCrossover(x, SR);
+  let worst = 0;
+  for (let i = 0; i < x.length; i++) worst = Math.max(worst, Math.abs(l[i] - ref[i]), Math.abs(r[i] - ref[i]));
+  assert.ok(worst < 1e-4, `off the crossover by ${worst}`);
+  // (An all-pass: as loud as it went in)
+  const rms = (y) => Math.sqrt(y.slice(SR / 4).reduce((a, v) => a + v * v, 0) / (y.length - SR / 4));
+  assert.ok(Math.abs(20 * Math.log10(rms(ref) / rms(x))) < 0.05);
+});
+
+test('the split kind leaves the top out of the clipping: a bass driven hard no longer flattens the hats riding on it', () => {
+  // A loud 60 Hz under a quiet 7 kHz tone, pushed 6 dB into the Crunch clipper: the band kind clips the
+  // 7 kHz flat at every bass peak (sidebands 60 Hz either side of it, as loud as the tone); the split kind's
+  // last, soft clipper still bends it a little where it rides over the clipped bass (about 12 dB less)
+  const n = SR;
+  const mix = Float32Array.from({ length: n }, (_, i) => 0.8 * Math.sin((2 * Math.PI * 60 * i) / SR) + 0.1 * Math.sin((2 * Math.PI * 7000 * i) / SR));
+  const sidebands = (split) => {
+    const l = mix.slice();
+    const r = mix.slice();
+    clipChannels(l, r, SR, { on: true, drive: 6, softness: 0.3, ceiling: -1.7, band: true, split });
+    const y = l.subarray(SR / 4);
+    const tone = dft(y, 7000);
+    let side = 0;
+    for (const k of [-3, -2, -1, 1, 2, 3]) side += dft(y, 7000 + 60 * k) ** 2;
+    return 10 * Math.log10(side / tone ** 2);
+  };
+  const band = sidebands(false);
+  const split = sidebands(true);
+  assert.ok(band > -12, `band kind ${band.toFixed(1)} dB`);
+  assert.ok(split < band - 10, `split kind ${split.toFixed(1)} dB, band kind ${band.toFixed(1)} dB`);
+});
+
+test('the split kind holds its sample peaks under the ceiling, and its numbers are the documented ones', () => {
+  const x = Float32Array.from({ length: SR }, (_, i) => 1.5 * Math.sin((2 * Math.PI * 80 * i) / SR) + 0.6 * Math.sin((2 * Math.PI * 4100 * i) / SR));
+  for (const band of [false, true]) {
+    const l = x.slice();
+    const r = x.slice();
+    clipChannels(l, r, SR, { on: true, drive: 0, softness: 0.3, ceiling: -2, band, split: true });
+    assert.ok(peak(l.subarray(2000)) <= 10 ** (-2 / 20) * 1.0001, `${band}: ${20 * Math.log10(peak(l))} dBFS`);
+  }
+  assert.equal(CLIPPER_SPLIT_HZ, 3000);
+  assert.equal(CLIPPER_SPLIT_LOW_ROOM_DB, 0.5);
+  assert.equal(CLIPPER_SPLIT_LAST_ROOM_DB, 0.3);
+  assert.equal(CLIPPER_SPLIT_SOFTNESS, 0.5);
+  // (The kernel writes them out for the worklet: keep them in step)
+  const src = createClipperKernel.toString();
+  assert.ok(src.includes('3e3') || src.includes('3000'));
+  assert.ok(src.includes('-0.5 / 20') && src.includes('-0.3 / 20') && src.includes('LAST_SOFTNESS = 0.5'));
 });

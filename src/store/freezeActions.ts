@@ -8,7 +8,7 @@ import { freezeFingerprint, isLiveParam, trackForFreezing } from './freeze';
 import type { Track } from './timelineTypes';
 import { barToSeconds, secondsToBar } from '../audio/tempoMap';
 import { isAudioKind, isDropKind } from '../audio/instrumentCatalog';
-import { ditherSeedOf, encodeChannels, renderForFreeze, SAMPLE_RATES } from '../audio/exportWav';
+import { encodeChannels, KEPT_RENDER_BITS, renderForFreeze, SAMPLE_RATES } from '../audio/exportWav';
 import type { SampleRate } from '../audio/exportWav';
 import { importSoundFile } from '../audio/soundLibrary';
 import { BUS_GAIN, liveMix } from '../audio/engine';
@@ -17,8 +17,8 @@ import { captureWamStates } from '../audio/wamHost';
 /** Tracks being frozen right now, with how far along (0 to 1). */
 export const useFreezing = create<Record<string, number>>(() => ({}));
 
-/** A frozen sound may be up to this big (16-bit stereo: about 19 minutes at 44.1 kHz). */
-const MAX_FROZEN_BYTES = 200 * 1024 * 1024;
+/** A frozen sound may be up to this big (24-bit stereo: about 19 minutes at 44.1 kHz). */
+const MAX_FROZEN_BYTES = 300 * 1024 * 1024;
 /** Frozen sounds are stored with their peak here, and played back at the gain that undoes it. */
 const STORED_PEAK = 0.98;
 /**
@@ -134,9 +134,8 @@ async function renderTrackSound(trackId: string, label: string): Promise<Rendere
       for (let i = 0; i < out.length; i++) out[i] *= scale;
       return out;
     });
-    // Each track its own dither (ditherSeedOf): frozen tracks that start together would otherwise
-    // add up their dither in step, louder with every track
-    const wav = encodeChannels(stored, r.sampleRate, 16, [], undefined, ditherSeedOf(trackId));
+    // 24-bit (KEPT_RENDER_BITS): no dither to add up across frozen tracks that start together
+    const wav = encodeChannels(stored, r.sampleRate, KEPT_RENDER_BITS);
     const meta = await importSoundFile(wav, `${track.name} (${label})`, MAX_FROZEN_BYTES);
     if (!useTimelineStore.getState().tracks.some((t) => t.id === trackId)) return null; // deleted while it rendered
     if (songGeneration() !== song) return null; // another song opened while it rendered

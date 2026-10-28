@@ -15,6 +15,14 @@ export function ditherSeedOf(name: string): number {
   return h >>> 0;
 }
 
+/**
+ * The bit depth of the sounds the app renders and keeps in the library (frozen tracks, bounces to a
+ * pad, resamples): 24-bit, so a part played back from one is as clean as the part was (16-bit's
+ * dither hiss sat about 96 dB down and added up with every frozen track). Older 16-bit ones still
+ * load and play as they were.
+ */
+export const KEPT_RENDER_BITS = 24;
+
 /** Encode `data` (one array per channel) as a WAV file at `bitDepth` bits. */
 export function encodeChannels(
   data: Float32Array[],

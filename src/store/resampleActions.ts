@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import { masterFxOf, songGeneration, songTempo, useTimelineStore } from './timelineStore';
 import type { Clip, SlicerSettings, Track } from './timelineTypes';
 import { uid } from './timelineTypes';
-import { audibleTracks, channelsOf, ditherSeedOf, encodeChannels, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
+import { audibleTracks, channelsOf, encodeChannels, KEPT_RENDER_BITS, renderArrangement, SAMPLE_RATES, type RenderOptions, type SampleRate } from '../audio/exportWav';
 import { decodeSound, importSoundFile } from '../audio/soundLibrary';
 import { liveMix } from '../audio/engine';
 import { barToSeconds, secondsToBar, tempoAt } from '../audio/tempoMap';
@@ -26,8 +26,8 @@ import { fledgeValues } from '../audio/plugins/fledgeWave';
 /** A resample under way: how far along (0 to 1). Null when none is. */
 export const useResampling = create<{ fraction: number | null }>(() => ({ fraction: null }));
 
-/** A resample may be up to this big (16-bit stereo: about 6 minutes at 44.1 kHz). */
-const MAX_BYTES = 64 * 1024 * 1024;
+/** A resample may be up to this big (24-bit stereo: about 6 minutes at 44.1 kHz). */
+const MAX_BYTES = 96 * 1024 * 1024;
 /** Stored a little under full scale; the clip gain or track level puts the level back */
 const STORED_PEAK = 0.89;
 const SILENT = 10 ** (-90 / 20);
@@ -148,7 +148,7 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
       return { message: `A Fledge Synth track, ${short} ${req.role ?? 'lead'}, plays it as a ${req.role ?? 'lead'} (${made.table.frames} cycles, cut at ${Math.round(made.hz)} Hz${made.found ? '' : ', no pitch found'}).`, trackId: id ?? undefined };
     }
 
-    const meta = await importSoundFile(encodeChannels(stored, sampleRate, 16, [], undefined, ditherSeedOf(name)), `${name}.wav`, MAX_BYTES);
+    const meta = await importSoundFile(encodeChannels(stored, sampleRate, KEPT_RENDER_BITS), `${name}.wav`, MAX_BYTES);
     if (elsewhere()) return ELSEWHERE;
 
     if (req.target === 'audio') {

@@ -19,7 +19,10 @@
  * a render (masterAfter.ts), and the unit test can run it directly: live and export are the same
  * maths. It delays the sound by its kernel's `latency` samples; the export takes that delay back
  * off. With the Loud master's Crunch it's the band kind (createClipperKernel's `band`): the whole
- * sound through the oversampling, so its peaks between samples stay near the ceiling too.
+ * sound through the oversampling, so its peaks between samples stay near the ceiling too; or, where
+ * a Crunch match measured it cleaner, the split kind (`split`): only the sound under 3 kHz clipped,
+ * the top passing by it to a soft clipper just under the ceiling, so the hats and air aren't
+ * flattened with every bass and kick peak.
  */
 
 /** Settings of the master clipper (MasterSettings.clipper). */
@@ -38,7 +41,29 @@ export interface ClipperSettings {
    * the Loud master's Crunch uses; never stored (the Clipper insert is always the plain kind).
    */
   band?: boolean;
+  /**
+   * The split kind (see createClipperKernel's `split`): only the sound under CLIPPER_SPLIT_HZ goes
+   * through the clipper (the band kind with `band`), the top passes by it and the two meet in a
+   * gentle plain clipper that only rounds off what pokes over. The hats, cymbals and air aren't
+   * flattened along with every bass and kick peak. What a Crunch match picks when it measures
+   * cleaner (loudMaster.ts); never stored here (the Loud master keeps the choice, LoudSettings.split).
+   */
+  split?: boolean;
 }
+
+/** Where the split kind divides the sound, Hz (a Linkwitz-Riley crossover, 24 dB an octave). */
+export const CLIPPER_SPLIT_HZ = 3000;
+/** How far under the ceiling the split kind clips the sound under CLIPPER_SPLIT_HZ, dB. */
+export const CLIPPER_SPLIT_LOW_ROOM_DB = 0.5;
+/**
+ * How far under the ceiling the split kind's last, soft clipper clips the two bands together, dB.
+ * Just under the ceiling, so the limiter after it stays idle (over it, the top's peaks went on to
+ * the limiter, which pulled the whole mix down on every hat and snare: 1 dB or more in 7 to 12% of
+ * Night Rails' drop, against none now).
+ */
+export const CLIPPER_SPLIT_LAST_ROOM_DB = 0.3;
+/** The split kind's last clipper's softness. */
+export const CLIPPER_SPLIT_SOFTNESS = 0.5;
 
 export const CLIPPER_DRIVE_MAX = 18;
 export const CLIPPER_CEILING_MIN = -12;
@@ -102,13 +127,103 @@ export interface ClipperKernel {
  * kind's work, about three times the plain kind on a loud drop. `whole` (internal): the band
  * kind's first stage.
  */
-export function createClipperKernel(_sampleRate: number, band = false, whole = false): ClipperKernel {
+export function createClipperKernel(sampleRate: number, band = false, whole = false, split = false): ClipperKernel {
+  if (split) {
+    // The split kind (ClipperSettings.split): a Linkwitz-Riley crossover (two Butterworth biquads
+    // each way: the two bands add back up to the sound, its phase turned around the split), the
+    // part under it clipped (the band kind with `band`) a little under the ceiling, the top
+    // held back as long so they line up, then the two together through a soft plain clipper just
+    // under the ceiling, which rounds off where the top rides over the clipped lows. (Its numbers
+    // are CLIPPER_SPLIT_HZ, CLIPPER_SPLIT_LOW_ROOM_DB, CLIPPER_SPLIT_LAST_ROOM_DB and
+    // CLIPPER_SPLIT_SOFTNESS, written out here so the worklet can embed the kernel)
+    const SPLIT_HZ = 3000;
+    const LOW_ROOM = Math.pow(10, -0.5 / 20);
+    const LAST_ROOM = Math.pow(10, -0.3 / 20);
+    const LAST_SOFTNESS = 0.5;
+    const rate = sampleRate > 0 ? sampleRate : 44100;
+    const w = (2 * Math.PI * Math.min(SPLIT_HZ, rate * 0.45)) / rate;
+    const cosw = Math.cos(w);
+    const alpha = Math.sin(w) / (2 * Math.SQRT1_2);
+    const a0 = 1 + alpha;
+    const a1 = (-2 * cosw) / a0;
+    const a2 = (1 - alpha) / a0;
+    const lb0 = (1 - cosw) / 2 / a0;
+    const lb1 = (1 - cosw) / a0;
+    const hb0 = (1 + cosw) / 2 / a0;
+    const hb1 = -(1 + cosw) / a0;
+    const low = createClipperKernel(rate, band);
+    const last = createClipperKernel(rate);
+    const lag = low.latency;
+    // Each channel's four biquads (low, low, high, high), x1 x2 y1 y2 each
+    const z = new Float64Array(32);
+    // The top, held back `lag` samples (a ring per channel)
+    const ringL = new Float32Array(Math.max(1, lag));
+    const ringR = new Float32Array(Math.max(1, lag));
+    let at = 0;
+    let size = 128;
+    let lowL = new Float32Array(size);
+    let lowR = new Float32Array(size);
+    let topL = new Float32Array(size);
+    let topR = new Float32Array(size);
+    const stage = (v: number, k: number, b0: number, b1: number) => {
+      const y = b0 * v + b1 * z[k] + b0 * z[k + 1] - a1 * z[k + 2] - a2 * z[k + 3];
+      z[k + 1] = z[k];
+      z[k] = v;
+      z[k + 3] = z[k + 2];
+      z[k + 2] = y;
+      return y;
+    };
+    return {
+      process: (inL, inR, outL, outR, frames, drive, ceiling, softness) => {
+        if (frames > size) {
+          size = frames;
+          lowL = new Float32Array(size);
+          lowR = new Float32Array(size);
+          topL = new Float32Array(size);
+          topR = new Float32Array(size);
+        }
+        for (let i = 0; i < frames; i++) {
+          // (NaN or infinity counts as silence)
+          const l = inL[i] - inL[i] === 0 ? inL[i] * drive : 0;
+          const r = inR[i] - inR[i] === 0 ? inR[i] * drive : 0;
+          lowL[i] = stage(stage(l, 0, lb0, lb1), 4, lb0, lb1);
+          lowR[i] = stage(stage(r, 16, lb0, lb1), 20, lb0, lb1);
+          const hl = stage(stage(l, 8, hb0, hb1), 12, hb0, hb1);
+          const hr = stage(stage(r, 24, hb0, hb1), 28, hb0, hb1);
+          if (lag > 0) {
+            topL[i] = ringL[at];
+            topR[i] = ringR[at];
+            ringL[at] = hl;
+            ringR[at] = hr;
+            at = at + 1 === lag ? 0 : at + 1;
+          } else {
+            topL[i] = hl;
+            topR[i] = hr;
+          }
+        }
+        const lowIn = lowL.subarray(0, frames);
+        const lowInR = lowR.subarray(0, frames);
+        low.process(lowIn, lowInR, lowIn, lowInR, frames, 1, ceiling * LOW_ROOM, softness);
+        for (let i = 0; i < frames; i++) {
+          lowL[i] += topL[i];
+          lowR[i] += topR[i];
+        }
+        last.process(lowIn, lowInR, outL, outR, frames, 1, ceiling * LAST_ROOM, LAST_SOFTNESS);
+      },
+      latency: low.latency + last.latency,
+      read: () => {
+        const a = low.read();
+        const b = last.read();
+        return { peakDb: a.peakDb > b.peakDb ? a.peakDb : b.peakDb, share: a.share > b.share ? a.share : b.share };
+      },
+    };
+  }
   if (band) {
     // The band clipper: this kernel's band kind, then two plain hard clips of what it left over
     // its ceiling (see ClipperSettings.band). (The kernel is the same at any sample rate)
-    const first = createClipperKernel(0, false, true);
-    const second = createClipperKernel(0);
-    const third = createClipperKernel(0);
+    const first = createClipperKernel(sampleRate, false, true);
+    const second = createClipperKernel(sampleRate);
+    const third = createClipperKernel(sampleRate);
     return {
       process: (inL, inR, outL, outR, frames, drive, ceiling, softness) => {
         first.process(inL, inR, outL, outR, frames, drive, ceiling, softness);
@@ -622,6 +737,49 @@ export function createClipperKernel(_sampleRate: number, band = false, whole = f
 }
 
 /**
+ * `channel` as the split kind's crossover leaves it when nothing clips: its two bands added back
+ * up, the same sound with its phase turned around CLIPPER_SPLIT_HZ (an all-pass). What the split
+ * kind's distortion is measured against (loudMaster.ts), so the crossover's phase isn't counted as
+ * distortion. The same biquads as the kernel's.
+ */
+export function splitCrossover(channel: Float32Array, sampleRate: number): Float32Array {
+  const w = (2 * Math.PI * Math.min(CLIPPER_SPLIT_HZ, sampleRate * 0.45)) / sampleRate;
+  const cosw = Math.cos(w);
+  const alpha = Math.sin(w) / (2 * Math.SQRT1_2);
+  const a0 = 1 + alpha;
+  const a1 = (-2 * cosw) / a0;
+  const a2 = (1 - alpha) / a0;
+  const run = (x: Float32Array, b0: number, b1: number) => {
+    const y = new Float64Array(x.length);
+    let x1 = 0;
+    let x2 = 0;
+    let y1 = 0;
+    let y2 = 0;
+    for (let i = 0; i < x.length; i++) {
+      const v = x[i];
+      const o = b0 * v + b1 * x1 + b0 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1;
+      x1 = v;
+      y2 = y1;
+      y1 = o;
+      y[i] = o;
+    }
+    return y;
+  };
+  const twice = (b0: number, b1: number) => {
+    const once = run(channel, b0, b1);
+    const f = new Float32Array(once.length);
+    for (let i = 0; i < f.length; i++) f[i] = once[i];
+    return run(f, b0, b1);
+  };
+  const low = twice((1 - cosw) / 2 / a0, (1 - cosw) / a0);
+  const high = twice((1 + cosw) / 2 / a0, -(1 + cosw) / a0);
+  const out = new Float32Array(channel.length);
+  for (let i = 0; i < out.length; i++) out[i] = low[i] + high[i];
+  return out;
+}
+
+/**
  * `kernel` held back a little more, so it delays the sound by `padTo` samples in all (no less than
  * its own latency): the live clipper plays every kind at the band kind's delay (LIVE_CLIPPER_LATENCY),
  * so swapping the plain kind for the band kind (Crunch switched on or off while the song plays)
@@ -653,8 +811,8 @@ export function padClipperKernel(kernel: ClipperKernel, padTo: number): ClipperK
   };
 }
 
-/** The live clipper's delay in samples, whichever kind: the band kind's (see padClipperKernel). */
-export const LIVE_CLIPPER_LATENCY = createClipperKernel(0, true).latency;
+/** The live clipper's delay in samples, whichever kind: the longest, the split band kind's (see padClipperKernel). */
+export const LIVE_CLIPPER_LATENCY = createClipperKernel(0, true, false, true).latency;
 
 /**
  * The clipper over whole channels in place, lined up with the input (its delay taken back off:
@@ -662,7 +820,7 @@ export const LIVE_CLIPPER_LATENCY = createClipperKernel(0, true).latency;
  * section does (masterAfter.ts); returns what it did.
  */
 export function clipChannels(left: Float32Array, right: Float32Array, sampleRate: number, settings: ClipperSettings): ClipperReading {
-  const kernel = createClipperKernel(sampleRate, settings.band === true);
+  const kernel = createClipperKernel(sampleRate, settings.band === true, false, settings.split === true);
   const { drive, ceiling, softness } = clipperParams(settings);
   const n = left.length;
   const lat = kernel.latency;
@@ -722,9 +880,9 @@ class ClipperProcessor extends AudioWorkletProcessor {
   }
   constructor(options) {
     super();
-    // (processorOptions.band: the band kind, see ClipperSettings.band; padTo: the delay in samples it plays at, see padClipperKernel)
+    // (processorOptions.band and .split: the band and split kinds, see ClipperSettings; padTo: the delay in samples it plays at, see padClipperKernel)
     const o = (options && options.processorOptions) || {};
-    this.kernel = padClipperKernel(createClipperKernel(sampleRate, !!o.band), o.padTo || 0);
+    this.kernel = padClipperKernel(createClipperKernel(sampleRate, !!o.band, false, !!o.split), o.padTo || 0);
     this.alive = true;
     this.silence = new Float32Array(128);
     this.frames = 0;

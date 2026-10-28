@@ -65,7 +65,7 @@ export const BASE_SAMPLE_RATES = [44100, 48000] as const;
 export const lossyRate = (rate: SampleRate): SampleRate => (rate === 88200 ? 44100 : rate === 96000 ? 48000 : rate);
 const DEFAULT_SAMPLE_RATE: SampleRate = 44100;
 
-export { encodeChannels, ditherSeedOf } from './wavFile';
+export { encodeChannels, ditherSeedOf, KEPT_RENDER_BITS } from './wavFile';
 /** The longest an export waits for one instrument's recordings before it gives up (ms) */
 const SAMPLE_WAIT_MS = 120000;
 /** WAV sample formats: 16 and 24 are integer PCM, 32 is IEEE float. */
