@@ -5,15 +5,18 @@
  * heading that stays hidden until "Show retro instruments" is on (see store/retroInstruments.ts),
  * while songs that use them play them as they always did. Each keeps its group by sound (a pad is
  * still a pad to the mixer and search); the ones a recording replaced outright are in the Retro
- * group itself (see RECORDED in starters.ts for which).
+ * group itself (see RECORDED in starters.ts for which). The ones the starters still play (the
+ * fiddle, bagpipes, dulcimer, accordion, shakuhachi, shamisen, taiko, agogô, crystal and rain) are
+ * rendered afresh from their SoundFont and hosted with the app (soundfontSets.ts `rendered`): the
+ * same sound, without the old files' low bit rate, dull top and 3.1 s cut.
  */
 import type { InstrumentDef, InstrumentKey } from './instrumentCatalog';
-import { gm, soundfont, held, struck, nb, SOUNDFONT_SUSTAIN } from './soundfontSets';
+import { gm, soundfont, held, struck, nb, rendered, SOUNDFONT_SUSTAIN } from './soundfontSets';
 
 const RETRO = 'Retro (1990s soundfonts)' as const;
 
 export const RETRO_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
-  taiko: { key: 'taiko', name: 'Taiko Drums', blurb: 'Big Japanese drums', color: '#b91c1c', category: 'Drums & Percussion', retro: true, kind: 'sampled', range: [36, 72], samples: gm('taiko_drum', 36, 72, 4, 1.5), gain: 9 },
+  taiko: { key: 'taiko', name: 'Taiko Drums', blurb: 'Big Japanese drums', color: '#b91c1c', category: 'Drums & Percussion', retro: true, kind: 'sampled', range: [36, 72], samples: rendered('retro-taiko', 1.5), gain: -7.9 },
   bassGuitar: {
     key: 'bassGuitar', name: 'Bass Guitar', blurb: 'Electric bass (recorded)', color: '#0891b2', category: RETRO, retro: true, kind: 'sampled', range: [28, 60],
     samples: nb('bass-electric', ['E1', 'G1', 'As1', 'Cs2', 'E2', 'G2', 'As2', 'Cs3', 'E3', 'G3', 'As3', 'Cs4'], 0.4), taper: [45, 3], tone: { presence: 4, presenceHz: 1500, mud: -2 },
@@ -73,7 +76,7 @@ export const RETRO_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = 
   glassPad: { key: 'glassPad', name: 'Glass Pad', blurb: 'Bowed glass, ethereal', color: '#a5f3fc', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: held('pad_5_bowed', 36, 96, 1.5), gain: 18, taper: [67, 4] },
   sweepPad: { key: 'sweepPad', name: 'Sweep Pad', blurb: 'Slowly sweeping pad', color: '#93c5fd', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: held('pad_8_sweep', 36, 96, 1.5), gain: 18, taper: [67, 2.5] },
   atmosphere: { key: 'atmosphere', name: 'Atmosphere', blurb: 'Plucked shimmer with a long air', color: '#99f6e4', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: struck('fx_4_atmosphere', 36, 96, 2), gain: 17, taper: [67, 3.5] },
-  crystal: { key: 'crystal', name: 'Crystal', blurb: 'Sparkling glassy bells', color: '#e0f2fe', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [48, 96], samples: struck('fx_3_crystal', 48, 96, 2), gain: 23, taper: [73, 2.5] },
+  crystal: { key: 'crystal', name: 'Crystal', blurb: 'Sparkling glassy bells', color: '#e0f2fe', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [48, 96], samples: rendered('retro-crystal', 2), gain: -1.7, taper: [73, 2.5] },
   sciFi: { key: 'sciFi', name: 'Sci-Fi', blurb: 'Space drone with movement', color: '#818cf8', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 84], samples: held('fx_8_scifi', 36, 84, 1.5), gain: 19, taper: [61, 2.5] },
   goblins: { key: 'goblins', name: 'Goblins', blurb: 'Eerie swelling drone: horror', color: '#4d7c0f', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 84], samples: held('fx_6_goblins', 36, 84, 1.5), gain: 5, taper: [61, 5] },
   viola: { key: 'viola', name: 'Viola', blurb: 'Solo viola, warm middle voice', color: '#f97316', category: RETRO, retro: true, kind: 'sampled', range: [48, 88], samples: held('viola', 48, 88, 0.6, -6), bowed: { skip: 0.04, solo: true }, gain: 23, taper: [69, 2.5], tone: { presence: 2, mud: -1 } },
@@ -109,19 +112,19 @@ export const RETRO_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = 
   banjo: { key: 'banjo', name: 'Banjo', blurb: 'Bright twangy folk and country', color: '#eab308', category: RETRO, retro: true, kind: 'sampled', range: [48, 84], samples: struck('banjo', 48, 84, 0.5), gain: 20, taper: [67, 1] },
   uprightBass: { key: 'uprightBass', name: 'Upright Bass', blurb: 'Plucked double bass: jazz', color: '#155e75', category: RETRO, retro: true, kind: 'sampled', range: [28, 60], samples: struck('acoustic_bass', 28, 60, 0.4), gain: 20, taper: [45, 2.5], tone: { presence: 5, presenceHz: 1500, mud: -2 } },
   fretlessBass: { key: 'fretlessBass', name: 'Fretless Bass', blurb: 'Smooth singing bass', color: '#0e7490', category: 'Bass', retro: true, kind: 'sampled', range: [28, 60], samples: struck('fretless_bass', 28, 60, 0.4), gain: 15, taper: [45, 2.5], tone: { presence: 5, presenceHz: 1500, mud: -2 } },
-  fiddle: { key: 'fiddle', name: 'Fiddle', blurb: 'Folk and Celtic fiddle', color: '#e11d48', category: 'World', retro: true, kind: 'sampled', range: [55, 93], samples: held('fiddle', 55, 93, 0.4), gain: 18, taper: [79, 5] },
+  fiddle: { key: 'fiddle', name: 'Fiddle', blurb: 'Folk and Celtic fiddle', color: '#e11d48', category: 'World', retro: true, kind: 'sampled', range: [55, 93], samples: rendered('retro-fiddle', 0.4), gain: -1.8, taper: [79, 5] },
   sitar: { key: 'sitar', name: 'Sitar', blurb: 'Indian buzzing strings', color: '#f59e0b', category: 'World', retro: true, kind: 'sampled', range: [48, 84], samples: struck('sitar', 48, 84, 1), gain: 23 },
   koto: { key: 'koto', name: 'Koto', blurb: 'Japanese zither', color: '#fb7185', category: 'World', retro: true, kind: 'sampled', range: [48, 88], samples: struck('koto', 48, 88, 1), gain: 14 },
-  shamisen: { key: 'shamisen', name: 'Shamisen', blurb: 'Japanese banjo-like lute', color: '#f43f5e', category: 'World', retro: true, kind: 'sampled', range: [50, 84], samples: struck('shamisen', 50, 84, 0.6), gain: 24, taper: [68, 1] },
-  shakuhachi: { key: 'shakuhachi', name: 'Shakuhachi', blurb: 'Breathy Japanese bamboo flute', color: '#84cc16', category: 'World', retro: true, kind: 'sampled', range: [55, 88], samples: held('shakuhachi', 55, 88, 0.4), gain: 14, taper: [73, 3] },
+  shamisen: { key: 'shamisen', name: 'Shamisen', blurb: 'Japanese banjo-like lute', color: '#f43f5e', category: 'World', retro: true, kind: 'sampled', range: [50, 84], samples: rendered('retro-shamisen', 0.6), gain: 6, taper: [68, 1] },
+  shakuhachi: { key: 'shakuhachi', name: 'Shakuhachi', blurb: 'Breathy Japanese bamboo flute', color: '#84cc16', category: 'World', retro: true, kind: 'sampled', range: [55, 88], samples: rendered('retro-shakuhachi', 0.4), gain: 0.2, taper: [73, 3] },
   panFlute: { key: 'panFlute', name: 'Pan Flute', blurb: 'Airy pipes: Andes, fantasy', color: '#bef264', category: 'World', retro: true, kind: 'sampled', range: [60, 96], samples: held('pan_flute', 60, 96, 0.4), gain: 17.5, taper: [84, 8] },
   ocarina: { key: 'ocarina', name: 'Ocarina', blurb: 'Round clay flute: adventure games', color: '#a3e635', category: RETRO, retro: true, kind: 'sampled', range: [60, 96], samples: held('ocarina', 60, 96, 0.3), gain: 11.5, taper: [84, 8] },
-  bagpipe: { key: 'bagpipe', name: 'Bagpipes', blurb: 'Scottish pipes and drone', color: '#65a30d', category: 'World', retro: true, kind: 'sampled', range: [58, 84], samples: held('bagpipe', 58, 84, 0.3), gain: 20, taper: [72, 4.5] },
-  accordion: { key: 'accordion', name: 'Accordion', blurb: 'French and folk squeezebox', color: '#dc2626', category: 'World', retro: true, kind: 'sampled', range: [48, 89], samples: held('accordion', 48, 89, 0.3), gain: 22, taper: [70, 1.5] },
+  bagpipe: { key: 'bagpipe', name: 'Bagpipes', blurb: 'Scottish pipes and drone', color: '#65a30d', category: 'World', retro: true, kind: 'sampled', range: [58, 84], samples: rendered('retro-bagpipe', 0.3), gain: -2.9, taper: [72, 4.5] },
+  accordion: { key: 'accordion', name: 'Accordion', blurb: 'French and folk squeezebox', color: '#dc2626', category: 'World', retro: true, kind: 'sampled', range: [48, 89], samples: rendered('retro-accordion', 0.3), gain: -1.1, taper: [70, 1.5] },
   harmonica: { key: 'harmonica', name: 'Harmonica', blurb: 'Blues harp', color: '#64748b', category: RETRO, retro: true, kind: 'sampled', range: [60, 84], samples: held('harmonica', 60, 84, 0.3), gain: 17 },
   kalimba: { key: 'kalimba', name: 'Kalimba', blurb: 'African thumb piano: cozy, gentle', color: '#d97706', category: RETRO, retro: true, kind: 'sampled', range: [48, 84], samples: struck('kalimba', 48, 84, 1), gain: 22, taper: [67, 2.5] },
   steelDrums: { key: 'steelDrums', name: 'Steel Drums', blurb: 'Caribbean steel pan', color: '#06b6d4', category: RETRO, retro: true, kind: 'sampled', range: [52, 84], samples: struck('steel_drums', 52, 84, 1), gain: 21 },
-  dulcimer: { key: 'dulcimer', name: 'Dulcimer', blurb: 'Hammered strings: medieval, folk', color: '#ca8a04', category: 'World', retro: true, kind: 'sampled', range: [48, 88], samples: struck('dulcimer', 48, 88, 1.2), gain: 27 },
+  dulcimer: { key: 'dulcimer', name: 'Dulcimer', blurb: 'Hammered strings: medieval, folk', color: '#ca8a04', category: 'World', retro: true, kind: 'sampled', range: [48, 88], samples: rendered('retro-dulcimer', 1.2), gain: 1.5 },
   brightPiano: { key: 'brightPiano', name: 'Bright Piano', blurb: 'Punchy pop and rock piano', color: '#f1f5f9', category: 'Keys & Synths', retro: true, kind: 'sampled', range: [21, 108], samples: struck('bright_acoustic_piano', 21, 108, 1.2), gain: 22 },
   electricGrand: { key: 'electricGrand', name: 'Electric Grand', blurb: '80s stage piano (CP-70)', color: '#e2e8f0', category: 'Keys & Synths', retro: true, kind: 'sampled', range: [28, 103], samples: struck('electric_grand_piano', 28, 103, 1), gain: 19 },
   honkyTonk: { key: 'honkyTonk', name: 'Honky-Tonk Piano', blurb: 'Saloon piano, slightly out of tune on purpose', color: '#fcd34d', category: 'Keys & Synths', retro: true, kind: 'sampled', range: [21, 108], samples: struck('honkytonk_piano', 21, 108, 1), gain: 19 },
@@ -142,7 +145,7 @@ export const RETRO_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = 
   synthStrings2: { key: 'synthStrings2', name: 'Synth Strings 2', blurb: 'Slow, lush string machine', color: '#fda4af', category: 'Keys & Synths', retro: true, kind: 'sampled', range: [36, 96], samples: held('synth_strings_2', 36, 96, 1), gain: 18, taper: [67, 2.5] },
   polysynthPad: { key: 'polysynthPad', name: 'Polysynth Pad', blurb: 'Classic analog poly pad', color: '#a78bfa', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: held('pad_3_polysynth', 36, 96, 1), gain: 16, taper: [67, 3] },
   metallicPad: { key: 'metallicPad', name: 'Metallic Pad', blurb: 'Shimmering metallic pad: sci-fi', color: '#94a3b8', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: held('pad_6_metallic', 36, 96, 1.5), gain: 20, taper: [67, 2.5] },
-  rainPad: { key: 'rainPad', name: 'Rain', blurb: 'Rainy, glittering texture', color: '#7dd3fc', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: held('fx_1_rain', 36, 96, 1.5), gain: 20, taper: [67, 2.5] },
+  rainPad: { key: 'rainPad', name: 'Rain', blurb: 'Rainy, glittering texture', color: '#7dd3fc', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: rendered('retro-rain', 1.5), gain: 3.2, taper: [67, 2.5] },
   soundtrackPad: { key: 'soundtrackPad', name: 'Soundtrack', blurb: 'Wide cinematic swell', color: '#c084fc', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: held('fx_2_soundtrack', 36, 96, 1.5), gain: 30 },
   brightnessPad: { key: 'brightnessPad', name: 'Brightness', blurb: 'Bright airy pad with sparkle', color: '#fef08a', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: held('fx_5_brightness', 36, 96, 1.5), gain: 20, taper: [67, 1.5] },
   echoesPad: { key: 'echoesPad', name: 'Echo Drops', blurb: 'Echoing droplets: caves, underwater', color: '#5eead4', category: 'Pads & Atmospheres', retro: true, kind: 'sampled', range: [36, 96], samples: held('fx_7_echoes', 36, 96, 1.5), gain: 21, taper: [67, 1] },
@@ -163,7 +166,7 @@ export const RETRO_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = 
   melodicTom: { key: 'melodicTom', name: 'Melodic Toms', blurb: 'Tuned toms you can play as notes', color: '#b91c1c', category: 'Drums & Percussion', retro: true, kind: 'sampled', range: [36, 72], samples: struck('melodic_tom', 36, 72, 0.5), gain: 15 },
   synthDrum: { key: 'synthDrum', name: 'Synth Drum', blurb: '80s electronic tom sweeps', color: '#dc2626', category: 'Drums & Percussion', retro: true, kind: 'sampled', range: [36, 72], samples: struck('synth_drum', 36, 72, 0.5), gain: 17 },
   woodblock: { key: 'woodblock', name: 'Woodblock', blurb: 'Hollow wood clicks', color: '#a16207', category: 'Drums & Percussion', retro: true, kind: 'sampled', range: [48, 84], samples: struck('woodblock', 48, 84, 0.2), gain: 18 },
-  agogo: { key: 'agogo', name: 'Agogô', blurb: 'Brazilian cowbells', color: '#ca8a04', category: 'Drums & Percussion', retro: true, kind: 'sampled', range: [48, 84], samples: struck('agogo', 48, 84, 0.4), gain: 21 },
+  agogo: { key: 'agogo', name: 'Agogô', blurb: 'Brazilian cowbells', color: '#ca8a04', category: 'Drums & Percussion', retro: true, kind: 'sampled', range: [48, 84], samples: rendered('retro-agogo', 0.4), gain: -0.5 },
   tinkleBell: { key: 'tinkleBell', name: 'Tinkle Bell', blurb: 'Small bright bells: magic, sparkle', color: '#fef3c7', category: 'Mallets & Bells', retro: true, kind: 'sampled', range: [60, 96], samples: struck('tinkle_bell', 60, 96, 1.5), gain: 21, taper: [79, 3] },
   reverseCymbal: { key: 'reverseCymbal', name: 'Reverse Cymbal', blurb: 'Cymbal swelling backwards into a hit', color: '#cbd5e1', category: 'Sound Effects', retro: true, kind: 'sampled', range: [48, 72], samples: struck('reverse_cymbal', 48, 72, 0.5), gain: 18 },
   seashore: { key: 'seashore', name: 'Seashore', blurb: 'Waves on a beach', color: '#38bdf8', category: 'Sound Effects', retro: true, kind: 'sampled', range: [48, 72], samples: held('seashore', 48, 72, 1), gain: 14 },

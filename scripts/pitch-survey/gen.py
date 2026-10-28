@@ -1,6 +1,8 @@
 import json, os
 HERE=os.path.dirname(os.path.abspath(__file__))
 T=json.load(open(os.path.join(HERE,'tuning.json')))
+# (measured on the soundfont MP3s these no longer play: re-rendered and tuned by scripts/soundfont-renders)
+RENDERED={'accordion','dulcimer','fiddle','rainPad','shakuhachi','shamisen'}
 lines=["/**",
 " * Tuning corrections for the recorded instruments, measured. Each recording's pitch was read two",
 " * ways (by its period, YIN, and from its harmonics; voices by their period only) over the loud part",
@@ -9,11 +11,14 @@ lines=["/**",
 " * - `cents`: how far to re-pitch a recording when it loads (positive raises it).",
 " * - `notes`: for soundfont instruments, which recordings to use (the soundfonts have every",
 " *   semitone; a steadier one a semitone away replaces a wobbly or badly tuned one).",
-" * Bells, drums and the piano (whose stretched tuning is deliberate) aren't corrected.",
+" * Bells, drums and the piano (whose stretched tuning is deliberate) aren't corrected. The",
+" * instruments rendered afresh from their SoundFont (scripts/soundfont-renders) were tuned as",
+" * they were rendered, so they aren't listed.",
 " */",
 "export const SAMPLE_TUNING: Record<string, { notes?: string[]; cents: Record<string, number> }> = {"]
 for k in sorted(T):
     v=T[k]
+    if k in RENDERED: continue
     if not v['cents'] and not v.get('notes'): continue
     parts=[]
     if v.get('notes'): parts.append("notes: ["+", ".join(f"'{n}'" for n in v['notes'])+"]")

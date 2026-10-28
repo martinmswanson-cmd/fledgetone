@@ -143,9 +143,16 @@ export interface SampleSource {
   /**
    * The soundfont renders stop dead at 3.1 s while the note is still at full level. When loaded,
    * the part from `from` to `to` seconds is looped (crossfaded) until the recording is `hold`
-   * seconds long, so a held note sustains instead of cutting off.
+   * seconds long, so a held note sustains instead of cutting off (pieces of that part, varied, so
+   * the joins don't come round at one steady beat: see recordingMaths.ts planSustain).
    */
   sustain?: { from: number; to: number; hold: number };
+  /**
+   * Recordings that may be cut off while they still sound (the soundfont renders of plucked and
+   * struck notes, cut at 3.1 s): one that is gets the rest of its decay when loaded, so it fades
+   * away instead of stopping dead (see recordingMaths.ts planRingOn).
+   */
+  ringOn?: boolean;
   /** Cents to re-pitch each recording by when it loads (out-of-tune recordings; see sampleTuning.ts). */
   tune?: Record<string, number>;
   /** dB to raise or lower each recording by when it loads (an ensemble's sections, levelled with each other) */

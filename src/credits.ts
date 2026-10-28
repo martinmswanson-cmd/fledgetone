@@ -19,6 +19,8 @@ const CC_BY_4 = '[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)';
 const CC_BY_SA = '[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/)';
 const NB = 'https://raw.githubusercontent.com/nbrosowsky/tonejs-instruments/master/samples/';
 const GLEITZ = "Benjamin Gleitzman's [MIDI.js Soundfonts](https://github.com/gleitz/midi-js-soundfonts)";
+/** The FluidR3 GM SoundFont's licence: Frank Wen released it under the MIT licence (its README and COPYING) */
+const FLUID_MIT = '[MIT](https://opensource.org/license/mit) (Frank Wen\'s licence for the SoundFont)';
 /** The recordings hosted with the app (public/fledgetone-samples/) */
 const HOSTED = 'fledgetone-samples/';
 
@@ -144,8 +146,19 @@ export const SAMPLE_CREDITS: SampleCredit[] = [
     samples: 'Electric guitars and their release sounds from [Black And Green Guitars](https://github.com/sfzinstruments/karoryfer.black-and-green-guitars) by Karoryfer Lecolds, recorded by Brian Wood (converted to MP3, hosted with the app)',
     licence: CC0,
   },
-  { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/MusyngKite/'], samples: `Musyng Kite SoundFont, rendered by ${GLEITZ}`, licence: CC_BY_SA },
-  { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/'], samples: `FluidR3 GM SoundFont by Frank Wen, rendered by ${GLEITZ}`, licence: CC_BY },
+  {
+    prefixes: ['retro-fiddle', 'retro-shakuhachi', 'retro-bagpipe', 'retro-accordion', 'retro-rain', 'retro-dulcimer', 'retro-shamisen', 'retro-agogo', 'retro-crystal'].map((set) => `${HOSTED}${set}/`),
+    samples:
+      'The retro fiddle, shakuhachi, bagpipes, accordion, rain, dulcimer, shamisen, agogô and crystal, rendered afresh with [FluidSynth](https://www.fluidsynth.org) from the [Musyng Kite SoundFont](https://archive.org/details/musyng-kite) by Cose V. (SynthFont Viena) (converted to MP3, hosted with the app; the rendered files are shared under the same licence)',
+    licence: CC_BY_SA,
+  },
+  {
+    prefixes: [`${HOSTED}retro-taiko/`],
+    samples: 'The retro taiko drums, rendered afresh with [FluidSynth](https://www.fluidsynth.org) from the FluidR3 GM SoundFont by Frank Wen (converted to MP3, hosted with the app)',
+    licence: FLUID_MIT,
+  },
+  { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/MusyngKite/'], samples: `Musyng Kite SoundFont by Cose V. (SynthFont Viena), rendered by ${GLEITZ}`, licence: CC_BY_SA },
+  { prefixes: ['https://gleitz.github.io/midi-js-soundfonts/FluidR3_GM/'], samples: `FluidR3 GM SoundFont by Frank Wen, rendered by ${GLEITZ}`, licence: FLUID_MIT },
 ];
 
 /** The credit for a sample address, if it's from a listed source. */

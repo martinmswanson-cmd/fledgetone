@@ -1,10 +1,12 @@
 /**
  * The note-name and sample-map helpers for the older sample sets: the General MIDI soundfonts
  * rendered by midi-js-soundfonts (FluidR3_GM, MusyngKite), whose instruments are in
- * instrumentCatalogRetro.ts, and the tonejs-instruments recordings. Kept apart from
- * instrumentCatalog.ts so the retro catalog can use them without the two importing each other.
+ * instrumentCatalogRetro.ts, and the tonejs-instruments recordings, and the hosted sets some of those
+ * instruments were rendered afresh into (`rendered`). Kept apart from instrumentCatalog.ts so the
+ * retro catalog can use them without the two importing each other.
  */
 import type { SampleSource } from './instrumentCatalog';
+import { HOSTED_SETS } from './hostedSets';
 
 const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 export const FLATS: Record<string, string> = { 'C#': 'Db', 'D#': 'Eb', 'F#': 'Gb', 'G#': 'Ab', 'A#': 'Bb' };
@@ -28,7 +30,8 @@ export function soundfont(font: string, instrument: string, lo: number, hi: numb
   };
   for (let m = lo; m <= hi; m += step) add(m);
   add(hi);
-  return { baseUrl: `https://gleitz.github.io/midi-js-soundfonts/${font}/${instrument}-mp3/`, samples, release };
+  // (every note is cut at 3.1 s: one still sounding there rings on as it was dying away)
+  return { baseUrl: `https://gleitz.github.io/midi-js-soundfonts/${font}/${instrument}-mp3/`, samples, release, ringOn: true };
 }
 
 /** nbrosowsky/tonejs-instruments set: listed files ("As3" = A#3). */
@@ -46,3 +49,30 @@ export const held = (instrument: string, lo: number, hi: number, release = 0.8, 
 });
 /** A Musyng Kite soundfont instrument whose notes die away by themselves (plucked, struck). */
 export const struck = (instrument: string, lo: number, hi: number, release = 1): SampleSource => soundfont('MusyngKite', instrument, lo, hi, 3, release);
+
+/**
+ * A General MIDI instrument rendered afresh from its SoundFont and hosted with the app
+ * (public/fledgetone-samples/<folder>, by scripts/soundfont-renders/render.py): every third note,
+ * one loudness (velocity 127), each ringing out by itself or, held, with a loop of several seconds
+ * (hostedSets.ts). Next to the page, else from the site, as the recorded instruments are.
+ */
+export function rendered(folder: string, release = 1): SampleSource {
+  const set = HOSTED_SETS[folder];
+  const samples: Record<string, string> = {};
+  const loops: Record<string, [number, number]> = {};
+  for (const m of set.notes) {
+    const n = noteName(m);
+    samples[`${n}|0|0`] = `${n.replace('#', 's')}_0_0.mp3`;
+    const loop = set.loops?.[`${m}_0_0`];
+    if (loop) loops[`${n}|0|0`] = loop;
+  }
+  return {
+    baseUrl: `fledgetone-samples/${folder}/`,
+    fallbackUrl: `https://fledgetone.com/app/fledgetone-samples/${folder}/`,
+    samples,
+    release,
+    layers: [1],
+    version: set.hash,
+    ...(Object.keys(loops).length ? { loops } : {}),
+  };
+}
