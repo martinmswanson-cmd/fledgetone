@@ -167,13 +167,6 @@ export interface SampleSource {
   fallbackUrl?: string;
   /** Changes when the files at these addresses do, so a kept copy is downloaded afresh (see recordingStore.ts) */
   version?: string;
-  /**
-   * Decode at twice the sample rate it plays at: the whole set (true) or a drum kit's rows (their
-   * names in `samples` before the first |). For the brightest sets, chosen by measuring: a note
-   * played at another pitch is resampled with linear interpolation, whose error lands in the top
-   * octaves, and at twice the rate it's about half as much, for twice the memory (samplerManager.ts).
-   */
-  doubleRate?: true | readonly string[];
 }
 
 export interface InstrumentDef {
@@ -331,20 +324,8 @@ const LAYER_TOPS: Record<number, number[]> = { 1: [1], 2: [0.55, 1], 3: [0.35, 0
 /** A set converted by scripts/real-samples (its notes, loudnesses and takes from hostedSets.ts) */
 const real = (folder: string, release: number): SampleSource => {
   const set = HOSTED_SETS[folder];
-  return { ...hosted(folder, set.notes, LAYER_TOPS[set.layers], set.takes, release), ...(DOUBLE_RATE_SETS.has(folder) ? { doubleRate: true as const } : {}) };
+  return hosted(folder, set.notes, LAYER_TOPS[set.layers], set.takes, release);
 };
-/**
- * The brightest hosted sets, decoded at twice the sample rate they play at (SampleSource.doubleRate):
- * those with the most of their sound above 8 kHz, measured over the first second of the loudest
- * recordings (harmonica -13 dB of the whole, trombone short notes -29, harpsichord -30,
- * glockenspiel -31; next come the solo violin and short trumpet at -32, the kalimba at -34, and the
- * xylophone, tubular bells, steel drums and vibraphone at -46 to -88, little to gain). The harpsichord
- * is left out: its set is large (about 126 MB decoded), so doubling it would cost 100 MB for a small gain.
- * The harmon-muted trumpet, measured the same way, is as bright as the harmonica.
- */
-const DOUBLE_RATE_SETS = new Set(['harmonica', 'trombone-staccato', 'glockenspiel', 'muted-trumpet']);
-/** The studio kit's brightest rows, measured the same way: closed hat -7 dB, crash -11, open hat -12, ride -16, snare -23 (the toms and kick -35 and under). */
-const STUDIO_KIT_BRIGHT_ROWS = ['F#1', 'C#2', 'A#1', 'D#2', 'D1'] as const;
 /** A hosted release set (see ReleaseSounds) */
 const releasesOf = (folder: string, db: number, decay?: number): ReleaseSounds => {
   const set = HOSTED_SETS[folder];
@@ -504,16 +485,12 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
 
   // Keys & Synths
   piano: {
-    key: 'piano', name: 'Grand Piano', blurb: 'Salamander grand (recorded)', color: '#e2e8f0', category: 'Keys & Synths', kind: 'sampled', range: [21, 108],
-    // Salamander has A, C, D# and F# per octave only; C + F# keeps every note within 3 semitones
-    samples: {
-      baseUrl: 'https://tonejs.github.io/audio/salamander/',
-      samples: {
-        A0: 'A0.mp3', C1: 'C1.mp3', 'F#1': 'Fs1.mp3', C2: 'C2.mp3', 'F#2': 'Fs2.mp3', C3: 'C3.mp3', 'F#3': 'Fs3.mp3',
-        C4: 'C4.mp3', 'F#4': 'Fs4.mp3', C5: 'C5.mp3', 'F#5': 'Fs5.mp3', C6: 'C6.mp3', 'F#6': 'Fs6.mp3', C7: 'C7.mp3', C8: 'C8.mp3',
-      },
-      release: 1.2,
-    },
+    key: 'piano', name: 'Grand Piano', blurb: 'A recorded grand at four loudnesses (the Concert Grand\'s recordings)', color: '#e2e8f0', category: 'Keys & Synths', kind: 'sampled', range: [21, 108],
+    // The Concert Grand's recordings (every note or two, four loudnesses). It played another set
+    // before, fetched from elsewhere: one loudness every six semitones, in files with nothing over
+    // about 6 kHz. The gain keeps songs at the level they had (their K-weighted level, measured
+    // over C2 to C7 at four velocities).
+    samples: { ...real('grand-piano', 0.6), releases: releasesOf('piano-release', -19, 6) }, gain: -4.3,
   },
   keys: { key: 'keys', name: 'Space Clav', blurb: 'FM electric keys', color: '#a855f7', category: 'Keys & Synths', kind: 'synth', range: [36, 88], taper: [63, 4.5] },
   wavetable: { key: 'wavetable', name: 'Wavetable Synth', blurb: 'Evolving sweeping pad', color: '#38bdf8', category: 'Keys & Synths', kind: 'synth', range: [36, 96], taper: [67, 1] },
@@ -895,7 +872,7 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   // Recorded drum kits (the rows a kit has no recording of play synthesized hits)
   studioKit: {
     key: 'studioKit', name: 'Studio Kit (Real)', blurb: 'A recorded drum kit, close and room mics, four loudnesses, two takes each: rock, pop, funk', color: '#b45309', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],
-    samples: { ...realKit('studio-kit', { C1: 36, D1: 38, 'F#1': 42, 'A#1': 46, F1: 41, B1: 45, D2: 48, 'C#2': 49, 'D#2': 51 }), doubleRate: STUDIO_KIT_BRIGHT_ROWS }, gain: 11,
+    samples: realKit('studio-kit', { C1: 36, D1: 38, 'F#1': 42, 'A#1': 46, F1: 41, B1: 45, D2: 48, 'C#2': 49, 'D#2': 51 }), gain: 11,
   },
   sessionKit: {
     key: 'sessionKit', name: 'Session Kit (Real)', blurb: 'A recorded drum kit with its room, rimshot and cowbell, four loudnesses, two takes each: pop, soul, rock', color: '#a16207', category: 'Drums & Percussion', kind: 'drums', range: [36, 48],

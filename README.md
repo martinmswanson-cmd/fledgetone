@@ -70,7 +70,7 @@ The stack: React 19, TypeScript, zustand, Tone.js 15 on the Web Audio API, Tailw
 
 ## Credits
 
-The recorded instruments come from free sample libraries: the Salamander Grand Piano,
+The recorded instruments come from free sample libraries: the Splendid Grand Piano,
 tonejs-instruments (Karoryfer and VSCO 2 recordings), the FluidR3 and Musyng Kite General MIDI
 soundfonts, Versilian Studios' VSCO 2 Community Edition and VCSL, the University of Iowa Musical
 Instrument Samples, Karoryfer's libraries (guitars, saxophones, basses, a drum kit) and a few

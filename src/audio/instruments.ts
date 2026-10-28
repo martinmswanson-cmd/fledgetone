@@ -256,7 +256,9 @@ function extraHit(extras: KitExtras, row: DrumRow, time: number, v: number, r = 
 /**
  * Expressive drums (Track.expressive): how far each row's hits may be detuned, in cents, so a
  * repeated hit isn't the identical sound (a real drum never is; real 808s drift too). The kick
- * hardly moves, so the low end stays put; hats and claps the most.
+ * hardly moves, so the low end stays put; hats and claps the most. Synthesized kits only: a kit
+ * that plays recordings (a recorded kit, the Designed Kit's rendered hits) would resample every
+ * hit for it, which dulls the cymbals, so its hits vary in level alone.
  */
 const DRUM_SPREAD: Partial<Record<DrumRow, number>> = { kick: 4, snare: 14, clap: 18, closedHat: 20, openHat: 16, tomLow: 10, tomMid: 10, tomHigh: 10, crash: 12, ride: 12, cowbell: 6 };
 
@@ -269,8 +271,11 @@ const hitPitch = (n: PlayableNote) => {
   return st ? 2 ** (Math.max(-24, Math.min(24, st)) / 12) : 1;
 };
 
-/** Map drum-clip notes onto a kit's rows (expressive: each hit a hair different in pitch and level, seeded so exports repeat). */
-function playDrums(play: DrumPlayer, notes: PlayableNote[], time: number, expressive = false): void {
+/**
+ * Map drum-clip notes onto a kit's rows (expressive: each hit a hair different in level, and in
+ * pitch where `detune`, seeded so exports repeat).
+ */
+function playDrums(play: DrumPlayer, notes: PlayableNote[], time: number, expressive = false, detune = true): void {
   // One hi-hat voice: an open hat on the same tick replaces the closed one
   const openHat = notes.some((n) => n.note === DRUM_NOTES.openHat);
   for (const n of notes) {
@@ -278,7 +283,7 @@ function playDrums(play: DrumPlayer, notes: PlayableNote[], time: number, expres
     if (!row || (row === 'closedHat' && openHat)) continue;
     const pitch = hitPitch(n);
     if (expressive) {
-      const ratio = pitch * 2 ** (((DRUM_SPREAD[row] ?? 8) * noteJitter(row, time, 3)) / 1200);
+      const ratio = detune ? pitch * 2 ** (((DRUM_SPREAD[row] ?? 8) * noteJitter(row, time, 3)) / 1200) : pitch;
       const velocity = Math.min(1, n.velocity * 10 ** ((0.8 * noteJitter(row, time, 5)) / 20));
       safely(() => play(row, time, velocity, ratio));
       continue;
@@ -306,7 +311,7 @@ function synthKit(kit: DrumHits & { dispose: () => void }, output: Tone.InputNod
 /** The Designed Kit (see designedKit.ts): every row the sound designed for it. */
 function designedKit(output: Tone.InputNode, design: DrumDesign | undefined, expressive = false, seed = 0): TrackInstrument {
   const kit = createDesignedKit(output, design, seed);
-  const play: TrackInstrument['play'] = (notes, time) => playDrums((row, t, v, r = 1) => kit.hit(row, t, v, r), notes, time, expressive);
+  const play: TrackInstrument['play'] = (notes, time) => playDrums((row, t, v, r = 1) => kit.hit(row, t, v, r), notes, time, expressive, false);
   return {
     play,
     noteOn: oneShot(play),
@@ -329,7 +334,7 @@ function recordedKit(key: InstrumentKey, output: Tone.InputNode, expressive = fa
     if (!kit.loaded()) return;
     if (!kit.hit(note, time, v, opts)) extraHit(extras, row, time, v, r);
   };
-  const play: TrackInstrument['play'] = (notes, time) => playDrums(player, notes, time, expressive);
+  const play: TrackInstrument['play'] = (notes, time) => playDrums(player, notes, time, expressive, false);
   return {
     play,
     noteOn: oneShot(play),
