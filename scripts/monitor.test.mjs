@@ -177,3 +177,43 @@ test('level-matched is only reported once the listening path is in; a failed ins
   assert.equal(livePushDb({ loud: { ...m.loud, push: -2 } }, false), -2);
   assert.equal(pushDb(m), 7, 'the export keeps the push');
 });
+
+test('how loud the song was heard: only while it plays, the matching as it was then, forgotten on a change', () => {
+  M.resetHeardLoudness();
+  const reading = (shortTerm, gainDb, sounding = true) => ({ gainDb, shortTerm, safetyDb: 0, sounding });
+  // Not playing (a preview, the metronome alone): nothing counts
+  M.setHeardSongPlaying(false);
+  for (let i = 0; i < 40; i++) M.heardReading(reading(-10, -4), true);
+  assert.equal(M.heardLoudness(), null);
+  M.setHeardSongPlaying(true);
+  // A few seconds: still nothing to say; silence, NaN and Infinity never count
+  for (let i = 0; i < 10; i++) M.heardReading(reading(-20, 6), true);
+  M.heardReading(reading(-Infinity, 6), true);
+  M.heardReading(reading(NaN, 6), true);
+  M.heardReading(reading(-20, NaN), true);
+  M.heardReading(reading(-20, 6, false), true);
+  assert.equal(M.heardLoudness(), null);
+  for (let i = 0; i < 10; i++) M.heardReading(reading(-20, 6), true);
+  let heard = M.heardLoudness();
+  assert.ok(Math.abs(heard.lufs + 20) < 1e-9 && Math.abs(heard.matchDb - 6) < 1e-9);
+  // Played with the matching off: the gain heard was none, whatever the switch says now
+  for (let i = 0; i < 20; i++) M.heardReading(reading(-20, 6), false);
+  heard = M.heardLoudness();
+  assert.ok(Math.abs(heard.matchDb - 3) < 1e-9, `${heard.matchDb}`);
+  // A file at -20 LUFS sounds 3 dB quieter than heard; one at the Streaming -14, 3 dB louder
+  assert.ok(Math.abs(M.fileAgainstHeardDb(heard, -20) + 3) < 1e-9);
+  assert.ok(Math.abs(M.fileAgainstHeardDb(heard, -14) - 3) < 1e-9);
+  // The mix changed (the store resets it): nothing until it has played again
+  M.resetHeardLoudness();
+  assert.equal(M.heardLoudness(), null);
+  M.setHeardSongPlaying(false);
+});
+
+test("the store forgets what was heard when the song's mix or master changes, and counts only while it plays", () => {
+  const src = readFileSync(new URL('../src/store/timelineStore.ts', import.meta.url), 'utf8');
+  const at = src.indexOf('setHeardSongPlaying(state.isPlaying)');
+  assert.ok(at > 0, 'the transport tells the record');
+  const block = src.slice(at, src.indexOf('resetHeardLoudness();', at));
+  for (const field of ['tracks', 'clips', 'master', 'masterReverbDecay', 'masterDelayTime', 'masterDelayFeedback', 'masterReverbRoom', 'masterRoomStyle', 'intensity', 'intensityCurves'])
+    assert.ok(block.includes(`state.${field} !== prev.${field}`), `a change of ${field} forgets it`);
+});

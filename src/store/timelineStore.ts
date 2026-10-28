@@ -48,7 +48,7 @@ import { createStarter, isStarterId } from './starters';
 import type { StarterId } from './starters';
 import { create, type StateCreator } from 'zustand';
 import { initAudio } from '../audio/engine';
-import { resetHeardLoudness } from '../audio/monitor';
+import { resetHeardLoudness, setHeardSongPlaying } from '../audio/monitor';
 import {
   formatBarsBeats,
   getAudiblePositionBar,
@@ -3507,6 +3507,22 @@ setSongMeter(songMeterOf(useTimelineStore.getState()));
 onWamStates((states) => useTimelineStore.getState().setPluginStates(states));
 useTimelineStore.subscribe((state, prev) => {
   if (state.meter !== prev.meter || state.meterPoints !== prev.meterPoints) setSongMeter(songMeterOf(state));
+  // The export dialog's note of how loud the song was heard (monitor.ts): only the song playing
+  // counts, and only since its mix or master last changed (what was heard before says nothing of it now)
+  if (state.isPlaying !== prev.isPlaying) setHeardSongPlaying(state.isPlaying);
+  if (
+    state.tracks !== prev.tracks ||
+    state.clips !== prev.clips ||
+    state.master !== prev.master ||
+    state.masterReverbDecay !== prev.masterReverbDecay ||
+    state.masterDelayTime !== prev.masterDelayTime ||
+    state.masterDelayFeedback !== prev.masterDelayFeedback ||
+    state.masterReverbRoom !== prev.masterReverbRoom ||
+    state.masterRoomStyle !== prev.masterRoomStyle ||
+    state.intensity !== prev.intensity ||
+    state.intensityCurves !== prev.intensityCurves
+  )
+    resetHeardLoudness();
   // Every seek, stop and move reaches the live playhead (playing, the frame loop moves it too)
   if (state.playheadPosition !== prev.playheadPosition) setLivePlayhead(state.playheadPosition);
   // The clip open in the editor gone (deleted, cut, or undone away): the editor closes with it

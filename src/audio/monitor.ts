@@ -354,17 +354,28 @@ const heardPower = new Float64Array(HEARD_READINGS);
 const heardGain = new Float64Array(HEARD_READINGS);
 let heardCount = 0;
 let heardAt = 0;
+/** Whether the song is playing (the transport running): set by the store, so previews and the like don't count. */
+let songPlaying = false;
 
-/** One reading into the record of what was heard: only while the song plays. */
-function heardReading(r: MonitorReading) {
-  if (!r.sounding || !Number.isFinite(r.shortTerm)) return;
+/** The song started or stopped playing (the store tells: timelineStore.ts). */
+export function setHeardSongPlaying(on: boolean): void {
+  songPlaying = on;
+}
+
+/**
+ * One reading into the record of what was heard: only while the song plays and sounds. The gain
+ * kept is what the level matching applied at that moment (0 with it off then), so switching it
+ * since doesn't change what was heard.
+ */
+export function heardReading(r: MonitorReading, matched = isMatched(listeningMatched(), status)): void {
+  if (!songPlaying || !r.sounding || !Number.isFinite(r.shortTerm) || !Number.isFinite(r.gainDb)) return;
   heardPower[heardAt] = Math.pow(10, (r.shortTerm + 0.691) / 10);
-  heardGain[heardAt] = r.gainDb;
+  heardGain[heardAt] = matched ? r.gainDb : 0;
   heardAt = (heardAt + 1) % HEARD_READINGS;
   heardCount = Math.min(HEARD_READINGS, heardCount + 1);
 }
 
-/** Forget what was heard (another song opened). */
+/** Forget what was heard: another song opened, or this one's mix or master changed (timelineStore.ts). */
 export function resetHeardLoudness(): void {
   heardCount = 0;
   heardAt = 0;
@@ -374,11 +385,11 @@ export function resetHeardLoudness(): void {
 export interface HeardLoudness {
   /** The master's loudness, LUFS: about what a file of the song measures. */
   lufs: number;
-  /** What the level matching added on average, dB (0 with it off). */
+  /** What the level matching added on average as it played, dB (0 with it off). */
   matchDb: number;
 }
 
-/** What the song was heard at (see HeardLoudness); null before it has played a few seconds. */
+/** What the song was heard at since its last change (see HeardLoudness); null before it has played a few seconds. */
 export function heardLoudness(): HeardLoudness | null {
   if (heardCount < HEARD_LEAST) return null;
   let p = 0;
@@ -387,7 +398,7 @@ export function heardLoudness(): HeardLoudness | null {
     p += heardPower[i];
     g += heardGain[i];
   }
-  return { lufs: -0.691 + 10 * Math.log10(p / heardCount), matchDb: isMatched(listeningMatched(), status) ? g / heardCount : 0 };
+  return { lufs: -0.691 + 10 * Math.log10(p / heardCount), matchDb: g / heardCount };
 }
 
 /**
