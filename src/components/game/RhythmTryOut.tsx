@@ -78,7 +78,7 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
         const s = useTimelineStore.getState();
         // On the written beat, as the chart is: no swing, groove feel or Human timing in the sound
         const { tracks, clips } = onTheBeat(s.tracks, s.clips);
-        const opts = { tracks, clips, bpm: s.bpm, tempoPoints: s.tempoPoints, swing: 0, startBar: 1, endBar: notes.end, masterFx: masterFxOf(s), master: s.master, ending: 'ringOut' as const, sampleRate: 44100 as const };
+        const opts = { tracks, clips, bpm: s.bpm, tempoPoints: s.tempoPoints, swing: 0, startBar: 1, endBar: notes.end, masterFx: masterFxOf(s), master: s.master, ending: 'ringOut' as const, sampleRate: 44100 as const, recordings: 'playback' as const };
         const key = JSON.stringify(opts);
         if (cache?.key !== key) {
           const b = await renderArrangement({ ...opts, signal: stop.signal }, (f) => !cancelled && setProgress(`Rendering the song (${Math.round(f * 100)}%).`));

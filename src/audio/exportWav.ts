@@ -42,7 +42,7 @@ import { withControllerLanes } from '../store/ccLanes';
 import { withStepLanes } from '../store/stepLanes';
 import { stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
-import { holdRecordingsAt, loadCustomSample, songSampleLoads } from './samplers/samplerManager';
+import { decodePitchedSoundAt, holdRecordingsAt, loadCustomSample, songSampleLoads, type RenderRecordings } from './samplers/samplerManager';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
 import { markerCues } from './wavCues';
@@ -100,6 +100,12 @@ export interface RenderOptions {
   ending?: ExportEnding;
   /** Default 44100. */
   sampleRate?: SampleRate;
+  /**
+   * How the recorded instruments play (see RenderRecordings): 'file' (the default), a file being
+   * exported, at twice its rate where that fits; 'playback', a render the app plays itself (a
+   * freeze, a preview, an analysis), with the recordings live playback has.
+   */
+  recordings?: RenderRecordings;
   /** Leave out the master compressor and limiter (for stems that add up to the mix). */
   bypassMaster?: boolean;
   /**
@@ -675,7 +681,8 @@ function endRingOut<T extends Float32Array>(channels: T[], sampleRate: number, o
  * other track's kicks still driving its Pump. `opts.tracks` is the whole arrangement.
  */
 export async function renderForFreeze(opts: RenderOptions, track: Track, onProgress?: (fraction: number) => void): Promise<{ channels: Float32Array[]; sampleRate: number }> {
-  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, ringOutMin: opts.ringOutMin ?? FREEZE_RING_OUT }, [track], onProgress);
+  // (played by the app, as live playback plays its recordings: see RenderRecordings)
+  const { channels, sampleRate } = await renderTracks({ ...opts, bypassMaster: true, ringOutMin: opts.ringOutMin ?? FREEZE_RING_OUT, recordings: opts.recordings ?? 'playback' }, [track], onProgress);
   return { channels, sampleRate };
 }
 
@@ -1053,7 +1060,7 @@ async function renderGraph(
 ): Promise<{ rendered: AudioBuffer; plan: RenderPlan; reverbImpulse: AudioBuffer | undefined }> {
   // At a rate other than the live context's, the recorded instruments play recordings decoded at
   // this rate, not the live ones resampled note by note (see holdRecordingsAt)
-  const letGo = holdRecordingsAt(opts.sampleRate ?? DEFAULT_SAMPLE_RATE);
+  const letGo = holdRecordingsAt(opts.sampleRate ?? DEFAULT_SAMPLE_RATE, opts.recordings);
   try {
     return await renderGraphHeld(opts, sounding, onProgress, premaster);
   } finally {
@@ -1376,15 +1383,24 @@ async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar
   const trackIds = new Set(tracks.map((t) => t.id));
   // Each sound once, with what to call it in an error: the clip or track it's for
   const needed = new Map<string, string>();
+  // ...played at other pitches (a Sampler track's: decoded as its voice decodes it, see decodePitchedSound), or as it is (the rest)
+  const pitched = new Set<string>();
+  const plain = new Set<string>();
   for (const c of clips) {
-    if (c.audio && trackIds.has(c.trackId) && c.startBar < endBar && c.startBar + c.lengthBars > startBar && !needed.has(c.audio.soundId)) {
-      needed.set(c.audio.soundId, `the clip "${c.name}"`);
+    if (c.audio && trackIds.has(c.trackId) && c.startBar < endBar && c.startBar + c.lengthBars > startBar) {
+      plain.add(c.audio.soundId);
+      if (!needed.has(c.audio.soundId)) needed.set(c.audio.soundId, `the clip "${c.name}"`);
     }
   }
   for (const t of tracks) {
-    if (t.slicer && !needed.has(t.slicer.soundId)) needed.set(t.slicer.soundId, `the track "${t.name}"`);
-    if (t.sample?.soundId && !needed.has(t.sample.soundId)) needed.set(t.sample.soundId, `the track "${t.name}"`);
-    else if (t.sample?.dataUrl) await loadCustomSample(t.sample.dataUrl);
+    if (t.slicer) {
+      plain.add(t.slicer.soundId);
+      if (!needed.has(t.slicer.soundId)) needed.set(t.slicer.soundId, `the track "${t.name}"`);
+    }
+    if (t.sample?.soundId) {
+      pitched.add(t.sample.soundId);
+      if (!needed.has(t.sample.soundId)) needed.set(t.sample.soundId, `the track "${t.name}"`);
+    } else if (t.sample?.dataUrl) await loadCustomSample(t.sample.dataUrl);
   }
   // Clips that follow the tempo play stretched copies, made before the render starts
   const stretches = new Map<string, number>();
@@ -1404,7 +1420,8 @@ async function loadSounds(tracks: Track[], all: Clip[], startBar: number, endBar
   wantCopies('export', [...[...stretches.entries()].map(([key, ratio]) => ({ id: key.slice(0, key.lastIndexOf('|')), sampleRate, ratio })), ...warps.map((w) => ({ id: w.audio.soundId, sampleRate, warp: w.audio, bpm: w.bpm }))], false);
   for (const [id, label] of needed) {
     try {
-      await decodeSound(id, sampleRate);
+      if (plain.has(id)) await decodeSound(id, sampleRate);
+      if (pitched.has(id)) await decodePitchedSoundAt(id, sampleRate, true);
       for (const [key, ratio] of stretches) if (key.startsWith(`${id}|`)) await stretchSound(id, sampleRate, ratio);
       for (const w of warps) if (w.audio.soundId === id) await warpSound(id, sampleRate, w.audio, w.bpm);
     } catch (err) {

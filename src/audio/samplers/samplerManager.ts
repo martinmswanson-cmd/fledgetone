@@ -18,8 +18,8 @@ import { foldToMono, isDualMono, keptLength, lengthenSustain, levelOutline, OUTL
 import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { expressiveCutoff, OPEN_CUTOFF } from './velocityTone';
-import { HOSTED_SETS } from '../hostedSets';
-import { BLEND_ZONE, decodeRateOf, indexRecordings, layerOf, neededSamples, quickLayer, quickSamples, songNotesByInstrument, STRETCH_SEMITONES } from './songSamples';
+import { decodedBytes, setBytes } from './setSizes';
+import { BLEND_ZONE, chooseExportDecodes, decodeRateOf, OVERSAMPLE, indexRecordings, layerOf, lowMemoryDevice, neededSamples, quickLayer, quickSamples, songNotesByInstrument, SPARSE_QUICK, STRETCH_SEMITONES } from './songSamples';
 import type { RecordingIndex, SongNotes } from './songSamples';
 
 /**
@@ -42,9 +42,10 @@ import type { RecordingIndex, SongNotes } from './songSamples';
  * note played on its own recording then reads every other sample, exactly as recorded, and one
  * re-pitched has about 12 dB less of the interpolation's error, the top octave about 1.5 dB
  * brighter, for twice the memory. Live playback decodes at its own rate on a device with little
- * memory, and for the biggest sets (see oversampledLive); exports always decode at twice theirs,
- * only what the song plays. Everything that counts samples uses the buffer's own sampleRate,
- * never the context's.
+ * memory, and for the big sets (see oversampledLive, which also load only what's asked for); a
+ * file export decodes what the song plays at twice its rate within a budget (planExport), and a
+ * render the app plays itself (a freeze, a preview) the live recordings. Everything that counts
+ * samples uses the buffer's own sampleRate, never the context's.
  */
 type SampleSet = Record<string, Tone.ToneAudioBuffer>;
 
@@ -83,10 +84,14 @@ const liveRate = () => liveContext.sampleRate;
 /** Whether `context` renders offline (an export, a freeze), not live playback. */
 const isOffline = (context: Tone.BaseContext) => typeof OfflineAudioContext !== 'undefined' && nativeContextOf(context) instanceof OfflineAudioContext;
 
-function newLoading(key: InstrumentKey, rate: number, live: boolean): Loading {
+/** Every recording's name an instrument has: its notes ("<note>|<layer>|<take>") and release sounds ("rel|<note>|<take>"). */
+const namesOf = (source: SampleSource) => [...Object.keys(source.samples), ...Object.keys(source.releases?.samples ?? {}).map((n) => `rel|${n}`)];
+
+/** An empty loading: live playback's (decoded at twice the rate unless oversampledLive says not), or an export's (`oversample`: at twice its rate). */
+function newLoading(key: InstrumentKey, rate: number, live: boolean, oversample = true): Loading {
   const source = INSTRUMENTS[key].samples!;
-  const names = [...Object.keys(source.samples), ...Object.keys(source.releases?.samples ?? {}).map((n) => `rel|${n}`)];
-  return { source, rate, live, oversample: !live || oversampledLive(source), names, index: indexRecordings(names, midiOfNote, source.layers ?? [1]), have: new Map(), pending: new Map(), listeners: new Set(), asked: new Set() };
+  const names = namesOf(source);
+  return { source, rate, live, oversample: live ? oversampledLive(source) : oversample, names, index: indexRecordings(names, midiOfNote, source.layers ?? [1]), have: new Map(), pending: new Map(), listeners: new Set(), asked: new Set() };
 }
 
 /** The instrument's loading state for live playback (made empty the first time). */
@@ -100,30 +105,67 @@ function loadingOf(key: InstrumentKey): Loading {
 }
 
 /**
- * Recordings decoded for an export at its sample rate, where the live ones won't do (another
- * rate, or live ones decoded at the live rate alone: see oversampledLive), by rate, while an
- * export at that rate holds them (holdRecordingsAt). Only what the export's songs need is decoded,
- * from the kept compressed files; nothing here updates the loading badges or fills in the background.
+ * How a render plays the recorded instruments: `file`, a file being exported (its own recordings
+ * at twice its rate where the song's fit in EXPORT_DECODE_BYTES, see chooseExportDecodes), or
+ * `playback`, a render the app plays itself (a freeze, a bounce, a preview, an analysis, the web
+ * runtime's music): the recordings live playback has at the live rate, decoded afresh only at
+ * another rate (at that rate, never twice it, and within the same budget).
  */
-const atRate = new Map<number, { loadings: Partial<Record<InstrumentKey, Loading>>; holds: number; timer?: ReturnType<typeof setTimeout> }>();
+export type RenderRecordings = 'file' | 'playback';
+
+/**
+ * How an export plays an instrument's recordings: `live`, live playback's (already decoded twice
+ * over, or the render reuses them rather than decode a copy: resampled as they play where its
+ * rate isn't the live one); `once` or `twice`, its own decoded at its rate or twice that.
+ */
+type RatePlan = 'live' | 'once' | 'twice';
+
+/**
+ * What an export at one rate decodes of its own, at most (bytes, every instrument together, an
+ * estimate: setSizes.ts). About a song's worth of most instruments at twice the rate; a piano
+ * part over much of the keyboard at several loudnesses is more than this, and plays at the
+ * export's rate, or from the live recordings when even that doesn't fit.
+ */
+const EXPORT_DECODE_BYTES = 512e6;
+
+/**
+ * Recordings decoded for an export at its sample rate, where the live ones won't do (another
+ * rate, or twice the rate where live playback decodes them at the live rate alone), by rate,
+ * while an export at that rate holds them (holdRecordingsAt), with how it plays each instrument
+ * (`plans`, chosen once in songSampleLoads) and how many of its holds are files'. Only what the
+ * export's songs need is decoded, from the kept compressed files; nothing here updates the
+ * loading badges or fills in the background.
+ */
+interface RateEntry {
+  loadings: Partial<Record<InstrumentKey, Loading>>;
+  plans: Map<InstrumentKey, RatePlan>;
+  holds: number;
+  files: number;
+  timer?: ReturnType<typeof setTimeout>;
+}
+const atRate = new Map<number, RateEntry>();
 /** How long an export's recordings stay after its last render lets go (the next stem or take uses them again). */
 const RATE_KEEP_MS = 10000;
 
 /**
- * An export at `rate` is rendering: until the returned function is called, its instruments play
+ * A render at `rate` is rendering: until the returned function is called, its instruments play
  * recordings decoded for its rate (where the live ones aren't), so no note is resampled on the
- * way. Holds overlap (the parts of a mix, stems); the recordings go a little after the last.
+ * way, at twice it for a file (`recordings`, see RenderRecordings). Holds overlap (the parts of a
+ * mix, stems); the recordings go a little after the last.
  */
-export function holdRecordingsAt(rate: number): () => void {
+export function holdRecordingsAt(rate: number, recordings: RenderRecordings = 'file'): () => void {
   let entry = atRate.get(rate);
-  if (!entry) atRate.set(rate, (entry = { loadings: {}, holds: 0 }));
+  if (!entry) atRate.set(rate, (entry = { loadings: {}, plans: new Map(), holds: 0, files: 0 }));
   const held = entry;
   held.holds++;
+  const file = recordings === 'file';
+  if (file) held.files++;
   clearTimeout(held.timer);
   let released = false;
   return () => {
     if (released) return;
     released = true;
+    if (file) held.files--;
     if (--held.holds > 0) return;
     held.timer = setTimeout(() => {
       if (held.holds > 0 || atRate.get(rate) !== held) return;
@@ -134,17 +176,55 @@ export function holdRecordingsAt(rate: number): () => void {
 }
 
 /**
- * The instrument's recordings for a context at `rate`: an export's own at its rate while held,
- * else the live ones. At the live rate an export has its own only where the live ones aren't
- * decoded at twice the rate (see oversampledLive), and only for an `offline` context (live
- * playback keeps the live ones); a song's loads (songSampleLoads) at that rate while an export
- * holds it are the export's.
+ * The instrument's recordings for a context at `rate`: an export's own while one at that rate
+ * holds them, as its plan says (see planExport), else the live ones. Live playback (`offline`
+ * false) keeps the live ones at the live rate. An instrument the plan doesn't know plays the live
+ * ones at the live rate, its own at the export's rate at another.
  */
 function loadingAt(key: InstrumentKey, rate: number, offline = true): Loading {
-  const own = rate !== liveRate() || (offline && !oversampledLive(INSTRUMENTS[key].samples!));
-  const entry = own ? atRate.get(rate) : undefined;
-  if (!entry) return loadingOf(key);
-  return (entry.loadings[key] ??= newLoading(key, rate, false));
+  const entry = atRate.get(rate);
+  if (!entry || (!offline && rate === liveRate())) return loadingOf(key);
+  const plan = entry.plans.get(key) ?? (rate === liveRate() ? 'live' : 'once');
+  if (plan === 'live') return loadingOf(key);
+  return (entry.loadings[key] ??= newLoading(key, rate, false, plan === 'twice'));
+}
+
+/**
+ * How an export at `rate` (held: `entry`) plays each of these instruments, given the recordings
+ * the song needs of each (chosen once per instrument for as long as the export holds them, so
+ * the stems and parts of one export play alike):
+ * - live playback's recordings where they're already twice the live rate, at the live rate for a
+ *   render the app plays itself, and always on a device with little memory;
+ * - else its own, the cheapest instruments first, at twice the rate for a file (or at the rate)
+ *   while they fit in EXPORT_DECODE_BYTES with what the export already decodes; at the live rate
+ *   the live ones rather than a copy at the same rate; past the budget, the live ones.
+ */
+function planExport(entry: RateEntry, rate: number, needs: ReadonlyArray<readonly [InstrumentKey, Iterable<string>]>): void {
+  const atLive = rate === liveRate();
+  const file = entry.files > 0;
+  const costs: Array<[InstrumentKey, number]> = [];
+  for (const [key, names] of needs) {
+    if (entry.plans.has(key)) continue;
+    const source = INSTRUMENTS[key].samples!;
+    if (LOW_MEMORY || (atLive && (!file || oversampledLive(source)))) entry.plans.set(key, 'live');
+    else costs.push([key, decodedBytes(source, names, rate)]);
+  }
+  let spent = 0;
+  for (const [key, l] of Object.entries(entry.loadings) as Array<[InstrumentKey, Loading]>) spent += decodedBytes(l.source, l.have.keys(), entry.plans.get(key) === 'twice' ? decodeRateOf(rate) : rate);
+  const times = chooseExportDecodes(costs, Math.max(0, EXPORT_DECODE_BYTES - spent), file ? OVERSAMPLE : 1);
+  for (const [key] of costs) {
+    const t = times.get(key) ?? 0;
+    // (a playback render at another rate decodes at it, never twice; at the live rate a copy at the same rate is no better than the live ones)
+    const plan: RatePlan = t === 2 ? 'twice' : t === 1 && !atLive ? 'once' : 'live';
+    entry.plans.set(key, plan);
+  }
+}
+
+/** Whether an offline render at `rate` decodes the user's own sounds at twice its rate (see decodePitchedSound): a file's, not on a device with little memory. */
+function soundsTwiceAt(rate: number): boolean {
+  if (LOW_MEMORY) return false;
+  const entry = atRate.get(rate);
+  return !entry || entry.files > 0;
 }
 
 /** Whether `l` is live playback's (with loading badges and background filling), not an export's. */
@@ -212,7 +292,7 @@ function loadSome(key: InstrumentKey, l: Loading, names: Iterable<string>): Prom
 export function loadQuick(key: InstrumentKey): Promise<SampleSet> {
   const l = loadingOf(key);
   if (isComplete(l)) return Promise.resolve(setOf(l));
-  return loadSome(key, l, l.first ?? quickSamples(l.index)).then((set) => {
+  return loadSome(key, l, l.first ?? quickSamples(l.index, isBigSet(l.source) ? SPARSE_QUICK : 0)).then((set) => {
     fillInBackground(key);
     return set;
   });
@@ -258,12 +338,24 @@ export function loadSongSamples(tracks: Parameters<typeof songNotesByInstrument>
  * live rate the export plays the same recordings live playback does once every recording is in;
  * at another rate, held by holdRecordingsAt, recordings decoded at that rate.
  */
-export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1], rate = liveRate()): Array<[InstrumentKey, Promise<unknown>]> {
+export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>[0], clips: Parameters<typeof songNotesByInstrument>[1], rate = liveRate(), offline = true): Array<[InstrumentKey, Promise<unknown>]> {
   const songs = songsOf(tracks, clips);
-  return [...new Set(tracks.map((t) => t.instrumentKey))]
-    .filter(hasRecordings)
-    .map((key) => {
-      const l = loadingAt(key, rate);
+  const keys = [...new Set(tracks.map((t) => t.instrumentKey))].filter(hasRecordings);
+  // An export: how it plays each instrument, from what the song needs of each
+  const entry = offline ? atRate.get(rate) : undefined;
+  if (entry) {
+    planExport(
+      entry,
+      rate,
+      keys.map((key) => {
+        const source = INSTRUMENTS[key].samples!;
+        const names = namesOf(source);
+        return [key, isSamplerKey(key) ? neededSamples(indexRecordings(names, midiOfNote, source.layers ?? [1]), songs.get(key)?.notes ?? [], INSTRUMENTS[key].dynamics ? (songs.get(key)?.wheel ?? null) : null) : names] as const;
+      })
+    );
+  }
+  return keys.map((key) => {
+      const l = loadingAt(key, rate, offline);
       if (!isLive(l)) {
         // An export's own: what the song needs (a kit's every row), and the instrument starts with those
         const needed = isSamplerKey(key) ? neededFor(key, l, songs.get(key)) : new Set(l.names);
@@ -277,7 +369,8 @@ export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>
 
 /** The recordings `notes` need of an instrument (a drum kit's every one), loaded: for a stinger or a transition's notes. */
 export function loadSamplesForNotes(key: InstrumentKey, notes: readonly NoteEvent[]): Promise<unknown> {
-  return songSampleLoads([{ id: 'notes', instrumentKey: key }], [{ trackId: 'notes', notes: [...notes] }])[0]?.[1] ?? Promise.resolve();
+  // (for live playback: the live recordings, even while an export holds its own at the live rate)
+  return songSampleLoads([{ id: 'notes', instrumentKey: key }], [{ trackId: 'notes', notes: [...notes] }], liveRate(), false)[0]?.[1] ?? Promise.resolve();
 }
 
 /** True for instruments that stream recordings (piano, sax, marimba...). */
@@ -459,27 +552,29 @@ let filling = false;
  * On a device with little memory (4 GB or less, where the browser says: a phone, an older laptop),
  * the rest of an instrument's recordings load only as notes need them, never all in the background.
  */
-const LOW_MEMORY = typeof navigator !== 'undefined' && ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? Infinity) <= 4;
+const LOW_MEMORY = typeof navigator !== 'undefined' && lowMemoryDevice(navigator as Navigator & { deviceMemory?: number });
 
 /**
- * Hosted sets bigger than this (their files, in bytes) are decoded at their own rate for live
- * playback, not twice it: the biggest pianos take over a gigabyte decoded once every recording is
- * in (the Concert Grand 1.3 GB at 44.1 kHz), and would take twice that. Their exports still
- * decode at twice the rate what the song plays. Under it are all but the pianos, the double bass,
- * the tenor saxophone and the tremolo strings.
+ * Sets bigger than this (their files, in bytes: setSizes.ts) are big: live playback decodes them
+ * at their own rate, not twice it, and loads only the recordings the song and the notes played
+ * ask for, never the rest in the background, starting from a few (quickSamples' SPARSE_QUICK).
+ * The biggest pianos take over a gigabyte decoded once every recording is in (the grand 1.4 GB
+ * at 48 kHz). Under it are all but the pianos, the double bass, the tenor saxophone and the
+ * tremolo strings.
  */
-const LIVE_OVERSAMPLE_BYTES = 6e6;
+const BIG_SET_BYTES = 6e6;
 
-/** Whether live playback decodes `source`'s recordings at twice the rate (see OVERSAMPLE): not on a device with little memory, nor for the biggest sets. */
+/** Whether `source` is a big set (see BIG_SET_BYTES). */
+const isBigSet = (source: SampleSource) => setBytes(source) > BIG_SET_BYTES;
+
+/** Whether live playback decodes `source`'s recordings at twice the rate (see OVERSAMPLE): not on a device with little memory, nor for the big sets. */
 function oversampledLive(source: SampleSource): boolean {
-  if (LOW_MEMORY) return false;
-  const folder = /^fledgetone-samples\/([^/]+)\//.exec(source.baseUrl)?.[1];
-  return (folder ? (HOSTED_SETS[folder]?.bytes ?? 0) : 0) <= LIVE_OVERSAMPLE_BYTES;
+  return !LOW_MEMORY && !isBigSet(source);
 }
 
-/** Load the rest of an instrument's recordings in the background, one at a time, when nothing more pressing loads. */
+/** Load the rest of an instrument's recordings in the background, one at a time, when nothing more pressing loads (not on a device with little memory, nor for a big set). */
 function fillInBackground(key: InstrumentKey): void {
-  if (LOW_MEMORY) return;
+  if (LOW_MEMORY || isBigSet(INSTRUMENTS[key].samples!)) return;
   if (!backlog.includes(key)) backlog.push(key);
   fillSoon();
 }
@@ -1977,8 +2072,16 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
  * rate alone.
  */
 export function decodePitchedSound(id: string, context: Tone.BaseContext): Promise<AudioBuffer> {
-  const rate = context.sampleRate;
-  return decodeSound(id, decodeRateOf(rate, !isOffline(context) && LOW_MEMORY)).catch(() => decodeSound(id, rate));
+  return decodePitchedSoundAt(id, context.sampleRate, isOffline(context));
+}
+
+/**
+ * decodePitchedSound for a context at `rate` (`offline`: a render's, which decodes at twice the
+ * rate for a file, at it for a render the app plays itself: see RenderRecordings).
+ */
+export function decodePitchedSoundAt(id: string, rate: number, offline: boolean): Promise<AudioBuffer> {
+  const twice = offline ? soundsTwiceAt(rate) : !LOW_MEMORY;
+  return decodeSound(id, decodeRateOf(rate, !twice)).catch(() => decodeSound(id, rate));
 }
 
 /**

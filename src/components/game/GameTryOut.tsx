@@ -158,7 +158,7 @@ const AdventureTryOut: React.FC<{ kind: 'arena' | 'platformer'; picker: React.Re
         if (cache?.key === key && cache.buffers.values().next().value?.sampleRate === ctx.sampleRate) ({ manifest, buffers } = cache);
         else {
           // The player mixes the stems, so a state's whole mix isn't made when it has them
-          const parts = await buildGameKitParts(song, (f, d) => !cancelled && setProgress(`Rendering the music (${d}, ${Math.round(f * 100)}%).`), 44100, true, stop.signal);
+          const parts = await buildGameKitParts(song, (f, d) => !cancelled && setProgress(`Rendering the music (${d}, ${Math.round(f * 100)}%).`), 44100, true, stop.signal, 'playback');
           manifest = parts.manifest;
           buffers = new Map<string, AudioBuffer>();
           for (const f of parts.files) buffers.set(f.name, await ctx.decodeAudioData(await f.data.arrayBuffer()));

@@ -15,6 +15,7 @@
  */
 import { SAMPLE_TUNING } from './sampleTuning';
 import { HOSTED_SETS } from './hostedSets';
+import { evenLevels, SET_LEVELS } from './samplers/setLevels';
 import { FLATS, nb, noteName } from './soundfontSets';
 import { RETRO_INSTRUMENTS } from './instrumentCatalogRetro';
 
@@ -326,6 +327,27 @@ const real = (folder: string, release: number): SampleSource => {
   const set = HOSTED_SETS[folder];
   return hosted(folder, set.notes, LAYER_TOPS[set.layers], set.takes, release);
 };
+/**
+ * A hosted set recorded at uneven levels or a few cents off (setLevels.ts): each recording raised
+ * or lowered onto its loudness's smooth curve across the keyboard (SampleSource.gains), and every
+ * note retuned by the set's measured offset (SampleSource.tune), as they load.
+ */
+function evened(source: SampleSource, folder: string): SampleSource {
+  const measured = SET_LEVELS[folder];
+  if (!measured) return source;
+  const even = evenLevels(measured.levels);
+  const gains: Record<string, number> = { ...source.gains };
+  const tune: Record<string, number> = { ...source.tune };
+  const pitch: Record<string, number> = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  for (const [name, file] of Object.entries(source.samples)) {
+    const m = /^([A-G])(s?)(-?\d+)_(\d+)_(\d+)\.mp3$/.exec(file.split('/').pop() ?? '');
+    if (!m) continue;
+    const key = `${12 * (Number(m[3]) + 1) + pitch[m[1]] + (m[2] ? 1 : 0)}_${m[4]}_${m[5]}`;
+    if (even[key]) gains[name] = Math.round(((gains[name] ?? 0) + even[key]) * 100) / 100;
+    if (measured.cents) tune[name] = (tune[name] ?? 0) - measured.cents;
+  }
+  return { ...source, gains, tune };
+}
 /** A hosted release set (see ReleaseSounds) */
 const releasesOf = (folder: string, db: number, decay?: number): ReleaseSounds => {
   const set = HOSTED_SETS[folder];
@@ -486,11 +508,12 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   // Keys & Synths
   piano: {
     key: 'piano', name: 'Grand Piano', blurb: 'A recorded grand at four loudnesses (the Concert Grand\'s recordings)', color: '#e2e8f0', category: 'Keys & Synths', kind: 'sampled', range: [21, 108],
-    // The Concert Grand's recordings (every note or two, four loudnesses). It played another set
-    // before, fetched from elsewhere: one loudness every six semitones, in files with nothing over
-    // about 6 kHz. The gain keeps songs at the level they had (their K-weighted level, measured
-    // over C2 to C7 at four velocities).
-    samples: { ...real('grand-piano', 0.6), releases: releasesOf('piano-release', -19, 6) }, gain: -4.3,
+    // The Concert Grand's recordings (every note or two, four loudnesses), evened out note to note
+    // and retuned (setLevels.ts). It played another set before, fetched from elsewhere: one
+    // loudness every six semitones, in files with nothing over about 6 kHz. The gain keeps songs
+    // at the level they had (their integrated loudness, over C2 to C7 at four velocities and in a
+    // piano song: within 0.3 dB of the old piano's).
+    samples: { ...evened(real('grand-piano', 0.6), 'grand-piano'), releases: releasesOf('piano-release', -19, 6) }, gain: -2.9,
   },
   keys: { key: 'keys', name: 'Space Clav', blurb: 'FM electric keys', color: '#a855f7', category: 'Keys & Synths', kind: 'synth', range: [36, 88], taper: [63, 4.5] },
   wavetable: { key: 'wavetable', name: 'Wavetable Synth', blurb: 'Evolving sweeping pad', color: '#38bdf8', category: 'Keys & Synths', kind: 'synth', range: [36, 96], taper: [67, 1] },
@@ -643,7 +666,8 @@ const MAIN_INSTRUMENTS: Partial<Record<InstrumentKey, InstrumentDef>> = {
   },
   realGrandPiano: {
     key: 'realGrandPiano', name: 'Concert Grand (Real)', blurb: 'A recorded concert grand at four loudnesses: soft and warm to bright and hard', color: '#f8fafc', category: 'Keys & Synths', kind: 'sampled', range: realRange('grand-piano'),
-    samples: { ...real('grand-piano', 0.6), releases: releasesOf('piano-release', -19, 6) }, gain: -7.3,
+    // (evened out and retuned: setLevels.ts; the gain keeps its songs' integrated loudness as it was)
+    samples: { ...evened(real('grand-piano', 0.6), 'grand-piano'), releases: releasesOf('piano-release', -19, 6) }, gain: -6.4,
   },
   realUprightPiano: {
     key: 'realUprightPiano', name: 'Upright Piano (Real)', blurb: 'A recorded upright piano, three loudnesses: intimate, homely', color: '#e7e5e4', category: 'Keys & Synths', kind: 'sampled', range: realRange('upright-piano'),

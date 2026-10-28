@@ -91,6 +91,7 @@ downloads take about 1.7 GB):
 python3 /path/to/bos-beat-box/scripts/real-samples/fetch.py            # downloads into dl/<set>/
 python3 /path/to/bos-beat-box/scripts/real-samples/measure.py          # each recording's real note and tuning: measure.json
 python3 /path/to/bos-beat-box/scripts/real-samples/convert.py /path/to/bos-beat-box
+python3 /path/to/bos-beat-box/scripts/real-samples/levels.py          # after converting the grand piano: its levels and tuning, setLevels.ts
 ```
 
 Each script takes set names to work on just those (`fetch.py --list harp` shows what a set would

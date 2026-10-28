@@ -85,7 +85,7 @@ export async function loadSong(source: string | object, opts: LoadOptions = {}):
   }
   if (project.sounds?.length) await importEmbeddedSounds(project.sounds);
   // With stem groups the player mixes the stems, so each state's whole mix isn't made
-  const { manifest, files } = await buildGameKitParts(songOf(project), opts.onProgress, 44100, true);
+  const { manifest, files } = await buildGameKitParts(songOf(project), opts.onProgress, 44100, true, undefined, 'playback');
   const ctx = opts.context ?? new AudioContext();
   const buffers = new Map<string, AudioBuffer>();
   for (const f of files) buffers.set(f.name, await ctx.decodeAudioData(await f.data.arrayBuffer()));

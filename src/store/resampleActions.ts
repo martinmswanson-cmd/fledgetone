@@ -92,6 +92,8 @@ export async function resample(req: ResampleRequest): Promise<ResampleResult> {
     const rate = liveMix.bus.context.sampleRate;
     const sampleRate: SampleRate = (SAMPLE_RATES as readonly number[]).includes(rate) ? (rate as SampleRate) : 48000;
     const opts: RenderOptions = {
+      // (it plays in the song: the recordings as live playback has them, as a freeze does)
+      recordings: 'playback',
       tracks,
       clips,
       bpm: s.bpm,
