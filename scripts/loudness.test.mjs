@@ -16,7 +16,7 @@ register(
 }`)
 );
 
-const { createLoudnessAnalyser, normalizeGainDb, truePeakOf, LOUDNESS_WORKLET_SOURCE, LOUDNESS_WORKER_SOURCE, formatLufs, formatDbtp } = await import('../src/audio/loudness.ts');
+const { createLoudnessAnalyser, normalizeGainDb, sharedGainDb, truePeakOf, LOUDNESS_WORKLET_SOURCE, LOUDNESS_WORKER_SOURCE, formatLufs, formatDbtp } = await import('../src/audio/loudness.ts');
 
 const near = (a, b, tol, what = '') => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} is not within ${tol} of ${b}`);
 
@@ -151,6 +151,22 @@ test('feeding in blocks of 128 gives the same reading as all at once', () => {
   near(blocks.integrated, whole.integrated, 1e-9);
   near(blocks.truePeakMax, whole.truePeakMax, 1e-9);
   near(blocks.shortTerm, whole.shortTerm, 1e-9);
+});
+
+test('one gain for an intro and its loop keeps the louder of their peaks under the ceiling', () => {
+  // A quiet loop (-42.6 LUFS, -30 dBTP) after a loud intro (-1.9 dBTP): measured by the loop alone
+  // it took +28.6 dB and the intro came out at +26.7 dBTP
+  const loop = { integrated: -42.6, truePeakMax: -30 };
+  assert.deepEqual(normalizeGainDb(loop), { gainDb: 28.6, limited: false });
+  const shared = sharedGainDb(loop, [-1.9]);
+  near(shared.gainDb, 0.9, 1e-9);
+  assert.equal(shared.limited, true);
+  assert.equal(shared.peakDbtp, -1.9);
+  assert.ok(shared.peakDbtp + shared.gainDb <= -1 + 1e-9);
+  // A quieter intro changes nothing; a silent one (-inf) neither
+  assert.deepEqual(sharedGainDb({ integrated: -18, truePeakMax: -6 }, [-12, -Infinity]), { gainDb: 4, limited: false, peakDbtp: -6 });
+  // A silent loop: no gain, whatever the intro
+  assert.equal(sharedGainDb({ integrated: -Infinity, truePeakMax: -Infinity }, [-1]).gainDb, 0);
 });
 
 test('the normalize gain reaches -14 LUFS unless the -1 dBTP ceiling holds it back', () => {

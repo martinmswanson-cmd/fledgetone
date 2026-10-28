@@ -108,8 +108,11 @@ import { ensureSound, importDataUrl, importEmbeddedSounds, letGoHeldSounds, soun
 import { liveView } from './freeze';
 import { sliceNotes } from '../audio/slicing';
 import {
-  audioLengthLimit,
-  audioTrimStartLimit,
+  audioLengthLimitAt,
+  audioTrimStartLimitAt,
+  barsForSeconds,
+  playsAlongMap,
+  soundShift,
   clipNameFromFile,
   normalizeClipAudio,
   referencedSoundIds,
@@ -117,7 +120,6 @@ import {
   secondsPerBar,
   partOfMangle,
   splitAudio,
-  audioShift,
   trimAudioStart,
   stretchRatio,
 } from './audioClips';
@@ -145,7 +147,7 @@ import { moveExpression, shiftExpression, tidyLane, type ExprLane } from './expr
 import { tidyNoteLane, type NoteLane } from './noteExpression';
 import { launcherActive, launcherClips, useLauncher } from './launcherView';
 import { addTake, applyComp, flattenTakes, keepNoteEdits, removeTake, setCompRange, splitTakes, trimTakes } from './takes';
-import { clampBpm, meterAt, nearestMeasureStart, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
+import { clampBpm, meterAt, nearestMeasureStart, secondsBetween, shiftTempoPoints, sortedPoints, FOUR_FOUR, tempoAt, tempoFrom } from '../audio/tempoMap';
 import type { Meter, MeterMap, MeterPoint, Tempo, TempoMap, TempoPoint } from '../audio/tempoMap';
 import { setSongMeter } from '../audio/transport';
 import { canLink, shareLinkedContent, syncPatterns, unlinked } from './patterns';
@@ -908,7 +910,6 @@ const MIN_CLIP_BARS = 0.0625;
  * falls in its sound (at `bpm`). Null if `atBar` isn't inside the clip.
  */
 export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Clip] | null {
-  const local = tempoAt(clip.startBar, tempo);
   const rel = atBar - clip.startBar;
   if (rel <= EPS || rel >= clip.lengthBars - EPS) return null;
   const left: Clip = {
@@ -934,13 +935,13 @@ export function splitClipAt(clip: Clip, atBar: number, tempo: Tempo): [Clip, Cli
     notes: clip.notes
       .filter((n) => n.startOffset >= rel - EPS)
       .map((n) => ({ ...n, id: uid('note'), startOffset: n.startOffset - rel })),
-    ...(clip.audio ? { audio: splitAudio(clip.audio, audioShift(clip.audio, rel, local)) } : {}),
+    ...(clip.audio ? { audio: splitAudio(clip.audio, soundShift(clip, rel, tempo)) } : {}),
   };
   if (rightExpr) right.expression = rightExpr;
   else delete right.expression;
   if (rightSteps) right.stepLanes = rightSteps;
   // A take folder's takes split with it
-  const takes = splitTakes(clip, rel, clip.audio ? audioShift(clip.audio, rel, local) : 0, () => uid('note'));
+  const takes = splitTakes(clip, rel, clip.audio ? soundShift(clip, rel, tempo) : 0, () => uid('note'));
   if (takes) return [{ ...left, ...takes[0] }, { ...right, ...takes[1] }];
   return [left, right];
 }
@@ -2317,7 +2318,7 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         const room = TOTAL_BARS + 1 - at;
         if (room < MIN_CLIP_BARS - EPS) break;
         ensureSound(sound.id);
-        const lengthBars = Math.max(MIN_CLIP_BARS, Math.min(sound.seconds / secondsPerBar(tempoAt(at, songTempo(s))), room));
+        const lengthBars = Math.max(MIN_CLIP_BARS, Math.min(barsForSeconds(at, sound.seconds, songTempo(s)), room));
         clips.push({
           id: uid('clip'),
           trackId: track.id,
@@ -2493,17 +2494,23 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
         // An audio clip keeps its length in seconds: moved to where the tempo differs, its bars change
         if (!c.audio || c.audio.stretchBpm || !get().tempoPoints.length) return { startBar: start };
         const tempo = songTempo(get());
-        const lengthBars = Math.min(TOTAL_BARS + 1 - start, (c.lengthBars * tempoAt(start, tempo)) / tempoAt(c.startBar, tempo));
+        // (Along the tempo map where it plays across a change, here or where it goes)
+        const end = c.startBar + c.lengthBars;
+        const seconds = playsAlongMap(c, end, tempo) ? secondsBetween(c.startBar, end, tempo) : c.lengthBars * secondsPerBar(tempoAt(c.startBar, tempo));
+        const scaled = (c.lengthBars * tempoAt(start, tempo)) / tempoAt(c.startBar, tempo);
+        const steady = !playsAlongMap(c, end, tempo) && !playsAlongMap({ ...c, startBar: start }, start + scaled, tempo);
+        const lengthBars = Math.min(TOTAL_BARS + 1 - start, steady ? scaled : barsForSeconds(start, seconds, tempo));
         return { startBar: start, lengthBars };
       }),
 
     trimClipStart: (clipId, newStartBar) =>
       updateClip(clipId, (c) => {
-        const bpm = tempoAt(c.startBar, songTempo(get()));
+        const tempo = songTempo(get());
+        const bpm = tempoAt(c.startBar, tempo);
         const end = c.startBar + c.lengthBars;
         // An audio clip's left edge can go back no further than the start of its sound
         // (a take folder's: no earlier than the start of the sound of whichever take starts latest in it)
-        const earliest = c.audio ? Math.max(1, ...[c.audio, ...(c.takes ?? []).map((t) => t.audio)].map((a) => (a ? audioTrimStartLimit({ ...c, audio: a }, bpm) : 1))) : 1;
+        const earliest = c.audio ? Math.max(1, ...[c.audio, ...(c.takes ?? []).map((t) => t.audio)].map((a) => (a ? audioTrimStartLimitAt({ ...c, audio: a }, tempo) : 1))) : 1;
         const start = Math.max(earliest, Math.min(end - 0.0625, newStartBar));
         const delta = start - c.startBar;
         // Notes keep their absolute song position; offsets shift so trimmed notes become hidden
@@ -2514,15 +2521,15 @@ export const useTimelineStore = create<TimelineState>()(withLinkedClips((set, ge
           notes: c.notes.map((n) => ({ ...n, startOffset: n.startOffset - delta })),
           ...(c.expression ? { expression: moveExpression(c.expression, -delta) } : {}),
           ...(c.stepLanes ? { stepLanes: moveStepLanes(c.stepLanes, -delta) } : {}),
-          ...(c.audio ? { audio: trimAudioStart(c.audio, audioShift(c.audio, delta, bpm)) } : {}),
-          ...trimTakes(c, delta, c.audio ? delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm) : 0),
+          ...(c.audio ? { audio: trimAudioStart(c.audio, soundShift(c, delta, tempo)) } : {}),
+          ...trimTakes(c, delta, c.audio ? (playsAlongMap(c, start, tempo) ? secondsBetween(c.startBar, start, tempo) : delta * secondsPerBar(bpm) * stretchRatio(c.audio, bpm)) : 0),
         };
       }),
 
     trimClipEnd: (clipId, newLengthBars) =>
       updateClip(clipId, (c) => {
         // An audio clip ends where its sound does, at the latest
-        const longest = c.audio ? audioLengthLimit(c.audio, soundSeconds(c.audio.soundId), tempoAt(c.startBar, songTempo(get()))) : Infinity;
+        const longest = c.audio ? audioLengthLimitAt(c, soundSeconds(c.audio.soundId), songTempo(get())) : Infinity;
         return { lengthBars: Math.max(0.0625, Math.min(TOTAL_BARS + 1 - c.startBar, longest, newLengthBars)) };
       }),
 

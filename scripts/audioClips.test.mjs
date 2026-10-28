@@ -23,8 +23,14 @@ const { ENVELOPE_HOP, envelopeOf, equalSlices, midiOf, sliceEnd, sliceIndexOf, s
 const {
   audioClipSeconds,
   audioLengthLimit,
+  audioLengthLimitAt,
+  audioShift,
   audioTrimStartLimit,
+  audioTrimStartLimitAt,
+  barsForSeconds,
   clipNameFromFile,
+  playsAlongMap,
+  soundShift,
   normalizeClipAudio,
   normalizeSlicer,
   normalizeSlices,
@@ -232,6 +238,62 @@ test('audio clips keep their length in seconds across a tempo change; note clips
   assert.equal(retimeAudioClips(only, 120, 90), only);
   near(audioClipSeconds({ lengthBars: 2 }, 120), 4);
   near(secondsPerBar(60), 4);
+});
+
+test('a tempo change keeps a clip played in real time its seconds along the tempo map', () => {
+  const audio = { soundId: 'a', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 };
+  const clip = { id: 'c', trackId: 't', startBar: 1, lengthBars: 8, audio, comp: [{ at: 0, take: 0 }, { at: 4, take: 1 }] };
+  // 24 s (8 s at 120, then 16 s at 60 from bar 5); the slow-down moved to bar 3: 4 s, then 20 s at 60
+  const from = { bpm: 120, points: [{ id: 'p', bar: 5, bpm: 60, ramp: false }] };
+  const to = { bpm: 120, points: [{ id: 'p', bar: 3, bpm: 60, ramp: false }] };
+  const [moved] = retimeAudioClips([clip], from, to);
+  near(moved.lengthBars, 7);
+  // The comp's change, 8 s in, stays there: 2 bars at 120 and 1 at 60
+  near(moved.comp[1].at, 3);
+  // Back again: as it was
+  const [back] = retimeAudioClips([moved], to, from);
+  near(back.lengthBars, 8);
+  // In one tempo, or with the change outside the clip, the tempos where it starts scale it, exactly as before
+  const later = { bpm: 120, points: [{ id: 'p', bar: 20, bpm: 60, ramp: false }] };
+  const short = { ...clip, lengthBars: 2, comp: undefined };
+  assert.equal(retimeAudioClips([short], later, 90)[0].lengthBars, (2 * 90) / 120);
+  assert.equal(retimeAudioClips([short], 120, 90)[0].lengthBars, (2 * 90) / 120);
+  // A clip that follows the tempo is left alone
+  const stretched = { ...clip, audio: { ...audio, stretchBpm: 100 } };
+  assert.equal(retimeAudioClips([stretched], from, to)[0], stretched);
+});
+
+test('cuts, trims and lengths of a clip played in real time follow the tempo map across a change, as it plays', () => {
+  const audio = { soundId: 'a', offset: 0, gain: 0, fadeIn: 0, fadeOut: 0 };
+  // 120 BPM, 60 from bar 5: bar 9 is 8 s + 16 s in
+  const slower = { bpm: 120, points: [{ id: 'p', bar: 5, bpm: 60, ramp: false }] };
+  const clip = { startBar: 1, audio };
+  assert.equal(playsAlongMap(clip, 9, slower), true);
+  assert.equal(playsAlongMap(clip, 4, slower), false);
+  // A cut (or the left edge) at bar 9 plays on from 24 s (it was 16 s, so 8 s played twice)
+  near(soundShift(clip, 8, slower), 24);
+  // Before the change, and in one tempo, exactly as audioShift
+  assert.equal(soundShift(clip, 3, slower), audioShift(audio, 3, 120));
+  assert.equal(soundShift(clip, 8, 120), audioShift(audio, 8, 120));
+  // A clip that follows the tempo keeps counting at the tempo where it starts
+  const stretched = { startBar: 1, audio: { ...audio, stretchBpm: 100 } };
+  assert.equal(playsAlongMap(stretched, 9, slower), false);
+  assert.equal(soundShift(stretched, 8, slower), audioShift(stretched.audio, 8, 120));
+  // Back from the start: the left edge moved earlier across the change
+  near(soundShift({ startBar: 9, audio: { ...audio, offset: 30 } }, -8, slower), -24);
+  // 60 BPM, 120 from bar 3: 24 s from bar 1 is 8 s, then 8 bars at 120: bar 11
+  const faster = { bpm: 60, points: [{ id: 'p', bar: 3, bpm: 120, ramp: false }] };
+  near(barsForSeconds(1, 24, faster), 10);
+  assert.equal(barsForSeconds(1, 6, faster), 6 / secondsPerBar(60));
+  assert.equal(barsForSeconds(1, 24, faster, true), 24 / secondsPerBar(60));
+  // So a 24 s bounce at bar 1 can be dragged out to its 10 bars (it was cut to 6)
+  near(audioLengthLimitAt(clip, 24, faster), 10);
+  assert.equal(audioLengthLimitAt(clip, 24, 60), audioLengthLimit(audio, 24, 60));
+  assert.equal(audioLengthLimitAt(clip, undefined, faster), Infinity);
+  // The left edge goes back to the sound's start across the change: 6 s into it at bar 5 is 4 s of
+  // bars 3 to 5 at 120 and half a bar at 60 back, bar 2.5 (at 120 alone it was bar 3.5)
+  near(audioTrimStartLimitAt({ startBar: 5, audio: { ...audio, offset: 6 } }, faster), 2.5);
+  assert.equal(audioTrimStartLimitAt({ startBar: 5, audio: { ...audio, offset: 1 } }, faster), audioTrimStartLimit({ startBar: 5, audio: { ...audio, offset: 1 } }, 120));
 });
 
 test('cuts and trims move the offset into the sound; the left edge stops at the sound start, the right at its end', () => {

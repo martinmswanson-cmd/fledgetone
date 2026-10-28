@@ -41,8 +41,40 @@ export function barOfSource(clip: Pick<Clip, 'startBar' | 'audio'>, src: number,
 export const audioShift = (audio: ClipAudio, bars: number, bpm: number): number => sourceAt(audio, bars * secondsPerBar(bpm), bpm) - audio.offset;
 
 /**
+ * Whether an audio clip's seconds between its start and bar `to` (either side of it) are counted
+ * along the song's tempo changes: a clip that plays its sound in real time does, across a change,
+ * as it plays (audioClipSchedule.ts), as the timeline draws it and as a freeze or bounce is
+ * measured. One that follows the tempo, or sits in one tempo, counts them at the tempo where it starts.
+ */
+export const playsAlongMap = (clip: Pick<Clip, 'startBar' | 'audio'>, to: number, tempo: Tempo): boolean =>
+  !!clip.audio && !clip.audio.stretchBpm && !steadyBetween(Math.min(clip.startBar, to), Math.max(clip.startBar, to), tempo);
+
+/**
+ * How far into its sound (seconds) a clip's audio moves when the clip is cut, or its left edge
+ * moved, `bars` in (negative: back): what it plays there, along the tempo map where it plays along
+ * it (see playsAlongMap), else as audioShift at the tempo where it starts.
+ */
+export function soundShift(clip: Pick<Clip, 'startBar' | 'audio'>, bars: number, tempo: Tempo): number {
+  const to = clip.startBar + bars;
+  if (playsAlongMap(clip, to, tempo)) return secondsBetween(clip.startBar, to, tempo);
+  return clip.audio ? audioShift(clip.audio, bars, tempoAt(clip.startBar, tempo)) : 0;
+}
+
+/**
+ * The bars `seconds` of sound played in real time fill from `startBar` (negative seconds: back
+ * from it): at the tempo there, or along the tempo map where that crosses a change. With
+ * `stretched` (the clip follows the tempo), always at the tempo there.
+ */
+export function barsForSeconds(startBar: number, seconds: number, tempo: Tempo, stretched = false): number {
+  const bars = seconds / secondsPerBar(tempoAt(startBar, tempo));
+  if (stretched || steadyBetween(Math.min(startBar, startBar + bars), Math.max(startBar, startBar + bars), tempo)) return bars;
+  return secondsToBar(barToSeconds(startBar, tempo) + seconds, tempo) - startBar;
+}
+
+/**
  * The clips after a tempo change: an audio clip keeps its start bar and its length in seconds, so
- * its length in bars scales with the tempo where it starts, unless it follows the tempo (then it
+ * its length in bars scales with the tempo where it starts (along the tempo map, where it plays
+ * across a change before or after), unless it follows the tempo (then it
  * keeps its bars and is stretched instead). Note clips are untouched; the same array comes back
  * when nothing changes.
  */
@@ -52,6 +84,18 @@ export function retimeAudioClips(clips: Clip[], from: Tempo, to: Tempo): Clip[] 
   const next = clips.map((c) => {
     if (!c.audio || c.audio.stretchBpm) return c;
     const ratio = tempoAt(c.startBar, to) / tempoAt(c.startBar, from);
+    const end = c.startBar + c.lengthBars;
+    // Across a tempo change (before or after), its seconds are counted along the map, as it plays
+    // (see playsAlongMap); in one tempo, scaled by the tempos where it starts
+    if (playsAlongMap(c, end, from) || playsAlongMap(c, c.startBar + c.lengthBars * ratio, to)) {
+      const secondsTo = (bars: number) => (playsAlongMap(c, c.startBar + bars, from) ? secondsBetween(c.startBar, c.startBar + bars, from) : bars * secondsPerBar(tempoAt(c.startBar, from)));
+      const barsAt = (bars: number) => barsForSeconds(c.startBar, secondsTo(bars), to);
+      const lengthBars = barsAt(c.lengthBars);
+      const comp = c.comp?.map((seg) => ({ ...seg, at: barsAt(seg.at) }));
+      if (Math.abs(lengthBars - c.lengthBars) < EPS && !(comp ?? []).some((seg, i) => Math.abs(seg.at - c.comp![i].at) >= EPS)) return c;
+      changed = true;
+      return { ...c, lengthBars, ...(comp ? { comp } : {}) };
+    }
     if (Math.abs(ratio - 1) < EPS) return c;
     changed = true;
     // A take folder's comp keeps its place in the sound, so its bars scale too
@@ -110,6 +154,25 @@ export function audioTrimStartLimit(clip: Pick<Clip, 'startBar' | 'audio'>, bpm:
 export function audioLengthLimit(audio: ClipAudio, soundSeconds: number | undefined, bpm: number): number {
   if (soundSeconds === undefined) return Infinity;
   return Math.max(0, clipSecondsAt(audio, soundSeconds, bpm)) / secondsPerBar(bpm);
+}
+
+/**
+ * audioTrimStartLimit along the song's tempo: a clip that plays its sound in real time reaches its
+ * sound's start across a tempo change at the bar it plays there (see playsAlongMap).
+ */
+export function audioTrimStartLimitAt(clip: Pick<Clip, 'startBar' | 'audio'>, tempo: Tempo): number {
+  const bpm = tempoAt(clip.startBar, tempo);
+  const bar = audioTrimStartLimit(clip, bpm);
+  if (!clip.audio || clip.audio.stretchBpm || steadyBetween(Math.min(bar, clip.startBar), clip.startBar, tempo)) return bar;
+  return clip.startBar + barsForSeconds(clip.startBar, -clip.audio.offset, tempo);
+}
+
+/** audioLengthLimit along the song's tempo, as audioTrimStartLimitAt. */
+export function audioLengthLimitAt(clip: Pick<Clip, 'startBar' | 'audio'>, soundSeconds: number | undefined, tempo: Tempo): number {
+  if (!clip.audio) return Infinity;
+  const bars = audioLengthLimit(clip.audio, soundSeconds, tempoAt(clip.startBar, tempo));
+  if (!Number.isFinite(bars) || clip.audio.stretchBpm || steadyBetween(clip.startBar, clip.startBar + bars, tempo)) return bars;
+  return Math.max(0, barsForSeconds(clip.startBar, soundSeconds! - clip.audio.offset, tempo));
 }
 
 /** The sounds a project refers to: audio clips (in the clip launcher's slots too), Slicer tracks and Sampler tracks (each id once). */
