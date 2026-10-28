@@ -10,6 +10,8 @@ import { midiOf, sliceEnd } from '../slicing';
 import { decodedSound, ensureSound } from '../soundLibrary';
 import { notLate } from './monotonic';
 import { createBus, createVoiceSet } from './native';
+import { copySetFor } from '../samplers/samplerManager';
+import type { TrackPlan } from '../samplers/songSamples';
 
 /** Fade at either end of a slice, so cuts mid-vocal don't click. */
 const SLICE_FADE = 0.003;
@@ -32,13 +34,31 @@ function reversedOf(buffer: AudioBuffer): AudioBuffer {
  * mode every key plays the focused slice instead, transposed from that slice's own key. Each note
  * is a plain AudioBufferSourceNode and a GainNode (see native.ts), so nothing runs between notes;
  * the sound is decoded once per context and shared (see soundLibrary.ts). The slices and modes are
- * read as each note plays, so the track's settings follow without rebuilding the instrument.
+ * read as each note plays, so the track's settings follow without rebuilding the instrument. In
+ * Pitch mode a key away from the slice's own plays a copy of the slice made at that pitch
+ * (pitchedCopies.ts), at a rate of exactly 1, where it's made: live, from the second time that key
+ * plays that slice; in a render, always (see prepare).
  */
 export function createSlicer(output: Tone.InputNode, initial: SlicerSettings | undefined): TrackInstrument {
   const { bus, raw, input } = createBus(output);
   const voices = createVoiceSet(raw, 0.05);
   let settings = initial;
   if (settings) ensureSound(settings.soundId);
+  const copies = copySetFor(raw);
+
+  /**
+   * What Pitch mode plays `midi` from: the focused slice of `buffer`, as a copy at the key's pitch
+   * (its stretch of the sound, forwards or backwards, from its first frame), with that copy's wish.
+   */
+  const sliceWish = (s: SlicerSettings, buffer: AudioBuffer, midi: number) => {
+    const index = Math.max(0, Math.min(s.slices.length - 1, s.focus));
+    const rate = Math.pow(2, (midi - (SLICE_KEY_BASE + index)) / 12);
+    const from = s.slices[index];
+    const to = Math.min(sliceEnd(s.slices, index, s.end), buffer.duration);
+    const back = !!s.reversed?.includes(index);
+    const offset = Math.round((back ? buffer.duration - to : from) * buffer.sampleRate) / buffer.sampleRate;
+    return { index, rate, back, wish: { ratio: rate, playRate: raw.sampleRate, region: [offset, offset + (to - from)] as [number, number] } };
+  };
 
   const play = (notes: PlayableNote[], time: number) => {
     const s = settings;
@@ -65,9 +85,12 @@ export function createSlicer(output: Tone.InputNode, initial: SlicerSettings | u
       if (!(seconds > 0) || from >= buffer.duration) continue;
       // A reversed slice: its end comes first, from the backwards copy
       const back = !!s.reversed?.includes(index);
+      const played = back ? reversedOf(buffer) : buffer;
+      // Pitch mode, away from the slice's key: its copy at that pitch, from the slice's first frame
+      const copy = s.pitch && rate !== 1 ? copies.find(played, sliceWish(s, buffer, midi).wish) : undefined;
       const source = raw.createBufferSource();
-      source.buffer = back ? reversedOf(buffer) : buffer;
-      source.playbackRate.value = rate;
+      source.buffer = copy?.buffer ?? played;
+      source.playbackRate.value = copy ? 1 : rate;
       const amp = raw.createGain();
       // Fades at the cuts; a slice at the very start of the sound keeps the recording's own attack
       const fade = Math.min(SLICE_FADE, seconds / 2);
@@ -83,7 +106,7 @@ export function createSlicer(output: Tone.InputNode, initial: SlicerSettings | u
       amp.gain.linearRampToValueAtTime(0, at + seconds);
       source.connect(amp);
       amp.connect(input);
-      source.start(at, offset);
+      source.start(at, copy ? 0 : offset);
       voices.add({ start: at, stopAt: at + seconds, sources: [source], nodes: [source, amp], amp });
     }
   };
@@ -92,8 +115,22 @@ export function createSlicer(output: Tone.InputNode, initial: SlicerSettings | u
     play,
     releaseAll: () => voices.releaseAll(bus.now()),
     ready: Promise.resolve(),
+    prepare: async (plan: TrackPlan) => {
+      const s = settings;
+      const buffer = s?.pitch ? decodedSound(s.soundId, raw.sampleRate) : undefined;
+      if (!s || !buffer || !s.slices.length) return;
+      const jobs: Promise<void>[] = [];
+      for (const n of plan.notes) {
+        const midi = midiOf(n.note);
+        if (!Number.isFinite(midi)) continue;
+        const { rate, back, wish } = sliceWish(s, buffer, midi);
+        if (rate !== 1) jobs.push(copies.prepare(back ? reversedOf(buffer) : buffer, wish));
+      }
+      await Promise.all(jobs);
+    },
     dispose: () => {
       voices.stopAll();
+      copies.dispose();
       bus.dispose();
     },
     setSlicer: (next) => {

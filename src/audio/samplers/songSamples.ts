@@ -10,7 +10,9 @@
  * Pure: sample names and numbers in, sample names out, so Node can test it.
  */
 import { HUMAN_MAX_DYNAMICS } from '../human';
-import type { Clip, Track } from '../../store/timelineTypes';
+import type { Clip, NoteEvent, Track } from '../../store/timelineTypes';
+import { durationToBars } from '../../store/timelineTypes';
+import { sustainNotes } from '../../store/expression';
 
 /** How far either side of a loudness boundary (in velocity) two recordings are blended. */
 export const BLEND_ZONE = 0.07;
@@ -134,8 +136,6 @@ export function indexRecordings(names: string[], midiOf: (note: string) => numbe
  */
 export function neededSamples(index: RecordingIndex, notes: SongNote[], wheel?: [number, number] | null): Set<string> {
   const out = new Set<string>();
-  const seen = new Set<string>();
-  const { layers, tops } = index;
   /** The recording `s` plays `midi` from (added), and the next one on the other side if within stretching distance. */
   const take = (s: SlotIndex, midi: number, neighbour: boolean) => {
     const m = nearestMidi(s.midis, midi);
@@ -148,17 +148,26 @@ export function neededSamples(index: RecordingIndex, notes: SongNote[], wheel?: 
     }
     return m;
   };
+  walkNotes(index, notes, wheel, take);
+  return out;
+}
+
+/**
+ * Every note of `notes` (once per pitch and loudnesses in reach) against the slots it can play
+ * from: `take(slot, midi, neighbour)` for each slot of each loudness in reach (see neededSamples)
+ * and returns the recording that slot plays it from; a note too far from it plays the first-loaded
+ * slot's (taken without its neighbour), and each release slot's nearest is taken too.
+ */
+function walkNotes(index: RecordingIndex, notes: SongNote[], wheel: [number, number] | null | undefined, take: (s: SlotIndex, midi: number, neighbour: boolean) => number | undefined): void {
+  const seen = new Set<string>();
+  const { layers, tops } = index;
   const fallback = layers[index.quick]?.[0];
   // The loudnesses the mod wheel reaches (see dynamicsMix in samplerManager.ts)
   const span = layers.length - 1;
   const wheelLow = (v: number) => Math.max(0, Math.min(span - 1, Math.floor(Math.max(0, Math.min(1, v)) * span)));
   const byWheel = wheel && span > 0 ? [wheelLow(wheel[0]), wheelLow(wheel[1]) + 1] : null;
   for (const note of notes) {
-    const drift = Math.max(0, Math.min(HUMAN_MAX_DYNAMICS, note.drift ?? 0));
-    const soft = Math.max(0, note.velocity * (1 - drift) - BLEND_ZONE);
-    const loud = Math.min(1, Math.max(note.velocity, note.loudest) * (1 + drift) + BLEND_ZONE);
-    const reach = new Set<number>();
-    for (let l = layerOf(tops, soft); l <= layerOf(tops, loud); l++) reach.add(l);
+    const reach = layersInReach(tops, note);
     if (byWheel) for (let l = byWheel[0]; l <= byWheel[1]; l++) reach.add(l);
     const key = `${note.midi}:${[...reach].join(',')}`;
     if (seen.has(key)) continue;
@@ -172,6 +181,44 @@ export function neededSamples(index: RecordingIndex, notes: SongNote[], wheel?: 
     }
     for (const r of index.releases) take(r, note.midi, false);
   }
+}
+
+/**
+ * The loudnesses (indexes into `tops`) a note can play: its velocity can drift (its Human
+ * insert), a chord plays at its loudest note's, and near a boundary two loudnesses blend.
+ */
+export function layersInReach(tops: number[], note: Pick<SongNote, 'velocity' | 'loudest' | 'drift'>): Set<number> {
+  const drift = Math.max(0, Math.min(HUMAN_MAX_DYNAMICS, note.drift ?? 0));
+  const soft = Math.max(0, note.velocity * (1 - drift) - BLEND_ZONE);
+  const loud = Math.min(1, Math.max(note.velocity, note.loudest) * (1 + drift) + BLEND_ZONE);
+  const reach = new Set<number>();
+  for (let l = layerOf(tops, soft); l <= layerOf(tops, loud); l++) reach.add(l);
+  return reach;
+}
+
+/** The furthest (semitones) a recording is copied at another pitch: past it a note plays it stretched as before (see pitchedCopies.ts). */
+export const COPY_SEMITONES = 24;
+
+/**
+ * The pitches `notes` play each recording at, other than its own (semitones from it, by
+ * recording's name): the recording each slot in reach plays a note from (see neededSamples),
+ * and its release sound's. What a song needs of re-pitched copies (see pitchedCopies.ts), made
+ * ahead so those notes play a copy instead of stretching the recording as they sound.
+ */
+export function neededPitches(index: RecordingIndex, notes: SongNote[], wheel?: [number, number] | null): Map<string, Set<number>> {
+  const out = new Map<string, Set<number>>();
+  walkNotes(index, notes, wheel, (s, midi) => {
+    const m = nearestMidi(s.midis, midi);
+    if (m === undefined) return undefined;
+    const semis = midi - m;
+    if (semis !== 0 && Math.abs(semis) <= COPY_SEMITONES) {
+      const name = s.names.get(m)!;
+      let row = out.get(name);
+      if (!row) out.set(name, (row = new Set()));
+      row.add(semis);
+    }
+    return m;
+  });
   return out;
 }
 
@@ -245,6 +292,60 @@ export function lowMemoryDevice(hints: DeviceHints): boolean {
 export interface SongNotes {
   notes: SongNote[];
   wheel: [number, number] | null;
+}
+
+/**
+ * A note a track plays, for an instrument making ahead what it will play (TrackInstrument.prepare):
+ * its name and velocity, the loudest of the chord it starts with, how far its Human insert lets
+ * its velocity drift (see SongNote), and its own expression (a drum hit's starting bend sets its pitch).
+ */
+export interface PlannedNote {
+  note: string;
+  velocity: number;
+  loudest: number;
+  drift: number;
+  expr?: NoteEvent['expr'];
+  /** The longest it can be held (seconds, the sustain pedal included), where the render's slowest tempo is known */
+  seconds?: number;
+}
+
+/** What a track plays (TrackInstrument.prepare): its notes, and the span of its clips' mod wheel lanes (null: none). */
+export interface TrackPlan {
+  notes: PlannedNote[];
+  wheel: [number, number] | null;
+  /** Whether its notes move in pitch as they sound: a bend or vibrato lane, a note's own bend, or its Human insert's pitch drift */
+  bends: boolean;
+}
+
+/**
+ * What a track's clips play (and their takes'), with the span of their mod wheel lanes: see
+ * PlannedNote. `barSeconds`: how long a bar of four beats lasts at the song's slowest tempo, for
+ * each note's longest hold.
+ */
+export function trackPlan(track: Pick<Track, 'id'> & { fx?: Partial<Pick<Track['fx'], 'human'>> }, clips: Array<Pick<Clip, 'trackId' | 'notes' | 'takes' | 'expression'> & Partial<Pick<Clip, 'lengthBars'>>>, barSeconds?: number): TrackPlan {
+  const human = track.fx?.human;
+  const drift = human?.on ? HUMAN_MAX_DYNAMICS * human.dynamics : 0;
+  const out: TrackPlan = { notes: [], wheel: null, bends: !!(human?.on && human.pitch > 0) };
+  for (const clip of clips) {
+    if (clip.trackId !== track.id) continue;
+    for (const ex of [clip.expression, ...(clip.takes ?? []).map((t) => t.expression)]) if (ex?.bend?.length || ex?.vibrato?.length) out.bends = true;
+    for (const lane of [clip.expression?.mod, ...(clip.takes ?? []).map((t) => t.expression?.mod)]) {
+      for (const p of lane ?? []) out.wheel = out.wheel ? [Math.min(out.wheel[0], p.value), Math.max(out.wheel[1], p.value)] : [p.value, p.value];
+    }
+    for (const played of [clip.notes, ...(clip.takes ?? []).map((t) => t.notes)]) {
+      if (!played?.length) continue;
+      // (held on by the sustain pedal as the scheduler holds them)
+      const notes = clip.lengthBars ? sustainNotes(played, clip.expression?.sustain, clip.lengthBars) : played;
+      const loudest = new Map<number, number>();
+      const at = (offset: number) => Math.round(offset * 1e6);
+      for (const n of notes) loudest.set(at(n.startOffset), Math.max(loudest.get(at(n.startOffset)) ?? 0, n.velocity));
+      for (const n of notes) {
+        if (n.expr?.bend?.length) out.bends = true;
+        out.notes.push({ note: n.note, velocity: n.velocity, loudest: loudest.get(at(n.startOffset)) ?? n.velocity, drift, ...(n.expr ? { expr: n.expr } : {}), ...(barSeconds ? { seconds: durationToBars(n.duration) * barSeconds } : {}) });
+      }
+    }
+  }
+  return out;
 }
 
 /**

@@ -43,6 +43,7 @@ import { withStepLanes } from '../store/stepLanes';
 import { stretchRatio } from '../store/audioClips';
 import { expandAudioComps } from '../store/takes';
 import { decodePitchedSoundAt, holdRecordingsAt, loadCustomSample, songSampleLoads, type RenderRecordings } from './samplers/samplerManager';
+import { trackPlan } from './samplers/songSamples';
 import { INSTRUMENTS, isDrumKind } from './instrumentCatalog';
 import { applyTempoAt, barToTicks, scheduleTempo, ticksToBar } from './transport';
 import { markerCues } from './wavCues';
@@ -1313,6 +1314,13 @@ async function renderGraphHeld(
     }
     for (const [id, strip] of stripOf) strip.setAlignment(alignment.delays.get(id) ?? null);
     await Promise.all([busFx.ready, section?.inserts.ready(), section?.limiterReady, ...[...instruments.values()].map((i) => i.ready)]);
+    // Notes that play a recording or sound at another pitch than its own play a copy made at that
+    // pitch now, read at a rate of exactly 1, not stretched by the browser as they sound (see
+    // pitchedCopies.ts): every instrument makes ready what its track's notes play
+    // (each note's longest hold at the song's slowest tempo, so a copy is only as long as its notes need)
+    const barSeconds = 240 / Math.min(opts.bpm, ...(opts.tempoPoints ?? []).map((p) => p.bpm));
+    await Promise.all(tracks.map((t) => instruments.get(t.id)?.prepare?.(trackPlan(t, clips, barSeconds))));
+    signal?.throwIfAborted();
     if (opts.reverbImpulse?.sampleRate === sampleRate) busFx.useImpulse(opts.reverbImpulse);
 
     const transport = context.transport;

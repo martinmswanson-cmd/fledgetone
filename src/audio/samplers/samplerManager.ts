@@ -19,8 +19,10 @@ import { chooseNoteToSteal, noteLevelNow } from './noteStealing';
 import { blendFor, correlationOf, layerBlend } from './layerBlend';
 import { expressiveCutoff, OPEN_CUTOFF } from './velocityTone';
 import { decodedBytes, setDecodedBytes } from './setSizes';
-import { BLEND_ZONE, chooseExportDecodes, decodeRateOf, OVERSAMPLE, indexRecordings, layerOf, lowMemoryDevice, neededSamples, quickLayer, quickSamples, songNotesByInstrument, SPARSE_QUICK, STRETCH_SEMITONES } from './songSamples';
-import type { RecordingIndex, SongNotes } from './songSamples';
+import { BLEND_ZONE, chooseExportDecodes, COPY_SEMITONES, decodeRateOf, OVERSAMPLE, indexRecordings, layerOf, layersInReach, lowMemoryDevice, neededPitches, neededSamples, quickLayer, quickSamples, songNotesByInstrument, SPARSE_QUICK, STRETCH_SEMITONES } from './songSamples';
+import type { RecordingIndex, SongNotes, TrackPlan } from './songSamples';
+import { clearCopies, copyBytes, copySet, dropCopy, makeCopy, onCopyMade, setCopyCap, type CopySet, type CopyWish } from './pitchedCopies';
+import { stretchOutline } from './resampler';
 
 /**
  * Sampled instruments. Each instrument's recordings are downloaded and decoded once, then
@@ -46,6 +48,13 @@ import type { RecordingIndex, SongNotes } from './songSamples';
  * file export decodes what the song plays at twice its rate within a budget (planExport), and a
  * render the app plays itself (a freeze, a preview) the live recordings. Everything that counts
  * samples uses the buffer's own sampleRate, never the context's.
+ *
+ * A note between two recordings (or a release sound, or a recorded kit's open hat) plays a copy
+ * of its recording re-pitched ahead with a windowed sinc (pitchedCopies.ts), at a rate of exactly
+ * 1, rather than the recording stretched by the buffer source: images 80 dB down or more instead
+ * of 11 to 36, and flat to 20 kHz. An export makes every copy its song plays before it renders
+ * (TrackInstrument.prepare), within its memory budget (copyAllowed); live playback makes a song's
+ * as it opens (liveCopies) and a note's the first time it misses one, in a Worker.
  */
 type SampleSet = Record<string, Tone.ToneAudioBuffer>;
 
@@ -78,6 +87,8 @@ interface Loading {
 }
 
 const loadings: Partial<Record<InstrumentKey, Loading>> = {};
+/** Live playback's recordings (an export's copies of these stay for live playback after it: see holdRecordingsAt) */
+const liveRecordings = new WeakSet<AudioBuffer>();
 
 /** The live context's sample rate: live playback's recordings are decoded for it. */
 const liveRate = () => liveContext.sampleRate;
@@ -142,6 +153,10 @@ interface RateEntry {
   holds: number;
   files: number;
   timer?: ReturnType<typeof setTimeout>;
+  /** The re-pitched copies its renders have made ready (see copyAllowed): bytes, which (each counted once), and in order, to let go with it */
+  copyBytes: number;
+  copied: WeakMap<AudioBuffer, Set<string>>;
+  made: Array<[AudioBuffer, string]>;
 }
 const atRate = new Map<number, RateEntry>();
 /** How long an export's recordings stay after its last render lets go (the next stem or take uses them again). */
@@ -155,7 +170,7 @@ const RATE_KEEP_MS = 10000;
  */
 export function holdRecordingsAt(rate: number, recordings: RenderRecordings = 'file'): () => void {
   let entry = atRate.get(rate);
-  if (!entry) atRate.set(rate, (entry = { loadings: {}, plans: new Map(), holds: 0, files: 0 }));
+  if (!entry) atRate.set(rate, (entry = { loadings: {}, plans: new Map(), holds: 0, files: 0, copyBytes: 0, copied: new WeakMap(), made: [] }));
   const held = entry;
   held.holds++;
   const file = recordings === 'file';
@@ -170,6 +185,8 @@ export function holdRecordingsAt(rate: number, recordings: RenderRecordings = 'f
     held.timer = setTimeout(() => {
       if (held.holds > 0 || atRate.get(rate) !== held) return;
       atRate.delete(rate);
+      // ...and the re-pitched copies its renders made (live playback makes its own as it needs them)
+      for (const [source, key] of held.made) if (!liveRecordings.has(source)) dropCopy(source, key);
       for (const [id, ref] of decoded) if (!ref.deref()) decoded.delete(id);
     }, RATE_KEEP_MS);
   };
@@ -199,15 +216,18 @@ function loadingAt(key: InstrumentKey, rate: number, offline = true): Loading {
  *   while they fit in EXPORT_DECODE_BYTES with what the export already decodes; at the live rate
  *   the live ones rather than a copy at the same rate; past the budget, the live ones.
  */
-function planExport(entry: RateEntry, rate: number, needs: ReadonlyArray<readonly [InstrumentKey, Iterable<string>]>): void {
+function planExport(entry: RateEntry, rate: number, needs: ReadonlyArray<readonly [InstrumentKey, Iterable<string>, Iterable<string>]>): void {
   const atLive = rate === liveRate();
   const file = entry.files > 0;
   const costs: Array<[InstrumentKey, number]> = [];
-  for (const [key, names] of needs) {
+  for (const [key, names, copies] of needs) {
     if (entry.plans.has(key)) continue;
     const source = INSTRUMENTS[key].samples!;
     if (LOW_MEMORY || (atLive && (!file || oversampledLive(source)))) entry.plans.set(key, 'live');
-    else costs.push([key, decodedBytes(source, names, rate)]);
+    // (with the re-pitched copies its notes play, each about as big as its recording at the
+    // export's rate, or at the recording's for an instrument whose notes bend: see wishOf and
+    // copyAllowed; the cost is doubled at twice the rate, a copy at the export's rate isn't)
+    else costs.push([key, decodedBytes(source, names, rate) + decodedBytes(source, copies, rate) / (bendsByDesign(INSTRUMENTS[key]) ? 1 : OVERSAMPLE)]);
   }
   let spent = 0;
   for (const [key, l] of Object.entries(entry.loadings) as Array<[InstrumentKey, Loading]>) spent += decodedBytes(l.source, l.have.keys(), entry.plans.get(key) === 'twice' ? decodeRateOf(rate) : rate);
@@ -225,6 +245,28 @@ function soundsTwiceAt(rate: number): boolean {
   if (LOW_MEMORY) return false;
   const entry = atRate.get(rate);
   return !entry || entry.files > 0;
+}
+
+/**
+ * Whether a render at `rate` may make `source`'s copy under `key` (`bytes` big) ready: what the
+ * renders at that rate decode of their own and the copies they've made ready stay within
+ * EXPORT_DECODE_BYTES (planExport counted the song's copies when it chose the rates). A copy
+ * already counted (another stem, part or take of the same export) is allowed again for nothing.
+ * A render nothing holds (a preview) may.
+ */
+function copyAllowed(rate: number, source: AudioBuffer, key: string, bytes: number): boolean {
+  const entry = atRate.get(rate);
+  if (!entry) return true;
+  const done = entry.copied.get(source);
+  if (done?.has(key)) return true;
+  let spent = entry.copyBytes;
+  for (const l of Object.values(entry.loadings)) spent += bytesOf(l);
+  if (spent + bytes > EXPORT_DECODE_BYTES) return false;
+  entry.copyBytes += bytes;
+  entry.made.push([source, key]);
+  if (done) done.add(key);
+  else entry.copied.set(source, new Set([key]));
+  return true;
 }
 
 /** Whether `l` is live playback's (with loading badges and background filling), not an export's. */
@@ -249,6 +291,8 @@ function loadNames(l: Loading, names: Iterable<string>, background = false): Pro
       p = decodeEntry(l.source, name, decodeRateOf(l.rate, !l.oversample))
         .then((buffer) => {
           l.have.set(name, buffer);
+          const audio = buffer.get();
+          if (l.live && audio) liveRecordings.add(audio);
           for (const listener of l.listeners) listener(name, buffer);
         })
         .finally(() => {
@@ -325,12 +369,78 @@ export function loadSongSamples(tracks: Parameters<typeof songNotesByInstrument>
     if (!hasRecordings(key)) continue;
     if (isSamplerKey(key)) {
       const l = loadingOf(key);
-      const needed = neededFor(key, l, songs.get(key));
+      const song = songs.get(key);
+      const needed = neededFor(key, l, song);
       l.first = needed.size ? needed : undefined;
+      // ...and once they're in, the copies its notes between recordings play (in the background)
+      loadQuick(key).then(() => song && liveCopies(key, l, song), () => {}); // the loading badge reports a failure
+      continue;
     }
-    (isSamplerKey(key) ? loadQuick(key) : loadSamples(key)).catch(() => {}); // the loading badge reports it
+    loadSamples(key).catch(() => {}); // the loading badge reports it
   }
 }
+
+/**
+ * Make, in the background, the re-pitched copies `song` plays of an instrument's recordings
+ * (live playback's): its notes between two recordings then play a copy at a rate of exactly 1
+ * from their first time (see pitchedCopies.ts). A note that comes before its copy plays its
+ * recording stretched, as before, and the copy is there the next time.
+ */
+function liveCopies(key: InstrumentKey, l: Loading, song: SongNotes): void {
+  for (const [name, semis] of neededPitches(l.index, song.notes, INSTRUMENTS[key].dynamics ? song.wheel : null)) {
+    const audio = l.have.get(name)?.get();
+    if (!audio) continue;
+    for (const st of semis) void makeCopy(audio, wishOf(audio, 2 ** (st / 12), l.rate, bendsByDesign(INSTRUMENTS[key])));
+  }
+}
+
+/** Whether an instrument's notes move in pitch as they sound by design (a vibrato, a bowed legato's slide): its copies keep its recordings' rate (see wishOf). */
+const bendsByDesign = (def: InstrumentDef) => !!(def.vibrato || def.bowed);
+
+/**
+ * What a copy of a recording `ratio` times as fast is, to play in a context at `playRate`: its
+ * loop moved with it, and for one decoded at twice the rate, nothing above RECORDED_BAND. At the
+ * context's rate (half the memory and the work of one at a recording's twice-the-rate) for notes
+ * that hold their pitch; `wide`, for an instrument or a track whose notes bend, vibrate or glide,
+ * at the recording's own rate (a moving rate then still reads twice the frames it plays, as it
+ * did from the recording).
+ */
+function wishOf(audio: AudioBuffer, ratio: number, playRate: number, wide = false): CopyWish {
+  const loop = loopsOf.get(audio);
+  return { ratio, playRate, ...(wide ? {} : { outRate: playRate }), ...(audio.sampleRate >= 1.5 * playRate ? { band: RECORDED_BAND } : {}), ...(loop ? { loop } : {}) };
+}
+
+/** What a copy of `audio` `ratio` times as fast is, to play in `context` at a rate of exactly 1 (see wishOf): for the drum kits. */
+export const recordingWish = (audio: AudioBuffer, ratio: number, context: BaseAudioContext): CopyWish => wishOf(audio, ratio, context.sampleRate);
+
+/**
+ * The re-pitched copies an instrument playing in `context` plays (see pitchedCopies.ts): a
+ * render's within its budget (copyAllowed), live playback's any there are.
+ */
+export function copySetFor(context: BaseAudioContext): CopySet {
+  const offline = typeof OfflineAudioContext !== 'undefined' && context instanceof OfflineAudioContext;
+  return copySet(offline, (source, key, bytes) => copyAllowed(context.sampleRate, source, key, bytes));
+}
+
+/** The most a recording decoded at twice the rate holds (Hz): its file's Nyquist (the hosted sets and the soundfonts are at most 48 kHz). */
+const RECORDED_BAND = 24000;
+
+/**
+ * A copy has its source's level outline, peak, audible end and recorded length (each at its own
+ * speed), and a whole copy its moved loop (planCopy), before anything plays it.
+ */
+onCopyMade((source, copy, wish) => {
+  // (a slice: nothing to carry over; the start of a recording keeps its own)
+  if (wish.region && wish.region[0] !== 0) return;
+  const audio = copy.buffer;
+  const r = copy.ratio;
+  const shape = outlines.get(source);
+  if (shape) outlines.set(audio, stretchOutline(shape, r));
+  peaks.set(audio, peakOf(source));
+  audibleEnds.set(audio, Math.min(audio.duration, audibleEnd(source) / r));
+  if (fullDurations.has(source)) fullDurations.set(audio, recordedDuration(source) / r);
+  if (copy.loop) loopsOf.set(audio, copy.loop);
+});
 
 /**
  * Everything these tracks' clips play, for an export at `rate` (default: the live context's): each
@@ -350,7 +460,13 @@ export function songSampleLoads(tracks: Parameters<typeof songNotesByInstrument>
       keys.map((key) => {
         const source = INSTRUMENTS[key].samples!;
         const names = namesOf(source);
-        return [key, isSamplerKey(key) ? neededSamples(indexRecordings(names, midiOfNote, source.layers ?? [1]), songs.get(key)?.notes ?? [], INSTRUMENTS[key].dynamics ? (songs.get(key)?.wheel ?? null) : null) : names] as const;
+        if (!isSamplerKey(key)) return [key, names, []] as const;
+        const index = indexRecordings(names, midiOfNote, source.layers ?? [1]);
+        const wheel = INSTRUMENTS[key].dynamics ? (songs.get(key)?.wheel ?? null) : null;
+        const notes = songs.get(key)?.notes ?? [];
+        // (each recording once for every other pitch the song plays it at)
+        const copies = [...neededPitches(index, notes, wheel)].flatMap(([name, semis]) => [...semis].map(() => name));
+        return [key, neededSamples(index, notes, wheel), copies] as const;
       })
     );
   }
@@ -554,6 +670,15 @@ let filling = false;
  * the rest of an instrument's recordings load only as notes need them, never all in the background.
  */
 const LOW_MEMORY = typeof navigator !== 'undefined' && lowMemoryDevice(navigator as Navigator & { deviceMemory?: number });
+
+/**
+ * How many bytes live playback keeps of re-pitched copies (see pitchedCopies.ts), the least
+ * recently played going first past it: a song's worth of notes between recordings on most
+ * instruments (each about as big as its recording). An export's are on top while it renders,
+ * within its own budget (copyAllowed).
+ */
+const LIVE_COPY_BYTES = LOW_MEMORY ? 48e6 : 192e6;
+setCopyCap(LIVE_COPY_BYTES);
 
 /**
  * Sets bigger than this (decoded at 48 kHz, every recording: setSizes.ts) are big: live playback
@@ -825,6 +950,8 @@ export interface SamplerVoice {
   releaseAll: () => void;
   /** Resolves once samples are attached (rejects if they failed to download). */
   ready: Promise<void>;
+  /** Make ahead the copies these notes play (see TrackInstrument.prepare). */
+  prepare: (plan: TrackPlan) => Promise<unknown>;
   dispose: () => void;
 }
 
@@ -1327,6 +1454,9 @@ interface SlotBank {
   want?: (midi: number, velocity: number, wheel?: number) => void;
   /** The sounds of keys being let go (ReleaseSounds), their takes in turn */
   releases?: { slots: Slot[]; db: number; decay?: number };
+  /** The slots by loudness (then take) and the loudnesses' velocity tops, for making ahead what notes will play (prepare) */
+  byLayer?: Slot[][];
+  tops?: number[];
 }
 
 const peaks = new WeakMap<AudioBuffer, number>();
@@ -1504,12 +1634,50 @@ function samplerVoice(
   const into = nativeInputOf(output);
   // Only native nodes feed `output`: keep Tone's wrapper from taking it out of the graph
   const letGo = keepActive(output);
+  // Notes between two recordings play a re-pitched copy where there is one (see pitchedCopies.ts)
+  const playRate = raw.sampleRate;
+  const copies = copySetFor(raw);
+  /** The recording nearest `midi` in `slot` that a note plays, once every recording is in (see start's `near`) */
+  const nearIn = (slot: Slot, midi: number) => {
+    const f = nearest(slot, midi);
+    if (f && Math.abs(f.interval) <= STRETCH_SEMITONES) return f;
+    return bank.fallback && slot !== bank.fallback ? nearest(bank.fallback, midi) : f;
+  };
+  /**
+   * Whether this voice's copies keep the recordings' rate (see wishOf): its instrument's notes
+   * bend by design, or (a render's) its track's notes bend, vibrate or drift in pitch (prepare).
+   */
+  let wide = !!(vibrato || bowed);
+  /**
+   * What plays `buffer` `interval` semitones up (and `frac` more, a detuned note's): its copy at
+   * that interval where there's one, at the rate `frac` leaves (exactly 1 for a note in tune), and
+   * `k`, how many times as fast as the recording the copy is; else the recording at the whole rate.
+   * Where the copies are at the context's rate, a note that starts off its pitch (detuned, or under
+   * a bend) plays the recording: a copy read between its frames would be no better.
+   */
+  /**
+   * A render's copies, by recording and interval: what each was made ready as (see prepare: a
+   * copy of only the start of a recording, as much of it as the track's notes play).
+   */
+  const readied = new Map<AudioBuffer, Map<number, CopyWish>>();
+  const pitched = (buffer: AudioBuffer, interval: number, frac = 0, need = Infinity, offset = 0): { buffer: AudioBuffer; rate: number; k: number } => {
+    const residual = Math.abs(frac) < 1e-9 ? 1 : 2 ** (frac / 12);
+    if (interval !== 0 && Math.abs(interval) <= COPY_SEMITONES && (wide || (residual === 1 && bendRatio === 1))) {
+      const wish = readied.get(buffer)?.get(interval) ?? wishOf(buffer, 2 ** (interval / 12), playRate, wide);
+      const copy = copies.find(buffer, wish);
+      // (the start of a recording only where it lasts as long as this note sounds: else the recording)
+      if (copy && (!wish.region || copy.buffer.duration >= offset / copy.ratio + need * residual)) return { buffer: copy.buffer, rate: residual, k: copy.ratio };
+    }
+    return { buffer, rate: interval === 0 ? residual : 2 ** ((interval + frac) / 12), k: 1 };
+  };
   // (Read in the voice's own context: in an export, the render's tempo, not the live one)
   const release = options.release;
   /** The release's time constant and where its straight last tenth starts (as Tone's targetRampTo). */
   const releaseTc = Math.log(release + 1) / Math.log(200);
   /** How long a release really lasts: a long one is inaudible (below -70 dB) well before it ends, so it stops there. */
   const tail = Math.min(release, releaseTc * 8);
+  /** The longest a note sounds after its key is let go, the track's ring included (see releaseNow) */
+  const afterRelease = () => tail + (feel?.ring ?? 0) + 0.02;
   /**
    * A release as the track has it: the instrument's own, or a longer ring (Track.ring). A note
    * that dies away by itself (a piano's, a harp's: its recording doesn't loop) rings on untouched
@@ -1687,8 +1855,11 @@ function samplerVoice(
       if (blend.x >= 0.5) found = upper;
       upper = null;
     }
-    const rateOf = (interval: number) => 2 ** ((interval + midiFloat - midi) / 12);
-    const base = rateOf(found.interval);
+    const frac = midiFloat - midi;
+    // (how long it sounds: to its key's release and its release's end)
+    const need = hold - Math.max(at, raw.currentTime) + afterRelease();
+    const main = pitched(found.buffer, found.interval, frac, need, offset);
+    const base = main.rate;
     const when = Math.max(at, raw.currentTime);
     const gain = raw.createGain();
     const v = level(note, velocity, at) * taperGain(taper, note) * scale;
@@ -1710,13 +1881,16 @@ function samplerVoice(
     // (played hard enough, or not expressively: as recorded, no filter)
     const cutoff = expressive ? expressiveCutoff(velocity, expressive.depth, Tone.Frequency(note).toFrequency()) : OPEN_CUTOFF;
     gain.connect(cutoff < OPEN_CUTOFF ? filterFor(cutoff) : into);
-    /** A source of `buffer` at `rate` into `to`, started `offset` in; returns it and when it runs out */
-    const play = (buffer: AudioBuffer, rate: number, to: AudioNode, extra: AudioNode[] = []) => {
+    /**
+     * A source of `buffer` (a recording, or its copy `k` times as fast) at `rate` into `to`,
+     * started `offset` seconds of the recording in; returns it and when it runs out
+     */
+    const play = ({ buffer, rate, k }: ReturnType<typeof pitched>, to: AudioNode, extra: AudioNode[] = []) => {
       const src = raw.createBufferSource();
       src.buffer = buffer;
       src.playbackRate.value = rate * bendRatio;
       src.connect(to);
-      const from = Math.min(offset, audibleEnd(buffer) / 2);
+      const from = Math.min(offset / k, audibleEnd(buffer) / 2);
       src.start(when, from);
       let end = when + (audibleEnd(buffer) - from) / (rate * bendRatio);
       // Held past the end of its recording: it loops its steady stretch until it's released
@@ -1746,13 +1920,15 @@ function samplerVoice(
       // The note's gain is let go with whichever recording runs out last
       let left = 2;
       const done = { disconnect: () => --left === 0 && gain.disconnect() } as unknown as AudioNode;
-      const one = play(found.buffer, base, soft, [soft, done]);
-      const hiBase = rateOf(upper.interval);
-      const two = play(upper.buffer, hiBase, loud, [loud, done]);
-      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity || two.end === Infinity, buffer: found.buffer, pair: { src: two.src, base: hiBase, soft, loud, low, from: two.from, mainFrom: one.from, looping: two.end === Infinity, mainLooping: one.end === Infinity } };
+      const one = play(main, soft, [soft, done]);
+      const hi = pitched(upper.buffer, upper.interval, frac, need, offset);
+      const hiBase = hi.rate;
+      const two = play(hi, loud, [loud, done]);
+      // (`played` and `from` count the main copy's own seconds; the louder one's, its own: see bend)
+      s = { src: one.src, gain, note, level: v, start: when, until: Math.max(one.end, two.end), base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity || two.end === Infinity, buffer: main.buffer, pair: { src: two.src, base: hiBase, soft, loud, low, from: two.from, mainFrom: one.from, looping: two.end === Infinity, mainLooping: one.end === Infinity } };
     } else {
-      const one = play(found.buffer, base, gain, [gain]);
-      s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity, buffer: found.buffer };
+      const one = play(main, gain, [gain]);
+      s = { src: one.src, gain, note, level: v, start: when, until: one.end, base, played: one.from, last: when, rate: base * bendRatio, releasedAt: Infinity, looping: one.end === Infinity, buffer: main.buffer };
     }
     if (vibrato && mode !== 'short' && hold - when >= VIBRATO_SHORTEST) addVibrato(s, note, at, when, mode === 'legato', loudness);
     // The same string picked again as it was let go: no damping sound (see comingReleases)
@@ -1859,8 +2035,10 @@ function samplerVoice(
     const level = s.level * 10 ** (rel.db / 20) * (peakOf(s.buffer) / Math.max(1e-6, peakOf(found.buffer))) * fade;
     if (!(level > 1e-5)) return;
     const src = raw.createBufferSource();
-    src.buffer = found.buffer;
-    src.playbackRate.value = 2 ** (found.interval / 12);
+    // (its copy at the note's pitch where there's one: see pitched)
+    const sound = pitched(found.buffer, found.interval);
+    src.buffer = sound.buffer;
+    src.playbackRate.value = sound.rate;
     const g = raw.createGain();
     g.gain.value = Math.min(4, level);
     src.connect(g).connect(into);
@@ -2020,7 +2198,60 @@ function samplerVoice(
       for (const s of sounding) if (s.until > now) releaseAt(s, now, false);
     },
     ready,
+    prepare: async (plan) => {
+      await ready;
+      // (a track whose notes bend: copies a bend reads well from)
+      if (plan.bends) wide = true;
+      /** How much of each recording (seconds) its notes play at each interval: Infinity, all of it */
+      const needs = new Map<AudioBuffer, Map<number, number>>();
+      const want = (buffer: AudioBuffer | undefined, interval: number, seconds: number) => {
+        if (!buffer || interval === 0 || Math.abs(interval) > COPY_SEMITONES) return;
+        let row = needs.get(buffer);
+        if (!row) needs.set(buffer, (row = new Map()));
+        // A note's hold and release (with room to spare), read `ratio` times as fast, past a bowed note's skip
+        const ratio = 2 ** (interval / 12);
+        const most = Number.isFinite(seconds) && !plan.bends ? ((seconds + afterRelease() + 0.1) * 1.1 * ratio + Math.max(bowed?.skip ?? 0, bowed ? LEGATO_SKIP : 0)) : Infinity;
+        row.set(interval, Math.max(row.get(interval) ?? 0, most));
+      };
+      const tops = bank.tops ?? [1];
+      const layers = bank.byLayer ?? [bank.slots];
+      for (const n of plan.notes) {
+        let midi: number;
+        try {
+          midi = Math.round(midiOfNote(n.note));
+        } catch {
+          continue;
+        }
+        // Every loudness it can play (all of them under the mod wheel's dynamics), every take of each
+        const reach = plan.wheel && bank.layer ? new Set(layers.keys()) : layersInReach(tops, n);
+        for (const l of reach) {
+          for (const slot of layers[l] ?? []) {
+            const f = nearIn(slot, midi);
+            if (f) want(f.buffer, f.interval, n.seconds ?? Infinity);
+          }
+        }
+        // (a release sound plays to its end)
+        for (const slot of bank.releases?.slots ?? []) {
+          const f = nearest(slot, midi);
+          if (f) want(f.buffer, f.interval, Infinity);
+        }
+      }
+      const jobs: Promise<void>[] = [];
+      for (const [buffer, row] of needs) {
+        for (const [interval, most] of row) {
+          const whole = wishOf(buffer, 2 ** (interval / 12), playRate, wide);
+          // Only the start of a recording that doesn't loop, where that's well short of all of it
+          const wish: CopyWish = most < 0.8 * buffer.duration && !whole.loop ? { ...whole, region: [0, most] } : whole;
+          let r = readied.get(buffer);
+          if (!r) readied.set(buffer, (r = new Map()));
+          r.set(interval, wish);
+          jobs.push(copies.prepare(buffer, wish));
+        }
+      }
+      await Promise.all(jobs);
+    },
     dispose: () => {
+      copies.dispose();
       for (const s of sounding) {
         for (const x of sourcesOf(s)) {
           x.onended = null;
@@ -2109,7 +2340,7 @@ export function createSamplerVoice(key: InstrumentKey, output: Tone.InputNode, e
     return null;
   };
   const progress = loading ? { complete: () => isComplete(loading), want: (midi: number, velocity: number, wheel?: number) => wantNote(loading, midi, velocity, wheel) } : {};
-  return samplerVoice({ slots: bank.flat(), pick, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key), def.vibrato, STRUMMED.has(key), feel);
+  return samplerVoice({ slots: bank.flat(), pick, byLayer: bank, tops: layers, ...progress, ...(firstSlot ? { fallback: firstSlot } : {}), ...(layers.length > 1 ? { blend } : {}), ...(def.dynamics ? { layer, layers: layers.length } : {}), ...(rel ? { releases: { slots: releaseSlots, db: rel.db, decay: rel.decay } } : {}) }, options, out, attach, extra, chain.onNote, def.taper, expressive ? expressiveFor(def) : null, def.bowed, breathOf(key), isSection(key), def.vibrato, STRUMMED.has(key), feel);
 }
 
 /**
@@ -2140,7 +2371,7 @@ export function createCustomSamplerVoice(sample: CustomSample | undefined, outpu
   const dataUrl = sample?.soundId ? undefined : sample?.dataUrl;
   if (!sample || (!sample.soundId && !dataUrl)) {
     // No sound loaded yet: ready straight away (so exports never wait on it) and silent
-    return { play: () => {}, attack: () => {}, release: () => {}, bend: () => {}, releaseAll: () => {}, ready: Promise.resolve(), dispose: () => {} };
+    return { play: () => {}, attack: () => {}, release: () => {}, bend: () => {}, releaseAll: () => {}, ready: Promise.resolve(), prepare: () => Promise.resolve(), dispose: () => {} };
   }
   const out = new Tone.Gain(1).connect(output);
   const slot: Slot = new Map();
@@ -2188,7 +2419,8 @@ function bytesOf(l: Loading | undefined, seen = new Set<AudioBuffer>()): number 
 /** About how many bytes every instrument's loaded recordings take (a recording two share counted once). */
 export function decodedSampleBytes(): number {
   const seen = new Set<AudioBuffer>();
-  return Object.values(loadings).reduce((n, l) => n + bytesOf(l, seen), 0);
+  // (with the re-pitched copies kept: see pitchedCopies.ts)
+  return Object.values(loadings).reduce((n, l) => n + bytesOf(l, seen), 0) + copyBytes();
 }
 
 /** Let go of an instrument's recordings: they load again when next needed. */
@@ -2205,7 +2437,8 @@ function forget(key: InstrumentKey): void {
  * sound that frees.
  */
 export function forgetUnusedSamples(keep: Set<InstrumentKey>): number {
-  let bytes = 0;
+  // The re-pitched copies too (they're made again as notes ask for them)
+  let bytes = clearCopies();
   for (const key of Object.keys(auditionVoices) as InstrumentKey[]) {
     auditionVoices[key]?.dispose();
     delete auditionVoices[key];
