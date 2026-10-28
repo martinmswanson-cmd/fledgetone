@@ -31,9 +31,25 @@ const manifest = {
 
 test('states are laid end to end with a bar between', () => {
   assert.deepEqual(stateLayout(manifest), [
-    { name: 'Explore', start: 0, length: 16, bpm: 120, num: 4, den: 4 },
-    { name: 'Combat', start: 18, length: 8, bpm: 120, num: 4, den: 4 },
+    { name: 'Explore', start: 0, length: 16, bpm: 120, num: 4, den: 4, changes: [] },
+    { name: 'Combat', start: 18, length: 8, bpm: 120, num: 4, den: 4, changes: [] },
   ]);
+});
+
+test('FMOD gets a tempo marker at each tempo change inside a state', () => {
+  // Combat: 2 bars at 120, then 2 bars at 60 (12 s)
+  const changed = { ...manifest, states: [manifest.states[0], { ...manifest.states[1], seconds: 12, barTimes: [0, 2, 4, 8], beatTimes: [], tempoChanges: [{ seconds: 0, bpm: 120, timeSignature: [4, 4] }, { seconds: 4, bpm: 60, timeSignature: [4, 4] }] }] };
+  assert.deepEqual(stateLayout(changed)[1].changes, [{ at: 22, bpm: 60, num: 4, den: 4 }]);
+  const created = [];
+  const obj = (kind) => new Proxy({ kind }, { get: (t, p) => (p in t ? t[p] : () => obj(String(p))), set: (t, p, v) => { t[p] = v; return true; } });
+  const studio = {
+    menu: { addMenuItem: (item) => { studio.item = item; } },
+    system: { getText: () => '/audio', message: () => {} },
+    project: { workspace: { addEvent: () => obj('event'), masterEventFolder: {} }, create: (k) => { const o = obj(k); created.push(o); return o; }, importAudioFile: () => ({ length: 1 }), parameterType: { User: 0 } },
+  };
+  new Function('studio', 'console', fmodScript(changed))(studio, { log: () => {} });
+  studio.item.execute();
+  assert.deepEqual(created.filter((o) => o.kind === 'TempoMarker').map((o) => [o.position, o.tempo]), [[0, 120], [18, 120], [22, 60]]);
 });
 
 test('the FMOD script is valid JavaScript and carries the song', () => {

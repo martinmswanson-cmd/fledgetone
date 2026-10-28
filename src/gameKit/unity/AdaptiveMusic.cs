@@ -24,7 +24,7 @@ public class AdaptiveMusic : MonoBehaviour
     [Serializable] public class Stem { public string group; public string file; }
     [Serializable] public class Costume { public string name; public double tempo = 1; public string file; public double seconds; public Stem[] stems; }
     [Serializable] public class Gap { public double min; public double max; }
-    [Serializable] public class State { public string name; public string file; public double bars; public double seconds; public double beatSeconds; public int beatsPerBar; public Stem[] stems; public Costume[] costumes; public int shuffleBars; public Gap gap; }
+    [Serializable] public class State { public string name; public string file; public double bars; public double seconds; public double beatSeconds; public int beatsPerBar; public Stem[] stems; public Costume[] costumes; public int shuffleBars; public Gap gap; public double[] barTimes; public double[] beatTimes; }
     [Serializable] public class Rule { public string from; public string to; public string kind; public string quantize; public int phraseBars; public double beats; public string file; public double leadInSeconds; public string stinger; public double bridgeSeconds; }
     [Serializable] public class StingerInfo { public string name; public string kind; public string file; public string quantize; public double bridgeBars; public double bridgeSeconds; }
     [Serializable] public class Point { public float x; public float y; }
@@ -68,7 +68,9 @@ public class AdaptiveMusic : MonoBehaviour
     // A state played in pieces that's crossfading out keeps its pieces coming until the fade ends (by play id)
     readonly Dictionary<int, double> fadeUntil = new Dictionary<int, double>();
     int playId;
+    // The pieces scheduled: when each starts and ends, and where it starts in the loop
     readonly List<double[]> pieceTimes = new List<double[]>();
+    double loopSeconds = 1;
 
     void Awake()
     {
@@ -195,16 +197,48 @@ public class AdaptiveMusic : MonoBehaviour
 
     /// The dspTime of the next bar (or "beat") line of the state playing now.
     /// A "phrase" is `phraseBars` bars from the state's start; "end" is where its loop (or piece) comes round.
-    public double NextLine(string unit = "bar", int phraseBars = 4)
+    public double NextLine(string unit = "bar", int phraseBars = 4, double ahead = 0)
     {
         double now = AudioSettings.dspTime + 0.05;
         if (Current == null || unit == "now") return now;
         double from = GridStart(now);
         if (now < from) return from;
+        // A state whose tempo or time signature changes inside it: its own bar lines and beats
+        var lines = GridLines(unit, phraseBars);
+        if (lines != null)
+        {
+            double[] piece = null;
+            foreach (var p in pieceTimes) if (now >= p[0] && now < p[1]) piece = p;
+            double pos = piece != null ? piece[2] + (now - piece[0]) : (now - from) % loopSeconds;
+            double at = now + UntilLine(lines, loopSeconds, pos, ahead);
+            // (The next piece, which may be any of them, starts on a bar line)
+            return piece != null && ahead <= piece[1] - now ? Math.Min(at, piece[1]) : at;
+        }
         if (unit == "end")
             foreach (var p in pieceTimes) if (now >= p[0] && now < p[1]) return p[1];
         double line = LineFor(unit, phraseBars);
         return from + Math.Ceiling((now - from) / line - 1e-6) * line;
+    }
+
+    // The lines of `unit` in the state playing now (seconds into its loop, as the costume on now plays
+    // it) when the manifest gives them (barTimes, beatTimes); null when one line length finds them
+    List<double> GridLines(string unit, int phraseBars = 4)
+    {
+        var st = CurrentState();
+        double[] times = st == null ? null : unit == "beat" ? st.beatTimes : unit == "bar" || unit == "phrase" ? st.barTimes : null;
+        if (times == null || times.Length == 0) return null;
+        var lines = new List<double>();
+        for (int i = 0; i < times.Length; i++) if (unit != "phrase" || i % Math.Max(1, phraseBars) == 0) lines.Add(times[i] / tempoNow);
+        return lines;
+    }
+
+    // Seconds from `pos` (seconds into a loop `loop` long) to the first of `lines` at least `ahead` on
+    static double UntilLine(List<double> lines, double loop, double pos, double ahead)
+    {
+        double target = pos + ahead - 1e-6;
+        double baseAt = Math.Floor(target / loop) * loop;
+        foreach (var t in lines) if (t >= target - baseAt) return baseAt + t - pos;
+        return baseAt + loop + lines[0] - pos;
     }
 
     double LineFor(string unit, int phraseBars = 4)
@@ -258,6 +292,7 @@ public class AdaptiveMusic : MonoBehaviour
         playId++;
         pieceTimes.Clear();
         tempoNow = tempo;
+        loopSeconds = seconds;
         Current = s.name;
         stateStart = at;
         if (s.shuffleBars > 0 || (s.gap != null && s.gap.max > 0))
@@ -294,12 +329,16 @@ public class AdaptiveMusic : MonoBehaviour
     IEnumerator Pieces(State s, List<Stem> parts, double seconds, double at, double from, int id, List<Voice> list)
     {
         // Bars are measures of the state's own time signature
+        // (At its own bar lines, barTimes, when its tempo or time signature changes inside it)
+        var lines = s.barTimes != null && s.barTimes.Length > 0 ? s.barTimes : null;
         double barLen = (s.beatsPerBar > 0 ? s.beatsPerBar : Data.beatsPerBar) * (s.beatSeconds > 0 ? s.beatSeconds : Data.beatSeconds);
-        double bars = barLen > 0 ? Math.Max(1, Math.Round(s.seconds / barLen)) : Math.Max(1, Math.Round(s.bars));
+        double bars = lines != null ? lines.Length : barLen > 0 ? Math.Max(1, Math.Round(s.seconds / barLen)) : Math.Max(1, Math.Round(s.bars));
         double each = s.shuffleBars > 0 && s.shuffleBars < bars ? s.shuffleBars : bars;
+        Func<double, double> lineAt = n => n >= bars ? seconds : lines == null ? n / bars * seconds : n == 0 ? 0 : lines[(int)n] * seconds / s.seconds;
         var bounds = new List<double[]>();
-        for (double b = 0; b < bars - 1e-6; b += each) bounds.Add(new[] { b / bars * seconds, Math.Min(bars, b + each) / bars * seconds });
-        int first = Math.Min(bounds.Count - 1, (int)Math.Floor((from % 1.0) * bars / each));
+        for (double b = 0; b < bars - 1e-6; b += each) bounds.Add(new[] { lineAt(b), lineAt(Math.Min(bars, b + each)) });
+        int first = 0;
+        while (first + 1 < bounds.Count && bounds[first + 1][0] <= (from % 1.0) * seconds + 1e-9) first++;
         double skip = (from % 1.0) * seconds - bounds[first][0];
         var queue = new List<int> { first };
         foreach (var i in Order(bounds.Count, first, s.shuffleBars > 0)) if (i != first) queue.Add(i);
@@ -337,7 +376,7 @@ public class AdaptiveMusic : MonoBehaviour
                         list.Add(new Voice { source = src, group = part.group, end = start + dur });
                         Destroy(src, (float)(start + dur - AudioSettings.dspTime) + 0.5f);
                     }
-                    pieceTimes.Add(new[] { next, next + (b - a) });
+                    pieceTimes.Add(new[] { next, next + (b - a), a });
                     if (pieceTimes.Count > 16) pieceTimes.RemoveAt(0);
                 }
                 skip = 0;
@@ -386,8 +425,8 @@ public class AdaptiveMusic : MonoBehaviour
         var r = RuleFor(name);
         string q = unit ?? (string.IsNullOrEmpty(r.quantize) ? "bar" : r.quantize);
         double line = LineFor(q, r.phraseBars);
-        double at = NextLine(q, r.phraseBars);
         double lead = r.leadInSeconds;
+        double at = NextLine(q, r.phraseBars, GridLines(q, r.phraseBars) != null ? lead + 0.05 : 0);
         while (at - AudioSettings.dspTime < lead + 0.05) at += line;
         var old = voices;
         if (r.kind == "crossfade")

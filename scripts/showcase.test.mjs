@@ -15,7 +15,7 @@ register(
 }`)
 );
 
-const { showcaseData, firstFrom } = await import('../src/store/showcase.ts');
+const { showcaseData, firstFrom, onTheBeat } = await import('../src/store/showcase.ts');
 const { defaultTrackFx } = await import('../src/store/timelineTypes.ts');
 
 const track = (id, instrumentKey, extra = {}) => ({ id, name: id, color: `#${id.length}00000`, instrumentKey, isMuted: false, isSoloed: false, isArmed: false, volume: 0, pan: 0, eq: { low: 0, mid: 0, high: 0 }, fx: defaultTrackFx(), reverbSend: 0, delaySend: 0, ...extra });
@@ -76,4 +76,17 @@ test('doubled parts share their row, and a big arrangement gets a lane per track
   const big = { ...d, tracks: Array.from({ length: 7 }, (_, i) => ({ name: `t${i}`, color: '#fff' })) };
   assert.equal(showcaseLayoutFor(big, 'auto'), 'lanes');
   assert.equal(showcaseLayoutFor(big, 'together'), 'together');
+});
+
+test("the rhythm game's sound is on the written beat, as its notes are", () => {
+  const fx = defaultTrackFx();
+  const swung = { id: 't1', fx: { ...fx, human: { on: true, timing: 0.4, dynamics: 0.3, pitch: 0 } } };
+  const plain = { id: 't2', fx };
+  const clips = [{ id: 'a', groove: { swing: 0.6, grid: 8, feel: { id: 'houseShuffle', amount: 1 } } }, { id: 'b' }];
+  const out = onTheBeat([swung, plain], clips);
+  assert.equal(out.tracks[0].fx.human.timing, 0);
+  assert.equal(out.tracks[0].fx.human.dynamics, 0.3);
+  assert.equal(out.tracks[1], plain);
+  assert.equal('groove' in out.clips[0], false);
+  assert.equal(out.clips[1], clips[1]);
 });

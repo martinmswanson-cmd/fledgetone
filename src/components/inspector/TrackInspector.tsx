@@ -428,6 +428,7 @@ export const TrackInspector: React.FC = () => {
                       <span className="text-[10px] font-mono font-bold text-cyan-300">LOW</span>
                       <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqLow" /> : '<400Hz'}</span>
                       <UndoableRange
+                        aria-label={`${currentTrack.name} low EQ`}
                         min={-24}
                         max={12}
                         step={0.5}
@@ -452,6 +453,7 @@ export const TrackInspector: React.FC = () => {
                       <span className="text-[10px] font-mono font-bold text-emerald-300">MID</span>
                       <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqMid" /> : '400Hz–2.5k'}</span>
                       <UndoableRange
+                        aria-label={`${currentTrack.name} mid EQ`}
                         min={-24}
                         max={12}
                         step={0.5}
@@ -476,6 +478,7 @@ export const TrackInspector: React.FC = () => {
                       <span className="text-[10px] font-mono font-bold text-amber-300">HIGH</span>
                       <span className="text-[9px] font-mono text-forge-muted mb-1">{auto !== null ? <AutoBadge trackId={currentTrack.id} param="eqHigh" /> : '>2.5kHz'}</span>
                       <UndoableRange
+                        aria-label={`${currentTrack.name} high EQ`}
                         min={-24}
                         max={12}
                         step={0.5}
@@ -543,6 +546,7 @@ export const TrackInspector: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <UndoableRange
+                          aria-label={`${currentTrack.name} reverb send`}
                           min={0}
                           max={top}
                           step={0.01}
@@ -582,6 +586,7 @@ export const TrackInspector: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <UndoableRange
+                          aria-label={`${currentTrack.name} echo send`}
                           min={0}
                           max={1}
                           step={0.01}
@@ -619,6 +624,7 @@ export const TrackInspector: React.FC = () => {
                     <div className="flex items-center justify-between gap-3 text-xs font-mono" title={auto !== null ? AUTOMATED_TIP : undefined}>
                       <span className="text-forge-muted text-[10px]">VOL</span>
                       <UndoableRange
+                        aria-label={`${currentTrack.name} volume`}
                         min={-60}
                         max={6}
                         step={0.5}
@@ -643,6 +649,7 @@ export const TrackInspector: React.FC = () => {
                     <div className="flex items-center justify-between gap-3 text-xs font-mono" title={auto !== null ? AUTOMATED_TIP : undefined}>
                       <span className="text-forge-muted text-[10px]">PAN</span>
                       <UndoableRange
+                        aria-label={`${currentTrack.name} pan`}
                         min={-1}
                         max={1}
                         step={0.01}
@@ -663,6 +670,7 @@ export const TrackInspector: React.FC = () => {
               <div className="flex items-center justify-between gap-3 text-xs font-mono" title="How far back on the stage it sits: further back is a little darker, quieter and more in the room">
                 <span className="text-forge-muted text-[10px]">DIST</span>
                 <UndoableRange
+                  aria-label={`${currentTrack.name} distance`}
                   min={0}
                   max={1}
                   step={0.01}
@@ -708,6 +716,7 @@ export const TrackInspector: React.FC = () => {
                   <span className="text-cyan-300 font-bold tabular-nums">{masterReverbDecay.toFixed(1)}s</span>
                 </div>
                 <UndoableRange
+                  aria-label="Room decay time"
                   min={0.8}
                   max={12}
                   step={0.1}
@@ -789,6 +798,7 @@ export const TrackInspector: React.FC = () => {
                   </span>
                 </div>
                 <UndoableRange
+                  aria-label="Echo feedback"
                   min={0}
                   max={0.8}
                   step={0.02}

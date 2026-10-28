@@ -104,3 +104,19 @@ export function firstFrom(notes: readonly ShowcaseNote[], t: number): number {
   }
   return lo;
 }
+
+/**
+ * The song played on the written beat, as the notes above read it (the rhythm game renders this, so
+ * its notes land where they're heard): no clip's own swing or groove feel and no Human timing,
+ * whose moves are only in the sound. (The song's swing is left out by the render's options.)
+ */
+export function onTheBeat<T extends Pick<Track, 'fx'>, C extends Pick<Clip, 'groove'>>(tracks: readonly T[], clips: readonly C[]): { tracks: T[]; clips: C[] } {
+  return {
+    tracks: tracks.map((t) => (t.fx.human.on && t.fx.human.timing > 0 ? { ...t, fx: { ...t.fx, human: { ...t.fx.human, timing: 0 } } } : t)),
+    clips: clips.map((c) => {
+      if (!c.groove) return c;
+      const { groove: _groove, ...rest } = c;
+      return rest as C;
+    }),
+  };
+}

@@ -4,7 +4,8 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   publicDir: false,
   // Library mode leaves these for the bundler that uses it; this file runs as it is in a browser
-  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+  // (VITE_BOS_RUNTIME: the plugins' WebAssembly is found next to bos-player.js, see pluginSources.ts)
+  define: { 'process.env.NODE_ENV': JSON.stringify('production'), 'import.meta.env.VITE_BOS_RUNTIME': JSON.stringify('1') },
   build: {
     outDir: 'dist-runtime',
     emptyOutDir: true,

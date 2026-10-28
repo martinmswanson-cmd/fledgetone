@@ -57,14 +57,18 @@ Making the music takes a few seconds per minute of music, more on slow devices, 
 
 Synth instruments need nothing. Sounds the song's audio clips and samplers play are inside the
 song file. But **recorded instruments** (pianos, drum kits, strings and so on) and the studio's
-built-in plugin effects need their recordings and code, which the player downloads while it makes
-the music:
+built-in plugins (Fledge Synth and the plugin effects) need their recordings and code, which the
+player downloads while it makes the music:
 
-- first from next to your page (the folders `fledgetone-samples/`, `fledgetone-sfx/` and
-  `fledgetone-plugins/`, if you host copies of them there),
+- first from your own copies, if you host them: the folders `fledgetone-samples/` and
+  `fledgetone-sfx/` next to your page, and `fledgetone-plugins/` next to `bos-player.js` (a web
+  runtime kit exported from the studio has the plugins its song plays there already),
 - otherwise from fledgetone.com (`https://fledgetone.com/app/...`), which allows this from any site,
 - and a few older instrument sets from public sample collections on GitHub
   (`tonejs.github.io`, `raw.githubusercontent.com` and `gleitz.github.io`).
+
+If a plugin the song plays can't be loaded, `loadSong` rejects with an error that names it, rather
+than play that part silent.
 
 So a song that uses recorded instruments needs an internet connection the first time, and your
 players' browsers will contact those sites. If that matters for your game, use only synth

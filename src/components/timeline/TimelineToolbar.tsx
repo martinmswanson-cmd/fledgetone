@@ -269,7 +269,7 @@ export const TimelineToolbar: React.FC = () => {
       <div className="flex items-center gap-1.5" role="group" aria-label="Edit tools">
         <ToolButton id="tool-select" title="Selection tool (V)" active={activeTool === 'select'} onClick={() => setTool('select')}>
           <MousePointer2 className="w-4 h-4" />
-          <span className="text-[10px] opacity-70">V</span>
+          <span className="text-[10px]">V</span>
         </ToolButton>
         <ToolButton
           id="tool-razor"
@@ -279,7 +279,7 @@ export const TimelineToolbar: React.FC = () => {
           onClick={() => setTool('razor')}
         >
           <Scissors className="w-4 h-4" />
-          <span className="text-[10px] opacity-70">C</span>
+          <span className="text-[10px]">C</span>
         </ToolButton>
       </div>
 

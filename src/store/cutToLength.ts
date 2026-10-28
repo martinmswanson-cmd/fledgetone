@@ -1,10 +1,10 @@
 import type { Clip, Marker } from './timelineTypes';
-import { measureAt, type MeterMap } from '../audio/tempoMap';
+import { FOUR_FOUR, measureAt, measureStart, type MeterMap } from '../audio/tempoMap';
 
 /**
  * Cut to length: make a 15, 30 or 60-second version of a song (an ad, a trailer, a social clip) by
  * dropping or repeating whole sections, the way an editor cuts music to picture. Sections are the
- * stretches between markers (or 8-bar phrases in a song without any). The cut always ends with the
+ * stretches between markers (or 8-bar phrases in a song without any, counted in its measures). The cut always ends with the
  * song's own ending, keeps the sections in order, and prefers the busiest and most important parts
  * (a drop or a chorus over an intro). The tempo can then be nudged a little so it lasts exactly
  * the length asked. This file plans the cut; the store rebuilds the clips. No audio or store here,
@@ -48,9 +48,13 @@ export function songSections(clips: readonly Clip[], markers: readonly Marker[],
   let bounds: Array<{ bar: number; name: string }>;
   if (cuts.length) bounds = [{ bar: 1, name: atStart?.name ?? 'Start' }, ...cuts];
   else {
-    const phrase = end - 1 >= 16 ? 8 : 4;
+    // 8 or 4 measures each, so every section starts on a bar line in 3/4 or 6/8 too (in 4/4 a
+    // measure is a bar)
+    const map = meter ?? { base: FOUR_FOUR, points: [] };
+    const measures = measureAt(end - EPS, map).measure;
+    const phrase = measures >= 16 ? 8 : 4;
     bounds = [];
-    for (let b = 1; b < end; b += phrase) bounds.push({ bar: b, name: `Bars ${b}-${Math.min(end, b + phrase) - 1}` });
+    for (let m = 1; m <= measures; m += phrase) bounds.push({ bar: measureStart(m, map), name: `Bars ${m}-${Math.min(measures, m + phrase - 1)}` });
   }
   const sections = bounds.map((b, i) => ({ name: b.name, from: b.bar, to: bounds[i + 1]?.bar ?? end }));
   // Busier sections matter more: notes (and audio) per bar, scaled to the busiest
@@ -84,8 +88,9 @@ export function stateNames(sections: ReadonlyArray<{ name: string }>): string[] 
   const used = new Set<string>();
   return sections.map((sec) => {
     let name = sec.name;
-    for (let n = 2; used.has(safe(name)); n++) name = `${sec.name} ${n}`;
-    used.add(safe(name));
+    // (Told apart without regard to case: Windows and macOS keep "Drop.wav" and "drop.wav" as one file)
+    for (let n = 2; used.has(safe(name).toLowerCase()); n++) name = `${sec.name} ${n}`;
+    used.add(safe(name).toLowerCase());
     return name;
   });
 }

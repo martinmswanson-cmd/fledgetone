@@ -6,6 +6,10 @@ import { referencedSoundIds } from '../store/audioClips';
 import { serializeProject, type ProjectSnapshot } from '../store/project';
 import { songSections, stateNames } from '../store/cutToLength';
 import { FOUR_FOUR } from './tempoMap';
+import { PLUGIN_FAMILIES } from './plugins/pluginCatalog';
+import { pluginSource } from './plugins/pluginSources';
+import { recordingBytes } from './recordingStore';
+import { songPlugins } from './runtimePlugins';
 
 /**
  * The web runtime kit: for a web game where download size matters, the song as its project file
@@ -20,6 +24,10 @@ const safe = (name: string) => name.replace(/[\\/:*?"<>|#%]+/g, '-').trim() || '
 const scriptString = (v: string) => JSON.stringify(v).replace(/</g, '\\u003c');
 
 export async function buildRuntimeKit(project: ProjectSnapshot): Promise<Blob> {
+  // The plugins it plays go in beside the player (it has the ones that aren't GPL-licensed)
+  const plugins = songPlugins(project.tracks, PLUGIN_FAMILIES);
+  if (plugins.missing.length) throw new Error(`the web runtime can't play ${plugins.missing.join(', ')} (a GPL plugin): use the game kit, or another plugin on that track`);
+  const pluginFiles = await Promise.all(plugins.families.map(async (f) => ({ name: `fledgetone-plugins/${f.file}`, data: new Blob([await recordingBytes(pluginSource(f), f.file)], { type: 'application/wasm' }) })));
   const sounds = await embedSounds(referencedSoundIds(project));
   const songFile = `${safe(project.name)}.json`;
   const song = JSON.stringify(serializeProject({ ...project, sounds }));
@@ -79,14 +87,17 @@ game loads and show a progress bar. Pass { context: yourAudioContext } to share 
 AudioContext, and { destination: someGainNode } to route the music through your own mixer.
 
 Recorded instruments download their samples from the same public libraries the app uses, so
-they need a connection; synth instruments need nothing. Sounds your clips play are inside the
-song file.
+they need a connection; the built-in synths need nothing. Sounds your clips play are inside the
+song file.${pluginFiles.length ? `\n\nThe plugins the song plays are in fledgetone-plugins/: keep that folder next to
+bos-player.js.` : ''} If something the song needs can't be loaded, loadSong rejects with an
+error that says what.
 
 index.html is a small test page: serve this folder (for example "npx serve") and open it.
 `;
   return createZip([
     { name: songFile, data: new Blob([song], { type: 'application/json' }) },
     { name: 'bos-player.js', data: new Blob([runtimeSource], { type: 'text/javascript' }) },
+    ...pluginFiles,
     { name: 'index.html', data: new Blob([example], { type: 'text/html' }) },
     { name: 'README.txt', data: new Blob([readme], { type: 'text/plain' }) },
     { name: EXPORTED_FILES_LICENCE_NAME, data: new Blob([EXPORTED_FILES_LICENCE], { type: 'text/plain' }) },

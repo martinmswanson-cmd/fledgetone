@@ -11,7 +11,7 @@ import { masterFxOf, useTimelineStore } from '../../store/timelineStore';
 import { audibleTracks, renderArrangement } from '../../audio/exportWav';
 import { initAudio } from '../../audio/engine';
 import { barToSeconds } from '../../audio/tempoMap';
-import { showcaseData } from '../../store/showcase';
+import { onTheBeat, showcaseData } from '../../store/showcase';
 import { buildChart, type RhythmDifficulty } from '../../store/rhythmChart';
 import { showToast } from '../timeline/toastStore';
 import { RHYTHM_KEYS, RhythmGame, type RhythmResult } from './rhythmGame';
@@ -76,7 +76,9 @@ export const RhythmTryOut: React.FC<{ picker: React.ReactNode; onClose: () => vo
       try {
         await initAudio();
         const s = useTimelineStore.getState();
-        const opts = { tracks: s.tracks, clips: s.clips, bpm: s.bpm, tempoPoints: s.tempoPoints, swing: 0, startBar: 1, endBar: notes.end, masterFx: masterFxOf(s), master: s.master, ending: 'ringOut' as const, sampleRate: 44100 as const };
+        // On the written beat, as the chart is: no swing, groove feel or Human timing in the sound
+        const { tracks, clips } = onTheBeat(s.tracks, s.clips);
+        const opts = { tracks, clips, bpm: s.bpm, tempoPoints: s.tempoPoints, swing: 0, startBar: 1, endBar: notes.end, masterFx: masterFxOf(s), master: s.master, ending: 'ringOut' as const, sampleRate: 44100 as const };
         const key = JSON.stringify(opts);
         if (cache?.key !== key) {
           const b = await renderArrangement({ ...opts, signal: stop.signal }, (f) => !cancelled && setProgress(`Rendering the song (${Math.round(f * 100)}%).`));

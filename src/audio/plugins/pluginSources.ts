@@ -11,9 +11,15 @@ const families: PluginFamily[] = GPL_PLUGINS ? [...PLUGIN_FAMILIES, ...GPL_PLUGI
 /** The plugin families this build offers. */
 export const pluginFamilies = (): PluginFamily[] => families;
 
-/** Where a family's files (its WebAssembly, preset files) are downloaded from: next to the page, else the site's copy. */
+/**
+ * The web games runtime (bos-player.js, vite.runtime.config.ts) finds the plugins next to itself,
+ * where its kit puts them (runtimeKit.ts), wherever the game's page is.
+ */
+const RUNTIME = import.meta.env.VITE_BOS_RUNTIME === '1';
+
+/** Where a family's files (its WebAssembly, preset files) are downloaded from: next to the page (the runtime: next to it), else the site's copy. */
 export const pluginSource = (family: PluginFamily) => ({
-  baseUrl: 'fledgetone-plugins/',
+  baseUrl: RUNTIME ? new URL('fledgetone-plugins/', import.meta.url).href : 'fledgetone-plugins/',
   fallbackUrl: 'https://fledgetone.com/app/fledgetone-plugins/',
   version: family.hash,
 });

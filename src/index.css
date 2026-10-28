@@ -56,3 +56,13 @@
 .search-flash {
   animation: search-flash 1.8s ease-out;
 }
+
+/* Asked for less motion (the system's setting): nothing pulses or bounces on and on (START AUDIO,
+   a waiting MIDI learn, a recording take); the loading spinners still turn, to show work going on */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-ping,
+  .animate-bounce {
+    animation: none;
+  }
+}

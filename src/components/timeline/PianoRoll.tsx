@@ -929,6 +929,8 @@ const PianoRollEditor: React.FC<EditorProps> = ({ clip, instrument, color, track
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (shouldIgnoreShortcut(e)) return;
+      // A clip on the timeline has the keyboard: its keys are for it (see ClipView)
+      if (e.target instanceof Element && e.target.closest('[data-clip-id]')) return;
       const store = useTimelineStore.getState();
       const mod = e.ctrlKey || e.metaKey;
       const handled = () => {

@@ -11,7 +11,10 @@ export class AdaptiveMusic {
   load(baseUrl?: string): Promise<void>;
   loadFrom(data: unknown, buffers: Map<string, AudioBuffer>): void;
   static filesOf(data: unknown): string[];
-  nextLine(unit?: 'bar' | 'beat' | 'phrase' | 'end' | 'now', phraseBars?: number): number;
+  /** The audio time of the next line of `unit` (at least `ahead` seconds away, on a state's own bar lines where the manifest gives them) */
+  nextLine(unit?: 'bar' | 'beat' | 'phrase' | 'end' | 'now', phraseBars?: number, ahead?: number): number;
+  /** Seconds from `pos` in a loop `loop` long to the first of `lines` at least `ahead` on */
+  static untilLine(lines: number[], loop: number, pos: number, ahead?: number): number;
   play(name: string): void;
   setState(name: string, unit?: 'bar' | 'beat' | 'phrase' | 'end' | 'now'): void;
   setIntensity(value: number, seconds?: number): void;

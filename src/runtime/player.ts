@@ -13,14 +13,19 @@
  *   music.stinger('Victory');
  *
  * Recorded instruments download their samples from the same public sound libraries as the app
- * (so they need a connection); the synths need nothing. Audio clips and the Sampler play from the
- * sounds a saved project file carries inside it.
+ * (so they need a connection); the built-in synths need nothing, and plugins (Fledge Synth...) load
+ * from fledgetone-plugins/ next to this file (the runtime kit puts them there), else fledgetone.com.
+ * A plugin that can't be loaded makes loadSong reject, rather than play its part silent. Audio clips
+ * and the Sampler play from the sounds a saved project file carries inside it.
  */
 import { parseProject, type ProjectSnapshot } from '../store/project';
 import { buildGameKitParts, type GameKitSong } from '../audio/gameKit';
 import { importEmbeddedSounds } from '../audio/soundLibrary';
 import { normalizeTrackFx, DEFAULT_MASTER_FX, defaultMasterSettings } from '../store/timelineTypes';
 import { AdaptiveMusic } from '../gameKit/adaptive-music.js';
+import { pluginFamilies } from '../audio/plugins/pluginSources';
+import { preloadFamily } from '../audio/plugins/builtinHost';
+import { songPlugins } from '../audio/runtimePlugins';
 
 export { AdaptiveMusic };
 
@@ -70,6 +75,14 @@ export async function loadSong(source: string | object, opts: LoadOptions = {}):
     raw = await res.json();
   }
   const project = parseProject(raw);
+  // The plugins it plays, loaded first: one that can't be would leave its part silent
+  const plugins = songPlugins(project.tracks, pluginFamilies());
+  if (plugins.missing.length) throw new Error(`This player can't play ${plugins.missing.join(', ')} (not in the runtime)`);
+  for (const f of plugins.families) {
+    await preloadFamily(f).catch((err: unknown) => {
+      throw new Error(`Couldn't load the ${f.label} plugins (fledgetone-plugins/${f.file}, next to bos-player.js): ${err instanceof Error ? err.message : String(err)}`);
+    });
+  }
   if (project.sounds?.length) await importEmbeddedSounds(project.sounds);
   // With stem groups the player mixes the stems, so each state's whole mix isn't made
   const { manifest, files } = await buildGameKitParts(songOf(project), opts.onProgress, 44100, true);

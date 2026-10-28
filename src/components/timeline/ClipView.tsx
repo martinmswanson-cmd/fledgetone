@@ -8,6 +8,7 @@ import { Link2 } from 'lucide-react';
 import { patternLabelOf } from '../../store/patterns';
 import { TOTAL_BARS, useTimelineStore, songTempo } from '../../store/timelineStore';
 import { tempoAt } from '../../audio/tempoMap';
+import { formatBarsBeats } from '../../audio/transport';
 import { useUiStore } from '../../store/uiStore';
 import type { Clip, ClipAudio, InstrumentKey, Track } from '../../store/timelineTypes';
 import { DEFAULT_WOBBLE, durationToBars, formatBarCount, minClipLength, snapBar } from '../../store/timelineTypes';
@@ -127,6 +128,8 @@ interface ClipViewProps {
   track: Track;
   originRef: React.RefObject<HTMLElement | null>;
   onOpenMenu: (menu: ContextMenuState) => void;
+  /** The lane's one stop for the Tab key (the others are reached with Ctrl+arrows: a big song isn't hundreds of stops) */
+  tabStop: boolean;
 }
 
 /**
@@ -138,7 +141,7 @@ interface ClipViewProps {
  * lanes a drag scrolls the timeline.
  * Memoized: an edit to one clip doesn't re-render (and re-draw the notes of) every other clip.
  */
-export const ClipView = React.memo(function ClipView({ clip, track, originRef, onOpenMenu }: ClipViewProps) {
+export const ClipView = React.memo(function ClipView({ clip, track, originRef, onOpenMenu, tabStop }: ClipViewProps) {
   const zoom = useTimelineStore((s) => s.zoom);
   const activeTool = useTimelineStore((s) => s.activeTool);
   const isEditing = useTimelineStore((s) => s.editingClipId === clip.id);
@@ -423,11 +426,65 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
 
   const isRazor = activeTool === 'razor';
 
+  // Keyboard: Tab reaches a clip on each lane, Ctrl+arrows the one before or after on the lane.
+  // Enter opens it, Delete deletes it, the arrows move it a grid step (Shift: a bar), each one undo
+  // step (a selection it's part of goes or moves with it), and the menu key or Shift+F10 opens its menu
+  const onKey = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const s = useTimelineStore.getState();
+    const horizontal = e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+    const dir = e.key === 'ArrowLeft' ? -1 : 1;
+    let handled = true;
+    if (e.key === 'Enter') s.openEditor(clip.id);
+    else if (e.key === 'Delete' || e.key === 'Backspace') {
+      // (The keyboard goes on to the clip after it on the lane, or the one before)
+      const lane = s.clips.filter((c) => c.trackId === clip.trackId).sort((a, b) => a.startBar - b.startBar);
+      const at = lane.findIndex((c) => c.id === clip.id);
+      const after = lane[at + 1] ?? lane[at - 1];
+      const parent = e.currentTarget.parentElement;
+      // (Part of a selection: the selection goes, as Delete always does)
+      if (!clip.isSelected) s.selectClip(clip.id, false);
+      s.deleteSelectedClips();
+      if (after) {
+        s.selectClip(after.id, false);
+        requestAnimationFrame(() => parent?.querySelector<HTMLElement>(`[data-clip-id="${after.id}"]`)?.focus());
+      }
+    } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+      const r = e.currentTarget.getBoundingClientRect();
+      s.selectClip(clip.id, false);
+      onOpenMenu({ x: r.left, y: r.bottom, bar: clip.startBar, trackId: clip.trackId, clipId: clip.id });
+    } else if (horizontal && (e.ctrlKey || e.metaKey)) {
+      const lane = s.clips.filter((c) => c.trackId === clip.trackId).sort((a, b) => a.startBar - b.startBar);
+      const next = lane[lane.findIndex((c) => c.id === clip.id) + dir];
+      if (next) {
+        s.selectClip(next.id, false);
+        e.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-clip-id="${next.id}"]`)?.focus();
+      }
+    } else if (horizontal && !e.altKey) {
+      // (Part of a selection: the selection moves together)
+      const step = e.shiftKey ? 1 : minClipLength(s.snapGrid, s);
+      const moved = snapBar(clip.startBar + dir * step, s.snapGrid, s);
+      const delta = Math.abs(moved - clip.startBar) > 1e-9 ? moved - clip.startBar : dir * step;
+      const moving = clip.isSelected ? s.clips.filter((c) => c.isSelected) : [clip];
+      const from = Math.min(...moving.map((c) => c.startBar));
+      const to = Math.max(...moving.map((c) => c.startBar + c.lengthBars));
+      const shift = Math.max(1 - from, Math.min(TOTAL_BARS + 1 - to, delta));
+      if (Math.abs(shift) > 1e-9) {
+        s.checkpoint();
+        for (const c of moving) s.moveClip(c.id, c.startBar + shift);
+      }
+    } else handled = false;
+    if (handled) {
+      // Not the timeline's own shortcuts too (Delete would delete the other selected clips)
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
   return (
     <div
       className={`absolute rounded-md overflow-hidden select-none border ${
         clip.isSelected ? 'ring-2 ring-white/90 border-white/80 z-10' : 'border-black/40'
-      } ${isEditing ? 'outline outline-2 outline-dashed outline-cyan-300 outline-offset-2' : ''} ${isRazor ? 'cursor-crosshair' : 'cursor-grab'}`}
+      } ${isEditing ? 'outline outline-2 outline-dashed outline-cyan-300 outline-offset-2' : 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-300 focus-visible:outline-offset-1'} ${isRazor ? 'cursor-crosshair' : 'cursor-grab'}`}
       style={{
         left,
         width,
@@ -437,6 +494,17 @@ export const ClipView = React.memo(function ClipView({ clip, track, originRef, o
         contentVisibility: 'auto',
         backgroundColor: `${track.color}2e`,
         borderColor: clip.isSelected ? undefined : `${track.color}99`,
+      }}
+      data-clip-id={clip.id}
+      tabIndex={tabStop ? 0 : -1}
+      role="button"
+      aria-label={`${clip.name || 'Clip'} on ${track.name}, at ${formatBarsBeats(clip.startBar)}, ${formatBarCount(clip.lengthBars)} bars${clip.isSelected ? ', selected' : ''}`}
+      aria-keyshortcuts="Enter Delete ArrowLeft ArrowRight Control+ArrowLeft Control+ArrowRight"
+      onKeyDown={onKey}
+      onFocus={(e) => {
+        // Reached with the keyboard, it's the selected clip (so Ctrl+C, Ctrl+D... act on it); a
+        // click selects as it always has
+        if (e.currentTarget.matches(':focus-visible') && !clip.isSelected) useTimelineStore.getState().selectClip(clip.id, false);
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handleHover}

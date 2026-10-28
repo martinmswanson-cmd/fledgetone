@@ -3,6 +3,7 @@
  * the components, so the search palette and menus can open any of them.
  */
 import { create } from 'zustand';
+import { scrollBehavior } from '../components/reducedMotion';
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 /** The search palette's shortcut, as this computer writes it. */
@@ -161,7 +162,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     saveDock({ tab: s.dockTab, open: s.dockOpen, height: s.dockHeight });
     // Scroll the dock into view once it has rendered
     if (typeof document !== 'undefined') {
-      requestAnimationFrame(() => document.querySelector('[data-dock]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+      requestAnimationFrame(() => document.querySelector('[data-dock]')?.scrollIntoView({ block: 'nearest', behavior: scrollBehavior() }));
     }
   },
   setDockOpen: (dockOpen) => {

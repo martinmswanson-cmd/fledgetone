@@ -3,6 +3,7 @@
  * finds it. Controls inside a panel that has to open first (the Inspector, a popover) may only
  * appear a few frames later, so it waits for them (about a second at most).
  */
+import { scrollBehavior } from '../components/reducedMotion';
 
 const FOCUSABLE = 'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea, button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -34,7 +35,7 @@ export async function reveal(selector: string): Promise<boolean> {
   // A folded section that is the thing asked for (or wraps it straight away): open it too
   const own = el.matches('details') ? el : el.querySelector<HTMLDetailsElement>(':scope > details');
   if (own instanceof HTMLDetailsElement) own.open = true;
-  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
   const target = el.matches(FOCUSABLE) ? el : el.querySelector<HTMLElement>(FOCUSABLE);
   target?.focus({ preventScroll: true });
   flash(el);
@@ -45,7 +46,7 @@ export async function reveal(selector: string): Promise<boolean> {
 export async function press(selector: string): Promise<boolean> {
   const el = await waitFor(selector, 2);
   if (!el) return false;
-  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
   el.click();
   return true;
 }
